@@ -23,7 +23,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/encoding/deflate"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
-	"github.com/trickstercache/trickster/v2/pkg/encoding/snappy"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/zstd"
 )
 
@@ -48,18 +47,19 @@ func SelectEncoderInitializer(p Provider) (EncoderInitializer, string) {
 	if p&Zstandard == Zstandard {
 		return zstd.NewEncoder, ZstandardValue
 	}
+
 	if p&Brotli == Brotli {
 		return brotli.NewEncoder, BrotliValue
 	}
+
 	if p&GZip == GZip {
 		return gzip.NewEncoder, GZipValue
 	}
+
 	if p&Deflate == Deflate {
 		return deflate.NewEncoder, DeflateValue
 	}
-	if p&Snappy == Snappy {
-		return snappy.NewEncoder, ""
-	}
+
 	return nil, ""
 }
 
@@ -78,17 +78,18 @@ func SelectDecoderInitializer(p Provider) DecoderInitializer {
 	if p&Zstandard == Zstandard {
 		return zstd.NewDecoder
 	}
+
 	if p&Brotli == Brotli {
 		return brotli.NewDecoder
 	}
+
 	if p&GZip == GZip {
 		return gzip.NewDecoder
 	}
+
 	if p&Deflate == Deflate {
 		return deflate.NewDecoder
 	}
-	if p&Snappy == Snappy {
-		return snappy.NewDecoder
-	}
+
 	return nil
 }

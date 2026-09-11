@@ -25,12 +25,14 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -39,7 +41,6 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 // Prometheus API
@@ -74,6 +75,11 @@ type TestClient struct {
 	fftime          time.Time
 	InstantCacheKey string
 	RangeCacheKey   string
+	setExtentCalls  atomic.Int64
+	setExtentErr    error
+	// setExtentErrorAfter causes calls after this count to fail. Zero causes
+	// every call to fail when setExtentErr is non-nil.
+	setExtentErrorAfter int64
 }
 
 func NewTestClient(name string, o *bo.Options, router http.Handler,
@@ -303,11 +309,17 @@ func (c *TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 }
 
 // SetExtent will change the upstream request query to use the provided Extent
-func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseries.Extent) {
+func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
+	extent *timeseries.Extent) error {
+	call := c.setExtentCalls.Add(1)
+	if c.setExtentErr != nil && (c.setExtentErrorAfter == 0 || call > c.setExtentErrorAfter) {
+		return c.setExtentErr
+	}
 	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
 	params.SetRequestValues(r, v)
+	return nil
 }
 
 // FastForwardRequest returns an *http.Request crafted to collect Fast Forward

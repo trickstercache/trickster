@@ -19,84 +19,48 @@ package otlp
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+
 	"go.opentelemetry.io/otel/attribute"
-	otlp "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
+	otlpgrpc "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	otlphttp "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"go.opentelemetry.io/otel/trace"
+	grpcgzip "google.golang.org/grpc/encoding/gzip"
 )
+
+var errGRPCPathOnlyEndpoint = fmt.Errorf("%w: path-only endpoints require OTLP/HTTP protocol",
+	errs.ErrInvalidEndpointURL)
 
 // New returns a new OTLP Tracer based on the provided options
 func New(o *options.Options) (*tracing.Tracer, error) {
-	var tp trace.TracerProvider
-	var err error
 	if o == nil {
 		return nil, errs.ErrNoTracerOptions
 	}
-	var sampler sdktrace.Sampler
-	o.SanitizeSampleRate()
-	switch *o.SampleRate {
-	case 0:
-		sampler = sdktrace.NeverSample()
-	case 1:
-		sampler = sdktrace.AlwaysSample()
-	default:
-		sampler = sdktrace.TraceIDRatioBased(*o.SampleRate)
+
+	tags := make([]attribute.KeyValue, 1, len(o.Tags)+1)
+	tags[0] = attribute.String("service.name", o.ServiceName)
+	for k, v := range o.Tags {
+		tags = append(tags, attribute.String(k, v))
 	}
 
-	var tags []attribute.KeyValue
-	if len(o.Tags) > 0 {
-		tags = make([]attribute.KeyValue, len(o.Tags))
-		for k, v := range o.Tags {
-			tags = append(tags, attribute.String(k, v))
-		}
-	}
-
-	opts := make([]otlp.Option, 0, 10)
-	// this determines if the collector endpoint is a path, uri or url
-	// and calls the appropriate Options decorator
-	switch {
-	case strings.HasPrefix(o.Endpoint, "/"):
-		opts = append(opts, otlp.WithURLPath(o.Endpoint))
-	case strings.HasPrefix(o.Endpoint, "http"):
-		opts = append(opts, otlp.WithEndpointURL(o.Endpoint))
-		if !strings.HasPrefix(o.Endpoint, "https") {
-			opts = append(opts, otlp.WithInsecure())
-		}
-	default:
-		otlp.WithEndpoint(o.Endpoint)
-	}
-
-	if o.Timeout > 0 {
-		opts = append(opts, otlp.WithTimeout(o.Timeout))
-	}
-
-	if len(o.Headers) > 0 {
-		opts = append(opts, otlp.WithHeaders(o.Headers))
-	}
-
-	if !o.DisableCompression {
-		opts = append(opts, otlp.WithCompression(otlp.GzipCompression))
-	}
-
-	exporter, err := otlp.New(context.Background(), opts...)
+	exporter, err := newExporter(context.Background(), o)
 	if err != nil {
 		return nil, err
 	}
 
-	tracerOpts := make([]sdktrace.TracerProviderOption, 0, 3)
-	tracerOpts = append(tracerOpts, sdktrace.WithSampler(sampler))
-	if len(tags) > 0 {
-		tracerOpts = append(tracerOpts,
-			sdktrace.WithResource(resource.NewWithAttributes("", tags...)))
-	}
-	tracerOpts = append(tracerOpts, sdktrace.WithBatcher(exporter))
-	tp = sdktrace.NewTracerProvider(tracerOpts...)
+	tp := sdktrace.NewTracerProvider(
+		sdktrace.WithSampler(tracing.Sampler(o)),
+		sdktrace.WithResource(resource.NewWithAttributes("", tags...)),
+		sdktrace.WithBatcher(exporter),
+	)
 	tracer := tp.Tracer(o.Name)
 
 	return &tracing.Tracer{
@@ -105,4 +69,73 @@ func New(o *options.Options) (*tracing.Tracer, error) {
 		Options:      o,
 		ShutdownFunc: exporter.Shutdown,
 	}, nil
+}
+
+func newExporter(ctx context.Context, o *options.Options) (*otlptrace.Exporter, error) {
+	switch o.Protocol {
+	case "", options.OTLPProtocolHTTP:
+		return newHTTPExporter(ctx, o)
+	case options.OTLPProtocolGRPC:
+		return newGRPCExporter(ctx, o)
+	}
+	return nil, fmt.Errorf("invalid OTLP protocol [%s]", o.Protocol)
+}
+
+func newHTTPExporter(ctx context.Context, o *options.Options) (*otlptrace.Exporter, error) {
+	opts := make([]otlphttp.Option, 0, 10)
+	// this determines if the collector endpoint is a path, uri or url
+	// and calls the appropriate Options decorator
+	switch {
+	case o.Endpoint == "":
+	case strings.HasPrefix(o.Endpoint, "/"):
+		opts = append(opts, otlphttp.WithURLPath(o.Endpoint))
+	case strings.HasPrefix(o.Endpoint, "http"):
+		opts = append(opts, otlphttp.WithEndpointURL(o.Endpoint))
+		if !strings.HasPrefix(o.Endpoint, "https") {
+			opts = append(opts, otlphttp.WithInsecure())
+		}
+	default:
+		opts = append(opts, otlphttp.WithEndpoint(o.Endpoint))
+	}
+
+	if time.Duration(o.Timeout) > 0 {
+		opts = append(opts, otlphttp.WithTimeout(time.Duration(o.Timeout)))
+	}
+
+	if len(o.Headers) > 0 {
+		opts = append(opts, otlphttp.WithHeaders(o.Headers))
+	}
+
+	if !o.DisableCompression {
+		opts = append(opts, otlphttp.WithCompression(otlphttp.GzipCompression))
+	}
+
+	return otlphttp.New(ctx, opts...)
+}
+
+func newGRPCExporter(ctx context.Context, o *options.Options) (*otlptrace.Exporter, error) {
+	opts := make([]otlpgrpc.Option, 0, 10)
+	switch {
+	case o.Endpoint == "":
+	case strings.HasPrefix(o.Endpoint, "/"):
+		return nil, errGRPCPathOnlyEndpoint
+	case strings.HasPrefix(o.Endpoint, "http"):
+		opts = append(opts, otlpgrpc.WithEndpointURL(o.Endpoint))
+	default:
+		opts = append(opts, otlpgrpc.WithEndpoint(o.Endpoint))
+	}
+
+	if time.Duration(o.Timeout) > 0 {
+		opts = append(opts, otlpgrpc.WithTimeout(time.Duration(o.Timeout)))
+	}
+
+	if len(o.Headers) > 0 {
+		opts = append(opts, otlpgrpc.WithHeaders(o.Headers))
+	}
+
+	if !o.DisableCompression {
+		opts = append(opts, otlpgrpc.WithCompressor(grpcgzip.Name))
+	}
+
+	return otlpgrpc.New(ctx, opts...)
 }

@@ -19,19 +19,54 @@ package gzip
 
 import (
 	"bytes"
-	"compress/gzip"
 	"io"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+
+	"github.com/klauspost/compress/gzip"
 )
 
-// Decode returns the decoded version of the encoded byte slice
-func Decode(in []byte) ([]byte, error) {
+var writerPool sync.Pool
+
+// pooledWriter wraps a gzip.Writer and returns it to the pool on Close.
+type pooledWriter struct {
+	*gzip.Writer
+}
+
+func (pw *pooledWriter) Close() error {
+	err := pw.Writer.Close()
+	writerPool.Put(pw.Writer)
+	return err
+}
+
+func decodeBody(in []byte) ([]byte, error) {
 	gr, err := gzip.NewReader(bytes.NewReader(in))
 	if err != nil {
-		return []byte{}, err
+		return nil, err
 	}
+	defer gr.Close()
 	return io.ReadAll(gr)
+}
+
+// Decode returns the decoded version of the encoded byte slice.
+func Decode(in []byte) ([]byte, error) {
+	if !Detect(in) {
+		return nil, gzip.ErrHeader
+	}
+	return decodeBody(in)
+}
+
+// Decompress returns decompressed bytes if b is gzip-encoded, otherwise returns b unchanged.
+func Decompress(b []byte) []byte {
+	if !Detect(b) {
+		return b
+	}
+	out, err := decodeBody(b)
+	if err != nil {
+		return b
+	}
+	return out
 }
 
 // Encode returns the encoded version of the byte slice
@@ -47,8 +82,13 @@ func NewEncoder(w io.Writer, level int) io.WriteCloser {
 	if level == -1 {
 		level = 6
 	}
-	wc, _ := gzip.NewWriterLevel(w, level)
-	return wc
+	if v := writerPool.Get(); v != nil {
+		gw := v.(*gzip.Writer)
+		gw.Reset(w)
+		return &pooledWriter{gw}
+	}
+	gw, _ := gzip.NewWriterLevel(w, level)
+	return &pooledWriter{gw}
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
@@ -57,4 +97,9 @@ func NewDecoder(r io.Reader) reader.ReadCloserResetter {
 		return nil
 	}
 	return rc
+}
+
+// Detect reports whether in begins with an RFC 1952 gzip member header
+func Detect(in []byte) bool {
+	return len(in) >= 2 && in[0] == 0x1f && in[1] == 0x8b
 }

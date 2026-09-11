@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"go.opentelemetry.io/otel/attribute"
 )
 

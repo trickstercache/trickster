@@ -18,13 +18,17 @@
 package lm
 
 import (
+	"cmp"
+	"fmt"
 	"net/http"
-	"sort"
+	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	meth "github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
 )
@@ -60,7 +64,7 @@ func (rt *lmRouter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
-	matchPrefix bool, handler http.Handler,
+	matchType matching.PathMatchType, handler http.Handler,
 ) error {
 	pl := len(path)
 	if pl == 0 {
@@ -76,6 +80,17 @@ func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 			methods[i] = strings.ToUpper(m)
 		}
 	}
+	var re *regexp.Regexp
+	switch matchType {
+	case matching.PathMatchTypeExact, matching.PathMatchTypePrefix:
+	case matching.PathMatchTypeRegex:
+		var err error
+		if re, err = regexp.Compile(path); err != nil {
+			return fmt.Errorf("%w: %w", errors.ErrInvalidPath, err)
+		}
+	default:
+		return errors.ErrInvalidMatchType
+	}
 	if hosts == nil {
 		hosts = emptyHost
 	}
@@ -86,87 +101,106 @@ func (rt *lmRouter) RegisterRoute(path string, hosts, methods []string,
 				ExactMatchRoutes:     make(route.LookupLookup),
 				PrefixMatchRoutes:    make(route.PrefixRouteSets, 0, 16),
 				PrefixMatchRoutesLkp: make(route.PrefixRouteSetLookup),
+				RegexMatchRoutesLkp:  make(route.RegexRouteSetLookup),
 			}
 			rt.routes[h] = hrc
 		}
-		if !matchPrefix {
+		switch matchType {
+		case matching.PathMatchTypeExact:
 			rl, ok := hrc.ExactMatchRoutes[path]
 			if rl == nil || !ok {
 				rl = make(route.Lookup)
 				hrc.ExactMatchRoutes[path] = rl
 			}
-			for _, m := range methods {
-				rl[m] = &route.Route{
-					ExactMatch: true,
-					Method:     m,
-					Host:       h,
-					Path:       path,
-					Handler:    handler,
+			registerMethods(rl, path, h, methods, handler, true)
+		case matching.PathMatchTypePrefix:
+			prc, ok := hrc.PrefixMatchRoutesLkp[path]
+			if prc == nil || !ok {
+				prc = &route.PrefixRouteSet{
+					Path:           path,
+					PathLen:        pl,
+					RoutesByMethod: make(route.Lookup),
 				}
-				if m == http.MethodGet {
-					if _, ok := rl[http.MethodHead]; !ok {
-						rl[http.MethodHead] = &route.Route{
-							ExactMatch: true,
-							Method:     http.MethodHead,
-							Host:       h,
-							Path:       path,
-							Handler:    handler,
-						}
-					}
+				hrc.PrefixMatchRoutesLkp[path] = prc
+				if len(hrc.PrefixMatchRoutes) == 0 {
+					hrc.PrefixMatchRoutes = make(route.PrefixRouteSets, 0, 16)
 				}
+				hrc.PrefixMatchRoutes = append(hrc.PrefixMatchRoutes, prc)
 			}
-			continue
-		}
-		prc, ok := hrc.PrefixMatchRoutesLkp[path]
-		if prc == nil || !ok {
-			prc = &route.PrefixRouteSet{
-				Path:           path,
-				PathLen:        pl,
-				RoutesByMethod: make(route.Lookup),
-			}
-			hrc.PrefixMatchRoutesLkp[path] = prc
-			if len(hrc.PrefixMatchRoutes) == 0 {
-				hrc.PrefixMatchRoutes = make(route.PrefixRouteSets, 0, 16)
-			}
-			hrc.PrefixMatchRoutes = append(hrc.PrefixMatchRoutes, prc)
-		}
-		for _, m := range methods {
-			prc.RoutesByMethod[m] = &route.Route{
-				ExactMatch: true,
-				Method:     m,
-				Host:       h,
-				Path:       path,
-				Handler:    handler,
-			}
-			if m == http.MethodGet {
-				if _, ok := prc.RoutesByMethod[http.MethodHead]; !ok {
-					prc.RoutesByMethod[http.MethodHead] = &route.Route{
-						ExactMatch: true,
-						Method:     http.MethodHead,
-						Host:       h,
-						Path:       path,
-						Handler:    handler,
-					}
+			registerMethods(prc.RoutesByMethod, path, h, methods, handler, true)
+		case matching.PathMatchTypeRegex:
+			rrs, ok := hrc.RegexMatchRoutesLkp[path]
+			if rrs == nil || !ok {
+				rrs = &route.RegexRouteSet{
+					Pattern:        path,
+					PatternLen:     pl,
+					Regexp:         re,
+					RoutesByMethod: make(route.Lookup),
 				}
+				hrc.RegexMatchRoutesLkp[path] = rrs
+				hrc.RegexMatchRoutes = append(hrc.RegexMatchRoutes, rrs)
 			}
+			registerMethods(rrs.RoutesByMethod, path, h, methods, handler, false)
 		}
 	}
 	rt.sort()
 	return nil
 }
 
-// this sorts the prefix-match paths longest to shortest
-func (rt *lmRouter) sort() {
-	for _, hrc := range rt.routes {
-		if len(hrc.PrefixMatchRoutes) == 0 {
-			continue
+// registerMethods populates the method lookup for a route path, including the
+// implicit HEAD-for-GET registration
+func registerMethods(rl route.Lookup, path, host string, methods []string,
+	handler http.Handler, exactMatch bool,
+) {
+	for _, m := range methods {
+		rl[m] = &route.Route{
+			ExactMatch: exactMatch,
+			Method:     m,
+			Host:       host,
+			Path:       path,
+			Handler:    handler,
 		}
-		prs := prefixRouteSets(hrc.PrefixMatchRoutes)
-		sort.Sort(prs)
-		hrc.PrefixMatchRoutes = route.PrefixRouteSets(prs)
+		if m == http.MethodGet {
+			if _, ok := rl[http.MethodHead]; !ok {
+				rl[http.MethodHead] = &route.Route{
+					ExactMatch: exactMatch,
+					Method:     http.MethodHead,
+					Host:       host,
+					Path:       path,
+					Handler:    handler,
+				}
+			}
+		}
 	}
 }
 
+// this sorts the prefix-match paths longest to shortest, and the regex
+// patterns longest to shortest with registration order breaking ties (stable),
+// so regex evaluation order is deterministic
+func (rt *lmRouter) sort() {
+	for _, hrc := range rt.routes {
+		if len(hrc.PrefixMatchRoutes) > 0 {
+			prs := prefixRouteSets(hrc.PrefixMatchRoutes)
+			slices.SortFunc(prs, func(a, b *route.PrefixRouteSet) int {
+				return cmp.Compare(b.PathLen, a.PathLen)
+			})
+			hrc.PrefixMatchRoutes = route.PrefixRouteSets(prs)
+		}
+		if len(hrc.RegexMatchRoutes) > 0 {
+			slices.SortStableFunc(hrc.RegexMatchRoutes,
+				func(a, b *route.RegexRouteSet) int {
+					return cmp.Compare(b.PatternLen, a.PatternLen)
+				})
+		}
+	}
+}
+
+// Handler resolves the request in two passes: first against the request's
+// hostname, then against the global ("") host. Within each pass, matching is
+// exact > longest prefix > regex, so a host-specific classic match wins over a
+// host-specific regex, and a host-specific regex wins over any global route;
+// if a request misses everything on the named host, the global pass repeats
+// exact > prefix > regex.
 func (rt *lmRouter) Handler(r *http.Request) http.Handler {
 	if rt.matchScheme&router.MatchHostname == router.MatchHostname {
 		host := r.Host
@@ -195,20 +229,32 @@ func (rt *lmRouter) matchByHost(method, host, path string) http.Handler {
 			}
 			return r.Handler
 		}
-		if rt.matchScheme&router.MatchPathPrefix != router.MatchPathPrefix {
-			return nil
-		}
-		lp := len(path)
-		for _, prc := range hrc.PrefixMatchRoutes {
-			if prc.PathLen > lp {
-				continue
-			}
-			if strings.HasPrefix(path, prc.Path) {
-				r, ok := prc.RoutesByMethod[method]
-				if !ok || r == nil {
-					return methodNotAllowedHandler
+		if rt.matchScheme&router.MatchPathPrefix == router.MatchPathPrefix {
+			lp := len(path)
+			for _, prc := range hrc.PrefixMatchRoutes {
+				if prc.PathLen > lp {
+					continue
 				}
-				return r.Handler
+				if strings.HasPrefix(path, prc.Path) {
+					r, ok := prc.RoutesByMethod[method]
+					if !ok || r == nil {
+						return methodNotAllowedHandler
+					}
+					return r.Handler
+				}
+			}
+		}
+		// the regex tier is evaluated only after exact and prefix both miss;
+		// iterating a host's empty regex set costs nothing
+		if rt.matchScheme&router.MatchPathRegex == router.MatchPathRegex {
+			for _, rrs := range hrc.RegexMatchRoutes {
+				if rrs.Regexp.MatchString(path) {
+					r, ok := rrs.RoutesByMethod[method]
+					if !ok || r == nil {
+						return methodNotAllowedHandler
+					}
+					return r.Handler
+				}
 			}
 		}
 	}

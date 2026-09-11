@@ -18,14 +18,16 @@ package purge
 
 import (
 	"fmt"
+	"html"
 	"net/http"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -37,11 +39,19 @@ func writeValidationError(w http.ResponseWriter, errorMsg string) {
 	w.Write([]byte(errorMsg))
 }
 
+func writePurgeResult(w http.ResponseWriter, backendName, target string) {
+	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
+	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
+	w.WriteHeader(http.StatusOK)
+	w.Write(fmt.Appendf(nil, "purged: %s | %s\n",
+		html.EscapeString(backendName), html.EscapeString(target)))
+}
+
 // validateBackend checks if the backend exists and writes an error response if not
 // Returns true if valid, false if invalid (and error response was written)
 func validateBackend(w http.ResponseWriter, backend backends.Backend, backendName string) bool {
 	if backend == nil {
-		writeValidationError(w, "Backend "+backendName+" doesn't exist.")
+		writeValidationError(w, "Backend "+html.EscapeString(backendName)+" doesn't exist.")
 		return false
 	}
 	return true
@@ -51,7 +61,7 @@ func validateBackend(w http.ResponseWriter, backend backends.Backend, backendNam
 // Returns true if valid, false if invalid (and error response was written)
 func validateCache(w http.ResponseWriter, cache cache.Cache, backendName string) bool {
 	if cache == nil {
-		writeValidationError(w, "Backend "+backendName+" doesn't have a cache.")
+		writeValidationError(w, "Backend "+html.EscapeString(backendName)+" doesn't have a cache.")
 		return false
 	}
 	return true
@@ -79,10 +89,7 @@ func KeyHandler(pathPrefix string,
 			return
 		}
 		cache.Remove(purgeKey)
-		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-		w.WriteHeader(http.StatusOK)
-		w.Write(fmt.Appendf(nil, "purged: %s | %s\n", backendName, purgeKey))
+		writePurgeResult(w, backendName, purgeKey)
 	}
 }
 
@@ -118,7 +125,7 @@ func PathHandler(pathPrefix string,
 			return
 		}
 		logger.Debug("purging cache item",
-			logging.Pairs{"backend": backendName, "path": purgePath})
+			logging.Pairs{"backend": backendName, keys.Path: purgePath})
 		backend := from.Get(backendName)
 		if !validateBackend(w, backend, backendName) {
 			return
@@ -128,17 +135,24 @@ func PathHandler(pathPrefix string,
 			return
 		}
 
+		cfg := backend.Configuration()
+		keys := make([]string, 0, len(engines)*len(methods)*2)
 		for _, engine := range engines {
 			for _, method := range methods {
-				cache.Remove(fmt.Sprintf("%s.%s.%s",
-					backend.Configuration().CacheKeyPrefix, engine,
-					md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method))))
+				keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
+					engine, proxyengines.DerivePathCacheKey(purgePath, method, "")))
+				// a path config with request_headers/request_params keys its
+				// entries on that configured identity; remove those variants too
+				if pc := cfg.Paths.Match(method, purgePath); pc != nil {
+					if ik := pc.IdentityKeyPart(); ik != "" {
+						keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
+							engine, proxyengines.DerivePathCacheKey(purgePath, method, ik)))
+					}
+				}
 			}
 		}
+		cache.Remove(keys...)
 
-		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
-		w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
-		w.WriteHeader(http.StatusOK)
-		w.Write(fmt.Appendf(nil, "purged: %s | %s\n", backendName, purgePath))
+		writePurgeResult(w, backendName, purgePath)
 	}
 }

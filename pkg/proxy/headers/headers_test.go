@@ -74,6 +74,45 @@ func TestUpdateHeaders(t *testing.T) {
 	}
 }
 
+func TestUpdateRequestHeadersPreservesHostUpdate(t *testing.T) {
+	for _, hostHeaderName := range []string{NameHost, "host"} {
+		t.Run(hostHeaderName, func(t *testing.T) {
+			updates := map[string]string{
+				hostHeaderName: "client.example.com",
+				"X-Test":       "value",
+			}
+			expectedUpdates := map[string]string{
+				hostHeaderName: "client.example.com",
+				"X-Test":       "value",
+			}
+
+			for i := range 2 {
+				r := &http.Request{
+					Header: make(http.Header),
+					Host:   "origin.example.com",
+				}
+
+				UpdateRequestHeaders(r, updates)
+
+				if r.Host != "client.example.com" {
+					t.Errorf("request %d: expected Host %q, got %q", i+1,
+						"client.example.com", r.Host)
+				}
+				if got := r.Header.Get("X-Test"); got != "value" {
+					t.Errorf("request %d: expected X-Test %q, got %q", i+1, "value", got)
+				}
+				if got := r.Header.Get(NameHost); got != "" {
+					t.Errorf("request %d: Host was not promoted from Header: %q", i+1, got)
+				}
+				if !reflect.DeepEqual(updates, expectedUpdates) {
+					t.Fatalf("request %d mutated updates: expected %v, got %v",
+						i+1, expectedUpdates, updates)
+				}
+			}
+		})
+	}
+}
+
 func TestRemoveClientHeaders(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(NameAcceptEncoding, "test")
@@ -106,6 +145,30 @@ func TestMerge(t *testing.T) {
 	Merge(h1, h2)
 	if h1.Get("test") != "pass" {
 		t.Errorf("expected 'pass' got '%s'", h1.Get("test"))
+	}
+}
+
+func TestMergeMultiValue(t *testing.T) {
+	src := make(http.Header)
+	src.Add(NameSetCookie, "a=1")
+	src.Add(NameSetCookie, "b=2")
+	src.Add("Vary", "Accept-Encoding")
+	src.Add("Vary", "Origin")
+
+	dst := make(http.Header)
+	Merge(dst, src)
+
+	if got := dst.Values(NameSetCookie); len(got) != 2 {
+		t.Errorf("expected 2 Set-Cookie values, got %d (%v)", len(got), got)
+	}
+	if got := dst.Values("Vary"); len(got) != 2 {
+		t.Errorf("expected 2 Vary values, got %d (%v)", len(got), got)
+	}
+
+	// the merged slice must not alias the source
+	src.Set(NameSetCookie, "mutated")
+	if got := dst.Values(NameSetCookie); len(got) != 2 || got[0] != "a=1" {
+		t.Errorf("destination aliases source: %v", got)
 	}
 }
 

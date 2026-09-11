@@ -16,12 +16,40 @@
 
 package headers
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHideAuthorizationCredentials(t *testing.T) {
-	hdrs := map[string]string{NameAuthorization: "Basic SomeHash"}
+	// matching is canonical and covers signed '+'/'-' update operators
+	hdrs := map[string]string{
+		NameAuthorization:                        "Basic SomeHash",
+		strings.ToLower(NameAuthorization):       "Bearer lower-secret",
+		"aUtHoRiZaTiOn":                          "Bearer mixed-secret",
+		"+" + NameAuthorization:                  "Bearer append-secret",
+		"+" + strings.ToLower(NameAuthorization): "Bearer append-lower-secret",
+		"-" + NameAuthorization:                  "Bearer remove-secret",
+		"X-Other":                                "kept",
+	}
 	HideAuthorizationCredentials(hdrs)
-	if hdrs[NameAuthorization] != "*****" {
-		t.Errorf("expected '*****' got '%s'", hdrs[NameAuthorization])
+	for k, v := range hdrs {
+		if k == "X-Other" {
+			if v != "kept" {
+				t.Errorf("non-sensitive header must be preserved, got '%s'", v)
+			}
+			continue
+		}
+		if v != "*****" {
+			t.Errorf("expected '*****' for key '%s', got '%s'", k, v)
+		}
+	}
+	// an empty value is a credential opt-out, not a credential; it is preserved
+	hdrs = map[string]string{NameAuthorization: "", strings.ToLower(NameAuthorization): ""}
+	HideAuthorizationCredentials(hdrs)
+	for k, v := range hdrs {
+		if v != "" {
+			t.Errorf("expected empty value preserved for key '%s', got '%s'", k, v)
+		}
 	}
 }

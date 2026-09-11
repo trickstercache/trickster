@@ -17,6 +17,7 @@
 package signaling
 
 import (
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -24,16 +25,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 )
 
-func Wait(reloader reload.Reloader) {
-	// Serve with Config
+func Wait(ctx context.Context, reloader reload.Reloader) {
 	sigs := make(chan os.Signal, 1)
+	// Defers run LIFO: signal.Stop unregisters our channel from os/signal's
+	// fanout before close runs, so no send-on-closed-channel panic can occur
+	// if a signal arrives while we're tearing down.
+	defer close(sigs)
+	defer signal.Stop(sigs)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	for {
-		sig := <-sigs
-		if sig == syscall.SIGHUP {
-			reloader("sighup")
-		} else if sig == syscall.SIGINT || sig == syscall.SIGTERM {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case sig := <-sigs:
+			switch sig {
+			case syscall.SIGHUP:
+				reloader("sighup")
+			case syscall.SIGINT, syscall.SIGTERM:
+				return
+			}
 		}
 	}
 }

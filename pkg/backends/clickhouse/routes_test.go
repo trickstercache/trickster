@@ -66,8 +66,22 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 1
+	const expectedLen = 2
 	if len(backendClient.Configuration().Paths) != expectedLen {
 		t.Errorf("expected %d got %d", expectedLen, len(backendClient.Configuration().Paths))
+	}
+}
+
+func TestDefaultPathConfigs_QueryInCacheKey(t *testing.T) {
+	c, err := NewClient("test", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := c.DefaultPathConfigs(nil)
+	if len(paths) < 2 {
+		t.Fatal("expected at least 2 paths")
+	}
+	if !slices.Contains(paths[1].CacheKeyParams, "query") {
+		t.Fatalf("CacheKeyParams must include 'query' to differentiate SQL statements: %v", paths[1].CacheKeyParams)
 	}
 }

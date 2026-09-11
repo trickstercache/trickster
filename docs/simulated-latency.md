@@ -31,9 +31,6 @@ Date: Mon, 06 Sep 2021 04:07:20 GMT
 ## Example Config
 
 ```yaml
-frontend:
-  listen_port: 8480
-
 backends:
   default:
     origin_url: https://www.example.com

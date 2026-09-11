@@ -30,18 +30,20 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	othttptrace "go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -62,10 +64,12 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 	start := time.Now()
 
-	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 	if span != nil {
 		defer span.End()
+		r = r.WithContext(ctx)
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	pc := rsc.PathConfig
 
@@ -75,41 +79,82 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	var reader io.ReadCloser
 
 	if pc == nil || pc.CollapsedForwardingType != forwarding.CFTypeProgressive ||
-		!methods.HasBody(r.Method) {
+		!methods.IsCacheable(r.Method) {
+		// don't use PCF
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 		if writer != nil && reader != nil {
-			io.Copy(writer, reader)
+			if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
+				logger.Error("proxy response copy failed",
+					logging.Pairs{keys.Error: err.Error()})
+				if closeResponse {
+					reader.Close()
+					closeResponse = false // abort below skips the deferred close
+				}
+				abortOnCopyError(writer, r, err)
+			}
 		}
 	} else {
 		pr := newProxyRequest(r, w)
-		key := o.CacheKeyPrefix + "." + pr.DeriveCacheKey("")
+		key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "", pr.DeriveCacheKey(""))
 		result, ok := reqs.Load(key)
 		if !ok {
 			var contentLength int64
-			reader, resp, contentLength = PrepareFetchReader(r)
+			// the fetch is detached from this client's cancellation so a leader
+			// disconnect does not tear down the stream for joined followers
+			lr := r.WithContext(context.WithoutCancel(r.Context()))
+			reader, resp, contentLength = PrepareFetchReader(lr)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			pr.mapLock.Unlock()
-			// Check if we know the content length and if it is less than our max object size.
-			if contentLength != 0 && contentLength < int64(o.MaxObjectSizeBytes) {
-				pcf := NewPCF(resp, contentLength)
+			var pcf ProgressiveCollapseForwarder
+			if (contentLength < 0 || (contentLength > 0 &&
+				contentLength < int64(o.MaxObjectSizeBytes))) &&
+				collapseEligible(r, resp.StatusCode, resp.Header, pc) {
+				pcf = NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
+			}
+			if pcf != nil {
 				reqs.Store(key, pcf)
 				// Blocks until server completes
 				grClose := reader != nil && closeResponse
 				closeResponse = false
-				go func() {
-					io.Copy(pcf, reader)
-					pcf.Close()
-					reqs.Delete(key)
-					if grClose {
-						reader.Close()
+				goWithRecover("doproxy.pcf.copy", func() {
+					defer func() {
+						if grClose {
+							reader.Close()
+						}
+					}()
+					defer reqs.Delete(key)
+					n, err := io.Copy(pcf, reader)
+					switch {
+					case err != nil:
+						logger.Error("pcf upstream copy failed",
+							logging.Pairs{keys.Error: err.Error()})
+						pcf.CloseWithError(err)
+					case r.Method != http.MethodHead && contentLength > 0 && n < contentLength:
+						logger.Error("pcf upstream returned short body",
+							logging.Pairs{keys.Key: key})
+						pcf.CloseWithError(io.ErrUnexpectedEOF)
+					default:
+						pcf.Close()
 					}
-				}()
-				if err := pcf.AddClient(writer); err != nil {
+				})
+				if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
+					abortOnCopyError(writer, r, err)
 					return nil
+				}
+			} else if writer != nil && reader != nil {
+				// response is not collapsible; deliver to this client alone
+				if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
+					logger.Error("proxy response copy failed",
+						logging.Pairs{keys.Error: err.Error()})
+					if closeResponse {
+						reader.Close()
+						closeResponse = false
+					}
+					abortOnCopyError(writer, r, err)
 				}
 			}
 		} else {
@@ -118,7 +163,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			pr.mapLock.Lock()
 			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
 			pr.mapLock.Unlock()
-			if err := pcf.AddClient(writer); err != nil {
+			if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
+				abortOnCopyError(writer, r, err)
 				return nil
 			}
 		}
@@ -133,7 +179,11 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	if resp != nil && rsc != nil && (rsc.IsMergeMember || rsc.TSTransformer != nil) {
 		rsc.Response = resp
 		recordResults(r, "HTTPProxy", cacheStatusCode, resp.StatusCode,
-			r.URL.Path, "", elapsed.Seconds(), nil, resp.Header)
+			r.URL.Path, "", elapsed.Seconds(), nil, nil, resp.Header)
+	}
+	if resp != nil {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatusCode.String()))
+		setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span)
 	}
 
 	return resp
@@ -141,11 +191,18 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 
 // PrepareResponseWriter prepares a response and returns a destination io.Writer for the payload
 // Used in Respond.
+//
+// Hop-by-hop headers named in the upstream's Connection header (and the static
+// HopHeaders set) are stripped from the downstream response before write, per
+// RFC 7230 6.1. Without this, an upstream that emitted
+// `Connection: X-Internal-Auth` plus `X-Internal-Auth: ...` would leak the
+// hop-only header to the client. Mirrors the request-side strip applied by
+// PrepareFetchReader via headers.StripClientHeaders.
 func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer {
 	if rw, ok := w.(http.ResponseWriter); ok {
 		h := rw.Header()
 		headers.Merge(h, header)
-		headers.AddResponseHeaders(h)
+		headers.StripClientHeaders(h)
 		if code > 0 {
 			rw.WriteHeader(code)
 		}
@@ -167,7 +224,9 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	ctx, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "PrepareFetchReader")
 	if span != nil {
 		defer span.End()
+		r = r.WithContext(ctx)
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	pc := rsc.PathConfig
 
@@ -193,27 +252,56 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	r.Close = false
 	r.RequestURI = ""
 
-	if rsc.Tracer != nil {
-		// Processing traces for proxies
-		// https://www.w3.org/TR/trace-context-1/#alternative-processing
-		ctx, r = othttptrace.W3C(ctx, r)
-		othttptrace.Inject(ctx, r)
-	}
-
-	_, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
+	ctx, doSpan := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ProxyRequest")
 	if doSpan != nil {
 		defer doSpan.End()
+		r = r.WithContext(ctx)
 	}
+	setResourceSpanAttributes(rsc, doSpan)
+
+	_, r = tspan.PrepareOutgoingRequest(r.Context(), r, rsc.Tracer)
 
 	if ep := profile.FromContext(r.Context()); ep != nil && ep.SupportedHeaderVal != "" {
 		r.Header.Set(headers.NameAcceptEncoding, ep.SupportedHeaderVal)
+	}
+
+	if r.Body != nil && r.GetBody == nil {
+		var body []byte
+		var err error
+		if o.MaxObjectSizeBytes > 0 {
+			body, err = request.GetBody(r, int64(o.MaxObjectSizeBytes))
+		} else {
+			body, err = request.GetBody(r)
+		}
+		if err != nil {
+			status := http.StatusBadGateway
+			if errors.Is(err, failures.ErrPayloadTooLarge) {
+				status = http.StatusRequestEntityTooLarge
+			}
+			logger.Error("error buffering request body for retry",
+				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
+			setHTTPStatusSpanAttributes(rsc.Tracer, status, span, doSpan)
+			return nil, &http.Response{
+				StatusCode: status,
+				Request:    r, Header: make(http.Header),
+			}, 0
+		}
+		// request.GetBody bounds the read by MaxObjectSizeBytes, caches it on
+		// the request resources, and resets r.Body to a re-readable reader.
+		// Mirror it into GetBody so the transport can replay the body when it
+		// retries after an HTTP/2 GOAWAY.
+		if body != nil {
+			r.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(body)), nil
+			}
+		}
 	}
 
 	resp, err := o.HTTPClient.Do(r)
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",
-				logging.Pairs{"url": r.URL.String(), "detail": err.Error()})
+				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
 		}
 		// if there is an err and the response is nil, the server could not be reached
 		// so make a 502 for the downstream response
@@ -222,23 +310,43 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				StatusCode: http.StatusBadGateway,
 				Request:    r, Header: make(http.Header),
 			}
+
+			logger.Error("error reaching upstream origin",
+				logging.Pairs{
+					keys.Origin:          r.Host,
+					keys.URL:             r.URL.String(),
+					keys.BackendName:     o.Name,
+					keys.BackendProvider: o.Provider,
+					keys.Detail:          "nil response from upstream origin",
+				})
 		}
 
 		if pc != nil {
 			headers.UpdateHeaders(resp.Header, pc.ResponseHeaders)
 		}
 
+		setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span, doSpan)
 		if doSpan != nil {
 			doSpan.AddEvent(
 				"Failure",
 				trace.EventOption(trace.WithAttributes(
-					attribute.String("error", err.Error()),
-					attribute.Int("httpStatus", resp.StatusCode),
+					attribute.String(keys.Error, err.Error()),
+					attribute.Int(keys.HTTPStatus, resp.StatusCode),
 				)),
 			)
 			doSpan.SetStatus(tracing.HTTPToCode(resp.StatusCode), "")
 		}
 		return nil, resp, 0
+	}
+
+	if resp.StatusCode == http.StatusBadGateway {
+		logger.Error("received 502 from upstream",
+			logging.Pairs{
+				keys.URL:             r.URL.String(),
+				keys.BackendProvider: o.Provider,
+				keys.BackendName:     o.Name,
+				keys.HTTPStatus:      resp.StatusCode,
+			})
 	}
 
 	if ce := resp.Header.Get(headers.NameContentEncoding); ep != nil && ce != "" {
@@ -262,10 +370,10 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				logger.WarnOnce("clockoffset."+o.Name,
 					ClockOffsetWarning,
 					logging.Pairs{
-						"backendName":   o.Name,
-						"tricksterTime": strconv.FormatInt(d.Add(offset).Unix(), 10),
-						"originTime":    strconv.FormatInt(d.Unix(), 10),
-						"offset":        strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
+						keys.BackendName: o.Name,
+						"tricksterTime":  strconv.FormatInt(d.Add(offset).Unix(), 10),
+						"originTime":     strconv.FormatInt(d.Unix(), 10),
+						"offset":         strconv.FormatInt(int64(offset.Seconds()), 10) + "s",
 					})
 			}
 		}
@@ -284,9 +392,13 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		resp.Body.Close()
 		rc = io.NopCloser(bytes.NewReader(pc.ResponseBodyBytes))
 	} else {
-		rc = resp.Body
+		// bounds a stalled transfer without capping how long a healthy one may
+		// run; replaces the blanket http.Client.Timeout this path used to carry
+		rc = newIdleTimeoutBody(resp.Body, time.Duration(o.Timeout))
+		resp.Body = rc
 	}
 
+	setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, span, doSpan)
 	return rc, resp, originalLen
 }
 
@@ -303,12 +415,18 @@ func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {
 	if httpStatus >= http.StatusBadRequest {
 		st = status.LookupStatusProxyError
 	}
-	headers.SetResultsHeader(header, "HTTPProxy", st.String(), "", nil)
+	headers.SetResultsHeader(header, "HTTPProxy", st.String(), "", nil, nil)
 	return st
 }
 
-func recordResults(r *http.Request, engine string, cacheStatus status.LookupStatus,
-	statusCode int, path, ffStatus string, elapsed float64, extents timeseries.ExtentList,
+func recordResults(
+	r *http.Request,
+	engine string,
+	cacheStatus status.LookupStatus,
+	statusCode int,
+	path, ffStatus string,
+	elapsed float64,
+	extents, failed timeseries.ExtentList,
 	header http.Header,
 ) {
 	rsc := request.GetResources(r)
@@ -317,12 +435,20 @@ func recordResults(r *http.Request, engine string, cacheStatus status.LookupStat
 	s := cacheStatus.String()
 
 	if pc != nil && !pc.NoMetrics {
+		// Use the matched PathConfig identifier so request URL.Path can't
+		// inflate label cardinality.
+		labelPath := path
+		if pc.HandlerName != "" {
+			labelPath = pc.HandlerName
+		} else if pc.Path != "" {
+			labelPath = pc.Path
+		}
 		httpStatus := strconv.Itoa(statusCode)
-		lvs := []string{o.Name, o.Provider, r.Method, s, httpStatus, path}
+		lvs := []string{o.Name, o.Provider, r.Method, s, httpStatus, labelPath}
 		metrics.ProxyRequestStatus.WithLabelValues(lvs...).Inc()
 		if elapsed > 0 {
 			metrics.ProxyRequestDuration.WithLabelValues(lvs...).Observe(elapsed)
 		}
 	}
-	headers.SetResultsHeader(header, engine, s, ffStatus, extents)
+	headers.SetResultsHeader(header, engine, s, ffStatus, extents, failed)
 }

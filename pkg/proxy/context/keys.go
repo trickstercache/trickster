@@ -24,4 +24,5 @@ const (
 	rewriterHopsKey
 	healthCheckKey
 	requestBodyKey
+	servedKey
 )

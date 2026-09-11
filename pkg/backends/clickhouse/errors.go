@@ -16,20 +16,30 @@
 
 package clickhouse
 
-import "errors"
+import "github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 
-// ErrLimitUnsupported indicates the input a LIMIT keyword, which is currently unsupported
-// in the caching layer
-var ErrLimitUnsupported = errors.New("limit queries are not supported")
-
-// ErrUnsupportedOutputFormat indicates the FORMAT value for the query is not supported
-var ErrUnsupportedOutputFormat = errors.New("unsupported output format requested")
-
-// ErrInvalidWithClause indicates the WITH clause of the query is not properly formatted
-var ErrInvalidWithClause = errors.New("invalid WITH expression list")
-
-// ErrUnsupportedToStartOfFunc indicates the ToStartOf func used in the query is not supported by Trickster
-var ErrUnsupportedToStartOfFunc = errors.New("unsupported ToStartOf* func")
-
-// ErrNotAtPreWhere indicates AtPreWhere was called but the current token is not of type tokenPreWhere
-var ErrNotAtPreWhere = errors.New("not at PREWHERE")
+var (
+	// ErrInvalidSQL indicates that the ClickHouse parser rejected the statement.
+	ErrInvalidSQL = aftership.ErrInvalidSQL
+	// ErrNotTimeRangeQuery indicates that the statement cannot use delta caching.
+	ErrNotTimeRangeQuery = aftership.ErrNotTimeRangeQuery
+	// ErrMissingTimeseries indicates that no supported bucket expression was found.
+	ErrMissingTimeseries = aftership.ErrMissingTimeseries
+	// ErrNoLowerBound indicates that the query has no usable lower time bound.
+	ErrNoLowerBound = aftership.ErrNoLowerBound
+	// ErrNoUpperBound indicates that the query has no usable upper time bound.
+	ErrNoUpperBound = aftership.ErrNoUpperBound
+	// ErrInvalidGroupByClause indicates that GROUP BY is unsafe for delta caching.
+	ErrInvalidGroupByClause = aftership.ErrInvalidGroupByClause
+	// ErrUnsafePredicate indicates that a time predicate cannot be safely rewritten.
+	ErrUnsafePredicate = aftership.ErrUnsafePredicate
+	// ErrAmbiguousTimeAxis indicates that more than one primary time range was found.
+	ErrAmbiguousTimeAxis = aftership.ErrAmbiguousTimeAxis
+	// ErrUnsupportedStatement indicates a SELECT shape outside the analyzer subset.
+	ErrUnsupportedStatement = aftership.ErrUnsupportedStatement
+	// ErrLimitUnsupported indicates the input a LIMIT keyword, which is currently unsupported
+	// in the caching layer
+	ErrLimitUnsupported = aftership.ErrLimitUnsupported
+	// ErrUnsupportedOutputFormat indicates the FORMAT value for the query is not supported
+	ErrUnsupportedOutputFormat = aftership.ErrUnsupportedOutputFormat
+)

@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -36,20 +37,20 @@ func BenchmarkObjectProxyCache(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", string(body), http.StatusPartialContent, hdrs)
 	if err != nil {
 		b.Error(err)
 	}
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Add(headers.NameRange, "bytes=0-10000")
 
 	o := rsc.BackendOptions
-	o.MaxTTL = time.Duration(15000) * time.Millisecond
+	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
 	w := httptest.NewRecorder()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ObjectProxyCacheRequest(w, r)
 	}
 }
@@ -63,21 +64,21 @@ func BenchmarkObjectProxyCacheChunks(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", string(body), http.StatusPartialContent, hdrs)
 	if err != nil {
 		b.Error(err)
 	}
 	rsc.CacheConfig.UseCacheChunking = true
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	r.Header.Add(headers.NameRange, "bytes=0-10000")
 
 	o := rsc.BackendOptions
-	o.MaxTTL = time.Duration(15000) * time.Millisecond
+	o.MaxTTL = timeconv.Duration(time.Duration(15000) * time.Millisecond)
 
 	w := httptest.NewRecorder()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ObjectProxyCacheRequest(w, r)
 	}
 }

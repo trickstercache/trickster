@@ -18,21 +18,49 @@ package healthcheck
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
+	"github.com/stretchr/testify/require"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type closeTrackingBody struct {
+	io.Reader
+	closed bool
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+func okProbeResponse(req *http.Request) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("OK")),
+		Header:     http.Header{},
+		Request:    req,
+	}
+}
 
 func TestNewTarget(t *testing.T) {
 	_, err := newTarget(context.Background(), "", "", nil, nil)
@@ -44,14 +72,31 @@ func TestNewTarget(t *testing.T) {
 	o := ho.New()
 	o.FailureThreshold = -1
 	o.RecoveryThreshold = -1
-	o.Headers = map[string]string{"test-header": "test-header-value"}
+	o.Headers = map[string]string{"test-header": "test-header-value", "X-Probe-Flag": ""}
 	o.ExpectedHeaders = map[string]string{"test-header1": "test-header-value1"}
 	o.SetExpectedBody("expectedBody")
 	o.ExpectedCodes = nil
 
-	_, err = newTarget(ctx, "test", "test", o, nil)
+	var probed *http.Request
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		probed = r
+		return okProbeResponse(r), nil
+	})}
+	tgt, err := newTarget(ctx, "test", "test", o, client)
 	if err != nil {
 		t.Error(err)
+	}
+	tgt.probe(ctx)
+	if probed == nil {
+		t.Fatal("expected the probe to issue a request")
+	}
+	if v := probed.Header.Get("test-header"); v != "test-header-value" {
+		t.Errorf("expected test-header on the probe request, got %q", v)
+	}
+	// an explicitly configured empty value is still a present header: HTTP
+	// distinguishes absence from empty, and gateways may test membership
+	if vals, ok := probed.Header["X-Probe-Flag"]; !ok || len(vals) != 1 || vals[0] != "" {
+		t.Errorf("an empty-valued header must remain present on the wire, got %v ok=%t", vals, ok)
 	}
 
 	expected := `net/http: invalid method "INVALID METHOD"`
@@ -249,30 +294,34 @@ func TestProbe(t *testing.T) {
 	})
 
 	t.Run("probe loop", func(t *testing.T) {
-		const intervalMS = 5
-		const windowMS = 1500
+		synctest.Test(t, func(t *testing.T) {
+			const intervalMS = 5
 
-		u, err := url.Parse(ts.URL)
-		require.NoError(t, err)
-		target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
-			Verb:          "GET",
-			Scheme:        u.Scheme,
-			Host:          u.Host,
-			Path:          "/",
-			Interval:      intervalMS * time.Millisecond,
-			ExpectedCodes: []int{200},
-		}, ts.Client())
-		require.NoError(t, err)
-		// start probe loop
-		ctx := t.Context()
-		target.Start(ctx)
-		time.Sleep((intervalMS + windowMS) * time.Millisecond)
-		// verify results
-		success := target.successConsecutiveCnt.Load()
-		fail := target.failConsecutiveCnt.Load()
-		require.Equal(t, int32(0), fail)
-		require.GreaterOrEqual(t, success, int32(90))
-		target.Stop()
+			client := &http.Client{
+				Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					return okProbeResponse(req), nil
+				}),
+			}
+			target, err := newTarget(context.Background(), "testprobe", "testprobe", &ho.Options{
+				Verb:          "GET",
+				Scheme:        "http",
+				Host:          "probe-loop.invalid",
+				Path:          "/",
+				Interval:      timeconv.Duration(intervalMS * time.Millisecond),
+				ExpectedCodes: []int{200},
+			}, client)
+			require.NoError(t, err)
+			target.Start(t.Context())
+			defer target.Stop()
+
+			time.Sleep(time.Second + 100*intervalMS*time.Millisecond)
+			synctest.Wait()
+
+			success := target.successConsecutiveCnt.Load()
+			fail := target.failConsecutiveCnt.Load()
+			require.Equal(t, int32(0), fail)
+			require.GreaterOrEqual(t, success, int32(90))
+		})
 	})
 }
 
@@ -312,6 +361,80 @@ func TestDemandProbe(t *testing.T) {
 	if w.Code != 500 {
 		t.Error("expected 500 got ", w.Code)
 	}
+}
+
+func TestDemandProbeClosesUpstreamBody(t *testing.T) {
+	body := &closeTrackingBody{Reader: strings.NewReader("OK")}
+	client := &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{},
+			Body:       body,
+			Request:    req,
+		}, nil
+	})}
+	r, err := http.NewRequest(http.MethodGet, "http://healthcheck.invalid/", nil)
+	require.NoError(t, err)
+	target := &target{
+		status:      &Status{},
+		baseRequest: r,
+		httpClient:  client,
+	}
+	w := httptest.NewRecorder()
+
+	target.demandProbe(w)
+
+	require.True(t, body.closed, "demand probe must close the upstream response body")
+	require.Equal(t, "OK", w.Body.String())
+}
+
+func TestProtocolProbeTransitionsAndDemand(t *testing.T) {
+	probeErr := error(nil)
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		FailureThreshold:  1,
+		RecoveryThreshold: 1,
+		Timeout:           timeconv.Duration(time.Second),
+	}, func(context.Context) error {
+		return probeErr
+	})
+	require.NoError(t, err)
+
+	target.probe(context.Background())
+	require.Equal(t, StatusPassing, target.status.Get())
+	require.Equal(t, int32(1), target.successConsecutiveCnt.Load())
+
+	probeErr = errors.New("mysql origin refused the connection")
+	target.probe(context.Background())
+	require.Equal(t, StatusFailing, target.status.Get())
+	require.Contains(t, target.status.Detail(), "connection")
+
+	w := httptest.NewRecorder()
+	target.demandProbe(w)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "mysql origin refused the connection")
+
+	probeErr = nil
+	w = httptest.NewRecorder()
+	target.demandProbe(w)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "health check passed", w.Body.String())
+}
+
+func TestProtocolProbeTimeout(t *testing.T) {
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		FailureThreshold: 1,
+		Timeout:          timeconv.Duration(ho.MinProbeWait),
+	}, func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	require.NoError(t, err)
+
+	started := time.Now()
+	target.probe(context.Background())
+	require.Less(t, time.Since(started), time.Second)
+	require.Equal(t, StatusFailing, target.status.Get())
+	require.Contains(t, target.status.Detail(), context.DeadlineExceeded.Error())
 }
 
 func newTestServer(responseCode int, responseBody string,

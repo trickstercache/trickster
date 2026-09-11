@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -28,34 +29,19 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 )
 
-const (
-	ID   types.ID   = 0
-	Name types.Name = "round_robin"
-)
+const Name types.Name = "round_robin"
 
 type handler struct {
-	pool pool.Pool
-	pos  atomic.Uint64
+	mech.PoolHolder
+	pos atomic.Uint64
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{ID: ID, Name: Name, ShortName: names.MechanismRR, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: names.MechanismRR, New: New}
 }
 
 func New(_ *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{}, nil
-}
-
-func (h *handler) SetPool(p pool.Pool) {
-	h.pool = p
-}
-
-func (h *handler) Pool() pool.Pool {
-	return h.pool
-}
-
-func (h *handler) ID() types.ID {
-	return ID
 }
 
 func (h *handler) Name() types.Name {
@@ -63,11 +49,12 @@ func (h *handler) Name() types.Name {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if h.pool == nil {
+	p := h.Pool()
+	if p == nil {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	if t := h.nextTarget(); t != nil {
+	if t := h.nextTarget(p); t != nil {
 		t.ServeHTTP(w, r)
 		return
 	}
@@ -75,16 +62,40 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) StopPool() {
-	if h.pool != nil {
-		h.pool.Stop()
+	if p := h.Pool(); p != nil {
+		p.Stop()
 	}
 }
 
-func (h *handler) nextTarget() http.Handler {
-	healthy := h.pool.Healthy()
-	if len(healthy) == 0 {
+// nextTarget selects the next pool member. With uniform weights it is a
+// plain modular rotation; with mixed weights, each member owns a contiguous
+// weight-sized span of the [0, totalWeight) rotation, so apportionment over
+// any totalWeight consecutive selections against a stable healthy set is
+// exact: each member is selected exactly Weight() times.
+func (h *handler) nextTarget(p pool.Pool) http.Handler {
+	targets := p.Targets()
+	n := uint64(len(targets))
+	if n == 0 {
 		return nil
 	}
-	i := h.pos.Add(1) % uint64(len(healthy))
-	return healthy[i]
+	var total uint64
+	weighted := false
+	for _, t := range targets {
+		w := uint64(t.Weight()) //nolint:gosec // Target.Weight() is always >= 1
+		if w != 1 {
+			weighted = true
+		}
+		total += w
+	}
+	if !weighted {
+		return targets[h.pos.Add(1)%n].Handler()
+	}
+	k := int(h.pos.Add(1) % total) //nolint:gosec // value is < total, an int sum
+	for _, t := range targets {
+		k -= t.Weight()
+		if k < 0 {
+			return t.Handler()
+		}
+	}
+	return targets[n-1].Handler()
 }

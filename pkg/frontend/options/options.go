@@ -19,8 +19,8 @@ package options
 import (
 	"crypto/tls"
 	"errors"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -45,7 +45,7 @@ type Options struct {
 	// MaxRequestBodySizeBytes when larger, without returning a 413 Payload Too Large
 	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
-	ReadHeaderTimeout time.Duration `yaml:"read_header_timeout,omitempty"`
+	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
 	// ServeTLS indicates whether to listen and serve on the TLS port, meaning
 	// at least one backend options has a valid certificate and key file configured.
 	ServeTLS bool `yaml:"-"`
@@ -60,14 +60,30 @@ func New() *Options {
 		ListenAddress:           DefaultProxyListenAddress,
 		TLSListenPort:           DefaultTLSProxyListenPort,
 		TLSListenAddress:        DefaultTLSProxyListenAddress,
-		ReadHeaderTimeout:       DefaultReadHeaderTimeout,
+		ReadHeaderTimeout:       timeconv.Duration(DefaultReadHeaderTimeout),
 		MaxRequestBodySizeBytes: new(DefaultMaxRequestBodySizeBytes),
 	}
 }
 
 // Equal returns true if the FrontendConfigs are identical in value.
 func (o *Options) Equal(o2 *Options) bool {
-	return *o == *o2
+	if o.ListenAddress != o2.ListenAddress ||
+		o.ListenPort != o2.ListenPort ||
+		o.TLSListenAddress != o2.TLSListenAddress ||
+		o.TLSListenPort != o2.TLSListenPort ||
+		o.ConnectionsLimit != o2.ConnectionsLimit ||
+		o.TruncateRequestBodyTooLarge != o2.TruncateRequestBodyTooLarge ||
+		o.ReadHeaderTimeout != o2.ReadHeaderTimeout ||
+		o.ServeTLS != o2.ServeTLS {
+		return false
+	}
+	if (o.MaxRequestBodySizeBytes == nil) != (o2.MaxRequestBodySizeBytes == nil) {
+		return false
+	}
+	if o.MaxRequestBodySizeBytes != nil && *o.MaxRequestBodySizeBytes != *o2.MaxRequestBodySizeBytes {
+		return false
+	}
+	return true
 }
 
 // Clone returns a clone of the Options

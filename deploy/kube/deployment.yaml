@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
@@ -6,6 +6,9 @@ metadata:
   name: trickster
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      name: trickster
   template:
     metadata:
       labels:
@@ -16,6 +19,16 @@ spec:
         - name: trickster
           image: trickstercache/trickster:latest
           imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8480
+              protocol: TCP
+            - name: metrics
+              containerPort: 8481
+              protocol: TCP
+            - name: mysql
+              containerPort: 8486
+              protocol: TCP
           volumeMounts:
             - name: cfg-volume
               mountPath: /etc/trickster

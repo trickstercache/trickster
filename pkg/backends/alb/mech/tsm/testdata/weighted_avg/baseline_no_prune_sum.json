@@ -1,0 +1,24 @@
+{
+  "results": [
+    {
+      "statement_id": 0,
+      "series": [
+        {
+          "name": "rps",
+          "tags": {
+            "region": "us-west-2"
+          },
+          "points": [
+            {
+              "epoch": 100,
+              "size": 32,
+              "values": [
+                "200"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

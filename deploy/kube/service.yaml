@@ -10,6 +10,24 @@ spec:
   ports:
     - port: 8480
       targetPort: 8480
+      name: http
+    - port: 8481
+      targetPort: 8481
       name: metrics
+    # Optional native MySQL listener. Remove this entry when MySQL support is
+    # not enabled in the mounted Trickster configuration.
+    - port: 8486
+      targetPort: 8486
+      name: mysql
+    # Optional in-cluster Graphite demonstration, added by
+    # graphite-deployment-patch.yaml. graphite-web is only needed to inspect
+    # the origin directly; carbon is how metrics are fed to it. Remove both
+    # entries when pointing Trickster at an external Graphite.
+    # - port: 8081
+    #   targetPort: graphite-web
+    #   name: graphite-web
+    # - port: 2003
+    #   targetPort: carbon
+    #   name: carbon
   selector:
     name: trickster

@@ -37,7 +37,10 @@ type Diffabble[P any, StepT any] interface {
 	Neg(step StepT) StepT
 }
 
-// Diff compares haves to needs and returns a []Segments missing from needs
+// Diff compares haves to needs and returns a []Segments missing from needs.
+// Both haves and needs must be sorted by start value.
+// This operates on segment boundaries in O(N+M) time rather than iterating
+// individual timestamps.
 func Diff[P any, S Segment[P], StepT comparable, D Diffabble[P, StepT]](
 	haves []S, needs []S, step StepT, diff D,
 ) []S {
@@ -48,43 +51,42 @@ func Diff[P any, S Segment[P], StepT comparable, D Diffabble[P, StepT]](
 	if len(needs) == 0 || step == zero {
 		return nil
 	}
-	out := make([]S, (len(haves)+1)*len(needs))
-	var k int
+	out := make([]S, 0, len(needs)*2)
+	j := 0 // pointer into haves
 
 	for _, n := range needs {
 		if diff.Less(n.EndVal(), n.StartVal()) {
-			// skip ranges where end < start
 			continue
 		}
-		missStart := diff.Zero()
-		var j int
-		var inMiss bool
+		// cursor tracks the start of the current uncovered region within n
+		cursor := n.StartVal()
 
-		for ts := n.StartVal(); !diff.Less(n.EndVal(), ts); ts = diff.Add(ts, step) {
-			for j < len(haves) && diff.Less(haves[j].EndVal(), ts) {
-				j++
+		// advance j past haves that end before this need starts
+		for j < len(haves) && diff.Less(haves[j].EndVal(), cursor) {
+			j++
+		}
+
+		// walk through haves that overlap with [cursor, n.End]
+		for hi := j; hi < len(haves); hi++ {
+			h := haves[hi]
+			if diff.Less(n.EndVal(), h.StartVal()) {
+				break
 			}
-			var inHave bool
-			if j < len(haves) {
-				s := haves[j].StartVal()
-				e := haves[j].EndVal()
-				inHave = !diff.Less(ts, s) && !diff.Less(e, ts)
-			}
-			if !inHave {
-				if !inMiss {
-					missStart = ts
-					inMiss = true
+			if diff.Less(cursor, h.StartVal()) {
+				gapEnd := diff.Add(h.StartVal(), diff.Neg(step))
+				if !diff.Less(gapEnd, cursor) {
+					out = append(out, n.NewSegment(cursor, gapEnd).(S))
 				}
-			} else if inMiss {
-				out[k] = n.NewSegment(missStart, diff.Add(ts, diff.Neg(step))).(S)
-				k++
-				inMiss = false
+			}
+			next := diff.Add(h.EndVal(), step)
+			if diff.Less(cursor, next) {
+				cursor = next
 			}
 		}
-		if inMiss {
-			out[k] = n.NewSegment(missStart, n.EndVal()).(S)
-			k++
+
+		if !diff.Less(n.EndVal(), cursor) {
+			out = append(out, n.NewSegment(cursor, n.EndVal()).(S))
 		}
 	}
-	return out[:k]
+	return out
 }

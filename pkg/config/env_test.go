@@ -20,6 +20,9 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 )
 
 func TestLoadEnvVars(t *testing.T) {
@@ -46,6 +49,17 @@ func TestLoadEnvVars(t *testing.T) {
 
 	if conf.Metrics.ListenPort != 4002 {
 		t.Errorf("expected %d got %d", 4002, conf.Metrics.ListenPort)
+	}
+	if conf.Listeners[listener.DefaultFrontendName].ListenPort != 4001 {
+		t.Errorf("expected proxy environment port to map to default frontend")
+	}
+	if conf.Listeners[mgmt.ListenerNameMetrics].ListenPort != 4002 {
+		t.Errorf("expected metrics environment port to map to metrics server")
+	}
+	for _, warning := range conf.LoaderWarnings {
+		if warning == legacyFrontendWarning || warning == legacyMetricsWarning {
+			t.Errorf("supported environment port produced deprecation warning %q", warning)
+		}
 	}
 
 	if d.Scheme != "http" {

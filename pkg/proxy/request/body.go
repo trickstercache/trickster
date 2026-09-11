@@ -49,6 +49,9 @@ func GetBody(r *http.Request, maxSize ...int64) ([]byte, error) {
 	}
 	rsc := GetResources(r)
 	if rsc != nil && len(rsc.RequestBody) > 0 {
+		if len(maxSize) > 0 && maxSize[0] >= 0 && int64(len(rsc.RequestBody)) > maxSize[0] {
+			return rsc.RequestBody[:maxSize[0]], failures.ErrPayloadTooLarge
+		}
 		return rsc.RequestBody, nil // returns the cached body if exists
 	}
 	if r.Body == nil {

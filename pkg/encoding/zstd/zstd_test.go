@@ -18,8 +18,11 @@ package zstd
 
 import (
 	"bytes"
+	"errors"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 func TestDecodeEncode(t *testing.T) {
@@ -34,6 +37,11 @@ func TestDecodeEncode(t *testing.T) {
 	}
 	if string(b) != expected {
 		t.Errorf("expected %s got %s", expected, string(b))
+	}
+
+	_, err = Decode([]byte(expected))
+	if !errors.Is(err, zstd.ErrMagicMismatch) {
+		t.Errorf("expected ErrMagicMismatch, got %v", err)
 	}
 }
 
@@ -74,4 +82,26 @@ func TestNewEncoder(t *testing.T) {
 	if enc == nil {
 		t.Error("expected non-nil encoder")
 	}
+}
+
+func TestDecompress(t *testing.T) {
+	t.Run("plain bytes unchanged", func(t *testing.T) {
+		input := []byte(`{"status":"ok"}`)
+		got := Decompress(input)
+		if !bytes.Equal(got, input) {
+			t.Errorf("expected unchanged, got %q", got)
+		}
+	})
+
+	t.Run("zstd roundtrip", func(t *testing.T) {
+		want := []byte(`{"status":"ok"}`)
+		zb, err := Encode(want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := Decompress(zb)
+		if !bytes.Equal(got, want) {
+			t.Errorf("expected %q, got %q", want, got)
+		}
+	})
 }

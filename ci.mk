@@ -30,12 +30,14 @@ release-artifacts: clean
 	mkdir -p $(PACKAGE_DIR)
 	mkdir -p $(BIN_DIR)
 	mkdir -p $(CONF_DIR)
+	$(MAKE) THIRD_PARTY_LICENSES_DIR=$(PACKAGE_DIR)/third-party-licenses third-party-licenses
 
 	cp -r ./docs $(PACKAGE_DIR)
 	cp -r ./deploy $(PACKAGE_DIR)
 	cp ./README.md $(PACKAGE_DIR)
 	cp ./CONTRIBUTING.md $(PACKAGE_DIR)
 	cp ./LICENSE $(PACKAGE_DIR)
+	cp ./NOTICE $(PACKAGE_DIR)
 	cp ./examples/conf/*.yaml $(CONF_DIR)
 
 	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).darwin-amd64  -v $(TRICKSTER_MAIN)/*.go

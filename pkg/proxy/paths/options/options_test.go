@@ -21,8 +21,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestNew(t *testing.T) {
@@ -513,5 +515,48 @@ func TestOverlay(t *testing.T) {
 			result := test.l1.Overlay(test.l2)
 			test.expected(t, result)
 		})
+	}
+}
+
+func TestListMatchMethodSplit(t *testing.T) {
+	get := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
+		Methods: []string{"GET"}}
+	post := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
+		Methods: []string{"POST"}}
+	tags := &Options{Path: "/tags/", MatchType: matching.PathMatchTypePrefix,
+		Methods: []string{"GET", "POST"}}
+	root := &Options{Path: "/", MatchType: matching.PathMatchTypePrefix,
+		Methods: []string{"GET", "POST"}}
+	l := List{nil, post, get, tags, root}
+
+	tests := []struct {
+		name, path, method string
+		expected           *Options
+	}{
+		{"exact method split GET", "/render", "GET", get},
+		{"exact method split POST", "/render", "POST", post},
+		{"exact without method wins over prefix", "/render", "PUT", nil},
+		{"implicit HEAD from GET", "/render", "HEAD", get},
+		{"longest prefix", "/tags/autoComplete", "GET", tags},
+		{"root prefix", "/functions", "GET", root},
+		{"prefix method not listed", "/functions", "PUT", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := l.Match(tc.method, tc.path); got != tc.expected {
+				t.Errorf("Match(%s, %s) = %+v, want %+v", tc.method, tc.path, got, tc.expected)
+			}
+		})
+	}
+
+	// an explicit HEAD config beats the implicit GET-derived one
+	head := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
+		Methods: []string{"HEAD"}}
+	l2 := List{get, head}
+	if got := l2.Match("HEAD", "/render"); got != head {
+		t.Errorf("explicit HEAD config must win, got %+v", got)
+	}
+	if List(nil).Match("GET", "/render") != nil {
+		t.Error("nil list must not match")
 	}
 }

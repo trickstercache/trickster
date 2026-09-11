@@ -17,11 +17,16 @@
 package options
 
 import (
+	"crypto/tls"
+	"crypto/x509"
+	"fmt"
 	"os"
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
+
+	"go.yaml.in/yaml/v3"
 )
 
 // Options is a collection of TLS-related client and server configurations
@@ -74,8 +79,12 @@ func (o *Options) Equal(o2 *Options) bool {
 }
 
 func (o *Options) Initialize(_ string) error {
-	if (o.FullChainCertPath != "" && o.PrivateKeyPath != "") ||
-		len(o.CertificateAuthorityPaths) > 0 {
+	// ServeTLS indicates this backend participates in the frontend's TLS
+	// listener by presenting a server certificate. Only a full server
+	// cert+key pair enables that. CertificateAuthorityPaths alone is used
+	// for verifying peers on outbound connections (mTLS) and must NOT
+	// cascade into flipping Frontend.ServeTLS — see #940.
+	if o.FullChainCertPath != "" && o.PrivateKeyPath != "" {
 		o.ServeTLS = true
 	}
 	return nil
@@ -115,10 +124,54 @@ func (o *Options) Validate() (bool, error) {
 	return true, nil
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+// ToClientTLSConfig renders the client-side portion of the Options into a
+// *tls.Config for outbound connections: the mutual-auth client certificate
+// pair, any additional Certificate Authorities to trust alongside the
+// system pool, and the InsecureSkipVerify escape hatch. The server-side
+// fields (FullChainCertPath, PrivateKeyPath, ServeTLS) are not consulted.
+//
+// A nil receiver yields a nil config, which net/http reads as "default TLS",
+// so callers may pass an absent TLS block straight through.
+func (o *Options) ToClientTLSConfig() (*tls.Config, error) {
+	if o == nil {
+		return nil, nil
+	}
+	// #nosec G402 -- InsecureSkipVerify is a documented, operator-set option
+	out := &tls.Config{InsecureSkipVerify: o.InsecureSkipVerify}
+	if o.ClientCertPath != "" && o.ClientKeyPath != "" {
+		cert, err := tls.LoadX509KeyPair(o.ClientCertPath, o.ClientKeyPath)
+		if err != nil {
+			return nil, err
+		}
+		out.Certificates = []tls.Certificate{cert}
+	}
+	if len(o.CertificateAuthorityPaths) == 0 {
+		return out, nil
+	}
+	// start from the system pool so configured CAs are additive rather than
+	// replacing public trust; an unavailable system pool degrades to an
+	// empty one, which trusts exactly the configured CAs
+	rootCAs, _ := x509.SystemCertPool()
+	if rootCAs == nil {
+		rootCAs = x509.NewCertPool()
+	}
+	for _, path := range o.CertificateAuthorityPaths {
+		certs, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
+			return nil, fmt.Errorf("unable to append to CA Certs from file %s", path)
+		}
+	}
+	out.RootCAs = rootCAs
+	return out, nil
+}
+
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	lo := loadOptions(*New())
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)

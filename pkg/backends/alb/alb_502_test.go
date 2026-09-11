@@ -20,12 +20,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
-	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	mtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -34,6 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestALB502WithMultiplePrometheusBackends ensure that multiple backends are supported by the ALB mechanism, and that a 502 is not returned
@@ -105,19 +104,15 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 	})
 
 	t.Run("single_backend_baseline", func(t *testing.T) {
-		pool1, _, st1 := albpool.New(-1, []http.Handler{handler1})
-		st1[0].Set(1)
-		time.Sleep(250 * time.Millisecond)
+		pool1, _, _ := albpool.NewHealthy([]http.Handler{handler1})
+		albpool.WaitHealthy(t, pool1, 1)
 
-		albOpts := &ao.Options{
-			MechanismName: names.MechanismTSM,
-			OutputFormat:  providers.Prometheus,
-		}
-
-		tsmMech, err := tsm.New(albOpts, types.Lookup{providers.Prometheus: prometheus.NewClient})
+		tsmMech, err := tsm.New(tsm.Config{OutputFormat: providers.Prometheus},
+			types.Lookup{providers.Prometheus: prometheus.NewClient})
 		require.NoError(t, err)
-		tsmMech.SetPool(pool1)
-		defer tsmMech.StopPool()
+		tsmPM := tsmMech.(mtypes.PoolMechanism)
+		tsmPM.SetPool(pool1)
+		defer tsmPM.StopPool()
 
 		req := httptest.NewRequest("GET", "http://alb/api/v1/query?query=up", nil)
 		rsc := request.NewResources(rsc1.BackendOptions, rsc1.PathConfig, rsc1.CacheConfig,
@@ -132,20 +127,15 @@ func TestALB502WithMultiplePrometheusBackends(t *testing.T) {
 	})
 
 	t.Run("multiple_backends_instant_query", func(t *testing.T) {
-		pool2, _, st2 := albpool.New(-1, []http.Handler{handler1, handler2})
-		st2[0].Set(1)
-		st2[1].Set(1)
-		time.Sleep(250 * time.Millisecond)
+		pool2, _, _ := albpool.NewHealthy([]http.Handler{handler1, handler2})
+		albpool.WaitHealthy(t, pool2, 2)
 
-		albOpts := &ao.Options{
-			MechanismName: names.MechanismTSM,
-			OutputFormat:  providers.Prometheus,
-		}
-
-		tsmMech, err := tsm.New(albOpts, types.Lookup{providers.Prometheus: prometheus.NewClient})
+		tsmMech, err := tsm.New(tsm.Config{OutputFormat: providers.Prometheus},
+			types.Lookup{providers.Prometheus: prometheus.NewClient})
 		require.NoError(t, err)
-		tsmMech.SetPool(pool2)
-		defer tsmMech.StopPool()
+		tsmPM := tsmMech.(mtypes.PoolMechanism)
+		tsmPM.SetPool(pool2)
+		defer tsmPM.StopPool()
 
 		req := httptest.NewRequest("GET", "http://alb/api/v1/query?query=up", nil)
 		rsc := request.NewResources(rsc1.BackendOptions, rsc1.PathConfig, rsc1.CacheConfig,

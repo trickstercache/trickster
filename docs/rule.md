@@ -142,3 +142,42 @@ backends:
     path_routing_disabled: true  # restrict routing to this backend via rule only, so
                                  # users cannot directly access via /example-writer-cluster/
 ```
+
+## Example Rule - Rewrite a Hostname From a Regex Capture
+
+An `rmatch` rule makes its numeric and named capture groups available to the matched case and egress request rewriters. This example routes a request containing a three-character tenant label and prefixes the destination hostname with that tenant.
+
+```yaml
+request_rewriters:
+  tenant-host:
+    instructions:
+      - [ 'hostname', 'set', '${tenant}.writer.example.com' ]
+
+rules:
+  tenant-router:
+    next_route: example-reader-cluster
+    input_source: path
+    input_type: string
+    operation: rmatch
+    operation_arg: '\{mylabel="(?P<tenant>[a-z0-9]{3})"\}'
+    cases:
+      - matches: [ 'true' ]
+        req_rewriter_name: tenant-host
+        next_route: example-writer-cluster
+
+backends:
+  example:
+    provider: rule
+    rule_name: tenant-router
+
+  example-reader-cluster:
+    provider: rpc
+    origin_url: 'http://reader-cluster.example.com'
+
+  example-writer-cluster:
+    provider: rpc
+    origin_url: 'http://writer-cluster.example.com'
+    path_routing_disabled: true
+```
+
+For `input_source: path`, matching uses Go's decoded `URL.Path`. For example, `%7Bmylabel%3D%22abc%22%7D` is matched as `{mylabel="abc"}` and `${tenant}` expands to `abc`. `${0}` represents the complete regex match, while `${1}` represents the first capture group. See [Request Rewriters](./request_rewriters.md#regex-capture-tokens) for token lifetime and safety details.

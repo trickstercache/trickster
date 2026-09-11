@@ -35,7 +35,7 @@ import (
 func testRawQuery() string {
 	return url.Values(map[string][]string{"query": {
 		`SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
-			`FROM testdb.test_table WHERE time_column BETWEEN toDateTime(1516665600) AND toDateTime(1516687200) ` +
+			`FROM testdb.test_table WHERE time_column >= toDateTime(1516665600) AND time_column < toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
 			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`,
 	}}).
@@ -117,6 +117,7 @@ func TestQueryHandler(t *testing.T) {
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
+
 }
 
 func TestQueryHandlerBody(t *testing.T) {

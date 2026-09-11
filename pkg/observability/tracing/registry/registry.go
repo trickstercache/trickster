@@ -100,6 +100,7 @@ func GetTracer(options *options.Options,
 			logging.Pairs{
 				"name":        options.Name,
 				"provider":    options.Provider,
+				"protocol":    options.Protocol,
 				"serviceName": options.ServiceName,
 				"endpoint":    options.Endpoint,
 				"sampleRate":  options.SampleRate,
@@ -111,10 +112,18 @@ func GetTracer(options *options.Options,
 	switch options.Provider {
 	case providers.Stdout.String():
 		logTracerRegistration()
-		return stdout.New(options)
+		tracer, err := stdout.New(options)
+		if err == nil && tracer != nil {
+			tracing.ConfigurePropagators()
+		}
+		return tracer, err
 	case providers.OTLP.String():
 		logTracerRegistration()
-		return otlp.New(options)
+		tracer, err := otlp.New(options)
+		if err == nil && tracer != nil {
+			tracing.ConfigurePropagators()
+		}
+		return tracer, err
 	}
 
 	return nil, nil

@@ -19,10 +19,10 @@
 package dataset
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -54,18 +54,40 @@ func (ds *DataSet) InjectTags(tags Tags) {
 	wg.Wait()
 }
 
+// StripTags removes the specified tag keys from all series in all results in the DataSet
+// and forces a hash recalculation so that series identity reflects the updated tags.
+func (ds *DataSet) StripTags(keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil || len(s.Header.Tags) == 0 {
+				continue
+			}
+			for _, k := range keys {
+				delete(s.Header.Tags, k)
+			}
+			s.Header.CalculateHash(true) // force rehash with updated tags
+		}
+	}
+}
+
 // StringsWithSep returns a string representation of the Tags with the provided key/value separator
 func (t Tags) StringsWithSep(sep1, sep2 string) string {
 	if len(t) == 0 {
 		return ""
 	}
-	pairs := make(sort.StringSlice, len(t))
+	pairs := make([]string, len(t))
 	var i int
 	for k, v := range t {
 		pairs[i] = fmt.Sprintf("%s%s%s", k, sep1, v)
 		i++
 	}
-	sort.Sort(pairs)
+	slices.Sort(pairs)
 	return strings.Join(pairs, sep2)
 }
 
@@ -77,12 +99,30 @@ func (t Tags) String() string {
 	return t.StringsWithSep("=", ";")
 }
 
-// JSON returns a string representation of the Tags as a JSON object
+// JSON returns a string representation of the Tags as a JSON object. Keys
+// are emitted in sorted order. Keys and values are escaped via encoding/json
+// since Prometheus label values are arbitrary UTF-8 (see data model spec)
+// and the older string-concat form produced invalid JSON for any value
+// containing `"` or `\`.
 func (t Tags) JSON() string {
 	if len(t) == 0 {
 		return "{}"
 	}
-	return `{"` + t.StringsWithSep(`":"`, `","`) + `"}`
+	keys := t.Keys()
+	var sb strings.Builder
+	sb.WriteByte('{')
+	for i, k := range keys {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		kb, _ := json.Marshal(k)
+		vb, _ := json.Marshal(t[k])
+		sb.Write(kb)
+		sb.WriteByte(':')
+		sb.Write(vb)
+	}
+	sb.WriteByte('}')
+	return sb.String()
 }
 
 // KVP returns a string representation of the Tags as "key"="value","key2"="value2"

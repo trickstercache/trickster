@@ -19,6 +19,7 @@ package index
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -26,10 +27,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	gm "github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 //go:generate go tool msgp
@@ -44,6 +47,11 @@ var (
 	ErrIndexInvalidCacheKey = errors.New("cannot store index")
 	ErrInvalidCacheBackend  = errors.New("invalid cache backend for reference access")
 )
+
+// maxIndexBytes caps the index blob read from the backing cache at startup so
+// a poisoned shared backend can't drive unbounded msgpack decode allocation.
+// Exposed as a var so tests can lower the threshold without allocating hundreds of MiB.
+var maxIndexBytes = 256 << 20
 
 // IndexedClientOptions modify an IndexedClient's behavior.
 type IndexedClientOptions struct {
@@ -82,28 +90,34 @@ func NewIndexedClient(
 		b, s, err := client.Retrieve(IndexKey)
 		if err != nil && options.NeedsFlushInterval {
 			logger.Warn("cache index was not loaded",
-				logging.Pairs{"cacheName": cacheName, "error": err.Error()})
+				logging.Pairs{keys.CacheName: cacheName, keys.Error: err.Error()})
 		} else if len(b) > 0 && s == status.LookupStatusHit {
-			// if an index was cached, load it
-			idx.UnmarshalMsg(b)
-			if time.Since(idx.LastFlush.Load()) > indexExpiry {
-				// if the index is stale, clear it
-				idx.Clear()
+			if len(b) > maxIndexBytes {
+				// Reject oversized blobs to bound alloc on poisoned shared-backend writes.
+				logger.Warn("cache index too large; discarding",
+					logging.Pairs{keys.CacheName: cacheName, "bytes": len(b), "max": maxIndexBytes})
+			} else {
+				idx.UnmarshalMsg(b)
+				if time.Since(idx.LastFlush.Load()) > time.Duration(indexExpiry) {
+					idx.Clear()
+				}
 			}
 		}
 		if o.FlushInterval > 0 {
+			idx.wg.Add(1)
 			go idx.flusher(ctx)
 		} else if options.NeedsFlushInterval {
 			logger.Warn("cache index flusher was not started, recommended for provider",
-				logging.Pairs{"cacheName": idx.name, "cacheProvider": idx.cacheProvider, "flushInterval": o.FlushInterval})
+				logging.Pairs{keys.CacheName: idx.name, keys.CacheProvider: idx.cacheProvider, "flushInterval": o.FlushInterval})
 		}
 	}
 
 	if o.ReapInterval > 0 {
+		idx.wg.Add(1)
 		go idx.reaper(ctx)
 	} else if options.NeedsReapInterval {
 		logger.Warn("cache reaper was not started, recommended for provider",
-			logging.Pairs{"cacheName": idx.name, "cacheProvider": idx.cacheProvider, "reapInterval": o.ReapInterval})
+			logging.Pairs{keys.CacheName: idx.name, keys.CacheProvider: idx.cacheProvider, "reapInterval": o.ReapInterval})
 	}
 
 	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeObjects))
@@ -134,6 +148,7 @@ type IndexedClient struct {
 	lastWrite     atomicx.Time         `msg:"-"`
 	isClosing     atomic.Bool
 	cancel        context.CancelFunc
+	wg            sync.WaitGroup
 	flusherExited atomic.Bool
 	reaperExited  atomic.Bool
 
@@ -230,7 +245,11 @@ func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Durat
 	}
 	start := time.Now()
 	// store the object in the cache
-	if err := idx.Client.Store(cacheKey, obj.ToBytes(), ttl); err != nil {
+	b, err := obj.ToBytes()
+	if err != nil {
+		return err
+	}
+	if err := idx.Client.Store(cacheKey, b, ttl); err != nil {
 		return err
 	}
 	idx.updateIndex(cacheKey, obj.Size, now, now, expiry)
@@ -326,6 +345,7 @@ func (idx *IndexedClient) Remove(cacheKeys ...string) error {
 func (idx *IndexedClient) Close() error {
 	idx.cancel() // stop the reaper & flusher
 	idx.isClosing.Store(true)
+	idx.wg.Wait() // wait for flusher/reaper goroutines to exit
 	if idx.ico.NeedsFlushInterval {
 		idx.flushOnce()
 	}
@@ -335,27 +355,46 @@ func (idx *IndexedClient) Close() error {
 
 // flusher periodically calls the cache's index flush func that writes the cache index to disk
 func (idx *IndexedClient) flusher(ctx context.Context) {
-FLUSHER:
-	for {
-		fi := idx.options.Load().(*options.Options).FlushInterval
-		select {
-		case <-ctx.Done():
-			break FLUSHER
-		case <-time.After(fi):
-			if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
-				continue
+	defer idx.wg.Done()
+	safego.Run(idx.workerPanicHandler("flusher", &idx.flusherExited), func() {
+	FLUSHER:
+		for {
+			fi := idx.options.Load().(*options.Options).FlushInterval
+			select {
+			case <-ctx.Done():
+				break FLUSHER
+			case <-time.After(time.Duration(fi)):
+				if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
+					continue
+				}
+			case <-idx.forceFlush:
 			}
-		case <-idx.forceFlush:
+			idx.flushOnce()
+			select {
+			case idx.hasFlushed <- true:
+				// signal that a flush has occurred
+			default:
+				// drop message if no listener
+			}
 		}
-		idx.flushOnce()
-		select {
-		case idx.hasFlushed <- true:
-			// signal that a flush has occurred
-		default:
-			// drop message if no listener
-		}
+		idx.flusherExited.Store(true)
+	})
+}
+
+// workerPanicHandler returns a safego.PanicHandler that logs, increments
+// CacheIndexPanicRecovered{worker}, and flips exited so the health
+// endpoint can surface the dead worker.
+func (idx *IndexedClient) workerPanicHandler(worker string, exited *atomic.Bool) safego.PanicHandler {
+	return func(r any, stack []byte) {
+		logger.Error("cache index "+worker+" panic", logging.Pairs{
+			"cacheName": idx.name,
+			"worker":    worker,
+			"panic":     r,
+			"stack":     string(stack),
+		})
+		gm.CacheIndexPanicRecovered.WithLabelValues(worker).Inc()
+		exited.Store(true)
 	}
-	idx.flusherExited.Store(true)
 }
 
 // clone the msgpack encoded fields of the IndexedClient structure
@@ -379,40 +418,44 @@ func (idx *IndexedClient) flushOnce() {
 	bytes, err := clone.MarshalMsg(nil)
 	if err != nil {
 		logger.Warn("unable to serialize index for flushing",
-			logging.Pairs{"cacheName": idx.name, "detail": err.Error()})
+			logging.Pairs{keys.CacheName: idx.name, keys.Detail: err.Error()})
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, idx.options.Load().(*options.Options).IndexExpiry)
+	idx.Client.Store(IndexKey, bytes, time.Duration(idx.options.Load().(*options.Options).IndexExpiry))
 }
 
 // reaper continually iterates through the cache to find expired elements and removes them
 func (idx *IndexedClient) reaper(ctx context.Context) {
-REAPER:
-	for {
-		ri := idx.options.Load().(*options.Options).ReapInterval
-		select {
-		case <-ctx.Done():
-			break REAPER
-		case <-time.After(ri):
-		case <-idx.forceReap:
+	defer idx.wg.Done()
+	safego.Run(idx.workerPanicHandler("reaper", &idx.reaperExited), func() {
+	REAPER:
+		for {
+			ri := idx.options.Load().(*options.Options).ReapInterval
+			select {
+			case <-ctx.Done():
+				break REAPER
+			case <-time.After(time.Duration(ri)):
+			case <-idx.forceReap:
+			}
+			idx.reap()
+			select {
+			case idx.hasReaped <- true:
+				// signal that a reap has occurred
+			default:
+				// drop message if no listener
+			}
 		}
-		idx.reap()
-		select {
-		case idx.hasReaped <- true:
-			// signal that a reap has occurred
-		default:
-			// drop message if no listener
-		}
-	}
-	idx.reaperExited.Store(true)
+		idx.reaperExited.Store(true)
+	})
 }
 
 // reap makes a single iteration through the cache index to to find and remove expired elements
 // and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
 func (idx *IndexedClient) reap() {
-	cacheSize := max(atomic.LoadInt64(&idx.CacheSize), 0)
-	removals := make([]string, 0)
-	remainders := make(objectsAtime, 0, cacheSize)
+	cacheSize := atomic.LoadInt64(&idx.CacheSize)
+	objectCount := max(atomic.LoadInt64(&idx.ObjectCount), 0)
+	removals := make([]string, 0, objectCount/10) // estimate ~10% expired per cycle
+	remainders := make(objectsAtime, 0, objectCount)
 
 	var cacheChanged bool
 
@@ -420,7 +463,7 @@ func (idx *IndexedClient) reap() {
 
 	idx.Objects.Range(func(_, value any) bool {
 		o := value.(*Object)
-		if o.Expiration.Load().Before(now) && !o.Expiration.Load().IsZero() {
+		if exp := o.Expiration.Load(); exp.Before(now) && !exp.IsZero() {
 			removals = append(removals, o.Key)
 		} else {
 			remainders = append(remainders, o)
@@ -431,19 +474,19 @@ func (idx *IndexedClient) reap() {
 	if len(removals) > 0 {
 		metrics.ObserveCacheEvent(idx.indexName, idx.cacheProvider, "eviction", "ttl")
 		if err := idx.Remove(removals...); err != nil {
-			logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
+			logger.Error("reap remove error", logging.Pairs{keys.CacheName: idx.name, keys.Error: err})
 		}
 		cacheChanged = true
 		cacheSize = atomic.LoadInt64(&idx.CacheSize)
 	}
-	objectCount := atomic.LoadInt64(&idx.ObjectCount)
+	objectCount = atomic.LoadInt64(&idx.ObjectCount)
 	opts := idx.options.Load().(*options.Options)
 
 	evictionType, removals := reap(cacheSize, objectCount, remainders, *opts)
 	if len(removals) > 0 {
 		metrics.ObserveCacheEvent(idx.indexName, idx.cacheProvider, "eviction", evictionType)
 		if err := idx.Remove(removals...); err != nil {
-			logger.Error("reap remove error", logging.Pairs{"cacheName": idx.name, "error": err})
+			logger.Error("reap remove error", logging.Pairs{keys.CacheName: idx.name, keys.Error: err})
 		}
 		cacheChanged = true
 
@@ -460,6 +503,10 @@ func (idx *IndexedClient) reap() {
 }
 
 type objectsAtime []*Object
+
+func objectAtimeCmp(a, b *Object) int {
+	return a.LastAccess.Load().Compare(b.LastAccess.Load())
+}
 
 // Len returns the number of elements in the subject slice
 func (o objectsAtime) Len() int {

@@ -19,7 +19,10 @@ package config
 import (
 	"testing"
 
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 )
 
 func TestLoadFlags(t *testing.T) {
@@ -57,5 +60,35 @@ func TestLoadFlags(t *testing.T) {
 	}
 	if c.Metrics.ListenPort != 9092 {
 		t.Errorf("wanted \"%d\". got \"%d\".", 9092, c.Metrics.ListenPort)
+	}
+	if err := c.applyLegacyListenerOptions(); err != nil {
+		t.Fatal(err)
+	}
+	if c.Listeners[listener.DefaultFrontendName].ListenPort != 9091 {
+		t.Errorf("expected proxy flag port to map to default frontend")
+	}
+	if c.Listeners[mgmt.ListenerNameMetrics].ListenPort != 9092 {
+		t.Errorf("expected metrics flag port to map to metrics server")
+	}
+	for _, warning := range c.LoaderWarnings {
+		if warning == legacyFrontendWarning || warning == legacyMetricsWarning {
+			t.Errorf("supported port flag produced deprecation warning %q", warning)
+		}
+	}
+}
+
+func TestFlagProviderAppliesSizingDefaults(t *testing.T) {
+	c, err := Load([]string{"-origin-url", "http://g:80", "-provider", "graphite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, ok := c.Backends["default"]
+	if !ok {
+		t.Fatal("no default backend")
+	}
+	wantSize, wantTRF := bo.GetProviderDefaults(providers.Graphite)
+	if o.MaxObjectSizeBytes != wantSize || o.TimeseriesRetentionFactor != wantTRF {
+		t.Errorf("flag-provided graphite backend sizing: got (%d, %d), want (%d, %d)",
+			o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor, wantSize, wantTRF)
 	}
 }

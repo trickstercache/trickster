@@ -22,11 +22,9 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 )
 
 var testString = "Hey, I'm an http response body string."
@@ -37,7 +35,7 @@ func TestPCFReadWriteSingle(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l))
 	var n int64
 	go func() {
 		n, _ = io.Copy(pcf, r)
@@ -63,7 +61,7 @@ func TestPCFReadWriteMultiple(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l))
 	var n int64
 	go func() {
 		n, _ = io.Copy(pcf, r)
@@ -93,7 +91,7 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l))
 	var n int64
 
 	_, err := pcf.GetBody()
@@ -128,87 +126,103 @@ func TestPCFReadWriteGetBody(t *testing.T) {
 }
 
 func TestPCFWaits(t *testing.T) {
-	var testStringLong string
+	var testStringLong strings.Builder
 	for range 32000 {
-		testStringLong += "DEADBEEF"
+		testStringLong.WriteString("DEADBEEF")
 	}
-	w := bytes.NewBuffer(make([]byte, 0, len(testStringLong)))
-	r := strings.NewReader(testStringLong)
-	l := len(testStringLong)
+	w := bytes.NewBuffer(make([]byte, 0, len(testStringLong.String())))
+	r := strings.NewReader(testStringLong.String())
+	l := len(testStringLong.String())
 	resp := &http.Response{}
-	allComplete := uint64(0)
-	serverComplete := uint64(0)
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l)).(*progressiveCollapseForwarder)
 
+	// Pace the origin write so Wait*Complete must block while work is in flight.
 	go func() {
 		buf := make([]byte, HTTPBlockSize)
-		var n int
-		var err error
 		for {
-			n, err = r.Read(buf)
-			if err != nil && n != 0 {
-				break
+			n, err := r.Read(buf)
+			if n > 0 {
+				time.Sleep(50 * time.Millisecond)
+				if _, werr := pcf.Write(buf[:n]); werr != nil {
+					break
+				}
 			}
-			time.Sleep(50 * time.Millisecond)
-			n, err = pcf.Write(buf)
-			if err != nil && n == 0 {
+			if err != nil {
 				break
 			}
 		}
 		pcf.Close()
 	}()
+
+	// AddClient increments clientCount before blocking on IndexRead. Wait for
+	// that registration before starting WaitAllComplete — otherwise
+	// WaitAllComplete sees clientCount==0 and returns immediately.
 	go pcf.AddClient(w)
+	deadline := time.Now().Add(2 * time.Second)
+	for pcf.clientCount.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for AddClient to register")
+		}
+		time.Sleep(time.Millisecond)
+	}
 
+	allDone := make(chan struct{})
+	serverDone := make(chan struct{})
 	go func() {
 		pcf.WaitAllComplete()
-		atomic.StoreUint64(&allComplete, 1)
+		close(allDone)
 	}()
-
 	go func() {
 		pcf.WaitServerComplete()
-		atomic.StoreUint64(&serverComplete, 1)
+		close(serverDone)
 	}()
 
-	if a := atomic.LoadUint64(&serverComplete); a != 0 {
-		t.Errorf("WaitServerComplete returned too quickly, expected wait got finished")
+	// Waiters should still be blocked while the paced write is in progress.
+	select {
+	case <-serverDone:
+		t.Fatal("WaitServerComplete returned too quickly, expected wait got finished")
+	case <-time.After(20 * time.Millisecond):
+	}
+	select {
+	case <-allDone:
+		t.Fatal("WaitAllComplete returned too quickly, expected wait got finished")
+	case <-time.After(20 * time.Millisecond):
 	}
 
-	if a := atomic.LoadUint64(&allComplete); a != 0 {
-		t.Errorf("WaitAllComplete returned too quickly, expected wait got finished")
+	// Wait for both conditions to unblock after the paced write finishes.
+	waitTimeout := time.Duration(100*(l/HTTPBlockSize+1)) * time.Millisecond
+	select {
+	case <-serverDone:
+	case <-time.After(waitTimeout):
+		t.Fatal("Expected WaitServerComplete to have finished with pcf finish")
+	}
+	select {
+	case <-allDone:
+	case <-time.After(waitTimeout):
+		t.Fatal("Expected WaitAllComplete to have finished with pcf finish")
 	}
 
-	// Wait for pcf to finish in goroutine
-	sleepDur := time.Duration(65*(l/HTTPBlockSize) + 1)
-	time.Sleep(sleepDur * time.Millisecond)
-
-	if a := atomic.LoadUint64(&serverComplete); a != 1 {
-		t.Errorf("Expected WaitServerComplete to have finished with pcf finish")
-	}
-
-	if a := atomic.LoadUint64(&allComplete); a != 1 {
-		t.Errorf("Expected WaitAllComplete to have finished with pcf finish")
-	}
-
+	// After completion, Wait*Complete must return without blocking.
+	allDone2 := make(chan struct{})
+	serverDone2 := make(chan struct{})
 	go func() {
 		pcf.WaitAllComplete()
-		atomic.StoreUint64(&allComplete, 2)
+		close(allDone2)
 	}()
-
 	go func() {
 		pcf.WaitServerComplete()
-		atomic.StoreUint64(&serverComplete, 2)
+		close(serverDone2)
 	}()
-
-	// Give time for goroutines to  initialize and try to wait
-	time.Sleep(20 * time.Millisecond)
-
-	if a := atomic.LoadUint64(&serverComplete); a != 2 {
-		t.Errorf("Expected WaitServerComplete to not block after pcf completion")
+	select {
+	case <-serverDone2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Expected WaitServerComplete to not block after pcf completion")
 	}
-
-	if a := atomic.LoadUint64(&allComplete); a != 2 {
-		t.Errorf("Expected WaitAllComplete to not block after pcf completion")
+	select {
+	case <-allDone2:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Expected WaitAllComplete to not block after pcf completion")
 	}
 }
 
@@ -218,15 +232,15 @@ func TestPCFReadWriteClose(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l))
 	buf := make([]byte, 2)
 	n, _ := r.Read(buf)
 	pcf.Write(buf)
 	pcf.Close()
 	err := pcf.AddClient(w)
 
-	if err != io.EOF {
-		t.Errorf("PCF Close call did not return io.EOF")
+	if err != nil {
+		t.Errorf("expected nil from AddClient after clean Close, got %v", err)
 	}
 
 	if n != 2 {
@@ -239,7 +253,7 @@ func TestPCFIndexReadTooLarge(t *testing.T) {
 	l := len(testString)
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l))
 	buf := make([]byte, 2)
 	r.Read(buf)
 	pcf.Write(buf)
@@ -247,8 +261,8 @@ func TestPCFIndexReadTooLarge(t *testing.T) {
 
 	_, err := pcf.IndexRead(12412, buf)
 
-	if err != errors.ErrReadIndexTooLarge {
-		t.Errorf("PCF did not return ErrReadIndexTooLarge, got %e", err)
+	if err != io.EOF {
+		t.Errorf("expected io.EOF for an out-of-range read after close, got %v", err)
 	}
 }
 
@@ -258,7 +272,7 @@ func TestPCFReadLarge(t *testing.T) {
 	l := r.Len()
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(l), int64(l))
 	var n int64
 	go func() {
 		n, _ = io.Copy(pcf, r)
@@ -276,20 +290,25 @@ func TestPCFReadLarge(t *testing.T) {
 	}
 }
 
-// TestNewPCFNegativeContentLength verifies that NewPCF returns nil when
-// the content length is negative (e.g. chunked transfer encoding).
+// TestNewPCFNegativeContentLength verifies unknown-length construction: nil
+// without a growth cap, usable with one.
 func TestNewPCFNegativeContentLength(t *testing.T) {
 	resp := &http.Response{}
-	pcf := NewPCF(resp, -1)
-	if pcf != nil {
-		t.Error("expected nil PCF for negative content length")
+	if pcf := NewPCF(resp, -1, 0); pcf != nil {
+		t.Error("expected nil PCF for unknown length with no growth cap")
+	}
+	if pcf := NewPCF(resp, -1, 1024); pcf == nil {
+		t.Error("expected usable PCF for unknown length with a growth cap")
+	}
+	if pcf := NewPCF(resp, 0, 1024); pcf != nil {
+		t.Error("expected nil PCF for an empty body")
 	}
 }
 
 func TestPCFResp(t *testing.T) {
 	resp := &http.Response{}
 
-	pcf := NewPCF(resp, 10)
+	pcf := NewPCF(resp, 10, 10)
 
 	if !reflect.DeepEqual(resp, pcf.GetResp()) {
 		t.Errorf("PCF GetResp failed to reproduce the original http response.")
@@ -305,7 +324,7 @@ func TestPCFCloseRaceNoDeadlock(t *testing.T) {
 	for i := range 200 {
 		resp := &http.Response{}
 		data := []byte("hello")
-		pcf := NewPCF(resp, int64(len(data)))
+		pcf := NewPCF(resp, int64(len(data)), int64(len(data)))
 
 		done := make(chan error, 1)
 		go func() {
@@ -319,8 +338,8 @@ func TestPCFCloseRaceNoDeadlock(t *testing.T) {
 
 		select {
 		case err := <-done:
-			if err != io.EOF {
-				t.Fatalf("iteration %d: expected io.EOF, got %v", i, err)
+			if err != nil {
+				t.Fatalf("iteration %d: expected nil after clean close, got %v", i, err)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("iteration %d: AddClient deadlocked", i)
@@ -334,7 +353,7 @@ func TestPCFCloseRaceNoDeadlock(t *testing.T) {
 func TestPCFWaitServerCompleteRace(t *testing.T) {
 	for i := range 200 {
 		resp := &http.Response{}
-		pcf := NewPCF(resp, 5)
+		pcf := NewPCF(resp, 5, 5)
 
 		done := make(chan struct{}, 1)
 		go func() {
@@ -359,7 +378,7 @@ func TestPCFWaitAllCompleteRace(t *testing.T) {
 	for i := range 200 {
 		resp := &http.Response{}
 		data := []byte("test")
-		pcf := NewPCF(resp, int64(len(data)))
+		pcf := NewPCF(resp, int64(len(data)), int64(len(data)))
 
 		go func() {
 			pcf.Write(data)
@@ -387,15 +406,19 @@ func BenchmarkPCFWrite(b *testing.B) {
 	bufSize := 32
 
 	testBytes := make([]byte, bufSize*1024)
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
+	pcf := NewPCF(resp, int64(len(testBytes)), int64(len(testBytes))).(*progressiveCollapseForwarder)
 
-	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(int64(bufSize) * 1024)
 
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		pcf.Write(testBytes)
+	for b.Loop() {
+		b.StopTimer()
+		pcf.dataIndex = 0
+		pcf.rIndex.Store(0)
+		b.StartTimer()
+		if _, err := pcf.Write(testBytes); err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
@@ -405,25 +428,17 @@ func BenchmarkPCFRead(b *testing.B) {
 	testBytes := make([]byte, bufSize*1024)
 	readBuf := make([]byte, bufSize*1024)
 
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
 
-	var readIndex uint64
-	var err error
-
-	pcf := NewPCF(resp, int64(l))
+	pcf := NewPCF(resp, int64(len(testBytes)), int64(len(testBytes)))
 	b.SetBytes(int64(bufSize) * 1024)
-	for i := 0; i < b.N; i++ {
-		pcf.Write(testBytes)
+	if _, err := pcf.Write(testBytes); err != nil {
+		b.Fatal(err)
 	}
 
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		_, err = pcf.IndexRead(readIndex, readBuf)
-		readIndex++
-		if err != nil {
-			break
+	for b.Loop() {
+		if _, err := pcf.IndexRead(0, readBuf); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -434,23 +449,21 @@ func BenchmarkPCFWriteRead(b *testing.B) {
 	testBytes := make([]byte, bufSize*1024)
 	readBuf := make([]byte, bufSize*1024)
 
-	l := b.N * bufSize * 1024
 	resp := &http.Response{}
+	pcf := NewPCF(resp, int64(len(testBytes)), int64(len(testBytes))).(*progressiveCollapseForwarder)
 
-	var readIndex uint64
-	var err error
-
-	pcf := NewPCF(resp, int64(l))
 	b.SetBytes(int64(bufSize) * 1024)
 
-	b.ResetTimer()
-
-	for n := 0; n < b.N; n++ {
-		pcf.Write(testBytes)
-		_, err = pcf.IndexRead(readIndex, readBuf)
-		readIndex++
-		if err != nil {
-			break
+	for b.Loop() {
+		b.StopTimer()
+		pcf.dataIndex = 0
+		pcf.rIndex.Store(0)
+		b.StartTimer()
+		if _, err := pcf.Write(testBytes); err != nil {
+			b.Fatal(err)
+		}
+		if _, err := pcf.IndexRead(0, readBuf); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

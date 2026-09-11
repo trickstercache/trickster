@@ -156,6 +156,7 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 			return err
 		}
 		compiledRegexes[r.operationArg] = re
+		r.regex = re
 	}
 
 	if len(o.CaseOptions) > 0 {
@@ -201,6 +202,16 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 					rewriter:     ri,
 				}
 				r.cases = append(r.cases, rc)
+			}
+		}
+	}
+
+	r.hasCaptureTokens = r.egressReqRewriter.HasTokens()
+	if !r.hasCaptureTokens {
+		for _, c := range r.cases {
+			if c.rewriter.HasTokens() {
+				r.hasCaptureTokens = true
+				break
 			}
 		}
 	}

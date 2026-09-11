@@ -54,30 +54,45 @@ type SeriesHeader struct {
 	hash Hash
 }
 
+// seriesHeaderFNVHash is the shared FNV payload for CalculateHash; queryStatement
+// is the string mixed into the hash in the same position as QueryStatement.
+func seriesHeaderFNVHash(sh *SeriesHeader, queryStatement string) Hash {
+	h := fnv.NewInlineFNV64a()
+	h.Write([]byte(sh.Name))
+	h.Write([]byte(queryStatement))
+	for _, k := range sh.Tags.Keys() {
+		h.Write([]byte(k))
+		h.Write([]byte(sh.Tags[k]))
+	}
+	for _, fd := range sh.ValueFieldsList {
+		h.Write([]byte(fd.Name))
+		h.Write([]byte{byte(fd.DataType)})
+	}
+	for _, fd := range sh.UntrackedFieldsList {
+		h.Write([]byte(fd.Name))
+		h.Write([]byte{byte(fd.DataType)})
+	}
+	h.Write([]byte(sh.TimestampField.Name))
+	h.Write([]byte{byte(sh.TimestampField.DataType)})
+	return Hash(h.Sum64())
+}
+
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member
 func (sh *SeriesHeader) CalculateHash(rehash ...bool) Hash {
 	if (len(rehash) == 0 || !rehash[0]) && sh.hash > 0 {
 		return sh.hash
 	}
-	hash := fnv.NewInlineFNV64a()
-	hash.Write([]byte(sh.Name))
-	hash.Write([]byte(sh.QueryStatement))
-	for _, k := range sh.Tags.Keys() {
-		hash.Write([]byte(k))
-		hash.Write([]byte(sh.Tags[k]))
-	}
-	for _, fd := range sh.ValueFieldsList {
-		hash.Write([]byte(fd.Name))
-		hash.Write([]byte{byte(fd.DataType)})
-	}
-	for _, fd := range sh.UntrackedFieldsList {
-		hash.Write([]byte(fd.Name))
-		hash.Write([]byte{byte(fd.DataType)})
-	}
-	hash.Write([]byte(sh.TimestampField.Name))
-	hash.Write([]byte{byte(sh.TimestampField.DataType)})
-	sh.hash = Hash(hash.Sum64())
+	sh.hash = seriesHeaderFNVHash(sh, sh.QueryStatement)
 	return sh.hash
+}
+
+// CalculateHashWithQueryStatement returns the same hash CalculateHash would yield
+// if SeriesHeader.QueryStatement were queryStatement. It does not read or update
+// the header's cached hash, so callers can compare series across DataSets that
+// intentionally use different stored statements (e.g. TSM sum/count rewrites of one
+// logical avg query) without affecting normal CalculateHash behavior elsewhere.
+func (sh *SeriesHeader) CalculateHashWithQueryStatement(queryStatement string) Hash {
+	return seriesHeaderFNVHash(sh, queryStatement)
 }
 
 // Clone returns a perfect, new copy of the SeriesHeader
@@ -91,6 +106,7 @@ func (sh *SeriesHeader) Clone() SeriesHeader {
 		TimestampField:      sh.TimestampField,
 		QueryStatement:      sh.QueryStatement,
 		Size:                sh.Size,
+		hash:                sh.hash,
 	}
 	copy(clone.ValueFieldsList, sh.ValueFieldsList)
 	copy(clone.TagFieldsList, sh.TagFieldsList)

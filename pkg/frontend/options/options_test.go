@@ -17,22 +17,132 @@
 package options
 
 import (
+	"crypto/tls"
+	"errors"
 	"testing"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestFrontendOptions(t *testing.T) {
-	// expect f1 and f2 to be equal
+func TestNew(t *testing.T) {
+	o := New()
+	require.Equal(t, DefaultProxyListenPort, o.ListenPort)
+	require.Equal(t, DefaultProxyListenAddress, o.ListenAddress)
+	require.Equal(t, DefaultTLSProxyListenPort, o.TLSListenPort)
+	require.Equal(t, DefaultTLSProxyListenAddress, o.TLSListenAddress)
+	require.Equal(t, timeconv.Duration(DefaultReadHeaderTimeout), o.ReadHeaderTimeout)
+	require.NotNil(t, o.MaxRequestBodySizeBytes)
+	require.Equal(t, DefaultMaxRequestBodySizeBytes, *o.MaxRequestBodySizeBytes)
+	require.Equal(t, 10*time.Second, time.Duration(o.ReadHeaderTimeout))
+}
+
+func TestFrontendOptionsEqual(t *testing.T) {
 	f1 := New()
 	f2 := New()
 	f1.MaxRequestBodySizeBytes = nil
 	f2.MaxRequestBodySizeBytes = nil
 	require.True(t, f1.Equal(f2))
 
-	// expect f1 and f2 to be equal, after modifying f1
 	f2 = f1.Clone()
 	f1.ListenAddress = "trickster"
 	require.NotEqual(t, f1.ListenAddress, f2.ListenAddress)
 	require.False(t, f1.Equal(f2))
+}
+
+func TestClone(t *testing.T) {
+	o := New()
+	o.ListenAddress = "127.0.0.1"
+	o.ConnectionsLimit = 100
+	o.TruncateRequestBodyTooLarge = true
+	*o.MaxRequestBodySizeBytes = 42
+
+	c := o.Clone()
+	require.NotSame(t, o, c)
+	require.Equal(t, o.ListenAddress, c.ListenAddress)
+	require.Equal(t, o.ConnectionsLimit, c.ConnectionsLimit)
+	require.Equal(t, o.TruncateRequestBodyTooLarge, c.TruncateRequestBodyTooLarge)
+	require.NotSame(t, o.MaxRequestBodySizeBytes, c.MaxRequestBodySizeBytes)
+	require.Equal(t, *o.MaxRequestBodySizeBytes, *c.MaxRequestBodySizeBytes)
+	require.True(t, o.Equal(c))
+
+	*c.MaxRequestBodySizeBytes = 99
+	require.Equal(t, int64(42), *o.MaxRequestBodySizeBytes)
+	require.Equal(t, int64(99), *c.MaxRequestBodySizeBytes)
+	require.False(t, o.Equal(c))
+
+	o.MaxRequestBodySizeBytes = nil
+	c = o.Clone()
+	require.Nil(t, c.MaxRequestBodySizeBytes)
+	require.True(t, o.Equal(c))
+}
+
+func TestInitialize(t *testing.T) {
+	o := &Options{}
+	require.NoError(t, o.Initialize())
+	require.NotNil(t, o.MaxRequestBodySizeBytes)
+	require.Equal(t, DefaultMaxRequestBodySizeBytes, *o.MaxRequestBodySizeBytes)
+
+	custom := int64(1234)
+	o = &Options{MaxRequestBodySizeBytes: &custom}
+	require.NoError(t, o.Initialize())
+	require.Equal(t, int64(1234), *o.MaxRequestBodySizeBytes)
+}
+
+func TestValidate(t *testing.T) {
+	tlsCfg := &tls.Config{}
+	okTLS := TLSConfigFunc(func() (*tls.Config, error) { return tlsCfg, nil })
+	errTLS := TLSConfigFunc(func() (*tls.Config, error) {
+		return nil, errors.New("tls config error")
+	})
+
+	tests := []struct {
+		name    string
+		opts    *Options
+		f       TLSConfigFunc
+		wantErr string
+	}{
+		{
+			name:    "no listeners",
+			opts:    &Options{},
+			wantErr: "no http or https listeners configured",
+		},
+		{
+			name: "http listener only",
+			opts: &Options{ListenPort: 8480},
+		},
+		{
+			name: "tls listener without serve tls",
+			opts: &Options{TLSListenPort: 8483},
+		},
+		{
+			name: "serve tls with valid config",
+			opts: &Options{TLSListenPort: 8483, ServeTLS: true},
+			f:    okTLS,
+		},
+		{
+			name:    "serve tls with config error",
+			opts:    &Options{TLSListenPort: 8483, ServeTLS: true},
+			f:       errTLS,
+			wantErr: "tls config error",
+		},
+		{
+			name: "serve tls with zero tls port skips config",
+			opts: &Options{ListenPort: 8480, ServeTLS: true},
+			f:    errTLS,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.opts.Validate(tc.f)
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				return
+			}
+			require.EqualError(t, err, tc.wantErr)
+		})
+	}
 }

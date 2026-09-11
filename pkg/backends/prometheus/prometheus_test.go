@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	pe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -203,6 +204,26 @@ func TestRoundTimestampParameterToMinute(t *testing.T) {
 	}
 }
 
+func TestRoundTimestampsToMinute_EndIncludesRecentData(t *testing.T) {
+	now := time.Unix(1523077733, 0) // 2018-04-07 05:08:53 UTC
+	qp := url.Values{}
+	qp.Set(upStart, strconv.FormatInt(now.Add(-5*time.Minute).Unix(), 10))
+	qp.Set(upEnd, strconv.FormatInt(now.Unix(), 10))
+
+	roundTimestampsToMinute(qp)
+
+	end, err := strconv.ParseInt(qp.Get(upEnd), 10, 64)
+	if err != nil {
+		t.Fatalf("parse end: %v", err)
+	}
+	if end < now.Unix() {
+		t.Fatalf("rounded end %d is BEFORE the requested end %d — "+
+			"samples between %d and %d will be excluded from /series & /labels "+
+			"merge results when prometheus has just started scraping",
+			end, now.Unix(), end, now.Unix())
+	}
+}
+
 func TestParseTimeRangeQuery(t *testing.T) {
 	logger.SetLogger(testLogger)
 	qp := url.Values(map[string][]string{
@@ -243,7 +264,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	b := bytes.NewBufferString(qp.Encode())
 	u.RawQuery = ""
 	req, _ = http.NewRequest(http.MethodPost, u.String(), b)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	_, _, _, err = client.ParseTimeRangeQuery(req)
 	if err != nil {
 		t.Error(err)
@@ -382,6 +403,39 @@ func TestParseVectorQuery(t *testing.T) {
 			}
 			if !test.hasErr && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestContainsOffsetKeyword(t *testing.T) {
+	tests := []struct {
+		stmt string
+		want bool
+	}{
+		{`rate(http_requests_total[5m] offset 1h)`, true},
+		{`rate(http_requests_total[5m])`, false},
+		{`sum(rate(x[5m] offset 10m))`, true},
+		// Inside braces — should not match
+		{`{"metric offset name"}`, false},
+		// Inside quoted string in selector
+		{`{label="has offset in value"}`, false},
+		// Offset outside braces with UTF-8 metric name
+		{`{"héllo"} offset 1h`, true},
+		// No spaces around offset
+		{`rate(x[5m])offset1h`, false},
+		// Escaped quote inside braces
+		{`{label="escaped\"offset"}`, false},
+		// Nested braces (unusual but should be safe)
+		{`{a="{offset}"}`, false},
+		{``, false},
+		{` offset `, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.stmt, func(t *testing.T) {
+			got := containsOffsetKeyword(tt.stmt)
+			if got != tt.want {
+				t.Errorf("containsOffsetKeyword(%q) = %v, want %v", tt.stmt, got, tt.want)
 			}
 		})
 	}

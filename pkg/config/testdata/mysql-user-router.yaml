@@ -1,0 +1,341 @@
+main:
+  server_name: trickster-test
+backends:
+  default:
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
+    max_idle_conns: 20
+    cache_name: default
+    chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
+    chunk_write_concurrency_limit: 16
+    healthcheck: {}
+    timeseries_retention_factor: 1024
+    timeseries_eviction_method: oldest
+    negative_cache_name: default
+    timeseries_ttl: 6h0m0s
+    fastforward_ttl: 15s
+    max_ttl: 25h0m0s
+    revalidation_factor: 2
+    max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
+    compressible_types:
+    - text/html
+    - text/javascript
+    - text/css
+    - text/plain
+    - text/xml
+    - text/json
+    - application/json
+    - application/javascript
+    - application/xml
+    tracing_name: default
+    tls: {}
+    forwarded_headers: standard
+    latency_min: 0s
+    latency_max: 0s
+  mysql-by-tenant:
+    provider: alb
+    listener_names:
+    - mysql-routed
+    timeout: 1m0s
+    keep_alive_timeout: 2m0s
+    max_concurrent_conns: 20
+    max_idle_conns: 20
+    cache_name: default
+    chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
+    chunk_write_concurrency_limit: 16
+    healthcheck: {}
+    timeseries_retention_factor: 1024
+    timeseries_eviction_method: oldest
+    negative_cache_name: default
+    timeseries_ttl: 6h0m0s
+    fastforward_ttl: 15s
+    max_ttl: 25h0m0s
+    revalidation_factor: 2
+    max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
+    compressible_types:
+    - text/html
+    - text/javascript
+    - text/css
+    - text/plain
+    - text/xml
+    - text/json
+    - application/json
+    - application/javascript
+    - application/xml
+    tracing_name: default
+    alb:
+      mechanism: ur
+      user_router:
+        default_backend: tenant-a-mysql
+        no_route_status_code: 401
+        users:
+          tenant_a_reader:
+            to_backend: tenant-a-mysql
+            to_user: ""
+            to_credential: ""
+          tenant_b_reader:
+            to_backend: tenant-b-mysql
+            to_user: ""
+            to_credential: ""
+    tls: {}
+    forwarded_headers: standard
+    authenticator_name: mysql-tenants
+    latency_min: 0s
+    latency_max: 0s
+  tenant-a-mysql:
+    provider: mysql
+    origin_url: mysql://tenant_a_ro:%2A%2A%2A%2A%2A@mysql-a.example:3306/analytics
+    timeout: 30s
+    keep_alive_timeout: 2m0s
+    max_concurrent_conns: 100
+    max_idle_conns: 20
+    cache_name: tenant-a-cache
+    cache_key_prefix: mysql-a.example:3306
+    chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
+    chunk_write_concurrency_limit: 16
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+    timeseries_retention_factor: 1024
+    timeseries_eviction_method: oldest
+    negative_cache_name: default
+    timeseries_ttl: 6h0m0s
+    fastforward_ttl: 15s
+    max_ttl: 25h0m0s
+    revalidation_factor: 2
+    max_object_size_bytes: 8388608
+    max_capture_bytes: 268435456
+    compressible_types:
+    - text/html
+    - text/javascript
+    - text/css
+    - text/plain
+    - text/xml
+    - text/json
+    - application/json
+    - application/javascript
+    - application/xml
+    tracing_name: default
+    mysql:
+      max_result_rows: 100000
+      max_result_size_bytes: 67108864
+    tls: {}
+    forwarded_headers: standard
+    authenticator_name: mysql-tenants
+    latency_min: 0s
+    latency_max: 0s
+  tenant-b-mysql:
+    provider: mysql
+    origin_url: mysql://tenant_b_ro:%2A%2A%2A%2A%2A@mysql-b.example:3306/analytics
+    timeout: 30s
+    keep_alive_timeout: 2m0s
+    max_concurrent_conns: 100
+    max_idle_conns: 20
+    cache_name: tenant-b-cache
+    cache_key_prefix: mysql-b.example:3306
+    chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
+    chunk_write_concurrency_limit: 16
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+    timeseries_retention_factor: 1024
+    timeseries_eviction_method: oldest
+    negative_cache_name: default
+    timeseries_ttl: 6h0m0s
+    fastforward_ttl: 15s
+    max_ttl: 25h0m0s
+    revalidation_factor: 2
+    max_object_size_bytes: 8388608
+    max_capture_bytes: 268435456
+    compressible_types:
+    - text/html
+    - text/javascript
+    - text/css
+    - text/plain
+    - text/xml
+    - text/json
+    - application/json
+    - application/javascript
+    - application/xml
+    tracing_name: default
+    mysql:
+      max_result_rows: 100000
+      max_result_size_bytes: 67108864
+    tls: {}
+    forwarded_headers: standard
+    authenticator_name: mysql-tenants
+    latency_min: 0s
+    latency_max: 0s
+caches:
+  default:
+    provider: memory
+    index:
+      reap_interval: 3s
+      flush_interval: 5s
+      index_expiry: 8760h0m0s
+      max_size_bytes: 536870912
+      max_size_backoff_bytes: 16777216
+      max_size_backoff_objects: 100
+    redis:
+      client_type: standard
+      protocol: tcp
+      endpoint: redis:6379
+      endpoints:
+      - redis:6379
+    filesystem:
+      cache_path: /tmp/trickster
+    bbolt:
+      filename: trickster.db
+      bucket: trickster
+    badger:
+      directory: /tmp/trickster
+      value_directory: /tmp/trickster
+    memory:
+      max_size_bytes: 536870912
+      num_counters: 500000
+    timeseries_chunk_factor: 420
+    byterange_chunk_size: 4096
+  tenant-a-cache:
+    provider: memory
+    index:
+      reap_interval: 3s
+      flush_interval: 5s
+      index_expiry: 8760h0m0s
+      max_size_bytes: 536870912
+      max_size_backoff_bytes: 16777216
+      max_size_backoff_objects: 100
+    redis:
+      client_type: standard
+      protocol: tcp
+      endpoint: redis:6379
+      endpoints:
+      - redis:6379
+    filesystem:
+      cache_path: /tmp/trickster
+    bbolt:
+      filename: trickster.db
+      bucket: trickster
+    badger:
+      directory: /tmp/trickster
+      value_directory: /tmp/trickster
+    memory:
+      max_size_bytes: 536870912
+      num_counters: 500000
+    timeseries_chunk_factor: 420
+    byterange_chunk_size: 4096
+  tenant-b-cache:
+    provider: filesystem
+    index:
+      reap_interval: 3s
+      flush_interval: 5s
+      index_expiry: 8760h0m0s
+      max_size_bytes: 536870912
+      max_size_backoff_bytes: 16777216
+      max_size_backoff_objects: 100
+    redis:
+      client_type: standard
+      protocol: tcp
+      endpoint: redis:6379
+      endpoints:
+      - redis:6379
+    filesystem:
+      cache_path: /var/cache/trickster/tenant-b
+    bbolt:
+      filename: trickster.db
+      bucket: trickster
+    badger:
+      directory: /tmp/trickster
+      value_directory: /tmp/trickster
+    memory:
+      max_size_bytes: 536870912
+      num_counters: 500000
+    timeseries_chunk_factor: 420
+    byterange_chunk_size: 4096
+frontend:
+  listen_port: 8480
+  tls_listen_port: 8483
+  max_request_body_size_bytes: 10485760
+  truncate_request_body_too_large: false
+  read_header_timeout: 10s
+listeners:
+  default:
+    port: 8480
+    tls_port: 8483
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: http
+    tls_watch_interval: 30s
+  metrics:
+    port: 8481
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: http
+    tls_watch_interval: 30s
+  mgmt:
+    address: 127.0.0.1
+    port: 8484
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: http
+    tls_watch_interval: 30s
+  mysql-routed:
+    port: 8486
+    connections_limit: 200
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: mysql
+    tls_watch_interval: 30s
+    mysql:
+      handshake_timeout: 10s
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 5m0s
+      max_packet_size_bytes: 16777215
+      max_query_size_bytes: 1048576
+logging:
+  log_level: INFO
+metrics:
+  listen_port: 8481
+tracing:
+  default:
+    provider: none
+    service_name: trickster
+    stdout: {}
+negative_caches:
+  default: {}
+mgmt:
+  listen_address: 127.0.0.1
+  listen_port: 8484
+  config_handler_path: /trickster/config
+  config_handler_listener: mgmt
+  ping_handler_path: /trickster/ping
+  health_handler_path: /trickster/health
+  purge_by_key_path: /trickster/purge/key/
+  purge_by_path_path: /trickster/purge/path/
+  certificates_handler_path: /trickster/certificates
+  pprof_listener: both
+  reload_handler_path: /trickster/config/reload
+  reload_drain_timeout: 30s
+  reload_rate_limit: 3s
+authenticators:
+  mysql-tenants:
+    provider: basic
+    observe_only: false
+    proxy_preserve: false
+    users_file: ""
+    users_file_format: ""
+    users:
+      user1: '*****'
+      user2: '*****'
+    config: {}

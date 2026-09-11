@@ -145,6 +145,24 @@ func TestCalculateHashCaching(t *testing.T) {
 		}
 	})
 
+	t.Run("clone preserves cached hash", func(t *testing.T) {
+		sh := testSeriesHeader()
+		h1 := sh.CalculateHash()
+		clone := sh.Clone()
+		// mutate the clone's fields — if hash was cached by Clone,
+		// CalculateHash() without rehash still returns the old value
+		clone.Name = "mutated-clone"
+		h2 := clone.CalculateHash() // should return cached h1, not recompute
+		if h1 != h2 {
+			t.Error("clone should return cached hash even after field mutation")
+		}
+		// with rehash, the mutated name should produce a different hash
+		h3 := clone.CalculateHash(true)
+		if h1 == h3 {
+			t.Error("rehash after mutation should produce different hash")
+		}
+	})
+
 	t.Run("rehash forces recalculation", func(t *testing.T) {
 		sh := testSeriesHeader()
 		h1 := sh.CalculateHash()
@@ -160,4 +178,21 @@ func TestCalculateHashCaching(t *testing.T) {
 			t.Error("rehash should produce different hash after name change")
 		}
 	})
+}
+
+func TestCalculateHashWithQueryStatement(t *testing.T) {
+	sh1 := testSeriesHeader()
+	sh2 := testSeriesHeader()
+	sh1.QueryStatement = "sum(rate(http_requests_total[5m]))"
+	sh2.QueryStatement = "count(rate(http_requests_total[5m]))"
+	if sh1.CalculateHash(true) == sh2.CalculateHash(true) {
+		t.Error("full header hash must differ when QueryStatement differs")
+	}
+	logical := "avg(rate(http_requests_total[5m]))"
+	if sh1.CalculateHashWithQueryStatement(logical) != sh2.CalculateHashWithQueryStatement(logical) {
+		t.Error("pairing hash with shared logical statement must match across sum/count rewrites")
+	}
+	if sh1.CalculateHashWithQueryStatement(logical) == sh1.CalculateHashWithQueryStatement("other") {
+		t.Error("different pairing statements must yield different hashes")
+	}
 }

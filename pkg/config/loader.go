@@ -78,6 +78,7 @@ func Load(args []string) (*Config, error) {
 
 		if c.providedProvider != "" {
 			d.Provider = c.providedProvider
+			d.ApplyProviderSizingDefaults()
 		}
 	}
 
@@ -88,6 +89,12 @@ func Load(args []string) (*Config, error) {
 	for k, o := range c.Backends {
 		err = o.Initialize(k)
 		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(c.Discovery) > 0 {
+		if err := c.Discovery.Initialize(); err != nil {
 			return nil, err
 		}
 	}
@@ -108,6 +115,12 @@ func Load(args []string) (*Config, error) {
 		if err := c.Metrics.Initialize(""); err != nil {
 			return nil, err
 		}
+	}
+
+	// Normalize legacy listener settings only after their existing defaulting
+	// behavior has run. Explicit entries in servers still take precedence.
+	if err := c.applyLegacyListenerOptions(); err != nil {
+		return nil, err
 	}
 
 	if len(c.Authenticators) > 0 {

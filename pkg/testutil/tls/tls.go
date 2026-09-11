@@ -19,6 +19,8 @@ package tls
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -56,6 +58,49 @@ func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {
 	}
 
 	return nil
+}
+
+// GetTestKeyAndCertWithNames returns a self-signed test TLS key and
+// certificate bearing the provided DNS names (wildcards permitted) as its
+// Subject Alternative Names, using a fast ECDSA key
+func GetTestKeyAndCertWithNames(names ...string) ([]byte, []byte, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	notBefore := time.Now()
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, _ := rand.Int(rand.Reader, serialNumberLimit)
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Trickster Test Certificate DO NOT USE"},
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notBefore.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:              names,
+	}
+	if len(names) > 0 {
+		template.Subject.CommonName = names[0]
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template,
+		&priv.PublicKey, priv)
+	if err != nil {
+		return nil, nil, err
+	}
+	certBuff := bytes.NewBuffer(nil)
+	pem.Encode(certBuff, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return nil, nil, err
+	}
+	keyBuff := bytes.NewBuffer(nil)
+	pem.Encode(keyBuff, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+	return keyBuff.Bytes(), certBuff.Bytes(), nil
 }
 
 // GetTestKeyAndCert returns a self-sign test TLS key and certificate

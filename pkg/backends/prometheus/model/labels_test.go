@@ -17,12 +17,39 @@
 package model
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
+
+func FuzzLabelsMergeRoundTrip(f *testing.F) {
+	f.Add("label1", "label2", "label3")
+	f.Add(`val"with"quotes`, `C:\back\slash`, "héllo\nwörld\t\u0000")
+	f.Fuzz(func(t *testing.T, l1, l2, l3 string) {
+		input := &WFLabelData{
+			Envelope: &Envelope{Status: "success"},
+			Data:     []string{l1, l2, l3},
+		}
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("GET", "/", nil)
+		accum := merge.NewAccumulator()
+		accum.SetGeneric(input)
+		respondFunc := MergeAndWriteLabelDataRespondFunc()
+		respondFunc(w, r, accum, http.StatusOK)
+		body := w.Body.Bytes()
+		if !json.Valid(body) {
+			t.Fatalf("label respond produced invalid JSON: %s", string(body))
+		}
+		var generic map[string]any
+		if err := json.Unmarshal(body, &generic); err != nil {
+			t.Fatalf("label respond JSON unmarshal failed: %v\nbody: %s", err, string(body))
+		}
+	})
+}
 
 func TestMergeLabelData(t *testing.T) {
 	ld1 := &WFLabelData{
@@ -118,6 +145,102 @@ func TestMergeAndWriteLabelData(t *testing.T) {
 
 			if w.Code != test.expCode {
 				t.Errorf("expected %d got %d", test.expCode, w.Code)
+			}
+		})
+	}
+}
+
+func TestMergeAndWriteLabelData_EscapesSpecialChars(t *testing.T) {
+	body := []byte(`{"status":"success","data":["simple","with \"quote\"","back\\slash"]}`)
+	w := httptest.NewRecorder()
+	r, _ := http.NewRequest("GET", "/", nil)
+	accum := merge.NewAccumulator()
+	mergeFunc := MergeAndWriteLabelDataMergeFunc()
+	respondFunc := MergeAndWriteLabelDataRespondFunc()
+	if err := mergeFunc(accum, body, 0); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	respondFunc(w, r, accum, http.StatusOK)
+
+	var env struct {
+		Status string   `json:"status"`
+		Data   []string `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("merged body invalid JSON: %v (body=%s)", err, w.Body.String())
+	}
+	want := map[string]bool{"simple": true, `with "quote"`: true, `back\slash`: true}
+	got := map[string]bool{}
+	for _, v := range env.Data {
+		got[v] = true
+	}
+	for v := range want {
+		if !got[v] {
+			t.Errorf("missing %q in merged data: %+v", v, env.Data)
+		}
+	}
+}
+
+func TestMergeAndWriteLabelData_BodyParseable(t *testing.T) {
+	tests := []struct {
+		name     string
+		bodies   [][]byte
+		wantData []string
+	}{
+		{
+			name: "single body",
+			bodies: [][]byte{
+				[]byte(`{"status":"success","data":["a"]}`),
+			},
+			wantData: []string{"a"},
+		},
+		{
+			name: "two distinct bodies merge and dedup",
+			bodies: [][]byte{
+				[]byte(`{"status":"success","data":["a","b"]}`),
+				[]byte(`{"status":"success","data":["b","c"]}`),
+			},
+			wantData: []string{"a", "b", "c"},
+		},
+		{
+			name: "empty merged set emits empty array",
+			bodies: [][]byte{
+				[]byte(`{"status":"success","data":[]}`),
+			},
+			wantData: []string{},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r, _ := http.NewRequest("GET", "/", nil)
+			accum := merge.NewAccumulator()
+			mergeFunc := MergeAndWriteLabelDataMergeFunc()
+			respondFunc := MergeAndWriteLabelDataRespondFunc()
+			for i, b := range test.bodies {
+				if err := mergeFunc(accum, b, i); err != nil {
+					t.Fatalf("merge %d: %v", i, err)
+				}
+			}
+			respondFunc(w, r, accum, http.StatusOK)
+
+			var env struct {
+				Status string   `json:"status"`
+				Data   []string `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+				t.Fatalf("merged body invalid JSON: %v (body=%s)", err, w.Body.String())
+			}
+			if env.Status != "success" {
+				t.Fatalf("want status=success, got %q", env.Status)
+			}
+			if len(env.Data) != len(test.wantData) {
+				t.Fatalf("want %d entries, got %d: %+v", len(test.wantData), len(env.Data), env.Data)
+			}
+			for _, want := range test.wantData {
+				if !slices.Contains(env.Data, want) {
+					t.Errorf("missing %q in merged data: %+v", want, env.Data)
+				}
 			}
 		})
 	}

@@ -9,8 +9,6 @@ influxql-max-select-point: 0
 influxql-max-select-series: 0
 key-name: ""
 log-level: info
-nats-max-payload-bytes: 1048576
-nats-port: 4222
 no-tasks: false
 query-concurrency: 10
 query-initial-memory-bytes: 0
@@ -36,7 +34,7 @@ storage-shard-precreator-check-interval: 10m0s
 storage-tsm-use-madv-willneed: false
 storage-validate-keys: false
 storage-wal-fsync-delay: 0s
-store: bolt
+store: disk
 testing-always-allow-setup: false
 tls-cert: ""
 tls-key: ""

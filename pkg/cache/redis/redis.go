@@ -23,10 +23,11 @@ import (
 	"errors"
 	"time"
 
-	redis "github.com/redis/go-redis/v9"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+
+	redis "github.com/redis/go-redis/v9"
 )
 
 // CacheClient implements the cache.Client interface

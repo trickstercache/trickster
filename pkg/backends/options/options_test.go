@@ -23,20 +23,26 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-	"gopkg.in/yaml.v2"
+
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
 )
 
 type testOptions struct {
@@ -66,6 +72,386 @@ func TestNew(t *testing.T) {
 	if o == nil {
 		t.Error("expected non-nil options")
 	}
+	if o.FetchConcurrencyLimit != DefaultFetchConcurrencyLimit {
+		t.Errorf("expected FetchConcurrencyLimit=%d, got %d",
+			DefaultFetchConcurrencyLimit, o.FetchConcurrencyLimit)
+	}
+}
+
+func TestMySQLLimitsYAMLDefaultsCloneAndValidation(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  mysql1:
+    provider: mysql
+    origin_url: mysql://user:password@example.com/database
+    mysql:
+      max_result_rows: 42
+`, "mysql1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("mysql1"); err != nil {
+		t.Fatal(err)
+	}
+	if o.MySQL == nil || o.MySQL.MaxResultRows != 42 ||
+		o.MySQL.MaxResultSizeBytes != mo.DefaultMaxResultSizeBytes {
+		t.Fatalf("unexpected MySQL options: %#v", o.MySQL)
+	}
+	clone := o.Clone()
+	clone.MySQL.MaxResultRows++
+	if o.MySQL.MaxResultRows != 42 {
+		t.Fatal("clone mutated original MySQL options")
+	}
+}
+
+// TestProviderSizingDefaults covers the provider-specific sizing defaults:
+// Graphite caches at the origin's native resolution, so it needs a larger
+// object limit and a longer retention than the generic backend defaults,
+// and an operator must not have to discover that to get a working backend.
+// The defaults apply only where the configuration is silent.
+func TestProviderSizingDefaults(t *testing.T) {
+	mos, trf := GetProviderDefaults(providers.Graphite)
+	if mos != gro.DefaultMaxObjectSizeBytes || trf != gro.DefaultTimeseriesRetentionFactor {
+		t.Errorf("graphite defaults: got (%d, %d)", mos, trf)
+	}
+	mos, trf = GetProviderDefaults(providers.Prometheus)
+	if mos != DefaultMaxObjectSizeBytes || trf != DefaultBackendTRF {
+		t.Errorf("prometheus defaults: got (%d, %d)", mos, trf)
+	}
+	if mos, trf = GetProviderDefaults(""); mos != DefaultMaxObjectSizeBytes || trf != DefaultBackendTRF {
+		t.Errorf("unknown provider must take the generic defaults: got (%d, %d)", mos, trf)
+	}
+
+	tests := []struct {
+		name     string
+		yaml     string
+		wantSize int
+		wantTRF  int
+	}{
+		{
+			name: "graphite silent",
+			yaml: `
+backends:
+  graphite1:
+    provider: graphite
+    origin_url: http://example.com:80
+`,
+			wantSize: gro.DefaultMaxObjectSizeBytes,
+			wantTRF:  gro.DefaultTimeseriesRetentionFactor,
+		},
+		{
+			name: "graphite explicit wins",
+			yaml: `
+backends:
+  graphite1:
+    provider: graphite
+    origin_url: http://example.com:80
+    max_object_size_bytes: 1024
+    timeseries_retention_factor: 7
+`,
+			wantSize: 1024,
+			wantTRF:  7,
+		},
+		{
+			name: "graphite explicit zeros survive",
+			yaml: `
+backends:
+  graphite1:
+    provider: graphite
+    origin_url: http://example.com:80
+    max_object_size_bytes: 0
+    timeseries_retention_factor: 0
+`,
+			wantSize: 0,
+			wantTRF:  0,
+		},
+		{
+			name: "prometheus explicit zero survives",
+			yaml: `
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://example.com:9090
+    max_object_size_bytes: 0
+`,
+			wantSize: 0,
+			wantTRF:  DefaultBackendTRF,
+		},
+		{
+			// the generic default, named explicitly: the provider default
+			// must not overwrite a value the operator actually chose
+			name: "graphite explicitly generic",
+			yaml: `
+backends:
+  graphite1:
+    provider: graphite
+    origin_url: http://example.com:80
+    max_object_size_bytes: 524288
+    timeseries_retention_factor: 1024
+`,
+			wantSize: DefaultMaxObjectSizeBytes,
+			wantTRF:  DefaultBackendTRF,
+		},
+		{
+			name: "other providers unchanged",
+			yaml: `
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://example.com:9090
+`,
+			wantSize: DefaultMaxObjectSizeBytes,
+			wantTRF:  DefaultBackendTRF,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			name := "graphite1"
+			if strings.Contains(tc.yaml, "prom1:") {
+				name = "prom1"
+			}
+			o, err := fromYAML(tc.yaml, name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := o.Initialize(name); err != nil {
+				t.Fatal(err)
+			}
+			if o.MaxObjectSizeBytes != tc.wantSize {
+				t.Errorf("max_object_size_bytes: got %d, want %d", o.MaxObjectSizeBytes, tc.wantSize)
+			}
+			if o.TimeseriesRetentionFactor != tc.wantTRF {
+				t.Errorf("timeseries_retention_factor: got %d, want %d",
+					o.TimeseriesRetentionFactor, tc.wantTRF)
+			}
+			if o.TimeseriesRetention != timeconv.Duration(tc.wantTRF) {
+				t.Errorf("timeseries_retention: got %v, want %v",
+					o.TimeseriesRetention, timeconv.Duration(tc.wantTRF))
+			}
+			// the sizing survives a clone, which is how a reload carries it
+			if c := o.Clone(); c.MaxObjectSizeBytes != tc.wantSize ||
+				c.TimeseriesRetentionFactor != tc.wantTRF {
+				t.Errorf("clone lost the sizing: %d %d", c.MaxObjectSizeBytes, c.TimeseriesRetentionFactor)
+			}
+		})
+	}
+
+	for _, provider := range []string{providers.Graphite, providers.Prometheus} {
+		o := New()
+		o.Provider = provider
+		o.OriginURL = "http://example.com:80"
+		o.MaxObjectSizeBytes = 12345
+		o.TimeseriesRetentionFactor = 99
+		if err := o.Initialize("b1"); err != nil {
+			t.Fatal(err)
+		}
+		if o.MaxObjectSizeBytes != 12345 || o.TimeseriesRetentionFactor != 99 {
+			t.Errorf("%s: Initialize overwrote programmatic sizing: (%d, %d)",
+				provider, o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor)
+		}
+		if o.TimeseriesRetention != timeconv.Duration(99) {
+			t.Errorf("%s: retention not derived: %v", provider, o.TimeseriesRetention)
+		}
+	}
+	o := New()
+	o.Provider = providers.Graphite
+	o.OriginURL = "http://example.com:80"
+	if err := o.Initialize("graphite1"); err != nil {
+		t.Fatal(err)
+	}
+	if o.MaxObjectSizeBytes != DefaultMaxObjectSizeBytes ||
+		o.TimeseriesRetentionFactor != DefaultBackendTRF {
+		t.Errorf("programmatic backend must keep generic defaults: (%d, %d)",
+			o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor)
+	}
+	o.ApplyProviderSizingDefaults()
+	if o.MaxObjectSizeBytes != gro.DefaultMaxObjectSizeBytes ||
+		o.TimeseriesRetentionFactor != gro.DefaultTimeseriesRetentionFactor {
+		t.Errorf("ApplyProviderSizingDefaults: got (%d, %d)", o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor)
+	}
+}
+
+// TestProviderSizingDefaultsMergeKeys covers YAML merge semantics in
+// presence detection: values inherited through `<<` aliases (including
+// alias sequences) were applied by the decoder and must count as explicit,
+// or an inherited explicit zero would be silently replaced by a provider
+// default. Local keys override merged ones as YAML specifies.
+func TestProviderSizingDefaultsMergeKeys(t *testing.T) {
+	load := func(t *testing.T, doc, name string) *Options {
+		t.Helper()
+		var c struct {
+			Backends Lookup `yaml:"backends"`
+		}
+		require.NoError(t, yaml.Unmarshal([]byte(doc), &c))
+		o, ok := c.Backends[name]
+		require.True(t, ok, "backend %s not decoded", name)
+		require.NoError(t, o.Initialize(name))
+		return o
+	}
+
+	t.Run("inherited explicit zeros survive", func(t *testing.T) {
+		o := load(t, `
+defaults: &defaults
+  max_object_size_bytes: 0
+  timeseries_retention_factor: 0
+backends:
+  graphite1:
+    <<: *defaults
+    provider: graphite
+    origin_url: http://graphite:80
+`, "graphite1")
+		if o.MaxObjectSizeBytes != 0 || o.TimeseriesRetentionFactor != 0 {
+			t.Errorf("inherited zeros replaced: (%d, %d)", o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor)
+		}
+	})
+
+	t.Run("inherited non-zero survives for an existing provider", func(t *testing.T) {
+		o := load(t, `
+defaults: &defaults
+  max_object_size_bytes: 777
+backends:
+  prom1:
+    <<: *defaults
+    provider: prometheus
+    origin_url: http://prom:9090
+`, "prom1")
+		if o.MaxObjectSizeBytes != 777 || o.TimeseriesRetentionFactor != DefaultBackendTRF {
+			t.Errorf("inherited value lost: (%d, %d)", o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor)
+		}
+	})
+
+	t.Run("merge sequence", func(t *testing.T) {
+		o := load(t, `
+a: &a
+  max_object_size_bytes: 111
+b: &b
+  timeseries_retention_factor: 222
+backends:
+  graphite1:
+    <<: [*a, *b]
+    provider: graphite
+    origin_url: http://graphite:80
+`, "graphite1")
+		if o.MaxObjectSizeBytes != 111 || o.TimeseriesRetentionFactor != 222 {
+			t.Errorf("merge sequence lost: (%d, %d)", o.MaxObjectSizeBytes, o.TimeseriesRetentionFactor)
+		}
+	})
+
+	t.Run("local key overrides merged", func(t *testing.T) {
+		o := load(t, `
+defaults: &defaults
+  max_object_size_bytes: 111
+backends:
+  graphite1:
+    <<: *defaults
+    provider: graphite
+    origin_url: http://graphite:80
+    max_object_size_bytes: 333
+`, "graphite1")
+		if o.MaxObjectSizeBytes != 333 {
+			t.Errorf("local override lost: %d", o.MaxObjectSizeBytes)
+		}
+	})
+
+	t.Run("quoted literal << is not a merge", func(t *testing.T) {
+		// a quoted "<<" key has the string tag: the decoder does not merge
+		// it, so its contents must not mark the sizing fields explicit
+		o := load(t, `
+backends:
+  graphite1:
+    "<<": {max_object_size_bytes: 1}
+    provider: graphite
+    origin_url: http://graphite:80
+`, "graphite1")
+		if o.MaxObjectSizeBytes != gro.DefaultMaxObjectSizeBytes {
+			t.Errorf("quoted << treated as a merge: %d", o.MaxObjectSizeBytes)
+		}
+	})
+
+	t.Run("silent through merge still gets provider default", func(t *testing.T) {
+		o := load(t, `
+defaults: &defaults
+  timeout: 30s
+backends:
+  graphite1:
+    <<: *defaults
+    provider: graphite
+    origin_url: http://graphite:80
+`, "graphite1")
+		if o.MaxObjectSizeBytes != gro.DefaultMaxObjectSizeBytes {
+			t.Errorf("provider default not applied: %d", o.MaxObjectSizeBytes)
+		}
+	})
+}
+
+func TestCORSOptionsYAML(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  test:
+    provider: reverseproxycache
+    origin_url: http://example.com
+    cors:
+      mode: merge
+      headers:
+        Access-Control-Allow-Origin: https://trickster.example.com
+    paths:
+      - path: /private
+        cors:
+          mode: disable
+`, "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("test"); err != nil {
+		t.Fatal(err)
+	}
+	if o.CORS == nil || o.CORS.Mode != corso.ModeMerge {
+		t.Fatalf("backend CORS mode = %v, want %q", o.CORS, corso.ModeMerge)
+	}
+	if got := o.CORS.Headers[headers.NameAllowOrigin]; got != "https://trickster.example.com" {
+		t.Fatalf("backend allow origin = %q", got)
+	}
+	if len(o.Paths) != 1 || o.Paths[0].CORS == nil || o.Paths[0].CORS.Mode != corso.ModeDisable {
+		t.Fatalf("path CORS = %v, want disable policy", o.Paths)
+	}
+	if o.Paths[0].CORS.Headers != nil {
+		t.Fatalf("disabled path CORS headers = %v, want nil", o.Paths[0].CORS.Headers)
+	}
+	if ok, err := o.Validate(); !ok || err != nil {
+		t.Fatalf("Validate() = %v, %v", ok, err)
+	}
+
+	clone := o.Clone()
+	clone.CORS.Headers[headers.NameAllowOrigin] = "https://other.example.com"
+	if o.CORS.Headers[headers.NameAllowOrigin] != "https://trickster.example.com" {
+		t.Fatal("clone mutated backend CORS headers")
+	}
+}
+
+func TestAccessLogOptionsYAML(t *testing.T) {
+	o, err := fromTestYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	al := o.AccessLog
+	if al == nil {
+		t.Fatal("expected access_log options")
+	}
+	if al.Filename != "/tmp/test.access.log" || al.Format != "combined" ||
+		al.Rotation == nil || *al.Rotation.Size != 64*1024*1024 ||
+		al.Retention == nil || *al.Retention.Count != 3 ||
+		al.ErrorFilename != "/tmp/test.error.log" || al.ErrorThreshold != 500 {
+		t.Fatalf("unexpected access_log options: %+v", al)
+	}
+	clone := o.Clone()
+	*clone.AccessLog.Retention.Count = 9
+	if *o.AccessLog.Retention.Count != 3 {
+		t.Fatal("clone mutated access_log retention")
+	}
+	o.AccessLog.Format = "%Z"
+	if _, err := o.Validate(); err == nil {
+		t.Fatal("expected validation error for invalid access log format")
+	}
 }
 
 func TestClone(t *testing.T) {
@@ -79,9 +465,101 @@ func TestClone(t *testing.T) {
 	o.HealthCheck = &ho.Options{}
 	o.FastForwardPath = p
 	o.RuleOptions = &ro.Options{}
+	o.ReplicaGroup = "replicas-a"
 	o2 := o.Clone()
 	if o2.CacheName != "test" {
 		t.Error("clone failed")
+	}
+	if o2.ReplicaGroup != o.ReplicaGroup {
+		t.Errorf("clone replica group = %q, want %q", o2.ReplicaGroup, o.ReplicaGroup)
+	}
+}
+
+func TestReplicaGroupYAMLCloneAndInitialization(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  prom-a:
+    provider: prometheus
+    origin_url: http://example.com
+    replica_group: "  shard-a  "
+`, "prom-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("prom-a"); err != nil {
+		t.Fatal(err)
+	}
+	if o.ReplicaGroup != "shard-a" {
+		t.Fatalf("replica group = %q, want shard-a", o.ReplicaGroup)
+	}
+	if clone := o.CloneYAMLSafe(); clone.ReplicaGroup != "shard-a" {
+		t.Fatalf("YAML-safe clone replica group = %q", clone.ReplicaGroup)
+	}
+	if out := o.ToYAML(); !strings.Contains(out, "replica_group: shard-a") {
+		t.Fatalf("round-trip YAML missing replica_group:\n%s", out)
+	}
+
+	unset := New()
+	if err := unset.Initialize("prom-b"); err != nil {
+		t.Fatal(err)
+	}
+	if unset.ReplicaGroup != "prom-b" {
+		t.Fatalf("default replica group = %q, want prom-b", unset.ReplicaGroup)
+	}
+	if out := unset.ToYAML(); strings.Contains(out, "replica_group:") {
+		t.Fatalf("implicit replica group should not be exported:\n%s", out)
+	}
+
+	nested := New()
+	nested.Provider = providers.ALB
+	nested.ReplicaGroup = "shard-a"
+	if err := nested.Initialize("nested-a"); err != nil {
+		t.Fatalf("nested ALB replica group rejected: %v", err)
+	}
+
+	unsupported := New()
+	unsupported.Provider = providers.ReverseProxyShort
+	unsupported.ReplicaGroup = "shard-a"
+	if err := unsupported.Initialize("proxy-a"); err == nil {
+		t.Fatal("expected replica group on reverse proxy backend to be rejected")
+	}
+}
+
+func TestValidateGraphiteOriginAuth(t *testing.T) {
+	newBackend := func(g *gro.Options, paths po.List) *Options {
+		o := New()
+		o.Name = "test"
+		o.Provider = providers.Graphite
+		o.OriginURL = "http://example.com"
+		o.Graphite = g
+		o.Paths = paths
+		return o
+	}
+	tests := []struct {
+		name string
+		o    *Options
+		err  error
+	}{
+		{"valid credential", newBackend(
+			&gro.Options{OriginAuthorization: "Bearer tok"}, nil), nil},
+		{"authorization with username", newBackend(
+			&gro.Options{OriginAuthorization: "Bearer tok", OriginUsername: "u"}, nil),
+			gro.ErrOriginAuthConflict},
+		{"password without username", newBackend(
+			&gro.Options{OriginPassword: "p"}, nil), gro.ErrOriginAuthNoUser},
+		{"credential with +Authorization path", newBackend(
+			&gro.Options{OriginUsername: "u", OriginPassword: "p"},
+			po.List{{Path: "/render",
+				RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}}}),
+			gro.ErrOriginAuthAppend},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := tc.o.Validate()
+			if !errors.Is(err, tc.err) {
+				t.Fatalf("expected %v, got %v", tc.err, err)
+			}
+		})
 	}
 }
 
@@ -149,6 +627,8 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.NegativeCacheName = ""
 	tpm := o.Clone()
 	tpm.Name = "test_pool_member"
+	tpm.Provider = "rp"
+	tpm.ALBOptions = nil
 	ol["test_pool_member"] = tpm
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
@@ -169,9 +649,9 @@ func testStringValueValidationError(to *testOptions, location *string, testValue
 }
 
 type durationSwapper struct {
-	location   *time.Duration
-	restoreVal time.Duration
-	testValue  time.Duration
+	location   *timeconv.Duration
+	restoreVal timeconv.Duration
+	testValue  timeconv.Duration
 }
 
 func testDurationValueValidationError(to *testOptions, sws []durationSwapper) error {
@@ -283,7 +763,7 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.ShardStep,
-					testValue: 1,
+					testValue: timeconv.Duration(1),
 				},
 			},
 			expected: nil,
@@ -293,11 +773,11 @@ func TestValidate(t *testing.T) {
 			sw: []durationSwapper{
 				{
 					location:  &o.MaxShardSizeTime,
-					testValue: 10,
+					testValue: timeconv.Duration(10),
 				},
 				{
 					location:  &o.ShardStep,
-					testValue: 32,
+					testValue: timeconv.Duration(32),
 				},
 			},
 			expected: ErrInvalidMaxShardSizeTime,
@@ -327,7 +807,7 @@ func TestValidate(t *testing.T) {
 
 	t.Run("maxShard edge cases", func(t *testing.T) {
 		opts := *o
-		opts.MaxShardSizeTime = 1 * time.Millisecond
+		opts.MaxShardSizeTime = timeconv.Duration(1 * time.Millisecond)
 		opts.MaxShardSizePoints = 1
 		to := &testOptions{Backends: Lookup{o.Name: &opts}}
 		require.ErrorIs(t, Lookup(to.Backends).Validate(), ErrInvalidMaxShardSize)
@@ -343,6 +823,12 @@ func TestInitialize(t *testing.T) {
 	err = o.Initialize("test")
 	if err != nil {
 		t.Error(err)
+	}
+
+	oInvalid := *o
+	oInvalid.MaxQueryRange = timeconv.Duration(-1 * time.Hour)
+	if err := oInvalid.Initialize("test_invalid"); err == nil {
+		t.Error("expected error for negative max_query_range, got nil")
 	}
 
 	o2, err := fromTestYAMLWithDefault()
@@ -459,6 +945,60 @@ func TestCloneYAMLSafe(t *testing.T) {
 	p2.RequestHeaders = map[string]string{headers.NameAuthorization: "trickster"}
 }
 
+func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = providers.Graphite
+	o.OriginURL = "http://example.com"
+	o.Paths = po.List{{Path: "/render", RequestHeaders: map[string]string{
+		strings.ToLower(headers.NameAuthorization):       "Bearer path-secret",
+		"+" + headers.NameAuthorization:                  "Bearer append-secret",
+		"-" + strings.ToLower(headers.NameAuthorization): "x",
+	}}}
+	o.HealthCheck = &ho.Options{Headers: map[string]string{
+		strings.ToLower(headers.NameAuthorization): "Bearer probe-secret",
+		"X-Probe": "trickster",
+	}}
+
+	got := o.CloneYAMLSafe()
+	for k, v := range got.Paths[0].RequestHeaders {
+		if v != "*****" {
+			t.Errorf("path header %q not masked: %q", k, v)
+		}
+	}
+	if v := got.HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; v != "*****" {
+		t.Errorf("health header not masked: %q", v)
+	}
+	if v := got.HealthCheck.Headers["X-Probe"]; v != "trickster" {
+		t.Errorf("non-sensitive health header must be preserved: %q", v)
+	}
+	// no credential form may survive into the YAML text either
+	y := o.ToYAML()
+	for _, secret := range []string{"path-secret", "append-secret", "probe-secret"} {
+		if strings.Contains(y, secret) {
+			t.Errorf("ToYAML leaked %q", secret)
+		}
+	}
+
+	// the empty Authorization opt-out is not a credential and survives export
+	o.HealthCheck.Headers = map[string]string{strings.ToLower(headers.NameAuthorization): ""}
+	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; !ok || v != "" {
+		t.Errorf("empty opt-out must be preserved, got %q ok=%t", v, ok)
+	}
+}
+
+func TestCloneYAMLSafeMasksOriginCredentials(t *testing.T) {
+	o := New()
+	o.OriginURL = "mysql://origin:origin-secret@example.com/database"
+	got := o.CloneYAMLSafe()
+	if strings.Contains(got.OriginURL, "origin-secret") {
+		t.Fatalf("CloneYAMLSafe exposed MySQL credentials: %+v", got)
+	}
+	if !strings.Contains(o.OriginURL, "origin-secret") {
+		t.Fatal("CloneYAMLSafe mutated the source options")
+	}
+}
+
 func TestToYAML(t *testing.T) {
 	o, err := fromTestYAML()
 	if err != nil {
@@ -467,5 +1007,90 @@ func TestToYAML(t *testing.T) {
 	s := o.ToYAML()
 	if !(strings.Index(s, `provider: test_type`) > 0) {
 		t.Error("ToYAML mismatch", s)
+	}
+}
+
+// The sigv4 block was the one pointer field Clone did not deep-copy, so a
+// cloned backend shared its credentials with the original. That matters now
+// that ALB templates clone a backend per discovered member.
+func TestCloneDeepCopiesSigV4(t *testing.T) {
+	o := New()
+	o.SigV4 = &taws.Options{
+		Region: "us-east-1", Service: "ec2", AccessKey: "AKIA", SecretKey: "shh",
+	}
+	c := o.Clone()
+	if c.SigV4 == o.SigV4 {
+		t.Fatal("Clone shared the SigV4 pointer with the original")
+	}
+	c.SigV4.Region = "eu-west-1"
+	c.SigV4.Service = "ecs"
+	if o.SigV4.Region != "us-east-1" || o.SigV4.Service != "ec2" {
+		t.Errorf("mutating the clone changed the original: %+v", o.SigV4)
+	}
+}
+
+// A config dump must never carry the secret key.
+func TestToYAMLRedactsSigV4Secret(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "prometheus"
+	o.OriginURL = "http://example.com"
+	o.SigV4 = &taws.Options{
+		Region: "us-east-1", AccessKey: "AKIA", SecretKey: "super-secret",
+	}
+	y := o.ToYAML()
+	if strings.Contains(y, "super-secret") {
+		t.Errorf("ToYAML exposed the sigv4 secret key:\n%s", y)
+	}
+	if !strings.Contains(y, "access_key: AKIA") {
+		t.Errorf("expected the non-secret sigv4 fields to survive:\n%s", y)
+	}
+}
+
+// Validation now runs on the programmatic path too, where the previous
+// implementation validated only during YAML unmarshaling.
+func TestValidateRejectsIncompleteSigV4(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "prometheus"
+	o.OriginURL = "http://example.com"
+	o.SigV4 = &taws.Options{AccessKey: "AKIA"} // no secret key
+	if _, err := o.Validate(); err == nil {
+		t.Error("expected an error for a half-configured sigv4 credential")
+	}
+}
+
+func TestInitializeH2CPriorKnowledge(t *testing.T) {
+	tests := []struct {
+		name      string
+		originURL string
+		expectErr bool
+	}{
+		{"http origin", "http://example.com:8123", false},
+		{"https origin", "https://example.com", true},
+		{"no origin url", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := New()
+			o.Provider = "rp"
+			o.OriginURL = tc.originURL
+			o.H2CPriorKnowledge = true
+			err := o.Initialize("test")
+			if tc.expectErr && err == nil {
+				t.Error("expected an error")
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	// the default must remain unaffected by the new validation
+	o := New()
+	o.Provider = "rp"
+	o.OriginURL = "https://example.com"
+	if err := o.Initialize("test"); err != nil {
+		t.Errorf("unexpected error without the option set: %v", err)
 	}
 }

@@ -12,11 +12,45 @@ Trickster supports, via configuration, customizing the upstream request and down
 
 ## Path Matching Scope
 
-Paths are matchable as `exact` or `prefix`
+Paths are matchable as `exact`, `prefix` or `regex`
 
 The default match is `exact`, meaning the client's requested URL Path must be an exact match to the configured path in order to match and be handled by a given Path Config. For example a request to `/foo/bar` will not match an `exact` Path Config for `/foo`.
 
 A `prefix` match will match any client-requested path to the Path Config with the longest prefix match. A `prefix` match Path Config to `/foo` will match `/foo/bar` as well as `/foobar` and `/food`. A basic string match is used to evaluate the incoming URL path, so it is recommended to consider finishing paths with a trailing `/`, like `/foo/` in Path Configurations, if needed to avoid any unintentional matches.
+
+### Regex Paths
+
+A path can also be a regular expression, evaluated against the client's requested URL Path. A path is treated as a regex when either:
+
+- the path value starts with `^/` (or the escaped form `^\/`) — this is auto-detected and applies regardless of any configured `match_type`; or
+- the Path Config explicitly sets `match_type: regex`, in which case the path need not start with `^/`; Trickster will prepend a `^` anchor if absent, so match semantics are consistent.
+
+Regex paths use Go's [RE2 syntax](https://github.com/google/re2/wiki/Syntax) (linear-time matching; no backtracking). Patterns are always anchored at the start with `^`. A `$` end anchor is honored when present but never required — an unanchored end behaves like a prefix-style match, so `^/api/[0-9]+` matches `/api/42` and `/api/42/details` alike, while `^/api/[0-9]+$` matches only `/api/42`.
+
+Evaluation order: regex paths are evaluated only after both `exact` and `prefix` matching have missed. Within the regex tier, patterns are evaluated longest-pattern-string first; equal-length patterns are evaluated in the order they appear in the configuration; the first pattern that matches wins.
+
+**Catch-all warning:** a classic catch-all path — `match_type: prefix` on `/`, or an effective catch-all like `/api` in front of regexes that all begin `^/api` — always prefix-matches first and prevents the regex tier from ever being evaluated for those requests. When using regex paths, define the catch-all as a regex too (e.g. `^/.*`), which sorts shortest and therefore evaluates last. Trickster logs a startup warning when a backend defines regex paths alongside a `/` prefix catch-all.
+
+```yaml
+backends:
+  default:
+    provider: rpc
+    origin_url: 'http://example.com'
+    paths:
+      # auto-detected as a regex path (starts with ^/)
+      - path: '^/api/[0-9]+/results'
+        methods: [ GET ]
+        handler: proxycache
+      # explicit opt-in; Trickster anchors this to ^/reports/(annual|monthly)/
+      - path: '/reports/(annual|monthly)/'
+        match_type: regex
+        methods: [ GET ]
+        handler: proxy
+      # regex catch-all: evaluates last, does not shadow the regexes above
+      - path: '^/.*'
+        methods: [ '*' ]
+        handler: proxy
+```
 
 ### Method Matching Scope
 
@@ -152,6 +186,9 @@ backends:
         # before replying to the client
         response_headers:
           Expires: '-1'
+        # a path-level CORS policy overrides the backend policy; see docs/cors.md
+        cors:
+          mode: preserve
       - path: /images/
         methods:
           - GET

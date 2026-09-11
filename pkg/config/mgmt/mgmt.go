@@ -18,19 +18,25 @@ package mgmt
 
 import (
 	"errors"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
 // Options is a collection of configurations for trickster management features
 type Options struct {
-	// ListenAddress is IP address from which the Reload API is available at ReloadHandlerPath
+	// ListenAddress (DEPRECATED) is IP address from which the Reload API is available at ReloadHandlerPath
+	// This is now auto-defined in the 'listeners' with defaults and can be overridden in the yaml config
 	ListenAddress string `yaml:"listen_address,omitempty"`
-	// ListenPort is TCP Port from which the Reload API is available at ReloadHandlerPath
+	// ListenPort (DEPRECATED) is TCP Port from which the Reload API is available at ReloadHandlerPath
+	// This is now auto-defined in the 'listeners' with defaults and can be overridden in the yaml config
 	ListenPort int `yaml:"listen_port,omitempty"`
+	//
 	// ConfigHandlerPath provides the path to register the Config Handler for outputting the running configuration
 	ConfigHandlerPath string `yaml:"config_handler_path,omitempty"`
+	// ConfigHandlerListener provides the name of the HTTP listener that will host the config routes
+	// Options are: "metrics", "mgmt", "both", or "off"; default is mgmt
+	ConfigHandlerListener string `yaml:"config_handler_listener,omitempty"`
 	// PingHandlerPath provides the path to register the Ping Handler for checking that Trickster is running
 	PingHandlerPath string `yaml:"ping_handler_path,omitempty"`
 	// HealthHandlerPath provides the base Health Check Handler path
@@ -39,51 +45,77 @@ type Options struct {
 	PurgeByKeyHandlerPath string `yaml:"purge_by_key_path,omitempty"`
 	// PurgeByKeyHandlerPath provides the base Cache Purge-by-Path Handler path
 	PurgeByPathHandlerPath string `yaml:"purge_by_path_path,omitempty"`
-	// PprofServer provides the name of the http listener that will host the pprof debugging routes
+	// CertificatesHandlerPath provides the path to register the read-only TLS
+	// certificate inventory handler
+	CertificatesHandlerPath string `yaml:"certificates_handler_path,omitempty"`
+	// PprofListener provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "mgmt", "both", or "off"; default is both
-	PprofServer string `yaml:"pprof_server,omitempty"`
+	PprofListener string `yaml:"pprof_listener,omitempty"`
 	//
 	// ReloadHandlerPath provides the path to register the Config Reload Handler
-	ReloadHandlerPath string `yaml:"handler_path,omitempty"`
+	ReloadHandlerPath string `yaml:"reload_handler_path,omitempty"`
 	// ReloadDrainTimeout provides the duration to wait for all sessions to drain before closing
 	// old resources following a reload
-	ReloadDrainTimeout time.Duration `yaml:"drain_timeout,omitempty"`
+	ReloadDrainTimeout timeconv.Duration `yaml:"reload_drain_timeout,omitempty"`
 	// ReloadRateLimit limits the # of handled config reload HTTP requests to 1 per CheckRateMS
 	// if multiple HTTP requests are received in the rate limit window, only the first is handled
 	// This prevents a bad actor from stating the config file with millions of concurrent requests
 	// The rate limit does not apply to SIGHUP-based reload requests
-	ReloadRateLimit time.Duration `yaml:"rate_limit,omitempty"`
+	ReloadRateLimit timeconv.Duration `yaml:"reload_rate_limit,omitempty"`
+	// AutoReloadInterval controls how often Trickster checks its effective configuration
+	// sources for changes. A zero value disables automatic reloads.
+	AutoReloadInterval timeconv.Duration `yaml:"auto_reload_interval,omitempty"`
 }
 
-// ErrInvalidPprofServerName returns an error for invalid pprof server name
-var ErrInvalidPprofServerName = errors.New("invalid pprof server name")
+// ErrInvalidPprofListenerName returns an error for invalid pprof listener name
+var ErrInvalidPprofListenerName = errors.New("invalid pprof listener name")
+
+// ErrInvalidConfigHandlerListenerName returns an error for an invalid config handler listener name
+var ErrInvalidConfigHandlerListenerName = errors.New("invalid config handler listener name")
+
+// ErrInvalidAutoReloadInterval indicates that the configured interval is negative.
+var ErrInvalidAutoReloadInterval = errors.New("auto reload interval cannot be negative")
 
 // New returns a new Options references with Default Values set
 func New() *Options {
 	return &Options{
-		ListenPort:             DefaultPort,
-		ListenAddress:          DefaultAddress,
-		ConfigHandlerPath:      DefaultConfigHandlerPath,
-		PingHandlerPath:        DefaultPingHandlerPath,
-		HealthHandlerPath:      DefaultHealthHandlerPath,
-		PurgeByKeyHandlerPath:  DefaultPurgeByKeyHandlerPath,
-		PurgeByPathHandlerPath: DefaultPurgeByPathHandlerPath,
-		PprofServer:            DefaultPprofServerName,
-		ReloadHandlerPath:      DefaultReloadHandlerPath,
-		ReloadDrainTimeout:     DefaultDrainTimeout,
-		ReloadRateLimit:        DefaultRateLimit,
+		ListenPort:              DefaultPort,
+		ListenAddress:           DefaultAddress,
+		ConfigHandlerPath:       DefaultConfigHandlerPath,
+		ConfigHandlerListener:   DefaultConfigHandlerListenerName,
+		PingHandlerPath:         DefaultPingHandlerPath,
+		HealthHandlerPath:       DefaultHealthHandlerPath,
+		PurgeByKeyHandlerPath:   DefaultPurgeByKeyHandlerPath,
+		PurgeByPathHandlerPath:  DefaultPurgeByPathHandlerPath,
+		CertificatesHandlerPath: DefaultCertificatesHandlerPath,
+		PprofListener:           DefaultPprofListenerName,
+		ReloadHandlerPath:       DefaultReloadHandlerPath,
+		ReloadDrainTimeout:      timeconv.Duration(DefaultDrainTimeout),
+		ReloadRateLimit:         timeconv.Duration(DefaultRateLimit),
 	}
 }
 
 func (o *Options) Validate() error {
-	switch o.PprofServer {
-	case "metrics", "management", "off", "both":
+	if o.AutoReloadInterval < 0 {
+		return ErrInvalidAutoReloadInterval
+	}
+
+	switch o.ConfigHandlerListener {
+	case ListenerNameMetrics, ListenerNameMgmt, ListenerNameOff, ListenerNameBoth:
+	case "":
+		o.ConfigHandlerListener = DefaultConfigHandlerListenerName
+	default:
+		return ErrInvalidConfigHandlerListenerName
+	}
+
+	switch o.PprofListener {
+	case ListenerNameMetrics, ListenerNameMgmt, ListenerNameOff, ListenerNameBoth:
 		return nil
 	case "":
-		o.PprofServer = DefaultPprofServerName
+		o.PprofListener = DefaultPprofListenerName
 		return nil
 	}
-	return ErrInvalidPprofServerName
+	return ErrInvalidPprofListenerName
 }
 
 func (o *Options) Clone() *Options {

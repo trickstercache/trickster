@@ -24,7 +24,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
-	"sort"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
@@ -80,7 +80,7 @@ func (mbrs MultipartByteRanges) Body(fullContentLength int64, contentType string
 
 	// otherwise, we return a multipart response
 
-	sort.Sort(ranges)
+	slices.SortFunc(ranges, rangeCmp)
 
 	boundary := md5.Checksum(ranges.String())
 	bw := bytes.NewBuffer(make([]byte, 0))
@@ -118,33 +118,34 @@ func (mbrs MultipartByteRanges) Ranges() Ranges {
 		k++
 	}
 	ranges = ranges[:k]
-	sort.Sort(ranges)
+	slices.SortFunc(ranges, rangeCmp)
 	return ranges
 }
 
-// Compress will take a Multipart Byte Range Map and compress it such that adajecent ranges are merged
+// Compress will take a Multipart Byte Range Map and compress it such that adjacent ranges are merged
 func (mbrs MultipartByteRanges) Compress() {
-	if len(mbrs.Ranges()) < 2 {
+	ranges := mbrs.Ranges() // sorted
+	if len(ranges) < 2 {
 		return
 	}
-	var cnt int
-	for len(mbrs) != cnt {
-		cnt = len(mbrs)
-		var prev *MultipartByteRange
-		for _, r := range mbrs.Ranges() {
-			curr := mbrs[r]
-			if prev != nil && r.Start == prev.Range.End+1 {
-				newPart := &MultipartByteRange{Range: Range{Start: prev.Range.Start, End: curr.Range.End}}
-				l := newPart.Range.End - newPart.Range.Start + 1
-				body := make([]byte, l)
-				copy(body[:len(prev.Content)], prev.Content)
-				copy(body[len(prev.Content):], curr.Content)
-				newPart.Content = body
-				delete(mbrs, r)
-				delete(mbrs, prev.Range)
-				mbrs[newPart.Range] = newPart
-				curr = newPart
-			}
+	// Single-pass merge over sorted ranges
+	prev := mbrs[ranges[0]]
+	for i := 1; i < len(ranges); i++ {
+		r := ranges[i]
+		curr := mbrs[r]
+		if r.Start == prev.Range.End+1 {
+			// Merge curr into prev
+			newPart := &MultipartByteRange{Range: Range{Start: prev.Range.Start, End: curr.Range.End}}
+			l := newPart.Range.End - newPart.Range.Start + 1
+			body := make([]byte, l)
+			copy(body[:len(prev.Content)], prev.Content)
+			copy(body[len(prev.Content):], curr.Content)
+			newPart.Content = body
+			delete(mbrs, r)
+			delete(mbrs, prev.Range)
+			mbrs[newPart.Range] = newPart
+			prev = newPart
+		} else {
 			prev = curr
 		}
 	}

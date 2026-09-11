@@ -1,0 +1,541 @@
+{
+  "id": "projects/my-project/aggregated/instances",
+  "items": {
+    "zones/africa-south1-a": {
+      "warning": {
+        "code": "NO_RESULTS_ON_PAGE",
+        "data": [
+          {
+            "key": "scope",
+            "value": "zones/africa-south1-a"
+          }
+        ],
+        "message": "No results for the scope 'zones/africa-south1-a'."
+      }
+    },
+    "zones/africa-south1-b": {
+      "warning": {
+        "code": "NO_RESULTS_ON_PAGE",
+        "data": [
+          {
+            "key": "scope",
+            "value": "zones/africa-south1-b"
+          }
+        ],
+        "message": "No results for the scope 'zones/africa-south1-b'."
+      }
+    },
+    "zones/africa-south1-c": {
+      "warning": {
+        "code": "NO_RESULTS_ON_PAGE",
+        "data": [
+          {
+            "key": "scope",
+            "value": "zones/africa-south1-c"
+          }
+        ],
+        "message": "No results for the scope 'zones/africa-south1-c'."
+      }
+    },
+    "zones/asia-east1-a": {
+      "warning": {
+        "code": "NO_RESULTS_ON_PAGE",
+        "data": [
+          {
+            "key": "scope",
+            "value": "zones/asia-east1-a"
+          }
+        ],
+        "message": "No results for the scope 'zones/asia-east1-a'."
+      }
+    },
+    "zones/us-central1-a": {
+      "instances": [
+        {
+          "canIpForward": false,
+          "cpuPlatform": "AMD Rome",
+          "creationTimestamp": "2026-08-31T11:31:04.851-07:00",
+          "deletionProtection": false,
+          "disks": [
+            {
+              "architecture": "X86_64",
+              "autoDelete": true,
+              "boot": true,
+              "deviceName": "persistent-disk-0",
+              "diskSizeGb": "10",
+              "guestOsFeatures": [
+                {
+                  "type": "UEFI_COMPATIBLE"
+                },
+                {
+                  "type": "VIRTIO_SCSI_MULTIQUEUE"
+                },
+                {
+                  "type": "GVNIC"
+                },
+                {
+                  "type": "SEV_CAPABLE"
+                },
+                {
+                  "type": "SEV_LIVE_MIGRATABLE_V2"
+                }
+              ],
+              "index": 0,
+              "interface": "SCSI",
+              "kind": "compute#attachedDisk",
+              "licenses": [
+                "https://www.googleapis.com/compute/v1/projects/debian-cloud/global/licenses/debian-12-bookworm"
+              ],
+              "mode": "READ_WRITE",
+              "source": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/disks/trickster-sd-1",
+              "type": "PERSISTENT"
+            }
+          ],
+          "fingerprint": "OI6jmNzHFkg=",
+          "id": "4943751108703581831",
+          "kind": "compute#instance",
+          "labelFingerprint": "kXRoUB2J11k=",
+          "labels": {
+            "service": "prometheus",
+            "trickster-port": "9090"
+          },
+          "lastStartTimestamp": "2026-08-31T11:31:15.319-07:00",
+          "machineType": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/machineTypes/e2-micro",
+          "metadata": {
+            "fingerprint": "0djVEMWCi8c=",
+            "kind": "compute#metadata"
+          },
+          "name": "trickster-sd-1",
+          "networkInterfaces": [
+            {
+              "accessConfigs": [
+                {
+                  "kind": "compute#accessConfig",
+                  "name": "external-nat",
+                  "natIP": "203.0.113.12",
+                  "networkTier": "PREMIUM",
+                  "type": "ONE_TO_ONE_NAT"
+                }
+              ],
+              "fingerprint": "qsCti8ld6Sg=",
+              "kind": "compute#networkInterface",
+              "name": "nic0",
+              "network": "https://www.googleapis.com/compute/v1/projects/my-project/global/networks/default",
+              "networkIP": "10.128.0.2",
+              "stackType": "IPV4_ONLY",
+              "subnetwork": "https://www.googleapis.com/compute/v1/projects/my-project/regions/us-central1/subnetworks/default"
+            }
+          ],
+          "resourceStatus": {
+            "effectiveInstanceMetadata": {
+              "vmDnsSettingMetadataValue": "ZonalOnly"
+            }
+          },
+          "satisfiesPzi": true,
+          "scheduling": {
+            "automaticRestart": true,
+            "onHostMaintenance": "MIGRATE",
+            "preemptible": false,
+            "provisioningModel": "STANDARD"
+          },
+          "selfLink": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/trickster-sd-1",
+          "serviceAccounts": [
+            {
+              "email": "123456789012-compute@developer.gserviceaccount.com",
+              "scopes": [
+                "https://www.googleapis.com/auth/devstorage.read_only",
+                "https://www.googleapis.com/auth/logging.write",
+                "https://www.googleapis.com/auth/monitoring.write",
+                "https://www.googleapis.com/auth/pubsub",
+                "https://www.googleapis.com/auth/service.management.readonly",
+                "https://www.googleapis.com/auth/servicecontrol",
+                "https://www.googleapis.com/auth/trace.append"
+              ]
+            }
+          ],
+          "shieldedInstanceConfig": {
+            "enableIntegrityMonitoring": true,
+            "enableSecureBoot": false,
+            "enableVtpm": true
+          },
+          "shieldedInstanceIntegrityPolicy": {
+            "updateAutoLearnPolicy": true
+          },
+          "startRestricted": false,
+          "status": "RUNNING",
+          "tags": {
+            "fingerprint": "NWuKTGvYc2o=",
+            "items": [
+              "http-server",
+              "prom"
+            ]
+          },
+          "zone": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a"
+        },
+        {
+          "canIpForward": false,
+          "cpuPlatform": "AMD Rome",
+          "creationTimestamp": "2026-08-31T11:31:05.075-07:00",
+          "deletionProtection": false,
+          "disks": [
+            {
+              "architecture": "X86_64",
+              "autoDelete": true,
+              "boot": true,
+              "deviceName": "persistent-disk-0",
+              "diskSizeGb": "10",
+              "guestOsFeatures": [
+                {
+                  "type": "UEFI_COMPATIBLE"
+                },
+                {
+                  "type": "VIRTIO_SCSI_MULTIQUEUE"
+                },
+                {
+                  "type": "GVNIC"
+                },
+                {
+                  "type": "SEV_CAPABLE"
+                },
+                {
+                  "type": "SEV_LIVE_MIGRATABLE_V2"
+                }
+              ],
+              "index": 0,
+              "interface": "SCSI",
+              "kind": "compute#attachedDisk",
+              "licenses": [
+                "https://www.googleapis.com/compute/v1/projects/debian-cloud/global/licenses/debian-12-bookworm"
+              ],
+              "mode": "READ_WRITE",
+              "source": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/disks/trickster-sd-2",
+              "type": "PERSISTENT"
+            }
+          ],
+          "fingerprint": "IjOuBdieyPo=",
+          "id": "6071364935130576519",
+          "kind": "compute#instance",
+          "labelFingerprint": "kXRoUB2J11k=",
+          "labels": {
+            "service": "prometheus",
+            "trickster-port": "9090"
+          },
+          "lastStartTimestamp": "2026-08-31T11:31:14.010-07:00",
+          "machineType": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/machineTypes/e2-micro",
+          "metadata": {
+            "fingerprint": "0djVEMWCi8c=",
+            "kind": "compute#metadata"
+          },
+          "name": "trickster-sd-2",
+          "networkInterfaces": [
+            {
+              "accessConfigs": [
+                {
+                  "kind": "compute#accessConfig",
+                  "name": "external-nat",
+                  "natIP": "203.0.113.11",
+                  "networkTier": "PREMIUM",
+                  "type": "ONE_TO_ONE_NAT"
+                }
+              ],
+              "fingerprint": "RpID91B-bE8=",
+              "kind": "compute#networkInterface",
+              "name": "nic0",
+              "network": "https://www.googleapis.com/compute/v1/projects/my-project/global/networks/default",
+              "networkIP": "10.128.0.3",
+              "stackType": "IPV4_ONLY",
+              "subnetwork": "https://www.googleapis.com/compute/v1/projects/my-project/regions/us-central1/subnetworks/default"
+            }
+          ],
+          "resourceStatus": {
+            "effectiveInstanceMetadata": {
+              "vmDnsSettingMetadataValue": "ZonalOnly"
+            }
+          },
+          "satisfiesPzi": true,
+          "scheduling": {
+            "automaticRestart": true,
+            "onHostMaintenance": "MIGRATE",
+            "preemptible": false,
+            "provisioningModel": "STANDARD"
+          },
+          "selfLink": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/trickster-sd-2",
+          "serviceAccounts": [
+            {
+              "email": "123456789012-compute@developer.gserviceaccount.com",
+              "scopes": [
+                "https://www.googleapis.com/auth/devstorage.read_only",
+                "https://www.googleapis.com/auth/logging.write",
+                "https://www.googleapis.com/auth/monitoring.write",
+                "https://www.googleapis.com/auth/pubsub",
+                "https://www.googleapis.com/auth/service.management.readonly",
+                "https://www.googleapis.com/auth/servicecontrol",
+                "https://www.googleapis.com/auth/trace.append"
+              ]
+            }
+          ],
+          "shieldedInstanceConfig": {
+            "enableIntegrityMonitoring": true,
+            "enableSecureBoot": false,
+            "enableVtpm": true
+          },
+          "shieldedInstanceIntegrityPolicy": {
+            "updateAutoLearnPolicy": true
+          },
+          "startRestricted": false,
+          "status": "RUNNING",
+          "tags": {
+            "fingerprint": "NWuKTGvYc2o=",
+            "items": [
+              "http-server",
+              "prom"
+            ]
+          },
+          "zone": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a"
+        },
+        {
+          "canIpForward": false,
+          "cpuPlatform": "AMD Rome",
+          "creationTimestamp": "2026-08-31T11:31:39.412-07:00",
+          "deletionProtection": false,
+          "disks": [
+            {
+              "architecture": "X86_64",
+              "autoDelete": true,
+              "boot": true,
+              "deviceName": "persistent-disk-0",
+              "diskSizeGb": "10",
+              "guestOsFeatures": [
+                {
+                  "type": "UEFI_COMPATIBLE"
+                },
+                {
+                  "type": "VIRTIO_SCSI_MULTIQUEUE"
+                },
+                {
+                  "type": "GVNIC"
+                },
+                {
+                  "type": "SEV_CAPABLE"
+                },
+                {
+                  "type": "SEV_LIVE_MIGRATABLE_V2"
+                }
+              ],
+              "index": 0,
+              "interface": "SCSI",
+              "kind": "compute#attachedDisk",
+              "licenses": [
+                "https://www.googleapis.com/compute/v1/projects/debian-cloud/global/licenses/debian-12-bookworm"
+              ],
+              "mode": "READ_WRITE",
+              "source": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/disks/trickster-sd-noaddr",
+              "type": "PERSISTENT"
+            }
+          ],
+          "fingerprint": "baVLurwieic=",
+          "id": "219500384064403044",
+          "kind": "compute#instance",
+          "labelFingerprint": "kXRoUB2J11k=",
+          "labels": {
+            "service": "prometheus",
+            "trickster-port": "9090"
+          },
+          "lastStartTimestamp": "2026-08-31T11:31:48.550-07:00",
+          "machineType": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/machineTypes/e2-micro",
+          "metadata": {
+            "fingerprint": "0djVEMWCi8c=",
+            "kind": "compute#metadata"
+          },
+          "name": "trickster-sd-noaddr",
+          "networkInterfaces": [
+            {
+              "fingerprint": "SueskdQzruI=",
+              "kind": "compute#networkInterface",
+              "name": "nic0",
+              "network": "https://www.googleapis.com/compute/v1/projects/my-project/global/networks/default",
+              "networkIP": "10.128.0.5",
+              "stackType": "IPV4_ONLY",
+              "subnetwork": "https://www.googleapis.com/compute/v1/projects/my-project/regions/us-central1/subnetworks/default"
+            }
+          ],
+          "resourceStatus": {
+            "effectiveInstanceMetadata": {
+              "vmDnsSettingMetadataValue": "ZonalOnly"
+            }
+          },
+          "satisfiesPzi": true,
+          "scheduling": {
+            "automaticRestart": true,
+            "onHostMaintenance": "MIGRATE",
+            "preemptible": false,
+            "provisioningModel": "STANDARD"
+          },
+          "selfLink": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a/instances/trickster-sd-noaddr",
+          "serviceAccounts": [
+            {
+              "email": "123456789012-compute@developer.gserviceaccount.com",
+              "scopes": [
+                "https://www.googleapis.com/auth/devstorage.read_only",
+                "https://www.googleapis.com/auth/logging.write",
+                "https://www.googleapis.com/auth/monitoring.write",
+                "https://www.googleapis.com/auth/pubsub",
+                "https://www.googleapis.com/auth/service.management.readonly",
+                "https://www.googleapis.com/auth/servicecontrol",
+                "https://www.googleapis.com/auth/trace.append"
+              ]
+            }
+          ],
+          "shieldedInstanceConfig": {
+            "enableIntegrityMonitoring": true,
+            "enableSecureBoot": false,
+            "enableVtpm": true
+          },
+          "shieldedInstanceIntegrityPolicy": {
+            "updateAutoLearnPolicy": true
+          },
+          "startRestricted": false,
+          "status": "RUNNING",
+          "tags": {
+            "fingerprint": "FYLDgkTKlA4=",
+            "items": [
+              "http-server"
+            ]
+          },
+          "zone": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-a"
+        }
+      ]
+    },
+    "zones/us-central1-b": {
+      "instances": [
+        {
+          "canIpForward": false,
+          "cpuPlatform": "Intel Broadwell",
+          "creationTimestamp": "2026-08-31T11:31:18.375-07:00",
+          "deletionProtection": false,
+          "disks": [
+            {
+              "architecture": "X86_64",
+              "autoDelete": true,
+              "boot": true,
+              "deviceName": "persistent-disk-0",
+              "diskSizeGb": "10",
+              "guestOsFeatures": [
+                {
+                  "type": "UEFI_COMPATIBLE"
+                },
+                {
+                  "type": "VIRTIO_SCSI_MULTIQUEUE"
+                },
+                {
+                  "type": "GVNIC"
+                },
+                {
+                  "type": "SEV_CAPABLE"
+                },
+                {
+                  "type": "SEV_LIVE_MIGRATABLE_V2"
+                }
+              ],
+              "index": 0,
+              "interface": "SCSI",
+              "kind": "compute#attachedDisk",
+              "licenses": [
+                "https://www.googleapis.com/compute/v1/projects/debian-cloud/global/licenses/debian-12-bookworm"
+              ],
+              "mode": "READ_WRITE",
+              "source": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-b/disks/trickster-sd-3",
+              "type": "PERSISTENT"
+            }
+          ],
+          "fingerprint": "X73c4-NmlPY=",
+          "id": "9083877454928967321",
+          "kind": "compute#instance",
+          "labelFingerprint": "nsZs3pGYLgY=",
+          "labels": {
+            "service": "prometheus"
+          },
+          "lastStartTimestamp": "2026-08-31T11:31:36.254-07:00",
+          "machineType": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-b/machineTypes/e2-micro",
+          "metadata": {
+            "fingerprint": "GcKXx7G1iak=",
+            "items": [
+              {
+                "key": "trickster-port",
+                "value": "9091"
+              }
+            ],
+            "kind": "compute#metadata"
+          },
+          "name": "trickster-sd-3",
+          "networkInterfaces": [
+            {
+              "accessConfigs": [
+                {
+                  "kind": "compute#accessConfig",
+                  "name": "external-nat",
+                  "natIP": "203.0.113.10",
+                  "networkTier": "PREMIUM",
+                  "type": "ONE_TO_ONE_NAT"
+                }
+              ],
+              "fingerprint": "wZdpHEF__Pk=",
+              "kind": "compute#networkInterface",
+              "name": "nic0",
+              "network": "https://www.googleapis.com/compute/v1/projects/my-project/global/networks/default",
+              "networkIP": "10.128.0.4",
+              "stackType": "IPV4_ONLY",
+              "subnetwork": "https://www.googleapis.com/compute/v1/projects/my-project/regions/us-central1/subnetworks/default"
+            }
+          ],
+          "resourceStatus": {
+            "effectiveInstanceMetadata": {
+              "vmDnsSettingMetadataValue": "ZonalOnly"
+            }
+          },
+          "satisfiesPzi": true,
+          "scheduling": {
+            "automaticRestart": true,
+            "onHostMaintenance": "MIGRATE",
+            "preemptible": false,
+            "provisioningModel": "STANDARD"
+          },
+          "selfLink": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-b/instances/trickster-sd-3",
+          "serviceAccounts": [
+            {
+              "email": "123456789012-compute@developer.gserviceaccount.com",
+              "scopes": [
+                "https://www.googleapis.com/auth/devstorage.read_only",
+                "https://www.googleapis.com/auth/logging.write",
+                "https://www.googleapis.com/auth/monitoring.write",
+                "https://www.googleapis.com/auth/pubsub",
+                "https://www.googleapis.com/auth/service.management.readonly",
+                "https://www.googleapis.com/auth/servicecontrol",
+                "https://www.googleapis.com/auth/trace.append"
+              ]
+            }
+          ],
+          "shieldedInstanceConfig": {
+            "enableIntegrityMonitoring": true,
+            "enableSecureBoot": false,
+            "enableVtpm": true
+          },
+          "shieldedInstanceIntegrityPolicy": {
+            "updateAutoLearnPolicy": true
+          },
+          "startRestricted": false,
+          "status": "RUNNING",
+          "tags": {
+            "fingerprint": "FYLDgkTKlA4=",
+            "items": [
+              "http-server"
+            ]
+          },
+          "zone": "https://www.googleapis.com/compute/v1/projects/my-project/zones/us-central1-b"
+        }
+      ]
+    }
+  },
+  "kind": "compute#instanceAggregatedList",
+  "selfLink": "https://www.googleapis.com/compute/v1/projects/my-project/aggregated/instances"
+}

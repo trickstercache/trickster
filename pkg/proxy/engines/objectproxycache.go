@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -34,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -124,7 +126,7 @@ func handleCachePartialHit(pr *proxyRequest) error {
 func confirmTrueCacheHit(pr *proxyRequest) (bool, error) {
 	pr.cachingPolicy.Merge(pr.cacheDocument.CachingPolicy)
 
-	if (!pr.checkCacheFreshness()) && (pr.cachingPolicy.CanRevalidate) {
+	if (!pr.checkCacheFreshness()) && pr.cachingPolicy.CanRevalidate {
 		return false, handleCacheRevalidation(pr)
 	}
 	if !pr.cachingPolicy.IsFresh {
@@ -144,9 +146,7 @@ func handleCacheRangeMiss(pr *proxyRequest) error {
 }
 
 func handleCacheRevalidation(pr *proxyRequest) error {
-	rsc := request.GetResources(pr.Request)
-
-	_, span := tspan.NewChildSpan(pr.Request.Context(), rsc.Tracer, "CacheRevalidation")
+	_, span := tspan.NewChildSpan(pr.Request.Context(), pr.rsc.Tracer, "CacheRevalidation")
 	if span != nil {
 		defer func() {
 			reval := revalidationStatusValues[pr.revalidation]
@@ -157,6 +157,7 @@ func handleCacheRevalidation(pr *proxyRequest) error {
 			span.End()
 		}()
 	}
+	setResourceSpanAttributes(pr.rsc, span)
 
 	pr.revalidation = RevalStatusInProgress
 
@@ -240,11 +241,10 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 }
 
 func handleCacheKeyMiss(pr *proxyRequest) error {
-	rsc := request.GetResources(pr.Request)
-	pc := rsc.PathConfig
+	pc := pr.rsc.PathConfig
 
 	// if we're using PCF, handle that separately
-	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
+	if methods.IsCacheable(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
 		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
 			return err
@@ -290,8 +290,11 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 }
 
 func handlePCF(pr *proxyRequest) error {
-	rsc := request.GetResources(pr.Request)
-	o := rsc.BackendOptions
+	o := pr.rsc.BackendOptions
+
+	if o.MaxObjectSizeBytes <= 0 {
+		return errors.ErrPCFContentLength
+	}
 
 	pr.isPCF = true
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -303,24 +306,38 @@ func handlePCF(pr *proxyRequest) error {
 		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
 			pr.upstreamResponse.Header)
 		pr.mapLock.Unlock()
-		return pcf.AddClient(pr.responseWriter)
+		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			abortOnCopyError(pr.responseWriter, pr.Request, err)
+			return err
+		}
+		return nil
 	}
 
-	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), rsc.Tracer, "FetchObject")
+	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), pr.rsc.Tracer, "FetchObject")
 	if span != nil {
 		span.SetAttributes(attribute.Bool("isPCF", true))
 		defer span.End()
 	}
+	setResourceSpanAttributes(pr.rsc, span)
 	pr.upstreamRequest = pr.upstreamRequest.WithContext(ctx)
 
 	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
 	pr.upstreamResponse = resp
 
+	// decide before committing anything downstream, so a response that cannot be
+	// collapsed is served from this fetch rather than re-requested
+	var pcf ProgressiveCollapseForwarder
+	if (contentLength < 0 || (contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes))) &&
+		collapseEligible(pr.Request, resp.StatusCode, resp.Header, pr.rsc.PathConfig) {
+		pcf = NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
+	}
+	if pcf == nil {
+		return serveUncollapsed(pr, resp, reader)
+	}
+
 	pr.writeResponseHeader()
 	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
-	// Check if we know the content length and if it is less than our max object size.
-	if contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes) {
-		pcf := NewPCF(resp, contentLength)
+	{
 		actual, loaded := reqs.LoadOrStore(pr.key, pcf)
 		if loaded {
 			// Another goroutine created a PCF session first; join it instead.
@@ -331,31 +348,70 @@ func handlePCF(pr *proxyRequest) error {
 			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
 				pr.upstreamResponse.Header)
 			pr.mapLock.Unlock()
-			return existingPCF.AddClient(pr.responseWriter)
+			if err := existingPCF.AddClient(pr.responseWriter); err != nil {
+				abortOnCopyError(pr.responseWriter, pr.Request, err)
+				return err
+			}
+			return nil
 		}
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
-			rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
+			pr.rsc.BackendOptions.NegativeCache, pr.upstreamResponse.Header))
 		pr.determineCacheability()
 
-		go func() {
+		goWithRecover("opc.pcf.copy", func() {
+			defer func() {
+				if reader != nil {
+					reader.Close()
+				}
+			}()
+			defer reqs.Delete(pr.key)
 			var dest io.Writer = pcf
 			if pr.writeToCache {
 				pr.cacheBuffer = &bytes.Buffer{}
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			io.Copy(dest, reader)
-			pcf.Close()
-			reqs.Delete(pr.key)
-		}()
+			n, err := io.Copy(dest, reader)
+			switch {
+			case err != nil:
+				logger.Error("pcf upstream copy failed",
+					logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
+				pr.bodyTruncated.Store(true)
+				pcf.CloseWithError(err)
+			case pr.Method != http.MethodHead && contentLength > 0 && n < contentLength:
+				logger.Error("pcf upstream returned short body",
+					logging.Pairs{keys.Key: pr.key})
+				pr.bodyTruncated.Store(true)
+				pcf.CloseWithError(io.ErrUnexpectedEOF)
+			default:
+				pcf.Close()
+			}
+		})
 
 		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			abortOnCopyError(pr.responseWriter, pr.Request, err)
 			return err
 		}
 
 		return handleAllWrites(pr)
 	}
-	return errors.ErrPCFContentLength
+}
+
+// serveUncollapsed serves a response that reached the collapse path but cannot
+// be shared, reusing the fetch already in hand. Falling back to an independent
+// fetch would double the origin request and write the second body under this
+// response's already-committed status.
+func serveUncollapsed(pr *proxyRequest, resp *http.Response, reader io.ReadCloser) error {
+	pr.isPCF = false
+	pr.upstreamResponse = resp
+	pr.upstreamReader = reader
+	if reader != nil {
+		defer reader.Close()
+	}
+	pr.cachingPolicy.Merge(GetResponseCachingPolicy(resp.StatusCode,
+		pr.rsc.BackendOptions.NegativeCache, resp.Header))
+	pr.determineCacheability()
+	return handleAllWrites(pr)
 }
 
 func handleAllWrites(pr *proxyRequest) error {
@@ -363,6 +419,13 @@ func handleAllWrites(pr *proxyRequest) error {
 		return err
 	}
 	if pr.writeToCache {
+		// an object that ended early is not the object the origin advertised;
+		// storing it would serve a truncated body to every later requester
+		if pr.bodyTruncated.Load() {
+			logger.Warn("skipping cache write for truncated upstream response",
+				logging.Pairs{keys.Key: pr.key, keys.URL: pr.URL.String()})
+			return nil
+		}
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
 			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
 			pr.cacheDocument = d
@@ -419,12 +482,13 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		pr.upstreamRequest = pr.upstreamRequest.WithContext(trace.ContextWithSpan(pr.upstreamRequest.Context(), span))
 		defer span.End()
 	}
+	setResourceSpanAttributes(rsc, span)
 
 	pr.parseRequestRanges()
 
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 
-	pr.key = o.CacheKeyPrefix + ".opc." + pr.DeriveCacheKey("")
+	pr.key = ComposeCacheKey(o.Name, o.CacheKeyPrefix, "opc", pr.DeriveCacheKey(""))
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -433,6 +497,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {
 			cc.Remove(pr.key)
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyOnly.String()))
 			return nil, status.LookupStatusProxyOnly
 		}
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
@@ -441,8 +506,12 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
 		pr.mapLock.Unlock()
 		if err := pcf.AddClient(writer); err != nil {
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+			abortOnCopyError(writer, r, err)
 			return nil, status.LookupStatusError
 		}
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyHit.String()))
+		setHTTPStatusSpanAttributes(rsc.Tracer, pr.upstreamResponse.StatusCode, span)
 		return pr.upstreamResponse, status.LookupStatusProxyHit
 	}
 
@@ -498,7 +567,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			}
 		} else {
 			logger.Error("cache lookup error",
-				logging.Pairs{"detail": err.Error()})
+				logging.Pairs{keys.Detail: err.Error()})
 			pr.cacheDocument = nil
 			pr.cacheStatus = status.LookupStatusKeyMiss
 			if fErr := handleCacheKeyMiss(pr); fErr != nil {
@@ -527,16 +596,19 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	})
 
 	if sfErr != nil {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
 		return nil, status.LookupStatusError
 	}
 	result := val.(*opcResult)
 	if result.cacheStatus == status.LookupStatusProxyOnly {
+		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyOnly.String()))
 		return nil, status.LookupStatusProxyOnly
 	}
 
 	// only serve the shared result for waiters; the executor already wrote its response
 	if !isExecutor {
 		if err := serveOPCResult(pr, result); err != nil {
+			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
 			return nil, status.LookupStatusError
 		}
 	}
@@ -553,6 +625,8 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	}
 
 	recordOPCResult(pr, pr.cacheStatus, pr.upstreamResponse.StatusCode, r.URL.Path, result.elapsed, pr.upstreamResponse.Header)
+	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", pr.cacheStatus.String()))
+	setHTTPStatusSpanAttributes(rsc.Tracer, pr.upstreamResponse.StatusCode, span)
 
 	return pr.upstreamResponse, pr.cacheStatus
 }
@@ -591,6 +665,6 @@ func recordOPCResult(pr *proxyRequest, cacheStatus status.LookupStatus, httpStat
 	path string, elapsed float64, header http.Header,
 ) {
 	pr.mapLock.Lock()
-	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, header)
+	recordResults(pr.Request, "ObjectProxyCache", cacheStatus, httpStatus, path, "", elapsed, nil, nil, header)
 	pr.mapLock.Unlock()
 }

@@ -48,6 +48,9 @@ func TestQueryRangeHandler(t *testing.T) {
 	rsc.IsMergeMember = true
 
 	client.QueryRangeHandler(w, r)
+	if rsc.BatchMergeFunc == nil {
+		t.Error("expected query range merge member to configure BatchMergeFunc")
+	}
 
 	resp := w.Result()
 

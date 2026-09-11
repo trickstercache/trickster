@@ -20,6 +20,7 @@ package stdout
 import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+
 	"go.opentelemetry.io/otel/attribute"
 	stdout "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -52,17 +53,6 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 		return nil, err
 	}
 
-	var sampler sdktrace.Sampler
-
-	switch *opts.SampleRate {
-	case 0:
-		sampler = sdktrace.NeverSample()
-	case 1:
-		sampler = sdktrace.AlwaysSample()
-	default:
-		sampler = sdktrace.TraceIDRatioBased(*opts.SampleRate)
-	}
-
 	serviceKey := attribute.String("service.name", opts.ServiceName)
 
 	var tags []attribute.KeyValue
@@ -77,7 +67,7 @@ func New(opts *options.Options) (*tracing.Tracer, error) {
 	}
 
 	tp := sdktrace.NewTracerProvider(sdktrace.WithSyncer(exp),
-		sdktrace.WithSampler(sampler),
+		sdktrace.WithSampler(tracing.Sampler(opts)),
 		sdktrace.WithResource(resource.NewWithAttributes("", tags...)),
 	)
 

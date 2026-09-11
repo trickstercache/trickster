@@ -17,7 +17,7 @@
 package index
 
 import (
-	"sort"
+	"slices"
 	"testing"
 	"time"
 
@@ -26,7 +26,10 @@ import (
 
 func TestObjectFromBytes(t *testing.T) {
 	obj := &Object{}
-	b := obj.ToBytes()
+	b, err := obj.ToBytes()
+	if err != nil {
+		t.Fatal(err)
+	}
 	obj2, err := ObjectFromBytes(b)
 	if err != nil {
 		t.Error(err)
@@ -52,7 +55,7 @@ func TestSort(t *testing.T) {
 			LastAccess: *atomicx.NewTime(time.Unix(2, 0)),
 		},
 	}
-	sort.Sort(o)
+	slices.SortFunc(o, objectAtimeCmp)
 
 	if o[0].Key != "1" {
 		t.Errorf("expected %s got %s", "1", o[0].Key)

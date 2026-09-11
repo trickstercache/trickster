@@ -22,11 +22,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/influxdata/influxdb/models"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
+	"github.com/influxdata/influxdb/models"
 )
 
 const timeColumnName = "time"

@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 )
 
@@ -29,13 +30,13 @@ import (
 func RegisterRoutes(routerName string, r router.Router) {
 	logger.Info("registering pprof /debug routes", logging.Pairs{"routerName": routerName})
 	r.RegisterRoute("/debug/pprof/", nil, nil,
-		true, http.HandlerFunc(pprof.Index))
+		matching.PathMatchTypePrefix, http.HandlerFunc(pprof.Index))
 	r.RegisterRoute("/debug/pprof/cmdline", nil, nil,
-		false, http.HandlerFunc(pprof.Cmdline))
+		matching.PathMatchTypeExact, http.HandlerFunc(pprof.Cmdline))
 	r.RegisterRoute("/debug/pprof/profile", nil, nil,
-		false, http.HandlerFunc(pprof.Profile))
+		matching.PathMatchTypeExact, http.HandlerFunc(pprof.Profile))
 	r.RegisterRoute("/debug/pprof/symbol", nil, nil,
-		false, http.HandlerFunc(pprof.Symbol))
+		matching.PathMatchTypeExact, http.HandlerFunc(pprof.Symbol))
 	r.RegisterRoute("/debug/pprof/trace", nil, nil,
-		false, http.HandlerFunc(pprof.Trace))
+		matching.PathMatchTypeExact, http.HandlerFunc(pprof.Trace))
 }

@@ -21,10 +21,11 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dgraph-io/badger/v4"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+
+	"github.com/dgraph-io/badger/v4"
 )
 
 // CacheClient implements the cache.Client interface

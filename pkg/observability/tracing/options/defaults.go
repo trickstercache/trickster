@@ -21,4 +21,12 @@ const (
 	DefaultTracerProvider = "none"
 	// DefaultTracerServiceName is the default service name under which traces are registered
 	DefaultTracerServiceName = "trickster"
+	// ProviderOTLP is the OTLP distributed tracer exporter implementation
+	ProviderOTLP = "otlp"
+	// DefaultOTLPProtocol is the default OTLP transport protocol
+	DefaultOTLPProtocol = OTLPProtocolHTTP
+	// OTLPProtocolHTTP indicates OTLP over HTTP
+	OTLPProtocolHTTP = "http"
+	// OTLPProtocolGRPC indicates OTLP over gRPC
+	OTLPProtocolGRPC = "grpc"
 )

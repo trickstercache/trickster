@@ -19,7 +19,7 @@ package index
 
 import (
 	"bytes"
-	"sort"
+	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
@@ -64,9 +64,8 @@ func (o *Object) Equal(other *Object) bool {
 }
 
 // ToBytes returns a serialized byte slice representing the Object
-func (o *Object) ToBytes() []byte {
-	bytes, _ := o.MarshalMsg(nil)
-	return bytes
+func (o *Object) ToBytes() ([]byte, error) {
+	return o.MarshalMsg(nil)
 }
 
 // ObjectFromBytes returns a deserialized Cache Object from a serialized byte slice
@@ -102,7 +101,7 @@ func reap(cacheSize int64, objectCount int64, remainders objectsAtime, opts opti
 
 	removals = make([]string, 0)
 
-	sort.Sort(remainders)
+	slices.SortFunc(remainders, objectAtimeCmp)
 
 	var i int
 	j := len(remainders)

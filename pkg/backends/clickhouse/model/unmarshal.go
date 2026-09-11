@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	dcsv "github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/csv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -40,6 +40,22 @@ const dataStartRow = 2
 func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	buf := bytes.NewReader(data)
 	return UnmarshalTimeseriesReader(buf, trq)
+}
+
+// UnmarshalTimeseriesAuto dispatches to Native or TSV based on data content.
+// Without header hints, falls back to TSV (the default DPC wire format).
+func UnmarshalTimeseriesAuto(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	return UnmarshalTimeseries(data, trq)
+}
+
+// UnmarshalTimeseriesAutoReader auto-detects Native vs TSV from an io.Reader.
+// It checks the FormatHintReader wrapper set by the DPC engine from the
+// X-ClickHouse-Format response header.
+func UnmarshalTimeseriesAutoReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	if hr, ok := reader.(*timeseries.FormatHintReader); ok && strings.EqualFold(hr.Format, "Native") {
+		return UnmarshalTimeseriesNativeReader(hr.Reader, trq)
+	}
+	return UnmarshalTimeseriesReader(reader, trq)
 }
 
 // parser is safe for concurrency
@@ -176,11 +192,11 @@ func parseTimeField(input string, tfd timeseries.FieldDefinition) (epoch.Epoch, 
 	switch tfd.DataType {
 	case timeseries.DateTimeSQL:
 		parse = parseClickHouseTimestamp
-		timeLayout = lsql.SQLDateTimeLayout
+		timeLayout = timeconv.SQLDateTimeLayout
 	case timeseries.TimeSQL:
-		timeLayout = lsql.SQLTimeLayout
+		timeLayout = timeconv.SQLTimeLayout
 	case timeseries.DateSQL:
-		timeLayout = lsql.SQLDateLayout
+		timeLayout = timeconv.SQLDateLayout
 	case timeseries.DateTimeRFC3339Nano:
 		timeLayout = time.RFC3339Nano
 	default:
@@ -206,7 +222,7 @@ func parseTimeField(input string, tfd timeseries.FieldDefinition) (epoch.Epoch, 
 			}
 			return 0, timeseries.ErrInvalidTimeFormat
 		}
-		timeLayout = lsql.SQLDateTimeLayout
+		timeLayout = timeconv.SQLDateTimeLayout
 		parse = parseClickHouseTimestamp
 	}
 	t, err := parse(timeLayout, input)
@@ -218,12 +234,12 @@ func parseTimeField(input string, tfd timeseries.FieldDefinition) (epoch.Epoch, 
 
 func parseClickHouseTimestamp(_, input string) (time.Time, error) {
 	if !strings.Contains(input, ".") {
-		return time.Parse(lsql.SQLDateTimeLayout, input)
+		return time.Parse(timeconv.SQLDateTimeLayout, input)
 	}
 	// this splits the seconds+ part of the time from the sub-second part
 	parts := strings.SplitN(input, ".", 2)
 	if len(parts[1]) == 0 {
-		return time.Parse(lsql.SQLDateTimeLayout, strings.TrimSuffix(input, "."))
+		return time.Parse(timeconv.SQLDateTimeLayout, strings.TrimSuffix(input, "."))
 	}
 	if len(parts[1]) > 9 {
 		// this truncates sub-nanosecond values if present
@@ -232,23 +248,23 @@ func parseClickHouseTimestamp(_, input string) (time.Time, error) {
 	input = strings.Join(parts, ".")
 	switch len(parts[1]) {
 	case 1:
-		return time.Parse(lsql.SQLDateTimeSubSec1Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec1Layout, input)
 	case 2:
-		return time.Parse(lsql.SQLDateTimeSubSec2Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec2Layout, input)
 	case 3:
-		return time.Parse(lsql.SQLDateTimeSubSec3Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec3Layout, input)
 	case 4:
-		return time.Parse(lsql.SQLDateTimeSubSec4Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec4Layout, input)
 	case 5:
-		return time.Parse(lsql.SQLDateTimeSubSec5Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec5Layout, input)
 	case 6:
-		return time.Parse(lsql.SQLDateTimeSubSec6Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec6Layout, input)
 	case 7:
-		return time.Parse(lsql.SQLDateTimeSubSec7Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec7Layout, input)
 	case 8:
-		return time.Parse(lsql.SQLDateTimeSubSec8Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec8Layout, input)
 	case 9:
-		return time.Parse(lsql.SQLDateTimeSubSec9Layout, input)
+		return time.Parse(timeconv.SQLDateTimeSubSec9Layout, input)
 	}
-	return time.Parse(lsql.SQLDateTimeLayout, input)
+	return time.Parse(timeconv.SQLDateTimeLayout, input)
 }

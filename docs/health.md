@@ -14,12 +14,12 @@ The main health check path is `/trickster/health`, which by default will return 
 
 ### Backend-Specific Endpoints
 
-Each configured backend's health check path is `/trickster/health/BACKEND_NAME`. For example, if your backend is named `foo`, you can perform a health check of the upstream server at `http://<trickster_address:port>/trickster/health/foo`.
+Each HTTP backend's health check path is `/trickster/health/BACKEND_NAME`. For example, if your backend is named `foo`, you can perform a health check of the upstream server at `http://<trickster_address:port>/trickster/health/foo`. Native-protocol backends publish their scheduled status through the general endpoint without registering a synthetic HTTP origin route.
 
 The backend health path prefix `/trickster/health/` is customizable. See the [example.full.yaml](../examples/conf/example.full.yaml) for more info about setting the `health_handler_path` configuration, or refer to this example:
 
 ```yaml
-frontend:
+mgmt:
   # this overrides the default '/trickster/health' to '/-/trickster/health'
   health_handler_path: /-/trickster/health
 ```
@@ -29,6 +29,32 @@ The behavior of a `health` request will vary based on the Backend provider, as e
 Supported TSDB Providers are pre-configured in Trickster to perform a suitable health check operation, however these can be overridden in the configuration file.
 
 For non-TSDB Backends, the default behavior is to make a `GET` request to `http://origin_url:port/` and expect a 2xx response. However, all aspects of the Health Check request and expected response are configurable per-Backend.
+
+### Native MySQL Health Checks
+
+The MySQL backend uses the same interval scheduler, timeout, transition
+thresholds, status registry, metrics, reload carryover, and shutdown lifecycle
+as HTTP health checks. Each probe opens a fresh connection with the backend's
+configured origin credentials and TLS policy, completes authentication,
+executes `COM_PING`, and closes the connection.
+
+```yaml
+backends:
+  mysql1:
+    provider: mysql
+    origin_url: mysql://health-user:password@mysql.example:3306/analytics
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      failure_threshold: 3
+      recovery_threshold: 3
+```
+
+Only `interval`, `timeout`, `failure_threshold`, and `recovery_threshold` apply
+to native probes. HTTP verbs, paths, headers, bodies, and expected HTTP response
+options are configuration errors for MySQL. Diagnostics exposed in health
+status and logs are limited to sanitized authentication, TLS, timeout,
+refused-connection, connection, and server-error categories.
 
 ### Basic Health Check Configuration Example
 
@@ -101,6 +127,8 @@ backends:
       failure_threshold: 3  # backend is unhealthy after 3 consecutive failures
       recovery_threshold: 3 # backend is healthy after 3 consecutive successes
 ```
+
+The Prometheus default probe is `/api/v1/query?query=up`. Some multi-tenant Prometheus gateways reject an unbounded `up` with `400 bad_data: "too many series found"`, which keeps the member out of any ALB pool it belongs to. Override `healthcheck.query` with a bounded expression the backend accepts (for example `query=vector(1)`) when probing such backends.
 
 ## Other Ways to Monitor Health
 

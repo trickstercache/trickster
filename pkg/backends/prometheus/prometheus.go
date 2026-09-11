@@ -32,10 +32,11 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	tt "github.com/trickstercache/trickster/v2/pkg/util/timeconv"
 )
 
 var (
@@ -45,18 +46,25 @@ var (
 
 // Prometheus API
 const (
-	APIPath         = "/api/v1/"
-	mnQueryRange    = "query_range"
-	mnQuery         = "query"
-	mnLabels        = "labels"
-	mnLabel         = "label"
-	mnSeries        = "series"
-	mnTargets       = "targets"
-	mnTargetsMeta   = "targets/metadata"
-	mnRules         = "rules"
-	mnAlerts        = "alerts"
-	mnAlertManagers = "alertmanagers"
-	mnStatus        = "status"
+	APIPath           = "/api/v1/"
+	mnQueryRange      = "query_range"
+	mnQuery           = "query"
+	mnLabels          = "labels"
+	mnLabel           = "label"
+	mnSeries          = "series"
+	mnTargets         = "targets"
+	mnTargetsMeta     = "targets/metadata"
+	mnRules           = "rules"
+	mnAlerts          = "alerts"
+	mnAlertManagers   = "alertmanagers"
+	mnStatus          = "status"
+	mnQueryExemplars  = "query_exemplars"
+	mnMetadata        = "metadata"
+	mnFormatQuery     = "format_query"
+	mnParseQuery      = "parse_query"
+	mnScrapePools     = "scrape_pools"
+	mnFeatures        = "features"
+	mnNotificationsLv = "notifications/live"
 )
 
 // Common URL Parameter Names
@@ -69,6 +77,34 @@ const (
 	upMatch = "match[]"
 )
 
+// containsOffsetKeyword reports whether stmt contains the PromQL " offset "
+// keyword outside of curly-brace selectors and double-quoted strings.
+// This avoids false positives from UTF-8 metric/label names like
+// {"metric offset name"} that became valid in Prometheus 3.0+.
+func containsOffsetKeyword(stmt string) bool {
+	const target = " offset "
+	depth := 0
+	inQuote := false
+	for i := 0; i < len(stmt); i++ {
+		switch {
+		case stmt[i] == '\\' && inQuote:
+			i++ // skip escaped character
+		case stmt[i] == '"':
+			inQuote = !inQuote
+		case inQuote:
+			continue
+		case stmt[i] == '{':
+			depth++
+		case stmt[i] == '}' && depth > 0:
+			depth--
+		case depth == 0 && i+len(target) <= len(stmt) &&
+			stmt[i:i+len(target)] == target:
+			return true
+		}
+	}
+	return false
+}
+
 // roundTimestampParameterToMinute rounds a specific timestamp parameter down to the minute for cacheability
 func roundTimestampParameterToMinute(qp url.Values, paramName string) {
 	if p := qp.Get(paramName); p != "" {
@@ -78,10 +114,30 @@ func roundTimestampParameterToMinute(qp url.Values, paramName string) {
 	}
 }
 
-// roundTimestampsToMinute rounds start and end timestamp parameters down to the minute for cacheability
+// roundEndTimestampParameterToMinute rounds an end-of-window timestamp up to the
+// next minute boundary. Rounding down can silently drop up to 59s of the newest
+// data when the caller's `end` is mid-minute, which surfaces as empty /series
+// and /labels responses immediately after Prometheus starts scraping. Rounding
+// up keeps recent samples in-window while still producing stable cache keys.
+func roundEndTimestampParameterToMinute(qp url.Values, paramName string) {
+	if p := qp.Get(paramName); p != "" {
+		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
+			t := time.Unix(i, 0)
+			rounded := t.Truncate(time.Minute)
+			if !rounded.Equal(t) {
+				rounded = rounded.Add(time.Minute)
+			}
+			qp.Set(paramName, strconv.FormatInt(rounded.Unix(), 10))
+		}
+	}
+}
+
+// roundTimestampsToMinute aligns start and end timestamps to minute boundaries
+// for cacheability: start rounds down, end rounds up so the queried window
+// still covers all samples the caller asked about.
 func roundTimestampsToMinute(qp url.Values) {
 	roundTimestampParameterToMinute(qp, upStart)
-	roundTimestampParameterToMinute(qp, upEnd)
+	roundEndTimestampParameterToMinute(qp, upEnd)
 }
 
 // Client Implements Proxy Client Interface
@@ -90,6 +146,18 @@ type Client struct {
 	instantRounder     time.Duration
 	hasTransformations bool
 	injectLabels       map[string]string
+}
+
+// captureLimit returns the per-response capture buffer cap for c. Reads
+// max_capture_bytes from the backend's configuration; falls back to the
+// package-level default when unset.
+func captureLimit(c *Client) int {
+	if c != nil {
+		if o := c.Configuration(); o != nil && o.MaxCaptureBytes > 0 {
+			return o.MaxCaptureBytes
+		}
+	}
+	return capture.DefaultMaxBytes
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -104,17 +172,17 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
 
-	rounder := po.DefaultInstantRound
+	rounder := tt.Duration(po.DefaultInstantRound)
 	if o != nil {
 		if o.Prometheus == nil {
-			o.Prometheus = &po.Options{InstantRound: po.DefaultInstantRound}
+			o.Prometheus = &po.Options{InstantRound: tt.Duration(po.DefaultInstantRound)}
 		} else {
 			rounder = o.Prometheus.InstantRound
 			c.injectLabels = o.Prometheus.Labels
 			c.hasTransformations = len(c.injectLabels) > 0
 		}
 	}
-	c.instantRounder = rounder
+	c.instantRounder = time.Duration(rounder)
 
 	return c, err
 }
@@ -189,7 +257,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	trq.Step = step
 
-	if strings.Contains(trq.Statement, " offset ") {
+	if containsOffsetKeyword(trq.Statement) {
 		trq.IsOffset = true
 		rlo.FastForwardDisable = true
 	}
@@ -234,7 +302,7 @@ func parseVectorQuery(r *http.Request, rounder time.Duration) (*timeseries.TimeR
 		trq.Extent.Start = time.Now().Truncate(rounder)
 	}
 
-	if strings.Contains(trq.Statement, " offset ") {
+	if containsOffsetKeyword(trq.Statement) {
 		trq.IsOffset = true
 	}
 

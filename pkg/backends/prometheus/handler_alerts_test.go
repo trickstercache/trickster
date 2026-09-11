@@ -17,6 +17,8 @@
 package prometheus
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -24,31 +26,56 @@ import (
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
 
-func TestAlertsHandler(t *testing.T) {
+func newAlertsTestClient(t *testing.T) (*Client, *request.Resources, *http.Request, *httptest.ResponseRecorder) {
+	t.Helper()
 	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	ts, w, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs, 200,
-		"{}", nil, providers.Prometheus, "/health", "debug")
+		`{"status":"success","data":{"alerts":[]}}`, nil,
+		providers.Prometheus, "/api/v1/alerts", "debug")
 	if err != nil {
-		t.Error(err)
-	} else {
-		defer ts.Close()
+		t.Fatal(err)
 	}
+	t.Cleanup(ts.Close)
 	rsc := request.GetResources(r)
 	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	client := backendClient.(*Client)
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	return client, rsc, r, w
+}
+
+func TestAlertsHandler_MergeMember_WiresFuncsAndProxies(t *testing.T) {
+	client, rsc, r, w := newAlertsTestClient(t)
 	rsc.IsMergeMember = true
 
 	client.AlertsHandler(w, r)
 
 	if rsc.MergeFunc == nil {
-		t.Error("expected non-nil func value")
+		t.Error("expected MergeFunc to be set for merge members")
+	}
+	if rsc.MergeRespondFunc == nil {
+		t.Error("expected MergeRespondFunc to be set for merge members")
+	}
+	if rsc.Response == nil {
+		t.Error("expected upstream Response to be captured on rsc")
+	}
+}
+
+func TestAlertsHandler_NotMergeMember_LeavesFuncsNil(t *testing.T) {
+	client, rsc, r, w := newAlertsTestClient(t)
+
+	client.AlertsHandler(w, r)
+
+	if rsc.MergeFunc != nil {
+		t.Error("expected MergeFunc to remain nil when not a merge member")
+	}
+	if rsc.MergeRespondFunc != nil {
+		t.Error("expected MergeRespondFunc to remain nil when not a merge member")
 	}
 }

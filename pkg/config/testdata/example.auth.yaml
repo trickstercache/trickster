@@ -11,6 +11,7 @@ backends:
     cache_name: default
     cache_key_prefix: example.com
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -21,6 +22,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -47,6 +49,7 @@ backends:
     cache_name: default
     cache_key_prefix: example.com
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -57,6 +60,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -83,6 +87,7 @@ backends:
     cache_name: default
     cache_key_prefix: example.com
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -93,6 +98,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -116,6 +122,7 @@ backends:
     max_idle_conns: 20
     cache_name: default
     chunk_read_concurrency_limit: 16
+    fetch_concurrency_limit: 16
     chunk_write_concurrency_limit: 16
     healthcheck: {}
     timeseries_retention_factor: 1024
@@ -126,6 +133,7 @@ backends:
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
+    max_capture_bytes: 268435456
     compressible_types:
     - text/html
     - text/javascript
@@ -176,6 +184,30 @@ frontend:
   max_request_body_size_bytes: 10485760
   truncate_request_body_too_large: false
   read_header_timeout: 10s
+listeners:
+  default:
+    port: 8480
+    tls_port: 8483
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: http
+    tls_watch_interval: 30s
+  metrics:
+    port: 8481
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: http
+    tls_watch_interval: 30s
+  mgmt:
+    address: 127.0.0.1
+    port: 8484
+    max_request_body_size_bytes: 10485760
+    truncate_request_body_too_large: false
+    read_header_timeout: 10s
+    protocol: http
+    tls_watch_interval: 30s
 logging:
   log_level: INFO
 metrics:
@@ -191,14 +223,16 @@ mgmt:
   listen_address: 127.0.0.1
   listen_port: 8484
   config_handler_path: /trickster/config
+  config_handler_listener: mgmt
   ping_handler_path: /trickster/ping
   health_handler_path: /trickster/health
   purge_by_key_path: /trickster/purge/key/
   purge_by_path_path: /trickster/purge/path/
-  pprof_server: both
-  handler_path: /trickster/config/reload
-  drain_timeout: 30s
-  rate_limit: 3s
+  certificates_handler_path: /trickster/certificates
+  pprof_listener: both
+  reload_handler_path: /trickster/config/reload
+  reload_drain_timeout: 30s
+  reload_rate_limit: 3s
 authenticators:
   example_auth_1:
     provider: basic
@@ -207,8 +241,8 @@ authenticators:
     users_file: /path/to/user-manifest.csv
     users_file_format: csv
     users:
-      user1: red123
-      user2: ${USER2_PASS}
+      user1: '*****'
+      user2: '*****'
     config:
       realm: custom-realm-name
       showLoginForm: true
@@ -226,5 +260,5 @@ authenticators:
     users_file: ""
     users_file_format: ""
     users:
-      user1: $2y$asf;j2ihj0h8vabjkwdqbv29hq
+      user1: '*****'
     config: {}

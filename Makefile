@@ -34,6 +34,8 @@ BIN_DIR        := $(PACKAGE_DIR)/bin
 CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
+THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
+GOLANG_CI_LINT_VERSION ?= v2.13.1
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
@@ -45,17 +47,59 @@ go-mod-tidy:
 
 .PHONY: test-go-mod
 test-go-mod:
-	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum which needs to be committed"
+	@git diff --quiet --exit-code go.mod go.sum || echo "There are changes to go.mod and go.sum that need to be committed"
+
+# Modules whose LICENSE file go-licenses cannot classify. Each is excluded
+# from automatic classification only -- its license notice is still copied
+# verbatim into the generated distribution below, and its own dependencies
+# are still classified -- so this narrows what the classifier is asked to
+# recognize without narrowing what ships. Every entry needs a reason:
+#
+#   github.com/segmentio/asm  MIT-0 (MIT No Attribution), an OSI-approved
+#                             license the bundled classifier has no template
+#                             for; it is unrecognized at any confidence, and
+#                             `save` takes no threshold flag anyway
+#
+# Remove an entry as soon as the module leaves the dependency graph -- the
+# loop below fails on a stale one rather than skipping it, because a stale
+# exception silently keeps a classifier waiver alive for a module that could
+# come back under a different license.
+UNCLASSIFIED_LICENSE_MODULES := \
+	github.com/segmentio/asm
+
+.PHONY: third-party-licenses
+third-party-licenses:
+	$(GO) tool go-licenses save ./cmd/trickster \
+		--force \
+		--save_path=$(THIRD_PARTY_LICENSES_DIR) \
+		--ignore=github.com/trickstercache/trickster/v2 \
+		$(foreach m,$(UNCLASSIFIED_LICENSE_MODULES),--ignore=$(m))
+	@set -e; for m in $(UNCLASSIFIED_LICENSE_MODULES); do \
+		dir="$$($(GO) list -mod=mod -m -f '{{.Dir}}' $$m 2>/dev/null)" || { \
+			echo "$$m is listed in UNCLASSIFIED_LICENSE_MODULES but is no longer a dependency; remove it" >&2; \
+			exit 1; }; \
+		mkdir -p "$(THIRD_PARTY_LICENSES_DIR)/$$m"; \
+		cp "$$dir/LICENSE" "$(THIRD_PARTY_LICENSES_DIR)/$$m/LICENSE"; \
+		test -s "$(THIRD_PARTY_LICENSES_DIR)/$$m/LICENSE"; \
+		echo "copied license notice for $$m"; \
+	done
+	@test -s "$(THIRD_PARTY_LICENSES_DIR)/vitess.io/vitess/go/LICENSE"
+
+.PHONY: check-third-party-licenses
+check-third-party-licenses: third-party-licenses
+	@echo "verified release notices for Vitess and the complete linked dependency graph"
 
 BUILD_FLAGS ?= -a -v
 .PHONY: build
-build: go-mod-tidy go-mod-vendor
+build: go-mod-tidy
 	CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) $(BUILD_FLAGS) -o ./$(BUILD_SUBDIR)/trickster  $(TRICKSTER_MAIN)/*.go
 
-rpm: build
+rpm: build third-party-licenses
 	mkdir -p ./$(BUILD_SUBDIR)/SOURCES
 	cp -p ./$(BUILD_SUBDIR)/trickster ./$(BUILD_SUBDIR)/SOURCES/
 	cp deploy/systemd/trickster.service ./$(BUILD_SUBDIR)/SOURCES/
+	cp -p LICENSE NOTICE ./$(BUILD_SUBDIR)/SOURCES/
+	cp -R ./$(THIRD_PARTY_LICENSES_DIR) ./$(BUILD_SUBDIR)/SOURCES/
 	sed -e 's%^# log_file:.*$$%log_file: /var/log/trickster/trickster.log%' \
 		-e 's%prometheus:9090%localhost:9090%' \
 		< examples/conf/example.full.yaml > ./$(BUILD_SUBDIR)/SOURCES/trickster.yaml
@@ -114,11 +158,61 @@ docker-release:
 style:
 	! gofmt -d $$(find . -path ./vendor -prune -o -name '*.go' -print) | grep '^'
 
-LINT_FLAGS ?= 
-.PHONY: lint
-lint: spelling
+.PHONY: check-imports
+check-imports:
+	@go run hack/check-imports/main.go
+
+.PHONY: gofix-apply
+gofix-apply:
+	@go fix ./...
+
+.PHONY: gofix-diff
+gofix-diff:
 	@go fix -diff ./...
+
+LINT_FLAGS ?= 
+.PHONY: golangci-lint
+golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+
+.PHONY: lint
+lint: check-imports spelling vulncheck gofix-diff golangci-lint
+
+.PHONY: lint-all
+lint-all:
+	@LINT_FLAGS="--new-from-rev= --fix=false" $(MAKE) lint
+
+.PHONY: vulncheck
+vulncheck:
+	@go tool govulncheck ./...
+
+.PHONY: benchmark-mysql-smoke
+benchmark-mysql-smoke:
+	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLSmoke$$' -benchtime=1x -benchmem
+
+.PHONY: benchmark-mysql
+benchmark-mysql:
+	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQL' -benchmem -count=5
+	@go test ./pkg/backends/alb/mech/ur -run '^$$' -bench '^BenchmarkResolveRouteProtocolNeutral$$' -benchmem -count=5
+
+.PHONY: benchmark-flightsql-smoke
+benchmark-flightsql-smoke:
+	@go test ./pkg/proxy/flightsql -run '^$$' -bench '^BenchmarkFlightSQLSmoke$$' -benchtime=1x -benchmem
+
+.PHONY: benchmark-flightsql
+benchmark-flightsql:
+	@go test ./pkg/proxy/flightsql -run '^$$' -bench '^BenchmarkFlightSQL' -benchmem -count=5
+
+.PHONY: benchmark-graphite
+benchmark-graphite:
+	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \
+		-benchmem -count=5
+
+.PHONY: benchmark-mysql-acceptance
+benchmark-mysql-acceptance:
+	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \
+		-benchmem -benchtime=200ms | tee /tmp/trickster-mysql-benchmarks.txt
+	@awk -f hack/check-mysql-benchmarks.awk /tmp/trickster-mysql-benchmarks.txt
 
 .PHONY: lint-fix
 lint-fix:
@@ -130,9 +224,14 @@ GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
 test: check-license-headers check-codegen gotest check-fmtprints check-todos
 
+GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
-	go test -timeout=5m -v ${GO_TEST_FLAGS} ./...
+	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
+	@./hack/filter-coverprofile.sh .coverprofile
+	@echo
+	@./hack/coverprofile-summary.sh
+	@echo "All tests passed successfully."
 
 .PHONY: data-race-test
 data-race-test:
@@ -141,6 +240,27 @@ data-race-test:
 .PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
+
+.PHONY: integration-test
+integration-test:
+	$(MAKE) -C integration test
+	$(MAKE) -C integration data-race-test
+
+.PHONY: integration-cover
+integration-cover:
+	$(MAKE) -C integration cover
+
+FUZZ_TIME ?= 30s
+
+.PHONY: fuzz
+fuzz:
+	@for pkg in $$($(GO) list ./... | grep -v /vendor/); do \
+		fuzz_funcs=$$($(GO) test -list 'Fuzz.*' $$pkg 2>/dev/null | grep '^Fuzz'); \
+		for fn in $$fuzz_funcs; do \
+			echo "fuzzing $$fn in $$pkg ($(FUZZ_TIME))"; \
+			$(GO) test -fuzz=$$fn -fuzztime=$(FUZZ_TIME) $$pkg || exit 1; \
+		done; \
+	done
 
 .PHONY: bench
 bench:
@@ -160,10 +280,11 @@ generate: perform-generate insert-license-headers
 .PHONY: perform-generate
 perform-generate:
 	$(GO) generate ./pkg/... ./cmd/...
+	cd integration && $(GO) generate ./...
 
 .PHONY: insert-license-headers
 insert-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
+	@for file in $$(find ./pkg ./cmd ./integration -name '*.go') ; \
 	do \
 		output=$$(grep 'Licensed under the Apache License' $$file) ; \
 		if [ "$$?" != "0" ]; then \
@@ -266,7 +387,7 @@ spelling:
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \
 	else \
-		codespell --skip='vendor,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
+		codespell --skip='vendor,bin,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
 	fi
 
 .PHONY: serve
@@ -285,7 +406,6 @@ serve-info:
 serve-cli:
 	@cd cmd/trickster && go run . -origin-url http://127.0.0.1:9090/ -provider prometheus
 
-GOLANG_CI_LINT_VERSION ?= v2.10.1
 .PHONY: get-tools
 get-tools: get-msgpack
 	@echo "Installing tools..."
@@ -298,10 +418,82 @@ get-msgpack:
 .PHONY: developer-start
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
+	@echo "Waiting for Redis to be ready..."
+	@cd docs/developer/environment && if ! timeout 30 sh -c \
+		'until response=$$(docker compose exec -T redis redis-cli ping 2>&1); do \
+			echo "PING -> $${response:-no response}"; \
+			sleep 1; \
+		done; \
+		echo "PING -> $$response"'; then \
+		echo "WARNING: timed out waiting for Redis readiness; continuing anyway"; \
+	fi
+	@echo "Waiting for Prometheus to be ready..."
+	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
+	@echo "Waiting for Graphite to be ready..."
+	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:
 	@cd docs/developer/environment && docker compose stop
+
+
+# --- Integration-only container toggling -------------------------------------
+# The compose file carries integration-only services (e.g. coredns for the
+# autodiscovery DNS tests) commented out between the
+# "-- INTEGRATION CONTAINERS BELOW --" / "-- ABOVE --" markers, so developer
+# workstations never run them. integration-start uncomments that section,
+# seeds the mutable CoreDNS zone directory, and brings the environment up;
+# integration-stop stops the environment and comments the section back out.
+
+COMPOSE_ENV_DIR := docs/developer/environment
+COMPOSE_YML     := $(COMPOSE_ENV_DIR)/docker-compose.yml
+COREDNS_ZONES   := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
+# services defined only in the integration section of the compose file
+INTEGRATION_SERVICES := coredns
+
+.PHONY: integration-env-enable
+integration-env-enable:
+	@awk 'BEGIN{p=0} \
+		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
+		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
+		p==1 && /^#/{sub(/^#/,"");print;next} \
+		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
+		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
+	@mkdir -p $(COREDNS_ZONES)
+	@cp -f $(COMPOSE_ENV_DIR)/docker-compose-data/coredns/trickster.test.db.seed \
+		$(COREDNS_ZONES)/trickster.test.db
+	@echo "integration containers enabled in $(COMPOSE_YML)"
+
+.PHONY: integration-env-disable
+integration-env-disable:
+	@awk 'BEGIN{p=0} \
+		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
+		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
+		p==1 && !/^[[:space:]]*#/ && !/^[[:space:]]*$$/{print "#" $$0;next} \
+		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
+		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
+	@echo "integration containers disabled in $(COMPOSE_YML)"
+
+.PHONY: integration-start
+integration-start: integration-env-enable developer-start
+
+.PHONY: integration-stop
+integration-stop:
+	@$(MAKE) integration-env-enable >/dev/null
+	@# stop-and-remove the integration-only containers so a restart policy
+	@# cannot resurrect them on developer machines
+	@cd $(COMPOSE_ENV_DIR) && docker compose rm -sf $(INTEGRATION_SERVICES)
+	@$(MAKE) developer-stop
+	@$(MAKE) integration-env-disable
+
+.PHONY: integration-delete
+integration-delete:
+	@$(MAKE) integration-env-enable >/dev/null
+	@$(MAKE) developer-delete
+	@$(MAKE) integration-env-disable
+
+# --- End Integration-only container toggling ---------------------------------
+
 
 .PHONY: developer-delete
 developer-delete:
@@ -311,9 +503,25 @@ developer-delete:
 developer-recreate: developer-delete
 	@cd docs/developer/environment && docker compose up -d
 
+.PHONY: dev-certs
+dev-certs:
+	@hack/dev-certs.sh
+
+.PHONY: h3-client
+h3-client:
+	@$(GO) run ./hack/h3-client $(ARGS)
+
 .PHONY: developer-seed-data
 developer-seed-data:
-	@cd docs/developer/environment && docker compose run --rm clickhouse_seed
+	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql
+	@cd docs/developer/environment && docker compose run --rm seed_data_fetch
+	@cd docs/developer/environment && \
+	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
+	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
+	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; exit $$rc
+	@cd docs/developer/environment && docker compose stop graphite_generator && \
+		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
+		docker compose up -d graphite_generator
 
 RUN_FLAGS ?=
 .PHONY: serve-dev
@@ -322,3 +530,21 @@ serve-dev:
 
 serve-dev-data-race:
 	RUN_FLAGS=-race $(MAKE) serve-dev 2>&1 | tee race-output.log
+
+# --- Kubernetes autodiscovery integration scenario ---------------------------
+# Creates the kind cluster for integration/kind (TestALBDiscoveryKind),
+# builds the trickster image, loads it, and deploys the manifests.
+KIND_CLUSTER := trickster-it
+
+.PHONY: kind-integration-start
+kind-integration-start:
+	kind create cluster --config integration/kind/kind-config.yaml
+	docker build -t trickster:integration .
+	kind load docker-image trickster:integration --name $(KIND_CLUSTER)
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/manifests.yaml
+	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
+		deployment/webecho deployment/trickster --timeout=180s
+
+.PHONY: kind-integration-stop
+kind-integration-stop:
+	kind delete cluster --name $(KIND_CLUSTER)

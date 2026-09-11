@@ -18,12 +18,15 @@ package dataset
 
 import (
 	"fmt"
+	"runtime"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
+	"golang.org/x/sync/errgroup"
 )
 
 //go:generate go tool msgp
@@ -50,7 +53,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash(true)
+		h := s.Header.CalculateHash()
 		if _, ok := m[h]; ok {
 			continue
 		}
@@ -64,7 +67,7 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 		if s == nil {
 			continue
 		}
-		h := s.Header.CalculateHash(true)
+		h := s.Header.CalculateHash()
 		if seen.Contains(h) {
 			continue
 		}
@@ -129,32 +132,208 @@ func (sl SeriesList) Clone() SeriesList {
 	return out[:k]
 }
 
-func (sl SeriesList) SortByTags() {
-	lkp := make(map[string]*Series, len(sl))
-	keys := make([]string, len(sl))
-	var i int
+// MergeWithStrategy merges sl2 into the subject SeriesList using the specified
+// MergeStrategy to combine values from series with identical headers.
+// For MergeStrategyDedup, this behaves identically to Merge.
+func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy merge.Strategy) SeriesList {
+	return sl.MergeWithOpts(sl2, MergeOpts{SortPoints: sortPoints, Strategy: strategy})
+}
+
+// MergeWithOpts is the MergeOpts-aware variant of MergeWithStrategy. The
+// dedup path with opts.ToleranceNanos > 0 collapses sub-step duplicates
+// produced by independent shards sampling the same metric at slightly
+// different timestamps.
+func (sl SeriesList) MergeWithOpts(sl2 SeriesList, opts MergeOpts) SeriesList {
+	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
+		// fast path: legacy exact-match dedup
+		return sl.Merge(sl2, opts.SortPoints)
+	}
+	if len(sl2) == 0 {
+		return sl.Clone()
+	}
+	if len(sl) == 0 {
+		return sl2.Clone()
+	}
+	m := make(map[Hash]*Series, len(sl)+len(sl2))
+	out := make(SeriesList, len(sl)+len(sl2))
+	var k int
 	for _, s := range sl {
 		if s == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s.%s", s.Header.Tags, s.Header.Name)
-		lkp[key] = s
-		keys[i] = key
-		i++
+		h := s.Header.CalculateHash()
+		if _, ok := m[h]; ok {
+			continue
+		}
+		out[k] = s
+		m[h] = s
+		k++
 	}
-	keys = keys[:i]
-	slices.Sort(keys)
-	for i, key := range keys {
-		sl[i] = lkp[key]
+	seen := make(sets.Set[Hash], len(sl2))
+	var wg sync.WaitGroup
+	for _, s := range sl2 {
+		if s == nil {
+			continue
+		}
+		h := s.Header.CalculateHash()
+		if seen.Contains(h) {
+			continue
+		}
+		seen.Set(h)
+		if cs, ok := m[h]; !ok {
+			out[k] = s
+			m[h] = s
+			k++
+		} else {
+			wg.Go(func() {
+				cs.Points = MergePointsWithOpts(cs.Points, s.Points, opts)
+				cs.PointSize = cs.Points.Size()
+			})
+		}
 	}
+	wg.Wait()
+	out = out[:k]
+	out.SortByTags()
+	return out
+}
+
+// mergeCollection merges several member lists while preserving the same
+// member order as repeated MergeWithOpts calls. Building the series lookup and
+// sorting once avoids repeating both operations for every fanout member.
+func (sl SeriesList) mergeCollection(collection []SeriesList, opts MergeOpts) SeriesList {
+	nonEmpty := make([]SeriesList, 0, len(collection))
+	for _, next := range collection {
+		if len(next) > 0 {
+			nonEmpty = append(nonEmpty, next)
+		}
+	}
+	if len(nonEmpty) == 0 {
+		return sl.Clone()
+	}
+	if len(nonEmpty) == 1 {
+		return sl.MergeWithOpts(nonEmpty[0], opts)
+	}
+
+	// Repeated merges clone the first incoming list when the receiver is
+	// empty. Preserve that ownership rule before processing the remainder.
+	if len(sl) == 0 {
+		sl = nonEmpty[0].Clone()
+		nonEmpty = nonEmpty[1:]
+		if len(nonEmpty) == 0 {
+			return sl
+		}
+	}
+
+	total := len(sl)
+	for _, next := range nonEmpty {
+		total += len(next)
+	}
+	out := make(SeriesList, total)
+	seriesByHash := make(map[Hash]*Series, total)
+	var k int
+	for _, s := range sl {
+		if s == nil {
+			continue
+		}
+		h := s.Header.CalculateHash()
+		if _, ok := seriesByHash[h]; ok {
+			continue
+		}
+		out[k] = s
+		seriesByHash[h] = s
+		k++
+	}
+
+	type mergeJob struct {
+		target *Series
+		series []*Series
+	}
+	jobs := make([]mergeJob, 0)
+	jobByHash := make(map[Hash]int)
+	seen := make(sets.Set[Hash])
+	for _, next := range nonEmpty {
+		clear(seen)
+		for _, s := range next {
+			if s == nil {
+				continue
+			}
+			h := s.Header.CalculateHash()
+			if seen.Contains(h) {
+				continue
+			}
+			seen.Set(h)
+			target, ok := seriesByHash[h]
+			if !ok {
+				out[k] = s
+				seriesByHash[h] = s
+				k++
+				continue
+			}
+			jobIndex, ok := jobByHash[h]
+			if !ok {
+				jobIndex = len(jobs)
+				jobByHash[h] = jobIndex
+				jobs = append(jobs, mergeJob{target: target})
+			}
+			jobs[jobIndex].series = append(jobs[jobIndex].series, s)
+		}
+	}
+
+	eg := errgroup.Group{}
+	eg.SetLimit(runtime.GOMAXPROCS(0))
+	for _, job := range jobs {
+		eg.Go(func() error {
+			points := job.target.Points
+			for _, next := range job.series {
+				points = MergePointsWithOpts(points, next.Points, opts)
+				job.target.Points = points
+			}
+			job.target.PointSize = points.Size()
+			return nil
+		})
+	}
+	_ = eg.Wait()
+
+	out = out[:k]
+	out.SortByTags()
+	return out
+}
+
+func (sl SeriesList) SortByTags() {
+	if len(sl) < 2 {
+		return
+	}
+	tagsJSON := make(map[*Series]string, len(sl))
+	for _, series := range sl {
+		if series != nil {
+			tagsJSON[series] = series.Header.Tags.JSON()
+		}
+	}
+	slices.SortFunc(sl, func(a, b *Series) int {
+		if a == nil && b == nil {
+			return 0
+		}
+		if a == nil {
+			return 1
+		}
+		if b == nil {
+			return -1
+		}
+		if c := strings.Compare(tagsJSON[a], tagsJSON[b]); c != 0 {
+			return c
+		}
+		return strings.Compare(a.Header.Name, b.Header.Name)
+	})
 }
 
 func (sl SeriesList) SortPoints() {
-	var wg sync.WaitGroup
+	eg := errgroup.Group{}
+	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
-		wg.Go(func() {
-			sort.Sort(s.Points)
+		eg.Go(func() error {
+			slices.SortFunc(s.Points, pointCmp)
+			return nil
 		})
 	}
-	wg.Wait()
+	eg.Wait()
 }

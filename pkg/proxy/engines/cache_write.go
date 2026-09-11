@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -103,7 +104,11 @@ func (tc *TimeseriesChunkWriter) IterateChunks(
 
 		// Handle serialization for non-memory providers
 		if tc.c.Configuration().Provider != providerMemory && tc.marshal != nil {
-			chunkData.Body, _ = tc.marshal(chunkData.timeseries, nil, 0)
+			var err error
+			chunkData.Body, err = tc.marshal(chunkData.timeseries, nil, 0)
+			if err != nil {
+				return err
+			}
 		}
 
 		if err := writeFunc(i, subkey, chunkData); err != nil {

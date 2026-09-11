@@ -1,5 +1,5 @@
 #
-# Trickster 2.0 Example Configuration File - Example Prometheus Accelerator
+# Trickster 2.x Example Configuration File - Example Prometheus Accelerator
 #
 # To use this, run: trickster -config /path/to/simple.prometheus.yaml
 #
@@ -10,17 +10,18 @@
 # Copyright 2018 The Trickster Authors
 #
 
-frontend:
-  listen_port: 9090
+listeners:
+  prom_port:
+    protocol: http
+    address: ""
+    port: 9090
 
 backends:
   default:
     # update FQDN and Port to work in your environment
     origin_url: 'http://prometheus:9090'
     provider: 'prometheus'
-
-metrics:
-  listen_port: 8481   # available for scraping at http://<trickster>:<metrics.listen_port>/metrics
+    listener_names: [prom_port]
 
 logging:
   log_level: 'info'

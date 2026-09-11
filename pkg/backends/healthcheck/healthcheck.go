@@ -18,7 +18,11 @@ package healthcheck
 
 import (
 	"context"
+	"maps"
 	"net/http"
+	"slices"
+	"sync"
+	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 )
@@ -27,6 +31,10 @@ import (
 type HealthChecker interface {
 	// Register a health check Target
 	Register(name string, description string, options *ho.Options, client *http.Client) (*Status, error)
+	// RegisterVirtual records a synthetic always-passing Status for a virtual
+	// backend (rule, alb) that has no upstream to probe, so it surfaces in
+	// the health page and in outer ALB pool reporting.
+	RegisterVirtual(name, description string) *Status
 	// Remove a health check Target
 	Unregister(name string)
 	// Resolve status of named Target
@@ -39,6 +47,21 @@ type HealthChecker interface {
 	Subscribe(chan bool)
 }
 
+// Registrar extends the health-check lifecycle with protocol-neutral target
+// registration. Status consumers can continue to depend on HealthChecker.
+type Registrar interface {
+	HealthChecker
+	RegisterProbe(name, description string, options *ho.Options, probe Probe) (*Status, error)
+}
+
+// RegistrationNotifier is implemented by health checkers that can notify
+// when the set of registered targets changes (e.g., autodiscovered ALB
+// members being added or removed at runtime), so consumers like the health
+// status page can track membership and not just status transitions
+type RegistrationNotifier interface {
+	SubscribeRegistrations(chan bool)
+}
+
 // Lookup is a map of named Target references
 type Lookup map[string]*target
 
@@ -46,9 +69,14 @@ type Lookup map[string]*target
 type StatusLookup map[string]*Status
 
 type healthChecker struct {
+	// guards targets, statuses, subscribers, regSubscribers
+	mtx         sync.RWMutex
 	targets     Lookup
 	statuses    StatusLookup
 	subscribers []chan bool
+	// regSubscribers receive a non-blocking signal whenever the set of
+	// registered targets changes
+	regSubscribers []chan bool
 }
 
 // New returns a new HealthChecker
@@ -61,14 +89,40 @@ func New() HealthChecker {
 }
 
 func (hc *healthChecker) Subscribe(ch chan bool) {
+	hc.mtx.Lock()
 	hc.subscribers = append(hc.subscribers, ch)
+	hc.mtx.Unlock()
+}
+
+// SubscribeRegistrations registers a channel signaled (non-blocking) each
+// time a target is registered or unregistered
+func (hc *healthChecker) SubscribeRegistrations(ch chan bool) {
+	hc.mtx.Lock()
+	hc.regSubscribers = append(hc.regSubscribers, ch)
+	hc.mtx.Unlock()
+}
+
+func (hc *healthChecker) notifyRegistrations() {
+	hc.mtx.RLock()
+	subs := slices.Clone(hc.regSubscribers)
+	hc.mtx.RUnlock()
+	for _, ch := range subs {
+		select {
+		case ch <- true:
+		default:
+		}
+	}
 }
 
 func (hc *healthChecker) Shutdown() {
-	for _, t := range hc.targets {
+	hc.mtx.RLock()
+	targets := slices.Collect(maps.Values(hc.targets))
+	subs := slices.Clone(hc.subscribers)
+	hc.mtx.RUnlock()
+	for _, t := range targets {
 		t.Stop()
 	}
-	for _, ch := range hc.subscribers {
+	for _, ch := range subs {
 		ch <- true
 	}
 }
@@ -78,9 +132,6 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 ) (*Status, error) {
 	if o == nil {
 		return nil, ho.ErrNoOptionsProvided
-	}
-	if t2, ok := hc.targets[name]; ok && t2 != nil {
-		go t2.Stop()
 	}
 	t, err := newTarget(
 		context.Background(),
@@ -92,22 +143,75 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if err != nil {
 		return nil, err
 	}
+	return hc.registerTarget(t), nil
+}
+
+func (hc *healthChecker) RegisterProbe(name, description string, o *ho.Options,
+	probe Probe,
+) (*Status, error) {
+	t, err := newProbeTarget(name, description, o, probe)
+	if err != nil {
+		return nil, err
+	}
+	return hc.registerTarget(t), nil
+}
+
+func (hc *healthChecker) registerTarget(t *target) *Status {
+	hc.mtx.Lock()
+	if t2, ok := hc.targets[t.name]; ok && t2 != nil {
+		// synchronous stop so the old probe loop exits before the new one starts
+		t2.Stop()
+	}
 	hc.targets[t.name] = t
 	hc.statuses[t.name] = t.status
+	hc.mtx.Unlock()
+	hc.notifyRegistrations()
 	if t.interval > 0 {
 		t.Start(context.Background())
 	}
-	return t.status, nil
+	return t.status
+}
+
+func (hc *healthChecker) RegisterVirtual(name, description string) *Status {
+	s := NewStatus(name, description, "", StatusPassing, time.Time{}, nil)
+	hc.mtx.Lock()
+	hc.statuses[name] = s
+	hc.mtx.Unlock()
+	hc.notifyRegistrations()
+	return s
+}
+
+// RegisterExternal records a caller-managed Status (e.g., one driven by a
+// discovery provider's readiness reporting) so it surfaces in the health
+// page and status lookups. The caller owns status transitions; no probe is
+// started. Remove it with Unregister.
+func (hc *healthChecker) RegisterExternal(name, description string, s *Status) {
+	if name == "" || s == nil {
+		return
+	}
+	hc.mtx.Lock()
+	hc.statuses[name] = s
+	hc.mtx.Unlock()
+	hc.notifyRegistrations()
 }
 
 func (hc *healthChecker) Unregister(name string) {
 	if name == "" {
 		return
 	}
-	if t, ok := hc.targets[name]; ok && t != nil {
+	hc.mtx.Lock()
+	t, hadTarget := hc.targets[name]
+	_, hadStatus := hc.statuses[name]
+	delete(hc.targets, name)
+	// virtual and external registrations have a status but no target;
+	// remove the status entry unconditionally so they don't linger
+	delete(hc.statuses, name)
+	hc.mtx.Unlock()
+	if hadTarget && t != nil {
 		t.Stop()
-		delete(hc.targets, t.name)
-		delete(hc.statuses, t.name)
+	}
+	if hadTarget || hadStatus {
+		hc.notifyRegistrations()
 	}
 }
 
@@ -115,6 +219,8 @@ func (hc *healthChecker) Status(name string) *Status {
 	if name == "" {
 		return nil
 	}
+	hc.mtx.RLock()
+	defer hc.mtx.RUnlock()
 	if t, ok := hc.targets[name]; ok && t != nil {
 		return t.status
 	}
@@ -122,5 +228,7 @@ func (hc *healthChecker) Status(name string) *Status {
 }
 
 func (hc *healthChecker) Statuses() StatusLookup {
-	return hc.statuses
+	hc.mtx.RLock()
+	defer hc.mtx.RUnlock()
+	return maps.Clone(hc.statuses)
 }

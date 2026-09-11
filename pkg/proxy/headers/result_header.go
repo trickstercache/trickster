@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -30,30 +32,41 @@ type ResultHeaderParts struct {
 	Engine            string
 	Status            string
 	Fetched           timeseries.ExtentList
+	FailedFetch       timeseries.ExtentList
 	FastForwardStatus string
 }
 
 func (p ResultHeaderParts) String() string {
 	var sb strings.Builder
-	sb.WriteString("engine=" + p.Engine)
+	sb.WriteString("engine=")
+	sb.WriteString(p.Engine)
 	if p.Status != "" {
-		sb.WriteString("; status=" + p.Status)
+		sb.WriteString("; status=")
+		sb.WriteString(p.Status)
 	}
 	if len(p.Fetched) > 0 {
-		sb.WriteString("; fetched=[" + p.Fetched.String() + "]")
+		sb.WriteString("; fetched=[")
+		sb.WriteString(p.Fetched.String())
+		sb.WriteString("]")
 	}
 	if p.FastForwardStatus != "" {
-		sb.WriteString("; ffstatus=" + p.FastForwardStatus)
+		sb.WriteString("; ffstatus=")
+		sb.WriteString(p.FastForwardStatus)
+	}
+	if len(p.FailedFetch) > 0 {
+		sb.WriteString("; failed=[")
+		sb.WriteString(p.FailedFetch.String())
+		sb.WriteString("]")
 	}
 	return sb.String()
 }
 
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
-func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList) {
+func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList, failedFetched timeseries.ExtentList) {
 	if headers == nil || engine == "" {
 		return
 	}
-	p := ResultHeaderParts{Engine: engine, Status: status, Fetched: fetched, FastForwardStatus: ffstatus}
+	p := ResultHeaderParts{Engine: engine, Status: status, Fetched: fetched, FailedFetch: failedFetched, FastForwardStatus: ffstatus}
 	headers.Set(NameTricksterResult, p.String())
 }
 
@@ -79,13 +92,13 @@ func MergeResultHeaderVals(h1, h2 string) string {
 	if r1.Status == "" {
 		r1.Status = r2.Status
 	} else if r1.Status != r2.Status {
-		r1.Status = "phit"
+		r1.Status = status.StatusPartialHit
 	}
 
 	if r1.FastForwardStatus == "" {
 		r1.FastForwardStatus = r2.FastForwardStatus
 	} else if r1.FastForwardStatus != r2.FastForwardStatus {
-		r1.FastForwardStatus = "phit"
+		r1.FastForwardStatus = status.StatusPartialHit
 	}
 
 	if len(r1.Fetched) == 0 {
@@ -94,8 +107,18 @@ func MergeResultHeaderVals(h1, h2 string) string {
 		merged := make(timeseries.ExtentList, len(r1.Fetched)+len(r2.Fetched))
 		copy(merged, r1.Fetched)
 		copy(merged[len(r1.Fetched):], r2.Fetched)
-		r1.Fetched = r1.Fetched.Compress(0)
+		r1.Fetched = merged.Compress(0)
 	}
+
+	if len(r1.FailedFetch) == 0 {
+		r1.FailedFetch = r2.FailedFetch
+	} else if len(r2.FailedFetch) > 0 {
+		merged := make(timeseries.ExtentList, len(r1.FailedFetch)+len(r2.FailedFetch))
+		copy(merged, r1.FailedFetch)
+		copy(merged[len(r1.FailedFetch):], r2.FailedFetch)
+		r1.FailedFetch = merged.Compress(0)
+	}
+
 	return r1.String()
 }
 
@@ -108,19 +131,19 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 			val := part[i+1:]
 
 			switch key {
-			case "engine":
+			case keys.Engine:
 				if val != "" {
 					r.Engine = val
 				}
-			case "status":
+			case keys.Status:
 				if val != "" {
 					r.Status = val
 				}
-			case "ffstatus":
+			case keys.FFStatus:
 				if val != "" {
 					r.FastForwardStatus = val
 				}
-			case "fetched":
+			case keys.Fetched, keys.Failed:
 				val = strings.NewReplacer("[", "", "]", "").Replace(val)
 				fparts := strings.Split(val, ";")
 				el := make(timeseries.ExtentList, len(fparts))
@@ -142,9 +165,39 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 						k++
 					}
 				}
-				r.Fetched = el[:k]
+
+				if key == keys.Fetched {
+					r.Fetched = el[:k]
+				} else {
+					r.FailedFetch = el[:k]
+				}
 			}
 		}
 	}
 	return r
+}
+
+// ParseResultHeader returns the structured values in X-Trickster-Result.
+func ParseResultHeader(h string) ResultHeaderParts {
+	return parseResultHeaderVals(h)
+}
+
+// ParseResultEngineStatus extracts only engine and status without extents.
+func ParseResultEngineStatus(h string) (engine, status string) {
+	for part := range strings.SplitSeq(h, ";") {
+		key, value, ok := strings.Cut(strings.TrimSpace(part), "=")
+		if !ok || value == "" {
+			continue
+		}
+		switch key {
+		case keys.Engine:
+			engine = value
+		case keys.Status:
+			status = value
+		}
+		if engine != "" && status != "" {
+			return engine, status
+		}
+	}
+	return engine, status
 }

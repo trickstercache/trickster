@@ -80,6 +80,12 @@ const (
 	NameCacheControl = "Cache-Control"
 	// NameAllowOrigin represents the HTTP Header Name of "Access-Control-Allow-Origin"
 	NameAllowOrigin = "Access-Control-Allow-Origin"
+	// NameAllowCredentials represents the HTTP Header Name of "Access-Control-Allow-Credentials"
+	NameAllowCredentials = "Access-Control-Allow-Credentials"
+	// NameExposeHeaders represents the HTTP Header Name of "Access-Control-Expose-Headers"
+	NameExposeHeaders = "Access-Control-Expose-Headers"
+	// NameOrigin represents the HTTP Header Name of "Origin"
+	NameOrigin = "Origin"
 	// NameConnection represents the HTTP Header Name of "Connection"
 	NameConnection = "Connection"
 	// NameContentType represents the HTTP Header Name of "Content-Type"
@@ -102,6 +108,10 @@ const (
 	NameHost = "Host"
 	// NameUserAgent represents the HTTP Header Name of "User-Agent"
 	NameUserAgent = "User-Agent"
+	// NameReferer represents the HTTP Header Name of "Referer"
+	NameReferer = "Referer"
+	// NameCookie represents the HTTP Header Name of "Cookie"
+	NameCookie = "Cookie"
 	// NameSetCookie represents the HTTP Header Name of "Set-Cookie"
 	NameSetCookie = "Set-Cookie"
 	// NameRange represents the HTTP Header Name of "Range"
@@ -145,6 +155,25 @@ const (
 	// NameWWWAuthenticate represents the HTTP Header Name of "WWW-Authenticate"
 	NameWWWAuthenticate = "WWW-Authenticate"
 
+	// NameAltSvc represents the HTTP Header Name of "Alt-Svc"
+	NameAltSvc = "Alt-Svc"
+	// NameVary represents the HTTP Header Name of "Vary"
+	NameVary = "Vary"
+	// NameAge represents the HTTP Header Name of "Age"
+	NameAge = "Age"
+	// NameVia represents the HTTP Header Name of "Via"
+	NameVia = "Via"
+	// NameForwarded represents the HTTP Header Name of "Forwarded"
+	NameForwarded = "Forwarded"
+	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
+	NameXForwardedFor = "X-Forwarded-For"
+	// NameXForwardedHost represents the HTTP Header Name of "X-Forwarded-Host"
+	NameXForwardedHost = "X-Forwarded-Host"
+	// NameXForwardedProto represents the HTTP Header Name of "X-Forwarded-Proto"
+	NameXForwardedProto = "X-Forwarded-Proto"
+	// NameXForwardedServer represents the HTTP Header Name of "X-Forwarded-Server"
+	NameXForwardedServer = "X-Forwarded-Server"
+
 	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
 	NameTrkHCStatus = "Trk-HC-Status"
 	// NameTrkHCDetail represents the HTTP Header Name of "Trk-HC-Detail"
@@ -184,7 +213,7 @@ func Merge(dst, src http.Header) {
 		if len(sv) == 0 {
 			continue
 		}
-		dst[k] = []string{sv[0]}
+		dst[k] = slices.Clone(sv)
 	}
 }
 
@@ -194,21 +223,23 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 		return
 	}
 	for k, v := range updates {
-		if k == "" {
-			continue
-		}
-		if k[0:1] == "-" {
-			k = k[1:]
-			headers.Del(k)
-			continue
-		}
-		if k[0:1] == "+" {
-			k = k[1:]
-			headers.Add(k, v)
-			continue
-		}
-		headers.Set(k, v)
+		updateHeader(headers, k, v)
 	}
+}
+
+func updateHeader(headers http.Header, name, value string) {
+	if name == "" {
+		return
+	}
+	if name[0:1] == "-" {
+		headers.Del(name[1:])
+		return
+	}
+	if name[0:1] == "+" {
+		headers.Add(name[1:], value)
+		return
+	}
+	headers.Set(name, value)
 }
 
 // UpdateRequestHeaders updates r's headers with the provided updates
@@ -229,9 +260,13 @@ func UpdateRequestHeaders(r *http.Request, updates map[string]string) {
 	// promote Host header from r.Header to r.Host if present
 	if hhVal != "" {
 		r.Host = hhVal
-		delete(updates, hhName)
 	}
-	UpdateHeaders(r.Header, updates)
+	for k, v := range updates {
+		if hhVal != "" && k == hhName {
+			continue
+		}
+		updateHeader(r.Header, k, v)
+	}
 }
 
 // ExtractHeader returns the value for the provided header name, and a boolean indicating if the header was present

@@ -1,0 +1,33 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for TestAuth_HtpasswdBasic
+
+listeners:
+  default:
+    port: 8536
+  metrics:
+    port: 8537
+  mgmt:
+    port: 8538
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+authenticators:
+  htpw1:
+    provider: basic
+    users_file: testdata/configs/htpasswd
+    users_file_format: htpasswd
+    config: {}
+
+backends:
+  prom1:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    authenticator_name: htpw1

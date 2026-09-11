@@ -42,16 +42,23 @@ jobs:
         run: echo "baretag=$(echo ${{ github.ref }} | cut -b 12-)" >> "$GITHUB_OUTPUT"
         #
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         #
       - name: install golang
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
         #
-      - name: Build project
+      - name: Build project and package third-party licenses
         run: |
           TAGVER=${{ steps.baretag.outputs.baretag }} make release
+        #
+      - name: Verify release third-party license material
+        run: |
+          tar -tzf ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
+            | grep -q '/third-party-licenses/'
+          tar -tzf ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
+            | grep -q '/third-party-licenses/vitess.io/vitess/go/LICENSE'
         #
       - name: Create Release
         env:

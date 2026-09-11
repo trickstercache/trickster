@@ -22,13 +22,14 @@ import (
 	"errors"
 	"io"
 	"runtime"
-	"sort"
+	"slices"
 	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+
 	"golang.org/x/sync/errgroup"
 )
 
@@ -126,7 +127,15 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			if err := errors.Join(errs...); err != nil {
 				return nil, err
 			}
-			sort.Sort(pts)
+			slices.SortFunc(pts, func(a, b dataset.Point) int {
+				if a.Epoch < b.Epoch {
+					return -1
+				}
+				if a.Epoch > b.Epoch {
+					return 1
+				}
+				return 0
+			})
 			s := &dataset.Series{
 				Header:    sh,
 				Points:    pts,

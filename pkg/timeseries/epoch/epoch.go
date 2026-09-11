@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"time"
 
-	lsql "github.com/trickstercache/trickster/v2/pkg/parsing/lex/sql"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -67,11 +67,11 @@ func FormatTime(t time.Time, to timeseries.FieldDataType, quoteDateTimeSQL bool)
 	case timeseries.DateTimeUnixNano:
 		return strconv.FormatInt(t.UnixNano(), 10)
 	case timeseries.DateTimeSQL:
-		return q + t.UTC().Format(lsql.SQLDateTimeLayout) + q
+		return q + t.UTC().Format(timeconv.SQLDateTimeLayout) + q
 	case timeseries.DateSQL:
-		return q + t.UTC().Format(lsql.SQLDateLayout) + q
+		return q + t.UTC().Format(timeconv.SQLDateLayout) + q
 	case timeseries.TimeSQL:
-		return q + t.UTC().Format(lsql.SQLTimeLayout) + q
+		return q + t.UTC().Format(timeconv.SQLTimeLayout) + q
 	case timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
 		return t.UTC().Format(time.RFC3339)
 	}

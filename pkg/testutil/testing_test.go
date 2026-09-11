@@ -22,11 +22,12 @@ import (
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
 func TestNewTestServer(t *testing.T) {
-	s := NewTestServer(200, "OK", map[string]string{"Expires": "-1"})
+	s := NewTestServer(200, "OK", map[string]string{headers.NameExpires: "-1"})
 	if s == nil {
 		t.Errorf("Expected server pointer, got %v", s)
 	}

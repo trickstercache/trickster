@@ -20,8 +20,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDefaultHealthCheckConfig(t *testing.T) {

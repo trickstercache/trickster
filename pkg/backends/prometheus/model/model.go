@@ -17,10 +17,10 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -61,18 +61,22 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
 		rw.WriteHeader(httpStatus)
 	}
-	fmt.Fprintf(w, `{"status":"%s"`, e.Status)
+	sb, _ := json.Marshal(e.Status)
+	fmt.Fprintf(w, `{"status":%s`, sb)
 
 	if e.Error != "" {
-		fmt.Fprintf(w, `,"error":"%s"`, e.Error)
+		b, _ := json.Marshal(e.Error)
+		fmt.Fprintf(w, `,"error":%s`, b)
 	}
 
 	if e.ErrorType != "" {
-		fmt.Fprintf(w, `,"errorType":"%s"`, e.ErrorType)
+		b, _ := json.Marshal(e.ErrorType)
+		fmt.Fprintf(w, `,"errorType":%s`, b)
 	}
 
 	if len(e.Warnings) > 0 {
-		fmt.Fprintf(w, `,"warnings":["%s"]`, strings.Join(e.Warnings, `","`))
+		b, _ := json.Marshal(e.Warnings)
+		fmt.Fprintf(w, `,"warnings":%s`, b)
 	}
 }
 

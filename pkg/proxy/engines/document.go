@@ -18,14 +18,16 @@ package engines
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"io"
 	"net/http"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -126,7 +128,9 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *H
 		ddbi -= chunkRange.Start
 		dd.Body = dd.Body[:ddbi]
 		dd.Ranges = dd.Ranges[:ddri]
-		sort.Sort(dd.Ranges)
+		slices.SortFunc(dd.Ranges, func(a, b byterange.Range) int {
+			return cmp.Compare(a.Start, b.Start)
+		})
 	}
 	return dd
 }
@@ -275,7 +279,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
 			logger.Error("unable to parse multipart range response body",
-				logging.Pairs{"detail": err.Error})
+				logging.Pairs{keys.Detail: err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {

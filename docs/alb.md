@@ -1,6 +1,6 @@
 # Application Load Balancer
 
-Trickster 2.0 provides an all-new Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
+Trickster 2.x provides an Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
 
 | Mechanism | Config | Provides | Description |
 |-----|-----|-----|----|
@@ -19,6 +19,8 @@ All settings and functions configured for a Backend are applicable to traffic ro
 
 In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes. This makes it possible to configure infinite loops (e.g., where ALB1 has ALB2 in its pool, and ALB2 has ALB1 in its pool). However, at startup Trickster will validate ALB configurations by following all ALBs' possible paths, and exit with a startup failure if any infinite loops are detected.
 
+In addition to (or instead of) a static pool list, an ALB's pool membership can be discovered and kept current automatically at runtime — from Kubernetes, the AWS, Google Cloud and Azure APIs, the Docker Engine, the Consul or Nomad service registries, DNS records, an HTTP endpoint, or a watched member-list file. See [ALB Autodiscovery](./alb-autodiscovery.md).
+
 ## Mechanisms Deep Dive
 
 Each mechanism has its own use cases and pitfalls. Be sure to read about each one to understand how they might apply to your situation.
@@ -31,13 +33,24 @@ The Trickster ALB is intended to support stateless workloads, and currently does
 
 #### Weighted Round Robin
 
-Trickster supports Weighted Round Robin by permitting repeated pool member names in the same pool list. In this way, an operator can craft a desired apportionment based on the number of times a given backend appears in the pool list. We've provided an example in the snippet below.
+Trickster supports Weighted Round Robin with a first-class integer `weight` on pool entries. A pool entry may be a plain backend name (weight 1) or a mapping with an explicit weight:
 
-Trickster's round robiner cycles through the pool in the order it is defined in the Configuration file. Thus, when using Weighted Round Robin, it is recommended to use a non-sorted, staggered ordering pattern in the pool list configuration, so as to prevent routing bursts of consecutive requests to the same backend.
+```yaml
+pool:
+  - node01            # weight 1
+  - name: node02
+    weight: 3         # receives 3 of every 4 requests
+```
+
+Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
+
+The legacy workaround of repeating a member name multiple times in the pool list still functions, but explicit weights replace it and are preferred.
+
+Weights apply to mechanisms that select a single member per request (round robin). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
 
 #### More About Our Round Robin Mechanism
 
-Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) - 1` indicates the assigned backend based on the counter and current pool size.
+Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and each member owns a contiguous `weight`-sized span of that rotation. Selection remains lock- and allocation-free in both forms.
 
 #### Example Round Robin Configuration
 
@@ -61,18 +74,18 @@ backends:
     request_headers: # this backend might use basic auth headers
       Authoriziation: "basic jdoe:${NODE_02_AUTH_TOKEN}"
 
-  # Trickster 2.0 ALB backend configuration, using above backends as pool members
+  # Trickster 2.x ALB backend configuration, using above backends as pool members
 
   node-alb:
     provider: alb
     alb:
       mechanism: rr # round robin
       pool:
-        - node01 # as named above
+        - node01 # as named above; weight 1
         - node02
-        # - node02 # if this node were uncommented, weighting would change to 33/67
-        # add backends multiple times to establish a weighting protocol.
-        # when weighting, use a cycling list, rather than a sorted list.
+        # to weight the pool, use the mapping form on any entry:
+        # - name: node02
+        #   weight: 2 # node02 would receive 2 of every 3 requests
 ```
 
 Here is the visual representation of this configuration:
@@ -81,9 +94,69 @@ Here is the visual representation of this configuration:
 
 ### Time Series Merge
 
-The recommended application for using the **Time Series Merge** mechanism is as a High Availability solution. In this application, Trickster fans the client request out to multiple redundant tsdb endpoints and merges the responses back into a single document for the client. If any of the endpoints are down, or have gaps in their response (due to prior downtime), the Trickster cache along with the data from the healthy endpoints will ensure the client receives the most complete response possible. Instantaneous downtime of any Backend will result in a warning being injected in the client response.
+The **Time Series Merge** mechanism supports both High Availability and federation. Each physical backend represents one logical data shard. Set the backend-level `replica_group` option to the same value on physical backends that are HA replicas of that shard. TSM first coalesces those replicas, using configured pool order to resolve overlapping points and later replicas to fill gaps, and then reduces the distinct logical shards.
 
-Separate from an HA use case, it is possible to Time Series Merge as a Federation broker that merges responses from different, non-redundant tsdb endpoints; for example, to aggregate metrics from a solution running clusters in multiple regions, with separate, in-region-only tsdb deployments. In this use case, it is recommended to [inject labels](./prometheus.md#injecting-labels) into the responses to protect against data collisions across series. Label injection is demonstrated in the snippet below.
+When a TSM pool member is itself an ALB (for example, a round-robin ALB over
+Prometheus backends), set `replica_group` on that immediate nested ALB. Trickster
+uses the wrapper as the replica-group boundary while delegating TSM planning and
+finalization to its terminal Prometheus provider. Other ALBs and non-TSM
+providers cannot set an explicit replica group.
+
+When `replica_group` is omitted, it defaults to the backend name, so existing configurations continue to treat every backend as a distinct shard. Explicitly set it for HA pools that use non-idempotent aggregations such as `sum`, `count`, or `avg`; otherwise replicas will be counted as separate data.
+
+Replica grouping is backend-global, not ALB-specific. A backend cannot be a replica in one ALB and a disjoint shard in another; define a second backend entry if both views are required. Partially overlapping datasets are not representable: one backend belongs to one logical shard for all TSM queries. Injected labels remain useful output and routing metadata, but they do not establish replica provenance.
+
+If replicas disagree at the same logical point, the first configured member wins deterministically and Trickster records a conflict metric and warning log. A failed replica does not make a response partial when another replica covers its group. If an entire logical group is unavailable, the response is marked partial and includes a warning.
+
+For request paths that are not mergeable by the configured time series provider, TSM does not fan the request out. Those requests are dispatched directly to the first live pool target. The same first-live-target fallback is used when a request cannot be prepared for the merge path.
+
+#### Merge Strategy
+
+Within each configured replica group, TSM deduplicates values when merging series with identical labels — for each timestamp, only one replica value is kept. Across different groups it uses the query's merge strategy.
+
+For Federation use cases where backends hold different, non-overlapping data, Trickster **automatically selects a merge strategy per query** by inspecting the outermost PromQL aggregation operator. No configuration is required. This is particularly important for PromQL aggregation queries like `sum()` or `avg()`, which strip labels from results and cause series from different backends to appear identical.
+
+| Outer Operator | Trickster Merge Behavior |
+|----------------|--------------------------|
+| `sum` | Sum of values per unique label set + timestamp |
+| `count` | Sum of values per unique label set + timestamp |
+| `count_values` | Sum of values per unique label set + timestamp |
+| `min` | Minimum value per unique label set + timestamp |
+| `max` | Maximum value per unique label set + timestamp |
+| `group` | Deduplicate per unique label set + timestamp |
+| `avg` | Dual queries (avg→sum and avg→count); weighted arithmetic mean per unique label set + timestamp |
+| `topk`, `bottomk` | Query the inner expression across backends, merge it, then apply final top/bottom-k selection per timestamp and aggregation group |
+| `stddev`, `stdvar` | Pool shard-local count, mean, and variance states, then finalize the global population variance or standard deviation |
+| `quantile` | Query the inner expression, merge all float samples globally, then calculate the exact quantile per timestamp and aggregation group |
+| `limit_ratio` | Apply Prometheus-compatible label-hash sampling, globally finalizing a supported inner aggregation when necessary |
+| `limitk` | Query the inner expression, merge it globally, then retain the first k samples in stable TSM series order per timestamp and aggregation group |
+| _(none)_ | Deduplicate (default) |
+
+For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
+
+For `topk` and `bottomk`, Trickster sends the inner expression to each backend, merges those inner results using the inner expression's merge strategy, then applies the final rank-and-trim step per timestamp and aggregation group. This prevents each backend's local `topk`/`bottomk` result from being weighted equally during the merge. If the inner expression is `avg`, Trickster still uses the weighted `sum`/`count` rewrite before applying the final rank. This also applies when the rank aggregation is wrapped in `sort()` or `sort_desc()`.
+
+For `stddev` and `stdvar`, Trickster requests the shard-local count, mean, and population variance and pools those states before finalizing the requested global value. Native histograms are excluded from this float-only calculation. Supported already-aggregated inner expressions such as `count`, `min`, `max`, and `group` are merged globally before the outer variance aggregation.
+
+For `quantile`, Trickster sends the inner expression to every backend, globally merges supported inner aggregations, ignores native-histogram samples, and calculates Prometheus's exact sort-and-interpolate value independently for each timestamp and group. Exact quantiles require every relevant float sample, so their fanout responses can be substantially larger than shard-local quantiles and remain subject to the configured response-capture limits. A capture-limit failure is returned rather than silently substituting an approximate result.
+
+For `limit_ratio`, selection uses the same complete-label-set hash threshold as Prometheus. Supported inner aggregations are merged before the ratio is applied; shard-local expressions can be sampled by each backend because the hash decision for a given label set is independent of shard placement.
+
+For `limitk`, Trickster reproduces the current Prometheus evaluator's first-visited algorithm over TSM's stable merged-series order: lexicographic JSON serialization of the complete label set, followed by the series name. Selection is independent for every timestamp and aggregation group, retains complete labels and both float and native-histogram samples, and does not rank candidates by value or label hash.
+
+Prometheus does not define a canonical storage visitation order for `limitk`. A separate Prometheus deployment whose storage returns the same series in a different order may therefore select different labels. Trickster guarantees the requested cardinality, grouping, and repeatability for the same merged input, and fanout completion order does not affect the result. `limitk` remains an experimental PromQL operator, so this compatibility contract may change with Prometheus.
+
+For an unsupported inner expression, Trickster retains the established per-shard fallback and injects a `warnings` entry in the Prometheus response body to alert the caller that results may be inaccurate.
+
+When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
+
+#### Native Histograms
+
+Native histogram samples are preserved through the merge rather than being numerically aggregated. When a timestamp has a histogram on one backend and a float sample on another (or histograms on both), the histogram value is kept as-is — numeric aggregators like `sum` only apply across float samples. This prevents mixed-type series from being corrupted into garbage values when backends return a mix of float and histogram samples at the same timestamp.
+
+#### Max Query Range Limitation
+
+Trickster ALB supports enforcing a `max_query_range` duration on ALB backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.
 
 #### Providers Supporting Time Series Merge
 
@@ -103,6 +176,7 @@ backends:
   # prom01a and prom01b are redundant and poll the same targets
   prom01a:
     provider: prometheus
+    replica_group: prom01
     origin_url: http://prom01a.example.com:9090
     prometheus:
       labels:
@@ -110,13 +184,16 @@ backends:
 
   prom01b:
     provider: prometheus
+    replica_group: prom01
     origin_url: http://prom01b.example.com:9090
       labels:
         region: us-east-1
 
-  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller
+  # prom-alb-01 scatter/gathers to prom01a and prom01b and merges responses for the caller.
+  # Enforces a max 14-day time range limit on all incoming merge requests.
   prom-alb-01:
     provider: alb
+    max_query_range: 14d
     alb:
       mechanism: tsm # time series merge
       pool: 
@@ -137,13 +214,16 @@ backends:
         region: us-west-1
 
   # prom-alb-all scatter/gathers prom01a/b, prom02 and prom03 and merges their responses
-  # for the caller. since a unique region label was applied to non-redundant backends,
-  # collisions are avoided. each backend caches data independently of the aggregated response
+  # for the caller. The merge strategy is automatically selected per-query based on the
+  # outer PromQL aggregation operator. Injected labels are automatically stripped before
+  # merging so that series from different backends are combined correctly. Because prom01a
+  # and prom01b are in the same replica_group, their values are de-duplicated before being
+  # merged/reduced with prom02 and prom03.
   prom-alb-all:
     provider: alb
     alb:
       mechanism: tsm
-      pool: 
+      pool:
         - prom01a
         - prom01b
         - prom02
@@ -266,7 +346,16 @@ Here is the visual representation of this configuration:
 
 The User Router mechanism is used to control a Request's destination Backend based on the username in the request. A default Backend (for no-user and users not in the manifest) can be configured, as well as a Backend per-user.
 
+Native MySQL listeners use a deliberately narrower User Router topology than
+HTTP backends: one authenticated listener-facing User Router may select only
+direct terminal MySQL backends, selection is sticky for the session, and
+`to_user`/`to_credential` remapping is rejected. See the
+[MySQL Provider Guide](mysql.md#protocol-aware-user-router) for the complete
+authentication, routing, health, cache-identity, and no-route contract.
+
 When a User Router ALB is configured to use an [Authenticator](./authenticator.md), the ALB can also modify a Request's credentials before passing it off to the destination Backend. In the graphic below, user `casey` will be routed to the `readersBackend`, which proxies to a read-only database server with the `dbreader` credentials; while user `taylor` will be routed to the `writersBackend`, which proxies to a read-write database server with the `dbwriter` credentials. Here is the example configuration corresponding to the graphic:
+
+Credential replacement is applied only when the user's configured `to_backend` target is selected. When a request instead uses `default_backend` - because the username has no mapping, the mapping does not name a usable runtime target, or the mapped target is unavailable - the request retains its inbound credentials. If a user should receive replacement credentials when routed to the same Backend that also serves as the default, set that Backend explicitly as the user's `to_backend`.
 
 ```yaml
 backends:
@@ -289,7 +378,7 @@ backends:
           casey:
             to_user: dbreader # replaces user casey with dbreader in the request's Authorization header
             to_credential: ${DB_READER_PW} # replaces credential in the Authorization header with this env
-            # casey is sent to the default backend (readers) since to_backend is not set here
+            to_backend: readersBackend # explicit selection applies casey's credential replacement
           taylor:
             to_user: dbwriter # replaces user taylor with dbwriter in the request's Authorization header
             to_credential: ${DB_WRITER_PW} # replaces credential in the Authorization header with this env
@@ -354,9 +443,64 @@ backends:
 
 ### User Router ALB Backend Pool and Health Checking
 
-The User Router does not rotate through or fanout to a Pool of Backends like the other ALB mechanisms. It also does not consider whether a destination backend is considered healthy or not. Users are blindly routed their configured (or default) backends regardless of health status.
+The User Router does not rotate through or fan out to a pool of Backends like
+the other ALB mechanisms. A healthy mapped target is selected directly. When a
+mapped target is unavailable, the request uses the healthy `default_backend`
+without applying the mapped target's credential replacement. If neither target
+is available, the router uses its configured no-route response.
+
+That fallback applies to HTTP requests. A native MySQL session whose username
+has an explicit mapping fails with a MySQL availability error when that mapped
+terminal is unavailable; it is never redirected to `default_backend`. Only an
+unmapped MySQL username may use the configured default terminal.
 
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
+
+## Bounding Per-Member Response Captures
+
+ALB mechanisms that fan out (TSM, FR, FGR, NLM) buffer each pool member's response in memory before merging or selecting a winner. Without a cap, one misbehaving upstream returning an oversized body can OOM the proxy -- an N-way fanout multiplies that by N.
+
+Trickster applies a default cap of **256 MiB** per response. A member whose body exceeds the cap is treated as a partial failure: the merged response carries an `X-Trickster-Result: phit` marker and the `trickster_alb_fanout_failures_total{mechanism, reason="truncated"}` metric increments.
+
+Override the cap at the backend or ALB level:
+
+```yaml
+backends:
+  default:
+    max_capture_bytes: 67108864  # 64 MiB, applies to all backends (Prometheus, ClickHouse, ALB members, etc.)
+
+  prom-alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      max_capture_bytes: 16777216  # 16 MiB, ALB-specific override
+      pool:
+        - prom01
+        - prom02
+```
+
+The ALB-level value takes precedence over the backend-level value, which in turn takes precedence over the 256 MiB default.
+
+### Bounding Aggregate In-Flight Captures
+
+`max_capture_bytes` caps each member's response individually; a fanout to N members can still buffer up to `N * max_capture_bytes` in flight. For deployments with large pools or low memory ceilings, set `max_fanout_capture_bytes` to cap the aggregate buffer across all in-flight slots in a single fanout call. Slots dispatched after the aggregate budget would go negative are fail-fasted (marked `Failed`, no capture buffer allocated) before the upstream handler runs; the merge sees them as partial failures and the existing fallback path handles it.
+
+```yaml
+backends:
+  prom-alb-tsm:
+    provider: alb
+    alb:
+      mechanism: tsm
+      max_capture_bytes: 16777216         # 16 MiB per member
+      max_fanout_capture_bytes: 67108864  # 64 MiB total across all in-flight slots
+      pool:
+        - prom01
+        - prom02
+        - prom03
+        - prom04
+```
+
+`max_fanout_capture_bytes` defaults to `0` (no aggregate cap). Pick a value matching what your trickster instance can afford to buffer per request, independent of pool size.
 
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
@@ -370,7 +514,9 @@ A backend will report one of three possible health states to its ALBs: `unavaila
 
 Each ALB has a configurable `healthy_floor` value, which is the threshold for determining which pool members are included in the healthy pool, based on their instantaneous health state. The `healthy_floor` represents the minimum acceptable health state value for inclusion in the healthy pool. The default `healthy_floor` value is `0`, meaning Backends in a state `>= 0` (`unknown` and `available`) are included in the healthy pool. Setting `healthy_floor: 1` would include only `available` Backends, while a value of `-1` will include all backends in the configured pool, including those marked as `unavailable`.
 
-Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. Note that if an ALB is configured with `healthy_floor: 1`, any pool members that are not configured with an automated health check interval will never be included in the ALB's healthy pool, as their state is permanently `0`.
+Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. A pool member in a permanent `unknown` state can never reach `available`, so a `healthy_floor: 1` ALB whose members lack health checks would have an empty pool and return `502` for every request. To avoid that, Trickster resets such an ALB's effective floor to `0` at startup, emits a warning naming the ALB and the un-probed members, and sets the `trickster_alb_pool_floor_reset{backend_name}` gauge to `1`. Configure a health check interval on those members if you want `healthy_floor: 1` to apply.
+
+Setting `healthy_floor` below `0` admits members the probe has confirmed `unavailable`, not just members in the transient `unknown` state. If your goal is to keep traffic flowing during the cold-start window before the first probes complete, lower the pool members' `recovery_threshold` so they transition out of `unknown` faster -- don't lower the floor. When `healthy_floor < 0` Trickster emits a startup warning and sets the `trickster_alb_pool_admits_failing{backend_name}` gauge to `1`.
 
 ### Example ALB Configuration Routing Only To Known Healthy Backends
 
@@ -400,7 +546,7 @@ backends:
 
 ## All-Backends Health Status Page
 
-Trickster 2.0 provides a new global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
+Trickster 2.x provides a global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
 
 The global status page will display the health state about all backends configured for automated health checking. Here is an example configuration and a possible corresponding status page output:
 

@@ -18,6 +18,7 @@ package healthcheck
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
 var testLogger = logging.NoopLogger()
@@ -62,7 +64,7 @@ func TestRegister(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
@@ -85,12 +87,41 @@ func TestRegister(t *testing.T) {
 	}
 }
 
+func TestRegisterProbe(t *testing.T) {
+	hc := New().(*healthChecker)
+	o := ho.New()
+	probeErr := errors.New("native probe failed")
+	status, err := hc.RegisterProbe("native", "mysql", o, func(context.Context) error {
+		return probeErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status == nil || status.Prober() == nil || hc.Status("native") != status {
+		t.Fatal("protocol probe was not registered with a demand prober")
+	}
+	if _, err := hc.RegisterProbe("nil-options", "mysql", nil, func(context.Context) error {
+		return nil
+	}); !errors.Is(err, ho.ErrNoOptionsProvided) {
+		t.Fatalf("nil options error = %v", err)
+	}
+	if _, err := hc.RegisterProbe("nil-probe", "mysql", o, nil); err == nil {
+		t.Fatal("nil protocol probe was accepted")
+	}
+	httpOptions := ho.New()
+	httpOptions.Path = "/health"
+	if _, err := hc.RegisterProbe("http-options", "mysql", httpOptions,
+		func(context.Context) error { return nil }); err == nil {
+		t.Fatal("HTTP-only options were accepted for a protocol probe")
+	}
+}
+
 func TestUnregister(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	logger.SetLogger(testLogger)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
@@ -106,7 +137,7 @@ func TestStatus(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)
@@ -132,7 +163,7 @@ func TestStatuses(t *testing.T) {
 	logger.SetLogger(testLogger)
 	hc := New().(*healthChecker)
 	o := ho.New()
-	o.Interval = 500 * time.Millisecond
+	o.Interval = timeconv.Duration(500 * time.Millisecond)
 	_, err := hc.Register("test", "test", o, http.DefaultClient)
 	if err != nil {
 		t.Error(err)

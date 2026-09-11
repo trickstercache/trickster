@@ -18,9 +18,12 @@ package engines
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -94,6 +97,7 @@ func TestParseRequestRanges(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:         r,
+		rsc:             request.GetResources(r),
 		upstreamRequest: r,
 	}
 	pr.parseRequestRanges()
@@ -159,6 +163,86 @@ func TestWriteResponseBody(t *testing.T) {
 	}
 }
 
+// newServedRequest returns a request that abortOnCopyError will act on.
+func newServedRequest() *http.Request {
+	r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	return r.WithContext(context.WithValue(r.Context(), http.ServerContextKey, &http.Server{}))
+}
+
+func TestWriteResponseBodyAbortsTruncated(t *testing.T) {
+	tests := []struct {
+		name        string
+		reader      io.Reader
+		clientFresh bool
+		expectPanic bool
+	}{
+		{"short body", strings.NewReader("short"), false, true},
+		{"complete body", strings.NewReader("0123456789"), false, false},
+		{"short body not sent to client", strings.NewReader("short"), true, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			pr := &proxyRequest{
+				Request:          newServedRequest(),
+				upstreamRequest:  newServedRequest(),
+				upstreamReader:   tc.reader,
+				upstreamResponse: &http.Response{StatusCode: http.StatusOK, ContentLength: 10},
+				responseWriter:   w,
+				clientWriter:     w,
+				mapLock:          &sync.Mutex{},
+			}
+			if tc.clientFresh {
+				pr.clientWriter = nil
+			}
+			defer func() {
+				r := recover()
+				if tc.expectPanic && r != http.ErrAbortHandler {
+					t.Errorf("expected ErrAbortHandler, got %v", r)
+				}
+				if !tc.expectPanic && r != nil {
+					t.Errorf("unexpected panic: %v", r)
+				}
+				if !pr.bodyTruncated.Load() && tc.name != "complete body" {
+					t.Error("expected bodyTruncated to be set")
+				}
+			}()
+			pr.writeResponseBody()
+		})
+	}
+}
+
+func TestPrepareResponseAbortsTruncatedRange(t *testing.T) {
+	w := httptest.NewRecorder()
+	pr := &proxyRequest{
+		Request:         newServedRequest(),
+		upstreamRequest: newServedRequest(),
+		upstreamReader: io.MultiReader(strings.NewReader("partial"),
+			&errReader{err: io.ErrUnexpectedEOF}),
+		upstreamResponse: &http.Response{StatusCode: http.StatusOK, Header: http.Header{}},
+		responseWriter:   w,
+		clientWriter:     w,
+		cachingPolicy:    &CachingPolicy{},
+		cacheStatus:      status.LookupStatusKeyMiss,
+		wantsRanges:      true,
+		wantedRanges:     byterange.Ranges{{Start: 0, End: 3}},
+		writeToCache:     true,
+		mapLock:          &sync.Mutex{},
+	}
+	defer func() {
+		if r := recover(); r != http.ErrAbortHandler {
+			t.Errorf("expected ErrAbortHandler, got %v", r)
+		}
+		if pr.writeToCache {
+			t.Error("expected writeToCache to be cleared")
+		}
+		if !pr.bodyTruncated.Load() {
+			t.Error("expected bodyTruncated to be set")
+		}
+	}()
+	pr.prepareResponse()
+}
+
 func TestDetermineCacheability(t *testing.T) {
 	logger.SetLogger(testLogger)
 
@@ -171,6 +255,7 @@ func TestDetermineCacheability(t *testing.T) {
 	}
 
 	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
 	cache, ok := caches["default"]
 	if !ok {
 		t.Error("could not load cache")
@@ -183,6 +268,7 @@ func TestDetermineCacheability(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:       r,
+		rsc:           request.GetResources(r),
 		cachingPolicy: &CachingPolicy{NoCache: true, LastModified: time.Unix(1, 0)},
 		writeToCache:  true,
 		cacheDocument: &HTTPDocument{
@@ -231,6 +317,7 @@ func TestPrepareResponse(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
 		cacheDocument:    &HTTPDocument{},
@@ -266,6 +353,59 @@ func TestPrepareResponse(t *testing.T) {
 	pr.prepareResponse()
 }
 
+type truncatingReader struct {
+	partial []byte
+	err     error
+	done    bool
+}
+
+func (r *truncatingReader) Read(p []byte) (int, error) {
+	if r.done {
+		return 0, r.err
+	}
+	n := copy(p, r.partial)
+	r.done = true
+	return n, nil
+}
+
+func TestPrepareResponse_UpstreamReadErrorSkipsCache(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	r.Header.Set(headers.NameRange, "bytes=0-10")
+
+	o := &bo.Options{}
+	r = request.SetResources(r, request.NewResources(o, nil, nil, nil, nil, nil))
+
+	pr := proxyRequest{
+		Request:          r,
+		rsc:              request.GetResources(r),
+		cachingPolicy:    &CachingPolicy{},
+		upstreamResponse: &http.Response{StatusCode: http.StatusOK},
+		cacheDocument:    &HTTPDocument{},
+	}
+	pr.parseRequestRanges()
+	pr.cacheDocument.Ranges = pr.wantedRanges
+
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	pr.writeToCache = true
+	pr.upstreamReader = &truncatingReader{
+		partial: []byte("trunc"),
+		err:     io.ErrUnexpectedEOF,
+	}
+	headers.Merge(pr.upstreamResponse.Header, http.Header{
+		headers.NameContentRange: {"bytes 0-99"},
+	})
+
+	pr.prepareResponse()
+
+	if pr.writeToCache {
+		t.Error("writeToCache must be cleared after upstream read error")
+	}
+	if pr.cacheDocument != nil && pr.cacheDocument.isLoaded {
+		t.Error("cacheDocument.isLoaded must not be true when upstream read errored")
+	}
+}
+
 func TestPrepareResponsePreconditionFailed(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
 	pr := proxyRequest{
@@ -298,6 +438,7 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -325,6 +466,7 @@ func TestPrepareRevalidationRequestNoRange(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -349,6 +491,7 @@ func TestPrepareRevalidationRequestDefaultRangeInclusiveEnd(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -381,6 +524,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 	pr := proxyRequest{
 		Request:          r,
+		rsc:              request.GetResources(r),
 		upstreamRequest:  r,
 		cachingPolicy:    &CachingPolicy{},
 		upstreamResponse: &http.Response{},
@@ -402,7 +546,7 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 func TestStoreTrueContentType(t *testing.T) {
 	ts, _, r, _, _ := setupTestHarnessOPC("", "test", http.StatusOK, nil)
-	defer ts.Close()
+	defer closeTestHarness(ts, r)
 
 	expected := "1234"
 
@@ -451,8 +595,9 @@ func TestReconstituteResponsesReadError(t *testing.T) {
 	readErr := errors.New("simulated read error")
 
 	pr := &proxyRequest{
-		mapLock:       &sync.Mutex{},
-		cachingPolicy: &CachingPolicy{},
+		mapLock:        &sync.Mutex{},
+		rsc:            request.GetResources(baseReq),
+		cachingPolicy:  &CachingPolicy{},
 		originRequests: []*http.Request{r1, r2},
 		originResponses: []*http.Response{
 			{
@@ -490,8 +635,9 @@ func TestReconstituteResponsesRevalidationReadError(t *testing.T) {
 	readErr := errors.New("simulated revalidation read error")
 
 	pr := &proxyRequest{
-		mapLock:       &sync.Mutex{},
-		cachingPolicy: &CachingPolicy{},
+		mapLock:             &sync.Mutex{},
+		rsc:                 request.GetResources(baseReq),
+		cachingPolicy:       &CachingPolicy{},
 		revalidationRequest: reval,
 		revalidationResponse: &http.Response{
 			StatusCode: http.StatusPartialContent,

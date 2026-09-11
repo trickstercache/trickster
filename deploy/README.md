@@ -65,6 +65,27 @@ For pure kubernetes deployment use the `deploy/kube` directory.
 - Set your kubectl context to your target cluster `kubectl config use-context <context>`
 - Run deployment script `./deploy` from within `deploy/kube`
 
+#### Graphite demonstration
+
+The Graphite provider can be demonstrated without an external origin by adding
+a graphite-web/carbon pair to the Trickster pod:
+
+- Create the schema ConfigMap and patch the deployment `make bootstrap-graphite-demo`,
+  or manually:
+    ```
+    kubectl create -f graphite-configmap.yaml
+    kubectl patch deployment trickster --type strategic --patch-file graphite-deployment-patch.yaml
+    ```
+- Configure a `graphite` backend in `configmap.yaml` pointing at
+  `http://127.0.0.1:80` (the containers share a network namespace). The
+  commented `graphite1` example in that file shows the available settings;
+  none of them are required, since the provider defaults its own sizing.
+- Uncomment the `graphite-web` and `carbon` entries in `service.yaml` to reach
+  the origin directly and to feed it metrics.
+
+Storage is an `emptyDir`, so this is a demonstration only. See
+[docs/graphite.md](../docs/graphite.md) for the provider's behavior and sizing.
+
 ## Local Binary
 ---
 #### Binary Dev

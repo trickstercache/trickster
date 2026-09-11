@@ -17,10 +17,11 @@
 package types
 
 type AuthResult struct {
-	Status          AuthResultStatus
-	StatusDetail    string
-	Username        string
-	ResponseHeaders map[string]string
+	AuthenticatorName string
+	Status            AuthResultStatus
+	StatusDetail      string
+	Username          string
+	ResponseHeaders   map[string]string
 	// Claims, etc. would go here in the future as needed
 }
 

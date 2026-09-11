@@ -19,11 +19,13 @@ package influxdb
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flightsql"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -37,14 +39,39 @@ var _ types.NewBackendClientFunc = NewClient
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
-	cache cache.Cache, _ backends.Backends, _ types.Lookup,
+	c cache.Cache, _ backends.Backends, _ types.Lookup,
 ) (backends.Backend, error) {
 	if o != nil {
 		o.FastForwardDisable = true
 	}
-	c := &Client{}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers,
-		router, cache, NewModeler())
-	c.TimeseriesBackend = b
-	return c, err
+	client := &Client{}
+	b, err := backends.NewTimeseriesBackend(name, o, client.RegisterHandlers,
+		router, c, NewModeler())
+	client.TimeseriesBackend = b
+	return client, err
+}
+
+// flightCacheAdapter adapts a Trickster cache.Cache to the flightsql.Cache
+// interface (Get/Set vs Retrieve/Store). Without this, Flight SQL requests
+// pass through to upstream unconditionally and the caching path advertised
+// in docs/influxdb.md never engages.
+type flightCacheAdapter struct{ c cache.Cache }
+
+func newFlightCache(c cache.Cache) flightsql.Cache {
+	if c == nil {
+		return nil
+	}
+	return &flightCacheAdapter{c: c}
+}
+
+func (a *flightCacheAdapter) Get(key string) ([]byte, bool) {
+	b, _, err := a.c.Retrieve(key)
+	if err != nil || len(b) == 0 {
+		return nil, false
+	}
+	return b, true
+}
+
+func (a *flightCacheAdapter) Set(key string, data []byte, ttl time.Duration) {
+	_ = a.c.Store(key, data, ttl)
 }
