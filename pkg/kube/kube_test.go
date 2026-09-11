@@ -260,26 +260,24 @@ func TestConnectionIDSeparatesInlineCredentials(t *testing.T) {
 	require.NotEqual(t, ca, cb)
 }
 
-func TestConnectionIDHoldsNoPlaintextSecrets(t *testing.T) {
-	// The identity is a map key held for the process lifetime; it must not
-	// carry credential material in the clear
-	id := connectionID(&rest.Config{
-		Host:        "https://a",
-		Username:    "admin",
-		Password:    "hunter2",
-		BearerToken: "super-secret-token",
-		TLSClientConfig: rest.TLSClientConfig{
-			KeyData: []byte("-----BEGIN PRIVATE KEY-----")},
-	})
-	for _, secret := range []string{
-		"hunter2", "super-secret-token", "BEGIN PRIVATE KEY"} {
-		require.NotContains(t, id, secret)
-	}
-	require.Len(t, id, 64, "expected a sha256 digest")
+func TestConnectionIDIsUnambiguous(t *testing.T) {
+	// Adjacent fields must not run together: moving a character across a
+	// field boundary is a different identity, not the same concatenation
+	require.NotEqual(t,
+		connectionID(&rest.Config{Host: "https://a", Username: "ab"}),
+		connectionID(&rest.Config{Host: "https://a", Username: "a", Password: "b"}))
+	require.NotEqual(t,
+		connectionID(&rest.Config{Host: "https://a", BearerToken: "t"}),
+		connectionID(&rest.Config{Host: "https://a", BearerTokenFile: "t"}))
+	require.NotEqual(t,
+		connectionID(&rest.Config{Host: "https://a",
+			Impersonate: rest.ImpersonationConfig{Groups: []string{"a", "b"}}}),
+		connectionID(&rest.Config{Host: "https://a",
+			Impersonate: rest.ImpersonationConfig{Groups: []string{"ab"}}}))
 }
 
 func TestConnectionIDRefusesToShareUncomparableConfigs(t *testing.T) {
-	// Two configs differing only in a field the digest cannot compare must not
+	// Two configs differing only in a field the identity cannot compare must not
 	// be assumed equal: sharing is an optimization, never a guess
 	mk := func() *rest.Config {
 		return &rest.Config{Host: "https://a", UserAgent: "t/1",

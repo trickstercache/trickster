@@ -24,8 +24,6 @@ package kube
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"maps"
@@ -177,19 +175,19 @@ func UserAgent() string {
 
 func connectionID(cfg *rest.Config) string {
 	// clients sharing an identity share a clientset and its credentials, so every authentication
-	// input is digested in; a config with an incomparable callback shares with nothing
+	// input is part of it; a config with an incomparable callback shares with nothing
 	if cfg.Proxy != nil || cfg.WrapTransport != nil || cfg.Dial != nil ||
 		cfg.Transport != nil || cfg.RateLimiter != nil ||
 		cfg.AuthConfigPersister != nil {
 		return "unshareable-" + strconv.FormatUint(clientsetSeq.Add(1), 10)
 	}
-	h := sha256.New()
+	var b strings.Builder
 	// each value is terminated so that concatenation cannot be ambiguous
 	// (an empty field next to a populated one must not read as one value)
 	write := func(values ...string) {
 		for _, v := range values {
-			h.Write([]byte(v))
-			h.Write([]byte{0})
+			b.WriteString(v)
+			b.WriteByte(0)
 		}
 	}
 	write(cfg.Host, cfg.APIPath, cfg.UserAgent)
@@ -223,7 +221,7 @@ func connectionID(cfg *rest.Config) string {
 	// disagree about it must not share one
 	write(strconv.FormatFloat(float64(cfg.QPS), 'g', -1, 32),
 		strconv.Itoa(cfg.Burst))
-	return hex.EncodeToString(h.Sum(nil))
+	return b.String()
 }
 
 func writeSortedMap(write func(...string), m map[string][]string) {
