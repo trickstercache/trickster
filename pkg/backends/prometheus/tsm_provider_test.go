@@ -62,15 +62,37 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"count(up)", int(merge.StrategySum), standard, ""},
 		{"count_values(\"code\", http_requests_total)", int(merge.StrategySum), standard, ""},
 		{"((count(up)))", int(merge.StrategySum), standard, ""},
-		{"count(up) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
-		{"(count(up)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
-		{"((count(up) or vector(0)))", int(merge.StrategyDedup), standard, "binary expression"},
+		{"SUM(up) BY (job) # comment", int(merge.StrategySum), standard, ""},
+		// Conditionally shard-local inputs retain their strategy but emit a warning.
+		{"sum(rate(errors[5m]) / rate(requests[5m]))", int(merge.StrategySum), standard, "binary expression"},
+		{"sum(sum(up))", int(merge.StrategySum), standard, "nested aggregation"},
+		{"sum(absent(up))", int(merge.StrategySum), standard, `function "absent"`},
+		// A zero fallback adds nothing when shard-local sums and counts are summed.
+		{"count(up) or vector(0)", int(merge.StrategySum), standard, ""},
+		{"(count(up)) or vector(0)", int(merge.StrategySum), standard, ""},
+		{"((count(up) or vector(0)))", int(merge.StrategySum), standard, ""},
+		{"sum by (job) (up) or vector(0)", int(merge.StrategySum), standard, ""},
+		{`count_values("code", up) or vector(0)`, int(merge.StrategySum), standard, ""},
+		{"count(up) or on () vector(0)", int(merge.StrategySum), standard, ""},
+		{"sum(rate(requests[5m])) or vector(0)", int(merge.StrategySum), standard, ""},
+		// The zero fallback is only exact when each shard can evaluate the input alone.
+		{"sum(up + down) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"count(sum by (job) (up)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"count(absent(up)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"sum by (job) (up) or on () vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{`count_values("code", up) or on () vector(0)`, int(merge.StrategyDedup), standard, "binary expression"},
+		{"count(up) or vector(1)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"avg(up) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"max(up) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
 		// Average uses paired sum and count variants.
 		{"avg(up)", int(merge.StrategySum), weighted, ""},
 		{"avg by (region) (up)", int(merge.StrategySum), weighted, ""},
 		{"((avg(up)))", int(merge.StrategySum), weighted, ""},
+		{"avg(up + down)", int(merge.StrategySum), weighted, "binary expression"},
 		{"min(up)", int(merge.StrategyMin), standard, ""},
 		{"max(up)", int(merge.StrategyMax), standard, ""},
+		{"min(up + down)", int(merge.StrategyMin), standard, "binary expression"},
+		{"group(up + down)", int(merge.StrategyDedup), standard, "binary expression"},
 		// Rank aggregations are rewritten and finalized after merge.
 		{"topk(5, up)", int(merge.StrategyDedup), standard, ""},
 		{"topk(5, sum by (service) (up))", int(merge.StrategySum), standard, ""},
@@ -122,7 +144,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"quantile(0.9, up + down)", int(merge.StrategyDedup), standard, "cross-shard"},
 		{"quantile(scalar(phi), up)", int(merge.StrategyDedup), standard, aggregation.Quantile},
 		{"topk(5, stddev(up))", int(merge.StrategyDedup), standard, aggregation.StdDev},
-		{"topk(k, up)", int(merge.StrategyDedup), standard, aggregation.TopK},
+		{"topk(scalar(k), up)", int(merge.StrategyDedup), standard, aggregation.TopK},
 		{"limitk(5, up)", int(merge.StrategyDedup), standard, ""},
 		{"limitk(5, count by (service) (requests))", int(merge.StrategySum), standard, ""},
 		{"limitk(5, min(requests))", int(merge.StrategyMin), standard, ""},
@@ -141,6 +163,17 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"limit_ratio(0.5, sum(absent(up)))", int(merge.StrategyDedup), standard, "absent"},
 		{"limit_ratio(scalar(ratio), up)", int(merge.StrategyDedup), standard, aggregation.LimitRatio},
 		{"group(up)", int(merge.StrategyDedup), standard, ""},
+		// Aggregations beneath other operations cannot be merged shard by shard.
+		{"abs(sum(up))", int(merge.StrategyDedup), standard, "outermost"},
+		{"-sum(up)", int(merge.StrategyDedup), standard, "outermost"},
+		{"histogram_quantile(0.9, sum by (le) (rate(x_bucket[5m])))", int(merge.StrategyDedup),
+			standard, "outermost"},
+		{"sum(up) + vector(1)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"sum(up) > 0", int(merge.StrategyDedup), standard, "binary expression"},
+		// Queries that cannot be parsed are deduplicated with a warning.
+		{"sum by service (up)", int(merge.StrategyDedup), standard, "could not be parsed"},
+		{"SORT(sum(up))", int(merge.StrategyDedup), standard, "could not be parsed"},
+		{"", int(merge.StrategyDedup), standard, ""},
 	}
 
 	c := &Client{}
@@ -296,7 +329,11 @@ func TestPlanTSMMergeVarianceContents(t *testing.T) {
 		if plan.Reduction.Kind != merge.TSMReductionPooledVariance || len(plan.Variants) != 3 {
 			t.Fatalf("pooled plan: %#v", plan)
 		}
-		spec, found := promql.ParseVarianceAggregation(query)
+		expr, err := promql.Parse(query)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		spec, found := promql.ParseVarianceAggregation(expr)
 		if !found {
 			t.Fatal("expected variance aggregation")
 		}
@@ -538,7 +575,7 @@ func TestPlanTSMMergeLimitKContents(t *testing.T) {
 		plan := mustTSMMergePlan(t, r, query)
 
 		if plan.Variants[0].Request != r || plan.Finalizer.Enabled ||
-			!strings.Contains(plan.UnsupportedWarning, aggregation.LimitK) {
+			plan.UnsupportedWarning != tsmUnparsableWarning || plan.AllowSingleMemberBypass {
 			t.Fatalf("invalid grouping plan: %#v", plan)
 		}
 	})

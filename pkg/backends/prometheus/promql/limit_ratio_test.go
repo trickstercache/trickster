@@ -109,7 +109,7 @@ func TestParseLimitRatioAggregation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, found := ParseLimitRatioAggregation(tt.query)
+			got, found := ParseLimitRatioAggregation(parseOrZero(tt.query))
 			if found != tt.wantFound {
 				t.Fatalf("found got %v want %v", found, tt.wantFound)
 			}
@@ -119,8 +119,8 @@ func TestParseLimitRatioAggregation(t *testing.T) {
 			if got.Ratio != tt.wantRatio {
 				t.Errorf("ratio got %v want %v", got.Ratio, tt.wantRatio)
 			}
-			if got.InnerQuery != tt.wantInner {
-				t.Errorf("inner query got %q want %q", got.InnerQuery, tt.wantInner)
+			if got.Inner.String() != tt.wantInner {
+				t.Errorf("inner query got %q want %q", got.Inner.String(), tt.wantInner)
 			}
 			if got.AggregationQuery != tt.wantQuery {
 				t.Errorf("aggregation query got %q want %q", got.AggregationQuery, tt.wantQuery)

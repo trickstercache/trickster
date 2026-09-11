@@ -16,43 +16,44 @@
 
 package promql
 
-import "strings"
+import "github.com/prometheus/prometheus/promql/parser"
 
 // SortWrapper describes outer PromQL sort functions that TSM must apply after
 // merging the wrapped expression across backends.
 type SortWrapper struct {
-	InnerQuery string
+	Inner      Expr
 	Descending bool
 }
 
-// ParseSortWrapper unwraps an outer sort or sort_desc function. If multiple
-// sort wrappers are nested, InnerQuery excludes all of them and Descending
-// reflects the outermost wrapper that determines the final ordering.
-func ParseSortWrapper(query string) (SortWrapper, bool) {
-	q := strings.TrimSpace(query)
-	inner, descending, ok := unwrapSortFunction(q)
-	if !ok || strings.TrimSpace(inner) == "" {
+// ParseSortWrapper unwraps an outer sort or sort_desc call. If multiple sort
+// wrappers are nested, Inner excludes all of them and Descending reflects the
+// outermost wrapper that determines the final ordering.
+func ParseSortWrapper(e Expr) (SortWrapper, bool) {
+	inner, descending, ok := unwrapSortFunction(e)
+	if !ok {
 		return SortWrapper{}, false
 	}
 	for {
 		next, _, found := unwrapSortFunction(inner)
-		if !found || strings.TrimSpace(next) == "" {
+		if !found {
 			break
 		}
 		inner = next
 	}
-	return SortWrapper{
-		InnerQuery: strings.TrimSpace(inner),
-		Descending: descending,
-	}, true
+	return SortWrapper{Inner: inner, Descending: descending}, true
 }
 
-func unwrapSortFunction(query string) (inner string, descending bool, ok bool) {
-	if inner, ok := unwrapUnaryFunction(query, "sort_desc"); ok {
-		return inner, true, true
+func unwrapSortFunction(e Expr) (inner Expr, descending bool, ok bool) {
+	call, isCall := e.node.(*parser.Call)
+	if !isCall || call.Func == nil || len(call.Args) != 1 {
+		return Expr{}, false, false
 	}
-	if inner, ok := unwrapUnaryFunction(query, "sort"); ok {
-		return inner, false, true
+	switch call.Func.Name {
+	case functionSort:
+		return e.child(call.Args[0]), false, true
+	case functionSortDesc:
+		return e.child(call.Args[0]), true, true
+	default:
+		return Expr{}, false, false
 	}
-	return "", false, false
 }

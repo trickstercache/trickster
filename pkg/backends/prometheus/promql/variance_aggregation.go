@@ -40,7 +40,7 @@ var varianceMetadataLabels = map[string]string{
 // optionally wrapped in sort or sort_desc.
 type VarianceAggregation struct {
 	Operator         string
-	InnerQuery       string
+	Inner            Expr
 	AggregationQuery string
 	Grouping         AggregationGrouping
 	SortSet          bool
@@ -52,112 +52,21 @@ type VarianceAggregation struct {
 
 // ParseVarianceAggregation parses a complete outer stddev or stdvar
 // aggregation, optionally wrapped in sort or sort_desc.
-func ParseVarianceAggregation(query string) (VarianceAggregation, bool) {
-	q := strings.TrimSpace(query)
-	if sortSpec, ok := ParseSortWrapper(q); ok {
-		spec, found := parseVarianceAggregation(sortSpec.InnerQuery)
-		if found {
-			spec.SortSet = true
-			spec.SortDescending = sortSpec.Descending
-		}
-		return spec, found
-	}
-	return parseVarianceAggregation(q)
-}
-
-func parseVarianceAggregation(query string) (VarianceAggregation, bool) {
-	q := strings.TrimSpace(query)
-	ql := strings.ToLower(q)
-	operator := ""
-	for _, candidate := range []string{aggregation.StdDev, aggregation.StdVar} {
-		if strings.HasPrefix(ql, candidate) &&
-			(len(q) == len(candidate) || isPromQLBoundary(q[len(candidate)])) {
-			operator = candidate
-			break
-		}
-	}
-	if operator == "" {
+func ParseVarianceAggregation(e Expr) (VarianceAggregation, bool) {
+	spec, found := parseOuterAggregation(e, aggregation.StdDev, aggregation.StdVar)
+	if !found || len(spec.inputPrefix) < len(spec.Operator) {
 		return VarianceAggregation{}, false
 	}
-
-	pos := skipPromQLSpaces(q, len(operator))
-	grouping, next, hasPrefixGrouping := parseGroupingAt(q, pos)
-	if hasPrefixGrouping {
-		pos = skipPromQLSpaces(q, next)
-	}
-	if pos >= len(q) || q[pos] != '(' {
-		return VarianceAggregation{}, false
-	}
-	closeIdx := findMatchingCloser(q, pos, '(', ')')
-	if closeIdx < 0 {
-		return VarianceAggregation{}, false
-	}
-	innerQuery := strings.TrimSpace(q[pos+1 : closeIdx])
-	if innerQuery == "" || findTopLevelComma(innerQuery) >= 0 {
-		return VarianceAggregation{}, false
-	}
-
-	trailer := skipPromQLSpaces(q, closeIdx+1)
-	if !hasPrefixGrouping && trailer < len(q) {
-		var ok bool
-		grouping, trailer, ok = parseGroupingAt(q, trailer)
-		if !ok {
-			return VarianceAggregation{}, false
-		}
-		trailer = skipPromQLSpaces(q, trailer)
-	}
-	if trailer != len(q) {
-		return VarianceAggregation{}, false
-	}
-
 	return VarianceAggregation{
-		Operator:         operator,
-		InnerQuery:       innerQuery,
-		AggregationQuery: q,
-		Grouping:         grouping,
-		inputPrefix:      q[:pos+1],
-		inputSuffix:      q[closeIdx:],
+		Operator:         spec.Operator,
+		Inner:            spec.Inner,
+		AggregationQuery: spec.Aggregation.String(),
+		Grouping:         spec.Grouping,
+		SortSet:          spec.SortSet,
+		SortDescending:   spec.SortDescending,
+		inputPrefix:      spec.inputPrefix,
+		inputSuffix:      spec.inputSuffix,
 	}, true
-}
-
-func skipPromQLSpaces(input string, pos int) int {
-	for pos < len(input) && isPromQLSpace(input[pos]) {
-		pos++
-	}
-	return pos
-}
-
-func parseGroupingAt(input string, pos int) (AggregationGrouping, int, bool) {
-	if pos >= len(input) {
-		return AggregationGrouping{}, pos, false
-	}
-	lower := strings.ToLower(input[pos:])
-	for _, keyword := range []string{"without", "by"} {
-		if !strings.HasPrefix(lower, keyword) {
-			continue
-		}
-		endKeyword := pos + len(keyword)
-		if endKeyword < len(input) && isPromQLIdentifierPart(input[endKeyword]) {
-			continue
-		}
-		openIdx := skipPromQLSpaces(input, endKeyword)
-		if openIdx >= len(input) || input[openIdx] != '(' {
-			return AggregationGrouping{}, pos, false
-		}
-		closeIdx := findMatchingCloser(input, openIdx, '(', ')')
-		if closeIdx < 0 {
-			return AggregationGrouping{}, pos, false
-		}
-		labels, ok := parseLabels(input[openIdx+1 : closeIdx])
-		if !ok {
-			return AggregationGrouping{}, pos, false
-		}
-		return AggregationGrouping{
-			Labels:  labels,
-			Without: keyword == "without",
-		}, closeIdx + 1, true
-	}
-	return AggregationGrouping{}, pos, false
 }
 
 // VarianceVariantQuery rewrites spec as one count, avg, or stdvar query. The
@@ -167,10 +76,10 @@ func VarianceVariantQuery(spec VarianceAggregation, operator string) string {
 	metadataLabels := varianceGroupingMetadataLabels(spec.Grouping)
 	if len(metadataLabels) == 0 {
 		prefix := operator + spec.inputPrefix[len(spec.Operator):]
-		return prefix + "clamp(" + spec.InnerQuery + ", -Inf, +Inf)" + spec.inputSuffix
+		return prefix + "clamp(" + spec.Inner.String() + ", -Inf, +Inf)" + spec.inputSuffix
 	}
 
-	input := spec.InnerQuery
+	input := spec.Inner.String()
 	internalGrouping := AggregationGrouping{Labels: append([]string(nil), spec.Grouping.Labels...)}
 	internalGrouping.Without = spec.Grouping.Without
 	finalGrouping := AggregationGrouping{

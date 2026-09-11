@@ -128,19 +128,18 @@ func finalizePooledVarianceStates(ds *dataset.DataSet, operator string) {
 }
 
 func isCentralVarianceInput(ds *dataset.DataSet, spec promql.VarianceAggregation) bool {
-	// A supported nested plan fans out spec.InnerQuery. The legacy sorted
+	// A supported nested plan fans out spec.Inner. The legacy sorted
 	// fallback fans out the outer variance aggregation instead, so its statement
 	// must not be aggregated a second time.
-	return dataSetContainsFinalizerInput(ds, spec.InnerQuery)
+	return dataSetContainsFinalizerInput(ds, spec.Inner)
 }
 
-func dataSetContainsFinalizerInput(ds *dataset.DataSet, logicalQuery string) bool {
-	query := strings.TrimSpace(logicalQuery)
-	candidates := map[string]struct{}{query: {}}
-	if operator, found := promql.CompleteOuterAggregator(query); found &&
+func dataSetContainsFinalizerInput(ds *dataset.DataSet, input promql.Expr) bool {
+	candidates := map[string]struct{}{input.String(): {}}
+	if operator, _, found := promql.CompleteOuterAggregation(input); found &&
 		operator == aggregation.Average {
-		sumQuery := promql.ReplaceOuterAggregator(query, aggregation.Average, aggregation.Sum)
-		candidates[strings.TrimSpace(sumQuery)] = struct{}{}
+		sumQuery := promql.ReplaceOuterAggregator(input, aggregation.Average, aggregation.Sum)
+		candidates[sumQuery] = struct{}{}
 	}
 
 	foundSeriesStatement := false
