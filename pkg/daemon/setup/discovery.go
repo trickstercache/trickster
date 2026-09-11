@@ -39,6 +39,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 )
 
+func stopDiscovery(si *instance.ServerInstance) {
+	for _, mgr := range si.PoolManagers {
+		if mgr != nil {
+			mgr.Stop()
+		}
+	}
+	for name, d := range si.Discoverers {
+		if d == nil {
+			continue
+		}
+		if err := d.Stop(); err != nil {
+			logger.Warn("error stopping discoverer",
+				logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
+		}
+	}
+	si.Discoverers = nil
+	si.PoolManagers = nil
+}
+
 // applyDiscoveryConfig (re)builds the autodiscovery control plane on each
 // config (re)load: it stops the previous instance's discoverers and dynamic
 // pool managers (capturing their applied membership first), constructs a
@@ -64,19 +83,8 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 		if s := mgr.AppliedSnapshot(); s != nil {
 			seeds[albName] = s
 		}
-		mgr.Stop()
 	}
-	for name, d := range si.Discoverers {
-		if d == nil {
-			continue
-		}
-		if err := d.Stop(); err != nil {
-			logger.Warn("error stopping discoverer during reload",
-				logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
-		}
-	}
-	si.Discoverers = nil
-	si.PoolManagers = nil
+	stopDiscovery(si)
 
 	// enumerate discovery-backed ALBs
 	type discoALB struct {

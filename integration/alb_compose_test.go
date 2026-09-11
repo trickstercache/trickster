@@ -71,7 +71,7 @@ func TestALBCompose(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	release()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)

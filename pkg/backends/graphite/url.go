@@ -18,6 +18,7 @@ package graphite
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 var errNoRenderQuery = errors.New("graphite: time range query carries no render query")
@@ -65,4 +68,42 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	v.Set("format", model.FormatJSON)
 	params.SetRequestValues(r, v)
 	return nil
+}
+
+func unmarshalFetch(r io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+	ts, err := model.UnmarshalTimeseriesReader(r, trq)
+	if ds, ok := ts.(*dataset.DataSet); ok && ds != nil && err == nil {
+		trimToExtent(ds, trq.Extent)
+	}
+	return ts, err
+}
+
+func trimToExtent(ds *dataset.DataSet, e timeseries.Extent) {
+	if e.Start.IsZero() || e.End.IsZero() {
+		return
+	}
+	start, end := epoch.Epoch(e.Start.UnixNano()), epoch.Epoch(e.End.UnixNano())
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			// points are ascending, so only each end is examined
+			i, j := 0, len(s.Points)
+			for i < j && s.Points[i].Epoch < start {
+				s.PointSize -= int64(s.Points[i].Size)
+				i++
+			}
+			for j > i && s.Points[j-1].Epoch > end {
+				s.PointSize -= int64(s.Points[j-1].Size)
+				j--
+			}
+			if i > 0 || j < len(s.Points) {
+				s.Points = s.Points[i:j]
+			}
+		}
+	}
 }

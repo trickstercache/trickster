@@ -67,7 +67,7 @@ func TestALB_TSM_Scale(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	releasePorts()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 	rangeParams := func() url.Values {
@@ -504,7 +504,7 @@ func TestALB_TSM_RealProm_Scale(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	releasePorts()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 	waitForPrometheusData(t, promAddr)
 
