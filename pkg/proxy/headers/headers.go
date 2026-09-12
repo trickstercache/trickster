@@ -61,6 +61,21 @@ const (
 	ValuePublic = "public"
 	// ValueSharedMaxAge represents the HTTP Header Value of "s-maxage"
 	ValueSharedMaxAge = "s-maxage"
+
+	// ValueOnlyIfCached is the "only-if-cached" request Cache-Control directive
+	ValueOnlyIfCached = "only-if-cached"
+	// ValueMinFresh is the "min-fresh" request Cache-Control directive
+	ValueMinFresh = "min-fresh"
+	// ValueMaxStale is the "max-stale" request Cache-Control directive
+	ValueMaxStale = "max-stale"
+	// ValueImmutable is the "immutable" response Cache-Control directive
+	ValueImmutable = "immutable"
+	// ValueMustUnderstand is the "must-understand" response Cache-Control directive
+	ValueMustUnderstand = "must-understand"
+	// ValueStaleWhileRevalidate is the RFC 5861 "stale-while-revalidate" directive
+	ValueStaleWhileRevalidate = "stale-while-revalidate"
+	// ValueStaleIfError is the RFC 5861 "stale-if-error" directive
+	ValueStaleIfError = "stale-if-error"
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
 	// ValueTextYAML represents the HTTP Header Value of "text/yaml"
@@ -126,6 +141,11 @@ const (
 	NameIfNoneMatch = "If-None-Match"
 	// NameIfMatch represents the HTTP Header Name of "If-Match"
 	NameIfMatch = "If-Match"
+	// NameIfRange represents the HTTP Header Name of "If-Range"
+	NameIfRange = "If-Range"
+	// NameCDNCacheControl represents the HTTP Header Name of "CDN-Cache-Control",
+	// the RFC 9213 targeted field a CDN applies in preference to Cache-Control
+	NameCDNCacheControl = "CDN-Cache-Control"
 	// NameDate represents the HTTP Header Name of "date"
 	NameDate = "Date"
 	// NamePragma represents the HTTP Header Name of "pragma"
@@ -161,8 +181,15 @@ const (
 	NameVary = "Vary"
 	// NameAge represents the HTTP Header Name of "Age"
 	NameAge = "Age"
+	// NameCacheStatus represents the HTTP Header Name of "Cache-Status",
+	// the RFC 9211 field describing how a cache handled a request
+	NameCacheStatus = "Cache-Status"
 	// NameVia represents the HTTP Header Name of "Via"
 	NameVia = "Via"
+	// NameMaxForwards represents the HTTP Header Name of "Max-Forwards"
+	NameMaxForwards = "Max-Forwards"
+	// NameAllow represents the HTTP Header Name of "Allow"
+	NameAllow = "Allow"
 	// NameForwarded represents the HTTP Header Name of "Forwarded"
 	NameForwarded = "Forwarded"
 	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"

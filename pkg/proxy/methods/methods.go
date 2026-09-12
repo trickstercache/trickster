@@ -115,6 +115,31 @@ func HasBody(method string) bool {
 	return false
 }
 
+// IsStateChanging returns true for methods that can change the state of the
+// target resource. RFC 9111 4.4 requires a cache to invalidate its stored
+// response when one of them succeeds. A method the cache does not recognize
+// counts as state-changing, since its safety cannot be assumed. PURGE and
+// CONNECT are excluded: the first acts on the cache itself, and the second
+// establishes a tunnel rather than acting on a representation.
+func IsStateChanging(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace,
+		http.MethodConnect, MethodPurge:
+		return false
+	}
+	return true
+}
+
+// HasResponseContent returns false for the request/response combinations that
+// RFC 9110 defines as carrying no content: a response to HEAD, and any 1xx,
+// 204 or 304 status. Their Content-Length, when present, describes the content
+// a GET would have returned rather than bytes actually on the wire.
+func HasResponseContent(method string, statusCode int) bool {
+	return method != http.MethodHead && statusCode != http.StatusNoContent &&
+		statusCode != http.StatusNotModified &&
+		(statusCode < 100 || statusCode > 199)
+}
+
 // MethodMask returns the integer representation of the collection of methods
 // based on the iota bitmask defined above
 func MethodMask(methods ...string) uint16 {

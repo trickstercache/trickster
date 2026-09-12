@@ -18,6 +18,7 @@ package methods
 
 import (
 	"net/http"
+	"strconv"
 	"testing"
 )
 
@@ -543,6 +544,32 @@ func TestAreEqual(t *testing.T) {
 			result := AreEqual(test.l1, test.l2)
 			if result != test.expected {
 				t.Errorf("AreEqual(%v, %v) = %v, expected %v", test.l1, test.l2, result, test.expected)
+			}
+		})
+	}
+}
+
+func TestHasResponseContent(t *testing.T) {
+	tests := []struct {
+		method   string
+		status   int
+		expected bool
+	}{
+		{http.MethodGet, 200, true},
+		{http.MethodGet, 206, true},
+		{http.MethodGet, 404, true},
+		{http.MethodHead, 200, false},
+		{http.MethodHead, 404, false},
+		{http.MethodGet, 204, false},
+		{http.MethodGet, 304, false},
+		{http.MethodGet, 103, false},
+		{http.MethodGet, 100, false},
+		{http.MethodGet, 199, false},
+	}
+	for _, test := range tests {
+		t.Run(test.method+strconv.Itoa(test.status), func(t *testing.T) {
+			if got := HasResponseContent(test.method, test.status); got != test.expected {
+				t.Errorf("got %t expected %t", got, test.expected)
 			}
 		})
 	}

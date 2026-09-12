@@ -82,6 +82,30 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 				err = msgp.WrapError(err, "FreshnessLifetime")
 				return
 			}
+		case "no_stale_serving":
+			z.NoStaleServing, err = dc.ReadBool()
+			if err != nil {
+				err = msgp.WrapError(err, "NoStaleServing")
+				return
+			}
+		case "stale_while_revalidate":
+			z.StaleWhileRevalidate, err = dc.ReadInt()
+			if err != nil {
+				err = msgp.WrapError(err, "StaleWhileRevalidate")
+				return
+			}
+		case "stale_if_error":
+			z.StaleIfError, err = dc.ReadInt()
+			if err != nil {
+				err = msgp.WrapError(err, "StaleIfError")
+				return
+			}
+		case "initial_age":
+			z.InitialAge, err = dc.ReadInt()
+			if err != nil {
+				err = msgp.WrapError(err, "InitialAge")
+				return
+			}
 		case "last_modified":
 			z.LastModified, err = dc.ReadTime()
 			if err != nil {
@@ -125,9 +149,9 @@ func (z *CachingPolicy) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 12
+	// map header, size 16
 	// write "is_fresh"
-	err = en.Append(0x8c, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
+	err = en.Append(0xde, 0x0, 0x10, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
 	if err != nil {
 		return
 	}
@@ -196,6 +220,46 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 		err = msgp.WrapError(err, "FreshnessLifetime")
 		return
 	}
+	// write "no_stale_serving"
+	err = en.Append(0xb0, 0x6e, 0x6f, 0x5f, 0x73, 0x74, 0x61, 0x6c, 0x65, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x6e, 0x67)
+	if err != nil {
+		return
+	}
+	err = en.WriteBool(z.NoStaleServing)
+	if err != nil {
+		err = msgp.WrapError(err, "NoStaleServing")
+		return
+	}
+	// write "stale_while_revalidate"
+	err = en.Append(0xb6, 0x73, 0x74, 0x61, 0x6c, 0x65, 0x5f, 0x77, 0x68, 0x69, 0x6c, 0x65, 0x5f, 0x72, 0x65, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt(z.StaleWhileRevalidate)
+	if err != nil {
+		err = msgp.WrapError(err, "StaleWhileRevalidate")
+		return
+	}
+	// write "stale_if_error"
+	err = en.Append(0xae, 0x73, 0x74, 0x61, 0x6c, 0x65, 0x5f, 0x69, 0x66, 0x5f, 0x65, 0x72, 0x72, 0x6f, 0x72)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt(z.StaleIfError)
+	if err != nil {
+		err = msgp.WrapError(err, "StaleIfError")
+		return
+	}
+	// write "initial_age"
+	err = en.Append(0xab, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x5f, 0x61, 0x67, 0x65)
+	if err != nil {
+		return
+	}
+	err = en.WriteInt(z.InitialAge)
+	if err != nil {
+		err = msgp.WrapError(err, "InitialAge")
+		return
+	}
 	// write "last_modified"
 	err = en.Append(0xad, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x6d, 0x6f, 0x64, 0x69, 0x66, 0x69, 0x65, 0x64)
 	if err != nil {
@@ -252,9 +316,9 @@ func (z *CachingPolicy) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *CachingPolicy) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 12
+	// map header, size 16
 	// string "is_fresh"
-	o = append(o, 0x8c, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
+	o = append(o, 0xde, 0x0, 0x10, 0xa8, 0x69, 0x73, 0x5f, 0x66, 0x72, 0x65, 0x73, 0x68)
 	o = msgp.AppendBool(o, z.IsFresh)
 	// string "nocache"
 	o = append(o, 0xa7, 0x6e, 0x6f, 0x63, 0x61, 0x63, 0x68, 0x65)
@@ -274,6 +338,18 @@ func (z *CachingPolicy) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "freshness_lifetime"
 	o = append(o, 0xb2, 0x66, 0x72, 0x65, 0x73, 0x68, 0x6e, 0x65, 0x73, 0x73, 0x5f, 0x6c, 0x69, 0x66, 0x65, 0x74, 0x69, 0x6d, 0x65)
 	o = msgp.AppendInt(o, z.FreshnessLifetime)
+	// string "no_stale_serving"
+	o = append(o, 0xb0, 0x6e, 0x6f, 0x5f, 0x73, 0x74, 0x61, 0x6c, 0x65, 0x5f, 0x73, 0x65, 0x72, 0x76, 0x69, 0x6e, 0x67)
+	o = msgp.AppendBool(o, z.NoStaleServing)
+	// string "stale_while_revalidate"
+	o = append(o, 0xb6, 0x73, 0x74, 0x61, 0x6c, 0x65, 0x5f, 0x77, 0x68, 0x69, 0x6c, 0x65, 0x5f, 0x72, 0x65, 0x76, 0x61, 0x6c, 0x69, 0x64, 0x61, 0x74, 0x65)
+	o = msgp.AppendInt(o, z.StaleWhileRevalidate)
+	// string "stale_if_error"
+	o = append(o, 0xae, 0x73, 0x74, 0x61, 0x6c, 0x65, 0x5f, 0x69, 0x66, 0x5f, 0x65, 0x72, 0x72, 0x6f, 0x72)
+	o = msgp.AppendInt(o, z.StaleIfError)
+	// string "initial_age"
+	o = append(o, 0xab, 0x69, 0x6e, 0x69, 0x74, 0x69, 0x61, 0x6c, 0x5f, 0x61, 0x67, 0x65)
+	o = msgp.AppendInt(o, z.InitialAge)
 	// string "last_modified"
 	o = append(o, 0xad, 0x6c, 0x61, 0x73, 0x74, 0x5f, 0x6d, 0x6f, 0x64, 0x69, 0x66, 0x69, 0x65, 0x64)
 	o = msgp.AppendTime(o, z.LastModified)
@@ -352,6 +428,30 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				err = msgp.WrapError(err, "FreshnessLifetime")
 				return
 			}
+		case "no_stale_serving":
+			z.NoStaleServing, bts, err = msgp.ReadBoolBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "NoStaleServing")
+				return
+			}
+		case "stale_while_revalidate":
+			z.StaleWhileRevalidate, bts, err = msgp.ReadIntBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "StaleWhileRevalidate")
+				return
+			}
+		case "stale_if_error":
+			z.StaleIfError, bts, err = msgp.ReadIntBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "StaleIfError")
+				return
+			}
+		case "initial_age":
+			z.InitialAge, bts, err = msgp.ReadIntBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "InitialAge")
+				return
+			}
 		case "last_modified":
 			z.LastModified, bts, err = msgp.ReadTimeBytes(bts)
 			if err != nil {
@@ -396,6 +496,6 @@ func (z *CachingPolicy) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 // Msgsize returns an upper bound estimate of the number of bytes occupied by the serialized message
 func (z *CachingPolicy) Msgsize() (s int) {
-	s = 1 + 9 + msgp.BoolSize + 8 + msgp.BoolSize + 12 + msgp.BoolSize + 15 + msgp.BoolSize + 16 + msgp.BoolSize + 18 + msgp.BoolSize + 19 + msgp.IntSize + 14 + msgp.TimeSize + 8 + msgp.TimeSize + 5 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.StringPrefixSize + len(z.ETag)
+	s = 3 + 9 + msgp.BoolSize + 8 + msgp.BoolSize + 12 + msgp.BoolSize + 15 + msgp.BoolSize + 16 + msgp.BoolSize + 18 + msgp.BoolSize + 19 + msgp.IntSize + 17 + msgp.BoolSize + 23 + msgp.IntSize + 15 + msgp.IntSize + 12 + msgp.IntSize + 14 + msgp.TimeSize + 8 + msgp.TimeSize + 5 + msgp.TimeSize + 11 + msgp.TimeSize + 5 + msgp.StringPrefixSize + len(z.ETag)
 	return
 }
