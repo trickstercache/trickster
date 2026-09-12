@@ -17,16 +17,16 @@ Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) 
 
 ## HTTP Reverse Proxy Cache
 
-Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications like static file servers and web API's.
+Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like static file servers and REST API's.
 
-### Proxy Feature Highlights
+### Feature Highlights
 
 * A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints, with [pool autodiscovery](./docs/alb-autodiscovery.md) from Kubernetes, AWS, GPC, Azure, Consul, Nomad, DNS, and more
 * [Supports TLS](./docs/tls.md), HTTP/2 and [HTTP/3](./docs/http3.md) for frontend termination, and TLS/HTTP/2 for backend origination
+* Can serve as Kubernetes [Ingress](./docs/kubernetes-ingress.md) and/or [Gateway](./docs/kubernetes-gateway.md) Controller
 * WebSocket and HTTP Upgrade tunneling, response trailers (gRPC), and incremental delivery of streaming responses
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
 * [Highly customizable](./docs/configuring.md), using simple yaml configuration settings, [down to the HTTP Path](./docs/paths.md)
-* Per-backend and per-path [CORS response policies](./docs/cors.md)
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
@@ -34,7 +34,6 @@ Trickster is a fully-featured HTTP Reverse Proxy Cache for HTTP applications lik
 * [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol.
 * Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting
-* Configurable [maximum request body size](./docs/body.md).
 
 ## Time Series Database Accelerator
 
