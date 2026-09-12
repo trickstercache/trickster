@@ -219,6 +219,14 @@ func (mbrs MultipartByteRanges) ExtractResponseRange(ranges Ranges, fullContentL
 		fullContentLength = int64(len(body))
 	}
 
+	// a parsed Range carries -1 for a bound the client left unspecified, and
+	// may name positions past the end; resolving first keeps those sentinels
+	// out of the slice arithmetic below
+	ranges, ok := ranges.Resolve(fullContentLength)
+	if !ok {
+		return nil, nil
+	}
+
 	m := make(MultipartByteRanges)
 
 	for _, r := range ranges {

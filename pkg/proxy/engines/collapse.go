@@ -161,7 +161,7 @@ func CollapsedPassthrough(inner http.Handler) http.Handler {
 
 func joinCollapse(pcf ProgressiveCollapseForwarder, w http.ResponseWriter, r *http.Request) {
 	resp := pcf.GetResp()
-	writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+	writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, nil)
 	if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
 		logger.Error("collapsed client stream failed",
 			logging.Pairs{keys.URL: r.URL.String(), keys.Error: err.Error()})
@@ -260,7 +260,7 @@ func (c *collapseCapture) WriteHeader(code int) {
 	// this response only to the leader, unbuffered
 	c.entry.resolve(nil)
 	collapses.CompareAndDelete(c.key, c.entry)
-	writer := PrepareResponseWriter(c.leader, code, c.header)
+	writer := PrepareResponseWriter(c.leader, code, c.header, nil)
 	c.tee = streamWriter(writer, &http.Response{
 		StatusCode: code, Header: c.header, ContentLength: c.declared,
 	})

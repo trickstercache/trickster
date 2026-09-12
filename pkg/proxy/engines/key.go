@@ -180,7 +180,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if v := r.Header.Get(headers.NameAuthorization); v != "" &&
-		!pc.ReplacesHeader(headers.NameAuthorization) {
+		!pc.ReplacesHeader(headers.NameAuthorization) && !pr.omitAuthFromKey {
 		kb.add(compAuth, headers.NameAuthorization, v)
 	}
 

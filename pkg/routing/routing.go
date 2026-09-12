@@ -113,6 +113,7 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	if !isPassthrough {
 		h = middleware.UpgradeSwitch(passthrough, h)
 	}
+	h = middleware.MaxForwards(h)
 	if tr != nil {
 		h = middleware.Trace(tr, h)
 	}

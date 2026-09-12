@@ -46,6 +46,7 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/net/http/httpguts"
 )
 
 // Reqs is for Progressive Collapsed Forwarding
@@ -83,7 +84,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		// don't use PCF
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
-		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, nil)
 		if writer != nil && reader != nil {
 			if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
 				logger.Error("proxy response copy failed",
@@ -107,7 +108,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			reader, resp, contentLength = PrepareFetchReader(lr)
 			cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
 			pr.mapLock.Lock()
-			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, nil)
 			pr.mapLock.Unlock()
 			var pcf ProgressiveCollapseForwarder
 			if (contentLength < 0 || (contentLength > 0 &&
@@ -161,7 +162,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 			pcf, _ := result.(ProgressiveCollapseForwarder)
 			resp = pcf.GetResp()
 			pr.mapLock.Lock()
-			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header)
+			writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, nil)
 			pr.mapLock.Unlock()
 			if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
 				abortOnCopyError(writer, r, err)
@@ -198,11 +199,20 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 // `Connection: X-Internal-Auth` plus `X-Internal-Auth: ...` would leak the
 // hop-only header to the client. Mirrors the request-side strip applied by
 // PrepareFetchReader via headers.StripClientHeaders.
-func PrepareResponseWriter(w io.Writer, code int, header http.Header) io.Writer {
+func PrepareResponseWriter(w io.Writer, code int, header http.Header,
+	trailers []string,
+) io.Writer {
 	if rw, ok := w.(http.ResponseWriter); ok {
 		h := rw.Header()
 		headers.Merge(h, header)
 		headers.StripClientHeaders(h)
+		// Trailer is hop-by-hop, so the strip above removes what the origin
+		// declared; re-announce here, after the strip and before the status is
+		// written, because a Go server only emits trailers on a chunked
+		// response and declaring them is what makes the response chunked
+		if len(trailers) > 0 {
+			h.Set(headers.NameTrailer, strings.Join(trailers, ", "))
+		}
 		if code > 0 {
 			rw.WriteHeader(code)
 		}
@@ -232,7 +242,13 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	var rc io.ReadCloser
 
+	// AddForwardingHeaders strips TE as hop-by-hop, but a client that asked for
+	// trailers needs that request to reach the origin, so restore it after
+	wantsTrailers := httpguts.HeaderValuesContainsToken(r.Header[headers.NameTe], "trailers")
 	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
+	if wantsTrailers {
+		r.Header.Set(headers.NameTe, "trailers")
+	}
 	// clear the Host header before proxying or it will be forwarded upstream
 	r.Host = ""
 
@@ -379,6 +395,16 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		}
 	}
 
+	// RFC 9110 7.6.1: fields the origin scoped to its own connection end at
+	// this hop. Removing them here rather than at write time keeps a
+	// connection-scoped Cache-Control or Vary out of the storage decision, and
+	// stops an upstream Connection: Via from deleting the value added next.
+	headers.StripClientHeaders(resp.Header)
+
+	// RFC 9110 7.6.3: name this hop on the response, using the protocol the
+	// response was received over, so the client can see the path it traveled
+	headers.AddResponseVia(resp.Header, resp.Proto)
+
 	var hasCustomResponseBody bool
 	resp.Header.Del(headers.NameContentLength)
 
@@ -404,7 +430,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 // Respond sends an HTTP Response down to the requesting client
 func Respond(w io.Writer, code int, header http.Header, body io.Reader) {
-	PrepareResponseWriter(w, code, header)
+	PrepareResponseWriter(w, code, header, nil)
 	if body != nil {
 		io.Copy(w, body)
 	}
@@ -416,6 +442,7 @@ func setStatusHeader(httpStatus int, header http.Header) status.LookupStatus {
 		st = status.LookupStatusProxyError
 	}
 	headers.SetResultsHeader(header, "HTTPProxy", st.String(), "", nil, nil)
+	addBypassCacheStatus(header, httpStatus)
 	return st
 }
 
