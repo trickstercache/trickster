@@ -116,6 +116,8 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sort_desc(count by (service) (up))", int(merge.StrategySum), standard, ""},
 		{"sort(avg by (service) (up))", int(merge.StrategySum), weighted, ""},
 		{"sort((avg(up)))", int(merge.StrategySum), weighted, ""},
+		{"sort(count(up) or vector(0))", int(merge.StrategySum), standard, ""},
+		{"sort_desc((count(up)) or vector(0))", int(merge.StrategySum), standard, ""},
 		{"sort(min(up))", int(merge.StrategyMin), standard, ""},
 		{"sort_desc(max(up))", int(merge.StrategyMax), standard, ""},
 		{"sort(up)", int(merge.StrategyDedup), standard, ""},

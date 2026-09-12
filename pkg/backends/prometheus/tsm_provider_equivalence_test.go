@@ -134,6 +134,7 @@ var tsmEquivalenceCorpus = []string{
 	"stddev(up + down)",
 	"sort(sum(up))",
 	"sort_desc(avg by (job) (up))",
+	"sort_desc(count(up) or vector(0))",
 	"sort(up)",
 	"count(up) or vector(0)",
 	"sum(up + down) or vector(0)",
@@ -220,6 +221,7 @@ func TestFinalizeTSMMergeFormattingEquivalence(t *testing.T) {
 		"sort_desc(topk by (job) (1, up))",
 		"sort(sum(up))",
 		"sort_desc(count by (job) (up))",
+		"sort_desc(count(up) or vector(0))",
 		"limitk(1, sum by (instance) (up))",
 		"quantile(0.5, max by (instance) (up))",
 		"limit_ratio(1, count by (instance) (up))",
@@ -250,6 +252,23 @@ func TestPlanTSMMergeZeroFallbackContents(t *testing.T) {
 	if plan.Variants[0].Request != r || plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
 		plan.Finalizer.Enabled || plan.UnsupportedWarning != "" || !plan.AllowSingleMemberBypass {
 		t.Fatalf("zero fallback plan: %#v", plan)
+	}
+}
+
+func TestPlanTSMMergeSortedZeroFallbackContents(t *testing.T) {
+	const (
+		query = "sort_desc((count(up)) or vector(0))"
+		inner = "(count(up)) or vector(0)"
+	)
+	r, _ := http.NewRequest(http.MethodGet,
+		"http://example.com/api/v1/query?query="+url.QueryEscape(query), nil)
+	plan := mustTSMMergePlan(t, r, query)
+	values, _, _ := params.GetRequestValues(plan.Variants[0].Request)
+	if values.Get(promQueryParam) != inner ||
+		plan.Variants[0].MergeStrategy != int(merge.StrategySum) ||
+		!plan.Finalizer.Enabled || plan.Finalizer.Query != query ||
+		plan.UnsupportedWarning != "" || plan.AllowSingleMemberBypass {
+		t.Fatalf("sorted zero fallback plan: %#v", plan)
 	}
 }
 

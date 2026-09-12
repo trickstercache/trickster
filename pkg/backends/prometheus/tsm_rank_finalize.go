@@ -155,7 +155,8 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 		return
 	}
 	if spec, found := promql.ParseSortWrapper(expr); found {
-		if _, _, aggregationFound := promql.CompleteOuterAggregation(spec.Inner); aggregationFound {
+		_, _, aggregationFound := promql.CompleteOuterAggregation(spec.Inner)
+		if aggregationFound || zeroFallbackMergesBySum(spec.Inner) {
 			finalizeSortWrapper(ds, spec.Descending)
 		}
 	}

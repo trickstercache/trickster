@@ -516,7 +516,8 @@ func tsmInnerQuery(expr promql.Expr) (promql.Expr, bool) {
 		return spec.Inner, true
 	}
 	if spec, ok := promql.ParseSortWrapper(expr); ok {
-		if _, _, found := promql.CompleteOuterAggregation(spec.Inner); found {
+		if _, _, found := promql.CompleteOuterAggregation(spec.Inner); found ||
+			zeroFallbackMergesBySum(spec.Inner) {
 			return spec.Inner, true
 		}
 	}
