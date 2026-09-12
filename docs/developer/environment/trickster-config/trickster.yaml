@@ -235,5 +235,11 @@ backends:
       - path: /
         match_type: prefix
         handler: proxycache
+  mecone-rp:
+    provider: reverseproxy
+    origin_url: 'http://127.0.0.1:8487'
+  mecone-rpc:
+    provider: reverseproxycache
+    origin_url: 'http://127.0.0.1:8488'
 logging:
   log_level: info
