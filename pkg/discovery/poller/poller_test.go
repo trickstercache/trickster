@@ -121,12 +121,74 @@ func TestFirstIterationIsImmediate(t *testing.T) {
 		"the first iteration waited for the interval instead of running immediately")
 }
 
-// Jitter must delay the first iteration, not skip it.
-func TestJitterDelaysButDoesNotSkipTheFirstIteration(t *testing.T) {
+// pinMaxJitter makes the one-time jitter deterministic by always drawing the
+// largest value in range. It deliberately honors the bound it is given
+// rather than returning a constant, so the caller still exercises whatever
+// cap the poller applied before drawing.
+func pinMaxJitter(t *testing.T) {
+	t.Helper()
+	prev := randomDuration
+	randomDuration = func(d time.Duration) time.Duration { return d }
+	t.Cleanup(func() { randomDuration = prev })
+}
+
+// Jitter must not postpone the first iteration: a health check registered
+// for a member joining a live pool cannot admit it until the first answer
+// arrives. The fleet is spread out by the wait that follows, once.
+func TestJitterShiftsTheCadenceNotTheFirstIteration(t *testing.T) {
+	pinMaxJitter(t)
+	const interval = 200 * time.Millisecond
 	r := newRecorder(nil)
-	mustStart(t, Options{Interval: time.Hour, Jitter: 50 * time.Millisecond}, r)
-	r.awaitCall(t)
-	require.EqualValues(t, 1, r.count.Load())
+	start := time.Now()
+	mustStart(t, Options{Interval: interval, Jitter: interval}, r)
+	first := r.awaitCall(t)
+	require.Less(t, first.Sub(start), settleTime,
+		"jitter delayed the first iteration")
+	second := r.awaitCall(t)
+	require.GreaterOrEqual(t, second.Sub(first), interval+interval/2,
+		"the wait after the first iteration must carry the jitter")
+	third := r.awaitCall(t)
+	require.Less(t, third.Sub(second), interval+interval/2,
+		"jitter must be spent once, not on every wait")
+}
+
+// Jitter is capped at the interval. A jitter sized for a slow poller must
+// not stall a fast one for several of its own periods: spreading over one
+// interval is all that de-phasing a fleet requires.
+func TestJitterIsCappedAtTheInterval(t *testing.T) {
+	pinMaxJitter(t)
+	const interval = 20 * time.Millisecond
+	r := newRecorder(nil)
+	// an hour of jitter on a 20ms poller would stall it for 180,000 periods
+	mustStart(t, Options{Interval: interval, Jitter: time.Hour}, r)
+	first := r.awaitCall(t)
+	second := r.awaitCall(t)
+	require.Less(t, second.Sub(first), settleTime,
+		"jitter must be capped at the interval, not applied whole")
+
+	third := r.awaitCall(t)
+	require.Less(t, third.Sub(second), settleTime)
+}
+
+// A blocking-query source's immediate re-issue is never held back by
+// jitter; it is carried to the first real wait
+func TestJitterSkipsPollNow(t *testing.T) {
+	pinMaxJitter(t)
+	const interval = 200 * time.Millisecond
+	r := newRecorder(func(_ context.Context, n int) (time.Duration, error) {
+		if n == 1 {
+			return PollNow, nil
+		}
+		return 0, nil
+	})
+	mustStart(t, Options{Interval: interval, Jitter: interval}, r)
+	first := r.awaitCall(t)
+	second := r.awaitCall(t)
+	require.Less(t, second.Sub(first), settleTime,
+		"PollNow must re-issue immediately even before the jitter is spent")
+	third := r.awaitCall(t)
+	require.GreaterOrEqual(t, third.Sub(second), interval+interval/2,
+		"the jitter is spent on the first real wait")
 }
 
 // A Source returning a positive next overrides the configured interval for

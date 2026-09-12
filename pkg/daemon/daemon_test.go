@@ -236,9 +236,9 @@ backends:
 	}
 }
 
-func TestHupNoExistingConfig(t *testing.T) {
+func TestReloadNoExistingConfig(t *testing.T) {
 	si := &instance.ServerInstance{}
-	ok, err := Hup(si, "test")
+	ok, err := Reload(si, "test")
 	if ok {
 		t.Error("expected no reload when the instance has no config")
 	}
@@ -247,10 +247,10 @@ func TestHupNoExistingConfig(t *testing.T) {
 	}
 }
 
-func TestHupNotStale(t *testing.T) {
+func TestReloadNotStale(t *testing.T) {
 	// a config with no backing file path is never considered stale
 	si := &instance.ServerInstance{Config: config.NewConfig()}
-	ok, err := Hup(si, "test")
+	ok, err := Reload(si, "test")
 	if ok {
 		t.Error("expected no reload for a non-stale config")
 	}
@@ -259,7 +259,7 @@ func TestHupNotStale(t *testing.T) {
 	}
 }
 
-func TestHupBootstrapFailure(t *testing.T) {
+func TestReloadBootstrapFailure(t *testing.T) {
 	dir := t.TempDir()
 	path := writeConfig(t, dir, runnableConfig(0))
 	conf, err := setup.LoadAndValidate("-config", path)
@@ -271,7 +271,7 @@ func TestHupBootstrapFailure(t *testing.T) {
 	if err := os.WriteFile(path, []byte("\tnot: [valid yaml"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ok, err := Hup(si, "test", "-config", path)
+	ok, err := Reload(si, "test", "-config", path)
 	if ok {
 		t.Error("expected the reload to fail")
 	}
@@ -280,7 +280,7 @@ func TestHupBootstrapFailure(t *testing.T) {
 	}
 }
 
-func TestHupApplyConfigFailureRollsBack(t *testing.T) {
+func TestReloadApplyConfigFailureRollsBack(t *testing.T) {
 	dir := t.TempDir()
 	path := writeConfig(t, dir, runnableConfig(0))
 	conf, clients, err := setup.BootstrapConfig("-config", path)
@@ -304,7 +304,7 @@ func TestHupApplyConfigFailureRollsBack(t *testing.T) {
 	oldHealthChecker := si.HealthChecker
 	// the replacement config validates but cannot be applied
 	writeConfig(t, dir, unapplyableConfig(t, dir))
-	ok, err := Hup(si, "test", "-config", path)
+	ok, err := Reload(si, "test", "-config", path)
 	if ok {
 		t.Error("expected the reload to fail")
 	}
@@ -325,7 +325,7 @@ func TestHupApplyConfigFailureRollsBack(t *testing.T) {
 	}
 }
 
-func TestHupSuccess(t *testing.T) {
+func TestReloadSuccess(t *testing.T) {
 	dir := t.TempDir()
 	firstPort := availablePort(t)
 	path := writeConfig(t, dir, runnableConfig(firstPort))
@@ -348,7 +348,7 @@ func TestHupSuccess(t *testing.T) {
 	waitForPort(t, firstPort)
 	secondPort := availablePort(t)
 	writeConfig(t, dir, runnableConfig(secondPort))
-	ok, err := Hup(si, "test", "-config", path)
+	ok, err := Reload(si, "test", "-config", path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -361,7 +361,7 @@ func TestHupSuccess(t *testing.T) {
 	waitForPort(t, secondPort)
 }
 
-func TestHupConfigDirectoryAfterAddingSource(t *testing.T) {
+func TestReloadConfigDirectoryAfterAddingSource(t *testing.T) {
 	dir := t.TempDir()
 	firstPort := availablePort(t)
 	if err := os.WriteFile(filepath.Join(dir, "10-base.yaml"),
@@ -391,7 +391,7 @@ func TestHupConfigDirectoryAfterAddingSource(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "20-listener.yaml"), []byte(override), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ok, err := Hup(si, "test", "-config", dir)
+	ok, err := Reload(si, "test", "-config", dir)
 	if err != nil {
 		t.Fatal(err)
 	}

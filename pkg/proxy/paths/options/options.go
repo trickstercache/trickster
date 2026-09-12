@@ -30,24 +30,35 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	reqmatching "github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	strutil "github.com/trickstercache/trickster/v2/pkg/util/strings"
 
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/net/http/httpguts"
 )
 
 // Options defines a URL Path that is associated with an HTTP Handler
 type Options struct {
 	// Path indicates the HTTP Request's URL PATH to which this configuration applies
 	Path string `yaml:"path,omitempty"`
-	// MatchTypeName indicates the type of path match the router will apply to the path ('exact' or 'prefix')
+	// MatchTypeName indicates the type of path match the router will apply to the path
+	// ('exact', 'prefix', 'segment' or 'regex')
 	MatchTypeName matching.PathMatchName `yaml:"match_type,omitempty"`
+	// MatchHeaders lists header conditions a request must satisfy for this path to match it
+	MatchHeaders []*Condition `yaml:"match_headers,omitempty"`
+	// MatchQueryParams lists query parameter conditions a request must satisfy for this path to match it
+	MatchQueryParams []*Condition `yaml:"match_query_params,omitempty"`
+	// MatchOrder ranks conditioned paths sharing a path and method, lowest first;
+	// an unconditioned path always matches, so it ends the search
+	MatchOrder int `yaml:"match_order,omitempty"`
 	// HandlerName provides the name of the HTTP handler to use
 	HandlerName string `yaml:"handler,omitempty"`
 	// Methods provides the list of permitted HTTP request methods for this Path
@@ -79,22 +90,38 @@ type Options struct {
 	ReqRewriterName string `yaml:"req_rewriter_name,omitempty"`
 	// NoMetrics, when set to true, disables metrics decoration for the path
 	NoMetrics bool `yaml:"no_metrics,omitempty"`
+	// HideResultHeader withholds the X-Trickster-Result response header from the client; the
+	// access log and metrics still record the result it carried
+	HideResultHeader bool `yaml:"hide_result_header,omitempty"`
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Path
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// DispatchOnly registers the path on the backend's own router only, so it is
+	// reachable through an ALB pool or a rule's next_route but never from a listener
+	DispatchOnly bool `yaml:"dispatch_only,omitempty"`
+	// Timeout bounds the whole upstream exchange for a request on this path, retries
+	// included; the backend timeout still bounds a stalled response
+	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
+	// AttemptTimeout bounds each upstream attempt made for a request on this path
+	AttemptTimeout timeconv.Duration `yaml:"attempt_timeout,omitempty"`
+	// Retry repeats a failed idempotent upstream request within a budget
+	Retry *RetryOptions `yaml:"retry,omitempty"`
+	// Mirrors send a copy of requests on this path to other backends, off the response path
+	Mirrors []*MirrorOptions `yaml:"mirrors,omitempty"`
 
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `yaml:"-"`
-	// HandlerFromRegistry is true when Handler was resolved from the Backend's
-	// registered handler lookup, rather than assigned directly by a caller.
-	// Only a registry-resolved handler can be swapped for an equivalent one.
+	// HandlerFromRegistry marks a Handler resolved from the Backend's registered
+	// lookup rather than assigned by a caller; only one of those may be swapped
 	HandlerFromRegistry bool `yaml:"-"`
 	// ResponseBodyBytes provides a byte slice version of the ResponseBody value
 	ResponseBodyBytes []byte `yaml:"-"`
 	// MatchType is the PathMatchType representation of MatchTypeName
 	MatchType matching.PathMatchType `yaml:"-"`
-	// Regexp is the compiled representation of Path when MatchType is
-	// PathMatchTypeRegex, compiled once at config load; compiled regexps are
-	// immutable and safe for concurrent use, so Clone copies the pointer
+	// Predicates is the compiled form of MatchHeaders and MatchQueryParams, built
+	// once at config load; nil when the path declares no conditions
+	Predicates *reqmatching.Predicates `yaml:"-"`
+	// Regexp is Path compiled, for a regex MatchType; a compiled expression is
+	// immutable and safe to share, so Clone copies the pointer
 	Regexp *regexp.Regexp `yaml:"-"`
 	// CollapsedForwardingType is the typed representation of CollapsedForwardingName
 	CollapsedForwardingType forwarding.CollapsedForwardingType `yaml:"-"`
@@ -109,6 +136,38 @@ type Options struct {
 	// identityKeyPart is the request_headers/request_params digest,
 	// precomputed by Initialize; see IdentityKeyPart
 	identityKeyPart string
+}
+
+// Condition is one header or query parameter a request must carry, with a
+// matching value, for a path to match it
+type Condition struct {
+	// Name is the header or query parameter name
+	Name string `yaml:"name"`
+	// Value is compared to the request's whole value, or, when Regex is set,
+	// matched as a regular expression that is not anchored
+	Value string `yaml:"value,omitempty"`
+	// Regex compares Value as a regular expression
+	Regex bool `yaml:"regex,omitempty"`
+}
+
+// Clone returns a copy of the condition
+func (c *Condition) Clone() *Condition {
+	if c == nil {
+		return nil
+	}
+	out := *c
+	return &out
+}
+
+func cloneConditions(in []*Condition) []*Condition {
+	if in == nil {
+		return nil
+	}
+	out := make([]*Condition, len(in))
+	for i, c := range in {
+		out[i] = c.Clone()
+	}
+	return out
 }
 
 // List is a slice of *Options
@@ -149,6 +208,8 @@ func (o *Options) Clone() *Options {
 		out.CORS = o.CORS.Clone()
 	}
 	out.Methods = slices.Clone(o.Methods)
+	out.MatchHeaders = cloneConditions(o.MatchHeaders)
+	out.MatchQueryParams = cloneConditions(o.MatchQueryParams)
 	out.CacheKeyParams = slices.Clone(o.CacheKeyParams)
 	out.CacheKeyHeaders = slices.Clone(o.CacheKeyHeaders)
 	out.CacheKeyFormFields = slices.Clone(o.CacheKeyFormFields)
@@ -160,6 +221,13 @@ func (o *Options) Clone() *Options {
 	if o.AuthOptions != nil {
 		out.AuthOptions = o.AuthOptions.Clone()
 	}
+	out.Retry = o.Retry.Clone()
+	if o.Mirrors != nil {
+		out.Mirrors = make([]*MirrorOptions, len(o.Mirrors))
+		for i, m := range o.Mirrors {
+			out.Mirrors[i] = m.Clone()
+		}
+	}
 	return out
 }
 
@@ -169,12 +237,7 @@ func (o *Options) Initialize(_ string) error {
 	if len(o.Methods) == 0 {
 		o.Methods = []string{http.MethodGet}
 	}
-
-	// Expand "*" to all HTTP methods
-	// If "*" is present, it replaces all other methods
-	if slices.Contains(o.Methods, "*") {
-		o.Methods = methods.AllHTTPMethods()
-	}
+	o.Methods = methods.Expand(o.Methods)
 
 	if isRegexPath(o.Path) {
 		// a path starting with ^/ (or the escaped ^\/ form) is always treated
@@ -205,6 +268,12 @@ func (o *Options) Initialize(_ string) error {
 		}
 	}
 
+	// compile errors are surfaced by Validate, which reports them with
+	// full config context
+	if p, err := o.compilePredicates(); err == nil {
+		o.Predicates = p
+	}
+
 	if o.CollapsedForwardingName == "" {
 		o.CollapsedForwardingType = forwarding.CFTypeBasic
 	} else {
@@ -219,6 +288,7 @@ func (o *Options) Initialize(_ string) error {
 			return err
 		}
 	}
+	o.Retry.Initialize()
 
 	o.identityKeyPart = o.computeIdentityKeyPart()
 
@@ -298,6 +368,35 @@ func (o *Options) computeIdentityKeyPart() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+func (o *Options) compilePredicates() (*reqmatching.Predicates, error) {
+	// a header condition must name a header the proxy can look up
+	if len(o.MatchHeaders)+len(o.MatchQueryParams) == 0 {
+		return nil, nil
+	}
+	p := &reqmatching.Predicates{}
+	for _, c := range o.MatchHeaders {
+		if c == nil || c.Name == "" || !httpguts.ValidHeaderFieldName(c.Name) {
+			return nil, fmt.Errorf("invalid match_headers entry for path %q: a valid header name is required", o.Path)
+		}
+		hp, err := reqmatching.NewHeaderPredicate(c.Name, c.Value, c.Regex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid match_headers regex for %s on path %q: %w", c.Name, o.Path, err)
+		}
+		p.Headers = append(p.Headers, hp)
+	}
+	for _, c := range o.MatchQueryParams {
+		if c == nil || c.Name == "" {
+			return nil, fmt.Errorf("invalid match_query_params entry for path %q: a name is required", o.Path)
+		}
+		qp, err := reqmatching.NewQueryPredicate(c.Name, c.Value, c.Regex)
+		if err != nil {
+			return nil, fmt.Errorf("invalid match_query_params regex for %s on path %q: %w", c.Name, o.Path, err)
+		}
+		p.Queries = append(p.Queries, qp)
+	}
+	return p, nil
+}
+
 // Initialize initializes all path options in the lookup
 func (l Lookup) Initialize() error {
 	for _, o := range l {
@@ -308,9 +407,8 @@ func (l Lookup) Initialize() error {
 	return nil
 }
 
-// isRegexPath returns true if the path pattern indicates a regex path via the
-// auto-detection rule: a leading ^/ or the escaped ^\/ form
 func isRegexPath(path string) bool {
+	// the auto-detection rule: a leading ^/ or the escaped ^\/ form
 	return strings.HasPrefix(path, "^/") || strings.HasPrefix(path, `^\/`)
 }
 
@@ -335,6 +433,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, fmt.Errorf("invalid HTTP method: %s", method)
 		}
 	}
+	if _, err := o.compilePredicates(); err != nil {
+		return false, err
+	}
 	if o.CollapsedForwardingName != "" {
 		if _, ok := forwarding.CollapsedForwardingTypeNames[o.CollapsedForwardingName]; !ok {
 			return false, fmt.Errorf("invalid collapsed_forwarding name: %s", o.CollapsedForwardingName)
@@ -348,7 +449,26 @@ func (o *Options) Validate() (bool, error) {
 			return false, err
 		}
 	}
+	if o.Timeout < 0 || o.AttemptTimeout < 0 {
+		return false, fmt.Errorf("invalid timeout for path %q: must not be negative", o.Path)
+	}
+	if o.Timeout > 0 && o.AttemptTimeout > o.Timeout {
+		return false, fmt.Errorf("path %q: %w", o.Path, ErrInvalidAttemptTimeout)
+	}
+	if err := o.Retry.Validate(); err != nil {
+		return false, fmt.Errorf("path %q: %w", o.Path, err)
+	}
+	for _, m := range o.Mirrors {
+		if err := m.Validate(); err != nil {
+			return false, fmt.Errorf("path %q: %w", o.Path, err)
+		}
+	}
 	return true, nil
+}
+
+// HasUpstreamPolicy reports whether the path bounds or retries upstream attempts.
+func (o *Options) HasUpstreamPolicy() bool {
+	return o != nil && (o.Timeout > 0 || o.AttemptTimeout > 0 || o.Retry != nil)
 }
 
 // Validate validates each path Options in the List; name is the name of the
@@ -366,10 +486,8 @@ func (l List) Validate(name string) error {
 	return nil
 }
 
-// RegexShadowedByCatchAll returns true if the List contains one or more regex
-// paths alongside a catch-all classic prefix path ("/"), which prefix-matches
-// every request and therefore precludes the regex tier (evaluated only after
-// exact and prefix both miss) from ever being reached
+// RegexShadowedByCatchAll reports whether the List holds regex paths behind a
+// catch-all prefix path, which matches first and leaves the regex tier unreached
 func (l List) RegexShadowedByCatchAll() bool {
 	var hasRegex, hasCatchAll bool
 	for _, o := range l {
@@ -379,7 +497,7 @@ func (l List) RegexShadowedByCatchAll() bool {
 		switch o.MatchType {
 		case matching.PathMatchTypeRegex:
 			hasRegex = true
-		case matching.PathMatchTypePrefix:
+		case matching.PathMatchTypePrefix, matching.PathMatchTypeSegment:
 			if o.Path == "/" {
 				hasCatchAll = true
 			}
@@ -474,34 +592,35 @@ func (l List) Overlay(l2 List) List {
 	return out
 }
 
-// Match returns the path Options that the lm router would select for the
-// provided request method and path, mirroring router precedence exactly:
-// exact match first, then longest prefix, then regex (longest pattern string
-// first, ties broken by config order, first match wins). Within a tier, a
-// matched path whose Options do not permit the method returns nil (where the
-// router would respond 405 Method Not Allowed) rather than falling through to
-// the next tier. HEAD implicitly matches a GET entry unless HEAD is
-// explicitly configured for the same path. Returns nil when no path matches.
+// Match returns the path Options the lm router would select for the method and
+// path; a matched path not permitting the method returns nil, where the router 405s
 func (l List) Match(method, path string) *Options {
 	method = strings.ToUpper(method)
 	// exact tier
 	if candidates := l.withPath(matching.PathMatchTypeExact, path); len(candidates) > 0 {
 		return matchMethod(candidates, method)
 	}
-	// prefix tier: the longest matching prefix wins regardless of method
-	var longest string
-	var matched bool
+	// prefix tier: the longest matching prefix wins regardless of method; a
+	// segment prefix matches on a segment boundary only
+	var longest *Options
 	for _, o := range l {
-		if o == nil || o.MatchType != matching.PathMatchTypePrefix {
+		if o == nil || (o.MatchType != matching.PathMatchTypePrefix &&
+			o.MatchType != matching.PathMatchTypeSegment) {
 			continue
 		}
-		if strings.HasPrefix(path, o.Path) && (!matched || len(o.Path) > len(longest)) {
-			longest = o.Path
-			matched = true
+		if o.MatchType == matching.PathMatchTypeSegment {
+			if _, ok := reqmatching.CutPathPrefix(path, o.Path); !ok {
+				continue
+			}
+		} else if !strings.HasPrefix(path, o.Path) {
+			continue
+		}
+		if longest == nil || len(o.Path) > len(longest.Path) {
+			longest = o
 		}
 	}
-	if matched {
-		return matchMethod(l.withPath(matching.PathMatchTypePrefix, longest), method)
+	if longest != nil {
+		return matchMethod(l.withPath(longest.MatchType, longest.Path), method)
 	}
 	// regex tier: longest pattern first, config order breaks ties,
 	// first match wins
@@ -522,9 +641,58 @@ func (l List) Match(method, path string) *Options {
 	return nil
 }
 
-// withPath returns the members of the List having the provided MatchType and
-// exact Path string, in config order
+// MatchIdentities returns the configured cache identities of every path that
+// could serve the method and pathname, the empty identity first
+func (l List) MatchIdentities(method, pathname string) []string {
+	// conditions are not evaluated: a purge must cover every variant a
+	// request could have created, and an unused key costs nothing to remove
+	out := []string{""}
+	seen := make(map[string]struct{}, len(l))
+	for _, o := range l {
+		if o == nil || !o.permitsMethod(method) || !o.matchesPath(pathname) {
+			continue
+		}
+		ik := o.IdentityKeyPart()
+		if ik == "" {
+			continue
+		}
+		if _, dup := seen[ik]; dup {
+			continue
+		}
+		seen[ik] = struct{}{}
+		out = append(out, ik)
+	}
+	return out
+}
+
+func (o *Options) permitsMethod(method string) bool {
+	// HEAD implicitly follows GET, as it does at route registration
+	has := func(m string) bool {
+		return slices.ContainsFunc(o.Methods, func(x string) bool {
+			return strings.EqualFold(x, m)
+		})
+	}
+	return has(method) || (method == http.MethodHead && has(http.MethodGet))
+}
+
+func (o *Options) matchesPath(pathname string) bool {
+	// each match type reads the configured path its own way
+	switch o.MatchType {
+	case matching.PathMatchTypeExact:
+		return o.Path == pathname
+	case matching.PathMatchTypePrefix:
+		return strings.HasPrefix(pathname, o.Path)
+	case matching.PathMatchTypeSegment:
+		_, ok := reqmatching.CutPathPrefix(pathname, o.Path)
+		return ok
+	case matching.PathMatchTypeRegex:
+		return o.Regexp != nil && o.Regexp.MatchString(pathname)
+	}
+	return false
+}
+
 func (l List) withPath(t matching.PathMatchType, path string) List {
+	// config order is what breaks ties between paths of one tier
 	out := make(List, 0, len(l))
 	for _, o := range l {
 		if o != nil && o.MatchType == t && o.Path == path {
@@ -534,10 +702,9 @@ func (l List) withPath(t matching.PathMatchType, path string) List {
 	return out
 }
 
-// matchMethod returns the first candidate permitting the method; a HEAD
-// request additionally matches a GET entry when no candidate explicitly
-// permits HEAD, mirroring the router's implicit HEAD-for-GET registration
 func matchMethod(candidates List, method string) *Options {
+	// a HEAD request matches a GET entry only when no candidate permits HEAD,
+	// mirroring the router's implicit HEAD-for-GET registration
 	for _, o := range candidates {
 		if slices.ContainsFunc(o.Methods, func(m string) bool {
 			return strings.EqualFold(m, method)

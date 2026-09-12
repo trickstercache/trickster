@@ -67,7 +67,7 @@ func (lg *Group) StartPacketListener(listenerName, protocol, address string,
 		readyCh:      make(chan struct{}),
 		routeSwapper: swapper,
 	}
-	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
+	if tlsConfig != nil {
 		// the swapper owns certificate selection from here on, so a rotation
 		// reaches this endpoint the same way it reaches a TLS/TCP one
 		tlsConfig = tlsConfig.Clone()
@@ -76,7 +76,21 @@ func (lg *Group) StartPacketListener(listenerName, protocol, address string,
 		tlsConfig.GetCertificate = l.tlsSwapper.GetCert
 		tlsConfig.Certificates = nil
 	}
-	svr := build(swapper, tlsConfig)
+	return lg.servePacket(listenerName, protocol, address, port, l, build(swapper, tlsConfig), f)
+}
+
+// StartDatagramListener starts a datagram server that carries no HTTP routes and no
+// certificates, such as a UDP relay, on a Trickster-managed socket in the group lifecycle.
+func (lg *Group) StartDatagramListener(listenerName, protocol, address string, port int,
+	svr PacketServer, f func(),
+) error {
+	l := &Listener{readyCh: make(chan struct{})}
+	return lg.servePacket(listenerName, protocol, address, port, l, svr, f)
+}
+
+func (lg *Group) servePacket(listenerName, protocol, address string, port int,
+	l *Listener, svr PacketServer, f func(),
+) error {
 	l.server = svr
 	l.exitOnError.Store(f != nil)
 	l.setState(StateStarting)
@@ -98,9 +112,10 @@ func (lg *Group) StartPacketListener(listenerName, protocol, address string,
 		logKeyListenerName: listenerName, logKeyPort: port, logKeyAddress: address,
 	})
 
-	lg.listenersLock.Lock()
-	lg.members[listenerName] = l
-	lg.listenersLock.Unlock()
+	if err := lg.publish(listenerName, l); err != nil {
+		l.refuse(listenerName)
+		return err
+	}
 	l.setState(StateReady)
 	l.markReady()
 

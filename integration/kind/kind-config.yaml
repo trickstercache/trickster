@@ -17,3 +17,23 @@ nodes:
         hostPort: 30080
       - containerPort: 30081
         hostPort: 30081
+      # the Ingress controller smoke test's front listener
+      # (integration/kind/ingress.yaml), applied separately
+      - containerPort: 30082
+        hostPort: 30082
+      # the endpoint-mode Ingress controller scenario (ingress-endpoint.yaml)
+      - containerPort: 30083
+        hostPort: 30083
+      - containerPort: 30084
+        hostPort: 30084
+      # the Gateway API controller scenarios (gateway.yaml): the edge
+      # Gateway's HTTP and HTTPS listeners, the controller's metrics, and the
+      # listener its Ingress annotation scenario names
+      - containerPort: 30085
+        hostPort: 30085
+      - containerPort: 30086
+        hostPort: 30086
+      - containerPort: 30087
+        hostPort: 30087
+      - containerPort: 30088
+        hostPort: 30088

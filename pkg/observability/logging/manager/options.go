@@ -41,6 +41,19 @@ const (
 	DefaultDirMode = fs.FileMode(0o755)
 )
 
+const (
+	// StreamStdout is the filename that writes log lines to standard output
+	StreamStdout = "stdout"
+	// StreamStderr is the filename that writes log lines to standard error
+	StreamStderr = "stderr"
+)
+
+// IsStream reports whether filename names a process output stream rather
+// than a file; streams are never rotated, pruned, or instance-suffixed.
+func IsStream(filename string) bool {
+	return filename == StreamStdout || filename == StreamStderr
+}
+
 // ErrNoFilename is returned when a Writer is requested without a Filename
 var ErrNoFilename = errors.New("log filename is required")
 
@@ -90,6 +103,11 @@ func normalizeOptions(o *Options) (Options, error) {
 		return Options{}, ErrNoFilename
 	}
 	out := *o
+	if IsStream(out.Filename) {
+		// rotation and retention do not apply to a stream, so consumers with
+		// differing settings still share one writer
+		return Options{Filename: out.Filename, FileMode: DefaultFileMode}, nil
+	}
 	name, err := filepath.Abs(out.Filename)
 	if err != nil {
 		return Options{}, err
@@ -129,7 +147,7 @@ func ValidateOptions(options ...*Options) error {
 // InstanceFilename returns the filename adjusted to include the provided
 // instance ID (e.g., trickster.log -> trickster.1.log) when id is positive
 func InstanceFilename(name string, id int) string {
-	if id <= 0 {
+	if id <= 0 || IsStream(name) {
 		return name
 	}
 	ext := filepath.Ext(filepath.Base(name))

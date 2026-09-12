@@ -20,6 +20,8 @@ package format
 
 import (
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -29,8 +31,10 @@ type Fields struct {
 	StartTime time.Time
 	// Duration is the total time taken to serve the request
 	Duration time.Duration
-	// ClientIP is the requesting client's IP address without port
+	// ClientIP is the client's IP address as resolved through the listener's trusted proxies
 	ClientIP string
+	// RemoteIP is the IP address of the connection peer, which is a proxy when one is trusted
+	RemoteIP string
 	// User is the authenticated username, if any
 	User string
 	// Method is the HTTP request method
@@ -67,4 +71,47 @@ type Fields struct {
 	CacheStatus string
 	// Engine is the proxy engine that handled the request
 	Engine string
+	// UpstreamAddr is the host:port of the origin the request was proxied to
+	UpstreamAddr string
+	// UpstreamStatus is the status code the origin answered with, or zero when none was made
+	UpstreamStatus int
+	// UpstreamDuration is the time taken by the origin exchange
+	UpstreamDuration time.Duration
+	// TraceID and SpanID identify the request's trace when tracing is enabled
+	TraceID, SpanID string
+	// RequestID is the request's X-Request-ID, received or assigned
+	RequestID string
+	// Extra holds the static values declared for the route at registration
+	Extra Extra
+}
+
+// ExtraField is one declared key and its static value.
+type ExtraField struct {
+	Key, Value string
+}
+
+// Extra is a key-sorted list of static values available to %{key}e tokens.
+type Extra []ExtraField
+
+// NewExtra returns the sorted Extra list for m, or nil when m is empty.
+func NewExtra(m map[string]string) Extra {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(Extra, 0, len(m))
+	for k, v := range m {
+		out = append(out, ExtraField{Key: k, Value: v})
+	}
+	slices.SortFunc(out, func(a, b ExtraField) int { return strings.Compare(a.Key, b.Key) })
+	return out
+}
+
+// Get returns the value declared for key, and whether it was declared.
+func (e Extra) Get(key string) (string, bool) {
+	for _, f := range e {
+		if f.Key == key {
+			return f.Value, true
+		}
+	}
+	return "", false
 }

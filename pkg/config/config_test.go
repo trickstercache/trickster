@@ -26,6 +26,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -365,7 +366,7 @@ func TestCheckAndMarkReloadInProgress(t *testing.T) {
 	c.Main.configLastModified = initialModTime.Add(-time.Second)
 	c.MgmtConfig = nil
 
-	if !c.CheckAndMarkReloadInProgress() {
+	if !c.CheckAndMarkReloadInProgress("", true) {
 		t.Fatal("expected modified config to be marked for reload")
 	}
 	if !c.Main.configLastModified.Equal(initialModTime) {
@@ -379,7 +380,7 @@ func TestCheckAndMarkReloadInProgress(t *testing.T) {
 	// Bypass the rate limit to prove the recorded timestamp prevents a
 	// duplicate reload of the same file version.
 	c.Main.configRateLimitTime = time.Time{}
-	if c.CheckAndMarkReloadInProgress() {
+	if c.CheckAndMarkReloadInProgress("", true) {
 		t.Error("expected the same config version not to trigger another reload")
 	}
 
@@ -388,7 +389,7 @@ func TestCheckAndMarkReloadInProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.Main.configRateLimitTime = time.Now().Add(time.Minute)
-	if c.CheckAndMarkReloadInProgress() {
+	if c.CheckAndMarkReloadInProgress("", true) {
 		t.Error("expected rate-limited check not to trigger a reload")
 	}
 	if !c.Main.configLastModified.Equal(initialModTime) {
@@ -561,4 +562,23 @@ func TestConfig_defaulting(t *testing.T) {
 // remove any values that are non-deterministic
 func clean(c *Config) {
 	c.Main.ServerName = "trickster-test"
+}
+
+func TestLogManagerOptionsIncludesDefaultAccessLog(t *testing.T) {
+	c := NewConfig()
+	c.Logging.LogFile = ""
+	c.AccessLog = &alo.Options{Filename: "stdout", ErrorFilename: "/var/log/trickster/errors.log"}
+	c.Backends["default"].AccessLog = &alo.Options{Filename: "/var/log/trickster/default.log"}
+	options := c.LogManagerOptions()
+	names := make([]string, len(options))
+	for i, o := range options {
+		names[i] = o.Filename
+	}
+	if len(names) != 3 || names[0] != "stdout" {
+		t.Fatalf("log manager filenames = %v; want the default access, error and backend logs", names)
+	}
+	if clone := c.Clone(); clone.AccessLog == nil || clone.AccessLog == c.AccessLog ||
+		clone.AccessLog.Filename != "stdout" {
+		t.Error("clone did not deep-copy the default access log")
+	}
 }

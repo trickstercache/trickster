@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 
@@ -39,7 +40,7 @@ func TestAllAllSlotsCloneError(t *testing.T) {
 				w.WriteHeader(http.StatusOK)
 			}))
 		}
-		parent, err := http.NewRequest(http.MethodPost, "http://trickstercache.org/", errReader{})
+		parent, err := http.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/", errReader{})
 		require.NoError(t, err)
 
 		before := runtime.NumGoroutine()

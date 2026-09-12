@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -50,7 +51,7 @@ func TestFRDisqualifiesTruncatedWinner(t *testing.T) {
 	h.SetPool(p)
 
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	r, _ := http.NewRequest("GET", "http://"+appinfo.Domain+"/", nil)
 	h.ServeHTTP(w, r)
 
 	if w.Code == http.StatusOK {
@@ -83,7 +84,7 @@ func TestFRTruncatedAllMembersFallback(t *testing.T) {
 	h.SetPool(p)
 
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	r, _ := http.NewRequest("GET", "http://"+appinfo.Domain+"/", nil)
 	h.ServeHTTP(w, r)
 
 	if w.Code == http.StatusOK && w.Body.Len() < bodySize {
@@ -114,7 +115,7 @@ func TestFRPrefersIntactOverTruncated(t *testing.T) {
 	h.SetPool(p)
 
 	w := httptest.NewRecorder()
-	r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+	r, _ := http.NewRequest("GET", "http://"+appinfo.Domain+"/", nil)
 	h.ServeHTTP(w, r)
 
 	if w.Code == http.StatusOK && w.Body.String() != "ok" {

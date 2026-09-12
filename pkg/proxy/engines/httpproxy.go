@@ -22,6 +22,7 @@ import (
 	"errors"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -84,7 +85,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		// don't use PCF
 		reader, resp, _ = PrepareFetchReader(r)
 		cacheStatusCode = setStatusHeader(resp.StatusCode, resp.Header)
-		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, nil)
+		trailers := responseTrailerNames(resp)
+		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, trailers)
 		if writer != nil && reader != nil {
 			if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
 				logger.Error("proxy response copy failed",
@@ -94,6 +96,8 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 					closeResponse = false // abort below skips the deferred close
 				}
 				abortOnCopyError(writer, r, err)
+			} else if len(trailers) > 0 {
+				forwardTrailers(writer, resp)
 			}
 		}
 	} else {
@@ -190,6 +194,15 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 	return resp
 }
 
+// isTimeout reports whether an upstream error is a deadline running out rather than a refusal
+func isTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
+}
+
 // PrepareResponseWriter prepares a response and returns a destination io.Writer for the payload
 // Used in Respond.
 //
@@ -211,6 +224,7 @@ func PrepareResponseWriter(w io.Writer, code int, header http.Header,
 		// written, because a Go server only emits trailers on a chunked
 		// response and declaring them is what makes the response chunked
 		if len(trailers) > 0 {
+			h.Del(headers.NameContentLength)
 			h.Set(headers.NameTrailer, strings.Join(trailers, ", "))
 		}
 		if code > 0 {
@@ -242,15 +256,18 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 
 	var rc io.ReadCloser
 
-	// AddForwardingHeaders strips TE as hop-by-hop, but a client that asked for
-	// trailers needs that request to reach the origin, so restore it after
+	// AddForwardingHeaders strips TE as hop-by-hop, so preserve a client's
+	// request for trailers across the rewrite.
 	wantsTrailers := httpguts.HeaderValuesContainsToken(r.Header[headers.NameTe], "trailers")
 	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
 	if wantsTrailers {
 		r.Header.Set(headers.NameTe, "trailers")
 	}
-	// clear the Host header before proxying or it will be forwarded upstream
-	r.Host = ""
+	// the Host header is forwarded as received only when the backend asks; otherwise it is
+	// cleared here so the transport sends the origin's own
+	if !o.PreserveHost {
+		r.Host = ""
+	}
 
 	if pc != nil && len(pc.RequestHeaders) > 0 {
 		headers.UpdateRequestHeaders(r, pc.RequestHeaders)
@@ -313,17 +330,21 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 		}
 	}
 
-	resp, err := o.HTTPClient.Do(r)
+	resp, err := doUpstream(o.HTTPClient.Do, r, rsc)
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",
 				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
 		}
-		// if there is an err and the response is nil, the server could not be reached
-		// so make a 502 for the downstream response
+		// if there is an err and the response is nil, the server could not be reached, which
+		// is a 502 downstream, or it ran out the path's or attempt's time, which is a 504
 		if resp == nil {
+			status := http.StatusBadGateway
+			if isTimeout(err) {
+				status = http.StatusGatewayTimeout
+			}
 			resp = &http.Response{
-				StatusCode: http.StatusBadGateway,
+				StatusCode: status,
 				Request:    r, Header: make(http.Header),
 			}
 

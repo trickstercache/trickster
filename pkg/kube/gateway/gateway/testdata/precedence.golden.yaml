@@ -1,0 +1,76 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.canary_r0:
+        provider: rp
+        origin_url: http://canary.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.canary
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              match_headers:
+                - name: X-Canary
+                  value: "true"
+              match_order: 2
+    kgw--httproute.shop.stable_r0:
+        provider: rp
+        origin_url: http://stable.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.stable
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              match_order: 3
+    kgw--httproute.shop.stable_r1:
+        provider: rp
+        origin_url: http://writer.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.stable
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - POST

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -124,12 +125,12 @@ func newTestCaseOpts() ro.CaseOptionsList {
 		},
 		{
 			Matches:     []string{"trickstercache"},
-			RedirectURL: "http://trickstercache.org",
+			RedirectURL: "http://" + appinfo.Domain,
 		},
 		{
 			Matches:         []string{"true"},
 			ReqRewriterName: "test-rewriter-5",
-			RedirectURL:     "http://trickstercache.org",
+			RedirectURL:     "http://" + appinfo.Domain,
 		},
 	}
 }
@@ -247,7 +248,7 @@ func TestEvaluateOpArg(t *testing.T) {
 
 	// Make sure redirection handlers are covered
 	r.defaultRedirectCode = 302
-	r.defaultRedirectURL = "http://trickstercache.org"
+	r.defaultRedirectURL = "http://" + appinfo.Domain
 
 	hr.Header.Del(testRuleHeader)
 	_, _, err = r.EvaluateOpArg(hr)
@@ -293,7 +294,7 @@ func TestEvaluateCaseArg(t *testing.T) {
 
 	// Make sure redirection handlers are covered
 	r.defaultRedirectCode = 302
-	r.defaultRedirectURL = "http://trickstercache.org"
+	r.defaultRedirectURL = "http://" + appinfo.Domain
 
 	hr.Header.Del(testRuleHeader)
 	_, _, err = r.EvaluateCaseArg(hr)
@@ -310,5 +311,24 @@ func TestEvaluateCaseArg(t *testing.T) {
 	}
 	if h == nil {
 		t.Error("unexpected handler value")
+	}
+}
+
+// The first rule a request reaches sets the execution budget from its own
+// max_rule_executions, which may exceed the default; every later rule may
+// only lower it
+func TestHopBudget(t *testing.T) {
+	r := &rule{maxRuleExecutions: 40}
+	hr, _ := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	if _, maxHops := r.hopBudget(hr); maxHops != 40 {
+		t.Errorf("first rule must set the budget: got %d, want 40", maxHops)
+	}
+	hr = hr.WithContext(tc.WithHops(hr.Context(), 2, 20))
+	if current, maxHops := r.hopBudget(hr); current != 2 || maxHops != 20 {
+		t.Errorf("a later rule may not raise the budget: got %d %d", current, maxHops)
+	}
+	r.maxRuleExecutions = 5
+	if _, maxHops := r.hopBudget(hr); maxHops != 5 {
+		t.Errorf("a later rule may lower the budget: got %d, want 5", maxHops)
 	}
 }

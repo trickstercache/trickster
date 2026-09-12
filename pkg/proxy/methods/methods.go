@@ -19,6 +19,7 @@ package methods
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -45,6 +46,9 @@ const (
 
 	// MethodPurge is the PURGE HTTP Method
 	MethodPurge = "PURGE"
+
+	// Wildcard is the method list entry that stands for every method
+	Wildcard = "*"
 )
 
 func getMethodLogicalID(method string) uint16 {
@@ -95,7 +99,7 @@ func CacheableHTTPMethods() []string {
 func UncacheableHTTPMethods() []string {
 	return []string{
 		http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodConnect,
-		http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge,
+		http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge, Wildcard,
 	}
 }
 
@@ -146,7 +150,7 @@ func MethodMask(methods ...string) uint16 {
 	var i uint16
 	for _, ms := range methods {
 		if m := getMethodLogicalID(ms); m > 0 {
-			i ^= m
+			i |= m
 		}
 	}
 	return i
@@ -154,7 +158,7 @@ func MethodMask(methods ...string) uint16 {
 
 // IsValidMethod returns true if the provided method is recognized in methodsMap
 func IsValidMethod(method string) bool {
-	return getMethodLogicalID(method) > 0
+	return method == Wildcard || getMethodLogicalID(method) > 0
 }
 
 func AreEqual(l1, l2 []string) bool {
@@ -185,4 +189,64 @@ func HasAny(methods1, methods2 []string) bool {
 	mask1 := MethodMask(methods1...)
 	mask2 := MethodMask(methods2...)
 	return (mask1 & mask2) != 0
+}
+
+// Expand returns the concrete, upper-cased method set a list names: an empty
+// list or one carrying the wildcard names every method. A list that is
+// already concrete and upper-cased is returned as is.
+func Expand(in []string) []string {
+	if len(in) == 0 {
+		return append(AllHTTPMethods(), Wildcard)
+	}
+	var lower bool
+	for _, m := range in {
+		if m == Wildcard {
+			if len(in) == 1 {
+				return append(AllHTTPMethods(), Wildcard)
+			}
+			continue
+		}
+		lower = lower || hasLower(m)
+	}
+	if !lower {
+		return in
+	}
+	out := make([]string, len(in))
+	for i, m := range in {
+		out[i] = strings.ToUpper(m)
+	}
+	return out
+}
+
+// Compact returns the wildcard for a list naming every method, and a sorted
+// copy of any other list
+func Compact(in []string) []string {
+	if HasAll(AllHTTPMethods(), in) {
+		return []string{Wildcard}
+	}
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return out
+}
+
+// Partition splits methods into those satisfying pred and the rest,
+// preserving order; either result is nil when empty
+func Partition(in []string, pred func(string) bool) (matched, rest []string) {
+	for _, m := range in {
+		if pred(m) {
+			matched = append(matched, m)
+		} else {
+			rest = append(rest, m)
+		}
+	}
+	return matched, rest
+}
+
+func hasLower(s string) bool {
+	for i := range len(s) {
+		if c := s[i]; 'a' <= c && c <= 'z' {
+			return true
+		}
+	}
+	return false
 }

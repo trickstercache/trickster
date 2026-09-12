@@ -19,6 +19,8 @@ package timeconv
 
 import (
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"strconv"
@@ -234,6 +236,22 @@ func ParseDuration(s string) (time.Duration, error) {
 	}
 	if hasMult {
 		return 0, ErrInvalidDurationFormat(len(s), "valid duration unit", s)
+	}
+	return d, nil
+}
+
+// ErrNonPositiveDuration indicates a duration that must be greater than zero is not
+var ErrNonPositiveDuration = errors.New("duration must be greater than zero")
+
+// ParsePositiveDuration parses a duration that must carry a unit and be
+// greater than zero, as a timeout or time-to-live must
+func ParsePositiveDuration(s string) (time.Duration, error) {
+	d, err := ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("must be a duration with a unit, such as 30s (got %q): %w", s, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("%w (got %q)", ErrNonPositiveDuration, s)
 	}
 	return d, nil
 }

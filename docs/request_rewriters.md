@@ -35,7 +35,23 @@ In a Request Rewriter instruction using the `chain` instruction type. Provide th
 
 ## Regex Capture Tokens
 
-An `rmatch` rule can expose its regular expression matches to request rewriters. Numeric tokens use `${0}` for the complete match and `${1}`, `${2}`, etc. for capture groups. A named capture such as `(?P<tenant>[a-z0-9]{3})` is also available as `${tenant}`.
+An `rmatch` rule, or a backend path with `match_type: regex`, can expose its regular expression matches to request rewriters. Numeric tokens use `${0}` for the complete match and `${1}`, `${2}`, etc. for capture groups. A named capture such as `(?P<tenant>[a-z0-9]{3})` is also available as `${tenant}`.
+
+For a regex path, captures are taken from the request path as the client sent it and are available to that path's `req_rewriter_name` rewriter and to the backend-level rewriter. Only paths whose rewriters actually use tokens pay the capture cost; every other route is matched without allocation. This is how an Ingress `trickstercache.org/rewrite-target: /${2}` is expressed:
+
+```yaml
+request_rewriters:
+  strip-app:
+    instructions:
+      - [ 'path', 'set', '/${2}' ]
+backends:
+  app:
+    provider: rp
+    origin_url: 'http://app:8080'
+    paths:
+      - path: '^/app(/|$)(.*)'
+        req_rewriter_name: strip-app
+```
 
 Captures are available only to the matched case rewriter and the current rule's egress rewriter. The ingress rewriter runs before matching and cannot use captures from its own rule, and captures are cleared before the request enters the next route. If the regular expression does not match, no capture tokens are available to the no-match or egress rewriter. Undefined tokens are left unchanged, while an optional capture group that did not participate in a successful match expands to an empty string.
 
@@ -106,6 +122,10 @@ When Trickster constructs the final upstream URL, only host components explicitl
 `['path', 'replace', 'search', 'replacement']` search replaces against the entire path scalar
 
 `['path', 'replace', 'search', 'replacement', 1]` search replaces against the second part of the path; For example `/my/example-search/path` => `/my/example-replacement/path`
+
+#### path prefix-replace
+
+`['path', 'prefix-replace', '/old', '/new']` replaces a leading path prefix and keeps the remainder. The prefix must match on a segment boundary, so `/old` matches `/old` and `/old/items` but not `/older`. For example `/old/items?x=1` => `/new/items?x=1`, and `/old` => `/new`. A replacement of `/` strips the prefix: `/old/items` => `/items`. Paths that do not start with the prefix are left unchanged. This is the equivalent of the Gateway API `URLRewrite` `ReplacePrefixMatch` filter.
 
 ### param
 

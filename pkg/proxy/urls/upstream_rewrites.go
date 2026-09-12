@@ -18,10 +18,8 @@ package urls
 
 import (
 	"context"
-	"net"
 	"net/http"
 	"net/url"
-	"strings"
 )
 
 type upstreamURLComponent uint8
@@ -93,10 +91,10 @@ func (rewrites upstreamURLRewrite) apply(u *url.URL) {
 		u.Host = rewrites.host
 	}
 	if rewrites.components&upstreamHostname != 0 {
-		u.Host = replaceHostname(u.Host, rewrites.hostname)
+		u.Host = ReplaceHostname(u.Host, rewrites.hostname)
 	}
 	if rewrites.components&upstreamPort != 0 {
-		u.Host = replacePort(u.Host, rewrites.port)
+		u.Host = ReplacePort(u.Host, rewrites.port)
 	}
 }
 
@@ -124,25 +122,4 @@ func UpstreamURLRewriteCacheKey(r *http.Request, base *url.URL) string {
 		return ""
 	}
 	return "\x00upstream=" + rewritten.Scheme + "://" + rewritten.Host + "\x00"
-}
-
-func replaceHostname(host, hostname string) string {
-	port := (&url.URL{Host: host}).Port()
-	return joinHostPort(hostname, port)
-}
-
-func replacePort(host, port string) string {
-	hostname := (&url.URL{Host: host}).Hostname()
-	return joinHostPort(hostname, port)
-}
-
-func joinHostPort(hostname, port string) string {
-	hostname = strings.TrimPrefix(strings.TrimSuffix(hostname, "]"), "[")
-	if port != "" {
-		return net.JoinHostPort(hostname, port)
-	}
-	if strings.Contains(hostname, ":") {
-		return "[" + hostname + "]"
-	}
-	return hostname
 }

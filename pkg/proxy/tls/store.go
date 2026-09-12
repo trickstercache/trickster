@@ -21,9 +21,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
+	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 )
 
 // source kinds for Entry.SourceKind
@@ -71,6 +75,13 @@ type CertStore interface {
 	CertSwapper
 	// SetEntries atomically replaces the full entry set
 	SetEntries([]*Entry)
+	// SetEntry adds the entry, replacing any existing entry with the same Key
+	SetEntry(*Entry)
+	// RemoveEntry removes the entry with the given Key, reporting whether it existed
+	RemoveEntry(key string) bool
+	// ReplaceKinds atomically replaces every entry whose SourceKind is one of
+	// kinds with entries, preserving entries of every other kind
+	ReplaceKinds(entries []*Entry, kinds ...string)
 	// Entries returns read-only metadata for the current entry set
 	Entries() []EntryInfo
 }
@@ -113,8 +124,10 @@ type storeSnapshot struct {
 	wildcard map[string]*tls.Certificate
 }
 
-// certStore implements CertStore
+// certStore implements CertStore. Writers serialize on mtx and publish a new
+// immutable snapshot; GetCert only loads the snapshot and never takes the lock.
 type certStore struct {
+	mtx      sync.Mutex
 	snapshot atomic.Pointer[storeSnapshot]
 }
 
@@ -157,9 +170,9 @@ func (s *certStore) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate,
 	return snap.certs[0], nil
 }
 
-// SetCerts safely updates the certs list for the subject store. Certificates
-// set this way carry no source identity and are keyed by content hash.
-func (s *certStore) SetCerts(certs []tls.Certificate) {
+// NewConfigEntries wraps config-loaded certificates as SourceKindConfig
+// entries keyed by content hash, since no per-source identity is available.
+func NewConfigEntries(certs []tls.Certificate) []*Entry {
 	entries := make([]*Entry, len(certs))
 	for i, cert := range certs {
 		if cert.Leaf == nil && len(cert.Certificate) > 0 {
@@ -169,12 +182,83 @@ func (s *certStore) SetCerts(certs []tls.Certificate) {
 		entries[i] = NewEntry("", SourceKindConfig, cert)
 		entries[i].Key = SourceKindConfig + ":" + entries[i].ContentHash
 	}
-	s.SetEntries(entries)
+	return entries
+}
+
+// SetCerts safely updates the certs list for the subject store. Certificates
+// set this way carry no source identity and are keyed by content hash.
+func (s *certStore) SetCerts(certs []tls.Certificate) {
+	s.SetEntries(NewConfigEntries(certs))
 }
 
 // SetEntries atomically replaces the full entry set, deduplicating entries
 // with identical content and rebuilding the SNI index
 func (s *certStore) SetEntries(entries []*Entry) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	s.setEntriesLocked(entries)
+}
+
+// SetEntry adds the entry, replacing any existing entry with the same Key
+func (s *certStore) SetEntry(e *Entry) {
+	if e == nil {
+		return
+	}
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	current := s.currentEntries()
+	entries := make([]*Entry, 0, len(current)+1)
+	for _, existing := range current {
+		if existing.Key != e.Key {
+			entries = append(entries, existing)
+		}
+	}
+	s.setEntriesLocked(append(entries, e))
+}
+
+// RemoveEntry removes the entry with the given Key, reporting whether it existed
+func (s *certStore) RemoveEntry(key string) bool {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	current := s.currentEntries()
+	entries := make([]*Entry, 0, len(current))
+	for _, existing := range current {
+		if existing.Key != key {
+			entries = append(entries, existing)
+		}
+	}
+	if len(entries) == len(current) {
+		return false
+	}
+	s.setEntriesLocked(entries)
+	return true
+}
+
+// ReplaceKinds atomically replaces every entry whose SourceKind is one of
+// kinds with entries, preserving entries of every other kind
+func (s *certStore) ReplaceKinds(entries []*Entry, kinds ...string) {
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	current := s.currentEntries()
+	merged := make([]*Entry, 0, len(current)+len(entries))
+	for _, existing := range current {
+		if !slices.Contains(kinds, existing.SourceKind) {
+			merged = append(merged, existing)
+		}
+	}
+	s.setEntriesLocked(append(merged, entries...))
+}
+
+// currentEntries returns the entries of the current snapshot; requires s.mtx held
+func (s *certStore) currentEntries() []*Entry {
+	if snap := s.snapshot.Load(); snap != nil {
+		return snap.entries
+	}
+	return nil
+}
+
+// setEntriesLocked builds and publishes a snapshot; requires s.mtx held
+func (s *certStore) setEntriesLocked(entries []*Entry) {
 	snap := &storeSnapshot{
 		entries:  make([]*Entry, 0, len(entries)),
 		certs:    make([]*tls.Certificate, 0, len(entries)),
@@ -207,8 +291,12 @@ func indexCert(snap *storeSnapshot, cert *tls.Certificate) {
 		names = []string{cert.Leaf.Subject.CommonName}
 	}
 	for _, name := range names {
-		name = strings.ToLower(name)
-		if base, ok := strings.CutPrefix(name, "*."); ok {
+		name, err := hostnames.Normalize(name, hostnames.RequireHost)
+		if err != nil {
+			continue
+		}
+		if hostnames.IsWildcard(name) {
+			base := hostnames.Suffix(name)
 			if _, exists := snap.wildcard[base]; !exists {
 				snap.wildcard[base] = cert
 			}
@@ -245,5 +333,6 @@ func (s *certStore) Entries() []EntryInfo {
 }
 
 func normalizeSNI(serverName string) string {
-	return strings.ToLower(strings.TrimSuffix(serverName, "."))
+	name, _ := hostnames.Normalize(serverName, hostnames.AllowEmpty)
+	return name
 }

@@ -27,17 +27,23 @@ back out. `make developer-start` alone still works: the autodiscovery DNS
 tests probe for CoreDNS and skip when it isn't running (CI sets
 `TRICKSTER_DNS_TEST=1` to turn that skip into a failure).
 
-The Kubernetes autodiscovery scenario (`TestALBDiscoveryKind`) is separate
-from compose entirely: it needs a kind cluster prepared via
-`make kind-integration-start` (see `kind/README.md`) and only runs when
-`TRICKSTER_KIND_TEST=1` is set. The autodiscovery soak
-(`TestALBDiscoverySoak`) runs only when `TRICKSTER_SOAK_TEST=1` is set, and
-is **run by hand rather than by CI**:
+The Kubernetes scenarios (every `Test*Kind`) are separate from compose
+entirely: they need a kind cluster prepared via `make kind-integration-start`,
+`make kind-integration-ingress` and `make kind-integration-gateway` (see
+`kind/README.md`) and only run when `TRICKSTER_KIND_TEST=1` is set;
+`make kind-integration-test` runs them all. The Gateway API conformance suite
+lives in its own module, `conformance/`, and is run with
+`make kind-conformance`.
+
+The soaks run only when `TRICKSTER_SOAK_TEST=1` is set, and are **run by
+hand rather than by CI**. `make soak` runs the autodiscovery soak
+(`TestALBDiscoverySoak`) against nothing but the host, and `make kind-soak`
+runs the gateway soak (`TestGatewaySoakKind`) against the kind cluster;
+both take `SOAK_DURATION` (default 60m) and `SOAK_TIMEOUT` (default 90m):
 
 ```sh
-cd integration
-TRICKSTER_SOAK_TEST=1 TRICKSTER_SOAK_DURATION=60m \
-  go test -v -timeout 80m -run TestALBDiscoverySoak .
+make soak SOAK_DURATION=60m SOAK_TIMEOUT=90m
+make kind-soak SOAK_DURATION=60m SOAK_TIMEOUT=90m
 ```
 
 ## Running
@@ -63,6 +69,8 @@ returned harness.
 
 - `main_test.go` — `TestMain`, shared helpers (`startTrickster`, `waitFor*`,
   `queryTricksterProm`, `parseTricksterResult`)
+- `kind_helpers_test.go` — the kind scenarios' shared helpers (`kubectlKind`,
+  `applyKind`, `hostGet`, `waitRoute`, `startLoad`, `tlsSecretManifest`)
 - `harness_test.go` — `tricksterHarness` boot helper, option-based HTTP client
   (`do`, `queryProm`, `withParams`, `withHeader`, `withBody`),
   `requireTricksterResult`, `runCacheProviderMatrix`, `configHarness`,

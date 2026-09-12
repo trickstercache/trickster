@@ -25,6 +25,7 @@ import (
 const (
 	AppName       = "trickster"
 	AppNameProper = "Trickster"
+	Domain        = "trickstercache.org"
 )
 
 // Name is the name of the Application

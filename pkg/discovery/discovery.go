@@ -63,6 +63,14 @@ type Discoverer interface {
 	Subscribe(q *options.Query, handler SnapshotHandler) (func(), error)
 }
 
+// Preflighter is implemented by a Discoverer whose source can be checked
+// for reachability before any subscription is served. The setup layer runs
+// it when a referencing ALB sets startup_policy: fail, so an unreachable
+// source fails startup instead of quietly yielding an empty pool.
+type Preflighter interface {
+	Preflight(ctx context.Context) error
+}
+
 // NewDiscovererFunc is the constructor signature each provider registers;
 // name is the discoverer's config name, for logs and metrics
 type NewDiscovererFunc func(name string, o *options.Options) (Discoverer, error)

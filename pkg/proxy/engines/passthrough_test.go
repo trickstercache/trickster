@@ -24,10 +24,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -215,5 +217,140 @@ func TestPassthroughErrorHandler(t *testing.T) {
 	}
 	if resp.Header.Get(headers.NameTricksterResult) == "" {
 		t.Error("expected the Trickster result header on the error response")
+	}
+}
+
+func TestPassthroughRecordsUpstream(t *testing.T) {
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer origin.Close()
+	u, _ := url.Parse(origin.URL)
+	o := bo.New()
+	o.Name, o.Provider, o.Scheme, o.Host, o.PathPrefix = "test", "rp", u.Scheme, u.Host, ""
+	client, err := NewTestClient("test", o, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := NewPassthroughHandler(client)
+	rsc := request.NewResources(o, po.New(), nil, nil, client, nil)
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/x", nil)
+	h.ServeHTTP(httptest.NewRecorder(), request.SetResources(r, rsc))
+	addr, status, elapsed := rsc.Upstream()
+	if addr != u.Host || status != http.StatusAccepted || elapsed <= 0 {
+		t.Errorf("upstream = %s %d %s; want the origin exchange recorded", addr, status, elapsed)
+	}
+}
+
+// passthroughWithPath serves the origin through the passthrough lane with the given path options
+func passthroughWithPath(t *testing.T, originURL string, pc *po.Options, edit func(*bo.Options)) *httptest.Server {
+	t.Helper()
+	u, err := url.Parse(originURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := bo.New()
+	o.Name = "test"
+	o.Provider = "rp"
+	o.Scheme = u.Scheme
+	o.Host = u.Host
+	o.PathPrefix = ""
+	if edit != nil {
+		edit(o)
+	}
+	client, err := NewTestClient("test", o, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.HTTPClient = client.HTTPClient()
+	h := NewPassthroughHandler(client)
+	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.NewResources(o, pc, nil, nil, client, nil)
+		h.ServeHTTP(w, request.SetResources(r, rsc))
+	}))
+	t.Cleanup(front.Close)
+	return front
+}
+
+func TestPassthroughPreservesHost(t *testing.T) {
+	// the origin sees its own host by default and the client's when the backend asks; a Host
+	// entry in the path's request headers still wins
+	var seen string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Host
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	get := func(front *httptest.Server) {
+		req, _ := http.NewRequest(http.MethodGet, front.URL+"/x", nil)
+		req.Host = "shop.example.com"
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+	}
+	get(passthroughWithPath(t, origin.URL, po.New(), nil))
+	if want := strings.TrimPrefix(origin.URL, "http://"); seen != want {
+		t.Errorf("origin saw Host %q; want its own %q", seen, want)
+	}
+	preserve := func(o *bo.Options) { o.PreserveHost = true }
+	get(passthroughWithPath(t, origin.URL, po.New(), preserve))
+	if seen != "shop.example.com" {
+		t.Errorf("origin saw Host %q; want the client's", seen)
+	}
+	pc := po.New()
+	pc.RequestHeaders = map[string]string{"Host": "api.example.com"}
+	get(passthroughWithPath(t, origin.URL, pc, preserve))
+	if seen != "api.example.com" {
+		t.Errorf("origin saw Host %q; want the path's", seen)
+	}
+}
+
+func TestPassthroughTimeoutIs504(t *testing.T) {
+	// an origin that does not answer within the path's timeout is a gateway timeout
+	release := make(chan struct{})
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	defer close(release)
+	pc := po.New()
+	pc.Timeout = timeconv.Duration(50 * time.Millisecond)
+	front := passthroughWithPath(t, origin.URL, pc, nil)
+	resp, err := http.Get(front.URL + "/slow")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusGatewayTimeout {
+		t.Errorf("expected 504 for a timed-out origin, got %d", resp.StatusCode)
+	}
+}
+
+func TestPassthroughRetriesStatus(t *testing.T) {
+	// a status the path retries is retried until the origin answers, without a budget
+	var calls atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if calls.Add(1)%3 != 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	pc := po.New()
+	pc.Retry = &po.RetryOptions{Attempts: 3, Codes: []int{http.StatusInternalServerError}, BudgetPercent: 100}
+	front := passthroughWithPath(t, origin.URL, pc, nil)
+	for i := range 10 {
+		resp, err := http.Get(front.URL + "/retry")
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("request %d: expected 200 after retries, got %d", i, resp.StatusCode)
+		}
 	}
 }

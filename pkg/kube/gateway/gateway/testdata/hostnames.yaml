@@ -1,0 +1,83 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: shop
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: wild
+      port: 80
+      protocol: HTTP
+      hostname: "*.example.com"
+    - name: exact
+      port: 80
+      protocol: HTTP
+      hostname: api.example.com
+    - name: any
+      port: 8080
+      protocol: HTTP
+    - name: narrow
+      port: 8081
+      protocol: HTTP
+      hostname: docs.example.com
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+  hostnames:
+    - api.example.com
+    - shop.example.com
+    - deep.shop.example.com
+    - other.net
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /
+      backendRefs:
+        - name: web-svc
+          port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: wildcard
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      sectionName: narrow
+  hostnames:
+    - "*.example.com"
+  rules:
+    - matches:
+        - path:
+            type: Exact
+            value: /docs
+      backendRefs:
+        - name: web-svc
+          port: 8080

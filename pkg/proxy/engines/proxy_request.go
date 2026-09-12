@@ -236,6 +236,9 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
+	if resp != nil {
+		pr.rsc.SetUpstream(pr.upstreamRequest.URL.Host, resp.StatusCode, elapsed)
+	}
 
 	goWithRecover("proxyRequest.Fetch.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
@@ -675,11 +678,15 @@ func (pr *proxyRequest) writeResponseBody() {
 // before the body is read, which is what lets them be announced downstream in
 // time to matter.
 func (pr *proxyRequest) trailerNames() []string {
-	if pr.upstreamResponse == nil || len(pr.upstreamResponse.Trailer) == 0 {
+	return responseTrailerNames(pr.upstreamResponse)
+}
+
+func responseTrailerNames(resp *http.Response) []string {
+	if resp == nil || len(resp.Trailer) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(pr.upstreamResponse.Trailer))
-	for k := range pr.upstreamResponse.Trailer {
+	out := make([]string, 0, len(resp.Trailer))
+	for k := range resp.Trailer {
 		out = append(out, k)
 	}
 	slices.Sort(out)
@@ -958,7 +965,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 		pr.upstreamRequest = pr.revalidationRequest
 		pr.upstreamResponse = pr.revalidationResponse
 		pr.upstreamReader = pr.upstreamResponse.Body
-		wasRevalidated = hasRevalidationRequest && pr.revalidationResponse.StatusCode == http.StatusNotModified
+		wasRevalidated = pr.revalidationResponse.StatusCode == http.StatusNotModified
 	}
 
 	var originCount int

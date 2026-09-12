@@ -18,6 +18,7 @@ package setup
 
 import (
 	"crypto/tls"
+	"maps"
 	"net/http"
 	"slices"
 	"time"
@@ -29,19 +30,24 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/pprof"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	certs "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/certificates"
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
 type desiredListener struct {
@@ -58,12 +64,38 @@ type desiredListener struct {
 	// http3 marks a QUIC/UDP endpoint that mirrors this listener's TLS routes.
 	http3          bool
 	advertisedPort int
+	// stream marks a tcp, tls or udp relay, whose routing table is swapped on reload.
+	stream bool
+}
+
+// mgmtRoute is a reserved exact-path route: registered on the management
+// router and served ahead of every proxy listener's router.
+type mgmtRoute struct {
+	path    string
+	handler http.Handler
+}
+
+// guardReservedRoutes serves reserved paths before next sees the request, so
+// backend routes on any host can never replace them.
+func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
+	if len(routes) == 0 || next == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, route := range routes {
+			if r.URL.Path == route.path {
+				route.handler.ServeHTTP(w, r)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
 	listenerRouters map[string]router.Router, reloadHandler http.Handler,
 	metricsRouter router.Router, tracers tracing.Tracers, clients backends.Backends,
-	errorFunc func(), lg *listener.Group,
+	errorFunc func(), lg *listener.Group, mgmtRoutes ...mgmtRoute,
 ) {
 	if conf == nil || len(conf.Listeners) == 0 {
 		return
@@ -90,9 +122,20 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 	if listenerEnabledOn(conf.MgmtConfig.PprofListener, mgmt.ListenerNameMgmt) {
 		pprof.RegisterRoutes(mgmt.ListenerNameMgmt, managementRouter)
 	}
+	mgmtRoutes = slices.DeleteFunc(mgmtRoutes, func(route mgmtRoute) bool {
+		return route.path == "" || route.handler == nil
+	})
+	for _, route := range mgmtRoutes {
+		managementRouter.RegisterRoute(route.path, nil, nil,
+			matching.PathMatchTypeExact, route.handler)
+	}
 
-	newListeners := desiredListeners(conf, listenerRouters, managementRouter, metricsRouter)
-	oldListeners := desiredListeners(oldConf, nil, nil, nil)
+	// requests that miss every backend route are logged by the default
+	// access log at the router level, on every listener but metrics
+	routerLogger := routing.RouterAccessLogger(conf)
+	newListeners := desiredListeners(conf, listenerRouters, managementRouter, metricsRouter,
+		routerLogger, mgmtRoutes)
+	oldListeners := desiredListeners(oldConf, nil, nil, nil, nil, nil)
 	drainTimeout := conf.MgmtConfig.ReloadDrainTimeout
 
 	// Stop removed or network-changed endpoints first. This permits safe port
@@ -115,6 +158,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		desired := newListeners[key]
 		old, existed := oldListeners[key]
 		if existed && !runtimeListenerNeedsRestart(lg, key, old, desired) && lg.Get(key) != nil {
+			if desired.stream {
+				updateStreamListener(lg, key, streamConfig(conf, desired, clients))
+				continue
+			}
 			lg.UpdateRouter(key, desired.router)
 			if desired.native != nil {
 				request := nativeBuildRequest(conf, desired, tracers, clients)
@@ -144,6 +191,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			continue
 		}
 
+		if desired.stream {
+			startStreamListener(lg, desired, streamConfig(conf, desired, clients), errorFunc)
+			continue
+		}
+
 		if desired.native != nil {
 			svr, err := desired.native.Build(nativeBuildRequest(conf, desired, tracers, clients))
 			if err != nil {
@@ -155,7 +207,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			}
 			go lg.StartProtocolListener(key, desired.options.Protocol,
 				desired.address, desired.port, desired.options.ConnectionsLimit,
-				svr, errorFunc, time.Duration(drainTimeout))
+				svr, errorFunc, proxyProtocolOptions(desired.options))
 			continue
 		}
 
@@ -196,12 +248,14 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener(key, desired.address, desired.port,
 			desired.options.ConnectionsLimit, tlsConfig, desired.router,
-			listenerTracers, errorFunc, time.Duration(drainTimeout), time.Duration(desired.options.ReadHeaderTimeout))
+			listenerTracers, errorFunc, time.Duration(desired.options.ReadHeaderTimeout),
+			proxyProtocolOptions(desired.options))
 	}
 }
 
 func desiredListeners(conf *config.Config, listenerRouters map[string]router.Router,
-	managementRouter, metricsRouter router.Router,
+	managementRouter, metricsRouter router.Router, routerLogger *accesslog.Logger,
+	reserved []mgmtRoute,
 ) map[string]desiredListener {
 	out := make(map[string]desiredListener)
 	if conf == nil {
@@ -210,6 +264,17 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 	nativeListeners := providerregistry.NativeListeners()
 	for name, options := range conf.Listeners {
 		if options == nil || !options.Active {
+			continue
+		}
+		if options.IsStream() {
+			if options.ListenPort > 0 {
+				key := listenerKey(name, options.Protocol, false)
+				out[key] = desiredListener{
+					key: key, listenerName: name,
+					address: options.ListenAddress, port: options.ListenPort,
+					options: options, stream: true,
+				}
+			}
 			continue
 		}
 		if adapter := nativeListeners.Get(options.Protocol); adapter != nil {
@@ -232,15 +297,19 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			}
 			continue
 		}
-		var r router.Router
+		var r http.Handler
 		switch name {
 		case mgmt.ListenerNameMgmt:
-			r = managementRouter
+			r = accesslog.RouterMiddleware(routerLogger, managementRouter)
 		case mgmt.ListenerNameMetrics:
 			r = metricsRouter
 		default:
-			r = listenerRouters[name]
+			r = accesslog.RouterMiddleware(routerLogger,
+				guardReservedRoutes(reserved, listenerRouters[name]))
 		}
+		// the client IP is resolved outside the access log so unmatched
+		// requests are attributed to the real client too
+		r = clientip.Middleware(trustedProxies(options), r)
 		if options.ListenPort > 0 {
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
@@ -251,7 +320,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		}
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, options.Protocol, true)
-			var tlsRouter http.Handler = r
+			tlsRouter := r
 			if h3Address, h3Port, advertised := options.HTTP3Endpoint(); h3Port > 0 {
 				// the TLS endpoint advertises the alternative service, which is
 				// how clients discover they may switch to HTTP/3
@@ -273,6 +342,69 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 	return out
 }
 
+// streamConfig builds a stream listener's routing table from the backends mapped to it: a tls
+// listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend
+func streamConfig(conf *config.Config, desired desiredListener, clients backends.Backends) *l4.Config {
+	// a pool member carries the listener name too, but is reached through its pool
+	members := conf.Backends.PoolMembers()
+	table := l4.NewTable()
+	for _, backendName := range slices.Sorted(maps.Keys(conf.Backends)) {
+		o := conf.Backends[backendName]
+		if o == nil || o.IsTemplate || members.Contains(backendName) ||
+			!o.UsesListener(desired.listenerName) {
+			continue
+		}
+		up := l4.FromBackend(clients.Get(backendName))
+		if up == nil {
+			logger.Error("stream listener backend has no dialable origin", logging.Pairs{
+				keys.ListenerName: desired.listenerName, keys.BackendName: backendName,
+			})
+			continue
+		}
+		hosts := o.Hosts
+		if desired.options.Protocol != listenerconfig.ProtocolTLS || len(hosts) == 0 {
+			hosts = []string{""}
+		}
+		for _, h := range hosts {
+			if err := table.Add(h, up); err != nil {
+				// validation refused the duplicates, so this names a bug rather than a config
+				logger.Error("stream listener route not added", logging.Pairs{
+					keys.ListenerName: desired.listenerName, keys.BackendName: backendName,
+					keys.Error: err.Error(),
+				})
+			}
+		}
+	}
+	// the relay bounds its own connections and sessions, keeping the accepted connection's
+	// half-close reachable rather than wrapping it in the limiting listener
+	return &l4.Config{
+		Table: table, Options: desired.options.Stream,
+		MaxConnections: desired.options.ConnectionsLimit,
+	}
+}
+
+func startStreamListener(lg *listener.Group, desired desiredListener, cfg *l4.Config, errorFunc func()) {
+	protocol := desired.options.Protocol
+	if protocol == listenerconfig.ProtocolUDP {
+		svr := l4.NewPacketServer(desired.listenerName, cfg)
+		go lg.StartDatagramListener(desired.key, protocol, desired.address, desired.port, svr, errorFunc)
+		return
+	}
+	svr := l4.NewServer(desired.listenerName, protocol, cfg)
+	go lg.StartProtocolListener(desired.key, protocol, desired.address, desired.port,
+		0, svr, errorFunc, proxyProtocolOptions(desired.options))
+}
+
+func updateStreamListener(lg *listener.Group, key string, cfg *l4.Config) {
+	if svr, ok := listener.ProtocolServerAs[*l4.Server](lg, key); ok {
+		svr.Update(cfg)
+		return
+	}
+	if svr, ok := listener.ProtocolServerAs[*l4.PacketServer](lg, key); ok {
+		svr.Update(cfg)
+	}
+}
+
 func nativeBuildRequest(conf *config.Config, desired desiredListener, tracers tracing.Tracers,
 	clients backends.Backends,
 ) native.BuildRequest {
@@ -290,7 +422,22 @@ func listenerNeedsRestart(old, current desiredListener) bool {
 	return old.address != current.address || old.port != current.port || old.tls != current.tls ||
 		old.origin != current.origin || old.advertisedPort != current.advertisedPort ||
 		old.options.ConnectionsLimit != current.options.ConnectionsLimit ||
-		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout
+		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout ||
+		old.options.ProxyProtocol != current.options.ProxyProtocol ||
+		(old.options.ProxyProtocol && !slices.Equal(old.options.TrustedProxies, current.options.TrustedProxies))
+}
+
+func trustedProxies(options *listenerconfig.Options) clientip.Trusted {
+	// validation has already checked the list, so a parse failure here trusts no proxy
+	trusted, err := clientip.ParseTrusted(options.TrustedProxies)
+	if err != nil {
+		return nil
+	}
+	return trusted
+}
+
+func proxyProtocolOptions(options *listenerconfig.Options) *listener.ProxyProtocolOptions {
+	return listener.NewProxyProtocolOptions(options.ProxyProtocol, trustedProxies(options))
 }
 
 func runtimeListenerNeedsRestart(lg *listener.Group, key string, old, current desiredListener) bool {
@@ -324,12 +471,21 @@ func updateListenerCertificates(conf *config.Config, desired desiredListener, lg
 		})
 		return
 	}
-	if tlsConfig == nil || len(tlsConfig.Certificates) == 0 {
+	if tlsConfig == nil {
 		return
 	}
-	if l := lg.Get(desired.key); l != nil && l.CertSwapper() != nil {
-		l.CertSwapper().SetCerts(tlsConfig.Certificates)
+	l := lg.Get(desired.key)
+	if l == nil || l.CertSwapper() == nil {
+		return
 	}
+	store, ok := l.CertSwapper().(tr.CertStore)
+	if !ok {
+		l.CertSwapper().SetCerts(tlsConfig.Certificates)
+		return
+	}
+	// replace only config-sourced entries so certificates supplied at runtime
+	// survive the reload
+	store.ReplaceKinds(tr.NewConfigEntries(tlsConfig.Certificates), tr.SourceKindConfig)
 }
 
 func listenerEnabledOn(configuredListener, listenerName string) bool {

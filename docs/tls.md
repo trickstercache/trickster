@@ -31,6 +31,12 @@ backends:
       # backend configs
       insecure_skip_verify: true
       certificate_authority_paths: [ '/path/to/ca1.pem', '/path/to/ca2.pem' ]
+      certificate_authority_pem: |
+        -----BEGIN CERTIFICATE-----
+        ...an inline CA bundle, for material that arrives as configuration...
+        -----END CERTIFICATE-----
+      server_name: origin.internal.example.com
+      exclude_system_roots: true
       client_cert_path: '/path/to/client/cert.pem'
       client_key_path: '/path/to/client/key.pem'
 ```
@@ -85,6 +91,20 @@ Certificate swaps — whether from a config reload or automatic rotation detecti
 - The certificate is consulted only at handshake time, so established connections (including keep-alive connections and in-flight requests) are untouched by a swap; they continue on the certificate they were handshaken with until they close naturally.
 - Only new handshakes see the new certificate.
 
+## Runtime Certificates
+
+A listener normally serves TLS only when a mapped backend provides a certificate and key file. Setting `tls_runtime_certs: true` on a listener serves its `tls_port` even when no backend provides a file pair, so certificates can be supplied to the running process instead, for example by the Kubernetes Gateway/Ingress controller from TLS Secrets:
+
+```yaml
+listeners:
+  default:
+    port: 8480
+    tls_port: 8483
+    tls_runtime_certs: true
+```
+
+Such a listener starts with an empty certificate store and fails handshakes until the first certificate is supplied. Certificates supplied at runtime are validated with the same pair-coherence checks as files, participate in SNI selection alongside any file-sourced certificates on the same listener, appear in the certificate inventory with source `memory`, and survive configuration reloads and file rotations: a reload replaces only the config-sourced certificates, and a rotation replaces only the file-sourced ones. `tls_runtime_certs` is valid only on `http` listeners.
+
 ## Certificate Inventory (mgmt)
 
 The mgmt listener exposes a read-only, per-listener certificate inventory at `/trickster/certificates` (configurable via `mgmt.certificates_handler_path`). Each entry reports the certificate's id, source kind (`file`, `memory` or `config`), common name, subject alternative names, validity window and last-load time. The inventory never includes key material.
@@ -100,5 +120,11 @@ Each backend's TLS configuration can also configure the https client used for ma
 `insecure_skip_verify` will instruct the http client to ignore hostname verification issues with the upstream origin's certificate, and process the request anyway. This is analogous to `-k | --insecure` in curl.
 
 `certificate_authority_paths` will provide the http client with a list of certificate authorities (used in addition to any OS-provided root CA's) to use when determining the trust of an upstream origin's TLS certificate. In all cases, the Root CA's installed to the operating system on which Trickster is running are used for trust by the client.
+
+`certificate_authority_pem` adds certificate authorities the same way, from a PEM bundle written inline in the configuration rather than read from a file, for material that arrives as configuration (a Kubernetes BackendTLSPolicy's CA bundle, for instance). A bundle holding no parsable certificate fails validation.
+
+`exclude_system_roots: true` makes the configured certificate authorities (`certificate_authority_paths` and `certificate_authority_pem`) the only ones trusted for the origin, rather than additions to the operating system's. Use it when the origin must present a certificate from one specific private authority and a certificate from any public authority would be an error. It requires at least one authority to be configured, since excluding the system roots with none would trust nothing.
+
+`server_name` sets the hostname sent as SNI and verified against the origin's certificate, when it differs from the host in `origin_url` — an origin reached by IP or by an internal alias whose certificate names something else. It changes nothing about where the connection goes or which `Host` header is sent.
 
 To us Mutual Authentication with an upstream origin server, configure Trickster with Client Certificates using `client_cert_path` and `client_key_path` parameters, as shown above. You will likely need to also configure a custom CA in `certificate_authority_paths` to represent your certificate signer, unless it has been added to the underlying Operating System's CA list.

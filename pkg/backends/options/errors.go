@@ -237,3 +237,24 @@ func NewErrInvalidTemplateTSMProvider(provider, templateName, backendName string
 			templateName, provider, backendName),
 	}
 }
+
+// ErrInvalidHost is an error type for an invalid entry in a backend's hosts list
+type ErrInvalidHost struct {
+	Host        string
+	BackendName string
+	Reason      string
+}
+
+// NewErrInvalidHost returns a new invalid host error
+func NewErrInvalidHost(host, backendName, reason string) error {
+	return &ErrInvalidHost{Host: host, BackendName: backendName, Reason: reason}
+}
+
+func (e *ErrInvalidHost) Error() string {
+	return fmt.Sprintf("invalid host %q for backend %s: %s", e.Host, e.BackendName, e.Reason)
+}
+
+// ErrAnyHostRoutingWithHosts indicates a backend sets both any_host_routing
+// and a hosts list; any_host_routing already serves every hostname
+var ErrAnyHostRoutingWithHosts = errors.New(
+	"any_host_routing cannot be combined with hosts")

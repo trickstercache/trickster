@@ -1,0 +1,159 @@
+# the endpoint routing mode, where each mirror's copies are load balanced over
+# the mirror Service's endpoints through a template of its own
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: endpoint-params
+    namespace: infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-params
+  namespace: infra
+data:
+  routing_mode: endpoint
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: audit-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: replay-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ca-bundle
+  namespace: shop
+data:
+  ca.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIIBkDCCATWgAwIBAgIUBM0wEvGb47MAWCsWiWOuKebif1cwCgYIKoZIzj0EAwIw
+    HDEaMBgGA1UEAwwRVHJpY2tzdGVyIFRlc3QgQ0EwIBcNMjYwOTA5MDYzOTM5WhgP
+    MjEyNjA4MTYwNjM5MzlaMBwxGjAYBgNVBAMMEVRyaWNrc3RlciBUZXN0IENBMFkw
+    EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgnLIuREsSh7cJNlA7yXD0ghHSUUUjD53
+    asMk/Q3hkuojnbud/rU2Cg1Au1Obla4uPXBkPG7mh6g4rKEostyXo6NTMFEwHQYD
+    VR0OBBYEFM/W8A40mTEPoW+W8G531tMlVkejMB8GA1UdIwQYMBaAFM/W8A40mTEP
+    oW+W8G531tMlVkejMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIh
+    APW0tnI8NA7VaYUgTJnVX1FCtQoSHDeGwiUX8wC391wKAiEAteuPh0f1KzPZZIYQ
+    +1thDxowJBFHpF8Cwl9p2aeltmY=
+    -----END CERTIFICATE-----
+---
+# the two mirror Services verify against different names and trust stores
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: audit-tls
+  namespace: shop
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: audit-svc
+  validation:
+    caCertificateRefs:
+      - group: ""
+        kind: ConfigMap
+        name: ca-bundle
+    hostname: audit.internal
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: BackendTLSPolicy
+metadata:
+  name: replay-tls
+  namespace: shop
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: replay-svc
+  validation:
+    wellKnownCACertificates: System
+    hostname: replay.internal
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: split
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - shop.example.com
+  rules:
+    - filters:
+        - type: RequestMirror
+          requestMirror:
+            backendRef:
+              name: audit-svc
+              port: 8443
+      backendRefs:
+        - name: web-svc
+          port: 8080
+          weight: 3
+        - name: canary-svc
+          port: 8080
+          weight: 1
+          filters:
+            - type: RequestMirror
+              requestMirror:
+                backendRef:
+                  name: replay-svc
+                  port: 8443

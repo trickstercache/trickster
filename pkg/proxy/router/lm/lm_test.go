@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
@@ -36,6 +37,17 @@ const (
 	testPathPrefix1 = "/path/prefix"
 	testPathPrefix2 = "/path/prefix/2"
 )
+
+func TestWildcardMethod(t *testing.T) {
+	r := NewRouter()
+	require.NoError(t, r.RegisterRoute("/", nil, []string{methods.Wildcard},
+		matching.PathMatchTypePrefix, testResponse1Handler))
+	req, err := http.NewRequest("MECONE-UPDATE", "/resource", nil)
+	require.NoError(t, err)
+	w := writer.NewWriter().(*writer.TestResponseWriter)
+	r.Handler(req).ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.StatusCode)
+}
 
 func TestRegisterRoute(t *testing.T) {
 	const testPathExact1 = "/path1/exact"
@@ -463,4 +475,107 @@ func Test_lmRouter(t *testing.T) {
 	require.Equal(t, "^/long/.*", regexes[0].Pattern)
 	require.Equal(t, "^/[ab]", regexes[1].Pattern)
 	require.Equal(t, "^/[ba]", regexes[2].Pattern)
+}
+
+const (
+	testHostExact    = "api.example.com"
+	testHostWildcard = "*.example.com"
+	testHostApex     = "example.com"
+	testHostNested   = "a.b.example.com"
+	testHostOther    = "api.example.org"
+	testHostUpper    = "API.Example.COM"
+)
+
+const testResponse3Text = "test response 3"
+
+func testResponse3(w http.ResponseWriter, _ *http.Request) {
+	http.Error(w, testResponse3Text, http.StatusOK)
+}
+
+var testResponse3Handler = http.HandlerFunc(testResponse3)
+
+func serveHost(t *testing.T, r *lmRouter, host, path string) string {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Host = host
+	w := writer.NewWriter().(*writer.TestResponseWriter)
+	r.Handler(req).ServeHTTP(w, req)
+	return strings.TrimSpace(string(w.Bytes))
+}
+
+func TestWildcardHostPrecedence(t *testing.T) {
+	r := NewRouter().(*lmRouter)
+	require.NoError(t, r.RegisterRoute(testPathExact1, []string{testHostExact}, nil,
+		matching.PathMatchTypeExact, testResponse1Handler))
+	require.NoError(t, r.RegisterRoute(testPathExact1, []string{testHostWildcard}, nil,
+		matching.PathMatchTypeExact, testResponse2Handler))
+	require.NoError(t, r.RegisterRoute(testPathExact1, nil, nil,
+		matching.PathMatchTypeExact, testResponse3Handler))
+
+	if got := serveHost(t, r, testHostExact+":8480", testPathExact1); got != testResponse1Text {
+		t.Errorf("exact host = %q; want the exact-host route", got)
+	}
+	if got := serveHost(t, r, "www.example.com", testPathExact1); got != testResponse2Text {
+		t.Errorf("single-label wildcard = %q; want the wildcard route", got)
+	}
+	if got := serveHost(t, r, testHostApex, testPathExact1); got != testResponse3Text {
+		t.Errorf("apex host = %q; want the global route, wildcards need one label", got)
+	}
+	if got := serveHost(t, r, testHostNested, testPathExact1); got != testResponse3Text {
+		t.Errorf("nested subdomain = %q; want the global route", got)
+	}
+	if got := serveHost(t, r, testHostOther, testPathExact1); got != testResponse3Text {
+		t.Errorf("other domain = %q; want the global route", got)
+	}
+	if got := serveHost(t, r, testHostUpper, testPathExact1); got != testResponse1Text {
+		t.Errorf("mixed-case host = %q; want case-insensitive exact match", got)
+	}
+}
+
+func TestWildcardHostPathTiers(t *testing.T) {
+	r := NewRouter().(*lmRouter)
+	require.NoError(t, r.RegisterRoute(testPathExact1, []string{testHostWildcard}, nil,
+		matching.PathMatchTypeExact, testResponse1Handler))
+	require.NoError(t, r.RegisterRoute(testPathPrefix1, []string{testHostWildcard}, nil,
+		matching.PathMatchTypePrefix, testResponse2Handler))
+	require.NoError(t, r.RegisterRoute("^/re/[0-9]+", []string{testHostWildcard}, nil,
+		matching.PathMatchTypeRegex, testResponse3Handler))
+	require.NoError(t, r.RegisterRoute(testPathExact1, nil, nil,
+		matching.PathMatchTypeExact, testResponse3Handler))
+
+	if got := serveHost(t, r, testHostExact, testPathExact1); got != testResponse1Text {
+		t.Errorf("wildcard exact path = %q", got)
+	}
+	if got := serveHost(t, r, testHostExact, testPathPrefix1+"/more"); got != testResponse2Text {
+		t.Errorf("wildcard prefix path = %q", got)
+	}
+	if got := serveHost(t, r, testHostExact, "/re/42"); got != testResponse3Text {
+		t.Errorf("wildcard regex path = %q", got)
+	}
+	// a wildcard host miss falls through to the global routes
+	if got := serveHost(t, r, testHostExact, "/nope"); got != "404 page not found" {
+		t.Errorf("wildcard miss = %q; want not found", got)
+	}
+	// hostname matching disabled: only global routes are consulted
+	r.SetMatchingScheme(router.MatchExactPath)
+	if got := serveHost(t, r, testHostExact, testPathExact1); got != testResponse3Text {
+		t.Errorf("hostname matching disabled = %q; want the global route", got)
+	}
+}
+
+func TestRegisterRouteInvalidHosts(t *testing.T) {
+	r := NewRouter().(*lmRouter)
+	for _, host := range []string{"*", "*.", "a.*.example.com", "*example.com", "api.*"} {
+		err := r.RegisterRoute(testPathExact1, []string{host}, nil,
+			matching.PathMatchTypeExact, testResponse1Handler)
+		if err != errors.ErrInvalidHost {
+			t.Errorf("host %q: error = %v; want %v", host, err, errors.ErrInvalidHost)
+		}
+	}
+	if len(r.wildcards) != 0 || len(r.routes) != 0 {
+		t.Error("invalid hosts must not register routes")
+	}
 }

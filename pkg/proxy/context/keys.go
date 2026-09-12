@@ -25,4 +25,6 @@ const (
 	healthCheckKey
 	requestBodyKey
 	servedKey
+	clientIPKey
+	mirroredKey
 )

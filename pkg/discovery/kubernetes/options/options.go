@@ -15,57 +15,26 @@
  */
 
 // Package options defines the connection settings for the kubernetes
-// autodiscovery provider.
+// autodiscovery provider. The settings themselves are the shared
+// Kubernetes connection options, aliased here so that a discoverer's
+// 'kubernetes' block and the controller's connection block are one
+// vocabulary; this package adds only the discovery-specific error wrapper.
 package options
 
 import (
-	"errors"
-
 	derrors "github.com/trickstercache/trickster/v2/pkg/discovery/errors"
-	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
+	kubeopts "github.com/trickstercache/trickster/v2/pkg/kube/options"
 )
 
-// ErrInClusterAndKubeconfig is returned when both credential sources are set
-var ErrInClusterAndKubeconfig = errors.New(
-	"'in_cluster' and 'kubeconfig' are mutually exclusive")
+// Options is the Kubernetes API client settings for a discoverer with the
+// 'kubernetes' provider
+type Options = kubeopts.Options
 
-// Options defines the Kubernetes API client settings for a discoverer with
-// the 'kubernetes' provider
-type Options struct {
-	// InCluster, when true, uses the pod's service account for API access.
-	// Defaults to true when no kubeconfig is provided.
-	InCluster bool `yaml:"in_cluster,omitempty"`
-	// Kubeconfig is the path to a kubeconfig file, for use when running
-	// outside the target cluster. Mutually exclusive with in_cluster.
-	Kubeconfig string `yaml:"kubeconfig,omitempty"`
-}
+// ErrInClusterAndKubeconfig is returned when both credential sources are set
+var ErrInClusterAndKubeconfig = kubeopts.ErrInClusterAndKubeconfig
 
 // New returns an Options with default values
-func New() *Options { return &Options{InCluster: true} }
-
-// Clone returns a perfect copy of the Options
-func (o *Options) Clone() *Options { return pointers.Clone(o) }
-
-// Initialize applies defaults
-func (o *Options) Initialize() {
-	if o == nil {
-		return
-	}
-	if !o.InCluster && o.Kubeconfig == "" {
-		o.InCluster = true
-	}
-}
-
-// Validate validates the Options
-func (o *Options) Validate() error {
-	if o == nil {
-		return nil
-	}
-	if o.InCluster && o.Kubeconfig != "" {
-		return ErrInClusterAndKubeconfig
-	}
-	return nil
-}
+func New() *Options { return kubeopts.New() }
 
 // NewErrInvalidOptions returns an error for an invalid `kubernetes` options block.
 // It lives here rather than in pkg/discovery/options so that the base

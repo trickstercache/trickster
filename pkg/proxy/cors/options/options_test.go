@@ -154,3 +154,39 @@ func TestLegacyPolicy(t *testing.T) {
 		t.Fatal("Legacy() returned shared mutable state")
 	}
 }
+
+func TestNilReceivers(t *testing.T) {
+	var o *Options
+	if o.Clone() != nil {
+		t.Error("expected a nil clone of nil options")
+	}
+	if err := o.Initialize(""); err != nil {
+		t.Error(err)
+	}
+	if o.PreservesOrigin() || o.IsLegacy() {
+		t.Error("nil options neither preserve origin headers nor are legacy")
+	}
+}
+
+func TestInitializeDisableKeepsHeadersNil(t *testing.T) {
+	o := &Options{Mode: "DISABLE"}
+	if err := o.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	if o.Mode != ModeDisable || o.Headers != nil {
+		t.Errorf("expected lower-cased disable mode with nil headers, got %q %v", o.Mode, o.Headers)
+	}
+}
+
+func TestPreservesOrigin(t *testing.T) {
+	for mode, expected := range map[Mode]bool{
+		ModePreserve: true, "MERGE": true, ModeReplace: false, ModeDisable: false, "": false,
+	} {
+		if got := (&Options{Mode: mode}).PreservesOrigin(); got != expected {
+			t.Errorf("mode %q: expected %t got %t", mode, expected, got)
+		}
+	}
+	if Legacy().PreservesOrigin() {
+		t.Error("the legacy policy replaces origin headers")
+	}
+}

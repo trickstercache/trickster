@@ -30,10 +30,7 @@ func HideAuthorizationCredentials[m ~map[K]V, K ~string, V ~string](headers m) {
 	// keys match canonically behind any '+'/'-' update operator; an empty
 	// value carries no credential (it can declare an opt-out) and is preserved
 	for k, v := range headers {
-		name := string(k)
-		if len(name) > 0 && (name[0] == '+' || name[0] == '-') {
-			name = name[1:]
-		}
+		_, name := ParseUpdateKey(string(k))
 		if _, ok := sensitiveCredentials[http.CanonicalHeaderKey(name)]; ok && v != "" {
 			headers[k] = "*****"
 		}

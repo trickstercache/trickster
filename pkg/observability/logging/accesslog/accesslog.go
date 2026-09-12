@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/format"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 // Logger writes formatted access log lines for one backend, and error log
@@ -36,7 +37,14 @@ type Logger struct {
 	threshold int
 	backend   string
 	provider  string
+	extra     format.Extra
 }
+
+// log names for the dropped-lines metric
+const (
+	logNameAccess = "access"
+	logNameError  = "error"
+)
 
 var bufPool = sync.Pool{
 	New: func() any {
@@ -59,6 +67,7 @@ func NewLogger(o *alo.Options, instanceID int,
 		backend:   backend,
 		provider:  provider,
 		threshold: o.ResolvedErrorThreshold(),
+		extra:     format.NewExtra(o.Extra),
 	}
 	var err error
 	if l.accessFmt, err = format.ParseFormat(o.ResolvedFormat()); err != nil {
@@ -90,11 +99,12 @@ func NewLogger(o *alo.Options, instanceID int,
 func (l *Logger) Log(f *format.Fields) {
 	f.Backend = l.backend
 	f.Provider = l.provider
+	f.Extra = l.extra
 	if l.access != nil {
-		l.render(l.access, l.accessFmt, f)
+		l.render(l.access, l.accessFmt, f, logNameAccess)
 	}
 	if l.errlog != nil && f.Status >= l.threshold {
-		l.render(l.errlog, l.errFmt, f)
+		l.render(l.errlog, l.errFmt, f, logNameError)
 	}
 }
 
@@ -104,10 +114,25 @@ func (l *Logger) NeedsResultHeader() bool {
 		l.errlog != nil && l.errFmt.NeedsResultHeader())
 }
 
-func (l *Logger) render(w *manager.Handle, fm *format.Formatter, f *format.Fields) {
+// NeedsResources reports whether either configured log emits fields the route
+// records on its request resources.
+func (l *Logger) NeedsResources() bool {
+	return l != nil && (l.access != nil && l.accessFmt.NeedsResources() ||
+		l.errlog != nil && l.errFmt.NeedsResources())
+}
+
+// NeedsRequestID reports whether either configured log emits the request ID.
+func (l *Logger) NeedsRequestID() bool {
+	return l != nil && (l.access != nil && l.accessFmt.NeedsRequestID() ||
+		l.errlog != nil && l.errFmt.NeedsRequestID())
+}
+
+func (l *Logger) render(w *manager.Handle, fm *format.Formatter, f *format.Fields, logName string) {
 	bp := bufPool.Get().(*[]byte)
 	b := fm.Render((*bp)[:0], f)
-	w.Write(b)
+	if _, err := w.Write(b); err != nil {
+		metrics.AccessLogDroppedLines.WithLabelValues(l.backend, logName).Inc()
+	}
 	if cap(b) <= maxPooledBufferSize {
 		*bp = b
 		bufPool.Put(bp)

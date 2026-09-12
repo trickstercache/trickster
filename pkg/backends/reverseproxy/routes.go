@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/redirect"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -31,9 +32,10 @@ import (
 func (c *Client) RegisterHandlers(handlers.Lookup) {
 	c.Backend.RegisterHandlers(
 		handlers.Lookup{
-			"health":        http.HandlerFunc(c.HealthHandler),
-			"proxy":         http.HandlerFunc(c.ProxyHandler),
-			"localresponse": http.HandlerFunc(local.HandleLocalResponse),
+			"health":                   http.HandlerFunc(c.HealthHandler),
+			"proxy":                    http.HandlerFunc(c.ProxyHandler),
+			handlers.NameLocalResponse: http.HandlerFunc(local.HandleLocalResponse),
+			handlers.NameRedirect:      http.HandlerFunc(redirect.HandleRedirect),
 		},
 	)
 }

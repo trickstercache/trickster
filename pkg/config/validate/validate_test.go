@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 )
 
 func TestLoadConfigurationFileFailures(t *testing.T) {
@@ -75,5 +76,20 @@ func TestLoadConfigurationFileFailures(t *testing.T) {
 				t.Errorf("expected `%s` got `%s`", test.expected, err.Error())
 			}
 		})
+	}
+}
+
+func TestValidateDefaultAccessLog(t *testing.T) {
+	c := config.NewConfig()
+	c.Backends["default"].Name = "default"
+	c.Backends["default"].Provider = "rp"
+	c.Backends["default"].OriginURL = "http://example.com"
+	c.AccessLog = &alo.Options{Filename: "stdout", Format: "%{nope}x"}
+	if err := Validate(c); err == nil || !strings.Contains(err.Error(), "access_log") {
+		t.Fatalf("error = %v; want an access_log format error", err)
+	}
+	c.AccessLog.Format = "json"
+	if err := Validate(c); err != nil {
+		t.Fatal(err)
 	}
 }

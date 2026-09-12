@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,6 +68,44 @@ func (b *configBackend) Configuration() *bo.Options { return b.cfg }
 func fixedNow() func() time.Time {
 	tm := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	return func() time.Time { return tm }
+}
+
+// flipOnSecondRead fails its status on the builder's second read of the statuses, the moment a
+// builder that builds before subscribing has read them but not yet subscribed
+type flipOnSecondRead struct {
+	stubHealthChecker
+	reads atomic.Int32
+	st    *healthcheck.Status
+}
+
+func (f *flipOnSecondRead) Statuses() healthcheck.StatusLookup {
+	if f.reads.Add(1) == 2 {
+		f.st.Set(healthcheck.StatusFailing)
+	}
+	return f.statuses
+}
+
+func TestStatusHandlerSeesChangeDuringStartup(t *testing.T) {
+	st := healthcheck.NewStatus("backend", providers.Prometheus, "",
+		healthcheck.StatusInitializing, time.Time{}, nil)
+	hc := &flipOnSecondRead{st: st}
+	hc.statuses = healthcheck.StatusLookup{"backend": st}
+	handler := StatusHandler(time.Now, hc, nil)
+	defer hc.Shutdown()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set(headers.NameAccept, headers.ValueApplicationJSON)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if strings.Contains(w.Body.String(), `"unavailable":[{"name":"backend"`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a status change during startup never reached the page: %s", w.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestStatusHandlerNilHealthChecker(t *testing.T) {

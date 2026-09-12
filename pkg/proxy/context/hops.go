@@ -31,13 +31,20 @@ func WithHops(ctx context.Context, current, maxHops int32) context.Context {
 
 // Hops returns the Hops data associated with the request
 func Hops(ctx context.Context) (int32, int32) {
+	current, maxHops, _ := HopsIfSet(ctx)
+	return current, maxHops
+}
+
+// HopsIfSet returns the Hops data associated with the request, and whether any
+// was set; the defaults are returned when none was
+func HopsIfSet(ctx context.Context) (int32, int32, bool) {
 	v := ctx.Value(hopsKey)
 	if v != nil {
 		if i, ok := v.([]int32); ok && len(i) == 2 {
-			return i[0], i[1]
+			return i[0], i[1], true
 		}
 	}
-	return 0, options.DefaultMaxRuleExecutions
+	return 0, options.DefaultMaxRuleExecutions, false
 }
 
 // IncrementedRewriterHops returns the current incremented hop count from the ctx

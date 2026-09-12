@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -115,7 +116,7 @@ func TestTSMNonMergePathUsesFirstLiveMember(t *testing.T) {
 
 	for range 3 {
 		w := httptest.NewRecorder()
-		r := httptest.NewRequest(http.MethodGet, "https://trickstercache.org/api/v1/query?query=up", nil)
+		r := httptest.NewRequest(http.MethodGet, "https://"+appinfo.Domain+"/api/v1/query?query=up", nil)
 		h.ServeHTTP(w, r)
 		if w.Code != http.StatusOK {
 			t.Fatalf("status = %d, want %d", w.Code, http.StatusOK)

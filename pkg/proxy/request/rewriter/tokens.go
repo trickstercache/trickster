@@ -20,6 +20,8 @@ import (
 	"context"
 	"maps"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -79,4 +81,39 @@ func expandTokens(r *http.Request, input string) string {
 		input = input[end+1:]
 	}
 	return output.String()
+}
+
+// CaptureTokens maps regexp submatches to rewrite tokens: ${0} for the whole
+// match, ${n} for each group, and ${name} for named groups.
+func CaptureTokens(re *regexp.Regexp, matches []string) map[string]string {
+	if len(matches) == 0 {
+		return nil
+	}
+	tokens := make(map[string]string, len(matches)*2)
+	names := re.SubexpNames()
+	for i, match := range matches {
+		tokens[strconv.Itoa(i)] = match
+		if i >= len(names) || names[i] == "" {
+			continue
+		}
+		if _, ok := tokens[names[i]]; !ok {
+			tokens[names[i]] = match
+		}
+	}
+	return tokens
+}
+
+// WithPathCaptures wraps next so each request carries the submatches of re
+// against its path as rewrite tokens. Attach only to routes whose rewriters
+// use tokens, since the submatch runs on every request through the wrapper.
+func WithPathCaptures(re *regexp.Regexp, next http.Handler) http.Handler {
+	if re == nil || next == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if tokens := CaptureTokens(re, re.FindStringSubmatch(r.URL.Path)); len(tokens) > 0 {
+			r = WithTokens(r, tokens)
+		}
+		next.ServeHTTP(w, r)
+	})
 }

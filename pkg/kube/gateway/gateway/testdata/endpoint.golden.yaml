@@ -1,0 +1,142 @@
+discovery:
+    kgw--discovery:
+        provider: kubernetes
+        kubernetes:
+            in_cluster: true
+            qps: 20
+            burst: 40
+            timeout: 10s
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.web_r0:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.web_r0_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: web-svc
+                    port: http
+    kgw--httproute.shop.web_r0_b0_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r1:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /split
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.web_r1_b0
+                  weight: 3
+                - name: kgw--httproute.shop.web_r1_b1
+                  weight: 1
+    kgw--httproute.shop.web_r1_b0:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.web_r1_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: web-svc
+                    port: http
+    kgw--httproute.shop.web_r1_b0_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.web_r1_b1:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.web_r1_b1_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: canary-svc
+    kgw--httproute.shop.web_r1_b1_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'

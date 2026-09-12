@@ -43,10 +43,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
 	discoveryv1 "k8s.io/api/discovery/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/client-go/informers"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 )
@@ -59,6 +57,21 @@ const SnapshotDebounce = 250 * time.Millisecond
 
 // ErrStopped aliases discovery.ErrStopped for callers of this package
 var ErrStopped = discovery.ErrStopped
+
+// Discoverer is the kubernetes provider's Discoverer: the shared
+// Start/Stop/Subscribe lifecycle plus the API server connectivity
+// preflight the setup layer runs under startup_policy: fail
+type Discoverer struct {
+	*discovery.Lifecycle
+	kc *kube.Client
+}
+
+var _ discovery.Preflighter = &Discoverer{}
+
+// Preflight reports whether the API server is reachable and answering
+func (d *Discoverer) Preflight(ctx context.Context) error {
+	return d.kc.Preflight(ctx)
+}
 
 // New constructs the kubernetes Discoverer for the provided discoverer
 // options; it satisfies discovery.NewDiscovererFunc
@@ -76,9 +89,12 @@ func New(name string, o *do.Options) (discovery.Discoverer, error) {
 // NewWithClient constructs the kubernetes Discoverer over an existing
 // client; used by tests (client-go fakes) and embedders with their own
 // client stack
-func NewWithClient(name string, kc *kube.Client) discovery.Discoverer {
+func NewWithClient(name string, kc *kube.Client) *Discoverer {
 	p := &provider{name: name, kc: kc}
-	return discovery.NewLifecycle(name, p.newSubscription)
+	return &Discoverer{
+		Lifecycle: discovery.NewLifecycle(name, p.newSubscription),
+		kc:        kc,
+	}
 }
 
 // provider carries the kubernetes provider's shared client; the shared
@@ -94,22 +110,28 @@ type subscription struct {
 	p       *provider
 	q       *do.Query
 	emitter *discovery.Emitter
-	factory informers.SharedInformerFactory
-	// podFactory is a second, selector-free informer factory joined in by
-	// the endpointslices kind when replica_group_label is set: endpoints
+	// handle is this subscription's reference to the shared informer
+	// factory for its query; informer and reg are its own informer and
+	// event-handler registration on it
+	handle   *kube.CoreInformerFactory
+	informer cache.SharedIndexInformer
+	reg      cache.ResourceEventHandlerRegistration
+	// podHandle references a second, selector-free shared factory joined in
+	// by the endpointslices kind when replica_group_label is set: endpoints
 	// carry no pod labels, so the target pod is consulted for the group
-	podFactory informers.SharedInformerFactory
+	podHandle   *kube.CoreInformerFactory
+	podInformer cache.SharedIndexInformer
+	podReg      cache.ResourceEventHandlerRegistration
 	// podLister resolves an endpoint's TargetRef pod for label lookups;
-	// nil unless podFactory is active
+	// nil unless podHandle is active
 	podLister corelisters.PodNamespaceLister
 	// build produces the current full-membership snapshot from the
 	// kind-specific informer's lister cache
 	build func() discovery.Snapshot
 
 	mtx sync.Mutex
-	// cancel stops this subscription's informers independently of the
-	// discoverer (unsubscribe); it is derived from the discoverer context
-	// at launch, so factory.Shutdown can actually complete
+	// cancel releases this subscription independently of the discoverer
+	// (unsubscribe); it is derived from the discoverer context at launch
 	cancel     context.CancelFunc
 	timer      *time.Timer
 	armed      bool
@@ -150,66 +172,88 @@ func (p *provider) newSubscription(q *do.Query, handler discovery.SnapshotHandle
 	default:
 		return nil, fmt.Errorf("invalid kubernetes query kind %q", q.Kind)
 	}
-	opts := []informers.SharedInformerOption{informers.WithNamespace(ns)}
-	if len(sel) > 0 || fieldSelector != "" {
-		// a factory holds exactly one tweak func (they do not compose), so
-		// label and field filtering are combined here
-		var labelSelector string
-		if len(sel) > 0 {
-			labelSelector = labels.SelectorFromSet(sel).String()
-		}
-		opts = append(opts, informers.WithTweakListOptions(
-			func(lo *metav1.ListOptions) {
-				if labelSelector != "" {
-					lo.LabelSelector = labelSelector
-				}
-				if fieldSelector != "" {
-					lo.FieldSelector = fieldSelector
-				}
-			}))
+	var labelSelector string
+	if len(sel) > 0 {
+		labelSelector = labels.SelectorFromSet(sel).String()
 	}
-	s.factory = informers.NewSharedInformerFactoryWithOptions(
-		p.kc.Clientset(), 0, opts...)
+	// the rendered selectors are the factory's identity, so a second
+	// subscription with the same query shares this one's informers
+	s.handle = p.kc.InformerFactory(kube.FactorySpec{
+		Namespace:     ns,
+		LabelSelector: labelSelector,
+		FieldSelector: fieldSelector,
+	})
+	factory := s.handle.Factory()
 
 	dirtyHandler := cache.ResourceEventHandlerFuncs{
 		AddFunc:    func(any) { s.markDirty() },
 		UpdateFunc: func(any, any) { s.markDirty() },
 		DeleteFunc: func(any) { s.markDirty() },
 	}
-	var informer cache.SharedIndexInformer
 	switch q.Kind {
 	case do.KindEndpointSlices:
-		inf := s.factory.Discovery().V1().EndpointSlices()
-		informer = inf.Informer()
+		inf := factory.Discovery().V1().EndpointSlices()
+		s.informer = inf.Informer()
 		lister := inf.Lister().EndpointSlices(ns)
 		s.build = func() discovery.Snapshot { return s.buildEndpointSlices(lister) }
 		if q.ReplicaGroupLabel != "" {
 			// join the target pods so per-member replica groups can be
 			// read from pod labels; a separate factory because the slice
 			// factory's service-name label tweak must not filter pods
-			s.podFactory = informers.NewSharedInformerFactoryWithOptions(
-				p.kc.Clientset(), 0, informers.WithNamespace(ns))
-			podInf := s.podFactory.Core().V1().Pods()
-			if _, err := podInf.Informer().AddEventHandler(dirtyHandler); err != nil {
+			s.podHandle = p.kc.InformerFactory(kube.FactorySpec{Namespace: ns})
+			podInf := s.podHandle.Factory().Core().V1().Pods()
+			s.podInformer = podInf.Informer()
+			reg, err := s.podInformer.AddEventHandler(dirtyHandler)
+			if err != nil {
+				s.release()
 				return nil, err
 			}
+			s.podReg = reg
 			s.podLister = podInf.Lister().Pods(ns)
 		}
 	case do.KindService:
-		inf := s.factory.Core().V1().Services()
-		informer = inf.Informer()
+		inf := factory.Core().V1().Services()
+		s.informer = inf.Informer()
 		lister := inf.Lister().Services(ns)
 		s.build = func() discovery.Snapshot { return s.buildServices(lister) }
 	case do.KindPods:
-		inf := s.factory.Core().V1().Pods()
-		informer = inf.Informer()
+		inf := factory.Core().V1().Pods()
+		s.informer = inf.Informer()
 		lister := inf.Lister().Pods(ns)
 		s.build = func() discovery.Snapshot { return s.buildPods(lister) }
 	}
-	if _, err := informer.AddEventHandler(dirtyHandler); err != nil {
+	reg, err := s.informer.AddEventHandler(dirtyHandler)
+	if err != nil {
+		s.removeHandlers()
+		s.release()
 		return nil, err
 	}
+	s.reg = reg
 	return s, nil
+}
+
+// removeHandlers deregisters this subscription's event handlers, so shared
+// informers other subscriptions keep running stop calling into it
+func (s *subscription) removeHandlers() {
+	if s.reg != nil {
+		s.informer.RemoveEventHandler(s.reg) //nolint:errcheck
+		s.reg = nil
+	}
+	if s.podReg != nil {
+		s.podInformer.RemoveEventHandler(s.podReg) //nolint:errcheck
+		s.podReg = nil
+	}
+}
+
+// release drops this subscription's references to the shared factories; the
+// last reference to a factory stops it
+func (s *subscription) release() {
+	if s.handle != nil {
+		s.handle.Release()
+	}
+	if s.podHandle != nil {
+		s.podHandle.Release()
+	}
 }
 
 // Launch starts the subscription's informers under its own context
@@ -225,14 +269,21 @@ func (s *subscription) Launch(ctx context.Context) {
 	subCtx, cancel := context.WithCancel(ctx)
 	s.cancel = cancel
 	s.mtx.Unlock()
-	s.factory.Start(subCtx.Done())
-	if s.podFactory != nil {
-		s.podFactory.Start(subCtx.Done())
+	s.handle.Start()
+	if s.podHandle != nil {
+		s.podHandle.Start()
 	}
+	// the shared factories outlive any one subscription, so cancellation of
+	// the discoverer context releases this subscription rather than
+	// stopping the informers directly
 	go func() {
-		synced := s.factory.WaitForCacheSync(subCtx.Done())
-		if s.podFactory != nil {
-			maps.Copy(synced, s.podFactory.WaitForCacheSync(subCtx.Done()))
+		<-subCtx.Done()
+		s.Stop()
+	}()
+	go func() {
+		synced := s.handle.WaitForCacheSync(subCtx.Done())
+		if s.podHandle != nil {
+			maps.Copy(synced, s.podHandle.WaitForCacheSync(subCtx.Done()))
 		}
 		for typ, ok := range synced {
 			if !ok {
@@ -263,21 +314,16 @@ func (s *subscription) Stop() {
 	if s.timer != nil {
 		s.timer.Stop()
 	}
-	launched := s.launched
 	cancel := s.cancel
 	s.mtx.Unlock()
 	s.emitter.Stop()
 	if cancel != nil {
 		cancel()
 	}
-	if launched {
-		// informer goroutines exit on the cancelled context; Shutdown then
-		// joins them so no watch goroutine outlives the subscription
-		s.factory.Shutdown()
-		if s.podFactory != nil {
-			s.podFactory.Shutdown()
-		}
-	}
+	// deregister before releasing: a shared informer another subscription
+	// still holds keeps running, and must stop calling into this one
+	s.removeHandlers()
+	s.release()
 }
 
 // markDirty schedules a debounced snapshot rebuild; bursts of informer

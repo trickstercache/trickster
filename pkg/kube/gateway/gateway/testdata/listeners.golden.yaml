@@ -1,0 +1,58 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+    kgw--listener-https-443:
+        tls_port: 443
+        tls_runtime_certs: true
+backends:
+    kgw--httproute.infra.web_r0:
+        provider: rp
+        origin_url: http://web-svc.infra.svc:8080
+        hosts:
+            - a.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.infra.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.infra.web_r1:
+        provider: rp
+        origin_url: http://web-svc.infra.svc:8080
+        hosts:
+            - b.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.infra.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.infra.web_r2:
+        provider: rp
+        origin_url: http://web-svc.infra.svc:8080
+        hosts:
+            - a.example.com
+        listener_names:
+            - kgw--listener-https-443
+        cache_key_prefix: httproute.infra.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
