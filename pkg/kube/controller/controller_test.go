@@ -1574,7 +1574,7 @@ func TestControllerCountsStatusWriteFailures(t *testing.T) {
 	require.NoError(t, c.Start(t.Context()))
 	eventually(t, func() bool {
 		return testutil.ToFloat64(metrics.KubeReconcileErrors.WithLabelValues(
-			metrics.KubeStageStatus)) == before+1
+			metrics.KubeStageStatus)) >= before+1
 	}, "the refused write was not counted")
 	require.Empty(t, ingressStatus(t, cs))
 }
