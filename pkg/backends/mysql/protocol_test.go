@@ -649,6 +649,7 @@ func TestProtocolServerProxiesTextQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.Close()
 	result, err := client.ExecuteFetch("select 42", vtmysql.FETCH_ALL_ROWS, true)
 	if err != nil {
 		t.Fatal(err)
@@ -688,8 +689,6 @@ func TestProtocolServerProxiesTextQueries(t *testing.T) {
 	if got := originHandler.queryCount.Load(); got != 5 {
 		t.Fatalf("session-state bypass origin queries = %d, want 5", got)
 	}
-	client.Close()
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
