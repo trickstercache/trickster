@@ -17,14 +17,18 @@
 package graphite
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func TestSetExtent(t *testing.T) {
@@ -94,5 +98,73 @@ func TestSetExtent(t *testing.T) {
 	}
 	if err := c.SetExtent(up, trq, &timeseries.Extent{Start: gap.End, End: gap.Start}); err == nil {
 		t.Error("inverted extent")
+	}
+}
+
+func TestRenderWidenedFetchTrimmed(t *testing.T) {
+	const leaf = "dev.medium.orders.us-east.count"
+	h := newHarness(t)
+	h.learn(leaf)
+	// with now on a 5m boundary, -604801s adds exactly one 5m bucket ahead of
+	// what -604799s and -604800s cached: a one-bucket head gap
+	h.now = time.Now().Truncate(5 * time.Minute)
+	for _, w := range []struct{ from, until string }{
+		{"-3d", "-1d"}, {"-604799s", "-5min"}, {"-604800s", "-5min"}, {"-604801s", "-5min"},
+		// a one-bucket window on a cold 60s entry: a key miss, served uncropped
+		{"-360s", "-5min"},
+	} {
+		for _, format := range []string{"json", "raw"} {
+			q := h.query(url.Values{"target": {leaf}, "from": {w.from}, "until": {w.until}, "format": {format}})
+			for pass := range 2 {
+				h.same(fmt.Sprintf("%s..%s %s (pass %d)", w.from, w.until, format, pass), q)
+				if h.lastRQ == nil || h.lastRQ.Fallback != "" {
+					t.Fatalf("%s: must be accelerated", w.from)
+				}
+				if pass == 0 && format == "json" && w.from == "-604801s" && h.fetches == 0 {
+					t.Fatal("vacuous: -604801s was a full cache hit, not a one-bucket head gap")
+				}
+			}
+		}
+	}
+}
+
+func TestTrimToExtent(t *testing.T) {
+	pts := func(secs ...int64) dataset.Points {
+		out := make(dataset.Points, len(secs))
+		for i, s := range secs {
+			out[i] = dataset.Point{Epoch: epoch.FromSecs(s), Size: 24, Values: []any{float64(s)}}
+		}
+		return out
+	}
+	s := &dataset.Series{Points: pts(100, 110, 120, 130), PointSize: 96}
+	ds := &dataset.DataSet{Results: []*dataset.Result{nil, {SeriesList: []*dataset.Series{nil, s}}}}
+	trimToExtent(ds, timeseries.Extent{})
+	if len(s.Points) != 4 {
+		t.Fatal("a zero extent must not trim")
+	}
+	trimToExtent(ds, timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(130, 0)})
+	if len(s.Points) != 4 || s.PointSize != 96 {
+		t.Fatal("points inside the extent must be kept")
+	}
+	trimToExtent(ds, timeseries.Extent{Start: time.Unix(110, 0), End: time.Unix(120, 0)})
+	if len(s.Points) != 2 || s.Points[0].Epoch != epoch.FromSecs(110) || s.PointSize != 48 {
+		t.Errorf("head and tail must be trimmed: %v (size %d)", s.Points, s.PointSize)
+	}
+	trimToExtent(ds, timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)})
+	if len(s.Points) != 0 || s.PointSize != 0 {
+		t.Errorf("a disjoint extent must trim every point: %v (size %d)", s.Points, s.PointSize)
+	}
+
+	trq := &timeseries.TimeRangeQuery{Step: 10 * time.Second,
+		Extent: timeseries.Extent{Start: time.Unix(110, 0), End: time.Unix(120, 0)}}
+	ts, err := unmarshalFetch(strings.NewReader(`[{"target":"a","datapoints":[[1,100],[2,110],[3,120]]}]`), trq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points; len(p) != 2 || p[0].Epoch != epoch.FromSecs(110) {
+		t.Errorf("a fetch must be trimmed to the request's extent: %v", p)
+	}
+	if _, err := unmarshalFetch(strings.NewReader(`[{`), trq); err == nil {
+		t.Error("an invalid body must fail")
 	}
 }

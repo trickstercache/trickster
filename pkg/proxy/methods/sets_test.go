@@ -25,8 +25,9 @@ import (
 
 func TestExpand(t *testing.T) {
 	all := AllHTTPMethods()
-	require.Equal(t, all, Expand(nil))
-	require.Equal(t, all, Expand([]string{http.MethodGet, Wildcard}))
+	require.Equal(t, append(all, Wildcard), Expand(nil))
+	require.Equal(t, append(AllHTTPMethods(), Wildcard), Expand([]string{Wildcard}))
+	require.Equal(t, []string{http.MethodGet, Wildcard}, Expand([]string{http.MethodGet, Wildcard}))
 	require.Equal(t, []string{http.MethodGet, http.MethodPost}, Expand([]string{"get", "Post"}))
 	// an already concrete, upper-cased list is returned as is
 	in := []string{http.MethodGet, http.MethodPost}

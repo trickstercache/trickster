@@ -158,14 +158,21 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
-    * `cache_name` - the name of the configured cache performing the operation$
+    * `cache_name` - the name of the configured cache performing the operation
     * `provider` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
 
-* `trickster_cache_operation_bytes_total` (Counter) - The total number of bytes upon which the Trickster cache has operated.
+* `trickster_cache_operation_duration_seconds` (Histogram) - The time, in seconds, required to perform an operation on the Trickster cache. Deletions include both requested removals and index reaper evictions.
   * labels:
-    * `cache_name` - the name of the configured cache performing the operation$
+    * `cache_name` - the name of the configured cache performing the operation
+    * `provider` - the type of the configured cache performing the operation
+    * `operation` - the name of the operation being performed (`get`, `set`, `setDirect`, `del`)
+    * `status` - the result of the operation being performed (e.g., `hit`, `kmiss` for a full key miss, `none`)
+
+* `trickster_cache_operation_bytes_total` (Counter) - The total number of bytes upon which the Trickster cache has operated. Deletions (`del`) record bytes only for cache providers that use an index, since other providers don't track object sizes.
+  * labels:
+    * `cache_name` - the name of the configured cache performing the operation
     * `provider` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed

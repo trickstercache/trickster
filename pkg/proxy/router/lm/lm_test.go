@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
@@ -36,6 +37,17 @@ const (
 	testPathPrefix1 = "/path/prefix"
 	testPathPrefix2 = "/path/prefix/2"
 )
+
+func TestWildcardMethod(t *testing.T) {
+	r := NewRouter()
+	require.NoError(t, r.RegisterRoute("/", nil, []string{methods.Wildcard},
+		matching.PathMatchTypePrefix, testResponse1Handler))
+	req, err := http.NewRequest("MECONE-UPDATE", "/resource", nil)
+	require.NoError(t, err)
+	w := writer.NewWriter().(*writer.TestResponseWriter)
+	r.Handler(req).ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.StatusCode)
+}
 
 func TestRegisterRoute(t *testing.T) {
 	const testPathExact1 = "/path1/exact"

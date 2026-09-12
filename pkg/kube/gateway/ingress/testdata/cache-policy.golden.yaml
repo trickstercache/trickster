@@ -35,6 +35,7 @@ backends:
                 - TRACE
                 - PATCH
                 - PURGE
+                - '*'
               cache_key_params:
                 - query
                 - step
@@ -147,6 +148,7 @@ backends:
                 - TRACE
                 - PATCH
                 - PURGE
+                - '*'
               cache_key_params:
                 - query
                 - step
@@ -182,3 +184,4 @@ backends:
                 - TRACE
                 - PATCH
                 - PURGE
+                - '*'

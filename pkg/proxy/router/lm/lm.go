@@ -412,8 +412,8 @@ func (rt *lmRouter) matchByHost(lookup route.HostRouteSetLookup, r *http.Request
 	}
 	method, path := r.Method, r.URL.Path
 	if rs, ok := hrc.ExactMatchRoutes[path]; ok && rs != nil {
-		rt, ok := rs[method]
-		if !ok || rt == nil {
+		rt := routeForMethod(rs, method)
+		if rt == nil {
 			return methodNotAllowedHandler
 		}
 		if rt.Candidates == nil {
@@ -434,8 +434,8 @@ func (rt *lmRouter) matchByHost(lookup route.HostRouteSetLookup, r *http.Request
 				if prc.PathLen > lp || !strings.HasPrefix(path, prc.Path) {
 					continue
 				}
-				rt, ok := prc.RoutesByMethod[method]
-				if !ok || rt == nil {
+				rt := routeForMethod(prc.RoutesByMethod, method)
+				if rt == nil {
 					return methodNotAllowedHandler
 				}
 				if rt.Candidates == nil {
@@ -454,8 +454,8 @@ func (rt *lmRouter) matchByHost(lookup route.HostRouteSetLookup, r *http.Request
 			if !rrs.Regexp.MatchString(path) {
 				continue
 			}
-			rt, ok := rrs.RoutesByMethod[method]
-			if !ok || rt == nil {
+			rt := routeForMethod(rrs.RoutesByMethod, method)
+			if rt == nil {
 				return methodNotAllowedHandler
 			}
 			if rt.Candidates == nil {
@@ -485,8 +485,8 @@ func matchSegmentPrefixes(sets route.PrefixRouteSets, r *http.Request, method, p
 			// every route here needs a boundary this path does not have
 			continue
 		}
-		rt, ok := prc.RoutesByMethod[method]
-		if !ok || rt == nil {
+		rt := routeForMethod(prc.RoutesByMethod, method)
+		if rt == nil {
 			return methodNotAllowedHandler
 		}
 		h, eligible := selectPrefixRoute(rt, boundary, r, q)
@@ -500,6 +500,13 @@ func matchSegmentPrefixes(sets route.PrefixRouteSets, r *http.Request, method, p
 		}
 	}
 	return nil
+}
+
+func routeForMethod(routes route.Lookup, method string) *route.Route {
+	if rt := routes[method]; rt != nil {
+		return rt
+	}
+	return routes[meth.Wildcard]
 }
 
 func selectPrefixRoute(rt *route.Route, boundary bool, r *http.Request,

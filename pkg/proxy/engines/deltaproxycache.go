@@ -53,9 +53,8 @@ import (
 )
 
 const (
-	statusOff  = "off"
-	statusErr  = "err"
-	statusMiss = "miss"
+	statusOff = "off"
+	statusErr = "err"
 
 	// errorBodyCap bounds the amount of upstream error body copied into
 	// HTTPDocument on non-2xx responses. Protects singleflight waiters
@@ -72,7 +71,7 @@ func dpcProxyErrorStatusCode(statusCode int) int {
 }
 
 // fetchFastForward executes a fast-forward request and merges the result into rts.
-// Returns the fast-forward status string ("off", "hit", "miss", or "err").
+// Returns the fast-forward status string ("off", "hit", "kmiss", or "err").
 func fetchFastForward(
 	ctx context.Context, r *http.Request,
 	o *bo.Options, cc *co.Options, cache tc.Cache,
@@ -118,7 +117,7 @@ func fetchFastForward(
 	}
 	ffts.SetTimeRangeQuery(trq)
 	x := ffts.Extents()
-	ffStatus := statusMiss
+	ffStatus := status.StatusKeyMiss
 	if isHit {
 		ffStatus = status.StatusHit
 	}
@@ -885,27 +884,10 @@ func fetchExtents(
 	eg.Wait()
 
 	fullFaults := false
-	trimmedList := trimEmptyExtents(errTs)
+	trimmedList := errTs.TrimEmptyExtents()
 	if trimmedList.Len() == el.Len() {
 		fullFaults = true
 	}
 
 	return mts, uncachedValueCount.Load(), mresp, trimmedList, fullFaults
-}
-
-func trimEmptyExtents(failedExtents timeseries.ExtentList) timeseries.ExtentList {
-	trimmedList := make(timeseries.ExtentList, len(failedExtents))
-	emptyExtent := timeseries.Extent{}
-
-	var cursor int
-	for _, extent := range failedExtents {
-		if extent == emptyExtent {
-			continue
-		}
-
-		trimmedList[cursor] = extent
-		cursor++
-	}
-
-	return trimmedList[:cursor]
 }

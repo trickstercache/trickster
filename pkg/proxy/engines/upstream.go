@@ -198,13 +198,6 @@ func (b *cancelBody) Close() error {
 	return err
 }
 
-func beginTrailerResponse(w io.Writer) {
-	// the header goes ahead of the body so the server cannot settle on a length and drop the trailers
-	if rw, ok := w.(http.ResponseWriter); ok {
-		_ = http.NewResponseController(rw).Flush()
-	}
-}
-
 func forwardTrailers(w io.Writer, resp *http.Response) {
 	// the origin's trailers are relayed after the body; unannounced ones use the trailer prefix
 	rw, ok := w.(http.ResponseWriter)

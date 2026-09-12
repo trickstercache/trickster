@@ -356,7 +356,7 @@ func TestPrepareResponseWriterMergesHeaders(t *testing.T) {
 		"X-Upstream": {"upstream-val"},
 	}
 
-	result := PrepareResponseWriter(w, http.StatusOK, upstream)
+	result := PrepareResponseWriter(w, http.StatusOK, upstream, nil)
 	if result == nil {
 		t.Fatal("expected non-nil writer")
 	}
@@ -371,7 +371,7 @@ func TestPrepareResponseWriterPlainWriter(t *testing.T) {
 	var buf bytes.Buffer
 	upstream := http.Header{"X-Test": {"val"}}
 
-	result := PrepareResponseWriter(&buf, http.StatusOK, upstream)
+	result := PrepareResponseWriter(&buf, http.StatusOK, upstream, nil)
 	// should return the same writer as-is
 	if result != &buf {
 		t.Errorf("expected plain writer to be returned unchanged")
@@ -433,7 +433,7 @@ func TestPrepareResponseWriterStripsHopByHop(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			PrepareResponseWriter(w, http.StatusOK, tc.upstream)
+			PrepareResponseWriter(w, http.StatusOK, tc.upstream, nil)
 			got := w.Header()
 			for _, h := range tc.mustGo {
 				if vals := got.Values(h); len(vals) > 0 {

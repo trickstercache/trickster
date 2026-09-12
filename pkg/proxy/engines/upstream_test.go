@@ -270,9 +270,8 @@ func TestDoProxyForwardsTrailers(t *testing.T) {
 	o.HTTPClient = &http.Client{Transport: tr}
 	t.Cleanup(tr.CloseIdleConnections)
 
-	serve := func(forward bool) *http.Response {
+	serve := func() *http.Response {
 		pc := po.New()
-		pc.ForwardTrailers = forward
 		front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r = r.WithContext(tc.WithResources(r.Context(),
 				request.NewResources(o, pc, nil, nil, nil, tu.NewTestTracer())))
@@ -291,12 +290,9 @@ func TestDoProxyForwardsTrailers(t *testing.T) {
 		require.Equal(t, "body", string(b))
 		return resp
 	}
-	resp := serve(true)
+	resp := serve()
 	require.Equal(t, "0", resp.Trailer.Get("Grpc-Status"))
 	require.True(t, sawTrailerRequest.Load(), "the client's request for trailers reaches the origin")
-	resp = serve(false)
-	require.Empty(t, resp.Trailer.Get("Grpc-Status"))
-	require.False(t, sawTrailerRequest.Load())
 }
 
 func TestObjectProxyCacheForwardsTrailers(t *testing.T) {
@@ -311,8 +307,6 @@ func TestObjectProxyCacheForwardsTrailers(t *testing.T) {
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, nil)
 	require.NoError(t, err)
 	defer closeTestHarness(ts, r)
-	pc := rsc.PathConfig
-	pc.ForwardTrailers = true
 	front := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, in *http.Request) {
 		req := r.Clone(in.Context())
 		req.URL, _ = url.Parse(origin.URL + "/rpc")

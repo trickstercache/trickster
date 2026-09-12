@@ -107,9 +107,6 @@ type Options struct {
 	Retry *RetryOptions `yaml:"retry,omitempty"`
 	// Mirrors send a copy of requests on this path to other backends, off the response path
 	Mirrors []*MirrorOptions `yaml:"mirrors,omitempty"`
-	// ForwardTrailers relays response trailers from an origin fetch to the client on a
-	// caching handler, which gRPC needs; the passthrough proxy always relays them
-	ForwardTrailers bool `yaml:"forward_trailers,omitempty"`
 
 	// Handler is the HTTP Handler represented by the Path's HandlerName
 	Handler http.Handler `yaml:"-"`

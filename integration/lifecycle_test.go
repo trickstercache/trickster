@@ -44,7 +44,7 @@ func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
 	if h.releasePorts != nil {
 		h.releasePorts()
 	}
-	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
+	runTrickster(t, ctx, "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
 
 	healthURL := "http://" + h.MetricsAddr + "/trickster/health"

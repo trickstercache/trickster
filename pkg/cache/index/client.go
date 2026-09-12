@@ -269,8 +269,11 @@ func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.Lookup
 	if !ok {
 		return nil, status.LookupStatusError, ErrInvalidCacheBackend
 	}
-	idx.updateAccessTime(cacheKey)
-	return mc.RetrieveReference(cacheKey)
+	v, s, err := mc.RetrieveReference(cacheKey)
+	if err == nil && s == status.LookupStatusHit {
+		idx.updateAccessTime(cacheKey)
+	}
+	return v, s, err
 }
 
 // Retrieve implements the cache.Client interface, looking up the object and updating the index last access time
@@ -295,19 +298,38 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 
 // Remove implements the cache.Client interface and removes the object from the cache and index
 func (idx *IndexedClient) Remove(cacheKeys ...string) error {
+	released, err := idx.remove(cacheKeys)
+	// the cache manager records the delete operation; only the index knows the freed byte count
+	metrics.ObserveCacheDelBytes(idx.name, idx.cacheProvider, float64(released))
+	return err
+}
+
+func (idx *IndexedClient) remove(cacheKeys []string) (int64, error) {
+	var released int64
 	// remove the objects from the index
 	for _, key := range cacheKeys {
 		if o, ok := idx.Objects.Load(key); ok {
 			obj := o.(*Object)
+			released += obj.Size
 			size := atomic.AddInt64(&idx.CacheSize, -obj.Size)
 			count := atomic.AddInt64(&idx.ObjectCount, -1)
-			metrics.ObserveCacheOperation(idx.name, idx.cacheProvider, "del", "none", float64(obj.Size))
 			idx.Objects.Delete(key)
 			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
 		}
 	}
 	idx.lastWrite.Store(time.Now())
-	return idx.Client.Remove(cacheKeys...)
+	return released, idx.Client.Remove(cacheKeys...)
+}
+
+func (idx *IndexedClient) evict(reason string, removals []string) {
+	metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", reason)
+	// reaper removals bypass the cache manager, so the deletion is recorded here
+	start := time.Now()
+	released, err := idx.remove(removals)
+	metrics.ObserveCacheDel(idx.name, idx.cacheProvider, float64(released), time.Since(start))
+	if err != nil {
+		logger.Error("reap remove error", logging.Pairs{keys.CacheName: idx.name, keys.Error: err})
+	}
 }
 
 // Stop the indexed cache, flush its state, and close the underlying cache
@@ -441,10 +463,7 @@ func (idx *IndexedClient) reap() {
 	})
 
 	if len(removals) > 0 {
-		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", "ttl")
-		if err := idx.Remove(removals...); err != nil {
-			logger.Error("reap remove error", logging.Pairs{keys.CacheName: idx.name, keys.Error: err})
-		}
+		idx.evict("ttl", removals)
 		cacheChanged = true
 		cacheSize = atomic.LoadInt64(&idx.CacheSize)
 	}
@@ -453,10 +472,7 @@ func (idx *IndexedClient) reap() {
 
 	evictionType, removals := reap(cacheSize, objectCount, remainders, *opts)
 	if len(removals) > 0 {
-		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", evictionType)
-		if err := idx.Remove(removals...); err != nil {
-			logger.Error("reap remove error", logging.Pairs{keys.CacheName: idx.name, keys.Error: err})
-		}
+		idx.evict(evictionType, removals)
 		cacheChanged = true
 
 		logger.Debug("size-based cache eviction exercise completed",

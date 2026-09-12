@@ -21,8 +21,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,6 +180,59 @@ func TestStartServesAndShutsDownOnContextCancel(t *testing.T) {
 		}
 	case <-time.After(30 * time.Second):
 		t.Fatal("Start did not return after context cancellation")
+	}
+}
+
+func TestStartStopsHealthChecksOnContextCancel(t *testing.T) {
+	var probes atomic.Int32
+	origin := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		probes.Add(1)
+	}))
+	t.Cleanup(origin.Close)
+	path := writeConfig(t, t.TempDir(), fmt.Sprintf(`
+listeners:
+  default:
+    address: 127.0.0.1
+    port: %d
+  mgmt:
+    port: 0
+  metrics:
+    port: 0
+backends:
+  test:
+    provider: rp
+    origin_url: '%s'
+    healthcheck:
+      interval: 10ms
+`, availablePort(t), origin.URL))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	errs := make(chan error, 1)
+	go func() { errs <- Start(ctx, "-config", path) }()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for probes.Load() == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the origin was never health checked")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-errs:
+		if err != nil {
+			t.Fatalf("err = %v, want nil", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Start did not return after context cancellation")
+	}
+	// a probe loop that outlives Start would keep hitting whatever server
+	// next binds this origin's port
+	stopped := probes.Load()
+	time.Sleep(100 * time.Millisecond)
+	if n := probes.Load(); n != stopped {
+		t.Errorf("origin was probed %d more times after Start returned", n-stopped)
 	}
 }
 

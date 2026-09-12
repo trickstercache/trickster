@@ -39,7 +39,6 @@ type pathOverrides struct {
 	timeout             time.Duration
 	attemptTimeout      time.Duration
 	retry               *retryDoc
-	forwardTrailers     bool
 }
 
 func overridesFor(e effective, rule ir.Rule, member []ir.Filter) *pathOverrides {
@@ -66,7 +65,6 @@ func overridesFor(e effective, rule ir.Rule, member []ir.Filter) *pathOverrides 
 	}
 	o := &pathOverrides{
 		requestHeaders: req.Render(), responseHeaders: resp.Render(),
-		forwardTrailers: e.grpc,
 	}
 	if t := rule.Timeouts; t != nil {
 		o.timeout = time.Duration(t.RequestMS) * time.Millisecond
@@ -93,7 +91,7 @@ func overridesFor(e effective, rule ir.Rule, member []ir.Filter) *pathOverrides 
 	if len(o.requestHeaders) == 0 && len(o.responseHeaders) == 0 &&
 		o.cors == nil && o.collapsedForwarding == "" &&
 		len(o.cacheKeyParams) == 0 && len(o.cacheKeyHeaders) == 0 &&
-		o.timeout == 0 && o.attemptTimeout == 0 && o.retry == nil && !o.forwardTrailers {
+		o.timeout == 0 && o.attemptTimeout == 0 && o.retry == nil {
 		return nil
 	}
 	return o
@@ -173,7 +171,6 @@ func (o *pathOverrides) engine(p *pathDoc) {
 		p.AttemptTimeout = o.attemptTimeout.String()
 	}
 	p.Retry = o.retry
-	p.ForwardTrailers = o.forwardTrailers
 }
 
 func applyHeaderFilter(u *headers.Updates, f *ir.HeaderFilter) {

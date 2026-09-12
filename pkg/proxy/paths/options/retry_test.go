@@ -196,7 +196,6 @@ func TestUpstreamPolicyOptions(t *testing.T) {
 	o.AttemptTimeout = timeconv.Duration(500 * time.Millisecond)
 	o.Retry = &RetryOptions{Attempts: 1}
 	o.Mirrors = []*MirrorOptions{{BackendName: "shadow"}}
-	o.ForwardTrailers = true
 	ok, err := o.Validate()
 	require.True(t, ok)
 	require.NoError(t, err)
@@ -209,7 +208,6 @@ func TestUpstreamPolicyOptions(t *testing.T) {
 	require.NotSame(t, o.Mirrors[0], c.Mirrors[0])
 	require.True(t, o.Retry.Equal(c.Retry))
 	require.True(t, o.Mirrors[0].Equal(c.Mirrors[0]))
-	require.True(t, c.ForwardTrailers)
 	require.Equal(t, o.Timeout, c.Timeout)
 
 	o.Timeout = -1

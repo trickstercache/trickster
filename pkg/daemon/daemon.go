@@ -153,7 +153,7 @@ func Start(ctx context.Context, args ...string) error {
 
 func shutdown(si *instance.ServerInstance, quiesced <-chan struct{}) {
 	si.Readiness.SetDraining()
-	defer stopHealthChecks(si)
+	defer stopWorkers(si)
 	if si.Listeners == nil {
 		return
 	}
@@ -188,17 +188,14 @@ func shutdown(si *instance.ServerInstance, quiesced <-chan struct{}) {
 	logger.Info("shutdown drain complete", nil)
 }
 
-func stopHealthChecks(si *instance.ServerInstance) {
-	// a reload a forced drain left running still holds the lock and owns the checker; the process
-	// exit reclaims that one, so shutdown never waits on it
+func stopWorkers(si *instance.ServerInstance) {
+	// A reload left running after a forced drain owns the workers. Process exit
+	// reclaims them, so shutdown never waits on the reload lock.
 	if !mtx.TryLock() {
 		return
 	}
-	hc := si.HealthChecker
+	setup.Shutdown(si)
 	mtx.Unlock()
-	if hc != nil {
-		hc.Shutdown()
-	}
 }
 
 // Reload is the single reload orchestrator for every source (SIGHUP, the mgmt handler, the

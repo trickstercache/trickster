@@ -1404,7 +1404,7 @@ func TestCompileKeepsMutatingMethodsOutOfTheCache(t *testing.T) {
 		var all []string
 		all = append(all, byHandler["proxycache"].Methods...)
 		all = append(all, byHandler["proxy"].Methods...)
-		require.ElementsMatch(t, methods.AllHTTPMethods(), all,
+		require.ElementsMatch(t, append(methods.AllHTTPMethods(), methods.Wildcard), all,
 			"the split must not narrow what the route accepts")
 	})
 

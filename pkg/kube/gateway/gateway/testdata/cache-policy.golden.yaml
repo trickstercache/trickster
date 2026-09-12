@@ -39,6 +39,7 @@ backends:
                 - TRACE
                 - PATCH
                 - PURGE
+                - '*'
               cache_key_params:
                 - query
                 - step
@@ -187,6 +188,7 @@ backends:
                 - TRACE
                 - PATCH
                 - PURGE
+                - '*'
               response_headers:
                 +Vary: Accept-Encoding
               cache_key_headers:

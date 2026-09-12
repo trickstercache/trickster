@@ -278,6 +278,18 @@ var (
 		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
 	)
 
+	// CacheObjectOperationDuration is a Histogram of time required in seconds to perform an operation on a Trickster cache
+	CacheObjectOperationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "operation_duration_seconds",
+			Help:      "Time required in seconds to perform an operation on a Trickster cache.",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
+	)
+
 	// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
 	CacheByteOperations = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -892,6 +904,7 @@ func init() {
 	prometheus.MustRegister(ALBPoolAdmitsFailing)
 	prometheus.MustRegister(ALBPoolFloorReset)
 	prometheus.MustRegister(CacheObjectOperations)
+	prometheus.MustRegister(CacheObjectOperationDuration)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
 	prometheus.MustRegister(CacheObjects)

@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -192,10 +193,22 @@ func passthroughModifyResponse(resp *http.Response) error {
 		}
 	}
 
+	// RFC 9111 4.4: a write the origin accepted supersedes whatever the cache
+	// holds for the target URI. Uncacheable methods route here rather than
+	// through the object cache, so this is where they reach a cache at all.
+	if rsc != nil && rsc.CacheClient != nil && r != nil &&
+		resp.StatusCode < http.StatusBadRequest && methods.IsStateChanging(r.Method) {
+		InvalidateTargetURI(r)
+	}
+
 	setStatusHeader(resp.StatusCode, resp.Header)
 	// matches the request-side strip in AddForwardingHeaders; ReverseProxy's
-	// own hop-header removal does not cover Accept-Encoding
+	// own hop-header removal does not cover Accept-Encoding. It runs before
+	// the Via below so an upstream Connection: Via cannot delete this hop.
 	headers.StripClientHeaders(resp.Header)
+	// RFC 9110 7.6.3: name this hop on the response, using the protocol the
+	// response was received over, so the client can see the path it traveled
+	headers.AddResponseVia(resp.Header, resp.Proto)
 	return nil
 }
 

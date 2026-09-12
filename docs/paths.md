@@ -191,17 +191,10 @@ backends:
 
 ### Forwarding Trailers
 
-The `proxy` handler proxies through the standard library's reverse proxy,
-which relays response trailers. The caching handlers read a response in
-full before serving it and drop its trailers, which is right for an HTTP
-object and wrong for gRPC, whose status arrives in the trailers. A path with
-`forward_trailers: true` relays the origin's trailers on a caching handler
-too: the client's `TE: trailers` reaches the origin, the response is sent
-chunked so trailers can follow it, and the origin's trailers are written
-after the body. A response served from cache has no trailers, so a gRPC
-path is best served by the `proxy` handler, which the Kubernetes controller
-selects for every GRPCRoute; `forward_trailers` is for a hand-written
-configuration that caches beside gRPC on one backend.
+Proxy and caching handlers relay origin trailers automatically: the client's
+`TE: trailers` reaches the origin, and trailers follow the response body.
+A response served from cache has no trailers, so gRPC paths should use the
+`proxy` handler, which the Kubernetes controller selects for every GRPCRoute.
 
 ### Method Matching Scope
 

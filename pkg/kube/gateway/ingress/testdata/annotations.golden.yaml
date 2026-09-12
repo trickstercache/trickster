@@ -43,6 +43,7 @@ backends:
                 - TRACE
                 - PATCH
                 - PURGE
+                - '*'
               request_headers:
                 -X-Internal-Token: ""
                 X-Forwarded-Host: shop.example.com

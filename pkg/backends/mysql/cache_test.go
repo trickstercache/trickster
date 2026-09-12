@@ -26,6 +26,7 @@ import (
 	tcache "github.com/trickstercache/trickster/v2/pkg/cache"
 	cachemanager "github.com/trickstercache/trickster/v2/pkg/cache/manager"
 	cachememory "github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	cachemetrics "github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -684,7 +685,7 @@ func TestSharedCacheOperationsUseCacheNameNotBackendName(t *testing.T) {
 	configuration.Provider = "memory"
 	shared := cachemanager.NewCache(newTestCache(), cachemanager.CacheOptions{}, configuration)
 	set := metrics.CacheObjectOperations.WithLabelValues(configuration.Name,
-		configuration.Provider, "set", "none")
+		configuration.Provider, cachemetrics.KeySet, cachemetrics.KeyNone)
 	before := testutil.ToFloat64(set)
 	result := &cachedQueryResult{result: &sqltypes.Result{
 		Fields: []*querypb.Field{{Name: "answer", Type: querypb.Type_INT64}},

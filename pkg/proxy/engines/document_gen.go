@@ -188,6 +188,31 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				z.StoredRangeParts[za0004] = za0005
 			}
+		case "vary_names":
+			var zb0005 uint32
+			zb0005, err = dc.ReadArrayHeader()
+			if err != nil {
+				err = msgp.WrapError(err, "VaryNames")
+				return
+			}
+			if cap(z.VaryNames) >= int(zb0005) {
+				z.VaryNames = (z.VaryNames)[:zb0005]
+			} else {
+				z.VaryNames = make([]string, zb0005)
+			}
+			for za0006 := range z.VaryNames {
+				z.VaryNames[za0006], err = dc.ReadString()
+				if err != nil {
+					err = msgp.WrapError(err, "VaryNames", za0006)
+					return
+				}
+			}
+		case "vary_generation":
+			z.VaryGeneration, err = dc.ReadString()
+			if err != nil {
+				err = msgp.WrapError(err, "VaryGeneration")
+				return
+			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -201,9 +226,9 @@ func (z *HTTPDocument) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 11
+	// map header, size 13
 	// write "is_meta"
-	err = en.Append(0x8b, 0xa7, 0x69, 0x73, 0x5f, 0x6d, 0x65, 0x74, 0x61)
+	err = en.Append(0x8d, 0xa7, 0x69, 0x73, 0x5f, 0x6d, 0x65, 0x74, 0x61)
 	if err != nil {
 		return
 	}
@@ -357,15 +382,42 @@ func (z *HTTPDocument) EncodeMsg(en *msgp.Writer) (err error) {
 			}
 		}
 	}
+	// write "vary_names"
+	err = en.Append(0xaa, 0x76, 0x61, 0x72, 0x79, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x73)
+	if err != nil {
+		return
+	}
+	err = en.WriteArrayHeader(uint32(len(z.VaryNames)))
+	if err != nil {
+		err = msgp.WrapError(err, "VaryNames")
+		return
+	}
+	for za0006 := range z.VaryNames {
+		err = en.WriteString(z.VaryNames[za0006])
+		if err != nil {
+			err = msgp.WrapError(err, "VaryNames", za0006)
+			return
+		}
+	}
+	// write "vary_generation"
+	err = en.Append(0xaf, 0x76, 0x61, 0x72, 0x79, 0x5f, 0x67, 0x65, 0x6e, 0x65, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+	if err != nil {
+		return
+	}
+	err = en.WriteString(z.VaryGeneration)
+	if err != nil {
+		err = msgp.WrapError(err, "VaryGeneration")
+		return
+	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
 func (z *HTTPDocument) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 11
+	// map header, size 13
 	// string "is_meta"
-	o = append(o, 0x8b, 0xa7, 0x69, 0x73, 0x5f, 0x6d, 0x65, 0x74, 0x61)
+	o = append(o, 0x8d, 0xa7, 0x69, 0x73, 0x5f, 0x6d, 0x65, 0x74, 0x61)
 	o = msgp.AppendBool(o, z.IsMeta)
 	// string "is_chunk"
 	o = append(o, 0xa8, 0x69, 0x73, 0x5f, 0x63, 0x68, 0x75, 0x6e, 0x6b)
@@ -428,6 +480,15 @@ func (z *HTTPDocument) MarshalMsg(b []byte) (o []byte, err error) {
 			}
 		}
 	}
+	// string "vary_names"
+	o = append(o, 0xaa, 0x76, 0x61, 0x72, 0x79, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x73)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.VaryNames)))
+	for za0006 := range z.VaryNames {
+		o = msgp.AppendString(o, z.VaryNames[za0006])
+	}
+	// string "vary_generation"
+	o = append(o, 0xaf, 0x76, 0x61, 0x72, 0x79, 0x5f, 0x67, 0x65, 0x6e, 0x65, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e)
+	o = msgp.AppendString(o, z.VaryGeneration)
 	return
 }
 
@@ -594,6 +655,31 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				z.StoredRangeParts[za0004] = za0005
 			}
+		case "vary_names":
+			var zb0005 uint32
+			zb0005, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "VaryNames")
+				return
+			}
+			if cap(z.VaryNames) >= int(zb0005) {
+				z.VaryNames = (z.VaryNames)[:zb0005]
+			} else {
+				z.VaryNames = make([]string, zb0005)
+			}
+			for za0006 := range z.VaryNames {
+				z.VaryNames[za0006], bts, err = msgp.ReadStringBytes(bts)
+				if err != nil {
+					err = msgp.WrapError(err, "VaryNames", za0006)
+					return
+				}
+			}
+		case "vary_generation":
+			z.VaryGeneration, bts, err = msgp.ReadStringBytes(bts)
+			if err != nil {
+				err = msgp.WrapError(err, "VaryGeneration")
+				return
+			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -636,5 +722,10 @@ func (z *HTTPDocument) Msgsize() (s int) {
 			}
 		}
 	}
+	s += 11 + msgp.ArrayHeaderSize
+	for za0006 := range z.VaryNames {
+		s += msgp.StringPrefixSize + len(z.VaryNames[za0006])
+	}
+	s += 16 + msgp.StringPrefixSize + len(z.VaryGeneration)
 	return
 }

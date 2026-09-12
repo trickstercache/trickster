@@ -20,19 +20,16 @@ backends:
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
             - path: ^/(?:(?:)baz(?:))/(?:Get|List(?:))$
               match_type: regex
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
             - path: ^/(?:((?:)qux(?:))|(?:)quux(?:))/(?:(?:)Check(?:))$
               match_type: regex
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
     kgw--grpcroute.shop.patterns_r1:
         provider: rp
         origin_url: http://api-svc.shop.svc:9000
@@ -51,7 +48,6 @@ backends:
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
     kgw--grpcroute.shop.rpc_r0:
         provider: rp
         origin_url: http://health-svc.shop.svc:9000
@@ -70,7 +66,6 @@ backends:
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
     kgw--grpcroute.shop.rpc_r1:
         provider: rp
         origin_url: http://api-svc.shop.svc:9000
@@ -89,7 +84,6 @@ backends:
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
     kgw--notfound_1e1e77d1:
         provider: rp
         origin_url: https://unmatched.kgw.invalid

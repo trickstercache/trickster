@@ -151,6 +151,7 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		// a local path promised never to make
 		h = middleware.UpgradeSwitch(passthrough, h)
 	}
+	h = middleware.MaxForwards(h)
 	if tr != nil {
 		h = middleware.Trace(tr, h)
 	}

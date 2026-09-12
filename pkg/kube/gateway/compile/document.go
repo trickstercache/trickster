@@ -252,7 +252,6 @@ type pathDoc struct {
 	AttemptTimeout          string            `yaml:"attempt_timeout,omitempty"`
 	Retry                   *retryDoc         `yaml:"retry,omitempty"`
 	Mirrors                 []*mirrorDoc      `yaml:"mirrors,omitempty"`
-	ForwardTrailers         bool              `yaml:"forward_trailers,omitempty"`
 }
 
 // retryDoc is the projection of a path's retry policy

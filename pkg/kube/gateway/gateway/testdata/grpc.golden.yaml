@@ -24,7 +24,6 @@ backends:
                 - POST
               request_headers:
                 x-route: rpc
-              forward_trailers: true
             - path: /shop.v1.Carts/GetCart
               match_type: exact
               handler: proxy
@@ -35,7 +34,6 @@ backends:
               match_headers:
                 - name: x-tenant
                   value: gold
-              forward_trailers: true
     kgw--grpcroute.shop.rpc_r1:
         provider: rp
         origin_url: http://grpc-svc.shop.svc:9000
@@ -54,13 +52,11 @@ backends:
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
             - path: ^/(?:shop\.v[0-9]+\.Users)/(?:Get.*)$
               match_type: regex
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
     kgw--grpcroute.shop.rpc_r2:
         provider: rp
         origin_url: http://grpc-svc.shop.svc:9000
@@ -81,7 +77,6 @@ backends:
                 - POST
               request_headers:
                 x-route: rpc
-              forward_trailers: true
             - path: /shop.v1.Carts/GetCart
               match_type: exact
               handler: proxy
@@ -92,7 +87,6 @@ backends:
               match_headers:
                 - name: x-tenant
                   value: gold
-              forward_trailers: true
     kgw--grpcroute.shop.rpc_r3:
         provider: rp
         origin_url: http://grpc-svc.shop.svc:9000
@@ -111,13 +105,11 @@ backends:
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
             - path: ^/(?:shop\.v[0-9]+\.Users)/(?:Get.*)$
               match_type: regex
               handler: proxy
               methods:
                 - POST
-              forward_trailers: true
     kgw--httproute.shop.web_r0:
         provider: rp
         origin_url: http://web-svc.shop.svc:8080

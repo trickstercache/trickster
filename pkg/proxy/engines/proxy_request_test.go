@@ -139,7 +139,7 @@ func TestSetBodyWriter(t *testing.T) {
 		mapLock:          &sync.Mutex{},
 	}
 
-	PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+	PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header, nil)
 
 	pr.setBodyWriter()
 	if pr.cacheBuffer == nil {

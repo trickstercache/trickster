@@ -896,7 +896,6 @@ backends:
 #           - backend_name: shadow             # backend receiving a copy of each request; its responses are discarded
 #             percent: 10                      # share of requests copied. default 100
 #             max_in_flight: 64                # copies in progress at once; more are dropped. default 64
-#         forward_trailers: false              # relay origin trailers (gRPC) on a caching handler. default false
 #       # regex path: a path starting with ^/ is auto-detected as a regular expression
 #       # (RE2 syntax); or set match_type: regex explicitly. Regex paths are evaluated
 #       # only after exact and prefix matching both miss, longest pattern first.

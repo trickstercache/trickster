@@ -239,19 +239,19 @@ func TestShutdownStopsHealthChecks(t *testing.T) {
 	}
 }
 
-func TestStopHealthChecksYieldsToRunningReload(t *testing.T) {
+func TestStopWorkersYieldsToRunningReload(t *testing.T) {
 	hc := healthcheck.New()
 	stopped := make(chan bool, 1)
 	hc.Subscribe(stopped)
 	mtx.Lock()
-	stopHealthChecks(&instance.ServerInstance{HealthChecker: hc})
+	stopWorkers(&instance.ServerInstance{HealthChecker: hc})
 	mtx.Unlock()
 	select {
 	case <-stopped:
 		t.Error("a reload holding the lock owns the checker; shutdown must not stop it")
 	default:
 	}
-	stopHealthChecks(&instance.ServerInstance{})
+	stopWorkers(&instance.ServerInstance{})
 }
 
 // blockReloads stubs the reload delegate so the first reload blocks until

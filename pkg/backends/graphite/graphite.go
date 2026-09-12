@@ -172,8 +172,11 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		}
 	}
 	c := &Client{timeNow: time.Now}
-	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
-		cache, model.NewModeler())
+	m := model.NewModeler()
+	// SetExtent widens a one-bucket fetch by a leading bucket to verify the step;
+	// fetches are trimmed to the request's extent so that bucket is never kept
+	m.WireUnmarshalerReader = unmarshalFetch
+	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, m)
 	c.TimeseriesBackend = b
 	if err != nil {
 		return c, err
