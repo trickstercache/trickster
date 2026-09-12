@@ -303,7 +303,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	si.Tracers = tracers
 	si.Caches = caches
 	si.Backends = clients
-	si.Listeners = lg
+	// Reloads reuse the instance's group; publishing the same pointer again
+	// would race a forced shutdown without changing the active listeners.
+	if firstStartup {
+		si.Listeners = lg
+	}
 	return nil
 }
 

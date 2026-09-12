@@ -105,6 +105,8 @@ func (r *Resources) Upstream() (addr string, status int, elapsed time.Duration) 
 
 // Clone returns an exact copy of the subject Resources collection
 func (r *Resources) Clone() *Resources {
+	r.Lock()
+	defer r.Unlock()
 	return &Resources{
 		BackendOptions:        r.BackendOptions,
 		PathConfig:            r.PathConfig,

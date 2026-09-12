@@ -411,9 +411,8 @@ func TestKubeSupervisorRetriesStart(t *testing.T) {
 		"a controller that failed to start was not retried")
 	require.Equal(t, int32(1), f.at(0).stopped.Load(),
 		"a failed start must stop the controller exactly once")
-	s.mtx.Lock()
-	require.Nil(t, s.current)
-	s.mtx.Unlock()
+	eventually(t, func() bool { return currentRunner(s) == nil },
+		"a failed controller remained current")
 }
 
 func TestKubeSupervisorDiscardsStaleStart(t *testing.T) {

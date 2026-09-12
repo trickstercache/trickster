@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -276,4 +277,14 @@ func TestUpstream(t *testing.T) {
 	if c.UpstreamAddr != addr || c.UpstreamStatus != status || c.UpstreamDuration != elapsed {
 		t.Error("clone dropped the upstream exchange")
 	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 1000 {
+			_ = rsc.Clone()
+		}
+	})
+	for i := range 1000 {
+		rsc.SetUpstream("10.1.1.1:9090", i, time.Duration(i))
+	}
+	wg.Wait()
 }

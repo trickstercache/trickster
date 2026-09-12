@@ -352,6 +352,9 @@ func TestApplyConfig(t *testing.T) {
 	if si.Config != conf {
 		t.Error("expected the instance config to be the new config")
 	}
+	if si.Listeners != group {
+		t.Error("expected the instance listener group to be retained")
+	}
 	if si.HealthChecker == nil {
 		t.Error("expected a health checker")
 	}
