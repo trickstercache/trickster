@@ -117,7 +117,13 @@ type engineResult struct {
 	err    error
 }
 
-// doEngineRangeBurst holds the origin until every client has written its request to Trickster.
+const engineBurstAdmissionWindow = 250 * time.Millisecond
+
+// doEngineRangeBurst holds the origin until every client has written its
+// request to Trickster and gives the server time to admit those requests into
+// the in-flight group. WroteRequest only confirms a socket write; without the
+// admission window, a busy runner can leave a handler queued until after the
+// first origin response has completed and the singleflight entry is gone.
 func doEngineRangeBurst(t *testing.T, f *engineFixture, params url.Values, n int, release func()) []engineResult {
 	t.Helper()
 	start := make(chan struct{})
@@ -166,6 +172,9 @@ func doEngineRangeBurst(t *testing.T, f *engineFixture, params url.Values, n int
 		if !allWritten {
 			break
 		}
+	}
+	if allWritten {
+		time.Sleep(engineBurstAdmissionWindow)
 	}
 	release()
 	wg.Wait()
