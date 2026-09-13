@@ -164,6 +164,14 @@ func TestVarianceVariantQueryAvoidsTemporaryLabelCollision(t *testing.T) {
 	}
 }
 
+func TestFormatLabelReplaceQuotesStringArguments(t *testing.T) {
+	got := formatLabelReplace("up", `dst"name`, `$1\suffix`, `src"name`, `(.*)\d+"`)
+	want := `label_replace(up, "dst\"name", "$1\\suffix", "src\"name", "(.*)\\d+\"")`
+	if got != want {
+		t.Fatalf("unexpected query\n got: %s\nwant: %s", got, want)
+	}
+}
+
 func TestVarianceVariantQueryWithoutPreservesNonExcludedMetadata(t *testing.T) {
 	tests := []struct {
 		query         string
