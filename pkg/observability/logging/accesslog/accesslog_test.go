@@ -104,7 +104,8 @@ func TestMiddlewareAccessAndErrorLogs(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fail" {
 			request.GetResources(r).AuthResult = &authtypes.AuthResult{
-				Status: authtypes.AuthSuccess, Username: "frank"}
+				Status: authtypes.AuthSuccess, Username: "frank",
+			}
 		}
 		w.Header().Set(headers.NameTricksterResult, "engine=HTTPProxy; status=hit")
 		if r.URL.Path == "/fail" {
@@ -221,7 +222,8 @@ func TestMiddlewareUsesAuthenticatedUsername(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/verified" {
 				request.GetResources(r).AuthResult = &authtypes.AuthResult{
-					Status: authtypes.AuthSuccess, Username: "verified"}
+					Status: authtypes.AuthSuccess, Username: "verified",
+				}
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}))
@@ -349,7 +351,8 @@ func TestGenerations(t *testing.T) {
 	dir := t.TempDir()
 	newGenLogger := func(name string) *Logger {
 		l, err := NewLogger(&alo.Options{
-			Filename: filepath.Join(dir, name)}, 0, "b", "p")
+			Filename: filepath.Join(dir, name),
+		}, 0, "b", "p")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -549,8 +552,10 @@ func TestLoggerCountsDroppedLines(t *testing.T) {
 
 func BenchmarkLoggerLogParallel(b *testing.B) {
 	dir := b.TempDir()
-	o := &alo.Options{Filename: filepath.Join(dir, "bench.access.log"), Format: format.Extended,
-		Extra: map[string]string{"route": "ns/name"}}
+	o := &alo.Options{
+		Filename: filepath.Join(dir, "bench.access.log"), Format: format.Extended,
+		Extra: map[string]string{"route": "ns/name"},
+	}
 	l, err := NewLogger(o, 0, "bench", "rp")
 	if err != nil {
 		b.Fatal(err)

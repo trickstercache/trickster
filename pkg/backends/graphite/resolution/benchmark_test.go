@@ -59,8 +59,10 @@ func BenchmarkResolverRegistryHit(b *testing.B) {
 		{"wildcard_cached", []string{"dev.fast.cpu.*.percent"}, resolution.Derived},
 		// two leaves agreeing on a step: Exact is reserved for a single
 		// leaf, so agreement across leaves reads as Derived
-		{"two_leaves_one_ladder", []string{"dev.fast.cpu.host01.percent",
-			"dev.fast.cpu.host02.percent"}, resolution.Derived},
+		{"two_leaves_one_ladder", []string{
+			"dev.fast.cpu.host01.percent",
+			"dev.fast.cpu.host02.percent",
+		}, resolution.Derived},
 	}
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -133,9 +135,11 @@ func BenchmarkResolverAtLadderScale(b *testing.B) {
 					b.Fatal(err)
 				}
 			}
-			res := &resolution.Resolver{Registry: reg,
+			res := &resolution.Resolver{
+				Registry: reg,
 				Expander: &resolution.Expander{Registry: reg},
-				Observer: newCounter()}
+				Observer: newCounter(),
+			}
 			ctx := context.Background()
 			leaf := []string{"scale.m0.value"}
 			b.ReportAllocs()

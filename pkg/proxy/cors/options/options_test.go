@@ -46,34 +46,56 @@ func TestOptionsValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "preserve", options: &Options{Mode: ModePreserve}},
-		{name: "merge override", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{headers.NameAllowOrigin: "https://example.com"}}},
-		{name: "merge delete", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{"-" + headers.NameAllowCredentials: ""}}},
+		{name: "merge override", options: &Options{
+			Mode:    ModeMerge,
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "https://example.com"},
+		}},
+		{name: "merge delete", options: &Options{
+			Mode:    ModeMerge,
+			Headers: types.EnvStringMap{"-" + headers.NameAllowCredentials: ""},
+		}},
 		{name: "replace empty", options: &Options{Mode: ModeReplace}},
 		{name: "disable", options: &Options{Mode: ModeDisable}},
-		{name: "disable with empty headers", options: &Options{Mode: ModeDisable,
-			Headers: types.EnvStringMap{}}, wantErr: true},
-		{name: "disable with headers", options: &Options{Mode: ModeDisable,
-			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*"}}, wantErr: true},
+		{name: "disable with empty headers", options: &Options{
+			Mode:    ModeDisable,
+			Headers: types.EnvStringMap{},
+		}, wantErr: true},
+		{name: "disable with headers", options: &Options{
+			Mode:    ModeDisable,
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*"},
+		}, wantErr: true},
 		{name: "default mode", options: &Options{}},
 		{name: "invalid mode", options: &Options{Mode: "append"}, wantErr: true},
-		{name: "preserve ignores headers", options: &Options{Mode: ModePreserve,
-			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*"}}, wantErr: true},
-		{name: "non cors header", options: &Options{Mode: ModeReplace,
-			Headers: types.EnvStringMap{"X-Other": "value"}}, wantErr: true},
-		{name: "double operation", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{"+-Access-Control-Allow-Origin": "*"}}, wantErr: true},
-		{name: "invalid field name", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{"Access-Control-Allow Origin": "*"}}, wantErr: true},
-		{name: "invalid field value", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*\r\nX-Injected: true"}},
-			wantErr: true},
-		{name: "case insensitive duplicate", options: &Options{Mode: ModeMerge,
+		{name: "preserve ignores headers", options: &Options{
+			Mode:    ModePreserve,
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*"},
+		}, wantErr: true},
+		{name: "non cors header", options: &Options{
+			Mode:    ModeReplace,
+			Headers: types.EnvStringMap{"X-Other": "value"},
+		}, wantErr: true},
+		{name: "double operation", options: &Options{
+			Mode:    ModeMerge,
+			Headers: types.EnvStringMap{"+-Access-Control-Allow-Origin": "*"},
+		}, wantErr: true},
+		{name: "invalid field name", options: &Options{
+			Mode:    ModeMerge,
+			Headers: types.EnvStringMap{"Access-Control-Allow Origin": "*"},
+		}, wantErr: true},
+		{
+			name: "invalid field value", options: &Options{
+				Mode:    ModeMerge,
+				Headers: types.EnvStringMap{headers.NameAllowOrigin: "*\r\nX-Injected: true"},
+			},
+			wantErr: true,
+		},
+		{name: "case insensitive duplicate", options: &Options{
+			Mode: ModeMerge,
 			Headers: types.EnvStringMap{
 				headers.NameAllowOrigin:                        "https://first.example.com",
 				"+" + strings.ToLower(headers.NameAllowOrigin): "https://second.example.com",
-			}}, wantErr: true},
+			},
+		}, wantErr: true},
 	}
 
 	for _, tc := range tests {
@@ -94,8 +116,10 @@ func TestOptionsUnmarshalYAMLDisableTracksHeadersBlock(t *testing.T) {
 		wantErr     bool
 	}{
 		{name: "without headers", yaml: "mode: disable\n"},
-		{name: "with empty headers", yaml: "mode: disable\nheaders: {}\n",
-			wantHeaders: true, wantErr: true},
+		{
+			name: "with empty headers", yaml: "mode: disable\nheaders: {}\n",
+			wantHeaders: true, wantErr: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -119,8 +143,10 @@ func TestOptionsUnmarshalYAMLDisableTracksHeadersBlock(t *testing.T) {
 }
 
 func TestOptionsClone(t *testing.T) {
-	o := &Options{Mode: ModeMerge,
-		Headers: types.EnvStringMap{headers.NameAllowOrigin: "https://example.com"}}
+	o := &Options{
+		Mode:    ModeMerge,
+		Headers: types.EnvStringMap{headers.NameAllowOrigin: "https://example.com"},
+	}
 	clone := o.Clone()
 	clone.Headers[headers.NameAllowOrigin] = "https://other.example.com"
 	if got := o.Headers[headers.NameAllowOrigin]; got != "https://example.com" {

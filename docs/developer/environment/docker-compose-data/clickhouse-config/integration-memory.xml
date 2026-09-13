@@ -1,0 +1,10 @@
+<clickhouse>
+    <!--
+      Keep the integration server's startup memory ceiling stable. ClickHouse's
+      dynamic memory worker otherwise lowers the ceiling as sibling containers
+      consume host memory; after seeding, it can fall below ClickHouse's own
+      retained RSS and cause small test queries to be killed by the global
+      overcommit tracker.
+    -->
+    <memory_worker_dynamic_hard_limit>0</memory_worker_dynamic_hard_limit>
+</clickhouse>

@@ -149,8 +149,10 @@ func TestRetryBudgetConcurrentAdmission(t *testing.T) {
 }
 
 func TestIsIdempotent(t *testing.T) {
-	for _, m := range []string{http.MethodGet, http.MethodHead, http.MethodOptions,
-		http.MethodTrace, http.MethodPut, http.MethodDelete} {
+	for _, m := range []string{
+		http.MethodGet, http.MethodHead, http.MethodOptions,
+		http.MethodTrace, http.MethodPut, http.MethodDelete,
+	} {
 		require.True(t, IsIdempotent(m), m)
 	}
 	for _, m := range []string{http.MethodPost, http.MethodPatch, http.MethodConnect, ""} {

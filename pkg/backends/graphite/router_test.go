@@ -195,8 +195,10 @@ func TestRouteRequestShapeLimits(t *testing.T) {
 	for i := range many {
 		many[i] = "a.b"
 	}
-	rq := &RenderQuery{Params: parsing.RenderParams{Targets: many, From: "-1h", Format: "json"},
-		Location: time.UTC, Now: time.Now()}
+	rq := &RenderQuery{
+		Params:   parsing.RenderParams{Targets: many, From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now(),
+	}
 	d := c.route(ctx, rq)
 	if d.Lane != LaneObject || d.Reason != parsing.ReasonParseError {
 		t.Fatalf("count limit: lane %v reason %q", d.Lane, d.Reason)
@@ -207,8 +209,10 @@ func TestRouteRequestShapeLimits(t *testing.T) {
 
 	// an oversized single target: declined before ParseTarget sees it
 	huge := strings.Repeat("a", gro.DefaultMaxTargetLength+1)
-	rq = &RenderQuery{Params: parsing.RenderParams{Targets: []string{huge}, From: "-1h", Format: "json"},
-		Location: time.UTC, Now: time.Now()}
+	rq = &RenderQuery{
+		Params:   parsing.RenderParams{Targets: []string{huge}, From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now(),
+	}
 	if d := c.route(ctx, rq); d.Lane != LaneObject || d.Reason != parsing.ReasonParseError {
 		t.Fatalf("length limit: lane %v reason %q", d.Lane, d.Reason)
 	}
@@ -219,8 +223,10 @@ func TestRouteRequestShapeLimits(t *testing.T) {
 	o.Graphite.MaxTargetsPerRequest = len(many) + 1
 	o.Graphite.MaxTargetLength = len(huge) + 1
 	c2 := newTestClient(t, o)
-	rq = &RenderQuery{Params: parsing.RenderParams{Targets: many, From: "-1h", Format: "json"},
-		Location: time.UTC, Now: time.Now()}
+	rq = &RenderQuery{
+		Params:   parsing.RenderParams{Targets: many, From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now(),
+	}
 	if d := c2.route(ctx, rq); d.Reason == parsing.ReasonParseError && len(rq.Targets) == 0 {
 		t.Fatal("raised count limit still declined on shape")
 	}
@@ -234,13 +240,17 @@ func BenchmarkRouteMultiTarget(b *testing.B) {
 	}
 	ctx := context.Background()
 	// warm: resolve once so the registry answers every member
-	warm := &RenderQuery{Params: parsing.RenderParams{Targets: targets[:1], From: "-1h", Format: "json"},
-		Location: time.UTC, Now: time.Now()}
+	warm := &RenderQuery{
+		Params:   parsing.RenderParams{Targets: targets[:1], From: "-1h", Format: "json"},
+		Location: time.UTC, Now: time.Now(),
+	}
 	c.route(ctx, warm)
 	b.ReportAllocs()
 	for b.Loop() {
-		rq := &RenderQuery{Params: parsing.RenderParams{Targets: targets, From: "-1h", Format: "json"},
-			Location: time.UTC, Now: time.Now()}
+		rq := &RenderQuery{
+			Params:   parsing.RenderParams{Targets: targets, From: "-1h", Format: "json"},
+			Location: time.UTC, Now: time.Now(),
+		}
 		if d := c.route(ctx, rq); d.Lane != LaneDelta {
 			b.Fatalf("lane %v reason %s", d.Lane, d.Reason)
 		}

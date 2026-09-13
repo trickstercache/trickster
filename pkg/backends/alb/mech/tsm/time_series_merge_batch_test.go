@@ -54,13 +54,19 @@ func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 	batchMergeFunc := merge.TimeseriesBatchMergeFuncWithStrategy(
 		int(tsmerge.StrategySum))
 	contributions := []*gatherContribution{
-		{data: batchContributionDataSet(1), mergeFunc: mergeFunc,
-			batchMergeFunc: batchMergeFunc, member: 0},
+		{
+			data: batchContributionDataSet(1), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 0,
+		},
 		nil,
-		{data: batchContributionDataSet(2), mergeFunc: mergeFunc,
-			batchMergeFunc: batchMergeFunc, member: 2},
-		{data: batchContributionDataSet(3), mergeFunc: mergeFunc,
-			batchMergeFunc: batchMergeFunc, member: 3},
+		{
+			data: batchContributionDataSet(2), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 2,
+		},
+		{
+			data: batchContributionDataSet(3), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 3,
+		},
 	}
 	accumulator := merge.NewAccumulator()
 
@@ -189,8 +195,10 @@ func TestMergeGatherContributionsRecoversBatchPanic(t *testing.T) {
 	batchMergeFunc := merge.TimeseriesBatchMergeFunc()
 	contributions := []*gatherContribution{
 		{data: first, mergeFunc: mergeFunc, batchMergeFunc: batchMergeFunc, member: 0},
-		{data: batchContributionDataSet(2), mergeFunc: mergeFunc,
-			batchMergeFunc: batchMergeFunc, member: 1},
+		{
+			data: batchContributionDataSet(2), mergeFunc: mergeFunc,
+			batchMergeFunc: batchMergeFunc, member: 1,
+		},
 	}
 	accumulator := merge.NewAccumulator()
 

@@ -38,8 +38,7 @@ func TestKubeMetricsRegistered(t *testing.T) {
 		"routeInfo":           KubeRouteInfo,
 	} {
 		err := prometheus.Register(c)
-		var already prometheus.AlreadyRegisteredError
-		if !errors.As(err, &already) {
+		if _, ok := errors.AsType[prometheus.AlreadyRegisteredError](err); !ok {
 			t.Errorf("expected %s to already be registered, got %v", name, err)
 		}
 	}

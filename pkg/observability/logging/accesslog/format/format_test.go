@@ -353,8 +353,10 @@ func TestExtendedTokens(t *testing.T) {
 		}
 	}
 	empty := &Fields{}
-	for _, format := range []string{"%{upstream-addr}x", "%{upstream-status}x",
-		"%{upstream-duration}x", "%{trace-id}x", "%{span-id}x", "%{request-id}x", "%{route}e"} {
+	for _, format := range []string{
+		"%{upstream-addr}x", "%{upstream-status}x",
+		"%{upstream-duration}x", "%{trace-id}x", "%{span-id}x", "%{request-id}x", "%{route}e",
+	} {
 		if got := render(t, format, empty); got != "-\n" {
 			t.Errorf("format %q on empty fields: expected -, got %q", format, got)
 		}
@@ -440,8 +442,10 @@ func TestNeedsResourcesAndRequestID(t *testing.T) {
 func BenchmarkRender(b *testing.B) {
 	f := testFields()
 	f.Extra = NewExtra(map[string]string{"route": "ns/name"})
-	for _, name := range []string{Common, Combined, Extended, JSON,
-		`%h %u %t "%r" %>s %b %{ms}T %{upstream-addr}x %{upstream-status}x %{route}e`} {
+	for _, name := range []string{
+		Common, Combined, Extended, JSON,
+		`%h %u %t "%r" %>s %b %{ms}T %{upstream-addr}x %{upstream-status}x %{route}e`,
+	} {
 		fm, err := ParseFormat(name)
 		if err != nil {
 			b.Fatal(err)

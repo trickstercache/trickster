@@ -46,11 +46,9 @@ const crdPath = "../../../../deploy/kube/crds/trickstercachepolicies.yaml"
 
 func policy(name string, age int, refs ...TargetRef) *CachePolicy {
 	return &CachePolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "shop", Name: name, Generation: 1, UID: types.UID("uid-" + name),
-			CreationTimestamp: metav1.NewTime(time.Unix(int64(age), 0)),
-		},
-		Spec: Spec{TargetRefs: refs},
+		Namespace: "shop", Name: name, Generation: 1, UID: types.UID("uid-" + name),
+		CreationTimestamp: metav1.NewTime(time.Unix(int64(age), 0)),
+		Spec:              Spec{TargetRefs: refs},
 	}
 }
 
@@ -74,8 +72,10 @@ func acceptedReason(t *testing.T, s ir.AncestorStatus) (bool, string) {
 
 func TestUnstructuredRoundTrip(t *testing.T) {
 	// what the dynamic client delivers and what is written back are the same object
-	p := policy("p", 1, TargetRef{Group: gwapiv1.GroupName, Kind: KindHTTPRoute, Name: "web",
-		SectionName: "api"})
+	p := policy("p", 1, TargetRef{
+		Group: gwapiv1.GroupName, Kind: KindHTTPRoute, Name: "web",
+		SectionName: "api",
+	})
 	p.Spec.Provider = "prometheus"
 	p.Spec.CacheKeyParams = []string{"query"}
 	p.Spec.CacheKeyHeaders = []string{}
@@ -83,8 +83,10 @@ func TestUnstructuredRoundTrip(t *testing.T) {
 	p.Spec.CORS = &CORS{Mode: "merge", Headers: map[string]string{"Access-Control-Allow-Origin": "*"}}
 	p.Status.Ancestors = []gwapiv1.PolicyAncestorStatus{{
 		AncestorRef: gwapiv1.ParentReference{Name: "web"}, ControllerName: "c",
-		Conditions: []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue,
-			Reason: "Accepted", LastTransitionTime: metav1.NewTime(time.Unix(0, 0).UTC())}},
+		Conditions: []metav1.Condition{{
+			Type: "Accepted", Status: metav1.ConditionTrue,
+			Reason: "Accepted", LastTransitionTime: metav1.NewTime(time.Unix(0, 0).UTC()),
+		}},
 	}}
 	u, err := ToUnstructured(p)
 	require.NoError(t, err)
@@ -98,7 +100,8 @@ func TestUnstructuredRoundTrip(t *testing.T) {
 	require.Equal(t, "shop", back.Namespace)
 
 	_, err = FromUnstructured(&unstructured.Unstructured{Object: map[string]any{
-		"spec": map[string]any{"targetRefs": "not a list"}}})
+		"spec": map[string]any{"targetRefs": "not a list"},
+	}})
 	require.Error(t, err)
 }
 
@@ -127,8 +130,10 @@ func TestServedAndClient(t *testing.T) {
 	ok, err := Served(kube.NewFromClientset(cs))
 	require.NoError(t, err)
 	require.False(t, ok, "a cluster without the CRD does not serve it")
-	cs.Resources = []*metav1.APIResourceList{{GroupVersion: GroupVersion.String(),
-		APIResources: []metav1.APIResource{{Name: "other"}}}}
+	cs.Resources = []*metav1.APIResourceList{{
+		GroupVersion: GroupVersion.String(),
+		APIResources: []metav1.APIResource{{Name: "other"}},
+	}}
 	ok, err = Served(kube.NewFromClientset(cs))
 	require.NoError(t, err)
 	require.False(t, ok, "the group may be served without the resource")

@@ -177,7 +177,7 @@ func startLifecycleProxy(t *testing.T, name string, queryTimeout time.Duration,
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	handler := &lifecycleOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}, release: release,
+		env: vtenv.NewTestEnv(), release: release,
 	}
 	origin, err := vtmysql.NewFromListener(listener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), handler,
@@ -191,8 +191,10 @@ func startLifecycleProxy(t *testing.T, name string, queryTimeout time.Duration,
 
 	config := ProtocolConfig{
 		BackendName: name, ProxyOnly: true,
-		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddress.Port,
-			Uname: "origin", Pass: "origin-password"},
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originAddress.Port,
+			Uname: "origin", Pass: "origin-password",
+		},
 		DownstreamUsers: map[string]string{"client": "client-password"},
 		ConnectTimeout:  time.Second, QueryTimeout: queryTimeout,
 	}
@@ -561,10 +563,14 @@ func TestAbandonUpstreamMarksUnreplayableSessionsTerminal(t *testing.T) {
 		terminal bool
 	}{
 		{name: "replayable", mutate: func(*upstreamSession) {}},
-		{name: "in transaction", terminal: true,
-			mutate: func(s *upstreamSession) { s.inTx = true }},
-		{name: "stateful", terminal: true,
-			mutate: func(s *upstreamSession) { s.stateful = true }},
+		{
+			name: "in transaction", terminal: true,
+			mutate: func(s *upstreamSession) { s.inTx = true },
+		},
+		{
+			name: "stateful", terminal: true,
+			mutate: func(s *upstreamSession) { s.stateful = true },
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newProtocolHandler(ProtocolConfig{BackendName: "mysql-abandon"}, nil)

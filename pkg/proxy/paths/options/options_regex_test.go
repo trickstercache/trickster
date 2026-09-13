@@ -197,8 +197,10 @@ func TestListMatch(t *testing.T) {
 	regexCatchAll := newPathOptions("^/.*", "", http.MethodGet)
 	postOnly := newPathOptions("^/write/.*", "", http.MethodPost)
 
-	l := List{exact, prefixShort, prefixLong, regexShort, regexLong,
-		regexCatchAll, postOnly}
+	l := List{
+		exact, prefixShort, prefixLong, regexShort, regexLong,
+		regexCatchAll, postOnly,
+	}
 	require.NoError(t, l.Initialize())
 
 	tests := []struct {
@@ -210,17 +212,25 @@ func TestListMatch(t *testing.T) {
 		{"exact match wins", http.MethodGet, "/api/query", exact},
 		{"longest prefix wins", http.MethodGet, "/api/admin/users", prefixLong},
 		{"shorter prefix", http.MethodGet, "/api/other", prefixShort},
-		{"regex only after classic misses", http.MethodGet,
-			"/results/42/detail", regexLong},
-		{"shorter regex when longer misses", http.MethodGet,
-			"/results/42/summary", regexShort},
+		{
+			"regex only after classic misses", http.MethodGet,
+			"/results/42/detail", regexLong,
+		},
+		{
+			"shorter regex when longer misses", http.MethodGet,
+			"/results/42/summary", regexShort,
+		},
 		{"regex catch-all evaluates last", http.MethodGet, "/misc", regexCatchAll},
 		{"regex method match", http.MethodPost, "/write/data", postOnly},
 		{"implicit HEAD for GET on exact", http.MethodHead, "/api/query", exact},
-		{"implicit HEAD for GET on regex", http.MethodHead,
-			"/results/42/detail", regexLong},
-		{"method not allowed on exact returns nil", http.MethodDelete,
-			"/api/query", nil},
+		{
+			"implicit HEAD for GET on regex", http.MethodHead,
+			"/results/42/detail", regexLong,
+		},
+		{
+			"method not allowed on exact returns nil", http.MethodDelete,
+			"/api/query", nil,
+		},
 	}
 
 	for _, test := range tests {

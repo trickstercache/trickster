@@ -513,8 +513,10 @@ func newTestCA(t *testing.T, name string) testCA {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return testCA{cert: cert, key: key,
-		pem: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))}
+	return testCA{
+		cert: cert, key: key,
+		pem: string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})),
+	}
 }
 
 // leaf issues a server certificate for hostname signed by the CA
@@ -576,14 +578,15 @@ func TestExcludeSystemRootsTrustsOnlyConfiguredCAs(t *testing.T) {
 	caA, caB := newTestCA(t, "CA A"), newTestCA(t, "CA B")
 	urlA, urlB := serveWith(t, caA.leaf(t, hostname)), serveWith(t, caB.leaf(t, hostname))
 
-	exclusive := &Options{CertificateAuthorityPEM: caA.pem, ServerName: hostname,
-		ExcludeSystemRoots: true}
+	exclusive := &Options{
+		CertificateAuthorityPEM: caA.pem, ServerName: hostname,
+		ExcludeSystemRoots: true,
+	}
 	if err := get(t, exclusive, urlA); err != nil {
 		t.Fatalf("a certificate from the configured CA must be accepted: %v", err)
 	}
 	err := get(t, exclusive, urlB)
-	var unknown x509.UnknownAuthorityError
-	if !errors.As(err, &unknown) {
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); !ok {
 		t.Fatalf("a certificate from any other CA must be refused, got %v", err)
 	}
 

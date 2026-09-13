@@ -41,16 +41,24 @@ func TestPrometheusValueQuantile(t *testing.T) {
 		{name: "singleton", phi: 0.5, values: []float64{7}, want: 7},
 		{name: "odd", phi: 0.5, values: []float64{5, 1, 3}, want: 3},
 		{name: "even interpolation", phi: 0.5, values: []float64{4, 1, 3, 2}, want: 2.5},
-		{name: "upper interpolation", phi: 0.9, values: []float64{0, 10, 20, 30},
-			want: 27.000000000000004},
+		{
+			name: "upper interpolation", phi: 0.9, values: []float64{0, 10, 20, 30},
+			want: 27.000000000000004,
+		},
 		{name: "duplicates", phi: 0.75, values: []float64{1, 1, 1, 5}, want: 2},
 		{name: "nan sorts first", phi: 0.5, values: []float64{2, math.NaN(), 1}, want: 1},
-		{name: "negative infinity interpolation", phi: 0.25,
-			values: []float64{0, math.Inf(1), math.Inf(-1)}, want: math.Inf(-1)},
-		{name: "positive infinity interpolation", phi: 0.75,
-			values: []float64{0, math.Inf(1), math.Inf(-1)}, want: math.Inf(1)},
-		{name: "infinity zero-weight follows IEEE arithmetic", phi: 0.5,
-			values: []float64{0, math.Inf(1), math.Inf(-1)}, want: math.NaN()},
+		{
+			name: "negative infinity interpolation", phi: 0.25,
+			values: []float64{0, math.Inf(1), math.Inf(-1)}, want: math.Inf(-1),
+		},
+		{
+			name: "positive infinity interpolation", phi: 0.75,
+			values: []float64{0, math.Inf(1), math.Inf(-1)}, want: math.Inf(1),
+		},
+		{
+			name: "infinity zero-weight follows IEEE arithmetic", phi: 0.5,
+			values: []float64{0, math.Inf(1), math.Inf(-1)}, want: math.NaN(),
+		},
 	}
 
 	for _, tt := range tests {

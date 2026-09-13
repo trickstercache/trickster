@@ -128,8 +128,10 @@ func TestCompileStreamEndpointMode(t *testing.T) {
 	require.Equal(t, providers.ALB, front.Provider)
 	require.Equal(t, "kgw--tcproute.data.db_r0_b0_tmpl", front.ALB.Discovery.TemplateBackend)
 	require.Equal(t, "provider", front.ALB.Discovery.HealthMode)
-	require.Equal(t, &queryDoc{Kind: "endpointslices", Namespace: "data", Service: "dns-svc",
-		Scheme: "udp"}, front.ALB.Discovery.Query)
+	require.Equal(t, &queryDoc{
+		Kind: "endpointslices", Namespace: "data", Service: "dns-svc",
+		Scheme: "udp",
+	}, front.ALB.Discovery.Query)
 	tmpl := doc.Backends[front.ALB.Discovery.TemplateBackend]
 	require.True(t, tmpl.IsTemplate)
 	require.Empty(t, tmpl.OriginURL)

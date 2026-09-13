@@ -127,6 +127,7 @@ services:
       network: host
     volumes:
       - ./docker-compose-data/clickhouse-config/users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml
+      - ./docker-compose-data/clickhouse-config/integration-memory.xml:/etc/clickhouse-server/config.d/integration-memory.xml
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 2s

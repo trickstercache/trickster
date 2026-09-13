@@ -40,14 +40,20 @@ func TestOriginAuthHeader(t *testing.T) {
 	}{
 		{"nil options", nil, "", nil},
 		{"unset", &gro.Options{}, "", nil},
-		{"basic", &gro.Options{OriginUsername: "u", OriginPassword: "p"},
-			"Basic dTpw", nil},
+		{
+			"basic", &gro.Options{OriginUsername: "u", OriginPassword: "p"},
+			"Basic dTpw", nil,
+		},
 		{"username only", &gro.Options{OriginUsername: "u"}, "Basic dTo=", nil},
 		{"raw", &gro.Options{OriginAuthorization: "Bearer tok"}, "Bearer tok", nil},
-		{"conflict", &gro.Options{OriginAuthorization: "Bearer tok",
-			OriginUsername: "u"}, "", gro.ErrOriginAuthConflict},
-		{"password without username", &gro.Options{OriginPassword: "p"},
-			"", gro.ErrOriginAuthNoUser},
+		{"conflict", &gro.Options{
+			OriginAuthorization: "Bearer tok",
+			OriginUsername:      "u",
+		}, "", gro.ErrOriginAuthConflict},
+		{
+			"password without username", &gro.Options{OriginPassword: "p"},
+			"", gro.ErrOriginAuthNoUser,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,8 +78,10 @@ func TestOriginAuthInjection(t *testing.T) {
 	// a user-defined path with no pinned credential is injected; one with an
 	// explicit pin is left alone
 	plain := &po.Options{Path: "/render", Methods: methods.GetAndPost()}
-	pinned := &po.Options{Path: "/tags", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic other"}}
+	pinned := &po.Options{
+		Path: "/tags", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic other"},
+	}
 	o.Paths = po.List{plain, pinned}
 	c := newTestClient(t, o)
 	o.Paths = c.DefaultPathConfigs(o).Overlay(o.Paths)
@@ -133,8 +141,10 @@ func TestOriginAuthAppendRejected(t *testing.T) {
 		o := bo.New()
 		o.Graphite = gro.New()
 		o.Graphite.OriginAuthorization = "Bearer backend-token"
-		o.Paths = po.List{{Path: "/render", Methods: methods.GetAndPost(),
-			RequestHeaders: map[string]string{key: "secondary-value"}}}
+		o.Paths = po.List{{
+			Path: "/render", Methods: methods.GetAndPost(),
+			RequestHeaders: map[string]string{key: "secondary-value"},
+		}}
 		if _, err := NewClient("test", o, nil, nil, nil, nil); !errors.Is(err,
 			gro.ErrOriginAuthAppend) {
 			t.Fatalf("%s: expected ErrOriginAuthAppend, got %v", key, err)
@@ -144,8 +154,10 @@ func TestOriginAuthAppendRejected(t *testing.T) {
 	// without a credential the append is permitted and untouched
 	o := bo.New()
 	o.Graphite = gro.New()
-	pc := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{"+" + headers.NameAuthorization: "secondary-value"}}
+	pc := &po.Options{
+		Path: "/render", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{"+" + headers.NameAuthorization: "secondary-value"},
+	}
 	o.Paths = po.List{pc}
 	if _, err := NewClient("test", o, nil, nil, nil, nil); err != nil {
 		t.Fatalf("append without origin credential must construct: %v", err)

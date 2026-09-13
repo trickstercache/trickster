@@ -23,7 +23,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 	netv1 "k8s.io/api/networking/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -31,16 +30,17 @@ const ours = appinfo.Domain + "/gateway-controller"
 
 func gatewayClass(name, controller string) *gwapiv1.GatewayClass {
 	return &gwapiv1.GatewayClass{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Name: name,
 		Spec: gwapiv1.GatewayClassSpec{
-			ControllerName: gwapiv1.GatewayController(controller)},
+			ControllerName: gwapiv1.GatewayController(controller),
+		},
 	}
 }
 
 func ingressClass(name, controller string, isDefault bool) *netv1.IngressClass {
 	ic := &netv1.IngressClass{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec:       netv1.IngressClassSpec{Controller: controller},
+		Name: name,
+		Spec: netv1.IngressClassSpec{Controller: controller},
 	}
 	if isDefault {
 		ic.Annotations = map[string]string{DefaultClassAnnotation: "true"}
@@ -50,8 +50,7 @@ func ingressClass(name, controller string, isDefault bool) *netv1.IngressClass {
 
 func ingress(name string, className *string, annotations map[string]string) *netv1.Ingress {
 	return &netv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: "shop", Annotations: annotations},
+		Name: name, Namespace: "shop", Annotations: annotations,
 		Spec: netv1.IngressSpec{IngressClassName: className},
 	}
 }
@@ -77,9 +76,10 @@ func TestGateway(t *testing.T) {
 
 	gw := func(className string) *gwapiv1.Gateway {
 		return &gwapiv1.Gateway{
-			ObjectMeta: metav1.ObjectMeta{Name: "gw", Namespace: "infra"},
+			Name: "gw", Namespace: "infra",
 			Spec: gwapiv1.GatewaySpec{
-				GatewayClassName: gwapiv1.ObjectName(className)},
+				GatewayClassName: gwapiv1.ObjectName(className),
+			},
 		}
 	}
 	require.True(t, c.Gateway(gw("trickster"), claimed))
@@ -138,19 +138,22 @@ func TestIngressWithoutClassName(t *testing.T) {
 	emptyClass := ingress("b", &empty, nil)
 
 	notDefault := c.ClaimedIngressClasses([]*netv1.IngressClass{
-		ingressClass("trickster", ours, false)})
+		ingressClass("trickster", ours, false),
+	})
 	require.False(t, c.Ingress(unclassed, notDefault))
 	require.False(t, c.Ingress(emptyClass, notDefault))
 
 	isDefault := c.ClaimedIngressClasses([]*netv1.IngressClass{
-		ingressClass("trickster", ours, true)})
+		ingressClass("trickster", ours, true),
+	})
 	require.True(t, c.Ingress(unclassed, isDefault))
 	require.True(t, c.Ingress(emptyClass, isDefault),
 		"an empty class name is no class name")
 
 	// another controller owns the default
 	theirs := c.ClaimedIngressClasses([]*netv1.IngressClass{
-		ingressClass("acme", "example.com/acme-controller", true)})
+		ingressClass("acme", "example.com/acme-controller", true),
+	})
 	require.False(t, c.Ingress(unclassed, theirs))
 }
 
@@ -159,7 +162,8 @@ func TestIngressWithoutClassName(t *testing.T) {
 func TestIngressLegacyAnnotation(t *testing.T) {
 	c := New(ours, "trickster")
 	claimed := c.ClaimedIngressClasses([]*netv1.IngressClass{
-		ingressClass("trickster", ours, true)})
+		ingressClass("trickster", ours, true),
+	})
 
 	legacy := ingress("a", nil,
 		map[string]string{LegacyIngressClassAnnotation: "trickster"})

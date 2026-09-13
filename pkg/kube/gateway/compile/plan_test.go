@@ -503,8 +503,10 @@ func TestConditionedMatchOnAWeightedALB(t *testing.T) {
 	plainRule, plain := serviceRule("plain", 0, "plain", exact("/api"))
 	g := group("shop", "split", 0,
 		svcMember(0, "shop", "a", 80, 1), svcMember(1, "shop", "b", 80, 1))
-	split := ir.Rule{Matches: []ir.Match{withHeaders(exact("/api"), "X-Split", "1")},
-		BackendGroup: g.Name}
+	split := ir.Rule{
+		Matches:      []ir.Match{withHeaders(exact("/api"), "X-Split", "1")},
+		BackendGroup: g.Name,
+	}
 	m := model([]ir.Route{
 		hostRoute("plain", testHost, 0, plainRule),
 		hostRoute("split", testHost, 1, split),
@@ -550,7 +552,8 @@ func TestRouteOnTwoListenersWithAConditionedPeer(t *testing.T) {
 	m := model([]ir.Route{both, hostRoute("canary", testHost, 1, canaryRule)}, web, canary)
 	m.Listeners = append(m.Listeners, ir.Listener{
 		Name: "l8080", Port: 8080, Protocol: ir.ProtocolHTTP,
-		Source: src("Gateway", "infra", "gw")})
+		Source: src("Gateway", "infra", "gw"),
+	})
 	got := emitted(t, m, serviceOpts(t))
 	b := got["kgw--httproute.shop.web_r0"]
 	require.Len(t, b.ListenerNames, 2)
@@ -612,9 +615,11 @@ func conditionedShapes() map[string]*ir.IR {
 			hostRoute("header", testHost, 1, headerRule),
 		}, plain, header),
 		"condition alone": model([]ir.Route{
-			hostRoute("header", testHost, 0, headerRule)}, header),
+			hostRoute("header", testHost, 0, headerRule),
+		}, header),
 		"method fill onto 404": model([]ir.Route{
-			hostRoute("get", testHost, 0, getRule)}, get),
+			hostRoute("get", testHost, 0, getRule),
+		}, get),
 		"hostless condition": model([]ir.Route{
 			hostRoute("plain", "", 0, plainRule),
 			hostRoute("header", "", 1, headerRule),
@@ -687,7 +692,8 @@ func TestClaimantPrecedenceIsTotal(t *testing.T) {
 		{"an awarded subset confers no rank", mk(0, "a", 0, 0, oneHeader), mk(9, "z", 9, 9, withMethods(base, "POST"))},
 		{"headers beat queries", mk(9, "z", 9, 9, oneHeader), mk(0, "a", 0, 0, oneQuery)},
 		{"more queries first", mk(9, "z", 9, 9, ir.Match{Path: base.Path, QueryParams: []ir.KeyValueMatch{
-			{Name: "q", Value: "1"}, {Name: "r", Value: "2"}}}), mk(0, "a", 0, 0, oneQuery)},
+			{Name: "q", Value: "1"}, {Name: "r", Value: "2"},
+		}}), mk(0, "a", 0, 0, oneQuery)},
 		{"older route first", mk(0, "z", 9, 9, oneHeader), mk(1, "a", 0, 0, oneHeader)},
 		{"then route name", mk(0, "a", 9, 9, oneHeader), mk(0, "b", 0, 0, oneHeader)},
 		{"then rule index", mk(0, "a", 0, 9, oneHeader), mk(0, "a", 1, 0, oneHeader)},
@@ -774,9 +780,11 @@ func TestConditionMissFallsToTheSamePathOnALowerTier(t *testing.T) {
 func TestRegexSlotsDoNotCover(t *testing.T) {
 	rxRule, rx := serviceRule("rx", 0, "rx", ir.Match{
 		Path:    ir.PathMatch{Type: ir.PathRegex, Value: "^/api/[0-9]+"},
-		Headers: []ir.KeyValueMatch{{Name: "X-A", Value: "1"}}})
+		Headers: []ir.KeyValueMatch{{Name: "X-A", Value: "1"}},
+	})
 	wideRule, wide := serviceRule("wide", 0, "wide", ir.Match{
-		Path: ir.PathMatch{Type: ir.PathRegex, Value: "^/.*"}})
+		Path: ir.PathMatch{Type: ir.PathRegex, Value: "^/.*"},
+	})
 	m := model([]ir.Route{
 		hostRoute("rx", testHost, 0, rxRule),
 		hostRoute("wide", testHost, 1, wideRule),
@@ -790,7 +798,8 @@ func TestRegexSlotsDoNotCover(t *testing.T) {
 	require.Equal(t, "wide", body)
 	// a method the pattern does not claim is a 404, not a fill from a prefix
 	postRule, post := serviceRule("post", 0, "post", withMethods(ir.Match{
-		Path: ir.PathMatch{Type: ir.PathRegex, Value: "^/rx$"}}, http.MethodPost))
+		Path: ir.PathMatch{Type: ir.PathRegex, Value: "^/rx$"},
+	}, http.MethodPost))
 	rootRule, root := serviceRule("root", 0, "root", prefix("/"))
 	m = model([]ir.Route{
 		hostRoute("post", testHost, 0, postRule),
@@ -804,8 +813,10 @@ func TestRegexSlotsDoNotCover(t *testing.T) {
 // The operator-tier names a policy carries reach the generated backend
 func TestCompilePolicyOperatorNames(t *testing.T) {
 	m := simple()
-	m.Policies = []ir.Policy{{Name: "class", TracingName: "otlp",
-		ReqRewriterName: "strip", AuthenticatorName: "auth"}}
+	m.Policies = []ir.Policy{{
+		Name: "class", TracingName: "otlp",
+		ReqRewriterName: "strip", AuthenticatorName: "auth",
+	}}
 	m.Routes[0].Rules[0].Policy = "class"
 	b := emitted(t, m, serviceOpts(t))["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "otlp", b.TracingConfigName)
@@ -915,13 +926,16 @@ func TestAwardedMethodsConferNoRank(t *testing.T) {
 func TestEmptyMatchingPatternsRequireThePresence(t *testing.T) {
 	anyHeader, anyHeaderGroup := serviceRule("anyheader", 0, "anyheader", ir.Match{
 		Path:    ir.PathMatch{Type: ir.PathExact, Value: "/h"},
-		Headers: []ir.KeyValueMatch{{Name: "X-Opt", Value: ".*", Regex: true}}})
+		Headers: []ir.KeyValueMatch{{Name: "X-Opt", Value: ".*", Regex: true}},
+	})
 	anyParam, anyParamGroup := serviceRule("anyparam", 0, "anyparam", ir.Match{
 		Path:        ir.PathMatch{Type: ir.PathExact, Value: "/q"},
-		QueryParams: []ir.KeyValueMatch{{Name: "opt", Value: ".*", Regex: true}}})
+		QueryParams: []ir.KeyValueMatch{{Name: "opt", Value: ".*", Regex: true}},
+	})
 	digits, digitsGroup := serviceRule("digits", 0, "digits", ir.Match{
 		Path:    ir.PathMatch{Type: ir.PathExact, Value: "/d"},
-		Headers: []ir.KeyValueMatch{{Name: "X-N", Value: "[0-9]+", Regex: true}}})
+		Headers: []ir.KeyValueMatch{{Name: "X-N", Value: "[0-9]+", Regex: true}},
+	})
 	plainRule, plain := serviceRule("plain", 0, "plain", exact("/h"), exact("/q"), exact("/d"))
 	m := model([]ir.Route{
 		hostRoute("anyheader", testHost, 0, anyHeader),

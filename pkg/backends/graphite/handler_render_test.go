@@ -106,8 +106,10 @@ func newHarness(t testing.TB, mods ...func(*bo.Options)) *harness {
 	t.Cleanup(c.Close)
 	o.HTTPClient = c.HTTPClient()
 	o.Paths = c.DefaultPathConfigs(o)
-	return &harness{t: t, stub: origin, client: c, o: o, originURL: origin.URL,
-		now: time.Now().Truncate(10 * time.Second)}
+	return &harness{
+		t: t, stub: origin, client: c, o: o, originURL: origin.URL,
+		now: time.Now().Truncate(10 * time.Second),
+	}
 }
 
 func newLiveHarness(t *testing.T) *harness {
@@ -136,8 +138,10 @@ func newLiveHarness(t *testing.T) *harness {
 	t.Cleanup(c.Close)
 	o.HTTPClient = c.HTTPClient()
 	o.Paths = c.DefaultPathConfigs(o)
-	return &harness{t: t, client: c, o: o, originURL: base,
-		now: time.Now().Add(-time.Minute).Truncate(10 * time.Second)}
+	return &harness{
+		t: t, client: c, o: o, originURL: base,
+		now: time.Now().Add(-time.Minute).Truncate(10 * time.Second),
+	}
 }
 
 func (h *harness) learn(leaves ...string) {
@@ -229,9 +233,15 @@ func TestRenderColdThenAccelerated(t *testing.T) {
 	h.expectFetches("cache hit", 0)
 	// every client format and option renders identically from the cache
 	for _, extra := range []url.Values{
-		{"format": {"raw"}}, {"format": {"csv"}}, {"format": {"msgpack"}},
-		{"maxDataPoints": {"7"}}, {"maxDataPoints": {"1"}}, {"noNullPoints": {"1"}},
-		{"pretty": {"1"}}, {"jsonp": {"cb"}}, {"tz": {"America/New_York"}, "format": {"csv"}},
+		{"format": {"raw"}},
+		{"format": {"csv"}},
+		{"format": {"msgpack"}},
+		{"maxDataPoints": {"7"}},
+		{"maxDataPoints": {"1"}},
+		{"noNullPoints": {"1"}},
+		{"pretty": {"1"}},
+		{"jsonp": {"cb"}},
+		{"tz": {"America/New_York"}, "format": {"csv"}},
 	} {
 		q2 := h.query(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-1h"}})
 		maps.Copy(q2, extra)
@@ -627,8 +637,10 @@ func TestRenderBodyLimits(t *testing.T) {
 	}
 
 	// an ordinary POST still works
-	r = postReq(url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {"-30min"},
-		"format": {"json"}, "now": {strconv.FormatInt(h.now.Unix(), 10)}})
+	r = postReq(url.Values{
+		"target": {"dev.fast.cpu.host01.percent"}, "from": {"-30min"},
+		"format": {"json"}, "now": {strconv.FormatInt(h.now.Unix(), 10)},
+	})
 	if w := h.serve(r); w.Code != http.StatusOK {
 		t.Errorf("ordinary POST: status %d: %.200s", w.Code, w.Body.String())
 	}
@@ -865,8 +877,10 @@ func TestRenderTZBudgetFailsClosed(t *testing.T) {
 
 	// the next request for a valid uncached zone, with a date-anchored
 	// range, is served through the object lane byte-identical to the origin
-	q := h.query(url.Values{"target": {leaf}, "from": {"midnight"},
-		"tz": {"America/Chicago"}})
+	q := h.query(url.Values{
+		"target": {leaf}, "from": {"midnight"},
+		"tz": {"America/Chicago"},
+	})
 	h.same("post-exhaustion date-anchored render", q)
 	h.expectFetches("post-exhaustion date-anchored render", 1)
 	if h.lastRQ == nil || h.lastRQ.Fallback != parsing.ReasonTZUnavailable {
@@ -882,8 +896,10 @@ func TestRenderTZBudgetFailsClosed(t *testing.T) {
 	h.client.tzCache.mu.Lock()
 	h.client.tzCache.now = func() time.Time { return frozen.Add(time.Minute) }
 	h.client.tzCache.mu.Unlock()
-	q2 := h.query(url.Values{"target": {leaf}, "from": {"-30min"},
-		"tz": {"America/Chicago"}})
+	q2 := h.query(url.Values{
+		"target": {leaf}, "from": {"-30min"},
+		"tz": {"America/Chicago"},
+	})
 	h.same("post-refill render", q2)
 	if h.lastRQ == nil || h.lastRQ.Fallback != "" {
 		t.Fatalf("a refilled budget must restore acceleration, got %q", h.lastRQ.Fallback)

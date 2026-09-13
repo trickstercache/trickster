@@ -127,7 +127,8 @@ func TestALBDiscoveryKind(t *testing.T) {
 	kubectl := func(args ...string) string {
 		t.Helper()
 		out, err := exec.Command("kubectl", append([]string{
-			"--context", "kind-trickster-it", "-n", namespace}, args...)...).
+			"--context", "kind-trickster-it", "-n", namespace,
+		}, args...)...).
 			CombinedOutput()
 		require.NoError(t, err, "kubectl %v: %s", args, out)
 		return string(out)

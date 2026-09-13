@@ -41,10 +41,12 @@ var (
 	frozenKind       = []string{"narrow", "wide", "find"}
 	frozenResult     = []string{"step", "empty", "error"}
 	frozenLayer      = []string{"leaf", "ladder", "target", "negative"}
-	frozenReason     = []string{"parse_error", "non_series_format", "function_not_allowlisted",
+	frozenReason     = []string{
+		"parse_error", "non_series_format", "function_not_allowlisted",
 		"unknown_step", "missing_target", "multi_target_step_mismatch",
 		"passthrough_max_data_points", "misprediction", "client_identity",
-		"tz_unavailable", "resolution_identity"}
+		"tz_unavailable", "resolution_identity",
+	}
 )
 
 func labelValues(t *testing.T, c prometheus.Collector, label string) map[string]float64 {
@@ -88,7 +90,8 @@ func TestObserverEmitsFrozenMetrics(t *testing.T) {
 
 	// a decline: the fallback reason is counted
 	h.same("declined", h.query(url.Values{
-		"target": {"movingAverage(dev.fast.cpu.host01.percent, '5min')"}, "from": {"-1h"}}))
+		"target": {"movingAverage(dev.fast.cpu.host01.percent, '5min')"}, "from": {"-1h"},
+	}))
 	if got := before(metrics.GraphiteFallbacks, parsing.ReasonFunctionNotAllowlisted); got <= fallbacksBefore {
 		t.Errorf("fallbacks_total{reason=function_not_allowlisted} did not advance: %v", got)
 	}

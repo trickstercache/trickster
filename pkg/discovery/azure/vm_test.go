@@ -149,8 +149,7 @@ func TestLoneNICNeedsNoPrimaryFlag(t *testing.T) {
 // it resolves only when that third list was fetched.
 func TestPublicAddressResolvesThroughItsOwnResource(t *testing.T) {
 	nic := testNIC(nicID, "10.0.0.4")
-	nic.Properties.IPConfigurations[0].Properties.PublicIPAddress =
-		&publicIPRef{ID: pipID}
+	nic.Properties.IPConfigurations[0].Properties.PublicIPAddress = &publicIPRef{ID: pipID}
 	vm := testVM("web-1", nicID)
 
 	m := baseMapping()
@@ -164,7 +163,8 @@ func TestPublicAddressResolvesThroughItsOwnResource(t *testing.T) {
 
 	// with it, it does -- and case-insensitively, as for nics
 	i.publicIPs[resourceKey(pipID)] = &publicIPAddress{
-		ID: pipID, Properties: publicIPProps{IPAddress: "20.1.2.3"}}
+		ID: pipID, Properties: publicIPProps{IPAddress: "20.1.2.3"},
+	}
 	snap, skipped := toMembers(i, m)
 	require.Empty(t, skipped)
 	require.Equal(t, "20.1.2.3:9090", snap[0].Address)
@@ -208,7 +208,8 @@ func TestPowerStateIsPickedOutOfTheStatuses(t *testing.T) {
 	require.Equal(t, powerStateRunning, powerStateOf(iv))
 	require.Empty(t, powerStateOf(nil))
 	require.Empty(t, powerStateOf(&instanceView{Statuses: []instanceStatus{
-		{Code: "ProvisioningState/succeeded"}}}))
+		{Code: "ProvisioningState/succeeded"},
+	}}))
 }
 
 // Azure treats tag names case-insensitively; so must the port lookup and

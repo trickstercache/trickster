@@ -193,8 +193,10 @@ func TestPollDetectsLateCreatedDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "not-yet")
 	path := filepath.Join(dir, "members.yaml")
 
-	d, err := New("poll-only", &do.Options{Provider: "file",
-		File: &fileopts.Options{PollInterval: timeconv.Duration(50 * time.Millisecond)}})
+	d, err := New("poll-only", &do.Options{
+		Provider: "file",
+		File:     &fileopts.Options{PollInterval: timeconv.Duration(50 * time.Millisecond)},
+	})
 	require.NoError(t, err)
 	require.NoError(t, d.Start(t.Context()))
 	defer d.Stop()

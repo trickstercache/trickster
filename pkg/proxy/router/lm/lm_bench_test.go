@@ -268,8 +268,10 @@ func BenchmarkPredicateHeaderExact(b *testing.B) {
 // one regex-header candidate hit
 func BenchmarkPredicateHeaderRegex(b *testing.B) {
 	r := newBenchRouter(b, 10, 0)
-	if err := r.RegisterRouteSpec(route.Spec{Path: "/cond/re", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: benchPredicates(b, map[string]string{"X-Tenant": "^t[0-9]+$"}, nil, true), Handler: benchHandler}); err != nil {
+	if err := r.RegisterRouteSpec(route.Spec{
+		Path: "/cond/re", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: benchPredicates(b, map[string]string{"X-Tenant": "^t[0-9]+$"}, nil, true), Handler: benchHandler,
+	}); err != nil {
 		b.Fatal(err)
 	}
 	benchHeaderRequest(b, r, "/cond/re", map[string]string{"X-Tenant": "t050"}, true)
@@ -278,8 +280,10 @@ func BenchmarkPredicateHeaderRegex(b *testing.B) {
 // one query candidate hit: the one allocation is the parsed query
 func BenchmarkPredicateQuery(b *testing.B) {
 	r := newBenchRouter(b, 10, 0)
-	if err := r.RegisterRouteSpec(route.Spec{Path: "/cond/q", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: benchPredicates(b, nil, map[string]string{"v": "1"}, false), Handler: benchHandler}); err != nil {
+	if err := r.RegisterRouteSpec(route.Spec{
+		Path: "/cond/q", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: benchPredicates(b, nil, map[string]string{"v": "1"}, false), Handler: benchHandler,
+	}); err != nil {
 		b.Fatal(err)
 	}
 	benchHeaderRequest(b, r, "/cond/q?v=1", nil, true)
@@ -288,8 +292,10 @@ func BenchmarkPredicateQuery(b *testing.B) {
 // header and query predicates on one candidate
 func BenchmarkPredicateMixed(b *testing.B) {
 	r := newBenchRouter(b, 10, 0)
-	if err := r.RegisterRouteSpec(route.Spec{Path: "/cond/m", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: benchPredicates(b, map[string]string{"X-Tenant": "t"}, map[string]string{"v": "1"}, false), Handler: benchHandler}); err != nil {
+	if err := r.RegisterRouteSpec(route.Spec{
+		Path: "/cond/m", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: benchPredicates(b, map[string]string{"X-Tenant": "t"}, map[string]string{"v": "1"}, false), Handler: benchHandler,
+	}); err != nil {
 		b.Fatal(err)
 	}
 	benchHeaderRequest(b, r, "/cond/m?v=1", map[string]string{"X-Tenant": "t"}, true)
@@ -300,8 +306,10 @@ func BenchmarkPredicateMixed(b *testing.B) {
 func newBenchCandidateRouter(b *testing.B, n int) *lmRouter {
 	r := newBenchRouter(b, 10, 0)
 	for i := range n {
-		if err := r.RegisterRouteSpec(route.Spec{Path: "/cond/slot", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-			Predicates: benchPredicates(b, map[string]string{"X-Tenant": fmt.Sprintf("t%03d", i)}, nil, false), Handler: benchHandler}); err != nil {
+		if err := r.RegisterRouteSpec(route.Spec{
+			Path: "/cond/slot", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+			Predicates: benchPredicates(b, map[string]string{"X-Tenant": fmt.Sprintf("t%03d", i)}, nil, false), Handler: benchHandler,
+		}); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -332,8 +340,10 @@ func BenchmarkPredicateFallbackExactToPrefix(b *testing.B) {
 // a failed prefix candidate falls to the next shorter prefix
 func BenchmarkPredicateFallbackPrefixToPrefix(b *testing.B) {
 	r := newBenchRouter(b, 10, 0)
-	if err := r.RegisterRouteSpec(route.Spec{Path: "/cond/deep/", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypePrefix,
-		Predicates: benchPredicates(b, map[string]string{"X-Tenant": "t"}, nil, false), Handler: benchHandler}); err != nil {
+	if err := r.RegisterRouteSpec(route.Spec{
+		Path: "/cond/deep/", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypePrefix,
+		Predicates: benchPredicates(b, map[string]string{"X-Tenant": "t"}, nil, false), Handler: benchHandler,
+	}); err != nil {
 		b.Fatal(err)
 	}
 	if err := r.RegisterRoute("/cond/", nil, nil, matching.PathMatchTypePrefix, benchHandler); err != nil {
@@ -347,8 +357,10 @@ func BenchmarkPredicateFallbackPrefixToPrefix(b *testing.B) {
 func BenchmarkPredicateManyQueryOneParse(b *testing.B) {
 	r := newBenchRouter(b, 10, 0)
 	for i := range 10 {
-		if err := r.RegisterRouteSpec(route.Spec{Path: "/cond/q", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-			Predicates: benchPredicates(b, nil, map[string]string{"v": fmt.Sprintf("%d", i)}, false), Handler: benchHandler}); err != nil {
+		if err := r.RegisterRouteSpec(route.Spec{
+			Path: "/cond/q", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+			Predicates: benchPredicates(b, nil, map[string]string{"v": fmt.Sprintf("%d", i)}, false), Handler: benchHandler,
+		}); err != nil {
 			b.Fatal(err)
 		}
 	}

@@ -40,8 +40,10 @@ func newTemplate(t *testing.T) *bo.Options {
 
 func TestInstantiate(t *testing.T) {
 	tmpl := newTemplate(t)
-	m := discovery.Member{Name: "pod-1", Scheme: "http",
-		Address: "10.0.0.1:9090", Weight: 2}
+	m := discovery.Member{
+		Name: "pod-1", Scheme: "http",
+		Address: "10.0.0.1:9090", Weight: 2,
+	}
 	o, err := Instantiate("my-alb-pod-1", tmpl, m)
 	require.NoError(t, err)
 	require.Equal(t, "my-alb-pod-1", o.Name)

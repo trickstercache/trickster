@@ -268,8 +268,10 @@ func TestRegisterProxyRoutesGraphite(t *testing.T) {
 		map[string]string{headers.NameContentType: "application/json"})
 	defer origin.Close()
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", origin.URL,
-		"-provider", providers.Graphite})
+	conf, err := config.Load([]string{
+		"-log-level", "debug", "-origin-url", origin.URL,
+		"-provider", providers.Graphite,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -798,6 +800,7 @@ func TestBackendRoutesOnMultipleHTTPListeners(t *testing.T) {
 		t.Fatal("duplicated backend clients for listener bindings")
 	}
 }
+
 func TestPassthroughLaneSelection(t *testing.T) {
 	conf := config.NewConfig()
 	o := conf.Backends["default"]
@@ -1297,8 +1300,10 @@ func TestRegisterDefaultBackendRoutesSegment(t *testing.T) {
 	oo.Paths = po.List{p}
 	rtr := lm.NewRouter()
 	RegisterDefaultBackendRoutes(rtr, conf, backends.Backends{"default": rpc}, nil)
-	for path, want := range map[string]int{"/seg": http.StatusOK, "/seg/x": http.StatusOK,
-		"/segment": http.StatusNotFound} {
+	for path, want := range map[string]int{
+		"/seg": http.StatusOK, "/seg/x": http.StatusOK,
+		"/segment": http.StatusNotFound,
+	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		w := httptest.NewRecorder()
 		rtr.ServeHTTP(w, req)

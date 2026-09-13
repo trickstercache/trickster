@@ -69,8 +69,10 @@ func TestProblemEventReason(t *testing.T) {
 
 func TestHashIgnoresUIDs(t *testing.T) {
 	a := &IR{Routes: []Route{{Name: "r", Source: Source{Kind: KindIngress, Name: "web"}}}}
-	b := &IR{Routes: []Route{{Name: "r", Source: Source{Kind: KindIngress, Name: "web",
-		UID: "1234"}}}}
+	b := &IR{Routes: []Route{{Name: "r", Source: Source{
+		Kind: KindIngress, Name: "web",
+		UID: "1234",
+	}}}}
 	require.Equal(t, a.Hash(), b.Hash())
 	require.Equal(t, "1234", b.Routes[0].Source.UID, "hashing must not strip the input")
 }

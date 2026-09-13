@@ -50,7 +50,8 @@ const controllerName = appinfo.Domain + "/gateway-controller"
 // gatewayGVR is the Gateway resource, named explicitly because the fake's
 // tracker pluralizes the kind to "gatewaies"
 var gatewayGVR = schema.GroupVersionResource{
-	Group: gwapiv1.GroupName, Version: "v1", Resource: "gateways"}
+	Group: gwapiv1.GroupName, Version: "v1", Resource: "gateways",
+}
 
 // cache is a Cache over fixed objects, which a test updates with what was written
 type cache struct {
@@ -98,9 +99,10 @@ var policyListKinds = map[schema.GroupVersionResource]string{
 
 func cachePolicy() *cachepolicy.CachePolicy {
 	return &cachepolicy.CachePolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "cp", Generation: 5, UID: "cp-uid"},
+		Namespace: "shop", Name: "cp", Generation: 5, UID: "cp-uid",
 		Spec: cachepolicy.Spec{TargetRefs: []cachepolicy.TargetRef{
-			{Kind: cachepolicy.KindHTTPRoute, Name: "web"}}},
+			{Kind: cachepolicy.KindHTTPRoute, Name: "web"},
+		}},
 		Status: gwapiv1.PolicyStatus{Ancestors: []gwapiv1.PolicyAncestorStatus{{
 			AncestorRef: gwapiv1.ParentReference{Name: "web"}, ControllerName: "other.example.com",
 		}}},
@@ -109,8 +111,10 @@ func cachePolicy() *cachepolicy.CachePolicy {
 
 func policyReport() ir.PolicyStatus {
 	return ir.PolicyStatus{
-		Source: ir.Source{Kind: ir.KindCachePolicy, Namespace: "shop", Name: "cp",
-			Generation: 5, UID: "cp-uid"},
+		Source: ir.Source{
+			Kind: ir.KindCachePolicy, Namespace: "shop", Name: "cp",
+			Generation: 5, UID: "cp-uid",
+		},
 		Ancestors: []ir.AncestorStatus{{
 			Ref:        ir.ParentRef{Kind: cachepolicy.KindHTTPRoute, Namespace: "shop", Name: "web"},
 			Conditions: []ir.Condition{cond("Accepted", true, "Accepted")},
@@ -120,30 +124,32 @@ func policyReport() ir.PolicyStatus {
 
 func class() *gwapiv1.GatewayClass {
 	return &gwapiv1.GatewayClass{
-		ObjectMeta: metav1.ObjectMeta{Name: "trickster", Generation: 2},
-		Spec:       gwapiv1.GatewayClassSpec{ControllerName: controllerName},
+		Name: "trickster", Generation: 2,
+		Spec: gwapiv1.GatewayClassSpec{ControllerName: controllerName},
 	}
 }
 
 func gateway() *gwapiv1.Gateway {
 	return &gwapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "infra", Name: "gw", Generation: 3},
+		Namespace: "infra", Name: "gw", Generation: 3,
 		Spec: gwapiv1.GatewaySpec{GatewayClassName: "trickster", Listeners: []gwapiv1.Listener{
-			{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType}}},
+			{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType},
+		}},
 	}
 }
 
 func route() *gwapiv1.HTTPRoute {
 	ns := gwapiv1.Namespace("infra")
 	return &gwapiv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web", Generation: 4},
+		Namespace: "shop", Name: "web", Generation: 4,
 		Spec: gwapiv1.HTTPRouteSpec{CommonRouteSpec: gwapiv1.CommonRouteSpec{
-			ParentRefs: []gwapiv1.ParentReference{{Namespace: &ns, Name: "gw"}}}},
+			ParentRefs: []gwapiv1.ParentReference{{Namespace: &ns, Name: "gw"}},
+		}},
 	}
 }
 
 func ingress() *netv1.Ingress {
-	return &netv1.Ingress{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"}}
+	return &netv1.Ingress{Namespace: "shop", Name: "web"}
 }
 
 func cond(typ string, status bool, reason string) ir.Condition {
@@ -160,13 +166,15 @@ func report() *ir.Report {
 		Gateways: []ir.GatewayStatus{{
 			Source: gwSrc,
 			Conditions: []ir.Condition{
-				cond("Accepted", true, "Accepted"), cond("Programmed", true, "Programmed")},
+				cond("Accepted", true, "Accepted"), cond("Programmed", true, "Programmed"),
+			},
 			Listeners: []ir.ListenerStatus{{
 				Name: "http", SupportedKinds: []string{"HTTPRoute"}, AttachedRoutes: 1,
 				Conditions: []ir.Condition{
 					cond("Accepted", true, "Accepted"), cond("Programmed", true, "Programmed"),
 					cond("ResolvedRefs", true, "ResolvedRefs"),
-					cond("Conflicted", false, "NoConflicts")},
+					cond("Conflicted", false, "NoConflicts"),
+				},
 			}},
 		}},
 		Routes: []ir.RouteStatus{{
@@ -174,7 +182,8 @@ func report() *ir.Report {
 			Parents: []ir.ParentStatus{{
 				Ref: ir.ParentRef{Namespace: "infra", Name: "gw"},
 				Conditions: []ir.Condition{
-					cond("Accepted", true, "Accepted"), cond("ResolvedRefs", true, "ResolvedRefs")},
+					cond("Accepted", true, "Accepted"), cond("ResolvedRefs", true, "ResolvedRefs"),
+				},
 			}},
 		}},
 		Ingresses: []ir.Source{{Kind: ir.KindIngress, Namespace: "shop", Name: "web"}},
@@ -257,9 +266,13 @@ func updatesOf(actions []ktesting.Action, resource string) int {
 
 func TestWriteEverything(t *testing.T) {
 	h := newHarness(t)
-	in := Input{Report: report(), Programmed: true, WantAddresses: true,
-		Addresses: []Address{{Type: AddressIP, Value: "10.0.0.1"},
-			{Type: AddressHostname, Value: "lb.example.com"}}}
+	in := Input{
+		Report: report(), Programmed: true, WantAddresses: true,
+		Addresses: []Address{
+			{Type: AddressIP, Value: "10.0.0.1"},
+			{Type: AddressHostname, Value: "lb.example.com"},
+		},
+	}
 	require.Equal(t, 0, h.w.Write(t.Context(), in))
 	h.refresh(t)
 
@@ -299,7 +312,8 @@ func TestWriteEverything(t *testing.T) {
 
 	i := h.c.ingresses["shop/web"]
 	require.Equal(t, []netv1.IngressLoadBalancerIngress{
-		{IP: "10.0.0.1"}, {Hostname: "lb.example.com"}}, i.Status.LoadBalancer.Ingress)
+		{IP: "10.0.0.1"}, {Hostname: "lb.example.com"},
+	}, i.Status.LoadBalancer.Ingress)
 
 	// the same input against what is now in cache writes nothing
 	h.cs.ClearActions()
@@ -361,8 +375,10 @@ func TestWritePolicies(t *testing.T) {
 
 	// without the resource nothing is written for it
 	h.c.policies["shop/cp"] = cachePolicy()
-	none := New(Config{Client: h.cs, GatewayClient: h.gwcs, Cache: h.c,
-		ControllerName: controllerName})
+	none := New(Config{
+		Client: h.cs, GatewayClient: h.gwcs, Cache: h.c,
+		ControllerName: controllerName,
+	})
 	require.Equal(t, 0, none.Write(t.Context(), in))
 	require.Equal(t, 0, updates(h.dyn.Actions()))
 }
@@ -419,8 +435,10 @@ func TestWriteLowersProgrammed(t *testing.T) {
 		meta.FindStatusCondition(gw.Status.Conditions, "Accepted").Status)
 
 	// a published service with no address yet is a gateway-level wait, not a listener one
-	require.Equal(t, 0, h.w.Write(t.Context(), Input{Report: report(), Programmed: true,
-		WantAddresses: true}))
+	require.Equal(t, 0, h.w.Write(t.Context(), Input{
+		Report: report(), Programmed: true,
+		WantAddresses: true,
+	}))
 	h.refresh(t)
 	gw = h.c.gateways["infra/gw"]
 	programmed = meta.FindStatusCondition(gw.Status.Conditions, "Programmed")
@@ -435,14 +453,22 @@ func TestWriteKeepsOtherControllersRouteParents(t *testing.T) {
 	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	r := route()
 	r.Status.Parents = []gwapiv1.RouteParentStatus{
-		{ParentRef: gwapiv1.ParentReference{Name: "theirs"}, ControllerName: "other.io/ctl",
-			Conditions: []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue}}},
-		{ParentRef: gwapiv1.ParentReference{Name: "stale"}, ControllerName: controllerName,
-			Conditions: []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue}}},
-		{ParentRef: gwapiv1.ParentReference{Namespace: &ns, Name: "gw"},
+		{
+			ParentRef: gwapiv1.ParentReference{Name: "theirs"}, ControllerName: "other.io/ctl",
+			Conditions: []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue}},
+		},
+		{
+			ParentRef: gwapiv1.ParentReference{Name: "stale"}, ControllerName: controllerName,
+			Conditions: []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue}},
+		},
+		{
+			ParentRef:      gwapiv1.ParentReference{Namespace: &ns, Name: "gw"},
 			ControllerName: controllerName,
-			Conditions: []metav1.Condition{{Type: "Accepted", Status: metav1.ConditionTrue,
-				Reason: "Accepted", LastTransitionTime: metav1.NewTime(old)}}},
+			Conditions: []metav1.Condition{{
+				Type: "Accepted", Status: metav1.ConditionTrue,
+				Reason: "Accepted", LastTransitionTime: metav1.NewTime(old),
+			}},
+		},
 	}
 	h.c.routes["shop/web"] = r
 	_, err := h.gwcs.GatewayV1().HTTPRoutes("shop").Update(t.Context(), r, metav1.UpdateOptions{})
@@ -520,8 +546,10 @@ func TestWriteSkipsWhatIsNotThere(t *testing.T) {
 func TestWriteWithoutGatewayAPI(t *testing.T) {
 	h := newHarness(t)
 	h.w = New(Config{Client: h.cs, Cache: h.c, ControllerName: controllerName})
-	require.Equal(t, 0, h.w.Write(t.Context(), Input{Report: report(), Programmed: true,
-		WantAddresses: true, Addresses: []Address{{Type: AddressIP, Value: "10.0.0.2"}}}))
+	require.Equal(t, 0, h.w.Write(t.Context(), Input{
+		Report: report(), Programmed: true,
+		WantAddresses: true, Addresses: []Address{{Type: AddressIP, Value: "10.0.0.2"}},
+	}))
 	require.Equal(t, 0, updates(h.gwcs.Actions()))
 	h.refresh(t)
 	require.Equal(t, "10.0.0.2", h.c.ingresses["shop/web"].Status.LoadBalancer.Ingress[0].IP)
@@ -533,7 +561,8 @@ func TestAddresses(t *testing.T) {
 	svc := &corev1.Service{Spec: corev1.ServiceSpec{ExternalIPs: []string{"192.0.2.1"}}}
 	require.Equal(t, []Address{{Type: AddressIP, Value: "192.0.2.1"}}, Addresses(svc))
 	svc.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{
-		{IP: "10.0.0.1"}, {Hostname: "lb.example.com"}}
+		{IP: "10.0.0.1"}, {Hostname: "lb.example.com"},
+	}
 	require.Equal(t, []Address{
 		{Type: AddressIP, Value: "10.0.0.1"}, {Type: AddressHostname, Value: "lb.example.com"},
 	}, Addresses(svc), "load balancer addresses take precedence over external IPs")
@@ -541,8 +570,10 @@ func TestAddresses(t *testing.T) {
 }
 
 func TestParentRefRoundTrip(t *testing.T) {
-	in := ir.ParentRef{Group: gwapiv1.GroupName, Kind: "Gateway", Namespace: "infra",
-		Name: "gw", SectionName: "http", Port: 80}
+	in := ir.ParentRef{
+		Group: gwapiv1.GroupName, Kind: "Gateway", Namespace: "infra",
+		Name: "gw", SectionName: "http", Port: 80,
+	}
 	ref := parentRef(in)
 	require.EqualValues(t, gwapiv1.GroupName, *ref.Group)
 	require.EqualValues(t, "Gateway", *ref.Kind)
@@ -604,8 +635,10 @@ func TestWriteIngressAddressesOnlyWhenPublishing(t *testing.T) {
 	require.Equal(t, "203.0.113.9", h.c.ingresses["shop/web"].Status.LoadBalancer.Ingress[0].IP)
 
 	// a configured Service that has lost its addresses clears what this controller published
-	require.Equal(t, 0, h.w.Write(t.Context(), Input{Report: report(), Programmed: true,
-		WantAddresses: true}))
+	require.Equal(t, 0, h.w.Write(t.Context(), Input{
+		Report: report(), Programmed: true,
+		WantAddresses: true,
+	}))
 	h.refresh(t)
 	require.Empty(t, h.c.ingresses["shop/web"].Status.LoadBalancer.Ingress)
 }
@@ -638,16 +671,16 @@ func TestWriteStreamRouteStatus(t *testing.T) {
 	ns := gwapiv1.Namespace("infra")
 	common := gwapiv1.CommonRouteSpec{ParentRefs: []gwapiv1.ParentReference{{Namespace: &ns, Name: "gw"}}}
 	tcp := &gwapiv1a2.TCPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "db", Generation: 2},
-		Spec:       gwapiv1a2.TCPRouteSpec{CommonRouteSpec: common},
+		Namespace: "data", Name: "db", Generation: 2,
+		Spec: gwapiv1a2.TCPRouteSpec{CommonRouteSpec: common},
 	}
 	tlsr := &gwapiv1a2.TLSRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "shop", Generation: 3},
-		Spec:       gwapiv1a2.TLSRouteSpec{CommonRouteSpec: common},
+		Namespace: "data", Name: "shop", Generation: 3,
+		Spec: gwapiv1a2.TLSRouteSpec{CommonRouteSpec: common},
 	}
 	udp := &gwapiv1a2.UDPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "dns", Generation: 4},
-		Spec:       gwapiv1a2.UDPRouteSpec{CommonRouteSpec: common},
+		Namespace: "data", Name: "dns", Generation: 4,
+		Spec: gwapiv1a2.UDPRouteSpec{CommonRouteSpec: common},
 	}
 	h := newHarness(t, tcp, tlsr, udp)
 	h.c.tcp["data/db"] = tcp
@@ -684,9 +717,10 @@ func TestWriteGRPCRouteStatus(t *testing.T) {
 	// one the cache no longer holds is skipped rather than failed
 	ns := gwapiv1.Namespace("infra")
 	gr := &gwapiv1.GRPCRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "rpc", Generation: 2},
+		Namespace: "shop", Name: "rpc", Generation: 2,
 		Spec: gwapiv1.GRPCRouteSpec{CommonRouteSpec: gwapiv1.CommonRouteSpec{
-			ParentRefs: []gwapiv1.ParentReference{{Namespace: &ns, Name: "gw"}}}},
+			ParentRefs: []gwapiv1.ParentReference{{Namespace: &ns, Name: "gw"}},
+		}},
 	}
 	h := newHarness(t, gr)
 	h.c.grpc["shop/rpc"] = gr

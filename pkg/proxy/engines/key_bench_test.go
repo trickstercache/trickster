@@ -31,8 +31,10 @@ import (
 // the configured identity is canonicalized once at path initialization, so
 // derivation cost must not grow with the static identity field count
 func benchmarkDeriveCacheKey(b *testing.B, hdrs, params map[string]string) {
-	pc := &po.Options{Path: "/", CacheKeyParams: []string{"query", "step", "time"},
-		RequestHeaders: hdrs, RequestParams: params}
+	pc := &po.Options{
+		Path: "/", CacheKeyParams: []string{"query", "step", "time"},
+		RequestHeaders: hdrs, RequestParams: params,
+	}
 	if err := pc.Initialize(""); err != nil {
 		b.Fatal(err)
 	}

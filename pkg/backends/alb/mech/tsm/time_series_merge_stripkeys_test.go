@@ -68,8 +68,8 @@ func TestComputeStripKeysUsesNestedProvider(t *testing.T) {
 	st := &healthcheck.Status{}
 	st.Set(healthcheck.StatusPassing)
 	nested := &nestedStripKeysStubBackend{
-		stripKeysStubBackend: stripKeysStubBackend{cfg: &bo.Options{Name: "nested"}},
-		keys:                 []string{"route", "tenant"},
+		cfg:  &bo.Options{Name: "nested"},
+		keys: []string{"route", "tenant"},
 	}
 	target := pool.NewTarget(http.NotFoundHandler(), st, nested)
 	got := append([]string(nil), h.computeStripKeys(pool.Targets{target})...)

@@ -310,7 +310,8 @@ func (c *TestClient) BuildUpstreamURL(r *http.Request) *url.URL {
 
 // SetExtent will change the upstream request query to use the provided Extent
 func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
-	extent *timeseries.Extent) error {
+	extent *timeseries.Extent,
+) error {
 	call := c.setExtentCalls.Add(1)
 	if c.setExtentErr != nil && (c.setExtentErrorAfter == 0 || call > c.setExtentErrorAfter) {
 		return c.setExtentErr

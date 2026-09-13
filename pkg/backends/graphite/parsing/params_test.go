@@ -29,9 +29,11 @@ func TestParseRenderParams(t *testing.T) {
 		"cacheTimeout": {"0"},
 	}
 	p := ParseRenderParams(v)
-	want := RenderParams{Targets: []string{"a.b", "c.d"}, From: "-6h", Until: "now", Now: "1787343600",
+	want := RenderParams{
+		Targets: []string{"a.b", "c.d"}, From: "-6h", Until: "now", Now: "1787343600",
 		TZ: "UTC", Format: "json", JSONP: "cb", Pretty: true, MaxDataPoints: 743, NoNullPoints: true,
-		XFilesFactor: "0.5", Local: true, GraphType: "line", Template: map[string]string{"host": "web1"}}
+		XFilesFactor: "0.5", Local: true, GraphType: "line", Template: map[string]string{"host": "web1"},
+	}
 	if p.Declined != "" || len(p.Targets) != 2 || p.From != want.From || p.Until != want.Until ||
 		p.Now != want.Now || p.TZ != want.TZ || p.Format != want.Format || p.JSONP != want.JSONP ||
 		!p.Pretty || p.MaxDataPoints != 743 || !p.NoNullPoints || p.XFilesFactor != "0.5" ||

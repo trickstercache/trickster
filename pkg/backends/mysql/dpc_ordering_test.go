@@ -340,12 +340,16 @@ func TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch(t *testing.T) {
 				{Name: "value", Type: querypb.Type_INT64},
 			},
 			Rows: [][]sqltypes.Value{
-				{sqltypes.NewInt64(0),
+				{
+					sqltypes.NewInt64(0),
 					sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("small")),
-					sqltypes.NewInt64(1)},
-				{sqltypes.NewInt64(60),
+					sqltypes.NewInt64(1),
+				},
+				{
+					sqltypes.NewInt64(60),
 					sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("large")),
-					sqltypes.NewInt64(2)},
+					sqltypes.NewInt64(2),
+				},
 			},
 		}
 	})

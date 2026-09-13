@@ -151,8 +151,10 @@ func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 
 	// backend "a" carries a configured identity on the purged path, so its
 	// entries are stored under the identity-keyed variant as well
-	pathA := &po.Options{Path: purgePath, Methods: methods,
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic pinned"}}
+	pathA := &po.Options{
+		Path: purgePath, Methods: methods,
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic pinned"},
+	}
 	if err := pathA.Initialize(""); err != nil {
 		t.Fatal(err)
 	}

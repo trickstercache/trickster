@@ -74,8 +74,10 @@ func TestInitializeDefaults(t *testing.T) {
 	require.NotNil(t, o.DNS)
 	require.Equal(t, timeconv.Duration(dnsopts.DefaultInterval), o.DNS.Interval)
 
-	o = &Options{Provider: providers.Kubernetes,
-		Kubernetes: &kubeopts.Options{Kubeconfig: "/tmp/kc"}}
+	o = &Options{
+		Provider:   providers.Kubernetes,
+		Kubernetes: &kubeopts.Options{Kubeconfig: "/tmp/kc"},
+	}
 	require.NoError(t, o.Initialize("k"))
 	require.False(t, o.Kubernetes.InCluster,
 		"a provided kubeconfig must not be overridden to in_cluster")
@@ -90,19 +92,33 @@ func TestOptionsValidate(t *testing.T) {
 		{"missing provider", &Options{}, false},
 		{"invalid provider", &Options{Provider: "consul"}, false},
 		{"valid file", &Options{Provider: providers.File}, true},
-		{"kube block on file provider", &Options{Provider: providers.File,
-			Kubernetes: &kubeopts.Options{}}, false},
-		{"dns block on kube provider", &Options{Provider: providers.Kubernetes,
-			DNS: &dnsopts.Options{}}, false},
-		{"in_cluster + kubeconfig", &Options{Provider: providers.Kubernetes,
-			Kubernetes: &kubeopts.Options{InCluster: true, Kubeconfig: "/x"}}, false},
-		{"bad resolver", &Options{Provider: providers.DNSSRV,
-			DNS: &dnsopts.Options{Resolver: "not-host-port"}}, false},
-		{"interval too low", &Options{Provider: providers.DNSA,
-			DNS: &dnsopts.Options{Interval: timeconv.Duration(time.Millisecond)}}, false},
-		{"valid dns", &Options{Provider: providers.DNSSRV,
-			DNS: &dnsopts.Options{Resolver: "10.0.0.53:53",
-				Interval: timeconv.Duration(time.Minute)}}, true},
+		{"kube block on file provider", &Options{
+			Provider:   providers.File,
+			Kubernetes: &kubeopts.Options{},
+		}, false},
+		{"dns block on kube provider", &Options{
+			Provider: providers.Kubernetes,
+			DNS:      &dnsopts.Options{},
+		}, false},
+		{"in_cluster + kubeconfig", &Options{
+			Provider:   providers.Kubernetes,
+			Kubernetes: &kubeopts.Options{InCluster: true, Kubeconfig: "/x"},
+		}, false},
+		{"bad resolver", &Options{
+			Provider: providers.DNSSRV,
+			DNS:      &dnsopts.Options{Resolver: "not-host-port"},
+		}, false},
+		{"interval too low", &Options{
+			Provider: providers.DNSA,
+			DNS:      &dnsopts.Options{Interval: timeconv.Duration(time.Millisecond)},
+		}, false},
+		{"valid dns", &Options{
+			Provider: providers.DNSSRV,
+			DNS: &dnsopts.Options{
+				Resolver: "10.0.0.53:53",
+				Interval: timeconv.Duration(time.Minute),
+			},
+		}, true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -122,8 +138,10 @@ func TestLookupValidateNilEntry(t *testing.T) {
 }
 
 func TestClone(t *testing.T) {
-	o := &Options{Provider: providers.DNSSRV, Name: "d",
-		DNS: &dnsopts.Options{Resolver: "r:53"}}
+	o := &Options{
+		Provider: providers.DNSSRV, Name: "d",
+		DNS: &dnsopts.Options{Resolver: "r:53"},
+	}
 	c := o.Clone()
 	require.Equal(t, o, c)
 	c.DNS.Resolver = "other:53"
@@ -146,8 +164,10 @@ func TestFileOptions(t *testing.T) {
 	require.NoError(t, err)
 
 	// explicit interval preserved
-	o = &Options{Provider: providers.File,
-		File: &fileopts.Options{PollInterval: timeconv.Duration(5 * time.Second)}}
+	o = &Options{
+		Provider: providers.File,
+		File:     &fileopts.Options{PollInterval: timeconv.Duration(5 * time.Second)},
+	}
 	require.NoError(t, o.Initialize("f"))
 	require.Equal(t, timeconv.Duration(5*time.Second), o.File.PollInterval)
 
@@ -157,14 +177,18 @@ func TestFileOptions(t *testing.T) {
 	require.Error(t, err)
 
 	// sub-minimum poll interval is rejected
-	o = &Options{Provider: providers.File,
-		File: &fileopts.Options{PollInterval: timeconv.Duration(time.Millisecond)}}
+	o = &Options{
+		Provider: providers.File,
+		File:     &fileopts.Options{PollInterval: timeconv.Duration(time.Millisecond)},
+	}
 	_, err = o.Validate()
 	require.Error(t, err)
 
 	// clone is deep
-	o = &Options{Provider: providers.File,
-		File: &fileopts.Options{PollInterval: timeconv.Duration(time.Minute)}}
+	o = &Options{
+		Provider: providers.File,
+		File:     &fileopts.Options{PollInterval: timeconv.Duration(time.Minute)},
+	}
 	c := o.Clone()
 	c.File.PollInterval = 0
 	require.Equal(t, timeconv.Duration(time.Minute), o.File.PollInterval)
@@ -739,8 +763,10 @@ func TestGCPOptions(t *testing.T) {
 	})
 	t.Run("block rejected on other providers", func(t *testing.T) {
 		for _, p := range []string{providers.AWS, providers.File, providers.Consul} {
-			o := &Options{Name: "test", Provider: p,
-				GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE}}
+			o := &Options{
+				Name: "test", Provider: p,
+				GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE},
+			}
 			_, err := o.Validate()
 			require.Error(t, err, "gcp block should be rejected on %s", p)
 		}

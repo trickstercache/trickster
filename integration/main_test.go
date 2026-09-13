@@ -199,8 +199,10 @@ func waitForClickHouseData(t *testing.T, clickhouseAddr string) {
 func waitForGraphiteData(t *testing.T, graphiteAddr string) {
 	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		q := url.Values{"target": {"dev.fast.cpu.host01.percent"},
-			"from": {"-10min"}, "until": {"-1min"}, "format": {"json"}}
+		q := url.Values{
+			"target": {"dev.fast.cpu.host01.percent"},
+			"from":   {"-10min"}, "until": {"-1min"}, "format": {"json"},
+		}
 		resp, err := http.Get("http://" + graphiteAddr + "/render?" + q.Encode())
 		if !assert.NoError(collect, err) {
 			return
