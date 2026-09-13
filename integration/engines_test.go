@@ -17,12 +17,12 @@
 package integration
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"net/url"
 	"strconv"
 	"strings"
@@ -31,64 +31,41 @@ import (
 	"testing"
 	"time"
 
+	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type engineFakeOrigin struct {
-	srv     *httptest.Server
-	handler func(http.ResponseWriter, *http.Request)
-	mu      sync.Mutex
+type engineFixture struct {
+	tricksterAddr string
+	metricsAddr   string
+	client        *http.Client
 }
 
-func (o *engineFakeOrigin) setHandler(h func(http.ResponseWriter, *http.Request)) {
-	o.mu.Lock()
-	o.handler = h
-	o.mu.Unlock()
-}
-
-var (
-	engSetupOnce     sync.Once
-	engOrigin        *engineFakeOrigin
-	engTricksterAddr string
-	engMetricsAddr   string
-)
-
-func engineSetup(t *testing.T) *engineFakeOrigin {
+func engineSetup(t *testing.T, path string, handler http.HandlerFunc) *engineFixture {
 	t.Helper()
-	engSetupOnce.Do(func() {
-		o := &engineFakeOrigin{}
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path == "/api/v1/status/buildinfo" {
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"status":"success","data":{"version":"test"}}`))
-				return
-			}
-			o.mu.Lock()
-			h := o.handler
-			o.mu.Unlock()
-			if h == nil {
-				http.Error(w, "no handler", http.StatusServiceUnavailable)
-				return
-			}
-			h(w, r)
-		}))
-		o.srv = srv
-		engOrigin = o
-
-		h := staticConfigHarness(t, "testdata/configs/engines.yaml")
-		rewriteGeneratedConfig(t, h.ConfigPath, "http://127.0.0.1:18520", srv.URL)
-		engTricksterAddr = h.BaseAddr
-		engMetricsAddr = h.MetricsAddr
-		if h.releasePorts != nil {
-			h.releasePorts()
-		}
-		ctx := context.Background()
-		go startTrickster(t, ctx, expectedStartError{},
-			"-config", h.ConfigPath)
-		waitForTrickster(t, engMetricsAddr)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/status/buildinfo", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"version":"test"}}`))
 	})
-	return engOrigin
+	mux.HandleFunc(path, handler)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	h := staticConfigHarness(t, "testdata/configs/engines.yaml")
+	rewriteGeneratedConfig(t, h.ConfigPath, "http://127.0.0.1:18520", srv.URL)
+	h.start(t)
+
+	transport := &http.Transport{DisableCompression: true}
+	t.Cleanup(transport.CloseIdleConnections)
+	return &engineFixture{
+		tricksterAddr: h.BaseAddr,
+		metricsAddr:   h.MetricsAddr,
+		client:        &http.Client{Transport: transport, Timeout: 15 * time.Second},
+	}
 }
 
 func engValidRangeBody(start, end, step int64) string {
@@ -123,49 +100,100 @@ func engRangeParams(querySuffix string) (url.Values, int64, int64, int64) {
 	}, start, end, step
 }
 
-func doEngineRange(t *testing.T, params url.Values) (int, []byte, http.Header) {
-	t.Helper()
-	u := "http://" + engTricksterAddr + "/prom-fake/api/v1/query_range?" + params.Encode()
-	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
-	resp, err := client.Get(u)
-	require.NoError(t, err)
+func doEngineRequest(client *http.Client, requestURL string) (int, []byte, http.Header, error) {
+	resp, err := client.Get(requestURL)
+	if err != nil {
+		return 0, nil, nil, err
+	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	return resp.StatusCode, b, resp.Header.Clone()
+	return resp.StatusCode, b, resp.Header.Clone(), err
+}
+
+type engineResult struct {
+	status int
+	body   []byte
+	header http.Header
+	err    error
+}
+
+// doEngineRangeBurst holds the origin until every client has written its request to Trickster.
+func doEngineRangeBurst(t *testing.T, f *engineFixture, params url.Values, n int, release func()) []engineResult {
+	t.Helper()
+	start := make(chan struct{})
+	written := make(chan struct{}, n)
+	results := make(chan engineResult, n)
+	u := "http://" + f.tricksterAddr + "/prom-fake/api/v1/query_range?" + params.Encode()
+
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for range n {
+		go func() {
+			defer wg.Done()
+			req, err := http.NewRequest(http.MethodGet, u, nil)
+			if err != nil {
+				results <- engineResult{err: err}
+				return
+			}
+			var signaled sync.Once
+			trace := &httptrace.ClientTrace{WroteRequest: func(httptrace.WroteRequestInfo) {
+				signaled.Do(func() { written <- struct{}{} })
+			}}
+			req = req.WithContext(httptrace.WithClientTrace(req.Context(), trace))
+			<-start
+			resp, err := f.client.Do(req)
+			if err != nil {
+				results <- engineResult{err: err}
+				return
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			results <- engineResult{status: resp.StatusCode, body: body,
+				header: resp.Header.Clone(), err: err}
+		}()
+	}
+	close(start)
+
+	allWritten := true
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	for range n {
+		select {
+		case <-written:
+		case <-timer.C:
+			allWritten = false
+		}
+		if !allWritten {
+			break
+		}
+	}
+	release()
+	wg.Wait()
+	close(results)
+	require.True(t, allWritten, "not all requests were written to Trickster before timeout")
+	collected := make([]engineResult, 0, n)
+	for result := range results {
+		collected = append(collected, result)
+	}
+	return collected
 }
 
 func TestEngines_PCF_Collapse(t *testing.T) {
-	origin := engineSetup(t)
-
 	params, start, end, step := engRangeParams(fmt.Sprintf("%d_944", time.Now().UnixNano()))
 	var counter atomic.Int32
-	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
+	release := make(chan struct{})
+	f := engineSetup(t, "/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
 		counter.Add(1)
-		time.Sleep(500 * time.Millisecond)
+		<-release
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, engValidRangeBody(start, end, step))
 	})
 
 	const n = 20
-	type result struct {
-		status int
-		body   []byte
-	}
-	results := make(chan result, n)
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
-			defer wg.Done()
-			sc, b, _ := doEngineRange(t, params)
-			results <- result{sc, b}
-		}()
-	}
-	wg.Wait()
-	close(results)
-	for r := range results {
+	results := doEngineRangeBurst(t, f, params, n, func() { close(release) })
+	for _, r := range results {
+		require.NoError(t, r.err)
 		require.Equal(t, http.StatusOK, r.status)
 		require.Contains(t, string(r.body), `"status":"success"`)
 		require.Contains(t, string(r.body), `"resultType":"matrix"`)
@@ -175,44 +203,29 @@ func TestEngines_PCF_Collapse(t *testing.T) {
 }
 
 func TestEngines_Singleflight_ErrorPropagation(t *testing.T) {
-	origin := engineSetup(t)
-
 	params, _, _, _ := engRangeParams(fmt.Sprintf("%d_939", time.Now().UnixNano()))
 	var counter atomic.Int32
 	const errBody = `{"status":"error","errorType":"internal","error":"origin failure"}`
-	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
+	release := make(chan struct{})
+	f := engineSetup(t, "/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
 		counter.Add(1)
-		time.Sleep(500 * time.Millisecond)
+		<-release
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = io.WriteString(w, errBody)
 	})
 
 	const n = 10
-	type result struct {
-		status int
-		body   string
-	}
-	results := make(chan result, n)
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
-			defer wg.Done()
-			sc, b, _ := doEngineRange(t, params)
-			results <- result{sc, string(b)}
-		}()
-	}
-	wg.Wait()
-	close(results)
+	results := doEngineRangeBurst(t, f, params, n, func() { close(release) })
 
-	for r := range results {
+	for _, r := range results {
+		require.NoError(t, r.err)
 		require.Equal(t, http.StatusServiceUnavailable, r.status)
-		require.NotEmpty(t, r.body,
+		require.NotEmpty(t, string(r.body),
 			"collapsed waiter must see the upstream error body, not empty")
-		require.Contains(t, r.body, "origin failure",
+		require.Contains(t, string(r.body), "origin failure",
 			"collapsed waiter must see the origin's error detail")
-		require.Equal(t, errBody, r.body,
+		require.Equal(t, errBody, string(r.body),
 			"collapsed waiter body must match the origin response byte-for-byte")
 	}
 	require.Equal(t, int32(1), counter.Load(),
@@ -220,32 +233,36 @@ func TestEngines_Singleflight_ErrorPropagation(t *testing.T) {
 }
 
 func TestEngines_Collapse_MetricsReport(t *testing.T) {
-	origin := engineSetup(t)
-
 	params, start, end, step := engRangeParams(fmt.Sprintf("%d_933", time.Now().UnixNano()))
 	var counter atomic.Int32
-	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
+	release := make(chan struct{})
+	f := engineSetup(t, "/api/v1/query_range", func(w http.ResponseWriter, _ *http.Request) {
 		counter.Add(1)
-		time.Sleep(500 * time.Millisecond)
+		<-release
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, engValidRangeBody(start, end, step))
 	})
 
-	before := readProxyHitCount(t)
+	before := readProxyHitCount(t, f.metricsAddr)
 
 	const n = 20
-	var wg sync.WaitGroup
-	wg.Add(n)
-	for range n {
-		go func() {
-			defer wg.Done()
-			sc, _, _ := doEngineRange(t, params)
-			assert.Equal(t, http.StatusOK, sc)
-		}()
+	results := doEngineRangeBurst(t, f, params, n, func() { close(release) })
+	var misses, proxyHits int
+	for _, r := range results {
+		require.NoError(t, r.err)
+		assert.Equal(t, http.StatusOK, r.status)
+		s := parseTricksterResult(r.header.Get(headers.NameTricksterResult))["status"]
+		switch s {
+		case cachestatus.LookupStatusKeyMiss.String():
+			misses++
+		case cachestatus.LookupStatusProxyHit.String():
+			proxyHits++
+		}
 	}
-	wg.Wait()
 	require.Equal(t, int32(1), counter.Load(), "collapse must hit origin exactly once")
+	require.Equal(t, 1, misses, "exactly one request must execute the cache miss")
+	require.Equal(t, n-1, proxyHits, "all other requests must join the in-flight request")
 
 	// Metrics are incremented after the response is flushed. Window is
 	// generous because CI runners under -race + cgroup CPU limits routinely
@@ -253,7 +270,7 @@ func TestEngines_Collapse_MetricsReport(t *testing.T) {
 	// singleflight responses and scrape /metrics.
 	var after float64
 	require.Eventually(t, func() bool {
-		after = readProxyHitCount(t)
+		after = readProxyHitCount(t, f.metricsAddr)
 		return after-before >= float64(n-1)
 	}, 15*time.Second, 25*time.Millisecond,
 		"proxy-hit metric did not reach expected delta (before=%v)", before)
@@ -275,33 +292,27 @@ func engValidVectorBody(n int) string {
 	return buf.String()
 }
 
-func doEngineInstant(t *testing.T, params url.Values) (int, []byte, http.Header) {
+func doEngineInstant(t *testing.T, f *engineFixture, params url.Values) (int, []byte, http.Header) {
 	t.Helper()
-	u := "http://" + engTricksterAddr + "/prom-fake/api/v1/query?" + params.Encode()
-	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
-	resp, err := client.Get(u)
+	u := "http://" + f.tricksterAddr + "/prom-fake/api/v1/query?" + params.Encode()
+	sc, b, h, err := doEngineRequest(f.client, u)
 	require.NoError(t, err)
-	defer resp.Body.Close()
-	b, err := io.ReadAll(resp.Body)
-	require.NoError(t, err)
-	return resp.StatusCode, b, resp.Header.Clone()
+	return sc, b, h
 }
 
 func TestEngines_LargeResponse(t *testing.T) {
-	origin := engineSetup(t)
-
 	const nResults = 500
 	body := engValidVectorBody(nResults)
 	require.Greater(t, len(body), 32*1024)
 
-	origin.setHandler(func(w http.ResponseWriter, r *http.Request) {
+	f := engineSetup(t, "/api/v1/query", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = io.WriteString(w, body)
 	})
 
 	params := url.Values{"query": {fmt.Sprintf("fake + 0*%d", time.Now().UnixNano())}}
-	sc, got, _ := doEngineInstant(t, params)
+	sc, got, _ := doEngineInstant(t, f, params)
 	require.Equal(t, http.StatusOK, sc)
 	require.Greater(t, len(got), 32*1024)
 
@@ -318,9 +329,9 @@ func TestEngines_LargeResponse(t *testing.T) {
 	require.Len(t, results, nResults)
 }
 
-func readProxyHitCount(t *testing.T) float64 {
+func readProxyHitCount(t *testing.T, metricsAddr string) float64 {
 	t.Helper()
-	resp, err := http.Get("http://" + engMetricsAddr + "/metrics")
+	resp, err := http.Get("http://" + metricsAddr + "/metrics")
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
