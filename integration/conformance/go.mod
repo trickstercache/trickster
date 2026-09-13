@@ -3,8 +3,8 @@ module github.com/trickstercache/trickster/v2/integration/conformance
 go 1.27.1
 
 require (
-	sigs.k8s.io/gateway-api v1.6.1
-	sigs.k8s.io/gateway-api/conformance v1.6.1
+	sigs.k8s.io/gateway-api v1.6.2
+	sigs.k8s.io/gateway-api/conformance v1.6.2
 )
 
 require (

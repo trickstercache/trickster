@@ -581,7 +581,8 @@ kind-integration-ingress:
 # because HTTPRoute retries, which the controller implements, exist only
 # there. The Service's externalIPs are set to the worker node, which is how
 # the conformance suite reaches the ports its Gateways declare.
-GATEWAY_API_CRDS = $(shell $(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api)/config/crd/experimental
+GATEWAY_API_CRDS = $(shell cd integration/conformance && \
+	$(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api)/config/crd/experimental
 .PHONY: kind-integration-gateway
 kind-integration-gateway:
 	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k $(GATEWAY_API_CRDS)
