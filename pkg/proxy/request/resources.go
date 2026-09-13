@@ -33,6 +33,8 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Resources is a collection of resources a Trickster request would need to fulfill the client request
@@ -68,10 +70,43 @@ type Resources struct {
 	AuthResult     *auth.AuthResult
 	AlreadyEncoded bool
 	Cancelable     bool
+	// HiddenResult is the X-Trickster-Result value withheld from the client by a path that
+	// hides it, kept so the access log can still record the result
+	HiddenResult string
+	// UpstreamAddr, UpstreamStatus and UpstreamDuration describe the most recent origin
+	// exchange made for the request, for the access log
+	UpstreamAddr     string
+	UpstreamStatus   int
+	UpstreamDuration time.Duration
+	// SpanContext identifies the request's trace span when tracing is enabled
+	SpanContext trace.SpanContext
+}
+
+// SetUpstream records an origin exchange; exchanges made concurrently for one
+// request (range fan-out) share the resources, so the write is serialized.
+func (r *Resources) SetUpstream(addr string, status int, elapsed time.Duration) {
+	if r == nil {
+		return
+	}
+	r.Lock()
+	r.UpstreamAddr, r.UpstreamStatus, r.UpstreamDuration = addr, status, elapsed
+	r.Unlock()
+}
+
+// Upstream returns the recorded origin exchange.
+func (r *Resources) Upstream() (addr string, status int, elapsed time.Duration) {
+	if r == nil {
+		return "", 0, 0
+	}
+	r.Lock()
+	defer r.Unlock()
+	return r.UpstreamAddr, r.UpstreamStatus, r.UpstreamDuration
 }
 
 // Clone returns an exact copy of the subject Resources collection
 func (r *Resources) Clone() *Resources {
+	r.Lock()
+	defer r.Unlock()
 	return &Resources{
 		BackendOptions:        r.BackendOptions,
 		PathConfig:            r.PathConfig,
@@ -97,6 +132,11 @@ func (r *Resources) Clone() *Resources {
 		AuthResult:            r.AuthResult, // shallow copy of the auth result
 		AlreadyEncoded:        r.AlreadyEncoded,
 		Cancelable:            r.Cancelable,
+		HiddenResult:          r.HiddenResult,
+		UpstreamAddr:          r.UpstreamAddr,
+		UpstreamStatus:        r.UpstreamStatus,
+		UpstreamDuration:      r.UpstreamDuration,
+		SpanContext:           r.SpanContext,
 	}
 }
 

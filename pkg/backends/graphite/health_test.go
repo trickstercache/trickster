@@ -63,37 +63,37 @@ func TestFinalizeHealthCheckOptions(t *testing.T) {
 
 	// no custom options: the default credential remains
 	o := overlaid(c, nil)
-	require.Equal(t, "Bearer tok", o.Headers["Authorization"])
+	require.Equal(t, "Bearer tok", o.Headers[headers.NameAuthorization])
 	require.Len(t, o.Headers, 1)
 
 	// a custom non-auth header must not drop the credential
 	o = overlaid(c, &ho.Options{Headers: map[string]string{"X-Probe": "trickster"}})
 	require.Equal(t, "trickster", o.Headers["X-Probe"])
-	require.Equal(t, "Bearer tok", o.Headers["Authorization"])
+	require.Equal(t, "Bearer tok", o.Headers[headers.NameAuthorization])
 	require.Len(t, o.Headers, 2)
 
 	// a custom Authorization overrides the credential, any casing
-	o = overlaid(c, &ho.Options{Headers: map[string]string{"Authorization": "Basic other"}})
-	require.Equal(t, map[string]string{"Authorization": "Basic other"}, map[string]string(o.Headers))
-	o = overlaid(c, &ho.Options{Headers: map[string]string{"authorization": "Basic other"}})
-	require.Equal(t, map[string]string{"authorization": "Basic other"}, map[string]string(o.Headers))
+	o = overlaid(c, &ho.Options{Headers: map[string]string{headers.NameAuthorization: "Basic other"}})
+	require.Equal(t, map[string]string{headers.NameAuthorization: "Basic other"}, map[string]string(o.Headers))
+	o = overlaid(c, &ho.Options{Headers: map[string]string{strings.ToLower(headers.NameAuthorization): "Basic other"}})
+	require.Equal(t, map[string]string{strings.ToLower(headers.NameAuthorization): "Basic other"}, map[string]string(o.Headers))
 
 	// an empty custom Authorization opts the probe out: the effective clone
 	// omits the header, the stored marker survives, and re-finalizing holds
 	stored := c.DefaultHealthCheckConfig()
-	stored.Overlay(&ho.Options{Headers: map[string]string{"Authorization": ""}})
+	stored.Overlay(&ho.Options{Headers: map[string]string{headers.NameAuthorization: ""}})
 	effective := c.FinalizeHealthCheckOptions(stored)
-	require.NotContains(t, effective.Headers, "Authorization")
-	require.Equal(t, map[string]string{"Authorization": ""}, map[string]string(stored.Headers))
+	require.NotContains(t, effective.Headers, headers.NameAuthorization)
+	require.Equal(t, map[string]string{headers.NameAuthorization: ""}, map[string]string(stored.Headers))
 	effective = c.FinalizeHealthCheckOptions(stored)
-	require.NotContains(t, effective.Headers, "Authorization")
-	require.Equal(t, map[string]string{"Authorization": ""}, map[string]string(stored.Headers))
+	require.NotContains(t, effective.Headers, headers.NameAuthorization)
+	require.Equal(t, map[string]string{headers.NameAuthorization: ""}, map[string]string(stored.Headers))
 
 	// a non-Authorization empty header is not the opt-out and rides as-is
 	o = overlaid(c, &ho.Options{Headers: map[string]string{"X-Probe-Flag": ""}})
 	require.Equal(t, "", o.Headers["X-Probe-Flag"])
 	require.Contains(t, o.Headers, "X-Probe-Flag")
-	require.Equal(t, "Bearer tok", o.Headers["Authorization"])
+	require.Equal(t, "Bearer tok", o.Headers[headers.NameAuthorization])
 
 	// without a configured credential the finalizer changes nothing
 	plain, err := NewClient("test", bo.New(), nil, nil, nil, nil)
@@ -126,19 +126,19 @@ func TestFinalizeHealthCheckOptionsCasingCollisions(t *testing.T) {
 		expected   []string
 	}{
 		{"canonical empty beats lowercase credential", "Bearer tok",
-			map[string]string{"Authorization": "", "authorization": "Basic alternate"},
+			map[string]string{headers.NameAuthorization: "", strings.ToLower(headers.NameAuthorization): "Basic alternate"},
 			nil},
 		{"canonical credential beats lowercase empty", "Bearer tok",
-			map[string]string{"Authorization": "Basic primary", "authorization": ""},
+			map[string]string{headers.NameAuthorization: "Basic primary", strings.ToLower(headers.NameAuthorization): ""},
 			[]string{"Basic primary"}},
 		{"two non-canonical credentials pick the first sorted key", "Bearer tok",
-			map[string]string{"AUTHORIZATION": "Basic upper", "authorization": "Basic lower"},
+			map[string]string{"AUTHORIZATION": "Basic upper", strings.ToLower(headers.NameAuthorization): "Basic lower"},
 			[]string{"Basic upper"}},
 		{"collisions collapse without an origin credential too", "",
-			map[string]string{"Authorization": "Basic primary", "authorization": "Basic alternate"},
+			map[string]string{headers.NameAuthorization: "Basic primary", strings.ToLower(headers.NameAuthorization): "Basic alternate"},
 			[]string{"Basic primary"}},
 		{"empty winner without a credential stays a present empty header", "",
-			map[string]string{"AUTHORIZATION": "", "authorization": "Basic lower"},
+			map[string]string{"AUTHORIZATION": "", strings.ToLower(headers.NameAuthorization): "Basic lower"},
 			[]string{""}},
 	}
 	for _, tc := range tests {
@@ -149,7 +149,7 @@ func TestFinalizeHealthCheckOptionsCasingCollisions(t *testing.T) {
 				stored.Overlay(&ho.Options{Headers: maps.Clone(tc.headers)})
 				effective := c.FinalizeHealthCheckOptions(stored)
 				h := headers.Lookup(effective.Headers).ToHeader()
-				require.Equal(t, tc.expected, h.Values("Authorization"))
+				require.Equal(t, tc.expected, h.Values(headers.NameAuthorization))
 			}
 		})
 	}
@@ -167,8 +167,8 @@ func TestStartHealthChecksAppliesOriginAuth(t *testing.T) {
 	defer hc.Shutdown()
 
 	require.Equal(t, map[string]string{
-		"X-Probe":       "trickster",
-		"Authorization": "Bearer tok",
+		"X-Probe":                 "trickster",
+		headers.NameAuthorization: "Bearer tok",
 	}, map[string]string(o.HealthCheck.Headers))
 }
 
@@ -177,7 +177,7 @@ func TestStartHealthChecksAuthOptOutIdempotent(t *testing.T) {
 	o.Graphite = gro.New()
 	o.Graphite.OriginAuthorization = "Bearer tok"
 	c := newTestClient(t, o)
-	o.HealthCheck = &ho.Options{Headers: map[string]string{"Authorization": ""}}
+	o.HealthCheck = &ho.Options{Headers: map[string]string{headers.NameAuthorization: ""}}
 
 	// two consecutive setups over the same options object must both yield an
 	// unauthenticated probe, and the opt-out must survive for config export
@@ -185,7 +185,7 @@ func TestStartHealthChecksAuthOptOutIdempotent(t *testing.T) {
 		hc, err := backends.Backends{"test": c}.StartHealthChecks(nil)
 		require.NoError(t, err, "pass %d", i)
 		hc.Shutdown()
-		v, ok := o.HealthCheck.Headers["Authorization"]
+		v, ok := o.HealthCheck.Headers[headers.NameAuthorization]
 		require.True(t, ok, "pass %d must retain the opt-out marker", i)
 		require.Empty(t, v, "pass %d must not restore the credential", i)
 	}

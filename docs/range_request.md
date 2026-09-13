@@ -43,7 +43,7 @@ backends:
 
 As explained above, whenever the client makes a Range request, and only part of the Range is in the Trickster cache, Trickster will fetch the uncached Ranges from the Origin, then reconstitute and cache all of the accumulated Ranges, while also replying to the client with its requested Ranges.
 
-In the event that a cache object returns 1) a partial hit, 2) that is no longer fresh, 3) but can be revalidated, based on a) the Origin's provided caching directives or b) overridden by the Trickster operator's explicit [path-based Header configs](/docs/paths.md); Trickster will revalidate the client's requested-but-cached range from the origin with the appropriate revalidation headers.
+In the event that a cache object returns 1) a partial hit, 2) that is no longer fresh, 3) but can be revalidated, based on a) the Origin's provided caching directives or b) overridden by the Trickster operator's explicit [path-based Header configs](./paths.md); Trickster will revalidate the client's requested-but-cached range from the origin with the appropriate revalidation headers.
 
 In a Partial Hit with Revalidation, the revalidation request is made as a separate, parallel request to the origin alongside the uncached range request(s). If the revalidation succeeds, the cached range is merged with the newly-fetched range as if it had never expired. If the revalidation fails, the Origin will return the range needed by the client that was previously cached, or potentially the entire object - either of which are used to complete the ranges needed by the client and update the cache and caching policy for the object.
 

@@ -17,13 +17,14 @@
 package rule
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/checksum/sha1"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 )
 
 type (
@@ -31,30 +32,33 @@ type (
 	operationFunc func(input string, arg string, negate bool) string
 )
 
-var compiledRegexes = make(map[string]*regexp.Regexp)
+func operationKey(inputType, op string) operation {
+	return operation(inputType + "-" + op)
+}
+
+// opStringRMatch is bound to its compiled expression at parse time rather
+// than looked up here, so it has no entry in this table
+var opStringRMatch = operationKey(ro.TypeString, ro.OpRegexMatch)
 
 var operationFuncs = map[operation]operationFunc{
-	"string-rmatch":   opStringRMatch,
-	"string-eq":       opStringEquality,
-	"string-contains": opStringContains,
-	"string-prefix":   opStringPrefix,
-	"string-suffix":   opStringSuffix,
-	// TODO: understand use case and implementation for these string funcs
-	"string-md5":    opStringMD5,
-	"string-sha1":   opStringSHA1,
-	"string-base64": opStringBase64,
-	"string-modulo": opStringModulo,
+	operationKey(ro.TypeString, ro.OpEqual):    opStringEquality,
+	operationKey(ro.TypeString, ro.OpContains): opStringContains,
+	operationKey(ro.TypeString, ro.OpPrefix):   opStringPrefix,
+	operationKey(ro.TypeString, ro.OpSuffix):   opStringSuffix,
+	operationKey(ro.TypeString, ro.OpMD5):      opStringMD5,
+	operationKey(ro.TypeString, ro.OpSHA1):     opStringSHA1,
+	operationKey(ro.TypeString, ro.OpBase64):   opStringBase64,
+	operationKey(ro.TypeString, ro.OpModulo):   opStringModulo,
 
-	"num-eq": opNumEquality,
-	"num-gt": opNumGreaterThan,
-	"num-lt": opNumLessThan,
-	"num-ge": opNumGreaterThanEqual,
-	"num-le": opNumLessThanEqual,
-	"num-bt": opNumBetween,
-	// TODO: understand use case and implementation for these num funcs
-	"num-modulo": opNumModulo,
+	operationKey(ro.TypeNum, ro.OpEqual):          opNumEquality,
+	operationKey(ro.TypeNum, ro.OpGreaterThan):    opNumGreaterThan,
+	operationKey(ro.TypeNum, ro.OpLessThan):       opNumLessThan,
+	operationKey(ro.TypeNum, ro.OpGreaterOrEqual): opNumGreaterThanEqual,
+	operationKey(ro.TypeNum, ro.OpLessOrEqual):    opNumLessThanEqual,
+	operationKey(ro.TypeNum, ro.OpBetween):        opNumBetween,
+	operationKey(ro.TypeNum, ro.OpModulo):         opNumModulo,
 
-	"bool-eq": opBoolEquality,
+	operationKey(ro.TypeBool, ro.OpEqual): opBoolEquality,
 }
 
 func btos(t bool, negate bool) string {
@@ -62,30 +66,20 @@ func btos(t bool, negate bool) string {
 		t = !t
 	}
 	if t {
-		return trueValue
+		return ro.ValueTrue
 	}
-	return falseValue
+	return ro.ValueFalse
 }
 
-func opStringRMatch(input, arg string, _ bool) string {
-	re, ok := compiledRegexes[arg]
-	if !ok {
-		var err error
-		re, err = regexp.Compile(arg)
-		if err != nil {
-			compiledRegexes[arg] = nil
-			return falseValue
-		}
-		compiledRegexes[arg] = re
+// regexOperation binds a compiled expression to the rule that declared it
+func regexOperation(re *matching.Regex) operationFunc {
+	return func(input, _ string, negate bool) string {
+		return btos(re.Match(input), negate)
 	}
-	if re != nil && re.MatchString(input) {
-		return trueValue
-	}
-	return falseValue
 }
 
 func opStringEquality(input, arg string, negate bool) string {
-	return btos(input == arg, negate)
+	return btos(matching.Exact(arg).Match(input), negate)
 }
 
 func opStringContains(input, arg string, negate bool) string {

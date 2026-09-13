@@ -1,6 +1,6 @@
 # X-Trickster-Result Header
 
-Trickster adds the `X-Trickster-Result` response header to describe how it handled a request. The header is intended for debugging cache behavior, proxy fallbacks, and partial origin fetches.
+Trickster adds the `X-Trickster-Result` response header to describe how it handled a request. The header is intended for debugging cache behavior, proxy fallbacks, and partial origin fetches. A path may withhold it from the client with `hide_result_header: true` ([paths.md](./paths.md#hiding-the-result-header)); the access log and metrics still record the result.
 
 Example:
 

@@ -24,10 +24,10 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.yaml.in/yaml/v3"
-	"golang.org/x/net/http/httpguts"
 )
 
 // Mode identifies how Trickster combines origin and configured CORS headers.
@@ -112,13 +112,13 @@ func (o *Options) Validate() (bool, error) {
 	}
 	seen := make(map[string]string, len(o.Headers))
 	for configuredName, value := range o.Headers {
-		operation, name, ok := configuredHeaderName(configuredName)
-		if !ok || !httpguts.ValidHeaderFieldName(name) ||
-			!strings.HasPrefix(strings.ToLower(name), corsHeaderPrefix) {
-			return false, fmt.Errorf("invalid CORS response header: %s", configuredName)
-		}
-		if operation != '-' && !httpguts.ValidHeaderFieldValue(value) {
+		operation, name := headers.ParseUpdateKey(configuredName)
+		err := headers.ValidUpdate(operation, name, value)
+		if errors.Is(err, headers.ErrInvalidHeaderValue) {
 			return false, fmt.Errorf("invalid value for CORS response header: %s", configuredName)
+		}
+		if err != nil || !strings.HasPrefix(strings.ToLower(name), corsHeaderPrefix) {
+			return false, fmt.Errorf("invalid CORS response header: %s", configuredName)
 		}
 		normalized := strings.ToLower(name)
 		if previous, ok := seen[normalized]; ok {
@@ -128,22 +128,6 @@ func (o *Options) Validate() (bool, error) {
 		seen[normalized] = configuredName
 	}
 	return true, nil
-}
-
-func configuredHeaderName(configuredName string) (byte, string, bool) {
-	if configuredName == "" {
-		return 0, "", false
-	}
-	var operation byte
-	name := configuredName
-	if name[0] == '+' || name[0] == '-' {
-		operation = name[0]
-		name = name[1:]
-	}
-	if name == "" || name[0] == '+' || name[0] == '-' {
-		return 0, "", false
-	}
-	return operation, name, true
 }
 
 // PreservesOrigin reports whether origin-provided CORS headers remain in the response.
@@ -163,7 +147,7 @@ func (o *Options) IsLegacy() bool {
 // UnmarshalYAML applies defaults before decoding a CORS configuration block.
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}

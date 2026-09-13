@@ -1,0 +1,135 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shadow-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 9090
+---
+# a rule mirroring every request to a shadow Service, a weighted rule whose
+# canary member mirrors a share of its own traffic, a rule whose mirror
+# names a Service that does not exist, which is dropped with the rest served,
+# and a rule served by one backendRef where both the rule and the reference
+# mirror, so both copies are sent
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shadowed
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      filters:
+        - type: RequestMirror
+          requestMirror:
+            backendRef:
+              name: shadow-svc
+              port: 9090
+      backendRefs:
+        - name: web-svc
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /split
+      backendRefs:
+        - name: web-svc
+          port: 8080
+          weight: 3
+        - name: canary-svc
+          port: 8080
+          weight: 1
+          filters:
+            - type: RequestMirror
+              requestMirror:
+                backendRef:
+                  name: shadow-svc
+                  port: 9090
+                fraction:
+                  numerator: 1
+                  denominator: 4
+    - matches:
+        - path:
+            type: Exact
+            value: /unmirrored
+      filters:
+        - type: RequestMirror
+          requestMirror:
+            backendRef:
+              name: missing-svc
+              port: 9090
+            percent: 50
+      backendRefs:
+        - name: web-svc
+          port: 8080
+    - matches:
+        - path:
+            type: Exact
+            value: /both
+      filters:
+        - type: RequestMirror
+          requestMirror:
+            backendRef:
+              name: shadow-svc
+              port: 9090
+      backendRefs:
+        - name: web-svc
+          port: 8080
+          filters:
+            - type: RequestMirror
+              requestMirror:
+                backendRef:
+                  name: canary-svc
+                  port: 8080

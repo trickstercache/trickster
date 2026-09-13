@@ -1060,7 +1060,7 @@ func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "miss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}
@@ -2101,7 +2101,7 @@ func TestDPCNoCacheBypass(t *testing.T) {
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
 	// set no-cache to bypass singleflight
-	r.Header.Set("Cache-Control", "no-cache")
+	r.Header.Set(headers.NameCacheControl, "no-cache")
 
 	w := httptest.NewRecorder()
 	client.QueryRangeHandler(w, r)

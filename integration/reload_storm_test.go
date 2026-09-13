@@ -55,7 +55,7 @@ import (
 // reintroduced, would leave one goroutine per in-flight op stuck on a
 // closed client (thousands under this storm). With the cache-rename
 // close fix in applyCachingConfig and CloseIdleConnections on old
-// backends in Hup, observed delta is ~0-3 goroutines across 12 reloads;
+// backends in Reload, observed delta is ~0-3 goroutines across 12 reloads;
 // 1/reload here is tight enough to catch a single-goroutine-per-reload
 // regression.
 func TestReloadStormDoesNotLeak(t *testing.T) {
@@ -127,7 +127,7 @@ backends:
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	releasePorts()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)
@@ -156,7 +156,7 @@ backends:
 	}
 	for i, name := range []string{"memB", "memA", "memB", "memA"} {
 		doReload(name)
-		// Settle: SIGHUP -> Hup -> ApplyConfig is async wrt signal delivery,
+		// Settle: SIGHUP -> Reload -> ApplyConfig is async wrt signal delivery,
 		// so give each warmup reload a beat to complete before the next.
 		time.Sleep(500 * time.Millisecond)
 		_ = i
@@ -236,7 +236,7 @@ backends:
 			}
 			// SIGHUP preserves the original -config arg via daemon.Start's
 			// closure. POST /trickster/config/reload drops args (the inner
-			// Hup that registers the handler does not forward them), causing
+			// Reload that registers the handler does not forward them), causing
 			// later reloads to load from /etc/trickster/trickster.yaml. Use
 			// SIGHUP here so the storm reliably exercises the cache-handoff
 			// path on the temp config.

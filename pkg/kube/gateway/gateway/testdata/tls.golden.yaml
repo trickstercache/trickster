@@ -1,0 +1,43 @@
+listeners:
+    kgw--listener-tls-8443:
+        protocol: tls
+        port: 8443
+    kgw--listener-tls-9443:
+        protocol: tls
+        port: 9443
+backends:
+    kgw--tlsroute.shop.api_r0:
+        provider: rp
+        origin_url: tcp://api-svc.shop.svc:8443
+        hosts:
+            - api.example.com
+        listener_names:
+            - kgw--listener-tls-8443
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--tlsroute.shop.catch-all_r0:
+        provider: rp
+        origin_url: tcp://fallback-svc.shop.svc:8443
+        listener_names:
+            - kgw--listener-tls-9443
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+    kgw--tlsroute.shop.rest_r0:
+        provider: rp
+        origin_url: tcp://fallback-svc.shop.svc:8443
+        hosts:
+            - '**.example.com'
+        listener_names:
+            - kgw--listener-tls-8443
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--tlsroute.shop.shop_r0:
+        provider: rp
+        origin_url: tcp://shop-svc.shop.svc:8443
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-tls-8443
+        path_routing_disabled: true
+        path_defaults_disabled: true

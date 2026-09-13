@@ -40,6 +40,18 @@ import (
 	"golang.org/x/net/netutil"
 )
 
+// serverProtocols enables cleartext HTTP/2 alongside HTTP/1.1 and TLS HTTP/2.
+// h2c is prior-knowledge only (the client sends the HTTP/2 preface), which is
+// what gRPC and other cleartext HTTP/2 clients require; Go does not implement
+// the Upgrade-based h2c handshake, so no request can be smuggled through one.
+func serverProtocols() *http.Protocols {
+	var p http.Protocols
+	p.SetHTTP1(true)
+	p.SetHTTP2(true)
+	p.SetUnencryptedHTTP2(true)
+	return &p
+}
+
 // ListenerState represents the state of a listener
 type ListenerState int32
 
@@ -70,6 +82,8 @@ type server interface {
 // Listener is the Trickster net.Listener implmementation
 type Listener struct {
 	net.Listener
+	// packetConn is set instead of Listener for datagram (QUIC) endpoints
+	packetConn   net.PacketConn
 	tlsConfig    *tls.Config
 	tlsSwapper   sw.CertSwapper
 	routeSwapper *switcher.SwitchHandler
@@ -82,6 +96,20 @@ type Listener struct {
 
 type observedConnection struct {
 	net.Conn
+}
+
+// CloseWrite ends the write side alone where the wrapped connection can, so a relay may
+// half-close as TCP allows; a PROXY protocol connection exposes its TCP connection for it.
+func (o *observedConnection) CloseWrite() error {
+	if hc, ok := o.Conn.(interface{ CloseWrite() error }); ok {
+		return hc.CloseWrite()
+	}
+	if tc, ok := o.Conn.(interface{ TCPConn() (*net.TCPConn, bool) }); ok {
+		if c, ok := tc.TCPConn(); ok {
+			return c.CloseWrite()
+		}
+	}
+	return errors.ErrUnsupported
 }
 
 func (o *observedConnection) Close() error {
@@ -133,6 +161,59 @@ type Group struct {
 	members       map[string]*Listener
 	listenersLock sync.Mutex
 	done          chan struct{}
+	// closed is set when shutdown begins; later starts are refused so a
+	// reload racing the shutdown can never publish a listener it misses
+	closed bool
+	// onPublish is told the key of every listener added, so state prepared for a listener
+	// before it existed, such as its certificates, can be applied once it does
+	onPublish func(key string)
+}
+
+// OnPublish registers f to be called with the group key of every listener published from now on
+func (lg *Group) OnPublish(f func(key string)) {
+	lg.listenersLock.Lock()
+	lg.onPublish = f
+	lg.listenersLock.Unlock()
+}
+
+// Closed reports whether shutdown has begun for the group.
+func (lg *Group) Closed() bool {
+	if lg == nil {
+		return true
+	}
+	lg.listenersLock.Lock()
+	defer lg.listenersLock.Unlock()
+	return lg.closed
+}
+
+// publish adds l to the group under name, or refuses it once shutdown has
+// begun; the refusal is decided under the same lock as the shutdown snapshot.
+func (lg *Group) publish(name string, l *Listener) error {
+	lg.listenersLock.Lock()
+	if lg.closed {
+		lg.listenersLock.Unlock()
+		return trerr.ErrListenerGroupClosed
+	}
+	lg.members[name] = l
+	f := lg.onPublish
+	lg.listenersLock.Unlock()
+	if f != nil {
+		f(name)
+	}
+	return nil
+}
+
+// refuse closes a bound but unpublished listener and logs the refusal.
+func (l *Listener) refuse(listenerName string) {
+	if l.Listener != nil {
+		_ = l.Listener.Close()
+	}
+	if l.packetConn != nil {
+		_ = l.packetConn.Close()
+	}
+	l.setState(StateStopped)
+	logger.Warn("listener start refused during shutdown",
+		logging.Pairs{logKeyListenerName: listenerName})
 }
 
 // NewGroup returns a new Group
@@ -196,22 +277,21 @@ func (l *Listener) WaitForReady(timeout time.Duration) bool {
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, _ time.Duration,
+	tlsConfig *tls.Config, proxyProtocol *ProxyProtocolOptions,
 ) (net.Listener, error) {
-	var listener net.Listener
-	var err error
-
 	listenerType := "http"
-
-	if tlsConfig != nil {
-		listenerType = "https"
-		listener, err = tls.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort), tlsConfig)
-	} else {
-		listener, err = net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
-	}
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
 	if err != nil {
 		// so we can exit one level above, this usually means that the port is in use
 		return nil, err
+	}
+	// the PROXY header precedes the TLS handshake, so it is read beneath TLS
+	if proxyProtocol != nil && proxyProtocol.Enabled {
+		listener = proxyProtocol.wrap(listener)
+	}
+	if tlsConfig != nil {
+		listenerType = "https"
+		listener = tls.NewListener(listener, tlsConfig)
 	}
 
 	if connectionsLimit > 0 {
@@ -267,7 +347,7 @@ func (lg *Group) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
-	f func(), drainTimeout, readHeaderTimeout time.Duration,
+	f func(), readHeaderTimeout time.Duration, proxyProtocol *ProxyProtocolOptions,
 ) error {
 	l := &Listener{
 		routeSwapper: switcher.NewSwitchHandler(router),
@@ -276,7 +356,9 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	l.exitOnError.Store(f != nil)
 	l.setState(StateStarting)
 
-	if tlsConfig != nil && len(tlsConfig.Certificates) > 0 {
+	if tlsConfig != nil {
+		// the store may start empty for a listener whose certificates arrive at
+		// runtime; handshakes fail until the first entry is set
 		l.tlsConfig = tlsConfig
 		l.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)
 		// Replace the normal GetCertificate function in the TLS config with lg.tlsSwapper's,
@@ -286,7 +368,7 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	}
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, drainTimeout)
+	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, proxyProtocol)
 	if err != nil {
 		logger.ErrorSynchronous(
 			"http listener startup failed", logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
@@ -305,12 +387,14 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		Handler:           l.routeSwapper,
 		TLSConfig:         tlsConfig,
 		ReadHeaderTimeout: readHeaderTimeout,
+		Protocols:         serverProtocols(),
 	}
 	l.server = svr
 
-	lg.listenersLock.Lock()
-	lg.members[listenerName] = l
-	lg.listenersLock.Unlock()
+	if err := lg.publish(listenerName, l); err != nil {
+		l.refuse(listenerName)
+		return err
+	}
 
 	// Mark as ready once listener is created and added
 	l.setState(StateReady)
@@ -355,16 +439,24 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *Group) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler,
-	tracers tracing.Tracers, f func(), drainTimeout, readHeaderTimeout time.Duration,
+	tracers tracing.Tracers, f func(), readHeaderTimeout time.Duration,
 ) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, tracers, f, drainTimeout, readHeaderTimeout)
+		tlsConfig, router, tracers, f, readHeaderTimeout, nil)
 }
 
-// DrainAndClose drains and closes the named listener
+// DrainAndClose drains the named listener for up to drainWait, then closes it.
 func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), drainWait)
+	defer cancel()
+	return lg.DrainAndCloseContext(ctx, listenerName)
+}
+
+// DrainAndCloseContext stops the named listener from accepting, waits for its
+// in-flight requests until ctx is done, then closes any remaining connections.
+func (lg *Group) DrainAndCloseContext(ctx context.Context, listenerName string) error {
 	lg.listenersLock.Lock()
 	l, ok := lg.members[listenerName]
 	if !ok || l == nil {
@@ -375,24 +467,24 @@ func (lg *Group) DrainAndClose(listenerName string, drainWait time.Duration) err
 	l.setState(StateStopping)
 	delete(lg.members, listenerName)
 	lg.listenersLock.Unlock()
+	defer l.setState(StateStopped)
 
-	if l.Listener == nil {
-		l.setState(StateStopped)
+	if l.Listener == nil && l.packetConn == nil {
 		return trerr.ErrNilListener
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), drainWait)
-	defer cancel()
-
-	if l.server != nil {
-		err := l.server.Shutdown(ctx)
-		if err != nil {
-			l.setState(StateStopped)
-			return err
-		}
+	if l.server == nil {
+		return nil
 	}
-	l.setState(StateStopped)
-	return nil
+	err := l.server.Shutdown(ctx)
+	if err == nil {
+		return nil
+	}
+	// Shutdown leaves active connections open when ctx expires; close them so
+	// the drain deadline is honored rather than advisory.
+	if closer, ok := l.server.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
+	return err
 }
 
 // WaitForReady waits for all listeners in the group to become ready
@@ -433,28 +525,58 @@ func (lg *Group) WaitForReady(timeout time.Duration) error {
 	return nil
 }
 
-// Shutdown gracefully shuts down all listeners in the group
+// Shutdown drains every listener in the group concurrently for up to drainWait.
 func (lg *Group) Shutdown(drainWait time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), drainWait)
+	defer cancel()
+	return lg.ShutdownContext(ctx)
+}
+
+// ShutdownContext drains every listener in the group concurrently until ctx is
+// done, then closes whatever is still open. Errors from all listeners are joined.
+func (lg *Group) ShutdownContext(ctx context.Context) error {
 	lg.listenersLock.Lock()
+	lg.closed = true
 	names := make([]string, 0, len(lg.members))
 	for name := range lg.members {
 		names = append(names, name)
 	}
 	lg.listenersLock.Unlock()
 
-	var firstErr error
-	for _, name := range names {
-		if err := lg.DrainAndClose(name, drainWait); err != nil && firstErr == nil {
-			firstErr = err
-		}
+	errs := make([]error, len(names))
+	var wg sync.WaitGroup
+	for i, name := range names {
+		wg.Go(func() {
+			errs[i] = lg.DrainAndCloseContext(ctx, name)
+		})
 	}
+	wg.Wait()
 
 	select {
 	case <-lg.done:
 	default:
 		close(lg.done)
 	}
-	return firstErr
+	return errors.Join(errs...)
+}
+
+// Serving reports whether the group has at least one listener and every
+// listener is accepting connections.
+func (lg *Group) Serving() bool {
+	if lg == nil {
+		return false
+	}
+	lg.listenersLock.Lock()
+	defer lg.listenersLock.Unlock()
+	if len(lg.members) == 0 {
+		return false
+	}
+	for _, l := range lg.members {
+		if l == nil || l.State() != StateReady {
+			return false
+		}
+	}
+	return true
 }
 
 // UpdateFrontendRouters will swap out the routers across the named Listeners with the provided ones

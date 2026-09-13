@@ -27,6 +27,7 @@ seed-window.env
 # Test Coverage Profile Output
 .coverprofile
 .integration.coverprofile
+integration/conformance/reports
 
 # output path
 OPATH
@@ -74,3 +75,5 @@ AGENTS.md
 # mutable CoreDNS zone data for the autodiscovery integration tests
 # (seeded from docker-compose-data/coredns/*.seed by `make integration-start`)
 docs/developer/environment/docker-compose-data/coredns-zones/
+
+integration/conformance/reports

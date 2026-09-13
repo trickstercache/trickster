@@ -51,3 +51,14 @@ func TestHops(t *testing.T) {
 		t.Error("expected 5 got", i)
 	}
 }
+
+func TestHopsIfSet(t *testing.T) {
+	current, maxHops, ok := HopsIfSet(context.Background())
+	if ok || current != 0 || maxHops != options.DefaultMaxRuleExecutions {
+		t.Errorf("expected defaults and unset, got %d %d %t", current, maxHops, ok)
+	}
+	current, maxHops, ok = HopsIfSet(WithHops(context.Background(), 3, 40))
+	if !ok || current != 3 || maxHops != 40 {
+		t.Errorf("expected 3 40 set, got %d %d %t", current, maxHops, ok)
+	}
+}

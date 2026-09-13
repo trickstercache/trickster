@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"strings"
@@ -36,15 +37,20 @@ import (
 func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
 	// Drop prior SIGHUP handlers so this test owns the only live receiver.
 	signal.Reset(syscall.SIGHUP)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(origin.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
 	h := staticConfigHarness(t, "testdata/configs/reload.yaml")
+	rewriteGeneratedConfig(t, h.ConfigPath, "http://127.0.0.1:9090", origin.URL)
 	if h.releasePorts != nil {
 		h.releasePorts()
 	}
-	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
+	runTrickster(t, ctx, "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
 
 	healthURL := "http://" + h.MetricsAddr + "/trickster/health"

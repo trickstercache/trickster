@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
@@ -245,9 +246,9 @@ func TestSyntheticRequestsCarryPathOptions(t *testing.T) {
 	origin.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
 		seen[r.URL.Path] = append(seen[r.URL.Path],
-			r.Header.Get("Authorization")+"|"+r.URL.Query().Get("local"))
+			r.Header.Get(headers.NameAuthorization)+"|"+r.URL.Query().Get("local"))
 		mu.Unlock()
-		if r.Header.Get("Authorization") != "Bearer test-key" {
+		if r.Header.Get(headers.NameAuthorization) != "Bearer test-key" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -269,7 +270,7 @@ func TestSyntheticRequestsCarryPathOptions(t *testing.T) {
 	// then attach the configured upstream options to every path
 	o.Paths = c.DefaultPathConfigs(o)
 	for _, pc := range o.Paths {
-		pc.RequestHeaders = map[string]string{"Authorization": "Bearer test-key"}
+		pc.RequestHeaders = map[string]string{headers.NameAuthorization: "Bearer test-key"}
 		pc.RequestParams = map[string]string{"local": "1"}
 	}
 
@@ -327,7 +328,7 @@ func TestDocumentedCredentialConfig(t *testing.T) {
 	origin.Add("dev.fast.cpu.host01.percent", "10s:6h,60s:7d")
 	inner := origin.Server.Config.Handler
 	origin.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != cred {
+		if r.Header.Get(headers.NameAuthorization) != cred {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -381,12 +382,12 @@ func TestSynthPathOptionsMethodAware(t *testing.T) {
 	c := newTestClient(t, nil)
 	c.Configuration().Paths = po.List{
 		{Path: "/render", Methods: []string{http.MethodPost},
-			RequestHeaders: map[string]string{"Authorization": "Basic tenant-b"}},
+			RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"}},
 		{Path: "/render", Methods: []string{http.MethodGet},
-			RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}},
+			RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}},
 	}
 	h, _ := c.synthPathOptions("/render")
-	if h["Authorization"] != "Basic tenant-a" {
+	if h[headers.NameAuthorization] != "Basic tenant-a" {
 		t.Fatalf("synthetic GET must select the GET path config, got %v", h)
 	}
 }
@@ -413,7 +414,7 @@ func TestEffectiveIdentityRotation(t *testing.T) {
 		o.Paths = c.DefaultPathConfigs(o)
 		for _, pc := range o.Paths {
 			if pc.Path == "/render" {
-				pc.RequestHeaders = map[string]string{"Authorization": cred}
+				pc.RequestHeaders = map[string]string{headers.NameAuthorization: cred}
 			}
 		}
 		c.SetCache(cache)

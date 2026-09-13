@@ -96,14 +96,12 @@ func graphiteConfig(cacheDir string, persist bool) func(*tkconfig.Config) {
 func startGraphite(t *testing.T, cacheDir string, persist bool) (tricksterHarness, func()) {
 	t.Helper()
 	h := configHarness(t, graphiteConfig(cacheDir, persist))
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 	if h.releasePorts != nil {
 		h.releasePorts()
 	}
-	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
+	stop := runTrickster(t, context.Background(), "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
-	return h, cancel
+	return h, stop
 }
 
 func renderParams(target, from, until string) url.Values {

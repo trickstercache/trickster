@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
@@ -257,17 +258,17 @@ func TestMarshalFormats(t *testing.T) {
 	if err := MarshalTimeseriesWriter(ds, &timeseries.RequestOptions{ProviderRequest: &RenderOptions{Format: FormatCSV}}, 201, w); err != nil {
 		t.Fatal(err)
 	}
-	if w.Code != 201 || w.Header().Get("Content-Type") != "text/csv" || w.Body.String() != sampleCSV {
-		t.Errorf("writer: %d %s", w.Code, w.Header().Get("Content-Type"))
+	if w.Code != 201 || w.Header().Get(headers.NameContentType) != "text/csv" || w.Body.String() != sampleCSV {
+		t.Errorf("writer: %d %s", w.Code, w.Header().Get(headers.NameContentType))
 	}
 	w = httptest.NewRecorder()
 	_ = MarshalTimeseriesWriter(ds, nil, 0, w)
-	if w.Header().Get("Content-Type") != "application/json" || w.Body.String() != sampleJSON {
+	if w.Header().Get(headers.NameContentType) != "application/json" || w.Body.String() != sampleJSON {
 		t.Error("default json")
 	}
 	w = httptest.NewRecorder()
 	_ = MarshalTimeseriesWriter(ds, &timeseries.RequestOptions{ProviderRequest: RenderOptions{JSONP: "x"}}, 200, w)
-	if w.Header().Get("Content-Type") != "text/javascript" {
+	if w.Header().Get(headers.NameContentType) != "text/javascript" {
 		t.Error("jsonp content type")
 	}
 	var nilRO *RenderOptions

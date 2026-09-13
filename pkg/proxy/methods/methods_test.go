@@ -18,6 +18,7 @@ package methods
 
 import (
 	"net/http"
+	"strconv"
 	"testing"
 )
 
@@ -46,7 +47,7 @@ func TestCacheableHTTPMethods(t *testing.T) {
 }
 
 func TestUncacheableHTTPMethods(t *testing.T) {
-	expected := 8
+	expected := 9
 	l := len(UncacheableHTTPMethods())
 	if l != expected {
 		t.Errorf("expected %d got %d", expected, l)
@@ -151,16 +152,16 @@ func TestHasAll(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods1 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods1 are one method",
 			methods1: []string{http.MethodGet, http.MethodGet},
 			methods2: []string{http.MethodGet},
 			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods2 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods2 are one method",
 			methods1: []string{http.MethodGet},
 			methods2: []string{http.MethodGet, http.MethodGet},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "multiple methods with partial overlap",
@@ -260,16 +261,16 @@ func TestHasAny(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods1 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods1 are one method",
 			methods1: []string{http.MethodGet, http.MethodGet},
 			methods2: []string{http.MethodGet},
-			expected: false,
+			expected: true,
 		},
 		{
-			name:     "duplicate methods in methods2 (XOR cancels duplicates, mask becomes 0)",
+			name:     "duplicate methods in methods2 are one method",
 			methods1: []string{http.MethodGet},
 			methods2: []string{http.MethodGet, http.MethodGet},
-			expected: false,
+			expected: true,
 		},
 		{
 			name:     "case insensitive - any match",
@@ -310,6 +311,11 @@ func TestIsValidMethod(t *testing.T) {
 		{
 			name:     "GET is valid",
 			method:   http.MethodGet,
+			expected: true,
+		},
+		{
+			name:     "wildcard is valid",
+			method:   Wildcard,
 			expected: true,
 		},
 		{
@@ -464,22 +470,22 @@ func TestAreEqual(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "duplicate methods in l1 (XOR cancels, but length check fails first)",
+			name:     "duplicate methods in l1 against an empty list",
 			l1:       []string{http.MethodGet, http.MethodGet},
 			l2:       []string{},
 			expected: false,
 		},
 		{
-			name:     "duplicate methods in l2 (XOR cancels, but length check fails first)",
+			name:     "duplicate methods in l2 against an empty list",
 			l1:       []string{},
 			l2:       []string{http.MethodGet, http.MethodGet},
 			expected: false,
 		},
 		{
-			name:     "duplicate methods in both (XOR cancels)",
+			name:     "duplicate methods in both name different methods",
 			l1:       []string{http.MethodGet, http.MethodGet},
 			l2:       []string{http.MethodPost, http.MethodPost},
-			expected: true,
+			expected: false,
 		},
 		{
 			name:     "three methods same order",
@@ -543,6 +549,32 @@ func TestAreEqual(t *testing.T) {
 			result := AreEqual(test.l1, test.l2)
 			if result != test.expected {
 				t.Errorf("AreEqual(%v, %v) = %v, expected %v", test.l1, test.l2, result, test.expected)
+			}
+		})
+	}
+}
+
+func TestHasResponseContent(t *testing.T) {
+	tests := []struct {
+		method   string
+		status   int
+		expected bool
+	}{
+		{http.MethodGet, 200, true},
+		{http.MethodGet, 206, true},
+		{http.MethodGet, 404, true},
+		{http.MethodHead, 200, false},
+		{http.MethodHead, 404, false},
+		{http.MethodGet, 204, false},
+		{http.MethodGet, 304, false},
+		{http.MethodGet, 103, false},
+		{http.MethodGet, 100, false},
+		{http.MethodGet, 199, false},
+	}
+	for _, test := range tests {
+		t.Run(test.method+strconv.Itoa(test.status), func(t *testing.T) {
+			if got := HasResponseContent(test.method, test.status); got != test.expected {
+				t.Errorf("got %t expected %t", got, test.expected)
 			}
 		})
 	}

@@ -32,15 +32,27 @@ import (
 	chast "github.com/AfterShip/clickhouse-sql-parser/parser"
 )
 
+// Options configures an Analyzer.
+type Options struct {
+	// RoundUnalignedTimeBounds accepts raw-time-column predicates that are not
+	// aligned to the bucket cadence by rounding the lower bound up and the
+	// exclusive upper bound down to the cadence. Partial edge buckets are
+	// dropped rather than cached. Dashboard clients such as Grafana emit live,
+	// unaligned ranges; without this option those queries fall back to the OPC.
+	RoundUnalignedTimeBounds bool
+}
+
 // Analyzer produces ClickHouse cache plans and is safe for concurrent use.
 // Its zero value is ready to use.
-type Analyzer struct{}
+type Analyzer struct {
+	opts Options
+}
 
 var _ sqlanalyzer.DialectAnalyzer = (*Analyzer)(nil)
 
 // NewAnalyzer returns a ClickHouse dialect analyzer.
-func NewAnalyzer() *Analyzer {
-	return &Analyzer{}
+func NewAnalyzer(opts Options) *Analyzer {
+	return &Analyzer{opts: opts}
 }
 
 // IsSelectQuery reports whether the SQL query contains a SELECT keyword.
@@ -106,7 +118,7 @@ func maskLegacyLineComments(statement string) string {
 	return string(source)
 }
 
-func (*Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
+func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 	if strings.TrimSpace(statement) == "" {
 		return sqlanalyzer.Analysis{Reason: sqlanalyzer.ReasonInvalidSQL, Err: ErrNotTimeRangeQuery}
 	}
@@ -140,7 +152,7 @@ func (*Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis {
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
-	ranges, err := analyzeRanges(selectQuery, bucket, constants, now)
+	ranges, err := analyzeRanges(selectQuery, bucket, constants, now, a.opts.RoundUnalignedTimeBounds)
 	if err != nil {
 		reason := sqlanalyzer.ReasonNotTimeRange
 		if errors.Is(err, ErrUnsafePredicate) {
@@ -749,6 +761,7 @@ func analyzeRanges(
 	bucket bucketSpec,
 	constants map[string]int64,
 	now time.Time,
+	roundUnaligned bool,
 ) (rangeAnalysis, error) {
 	result := rangeAnalysis{timeColumn: bucket.timeColumn}
 	var predicates []predicateBound
@@ -832,7 +845,7 @@ func analyzeRanges(
 			result.targets = append(result.targets, predicate.upper.target)
 		}
 	}
-	if err := normalizePrimaryBounds(&result, bucket); err != nil {
+	if err := normalizePrimaryBounds(&result, bucket, roundUnaligned); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -841,9 +854,12 @@ func analyzeRanges(
 // normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
 // bucket extent convention. Raw timestamp predicates must describe complete
 // buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// Predicates on the bucket output are discrete and can safely move by one
-// cadence for strict comparisons.
-func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
+// When roundUnaligned is set, unaligned raw-column bounds are instead rounded
+// inward to the cadence (lower up, exclusive upper down), dropping partial
+// edge buckets. Predicates on the bucket output are discrete and can safely
+// move by one cadence for strict comparisons.
+func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
+	rounded := false
 	if bucket.step < time.Second {
 		for _, target := range result.targets {
 			if target.style == boundUnixSeconds || target.style == boundToDateTime {
@@ -863,9 +879,17 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 			result.lower.value = sqlanalyzer.FloorBucket(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
 		}
-	} else if !result.lower.inclusive ||
-		!sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
-		return ErrUnsafePredicate
+	} else {
+		if !result.lower.inclusive {
+			return ErrUnsafePredicate
+		}
+		if !sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
+			if !roundUnaligned {
+				return ErrUnsafePredicate
+			}
+			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+			rounded = true
+		}
 	}
 
 	if result.upper == nil {
@@ -881,11 +905,22 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 		}
 		return nil
 	}
-	if result.upper.inclusive ||
-		!sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+	if result.upper.inclusive {
 		return ErrUnsafePredicate
 	}
+	if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+		if !roundUnaligned {
+			return ErrUnsafePredicate
+		}
+		result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		rounded = true
+	}
 	result.upper.target.offset = bucket.step
+	// Rounding inward can leave no complete bucket; fail closed rather than
+	// requesting an inverted or empty window.
+	if rounded && !result.upper.value.After(result.lower.value) {
+		return ErrUnsafePredicate
+	}
 	return nil
 }
 

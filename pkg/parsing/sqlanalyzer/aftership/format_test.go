@@ -39,7 +39,7 @@ func TestResolveOutputFormat(t *testing.T) {
 		{name: "invalid fallback", fallback: "Parquet", wantErr: ErrUnsupportedOutputFormat},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(query+test.clause, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(query+test.clause, time.Unix(500, 0))
 			if analysis.Err != nil {
 				t.Fatal(analysis.Err)
 			}

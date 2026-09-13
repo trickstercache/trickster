@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -79,7 +80,7 @@ func getReq(q string) *http.Request {
 
 func postReq(v url.Values) *http.Request {
 	r, _ := http.NewRequest(http.MethodPost, "http://graphite/render", strings.NewReader(v.Encode()))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	return r
 }
 
@@ -376,7 +377,7 @@ func TestClientIdentityDeclinesAcceleration(t *testing.T) {
 		t.Fatalf("plain request must accelerate: %v %q", err, rq.Fallback)
 	}
 	// a client Authorization declines to the object lane
-	rq, canOPC, err := serve(map[string]string{"Authorization": "Bearer tenant-a"}, pc)
+	rq, canOPC, err := serve(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, pc)
 	if err == nil || !canOPC || rq.Fallback != parsing.ReasonClientIdentity {
 		t.Fatalf("client auth must decline: err=%v canOPC=%t fallback=%q", err, canOPC, rq.Fallback)
 	}
@@ -387,7 +388,7 @@ func TestClientIdentityDeclinesAcceleration(t *testing.T) {
 	}
 	// a static override pins the upstream identity and lifts the decline,
 	// provided the synthetic resolution paths carry the same identity
-	hdrs := map[string]string{"Authorization": "Basic static", "X-Tenant": "static"}
+	hdrs := map[string]string{headers.NameAuthorization: "Basic static", "X-Tenant": "static"}
 	pinned := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
 		RequestHeaders: hdrs, CacheKeyHeaders: []string{"X-Tenant"}}
 	pinnedExpand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
@@ -395,7 +396,7 @@ func TestClientIdentityDeclinesAcceleration(t *testing.T) {
 	c2 := newTestClient(t, nil)
 	c2.Configuration().Paths = po.List{pinned, pinnedExpand}
 	r := getReq("target=a.b&from=-1h&format=json")
-	r.Header.Set("Authorization", "Bearer tenant-a")
+	r.Header.Set(headers.NameAuthorization, "Bearer tenant-a")
 	r.Header.Set("X-Tenant", "a")
 	r = request.SetResources(r, request.NewResources(nil, pinned, nil, nil, nil, nil))
 	trq, _, _, err := c2.ParseTimeRangeQuery(r)
@@ -453,11 +454,11 @@ func TestResolutionIdentityMismatchDeclines(t *testing.T) {
 	// GET and POST /render pinned to different tenants: probes are GETs under
 	// tenant A, so a POST render under tenant B must not accelerate
 	getRender := &po.Options{Path: "/render", Methods: []string{http.MethodGet},
-		RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}}
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}}
 	postRender := &po.Options{Path: "/render", Methods: []string{http.MethodPost},
-		RequestHeaders: map[string]string{"Authorization": "Basic tenant-b"}}
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"}}
 	expand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}}
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}}
 	c := newTestClient(t, nil)
 	c.Configuration().Paths = po.List{getRender, postRender, expand}
 
@@ -474,9 +475,9 @@ func TestResolutionIdentityMismatchDeclines(t *testing.T) {
 	// /render and /metrics/expand pinned to different tenants: probes and
 	// expansion would mix namespaces, so no render accelerates
 	render2 := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{"Authorization": "Basic tenant-a"}}
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}}
 	expand2 := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{"Authorization": "Basic tenant-b"}}
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"}}
 	c2 := newTestClient(t, nil)
 	c2.Configuration().Paths = po.List{render2, expand2}
 	rq, err = serve(c2, getReq("target=a.b&from=-1h&format=json"), render2)

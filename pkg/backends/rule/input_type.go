@@ -20,7 +20,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/parts"
 )
 
 type (
@@ -28,103 +29,43 @@ type (
 	extractionFunc func(*http.Request, string) string
 )
 
+// the header sources are given a canonical header name at parse time, which
+// is what the parts lookups expect
 var sourceExtractionFuncs = map[inputType]extractionFunc{
-	"method":        extractMethodFromSource,
-	"url":           extractURLFromSource,
-	"url_no_params": extractURLNoParamsFromSource,
-	"scheme":        extractSchemeFromSource,
-	"host":          extracHostFromSource,
-	"hostname":      extractHostnameFromSource,
-	"port":          extractPortFromSource,
-	"path":          extractPathFromSource,
-	"params":        extractParamsFromSource,
-	"param":         extractParamFromSource,
-	"header":        extractHeaderFromSource,
+	ro.SourceMethod:      func(r *http.Request, _ string) string { return parts.Method(r) },
+	ro.SourceURL:         func(r *http.Request, _ string) string { return parts.URL(r) },
+	ro.SourceURLNoParams: func(r *http.Request, _ string) string { return parts.URLNoParams(r) },
+	ro.SourceScheme:      func(r *http.Request, _ string) string { return parts.Scheme(r) },
+	ro.SourceHost:        func(r *http.Request, _ string) string { return parts.Host(r) },
+	ro.SourceHostname:    func(r *http.Request, _ string) string { return parts.Hostname(r) },
+	ro.SourcePort:        func(r *http.Request, _ string) string { return parts.Port(r) },
+	ro.SourcePath:        func(r *http.Request, _ string) string { return parts.Path(r) },
+	ro.SourceParams:      func(r *http.Request, _ string) string { return parts.RawQuery(r) },
+	ro.SourceParam:       extractParamFromSource,
+	ro.SourceHeader:      parts.Header,
+	ro.SourceHasParam:    extractParamPresenceFromSource,
+	ro.SourceHasHeader:   extractHeaderPresenceFromSource,
 }
 
-// IsValidSourceName returns true only if the provided source name is supported by the Rules engine
 func isValidSourceName(source string) (extractionFunc, bool) {
 	f, ok := sourceExtractionFuncs[inputType(source)]
 	return f, ok
 }
 
-func extractMethodFromSource(r *http.Request, _ string) string {
-	if r != nil {
-		return r.Method
-	}
-	return ""
-}
-
-func extractURLFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.String()
-	}
-	return ""
-}
-
-func extractURLNoParamsFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		u := urls.Clone(r.URL)
-		u.RawQuery = ""
-		return u.String()
-	}
-	return ""
-}
-
-func extractSchemeFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.Scheme
-	}
-	return ""
-}
-
-func extracHostFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.Host
-	}
-	return ""
-}
-
-func extractHostnameFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.Hostname()
-	}
-	return ""
-}
-
-func extractPortFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.Port()
-	}
-	return ""
-}
-
-func extractPathFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.Path
-	}
-	return ""
-}
-
-func extractParamsFromSource(r *http.Request, _ string) string {
-	if r != nil && r.URL != nil {
-		return r.URL.RawQuery
-	}
-	return ""
+func isHeaderSource(source string) bool {
+	return source == ro.SourceHeader || source == ro.SourceHasHeader
 }
 
 func extractParamFromSource(r *http.Request, paramName string) string {
-	if r != nil && r.URL != nil && r.URL.Query() != nil {
-		return r.URL.Query().Get(paramName)
-	}
-	return ""
+	return parts.Param(parts.Query(r), paramName)
 }
 
-func extractHeaderFromSource(r *http.Request, headerName string) string {
-	if r != nil && r.Header != nil {
-		return r.Header.Get(headerName)
-	}
-	return ""
+func extractHeaderPresenceFromSource(r *http.Request, headerName string) string {
+	return btos(parts.HasHeader(r, headerName), false)
+}
+
+func extractParamPresenceFromSource(r *http.Request, paramName string) string {
+	return btos(parts.HasParam(parts.Query(r), paramName), false)
 }
 
 // assumes delimiter is not empty string, and part is >= 0

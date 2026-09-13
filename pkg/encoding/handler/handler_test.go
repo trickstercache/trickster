@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -32,7 +33,7 @@ func emptyHandler(w http.ResponseWriter, r *http.Request) {
 func TestHandleCompression(t *testing.T) {
 	f := HandleCompression(http.HandlerFunc(emptyHandler),
 		sets.New([]string{headers.ValueTextPlain}))
-	r, _ := http.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	r, _ := http.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	w := httptest.NewRecorder()
 	f.ServeHTTP(w, r)
 	if w.Body.String() != "trickster" {
@@ -43,5 +44,18 @@ func TestHandleCompression(t *testing.T) {
 	f.ServeHTTP(w, r)
 	if w.Body.String() != "trickster" {
 		t.Error("writer data mismatch")
+	}
+}
+
+func TestHandleCompressionSupportsHijacker(t *testing.T) {
+	var supportsHijacker bool
+	f := HandleCompression(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, supportsHijacker = w.(http.Hijacker)
+	}), nil)
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
+	f.ServeHTTP(httptest.NewRecorder(), r)
+
+	if !supportsHijacker {
+		t.Error("compression response writer does not implement http.Hijacker")
 	}
 }

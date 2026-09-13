@@ -20,6 +20,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
@@ -72,7 +73,7 @@ func TestOriginAuthInjection(t *testing.T) {
 	// explicit pin is left alone
 	plain := &po.Options{Path: "/render", Methods: methods.GetAndPost()}
 	pinned := &po.Options{Path: "/tags", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{"Authorization": "Basic other"}}
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic other"}}
 	o.Paths = po.List{plain, pinned}
 	c := newTestClient(t, o)
 	o.Paths = c.DefaultPathConfigs(o).Overlay(o.Paths)
@@ -83,7 +84,7 @@ func TestOriginAuthInjection(t *testing.T) {
 		if pc.Path == "/tags" {
 			expected = "Basic other"
 		}
-		if got := pc.RequestHeaders["Authorization"]; got != expected {
+		if got := pc.RequestHeaders[headers.NameAuthorization]; got != expected {
 			t.Fatalf("%s: Authorization = %q, want %q", pc.Path, got, expected)
 		}
 		if pc.IdentityKeyPart() == "" {
@@ -92,14 +93,14 @@ func TestOriginAuthInjection(t *testing.T) {
 	}
 
 	// the health check default carries the credential
-	if h := c.DefaultHealthCheckConfig().Headers["Authorization"]; h != want {
+	if h := c.DefaultHealthCheckConfig().Headers[headers.NameAuthorization]; h != want {
 		t.Fatalf("health check Authorization = %q, want %q", h, want)
 	}
 
 	// synthetic identities are uniform, so a render carrying a client
 	// Authorization header still accelerates: the credential replaces it
 	r := getReq("target=a.b&from=-1h&format=json")
-	r.Header.Set("Authorization", "Bearer client-token")
+	r.Header.Set(headers.NameAuthorization, "Bearer client-token")
 	r = request.SetResources(r, request.NewResources(nil, o.Paths.Match(http.MethodGet, "/render"),
 		nil, nil, nil, nil))
 	trq, _, _, err := c.ParseTimeRangeQuery(r)
@@ -128,7 +129,7 @@ func TestOriginAuthInjection(t *testing.T) {
 func TestOriginAuthAppendRejected(t *testing.T) {
 	// a set and an append on Authorization would share one unordered map, so
 	// a path appending it alongside an origin credential fails construction
-	for _, key := range []string{"+Authorization", "+authorization"} {
+	for _, key := range []string{"+" + headers.NameAuthorization, "+" + strings.ToLower(headers.NameAuthorization)} {
 		o := bo.New()
 		o.Graphite = gro.New()
 		o.Graphite.OriginAuthorization = "Bearer backend-token"
@@ -144,7 +145,7 @@ func TestOriginAuthAppendRejected(t *testing.T) {
 	o := bo.New()
 	o.Graphite = gro.New()
 	pc := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{"+Authorization": "secondary-value"}}
+		RequestHeaders: map[string]string{"+" + headers.NameAuthorization: "secondary-value"}}
 	o.Paths = po.List{pc}
 	if _, err := NewClient("test", o, nil, nil, nil, nil); err != nil {
 		t.Fatalf("append without origin credential must construct: %v", err)
@@ -167,9 +168,9 @@ func TestOriginAuthDeterministicHeader(t *testing.T) {
 	wantID := pc.IdentityKeyPart()
 	for range 100 {
 		r := getReq("target=a.b&from=-1h&format=json")
-		r.Header.Set("Authorization", "Bearer client-token")
+		r.Header.Set(headers.NameAuthorization, "Bearer client-token")
 		headers.UpdateRequestHeaders(r, pc.RequestHeaders)
-		if v := r.Header.Values("Authorization"); len(v) != 1 || v[0] != "Bearer backend-token" {
+		if v := r.Header.Values(headers.NameAuthorization); len(v) != 1 || v[0] != "Bearer backend-token" {
 			t.Fatalf("Authorization values = %v, want exactly [Bearer backend-token]", v)
 		}
 		if pc.IdentityKeyPart() != wantID {

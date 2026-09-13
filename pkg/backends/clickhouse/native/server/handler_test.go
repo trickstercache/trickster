@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
@@ -48,7 +49,7 @@ func echoJSONHandler() http.Handler {
 			},
 			"rows": 1,
 		}
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameContentType, "application/json")
 		json.NewEncoder(w).Encode(doc)
 	})
 }

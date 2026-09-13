@@ -17,6 +17,7 @@
 package providers
 
 import (
+	"slices"
 	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -109,6 +110,33 @@ var supportedTimeSeries = map[string]Provider{
 func IsSupportedTimeSeriesProvider(name string) bool {
 	_, ok := supportedTimeSeries[name]
 	return ok
+}
+
+// supportedHTTPTimeSeries is the time series providers reached over HTTP, whose API paths the
+// proxy predefines; MySQL is served over its own wire protocol and has none
+var supportedHTTPTimeSeries = map[string]Provider{
+	Prometheus: PrometheusID,
+	InfluxDB:   InfluxDBID,
+	ClickHouse: ClickHouseID,
+	Graphite:   GraphiteID,
+}
+
+// IsSupportedHTTPTimeSeriesProvider returns true if the named provider is a time series
+// provider reached over HTTP
+func IsSupportedHTTPTimeSeriesProvider(name string) bool {
+	_, ok := supportedHTTPTimeSeries[name]
+	return ok
+}
+
+// HTTPTimeSeriesProviderNames returns the sorted names of the time series providers reached
+// over HTTP
+func HTTPTimeSeriesProviderNames() []string {
+	out := make([]string, 0, len(supportedHTTPTimeSeries))
+	for name := range supportedHTTPTimeSeries {
+		out = append(out, name)
+	}
+	slices.Sort(out)
+	return out
 }
 
 var supportedTimeSeriesMerge = map[string]Provider{

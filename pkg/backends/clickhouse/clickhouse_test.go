@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -31,8 +32,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
-
-	"github.com/prometheus/common/sigv4"
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
@@ -215,7 +214,7 @@ func TestNativeListenerAdapterValidation(t *testing.T) {
 	}{
 		{"nil", nil},
 		{"unsupported protocol", &bo.Options{Protocol: "tcp"}},
-		{"native SigV4", &bo.Options{Protocol: "native", SigV4: &sigv4.SigV4Config{}}},
+		{"native SigV4", &bo.Options{Protocol: "native", SigV4: &taws.Options{}}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if err := a.ValidateBackend(test.o); err == nil {

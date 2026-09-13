@@ -20,6 +20,8 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 func TestClone(t *testing.T) {
@@ -48,7 +50,7 @@ func TestBuildUpstreamURL(t *testing.T) {
 
 func TestSize(t *testing.T) {
 	const expected = 24
-	u, _ := url.Parse("https://trickstercache.org")
+	u, _ := url.Parse("https://" + appinfo.Domain)
 	i := Size(u)
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)

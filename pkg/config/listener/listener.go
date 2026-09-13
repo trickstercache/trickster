@@ -19,6 +19,7 @@ package listener
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
@@ -26,6 +27,7 @@ import (
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -39,10 +41,21 @@ const (
 	ProtocolMySQL = "mysql"
 	// ProtocolClickHouse is the ClickHouse native wire protocol.
 	ProtocolClickHouse = "clickhouse"
+	// ProtocolHTTP3 is the HTTP/3-over-QUIC listener protocol. It is not
+	// selectable via the protocol field; an http listener grows an HTTP/3
+	// endpoint by enabling its http3 block.
+	ProtocolHTTP3 = "http3"
 	// ProtocolFlightSQL is Apache Arrow Flight SQL over gRPC, a
 	// vendor-neutral query protocol currently served by the InfluxDB
 	// provider.
 	ProtocolFlightSQL = "flight-sql"
+	// ProtocolTCP relays each connection's bytes, unread, to the listener's one backend.
+	ProtocolTCP = "tcp"
+	// ProtocolTLS relays TLS connections unterminated, selecting the backend whose hosts
+	// name the server name the client offered.
+	ProtocolTLS = "tls"
+	// ProtocolUDP relays datagrams to the listener's one backend, one session per client.
+	ProtocolUDP = "udp"
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)
@@ -71,12 +84,97 @@ type Options struct {
 	// TLSWatchInterval is the backstop poll for out-of-band cert/key rotation
 	// (e.g. certbot). Changes are hot-swapped without restart. 0 disables.
 	TLSWatchInterval timeconv.Duration `yaml:"tls_watch_interval,omitempty"`
+	// TLSRuntimeCerts serves the TLS port even when no mapped backend provides a
+	// certificate file, so certificates can be supplied at runtime (e.g. from Secrets).
+	TLSRuntimeCerts bool `yaml:"tls_runtime_certs,omitempty"`
 	// MySQL contains downstream limits when protocol is mysql.
 	MySQL *mo.ListenerOptions `yaml:"mysql,omitempty"`
+	// HTTP3 optionally serves this listener's routes over HTTP/3 as well.
+	HTTP3 *HTTP3Options `yaml:"http3,omitempty"`
+	// Stream tunes the connect and idle timeouts when protocol is tcp, tls or udp.
+	Stream *l4o.Options `yaml:"stream,omitempty"`
+	// ProxyProtocol accepts a PROXY protocol v1 or v2 header on each connection from a
+	// trusted proxy, so the peer address is the client's rather than the load balancer's.
+	ProxyProtocol bool `yaml:"proxy_protocol,omitempty"`
+	// TrustedProxies lists the addresses or CIDRs of proxies whose PROXY protocol header
+	// and forwarding headers are believed when resolving the client IP; others are ignored.
+	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
 	ServeTLS bool `yaml:"-"`
 	// Active indicates whether the listener has a configured purpose.
 	Active bool `yaml:"-"`
+}
+
+// HTTP3Options configures an HTTP/3 endpoint alongside an HTTP listener's TLS
+// endpoint. HTTP/3 is TLS-only, so the listener must already serve TLS.
+type HTTP3Options struct {
+	// Enabled turns on the HTTP/3 endpoint for this listener.
+	Enabled bool `yaml:"enabled,omitempty"`
+	// ListenAddress is the IP for the UDP endpoint; defaults to the
+	// listener's TLS address.
+	ListenAddress string `yaml:"address,omitempty"`
+	// ListenPort is the UDP port; defaults to the listener's TLS port so
+	// clients find HTTP/3 where they already found HTTPS.
+	ListenPort int `yaml:"port,omitempty"`
+	// AdvertisedPort is the port published in the Alt-Svc header; defaults
+	// to ListenPort. Set it when a load balancer or NAT presents a
+	// different port to clients than the one bound here.
+	AdvertisedPort int `yaml:"advertised_port,omitempty"`
+}
+
+// Equal reports whether both HTTP/3 configurations are identical.
+func (o *HTTP3Options) Equal(other *HTTP3Options) bool {
+	if o == nil || other == nil {
+		return o == other
+	}
+	return *o == *other
+}
+
+// Clone returns a deep copy of the HTTP/3 options.
+func (o *HTTP3Options) Clone() *HTTP3Options {
+	if o == nil {
+		return nil
+	}
+	out := *o
+	return &out
+}
+
+// HTTP3Enabled reports whether this listener should also serve HTTP/3.
+// HTTP/3 requires TLS, so a listener without a usable TLS endpoint cannot
+// serve it regardless of the http3 block.
+func (o *Options) HTTP3Enabled() bool {
+	return o != nil && o.HTTP3 != nil && o.HTTP3.Enabled &&
+		o.Protocol == ProtocolHTTP && o.ServeTLS && o.TLSListenPort > 0
+}
+
+// HTTP3Endpoint resolves the address, bound port, and advertised port for this
+// listener's HTTP/3 endpoint, defaulting each to the TLS endpoint's value.
+func (o *Options) HTTP3Endpoint() (address string, port, advertisedPort int) {
+	if !o.HTTP3Enabled() {
+		return "", 0, 0
+	}
+	address, port = o.TLSListenAddress, o.TLSListenPort
+	if o.HTTP3.ListenAddress != "" {
+		address = o.HTTP3.ListenAddress
+	}
+	if o.HTTP3.ListenPort > 0 {
+		port = o.HTTP3.ListenPort
+	}
+	advertisedPort = port
+	if o.HTTP3.AdvertisedPort > 0 {
+		advertisedPort = o.HTTP3.AdvertisedPort
+	}
+	return address, port, advertisedPort
+}
+
+// IsStream reports whether the protocol relays bytes without reading them: tcp, tls or udp.
+func IsStream(protocol string) bool {
+	return protocol == ProtocolTCP || protocol == ProtocolTLS || protocol == ProtocolUDP
+}
+
+// IsStream reports whether this listener relays bytes without reading them.
+func (o *Options) IsStream() bool {
+	return o != nil && IsStream(o.Protocol)
 }
 
 // Lookup maps listener names to their options.
@@ -175,6 +273,9 @@ func (o *Options) Clone() *Options {
 	}
 	out := *o
 	out.MySQL = o.MySQL.Clone()
+	out.HTTP3 = o.HTTP3.Clone()
+	out.Stream = o.Stream.Clone()
+	out.TrustedProxies = slices.Clone(o.TrustedProxies)
 	if o.MaxRequestBodySizeBytes != nil {
 		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
@@ -192,10 +293,14 @@ func (o *Options) Equal(other *Options) bool {
 		o.ConnectionsLimit != other.ConnectionsLimit ||
 		o.TruncateRequestBodyTooLarge != other.TruncateRequestBodyTooLarge ||
 		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS ||
-		o.TLSWatchInterval != other.TLSWatchInterval {
+		o.TLSWatchInterval != other.TLSWatchInterval || o.TLSRuntimeCerts != other.TLSRuntimeCerts ||
+		o.ProxyProtocol != other.ProxyProtocol || !slices.Equal(o.TrustedProxies, other.TrustedProxies) {
 		return false
 	}
 	if (o.MySQL == nil) != (other.MySQL == nil) || o.MySQL != nil && *o.MySQL != *other.MySQL {
+		return false
+	}
+	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) {
 		return false
 	}
 	if o.MaxRequestBodySizeBytes == nil || other.MaxRequestBodySizeBytes == nil {

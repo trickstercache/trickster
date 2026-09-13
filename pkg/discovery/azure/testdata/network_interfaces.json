@@ -1,0 +1,216 @@
+{
+ "value": [
+  {
+   "name": "tk-disco-1VMNic",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-1VMNic",
+   "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+   "tags": {
+    "role": "prometheus",
+    "port": "9090",
+    "shard": "a"
+   },
+   "properties": {
+    "provisioningState": "Succeeded",
+    "resourceGuid": "bbbbbbbb-0000-0000-0000-000000000001",
+    "ipConfigurations": [
+     {
+      "name": "ipconfigtk-disco-1",
+      "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-1VMNic/ipConfigurations/ipconfigtk-disco-1",
+      "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+      "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+      "properties": {
+       "provisioningState": "Succeeded",
+       "privateIPAddress": "10.0.0.4",
+       "privateIPAllocationMethod": "Dynamic",
+       "subnet": {
+        "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/virtualNetworks/tk-disco-1VNET/subnets/tk-disco-1Subnet"
+       },
+       "primary": true,
+       "privateIPAddressVersion": "IPv4"
+      }
+     }
+    ],
+    "macAddress": "00-0D-3A-00-00-01",
+    "vnetEncryptionSupported": false,
+    "enableIPForwarding": false,
+    "disableTcpStateTracking": false,
+    "networkSecurityGroup": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkSecurityGroups/tk-disco-1NSG"
+    },
+    "primary": true,
+    "virtualMachine": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-1"
+    },
+    "hostedWorkloads": [],
+    "tapConfigurations": [],
+    "nicType": "Standard",
+    "allowPort25Out": false,
+    "defaultOutboundConnectivityEnabled": true,
+    "auxiliaryMode": "None",
+    "auxiliarySku": "None"
+   },
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "eastus",
+   "kind": "Regular"
+  },
+  {
+   "name": "tk-disco-2VMNic",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-2VMNic",
+   "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+   "tags": {
+    "role": "prometheus",
+    "port": "9091",
+    "shard": "b"
+   },
+   "properties": {
+    "provisioningState": "Succeeded",
+    "resourceGuid": "bbbbbbbb-0000-0000-0000-000000000001",
+    "ipConfigurations": [
+     {
+      "name": "ipconfigtk-disco-2",
+      "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-2VMNic/ipConfigurations/ipconfigtk-disco-2",
+      "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+      "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+      "properties": {
+       "provisioningState": "Succeeded",
+       "privateIPAddress": "10.0.0.5",
+       "privateIPAllocationMethod": "Dynamic",
+       "publicIPAddress": {
+        "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/publicIPAddresses/tk-disco-2PublicIP"
+       },
+       "subnet": {
+        "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/virtualNetworks/tk-disco-1VNET/subnets/tk-disco-1Subnet"
+       },
+       "primary": true,
+       "privateIPAddressVersion": "IPv4"
+      }
+     }
+    ],
+    "macAddress": "00-0D-3A-00-00-01",
+    "vnetEncryptionSupported": false,
+    "enableIPForwarding": false,
+    "disableTcpStateTracking": false,
+    "networkSecurityGroup": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkSecurityGroups/tk-disco-2NSG"
+    },
+    "primary": true,
+    "virtualMachine": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-2"
+    },
+    "hostedWorkloads": [],
+    "tapConfigurations": [],
+    "nicType": "Standard",
+    "allowPort25Out": false,
+    "defaultOutboundConnectivityEnabled": false,
+    "auxiliaryMode": "None",
+    "auxiliarySku": "None"
+   },
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "eastus",
+   "kind": "Regular"
+  },
+  {
+   "name": "tk-disco-3VMNic",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-3VMNic",
+   "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+   "tags": {
+    "role": "prometheus",
+    "port": "9092"
+   },
+   "properties": {
+    "provisioningState": "Succeeded",
+    "resourceGuid": "bbbbbbbb-0000-0000-0000-000000000001",
+    "ipConfigurations": [
+     {
+      "name": "ipconfigtk-disco-3",
+      "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-3VMNic/ipConfigurations/ipconfigtk-disco-3",
+      "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+      "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+      "properties": {
+       "provisioningState": "Succeeded",
+       "privateIPAddress": "10.0.0.6",
+       "privateIPAllocationMethod": "Dynamic",
+       "subnet": {
+        "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/virtualNetworks/tk-disco-1VNET/subnets/tk-disco-1Subnet"
+       },
+       "primary": true,
+       "privateIPAddressVersion": "IPv4"
+      }
+     }
+    ],
+    "macAddress": "00-0D-3A-00-00-01",
+    "vnetEncryptionSupported": false,
+    "enableIPForwarding": false,
+    "disableTcpStateTracking": false,
+    "networkSecurityGroup": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkSecurityGroups/tk-disco-3NSG"
+    },
+    "primary": true,
+    "virtualMachine": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-3"
+    },
+    "hostedWorkloads": [],
+    "tapConfigurations": [],
+    "nicType": "Standard",
+    "allowPort25Out": false,
+    "defaultOutboundConnectivityEnabled": false,
+    "auxiliaryMode": "None",
+    "auxiliarySku": "None"
+   },
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "eastus",
+   "kind": "Regular"
+  },
+  {
+   "name": "tk-disco-4VMNic",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-4VMNic",
+   "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+   "tags": {
+    "role": "other"
+   },
+   "properties": {
+    "provisioningState": "Succeeded",
+    "resourceGuid": "bbbbbbbb-0000-0000-0000-000000000001",
+    "ipConfigurations": [
+     {
+      "name": "ipconfigtk-disco-4",
+      "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-4VMNic/ipConfigurations/ipconfigtk-disco-4",
+      "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+      "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+      "properties": {
+       "provisioningState": "Succeeded",
+       "privateIPAddress": "10.0.0.7",
+       "privateIPAllocationMethod": "Dynamic",
+       "subnet": {
+        "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/virtualNetworks/tk-disco-1VNET/subnets/tk-disco-1Subnet"
+       },
+       "primary": true,
+       "privateIPAddressVersion": "IPv4"
+      }
+     }
+    ],
+    "macAddress": "00-0D-3A-00-00-01",
+    "vnetEncryptionSupported": false,
+    "enableIPForwarding": false,
+    "disableTcpStateTracking": false,
+    "networkSecurityGroup": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkSecurityGroups/tk-disco-4NSG"
+    },
+    "primary": true,
+    "virtualMachine": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-4"
+    },
+    "hostedWorkloads": [],
+    "tapConfigurations": [],
+    "nicType": "Standard",
+    "allowPort25Out": false,
+    "defaultOutboundConnectivityEnabled": true,
+    "auxiliaryMode": "None",
+    "auxiliarySku": "None"
+   },
+   "type": "Microsoft.Network/networkInterfaces",
+   "location": "eastus",
+   "kind": "Regular"
+  }
+ ]
+}

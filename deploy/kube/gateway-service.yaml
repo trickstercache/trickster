@@ -1,0 +1,53 @@
+# The address clients reach the controller at, and the one published into
+# Gateway and Ingress status (kubernetes.published_service). Ports forward by
+# number: 80 and 443 to the listeners Gateways declare, 8080 and 8443 to the
+# Ingress listeners the ConfigMap configures. A Gateway declaring another
+# port needs an entry here as well.
+apiVersion: v1
+kind: Service
+metadata:
+  name: trickster-gateway
+  namespace: trickster
+  labels:
+    app.kubernetes.io/name: trickster-gateway
+spec:
+  type: LoadBalancer
+  # a client's address reaches the pod only when the load balancer keeps it;
+  # Local does, at the cost of routing only to nodes running a replica.
+  # Cluster is the default and works everywhere.
+  externalTrafficPolicy: Cluster
+  selector:
+    app.kubernetes.io/name: trickster-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: https
+      port: 443
+      targetPort: 443
+    - name: web
+      port: 8080
+      targetPort: 8080
+    - name: websecure
+      port: 8443
+      targetPort: 8443
+---
+# metrics stay off the load balancer
+apiVersion: v1
+kind: Service
+metadata:
+  name: trickster-gateway-metrics
+  namespace: trickster
+  labels:
+    app.kubernetes.io/name: trickster-gateway
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8481"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app.kubernetes.io/name: trickster-gateway
+  ports:
+    - name: metrics
+      port: 8481
+      targetPort: metrics

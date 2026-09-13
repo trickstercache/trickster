@@ -80,7 +80,7 @@ func (c *Client) RenderHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		r.Body = http.NoBody
 		r.ContentLength = 0
-		r.Header.Del("Content-Length")
+		r.Header.Del(headers.NameContentLength)
 	}
 	qp, body, isBody := params.GetRequestValues(r)
 	if isBody {

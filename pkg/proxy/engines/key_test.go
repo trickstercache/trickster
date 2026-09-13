@@ -408,6 +408,83 @@ func TestDeriveCacheKeyVariesByCORSOrigin(t *testing.T) {
 	}
 }
 
+func TestDeriveCacheKeyVariesByPreservedHost(t *testing.T) {
+	// the origin sees the client's Host only when the backend preserves it, and then not when a
+	// path replaces it; the key follows the Host the origin sees, case being no part of a host
+	makeKey := func(preserve bool, host string, pc *po.Options, customHasher bool) string {
+		t.Helper()
+		if pc == nil {
+			pc = po.New()
+		}
+		if customHasher {
+			pc.KeyHasher = exampleKeyHasher
+		}
+		rsc := request.NewResources(&bo.Options{PreserveHost: preserve}, pc, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Host = host
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	updating := func(key, value string) func() *po.Options {
+		return func() *po.Options {
+			pc := po.New()
+			pc.RequestHeaders = map[string]string{key: value}
+			return pc
+		}
+	}
+	tests := []struct {
+		name          string
+		preserve      bool
+		pc            func() *po.Options
+		customHasher  bool
+		wantDifferent bool
+	}{
+		{name: "the origin's own host", preserve: false},
+		{name: "preserved", preserve: true, wantDifferent: true},
+		{name: "preserved with a custom hasher", preserve: true, customHasher: true,
+			wantDifferent: true},
+		{name: "preserved but set by the path", preserve: true, pc: updating("Host", "fixed.example.com")},
+		{name: "preserved, the path's set empty", preserve: true, pc: updating("Host", ""),
+			wantDifferent: true},
+		{name: "preserved but appended by the path", preserve: true,
+			pc: updating("+Host", "fixed.example.com")},
+		{name: "preserved, the path's append empty", preserve: true, pc: updating("+Host", ""),
+			wantDifferent: true},
+		{name: "preserved but deleted by the path", preserve: true, pc: updating("-Host", "")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var first, second *po.Options
+			if tc.pc != nil {
+				first, second = tc.pc(), tc.pc()
+			}
+			a := makeKey(tc.preserve, "first.example.com", first, tc.customHasher)
+			b := makeKey(tc.preserve, "second.example.com", second, tc.customHasher)
+			if got := a != b; got != tc.wantDifferent {
+				t.Fatalf("cache keys differ = %v, want %v (%q, %q)", got, tc.wantDifferent, a, b)
+			}
+		})
+	}
+	// a request served with no path options is keyed by its Host too
+	noPath := func(host string) string {
+		rsc := request.NewResources(&bo.Options{PreserveHost: true}, nil, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Host = host
+		return newProxyRequest(request.SetResources(r, rsc), nil).DeriveCacheKey("")
+	}
+	if a, b := noPath("first.example.com"), noPath("second.example.com"); a == b {
+		t.Fatalf("no path options: keys of two hosts are one: %q", a)
+	}
+	if a, b := makeKey(true, "Shop.Example.com", nil, false),
+		makeKey(true, "shop.example.com", nil, false); a != b {
+		t.Fatalf("a host's case split the key: %q vs %q", a, b)
+	}
+	if a, b := makeKey(false, "shop.example.com", nil, false),
+		makeKey(true, "", nil, false); a != b {
+		t.Fatalf("a backend not preserving the Host changed its keys: %q vs %q", a, b)
+	}
+}
+
 // TestDeriveCacheKey_MultiValueParams is a comprehensive test for multi-value
 // query parameter handling in cache key derivation.
 // Regression tests for https://github.com/trickstercache/trickster/issues/858
@@ -538,7 +615,7 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 		request.NewResources(client.Configuration(), client.Configuration().Paths[0],
 			nil, nil, nil, nil)))
 
-	tr.Header.Add("Authorization", "test")
+	tr.Header.Add(headers.NameAuthorization, "test")
 	tr.Header.Add("X-Test-Header", "test2")
 
 	pr := newProxyRequest(tr, nil)
@@ -664,15 +741,15 @@ func TestDeriveCacheKeyEffectiveIdentity(t *testing.T) {
 
 	// rotating a pinned credential rotates the key, with no inbound auth at
 	// all — the metadata-route and late-fallback shape
-	kA := newPR(path(map[string]string{"Authorization": "Bearer tenant-a"}, nil), "").DeriveCacheKey("")
-	kB := newPR(path(map[string]string{"Authorization": "Bearer tenant-b"}, nil), "").DeriveCacheKey("")
+	kA := newPR(path(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, nil), "").DeriveCacheKey("")
+	kB := newPR(path(map[string]string{headers.NameAuthorization: "Bearer tenant-b"}, nil), "").DeriveCacheKey("")
 	if kA == kB {
 		t.Error("a rotated pinned credential must change the cache key")
 	}
 
 	// with a static override, the discarded inbound value does not fragment
 	// the key, but the configured replacement is represented in it
-	pcPinned := path(map[string]string{"Authorization": "Bearer tenant-a"}, nil)
+	pcPinned := path(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, nil)
 	k1 := newPR(pcPinned, "Bearer client-1").DeriveCacheKey("")
 	k2 := newPR(pcPinned, "Bearer client-2").DeriveCacheKey("")
 	if k1 != k2 {

@@ -243,12 +243,17 @@ func readConfigSource(path string) (configSource, error) {
 	return configSource{path: path, data: data, modTime: info.ModTime()}, nil
 }
 
-func mergeConfigSources(plan configSourcePlan, sources []configSource) ([]byte, error) {
+func mergeConfigSources(plan configSourcePlan, sources []configSource,
+	overlay *Overlay,
+) ([]byte, error) {
 	merged := emptyConfigDocument()
 	for index, source := range sources {
 		document, err := parseConfigDocument(source.data)
 		if err != nil {
 			return nil, fmt.Errorf("parse config source %q: %w", source.path, err)
+		}
+		if err := validateReservedNames(document.Content[0]); err != nil {
+			return nil, fmt.Errorf("config source %q: %w", source.path, err)
 		}
 		includeSetting, err := configIncludeDirectoryFromYAML(source.data)
 		if err != nil {
@@ -256,6 +261,16 @@ func mergeConfigSources(plan configSourcePlan, sources []configSource) ([]byte, 
 		}
 		if includeSetting != nil && (plan.mode == configSourceModeDirectory || index > 0) {
 			return nil, fmt.Errorf("config source %q cannot set main.config_include_directory", source.path)
+		}
+		mergeConfigMapping(merged.Content[0], document.Content[0])
+	}
+	if !overlay.IsEmpty() {
+		document, err := parseConfigDocument(overlay.Data)
+		if err != nil {
+			return nil, fmt.Errorf("parse config overlay: %w", err)
+		}
+		if err := validateOverlayDocument(document.Content[0], overlay.Prefix); err != nil {
+			return nil, fmt.Errorf("config overlay: %w", err)
 		}
 		mergeConfigMapping(merged.Content[0], document.Content[0])
 	}

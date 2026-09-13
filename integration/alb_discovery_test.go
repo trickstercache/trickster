@@ -170,7 +170,7 @@ func startDiscoveryTrickster(t *testing.T, cfg string) string {
 	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg), 0o644))
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 	return cfgPath
 }
 

@@ -20,6 +20,7 @@ import (
 	"net"
 	"strconv"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -35,8 +36,8 @@ import (
 
 // AnnotationScheme is the well-known annotation consulted on watched
 // Services and Pods to select the member scheme when the query does not set
-// one (e.g. trickster.io/scheme: https)
-const AnnotationScheme = "trickster.io/scheme"
+// one (e.g. AnnotationScheme: https)
+const AnnotationScheme = appinfo.Domain + "/scheme"
 
 // buildEndpointSlices maps the ready endpoint addresses of the query's
 // Service onto members. Terminating endpoints are omitted entirely so
@@ -289,7 +290,7 @@ func resolvePodPort(pod *corev1.Pod, want string) (int32, bool) {
 
 // resolveScheme selects the member scheme: an explicit query scheme wins;
 // else a declared https appProtocol; else the well-known
-// trickster.io/scheme annotation on the watched object; else http
+// AnnotationScheme on the watched object; else http
 func resolveScheme(qScheme, appProtocol string, annotations map[string]string) string {
 	if qScheme != "" {
 		return qScheme

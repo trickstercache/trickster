@@ -30,6 +30,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
 	"github.com/stretchr/testify/require"
@@ -197,7 +198,7 @@ func TestStatusHandler(t *testing.T) {
 	require.NotNil(t, sh)
 
 	req, err := http.NewRequest("GET", "/", nil)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set(headers.NameAccept, "application/json")
 	require.NoError(t, err)
 
 	w := httptest.NewRecorder()

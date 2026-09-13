@@ -30,9 +30,7 @@ import (
 const clfTimeLayout = "02/Jan/2006:15:04:05 -0700"
 
 const (
-	dash          = "-"
-	headerCookie  = "Cookie"
-	headerReferer = "Referer"
+	dash = "-"
 )
 
 // Named format presets; "combined" is the default
@@ -58,6 +56,15 @@ type emitter func(b []byte, f *Fields) []byte
 type Formatter struct {
 	emitters          []emitter
 	needsResultHeader bool
+	needsResources    bool
+	needsRequestID    bool
+}
+
+// resourceTokens are the extension tokens whose values the route records on
+// its request resources, so the logger must share resources with the route.
+var resourceTokens = map[string]bool{
+	"upstream-addr": true, "upstream-status": true, "upstream-duration": true,
+	"trace-id": true, "span-id": true,
 }
 
 // Render appends the formatted log line, including a trailing newline, to b
@@ -75,7 +82,10 @@ func ParseFormat(input string) (*Formatter, error) {
 		input = DefaultFormatName
 	}
 	if input == JSON {
-		return &Formatter{emitters: jsonEmitters(), needsResultHeader: true}, nil
+		return &Formatter{
+			emitters: jsonEmitters(), needsResultHeader: true,
+			needsResources: true, needsRequestID: true,
+		}, nil
 	}
 	if p, ok := presets[input]; ok {
 		input = p
@@ -131,8 +141,15 @@ func ParseFormat(input string) (*Formatter, error) {
 		}
 		flushLiteral()
 		fm.emitters = append(fm.emitters, e)
-		if hasArg && input[i] == 'x' && (arg == "engine" || arg == "cache-status") {
-			fm.needsResultHeader = true
+		if hasArg && input[i] == 'x' {
+			switch {
+			case arg == "engine" || arg == "cache-status":
+				fm.needsResultHeader = true
+			case arg == "request-id":
+				fm.needsRequestID = true
+			case resourceTokens[arg]:
+				fm.needsResources = true
+			}
 		}
 		i++
 	}
@@ -143,6 +160,17 @@ func ParseFormat(input string) (*Formatter, error) {
 // NeedsResultHeader reports whether this format emits result-header fields.
 func (fm *Formatter) NeedsResultHeader() bool {
 	return fm != nil && fm.needsResultHeader
+}
+
+// NeedsResources reports whether this format emits fields the route records
+// on its request resources, such as the upstream exchange or trace.
+func (fm *Formatter) NeedsResources() bool {
+	return fm != nil && fm.needsResources
+}
+
+// NeedsRequestID reports whether this format emits the request ID.
+func (fm *Formatter) NeedsRequestID() bool {
+	return fm != nil && fm.needsRequestID
 }
 
 func compileToken(token byte, arg string, hasArg bool) (emitter, error) {
@@ -251,6 +279,13 @@ func compileArgToken(token byte, arg string) (emitter, error) {
 		return func(b []byte, f *Fields) []byte {
 			return appendCookie(b, f.ReqHeader, arg)
 		}, nil
+	case 'a':
+		if arg != "c" {
+			return nil, fmt.Errorf("%w: %%{%s}a", ErrInvalidFormatToken, arg)
+		}
+		return func(b []byte, f *Fields) []byte {
+			return appendOrDash(b, f.RemoteIP)
+		}, nil
 	case 't':
 		return compileTimeToken(arg)
 	case 'T':
@@ -271,6 +306,14 @@ func compileArgToken(token byte, arg string) (emitter, error) {
 		return nil, fmt.Errorf("%w: %%{%s}T", ErrInvalidFormatToken, arg)
 	case 'x':
 		return compileExtensionToken(arg)
+	case 'e':
+		if arg == "" {
+			return nil, fmt.Errorf("%w: %%{}e", ErrInvalidFormatToken)
+		}
+		return func(b []byte, f *Fields) []byte {
+			v, _ := f.Extra.Get(arg)
+			return appendEscapedOrDash(b, v)
+		}, nil
 	}
 	return nil, fmt.Errorf("%w: %%{%s}%s", ErrInvalidFormatToken, arg, string(token))
 }
@@ -320,6 +363,36 @@ func compileExtensionToken(arg string) (emitter, error) {
 		return func(b []byte, f *Fields) []byte {
 			return appendEscapedOrDash(b, f.PathConfig)
 		}, nil
+	case "upstream-addr":
+		return func(b []byte, f *Fields) []byte {
+			return appendEscapedOrDash(b, f.UpstreamAddr)
+		}, nil
+	case "upstream-status":
+		return func(b []byte, f *Fields) []byte {
+			if f.UpstreamStatus == 0 {
+				return append(b, dash...)
+			}
+			return strconv.AppendInt(b, int64(f.UpstreamStatus), 10)
+		}, nil
+	case "upstream-duration":
+		return func(b []byte, f *Fields) []byte {
+			if f.UpstreamStatus == 0 {
+				return append(b, dash...)
+			}
+			return strconv.AppendInt(b, f.UpstreamDuration.Milliseconds(), 10)
+		}, nil
+	case "trace-id":
+		return func(b []byte, f *Fields) []byte {
+			return appendOrDash(b, f.TraceID)
+		}, nil
+	case "span-id":
+		return func(b []byte, f *Fields) []byte {
+			return appendOrDash(b, f.SpanID)
+		}, nil
+	case "request-id":
+		return func(b []byte, f *Fields) []byte {
+			return appendEscapedOrDash(b, f.RequestID)
+		}, nil
 	}
 	return nil, fmt.Errorf("%w: %%{%s}x", ErrInvalidFormatToken, arg)
 }
@@ -347,7 +420,7 @@ func appendHeader(b []byte, h http.Header, key string) []byte {
 
 func appendCookie(b []byte, h http.Header, name string) []byte {
 	if h != nil {
-		if cookies, err := http.ParseCookie(h.Get(headerCookie)); err == nil {
+		if cookies, err := http.ParseCookie(h.Get(headers.NameCookie)); err == nil {
 			for _, c := range cookies {
 				if c.Name == name {
 					return appendEscapedOrDash(b, c.Value)
@@ -406,6 +479,9 @@ func jsonEmitters() []emitter {
 		{"client_ip", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.ClientIP)
 		}},
+		{"remote_ip", func(b []byte, f *Fields) []byte {
+			return appendJSONString(b, f.RemoteIP)
+		}},
 		{"user", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.User)
 		}},
@@ -433,8 +509,8 @@ func jsonEmitters() []emitter {
 		{"host", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.Host)
 		}},
-		{"referer", func(b []byte, f *Fields) []byte {
-			return appendJSONHeader(b, f.ReqHeader, headerReferer)
+		{strings.ToLower(headers.NameReferer), func(b []byte, f *Fields) []byte {
+			return appendJSONHeader(b, f.ReqHeader, headers.NameReferer)
 		}},
 		{"user_agent", func(b []byte, f *Fields) []byte {
 			return appendJSONHeader(b, f.ReqHeader, headers.NameUserAgent)
@@ -454,8 +530,26 @@ func jsonEmitters() []emitter {
 		{"engine", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.Engine)
 		}},
+		{"upstream_addr", func(b []byte, f *Fields) []byte {
+			return appendJSONString(b, f.UpstreamAddr)
+		}},
+		{"upstream_status", func(b []byte, f *Fields) []byte {
+			return strconv.AppendInt(b, int64(f.UpstreamStatus), 10)
+		}},
+		{"upstream_duration_ms", func(b []byte, f *Fields) []byte {
+			return strconv.AppendInt(b, f.UpstreamDuration.Milliseconds(), 10)
+		}},
+		{"trace_id", func(b []byte, f *Fields) []byte {
+			return appendJSONString(b, f.TraceID)
+		}},
+		{"span_id", func(b []byte, f *Fields) []byte {
+			return appendJSONString(b, f.SpanID)
+		}},
+		{"request_id", func(b []byte, f *Fields) []byte {
+			return appendJSONString(b, f.RequestID)
+		}},
 	}
-	out := make([]emitter, 0, len(fields)+1)
+	out := make([]emitter, 0, len(fields)+2)
 	for i, fd := range fields {
 		prefix := `,"` + fd.key + `":`
 		if i == 0 {
@@ -466,8 +560,21 @@ func jsonEmitters() []emitter {
 			return emit(append(b, prefix...), f)
 		})
 	}
-	out = append(out, func(b []byte, _ *Fields) []byte {
-		return append(b, '}')
+	// declared extra values are nested so they can never shadow a fixed key
+	out = append(out, func(b []byte, f *Fields) []byte {
+		if len(f.Extra) == 0 {
+			return append(b, '}')
+		}
+		b = append(b, `,"extra":{`...)
+		for i, e := range f.Extra {
+			if i > 0 {
+				b = append(b, ',')
+			}
+			b = appendJSONString(b, e.Key)
+			b = append(b, ':')
+			b = appendJSONString(b, e.Value)
+		}
+		return append(b, '}', '}')
 	})
 	return out
 }

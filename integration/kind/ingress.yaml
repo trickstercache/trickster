@@ -1,0 +1,219 @@
+# Manual Ingress v1 smoke test for the Kubernetes controller (phase 2).
+# It deploys a second Trickster into the trickster-it namespace, configured
+# as an Ingress controller rather than as an autodiscovery ALB, and an
+# Ingress in front of the webecho Service that manifests.yaml already
+# deploys. Exposed on the host via NodePort 30082.
+#
+#   make kind-integration-start
+#   kubectl --context kind-trickster-it apply -f integration/kind/ingress.yaml
+#   kubectl --context kind-trickster-it -n trickster-it \
+#     rollout status deployment/trickster-ingress --timeout=180s
+#   curl -sS -H 'Host: shop.example.com' http://localhost:30082/api/hello
+#
+# The response is webecho's echo of the request, with the path rewritten to
+# /hello by the rewrite-target annotation. Requests for a host or path the
+# Ingress does not claim return 404.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trickster-ingress
+  namespace: trickster-it
+---
+# Cluster-scoped: IngressClasses are cluster-scoped, and the controller
+# reads them to decide what it claims.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: trickster-ingress
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingressclasses"]
+    verbs: ["list", "watch"]
+  # read in any cluster that serves the Gateway API, whose CRDs
+  # kind-integration-gateway installs, because a listener may admit routes by
+  # the labels of their namespace
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gatewayclasses"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: trickster-ingress
+subjects:
+  - kind: ServiceAccount
+    name: trickster-ingress
+    namespace: trickster-it
+roleRef:
+  kind: ClusterRole
+  name: trickster-ingress
+  apiGroup: rbac.authorization.k8s.io
+---
+# Namespace-scoped: watch_namespaces narrows the watches themselves, so the
+# rest of the grant does not have to be cluster-wide. The controller probes
+# for the Gateway API group and serves Ingress alone when it is missing. The
+# trickstercache.org verbs serve the cache policy scenario (cache-policy.yaml).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trickster-ingress
+  namespace: trickster-it
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["list", "watch"]
+  # configmaps and the Gateway API kinds are watched in any cluster that
+  # serves the Gateway API, which the controller probes for at startup; an
+  # Ingress-only controller in such a cluster needs the grants all the same
+  - apiGroups: [""]
+    resources: ["services", "secrets", "configmaps"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes", "grpcroutes", "tcproutes", "tlsroutes", "udproutes", "referencegrants", "backendtlspolicies"]
+    verbs: ["list", "watch"]
+  - apiGroups: ["trickstercache.org"]
+    resources: ["trickstercachepolicies"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trickster-ingress
+  namespace: trickster-it
+subjects:
+  - kind: ServiceAccount
+    name: trickster-ingress
+    namespace: trickster-it
+roleRef:
+  kind: Role
+  name: trickster-ingress
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster
+spec:
+  controller: trickstercache.org/gateway-controller
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-ingress-config
+  namespace: trickster-it
+data:
+  trickster.yaml: |
+    listeners:
+      # the listener claimed Ingresses are served on; 8080 rather than 80 so
+      # the container needs no NET_BIND_SERVICE
+      web:
+        port: 8080
+      # the placeholder backend has to be bound somewhere
+      default:
+        port: 8479
+      metrics:
+        port: 8481
+    logging:
+      log_level: info
+    # at least one backend must be configured before the controller
+    # generates any; this one answers nothing the Ingress claims
+    backends:
+      placeholder:
+        provider: rp
+        origin_url: http://127.0.0.1:1
+        listener_names: [default]
+    kubernetes:
+      connection:
+        in_cluster: true
+      ingress_class: trickster
+      watch_namespaces:
+        - trickster-it
+      # status, Events and leader election land in phase 5; leaving them on
+      # here would only produce RBAC failures. read_only gives up all three,
+      # which is why this manifest's Role grants no write verbs.
+      read_only: true
+      ingress:
+        listener_names:
+          - web
+      defaults:
+        routing_mode: service
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster-ingress
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trickster-ingress
+  template:
+    metadata:
+      labels:
+        app: trickster-ingress
+    spec:
+      serviceAccountName: trickster-ingress
+      containers:
+        - name: trickster
+          image: trickster:integration
+          imagePullPolicy: Never
+          args: ["-config", "/etc/trickster/trickster.yaml"]
+          ports:
+            - name: front
+              containerPort: 8080
+            - name: metrics
+              containerPort: 8481
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 1
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trickster
+      volumes:
+        - name: config
+          configMap:
+            name: trickster-ingress-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trickster-ingress
+  namespace: trickster-it
+spec:
+  type: NodePort
+  selector:
+    app: trickster-ingress
+  ports:
+    - name: front
+      port: 8080
+      targetPort: front
+      nodePort: 30082
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop
+  namespace: trickster-it
+  annotations:
+    trickstercache.org/rewrite-target: /
+    trickstercache.org/response-headers: |
+      +X-Trickster-Ingress: shop
+spec:
+  ingressClassName: trickster
+  rules:
+    - host: shop.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: webecho
+                port:
+                  name: web

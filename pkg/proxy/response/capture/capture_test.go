@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,7 +100,7 @@ func TestWriteWithLimit_ZeroMeansUnlimited(t *testing.T) {
 
 func TestWriteHeader_PresizeFromContentLength(t *testing.T) {
 	sw := NewCaptureResponseWriter()
-	sw.Header().Set("Content-Length", "8192")
+	sw.Header().Set(headers.NameContentLength, "8192")
 	sw.WriteHeader(http.StatusOK)
 	require.GreaterOrEqual(t, sw.body.Cap(), 8192)
 
@@ -116,7 +118,7 @@ func TestWriteHeader_PresizeFromContentLength(t *testing.T) {
 func TestWriteHeader_PresizeClampedByMaxBytes(t *testing.T) {
 	const limit = 1024
 	sw := NewCaptureResponseWriterWithLimit(limit)
-	sw.Header().Set("Content-Length", strconv.Itoa(limit*16))
+	sw.Header().Set(headers.NameContentLength, strconv.Itoa(limit*16))
 	sw.WriteHeader(http.StatusOK)
 	require.LessOrEqual(t, sw.body.Cap(), limit, "presize must not exceed maxBytes")
 }
@@ -132,7 +134,7 @@ func TestWriteHeader_PresizeSkippedWhenAbsentOrInvalid(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sw := NewCaptureResponseWriter()
 			if cl != "" {
-				sw.Header().Set("Content-Length", cl)
+				sw.Header().Set(headers.NameContentLength, cl)
 			}
 			sw.WriteHeader(http.StatusOK)
 			require.Equal(t, 0, sw.body.Cap(), "no presize expected")
@@ -145,13 +147,13 @@ func TestWriteHeader_PresizeSkippedWhenAbsentOrInvalid(t *testing.T) {
 
 func TestWriteHeader_DoubleCallDoesNotRegrow(t *testing.T) {
 	sw := NewCaptureResponseWriter()
-	sw.Header().Set("Content-Length", "1024")
+	sw.Header().Set(headers.NameContentLength, "1024")
 	sw.WriteHeader(http.StatusOK)
 	firstCap := sw.body.Cap()
 	require.GreaterOrEqual(t, firstCap, 1024)
 	// Mutate the header to a much larger CL and call WriteHeader again; the
 	// guard on Cap()!=0 must prevent re-grow.
-	sw.Header().Set("Content-Length", "1048576")
+	sw.Header().Set(headers.NameContentLength, "1048576")
 	sw.WriteHeader(http.StatusOK)
 	require.Equal(t, firstCap, sw.body.Cap(), "second WriteHeader must not re-grow")
 }
@@ -166,7 +168,7 @@ func benchmarkCaptureFragmented(b *testing.B, size, chunk int, withCL bool) {
 	for b.Loop() {
 		sw := NewCaptureResponseWriter()
 		if withCL {
-			sw.Header().Set("Content-Length", cl)
+			sw.Header().Set(headers.NameContentLength, cl)
 		}
 		sw.WriteHeader(http.StatusOK)
 		for written := 0; written < size; written += chunk {

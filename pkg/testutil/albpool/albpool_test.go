@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
@@ -113,8 +114,8 @@ func TestNewParentGET(t *testing.T) {
 	if r.Method != http.MethodGet {
 		t.Errorf("method = %s; want GET", r.Method)
 	}
-	if r.URL.Host != "trickstercache.org" {
-		t.Errorf("host = %s; want trickstercache.org", r.URL.Host)
+	if r.URL.Host != appinfo.Domain {
+		t.Errorf("host = %s; want %s", r.URL.Host, appinfo.Domain)
 	}
 }
 

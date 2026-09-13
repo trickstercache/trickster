@@ -25,6 +25,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -447,4 +448,32 @@ func newTestServer(responseCode int, responseBody string,
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 	return s
+}
+
+// A target registered against a live pool must be probed at once: its
+// member cannot be admitted until a result arrives, so startup jitter
+// belongs to the cadence that follows, not in front of the first probe
+func TestFirstProbeIsImmediate(t *testing.T) {
+	var probes atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			probes.Add(1)
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer ts.Close()
+
+	hc := New()
+	defer hc.Shutdown()
+	st, err := hc.Register("immediate", "immediate", &ho.Options{
+		Interval:          timeconv.Duration(time.Hour),
+		Scheme:            "http",
+		Host:              ts.Listener.Addr().String(),
+		Path:              "/",
+		RecoveryThreshold: 1,
+	}, ts.Client())
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return probes.Load() >= 1 && st.Get() == StatusPassing
+	}, 500*time.Millisecond, 5*time.Millisecond,
+		"first probe waited on startup jitter instead of running immediately")
 }

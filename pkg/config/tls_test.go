@@ -255,3 +255,22 @@ func TestTLSCertConfigForMySQLInBandTLS(t *testing.T) {
 		t.Fatalf("MySQL in-band TLS config = %#v", got)
 	}
 }
+
+func TestTLSCertConfigForListenerRuntimeCerts(t *testing.T) {
+	conf := NewConfig()
+	conf.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
+	lo := conf.Listeners[listener.DefaultFrontendName]
+	lo.ServeTLS = true
+	cfg, err := conf.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil || cfg != nil {
+		t.Fatalf("without runtime certs = %v, %v; want nil config", cfg, err)
+	}
+	lo.TLSRuntimeCerts = true
+	cfg, err = conf.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil || cfg == nil {
+		t.Fatalf("with runtime certs = %v, %v; want an empty config", cfg, err)
+	}
+	if len(cfg.Certificates) != 0 || len(cfg.NextProtos) == 0 {
+		t.Errorf("runtime config = %+v; want no certificates and ALPN set", cfg)
+	}
+}

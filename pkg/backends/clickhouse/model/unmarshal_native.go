@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	dcsv "github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/csv"
 )
@@ -201,10 +202,11 @@ func readString(r *bufio.Reader) (string, error) {
 	return string(b), err
 }
 
+// readFixed reads exactly n bytes of a framed wire value, leaving whatever
+// follows for the next read. It is a local name for the shared bounded read
+// so the many fixed-width call sites below stay readable.
 func readFixed(r io.Reader, n int) ([]byte, error) {
-	b := make([]byte, n)
-	_, err := io.ReadFull(r, b)
-	return b, err
+	return tbytes.ReadBoundedBody(r, n, true)
 }
 
 //nolint:gosec // intentional wire protocol conversions

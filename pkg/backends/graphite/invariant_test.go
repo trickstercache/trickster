@@ -27,6 +27,7 @@ import (
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestCorrectnessInvariant(t *testing.T) {
@@ -200,7 +201,7 @@ func TestObjectLaneKeyStability(t *testing.T) {
 			b.WriteString(url.QueryEscape(form.Get(k)))
 		}
 		r := httptest.NewRequest(http.MethodPost, "http://trickster/render", strings.NewReader(b.String()))
-		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 		w := h.serve(r)
 		if w.Code != http.StatusOK {
 			t.Fatalf("POST order %d: status %d", i, w.Code)

@@ -965,7 +965,7 @@ func TestDeltaProxyCacheRequestFastForwardChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "miss"})
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: status.StatusKeyMiss})
 	if err != nil {
 		t.Error(err)
 	}

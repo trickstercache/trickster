@@ -130,7 +130,7 @@ func New() *Options {
 		InputDelimiter:    " ",
 		InputIndex:        -1,
 		MaxRuleExecutions: DefaultMaxRuleExecutions,
-		InputType:         "string",
+		InputType:         TypeString,
 	}
 }
 
@@ -209,7 +209,7 @@ func (l Lookup) Validate() error {
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}

@@ -31,15 +31,18 @@ import (
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
-const sanitizedSecret = "*****"
-const sanitizedEndpoint = "example.com"
+const (
+	sanitizedSecret   = "*****"
+	sanitizedEndpoint = "example.com"
+)
 
 var unsanitizedPathHeaders = map[string]struct{}{
-	"cache-control": {},
-	"expires":       {},
+	strings.ToLower(headers.NameCacheControl): {},
+	strings.ToLower(headers.NameExpires):      {},
 }
 
 // SanitizedString returns the running Config as YAML with private backend and

@@ -19,6 +19,8 @@ package headers
 import (
 	"net/http"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 func TestIsValidForwardingType(t *testing.T) {
@@ -177,9 +179,9 @@ func TestFormatForwardedAddress(t *testing.T) {
 func TestStripMergeHeaders(t *testing.T) {
 	h := http.Header{
 		NameContentLength: []string{"42"},
-		NameLocation:      []string{"https://trickstercache.org/"},
+		NameLocation:      []string{"https://" + appinfo.Domain + "/"},
 		NameCacheControl:  []string{"max-age=300"},
-		NameVary:          []string{"Accept-Encoding"},
+		NameVary:          []string{NameAcceptEncoding},
 		NameAge:           []string{"7"},
 		NameETag:          []string{"abc123"},
 		NameExpires:       []string{"Thu, 01 Jan 2099 00:00:00 GMT"},
@@ -201,5 +203,61 @@ func TestStripMergeHeaders(t *testing.T) {
 
 	if _, ok := h[NameLocation]; !ok {
 		t.Error("expected Location Header to remain present")
+	}
+}
+
+func TestReceivedProtocol(t *testing.T) {
+	tests := []struct{ input, expected string }{
+		{"HTTP/1.1", "1.1"},
+		{"HTTP/1.0", "1.0"},
+		{"HTTP/2.0", "2.0"},
+		{"", "1.1"},
+		{"SIP/2.0", "SIP/2.0"},
+	}
+	for _, test := range tests {
+		t.Run(test.input, func(t *testing.T) {
+			if got := ReceivedProtocol(test.input); got != test.expected {
+				t.Errorf("got %s expected %s", got, test.expected)
+			}
+		})
+	}
+}
+
+func TestSetViaOmitsProtocolName(t *testing.T) {
+	r, err := http.NewRequest(http.MethodGet, "http://example.com/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetVia(r, &Hop{Protocol: "HTTP/1.1"})
+	expected := "1.1 " + appinfo.Server()
+	if got := r.Header.Get(NameVia); got != expected {
+		t.Errorf("got %s expected %s", got, expected)
+	}
+
+	r.Header.Set(NameVia, "1.0 upstream")
+	SetVia(r, HopsFromRequest(r))
+	expected = "1.0 upstream, 1.1 " + appinfo.Server()
+	if got := r.Header.Get(NameVia); got != expected {
+		t.Errorf("got %s expected %s", got, expected)
+	}
+}
+
+func TestAddResponseVia(t *testing.T) {
+	AddResponseVia(nil, "HTTP/1.1") // must not panic
+
+	h := http.Header{}
+	AddResponseVia(h, "HTTP/1.1")
+	expected := "1.1 " + appinfo.Server()
+	if got := h.Get(NameVia); got != expected {
+		t.Errorf("got %s expected %s", got, expected)
+	}
+
+	h = http.Header{}
+	h.Add(NameVia, "1.1 origin")
+	h.Add(NameVia, "2.0 edge")
+	AddResponseVia(h, "HTTP/1.1")
+	expected = "1.1 origin, 2.0 edge, 1.1 " + appinfo.Server()
+	if got := h.Get(NameVia); got != expected {
+		t.Errorf("got %s expected %s", got, expected)
 	}
 }

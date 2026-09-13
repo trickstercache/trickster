@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
@@ -48,6 +49,7 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
@@ -56,7 +58,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
-	"github.com/prometheus/common/sigv4"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -85,6 +86,12 @@ type Options struct {
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
+	// H2CPriorKnowledge speaks cleartext HTTP/2 to the origin by prior knowledge.
+	// Cleartext HTTP/2 only; there is no HTTP/1 fallback.
+	H2CPriorKnowledge bool `yaml:"h2c_prior_knowledge,omitempty"`
+	// PreserveHost sends the client's Host header to the origin instead of the origin's own host;
+	// a Host entry in a path's request_headers still replaces it.
+	PreserveHost bool `yaml:"preserve_host,omitempty"`
 	// Protocol selects the upstream wire protocol used to communicate with the origin.
 	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
 	// for ClickHouse to use the binary protocol on port 9000).
@@ -218,6 +225,12 @@ type Options struct {
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
 	PathRoutingDisabled bool `yaml:"path_routing_disabled,omitempty"`
+	// PathDefaultsDisabled, when true, registers only the configured paths,
+	// suppressing the provider's default path configurations
+	PathDefaultsDisabled bool `yaml:"path_defaults_disabled,omitempty"`
+	// AnyHostRouting, when true, registers the configured paths for every
+	// hostname reaching this backend's listeners; it cannot be used with hosts
+	AnyHostRouting bool `yaml:"any_host_routing,omitempty"`
 	// RequireTLS, when true, indicates this Backend Config's paths must only be registered with the TLS Router
 	RequireTLS bool `yaml:"require_tls,omitempty"`
 	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
@@ -232,8 +245,10 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
-	// AWS SigV4
-	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
+	// SigV4 signs outbound requests to this backend's origin with AWS
+	// SigV4. It defaults to signing for Amazon Managed Service for
+	// Prometheus; set sigv4.service to sign for another AWS service.
+	SigV4 *taws.Options `yaml:"sigv4,omitempty"`
 
 	// Simulated Latency
 	// When LatencyMin > 0 and LatencyMaxMS < LatencyMin (e.g., 0), then LatencyMin of latency
@@ -393,7 +408,55 @@ func (o *Options) Clone() *Options {
 		out.AccessLog = o.AccessLog.Clone()
 	}
 
+	if o.SigV4 != nil {
+		out.SigV4 = o.SigV4.Clone()
+	}
+
 	return out
+}
+
+const (
+	hostReasonEmpty         = "must not be empty"
+	hostReasonWhitespace    = "must not contain whitespace"
+	hostReasonWildcard      = "a wildcard may only be a leading *. or **. followed by a domain"
+	hostReasonDuplicate     = "is listed more than once"
+	hostReasonBothWildcards = "lists both wildcard spellings for one domain"
+)
+
+// validateHosts normalizes each hosts entry, since matching is
+// case-insensitive, and rejects duplicates and both wildcard depths on one domain
+func (o *Options) validateHosts() error {
+	seen := make(map[string]struct{}, len(o.Hosts))
+	wild := make(map[string]struct{})
+	for i, host := range o.Hosts {
+		host, err := hostnames.Normalize(host, hostnames.RequireHost)
+		if err != nil {
+			return NewErrInvalidHost(o.Hosts[i], o.Name, hostReason(err))
+		}
+		if _, ok := seen[host]; ok {
+			return NewErrInvalidHost(o.Hosts[i], o.Name, hostReasonDuplicate)
+		}
+		if hostnames.IsWildcard(host) {
+			suffix := hostnames.Suffix(host)
+			if _, ok := wild[suffix]; ok {
+				return NewErrInvalidHost(o.Hosts[i], o.Name, hostReasonBothWildcards)
+			}
+			wild[suffix] = struct{}{}
+		}
+		seen[host] = struct{}{}
+		o.Hosts[i] = host
+	}
+	return nil
+}
+
+func hostReason(err error) string {
+	switch {
+	case errors.Is(err, hostnames.ErrEmpty):
+		return hostReasonEmpty
+	case errors.Is(err, hostnames.ErrWhitespace):
+		return hostReasonWhitespace
+	}
+	return hostReasonWildcard
 }
 
 // Validate validates the Backend Options
@@ -420,6 +483,18 @@ func (o *Options) Validate() (bool, error) {
 		if _, err := url.Parse(o.OriginURL); err != nil {
 			return false, fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
 		}
+	}
+	if err := o.validateHosts(); err != nil {
+		return false, err
+	}
+	if o.AnyHostRouting && len(o.Hosts) > 0 {
+		return false, fmt.Errorf("%w: backend %s", ErrAnyHostRoutingWithHosts, o.Name)
+	}
+	// previously the sigv4 block was validated only by its own
+	// UnmarshalYAML, which meant no validation at all on the programmatic
+	// path the ALB template uses
+	if err := o.SigV4.Validate(); err != nil {
+		return false, fmt.Errorf("invalid sigv4 options for backend %s: %w", o.Name, err)
 	}
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return false, ErrInvalidMaxShardSize
@@ -517,6 +592,27 @@ func (l Lookup) Validate() error {
 	return backendTree[:k].Validate()
 }
 
+// validateMirrors checks that every backend a path mirrors to is a routable
+// backend, since a template is never served on its own.
+func (l Lookup) validateMirrors(o *Options) error {
+	for _, p := range o.Paths {
+		if p == nil {
+			continue
+		}
+		for _, m := range p.Mirrors {
+			if m == nil {
+				continue
+			}
+			target, ok := l[m.BackendName]
+			if !ok || target == nil || target.IsTemplate {
+				return fmt.Errorf("backend %q path %q mirrors to undefined backend %q",
+					o.Name, p.Path, m.BackendName)
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateBackendName ensures the backend name is permitted against the
 // dictionary of restricted words
 func ValidateBackendName(name string) error {
@@ -533,6 +629,9 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
+			return err
+		}
+		if err := l.validateMirrors(o); err != nil {
 			return err
 		}
 		var ok bool
@@ -640,7 +739,7 @@ func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
 		if !ok || disc == nil {
 			return NewErrInvalidDiscovererName(d.DiscovererName, o.Name)
 		}
-		if err := d.Query.Validate(o.Name, disc.Provider); err != nil {
+		if err := d.Query.Validate(o.Name, disc); err != nil {
 			return err
 		}
 		t, ok := l[d.TemplateBackend]
@@ -679,6 +778,21 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 		}
 	}
 	return serveTLS, nil
+}
+
+// PoolMembers returns the names of every backend that is a member of an ALB pool; a member
+// carries its pool's listener names without being served on those listeners itself
+func (l Lookup) PoolMembers() sets.Set[string] {
+	out := sets.NewStringSet()
+	for _, o := range l {
+		if o == nil || o.ALBOptions == nil {
+			continue
+		}
+		for _, m := range o.ALBOptions.Pool {
+			out.Set(m.Name)
+		}
+	}
+	return out
 }
 
 func (l Lookup) Keys() sets.Set[string] {
@@ -736,6 +850,11 @@ func (o *Options) Initialize(name string) error {
 		o.Scheme = parsedURL.Scheme
 		o.Host = parsedURL.Host
 		o.PathPrefix = parsedURL.Path
+	}
+	if o.H2CPriorKnowledge && !strings.EqualFold(o.Scheme, "http") {
+		return fmt.Errorf(
+			"h2c_prior_knowledge requires an http:// origin_url (cleartext HTTP/2 only; no HTTP/1 fallback), got scheme %q",
+			o.Scheme)
 	}
 	if o.CacheKeyPrefix == "" {
 		o.CacheKeyPrefix = o.Host

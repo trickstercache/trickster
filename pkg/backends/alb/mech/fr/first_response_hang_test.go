@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
@@ -51,7 +52,7 @@ func TestFRDoesNotHangWhenAllTargetsAbort(t *testing.T) {
 
 	// POST with an erroring body causes CloneWithoutResources to fail in
 	// every goroutine before captures[i] = crw runs.
-	r, _ := http.NewRequest(http.MethodPost, "http://trickstercache.org/", errReader{})
+	r, _ := http.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/", errReader{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

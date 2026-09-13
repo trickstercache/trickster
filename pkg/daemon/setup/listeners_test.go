@@ -41,13 +41,20 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	logmgr "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/routing"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
@@ -87,7 +94,7 @@ func TestDesiredListeners(t *testing.T) {
 		"custom":                           lm.NewRouter(),
 	}
 
-	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter())
+	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)
 	for _, key := range []string{
 		listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false),
 		listenerKey(mgmt.ListenerNameMetrics, listenerconfig.ProtocolHTTP, false),
@@ -136,7 +143,7 @@ func TestDesiredRoutedMySQLListener(t *testing.T) {
 	}
 	c.Backends = bo.Lookup{"mysql-users": router, "mysql-a": target}
 
-	got := desiredListeners(c, nil, nil, nil)
+	got := desiredListeners(c, nil, nil, nil, nil, nil)
 	key := listenerKey("mysql-users", listenerconfig.ProtocolMySQL, false)
 	desired, ok := got[key]
 	if !ok {
@@ -182,6 +189,63 @@ func TestListenerNeedsRestart(t *testing.T) {
 	current.options.ConnectionsLimit++
 	if !listenerNeedsRestart(old, current) {
 		t.Error("connection limit change should restart a listener")
+	}
+
+	current = old
+	current.options = o.Clone()
+	current.options.TrustedProxies = []string{"10.0.0.0/8"}
+	if listenerNeedsRestart(old, current) {
+		t.Error("trusted proxy change without the PROXY protocol should not restart a listener")
+	}
+	current.options.ProxyProtocol = true
+	if !listenerNeedsRestart(old, current) {
+		t.Error("enabling the PROXY protocol should restart a listener")
+	}
+	old.options = current.options.Clone()
+	current.options = current.options.Clone()
+	current.options.TrustedProxies = append(current.options.TrustedProxies, "192.0.2.1")
+	if !listenerNeedsRestart(old, current) {
+		t.Error("trusted proxy change with the PROXY protocol should restart a listener")
+	}
+}
+
+func TestDesiredListenersResolveClientIP(t *testing.T) {
+	c := config.NewConfig()
+	c.Listeners[listenerconfig.DefaultFrontendName].Active = true
+	c.Listeners[listenerconfig.DefaultFrontendName].ListenPort = 1
+	c.Listeners[listenerconfig.DefaultFrontendName].TrustedProxies = []string{"192.0.2.0/24"}
+	raw := lm.NewRouter()
+	var seen string
+	if err := raw.RegisterRoute("/", nil, nil, matching.PathMatchTypePrefix,
+		http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			seen = request.ClientIP(r)
+		})); err != nil {
+		t.Fatal(err)
+	}
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
+	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)
+	proxy := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)]
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "192.0.2.10:1234"
+	req.Header.Set(headers.NameXForwardedFor, "203.0.113.9")
+	proxy.router.ServeHTTP(httptest.NewRecorder(), req)
+	if seen != "203.0.113.9" {
+		t.Errorf("client ip = %q; want the forwarded address from a trusted proxy", seen)
+	}
+	req.RemoteAddr = "198.51.100.1:1234"
+	proxy.router.ServeHTTP(httptest.NewRecorder(), req)
+	if seen != "198.51.100.1" {
+		t.Errorf("client ip = %q; want the untrusted peer address", seen)
+	}
+	if trustedProxies(&listenerconfig.Options{TrustedProxies: []string{"bad"}}) != nil {
+		t.Error("an unparsable list must trust no proxy")
+	}
+	if proxyProtocolOptions(c.Listeners[listenerconfig.DefaultFrontendName]) != nil {
+		t.Error("PROXY protocol options must be nil when disabled")
+	}
+	c.Listeners[listenerconfig.DefaultFrontendName].ProxyProtocol = true
+	if o := proxyProtocolOptions(c.Listeners[listenerconfig.DefaultFrontendName]); o == nil || len(o.Trusted) != 1 {
+		t.Error("PROXY protocol options must carry the trusted proxies")
 	}
 }
 
@@ -597,5 +661,323 @@ func TestListenerBindingReloadPreservesExistingConnections(t *testing.T) {
 	}
 	if err := session.PingContext(ctx); err == nil {
 		t.Fatal("removed native binding retained its session")
+	}
+}
+
+const runtimeCertSAN = "runtime.example.com"
+
+func TestUpdateListenerCertificatesPreservesRuntimeEntries(t *testing.T) {
+	dir := t.TempDir()
+	keyPath := filepath.Join(dir, "test.key.pem")
+	certPath := filepath.Join(dir, "test.cert.pem")
+	if err := tlstest.WriteTestKeyAndCert(false, keyPath, certPath); err != nil {
+		t.Fatal(err)
+	}
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	conf := tlsTestConfig(t, keyPath, certPath, availablePort(t))
+	conf.Backends["default"].ListenerNames = []string{listenerconfig.DefaultFrontendName}
+	key := listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true)
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: lm.NewRouter()}
+	applyListenerConfigs(conf, nil, routers, http.NotFoundHandler(), lm.NewRouter(),
+		nil, nil, nil, group)
+	waitForListener(t, group, key)
+	store, ok := group.Get(key).CertSwapper().(tr.CertStore)
+	if !ok {
+		t.Fatal("listener has no certificate store")
+	}
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeCertSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := tr.ValidatePair(c, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetEntry(tr.NewEntry(tr.SourceKindMemory+":"+runtimeCertSAN, tr.SourceKindMemory, cert))
+
+	updateListenerCertificates(conf, desiredListener{
+		key: key, listenerName: listenerconfig.DefaultFrontendName, tls: true,
+	}, group)
+	kinds := make(map[string]int)
+	for _, e := range store.Entries() {
+		kinds[e.SourceKind]++
+	}
+	if kinds[tr.SourceKindMemory] != 1 || kinds[tr.SourceKindConfig] != 1 {
+		t.Fatalf("entry kinds after update = %v; want config replaced and memory kept", kinds)
+	}
+}
+
+func TestDesiredListenersWrapDefaultAccessLog(t *testing.T) {
+	c := config.NewConfig()
+	c.AccessLog = &alo.Options{Filename: logmgr.StreamStdout}
+	for _, name := range []string{listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics} {
+		c.Listeners[name].Active = true
+		c.Listeners[name].ListenPort = 1
+	}
+	routerLogger := routing.RouterAccessLogger(c)
+	if routerLogger == nil {
+		t.Fatal("expected a router-level access logger from the default access_log")
+	}
+	t.Cleanup(routerLogger.Close)
+	raw := lm.NewRouter()
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
+	got := desiredListeners(c, routers, lm.NewRouter(), raw, routerLogger, nil)
+	proxy := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)]
+	if _, isRouter := proxy.router.(router.Router); isRouter {
+		t.Error("proxy listener router was not wrapped with the default access logger")
+	}
+	mgmtListener := got[listenerKey(mgmt.ListenerNameMgmt, listenerconfig.ProtocolHTTP, false)]
+	if _, isRouter := mgmtListener.router.(router.Router); isRouter {
+		t.Error("mgmt listener router was not wrapped with the default access logger")
+	}
+	metricsListener := got[listenerKey(mgmt.ListenerNameMetrics, listenerconfig.ProtocolHTTP, false)]
+	if metricsListener.router != http.Handler(raw) {
+		t.Error("metrics listener router must not be access-logged")
+	}
+	// without a default access log the routers are passed through untouched
+	got = desiredListeners(c, routers, lm.NewRouter(), raw, nil, nil)
+	if got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router != http.Handler(raw) {
+		t.Error("router was wrapped without a default access logger")
+	}
+}
+
+func TestDesiredListenersGuardReservedRoutes(t *testing.T) {
+	c := config.NewConfig()
+	c.Listeners[listenerconfig.DefaultFrontendName].Active = true
+	c.Listeners[listenerconfig.DefaultFrontendName].ListenPort = 1
+	readyPath := c.MgmtConfig.ReadyHandlerPath
+	hijack := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("backend"))
+	})
+	raw := lm.NewRouter()
+	// a backend claims the readiness path globally and for a specific host
+	if err := raw.RegisterRoute(readyPath, nil, nil, matching.PathMatchTypeExact, hijack); err != nil {
+		t.Fatal(err)
+	}
+	if err := raw.RegisterRoute(readyPath, []string{"api.example.com"}, nil,
+		matching.PathMatchTypeExact, hijack); err != nil {
+		t.Fatal(err)
+	}
+	reserved := []mgmtRoute{{path: readyPath, handler: ready.HandlerFunc(&ready.State{}, nil)}}
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
+	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, reserved)
+	proxy := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)]
+	for _, host := range []string{"", "api.example.com"} {
+		req := httptest.NewRequest(http.MethodGet, readyPath, nil)
+		if host != "" {
+			req.Host = host
+		}
+		w := httptest.NewRecorder()
+		proxy.router.ServeHTTP(w, req)
+		if w.Code != http.StatusServiceUnavailable || w.Body.String() != ready.BodyNotReady {
+			t.Errorf("host %q: readiness = %d %q; want the reserved handler", host, w.Code, w.Body.String())
+		}
+	}
+	req := httptest.NewRequest(http.MethodGet, "/other", nil)
+	w := httptest.NewRecorder()
+	proxy.router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Errorf("non-reserved path = %d; want the router's 404", w.Code)
+	}
+	if guardReservedRoutes(nil, raw) != http.Handler(raw) {
+		t.Error("no reserved routes must pass the router through")
+	}
+}
+
+// lineEcho answers each line with the prefix and the line
+func lineEcho(t *testing.T, prefix string) string {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				r := bufio.NewReader(conn)
+				for {
+					line, err := r.ReadString('\n')
+					if line != "" {
+						_, _ = conn.Write([]byte(prefix + line))
+					}
+					if err != nil {
+						return
+					}
+				}
+			}()
+		}
+	}()
+	return ln.Addr().String()
+}
+
+func streamExchange(t *testing.T, port int, line string) string {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Write([]byte(line + "\n")); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(reply)
+}
+
+func streamConfigFor(t *testing.T, port int, protocol, origin string) (*config.Config, backends.Backends) {
+	t.Helper()
+	conf := config.NewConfig()
+	deactivateBuiltinListeners(conf)
+	lo := listenerconfig.New("relay")
+	lo.ListenAddress = "127.0.0.1"
+	lo.ListenPort = port
+	lo.Protocol = protocol
+	conf.Listeners["relay"] = lo
+	o := bo.New()
+	o.Provider = providers.ReverseProxyShort
+	o.OriginURL = "tcp://" + origin
+	o.ListenerNames = []string{"relay"}
+	if err := o.Initialize("db"); err != nil {
+		t.Fatal(err)
+	}
+	conf.Backends = bo.Lookup{"db": o}
+	if err := validate.Listeners(conf); err != nil {
+		t.Fatal(err)
+	}
+	client, err := backends.New("db", o, nil, lm.NewRouter(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return conf, backends.Backends{"db": client}
+}
+
+func TestDesiredListenersStream(t *testing.T) {
+	conf, _ := streamConfigFor(t, 9000, listenerconfig.ProtocolUDP, "127.0.0.1:53")
+	desired := desiredListeners(conf, nil, nil, nil, nil, nil)
+	key := listenerKey("relay", listenerconfig.ProtocolUDP, false)
+	d, ok := desired[key]
+	if !ok || !d.stream || d.port != 9000 || d.router != nil || d.native != nil {
+		t.Fatalf("stream listener not described: %+v", d)
+	}
+	conf.Listeners["relay"].ListenPort = 0
+	if _, ok := desiredListeners(conf, nil, nil, nil, nil, nil)[key]; ok {
+		t.Error("a stream listener without a port was described")
+	}
+}
+
+func TestApplyStreamListenerRelaysAndSwapsOnReload(t *testing.T) {
+	first, second := lineEcho(t, "first:"), lineEcho(t, "second:")
+	port := availablePort(t)
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	conf, clients := streamConfigFor(t, port, listenerconfig.ProtocolTCP, first)
+	applyListenerConfigs(conf, nil, nil, http.NotFoundHandler(), lm.NewRouter(), nil, clients, nil, group)
+	key := listenerKey("relay", listenerconfig.ProtocolTCP, false)
+	waitForListener(t, group, key)
+	original := group.Get(key)
+	if got := streamExchange(t, port, "hello"); got != "first:hello" {
+		t.Fatalf("reply = %q", got)
+	}
+	// an origin change swaps the routing table without restarting the socket
+	second2, clients2 := streamConfigFor(t, port, listenerconfig.ProtocolTCP, second)
+	applyListenerConfigs(second2, conf, nil, http.NotFoundHandler(), lm.NewRouter(), nil, clients2, nil, group)
+	if group.Get(key) != original {
+		t.Error("an origin change restarted the stream listener")
+	}
+	if got := streamExchange(t, port, "again"); got != "second:again" {
+		t.Errorf("reply after reload = %q", got)
+	}
+	// a backend with no dialable origin routes nothing, and the connection is refused
+	third := second2.Clone()
+	hostless := bo.New()
+	hostless.Provider = providers.ReverseProxyShort
+	hostless.ListenerNames = []string{"relay"}
+	third.Backends = bo.Lookup{"db": hostless}
+	clientless, err := backends.New("db", hostless, nil, lm.NewRouter(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyListenerConfigs(third, second2, nil, http.NotFoundHandler(), lm.NewRouter(), nil,
+		backends.Backends{"db": clientless}, nil, group)
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, err := conn.Read(make([]byte, 1)); err == nil {
+		t.Error("a connection with no upstream was not closed")
+	}
+	// removing the listener drains it
+	fourth := third.Clone()
+	delete(fourth.Backends, "db")
+	fourth.Listeners["relay"].Active = false
+	applyListenerConfigs(fourth, third, nil, http.NotFoundHandler(), lm.NewRouter(), nil, nil, nil, group)
+	if group.Get(key) != nil {
+		t.Error("a removed stream listener is still in the group")
+	}
+}
+
+func TestApplyStreamListenerUDP(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = pc.Close() })
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, addr, err := pc.ReadFrom(buf)
+			if err != nil {
+				return
+			}
+			_, _ = pc.WriteTo(append([]byte("udp:"), buf[:n]...), addr)
+		}
+	}()
+	port := availablePort(t)
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	conf, clients := streamConfigFor(t, port, listenerconfig.ProtocolUDP, pc.LocalAddr().String())
+	applyListenerConfigs(conf, nil, nil, http.NotFoundHandler(), lm.NewRouter(), nil, clients, nil, group)
+	key := listenerKey("relay", listenerconfig.ProtocolUDP, false)
+	waitForListener(t, group, key)
+	raddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := net.DialUDP("udp", nil, raddr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	if _, err := client.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64)
+	_ = client.SetReadDeadline(time.Now().Add(3 * time.Second))
+	n, err := client.Read(buf)
+	if err != nil || string(buf[:n]) != "udp:ping" {
+		t.Fatalf("reply = %q %v", buf[:n], err)
+	}
+	// a reload with the same listener keeps the socket and updates the relay in place
+	applyListenerConfigs(conf.Clone(), conf, nil, http.NotFoundHandler(), lm.NewRouter(), nil, clients, nil, group)
+	if _, err := client.Write([]byte("pong")); err != nil {
+		t.Fatal(err)
+	}
+	n, err = client.Read(buf)
+	if err != nil || string(buf[:n]) != "udp:pong" {
+		t.Fatalf("reply after reload = %q %v", buf[:n], err)
 	}
 }

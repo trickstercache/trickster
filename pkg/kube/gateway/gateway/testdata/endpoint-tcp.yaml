@@ -1,0 +1,113 @@
+# in the endpoint routing mode a stream member is a pool of the Service's ready endpoints, each
+# relayed to directly; a weighted rule is an outer pool over those
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: endpoint-params
+    namespace: infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-params
+  namespace: infra
+data:
+  routing_mode: endpoint
+  health_mode: probe
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: db
+      port: 5432
+      protocol: TCP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: dns
+      port: 53
+      protocol: UDP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-svc
+  namespace: data
+spec:
+  ports:
+    - name: pg
+      port: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: replica-svc
+  namespace: data
+spec:
+  ports:
+    - name: pg
+      port: 5432
+---
+# the port number is exposed over both transports; the UDPRoute's discovery selects the UDP port
+# by its name, so its endpoints are the UDP target rather than the TCP one
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-svc
+  namespace: data
+spec:
+  ports:
+    - name: dns-tcp
+      port: 53
+      targetPort: 5300
+    - name: dns-udp
+      port: 53
+      targetPort: 5353
+      protocol: UDP
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: db
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: db
+  rules:
+    - backendRefs:
+        - name: db-svc
+          port: 5432
+          weight: 2
+        - name: replica-svc
+          port: 5432
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: dns
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: dns
+  rules:
+    - backendRefs:
+        - name: dns-svc
+          port: 53

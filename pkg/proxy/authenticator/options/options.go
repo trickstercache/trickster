@@ -106,7 +106,7 @@ func (l Lookup) Validate(f types.IsRegisteredFunc) error {
 
 func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
+	lo := loadOptions(*New())
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}

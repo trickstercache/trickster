@@ -18,8 +18,10 @@ package options
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
@@ -57,7 +59,7 @@ func TestValidateWithPaths(t *testing.T) {
 		t.Fatalf("credential with no paths must validate: %v", err)
 	}
 	if err := (&Options{}).ValidateWithPaths(po.List{
-		{Path: "/render", RequestHeaders: map[string]string{"+Authorization": "x"}},
+		{Path: "/render", RequestHeaders: map[string]string{"+" + headers.NameAuthorization: "x"}},
 	}); err != nil {
 		t.Fatalf("append without a credential must validate: %v", err)
 	}
@@ -67,8 +69,8 @@ func TestValidateWithPaths(t *testing.T) {
 	}
 	paths := po.List{
 		nil,
-		{Path: "/ok", RequestHeaders: map[string]string{"Authorization": "x"}},
-		{Path: "/render", RequestHeaders: map[string]string{"+authorization": "x"}},
+		{Path: "/ok", RequestHeaders: map[string]string{headers.NameAuthorization: "x"}},
+		{Path: "/render", RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}},
 	}
 	// the signed operation must be detected case-insensitively
 	if err := authed.ValidateWithPaths(paths); !errors.Is(err, ErrOriginAuthAppend) {

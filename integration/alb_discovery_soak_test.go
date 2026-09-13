@@ -29,14 +29,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestALBDiscoverySoak (plan step 37) runs continuous membership churn
-// under sustained request load for a configurable duration and asserts no
-// goroutine or file-descriptor growth, sampling the process's own
-// go_goroutines and process_open_fds metrics. It only runs when
-// TRICKSTER_SOAK_TEST=1 (the nightly workflow sets it, with
-// TRICKSTER_SOAK_DURATION=30m); it is skipped in regular CI and local
-// runs. This soak also serves as the baseline for the gateway controller's
-// endpoint-mode soak.
+// TestALBDiscoverySoak runs continuous membership churn under sustained
+// request load for a configurable duration and asserts no goroutine or
+// file-descriptor growth, sampling the process's own go_goroutines and
+// process_open_fds metrics.
+//
+// It is run by hand, not by CI.
+//
+//	cd integration
+//	TRICKSTER_SOAK_TEST=1 TRICKSTER_SOAK_DURATION=60m \
+//	  go test -v -timeout 80m -run TestALBDiscoverySoak .
+//
+// It is skipped in regular CI and local runs. This soak also serves as the
+// baseline for the gateway controller's endpoint-mode soak.
 func TestALBDiscoverySoak(t *testing.T) {
 	if os.Getenv("TRICKSTER_SOAK_TEST") != "1" {
 		t.Skip("soak runs only with TRICKSTER_SOAK_TEST=1")

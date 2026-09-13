@@ -1,0 +1,184 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+# a TLS listener relays the handshake to the backend the server name selects; it terminates
+# nothing, so only tls mode Passthrough is served
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: wild
+      port: 8443
+      protocol: TLS
+      hostname: "*.example.com"
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: All
+    # a precise listener on the wildcard's port: both bind one socket, so a server name is one
+    # route's however it was admitted
+    - name: exact
+      port: 8443
+      protocol: TLS
+      hostname: shop.example.com
+      tls:
+        mode: Passthrough
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: any
+      port: 9443
+      protocol: TLS
+      tls:
+        mode: Passthrough
+        certificateRefs:
+          - name: ignored
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: terminate
+      port: 10443
+      protocol: TLS
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: ignored
+    - name: no-tls
+      port: 11443
+      protocol: TLS
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shop-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fallback-svc
+  namespace: shop
+spec:
+  ports:
+    - name: https
+      port: 8443
+---
+# attached through both listeners on the port, the route is served once there
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: shop
+  namespace: shop
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: wild
+    - name: gw
+      namespace: infra
+      sectionName: exact
+  hostnames:
+    - shop.example.com
+  rules:
+    - backendRefs:
+        - name: shop-svc
+          port: 8443
+---
+# the hostnames outside the listener's are dropped, the one within it is served
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: api
+  namespace: shop
+  creationTimestamp: "2026-01-02T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: wild
+  hostnames:
+    - api.example.com
+    - api.other.org
+  rules:
+    - backendRefs:
+        - name: api-svc
+          port: 8443
+---
+# the older route already serves shop.example.com on the port; a newer one naming only it,
+# through the other listener on that port, is refused
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: dup
+  namespace: shop
+  creationTimestamp: "2026-03-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: exact
+  hostnames:
+    - shop.example.com
+  rules:
+    - backendRefs:
+        - name: api-svc
+          port: 8443
+---
+# a wildcard route on the listener serves whatever no precise hostname claims
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: rest
+  namespace: shop
+  creationTimestamp: "2026-01-03T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: wild
+  hostnames:
+    - "*.example.com"
+  rules:
+    - backendRefs:
+        - name: fallback-svc
+          port: 8443
+---
+# on a listener with no hostname a route naming none serves every server name
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: catch-all
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: any
+  rules:
+    - backendRefs:
+        - name: fallback-svc
+          port: 8443

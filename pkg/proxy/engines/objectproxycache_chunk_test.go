@@ -38,7 +38,7 @@ import (
 )
 
 func TestObjectProxyCacheRequestChunks(t *testing.T) {
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -423,7 +423,7 @@ func TestObjectProxyCacheRevalidationChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestWithPCFChunks(t *testing.T) {
-	headers := map[string]string{"Cache-Control": "max-age=60"}
+	headers := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPCWithPCF("", "test", http.StatusOK, headers)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -488,7 +488,7 @@ func TestFetchViaObjectProxyCacheRequestClientNoCacheChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheRequestOriginNoCacheChunks(t *testing.T) {
-	headers := map[string]string{"Cache-Control": "no-cache"}
+	headers := map[string]string{headers.NameCacheControl: "no-cache"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, headers)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {
@@ -503,7 +503,7 @@ func TestObjectProxyCacheRequestOriginNoCacheChunks(t *testing.T) {
 }
 
 func TestObjectProxyCacheIMSChunks(t *testing.T) {
-	hdrs := map[string]string{"Cache-Control": "max-age=1"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=1"}
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(hdrs)
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {

@@ -243,7 +243,7 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 	// pass 2: instantiate added members; update changed ones in place
 	for name, member := range assigned {
 		if e, ok := m.members[name]; ok && member.Key() == e.member.Key() {
-			m.updateMember(e, member)
+			m.updateMember(name, e, member)
 			continue
 		}
 		e, err := m.instantiateMember(name, member)
@@ -453,6 +453,7 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 				st.Set(v)
 			}
 		}
+		m.admitOnReadiness(name, st, member)
 		client.SetHealthCheckProbe(st.Prober())
 		e.status = st
 	}
@@ -472,11 +473,31 @@ func (m *Manager) healthDescription(provider string) string {
 	return fmt.Sprintf("%s (%s via %s)", provider, m.albName, m.discoverer)
 }
 
+// admitOnReadiness admits a probe-mode member the provider reports ready
+// ahead of its first probe result: the orchestrator retires the predecessor
+// on that same signal, so waiting on a probe leaves the pool with no
+// admissible member. The probe governs from its first result on.
+func (m *Manager) admitOnReadiness(name string, st *healthcheck.Status,
+	member discovery.Member,
+) {
+	if st == nil || member.Ready != discovery.Ready ||
+		st.Get() != healthcheck.StatusInitializing {
+		return
+	}
+	st.Set(healthcheck.StatusPassing)
+	discovery.LogDebug("alb discovery member admitted on provider readiness pending first probe",
+		logging.Pairs{keys.ALBName: m.albName, keys.Member: name})
+}
+
 // updateMember applies attribute-only changes (weight, readiness, labels)
 // to a live member without rebuilding its backend client
-func (m *Manager) updateMember(e *memberEntry, member discovery.Member) {
-	if e.external && member.Ready != e.member.Ready {
-		e.status.Set(statusForReadyState(member.Ready))
+func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Member) {
+	if member.Ready != e.member.Ready {
+		if e.external {
+			e.status.Set(statusForReadyState(member.Ready))
+		} else {
+			m.admitOnReadiness(name, e.status, member)
+		}
 	}
 	if member.Weight != e.member.Weight {
 		// targets are immutable; rebuild this member's target around the

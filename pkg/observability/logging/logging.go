@@ -103,7 +103,7 @@ func New(conf *config.Config) Logger {
 			l.writer = os.Stdout
 		}
 	}
-	l.SetLogLevel(level.Level(conf.Logging.LogLevel))
+	l.SetLogLevel(conf.Logging.LogLevel)
 	return l
 }
 
@@ -165,7 +165,7 @@ func (l *logger) Write(b []byte) (int, error) {
 func (l *logger) SetLogLevel(logLevel level.Level) {
 	id := level.GetID(logLevel)
 	if id == 0 {
-		l.WarnOnce("loglevel."+string(logLevel),
+		l.WarnOnce("loglevel."+logLevel,
 			"unknown log level; using INFO",
 			Pairs{"providedLevel": logLevel})
 		logLevel = level.Info
@@ -270,7 +270,7 @@ func (l *logger) logOnce(logLevel level.Level, lid level.ID,
 	if lid == 0 || lid < l.levelID || l.HasLoggedOnce(logLevel, key) {
 		return false
 	}
-	key = string(logLevel) + "." + key
+	key = logLevel + "." + key
 	_, ok := l.onceRanEntries.Load(key)
 	if !ok {
 		// load or store is more expensive than load, so check via load first
@@ -316,7 +316,7 @@ func (l *logger) HasErroredOnce(key string) bool {
 }
 
 func (l *logger) HasLoggedOnce(logLevel level.Level, key string) bool {
-	key = string(logLevel) + "." + key
+	key = logLevel + "." + key
 	_, ok := l.onceRanEntries.Load(key)
 	return ok
 }
@@ -390,7 +390,7 @@ func (l *logger) logWithCaller(logLevel level.Level, event string, detail Pairs,
 	logLine := []byte(
 		"time=" + ts.UTC().Format(time.RFC3339Nano) + space +
 			"app=trickster" + space +
-			"level=" + string(logLevel) + space +
+			"level=" + logLevel + space +
 			"event=" + quoteAsNeeded(event),
 	)
 

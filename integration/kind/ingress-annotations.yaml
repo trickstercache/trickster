@@ -1,0 +1,41 @@
+# Annotation-handling scenario: an Ingress carrying annotations of another
+# controller's namespace, which are ignored, beside trickstercache.org
+# equivalents, which apply, and one unrecognized trickstercache.org
+# annotation, which is rejected with an Event rather than applied or
+# silently dropped. Served by the trickster-gateway controller
+# (gateway.yaml) on the listener it names, NodePort 30088.
+#
+#   make kind-integration-start
+#   make kind-integration-ingress
+#   make kind-integration-gateway
+#   cd integration && TRICKSTER_KIND_TEST=1 go test -run TestIngressAnnotationsKind -v .
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: annotated
+  namespace: trickster-it
+  annotations:
+    acme.example.com/use-regex: "true"
+    acme.example.com/rewrite-target: /$2
+    acme.example.com/proxy-read-timeout: "60"
+    acme.example.com/ssl-redirect: "false"
+    acme.example.com/response-header: X-Served-By=acme
+    trickstercache.org/use-regex: "true"
+    trickstercache.org/rewrite-target: /${2}
+    trickstercache.org/timeout: 60s
+    trickstercache.org/response-headers: |
+      X-Served-By: trickster
+    trickstercache.org/proxy-read-timeout: "60"
+spec:
+  ingressClassName: trickster-gateway
+  rules:
+    - host: annotated.example.com
+      http:
+        paths:
+          - path: /legacy(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: webecho
+                port:
+                  name: web

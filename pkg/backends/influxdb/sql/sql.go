@@ -127,7 +127,7 @@ func extractV3Request(r *http.Request) (*v3Request, error) {
 	if len(b) == 0 {
 		return out, nil
 	}
-	ct := r.Header.Get("Content-Type")
+	ct := r.Header.Get(headers.NameContentType)
 	switch {
 	case strings.HasPrefix(ct, "application/json"):
 		var payload struct {
@@ -223,7 +223,7 @@ func SupportedV3Format(r *http.Request) bool {
 // body's other fields (db, format, ...) and its Content-Type shape. Used when
 // Trickster rewrites the upstream request (e.g. on SetExtent).
 func EncodeBody(r *http.Request, sqlQuery string) []byte {
-	ct := r.Header.Get("Content-Type")
+	ct := r.Header.Get(headers.NameContentType)
 	switch {
 	case strings.HasPrefix(ct, "application/json"):
 		document := map[string]json.RawMessage{}

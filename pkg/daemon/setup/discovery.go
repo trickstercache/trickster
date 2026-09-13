@@ -39,6 +39,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 )
 
+func stopDiscovery(si *instance.ServerInstance) {
+	for _, mgr := range si.PoolManagers {
+		if mgr != nil {
+			mgr.Stop()
+		}
+	}
+	for name, d := range si.Discoverers {
+		if d == nil {
+			continue
+		}
+		if err := d.Stop(); err != nil {
+			logger.Warn("error stopping discoverer",
+				logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
+		}
+	}
+	si.Discoverers = nil
+	si.PoolManagers = nil
+}
+
 // applyDiscoveryConfig (re)builds the autodiscovery control plane on each
 // config (re)load: it stops the previous instance's discoverers and dynamic
 // pool managers (capturing their applied membership first), constructs a
@@ -66,17 +85,27 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 		}
 		mgr.Stop()
 	}
-	for name, d := range si.Discoverers {
-		if d == nil {
-			continue
-		}
-		if err := d.Stop(); err != nil {
-			logger.Warn("error stopping discoverer during reload",
-				logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
-		}
-	}
+	// the outgoing discoverers are stopped only once the incoming ones have
+	// subscribed. A discoverer's watches are shared, reference-counted
+	// informers; stopping the old one first would drop the last reference
+	// to each, and the new one would then re-list every source from the API
+	// server on every reload. Holding the old one open across the handoff
+	// keeps the informers warm, so a reload that changes nothing about a
+	// query costs no API call for it.
+	outgoing := si.Discoverers
 	si.Discoverers = nil
 	si.PoolManagers = nil
+	defer func() {
+		for name, d := range outgoing {
+			if d == nil {
+				continue
+			}
+			if err := d.Stop(); err != nil {
+				logger.Warn("error stopping discoverer during reload",
+					logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
+			}
+		}
+	}()
 
 	// enumerate discovery-backed ALBs
 	type discoALB struct {
@@ -84,7 +113,11 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 		opts   *ao.DiscoveryOptions
 	}
 	albs := make(map[string]discoALB)
-	failFast := false
+	// failFast records, per discoverer, whether any ALB referencing it asks
+	// for fail-fast startup. It is per discoverer rather than process-wide
+	// because one ALB's policy has no business failing startup over a
+	// discoverer it does not use.
+	failFast := make(map[string]bool)
 	for name, c := range clients {
 		ac, ok := c.(*alb.Client)
 		if !ok {
@@ -94,20 +127,44 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 		if cfg == nil || cfg.ALBOptions == nil || cfg.ALBOptions.Discovery == nil {
 			continue
 		}
-		albs[name] = discoALB{client: ac, opts: cfg.ALBOptions.Discovery}
-		if cfg.ALBOptions.Discovery.StartupPolicy == ao.StartupPolicyFail {
-			failFast = true
+		d := cfg.ALBOptions.Discovery
+		albs[name] = discoALB{client: ac, opts: d}
+		if d.StartupPolicy == ao.StartupPolicyFail {
+			failFast[d.DiscovererName] = true
 		}
 	}
 	if len(albs) == 0 {
 		return nil
 	}
 
+	// build and start one discoverer per referenced discovery entry
+	discoverers := make(map[string]discovery.Discoverer)
+	managers := make(map[string]*dynamic.Manager, len(albs))
+
+	// stopStarted releases everything this pass has already brought up.
+	// Until the new control plane is published on the ServerInstance nothing
+	// else can reach it, so an error return that skipped this would strand
+	// discoverer clients, informers, and seeded members' health checks with
+	// no owner.
+	stopStarted := func() {
+		for name, d := range discoverers {
+			if err := d.Stop(); err != nil {
+				logger.Warn("error stopping discoverer after a failed apply",
+					logging.Pairs{keys.Discoverer: name, keys.Error: err.Error()})
+			}
+		}
+		for _, mgr := range managers {
+			mgr.Stop()
+		}
+	}
+
 	// handleUnavailable applies the startup policy for a discoverer that
-	// cannot be brought up: fail startup when any referencing ALB requires
-	// it; otherwise serve static members and retry on the next (re)load
+	// cannot be brought up: fail startup when an ALB referencing that
+	// discoverer requires it; otherwise serve static members and retry on
+	// the next (re)load
 	handleUnavailable := func(name string, err error) error {
-		if failFast {
+		if failFast[name] {
+			stopStarted()
 			return fmt.Errorf("discoverer %q unavailable: %w", name, err)
 		}
 		logger.Warn("discoverer unavailable; its albs serve static members only until the next config load",
@@ -115,8 +172,6 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 		return nil
 	}
 
-	// build and start one discoverer per referenced discovery entry
-	discoverers := make(map[string]discovery.Discoverer)
 	for _, a := range albs {
 		dn := a.opts.DiscovererName
 		if _, ok := discoverers[dn]; ok {
@@ -129,6 +184,17 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 			}
 			continue
 		}
+		// under a fail-fast policy, verify the source answers before
+		// standing up watches; an unreachable source is otherwise
+		// indistinguishable from one with no members yet
+		if pf, ok := d.(discovery.Preflighter); ok && failFast[dn] {
+			if err = pf.Preflight(context.Background()); err != nil {
+				if perr := handleUnavailable(dn, err); perr != nil {
+					return perr
+				}
+				continue
+			}
+		}
 		if err = d.Start(context.Background()); err != nil {
 			if perr := handleUnavailable(dn, err); perr != nil {
 				return perr
@@ -139,7 +205,6 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 
 	drain := time.Duration(newConf.MgmtConfig.ReloadDrainTimeout)
-	managers := make(map[string]*dynamic.Manager, len(albs))
 	for albName, a := range albs {
 		tmpl := newConf.Backends[a.opts.TemplateBackend]
 		mgr := dynamic.New(dynamic.Config{
@@ -154,6 +219,7 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 			KnownStatuses: knownStatuses,
 			DrainTimeout:  drain,
 		})
+		managers[albName] = mgr
 		if seed, ok := seeds[albName]; ok &&
 			discoveryConfigUnchanged(si.Config, newConf, albName, a.opts) {
 			mgr.ApplySnapshot(seed)
@@ -165,7 +231,6 @@ func applyDiscoveryConfig(si *instance.ServerInstance, newConf *config.Config,
 				}
 			}
 		}
-		managers[albName] = mgr
 	}
 	si.Discoverers = discoverers
 	si.PoolManagers = managers

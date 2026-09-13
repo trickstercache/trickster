@@ -30,6 +30,7 @@ import (
 	errs "github.com/trickstercache/trickster/v2/pkg/observability/tracing/errors"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"go.opentelemetry.io/otel/trace"
 	collectortracepb "go.opentelemetry.io/proto/otlp/collector/trace/v1"
@@ -124,7 +125,7 @@ func TestNewAppliesEndpointOptions(t *testing.T) {
 				case requests <- r.Clone(context.Background()):
 				default:
 				}
-				w.Header().Set("Content-Type", "application/x-protobuf")
+				w.Header().Set(headers.NameContentType, "application/x-protobuf")
 				w.WriteHeader(http.StatusOK)
 			}))
 			defer srv.Close()
@@ -189,7 +190,7 @@ func TestNewAppliesResourceAttributes(t *testing.T) {
 			return
 		}
 		payloads <- &req
-		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set(headers.NameContentType, "application/x-protobuf")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
@@ -319,7 +320,7 @@ func TestNewContinuesSampledRemoteParent(t *testing.T) {
 			return
 		}
 		payloads <- &req
-		w.Header().Set("Content-Type", "application/x-protobuf")
+		w.Header().Set(headers.NameContentType, "application/x-protobuf")
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()

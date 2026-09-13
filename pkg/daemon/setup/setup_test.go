@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -350,6 +351,9 @@ func TestApplyConfig(t *testing.T) {
 	}
 	if si.Config != conf {
 		t.Error("expected the instance config to be the new config")
+	}
+	if si.Listeners != group {
+		t.Error("expected the instance listener group to be retained")
 	}
 	if si.HealthChecker == nil {
 		t.Error("expected a health checker")
@@ -784,5 +788,33 @@ func TestInitLogger(t *testing.T) {
 	l := initLogger(c)
 	if l == nil {
 		t.Fatal("expected a logger")
+	}
+}
+
+const overlayTestBackendName = reserved.NamePrefixKubeGateway + "svc"
+
+func TestBootstrapConfigWithOverlay(t *testing.T) {
+	path := writeConfig(t, minimalConfig)
+	overlay := &config.Overlay{
+		Data:    []byte("backends:\n  " + overlayTestBackendName + ":\n    provider: rp\n    origin_url: 'http://example.com'\n"),
+		Prefix:  reserved.NamePrefixKubeGateway,
+		Version: "v1",
+	}
+	conf, clients, err := BootstrapConfigWithOverlay(overlay, "-config", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Backends[overlayTestBackendName] == nil || conf.Backends["test"] == nil {
+		t.Fatalf("backends = %v; want file and overlay backends", conf.Backends)
+	}
+	if _, ok := clients[overlayTestBackendName]; !ok {
+		t.Error("overlay backend has no client")
+	}
+	if conf.OverlayVersion() != "v1" {
+		t.Errorf("overlay version = %q; want v1", conf.OverlayVersion())
+	}
+	overlay.Data = []byte("main: {}")
+	if _, _, err := BootstrapConfigWithOverlay(overlay, "-config", path); err == nil {
+		t.Error("expected an overlay validation error")
 	}
 }

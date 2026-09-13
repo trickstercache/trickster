@@ -232,7 +232,7 @@ func TestPrepareFetchReaderPropagatesIncomingTraceContextToOrigin(t *testing.T) 
 }
 
 func TestObjectProxyCacheRequestSpanIncludesResourceStatusAttributes(t *testing.T) {
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
 	if err != nil {
 		t.Fatal(err)

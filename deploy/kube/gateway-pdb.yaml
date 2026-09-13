@@ -1,0 +1,12 @@
+# Keeps one replica serving through node drains and other voluntary
+# disruptions; sized for the two replicas gateway-deployment.yaml starts with
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: trickster-gateway
+  namespace: trickster
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trickster-gateway

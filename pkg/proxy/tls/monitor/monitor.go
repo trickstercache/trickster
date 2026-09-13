@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,9 +64,13 @@ type watchedSet struct {
 type listenerNotifier struct {
 	name     string
 	groupKey string
-	watch    bool
-	fileSets []tr.FileSet
-	memory   map[string]*tr.Entry
+	// groupKeys lists every listener group member sharing this certificate
+	// set, so an endpoint that binds its own socket -- HTTP/3 alongside the
+	// TLS/TCP endpoint -- rotates with it rather than serving a stale cert.
+	groupKeys []string
+	watch     bool
+	fileSets  []tr.FileSet
+	memory    map[string]*tr.Entry
 }
 
 type watchSpec struct {
@@ -126,16 +131,38 @@ func (m *Monitor) Apply(conf *config.Config, lg *listener.Group) {
 				}
 			}
 		}
-		if len(ln.fileSets) == 0 {
+		if len(ln.fileSets) == 0 && !o.TLSRuntimeCerts {
 			continue
+		}
+		ln.groupKeys = []string{ln.groupKey}
+		if o.HTTP3Enabled() {
+			ln.groupKeys = append(ln.groupKeys,
+				listener.GroupKey(name, listenerconfig.ProtocolHTTP3, false))
 		}
 		newListeners[ln.groupKey] = ln
 	}
 
 	var toClose []watchers.Watcher
 	var toStart []watchSpec
+	// a listener still starting is not in the group yet; its store is filled when it arrives
+	lg.OnPublish(m.onPublish)
 	m.mtx.Lock()
 	m.group = lg
+	// a config reload may follow an in-place rotation that no watcher has
+	// applied yet, so every active file set is re-read now; a set that fails
+	// to load keeps its last-good entry, and stale sets are dropped
+	active := make(map[string]struct{})
+	for _, ln := range newListeners {
+		for _, fs := range ln.fileSets {
+			active[fs.Key()] = struct{}{}
+			m.loadFileSet(fs)
+		}
+	}
+	for key := range m.cache {
+		if _, ok := active[key]; !ok {
+			delete(m.cache, key)
+		}
+	}
 	for groupKey, ln := range newListeners {
 		if old, ok := m.listeners[groupKey]; ok {
 			ln.memory = old.memory
@@ -244,6 +271,60 @@ func memoryEntryKey(sourceKey string) string {
 	return tr.SourceKindMemory + ":" + sourceKey
 }
 
+// MemoryCerts returns the source keys of the in-memory certificates the
+// named listener is currently serving, and false when there is no such
+// listener.
+//
+// A listener's memory entries live only as long as the listener does: a
+// configuration that drops it takes them with it. A caller that remembers
+// what it installed therefore cannot tell an entry it still owns from one a
+// reload destroyed, and needs to ask.
+func (m *Monitor) MemoryCerts(listenerName string) ([]string, bool) {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	ln := m.listenerByName(listenerName)
+	if ln == nil {
+		return nil, false
+	}
+	out := make([]string, 0, len(ln.memory))
+	for key := range ln.memory {
+		out = append(out, strings.TrimPrefix(key, tr.SourceKindMemory+":"))
+	}
+	slices.Sort(out)
+	return out, true
+}
+
+// TLSListeners returns the names of every TLS-enabled listener the monitor
+// tracks, which are the valid targets for SetMemoryCert.
+func (m *Monitor) TLSListeners() []string {
+	m.mtx.Lock()
+	defer m.mtx.Unlock()
+	names := make([]string, 0, len(m.listeners))
+	for _, ln := range m.listeners {
+		names = append(names, ln.name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+// onPublish fills the store of a listener the group has just published, since a rebuild that
+// ran before the listener existed had nowhere to put its entries
+func (m *Monitor) onPublish(key string) {
+	m.mtx.Lock()
+	var ln *listenerNotifier
+	for groupKey, candidate := range m.listeners {
+		if groupKey == key || slices.Contains(candidate.groupKeys, key) {
+			ln = candidate
+			break
+		}
+	}
+	m.mtx.Unlock()
+	if ln == nil {
+		return
+	}
+	m.rebuild(ln.groupKey)
+}
+
 // requires m.mtx held
 func (m *Monitor) listenerByName(name string) *listenerNotifier {
 	for _, ln := range m.listeners {
@@ -288,8 +369,9 @@ func logSwap(listenerName string, e *tr.Entry) {
 	logger.Info("tls certificate hot-swapped into listener", pairs)
 }
 
-// rebuild replaces groupKey's cert store with last-good entries. Leaves the
-// store untouched if any file set has never loaded successfully.
+// rebuild resyncs groupKey's cert stores with the last-good file entries and
+// the memory entries. When every file set has loaded, config-sourced entries
+// are superseded; a file set that has never loaded keeps its config fallback.
 func (m *Monitor) rebuild(groupKey string) {
 	m.mtx.Lock()
 	ln, ok := m.listeners[groupKey]
@@ -297,42 +379,66 @@ func (m *Monitor) rebuild(groupKey string) {
 		m.mtx.Unlock()
 		return
 	}
-	entries := make([]*tr.Entry, 0, len(ln.fileSets)+len(ln.memory))
+	complete := true
+	fileEntries := make([]*tr.Entry, 0, len(ln.fileSets))
 	for _, fs := range ln.fileSets {
 		e := m.cache[fs.Key()]
 		if e == nil {
 			e = m.loadFileSet(fs)
 		}
 		if e == nil {
-			// incomplete load: leave store as config path populated it
-			m.mtx.Unlock()
-			return
+			complete = false
+			continue
 		}
-		entries = append(entries, e)
+		fileEntries = append(fileEntries, e)
 	}
 	memoryKeys := make([]string, 0, len(ln.memory))
 	for key := range ln.memory {
 		memoryKeys = append(memoryKeys, key)
 	}
 	slices.Sort(memoryKeys)
+	memoryEntries := make([]*tr.Entry, 0, len(memoryKeys))
 	for _, key := range memoryKeys {
-		entries = append(entries, ln.memory[key])
+		memoryEntries = append(memoryEntries, ln.memory[key])
 	}
 	group := m.group
 	name := ln.name
+	keys := slices.Clone(ln.groupKeys)
+	if len(keys) == 0 {
+		keys = []string{groupKey}
+	}
 	m.mtx.Unlock()
 
-	l := group.Get(groupKey)
-	if l == nil || l.CertSwapper() == nil {
+	var primary tr.CertStore
+	for _, key := range keys {
+		l := group.Get(key)
+		if l == nil || l.CertSwapper() == nil {
+			continue
+		}
+		store, ok := l.CertSwapper().(tr.CertStore)
+		if !ok {
+			continue
+		}
+		if complete {
+			store.ReplaceKinds(append(slices.Clone(fileEntries), memoryEntries...),
+				tr.SourceKindFile, tr.SourceKindMemory, tr.SourceKindConfig)
+		} else {
+			store.ReplaceKinds(memoryEntries, tr.SourceKindMemory)
+			for _, e := range fileEntries {
+				store.SetEntry(e)
+			}
+		}
+		if primary == nil {
+			primary = store
+		}
+	}
+	if primary == nil {
 		return
 	}
-	store, ok := l.CertSwapper().(tr.CertStore)
-	if !ok {
-		return
-	}
-	store.SetEntries(entries)
 	clearListenerMetrics(name)
-	infos := store.Entries()
+	// every endpoint sharing this notifier now holds the same entries, so one
+	// store is enough to report the listener's inventory
+	infos := primary.Entries()
 	metrics.TLSCertificateStoreSize.WithLabelValues(name).Set(float64(len(infos)))
 	for _, info := range infos {
 		metrics.TLSCertificateNotAfter.WithLabelValues(name, info.Key).

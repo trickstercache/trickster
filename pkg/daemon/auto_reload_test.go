@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
@@ -55,8 +56,8 @@ func TestAutoReloader(t *testing.T) {
 		if got := calls.Load(); got != 1 {
 			t.Fatalf("reload calls after interval = %d; want 1", got)
 		}
-		if got, _ := source.Load().(string); got != autoReloadSource {
-			t.Errorf("reload source = %q; want %q", got, autoReloadSource)
+		if got, _ := source.Load().(string); got != reload.SourceAutoReload {
+			t.Errorf("reload source = %q; want %q", got, reload.SourceAutoReload)
 		}
 
 		changed.Store(false)

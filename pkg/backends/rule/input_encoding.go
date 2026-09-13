@@ -17,6 +17,7 @@
 package rule
 
 import (
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/base64"
 )
 
@@ -26,7 +27,7 @@ type (
 )
 
 var decodingFuncs = map[encoding]decodingFunc{
-	"base64": decodeBase64,
+	ro.EncodingBase64: decodeBase64,
 }
 
 func decodeBase64(input, _ string, _ int) string {

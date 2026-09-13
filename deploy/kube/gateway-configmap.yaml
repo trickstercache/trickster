@@ -1,0 +1,101 @@
+# The controller's own configuration: the listeners claimed Ingresses are
+# served on, the probes' listener, the Kubernetes section, and the operator
+# tier the routes cannot change. Gateway listeners are not configured here:
+# they are generated from the Gateways themselves and bind the ports the
+# Gateways declare, and every generated route, backend and cache reaches the
+# data plane through the same validation as this file.
+#
+# Fragments in an optional second ConfigMap, trickster-gateway-conf-d, are
+# mounted as conf.d beside this file and merged into it, which is where a
+# chart or an operator adds caches, tracers, authenticators and rewriters
+# without editing the primary file. Every option is described in
+# configmap.yaml, the exhaustive example.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-gateway-conf
+  namespace: trickster
+  labels:
+    name: trickster-gateway-conf
+data:
+  trickster.yaml: |
+    listeners:
+      # The listeners claimed Ingresses are served on. A port is bound once,
+      # so a port here is one no Gateway may declare: Gateways own 80 and 443
+      # in this layout. To serve Ingresses there instead, move these two to
+      # 80 and 443 and have Gateways declare other ports; gateway-service.yaml
+      # forwards by port number, so it needs no change for that.
+      web:
+        port: 8080
+        max_request_body_size_bytes: 10485760
+        read_header_timeout: 10s
+      websecure:
+        tls_port: 8443
+        # the certificates arrive at runtime from the Secrets the claimed
+        # Ingresses reference, so the port is kept open with none behind them
+        tls_runtime_certs: true
+        max_request_body_size_bytes: 10485760
+        read_header_timeout: 10s
+      # serves the readiness and liveness probes and the placeholder backend
+      # below; not exposed by the Service
+      default:
+        port: 8479
+        tls_port: 0
+      metrics:
+        port: 8481
+
+    logging:
+      log_level: info
+
+    # one JSON line per request to the container's stdout; generated backends
+    # inherit it unless kubernetes.defaults.access_log says otherwise
+    access_log:
+      filename: stdout
+      format: json
+
+    # the configuration must define at least one backend before the
+    # controller generates any; this one answers nothing the routes claim
+    backends:
+      placeholder:
+        provider: rp
+        origin_url: http://127.0.0.1:1
+        listener_names: [default]
+
+    mgmt:
+      # picks up an edit to this ConfigMap, or to conf.d, in place: the
+      # kubelet refreshes the mounted volume within about a minute of the
+      # edit and the next poll reloads without restarting the pod
+      auto_reload_interval: 30s
+
+    kubernetes:
+      connection:
+        in_cluster: true
+      gateway_class_controller_name: trickstercache.org/gateway-controller
+      ingress_class: trickster
+      # watch_namespaces: []   # empty watches every namespace (ClusterRole)
+      ingress:
+        listener_names:
+          - web
+          - websecure
+      # the Service whose addresses are published into Gateway and Ingress
+      # status: the LoadBalancer in gateway-service.yaml
+      published_service:
+        namespace: trickster
+        name: trickster-gateway
+      # which replica writes status and Events; the Lease is created in the
+      # pod's own namespace
+      leader_election:
+        name: trickster-gateway
+      defaults:
+        # service: traffic goes to each Service's cluster IP and kube-proxy
+        # balances it. endpoint: the controller discovers each Service's
+        # endpoints and balances in-process, which needs the endpointslices
+        # grant commented out in gateway-rbac.yaml.
+        routing_mode: service
+        timeout: 60s
+        # operator-tier names a route cannot set, defined in conf.d fragments:
+        # cache_name: objects
+        # negative_cache_name: default
+        # authenticator_name: gateway-auth
+        # req_rewriter_name: strip-internal-headers
+        # tracing_name: otlp

@@ -31,6 +31,7 @@ import (
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
@@ -87,7 +88,7 @@ func TestPathPurgeRemovesEngineDerivedKeys(t *testing.T) {
 	pc := &po.Options{
 		Path:           purgePath,
 		Methods:        []string{http.MethodGet, http.MethodPost},
-		RequestHeaders: map[string]string{"Authorization": "Basic pinned"},
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic pinned"},
 		RequestParams:  map[string]string{"local": "1"},
 	}
 	if err := pc.Initialize(""); err != nil {

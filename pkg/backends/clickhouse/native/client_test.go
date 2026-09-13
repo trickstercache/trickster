@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestNewNativeClient(t *testing.T) {
@@ -164,7 +165,7 @@ func TestSyntheticErrorResponse(t *testing.T) {
 	if resp.Status != "400 Bad Request" {
 		t.Fatalf("status text: got %q", resp.Status)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "text/plain" {
+	if ct := resp.Header.Get(headers.NameContentType); ct != "text/plain" {
 		t.Fatalf("content-type: got %q", ct)
 	}
 	b, readErr := io.ReadAll(resp.Body)
@@ -228,7 +229,7 @@ func TestFetchSuccess(t *testing.T) {
 			"data": []map[string]any{},
 			"rows": 0,
 		}
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameContentType, "application/json")
 		_ = json.NewEncoder(w).Encode(doc)
 	}))
 	defer stop()
@@ -248,7 +249,7 @@ func TestFetchSuccess(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status: got %d body=%q", resp.StatusCode, body)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+	if ct := resp.Header.Get(headers.NameContentType); ct != "application/json" {
 		t.Fatalf("content-type: got %q", ct)
 	}
 
@@ -283,7 +284,7 @@ func TestFetchSuccessWithRows(t *testing.T) {
 			},
 			"rows": 3,
 		}
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set(headers.NameContentType, "application/json")
 		_ = json.NewEncoder(w).Encode(doc)
 	}))
 	defer stop()
@@ -608,5 +609,21 @@ func TestNativeRoundTripAndFormats(t *testing.T) {
 	resp, err = c.Fetch(buildQueryRequest(t, "SELECT 1 FORMAT Parquet"))
 	if err != nil || resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unsupported format response = %#v, %v", resp, err)
+	}
+}
+
+func TestValidateOptionsH2CPriorKnowledge(t *testing.T) {
+	o := bo.New()
+	o.Protocol = "native"
+	o.H2CPriorKnowledge = true
+	if err := ValidateOptions(o); err == nil {
+		t.Error("expected native + h2c_prior_knowledge to be rejected")
+	}
+
+	// over HTTP the native client never replaces the transport, so the
+	// setting is honored rather than ignored
+	o.Protocol = "http"
+	if err := ValidateOptions(o); err != nil {
+		t.Errorf("unexpected error for http protocol: %v", err)
 	}
 }

@@ -49,6 +49,22 @@ The following metrics are available for polling with any Trickster configuration
     * `http_status` - The HTTP response code provided by the backend
     * `path` - the Path portion of the requested URL
 
+* `trickster_proxy_upstream_retries_total` (Counter) - The number of upstream requests retried under a path's `retry` policy.
+  * labels:
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `path` - the configured path whose policy retried the request
+
+* `trickster_proxy_mirror_requests_total` (Counter) - The number of requests copied to a path's `mirror` backend.
+  * labels:
+    * `backend_name` - the name of the configured backend handling the proxy request
+    * `mirror_backend` - the backend receiving the copies
+    * `result` - `sent`, or `dropped` when the mirror's in-flight bound was reached
+
+* `trickster_accesslog_dropped_lines_total` (Counter) - The number of access and error log lines dropped because the log could not accept them.
+  * labels:
+    * `backend_name` - the name of the configured backend whose logger dropped the line
+    * `log` - `access` or `error`
+
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request
@@ -76,6 +92,28 @@ The following metrics are available for polling with any Trickster configuration
 * `trickster_proxy_closed_connections_total` (Counter) - Trickster total number of administratively closed client connections.
 
 * `trickster_proxy_failed_connections_total` (Counter) - Trickster total number of failed client connections.
+
+* `trickster_proxy_stream_connections_total` (Counter) - The number of connections and UDP sessions accepted by `tcp`, `tls` and `udp` listeners.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `protocol` - `tcp`, `tls` or `udp`
+    * `result` - `proxied`, or why the connection was closed instead: `not_tls` (a `tls` listener received no ClientHello), `no_route` (no backend routes the server name), `no_upstream` (the backend's pool has no dialable member, or the member chosen refuses its share), `dial_failed`, or `refused` (a `udp` listener at its session limit, or a connection arriving as the listener closes)
+
+* `trickster_proxy_stream_active_connections` (Gauge) - The number of connections and UDP sessions stream listeners are relaying.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `protocol` - `tcp`, `tls` or `udp`
+
+* `trickster_proxy_stream_dropped_datagrams_total` (Counter) - The number of datagrams `udp` listeners dropped rather than relayed.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `reason` - `queue_full` (the client's flow, or every flow together, already held its allowance of datagrams waiting to be written) or `write_timeout` (the write to the backend blocked for the whole write bound)
+
+* `trickster_proxy_stream_bytes_total` (Counter) - The bytes relayed by stream listeners.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `protocol` - `tcp`, `tls` or `udp`
+    * `direction` - `in` from the client to the backend, `out` from the backend to the client
 
 * `trickster_proxy_query_range_rejected_total` (Counter) - Trickster total number of queries rejected due to exceeding the `max_query_range` limit.
   * labels:
@@ -131,14 +169,21 @@ The following metrics are available for polling with any Trickster configuration
 
 * `trickster_cache_operation_objects_total` (Counter) - The total number of objects upon which the Trickster cache has operated.
   * labels:
-    * `cache_name` - the name of the configured cache performing the operation$
+    * `cache_name` - the name of the configured cache performing the operation
     * `provider` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
 
-* `trickster_cache_operation_bytes_total` (Counter) - The total number of bytes upon which the Trickster cache has operated.
+* `trickster_cache_operation_duration_seconds` (Histogram) - The time, in seconds, required to perform an operation on the Trickster cache. Deletions include both requested removals and index reaper evictions.
   * labels:
-    * `cache_name` - the name of the configured cache performing the operation$
+    * `cache_name` - the name of the configured cache performing the operation
+    * `provider` - the type of the configured cache performing the operation
+    * `operation` - the name of the operation being performed (`get`, `set`, `setDirect`, `del`)
+    * `status` - the result of the operation being performed (e.g., `hit`, `kmiss` for a full key miss, `none`)
+
+* `trickster_cache_operation_bytes_total` (Counter) - The total number of bytes upon which the Trickster cache has operated. Deletions (`del`) record bytes only for cache providers that use an index, since other providers don't track object sizes.
+  * labels:
+    * `cache_name` - the name of the configured cache performing the operation
     * `provider` - the type of the configured cache performing the operation
     * `operation` - the name of the operation being performed (read, write, etc.)
     * `status` - the result of the operation being performed
@@ -236,6 +281,55 @@ The following metrics are available only for Caches Types whose object lifecycle
   * labels:
     * `cache_name` - the name of the configured cache$
     * `provider` - the type of the configured cache
+
+The following metrics are available when the Kubernetes Gateway/Ingress controller is enabled (the top-level `kubernetes` section; see [kubernetes-gateway.md](./kubernetes-gateway.md)):
+
+* `trickster_kgw_reconciles_total` (Counter) - Count of controller reconcile passes, by result
+  * labels:
+    * `result` - `applied` (the data plane was reloaded), `unchanged` (the generated configuration was already running), or `error` (the pass failed to compile or apply)
+
+* `trickster_kgw_reconcile_duration_seconds` (Histogram) - Duration of a whole reconcile pass, from reading the caches to writing status
+
+* `trickster_kgw_reconcile_errors_total` (Counter) - Count of reconcile passes that failed in a stage
+  * labels:
+    * `stage` - `compile`, `apply`, `certificates` (a certificate a listener's store refused) or `status` (a status write the API server refused)
+
+* `trickster_kgw_watch_events_total` (Counter) - Count of Kubernetes watch events received by the controller
+  * labels:
+    * `kind` - the object kind (`Gateway`, `HTTPRoute`, `Ingress`, `Secret`, `Service`, ...)
+    * `event` - `add`, `update` or `delete`
+
+* `trickster_kgw_translate_duration_seconds` (Histogram) - Duration of translating the watched objects into the routing model
+
+* `trickster_kgw_apply_duration_seconds` (Histogram) - Duration of applying generated configuration to the data plane, observed only on passes that reload it
+
+* `trickster_kgw_generated_objects` (Gauge) - Size of the routing model the last pass produced
+  * labels:
+    * `kind` - `listeners`, `routes`, `backends`, `certificates` or `policies`
+
+* `trickster_kgw_status_write_failures_total` (Counter) - Count of status writes the API server refused, after conflict retries
+  * labels:
+    * `kind` - the kind of the object whose status could not be written
+
+* `trickster_kgw_leader` (Gauge) - 1 when this replica holds the leader election Lease and so writes status and Events, 0 otherwise
+
+* `trickster_kgw_last_successful_sync_time_seconds` (Gauge) - Epoch timestamp of the last reconcile pass whose generated configuration is running, for staleness alerting
+
+* `trickster_kgw_route_info` (Gauge) - A constant 1 per generated backend, joining it to the Kubernetes object it serves
+  * labels:
+    * `kind` - `HTTPRoute` or `Ingress`
+    * `route` - the object's name
+    * `namespace` - the object's namespace
+    * `backend_name` - the generated backend's name, as the `backend_name` label of the request metrics carries it
+
+  For example, request rates per Kubernetes route:
+
+  ```promql
+  sum by (kind, namespace, route) (
+    rate(trickster_proxy_requests_total[5m])
+    * on (backend_name) group_left (kind, namespace, route) trickster_kgw_route_info
+  )
+  ```
 
 ---
 

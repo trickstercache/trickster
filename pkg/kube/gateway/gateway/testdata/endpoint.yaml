@@ -1,0 +1,88 @@
+# the class's parameters select the endpoint routing mode, so every route
+# through its Gateways load balances across the Service's endpoints
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: endpoint-params
+    namespace: infra
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: endpoint-params
+  namespace: infra
+data:
+  routing_mode: endpoint
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 3000
+---
+# a single unnamed port is selected by being the only one
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-svc
+  namespace: shop
+spec:
+  ports:
+    - port: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+  hostnames:
+    - shop.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: web-svc
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /split
+      backendRefs:
+        - name: web-svc
+          port: 8080
+          weight: 3
+        - name: canary-svc
+          port: 8080
+          weight: 1

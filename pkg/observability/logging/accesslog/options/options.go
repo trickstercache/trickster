@@ -19,7 +19,10 @@ package options
 
 import (
 	"errors"
+	"fmt"
+	"maps"
 	"net/http"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/format"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
@@ -32,6 +35,9 @@ const DefaultErrorThreshold = http.StatusBadRequest
 
 var ErrInvalidErrorThreshold = errors.New(
 	"error_threshold must be a valid http status code (100-599)")
+
+// ErrInvalidExtraKey is returned for an extra key that cannot be named by a format token.
+var ErrInvalidExtraKey = errors.New("invalid access log extra key")
 
 // Options configures per-backend access and error logging. Error settings
 // inherit their access-log counterparts when unset.
@@ -60,6 +66,9 @@ type Options struct {
 	ErrorRetention *manager.RetentionOptions `yaml:"error_retention,omitempty"`
 	// ErrorCompress overrides Compress for the error log
 	ErrorCompress *bool `yaml:"error_compress,omitempty"`
+	// Extra declares static values, rendered by %{key}e tokens and the json
+	// preset, that identify what the backend serves (e.g. a Kubernetes route)
+	Extra map[string]string `yaml:"extra,omitempty"`
 }
 
 // New returns a new Options with default values
@@ -79,6 +88,7 @@ func (o *Options) Clone() *Options {
 	out.ErrorRotation = o.ErrorRotation.Clone()
 	out.ErrorRetention = o.ErrorRetention.Clone()
 	out.ErrorCompress = pointers.Clone(o.ErrorCompress)
+	out.Extra = maps.Clone(o.Extra)
 	return &out
 }
 
@@ -102,6 +112,11 @@ func (o *Options) Validate() (bool, error) {
 	if o.ErrorThreshold != 0 &&
 		(o.ErrorThreshold < 100 || o.ErrorThreshold > 599) {
 		return false, ErrInvalidErrorThreshold
+	}
+	for k := range o.Extra {
+		if k == "" || strings.ContainsAny(k, "{}%") {
+			return false, fmt.Errorf("%w: %q", ErrInvalidExtraKey, k)
+		}
 	}
 	return true, nil
 }

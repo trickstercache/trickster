@@ -338,6 +338,14 @@ func (c *Client) SetDynamicTargets(dynamic pool.Targets) bool {
 	return true
 }
 
+// Pool returns the mechanism's current pool, or nil for a mechanism that dispatches without one
+func (c *Client) Pool() pool.Pool {
+	if pm, ok := c.handler.(types.PoolMechanism); ok {
+		return pm.Pool()
+	}
+	return nil
+}
+
 // DynamicPoolNames returns the names of the ALB's currently-discovered pool
 // members, for health and management display
 func (c *Client) DynamicPoolNames() []string {
@@ -505,7 +513,7 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	if conf.AuthOptions != nil && conf.AuthOptions.Authenticator != nil {
 		// credential replacement is only allowed if users will be positively
 		// authenticated and not just observed.
-		canReplaceCreds = !(conf.AuthOptions.Authenticator.IsObserveOnly())
+		canReplaceCreds = !conf.AuthOptions.Authenticator.IsObserveOnly()
 		authenticator = conf.AuthOptions.Authenticator
 	} else {
 		a, err := authreg.NewObserverFromProviderName(o.TargetProvider,

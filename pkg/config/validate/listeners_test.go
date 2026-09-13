@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 )
 
@@ -343,6 +344,19 @@ func TestListenersEdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid_trusted_proxy", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Backends = bo.Lookup{"test": bo.New()}
+		c.Listeners[listener.DefaultFrontendName].TrustedProxies = []string{"10.0.0.0/8", "nope"}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "invalid trusted proxy") {
+			t.Fatalf("expected invalid trusted proxy error, got %v", err)
+		}
+		c.Listeners[listener.DefaultFrontendName].TrustedProxies = []string{"10.0.0.0/8", "::1"}
+		if err := Listeners(c); err != nil {
+			t.Fatalf("expected valid trusted proxies, got %v", err)
+		}
+	})
+
 	t.Run("port_conflict", func(t *testing.T) {
 		c := config.NewConfig()
 		c.Listeners["custom"] = listener.New("custom")
@@ -511,5 +525,161 @@ func TestListenerNamesAreAdditiveAndProviderIndependent(t *testing.T) {
 				t.Fatal("runtime reads legacy field")
 			}
 		})
+	}
+}
+
+func TestListenersRuntimeCerts(t *testing.T) {
+	c := config.NewConfig()
+	c.Backends["default"].ListenerName = listener.DefaultFrontendName
+	lo := c.Listeners[listener.DefaultFrontendName]
+	lo.TLSListenPort = 8483
+	lo.TLSRuntimeCerts = true
+	if err := Listeners(c); err != nil {
+		t.Fatal(err)
+	}
+	if !lo.ServeTLS || lo.TLSListenPort != 8483 {
+		t.Errorf("runtime-cert listener serveTLS=%v port=%d; want TLS kept without a file cert",
+			lo.ServeTLS, lo.TLSListenPort)
+	}
+	if warningsContain(c.LoaderWarnings, "TLS port is disabled") {
+		t.Error("runtime-cert listener must not warn that its TLS port is disabled")
+	}
+
+	c = config.NewConfig()
+	c.Backends["default"].ListenerName = listener.DefaultFrontendName
+	c.Listeners["native"] = &listener.Options{Protocol: listener.ProtocolMySQL, TLSRuntimeCerts: true}
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "tls_runtime_certs") {
+		t.Fatalf("error = %v; want a tls_runtime_certs protocol error", err)
+	}
+}
+
+func streamBackend(listenerName, provider string, hosts ...string) *bo.Options {
+	backend := bo.New()
+	backend.Provider = provider
+	backend.ListenerName = listenerName
+	backend.OriginURL = "tcp://origin.example.com:9000"
+	backend.Hosts = hosts
+	return backend
+}
+
+func TestListenersStreamProtocols(t *testing.T) {
+	newConfig := func(protocol string, backends bo.Lookup) *config.Config {
+		c := config.NewConfig()
+		c.Listeners["relay"] = listener.New("relay")
+		c.Listeners["relay"].Protocol = protocol
+		c.Listeners["relay"].ListenPort = 9000
+		c.Backends = backends
+		return c
+	}
+	albBackend := func(mechanism string) *bo.Options {
+		b := bo.New()
+		b.Provider = providers.ALB
+		b.ListenerName = "relay"
+		b.ALBOptions = &ao.Options{MechanismName: mechanism, Pool: ao.PoolMemberList{{Name: "m1"}}}
+		return b
+	}
+	member := bo.New()
+	member.OriginURL = "tcp://member.example.com:9000"
+	cases := []struct {
+		name string
+		conf *config.Config
+		want string
+	}{
+		{"tcp_single_rp", newConfig(listener.ProtocolTCP, bo.Lookup{"db": streamBackend("relay", providers.ReverseProxyShort)}), ""},
+		{"udp_single_proxy", newConfig(listener.ProtocolUDP, bo.Lookup{"dns": streamBackend("relay", providers.Proxy)}), ""},
+		{"tcp_alb_rr", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("rr"), "m1": member}), ""},
+		{"tls_sni_hosts", newConfig(listener.ProtocolTLS, bo.Lookup{
+			"a": streamBackend("relay", providers.ReverseProxy, "a.example.com", "*.a.example.com"),
+			"b": streamBackend("relay", providers.ReverseProxyShort, "b.example.com"),
+			"c": streamBackend("relay", providers.ReverseProxyShort),
+		}), ""},
+		{"tcp_two_backends", newConfig(listener.ProtocolTCP, bo.Lookup{
+			"a": streamBackend("relay", providers.ReverseProxyShort), "b": streamBackend("relay", providers.ReverseProxyShort),
+		}), "can map to only one backend"},
+		{"tls_two_catch_alls", newConfig(listener.ProtocolTLS, bo.Lookup{
+			"a": streamBackend("relay", providers.ReverseProxyShort), "b": streamBackend("relay", providers.ReverseProxyShort),
+		}), "already has a catch-all"},
+		{"tls_duplicate_host", newConfig(listener.ProtocolTLS, bo.Lookup{
+			"a": streamBackend("relay", providers.ReverseProxyShort, "x.example.com"),
+			"b": streamBackend("relay", providers.ReverseProxyShort, "X.example.com."),
+		}), "already routed"},
+		{"wrong_provider", newConfig(listener.ProtocolTCP, bo.Lookup{"p": streamBackend("relay", providers.Prometheus)}), "cannot map to backend"},
+		{"alb_not_rr", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("fr"), "m1": member}), "requires alb backend"},
+		{"unsupported_still_refused", newConfig("sctp", bo.Lookup{"p": streamBackend("relay", providers.ReverseProxyShort)}), "unsupported protocol"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := Listeners(tc.conf)
+			switch {
+			case tc.want == "" && err != nil:
+				t.Fatalf("unexpected error: %v", err)
+			case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+			if tc.want == "" && !tc.conf.Listeners["relay"].Active {
+				t.Error("a mapped stream listener must be active")
+			}
+		})
+	}
+
+	t.Run("stream_block_on_http_listener", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Listeners["web"] = listener.New("web")
+		c.Listeners["web"].ListenPort = 9000
+		c.Listeners["web"].Stream = l4o.New()
+		c.Backends = bo.Lookup{"b": streamBackend("web", providers.ReverseProxyShort)}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "stream options") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("negative_stream_timeout", func(t *testing.T) {
+		c := newConfig(listener.ProtocolTCP, bo.Lookup{"db": streamBackend("relay", providers.ReverseProxyShort)})
+		c.Listeners["relay"].Stream = &l4o.Options{IdleTimeout: -1}
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "zero or positive") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+	t.Run("stream_tls_port_refused", func(t *testing.T) {
+		c := newConfig(listener.ProtocolTLS, bo.Lookup{"db": streamBackend("relay", providers.ReverseProxyShort)})
+		c.Listeners["relay"].TLSListenPort = 9443
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "cannot configure a TLS port") {
+			t.Fatalf("error = %v", err)
+		}
+	})
+}
+
+func TestListenersReservePortsByTransport(t *testing.T) {
+	// a tcp and a udp listener may share a port number, since they bind in different port
+	// spaces; two in one space may not, and an HTTP/3 endpoint binds UDP
+	newConfig := func() *config.Config {
+		c := config.NewConfig()
+		for _, name := range []string{"tcp", "udp"} {
+			c.Listeners[name] = listener.New(name)
+			c.Listeners[name].Protocol = name
+			c.Listeners[name].ListenPort = 5353
+		}
+		c.Backends = bo.Lookup{
+			"a": streamBackend("tcp", providers.ReverseProxyShort),
+			"b": streamBackend("udp", providers.ReverseProxyShort),
+		}
+		return c
+	}
+	if err := Listeners(newConfig()); err != nil {
+		t.Fatalf("tcp and udp on one port number: %v", err)
+	}
+	c := newConfig()
+	c.Listeners["udp"].Protocol = listener.ProtocolTLS
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "both use tcp :5353") {
+		t.Fatalf("tcp and tls on one port: %v", err)
+	}
+	c = newConfig()
+	c.Listeners["udp"].Protocol = listener.ProtocolHTTP
+	c.Listeners["udp"].ListenPort = 0
+	c.Listeners["udp"].TLSListenPort = 5443
+	c.Listeners["udp"].TLSRuntimeCerts = true
+	c.Listeners["udp"].HTTP3 = &listener.HTTP3Options{Enabled: true, ListenPort: 5353}
+	c.Listeners["tcp"].Protocol = listener.ProtocolUDP
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "both use udp :5353") {
+		t.Fatalf("HTTP/3 and udp on one port: %v", err)
 	}
 }

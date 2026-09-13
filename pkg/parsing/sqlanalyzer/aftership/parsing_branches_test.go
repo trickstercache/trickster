@@ -42,7 +42,7 @@ func TestAnalyzeAdditionalBucketForms(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			query := "SELECT " + test.expr + " AS t, count() FROM events " +
 				"WHERE ts >= 120 AND ts < 240 GROUP BY t"
-			analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
 			if analysis.Err != nil {
 				t.Fatal(analysis.Err)
 			}
@@ -56,7 +56,7 @@ func TestAnalyzeAdditionalBucketForms(t *testing.T) {
 func TestAnalyzeReversedPredicates(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
 		"WHERE 120 <= ts AND 240 > ts GROUP BY t"
-	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -100,7 +100,7 @@ func TestAnalyzeUnsupportedBucketBranches(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			query := "SELECT " + test.expr + " AS t, count() FROM events " +
 				"WHERE ts >= 120 AND ts < 240 GROUP BY t"
-			analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
 			if analysis.Mode != sqlanalyzer.CacheModeObject ||
 				analysis.Reason != sqlanalyzer.ReasonUnsupportedBucket || analysis.Err == nil {
 				t.Errorf("analysis = %+v, want unsupported-bucket object caching", analysis)
@@ -136,7 +136,7 @@ func TestAnalyzeRangeAndGroupingBranches(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(test.query, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(test.query, time.Unix(500, 0))
 			if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != test.reason || analysis.Err == nil {
 				t.Errorf("analysis = %+v, want object mode with reason %v", analysis, test.reason)
 			}

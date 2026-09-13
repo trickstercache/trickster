@@ -12,7 +12,7 @@ If you are wanting to use Helm and kubernetes rbac use the following install ste
 
 #### Bootstrap Local Kubernetes-Helm Dev
 
-- Install [Helm](helm.sh) **Client Version 2.9.1**
+- Install [Helm](https://helm.sh/docs/intro/install/) **Client Version 2.9.1**
     ```
     brew install kubernetes-helm
     ```

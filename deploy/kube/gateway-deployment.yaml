@@ -1,0 +1,124 @@
+# The Gateway API / Ingress controller: Trickster with the `kubernetes`
+# section enabled, programming its own data plane from the cluster's routing
+# objects. Two replicas each serve every route; one, elected over a Lease,
+# writes status and Events.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster-gateway
+  namespace: trickster
+  labels:
+    app.kubernetes.io/name: trickster-gateway
+spec:
+  replicas: 2
+  # a new pod is ready only once its controller has programmed the routes,
+  # so surging one in before an old one goes makes a rollout invisible
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trickster-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trickster-gateway
+      # A chart that rolls the pods on a configuration change instead of
+      # relying on mgmt.auto_reload_interval sets a checksum of the ConfigMap
+      # here; see docs/kubernetes-deploy.md
+      # annotations:
+      #   checksum/config: ""
+    spec:
+      serviceAccountName: trickster-gateway
+      # covers the preStop sleep plus the default 30s shutdown drain, with margin
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+        # lets the unprivileged process bind the 80 and 443 that Gateways
+        # declare; a safe sysctl on every current Kubernetes release
+        sysctls:
+          - name: net.ipv4.ip_unprivileged_port_start
+            value: "0"
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: trickster-gateway
+      containers:
+        - name: trickster
+          image: trickstercache/trickster:latest
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/etc/trickster/trickster.yaml"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          # Environment variables are expanded in the configuration's
+          # credential-bearing fields (authenticator users, a Redis password,
+          # header values), so secrets stay out of the ConfigMap:
+          # envFrom:
+          #   - secretRef:
+          #       name: trickster-gateway-env
+          ports:
+            # the ports Gateways declare; the Service forwards them by number
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+            # the Ingress listeners configured in gateway-configmap.yaml
+            - name: web
+              containerPort: 8080
+            - name: websecure
+              containerPort: 8443
+            - name: ready
+              containerPort: 8479
+            - name: metrics
+              containerPort: 8481
+          # 503 until the controller's first translation is serving, and
+          # again from SIGTERM until the process exits
+          readinessProbe:
+            httpGet:
+              path: /trickster/ready
+              port: ready
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /trickster/ping
+              port: ready
+            periodSeconds: 10
+          lifecycle:
+            preStop:
+              # lets the endpoint removal propagate before SIGTERM arrives
+              sleep:
+                seconds: 5
+          # starting points; the HPA in gateway-hpa.yaml scales on the request
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trickster
+            - name: config-fragments
+              mountPath: /etc/trickster/conf.d
+      volumes:
+        # whole-volume mounts, never subPath: a subPath mount is a copy the
+        # kubelet does not refresh, so auto_reload_interval would see nothing
+        - name: config
+          configMap:
+            name: trickster-gateway-conf
+        - name: config-fragments
+          configMap:
+            name: trickster-gateway-conf-d
+            optional: true

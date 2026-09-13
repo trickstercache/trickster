@@ -1,0 +1,202 @@
+discovery:
+    kgw--discovery:
+        provider: kubernetes
+        kubernetes:
+            in_cluster: true
+            qps: 20
+            burst: 40
+            timeout: 10s
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.split_r0:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+              mirrors:
+                - backend_name: kgw--httproute.shop.split_r0_mirror
+                  percent: 100
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.split_r0_b0
+                  weight: 3
+                - name: kgw--httproute.shop.split_r0_b1
+                  weight: 1
+    kgw--httproute.shop.split_r0_b0:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.split_r0_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: web-svc
+                    port: http
+    kgw--httproute.shop.split_r0_b0_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.split_r0_b1:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: alb
+              methods:
+                - '*'
+              mirrors:
+                - backend_name: kgw--httproute.shop.split_r0_b1_mirror
+                  percent: 100
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.split_r0_b1_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: canary-svc
+                    port: http
+    kgw--httproute.shop.split_r0_b1_mirror:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.split_r0_b1_mirror_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: replay-svc
+                    port: https
+                    scheme: https
+    kgw--httproute.shop.split_r0_b1_mirror_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.split
+        tls:
+            server_name: replay.internal
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.split_r0_b1_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.split_r0_mirror:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--httproute.shop.split_r0_mirror_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: audit-svc
+                    port: https
+                    scheme: https
+    kgw--httproute.shop.split_r0_mirror_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: httproute.shop.split
+        tls:
+            server_name: audit.internal
+            certificate_authority_pem: |-
+                -----BEGIN CERTIFICATE-----
+                MIIBkDCCATWgAwIBAgIUBM0wEvGb47MAWCsWiWOuKebif1cwCgYIKoZIzj0EAwIw
+                HDEaMBgGA1UEAwwRVHJpY2tzdGVyIFRlc3QgQ0EwIBcNMjYwOTA5MDYzOTM5WhgP
+                MjEyNjA4MTYwNjM5MzlaMBwxGjAYBgNVBAMMEVRyaWNrc3RlciBUZXN0IENBMFkw
+                EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEgnLIuREsSh7cJNlA7yXD0ghHSUUUjD53
+                asMk/Q3hkuojnbud/rU2Cg1Au1Obla4uPXBkPG7mh6g4rKEostyXo6NTMFEwHQYD
+                VR0OBBYEFM/W8A40mTEPoW+W8G531tMlVkejMB8GA1UdIwQYMBaAFM/W8A40mTEP
+                oW+W8G531tMlVkejMA8GA1UdEwEB/wQFMAMBAf8wCgYIKoZIzj0EAwIDSQAwRgIh
+                APW0tnI8NA7VaYUgTJnVX1FCtQoSHDeGwiUX8wC391wKAiEAteuPh0f1KzPZZIYQ
+                +1thDxowJBFHpF8Cwl9p2aeltmY=
+                -----END CERTIFICATE-----
+            exclude_system_roots: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'

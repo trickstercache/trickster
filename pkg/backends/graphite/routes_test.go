@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 )
@@ -69,7 +70,7 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected / -> %s last, got %s -> %s", providers.Proxy, last.Path, last.HandlerName)
 	}
 	for _, p := range dpc[1 : len(dpc)-1] {
-		if p.HandlerName != handlerProxyCache || p.ResponseHeaders["Cache-Control"] == "" {
+		if p.HandlerName != handlerProxyCache || p.ResponseHeaders[headers.NameCacheControl] == "" {
 			t.Errorf("expected %s to be object-cached with a TTL: %+v", p.Path, p)
 		}
 	}

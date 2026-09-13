@@ -46,8 +46,10 @@ func TestNew(t *testing.T) {
 	require.NotNil(t, d)
 
 	// names with no registered implementation return a clear error rather
-	// than a nil Discoverer
-	_, err = New(&options.Options{Name: "d", Provider: "consul"})
+	// than a nil Discoverer. This deliberately uses a name that will never
+	// be a real provider: an unimplemented-but-planned one would silently
+	// stop testing this path the day it lands.
+	_, err = New(&options.Options{Name: "d", Provider: "not_a_real_provider"})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no discoverer implementation registered")
 }

@@ -23,6 +23,7 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
@@ -38,7 +39,7 @@ func benchmarkDeriveCacheKey(b *testing.B, hdrs, params map[string]string) {
 	cfg := &bo.Options{Paths: po.List{pc}}
 	tr := httptest.NewRequest("GET",
 		"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
-	tr.Header.Set("Authorization", "Bearer client-credential")
+	tr.Header.Set(headers.NameAuthorization, "Bearer client-credential")
 	tr = tr.WithContext(ct.WithResources(context.Background(),
 		request.NewResources(cfg, pc, nil, nil, nil, nil)))
 	pr := newProxyRequest(tr, nil)
@@ -54,15 +55,15 @@ func BenchmarkDeriveCacheKeyStaticIdentity0(b *testing.B) {
 
 func BenchmarkDeriveCacheKeyStaticIdentity1(b *testing.B) {
 	benchmarkDeriveCacheKey(b,
-		map[string]string{"Authorization": "Bearer pinned-tenant"}, nil)
+		map[string]string{headers.NameAuthorization: "Bearer pinned-tenant"}, nil)
 }
 
 func BenchmarkDeriveCacheKeyStaticIdentity6(b *testing.B) {
 	benchmarkDeriveCacheKey(b,
 		map[string]string{
-			"Authorization": "Bearer pinned-tenant",
-			"X-Tenant":      "shared",
-			"-X-Debug":      "",
+			headers.NameAuthorization: "Bearer pinned-tenant",
+			"X-Tenant":                "shared",
+			"-X-Debug":                "",
 		},
 		map[string]string{
 			"local":   "1",
@@ -75,7 +76,7 @@ func BenchmarkDeriveCacheKeyStaticIdentity6(b *testing.B) {
 // object-cache hit, key derivation included
 func benchmarkObjectCacheHit(b *testing.B, hdrs, params map[string]string) {
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test",
-		200, map[string]string{"Cache-Control": "max-age=3600"})
+		200, map[string]string{headers.NameCacheControl: "max-age=3600"})
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -102,6 +103,6 @@ func BenchmarkObjectCacheHitStaticIdentity0(b *testing.B) {
 
 func BenchmarkObjectCacheHitStaticIdentity4(b *testing.B) {
 	benchmarkObjectCacheHit(b,
-		map[string]string{"Authorization": "Bearer pinned-tenant", "X-Tenant": "shared"},
+		map[string]string{headers.NameAuthorization: "Bearer pinned-tenant", "X-Tenant": "shared"},
 		map[string]string{"local": "1", "-trace": ""})
 }

@@ -30,6 +30,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
@@ -60,9 +61,8 @@ func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {
 	return nil
 }
 
-// GetTestKeyAndCertWithNames returns a self-signed test TLS key and
-// certificate bearing the provided DNS names (wildcards permitted) as its
-// Subject Alternative Names, using a fast ECDSA key
+// GetTestKeyAndCertWithNames returns a self-signed test TLS key and certificate bearing the
+// DNS names (wildcards permitted) as its Subject Alternative Names, using a fast ECDSA key
 func GetTestKeyAndCertWithNames(names ...string) ([]byte, []byte, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -163,4 +163,40 @@ func GetTestKeyAndCertFiles(condition string) (string, string, func(), error) {
 	}
 
 	return kf, cf, func() { os.Remove(kf); os.Remove(cf) }, nil
+}
+
+var (
+	namedMtx   sync.Mutex
+	namedPairs = make(map[string][2][]byte)
+)
+
+// NamedKeyAndCert returns a self-signed test key and certificate with the given common name,
+// generated once per name, so a fake store can tell fixtures apart by what they serve
+func NamedKeyAndCert(name string) ([]byte, []byte) {
+	namedMtx.Lock()
+	defer namedMtx.Unlock()
+	if p, ok := namedPairs[name]; ok {
+		return p[0], p[1]
+	}
+	key, cert, err := GetTestKeyAndCertWithNames(name)
+	if err != nil {
+		// only a broken entropy source fails here, and no test can proceed without one
+		panic(err)
+	}
+	namedPairs[name] = [2][]byte{key, cert}
+	return key, cert
+}
+
+// CommonName returns the common name of a PEM certificate, or the input as a string when it
+// is not one, so a fake store can record what it was handed by name
+func CommonName(certPEM []byte) string {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return string(certPEM)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return string(certPEM)
+	}
+	return cert.Subject.CommonName
 }

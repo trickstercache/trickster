@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -258,4 +259,32 @@ func TestMergeResources(t *testing.T) {
 	if r1.AuthResult.Username != "inner" {
 		t.Error("non-nil inner auth result did not replace the outer authentication")
 	}
+}
+
+func TestUpstream(t *testing.T) {
+	var nilRsc *Resources
+	nilRsc.SetUpstream("a", 1, time.Second)
+	if addr, status, elapsed := nilRsc.Upstream(); addr != "" || status != 0 || elapsed != 0 {
+		t.Error("nil resources record nothing")
+	}
+	rsc := &Resources{}
+	rsc.SetUpstream("10.1.1.1:9090", 502, 42*time.Millisecond)
+	addr, status, elapsed := rsc.Upstream()
+	if addr != "10.1.1.1:9090" || status != 502 || elapsed != 42*time.Millisecond {
+		t.Errorf("unexpected upstream: %s %d %s", addr, status, elapsed)
+	}
+	c := rsc.Clone()
+	if c.UpstreamAddr != addr || c.UpstreamStatus != status || c.UpstreamDuration != elapsed {
+		t.Error("clone dropped the upstream exchange")
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for range 1000 {
+			_ = rsc.Clone()
+		}
+	})
+	for i := range 1000 {
+		rsc.SetUpstream("10.1.1.1:9090", i, time.Duration(i))
+	}
+	wg.Wait()
 }

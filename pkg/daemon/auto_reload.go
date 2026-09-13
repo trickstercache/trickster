@@ -27,8 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
-const autoReloadSource = "auto-reload"
-
 type autoReloadSettings struct {
 	interval   time.Duration
 	hasChanged func() bool
@@ -53,7 +51,7 @@ func newAutoReloader(parent context.Context, reloader reload.Reloader) *autoRelo
 		cancel:   cancel,
 		done:     make(chan struct{}),
 	}
-	safego.Go(reloadGoroutinePanic("autoReloader", autoReloadSource), func() {
+	safego.Go(reloadGoroutinePanic("autoReloader", reload.SourceAutoReload), func() {
 		defer close(r.done)
 		r.run(ctx)
 	})
@@ -119,7 +117,7 @@ func (r *autoReloader) run(ctx context.Context) {
 			timer, timerC = resetAutoReloadTimer(timer, settings.interval)
 		case <-timerC:
 			if settings.hasChanged != nil && settings.hasChanged() {
-				_, _ = r.reloader(autoReloadSource)
+				_, _ = r.reloader(reload.SourceAutoReload)
 			}
 			timer, timerC = resetAutoReloadTimer(timer, settings.interval)
 		}

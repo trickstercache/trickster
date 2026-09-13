@@ -17,9 +17,11 @@
 package options
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -45,19 +47,19 @@ func TestOptionsValidate(t *testing.T) {
 	}{
 		{name: "preserve", options: &Options{Mode: ModePreserve}},
 		{name: "merge override", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{"Access-Control-Allow-Origin": "https://example.com"}}},
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "https://example.com"}}},
 		{name: "merge delete", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{"-Access-Control-Allow-Credentials": ""}}},
+			Headers: types.EnvStringMap{"-" + headers.NameAllowCredentials: ""}}},
 		{name: "replace empty", options: &Options{Mode: ModeReplace}},
 		{name: "disable", options: &Options{Mode: ModeDisable}},
 		{name: "disable with empty headers", options: &Options{Mode: ModeDisable,
 			Headers: types.EnvStringMap{}}, wantErr: true},
 		{name: "disable with headers", options: &Options{Mode: ModeDisable,
-			Headers: types.EnvStringMap{"Access-Control-Allow-Origin": "*"}}, wantErr: true},
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*"}}, wantErr: true},
 		{name: "default mode", options: &Options{}},
 		{name: "invalid mode", options: &Options{Mode: "append"}, wantErr: true},
 		{name: "preserve ignores headers", options: &Options{Mode: ModePreserve,
-			Headers: types.EnvStringMap{"Access-Control-Allow-Origin": "*"}}, wantErr: true},
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*"}}, wantErr: true},
 		{name: "non cors header", options: &Options{Mode: ModeReplace,
 			Headers: types.EnvStringMap{"X-Other": "value"}}, wantErr: true},
 		{name: "double operation", options: &Options{Mode: ModeMerge,
@@ -65,12 +67,12 @@ func TestOptionsValidate(t *testing.T) {
 		{name: "invalid field name", options: &Options{Mode: ModeMerge,
 			Headers: types.EnvStringMap{"Access-Control-Allow Origin": "*"}}, wantErr: true},
 		{name: "invalid field value", options: &Options{Mode: ModeMerge,
-			Headers: types.EnvStringMap{"Access-Control-Allow-Origin": "*\r\nX-Injected: true"}},
+			Headers: types.EnvStringMap{headers.NameAllowOrigin: "*\r\nX-Injected: true"}},
 			wantErr: true},
 		{name: "case insensitive duplicate", options: &Options{Mode: ModeMerge,
 			Headers: types.EnvStringMap{
-				"Access-Control-Allow-Origin":  "https://first.example.com",
-				"+access-control-allow-origin": "https://second.example.com",
+				headers.NameAllowOrigin:                        "https://first.example.com",
+				"+" + strings.ToLower(headers.NameAllowOrigin): "https://second.example.com",
 			}}, wantErr: true},
 	}
 
@@ -118,10 +120,10 @@ func TestOptionsUnmarshalYAMLDisableTracksHeadersBlock(t *testing.T) {
 
 func TestOptionsClone(t *testing.T) {
 	o := &Options{Mode: ModeMerge,
-		Headers: types.EnvStringMap{"Access-Control-Allow-Origin": "https://example.com"}}
+		Headers: types.EnvStringMap{headers.NameAllowOrigin: "https://example.com"}}
 	clone := o.Clone()
-	clone.Headers["Access-Control-Allow-Origin"] = "https://other.example.com"
-	if got := o.Headers["Access-Control-Allow-Origin"]; got != "https://example.com" {
+	clone.Headers[headers.NameAllowOrigin] = "https://other.example.com"
+	if got := o.Headers[headers.NameAllowOrigin]; got != "https://example.com" {
 		t.Fatalf("clone mutated source Headers: %q", got)
 	}
 }
@@ -150,5 +152,41 @@ func TestLegacyPolicy(t *testing.T) {
 	o.Mode = ModeReplace
 	if Legacy().Mode != "" {
 		t.Fatal("Legacy() returned shared mutable state")
+	}
+}
+
+func TestNilReceivers(t *testing.T) {
+	var o *Options
+	if o.Clone() != nil {
+		t.Error("expected a nil clone of nil options")
+	}
+	if err := o.Initialize(""); err != nil {
+		t.Error(err)
+	}
+	if o.PreservesOrigin() || o.IsLegacy() {
+		t.Error("nil options neither preserve origin headers nor are legacy")
+	}
+}
+
+func TestInitializeDisableKeepsHeadersNil(t *testing.T) {
+	o := &Options{Mode: "DISABLE"}
+	if err := o.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	if o.Mode != ModeDisable || o.Headers != nil {
+		t.Errorf("expected lower-cased disable mode with nil headers, got %q %v", o.Mode, o.Headers)
+	}
+}
+
+func TestPreservesOrigin(t *testing.T) {
+	for mode, expected := range map[Mode]bool{
+		ModePreserve: true, "MERGE": true, ModeReplace: false, ModeDisable: false, "": false,
+	} {
+		if got := (&Options{Mode: mode}).PreservesOrigin(); got != expected {
+			t.Errorf("mode %q: expected %t got %t", mode, expected, got)
+		}
+	}
+	if Legacy().PreservesOrigin() {
+		t.Error("the legacy policy replaces origin headers")
 	}
 }

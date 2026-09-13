@@ -24,7 +24,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-var dialectAnalyzer sqlanalyzer.DialectAnalyzer = aftership.NewAnalyzer()
+var dialectAnalyzer sqlanalyzer.DialectAnalyzer = aftership.NewAnalyzer(aftership.Options{
+	// Grafana's $__fromTime/$__toTime macros emit live, unaligned ranges; round
+	// them inward to complete buckets rather than falling back to the OPC.
+	RoundUnalignedTimeBounds: true,
+})
 
 func parse(
 	statement string,

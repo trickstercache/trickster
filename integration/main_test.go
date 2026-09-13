@@ -18,6 +18,7 @@ package integration
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,20 +40,36 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	// goleak is intentionally NOT enabled here: daemon.Start doesn't
-	// propagate ctx-cancel to all its background workers (healthcheck
-	// targets, ALB pools, health-page builder, ristretto, healthcheck
-	// HTTP transport keepalives). Each test boots a fresh trickster
-	// instance and dozens of net/http transport goroutines linger.
-	// Enable goleak once daemon.Stop is plumbed; until then it would
-	// either flake or require an ignore list broad enough to mask any
-	// real HTTP-client leak.
+	// goleak is intentionally NOT enabled: a stopped daemon still leaves cache
+	// workers (e.g. ristretto) and HTTP transport keepalives behind.
 	os.Exit(m.Run())
 }
 
 type expectedStartError struct {
 	ErrorContains *string
 	Error         *error
+}
+
+// runTrickster boots the daemon in the background and returns a func that stops
+// it and waits for exit, so its probes can't reach origins of later tests.
+func runTrickster(t *testing.T, ctx context.Context, args ...string) func() {
+	t.Helper()
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		startTrickster(t, ctx, expectedStartError{}, args...)
+	}()
+	stop := sync.OnceFunc(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(35 * time.Second):
+			t.Error("trickster did not exit after its context was cancelled")
+		}
+	})
+	t.Cleanup(stop)
+	return stop
 }
 
 func startTrickster(t *testing.T, ctx context.Context, expected expectedStartError, args ...string) {
@@ -214,12 +232,13 @@ func waitForGraphiteData(t *testing.T, graphiteAddr string) {
 	}, 2*time.Minute, 2*time.Second, "Graphite data never became available")
 }
 
-func waitForInfluxDBData(t *testing.T, influxAddr string) {
+func waitForInfluxDBData(t *testing.T, influxAddr string) time.Time {
 	t.Helper()
+	var latest time.Time
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		req, err := http.NewRequest("POST",
 			"http://"+influxAddr+"/api/v2/query?org=trickster-dev",
-			strings.NewReader(`{"query": "from(bucket: \"trickster\") |> range(start: -5m) |> limit(n: 1)", "type": "flux"}`))
+			strings.NewReader(`{"query": "from(bucket: \"trickster\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"cpu\" and r._field == \"usage_idle\") |> group() |> last(column: \"_time\") |> keep(columns: [\"_time\"])", "type": "flux"}`))
 		if !assert.NoError(collect, err) {
 			return
 		}
@@ -234,9 +253,35 @@ func waitForInfluxDBData(t *testing.T, influxAddr string) {
 		if !assert.NoError(collect, err) {
 			return
 		}
-		lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-		assert.Greater(collect, len(lines), 1, "waiting for Telegraf to write data to InfluxDB")
+		if !assert.Equal(collect, http.StatusOK, resp.StatusCode,
+			"InfluxDB query failed: %s", strings.TrimSpace(string(b))) {
+			return
+		}
+		records, err := csv.NewReader(strings.NewReader(string(b))).ReadAll()
+		if !assert.NoError(collect, err) {
+			return
+		}
+		timeColumn := -1
+		for _, record := range records {
+			if len(record) == 0 || strings.HasPrefix(record[0], "#") {
+				continue
+			}
+			if timeColumn < 0 {
+				timeColumn = slices.Index(record, "_time")
+				continue
+			}
+			if timeColumn < 0 || timeColumn >= len(record) || record[timeColumn] == "" {
+				continue
+			}
+			latest, err = time.Parse(time.RFC3339Nano, record[timeColumn])
+			if !assert.NoError(collect, err) {
+				return
+			}
+			break
+		}
+		assert.False(collect, latest.IsZero(), "waiting for InfluxDB data")
 	}, 30*time.Second, 2*time.Second, "InfluxDB data never became available")
+	return latest
 }
 
 // waitForInfluxDB3Data polls the v3 SQL endpoint until rows land in the cpu

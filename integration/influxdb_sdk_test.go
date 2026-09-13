@@ -18,6 +18,7 @@ package integration
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -35,7 +36,9 @@ func TestInfluxDBSDK(t *testing.T) {
 	h := configHarness(t)
 	influxAddr := h.BaseAddr
 	h.start(t)
-	waitForInfluxDBData(t, "127.0.0.1:8086")
+	latest := waitForInfluxDBData(t, "127.0.0.1:8086")
+	dataRange := fmt.Sprintf(`range(start: %s, stop: %s)`,
+		latest.Add(-5*time.Minute).Format(time.RFC3339Nano), latest.Add(time.Minute).Format(time.RFC3339Nano))
 
 	serverURL := "http://" + influxAddr + "/flux2"
 	client := influxdb2.NewClient(serverURL, "trickster-dev-token")
@@ -47,8 +50,7 @@ func TestInfluxDBSDK(t *testing.T) {
 	t.Cleanup(cancel)
 
 	t.Run("flux_query", func(t *testing.T) {
-		result, err := queryAPI.Query(ctx,
-			`from(bucket: "trickster") |> range(start: -5m) |> limit(n: 10)`)
+		result, err := queryAPI.Query(ctx, `from(bucket: "trickster") |> `+dataRange+` |> limit(n: 10)`)
 		require.NoError(t, err)
 
 		var count int
@@ -63,7 +65,7 @@ func TestInfluxDBSDK(t *testing.T) {
 	})
 
 	t.Run("cache_hit", func(t *testing.T) {
-		q := `from(bucket: "trickster") |> range(start: -5m) |> limit(n: 5)`
+		q := `from(bucket: "trickster") |> ` + dataRange + ` |> limit(n: 5)`
 
 		result1, err := queryAPI.Query(ctx, q)
 		require.NoError(t, err)

@@ -71,7 +71,7 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(prefix+test.predicate+suffix, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(prefix+test.predicate+suffix, time.Unix(500, 0))
 			if analysis.Mode != test.mode {
 				t.Fatalf("mode = %v, want %v (reason=%v, err=%v)",
 					analysis.Mode, test.mode, analysis.Reason, analysis.Err)
@@ -103,7 +103,7 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 }
 
 func TestHalfOpenRawBoundsRenderFullPartialAndShardedMisses(t *testing.T) {
-	analysis := NewAnalyzer().Analyze(
+	analysis := NewAnalyzer(Options{}).Analyze(
 		"SELECT toStartOfMinute(ts) AS t, count() FROM events "+
 			"WHERE ts >= 120 AND ts < 240 GROUP BY t",
 		time.Unix(500, 0),
@@ -208,7 +208,7 @@ func TestGroupByResolvesSelectResultShape(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(test.body, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(test.body, time.Unix(500, 0))
 			if analysis.Mode != test.mode {
 				t.Fatalf("mode = %v, want %v (reason=%v, err=%v)",
 					analysis.Mode, test.mode, analysis.Reason, analysis.Err)
@@ -261,7 +261,7 @@ func TestTimezoneExpressionsFailClosed(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(test.body, time.Unix(500, 0))
+			analysis := NewAnalyzer(Options{}).Analyze(test.body, time.Unix(500, 0))
 			if analysis.Mode != sqlanalyzer.CacheModeObject {
 				t.Fatalf("mode = %v, want object (reason=%v, err=%v)",
 					analysis.Mode, analysis.Reason, analysis.Err)
@@ -279,7 +279,7 @@ func TestTimezoneExpressionsFailClosed(t *testing.T) {
 func TestFloatingEpochBoundsFailClosed(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
 		"WHERE ts >= 120.5 AND ts < 240.5 GROUP BY t"
-	analysis := NewAnalyzer().Analyze(query, time.Now())
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Now())
 	if analysis.Mode != sqlanalyzer.CacheModeObject {
 		t.Fatalf("floating epoch bounds produced a delta-cache plan: %+v", analysis)
 	}
@@ -288,7 +288,7 @@ func TestFloatingEpochBoundsFailClosed(t *testing.T) {
 func TestRendererPrivatePlaceholdersAreCollisionSafe(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE note = '<$TRICKSTER_TS1_0$>' " +
 		"AND marker = '<$TS1$>' AND ts >= 120 AND ts < 240 GROUP BY t"
-	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
 	if analysis.Err != nil {
 		t.Fatal(analysis.Err)
 	}
@@ -309,7 +309,7 @@ func TestRendererPrivatePlaceholdersAreCollisionSafe(t *testing.T) {
 
 func TestRendererIsConcurrentAndImmutable(t *testing.T) {
 	const workers = 64
-	analysis := NewAnalyzer().Analyze(
+	analysis := NewAnalyzer(Options{}).Analyze(
 		"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 120 AND ts < 240 GROUP BY t",
 		time.Unix(500, 0),
 	)
@@ -353,4 +353,49 @@ func equalStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func TestRoundUnalignedTimeBounds(t *testing.T) {
+	a := NewAnalyzer(Options{RoundUnalignedTimeBounds: true})
+	// Grafana's $__fromTime/$__toTime expand to toDateTime(seconds) at
+	// live, unaligned instants.
+	query := "SELECT toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE) AS t, count() AS trips " +
+		"FROM default.trips WHERE pickup_datetime >= toDateTime(1756671691) " +
+		"AND pickup_datetime < toDateTime(1756758091) GROUP BY t ORDER BY t"
+	got := a.Analyze(query, time.Unix(1756758100, 0))
+	if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil {
+		t.Fatalf("Analyze() = %s/%s (%v)", got.Mode, got.Reason, got.Err)
+	}
+	// 1756671691 rounds up to 1756671900; the exclusive 1756758091 rounds down to 1756758000.
+	if !got.Plan.LowerBound.Value.Equal(time.Unix(1756671900, 0)) || !got.Plan.LowerBound.Inclusive {
+		t.Fatalf("rounded lower bound = %+v", got.Plan.LowerBound)
+	}
+	if !got.Plan.UpperBound.Value.Equal(time.Unix(1756758000, 0)) || got.Plan.UpperBound.Inclusive {
+		t.Fatalf("rounded upper bound = %+v", got.Plan.UpperBound)
+	}
+	extent := got.Plan.RequestExtent(time.Unix(1756758100, 0))
+	if extent.Start.Unix() != 1756671900 || extent.End.Unix() != 1756757700 {
+		t.Fatalf("extent = [%d,%d]", extent.Start.Unix(), extent.End.Unix())
+	}
+	rendered, err := got.Plan.RenderExtent(extent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(rendered, ">= toDateTime(1756671900)") ||
+		!strings.Contains(rendered, "< toDateTime(1756758000)") {
+		t.Fatalf("rounded bounds rendered incorrectly: %s", rendered)
+	}
+
+	// Both bounds inside one bucket leave no complete bucket to cache.
+	empty := a.Analyze("SELECT toStartOfInterval(ts, INTERVAL 5 MINUTE) AS t, count() FROM events "+
+		"WHERE ts >= 1756671601 AND ts < 1756671899 GROUP BY t", time.Unix(1756758100, 0))
+	if empty.Mode == sqlanalyzer.CacheModeDelta || empty.Reason != sqlanalyzer.ReasonUnsafePredicate {
+		t.Fatalf("empty rounded window = %s/%s (%v)", empty.Mode, empty.Reason, empty.Err)
+	}
+
+	// Without the option, unaligned raw bounds still fail closed.
+	strict := NewAnalyzer(Options{}).Analyze(query, time.Unix(1756758100, 0))
+	if strict.Mode == sqlanalyzer.CacheModeDelta || strict.Reason != sqlanalyzer.ReasonUnsafePredicate {
+		t.Fatalf("strict analysis = %s/%s (%v)", strict.Mode, strict.Reason, strict.Err)
+	}
 }

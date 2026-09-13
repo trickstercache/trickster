@@ -1,0 +1,55 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: trickstercache.org/gateway-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: shop
+spec:
+  ingressClassName: trickster
+  rules:
+    - host: shop.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: web-svc
+                port:
+                  number: 8080
+    - host: "*.shop.example.com"
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: web-svc
+                port:
+                  number: 8080
+    - http:
+        paths:
+          - path: /anyhost
+            pathType: Prefix
+            backend:
+              service:
+                name: web-svc
+                port:
+                  number: 8080

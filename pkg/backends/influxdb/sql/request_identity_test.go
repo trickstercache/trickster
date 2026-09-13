@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 const identityQuery = "SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) " +
@@ -37,7 +38,7 @@ func jsonPost(t *testing.T, body string) *http.Request {
 	return &http.Request{
 		Method:        http.MethodPost,
 		URL:           &url.URL{Path: "/api/v3/query_sql"},
-		Header:        http.Header{"Content-Type": {"application/json"}},
+		Header:        http.Header{headers.NameContentType: {"application/json"}},
 		Body:          io.NopCloser(bytes.NewReader(b)),
 		ContentLength: int64(len(b)),
 	}
@@ -98,7 +99,7 @@ func TestEncodeBodyPreservesFields(t *testing.T) {
 	fr := &http.Request{
 		Method:        http.MethodPost,
 		URL:           &url.URL{Path: "/api/v3/query_sql"},
-		Header:        http.Header{"Content-Type": {"application/x-www-form-urlencoded"}},
+		Header:        http.Header{headers.NameContentType: {"application/x-www-form-urlencoded"}},
 		Body:          io.NopCloser(bytes.NewReader(form)),
 		ContentLength: int64(len(form)),
 	}

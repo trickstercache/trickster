@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -37,7 +38,7 @@ const OutputFormatNative byte = 6
 func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseries.RequestOptions) error {
 	if hw, ok := w.(http.ResponseWriter); ok {
 		hw.Header().Set(formatHeader, "Native")
-		hw.Header().Set("Content-Type", "application/octet-stream")
+		hw.Header().Set(headers.NameContentType, "application/octet-stream")
 	}
 	revision := uint64(server.ServerRevision)
 	if options != nil {

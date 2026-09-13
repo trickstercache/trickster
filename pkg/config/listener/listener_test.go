@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -217,5 +218,157 @@ func TestMySQLLimitsYAMLDefaultsCloneAndEquality(t *testing.T) {
 	clone.MySQL.MaxQuerySizeBytes++
 	if o.Equal(clone) {
 		t.Fatal("MySQL limit change should affect listener equality")
+	}
+}
+
+func TestHTTP3EnabledAndEndpoint(t *testing.T) {
+	base := func() *Options {
+		o := New(DefaultFrontendName)
+		o.Protocol = ProtocolHTTP
+		o.ServeTLS = true
+		o.TLSListenAddress = "10.0.0.1"
+		o.TLSListenPort = 8443
+		o.HTTP3 = &HTTP3Options{Enabled: true}
+		return o
+	}
+
+	o := base()
+	if !o.HTTP3Enabled() {
+		t.Fatal("expected HTTP/3 to be enabled")
+	}
+	addr, port, advertised := o.HTTP3Endpoint()
+	if addr != "10.0.0.1" || port != 8443 || advertised != 8443 {
+		t.Errorf("expected defaults from the TLS endpoint, got %s:%d adv=%d", addr, port, advertised)
+	}
+
+	o = base()
+	o.HTTP3.ListenAddress = "0.0.0.0"
+	o.HTTP3.ListenPort = 8444
+	o.HTTP3.AdvertisedPort = 443
+	addr, port, advertised = o.HTTP3Endpoint()
+	if addr != "0.0.0.0" || port != 8444 || advertised != 443 {
+		t.Errorf("explicit values not honored: %s:%d adv=%d", addr, port, advertised)
+	}
+
+	// HTTP/3 requires TLS, and only applies to http listeners
+	for _, tc := range []struct {
+		name string
+		mod  func(*Options)
+	}{
+		{"no tls", func(o *Options) { o.ServeTLS = false }},
+		{"no tls port", func(o *Options) { o.TLSListenPort = 0 }},
+		{"not http protocol", func(o *Options) { o.Protocol = ProtocolMySQL }},
+		{"not enabled", func(o *Options) { o.HTTP3.Enabled = false }},
+		{"no block", func(o *Options) { o.HTTP3 = nil }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			o := base()
+			tc.mod(o)
+			if o.HTTP3Enabled() {
+				t.Error("expected HTTP/3 to be disabled")
+			}
+			if _, p, _ := o.HTTP3Endpoint(); p != 0 {
+				t.Errorf("expected no endpoint, got port %d", p)
+			}
+		})
+	}
+}
+
+func TestHTTP3OptionsEqualAndClone(t *testing.T) {
+	a := &HTTP3Options{Enabled: true, ListenPort: 8443}
+	if !a.Equal(a.Clone()) {
+		t.Error("clone should equal its source")
+	}
+	if a.Equal(&HTTP3Options{Enabled: true, ListenPort: 8444}) {
+		t.Error("differing ports should not be equal")
+	}
+	if a.Equal(nil) || (*HTTP3Options)(nil).Equal(a) {
+		t.Error("nil should not equal a populated config")
+	}
+	if !(*HTTP3Options)(nil).Equal(nil) {
+		t.Error("two nils should be equal")
+	}
+	if (*HTTP3Options)(nil).Clone() != nil {
+		t.Error("cloning nil should yield nil")
+	}
+
+	// Options.Equal must account for the HTTP/3 block
+	o1, o2 := New(DefaultFrontendName), New(DefaultFrontendName)
+	o1.HTTP3 = &HTTP3Options{Enabled: true}
+	if o1.Equal(o2) {
+		t.Error("listeners differing only in HTTP/3 must not compare equal")
+	}
+}
+
+func TestOptionsEqualRuntimeCerts(t *testing.T) {
+	a := New(DefaultFrontendName)
+	b := a.Clone()
+	if !a.Equal(b) {
+		t.Fatal("clone must be equal")
+	}
+	b.TLSRuntimeCerts = true
+	if a.Equal(b) {
+		t.Error("tls_runtime_certs must participate in equality")
+	}
+	if c := b.Clone(); !c.TLSRuntimeCerts {
+		t.Error("clone dropped tls_runtime_certs")
+	}
+}
+
+func TestOptionsEqualProxyProtocol(t *testing.T) {
+	a := New(DefaultFrontendName)
+	b := a.Clone()
+	b.ProxyProtocol = true
+	if a.Equal(b) {
+		t.Error("proxy_protocol must participate in equality")
+	}
+	a.ProxyProtocol = true
+	b.TrustedProxies = []string{"10.0.0.0/8"}
+	if a.Equal(b) {
+		t.Error("trusted_proxies must participate in equality")
+	}
+	c := b.Clone()
+	if !b.Equal(c) || !c.ProxyProtocol || len(c.TrustedProxies) != 1 {
+		t.Error("clone dropped proxy protocol options")
+	}
+	c.TrustedProxies[0] = "192.0.2.0/24"
+	if b.TrustedProxies[0] != "10.0.0.0/8" {
+		t.Error("clone shares the trusted proxy list")
+	}
+}
+
+func TestStreamOptionsCloneEqualAndIsStream(t *testing.T) {
+	for _, p := range []string{ProtocolTCP, ProtocolTLS, ProtocolUDP} {
+		if !IsStream(p) {
+			t.Errorf("IsStream(%q) = false", p)
+		}
+	}
+	for _, p := range []string{ProtocolHTTP, ProtocolMySQL, ProtocolClickHouse, ""} {
+		if IsStream(p) {
+			t.Errorf("IsStream(%q) = true", p)
+		}
+	}
+	var nilOpts *Options
+	if nilOpts.IsStream() {
+		t.Error("nil options report a stream protocol")
+	}
+	o := New("relay")
+	o.Protocol = ProtocolTLS
+	o.Stream = l4o.New()
+	o.Stream.IdleTimeout = timeconv.Duration(time.Minute)
+	if !o.IsStream() {
+		t.Error("tls listener is not a stream")
+	}
+	c := o.Clone()
+	if !c.Equal(o) || c.Stream == o.Stream {
+		t.Error("clone must equal the original with its own stream options")
+	}
+	c.Stream.IdleTimeout = 0
+	if c.Equal(o) {
+		t.Error("stream option changes must break equality")
+	}
+	c.Stream = nil
+	if c.Equal(o) {
+		t.Error("a missing stream block must break equality")
 	}
 }

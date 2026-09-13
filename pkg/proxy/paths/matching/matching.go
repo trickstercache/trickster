@@ -30,17 +30,22 @@ const (
 	PathMatchTypePrefix
 	// PathMatchTypeRegex indicates the router will map the Path as a regular expression
 	PathMatchTypeRegex
+	// PathMatchTypeSegment indicates the router will map the Path by prefix on a
+	// segment boundary: /foo matches /foo and /foo/bar, but not /foobar
+	PathMatchTypeSegment
 
-	PathMatchNameExact  PathMatchName = "exact"
-	PathMatchNamePrefix PathMatchName = "prefix"
-	PathMatchNameRegex  PathMatchName = "regex"
+	PathMatchNameExact   PathMatchName = "exact"
+	PathMatchNamePrefix  PathMatchName = "prefix"
+	PathMatchNameRegex   PathMatchName = "regex"
+	PathMatchNameSegment PathMatchName = "segment"
 )
 
 // Names is a map of PathMatchTypes keyed by string name
 var Names = map[PathMatchName]PathMatchType{
-	PathMatchNameExact:  PathMatchTypeExact,
-	PathMatchNamePrefix: PathMatchTypePrefix,
-	PathMatchNameRegex:  PathMatchTypeRegex,
+	PathMatchNameExact:   PathMatchTypeExact,
+	PathMatchNamePrefix:  PathMatchTypePrefix,
+	PathMatchNameRegex:   PathMatchTypeRegex,
+	PathMatchNameSegment: PathMatchTypeSegment,
 }
 
 // Values is a map of PathMatchTypes valued by string name

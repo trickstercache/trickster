@@ -84,7 +84,7 @@ func TestClickHouseCompatibilityCorpus(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
 	for _, test := range clickHouseCompatibilityCorpus {
 		t.Run(test.name, func(t *testing.T) {
-			analysis := NewAnalyzer().Analyze(test.query, now)
+			analysis := NewAnalyzer(Options{}).Analyze(test.query, now)
 			if analysis.Mode != test.mode || analysis.Reason != test.reason {
 				t.Fatalf("analysis = (%s, %s, %v), want (%s, %s)",
 					analysis.Mode.String(), analysis.Reason, analysis.Err,
@@ -168,7 +168,7 @@ func TestAllIntervalBucketUnits(t *testing.T) {
 			query := "SELECT toStartOfInterval(ts, INTERVAL 1 " + test.unit + ") AS t, count() " +
 				"FROM events WHERE ts >= " + formatInt(test.start) + " AND ts < " + formatInt(end) + " GROUP BY t"
 			if test.unit == "microsecond" || test.unit == "nanosecond" {
-				analysis := NewAnalyzer().Analyze(query, time.Now())
+				analysis := NewAnalyzer(Options{}).Analyze(query, time.Now())
 				if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != sqlanalyzer.ReasonInvalidSQL {
 					t.Fatalf("unsupported parser interval did not fail closed: %+v", analysis)
 				}
@@ -183,7 +183,7 @@ func TestCrossPredicateBetweenStateDoesNotLeak(t *testing.T) {
 	query := "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
 		"WHERE partition_date BETWEEN toDate(120) AND toDate(240) " +
 		"AND ts >= 120 AND ts < 240 GROUP BY t"
-	analysis := NewAnalyzer().Analyze(query, time.Unix(500, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		t.Fatalf("analysis = %+v, want delta", analysis)
 	}
@@ -205,7 +205,7 @@ func TestCrossPredicateBetweenStateDoesNotLeak(t *testing.T) {
 
 func assertDeltaCadence(t *testing.T, query string, step, phase time.Duration) {
 	t.Helper()
-	analysis := NewAnalyzer().Analyze(query, time.Unix(1_700_000_000, 0))
+	analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(1_700_000_000, 0))
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil || analysis.Err != nil {
 		t.Fatalf("analysis = %+v, want delta", analysis)
 	}

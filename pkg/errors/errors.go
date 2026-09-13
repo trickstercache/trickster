@@ -46,6 +46,9 @@ var ErrInvalidMethod = errors.New("invalid method value in config")
 // ErrInvalidMatchType is an error for when a route's path match type is invalid
 var ErrInvalidMatchType = errors.New("invalid path match type")
 
+// ErrInvalidHost is an error for when a route's host pattern is invalid
+var ErrInvalidHost = errors.New("invalid host value in config")
+
 // ErrNoValidBackends is an error for when not valid backends have been configured
 var ErrNoValidBackends = errors.New("no valid backends configured")
 

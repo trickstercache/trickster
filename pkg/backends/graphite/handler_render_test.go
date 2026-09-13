@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
 )
@@ -300,7 +301,7 @@ func TestRenderMultiTarget(t *testing.T) {
 	// POST form requests work the same way
 	body := q.Encode()
 	r := httptest.NewRequest(http.MethodPost, "http://trickster/render", strings.NewReader(body))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	w := h.serve(r)
 	if w.Code != http.StatusOK || w.Body.String() != h.direct(q) {
 		t.Errorf("POST split: %d %.200s", w.Code, w.Body.String())
@@ -493,7 +494,7 @@ func TestRenderTruncatedCaptureNotServed(t *testing.T) {
 			t.Errorf("pass %d: truncated capture leaked: got %d bytes, want %d",
 				pass, got.Body.Len(), len(want))
 		}
-		if cl := got.Header().Get("Content-Length"); cl != "" {
+		if cl := got.Header().Get(headers.NameContentLength); cl != "" {
 			if n, _ := strconv.Atoi(cl); n != got.Body.Len() {
 				t.Errorf("pass %d: Content-Length %s does not match body %d", pass, cl, got.Body.Len())
 			}
@@ -574,7 +575,7 @@ func TestRenderBodyLimits(t *testing.T) {
 	// declared oversized: rejected on Content-Length alone
 	r := httptest.NewRequest(http.MethodPost, "http://trickster/render",
 		strings.NewReader("target=a.b"))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	r.ContentLength = maxRenderBodyBytes + 1
 	w := h.serve(r)
 	if w.Code != http.StatusRequestEntityTooLarge {
@@ -583,7 +584,7 @@ func TestRenderBodyLimits(t *testing.T) {
 	// chunked oversized: no Content-Length, the reader is bounded instead
 	big := strings.NewReader("target=" + strings.Repeat("a", maxRenderBodyBytes+1024))
 	r = httptest.NewRequest(http.MethodPost, "http://trickster/render", big)
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	r.ContentLength = -1
 	w = h.serve(r)
 	if w.Code != http.StatusRequestEntityTooLarge {
@@ -591,7 +592,7 @@ func TestRenderBodyLimits(t *testing.T) {
 	}
 	r = httptest.NewRequest(http.MethodPost, "http://trickster/render",
 		strings.NewReader("target=a.b"))
-	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set(headers.NameContentType, "application/x-www-form-urlencoded")
 	rsc := request.NewResources(h.o, h.o.Paths[0], h.client.Cache().Configuration(),
 		h.client.Cache(), h.client, nil)
 	rsc.RequestBody = []byte("target=" + strings.Repeat("a", maxRenderBodyBytes+1024))
@@ -788,7 +789,7 @@ func TestLocalParamDeclinesAcceleration(t *testing.T) {
 		if r.Form.Get("local") == "1" {
 			for _, tgt := range r.Form["target"] {
 				if strings.Contains(tgt, "host02") {
-					w.Header().Set("Content-Type", "application/json")
+					w.Header().Set(headers.NameContentType, "application/json")
 					_, _ = w.Write([]byte("[]"))
 					return
 				}

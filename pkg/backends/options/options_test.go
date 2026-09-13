@@ -19,10 +19,13 @@ package options
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
@@ -549,7 +552,7 @@ func TestValidateGraphiteOriginAuth(t *testing.T) {
 		{"credential with +Authorization path", newBackend(
 			&gro.Options{OriginUsername: "u", OriginPassword: "p"},
 			po.List{{Path: "/render",
-				RequestHeaders: map[string]string{"+authorization": "x"}}}),
+				RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}}}),
 			gro.ErrOriginAuthAppend},
 	}
 	for _, tc := range tests {
@@ -707,7 +710,7 @@ func TestValidate(t *testing.T) {
 		{ // 2 - valid origin URL + strip trailing slash
 			to:       to,
 			loc:      &o.OriginURL,
-			val:      "http://trickstercache.org/test/path/",
+			val:      "http://" + appinfo.Domain + "/test/path/",
 			expected: nil,
 		},
 		{ // 3 - invalid cache key prefix
@@ -950,13 +953,13 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 	o.Provider = providers.Graphite
 	o.OriginURL = "http://example.com"
 	o.Paths = po.List{{Path: "/render", RequestHeaders: map[string]string{
-		"authorization":  "Bearer path-secret",
-		"+Authorization": "Bearer append-secret",
-		"-authorization": "x",
+		strings.ToLower(headers.NameAuthorization):       "Bearer path-secret",
+		"+" + headers.NameAuthorization:                  "Bearer append-secret",
+		"-" + strings.ToLower(headers.NameAuthorization): "x",
 	}}}
 	o.HealthCheck = &ho.Options{Headers: map[string]string{
-		"authorization": "Bearer probe-secret",
-		"X-Probe":       "trickster",
+		strings.ToLower(headers.NameAuthorization): "Bearer probe-secret",
+		"X-Probe": "trickster",
 	}}
 
 	got := o.CloneYAMLSafe()
@@ -965,7 +968,7 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 			t.Errorf("path header %q not masked: %q", k, v)
 		}
 	}
-	if v := got.HealthCheck.Headers["authorization"]; v != "*****" {
+	if v := got.HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; v != "*****" {
 		t.Errorf("health header not masked: %q", v)
 	}
 	if v := got.HealthCheck.Headers["X-Probe"]; v != "trickster" {
@@ -980,8 +983,8 @@ func TestCloneYAMLSafeMasksAllAuthorizationForms(t *testing.T) {
 	}
 
 	// the empty Authorization opt-out is not a credential and survives export
-	o.HealthCheck.Headers = map[string]string{"authorization": ""}
-	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers["authorization"]; !ok || v != "" {
+	o.HealthCheck.Headers = map[string]string{strings.ToLower(headers.NameAuthorization): ""}
+	if v, ok := o.CloneYAMLSafe().HealthCheck.Headers[strings.ToLower(headers.NameAuthorization)]; !ok || v != "" {
 		t.Errorf("empty opt-out must be preserved, got %q ok=%t", v, ok)
 	}
 }
@@ -1006,5 +1009,175 @@ func TestToYAML(t *testing.T) {
 	s := o.ToYAML()
 	if !(strings.Index(s, `provider: test_type`) > 0) {
 		t.Error("ToYAML mismatch", s)
+	}
+}
+
+// The sigv4 block was the one pointer field Clone did not deep-copy, so a
+// cloned backend shared its credentials with the original. That matters now
+// that ALB templates clone a backend per discovered member.
+func TestCloneDeepCopiesSigV4(t *testing.T) {
+	o := New()
+	o.SigV4 = &taws.Options{
+		Region: "us-east-1", Service: "ec2", AccessKey: "AKIA", SecretKey: "shh",
+	}
+	c := o.Clone()
+	if c.SigV4 == o.SigV4 {
+		t.Fatal("Clone shared the SigV4 pointer with the original")
+	}
+	c.SigV4.Region = "eu-west-1"
+	c.SigV4.Service = "ecs"
+	if o.SigV4.Region != "us-east-1" || o.SigV4.Service != "ec2" {
+		t.Errorf("mutating the clone changed the original: %+v", o.SigV4)
+	}
+}
+
+// A config dump must never carry the secret key.
+func TestToYAMLRedactsSigV4Secret(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "prometheus"
+	o.OriginURL = "http://example.com"
+	o.SigV4 = &taws.Options{
+		Region: "us-east-1", AccessKey: "AKIA", SecretKey: "super-secret",
+	}
+	y := o.ToYAML()
+	if strings.Contains(y, "super-secret") {
+		t.Errorf("ToYAML exposed the sigv4 secret key:\n%s", y)
+	}
+	if !strings.Contains(y, "access_key: AKIA") {
+		t.Errorf("expected the non-secret sigv4 fields to survive:\n%s", y)
+	}
+}
+
+// Validation now runs on the programmatic path too, where the previous
+// implementation validated only during YAML unmarshaling.
+func TestValidateRejectsIncompleteSigV4(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "prometheus"
+	o.OriginURL = "http://example.com"
+	o.SigV4 = &taws.Options{AccessKey: "AKIA"} // no secret key
+	if _, err := o.Validate(); err == nil {
+		t.Error("expected an error for a half-configured sigv4 credential")
+	}
+}
+
+func TestInitializeH2CPriorKnowledge(t *testing.T) {
+	tests := []struct {
+		name      string
+		originURL string
+		expectErr bool
+	}{
+		{"http origin", "http://example.com:8123", false},
+		{"https origin", "https://example.com", true},
+		{"no origin url", "", true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := New()
+			o.Provider = "rp"
+			o.OriginURL = tc.originURL
+			o.H2CPriorKnowledge = true
+			err := o.Initialize("test")
+			if tc.expectErr && err == nil {
+				t.Error("expected an error")
+			}
+			if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+
+	// the default must remain unaffected by the new validation
+	o := New()
+	o.Provider = "rp"
+	o.OriginURL = "https://example.com"
+	if err := o.Initialize("test"); err != nil {
+		t.Errorf("unexpected error without the option set: %v", err)
+	}
+}
+
+func TestValidateHosts(t *testing.T) {
+	tests := []struct {
+		name   string
+		hosts  []string
+		want   []string
+		reason string
+	}{
+		{name: "lowercased and trimmed", hosts: []string{" API.Example.com "}, want: []string{"api.example.com"}},
+		{name: "leading wildcard", hosts: []string{"*.example.com"}, want: []string{"*.example.com"}},
+		{name: "any-depth wildcard", hosts: []string{"**.Example.com."}, want: []string{"**.example.com"}},
+		{name: "empty", hosts: []string{""}, reason: hostReasonEmpty},
+		{name: "whitespace", hosts: []string{"api example.com"}, reason: hostReasonWhitespace},
+		{name: "bare wildcard", hosts: []string{"*"}, reason: hostReasonWildcard},
+		{name: "wildcard only", hosts: []string{"*."}, reason: hostReasonWildcard},
+		{name: "embedded wildcard", hosts: []string{"api.*.example.com"}, reason: hostReasonWildcard},
+		{name: "any-depth wildcard only", hosts: []string{"**."}, reason: hostReasonWildcard},
+		{name: "triple wildcard", hosts: []string{"***.example.com"}, reason: hostReasonWildcard},
+		{name: "both wildcard spellings", hosts: []string{"*.example.com", "**.example.com"}, reason: hostReasonBothWildcards},
+		{name: "nested wildcard", hosts: []string{"*.*.example.com"}, reason: hostReasonWildcard},
+		{name: "duplicate", hosts: []string{"api.example.com", "API.example.com"}, reason: hostReasonDuplicate},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			o := New()
+			o.Name = "test"
+			o.Provider = "rp"
+			o.OriginURL = "http://example.com"
+			o.Hosts = test.hosts
+			_, err := o.Validate()
+			if test.reason == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(o.Hosts, test.want) {
+					t.Errorf("hosts = %v; want %v", o.Hosts, test.want)
+				}
+				return
+			}
+			var hostErr *ErrInvalidHost
+			if !errors.As(err, &hostErr) || hostErr.Reason != test.reason {
+				t.Fatalf("error = %v; want invalid host with reason %q", err, test.reason)
+			}
+		})
+	}
+}
+
+func TestValidateAnyHostRouting(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "rp"
+	o.OriginURL = "http://example.com"
+	o.AnyHostRouting = true
+	if _, err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	o.Hosts = []string{"api.example.com"}
+	if _, err := o.Validate(); !errors.Is(err, ErrAnyHostRoutingWithHosts) {
+		t.Fatalf("error = %v; want %v", err, ErrAnyHostRoutingWithHosts)
+	}
+}
+
+func TestValidateMirrors(t *testing.T) {
+	o := New()
+	o.Name = "primary"
+	o.Provider = providers.ReverseProxyCacheShort
+	o.OriginURL = "http://example.com"
+	p := po.New()
+	p.Mirrors = []*po.MirrorOptions{{BackendName: "shadow"}, nil}
+	o.Paths = po.List{p, nil}
+	l := Lookup{"primary": o}
+	if err := l.validateMirrors(o); err == nil {
+		t.Error("expected an error for an undefined mirror backend")
+	}
+	tmpl := New()
+	tmpl.IsTemplate = true
+	l["shadow"] = tmpl
+	if err := l.validateMirrors(o); err == nil {
+		t.Error("expected an error for a template mirror backend")
+	}
+	l["shadow"] = New()
+	if err := l.validateMirrors(o); err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

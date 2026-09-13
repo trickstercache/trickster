@@ -1,0 +1,54 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+    kgw--listener-http-8080:
+        port: 8080
+    kgw--listener-http-8081:
+        port: 8081
+backends:
+    kgw--httproute.tenant-a.a_r0:
+        provider: rp
+        origin_url: http://a-svc.tenant-a.svc:8080
+        listener_names:
+            - kgw--listener-http-8080
+        cache_key_prefix: httproute.tenant-a.a
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+    kgw--listener-http-80_none:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 404
+              response_body: no route
+    kgw--listener-http-8081_none:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-http-8081
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 404
+              response_body: no route
