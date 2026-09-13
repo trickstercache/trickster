@@ -125,18 +125,23 @@ func TestALBNestedDiscoveryWeightedOuter(t *testing.T) {
 	leafB1.hits.Store(0)
 
 	// weighted round robin over a stable healthy set apportions exactly, so
-	// ten full cycles of the 3:1 pool split 30:10 between the inner ALBs
+	// ten full cycles of the 3:1 pool split 30:10 between the inner ALBs.
+	// Count the responses to this request set instead of the leaves' lifetime
+	// hit counters: suite-level lifecycle traffic may also reach an upstream,
+	// but it is not part of the distribution this assertion exercises.
 	frontURL := fmt.Sprintf("http://127.0.0.1:%d/", frontPort)
 	total := nestedDiscoveryRounds * (nestedDiscoveryWeight + 1)
+	leafHits := make(map[string]int, 3)
 	for range total {
-		status, _ := getBody(t, frontURL)
+		status, body := getBody(t, frontURL)
 		require.Equal(t, http.StatusOK, status)
+		leafHits[body]++
 	}
-	groupA := leafA1.hits.Load() + leafA2.hits.Load()
-	groupB := leafB1.hits.Load()
-	require.Equal(t, int64(nestedDiscoveryRounds*nestedDiscoveryWeight), groupA,
+	groupA := leafHits[leafA1.name] + leafHits[leafA2.name]
+	groupB := leafHits[leafB1.name]
+	require.Equal(t, nestedDiscoveryRounds*nestedDiscoveryWeight, groupA,
 		"inner-a share of traffic")
-	require.Equal(t, int64(nestedDiscoveryRounds), groupB, "inner-b share of traffic")
-	require.Positive(t, leafA1.hits.Load(), "inner-a must spread across its discovered members")
-	require.Positive(t, leafA2.hits.Load(), "inner-a must spread across its discovered members")
+	require.Equal(t, nestedDiscoveryRounds, groupB, "inner-b share of traffic")
+	require.Positive(t, leafHits[leafA1.name], "inner-a must spread across its discovered members")
+	require.Positive(t, leafHits[leafA2.name], "inner-a must spread across its discovered members")
 }

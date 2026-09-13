@@ -365,7 +365,8 @@ func TestNewContinuesSampledRemoteParent(t *testing.T) {
 }
 
 func waitForOTLPRequest(t *testing.T, payloads <-chan *collectortracepb.ExportTraceServiceRequest,
-	handlerErrs <-chan error) *collectortracepb.ExportTraceServiceRequest {
+	handlerErrs <-chan error,
+) *collectortracepb.ExportTraceServiceRequest {
 	t.Helper()
 	select {
 	case req := <-payloads:

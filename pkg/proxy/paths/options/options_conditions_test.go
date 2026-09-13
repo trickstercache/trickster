@@ -185,8 +185,10 @@ func TestMatchIdentities(t *testing.T) {
 
 	// every tier a request for the pathname could resolve through
 	got := l.MatchIdentities(http.MethodGet, "/api/v1")
-	require.Equal(t, []string{"", gold.IdentityKeyPart(), silver.IdentityKeyPart(),
-		segment.IdentityKeyPart()}, got)
+	require.Equal(t, []string{
+		"", gold.IdentityKeyPart(), silver.IdentityKeyPart(),
+		segment.IdentityKeyPart(),
+	}, got)
 	require.Equal(t, gold.IdentityKeyPart(), twin.IdentityKeyPart(),
 		"the twin configures the same headers, so it shares gold's identity and is listed once")
 

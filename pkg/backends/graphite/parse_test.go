@@ -142,8 +142,10 @@ func TestParseTimeRangeQuery(t *testing.T) {
 func TestParseTimeRangeQueryPOST(t *testing.T) {
 	c := newTestClient(t, nil)
 	v := url.Values{
-		"target": {`aliasSub(aliasByNode(dev.fast.requests.*.count, 3), "(^.*$)", "\1 A")`,
-			`aliasSub(alias(sumSeries(dev.fast.requests.*.count), 'total'), "(^.*$)", "\1 B")`},
+		"target": {
+			`aliasSub(aliasByNode(dev.fast.requests.*.count, 3), "(^.*$)", "\1 A")`,
+			`aliasSub(alias(sumSeries(dev.fast.requests.*.count), 'total'), "(^.*$)", "\1 B")`,
+		},
 		"from": {"1787322096"}, "until": {"1787343696"}, "format": {"json"}, "maxDataPoints": {"533"},
 	}
 	trq, _, _, err := c.ParseTimeRangeQuery(postReq(v))
@@ -389,10 +391,14 @@ func TestClientIdentityDeclinesAcceleration(t *testing.T) {
 	// a static override pins the upstream identity and lifts the decline,
 	// provided the synthetic resolution paths carry the same identity
 	hdrs := map[string]string{headers.NameAuthorization: "Basic static", "X-Tenant": "static"}
-	pinned := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
-		RequestHeaders: hdrs, CacheKeyHeaders: []string{"X-Tenant"}}
-	pinnedExpand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
-		RequestHeaders: hdrs}
+	pinned := &po.Options{
+		Path: "/render", Methods: methods.GetAndPost(),
+		RequestHeaders: hdrs, CacheKeyHeaders: []string{"X-Tenant"},
+	}
+	pinnedExpand := &po.Options{
+		Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestHeaders: hdrs,
+	}
 	c2 := newTestClient(t, nil)
 	c2.Configuration().Paths = po.List{pinned, pinnedExpand}
 	r := getReq("target=a.b&from=-1h&format=json")
@@ -405,8 +411,10 @@ func TestClientIdentityDeclinesAcceleration(t *testing.T) {
 		t.Fatalf("statically pinned identity must accelerate: %v %q", err, rq.Fallback)
 	}
 	// a request rewriter on the path declines outright
-	rewriting := &po.Options{Path: "/render",
-		ReqRewriter: rewriter.RewriteInstructions{nil}}
+	rewriting := &po.Options{
+		Path:        "/render",
+		ReqRewriter: rewriter.RewriteInstructions{nil},
+	}
 	rq, _, err = serve(nil, rewriting)
 	if err == nil || rq.Fallback != parsing.ReasonClientIdentity {
 		t.Fatalf("a rewriter must decline: %v %q", err, rq.Fallback)
@@ -453,17 +461,24 @@ func TestResolutionIdentityMismatchDeclines(t *testing.T) {
 
 	// GET and POST /render pinned to different tenants: probes are GETs under
 	// tenant A, so a POST render under tenant B must not accelerate
-	getRender := &po.Options{Path: "/render", Methods: []string{http.MethodGet},
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}}
-	postRender := &po.Options{Path: "/render", Methods: []string{http.MethodPost},
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"}}
-	expand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}}
+	getRender := &po.Options{
+		Path: "/render", Methods: []string{http.MethodGet},
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"},
+	}
+	postRender := &po.Options{
+		Path: "/render", Methods: []string{http.MethodPost},
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"},
+	}
+	expand := &po.Options{
+		Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"},
+	}
 	c := newTestClient(t, nil)
 	c.Configuration().Paths = po.List{getRender, postRender, expand}
 
 	rq, err := serve(c, postReq(url.Values{
-		"target": {"a.b"}, "from": {"-1h"}, "format": {"json"}}), postRender)
+		"target": {"a.b"}, "from": {"-1h"}, "format": {"json"},
+	}), postRender)
 	if err == nil || rq.Fallback != parsing.ReasonResolutionIdentity {
 		t.Fatalf("POST under a different identity must decline: %v %q", err, rq.Fallback)
 	}
@@ -474,10 +489,14 @@ func TestResolutionIdentityMismatchDeclines(t *testing.T) {
 
 	// /render and /metrics/expand pinned to different tenants: probes and
 	// expansion would mix namespaces, so no render accelerates
-	render2 := &po.Options{Path: "/render", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}}
-	expand2 := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"}}
+	render2 := &po.Options{
+		Path: "/render", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"},
+	}
+	expand2 := &po.Options{
+		Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"},
+	}
 	c2 := newTestClient(t, nil)
 	c2.Configuration().Paths = po.List{render2, expand2}
 	rq, err = serve(c2, getReq("target=a.b&from=-1h&format=json"), render2)
@@ -514,11 +533,15 @@ func TestWildcardCacheKeyParamsDecline(t *testing.T) {
 	}
 	// a static request_params pin lifts it when the synthetic resolution
 	// paths are pinned identically
-	pinned := &po.Options{Path: "/render", CacheKeyParams: []string{"*"},
+	pinned := &po.Options{
+		Path: "/render", CacheKeyParams: []string{"*"},
 		Methods:       methods.GetAndPost(),
-		RequestParams: map[string]string{"local": "1"}}
-	pinnedExpand := &po.Options{Path: "/metrics/expand", Methods: methods.GetAndPost(),
-		RequestParams: map[string]string{"local": "1"}}
+		RequestParams: map[string]string{"local": "1"},
+	}
+	pinnedExpand := &po.Options{
+		Path: "/metrics/expand", Methods: methods.GetAndPost(),
+		RequestParams: map[string]string{"local": "1"},
+	}
 	c2 := newTestClient(t, nil)
 	c2.Configuration().Paths = po.List{pinned, pinnedExpand}
 	r := getReq("target=a.b&from=-1h&format=json&local=1")

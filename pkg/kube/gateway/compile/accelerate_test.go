@@ -45,18 +45,28 @@ func promPaths(provider string) po.List {
 		return nil
 	}
 	return po.List{
-		{Path: "/api/v1/query_range", HandlerName: "query_range",
+		{
+			Path: "/api/v1/query_range", HandlerName: "query_range",
 			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST"},
 			CacheKeyParams:  []string{"query", "step", "stats"},
-			ResponseHeaders: map[string]string{"Cache-Control": "s-maxage=30"}},
-		{Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"}},
-		{Path: "/api/v1/label/", HandlerName: "labels", MatchTypeName: matching.PathMatchNamePrefix,
-			CacheKeyParams: []string{"match[]"}},
-		{Path: "/metrics", HandlerName: "proxy", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET"}},
-		{Path: "/", HandlerName: "proxy", MatchTypeName: matching.PathMatchNamePrefix,
-			Methods: []string{"GET", "POST"}},
+			ResponseHeaders: map[string]string{"Cache-Control": "s-maxage=30"},
+		},
+		{
+			Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
+			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"},
+		},
+		{
+			Path: "/api/v1/label/", HandlerName: "labels", MatchTypeName: matching.PathMatchNamePrefix,
+			CacheKeyParams: []string{"match[]"},
+		},
+		{
+			Path: "/metrics", HandlerName: "proxy", MatchTypeName: matching.PathMatchNameExact,
+			Methods: []string{"GET"},
+		},
+		{
+			Path: "/", HandlerName: "proxy", MatchTypeName: matching.PathMatchNamePrefix,
+			Methods: []string{"GET", "POST"},
+		},
 	}
 }
 
@@ -137,8 +147,10 @@ func TestCompileProviderPathsFollowTheRoute(t *testing.T) {
 			filled = append(filled, d.Methods...)
 		}
 	}
-	require.ElementsMatch(t, []string{"HEAD", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE",
-		"PATCH", "PURGE"}, filled)
+	require.ElementsMatch(t, []string{
+		"HEAD", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE",
+		"PATCH", "PURGE",
+	}, filled)
 	require.Len(t, accelerating(b, "/api/v1/label/"), 1)
 	require.Equal(t, []string{"GET"}, accelerating(b, "/api/v1/label/")[0].Methods,
 		"a predefined path naming no method serves GET alone")
@@ -166,15 +178,20 @@ func TestCompileProviderPathsRespectOtherRoutes(t *testing.T) {
 	third := group("shop", "third", 0, svcMember(0, "shop", "third-svc", 8080, 1))
 	prom := route("shop", "web", ir.Rule{
 		Matches:      []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"}}},
-		BackendGroup: g.Name, Policy: "p1"})
+		BackendGroup: g.Name, Policy: "p1",
+	})
 	exact := route("shop", "other", ir.Rule{
-		Matches: []ir.Match{{Path: ir.PathMatch{Type: ir.PathExact, Value: "/api/v1/query"},
-			Methods: []string{"GET"}, MethodSpecific: true}},
-		BackendGroup: other.Name})
+		Matches: []ir.Match{{
+			Path:    ir.PathMatch{Type: ir.PathExact, Value: "/api/v1/query"},
+			Methods: []string{"GET"}, MethodSpecific: true,
+		}},
+		BackendGroup: other.Name,
+	})
 	exact.Rank = 1
 	longer := route("shop", "third", ir.Rule{
 		Matches:      []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api/v1/label"}}},
-		BackendGroup: third.Name})
+		BackendGroup: third.Name,
+	})
 	longer.Rank = 2
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
@@ -205,8 +222,10 @@ func TestCompileProviderPathsReachMembersAndTemplates(t *testing.T) {
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name, Policy: "p1"})},
 		Backends:  []ir.BackendGroup{g},
-		Policies: []ir.Policy{{Name: "p1", Provider: providers.Prometheus,
-			CacheKeyHeaders: []string{"X-Tenant"}, ResultHeader: ir.ResultHeaderHide}},
+		Policies: []ir.Policy{{
+			Name: "p1", Provider: providers.Prometheus,
+			CacheKeyHeaders: []string{"X-Tenant"}, ResultHeader: ir.ResultHeaderHide,
+		}},
 	}
 	docs := emittedWith(t, m, serviceOpts(t), promPaths)
 	require.Empty(t, pathsOf(docs["kgw--httproute.shop.web_r0"], "/api/v1/query_range"))
@@ -252,7 +271,8 @@ func prometheusStub() *httptest.Server {
 			"data": map[string]any{
 				"resultType": "matrix",
 				"result": []map[string]any{{
-					"metric": map[string]string{"__name__": "up"}, "values": values}},
+					"metric": map[string]string{"__name__": "up"}, "values": values,
+				}},
 			},
 		})
 		w.Header().Set(headers.NameContentType, "application/json")
@@ -290,33 +310,45 @@ func TestAcceleratedPathsStayBehindTheRoute(t *testing.T) {
 	only := group("shop", "getonly", 0, svcMember(0, "shop", "prom-svc", 9090, 1))
 	hidden := group("shop", "hidden", 0, svcMember(0, "shop", "prom-svc", 9090, 1))
 	tenant := route("shop", "gold", ir.Rule{
-		Matches: []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"},
-			Headers: []ir.KeyValueMatch{{Name: "X-Tenant", Value: "gold"}}}},
-		BackendGroup: gold.Name, Policy: "prom"})
+		Matches: []ir.Match{{
+			Path:    ir.PathMatch{Type: ir.PathPrefix, Value: "/api"},
+			Headers: []ir.KeyValueMatch{{Name: "X-Tenant", Value: "gold"}},
+		}},
+		BackendGroup: gold.Name, Policy: "prom",
+	})
 	tenant.Hostnames = []string{"shop.example.com"}
 	fallback := route("shop", "plain", ir.Rule{
 		Matches:      []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"}}},
-		BackendGroup: plain.Name})
+		BackendGroup: plain.Name,
+	})
 	fallback.Hostnames = []string{"shop.example.com"}
 	fallback.Rank = 1
 	getOnly := route("shop", "getonly", ir.Rule{
-		Matches: []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"},
-			Methods: []string{"GET"}, MethodSpecific: true}},
-		BackendGroup: only.Name, Policy: "prom"})
+		Matches: []ir.Match{{
+			Path:    ir.PathMatch{Type: ir.PathPrefix, Value: "/api"},
+			Methods: []string{"GET"}, MethodSpecific: true,
+		}},
+		BackendGroup: only.Name, Policy: "prom",
+	})
 	getOnly.Hostnames = []string{"api.example.com"}
 	quiet := route("shop", "hidden", ir.Rule{
 		Matches:      []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"}}},
-		BackendGroup: hidden.Name, Policy: "quiet"})
+		BackendGroup: hidden.Name, Policy: "quiet",
+	})
 	quiet.Hostnames = []string{"hidden.example.com"}
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{tenant, fallback, getOnly, quiet},
 		Backends:  []ir.BackendGroup{gold, plain, only, hidden},
 		Policies: []ir.Policy{
-			{Name: "prom", Provider: providers.Prometheus, CacheName: "default",
-				CacheKeyHeaders: []string{"X-Scope-OrgID"}},
-			{Name: "quiet", Provider: providers.Prometheus, CacheName: "default",
-				ResultHeader: ir.ResultHeaderHide},
+			{
+				Name: "prom", Provider: providers.Prometheus, CacheName: "default",
+				CacheKeyHeaders: []string{"X-Scope-OrgID"},
+			},
+			{
+				Name: "quiet", Provider: providers.Prometheus, CacheName: "default",
+				ResultHeader: ir.ResultHeaderHide,
+			},
 		},
 	}
 	o, _, err := CompileWith(m, serviceOpts(t), realPaths(t))

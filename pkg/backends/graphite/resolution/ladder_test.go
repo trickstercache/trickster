@@ -84,9 +84,14 @@ func TestLadderStepFor(t *testing.T) {
 		age  time.Duration
 		step time.Duration
 	}{
-		{0, 10 * time.Second}, {time.Second, 10 * time.Second}, {6 * h, 10 * time.Second},
-		{6*h + time.Second, time.Minute}, {7 * d, time.Minute}, {7*d + time.Second, 10 * time.Minute},
-		{5 * 365 * d, 10 * time.Minute}, {100 * 365 * d, 10 * time.Minute}, // saturates
+		{0, 10 * time.Second},
+		{time.Second, 10 * time.Second},
+		{6 * h, 10 * time.Second},
+		{6*h + time.Second, time.Minute},
+		{7 * d, time.Minute},
+		{7*d + time.Second, 10 * time.Minute},
+		{5 * 365 * d, 10 * time.Minute},
+		{100 * 365 * d, 10 * time.Minute}, // saturates
 	}
 	for _, tc := range tests {
 		s, ok := l.StepFor(tc.age)

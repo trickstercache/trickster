@@ -45,29 +45,43 @@ func TestLocation(t *testing.T) {
 		r    *http.Request
 		want string
 	}{
-		{"nothing set keeps the request", rewritten("shop.example.com:8080", "/a?b=1", nil),
-			"http://shop.example.com:8080/a?b=1"},
+		{
+			"nothing set keeps the request", rewritten("shop.example.com:8080", "/a?b=1", nil),
+			"http://shop.example.com:8080/a?b=1",
+		},
 		{"tls request keeps https", rewritten("shop.example.com", "/a", func(r *http.Request) {
 			r.TLS = &tls.ConnectionState{}
 		}), "https://shop.example.com/a"},
-		{"explicit scheme drops the request port", rewritten("shop.example.com:8080", "/a",
-			func(r *http.Request) { r.URL.Scheme = "https" }),
-			"https://shop.example.com/a"},
-		{"explicit scheme and port", rewritten("shop.example.com", "/a",
-			func(r *http.Request) { r.URL.Scheme = "https"; r.URL.Host = ":8443" }),
-			"https://shop.example.com:8443/a"},
-		{"well-known port is omitted", rewritten("shop.example.com", "/a",
-			func(r *http.Request) { r.URL.Scheme = "https"; r.URL.Host = ":443" }),
-			"https://shop.example.com/a"},
-		{"hostname keeps the request port", rewritten("shop.example.com:8080", "/a",
-			func(r *http.Request) { r.URL.Host = "other.example.com" }),
-			"http://other.example.com:8080/a"},
-		{"hostname and port", rewritten("shop.example.com", "/a",
-			func(r *http.Request) { r.URL.Host = "other.example.com:9000" }),
-			"http://other.example.com:9000/a"},
-		{"rewritten path", rewritten("shop.example.com", "/a/b?q=1",
-			func(r *http.Request) { r.URL.Path = "/v2/b" }),
-			"http://shop.example.com/v2/b?q=1"},
+		{
+			"explicit scheme drops the request port", rewritten("shop.example.com:8080", "/a",
+				func(r *http.Request) { r.URL.Scheme = "https" }),
+			"https://shop.example.com/a",
+		},
+		{
+			"explicit scheme and port", rewritten("shop.example.com", "/a",
+				func(r *http.Request) { r.URL.Scheme = "https"; r.URL.Host = ":8443" }),
+			"https://shop.example.com:8443/a",
+		},
+		{
+			"well-known port is omitted", rewritten("shop.example.com", "/a",
+				func(r *http.Request) { r.URL.Scheme = "https"; r.URL.Host = ":443" }),
+			"https://shop.example.com/a",
+		},
+		{
+			"hostname keeps the request port", rewritten("shop.example.com:8080", "/a",
+				func(r *http.Request) { r.URL.Host = "other.example.com" }),
+			"http://other.example.com:8080/a",
+		},
+		{
+			"hostname and port", rewritten("shop.example.com", "/a",
+				func(r *http.Request) { r.URL.Host = "other.example.com:9000" }),
+			"http://other.example.com:9000/a",
+		},
+		{
+			"rewritten path", rewritten("shop.example.com", "/a/b?q=1",
+				func(r *http.Request) { r.URL.Path = "/v2/b" }),
+			"http://shop.example.com/v2/b?q=1",
+		},
 		{"ipv6 request host", rewritten("[::1]:8080", "/a", nil), "http://[::1]:8080/a"},
 		{"bare ipv6 request host", rewritten("[::1]", "/a", nil), "http://[::1]/a"},
 		{"empty path", rewritten("shop.example.com", "/", func(r *http.Request) {
@@ -93,8 +107,10 @@ func TestHandleRedirect(t *testing.T) {
 	require.Equal(t, "http://shop.example.com/a", w.Header().Get("Location"))
 
 	// a redirection response_code is honored, and response_headers applied
-	pc := &po.Options{ResponseCode: http.StatusMovedPermanently,
-		ResponseHeaders: map[string]string{"X-Redirected-By": "trickster"}}
+	pc := &po.Options{
+		ResponseCode:    http.StatusMovedPermanently,
+		ResponseHeaders: map[string]string{"X-Redirected-By": "trickster"},
+	}
 	r = rewritten("shop.example.com", "/a", func(r *http.Request) { r.URL.Scheme = "https" })
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(nil, pc, nil, nil, nil, nil)))
@@ -107,7 +123,8 @@ func TestHandleRedirect(t *testing.T) {
 	// the path's request headers shape the Location: a Host update, under
 	// any spelling, is the hostname a rewriter did not set
 	pc = &po.Options{RequestHeaders: map[string]string{
-		"hOsT": "tenant.example.com", "X-Ignored": "1"}}
+		"hOsT": "tenant.example.com", "X-Ignored": "1",
+	}}
 	r = rewritten("shop.example.com:8080", "/a", nil)
 	r = r.WithContext(tc.WithResources(r.Context(),
 		request.NewResources(nil, pc, nil, nil, nil, nil)))

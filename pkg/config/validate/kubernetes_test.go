@@ -35,8 +35,10 @@ import (
 // what it means to
 func baseConfig(t *testing.T) *config.Config {
 	t.Helper()
-	c, err := config.Load([]string{"-origin-url", "http://example.com",
-		"-provider", "rp"})
+	c, err := config.Load([]string{
+		"-origin-url", "http://example.com",
+		"-provider", "rp",
+	})
 	require.NoError(t, err)
 	require.NoError(t, Validate(c))
 	return c
@@ -77,7 +79,8 @@ func TestValidateKubernetesListeners(t *testing.T) {
 	require.NoError(t, Validate(c), "the default frontend is always defined")
 
 	c.Kubernetes.Ingress = &kubecfg.IngressOptions{
-		ListenerNames: []string{"undefined"}}
+		ListenerNames: []string{"undefined"},
+	}
 	require.ErrorContains(t, Validate(c),
 		`kubernetes 'ingress' references undefined listener "undefined"`)
 
@@ -112,8 +115,7 @@ func TestValidateKubernetesDefaultsReferences(t *testing.T) {
 				d.NegativeCacheName = "absent"
 			},
 			define: func(c *config.Config) {
-				c.NegativeCacheConfigs["absent"] =
-					negative.Config{"404": time.Minute}
+				c.NegativeCacheConfigs["absent"] = negative.Config{"404": time.Minute}
 			},
 		},
 		{

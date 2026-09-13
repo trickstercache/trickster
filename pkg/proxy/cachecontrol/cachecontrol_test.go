@@ -52,19 +52,28 @@ func TestParseRequest(t *testing.T) {
 		{"no-cache", []string{"no-cache"}, RequestDirectives{NoCache: true}},
 		{"no-store", []string{"no-store"}, RequestDirectives{NoStore: true}},
 		{"only-if-cached", []string{"only-if-cached"}, RequestDirectives{OnlyIfCached: true}},
-		{"max-age zero is not absent", []string{"max-age=0"},
-			RequestDirectives{MaxAge: new(0)}},
+		{
+			"max-age zero is not absent",
+			[]string{"max-age=0"},
+			RequestDirectives{MaxAge: new(0)},
+		},
 		{"max-age", []string{"max-age=60"}, RequestDirectives{MaxAge: new(60)}},
 		{"min-fresh", []string{"min-fresh=30"}, RequestDirectives{MinFresh: new(30)}},
 		{"bare max-stale", []string{"max-stale"}, RequestDirectives{MaxStaleAny: true}},
 		{"bounded max-stale", []string{"max-stale=10"}, RequestDirectives{MaxStale: new(10)}},
-		{"combined", []string{"max-age=5, only-if-cached"},
-			RequestDirectives{MaxAge: new(5), OnlyIfCached: true}},
+		{
+			"combined",
+			[]string{"max-age=5, only-if-cached"},
+			RequestDirectives{MaxAge: new(5), OnlyIfCached: true},
+		},
 		{"uppercase", []string{"NO-CACHE"}, RequestDirectives{NoCache: true}},
 		{"spacing", []string{"  max-age =  7 "}, RequestDirectives{MaxAge: new(7)}},
 		// RFC 9110 5.3: repeated field lines carry the same weight as one list
-		{"second field line", []string{"max-age=5", "no-store"},
-			RequestDirectives{MaxAge: new(5), NoStore: true}},
+		{
+			"second field line",
+			[]string{"max-age=5", "no-store"},
+			RequestDirectives{MaxAge: new(5), NoStore: true},
+		},
 		{"negative is invalid", []string{"max-age=-5"}, RequestDirectives{}},
 		{"unparsable is invalid", []string{"max-age=abc"}, RequestDirectives{}},
 	}
@@ -100,21 +109,29 @@ func TestParseResponse(t *testing.T) {
 		{name: "empty"},
 		{name: "no-cache", lines: []string{"no-cache"}, noCache: true},
 		{name: "private", lines: []string{"private"}, private: true},
-		{name: "public with s-maxage", lines: []string{"public, s-maxage=60"},
-			public: true, sMaxAge: new(60)},
+		{
+			name: "public with s-maxage", lines: []string{"public, s-maxage=60"},
+			public: true, sMaxAge: new(60),
+		},
 		{name: "max-age", lines: []string{"max-age=300"}, maxAge: new(300)},
 		{name: "must-revalidate", lines: []string{"must-revalidate"}, mustRevalidate: true},
 		{name: "immutable", lines: []string{"immutable"}, immutable: true},
 		{name: "must-understand", lines: []string{"must-understand"}, mustUnderstand: true},
-		{name: "stale extensions", lines: []string{"max-age=1, stale-while-revalidate=10, stale-if-error=20"},
-			maxAge: new(1), staleWhileRev: new(10), staleIfErr: new(20)},
+		{
+			name: "stale extensions", lines: []string{"max-age=1, stale-while-revalidate=10, stale-if-error=20"},
+			maxAge: new(1), staleWhileRev: new(10), staleIfErr: new(20),
+		},
 		// the reason storage-no-store-on-second-field-line failed: Get() reads
 		// only the first line
-		{name: "no-store on a second field line", lines: []string{"max-age=3600", "no-store"},
-			noStore: true, maxAge: new(3600)},
+		{
+			name: "no-store on a second field line", lines: []string{"max-age=3600", "no-store"},
+			noStore: true, maxAge: new(3600),
+		},
 		// a quoted argument may hold commas, which naive splitting would break on
-		{name: "quoted argument with comma", lines: []string{`no-cache="Set-Cookie, X-Foo", max-age=30`},
-			noCache: true, maxAge: new(30)},
+		{
+			name: "quoted argument with comma", lines: []string{`no-cache="Set-Cookie, X-Foo", max-age=30`},
+			noCache: true, maxAge: new(30),
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -248,8 +265,10 @@ func TestParseResponseTargetedUnknownDirectiveStillSelects(t *testing.T) {
 		{"none suppresses no-store", "no-store", "none", true},
 		{"none suppresses a cacheable policy", "public, max-age=3600", "none", true},
 		{"an unknown extension still selects", "max-age=3600", "mecone-only", true},
-		{"unknown value and parameter still select", "max-age=3600",
-			`mecone-only="yes";scope=?1`, true},
+		{
+			"unknown value and parameter still select", "max-age=3600",
+			`mecone-only="yes";scope=?1`, true,
+		},
 		{"semantically invalid known value still selects", "max-age=3600", "max-age=abc", true},
 		{"an empty field does not select", "max-age=3600", "", false},
 	}

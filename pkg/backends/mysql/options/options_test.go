@@ -85,14 +85,22 @@ func TestListenerOptionsDefaultsCloneAndValidate(t *testing.T) {
 		t.Fatal("nil listener options should clone and validate as nil")
 	}
 	for _, invalid := range []*ListenerOptions{
-		{HandshakeTimeout: 0, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
-			MaxPacketSizeBytes: DefaultMaxPacketSizeBytes, MaxQuerySizeBytes: 1},
-		{HandshakeTimeout: 1, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
-			MaxPacketSizeBytes: 1, MaxQuerySizeBytes: 1},
-		{HandshakeTimeout: 1, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
-			MaxPacketSizeBytes: DefaultMaxPacketSizeBytes, MaxQuerySizeBytes: 0},
-		{HandshakeTimeout: 1, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
-			MaxPacketSizeBytes: DefaultMaxPacketSizeBytes, MaxQuerySizeBytes: DefaultMaxPacketSizeBytes + 1},
+		{
+			HandshakeTimeout: 0, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
+			MaxPacketSizeBytes: DefaultMaxPacketSizeBytes, MaxQuerySizeBytes: 1,
+		},
+		{
+			HandshakeTimeout: 1, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
+			MaxPacketSizeBytes: 1, MaxQuerySizeBytes: 1,
+		},
+		{
+			HandshakeTimeout: 1, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
+			MaxPacketSizeBytes: DefaultMaxPacketSizeBytes, MaxQuerySizeBytes: 0,
+		},
+		{
+			HandshakeTimeout: 1, ReadTimeout: 1, WriteTimeout: 1, IdleTimeout: 1,
+			MaxPacketSizeBytes: DefaultMaxPacketSizeBytes, MaxQuerySizeBytes: DefaultMaxPacketSizeBytes + 1,
+		},
 	} {
 		if invalid.Validate() == nil {
 			t.Errorf("Validate(%+v) succeeded", invalid)

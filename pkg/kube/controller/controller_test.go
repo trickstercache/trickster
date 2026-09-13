@@ -211,12 +211,11 @@ const tlsListener = listenerconfig.DefaultFrontendName
 
 func ingressClass() *netv1.IngressClass {
 	return &netv1.IngressClass{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "trickster",
-			Annotations: map[string]string{class.DefaultClassAnnotation: "true"},
-		},
+		Name:        "trickster",
+		Annotations: map[string]string{class.DefaultClassAnnotation: "true"},
 		Spec: netv1.IngressClassSpec{
-			Controller: kubecfg.DefaultGatewayClassControllerName},
+			Controller: kubecfg.DefaultGatewayClassControllerName,
+		},
 	}
 }
 
@@ -225,34 +224,33 @@ func otherNamespace() []runtime.Object {
 	className := "trickster"
 	return []runtime.Object{
 		&corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "warehouse", Name: "web-svc"},
+			Namespace: "warehouse", Name: "web-svc",
 			Spec: corev1.ServiceSpec{
-				Ports: []corev1.ServicePort{{Port: 8080}}},
+				Ports: []corev1.ServicePort{{Port: 8080}},
+			},
 		},
 		warehouseSecret("cert-b"),
 		&netv1.Ingress{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: "warehouse", Name: "stock"},
+			Namespace: "warehouse", Name: "stock",
 			Spec: netv1.IngressSpec{
 				IngressClassName: &className,
 				TLS: []netv1.IngressTLS{
-					{SecretName: "warehouse-tls"}},
+					{SecretName: "warehouse-tls"},
+				},
 				Rules: []netv1.IngressRule{{
 					Host: "stock.example.com",
-					IngressRuleValue: netv1.IngressRuleValue{
-						HTTP: &netv1.HTTPIngressRuleValue{
-							Paths: []netv1.HTTPIngressPath{{
-								Path: "/api", PathType: &prefix,
-								Backend: netv1.IngressBackend{
-									Service: &netv1.IngressServiceBackend{
-										Name: "web-svc",
-										Port: netv1.ServiceBackendPort{
-											Number: 8080},
+					HTTP: &netv1.HTTPIngressRuleValue{
+						Paths: []netv1.HTTPIngressPath{{
+							Path: "/api", PathType: &prefix,
+							Backend: netv1.IngressBackend{
+								Service: &netv1.IngressServiceBackend{
+									Name: "web-svc",
+									Port: netv1.ServiceBackendPort{
+										Number: 8080,
 									},
 								},
-							}},
-						},
+							},
+						}},
 					},
 				}},
 			},
@@ -263,8 +261,7 @@ func otherNamespace() []runtime.Object {
 func warehouseSecret(label string) *corev1.Secret {
 	key, crt := tlstest.NamedKeyAndCert(label)
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: "warehouse", Name: "warehouse-tls"},
+		Namespace: "warehouse", Name: "warehouse-tls",
 		Type: corev1.SecretTypeTLS,
 		Data: map[string][]byte{
 			corev1.TLSCertKey:       crt,
@@ -300,8 +297,8 @@ func newController(t *testing.T, cfg Config, objects ...runtime.Object,
 
 func service() *corev1.Service {
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web-svc"},
-		Spec:       corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 8080}}},
+		Namespace: "shop", Name: "web-svc",
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 8080}}},
 	}
 }
 
@@ -309,24 +306,22 @@ func webIngress(tls ...netv1.IngressTLS) *netv1.Ingress {
 	className := "trickster"
 	prefix := netv1.PathTypePrefix
 	return &netv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"},
+		Namespace: "shop", Name: "web",
 		Spec: netv1.IngressSpec{
 			IngressClassName: &className,
 			TLS:              tls,
 			Rules: []netv1.IngressRule{{
 				Host: "shop.example.com",
-				IngressRuleValue: netv1.IngressRuleValue{
-					HTTP: &netv1.HTTPIngressRuleValue{
-						Paths: []netv1.HTTPIngressPath{{
-							Path: "/api", PathType: &prefix,
-							Backend: netv1.IngressBackend{
-								Service: &netv1.IngressServiceBackend{
-									Name: "web-svc",
-									Port: netv1.ServiceBackendPort{Number: 8080},
-								},
+				HTTP: &netv1.HTTPIngressRuleValue{
+					Paths: []netv1.HTTPIngressPath{{
+						Path: "/api", PathType: &prefix,
+						Backend: netv1.IngressBackend{
+							Service: &netv1.IngressServiceBackend{
+								Name: "web-svc",
+								Port: netv1.ServiceBackendPort{Number: 8080},
 							},
-						}},
-					},
+						},
+					}},
 				},
 			}},
 		},
@@ -335,9 +330,9 @@ func webIngress(tls ...netv1.IngressTLS) *netv1.Ingress {
 
 func tlsSecret(label string) *corev1.Secret {
 	s := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "shop-tls"},
-		Type:       corev1.SecretTypeTLS,
-		Data:       map[string][]byte{},
+		Namespace: "shop", Name: "shop-tls",
+		Type: corev1.SecretTypeTLS,
+		Data: map[string][]byte{},
 	}
 	if label != "" {
 		s.Data[corev1.TLSPrivateKeyKey], s.Data[corev1.TLSCertKey] = tlstest.NamedKeyAndCert(label)
@@ -562,7 +557,8 @@ func TestReplacementJudgesByWhatServes(t *testing.T) {
 	gw.Spec.Listeners = append(gw.Spec.Listeners, gwapiv1.Listener{
 		Name: "alt", Port: 8443, Protocol: gwapiv1.HTTPSProtocolType,
 		TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{
-			{Name: "shop-tls"}}},
+			{Name: "shop-tls"},
+		}},
 	})
 	require.NoError(t, gwcs.Tracker().Update(gatewayGVR, gw, gw.Namespace))
 	third := httpsGateway()
@@ -1186,42 +1182,47 @@ func TestRetiringControllerLeavesCertificatesAlone(t *testing.T) {
 // gatewayGVR is the Gateway resource, named explicitly because the fake tracker pluralizes
 // "Gateway" as "gatewaies" and files seeded objects where the client never reads
 var gatewayGVR = schema.GroupVersionResource{
-	Group: gwapiv1.GroupName, Version: "v1", Resource: "gateways"}
+	Group: gwapiv1.GroupName, Version: "v1", Resource: "gateways",
+}
 
 func TestControllerTranslatesGatewayAPIObjects(t *testing.T) {
 	// A cluster serving the Gateway API is translated alongside its Ingresses: a Gateway mints
 	// listeners, an HTTPRoute becomes a backend, and the HTTPS Secret reaches its store
 	https := gwapiv1.HTTPSProtocolType
 	gw := &gwapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "gw"},
+		Namespace: "shop", Name: "gw",
 		Spec: gwapiv1.GatewaySpec{
 			GatewayClassName: "trickster",
 			Listeners: []gwapiv1.Listener{
 				{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType},
-				{Name: "https", Port: 443, Protocol: https,
+				{
+					Name: "https", Port: 443, Protocol: https,
 					TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{
-						{Name: "shop-tls"}}}},
+						{Name: "shop-tls"},
+					}},
+				},
 			},
 		},
 	}
 	port := gwapiv1.PortNumber(8080)
 	route := &gwapiv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"},
+		Namespace: "shop", Name: "web",
 		Spec: gwapiv1.HTTPRouteSpec{
 			CommonRouteSpec: gwapiv1.CommonRouteSpec{ParentRefs: []gwapiv1.ParentReference{{Name: "gw"}}},
 			Hostnames:       []gwapiv1.Hostname{"shop.example.com"},
 			Rules: []gwapiv1.HTTPRouteRule{{
-				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{
-					BackendObjectReference: gwapiv1.BackendObjectReference{
-						Name: "web-svc", Port: &port}}}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{
+					Name: "web-svc", Port: &port,
+				}},
 			}},
 		},
 	}
 	gwcs := gwfake.NewSimpleClientset(
 		&gwapiv1.GatewayClass{
-			ObjectMeta: metav1.ObjectMeta{Name: "trickster"},
+			Name: "trickster",
 			Spec: gwapiv1.GatewayClassSpec{
-				ControllerName: kubecfg.DefaultGatewayClassControllerName},
+				ControllerName: kubecfg.DefaultGatewayClassControllerName,
+			},
 		},
 		route,
 	)
@@ -1289,9 +1290,10 @@ func (r *recorder) count() int { return len(r.list()) }
 func publishedService() *corev1.Service {
 	// publishedService is the Service whose addresses are written into status
 	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "trickster", Name: "trickster-gateway"},
+		Namespace: "trickster", Name: "trickster-gateway",
 		Status: corev1.ServiceStatus{LoadBalancer: corev1.LoadBalancerStatus{
-			Ingress: []corev1.LoadBalancerIngress{{IP: "10.0.0.1"}}}},
+			Ingress: []corev1.LoadBalancerIngress{{IP: "10.0.0.1"}},
+		}},
 	}
 }
 
@@ -1418,30 +1420,32 @@ func TestControllerElection(t *testing.T) {
 func TestControllerWritesGatewayStatus(t *testing.T) {
 	// Gateway API objects get their conditions, the class an acceptance Event
 	gw := &gwapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "gw", Generation: 2},
+		Namespace: "shop", Name: "gw", Generation: 2,
 		Spec: gwapiv1.GatewaySpec{
 			GatewayClassName: "trickster",
 			Listeners: []gwapiv1.Listener{
-				{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType}},
+				{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType},
+			},
 		},
 	}
 	port := gwapiv1.PortNumber(8080)
 	route := &gwapiv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"},
+		Namespace: "shop", Name: "web",
 		Spec: gwapiv1.HTTPRouteSpec{
 			CommonRouteSpec: gwapiv1.CommonRouteSpec{ParentRefs: []gwapiv1.ParentReference{{Name: "gw"}}},
 			Rules: []gwapiv1.HTTPRouteRule{{
-				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{
-					BackendObjectReference: gwapiv1.BackendObjectReference{
-						Name: "missing", Port: &port}}}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{
+					Name: "missing", Port: &port,
+				}},
 			}},
 		},
 	}
 	gwcs := gwfake.NewSimpleClientset(
 		&gwapiv1.GatewayClass{
-			ObjectMeta: metav1.ObjectMeta{Name: "trickster"},
+			Name: "trickster",
 			Spec: gwapiv1.GatewayClassSpec{
-				ControllerName: kubecfg.DefaultGatewayClassControllerName},
+				ControllerName: kubecfg.DefaultGatewayClassControllerName,
+			},
 		},
 		route,
 	)
@@ -1787,13 +1791,14 @@ func listenerCondition(gw *gwapiv1.Gateway, section, typ string) *metav1.Conditi
 func httpsGateway() *gwapiv1.Gateway {
 	// httpsGateway is a Gateway with one HTTPS listener serving the shop TLS Secret
 	return &gwapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "gw"},
+		Namespace: "shop", Name: "gw",
 		Spec: gwapiv1.GatewaySpec{
 			GatewayClassName: "trickster",
 			Listeners: []gwapiv1.Listener{{
 				Name: "https", Port: 443, Protocol: gwapiv1.HTTPSProtocolType,
 				TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{
-					{Name: "shop-tls"}}},
+					{Name: "shop-tls"},
+				}},
 			}},
 		},
 	}
@@ -1801,9 +1806,10 @@ func httpsGateway() *gwapiv1.Gateway {
 
 func gatewayClass() *gwapiv1.GatewayClass {
 	return &gwapiv1.GatewayClass{
-		ObjectMeta: metav1.ObjectMeta{Name: "trickster"},
+		Name: "trickster",
 		Spec: gwapiv1.GatewayClassSpec{
-			ControllerName: kubecfg.DefaultGatewayClassControllerName},
+			ControllerName: kubecfg.DefaultGatewayClassControllerName,
+		},
 	}
 }
 
@@ -1883,28 +1889,30 @@ func TestClassRefusalPropagatesToRoutes(t *testing.T) {
 	ns := gwapiv1.Namespace("infra")
 	gc := gatewayClass()
 	gc.Spec.ParametersRef = &gwapiv1.ParametersReference{
-		Kind: "ConfigMap", Name: "params", Namespace: &ns}
+		Kind: "ConfigMap", Name: "params", Namespace: &ns,
+	}
 	params := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "infra", Name: "params"},
-		Data:       map[string]string{"timeout": "5s"},
+		Namespace: "infra", Name: "params",
+		Data: map[string]string{"timeout": "5s"},
 	}
 	gw := &gwapiv1.Gateway{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "gw"},
+		Namespace: "shop", Name: "gw",
 		Spec: gwapiv1.GatewaySpec{
 			GatewayClassName: "trickster",
 			Listeners: []gwapiv1.Listener{
-				{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType}},
+				{Name: "http", Port: 80, Protocol: gwapiv1.HTTPProtocolType},
+			},
 		},
 	}
 	port := gwapiv1.PortNumber(8080)
 	route := &gwapiv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"},
+		Namespace: "shop", Name: "web",
 		Spec: gwapiv1.HTTPRouteSpec{
 			CommonRouteSpec: gwapiv1.CommonRouteSpec{ParentRefs: []gwapiv1.ParentReference{{Name: "gw"}}},
 			Rules: []gwapiv1.HTTPRouteRule{{
-				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{
-					BackendObjectReference: gwapiv1.BackendObjectReference{
-						Name: "web-svc", Port: &port}}}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{
+					Name: "web-svc", Port: &port,
+				}},
 			}},
 		},
 	}
@@ -2112,7 +2120,8 @@ func TestCertificateVerdictsAreReused(t *testing.T) {
 			Name: gwapiv1.SectionName(fmt.Sprintf("https-%d", port)), Port: gwapiv1.PortNumber(port),
 			Protocol: gwapiv1.HTTPSProtocolType,
 			TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{
-				{Name: "shop-tls"}}},
+				{Name: "shop-tls"},
+			}},
 		})
 	}
 	gwcs := gwfake.NewSimpleClientset(gatewayClass())

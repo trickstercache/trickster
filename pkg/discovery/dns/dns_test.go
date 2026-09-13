@@ -131,7 +131,8 @@ func TestADiscovery(t *testing.T) {
 
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{
-		Hostname: "prom.example.com", Port: "9090", Scheme: "https"},
+		Hostname: "prom.example.com", Port: "9090", Scheme: "https",
+	},
 		col.handle)
 	require.NoError(t, err)
 	defer unsub()
@@ -169,7 +170,8 @@ func TestTruncatedAnswer(t *testing.T) {
 
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{
-		Hostname: "prom.example.com", Port: "80"}, col.handle)
+		Hostname: "prom.example.com", Port: "80",
+	}, col.handle)
 	require.NoError(t, err)
 	defer unsub()
 
@@ -189,7 +191,8 @@ func TestTTLFloor(t *testing.T) {
 
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{
-		Hostname: "prom.example.com", Port: "80"}, col.handle)
+		Hostname: "prom.example.com", Port: "80",
+	}, col.handle)
 	require.NoError(t, err)
 	defer unsub()
 
@@ -211,7 +214,8 @@ func TestResolutionFailureKeepsLastGood(t *testing.T) {
 
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{
-		Hostname: "prom.example.com", Port: "80"}, col.handle)
+		Hostname: "prom.example.com", Port: "80",
+	}, col.handle)
 	require.NoError(t, err)
 	defer unsub()
 
@@ -335,8 +339,10 @@ func TestModeAccessors(t *testing.T) {
 }
 
 func TestNewProviderIntervalDefault(t *testing.T) {
-	p, err := newProvider("d", &do.Options{Provider: "dns_srv",
-		DNS: &dnsopts.Options{Resolver: "10.0.0.53:53"}}, modeSRV)
+	p, err := newProvider("d", &do.Options{
+		Provider: "dns_srv",
+		DNS:      &dnsopts.Options{Resolver: "10.0.0.53:53"},
+	}, modeSRV)
 	require.NoError(t, err)
 	require.Equal(t, dnsopts.DefaultInterval, p.interval)
 }

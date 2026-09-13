@@ -191,8 +191,10 @@ func TestStringAtVariants(t *testing.T) {
 
 	// large-string dictionaries are readable (no builder exists, so they are
 	// not representable; construct the array directly)
-	largeDict := &arrow.DictionaryType{IndexType: arrow.PrimitiveTypes.Int32,
-		ValueType: arrow.BinaryTypes.LargeString}
+	largeDict := &arrow.DictionaryType{
+		IndexType: arrow.PrimitiveTypes.Int32,
+		ValueType: arrow.BinaryTypes.LargeString,
+	}
 	indexBuilder := array.NewBuilder(memory.DefaultAllocator, arrow.PrimitiveTypes.Int32)
 	defer indexBuilder.Release()
 	indexBuilder.(*array.Int32Builder).Append(0)

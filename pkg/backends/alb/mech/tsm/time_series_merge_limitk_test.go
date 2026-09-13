@@ -154,13 +154,11 @@ func newLimitKPool(specs []limitKMemberSpec, recorder *queryRecorder) pool.Pool 
 		status := &healthcheck.Status{}
 		status.Set(healthcheck.StatusPassing)
 		backend := &pooledVarianceBackend{
-			stripKeysStubBackend: stripKeysStubBackend{
-				cfg: &bo.Options{
-					Name:         spec.backendName,
-					ReplicaGroup: spec.replicaGroup,
-					Prometheus: &prop.Options{
-						Labels: map[string]string{"replica": spec.backendName},
-					},
+			cfg: &bo.Options{
+				Name:         spec.backendName,
+				ReplicaGroup: spec.replicaGroup,
+				Prometheus: &prop.Options{
+					Labels: map[string]string{"replica": spec.backendName},
 				},
 			},
 		}
@@ -180,24 +178,36 @@ func TestServeLimitKGloballySelectsInStableOrder(t *testing.T) {
 		{
 			name: "first pool member completes last",
 			specs: []limitKMemberSpec{
-				{backendName: "a-primary", replicaGroup: "shard-a",
-					values: map[string]string{"d": "4", "a": "1"}, delay: 30 * time.Millisecond},
-				{backendName: "b-primary", replicaGroup: "shard-b",
-					values: map[string]string{"c": "3", "b": "2"}},
+				{
+					backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"}, delay: 30 * time.Millisecond,
+				},
+				{
+					backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"c": "3", "b": "2"},
+				},
 				// This faster HA copy must not consume either global slot twice.
-				{backendName: "a-replica", replicaGroup: "shard-a",
-					values: map[string]string{"d": "4", "a": "1"}},
+				{
+					backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"},
+				},
 			},
 		},
 		{
 			name: "pool and completion order change",
 			specs: []limitKMemberSpec{
-				{backendName: "a-replica", replicaGroup: "shard-a",
-					values: map[string]string{"d": "4", "a": "1"}},
-				{backendName: "a-primary", replicaGroup: "shard-a",
-					values: map[string]string{"d": "4", "a": "1"}},
-				{backendName: "b-primary", replicaGroup: "shard-b",
-					values: map[string]string{"c": "3", "b": "2"}, delay: 30 * time.Millisecond},
+				{
+					backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"},
+				},
+				{
+					backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"d": "4", "a": "1"},
+				},
+				{
+					backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"c": "3", "b": "2"}, delay: 30 * time.Millisecond,
+				},
 			},
 		},
 	}
@@ -242,35 +252,53 @@ func TestServeLimitKReplicaGroupTopologies(t *testing.T) {
 		{
 			name: "replicas are collapsed before shards are summed",
 			specs: []limitKMemberSpec{
-				{backendName: "a-primary", replicaGroup: "shard-a",
-					values: map[string]string{"a": "2", "b": "10"}, delay: 30 * time.Millisecond},
-				{backendName: "b-primary", replicaGroup: "shard-b",
-					values: map[string]string{"a": "3", "c": "1"}},
-				{backendName: "a-replica", replicaGroup: "shard-a",
-					values: map[string]string{"a": "2", "b": "10"}},
+				{
+					backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}, delay: 30 * time.Millisecond,
+				},
+				{
+					backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"},
+				},
+				{
+					backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"},
+				},
 			},
 		},
 		{
 			name: "multiple replicated shards in mixed order",
 			specs: []limitKMemberSpec{
-				{backendName: "b-replica", replicaGroup: "shard-b",
-					values: map[string]string{"a": "3", "c": "1"}},
-				{backendName: "a-primary", replicaGroup: "shard-a",
-					values: map[string]string{"a": "2", "b": "10"}, delay: 30 * time.Millisecond},
-				{backendName: "a-replica", replicaGroup: "shard-a",
-					values: map[string]string{"a": "2", "b": "10"}},
-				{backendName: "b-primary", replicaGroup: "shard-b",
-					values: map[string]string{"a": "3", "c": "1"}},
+				{
+					backendName: "b-replica", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"},
+				},
+				{
+					backendName: "a-primary", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"}, delay: 30 * time.Millisecond,
+				},
+				{
+					backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"},
+				},
+				{
+					backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"},
+				},
 			},
 		},
 		{
 			name: "failed member falls back within its replica group",
 			specs: []limitKMemberSpec{
 				{backendName: "a-primary", replicaGroup: "shard-a", fail: true},
-				{backendName: "a-replica", replicaGroup: "shard-a",
-					values: map[string]string{"a": "2", "b": "10"}},
-				{backendName: "b-primary", replicaGroup: "shard-b",
-					values: map[string]string{"a": "3", "c": "1"}},
+				{
+					backendName: "a-replica", replicaGroup: "shard-a",
+					values: map[string]string{"a": "2", "b": "10"},
+				},
+				{
+					backendName: "b-primary", replicaGroup: "shard-b",
+					values: map[string]string{"a": "3", "c": "1"},
+				},
 			},
 		},
 	}
@@ -307,10 +335,14 @@ func TestServeLimitKPreservesNativeHistograms(t *testing.T) {
 	logger.SetLogger(testLogger)
 	const histogram = `{"count":"2","sum":"3"}`
 	p := newLimitKPool([]limitKMemberSpec{
-		{backendName: "a", replicaGroup: "shard-a",
-			values: map[string]string{"a": "1", "d": "4"}},
-		{backendName: "b", replicaGroup: "shard-b",
-			histograms: map[string]string{"b": histogram}, values: map[string]string{"c": "3"}},
+		{
+			backendName: "a", replicaGroup: "shard-a",
+			values: map[string]string{"a": "1", "d": "4"},
+		},
+		{
+			backendName: "b", replicaGroup: "shard-b",
+			histograms: map[string]string{"b": histogram}, values: map[string]string{"c": "3"},
+		},
 	}, &queryRecorder{})
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
@@ -334,10 +366,14 @@ func TestServeLimitKMergesInnerCountBeforeSelection(t *testing.T) {
 	)
 	recorder := &queryRecorder{}
 	p := newLimitKPool([]limitKMemberSpec{
-		{backendName: "a", replicaGroup: "shard-a",
-			values: map[string]string{"a": "2", "b": "10"}},
-		{backendName: "b", replicaGroup: "shard-b",
-			values: map[string]string{"a": "3", "b": "1"}},
+		{
+			backendName: "a", replicaGroup: "shard-a",
+			values: map[string]string{"a": "2", "b": "10"},
+		},
+		{
+			backendName: "b", replicaGroup: "shard-b",
+			values: map[string]string{"a": "3", "b": "1"},
+		},
 	}, recorder)
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 2)
@@ -364,17 +400,23 @@ func TestServeLimitKPartialFanoutIsMarked(t *testing.T) {
 		configure func(*handler)
 	}{
 		{name: "status", failed: limitKMemberSpec{
-			backendName: "b", replicaGroup: "shard-b", fail: true}},
-		{name: "capture", failed: limitKMemberSpec{
-			backendName: "b", replicaGroup: "shard-b", capture: true},
-			configure: func(h *handler) { h.maxCaptureBytes = 32 }},
+			backendName: "b", replicaGroup: "shard-b", fail: true,
+		}},
+		{
+			name: "capture", failed: limitKMemberSpec{
+				backendName: "b", replicaGroup: "shard-b", capture: true,
+			},
+			configure: func(h *handler) { h.maxCaptureBytes = 32 },
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := &queryRecorder{}
 			p := newLimitKPool([]limitKMemberSpec{
-				{backendName: "a", replicaGroup: "shard-a",
-					values: map[string]string{"a": "1"}}, tt.failed,
+				{
+					backendName: "a", replicaGroup: "shard-a",
+					values: map[string]string{"a": "1"},
+				}, tt.failed,
 			}, recorder)
 			defer p.Stop()
 			albpool.WaitHealthy(t, p, 2)

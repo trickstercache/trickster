@@ -49,7 +49,8 @@ func changeCount(alb, disco, event string) float64 {
 
 func TestManagerMetrics(t *testing.T) {
 	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 
 	applied0 := snapshotCount("myalb", "d", resultApplied)
 	unchanged0 := snapshotCount("myalb", "d", resultUnchanged)
@@ -89,7 +90,8 @@ func TestManagerMetrics(t *testing.T) {
 
 func TestManagerMetricsRejectedAndPartial(t *testing.T) {
 	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template", MinMembers: 1})
+		DiscovererName: "d", TemplateBackend: "rp-template", MinMembers: 1,
+	})
 	rejected0 := snapshotCount("myalb", "d", resultRejected)
 	partial0 := snapshotCount("myalb", "d", resultPartial)
 	refresh0 := testutil.ToFloat64(
@@ -110,7 +112,8 @@ func TestManagerMetricsRejectedAndPartial(t *testing.T) {
 
 func TestManagerHealthDescriptionTag(t *testing.T) {
 	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	m.ApplySnapshot(discovery.Snapshot{member("m1", "10.0.0.1:8080")})
 	st := hc.Statuses()["myalb-m1"]
 	require.NotNil(t, st)
@@ -124,9 +127,12 @@ func TestManagerReconcileSpan(t *testing.T) {
 	o := bo.New()
 	o.Provider = providers.ALB
 	o.TracingConfigName = "test"
-	o.ALBOptions = &ao.Options{MechanismName: "rr",
+	o.ALBOptions = &ao.Options{
+		MechanismName: "rr",
 		Discovery: &ao.DiscoveryOptions{
-			DiscovererName: "d", TemplateBackend: "rp-template"}}
+			DiscovererName: "d", TemplateBackend: "rp-template",
+		},
+	}
 	cl, err := alb.NewClient("span-alb", o, nil, nil, nil, nil)
 	require.NoError(t, err)
 	c := cl.(*alb.Client)

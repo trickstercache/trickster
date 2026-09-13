@@ -34,14 +34,27 @@ func TestParseVarianceAggregation(t *testing.T) {
 		sortDescending bool
 	}{
 		{"stddev(up)", aggregation.StdDev, "up", AggregationGrouping{}, false, false},
-		{"STDVAR by (zone, job) (rate(x[5m]))", aggregation.StdVar, "rate(x[5m])",
-			AggregationGrouping{Labels: []string{"job", "zone"}}, false, false},
-		{"stddev(sum(x)) without (instance)", aggregation.StdDev, "sum(x)",
-			AggregationGrouping{Labels: []string{"instance"}, Without: true}, false, false},
-		{"sort(stdvar without () ({__name__=~\".+\"}))", aggregation.StdVar,
-			"{__name__=~\".+\"}", AggregationGrouping{Without: true}, true, false},
-		{"sort_desc(stddev by (__name__) (up))", aggregation.StdDev, "up",
-			AggregationGrouping{Labels: []string{"__name__"}}, true, true},
+		{
+			"STDVAR by (zone, job) (rate(x[5m]))", aggregation.StdVar, "rate(x[5m])",
+			AggregationGrouping{Labels: []string{"job", "zone"}},
+			false, false,
+		},
+		{
+			"stddev(sum(x)) without (instance)", aggregation.StdDev, "sum(x)",
+			AggregationGrouping{Labels: []string{"instance"}, Without: true},
+			false, false,
+		},
+		{
+			"sort(stdvar without () ({__name__=~\".+\"}))", aggregation.StdVar,
+			"{__name__=~\".+\"}",
+			AggregationGrouping{Without: true},
+			true, false,
+		},
+		{
+			"sort_desc(stddev by (__name__) (up))", aggregation.StdDev, "up",
+			AggregationGrouping{Labels: []string{"__name__"}},
+			true, true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {

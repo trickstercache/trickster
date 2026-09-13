@@ -75,8 +75,10 @@ func (c *clock) advance(d time.Duration) {
 
 func newTestRegistry(store Store) (*Registry, *clock) {
 	c := &clock{t: time.Unix(1_787_000_000, 0)}
-	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: 10 * time.Second,
-		NegativeTTLMax: time.Minute, MaxEntries: 4, KeyPrefix: "b1.", Now: c.now}, store)
+	r := NewRegistry(RegistryOptions{
+		TTL: time.Hour, NegativeTTL: 10 * time.Second,
+		NegativeTTLMax: time.Minute, MaxEntries: 4, KeyPrefix: "b1.", Now: c.now,
+	}, store)
 	return r, c
 }
 
@@ -301,8 +303,10 @@ func TestRegistryEviction(t *testing.T) {
 
 func TestRegistryConcurrentHitsAndEviction(t *testing.T) {
 	now := time.Now()
-	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
-		MaxEntries: 8, Now: func() time.Time { return now }}, nil)
+	r := NewRegistry(RegistryOptions{
+		TTL: time.Hour, NegativeTTL: time.Second,
+		MaxEntries: 8, Now: func() time.Time { return now },
+	}, nil)
 	shared, err := NewLadder([]Rung{{Step: 10 * time.Second, MaxAge: 6 * time.Hour}})
 	if err != nil {
 		t.Fatal(err)
@@ -336,8 +340,10 @@ func TestRegistryConcurrentHitsAndEviction(t *testing.T) {
 
 func TestStatsCompleteLaddersStaysExact(t *testing.T) {
 	now := time.Now()
-	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
-		MaxEntries: 16, Now: func() time.Time { return now }}, nil)
+	r := NewRegistry(RegistryOptions{
+		TTL: time.Hour, NegativeTTL: time.Second,
+		MaxEntries: 16, Now: func() time.Time { return now },
+	}, nil)
 	recount := func() int {
 		r.mu.RLock()
 		defer r.mu.RUnlock()
@@ -409,8 +415,10 @@ func TestRegistryObserverMayReenter(t *testing.T) {
 	// layer-size publication must happen outside Registry.mu and in mutation
 	// order; one layer is hammered concurrently under the race detector
 	now := time.Now()
-	r := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
-		MaxEntries: 64, Now: func() time.Time { return now }}, nil)
+	r := NewRegistry(RegistryOptions{
+		TTL: time.Hour, NegativeTTL: time.Second,
+		MaxEntries: 64, Now: func() time.Time { return now },
+	}, nil)
 	obs := &reentrantObserver{r: r}
 	r.Observer = obs
 	l, err := NewLadder([]Rung{{Step: 10 * time.Second, MaxAge: 6 * time.Hour}})

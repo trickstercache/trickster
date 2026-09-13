@@ -75,7 +75,8 @@ func route(ns, name string, rules ...ir.Rule) ir.Route {
 func httpListener() ir.Listener {
 	return ir.Listener{
 		Name: "l80", Port: 80, Protocol: ir.ProtocolHTTP,
-		Source: src("Gateway", "infra", "gw")}
+		Source: src("Gateway", "infra", "gw"),
+	}
 }
 
 func group(ns, name string, ruleIndex int, members ...ir.BackendMember) ir.BackendGroup {
@@ -101,7 +102,8 @@ func simple() *ir.IR {
 		Routes: []ir.Route{func() ir.Route {
 			r := route("shop", "web", ir.Rule{
 				Matches: []ir.Match{{
-					Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"}}},
+					Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"},
+				}},
 				BackendGroup: g.Name,
 			})
 			r.Hostnames = []string{"shop.example.com"}
@@ -223,8 +225,10 @@ func TestCompileInvalidBackendRef(t *testing.T) {
 	// it, rather than shifting that share onto its siblings
 	g := group("shop", "web", 0,
 		svcMember(0, "shop", "stable", 80, 1),
-		ir.BackendMember{RefIndex: 1, Weight: 1, Invalid: true,
-			InvalidReason: "Service not found"})
+		ir.BackendMember{
+			RefIndex: 1, Weight: 1, Invalid: true,
+			InvalidReason: "Service not found",
+		})
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
@@ -273,7 +277,8 @@ func TestCompileTLSListener(t *testing.T) {
 	m.Listeners = append(m.Listeners, ir.Listener{
 		Name: "l443", Port: 443, Protocol: ir.ProtocolHTTPS,
 		CertRefs: []string{"c1"},
-		Source:   ir.Source{Kind: "Gateway", Namespace: "infra", Name: "gw"}})
+		Source:   ir.Source{Kind: "Gateway", Namespace: "infra", Name: "gw"},
+	})
 	o, err := Compile(m, serviceOpts(t))
 	require.NoError(t, err)
 	got := decode(t, o.Data)
@@ -291,7 +296,8 @@ func TestCompileMergesListenersOnOnePort(t *testing.T) {
 	m := simple()
 	m.Listeners = append(m.Listeners, ir.Listener{
 		Name: "l80-b", Port: 80, Protocol: ir.ProtocolHTTP,
-		Source: ir.Source{Kind: "Gateway", Namespace: "other", Name: "gw2"}})
+		Source: ir.Source{Kind: "Gateway", Namespace: "other", Name: "gw2"},
+	})
 	o, err := Compile(m, serviceOpts(t))
 	require.NoError(t, err)
 	require.Len(t, decode(t, o.Data).Listeners, 1)
@@ -323,8 +329,10 @@ func TestCompilePathMatchTypes(t *testing.T) {
 			Routes: []ir.Route{route("shop", "web", ir.Rule{
 				Matches: []ir.Match{{
 					Path:    ir.PathMatch{Type: irType, Value: "/p"},
-					Methods: []string{"GET"}}},
-				BackendGroup: g.Name})},
+					Methods: []string{"GET"},
+				}},
+				BackendGroup: g.Name,
+			})},
 			Backends: []ir.BackendGroup{g},
 		}
 		o, err := Compile(m, serviceOpts(t))
@@ -352,7 +360,9 @@ func TestCompileUnknownBackendGroupIsSkipped(t *testing.T) {
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes: []ir.Route{
-			route("shop", "web", ir.Rule{BackendGroup: "missing"})}}
+			route("shop", "web", ir.Rule{BackendGroup: "missing"}),
+		},
+	}
 	o, err := Compile(m, serviceOpts(t))
 	require.NoError(t, err)
 	require.Empty(t, routeBackends(decode(t, o.Data)))
@@ -399,7 +409,8 @@ func TestCompileIsDeterministic(t *testing.T) {
 	m.Backends[0].Members = append(m.Backends[0].Members,
 		svcMember(1, "shop", "canary", 8080, 1))
 	m.Listeners = append(m.Listeners, ir.Listener{
-		Name: "l443", Port: 443, Protocol: ir.ProtocolHTTPS})
+		Name: "l443", Port: 443, Protocol: ir.ProtocolHTTPS,
+	})
 	first, err := Compile(m, serviceOpts(t))
 	require.NoError(t, err)
 	for range 8 {
@@ -416,7 +427,8 @@ func TestCompileBindsBackendsToTheirListeners(t *testing.T) {
 	m := simple()
 	m.Listeners = append(m.Listeners, ir.Listener{
 		Name: "l443", Port: 443, Protocol: ir.ProtocolHTTPS,
-		Source: src("Gateway", "infra", "gw")})
+		Source: src("Gateway", "infra", "gw"),
+	})
 	m.Routes[0].Listeners = []string{"l443", "l80"}
 
 	o, err := Compile(m, serviceOpts(t))
@@ -439,7 +451,8 @@ func TestCompileDeduplicatesMergedListenerNames(t *testing.T) {
 	m := simple()
 	m.Listeners = append(m.Listeners, ir.Listener{
 		Name: "l80-b", Port: 80, Protocol: ir.ProtocolHTTP,
-		Source: src("Gateway", "other", "gw2")})
+		Source: src("Gateway", "other", "gw2"),
+	})
 	m.Routes[0].Listeners = []string{"l80", "l80-b"}
 
 	o, err := Compile(m, serviceOpts(t))
@@ -478,8 +491,10 @@ func TestCompileALBPathsAlwaysUseTheALBHandler(t *testing.T) {
 		Routes: []ir.Route{route("shop", "web", ir.Rule{
 			Matches: []ir.Match{
 				{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/a"}},
-				{Path: ir.PathMatch{Type: ir.PathExact, Value: "/b"}}},
-			BackendGroup: g.Name})},
+				{Path: ir.PathMatch{Type: ir.PathExact, Value: "/b"}},
+			},
+			BackendGroup: g.Name,
+		})},
 		Backends: []ir.BackendGroup{g},
 	}
 	o, err := Compile(m, opts)
@@ -525,7 +540,8 @@ func TestCompileMembersCarryTheALBListeners(t *testing.T) {
 	require.NoError(t, err)
 	got := decode(t, o.Data)
 	for _, name := range []string{
-		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1"} {
+		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1",
+	} {
 		b := got.Backends[name]
 		require.Equal(t, []string{"kgw--listener-http-80"}, b.ListenerNames, name)
 		require.True(t, b.PathRoutingDisabled, name)
@@ -542,7 +558,8 @@ func TestCompilePolicyOverridesDefaults(t *testing.T) {
 
 	g := group("shop", "web", 0, svcMember(0, "shop", "web-svc", 80, 1))
 	r := route("shop", "web", ir.Rule{
-		BackendGroup: g.Name, Policy: "p1"})
+		BackendGroup: g.Name, Policy: "p1",
+	})
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{r},
@@ -642,8 +659,10 @@ func TestCompileEndpointMode(t *testing.T) {
 	require.Equal(t, DiscovererName(), d.DiscovererName)
 	require.Equal(t, "kgw--httproute.shop.web_r0_b0_tmpl", d.TemplateBackend)
 	require.Equal(t, "provider", d.HealthMode)
-	require.Equal(t, &queryDoc{Kind: "endpointslices", Namespace: "shop",
-		Service: "web-svc", Port: "http"}, d.Query)
+	require.Equal(t, &queryDoc{
+		Kind: "endpointslices", Namespace: "shop",
+		Service: "web-svc", Port: "http",
+	}, d.Query)
 
 	tmpl := doc.Backends[d.TemplateBackend]
 	require.NotNil(t, tmpl)
@@ -705,8 +724,10 @@ func TestCompileEndpointModeWeighted(t *testing.T) {
 		svcMember(0, "shop", "a", 80, 3), svcMember(1, "shop", "b", 80, 1))
 	g.Members[1].Service.Scheme = ir.ProtocolHTTPS
 	g.Members[1].TLS = &ir.BackendTLS{Hostname: "b.internal", System: true}
-	g.Members[1].Filters = []ir.Filter{{Type: ir.FilterURLRewrite,
-		URLRewrite: &ir.URLRewriteFilter{Path: &ir.PathModifier{Type: ir.PathReplaceFull, Value: "/b"}}}}
+	g.Members[1].Filters = []ir.Filter{{
+		Type:       ir.FilterURLRewrite,
+		URLRewrite: &ir.URLRewriteFilter{Path: &ir.PathModifier{Type: ir.PathReplaceFull, Value: "/b"}},
+	}}
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
@@ -777,8 +798,10 @@ func TestCompileRedirect(t *testing.T) {
 		require.Equal(t, "kgw--httproute.shop.web_r0_w0", p.ReqRewriterName)
 	}
 	require.Equal(t, [][]string{
-		{"scheme", "set", "https"}, {"hostname", "set", "new.example.com"},
-		{"port", "set", "8443"}, {"path", "prefix-replace", "/old", "/new"},
+		{"scheme", "set", "https"},
+		{"hostname", "set", "new.example.com"},
+		{"port", "set", "8443"},
+		{"path", "prefix-replace", "/old", "/new"},
 	}, doc.RequestRewriters["kgw--httproute.shop.web_r0_w0"].Instructions)
 
 	// an unset status is the default redirection, and the endpoint routing
@@ -795,8 +818,10 @@ func TestCompileHeaderFilters(t *testing.T) {
 	// Header filters fold into one operation per header, in declaration order,
 	// so the emitted map never says two things about one header
 	g := group("shop", "web", 0, svcMember(0, "shop", "web-svc", 8080, 1))
-	g.Members[0].Filters = []ir.Filter{{Type: ir.FilterRequestHeaders,
-		RequestHeaders: &ir.HeaderFilter{Set: []ir.Header{{Name: "X-Member", Value: "m"}}}}}
+	g.Members[0].Filters = []ir.Filter{{
+		Type:           ir.FilterRequestHeaders,
+		RequestHeaders: &ir.HeaderFilter{Set: []ir.Header{{Name: "X-Member", Value: "m"}}},
+	}}
 	p := ir.Policy{Name: "p", RequestHeaders: map[string]string{"X-Policy": "1", "-X-Kept": ""}}
 	r := route("shop", "web", ir.Rule{
 		BackendGroup: g.Name, Policy: "p",
@@ -846,15 +871,18 @@ func TestCompileURLRewrite(t *testing.T) {
 	// member's full-path rewrite lands on its own catch-all path
 	g := group("shop", "web", 0,
 		svcMember(0, "shop", "a", 80, 1), svcMember(1, "shop", "b", 80, 1))
-	g.Members[1].Filters = []ir.Filter{{Type: ir.FilterURLRewrite,
-		URLRewrite: &ir.URLRewriteFilter{Path: &ir.PathModifier{Type: ir.PathReplaceFull, Value: "/b"}}}}
+	g.Members[1].Filters = []ir.Filter{{
+		Type:       ir.FilterURLRewrite,
+		URLRewrite: &ir.URLRewriteFilter{Path: &ir.PathModifier{Type: ir.PathReplaceFull, Value: "/b"}},
+	}}
 	r := route("shop", "web", ir.Rule{
 		Matches: []ir.Match{
 			{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/api"}},
 		},
 		BackendGroup: g.Name,
 		Filters: []ir.Filter{{Type: ir.FilterURLRewrite, URLRewrite: &ir.URLRewriteFilter{
-			Path: &ir.PathModifier{Type: ir.PathReplacePrefix, Value: ""}}}},
+			Path: &ir.PathModifier{Type: ir.PathReplacePrefix, Value: ""},
+		}}},
 	})
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
@@ -889,8 +917,10 @@ func TestCompileBackendTLS(t *testing.T) {
 	// and, unless the system store is trusted, the CA bundle inline
 	g := group("shop", "web", 0, svcMember(0, "shop", "web-svc", 8443, 1))
 	g.Members[0].Service.Scheme = ir.ProtocolHTTPS
-	g.Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal",
-		CACertificates: []string{"-----A-----", "-----B-----"}}
+	g.Members[0].TLS = &ir.BackendTLS{
+		Hostname:       "web.internal",
+		CACertificates: []string{"-----A-----", "-----B-----"},
+	}
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
@@ -900,8 +930,10 @@ func TestCompileBackendTLS(t *testing.T) {
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "https://web-svc.shop.svc:8443", b.OriginURL)
-	require.Equal(t, &tlsDoc{ServerName: "web.internal",
-		CertificateAuthorityPEM: "-----A-----\n-----B-----", ExcludeSystemRoots: true}, b.TLS)
+	require.Equal(t, &tlsDoc{
+		ServerName:              "web.internal",
+		CertificateAuthorityPEM: "-----A-----\n-----B-----", ExcludeSystemRoots: true,
+	}, b.TLS)
 
 	g.Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal", System: true}
 	m.Backends = []ir.BackendGroup{g}
@@ -934,7 +966,8 @@ func TestCompileEmitsDefaultsAccessLog(t *testing.T) {
 	// silently discarded and generated routes inherit the unrelated top-level settings
 	opts := serviceOpts(t)
 	opts.Defaults.AccessLog = &alo.Options{
-		Filename: "stdout", Format: "combined"}
+		Filename: "stdout", Format: "combined",
+	}
 	require.NoError(t, opts.Validate())
 
 	g := group("shop", "web", 0,
@@ -951,7 +984,8 @@ func TestCompileEmitsDefaultsAccessLog(t *testing.T) {
 	// it lands on the backends that actually proxy, which is where an
 	// access log has a request to record
 	for _, name := range []string{
-		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1"} {
+		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1",
+	} {
 		b := got.Backends[name]
 		require.NotNil(t, b.AccessLog, name)
 		require.Equal(t, "stdout", b.AccessLog.Filename, name)
@@ -1059,8 +1093,10 @@ func everyShape() map[string]*ir.IR {
 				Listeners: []ir.Listener{httpListener()},
 				Routes: []ir.Route{route("shop", "web", ir.Rule{
 					BackendGroup: g.Name,
-					Filters: []ir.Filter{{Type: ir.FilterRedirect,
-						Redirect: &ir.RedirectFilter{Scheme: "https", StatusCode: 301}}},
+					Filters: []ir.Filter{{
+						Type:     ir.FilterRedirect,
+						Redirect: &ir.RedirectFilter{Scheme: "https", StatusCode: 301},
+					}},
 				})},
 				Backends: []ir.BackendGroup{g},
 			}
@@ -1092,8 +1128,10 @@ func everyShape() map[string]*ir.IR {
 		"backend tls": func() *ir.IR {
 			m := simple()
 			m.Backends[0].Members[0].Service.Scheme = ir.ProtocolHTTPS
-			m.Backends[0].Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal",
-				CACertificates: []string{testCAPEM()}}
+			m.Backends[0].Members[0].TLS = &ir.BackendTLS{
+				Hostname:       "web.internal",
+				CACertificates: []string{testCAPEM()},
+			}
 			return m
 		}(),
 		"endpoint tls": func() *ir.IR {
@@ -1111,9 +1149,11 @@ func filterShape() *ir.IR {
 	g := group("shop", "web", 0, svcMember(0, "shop", "web-svc", 8080, 1))
 	g.Members[0].Filters = []ir.Filter{
 		{Type: ir.FilterRequestHeaders, RequestHeaders: &ir.HeaderFilter{
-			Set: []ir.Header{{Name: "X-Member", Value: "1"}}}},
+			Set: []ir.Header{{Name: "X-Member", Value: "1"}},
+		}},
 		{Type: ir.FilterURLRewrite, URLRewrite: &ir.URLRewriteFilter{
-			Path: &ir.PathModifier{Type: ir.PathReplaceFull, Value: "/member"}}},
+			Path: &ir.PathModifier{Type: ir.PathReplaceFull, Value: "/member"},
+		}},
 	}
 	r := route("shop", "web", ir.Rule{
 		Matches: []ir.Match{
@@ -1123,9 +1163,11 @@ func filterShape() *ir.IR {
 		Filters: []ir.Filter{
 			{Type: ir.FilterRequestHeaders, RequestHeaders: &ir.HeaderFilter{
 				Set: []ir.Header{{Name: "X-A", Value: "1"}}, Add: []ir.Header{{Name: "X-B", Value: "2"}},
-				Remove: []string{"X-C"}}},
+				Remove: []string{"X-C"},
+			}},
 			{Type: ir.FilterResponseHeaders, ResponseHeaders: &ir.HeaderFilter{
-				Add: []ir.Header{{Name: "Vary", Value: "X-A"}}}},
+				Add: []ir.Header{{Name: "Vary", Value: "X-A"}},
+			}},
 			{Type: ir.FilterURLRewrite, URLRewrite: &ir.URLRewriteFilter{Hostname: "web.internal"}},
 		},
 	})
@@ -1222,7 +1264,8 @@ func assertGeneratedRoutesAreSound(t *testing.T, factories rt.Lookup,
 			// a template's paths are what its discovered clones serve, so
 			// the invariants are checked on a clone
 			clone, err := template.Instantiate(name, b, discovery.Member{
-				Name: "pod", Scheme: "http", Address: "127.0.0.1:1"})
+				Name: "pod", Scheme: "http", Address: "127.0.0.1:1",
+			})
 			require.NoError(t, err, "template %q", name)
 			b = clone
 		}
@@ -1299,7 +1342,8 @@ func TestCompileMembersCarryTheEffectiveHandler(t *testing.T) {
 	}
 	got := emitted(t, m, opts)
 	for _, name := range []string{
-		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1"} {
+		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1",
+	} {
 		b := got[name]
 		require.Equal(t, providers.ReverseProxyCacheShort, b.Provider, name)
 		require.Equal(t, "default", b.CacheName, name)
@@ -1342,7 +1386,8 @@ func TestCompilePolicyHandlerReachesMembers(t *testing.T) {
 	got := emitted(t, m, opts)
 	require.Equal(t, providers.ALB, got["kgw--httproute.shop.web_r0"].Provider)
 	for _, name := range []string{
-		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1"} {
+		"kgw--httproute.shop.web_r0_b0", "kgw--httproute.shop.web_r0_b1",
+	} {
 		b := got[name]
 		require.Equal(t, "proxy", b.Paths[0].Handler, name)
 		require.Equal(t, providers.ReverseProxyShort, b.Provider,
@@ -1370,8 +1415,10 @@ func TestCompiledPathsAcceptEveryMethodByDefault(t *testing.T) {
 		Routes: []ir.Route{route("shop", "web", ir.Rule{
 			Matches: []ir.Match{{
 				Path:    ir.PathMatch{Type: ir.PathPrefix, Value: "/"},
-				Methods: []string{http.MethodGet}}},
-			BackendGroup: g.Name})},
+				Methods: []string{http.MethodGet},
+			}},
+			BackendGroup: g.Name,
+		})},
 		Backends: []ir.BackendGroup{g},
 	}
 	o2, err := Compile(m, serviceOpts(t))
@@ -1415,8 +1462,10 @@ func TestCompileKeepsMutatingMethodsOutOfTheCache(t *testing.T) {
 			Routes: []ir.Route{route("shop", "web", ir.Rule{
 				Matches: []ir.Match{{
 					Path:    ir.PathMatch{Type: ir.PathPrefix, Value: "/submit"},
-					Methods: []string{http.MethodPost}}},
-				BackendGroup: g.Name})},
+					Methods: []string{http.MethodPost},
+				}},
+				BackendGroup: g.Name,
+			})},
 			Backends: []ir.BackendGroup{g},
 		}
 		b := emitted(t, m, opts)["kgw--httproute.shop.web_r0"]
@@ -1433,8 +1482,10 @@ func TestCompileKeepsMutatingMethodsOutOfTheCache(t *testing.T) {
 			Routes: []ir.Route{route("shop", "web", ir.Rule{
 				Matches: []ir.Match{{
 					Path:    ir.PathMatch{Type: ir.PathPrefix, Value: "/read"},
-					Methods: []string{http.MethodGet}}},
-				BackendGroup: g.Name})},
+					Methods: []string{http.MethodGet},
+				}},
+				BackendGroup: g.Name,
+			})},
 			Backends: []ir.BackendGroup{g},
 		}
 		b := emitted(t, m, opts)["kgw--httproute.shop.web_r0"]
@@ -1451,8 +1502,11 @@ func TestCompileKeepsMutatingMethodsOutOfTheCache(t *testing.T) {
 				Matches: []ir.Match{{
 					Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/mixed"},
 					Methods: []string{
-						http.MethodGet, http.MethodPost, http.MethodHead}}},
-				BackendGroup: g.Name})},
+						http.MethodGet, http.MethodPost, http.MethodHead,
+					},
+				}},
+				BackendGroup: g.Name,
+			})},
 			Backends: []ir.BackendGroup{g},
 		}
 		b := emitted(t, m, opts)["kgw--httproute.shop.web_r0"]
@@ -1496,7 +1550,8 @@ func weighted(hostnames ...string) *ir.IR {
 		svcMember(0, "shop", "a", 80, 9), svcMember(1, "shop", "b", 80, 1))
 	r := route("shop", "web", ir.Rule{
 		Matches: []ir.Match{{
-			Path: ir.PathMatch{Type: ir.PathPrefix, Value: boundaryPath}}},
+			Path: ir.PathMatch{Type: ir.PathPrefix, Value: boundaryPath},
+		}},
 		BackendGroup: g.Name,
 	})
 	r.Hostnames = hostnames
@@ -1702,7 +1757,8 @@ func TestCompileRedirectCarriesOperatorControls(t *testing.T) {
 	m := &ir.IR{
 		Listeners: []ir.Listener{httpListener()},
 		Routes: []ir.Route{route("shop", "web", ir.Rule{
-			BackendGroup: g.Name, Filters: []ir.Filter{redirect}})},
+			BackendGroup: g.Name, Filters: []ir.Filter{redirect},
+		})},
 		Backends: []ir.BackendGroup{g},
 	}
 	opts := serviceOpts(t)
@@ -1717,13 +1773,17 @@ func TestCompileRedirectCarriesOperatorControls(t *testing.T) {
 	require.Equal(t, "strip", b.ReqRewriterName)
 	require.Equal(t, "otlp", b.TracingConfigName)
 	require.Equal(t, "stdout", b.AccessLog.Filename)
-	require.Equal(t, map[string]string{"route_kind": "HTTPRoute", "route_namespace": "shop",
-		"route_name": "web"}, b.AccessLog.Extra, "the access log names the object served")
+	require.Equal(t, map[string]string{
+		"route_kind": "HTTPRoute", "route_namespace": "shop",
+		"route_name": "web",
+	}, b.AccessLog.Extra, "the access log names the object served")
 	require.Nil(t, opts.Defaults.AccessLog.Extra, "the operator's settings are not modified")
 	require.Empty(t, b.CacheName, "a redirect caches nothing")
 
-	m.Policies = []ir.Policy{{Name: "p", AuthenticatorName: "class-auth",
-		ResponseHeaders: map[string]string{"X-Policy": "1"}}}
+	m.Policies = []ir.Policy{{
+		Name: "p", AuthenticatorName: "class-auth",
+		ResponseHeaders: map[string]string{"X-Policy": "1"},
+	}}
 	m.Routes[0].Rules[0].Policy = "p"
 	doc, err = buildDocument(m, serviceOpts(t), nil)
 	require.NoError(t, err)
@@ -1747,8 +1807,10 @@ func TestCompileRedirectCarriesResponseHeaders(t *testing.T) {
 				{Type: ir.FilterRedirect, Redirect: &ir.RedirectFilter{Scheme: "https", StatusCode: 301}},
 				{Type: ir.FilterResponseHeaders, ResponseHeaders: &ir.HeaderFilter{
 					Set:    []ir.Header{{Name: "Cache-Control", Value: "no-store"}},
-					Remove: []string{"Server"}}},
-			}})},
+					Remove: []string{"Server"},
+				}},
+			},
+		})},
 		Backends: []ir.BackendGroup{g},
 	}
 	doc, err := buildDocument(m, serviceOpts(t), nil)
@@ -1771,8 +1833,10 @@ func TestCompileRedirectUsesTheListenerPort(t *testing.T) {
 	) *document {
 		t.Helper()
 		g := group("shop", "web", 0)
-		r := route("shop", "web", ir.Rule{BackendGroup: g.Name,
-			Filters: []ir.Filter{{Type: ir.FilterRedirect, Redirect: red}}})
+		r := route("shop", "web", ir.Rule{
+			BackendGroup: g.Name,
+			Filters:      []ir.Filter{{Type: ir.FilterRedirect, Redirect: red}},
+		})
 		r.Listeners = attach
 		doc, err := buildDocument(&ir.IR{
 			Listeners: listeners, Routes: []ir.Route{r}, Backends: []ir.BackendGroup{g},
@@ -1780,8 +1844,10 @@ func TestCompileRedirectUsesTheListenerPort(t *testing.T) {
 		require.NoError(t, err)
 		return doc
 	}
-	alt := ir.Listener{Name: "l8080", Port: 8080, Protocol: ir.ProtocolHTTP,
-		Source: src("Gateway", "infra", "gw")}
+	alt := ir.Listener{
+		Name: "l8080", Port: 8080, Protocol: ir.ProtocolHTTP,
+		Source: src("Gateway", "infra", "gw"),
+	}
 	instructions := func(doc *document) [][]string {
 		rw := doc.RequestRewriters["kgw--httproute.shop.web_r0_w0"]
 		if rw == nil {
@@ -1849,8 +1915,10 @@ func TestManifestNamesEveryGeneratedBackend(t *testing.T) {
 	web := ir.Source{Kind: ir.KindHTTPRoute, Namespace: "shop", Name: "web"}
 	api := ir.Source{Kind: ir.KindIngress, Namespace: "shop", Name: "api.v1"}
 	model := &ir.IR{
-		Listeners: []ir.Listener{{Name: "l", Port: 80, Protocol: ir.ProtocolHTTP,
-			Source: ir.Source{Kind: ir.KindGateway, Namespace: "infra", Name: "gw"}}},
+		Listeners: []ir.Listener{{
+			Name: "l", Port: 80, Protocol: ir.ProtocolHTTP,
+			Source: ir.Source{Kind: ir.KindGateway, Namespace: "infra", Name: "gw"},
+		}},
 		Routes: []ir.Route{
 			{Name: "web", Source: web, Listeners: []string{"l"}, Rules: []ir.Rule{{
 				Matches:      []ir.Match{{Path: ir.PathMatch{Type: ir.PathPrefix, Value: "/"}}},

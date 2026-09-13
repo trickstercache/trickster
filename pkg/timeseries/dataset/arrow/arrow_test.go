@@ -45,8 +45,10 @@ func testTRQ(tags ...string) *timeseries.TimeRangeQuery {
 }
 
 func dictUtf8() arrow.DataType {
-	return &arrow.DictionaryType{IndexType: arrow.PrimitiveTypes.Int32,
-		ValueType: arrow.BinaryTypes.String}
+	return &arrow.DictionaryType{
+		IndexType: arrow.PrimitiveTypes.Int32,
+		ValueType: arrow.BinaryTypes.String,
+	}
 }
 
 // makeRecord builds one record batch from raw row cells. Timestamp cells are
@@ -161,12 +163,16 @@ func TestToRecordsTimeMajorOrdering(t *testing.T) {
 	}, nil)
 	const ns = int64(1_000_000_000)
 	seriesMajor := [][]any{
-		{10 * ns, "a", 1.0}, {20 * ns, "a", 2.0},
-		{10 * ns, "b", 3.0}, {20 * ns, "b", 4.0},
+		{10 * ns, "a", 1.0},
+		{20 * ns, "a", 2.0},
+		{10 * ns, "b", 3.0},
+		{20 * ns, "b", 4.0},
 	}
 	want := [][]any{
-		{10 * ns, "a", 1.0}, {10 * ns, "b", 3.0},
-		{20 * ns, "a", 2.0}, {20 * ns, "b", 4.0},
+		{10 * ns, "a", 1.0},
+		{10 * ns, "b", 3.0},
+		{20 * ns, "a", 2.0},
+		{20 * ns, "b", 4.0},
 	}
 	_, got := roundTrip(t, schema, seriesMajor, testTRQ("host"))
 	if !reflect.DeepEqual(got, want) {
@@ -183,32 +189,49 @@ func TestRepresentableMatrix(t *testing.T) {
 		tsName string
 		want   bool
 	}{
-		{"supported", []arrow.Field{ts, value,
+		{"supported", []arrow.Field{
+			ts, value,
 			{Name: "tag", Type: dictUtf8()},
 			{Name: "u", Type: arrow.PrimitiveTypes.Uint64},
 			{Name: "s", Type: arrow.BinaryTypes.LargeString},
-			{Name: "other_ts", Type: &arrow.TimestampType{Unit: arrow.Second}}}, "time", true},
+			{Name: "other_ts", Type: &arrow.TimestampType{Unit: arrow.Second}},
+		}, "time", true},
 		{"missing ts", []arrow.Field{value}, "time", false},
 		{"ts not timestamp", []arrow.Field{
-			{Name: "time", Type: arrow.PrimitiveTypes.Int64}, value}, "time", false},
+			{Name: "time", Type: arrow.PrimitiveTypes.Int64}, value,
+		}, "time", false},
 		{"duplicate ts name", []arrow.Field{ts, ts, value}, "time", false},
 		{"empty ts name", []arrow.Field{ts, value}, "", false},
-		{"list column", []arrow.Field{ts,
-			{Name: "l", Type: arrow.ListOf(arrow.PrimitiveTypes.Int64)}}, "time", false},
-		{"struct column", []arrow.Field{ts,
-			{Name: "st", Type: arrow.StructOf(value)}}, "time", false},
-		{"float16 column", []arrow.Field{ts,
-			{Name: "h", Type: arrow.FixedWidthTypes.Float16}}, "time", false},
-		{"duration column", []arrow.Field{ts,
-			{Name: "d", Type: arrow.FixedWidthTypes.Duration_ns}}, "time", false},
-		{"non-string dictionary", []arrow.Field{ts,
+		{"list column", []arrow.Field{
+			ts,
+			{Name: "l", Type: arrow.ListOf(arrow.PrimitiveTypes.Int64)},
+		}, "time", false},
+		{"struct column", []arrow.Field{
+			ts,
+			{Name: "st", Type: arrow.StructOf(value)},
+		}, "time", false},
+		{"float16 column", []arrow.Field{
+			ts,
+			{Name: "h", Type: arrow.FixedWidthTypes.Float16},
+		}, "time", false},
+		{"duration column", []arrow.Field{
+			ts,
+			{Name: "d", Type: arrow.FixedWidthTypes.Duration_ns},
+		}, "time", false},
+		{"non-string dictionary", []arrow.Field{
+			ts,
 			{Name: "di", Type: &arrow.DictionaryType{
 				IndexType: arrow.PrimitiveTypes.Int32,
-				ValueType: arrow.PrimitiveTypes.Int64}}}, "time", false},
-		{"large-string dictionary", []arrow.Field{ts,
+				ValueType: arrow.PrimitiveTypes.Int64,
+			}},
+		}, "time", false},
+		{"large-string dictionary", []arrow.Field{
+			ts,
 			{Name: "dl", Type: &arrow.DictionaryType{
 				IndexType: arrow.PrimitiveTypes.Int32,
-				ValueType: arrow.BinaryTypes.LargeString}}}, "time", false},
+				ValueType: arrow.BinaryTypes.LargeString,
+			}},
+		}, "time", false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -464,35 +487,46 @@ func TestToRecordsSortKeys(t *testing.T) {
 		want [][]any
 	}{
 		{"default time-major", nil, rows},
-		{"time descending", []SortKey{{Column: "time", Descending: true}},
+		{
+			"time descending",
+			[]SortKey{{Column: "time", Descending: true}},
 			[][]any{
 				{int64(2000), "a", 4.0},
 				{int64(2000), "b", 3.0},
 				{int64(1000), "a", 2.0},
 				{int64(1000), "b", 1.0},
-			}},
-		{"tag then time", []SortKey{{Column: "host"}, {Column: "time"}},
+			},
+		},
+		{
+			"tag then time",
+			[]SortKey{{Column: "host"}, {Column: "time"}},
 			[][]any{
 				{int64(1000), "a", 2.0},
 				{int64(2000), "a", 4.0},
 				{int64(1000), "b", 1.0},
 				{int64(2000), "b", 3.0},
-			}},
-		{"tag descending then time descending",
+			},
+		},
+		{
+			"tag descending then time descending",
 			[]SortKey{{Column: "host", Descending: true}, {Column: "time", Descending: true}},
 			[][]any{
 				{int64(2000), "b", 3.0},
 				{int64(1000), "b", 1.0},
 				{int64(2000), "a", 4.0},
 				{int64(1000), "a", 2.0},
-			}},
-		{"value ascending", []SortKey{{Column: "cpu"}},
+			},
+		},
+		{
+			"value ascending",
+			[]SortKey{{Column: "cpu"}},
 			[][]any{
 				{int64(1000), "b", 1.0},
 				{int64(1000), "a", 2.0},
 				{int64(2000), "b", 3.0},
 				{int64(2000), "a", 4.0},
-			}},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -521,12 +555,21 @@ func TestToRecordsSortKeyNullPlacement(t *testing.T) {
 		want []any
 	}{
 		{"ascending nulls last", SortKey{Column: "cpu"}, []any{1.0, 2.0, nil}},
-		{"ascending nulls first", SortKey{Column: "cpu", NullsFirst: true},
-			[]any{nil, 1.0, 2.0}},
-		{"descending nulls first", SortKey{Column: "cpu", Descending: true, NullsFirst: true},
-			[]any{nil, 2.0, 1.0}},
-		{"descending nulls last", SortKey{Column: "cpu", Descending: true},
-			[]any{2.0, 1.0, nil}},
+		{
+			"ascending nulls first",
+			SortKey{Column: "cpu", NullsFirst: true},
+			[]any{nil, 1.0, 2.0},
+		},
+		{
+			"descending nulls first",
+			SortKey{Column: "cpu", Descending: true, NullsFirst: true},
+			[]any{nil, 2.0, 1.0},
+		},
+		{
+			"descending nulls last",
+			SortKey{Column: "cpu", Descending: true},
+			[]any{2.0, 1.0, nil},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -69,7 +69,7 @@ func TestALBCache(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, upstreamA.URL, upstreamB.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -203,7 +203,7 @@ func TestALBCache(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, m0.URL, m1.URL, m2.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -320,7 +320,7 @@ func TestALBCache(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -424,7 +424,7 @@ func TestALBCache(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -531,7 +531,7 @@ func TestALBCache(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)

@@ -174,17 +174,25 @@ func TestFinalizeTSMMergeVarianceAfterWeightedAverage(t *testing.T) {
 func TestFinalizeTSMMergeVarianceGroupingAndSort(t *testing.T) {
 	const inner = "count without (shard) (requests)"
 	series := []*dataset.Series{
-		varianceFinalizeSeries(dataset.Tags{"instance": "a", "region": "east", "job": "api",
-			"__type__": "gauge", "__unit__": "requests"}, inner,
+		varianceFinalizeSeries(dataset.Tags{
+			"instance": "a", "region": "east", "job": "api",
+			"__type__": "gauge", "__unit__": "requests",
+		}, inner,
 			"1", int64(100)),
-		varianceFinalizeSeries(dataset.Tags{"instance": "b", "region": "east", "job": "api",
-			"__type__": "gauge", "__unit__": "requests"}, inner,
+		varianceFinalizeSeries(dataset.Tags{
+			"instance": "b", "region": "east", "job": "api",
+			"__type__": "gauge", "__unit__": "requests",
+		}, inner,
 			"3", int64(100)),
-		varianceFinalizeSeries(dataset.Tags{"instance": "a", "region": "west", "job": "api",
-			"__type__": "gauge", "__unit__": "requests"}, inner,
+		varianceFinalizeSeries(dataset.Tags{
+			"instance": "a", "region": "west", "job": "api",
+			"__type__": "gauge", "__unit__": "requests",
+		}, inner,
 			"1", int64(100)),
-		varianceFinalizeSeries(dataset.Tags{"instance": "b", "region": "west", "job": "api",
-			"__type__": "gauge", "__unit__": "requests"}, inner,
+		varianceFinalizeSeries(dataset.Tags{
+			"instance": "b", "region": "west", "job": "api",
+			"__type__": "gauge", "__unit__": "requests",
+		}, inner,
 			"7", int64(100)),
 	}
 	ds := varianceFinalizeDataSet(inner, series...)

@@ -79,7 +79,8 @@ func TestCompileHidesTheResultHeaderWherePathsFaceTheClient(t *testing.T) {
 	r := simple()
 	r.Routes[0].Rules[0].Policy = "p1"
 	r.Routes[0].Rules[0].Filters = []ir.Filter{{
-		Type: ir.FilterRedirect, Redirect: &ir.RedirectFilter{Scheme: "https"}}}
+		Type: ir.FilterRedirect, Redirect: &ir.RedirectFilter{Scheme: "https"},
+	}}
 	r.Policies = []ir.Policy{{Name: "p1", ResultHeader: ir.ResultHeaderHide}}
 	require.True(t, emitted(t, r, serviceOpts(t))["kgw--httproute.shop.web_r0"].
 		Paths[0].HideResultHeader)
@@ -128,8 +129,10 @@ func TestCompileMemberPolicyOverlaysTheRules(t *testing.T) {
 		Backends:  []ir.BackendGroup{g},
 		Policies: []ir.Policy{
 			{Name: "rule", CacheName: "objects", TimeoutMS: 5000},
-			{Name: "svc", TimeoutMS: 9000, Provider: providers.Prometheus,
-				RequestHeaders: map[string]string{"X-Svc": "1"}},
+			{
+				Name: "svc", TimeoutMS: 9000, Provider: providers.Prometheus,
+				RequestHeaders: map[string]string{"X-Svc": "1"},
+			},
 		},
 	}
 	docs := emittedWith(t, m, serviceOpts(t), promPaths)

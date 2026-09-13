@@ -100,8 +100,10 @@ func seedRecords(f *testing.F) [][]byte {
 	return [][]byte{
 		packedRecordSeed(f, &A{Hdr: hdr(TypeA), Addr: netip.MustParseAddr("10.0.0.1")}),
 		packedRecordSeed(f, &AAAA{Hdr: hdr(TypeAAAA), Addr: netip.MustParseAddr("2001:db8::1")}),
-		packedRecordSeed(f, &SRV{Hdr: hdr(TypeSRV), Priority: 10, Weight: 5,
-			Port: 9090, Target: "prom-a.example.com."}),
+		packedRecordSeed(f, &SRV{
+			Hdr: hdr(TypeSRV), Priority: 10, Weight: 5,
+			Port: 9090, Target: "prom-a.example.com.",
+		}),
 		packedRecordSeed(f, &Unknown{Hdr: hdr(99), Data: []byte{1, 2, 3}}),
 	}
 }

@@ -44,8 +44,10 @@ func largeDataSet(n int) *dataset.DataSet {
 	if err != nil {
 		panic(err)
 	}
-	return &dataset.DataSet{TimeRangeQuery: trq,
-		Results: []*dataset.Result{{SeriesList: []*dataset.Series{s}}}}
+	return &dataset.DataSet{
+		TimeRangeQuery: trq,
+		Results:        []*dataset.Result{{SeriesList: []*dataset.Series{s}}},
+	}
 }
 
 func BenchmarkMarshalLargeSeries(b *testing.B) {
@@ -57,7 +59,8 @@ func BenchmarkMarshalLargeSeries(b *testing.B) {
 		}{
 			{"json", &timeseries.RequestOptions{ProviderRequest: RenderOptions{Format: FormatJSON}}},
 			{"json_mdp1000", &timeseries.RequestOptions{
-				ProviderRequest: RenderOptions{Format: FormatJSON, MaxDataPoints: 1000}}},
+				ProviderRequest: RenderOptions{Format: FormatJSON, MaxDataPoints: 1000},
+			}},
 			{"raw", &timeseries.RequestOptions{ProviderRequest: RenderOptions{Format: FormatRaw}}},
 			{"msgpack", &timeseries.RequestOptions{ProviderRequest: RenderOptions{Format: FormatMsgPack}}},
 		}

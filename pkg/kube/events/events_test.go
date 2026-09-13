@@ -208,8 +208,10 @@ func TestTermEndCancelsEventsInFlight(t *testing.T) {
 func TestTermSinkCallsCarryTheTerm(t *testing.T) {
 	cs := fake.NewClientset()
 	sink := &termSink{ctx: t.Context(), events: cs.CoreV1()}
-	ev := &corev1.Event{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "e1"},
-		Reason: "Rejected", Count: 1}
+	ev := &corev1.Event{
+		Namespace: "shop", Name: "e1",
+		Reason: "Rejected", Count: 1,
+	}
 	created, err := sink.Create(ev)
 	require.NoError(t, err)
 	created.Count = 2

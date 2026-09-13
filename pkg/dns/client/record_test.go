@@ -37,8 +37,10 @@ func TestRecordRoundTrip(t *testing.T) {
 	tests := map[string]Record{
 		"A":    &A{Hdr: hdr(TypeA), Addr: netip.MustParseAddr("10.0.0.1")},
 		"AAAA": &AAAA{Hdr: hdr(TypeAAAA), Addr: netip.MustParseAddr("2001:db8::1")},
-		"SRV": &SRV{Hdr: hdr(TypeSRV), Priority: 10, Weight: 5, Port: 9090,
-			Target: "prom-a.example.com."},
+		"SRV": &SRV{
+			Hdr: hdr(TypeSRV), Priority: 10, Weight: 5, Port: 9090,
+			Target: "prom-a.example.com.",
+		},
 		"unrecognized type": &Unknown{Hdr: hdr(99), Data: []byte{1, 2, 3}},
 	}
 	for name, want := range tests {

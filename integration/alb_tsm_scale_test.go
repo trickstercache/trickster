@@ -626,6 +626,7 @@ func behaviorEmpty() *promBehavior { return &promBehavior{mode: "empty"} }
 func behaviorOversized(kb int) *promBehavior {
 	return &promBehavior{mode: "oversized", seriesKB: kb}
 }
+
 func behaviorStatus(code int) *promBehavior {
 	return &promBehavior{mode: "status", status: code}
 }
@@ -966,7 +967,8 @@ func doRaw(t *testing.T, address, backend, path string, params url.Values) ([]by
 func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 	listenPort, metricsPort, mgmtPort int,
 	albName, labeledAlbName string, labeledN int,
-	fgrAlbName, nlmAlbName, shardedBackendName string) string {
+	fgrAlbName, nlmAlbName, shardedBackendName string,
+) string {
 	t.Helper()
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", listenPort)
@@ -1031,7 +1033,8 @@ func writeScaleConfig(t *testing.T, fakes []*fakeProm,
 }
 
 func writeRealPromScaleConfig(t *testing.T, listenPort, metricsPort, mgmtPort int,
-	promAddr, albName string, numShards int) string {
+	promAddr, albName string, numShards int,
+) string {
 	t.Helper()
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", listenPort)
