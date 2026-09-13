@@ -430,14 +430,15 @@ get-msgpack:
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	@echo "Waiting for Redis to be ready..."
-	@cd docs/developer/environment && if ! timeout 30 sh -c \
-		'until response=$$(docker compose exec -T redis redis-cli ping 2>&1); do \
-			echo "PING -> $${response:-no response}"; \
-			sleep 1; \
-		done; \
-		echo "PING -> $$response"'; then \
-		echo "WARNING: timed out waiting for Redis readiness; continuing anyway"; \
-	fi
+	@cd docs/developer/environment && attempts=0; \
+	while [ $$attempts -lt 30 ]; do \
+		response=$$(docker compose exec -T redis redis-cli ping 2>&1 || true); \
+		echo "PING -> $${response:-no response}"; \
+		case "$$response" in *PONG*) exit 0;; esac; \
+		attempts=$$((attempts + 1)); \
+		sleep 1; \
+	done; \
+	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	@echo "Waiting for Graphite to be ready..."
@@ -513,8 +514,7 @@ developer-delete:
 	@cd docs/developer/environment && docker compose down -v --remove-orphans
 
 .PHONY: developer-recreate
-developer-recreate: developer-delete
-	@cd docs/developer/environment && docker compose up -d
+developer-recreate: developer-delete developer-start
 
 .PHONY: dev-certs
 dev-certs:
