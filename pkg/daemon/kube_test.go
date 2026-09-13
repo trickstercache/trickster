@@ -558,7 +558,8 @@ func TestKubeSupervisorPublishesIntoTheRunningConfig(t *testing.T) {
 
 	// withdrawing it takes the generated routes out of service
 	changed, err = publishAs(t, s, &config.Overlay{
-		Prefix: overlayTestPrefix, Version: "kgw-2"})
+		Prefix: overlayTestPrefix, Version: "kgw-2",
+	})
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.Nil(t, si.Config.Backends[overlayTestBackendName])

@@ -58,10 +58,12 @@ func TestProblems(t *testing.T) {
 func TestSourceAndByAge(t *testing.T) {
 	now := metav1.NewTime(time.Unix(100, 0))
 	later := metav1.NewTime(time.Unix(200, 0))
-	a := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "a", Namespace: "z",
-		Generation: 3, CreationTimestamp: later}}
-	b := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "y", CreationTimestamp: now}}
-	c := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "y", CreationTimestamp: now}}
+	a := &corev1.Service{
+		Name: "a", Namespace: "z",
+		Generation: 3, CreationTimestamp: later,
+	}
+	b := &corev1.Service{Name: "b", Namespace: "y", CreationTimestamp: now}
+	c := &corev1.Service{Name: "c", Namespace: "y", CreationTimestamp: now}
 	require.Equal(t, ir.Source{Kind: "Service", Namespace: "z", Name: "a", Generation: 3},
 		Source("Service", a))
 	in := []*corev1.Service{c, a, b}
@@ -93,10 +95,12 @@ func TestCertRefs(t *testing.T) {
 	key, crt := tlstest.NamedKeyAndCert("tls")
 	cache := fakeCache{secrets: map[string]*corev1.Secret{
 		"shop/tls": {Data: map[string][]byte{
-			corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key}},
+			corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key,
+		}},
 		"shop/empty": {},
 		"shop/bad": {Data: map[string][]byte{
-			corev1.TLSCertKey: []byte("garbage"), corev1.TLSPrivateKeyKey: key}},
+			corev1.TLSCertKey: []byte("garbage"), corev1.TLSPrivateKeyKey: key,
+		}},
 	}}
 	model := &ir.IR{}
 	src := ir.Source{Kind: ir.KindIngress, Namespace: "shop", Name: "web"}

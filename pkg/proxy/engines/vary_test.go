@@ -42,14 +42,26 @@ func TestVaryFieldNames(t *testing.T) {
 	}{
 		{"absent", nil, nil, true},
 		{"single", []string{"X-Mecone-Select"}, []string{"X-Mecone-Select"}, true},
-		{"comma list", []string{"X-Mecone-Color, X-Mecone-Shape"},
-			[]string{"X-Mecone-Color", "X-Mecone-Shape"}, true},
+		{
+			"comma list",
+			[]string{"X-Mecone-Color, X-Mecone-Shape"},
+			[]string{"X-Mecone-Color", "X-Mecone-Shape"},
+			true,
+		},
 		// RFC 9110 5.3: every field line nominates
-		{"repeated lines", []string{"X-Mecone-Color", "X-Mecone-Shape"},
-			[]string{"X-Mecone-Color", "X-Mecone-Shape"}, true},
+		{
+			"repeated lines",
+			[]string{"X-Mecone-Color", "X-Mecone-Shape"},
+			[]string{"X-Mecone-Color", "X-Mecone-Shape"},
+			true,
+		},
 		{"case is normalized", []string{"x-mecone-select"}, []string{"X-Mecone-Select"}, true},
-		{"order does not matter", []string{"X-Mecone-Shape, X-Mecone-Color"},
-			[]string{"X-Mecone-Color", "X-Mecone-Shape"}, true},
+		{
+			"order does not matter",
+			[]string{"X-Mecone-Shape, X-Mecone-Color"},
+			[]string{"X-Mecone-Color", "X-Mecone-Shape"},
+			true,
+		},
 		{"duplicates collapse", []string{"X-A, X-A"}, []string{"X-A"}, true},
 		{"empty entries ignored", []string{"X-A, , X-B"}, []string{"X-A", "X-B"}, true},
 		{"asterisk is unmatchable", []string{"*"}, nil, false},

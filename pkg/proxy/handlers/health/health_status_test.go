@@ -45,6 +45,7 @@ type stubHealthChecker struct {
 func (s *stubHealthChecker) Register(string, string, *ho.Options, *http.Client) (*healthcheck.Status, error) {
 	return &healthcheck.Status{}, nil
 }
+
 func (s *stubHealthChecker) RegisterVirtual(string, string) *healthcheck.Status {
 	return &healthcheck.Status{}
 }
@@ -203,13 +204,13 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	}}
 	hd := &healthDetail{}
 	bes := backends.Backends{
-		"rp-up":    &configBackend{mockBackend: mockBackend{name: "rp-up"}, cfg: rpOpts},
-		"rp-down":  &configBackend{mockBackend: mockBackend{name: "rp-down"}, cfg: rpOpts},
-		"no-probe": &configBackend{mockBackend: mockBackend{name: "no-probe"}, cfg: noProbeOpts},
+		"rp-up":    &configBackend{name: "rp-up", cfg: rpOpts},
+		"rp-down":  &configBackend{name: "rp-down", cfg: rpOpts},
+		"no-probe": &configBackend{name: "no-probe", cfg: noProbeOpts},
 		"edge":     albClient,
 		"virtual-alb": &configBackend{
-			mockBackend: mockBackend{name: "virtual-alb"},
-			cfg:         &bo.Options{Provider: providers.ALB},
+			name: "virtual-alb",
+			cfg:  &bo.Options{Provider: providers.ALB},
 		},
 	}
 
@@ -456,13 +457,13 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	}}
 	hd := &healthDetail{}
 	bes := backends.Backends{
-		"ok":           &configBackend{mockBackend: mockBackend{name: "ok"}, cfg: &bo.Options{Provider: providers.Prometheus}},
+		"ok":           &configBackend{name: "ok", cfg: &bo.Options{Provider: providers.Prometheus}},
 		"nil-be":       nil,
-		"rule-virt":    &configBackend{mockBackend: mockBackend{name: "rule-virt"}, cfg: ruleOpts},
+		"rule-virt":    &configBackend{name: "rule-virt", cfg: ruleOpts},
 		"down-edge":    albClient,
 		"missing-edge": albMissingClient,
 		"nil-cfg":      nilCfgClient,
-		"no-cfg":       &configBackend{mockBackend: mockBackend{name: "no-cfg"}, cfg: nil},
+		"no-cfg":       &configBackend{name: "no-cfg", cfg: nil},
 	}
 
 	updateStatusText(now, hc, hd, bes)

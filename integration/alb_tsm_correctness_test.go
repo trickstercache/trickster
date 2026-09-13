@@ -61,7 +61,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, mock.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -169,7 +169,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, m1.URL, m2.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -307,7 +307,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, m1.URL, m2.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
@@ -420,7 +420,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 			frontPort, metricsPort, mgmtPort, ok.URL, b1.URL, b2.URL, b3.URL)
 
 		cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+		require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)

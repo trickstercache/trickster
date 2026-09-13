@@ -129,21 +129,27 @@ func TestNewErrors(t *testing.T) {
 	_, err := New(Config{})
 	require.ErrorIs(t, err, ErrNoClient)
 	// a renew deadline the retry period cannot meet is refused at construction
-	_, err = New(Config{Client: fake.NewClientset(), Name: "l",
+	_, err = New(Config{
+		Client: fake.NewClientset(), Name: "l",
 		LeaseDuration: time.Second, RenewDeadline: 100 * time.Millisecond,
-		RetryPeriod: 100 * time.Millisecond})
+		RetryPeriod: 100 * time.Millisecond,
+	})
 	require.Error(t, err)
 	// the Lease API holds whole seconds, so a shorter lease is always expired
-	_, err = New(Config{Client: fake.NewClientset(), Name: "l",
+	_, err = New(Config{
+		Client: fake.NewClientset(), Name: "l",
 		LeaseDuration: 500 * time.Millisecond, RenewDeadline: 200 * time.Millisecond,
-		RetryPeriod: 50 * time.Millisecond})
+		RetryPeriod: 50 * time.Millisecond,
+	})
 	require.ErrorIs(t, err, ErrLeaseTooShort)
 }
 
 func TestIdentityDefaults(t *testing.T) {
-	e, err := New(Config{Client: fake.NewClientset(), Name: "l",
+	e, err := New(Config{
+		Client: fake.NewClientset(), Name: "l",
 		LeaseDuration: time.Second, RenewDeadline: 500 * time.Millisecond,
-		RetryPeriod: 100 * time.Millisecond})
+		RetryPeriod: 100 * time.Millisecond,
+	})
 	require.NoError(t, err)
 	require.NotEmpty(t, e.Identity())
 	require.Contains(t, e.Identity(), "_", "the identity carries a random suffix")

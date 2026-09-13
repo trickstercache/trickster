@@ -544,16 +544,22 @@ func TestValidateGraphiteOriginAuth(t *testing.T) {
 	}{
 		{"valid credential", newBackend(
 			&gro.Options{OriginAuthorization: "Bearer tok"}, nil), nil},
-		{"authorization with username", newBackend(
-			&gro.Options{OriginAuthorization: "Bearer tok", OriginUsername: "u"}, nil),
-			gro.ErrOriginAuthConflict},
+		{
+			"authorization with username", newBackend(
+				&gro.Options{OriginAuthorization: "Bearer tok", OriginUsername: "u"}, nil),
+			gro.ErrOriginAuthConflict,
+		},
 		{"password without username", newBackend(
 			&gro.Options{OriginPassword: "p"}, nil), gro.ErrOriginAuthNoUser},
-		{"credential with +Authorization path", newBackend(
-			&gro.Options{OriginUsername: "u", OriginPassword: "p"},
-			po.List{{Path: "/render",
-				RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}}}),
-			gro.ErrOriginAuthAppend},
+		{
+			"credential with +Authorization path", newBackend(
+				&gro.Options{OriginUsername: "u", OriginPassword: "p"},
+				po.List{{
+					Path:           "/render",
+					RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"},
+				}}),
+			gro.ErrOriginAuthAppend,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -75,7 +75,8 @@ func TestSetDynamicTargets(t *testing.T) {
 	// a second swap replaces the membership entirely
 	h2 := &countingHandler{}
 	if !c.SetDynamicTargets(pool.Targets{
-		pool.NewWeightedTarget(h2, passingStatus(), nil, 1)}) {
+		pool.NewWeightedTarget(h2, passingStatus(), nil, 1),
+	}) {
 		t.Fatal("expected second swap to be accepted")
 	}
 	c.Handlers()[providers.ALB].ServeHTTP(w, r)

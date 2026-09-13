@@ -466,10 +466,14 @@ func TestDeltaWindowValidationAndFlooring(t *testing.T) {
 		{},
 		{Step: time.Minute, LowerBound: valid.LowerBound},
 		{Step: 0, LowerBound: valid.LowerBound, UpperBound: valid.UpperBound},
-		{Step: time.Minute,
-			LowerBound: &sqlanalyzer.Bound{Value: now}, UpperBound: valid.UpperBound},
-		{Step: time.Minute, LowerBound: valid.LowerBound,
-			UpperBound: &sqlanalyzer.Bound{Value: now.Add(time.Minute), Inclusive: true}},
+		{
+			Step:       time.Minute,
+			LowerBound: &sqlanalyzer.Bound{Value: now}, UpperBound: valid.UpperBound,
+		},
+		{
+			Step: time.Minute, LowerBound: valid.LowerBound,
+			UpperBound: &sqlanalyzer.Bound{Value: now.Add(time.Minute), Inclusive: true},
+		},
 		{Step: time.Minute, LowerBound: valid.UpperBound, UpperBound: valid.LowerBound},
 	}
 	for i, plan := range invalid {
@@ -559,13 +563,20 @@ func TestDeltaResultValidationMatrix(t *testing.T) {
 	}
 
 	for name, candidate := range map[string][]*querypb.Field{
-		"duplicate time": {{Name: "time", Type: querypb.Type_INT64}, {Name: "time", Type: querypb.Type_INT64},
-			{Name: "metric", Type: querypb.Type_VARCHAR}, {Name: "value", Type: querypb.Type_INT64}},
+		"duplicate time": {
+			{Name: "time", Type: querypb.Type_INT64},
+			{Name: "time", Type: querypb.Type_INT64},
+			{Name: "metric", Type: querypb.Type_VARCHAR},
+			{Name: "value", Type: querypb.Type_INT64},
+		},
 		"missing time":  {{Name: "metric", Type: querypb.Type_VARCHAR}, {Name: "value", Type: querypb.Type_INT64}},
 		"missing group": {{Name: "time", Type: querypb.Type_INT64}, {Name: "value", Type: querypb.Type_INT64}},
 		"missing value": {{Name: "time", Type: querypb.Type_INT64}, {Name: "metric", Type: querypb.Type_VARCHAR}},
-		"text value": {{Name: "time", Type: querypb.Type_INT64}, {Name: "metric", Type: querypb.Type_VARCHAR},
-			{Name: "value", Type: querypb.Type_VARCHAR}},
+		"text value": {
+			{Name: "time", Type: querypb.Type_INT64},
+			{Name: "metric", Type: querypb.Type_VARCHAR},
+			{Name: "value", Type: querypb.Type_VARCHAR},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, _, err := resultIndexes(candidate, plan); err == nil {
@@ -811,16 +822,20 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 		OutputColumn: "time", ValueColumns: []string{"value"}, OutputUnit: timeseries.DateTimeUnixSecs,
 		Renderer: emptyRangeRenderer{},
 	}
-	fields := []*querypb.Field{{Name: "time", Type: querypb.Type_INT64},
-		{Name: "value", Type: querypb.Type_INT64}}
+	fields := []*querypb.Field{
+		{Name: "time", Type: querypb.Type_INT64},
+		{Name: "value", Type: querypb.Type_INT64},
+	}
 	result := &sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{
 		{sqltypes.NewInt64(0), sqltypes.NewInt64(1)},
 		{sqltypes.NewInt64(60), sqltypes.NewInt64(2)},
 	}}
 	extent := timeseries.Extent{Start: start, End: time.Unix(60, 0)}
 	key := h.queryCacheKey(c, session, "dpc", plan.CanonicalSQL, plan.IdentitySuffix)
-	h.storeCached(key, &cachedQueryResult{result: result,
-		extents: timeseries.ExtentList{extent}})
+	h.storeCached(key, &cachedQueryResult{
+		result:  result,
+		extents: timeseries.ExtentList{extent},
+	})
 	got, status, err := h.executeDelta(c, session, "SELECT delta", plan)
 	if err != nil || status != cachestatus.LookupStatusHit || len(got.Rows) != 2 {
 		t.Fatalf("delta hit = %+v/%v/%v", got, status, err)
@@ -843,11 +858,15 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 
 func TestRetentionAndStableExtentGuardBranches(t *testing.T) {
 	h := &protocolHandler{}
-	plan := &sqlanalyzer.QueryPlan{Step: time.Minute, OutputColumn: "time",
-		OutputUnit: timeseries.DateTimeUnixSecs}
+	plan := &sqlanalyzer.QueryPlan{
+		Step: time.Minute, OutputColumn: "time",
+		OutputUnit: timeseries.DateTimeUnixSecs,
+	}
 	extents := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
-	result := &sqltypes.Result{Fields: []*querypb.Field{{Name: "other", Type: querypb.Type_INT64}},
-		Rows: [][]sqltypes.Value{{sqltypes.NewInt64(1)}, {sqltypes.NewInt64(2)}}}
+	result := &sqltypes.Result{
+		Fields: []*querypb.Field{{Name: "other", Type: querypb.Type_INT64}},
+		Rows:   [][]sqltypes.Value{{sqltypes.NewInt64(1)}, {sqltypes.NewInt64(2)}},
+	}
 	if got, _, err := h.applyRetentionSorted(result, extents, plan, 0); err != nil || got != result {
 		t.Fatal("disabled retention changed the result")
 	}
@@ -888,8 +907,10 @@ func TestComQueryEarlyFailureMatrix(t *testing.T) {
 }
 
 func TestRoutedConnectionSelectionFailures(t *testing.T) {
-	h := &routedProtocolHandler{targets: make(map[string]*protocolHandler),
-		controls: make(map[uint32]*phaseConn)}
+	h := &routedProtocolHandler{
+		targets:  make(map[string]*protocolHandler),
+		controls: make(map[uint32]*phaseConn),
+	}
 	if _, ok := h.ResolveRoute(backends.RouteInput{}); ok {
 		t.Fatal("nil resolver selected a route")
 	}
@@ -940,12 +961,14 @@ func startCoverageOrigin(t *testing.T, handler vtmysql.Handler) vtmysql.ConnPara
 	go server.Accept()
 	t.Cleanup(server.Shutdown)
 	address := listener.Addr().(*net.TCPAddr)
-	return vtmysql.ConnParams{Host: "127.0.0.1", Port: address.Port,
-		Uname: "origin", Pass: "password"}
+	return vtmysql.ConnParams{
+		Host: "127.0.0.1", Port: address.Port,
+		Uname: "origin", Pass: "password",
+	}
 }
 
 func TestShardedDeltaAndMergeFallback(t *testing.T) {
-	deltaOrigin := &deltaOriginHandler{testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}}
+	deltaOrigin := &deltaOriginHandler{env: vtenv.NewTestEnv()}
 	params := startCoverageOrigin(t, deltaOrigin)
 	query := "SELECT UNIX_TIMESTAMP(ts) DIV 60 * 60 AS time, COUNT(*) AS value " +
 		"FROM events WHERE ts >= FROM_UNIXTIME(0) AND ts < FROM_UNIXTIME(300) " +
@@ -1042,5 +1065,7 @@ func TestConfiguredHealthProbeFactory(t *testing.T) {
 	}
 }
 
-var _ net.Error = timeoutNetError{}
-var _ backends.Backend = (*Client)(nil)
+var (
+	_ net.Error        = timeoutNetError{}
+	_ backends.Backend = (*Client)(nil)
+)

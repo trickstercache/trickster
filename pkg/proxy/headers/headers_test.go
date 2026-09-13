@@ -131,8 +131,10 @@ func TestFixesHost(t *testing.T) {
 		{name: "append", updates: map[string]string{"+host": "a.example.com"}, fixed: true},
 		{name: "append empty", updates: map[string]string{"+Host": ""}},
 		{name: "delete", updates: map[string]string{"-HOST": ""}, fixed: true},
-		{name: "empty set beside a delete", updates: map[string]string{"Host": "", "-Host": ""},
-			fixed: true},
+		{
+			name: "empty set beside a delete", updates: map[string]string{"Host": "", "-Host": ""},
+			fixed: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -93,7 +93,7 @@ func startHandshakeOrigin(t *testing.T) (*handshakeOriginHandler, vtmysql.ConnPa
 		t.Fatal(err)
 	}
 	handler := &handshakeOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()},
+		env: vtenv.NewTestEnv(),
 	}
 	origin, err := vtmysql.NewFromListener(listener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), handler,

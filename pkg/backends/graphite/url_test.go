@@ -109,7 +109,10 @@ func TestRenderWidenedFetchTrimmed(t *testing.T) {
 	// what -604799s and -604800s cached: a one-bucket head gap
 	h.now = time.Now().Truncate(5 * time.Minute)
 	for _, w := range []struct{ from, until string }{
-		{"-3d", "-1d"}, {"-604799s", "-5min"}, {"-604800s", "-5min"}, {"-604801s", "-5min"},
+		{"-3d", "-1d"},
+		{"-604799s", "-5min"},
+		{"-604800s", "-5min"},
+		{"-604801s", "-5min"},
 		// a one-bucket window on a cold 60s entry: a key miss, served uncropped
 		{"-360s", "-5min"},
 	} {
@@ -155,8 +158,10 @@ func TestTrimToExtent(t *testing.T) {
 		t.Errorf("a disjoint extent must trim every point: %v (size %d)", s.Points, s.PointSize)
 	}
 
-	trq := &timeseries.TimeRangeQuery{Step: 10 * time.Second,
-		Extent: timeseries.Extent{Start: time.Unix(110, 0), End: time.Unix(120, 0)}}
+	trq := &timeseries.TimeRangeQuery{
+		Step:   10 * time.Second,
+		Extent: timeseries.Extent{Start: time.Unix(110, 0), End: time.Unix(120, 0)},
+	}
 	ts, err := unmarshalFetch(strings.NewReader(`[{"target":"a","datapoints":[[1,100],[2,110],[3,120]]}]`), trq)
 	if err != nil {
 		t.Fatal(err)

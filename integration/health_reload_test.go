@@ -105,7 +105,7 @@ backends:
 `, frontPort, metricsPort, mgmtPort, upstream.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -154,7 +154,7 @@ backends:
       pool:
         - prom1
 `, frontPort, metricsPort, mgmtPort, upstream.URL)
-	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml2), 0644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml2), 0o644))
 
 	reloadURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/config/reload", mgmtPort)
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {

@@ -126,11 +126,13 @@ func TestSubscriptionsWithDifferentQueriesDoNotShare(t *testing.T) {
 
 	prom, thanos := newSnapCollector(), newSnapCollector()
 	unsubP, err := d.Subscribe(&do.Query{
-		Namespace: testNS, Service: "prom", Port: "web"}, prom.handle)
+		Namespace: testNS, Service: "prom", Port: "web",
+	}, prom.handle)
 	require.NoError(t, err)
 	defer unsubP()
 	unsubT, err := d.Subscribe(&do.Query{
-		Namespace: testNS, Service: "thanos", Port: "web"}, thanos.handle)
+		Namespace: testNS, Service: "thanos", Port: "web",
+	}, thanos.handle)
 	require.NoError(t, err)
 	defer unsubT()
 
@@ -192,11 +194,15 @@ func TestReplicaGroupPodWatchIsShared(t *testing.T) {
 	defer d.Stop() //nolint:errcheck
 
 	prom, thanos := newSnapCollector(), newSnapCollector()
-	_, err := d.Subscribe(&do.Query{Namespace: testNS, Service: "prom",
-		Port: "web", ReplicaGroupLabel: "zone"}, prom.handle)
+	_, err := d.Subscribe(&do.Query{
+		Namespace: testNS, Service: "prom",
+		Port: "web", ReplicaGroupLabel: "zone",
+	}, prom.handle)
 	require.NoError(t, err)
-	_, err = d.Subscribe(&do.Query{Namespace: testNS, Service: "thanos",
-		Port: "web", ReplicaGroupLabel: "zone"}, thanos.handle)
+	_, err = d.Subscribe(&do.Query{
+		Namespace: testNS, Service: "thanos",
+		Port: "web", ReplicaGroupLabel: "zone",
+	}, thanos.handle)
 	require.NoError(t, err)
 
 	require.Equal(t, "us-east", prom.next(t)[0].ReplicaGroup)
@@ -226,10 +232,10 @@ func TestDiscovererPreflight(t *testing.T) {
 // zonePod is a bare pod object carrying only the replica-group label the
 // endpointslices join reads
 func zonePod(name, zone string) *corev1.Pod {
-	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+	return &corev1.Pod{
 		Name: name, Namespace: testNS,
 		Labels: map[string]string{"zone": zone},
-	}}
+	}
 }
 
 // A named Service is filtered server-side by field selector rather than by
@@ -237,9 +243,11 @@ func zonePod(name, zone string) *corev1.Pod {
 func TestServiceKindByNameUsesAFieldSelector(t *testing.T) {
 	svc := func(name string) *corev1.Service {
 		return &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNS},
-			Spec: corev1.ServiceSpec{ClusterIP: "10.96.0.1",
-				Ports: []corev1.ServicePort{{Name: "web", Port: 9090}}},
+			Name: name, Namespace: testNS,
+			Spec: corev1.ServiceSpec{
+				ClusterIP: "10.96.0.1",
+				Ports:     []corev1.ServicePort{{Name: "web", Port: 9090}},
+			},
 		}
 	}
 	cs := fake.NewClientset(svc("prom"), svc("thanos"))

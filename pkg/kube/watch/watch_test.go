@@ -71,36 +71,41 @@ func opts(t *testing.T, mutate ...func(*kubecfg.Options)) *kubecfg.Options {
 }
 
 func svc(ns, name string) *corev1.Service {
-	return &corev1.Service{ObjectMeta: metav1.ObjectMeta{
-		Namespace: ns, Name: name}}
+	return &corev1.Service{
+		Namespace: ns, Name: name,
+	}
 }
 
 func tlsSecret(ns, name string) *corev1.Secret {
 	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
-		Type:       corev1.SecretTypeTLS,
+		Namespace: ns, Name: name,
+		Type: corev1.SecretTypeTLS,
 	}
 }
 
 func ing(ns, name string) *netv1.Ingress {
-	return &netv1.Ingress{ObjectMeta: metav1.ObjectMeta{
-		Namespace: ns, Name: name}}
+	return &netv1.Ingress{
+		Namespace: ns, Name: name,
+	}
 }
 
 func httpRoute(ns, name string) *gwapiv1.HTTPRoute {
-	return &gwapiv1.HTTPRoute{ObjectMeta: metav1.ObjectMeta{
-		Namespace: ns, Name: name}}
+	return &gwapiv1.HTTPRoute{
+		Namespace: ns, Name: name,
+	}
 }
 
 func gw(ns, name string) *gwapiv1.Gateway {
-	return &gwapiv1.Gateway{ObjectMeta: metav1.ObjectMeta{
-		Namespace: ns, Name: name}}
+	return &gwapiv1.Gateway{
+		Namespace: ns, Name: name,
+	}
 }
 
 // gatewayGVR is the Gateway resource, named explicitly because the fake tracker pluralizes the
 // kind to "gatewaies" and files seeded objects where the typed client never reads
 var gatewayGVR = schema.GroupVersionResource{
-	Group: gwapiv1.GroupName, Version: "v1", Resource: "gateways"}
+	Group: gwapiv1.GroupName, Version: "v1", Resource: "gateways",
+}
 
 func seedGateways(t *testing.T, cs *gwfake.Clientset, gateways ...*gwapiv1.Gateway) {
 	t.Helper()
@@ -136,19 +141,21 @@ func TestWatcherReadsEveryKind(t *testing.T) {
 		svc("shop", "web"), svc("infra", "api"),
 		tlsSecret("shop", "tls"),
 		ing("shop", "site"),
-		&netv1.IngressClass{ObjectMeta: metav1.ObjectMeta{Name: "trickster"}},
+		&netv1.IngressClass{Name: "trickster"},
 	}
 	gwObjs := []runtime.Object{
 		httpRoute("shop", "web"),
-		&gwapiv1.GRPCRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "rpc"}},
-		&gwapiv1.GatewayClass{ObjectMeta: metav1.ObjectMeta{Name: "trickster"}},
-		&gwapiv1.ReferenceGrant{ObjectMeta: metav1.ObjectMeta{
-			Namespace: "shop", Name: "grant"}},
-		&gwapiv1.BackendTLSPolicy{ObjectMeta: metav1.ObjectMeta{
-			Namespace: "shop", Name: "tls"}},
-		&gwapiv1a2.TCPRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "db"}},
-		&gwapiv1a2.TLSRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "shop"}},
-		&gwapiv1a2.UDPRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "dns"}},
+		&gwapiv1.GRPCRoute{Namespace: "shop", Name: "rpc"},
+		&gwapiv1.GatewayClass{Name: "trickster"},
+		&gwapiv1.ReferenceGrant{
+			Namespace: "shop", Name: "grant",
+		},
+		&gwapiv1.BackendTLSPolicy{
+			Namespace: "shop", Name: "tls",
+		},
+		&gwapiv1a2.TCPRoute{Namespace: "data", Name: "db"},
+		&gwapiv1a2.TLSRoute{Namespace: "data", Name: "shop"},
+		&gwapiv1a2.UDPRoute{Namespace: "data", Name: "dns"},
 	}
 	w, c := start(t, opts(t), core, gwObjs, gw("infra", "gw"))
 	c.await(t, 1)
@@ -189,11 +196,12 @@ func TestWatcherSkipsUnservedGatewayKinds(t *testing.T) {
 	// A Gateway API kind the cluster does not serve gets no informer, since one would never
 	// sync; the accessor answers nothing rather than dereferencing a lister never built
 	gwcs := gwfake.NewSimpleClientset(&gwapiv1.BackendTLSPolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "tls"}},
-		&gwapiv1.GRPCRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "rpc"}},
-		&gwapiv1a2.TCPRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "db"}},
-		&gwapiv1a2.TLSRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "shop"}},
-		&gwapiv1a2.UDPRoute{ObjectMeta: metav1.ObjectMeta{Namespace: "data", Name: "dns"}})
+		Namespace: "shop", Name: "tls",
+	},
+		&gwapiv1.GRPCRoute{Namespace: "shop", Name: "rpc"},
+		&gwapiv1a2.TCPRoute{Namespace: "data", Name: "db"},
+		&gwapiv1a2.TLSRoute{Namespace: "data", Name: "shop"},
+		&gwapiv1a2.UDPRoute{Namespace: "data", Name: "dns"})
 	c := &changes{}
 	w, err := New(Config{
 		Client:           kube.NewFromClientset(kubefake.NewClientset()),
@@ -277,8 +285,8 @@ func TestWatcherWatchesOnlyTLSSecrets(t *testing.T) {
 	cs := kubefake.NewClientset(
 		tlsSecret("shop", "tls"),
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "app-creds"},
-			Type:       corev1.SecretTypeOpaque,
+			Namespace: "shop", Name: "app-creds",
+			Type: corev1.SecretTypeOpaque,
 		})
 	w, err := New(Config{
 		Client:        kube.NewFromClientset(cs),
@@ -323,9 +331,10 @@ func TestWatcherNamespaceSelector(t *testing.T) {
 	// A namespace selector filters results rather than the watch, because an
 	// informer cannot select by the labels of a different object
 	core := []runtime.Object{
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-			Name: "shop", Labels: map[string]string{"gateway": "yes"}}},
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "other"}},
+		&corev1.Namespace{
+			Name: "shop", Labels: map[string]string{"gateway": "yes"},
+		},
+		&corev1.Namespace{Name: "other"},
 		svc("shop", "web"), svc("other", "web"),
 	}
 	w, c := start(t, opts(t, func(o *kubecfg.Options) {
@@ -466,7 +475,7 @@ func TestWatcherWithoutGatewayAPI(t *testing.T) {
 	w, err := New(Config{
 		Client: kube.NewFromClientset(kubefake.NewClientset(
 			svc("shop", "web"), ing("shop", "site"),
-			&netv1.IngressClass{ObjectMeta: metav1.ObjectMeta{Name: "trickster"}},
+			&netv1.IngressClass{Name: "trickster"},
 		)),
 		Options:  opts(t),
 		OnChange: c.handler(),
@@ -490,10 +499,12 @@ func TestWatcherReadsConfigMapsAndNamespacesForTheGatewayAPI(t *testing.T) {
 	// ConfigMaps are read only for a GatewayClass's parameters, and Namespaces by a listener
 	// admitting routes by label; both are held whenever the cluster serves the Gateway API
 	core := []runtime.Object{
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{
-			Namespace: "infra", Name: "params"}, Data: map[string]string{"a": "b"}},
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{
-			Name: "tenant", Labels: map[string]string{"team": "a"}}},
+		&corev1.ConfigMap{
+			Namespace: "infra", Name: "params", Data: map[string]string{"a": "b"},
+		},
+		&corev1.Namespace{
+			Name: "tenant", Labels: map[string]string{"team": "a"},
+		},
 	}
 	w, c := start(t, opts(t), core, nil)
 	c.await(t, 1)
@@ -515,8 +526,8 @@ func TestWatcherWithoutGatewayAPIHoldsNoConfigMapsOrNamespaces(t *testing.T) {
 	// Without the Gateway API nothing reads ConfigMaps, and namespaces are held only for a
 	// configured selector, so an Ingress-only controller needs neither grant
 	cs := kubefake.NewClientset(
-		&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "infra", Name: "params"}},
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "tenant"}},
+		&corev1.ConfigMap{Namespace: "infra", Name: "params"},
+		&corev1.Namespace{Name: "tenant"},
 	)
 	c := &changes{}
 	w, err := New(Config{
@@ -542,7 +553,7 @@ func TestWatcherWithoutGatewayAPIHoldsNoConfigMapsOrNamespaces(t *testing.T) {
 func TestWatcherObjectGetters(t *testing.T) {
 	// One object of every kind is reachable by name, and a kind the cluster does
 	// not serve answers nothing rather than failing
-	gc := &gwapiv1.GatewayClass{ObjectMeta: metav1.ObjectMeta{Name: "gc"}}
+	gc := &gwapiv1.GatewayClass{Name: "gc"}
 	w, _ := start(t, opts(t), []runtime.Object{ing("shop", "web"), svc("shop", "s")},
 		[]runtime.Object{httpRoute("shop", "web"), gc}, gw("shop", "gw"))
 	require.NotNil(t, w.Ingress("shop", "web"))
@@ -600,7 +611,7 @@ func TestWatcherPublishedService(t *testing.T) {
 
 func TestObjectKey(t *testing.T) {
 	require.Equal(t, "shop/web", ObjectKey(ing("shop", "web")))
-	require.Equal(t, "gc", ObjectKey(&gwapiv1.GatewayClass{ObjectMeta: metav1.ObjectMeta{Name: "gc"}}))
+	require.Equal(t, "gc", ObjectKey(&gwapiv1.GatewayClass{Name: "gc"}))
 	require.Equal(t, "a/b", ObjectKey(cache.DeletedFinalStateUnknown{Key: "a/b"}))
 	require.Equal(t, "", ObjectKey("not an object"))
 }

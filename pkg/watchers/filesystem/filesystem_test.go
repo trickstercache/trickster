@@ -117,8 +117,10 @@ func TestNewValidation(t *testing.T) {
 func TestNewDoesNotStart(t *testing.T) {
 	_, a, b := testPaths(t)
 	rec := &changeRecorder{}
-	w, err := New(&Options{Name: "test", Paths: []string{a, b},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := New(&Options{
+		Name: "test", Paths: []string{a, b},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,8 +142,10 @@ func TestNewDoesNotStart(t *testing.T) {
 func TestDetectsChange(t *testing.T) {
 	_, a, b := testPaths(t)
 	rec := &changeRecorder{}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a, b},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a, b},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,8 +176,10 @@ func TestDetectsChange(t *testing.T) {
 func TestRejectedChangeIsRetried(t *testing.T) {
 	_, a, b := testPaths(t)
 	rec := &changeRecorder{reject: true}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a, b},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a, b},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,8 +227,10 @@ func TestSymlinkSwap(t *testing.T) {
 	}
 
 	rec := &changeRecorder{}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,13 +263,15 @@ func TestDeletionAndRecovery(t *testing.T) {
 	rec := &changeRecorder{}
 	var readErrs int
 	var readErrsMtx sync.Mutex
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a, b},
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a, b},
 		Interval: testPollInterval, OnChange: rec.onChange,
 		OnReadError: func(error) {
 			readErrsMtx.Lock()
 			readErrs++
 			readErrsMtx.Unlock()
-		}})
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,8 +305,10 @@ func TestDeletionAndRecovery(t *testing.T) {
 func TestEventDriven(t *testing.T) {
 	_, a, b := testPaths(t)
 	rec := &changeRecorder{}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a, b},
-		Interval: time.Hour, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a, b},
+		Interval: time.Hour, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,8 +328,10 @@ func TestEventDriven(t *testing.T) {
 func TestRestart(t *testing.T) {
 	_, a, b := testPaths(t)
 	rec := &changeRecorder{}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a, b},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a, b},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,8 +381,10 @@ func TestDirectoryRecreationRearm(t *testing.T) {
 	writeFiles(t, "one", a)
 
 	rec := &changeRecorder{}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,8 +416,10 @@ func TestEventWatchUnavailableDirs(t *testing.T) {
 	base := t.TempDir()
 	a := filepath.Join(base, "missing", "a.txt")
 	rec := &changeRecorder{}
-	w, err := StartNew(&Options{Name: "test", Paths: []string{a},
-		Interval: testPollInterval, OnChange: rec.onChange})
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a},
+		Interval: testPollInterval, OnChange: rec.onChange,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,8 +444,10 @@ func TestLifecycleNoLeaks(t *testing.T) {
 	before := runtime.NumGoroutine()
 	ws := make([]*Watcher, 0, 8)
 	for range 8 {
-		w, err := StartNew(&Options{Name: "test", Paths: []string{a, b},
-			Interval: testPollInterval})
+		w, err := StartNew(&Options{
+			Name: "test", Paths: []string{a, b},
+			Interval: testPollInterval,
+		})
 		if err != nil {
 			t.Fatal(err)
 		}

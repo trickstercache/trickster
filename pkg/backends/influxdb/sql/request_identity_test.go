@@ -131,13 +131,17 @@ func TestUnsupportedFormatDetection(t *testing.T) {
 		supported bool
 	}{
 		{"url parquet", &http.Request{Method: http.MethodGet, URL: &url.URL{
-			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1&format=parquet"}}, false},
+			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1&format=parquet",
+		}}, false},
 		{"url pretty", &http.Request{Method: http.MethodGet, URL: &url.URL{
-			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1&format=pretty"}}, false},
+			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1&format=pretty",
+		}}, false},
 		{"url csv", &http.Request{Method: http.MethodGet, URL: &url.URL{
-			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1&format=csv"}}, true},
+			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1&format=csv",
+		}}, true},
 		{"none", &http.Request{Method: http.MethodGet, URL: &url.URL{
-			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1"}}, true},
+			Path: "/api/v3/query_sql", RawQuery: "q=SELECT+1",
+		}}, true},
 		{"body parquet", jsonPost(t, `{"q":"SELECT 1","format":"parquet"}`), false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

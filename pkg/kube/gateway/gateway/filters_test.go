@@ -44,7 +44,8 @@ func TestLowerFilterEdges(t *testing.T) {
 	require.ErrorIs(t, err, translate.ErrEmptyHostname)
 
 	_, err = lowerHeaderFilter(&gwapiv1.HTTPHeaderFilter{
-		Add: []gwapiv1.HTTPHeader{{Name: "X-A", Value: "bad\x00value"}}})
+		Add: []gwapiv1.HTTPHeader{{Name: "X-A", Value: "bad\x00value"}},
+	})
 	require.ErrorIs(t, err, errHeaderValue)
 
 	// a redirect with nothing set still redirects, to the request itself

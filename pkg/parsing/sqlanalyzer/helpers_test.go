@@ -59,7 +59,8 @@ func TestFlattenConjunction(t *testing.T) {
 	a := &conjunctionNode{leaf: "a"}
 	b := &conjunctionNode{leaf: "b"}
 	c := &conjunctionNode{leaf: "c"}
-	tree := &conjunctionNode{op: "AND",
+	tree := &conjunctionNode{
+		op:    "AND",
 		left:  &conjunctionNode{op: "AND", left: a, right: &conjunctionNode{wrapped: b}},
 		right: &conjunctionNode{wrapped: &conjunctionNode{op: "AND", left: c, right: a}},
 	}
@@ -237,22 +238,35 @@ func TestRequestExtent(t *testing.T) {
 		plan       QueryPlan
 		start, end time.Time
 	}{
-		{"inclusive bounds",
-			QueryPlan{Step: step,
+		{
+			"inclusive bounds",
+			QueryPlan{
+				Step:       step,
 				LowerBound: &Bound{Value: time.Unix(120, 0), Inclusive: true},
-				UpperBound: &Bound{Value: time.Unix(300, 0), Inclusive: true}},
-			time.Unix(120, 0), time.Unix(300, 0)},
-		{"exclusive bounds",
-			QueryPlan{Step: step,
+				UpperBound: &Bound{Value: time.Unix(300, 0), Inclusive: true},
+			},
+			time.Unix(120, 0), time.Unix(300, 0),
+		},
+		{
+			"exclusive bounds",
+			QueryPlan{
+				Step:       step,
 				LowerBound: &Bound{Value: time.Unix(120, 0)},
-				UpperBound: &Bound{Value: time.Unix(300, 0)}},
-			time.Unix(180, 0), time.Unix(240, 0)},
-		{"missing upper defaults to now",
+				UpperBound: &Bound{Value: time.Unix(300, 0)},
+			},
+			time.Unix(180, 0), time.Unix(240, 0),
+		},
+		{
+			"missing upper defaults to now",
 			QueryPlan{Step: step, LowerBound: &Bound{Value: time.Unix(120, 0), Inclusive: true}},
-			time.Unix(120, 0), now},
-		{"missing lower leaves zero start",
+			time.Unix(120, 0), now,
+		},
+		{
+			"missing lower leaves zero start",
 			QueryPlan{Step: step, UpperBound: &Bound{Value: time.Unix(300, 0), Inclusive: true}},
-			time.Time{}, time.Unix(300, 0)},
+			time.Time{},
+			time.Unix(300, 0),
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

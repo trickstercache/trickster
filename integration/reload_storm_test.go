@@ -122,7 +122,7 @@ backends:
 	}
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(cfgPath, []byte(makeYAML("memA")), 0644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(makeYAML("memA")), 0o644))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -150,7 +150,7 @@ backends:
 	// reflects per-reload growth rather than first-reload setup churn.
 	doReload := func(cacheName string) {
 		tmp := cfgPath + ".tmp"
-		require.NoError(t, os.WriteFile(tmp, []byte(makeYAML(cacheName)), 0644))
+		require.NoError(t, os.WriteFile(tmp, []byte(makeYAML(cacheName)), 0o644))
 		require.NoError(t, os.Rename(tmp, cfgPath))
 		require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP))
 	}
@@ -226,7 +226,7 @@ backends:
 			// Atomic write: write to sibling tmp then rename, so the reload's
 			// config loader never observes a half-written file.
 			tmp := cfgPath + ".tmp"
-			if err := os.WriteFile(tmp, []byte(makeYAML(current)), 0644); err != nil {
+			if err := os.WriteFile(tmp, []byte(makeYAML(current)), 0o644); err != nil {
 				t.Logf("write cfg: %v", err)
 				continue
 			}

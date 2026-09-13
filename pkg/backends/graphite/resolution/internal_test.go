@@ -54,9 +54,11 @@ func TestParseRawHeader(t *testing.T) {
 }
 
 func TestWhisperDurationAndDigits(t *testing.T) {
-	for in, want := range map[string]time.Duration{"10": 10 * time.Second, "10s": 10 * time.Second,
+	for in, want := range map[string]time.Duration{
+		"10": 10 * time.Second, "10s": 10 * time.Second,
 		"1m": time.Minute, "1min": time.Minute, "1MINUTE": time.Minute, "2h": 2 * time.Hour,
-		"1d": 24 * time.Hour, "1w": 7 * 24 * time.Hour, "1y": 365 * 24 * time.Hour} {
+		"1d": 24 * time.Hour, "1w": 7 * 24 * time.Hour, "1y": 365 * 24 * time.Hour,
+	} {
 		if got, err := whisperDuration(in); err != nil || got != want {
 			t.Errorf("%s: got %v %v want %v", in, got, err, want)
 		}
@@ -235,8 +237,10 @@ func TestExpandBounds(t *testing.T) {
 		srv := httptest.NewServer(handler)
 		t.Cleanup(srv.Close)
 		base, _ := url.Parse(srv.URL)
-		reg := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Minute,
-			MaxEntries: 100, Now: func() time.Time { return now }}, nil)
+		reg := NewRegistry(RegistryOptions{
+			TTL: time.Hour, NegativeTTL: time.Minute,
+			MaxEntries: 100, Now: func() time.Time { return now },
+		}, nil)
 		return &Expander{
 			Origin:   &Origin{Base: base, Client: http.DefaultClient, Timeout: 5 * time.Second},
 			Registry: reg, TTL: time.Minute, MaxLeaves: maxLeaves, MaxLeafBytes: maxBytes,
@@ -345,8 +349,10 @@ func TestExpandCoalescingLifecycle(t *testing.T) {
 		}))
 		t.Cleanup(srv.Close)
 		base, _ := url.Parse(srv.URL)
-		reg := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Minute,
-			MaxEntries: 100, Now: func() time.Time { return now }}, nil)
+		reg := NewRegistry(RegistryOptions{
+			TTL: time.Hour, NegativeTTL: time.Minute,
+			MaxEntries: 100, Now: func() time.Time { return now },
+		}, nil)
 		return &Expander{
 			Origin:   &Origin{Base: base, Client: http.DefaultClient, Timeout: 10 * time.Second},
 			Registry: reg, TTL: time.Minute,
@@ -454,8 +460,10 @@ func TestExpandLateArrivalAfterAbandonment(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	base, _ := url.Parse(srv.URL)
-	reg := NewRegistry(RegistryOptions{TTL: time.Hour, NegativeTTL: time.Minute,
-		MaxEntries: 100, Now: func() time.Time { return now }}, nil)
+	reg := NewRegistry(RegistryOptions{
+		TTL: time.Hour, NegativeTTL: time.Minute,
+		MaxEntries: 100, Now: func() time.Time { return now },
+	}, nil)
 	e := &Expander{
 		Origin:   &Origin{Base: base, Client: http.DefaultClient, Timeout: 10 * time.Second},
 		Registry: reg, TTL: time.Minute,

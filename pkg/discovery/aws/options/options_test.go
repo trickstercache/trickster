@@ -102,7 +102,8 @@ func TestCloneIsIndependent(t *testing.T) {
 // management API cannot emit it.
 func TestSecretKeyIsRedactedOnMarshal(t *testing.T) {
 	out, err := yaml.Marshal(&Options{
-		Service: ServiceEC2, AccessKey: "AKIA", SecretKey: "super-secret"})
+		Service: ServiceEC2, AccessKey: "AKIA", SecretKey: "super-secret",
+	})
 	require.NoError(t, err)
 	require.NotContains(t, string(out), "super-secret")
 	require.Contains(t, string(out), "AKIA",

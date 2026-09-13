@@ -55,8 +55,10 @@ func TestPeekClientHello(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close(); _ = server.Close() })
 	go func() {
 		// the handshake never completes, since the peek answers nothing; it only sends the hello
-		_ = tls.Client(client, &tls.Config{ServerName: "shop.example.com",
-			InsecureSkipVerify: true}).Handshake() // #nosec G402 -- test client
+		_ = tls.Client(client, &tls.Config{
+			ServerName:         "shop.example.com",
+			InsecureSkipVerify: true,
+		}).Handshake() // #nosec G402 -- test client
 	}()
 	name, replay, err := peekClientHello(server, time.Second)
 	if err != nil {

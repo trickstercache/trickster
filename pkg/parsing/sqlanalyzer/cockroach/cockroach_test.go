@@ -78,30 +78,46 @@ func TestAnalyzeDeltaCacheableQueries(t *testing.T) {
 		unit  timeseries.FieldDataType
 	}{
 		{"date_bin epoch seconds", hourlyEpochQuery, time.Hour, timeseries.DateTimeUnixSecs},
-		{"date_bin five minutes",
+		{
+			"date_bin five minutes",
 			`SELECT date_bin(INTERVAL '5 minutes', time) AS time, avg(cpu) AS cpu FROM metrics WHERE time >= 1704067200 AND time < 1704070800 GROUP BY 1`,
-			5 * time.Minute, timeseries.DateTimeUnixSecs},
-		{"date_bin SQL datetime bounds",
+			5 * time.Minute, timeseries.DateTimeUnixSecs,
+		},
+		{
+			"date_bin SQL datetime bounds",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(temp) FROM weather WHERE time >= '2024-01-01 00:00:00' AND time < '2024-01-02 00:00:00' GROUP BY 1`,
-			time.Hour, timeseries.DateTimeSQL},
-		{"date_bin RFC3339 bounds",
+			time.Hour, timeseries.DateTimeSQL,
+		},
+		{
+			"date_bin RFC3339 bounds",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(temp) FROM weather WHERE time >= '2024-01-01T00:00:00Z' AND time < '2024-01-02T00:00:00Z' GROUP BY 1`,
-			time.Hour, timeseries.DateTimeRFC3339},
-		{"date_bin TIMESTAMP literal bounds",
+			time.Hour, timeseries.DateTimeRFC3339,
+		},
+		{
+			"date_bin TIMESTAMP literal bounds",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(temp) FROM weather WHERE time >= TIMESTAMP '2024-01-01 00:00:00' AND time < TIMESTAMP '2024-01-02 00:00:00' GROUP BY 1`,
-			time.Hour, timeseries.DateTimeSQL},
-		{"date_bin epoch nanoseconds",
+			time.Hour, timeseries.DateTimeSQL,
+		},
+		{
+			"date_bin epoch nanoseconds",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(temp) FROM weather WHERE time >= 1704067200000000000 AND time < 1704153600000000000 GROUP BY 1`,
-			time.Hour, timeseries.DateTimeUnixNano},
-		{"date_trunc hour",
+			time.Hour, timeseries.DateTimeUnixNano,
+		},
+		{
+			"date_trunc hour",
 			`SELECT date_trunc('hour', time) AS time, avg(temperature) AS temperature FROM weather WHERE time >= 1704067200 AND time < 1704153600 GROUP BY 1`,
-			time.Hour, timeseries.DateTimeUnixSecs},
-		{"date_trunc day",
+			time.Hour, timeseries.DateTimeUnixSecs,
+		},
+		{
+			"date_trunc day",
 			`SELECT date_trunc('day', time) AS time, avg(val) FROM stats WHERE time >= 1704067200 AND time < 1704153600 GROUP BY 1`,
-			24 * time.Hour, timeseries.DateTimeUnixSecs},
-		{"group by alias",
+			24 * time.Hour, timeseries.DateTimeUnixSecs,
+		},
+		{
+			"group by alias",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS bucket, sum(v) FROM t WHERE time >= 1704067200 AND time < 1704153600 GROUP BY bucket`,
-			time.Hour, timeseries.DateTimeUnixSecs},
+			time.Hour, timeseries.DateTimeUnixSecs,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -205,18 +221,26 @@ func TestRenderExtentPreservesBoundStyles(t *testing.T) {
 	tests := []struct {
 		name, query, wantLower, wantUpper string
 	}{
-		{"sql datetime",
+		{
+			"sql datetime",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m WHERE time >= '2024-01-01 00:00:00' AND time < '2024-01-02 00:00:00' GROUP BY 1`,
-			`'2024-01-01 01:00:00'`, `'2024-01-01 03:00:00'`},
-		{"rfc3339",
+			`'2024-01-01 01:00:00'`, `'2024-01-01 03:00:00'`,
+		},
+		{
+			"rfc3339",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m WHERE time >= '2024-01-01T00:00:00Z' AND time < '2024-01-02T00:00:00Z' GROUP BY 1`,
-			`'2024-01-01T01:00:00Z'`, `'2024-01-01T03:00:00Z'`},
-		{"timestamp literal",
+			`'2024-01-01T01:00:00Z'`, `'2024-01-01T03:00:00Z'`,
+		},
+		{
+			"timestamp literal",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m WHERE time >= TIMESTAMP '2024-01-01 00:00:00' AND time < TIMESTAMP '2024-01-02 00:00:00' GROUP BY 1`,
-			`TIMESTAMP '2024-01-01 01:00:00'`, `TIMESTAMP '2024-01-01 03:00:00'`},
-		{"epoch nanoseconds coerced to rfc3339",
+			`TIMESTAMP '2024-01-01 01:00:00'`, `TIMESTAMP '2024-01-01 03:00:00'`,
+		},
+		{
+			"epoch nanoseconds coerced to rfc3339",
 			`SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) FROM m WHERE time >= 1704067200000000000 AND time < 1704153600000000000 GROUP BY 1`,
-			`'2024-01-01T01:00:00Z'`, `'2024-01-01T03:00:00Z'`},
+			`'2024-01-01T01:00:00Z'`, `'2024-01-01T03:00:00Z'`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -502,25 +526,41 @@ func TestAnalyzeOrderByIsPreserved(t *testing.T) {
 		want  []sqlanalyzer.OrderTerm
 	}{
 		{"no order by", prefix, nil},
-		{"ascending alias", prefix + `ORDER BY time`,
-			[]sqlanalyzer.OrderTerm{{Column: "time"}}},
-		{"explicit asc", prefix + `ORDER BY time ASC`,
-			[]sqlanalyzer.OrderTerm{{Column: "time"}}},
-		{"descending", prefix + `ORDER BY time DESC`,
-			[]sqlanalyzer.OrderTerm{{Column: "time", Descending: true, NullsFirst: true}}},
-		{"ordinal reference", prefix + `ORDER BY 1 DESC`,
-			[]sqlanalyzer.OrderTerm{{Column: "time", Descending: true, NullsFirst: true}}},
-		{"multiple terms", prefix + `ORDER BY host DESC, time ASC`,
+		{
+			"ascending alias", prefix + `ORDER BY time`,
+			[]sqlanalyzer.OrderTerm{{Column: "time"}},
+		},
+		{
+			"explicit asc", prefix + `ORDER BY time ASC`,
+			[]sqlanalyzer.OrderTerm{{Column: "time"}},
+		},
+		{
+			"descending", prefix + `ORDER BY time DESC`,
+			[]sqlanalyzer.OrderTerm{{Column: "time", Descending: true, NullsFirst: true}},
+		},
+		{
+			"ordinal reference", prefix + `ORDER BY 1 DESC`,
+			[]sqlanalyzer.OrderTerm{{Column: "time", Descending: true, NullsFirst: true}},
+		},
+		{
+			"multiple terms", prefix + `ORDER BY host DESC, time ASC`,
 			[]sqlanalyzer.OrderTerm{
 				{Column: "host", Descending: true, NullsFirst: true},
 				{Column: "time"},
-			}},
-		{"value column", prefix + `ORDER BY cpu DESC`,
-			[]sqlanalyzer.OrderTerm{{Column: "cpu", Descending: true, NullsFirst: true}}},
-		{"nulls first ascending", prefix + `ORDER BY host ASC NULLS FIRST`,
-			[]sqlanalyzer.OrderTerm{{Column: "host", NullsFirst: true}}},
-		{"nulls last descending", prefix + `ORDER BY host DESC NULLS LAST`,
-			[]sqlanalyzer.OrderTerm{{Column: "host", Descending: true}}},
+			},
+		},
+		{
+			"value column", prefix + `ORDER BY cpu DESC`,
+			[]sqlanalyzer.OrderTerm{{Column: "cpu", Descending: true, NullsFirst: true}},
+		},
+		{
+			"nulls first ascending", prefix + `ORDER BY host ASC NULLS FIRST`,
+			[]sqlanalyzer.OrderTerm{{Column: "host", NullsFirst: true}},
+		},
+		{
+			"nulls last descending", prefix + `ORDER BY host DESC NULLS LAST`,
+			[]sqlanalyzer.OrderTerm{{Column: "host", Descending: true}},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

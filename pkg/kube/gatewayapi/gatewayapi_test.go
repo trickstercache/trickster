@@ -62,7 +62,8 @@ func TestInformersAreShared(t *testing.T) {
 
 	// a selector-bearing spec reaches the API server as a filter
 	sel := Informers(c, cs, kube.FactorySpec{
-		Namespace: "shop", LabelSelector: "app=x"})
+		Namespace: "shop", LabelSelector: "app=x",
+	})
 	defer sel.Release()
 	require.NotSame(t, a.Factory(), sel.Factory())
 

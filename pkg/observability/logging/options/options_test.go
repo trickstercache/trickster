@@ -71,10 +71,12 @@ func TestInitialize(t *testing.T) {
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	validLevels := []string{level.Error, level.Warn, level.Fatal, level.Info,
+	validLevels := []string{
+		level.Error, level.Warn, level.Fatal, level.Info,
 		level.Debug, strings.ToUpper(level.Error), "Warn",
 		strings.ToUpper(level.Fatal), "Info",
-		strings.ToUpper(level.Debug)}
+		strings.ToUpper(level.Debug),
+	}
 	for _, lvl := range validLevels {
 		t.Run(lvl, func(t *testing.T) {
 			t.Parallel()

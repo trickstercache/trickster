@@ -66,10 +66,14 @@ func TestPredicatedExactRoutes(t *testing.T) {
 	r := NewRouter().(*lmRouter)
 	// conditioned routes are registered before the unconditioned one, in
 	// the order they should be tried
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler}))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, [][3]string{{"X-Tenant", "^b.*$", "regex"}}, [][3]string{{"v", "2", ""}}), Handler: testResponse2Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler,
+	}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, [][3]string{{"X-Tenant", "^b.*$", "regex"}}, [][3]string{{"v", "2", ""}}), Handler: testResponse2Handler,
+	}))
 	require.NoError(t, r.RegisterRoute(testPathExact1, nil, nil, matching.PathMatchTypeExact,
 		testResponse3Handler))
 
@@ -91,10 +95,14 @@ func TestPredicatedExactRoutes(t *testing.T) {
 
 func TestPredicateMissContinuesToLessSpecificTiers(t *testing.T) {
 	r := NewRouter().(*lmRouter)
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, Hosts: []string{testHostExact}, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler}))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathPrefix1, Hosts: []string{testHostExact}, Methods: nil, MatchType: matching.PathMatchTypePrefix,
-		Predicates: predicates(t, header("X-Tenant", "b"), nil), Handler: testResponse2Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, Hosts: []string{testHostExact}, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler,
+	}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathPrefix1, Hosts: []string{testHostExact}, Methods: nil, MatchType: matching.PathMatchTypePrefix,
+		Predicates: predicates(t, header("X-Tenant", "b"), nil), Handler: testResponse2Handler,
+	}))
 	require.NoError(t, r.RegisterRoute("/", []string{testHostWildcard}, nil,
 		matching.PathMatchTypePrefix, testResponse3Handler))
 
@@ -107,8 +115,10 @@ func TestPredicateMissContinuesToLessSpecificTiers(t *testing.T) {
 	require.Equal(t, testResponse3Text, got)
 	// with nothing below, an all-candidate miss is a 404
 	r2 := NewRouter().(*lmRouter)
-	require.NoError(t, r2.RegisterRouteSpec(route.Spec{Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler}))
+	require.NoError(t, r2.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler,
+	}))
 	got, code := serveWith(t, r2, http.MethodGet, "", testPathExact1, nil)
 	require.Equal(t, http.StatusNotFound, code)
 	require.Equal(t, notFoundText, got)
@@ -116,11 +126,15 @@ func TestPredicateMissContinuesToLessSpecificTiers(t *testing.T) {
 
 func TestPredicatedPrefixAndRegexTiers(t *testing.T) {
 	r := NewRouter().(*lmRouter)
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "/api/v1", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypePrefix,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: "/api/v1", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypePrefix,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler,
+	}))
 	require.NoError(t, r.RegisterRoute("/api", nil, nil, matching.PathMatchTypePrefix, testResponse2Handler))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "^/re/[0-9]+", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeRegex,
-		Predicates: predicates(t, nil, [][3]string{{"v", "1", ""}}), Handler: testResponse1Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: "^/re/[0-9]+", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeRegex,
+		Predicates: predicates(t, nil, [][3]string{{"v", "1", ""}}), Handler: testResponse1Handler,
+	}))
 	require.NoError(t, r.RegisterRoute("^/re/.*", nil, nil, matching.PathMatchTypeRegex, testResponse3Handler))
 
 	got, _ := serveWith(t, r, http.MethodGet, "", "/api/v1/x", http.Header{"X-Tenant": {"a"}})
@@ -138,8 +152,10 @@ func TestPredicateRegistrationOrder(t *testing.T) {
 	// conditioned route registered after it is never reached
 	r := NewRouter().(*lmRouter)
 	require.NoError(t, r.RegisterRoute(testPathExact1, nil, nil, matching.PathMatchTypeExact, testResponse3Handler))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse1Handler,
+	}))
 	got, _ := serveWith(t, r, http.MethodGet, "", testPathExact1, http.Header{"X-Tenant": {"a"}})
 	require.Equal(t, testResponse3Text, got)
 
@@ -150,11 +166,15 @@ func TestPredicateRegistrationOrder(t *testing.T) {
 	require.Equal(t, testResponse2Text, got)
 
 	// empty predicates register an unconditioned route
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathPrefix1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: &reqmatching.Predicates{}, Handler: testResponse1Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathPrefix1, Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: &reqmatching.Predicates{}, Handler: testResponse1Handler,
+	}))
 	require.Nil(t, r.routes[""].ExactMatchRoutes[testPathPrefix1][http.MethodGet].Candidates)
-	require.Equal(t, errors.ErrInvalidPath, r.RegisterRouteSpec(route.Spec{Path: "", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
-		Predicates: nil, Handler: testResponse1Handler}))
+	require.Equal(t, errors.ErrInvalidPath, r.RegisterRouteSpec(route.Spec{
+		Path: "", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeExact,
+		Predicates: nil, Handler: testResponse1Handler,
+	}))
 }
 
 func TestSegmentMatch(t *testing.T) {
@@ -226,8 +246,10 @@ func TestSegmentHostTiers(t *testing.T) {
 	// a host with a segment route runs the boundary loop for every prefix
 	r := NewRouter().(*lmRouter)
 	require.NoError(t, r.RegisterRoute("/seg", nil, nil, matching.PathMatchTypeSegment, testResponse1Handler))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "/cond", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeSegment,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse2Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: "/cond", Hosts: nil, Methods: nil, MatchType: matching.PathMatchTypeSegment,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse2Handler,
+	}))
 	require.NoError(t, r.RegisterRoute("/plain/", nil, nil, matching.PathMatchTypePrefix, testResponse3Handler))
 	require.True(t, r.routes[""].HasSegments)
 
@@ -248,12 +270,18 @@ func TestCandidateOrder(t *testing.T) {
 	// candidates are tried in ascending order whatever their registration
 	// order; the unconditioned route ranks last by its order, not its position
 	r := NewRouter().(*lmRouter)
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
-		Order: 9, Handler: testResponse3Handler}))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Order: 5, Handler: testResponse2Handler}))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, [][3]string{{"X-Tenant", "^z", "regex"}}, nil), Order: 1, Handler: testResponse1Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
+		Order: 9, Handler: testResponse3Handler,
+	}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Order: 5, Handler: testResponse2Handler,
+	}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, [][3]string{{"X-Tenant", "^z", "regex"}}, nil), Order: 1, Handler: testResponse1Handler,
+	}))
 	got, _ := serveWith(t, r, http.MethodGet, "", testPathExact1, http.Header{"X-Tenant": {"zed"}})
 	require.Equal(t, testResponse1Text, got, "the lowest order wins")
 	got, _ = serveWith(t, r, http.MethodGet, "", testPathExact1, http.Header{"X-Tenant": {"a"}})
@@ -264,8 +292,10 @@ func TestCandidateOrder(t *testing.T) {
 	require.Len(t, slot.Candidates, 3)
 	require.Equal(t, []int{1, 5, 9}, []int{slot.Candidates[0].Order, slot.Candidates[1].Order, slot.Candidates[2].Order})
 	// equal orders keep registration order
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Order: 5, Handler: testResponse3Handler}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path: testPathExact1, MatchType: matching.PathMatchTypeExact,
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Order: 5, Handler: testResponse3Handler,
+	}))
 	got, _ = serveWith(t, r, http.MethodGet, "", testPathExact1, http.Header{"X-Tenant": {"a"}})
 	require.Equal(t, testResponse2Text, got, "the earlier registration of an equal order is tried first")
 	require.Len(t, slot.Candidates, 4)
@@ -281,10 +311,12 @@ func TestDeclaredHEADSupersedesImplicitHEAD(t *testing.T) {
 				matching.PathMatchTypeExact, testResponse3Handler))
 		}
 		declareGET := func() {
-			require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact1,
+			require.NoError(t, r.RegisterRouteSpec(route.Spec{
+				Path:      testPathExact1,
 				MatchType: matching.PathMatchTypeExact, Methods: []string{http.MethodGet},
 				Predicates: predicates(t, header("X-Tenant", "a"), nil),
-				Handler:    testResponse1Handler}))
+				Handler:    testResponse1Handler,
+			}))
 		}
 		if headFirst {
 			declareHEAD()
@@ -310,9 +342,11 @@ func TestImplicitHEADSurvivesWithoutADeclaredHEAD(t *testing.T) {
 	got, _ := serveWith(t, r, http.MethodHead, "", testPathExact1, nil)
 	require.Equal(t, testResponse1Text, got)
 
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: testPathExact2,
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path:      testPathExact2,
 		MatchType: matching.PathMatchTypeExact, Methods: []string{http.MethodGet},
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse2Handler}))
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse2Handler,
+	}))
 	got, _ = serveWith(t, r, http.MethodHead, "", testPathExact2, http.Header{"X-Tenant": {"a"}})
 	require.Equal(t, testResponse2Text, got)
 	_, code := serveWith(t, r, http.MethodHead, "", testPathExact2, nil)
@@ -361,16 +395,22 @@ func TestSegmentAndPrefixShareOnePath(t *testing.T) {
 func TestSegmentAndPrefixShareOnePathWithPredicates(t *testing.T) {
 	// Conditioned and plain routes of both boundary kinds resolve on one path
 	r := NewRouter().(*lmRouter)
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "/foo",
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path:      "/foo",
 		MatchType: matching.PathMatchTypeSegment, Methods: []string{http.MethodGet},
 		Predicates: predicates(t, header("X-Tenant", "a"), nil), Order: 1,
-		Handler: testResponse1Handler}))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "/foo",
+		Handler: testResponse1Handler,
+	}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path:      "/foo",
 		MatchType: matching.PathMatchTypePrefix, Methods: []string{http.MethodGet},
-		Order: 2, Handler: testResponse2Handler}))
-	require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "/foo",
+		Order: 2, Handler: testResponse2Handler,
+	}))
+	require.NoError(t, r.RegisterRouteSpec(route.Spec{
+		Path:      "/foo",
 		MatchType: matching.PathMatchTypeSegment, Methods: []string{http.MethodPost},
-		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse3Handler}))
+		Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: testResponse3Handler,
+	}))
 
 	got, _ := serveWith(t, r, http.MethodGet, "", "/foo/bar", http.Header{"X-Tenant": {"a"}})
 	require.Equal(t, testResponse1Text, got, "the conditioned segment route ranks first")
@@ -472,9 +512,11 @@ func TestEqualOrderCandidatesKeepRegistrationOrder(t *testing.T) {
 	for _, prefixFirst := range []bool{true, false} {
 		r := NewRouter().(*lmRouter)
 		declare := func(mt matching.PathMatchType, order int, h http.Handler) {
-			require.NoError(t, r.RegisterRouteSpec(route.Spec{Path: "/foo",
+			require.NoError(t, r.RegisterRouteSpec(route.Spec{
+				Path:      "/foo",
 				MatchType: mt, Methods: []string{http.MethodGet}, Order: order,
-				Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: h}))
+				Predicates: predicates(t, header("X-Tenant", "a"), nil), Handler: h,
+			}))
 		}
 		want := testResponse1Text
 		if prefixFirst {

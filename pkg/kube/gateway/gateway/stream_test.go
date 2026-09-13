@@ -285,8 +285,10 @@ func TestTLSRouteIsServed(t *testing.T) {
 		streamTable(t, conf, clients, compile.ListenerName(9443, ir.ProtocolTLS), true))
 	dial := func(addr, serverName string) net.Conn {
 		t.Helper()
-		conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: serverName,
-			InsecureSkipVerify: true}) // #nosec G402 -- the origins present test certificates
+		conn, err := tls.Dial("tcp", addr, &tls.Config{
+			ServerName:         serverName,
+			InsecureSkipVerify: true,
+		}) // #nosec G402 -- the origins present test certificates
 		if err != nil {
 			return nil
 		}
@@ -319,8 +321,10 @@ func TestTCPRouteIsServedThroughDiscoveredMembers(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, throughStream(t, conn), "no endpoint is known yet")
 
-	origins := map[string]string{"db-svc": originFor(t, map[string]string{}, "tcp://db-svc.data.svc:5432", nil, false),
-		"replica-svc": originFor(t, map[string]string{}, "tcp://replica-svc.data.svc:5432", nil, false)}
+	origins := map[string]string{
+		"db-svc":      originFor(t, map[string]string{}, "tcp://db-svc.data.svc:5432", nil, false),
+		"replica-svc": originFor(t, map[string]string{}, "tcp://replica-svc.data.svc:5432", nil, false),
+	}
 	discover := func(memberALB, tmplName string, ready bool, service string) {
 		t.Helper()
 		u, err := neturl.Parse(origins[service])

@@ -116,7 +116,7 @@ func TestStartHealthChecks(t *testing.T) {
 		t.Error(err)
 	}
 
-	c2p := &protocolTestBackend{testBackend: testBackend{Backend: c2}}
+	c2p := &protocolTestBackend{Backend: c2}
 	b = Backends{"test2": c2p}
 	hc, err := b.StartHealthChecks(nil)
 	if err != nil {

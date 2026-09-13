@@ -69,31 +69,51 @@ func TestResolve(t *testing.T) {
 		r       *http.Request
 		want    string
 	}{
-		{"no trusted proxies", nil,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9"}), "10.0.0.1"},
-		{"untrusted peer ignores headers", trusted,
-			newReq("198.51.100.4:80", map[string]string{headers.NameXForwardedFor: "203.0.113.9"}), "198.51.100.4"},
+		{
+			"no trusted proxies", nil,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9"}), "10.0.0.1",
+		},
+		{
+			"untrusted peer ignores headers", trusted,
+			newReq("198.51.100.4:80", map[string]string{headers.NameXForwardedFor: "203.0.113.9"}), "198.51.100.4",
+		},
 		{"trusted peer without headers", trusted, newReq("10.0.0.1:1234", nil), "10.0.0.1"},
-		{"xff single", trusted,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9"}), "203.0.113.9"},
-		{"xff skips trusted hops from the right", trusted,
+		{
+			"xff single", trusted,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9"}), "203.0.113.9",
+		},
+		{
+			"xff skips trusted hops from the right", trusted,
 			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9, 172.16.0.1, 10.9.9.9"}),
-			"203.0.113.9"},
-		{"xff all trusted returns leftmost", trusted,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "10.1.1.1, 10.2.2.2"}), "10.1.1.1"},
-		{"xff invalid entries skipped", trusted,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9, unknown"}), "203.0.113.9"},
-		{"xff with port and v6 brackets", trusted,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "[2001:db8::1]:8080"}), "2001:db8::1"},
-		{"forwarded header preferred", trusted,
+			"203.0.113.9",
+		},
+		{
+			"xff all trusted returns leftmost", trusted,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "10.1.1.1, 10.2.2.2"}), "10.1.1.1",
+		},
+		{
+			"xff invalid entries skipped", trusted,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "203.0.113.9, unknown"}), "203.0.113.9",
+		},
+		{
+			"xff with port and v6 brackets", trusted,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXForwardedFor: "[2001:db8::1]:8080"}), "2001:db8::1",
+		},
+		{
+			"forwarded header preferred", trusted,
 			newReq("10.0.0.1:1234", map[string]string{
 				headers.NameForwarded:     `for="[2001:db8::2]";proto=https, for=10.3.3.3`,
 				headers.NameXForwardedFor: "203.0.113.9",
-			}), "2001:db8::2"},
-		{"x-real-ip fallback", trusted,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXRealIP: "203.0.113.10"}), "203.0.113.10"},
-		{"x-real-ip invalid falls back to peer", trusted,
-			newReq("10.0.0.1:1234", map[string]string{headers.NameXRealIP: "bogus"}), "10.0.0.1"},
+			}), "2001:db8::2",
+		},
+		{
+			"x-real-ip fallback", trusted,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXRealIP: "203.0.113.10"}), "203.0.113.10",
+		},
+		{
+			"x-real-ip invalid falls back to peer", trusted,
+			newReq("10.0.0.1:1234", map[string]string{headers.NameXRealIP: "bogus"}), "10.0.0.1",
+		},
 		{"remote addr without port", trusted, newReq("10.0.0.1", nil), "10.0.0.1"},
 	}
 	for _, tc := range tests {

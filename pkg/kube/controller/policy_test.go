@@ -49,8 +49,8 @@ var policyListKinds = map[schema.GroupVersionResource]string{
 func cachePolicyObject(t *testing.T, spec cachepolicy.Spec) *unstructured.Unstructured {
 	t.Helper()
 	u, err := cachepolicy.ToUnstructured(&cachepolicy.CachePolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "cp", Generation: 1, UID: "cp-uid"},
-		Spec:       spec,
+		Namespace: "shop", Name: "cp", Generation: 1, UID: "cp-uid",
+		Spec: spec,
 	})
 	require.NoError(t, err)
 	return u
@@ -76,8 +76,10 @@ func TestControllerServesCachePolicies(t *testing.T) {
 		GatewayClient: gwfake.NewSimpleClientset(), DynamicClient: dyn,
 		Recorder: events.NewWithRecorder(rec),
 		ProviderPaths: func(string) po.List {
-			return po.List{{Path: "/api/v1/query_range", HandlerName: "query_range",
-				MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET"}}}
+			return po.List{{
+				Path: "/api/v1/query_range", HandlerName: "query_range",
+				MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET"},
+			}}
 		},
 		KnownNames: func() ir.ConfiguredNames {
 			return ir.ConfiguredNames{Caches: sets.New([]string{"objects"})}

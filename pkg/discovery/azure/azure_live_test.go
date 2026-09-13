@@ -97,8 +97,10 @@ func liveProvider(t *testing.T) *provider {
 
 func liveSubscription(t *testing.T, m mapping) *subscription {
 	t.Helper()
-	return &subscription{p: liveProvider(t), mapping: m,
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	return &subscription{
+		p: liveProvider(t), mapping: m,
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 }
 
 // Authentication works and the pinned api-versions are served.

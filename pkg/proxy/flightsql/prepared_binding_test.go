@@ -219,7 +219,7 @@ func TestPreparedMultiBatchBindingRejected(t *testing.T) {
 	rec := buildParamRecord(t, "a")
 	defer rec.Release()
 	reader := &multiBatchReader{
-		fakeMessageReader: fakeMessageReader{rec: rec}, remaining: 2,
+		rec: rec, remaining: 2,
 	}
 	_, err = srv.DoPutPreparedStatementQuery(context.Background(),
 		fakePrepQuery{handle: res.Handle}, reader, nil)

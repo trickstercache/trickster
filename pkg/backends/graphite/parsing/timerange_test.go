@@ -211,8 +211,10 @@ func TestParseTimeRange(t *testing.T) {
 }
 
 func FuzzParseATTime(f *testing.F) {
-	for _, s := range []string{"now", "-7d", "midnight yesterday", "08/21/26", "14:30_20260821",
-		"9:30pm", "jan15", "monday", "1787343600", "20260821", "-1h30min", "today+1h", "", "-", "+", ":"} {
+	for _, s := range []string{
+		"now", "-7d", "midnight yesterday", "08/21/26", "14:30_20260821",
+		"9:30pm", "jan15", "monday", "1787343600", "20260821", "-1h30min", "today+1h", "", "-", "+", ":",
+	} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {
@@ -236,11 +238,19 @@ func TestParseATTimeAgainstGraphiteWeb(t *testing.T) {
 		tz   string
 		loc  *time.Location
 	}{
-		{"-1h", "", time.UTC}, {"-90min", "", time.UTC}, {"midnight", "", time.UTC},
-		{"noon", "", time.UTC}, {"teatime", "", time.UTC}, {"yesterday", "", time.UTC},
-		{"midnight yesterday", "", time.UTC}, {"today-1h", "", time.UTC},
-		{"monday", "", time.UTC}, {"9:30pm", "", time.UTC}, {"6:00pm yesterday", "", time.UTC},
-		{"midnight", "America/New_York", ny}, {"08/21/26", "America/New_York", ny},
+		{"-1h", "", time.UTC},
+		{"-90min", "", time.UTC},
+		{"midnight", "", time.UTC},
+		{"noon", "", time.UTC},
+		{"teatime", "", time.UTC},
+		{"yesterday", "", time.UTC},
+		{"midnight yesterday", "", time.UTC},
+		{"today-1h", "", time.UTC},
+		{"monday", "", time.UTC},
+		{"9:30pm", "", time.UTC},
+		{"6:00pm yesterday", "", time.UTC},
+		{"midnight", "America/New_York", ny},
+		{"08/21/26", "America/New_York", ny},
 		{now.Add(-2 * time.Hour).Format("20060102"), "", time.UTC},
 	}
 	for _, tc := range cases {
@@ -251,8 +261,10 @@ func TestParseATTimeAgainstGraphiteWeb(t *testing.T) {
 		if !want.Before(now) {
 			continue
 		}
-		q := url.Values{"target": {"dev.fast.cpu.host01.percent"}, "from": {tc.from},
-			"until": {"now"}, "now": {strconv.FormatInt(now.Unix(), 10)}, "format": {"raw"}}
+		q := url.Values{
+			"target": {"dev.fast.cpu.host01.percent"}, "from": {tc.from},
+			"until": {"now"}, "now": {strconv.FormatInt(now.Unix(), 10)}, "format": {"raw"},
+		}
 		if tc.tz != "" {
 			q.Set("tz", tc.tz)
 		}

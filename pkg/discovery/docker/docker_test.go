@@ -103,7 +103,8 @@ func TestNewRequiresDockerOptions(t *testing.T) {
 // no endpoint is the common case rather than an error.
 func TestEndpointDefaultsToTheSocket(t *testing.T) {
 	p, err := newProvider("test", &do.Options{
-		Provider: "docker", Docker: &dockeropts.Options{}})
+		Provider: "docker", Docker: &dockeropts.Options{},
+	})
 	require.NoError(t, err)
 	require.Equal(t, "http://"+socketHost, p.endpoint,
 		"a socket request needs a syntactically valid but meaningless authority")
@@ -193,7 +194,8 @@ func TestExplicitStatusFilterWins(t *testing.T) {
 		Filters: map[string][]string{
 			"status": {"running", "paused"},
 			"label":  {"com.example.discover=yes"},
-		}})
+		},
+	})
 	defer s.Stop()
 
 	var filters map[string][]string

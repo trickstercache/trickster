@@ -274,8 +274,10 @@ func TestUntaggedInstancesAreExcludedNotFatal(t *testing.T) {
 // what makes port_label safe to adopt incrementally.
 func TestPortLabelFallsBackToStaticPort(t *testing.T) {
 	instances := []ec2Instance{
-		{InstanceID: "i-1", PrivateIPAddress: "10.0.0.1",
-			Tags: []ec2Tag{{Key: "port", Value: "8080"}}},
+		{
+			InstanceID: "i-1", PrivateIPAddress: "10.0.0.1",
+			Tags: []ec2Tag{{Key: "port", Value: "8080"}},
+		},
 		{InstanceID: "i-2", PrivateIPAddress: "10.0.0.2"},
 	}
 	for i := range instances {

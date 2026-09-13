@@ -221,12 +221,16 @@ func TestServerSNIMatrix(t *testing.T) {
 	tbl := tableOf(t, map[string]Upstream{
 		"shop.example.com": Static(exact), "*.example.com": Static(wild), "": Static(catchAll),
 	})
-	srv, addr := startServer(t, ProtocolTLS, &Config{Table: tbl,
-		Options: &options.Options{ConnectTimeout: timeconv.Duration(time.Second)}})
+	srv, addr := startServer(t, ProtocolTLS, &Config{
+		Table:   tbl,
+		Options: &options.Options{ConnectTimeout: timeconv.Duration(time.Second)},
+	})
 	dialTLS := func(serverName string) *tls.Conn {
 		t.Helper()
-		conn := tls.Client(dialTCP(t, addr), &tls.Config{ServerName: serverName,
-			InsecureSkipVerify: true}) // #nosec G402 -- the test trusts its own certificate
+		conn := tls.Client(dialTCP(t, addr), &tls.Config{
+			ServerName:         serverName,
+			InsecureSkipVerify: true,
+		}) // #nosec G402 -- the test trusts its own certificate
 		t.Cleanup(func() { _ = conn.Close() })
 		return conn
 	}
@@ -270,8 +274,10 @@ func TestServerSNIMatrix(t *testing.T) {
 
 func TestServerIdleTimeoutClosesQuietConnections(t *testing.T) {
 	echo := echoServer(t, "echo:", nil)
-	_, addr := startServer(t, ProtocolTCP, &Config{Table: tableOf(t, map[string]Upstream{"": Static(echo)}),
-		Options: &options.Options{IdleTimeout: timeconv.Duration(100 * time.Millisecond)}})
+	_, addr := startServer(t, ProtocolTCP, &Config{
+		Table:   tableOf(t, map[string]Upstream{"": Static(echo)}),
+		Options: &options.Options{IdleTimeout: timeconv.Duration(100 * time.Millisecond)},
+	})
 	conn := dialTCP(t, addr)
 	if got := exchange(t, conn, "hi"); got != "echo:hi" {
 		t.Fatal(got)

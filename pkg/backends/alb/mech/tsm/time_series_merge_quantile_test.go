@@ -119,12 +119,10 @@ func newQuantilePool(specs []quantileMemberSpec, recorder *queryRecorder) pool.P
 		status := &healthcheck.Status{}
 		status.Set(healthcheck.StatusPassing)
 		backend := &pooledVarianceBackend{
-			stripKeysStubBackend: stripKeysStubBackend{
-				cfg: &bo.Options{
-					ReplicaGroup: spec.replicaGroup,
-					Prometheus: &prop.Options{
-						Labels: map[string]string{"replica": spec.replica},
-					},
+			cfg: &bo.Options{
+				ReplicaGroup: spec.replicaGroup,
+				Prometheus: &prop.Options{
+					Labels: map[string]string{"replica": spec.replica},
 				},
 			},
 		}

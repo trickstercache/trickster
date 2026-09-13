@@ -306,9 +306,11 @@ func TestReadValueAsString_DateTimeWithTimezone(t *testing.T) {
 }
 
 func TestReadValueAsString_ShortBuffers(t *testing.T) {
-	types := []string{TypeUInt16, TypeUInt32, TypeUInt64, TypeInt16,
+	types := []string{
+		TypeUInt16, TypeUInt32, TypeUInt64, TypeInt16,
 		TypeInt32, TypeInt64, TypeFloat32, TypeFloat64, TypeDateTime, TypeDate,
-		"DateTime64(3)"}
+		"DateTime64(3)",
+	}
 	for _, typ := range types {
 		br := bufio.NewReader(bytes.NewReader(nil))
 		if _, err := readValueAsString(br, typ); err == nil {

@@ -166,15 +166,23 @@ func prometheusPaths(provider string) po.List {
 		return nil
 	}
 	return po.List{
-		{Path: "/api/v1/query_range", HandlerName: "query_range",
+		{
+			Path: "/api/v1/query_range", HandlerName: "query_range",
 			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST"},
-			CacheKeyParams: []string{"query", "step", "stats"}},
-		{Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"}},
-		{Path: "/api/v1/series", HandlerName: "series", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"match[]", "start", "end"}},
-		{Path: "/", HandlerName: "proxy", MatchTypeName: matching.PathMatchNamePrefix,
-			Methods: []string{"GET", "POST"}},
+			CacheKeyParams: []string{"query", "step", "stats"},
+		},
+		{
+			Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
+			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"},
+		},
+		{
+			Path: "/api/v1/series", HandlerName: "series", MatchTypeName: matching.PathMatchNameExact,
+			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"match[]", "start", "end"},
+		},
+		{
+			Path: "/", HandlerName: "proxy", MatchTypeName: matching.PathMatchNamePrefix,
+			Methods: []string{"GET", "POST"},
+		},
 	}
 }
 
@@ -369,8 +377,10 @@ func TestTranslateHostnameIntersection(t *testing.T) {
 				r.Listeners)
 		}
 	}
-	require.ElementsMatch(t, []string{"api.example.com", "shop.example.com",
-		"deep.shop.example.com"}, port80)
+	require.ElementsMatch(t, []string{
+		"api.example.com", "shop.example.com",
+		"deep.shop.example.com",
+	}, port80)
 	// the listener with no hostname admits all four
 	var port8080 []string
 	for name, r := range byName {
@@ -378,8 +388,10 @@ func TestTranslateHostnameIntersection(t *testing.T) {
 			port8080 = append(port8080, r.Hostnames[0])
 		}
 	}
-	require.ElementsMatch(t, []string{"api.example.com", "shop.example.com",
-		"deep.shop.example.com", "other.net"}, port8080)
+	require.ElementsMatch(t, []string{
+		"api.example.com", "shop.example.com",
+		"deep.shop.example.com", "other.net",
+	}, port8080)
 	// a wildcard route narrowed to a precise listener takes the listener's
 	// hostname
 	r, ok := byName["HTTPRoute/shop/wildcard|Gateway/shop/gw/narrow|docs.example.com"]
@@ -413,8 +425,10 @@ func TestTranslateListenerMerging(t *testing.T) {
 	for _, l := range model.Listeners {
 		names = append(names, l.Name)
 	}
-	require.ElementsMatch(t, []string{"Gateway/infra/older/http", "Gateway/infra/older/https",
-		"Gateway/infra/newer/http", "Gateway/infra/newer/shared", "Gateway/infra/newer/clash"}, names)
+	require.ElementsMatch(t, []string{
+		"Gateway/infra/older/http", "Gateway/infra/older/https",
+		"Gateway/infra/newer/http", "Gateway/infra/newer/shared", "Gateway/infra/newer/clash",
+	}, names)
 	require.Len(t, model.Certs, 1)
 	require.Equal(t, "infra/a-tls", model.Certs[0].Name)
 }
@@ -427,8 +441,10 @@ func TestTranslateHTTPSHostnameAcrossGateways(t *testing.T) {
 	for _, l := range model.Listeners {
 		names = append(names, l.Name)
 	}
-	require.ElementsMatch(t, []string{"Gateway/infra/older/https", "Gateway/infra/same/https",
-		"Gateway/infra/other/hostless"}, names)
+	require.ElementsMatch(t, []string{
+		"Gateway/infra/older/https", "Gateway/infra/same/https",
+		"Gateway/infra/other/hostless",
+	}, names)
 	require.Len(t, model.Certs, 2, "both certificates reach the port's store")
 	var other ir.GatewayStatus
 	for _, g := range report.Gateways {
@@ -477,8 +493,11 @@ func TestTranslatePrecedence(t *testing.T) {
 		{"plain get", http.MethodGet, nil, "stable"},
 		{"canary header", http.MethodGet, []string{"X-Canary", "true"}, "canary"},
 		{"post goes to the method match", http.MethodPost, nil, "writer"},
-		{"the method match outranks the header match on post", http.MethodPost,
-			[]string{"X-Canary", "true"}, "writer"},
+		{
+			"the method match outranks the header match on post", http.MethodPost,
+			[]string{"X-Canary", "true"},
+			"writer",
+		},
 		{"below the prefix", http.MethodGet, nil, "stable"},
 	}
 	for _, test := range tests {
@@ -623,8 +642,10 @@ func TestTranslateClassParametersLostAfterServing(t *testing.T) {
 	// A class that was serving stops the moment its parameters can no longer be
 	// honored; nothing is carried over from the earlier pass
 	c := load(t, filepath.Join("testdata", "class-params.yaml"))
-	cfg := Config{Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
-		KnownNames: known}
+	cfg := Config{
+		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
+		KnownNames: known,
+	}
 	model, _, problems := Translate(cfg)
 	require.Empty(t, problems)
 	require.Len(t, model.Routes, 1)
@@ -638,7 +659,8 @@ func TestTranslateClassParametersLostAfterServing(t *testing.T) {
 
 	// an empty ConfigMap is a class with no overrides, which is served
 	c.configMaps["infra/gateway-params"] = &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "infra", Name: "gateway-params"}}
+		Namespace: "infra", Name: "gateway-params",
+	}
 	model, _, problems = Translate(cfg)
 	require.Empty(t, problems)
 	require.Len(t, model.Routes, 1)
@@ -666,8 +688,7 @@ func TestTranslateAllowedRoutes(t *testing.T) {
 	// a listener admitting a kind this controller does not serve admits nothing
 	c := load(t, filepath.Join("testdata", "allowed.yaml"))
 	kind := gwapiv1.Kind("TCPRoute")
-	c.gateways[0].Spec.Listeners[len(c.gateways[0].Spec.Listeners)-1].AllowedRoutes.Kinds =
-		[]gwapiv1.RouteGroupKind{{Kind: kind}}
+	c.gateways[0].Spec.Listeners[len(c.gateways[0].Spec.Listeners)-1].AllowedRoutes.Kinds = []gwapiv1.RouteGroupKind{{Kind: kind}}
 	_, report, problems = Translate(Config{
 		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
 	})
@@ -768,7 +789,8 @@ func TestTranslateUnsupportedRouteFeatures(t *testing.T) {
 	model, problems := mutateRoute(t, func(hr *gwapiv1.HTTPRoute) {
 		hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 			Type:          gwapiv1.HTTPRouteFilterRequestMirror,
-			RequestMirror: &gwapiv1.HTTPRequestMirrorFilter{}}}
+			RequestMirror: &gwapiv1.HTTPRequestMirrorFilter{},
+		}}
 	})
 	containing(t, problems, "requestMirror: service shop/: no port named; the mirror is not applied")
 	require.Len(t, model.Routes, 1)
@@ -776,7 +798,8 @@ func TestTranslateUnsupportedRouteFeatures(t *testing.T) {
 
 	model, problems = mutateRoute(t, func(hr *gwapiv1.HTTPRoute) {
 		hr.Spec.Rules[0].BackendRefs[0].Filters = []gwapiv1.HTTPRouteFilter{{
-			Type: gwapiv1.HTTPRouteFilterExtensionRef}}
+			Type: gwapiv1.HTTPRouteFilterExtensionRef,
+		}}
 	})
 	containing(t, problems, "backendRef 0: filter 0 (ExtensionRef): filter type is not supported")
 	require.Empty(t, model.Routes)
@@ -808,7 +831,8 @@ func TestTranslateFilterRejections(t *testing.T) {
 	weight := int32(1)
 	headerMod := func(name, value string) *gwapiv1.HTTPHeaderFilter {
 		return &gwapiv1.HTTPHeaderFilter{Set: []gwapiv1.HTTPHeader{{
-			Name: gwapiv1.HTTPHeaderName(name), Value: value}}}
+			Name: gwapiv1.HTTPHeaderName(name), Value: value,
+		}}}
 	}
 	tests := []struct {
 		name string
@@ -817,85 +841,110 @@ func TestTranslateFilterRejections(t *testing.T) {
 	}{
 		{"no body", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
-				Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier}}
+				Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
+			}}
 		}, "carries no configuration"},
 		{"repeated", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{
-				{Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
-					RequestHeaderModifier: headerMod("X-A", "1")},
-				{Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
-					RequestHeaderModifier: headerMod("X-B", "2")}}
+				{
+					Type:                  gwapiv1.HTTPRouteFilterRequestHeaderModifier,
+					RequestHeaderModifier: headerMod("X-A", "1"),
+				},
+				{
+					Type:                  gwapiv1.HTTPRouteFilterRequestHeaderModifier,
+					RequestHeaderModifier: headerMod("X-B", "2"),
+				},
+			}
 		}, "may not be repeated"},
 		{"redirect and rewrite", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{
-				{Type: gwapiv1.HTTPRouteFilterRequestRedirect,
-					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")}},
-				{Type: gwapiv1.HTTPRouteFilterURLRewrite,
-					URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Hostname: &host}}}
+				{
+					Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
+					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")},
+				},
+				{
+					Type:       gwapiv1.HTTPRouteFilterURLRewrite,
+					URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Hostname: &host},
+				},
+			}
 		}, "cannot both be used"},
 		{"redirect on backendRef", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
-				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")}}}
+				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")},
+			}}
 		}, "not permitted on a backendRef"},
 		{"bad header name", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:                  gwapiv1.HTTPRouteFilterRequestHeaderModifier,
-				RequestHeaderModifier: headerMod("X A", "1")}}
+				RequestHeaderModifier: headerMod("X A", "1"),
+			}}
 		}, "not a valid header name"},
 		{"bad header value", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:                   gwapiv1.HTTPRouteFilterResponseHeaderModifier,
-				ResponseHeaderModifier: headerMod("X-A", "bad\x00value")}}
+				ResponseHeaderModifier: headerMod("X-A", "bad\x00value"),
+			}}
 		}, "not a valid header value"},
 		{"bad remove", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:                   gwapiv1.HTTPRouteFilterResponseHeaderModifier,
-				ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{Remove: []string{"X A"}}}}
+				ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{Remove: []string{"X A"}},
+			}}
 		}, "not a valid header name"},
 		{"bad scheme", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
-				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("ftp")}}}
+				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("ftp")},
+			}}
 		}, "scheme must be http or https"},
 		{"wildcard redirect hostname", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
-				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Hostname: &wild}}}
+				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Hostname: &wild},
+			}}
 		}, "hostname must be precise"},
 		{"bad port", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
-				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Port: &port}}}
+				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Port: &port},
+			}}
 		}, "port must be between"},
 		{"bad status", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
-				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{StatusCode: &code}}}
+				RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{StatusCode: &code},
+			}}
 		}, "statusCode must be 301, 302, 303, 307 or 308"},
 		{"relative full path", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: full, ReplaceFullPath: str("v2")}}}}
+					Type: full, ReplaceFullPath: str("v2"),
+				}},
+			}}
 		}, "must begin with '/'"},
 		{"relative prefix", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: prefix, ReplacePrefixMatch: str("v2")}}}}
+					Type: prefix, ReplacePrefixMatch: str("v2"),
+				}},
+			}}
 		}, "must begin with '/'"},
 		{"prefix replacement on an exact match", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Matches[0].Path.Type = &exact
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: prefix, ReplacePrefixMatch: str("/v2")}}}}
+					Type: prefix, ReplacePrefixMatch: str("/v2"),
+				}},
+			}}
 		}, "requires exactly one PathPrefix match"},
 		{"prefix replacement on two matches", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Matches = append(hr.Spec.Rules[0].Matches,
@@ -903,7 +952,9 @@ func TestTranslateFilterRejections(t *testing.T) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: prefix, ReplacePrefixMatch: str("/v2")}}}}
+					Type: prefix, ReplacePrefixMatch: str("/v2"),
+				}},
+			}}
 		}, "requires exactly one PathPrefix match"},
 		{"prefix replacement behind a weighted rule", func(hr *gwapiv1.HTTPRoute) {
 			second := hr.Spec.Rules[0].BackendRefs[0]
@@ -911,82 +962,116 @@ func TestTranslateFilterRejections(t *testing.T) {
 			second.Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: prefix, ReplacePrefixMatch: str("/v2")}}}}
+					Type: prefix, ReplacePrefixMatch: str("/v2"),
+				}},
+			}}
 			hr.Spec.Rules[0].BackendRefs = append(hr.Spec.Rules[0].BackendRefs, second)
 		}, "requires a rule with one backendRef"},
 		{"path rewritten at both levels", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: full, ReplaceFullPath: str("/a")}}}}
+					Type: full, ReplaceFullPath: str("/a"),
+				}},
+			}}
 			hr.Spec.Rules[0].BackendRefs[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: full, ReplaceFullPath: str("/b")}}}}
+					Type: full, ReplaceFullPath: str("/b"),
+				}},
+			}}
 		}, "both rewrite the path"},
 		{"header repeated in set", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
 				RequestHeaderModifier: &gwapiv1.HTTPHeaderFilter{Set: []gwapiv1.HTTPHeader{
-					{Name: "X-A", Value: "1"}, {Name: "X-A", Value: "2"}}}}}
+					{Name: "X-A", Value: "1"}, {Name: "X-A", Value: "2"},
+				}},
+			}}
 		}, "named once per filter"},
 		{"header repeated in set by case", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
 				RequestHeaderModifier: &gwapiv1.HTTPHeaderFilter{Set: []gwapiv1.HTTPHeader{
-					{Name: "Authorization", Value: "1"}, {Name: "authorization", Value: "2"}}}}}
+					{Name: "Authorization", Value: "1"}, {Name: "authorization", Value: "2"},
+				}},
+			}}
 		}, "named once per filter"},
 		{"header set and added", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
 				RequestHeaderModifier: &gwapiv1.HTTPHeaderFilter{
 					Set: []gwapiv1.HTTPHeader{{Name: "X-A", Value: "1"}},
-					Add: []gwapiv1.HTTPHeader{{Name: "x-a", Value: "2"}}}}}
+					Add: []gwapiv1.HTTPHeader{{Name: "x-a", Value: "2"}},
+				},
+			}}
 		}, "named once per filter"},
 		{"header set and removed", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterResponseHeaderModifier,
 				ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{
 					Set:    []gwapiv1.HTTPHeader{{Name: "Authorization", Value: "1"}},
-					Remove: []string{"authorization"}}}}
+					Remove: []string{"authorization"},
+				},
+			}}
 		}, "named once per filter"},
 		{"header added and removed", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterResponseHeaderModifier,
 				ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{
 					Add:    []gwapiv1.HTTPHeader{{Name: "Vary", Value: "1"}},
-					Remove: []string{"VARY"}}}}
+					Remove: []string{"VARY"},
+				},
+			}}
 		}, "named once per filter"},
 		{"location set on a redirect", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{
-				{Type: gwapiv1.HTTPRouteFilterRequestRedirect,
-					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")}},
-				{Type: gwapiv1.HTTPRouteFilterResponseHeaderModifier,
-					ResponseHeaderModifier: headerMod("Location", "https://elsewhere.example.com/")}}
+				{
+					Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
+					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")},
+				},
+				{
+					Type:                   gwapiv1.HTTPRouteFilterResponseHeaderModifier,
+					ResponseHeaderModifier: headerMod("Location", "https://elsewhere.example.com/"),
+				},
+			}
 		}, "may not modify Location"},
 		{"location added on a redirect, lowercase", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{
-				{Type: gwapiv1.HTTPRouteFilterResponseHeaderModifier,
+				{
+					Type: gwapiv1.HTTPRouteFilterResponseHeaderModifier,
 					ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{
-						Add: []gwapiv1.HTTPHeader{{Name: "location", Value: "/x"}}}},
-				{Type: gwapiv1.HTTPRouteFilterRequestRedirect,
-					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")}}}
+						Add: []gwapiv1.HTTPHeader{{Name: "location", Value: "/x"}},
+					},
+				},
+				{
+					Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
+					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")},
+				},
+			}
 		}, "may not modify Location"},
 		{"location removed on a redirect", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].BackendRefs = nil
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{
-				{Type: gwapiv1.HTTPRouteFilterRequestRedirect,
-					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")}},
-				{Type: gwapiv1.HTTPRouteFilterResponseHeaderModifier,
-					ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{Remove: []string{"LOCATION"}}}}
+				{
+					Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
+					RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: str("https")},
+				},
+				{
+					Type:                   gwapiv1.HTTPRouteFilterResponseHeaderModifier,
+					ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{Remove: []string{"LOCATION"}},
+				},
+			}
 		}, "may not modify Location"},
 		{"unknown path modifier", func(hr *gwapiv1.HTTPRoute) {
 			hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 				Type: gwapiv1.HTTPRouteFilterURLRewrite,
 				URLRewrite: &gwapiv1.HTTPURLRewriteFilter{Path: &gwapiv1.HTTPPathModifier{
-					Type: "Regex"}}}}
+					Type: "Regex",
+				}},
+			}}
 		}, "unsupported path modifier type"},
 	}
 	for _, tt := range tests {
@@ -1030,7 +1115,8 @@ func TestTranslateLocationModifierOnForwardingRule(t *testing.T) {
 	model, problems := mutateRoute(t, func(hr *gwapiv1.HTTPRoute) {
 		hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 			Type:                   gwapiv1.HTTPRouteFilterResponseHeaderModifier,
-			ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{Remove: []string{"Location"}}}}
+			ResponseHeaderModifier: &gwapiv1.HTTPHeaderFilter{Remove: []string{"Location"}},
+		}}
 	})
 	require.Empty(t, problems)
 	require.Len(t, model.Routes, 1)
@@ -1049,7 +1135,9 @@ func TestRequestHeaderFilterSetsHostInAnyCase(t *testing.T) {
 				hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 					Type: gwapiv1.HTTPRouteFilterRequestHeaderModifier,
 					RequestHeaderModifier: &gwapiv1.HTTPHeaderFilter{Set: []gwapiv1.HTTPHeader{
-						{Name: gwapiv1.HTTPHeaderName(name), Value: "tenant.internal"}}}}}
+						{Name: gwapiv1.HTTPHeaderName(name), Value: "tenant.internal"},
+					}},
+				}}
 			}
 			o := options(t)
 			model, _, problems := Translate(Config{
@@ -1084,7 +1172,8 @@ func TestTranslateRedirectIgnoresBackendRefs(t *testing.T) {
 		https := "https"
 		hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 			Type:            gwapiv1.HTTPRouteFilterRequestRedirect,
-			RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: &https}}}
+			RequestRedirect: &gwapiv1.HTTPRequestRedirectFilter{Scheme: &https},
+		}}
 	})
 	containing(t, problems, "backendRefs are ignored on a redirecting rule")
 	require.Len(t, model.Routes, 1)
@@ -1280,8 +1369,8 @@ func TestRedirectIsAuthenticated(t *testing.T) {
 		c := load(t, filepath.Join("testdata", "filters.yaml"))
 		params := "infra/params"
 		c.configMaps[params] = &corev1.ConfigMap{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "infra", Name: "params"},
-			Data:       map[string]string{ParamAuthenticatorName: "gateway-auth"},
+			Namespace: "infra", Name: "params",
+			Data: map[string]string{ParamAuthenticatorName: "gateway-auth"},
 		}
 		c.classes[0].Spec.ParametersRef = &gwapiv1.ParametersReference{
 			Group: "", Kind: "ConfigMap", Name: "params",
@@ -1387,7 +1476,8 @@ func TestTranslateBackendTLSRejections(t *testing.T) {
 		}, "hostname must be precise"},
 		{"subject alt names", func(p *gwapiv1.BackendTLSPolicy) {
 			p.Spec.Validation.SubjectAltNames = []gwapiv1.SubjectAltName{{
-				Type: gwapiv1.HostnameSubjectAltNameType, Hostname: "a.internal"}}
+				Type: gwapiv1.HostnameSubjectAltNameType, Hostname: "a.internal",
+			}}
 		}, "subjectAltNames are not supported"},
 		{"both validations", func(p *gwapiv1.BackendTLSPolicy) {
 			wk := gwapiv1.WellKnownCACertificatesType("System")
@@ -1426,15 +1516,18 @@ func TestTranslateBackendTLSRejections(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := load(t, filepath.Join("testdata", "backend-tls.yaml"))
 			c.configMaps["shop/no-key"] = &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "no-key"},
-				Data:       map[string]string{"tls.crt": "x"}}
+				Namespace: "shop", Name: "no-key",
+				Data: map[string]string{"tls.crt": "x"},
+			}
 			c.configMaps["shop/garbage"] = &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "garbage"},
-				Data:       map[string]string{"ca.crt": "not a certificate"}}
+				Namespace: "shop", Name: "garbage",
+				Data: map[string]string{"ca.crt": "not a certificate"},
+			}
 			c.secrets["shop/ca-secret"] = &corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "ca-secret"},
-				Type:       corev1.SecretTypeTLS,
-				Data:       map[string][]byte{"ca.crt": []byte(c.configMaps["shop/ca-bundle"].Data["ca.crt"])}}
+				Namespace: "shop", Name: "ca-secret",
+				Type: corev1.SecretTypeTLS,
+				Data: map[string][]byte{"ca.crt": []byte(c.configMaps["shop/ca-bundle"].Data["ca.crt"])},
+			}
 			for _, p := range c.policies {
 				if p.Name == "tls-ca" {
 					tt.edit(p)
@@ -1575,15 +1668,20 @@ func TestTranslateMatchRejections(t *testing.T) {
 		detail string
 	}{
 		{"relative path", gwapiv1.HTTPRouteMatch{Path: &gwapiv1.HTTPPathMatch{
-			Type: &exact, Value: new("api")}}, "must begin with '/'"},
+			Type: &exact, Value: new("api"),
+		}}, "must begin with '/'"},
 		{"bad regex", gwapiv1.HTTPRouteMatch{Path: &gwapiv1.HTTPPathMatch{
-			Type: &regex, Value: new("/api/(")}}, "not a valid regular expression"},
+			Type: &regex, Value: new("/api/("),
+		}}, "not a valid regular expression"},
 		{"unknown type", gwapiv1.HTTPRouteMatch{Path: &gwapiv1.HTTPPathMatch{
-			Type: &bogus, Value: new("/api")}}, "unsupported path match type"},
+			Type: &bogus, Value: new("/api"),
+		}}, "unsupported path match type"},
 		{"bad header regex", gwapiv1.HTTPRouteMatch{Headers: []gwapiv1.HTTPHeaderMatch{{
-			Type: &rx, Name: "X-A", Value: "("}}}, `header "X-A": not a valid regular expression`},
+			Type: &rx, Name: "X-A", Value: "(",
+		}}}, `header "X-A": not a valid regular expression`},
 		{"bad query regex", gwapiv1.HTTPRouteMatch{QueryParams: []gwapiv1.HTTPQueryParamMatch{{
-			Type: &qrx, Name: "q", Value: "("}}}, `query parameter "q": not a valid regular expression`},
+			Type: &qrx, Name: "q", Value: "(",
+		}}}, `query parameter "q": not a valid regular expression`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1647,16 +1745,25 @@ func TestTranslateGatewayRejections(t *testing.T) {
 	bad := gwapiv1.Hostname("*.*.example.com")
 	mode := gwapiv1.TLSModeTerminate
 	gw.Spec.Listeners = append(gw.Spec.Listeners,
-		gwapiv1.Listener{Name: "bad-host", Port: 81, Protocol: gwapiv1.HTTPProtocolType,
-			Hostname: &bad},
-		gwapiv1.Listener{Name: "tls-on-http", Port: 82, Protocol: gwapiv1.HTTPProtocolType,
-			TLS: &gwapiv1.ListenerTLSConfig{}},
+		gwapiv1.Listener{
+			Name: "bad-host", Port: 81, Protocol: gwapiv1.HTTPProtocolType,
+			Hostname: &bad,
+		},
+		gwapiv1.Listener{
+			Name: "tls-on-http", Port: 82, Protocol: gwapiv1.HTTPProtocolType,
+			TLS: &gwapiv1.ListenerTLSConfig{},
+		},
 		gwapiv1.Listener{Name: "no-tls", Port: 443, Protocol: gwapiv1.HTTPSProtocolType},
-		gwapiv1.Listener{Name: "no-refs", Port: 444, Protocol: gwapiv1.HTTPSProtocolType,
-			TLS: &gwapiv1.ListenerTLSConfig{Mode: &mode}},
-		gwapiv1.Listener{Name: "missing-secret", Port: 445, Protocol: gwapiv1.HTTPSProtocolType,
+		gwapiv1.Listener{
+			Name: "no-refs", Port: 444, Protocol: gwapiv1.HTTPSProtocolType,
+			TLS: &gwapiv1.ListenerTLSConfig{Mode: &mode},
+		},
+		gwapiv1.Listener{
+			Name: "missing-secret", Port: 445, Protocol: gwapiv1.HTTPSProtocolType,
 			TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{
-				{Name: "absent"}}}},
+				{Name: "absent"},
+			}},
+		},
 	)
 	model, _, problems := Translate(Config{
 		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
@@ -1675,8 +1782,10 @@ func TestTranslateGatewayRejections(t *testing.T) {
 	}
 	// the listener whose Secret is merely absent still opens, so a Secret
 	// created later heals it; the ones that cannot terminate TLS do not
-	require.ElementsMatch(t, []string{"Gateway/infra/gw/http", "Gateway/infra/gw/tls-on-http",
-		"Gateway/infra/gw/missing-secret"}, names)
+	require.ElementsMatch(t, []string{
+		"Gateway/infra/gw/http", "Gateway/infra/gw/tls-on-http",
+		"Gateway/infra/gw/missing-secret",
+	}, names)
 }
 
 func TestTranslateAllowedRoutesSelectorProblems(t *testing.T) {
@@ -1685,7 +1794,8 @@ func TestTranslateAllowedRoutesSelectorProblems(t *testing.T) {
 	sel := gwapiv1.NamespacesFromSelector
 	c := load(t, filepath.Join("testdata", "basic.yaml"))
 	c.gateways[0].Spec.Listeners[0].AllowedRoutes = &gwapiv1.AllowedRoutes{
-		Namespaces: &gwapiv1.RouteNamespaces{From: &sel}}
+		Namespaces: &gwapiv1.RouteNamespaces{From: &sel},
+	}
 	model, _, problems := Translate(Config{
 		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
 	})
@@ -1693,7 +1803,8 @@ func TestTranslateAllowedRoutesSelectorProblems(t *testing.T) {
 	require.Empty(t, model.Routes)
 
 	c.gateways[0].Spec.Listeners[0].AllowedRoutes.Namespaces.Selector = &metav1.LabelSelector{
-		MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "team", Operator: "Bogus"}}}
+		MatchExpressions: []metav1.LabelSelectorRequirement{{Key: "team", Operator: "Bogus"}},
+	}
 	model, _, problems = Translate(Config{
 		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
 	})
@@ -1702,7 +1813,8 @@ func TestTranslateAllowedRoutesSelectorProblems(t *testing.T) {
 
 	weird := gwapiv1.FromNamespaces("Sometimes")
 	c.gateways[0].Spec.Listeners[0].AllowedRoutes = &gwapiv1.AllowedRoutes{
-		Namespaces: &gwapiv1.RouteNamespaces{From: &weird}}
+		Namespaces: &gwapiv1.RouteNamespaces{From: &weird},
+	}
 	_, _, problems = Translate(Config{
 		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
 	})
@@ -1731,8 +1843,12 @@ func TestIntersectHostnames(t *testing.T) {
 		{"a.example.com", []string{"a.example.com"}, []string{"a.example.com"}, true},
 		{"a.example.com", []string{"*.example.com"}, []string{"a.example.com"}, true},
 		{"a.example.com", []string{"b.example.com"}, nil, false},
-		{"*.example.com", []string{"a.example.com", "x.y.example.com", "example.com"},
-			[]string{"a.example.com", "x.y.example.com"}, true},
+		{
+			"*.example.com",
+			[]string{"a.example.com", "x.y.example.com", "example.com"},
+			[]string{"a.example.com", "x.y.example.com"},
+			true,
+		},
 		{"*.example.com", []string{"*.example.com"}, []string{"*.example.com"}, true},
 		{"*.example.com", []string{"*.a.example.com"}, []string{"*.a.example.com"}, true},
 		{"*.a.example.com", []string{"*.example.com"}, []string{"*.a.example.com"}, true},
@@ -1949,10 +2065,11 @@ func TestGrantIndex(t *testing.T) {
 	// A grant permits only what both its from and to entries describe
 	name := gwapiv1.ObjectName("shared")
 	g := indexGrants([]*gwapiv1.ReferenceGrant{{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "backends", Name: "g"},
+		Namespace: "backends", Name: "g",
 		Spec: gwapiv1.ReferenceGrantSpec{
 			From: []gwapiv1.ReferenceGrantFrom{{
-				Group: gwapiv1.GroupName, Kind: kindHTTPRoute, Namespace: "shop"}},
+				Group: gwapiv1.GroupName, Kind: kindHTTPRoute, Namespace: "shop",
+			}},
 			To: []gwapiv1.ReferenceGrantTo{
 				{Group: "", Kind: kindService, Name: &name},
 				{Group: "", Kind: kindSecret},
@@ -1992,8 +2109,9 @@ func TestByAgeIsTotal(t *testing.T) {
 	// Objects created in the same clock tick are ordered by namespace then name,
 	// so every replica awards conflicts identically
 	mk := func(ns, name string, sec int64) *gwapiv1.HTTPRoute {
-		return &gwapiv1.HTTPRoute{ObjectMeta: metav1.ObjectMeta{
-			Namespace: ns, Name: name, CreationTimestamp: metav1.Unix(sec, 0)}}
+		return &gwapiv1.HTTPRoute{
+			Namespace: ns, Name: name, CreationTimestamp: metav1.Unix(sec, 0),
+		}
 	}
 	in := []*gwapiv1.HTTPRoute{mk("b", "x", 1), mk("a", "z", 1), mk("a", "y", 1), mk("z", "a", 0)}
 	out := translate.ByAge(in)
@@ -2011,24 +2129,26 @@ func TestTranslateDeclaredExactBeatsAnOlderPrefix(t *testing.T) {
 	c := load(t, filepath.Join("testdata", "basic.yaml"))
 	c.routes[0].CreationTimestamp = metav1.Unix(1, 0)
 	c.services["shop/exact-svc"] = &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "exact-svc"},
-		Spec:       corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 8080}}},
+		Namespace: "shop", Name: "exact-svc",
+		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Port: 8080}}},
 	}
 	exact := gwapiv1.PathMatchExact
 	port := gwapiv1.PortNumber(8080)
 	c.routes = append(c.routes, &gwapiv1.HTTPRoute{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "newer",
-			CreationTimestamp: metav1.Unix(2, 0)},
+		Namespace: "shop", Name: "newer",
+		CreationTimestamp: metav1.Unix(2, 0),
 		Spec: gwapiv1.HTTPRouteSpec{
 			CommonRouteSpec: gwapiv1.CommonRouteSpec{ParentRefs: []gwapiv1.ParentReference{{
-				Name: "gw", Namespace: new(gwapiv1.Namespace("infra"))}}},
+				Name: "gw", Namespace: new(gwapiv1.Namespace("infra")),
+			}}},
 			Hostnames: []gwapiv1.Hostname{"shop.example.com"},
 			Rules: []gwapiv1.HTTPRouteRule{{
 				Matches: []gwapiv1.HTTPRouteMatch{{Path: &gwapiv1.HTTPPathMatch{
-					Type: &exact, Value: new("/api")}}},
-				BackendRefs: []gwapiv1.HTTPBackendRef{{BackendRef: gwapiv1.BackendRef{
-					BackendObjectReference: gwapiv1.BackendObjectReference{
-						Name: "exact-svc", Port: &port}}}},
+					Type: &exact, Value: new("/api"),
+				}}},
+				BackendRefs: []gwapiv1.HTTPBackendRef{{
+					Name: "exact-svc", Port: &port,
+				}},
 			}},
 		},
 	})
@@ -2072,7 +2192,8 @@ func TestTranslateDeduplicatesConditionNames(t *testing.T) {
 	// case, as is a later condition on a query parameter of the same name
 	model, problems := mutateRoute(t, func(hr *gwapiv1.HTTPRoute) {
 		hr.Spec.Rules[0].Matches[0].Headers = []gwapiv1.HTTPHeaderMatch{
-			{Name: "X-Tenant", Value: "a"}, {Name: "x-tenant", Value: "b"},
+			{Name: "X-Tenant", Value: "a"},
+			{Name: "x-tenant", Value: "b"},
 			{Name: "X-Other", Value: "c"},
 		}
 		hr.Spec.Rules[0].Matches[0].QueryParams = []gwapiv1.HTTPQueryParamMatch{
@@ -2081,8 +2202,10 @@ func TestTranslateDeduplicatesConditionNames(t *testing.T) {
 	})
 	require.Empty(t, problems)
 	m := model.Routes[0].Rules[0].Matches[0]
-	require.Equal(t, []ir.KeyValueMatch{{Name: "X-Tenant", Value: "a"},
-		{Name: "X-Other", Value: "c"}}, m.Headers, "the first declaration is kept")
+	require.Equal(t, []ir.KeyValueMatch{
+		{Name: "X-Tenant", Value: "a"},
+		{Name: "X-Other", Value: "c"},
+	}, m.Headers, "the first declaration is kept")
 	require.Equal(t, []ir.KeyValueMatch{{Name: "q", Value: "1"}, {Name: "Q", Value: "3"}},
 		m.QueryParams, "query parameter names are case-sensitive")
 }
@@ -2176,8 +2299,10 @@ func TestReportListenerRejections(t *testing.T) {
 	// conflicts: a second protocol on the port, and a repeated hostname
 	c = load(t, filepath.Join("testdata", "basic.yaml"))
 	c.gateways[0].Spec.Listeners = append(c.gateways[0].Spec.Listeners,
-		gwapiv1.Listener{Name: "tls", Port: 80, Protocol: gwapiv1.HTTPSProtocolType,
-			TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{{Name: "x"}}}},
+		gwapiv1.Listener{
+			Name: "tls", Port: 80, Protocol: gwapiv1.HTTPSProtocolType,
+			TLS: &gwapiv1.ListenerTLSConfig{CertificateRefs: []gwapiv1.SecretObjectReference{{Name: "x"}}},
+		},
 		gwapiv1.Listener{Name: "dup", Port: 80, Protocol: gwapiv1.HTTPProtocolType})
 	report, _ = reportOf(t, c)
 	gw = report.Gateways[0]
@@ -2203,7 +2328,8 @@ func TestReportCertificateRefs(t *testing.T) {
 	c := load(t, filepath.Join("testdata", "basic.yaml"))
 	c.gateways[0].Spec.Listeners[0].Protocol = gwapiv1.HTTPSProtocolType
 	c.gateways[0].Spec.Listeners[0].TLS = &gwapiv1.ListenerTLSConfig{
-		CertificateRefs: []gwapiv1.SecretObjectReference{{Name: "missing"}}}
+		CertificateRefs: []gwapiv1.SecretObjectReference{{Name: "missing"}},
+	}
 	report, problems := reportOf(t, c)
 	l := report.Gateways[0].Listeners[0]
 	require.True(t, condOf(t, l.Conditions, "Accepted").Status)
@@ -2286,8 +2412,10 @@ func TestReportResolvedRefs(t *testing.T) {
 		edit   func(*gwapiv1.BackendObjectReference)
 		reason gwapiv1.RouteConditionReason
 	}{
-		{"missing", func(r *gwapiv1.BackendObjectReference) { r.Name = "missing" },
-			gwapiv1.RouteReasonBackendNotFound},
+		{
+			"missing", func(r *gwapiv1.BackendObjectReference) { r.Name = "missing" },
+			gwapiv1.RouteReasonBackendNotFound,
+		},
 		{"kind", func(r *gwapiv1.BackendObjectReference) {
 			k := gwapiv1.Kind("ConfigMap")
 			r.Kind = &k
@@ -2538,7 +2666,9 @@ func TestTranslateMirror(t *testing.T) {
 		hr.Spec.Rules[0].Filters = []gwapiv1.HTTPRouteFilter{{
 			Type: gwapiv1.HTTPRouteFilterRequestMirror,
 			RequestMirror: &gwapiv1.HTTPRequestMirrorFilter{
-				BackendRef: gwapiv1.BackendObjectReference{Name: "web-svc"}, Percent: &zero}}}
+				BackendRef: gwapiv1.BackendObjectReference{Name: "web-svc"}, Percent: &zero,
+			},
+		}}
 	})
 	containing(t, problems, "requestMirror copies no request")
 	require.Empty(t, m2.Routes)
@@ -2637,12 +2767,19 @@ func TestTranslateGRPCRoute(t *testing.T) {
 		{gwapiv1.GRPCMethodMatch{}, gwapiv1.PathMatchRegularExpression, grpcCatchAll},
 		{gwapiv1.GRPCMethodMatch{Service: new("a.B")}, gwapiv1.PathMatchPathPrefix, "/a.B"},
 		{gwapiv1.GRPCMethodMatch{Service: new("a.B"), Method: new("C")}, gwapiv1.PathMatchExact, "/a.B/C"},
-		{gwapiv1.GRPCMethodMatch{Method: new("C.D")}, gwapiv1.PathMatchRegularExpression,
-			`^/[^/]+/C\.D$`},
-		{gwapiv1.GRPCMethodMatch{Type: ptrOf(gwapiv1.GRPCMethodMatchRegularExpression),
-			Service: new("a.*")}, gwapiv1.PathMatchRegularExpression, "^/(?:a.*)/[^/]+$"},
-		{gwapiv1.GRPCMethodMatch{Type: ptrOf(gwapiv1.GRPCMethodMatchRegularExpression),
-			Method: new("Get.*")}, gwapiv1.PathMatchRegularExpression, "^/[^/]+/(?:Get.*)$"},
+		{
+			gwapiv1.GRPCMethodMatch{Method: new("C.D")},
+			gwapiv1.PathMatchRegularExpression,
+			`^/[^/]+/C\.D$`,
+		},
+		{gwapiv1.GRPCMethodMatch{
+			Type:    ptrOf(gwapiv1.GRPCMethodMatchRegularExpression),
+			Service: new("a.*"),
+		}, gwapiv1.PathMatchRegularExpression, "^/(?:a.*)/[^/]+$"},
+		{gwapiv1.GRPCMethodMatch{
+			Type:   ptrOf(gwapiv1.GRPCMethodMatchRegularExpression),
+			Method: new("Get.*"),
+		}, gwapiv1.PathMatchRegularExpression, "^/[^/]+/(?:Get.*)$"},
 	} {
 		pm, err := grpcPath(&tc.m)
 		require.NoError(t, err)
@@ -2652,8 +2789,10 @@ func TestTranslateGRPCRoute(t *testing.T) {
 	pm, err := grpcPath(nil)
 	require.NoError(t, err)
 	require.Equal(t, grpcCatchAll, *pm.Value)
-	_, err = grpcPath(&gwapiv1.GRPCMethodMatch{Type: ptrOf(gwapiv1.GRPCMethodMatchRegularExpression),
-		Method: new("a^b")})
+	_, err = grpcPath(&gwapiv1.GRPCMethodMatch{
+		Type:   ptrOf(gwapiv1.GRPCMethodMatchRegularExpression),
+		Method: new("a^b"),
+	})
 	require.ErrorIs(t, err, errAnchorPlacement)
 }
 
@@ -2925,8 +3064,10 @@ func BenchmarkRefuseCrossKindConflicts(b *testing.B) {
 				if mixed && i%2 == 1 {
 					kind = ir.KindGRPCRoute
 				}
-				p := &routePlan{src: ir.Source{Kind: kind, Namespace: "ns", Name: fmt.Sprint("r", i)},
-					report: newRouteReport(ir.Source{})}
+				p := &routePlan{
+					src:    ir.Source{Kind: kind, Namespace: "ns", Name: fmt.Sprint("r", i)},
+					report: newRouteReport(ir.Source{}),
+				}
 				// both kinds share every listener, each route on its own hostname, so nothing conflicts
 				l := listeners[(i/2)%len(listeners)]
 				p.attachments = []attachment{{listener: l, hostnames: []string{fmt.Sprintf("h%d.example.com", i)}, plan: p}}
@@ -2949,8 +3090,10 @@ func TestCrossKindConflictIndex(t *testing.T) {
 	tr := &translator{problems: translate.NewProblems(true)}
 	l := &listenerState{name: "l"}
 	newPlan := func(rank int, kind string, hosts ...string) *routePlan {
-		p := &routePlan{rank: rank, src: ir.Source{Kind: kind, Namespace: "ns", Name: fmt.Sprint(kind, rank)},
-			report: newRouteReport(ir.Source{})}
+		p := &routePlan{
+			rank: rank, src: ir.Source{Kind: kind, Namespace: "ns", Name: fmt.Sprint(kind, rank)},
+			report: newRouteReport(ir.Source{}),
+		}
 		p.attachments = []attachment{{listener: l, hostnames: hosts, plan: p}}
 		l.attached++
 		return p
@@ -3079,7 +3222,8 @@ func TestTranslateCertificateIdentityConflicts(t *testing.T) {
 		key, crt, err := tlstest.GetTestKeyAndCertWithNames(names...)
 		require.NoError(t, err)
 		c.secrets[secret].Data = map[string][]byte{
-			corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key}
+			corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key,
+		}
 	}
 	listener := func(report *ir.Report, gateway, section string) ir.ListenerStatus {
 		t.Helper()
@@ -3246,7 +3390,9 @@ func TestTranslateGatewayInfrastructureParameters(t *testing.T) {
 	c := load(t, filepath.Join("testdata", "basic.yaml"))
 	c.gateways[0].Spec.Infrastructure = &gwapiv1.GatewayInfrastructure{
 		ParametersRef: &gwapiv1.LocalParametersReference{
-			Group: "invalid.io", Kind: "InvalidParameters", Name: "invalid"}}
+			Group: "invalid.io", Kind: "InvalidParameters", Name: "invalid",
+		},
+	}
 	model, report, problems := Translate(Config{
 		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
 	})
