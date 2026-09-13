@@ -16,7 +16,15 @@
 
 package mgmt
 
-import "testing"
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+
+	"go.yaml.in/yaml/v3"
+)
 
 func TestValidate(t *testing.T) {
 	c := New()
@@ -69,6 +77,39 @@ func TestValidatePprofListenerNames(t *testing.T) {
 			t.Errorf("expected pprof listener name %q to be invalid, got %v", name, err)
 		}
 	}
+
+	c := New()
+	c.AutoReloadInterval = timeconv.Duration(-time.Second)
+	if err := c.Validate(); !errors.Is(err, ErrInvalidAutoReloadInterval) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidAutoReloadInterval)
+	}
+}
+
+func TestReloadOptionsYAML(t *testing.T) {
+	o := New()
+	const yml = `reload_handler_path: /reload
+reload_drain_timeout: 17s
+reload_rate_limit: 2s
+auto_reload_interval: 10s
+`
+	if err := yaml.Unmarshal([]byte(yml), o); err != nil {
+		t.Fatal(err)
+	}
+	if o.ReloadHandlerPath != "/reload" {
+		t.Errorf("reload handler path = %q; want %q", o.ReloadHandlerPath, "/reload")
+	}
+	if o.ReloadDrainTimeout != timeconv.Duration(17*time.Second) {
+		t.Errorf("reload drain timeout = %v; want %v", o.ReloadDrainTimeout, 17*time.Second)
+	}
+	if o.ReloadRateLimit != timeconv.Duration(2*time.Second) {
+		t.Errorf("reload rate limit = %v; want %v", o.ReloadRateLimit, 2*time.Second)
+	}
+	if o.AutoReloadInterval != timeconv.Duration(10*time.Second) {
+		t.Errorf("auto reload interval = %v; want %v", o.AutoReloadInterval, 10*time.Second)
+	}
+	if got := o.Clone().AutoReloadInterval; got != o.AutoReloadInterval {
+		t.Errorf("cloned auto reload interval = %v; want %v", got, o.AutoReloadInterval)
+	}
 }
 
 func TestClone(t *testing.T) {
@@ -85,5 +126,41 @@ func TestClone(t *testing.T) {
 	clone.ListenPort = 1
 	if o.ListenPort != 9999 {
 		t.Fatal("mutating clone should not affect original")
+	}
+}
+
+func TestValidateShutdownOptions(t *testing.T) {
+	c := New()
+	if c.ReadyHandlerPath != DefaultReadyHandlerPath {
+		t.Errorf("ready handler path = %q; want %q", c.ReadyHandlerPath, DefaultReadyHandlerPath)
+	}
+	c.ShutdownDelay = -1
+	if err := c.Validate(); !errors.Is(err, ErrInvalidShutdownDelay) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidShutdownDelay)
+	}
+	c.ShutdownDelay = 0
+	c.ShutdownDrainTimeout = -1
+	if err := c.Validate(); !errors.Is(err, ErrInvalidShutdownDrainTimeout) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidShutdownDrainTimeout)
+	}
+	c.ShutdownDrainTimeout = 0
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestShutdownDrain(t *testing.T) {
+	var nilOptions *Options
+	if nilOptions.ShutdownDrain() != DefaultDrainTimeout {
+		t.Error("nil options must use the default drain timeout")
+	}
+	c := New()
+	c.ReloadDrainTimeout = timeconv.Duration(7 * time.Second)
+	if c.ShutdownDrain() != 7*time.Second {
+		t.Errorf("shutdown drain = %v; want the reload drain timeout", c.ShutdownDrain())
+	}
+	c.ShutdownDrainTimeout = timeconv.Duration(2 * time.Second)
+	if c.ShutdownDrain() != 2*time.Second {
+		t.Errorf("shutdown drain = %v; want the configured value", c.ShutdownDrain())
 	}
 }

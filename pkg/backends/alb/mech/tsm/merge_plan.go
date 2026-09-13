@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/encoding"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -136,7 +137,7 @@ func (h *handler) serveMultiVariantPlan(
 		primed, err := fanout.PrimeBody(variant.Request)
 		if err != nil {
 			logger.Warn("tsm plan variant body preparation failure", logging.Pairs{
-				"variant": variant.Name, "error": err,
+				keys.Variant: variant.Name, keys.Error: err,
 			})
 			failures.HandleBadGateway(w, r)
 			return
@@ -168,7 +169,7 @@ func (h *handler) serveMultiVariantPlan(
 		})
 	}
 	if err := eg.Wait(); err != nil && parentCtx.Err() == nil {
-		logger.Warn("tsm plan gather failure", logging.Pairs{"error": err})
+		logger.Warn("tsm plan gather failure", logging.Pairs{keys.Error: err})
 	}
 	if parentCtx.Err() != nil {
 		return
@@ -233,8 +234,8 @@ func (h *handler) serveMultiVariantPlan(
 						names.MechanismTSM, plan.Variants[variantIndex].Name, "merge",
 					).Inc()
 					logger.Warn("tsm plan contribution merge failure", logging.Pairs{
-						"variant": plan.Variants[variantIndex].Name,
-						"member":  member,
+						keys.Variant: plan.Variants[variantIndex].Name,
+						keys.Member:  member,
 					})
 				}
 				// Re-running a partially mutated generic accumulator is unsafe. Fail
@@ -252,7 +253,7 @@ func (h *handler) serveMultiVariantPlan(
 		if parentCtx.Err() != nil {
 			return
 		}
-		logger.Warn("tsm plan reduction failure", logging.Pairs{"error": err})
+		logger.Warn("tsm plan reduction failure", logging.Pairs{keys.Error: err})
 		failures.HandleBadGateway(w, r)
 		return
 	}
@@ -328,7 +329,7 @@ func (h *handler) collectPlanResult(
 	}
 	if rsc.MergeFunc == nil || rsc.MergeRespondFunc == nil {
 		logger.Warn("tsm plan gather failed due to nil func", logging.Pairs{
-			"variant": variantName, "member": member,
+			keys.Variant: variantName, keys.Member: member,
 		})
 		result.failed = true
 		execution.results[member] = result
@@ -345,7 +346,7 @@ func (h *handler) collectPlanResult(
 		)
 		if err != nil {
 			logger.Warn("tsm plan gather decode failure", logging.Pairs{
-				"variant": variantName, "member": member, "error": err,
+				keys.Variant: variantName, keys.Member: member, keys.Error: err,
 			})
 			result.failed = true
 			execution.results[member] = result

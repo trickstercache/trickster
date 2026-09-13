@@ -24,6 +24,7 @@ import (
 	"io"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
@@ -79,7 +80,7 @@ func Encode(in []byte) ([]byte, error) {
 	if _, err := w.Write(in); err != nil {
 		if err2 := w.Close(); err2 != nil {
 			logger.Error("failed to close encoder writer",
-				logging.Pairs{"error": err2, "parentError": err})
+				logging.Pairs{keys.Error: err2, "parentError": err})
 		}
 		return nil, err
 	}

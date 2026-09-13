@@ -53,7 +53,7 @@ func TestMultiPartByteRangeChunks(t *testing.T) {
 	resp2.Header = make(http.Header)
 	resp2.Header.Add(headers.NameContentLength, "62")
 	resp2.Header.Add(headers.NameContentRange, "bytes 0-10/62")
-	resp2.Header.Add("Content-Type", "multipart/byteranges; boundary=ddffee123")
+	resp2.Header.Add(headers.NameContentType, "multipart/byteranges; boundary=ddffee123")
 	resp2.StatusCode = 200
 	d := DocumentFromHTTPResponse(resp2, []byte("This is a t"), nil)
 

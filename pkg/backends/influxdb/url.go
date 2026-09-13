@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	ti "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
+	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/influxdata/influxql"
@@ -31,8 +32,10 @@ import (
 
 // Upstream Endpoints
 const (
-	mnQuery    = "query"
-	apiv2Query = "api/v2/query"
+	mnQuery            = "query"
+	apiv2Query         = "api/v2/query"
+	apiv3QuerySQL      = "api/v3/query_sql"
+	apiv3QueryInfluxQL = "api/v3/query_influxql"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
@@ -56,6 +59,12 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		return promremote.SetExtent(r, trq, extent)
 	}
 	switch q := trq.ParsedQuery.(type) {
+	case *isql.Query:
+		isql.SetExtent(r, trq, extent, q)
+	case *isql.V3InfluxQLQuery:
+		if inner, ok := q.Inner.(*influxql.Query); ok {
+			isql.SetExtentV3InfluxQL(r, trq, extent, inner)
+		}
 	case *influxql.Query:
 		ti.SetExtent(r, trq, extent, q)
 	case *flux.Query:

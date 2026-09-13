@@ -1,0 +1,51 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: trickstercache.org/gateway-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: shop
+  annotations:
+    trickstercache.org/handler: proxycache
+    trickstercache.org/cache-name: objects
+    trickstercache.org/max-ttl: 10m
+    trickstercache.org/timeout: 15s
+    trickstercache.org/negative-cache-name: api-errors
+    trickstercache.org/collapsed-forwarding: progressive
+    trickstercache.org/cors-mode: merge
+    trickstercache.org/cors-headers: |
+      Access-Control-Allow-Origin: https://shop.example.com
+    trickstercache.org/request-headers: |
+      X-Forwarded-Host: shop.example.com
+      -X-Internal-Token:
+    trickstercache.org/response-headers: |
+      +Vary: Accept-Encoding
+spec:
+  ingressClassName: trickster
+  rules:
+    - host: shop.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: web-svc
+                port:
+                  number: 8080

@@ -1,0 +1,99 @@
+listeners:
+    kgw--listener-tcp-53:
+        protocol: tcp
+        port: 53
+    kgw--listener-tcp-5432:
+        protocol: tcp
+        port: 5432
+    kgw--listener-tcp-7000:
+        protocol: tcp
+        port: 7000
+    kgw--listener-tcp-7100:
+        protocol: tcp
+        port: 7100
+    kgw--listener-udp-53:
+        protocol: udp
+        port: 53
+backends:
+    kgw--tcproute.data.db_r0:
+        provider: alb
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--tcproute.data.db_r0_b0
+                  weight: 3
+                - name: kgw--tcproute.data.db_r0_b1
+                  weight: 1
+                - name: kgw--tcproute.data.db_r0_b2
+                  weight: 1
+    kgw--tcproute.data.db_r0_b0:
+        provider: rp
+        origin_url: tcp://db-svc.data.svc:5432
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--tcproute.data.db_r0_b1:
+        provider: rp
+        origin_url: tcp://replica-svc.data.svc:5432
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--tcproute.data.db_r0_b2:
+        provider: rp
+        origin_url: tcp://unresolved.kgw.invalid:1
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--tcproute.data.dns-tcp_r0:
+        provider: rp
+        origin_url: tcp://dns-svc.data.svc:53
+        listener_names:
+            - kgw--listener-tcp-53
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+    kgw--udproute.data.dns_r0:
+        provider: alb
+        listener_names:
+            - kgw--listener-udp-53
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--udproute.data.dns_r0_b0
+                  weight: 1
+                - name: kgw--udproute.data.dns_r0_b1
+                  weight: 1
+                - name: kgw--udproute.data.dns_r0_b2
+                  weight: 1
+    kgw--udproute.data.dns_r0_b0:
+        provider: rp
+        origin_url: udp://dns-svc.data.svc:53
+        listener_names:
+            - kgw--listener-udp-53
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--udproute.data.dns_r0_b1:
+        provider: rp
+        origin_url: udp://resolver-svc.data.svc:53
+        listener_names:
+            - kgw--listener-udp-53
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--udproute.data.dns_r0_b2:
+        provider: rp
+        origin_url: tcp://unresolved.kgw.invalid:1
+        listener_names:
+            - kgw--listener-udp-53
+        path_routing_disabled: true
+        path_defaults_disabled: true

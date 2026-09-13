@@ -1,0 +1,106 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.bounded_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.bounded
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+              timeout: 5s
+              attempt_timeout: 2s
+              retry:
+                attempts: 2
+                codes:
+                    - 502
+                    - 503
+                backoff: 100ms
+                budget_percent: 100
+    kgw--httproute.shop.bounded_r1:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /split
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.bounded_r1_b0
+                  weight: 3
+                - name: kgw--httproute.shop.bounded_r1_b1
+                  weight: 1
+    kgw--httproute.shop.bounded_r1_b0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.bounded
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+              attempt_timeout: 1.5s
+              retry:
+                attempts: 1
+                budget_percent: 100
+    kgw--httproute.shop.bounded_r1_b1:
+        provider: rp
+        origin_url: http://canary-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.bounded
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+              attempt_timeout: 1.5s
+              retry:
+                attempts: 1
+                budget_percent: 100
+    kgw--httproute.shop.bounded_r2:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.bounded
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /plain
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'

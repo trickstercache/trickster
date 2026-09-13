@@ -67,11 +67,35 @@ func (h *handler) StopPool() {
 	}
 }
 
+// nextTarget selects the next pool member. With uniform weights it is a
+// plain modular rotation; with mixed weights, each member owns a contiguous
+// weight-sized span of the [0, totalWeight) rotation, so apportionment over
+// any totalWeight consecutive selections against a stable healthy set is
+// exact: each member is selected exactly Weight() times.
 func (h *handler) nextTarget(p pool.Pool) http.Handler {
 	targets := p.Targets()
 	n := uint64(len(targets))
 	if n == 0 {
 		return nil
 	}
-	return targets[h.pos.Add(1)%n].Handler()
+	var total uint64
+	weighted := false
+	for _, t := range targets {
+		w := uint64(t.Weight()) //nolint:gosec // Target.Weight() is always >= 1
+		if w != 1 {
+			weighted = true
+		}
+		total += w
+	}
+	if !weighted {
+		return targets[h.pos.Add(1)%n].Handler()
+	}
+	k := int(h.pos.Add(1) % total) //nolint:gosec // value is < total, an int sum
+	for _, t := range targets {
+		k -= t.Weight()
+		if k < 0 {
+			return t.Handler()
+		}
+	}
+	return targets[n-1].Handler()
 }

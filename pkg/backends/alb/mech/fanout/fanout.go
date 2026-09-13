@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -443,7 +444,7 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 	}
 	if err != nil && ctx.Err() == nil {
 		logger.Warn("alb fanout gather failure", logging.Pairs{
-			"mech": cfg.Mechanism, "error": err,
+			"mech": cfg.Mechanism, keys.Error: err,
 		})
 	}
 	return results, err

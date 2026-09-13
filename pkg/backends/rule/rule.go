@@ -18,16 +18,13 @@ package rule
 
 import (
 	"net/http"
+	"regexp"
 
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/redirect"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
-)
-
-const (
-	trueValue  = "true"
-	falseValue = "false"
 )
 
 // handleMatchedCase processes a matched case by setting the router, executing rewriters, and handling redirects
@@ -57,8 +54,10 @@ type rule struct {
 
 	cases caseList
 
-	extractionArg string
-	operationArg  string
+	extractionArg    string
+	operationArg     string
+	regex            *regexp.Regexp
+	hasCaptureTokens bool
 
 	defaultRedirectURL  string
 	defaultRedirectCode int
@@ -82,13 +81,22 @@ type caseList []*ruleCase
 
 type evaluatorFunc func(*http.Request) (http.Handler, *http.Request, error)
 
+// hopBudget returns the request's rule execution count and limit. The first
+// rule a request reaches sets the limit from its own max_rule_executions;
+// each later rule may only lower it.
+func (r *rule) hopBudget(hr *http.Request) (int32, int32) {
+	currentHops, maxHops, ok := context.HopsIfSet(hr.Context())
+	if !ok || r.maxRuleExecutions < maxHops {
+		maxHops = r.maxRuleExecutions
+	}
+	return currentHops, maxHops
+}
+
 var badRequestHandler = http.HandlerFunc(failures.HandleBadRequestResponse)
 
 func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, error) {
-	currentHops, maxHops := context.Hops(hr.Context())
-	if r.maxRuleExecutions < maxHops {
-		maxHops = r.maxRuleExecutions
-	}
+	hr = rewriter.WithoutTokens(hr)
+	currentHops, maxHops := r.hopBudget(hr)
 
 	if currentHops >= maxHops {
 		return badRequestHandler, hr, nil
@@ -100,13 +108,24 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 	}
 
 	h := r.defaultRouter
-	res := r.operationFunc(r.extractionFunc(hr, r.extractionArg),
-		r.operationArg, r.negateOpResult)
+	input := r.extractionFunc(hr, r.extractionArg)
+	var captureTokens map[string]string
+	var res string
+	if r.regex != nil && r.hasCaptureTokens {
+		matches := r.regex.FindStringSubmatch(input)
+		res = btos(len(matches) > 0, r.negateOpResult)
+		captureTokens = rewriter.CaptureTokens(r.regex, matches)
+	} else {
+		res = r.operationFunc(input, r.operationArg, r.negateOpResult)
+	}
 	var nonDefault bool
 
 	for _, c := range r.cases {
 		if c.matchValue == res {
 			nonDefault = true
+			if len(captureTokens) > 0 {
+				hr = rewriter.WithTokens(hr, captureTokens)
+			}
 			h, hr = handleMatchedCase(c, hr)
 		}
 	}
@@ -125,16 +144,14 @@ func (r *rule) EvaluateOpArg(hr *http.Request) (http.Handler, *http.Request, err
 			r.defaultRedirectCode, r.defaultRedirectURL))
 	}
 
+	hr = rewriter.WithoutTokens(hr)
 	hr = hr.WithContext(context.WithHops(hr.Context(), currentHops+1, maxHops))
 
 	return h, hr, nil
 }
 
 func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, error) {
-	currentHops, maxHops := context.Hops(hr.Context())
-	if r.maxRuleExecutions < maxHops {
-		maxHops = r.maxRuleExecutions
-	}
+	currentHops, maxHops := r.hopBudget(hr)
 
 	if currentHops >= maxHops {
 		return http.HandlerFunc(failures.HandleBadRequestResponse), hr, nil
@@ -154,7 +171,7 @@ func (r *rule) EvaluateCaseArg(hr *http.Request) (http.Handler, *http.Request, e
 		res := r.operationFunc(extraction, c.matchValue, r.negateOpResult)
 
 		// TODO: support comparison of other values via 'where'
-		if res == trueValue {
+		if res == ro.ValueTrue {
 			nonDefault = true
 			h, hr = handleMatchedCase(c, hr)
 		}

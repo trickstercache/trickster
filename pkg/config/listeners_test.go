@@ -136,3 +136,22 @@ func TestAddLoaderWarningDedupes(t *testing.T) {
 		t.Fatalf("LoaderWarnings = %v, want 2 unique entries", c.LoaderWarnings)
 	}
 }
+
+func TestLoadMergesLegacyAndPluralListenerBindings(t *testing.T) {
+	for _, test := range []struct {
+		body string
+		want []string
+	}{
+		{"listener_name: legacy", []string{"legacy"}},
+		{"listener_names: [second, first, second]", []string{"first", "second"}},
+		{"listener_name: legacy\n    listener_names: [second, legacy, second]", []string{"legacy", "second"}},
+	} {
+		c := NewConfig()
+		if err := c.loadYAMLConfig("backends:\n  default:\n    " + test.body + "\n"); err != nil {
+			t.Fatal(err)
+		}
+		if got := c.Backends["default"].ListenerNames; !slices.Equal(got, test.want) {
+			t.Fatalf("got %v, want %v", got, test.want)
+		}
+	}
+}

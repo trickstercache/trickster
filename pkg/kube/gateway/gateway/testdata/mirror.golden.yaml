@@ -1,0 +1,173 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.shadowed_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.shadowed
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+              mirrors:
+                - backend_name: kgw--httproute.shop.shadowed_r0_mirror
+                  percent: 100
+    kgw--httproute.shop.shadowed_r0_mirror:
+        provider: rp
+        origin_url: http://shadow-svc.shop.svc:9090
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.shadowed_r1:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /split
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.shadowed_r1_b0
+                  weight: 3
+                - name: kgw--httproute.shop.shadowed_r1_b1
+                  weight: 1
+    kgw--httproute.shop.shadowed_r1_b0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.shadowed
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.shadowed_r1_b1:
+        provider: rp
+        origin_url: http://canary-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.shadowed
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+              mirrors:
+                - backend_name: kgw--httproute.shop.shadowed_r1_b1_mirror
+                  percent: 25
+    kgw--httproute.shop.shadowed_r1_b1_mirror:
+        provider: rp
+        origin_url: http://shadow-svc.shop.svc:9090
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.shadowed_r2:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.shadowed
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /unmirrored
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.shadowed_r3:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.shadowed
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /both
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+              mirrors:
+                - backend_name: kgw--httproute.shop.shadowed_r3_mirror
+                  percent: 100
+                - backend_name: kgw--httproute.shop.shadowed_r3_b0_mirror
+                  percent: 100
+    kgw--httproute.shop.shadowed_r3_b0_mirror:
+        provider: rp
+        origin_url: http://canary-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.shadowed_r3_mirror:
+        provider: rp
+        origin_url: http://shadow-svc.shop.svc:9090
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'

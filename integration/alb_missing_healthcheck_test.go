@@ -65,7 +65,7 @@ func TestALBHealthyFloorAdmitsFailingMetric(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	release()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)
@@ -114,7 +114,7 @@ func TestALBHealthyFloorResetWhenMemberHasNoHealthcheck(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	release()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)
@@ -170,7 +170,7 @@ func TestALBPoolDegradeWarnsInResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	release()
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	runTrickster(t, ctx, "-config", cfgPath)
 
 	frontAddr := fmt.Sprintf("127.0.0.1:%d", frontPort)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)

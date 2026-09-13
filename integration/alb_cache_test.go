@@ -31,7 +31,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,9 +62,8 @@ func TestALBCache(t *testing.T) {
 		upstreamB := mk("b", "2", &bHits)
 		t.Cleanup(upstreamB.Close)
 
-		frontPort := 18900
-		metricsPort := 18901
-		mgmtPort := 18902
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/c1.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, upstreamA.URL, upstreamB.URL)
@@ -71,7 +73,8 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		// Use a query unique to this run so prior cache state doesn't taint.
@@ -193,9 +196,8 @@ func TestALBCache(t *testing.T) {
 		m2 := makeBadEncoding(&m2QueryHits)
 		t.Cleanup(m2.Close)
 
-		frontPort := 18910
-		metricsPort := 18911
-		mgmtPort := 18912
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/c2.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, m0.URL, m1.URL, m2.URL)
@@ -205,7 +207,8 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		now := time.Now()
@@ -240,7 +243,7 @@ func TestALBCache(t *testing.T) {
 		}, 5*time.Second, 100*time.Millisecond, "alb pool never queried the bad-encoding member")
 
 		t.Logf("status=%d X-Trickster-Result=%q body=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), string(body))
+			resp.StatusCode, resp.Header.Get(headers.NameTricksterResult), string(body))
 
 		require.GreaterOrEqual(t, resp.StatusCode, 200,
 			"expected a response, got status=%d body=%s", resp.StatusCode, string(body))
@@ -264,8 +267,8 @@ func TestALBCache(t *testing.T) {
 		require.NotEmpty(t, series,
 			"expected merged series from members 0+1; body=%s", string(body))
 
-		raw := resp.Header.Get("X-Trickster-Result")
-		hasPhit := strings.Contains(raw, "phit")
+		raw := resp.Header.Get(headers.NameTricksterResult)
+		hasPhit := strings.Contains(raw, status.StatusPartialHit)
 		hasWarn := strings.Contains(string(body), `"warnings"`) ||
 			strings.Contains(string(body), "encoding") ||
 			strings.Contains(string(body), "unsupported")
@@ -310,9 +313,8 @@ func TestALBCache(t *testing.T) {
 		up2 := mk(&m2Hits)
 		t.Cleanup(up2.Close)
 
-		frontPort := 18920
-		metricsPort := 18921
-		mgmtPort := 18922
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v3.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
@@ -322,7 +324,8 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
@@ -367,13 +370,13 @@ func TestALBCache(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
 
-		raw := resp.Header.Get("X-Trickster-Result")
+		raw := resp.Header.Get(headers.NameTricksterResult)
 		t.Logf("status=%d X-Trickster-Result=%q m1Hits=%d m2Hits=%d body=%s",
 			resp.StatusCode, raw, m1Hits.Load(), m2Hits.Load(), string(body))
 
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
-		assert.Containsf(t, raw, "phit",
+		assert.Containsf(t, raw, status.StatusPartialHit,
 			"mixed cache hit/miss across pool members did not surface phit in X-Trickster-Result=%q",
 			raw)
 	})
@@ -414,9 +417,8 @@ func TestALBCache(t *testing.T) {
 		up2 := mk("proxy-only-b", &m2Hits)
 		t.Cleanup(up2.Close)
 
-		frontPort := 18930
-		metricsPort := 18931
-		mgmtPort := 18932
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v4.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
@@ -426,7 +428,8 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
@@ -462,7 +465,7 @@ func TestALBCache(t *testing.T) {
 		}, 10*time.Second, 250*time.Millisecond, "proxy-only TSM pool never merged both members")
 
 		t.Logf("status=%d X-Trickster-Result=%q m1Hits=%d m2Hits=%d body=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), m1Hits.Load(), m2Hits.Load(), string(body))
+			resp.StatusCode, resp.Header.Get(headers.NameTricksterResult), m1Hits.Load(), m2Hits.Load(), string(body))
 
 		var pr promResponse
 		require.NoError(t, json.Unmarshal(body, &pr),
@@ -521,9 +524,8 @@ func TestALBCache(t *testing.T) {
 		up2 := mk("old-range-b", &m2Hits)
 		t.Cleanup(up2.Close)
 
-		frontPort := 18940
-		metricsPort := 18941
-		mgmtPort := 18942
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_cache/v5.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, up1.URL, up2.URL)
@@ -533,7 +535,8 @@ func TestALBCache(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		client := &http.Client{Transport: &http.Transport{DisableCompression: true}}

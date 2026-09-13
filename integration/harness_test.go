@@ -20,6 +20,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,49 +28,48 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 type tricksterHarness struct {
-	ConfigPath  string // path to YAML config passed to the daemon
-	BaseAddr    string // host:port of the data listener (e.g. "127.0.0.1:8480")
-	MetricsAddr string // host:port of the metrics/health listener
+	ConfigPath                 string // path to YAML config passed to the daemon
+	BaseAddr                   string // host:port of the data listener (e.g. "127.0.0.1:8480")
+	MetricsAddr                string // host:port of the metrics/health listener
+	MgmtAddr                   string // host:port of the management listener
+	MySQLAddr                  string // host:port of the MySQL protocol listener, when configured
+	ClickHouseNativeAddr       string // native listener backed by ClickHouse HTTP
+	ClickHouseNativeOriginAddr string // native listener backed by ClickHouse native
+	releasePorts               func() // releases ports reserved while the config is prepared
 }
 
-func developerHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "../docs/developer/environment/trickster-config/trickster.yaml",
-		BaseAddr:    "127.0.0.1:8480",
-		MetricsAddr: "127.0.0.1:8481",
-	}
+func developerHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return configHarness(t)
 }
 
-func albHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "testdata/alb.yaml",
-		BaseAddr:    "127.0.0.1:8490",
-		MetricsAddr: "127.0.0.1:8491",
-	}
+func albHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return staticConfigHarness(t, "testdata/alb.yaml")
 }
 
-func rewriterHarness() tricksterHarness {
-	return tricksterHarness{
-		ConfigPath:  "testdata/rewriter.yaml",
-		BaseAddr:    "127.0.0.1:8493",
-		MetricsAddr: "127.0.0.1:8494",
-	}
+func rewriterHarness(t *testing.T) tricksterHarness {
+	t.Helper()
+	return staticConfigHarness(t, "testdata/rewriter.yaml")
 }
 
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", h.ConfigPath)
+	if h.releasePorts != nil {
+		h.releasePorts()
+	}
+	runTrickster(t, context.Background(), "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
 }
 
@@ -83,24 +83,12 @@ type requestOptions struct {
 
 type requestOption func(*requestOptions)
 
-func withMethod(m string) requestOption { return func(o *requestOptions) { o.method = m } }
-
 func withHeader(k, v string) requestOption {
 	return func(o *requestOptions) {
 		if o.headers == nil {
 			o.headers = http.Header{}
 		}
 		o.headers.Add(k, v)
-	}
-}
-
-func withBody(contentType string, r io.Reader) requestOption {
-	return func(o *requestOptions) {
-		o.contentType = contentType
-		o.body = r
-		if o.method == "" {
-			o.method = "POST"
-		}
 	}
 }
 
@@ -154,7 +142,7 @@ func (h tricksterHarness) queryProm(t *testing.T, backend, apiPath string, opts 
 
 func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]string) {
 	t.Helper()
-	raw := hdr.Get("X-Trickster-Result")
+	raw := hdr.Get(headers.NameTricksterResult)
 	got := parseTricksterResult(raw)
 	for k, v := range want {
 		require.Equal(t, v, got[k], "X-Trickster-Result[%q] mismatch in %q", k, raw)
@@ -166,9 +154,68 @@ type cacheProviderCase struct {
 	Backend string // backend id, e.g. "prom1"
 }
 
-func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string {
+func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
-	b, err := os.ReadFile("../docs/developer/environment/trickster-config/trickster.yaml")
+	ports, release := portutil.Reserve(t, 6)
+	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
+	clickHouseHTTPOriginPort, clickHouseNativeOriginPort := ports[4], ports[5]
+	return tricksterHarness{
+		ConfigPath: writeTestConfig(t,
+			"../docs/developer/environment/trickster-config/trickster.yaml",
+			frontPort, metricsPort, mgmtPort, mysqlPort, 0,
+			clickHouseHTTPOriginPort, clickHouseNativeOriginPort, mods...),
+		BaseAddr:                   fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:                fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MgmtAddr:                   fmt.Sprintf("127.0.0.1:%d", mgmtPort),
+		MySQLAddr:                  fmt.Sprintf("127.0.0.1:%d", mysqlPort),
+		ClickHouseNativeAddr:       fmt.Sprintf("127.0.0.1:%d", clickHouseHTTPOriginPort),
+		ClickHouseNativeOriginAddr: fmt.Sprintf("127.0.0.1:%d", clickHouseNativeOriginPort),
+		releasePorts:               release,
+	}
+}
+
+// flightConfigHarness is configHarness with the influx3 backend's Flight SQL
+// (gRPC) listener enabled on a reserved port, returned alongside the harness.
+func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 5)
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort :=
+		ports[0], ports[1], ports[2], ports[3], ports[4]
+	return tricksterHarness{
+		ConfigPath: writeTestConfig(t,
+			"../docs/developer/environment/trickster-config/trickster.yaml",
+			frontPort, metricsPort, mgmtPort, mysqlPort, flightPort, 0, 0),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MySQLAddr:    fmt.Sprintf("127.0.0.1:%d", mysqlPort),
+		releasePorts: release,
+	}, flightPort
+}
+
+func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
+	return tricksterHarness{
+		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0, 0, 0),
+		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
+		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
+		MgmtAddr:     fmt.Sprintf("127.0.0.1:%d", mgmtPort),
+		releasePorts: release,
+	}
+}
+
+// writeTestConfig renders configPath onto reserved ports and writes it to a
+// temp file. flightPort rebinds the influx3 backend's Flight SQL listener;
+// pass 0 to remove the Flight SQL listener. mods run after the ports are set
+// and before the file is written.
+func writeTestConfig(t *testing.T, configPath string,
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort int,
+	clickHouseHTTPOriginPort, clickHouseNativeOriginPort int,
+	mods ...func(*tkconfig.Config),
+) string {
+	t.Helper()
+	b, err := os.ReadFile(configPath)
 	require.NoError(t, err)
 	var c tkconfig.Config
 	require.NoError(t, yaml.Unmarshal(b, &c))
@@ -176,8 +223,10 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 		c.Listeners = make(listener.Lookup)
 	}
 	if _, ok := c.Listeners["default"]; !ok {
-		c.Listeners["default"] = &listener.Options{
-			ListenPort: 8480,
+		if c.Frontend != nil {
+			c.Listeners["default"] = listener.FromFrontend(c.Frontend)
+		} else {
+			c.Listeners["default"] = &listener.Options{ListenPort: 8480}
 		}
 	}
 	if _, ok := c.Listeners["metrics"]; !ok {
@@ -191,10 +240,59 @@ func writeTestConfig(t *testing.T, frontPort, metricsPort, mgmtPort int) string 
 		}
 	}
 	c.Listeners["default"].ListenPort = frontPort
+	c.Listeners["default"].ListenAddress = "127.0.0.1"
 	c.Listeners["metrics"].ListenPort = metricsPort
+	c.Listeners["metrics"].ListenAddress = "127.0.0.1"
 	c.Listeners["mgmt"].ListenPort = mgmtPort
+	c.Listeners["mgmt"].ListenAddress = "127.0.0.1"
+	if mysqlListener := c.Listeners["mysql1"]; mysqlListener != nil {
+		mysqlListener.ListenAddress = "0.0.0.0"
+		mysqlListener.ListenPort = mysqlPort
+	}
+	// The dev config binds its native ClickHouse listener to a fixed port; drop
+	// it so tests that don't reserve a port for it can't collide with a locally
+	// running dev instance, then re-add it on the reserved port when requested.
+	delete(c.Listeners, "clickhouse-native")
+	if click := c.Backends["click1"]; click != nil {
+		click.ListenerNames = []string{listener.DefaultFrontendName}
+	}
+	if clickHouseHTTPOriginPort > 0 && c.Backends["click1"] != nil {
+		c.Listeners["clickhouse-native"] = &listener.Options{
+			Protocol: listener.ProtocolClickHouse, ListenAddress: "127.0.0.1", ListenPort: clickHouseHTTPOriginPort,
+		}
+		c.Backends["click1"].ListenerNames = []string{listener.DefaultFrontendName, "clickhouse-native"}
+	}
+	if clickHouseNativeOriginPort > 0 && c.Backends["click1"] != nil {
+		c.Listeners["clickhouse-native-origin-native"] = &listener.Options{
+			Protocol: listener.ProtocolClickHouse, ListenAddress: "127.0.0.1", ListenPort: clickHouseNativeOriginPort,
+		}
+		nativeOrigin := c.Backends["click1"].Clone()
+		nativeOrigin.Name = "click-native"
+		nativeOrigin.OriginURL = "http://127.0.0.1:9000"
+		nativeOrigin.Protocol = "native"
+		nativeOrigin.CacheName = "mem2"
+		nativeOrigin.ListenerNames = []string{listener.DefaultFrontendName, "clickhouse-native-origin-native"}
+		c.Backends["click-native"] = nativeOrigin
+	}
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()
+	}
+	delete(c.Listeners, "influx3-flight")
+	if bo, ok := c.Backends["influx3"]; ok && bo != nil {
+		bo.ListenerNames = []string{listener.DefaultFrontendName}
+		if flightPort > 0 {
+			c.Listeners["influx3-flight"] = &listener.Options{
+				Protocol: listener.ProtocolFlightSQL, ListenAddress: "127.0.0.1", ListenPort: flightPort,
+			}
+			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
+		}
+	}
+	c.Frontend = nil
+	c.Metrics = nil
+	c.MgmtConfig.ListenAddress = ""
+	c.MgmtConfig.ListenPort = 0
+	for _, mod := range mods {
+		mod(&c)
 	}
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)

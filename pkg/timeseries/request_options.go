@@ -35,6 +35,9 @@ type RequestOptions struct {
 	BaseTimestampFieldName string
 	// ProviderRequest holds the original provider request in the provider's structure
 	ProviderRequest any
+	// MarshalVariesByRequest should be true for any Backend provider that doesn't guarantee that a rendered
+	// response can be shared across all concurrent requests for the same cache key.
+	MarshalVariesByRequest bool
 }
 
 // ExtractFastForwardDisabled will look for the FastForwardUserDisableFlag in the provided string

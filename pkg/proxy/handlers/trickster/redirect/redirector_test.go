@@ -20,11 +20,13 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
 func TestRedirector(t *testing.T) {
 	ctx := context.Background()
-	ctx = WithRedirects(ctx, 302, "http://trickstercache.org")
+	ctx = WithRedirects(ctx, 302, "http://"+appinfo.Domain)
 	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
 	w := httptest.NewRecorder()
 	HandleRedirectResponse(w, r)

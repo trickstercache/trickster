@@ -1,0 +1,61 @@
+# Example Prometheus alerting rules for Trickster TLS certificate rotation.
+# See docs/tls.md (Automatic Certificate Rotation Detection) and
+# docs/metrics.md for the metrics referenced here.
+groups:
+  - name: trickster-tls-certificates
+    rules:
+      # A serving certificate is approaching expiry. With rotation detection
+      # enabled (tls_watch_interval > 0), a renewal placed at the configured
+      # file paths is picked up automatically; this alert firing usually
+      # means the external renewal tooling has not produced a new cert.
+      - alert: TricksterTLSCertificateExpiringSoon
+        expr: |
+          (trickster_tls_certificate_expiration_time_seconds - time()) < (14 * 86400)
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trickster serving certificate expires in under 14 days"
+          description: >-
+            Certificate {{ $labels.entry }} on listener {{ $labels.listener }}
+            expires at {{ $value | humanizeTimestamp }}.
+
+      - alert: TricksterTLSCertificateExpired
+        expr: |
+          (trickster_tls_certificate_expiration_time_seconds - time()) < 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Trickster is serving an expired certificate"
+          description: >-
+            Certificate {{ $labels.entry }} on listener {{ $labels.listener }}
+            has expired. Clients will reject handshakes.
+
+      # A rotated certificate keeps failing validation (e.g. a mismatched
+      # cert/key pair was written); Trickster keeps serving the last-good
+      # pair, but the renewal is not taking effect.
+      - alert: TricksterTLSCertificateValidationFailing
+        expr: |
+          increase(trickster_tls_certificate_validation_failures_total[15m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trickster TLS certificate rotation is failing validation"
+          description: >-
+            The certificate source {{ $labels.entry }} has repeatedly failed
+            pair validation over the last 15 minutes; the previous certificate
+            is still being served.
+
+      # The watcher cannot read the certificate source files (deleted paths,
+      # permissions, unmounted volume). The last-good certificate keeps
+      # serving, but rotation detection is effectively stalled.
+      - alert: TricksterTLSWatcherStale
+        expr: |
+          increase(trickster_tls_watcher_errors_total[15m]) > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "Trickster TLS certificate watcher cannot read its sources"
+          description: >-
+            The watcher for {{ $labels.entry }} has repeatedly failed to read
+            its certificate source files over the last 15 minutes.

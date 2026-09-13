@@ -28,11 +28,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -43,6 +45,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
@@ -69,7 +72,7 @@ func TestListeners(t *testing.T) {
 			Certificates: make([]tls.Certificate, 1),
 		}
 		errs <- testLG.StartListener("httpListener",
-			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0, 0)
+			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0, nil)
 		close(errs)
 	}()
 
@@ -87,7 +90,7 @@ func TestListeners(t *testing.T) {
 	go func() {
 		errs2 <- testLG.StartListenerRouter("httpListener2",
 			"", 0, 20, nil, "/", http.HandlerFunc(local.HandleLocalResponse),
-			nil, nil, 0, 0)
+			nil, nil, 0)
 		close(errs2)
 	}()
 	time.Sleep(time.Millisecond * 300)
@@ -102,7 +105,7 @@ func TestListeners(t *testing.T) {
 	}
 
 	err = testLG.StartListener("testBadPort",
-		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0, 0)
+		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0, nil)
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
@@ -121,7 +124,7 @@ func TestUpdateRouter(t *testing.T) {
 func TestNewListenerErr(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil, 0)
+	l, err := NewListener("-", 0, 0, nil, nil)
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -134,7 +137,7 @@ func TestListenerAccept(t *testing.T) {
 	var err error
 	go func() {
 		err = testLG.StartListener("httpListener",
-			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0, 0)
+			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0, nil)
 	}()
 	time.Sleep(time.Millisecond * 500)
 	if err != nil {
@@ -174,7 +177,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig, 0)
+	l, err := NewListener("", 0, 0, tlsConfig, nil)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -229,7 +232,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			// Bind to port 0 so the kernel picks a free ephemeral port;
 			// fixed ports flake on shared CI runners when the prior
 			// subtest's socket lingers in TIME_WAIT.
-			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, 0)
+			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			} else {
@@ -480,7 +483,7 @@ func TestGroupWaitForReadySkipsNilMembers(t *testing.T) {
 func TestGroupWaitForReadyNoTimeoutBlocksUntilReady(t *testing.T) {
 	lg := NewGroup()
 	l := &Listener{readyCh: make(chan struct{})}
-	lg.members["member"] = l
+	lg.members[keys.Member] = l
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		l.markReady()
@@ -541,7 +544,7 @@ func TestDrainAndCloseServerShutdownError(t *testing.T) {
 	lg := NewGroup()
 	errs := make(chan error, 1)
 	go func() {
-		errs <- lg.StartListener("blocking", "127.0.0.1", 0, 0, nil, handler, nil, nil, 0, 0)
+		errs <- lg.StartListener("blocking", "127.0.0.1", 0, 0, nil, handler, nil, nil, 0, nil)
 	}()
 
 	var l *Listener
@@ -641,7 +644,7 @@ func TestStartListenerCallsFOnBindFailure(t *testing.T) {
 	var called bool
 	lg := NewGroup()
 	err := lg.StartListener("testBadPort", "", -31, 0, nil, http.NewServeMux(),
-		nil, func() { called = true }, 0, 0)
+		nil, func() { called = true }, 0, nil)
 	if err == nil {
 		t.Error("expected an error for an invalid port")
 	}
@@ -696,7 +699,7 @@ func runExitOnServeErrorChild(useTLS bool) {
 	}
 	go func() {
 		_ = lg.StartListener("child", "", 0, 0, tc, http.NewServeMux(), nil,
-			func() {}, 0, 0)
+			func() {}, 0, nil)
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -736,5 +739,294 @@ func TestAcceptWrapsLimitListenerConn(t *testing.T) {
 	defer conn.Close()
 	if _, ok := conn.(*observedConnection); !ok {
 		t.Errorf("Accept did not wrap LimitListener conn: got %T, want *observedConnection", conn)
+	}
+}
+
+func TestServerProtocols(t *testing.T) {
+	p := serverProtocols()
+	if p == nil {
+		t.Fatal("expected protocols to be set")
+	}
+	if !p.HTTP1() {
+		t.Error("HTTP/1.1 must remain enabled")
+	}
+	if !p.HTTP2() {
+		t.Error("HTTP/2 over TLS must remain enabled")
+	}
+	if !p.UnencryptedHTTP2() {
+		t.Error("expected h2c to be enabled")
+	}
+}
+
+// startBlockingListener starts an HTTP listener whose handler blocks until
+// release is closed and returns the listener once it is ready.
+func startBlockingListener(t *testing.T, lg *Group, name string, release <-chan struct{}) *Listener {
+	t.Helper()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release
+		w.WriteHeader(http.StatusOK)
+	})
+	go func() {
+		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, handler, nil, nil, 0, nil)
+	}()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if l := lg.Get(name); l != nil && l.State() == StateReady {
+			return l
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("listener %s did not become ready", name)
+	return nil
+}
+
+// inFlightRequest issues a request against l in the background and returns
+// the channel that receives the outcome.
+func inFlightRequest(l *Listener) <-chan error {
+	result := make(chan error, 1)
+	go func() {
+		resp, err := http.Get(fmt.Sprintf("http://%s/", l.Addr().String()))
+		if err == nil {
+			resp.Body.Close()
+		}
+		result <- err
+	}()
+	return result
+}
+
+func TestDrainAndCloseForceClosesAfterDeadline(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	release := make(chan struct{})
+	defer close(release)
+	lg := NewGroup()
+	l := startBlockingListener(t, lg, "blocking", release)
+	result := inFlightRequest(l)
+	time.Sleep(50 * time.Millisecond)
+
+	started := time.Now()
+	err := lg.DrainAndClose("blocking", 100*time.Millisecond)
+	if !stderrors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v; want deadline exceeded", err)
+	}
+	if elapsed := time.Since(started); elapsed > 2*time.Second {
+		t.Errorf("drain took %v; want roughly the 100ms deadline", elapsed)
+	}
+	if l.State() != StateStopped {
+		t.Errorf("state = %v; want stopped", l.State())
+	}
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Error("in-flight request completed; want its connection force-closed")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("in-flight connection was not closed after the drain deadline")
+	}
+}
+
+func TestGroupShutdownContextDrainsConcurrently(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	release := make(chan struct{})
+	defer close(release)
+	lg := NewGroup()
+	first := startBlockingListener(t, lg, "first", release)
+	second := startBlockingListener(t, lg, "second", release)
+	if !lg.Serving() {
+		t.Fatal("group with two serving listeners must be ready")
+	}
+	firstResult := inFlightRequest(first)
+	secondResult := inFlightRequest(second)
+	time.Sleep(50 * time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	err := lg.ShutdownContext(ctx)
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Errorf("shutdown took %v; listeners must drain concurrently within one deadline", elapsed)
+	}
+	if !stderrors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v; want deadline exceeded", err)
+	}
+	for _, result := range []<-chan error{firstResult, secondResult} {
+		select {
+		case err := <-result:
+			if err == nil {
+				t.Error("in-flight request completed; want its connection force-closed")
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("in-flight connection was not closed")
+		}
+	}
+	if lg.Serving() {
+		t.Error("drained group must not report ready")
+	}
+	select {
+	case <-lg.done:
+	default:
+		t.Error("done channel was not closed")
+	}
+}
+
+func TestGroupServing(t *testing.T) {
+	var nilGroup *Group
+	if nilGroup.Serving() {
+		t.Error("nil group reported ready")
+	}
+	lg := NewGroup()
+	if lg.Serving() {
+		t.Error("empty group reported ready")
+	}
+	starting := &Listener{}
+	starting.setState(StateStarting)
+	lg.members["starting"] = starting
+	if lg.Serving() {
+		t.Error("group with a starting listener reported ready")
+	}
+	starting.setState(StateReady)
+	if !lg.Serving() {
+		t.Error("group with only ready listeners reported not ready")
+	}
+	lg.members["nil"] = nil
+	if lg.Serving() {
+		t.Error("group with a nil member reported ready")
+	}
+}
+
+const runtimeCertSAN = "runtime.example.com"
+
+func TestStartListenerRuntimeCertStore(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	lg := NewGroup()
+	t.Cleanup(func() { _ = lg.Shutdown(0) })
+	const name = "runtime"
+	go func() {
+		_ = lg.StartListener(name, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
+			http.NotFoundHandler(), nil, nil, time.Second, nil)
+	}()
+	var l *Listener
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if l = lg.Get(name); l != nil && l.State() == StateReady {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if l == nil || l.CertSwapper() == nil {
+		t.Fatal("runtime-cert listener did not start with a certificate store")
+	}
+	store, ok := l.CertSwapper().(sw.CertStore)
+	if !ok {
+		t.Fatal("swapper does not implement CertStore")
+	}
+	dial := func() error {
+		conn, err := tls.Dial("tcp", l.Addr().String(), &tls.Config{
+			InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+			ServerName:         runtimeCertSAN,
+		})
+		if err == nil {
+			conn.Close()
+		}
+		return err
+	}
+	if err := dial(); err == nil {
+		t.Fatal("handshake succeeded with an empty certificate store")
+	}
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeCertSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := sw.ValidatePair(c, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.SetEntry(sw.NewEntry(sw.SourceKindMemory+":test", sw.SourceKindMemory, cert))
+	if err := dial(); err != nil {
+		t.Fatalf("handshake failed after the runtime certificate was set: %v", err)
+	}
+}
+
+type stubProtocolServer struct{}
+
+func (stubProtocolServer) Serve(net.Listener) error       { return nil }
+func (stubProtocolServer) Shutdown(context.Context) error { return nil }
+
+type stubPacketServer struct{}
+
+func (stubPacketServer) Serve(net.PacketConn) error     { return nil }
+func (stubPacketServer) Shutdown(context.Context) error { return nil }
+
+func TestGroupRefusesStartsAfterShutdown(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	lg := NewGroup()
+	if lg.Closed() {
+		t.Fatal("new group reported closed")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := lg.ShutdownContext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !lg.Closed() {
+		t.Fatal("group did not report closed after shutdown")
+	}
+	err := lg.StartListener("late-http", "127.0.0.1", 0, 0, nil, http.NotFoundHandler(),
+		nil, nil, time.Second, nil)
+	if !stderrors.Is(err, errors.ErrListenerGroupClosed) {
+		t.Errorf("StartListener after shutdown = %v; want %v", err, errors.ErrListenerGroupClosed)
+	}
+	err = lg.StartProtocolListener("late-proto", "stub", "127.0.0.1", 0, 0, stubProtocolServer{}, nil, nil)
+	if !stderrors.Is(err, errors.ErrListenerGroupClosed) {
+		t.Errorf("StartProtocolListener after shutdown = %v; want %v", err, errors.ErrListenerGroupClosed)
+	}
+	err = lg.StartPacketListener("late-packet", "stub", "127.0.0.1", 0, nil, http.NotFoundHandler(),
+		func(http.Handler, *tls.Config) PacketServer { return stubPacketServer{} }, nil)
+	if !stderrors.Is(err, errors.ErrListenerGroupClosed) {
+		t.Errorf("StartPacketListener after shutdown = %v; want %v", err, errors.ErrListenerGroupClosed)
+	}
+	if keys := lg.Keys(); len(keys) != 0 {
+		t.Errorf("group members after refused starts = %v; want none", keys)
+	}
+	var nilGroup *Group
+	if !nilGroup.Closed() {
+		t.Error("nil group must report closed")
+	}
+}
+
+func TestGroupOnPublish(t *testing.T) {
+	// whatever was prepared for a listener before it existed can be applied once
+	// the group publishes it
+	lg := NewGroup()
+	t.Cleanup(func() { lg.Shutdown(0) })
+	var mtx sync.Mutex
+	var keys []string
+	lg.OnPublish(func(key string) {
+		mtx.Lock()
+		keys = append(keys, key)
+		mtx.Unlock()
+	})
+	const key = "listener.hooked.http"
+	go lg.StartListener(key, "127.0.0.1", 0, 0, nil, http.NotFoundHandler(), nil, nil,
+		time.Second, nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		mtx.Lock()
+		n := len(keys)
+		mtx.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the publish hook was never called")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	mtx.Lock()
+	defer mtx.Unlock()
+	if len(keys) != 1 || keys[0] != key {
+		t.Errorf("published keys = %v; want [%s]", keys, key)
+	}
+	if lg.Get(key) == nil {
+		t.Error("the hook ran before the listener was in the group")
 	}
 }

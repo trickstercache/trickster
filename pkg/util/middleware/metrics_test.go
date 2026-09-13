@@ -120,3 +120,29 @@ func TestDecorate(t *testing.T) {
 		})
 	}
 }
+
+func TestDecorateReusesResponseObserver(t *testing.T) {
+	base := NewResponseObserver(httptest.NewRecorder())
+	var got http.ResponseWriter
+	h := Decorate("backend", "provider", "/", http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			got = w
+			_, _ = w.Write([]byte("ok"))
+		}))
+	h.ServeHTTP(base, httptest.NewRequest(http.MethodGet, "/", nil))
+	if got != base {
+		t.Error("expected metrics middleware to reuse the existing response observer")
+	}
+	if base.BytesWritten() != 2 || base.StatusCode() != http.StatusOK {
+		t.Errorf("unexpected observation: status=%d bytes=%d",
+			base.StatusCode(), base.BytesWritten())
+	}
+}
+
+func TestResponseObserverStatusClassBounds(t *testing.T) {
+	observer := NewResponseObserver(httptest.NewRecorder())
+	observer.statusCode = 999
+	if got := observer.StatusClass(); got != "0xx" {
+		t.Errorf("invalid status class = %q, want 0xx", got)
+	}
+}

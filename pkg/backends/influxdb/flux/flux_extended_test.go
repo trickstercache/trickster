@@ -64,23 +64,23 @@ func TestValidateMarshalerOptionsBranches(t *testing.T) {
 
 type fakeTimeseries struct{}
 
-func (fakeTimeseries) SetExtents(timeseries.ExtentList)         {}
-func (fakeTimeseries) Extents() timeseries.ExtentList           { return nil }
-func (fakeTimeseries) VolatileExtents() timeseries.ExtentList   { return nil }
-func (fakeTimeseries) SetVolatileExtents(timeseries.ExtentList) {}
+func (fakeTimeseries) SetExtents(timeseries.ExtentList)             {}
+func (fakeTimeseries) Extents() timeseries.ExtentList               { return nil }
+func (fakeTimeseries) VolatileExtents() timeseries.ExtentList       { return nil }
+func (fakeTimeseries) SetVolatileExtents(timeseries.ExtentList)     {}
 func (fakeTimeseries) SetTimeRangeQuery(*timeseries.TimeRangeQuery) {}
-func (fakeTimeseries) Step() time.Duration                      { return 0 }
-func (fakeTimeseries) Merge(bool, ...timeseries.Timeseries)     {}
-func (fakeTimeseries) Sort()                                    {}
-func (fakeTimeseries) ValueCount() int64                        { return 0 }
-func (fakeTimeseries) Size() int64                              { return 0 }
-func (fakeTimeseries) TimestampCount() int64                    { return 0 }
-func (fakeTimeseries) SeriesCount() int                         { return 0 }
-func (fakeTimeseries) Clone() timeseries.Timeseries             { return fakeTimeseries{} }
+func (fakeTimeseries) Step() time.Duration                          { return 0 }
+func (fakeTimeseries) Merge(bool, ...timeseries.Timeseries)         {}
+func (fakeTimeseries) Sort()                                        {}
+func (fakeTimeseries) ValueCount() int64                            { return 0 }
+func (fakeTimeseries) Size() int64                                  { return 0 }
+func (fakeTimeseries) TimestampCount() int64                        { return 0 }
+func (fakeTimeseries) SeriesCount() int                             { return 0 }
+func (fakeTimeseries) Clone() timeseries.Timeseries                 { return fakeTimeseries{} }
 func (fakeTimeseries) CroppedClone(timeseries.Extent) timeseries.Timeseries {
 	return fakeTimeseries{}
 }
-func (fakeTimeseries) CropToRange(timeseries.Extent) {}
+func (fakeTimeseries) CropToRange(timeseries.Extent)                {}
 func (fakeTimeseries) CropToSize(int, time.Time, timeseries.Extent) {}
 
 func TestGetFormattedTimestamp(t *testing.T) {

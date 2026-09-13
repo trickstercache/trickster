@@ -22,6 +22,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
@@ -42,7 +43,7 @@ func MakeMergeFunc[T any, PT merge.Mergeable[T]](errorType string,
 			instance = newInstance()
 			if err := json.Unmarshal(body, instance); err != nil {
 				logger.Error(errorType+" unmarshaling error",
-					logging.Pairs{"provider": providers.Prometheus, "detail": err.Error(), "body": string(body)})
+					logging.Pairs{keys.Provider: providers.Prometheus, keys.Detail: err.Error(), keys.Body: string(body)})
 				return err
 			}
 		} else {
@@ -76,7 +77,7 @@ func MakeMergeFuncFromBytes[T any, PT merge.Mergeable[T]](errorType string,
 		instance := newInstance()
 		if err := json.Unmarshal(body, instance); err != nil {
 			logger.Error(errorType+" unmarshaling error",
-				logging.Pairs{"provider": providers.Prometheus, "detail": err.Error()})
+				logging.Pairs{keys.Provider: providers.Prometheus, keys.Detail: err.Error()})
 			return err
 		}
 		return mergeFunc(accum, instance, idx)

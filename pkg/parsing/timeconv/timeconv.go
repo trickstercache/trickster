@@ -19,12 +19,16 @@ package timeconv
 
 import (
 	"crypto/rand"
+	"errors"
+	"fmt"
 	"math"
 	"math/big"
 	"strconv"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/util/strings"
+
+	"go.yaml.in/yaml/v3"
 )
 
 const (
@@ -236,6 +240,22 @@ func ParseDuration(s string) (time.Duration, error) {
 	return d, nil
 }
 
+// ErrNonPositiveDuration indicates a duration that must be greater than zero is not
+var ErrNonPositiveDuration = errors.New("duration must be greater than zero")
+
+// ParsePositiveDuration parses a duration that must carry a unit and be
+// greater than zero, as a timeout or time-to-live must
+func ParsePositiveDuration(s string) (time.Duration, error) {
+	d, err := ParseDuration(s)
+	if err != nil {
+		return 0, fmt.Errorf("must be a duration with a unit, such as 30s (got %q): %w", s, err)
+	}
+	if d <= 0 {
+		return 0, fmt.Errorf("%w (got %q)", ErrNonPositiveDuration, s)
+	}
+	return d, nil
+}
+
 // SleepRandomMS sleeps a random amount of MS between min and max (inclusive)
 func SleepRandomMS(min, max int) {
 	delay := min
@@ -250,13 +270,13 @@ func SleepRandomMS(min, max int) {
 type Duration time.Duration
 
 // UnmarshalYAML unmarshals a string into a timeconv.Duration
-func (d *Duration) UnmarshalYAML(unmarshal func(any) error) error {
-	var value string
-	if err := unmarshal(&value); err != nil {
+func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
+	var s string
+	if err := value.Decode(&s); err != nil {
 		return err
 	}
 
-	parsed, err := ParseDuration(value)
+	parsed, err := ParseDuration(s)
 	if err != nil {
 		return err
 	}

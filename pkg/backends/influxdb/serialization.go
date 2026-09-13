@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
+	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -50,6 +51,9 @@ func UnmarshalTimeseries(data []byte,
 	if promremote.IsParsedQuery(trq.ParsedQuery) {
 		return promremote.UnmarshalTimeseries(data, trq)
 	}
+	if isV3Query(trq) {
+		return isql.UnmarshalTimeseries(data, trq)
+	}
 	if strings.Contains(strings.ToLower(trq.Statement), flux.FuncRange) {
 		return flux.UnmarshalTimeseries(data, trq)
 	}
@@ -64,6 +68,9 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 	}
 	if promremote.IsParsedQuery(trq.ParsedQuery) {
 		return promremote.UnmarshalTimeseriesReader(reader, trq)
+	}
+	if isV3Query(trq) {
+		return isql.UnmarshalTimeseriesReader(reader, trq)
 	}
 	if strings.Contains(strings.ToLower(trq.Statement), flux.FuncRange) {
 		return flux.UnmarshalTimeseriesReader(reader, trq)
@@ -80,6 +87,9 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 	if iofmt.Format(rlo.OutputFormat).IsPromRemoteRead() {
 		return promremote.MarshalTimeseries(ts, rlo, status)
 	}
+	if rlo.OutputFormat >= iofmt.V3OutputJSON {
+		return isql.MarshalTimeseries(ts, rlo, status)
+	}
 	if iofmt.Format(rlo.OutputFormat).IsInfluxQL() {
 		return influxql.MarshalTimeseries(ts, rlo, status)
 	}
@@ -95,8 +105,24 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	if iofmt.Format(rlo.OutputFormat).IsPromRemoteRead() {
 		return promremote.MarshalTimeseriesWriter(ts, rlo, status, w)
 	}
+	if rlo.OutputFormat >= iofmt.V3OutputJSON {
+		return isql.MarshalTimeseriesWriter(ts, rlo, status, w)
+	}
 	if rlo.OutputFormat < 4 {
 		return influxql.MarshalTimeseriesWriter(ts, rlo, status, w)
 	}
 	return flux.MarshalTimeseriesWriter(ts, rlo, status, w)
+}
+
+// isV3Query returns true if the parsed query is a v3 query type (either the
+// native SQL query or a v3 InfluxQL wrapper around the v1 parse tree).
+func isV3Query(trq *timeseries.TimeRangeQuery) bool {
+	if trq.ParsedQuery == nil {
+		return false
+	}
+	switch trq.ParsedQuery.(type) {
+	case *isql.Query, *isql.V3InfluxQLQuery:
+		return true
+	}
+	return false
 }

@@ -54,6 +54,24 @@ func ProcessConfigs(rwl options.Lookup) (InstructionsLookup, error) {
 		}
 	}
 
+	// Propagate token use through chains without recursively walking cycles.
+	for range len(crw) {
+		var changed bool
+		for _, ri := range crw {
+			for _, instr := range ri {
+				ce, ok := instr.(*rwiChainExecutor)
+				if !ok || ce.hasTokens || !ce.rewriter.HasTokens() {
+					continue
+				}
+				ce.hasTokens = true
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+
 	return crw, nil
 }
 
@@ -63,8 +81,7 @@ func ParseRewriteList(rl options.RewriteList) (RewriteInstructions, error) {
 	var k int
 	for _, sri := range rl {
 		if len(sri) > 1 {
-			key := sri[0] + "-" + sri[1]
-			f, ok := rewriters[key]
+			f, ok := rewriters[instructionKey(sri[0], sri[1])]
 			if !ok {
 				return nil, errBadParams
 			}

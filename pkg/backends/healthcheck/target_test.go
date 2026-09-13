@@ -18,12 +18,14 @@ package healthcheck
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -71,14 +73,31 @@ func TestNewTarget(t *testing.T) {
 	o := ho.New()
 	o.FailureThreshold = -1
 	o.RecoveryThreshold = -1
-	o.Headers = map[string]string{"test-header": "test-header-value"}
+	o.Headers = map[string]string{"test-header": "test-header-value", "X-Probe-Flag": ""}
 	o.ExpectedHeaders = map[string]string{"test-header1": "test-header-value1"}
 	o.SetExpectedBody("expectedBody")
 	o.ExpectedCodes = nil
 
-	_, err = newTarget(ctx, "test", "test", o, nil)
+	var probed *http.Request
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		probed = r
+		return okProbeResponse(r), nil
+	})}
+	tgt, err := newTarget(ctx, "test", "test", o, client)
 	if err != nil {
 		t.Error(err)
+	}
+	tgt.probe(ctx)
+	if probed == nil {
+		t.Fatal("expected the probe to issue a request")
+	}
+	if v := probed.Header.Get("test-header"); v != "test-header-value" {
+		t.Errorf("expected test-header on the probe request, got %q", v)
+	}
+	// an explicitly configured empty value is still a present header: HTTP
+	// distinguishes absence from empty, and gateways may test membership
+	if vals, ok := probed.Header["X-Probe-Flag"]; !ok || len(vals) != 1 || vals[0] != "" {
+		t.Errorf("an empty-valued header must remain present on the wire, got %v ok=%t", vals, ok)
 	}
 
 	expected := `net/http: invalid method "INVALID METHOD"`
@@ -370,6 +389,55 @@ func TestDemandProbeClosesUpstreamBody(t *testing.T) {
 	require.Equal(t, "OK", w.Body.String())
 }
 
+func TestProtocolProbeTransitionsAndDemand(t *testing.T) {
+	probeErr := error(nil)
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		FailureThreshold:  1,
+		RecoveryThreshold: 1,
+		Timeout:           timeconv.Duration(time.Second),
+	}, func(context.Context) error {
+		return probeErr
+	})
+	require.NoError(t, err)
+
+	target.probe(context.Background())
+	require.Equal(t, StatusPassing, target.status.Get())
+	require.Equal(t, int32(1), target.successConsecutiveCnt.Load())
+
+	probeErr = errors.New("mysql origin refused the connection")
+	target.probe(context.Background())
+	require.Equal(t, StatusFailing, target.status.Get())
+	require.Contains(t, target.status.Detail(), "connection")
+
+	w := httptest.NewRecorder()
+	target.demandProbe(w)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+	require.Contains(t, w.Body.String(), "mysql origin refused the connection")
+
+	probeErr = nil
+	w = httptest.NewRecorder()
+	target.demandProbe(w)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "health check passed", w.Body.String())
+}
+
+func TestProtocolProbeTimeout(t *testing.T) {
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		FailureThreshold: 1,
+		Timeout:          timeconv.Duration(ho.MinProbeWait),
+	}, func(ctx context.Context) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	require.NoError(t, err)
+
+	started := time.Now()
+	target.probe(context.Background())
+	require.Less(t, time.Since(started), time.Second)
+	require.Equal(t, StatusFailing, target.status.Get())
+	require.Contains(t, target.status.Detail(), context.DeadlineExceeded.Error())
+}
+
 func newTestServer(responseCode int, responseBody string,
 	hdrs map[string]string,
 ) *httptest.Server {
@@ -380,4 +448,32 @@ func newTestServer(responseCode int, responseBody string,
 	}
 	s := httptest.NewServer(http.HandlerFunc(handler))
 	return s
+}
+
+// A target registered against a live pool must be probed at once: its
+// member cannot be admitted until a result arrives, so startup jitter
+// belongs to the cadence that follows, not in front of the first probe
+func TestFirstProbeIsImmediate(t *testing.T) {
+	var probes atomic.Int32
+	ts := httptest.NewServer(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			probes.Add(1)
+			w.WriteHeader(http.StatusOK)
+		}))
+	defer ts.Close()
+
+	hc := New()
+	defer hc.Shutdown()
+	st, err := hc.Register("immediate", "immediate", &ho.Options{
+		Interval:          timeconv.Duration(time.Hour),
+		Scheme:            "http",
+		Host:              ts.Listener.Addr().String(),
+		Path:              "/",
+		RecoveryThreshold: 1,
+	}, ts.Client())
+	require.NoError(t, err)
+	require.Eventually(t, func() bool {
+		return probes.Load() >= 1 && st.Get() == StatusPassing
+	}, 500*time.Millisecond, 5*time.Millisecond,
+		"first probe waited on startup jitter instead of running immediately")
 }

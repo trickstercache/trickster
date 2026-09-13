@@ -24,7 +24,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
@@ -34,15 +36,15 @@ const testURLRaw = "https://example.com:8480/path1/path2?param1=value&param2=val
 var testURL, _ = url.Parse(testURLRaw)
 
 var testRL0 = options.RewriteList{
-	[]string{"header", "set", "Cache-Control", "max-age=60"},
-	[]string{"header", "append", "Cache-Control", "max-age=300"},
-	[]string{"header", "append", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "private"},
+	[]string{"header", "set", headers.NameCacheControl, "max-age=60"},
+	[]string{"header", "append", headers.NameCacheControl, "max-age=300"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
 	[]string{"header", "set", "Test-Header", "Trickster"},
-	[]string{"header", "replace", "Cache-Control", "300", "60"},
+	[]string{"header", "replace", headers.NameCacheControl, "300", "60"},
 	[]string{"header", "delete", "Test-Header"},
-	[]string{"header", "delete", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "smax-age=30"},
+	[]string{"header", "delete", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "smax-age=30"},
 	[]string{"param", "set", "param1", "foo"},
 	[]string{"param", "append", "param1", "value2"},
 	[]string{"param", "set", "param2", "${trickster}"},
@@ -57,15 +59,15 @@ var testRL0 = options.RewriteList{
 }
 
 var testRLW1 = options.RewriteList{
-	[]string{"header", "set", "Cache-Control", "max-age=60"},
-	[]string{"header", "append", "Cache-Control", "max-age=300"},
-	[]string{"header", "append", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "private"},
+	[]string{"header", "set", headers.NameCacheControl, "max-age=60"},
+	[]string{"header", "append", headers.NameCacheControl, "max-age=300"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "private"},
 	[]string{"header", "set", "Test-Header", "Trickster"},
-	[]string{"header", "replace", "Cache-Control", "300", "60"},
+	[]string{"header", "replace", headers.NameCacheControl, "300", "60"},
 	[]string{"header", "delete", "Test-Header"},
-	[]string{"header", "delete", "Cache-Control", "private"},
-	[]string{"header", "append", "Cache-Control", "smax-age=30"},
+	[]string{"header", "delete", headers.NameCacheControl, "private"},
+	[]string{"header", "append", headers.NameCacheControl, "smax-age=30"},
 	[]string{"param", "set", "param1", "foo"},
 	[]string{"param", "append", "param1", "value2"},
 	[]string{"param", "set", "param2", "${trickster}"},
@@ -93,13 +95,13 @@ var testRL2 = options.RewriteList{
 var testRL3 = options.RewriteList{
 	[]string{"method", "set", "POST"},
 	[]string{"host", "set", "example.com:9090"},
-	[]string{"host", "replace", "example.com", "trickstercache.org"},
+	[]string{"host", "replace", "example.com", appinfo.Domain},
 	[]string{"port", "delete"},
 	[]string{"port", "set", "8000"},
 	[]string{"port", "replace", "000", "480"},
 	[]string{"scheme", "set", "https"},
 	[]string{"hostname", "set", "example.com"},
-	[]string{"hostname", "replace", "example.com", "trickstercache.org"},
+	[]string{"hostname", "replace", "example.com", appinfo.Domain},
 }
 
 type testRewriteInstruction struct{}
@@ -112,15 +114,15 @@ func (ri *testRewriteInstruction) HasTokens() bool       { return false }
 var testRWI = RewriteInstructions{&testRewriteInstruction{}}
 
 var testRI0 = RewriteInstructions{
-	&rwiKeyBasedSetter{key: "Cache-Control", value: "max-age=60"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "max-age=300"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "private"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "private"},
+	&rwiKeyBasedSetter{key: headers.NameCacheControl, value: "max-age=60"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "max-age=300"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "private"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "private"},
 	&rwiKeyBasedSetter{key: "Test-Header", value: "Trickster"},
-	&rwiKeyBasedReplacer{key: "Cache-Control", search: "300", replacement: "60"},
+	&rwiKeyBasedReplacer{key: headers.NameCacheControl, search: "300", replacement: "60"},
 	&rwiKeyBasedDeleter{key: "Test-Header"},
-	&rwiKeyBasedDeleter{key: "Cache-Control", value: "private"},
-	&rwiKeyBasedAppender{key: "Cache-Control", value: "smax-age=30"},
+	&rwiKeyBasedDeleter{key: headers.NameCacheControl, value: "private"},
+	&rwiKeyBasedAppender{key: headers.NameCacheControl, value: "smax-age=30"},
 	&rwiKeyBasedSetter{key: "param1", value: "foo"},
 	&rwiKeyBasedAppender{key: "param1", value: "value2"},
 	&rwiKeyBasedSetter{key: "param2", value: "${trickster}", hasTokens: true},
@@ -149,13 +151,13 @@ var testRI2 = RewriteInstructions{
 var testRI3 = RewriteInstructions{
 	&rwiBasicSetter{value: "POST"},
 	&rwiBasicSetter{value: "example.com:9090"},
-	&rwiBasicReplacer{search: "example.com", replacement: "trickstercache.org", depth: -1},
+	&rwiBasicReplacer{search: "example.com", replacement: appinfo.Domain, depth: -1},
 	&rwiPortDeleter{},
 	&rwiBasicSetter{value: "8000"},
 	&rwiBasicReplacer{search: "000", replacement: "480", depth: -1},
 	&rwiBasicSetter{value: "https"},
 	&rwiBasicSetter{value: "example.com"},
-	&rwiBasicReplacer{search: "example.com", replacement: "trickstercache.org", depth: -1},
+	&rwiBasicReplacer{search: "example.com", replacement: appinfo.Domain, depth: -1},
 }
 
 func TestParseRewriteList(t *testing.T) {
@@ -307,7 +309,7 @@ func TestDictFuncsNilRequest(t *testing.T) {
 }
 
 func TestExecuteRewriteInstructions(t *testing.T) {
-	exh0 := http.Header{"Cache-Control": []string{"max-age=60, smax-age=30"}}
+	exh0 := http.Header{headers.NameCacheControl: []string{"max-age=60, smax-age=30"}}
 	eu0, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param1=too&param3=trickster")
 	ri0, _ := ParseRewriteList(testRL0)
 
@@ -317,7 +319,7 @@ func TestExecuteRewriteInstructions(t *testing.T) {
 	eu2, _ := url.Parse("https://example.com:8480/path1/path2?param1=bar&param2=trickster&param3=foo&param1=too")
 	ri2, _ := ParseRewriteList(testRL2)
 
-	eu3, _ := url.Parse("https://trickstercache.org:8480/path1/path2?param1=value&param2=value&param1=value2")
+	eu3, _ := url.Parse("https://" + appinfo.Domain + ":8480/path1/path2?param1=value&param2=value&param1=value2")
 	ri3, _ := ParseRewriteList(testRL3)
 
 	tests := []struct {
@@ -402,7 +404,7 @@ func TestNilRequestGetters(t *testing.T) {
 }
 
 func TestMiscRequestGetters(t *testing.T) {
-	r := &http.Request{Method: "GET", URL: testURL}
+	r := &http.Request{Method: "GET", URL: urls.Clone(testURL)}
 	fm := scalarGets["method"]
 	fh := scalarGets["hostname"]
 
@@ -418,17 +420,17 @@ func TestMiscRequestGetters(t *testing.T) {
 }
 
 func TestMiscRequestSetters(t *testing.T) {
-	r := &http.Request{Method: "GET", URL: testURL}
+	r := &http.Request{Method: "GET", URL: urls.Clone(testURL)}
 	fp := scalarSets["port"]
 	fh := scalarSets["hostname"]
 
 	fp(nil, "")
 
 	fp(r, "8480")
-	fh(r, "trickstercache.org")
+	fh(r, appinfo.Domain)
 
-	if r.URL.Host != "trickstercache.org:8480" {
-		t.Errorf("expected %s got %s", "trickstercache.org:8480", r.URL.Host)
+	if r.URL.Host != appinfo.Domain+":8480" {
+		t.Errorf("expected %s got %s", appinfo.Domain+":8480", r.URL.Host)
 	}
 
 	var s rewriteInstruction
@@ -525,5 +527,16 @@ func TestReqChainHasTokens(t *testing.T) {
 	b := ri.HasTokens()
 	if b {
 		t.Error("expected false")
+	}
+}
+
+func TestPathPrefixReplacerString(t *testing.T) {
+	ri := &rwiPathPrefixReplacer{}
+	if err := ri.Parse([]string{"path", "prefix-replace", "/v1", "/v2/${x}"}); err != nil {
+		t.Fatal(err)
+	}
+	expected := `{"type":"pathPrefixReplacer","prefix":"/v1","replacement":"/v2/${x}","tokens":"true"}`
+	if ri.String() != expected {
+		t.Errorf("expected %s got %s", expected, ri.String())
 	}
 }

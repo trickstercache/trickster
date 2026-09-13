@@ -24,21 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 )
 
-const (
-	// NameVia represents the HTTP Header Name of "Via"
-	NameVia = "Via"
-	// NameForwarded reqresents the HTTP Header Name of "Forwarded"
-	NameForwarded = "Forwarded"
-	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
-	NameXForwardedFor = "X-Forwarded-For"
-	// NameXForwardedServer represents the HTTP Header Name of "X-Forwarded-Server"
-	NameXForwardedServer = "X-Forwarded-Server"
-	// NameXForwardedHost represents the HTTP Header Name of "X-Forwarded-Host"
-	NameXForwardedHost = "X-Forwarded-Host"
-	// NameXForwardedProto represents the HTTP Header Name of "X-Forwarded-Proto"
-	NameXForwardedProto = "X-Forwarded-Proto"
-)
-
 // Hop describes a collection of data about the forwarded request
 // to be used in Via, Forwarded and X-Forwarded-* headers
 type Hop struct {
@@ -213,16 +198,43 @@ func AddForwardedAndX(r *http.Request, hop *Hop) {
 	Merge(r.Header, h)
 }
 
+// ReceivedProtocol renders an HTTP version string (e.g., "HTTP/1.1") as the
+// received-protocol of a Via field. RFC 9110 7.6.3 omits the protocol-name
+// when it is HTTP, leaving only the version.
+func ReceivedProtocol(proto string) string {
+	if proto == "" {
+		return "1.1"
+	}
+	if v, ok := strings.CutPrefix(proto, "HTTP/"); ok {
+		return v
+	}
+	return proto
+}
+
+// viaValue appends this hop to prior, as "[prior, ]<version> <pseudonym>"
+func viaValue(prior, proto string) string {
+	hop := ReceivedProtocol(proto) + " " + appinfo.Server()
+	if prior == "" {
+		return hop
+	}
+	return prior + ", " + hop
+}
+
 // SetVia sets the "Via" header to the provided request
 func SetVia(r *http.Request, hop *Hop) {
 	if r == nil || r.Header == nil || hop == nil {
 		return
 	}
-	if hop.Via != "" {
-		r.Header.Set(NameVia, hop.Via+", "+hop.Protocol+" "+appinfo.Server())
-	} else {
-		r.Header.Set(NameVia, hop.Protocol+" "+appinfo.Server())
+	r.Header.Set(NameVia, viaValue(hop.Via, hop.Protocol))
+}
+
+// AddResponseVia appends this proxy to the Via field of a response received
+// over proto, so the client sees every intermediary the response passed through
+func AddResponseVia(h http.Header, proto string) {
+	if h == nil {
+		return
 	}
+	h.Set(NameVia, viaValue(strings.Join(h.Values(NameVia), ", "), proto))
 }
 
 // HopsFromRequest extracts a Hop reference that includes a list of any previous hops

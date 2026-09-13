@@ -17,6 +17,8 @@
 package setup
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	goruntime "runtime"
@@ -40,32 +42,41 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	te "github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
-// mtx guards the config loading and validation process,
-// to ensure only one operation can occur at a time.
-// There is no race-related reason for this mutex, it simply prevents overlapping config operations.
+// mtx guards config loading and validation so only one operation occurs at a time; it
+// prevents overlapping operations rather than any data race
 var mtx sync.Mutex
 
-// BootstrapConfig loads, validates, processes and prepares a configuration
-// along with its backend clients. This centralizes the common initialization
-// logic used by both startup and reload operations.
+// BootstrapConfig loads, validates, processes and prepares a configuration along with its
+// backend clients, the initialization both startup and reload share
 func BootstrapConfig(args ...string) (*config.Config, backends.Backends, error) {
-	conf, err := LoadAndValidate(args...)
+	return BootstrapConfigWithOverlay(nil, args...)
+}
+
+// BootstrapConfigWithOverlay is BootstrapConfig with an in-memory overlay
+// merged on top of the file-sourced configuration; a nil overlay is ignored.
+func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
+) (*config.Config, backends.Backends, error) {
+	conf, err := LoadAndValidateWithOverlay(overlay, args...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -94,12 +105,18 @@ func BootstrapConfig(args ...string) (*config.Config, backends.Backends, error) 
 }
 
 func LoadAndValidate(args ...string) (*config.Config, error) {
+	return LoadAndValidateWithOverlay(nil, args...)
+}
+
+// LoadAndValidateWithOverlay loads and validates the configuration with an
+// in-memory overlay merged on top of the file sources; nil means no overlay.
+func LoadAndValidateWithOverlay(overlay *config.Overlay, args ...string) (*config.Config, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 	// Load Config
-	cfg, err := config.Load(args)
+	cfg, err := config.LoadWithOverlay(args, overlay)
 	if err != nil {
-		logger.Error("Could not load configuration:", logging.Pairs{"error": err.Error()})
+		logger.Error("Could not load configuration:", logging.Pairs{keys.Error: err.Error()})
 		if cfg != nil && cfg.Flags != nil && cfg.Flags.ValidateConfig {
 			usage.PrintUsage()
 		}
@@ -108,7 +125,7 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	if cfg == nil || len(cfg.Backends) == 0 {
 		return nil, te.ErrInvalidOptions
 	}
-	if cfg.Flags != nil && (cfg.Flags.PrintVersion) {
+	if cfg.Flags != nil && cfg.Flags.PrintVersion {
 		return cfg, nil
 	}
 
@@ -135,10 +152,25 @@ func LoadAndValidate(args ...string) (*config.Config, error) {
 	return cfg, nil
 }
 
+// Shutdown stops the instance's background workers that reach upstreams
+// (autodiscovery, ALB pools and health check probes) and waits for them to exit.
+func Shutdown(si *instance.ServerInstance) {
+	if si == nil {
+		return
+	}
+	stopDiscovery(si)
+	if si.Backends != nil {
+		alb.StopPools(si.Backends)
+	}
+	if si.HealthChecker != nil {
+		si.HealthChecker.Shutdown()
+	}
+}
+
 func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	clients backends.Backends, hupFunc dr.Reloader, errorFunc func(),
 	lg *listener.Group,
-) error {
+) (retErr error) {
 	if si == nil || newConf == nil {
 		return nil
 	}
@@ -151,18 +183,35 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if newConf.MgmtConfig == nil {
 		newConf.MgmtConfig = mgmt.New()
 	}
+	firstStartup := si.Config == nil
+	if firstStartup {
+		applyLoggingConfig(newConf, nil)
+	}
 
 	if err := buildAuthenticators(newConf); err != nil {
 		return err
 	}
 
-	applyLoggingConfig(newConf, si.Config)
+	if err := reconfigureLogWriters(newConf); err != nil {
+		handleStartupIssue("log writer reconfiguration failed",
+			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
+		return err
+	}
+	rollbackLogWriters := !firstStartup
+	defer func() {
+		if rollbackLogWriters {
+			if err := reconfigureLogWriters(si.Config); err != nil {
+				retErr = errors.Join(retErr,
+					fmt.Errorf("restore previous log writer options: %w", err))
+			}
+		}
+	}()
 
 	// Register Tracing Configurations
 	tracers, err := tr.RegisterAll(newConf, false)
 	if err != nil {
 		handleStartupIssue("tracing registration failed",
-			logging.Pairs{"detail": err.Error()},
+			logging.Pairs{keys.Detail: err.Error()},
 			errorFunc)
 		return err
 	}
@@ -179,18 +228,27 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	mr := lm.NewRouter()
 	mr.SetMatchingScheme(router.MatchExactPath)
 
+	if si.Readiness == nil {
+		si.Readiness = &ready.State{}
+	}
+	// the readiness route is reserved: served ahead of every proxy listener's router rather
+	// than registered in it, so no backend can claim it, and registered on the management router
+	readyHandler := ready.HandlerFunc(si.Readiness, lg)
 	for _, r := range listenerRouters {
 		r.RegisterRoute(newConf.MgmtConfig.PingHandlerPath, nil,
-			[]string{http.MethodGet, http.MethodHead}, false,
-			http.HandlerFunc((pnh.HandlerFunc(newConf))))
+			[]string{http.MethodGet, http.MethodHead}, matching.PathMatchTypeExact,
+			http.HandlerFunc(pnh.HandlerFunc(newConf)))
 	}
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
+	// retire the old config's access loggers once the new routes are live
+	accesslog.BeginGeneration()
 	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
 	if err != nil {
+		accesslog.AbortGeneration()
 		handleStartupIssue("route registration failed",
-			logging.Pairs{"detail": err.Error()}, errorFunc)
+			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
 	}
 
@@ -199,7 +257,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	for _, r := range listenerRouters {
 		r.RegisterRoute(newConf.MgmtConfig.PurgeByKeyHandlerPath, nil,
-			[]string{http.MethodDelete}, true,
+			[]string{http.MethodDelete}, matching.PathMatchTypePrefix,
 			http.HandlerFunc(ph.KeyHandler(newConf.MgmtConfig.PurgeByKeyHandlerPath, clients)))
 	}
 
@@ -215,21 +273,50 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	}
 	si.HealthChecker, err = clients.StartHealthChecks(oldStatuses)
 	if err != nil {
+		accesslog.AbortGeneration()
 		// logs the error (no status code or target name)
 		healthcheck.LogHealthCheckError("", err, 0)
 		return err
 	}
+	rollbackLogWriters = false
+	if !firstStartup {
+		applyLoggingConfig(newConf, si.Config)
+	}
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
+	if err = applyDiscoveryConfig(si, newConf, clients, caches, tracers,
+		oldStatuses); err != nil {
+		handleStartupIssue("autodiscovery setup failed",
+			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
+		return err
+	}
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
-	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg)
+	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg,
+		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler})
 
+	accesslog.CommitGeneration(
+		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.LastReloadSuccessful.Set(1)
+	si.SetMgmtOptions(newConf.MgmtConfig)
 	si.Config = newConf
+	si.Tracers = tracers
 	si.Caches = caches
 	si.Backends = clients
-	si.Listeners = lg
+	// Reloads reuse the instance's group; publishing the same pointer again
+	// would race a forced shutdown without changing the active listeners.
+	if firstStartup {
+		si.Listeners = lg
+	}
+	return nil
+}
+
+func reconfigureLogWriters(c *config.Config) error {
+	for _, o := range c.LogManagerOptions() {
+		if err := logmanager.Reconfigure(o); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -257,12 +344,6 @@ func applyLoggingConfig(c, o *config.Config) {
 		c.MgmtConfig = mgmt.New()
 	}
 	if isReload {
-		if c.Logging.LogFile == o.Logging.LogFile &&
-			c.Logging.LogLevel == o.Logging.LogLevel {
-			// no changes in logging config,
-			// so we keep the old logger intact
-			return
-		}
 		if c.Logging.LogFile != o.Logging.LogFile {
 			if o.Logging.LogFile != "" {
 				// if we're changing from file1 -> console or file1 -> file2, close file1 handle
@@ -273,10 +354,9 @@ func applyLoggingConfig(c, o *config.Config) {
 			return
 		}
 		if c.Logging.LogLevel != o.Logging.LogLevel {
-			// the only change is the log level, so update it and return the original logger
-			oldLogger.SetLogLevel(level.Level(c.Logging.LogLevel))
-			return
+			oldLogger.SetLogLevel(c.Logging.LogLevel)
 		}
+		return
 	}
 	initLogger(c)
 }
@@ -308,17 +388,14 @@ func applyCachingConfig(si *instance.ServerInstance,
 				continue
 			}
 
-			// if the new and old caches with the same name are the same type, then assume
-			// the cache should be preserved between reconfigurations, but only if the Index
-			// is the only change. In this case, we'll apply the new index configuration,
-			// then add the old cache with the new index config to the new cache map
+			// a cache whose only change is its index is preserved across the reconfiguration:
+			// the new index configuration is applied to the old cache, which joins the new map
 			if ocfg.ProviderID == v.ProviderID &&
 				v.ProviderID == providers.MemoryID {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
-					// only index-backed clients carry index options; the memory
-					// cache manages its own sizing, so a failed assertion here
-					// is expected and simply means there is nothing to update
+					// only index-backed clients carry index options; the memory cache sizes
+					// itself, so a failed assertion means there is nothing to update
 					if m, ok := w.(*manager.Manager); ok {
 						if mc, ok := m.Client.(*index.IndexedClient); ok {
 							mc.UpdateOptions(v.Index)
@@ -354,15 +431,15 @@ func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {
 	}
 	safego.Go(func(r any, stack []byte) {
 		logger.Error("reload background goroutine panic", logging.Pairs{
-			"site":  "closeOldCache",
-			"cache": name,
-			"panic": r,
-			"stack": string(stack),
+			keys.Site:      "closeOldCache",
+			keys.CacheName: name,
+			keys.Panic:     r,
+			keys.Stack:     string(stack),
 		})
 	}, func() {
 		if err := w.Close(); err != nil {
 			logger.Warn("error closing old cache during reload",
-				logging.Pairs{"cache": name, "error": err.Error()})
+				logging.Pairs{keys.CacheName: name, keys.Error: err.Error()})
 		}
 	})
 }
@@ -379,7 +456,7 @@ func initLogger(c *config.Config) logging.Logger {
 			"commitID":  appinfo.GitCommitID,
 			"buildTime": appinfo.BuildTime,
 			"logLevel":  c.Logging.LogLevel,
-			"config":    c.ConfigFilePath(),
+			"config":    strings.Join(c.ConfigFilePaths(), ","),
 			"pid":       os.Getpid(),
 		},
 	)
@@ -387,9 +464,8 @@ func initLogger(c *config.Config) logging.Logger {
 }
 
 func delayedLogCloser(logger logging.Logger, delay time.Duration) {
-	// we can't immediately close the logger, because some outstanding
-	// http requests might still be on the old reference, so this will
-	// allow time for those connections to drain
+	// the logger is not closed at once, since outstanding requests may still hold the old
+	// reference; this allows those connections time to drain
 	if logger == nil {
 		return
 	}
@@ -401,7 +477,8 @@ func handleStartupIssue(event string, detail logging.Pairs, errorFunc func()) {
 	metrics.LastReloadSuccessful.Set(0)
 	if event != "" {
 		if errorFunc != nil {
-			logger.Error(event, detail)
+			logger.ErrorSynchronous(event, detail)
+			_ = logger.Flush()
 			errorFunc()
 		}
 		logger.Warn(event, detail)

@@ -1,0 +1,23 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+
+listeners:
+  default:
+    protocol: http
+    port: 8480
+  clickhouse-native:
+    protocol: clickhouse
+    port: 8487
+    connections_limit: 128
+
+backends:
+  click1:
+    provider: clickhouse
+    origin_url: http://clickhouse:8123
+    listener_names: [default, clickhouse-native]
+    cache_name: default
+    backfill_tolerance: 60s
+    timeseries_retention_factor: 2048
+
+    # To use a Native origin, change the URL to port 9000 and enable:
+    # protocol: native

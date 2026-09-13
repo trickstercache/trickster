@@ -135,6 +135,16 @@ func ErrorSynchronous(event string, detail logging.Pairs) {
 	logger.ErrorSynchronous(event, detail)
 }
 
+// Flush writes buffered output from the package-level logger when supported.
+func Flush() error {
+	mtx.Lock()
+	defer mtx.Unlock()
+	if flusher, ok := logger.(interface{ Flush() error }); ok {
+		return flusher.Flush()
+	}
+	return nil
+}
+
 func LogOnce(logLevel level.Level, key, event string, detail logging.Pairs) bool {
 	mtx.Lock()
 	defer mtx.Unlock()

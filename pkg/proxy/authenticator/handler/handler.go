@@ -28,6 +28,11 @@ import (
 // Middleware returns a handler that authenticates the request and passes to
 // the next handler on success, else responds with unauthorized and aborts
 func Middleware(a types.Authenticator, next http.Handler) http.Handler {
+	return NamedMiddleware("", a, next)
+}
+
+// NamedMiddleware authenticates requests and scopes cached results by name.
+func NamedMiddleware(name string, a types.Authenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if a == nil {
 			logger.WarnOnce("auth.middleware.nil.handle",
@@ -37,6 +42,7 @@ func Middleware(a types.Authenticator, next http.Handler) http.Handler {
 		}
 		// if the request has already been authorized, use the existing result
 		if rsc := request.GetResources(r); rsc != nil && rsc.AuthResult != nil &&
+			rsc.AuthResult.AuthenticatorName == name &&
 			rsc.AuthResult.Status != types.AuthObserved {
 			if rsc.AuthResult.Status != types.AuthSuccess {
 				failures.HandleUnauthorized(w, nil)
@@ -59,7 +65,9 @@ func Middleware(a types.Authenticator, next http.Handler) http.Handler {
 		}
 		// and cache the auth result to the request context
 		rsc := request.GetResources(r)
-		rsc.AuthResult = res
+		cached := *res
+		cached.AuthenticatorName = name
+		rsc.AuthResult = &cached
 		if res.Status == types.AuthSuccess {
 			a.Sanitize(r)
 		}

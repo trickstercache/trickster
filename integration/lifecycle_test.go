@@ -17,10 +17,12 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/signal"
 	"strings"
@@ -35,17 +37,26 @@ import (
 func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
 	// Drop prior SIGHUP handlers so this test owns the only live receiver.
 	signal.Reset(syscall.SIGHUP)
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(origin.Close)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", "testdata/configs/reload.yaml")
 
-	const metricsAddr = "127.0.0.1:8531"
-	waitForTrickster(t, metricsAddr)
+	h := staticConfigHarness(t, "testdata/configs/reload.yaml")
+	rewriteGeneratedConfig(t, h.ConfigPath, "http://127.0.0.1:9090", origin.URL)
+	if h.releasePorts != nil {
+		h.releasePorts()
+	}
+	runTrickster(t, ctx, "-config", h.ConfigPath)
+	waitForTrickster(t, h.MetricsAddr)
 
-	healthURL := "http://" + metricsAddr + "/trickster/health"
+	healthURL := "http://" + h.MetricsAddr + "/trickster/health"
 	requireTargetAvailable(t, healthURL, "prom1", 15*time.Second)
 
+	rewriteGeneratedConfig(t, h.ConfigPath, "log_level: info", "log_level: warn")
 	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP),
 		"failed to send SIGHUP for in-process reload")
 
@@ -87,4 +98,15 @@ func requireTargetAvailable(t *testing.T, healthURL, name string, timeout time.D
 			"expected %q in available=%v (body=%s)", name, names, strings.TrimSpace(string(b)))
 	}, timeout, 250*time.Millisecond,
 		"%q never became available at %s", name, healthURL)
+}
+
+func rewriteGeneratedConfig(t *testing.T, path, old, replacement string) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, 1, bytes.Count(b, []byte(old)), "expected one %q in generated config", old)
+	b = bytes.Replace(b, []byte(old), []byte(replacement), 1)
+	tmp := path + ".tmp"
+	require.NoError(t, os.WriteFile(tmp, b, 0o644))
+	require.NoError(t, os.Rename(tmp, path))
 }

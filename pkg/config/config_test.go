@@ -26,7 +26,9 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -364,7 +366,7 @@ func TestCheckAndMarkReloadInProgress(t *testing.T) {
 	c.Main.configLastModified = initialModTime.Add(-time.Second)
 	c.MgmtConfig = nil
 
-	if !c.CheckAndMarkReloadInProgress() {
+	if !c.CheckAndMarkReloadInProgress("", true) {
 		t.Fatal("expected modified config to be marked for reload")
 	}
 	if !c.Main.configLastModified.Equal(initialModTime) {
@@ -378,7 +380,7 @@ func TestCheckAndMarkReloadInProgress(t *testing.T) {
 	// Bypass the rate limit to prove the recorded timestamp prevents a
 	// duplicate reload of the same file version.
 	c.Main.configRateLimitTime = time.Time{}
-	if c.CheckAndMarkReloadInProgress() {
+	if c.CheckAndMarkReloadInProgress("", true) {
 		t.Error("expected the same config version not to trigger another reload")
 	}
 
@@ -387,11 +389,109 @@ func TestCheckAndMarkReloadInProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.Main.configRateLimitTime = time.Now().Add(time.Minute)
-	if c.CheckAndMarkReloadInProgress() {
+	if c.CheckAndMarkReloadInProgress("", true) {
 		t.Error("expected rate-limited check not to trigger a reload")
 	}
 	if !c.Main.configLastModified.Equal(initialModTime) {
 		t.Error("rate-limited check unexpectedly marked the newer file version")
+	}
+}
+
+func TestHasConfigChangedDoesNotApplyRateLimit(t *testing.T) {
+	var nilConfig *Config
+	if nilConfig.HasConfigChanged() {
+		t.Error("nil config reported changed")
+	}
+	if NewConfig().HasConfigChanged() {
+		t.Error("config without a file path reported changed")
+	}
+	missingConfig := NewConfig()
+	missingConfig.Main.configFilePath = filepath.Join(t.TempDir(), "missing.yaml")
+	if missingConfig.HasConfigChanged() {
+		t.Error("missing config file reported changed")
+	}
+
+	testFile := filepath.Join(t.TempDir(), "trickster_test.conf")
+	_, yml := emptyTestConfig()
+	if err := os.WriteFile(testFile, []byte(yml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := Load([]string{"-config", testFile})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.MgmtConfig.ReloadRateLimit = timeconv.Duration(time.Hour)
+	if c.HasConfigChanged() {
+		t.Fatal("freshly loaded config reported changed")
+	}
+
+	if err := os.WriteFile(testFile, []byte(yml+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modified := c.Main.configLastModified.Add(time.Second)
+	if err := os.Chtimes(testFile, modified, modified); err != nil {
+		t.Fatal(err)
+	}
+	if !c.HasConfigChanged() || !c.HasConfigChanged() {
+		t.Error("read-only change check was unexpectedly rate limited")
+	}
+}
+
+func TestHasConfigChangedAfterProjectedVolumeSwap(t *testing.T) {
+	root := t.TempDir()
+	firstRevision := filepath.Join(root, "..2026_01")
+	secondRevision := filepath.Join(root, "..2026_02")
+	for _, dir := range []string{firstRevision, secondRevision} {
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const backendYAML = "backends:\n  test:\n    provider: test\n    origin_url: http://1\n"
+	const firstYAML = backendYAML + "frontend:\n  listen_port: 8480\n"
+	const secondYAML = backendYAML + "frontend:\n  listen_port: 8481\n"
+	firstConfig := filepath.Join(firstRevision, "trickster.yaml")
+	secondConfig := filepath.Join(secondRevision, "trickster.yaml")
+	if err := os.WriteFile(firstConfig, []byte(firstYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(secondConfig, []byte(secondYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	firstModified := time.Now().Add(-2 * time.Hour)
+	secondModified := firstModified.Add(time.Hour)
+	if err := os.Chtimes(firstConfig, firstModified, firstModified); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(secondConfig, secondModified, secondModified); err != nil {
+		t.Fatal(err)
+	}
+
+	dataLink := filepath.Join(root, "..data")
+	if err := os.Symlink(firstRevision, dataLink); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	configPath := filepath.Join(root, "trickster.yaml")
+	if err := os.Symlink(filepath.Join("..data", "trickster.yaml"), configPath); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+
+	c, err := Load([]string{"-config", configPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HasConfigChanged() {
+		t.Fatal("fresh projected config reported changed")
+	}
+	if err := os.Remove(dataLink); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secondRevision, dataLink); err != nil {
+		t.Fatal(err)
+	}
+	if !c.HasConfigChanged() {
+		t.Error("projected volume symlink swap was not detected")
 	}
 }
 
@@ -401,24 +501,17 @@ func TestConfigFilePath(t *testing.T) {
 	if c.ConfigFilePath() != emptyFilePath {
 		t.Errorf("expected %s got %s", emptyFilePath, c.ConfigFilePath())
 	}
+	paths := c.ConfigFilePaths()
+	if len(paths) != 1 || paths[0] != emptyFilePath {
+		t.Errorf("expected [%s] got %v", emptyFilePath, paths)
+	}
 
 	c.Main = nil
 	if c.ConfigFilePath() != "" {
 		t.Errorf("expected %s got %s", "", c.ConfigFilePath())
 	}
-}
-
-func TestSetStalenessInfo(t *testing.T) {
-	fp := "trickster"
-	t1 := time.Now()
-	t2 := t1.Add(-1 * time.Minute)
-
-	mc := &MainConfig{}
-	mc.SetStalenessInfo(fp, t1, t2)
-
-	if fp != mc.configFilePath || !t1.Equal(mc.configLastModified) ||
-		!t2.Equal(mc.configRateLimitTime) {
-		t.Error("mismatch")
+	if c.ConfigFilePaths() != nil {
+		t.Errorf("expected nil paths got %v", c.ConfigFilePaths())
 	}
 }
 
@@ -469,4 +562,23 @@ func TestConfig_defaulting(t *testing.T) {
 // remove any values that are non-deterministic
 func clean(c *Config) {
 	c.Main.ServerName = "trickster-test"
+}
+
+func TestLogManagerOptionsIncludesDefaultAccessLog(t *testing.T) {
+	c := NewConfig()
+	c.Logging.LogFile = ""
+	c.AccessLog = &alo.Options{Filename: "stdout", ErrorFilename: "/var/log/trickster/errors.log"}
+	c.Backends["default"].AccessLog = &alo.Options{Filename: "/var/log/trickster/default.log"}
+	options := c.LogManagerOptions()
+	names := make([]string, len(options))
+	for i, o := range options {
+		names[i] = o.Filename
+	}
+	if len(names) != 3 || names[0] != "stdout" {
+		t.Fatalf("log manager filenames = %v; want the default access, error and backend logs", names)
+	}
+	if clone := c.Clone(); clone.AccessLog == nil || clone.AccessLog == c.AccessLog ||
+		clone.AccessLog.Filename != "stdout" {
+		t.Error("clone did not deep-copy the default access log")
+	}
 }

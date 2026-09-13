@@ -1,0 +1,7 @@
+# The namespace the Gateway API / Ingress controller deployment below runs
+# in. Every gateway-*.yaml manifest names it, as does the ClusterRoleBinding
+# subject, so a different namespace is a find-and-replace of `trickster`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trickster

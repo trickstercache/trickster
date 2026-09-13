@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -52,10 +53,8 @@ import (
 )
 
 const (
-	statusOff  = "off"
-	statusErr  = "err"
-	statusHit  = "hit"
-	statusMiss = "miss"
+	statusOff = "off"
+	statusErr = "err"
 
 	// errorBodyCap bounds the amount of upstream error body copied into
 	// HTTPDocument on non-2xx responses. Protects singleflight waiters
@@ -72,7 +71,7 @@ func dpcProxyErrorStatusCode(statusCode int) int {
 }
 
 // fetchFastForward executes a fast-forward request and merges the result into rts.
-// Returns the fast-forward status string ("off", "hit", "miss", or "err").
+// Returns the fast-forward status string ("off", "hit", "kmiss", or "err").
 func fetchFastForward(
 	ctx context.Context, r *http.Request,
 	o *bo.Options, cc *co.Options, cache tc.Cache,
@@ -118,9 +117,9 @@ func fetchFastForward(
 	}
 	ffts.SetTimeRangeQuery(trq)
 	x := ffts.Extents()
-	ffStatus := statusMiss
+	ffStatus := status.StatusKeyMiss
 	if isHit {
-		ffStatus = statusHit
+		ffStatus = status.StatusHit
 	}
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
 	// the cropped extent was normalized to step boundaries and would remove fast forward data.
@@ -226,7 +225,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		}
 		if canOPC {
 			logger.Debug("could not parse time range query, using object proxy cache",
-				logging.Pairs{"error": err.Error()})
+				logging.Pairs{keys.Error: err.Error()})
 			rsc.AlternateCacheTTL = time.Minute
 			ObjectProxyCacheRequest(w, r)
 			return
@@ -249,6 +248,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	pr := newProxyRequest(r, w)
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
+	// providers whose marshaling depends on parameters outside the cache key
+	// must not share one pre-marshaled body across singleflight waiters
+	marshalVaries := rlo.MarshalVariesByRequest
 	// republish trq after normalize so concurrent readers see the normalized extent atomically
 	rsc.Lock()
 	trq.NormalizeExtent()
@@ -278,7 +280,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	if err := client.SetExtent(pr.upstreamRequest, trq, &trq.Extent); err != nil {
 		logger.Error("could not rewrite time range query",
-			logging.Pairs{"error": err.Error(), "backend": client.Name()})
+			logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})
 		failures.HandleInternalServerError(w, r)
 		return
 	}
@@ -345,7 +347,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 				if err != nil {
 					logger.Error("cache object unmarshaling failed",
-						logging.Pairs{"key": key, "backendName": client.Name(), "detail": err.Error()})
+						logging.Pairs{keys.Key: key, keys.BackendName: client.Name(), keys.Detail: err.Error()})
 					goWithRecover("dpc.cache.Remove.unmarshal", func() { cache.Remove(key) })
 					cts, doc, elapsed, failedExts, severeFault = fetchTimeseries(pr, trq, client, modeler)
 					if len(failedExts) > 0 && severeFault {
@@ -473,6 +475,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			} else {
 				rts = cts.Clone()
 			}
+			rts.SetTimeRangeQuery(trq)
 
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
@@ -491,10 +494,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 						o.CompressibleTypes, modeler.CacheMarshaler); werr != nil {
 						logger.Error("error writing object to cache",
 							logging.Pairs{
-								"backendName": o.Name,
-								"cacheName":   cache.Configuration().Name,
-								"cacheKey":    key,
-								"detail":      werr.Error(),
+								keys.BackendName: o.Name,
+								keys.CacheName:   cache.Configuration().Name,
+								"cacheKey":       key,
+								keys.Detail:      werr.Error(),
 							},
 						)
 					}
@@ -506,13 +509,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			ffStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
 				rlo, trq, normalizedNow, modeler, rts)
 
-			// marshal the response timeseries to wire format
+			// marshal the response timeseries to wire format, unless the
+			// provider renders per request (see MarshalVariesByRequest), in
+			// which case each caller marshals the shared timeseries itself
 			rts.SetExtents(nil) // so they are not included in the client response json
-			var buf bytes.Buffer
-			modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
+			var wireBody []byte
+			if !marshalVaries {
+				var buf bytes.Buffer
+				modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
+				wireBody = buf.Bytes()
+			}
 
 			return &dpcResult{
-				wireBody:           buf.Bytes(),
+				wireBody:           wireBody,
 				rts:                rts,
 				headers:            doc.SafeHeaderClone(),
 				statusCode:         doc.StatusCode,
@@ -563,9 +572,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		rh := result.headers.Clone()
 		sc := result.statusCode
 
-		// for merge members or requests with a TSTransformer, provide the timeseries
-		if rsc.IsMergeMember || rsc.TSTransformer != nil {
-			rts := result.rts.Clone()
+		// for merge members, requests with a TSTransformer, and providers
+		// that render per request, provide the timeseries rather than the
+		// executor's pre-marshaled body
+		if rsc.IsMergeMember || rsc.TSTransformer != nil || marshalVaries {
+			rts := result.rts
+			if rsc.TSTransformer != nil || (rsc.IsMergeMember && !marshalVaries) {
+				rts = result.rts.Clone()
+			}
 			finalizeDPCResponse(w, r, rsc, rts, rh, sc,
 				cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
 				result.failedExtents, result.uncachedValueCount, key, o, rlo, modeler, nil)
@@ -599,6 +613,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		return
 	}
 	rts = cts.Clone()
+	rts.SetTimeRangeQuery(trq)
 
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 
@@ -775,7 +790,7 @@ func fetchExtents(
 				dpcEncodingProfile.Clone()))
 			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e); err != nil {
 				logger.Error("could not rewrite cache-miss time range query",
-					logging.Pairs{"error": err.Error(), "backend": client.Name()})
+					logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})
 				errTs[i] = el[i]
 				respLock.Lock()
 				if mresp.StatusCode < http.StatusInternalServerError {
@@ -813,10 +828,14 @@ func fetchExtents(
 			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				nts, ferr := wur(getDecoderReader(resp), rsc.TimeRangeQuery)
+				dr := getDecoderReader(resp)
+				if format := resp.Header.Get("X-ClickHouse-Format"); format != "" {
+					dr = timeseries.NewFormatHintReader(dr, format)
+				}
+				nts, ferr := wur(dr, rsc.TimeRangeQuery)
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
-						logging.Pairs{"detail": ferr.Error()})
+						logging.Pairs{keys.Detail: ferr.Error()})
 					errTs[i] = el[i]
 					return nil
 				}
@@ -836,7 +855,7 @@ func fetchExtents(
 					b, readErr = io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
 					if readErr != nil {
 						logger.Warn("failed to read upstream error response body",
-							logging.Pairs{"detail": readErr.Error()})
+							logging.Pairs{keys.Detail: readErr.Error()})
 					}
 					s = string(b)
 					respLock.Lock()
@@ -848,7 +867,7 @@ func fetchExtents(
 				}
 				logger.Error("unexpected upstream response",
 					logging.Pairs{
-						"statusCode":              resp.StatusCode,
+						keys.StatusCode:           resp.StatusCode,
 						"clientRequestURL":        pr.Request.URL.String(),
 						"clientRequestMethod":     pr.Request.Method,
 						"clientRequestHeaders":    headers.SanitizeForLogging(pr.Request.Header),
@@ -866,27 +885,10 @@ func fetchExtents(
 	eg.Wait()
 
 	fullFaults := false
-	trimmedList := trimEmptyExtents(errTs)
+	trimmedList := errTs.TrimEmptyExtents()
 	if trimmedList.Len() == el.Len() {
 		fullFaults = true
 	}
 
 	return mts, uncachedValueCount.Load(), mresp, trimmedList, fullFaults
-}
-
-func trimEmptyExtents(failedExtents timeseries.ExtentList) timeseries.ExtentList {
-	trimmedList := make(timeseries.ExtentList, len(failedExtents))
-	emptyExtent := timeseries.Extent{}
-
-	var cursor int
-	for _, extent := range failedExtents {
-		if extent == emptyExtent {
-			continue
-		}
-
-		trimmedList[cursor] = extent
-		cursor++
-	}
-
-	return trimmedList[:cursor]
 }

@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	prommodel "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -446,7 +447,7 @@ func TestTSMLimitRatioSurfacesPartialAndCaptureFailures(t *testing.T) {
 			if !strings.Contains(w.Body.String(), "tsm partial failure") {
 				t.Fatalf("body missing partial warning: %q", w.Body.String())
 			}
-			if got := w.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "phit") {
+			if got := w.Header().Get(headers.NameTricksterResult); !strings.Contains(got, status.StatusPartialHit) {
 				t.Fatalf("result header got %q want phit", got)
 			}
 		})

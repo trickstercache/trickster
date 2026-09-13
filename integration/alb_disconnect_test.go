@@ -32,6 +32,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
 
 	"github.com/stretchr/testify/require"
@@ -122,10 +123,12 @@ func mkDisconnectMatrix(label string, start, end, step int64) string {
 }
 
 // runDisconnectMidFanout shares the body of the TSM/NLM tests. mech selects
-// the ALB mechanism, frontPort/metricsPort/mgmtPort select disjoint ports per
-// test so the suite stays parallel-safe.
-func runDisconnectMidFanout(t *testing.T, mech string, frontPort, metricsPort, mgmtPort int) {
+// the ALB mechanism.
+func runDisconnectMidFanout(t *testing.T, mech string) {
 	t.Helper()
+
+	ports, releasePorts := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 	const stubs = 3
 	stubsArr := make([]*disconnectStub, stubs)
@@ -166,7 +169,8 @@ func runDisconnectMidFanout(t *testing.T, mech string, frontPort, metricsPort, m
 
 	ctx, cancelTrickster := context.WithCancel(context.Background())
 	t.Cleanup(cancelTrickster)
-	go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+	releasePorts()
+	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 	// Settle goroutine count after Trickster startup (HTTP servers, listeners,
@@ -286,9 +290,9 @@ func runDisconnectMidFanout(t *testing.T, mech string, frontPort, metricsPort, m
 }
 
 func TestALB_TSM_ClientDisconnectMidFanout(t *testing.T) {
-	runDisconnectMidFanout(t, "tsm", 19200, 19201, 19202)
+	runDisconnectMidFanout(t, "tsm")
 }
 
 func TestALB_NLM_ClientDisconnectMidFanout(t *testing.T) {
-	runDisconnectMidFanout(t, "nlm", 19210, 19211, 19212)
+	runDisconnectMidFanout(t, "nlm")
 }

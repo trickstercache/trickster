@@ -17,8 +17,8 @@ logging:
 
 negative_caches:
   default:
-    "400": 3
-    "500": 3
+    "400": 3s
+    "500": 3s
 
 caches:
   mem1:

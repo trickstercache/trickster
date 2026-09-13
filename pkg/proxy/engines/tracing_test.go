@@ -23,11 +23,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	otracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -82,7 +85,7 @@ func TestCacheSpansIncludeResourceAttributesAndStatus(t *testing.T) {
 	tu.RequireSpanAttributes(t, sr, "WriteCache", resourceAttributeStrings(rsc))
 
 	wantQuery := resourceAttributeStrings(rsc)
-	wantQuery["cache.status"] = "hit"
+	wantQuery["cache.status"] = status.StatusHit
 	tu.RequireSpanAttributes(t, sr, "QueryCache", wantQuery)
 }
 
@@ -102,7 +105,7 @@ func TestDoProxySpanIncludesResourceStatusAttributes(t *testing.T) {
 	}
 
 	want := resourceAttributeStrings(rsc)
-	want["cache.status"] = "proxy-only"
+	want["cache.status"] = status.StatusProxyOnly
 	want["http.status_code"] = "202"
 	tu.RequireSpanAttributes(t, sr, "ProxyRequest", want)
 }
@@ -229,7 +232,7 @@ func TestPrepareFetchReaderPropagatesIncomingTraceContextToOrigin(t *testing.T) 
 }
 
 func TestObjectProxyCacheRequestSpanIncludesResourceStatusAttributes(t *testing.T) {
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusPartialContent, hdrs)
 	if err != nil {
 		t.Fatal(err)
@@ -242,13 +245,13 @@ func TestObjectProxyCacheRequestSpanIncludesResourceStatusAttributes(t *testing.
 	r.Header.Add(headers.NameRange, "bytes=0-3")
 	r = request.SetResources(r, rsc)
 
-	_, errs := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{"status": "kmiss"})
+	_, errs := testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err := range errs {
 		t.Error(err)
 	}
 
 	want := resourceAttributeStrings(rsc)
-	want["cache.status"] = "kmiss"
+	want["cache.status"] = status.StatusKeyMiss
 	want["http.status_code"] = "206"
 	tu.RequireSpanAttributes(t, sr, "ObjectProxyCacheRequest", want)
 }
@@ -289,9 +292,9 @@ func resourceAttributeStrings(rsc *request.Resources) map[string]string {
 func latestEndedSpan(t testing.TB, sr *tracetest.SpanRecorder, name string) sdktrace.ReadOnlySpan {
 	t.Helper()
 	spans := sr.Ended()
-	for i := len(spans) - 1; i >= 0; i-- {
-		if spans[i].Name() == name {
-			return spans[i]
+	for _, span := range slices.Backward(spans) {
+		if span.Name() == name {
+			return span
 		}
 	}
 	t.Fatalf("span %q not found in %d ended spans", name, len(spans))

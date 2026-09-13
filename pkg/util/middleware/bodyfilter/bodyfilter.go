@@ -35,12 +35,21 @@ func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 		}
 		b, err := request.GetBody(r, maxSize)
 		if err != nil && (!truncateOnly || !errors.Is(err, failures.ErrPayloadTooLarge)) {
-			failures.HandleBadRequestResponse(w, nil)
+			// an over-limit body is 413 whether it was read here or served
+			// from a middleware's cached copy; other read failures are 400
+			if errors.Is(err, failures.ErrPayloadTooLarge) {
+				failures.HandlePayloadTooLarge(w, nil)
+			} else {
+				failures.HandleBadRequestResponse(w, nil)
+			}
 			return
 		}
 		if !truncateOnly && int64(len(b)) > maxSize {
 			failures.HandlePayloadTooLarge(w, nil)
 			return
+		}
+		if truncateOnly && errors.Is(err, failures.ErrPayloadTooLarge) {
+			request.SetBody(r, b)
 		}
 		next.ServeHTTP(w, r)
 	})

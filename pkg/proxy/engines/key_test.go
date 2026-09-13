@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -137,8 +138,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	pr := newProxyRequest(tr, nil)
 	ck := pr.DeriveCacheKey("extra")
 
-	if ck != "52dc11456c84506d3444e53ee4c99777" {
-		t.Errorf("expected %s got %s", "52dc11456c84506d3444e53ee4c99777", ck)
+	if ck != "6ddef55b5e18cb0ec83c063baeba757950a8961fe5378d111dc88dfb6b284d1e" {
+		t.Errorf("expected %s got %s", "6ddef55b5e18cb0ec83c063baeba757950a8961fe5378d111dc88dfb6b284d1e", ck)
 	}
 
 	cfg.Paths[0].CacheKeyParams = []string{"*"}
@@ -146,11 +147,11 @@ func TestDeriveCacheKey(t *testing.T) {
 	pr = newProxyRequest(tr, nil)
 	// might need to get something into the resources
 	ck = pr.DeriveCacheKey("extra")
-	if ck != "407aba34f02c87f6898a6d80b01f38a4" {
-		t.Errorf("expected %s got %s", "407aba34f02c87f6898a6d80b01f38a4", ck)
+	if ck != "d81e1837216dabf4f2f37948adefb6e26590a8789f1185c94b70c30fe8d8f132" {
+		t.Errorf("expected %s got %s", "d81e1837216dabf4f2f37948adefb6e26590a8789f1185c94b70c30fe8d8f132", ck)
 	}
 
-	const expected = "cb84ad010abb4d0f864470540a46f137"
+	const expected = "413fc9503d82e6845cbbb94c1a328539d3e0dd84eaa17ebcbb8976b7a0f1a5aa"
 
 	tr = httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", strings.NewReader("field1=value1"))
 	tr = tr.WithContext(ct.WithResources(context.Background(), newResources()))
@@ -167,8 +168,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(testMultipartBody)))
 	pr = newProxyRequest(tr, nil)
 	ck = pr.DeriveCacheKey("extra")
-	if ck != "279463f7c59dd2736dc28dc7531208b2" {
-		t.Errorf("expected %s got %s", "279463f7c59dd2736dc28dc7531208b2", ck)
+	if ck != "29f3afd85b9459b5e88d4a53bbf4d9eb97581193ea8c03be6df25e51c36ce765" {
+		t.Errorf("expected %s got %s", "29f3afd85b9459b5e88d4a53bbf4d9eb97581193ea8c03be6df25e51c36ce765", ck)
 	}
 
 	_, _, tr, _, _ = tu.NewTestInstance("", nil, 0, "", nil,
@@ -181,8 +182,8 @@ func TestDeriveCacheKey(t *testing.T) {
 	pr = newProxyRequest(tr, nil)
 
 	ck = pr.DeriveCacheKey("extra")
-	if ck != "82c1d86126a02b96b8d0fcb94a9f486a" {
-		t.Errorf("expected %s got %s", "82c1d86126a02b96b8d0fcb94a9f486a", ck)
+	if ck != "4fc96fcea5718b03be6d03eb07cbc2ae92e77a4a6d01941bb8ec7a8be904efb0" {
+		t.Errorf("expected %s got %s", "4fc96fcea5718b03be6d03eb07cbc2ae92e77a4a6d01941bb8ec7a8be904efb0", ck)
 	}
 
 	// Test Custom KeyHasher Integration
@@ -202,6 +203,106 @@ func TestDeriveCacheKey(t *testing.T) {
 	ck = pr.DeriveCacheKey("extra")
 	if ck != "test-key" {
 		t.Errorf("expected %s got %s", expected, ck)
+	}
+}
+
+func TestDeriveCacheKeySeparatesRewrittenUpstreams(t *testing.T) {
+	path := po.New()
+	path.CacheKeyParams = []string{"query"}
+
+	derive := func(host string, rewritten bool) string {
+		t.Helper()
+		rsc := request.NewResources(&bo.Options{
+			Scheme: "http",
+			Host:   "origin.example.com:9090",
+		}, path, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet,
+			"http://"+host+"/data?query=value", nil)
+		r = request.SetResources(r, rsc)
+		if rewritten {
+			proxyurls.SetUpstreamHost(r, host)
+		}
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	unmarkedA := derive("one.example.com", false)
+	unmarkedB := derive("two.example.com", false)
+	if unmarkedA != unmarkedB {
+		t.Errorf("inbound hosts unexpectedly changed cache key: %s != %s", unmarkedA, unmarkedB)
+	}
+
+	markedA := derive("one.example.com", true)
+	markedB := derive("two.example.com", true)
+	if markedA == markedB {
+		t.Errorf("rewritten upstreams share cache key %s", markedA)
+	}
+	if markedA == unmarkedA {
+		t.Errorf("rewritten and default upstream share cache key %s", markedA)
+	}
+	if got := derive("one.example.com", true); got != markedA {
+		t.Errorf("same rewritten upstream produced unstable keys: %s != %s", got, markedA)
+	}
+
+	path.KeyHasher = exampleKeyHasher
+	customA := derive("one.example.com", true)
+	customB := derive("two.example.com", true)
+	if customA == customB {
+		t.Errorf("custom hasher reused a key across rewritten upstreams: %s", customA)
+	}
+	if got := derive("one.example.com", false); got != "test-key" {
+		t.Errorf("unrewritten custom key = %q, want %q", got, "test-key")
+	}
+
+	deriveWithoutPath := func(host string) string {
+		rsc := request.NewResources(&bo.Options{
+			Scheme: "http",
+			Host:   "origin.example.com:9090",
+		}, nil, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://frontend.example.com/data", nil)
+		r = request.SetResources(r, rsc)
+		proxyurls.SetUpstreamHost(r, host)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	if first, second := deriveWithoutPath("one.example.com"),
+		deriveWithoutPath("two.example.com"); first == second {
+		t.Errorf("nil path config reused a key across rewritten upstreams: %s", first)
+	}
+}
+
+func TestDeriveCacheKeyUsesFinalRewrittenUpstream(t *testing.T) {
+	path := po.New()
+	path.CacheKeyParams = []string{"query"}
+	backendOptions := &bo.Options{
+		Scheme: "http",
+		Host:   "origin.example.com:9090",
+	}
+
+	derive := func(frontendURL string, rewrite func(*http.Request)) string {
+		t.Helper()
+		rsc := request.NewResources(backendOptions, path, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, frontendURL+"/data?query=value", nil)
+		r = request.SetResources(r, rsc)
+		if rewrite != nil {
+			rewrite(r)
+		}
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+
+	setTenant := func(r *http.Request) {
+		proxyurls.SetUpstreamHostname(r, "tenant.example.com")
+	}
+	first := derive("http://frontend.example.com:8480", setTenant)
+	second := derive("https://other-frontend.example.com:443", setTenant)
+	if first != second {
+		t.Errorf("same final upstream produced different keys: %s != %s", first, second)
+	}
+
+	defaultKey := derive("http://frontend.example.com:8480", nil)
+	noOpRewrite := derive("http://frontend.example.com:8480", func(r *http.Request) {
+		proxyurls.SetUpstreamHost(r, backendOptions.Host)
+	})
+	if defaultKey != noOpRewrite {
+		t.Errorf("no-op upstream rewrite changed key: %s != %s", defaultKey, noOpRewrite)
 	}
 }
 
@@ -279,6 +380,83 @@ func TestDeriveCacheKeyVariesByCORSOrigin(t *testing.T) {
 					got, tc.wantDifferent, first, second)
 			}
 		})
+	}
+}
+
+func TestDeriveCacheKeyVariesByPreservedHost(t *testing.T) {
+	// the origin sees the client's Host only when the backend preserves it, and then not when a
+	// path replaces it; the key follows the Host the origin sees, case being no part of a host
+	makeKey := func(preserve bool, host string, pc *po.Options, customHasher bool) string {
+		t.Helper()
+		if pc == nil {
+			pc = po.New()
+		}
+		if customHasher {
+			pc.KeyHasher = exampleKeyHasher
+		}
+		rsc := request.NewResources(&bo.Options{PreserveHost: preserve}, pc, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Host = host
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	updating := func(key, value string) func() *po.Options {
+		return func() *po.Options {
+			pc := po.New()
+			pc.RequestHeaders = map[string]string{key: value}
+			return pc
+		}
+	}
+	tests := []struct {
+		name          string
+		preserve      bool
+		pc            func() *po.Options
+		customHasher  bool
+		wantDifferent bool
+	}{
+		{name: "the origin's own host", preserve: false},
+		{name: "preserved", preserve: true, wantDifferent: true},
+		{name: "preserved with a custom hasher", preserve: true, customHasher: true,
+			wantDifferent: true},
+		{name: "preserved but set by the path", preserve: true, pc: updating("Host", "fixed.example.com")},
+		{name: "preserved, the path's set empty", preserve: true, pc: updating("Host", ""),
+			wantDifferent: true},
+		{name: "preserved but appended by the path", preserve: true,
+			pc: updating("+Host", "fixed.example.com")},
+		{name: "preserved, the path's append empty", preserve: true, pc: updating("+Host", ""),
+			wantDifferent: true},
+		{name: "preserved but deleted by the path", preserve: true, pc: updating("-Host", "")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var first, second *po.Options
+			if tc.pc != nil {
+				first, second = tc.pc(), tc.pc()
+			}
+			a := makeKey(tc.preserve, "first.example.com", first, tc.customHasher)
+			b := makeKey(tc.preserve, "second.example.com", second, tc.customHasher)
+			if got := a != b; got != tc.wantDifferent {
+				t.Fatalf("cache keys differ = %v, want %v (%q, %q)", got, tc.wantDifferent, a, b)
+			}
+		})
+	}
+	// a request served with no path options is keyed by its Host too
+	noPath := func(host string) string {
+		rsc := request.NewResources(&bo.Options{PreserveHost: true}, nil, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Host = host
+		return newProxyRequest(request.SetResources(r, rsc), nil).DeriveCacheKey("")
+	}
+	if a, b := noPath("first.example.com"), noPath("second.example.com"); a == b {
+		t.Fatalf("no path options: keys of two hosts are one: %q", a)
+	}
+	if a, b := makeKey(true, "Shop.Example.com", nil, false),
+		makeKey(true, "shop.example.com", nil, false); a != b {
+		t.Fatalf("a host's case split the key: %q vs %q", a, b)
+	}
+	if a, b := makeKey(false, "shop.example.com", nil, false),
+		makeKey(true, "", nil, false); a != b {
+		t.Fatalf("a backend not preserving the Host changed its keys: %q vs %q", a, b)
 	}
 }
 
@@ -377,8 +555,8 @@ func TestDeriveCacheKey_MultiValueParams(t *testing.T) {
 			"http://127.0.0.1/?query=12345&start=0&end=0&step=300&time=0", nil)
 		r = r.WithContext(ct.WithResources(context.Background(), rsc))
 		k := newProxyRequest(r, nil).DeriveCacheKey("extra")
-		if k != "52dc11456c84506d3444e53ee4c99777" {
-			t.Errorf("single-value param key changed: got %s, want 52dc11456c84506d3444e53ee4c99777", k)
+		if k != "6ddef55b5e18cb0ec83c063baeba757950a8961fe5378d111dc88dfb6b284d1e" {
+			t.Errorf("single-value param key changed: got %s, want 6ddef55b5e18cb0ec83c063baeba757950a8961fe5378d111dc88dfb6b284d1e", k)
 		}
 	})
 
@@ -412,15 +590,15 @@ func TestDeriveCacheKeyAuthHeader(t *testing.T) {
 		request.NewResources(client.Configuration(), client.Configuration().Paths[0],
 			nil, nil, nil, nil)))
 
-	tr.Header.Add("Authorization", "test")
+	tr.Header.Add(headers.NameAuthorization, "test")
 	tr.Header.Add("X-Test-Header", "test2")
 
 	pr := newProxyRequest(tr, nil)
 
 	ck := pr.DeriveCacheKey("extra")
 
-	if ck != "60257fa6b18d6072b90a294269a8e6e1" {
-		t.Errorf("expected %s got %s", "60257fa6b18d6072b90a294269a8e6e1", ck)
+	if ck != "49fb4e15c9e560b0e022d8c3093504ac7b2ce145292fcc945ca2aecab2f10d05" {
+		t.Errorf("expected %s got %s", "49fb4e15c9e560b0e022d8c3093504ac7b2ce145292fcc945ca2aecab2f10d05", ck)
 	}
 }
 
@@ -444,8 +622,8 @@ func TestDeriveCacheKeyNoPathConfig(t *testing.T) {
 	pr := newProxyRequest(tr, nil)
 	ck := pr.DeriveCacheKey("extra")
 
-	if ck != "f53b04ce5c434a7357804ae15a64ee6c" {
-		t.Errorf("expected %s got %s", "f53b04ce5c434a7357804ae15a64ee6c", ck)
+	if ck != "e23c350d0d237d66d22b644a9ac894a3a776e72478ac3c351c6f75c34d5a9b1d" {
+		t.Errorf("expected %s got %s", "e23c350d0d237d66d22b644a9ac894a3a776e72478ac3c351c6f75c34d5a9b1d", ck)
 	}
 }
 
@@ -456,7 +634,7 @@ func TestDeriveCacheKeyNilURL(t *testing.T) {
 	pr := newProxyRequest(r, w)
 	pr.upstreamRequest.URL = nil
 	k := pr.DeriveCacheKey("")
-	if k != "c04284eb2c269dd939d54437d4efb071" {
+	if k != "1de65ee1a222eb17a15867a8fa29c94f9a995bc4e0d47671c07953941427901f" {
 		t.Errorf("unexpected cache key: %s", k)
 	}
 }
@@ -517,4 +695,211 @@ func composeKey(engine string, o *bo.Options, derived string) string {
 		return o.Name + "." + o.CacheKeyPrefix + "." + derived
 	}
 	return ""
+}
+
+func TestDeriveCacheKeyEffectiveIdentity(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	newPR := func(pc *po.Options, auth string) *proxyRequest {
+		cfg := &bo.Options{Paths: po.List{pc}}
+		tr := httptest.NewRequest("GET", "http://127.0.0.1/render?target=a.b", nil)
+		if auth != "" {
+			tr.Header.Set(headers.NameAuthorization, auth)
+		}
+		tr = tr.WithContext(ct.WithResources(context.Background(),
+			request.NewResources(cfg, pc, nil, nil, nil, nil)))
+		return newProxyRequest(tr, nil)
+	}
+	path := func(hdrs, params map[string]string) *po.Options {
+		return &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
+			RequestHeaders: hdrs, RequestParams: params}
+	}
+
+	// rotating a pinned credential rotates the key, with no inbound auth at
+	// all — the metadata-route and late-fallback shape
+	kA := newPR(path(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, nil), "").DeriveCacheKey("")
+	kB := newPR(path(map[string]string{headers.NameAuthorization: "Bearer tenant-b"}, nil), "").DeriveCacheKey("")
+	if kA == kB {
+		t.Error("a rotated pinned credential must change the cache key")
+	}
+
+	// with a static override, the discarded inbound value does not fragment
+	// the key, but the configured replacement is represented in it
+	pcPinned := path(map[string]string{headers.NameAuthorization: "Bearer tenant-a"}, nil)
+	k1 := newPR(pcPinned, "Bearer client-1").DeriveCacheKey("")
+	k2 := newPR(pcPinned, "Bearer client-2").DeriveCacheKey("")
+	if k1 != k2 {
+		t.Error("clients behind one pinned identity must share a key")
+	}
+	if k1 != kA {
+		t.Error("the pinned identity itself must be part of the key")
+	}
+
+	// without an override, inbound identities stay separated
+	plain := path(nil, nil)
+	if newPR(plain, "Bearer c1").DeriveCacheKey("") == newPR(plain, "Bearer c2").DeriveCacheKey("") {
+		t.Error("distinct inbound identities must not share a key")
+	}
+
+	// configured request_params are identity too (a clustered view selector)
+	pA := newPR(path(nil, map[string]string{"local": "1"}), "").DeriveCacheKey("")
+	pB := newPR(path(nil, map[string]string{"local": "0"}), "").DeriveCacheKey("")
+	if pA == pB {
+		t.Error("a rotated configured parameter must change the cache key")
+	}
+}
+
+func TestDeriveCacheKeyUnambiguousEncoding(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	newPR := func(pc *po.Options, hdrs map[string]string, target string) *proxyRequest {
+		cfg := &bo.Options{Paths: po.List{pc}}
+		tr := httptest.NewRequest("GET", target, nil)
+		for k, v := range hdrs {
+			tr.Header.Set(k, v)
+		}
+		tr = tr.WithContext(ct.WithResources(context.Background(),
+			request.NewResources(cfg, pc, nil, nil, nil, nil)))
+		return newProxyRequest(tr, nil)
+	}
+	path := func(hdrs, params map[string]string) *po.Options {
+		return &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
+			RequestHeaders: hdrs, RequestParams: params}
+	}
+	const u = "http://127.0.0.1/render?target=a.b"
+
+	// configured header pairs that concatenate identically must not collide:
+	// {X: Y.Z} and {X.Y: Z} are different effective upstream identities
+	k1 := newPR(path(map[string]string{"X": "Y.Z"}, nil), nil, u).DeriveCacheKey("")
+	k2 := newPR(path(map[string]string{"X.Y": "Z"}, nil), nil, u).DeriveCacheKey("")
+	if k1 == k2 {
+		t.Error("dotted configured header identities must not share a cache key")
+	}
+
+	// the analogous configured request-parameter case
+	p1 := newPR(path(nil, map[string]string{"x": "y.z"}), nil, u).DeriveCacheKey("")
+	p2 := newPR(path(nil, map[string]string{"x.y": "z"}), nil, u).DeriveCacheKey("")
+	if p1 == p2 {
+		t.Error("dotted configured parameter identities must not share a cache key")
+	}
+
+	// a configured header pair and an identical configured parameter pair are
+	// different identities
+	if newPR(path(map[string]string{"X": "1"}, nil), nil, u).DeriveCacheKey("") ==
+		newPR(path(nil, map[string]string{"X": "1"}), nil, u).DeriveCacheKey("") {
+		t.Error("configured header and parameter identities must be typed apart")
+	}
+
+	// client-supplied elements have the same property: a keyed header and a
+	// keyed parameter with one name and value must not collide
+	hp := &po.Options{Path: "/render", CacheKeyParams: []string{"token"},
+		CacheKeyHeaders: []string{"Token"}}
+	viaParam := newPR(hp, nil, "http://127.0.0.1/render?token=abc").DeriveCacheKey("")
+	viaHeader := newPR(hp, map[string]string{"Token": "abc"},
+		"http://127.0.0.1/render").DeriveCacheKey("")
+	if viaParam == viaHeader {
+		t.Error("a keyed parameter and a keyed header must be typed apart")
+	}
+
+	// value boundaries are length-prefixed: name/value splits of one
+	// concatenation are distinct keys
+	if newPR(hp, nil, "http://127.0.0.1/render?token=ab").DeriveCacheKey("") ==
+		newPR(hp, nil, "http://127.0.0.1/render?token=a.b").DeriveCacheKey("") {
+		t.Error("parameter values must be length-prefixed, not delimiter-joined")
+	}
+}
+
+func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Error))
+	newPR := func(pc *po.Options, hdrs map[string]string, target string) *proxyRequest {
+		cfg := &bo.Options{Paths: po.List{pc}}
+		tr := httptest.NewRequest("GET", target, nil)
+		for k, v := range hdrs {
+			tr.Header.Set(k, v)
+		}
+		tr = tr.WithContext(ct.WithResources(context.Background(),
+			request.NewResources(cfg, pc, nil, nil, nil, nil)))
+		return newProxyRequest(tr, nil)
+	}
+	renderURL := func(local string) string {
+		if local == "" {
+			return "http://127.0.0.1/render?target=a.b"
+		}
+		return "http://127.0.0.1/render?target=a.b&local=" + local
+	}
+
+	t.Run("replaced param does not fragment", func(t *testing.T) {
+		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target", "local"},
+			RequestParams: map[string]string{"local": "1"}}
+		keys := map[string]bool{}
+		for _, v := range []string{"", "0", "1", "junk", "aaaaaaaa"} {
+			keys[newPR(pc, nil, renderURL(v)).DeriveCacheKey("")] = true
+		}
+		if len(keys) != 1 {
+			t.Errorf("clients behind a pinned parameter must share one cache key, got %d", len(keys))
+		}
+	})
+
+	t.Run("removed param does not fragment", func(t *testing.T) {
+		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target", "local"},
+			RequestParams: map[string]string{"-local": ""}}
+		if newPR(pc, nil, renderURL("0")).DeriveCacheKey("") !=
+			newPR(pc, nil, renderURL("5")).DeriveCacheKey("") {
+			t.Error("clients behind a removed parameter must share one cache key")
+		}
+	})
+
+	t.Run("appended param keeps the client component", func(t *testing.T) {
+		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target", "local"},
+			RequestParams: map[string]string{"+local": "1"}}
+		if newPR(pc, nil, renderURL("0")).DeriveCacheKey("") ==
+			newPR(pc, nil, renderURL("5")).DeriveCacheKey("") {
+			t.Error("an appended parameter must still key the client's value")
+		}
+	})
+
+	t.Run("wildcard params honor replacement", func(t *testing.T) {
+		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"*"},
+			RequestParams: map[string]string{"local": "1"}}
+		if newPR(pc, nil, renderURL("0")).DeriveCacheKey("") !=
+			newPR(pc, nil, renderURL("5")).DeriveCacheKey("") {
+			t.Error("wildcard cache_key_params must key the effective, not inbound, value")
+		}
+	})
+
+	t.Run("replaced cache_key_header does not fragment", func(t *testing.T) {
+		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
+			CacheKeyHeaders: []string{"X-Tenant"},
+			RequestHeaders:  map[string]string{"X-Tenant": "shared"}}
+		k1 := newPR(pc, map[string]string{"X-Tenant": "t1"}, renderURL("")).DeriveCacheKey("")
+		k2 := newPR(pc, map[string]string{"X-Tenant": "t2"}, renderURL("")).DeriveCacheKey("")
+		if k1 != k2 {
+			t.Error("clients behind a pinned cache_key_header must share one cache key")
+		}
+		// and without the pin they stay separated
+		plain := &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
+			CacheKeyHeaders: []string{"X-Tenant"}}
+		if newPR(plain, map[string]string{"X-Tenant": "t1"}, renderURL("")).DeriveCacheKey("") ==
+			newPR(plain, map[string]string{"X-Tenant": "t2"}, renderURL("")).DeriveCacheKey("") {
+			t.Error("distinct tenants must not share a key absent an override")
+		}
+	})
+
+	t.Run("replaced form field does not fragment", func(t *testing.T) {
+		pc := &po.Options{Path: "/render", CacheKeyParams: []string{},
+			CacheKeyFormFields: []string{"local"},
+			RequestParams:      map[string]string{"local": "1"}}
+		post := func(body string) *proxyRequest {
+			cfg := &bo.Options{Paths: po.List{pc}}
+			tr := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/render",
+				strings.NewReader(body))
+			tr.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+			tr.Header.Set(headers.NameContentLength, strconv.Itoa(len(body)))
+			tr = tr.WithContext(ct.WithResources(context.Background(),
+				request.NewResources(cfg, pc, nil, nil, nil, nil)))
+			return newProxyRequest(tr, nil)
+		}
+		if post(`{"local": "0"}`).DeriveCacheKey("") !=
+			post(`{"local": "5"}`).DeriveCacheKey("") {
+			t.Error("clients behind a pinned form field must share one cache key")
+		}
+	})
 }

@@ -32,11 +32,11 @@ type stubTimeseries struct {
 	timeseries.Timeseries
 }
 
-func (s stubTimeseries) Clone() timeseries.Timeseries { return s }
+func (s stubTimeseries) Clone() timeseries.Timeseries         { return s }
 func (s stubTimeseries) Merge(bool, ...timeseries.Timeseries) {}
-func (s stubTimeseries) Sort()                             {}
-func (s stubTimeseries) SetExtents(timeseries.ExtentList)  {}
-func (s stubTimeseries) Extents() timeseries.ExtentList    { return nil }
+func (s stubTimeseries) Sort()                                {}
+func (s stubTimeseries) SetExtents(timeseries.ExtentList)     {}
+func (s stubTimeseries) Extents() timeseries.ExtentList       { return nil }
 func (s stubTimeseries) VolatileExtents() timeseries.ExtentList {
 	return nil
 }

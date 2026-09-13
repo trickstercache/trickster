@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -218,7 +219,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	// transformed query, marshals it back to a []byte and sets r.Body to it.
 	b, err := request.GetBody(r)
 	if err != nil || len(b) == 0 {
-		logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+		logger.Error(setExtentErrorLogEvent, logging.Pairs{keys.Error: err})
 		return
 	}
 	var rb *JSONRequestBody
@@ -229,7 +230,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	case headers.ProvidesContentType(r, headers.ValueApplicationJSON):
 		err = json.Unmarshal(b, &rb)
 		if err != nil || rb == nil {
-			logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+			logger.Error(setExtentErrorLogEvent, logging.Pairs{keys.Error: err})
 			return
 		}
 	default:
@@ -242,7 +243,7 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	}
 	b, err = json.Marshal(rb)
 	if err != nil {
-		logger.Error(setExtentErrorLogEvent, logging.Pairs{"error": err})
+		logger.Error(setExtentErrorLogEvent, logging.Pairs{keys.Error: err})
 		return
 	}
 	request.SetBody(r, b)
@@ -326,6 +327,9 @@ func parseRange(input string) (timeseries.Extent, error) {
 }
 
 func tryParseTimeField(s string) (time.Time, error) {
+	if s == "now()" {
+		return time.Now(), nil
+	}
 	var t time.Time
 	var erd, eat, eut error
 	if t, erd = tryParseRelativeDuration(s); erd == nil {
@@ -364,10 +368,32 @@ func tryParseUnixTimestamp(s string) (time.Time, error) {
 	return time.Unix(int64(unix), 0).UTC(), nil
 }
 
+// tokenizeRangeLine replaces the body of `|> range(...)` with the placeholder,
+// correctly matching the closing paren at the same nesting depth (so nested
+// function calls like `now()` inside range() don't confuse the match).
 func tokenizeRangeLine(input string, funcStart int) string {
-	i := strings.Index(input[funcStart:], ")")
-	if i < 0 {
+	open := funcStart + len(FuncRange) - 1 // index of the `(` in `|> range(`
+	if open >= len(input) || input[open] != '(' {
 		return input
 	}
-	return input[:funcStart+len(FuncRange)] + TokenPlaceholderTimeRange + input[funcStart+i:]
+	depth := 1
+	close := -1
+	for j := open + 1; j < len(input); j++ {
+		switch input[j] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				close = j
+			}
+		}
+		if close >= 0 {
+			break
+		}
+	}
+	if close < 0 {
+		return input
+	}
+	return input[:open+1] + TokenPlaceholderTimeRange + input[close:]
 }

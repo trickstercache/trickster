@@ -21,9 +21,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestNew(t *testing.T) {
@@ -56,11 +57,11 @@ func TestClone(t *testing.T) {
 func TestURL(t *testing.T) {
 	o := New()
 	o.Scheme = "https"
-	o.Host = "trickstercache.org"
+	o.Host = appinfo.Domain
 	o.Path = "/"
 	o.Query = "?somequeryparam=somevalue"
 
-	const expected = "https://trickstercache.org/?somequeryparam=somevalue"
+	const expected = "https://" + appinfo.Domain + "/?somequeryparam=somevalue"
 
 	u := o.URL()
 	if u.String() != expected {

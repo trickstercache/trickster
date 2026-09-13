@@ -1,0 +1,117 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: older
+  namespace: infra
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostname: a.example.com
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: a.example.com
+      allowedRoutes:
+        namespaces:
+          from: All
+      tls:
+        certificateRefs:
+          - name: a-tls
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: newer
+  namespace: infra
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostname: b.example.com
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: shared
+      port: 80
+      protocol: HTTP
+      hostname: a.example.com
+    - name: clash
+      port: 443
+      protocol: HTTPS
+      hostname: a.example.com
+      tls:
+        certificateRefs:
+          - name: a-tls
+    - name: twice
+      port: 443
+      protocol: HTTPS
+      hostname: a.example.com
+      tls:
+        certificateRefs:
+          - name: a-tls
+    - name: wrong-protocol
+      port: 80
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - name: a-tls
+    - name: custom
+      port: 9000
+      protocol: example.com/Custom
+    - name: passthrough
+      port: 8443
+      protocol: HTTPS
+      tls:
+        mode: Passthrough
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: a-tls
+  namespace: infra
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJMVENCMWFBREFnRUNBZ0VCTUFvR0NDcUdTTTQ5QkFNQ01CSXhFREFPQmdOVkJBTVRCMlpwZUhSMWNtVXcKSUJjTk1qQXdNVEF4TURBd01EQXdXaGdQTWpFd01EQXhNREV3TURBd01EQmFNQkl4RURBT0JnTlZCQU1UQjJacAplSFIxY21Vd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFSeFl6LzJreUdLaEs1MWtqcjFwSUJ3CnArWkxHanJZWVgvOEplYUxveHhEOEVzNGV0MTZlRG9kUk96ZVp1ZVNTUGwyQjR0cFFUeFJmRWFSMmc4MkVzbTYKb3hvd0dEQVdCZ05WSFJFRUR6QU5nZ3RsZUdGdGNHeGxMbU52YlRBS0JnZ3Foa2pPUFFRREFnTkhBREJFQWlBUApmMW5LZnp0WTlXcDdzVVltclZLQzFYUlpGN2FyOTIwbmtXeVJua3dlNWdJZ052UmdFVHE2SWsvVEprb2RNL0NJClZzS0ZDL2t1bmhpM3dvNG5uckczZTZvPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUVTc0g1RWRtc0x1bzdsdEJld2c4emt2TXRoeDMxV3FEcGd1NHV0d2RDNmpvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFY1dNLzlwTWhpb1N1ZFpJNjlhU0FjS2ZtU3hvNjJHRi8vQ1htaTZNY1EvQkxPSHJkZW5nNgpIVVRzM21ibmtrajVkZ2VMYVVFOFVYeEdrZG9QTmhMSnVnPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: infra
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: infra
+spec:
+  parentRefs:
+    - name: older
+    - name: newer
+  rules:
+    - backendRefs:
+        - name: web-svc
+          port: 8080

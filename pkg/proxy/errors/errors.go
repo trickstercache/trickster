@@ -60,11 +60,23 @@ var ErrNilListener = errors.New("nil listener")
 // ErrNoSuchListener indicates an error that the provided listener name is unknown
 var ErrNoSuchListener = errors.New("no such listener")
 
+// ErrListenerGroupClosed indicates a listener start was refused because the
+// group has begun shutting down
+var ErrListenerGroupClosed = errors.New("listener group is shutting down")
+
 // ErrDrainTimeout indicates an error that the connection drain took longer than the requested timeout
 var ErrDrainTimeout = errors.New("timed out draining")
 
 // ErrPCFContentLength indicates that a response's content length does not permit PCF
 var ErrPCFContentLength = errors.New("content length does not permit PCF")
+
+// ErrOriginStalled indicates an origin stopped sending body bytes for longer
+// than the configured timeout, so the transfer was aborted as incomplete
+var ErrOriginStalled = errors.New("origin stalled mid-response")
+
+// ErrPCFMaxSizeExceeded indicates an unknown-length collapsed response outgrew
+// the configured max object size and the collapse was aborted
+var ErrPCFMaxSizeExceeded = errors.New("collapsed response exceeded max object size")
 
 // ErrUnsupportedEncoding indicates that the client requested an encoding that is not supported by Trickster
 var ErrUnsupportedEncoding = errors.New("unsupported ecoding format requested")

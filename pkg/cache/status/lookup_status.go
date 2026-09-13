@@ -17,10 +17,14 @@
 // Package status governs the possible Cache Lookup Status values
 package status
 
-import "strconv"
+import (
+	"strconv"
+)
 
 // LookupStatus defines the possible status of a cache lookup
 type LookupStatus int
+
+type Label = string
 
 const (
 	// LookupStatusHit indicates a full cache hit on lookup
@@ -53,6 +57,20 @@ const (
 	maxLookupStatus = LookupStatusProxyHit
 )
 
+const (
+	StatusHit              Label = "hit"
+	StatusPartialHit       Label = "phit"
+	StatusRangeMiss        Label = "rmiss"
+	StatusKeyMiss          Label = "kmiss"
+	StatusRevalidated      Label = "rhit"
+	StatusPurge            Label = "purge"
+	StatusProxyError       Label = "proxy-error"
+	StatusProxyOnly        Label = "proxy-only"
+	StatusNegativeCacheHit Label = "nchit"
+	StatusError            Label = "error"
+	StatusProxyHit         Label = "proxy-hit"
+)
+
 // Return the maximum LookupStatus value
 func MaxLookupStatus() LookupStatus {
 	return maxLookupStatus
@@ -60,19 +78,19 @@ func MaxLookupStatus() LookupStatus {
 
 var cacheLookupStatusValues = []struct {
 	LookupStatus LookupStatus
-	Value        string
+	Value        Label
 }{
-	{LookupStatusHit, "hit"},
-	{LookupStatusPartialHit, "phit"},
-	{LookupStatusRangeMiss, "rmiss"},
-	{LookupStatusKeyMiss, "kmiss"},
-	{LookupStatusRevalidated, "rhit"},
-	{LookupStatusPurge, "purge"},
-	{LookupStatusProxyError, "proxy-error"},
-	{LookupStatusProxyOnly, "proxy-only"},
-	{LookupStatusNegativeCacheHit, "nchit"},
-	{LookupStatusError, "error"},
-	{LookupStatusProxyHit, "proxy-hit"},
+	{LookupStatusHit, StatusHit},
+	{LookupStatusPartialHit, StatusPartialHit},
+	{LookupStatusRangeMiss, StatusRangeMiss},
+	{LookupStatusKeyMiss, StatusKeyMiss},
+	{LookupStatusRevalidated, StatusRevalidated},
+	{LookupStatusPurge, StatusPurge},
+	{LookupStatusProxyError, StatusProxyError},
+	{LookupStatusProxyOnly, StatusProxyOnly},
+	{LookupStatusNegativeCacheHit, StatusNegativeCacheHit},
+	{LookupStatusError, StatusError},
+	{LookupStatusProxyHit, StatusProxyHit},
 }
 
 func (s LookupStatus) String() string {

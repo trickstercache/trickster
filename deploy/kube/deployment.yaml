@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
@@ -6,16 +6,47 @@ metadata:
   name: trickster
 spec:
   replicas: 1
+  selector:
+    matchLabels:
+      name: trickster
   template:
     metadata:
       labels:
         name: trickster
       name: trickster
     spec:
+      # covers the preStop sleep plus the mgmt shutdown_delay and
+      # shutdown_drain_timeout (30s by default) with margin
+      terminationGracePeriodSeconds: 45
       containers:
         - name: trickster
           image: trickstercache/trickster:latest
           imagePullPolicy: IfNotPresent
+          livenessProbe:
+            httpGet:
+              path: /trickster/ping
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /trickster/ready
+              port: http
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              # lets Service endpoint updates propagate before SIGTERM arrives
+              sleep:
+                seconds: 5
+          ports:
+            - name: http
+              containerPort: 8480
+              protocol: TCP
+            - name: metrics
+              containerPort: 8481
+              protocol: TCP
+            - name: mysql
+              containerPort: 8486
+              protocol: TCP
           volumeMounts:
             - name: cfg-volume
               mountPath: /etc/trickster

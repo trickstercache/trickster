@@ -90,7 +90,9 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		if err != nil {
 			return r.URL.Query(), nil, false
 		}
-		r.ParseMultipartForm(10 * 1024 * 1024)
+		const maxMultipartFormBytes = 10 * 1024 * 1024
+		r.Body = http.MaxBytesReader(nil, r.Body, maxMultipartFormBytes)
+		r.ParseMultipartForm(maxMultipartFormBytes) // #nosec G120 -- body bounded by MaxBytesReader above; gosec taint does not track Body field
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
 		// Merge URL query with form body: the caller may have split params

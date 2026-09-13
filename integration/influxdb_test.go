@@ -17,20 +17,26 @@
 package integration
 
 import (
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestInfluxDB(t *testing.T) {
-	cfg := writeTestConfig(t, 8572, 8573, 8583)
-	influxAddr := "127.0.0.1:8572"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: influxAddr, MetricsAddr: "127.0.0.1:8573"}
+	h := configHarness(t)
+	influxAddr := h.BaseAddr
 	h.start(t)
-	waitForInfluxDBData(t, "127.0.0.1:8086")
+	latest := waitForInfluxDBData(t, "127.0.0.1:8086")
+	dataRange := fmt.Sprintf(`range(start: %s, stop: %s)`,
+		latest.Add(-5*time.Minute).Format(time.RFC3339Nano), latest.Add(time.Minute).Format(time.RFC3339Nano))
 
 	fluxURL := "http://" + influxAddr + "/flux2/api/v2/query?org=trickster-dev"
 	post := func(t *testing.T, body, token string) (*http.Response, []byte) {
@@ -48,10 +54,13 @@ func TestInfluxDB(t *testing.T) {
 	}
 
 	t.Run("flux query", func(t *testing.T) {
-		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)", "type": "flux"}`, "trickster-dev-token")
+		query := `from(bucket: "trickster") |> ` + dataRange +
+			` |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)`
+		bodyJSON := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
+		resp, body := post(t, bodyJSON, "trickster-dev-token")
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 		require.NotEmpty(t, body)
-		hdr := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
 		require.NotEmpty(t, hdr["engine"], "expected engine in X-Trickster-Result")
 	})
 
@@ -62,7 +71,10 @@ func TestInfluxDB(t *testing.T) {
 	}
 	for _, fc := range fluxCases {
 		t.Run("flux_"+fc.name, func(t *testing.T) {
-			q := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._field == \"usage_idle\") |> aggregateWindow(every: 1m, fn: ` + fc.fn + `) |> limit(n: 5)", "type": "flux"}`
+			query := `from(bucket: "trickster") |> ` + dataRange +
+				` |> filter(fn: (r) => r._field == "usage_idle") |> aggregateWindow(every: 1m, fn: ` +
+				fc.fn + `) |> limit(n: 5)`
+			q := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
 			resp, body := post(t, q, "trickster-dev-token")
 			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 			lines := strings.Split(strings.TrimSpace(string(body)), "\n")
@@ -74,5 +86,39 @@ func TestInfluxDB(t *testing.T) {
 		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h) |> limit(n: 1)", "type": "flux"}`, "wrong-token")
 		require.Equal(t, http.StatusUnauthorized, resp.StatusCode,
 			"expected 401 for wrong token, got %d: %s", resp.StatusCode, string(body))
+	})
+
+	// v1 InfluxQL goes through /flux2/query against InfluxDB 2's v1-compat
+	// endpoint. Verifies Trickster's v1 InfluxQL handler + cache path.
+	t.Run("influxql_select", func(t *testing.T) {
+		q := `SELECT mean("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' AND time > now() - 5m GROUP BY time(10s)`
+		u := "http://" + influxAddr + "/flux2/query?db=trickster&q=" + url.QueryEscape(q)
+		req, err := http.NewRequest("GET", u, nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Token trickster-dev-token")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(b))
+		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
+		require.NotEmpty(t, hdr["engine"], "expected engine header on v1 InfluxQL response")
+	})
+
+	// Non-cacheable InfluxQL (SHOW MEASUREMENTS) should passthrough to upstream.
+	t.Run("influxql_show_measurements", func(t *testing.T) {
+		u := "http://" + influxAddr + "/flux2/query?db=trickster&q=" + url.QueryEscape("SHOW MEASUREMENTS")
+		req, err := http.NewRequest("GET", u, nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Token trickster-dev-token")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode,
+			"expected SHOW MEASUREMENTS to proxy through: %s", string(b))
+		require.Contains(t, string(b), "cpu", "expected cpu measurement in response")
 	})
 }

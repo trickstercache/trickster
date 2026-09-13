@@ -27,6 +27,12 @@ import (
 // Load returns the Application Configuration, starting with a default config,
 // then overriding with any provided config file, then env vars, and finally flags
 func Load(args []string) (*Config, error) {
+	return LoadWithOverlay(args, nil)
+}
+
+// LoadWithOverlay is Load with an in-memory overlay applied after the file
+// sources and before env vars and flags. A nil overlay is the same as Load.
+func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 	// this sanitizes the args from -test flags, which can cause issues with unit tests relying on cli args
 	sargs := make([]string, 0, len(args))
 	for _, v := range args {
@@ -46,8 +52,7 @@ func Load(args []string) (*Config, error) {
 		c.Flags = flags
 		return c, nil
 	}
-	if err := c.loadFile(flags); err != nil && flags.customPath {
-		// a user-provided path couldn't be loaded. return the error for the application to handle
+	if err := c.loadFile(flags, overlay); err != nil {
 		return nil, err
 	}
 
@@ -78,6 +83,7 @@ func Load(args []string) (*Config, error) {
 
 		if c.providedProvider != "" {
 			d.Provider = c.providedProvider
+			d.ApplyProviderSizingDefaults()
 		}
 	}
 
@@ -88,6 +94,12 @@ func Load(args []string) (*Config, error) {
 	for k, o := range c.Backends {
 		err = o.Initialize(k)
 		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(c.Discovery) > 0 {
+		if err := c.Discovery.Initialize(); err != nil {
 			return nil, err
 		}
 	}

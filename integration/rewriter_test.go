@@ -23,14 +23,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestRequestRewriter(t *testing.T) {
-	rewriterHarness().start(t)
+	h := rewriterHarness(t)
+	h.start(t)
 	waitForPrometheusData(t, "127.0.0.1:9090")
-
-	const rewriterAddr = "127.0.0.1:8493"
 
 	t.Run("range to instant rewrite", func(t *testing.T) {
 		now := time.Now()
@@ -40,13 +41,13 @@ func TestRequestRewriter(t *testing.T) {
 			"end":   {fmt.Sprintf("%d", now.Unix())},
 			"step":  {"15"},
 		}
-		pr, hdr := queryTricksterProm(t, rewriterAddr, "prom1", "/api/v1/query_range", params)
+		pr, hdr := queryTricksterProm(t, h.BaseAddr, "prom1", "/api/v1/query_range", params)
 		require.Equal(t, "success", pr.Status)
 
 		var qd promQueryData
 		require.NoError(t, json.Unmarshal(pr.Data, &qd))
 		require.Equal(t, "vector", qd.ResultType,
 			"rewriter should have converted range query to instant query (vector result)")
-		t.Logf("rewriter result: %s", hdr.Get("X-Trickster-Result"))
+		t.Logf("rewriter result: %s", hdr.Get(headers.NameTricksterResult))
 	})
 }

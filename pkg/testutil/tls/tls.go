@@ -19,6 +19,8 @@ package tls
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -28,6 +30,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
@@ -56,6 +59,48 @@ func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {
 	}
 
 	return nil
+}
+
+// GetTestKeyAndCertWithNames returns a self-signed test TLS key and certificate bearing the
+// DNS names (wildcards permitted) as its Subject Alternative Names, using a fast ECDSA key
+func GetTestKeyAndCertWithNames(names ...string) ([]byte, []byte, error) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, nil, err
+	}
+	notBefore := time.Now()
+	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
+	serialNumber, _ := rand.Int(rand.Reader, serialNumberLimit)
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Trickster Test Certificate DO NOT USE"},
+		},
+		NotBefore:             notBefore,
+		NotAfter:              notBefore.Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+		DNSNames:              names,
+	}
+	if len(names) > 0 {
+		template.Subject.CommonName = names[0]
+	}
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template,
+		&priv.PublicKey, priv)
+	if err != nil {
+		return nil, nil, err
+	}
+	certBuff := bytes.NewBuffer(nil)
+	pem.Encode(certBuff, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		return nil, nil, err
+	}
+	keyBuff := bytes.NewBuffer(nil)
+	pem.Encode(keyBuff, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes})
+	return keyBuff.Bytes(), certBuff.Bytes(), nil
 }
 
 // GetTestKeyAndCert returns a self-sign test TLS key and certificate
@@ -118,4 +163,40 @@ func GetTestKeyAndCertFiles(condition string) (string, string, func(), error) {
 	}
 
 	return kf, cf, func() { os.Remove(kf); os.Remove(cf) }, nil
+}
+
+var (
+	namedMtx   sync.Mutex
+	namedPairs = make(map[string][2][]byte)
+)
+
+// NamedKeyAndCert returns a self-signed test key and certificate with the given common name,
+// generated once per name, so a fake store can tell fixtures apart by what they serve
+func NamedKeyAndCert(name string) ([]byte, []byte) {
+	namedMtx.Lock()
+	defer namedMtx.Unlock()
+	if p, ok := namedPairs[name]; ok {
+		return p[0], p[1]
+	}
+	key, cert, err := GetTestKeyAndCertWithNames(name)
+	if err != nil {
+		// only a broken entropy source fails here, and no test can proceed without one
+		panic(err)
+	}
+	namedPairs[name] = [2][]byte{key, cert}
+	return key, cert
+}
+
+// CommonName returns the common name of a PEM certificate, or the input as a string when it
+// is not one, so a fake store can record what it was handed by name
+func CommonName(certPEM []byte) string {
+	block, _ := pem.Decode(certPEM)
+	if block == nil {
+		return string(certPEM)
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return string(certPEM)
+	}
+	return cert.Subject.CommonName
 }

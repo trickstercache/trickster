@@ -347,6 +347,13 @@ func TestCheckIfNoneMatch(t *testing.T) {
 		{"quoted match", "test", `"test"`, status.LookupStatusHit, false},
 		{"multi-value one matches", "test", `"foo", "test"`, status.LookupStatusHit, false},
 		{"multi-value none match", "test", `"foo", "bar"`, status.LookupStatusHit, true},
+		// an origin sends its ETag quoted, so the stored value is quoted too
+		{"quoted etag quoted inm", `"b1"`, `"b1"`, status.LookupStatusHit, false},
+		{"quoted etag unquoted inm", `"b1"`, "b1", status.LookupStatusHit, false},
+		{"quoted etag weak inm", `"b1"`, `W/"b1"`, status.LookupStatusHit, false},
+		{"weak etag quoted inm", `W/"b1"`, `"b1"`, status.LookupStatusHit, false},
+		{"quoted etag second tag matches", `"b1"`, `"foo", "b1"`, status.LookupStatusHit, false},
+		{"quoted etag no tag matches", `"b1"`, `"foo", "bar"`, status.LookupStatusHit, true},
 	}
 
 	for _, tt := range tests {
@@ -371,5 +378,57 @@ func TestParseCacheControlNoTransform(t *testing.T) {
 	// verify max-age is still parsed alongside no-transform
 	if cp.FreshnessLifetime != 300 {
 		t.Errorf("expected FreshnessLifetime=300, got %d", cp.FreshnessLifetime)
+	}
+}
+
+func TestIfRangeMatches(t *testing.T) {
+	lm := time.Date(2026, 9, 12, 8, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name         string
+		ifRange      string
+		etag         string
+		lastModified time.Time
+		expected     bool
+	}{
+		{"empty", "", `"b3"`, time.Time{}, false},
+		{"strong etag matches", `"b3"`, `"b3"`, time.Time{}, true},
+		{"strong etag differs", `"no-longer-current"`, `"b3"`, time.Time{}, false},
+		{"weak if-range never matches", `W/"b3"`, `"b3"`, time.Time{}, false},
+		{"weak stored etag never matches", `"b3"`, `W/"b3"`, time.Time{}, false},
+		{"no stored etag", `"b3"`, "", time.Time{}, false},
+		{"date matches", lm.Format(time.RFC1123), "", lm, true},
+		{"date differs", lm.Add(time.Hour).Format(time.RFC1123), "", lm, false},
+		{"date with no stored last-modified", lm.Format(time.RFC1123), "", time.Time{}, false},
+		{"unparsable value", "not-a-date", `"b3"`, lm, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cp := &CachingPolicy{
+				IfRangeValue: test.ifRange,
+				ETag:         test.etag,
+				LastModified: test.lastModified,
+			}
+			if got := cp.IfRangeMatches(); got != test.expected {
+				t.Errorf("got %t expected %t", got, test.expected)
+			}
+		})
+	}
+}
+
+func TestParseClientConditionalsIfRange(t *testing.T) {
+	h := http.Header{}
+	h.Set(headers.NameIfRange, `"b3"`)
+	cp := GetRequestCachingPolicy(h)
+	cp.ParseClientConditionals()
+	if !cp.HasIfRange {
+		t.Error("expected HasIfRange")
+	}
+	// If-Range gates the Range, it never on its own produces a 304
+	if cp.IsClientConditional {
+		t.Error("expected If-Range not to make the request conditional")
+	}
+	cp.ResetClientConditionals()
+	if cp.HasIfRange || cp.IfRangeValue != "" {
+		t.Error("expected If-Range state to reset")
 	}
 }

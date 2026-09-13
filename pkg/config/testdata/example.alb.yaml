@@ -2,7 +2,6 @@ main:
   server_name: trickster-test
 backends:
   default:
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -38,7 +37,6 @@ backends:
     latency_max: 0s
   origin1:
     provider: rpc
-    listener_name: default
     origin_url: https://origin1/
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -78,7 +76,6 @@ backends:
     latency_max: 0s
   origin2:
     provider: rp
-    listener_name: default
     origin_url: http://origin2
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -118,7 +115,6 @@ backends:
     latency_max: 0s
   prom1:
     provider: prometheus
-    listener_name: default
     origin_url: http://prom1:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -157,7 +153,6 @@ backends:
     latency_max: 0s
   prom2:
     provider: prometheus
-    listener_name: default
     origin_url: http://prom2:9090
     timeout: 1m0s
     keep_alive_timeout: 2m0s
@@ -196,7 +191,6 @@ backends:
     latency_max: 0s
   promalb:
     provider: alb
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -238,7 +232,6 @@ backends:
     latency_max: 0s
   proxycache:
     provider: alb
-    listener_name: default
     timeout: 1m0s
     keep_alive_timeout: 2m0s
     max_concurrent_conns: 20
@@ -320,12 +313,14 @@ listeners:
     truncate_request_body_too_large: false
     read_header_timeout: 10s
     protocol: http
+    tls_watch_interval: 30s
   metrics:
     port: 8481
     max_request_body_size_bytes: 10485760
     truncate_request_body_too_large: false
     read_header_timeout: 10s
     protocol: http
+    tls_watch_interval: 30s
   mgmt:
     address: 127.0.0.1
     port: 8484
@@ -333,6 +328,7 @@ listeners:
     truncate_request_body_too_large: false
     read_header_timeout: 10s
     protocol: http
+    tls_watch_interval: 30s
 logging:
   log_level: INFO
 metrics:
@@ -350,9 +346,11 @@ mgmt:
   config_handler_path: /trickster/config
   config_handler_listener: mgmt
   ping_handler_path: /trickster/ping
+  ready_handler_path: /trickster/ready
   health_handler_path: /trickster/health
   purge_by_key_path: /trickster/purge/key/
   purge_by_path_path: /trickster/purge/path/
+  certificates_handler_path: /trickster/certificates
   pprof_listener: both
   reload_handler_path: /trickster/config/reload
   reload_drain_timeout: 30s

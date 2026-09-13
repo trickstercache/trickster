@@ -82,3 +82,72 @@ func TestSetExtentWithBody(t *testing.T) {
 		t.Errorf("SQL datetime extent was not rendered: %s", rendered)
 	}
 }
+
+func TestSetExtentNativeFormatPreserved(t *testing.T) {
+	client := &Client{}
+	start := time.Unix(1589904000, 0)
+	end := time.Unix(1589997600, 0)
+	e := &timeseries.Extent{Start: start, End: end}
+
+	trq, _, _, err := parse(`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl WHERE datetime >= 1589904000 AND datetime < 1589997900 GROUP BY t ORDER BY t`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GET request with default_format=Native (official Grafana plugin style)
+	tu := &url.URL{RawQuery: url.Values{
+		"query":                   {trq.Statement},
+		"default_format":          {"Native"},
+		"client_protocol_version": {"54460"},
+		"database":                {"default"},
+	}.Encode()}
+	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
+	r.URL = tu
+
+	if err := client.SetExtent(r, trq, e); err != nil {
+		t.Fatal(err)
+	}
+
+	q := r.URL.Query()
+	if !q.Has("default_format") {
+		t.Error("expected default_format to be preserved in URL params")
+	}
+	if !q.Has("database") {
+		t.Error("expected database param to be preserved")
+	}
+	// Origin requests use the analyzer's TSV format regardless of the client format.
+	sql := q.Get("query")
+	if !strings.Contains(sql, "FORMAT TSVWithNamesAndTypes") {
+		t.Errorf("expected TSV origin format with Native client output, got: %s", sql)
+	}
+}
+
+func TestSetExtentTSVFormatInjected(t *testing.T) {
+	client := &Client{}
+	start := time.Unix(1589904000, 0)
+	end := time.Unix(1589997600, 0)
+	e := &timeseries.Extent{Start: start, End: end}
+
+	trq, _, _, err := parse(`SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tbl WHERE datetime >= 1589904000 AND datetime < 1589997900 GROUP BY t ORDER BY t`, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GET request WITHOUT default_format (standard TSV path)
+	tu := &url.URL{RawQuery: url.Values{
+		"query":    {trq.Statement},
+		"database": {"default"},
+	}.Encode()}
+	r, _ := http.NewRequest(http.MethodGet, tu.String(), nil)
+	r.URL = tu
+
+	if err := client.SetExtent(r, trq, e); err != nil {
+		t.Fatal(err)
+	}
+
+	q := r.URL.Query()
+	sql := q.Get("query")
+	if !strings.Contains(sql, "TSVWithNamesAndTypes") {
+		t.Errorf("expected FORMAT TSVWithNamesAndTypes when no default_format, got: %s", sql)
+	}
+}

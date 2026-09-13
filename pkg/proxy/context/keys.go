@@ -24,4 +24,7 @@ const (
 	rewriterHopsKey
 	healthCheckKey
 	requestBodyKey
+	servedKey
+	clientIPKey
+	mirroredKey
 )

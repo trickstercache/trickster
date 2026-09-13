@@ -25,6 +25,7 @@ import (
 	"time"
 
 	prommodel "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -162,8 +163,8 @@ func TestHandleResponseMergeBody(t *testing.T) {
 		if !strings.Contains(body, "tsm partial failure") {
 			t.Fatalf("body: want partial-failure warning, got %q", body)
 		}
-		if status := w.Header().Get(headers.NameTricksterResult); !strings.Contains(status, "phit") {
-			t.Fatalf("%s header: want phit marker, got %q", headers.NameTricksterResult, status)
+		if st := w.Header().Get(headers.NameTricksterResult); !strings.Contains(st, status.StatusPartialHit) {
+			t.Fatalf("%s header: want phit marker, got %q", headers.NameTricksterResult, st)
 		}
 	})
 

@@ -22,6 +22,12 @@ import (
 	"sync/atomic"
 )
 
+const (
+	AppName       = "trickster"
+	AppNameProper = "Trickster"
+	Domain        = "trickstercache.org"
+)
+
 // Name is the name of the Application
 var Name string
 

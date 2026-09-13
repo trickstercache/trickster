@@ -67,7 +67,8 @@ func TestDefaultPathConfigs(t *testing.T) {
 		t.Errorf("expected to find path named: %s", "/")
 	}
 
-	const expectedLen = 4
+	const expectedLen = 6
+
 	if len(rsc.BackendOptions.Paths) != expectedLen {
 		t.Errorf("expected ordered length to be: %d, got: %d", expectedLen, len(rsc.BackendOptions.Paths))
 	}
@@ -77,5 +78,17 @@ func TestDefaultPathConfigs(t *testing.T) {
 				len(pathConfig.Methods) == 1 && pathConfig.Methods[0] == http.MethodPost
 		}) {
 		t.Errorf("expected remote-read path named: %s", promremote.Path)
+	}
+	// the catch-all must accept every method so management calls (e.g. DELETE
+	// on /api/v3/configure/*) proxy through instead of returning 405
+	for _, pathConfig := range rsc.BackendOptions.Paths {
+		if pathConfig.Path != "/" {
+			continue
+		}
+		if !slices.Contains(pathConfig.Methods, "DELETE") ||
+			!slices.Contains(pathConfig.Methods, "PUT") ||
+			!slices.Contains(pathConfig.Methods, "PATCH") {
+			t.Errorf("catch-all path missing management methods: %v", pathConfig.Methods)
+		}
 	}
 }

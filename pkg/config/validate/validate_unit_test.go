@@ -17,6 +17,8 @@
 package validate
 
 import (
+	stderrors "errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,6 +28,8 @@ import (
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -40,6 +44,23 @@ func TestValidateNilConfig(t *testing.T) {
 
 	if err := Validate(nil); err != errors.ErrInvalidOptions {
 		t.Fatalf("Validate(nil) = %v, want ErrInvalidOptions", err)
+	}
+}
+
+func TestLoggingFilesRejectsConflictingOptions(t *testing.T) {
+	name := filepath.Join(t.TempDir(), "shared.log")
+	c := config.NewConfig()
+	c.Logging.LogFile = name
+	c.Backends = bo.Lookup{
+		"one": {AccessLog: &alo.Options{Filename: name}},
+	}
+	if err := LoggingFiles(c); err != nil {
+		t.Fatalf("matching options failed validation: %v", err)
+	}
+	compress := false
+	c.Backends["one"].AccessLog.Compress = &compress
+	if err := LoggingFiles(c); !stderrors.Is(err, logmanager.ErrConflictingOptions) {
+		t.Fatalf("expected conflicting options error, got %v", err)
 	}
 }
 

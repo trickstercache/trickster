@@ -1,4 +1,4 @@
-# <img src="https://github.com/${REPO}/raw/v${TAG}/docs/images/logos/trickster-logo.svg" width=60 />&nbsp;&nbsp;&nbsp;&nbsp;<img src="https://github.com/${REPO}/raw/v${TAG}/docs/images/logos/trickster-text.svg" width=280 />
+# <img src="https://github.com/${REPO}/raw/v${TAG}/docs/images/logos/trickster-horizontal.svg" width=400 />
 
 Welcome to Trickster ${TAG}! :tada:
 

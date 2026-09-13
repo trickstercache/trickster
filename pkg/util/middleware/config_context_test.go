@@ -32,7 +32,7 @@ import (
 func TestWithResourcesContextAppliesLegacyCORS(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headers.NameAllowOrigin, "https://origin.example.com")
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		w.Header().Set(headers.NameAllowCredentials, "true")
 		w.WriteHeader(http.StatusNoContent)
 	})
 	h := WithResourcesContext(nil, bo.New(), nil, po.New(), nil, next)
@@ -43,7 +43,7 @@ func TestWithResourcesContextAppliesLegacyCORS(t *testing.T) {
 	if got := result.Header.Get(headers.NameAllowOrigin); got != "*" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want *", got)
 	}
-	if got := result.Header.Get("Access-Control-Allow-Credentials"); got != "true" {
+	if got := result.Header.Get(headers.NameAllowCredentials); got != "true" {
 		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
 	}
 }

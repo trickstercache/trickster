@@ -1,0 +1,32 @@
+{
+ "value": [
+  {
+   "name": "tk-disco-2PublicIP",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/publicIPAddresses/tk-disco-2PublicIP",
+   "etag": "W/\"bbbbbbbb-0000-0000-0000-000000000001\"",
+   "location": "eastus",
+   "tags": {
+    "role": "prometheus",
+    "port": "9091",
+    "shard": "b"
+   },
+   "properties": {
+    "provisioningState": "Succeeded",
+    "resourceGuid": "bbbbbbbb-0000-0000-0000-000000000001",
+    "ipAddress": "203.0.113.10",
+    "publicIPAddressVersion": "IPv4",
+    "publicIPAllocationMethod": "Static",
+    "idleTimeoutInMinutes": 4,
+    "ipTags": [],
+    "ipConfiguration": {
+     "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-2VMNic/ipConfigurations/ipconfigtk-disco-2"
+    }
+   },
+   "type": "Microsoft.Network/publicIPAddresses",
+   "sku": {
+    "name": "Standard",
+    "tier": "Regional"
+   }
+  }
+ ]
+}

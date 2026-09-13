@@ -23,7 +23,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestNew(t *testing.T) {
@@ -80,8 +80,7 @@ func TestValidate(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected invalid default backend error")
 	}
-	var ie *InvalidUserRouterOptionsError
-	if !errors.As(err, &ie) {
+	if _, ok := errors.AsType[*InvalidUserRouterOptionsError](err); !ok {
 		t.Fatalf("Validate() = %T, want InvalidUserRouterOptionsError", err)
 	}
 
@@ -131,8 +130,7 @@ func TestNewErrInvalidUserRouterOptions(t *testing.T) {
 	t.Parallel()
 
 	err := NewErrInvalidUserRouterOptions("edge")
-	var ie *InvalidUserRouterOptionsError
-	if !errors.As(err, &ie) {
+	if _, ok := errors.AsType[*InvalidUserRouterOptionsError](err); !ok {
 		t.Fatalf("error type = %T, want InvalidUserRouterOptionsError", err)
 	}
 }

@@ -39,7 +39,7 @@ func (c *Config) TLSCertConfigForListener(listenerName string) (*tls.Config, err
 	if err != nil {
 		return nil, err
 	}
-	if !o.ServeTLS {
+	if !o.ServeTLS && o.Protocol == listener.ProtocolHTTP {
 		return nil, nil
 	}
 	return c.tlsCertConfig(listenerName)
@@ -53,24 +53,24 @@ func (c *Config) tlsCertConfig(listenerName string) (*tls.Config, error) {
 		// A CA-only TLS block (certificate_authority_paths with no
 		// FullChainCertPath/PrivateKeyPath) is for outbound verification
 		// and must not feed LoadX509KeyPair. See #940.
-		if o.ListenerName == "" {
-			o.ListenerName = listener.DefaultFrontendName
-		}
-		if o.ListenerName == listenerName && o.TLS != nil && o.TLS.ServeTLS &&
+		if o.UsesListener(listenerName) && o.TLS != nil && o.TLS.ServeTLS &&
 			o.TLS.FullChainCertPath != "" && o.TLS.PrivateKeyPath != "" {
 			to = append(to, o)
 		}
 	}
 
 	l := len(to)
-	if l == 0 {
-		return nil, nil
-	}
-
 	tlsConfig := &tls.Config{
 		Certificates: make([]tls.Certificate, l),
 		NextProtos:   []string{"h2"},
 		MinVersion:   tls.VersionTLS12,
+	}
+	if l == 0 {
+		// a runtime-cert listener starts with an empty store and is fed later
+		if o := c.Listeners[listenerName]; o != nil && o.TLSRuntimeCerts {
+			return tlsConfig, nil
+		}
+		return nil, nil
 	}
 
 	for i, tc := range to {

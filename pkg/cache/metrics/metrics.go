@@ -18,31 +18,50 @@ package metrics
 
 import (
 	"fmt"
+	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
-// ObserveCacheMiss records a Cache Miss event
-func ObserveCacheMiss(cacheName, cacheProvider string) {
-	ObserveCacheOperation(cacheName, cacheProvider, "get", "miss", 0)
+const (
+	KeySet       = "set"
+	KeySetDirect = "setDirect"
+	KeyGet       = "get"
+	KeyDel       = "del"
+	KeyNone      = "none"
+)
+
+// ObserveCacheMiss records a full cache key miss
+func ObserveCacheMiss(cacheName, cacheProvider string, elapsed time.Duration) {
+	ObserveCacheOperation(cacheName, cacheProvider, KeyGet, status.StatusKeyMiss, 0, elapsed)
 }
 
 // ObserveCacheDel records a cache deletion event
-func ObserveCacheDel(cache, cacheProvider string, count float64) {
-	ObserveCacheOperation(cache, cacheProvider, "del", "none", count)
+func ObserveCacheDel(cache, cacheProvider string, bytes float64, elapsed time.Duration) {
+	ObserveCacheOperation(cache, cacheProvider, KeyDel, KeyNone, bytes, elapsed)
+}
+
+// ObserveCacheDelBytes records bytes freed by a deletion whose operation count and duration are recorded elsewhere
+func ObserveCacheDelBytes(cache, cacheProvider string, bytes float64) {
+	if bytes > 0 {
+		metrics.CacheByteOperations.WithLabelValues(cache, cacheProvider, KeyDel, KeyNone).Add(bytes)
+	}
 }
 
 // CacheError returns an empty cache object and the formatted error
 func CacheError(cacheKey, cacheName, cacheProvider string, msg string) ([]byte, error) {
-	ObserveCacheEvent(cacheName, cacheProvider, "error", msg)
+	ObserveCacheEvent(cacheName, cacheProvider, keys.Error, msg)
 	return nil, fmt.Errorf(msg, cacheKey)
 }
 
-// ObserveCacheOperation increments counters as cache operations occur
-func ObserveCacheOperation(cache, cacheProvider, operation, status string, bytes float64) {
-	metrics.CacheObjectOperations.WithLabelValues(cache, cacheProvider, operation, status).Inc()
+// ObserveCacheOperation records a cache operation's count, duration and byte count
+func ObserveCacheOperation(cache, cacheProvider, operation, opStatus string, bytes float64, elapsed time.Duration) {
+	metrics.CacheObjectOperations.WithLabelValues(cache, cacheProvider, operation, opStatus).Inc()
+	metrics.CacheObjectOperationDuration.WithLabelValues(cache, cacheProvider, operation, opStatus).Observe(elapsed.Seconds())
 	if bytes > 0 {
-		metrics.CacheByteOperations.WithLabelValues(cache, cacheProvider, operation, status).Add(bytes)
+		metrics.CacheByteOperations.WithLabelValues(cache, cacheProvider, operation, opStatus).Add(bytes)
 	}
 }
 

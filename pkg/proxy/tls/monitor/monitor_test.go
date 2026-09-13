@@ -1,0 +1,733 @@
+/*
+ * Copyright 2018 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package monitor
+
+import (
+	"bufio"
+	"context"
+	"crypto/tls"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"slices"
+	"testing"
+	"time"
+
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/config"
+	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+)
+
+const testWatchInterval = 10 * time.Millisecond
+
+func writePair(t *testing.T, certPath, keyPath string, names ...string) {
+	t.Helper()
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(names...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyPath, k, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(certPath, c, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitFor(t *testing.T, timeout time.Duration, condition func() bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return true
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	return condition()
+}
+
+func testConfig(t *testing.T, interval time.Duration) (*config.Config, string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	certPath, keyPath := filepath.Join(dir, "tls.crt"), filepath.Join(dir, "tls.key")
+	writePair(t, certPath, keyPath, "one.example.com")
+	conf := config.NewConfig()
+	lo := conf.Listeners[listenerconfig.DefaultFrontendName]
+	lo.ServeTLS = true
+	lo.TLSWatchInterval = timeconv.Duration(interval)
+	conf.Backends = map[string]*bo.Options{
+		"test": {
+			ListenerNames: []string{listenerconfig.DefaultFrontendName},
+			TLS: &to.Options{
+				ServeTLS:          true,
+				FullChainCertPath: certPath,
+				PrivateKeyPath:    keyPath,
+			},
+		},
+	}
+	return conf, certPath, keyPath
+}
+
+func startTLSListener(t *testing.T, certPath, keyPath string) (*listener.Group, string, string) {
+	t.Helper()
+	tlsCfg, err := tlsServerConfig(certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lg := listener.NewGroup()
+	key := listener.GroupKey(listenerconfig.DefaultFrontendName, "", true)
+	go lg.StartListener(key, "127.0.0.1", 0, 0, tlsCfg,
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		}), nil, nil, time.Second, nil)
+	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
+		t.Fatal("listener not found in group")
+	}
+	l := lg.Get(key)
+	if !l.WaitForReady(5 * time.Second) {
+		t.Fatal("listener not ready")
+	}
+	t.Cleanup(func() { lg.Shutdown(0) })
+	return lg, key, l.Addr().String()
+}
+
+func tlsServerConfig(certPath, keyPath string) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}, nil
+}
+
+func handshakeSAN(t *testing.T, address string) string {
+	t.Helper()
+	conn, err := tls.Dial("tcp", address, &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+		ServerName:         "one.example.com",
+	})
+	if err != nil {
+		t.Fatalf("handshake failed: %v", err)
+	}
+	defer conn.Close()
+	leaf := conn.ConnectionState().PeerCertificates[0]
+	if len(leaf.DNSNames) == 0 {
+		return ""
+	}
+	return leaf.DNSNames[0]
+}
+
+func TestMonitorRotationHotSwap(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, testWatchInterval)
+	lg, key, address := startTLSListener(t, certPath, keyPath)
+
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	// establish a keep-alive connection on the original cert
+	established, err := tls.Dial("tcp", address, &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+		ServerName:         "one.example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer established.Close()
+	reader := bufio.NewReader(established)
+	doRequest := func() {
+		t.Helper()
+		if _, err := established.Write([]byte("GET / HTTP/1.1\r\nHost: one.example.com\r\n\r\n")); err != nil {
+			t.Fatalf("write on established connection failed: %v", err)
+		}
+		resp, err := http.ReadResponse(reader, nil)
+		if err != nil {
+			t.Fatalf("read on established connection failed: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("unexpected status on established connection: %d", resp.StatusCode)
+		}
+	}
+	doRequest()
+
+	if san := handshakeSAN(t, address); san != "one.example.com" {
+		t.Fatalf("expected original cert before rotation, got %s", san)
+	}
+
+	// rotate the pair in place; config remains untouched
+	writePair(t, certPath, keyPath, "two.example.com")
+
+	if !waitFor(t, 5*time.Second, func() bool {
+		conn, err := tls.Dial("tcp", address, &tls.Config{
+			InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+		})
+		if err != nil {
+			t.Fatalf("handshake failed during rotation: %v", err)
+		}
+		defer conn.Close()
+		leaf := conn.ConnectionState().PeerCertificates[0]
+		return len(leaf.DNSNames) > 0 && leaf.DNSNames[0] == "two.example.com"
+	}) {
+		t.Fatal("new handshakes did not pick up the rotated certificate")
+	}
+
+	// the established connection must be untouched by the swap
+	doRequest()
+
+	// a config reload arriving mid-rotation is safe and preserves watcher
+	// continuity; a subsequent rotation is still detected
+	m.Apply(conf, lg)
+	doRequest()
+	writePair(t, certPath, keyPath, "three.example.com")
+	if !waitFor(t, 5*time.Second, func() bool {
+		conn, err := tls.Dial("tcp", address, &tls.Config{
+			InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+		})
+		if err != nil {
+			return false
+		}
+		defer conn.Close()
+		leaf := conn.ConnectionState().PeerCertificates[0]
+		return len(leaf.DNSNames) > 0 && leaf.DNSNames[0] == "three.example.com"
+	}) {
+		t.Fatal("rotation after reload not detected")
+	}
+	doRequest()
+
+	if key == "" {
+		t.Fatal("unexpected empty listener key")
+	}
+}
+
+func storeFor(t *testing.T, lg *listener.Group, key string) tr.CertStore {
+	t.Helper()
+	l := lg.Get(key)
+	if l == nil || l.CertSwapper() == nil {
+		t.Fatal("no swapper for listener")
+	}
+	store, ok := l.CertSwapper().(tr.CertStore)
+	if !ok {
+		t.Fatal("swapper does not implement CertStore")
+	}
+	return store
+}
+
+func TestMonitorMemoryCerts(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, testWatchInterval)
+	lg, key, _ := startTLSListener(t, certPath, keyPath)
+
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	k, c, err := tlstest.GetTestKeyAndCertWithNames("secret.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMemoryCert("no-such-listener", "ns/name", c, k); err == nil {
+		t.Error("expected error for unknown listener")
+	}
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, "ns/name", c, k); err != nil {
+		t.Fatal(err)
+	}
+	store := storeFor(t, lg, key)
+	entries := store.Entries()
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	idx := slices.IndexFunc(entries, func(e tr.EntryInfo) bool {
+		return e.SourceKind == tr.SourceKindMemory
+	})
+	if idx < 0 || entries[idx].Key != "memory:ns/name" ||
+		entries[idx].CommonName != "secret.example.com" {
+		t.Errorf("unexpected memory entry: %+v", entries)
+	}
+
+	// an invalid pair must be rejected by the same coherence validation
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, "ns/name",
+		c, []byte("garbage")); err == nil {
+		t.Error("expected validation error for invalid memory pair")
+	}
+
+	// what a listener is serving has to be answerable: an owner that only
+	// remembers what it installed cannot tell an entry it still owns from
+	// one a reload destroyed with its listener
+	sources, ok := m.MemoryCerts(listenerconfig.DefaultFrontendName)
+	if !ok || !slices.Equal(sources, []string{"ns/name"}) {
+		t.Errorf("MemoryCerts = %v, %t; want [ns/name], true", sources, ok)
+	}
+	if sources, ok := m.MemoryCerts("no-such-listener"); ok || sources != nil {
+		t.Errorf("MemoryCerts of an absent listener = %v, %t; want nil, false",
+			sources, ok)
+	}
+
+	if err := m.RemoveMemoryCert(listenerconfig.DefaultFrontendName, "ns/name"); err != nil {
+		t.Fatal(err)
+	}
+	if entries := storeFor(t, lg, key).Entries(); len(entries) != 1 {
+		t.Errorf("expected 1 entry after removal, got %d", len(entries))
+	}
+	if sources, ok := m.MemoryCerts(listenerconfig.DefaultFrontendName); !ok ||
+		len(sources) != 0 {
+		t.Errorf("MemoryCerts after removal = %v, %t; want empty, true",
+			sources, ok)
+	}
+}
+
+func TestMonitorDisabledWatch(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, 0)
+	lg, key, address := startTLSListener(t, certPath, keyPath)
+
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	// with watching disabled, the store is still resynced with keyed entries
+	entries := storeFor(t, lg, key).Entries()
+	if len(entries) != 1 || entries[0].SourceKind != tr.SourceKindFile {
+		t.Fatalf("expected 1 file-sourced entry, got %+v", entries)
+	}
+
+	// but a rotation is not auto-detected
+	writePair(t, certPath, keyPath, "two.example.com")
+	time.Sleep(100 * time.Millisecond)
+	if san := handshakeSAN(t, address); san != "one.example.com" {
+		t.Errorf("rotation applied despite disabled watching; got %s", san)
+	}
+}
+
+func TestMonitorUnreadableSourceKeepsStore(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, 0)
+	lg, key, _ := startTLSListener(t, certPath, keyPath)
+
+	m := New()
+	defer m.Close()
+
+	for _, breakage := range []func(){
+		func() { os.Remove(certPath) },
+		func() { writePair(t, certPath, keyPath, "two.example.com"); os.Remove(keyPath) },
+		func() {
+			writePair(t, certPath, keyPath, "two.example.com")
+			if err := os.WriteFile(keyPath, []byte("garbage"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+		},
+	} {
+		breakage()
+		m.cache = make(map[string]*tr.Entry) // force a reload attempt
+		m.Apply(conf, lg)
+		entries := storeFor(t, lg, key).Entries()
+		if len(entries) != 1 || entries[0].SourceKind != tr.SourceKindConfig {
+			t.Fatalf("store should retain its config-populated entry, got %+v", entries)
+		}
+	}
+}
+
+func TestMonitorApplyLifecycle(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, testWatchInterval)
+	lg, key, _ := startTLSListener(t, certPath, keyPath)
+
+	before := runtime.NumGoroutine()
+	m := New()
+	m.Apply(conf, lg)
+
+	// soak: rapid rotation loop; the store must track the latest coherent pair
+	for i := range 5 {
+		names := []string{"one.example.com", "two.example.com"}
+		writePair(t, certPath, keyPath, names[i%2])
+	}
+	writePair(t, certPath, keyPath, "final.example.com")
+	if !waitFor(t, 5*time.Second, func() bool {
+		entries := storeFor(t, lg, key).Entries()
+		return len(entries) == 1 && entries[0].CommonName == "final.example.com"
+	}) {
+		t.Fatal("store did not converge to the final rotated certificate")
+	}
+
+	// a reload that drops all TLS backends must stop the watchers
+	confNoTLS := config.NewConfig()
+	confNoTLS.Listeners[listenerconfig.DefaultFrontendName].ServeTLS = false
+	m.Apply(confNoTLS, lg)
+	m.Close()
+	if !waitFor(t, 3*time.Second, func() bool {
+		return runtime.NumGoroutine() <= before
+	}) {
+		t.Errorf("goroutine leak: before=%d after=%d", before, runtime.NumGoroutine())
+	}
+}
+
+func TestMonitorTracksEveryBackendListenerBinding(t *testing.T) {
+	conf, _, _ := testConfig(t, 0)
+	primary := conf.Listeners[listenerconfig.DefaultFrontendName]
+	primary.Active = true
+	other := primary.Clone()
+	other.Active = true
+	conf.Listeners["second"] = other
+	conf.Backends["test"].ListenerNames = []string{listenerconfig.DefaultFrontendName, "second"}
+	m := New()
+	defer m.Close()
+	group := listener.NewGroup()
+	m.Apply(conf, group)
+	if len(m.listeners) != 2 {
+		t.Fatalf("tracked %d listeners, want 2", len(m.listeners))
+	}
+	for _, ln := range m.listeners {
+		if len(ln.fileSets) != 1 {
+			t.Fatal("binding is missing its certificate")
+		}
+	}
+	next := conf.Clone()
+	next.Backends["test"].ListenerNames = []string{"second"}
+	m.Apply(next, group)
+	if len(m.listeners) != 1 {
+		t.Fatalf("removed binding still monitored: %v", m.listeners)
+	}
+	for _, ln := range m.listeners {
+		if ln.name != "second" {
+			t.Fatal("wrong binding retained")
+		}
+	}
+}
+
+type stubPacketServer struct{ done chan struct{} }
+
+func (s *stubPacketServer) Serve(net.PacketConn) error {
+	<-s.done
+	return nil
+}
+
+func (s *stubPacketServer) Shutdown(context.Context) error {
+	close(s.done)
+	return nil
+}
+
+func TestMonitorRotatesHTTP3Endpoint(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, testWatchInterval)
+	lo := conf.Listeners[listenerconfig.DefaultFrontendName]
+	lo.TLSListenPort = 8483
+	lo.HTTP3 = &listenerconfig.HTTP3Options{Enabled: true}
+
+	lg, tlsKey, _ := startTLSListener(t, certPath, keyPath)
+
+	tlsCfg, err := tlsServerConfig(certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h3Key := listener.GroupKey(listenerconfig.DefaultFrontendName,
+		listenerconfig.ProtocolHTTP3, false)
+	stub := &stubPacketServer{done: make(chan struct{})}
+	go lg.StartPacketListener(h3Key, listenerconfig.ProtocolHTTP3, "127.0.0.1", 0,
+		tlsCfg, http.NotFoundHandler(),
+		func(http.Handler, *tls.Config) listener.PacketServer { return stub }, nil)
+	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(h3Key) != nil }) {
+		t.Fatal("HTTP/3 listener not found in group")
+	}
+
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	h3Store := storeFor(t, lg, h3Key)
+	tlsStore := storeFor(t, lg, tlsKey)
+
+	// rotating on disk must reach the HTTP/3 store, not only the TCP one
+	writePair(t, certPath, keyPath, "rotated.example.com")
+	if !waitFor(t, 5*time.Second, func() bool {
+		return certStoreHasName(h3Store, "rotated.example.com")
+	}) {
+		t.Error("HTTP/3 endpoint kept serving the pre-rotation certificate")
+	}
+	if !certStoreHasName(tlsStore, "rotated.example.com") {
+		t.Error("TLS endpoint did not receive the rotated certificate")
+	}
+}
+
+func certStoreHasName(store tr.CertStore, name string) bool {
+	for _, e := range store.Entries() {
+		if slices.Contains(e.DNSNames, name) {
+			return true
+		}
+	}
+	return false
+}
+
+const (
+	runtimeSAN      = "runtime.example.com"
+	secondSAN       = "second.example.com"
+	memorySourceKey = "ns/secret"
+)
+
+func runtimeCertConfig() *config.Config {
+	conf := config.NewConfig()
+	lo := conf.Listeners[listenerconfig.DefaultFrontendName]
+	lo.ServeTLS = true
+	lo.TLSRuntimeCerts = true
+	lo.TLSWatchInterval = 0
+	conf.Backends = map[string]*bo.Options{
+		"test": {ListenerNames: []string{listenerconfig.DefaultFrontendName}},
+	}
+	return conf
+}
+
+func startRuntimeTLSListener(t *testing.T) (*listener.Group, string, string) {
+	t.Helper()
+	lg := listener.NewGroup()
+	key := listener.GroupKey(listenerconfig.DefaultFrontendName, "", true)
+	go lg.StartListener(key, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}), nil, nil, time.Second, nil)
+	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
+		t.Fatal("listener not found in group")
+	}
+	l := lg.Get(key)
+	if !l.WaitForReady(5 * time.Second) {
+		t.Fatal("listener not ready")
+	}
+	t.Cleanup(func() { lg.Shutdown(0) })
+	return lg, key, l.Addr().String()
+}
+
+func handshakeErr(address, serverName string) error {
+	conn, err := tls.Dial("tcp", address, &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+		ServerName:         serverName,
+	})
+	if err == nil {
+		conn.Close()
+	}
+	return err
+}
+
+func kindsOf(store tr.CertStore) map[string]int {
+	out := make(map[string]int)
+	for _, e := range store.Entries() {
+		out[e.SourceKind]++
+	}
+	return out
+}
+
+func TestMonitorRuntimeCertListener(t *testing.T) {
+	conf := runtimeCertConfig()
+	lg, key, address := startRuntimeTLSListener(t)
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	if names := m.TLSListeners(); !slices.Equal(names, []string{listenerconfig.DefaultFrontendName}) {
+		t.Fatalf("TLSListeners = %v; want the runtime-cert listener tracked", names)
+	}
+	if err := handshakeErr(address, runtimeSAN); err == nil {
+		t.Fatal("handshake succeeded before any certificate was supplied")
+	}
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, memorySourceKey, c, k); err != nil {
+		t.Fatal(err)
+	}
+	if err := handshakeErr(address, runtimeSAN); err != nil {
+		t.Fatalf("handshake failed after the runtime certificate was supplied: %v", err)
+	}
+	if kinds := kindsOf(storeFor(t, lg, key)); kinds[tr.SourceKindMemory] != 1 || len(kinds) != 1 {
+		t.Errorf("entry kinds = %v; want exactly one memory entry", kinds)
+	}
+	if err := m.RemoveMemoryCert(listenerconfig.DefaultFrontendName, memorySourceKey); err != nil {
+		t.Fatal(err)
+	}
+	if err := handshakeErr(address, runtimeSAN); err == nil {
+		t.Error("handshake succeeded after the runtime certificate was removed")
+	}
+}
+
+func TestMonitorReloadPreservesMemoryCerts(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, 0)
+	lg, key, _ := startTLSListener(t, certPath, keyPath)
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, memorySourceKey, c, k); err != nil {
+		t.Fatal(err)
+	}
+	store := storeFor(t, lg, key)
+	// a config reload replaces only the config-sourced entries
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.ReplaceKinds(tr.NewConfigEntries([]tls.Certificate{cert}), tr.SourceKindConfig)
+	if kinds := kindsOf(store); kinds[tr.SourceKindMemory] != 1 {
+		t.Fatalf("entry kinds after reload = %v; want the memory entry preserved", kinds)
+	}
+	m.Apply(conf, lg)
+	kinds := kindsOf(store)
+	if kinds[tr.SourceKindMemory] != 1 || kinds[tr.SourceKindFile] != 1 || kinds[tr.SourceKindConfig] != 0 {
+		t.Fatalf("entry kinds after monitor apply = %v; want file and memory only", kinds)
+	}
+}
+
+func TestMonitorPartialFileSetFailureKeepsOtherEntries(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, 0)
+	dir := t.TempDir()
+	secondCert, secondKey := filepath.Join(dir, "second.crt"), filepath.Join(dir, "second.key")
+	writePair(t, secondCert, secondKey, secondSAN)
+	conf.Backends["second"] = &bo.Options{
+		ListenerNames: []string{listenerconfig.DefaultFrontendName},
+		TLS: &to.Options{
+			ServeTLS:          true,
+			FullChainCertPath: secondCert,
+			PrivateKeyPath:    secondKey,
+		},
+	}
+	lg, key, address := startTLSListener(t, certPath, keyPath)
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+	store := storeFor(t, lg, key)
+	if kinds := kindsOf(store); kinds[tr.SourceKindFile] != 2 {
+		t.Fatalf("entry kinds = %v; want two file entries", kinds)
+	}
+
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, memorySourceKey, c, k); err != nil {
+		t.Fatal(err)
+	}
+	// the second set becomes unloadable and has no cached last-good entry
+	os.Remove(secondCert)
+	m.cache = make(map[string]*tr.Entry)
+	m.Apply(conf, lg)
+	kinds := kindsOf(store)
+	if kinds[tr.SourceKindMemory] != 1 || kinds[tr.SourceKindFile] < 1 {
+		t.Fatalf("entry kinds = %v; want the memory entry and the loadable file entry kept", kinds)
+	}
+	if err := handshakeErr(address, runtimeSAN); err != nil {
+		t.Errorf("handshake failed after a partial file-set failure: %v", err)
+	}
+}
+
+func handshakeSANFor(t *testing.T, address, serverName string) string {
+	t.Helper()
+	conn, err := tls.Dial("tcp", address, &tls.Config{
+		InsecureSkipVerify: true, // #nosec G402 -- test client against self-signed test cert
+		ServerName:         serverName,
+	})
+	if err != nil {
+		t.Fatalf("handshake failed: %v", err)
+	}
+	defer conn.Close()
+	leaf := conn.ConnectionState().PeerCertificates[0]
+	if len(leaf.DNSNames) == 0 {
+		return ""
+	}
+	return leaf.DNSNames[0]
+}
+
+func TestMonitorReloadPicksUpRotatedFilesWithoutWatching(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, 0)
+	lg, key, address := startTLSListener(t, certPath, keyPath)
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, memorySourceKey, c, k); err != nil {
+		t.Fatal(err)
+	}
+	// rotate the pair in place with watching disabled, then reload the config
+	// the same way the daemon does: config entries first, then the monitor
+	writePair(t, certPath, keyPath, secondSAN)
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := storeFor(t, lg, key)
+	store.ReplaceKinds(tr.NewConfigEntries([]tls.Certificate{cert}), tr.SourceKindConfig)
+	m.Apply(conf, lg)
+
+	if san := handshakeSANFor(t, address, secondSAN); san != secondSAN {
+		t.Errorf("handshake after reload served %q; want the rotated certificate", san)
+	}
+	if san := handshakeSANFor(t, address, runtimeSAN); san != runtimeSAN {
+		t.Errorf("handshake after reload served %q; want the memory certificate kept", san)
+	}
+	kinds := kindsOf(store)
+	if kinds[tr.SourceKindFile] != 1 || kinds[tr.SourceKindMemory] != 1 || kinds[tr.SourceKindConfig] != 0 {
+		t.Errorf("entry kinds = %v; want one file and one memory entry", kinds)
+	}
+	if _, ok := m.cache["stale"]; ok {
+		t.Error("unexpected cache key")
+	}
+}
+
+func TestMonitorFillsStoreWhenListenerPublishesLater(t *testing.T) {
+	// a certificate supplied while its listener is still starting reaches the
+	// listener's store once the group publishes it
+	conf := runtimeCertConfig()
+	lg := listener.NewGroup()
+	t.Cleanup(func() { lg.Shutdown(0) })
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(runtimeSAN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := m.SetMemoryCert(listenerconfig.DefaultFrontendName, memorySourceKey, c, k); err != nil {
+		t.Fatal(err)
+	}
+	key := listener.GroupKey(listenerconfig.DefaultFrontendName, "", true)
+	go lg.StartListener(key, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}), nil, nil, time.Second, nil)
+	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
+		t.Fatal("listener not found in group")
+	}
+	l := lg.Get(key)
+	if !l.WaitForReady(5 * time.Second) {
+		t.Fatal("listener not ready")
+	}
+	if err := handshakeErr(l.Addr().String(), runtimeSAN); err != nil {
+		t.Fatalf("handshake failed after the listener was published: %v", err)
+	}
+	if kinds := kindsOf(storeFor(t, lg, key)); kinds[tr.SourceKindMemory] != 1 {
+		t.Errorf("entry kinds = %v; want the memory entry installed", kinds)
+	}
+}

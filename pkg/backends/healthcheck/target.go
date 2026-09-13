@@ -18,19 +18,19 @@ package healthcheck
 
 import (
 	"context"
-	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -44,21 +44,26 @@ type target struct {
 	description           string
 	baseRequest           *http.Request
 	httpClient            *http.Client
+	probeFunc             Probe
+	timeout               time.Duration
 	interval              time.Duration
 	status                *Status
 	failureThreshold      int
 	recoveryThreshold     int
 	failConsecutiveCnt    atomic.Int32
 	successConsecutiveCnt atomic.Int32
-	// guards cancel and wg across Start/Stop cycles
-	mtx    sync.Mutex
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	// poller runs the probe loop; nil when interval <= 0, meaning the
+	// target is registered and reportable but never probed
+	poller *poller.Poller
 	ceb    bool
 	eb     string
 	eh     http.Header
 	ec     []int
 }
+
+// Probe is a protocol-neutral health probe. Returned errors must be safe for
+// operator-facing health status, logs, and demand-probe responses.
+type Probe func(context.Context) error
 
 // DemandProbe defines a health check probe that makes an HTTP Request to the backend and writes the
 // response to the provided ResponseWriter
@@ -82,31 +87,14 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 	if len(o.Headers) > 0 {
 		r.Header = headers.Lookup(o.Headers).ToHeader()
 	}
-	interval := time.Duration(o.Interval)
 	if client == nil {
 		client = newHTTPClient(ho.CalibrateTimeout(time.Duration(o.Timeout)))
 	}
-	if o.FailureThreshold < 1 {
-		o.FailureThreshold = 3 // default to 3
-	}
-	if o.RecoveryThreshold < 1 {
-		o.RecoveryThreshold = 3 // default to 3
-	}
-	isd := fmt.Sprintf("initializing (check interval: %dms)", interval.Milliseconds())
-	t := &target{
-		name:              name,
-		description:       description,
-		baseRequest:       r,
-		httpClient:        client,
-		failureThreshold:  o.FailureThreshold,
-		recoveryThreshold: o.RecoveryThreshold,
-		interval:          interval,
-	}
+	t := newBaseTarget(name, description, o)
+	t.baseRequest = r
+	t.httpClient = client
+	t.status.prober = t.demandProbe
 
-	t.status = &Status{name: name, detail: isd, description: description, prober: t.demandProbe}
-	if interval > 0 {
-		t.status.Set(StatusInitializing)
-	}
 	if len(o.ExpectedHeaders) > 0 {
 		t.eh = headers.Lookup(o.ExpectedHeaders).ToHeader()
 	}
@@ -120,6 +108,62 @@ func newTarget(_ context.Context, name, description string, o *ho.Options,
 		t.ec = []int{http.StatusOK}
 	}
 	return t, nil
+}
+
+func newProbeTarget(name, description string, o *ho.Options, probe Probe) (*target, error) {
+	if o == nil {
+		return nil, ho.ErrNoOptionsProvided
+	}
+	if probe == nil {
+		return nil, errors.New("no health check probe provided")
+	}
+	if hasHTTPProbeOptions(o) {
+		return nil, errors.New("protocol health checks do not accept HTTP request or response options")
+	}
+	t := newBaseTarget(name, description, o)
+	t.probeFunc = probe
+	t.status.prober = t.demandProbe
+	return t, nil
+}
+
+func newBaseTarget(name, description string, o *ho.Options) *target {
+	interval := time.Duration(o.Interval)
+	if o.FailureThreshold < 1 {
+		o.FailureThreshold = 3 // default to 3
+	}
+	if o.RecoveryThreshold < 1 {
+		o.RecoveryThreshold = 3 // default to 3
+	}
+	isd := fmt.Sprintf("initializing (check interval: %dms)", interval.Milliseconds())
+	t := &target{
+		name:              name,
+		description:       description,
+		failureThreshold:  o.FailureThreshold,
+		recoveryThreshold: o.RecoveryThreshold,
+		interval:          interval,
+		timeout:           ho.CalibrateTimeout(time.Duration(o.Timeout)),
+	}
+
+	t.status = &Status{name: name, detail: isd, description: description}
+	if interval > 0 {
+		t.status.Set(StatusInitializing)
+		p, err := poller.New(poller.Options{
+			Name:             name,
+			Interval:         interval,
+			DetachIterations: true,
+			OnPanic:          t.onProbePanic,
+		}, poller.Func(t.pollProbe))
+		if err == nil {
+			t.poller = p
+		}
+	}
+	return t
+}
+
+func hasHTTPProbeOptions(o *ho.Options) bool {
+	return o.Verb != "" || o.Scheme != "" || o.Host != "" || o.Path != "" ||
+		o.Query != "" || len(o.Headers) > 0 || o.Body != "" ||
+		len(o.ExpectedCodes) > 0 || len(o.ExpectedHeaders) > 0 || o.HasExpectedBody()
 }
 
 func (t *target) Name() string {
@@ -172,83 +216,59 @@ func (t *target) isGoodBody(r io.ReadCloser) bool {
 	return true
 }
 
-// Start begins health checking the target
+// Start begins health checking the target. Starting an already-running
+// target stops its predecessor first, so Register-over-existing does not
+// leave two probe loops against one upstream.
 func (t *target) Start(ctx context.Context) {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	if t.cancel != nil {
-		t.cancel()
-		t.wg.Wait()
-		t.cancel = nil
+	if t.poller == nil {
+		return // interval <= 0: registered but never probed
 	}
-	t.wg = sync.WaitGroup{}
-	ctx, cancel := context.WithCancel(tctx.WithHealthCheckFlag(ctx, true))
-	t.cancel = cancel
-	t.probeLoop(ctx)
+	t.poller.Start(tctx.WithHealthCheckFlag(ctx, true))
 }
 
-// Stop stops healthchecking the target
+// Stop stops healthchecking the target. It waits for an in-flight probe to
+// finish rather than cancelling it; see the DetachIterations note in
+// newBaseTarget.
 func (t *target) Stop() {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	if t.cancel == nil {
+	if t.poller == nil {
 		return
 	}
-	t.cancel()
-	t.wg.Wait()
-	t.cancel = nil
+	t.poller.Stop()
 }
 
-func (t *target) probeLoop(ctx context.Context) {
-	// runProbe isolates each probe invocation so a panic only kills this
-	// iteration; the ticker loop keeps running and the target's Status stays
-	// fresh. Without this, a single bad probe (nil deref, panicking transport,
-	// etc.) silently freezes Status at its last value.
-	runProbe := func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Error("healthcheck probe panic", logging.Pairs{
-					"target": t.Name(),
-					"panic":  fmt.Sprintf("%v", r),
-				})
-				metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
-			}
-		}()
-		t.probe(context.WithoutCancel(ctx))
-	}
-	t.wg.Go(func() {
-		// this prevents all health checks from always probing at the same time
-		jitter := time.NewTimer(randomJitter(10*time.Millisecond, time.Second))
-		select {
-		case <-ctx.Done():
-			jitter.Stop()
-			return
-		case <-jitter.C:
-		}
-		// detach the probe request from the loop ctx so Stop waits for the
-		// in-flight probe to finish instead of cancelling it; this serializes
-		// Register-over-existing at the upstream level.
-		runProbe()
-		ticker := time.NewTicker(t.interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return // probe complete, stop loop and prevent goroutine leak
-			case <-ticker.C:
-				runProbe()
-			}
-		}
+// pollProbe adapts probe to poller.Func.
+//
+// It always reports success, because a failed probe is not a failed
+// iteration: the poll happened, and what the result means is decided by
+// recordProbeResult's failure and recovery thresholds. Returning an error
+// here would hand that judgment to the poller's backoff and stretch the
+// interval that those thresholds are counted in, quietly changing how long
+// a target takes to be marked down.
+func (t *target) pollProbe(ctx context.Context) (time.Duration, error) {
+	t.probe(ctx)
+	return 0, nil
+}
+
+// onProbePanic keeps a panicking probe from freezing Status at its last
+// value, which would silently mask real upstream failures from operators
+// and from ALB pools.
+func (t *target) onProbePanic(r any, _ []byte) {
+	logger.Error("healthcheck probe panic", logging.Pairs{
+		keys.Target: t.Name(),
+		keys.Panic:  fmt.Sprintf("%v", r),
 	})
+	metrics.HealthcheckProbePanicRecovered.WithLabelValues(t.Name()).Inc()
 }
 
 func (t *target) probe(ctx context.Context) {
+	if t.probeFunc != nil {
+		t.probeProtocol(ctx)
+		return
+	}
 	r := t.baseRequest.Clone(ctx)
 	start := time.Now()
 	resp, err := t.httpClient.Do(r)
 	metrics.HealthcheckProbeLatency.WithLabelValues(t.Name()).Observe(time.Since(start).Seconds())
-	st := t.status.Get()
-	var errCnt, successCnt int
 	var passed bool
 	var detail string
 	switch {
@@ -258,27 +278,46 @@ func (t *target) probe(ctx context.Context) {
 			resp.Body.Close()
 		}
 		detail = fmt.Sprintf("error probing target: %v", err)
+	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
+		detail = t.status.Detail()
+		resp.Body.Close()
+	default:
+		resp.Body.Close()
+		passed = true
+	}
+	statusCode := 0
+	if resp != nil && err == nil {
+		statusCode = resp.StatusCode
+	}
+	t.recordProbeResult(passed, detail, err, statusCode)
+}
+
+func (t *target) probeProtocol(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, t.timeout)
+	defer cancel()
+	start := time.Now()
+	err := t.probeFunc(ctx)
+	metrics.HealthcheckProbeLatency.WithLabelValues(t.Name()).Observe(time.Since(start).Seconds())
+	detail := ""
+	if err != nil {
+		detail = "error probing target: " + err.Error()
+	}
+	t.recordProbeResult(err == nil, detail, err, 0)
+}
+
+func (t *target) recordProbeResult(passed bool, detail string, err error, statusCode int) {
+	st := t.status.Get()
+	var errCnt, successCnt int
+	if passed {
+		successCnt = int(t.successConsecutiveCnt.Add(1))
+		t.failConsecutiveCnt.Store(0)
+	} else {
 		t.status.SetDetail(detail)
 		errCnt = int(t.failConsecutiveCnt.Add(1))
 		t.successConsecutiveCnt.Store(0)
-
 		if st != StatusFailing {
-			LogHealthCheckError(t.Name(), err, 0)
+			LogHealthCheckError(t.Name(), err, statusCode)
 		}
-
-	case !t.isGoodCode(resp.StatusCode) || !t.isGoodHeader(resp.Header) || !t.isGoodBody(resp.Body):
-		errCnt = int(t.failConsecutiveCnt.Add(1))
-		t.successConsecutiveCnt.Store(0)
-		resp.Body.Close()
-
-		if st != StatusFailing {
-			LogHealthCheckError(t.Name(), nil, resp.StatusCode)
-		}
-	default:
-		resp.Body.Close()
-		successCnt = int(t.successConsecutiveCnt.Add(1))
-		t.failConsecutiveCnt.Store(0)
-		passed = true
 	}
 	nst := StatusFailing
 	if (passed && successCnt >= t.recoveryThreshold) ||
@@ -294,18 +333,18 @@ func (t *target) probe(ctx context.Context) {
 }
 
 func (t *target) notifyStatus(st int32, detail string) {
-	pairs := logging.Pairs{"targetName": t.name}
+	pairs := logging.Pairs{keys.TargetName: t.name}
 	switch st {
 	case StatusFailing:
 		t.status.SetFailingSince(time.Now())
 		t.status.SetDetail(detail)
-		pairs["status"] = "unavailable"
-		pairs["detail"] = detail
-		pairs["threshold"] = t.failureThreshold
+		pairs[keys.Status] = "unavailable"
+		pairs[keys.Detail] = detail
+		pairs[keys.Threshold] = t.failureThreshold
 	case StatusPassing:
 		t.status.SetFailingSince(time.Time{})
-		pairs["status"] = "available"
-		pairs["threshold"] = t.recoveryThreshold
+		pairs[keys.Status] = "available"
+		pairs[keys.Threshold] = t.recoveryThreshold
 		t.status.SetDetail("")
 	}
 	t.status.Set(st)
@@ -313,6 +352,10 @@ func (t *target) notifyStatus(st int32, detail string) {
 }
 
 func (t *target) demandProbe(w http.ResponseWriter) {
+	if t.probeFunc != nil {
+		t.demandProtocolProbe(w)
+		return
+	}
 	r := t.baseRequest.Clone(context.Background())
 	resp, err := t.httpClient.Do(r)
 	if resp != nil && resp.Body != nil {
@@ -347,6 +390,31 @@ func (t *target) demandProbe(w http.ResponseWriter) {
 	}
 }
 
+func (t *target) demandProtocolProbe(w http.ResponseWriter) {
+	ctx, cancel := context.WithTimeout(context.Background(), t.timeout)
+	defer cancel()
+	err := t.probeFunc(ctx)
+	t.copyStatusHeaders(w.Header())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("error performing health check: " + err.Error()))
+		LogHealthCheckError(t.Name(), err, 0)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte("health check passed"))
+}
+
+func (t *target) copyStatusHeaders(h http.Header) {
+	if t.status == nil || t.status.Get() == StatusUnchecked {
+		return
+	}
+	sh := t.status.Headers()
+	for k := range sh {
+		h.Set(k, sh.Get(k))
+	}
+}
+
 // LogHealthCheckError logs a failed health check by printing
 // the backend target name, error, and HTTP status. These parameters
 // are optional and can be omitted by passing their default values.
@@ -355,29 +423,18 @@ func LogHealthCheckError(targetName string, err error, status int) {
 	pairs := logging.Pairs{}
 
 	if targetName != "" {
-		pairs["targetName"] = targetName
+		pairs[keys.TargetName] = targetName
 	}
 
 	if err != nil {
-		pairs["error"] = err
+		pairs[keys.Error] = err
 	}
 
 	if status > 0 {
-		pairs["httpStatus"] = status
+		pairs[keys.HTTPStatus] = status
 	}
 
 	logger.Error(standardLogLine, pairs)
-}
-
-func randomJitter(min, max time.Duration) time.Duration {
-	if max <= min {
-		return min
-	}
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max-min)))
-	if err != nil {
-		return min
-	}
-	return min + time.Duration(n.Int64())
 }
 
 func newHTTPClient(timeout time.Duration) *http.Client {
@@ -387,10 +444,10 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
-			Dial: (&net.Dialer{
+			DialContext: (&net.Dialer{
 				Timeout:   timeout,
 				KeepAlive: time.Second * 30,
-			}).Dial,
+			}).DialContext,
 			MaxIdleConns:          1,
 			MaxIdleConnsPerHost:   1,
 			MaxConnsPerHost:       1,

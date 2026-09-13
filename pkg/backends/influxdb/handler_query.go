@@ -18,12 +18,14 @@ package influxdb
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
+	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -36,6 +38,13 @@ import (
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	f := iofmt.Detect(r)
 	switch {
+	case f.IsV3SQL(), f.IsV3InfluxQL():
+		// formats Trickster cannot reserialize (parquet, pretty, ...) are
+		// proxied through untouched, per docs/influxdb.md
+		if !isV3SelectQuery(r) || !isql.SupportedV3Format(r) {
+			c.ProxyHandler(w, r)
+			return
+		}
 	case f.IsInfluxQL():
 		qp, _, _ := params.GetRequestValues(r)
 		// skip non-selects
@@ -55,6 +64,15 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }
 
+// isV3SelectQuery checks if a v3 request contains a SELECT query.
+func isV3SelectQuery(r *http.Request) bool {
+	q, err := isql.ExtractQuery(r)
+	if err != nil || q == "" {
+		return false
+	}
+	return slices.Contains(strings.Fields(strings.ToLower(q)), "select")
+}
+
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
@@ -64,6 +82,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	f := iofmt.Detect(r)
 	switch {
+	case f.IsV3SQL():
+		return isql.ParseTimeRangeQuery(r, f)
+	case f.IsV3InfluxQL():
+		return isql.ParseV3InfluxQL(r, f)
 	case f.IsInfluxQL():
 		return influxql.ParseTimeRangeQuery(r, f)
 	case f.IsFlux():

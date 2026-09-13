@@ -22,6 +22,7 @@ import (
 
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
 func TestValidateSuccess(t *testing.T) {
@@ -102,7 +103,7 @@ func TestCloneCopiesSlicesAndMaps(t *testing.T) {
 		Verb:            "GET",
 		ExpectedCodes:   []int{200},
 		Headers:         ct.EnvStringMap{"X-Test": "1"},
-		ExpectedHeaders: map[string]string{"Content-Type": "text/plain"},
+		ExpectedHeaders: map[string]string{headers.NameContentType: "text/plain"},
 	}
 	cl := o.Clone()
 	if cl == o {
@@ -116,8 +117,8 @@ func TestCloneCopiesSlicesAndMaps(t *testing.T) {
 	if o.Headers["X-Test"] != "1" {
 		t.Fatal("Headers should be copied")
 	}
-	cl.ExpectedHeaders["Content-Type"] = "application/json"
-	if o.ExpectedHeaders["Content-Type"] != "text/plain" {
+	cl.ExpectedHeaders[headers.NameContentType] = "application/json"
+	if o.ExpectedHeaders[headers.NameContentType] != "text/plain" {
 		t.Fatal("ExpectedHeaders should be copied")
 	}
 }

@@ -17,8 +17,10 @@
 package handler
 
 import (
+	"bufio"
 	"bytes"
 	"io"
+	"net"
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
@@ -58,10 +60,16 @@ type responseEncoder struct {
 	buff                *bytes.Buffer
 	writeFunc           writeFunc
 	decoderInit         providers.DecoderInitializer
+	hijacked            bool
 }
+
+var _ http.Hijacker = (*responseEncoder)(nil)
 
 // Write implements ResponseEncoder.Write
 func (ew *responseEncoder) Write(b []byte) (int, error) {
+	if ew.hijacked {
+		return 0, http.ErrHijacked
+	}
 	if !ew.prepared {
 		ew.prepareWriter()
 	}
@@ -79,6 +87,37 @@ func (ew *responseEncoder) WriteHeader(c int) {
 // Header implements ResponseEncoder.Header
 func (ew *responseEncoder) Header() http.Header {
 	return ew.ResponseWriter.Header()
+}
+
+// FlushError flushes the active transform before the underlying writer, so a
+// streaming response is not left buffered inside the compressor. Without it,
+// http.ResponseController.Flush would follow Unwrap straight to the network.
+func (ew *responseEncoder) FlushError() error {
+	if ew.hijacked {
+		return http.ErrHijacked
+	}
+	if ew.encoder != nil {
+		if f, ok := ew.encoder.(interface{ Flush() error }); ok {
+			if err := f.Flush(); err != nil {
+				return err
+			}
+		}
+	}
+	return http.NewResponseController(ew.ResponseWriter).Flush()
+}
+
+// Unwrap exposes the underlying writer to http.ResponseController.
+func (ew *responseEncoder) Unwrap() http.ResponseWriter {
+	return ew.ResponseWriter
+}
+
+// Hijack delegates connection ownership to the underlying response writer.
+func (ew *responseEncoder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	c, rw, err := http.NewResponseController(ew.ResponseWriter).Hijack()
+	if err == nil {
+		ew.hijacked = true
+	}
+	return c, rw, err
 }
 
 func (ew *responseEncoder) prepareWriter() {
@@ -173,6 +212,9 @@ func (ew *responseEncoder) writeTranscoded(b []byte) (int, error) {
 }
 
 func (ew *responseEncoder) Close() error {
+	if ew.hijacked {
+		return nil
+	}
 	var err1, err2 error
 	if ew.encoder != nil {
 		err1 = ew.encoder.Close()

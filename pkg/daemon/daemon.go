@@ -28,37 +28,36 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/setup"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/signaling"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
 
 var mtx sync.Mutex
 
-// hupDelegate is the function newHupFunc forwards to. Indirected through a
-// package var so tests can swap it out without invoking the full reload path.
-// Initialized in init() to break the Hup -> newHupFunc -> hupDelegate -> Hup
-// initialization cycle.
-var hupDelegate func(si *instance.ServerInstance, source string, args ...string) (bool, error)
+// reloadDelegate is the function newReloadFunc forwards to, a package var so tests can swap it
+// out; it is set in init() to break the initialization cycle through Reload
+var reloadDelegate func(si *instance.ServerInstance, source string, args ...string) (bool, error)
 
 func init() {
-	hupDelegate = Hup
+	reloadDelegate = Reload
 }
 
-// newHupFunc returns a reload.Reloader closed over args, so subsequent reloads
-// continue reading from the original -config path. Used for both the initial
-// registration and the re-registration performed after a successful reload.
-func newHupFunc(si *instance.ServerInstance, args []string) reload.Reloader {
+func newReloadFunc(si *instance.ServerInstance, args []string) reload.Reloader {
 	return func(source string) (bool, error) {
-		return hupDelegate(si, source, args...)
+		return reloadDelegate(si, source, args...)
 	}
 }
 
@@ -95,9 +94,21 @@ func Start(ctx context.Context, args ...string) error {
 	}
 
 	si := &instance.ServerInstance{
-		Listeners: listener.NewGroup(),
+		Listeners:   listener.NewGroup(),
+		CertMonitor: monitor.New(),
+		Readiness:   &ready.State{},
 	}
-	hupFunc := newHupFunc(si, args)
+	hupFunc := newReloadFunc(si, args)
+	si.Reloader = hupFunc
+	autoReloader := bindAutoReloader(ctx, si, hupFunc)
+	defer autoReloader.Close()
+	kubeSup := bindKubeSupervisor(ctx, si, hupFunc)
+	defer kubeSup.Close()
+	// with a controller configured the pod is not ready until that controller has published
+	// its first translation, and the flag is raised before any listener can answer a probe
+	if conf.Kubernetes.IsEnabled() {
+		si.Readiness.SetPending()
+	}
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
 	if err != nil {
@@ -111,22 +122,85 @@ func Start(ctx context.Context, args ...string) error {
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("startup completed but some listeners not ready",
-				logging.Pairs{"error": err.Error()})
+				logging.Pairs{keys.Error: err.Error()})
 		} else {
 			logger.Info("all listeners ready", nil)
 		}
 	}
+	autoReloader.Update(conf)
+	si.CertMonitor.Apply(conf, si.Listeners)
+	// the controller starts last and asynchronously: its first translation reloads the daemon,
+	// which cannot happen until startup has released the configuration lock it still holds
+	kubeSup.Apply(conf, si.Tracers)
 
 	skipUnlock = true
 	mtx.Unlock()
-	signaling.Wait(ctx, hupFunc)
-	if si.Listeners != nil {
-		si.Listeners.Shutdown(0)
-	}
+	reloadsDone := signaling.Wait(ctx, hupFunc, si.Readiness.SetDraining)
+	// readiness must report draining before any reload or watcher is awaited
+	si.Readiness.SetDraining()
+	// in-flight reloads, the auto-reloader and the cert monitor are quiesced
+	// concurrently so shutdown can bound how long it waits for them
+	quiesced := make(chan struct{})
+	safego.Go(reloadGoroutinePanic("quiesce", "shutdown"), func() {
+		<-reloadsDone
+		autoReloader.Close()
+		si.CertMonitor.Close()
+		close(quiesced)
+	})
+	shutdown(si, quiesced)
 	return nil
 }
 
-func Hup(si *instance.ServerInstance, source string, args ...string) (bool, error) {
+func shutdown(si *instance.ServerInstance, quiesced <-chan struct{}) {
+	si.Readiness.SetDraining()
+	defer stopWorkers(si)
+	if si.Listeners == nil {
+		return
+	}
+	// the settings snapshot is read atomically because a reload may still be
+	// committing a new config while shutdown runs
+	opts := si.MgmtOptions()
+	delay := time.Duration(opts.ShutdownDelay)
+	drain := opts.ShutdownDrain()
+	ctx, cancel := signaling.DrainContext(context.Background(), delay+drain)
+	defer cancel()
+	logger.Info("shutdown starting", logging.Pairs{
+		keys.Delay: delay.String(), keys.DrainTimeout: drain.String(),
+	})
+	if quiesced != nil {
+		select {
+		case <-quiesced:
+		case <-ctx.Done():
+			logger.Warn("shutdown proceeding before an in-flight reload finished", nil)
+		}
+	}
+	if delay > 0 {
+		select {
+		case <-time.After(delay):
+		case <-ctx.Done():
+		}
+	}
+	if err := si.Listeners.ShutdownContext(ctx); err != nil {
+		logger.Warn("shutdown drain ended early; remaining connections were closed",
+			logging.Pairs{keys.Error: err.Error()})
+		return
+	}
+	logger.Info("shutdown drain complete", nil)
+}
+
+func stopWorkers(si *instance.ServerInstance) {
+	// A reload left running after a forced drain owns the workers. Process exit
+	// reclaims them, so shutdown never waits on the reload lock.
+	if !mtx.TryLock() {
+		return
+	}
+	setup.Shutdown(si)
+	mtx.Unlock()
+}
+
+// Reload is the single reload orchestrator for every source (SIGHUP, the mgmt handler, the
+// auto-reloader, overlay producers): it re-reads the files and merges the current overlay
+func Reload(si *instance.ServerInstance, source string, args ...string) (bool, error) {
 	mtx.Lock()
 	defer mtx.Unlock()
 
@@ -135,32 +209,39 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 
 	if si.Config == nil {
 		logger.Warn(reload.ConfigNotReloadedText,
-			logging.Pairs{"source": source, "reason": "no existing config to reload"})
+			logging.Pairs{keys.Source: source, keys.Reason: "no existing config to reload"})
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		return false, nil
 	}
+	if si.Listeners != nil && si.Listeners.Closed() {
+		logger.Warn(reload.ConfigNotReloadedText,
+			logging.Pairs{keys.Source: source, keys.Reason: "shutdown in progress"})
+		return false, nil
+	}
 
-	if !si.Config.CheckAndMarkReloadInProgress() {
+	overlay := currentOverlay(si)
+	if !si.Config.CheckAndMarkReloadInProgress(overlay.VersionString(),
+		reload.IsUserRequested(source)) {
 		logger.Debug("configuration not stale, skipping reload",
-			logging.Pairs{"source": source})
+			logging.Pairs{keys.Source: source})
 		return false, nil
 	}
 
 	logger.Warn("configuration reload starting now",
-		logging.Pairs{"source": source})
+		logging.Pairs{keys.Source: source})
 
 	// handleReloadFailure handles common reload failure logging and metrics
 	handleReloadFailure := func(message string, err error) (bool, error) {
 		logger.Error(message,
-			logging.Pairs{"error": err.Error(), "source": source})
+			logging.Pairs{keys.Error: err.Error(), keys.Source: source})
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 		return false, err
 	}
 
-	newConf, newClients, err := setup.BootstrapConfig(args...)
+	newConf, newClients, err := setup.BootstrapConfigWithOverlay(overlay, args...)
 	if err != nil {
 		return handleReloadFailure("reload failed: could not load new config", err)
 	}
@@ -174,12 +255,12 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	oldCaches := si.Caches
 	oldHealthChecker := si.HealthChecker
 
-	hupFunc := newHupFunc(si, args)
+	hupFunc := newReloadFunc(si, args)
 
 	err = setup.ApplyConfig(si, newConf, newClients, hupFunc, nil, si.Listeners)
 	if err != nil {
 		logger.Error("reload failed, rolling back to previous configuration",
-			logging.Pairs{"error": err.Error(), "source": source})
+			logging.Pairs{keys.Error: err.Error(), keys.Source: source})
 		si.Config = oldConfig
 		si.Backends = oldClients
 		si.Caches = oldCaches
@@ -197,14 +278,19 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 		}
 		if err := si.Listeners.WaitForReady(readinessTimeout); err != nil {
 			logger.Warn("reload completed but some listeners not ready",
-				logging.Pairs{"error": err.Error(), "source": source})
+				logging.Pairs{keys.Error: err.Error(), keys.Source: source})
 		}
 	}
 
+	if si.CertMonitor != nil {
+		// rebuild the cert stores from the new config while preserving watcher
+		// continuity for unchanged certificate file sets
+		si.CertMonitor.Apply(newConf, si.Listeners)
+	}
+
 	if oldClients != nil {
-		// close idle now, then again after drain so conns released by
-		// in-flight requests post-rotation also get reaped before the
-		// per-transport IdleConnTimeout (default 2m) elapses.
+		// close idle now, then again after the drain so connections released by in-flight
+		// requests are also reaped before the per-transport IdleConnTimeout (default 2m)
 		oldClients.CloseIdleConnections()
 		drainTimeout := 30 * time.Second
 		if newConf.MgmtConfig != nil && newConf.MgmtConfig.ReloadDrainTimeout > 0 {
@@ -221,17 +307,28 @@ func Hup(si *instance.ServerInstance, source string, args ...string) (bool, erro
 	metrics.LastReloadSuccessfulTimestamp.Set(float64(time.Now().Unix()))
 	metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
 
-	logger.Info(reload.ConfigReloadedText, logging.Pairs{"source": source})
+	logger.Info(reload.ConfigReloadedText, logging.Pairs{keys.Source: source})
+	notifyAutoReloader(si)
+	// a reload may have changed the kubernetes section, which the running
+	// controller was built from
+	notifyKubeSupervisor(si, newConf)
 	return true, nil
+}
+
+func currentOverlay(si *instance.ServerInstance) *config.Overlay {
+	if si == nil || si.OverlayProvider == nil {
+		return nil
+	}
+	return si.OverlayProvider.Overlay()
 }
 
 func reloadGoroutinePanic(site, source string) safego.PanicHandler {
 	return func(r any, stack []byte) {
 		logger.Error("reload background goroutine panic", logging.Pairs{
-			"site":   site,
-			"source": source,
-			"panic":  r,
-			"stack":  string(stack),
+			keys.Site:   site,
+			keys.Source: source,
+			keys.Panic:  r,
+			keys.Stack:  string(stack),
 		})
 	}
 }

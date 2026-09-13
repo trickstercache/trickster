@@ -20,6 +20,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -29,9 +30,13 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	cache "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	disco "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -39,7 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 const defaultResourceName = "default"
@@ -52,6 +57,9 @@ type Config struct {
 	Backends bo.Lookup `yaml:"backends,omitempty"`
 	// Caches is a map of CacheConfigs
 	Caches cache.Lookup `yaml:"caches,omitempty"`
+	// Discovery is a map of named discoverer configurations for ALB pool
+	// autodiscovery
+	Discovery disco.Lookup `yaml:"discovery,omitempty"`
 	// Frontend provides configurations about the Proxy Front End
 	// Frontend is deprecated and will be phased out in a future release
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
@@ -59,6 +67,9 @@ type Config struct {
 	Listeners listener.Lookup `yaml:"listeners,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
+	// AccessLog is the default access and error log configuration, inherited by
+	// every backend without its own access_log and used for unmatched requests
+	AccessLog *alo.Options `yaml:"access_log,omitempty"`
 	// Metrics provides configurations for collecting Metrics about the application
 	Metrics *mo.Options `yaml:"metrics,omitempty"`
 	// TracingOptions provides the distributed tracing configuration
@@ -74,6 +85,9 @@ type Config struct {
 	MgmtConfig *mgmt.Options `yaml:"mgmt,omitempty"`
 	// Authenticators provides configurations for Authenticating users
 	Authenticators auth.Lookup `yaml:"authenticators,omitempty"`
+	// Kubernetes configures the Kubernetes Gateway/Ingress controller. The
+	// controller does not exist unless this section is present.
+	Kubernetes *kubecfg.Options `yaml:"kubernetes,omitempty"`
 
 	// Flags contains a compiled version of the CLI flags
 	Flags *Flags `yaml:"-"`
@@ -100,19 +114,17 @@ type MainConfig struct {
 	// ServerName represents the server name that is conveyed in Via headers to upstream origins
 	// defaults to os.Hostname
 	ServerName string `yaml:"server_name,omitempty"`
+	// ConfigIncludeDirectory optionally overrides the default sibling conf.d directory.
+	ConfigIncludeDirectory string `yaml:"config_include_directory,omitempty"`
 
-	configFilePath      string
-	configLastModified  time.Time
-	configRateLimitTime time.Time
-	stalenessCheckLock  sync.Mutex
-}
-
-func (mc *MainConfig) SetStalenessInfo(fp string, lm, rlt time.Time) {
-	mc.stalenessCheckLock.Lock()
-	mc.configFilePath = fp
-	mc.configLastModified = lm
-	mc.configRateLimitTime = rlt
-	mc.stalenessCheckLock.Unlock()
+	configFilePath          string
+	configSourcePlan        configSourcePlan
+	configSourcePaths       []string
+	configSourceFingerprint string
+	configOverlayVersion    string
+	configLastModified      time.Time
+	configRateLimitTime     time.Time
+	stalenessCheckLock      sync.Mutex
 }
 
 // NewConfig returns a Config initialized with default values.
@@ -143,19 +155,64 @@ func NewConfig() *Config {
 	}
 }
 
-// loadFile loads application configuration from a YAML-formatted file.
-func (c *Config) loadFile(flags *Flags) error {
-	b, err := os.ReadFile(flags.ConfigPath)
+// loadFile loads application configuration from a YAML-formatted file or
+// directory, then applies the overlay, if any, on top of the file sources.
+func (c *Config) loadFile(flags *Flags, overlay *Overlay) error {
+	plan, sources, err := loadConfigSources(flags.ConfigPath)
 	if err != nil {
+		// only an absent default path is tolerated; every other source error
+		// propagates so a reload never silently drops file-defined objects
+		if flags.customPath || !defaultPathAbsent(flags.ConfigPath) {
+			return err
+		}
+		if overlay.IsEmpty() {
+			return nil
+		}
+		plan, sources = configSourcePlan{}, nil
+	}
+	var configData []byte
+	if plan.mode == configSourceModeDirectory || len(sources) != 1 || !overlay.IsEmpty() {
+		configData, err = mergeConfigSources(plan, sources, overlay)
+		if err != nil {
+			return err
+		}
+	} else {
+		configData = sources[0].data
+		document, err := parseConfigDocument(configData)
+		if err != nil {
+			return fmt.Errorf("parse config source %q: %w", sources[0].path, err)
+		}
+		if err := validateReservedNames(document.Content[0]); err != nil {
+			return fmt.Errorf("config source %q: %w", sources[0].path, err)
+		}
+	}
+	if err := c.loadYAMLConfig(string(configData)); err != nil {
 		return err
 	}
-	err = c.loadYAMLConfig(string(b))
-	if err != nil {
-		return err
+	if c.Main == nil {
+		c.Main = &MainConfig{}
 	}
+	c.Main.configOverlayVersion = overlay.VersionString()
+	if len(sources) == 0 {
+		return nil
+	}
+	snapshot := snapshotConfigSources(plan, sources, nil)
 	c.Main.configFilePath = flags.ConfigPath
-	c.Main.configLastModified = c.CheckFileLastModified()
+	c.Main.configSourcePlan = plan
+	c.Main.configSourcePaths = make([]string, len(sources))
+	for i, source := range sources {
+		c.Main.configSourcePaths[i] = source.path
+	}
+	c.Main.configSourceFingerprint = snapshot.fingerprint
+	c.Main.configLastModified = snapshot.lastModified
 	return nil
+}
+
+// defaultPathAbsent reports whether the config root path itself does not exist,
+// as opposed to existing but failing to load.
+func defaultPathAbsent(path string) bool {
+	_, err := os.Stat(path)
+	return errors.Is(err, os.ErrNotExist)
 }
 
 // loadYAMLConfig loads application configuration from a YAML-formatted byte slice.
@@ -182,19 +239,49 @@ func (c *Config) loadYAMLConfig(yml string) error {
 		}
 	}
 
+	c.Kubernetes.Initialize()
+
 	return nil
 }
 
-// CheckFileLastModified returns the last modified date of the running config file, if present
+// CheckFileLastModified returns the latest modification time among the running config sources.
 func (c *Config) CheckFileLastModified() time.Time {
 	if c.Main == nil || c.Main.configFilePath == "" {
 		return time.Time{}
+	}
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		return inspectConfigSources(c.Main.configSourcePlan).lastModified
 	}
 	file, err := os.Stat(c.Main.configFilePath)
 	if err != nil {
 		return time.Time{}
 	}
 	return file.ModTime()
+}
+
+// HasConfigChanged reports whether the configuration sources have changed since they were loaded.
+// Unlike IsStale, it does not apply or update the reload rate limiter.
+func (c *Config) HasConfigChanged() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	return c.hasConfigChanged()
+}
+
+func (c *Config) hasConfigChanged() bool {
+	if c.Main.configFilePath == "" {
+		return false
+	}
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		snapshot := inspectConfigSources(c.Main.configSourcePlan)
+		return snapshot.fingerprint != c.Main.configSourceFingerprint
+	}
+	t := c.CheckFileLastModified()
+	return !t.IsZero() && !t.Equal(c.Main.configLastModified)
 }
 
 // Process converts various raw config options into internal data structures
@@ -238,6 +325,7 @@ func (c *Config) Clone() *Config {
 
 	nc.Main.InstanceID = c.Main.InstanceID
 	nc.Main.ServerName = c.Main.ServerName
+	nc.Main.ConfigIncludeDirectory = c.Main.ConfigIncludeDirectory
 
 	nc.MgmtConfig = c.MgmtConfig.Clone()
 	nc.Listeners = c.Listeners.Clone()
@@ -251,9 +339,15 @@ func (c *Config) Clone() *Config {
 	nc.legacyMetricsUsed = c.legacyMetricsUsed
 	nc.legacyMgmtUsed = c.legacyMgmtUsed
 
+	c.Main.stalenessCheckLock.Lock()
 	nc.Main.configFilePath = c.Main.configFilePath
+	nc.Main.configSourcePlan = c.Main.configSourcePlan
+	nc.Main.configSourcePaths = append([]string(nil), c.Main.configSourcePaths...)
+	nc.Main.configSourceFingerprint = c.Main.configSourceFingerprint
+	nc.Main.configOverlayVersion = c.Main.configOverlayVersion
 	nc.Main.configLastModified = c.Main.configLastModified
 	nc.Main.configRateLimitTime = c.Main.configRateLimitTime
+	c.Main.stalenessCheckLock.Unlock()
 
 	nc.Metrics.ListenAddress = c.Metrics.ListenAddress
 	nc.Metrics.ListenPort = c.Metrics.ListenPort
@@ -265,6 +359,9 @@ func (c *Config) Clone() *Config {
 	if c.Logging != nil {
 		nc.Logging = c.Logging.Clone()
 	}
+	if c.AccessLog != nil {
+		nc.AccessLog = c.AccessLog.Clone()
+	}
 
 	for k, v := range c.Backends {
 		nc.Backends[k] = v.Clone()
@@ -272,6 +369,10 @@ func (c *Config) Clone() *Config {
 
 	for k, v := range c.Caches {
 		nc.Caches[k] = v.Clone()
+	}
+
+	if len(c.Discovery) > 0 {
+		nc.Discovery = c.Discovery.Clone()
 	}
 
 	for k, v := range c.NegativeCacheConfigs {
@@ -303,15 +404,20 @@ func (c *Config) Clone() *Config {
 		}
 	}
 
+	nc.Kubernetes = c.Kubernetes.Clone()
+
 	return nc
 }
 
-// IsStale returns true if the running config is stale versus the config on disk
+// IsStale returns true if the running config is stale versus its sources on disk.
 func (c *Config) IsStale() bool {
+	if c == nil || c.Main == nil {
+		return false
+	}
 	c.Main.stalenessCheckLock.Lock()
 	defer c.Main.stalenessCheckLock.Unlock()
 
-	if c.Main == nil || c.Main.configFilePath == "" ||
+	if c.Main.configFilePath == "" ||
 		time.Now().Before(c.Main.configRateLimitTime) {
 		return false
 	}
@@ -321,26 +427,49 @@ func (c *Config) IsStale() bool {
 	}
 
 	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
-	t := c.CheckFileLastModified()
-	if t.IsZero() {
-		return false
-	}
-	return !t.Equal(c.Main.configLastModified)
+	return c.hasConfigChanged()
 }
 
-// CheckAndMarkReloadInProgress checks if the config is stale and
-// marks it as being reloaded to prevent duplicate reloads.
-func (c *Config) CheckAndMarkReloadInProgress() bool {
-	c.Main.stalenessCheckLock.Lock()
-	defer c.Main.stalenessCheckLock.Unlock()
-	if c.Main == nil || c.Main.configFilePath == "" ||
-		time.Now().Before(c.Main.configRateLimitTime) {
+// CheckAndMarkReloadInProgress reports whether the config sources on disk or
+// the overlay version differ from what was loaded, marking both to prevent
+// duplicate reloads. The reload rate limiter is applied only when rateLimited is true.
+func (c *Config) CheckAndMarkReloadInProgress(overlayVersion string, rateLimited bool) bool {
+	if c == nil || c.Main == nil {
 		return false
 	}
-	if c.MgmtConfig == nil {
-		c.MgmtConfig = mgmt.New()
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	if rateLimited {
+		if time.Now().Before(c.Main.configRateLimitTime) {
+			return false
+		}
+		if c.MgmtConfig == nil {
+			c.MgmtConfig = mgmt.New()
+		}
+		c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
 	}
-	c.Main.configRateLimitTime = time.Now().Add(time.Duration(c.MgmtConfig.ReloadRateLimit))
+	sourcesStale := c.checkAndMarkSources()
+	overlayStale := overlayVersion != c.Main.configOverlayVersion
+	if overlayStale {
+		c.Main.configOverlayVersion = overlayVersion
+	}
+	return sourcesStale || overlayStale
+}
+
+func (c *Config) checkAndMarkSources() bool {
+	if c.Main.configFilePath == "" {
+		return false
+	}
+	if c.Main.configSourcePlan.mode != 0 &&
+		c.Main.configSourcePlan.rootPath == c.Main.configFilePath {
+		snapshot := inspectConfigSources(c.Main.configSourcePlan)
+		isStale := snapshot.fingerprint != c.Main.configSourceFingerprint
+		if isStale {
+			c.Main.configSourceFingerprint = snapshot.fingerprint
+			c.Main.configLastModified = snapshot.lastModified
+		}
+		return isStale
+	}
 	t := c.CheckFileLastModified()
 	if t.IsZero() {
 		return false
@@ -350,6 +479,16 @@ func (c *Config) CheckAndMarkReloadInProgress() bool {
 		c.Main.configLastModified = t
 	}
 	return isStale
+}
+
+// OverlayVersion returns the version of the overlay applied to this configuration.
+func (c *Config) OverlayVersion() string {
+	if c == nil || c.Main == nil {
+		return ""
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	return c.Main.configOverlayVersion
 }
 
 func (c *Config) String() string {
@@ -370,7 +509,7 @@ func (c *Config) String() string {
 		}
 	}
 
-	bytes, err := yaml.Marshal(cp)
+	bytes, err := yamlencoding.Marshal(cp)
 	if err == nil {
 		return string(bytes)
 	}
@@ -378,10 +517,26 @@ func (c *Config) String() string {
 	return ""
 }
 
-// ConfigFilePath returns the file path from which this configuration is based
+// ConfigFilePath returns the file or directory path from which this configuration is based.
 func (c *Config) ConfigFilePath() string {
 	if c.Main != nil {
 		return c.Main.configFilePath
 	}
 	return ""
+}
+
+// ConfigFilePaths returns the configuration files in application order.
+func (c *Config) ConfigFilePaths() []string {
+	if c == nil || c.Main == nil {
+		return nil
+	}
+	c.Main.stalenessCheckLock.Lock()
+	defer c.Main.stalenessCheckLock.Unlock()
+	if len(c.Main.configSourcePaths) > 0 {
+		return append([]string(nil), c.Main.configSourcePaths...)
+	}
+	if c.Main.configFilePath != "" {
+		return []string{c.Main.configFilePath}
+	}
+	return nil
 }

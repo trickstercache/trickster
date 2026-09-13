@@ -1,11 +1,18 @@
 # Adding a SQL Dialect Adapter
 
-Trickster accelerates SQL-based time series backends (currently ClickHouse) by
+Trickster accelerates SQL-based time series backends (currently ClickHouse and
+MySQL) by
 parsing each query into a dialect-native abstract syntax tree, analyzing it
 for delta-cache eligibility, and rendering cache-miss origin requests from an
 immutable query plan. This document describes the architecture and the
-requirements a new SQL dialect adapter (for example, MySQL) must satisfy. The
-ClickHouse implementation in `pkg/backends/clickhouse` is the reference.
+requirements a new SQL dialect adapter must satisfy. The ClickHouse and MySQL
+implementations in `pkg/backends/clickhouse` and `pkg/backends/mysql` are the
+references for HTTP and native-protocol backends, respectively.
+
+The initial MySQL compatibility and safety boundaries are normative in
+[`mysql-release-contract.md`](mysql-release-contract.md). Changes that broaden
+MySQL protocol, authentication, TLS, session-state, caching, or routing behavior
+must update that contract and its test evidence.
 
 ## The Parser–Adapter–Plan–Renderer Lifecycle
 
@@ -50,7 +57,8 @@ Defined in `pkg/parsing/sqlanalyzer`:
   `Reason` (a stable, low-cardinality `AnalysisReason`), `Plan`, and `Err`.
 - `QueryPlan` — canonical SQL, time and output columns, step, phase, input
   and output timestamp units, lower and upper `Bound`s (value plus
-  inclusivity), group columns, output format, and the embedded renderer.
+  inclusivity), group columns, ordering, output format, and the embedded
+  renderer.
 - `ExtentRenderer.RenderExtent(extent timeseries.Extent) (string, error)`.
 
 Rendering is an embedded interface value on the plan rather than a method on
@@ -77,15 +85,27 @@ metric label values.
 
 Fail-closed rules that apply to every dialect:
 
-- Predicates on the **raw timestamp column** are delta-eligible only when
-  they describe complete buckets: an aligned inclusive lower bound and an
-  aligned exclusive upper bound. Anything else (strict lower, inclusive
-  upper, `BETWEEN`, unaligned values) risks caching a partial aggregate as a
-  complete bucket and must fall back to the object cache.
+- Predicates on the **raw timestamp column** use an inclusive lower bound and
+  an exclusive upper bound. Aligned bounds describe complete buckets directly.
+  An adapter may accelerate unaligned half-open ranges by rounding the lower
+  bound up and the upper bound down to the query cadence when the client
+  consumes only complete buckets, or by proving equivalent partial-edge
+  handling. When no complete bucket remains, both bounds normalize to the
+  rounded-up lower boundary. Strict lower bounds, inclusive upper bounds, and
+  `BETWEEN` remain object-cache fallbacks unless an adapter proves equivalent
+  handling.
 - Predicates on the **bucket output** are discrete and may be normalized
   from any comparator to the first and last included buckets.
 - A query that cannot be delta-cached should remain object-cacheable
   whenever it is a well-formed read query.
+- **`ORDER BY` must be carried or refused.** A response rebuilt from merged
+  cache parts is re-materialized by the engine, so the analyzer must resolve
+  every ordering term to a result column name and record it in
+  `QueryPlan.Ordering` (direction plus the dialect's resolved null placement).
+  Terms that cannot be resolved to a select-list output fail closed to the
+  object cache with `ReasonUnsupportedOrdering`, where responses are returned
+  byte-verbatim. Leaving ordering unanalyzed is a response-semantics defect:
+  the engine would otherwise emit its own default row order on a cache hit.
 
 ## Canonical Identity Requirements
 
@@ -150,7 +170,7 @@ origin on a cache miss.
 Maintain a corpus of statements with expected classifications (delta, OPC,
 none) and, for delta-eligible entries, expected plan facts. The ClickHouse
 reference corpus is maintained in
-`pkg/backends/clickhouse/compatibility_corpus_test.go` and runs against the
+`pkg/parsing/sqlanalyzer/aftership/compatibility_corpus_test.go` and runs against the
 AfterShip parser version pinned in `go.mod`.
 
 Include:

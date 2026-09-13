@@ -19,6 +19,7 @@ package methods
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -45,6 +46,9 @@ const (
 
 	// MethodPurge is the PURGE HTTP Method
 	MethodPurge = "PURGE"
+
+	// Wildcard is the method list entry that stands for every method
+	Wildcard = "*"
 )
 
 func getMethodLogicalID(method string) uint16 {
@@ -95,7 +99,7 @@ func CacheableHTTPMethods() []string {
 func UncacheableHTTPMethods() []string {
 	return []string{
 		http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodConnect,
-		http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge,
+		http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge, Wildcard,
 	}
 }
 
@@ -115,13 +119,38 @@ func HasBody(method string) bool {
 	return false
 }
 
+// IsStateChanging returns true for methods that can change the state of the
+// target resource. RFC 9111 4.4 requires a cache to invalidate its stored
+// response when one of them succeeds. A method the cache does not recognize
+// counts as state-changing, since its safety cannot be assumed. PURGE and
+// CONNECT are excluded: the first acts on the cache itself, and the second
+// establishes a tunnel rather than acting on a representation.
+func IsStateChanging(method string) bool {
+	switch strings.ToUpper(method) {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace,
+		http.MethodConnect, MethodPurge:
+		return false
+	}
+	return true
+}
+
+// HasResponseContent returns false for the request/response combinations that
+// RFC 9110 defines as carrying no content: a response to HEAD, and any 1xx,
+// 204 or 304 status. Their Content-Length, when present, describes the content
+// a GET would have returned rather than bytes actually on the wire.
+func HasResponseContent(method string, statusCode int) bool {
+	return method != http.MethodHead && statusCode != http.StatusNoContent &&
+		statusCode != http.StatusNotModified &&
+		(statusCode < 100 || statusCode > 199)
+}
+
 // MethodMask returns the integer representation of the collection of methods
 // based on the iota bitmask defined above
 func MethodMask(methods ...string) uint16 {
 	var i uint16
 	for _, ms := range methods {
 		if m := getMethodLogicalID(ms); m > 0 {
-			i ^= m
+			i |= m
 		}
 	}
 	return i
@@ -129,7 +158,7 @@ func MethodMask(methods ...string) uint16 {
 
 // IsValidMethod returns true if the provided method is recognized in methodsMap
 func IsValidMethod(method string) bool {
-	return getMethodLogicalID(method) > 0
+	return method == Wildcard || getMethodLogicalID(method) > 0
 }
 
 func AreEqual(l1, l2 []string) bool {
@@ -160,4 +189,64 @@ func HasAny(methods1, methods2 []string) bool {
 	mask1 := MethodMask(methods1...)
 	mask2 := MethodMask(methods2...)
 	return (mask1 & mask2) != 0
+}
+
+// Expand returns the concrete, upper-cased method set a list names: an empty
+// list or one carrying the wildcard names every method. A list that is
+// already concrete and upper-cased is returned as is.
+func Expand(in []string) []string {
+	if len(in) == 0 {
+		return append(AllHTTPMethods(), Wildcard)
+	}
+	var lower bool
+	for _, m := range in {
+		if m == Wildcard {
+			if len(in) == 1 {
+				return append(AllHTTPMethods(), Wildcard)
+			}
+			continue
+		}
+		lower = lower || hasLower(m)
+	}
+	if !lower {
+		return in
+	}
+	out := make([]string, len(in))
+	for i, m := range in {
+		out[i] = strings.ToUpper(m)
+	}
+	return out
+}
+
+// Compact returns the wildcard for a list naming every method, and a sorted
+// copy of any other list
+func Compact(in []string) []string {
+	if HasAll(AllHTTPMethods(), in) {
+		return []string{Wildcard}
+	}
+	out := slices.Clone(in)
+	slices.Sort(out)
+	return out
+}
+
+// Partition splits methods into those satisfying pred and the rest,
+// preserving order; either result is nil when empty
+func Partition(in []string, pred func(string) bool) (matched, rest []string) {
+	for _, m := range in {
+		if pred(m) {
+			matched = append(matched, m)
+		} else {
+			rest = append(rest, m)
+		}
+	}
+	return matched, rest
+}
+
+func hasLower(s string) bool {
+	for i := range len(s) {
+		if c := s[i]; 'a' <= c && c <= 'z' {
+			return true
+		}
+	}
+	return false
 }

@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -33,17 +34,8 @@ import (
 
 const URName types.Name = "user_router"
 
-// HealthStatusGetter exposes the subset of *healthcheck.Status that the
-// router needs to gate dispatch.
-type HealthStatusGetter interface {
-	Get() int32
-}
-
 // UserRoute holds runtime state for one configured user mapping.
-type UserRoute struct {
-	Handler http.Handler
-	Status  HealthStatusGetter
-}
+type UserRoute = backends.RouteTarget
 
 // UserRoutes maps usernames to their resolved runtime route state.
 type UserRoutes map[string]UserRoute
@@ -54,6 +46,19 @@ type Handler struct {
 	// ValidateAndStartPool.
 	mu                 sync.RWMutex
 	authenticator      at.Authenticator
+	routerName         string
+	defaultTarget      backends.RouteTarget
+	defaultHandler     http.Handler
+	enableReplaceCreds bool
+	noRouteStatusCode  int
+	options            *uropt.Options
+	userRoutes         UserRoutes
+}
+
+type handlerSnapshot struct {
+	authenticator      at.Authenticator
+	routerName         string
+	defaultTarget      backends.RouteTarget
 	defaultHandler     http.Handler
 	enableReplaceCreds bool
 	noRouteStatusCode  int
@@ -85,15 +90,10 @@ func (h *Handler) Name() types.Name {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	opts := h.options
-	auth := h.authenticator
-	replaceAllowed := h.enableReplaceCreds
-	routes := h.userRoutes
-	h.mu.RUnlock()
+	state := h.snapshot()
 
 	var username, cred string
-	var enableReplaceCreds bool
+	var authenticated bool
 
 	rsc := request.GetResources(r)
 	// this checks if an authenticator has already handled the request, and if
@@ -101,63 +101,104 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// default authenticator (usually Basic Auth) for the username.
 	if rsc != nil && rsc.AuthResult != nil && rsc.AuthResult.Username != "" {
 		username = rsc.AuthResult.Username
-		enableReplaceCreds = replaceAllowed && rsc.AuthResult.Status == at.AuthSuccess
-	} else if auth != nil {
-		u, c, err := auth.ExtractCredentials(r)
+		authenticated = rsc.AuthResult.Status == at.AuthSuccess
+	} else if state.authenticator != nil {
+		u, c, err := state.authenticator.ExtractCredentials(r)
 		if err == nil && u != "" {
 			username = u
 			cred = c
-			// enableReplaceCreds remains false since credentials were not verified
+			// authenticated remains false since credentials were not verified.
 		}
 	}
-	// if the request doesn't have a username or there are 0 Users in the Router,
-	// the default handler takes the request
-	if username == "" || opts == nil || len(opts.Users) == 0 {
-		h.handleDefault(w, r)
+	decision, ok := resolveRoute(backends.RouteInput{
+		RouterName: state.routerName, Username: username, Credential: cred,
+		Authenticated: authenticated, FallbackOnMappedUnavailable: true,
+	}, state)
+	if !ok {
+		handleDefault(w, r, state)
 		return
 	}
-	// if the User is found in the Router map, process their options
-	if u, ok := opts.Users[username]; ok {
-		// this handles when username or credential is configured to be remapped
-		if enableReplaceCreds && (u.ToUser != "" || u.ToCredential != "") {
-			outboundUsername := username
-			// swap in the new user if configured
-			if u.ToUser != "" {
-				outboundUsername = u.ToUser
-			}
-			// swap in the new credential if configured. When ToCredential is
-			// empty, retain the inbound credential rather than overwriting with
-			// an empty password (which would silently corrupt Basic auth on
-			// the backend).
-			if u.ToCredential != "" {
-				cred = string(u.ToCredential)
-			}
-			// Don't write empty creds: callers using AuthResult-only auth
-			// (SSO, etc.) have cred == "" with nothing to fall back on.
-			// SetCredentials(r, user, "") emits Basic auth with an empty
-			// password and collapses every such user into one cache key.
-			if cred != "" {
-				auth.Sanitize(r)
-				if err := auth.SetCredentials(r, outboundUsername, cred); err != nil {
-					h.handleDefault(w, r)
-					return
-				}
-			}
-		}
-		// this passes the request to a user-specific route handler, if set
-		// and the routed backend is currently considered healthy. Status
-		// values below StatusUnchecked (Failing, Initializing) fall through
-		// to the default handler instead of dispatching to a known-bad target.
-		if route, ok := routes[username]; ok && route.Handler != nil {
-			if route.Status == nil || route.Status.Get() >= 0 {
-				route.Handler.ServeHTTP(w, r)
-				return
-			}
+	if decision.ReplaceCredentials && state.authenticator != nil {
+		state.authenticator.Sanitize(r)
+		if err := state.authenticator.SetCredentials(r, decision.OutboundUsername,
+			decision.OutboundCredential); err != nil {
+			handleDefault(w, r, state)
+			return
 		}
 	}
-	// the default handler serves the request when the user doesn't have an entry
-	// in the router map, or when a mapped user's entry doesn't have a runtime route
-	h.handleDefault(w, r)
+	if decision.Target.Backend == nil || decision.Target.Backend.Router() == nil {
+		handleDefault(w, r, state)
+		return
+	}
+	decision.Target.Backend.Router().ServeHTTP(w, r)
+}
+
+// ResolveRoute selects a backend without assuming an HTTP request or native
+// protocol session. It is safe to call concurrently with configuration reload.
+func (h *Handler) ResolveRoute(input backends.RouteInput) (backends.RouteDecision, bool) {
+	return resolveRoute(input, h.snapshot())
+}
+
+func resolveRoute(input backends.RouteInput, state handlerSnapshot) (backends.RouteDecision, bool) {
+	if input.Username == "" || state.options == nil || len(state.options.Users) == 0 {
+		return defaultRouteDecision(state.defaultTarget)
+	}
+	mapping, ok := state.options.Users[input.Username]
+	if !ok || mapping == nil {
+		return defaultRouteDecision(state.defaultTarget)
+	}
+	target, ok := state.userRoutes[input.Username]
+	if !ok || !target.Available() {
+		if input.FallbackOnMappedUnavailable {
+			return defaultRouteDecision(state.defaultTarget)
+		}
+		return backends.RouteDecision{Outcome: backends.RouteOutcomeUnavailable}, false
+	}
+	decision := backends.RouteDecision{Target: target, Outcome: backends.RouteOutcomeSelected}
+	if state.enableReplaceCreds && input.Authenticated &&
+		(mapping.ToUser != "" || mapping.ToCredential != "") {
+		decision.OutboundUsername = input.Username
+		if mapping.ToUser != "" {
+			decision.OutboundUsername = mapping.ToUser
+		}
+		decision.OutboundCredential = input.Credential
+		if mapping.ToCredential != "" {
+			decision.OutboundCredential = string(mapping.ToCredential)
+		}
+		decision.ReplaceCredentials = decision.OutboundCredential != ""
+	}
+	return decision, true
+}
+
+func defaultRouteDecision(target backends.RouteTarget) (backends.RouteDecision, bool) {
+	if !target.Available() {
+		outcome := backends.RouteOutcomeNoRoute
+		if target.Backend != nil {
+			outcome = backends.RouteOutcomeUnavailable
+		}
+		return backends.RouteDecision{Outcome: outcome}, false
+	}
+	return backends.RouteDecision{Target: target, Outcome: backends.RouteOutcomeDefault}, true
+}
+
+func (h *Handler) snapshot() handlerSnapshot {
+	h.mu.RLock()
+	state := handlerSnapshot{
+		authenticator: h.authenticator, routerName: h.routerName,
+		defaultTarget: h.defaultTarget, defaultHandler: h.defaultHandler,
+		enableReplaceCreds: h.enableReplaceCreds, noRouteStatusCode: h.noRouteStatusCode,
+		options: h.options, userRoutes: h.userRoutes,
+	}
+	h.mu.RUnlock()
+	return state
+}
+
+// SetRouterName identifies this resolver without exposing protocol-specific
+// listener or connection objects through the shared routing contract.
+func (h *Handler) SetRouterName(name string) {
+	h.mu.Lock()
+	h.routerName = name
+	h.mu.Unlock()
 }
 
 func (h *Handler) SetAuthenticator(a at.Authenticator, enableReplaceCreds bool) {
@@ -173,6 +214,13 @@ func (h *Handler) SetDefaultHandler(h2 http.Handler) {
 	h.mu.Unlock()
 }
 
+// SetDefaultTarget updates the protocol-neutral fallback backend.
+func (h *Handler) SetDefaultTarget(target backends.RouteTarget) {
+	h.mu.Lock()
+	h.defaultTarget = target
+	h.mu.Unlock()
+}
+
 func (h *Handler) SetNoRouteStatusCode(code int) {
 	h.mu.Lock()
 	h.noRouteStatusCode = code
@@ -185,20 +233,17 @@ func (h *Handler) SetUserRoutes(routes UserRoutes) {
 	h.mu.Unlock()
 }
 
-func (h *Handler) handleDefault(w http.ResponseWriter, r *http.Request) {
-	h.mu.RLock()
-	dh := h.defaultHandler
-	code := h.noRouteStatusCode
-	if code == 0 && h.options != nil {
-		code = h.options.NoRouteStatusCode
+func handleDefault(w http.ResponseWriter, r *http.Request, state handlerSnapshot) {
+	code := state.noRouteStatusCode
+	if code == 0 && state.options != nil {
+		code = state.options.NoRouteStatusCode
 	}
-	h.mu.RUnlock()
-	if dh == nil {
+	if state.defaultHandler == nil {
 		if code < 100 || code >= 600 {
 			code = http.StatusBadGateway
 		}
 		w.WriteHeader(code)
 		return
 	}
-	dh.ServeHTTP(w, r)
+	state.defaultHandler.ServeHTTP(w, r)
 }

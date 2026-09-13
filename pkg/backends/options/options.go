@@ -26,8 +26,13 @@ import (
 	"strings"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	ino "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/options"
+	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
@@ -35,13 +40,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
@@ -50,8 +58,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
-	"github.com/prometheus/common/sigv4"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 var restrictedOriginNames = sets.New([]string{"", "frontend"})
@@ -71,11 +78,24 @@ type Options struct {
 	// when it participates in a Time Series Merge pool.
 	// An empty value is initialized to the backend name.
 	ReplicaGroup string `yaml:"replica_group,omitempty"`
-	// ListenerName identifies the inbound listener that exposes this backend.
+	// ListenerName is appended to ListenerNames during configuration validation.
+	// Deprecated but remains for compatibility. Use ListenerNames directly.
 	ListenerName string `yaml:"listener_name,omitempty"`
+	// ListenerNames identifies every inbound listener exposing this backend.
+	ListenerNames []string `yaml:"listener_names,omitempty"`
 	// OriginURL provides the base upstream URL for all proxied requests to this Backend.
 	// it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
 	OriginURL string `yaml:"origin_url,omitempty"`
+	// H2CPriorKnowledge speaks cleartext HTTP/2 to the origin by prior knowledge.
+	// Cleartext HTTP/2 only; there is no HTTP/1 fallback.
+	H2CPriorKnowledge bool `yaml:"h2c_prior_knowledge,omitempty"`
+	// PreserveHost sends the client's Host header to the origin instead of the origin's own host;
+	// a Host entry in a path's request_headers still replaces it.
+	PreserveHost bool `yaml:"preserve_host,omitempty"`
+	// Protocol selects the upstream wire protocol used to communicate with the origin.
+	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
+	// for ClickHouse to use the binary protocol on port 9000).
+	Protocol string `yaml:"protocol,omitempty"`
 	// Timeout defines how long the HTTP request will wait for a response before timing out
 	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
 	// KeepAliveTimeout defines how long an open keep-alive HTTP connection remains idle before closing
@@ -171,6 +191,12 @@ type Options struct {
 	ALBOptions *ao.Options `yaml:"alb,omitempty"`
 	// Prometheus holds options specific to prometheus backends
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
+	// MySQL holds limits specific to MySQL origin result processing.
+	MySQL *mo.Options `yaml:"mysql,omitempty"`
+	// Graphite holds options specific to graphite backends
+	Graphite *gro.Options `yaml:"graphite,omitempty"`
+	// InfluxDB holds options specific to influxdb backends
+	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -179,13 +205,32 @@ type Options struct {
 	ForwardedHeaders string `yaml:"forwarded_headers,omitempty"`
 	// CORS configures downstream CORS response headers for this backend
 	CORS *corso.Options `yaml:"cors,omitempty"`
+	// AccessLog configures access and error logging for this backend
+	AccessLog *alo.Options `yaml:"access_log,omitempty"`
+
+	// DPCFallbackWarning, when true (default), logs a warning when a query cannot
+	// be parsed as a time range query and falls back from DPC to OPC. Set to false
+	// to suppress these warnings (they will still appear at debug level).
+	DPCFallbackWarning *bool `yaml:"dpc_fallback_warning,omitempty"`
 
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
+	// IsTemplate indicates this backend is held as a template for ALB
+	// autodiscovery: it is cloned per discovered pool member, and is itself
+	// never routed, never eligible for is_default, never a static ALB pool
+	// member, and exempt from validations that apply only to live backends
+	// (e.g., a required origin_url)
+	IsTemplate bool `yaml:"is_template,omitempty"`
 	// FastForwardDisable indicates whether the FastForward feature should be disabled for this backend
 	FastForwardDisable bool `yaml:"fast_forward_disable,omitempty"`
 	// PathRoutingDisabled, when true, will bypass /backendName/path route registrations
 	PathRoutingDisabled bool `yaml:"path_routing_disabled,omitempty"`
+	// PathDefaultsDisabled, when true, registers only the configured paths,
+	// suppressing the provider's default path configurations
+	PathDefaultsDisabled bool `yaml:"path_defaults_disabled,omitempty"`
+	// AnyHostRouting, when true, registers the configured paths for every
+	// hostname reaching this backend's listeners; it cannot be used with hosts
+	AnyHostRouting bool `yaml:"any_host_routing,omitempty"`
 	// RequireTLS, when true, indicates this Backend Config's paths must only be registered with the TLS Router
 	RequireTLS bool `yaml:"require_tls,omitempty"`
 	// MultipartRangesDisabled, when true, indicates that if a downstream client requests multiple ranges
@@ -200,8 +245,10 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
-	// AWS SigV4
-	SigV4 *sigv4.SigV4Config `yaml:"sigv4,omitempty"`
+	// SigV4 signs outbound requests to this backend's origin with AWS
+	// SigV4. It defaults to signing for Amazon Managed Service for
+	// Prometheus; set sigv4.service to sign for another AWS service.
+	SigV4 *taws.Options `yaml:"sigv4,omitempty"`
 
 	// Simulated Latency
 	// When LatencyMin > 0 and LatencyMaxMS < LatencyMin (e.g., 0), then LatencyMin of latency
@@ -254,6 +301,9 @@ type Options struct {
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
+
+	sizeExplicit      bool
+	retentionExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -283,7 +333,6 @@ func New() *Options {
 		NegativeCacheName:            DefaultBackendNegativeCacheName,
 		Paths:                        make(po.List, 0, 10),
 		RevalidationFactor:           DefaultRevalidationFactor,
-		ListenerName:                 listener.DefaultFrontendName,
 		MaxShardSizePoints:           DefaultTimeseriesShardSize,
 		MaxShardSizeTime:             timeconv.Duration(DefaultTimeseriesShardSize),
 		ShardStep:                    timeconv.Duration(DefaultTimeseriesShardStep),
@@ -305,6 +354,7 @@ func (o *Options) Clone() *Options {
 		out.HealthCheck = o.HealthCheck.Clone()
 	}
 	out.Hosts = slices.Clone(o.Hosts)
+	out.ListenerNames = slices.Clone(o.ListenerNames)
 	out.CompressibleTypeList = slices.Clone(o.CompressibleTypeList)
 	if o.CompressibleTypes != nil {
 		out.CompressibleTypes = maps.Clone(o.CompressibleTypes)
@@ -338,11 +388,75 @@ func (o *Options) Clone() *Options {
 		out.Prometheus = o.Prometheus.Clone()
 	}
 
+	if o.Graphite != nil {
+		out.Graphite = o.Graphite.Clone()
+	}
+
+	if o.InfluxDB != nil {
+		out.InfluxDB = o.InfluxDB.Clone()
+	}
+
+	if o.MySQL != nil {
+		out.MySQL = o.MySQL.Clone()
+	}
+
 	if o.AuthOptions != nil {
 		out.AuthOptions = o.AuthOptions.Clone()
 	}
 
+	if o.AccessLog != nil {
+		out.AccessLog = o.AccessLog.Clone()
+	}
+
+	if o.SigV4 != nil {
+		out.SigV4 = o.SigV4.Clone()
+	}
+
 	return out
+}
+
+const (
+	hostReasonEmpty         = "must not be empty"
+	hostReasonWhitespace    = "must not contain whitespace"
+	hostReasonWildcard      = "a wildcard may only be a leading *. or **. followed by a domain"
+	hostReasonDuplicate     = "is listed more than once"
+	hostReasonBothWildcards = "lists both wildcard spellings for one domain"
+)
+
+// validateHosts normalizes each hosts entry, since matching is
+// case-insensitive, and rejects duplicates and both wildcard depths on one domain
+func (o *Options) validateHosts() error {
+	seen := make(map[string]struct{}, len(o.Hosts))
+	wild := make(map[string]struct{})
+	for i, host := range o.Hosts {
+		host, err := hostnames.Normalize(host, hostnames.RequireHost)
+		if err != nil {
+			return NewErrInvalidHost(o.Hosts[i], o.Name, hostReason(err))
+		}
+		if _, ok := seen[host]; ok {
+			return NewErrInvalidHost(o.Hosts[i], o.Name, hostReasonDuplicate)
+		}
+		if hostnames.IsWildcard(host) {
+			suffix := hostnames.Suffix(host)
+			if _, ok := wild[suffix]; ok {
+				return NewErrInvalidHost(o.Hosts[i], o.Name, hostReasonBothWildcards)
+			}
+			wild[suffix] = struct{}{}
+		}
+		seen[host] = struct{}{}
+		o.Hosts[i] = host
+	}
+	return nil
+}
+
+func hostReason(err error) string {
+	switch {
+	case errors.Is(err, hostnames.ErrEmpty):
+		return hostReasonEmpty
+	case errors.Is(err, hostnames.ErrWhitespace):
+		return hostReasonWhitespace
+	}
+	return hostReasonWildcard
 }
 
 // Validate validates the Backend Options
@@ -353,13 +467,34 @@ func (o *Options) Validate() (bool, error) {
 	if o.Provider == "" {
 		return false, NewErrMissingProvider(o.Name)
 	}
-	if !providers.NonOriginBackends().Contains(o.Provider) && o.OriginURL == "" {
+	if o.IsTemplate {
+		if o.IsDefault {
+			return false, NewErrTemplateIsDefault(o.Name)
+		}
+		if providers.NonOriginBackends().Contains(o.Provider) {
+			return false, NewErrInvalidTemplateProvider(o.Provider, o.Name)
+		}
+	}
+	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
+		o.OriginURL == "" {
 		return false, NewErrMissingOriginURL(o.Name)
 	}
 	if o.OriginURL != "" {
 		if _, err := url.Parse(o.OriginURL); err != nil {
 			return false, fmt.Errorf("invalid origin_url for backend %s: %w", o.Name, err)
 		}
+	}
+	if err := o.validateHosts(); err != nil {
+		return false, err
+	}
+	if o.AnyHostRouting && len(o.Hosts) > 0 {
+		return false, fmt.Errorf("%w: backend %s", ErrAnyHostRoutingWithHosts, o.Name)
+	}
+	// previously the sigv4 block was validated only by its own
+	// UnmarshalYAML, which meant no validation at all on the programmatic
+	// path the ALB template uses
+	if err := o.SigV4.Validate(); err != nil {
+		return false, fmt.Errorf("invalid sigv4 options for backend %s: %w", o.Name, err)
 	}
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return false, ErrInvalidMaxShardSize
@@ -370,8 +505,13 @@ func (o *Options) Validate() (bool, error) {
 	}
 
 	if len(o.Paths) > 0 {
-		if err := o.Paths.Validate(); err != nil {
+		if err := o.Paths.Validate(o.Name); err != nil {
 			return false, err
+		}
+	}
+	if o.Graphite != nil {
+		if err := o.Graphite.ValidateWithPaths(o.Paths); err != nil {
+			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
 	if o.CORS != nil {
@@ -383,6 +523,11 @@ func (o *Options) Validate() (bool, error) {
 	if o.HealthCheck != nil {
 		_, err := o.HealthCheck.Validate()
 		if err != nil {
+			return false, err
+		}
+	}
+	if o.AccessLog != nil {
+		if _, err := o.AccessLog.Validate(); err != nil {
 			return false, err
 		}
 	}
@@ -408,7 +553,7 @@ func (l Lookup) Validate() error {
 		}
 		if o.ALBOptions != nil {
 			if len(o.ALBOptions.Pool) > 0 {
-				entry.Pool = o.ALBOptions.Pool
+				entry.Pool = o.ALBOptions.Pool.Names()
 			} else if o.ALBOptions.UserRouter != nil {
 				used := sets.NewStringSet()
 				if o.ALBOptions.UserRouter.DefaultBackend != "" {
@@ -447,6 +592,27 @@ func (l Lookup) Validate() error {
 	return backendTree[:k].Validate()
 }
 
+// validateMirrors checks that every backend a path mirrors to is a routable
+// backend, since a template is never served on its own.
+func (l Lookup) validateMirrors(o *Options) error {
+	for _, p := range o.Paths {
+		if p == nil {
+			continue
+		}
+		for _, m := range p.Mirrors {
+			if m == nil {
+				continue
+			}
+			target, ok := l[m.BackendName]
+			if !ok || target == nil || target.IsTemplate {
+				return fmt.Errorf("backend %q path %q mirrors to undefined backend %q",
+					o.Name, p.Path, m.BackendName)
+			}
+		}
+	}
+	return nil
+}
+
 // ValidateBackendName ensures the backend name is permitted against the
 // dictionary of restricted words
 func ValidateBackendName(name string) error {
@@ -463,6 +629,9 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
+			return err
+		}
+		if err := l.validateMirrors(o); err != nil {
 			return err
 		}
 		var ok bool
@@ -521,6 +690,11 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
 				return err
 			}
+			for _, m := range o.ALBOptions.Pool {
+				if t, ok := l[m.Name]; ok && t != nil && t.IsTemplate {
+					return NewErrTemplatePoolMember(m.Name, o.Name)
+				}
+			}
 		default:
 			// No specific validation needed for other provider types
 		}
@@ -545,6 +719,47 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 	return nil
 }
 
+// ValidateDiscovery validates each discovery-backed ALB in the Lookup
+// against the named discoverers and template backends it references:
+// 'discoverer_name' must resolve to a defined discoverer, the query must be
+// valid for that discoverer's provider, and 'template_backend' must name a
+// defined backend configured with is_template: true.
+func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
+	for _, o := range l {
+		if o == nil || o.Provider != providers.ALB || o.ALBOptions == nil ||
+			o.ALBOptions.Discovery == nil {
+			continue
+		}
+		d := o.ALBOptions.Discovery
+		if _, err := d.Validate(); err != nil {
+			return fmt.Errorf("invalid discovery options for alb %q: %w",
+				o.Name, err)
+		}
+		disc, ok := dl[d.DiscovererName]
+		if !ok || disc == nil {
+			return NewErrInvalidDiscovererName(d.DiscovererName, o.Name)
+		}
+		if err := d.Query.Validate(o.Name, disc); err != nil {
+			return err
+		}
+		t, ok := l[d.TemplateBackend]
+		if !ok || t == nil || !t.IsTemplate {
+			return NewErrInvalidTemplateBackendName(d.TemplateBackend, o.Name)
+		}
+		// TSM-merged pools require members whose provider can be merged,
+		// and per-member replica groups (replica_group_label) are only
+		// meaningful -- and only accepted by backend initialization -- on
+		// TSM-mergeable providers
+		if (o.ALBOptions.MechanismName == albnames.MechanismTSM ||
+			d.Query.ReplicaGroupLabel != "") &&
+			!providers.IsSupportedTimeSeriesMergeProvider(t.Provider) {
+			return NewErrInvalidTemplateTSMProvider(t.Provider,
+				d.TemplateBackend, o.Name)
+		}
+	}
+	return nil
+}
+
 // ValidateTLSConfigs iterates the map and validates any Options that use TLS
 func (l Lookup) ValidateTLSConfigs() (bool, error) {
 	var serveTLS bool
@@ -563,6 +778,21 @@ func (l Lookup) ValidateTLSConfigs() (bool, error) {
 		}
 	}
 	return serveTLS, nil
+}
+
+// PoolMembers returns the names of every backend that is a member of an ALB pool; a member
+// carries its pool's listener names without being served on those listeners itself
+func (l Lookup) PoolMembers() sets.Set[string] {
+	out := sets.NewStringSet()
+	for _, o := range l {
+		if o == nil || o.ALBOptions == nil {
+			continue
+		}
+		for _, m := range o.ALBOptions.Pool {
+			out.Set(m.Name)
+		}
+	}
+	return out
 }
 
 func (l Lookup) Keys() sets.Set[string] {
@@ -597,6 +827,7 @@ func (l Lookup) Initialize() error {
 // any values that were set during YAML unmarshaling
 func (o *Options) Initialize(name string) error {
 	o.Name = name
+	o.NormalizeListenerNames()
 	o.ReplicaGroup = strings.TrimSpace(o.ReplicaGroup)
 	if !providers.IsSupportedTimeSeriesMergeProvider(o.Provider) &&
 		o.Provider != providers.ALB &&
@@ -606,10 +837,6 @@ func (o *Options) Initialize(name string) error {
 	if o.ReplicaGroup == "" {
 		o.ReplicaGroup = name
 	}
-	if o.ListenerName == "" {
-		o.ListenerName = listener.DefaultFrontendName
-	}
-
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
@@ -623,6 +850,11 @@ func (o *Options) Initialize(name string) error {
 		o.Scheme = parsedURL.Scheme
 		o.Host = parsedURL.Host
 		o.PathPrefix = parsedURL.Path
+	}
+	if o.H2CPriorKnowledge && !strings.EqualFold(o.Scheme, "http") {
+		return fmt.Errorf(
+			"h2c_prior_knowledge requires an http:// origin_url (cleartext HTTP/2 only; no HTTP/1 fallback), got scheme %q",
+			o.Scheme)
 	}
 	if o.CacheKeyPrefix == "" {
 		o.CacheKeyPrefix = o.Host
@@ -679,6 +911,12 @@ func (o *Options) Initialize(name string) error {
 // exposing credentials (by masking known credential fields with "*****")
 func (o *Options) CloneYAMLSafe() *Options {
 	co := o.Clone()
+	if parsed, err := url.Parse(co.OriginURL); err == nil && parsed.User != nil {
+		if _, hasPassword := parsed.User.Password(); hasPassword {
+			parsed.User = url.UserPassword(parsed.User.Username(), "*****")
+			co.OriginURL = parsed.String()
+		}
+	}
 	// The runtime default is the backend name, but exporting that implicit
 	// value is noisy and suggests replica_group is relevant to every provider.
 	// Preserve only operator-supplied groupings that differ from the name.
@@ -691,6 +929,14 @@ func (o *Options) CloneYAMLSafe() *Options {
 		headers.HideAuthorizationCredentials(w.RequestHeaders)
 		headers.HideAuthorizationCredentials(w.ResponseHeaders)
 	}
+	if co.Graphite != nil {
+		if co.Graphite.OriginPassword != "" {
+			co.Graphite.OriginPassword = "*****"
+		}
+		if co.Graphite.OriginAuthorization != "" {
+			co.Graphite.OriginAuthorization = "*****"
+		}
+	}
 	if co.HealthCheck != nil {
 		// also strip out potentially sensitive headers
 		headers.HideAuthorizationCredentials(co.HealthCheck.Headers)
@@ -701,16 +947,105 @@ func (o *Options) CloneYAMLSafe() *Options {
 // ToYAML prints the Options as a YAML representation
 func (o *Options) ToYAML() string {
 	co := o.CloneYAMLSafe()
-	b, _ := yaml.Marshal(co)
+	b, _ := yamlencoding.Marshal(co)
 	return string(b)
 }
 
-func (o *Options) UnmarshalYAML(unmarshal func(any) error) error {
+func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	type loadOptions Options
-	lo := loadOptions(*(New()))
-	if err := unmarshal(&lo); err != nil {
+	lo := loadOptions(*New())
+	if err := value.Decode(&lo); err != nil {
 		return err
 	}
 	*o = Options(lo)
+	o.sizeExplicit = yamlHasKey(value, "max_object_size_bytes")
+	o.retentionExplicit = yamlHasKey(value, "timeseries_retention_factor")
+	o.ApplyProviderSizingDefaults()
 	return nil
+}
+
+// NormalizeListenerNames merges the legacy binding and removes duplicate names.
+func (o *Options) NormalizeListenerNames() {
+	o.ListenerNames = slices.Clone(o.ListenerNames)
+	if o.ListenerName != "" {
+		o.ListenerNames = append(o.ListenerNames, o.ListenerName)
+	}
+	slices.Sort(o.ListenerNames)
+	o.ListenerNames = slices.Compact(o.ListenerNames)
+}
+
+// UsesListener reports whether this backend is exposed on the named listener.
+func (o *Options) UsesListener(name string) bool {
+	return o != nil && slices.Contains(o.ListenerNames, name)
+}
+
+func yamlHasKey(node *yaml.Node, key string) bool {
+	return yamlNodeHasKey(node, key, make(map[*yaml.Node]bool))
+}
+
+func yamlNodeHasKey(node *yaml.Node, key string, visited map[*yaml.Node]bool) bool {
+	if node == nil || visited[node] {
+		return false
+	}
+	visited[node] = true
+	switch node.Kind {
+	case yaml.DocumentNode:
+		if len(node.Content) > 0 {
+			return yamlNodeHasKey(node.Content[0], key, visited)
+		}
+		return false
+	case yaml.AliasNode:
+		return yamlNodeHasKey(node.Alias, key, visited)
+	case yaml.MappingNode:
+	default:
+		return false
+	}
+	// local keys first; then any `<<` merge values, each of which may be a
+	// mapping, an alias to one, or a sequence of either
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i] != nil && node.Content[i].Value == key {
+			return true
+		}
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		k, v := node.Content[i], node.Content[i+1]
+		// only a real merge directive counts: go-yaml merges `<<` only
+		// when the key carries the merge tag, while a quoted "<<" is an
+		// ordinary string key the decoder does not merge
+		if k == nil || v == nil || k.Value != "<<" || k.Tag != "!!merge" {
+			continue
+		}
+		if v.Kind == yaml.SequenceNode {
+			for _, item := range v.Content {
+				if yamlNodeHasKey(item, key, visited) {
+					return true
+				}
+			}
+			continue
+		}
+		if yamlNodeHasKey(v, key, visited) {
+			return true
+		}
+	}
+	return false
+}
+
+// ApplyProviderSizingDefaults sets max_object_size_bytes and
+// timeseries_retention_factor to the provider's defaults
+// (GetProviderDefaults) wherever the YAML did not name them itself. It is
+// part of configuration loading: UnmarshalYAML calls it once the file's
+// provider is known, and the config loader calls it again for a backend
+// whose provider arrives later from the -provider flag. It is deliberately
+// not part of Initialize, so an Options constructed in code — where these
+// flags are false but the builder's assignments are intentional — is never
+// re-defaulted.
+func (o *Options) ApplyProviderSizingDefaults() {
+	mos, trf := GetProviderDefaults(o.Provider)
+	if !o.sizeExplicit {
+		o.MaxObjectSizeBytes = mos
+	}
+	if !o.retentionExplicit {
+		o.TimeseriesRetentionFactor = trf
+	}
+	o.TimeseriesRetention = timeconv.Duration(o.TimeseriesRetentionFactor)
 }

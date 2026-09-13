@@ -35,8 +35,8 @@ func TestValidateNoCycles(t *testing.T) {
 		{
 			name: "direct 2-cycle a->b->a",
 			albs: map[string]*Options{
-				"a": {Pool: []string{"b"}},
-				"b": {Pool: []string{"a"}},
+				"a": {Pool: Members("b")},
+				"b": {Pool: Members("a")},
 			},
 			wantErr: true,
 			errSub:  "cycle",
@@ -44,7 +44,7 @@ func TestValidateNoCycles(t *testing.T) {
 		{
 			name: "self-loop a->a",
 			albs: map[string]*Options{
-				"a": {Pool: []string{"a"}},
+				"a": {Pool: Members("a")},
 			},
 			wantErr: true,
 			errSub:  "cycle",
@@ -52,9 +52,9 @@ func TestValidateNoCycles(t *testing.T) {
 		{
 			name: "3-cycle a->b->c->a",
 			albs: map[string]*Options{
-				"a": {Pool: []string{"b"}},
-				"b": {Pool: []string{"c"}},
-				"c": {Pool: []string{"a"}},
+				"a": {Pool: Members("b")},
+				"b": {Pool: Members("c")},
+				"c": {Pool: Members("a")},
 			},
 			wantErr: true,
 			errSub:  "cycle",
@@ -62,26 +62,26 @@ func TestValidateNoCycles(t *testing.T) {
 		{
 			name: "acyclic DAG: alb_root targets alb_mid targets prom1 (leaf)",
 			albs: map[string]*Options{
-				"alb_root": {Pool: []string{"alb_mid", "prom2"}},
-				"alb_mid":  {Pool: []string{"prom1"}},
+				"alb_root": {Pool: Members("alb_mid", "prom2")},
+				"alb_mid":  {Pool: Members("prom1")},
 			},
 			wantErr: false,
 		},
 		{
 			name: "two disjoint ALBs, no cycle",
 			albs: map[string]*Options{
-				"alb1": {Pool: []string{"prom1"}},
-				"alb2": {Pool: []string{"prom2"}},
+				"alb1": {Pool: Members("prom1")},
+				"alb2": {Pool: Members("prom2")},
 			},
 			wantErr: false,
 		},
 		{
 			name: "diamond: a->b, a->c, b->d, c->d (DAG, not a cycle)",
 			albs: map[string]*Options{
-				"a": {Pool: []string{"b", "c"}},
-				"b": {Pool: []string{"d"}},
-				"c": {Pool: []string{"d"}},
-				"d": {Pool: []string{"prom1"}},
+				"a": {Pool: Members("b", "c")},
+				"b": {Pool: Members("d")},
+				"c": {Pool: Members("d")},
+				"d": {Pool: Members("prom1")},
 			},
 			wantErr: false,
 		},
@@ -93,16 +93,16 @@ func TestValidateNoCycles(t *testing.T) {
 		{
 			name: "10-length cycle a0->a1->...->a9->a0",
 			albs: map[string]*Options{
-				"a0": {Pool: []string{"a1"}},
-				"a1": {Pool: []string{"a2"}},
-				"a2": {Pool: []string{"a3"}},
-				"a3": {Pool: []string{"a4"}},
-				"a4": {Pool: []string{"a5"}},
-				"a5": {Pool: []string{"a6"}},
-				"a6": {Pool: []string{"a7"}},
-				"a7": {Pool: []string{"a8"}},
-				"a8": {Pool: []string{"a9"}},
-				"a9": {Pool: []string{"a0"}},
+				"a0": {Pool: Members("a1")},
+				"a1": {Pool: Members("a2")},
+				"a2": {Pool: Members("a3")},
+				"a3": {Pool: Members("a4")},
+				"a4": {Pool: Members("a5")},
+				"a5": {Pool: Members("a6")},
+				"a6": {Pool: Members("a7")},
+				"a7": {Pool: Members("a8")},
+				"a8": {Pool: Members("a9")},
+				"a9": {Pool: Members("a0")},
 			},
 			wantErr: true,
 			errSub:  "cycle",
@@ -116,8 +116,8 @@ func TestValidateNoCycles(t *testing.T) {
 			// the alb_root -> alb_mid edge.
 			name: "alb pool mixes alb target with non-alb leaves",
 			albs: map[string]*Options{
-				"alb_root": {Pool: []string{"prom_a", "alb_mid", "prom_b"}},
-				"alb_mid":  {Pool: []string{"prom_c"}},
+				"alb_root": {Pool: Members("prom_a", "alb_mid", "prom_b")},
+				"alb_mid":  {Pool: Members("prom_c")},
 			},
 			wantErr: false,
 		},
@@ -166,7 +166,7 @@ func TestValidateNoCycles(t *testing.T) {
 		{
 			name: "user_router mixed pool+UR cycle: rr alb_root -> ur alb_ur -> alb_root",
 			albs: map[string]*Options{
-				"alb_root": {Pool: []string{"alb_ur"}},
+				"alb_root": {Pool: Members("alb_ur")},
 				"alb_ur": {
 					MechanismName: "user_router",
 					UserRouter:    &ur.Options{DefaultBackend: "alb_root"},
@@ -196,7 +196,7 @@ func TestValidateNoCycles(t *testing.T) {
 			// nor inflate path/visiting state.
 			name: "user_router nil + empty edges treated as no edge",
 			albs: map[string]*Options{
-				"alb_pool":     {Pool: []string{"prom1"}},
+				"alb_pool":     {Pool: Members("prom1")},
 				"alb_ur_nil":   {MechanismName: "user_router", UserRouter: nil},
 				"alb_ur_empty": {MechanismName: "user_router", UserRouter: &ur.Options{}},
 				"alb_ur_user0": {

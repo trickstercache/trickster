@@ -12,6 +12,8 @@ prometheus-data/
 redis-data/
 trickster-data
 trips_*.gz
+__pycache__
+seed-window.env
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
@@ -25,6 +27,7 @@ trips_*.gz
 # Test Coverage Profile Output
 .coverprofile
 .integration.coverprofile
+integration/conformance/reports
 
 # output path
 OPATH
@@ -68,3 +71,9 @@ notes.txt
 # Local AI Agent Files & Directories
 AGENTS.md
 .claude
+
+# mutable CoreDNS zone data for the autodiscovery integration tests
+# (seeded from docker-compose-data/coredns/*.seed by `make integration-start`)
+docs/developer/environment/docker-compose-data/coredns-zones/
+
+integration/conformance/reports

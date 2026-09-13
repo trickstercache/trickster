@@ -24,14 +24,13 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
-// writeValidationError writes a standardized validation error response
 func writeValidationError(w http.ResponseWriter, errorMsg string) {
 	w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
 	w.Header().Set(headers.NameCacheControl, headers.ValueNoCache)
@@ -47,9 +46,8 @@ func writePurgeResult(w http.ResponseWriter, backendName, target string) {
 		html.EscapeString(backendName), html.EscapeString(target)))
 }
 
-// validateBackend checks if the backend exists and writes an error response if not
-// Returns true if valid, false if invalid (and error response was written)
 func validateBackend(w http.ResponseWriter, backend backends.Backend, backendName string) bool {
+	// a false result means the error response has already been written
 	if backend == nil {
 		writeValidationError(w, "Backend "+html.EscapeString(backendName)+" doesn't exist.")
 		return false
@@ -57,9 +55,8 @@ func validateBackend(w http.ResponseWriter, backend backends.Backend, backendNam
 	return true
 }
 
-// validateCache checks if the backend has a cache and writes an error response if not
-// Returns true if valid, false if invalid (and error response was written)
 func validateCache(w http.ResponseWriter, cache cache.Cache, backendName string) bool {
+	// a false result means the error response has already been written
 	if cache == nil {
 		writeValidationError(w, "Backend "+html.EscapeString(backendName)+" doesn't have a cache.")
 		return false
@@ -125,7 +122,7 @@ func PathHandler(pathPrefix string,
 			return
 		}
 		logger.Debug("purging cache item",
-			logging.Pairs{"backend": backendName, "path": purgePath})
+			logging.Pairs{"backend": backendName, keys.Path: purgePath})
 		backend := from.Get(backendName)
 		if !validateBackend(w, backend, backendName) {
 			return
@@ -136,12 +133,18 @@ func PathHandler(pathPrefix string,
 		}
 
 		cfg := backend.Configuration()
+		keys := make([]string, 0, len(engines)*len(methods)*2)
 		for _, engine := range engines {
 			for _, method := range methods {
-				suffix := md5.Checksum(fmt.Sprintf("%s.method.%s.", purgePath, method))
-				cache.Remove(proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix, engine, suffix))
+				// conditions can send one pathname to several paths, each
+				// keying its cache entries on its own configured identity
+				for _, identity := range cfg.Paths.MatchIdentities(method, purgePath) {
+					keys = append(keys, proxyengines.ComposeCacheKey(cfg.Name, cfg.CacheKeyPrefix,
+						engine, proxyengines.DerivePathCacheKey(purgePath, method, identity)))
+				}
 			}
 		}
+		cache.Remove(keys...)
 
 		writePurgeResult(w, backendName, purgePath)
 	}

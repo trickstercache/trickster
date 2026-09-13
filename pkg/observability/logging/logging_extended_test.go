@@ -24,9 +24,11 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 )
 
@@ -52,7 +54,7 @@ func TestLoggerWriteAndFiltering(t *testing.T) {
 	l.SetLogAsynchronous(false)
 
 	l.Info("hidden", nil)
-	l.Warn("visible", Pairs{"key": "value"})
+	l.Warn("visible", Pairs{keys.Key: "value"})
 	if !strings.Contains(buf.String(), "visible") {
 		t.Fatalf("output = %q", buf.String())
 	}
@@ -103,7 +105,7 @@ func TestLoggerOnceAndSynchronousHelpers(t *testing.T) {
 func TestLoggerAsyncMode(t *testing.T) {
 	t.Parallel()
 
-	buf := &bytes.Buffer{}
+	buf := &syncBuffer{}
 	l := StreamLogger(buf, level.Info)
 	l.SetLogAsynchronous(true)
 	l.Info("async entry", nil)
@@ -114,6 +116,23 @@ func TestLoggerAsyncMode(t *testing.T) {
 	if buf.Len() == 0 {
 		t.Fatal("expected async log output")
 	}
+}
+
+type syncBuffer struct {
+	mtx sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) Len() int {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Len()
 }
 
 func TestQuoteAsNeeded(t *testing.T) {

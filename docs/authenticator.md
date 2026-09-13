@@ -1,10 +1,14 @@
 # Authenticator
 
-Trickster 2.0 provides a new Authenticator capability that allows you to protect Backends with an Authentication layer.
+Trickster 2.x provides an Authenticator capability that allows you to protect Backends with an Authentication layer.
 
 Authenticator resources are defined globally by name, and then mapped into any Backend and/or Path configuration as needed. Authenticator users can be loaded from `htpasswd` or `csv` files, or directly in the Trickster config file. You can provide credentials in plaintext, bcrypt, apache md5-script, as well as legacy formats rsa-256 and rsa-512.
 
 Authenticators work with all Backend provider types. Requests are handled by their respective Authenticators before all other Handlers (e.g., Caches, Rules, Request Rewrites, ALB Routes, etc.).
+
+Native MySQL listeners terminate `mysql_native_password` authentication and
+have stricter credential-source requirements than HTTP authenticators. See the
+[MySQL Provider Guide](mysql.md#direct-backend-configuration).
 
 If a request is routed via a Trickster ALB or Rule Backend through to multiple other Backends - each having different Authenticator configurations - the authentication behavior is currently undefined. In an upcoming Beta release, we will define this use case to either use the Authenticator config (if set) of the very first Backend that handled the request; or to use the first defined Authenticator regardless of how deep into the Backend chain it is.
 

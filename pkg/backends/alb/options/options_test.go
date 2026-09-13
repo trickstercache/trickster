@@ -26,7 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 type testOptions1 struct {
@@ -74,13 +74,13 @@ func TestNew(t *testing.T) {
 
 func TestClone(t *testing.T) {
 	o := New()
-	o.Pool = []string{"test"}
+	o.Pool = Members("test")
 	o.FGRStatusCodes = []int{200}
 	o.FgrCodesLookup = sets.New([]int{200})
 	require.NotNil(t, o)
 	co := o.Clone()
 
-	if len(co.Pool) != 1 || co.Pool[0] != "test" {
+	if len(co.Pool) != 1 || co.Pool[0].Name != "test" {
 		t.Error("clone mismatch")
 	}
 	if len(co.FGRStatusCodes) != 1 || co.FGRStatusCodes[0] != 200 {
@@ -146,7 +146,7 @@ func TestErrInvalidALBOptions(t *testing.T) {
 
 func TestCloneWithUserRouter(t *testing.T) {
 	o := New()
-	o.Pool = []string{"a", "b"}
+	o.Pool = Members("a", "b")
 	o.UserRouter = &ur.Options{DefaultBackend: "prom1"}
 	co := o.Clone()
 	require.NotNil(t, co.UserRouter)
@@ -226,7 +226,7 @@ func TestValidate(t *testing.T) {
 
 func TestValidatePool(t *testing.T) {
 	o := New()
-	o.Pool = []string{"prom1", "prom2"}
+	o.Pool = Members("prom1", "prom2")
 	err := o.ValidatePool("alb1", sets.New([]string{"prom1", "prom2", "prom3"}))
 	require.NoError(t, err)
 
@@ -238,7 +238,7 @@ func TestValidatePool(t *testing.T) {
 
 func TestUnmarshalYAMLError(t *testing.T) {
 	o := New()
-	want := errors.New("boom")
-	err := o.UnmarshalYAML(func(any) error { return want })
-	require.ErrorIs(t, err, want)
+	// a sequence cannot be decoded into the options struct
+	err := yaml.Unmarshal([]byte("- boom"), o)
+	require.Error(t, err)
 }

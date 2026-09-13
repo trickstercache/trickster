@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -43,8 +44,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
-	"gopkg.in/yaml.v2"
 )
 
 type detail struct {
@@ -92,7 +91,7 @@ func (hs *healthStatus) JSON() string {
 }
 
 func (hs *healthStatus) YAML() string {
-	b, err := yaml.Marshal(hs)
+	b, err := yamlencoding.Marshal(hs)
 	if err != nil {
 		return "---"
 	}
@@ -226,19 +225,49 @@ func StatusHandler(now func() time.Time, hc healthcheck.HealthChecker, backends 
 }
 
 func builder(now func() time.Time, hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends, ready chan<- bool) {
-	updateStatusText(now, hc, hd, backends) // setup the initial status page text
 	notifier := make(chan bool, 32)
-	for _, c := range hc.Statuses() {
-		c.RegisterSubscriber(notifier)
+	// track which statuses carry our subscriber, so registrations that
+	// appear at runtime (autodiscovered ALB members) get subscribed too
+	// and removed ones are released
+	subscribed := make(map[*healthcheck.Status]struct{})
+	syncSubscriptions := func() {
+		current := hc.Statuses()
+		inUse := make(map[*healthcheck.Status]struct{}, len(current))
+		for _, c := range current {
+			inUse[c] = struct{}{}
+			if _, ok := subscribed[c]; !ok {
+				subscribed[c] = struct{}{}
+				c.RegisterSubscriber(notifier)
+			}
+		}
+		for c := range subscribed {
+			if _, ok := inUse[c]; !ok {
+				c.UnregisterSubscriber(notifier)
+				delete(subscribed, c)
+			}
+		}
 	}
+	registrations := make(chan bool, 1)
+	if rn, ok := hc.(healthcheck.RegistrationNotifier); ok {
+		rn.SubscribeRegistrations(registrations)
+	}
+	syncSubscriptions()
 	closer := make(chan bool, 1)
 	hc.Subscribe(closer)
+	// built only once subscribed, so a status that changes during the build still triggers a
+	// rebuild; building first would lose a change landing between the build and the subscription
+	updateStatusText(now, hc, hd, backends)
 	for {
 		select {
 		case ready <- true:
 			// signal that the builder is in its ready state
 		case <-closer: // a bool comes over closer when the Health Checker is closing down, so the builder should as well
 			return
+		case <-registrations:
+			// the registered-target set changed (e.g. discovered members
+			// added/removed): follow the membership and rebuild
+			syncSubscriptions()
+			updateStatusText(now, hc, hd, backends)
 		case <-notifier: // a bool comes over notifier when the status text should be rebuilt
 			updateStatusText(now, hc, hd, backends)
 		}
@@ -419,7 +448,8 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 				}
 				pool = urPool.Keys()
 			} else {
-				pool = albConfig.ALBOptions.Pool
+				pool = albConfig.ALBOptions.Pool.Names()
+				pool = append(pool, albClient.DynamicPoolNames()...)
 			}
 
 			seen := sets.NewStringSet()

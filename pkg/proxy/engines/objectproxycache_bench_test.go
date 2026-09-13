@@ -37,7 +37,7 @@ func BenchmarkObjectProxyCache(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", string(body), http.StatusPartialContent, hdrs)
 	if err != nil {
 		b.Error(err)
@@ -64,7 +64,7 @@ func BenchmarkObjectProxyCacheChunks(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	hdrs := map[string]string{"Cache-Control": "max-age=60"}
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
 	ts, _, r, rsc, err := setupTestHarnessOPC("", string(body), http.StatusPartialContent, hdrs)
 	if err != nil {
 		b.Error(err)

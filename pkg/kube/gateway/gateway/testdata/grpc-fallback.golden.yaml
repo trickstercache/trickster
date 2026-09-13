@@ -1,0 +1,196 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--grpcroute.shop.patterns_r0:
+        provider: rp
+        origin_url: http://pattern-svc.shop.svc:9000
+        hosts:
+            - patterns.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: grpcroute.shop.patterns
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        h2c_prior_knowledge: true
+        preserve_host: true
+        paths:
+            - path: ^/(?:foo|bar)/(?:Check)$
+              match_type: regex
+              handler: proxy
+              methods:
+                - POST
+            - path: ^/(?:(?:)baz(?:))/(?:Get|List(?:))$
+              match_type: regex
+              handler: proxy
+              methods:
+                - POST
+            - path: ^/(?:((?:)qux(?:))|(?:)quux(?:))/(?:(?:)Check(?:))$
+              match_type: regex
+              handler: proxy
+              methods:
+                - POST
+    kgw--grpcroute.shop.patterns_r1:
+        provider: rp
+        origin_url: http://api-svc.shop.svc:9000
+        hosts:
+            - patterns.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: grpcroute.shop.patterns
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        h2c_prior_knowledge: true
+        preserve_host: true
+        paths:
+            - path: ^/.*
+              match_type: regex
+              handler: proxy
+              methods:
+                - POST
+    kgw--grpcroute.shop.rpc_r0:
+        provider: rp
+        origin_url: http://health-svc.shop.svc:9000
+        hosts:
+            - rpc.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: grpcroute.shop.rpc
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        h2c_prior_knowledge: true
+        preserve_host: true
+        paths:
+            - path: ^/[^/]+/Check$
+              match_type: regex
+              handler: proxy
+              methods:
+                - POST
+    kgw--grpcroute.shop.rpc_r1:
+        provider: rp
+        origin_url: http://api-svc.shop.svc:9000
+        hosts:
+            - rpc.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: grpcroute.shop.rpc
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        h2c_prior_knowledge: true
+        preserve_host: true
+        paths:
+            - path: ^/.*
+              match_type: regex
+              handler: proxy
+              methods:
+                - POST
+    kgw--notfound_1e1e77d1:
+        provider: rp
+        origin_url: https://unmatched.kgw.invalid
+        hosts:
+            - patterns.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: ^/(?:((?:)qux(?:))|(?:)quux(?:))/(?:(?:)Check(?:))$
+              match_type: regex
+              handler: localresponse
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              response_code: 404
+              response_body: no route matched
+            - path: ^/(?:(?:)baz(?:))/(?:Get|List(?:))$
+              match_type: regex
+              handler: localresponse
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              response_code: 404
+              response_body: no route matched
+            - path: ^/(?:foo|bar)/(?:Check)$
+              match_type: regex
+              handler: localresponse
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              response_code: 404
+              response_body: no route matched
+            - path: ^/.*
+              match_type: regex
+              handler: localresponse
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              response_code: 404
+              response_body: no route matched
+    kgw--notfound_1e72f2dd:
+        provider: rp
+        origin_url: https://unmatched.kgw.invalid
+        hosts:
+            - rpc.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: ^/.*
+              match_type: regex
+              handler: localresponse
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              response_code: 404
+              response_body: no route matched
+            - path: ^/[^/]+/Check$
+              match_type: regex
+              handler: localresponse
+              methods:
+                - CONNECT
+                - DELETE
+                - GET
+                - HEAD
+                - OPTIONS
+                - PATCH
+                - PURGE
+                - PUT
+                - TRACE
+              response_code: 404
+              response_body: no route matched

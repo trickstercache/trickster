@@ -21,13 +21,14 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+
 	"github.com/stretchr/testify/require"
 )
 
 func TestReverseProxyCache(t *testing.T) {
-	cfg := writeTestConfig(t, 8574, 8575, 8584)
-	rpcAddr := "127.0.0.1:8574"
-	h := tricksterHarness{ConfigPath: cfg, BaseAddr: rpcAddr, MetricsAddr: "127.0.0.1:8575"}
+	h := configHarness(t)
+	rpcAddr := h.BaseAddr
 	h.start(t)
 
 	t.Run("full object cache", func(t *testing.T) {
@@ -39,8 +40,8 @@ func TestReverseProxyCache(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 		require.NotEmpty(t, body)
-		result := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
-		t.Logf("rpc first: %s", resp.Header.Get("X-Trickster-Result"))
+		result := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
+		t.Logf("rpc first: %s", resp.Header.Get(headers.NameTricksterResult))
 
 		resp2, err := http.Get(u)
 		require.NoError(t, err)
@@ -49,8 +50,8 @@ func TestReverseProxyCache(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp2.StatusCode)
 		require.Equal(t, body, body2, "cached response should match original")
-		result2 := parseTricksterResult(resp2.Header.Get("X-Trickster-Result"))
-		t.Logf("rpc second: %s", resp2.Header.Get("X-Trickster-Result"))
+		result2 := parseTricksterResult(resp2.Header.Get(headers.NameTricksterResult))
+		t.Logf("rpc second: %s", resp2.Header.Get(headers.NameTricksterResult))
 		_ = result
 		_ = result2
 	})
@@ -69,7 +70,7 @@ func TestReverseProxyCache(t *testing.T) {
 		require.NoError(t, err)
 
 		t.Logf("byte range: status=%d, Content-Range=%s, X-Trickster-Result=%s",
-			resp.StatusCode, resp.Header.Get("Content-Range"), resp.Header.Get("X-Trickster-Result"))
+			resp.StatusCode, resp.Header.Get("Content-Range"), resp.Header.Get(headers.NameTricksterResult))
 
 		require.Equal(t, http.StatusPartialContent, resp.StatusCode,
 			"expected 206 Partial Content for Range request, body: %s", string(body))

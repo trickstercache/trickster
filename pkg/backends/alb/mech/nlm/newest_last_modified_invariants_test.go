@@ -92,7 +92,7 @@ func testNLMSkipsTruncated(t *testing.T) {
 	})
 	bigH := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headers.NameLastModified, newer.UTC().Format(http.TimeFormat))
-		w.Header().Set("Content-Length", "4096")
+		w.Header().Set(headers.NameContentLength, "4096")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(bigBody))
 	})
@@ -111,7 +111,7 @@ func testNLMSkipsTruncated(t *testing.T) {
 		t.Fatalf("expected truncated upstream disqualified; want body %q, got %q (len=%d)",
 			smallBody, got, len(got))
 	}
-	if cl := w.Header().Get("Content-Length"); cl != "" && cl != "2" {
+	if cl := w.Header().Get(headers.NameContentLength); cl != "" && cl != "2" {
 		t.Errorf("served Content-Length %q does not match served body length %d", cl, w.Body.Len())
 	}
 }
@@ -126,7 +126,7 @@ func testNLMAllTruncated(t *testing.T) {
 			for i := range body {
 				body[i] = 'a'
 			}
-			w.Header().Set("Content-Length", strconv.Itoa(bodySize))
+			w.Header().Set(headers.NameContentLength, strconv.Itoa(bodySize))
 			w.WriteHeader(http.StatusOK)
 			w.Write(body)
 		})

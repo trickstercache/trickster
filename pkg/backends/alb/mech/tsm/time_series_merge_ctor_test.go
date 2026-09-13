@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	alberr "github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -35,6 +34,7 @@ func TestRegistryEntry(t *testing.T) {
 	if entry.Name != Name || entry.ShortName != ShortName {
 		t.Fatalf("RegistryEntry = %+v, want Name=%q ShortName=%q", entry, Name, ShortName)
 	}
+
 	if entry.New == nil {
 		t.Fatal("RegistryEntry.New is nil")
 	}
@@ -45,7 +45,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("invalid output format", func(t *testing.T) {
 		t.Parallel()
-		_, err := New(&options.Options{OutputFormat: "not-a-provider"}, nil)
+		_, err := New(Config{OutputFormat: "not-a-provider"}, nil)
 		if !errors.Is(err, alberr.ErrInvalidTimeSeriesMergeProvider) {
 			t.Fatalf("New() error = %v, want ErrInvalidTimeSeriesMergeProvider", err)
 		}
@@ -53,7 +53,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("missing factory", func(t *testing.T) {
 		t.Parallel()
-		_, err := New(&options.Options{OutputFormat: providers.Prometheus}, rt.Lookup{})
+		_, err := New(Config{OutputFormat: providers.Prometheus}, rt.Lookup{})
 		if !errors.Is(err, alberr.ErrInvalidTimeSeriesMergeProvider) {
 			t.Fatalf("New() error = %v, want ErrInvalidTimeSeriesMergeProvider", err)
 		}
@@ -62,7 +62,7 @@ func TestNew(t *testing.T) {
 	t.Run("valid prometheus provider", func(t *testing.T) {
 		t.Parallel()
 		m, err := New(
-			&options.Options{OutputFormat: providers.Prometheus},
+			Config{OutputFormat: providers.Prometheus},
 			rt.Lookup{providers.Prometheus: prometheus.NewClient},
 		)
 		if err != nil {

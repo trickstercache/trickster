@@ -1,0 +1,114 @@
+# Kubernetes controller cache policy scenario (phase 6). A real Prometheus is
+# deployed behind two Ingresses served by the trickster-ingress controller
+# that ingress.yaml deploys (NodePort 30082), and a TricksterCachePolicy on
+# each routes it through the prometheus provider: a range query is answered by
+# the Delta Proxy Cache rather than proxied, and the second Ingress hides the
+# X-Trickster-Result header. The CRD from deploy/kube/crds must be installed
+# before trickster-ingress starts, which `make kind-integration-ingress` does.
+#
+#   make kind-integration-start
+#   make kind-integration-ingress
+#   cd integration && TRICKSTER_KIND_TEST=1 go test -run TestCachePolicyKind -v .
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.5.0
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            periodSeconds: 2
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  namespace: trickster-it
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prom
+  namespace: trickster-it
+spec:
+  ingressClassName: trickster
+  rules:
+    - host: prom.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prom-hidden
+  namespace: trickster-it
+spec:
+  ingressClassName: trickster
+  rules:
+    - host: hidden.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus
+                port:
+                  name: http
+---
+# the provider on the Service reaches both Ingresses; the default memory cache
+# holds what is cached, since the controller's configuration names none
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: prometheus
+  namespace: trickster-it
+spec:
+  targetRefs:
+    - kind: Service
+      name: prometheus
+  provider: prometheus
+  timeout: 30s
+---
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: prom-hidden
+  namespace: trickster-it
+spec:
+  targetRefs:
+    - group: networking.k8s.io
+      kind: Ingress
+      name: prom-hidden
+  resultHeader: Hide

@@ -17,21 +17,26 @@
 package setup
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	logmgr "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -147,6 +152,49 @@ backends:
 	}
 }
 
+func TestValidateConfigRejectsGraphiteOriginAuthConflicts(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		err  error
+	}{
+		{"authorization with username", `
+    graphite:
+      origin_authorization: 'Bearer tok'
+      origin_username: 'u'`, gro.ErrOriginAuthConflict},
+		{"password without username", `
+    graphite:
+      origin_password: 'p'`, gro.ErrOriginAuthNoUser},
+		{"credential with +Authorization path", `
+    graphite:
+      origin_username: 'u'
+      origin_password: 'p'
+    paths:
+      - path: /render
+        request_headers:
+          '+authorization': 'appended'`, gro.ErrOriginAuthAppend},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, `
+backends:
+  test:
+    provider: graphite
+    origin_url: 'http://example.com'`+tc.body)
+			// the -validate-config flow and ordinary startup must both reject
+			// it with the specific origin-auth error, not just any failure
+			_, err := LoadAndValidate("-validate-config", "-config", path)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("-validate-config: expected %v, got %v", tc.err, err)
+			}
+			_, _, err = BootstrapConfig("-config", path)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("startup: expected %v, got %v", tc.err, err)
+			}
+		})
+	}
+}
+
 func TestLoadAndValidateInvalidConfig(t *testing.T) {
 	_, err := LoadAndValidate("-config", writeConfig(t, `
 logging:
@@ -176,6 +224,38 @@ backends:
 	}
 	if len(conf.LoaderWarnings) == 0 {
 		t.Error("expected at least one loader warning")
+	}
+}
+
+func TestInitLoggerIncludesAllConfigFiles(t *testing.T) {
+	directory := t.TempDir()
+	basePath := filepath.Join(directory, "10-base.yaml")
+	fragmentPath := filepath.Join(directory, "20-logging.yaml")
+	if err := os.WriteFile(basePath, []byte(minimalConfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fragmentPath, []byte("logging:\n  log_level: info\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	conf, err := LoadAndValidate("-config", directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(t.TempDir(), "trickster.log")
+	conf.Logging.LogFile = logPath
+	conf.Logging.LogLevel = string(level.Info)
+	activeLogger := initLogger(conf)
+	activeLogger.Close()
+	logger.SetLogger(logging.NoopLogger())
+
+	contents, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "config=" + basePath + "," + fragmentPath
+	if !strings.Contains(string(contents), want) {
+		t.Errorf("log does not contain ordered config files %q: %s", want, contents)
 	}
 }
 
@@ -272,6 +352,9 @@ func TestApplyConfig(t *testing.T) {
 	if si.Config != conf {
 		t.Error("expected the instance config to be the new config")
 	}
+	if si.Listeners != group {
+		t.Error("expected the instance listener group to be retained")
+	}
 	if si.HealthChecker == nil {
 		t.Error("expected a health checker")
 	}
@@ -348,12 +431,23 @@ func TestApplyConfigTracingError(t *testing.T) {
 		t.Fatal(err)
 	}
 	quietListeners(conf)
+	old := conf.Clone()
+	old.Logging.LogFile = filepath.Join(t.TempDir(), "reload.log")
+	conf.Logging.LogFile = old.Logging.LogFile
+	count := 5
+	conf.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
+	oldOptions := old.Logging.ManagerOptions()
+	h, err := logmgr.GetWriter(oldOptions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.Close()
 	// a backend pointing at a tracing config that does not exist fails
 	// tracer registration
 	conf.Backends["test"].TracingConfigName = "nonexistent"
 
 	var errorFuncCalls int
-	si := &instance.ServerInstance{}
+	si := &instance.ServerInstance{Config: old}
 	err = ApplyConfig(si, conf, clients, nil, func() { errorFuncCalls++ }, listener.NewGroup())
 	if err == nil {
 		t.Fatal("expected a tracer registration error")
@@ -361,6 +455,11 @@ func TestApplyConfigTracingError(t *testing.T) {
 	if errorFuncCalls != 1 {
 		t.Errorf("errorFunc calls = %d, want 1", errorFuncCalls)
 	}
+	restored, err := logmgr.GetWriter(oldOptions)
+	if err != nil {
+		t.Fatalf("old log options were not restored: %v", err)
+	}
+	restored.Close()
 }
 
 func TestApplyConfigRouteRegistrationError(t *testing.T) {
@@ -369,17 +468,36 @@ func TestApplyConfigRouteRegistrationError(t *testing.T) {
 		t.Fatal(err)
 	}
 	quietListeners(conf)
+	logFile := filepath.Join(t.TempDir(), "startup.log")
+	conf.Logging.LogFile = logFile
 	// an unknown provider is rejected by route registration
 	conf.Backends["test"].Provider = "not-a-provider"
 
 	var errorFuncCalls int
+	var loggedBeforeExit bool
 	si := &instance.ServerInstance{}
-	err = ApplyConfig(si, conf, clients, nil, func() { errorFuncCalls++ }, listener.NewGroup())
+	err = ApplyConfig(si, conf, clients, nil, func() {
+		errorFuncCalls++
+		b, _ := os.ReadFile(logFile)
+		loggedBeforeExit = strings.Contains(string(b), "route registration failed")
+	}, listener.NewGroup())
 	if err == nil {
 		t.Fatal("expected a route registration error")
 	}
 	if errorFuncCalls != 1 {
 		t.Errorf("errorFunc calls = %d, want 1", errorFuncCalls)
+	}
+	if !loggedBeforeExit {
+		t.Error("startup failure was not flushed before the exit callback")
+	}
+	logger.Logger().Close()
+	logger.SetLogger(logging.NoopLogger())
+	b, readErr := os.ReadFile(logFile)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(b), "route registration failed") {
+		t.Errorf("startup failure missing from configured log: %q", string(b))
 	}
 }
 
@@ -483,6 +601,43 @@ func TestApplyLoggingConfigFileChange(t *testing.T) {
 	}
 	// let the delayed closer for the old logger run before TempDir cleanup
 	time.Sleep(20 * time.Millisecond)
+}
+
+func TestApplyLoggingConfigRotationChange(t *testing.T) {
+	dir := t.TempDir()
+	t.Cleanup(func() {
+		logger.Logger().Close()
+		logger.SetLogger(logging.NoopLogger())
+	})
+	old := config.NewConfig()
+	old.Logging.LogFile = filepath.Join(dir, "trickster.log")
+	old.MgmtConfig.ReloadDrainTimeout = 0
+	logger.SetLogger(logging.New(old))
+
+	// the shared writer is reconfigured before applying the logging config
+	nc := config.NewConfig()
+	nc.Logging.LogFile = old.Logging.LogFile
+	nc.MgmtConfig.ReloadDrainTimeout = 0
+	count := 5
+	nc.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
+	before := logger.Logger()
+	if err := reconfigureLogWriters(nc); err != nil {
+		t.Fatal(err)
+	}
+	applyLoggingConfig(nc, old)
+	if logger.Logger() != before {
+		t.Error("a rotation-only change should retain the existing logger")
+	}
+
+	// an identical rotation config must retain the existing logger
+	nc2 := config.NewConfig()
+	nc2.Logging.LogFile = nc.Logging.LogFile
+	nc2.Logging.Retention = &logmgr.RetentionOptions{Count: &count}
+	before = logger.Logger()
+	applyLoggingConfig(nc2, nc)
+	if logger.Logger() != before {
+		t.Error("an equivalent rotation config should retain the existing logger")
+	}
 }
 
 func TestApplyCachingConfigNilArgs(t *testing.T) {
@@ -611,12 +766,12 @@ func TestHandleStartupIssue(t *testing.T) {
 		t.Errorf("calls = %d, want 1", calls)
 	}
 
-	handleStartupIssue("some event", logging.Pairs{"detail": "x"}, errorFunc)
+	handleStartupIssue("some event", logging.Pairs{keys.Detail: "x"}, errorFunc)
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
 	}
 
-	handleStartupIssue("some event", logging.Pairs{"detail": "x"}, nil)
+	handleStartupIssue("some event", logging.Pairs{keys.Detail: "x"}, nil)
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
 	}
@@ -633,5 +788,33 @@ func TestInitLogger(t *testing.T) {
 	l := initLogger(c)
 	if l == nil {
 		t.Fatal("expected a logger")
+	}
+}
+
+const overlayTestBackendName = reserved.NamePrefixKubeGateway + "svc"
+
+func TestBootstrapConfigWithOverlay(t *testing.T) {
+	path := writeConfig(t, minimalConfig)
+	overlay := &config.Overlay{
+		Data:    []byte("backends:\n  " + overlayTestBackendName + ":\n    provider: rp\n    origin_url: 'http://example.com'\n"),
+		Prefix:  reserved.NamePrefixKubeGateway,
+		Version: "v1",
+	}
+	conf, clients, err := BootstrapConfigWithOverlay(overlay, "-config", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conf.Backends[overlayTestBackendName] == nil || conf.Backends["test"] == nil {
+		t.Fatalf("backends = %v; want file and overlay backends", conf.Backends)
+	}
+	if _, ok := clients[overlayTestBackendName]; !ok {
+		t.Error("overlay backend has no client")
+	}
+	if conf.OverlayVersion() != "v1" {
+		t.Errorf("overlay version = %q; want v1", conf.OverlayVersion())
+	}
+	overlay.Data = []byte("main: {}")
+	if _, _, err := BootstrapConfigWithOverlay(overlay, "-config", path); err == nil {
+		t.Error("expected an overlay validation error")
 	}
 }

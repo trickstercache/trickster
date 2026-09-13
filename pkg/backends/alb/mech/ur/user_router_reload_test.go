@@ -92,7 +92,7 @@ func TestURRetainsInboundCredWhenToCredentialEmpty(t *testing.T) {
 				},
 			},
 		},
-		userRoutes: UserRoutes{"alice": {Handler: okH}},
+		userRoutes: UserRoutes{"alice": testRoute(okH)},
 	}
 
 	r, _ := http.NewRequest("GET", "http://example.com/", nil)

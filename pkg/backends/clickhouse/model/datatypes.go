@@ -18,6 +18,24 @@ package model
 
 type DataType int
 
+// ClickHouse type name strings used across marshal/unmarshal.
+const (
+	TypeUInt8    = "UInt8"
+	TypeUInt16   = "UInt16"
+	TypeUInt32   = "UInt32"
+	TypeUInt64   = "UInt64"
+	TypeInt8     = "Int8"
+	TypeInt16    = "Int16"
+	TypeInt32    = "Int32"
+	TypeInt64    = "Int64"
+	TypeFloat32  = "Float32"
+	TypeFloat64  = "Float64"
+	TypeDateTime = "DateTime"
+	TypeDate     = "Date"
+	TypeString   = "String"
+	TypeBool     = "Bool"
+)
+
 const (
 	UInt8 = DataType(iota)
 	UInt16

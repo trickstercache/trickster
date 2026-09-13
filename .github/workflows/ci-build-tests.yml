@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
@@ -32,6 +34,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
+          version: v2.13.1
           args: --timeout 5m
           only-new-issues: true
   docker:
@@ -54,6 +57,11 @@ jobs:
             --label "org.opencontainers.image.created=${{ steps.builddate.outputs.builddate }}" \
             --platform linux/amd64 \
             -f ./Dockerfile  .
+      # the release targets select the binary and base image by platform;
+      # confirm each platform's image reports the architecture it advertises
+      - name: verify release image platforms
+        run: |
+          make docker-release IMAGE_TAG=ci
   build:
     runs-on: ubuntu-latest
     strategy:
@@ -115,17 +123,25 @@ jobs:
 
   integration:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    env:
+      TRICKSTER_MYSQL_CLI_TEST: "1"
+      TRICKSTER_DNS_TEST: "1"
+      # CI containers cannot raise the UDP receive buffer; the warning is noise
+      QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      - name: Start developer environment
-        run: make developer-start
+      - name: Start developer environment (with integration containers)
+        run: make integration-start
       - name: Show container status
         if: always()
-        run: cd docs/developer/environment && docker compose ps && docker compose logs prometheus --tail=30
+        run: |
+          cd docs/developer/environment
+          docker compose ps
+          docker compose logs --tail=30 redis prometheus mysql grafana coredns
+          docker compose logs --tail=60 graphite graphite_seed graphite_generator
       - name: Run integration tests (with coverage)
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
@@ -138,6 +154,75 @@ jobs:
           path-to-profile: integration/.integration.coverprofile
           flag-name: integration
           parallel: true
+
+  integration-kind:
+    # Kubernetes scenarios in a kind cluster: autodiscovery over
+    # EndpointSlices, the Ingress and Gateway API controllers, and the
+    # Gateway API conformance suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          config: integration/kind/kind-config.yaml
+          cluster_name: trickster-it
+      - name: Build and load trickster image
+        run: |
+          docker build -t trickster:integration .
+          kind load docker-image trickster:integration --name trickster-it
+      - name: Deploy scenario manifests
+        run: |
+          kubectl --context kind-trickster-it apply -f integration/kind/manifests.yaml
+          kubectl --context kind-trickster-it -n trickster-it rollout status             deployment/webecho deployment/trickster --timeout=180s
+      - name: Run kubernetes autodiscovery scenario
+        working-directory: integration
+        env:
+          TRICKSTER_KIND_TEST: "1"
+        run: go test -v -timeout 15m -run TestALBDiscoveryKind .
+      - name: Deploy kubernetes controller manifests
+        run: make kind-integration-ingress
+      - name: Run kubernetes controller endpoint-mode scenario
+        working-directory: integration
+        env:
+          TRICKSTER_KIND_TEST: "1"
+        run: go test -v -timeout 15m -run TestIngressEndpointModeKind .
+      - name: Run kubernetes cache policy scenario
+        working-directory: integration
+        env:
+          TRICKSTER_KIND_TEST: "1"
+        run: go test -v -timeout 15m -run TestCachePolicyKind .
+      - name: Deploy kubernetes gateway manifests
+        run: make kind-integration-gateway
+      - name: Run kubernetes gateway, ingress and upgrade scenarios
+        working-directory: integration
+        env:
+          TRICKSTER_KIND_TEST: "1"
+        run: go test -v -timeout 20m -run 'TestIngressKind|TestGatewayKind|TestIngressAnnotationsKind|TestGatewayRollingUpgradeKind' .
+      - name: Run Gateway API conformance suite
+        run: make kind-conformance CONFORMANCE_REPORT=integration/conformance/reports/ci.yaml
+      - name: Upload Gateway API conformance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-api-conformance-report
+          path: integration/conformance/reports/ci.yaml
+          if-no-files-found: ignore
+      - name: Show cluster state on failure
+        if: failure()
+        run: |
+          kubectl --context kind-trickster-it -n trickster-it get pods -o wide || true
+          kubectl --context kind-trickster-it -n trickster-it describe deployment trickster webecho trickster-ingress-endpoint trickster-ingress prometheus trickster-gateway || true
+          kubectl --context kind-trickster-it -n trickster-it describe trickstercachepolicies || true
+          kubectl --context kind-trickster-it get gatewayclass -o yaml || true
+          kubectl --context kind-trickster-it get gateway,httproute -A || true
+          kubectl --context kind-trickster-it -n trickster-it logs deployment/trickster --tail=100 || true
+          kubectl --context kind-trickster-it -n trickster-it logs deployment/trickster-ingress-endpoint --tail=100 || true
+          kubectl --context kind-trickster-it -n trickster-it logs deployment/trickster-ingress --tail=100 || true
+          kubectl --context kind-trickster-it -n trickster-it logs deployment/trickster-gateway --tail=200 || true
   finish:
     needs:
       - build

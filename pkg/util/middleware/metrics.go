@@ -17,7 +17,6 @@
 package middleware
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
@@ -29,40 +28,75 @@ import (
 // perspective
 func Decorate(backendName, backendProvider, path string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		observer := &responseObserver{
-			w,
-			"2xx",
-			http.StatusOK,
+		observer, ok := w.(*ResponseObserver)
+		if !ok {
+			observer = NewResponseObserver(w)
 		}
+		startBytes := observer.BytesWritten()
 
 		n := time.Now()
 		next.ServeHTTP(observer, r)
+		statusClass := observer.StatusClass()
 
 		metrics.FrontendRequestDuration.WithLabelValues(backendName, backendProvider,
-			r.Method, path, observer.status).Observe(time.Since(n).Seconds())
+			r.Method, path, statusClass).Observe(time.Since(n).Seconds())
 		metrics.FrontendRequestStatus.WithLabelValues(backendName, backendProvider,
-			r.Method, path, observer.status).Inc()
+			r.Method, path, statusClass).Inc()
 		metrics.FrontendRequestWrittenBytes.WithLabelValues(backendName, backendProvider,
-			r.Method, path, observer.status).Add(observer.bytesWritten)
+			r.Method, path, statusClass).Add(float64(observer.BytesWritten() - startBytes))
 	})
 }
 
-type responseObserver struct {
+// ResponseObserver records the response status and number of bytes written.
+type ResponseObserver struct {
 	http.ResponseWriter
 
-	status       string
-	bytesWritten float64
+	statusCode   int
+	bytesWritten int64
+	wroteHeader  bool
 }
 
-func (w *responseObserver) WriteHeader(statusCode int) {
+// NewResponseObserver wraps w with a response observer.
+func NewResponseObserver(w http.ResponseWriter) *ResponseObserver {
+	return &ResponseObserver{ResponseWriter: w, statusCode: http.StatusOK}
+}
+
+func (w *ResponseObserver) WriteHeader(statusCode int) {
+	if w.wroteHeader {
+		return
+	}
+	if statusCode >= 100 && statusCode < 200 && statusCode != http.StatusSwitchingProtocols {
+		w.ResponseWriter.WriteHeader(statusCode)
+		return
+	}
+	w.wroteHeader = true
 	w.ResponseWriter.WriteHeader(statusCode)
-	w.status = fmt.Sprintf("%dxx", statusCode/100)
+	w.statusCode = statusCode
 }
 
-func (w *responseObserver) Write(b []byte) (int, error) {
+func (w *ResponseObserver) Write(b []byte) (int, error) {
+	w.wroteHeader = true
 	bytesWritten, err := w.ResponseWriter.Write(b)
-
-	w.bytesWritten += float64(bytesWritten)
-
+	w.bytesWritten += int64(bytesWritten)
 	return bytesWritten, err
 }
+
+// StatusCode returns the first HTTP status written, or 200 if none was written.
+func (w *ResponseObserver) StatusCode() int { return w.statusCode }
+
+// StatusClass returns the recorded HTTP status class, such as "2xx".
+func (w *ResponseObserver) StatusClass() string {
+	class := w.statusCode / 100
+	if class >= 0 && class < len(statusClasses) {
+		return statusClasses[class]
+	}
+	return statusClasses[0]
+}
+
+// BytesWritten returns the number of response body bytes written.
+func (w *ResponseObserver) BytesWritten() int64 { return w.bytesWritten }
+
+// Unwrap exposes the underlying writer to http.ResponseController.
+func (w *ResponseObserver) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+var statusClasses = [6]string{"0xx", "1xx", "2xx", "3xx", "4xx", "5xx"}

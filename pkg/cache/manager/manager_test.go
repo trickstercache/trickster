@@ -25,9 +25,13 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	cm "github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,6 +99,76 @@ func TestManager(t *testing.T) {
 		require.Equal(t, status.LookupStatusHit, s)
 		require.Equal(t, val, *v.(*object))
 	})
+}
+
+func TestManagerObservesOperations(t *testing.T) {
+	const name, provider = "observeTest", "memory"
+	cacheConfig := co.New()
+	cacheConfig.Name = name
+	cacheConfig.Provider = provider
+	c := NewCache(memory.New(name, cacheConfig), CacheOptions{UseIndex: true}, cacheConfig)
+	require.NoError(t, c.Connect())
+	t.Cleanup(func() { require.NoError(t, c.Close()) })
+
+	// each call must be recorded exactly once, even though the index wraps the underlying client
+	delta := func(op, opStatus string, fn func()) float64 {
+		counter := metrics.CacheObjectOperations.WithLabelValues(name, provider, op, opStatus)
+		before := testutil.ToFloat64(counter)
+		fn()
+		return testutil.ToFloat64(counter) - before
+	}
+	require.Equal(t, 1.0, delta(cm.KeySet, cm.KeyNone, func() {
+		require.NoError(t, c.Store("foo", []byte("bar"), 0))
+	}))
+	require.Equal(t, 1.0, delta(cm.KeyGet, status.StatusHit, func() {
+		_, s, err := c.Retrieve("foo")
+		require.NoError(t, err)
+		require.Equal(t, status.LookupStatusHit, s)
+	}))
+	require.Equal(t, 1.0, delta(cm.KeyGet, status.StatusKeyMiss, func() {
+		_, s, _ := c.Retrieve("missing")
+		require.Equal(t, status.LookupStatusKeyMiss, s)
+	}))
+	delBytes := metrics.CacheByteOperations.WithLabelValues(name, provider, cm.KeyDel, cm.KeyNone)
+	delBytesBefore := testutil.ToFloat64(delBytes)
+	require.Equal(t, 1.0, delta(cm.KeyDel, cm.KeyNone, func() {
+		require.NoError(t, c.Remove("foo"))
+	}))
+	// the index records the freed bytes without counting a second operation
+	require.Equal(t, delBytesBefore+3, testutil.ToFloat64(delBytes))
+	mc := c.(cache.MemoryCache)
+	require.Equal(t, 1.0, delta(cm.KeySetDirect, cm.KeyNone, func() {
+		require.NoError(t, mc.StoreReference("ref", &object{"bar"}, 0))
+	}))
+	require.Equal(t, 1.0, delta(cm.KeyGet, status.StatusHit, func() {
+		_, s, err := mc.RetrieveReference("ref")
+		require.NoError(t, err)
+		require.Equal(t, status.LookupStatusHit, s)
+	}))
+	require.Equal(t, 1.0, delta(cm.KeyGet, status.StatusKeyMiss, func() {
+		_, s, _ := mc.RetrieveReference("missing")
+		require.Equal(t, status.LookupStatusKeyMiss, s)
+	}))
+}
+
+type failingClient struct {
+	*blockingClient
+}
+
+func (failingClient) Retrieve(_ string) ([]byte, status.LookupStatus, error) {
+	return nil, status.LookupStatusError, errors.New("backend failure")
+}
+
+func TestManagerObservesRetrieveError(t *testing.T) {
+	const name, provider = "observeErrorTest", "memory"
+	cacheConfig := &co.Options{Name: name, Provider: provider}
+	c := NewCache(failingClient{newBlockingClient()}, CacheOptions{}, cacheConfig)
+	failures := metrics.CacheEvents.WithLabelValues(name, provider, keys.Error, "failed to retrieve cache entry")
+	before := testutil.ToFloat64(failures)
+	_, s, err := c.Retrieve("foo")
+	require.Error(t, err)
+	require.Equal(t, status.LookupStatusError, s)
+	require.Equal(t, before+1, testutil.ToFloat64(failures))
 }
 
 type object struct {

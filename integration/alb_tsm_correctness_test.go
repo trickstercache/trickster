@@ -31,7 +31,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -51,9 +54,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 		}))
 		t.Cleanup(mock.Close)
 
-		frontPort := 18800
-		metricsPort := 18801
-		mgmtPort := 18802
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_tsm_correctness/d1.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, mock.URL)
@@ -63,7 +65,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		q := fmt.Sprintf("sum by (job) (up + 0*%d)", time.Now().UnixNano())
@@ -159,9 +162,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 		m2 := makeMock("20")
 		t.Cleanup(m2.Close)
 
-		frontPort := 18810
-		metricsPort := 18811
-		mgmtPort := 18812
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_tsm_correctness/d2.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, m1.URL, m2.URL)
@@ -171,7 +173,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		now := time.Now()
@@ -226,11 +229,11 @@ func TestALBTSMCorrectness(t *testing.T) {
 
 		nonOK := resp.StatusCode >= 400
 		hasWarn := strings.Contains(string(body), `"warnings"`)
-		result := parseTricksterResult(resp.Header.Get("X-Trickster-Result"))
-		hasPhit := strings.Contains(result["status"], "phit")
+		result := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
+		hasPhit := strings.Contains(result["status"], status.StatusPartialHit)
 		assert.Truef(t, nonOK || hasWarn || hasPhit,
 			"avg fanout silently returned 200 with raw sum: status=%d X-Trickster-Result=%q body=%s",
-			resp.StatusCode, resp.Header.Get("X-Trickster-Result"), string(body))
+			resp.StatusCode, resp.Header.Get(headers.NameTricksterResult), string(body))
 	})
 
 	t.Run("R1 topk and bottomk trim globally across shards", func(t *testing.T) {
@@ -297,9 +300,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 		})
 		t.Cleanup(m2.Close)
 
-		frontPort := 18830
-		metricsPort := 18831
-		mgmtPort := 18832
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_tsm_correctness/d2.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, m1.URL, m2.URL)
@@ -309,7 +311,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		queryRank := func(operator string) []vectorSeries {
@@ -410,9 +413,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 		b3 := makeBroken()
 		t.Cleanup(b3.Close)
 
-		frontPort := 18820
-		metricsPort := 18821
-		mgmtPort := 18822
+		ports, release := portutil.Reserve(t, 3)
+		frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 
 		yaml := fmt.Sprintf(albTestdata(t, "alb_tsm_correctness/v2.yaml.tmpl"),
 			frontPort, metricsPort, mgmtPort, ok.URL, b1.URL, b2.URL, b3.URL)
@@ -422,7 +424,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 
 		ctx, cancel := context.WithCancel(context.Background())
 		t.Cleanup(cancel)
-		go startTrickster(t, ctx, expectedStartError{}, "-config", cfgPath)
+		release()
+		runTrickster(t, ctx, "-config", cfgPath)
 		waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
 		// Poll until mixed 2xx+5xx fanout occurs; healthcheck registration is async.
@@ -441,8 +444,8 @@ func TestALBTSMCorrectness(t *testing.T) {
 			}
 			b, _ := io.ReadAll(r.Body)
 			r.Body.Close()
-			rh := r.Header.Get("X-Trickster-Result")
-			if !assert.Contains(c, rh, "phit", "X-Trickster-Result=%q body=%s", rh, string(b)) {
+			rh := r.Header.Get(headers.NameTricksterResult)
+			if !assert.Contains(c, rh, status.StatusPartialHit, "X-Trickster-Result=%q body=%s", rh, string(b)) {
 				return
 			}
 			resp, body, raw = r, b, rh
@@ -455,7 +458,7 @@ func TestALBTSMCorrectness(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode,
 			"current behavior is 200 (lowest non-zero status wins); body=%s", string(body))
 
-		require.Contains(t, raw, "phit",
+		require.Contains(t, raw, status.StatusPartialHit,
 			"3 of 4 fanout members 500'd; expected partial-hit marker in X-Trickster-Result, got %q", raw)
 	})
 }

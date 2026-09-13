@@ -21,10 +21,18 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/http/httptrace"
+	"net/textproto"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -60,6 +68,7 @@ type proxyRequest struct {
 	rsc            *request.Resources
 	responseWriter io.Writer
 	responseBody   []byte
+	clientWriter   io.Writer
 
 	// upstream
 	upstreamRequest  *http.Request
@@ -83,7 +92,26 @@ type proxyRequest struct {
 	cacheStatus   status.LookupStatus
 	cachingPolicy *CachingPolicy
 	key           string
-	writeToCache  bool
+	// primaryKey is the key for the target URI alone. key equals it unless the
+	// stored response nominated request fields, in which case key is the
+	// secondary key derived from them.
+	primaryKey string
+	varyNames  []string
+	// varyGeneration scopes this request's variant key. It is read from the
+	// index on lookup and minted on store when none was found.
+	varyGeneration string
+	// varyUnmatchable records a Vary the cache cannot compare on, so the
+	// response answers this request alone
+	varyUnmatchable bool
+	// sharedKey is the key this request would have without its Authorization
+	// credential. RFC 9111 3.5 lets a shared cache reuse a response to an
+	// authorized request only where the origin marked it shareable, and that
+	// is the key such a response is stored under.
+	sharedKey string
+	// omitAuthFromKey makes DeriveCacheKey produce sharedKey rather than the
+	// credential-specific key
+	omitAuthFromKey bool
+	writeToCache    bool
 
 	// range handling
 	wantedRanges      byterange.Ranges
@@ -101,6 +129,10 @@ type proxyRequest struct {
 	started         time.Time
 	contentLength   int64
 	trueContentType string
+	// set when the upstream body ended early or failed mid-copy; an incomplete
+	// object must never be written to cache. Atomic because the PCF copy runs
+	// on its own goroutine while the caller waits to store.
+	bodyTruncated atomic.Bool
 }
 
 func cloneRequestWithSpan(r *http.Request) *http.Request {
@@ -129,6 +161,7 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 		upstreamRequest: cloneRequestWithSpan(r),
 		contentLength:   -1,
 		responseWriter:  w,
+		clientWriter:    w,
 		started:         time.Now(),
 		mapLock:         &sync.Mutex{},
 	}
@@ -142,6 +175,10 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 		upstreamRequest:    cloneRequestWithSpan(pr.upstreamRequest),
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
+		primaryKey:         pr.primaryKey,
+		sharedKey:          pr.sharedKey,
+		varyNames:          pr.varyNames,
+		varyGeneration:     pr.varyGeneration,
 		cacheStatus:        pr.cacheStatus,
 		writeToCache:       pr.writeToCache,
 		wantsRanges:        pr.wantsRanges,
@@ -149,11 +186,13 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 		neededRanges:       pr.neededRanges,
 		rangeParts:         pr.rangeParts,
 		collapsedForwarder: pr.collapsedForwarder,
-		cachingPolicy:      pr.cachingPolicy,
-		revalidation:       pr.revalidation,
-		isPartialResponse:  pr.isPartialResponse,
-		started:            time.Now(),
-		mapLock:            &sync.Mutex{},
+		// a clone can outlive this request on its own goroutine, and the
+		// policy is mutated by response handling under a different lock
+		cachingPolicy:     pr.cachingPolicy.Clone(),
+		revalidation:      pr.revalidation,
+		isPartialResponse: pr.isPartialResponse,
+		started:           time.Now(),
+		mapLock:           &sync.Mutex{},
 	}
 }
 
@@ -182,7 +221,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 			if err == nil && int64(len(body)) >= limit {
 				err = tpe.ErrUnexpectedUpstreamResponse
 				logger.Error("upstream response exceeded MaxObjectSizeBytes",
-					logging.Pairs{"url": pr.URL.String(), "max": o.MaxObjectSizeBytes})
+					logging.Pairs{keys.URL: pr.URL.String(), "max": o.MaxObjectSizeBytes})
 			}
 		} else {
 			body, err = io.ReadAll(reader)
@@ -192,11 +231,14 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	}
 	if err != nil {
 		logger.Error("error reading body from http response",
-			logging.Pairs{"url": pr.URL.String(), "detail": err.Error()})
+			logging.Pairs{keys.URL: pr.URL.String(), keys.Detail: err.Error()})
 		return body, resp, 0, err
 	}
 
 	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
+	if resp != nil {
+		pr.rsc.SetUpstream(pr.upstreamRequest.URL.Host, resp.StatusCode, elapsed)
+	}
 
 	goWithRecover("proxyRequest.Fetch.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
@@ -204,6 +246,33 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	})
 
 	return body, resp, elapsed, nil
+}
+
+// relayInterimResponses forwards 1xx responses from the origin to the client as
+// they arrive. RFC 9110 15.2 requires a proxy to relay an interim response it
+// does not consume itself, which is what makes 103 Early Hints useful: the
+// client starts preloading while the origin is still producing the final
+// response. The cache has nothing to store for an interim response.
+func (pr *proxyRequest) relayInterimResponses(w io.Writer) {
+	rw, ok := w.(http.ResponseWriter)
+	if !ok || pr.upstreamRequest == nil {
+		return
+	}
+	trace := &httptrace.ClientTrace{
+		Got1xxResponse: func(code int, header textproto.MIMEHeader) error {
+			h := rw.Header()
+			for k, vv := range header {
+				h[http.CanonicalHeaderKey(k)] = slices.Clone(vv)
+			}
+			rw.WriteHeader(code)
+			// an interim response's fields belong to it alone, and this header
+			// map is reused to build the final response
+			clear(h)
+			return nil
+		},
+	}
+	pr.upstreamRequest = pr.upstreamRequest.WithContext(
+		httptrace.WithClientTrace(pr.upstreamRequest.Context(), trace))
 }
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
@@ -340,8 +409,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 			if pr.revalidationReader == nil {
 				logger.Error("revalidation upstream returned no reader",
 					logging.Pairs{
-						"url":           pr.revalidationRequest.URL.String(),
-						"contentLength": contentLength,
+						keys.URL:           pr.revalidationRequest.URL.String(),
+						keys.ContentLength: contentLength,
 					})
 			}
 		})
@@ -366,8 +435,8 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				if pr.originReaders[i] == nil {
 					logger.Error("origin upstream returned no reader",
 						logging.Pairs{
-							"url":           req.URL.String(),
-							"contentLength": contentLength,
+							keys.URL:           req.URL.String(),
+							keys.ContentLength: contentLength,
 						})
 				}
 			})
@@ -379,19 +448,140 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 	return nil
 }
 
+// queryCache reads the object for this request. When the stored response
+// nominated request fields, the primary key holds only an index naming them
+// and the object itself lives under the secondary key those fields derive,
+// which costs a second read for varying objects alone.
+func (pr *proxyRequest) queryCache(ctx context.Context, c cache.Cache) error {
+	d, ls, nr, err := pr.queryKey(ctx, c)
+	// nothing stored for this credential; a copy the origin marked shareable
+	// may still be held for the target URI itself. This only probes: a miss
+	// must leave the request keyed to its own credential, or whatever it goes
+	// on to fetch would be stored where anyone could read it.
+	if ls != status.LookupStatusHit && pr.sharedKey != "" {
+		key, primary, vary, gen := pr.key, pr.primaryKey, pr.varyNames, pr.varyGeneration
+		pr.key, pr.primaryKey, pr.varyNames, pr.varyGeneration = pr.sharedKey, pr.sharedKey, nil, ""
+		sd, sls, snr, sErr := pr.queryKey(ctx, c)
+		if sls == status.LookupStatusHit {
+			d, ls, nr, err = sd, sls, snr, sErr
+		} else {
+			pr.key, pr.primaryKey, pr.varyNames, pr.varyGeneration = key, primary, vary, gen
+		}
+	}
+	pr.cacheDocument, pr.cacheStatus, pr.neededRanges = d, ls, nr
+
+	// RFC 9110 13.1.5: a Range whose If-Range validator no longer matches the
+	// stored representation is ignored and the client gets the whole thing.
+	// The cache may hold only the requested part, so the lookup is redone
+	// without the range to work out what is actually missing -- deciding this
+	// after the fetch would serve a fragment as if it were the whole.
+	//
+	// With nothing stored there is no validator here to compare against, and
+	// the request keeps its range state so the origin evaluates If-Range and
+	// answers 206 or 200 as it sees fit.
+	if pr.wantsRanges && pr.cachingPolicy.HasIfRange &&
+		pr.hasStoredRepresentation() && !pr.ifRangeMatchesDocument() {
+		pr.wantsRanges = false
+		pr.wantedRanges = nil
+		d, ls, nr, err = pr.queryKey(ctx, c)
+		pr.cacheDocument, pr.cacheStatus, pr.neededRanges = d, ls, nr
+	}
+	return err
+}
+
+// hasConfiguredCredential reports whether a path configuration puts an
+// Authorization credential on the request going upstream. Such a request is
+// authenticated at the origin even though the client sent nothing, so RFC 9111
+// 3.5 governs whether the response may be kept.
+func (pr *proxyRequest) hasConfiguredCredential() bool {
+	if pr.rsc == nil || pr.rsc.PathConfig == nil {
+		return false
+	}
+	for k, v := range pr.rsc.PathConfig.RequestHeaders {
+		name := strings.TrimPrefix(strings.TrimPrefix(k, "+"), "-")
+		if http.CanonicalHeaderKey(name) != headers.NameAuthorization {
+			continue
+		}
+		// a deletion, or a value that clears the field, leaves it anonymous
+		if strings.HasPrefix(k, "-") || v == "" {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// hasStoredRepresentation reports whether the lookup found an object whose
+// validator can be compared against. A miss still yields a document -- an
+// empty one -- so a nil check alone would treat every cold miss as a
+// validator mismatch.
+func (pr *proxyRequest) hasStoredRepresentation() bool {
+	switch pr.cacheStatus {
+	case status.LookupStatusHit, status.LookupStatusPartialHit,
+		status.LookupStatusRangeMiss:
+		return pr.cacheDocument != nil && pr.cacheDocument.CachingPolicy != nil
+	}
+	return false
+}
+
+// ifRangeMatchesDocument evaluates the client's If-Range against the validator
+// of the representation actually in storage, rather than against a policy that
+// later merging may have moved on from.
+func (pr *proxyRequest) ifRangeMatchesDocument() bool {
+	d := pr.cacheDocument
+	if d == nil || d.CachingPolicy == nil || pr.cachingPolicy == nil {
+		return false
+	}
+	probe := &CachingPolicy{
+		ETag:         d.CachingPolicy.ETag,
+		LastModified: d.CachingPolicy.LastModified,
+		IfRangeValue: pr.cachingPolicy.IfRangeValue,
+	}
+	return probe.IfRangeMatches()
+}
+
+// queryKey reads pr.key, following the variant index when the stored response
+// nominated request fields.
+func (pr *proxyRequest) queryKey(ctx context.Context,
+	c cache.Cache,
+) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+	d, ls, nr, err := QueryCache(ctx, c, pr.key, pr.wantedRanges, nil)
+	if err == nil && d != nil && len(d.VaryNames) > 0 {
+		pr.varyGeneration = d.VaryGeneration
+		pr.setVaryNames(d.VaryNames)
+		d, ls, nr, err = QueryCache(ctx, c, pr.key, pr.wantedRanges, nil)
+	}
+	return d, ls, nr, err
+}
+
+// setVaryNames points this request's key at the variant the nominated fields
+// select. With no names the object is stored under the primary key itself.
+func (pr *proxyRequest) setVaryNames(names []string) {
+	pr.varyNames = names
+	if len(names) == 0 {
+		pr.key = pr.primaryKey
+		return
+	}
+	if pr.varyGeneration == "" {
+		pr.varyGeneration = newVaryGeneration()
+	}
+	pr.key = varySecondaryKey(pr.primaryKey, pr.varyGeneration, names, pr.Header)
+}
+
 func (pr *proxyRequest) checkCacheFreshness() bool {
 	cp := pr.cachingPolicy
 	if pr.cachingPolicy == nil {
 		return false
 	}
-	cp.IsFresh = !cp.LocalDate.Add(time.Duration(cp.FreshnessLifetime) * time.Second).Before(time.Now())
+	cp.IsFresh = cp.CurrentAge(time.Now()) < cp.FreshnessLifetime
 	return cp.IsFresh
 }
 
 func (pr *proxyRequest) parseRequestRanges() bool {
-	// handle byte range requests
+	// handle byte range requests. RFC 9110 14.2 defines range handling for GET
+	// alone, so a Range on any other method -- HEAD included -- is ignored
 	var out byterange.Ranges
-	if _, ok := pr.Header[headers.NameRange]; ok {
+	if _, ok := pr.Header[headers.NameRange]; ok && pr.Method == http.MethodGet {
 		out = byterange.ParseRangeHeader(pr.Header.Get(headers.NameRange))
 	}
 	pr.wantsRanges = len(out) > 0
@@ -417,13 +607,16 @@ func (pr *proxyRequest) stripConditionalHeaders() {
 func (pr *proxyRequest) writeResponseHeader() {
 	pr.mapLock.Lock()
 	headers.SetResultsHeader(pr.upstreamResponse.Header, "ObjectProxyCache", pr.cacheStatus.String(), "", nil, nil)
+	pr.setAgeHeader()
+	pr.setCacheStatusHeader()
 	pr.mapLock.Unlock()
 }
 
 func (pr *proxyRequest) setBodyWriter() {
 	if !pr.isPCF {
 		pr.mapLock.Lock()
-		PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+		PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
+			pr.upstreamResponse.Header, pr.trailerNames())
 		pr.mapLock.Unlock()
 	}
 
@@ -433,6 +626,7 @@ func (pr *proxyRequest) setBodyWriter() {
 		if pr.cachingPolicy.IsClientFresh {
 			// don't write response body to the client on a 304 Not Modified
 			pr.responseWriter = pr.cacheBuffer
+			pr.clientWriter = nil
 			if pr.upstreamResponse.StatusCode == http.StatusNotModified {
 				pr.upstreamResponse.StatusCode = http.StatusOK
 			}
@@ -455,20 +649,108 @@ func (pr *proxyRequest) writeResponseBody() {
 	}
 	n, err := io.Copy(pr.responseWriter, pr.upstreamReader)
 	if err != nil {
-		logger.Error("error copying upstream response body", logging.Pairs{"error": err})
+		logger.Error("error copying upstream response body", logging.Pairs{keys.Error: err})
+		pr.bodyTruncated.Store(true)
 	}
 	// Chunked / transparent-gzip transports can return err==nil with n<CL;
-	// trigger short-read regardless of err.
+	// trigger short-read regardless of err. Responses that carry no content
+	// are exempt: their Content-Length describes the body a GET would have
+	// returned, so an empty copy is the correct outcome, not a truncation.
 	if pr.upstreamResponse != nil && pr.upstreamResponse.ContentLength > 0 &&
-		n < pr.upstreamResponse.ContentLength {
+		n < pr.upstreamResponse.ContentLength &&
+		methods.HasResponseContent(pr.Method, pr.upstreamResponse.StatusCode) {
+		pr.bodyTruncated.Store(true)
+		if err == nil {
+			err = io.ErrUnexpectedEOF
+		}
 		if c := request.GetUpstreamShortReadCapture(pr.upstreamRequest.Context()); c != nil {
 			c.Mark()
+		}
+	}
+	// the upstream Content-Length was dropped, so a normal return would end the
+	// chunked response cleanly and the client would accept a partial body as
+	// whole; break the connection instead. err is local to this copy, so a
+	// truncation flagged by the PCF goroutine does not abort this client.
+	abortOnCopyError(pr.clientWriter, pr.Request, err)
+}
+
+// trailerNames returns the trailer fields the origin declared. They are known
+// before the body is read, which is what lets them be announced downstream in
+// time to matter.
+func (pr *proxyRequest) trailerNames() []string {
+	return responseTrailerNames(pr.upstreamResponse)
+}
+
+func responseTrailerNames(resp *http.Response) []string {
+	if resp == nil || len(resp.Trailer) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(resp.Trailer))
+	for k := range resp.Trailer {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// writeResponseTrailers copies any trailer fields the origin sent after its
+// body to the client. RFC 9110 6.5 lets a proxy forward them. Nothing is stored
+// for them, so a response served from cache has none to add.
+func (pr *proxyRequest) writeResponseTrailers() {
+	if pr.upstreamResponse == nil || len(pr.upstreamResponse.Trailer) == 0 {
+		return
+	}
+	rw, ok := pr.clientWriter.(http.ResponseWriter)
+	if !ok {
+		return
+	}
+	h := rw.Header()
+	for k, vv := range pr.upstreamResponse.Trailer {
+		for _, v := range vv {
+			// the prefix marks a field the server emits after the body, which
+			// is the only way to send one that was not announced up front
+			h.Add(http.TrailerPrefix+k, v)
 		}
 	}
 }
 
 func (pr *proxyRequest) determineCacheability() {
 	resp := pr.upstreamResponse
+
+	if resp != nil {
+		// RFC 9111 4.1: a response nominating request fields is stored under a
+		// key derived from them, so it is reused only where they match.
+		names, matchable := varyFieldNames(resp.Header)
+		pr.varyUnmatchable = !matchable
+		if !matchable {
+			pr.writeToCache = false
+			pr.rsc.CacheClient.Remove(pr.key)
+			return
+		}
+		pr.setVaryNames(names)
+	}
+
+	// RFC 9111 3.5: a shared cache may store a response to a request that
+	// carried Authorization only where the origin marked it reusable by one.
+	// This has to settle before any branch below can authorize storage --
+	// a negative-cached error is still an authenticated response.
+	switch {
+	case pr.sharedKey != "":
+		if !pr.cachingPolicy.IsShareable {
+			pr.writeToCache = false
+			return
+		}
+		// the origin said this is shareable, so store it under the target URI
+		// rather than under the credential that happened to fetch it
+		pr.primaryKey = pr.sharedKey
+		pr.setVaryNames(pr.varyNames)
+	case pr.hasConfiguredCredential() && !pr.cachingPolicy.IsShareable:
+		// the request reaches the origin authenticated even though the client
+		// sent no credential, and there is no per-credential key isolating the
+		// result, so only the origin can authorize keeping it
+		pr.writeToCache = false
+		return
+	}
 
 	if resp != nil && resp.StatusCode >= 400 {
 		pr.writeToCache = pr.cachingPolicy.IsNegativeCache
@@ -538,8 +820,21 @@ func (pr *proxyRequest) store() error {
 	}
 
 	d.CachingPolicy = pr.cachingPolicy
+	ttl := pr.cachingPolicy.TTL(rf, time.Duration(o.MaxTTL))
+
+	// the primary key holds the index naming the selecting fields, so a later
+	// request can learn which secondary key to read before it has the object
+	if len(pr.varyNames) > 0 && pr.primaryKey != "" && pr.primaryKey != pr.key {
+		idx := &HTTPDocument{VaryNames: pr.varyNames, VaryGeneration: pr.varyGeneration}
+		if err := WriteCache(pr.upstreamRequest.Context(), pr.rsc.CacheClient,
+			pr.primaryKey, idx, ttl, nil, nil); err != nil {
+			logger.Error("error writing vary index to cache",
+				logging.Pairs{keys.Key: pr.primaryKey, keys.Detail: err.Error()})
+		}
+	}
+
 	err := WriteCache(pr.upstreamRequest.Context(), pr.rsc.CacheClient, pr.key, d,
-		pr.cachingPolicy.TTL(rf, time.Duration(o.MaxTTL)), o.CompressibleTypes, nil)
+		ttl, o.CompressibleTypes, nil)
 	if err != nil {
 		return err
 	}
@@ -582,6 +877,14 @@ func (pr *proxyRequest) prepareResponse() {
 		return
 	}
 
+	// RFC 9110 13.1.5: a Range is honored only while the client's If-Range
+	// validator still identifies this representation; otherwise the range is
+	// ignored and the whole response is served
+	if pr.wantsRanges && pr.cachingPolicy.HasIfRange && !pr.cachingPolicy.IfRangeMatches() {
+		pr.wantsRanges = false
+		pr.wantedRanges = nil
+	}
+
 	if pr.wantsRanges && (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent) {
 		// since the user wants ranges, we have to extract them from what we have already
 		if (d == nil || !d.isLoaded) &&
@@ -593,13 +896,13 @@ func (pr *proxyRequest) prepareResponse() {
 				b, err = io.ReadAll(pr.upstreamReader)
 				if err != nil {
 					// Upstream cut off mid-stream — b holds only a truncated
-					// prefix. Never cache a truncated body as if it were
-					// complete; a later request would see it as a valid hit.
-					// The current client still gets what we received, but
-					// writeToCache is cleared so pr.store() is skipped.
-					logger.Error("upstream read error during range extraction; skipping cache write",
-						logging.Pairs{"error": err})
+					// prefix. Neither cache it nor present ranges carved from
+					// it as a successful response; fail the client instead.
+					logger.Error("upstream read error during range extraction",
+						logging.Pairs{keys.Error: err})
 					pr.writeToCache = false
+					pr.bodyTruncated.Store(true)
+					abortOnCopyError(pr.clientWriter, pr.Request, err)
 				}
 			}
 			d = DocumentFromHTTPResponse(pr.upstreamResponse, b, pr.cachingPolicy)
@@ -614,6 +917,19 @@ func (pr *proxyRequest) prepareResponse() {
 		// but need the original content type and length if we are also writing to the cache
 		pr.trueContentType = resp.Header.Get(headers.NameContentType)
 		pr.contentLength = d.ContentLength
+
+		// RFC 9110 14.2: when none of the requested ranges overlap the content,
+		// answer 416 naming the full length rather than an empty 206
+		if _, ok := pr.wantedRanges.Resolve(d.ContentLength); !ok {
+			resp.StatusCode = http.StatusRequestedRangeNotSatisfiable
+			resp.Header.Set(headers.NameContentRange,
+				"bytes */"+strconv.FormatInt(d.ContentLength, 10))
+			resp.Header.Del(headers.NameContentLength)
+			resp.ContentLength = 0
+			pr.responseBody = nil
+			pr.upstreamReader = bytes.NewReader(nil)
+			return
+		}
 
 		resp.StatusCode = http.StatusPartialContent
 
@@ -649,7 +965,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 		pr.upstreamRequest = pr.revalidationRequest
 		pr.upstreamResponse = pr.revalidationResponse
 		pr.upstreamReader = pr.upstreamResponse.Body
-		wasRevalidated = hasRevalidationRequest && pr.revalidationResponse.StatusCode == http.StatusNotModified
+		wasRevalidated = pr.revalidationResponse.StatusCode == http.StatusNotModified
 	}
 
 	var originCount int
@@ -731,7 +1047,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					b, err := io.ReadAll(resp.Body)
 					if err != nil {
 						logger.Error("error reading revalidation response body",
-							logging.Pairs{"detail": err.Error()})
+							logging.Pairs{keys.Detail: err.Error()})
 						return
 					}
 					appendLock.Lock()
@@ -758,7 +1074,7 @@ func (pr *proxyRequest) reconstituteResponses() {
 					b, err := io.ReadAll(resp.Body)
 					if err != nil {
 						logger.Error("error reading origin response body",
-							logging.Pairs{"detail": err.Error()})
+							logging.Pairs{keys.Detail: err.Error()})
 						return
 					}
 					appendLock.Lock()

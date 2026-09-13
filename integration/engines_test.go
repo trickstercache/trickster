@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -34,12 +33,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-)
-
-const (
-	engTricksterAddr = "127.0.0.1:8520"
-	engMetricsAddr   = "127.0.0.1:8521"
-	engOriginAddr    = "127.0.0.1:18520"
 )
 
 type engineFakeOrigin struct {
@@ -55,38 +48,44 @@ func (o *engineFakeOrigin) setHandler(h func(http.ResponseWriter, *http.Request)
 }
 
 var (
-	engSetupOnce sync.Once
-	engOrigin    *engineFakeOrigin
+	engSetupOnce     sync.Once
+	engOrigin        *engineFakeOrigin
+	engTricksterAddr string
+	engMetricsAddr   string
 )
 
 func engineSetup(t *testing.T) *engineFakeOrigin {
 	t.Helper()
 	engSetupOnce.Do(func() {
 		o := &engineFakeOrigin{}
-		ln, err := net.Listen("tcp", engOriginAddr)
-		if err != nil {
-			t.Fatalf("bind fake origin: %v", err)
-		}
-		srv := &httptest.Server{
-			Listener: ln,
-			Config: &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				o.mu.Lock()
-				h := o.handler
-				o.mu.Unlock()
-				if h == nil {
-					http.Error(w, "no handler", http.StatusServiceUnavailable)
-					return
-				}
-				h(w, r)
-			})},
-		}
-		srv.Start()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/api/v1/status/buildinfo" {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"status":"success","data":{"version":"test"}}`))
+				return
+			}
+			o.mu.Lock()
+			h := o.handler
+			o.mu.Unlock()
+			if h == nil {
+				http.Error(w, "no handler", http.StatusServiceUnavailable)
+				return
+			}
+			h(w, r)
+		}))
 		o.srv = srv
 		engOrigin = o
 
+		h := staticConfigHarness(t, "testdata/configs/engines.yaml")
+		rewriteGeneratedConfig(t, h.ConfigPath, "http://127.0.0.1:18520", srv.URL)
+		engTricksterAddr = h.BaseAddr
+		engMetricsAddr = h.MetricsAddr
+		if h.releasePorts != nil {
+			h.releasePorts()
+		}
 		ctx := context.Background()
 		go startTrickster(t, ctx, expectedStartError{},
-			"-config", "testdata/configs/engines.yaml")
+			"-config", h.ConfigPath)
 		waitForTrickster(t, engMetricsAddr)
 	})
 	return engOrigin

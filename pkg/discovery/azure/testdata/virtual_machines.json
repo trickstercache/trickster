@@ -1,0 +1,291 @@
+{
+ "value": [
+  {
+   "name": "tk-disco-1",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-1",
+   "type": "Microsoft.Compute/virtualMachines",
+   "location": "eastus",
+   "tags": {
+    "role": "prometheus",
+    "port": "9090",
+    "shard": "a"
+   },
+   "properties": {
+    "hardwareProfile": {
+     "vmSize": "Standard_F1als_v7"
+    },
+    "provisioningState": "Succeeded",
+    "vmId": "aaaaaaaa-0000-0000-0000-000000000008",
+    "storageProfile": {
+     "imageReference": {
+      "publisher": "Canonical",
+      "offer": "0001-com-ubuntu-server-jammy",
+      "sku": "22_04-lts-gen2",
+      "version": "latest",
+      "exactVersion": "22.04.202608060"
+     },
+     "osDisk": {
+      "osType": "Linux",
+      "name": "tk-disco-1_OsDisk_1_598659ed8b5245aab065ab084de43264",
+      "createOption": "FromImage",
+      "caching": "ReadWrite",
+      "managedDisk": {
+       "storageAccountType": "Premium_LRS",
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/disks/tk-disco-1_OsDisk_1_598659ed8b5245aab065ab084de43264"
+      },
+      "deleteOption": "Detach",
+      "diskSizeGB": 30
+     },
+     "dataDisks": [],
+     "diskControllerType": "NVMe"
+    },
+    "osProfile": {
+     "computerName": "tk-disco-1",
+     "linuxConfiguration": {
+      "disablePasswordAuthentication": true,
+      "ssh": {
+       "publicKeys": [
+        {
+         "path": "/home/trickster/.ssh/authorized_keys",
+         "keyData": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRk2xh3rxMf3vKLD3qLUmjz3DswzFDwxp2QFBR+EVKl trickster-fixture\n"
+        }
+       ]
+      },
+      "provisionVMAgent": true,
+      "patchSettings": {
+       "patchMode": "ImageDefault",
+       "assessmentMode": "ImageDefault"
+      }
+     },
+     "secrets": [],
+     "allowExtensionOperations": true,
+     "requireGuestProvisionSignal": true,
+     "adminUsername": "trickster"
+    },
+    "networkProfile": {
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-1VMNic"
+      }
+     ]
+    },
+    "timeCreated": "2026-09-01T06:00:17.9576792+00:00"
+   },
+   "etag": "\"1\""
+  },
+  {
+   "name": "tk-disco-2",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-2",
+   "type": "Microsoft.Compute/virtualMachines",
+   "location": "eastus",
+   "tags": {
+    "role": "prometheus",
+    "port": "9091",
+    "shard": "b"
+   },
+   "properties": {
+    "hardwareProfile": {
+     "vmSize": "Standard_F1als_v7"
+    },
+    "provisioningState": "Succeeded",
+    "vmId": "aaaaaaaa-0000-0000-0000-000000000008",
+    "storageProfile": {
+     "imageReference": {
+      "publisher": "Canonical",
+      "offer": "0001-com-ubuntu-server-jammy",
+      "sku": "22_04-lts-gen2",
+      "version": "latest",
+      "exactVersion": "22.04.202608060"
+     },
+     "osDisk": {
+      "osType": "Linux",
+      "name": "tk-disco-2_OsDisk_1_aa190b808755450b8d7f0eb87ce7c0d1",
+      "createOption": "FromImage",
+      "caching": "ReadWrite",
+      "managedDisk": {
+       "storageAccountType": "Premium_LRS",
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/disks/tk-disco-2_OsDisk_1_aa190b808755450b8d7f0eb87ce7c0d1"
+      },
+      "deleteOption": "Detach",
+      "diskSizeGB": 30
+     },
+     "dataDisks": [],
+     "diskControllerType": "NVMe"
+    },
+    "osProfile": {
+     "computerName": "tk-disco-2",
+     "linuxConfiguration": {
+      "disablePasswordAuthentication": true,
+      "ssh": {
+       "publicKeys": [
+        {
+         "path": "/home/trickster/.ssh/authorized_keys",
+         "keyData": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRk2xh3rxMf3vKLD3qLUmjz3DswzFDwxp2QFBR+EVKl trickster-fixture\n"
+        }
+       ]
+      },
+      "provisionVMAgent": true,
+      "patchSettings": {
+       "patchMode": "ImageDefault",
+       "assessmentMode": "ImageDefault"
+      }
+     },
+     "secrets": [],
+     "allowExtensionOperations": true,
+     "requireGuestProvisionSignal": true,
+     "adminUsername": "trickster"
+    },
+    "networkProfile": {
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-2VMNic"
+      }
+     ]
+    },
+    "timeCreated": "2026-09-01T06:00:22.4051197+00:00"
+   },
+   "etag": "\"1\""
+  },
+  {
+   "name": "tk-disco-3",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-3",
+   "type": "Microsoft.Compute/virtualMachines",
+   "location": "eastus",
+   "tags": {
+    "role": "prometheus",
+    "port": "9092"
+   },
+   "properties": {
+    "hardwareProfile": {
+     "vmSize": "Standard_F1als_v7"
+    },
+    "provisioningState": "Succeeded",
+    "vmId": "aaaaaaaa-0000-0000-0000-000000000009",
+    "storageProfile": {
+     "imageReference": {
+      "publisher": "Canonical",
+      "offer": "0001-com-ubuntu-server-jammy",
+      "sku": "22_04-lts-gen2",
+      "version": "latest",
+      "exactVersion": "22.04.202608060"
+     },
+     "osDisk": {
+      "osType": "Linux",
+      "name": "tk-disco-3_OsDisk_1_3df8a2b10c9349c19de53bd3c87c1a05",
+      "createOption": "FromImage",
+      "caching": "ReadWrite",
+      "managedDisk": {
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/disks/tk-disco-3_OsDisk_1_3df8a2b10c9349c19de53bd3c87c1a05"
+      },
+      "deleteOption": "Detach"
+     },
+     "dataDisks": [],
+     "diskControllerType": "NVMe"
+    },
+    "osProfile": {
+     "computerName": "tk-disco-3",
+     "linuxConfiguration": {
+      "disablePasswordAuthentication": true,
+      "ssh": {
+       "publicKeys": [
+        {
+         "path": "/home/trickster/.ssh/authorized_keys",
+         "keyData": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRk2xh3rxMf3vKLD3qLUmjz3DswzFDwxp2QFBR+EVKl trickster-fixture\n"
+        }
+       ]
+      },
+      "provisionVMAgent": true,
+      "patchSettings": {
+       "patchMode": "ImageDefault",
+       "assessmentMode": "ImageDefault"
+      }
+     },
+     "secrets": [],
+     "allowExtensionOperations": true,
+     "requireGuestProvisionSignal": true,
+     "adminUsername": "trickster"
+    },
+    "networkProfile": {
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-3VMNic"
+      }
+     ]
+    },
+    "timeCreated": "2026-09-01T06:00:23.3725629+00:00"
+   },
+   "etag": "\"4\""
+  },
+  {
+   "name": "tk-disco-4",
+   "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/virtualMachines/tk-disco-4",
+   "type": "Microsoft.Compute/virtualMachines",
+   "location": "eastus",
+   "tags": {
+    "role": "other"
+   },
+   "properties": {
+    "hardwareProfile": {
+     "vmSize": "Standard_F1als_v7"
+    },
+    "provisioningState": "Succeeded",
+    "vmId": "aaaaaaaa-0000-0000-0000-000000000007",
+    "storageProfile": {
+     "imageReference": {
+      "publisher": "Canonical",
+      "offer": "0001-com-ubuntu-server-jammy",
+      "sku": "22_04-lts-gen2",
+      "version": "latest",
+      "exactVersion": "22.04.202608060"
+     },
+     "osDisk": {
+      "osType": "Linux",
+      "name": "tk-disco-4_OsDisk_1_308047ddb5294669b190449aee168ec3",
+      "createOption": "FromImage",
+      "caching": "ReadWrite",
+      "managedDisk": {
+       "storageAccountType": "Premium_LRS",
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Compute/disks/tk-disco-4_OsDisk_1_308047ddb5294669b190449aee168ec3"
+      },
+      "deleteOption": "Detach",
+      "diskSizeGB": 30
+     },
+     "dataDisks": [],
+     "diskControllerType": "NVMe"
+    },
+    "osProfile": {
+     "computerName": "tk-disco-4",
+     "linuxConfiguration": {
+      "disablePasswordAuthentication": true,
+      "ssh": {
+       "publicKeys": [
+        {
+         "path": "/home/trickster/.ssh/authorized_keys",
+         "keyData": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPRk2xh3rxMf3vKLD3qLUmjz3DswzFDwxp2QFBR+EVKl trickster-fixture\n"
+        }
+       ]
+      },
+      "provisionVMAgent": true,
+      "patchSettings": {
+       "patchMode": "ImageDefault",
+       "assessmentMode": "ImageDefault"
+      }
+     },
+     "secrets": [],
+     "allowExtensionOperations": true,
+     "requireGuestProvisionSignal": true,
+     "adminUsername": "trickster"
+    },
+    "networkProfile": {
+     "networkInterfaces": [
+      {
+       "id": "/subscriptions/bbbbbbbb-0000-0000-0000-000000000001/resourceGroups/trickster-disco-rg/providers/Microsoft.Network/networkInterfaces/tk-disco-4VMNic"
+      }
+     ]
+    },
+    "timeCreated": "2026-09-01T06:00:27.3760656+00:00"
+   },
+   "etag": "\"1\""
+  }
+ ]
+}

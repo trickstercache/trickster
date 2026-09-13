@@ -18,22 +18,17 @@ package clickhouse
 
 import (
 	"net/http"
-	"slices"
-	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
-
-// isSelectQuery reports whether the SQL query contains a SELECT keyword.
-func isSelectQuery(sqlQuery string) bool {
-	return slices.Contains(strings.Fields(strings.ToLower(sqlQuery)), "select")
-}
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
@@ -48,10 +43,10 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	} else {
 		sqlQuery = r.URL.Query().Get(upQuery)
 	}
-	if !isSelectQuery(sqlQuery) {
+	if !aftership.IsSelectQuery(sqlQuery) {
 		logger.Debug("request is not a SELECT query, proxying", logging.Pairs{
-			"backend_name": c.observabilityBackendName(),
-			"dialect":      clickHouseDialect,
+			keys.BackendName: c.observabilityBackendName(),
+			keys.Dialect:     clickHouseDialect,
 		})
 		c.ProxyHandler(w, r)
 		return

@@ -27,6 +27,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	txe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
@@ -53,6 +54,13 @@ type HTTPDocument struct {
 	RangeParts byterange.MultipartByteRanges `msg:"-"`
 	// StoredRangeParts is a version of RangeParts that can be exported to MessagePack
 	StoredRangeParts map[string]*byterange.MultipartByteRange `msg:"range_parts"`
+	// VaryNames marks this document as a variant index rather than an object:
+	// it names the request fields that select among the objects stored under
+	// this key's secondary keys. Object documents never set it.
+	VaryNames []string `msg:"vary_names"`
+	// VaryGeneration scopes the secondary keys this index points at, so an
+	// invalidation retires every variant at once by dropping the index
+	VaryGeneration string `msg:"vary_generation"`
 
 	rangePartsLoaded bool
 	isFulfillment    bool
@@ -161,6 +169,8 @@ func (d *HTTPDocument) ShallowCopy() *HTTPDocument {
 		Ranges:           d.Ranges,
 		RangeParts:       d.RangeParts,
 		StoredRangeParts: d.StoredRangeParts,
+		VaryNames:        d.VaryNames,
+		VaryGeneration:   d.VaryGeneration,
 		rangePartsLoaded: d.rangePartsLoaded,
 		isFulfillment:    d.isFulfillment,
 		isLoaded:         d.isLoaded,
@@ -278,7 +288,7 @@ func (d *HTTPDocument) ParsePartialContentBody(resp *http.Response,
 			d.Ranges = d.RangeParts.Ranges()
 		} else {
 			logger.Error("unable to parse multipart range response body",
-				logging.Pairs{"detail": err.Error})
+				logging.Pairs{keys.Detail: err.Error})
 		}
 	} else {
 		if !strings.HasPrefix(ct, headers.ValueMultipartByteRanges) {

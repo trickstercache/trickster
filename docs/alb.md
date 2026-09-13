@@ -1,6 +1,6 @@
 # Application Load Balancer
 
-Trickster 2.0 provides an all-new Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
+Trickster 2.x provides an Application Load Balancer that is easy to configure and provides unique features to aid with Scaling, High Availability and other applications. The ALB supports several balancing Mechanisms:
 
 | Mechanism | Config | Provides | Description |
 |-----|-----|-----|----|
@@ -19,6 +19,8 @@ All settings and functions configured for a Backend are applicable to traffic ro
 
 In Trickster configuration files, each ALB itself is a Backend, just like the pool members to which it routes. This makes it possible to configure infinite loops (e.g., where ALB1 has ALB2 in its pool, and ALB2 has ALB1 in its pool). However, at startup Trickster will validate ALB configurations by following all ALBs' possible paths, and exit with a startup failure if any infinite loops are detected.
 
+In addition to (or instead of) a static pool list, an ALB's pool membership can be discovered and kept current automatically at runtime — from Kubernetes, the AWS, Google Cloud and Azure APIs, the Docker Engine, the Consul or Nomad service registries, DNS records, an HTTP endpoint, or a watched member-list file. See [ALB Autodiscovery](./alb-autodiscovery.md).
+
 ## Mechanisms Deep Dive
 
 Each mechanism has its own use cases and pitfalls. Be sure to read about each one to understand how they might apply to your situation.
@@ -31,13 +33,24 @@ The Trickster ALB is intended to support stateless workloads, and currently does
 
 #### Weighted Round Robin
 
-Trickster supports Weighted Round Robin by permitting repeated pool member names in the same pool list. In this way, an operator can craft a desired apportionment based on the number of times a given backend appears in the pool list. We've provided an example in the snippet below.
+Trickster supports Weighted Round Robin with a first-class integer `weight` on pool entries. A pool entry may be a plain backend name (weight 1) or a mapping with an explicit weight:
 
-Trickster's round robiner cycles through the pool in the order it is defined in the Configuration file. Thus, when using Weighted Round Robin, it is recommended to use a non-sorted, staggered ordering pattern in the pool list configuration, so as to prevent routing bursts of consecutive requests to the same backend.
+```yaml
+pool:
+  - node01            # weight 1
+  - name: node02
+    weight: 3         # receives 3 of every 4 requests
+```
+
+Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
+
+The legacy workaround of repeating a member name multiple times in the pool list still functions, but explicit weights replace it and are preferred.
+
+Weights apply to mechanisms that select a single member per request (round robin). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
 
 #### More About Our Round Robin Mechanism
 
-Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. The ALB then performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool. The resulting value, ranging from `0` to `len(healthy_pool) - 1` indicates the assigned backend based on the counter and current pool size.
+Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and each member owns a contiguous `weight`-sized span of that rotation. Selection remains lock- and allocation-free in both forms.
 
 #### Example Round Robin Configuration
 
@@ -61,18 +74,18 @@ backends:
     request_headers: # this backend might use basic auth headers
       Authoriziation: "basic jdoe:${NODE_02_AUTH_TOKEN}"
 
-  # Trickster 2.0 ALB backend configuration, using above backends as pool members
+  # Trickster 2.x ALB backend configuration, using above backends as pool members
 
   node-alb:
     provider: alb
     alb:
       mechanism: rr # round robin
       pool:
-        - node01 # as named above
+        - node01 # as named above; weight 1
         - node02
-        # - node02 # if this node were uncommented, weighting would change to 33/67
-        # add backends multiple times to establish a weighting protocol.
-        # when weighting, use a cycling list, rather than a sorted list.
+        # to weight the pool, use the mapping form on any entry:
+        # - name: node02
+        #   weight: 2 # node02 would receive 2 of every 3 requests
 ```
 
 Here is the visual representation of this configuration:
@@ -333,7 +346,16 @@ Here is the visual representation of this configuration:
 
 The User Router mechanism is used to control a Request's destination Backend based on the username in the request. A default Backend (for no-user and users not in the manifest) can be configured, as well as a Backend per-user.
 
+Native MySQL listeners use a deliberately narrower User Router topology than
+HTTP backends: one authenticated listener-facing User Router may select only
+direct terminal MySQL backends, selection is sticky for the session, and
+`to_user`/`to_credential` remapping is rejected. See the
+[MySQL Provider Guide](mysql.md#protocol-aware-user-router) for the complete
+authentication, routing, health, cache-identity, and no-route contract.
+
 When a User Router ALB is configured to use an [Authenticator](./authenticator.md), the ALB can also modify a Request's credentials before passing it off to the destination Backend. In the graphic below, user `casey` will be routed to the `readersBackend`, which proxies to a read-only database server with the `dbreader` credentials; while user `taylor` will be routed to the `writersBackend`, which proxies to a read-write database server with the `dbwriter` credentials. Here is the example configuration corresponding to the graphic:
+
+Credential replacement is applied only when the user's configured `to_backend` target is selected. When a request instead uses `default_backend` - because the username has no mapping, the mapping does not name a usable runtime target, or the mapped target is unavailable - the request retains its inbound credentials. If a user should receive replacement credentials when routed to the same Backend that also serves as the default, set that Backend explicitly as the user's `to_backend`.
 
 ```yaml
 backends:
@@ -356,7 +378,7 @@ backends:
           casey:
             to_user: dbreader # replaces user casey with dbreader in the request's Authorization header
             to_credential: ${DB_READER_PW} # replaces credential in the Authorization header with this env
-            # casey is sent to the default backend (readers) since to_backend is not set here
+            to_backend: readersBackend # explicit selection applies casey's credential replacement
           taylor:
             to_user: dbwriter # replaces user taylor with dbwriter in the request's Authorization header
             to_credential: ${DB_WRITER_PW} # replaces credential in the Authorization header with this env
@@ -421,7 +443,16 @@ backends:
 
 ### User Router ALB Backend Pool and Health Checking
 
-The User Router does not rotate through or fanout to a Pool of Backends like the other ALB mechanisms. It also does not consider whether a destination backend is considered healthy or not. Users are blindly routed their configured (or default) backends regardless of health status.
+The User Router does not rotate through or fan out to a pool of Backends like
+the other ALB mechanisms. A healthy mapped target is selected directly. When a
+mapped target is unavailable, the request uses the healthy `default_backend`
+without applying the mapped target's credential replacement. If neither target
+is available, the router uses its configured no-route response.
+
+That fallback applies to HTTP requests. A native MySQL session whose username
+has an explicit mapping fails with a MySQL availability error when that mapped
+terminal is unavailable; it is never redirected to `default_backend`. Only an
+unmapped MySQL username may use the configured default terminal.
 
 You can configure a User Router ALB's backend destinations to be other ALBs with mechanisms that utilize healthchecked pools.
 
@@ -515,7 +546,7 @@ backends:
 
 ## All-Backends Health Status Page
 
-Trickster 2.0 provides a new global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
+Trickster 2.x provides a global health status page available at `http://trickster:metrics-port/trickster/health` or (the configured `health_handler_path`).
 
 The global status page will display the health state about all backends configured for automated health checking. Here is an example configuration and a possible corresponding status page output:
 

@@ -14,12 +14,8 @@
  * limitations under the License.
  */
 
-// Package promstub centralizes the small Prometheus-compatible stub pieces
-// reused across the ALB integration tests: the /api/v1/status/buildinfo
-// response (used by every test that boots trickster with a Prometheus backend
-// healthcheck) and the trickster YAML preamble + per-backend stanza that
-// otherwise gets duplicated byte-for-byte across writeMatrixConfig,
-// writeChaosConfig, and the disconnect test's inline builder.
+// Package promstub centralizes Prometheus-compatible handlers and Trickster
+// configuration fragments reused by ALB integration tests.
 package promstub
 
 import (
@@ -54,14 +50,13 @@ func BuildInfoHandler() http.Handler {
 	})
 }
 
-// Preamble emits the trickster YAML frontend/metrics/mgmt/logging/caches
-// stanza common to every ALB integration test. Callers append a backends
-// section and an alb stanza below.
+// Preamble emits loopback-bound Trickster listeners plus common logging and
+// cache configuration. Callers append backend configuration.
 func Preamble(frontPort, metricsPort, mgmtPort int) string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", frontPort)
-	fmt.Fprintf(&sb, "  metrics:\n    port: %d\n", metricsPort)
-	fmt.Fprintf(&sb, "  mgmt:\n    port: %d\n", mgmtPort)
+	fmt.Fprintf(&sb, "listeners:\n  default:\n    address: 127.0.0.1\n    port: %d\n", frontPort)
+	fmt.Fprintf(&sb, "  metrics:\n    address: 127.0.0.1\n    port: %d\n", metricsPort)
+	fmt.Fprintf(&sb, "  mgmt:\n    address: 127.0.0.1\n    port: %d\n", mgmtPort)
 	sb.WriteString("logging:\n  log_level: error\n")
 	sb.WriteString("caches:\n  mem1:\n    provider: memory\n")
 	return sb.String()

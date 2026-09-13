@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -391,7 +392,7 @@ func TestServeLimitKPartialFanoutIsMarked(t *testing.T) {
 				!strings.Contains(body, "logical replica group shard-b returned no usable response") {
 				t.Fatalf("status=%d body=%q", w.Code, body)
 			}
-			if got := w.Header().Get(headers.NameTricksterResult); !strings.Contains(got, "phit") {
+			if got := w.Header().Get(headers.NameTricksterResult); !strings.Contains(got, status.StatusPartialHit) {
 				t.Fatalf("result header got %q want phit", got)
 			}
 		})

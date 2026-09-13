@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -96,8 +97,10 @@ func executeChunkQuery(ctx context.Context, c cache.Cache, iterator ChunkQueryIt
 				}
 				logger.Error("chunk query failed",
 					logging.Pairs{
-						"error": qr.err, "chunkIdx": index,
-						"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+						keys.Error:         qr.err,
+						"chunkIdx":         index,
+						keys.Key:           subkey,
+						"cacheQueryStatus": qr.lookupStatus,
 					})
 				return qr.err
 			}
@@ -167,8 +170,10 @@ func (tcp *TimeseriesChunkQueryProcessor) ProcessChunk(index int, subkey string,
 		if err != nil {
 			logger.Error("chunk unmarshal failed",
 				logging.Pairs{
-					"error": err, "chunkIdx": index,
-					"key": subkey, "cacheQueryStatus": qr.lookupStatus,
+					keys.Error:         err,
+					"chunkIdx":         index,
+					keys.Key:           subkey,
+					"cacheQueryStatus": qr.lookupStatus,
 				})
 			return err
 		}

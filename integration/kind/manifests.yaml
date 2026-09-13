@@ -1,0 +1,191 @@
+# ALB autodiscovery Kubernetes integration scenario (plan step 34):
+# an in-cluster Trickster whose ALB pool is discovered from the webecho
+# Service's EndpointSlices, exposed on the host via NodePorts 30080
+# (front) and 30081 (metrics). Applied by `make kind-integration-start`.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trickster-it
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: trickster
+  namespace: trickster-it
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: trickster-autodiscovery
+  namespace: trickster-it
+rules:
+  - apiGroups: ["discovery.k8s.io"]
+    resources: ["endpointslices"]
+    verbs: ["list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: trickster-autodiscovery
+  namespace: trickster-it
+subjects:
+  - kind: ServiceAccount
+    name: trickster
+    namespace: trickster-it
+roleRef:
+  kind: Role
+  name: trickster-autodiscovery
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webecho
+  namespace: trickster-it
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: webecho
+  template:
+    metadata:
+      labels:
+        app: webecho
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: webecho
+          image: traefik/whoami:v1.10.2
+          ports:
+            - name: web
+              containerPort: 80
+          # Keep serving briefly after termination begins: kubelet marks
+          # the endpoint terminating and signals the container at the same
+          # moment, so every EndpointSlice consumer needs the removal to
+          # propagate before the process exits (zero-error rolling
+          # deploys). The native sleep action is used because the image
+          # has no shell.
+          lifecycle:
+            preStop:
+              sleep:
+                seconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: web
+            periodSeconds: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webecho
+  namespace: trickster-it
+spec:
+  selector:
+    app: webecho
+  ports:
+    - name: web
+      port: 80
+      targetPort: web
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-config
+  namespace: trickster-it
+data:
+  trickster.yaml: |
+    listeners:
+      default:
+        port: 8480
+      metrics:
+        port: 8481
+    logging:
+      log_level: info
+    discovery:
+      in-cluster:
+        provider: kubernetes
+        kubernetes:
+          in_cluster: true
+    backends:
+      member-template:
+        provider: rp
+        is_template: true
+        healthcheck:
+          path: /
+          interval: 1s
+          timeout: 2s
+          failure_threshold: 2
+          recovery_threshold: 1
+      disco-alb:
+        provider: alb
+        is_default: true
+        alb:
+          mechanism: rr
+          healthy_floor: 1
+          discovery:
+            discoverer_name: in-cluster
+            template_backend: member-template
+            query:
+              kind: endpointslices
+              namespace: trickster-it
+              service: webecho
+              port: web
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trickster
+  namespace: trickster-it
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trickster
+  template:
+    metadata:
+      labels:
+        app: trickster
+    spec:
+      serviceAccountName: trickster
+      containers:
+        - name: trickster
+          image: trickster:integration
+          imagePullPolicy: Never
+          args: ["-config", "/etc/trickster/trickster.yaml"]
+          ports:
+            - name: front
+              containerPort: 8480
+            - name: metrics
+              containerPort: 8481
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            periodSeconds: 1
+          volumeMounts:
+            - name: config
+              mountPath: /etc/trickster
+      volumes:
+        - name: config
+          configMap:
+            name: trickster-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trickster
+  namespace: trickster-it
+spec:
+  type: NodePort
+  selector:
+    app: trickster
+  ports:
+    - name: front
+      port: 8480
+      targetPort: front
+      nodePort: 30080
+    - name: metrics
+      port: 8481
+      targetPort: metrics
+      nodePort: 30081

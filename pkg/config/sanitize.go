@@ -31,15 +31,18 @@ import (
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
 
-const sanitizedSecret = "*****"
-const sanitizedEndpoint = "example.com"
+const (
+	sanitizedSecret   = "*****"
+	sanitizedEndpoint = "example.com"
+)
 
 var unsanitizedPathHeaders = map[string]struct{}{
-	"cache-control": {},
-	"expires":       {},
+	strings.ToLower(headers.NameCacheControl): {},
+	strings.ToLower(headers.NameExpires):      {},
 }
 
 // SanitizedString returns the running Config as YAML with private backend and
@@ -100,12 +103,18 @@ func (c *Config) SanitizedClone() *Config {
 			if newTracingName, ok := tracingNameMap[opts.TracingConfigName]; ok {
 				opts.TracingConfigName = newTracingName
 			}
+			for i, name := range opts.ListenerNames {
+				if replacement, ok := listenerNameMap[name]; ok {
+					opts.ListenerNames[i] = replacement
+				}
+			}
 			if newListenerName, ok := listenerNameMap[opts.ListenerName]; ok {
 				opts.ListenerName = newListenerName
 			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
+			sanitizeGraphiteOriginCredentials(opts)
 		}
 		renamedBackends[newName] = opts
 	}
@@ -302,9 +311,9 @@ func sanitizeBackendReferences(opts *bo.Options, backendNameMap map[string]strin
 	if opts.ALBOptions == nil {
 		return
 	}
-	for i, name := range opts.ALBOptions.Pool {
-		if newName, ok := backendNameMap[name]; ok {
-			opts.ALBOptions.Pool[i] = newName
+	for i, member := range opts.ALBOptions.Pool {
+		if newName, ok := backendNameMap[member.Name]; ok {
+			opts.ALBOptions.Pool[i].Name = newName
 		}
 	}
 	if opts.ALBOptions.UserRouter == nil {
@@ -397,6 +406,18 @@ func sanitizePathHeaderValues(opts *bo.Options) {
 				path.ResponseHeaders[k] = sanitizedSecret
 			}
 		}
+	}
+}
+
+func sanitizeGraphiteOriginCredentials(opts *bo.Options) {
+	if opts.Graphite == nil {
+		return
+	}
+	if opts.Graphite.OriginPassword != "" {
+		opts.Graphite.OriginPassword = sanitizedSecret
+	}
+	if opts.Graphite.OriginAuthorization != "" {
+		opts.Graphite.OriginAuthorization = sanitizedSecret
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -145,25 +146,25 @@ func processSeriesHeader(st *state) {
 		if st.t {
 			if err := printCsvDatatypeAnnotationRow(st.w, st.fds); err != nil {
 				logger.Error("failed to write csv datatype annotation row",
-					logging.Pairs{"error": err})
+					logging.Pairs{keys.Error: err})
 			}
 		}
 		if st.g {
 			if err := printCsvGroupAnnotationRow(st.w, st.fds); err != nil {
 				logger.Error("failed to write csv group annotation row",
-					logging.Pairs{"error": err})
+					logging.Pairs{keys.Error: err})
 			}
 		}
 		if st.d {
 			if err := printCsvDefaultAnnotationRow(st.w, st.fds); err != nil {
 				logger.Error("failed to write csv group annotation row",
-					logging.Pairs{"error": err})
+					logging.Pairs{keys.Error: err})
 			}
 		}
 		if st.h {
 			if err := printCsvHeaderRow(st.w, st.fds); err != nil {
 				logger.Error("failed to write csv header row",
-					logging.Pairs{"error": err})
+					logging.Pairs{keys.Error: err})
 			}
 		}
 	}
@@ -176,7 +177,7 @@ func processCsvSeriesData(st *state) {
 	for _, p := range st.s.Points {
 		if err := processCsvRowData(st, p); err != nil {
 			logger.Error("failed to write csv data row",
-				logging.Pairs{"error": err})
+				logging.Pairs{keys.Error: err})
 		}
 	}
 }

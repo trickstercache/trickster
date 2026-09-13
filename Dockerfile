@@ -1,8 +1,8 @@
-FROM alpine:latest as certs
+FROM alpine:latest AS certs
 RUN apk update && apk add ca-certificates
 
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=${BUILDPLATFORM} golang:1.26 as builder
+FROM --platform=${BUILDPLATFORM} golang:1.26 AS builder
 ARG GIT_LATEST_COMMIT_ID
 ARG TAGVER
 
@@ -10,13 +10,15 @@ COPY . /go/src/github.com/trickstercache/trickster
 WORKDIR /go/src/github.com/trickstercache/trickster
 
 ARG TARGETARCH
-RUN GOOS=linux GOARCH=${TARGETARCH} CGO_ENABLED=0 BUILD_FLAGS=-v make build
+RUN GOOS=linux GOARCH=${TARGETARCH} CGO_ENABLED=0 BUILD_FLAGS=-v make build third-party-licenses
 
-FROM gcr.io/distroless/static-debian12 as final
-LABEL maintainer "The Trickster Authors <trickster-developers@googlegroups.com>"
+FROM gcr.io/distroless/static-debian12 AS final
+LABEL maintainer="The Trickster Authors <trickster-developers@googlegroups.com>"
 
 COPY --from=certs /etc/ssl /etc/ssl
 COPY --from=builder /go/src/github.com/trickstercache/trickster/bin/trickster /trickster
+COPY --from=builder /go/src/github.com/trickstercache/trickster/bin/third-party-licenses /licenses/third-party-licenses
+COPY LICENSE NOTICE /licenses/
 COPY examples/conf/example.full.yaml /etc/trickster/trickster.yaml
 USER nobody
 ENTRYPOINT ["/trickster"]

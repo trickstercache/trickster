@@ -21,21 +21,26 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 const (
-	metricNamespace   = "trickster"
-	cacheSubsystem    = "cache"
-	proxySubsystem    = providers.Proxy
-	configSubsystem   = "config"
-	buildSubsystem    = "build"
-	frontendSubsystem = "frontend"
-	albSubsystem      = "alb"
-	healthSubsystem   = "healthcheck"
-	sqlSubsystem      = "sql"
+	metricNamespace    = "trickster"
+	cacheSubsystem     = "cache"
+	proxySubsystem     = providers.Proxy
+	configSubsystem    = "config"
+	buildSubsystem     = "build"
+	frontendSubsystem  = "frontend"
+	albSubsystem       = "alb"
+	healthSubsystem    = "healthcheck"
+	sqlSubsystem       = "sql"
+	mysqlSubsystem     = "mysql"
+	graphiteSubsystem  = providers.Graphite
+	tlsSubsystem       = "tls"
+	accessLogSubsystem = "accesslog"
 )
 
 // Default histogram buckets used by trickster
@@ -44,6 +49,39 @@ var (
 )
 
 var (
+	// AccessLogDroppedLines counts access and error log lines that could not be written
+	AccessLogDroppedLines = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: accessLogSubsystem,
+			Name:      "dropped_lines_total",
+			Help:      "Count of access log lines dropped because the log could not accept them",
+		},
+		[]string{keys.Backend_Name, keys.LogName},
+	)
+
+	// ProxyUpstreamRetries counts upstream attempts repeated under a path's retry policy
+	ProxyUpstreamRetries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "upstream_retries_total",
+			Help:      "Count of upstream requests retried under a path's retry policy",
+		},
+		[]string{keys.Backend_Name, keys.Path},
+	)
+
+	// ProxyMirrorRequests counts requests copied to a mirror backend, by result
+	ProxyMirrorRequests = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "mirror_requests_total",
+			Help:      "Count of requests mirrored to another backend, sent or dropped at the in-flight bound",
+		},
+		[]string{keys.Backend_Name, keys.Mirror_Backend, keys.Result},
+	)
+
 	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -125,7 +163,7 @@ var (
 			Name:      "requests_total",
 			Help:      "Count of front end requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
 	)
 
 	// FrontendRequestDuration is a histogram that tracks the time it takes to process a request
@@ -137,7 +175,7 @@ var (
 			Help:      "Histogram of front end request durations handled by Trickster",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
 	)
 
 	// FrontendRequestWrittenBytes is a Counter of bytes written for front end requests
@@ -148,7 +186,51 @@ var (
 			Name:      "written_bytes_total",
 			Help:      "Count of bytes written in front end requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "path", "http_status"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Path, keys.HTTP_Status},
+	)
+
+	// ProxyStreamConnections counts connections and UDP sessions a stream listener accepted, by result
+	ProxyStreamConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_connections_total",
+			Help:      "Count of connections and UDP sessions accepted by stream listeners, by result",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Result},
+	)
+
+	// ProxyStreamActiveConnections gauges the connections and UDP sessions a stream listener is relaying
+	ProxyStreamActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_active_connections",
+			Help:      "Number of connections and UDP sessions stream listeners are relaying",
+		},
+		[]string{keys.Listener_Name, keys.Protocol},
+	)
+
+	// ProxyStreamDroppedDatagrams counts datagrams a udp listener dropped, by reason
+	ProxyStreamDroppedDatagrams = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_dropped_datagrams_total",
+			Help:      "Count of datagrams udp listeners dropped, by reason",
+		},
+		[]string{keys.Listener_Name, keys.Reason},
+	)
+
+	// ProxyStreamBytes counts the bytes stream listeners relayed, in from clients and out to them
+	ProxyStreamBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_bytes_total",
+			Help:      "Bytes relayed by stream listeners, by direction",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Direction},
 	)
 
 	// ProxyRequestStatus is a Counter of downstream client requests handled by Trickster
@@ -159,7 +241,7 @@ var (
 			Name:      "requests_total",
 			Help:      "Count of downstream client requests handled by Trickster",
 		},
-		[]string{"backend_name", "provider", "method", "cache_status", "http_status", "path"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Cache_Status, keys.HTTP_Status, keys.Path},
 	)
 
 	// ProxyRequestElements is a Counter of data points in the timeseries returned to the requesting client
@@ -170,7 +252,7 @@ var (
 			Name:      "points_total",
 			Help:      "Count of data points in the timeseries returned to the requesting client.",
 		},
-		[]string{"backend_name", "provider", "cache_status", "path"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Cache_Status, keys.Path},
 	)
 
 	// ProxyRequestDuration is a Histogram of time required in seconds to proxy a given Prometheus query
@@ -182,7 +264,7 @@ var (
 			Help:      "Time required in seconds to proxy a given Prometheus query.",
 			Buckets:   defaultBuckets,
 		},
-		[]string{"backend_name", "provider", "method", "status", "http_status", "path"},
+		[]string{keys.Backend_Name, keys.Provider, keys.Method, keys.Status, keys.HTTP_Status, keys.Path},
 	)
 
 	// CacheObjectOperations is a Counter of operations (in # of objects) performed on a Trickster cache
@@ -193,7 +275,19 @@ var (
 			Name:      "operation_objects_total",
 			Help:      "Count (in # of objects) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "provider", "operation", "status"},
+		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
+	)
+
+	// CacheObjectOperationDuration is a Histogram of time required in seconds to perform an operation on a Trickster cache
+	CacheObjectOperationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: cacheSubsystem,
+			Name:      "operation_duration_seconds",
+			Help:      "Time required in seconds to perform an operation on a Trickster cache.",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
 	)
 
 	// CacheByteOperations is a Counter of operations (in # of bytes) performed on a Trickster cache
@@ -204,7 +298,7 @@ var (
 			Name:      "operation_bytes_total",
 			Help:      "Count (in bytes) of operations performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "provider", "operation", "status"},
+		[]string{keys.Cache_Name, keys.Provider, keys.Operation, keys.Status},
 	)
 
 	// CacheEvents is a Counter of events performed on a Trickster cache
@@ -215,7 +309,7 @@ var (
 			Name:      "events_total",
 			Help:      "Count of events performed on a Trickster cache.",
 		},
-		[]string{"cache_name", "provider", "event", "reason"},
+		[]string{keys.Cache_Name, keys.Provider, keys.Event, keys.Reason},
 	)
 
 	// CacheObjects is a Gauge representing the number of objects in a Trickster cache
@@ -226,7 +320,7 @@ var (
 			Name:      "usage_objects",
 			Help:      "Number of objects in a Trickster cache.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// CacheBytes is a Gauge representing the number of bytes in a Trickster cache
@@ -237,7 +331,7 @@ var (
 			Name:      "usage_bytes",
 			Help:      "Number of bytes in a Trickster cache.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// CacheMaxObjects is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
@@ -248,7 +342,7 @@ var (
 			Name:      "max_usage_objects",
 			Help:      "Trickster cache's Max Object Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// CacheMaxBytes is a Gauge for the Trickster cache's Max Object Threshold for triggering an eviction exercise
@@ -259,7 +353,7 @@ var (
 			Name:      "max_usage_bytes",
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
-		[]string{"cache_name", "provider"},
+		[]string{keys.Cache_Name, keys.Provider},
 	)
 
 	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
@@ -330,7 +424,7 @@ var (
 			Name:      "query_range_rejections_total",
 			Help:      "Trickster total number of queries rejected due to exceeding the max_query_range limit.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
@@ -343,7 +437,7 @@ var (
 			Name:      "query_analysis_total",
 			Help:      "Count of SQL query cache-eligibility classifications.",
 		},
-		[]string{"backend_name", "dialect", "cache_mode", "reason"},
+		[]string{keys.Backend_Name, keys.Dialect, keys.Cache_Mode, keys.Reason},
 	)
 
 	// SQLQueryRewriteFailures counts failures to render a SQL origin request for
@@ -356,7 +450,155 @@ var (
 			Name:      "query_rewrite_failures_total",
 			Help:      "Count of SQL cache-miss extent rewrite failures.",
 		},
-		[]string{"backend_name", "dialect", "reason"},
+		[]string{keys.Backend_Name, keys.Dialect, keys.Reason},
+	)
+
+	// SQLQueryCache counts native SQL protocol cache outcomes. Unlike the HTTP
+	// proxy metrics, this does not manufacture HTTP method or status labels.
+	SQLQueryCache = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: sqlSubsystem,
+			Name:      "query_cache_total",
+			Help:      "Count of SQL query cache outcomes.",
+		},
+		[]string{keys.Backend_Name, keys.Dialect, keys.Cache_Mode, keys.Cache_Status},
+	)
+
+	// MySQLConnections tracks bounded connection lifecycle outcomes.
+	MySQLConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "connections_total",
+			Help:      "Count of MySQL connection lifecycle events.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// MySQLActiveConnections is the current authenticated-or-handshaking count.
+	MySQLActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "active_connections",
+			Help:      "Current MySQL downstream connections.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// MySQLConnectionErrors tracks handshake, authentication, protocol, and
+	// upstream failures without including user-controlled text in labels.
+	MySQLConnectionErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "errors_total",
+			Help:      "Count of MySQL protocol and origin failures.",
+		},
+		[]string{keys.Backend_Name, keys.Class},
+	)
+
+	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
+	// is exact | derived | configured | unknown and source is registry |
+	// response | probe | static | function | none; both label sets are
+	// closed, and neither ever contains a metric path or query text.
+	GraphiteResolutionLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "resolution_lookups_total",
+			Help:      "Count of Graphite step-resolution lookups by confidence and source.",
+		},
+		[]string{keys.Backend_Name, keys.Confidence, keys.Source},
+	)
+
+	// GraphiteProbes counts synthetic requests issued to learn an archive
+	// ladder. kind is narrow | wide | find and result is step | empty | error.
+	GraphiteProbes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "probes_total",
+			Help:      "Count of Graphite resolution probes by kind and result.",
+		},
+		[]string{keys.Backend_Name, keys.Kind, keys.Result},
+	)
+
+	// GraphiteLadders is the number of distinct complete archive ladders the
+	// resolution registry knows. It should spike during warmup and then flatten
+	// at roughly the number of storage-schemas.conf patterns in use.
+	GraphiteLadders = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "ladders",
+			Help:      "Number of distinct Graphite archive ladders known to the resolution registry.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// GraphiteRegistryEntries is the size of each resolution registry layer:
+	// leaf | ladder | target | negative.
+	GraphiteRegistryEntries = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "registry_entries",
+			Help:      "Number of entries in each layer of the Graphite resolution registry.",
+		},
+		[]string{keys.Backend_Name, keys.Layer},
+	)
+
+	// GraphiteStepMispredictions counts responses whose step contradicted the
+	// predicted one. Any non-zero value is a defect: the prediction is
+	// discarded and the request re-served unaccelerated, but the ladder that
+	// produced it was wrong.
+	GraphiteStepMispredictions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "step_mispredictions_total",
+			Help:      "Count of Graphite responses whose step differed from the predicted step.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// GraphiteFallbacks counts render requests routed to the unaccelerated
+	// lane. reason is a closed set of internal categories and never contains
+	// a target expression.
+	GraphiteFallbacks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: graphiteSubsystem,
+			Name:      "fallbacks_total",
+			Help:      "Count of Graphite render requests served without delta caching, by reason.",
+		},
+		[]string{keys.Backend_Name, keys.Reason},
+	)
+
+	// MySQLRouteSelections tracks bounded native User Router outcomes. Backend
+	// and router names come from configuration; usernames are never labels.
+	MySQLRouteSelections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "route_selections_total",
+			Help:      "Count of native MySQL route-selection outcomes.",
+		},
+		[]string{keys.Router_Name, keys.Backend_Name, keys.Outcome},
+	)
+
+	// MySQLCommandLatency measures a fixed set of protocol operations.
+	MySQLCommandLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: mysqlSubsystem,
+			Name:      "command_duration_seconds",
+			Help:      "Duration of bounded MySQL protocol operations.",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.Backend_Name, keys.Operation},
 	)
 
 	// ALBFanoutFailures counts per-shard failures during ALB fanout. The
@@ -374,7 +616,7 @@ var (
 			Name:      "fanout_failures_total",
 			Help:      "Count of per-shard failures during ALB fanout, by mechanism, variant, and reason.",
 		},
-		[]string{"mechanism", "variant", "reason"},
+		[]string{keys.Mechanism, keys.Variant, keys.Reason},
 	)
 
 	// ALBFanoutAttempts counts ALB fanout calls (one increment per All/Race
@@ -390,7 +632,7 @@ var (
 			Name:      "fanout_attempts_total",
 			Help:      "Count of ALB fanout invocations, by mechanism and variant.",
 		},
-		[]string{"mechanism", "variant"},
+		[]string{keys.Mechanism, keys.Variant},
 	)
 
 	// ALBTSMReplicaEvents counts logical replica-group activity without using
@@ -404,7 +646,7 @@ var (
 			Name:      "tsm_replica_events_total",
 			Help:      "Count of TSM logical replica-group selection events, by event and variant.",
 		},
-		[]string{"event", "variant"},
+		[]string{keys.Event, keys.Variant},
 	)
 
 	// ALBFanoutLoserDrain observes how long each losing slot in a
@@ -421,7 +663,7 @@ var (
 			Help:      "Time between winner-claim and each losing slot's goroutine exit, by mechanism and variant.",
 			Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
 		},
-		[]string{"mechanism", "variant"},
+		[]string{keys.Mechanism, keys.Variant},
 	)
 
 	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
@@ -435,7 +677,7 @@ var (
 			Name:      "pool_refresh_panic_recovered_total",
 			Help:      "Count of recovered panics in ALB pool refresh worker goroutines, by worker.",
 		},
-		[]string{"worker"},
+		[]string{keys.Worker},
 	)
 
 	// HealthcheckProbePanicRecovered counts recovered panics in the per-target
@@ -449,7 +691,7 @@ var (
 			Name:      "probe_panic_recovered_total",
 			Help:      "Count of recovered panics in the per-target health-probe ticker, by backend.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// HealthcheckProbeLatency records wall-clock duration of each per-target
@@ -464,7 +706,7 @@ var (
 			Help:      "Latency of per-target health-check probes, in seconds, by backend.",
 			Buckets:   []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// ProxyEnginesPanicRecovered counts recovered panics in fire-and-forget
@@ -479,7 +721,7 @@ var (
 			Name:      "engines_panic_recovered_total",
 			Help:      "Count of recovered panics in proxy/engines fire-and-forget goroutines, by call site.",
 		},
-		[]string{"site"},
+		[]string{keys.Site},
 	)
 
 	// CacheIndexPanicRecovered counts recovered panics in the cache index
@@ -494,7 +736,7 @@ var (
 			Name:      "index_panic_recovered_total",
 			Help:      "Count of recovered panics in cache index worker goroutines, by worker.",
 		},
-		[]string{"worker"},
+		[]string{keys.Worker},
 	)
 
 	// HealthHandlerPanicRecovered counts recovered panics in the status-page
@@ -521,7 +763,7 @@ var (
 			Name:      "status_notify_panic_recovered_total",
 			Help:      "Count of recovered panics while notifying a healthcheck Status subscriber, by backend.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 
 	// ALBPoolAdmitsFailing flags ALB pools whose healthy_floor admits a Failing
@@ -536,7 +778,80 @@ var (
 			Name:      "pool_admits_failing",
 			Help:      "1 when an ALB pool's healthy_floor admits members in Failing state; 0 otherwise.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
+	)
+
+	// TLSCertificateNotAfter is a Gauge of each serving certificate's
+	// NotAfter (expiration) time as unix seconds, by listener and entry.
+	TLSCertificateNotAfter = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_expiration_time_seconds",
+			Help:      "NotAfter time of a serving TLS certificate, as unix seconds.",
+		},
+		[]string{keys.Listener, keys.Entry},
+	)
+
+	// TLSCertificateLastLoad is a Gauge of the time each serving certificate
+	// was last successfully loaded from its source, as unix seconds.
+	TLSCertificateLastLoad = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_last_load_time_seconds",
+			Help:      "Time a serving TLS certificate was last loaded from its source, as unix seconds.",
+		},
+		[]string{keys.Listener, keys.Entry},
+	)
+
+	// TLSCertificateSwapsTotal counts hot swaps of a rotated certificate into
+	// a live listener.
+	TLSCertificateSwapsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_swaps_total",
+			Help:      "Count of TLS certificates hot-swapped into a live listener.",
+		},
+		[]string{keys.Listener, keys.Entry},
+	)
+
+	// TLSCertificateValidationFailures counts detected certificate source
+	// changes that failed pair validation (e.g. a mid-rotation partial write)
+	// and were not swapped in; the last-good certificate keeps serving.
+	TLSCertificateValidationFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_validation_failures_total",
+			Help:      "Count of TLS certificate source changes that failed validation.",
+		},
+		[]string{keys.Entry},
+	)
+
+	// TLSWatcherErrors counts errors reading watched TLS certificate source
+	// files; the last-good certificate keeps serving.
+	TLSWatcherErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "watcher_errors_total",
+			Help:      "Count of errors reading watched TLS certificate source files.",
+		},
+		[]string{keys.Entry},
+	)
+
+	// TLSCertificateStoreSize is a Gauge of the number of certificates in
+	// each listener's certificate store.
+	TLSCertificateStoreSize = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: tlsSubsystem,
+			Name:      "certificate_store_size",
+			Help:      "Number of certificates in a listener's TLS certificate store.",
+		},
+		[]string{keys.Listener},
 	)
 
 	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
@@ -550,12 +865,19 @@ var (
 			Name:      "pool_floor_reset",
 			Help:      "1 when an ALB pool's healthy_floor was reset to 0 because members lack health checks; 0 otherwise.",
 		},
-		[]string{"backend_name"},
+		[]string{keys.Backend_Name},
 	)
 )
 
 func init() {
 	// Register Metrics
+	prometheus.MustRegister(AccessLogDroppedLines)
+	prometheus.MustRegister(ProxyUpstreamRetries)
+	prometheus.MustRegister(ProxyMirrorRequests)
+	prometheus.MustRegister(ProxyStreamConnections)
+	prometheus.MustRegister(ProxyStreamActiveConnections)
+	prometheus.MustRegister(ProxyStreamBytes)
+	prometheus.MustRegister(ProxyStreamDroppedDatagrams)
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
 	prometheus.MustRegister(FrontendRequestWrittenBytes)
@@ -582,6 +904,7 @@ func init() {
 	prometheus.MustRegister(ALBPoolAdmitsFailing)
 	prometheus.MustRegister(ALBPoolFloorReset)
 	prometheus.MustRegister(CacheObjectOperations)
+	prometheus.MustRegister(CacheObjectOperationDuration)
 	prometheus.MustRegister(CacheByteOperations)
 	prometheus.MustRegister(CacheEvents)
 	prometheus.MustRegister(CacheObjects)
@@ -598,9 +921,168 @@ func init() {
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
+	prometheus.MustRegister(SQLQueryCache)
+	prometheus.MustRegister(MySQLConnections)
+	prometheus.MustRegister(MySQLActiveConnections)
+	prometheus.MustRegister(MySQLConnectionErrors)
+	prometheus.MustRegister(GraphiteResolutionLookups)
+	prometheus.MustRegister(GraphiteProbes)
+	prometheus.MustRegister(GraphiteLadders)
+	prometheus.MustRegister(GraphiteRegistryEntries)
+	prometheus.MustRegister(GraphiteStepMispredictions)
+	prometheus.MustRegister(GraphiteFallbacks)
+	prometheus.MustRegister(MySQLRouteSelections)
+	prometheus.MustRegister(MySQLCommandLatency)
+	prometheus.MustRegister(TLSCertificateNotAfter)
+	prometheus.MustRegister(TLSCertificateLastLoad)
+	prometheus.MustRegister(TLSCertificateSwapsTotal)
+	prometheus.MustRegister(TLSCertificateValidationFailures)
+	prometheus.MustRegister(TLSWatcherErrors)
+	prometheus.MustRegister(TLSCertificateStoreSize)
 }
 
 // Handler returns the http handler for the listener
 func Handler() http.Handler {
 	return promhttp.Handler()
+}
+
+// partialDeleter matches the prometheus vector types' DeletePartialMatch
+type partialDeleter interface {
+	DeletePartialMatch(prometheus.Labels) int
+}
+
+// backendSeriesVecs enumerates every metric vector labeled by backend_name,
+// so series for a torn-down backend can be removed. Update this list when
+// adding a new backend_name-labeled vector.
+var backendSeriesVecs = []partialDeleter{
+	FrontendRequestStatus,
+	FrontendRequestDuration,
+	FrontendRequestWrittenBytes,
+	ProxyRequestStatus,
+	ProxyRequestElements,
+	ProxyRequestDuration,
+	ProxyQueryRangeRejections,
+	SQLQueryAnalysis,
+	SQLQueryRewriteFailures,
+	SQLQueryCache,
+	MySQLConnections,
+	MySQLActiveConnections,
+	MySQLConnectionErrors,
+	MySQLRouteSelections,
+	MySQLCommandLatency,
+	HealthcheckProbePanicRecovered,
+	HealthcheckProbeLatency,
+	HealthcheckStatusNotifyPanicRecovered,
+	ALBPoolAdmitsFailing,
+	ALBPoolFloorReset,
+}
+
+// DeleteBackendSeries removes every metric series labeled with the provided
+// backend_name. It is called when a runtime-instantiated (discovered) backend
+// is torn down, so stale series don't accumulate as elastic members churn.
+func DeleteBackendSeries(backendName string) {
+	if backendName == "" {
+		return
+	}
+	labels := prometheus.Labels{keys.Backend_Name: backendName}
+	for _, v := range backendSeriesVecs {
+		v.DeletePartialMatch(labels)
+	}
+}
+
+// ALB Autodiscovery metrics
+var (
+	// ALBDiscoveryMembers is the current count of discovered pool members
+	// per ALB and discoverer.
+	ALBDiscoveryMembers = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_members",
+			Help:      "Current number of discovered ALB pool members.",
+		},
+		[]string{keys.ALB_Name, keys.Discoverer},
+	)
+
+	// ALBDiscoveryMemberChanges counts discovered-member lifecycle events;
+	// the event label is add or remove.
+	ALBDiscoveryMemberChanges = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_member_changes_total",
+			Help:      "Count of discovered ALB pool member additions and removals.",
+		},
+		[]string{keys.ALB_Name, keys.Discoverer, keys.Event},
+	)
+
+	// ALBDiscoverySnapshots counts membership snapshots processed per ALB.
+	// The result label is applied (membership updated), unchanged (no-op),
+	// rejected (guardrail-refused, e.g. a min_members violation), or
+	// partial (applied, but one or more member instantiations failed).
+	ALBDiscoverySnapshots = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_snapshots_total",
+			Help:      "Count of ALB autodiscovery membership snapshots processed, by result.",
+		},
+		[]string{keys.ALB_Name, keys.Discoverer, keys.Result},
+	)
+
+	// ALBDiscoveryLastRefresh is the unix timestamp of the last successfully
+	// processed (applied or unchanged) snapshot per ALB, for staleness
+	// alerting.
+	ALBDiscoveryLastRefresh = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "discovery_last_refresh_success_time_seconds",
+			Help:      "Epoch timestamp of the last successfully processed autodiscovery snapshot.",
+		},
+		[]string{keys.ALB_Name, keys.Discoverer},
+	)
+
+	// DiscoveryRefreshErrors counts provider-side refresh and watch
+	// failures (DNS resolution errors, kubernetes list/sync failures, file
+	// read/parse failures), per discoverer.
+	DiscoveryRefreshErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: "discovery",
+			Name:      "refresh_errors_total",
+			Help:      "Count of autodiscovery provider refresh/watch errors.",
+		},
+		[]string{keys.Discoverer, keys.Provider},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(ALBDiscoveryMembers)
+	prometheus.MustRegister(ALBDiscoveryMemberChanges)
+	prometheus.MustRegister(ALBDiscoverySnapshots)
+	prometheus.MustRegister(ALBDiscoveryLastRefresh)
+	prometheus.MustRegister(DiscoveryRefreshErrors)
+}
+
+// albDiscoveryVecs enumerates the vectors labeled by alb_name for
+// autodiscovery, so a torn-down (or reloaded-away) discovery-backed ALB's
+// series can be removed.
+var albDiscoveryVecs = []partialDeleter{
+	ALBDiscoveryMembers,
+	ALBDiscoveryMemberChanges,
+	ALBDiscoverySnapshots,
+	ALBDiscoveryLastRefresh,
+}
+
+// DeleteALBDiscoverySeries removes every autodiscovery metric series for
+// the provided ALB name; called when its dynamic pool manager stops.
+func DeleteALBDiscoverySeries(albName string) {
+	if albName == "" {
+		return
+	}
+	labels := prometheus.Labels{keys.ALB_Name: albName}
+	for _, v := range albDiscoveryVecs {
+		v.DeletePartialMatch(labels)
+	}
 }

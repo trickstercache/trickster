@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -125,15 +126,44 @@ func handleCachePartialHit(pr *proxyRequest) error {
 func confirmTrueCacheHit(pr *proxyRequest) (bool, error) {
 	pr.cachingPolicy.Merge(pr.cacheDocument.CachingPolicy)
 
-	if (!pr.checkCacheFreshness()) && (pr.cachingPolicy.CanRevalidate) {
+	fresh := pr.checkCacheFreshness()
+	// RFC 9111 5.2.1: the client's own directives can rule out a response the
+	// cache would otherwise have reused
+	if fresh && !pr.cachingPolicy.clientAcceptsStored(time.Now()) {
+		fresh = false
+		pr.cachingPolicy.IsFresh = false
+	}
+	if fresh {
+		return true, nil
+	}
+	// RFC 5861 3: inside the stale-while-revalidate window the client gets the
+	// stored response now and the refresh happens behind it
+	if pr.cachingPolicy.CanServeStaleWhileRevalidate(time.Now()) {
+		return false, handleStaleWhileRevalidate(pr)
+	}
+	// only-if-cached forbids going to the origin, even to revalidate
+	if pr.cachingPolicy.OnlyIfCached() {
+		return false, handleOnlyIfCachedMiss(pr)
+	}
+	if pr.cachingPolicy.CanRevalidate {
 		return false, handleCacheRevalidation(pr)
 	}
-	if !pr.cachingPolicy.IsFresh {
-		pr.cacheStatus = status.LookupStatusKeyMiss
-		return false, handleCacheKeyMiss(pr)
-	}
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	return false, handleCacheKeyMiss(pr)
+}
 
-	return true, nil
+// handleOnlyIfCachedMiss answers a request that refused a forwarded response
+// but could not be satisfied from storage. RFC 9111 5.2.1.7 specifies 504.
+func handleOnlyIfCachedMiss(pr *proxyRequest) error {
+	pr.cacheStatus = status.LookupStatusKeyMiss
+	pr.writeToCache = false
+	pr.upstreamResponse = &http.Response{
+		StatusCode: http.StatusGatewayTimeout,
+		Request:    pr.Request,
+		Header:     make(http.Header),
+	}
+	pr.upstreamReader = bytes.NewReader(nil)
+	return handleResponse(pr)
 }
 
 func handleCacheRangeMiss(pr *proxyRequest) error {
@@ -194,6 +224,8 @@ func handleCacheRevalidationResponse(pr *proxyRequest) error {
 		pr.revalidation = RevalStatusOK
 		pr.cachingPolicy.IsFresh = true
 		pr.cachingPolicy.LocalDate = time.Now()
+		// the origin just confirmed this representation, so it is new again
+		pr.cachingPolicy.InitialAge = 0
 		pr.cacheStatus = status.LookupStatusRevalidated
 		pr.upstreamResponse.StatusCode = pr.cacheDocument.StatusCode
 		pr.writeToCache = true
@@ -243,7 +275,7 @@ func handleCacheKeyMiss(pr *proxyRequest) error {
 	pc := pr.rsc.PathConfig
 
 	// if we're using PCF, handle that separately
-	if !methods.HasBody(pr.Method) && !pr.wantsRanges && pc != nil &&
+	if methods.IsCacheable(pr.Method) && !pr.wantsRanges && pc != nil &&
 		pc.CollapsedForwardingType == forwarding.CFTypeProgressive {
 		if err := handlePCF(pr); !stderrors.Is(err, errors.ErrPCFContentLength) {
 			return err
@@ -273,10 +305,100 @@ func serveOPCResult(pr *proxyRequest, result *opcResult) error {
 	}
 	pr.writeResponseHeader()
 	pr.mapLock.Lock()
-	PrepareResponseWriter(pr.responseWriter, result.statusCode, pr.upstreamResponse.Header)
+	PrepareResponseWriter(pr.responseWriter, result.statusCode, pr.upstreamResponse.Header, nil)
 	pr.mapLock.Unlock()
 	_, err := io.Copy(pr.responseWriter, bytes.NewReader(result.body))
 	return err
+}
+
+// maxVariantRetries bounds how many times a waiter will re-run to find a
+// result it may use before fetching on its own. A shifting Vary should settle
+// in one hop; the bound only keeps a pathological origin from spinning.
+const maxVariantRetries = 3
+
+// runOPC performs this request's cache lookup and handling under singleflight,
+// returning the shared result and whether this request is the one that ran it.
+func (pr *proxyRequest) runOPC(sfKey string, cc cache.Cache) (*opcResult, bool, error) {
+	var isExecutor bool
+	val, err, _ := opcGroup.Do(sfKey, func() (any, error) {
+		isExecutor = true
+		return pr.executeOPC(cc), nil
+	})
+	if err != nil {
+		return nil, isExecutor, err
+	}
+	return val.(*opcResult), isExecutor, nil
+}
+
+// executeOPC reads the cache and runs the handler for the resulting status,
+// writing this request's own response and returning what a waiter would need.
+func (pr *proxyRequest) executeOPC(cc cache.Cache) *opcResult {
+	// wrap the response writer to capture body writes for the opcResult
+	capture := &sfResponseCapture{inner: pr.responseWriter}
+	pr.responseWriter = capture
+
+	// buildErrorResult constructs an opcResult for error responses.
+	buildErrorResult := func() *opcResult {
+		sc := http.StatusBadGateway
+		var h http.Header
+		if pr.upstreamResponse != nil {
+			sc = pr.upstreamResponse.StatusCode
+			h = pr.upstreamResponse.Header.Clone()
+		}
+		if h == nil {
+			h = http.Header{}
+		}
+		return &opcResult{
+			statusCode:  sc,
+			headers:     h,
+			body:        append([]byte(nil), capture.buf.Bytes()...),
+			elapsed:     float64(time.Since(pr.started).Milliseconds()) / 1000.0,
+			cacheStatus: status.LookupStatusProxyError,
+		}
+	}
+
+	err := pr.queryCache(pr.upstreamRequest.Context(), cc)
+	// nothing stored and the client will not accept a forwarded response
+	if pr.cachingPolicy.OnlyIfCached() && pr.cacheStatus != status.LookupStatusHit {
+		if fErr := handleOnlyIfCachedMiss(pr); fErr != nil {
+			return buildErrorResult()
+		}
+	} else if err == nil || stderrors.Is(err, cache.ErrKNF) {
+		f := cacheResponseHandler(pr.cacheStatus)
+		if f == nil {
+			logger.Warn("unhandled cache lookup response",
+				logging.Pairs{"lookupStatus": pr.cacheStatus})
+			return &opcResult{cacheStatus: status.LookupStatusProxyOnly}
+		}
+		if fErr := f(pr); fErr != nil {
+			return buildErrorResult()
+		}
+	} else {
+		logger.Error("cache lookup error",
+			logging.Pairs{keys.Detail: err.Error()})
+		pr.cacheDocument = nil
+		pr.cacheStatus = status.LookupStatusKeyMiss
+		if fErr := handleCacheKeyMiss(pr); fErr != nil {
+			return buildErrorResult()
+		}
+	}
+
+	// the shared result must be what went on the wire, not what went into
+	// storage: those differ whenever a range was extracted from a complete
+	// stored object, or a conditional hit sent a bodyless 304
+	body := capture.buf.Bytes()
+	// deep-copy body to avoid aliasing with memory cache (stores by reference)
+	return &opcResult{
+		statusCode:      pr.upstreamResponse.StatusCode,
+		headers:         pr.upstreamResponse.Header.Clone(),
+		body:            append([]byte(nil), body...),
+		elapsed:         float64(time.Since(pr.started).Milliseconds()) / 1000.0,
+		cacheStatus:     pr.cacheStatus,
+		varyNames:       pr.varyNames,
+		varyGeneration:  pr.varyGeneration,
+		varyKey:         pr.key,
+		varyUnmatchable: pr.varyUnmatchable,
+	}
 }
 
 func handleUpstreamTransactions(pr *proxyRequest) error {
@@ -291,6 +413,10 @@ func handleUpstreamTransactions(pr *proxyRequest) error {
 func handlePCF(pr *proxyRequest) error {
 	o := pr.rsc.BackendOptions
 
+	if o.MaxObjectSizeBytes <= 0 {
+		return errors.ErrPCFContentLength
+	}
+
 	pr.isPCF = true
 	pcfResult, pcfExists := reqs.Load(pr.key)
 	// a PCF session is in progress for this URL, join this client to it.
@@ -299,9 +425,13 @@ func handlePCF(pr *proxyRequest) error {
 		pr.upstreamResponse = pcf.GetResp()
 		pr.mapLock.Lock()
 		pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
-			pr.upstreamResponse.Header)
+			pr.upstreamResponse.Header, nil)
 		pr.mapLock.Unlock()
-		return pcf.AddClient(pr.responseWriter)
+		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			abortOnCopyError(pr.responseWriter, pr.Request, err)
+			return err
+		}
+		return nil
 	}
 
 	ctx, span := tspan.NewChildSpan(pr.upstreamRequest.Context(), pr.rsc.Tracer, "FetchObject")
@@ -315,11 +445,20 @@ func handlePCF(pr *proxyRequest) error {
 	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
 	pr.upstreamResponse = resp
 
+	// decide before committing anything downstream, so a response that cannot be
+	// collapsed is served from this fetch rather than re-requested
+	var pcf ProgressiveCollapseForwarder
+	if (contentLength < 0 || (contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes))) &&
+		collapseEligible(pr.Request, resp.StatusCode, resp.Header, pr.rsc.PathConfig) {
+		pcf = NewPCF(resp, contentLength, int64(o.MaxObjectSizeBytes))
+	}
+	if pcf == nil {
+		return serveUncollapsed(pr, resp, reader)
+	}
+
 	pr.writeResponseHeader()
-	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header)
-	// Check if we know the content length and if it is less than our max object size.
-	if contentLength > 0 && contentLength < int64(o.MaxObjectSizeBytes) {
-		pcf := NewPCF(resp, contentLength)
+	pr.responseWriter = PrepareResponseWriter(pr.responseWriter, resp.StatusCode, resp.Header, nil)
+	{
 		actual, loaded := reqs.LoadOrStore(pr.key, pcf)
 		if loaded {
 			// Another goroutine created a PCF session first; join it instead.
@@ -328,9 +467,13 @@ func handlePCF(pr *proxyRequest) error {
 			pr.upstreamResponse = existingPCF.GetResp()
 			pr.mapLock.Lock()
 			pr.responseWriter = PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode,
-				pr.upstreamResponse.Header)
+				pr.upstreamResponse.Header, nil)
 			pr.mapLock.Unlock()
-			return existingPCF.AddClient(pr.responseWriter)
+			if err := existingPCF.AddClient(pr.responseWriter); err != nil {
+				abortOnCopyError(pr.responseWriter, pr.Request, err)
+				return err
+			}
+			return nil
 		}
 
 		pr.cachingPolicy.Merge(GetResponseCachingPolicy(pr.upstreamResponse.StatusCode,
@@ -344,32 +487,73 @@ func handlePCF(pr *proxyRequest) error {
 				}
 			}()
 			defer reqs.Delete(pr.key)
-			defer pcf.Close()
 			var dest io.Writer = pcf
 			if pr.writeToCache {
 				pr.cacheBuffer = &bytes.Buffer{}
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			if _, err := io.Copy(dest, reader); err != nil {
+			n, err := io.Copy(dest, reader)
+			switch {
+			case err != nil:
 				logger.Error("pcf upstream copy failed",
-					logging.Pairs{"key": pr.key, "detail": err.Error()})
+					logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
+				pr.bodyTruncated.Store(true)
+				pcf.CloseWithError(err)
+			case pr.Method != http.MethodHead && contentLength > 0 && n < contentLength:
+				logger.Error("pcf upstream returned short body",
+					logging.Pairs{keys.Key: pr.key})
+				pr.bodyTruncated.Store(true)
+				pcf.CloseWithError(io.ErrUnexpectedEOF)
+			default:
+				pcf.Close()
 			}
 		})
 
 		if err := pcf.AddClient(pr.responseWriter); err != nil {
+			abortOnCopyError(pr.responseWriter, pr.Request, err)
 			return err
 		}
 
 		return handleAllWrites(pr)
 	}
-	return errors.ErrPCFContentLength
+}
+
+// serveUncollapsed serves a response that reached the collapse path but cannot
+// be shared, reusing the fetch already in hand. Falling back to an independent
+// fetch would double the origin request and write the second body under this
+// response's already-committed status.
+func serveUncollapsed(pr *proxyRequest, resp *http.Response, reader io.ReadCloser) error {
+	pr.isPCF = false
+	pr.upstreamResponse = resp
+	pr.upstreamReader = reader
+	if reader != nil {
+		defer reader.Close()
+	}
+	pr.cachingPolicy.Merge(GetResponseCachingPolicy(resp.StatusCode,
+		pr.rsc.BackendOptions.NegativeCache, resp.Header))
+	pr.determineCacheability()
+	return handleAllWrites(pr)
 }
 
 func handleAllWrites(pr *proxyRequest) error {
+	// RFC 5861 4: an origin that failed does not invalidate what is stored, so
+	// a response still inside its stale-if-error window stands in for it
+	if serveStaleOnError(pr) {
+		pr.writeToCache = false
+		pr.cacheStatus = status.LookupStatusHit
+		return handleTrueCacheHit(pr)
+	}
 	if err := handleResponse(pr); err != nil {
 		return err
 	}
 	if pr.writeToCache {
+		// an object that ended early is not the object the origin advertised;
+		// storing it would serve a truncated body to every later requester
+		if pr.bodyTruncated.Load() {
+			logger.Warn("skipping cache write for truncated upstream response",
+				logging.Pairs{keys.Key: pr.key, keys.URL: pr.URL.String()})
+			return nil
+		}
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
 			d := DocumentFromHTTPResponse(pr.upstreamResponse, nil, pr.cachingPolicy)
 			pr.cacheDocument = d
@@ -393,6 +577,7 @@ func handleResponse(pr *proxyRequest) error {
 	}
 	pr.setBodyWriter() // what about partial hit? it does not set this
 	pr.writeResponseBody()
+	pr.writeResponseTrailers()
 	return nil
 }
 
@@ -420,6 +605,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	cc := rsc.CacheClient
 
 	pr := newProxyRequest(r, w)
+	pr.relayInterimResponses(w)
 
 	_, span := tspan.NewChildSpan(r.Context(), rsc.Tracer, "ObjectProxyCacheRequest")
 	if span != nil {
@@ -433,6 +619,14 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cachingPolicy = GetRequestCachingPolicy(pr.Header)
 
 	pr.key = ComposeCacheKey(o.Name, o.CacheKeyPrefix, "opc", pr.DeriveCacheKey(""))
+	pr.primaryKey = pr.key
+	// an authorized request also has a credential-free key, which is where a
+	// response the origin marked shareable is stored and found
+	if methods.IsCacheable(pr.Method) && pr.Header.Get(headers.NameAuthorization) != "" {
+		pr.omitAuthFromKey = true
+		pr.sharedKey = ComposeCacheKey(o.Name, o.CacheKeyPrefix, "opc", pr.DeriveCacheKey(""))
+		pr.omitAuthFromKey = false
+	}
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := reqs.Load(pr.key)
@@ -447,10 +641,11 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 		pcf := pcfResult.(ProgressiveCollapseForwarder)
 		pr.upstreamResponse = pcf.GetResp()
 		pr.mapLock.Lock()
-		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+		writer := PrepareResponseWriter(w, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header, nil)
 		pr.mapLock.Unlock()
 		if err := pcf.AddClient(writer); err != nil {
 			tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
+			abortOnCopyError(writer, r, err)
 			return nil, status.LookupStatusError
 		}
 		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyHit.String()))
@@ -461,88 +656,38 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 	pr.cachingPolicy.ParseClientConditionals()
 
 	// deduplicate cache lookup + handler work per cache key via singleflight.
-	// the executor writes its own response and returns an opcResult for any waiters.
+	// the executor writes its own response and returns an opcResult for waiters.
 	sfKey := pr.key
 	if pr.wantsRanges {
 		sfKey += "|" + pr.wantedRanges.String()
 	}
-	// isExecutor distinguishes the executor from waiters after Do returns,
-	// since singleflight.Do returns shared=true for the executor too.
-	var isExecutor bool
-	val, sfErr, _ := opcGroup.Do(sfKey, func() (any, error) {
-		isExecutor = true
-
-		// wrap the response writer to capture body writes for the opcResult
-		capture := &sfResponseCapture{inner: pr.responseWriter}
-		pr.responseWriter = capture
-
-		// buildErrorResult constructs an opcResult for error responses.
-		buildErrorResult := func() *opcResult {
-			sc := http.StatusBadGateway
-			var h http.Header
-			if pr.upstreamResponse != nil {
-				sc = pr.upstreamResponse.StatusCode
-				h = pr.upstreamResponse.Header.Clone()
-			}
-			if h == nil {
-				h = http.Header{}
-			}
-			return &opcResult{
-				statusCode:  sc,
-				headers:     h,
-				body:        append([]byte(nil), capture.buf.Bytes()...),
-				elapsed:     float64(time.Since(pr.started).Milliseconds()) / 1000.0,
-				cacheStatus: status.LookupStatusProxyError,
-			}
+	result, isExecutor, sfErr := pr.runOPC(sfKey, cc)
+	// RFC 9111 4.1: a leader's response answers only requests whose own fields
+	// select the same variant. A waiter that selects differently -- which a
+	// cold miss cannot know in advance -- redoes the work under its own
+	// variant key rather than being handed a body chosen for someone else.
+	// The check repeats, because the execution it then joins may nominate a
+	// different set of fields again.
+	for attempt := range maxVariantRetries {
+		if sfErr != nil || isExecutor || result.suitableFor(pr) {
+			break
 		}
-
-		var err error
-		pr.cacheDocument, pr.cacheStatus, pr.neededRanges, err = QueryCache(pr.upstreamRequest.Context(), cc, pr.key, pr.wantedRanges, nil)
-		if err == nil || stderrors.Is(err, cache.ErrKNF) {
-			f := cacheResponseHandler(pr.cacheStatus)
-			if f == nil {
-				logger.Warn("unhandled cache lookup response",
-					logging.Pairs{"lookupStatus": pr.cacheStatus})
-				return &opcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
-			}
-			if fErr := f(pr); fErr != nil {
-				return buildErrorResult(), nil
-			}
-		} else {
-			logger.Error("cache lookup error",
-				logging.Pairs{"detail": err.Error()})
-			pr.cacheDocument = nil
-			pr.cacheStatus = status.LookupStatusKeyMiss
-			if fErr := handleCacheKeyMiss(pr); fErr != nil {
-				return buildErrorResult(), nil
-			}
+		vKey := result.variantKeyFor(pr)
+		// a response that can match no other request, or a selection that
+		// keeps shifting, has to be fetched for this request alone
+		if result.varyUnmatchable || attempt+1 >= maxVariantRetries {
+			vKey = sfKey + "|solo|" + newVaryGeneration()
 		}
-
-		// build result for singleflight waiters; prefer cached doc body,
-		// then cacheBuffer, then sfResponseCapture buffer as fallback.
-		var body []byte
-		if pr.cacheDocument != nil && pr.cacheDocument.Body != nil {
-			body = pr.cacheDocument.Body
-		} else if pr.cacheBuffer != nil {
-			body = pr.cacheBuffer.Bytes()
-		} else {
-			body = capture.buf.Bytes()
+		if pr.wantsRanges {
+			vKey += "|" + pr.wantedRanges.String()
 		}
-		// deep-copy body to avoid aliasing with memory cache (stores by reference)
-		return &opcResult{
-			statusCode:  pr.upstreamResponse.StatusCode,
-			headers:     pr.upstreamResponse.Header.Clone(),
-			body:        append([]byte(nil), body...),
-			elapsed:     float64(time.Since(pr.started).Milliseconds()) / 1000.0,
-			cacheStatus: pr.cacheStatus,
-		}, nil
-	})
+		result, isExecutor, sfErr = pr.runOPC(vKey, cc)
+	}
 
 	if sfErr != nil {
 		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusError.String()))
 		return nil, status.LookupStatusError
 	}
-	result := val.(*opcResult)
 	if result.cacheStatus == status.LookupStatusProxyOnly {
 		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", status.LookupStatusProxyOnly.String()))
 		return nil, status.LookupStatusProxyOnly

@@ -1,0 +1,996 @@
+{
+ "annotations": {
+  "list": [
+   {
+    "builtIn": 1,
+    "datasource": {
+     "type": "grafana",
+     "uid": "-- Grafana --"
+    },
+    "enable": true,
+    "hide": true,
+    "iconColor": "rgba(0, 211, 255, 1)",
+    "name": "Annotations & Alerts",
+    "type": "dashboard"
+   }
+  ]
+ },
+ "description": "NYC taxi trips seeded into MySQL with a source-derived shift centered on seed time. Set an absolute future range to inspect the future half.",
+ "editable": true,
+ "fiscalYearStartMonth": 0,
+ "graphTooltip": 0,
+ "links": [],
+ "panels": [
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 0
+   },
+   "id": 14,
+   "panels": [],
+   "title": "Trips Data",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "mysql",
+    "uid": "${datasource}"
+   },
+   "description": "Grafana MySQL time-series pattern using $__timeGroupAlias with a fixed 5m interval and a half-open $__timeFrom()/$__timeTo() range for delta caching.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green"
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 0,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 1,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 12,
+    "x": 0,
+    "y": 1
+   },
+   "id": 1,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "11.6.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "mysql",
+      "uid": "${datasource}"
+     },
+     "dataset": "trickster",
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "SELECT\n  $__timeGroupAlias(pickup_datetime, '5m'),\n  count(*) AS trips\nFROM trips\nWHERE pickup_datetime >= $__timeFrom() AND pickup_datetime < $__timeTo()\nGROUP BY time\nORDER BY time",
+     "refId": "A",
+     "sql": {
+      "columns": [
+       {
+        "parameters": [],
+        "type": "function"
+       }
+      ],
+      "groupBy": [
+       {
+        "property": {
+         "type": "string"
+        },
+        "type": "groupBy"
+       }
+      ],
+      "limit": 50
+     }
+    }
+   ],
+   "title": "# Trips Over Time (5m buckets)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "mysql",
+    "uid": "${datasource}"
+   },
+   "description": "Grafana-driven dynamic bucket size via $__interval, with a 1m documented minimum interval configured on the panel.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green"
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 0,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 1,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 12,
+    "x": 12,
+    "y": 1
+   },
+   "id": 2,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "11.6.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "mysql",
+      "uid": "${datasource}"
+     },
+     "dataset": "trickster",
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "SELECT\n  $__timeGroupAlias(pickup_datetime, $__interval),\n  count(*) AS trips\nFROM trips\nWHERE pickup_datetime >= $__timeFrom() AND pickup_datetime < $__timeTo()\nGROUP BY time\nORDER BY time",
+     "refId": "A",
+     "sql": {
+      "columns": [
+       {
+        "parameters": [],
+        "type": "function"
+       }
+      ],
+      "groupBy": [
+       {
+        "property": {
+         "type": "string"
+        },
+        "type": "groupBy"
+       }
+      ],
+      "limit": 50
+     }
+    }
+   ],
+   "title": "# Trips Over Time ($__interval)",
+   "type": "timeseries",
+   "interval": "1m"
+  },
+  {
+   "datasource": {
+    "type": "mysql",
+    "uid": "${datasource}"
+   },
+   "description": "Multiple numeric value columns in a single time-series result.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green"
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 0,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 1,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     },
+     "unit": "currencyUSD"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 12,
+    "x": 0,
+    "y": 11
+   },
+   "id": 3,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "11.6.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "mysql",
+      "uid": "${datasource}"
+     },
+     "dataset": "trickster",
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "SELECT\n  $__timeGroupAlias(pickup_datetime, '15m'),\n  avg(fare_amount) AS avg_fare,\n  avg(tip_amount) AS avg_tip,\n  avg(total_amount) AS avg_total\nFROM trips\nWHERE pickup_datetime >= $__timeFrom() AND pickup_datetime < $__timeTo()\nGROUP BY time\nORDER BY time",
+     "refId": "A",
+     "sql": {
+      "columns": [
+       {
+        "parameters": [],
+        "type": "function"
+       }
+      ],
+      "groupBy": [
+       {
+        "property": {
+         "type": "string"
+        },
+        "type": "groupBy"
+       }
+      ],
+      "limit": 50
+     }
+    }
+   ],
+   "title": "Fare Metrics (15m buckets)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "mysql",
+    "uid": "${datasource}"
+   },
+   "description": "A string dimension (cab_type) grouped with time to produce multiple series from one query.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green"
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     },
+     "custom": {
+      "axisBorderShow": false,
+      "axisCenteredZero": false,
+      "axisColorMode": "text",
+      "axisLabel": "",
+      "axisPlacement": "auto",
+      "barAlignment": 0,
+      "barWidthFactor": 0.6,
+      "drawStyle": "line",
+      "fillOpacity": 0,
+      "gradientMode": "none",
+      "hideFrom": {
+       "legend": false,
+       "tooltip": false,
+       "viz": false
+      },
+      "insertNulls": false,
+      "lineInterpolation": "linear",
+      "lineWidth": 1,
+      "pointSize": 5,
+      "scaleDistribution": {
+       "type": "linear"
+      },
+      "showPoints": "auto",
+      "spanNulls": false,
+      "stacking": {
+       "group": "A",
+       "mode": "none"
+      },
+      "thresholdsStyle": {
+       "mode": "off"
+      }
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 12,
+    "x": 12,
+    "y": 11
+   },
+   "id": 4,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "hideZeros": false,
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "pluginVersion": "11.6.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "mysql",
+      "uid": "${datasource}"
+     },
+     "dataset": "trickster",
+     "editorMode": "code",
+     "format": "time_series",
+     "rawQuery": true,
+     "rawSql": "SELECT\n  $__timeGroupAlias(pickup_datetime, '15m'),\n  cab_type AS metric,\n  count(*) AS trips\nFROM trips\nWHERE pickup_datetime >= $__timeFrom() AND pickup_datetime < $__timeTo()\nGROUP BY time, cab_type\nORDER BY time",
+     "refId": "A",
+     "sql": {
+      "columns": [
+       {
+        "parameters": [],
+        "type": "function"
+       }
+      ],
+      "groupBy": [
+       {
+        "property": {
+         "type": "string"
+        },
+        "type": "groupBy"
+       }
+      ],
+      "limit": 50
+     }
+    }
+   ],
+   "title": "Trips by Cab Type (15m buckets)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "mysql",
+    "uid": "${datasource}"
+   },
+   "description": "Table-format query over the dashboard time range; not a time series.",
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "mappings": [],
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "green"
+       },
+       {
+        "color": "red",
+        "value": 80
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 10,
+    "w": 24,
+    "x": 0,
+    "y": 21
+   },
+   "id": 5,
+   "options": {
+    "cellHeight": "sm",
+    "footer": {
+     "countRows": false,
+     "fields": "",
+     "reducer": [
+      "sum"
+     ],
+     "show": false
+    },
+    "showHeader": true
+   },
+   "pluginVersion": "11.6.0",
+   "targets": [
+    {
+     "datasource": {
+      "type": "mysql",
+      "uid": "${datasource}"
+     },
+     "dataset": "trickster",
+     "editorMode": "code",
+     "format": "table",
+     "rawQuery": true,
+     "rawSql": "SELECT\n  pickup_ntaname AS neighborhood,\n  count(*) AS trips,\n  round(avg(trip_distance), 2) AS avg_distance_mi,\n  round(avg(total_amount), 2) AS avg_total_usd\nFROM trips\nWHERE $__timeFilter(pickup_datetime)\nGROUP BY pickup_ntaname\nORDER BY trips DESC\nLIMIT 10",
+     "refId": "A",
+     "sql": {
+      "columns": [
+       {
+        "parameters": [],
+        "type": "function"
+       }
+      ],
+      "groupBy": [
+       {
+        "property": {
+         "type": "string"
+        },
+        "type": "groupBy"
+       }
+      ],
+      "limit": 50
+     }
+    }
+   ],
+   "title": "Top Pickup Neighborhoods",
+   "type": "table"
+  },
+  {
+   "collapsed": false,
+   "gridPos": {
+    "h": 1,
+    "w": 24,
+    "x": 0,
+    "y": 31
+   },
+   "id": 15,
+   "panels": [],
+   "title": "Trickster Performance",
+   "type": "row"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 32
+   },
+   "id": 6,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "sum by (cache_mode, reason) (rate(trickster_sql_query_analysis_total{backend_name=\"mysql1\",dialect=\"mysql\"}[$__rate_interval]))",
+     "legendFormat": "{{cache_mode}} / {{reason}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "SQL Analysis Classifications",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 32
+   },
+   "id": 7,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "sum by (reason) (rate(trickster_sql_query_rewrite_failures_total{backend_name=\"mysql1\",dialect=\"mysql\"}[$__rate_interval]))",
+     "legendFormat": "{{reason}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "SQL Rewrite Failures",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 41
+   },
+   "id": 8,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "sum by (cache_mode, cache_status) (rate(trickster_sql_query_cache_total{backend_name=\"mysql1\",dialect=\"mysql\"}[$__rate_interval]))",
+     "legendFormat": "{{cache_mode}} / {{cache_status}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "OPC / DPC Cache Status",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "s"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 41
+   },
+   "id": 9,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "histogram_quantile(0.95, sum by (le) (rate(trickster_proxy_request_duration_seconds_bucket{backend_name=\"mysql1\",provider=\"mysql\",path=\"query\"}[$__rate_interval])))",
+     "legendFormat": "p95",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "MySQL Request Duration (p95)",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 50
+   },
+   "id": 10,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "sum by (cache_status) (rate(trickster_proxy_points_total{backend_name=\"mysql1\",provider=\"mysql\",path=\"query\"}[$__rate_interval]))",
+     "legendFormat": "{{cache_status}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "Returned Elements",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 50
+   },
+   "id": 11,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "sum by (operation, status) (rate(trickster_cache_operation_objects_total{cache_name=\"fs1\"}[$__rate_interval]))",
+     "legendFormat": "{{operation}} / {{status}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "Cache Operations",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 0,
+    "y": 59
+   },
+   "id": 12,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "100 * trickster_cache_usage_bytes{cache_name=\"fs1\"} / trickster_cache_max_usage_bytes{cache_name=\"fs1\"}",
+     "legendFormat": "{{cache_name}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "Cache Storage Utilization",
+   "type": "timeseries"
+  },
+  {
+   "datasource": {
+    "type": "prometheus",
+    "uid": "ds_prom_direct"
+   },
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ops"
+    },
+    "overrides": []
+   },
+   "gridPos": {
+    "h": 9,
+    "w": 12,
+    "x": 12,
+    "y": 59
+   },
+   "id": 13,
+   "options": {
+    "legend": {
+     "calcs": [],
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "none"
+    }
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "prometheus",
+      "uid": "ds_prom_direct"
+     },
+     "editorMode": "code",
+     "expr": "sum by (reason) (rate(trickster_cache_events_total{cache_name=\"fs1\",event=\"eviction\"}[$__rate_interval]))",
+     "legendFormat": "{{reason}}",
+     "range": true,
+     "refId": "A"
+    }
+   ],
+   "title": "Cache Evictions",
+   "type": "timeseries"
+  }
+ ],
+ "preload": false,
+ "refresh": "",
+ "schemaVersion": 41,
+ "tags": [
+  "trickster",
+  "mysql"
+ ],
+ "templating": {
+  "list": [
+   {
+    "allowCustomValue": false,
+    "current": {
+     "text": "mysql-direct",
+     "value": "ds_mysql_direct"
+    },
+    "description": "",
+    "name": "datasource",
+    "options": [],
+    "query": "mysql",
+    "refresh": 1,
+    "regex": "",
+    "type": "datasource"
+   }
+  ]
+ },
+ "time": {
+  "from": "now-7d",
+  "to": "now"
+ },
+ "timepicker": {},
+ "timezone": "utc",
+ "title": "MySQL",
+ "uid": "trickster-mysql",
+ "version": 4
+}

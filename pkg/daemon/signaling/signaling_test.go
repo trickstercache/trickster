@@ -24,6 +24,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 )
 
 // guardSignals keeps a test-owned channel registered for the signals Wait
@@ -82,7 +84,7 @@ func TestWaitContextCancel(t *testing.T) {
 		Wait(ctx, func(string) (bool, error) {
 			calls.Add(1)
 			return true, nil
-		})
+		}, nil)
 		close(done)
 	}()
 	cancel()
@@ -112,7 +114,7 @@ func TestWaitSIGHUPReloadsThenSIGTERMReturns(t *testing.T) {
 				close(reloaded)
 			}
 			return true, nil
-		})
+		}, nil)
 		close(done)
 	}()
 
@@ -122,8 +124,8 @@ func TestWaitSIGHUPReloadsThenSIGTERMReturns(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("SIGHUP did not invoke the reloader")
 	}
-	if got := sources.Load().(string); got != "sighup" {
-		t.Errorf("reload source = %q, want %q", got, "sighup")
+	if got := sources.Load().(string); got != reload.SourceSIGHUP {
+		t.Errorf("reload source = %q, want %q", got, reload.SourceSIGHUP)
 	}
 
 	select {
@@ -146,7 +148,7 @@ func TestWaitSIGINTReturns(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		Wait(ctx, func(string) (bool, error) { return true, nil })
+		Wait(ctx, func(string) (bool, error) { return true, nil }, nil)
 		close(done)
 	}()
 
@@ -155,5 +157,126 @@ func TestWaitSIGINTReturns(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Wait did not return after SIGINT")
+	}
+}
+
+func TestDrainContextTimeout(t *testing.T) {
+	guardSignals(t)
+	ctx, cancel := DrainContext(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+		if ctx.Err() != context.DeadlineExceeded {
+			t.Errorf("err = %v; want deadline exceeded", ctx.Err())
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("drain context did not expire")
+	}
+}
+
+func TestDrainContextSecondSignal(t *testing.T) {
+	guardSignals(t)
+	ctx, cancel := DrainContext(context.Background(), time.Minute)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		close(done)
+	}()
+	raiseUntil(t, syscall.SIGTERM, done)
+	if ctx.Err() != context.Canceled {
+		t.Errorf("err = %v; want canceled", ctx.Err())
+	}
+}
+
+func TestWaitTerminateDuringBlockedReload(t *testing.T) {
+	guardSignals(t)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	terminated := make(chan struct{})
+	returned := make(chan (<-chan struct{}), 1)
+	var enteredOnce atomic.Bool
+	go func() {
+		returned <- Wait(t.Context(), func(string) (bool, error) {
+			if enteredOnce.CompareAndSwap(false, true) {
+				close(entered)
+			}
+			<-release
+			return true, nil
+		}, func() { close(terminated) })
+	}()
+	raiseUntil(t, syscall.SIGHUP, entered)
+	// termination is reported and Wait returns while the reload is blocked
+	raiseUntil(t, syscall.SIGTERM, terminated)
+	var reloadsDone <-chan struct{}
+	select {
+	case reloadsDone = <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Wait did not return on termination during a blocked reload")
+	}
+	select {
+	case <-reloadsDone:
+		t.Fatal("reloads reported done while the reload is still blocked")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-reloadsDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reloads never reported done after the reload finished")
+	}
+}
+
+func TestWaitCoalescesSIGHUPDuringReload(t *testing.T) {
+	guardSignals(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var calls atomic.Int64
+	var enteredOnce atomic.Bool
+	var reloadsDone <-chan struct{}
+	returned := make(chan struct{})
+	go func() {
+		reloadsDone = Wait(ctx, func(string) (bool, error) {
+			if calls.Add(1) == 1 {
+				enteredOnce.Store(true)
+				close(entered)
+				<-release
+			}
+			return true, nil
+		}, nil)
+		close(returned)
+	}()
+	raiseUntil(t, syscall.SIGHUP, entered)
+	// a further SIGHUP during the blocked reload must schedule one follow-up
+	if err := syscall.Kill(syscall.Getpid(), syscall.SIGHUP); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d; want the follow-up to wait for the active reload", calls.Load())
+	}
+	close(release)
+	deadline := time.Now().Add(5 * time.Second)
+	for calls.Load() < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("calls = %d; want exactly one coalesced follow-up reload", calls.Load())
+	}
+	cancel()
+	select {
+	case <-returned:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Wait did not return on context cancellation")
+	}
+	select {
+	case <-reloadsDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("reloads never reported done")
+	}
+	if calls.Load() != 2 {
+		t.Errorf("calls = %d after completion; want 2", calls.Load())
 	}
 }

@@ -26,6 +26,7 @@ import (
 
 func TestTLSCertConfig(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 
 	// test empty config condition #1 (ServeTLS is false, early bail)
 	n, err := config.TLSCertConfig()
@@ -114,6 +115,7 @@ func tlsConfig(condition string) (*options.Options, func(), error) {
 // a misconfigured backend cannot crash the whole TLS setup func.
 func TestTLSCertConfig_CAOnlyBackendExcluded(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 	config.Frontend.ServeTLS = true
 
 	// CA-only: ServeTLS flipped true but no cert+key paths. Pre-#940 this
@@ -137,6 +139,7 @@ func TestTLSCertConfig_CAOnlyBackendExcluded(t *testing.T) {
 // without error.
 func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 	config.Frontend.ServeTLS = true
 
 	validTLS, closer, err := tlsConfig("")
@@ -171,6 +174,7 @@ func TestTLSCertConfig_MixedBackendsOnlyValidContribute(t *testing.T) {
 
 func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
 	config := NewConfig()
+	config.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
 	config.Listeners["custom"] = listener.New("custom")
 	config.Listeners["custom"].ServeTLS = true
 	config.Listeners[listener.DefaultFrontendName].ServeTLS = true
@@ -191,7 +195,7 @@ func TestTLSCertConfigForListenerFiltersMappedBackends(t *testing.T) {
 	}
 	config.Backends["default"].TLS = defaultTLS
 	customBackend := config.Backends["default"].Clone()
-	customBackend.ListenerName = "custom"
+	customBackend.ListenerNames = []string{"custom"}
 	customBackend.TLS = customTLS
 	config.Backends["custom"] = customBackend
 
@@ -223,5 +227,50 @@ func TestTLSCertConfigForListenerEdgeCases(t *testing.T) {
 	}
 	if got != nil {
 		t.Fatal("ServeTLS=false should return nil tls config")
+	}
+}
+
+func TestTLSCertConfigForMySQLInBandTLS(t *testing.T) {
+	c := NewConfig()
+	c.Listeners["mysql1"] = listener.New("mysql1")
+	c.Listeners["mysql1"].Protocol = listener.ProtocolMySQL
+	tlsOptions, closeTLS, err := tlsConfig("")
+	if closeTLS != nil {
+		defer closeTLS()
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	backend := c.Backends["default"].Clone()
+	backend.ListenerNames = []string{"mysql1"}
+	backend.TLS = tlsOptions
+	delete(c.Backends, "default")
+	c.Backends["mysql1"] = backend
+
+	got, err := c.TLSCertConfigForListener("mysql1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || len(got.Certificates) != 1 {
+		t.Fatalf("MySQL in-band TLS config = %#v", got)
+	}
+}
+
+func TestTLSCertConfigForListenerRuntimeCerts(t *testing.T) {
+	conf := NewConfig()
+	conf.Backends["default"].ListenerNames = []string{listener.DefaultFrontendName}
+	lo := conf.Listeners[listener.DefaultFrontendName]
+	lo.ServeTLS = true
+	cfg, err := conf.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil || cfg != nil {
+		t.Fatalf("without runtime certs = %v, %v; want nil config", cfg, err)
+	}
+	lo.TLSRuntimeCerts = true
+	cfg, err = conf.TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil || cfg == nil {
+		t.Fatalf("with runtime certs = %v, %v; want an empty config", cfg, err)
+	}
+	if len(cfg.Certificates) != 0 || len(cfg.NextProtos) == 0 {
+		t.Errorf("runtime config = %+v; want no certificates and ALPN set", cfg)
 	}
 }

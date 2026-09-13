@@ -19,6 +19,7 @@ package logger
 import (
 	"bytes"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -100,7 +101,7 @@ func TestPackageLoggerWrappers(t *testing.T) {
 }
 
 func TestPackageLoggerAsync(t *testing.T) {
-	buf := &bytes.Buffer{}
+	buf := &syncBuffer{}
 	l := logging.StreamLogger(buf, level.Info)
 	SetLogger(l)
 	t.Cleanup(func() {
@@ -115,4 +116,27 @@ func TestPackageLoggerAsync(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	require.Contains(t, buf.String(), "async package log")
+}
+
+type syncBuffer struct {
+	mtx sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) Len() int {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.Len()
+}
+
+func (b *syncBuffer) String() string {
+	b.mtx.Lock()
+	defer b.mtx.Unlock()
+	return b.buf.String()
 }

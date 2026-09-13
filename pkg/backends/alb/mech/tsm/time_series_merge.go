@@ -30,13 +30,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fanout"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/encoding"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -59,7 +60,7 @@ type handler struct {
 	mech.PoolHolder
 	mergePaths            []string // paths handled by the alb client that are enabled for tsmerge
 	outputFormat          string   // the provider output format (e.g., "prometheus")
-	tsmOptions            options.TimeSeriesMergeOptions
+	tsmOptions            options.Options
 	maxCaptureBytes       int
 	maxFanoutCaptureBytes int
 	queryParser           backends.TimeseriesBackend
@@ -94,24 +95,21 @@ type stripKeysSnapshot struct {
 	seen    map[string]struct{}
 }
 
-func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: ShortName, New: New}
-}
-
-func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
+// New constructs a time-series merge mechanism from its resolved configuration.
+func New(c Config, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
-		tsmOptions:            o.TSMOptions,
-		maxCaptureBytes:       o.MaxCaptureBytes,
-		maxFanoutCaptureBytes: o.MaxFanoutCaptureBytes,
+		tsmOptions:            c.Options,
+		maxCaptureBytes:       c.MaxCaptureBytes,
+		maxFanoutCaptureBytes: c.MaxFanoutCaptureBytes,
 	}
 	// this validates the merge configuration for the ALB client as it sets it up
 	// First, verify the output format is a support merge provider
-	if !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
+	if !providers.IsSupportedTimeSeriesMergeProvider(c.OutputFormat) {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
 
 	// next, get the factory function required to create a backend handler for the supplied format
-	f, ok := factories[o.OutputFormat]
+	f, ok := factories[c.OutputFormat]
 	if !ok {
 		return nil, errors.ErrInvalidTimeSeriesMergeProvider
 	}
@@ -133,7 +131,7 @@ func New(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {
 	}
 	// set the merge paths in the ALB client
 	out.mergePaths = mc2.MergeablePaths()
-	out.outputFormat = o.OutputFormat
+	out.outputFormat = c.OutputFormat
 	return out, nil
 }
 
@@ -305,20 +303,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
 			if duration > limit {
 				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
-				clientIP := r.Header.Get("X-Forwarded-For")
-				if clientIP == "" {
-					clientIP = r.RemoteAddr
-				}
 				logger.Warn("query rejected due to max_query_range limit",
 					logging.Pairs{
-						"backendName": rsc.BackendOptions.Name,
-						"clientIP":    clientIP,
-						"path":        r.URL.Path,
-						"statement":   trq.Statement,
-						"start":       trq.Extent.Start.String(),
-						"end":         trq.Extent.End.String(),
-						"duration":    duration.String(),
-						"limit":       limit.String(),
+						keys.BackendName: rsc.BackendOptions.Name,
+						"clientIP":       request.ClientIP(r),
+						keys.Path:        r.URL.Path,
+						"statement":      trq.Statement,
+						"start":          trq.Extent.Start.String(),
+						"end":            trq.Extent.End.String(),
+						"duration":       duration.String(),
+						"limit":          limit.String(),
 					})
 				http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
 				return
@@ -371,7 +365,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				var err error
 				plan, err = planner.PlanTSMMerge(r, query)
 				if err != nil {
-					logger.Warn("tsm merge plan construction failure", logging.Pairs{"error": err})
+					logger.Warn("tsm merge plan construction failure", logging.Pairs{keys.Error: err})
 					failures.HandleBadGateway(w, r)
 					return
 				}
@@ -382,7 +376,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := plan.Validate(); err != nil {
-		logger.Warn("invalid tsm merge plan", logging.Pairs{"error": err})
+		logger.Warn("invalid tsm merge plan", logging.Pairs{keys.Error: err})
 		failures.HandleBadGateway(w, r)
 		return
 	}
@@ -426,7 +420,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			logger.Warn("alb tsm pool has unavailable replica groups",
 				logging.Pairs{
-					"backend_name":      bn,
+					keys.BackendName:    bn,
 					"configured_groups": configuredGroups,
 					"live_groups":       liveGroups,
 				})
@@ -551,7 +545,7 @@ func prepareGatherContribution(ctx context.Context, rsc *request.Resources, body
 		ts, err = rsc.TSUnmarshaler(body, rsc.TimeRangeQuery)
 		if err != nil {
 			logger.Warn("tsm gather timeseries decode failure", logging.Pairs{
-				"member": member, "error": err,
+				keys.Member: member, keys.Error: err,
 			})
 			return nil
 		}
@@ -614,7 +608,7 @@ func mergeGatherContributions(ctx context.Context, accumulator *merge.Accumulato
 		handled, err := mergeContributionBatch(accumulator, batchMergeFunc, items)
 		if err != nil {
 			logger.Warn("tsm gather batch merge failure", logging.Pairs{
-				"members": len(items), "error": err,
+				"members": len(items), keys.Error: err,
 			})
 			failed := make([]int, len(items))
 			for i, item := range items {
@@ -637,7 +631,7 @@ func mergeGatherContributions(ctx context.Context, accumulator *merge.Accumulato
 		}
 		if err := mergeContribution(accumulator, contribution); err != nil {
 			logger.Warn("tsm gather merge failure", logging.Pairs{
-				"member": contribution.member, "error": err,
+				keys.Member: contribution.member, keys.Error: err,
 			})
 			failed = append(failed, contribution.member)
 		}
@@ -734,7 +728,7 @@ func (h *handler) serveStandard(
 					)
 					if derr != nil {
 						logger.Warn("tsm gather decode failure", logging.Pairs{
-							"member": i, "error": derr,
+							keys.Member: i, keys.Error: derr,
 						})
 						results[i].failed = true
 						return

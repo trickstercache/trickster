@@ -67,7 +67,23 @@ func New() *Options {
 
 // Equal returns true if the FrontendConfigs are identical in value.
 func (o *Options) Equal(o2 *Options) bool {
-	return *o == *o2
+	if o.ListenAddress != o2.ListenAddress ||
+		o.ListenPort != o2.ListenPort ||
+		o.TLSListenAddress != o2.TLSListenAddress ||
+		o.TLSListenPort != o2.TLSListenPort ||
+		o.ConnectionsLimit != o2.ConnectionsLimit ||
+		o.TruncateRequestBodyTooLarge != o2.TruncateRequestBodyTooLarge ||
+		o.ReadHeaderTimeout != o2.ReadHeaderTimeout ||
+		o.ServeTLS != o2.ServeTLS {
+		return false
+	}
+	if (o.MaxRequestBodySizeBytes == nil) != (o2.MaxRequestBodySizeBytes == nil) {
+		return false
+	}
+	if o.MaxRequestBodySizeBytes != nil && *o.MaxRequestBodySizeBytes != *o2.MaxRequestBodySizeBytes {
+		return false
+	}
+	return true
 }
 
 // Clone returns a clone of the Options

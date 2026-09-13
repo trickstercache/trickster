@@ -23,7 +23,7 @@
   "panels": [
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -81,7 +81,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 22,
+        "h": 10,
         "w": 12,
         "x": 0,
         "y": 0
@@ -103,39 +103,30 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "time_series",
-          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "SELECT $timeSeries as t, count() as Count FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "rawQuery": "/* grafana dashboard=ClickHouse Testing - Trips, user=1 */\nSELECT (intDiv(toUInt32(pickup_datetime), 20) * 20) * 1000 as t, count() as Coun FROM default.trips WHERE pickup_date >= toDate(1745841685) AND pickup_date <= toDate(1745863285) AND pickup_datetime >= toDateTime(1745841685) AND pickup_datetime <= toDateTime(1745863285) GROUP BY t ORDER BY t",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE) AS t, count() AS trips FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t ORDER BY t",
+          "refId": "A"
         }
       ],
-      "title": "# Trips Over Time",
-      "type": "timeseries"
+      "title": "# Trips Over Time (5m buckets)",
+      "type": "timeseries",
+      "description": "ClickHouse equivalent of the MySQL fixed 5-minute taxi panel."
     },
     {
       "datasource": {
-        "type": "vertamedia-clickhouse-datasource",
+        "type": "grafana-clickhouse-datasource",
         "uid": "${datasource}"
       },
       "fieldConfig": {
@@ -193,7 +184,7 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 22,
+        "h": 10,
         "w": 12,
         "x": 12,
         "y": 0
@@ -215,35 +206,335 @@
       "pluginVersion": "11.6.0",
       "targets": [
         {
-          "adHocFilters": [],
-          "adHocValuesQuery": "",
-          "add_metadata": true,
-          "contextWindowSize": "10",
-          "database": "default",
           "datasource": {
-            "type": "vertamedia-clickhouse-datasource",
+            "type": "grafana-clickhouse-datasource",
             "uid": "${datasource}"
           },
-          "dateColDataType": "pickup_date",
-          "dateTimeColDataType": "pickup_datetime",
-          "dateTimeType": "DATETIME",
-          "editorMode": "sql",
-          "extrapolate": true,
-          "format": "time_series",
-          "formattedQuery": "SELECT $timeSeries as t, count() FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "interval": "",
-          "intervalFactor": 1,
-          "query": "WITH sumIf(trip_id, payment_type = 'CSH') AS cash_trips, sumIf(trip_id, payment_type != 'CSH') AS non_cash_trips SELECT $timeSeries AS t, non_cash_trips / (cash_trips + non_cash_trips) * 100 AS \"Card Use Rate\" FROM $table WHERE $timeFilter GROUP BY t ORDER BY t",
-          "rawQuery": "/* grafana dashboard=ClickHouse, user=1 */\nWITH sumIf(trip_id, payment_type = 'CSH') AS cash_trips, sumIf(trip_id, payment_type != 'CSH') AS non_cash_trips SELECT (intDiv(toUInt32(pickup_datetime), 20) * 20) * 1000 AS t, non_cash_trips / (cash_trips + non_cash_trips) * 100 AS \"Card Use Rate\" FROM default.trips WHERE pickup_date >= toDate(1748204302) AND pickup_date <= toDate(1748225902) AND pickup_datetime >= toDateTime(1748204302) AND pickup_datetime <= toDateTime(1748225902) GROUP BY t ORDER BY t",
-          "refId": "A",
-          "round": "0s",
-          "skip_comments": true,
-          "table": "trips",
-          "useWindowFuncForMacros": true
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT $__timeInterval(pickup_datetime) AS t, count() AS trips FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t ORDER BY t",
+          "refId": "A"
         }
       ],
-      "title": "% Trips Paid w/ Credit Card",
-      "type": "timeseries"
+      "title": "# Trips Over Time ($__interval)",
+      "type": "timeseries",
+      "description": "ClickHouse equivalent of the MySQL dynamic-interval taxi panel."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE) AS t, avg(fare_amount) AS avg_fare, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_total FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t ORDER BY t",
+          "refId": "A"
+        }
+      ],
+      "title": "Fare Metrics (15m buckets)",
+      "type": "timeseries",
+      "description": "ClickHouse equivalent of the MySQL fare panel."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT toStartOfInterval(pickup_datetime, INTERVAL 15 MINUTE) AS t, cab_type, count() AS trips FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY t, cab_type ORDER BY t",
+          "refId": "A"
+        }
+      ],
+      "title": "Trips by Cab Type (15m buckets)",
+      "type": "timeseries",
+      "description": "ClickHouse equivalent of the MySQL cab-type panel."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.6.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${datasource}"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "meta": {
+            "builderOptions": {
+              "database": "default",
+              "table": "trips"
+            }
+          },
+          "queryType": "sql",
+          "rawSql": "SELECT pickup_ntaname AS neighborhood, count() AS trips, round(avg(trip_distance), 2) AS avg_distance_mi, round(avg(total_amount), 2) AS avg_total_usd FROM default.trips WHERE pickup_datetime >= $__fromTime AND pickup_datetime < $__toTime GROUP BY pickup_ntaname ORDER BY trips DESC LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "title": "Top Pickup Neighborhoods",
+      "type": "table",
+      "description": "ClickHouse equivalent of the MySQL pickup-neighborhood panel."
     }
   ],
   "preload": false,
@@ -255,13 +546,13 @@
       {
         "allowCustomValue": false,
         "current": {
-          "text": "clickhouse-direct",
-          "value": "P788589A3A7614F2B"
+          "text": "clickhouse-grafana-direct",
+          "value": "clickhouse-grafana-direct"
         },
         "description": "",
         "name": "datasource",
         "options": [],
-        "query": "vertamedia-clickhouse-datasource",
+        "query": "grafana-clickhouse-datasource",
         "refresh": 1,
         "regex": "",
         "type": "datasource"
@@ -269,12 +560,13 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-7d",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "ClickHouse",
   "uid": "aekapw5xl2epsc",
-  "version": 2
+  "version": 4,
+  "description": "NYC taxi trips seeded into ClickHouse with the same source-derived time shift used by MySQL."
 }

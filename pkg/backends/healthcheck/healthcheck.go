@@ -47,6 +47,21 @@ type HealthChecker interface {
 	Subscribe(chan bool)
 }
 
+// Registrar extends the health-check lifecycle with protocol-neutral target
+// registration. Status consumers can continue to depend on HealthChecker.
+type Registrar interface {
+	HealthChecker
+	RegisterProbe(name, description string, options *ho.Options, probe Probe) (*Status, error)
+}
+
+// RegistrationNotifier is implemented by health checkers that can notify
+// when the set of registered targets changes (e.g., autodiscovered ALB
+// members being added or removed at runtime), so consumers like the health
+// status page can track membership and not just status transitions
+type RegistrationNotifier interface {
+	SubscribeRegistrations(chan bool)
+}
+
 // Lookup is a map of named Target references
 type Lookup map[string]*target
 
@@ -54,11 +69,14 @@ type Lookup map[string]*target
 type StatusLookup map[string]*Status
 
 type healthChecker struct {
-	// guards targets, statuses, subscribers
+	// guards targets, statuses, subscribers, regSubscribers
 	mtx         sync.RWMutex
 	targets     Lookup
 	statuses    StatusLookup
 	subscribers []chan bool
+	// regSubscribers receive a non-blocking signal whenever the set of
+	// registered targets changes
+	regSubscribers []chan bool
 }
 
 // New returns a new HealthChecker
@@ -74,6 +92,26 @@ func (hc *healthChecker) Subscribe(ch chan bool) {
 	hc.mtx.Lock()
 	hc.subscribers = append(hc.subscribers, ch)
 	hc.mtx.Unlock()
+}
+
+// SubscribeRegistrations registers a channel signaled (non-blocking) each
+// time a target is registered or unregistered
+func (hc *healthChecker) SubscribeRegistrations(ch chan bool) {
+	hc.mtx.Lock()
+	hc.regSubscribers = append(hc.regSubscribers, ch)
+	hc.mtx.Unlock()
+}
+
+func (hc *healthChecker) notifyRegistrations() {
+	hc.mtx.RLock()
+	subs := slices.Clone(hc.regSubscribers)
+	hc.mtx.RUnlock()
+	for _, ch := range subs {
+		select {
+		case ch <- true:
+		default:
+		}
+	}
 }
 
 func (hc *healthChecker) Shutdown() {
@@ -105,18 +143,33 @@ func (hc *healthChecker) Register(name, description string, o *ho.Options,
 	if err != nil {
 		return nil, err
 	}
+	return hc.registerTarget(t), nil
+}
+
+func (hc *healthChecker) RegisterProbe(name, description string, o *ho.Options,
+	probe Probe,
+) (*Status, error) {
+	t, err := newProbeTarget(name, description, o, probe)
+	if err != nil {
+		return nil, err
+	}
+	return hc.registerTarget(t), nil
+}
+
+func (hc *healthChecker) registerTarget(t *target) *Status {
 	hc.mtx.Lock()
-	if t2, ok := hc.targets[name]; ok && t2 != nil {
+	if t2, ok := hc.targets[t.name]; ok && t2 != nil {
 		// synchronous stop so the old probe loop exits before the new one starts
 		t2.Stop()
 	}
 	hc.targets[t.name] = t
 	hc.statuses[t.name] = t.status
 	hc.mtx.Unlock()
+	hc.notifyRegistrations()
 	if t.interval > 0 {
 		t.Start(context.Background())
 	}
-	return t.status, nil
+	return t.status
 }
 
 func (hc *healthChecker) RegisterVirtual(name, description string) *Status {
@@ -124,7 +177,22 @@ func (hc *healthChecker) RegisterVirtual(name, description string) *Status {
 	hc.mtx.Lock()
 	hc.statuses[name] = s
 	hc.mtx.Unlock()
+	hc.notifyRegistrations()
 	return s
+}
+
+// RegisterExternal records a caller-managed Status (e.g., one driven by a
+// discovery provider's readiness reporting) so it surfaces in the health
+// page and status lookups. The caller owns status transitions; no probe is
+// started. Remove it with Unregister.
+func (hc *healthChecker) RegisterExternal(name, description string, s *Status) {
+	if name == "" || s == nil {
+		return
+	}
+	hc.mtx.Lock()
+	hc.statuses[name] = s
+	hc.mtx.Unlock()
+	hc.notifyRegistrations()
 }
 
 func (hc *healthChecker) Unregister(name string) {
@@ -132,14 +200,18 @@ func (hc *healthChecker) Unregister(name string) {
 		return
 	}
 	hc.mtx.Lock()
-	t, ok := hc.targets[name]
-	if ok && t != nil {
-		delete(hc.targets, t.name)
-		delete(hc.statuses, t.name)
-	}
+	t, hadTarget := hc.targets[name]
+	_, hadStatus := hc.statuses[name]
+	delete(hc.targets, name)
+	// virtual and external registrations have a status but no target;
+	// remove the status entry unconditionally so they don't linger
+	delete(hc.statuses, name)
 	hc.mtx.Unlock()
-	if ok && t != nil {
+	if hadTarget && t != nil {
 		t.Stop()
+	}
+	if hadTarget || hadStatus {
+		hc.notifyRegistrations()
 	}
 }
 

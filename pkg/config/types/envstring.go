@@ -19,7 +19,7 @@ package types
 import (
 	"os"
 
-	"gopkg.in/yaml.v2"
+	"go.yaml.in/yaml/v3"
 )
 
 // EnvString is a string that should automatically have any environment variable references

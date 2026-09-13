@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -67,6 +68,44 @@ func (b *configBackend) Configuration() *bo.Options { return b.cfg }
 func fixedNow() func() time.Time {
 	tm := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	return func() time.Time { return tm }
+}
+
+// flipOnSecondRead fails its status on the builder's second read of the statuses, the moment a
+// builder that builds before subscribing has read them but not yet subscribed
+type flipOnSecondRead struct {
+	stubHealthChecker
+	reads atomic.Int32
+	st    *healthcheck.Status
+}
+
+func (f *flipOnSecondRead) Statuses() healthcheck.StatusLookup {
+	if f.reads.Add(1) == 2 {
+		f.st.Set(healthcheck.StatusFailing)
+	}
+	return f.statuses
+}
+
+func TestStatusHandlerSeesChangeDuringStartup(t *testing.T) {
+	st := healthcheck.NewStatus("backend", providers.Prometheus, "",
+		healthcheck.StatusInitializing, time.Time{}, nil)
+	hc := &flipOnSecondRead{st: st}
+	hc.statuses = healthcheck.StatusLookup{"backend": st}
+	handler := StatusHandler(time.Now, hc, nil)
+	defer hc.Shutdown()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set(headers.NameAccept, headers.ValueApplicationJSON)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if strings.Contains(w.Body.String(), `"unavailable":[{"name":"backend"`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a status change during startup never reached the page: %s", w.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestStatusHandlerNilHealthChecker(t *testing.T) {
@@ -147,7 +186,7 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	albOpts.Provider = providers.ALB
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
-	albOpts.ALBOptions.Pool = []string{"member-up", "member-down", "member-nc", "member-init"}
+	albOpts.ALBOptions.Pool = ao.Members("member-up", "member-down", "member-nc", "member-init")
 
 	albClient, err := alb.NewClient("edge", albOpts, nil, nil, nil, nil)
 	if err != nil {
@@ -382,7 +421,7 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	albOpts.Provider = providers.ALB
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
-	albOpts.ALBOptions.Pool = []string{"down-only", "down-only"}
+	albOpts.ALBOptions.Pool = ao.Members("down-only", "down-only")
 
 	downOnly := healthcheck.NewStatus("down-only", providers.Prometheus, "", healthcheck.StatusFailing, now().Add(-time.Minute), nil)
 
@@ -396,7 +435,7 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	albMissingOpts.Provider = providers.ALB
 	albMissingOpts.ALBOptions = ao.New()
 	albMissingOpts.ALBOptions.MechanismName = names.MechanismRR
-	albMissingOpts.ALBOptions.Pool = []string{"missing-member"}
+	albMissingOpts.ALBOptions.Pool = ao.Members("missing-member")
 	albMissingClient, err := alb.NewClient("missing-edge", albMissingOpts, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("NewClient missing-edge: %v", err)

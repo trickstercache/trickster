@@ -20,13 +20,18 @@ package clickhouse
 import (
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
+	chnative "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -39,6 +44,7 @@ var _ backends.TimeseriesBackend = (*Client)(nil)
 // Client Implements the Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
+	nativeClient *chnative.NativeClient
 }
 
 var _ types.NewBackendClientFunc = NewClient
@@ -54,7 +60,24 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	c := &Client{}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router, cache, modelch.NewModeler())
 	c.TimeseriesBackend = b
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	if o != nil {
+		if err := chnative.ValidateOptions(o); err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(o.Protocol, "native") {
+			nc, err := chnative.NewNativeClient(o)
+			if err != nil {
+				return nil, err
+			}
+			c.nativeClient = nc
+			c.HTTPClient().Transport = nc
+			c.HealthCheckHTTPClient().Transport = nc
+		}
+	}
+	return c, nil
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -82,6 +105,22 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq, ro, canOPC, err := parse(sqlQuery, c.observeAnalysis)
 	if err != nil {
 		return trq, ro, canOPC, err
+	}
+	if ro != nil && r.URL != nil {
+		plan, _ := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+		output, err := aftership.ResolveOutputFormat(plan, r.URL.Query().Get("default_format"))
+		if err != nil {
+			return trq, ro, true, err
+		}
+		ro.OutputFormat = output
+	}
+	if ro != nil && ro.OutputFormat == modelch.OutputFormatNative {
+		raw := r.URL.Query().Get("client_protocol_version")
+		revision, err := strconv.ParseUint(raw, 10, 64)
+		if raw != "" && err != nil {
+			return trq, ro, true, ErrUnsupportedOutputFormat
+		}
+		ro.ProviderRequest = modelch.NativeFormatOptions{Revision: revision}
 	}
 	if isBody && trq != nil {
 		trq.OriginalBody = originalBody
