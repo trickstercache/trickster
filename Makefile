@@ -621,7 +621,7 @@ kind-conformance-docker:
 	@tmp=$$(mktemp -d) && kind get kubeconfig --internal --name $(KIND_CLUSTER) > $$tmp/config && \
 	docker run --rm --network kind -v $$tmp:/kube:ro -v $(CURDIR):/src -w /src/integration/conformance \
 		-v trickster-conformance-gomod:/go/pkg/mod -v trickster-conformance-gocache:/root/.cache/go-build \
-		-e KUBECONFIG=/kube/config -e TRICKSTER_KIND_TEST=1 golang:1.26 \
+		-e KUBECONFIG=/kube/config -e TRICKSTER_KIND_TEST=1 golang:1.27 \
 		go test $(CONFORMANCE_TEST_ARGS) -report-output=/src/$(CONFORMANCE_REPORT)
 
 .PHONY: kind-integration-stop

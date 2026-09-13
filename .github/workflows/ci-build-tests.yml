@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go: [1.26]
+        go: [1.27]
 
     steps:
       - uses: actions/checkout@v6
