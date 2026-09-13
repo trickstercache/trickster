@@ -121,7 +121,8 @@ func TestIntervalAndTimeoutHonorConfiguration(t *testing.T) {
 // carrying only some of them is not a match.
 func TestECSHasAllTags(t *testing.T) {
 	tk := &ecsTask{Tags: []ecsTag{
-		{Key: "role", Value: "prom"}, {Key: "env", Value: "prod"}}}
+		{Key: "role", Value: "prom"}, {Key: "env", Value: "prod"},
+	}}
 
 	require.True(t, tk.hasAllTags(nil), "no required tags matches everything")
 	require.True(t, tk.hasAllTags([]string{"role"}))

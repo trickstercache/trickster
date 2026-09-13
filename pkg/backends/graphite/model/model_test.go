@@ -46,8 +46,10 @@ const (
 )
 
 func trq(step time.Duration) *timeseries.TimeRangeQuery {
-	return &timeseries.TimeRangeQuery{Statement: "x", Step: step,
-		Extent: timeseries.Extent{Start: time.Unix(1787349960, 0), End: time.Unix(1787350000, 0)}}
+	return &timeseries.TimeRangeQuery{
+		Statement: "x", Step: step,
+		Extent: timeseries.Extent{Start: time.Unix(1787349960, 0), End: time.Unix(1787350000, 0)},
+	}
 }
 
 func mustUnmarshal(t *testing.T, body string, step time.Duration) *dataset.DataSet {
@@ -116,8 +118,10 @@ func TestUnmarshalJSON(t *testing.T) {
 	if len(ds.Results[0].SeriesList) != 0 {
 		t.Error("empty array must yield no series")
 	}
-	for _, bad := range []string{"[{", `[{"target":"a","datapoints":[[1, null]]}]`,
-		`[{"target":"a","datapoints":[[1, 200],[2, 100]]}]`, `[{"target":"a","datapoints":[[1, 100],[2, 100]]}]`} {
+	for _, bad := range []string{
+		"[{", `[{"target":"a","datapoints":[[1, null]]}]`,
+		`[{"target":"a","datapoints":[[1, 200],[2, 100]]}]`, `[{"target":"a","datapoints":[[1, 100],[2, 100]]}]`,
+	} {
 		if _, err := UnmarshalTimeseries([]byte(bad), trq(0)); err == nil {
 			t.Errorf("%s: expected an error", bad)
 		}
@@ -312,8 +316,10 @@ func TestConsolidation(t *testing.T) {
 	bit := func(b []uint64, i int) bool { return b[i>>6]&(1<<(uint(i)&63)) != 0 }
 	vals := []float64{1, 4, 0, 2}
 	okv := []bool{true, true, false, true}
-	for cf, want := range map[string]float64{"sum": 7, "average": 7.0 / 3, "avg": 7.0 / 3, "max": 4, "min": 1,
-		"first": 1, "last": 2, "avg_zero": 7.0 / 4} {
+	for cf, want := range map[string]float64{
+		"sum": 7, "average": 7.0 / 3, "avg": 7.0 / 3, "max": 4, "min": 1,
+		"first": 1, "last": 2, "avg_zero": 7.0 / 4,
+	} {
 		out, ok := mkSeries(vals, okv, 4).consolidate(cf, 0)
 		if len(out) != 1 || !bit(ok, 0) || math.Abs(out[0]-want) > 1e-12 {
 			t.Errorf("%s: got %v %v want %v", cf, out, ok, want)

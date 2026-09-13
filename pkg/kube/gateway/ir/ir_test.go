@@ -48,15 +48,19 @@ func sample(shuffled bool) *IR {
 		Name: "g1", Source: route.Source,
 		Members: []BackendMember{
 			{RefIndex: 0, Weight: 3, Service: ServiceTarget{
-				Namespace: "shop", Name: "web", Port: 80}},
+				Namespace: "shop", Name: "web", Port: 80,
+			}},
 			{RefIndex: 1, Weight: 1, Service: ServiceTarget{
-				Namespace: "shop", Name: "canary", Port: 80}},
+				Namespace: "shop", Name: "canary", Port: 80,
+			}},
 		},
 	}
 	listeners := []Listener{
 		{Name: "l-80", Port: 80, Protocol: ProtocolHTTP, Source: src("Gateway", "infra", "gw")},
-		{Name: "l-443", Port: 443, Protocol: ProtocolHTTPS,
-			CertRefs: []string{"c1", "c2"}, Source: src("Gateway", "infra", "gw")},
+		{
+			Name: "l-443", Port: 443, Protocol: ProtocolHTTPS,
+			CertRefs: []string{"c1", "c2"}, Source: src("Gateway", "infra", "gw"),
+		},
 	}
 	certs := []CertRef{
 		{Name: "c1", Namespace: "infra", SecretName: "a-tls", Source: src("Gateway", "infra", "gw")},
@@ -119,19 +123,25 @@ func TestHashChangesWithContent(t *testing.T) {
 		"cert secret":  func(i *IR) { i.Certs[0].SecretName = "other-tls" },
 		"policy":       func(i *IR) { i.Policies = []Policy{{Name: "p", CacheName: "c"}} },
 		"rule filter": func(i *IR) {
-			i.Routes[0].Rules[0].Filters = []Filter{{Type: FilterRequestHeaders,
-				RequestHeaders: &HeaderFilter{Set: []Header{{Name: "X-A", Value: "1"}}}}}
+			i.Routes[0].Rules[0].Filters = []Filter{{
+				Type:           FilterRequestHeaders,
+				RequestHeaders: &HeaderFilter{Set: []Header{{Name: "X-A", Value: "1"}}},
+			}}
 		},
 		"member filter": func(i *IR) {
-			i.Backends[0].Members[0].Filters = []Filter{{Type: FilterURLRewrite,
-				URLRewrite: &URLRewriteFilter{Hostname: "x.internal"}}}
+			i.Backends[0].Members[0].Filters = []Filter{{
+				Type:       FilterURLRewrite,
+				URLRewrite: &URLRewriteFilter{Hostname: "x.internal"},
+			}}
 		},
 		"member tls": func(i *IR) {
 			i.Backends[0].Members[0].TLS = &BackendTLS{Hostname: "x.internal", System: true}
 		},
 		"member tls ca": func(i *IR) {
-			i.Backends[0].Members[0].TLS = &BackendTLS{Hostname: "x.internal",
-				CACertificates: []string{"pem"}}
+			i.Backends[0].Members[0].TLS = &BackendTLS{
+				Hostname:       "x.internal",
+				CACertificates: []string{"pem"},
+			}
 		},
 		"rule order": func(i *IR) {
 			i.Routes[0].Rules = append(i.Routes[0].Rules,
@@ -184,12 +194,17 @@ func TestCanonicalClonesFiltersAndTLS(t *testing.T) {
 	m.Routes[0].Rules[0].Filters = []Filter{
 		{Type: FilterRequestHeaders, RequestHeaders: &HeaderFilter{
 			Set: []Header{{Name: "X-A", Value: "1"}}, Add: []Header{{Name: "X-B", Value: "2"}},
-			Remove: []string{"X-C"}}},
+			Remove: []string{"X-C"},
+		}},
 		{Type: FilterResponseHeaders, ResponseHeaders: &HeaderFilter{Remove: []string{"Server"}}},
-		{Type: FilterRedirect, Redirect: &RedirectFilter{Scheme: "https",
-			Path: &PathModifier{Type: PathReplaceFull, Value: "/x"}, StatusCode: 301}},
-		{Type: FilterURLRewrite, URLRewrite: &URLRewriteFilter{Hostname: "h",
-			Path: &PathModifier{Type: PathReplacePrefix, Value: "/y"}}},
+		{Type: FilterRedirect, Redirect: &RedirectFilter{
+			Scheme: "https",
+			Path:   &PathModifier{Type: PathReplaceFull, Value: "/x"}, StatusCode: 301,
+		}},
+		{Type: FilterURLRewrite, URLRewrite: &URLRewriteFilter{
+			Hostname: "h",
+			Path:     &PathModifier{Type: PathReplacePrefix, Value: "/y"},
+		}},
 	}
 	m.Backends[0].Members[0].TLS = &BackendTLS{Hostname: "h", CACertificates: []string{"a"}}
 	c := m.Canonical()
@@ -289,7 +304,8 @@ func TestCanonicalSortsRepeatedHeaderNamesByValue(t *testing.T) {
 			Matches: []Match{{
 				Path: PathMatch{Type: PathPrefix, Value: "/"},
 				Headers: []KeyValueMatch{
-					{Name: "x", Value: first}, {Name: "x", Value: second}},
+					{Name: "x", Value: first}, {Name: "x", Value: second},
+				},
 			}},
 		}}}}}
 	}
@@ -329,8 +345,10 @@ func TestCloneIsDeep(t *testing.T) {
 	require.Equal(t, Filter{Type: FilterRedirect}, Filter{Type: FilterRedirect}.Clone())
 	require.Nil(t, CloneFilters(nil))
 
-	p := Policy{Name: "p", RequestHeaders: map[string]string{"X-A": "1"},
-		ResponseHeaders: map[string]string{"X-B": "2"}, CORSHeaders: map[string]string{"X-C": "3"}}
+	p := Policy{
+		Name: "p", RequestHeaders: map[string]string{"X-A": "1"},
+		ResponseHeaders: map[string]string{"X-B": "2"}, CORSHeaders: map[string]string{"X-C": "3"},
+	}
 	pc := p.Clone()
 	require.Equal(t, p, pc)
 	pc.RequestHeaders["X-A"], pc.ResponseHeaders["X-B"], pc.CORSHeaders["X-C"] = "x", "x", "x"

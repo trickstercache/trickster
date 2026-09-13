@@ -90,10 +90,14 @@ func TestGroupedRoundTripPreservesTags(t *testing.T) {
 		format byte
 		want   []string
 	}{
-		{"json", iofmt.V3OutputJSON,
-			[]string{`{"time":"2024-01-01T00:00:00","host":"a","usage":1}`, `"host":"b"`}},
-		{"jsonl", iofmt.V3OutputJSONL,
-			[]string{`{"time":"2024-01-01T00:00:00","host":"a","usage":1}`}},
+		{
+			"json", iofmt.V3OutputJSON,
+			[]string{`{"time":"2024-01-01T00:00:00","host":"a","usage":1}`, `"host":"b"`},
+		},
+		{
+			"jsonl", iofmt.V3OutputJSONL,
+			[]string{`{"time":"2024-01-01T00:00:00","host":"a","usage":1}`},
+		},
 		{"csv", iofmt.V3OutputCSV, []string{"time,host,usage", "2024-01-01T00:00:00,a,1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -115,8 +119,10 @@ func TestGroupedRoundTripPreservesTags(t *testing.T) {
 // round trip instead of being alphabetized or randomized.
 func TestColumnOrderPreserved(t *testing.T) {
 	body := `[{"time":"2024-01-01T00:00:00Z","zeta":1,"alpha":2,"mid":3}]`
-	trq := &timeseries.TimeRangeQuery{Statement: "test",
-		TimestampDefinition: timeseries.FieldDefinition{Name: "time"}}
+	trq := &timeseries.TimeRangeQuery{
+		Statement:           "test",
+		TimestampDefinition: timeseries.FieldDefinition{Name: "time"},
+	}
 	ts, err := UnmarshalTimeseries([]byte(body), trq)
 	if err != nil {
 		t.Fatal(err)
@@ -132,8 +138,10 @@ func TestColumnOrderPreserved(t *testing.T) {
 }
 
 func TestTypeFidelity(t *testing.T) {
-	trq := &timeseries.TimeRangeQuery{Statement: "test",
-		TimestampDefinition: timeseries.FieldDefinition{Name: "time"}}
+	trq := &timeseries.TimeRangeQuery{
+		Statement:           "test",
+		TimestampDefinition: timeseries.FieldDefinition{Name: "time"},
+	}
 
 	t.Run("json integers stay integers", func(t *testing.T) {
 		body := `[{"time":"2024-01-01T00:00:00Z","count":9007199254740993,"ratio":1.5}]`
@@ -193,8 +201,10 @@ func TestTypeFidelity(t *testing.T) {
 }
 
 func TestUnmarshalRobustness(t *testing.T) {
-	trq := &timeseries.TimeRangeQuery{Statement: "test",
-		TimestampDefinition: timeseries.FieldDefinition{Name: "time"}}
+	trq := &timeseries.TimeRangeQuery{
+		Statement:           "test",
+		TimestampDefinition: timeseries.FieldDefinition{Name: "time"},
+	}
 
 	t.Run("header-only csv is an empty result", func(t *testing.T) {
 		ts, err := UnmarshalTimeseries([]byte("time,v\n"), trq)

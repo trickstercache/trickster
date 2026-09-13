@@ -76,8 +76,10 @@ func TestDoUpstreamRetriesStatusAndErrors(t *testing.T) {
 		case 1:
 			return nil, errors.New("connection refused")
 		case 2:
-			return &http.Response{StatusCode: http.StatusBadGateway,
-				Body: io.NopCloser(strings.NewReader("bad"))}, nil
+			return &http.Response{
+				StatusCode: http.StatusBadGateway,
+				Body:       io.NopCloser(strings.NewReader("bad")),
+			}, nil
 		}
 		return okResponse("ok"), nil
 	}

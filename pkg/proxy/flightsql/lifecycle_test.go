@@ -43,8 +43,7 @@ func TestReapIdlePrepared(t *testing.T) {
 
 	// age the first handle past the idle cutoff
 	srv.paramMu.Lock()
-	srv.prepared[string(stale.Handle)].lastAccess =
-		time.Now().Add(-2 * DefaultPreparedIdleTTL)
+	srv.prepared[string(stale.Handle)].lastAccess = time.Now().Add(-2 * DefaultPreparedIdleTTL)
 	srv.paramMu.Unlock()
 
 	if n := srv.ReapIdlePrepared(context.Background(), DefaultPreparedIdleTTL); n != 1 {

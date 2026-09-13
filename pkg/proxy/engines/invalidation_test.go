@@ -41,15 +41,19 @@ func TestInvalidateTargetURICoversEveryCacheableMethod(t *testing.T) {
 }
 
 func TestIsStateChangingCoversUnsafeMethods(t *testing.T) {
-	changing := []string{http.MethodPost, http.MethodPut, http.MethodDelete,
-		http.MethodPatch, "MECONE-UPDATE"}
+	changing := []string{
+		http.MethodPost, http.MethodPut, http.MethodDelete,
+		http.MethodPatch, "MECONE-UPDATE",
+	}
 	for _, m := range changing {
 		if !methods.IsStateChanging(m) {
 			t.Errorf("expected %s to be state-changing", m)
 		}
 	}
-	safe := []string{http.MethodGet, http.MethodHead, http.MethodOptions,
-		http.MethodTrace, http.MethodConnect, methods.MethodPurge}
+	safe := []string{
+		http.MethodGet, http.MethodHead, http.MethodOptions,
+		http.MethodTrace, http.MethodConnect, methods.MethodPurge,
+	}
 	for _, m := range safe {
 		if methods.IsStateChanging(m) {
 			t.Errorf("expected %s not to be state-changing", m)

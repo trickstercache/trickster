@@ -96,8 +96,10 @@ func newDiscoveryFixture(t *testing.T, discoverer *do.Options,
 // kubernetes with in_cluster outside a cluster cannot construct: the
 // canonical "discoverer unavailable at startup" condition
 func unavailableDiscoverer() *do.Options {
-	return &do.Options{Provider: dp.Kubernetes,
-		Kubernetes: &kubeopts.Options{InCluster: true}}
+	return &do.Options{
+		Provider:   dp.Kubernetes,
+		Kubernetes: &kubeopts.Options{InCluster: true},
+	}
 }
 
 func TestApplyDiscoveryStartupPolicyFail(t *testing.T) {
@@ -137,9 +139,13 @@ users:
 - name: dead
   user: {token: not-a-real-token}
 `), 0o600))
-	return &do.Options{Provider: dp.Kubernetes,
-		Kubernetes: &kubeopts.Options{Kubeconfig: path,
-			Timeout: timeconv.Duration(2 * time.Second)}}
+	return &do.Options{
+		Provider: dp.Kubernetes,
+		Kubernetes: &kubeopts.Options{
+			Kubeconfig: path,
+			Timeout:    timeconv.Duration(2 * time.Second),
+		},
+	}
 }
 
 // Informers are lazy, so a discoverer over an unreachable API server starts
@@ -194,7 +200,8 @@ func TestApplyDiscoveryReloadSeedsMembership(t *testing.T) {
 
 	// simulate a previously-discovered membership on the outgoing manager
 	si.PoolManagers["alb1"].ApplySnapshot(discovery.Snapshot{
-		{Name: "m1", Scheme: "http", Address: "10.0.0.1:9090"}})
+		{Name: "m1", Scheme: "http", Address: "10.0.0.1:9090"},
+	})
 	require.Len(t, si.PoolManagers["alb1"].MemberNames(), 1)
 	si.Config = c
 
@@ -210,7 +217,8 @@ func TestApplyDiscoveryReloadSeedsMembership(t *testing.T) {
 	c2 := config.NewConfig()
 	*c2 = *c
 	c2.Backends = map[string]*bo.Options{
-		"tmpl": c.Backends["tmpl"], "alb1": c.Backends["alb1"].Clone()}
+		"tmpl": c.Backends["tmpl"], "alb1": c.Backends["alb1"].Clone(),
+	}
 	c2.Backends["alb1"].ALBOptions.Discovery.MinMembers = 3
 	cl2, err := alb.NewClient("alb1", c2.Backends["alb1"], nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -360,7 +368,8 @@ func TestApplyDiscoveryStopsSeededManagerOnSubscribeFailure(t *testing.T) {
 	tmpl := c.Backends["tmpl"]
 	tmpl.HealthCheck = &ho.Options{
 		Interval: timeconv.Duration(time.Hour),
-		Timeout:  timeconv.Duration(10 * time.Millisecond)}
+		Timeout:  timeconv.Duration(10 * time.Millisecond),
+	}
 
 	// stand up the previous instance's manager by hand, with an applied
 	// membership. A prior apply cannot produce this state, because the same
@@ -377,7 +386,8 @@ func TestApplyDiscoveryStopsSeededManagerOnSubscribeFailure(t *testing.T) {
 	})
 	t.Cleanup(prev.Stop)
 	prev.ApplySnapshot(discovery.Snapshot{
-		{Name: "m1", Scheme: "http", Address: "10.0.0.1:9090"}})
+		{Name: "m1", Scheme: "http", Address: "10.0.0.1:9090"},
+	})
 	require.Equal(t, []string{"alb1-m1"}, prev.MemberNames())
 	require.Contains(t, si.HealthChecker.Statuses(), "alb1-m1")
 	si.PoolManagers = map[string]*dynamic.Manager{"alb1": prev}

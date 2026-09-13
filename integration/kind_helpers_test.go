@@ -63,7 +63,8 @@ func skipUnlessKind(t *testing.T) {
 // safe to call from a goroutine, since it fails nothing
 func kubectlTry(stdin string, args ...string) (string, error) {
 	cmd := exec.Command("kubectl", append([]string{
-		"--context", kindContext, "-n", kindNamespace}, args...)...)
+		"--context", kindContext, "-n", kindNamespace,
+	}, args...)...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}

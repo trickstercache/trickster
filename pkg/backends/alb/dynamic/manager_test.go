@@ -76,7 +76,8 @@ func member(name, addr string) discovery.Member {
 
 func TestManagerAddAndRemoveMembers(t *testing.T) {
 	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 
 	m.ApplySnapshot(discovery.Snapshot{
 		member("m1", "10.0.0.1:8080"),
@@ -108,7 +109,8 @@ func TestManagerAddAndRemoveMembers(t *testing.T) {
 
 func TestManagerMinMembersGuardrail(t *testing.T) {
 	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template", MinMembers: 2})
+		DiscovererName: "d", TemplateBackend: "rp-template", MinMembers: 2,
+	})
 
 	full := discovery.Snapshot{
 		member("m1", "10.0.0.1:8080"),
@@ -134,7 +136,8 @@ func TestManagerMinMembersGuardrail(t *testing.T) {
 func TestManagerDebounce(t *testing.T) {
 	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
 		DiscovererName: "d", TemplateBackend: "rp-template",
-		DebounceWindow: timeconv.Duration(50 * time.Millisecond)})
+		DebounceWindow: timeconv.Duration(50 * time.Millisecond),
+	})
 
 	// the first snapshot applies immediately (leading edge)
 	m.ApplySnapshot(discovery.Snapshot{member("m1", "10.0.0.1:8080")})
@@ -154,7 +157,8 @@ func TestManagerDebounce(t *testing.T) {
 func TestManagerProviderHealthMode(t *testing.T) {
 	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
 		DiscovererName: "d", TemplateBackend: "rp-template",
-		HealthMode: ao.HealthModeProvider})
+		HealthMode: ao.HealthModeProvider,
+	})
 
 	mem := member("m1", "10.0.0.1:8080")
 	mem.Ready = discovery.Ready
@@ -175,7 +179,8 @@ func TestManagerProviderHealthMode(t *testing.T) {
 
 func TestManagerInstantiationFailureRetries(t *testing.T) {
 	m, c, _ := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	m.cfg.Template.IsTemplate = false // sabotage instantiation
 
 	s := discovery.Snapshot{member("m1", "10.0.0.1:8080")}
@@ -192,7 +197,8 @@ func TestManagerInstantiationFailureRetries(t *testing.T) {
 
 func TestManagerReplicaGroupChangeRebuildsMember(t *testing.T) {
 	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "prom-template"})
+		DiscovererName: "d", TemplateBackend: "prom-template",
+	})
 	// per-member replica groups require a TSM-capable template
 	m.cfg.Template = newPromTemplate(t)
 	m.cfg.Caches = cache.Lookup{"default": nil}
@@ -250,7 +256,8 @@ func probedTemplate(m *Manager) {
 // same signal, so waiting for a probe leaves the pool empty meanwhile
 func TestManagerProbeModeAdmitsProviderReadyMembers(t *testing.T) {
 	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	probedTemplate(m)
 	// the probe itself cannot admit anyone: it expects a code the upstream
 	// never returns, so only provider readiness can open the pool
@@ -294,7 +301,8 @@ func TestManagerProbeModeAdmitsProviderReadyMembers(t *testing.T) {
 // is still pending, but never overrides a verdict the probe has reached
 func TestManagerProbeModeReadinessFlipAdmitsPendingMembersOnly(t *testing.T) {
 	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	probedTemplate(m)
 
 	pending := member("pending", "10.0.0.1:8080")
@@ -325,7 +333,8 @@ func TestManagerProbeModeReadinessFlipAdmitsPendingMembersOnly(t *testing.T) {
 // invent one
 func TestManagerProbeModeReadinessWithoutProbe(t *testing.T) {
 	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	m.cfg.Template.HealthCheck = nil
 
 	mem := member("m1", "10.0.0.1:8080")

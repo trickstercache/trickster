@@ -34,8 +34,10 @@ func TestParseTargetCanonical(t *testing.T) {
 		{"sumSeries (a.b)", "sumSeries(a.b)"},
 		{"aliasByNode(dev.fast.requests.*.count, 3)", "aliasByNode(dev.fast.requests.*.count, 3)"},
 		{`alias(sumSeries(dev.fast.requests.*.count), "total")`, "alias(sumSeries(dev.fast.requests.*.count), 'total')"},
-		{`aliasSub(aliasByNode(dev.fast.latency.*.p99, 3), "(^.*$)", "\1 A")`,
-			`aliasSub(aliasByNode(dev.fast.latency.*.p99, 3), '(^.*$)', '\1 A')`},
+		{
+			`aliasSub(aliasByNode(dev.fast.latency.*.p99, 3), "(^.*$)", "\1 A")`,
+			`aliasSub(aliasByNode(dev.fast.latency.*.p99, 3), '(^.*$)', '\1 A')`,
+		},
 		{`alias(a.b, "it's")`, `alias(a.b, "it's")`},
 		{`alias(a.b, 'say "hi"')`, `alias(a.b, 'say "hi"')`},
 		{`alias(a.b, 'both \' and "')`, `alias(a.b, 'both \' and "')`},
@@ -213,9 +215,11 @@ func TestParseTargetAST(t *testing.T) {
 }
 
 func FuzzParseTarget(f *testing.F) {
-	for _, s := range []string{"a.b.c", "sumSeries(a.b, a.c)", `aliasSub(a.b, "(^.*$)", "\1 A")`,
+	for _, s := range []string{
+		"a.b.c", "sumSeries(a.b, a.c)", `aliasSub(a.b, "(^.*$)", "\1 A")`,
 		"a.b | sumSeries() | alias('x')", "a.{b,c}.*", `a\.b`, "summarize(a.b, 1h, sum, alignToFrom=true)",
-		"template(a.$1, 'x')", "f(", ")", "{", "\"", "'", "|", "f(a.b, -1.5e3)"} {
+		"template(a.$1, 'x')", "f(", ")", "{", "\"", "'", "|", "f(a.b, -1.5e3)",
+	} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, s string) {

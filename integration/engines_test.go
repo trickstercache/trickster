@@ -154,8 +154,10 @@ func doEngineRangeBurst(t *testing.T, f *engineFixture, params url.Values, n int
 			}
 			defer resp.Body.Close()
 			body, err := io.ReadAll(resp.Body)
-			results <- engineResult{status: resp.StatusCode, body: body,
-				header: resp.Header.Clone(), err: err}
+			results <- engineResult{
+				status: resp.StatusCode, body: body,
+				header: resp.Header.Clone(), err: err,
+			}
 		}()
 	}
 	close(start)

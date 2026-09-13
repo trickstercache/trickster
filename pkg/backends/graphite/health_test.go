@@ -125,21 +125,31 @@ func TestFinalizeHealthCheckOptionsCasingCollisions(t *testing.T) {
 		headers    map[string]string
 		expected   []string
 	}{
-		{"canonical empty beats lowercase credential", "Bearer tok",
+		{
+			"canonical empty beats lowercase credential", "Bearer tok",
 			map[string]string{headers.NameAuthorization: "", strings.ToLower(headers.NameAuthorization): "Basic alternate"},
-			nil},
-		{"canonical credential beats lowercase empty", "Bearer tok",
+			nil,
+		},
+		{
+			"canonical credential beats lowercase empty", "Bearer tok",
 			map[string]string{headers.NameAuthorization: "Basic primary", strings.ToLower(headers.NameAuthorization): ""},
-			[]string{"Basic primary"}},
-		{"two non-canonical credentials pick the first sorted key", "Bearer tok",
+			[]string{"Basic primary"},
+		},
+		{
+			"two non-canonical credentials pick the first sorted key", "Bearer tok",
 			map[string]string{"AUTHORIZATION": "Basic upper", strings.ToLower(headers.NameAuthorization): "Basic lower"},
-			[]string{"Basic upper"}},
-		{"collisions collapse without an origin credential too", "",
+			[]string{"Basic upper"},
+		},
+		{
+			"collisions collapse without an origin credential too", "",
 			map[string]string{headers.NameAuthorization: "Basic primary", strings.ToLower(headers.NameAuthorization): "Basic alternate"},
-			[]string{"Basic primary"}},
-		{"empty winner without a credential stays a present empty header", "",
+			[]string{"Basic primary"},
+		},
+		{
+			"empty winner without a credential stays a present empty header", "",
 			map[string]string{"AUTHORIZATION": "", strings.ToLower(headers.NameAuthorization): "Basic lower"},
-			[]string{""}},
+			[]string{""},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

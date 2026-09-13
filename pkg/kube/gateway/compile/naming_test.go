@@ -80,8 +80,12 @@ func TestNamesDistinguishKind(t *testing.T) {
 func TestNamesAreInjective(t *testing.T) {
 	kinds := []string{"HTTPRoute", "Ingress"}
 	objects := [][2]string{
-		{"a-b", "c"}, {"a", "b-c"}, {"shop", "web"},
-		{"shop", "web-r0"}, {"shop", "web-r0-b0"}, {"shop", "web-b0"},
+		{"a-b", "c"},
+		{"a", "b-c"},
+		{"shop", "web"},
+		{"shop", "web-r0"},
+		{"shop", "web-r0-b0"},
+		{"shop", "web-b0"},
 		{"shop", "web.r0"},
 	}
 	indices := []int{0, 1, 10}

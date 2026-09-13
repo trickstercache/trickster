@@ -195,7 +195,8 @@ func TestNewRequiresService(t *testing.T) {
 // private service endpoint or a test double.
 func TestEndpointDefaultAndOverride(t *testing.T) {
 	p, err := newProvider("test", &do.Options{
-		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE, Project: "p"}})
+		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE, Project: "p"},
+	})
 	require.NoError(t, err)
 	require.Equal(t, DefaultEndpoint, p.endpoint)
 
@@ -213,7 +214,8 @@ func TestEndpointDefaultAndOverride(t *testing.T) {
 func TestNewProviderDoesNoNetworkIO(t *testing.T) {
 	isolate(t)
 	p, err := newProvider("test", &do.Options{
-		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE}})
+		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE},
+	})
 	require.NoError(t, err)
 	require.NotNil(t, p)
 	require.Nil(t, p.tokens, "credentials must not be resolved at construction")
@@ -352,7 +354,8 @@ func TestCredentialsFile(t *testing.T) {
 func TestProjectResolution(t *testing.T) {
 	isolate(t)
 	p, err := newProvider("test", &do.Options{
-		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE, Project: "configured"}})
+		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE, Project: "configured"},
+	})
 	require.NoError(t, err)
 	got, err := p.projectID(t.Context())
 	require.NoError(t, err)
@@ -363,7 +366,8 @@ func TestProjectResolution(t *testing.T) {
 	f := filepath.Join(dir, "sa.json")
 	require.NoError(t, os.WriteFile(f, serviceAccountJSON(t), 0o600))
 	p, err = newProvider("test", &do.Options{
-		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE, CredentialsFile: f}})
+		Provider: "gcp", GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE, CredentialsFile: f},
+	})
 	require.NoError(t, err)
 	got, err = p.projectID(t.Context())
 	require.NoError(t, err)

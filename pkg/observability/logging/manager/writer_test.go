@@ -582,7 +582,7 @@ func TestOpenFailure(t *testing.T) {
 	o := NewOptions()
 	// a path whose parent is a file cannot be created
 	base := filepath.Join(t.TempDir(), "blocker")
-	if err := os.WriteFile(base, []byte("x"), 0644); err != nil {
+	if err := os.WriteFile(base, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	o.Filename = filepath.Join(base, "test.log")
@@ -645,11 +645,13 @@ func TestConcurrentWrites(t *testing.T) {
 func TestListArchivesIgnoresUnrelated(t *testing.T) {
 	dir := t.TempDir()
 	name := filepath.Join(dir, "test.log")
-	for _, f := range []string{"test.log", "test.log.1", "test.log.2.gz",
-		"test.log.bak", "test.log.0", "other.log.1"} {
-		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0644)
+	for _, f := range []string{
+		"test.log", "test.log.1", "test.log.2.gz",
+		"test.log.bak", "test.log.0", "other.log.1",
+	} {
+		os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644)
 	}
-	os.Mkdir(filepath.Join(dir, "test.log.3"), 0755)
+	os.Mkdir(filepath.Join(dir, "test.log.3"), 0o755)
 	archives := listArchives(name)
 	if len(archives) != 2 {
 		t.Fatalf("expected 2 archives, got %d", len(archives))
@@ -668,8 +670,8 @@ func TestCompressArchiveErrors(t *testing.T) {
 	// an unwritable destination is a no-op that leaves the source in place
 	dir := t.TempDir()
 	src := filepath.Join(dir, "test.log.1")
-	os.WriteFile(src, []byte("x"), 0644)
-	os.Mkdir(src+".gz", 0755)
+	os.WriteFile(src, []byte("x"), 0o644)
+	os.Mkdir(src+".gz", 0o755)
 	compressArchive(src)
 	if !fileExists(src) {
 		t.Error("expected source to remain after failed compression")
@@ -713,7 +715,7 @@ func TestMillPrunesStrayArchives(t *testing.T) {
 		t.Fatal(err)
 	}
 	// simulate an archive left over from a larger retention setting
-	os.WriteFile(o.Filename+".5", []byte("stale"), 0644)
+	os.WriteFile(o.Filename+".5", []byte("stale"), 0o644)
 	mustWrite(t, w, "aaaa")
 	mustWrite(t, w, "bbbb")
 	w.Close()

@@ -156,8 +156,10 @@ func TestSetCacheAttachesRegistryStore(t *testing.T) {
 	if _, err := c.Registry().SetLadder("x.y", ladder); err != nil {
 		t.Fatal(err)
 	}
-	for _, k := range []string{"g6.graphite.resolution.leaf.x.y",
-		"g6.graphite.resolution.ladder." + key, "g6.graphite.resolution.config"} {
+	for _, k := range []string{
+		"g6.graphite.resolution.leaf.x.y",
+		"g6.graphite.resolution.ladder." + key, "g6.graphite.resolution.config",
+	} {
 		if _, st, err := cache.Retrieve(k); err != nil || st != cstatus.LookupStatusHit {
 			t.Errorf("%s was not persisted (status %v, err %v)", k, st, err)
 		}
@@ -381,10 +383,14 @@ func TestDocumentedCredentialConfig(t *testing.T) {
 func TestSynthPathOptionsMethodAware(t *testing.T) {
 	c := newTestClient(t, nil)
 	c.Configuration().Paths = po.List{
-		{Path: "/render", Methods: []string{http.MethodPost},
-			RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"}},
-		{Path: "/render", Methods: []string{http.MethodGet},
-			RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"}},
+		{
+			Path: "/render", Methods: []string{http.MethodPost},
+			RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-b"},
+		},
+		{
+			Path: "/render", Methods: []string{http.MethodGet},
+			RequestHeaders: map[string]string{headers.NameAuthorization: "Basic tenant-a"},
+		},
 	}
 	h, _ := c.synthPathOptions("/render")
 	if h[headers.NameAuthorization] != "Basic tenant-a" {
@@ -425,7 +431,8 @@ func TestEffectiveIdentityRotation(t *testing.T) {
 	digestA := a.effectiveIdentityDigest()
 	// tenant A learns a ladder, persisted through the cache
 	ladder, err := resolution.NewLadder([]resolution.Rung{
-		{Step: 10 * time.Second, MaxAge: 6 * time.Hour}})
+		{Step: 10 * time.Second, MaxAge: 6 * time.Hour},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

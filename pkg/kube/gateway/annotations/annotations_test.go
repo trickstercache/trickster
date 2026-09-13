@@ -53,7 +53,8 @@ func TestParseFullSet(t *testing.T) {
 	require.Equal(t, "progressive", p.CollapsedForwarding)
 	require.Equal(t, "merge", p.CORSMode)
 	require.Equal(t, map[string]string{
-		"Access-Control-Allow-Origin": "https://x.example.com"}, p.CORSHeaders)
+		"Access-Control-Allow-Origin": "https://x.example.com",
+	}, p.CORSHeaders)
 	require.Equal(t, map[string]string{"X-A": "1", "-X-B": ""}, p.RequestHeaders,
 		"a blank line between entries is not an entry")
 	require.Equal(t, map[string]string{"+Vary": "Accept-Encoding"},

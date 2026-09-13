@@ -519,14 +519,22 @@ func TestOverlay(t *testing.T) {
 }
 
 func TestListMatchMethodSplit(t *testing.T) {
-	get := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
-		Methods: []string{"GET"}}
-	post := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
-		Methods: []string{"POST"}}
-	tags := &Options{Path: "/tags/", MatchType: matching.PathMatchTypePrefix,
-		Methods: []string{"GET", "POST"}}
-	root := &Options{Path: "/", MatchType: matching.PathMatchTypePrefix,
-		Methods: []string{"GET", "POST"}}
+	get := &Options{
+		Path: "/render", MatchType: matching.PathMatchTypeExact,
+		Methods: []string{"GET"},
+	}
+	post := &Options{
+		Path: "/render", MatchType: matching.PathMatchTypeExact,
+		Methods: []string{"POST"},
+	}
+	tags := &Options{
+		Path: "/tags/", MatchType: matching.PathMatchTypePrefix,
+		Methods: []string{"GET", "POST"},
+	}
+	root := &Options{
+		Path: "/", MatchType: matching.PathMatchTypePrefix,
+		Methods: []string{"GET", "POST"},
+	}
 	l := List{nil, post, get, tags, root}
 
 	tests := []struct {
@@ -550,8 +558,10 @@ func TestListMatchMethodSplit(t *testing.T) {
 	}
 
 	// an explicit HEAD config beats the implicit GET-derived one
-	head := &Options{Path: "/render", MatchType: matching.PathMatchTypeExact,
-		Methods: []string{"HEAD"}}
+	head := &Options{
+		Path: "/render", MatchType: matching.PathMatchTypeExact,
+		Methods: []string{"HEAD"},
+	}
 	l2 := List{get, head}
 	if got := l2.Match("HEAD", "/render"); got != head {
 		t.Errorf("explicit HEAD config must win, got %+v", got)

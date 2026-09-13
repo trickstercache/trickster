@@ -624,8 +624,10 @@ func TestParserExpressionHelperMatrix(t *testing.T) {
 			t.Fatalf("intLiteral(%q) = %d/%t", tc.expression, got, ok)
 		}
 	}
-	outputs := []selectOutput{{alias: "bucket", sourceName: "time", sourceAxis: "events.time"},
-		{sourceName: "value", sourceAxis: "events.value"}}
+	outputs := []selectOutput{
+		{alias: "bucket", sourceName: "time", sourceAxis: "events.time"},
+		{sourceName: "value", sourceAxis: "events.value"},
+	}
 	for _, expression := range []string{"0", "3", "unknown", "value + 1"} {
 		if _, ok := resolveOutputReference(parse(expression), outputs); ok {
 			t.Fatalf("invalid output reference %q resolved", expression)

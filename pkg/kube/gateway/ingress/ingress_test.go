@@ -91,15 +91,23 @@ func prometheusPaths(provider string) po.List {
 		return nil
 	}
 	return po.List{
-		{Path: "/api/v1/query_range", HandlerName: "query_range",
+		{
+			Path: "/api/v1/query_range", HandlerName: "query_range",
 			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST"},
-			CacheKeyParams: []string{"query", "step", "stats"}},
-		{Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"}},
-		{Path: "/api/v1/series", HandlerName: "series", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"match[]", "start", "end"}},
-		{Path: "/", HandlerName: "proxy", MatchTypeName: matching.PathMatchNamePrefix,
-			Methods: []string{"GET", "POST"}},
+			CacheKeyParams: []string{"query", "step", "stats"},
+		},
+		{
+			Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
+			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"},
+		},
+		{
+			Path: "/api/v1/series", HandlerName: "series", MatchTypeName: matching.PathMatchNameExact,
+			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"match[]", "start", "end"},
+		},
+		{
+			Path: "/", HandlerName: "proxy", MatchTypeName: matching.PathMatchNamePrefix,
+			Methods: []string{"GET", "POST"},
+		},
 	}
 }
 
@@ -332,7 +340,8 @@ func TestTranslateTLSCertRefs(t *testing.T) {
 	// what the controller must push; which listener can serve one is the listener's own business
 	model, problems, _ := translateFixture(t, "tls", func(o *kubecfg.Options) {
 		o.Ingress = &kubecfg.IngressOptions{
-			ListenerNames: []string{"web", "websecure"}}
+			ListenerNames: []string{"web", "websecure"},
+		}
 	})
 	require.Empty(t, problems)
 	require.Len(t, model.Certs, 1)
@@ -360,7 +369,8 @@ func TestIngressListenersAreConfigured(t *testing.T) {
 	// names them; the controller defines none and every claimed route attaches to all
 	model, _, _ := translateFixture(t, "tls", func(o *kubecfg.Options) {
 		o.Ingress = &kubecfg.IngressOptions{
-			ListenerNames: []string{"web", "websecure"}}
+			ListenerNames: []string{"web", "websecure"},
+		}
 	})
 	require.Len(t, model.Listeners, 2)
 	for _, l := range model.Listeners {
@@ -440,17 +450,15 @@ func ingressWith(host, path string, pathType *netv1.PathType,
 	// ingressWith builds a claimed Ingress with one rule and one path
 	className := "trickster"
 	ing := &netv1.Ingress{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web"},
+		Namespace: "shop", Name: "web",
 		Spec: netv1.IngressSpec{
 			IngressClassName: &className,
 			Rules: []netv1.IngressRule{{
 				Host: host,
-				IngressRuleValue: netv1.IngressRuleValue{
-					HTTP: &netv1.HTTPIngressRuleValue{
-						Paths: []netv1.HTTPIngressPath{{
-							Path: path, PathType: pathType, Backend: backend,
-						}},
-					},
+				HTTP: &netv1.HTTPIngressRuleValue{
+					Paths: []netv1.HTTPIngressPath{{
+						Path: path, PathType: pathType, Backend: backend,
+					}},
 				},
 			}},
 		},
@@ -464,7 +472,8 @@ func ingressWith(host, path string, pathType *netv1.PathType,
 func svcBackend(name string, port int32) netv1.IngressBackend {
 	// svcBackend references the fixture Service by port number
 	return netv1.IngressBackend{Service: &netv1.IngressServiceBackend{
-		Name: name, Port: netv1.ServiceBackendPort{Number: port}}}
+		Name: name, Port: netv1.ServiceBackendPort{Number: port},
+	}}
 }
 
 func withCache(ings ...*netv1.Ingress) *cache {
@@ -472,16 +481,15 @@ func withCache(ings ...*netv1.Ingress) *cache {
 	// and the supplied Ingresses
 	c := newCache()
 	c.classes = []*netv1.IngressClass{{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "trickster",
-			Annotations: map[string]string{class.DefaultClassAnnotation: "true"},
-		},
-		Spec: netv1.IngressClassSpec{Controller: controllerName},
+		Name:        "trickster",
+		Annotations: map[string]string{class.DefaultClassAnnotation: "true"},
+		Spec:        netv1.IngressClassSpec{Controller: controllerName},
 	}}
 	c.services["shop/web-svc"] = &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "web-svc"},
+		Namespace: "shop", Name: "web-svc",
 		Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{
-			{Name: "http", Port: 8080}}},
+			{Name: "http", Port: 8080},
+		}},
 	}
 	c.ingresses = ings
 	return c
@@ -510,29 +518,40 @@ func TestTranslateRejections(t *testing.T) {
 		ingress *netv1.Ingress
 		detail  string
 	}{
-		{"empty path", ingressWith("a.example.com", "", prefix, backend),
-			"path is empty"},
-		{"relative path", ingressWith("a.example.com", "api", prefix, backend),
-			"must begin with '/'"},
+		{
+			"empty path", ingressWith("a.example.com", "", prefix, backend),
+			"path is empty",
+		},
+		{
+			"relative path", ingressWith("a.example.com", "api", prefix, backend),
+			"must begin with '/'",
+		},
 		{"unknown path type", ingressWith("a.example.com", "/api",
 			pathType(netv1.PathType("Fuzzy")), backend), "unsupported pathType"},
 		{"bad regex", ingressWith("a.example.com", "^/api/(", specific, backend,
 			func(i *netv1.Ingress) {
 				i.Annotations = map[string]string{
-					appinfo.Domain + "/use-regex": "true"}
+					appinfo.Domain + "/use-regex": "true",
+				}
 			}), "not a valid regular expression"},
-		{"bad host", ingressWith("*bad.example.com", "/api", prefix, backend),
-			"is not routable"},
+		{
+			"bad host", ingressWith("*bad.example.com", "/api", prefix, backend),
+			"is not routable",
+		},
 		{"resource backend", ingressWith("a.example.com", "/api", prefix,
 			netv1.IngressBackend{Resource: &corev1.TypedLocalObjectReference{
-				Kind: "StorageBucket"}}), "resource reference"},
+				Kind: "StorageBucket",
+			}}), "resource reference"},
 		{"no backend", ingressWith("a.example.com", "/api", prefix,
 			netv1.IngressBackend{}), "names no service"},
-		{"unknown port name", ingressWith("a.example.com", "/api", prefix,
-			netv1.IngressBackend{Service: &netv1.IngressServiceBackend{
-				Name: "web-svc",
-				Port: netv1.ServiceBackendPort{Name: "grpc"}}}),
-			`has no port "grpc"`},
+		{
+			"unknown port name", ingressWith("a.example.com", "/api", prefix,
+				netv1.IngressBackend{Service: &netv1.IngressServiceBackend{
+					Name: "web-svc",
+					Port: netv1.ServiceBackendPort{Name: "grpc"},
+				}}),
+			`has no port "grpc"`,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -597,15 +616,26 @@ func TestTranslateTLSRejections(t *testing.T) {
 		secret *corev1.Secret
 		detail string
 	}{
-		{"no secret named", []netv1.IngressTLS{{Hosts: []string{"a"}}}, nil,
-			"names no secret"},
-		{"secret absent", []netv1.IngressTLS{{SecretName: "gone"}}, nil,
-			"not found"},
-		{"secret not tls", []netv1.IngressTLS{{SecretName: "opaque"}},
+		{
+			"no secret named",
+			[]netv1.IngressTLS{{Hosts: []string{"a"}}},
+			nil,
+			"names no secret",
+		},
+		{
+			"secret absent",
+			[]netv1.IngressTLS{{SecretName: "gone"}},
+			nil,
+			"not found",
+		},
+		{
+			"secret not tls",
+			[]netv1.IngressTLS{{SecretName: "opaque"}},
 			&corev1.Secret{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "opaque"},
-				Type:       corev1.SecretTypeOpaque,
-			}, "not found"},
+				Namespace: "shop", Name: "opaque",
+				Type: corev1.SecretTypeOpaque,
+			}, "not found",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -630,9 +660,9 @@ func TestTranslateDeduplicatesCertRefs(t *testing.T) {
 	c := withCache()
 	key, crt := tlstest.NamedKeyAndCert("tls")
 	c.secrets["shop/tls"] = &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "shop", Name: "tls"},
-		Type:       corev1.SecretTypeTLS,
-		Data:       map[string][]byte{corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key},
+		Namespace: "shop", Name: "tls",
+		Type: corev1.SecretTypeTLS,
+		Data: map[string][]byte{corev1.TLSCertKey: crt, corev1.TLSPrivateKeyKey: key},
 	}
 	for _, name := range []string{"newer", "older"} {
 		ing := ingressWith("a.example.com", "/"+name,

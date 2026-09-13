@@ -177,7 +177,8 @@ func TestRefusedGrantCarriesTheDescription(t *testing.T) {
 func TestTokenIsCachedUntilNearExpiry(t *testing.T) {
 	f := newFakeLogin(t, goodToken("3599"))
 	ts := tokenSourceFor(&azureopts.Options{
-		TenantID: "t", ClientID: "c", ClientSecret: "s"}, f.URL)
+		TenantID: "t", ClientID: "c", ClientSecret: "s",
+	}, f.URL)
 
 	for range 3 {
 		_, err := ts.Token(t.Context())
@@ -192,7 +193,8 @@ func TestFailedAcquisitionIsNotCached(t *testing.T) {
 	f := newFakeLogin(t, `{"error":"temporarily_unavailable","error_description":"try again"}`)
 	f.status = http.StatusServiceUnavailable
 	ts := tokenSourceFor(&azureopts.Options{
-		TenantID: "t", ClientID: "c", ClientSecret: "s"}, f.URL)
+		TenantID: "t", ClientID: "c", ClientSecret: "s",
+	}, f.URL)
 
 	_, err := ts.Token(t.Context())
 	require.Error(t, err)
@@ -210,7 +212,8 @@ func TestFailedAcquisitionIsNotCached(t *testing.T) {
 func TestExpiryHasAGrace(t *testing.T) {
 	f := newFakeLogin(t, goodToken("3599"))
 	ts := tokenSourceFor(&azureopts.Options{
-		TenantID: "t", ClientID: "c", ClientSecret: "s"}, f.URL)
+		TenantID: "t", ClientID: "c", ClientSecret: "s",
+	}, f.URL)
 	_, err := ts.Token(t.Context())
 	require.NoError(t, err)
 	require.True(t, ts.expires.Before(time.Now().Add(3599*time.Second)),
@@ -236,7 +239,8 @@ func TestNoSilentFallbackToManagedIdentity(t *testing.T) {
 	f := newFakeLogin(t, `{"error":"invalid_client","error_description":"bad"}`)
 	f.status = http.StatusUnauthorized
 	ts := tokenSourceFor(&azureopts.Options{
-		TenantID: "t", ClientID: "c", ClientSecret: "wrong"}, f.URL)
+		TenantID: "t", ClientID: "c", ClientSecret: "wrong",
+	}, f.URL)
 
 	_, err := ts.Token(t.Context())
 	require.Error(t, err)
@@ -250,12 +254,18 @@ func TestNoSilentFallbackToManagedIdentity(t *testing.T) {
 // hand is exactly the kind of thing that silently half-works.
 func TestCloudSelectsBothEndpoints(t *testing.T) {
 	for _, tc := range []struct{ cloud, mgmt, login string }{
-		{azureopts.CloudPublic,
-			"https://management.azure.com", "https://login.microsoftonline.com"},
-		{azureopts.CloudUSGovernment,
-			"https://management.usgovcloudapi.net", "https://login.microsoftonline.us"},
-		{azureopts.CloudChina,
-			"https://management.chinacloudapi.cn", "https://login.chinacloudapi.cn"},
+		{
+			azureopts.CloudPublic,
+			"https://management.azure.com", "https://login.microsoftonline.com",
+		},
+		{
+			azureopts.CloudUSGovernment,
+			"https://management.usgovcloudapi.net", "https://login.microsoftonline.us",
+		},
+		{
+			azureopts.CloudChina,
+			"https://management.chinacloudapi.cn", "https://login.chinacloudapi.cn",
+		},
 	} {
 		t.Run(tc.cloud, func(t *testing.T) {
 			o := &azureopts.Options{Cloud: tc.cloud}

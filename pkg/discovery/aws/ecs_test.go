@@ -180,8 +180,10 @@ func TestECSDiscoversAwsvpcTasks(t *testing.T) {
 		awsvpcTask("t2", taskRunning, healthHealthy, "10.0.1.6",
 			map[string]string{"trickster-port": "8080"}),
 	)
-	l := ecsListerFor(t, f.URL, &do.Query{Cluster: "prod", Service: "web",
-		PortLabel: "trickster-port"})
+	l := ecsListerFor(t, f.URL, &do.Query{
+		Cluster: "prod", Service: "web",
+		PortLabel: "trickster-port",
+	})
 	snap, skipped, err := l.Members(t.Context())
 	require.NoError(t, err)
 	require.Empty(t, skipped)

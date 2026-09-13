@@ -90,8 +90,10 @@ func TestCachedQueryResultSizeEstimateTracksRetainedMemory(t *testing.T) {
 		t.Fatal("nil cached result had a size")
 	}
 	base := &cachedQueryResult{result: &sqltypes.Result{
-		Fields: []*querypb.Field{{Name: "value", Table: "events", OrgTable: "events",
-			Database: "analytics", OrgName: "value", ColumnType: "varchar(255)"}},
+		Fields: []*querypb.Field{{
+			Name: "value", Table: "events", OrgTable: "events",
+			Database: "analytics", OrgName: "value", ColumnType: "varchar(255)",
+		}},
 		Rows:                [][]sqltypes.Value{{sqltypes.NewVarChar("payload")}},
 		Info:                "info",
 		SessionStateChanges: "state",
@@ -127,8 +129,10 @@ func TestByteCacheUsesEncodedSize(t *testing.T) {
 }
 
 func TestUnmarshalCachedQueryResultRejectsInvalidData(t *testing.T) {
-	for _, data := range [][]byte{nil, []byte("not-a-cache-entry"),
-		append(cacheEnvelopeMagic[:], cacheEnvelopeVersion)} {
+	for _, data := range [][]byte{
+		nil, []byte("not-a-cache-entry"),
+		append(cacheEnvelopeMagic[:], cacheEnvelopeVersion),
+	} {
 		if _, err := unmarshalCachedQueryResult(data); err == nil {
 			t.Fatalf("unmarshal accepted invalid data %q", data)
 		}

@@ -46,7 +46,8 @@ func TestNew(t *testing.T) {
 	}
 	// a kubeconfig path that does not exist must error, not panic
 	if _, err := New(&kubeopts.Options{
-		Kubeconfig: "/nonexistent/kubeconfig"}); err == nil {
+		Kubeconfig: "/nonexistent/kubeconfig",
+	}); err == nil {
 		t.Error("expected error for missing kubeconfig")
 	}
 }
@@ -165,7 +166,8 @@ func TestNewFromRESTConfigAppliesTuning(t *testing.T) {
 	in := &rest.Config{Host: "https://127.0.0.1:6443"}
 	c, err := NewFromRESTConfig(in, &kubeopts.Options{
 		QPS: 33, Burst: 66, UserAgent: "custom/9",
-		Timeout: timeconv.Duration(3 * time.Second)})
+		Timeout: timeconv.Duration(3 * time.Second),
+	})
 	require.NoError(t, err)
 	require.Equal(t, float32(33), c.RESTConfig().QPS)
 	require.Equal(t, 66, c.RESTConfig().Burst)
@@ -211,35 +213,64 @@ func TestConnectionID(t *testing.T) {
 		"token file":   {Host: "https://a", UserAgent: "t/1", BearerTokenFile: "/f"},
 		"qps":          {Host: "https://a", UserAgent: "t/1", QPS: 99},
 		"burst":        {Host: "https://a", UserAgent: "t/1", Burst: 99},
-		"ca file": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{CAFile: "/ca"}},
-		"server name": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{ServerName: "s"}},
-		"insecure": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{Insecure: true}},
-		"cert file": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{CertFile: "/c"}},
-		"key file": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{KeyFile: "/k"}},
-		"cert data": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{CertData: []byte("c")}},
-		"key data": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{KeyData: []byte("k")}},
-		"ca data": {Host: "https://a", UserAgent: "t/1",
-			TLSClientConfig: rest.TLSClientConfig{CAData: []byte("ca")}},
-		"impersonated user": {Host: "https://a", UserAgent: "t/1",
-			Impersonate: rest.ImpersonationConfig{UserName: "other"}},
-		"impersonated uid": {Host: "https://a", UserAgent: "t/1",
-			Impersonate: rest.ImpersonationConfig{UID: "uid"}},
-		"impersonated groups": {Host: "https://a", UserAgent: "t/1",
-			Impersonate: rest.ImpersonationConfig{Groups: []string{"admins"}}},
-		"impersonated extra": {Host: "https://a", UserAgent: "t/1",
+		"ca file": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{CAFile: "/ca"},
+		},
+		"server name": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{ServerName: "s"},
+		},
+		"insecure": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{Insecure: true},
+		},
+		"cert file": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{CertFile: "/c"},
+		},
+		"key file": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{KeyFile: "/k"},
+		},
+		"cert data": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{CertData: []byte("c")},
+		},
+		"key data": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{KeyData: []byte("k")},
+		},
+		"ca data": {
+			Host: "https://a", UserAgent: "t/1",
+			TLSClientConfig: rest.TLSClientConfig{CAData: []byte("ca")},
+		},
+		"impersonated user": {
+			Host: "https://a", UserAgent: "t/1",
+			Impersonate: rest.ImpersonationConfig{UserName: "other"},
+		},
+		"impersonated uid": {
+			Host: "https://a", UserAgent: "t/1",
+			Impersonate: rest.ImpersonationConfig{UID: "uid"},
+		},
+		"impersonated groups": {
+			Host: "https://a", UserAgent: "t/1",
+			Impersonate: rest.ImpersonationConfig{Groups: []string{"admins"}},
+		},
+		"impersonated extra": {
+			Host: "https://a", UserAgent: "t/1",
 			Impersonate: rest.ImpersonationConfig{
-				Extra: map[string][]string{"scope": {"a"}}}},
-		"auth provider": {Host: "https://a", UserAgent: "t/1",
-			AuthProvider: &clientcmdapi.AuthProviderConfig{Name: "oidc"}},
-		"exec provider": {Host: "https://a", UserAgent: "t/1",
-			ExecProvider: &clientcmdapi.ExecConfig{Command: "get-token"}},
+				Extra: map[string][]string{"scope": {"a"}},
+			},
+		},
+		"auth provider": {
+			Host: "https://a", UserAgent: "t/1",
+			AuthProvider: &clientcmdapi.AuthProviderConfig{Name: "oidc"},
+		},
+		"exec provider": {
+			Host: "https://a", UserAgent: "t/1",
+			ExecProvider: &clientcmdapi.ExecConfig{Command: "get-token"},
+		},
 	} {
 		require.NotEqual(t, connectionID(base), connectionID(alt), name)
 	}
@@ -253,10 +284,14 @@ func TestConnectionIDSeparatesInlineCredentials(t *testing.T) {
 	require.NotEqual(t, a, b)
 
 	// the same for client certificates presented inline
-	ca := connectionID(&rest.Config{Host: "https://a",
-		TLSClientConfig: rest.TLSClientConfig{CertData: []byte("cert-a")}})
-	cb := connectionID(&rest.Config{Host: "https://a",
-		TLSClientConfig: rest.TLSClientConfig{CertData: []byte("cert-b")}})
+	ca := connectionID(&rest.Config{
+		Host:     "https://a",
+		CertData: []byte("cert-a"),
+	})
+	cb := connectionID(&rest.Config{
+		Host:     "https://a",
+		CertData: []byte("cert-b"),
+	})
 	require.NotEqual(t, ca, cb)
 }
 
@@ -270,23 +305,31 @@ func TestConnectionIDIsUnambiguous(t *testing.T) {
 		connectionID(&rest.Config{Host: "https://a", BearerToken: "t"}),
 		connectionID(&rest.Config{Host: "https://a", BearerTokenFile: "t"}))
 	require.NotEqual(t,
-		connectionID(&rest.Config{Host: "https://a",
-			Impersonate: rest.ImpersonationConfig{Groups: []string{"a", "b"}}}),
-		connectionID(&rest.Config{Host: "https://a",
-			Impersonate: rest.ImpersonationConfig{Groups: []string{"ab"}}}))
+		connectionID(&rest.Config{
+			Host:        "https://a",
+			Impersonate: rest.ImpersonationConfig{Groups: []string{"a", "b"}},
+		}),
+		connectionID(&rest.Config{
+			Host:        "https://a",
+			Impersonate: rest.ImpersonationConfig{Groups: []string{"ab"}},
+		}))
 }
 
 func TestConnectionIDRefusesToShareUncomparableConfigs(t *testing.T) {
 	// Two configs differing only in a field the identity cannot compare must not
 	// be assumed equal: sharing is an optimization, never a guess
 	mk := func() *rest.Config {
-		return &rest.Config{Host: "https://a", UserAgent: "t/1",
-			Proxy: func(*http.Request) (*url.URL, error) { return nil, nil }}
+		return &rest.Config{
+			Host: "https://a", UserAgent: "t/1",
+			Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+		}
 	}
 	require.NotEqual(t, connectionID(mk()), connectionID(mk()))
 
-	wrapped := &rest.Config{Host: "https://a",
-		WrapTransport: func(rt http.RoundTripper) http.RoundTripper { return rt }}
+	wrapped := &rest.Config{
+		Host:          "https://a",
+		WrapTransport: func(rt http.RoundTripper) http.RoundTripper { return rt },
+	}
 	require.NotEqual(t, connectionID(wrapped), connectionID(wrapped))
 }
 

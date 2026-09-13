@@ -45,8 +45,8 @@ func policyObject(t *testing.T, ns, name string, refs ...cachepolicy.TargetRef,
 ) *unstructured.Unstructured {
 	t.Helper()
 	p := &cachepolicy.CachePolicy{
-		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
-		Spec:       cachepolicy.Spec{TargetRefs: refs, CacheName: "objects"},
+		Namespace: ns, Name: name,
+		Spec: cachepolicy.Spec{TargetRefs: refs, CacheName: "objects"},
 	}
 	u, err := cachepolicy.ToUnstructured(p)
 	require.NoError(t, err)

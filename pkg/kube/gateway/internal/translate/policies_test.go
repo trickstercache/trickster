@@ -27,10 +27,14 @@ import (
 func TestPoliciesMerge(t *testing.T) {
 	model := &ir.IR{}
 	m := NewPolicies(model, nil, nil)
-	class := ir.Policy{Name: "GatewayClass//gc", Source: ir.Source{Kind: ir.KindGatewayClass},
-		CacheName: "objects", AuthenticatorName: "auth"}
-	route := ir.Policy{Name: "TricksterCachePolicy/shop/r", Source: ir.Source{Kind: ir.KindCachePolicy,
-		Name: "r"}, TimeoutMS: 2000, Provider: "prometheus"}
+	class := ir.Policy{
+		Name: "GatewayClass//gc", Source: ir.Source{Kind: ir.KindGatewayClass},
+		CacheName: "objects", AuthenticatorName: "auth",
+	}
+	route := ir.Policy{Name: "TricksterCachePolicy/shop/r", Source: ir.Source{
+		Kind: ir.KindCachePolicy,
+		Name: "r",
+	}, TimeoutMS: 2000, Provider: "prometheus"}
 	require.Equal(t, class.Name, m.Add(class))
 	require.Equal(t, class.Name, m.Add(class), "a name is added once")
 	require.Len(t, model.Policies, 1)
@@ -158,8 +162,10 @@ func TestPoliciesBind(t *testing.T) {
 	src := ir.Source{Kind: ir.KindHTTPRoute, Namespace: "shop", Name: "web"}
 	policySrc := ir.Source{Kind: ir.KindCachePolicy, Namespace: "shop", Name: "cp"}
 	s := source{reserved: "/api/v1/query_range", policies: map[string]ir.Policy{
-		"HTTPRoute/shop/web/": {Name: "TricksterCachePolicy/shop/cp", Source: policySrc,
-			Provider: "prometheus", CacheName: "objects"},
+		"HTTPRoute/shop/web/": {
+			Name: "TricksterCachePolicy/shop/cp", Source: policySrc,
+			Provider: "prometheus", CacheName: "objects",
+		},
 		"Service/shop/svc/":     {Name: "TricksterCachePolicy/shop/svc", TimeoutMS: 1000},
 		"Service/shop/svc/http": {Name: "TricksterCachePolicy/shop/port", TimeoutMS: 2000},
 	}}

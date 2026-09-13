@@ -53,7 +53,7 @@ func testSubscription(q *do.Query) *subscription {
 func TestBuildServicesSkipsUnaddressable(t *testing.T) {
 	svc := func(name, clusterIP string) *corev1.Service {
 		return &corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNS},
+			Name: name, Namespace: testNS,
 			Spec: corev1.ServiceSpec{
 				ClusterIP: clusterIP,
 				Ports:     []corev1.ServicePort{{Name: "web", Port: 80}},
@@ -77,9 +77,10 @@ func TestBuildServicesSkipsUnaddressable(t *testing.T) {
 func TestBuildPodsSkipsTerminating(t *testing.T) {
 	pod := func(name, ip string, deleting bool) *corev1.Pod {
 		p := &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNS},
+			Name: name, Namespace: testNS,
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{
-				Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: 9090}}}}},
+				Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: 9090}},
+			}}},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: ip},
 		}
 		if deleting {
@@ -104,7 +105,8 @@ func TestBuildEndpointSlicesSkipsAddresslessAndAmbiguousPorts(t *testing.T) {
 	slice := newSlice("prom-abc", "prom", 9090,
 		endpoint("10.0.0.1", "prom-0", true, false),
 		discoveryv1.Endpoint{Conditions: discoveryv1.EndpointConditions{
-			Ready: new(true)}},
+			Ready: new(true),
+		}},
 	)
 	// an endpoint with no TargetRef is named by its address
 	slice.Endpoints = append(slice.Endpoints, discoveryv1.Endpoint{
@@ -116,7 +118,8 @@ func TestBuildEndpointSlicesSkipsAddresslessAndAmbiguousPorts(t *testing.T) {
 		{Name: new("b"), Port: new(int32(2))},
 	}
 	ambiguous.Endpoints = []discoveryv1.Endpoint{
-		endpoint("10.0.0.5", "prom-5", true, false)}
+		endpoint("10.0.0.5", "prom-5", true, false),
+	}
 
 	idx := newIndexer(t, slice, ambiguous)
 	s := testSubscription(&do.Query{Namespace: testNS, Service: "prom"})
@@ -153,18 +156,21 @@ func discoveryNamespaceServices(idx cache.Indexer) corelisters.ServiceNamespaceL
 // declare; those objects are skipped rather than dialed on port 0.
 func TestBuildersSkipUnresolvablePorts(t *testing.T) {
 	svcIdx := newIndexer(t, &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: "multi", Namespace: testNS},
+		Name: "multi", Namespace: testNS,
 		Spec: corev1.ServiceSpec{ClusterIP: "10.96.0.1", Ports: []corev1.ServicePort{
-			{Name: "a", Port: 1}, {Name: "b", Port: 2}}},
+			{Name: "a", Port: 1}, {Name: "b", Port: 2},
+		}},
 	})
 	s := testSubscription(&do.Query{Namespace: testNS})
 	require.Empty(t, s.buildServices(discoveryNamespaceServices(svcIdx)))
 
 	podIdx := newIndexer(t, &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "multi", Namespace: testNS},
+		Name: "multi", Namespace: testNS,
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
 			Ports: []corev1.ContainerPort{
-				{Name: "a", ContainerPort: 1}, {Name: "b", ContainerPort: 2}}}}},
+				{Name: "a", ContainerPort: 1}, {Name: "b", ContainerPort: 2},
+			},
+		}}},
 		Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
 	})
 	p := testSubscription(&do.Query{Namespace: testNS})

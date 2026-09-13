@@ -59,8 +59,10 @@ func TestInitializeDefaultsToInClusterOnlyWithoutAKubeconfig(t *testing.T) {
 }
 
 func TestInitializeKeepsExplicitTuning(t *testing.T) {
-	o := &Options{InCluster: true, QPS: 5, Burst: 7,
-		Timeout: timeconv.Duration(time.Second), UserAgent: "custom/1"}
+	o := &Options{
+		InCluster: true, QPS: 5, Burst: 7,
+		Timeout: timeconv.Duration(time.Second), UserAgent: "custom/1",
+	}
 	o.Initialize()
 	require.Equal(t, float32(5), o.QPS)
 	require.Equal(t, 7, o.Burst)
@@ -92,8 +94,10 @@ func TestValidateRejectsNegativeTuning(t *testing.T) {
 }
 
 func TestCloneIsIndependent(t *testing.T) {
-	o := &Options{InCluster: false, Kubeconfig: "/a", QPS: 1, Burst: 2,
-		UserAgent: "a/1", Timeout: timeconv.Duration(time.Second)}
+	o := &Options{
+		InCluster: false, Kubeconfig: "/a", QPS: 1, Burst: 2,
+		UserAgent: "a/1", Timeout: timeconv.Duration(time.Second),
+	}
 	c := o.Clone()
 	require.Equal(t, o, c)
 	require.NotSame(t, o, c)

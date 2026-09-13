@@ -65,12 +65,20 @@ func TestCorrectnessInvariant(t *testing.T) {
 		{"-120d", "-5min"},
 		{"-6h", "-5h"},
 		// dev.fast 10s->60s at 6h, and 60s->10m at 7d
-		{"-21599s", "-5min"}, {"-21600s", "-5min"}, {"-21601s", "-5min"},
-		{"-604799s", "-5min"}, {"-604800s", "-5min"}, {"-604801s", "-5min"},
+		{"-21599s", "-5min"},
+		{"-21600s", "-5min"},
+		{"-21601s", "-5min"},
+		{"-604799s", "-5min"},
+		{"-604800s", "-5min"},
+		{"-604801s", "-5min"},
 		// dev.medium 60s->5m at 2d, and cfg.a's configured 60s->5m at 2d
-		{"-172799s", "-5min"}, {"-172800s", "-5min"}, {"-172801s", "-5min"},
+		{"-172799s", "-5min"},
+		{"-172800s", "-5min"},
+		{"-172801s", "-5min"},
 		// dev.coarse maxRetention at 90d: the clamp edge, either side
-		{"-7775999s", "-5min"}, {"-7776000s", "-5min"}, {"-7776001s", "-5min"},
+		{"-7775999s", "-5min"},
+		{"-7776000s", "-5min"},
+		{"-7776001s", "-5min"},
 	}
 	variants := []struct {
 		label string
@@ -134,8 +142,10 @@ func TestCorrectnessInvariant(t *testing.T) {
 		}
 	}
 	// the corpus is only meaningful if it actually reached every lane
-	for _, c := range []resolution.Confidence{resolution.Exact, resolution.Derived,
-		resolution.Configured, resolution.Unknown} {
+	for _, c := range []resolution.Confidence{
+		resolution.Exact, resolution.Derived,
+		resolution.Configured, resolution.Unknown,
+	} {
 		if seen[c] == 0 {
 			t.Errorf("no corpus entry resolved to %v", c)
 		}
@@ -188,8 +198,10 @@ func TestObjectLaneKeyStability(t *testing.T) {
 	}
 
 	// and the same for a POST form body, which is how Grafana sends renders
-	form := url.Values{"target": {target}, "from": {base.Get("from")}, "until": {base.Get("until")},
-		"now": {base.Get("now")}, "format": {"json"}, "maxDataPoints": {"500"}}
+	form := url.Values{
+		"target": {target}, "from": {base.Get("from")}, "until": {base.Get("until")},
+		"now": {base.Get("now")}, "format": {"json"}, "maxDataPoints": {"500"},
+	}
 	for i, order := range orders {
 		var b strings.Builder
 		for j, k := range order {
@@ -231,19 +243,34 @@ func TestCorrectnessInvariantAgainstGraphiteWeb(t *testing.T) {
 		from, until string
 		edge        bool
 	}{
-		{"-30min", "-5min", false}, {"-8h", "-5min", false}, {"-3d", "-1d", false}, {"-100d", "-2h", false},
-		{"-21599s", "-5min", true}, {"-21600s", "-5min", true}, {"-21601s", "-5min", false}, // fast 10s->60s
-		{"-604799s", "-2h", true}, {"-604801s", "-2h", false}, // fast 60s->10m
-		{"-43199s", "-2h", true}, {"-43200s", "-2h", true}, {"-43201s", "-2h", false}, // drift 30s->5m
-		{"-1209601s", "-2h", false},                           // drift 5m->1h
-		{"-172799s", "-2h", true}, {"-172801s", "-2h", false}, // medium 60s->5m
-		{"-7775999s", "-2h", true}, {"-7776001s", "-2h", false}, // coarse maxRetention
+		{"-30min", "-5min", false},
+		{"-8h", "-5min", false},
+		{"-3d", "-1d", false},
+		{"-100d", "-2h", false},
+		{"-21599s", "-5min", true},
+		{"-21600s", "-5min", true},
+		{"-21601s", "-5min", false}, // fast 10s->60s
+		{"-604799s", "-2h", true},
+		{"-604801s", "-2h", false}, // fast 60s->10m
+		{"-43199s", "-2h", true},
+		{"-43200s", "-2h", true},
+		{"-43201s", "-2h", false},   // drift 30s->5m
+		{"-1209601s", "-2h", false}, // drift 5m->1h
+		{"-172799s", "-2h", true},
+		{"-172801s", "-2h", false}, // medium 60s->5m
+		{"-7775999s", "-2h", true},
+		{"-7776001s", "-2h", false}, // coarse maxRetention
 	}
 	variants := []url.Values{
 		nil,
-		{"format": {"raw"}}, {"format": {"csv"}},
-		{"maxDataPoints": {"7"}}, {"maxDataPoints": {"533"}}, {"maxDataPoints": {"1"}},
-		{"noNullPoints": {"1"}}, {"pretty": {"1"}}, {"jsonp": {"cb"}},
+		{"format": {"raw"}},
+		{"format": {"csv"}},
+		{"maxDataPoints": {"7"}},
+		{"maxDataPoints": {"533"}},
+		{"maxDataPoints": {"1"}},
+		{"noNullPoints": {"1"}},
+		{"pretty": {"1"}},
+		{"jsonp": {"cb"}},
 	}
 	seen := map[resolution.Confidence]int{}
 	var checked, empty int

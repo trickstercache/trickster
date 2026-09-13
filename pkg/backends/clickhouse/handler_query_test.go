@@ -117,7 +117,6 @@ func TestQueryHandler(t *testing.T) {
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
-
 }
 
 func TestQueryHandlerBody(t *testing.T) {

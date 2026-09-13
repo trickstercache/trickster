@@ -23,14 +23,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 )
 
 func testPod(ns, name string) *corev1.Pod {
-	return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name}}
+	return &corev1.Pod{Namespace: ns, Name: name}
 }
 
 // Two subscribers with the same connection and spec must share one factory,
@@ -144,7 +143,8 @@ func TestInformerFactoryAppliesSelectors(t *testing.T) {
 	cs := fake.NewClientset(testPod("sel", "p1"))
 	c := NewFromClientset(cs)
 	h := c.InformerFactory(FactorySpec{
-		Namespace: "sel", LabelSelector: "app=x", FieldSelector: "metadata.name=p1"})
+		Namespace: "sel", LabelSelector: "app=x", FieldSelector: "metadata.name=p1",
+	})
 	defer h.Release()
 	h.Factory().Core().V1().Pods().Informer()
 	h.Start()

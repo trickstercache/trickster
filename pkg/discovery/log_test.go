@@ -56,8 +56,10 @@ func TestScopedLogging(t *testing.T) {
 	LogError("error-event", logging.Pairs{"k": "v"})
 
 	out := buf.String()
-	for _, event := range []string{"dbg-event", "info-event", "warn-event",
-		"error-event"} {
+	for _, event := range []string{
+		"dbg-event", "info-event", "warn-event",
+		"error-event",
+	} {
 		require.Contains(t, out, event)
 	}
 	require.Equal(t, 4, strings.Count(out, "scope="+LogScope),

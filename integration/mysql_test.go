@@ -324,8 +324,10 @@ func TestMySQLRealServerUserRouter(t *testing.T) {
 		"alice": {Target: backends.RouteTarget{Backend: targetA}, Outcome: backends.RouteOutcomeSelected},
 		"bob":   {Target: backends.RouteTarget{Backend: targetB}, Outcome: backends.RouteOutcomeSelected},
 		"carol": {Target: backends.RouteTarget{Backend: targetA}, Outcome: backends.RouteOutcomeDefault},
-		"down": {Target: backends.RouteTarget{Backend: targetB, Status: integrationRouteHealth(-1)},
-			Outcome: backends.RouteOutcomeUnavailable},
+		"down": {
+			Target:  backends.RouteTarget{Backend: targetB, Status: integrationRouteHealth(-1)},
+			Outcome: backends.RouteOutcomeUnavailable,
+		},
 	}
 	upstream := func(database string) mysqlbackend.ProtocolConfig {
 		return mysqlbackend.ProtocolConfig{

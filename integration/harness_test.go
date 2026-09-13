@@ -297,7 +297,7 @@ func writeTestConfig(t *testing.T, configPath string,
 	out, err := yaml.Marshal(&c)
 	require.NoError(t, err)
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(path, out, 0644))
+	require.NoError(t, os.WriteFile(path, out, 0o644))
 	return path
 }
 
