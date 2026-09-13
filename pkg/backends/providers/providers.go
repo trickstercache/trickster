@@ -119,6 +119,7 @@ var supportedHTTPTimeSeries = map[string]Provider{
 	InfluxDB:   InfluxDBID,
 	ClickHouse: ClickHouseID,
 	Graphite:   GraphiteID,
+	Druid:      DruidID,
 }
 
 // IsSupportedHTTPTimeSeriesProvider returns true if the named provider is a time series

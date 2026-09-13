@@ -144,7 +144,15 @@ func TestParseTimeRangeQueryStructuredGranularities(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			body := druidQuery("timeseries", test.granularity)
+			interval := testInterval
+			if test.wantReason == "" {
+				start := truncateToPhase(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+					test.step, test.phase)
+				interval = start.Format(time.RFC3339Nano) + "/" +
+					start.Add(2*test.step).Format(time.RFC3339Nano)
+			}
+			body := strings.Replace(druidQuery("timeseries", test.granularity),
+				testInterval, interval, 1)
 			r := httptest.NewRequest(http.MethodPost, "http://trickster/druid/v2", strings.NewReader(body))
 			r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 			trq, _, canOPC, err := (&Client{}).ParseTimeRangeQuery(r)
@@ -223,11 +231,15 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 		{"invalid context", http.MethodPost, headers.ValueApplicationJSON, `{"queryType":"timeseries","dataSource":"wiki","intervals":["` + testInterval + `"],"granularity":"minute","context":"bad"}`, true, reasonInvalidContext},
 		{"multi interval", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), `[`+strconvQuote(testInterval)+`]`, `[`+strconvQuote(testInterval)+`,"2024-02-01/2024-02-02"]`, 1), true, reasonMultipleIntervals},
 		{"invalid interval", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "not-an-interval", 1), true, reasonInvalidInterval},
+		{"unaligned interval start", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "2024-01-01T00:00:30Z/2024-01-02T00:00:00Z", 1), true, reasonUnalignedInterval},
+		{"unaligned interval end", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "2024-01-01T00:00:00Z/2024-01-02T00:00:30Z", 1), true, reasonUnalignedInterval},
 		{"unknown granularity", http.MethodPost, headers.ValueApplicationJSON, druidQuery("timeseries", `"fortnight"`), true, reasonUnsupportedGranularity},
 		{"by segment", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("topN", `"minute"`), "}") + `,"context":{"bySegment":true}}`, true, reasonUnsupportedShape},
 		{"numeric timestamps", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"serializeDateTimeAsLong":true}}`, true, reasonUnsupportedShape},
 		{"timeseries grand total", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"grandTotal":true}}`, true, reasonUnsupportedShape},
 		{"groupBy array", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"context":{"resultAsArray":true}}`, true, reasonUnsupportedShape},
+		{"groupBy dimension-first order", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"context":{"sortByDimsFirst":true}}`, true, reasonUnsupportedShape},
+		{"groupBy limit", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"limitSpec":{"type":"default","limit":10}}`, true, reasonUnsupportedShape},
 		{"topN missing dimension", http.MethodPost, headers.ValueApplicationJSON, druidQuery("topN", `"minute"`), true, reasonUnsupportedDimension},
 		{"invalid dimensions", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"dimensions":[{"type":"unknown"}]}`, true, reasonUnsupportedDimension},
 	}
@@ -243,6 +255,16 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 				t.Fatal("OPC fallback did not preserve its request")
 			}
 		})
+	}
+}
+
+func TestParseTimeRangeQueryAllowsNoopGroupByLimit(t *testing.T) {
+	body := strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") +
+		`,"limitSpec":{"type":"noop"}}`
+	r := httptest.NewRequest(http.MethodPost, "http://trickster/druid/v2", strings.NewReader(body))
+	r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+	if _, _, _, err := (&Client{}).ParseTimeRangeQuery(r); err != nil {
+		t.Fatal(err)
 	}
 }
 

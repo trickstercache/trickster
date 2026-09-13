@@ -115,6 +115,9 @@ func TestHTTPTimeSeriesProviderNames(t *testing.T) {
 			t.Fatalf("%q is not a supported http time series provider", n)
 		}
 	}
+	if !IsSupportedHTTPTimeSeriesProvider(Druid) {
+		t.Fatal("druid is not registered as an http time series provider")
+	}
 	if IsSupportedHTTPTimeSeriesProvider(MySQL) || IsSupportedHTTPTimeSeriesProvider(ReverseProxy) {
 		t.Fatal("mysql and the reverse proxy are not http time series providers")
 	}

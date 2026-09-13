@@ -20,6 +20,7 @@ backends:
 
 - `queryType` is `timeseries`, `groupBy`, or `topN`.
 - `intervals` contains exactly one ISO-8601 half-open interval.
+- Both interval boundaries align with the selected granularity and origin.
 - `granularity` has a fixed width:
   - a simple granularity from `second` through `day`;
   - a positive `duration` granularity in milliseconds; or
@@ -44,8 +45,10 @@ provide explicit freshness headers. This includes:
 - other native query types such as `scan`, `search`, `segmentMetadata`,
   `datasourceMetadata`, and `timeBoundary`;
 - multiple intervals;
+- interval boundaries that do not align with the selected granularity;
 - `all`, `none`, `week`, `month`, `quarter`, and `year` simple granularities;
-- calendar-width periods or period granularities in a non-UTC time zone; and
+- calendar-width periods or period granularities in a non-UTC time zone;
+- groupBy limits or dimension-first result ordering; and
 - response-changing contexts such as `bySegment`, `serializeDateTimeAsLong`,
   timeseries `grandTotal`, or groupBy `resultAsArray`.
 

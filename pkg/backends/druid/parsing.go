@@ -133,7 +133,12 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
 	}
-	start = truncateToPhase(start, step, phase)
+	alignedStart := truncateToPhase(start, step, phase)
+	alignedEnd := truncateToPhase(endExclusive, step, phase)
+	if !alignedStart.Equal(start) || !alignedEnd.Equal(endExclusive) {
+		return c.reject(trq, ro, true, modeObject, reasonUnalignedInterval, errObjectCache)
+	}
+	start = alignedStart
 	end := truncateToPhase(endExclusive.Add(-time.Nanosecond), step, phase)
 	if end.Before(start) {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
@@ -393,10 +398,25 @@ func responseShapeSupported(queryType string, document map[string]any) bool {
 	case queryTypeTimeseries:
 		return !booleanValue(context["grandTotal"])
 	case queryTypeGroupBy:
-		return !booleanValue(context["resultAsArray"])
+		return !booleanValue(context["resultAsArray"]) &&
+			!booleanValue(context["sortByDimsFirst"]) &&
+			groupByLimitSpecSupported(document)
 	default:
 		return true
 	}
+}
+
+func groupByLimitSpecSupported(document map[string]any) bool {
+	value, exists := document["limitSpec"]
+	if !exists {
+		return true
+	}
+	spec, ok := value.(map[string]any)
+	if !ok {
+		return false
+	}
+	typeName, ok := spec["type"].(string)
+	return ok && strings.EqualFold(strings.TrimSpace(typeName), "noop")
 }
 
 func integerValue(value any) (int64, bool) {

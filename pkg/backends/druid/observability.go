@@ -41,6 +41,7 @@ const (
 	reasonUnsupportedQueryType   analysisReason = "unsupported_query_type"
 	reasonInvalidContext         analysisReason = "invalid_context"
 	reasonInvalidInterval        analysisReason = "invalid_interval"
+	reasonUnalignedInterval      analysisReason = "unaligned_interval"
 	reasonMultipleIntervals      analysisReason = "multiple_intervals"
 	reasonUnsupportedGranularity analysisReason = "unsupported_granularity"
 	reasonNonFixedGranularity    analysisReason = "non_fixed_granularity"
