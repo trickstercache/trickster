@@ -124,7 +124,7 @@ func TestCacheHitRangeRequest(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	if (string(d2.Body[5:10])) != expected {
+	if string(d2.Body[5:10]) != expected {
 		t.Errorf("expected %s got %s", expected, string(d2.Body[5:10]))
 	}
 	if deltas != nil {

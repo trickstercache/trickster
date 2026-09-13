@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	proxyengines "github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
@@ -141,9 +143,6 @@ func TestValidationErrorsEscapeBackendName(t *testing.T) {
 	}
 }
 
-// TestPathHandler_KeyFormatMatchesEngines stores entries under the engine key
-// format for two backends sharing CacheKeyPrefix, then issues purges and
-// asserts only the targeted backend's entries are removed.
 func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 	const (
 		sharedPrefix = "shared"
@@ -152,8 +151,10 @@ func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 
 	// backend "a" carries a configured identity on the purged path, so its
 	// entries are stored under the identity-keyed variant as well
-	pathA := &po.Options{Path: purgePath, Methods: methods,
-		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic pinned"}}
+	pathA := &po.Options{
+		Path: purgePath, Methods: methods,
+		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic pinned"},
+	}
 	if err := pathA.Initialize(""); err != nil {
 		t.Fatal(err)
 	}
@@ -230,6 +231,88 @@ func TestPathHandler_KeyFormatMatchesEngines(t *testing.T) {
 			if _, _, err := cacheB.Retrieve(kb); err == nil {
 				t.Errorf("backend b key %q should have been purged", kb)
 			}
+		}
+	}
+}
+
+func TestPathHandler_PurgesEveryConditionalIdentity(t *testing.T) {
+	// conditioned paths for one pathname key their entries on different
+	// configured identities, and a purge removes every variant
+	const (
+		purgePath = "/api/v1/query"
+		otherPath = "/api/v1/other"
+	)
+	newPath := func(path string, mt matching.PathMatchName, auth string,
+		conds []*po.Condition,
+	) *po.Options {
+		p := &po.Options{
+			Path: path, MatchTypeName: mt, Methods: slices.Clone(methods),
+			RequestHeaders: map[string]string{headers.NameAuthorization: auth},
+			MatchHeaders:   conds,
+		}
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	list := po.List{
+		newPath(purgePath, matching.PathMatchNameExact, "Basic gold",
+			[]*po.Condition{{Name: "X-Tenant", Value: "gold"}}),
+		newPath(purgePath, matching.PathMatchNameExact, "Basic silver",
+			[]*po.Condition{{Name: "X-Tenant", Value: "silver"}}),
+		// a request matching neither condition falls through to this one
+		newPath("/api/", matching.PathMatchNamePrefix, "Basic fallback", nil),
+	}
+	identities := []string{""}
+	for _, p := range list {
+		ik := p.IdentityKeyPart()
+		if ik == "" || slices.Contains(identities, ik) {
+			t.Fatalf("path %q must have a distinct configured identity", p.Path)
+		}
+		identities = append(identities, ik)
+	}
+
+	c := newMemCache()
+	bes := backends.Backends{"a": &fakeBackend{
+		cfg:   &bo.Options{Name: "a", CacheKeyPrefix: "shared", Paths: list},
+		cache: c,
+	}}
+
+	// every variant a request to the purged path could have created, plus
+	// the same variants of a neighboring path, which must survive
+	var purged, kept []string
+	for _, engine := range engines {
+		for _, method := range methods {
+			for _, identity := range identities {
+				purged = append(purged, proxyengines.ComposeCacheKey("a", "shared", engine,
+					proxyengines.DerivePathCacheKey(purgePath, method, identity)))
+				kept = append(kept, proxyengines.ComposeCacheKey("a", "shared", engine,
+					proxyengines.DerivePathCacheKey(otherPath, method, identity)))
+			}
+		}
+	}
+	for _, k := range append(slices.Clone(purged), kept...) {
+		if err := c.Store(k, []byte("v"), time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const pathPrefix = "/trickster/purge/path/"
+	w := httptest.NewRecorder()
+	PathHandler(pathPrefix, &bes)(w, httptest.NewRequest(http.MethodGet,
+		pathPrefix+"a"+purgePath, nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	for _, k := range purged {
+		if _, _, err := c.Retrieve(k); err == nil {
+			t.Errorf("key %q should have been purged", k)
+		}
+	}
+	for _, k := range kept {
+		if _, _, err := c.Retrieve(k); err != nil {
+			t.Errorf("key %q is another path and should remain, got err=%v", k, err)
 		}
 	}
 }

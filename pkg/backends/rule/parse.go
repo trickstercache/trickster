@@ -20,11 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/redirect"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 )
 
@@ -109,6 +109,9 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 	}
 	r.extractionFunc = exf
 	r.extractionArg = o.InputKey
+	if isHeaderSource(o.InputSource) {
+		r.extractionArg = matching.CanonicalHeaderName(o.InputKey)
+	}
 
 	// if the user only wants a part of the response
 	if o.InputIndex > -1 && o.InputDelimiter != "" {
@@ -130,33 +133,34 @@ func (c *Client) parseOptions(o *ro.Options, rwi rewriter.InstructionsLookup) er
 		}
 	}
 
-	if strings.HasPrefix(o.Operation, "!") {
+	if strings.HasPrefix(o.Operation, ro.NegatePrefix) {
 		r.negateOpResult = true
-		o.Operation = o.Operation[1:]
+		o.Operation = o.Operation[len(ro.NegatePrefix):]
 	}
 
-	of, ok := operationFuncs[operation(o.InputType+"-"+o.Operation)]
-	if !ok {
-		return fmt.Errorf("invalid operation %s in rule %s", o.InputType+"-"+o.Operation, o.Name)
-	}
-	r.operationFunc = of
 	r.operationArg = o.OperationArg
+	key := operationKey(o.InputType, o.Operation)
+	if key == opStringRMatch {
+		// the expression is compiled once and owned by this rule, so a
+		// reload parsing new rules shares nothing with rules still serving
+		if r.operationArg == "" {
+			return ErrInvalidRegularExpression
+		}
+		re, err := matching.NewRegex(r.operationArg)
+		if err != nil {
+			return err
+		}
+		r.regex = re.Regexp()
+		r.operationFunc = regexOperation(re)
+	} else if of, ok := operationFuncs[key]; ok {
+		r.operationFunc = of
+	} else {
+		return fmt.Errorf("invalid operation %s in rule %s", key, o.Name)
+	}
 	if r.operationArg == "" {
 		r.evaluatorFunc = r.EvaluateCaseArg
 	} else {
 		r.evaluatorFunc = r.EvaluateOpArg
-	}
-
-	if o.Operation == "rmatch" {
-		if r.operationArg == "" {
-			return ErrInvalidRegularExpression
-		}
-		re, err := regexp.Compile(r.operationArg)
-		if err != nil {
-			return err
-		}
-		compiledRegexes[r.operationArg] = re
-		r.regex = re
 	}
 
 	if len(o.CaseOptions) > 0 {

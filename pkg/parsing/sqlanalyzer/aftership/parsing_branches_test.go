@@ -115,24 +115,36 @@ func TestAnalyzeRangeAndGroupingBranches(t *testing.T) {
 		query  string
 		reason sqlanalyzer.AnalysisReason
 	}{
-		{"no range clause",
+		{
+			"no range clause",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events GROUP BY t",
-			sqlanalyzer.ReasonNotTimeRange},
-		{"missing lower bound",
+			sqlanalyzer.ReasonNotTimeRange,
+		},
+		{
+			"missing lower bound",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts < 240 GROUP BY t",
-			sqlanalyzer.ReasonNotTimeRange},
-		{"ambiguous lower bound",
+			sqlanalyzer.ReasonNotTimeRange,
+		},
+		{
+			"ambiguous lower bound",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 60 AND ts >= 120 AND ts < 240 GROUP BY t",
-			sqlanalyzer.ReasonAmbiguousTimeAxis},
-		{"ambiguous upper bound",
+			sqlanalyzer.ReasonAmbiguousTimeAxis,
+		},
+		{
+			"ambiguous upper bound",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 60 AND ts < 180 AND ts < 240 GROUP BY t",
-			sqlanalyzer.ReasonAmbiguousTimeAxis},
-		{"non-column grouping",
+			sqlanalyzer.ReasonAmbiguousTimeAxis,
+		},
+		{
+			"non-column grouping",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 60 GROUP BY tuple(t)",
-			sqlanalyzer.ReasonUnsupportedGrouping},
-		{"group by rollup",
+			sqlanalyzer.ReasonUnsupportedGrouping,
+		},
+		{
+			"group by rollup",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 60 GROUP BY t WITH ROLLUP",
-			sqlanalyzer.ReasonUnsupportedGrouping},
+			sqlanalyzer.ReasonUnsupportedGrouping,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -287,28 +299,46 @@ func TestEvaluateBoundBranches(t *testing.T) {
 	}{
 		{"number", number("1234"), boundUnixMilli, time.UnixMilli(1234), true},
 		{"invalid number", number("bad"), boundUnixSeconds, time.Unix(0, 0), false},
-		{"SQL datetime", &chast.StringLiteral{Literal: "2020-01-02 03:04:05"}, boundUnixSeconds,
-			time.Unix(1_577_934_245, 0), true},
+		{
+			"SQL datetime", &chast.StringLiteral{Literal: "2020-01-02 03:04:05"}, boundUnixSeconds,
+			time.Unix(1_577_934_245, 0), true,
+		},
 		{"invalid SQL datetime", &chast.StringLiteral{Literal: "bad"}, boundUnixSeconds, time.Time{}, false},
 		{"now", functionExpression("now"), boundUnixSeconds, now, true},
-		{"toDateTime", functionExpression("toDateTime", number("120")), boundUnixSeconds,
-			time.Unix(120, 0), true},
-		{"toDate", functionExpression("toDate", number("120")), boundUnixSeconds,
-			time.Unix(120, 0), true},
+		{
+			"toDateTime", functionExpression("toDateTime", number("120")), boundUnixSeconds,
+			time.Unix(120, 0), true,
+		},
+		{
+			"toDate", functionExpression("toDate", number("120")), boundUnixSeconds,
+			time.Unix(120, 0), true,
+		},
 		{"function without name", &chast.FunctionExpr{}, boundUnixSeconds, time.Time{}, false},
 		{"conversion missing argument", functionExpression("toDateTime"), boundUnixSeconds, time.Time{}, false},
-		{"conversion invalid argument", functionExpression("toDateTime", &chast.Ident{Name: "missing"}),
-			boundUnixSeconds, time.Time{}, false},
+		{
+			"conversion invalid argument", functionExpression("toDateTime", &chast.Ident{Name: "missing"}),
+			boundUnixSeconds,
+			time.Time{},
+			false,
+		},
 		{"constant", &chast.Ident{Name: "start"}, boundUnixSeconds, time.Unix(120, 0), true},
 		{"missing constant", &chast.Ident{Name: "missing"}, boundUnixSeconds, time.Unix(0, 0), false},
-		{"addition", &chast.BinaryOperation{LeftExpr: number("120"), Operation: chast.TokenKindPlus,
-			RightExpr: number("30")}, boundUnixSeconds, time.Unix(150, 0), true},
-		{"subtraction", &chast.BinaryOperation{LeftExpr: number("120"), Operation: chast.TokenKindMinus,
-			RightExpr: number("30")}, boundUnixSeconds, time.Unix(90, 0), true},
-		{"invalid binary operand", &chast.BinaryOperation{LeftExpr: number("bad"), Operation: chast.TokenKindPlus,
-			RightExpr: number("30")}, boundUnixSeconds, time.Time{}, false},
-		{"unsupported binary operation", &chast.BinaryOperation{LeftExpr: number("120"), Operation: chast.TokenKindMul,
-			RightExpr: number("30")}, boundUnixSeconds, time.Time{}, false},
+		{"addition", &chast.BinaryOperation{
+			LeftExpr: number("120"), Operation: chast.TokenKindPlus,
+			RightExpr: number("30"),
+		}, boundUnixSeconds, time.Unix(150, 0), true},
+		{"subtraction", &chast.BinaryOperation{
+			LeftExpr: number("120"), Operation: chast.TokenKindMinus,
+			RightExpr: number("30"),
+		}, boundUnixSeconds, time.Unix(90, 0), true},
+		{"invalid binary operand", &chast.BinaryOperation{
+			LeftExpr: number("bad"), Operation: chast.TokenKindPlus,
+			RightExpr: number("30"),
+		}, boundUnixSeconds, time.Time{}, false},
+		{"unsupported binary operation", &chast.BinaryOperation{
+			LeftExpr: number("120"), Operation: chast.TokenKindMul,
+			RightExpr: number("30"),
+		}, boundUnixSeconds, time.Time{}, false},
 		{"unsupported expression", &chast.PlaceHolder{Type: "x"}, boundUnixSeconds, time.Time{}, false},
 	}
 	for _, test := range tests {

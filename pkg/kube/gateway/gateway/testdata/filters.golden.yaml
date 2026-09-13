@@ -1,0 +1,303 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+    kgw--listener-http-8080:
+        port: 8080
+backends:
+    kgw--httproute.shop.both-ports_r0:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - both.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /both
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              req_rewriter_name: kgw--httproute.shop.both-ports_r0_w0
+              response_code: 302
+    kgw--httproute.shop.both-ports_r1:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - both.example.com
+        listener_names:
+            - kgw--listener-http-8080
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /both
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              req_rewriter_name: kgw--httproute.shop.both-ports_r1_w0
+              response_code: 302
+    kgw--httproute.shop.headers_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.headers
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+              request_headers:
+                +X-Trace: traced
+                -X-Internal: ""
+                Host: web.internal
+                X-Env: prod
+              response_headers:
+                +Vary: Accept
+                -Server: ""
+                Cache-Control: no-store
+              req_rewriter_name: kgw--httproute.shop.headers_r0_w0
+    kgw--httproute.shop.hostname-only_r0:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-8080
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /alt
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              req_rewriter_name: kgw--httproute.shop.hostname-only_r0_w0
+              response_code: 302
+    kgw--httproute.shop.https_r0:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /login
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              req_rewriter_name: kgw--httproute.shop.https_r0_w0
+              response_code: 302
+    kgw--httproute.shop.member-prefix_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.member-prefix
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /member
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+              req_rewriter_name: kgw--httproute.shop.member-prefix_r0_w0
+    kgw--httproute.shop.moved_r0:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /old
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              response_headers:
+                Cache-Control: no-store
+              req_rewriter_name: kgw--httproute.shop.moved_r0_w0
+              response_code: 301
+    kgw--httproute.shop.split_r0:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /split
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.split_r0_b0
+                  weight: 3
+                - name: kgw--httproute.shop.split_r0_b1
+                  weight: 1
+    kgw--httproute.shop.split_r0_b0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+              request_headers:
+                X-Variant: stable
+    kgw--httproute.shop.split_r0_b1:
+        provider: rp
+        origin_url: http://canary-svc.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+              request_headers:
+                X-Variant: canary
+              response_headers:
+                +Vary: X-Variant
+              req_rewriter_name: kgw--httproute.shop.split_r0_b1_w
+    kgw--httproute.shop.tenant_r0:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /tenant
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              request_headers:
+                hOsT: tenant.example.com
+              req_rewriter_name: kgw--httproute.shop.tenant_r0_w0
+              response_code: 302
+    kgw--httproute.shop.tenant_r1:
+        provider: rp
+        origin_url: https://redirect.kgw.invalid
+        hosts:
+            - shop.example.com
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /late
+              match_type: segment
+              handler: redirect
+              methods:
+                - '*'
+              req_rewriter_name: kgw--httproute.shop.tenant_r1_w0
+              response_code: 302
+request_rewriters:
+    kgw--httproute.shop.both-ports_r0_w0:
+        instructions:
+            - - hostname
+              - set
+              - new.example.com
+            - - port
+              - set
+              - "80"
+    kgw--httproute.shop.both-ports_r1_w0:
+        instructions:
+            - - hostname
+              - set
+              - new.example.com
+            - - port
+              - set
+              - "8080"
+    kgw--httproute.shop.headers_r0_w0:
+        instructions:
+            - - path
+              - prefix-replace
+              - /api
+              - /v2
+    kgw--httproute.shop.hostname-only_r0_w0:
+        instructions:
+            - - hostname
+              - set
+              - new.example.com
+            - - port
+              - set
+              - "8080"
+    kgw--httproute.shop.https_r0_w0:
+        instructions:
+            - - scheme
+              - set
+              - https
+    kgw--httproute.shop.member-prefix_r0_w0:
+        instructions:
+            - - path
+              - prefix-replace
+              - /member
+              - /m
+    kgw--httproute.shop.moved_r0_w0:
+        instructions:
+            - - scheme
+              - set
+              - https
+            - - hostname
+              - set
+              - new.example.com
+            - - port
+              - set
+              - "8443"
+            - - path
+              - set
+              - /new
+    kgw--httproute.shop.split_r0_b1_w:
+        instructions:
+            - - path
+              - set
+              - /canary
+    kgw--httproute.shop.tenant_r0_w0:
+        instructions:
+            - - scheme
+              - set
+              - https
+    kgw--httproute.shop.tenant_r1_w0:
+        instructions:
+            - - scheme
+              - set
+              - https

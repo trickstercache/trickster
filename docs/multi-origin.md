@@ -91,6 +91,8 @@ Example Client Request URLs:
 
 In this mode, multiple DNS records point to a single Trickster instance. The FQDN used by the client to reach Trickster is mapped to specific backend configurations using the `hosts` list. In this mode, the URL Path is _not_ considered during Backend Selection.
 
+Host matching is case-insensitive and ignores the port. An entry may also be a single-label wildcard such as `*.example.com`, which matches `foo.example.com` but not `example.com` or `a.b.example.com`, or an any-depth wildcard such as `**.example.com`, which matches `foo.example.com` and `a.b.example.com` but not `example.com`; an exact entry on another backend always wins over a wildcard, and a `*.` entry wins over a `**.` entry for the same domain. A `*` anywhere else in an entry is rejected at load time. See [Host Resolution](./paths.md#host-resolution) for the full precedence order.
+
 Example DNS-based Backend Configuration:
 
 ```yaml

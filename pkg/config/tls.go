@@ -60,14 +60,17 @@ func (c *Config) tlsCertConfig(listenerName string) (*tls.Config, error) {
 	}
 
 	l := len(to)
-	if l == 0 {
-		return nil, nil
-	}
-
 	tlsConfig := &tls.Config{
 		Certificates: make([]tls.Certificate, l),
 		NextProtos:   []string{"h2"},
 		MinVersion:   tls.VersionTLS12,
+	}
+	if l == 0 {
+		// a runtime-cert listener starts with an empty store and is fed later
+		if o := c.Listeners[listenerName]; o != nil && o.TLSRuntimeCerts {
+			return tlsConfig, nil
+		}
+		return nil, nil
 	}
 
 	for i, tc := range to {

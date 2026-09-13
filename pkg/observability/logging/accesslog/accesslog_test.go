@@ -26,11 +26,17 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/format"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	utilmiddleware "github.com/trickstercache/trickster/v2/pkg/util/middleware"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func testLoggerOptions(t *testing.T) *alo.Options {
@@ -98,7 +104,8 @@ func TestMiddlewareAccessAndErrorLogs(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/fail" {
 			request.GetResources(r).AuthResult = &authtypes.AuthResult{
-				Status: authtypes.AuthSuccess, Username: "frank"}
+				Status: authtypes.AuthSuccess, Username: "frank",
+			}
 		}
 		w.Header().Set(headers.NameTricksterResult, "engine=HTTPProxy; status=hit")
 		if r.URL.Path == "/fail" {
@@ -215,7 +222,8 @@ func TestMiddlewareUsesAuthenticatedUsername(t *testing.T) {
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.Path == "/verified" {
 				request.GetResources(r).AuthResult = &authtypes.AuthResult{
-					Status: authtypes.AuthSuccess, Username: "verified"}
+					Status: authtypes.AuthSuccess, Username: "verified",
+				}
 			}
 			w.WriteHeader(http.StatusNoContent)
 		}))
@@ -227,6 +235,28 @@ func TestMiddlewareUsesAuthenticatedUsername(t *testing.T) {
 	l.Close()
 	if s := readFile(t, o.Filename); s != "-\nverified\n" {
 		t.Errorf("unexpected authenticated users: %q", s)
+	}
+}
+
+func TestMiddlewareLogsAWithheldResultHeader(t *testing.T) {
+	// A route that hides X-Trickster-Result from the client leaves its value on the shared
+	// resources, and the log records it from there
+	o := testLoggerOptions(t)
+	o.ErrorFilename = ""
+	o.Format = "%{cache-status}x %{engine}x"
+	l, err := NewLogger(o, 0, "b", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Middleware(l, "/", true, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			request.GetResources(r).HiddenResult = "engine=ObjectProxyCache; status=hit"
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	l.Close()
+	if s := readFile(t, o.Filename); s != "hit ObjectProxyCache\n" {
+		t.Errorf("unexpected result fields: %q", s)
 	}
 }
 
@@ -321,7 +351,8 @@ func TestGenerations(t *testing.T) {
 	dir := t.TempDir()
 	newGenLogger := func(name string) *Logger {
 		l, err := NewLogger(&alo.Options{
-			Filename: filepath.Join(dir, name)}, 0, "b", "p")
+			Filename: filepath.Join(dir, name),
+		}, 0, "b", "p")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -351,4 +382,196 @@ func TestGenerations(t *testing.T) {
 	BeginGeneration()
 	CommitGeneration(0)
 	waitClosed(t, l2)
+}
+
+const (
+	routerTestBackend = "api"
+	routerTestMatched = "/matched"
+	routerTestMissed  = "/missed"
+)
+
+func TestRouterMiddlewareLogsOnlyUnmatchedRequests(t *testing.T) {
+	opts := testLoggerOptions(t)
+	opts.Format = "%U %>s %{backend}x"
+	opts.ErrorFilename = ""
+	routeLogger, err := NewLogger(opts, 0, routerTestBackend, "rp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	routerLogger, err := NewLogger(opts, 0, UnmatchedName, UnmatchedName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.Handle(routerTestMatched, Middleware(routeLogger, routerTestMatched, false,
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })))
+	h := RouterMiddleware(routerLogger, mux)
+	for _, path := range []string{routerTestMatched, routerTestMissed} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://example.com"+path, nil))
+	}
+	routeLogger.Close()
+	routerLogger.Close()
+	lines := strings.Split(strings.TrimSpace(readFile(t, opts.Filename)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("lines = %q; want exactly one line per request", lines)
+	}
+	if lines[0] != routerTestMatched+" 200 "+routerTestBackend {
+		t.Errorf("matched line = %q; want the route-level line only", lines[0])
+	}
+	if lines[1] != routerTestMissed+" 404 "+UnmatchedName {
+		t.Errorf("unmatched line = %q; want the router-level line", lines[1])
+	}
+	if RouterMiddleware(nil, mux) != http.Handler(mux) {
+		t.Error("nil logger must pass the handler through")
+	}
+}
+
+func TestMiddlewareLogsResolvedClientIP(t *testing.T) {
+	o := testLoggerOptions(t)
+	o.ErrorFilename = ""
+	o.Format = "%{c}a %h"
+	l, err := NewLogger(o, 0, "b", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := Middleware(l, "/", false, http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.RemoteAddr = "10.0.0.5:4242"
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	r = r.WithContext(tctx.WithClientIP(r.Context(), "203.0.113.9"))
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	l.Close()
+	if s := readFile(t, o.Filename); s != "10.0.0.5 10.0.0.5\n10.0.0.5 203.0.113.9\n" {
+		t.Errorf("unexpected client addresses: %q", s)
+	}
+}
+
+func TestMiddlewareLogsUpstreamAndTrace(t *testing.T) {
+	o := testLoggerOptions(t)
+	o.ErrorFilename = ""
+	o.Format = "%{upstream-addr}x %{upstream-status}x %{upstream-duration}x %{trace-id}x %{span-id}x %{route}e"
+	o.Extra = map[string]string{"route": "ns/name"}
+	l, err := NewLogger(o, 0, "b", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !l.NeedsResources() || l.NeedsRequestID() {
+		t.Fatal("format must need resources but not a request id")
+	}
+	var nilLogger *Logger
+	if nilLogger.NeedsResources() || nilLogger.NeedsRequestID() {
+		t.Fatal("nil logger needs nothing")
+	}
+	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	// the resources are created by the logger when none exist, so the route
+	// can record its upstream exchange on them
+	h := Middleware(l, "/", false, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			rsc := request.GetResources(r)
+			if r.URL.Path == "/traced" {
+				rsc.SetUpstream("10.1.1.1:9090", http.StatusBadGateway, 42*time.Millisecond)
+				rsc.SpanContext = trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID})
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/plain", nil))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/traced", nil))
+	l.Close()
+	want := "- - - - - ns/name\n10.1.1.1:9090 502 42 4bf92f3577b34da6a3ce929d0e0e4736 00f067aa0ba902b7 ns/name\n"
+	if s := readFile(t, o.Filename); s != want {
+		t.Errorf("unexpected lines: %q", s)
+	}
+}
+
+func TestMiddlewareRequestID(t *testing.T) {
+	o := testLoggerOptions(t)
+	o.ErrorFilename = ""
+	o.Format = "%{request-id}x"
+	l, err := NewLogger(o, 0, "b", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !l.NeedsRequestID() || l.NeedsResources() {
+		t.Fatal("format must need a request id but not resources")
+	}
+	var upstreamIDs []string
+	h := Middleware(l, "/", false, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			upstreamIDs = append(upstreamIDs, r.Header.Get(headers.NameXRequestID))
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set(headers.NameXRequestID, "client-supplied")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if w.Header().Get(headers.NameXRequestID) != "client-supplied" {
+		t.Errorf("response id = %q; want the received id echoed", w.Header().Get(headers.NameXRequestID))
+	}
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	assigned := w.Header().Get(headers.NameXRequestID)
+	if len(assigned) != 32 {
+		t.Errorf("assigned id = %q; want 32 hex characters", assigned)
+	}
+	if len(upstreamIDs) != 2 || upstreamIDs[0] != "client-supplied" || upstreamIDs[1] != assigned {
+		t.Errorf("upstream ids = %v; want the logged ids on the request", upstreamIDs)
+	}
+	// the router-level middleware assigns ids to unmatched requests too
+	w = httptest.NewRecorder()
+	RouterMiddleware(l, http.NotFoundHandler()).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	unmatched := w.Header().Get(headers.NameXRequestID)
+	l.Close()
+	if s := readFile(t, o.Filename); s != "client-supplied\n"+assigned+"\n"+unmatched+"\n" {
+		t.Errorf("unexpected ids: %q", s)
+	}
+}
+
+func TestLoggerCountsDroppedLines(t *testing.T) {
+	o := testLoggerOptions(t)
+	o.ErrorFilename = ""
+	o.Format = "%U"
+	l, err := NewLogger(o, 0, "dropped-test", "p")
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter := metrics.AccessLogDroppedLines.WithLabelValues("dropped-test", logNameAccess)
+	before := testutil.ToFloat64(counter)
+	f := &format.Fields{Path: strings.Repeat("x", 300*1024)}
+	l.Log(f)
+	l.Log(&format.Fields{Path: "/ok"})
+	l.Close()
+	if got := testutil.ToFloat64(counter) - before; got != 1 {
+		t.Errorf("dropped lines = %v; want 1 for a line larger than the write buffer", got)
+	}
+	if s := readFile(t, o.Filename); s != "/ok\n" {
+		t.Errorf("unexpected content: %q", s)
+	}
+}
+
+func BenchmarkLoggerLogParallel(b *testing.B) {
+	dir := b.TempDir()
+	o := &alo.Options{
+		Filename: filepath.Join(dir, "bench.access.log"), Format: format.Extended,
+		Extra: map[string]string{"route": "ns/name"},
+	}
+	l, err := NewLogger(o, 0, "bench", "rp")
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer l.Close()
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		f := &format.Fields{
+			StartTime: time.Now(), Duration: 3 * time.Millisecond, ClientIP: "203.0.113.9",
+			Method: http.MethodGet, RequestURI: "/api/query?q=up", Path: "/api/query",
+			Proto: "HTTP/1.1", Host: "example.com", Status: 200, BytesWritten: 2326,
+			ReqHeader:   http.Header{headers.NameUserAgent: []string{"bench/1.0"}},
+			CacheStatus: "hit", Engine: "DeltaProxyCache",
+		}
+		for pb.Next() {
+			l.Log(f)
+		}
+	})
 }

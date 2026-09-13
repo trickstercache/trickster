@@ -42,8 +42,10 @@ func TestLearnAgainstGraphiteWeb(t *testing.T) {
 	obs := newCounter()
 	reg := resolution.NewRegistry(resolution.RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second}, nil)
 	exp := &resolution.Expander{Origin: origin, Registry: reg, Observer: obs, TTL: time.Minute}
-	learner := &resolution.Learner{Prober: &resolution.Prober{Origin: origin, Observer: obs},
-		Expander: exp, Registry: reg, Observer: obs, Budget: 96, Name: "devenv"}
+	learner := &resolution.Learner{
+		Prober:   &resolution.Prober{Origin: origin, Observer: obs},
+		Expander: exp, Registry: reg, Observer: obs, Budget: 96, Name: "devenv",
+	}
 	want := map[string]string{
 		"dev.fast.cpu.host01.percent":            "10s:6h,1m:1w,10m:5y",
 		"dev.medium.orders.us-east.count":        "1m:2d,5m:30d,1h:2y",

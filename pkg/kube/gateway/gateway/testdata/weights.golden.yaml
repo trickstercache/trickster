@@ -1,0 +1,140 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+backends:
+    kgw--httproute.shop.split_r0:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.split_r0_b0
+                  weight: 3
+                - name: kgw--httproute.shop.split_r0_b1
+                  weight: 1
+                - name: kgw--httproute.shop.split_r0_b3
+                  weight: 1
+    kgw--httproute.shop.split_r0_b0:
+        provider: rp
+        origin_url: http://stable.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.split_r0_b1:
+        provider: rp
+        origin_url: http://canary.shop.svc:8080
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--httproute.shop.split_r0_b3:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 500
+              response_body: unresolved backend reference
+    kgw--httproute.shop.split_r1:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        paths:
+            - path: /empty
+              match_type: exact
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.split_r1_b0
+                  weight: 1
+    kgw--httproute.shop.split_r1_b0:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 500
+              response_body: unresolved backend reference
+    kgw--httproute.shop.split_r2:
+        provider: alb
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        paths:
+            - path: /zeroed
+              match_type: exact
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--httproute.shop.split_r2_b0
+                  weight: 1
+    kgw--httproute.shop.split_r2_b0:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-http-80
+        cache_key_prefix: httproute.shop.split
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 500
+              response_body: unresolved backend reference

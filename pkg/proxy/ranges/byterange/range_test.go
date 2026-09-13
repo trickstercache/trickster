@@ -482,3 +482,80 @@ func TestCompressRanges(t *testing.T) {
 		})
 	}
 }
+
+func TestResolve(t *testing.T) {
+	tests := []struct {
+		name          string
+		header        string
+		contentLength int64
+		expected      string
+		satisfiable   bool
+	}{
+		{"suffix", "bytes=-5", 20, "bytes=15-19", true},
+		{"suffix longer than content", "bytes=-50", 20, "bytes=0-19", true},
+		{"suffix of zero", "bytes=-0", 20, "", false},
+		{"open ended", "bytes=15-", 20, "bytes=15-19", true},
+		{"open ended from zero", "bytes=0-", 20, "bytes=0-19", true},
+		{"fully specified", "bytes=5-9", 20, "bytes=5-9", true},
+		{"end past content", "bytes=15-200", 20, "bytes=15-19", true},
+		{"start past content", "bytes=5000-6000", 20, "", false},
+		{"start at last byte", "bytes=19-19", 20, "bytes=19-19", true},
+		{"multipart", "bytes=0-4,-5", 20, "bytes=0-4, 15-19", true},
+		{"one of two satisfiable", "bytes=0-4,5000-6000", 20, "bytes=0-4", true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			rs, ok := ParseRangeHeader(test.header).Resolve(test.contentLength)
+			if ok != test.satisfiable {
+				t.Fatalf("satisfiable got %t expected %t", ok, test.satisfiable)
+			}
+			if !ok {
+				return
+			}
+			if got := rs.String(); got != test.expected {
+				t.Errorf("got %s expected %s", got, test.expected)
+			}
+		})
+	}
+}
+
+func TestResolveUnknownContentLength(t *testing.T) {
+	// without a length only a fully specified range survives
+	if _, ok := (Range{Start: 12, End: 15}).Resolve(-1); !ok {
+		t.Error("expected a fully specified range to resolve")
+	}
+	if _, ok := (Range{Start: -1, End: 5}).Resolve(-1); ok {
+		t.Error("expected a suffix range not to resolve")
+	}
+	if _, ok := (Range{Start: 5, End: -1}).Resolve(0); ok {
+		t.Error("expected an open-ended range not to resolve")
+	}
+	if _, ok := (Ranges{}).Resolve(20); ok {
+		t.Error("expected an empty range set not to resolve")
+	}
+}
+
+// the sentinel bounds of an unresolved range once indexed the body directly,
+// panicking on suffix, open-ended and unsatisfiable forms
+func TestExtractResponseRangeDoesNotPanic(t *testing.T) {
+	body := []byte("0123456789abcdefghij")
+	tests := []struct {
+		header   string
+		expected string
+	}{
+		{"bytes=-5", "fghij"},
+		{"bytes=15-", "fghij"},
+		{"bytes=5000-6000", ""},
+		{"bytes=-0", ""},
+		{"bytes=0-4", "01234"},
+	}
+	for _, test := range tests {
+		t.Run(test.header, func(t *testing.T) {
+			rs := ParseRangeHeader(test.header)
+			_, b := MultipartByteRanges{}.ExtractResponseRange(rs, int64(len(body)), "text/plain", body)
+			if string(b) != test.expected {
+				t.Errorf("got %q expected %q", string(b), test.expected)
+			}
+		})
+	}
+}

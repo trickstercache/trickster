@@ -52,8 +52,10 @@ func FuzzParseTimeRange(f *testing.F) {
 	f.Fuzz(func(t *testing.T, q string) {
 		// built by hand rather than through http.NewRequest, which refuses
 		// bytes (a NUL, say) that a query string can still carry
-		r := &http.Request{Method: http.MethodGet, Body: http.NoBody, Header: http.Header{},
-			URL: &url.URL{Scheme: "http", Host: "graphite", Path: "/render", RawQuery: q}}
+		r := &http.Request{
+			Method: http.MethodGet, Body: http.NoBody, Header: http.Header{},
+			URL: &url.URL{Scheme: "http", Host: "graphite", Path: "/render", RawQuery: q},
+		}
 		trq, rlo, canOPC, err := c.ParseTimeRangeQuery(r)
 		if err != nil {
 			// a decline must leave the request servable by the object lane,

@@ -19,6 +19,8 @@ package options
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/pem"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -49,6 +51,17 @@ type Options struct {
 	ClientCertPath string `yaml:"client_cert_path,omitempty"`
 	// ClientKeyPath provides the path to the Client Key when using Mutual Authorization
 	ClientKeyPath string `yaml:"client_key_path,omitempty"`
+	// CertificateAuthorityPEM is an inline PEM bundle of additional Certificate
+	// Authorities for the upstream origin, for material that arrives as
+	// configuration rather than as a file
+	CertificateAuthorityPEM string `yaml:"certificate_authority_pem,omitempty"`
+	// ServerName is the hostname sent as SNI and verified against the upstream
+	// origin's certificate, when it differs from the origin_url host
+	ServerName string `yaml:"server_name,omitempty"`
+	// ExcludeSystemRoots makes the configured Certificate Authorities the
+	// only ones trusted for the upstream origin, rather than additions to
+	// the operating system's; it requires at least one to be configured
+	ExcludeSystemRoots bool `yaml:"exclude_system_roots,omitempty"`
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -75,8 +88,21 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.InsecureSkipVerify == o2.InsecureSkipVerify &&
 		slices.Equal(o.CertificateAuthorityPaths, o2.CertificateAuthorityPaths) &&
 		o.ClientCertPath == o2.ClientCertPath &&
-		o.ClientKeyPath == o2.ClientKeyPath
+		o.ClientKeyPath == o2.ClientKeyPath &&
+		o.CertificateAuthorityPEM == o2.CertificateAuthorityPEM &&
+		o.ServerName == o2.ServerName &&
+		o.ExcludeSystemRoots == o2.ExcludeSystemRoots
 }
+
+// ErrInvalidCertificateAuthorityPEM is returned when certificate_authority_pem
+// holds no parsable certificate
+var ErrInvalidCertificateAuthorityPEM = errors.New(
+	"certificate_authority_pem holds no parsable certificate")
+
+// ErrExcludeSystemRootsWithoutCAs is returned when exclude_system_roots is set
+// with no Certificate Authority configured, which would trust nothing at all
+var ErrExcludeSystemRootsWithoutCAs = errors.New(
+	"exclude_system_roots requires certificate_authority_paths or certificate_authority_pem")
 
 func (o *Options) Initialize(_ string) error {
 	// ServeTLS indicates this backend participates in the frontend's TLS
@@ -92,8 +118,18 @@ func (o *Options) Initialize(_ string) error {
 
 // Validate returns true if the TLS Options are validated
 func (o *Options) Validate() (bool, error) {
+	if o.CertificateAuthorityPEM != "" {
+		if _, err := ValidateCABundle([]byte(o.CertificateAuthorityPEM)); err != nil {
+			return false, err
+		}
+	}
+	if o.ExcludeSystemRoots && len(o.CertificateAuthorityPaths) == 0 &&
+		o.CertificateAuthorityPEM == "" {
+		return false, ErrExcludeSystemRootsWithoutCAs
+	}
 	if (o.FullChainCertPath == "" || o.PrivateKeyPath == "") &&
-		len(o.CertificateAuthorityPaths) == 0 {
+		len(o.CertificateAuthorityPaths) == 0 &&
+		o.CertificateAuthorityPEM == "" && o.ServerName == "" {
 		return false, nil
 	}
 	if o.FullChainCertPath != "" && o.PrivateKeyPath != "" {
@@ -137,7 +173,7 @@ func (o *Options) ToClientTLSConfig() (*tls.Config, error) {
 		return nil, nil
 	}
 	// #nosec G402 -- InsecureSkipVerify is a documented, operator-set option
-	out := &tls.Config{InsecureSkipVerify: o.InsecureSkipVerify}
+	out := &tls.Config{InsecureSkipVerify: o.InsecureSkipVerify, ServerName: o.ServerName}
 	if o.ClientCertPath != "" && o.ClientKeyPath != "" {
 		cert, err := tls.LoadX509KeyPair(o.ClientCertPath, o.ClientKeyPath)
 		if err != nil {
@@ -145,13 +181,17 @@ func (o *Options) ToClientTLSConfig() (*tls.Config, error) {
 		}
 		out.Certificates = []tls.Certificate{cert}
 	}
-	if len(o.CertificateAuthorityPaths) == 0 {
+	if len(o.CertificateAuthorityPaths) == 0 && o.CertificateAuthorityPEM == "" {
 		return out, nil
 	}
 	// start from the system pool so configured CAs are additive rather than
-	// replacing public trust; an unavailable system pool degrades to an
-	// empty one, which trusts exactly the configured CAs
-	rootCAs, _ := x509.SystemCertPool()
+	// replacing public trust, unless the configuration says they are the
+	// whole of it; an unavailable system pool degrades to an empty one,
+	// which trusts exactly the configured CAs
+	var rootCAs *x509.CertPool
+	if !o.ExcludeSystemRoots {
+		rootCAs, _ = x509.SystemCertPool()
+	}
 	if rootCAs == nil {
 		rootCAs = x509.NewCertPool()
 	}
@@ -160,9 +200,16 @@ func (o *Options) ToClientTLSConfig() (*tls.Config, error) {
 		if err != nil {
 			return nil, err
 		}
-		if ok := rootCAs.AppendCertsFromPEM(certs); !ok {
-			return nil, fmt.Errorf("unable to append to CA Certs from file %s", path)
+		if _, err := ValidateCABundle(certs); err != nil {
+			return nil, fmt.Errorf("unable to append to CA Certs from file %s: %w", path, err)
 		}
+		rootCAs.AppendCertsFromPEM(certs)
+	}
+	if o.CertificateAuthorityPEM != "" {
+		if _, err := ValidateCABundle([]byte(o.CertificateAuthorityPEM)); err != nil {
+			return nil, err
+		}
+		rootCAs.AppendCertsFromPEM([]byte(o.CertificateAuthorityPEM))
 	}
 	out.RootCAs = rootCAs
 	return out, nil
@@ -176,4 +223,29 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	}
 	*o = Options(lo)
 	return nil
+}
+
+// ValidateCABundle parses a PEM bundle of certificates and returns how many
+// it holds. A bundle holding no certificate, or a certificate block that
+// does not parse, is an error; blocks of other types are ignored.
+func ValidateCABundle(bundle []byte) (int, error) {
+	var n int
+	for len(bundle) > 0 {
+		var block *pem.Block
+		block, bundle = pem.Decode(bundle)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			continue
+		}
+		if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+			return 0, fmt.Errorf("%w: %w", ErrInvalidCertificateAuthorityPEM, err)
+		}
+		n++
+	}
+	if n == 0 {
+		return 0, ErrInvalidCertificateAuthorityPEM
+	}
+	return n, nil
 }

@@ -92,6 +92,57 @@ func (r Range) Copy(dst []byte, src []byte) int {
 	return copy(dst[r.Start:r.End+1-over], src)
 }
 
+// Resolve converts a parsed range into absolute first and last byte positions
+// against a known content length, per RFC 9110 14.1.2. A parsed range carries
+// -1 for a bound the client left unspecified: Start < 0 is a suffix-range of
+// End bytes, and End < 0 is open-ended. It reports whether the range is
+// satisfiable.
+func (r Range) Resolve(fullContentLength int64) (Range, bool) {
+	if fullContentLength <= 0 {
+		// with no known length there is nothing to resolve against, so only a
+		// range the client stated in full can be honored
+		return r, r.Start >= 0 && r.End >= r.Start
+	}
+	last := fullContentLength - 1
+	switch {
+	case r.Start < 0:
+		// a suffix-range names a length, not a position, and asking for zero
+		// trailing bytes is unsatisfiable
+		if r.End <= 0 {
+			return r, false
+		}
+		return Range{Start: max(fullContentLength-r.End, 0), End: last}, true
+	case r.Start > last:
+		return r, false
+	case r.End < 0 || r.End > last:
+		// open-ended, or a last-byte-pos beyond the content, ends at the last byte
+		return Range{Start: r.Start, End: last}, true
+	case r.End < r.Start:
+		return r, false
+	}
+	return r, true
+}
+
+// Resolve resolves every range against a known content length, dropping those
+// that are unsatisfiable. It reports false only when none of them survive,
+// which is the condition RFC 9110 14.2 answers with 416.
+func (rs Ranges) Resolve(fullContentLength int64) (Ranges, bool) {
+	if len(rs) == 0 {
+		return rs, false
+	}
+	out := make(Ranges, 0, len(rs))
+	for _, r := range rs {
+		if resolved, ok := r.Resolve(fullContentLength); ok {
+			out = append(out, resolved)
+		}
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	slices.SortFunc(out, rangeCmp)
+	return out, true
+}
+
 // CalculateDeltas calculates the delta between two Ranges
 func (rs Ranges) CalculateDeltas(needs Ranges, fullContentLength int64) Ranges {
 	if len(rs) == 0 || fullContentLength <= 0 {

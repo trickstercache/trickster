@@ -23,3 +23,21 @@ const (
 	ConfigNotReloadedText = "configuration NOT reloaded"
 	ConfigReloadedText    = "configuration reloaded"
 )
+
+const (
+	// SourceSIGHUP identifies a reload requested by an operator via SIGHUP.
+	SourceSIGHUP = "sighup"
+	// SourceHTTP identifies a reload requested via the mgmt reload handler.
+	SourceHTTP = "handler"
+	// SourceAutoReload identifies a reload started by the auto-reload poller.
+	SourceAutoReload = "auto-reload"
+	// SourceKubernetes identifies a reload the Kubernetes controller started
+	// because its translation of the watched objects changed.
+	SourceKubernetes = "kubernetes"
+)
+
+// IsUserRequested reports whether source is an operator-initiated reload, which
+// is subject to the reload rate limit; automatic and in-process reloads are not.
+func IsUserRequested(source string) bool {
+	return source == SourceSIGHUP || source == SourceHTTP
+}

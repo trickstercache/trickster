@@ -81,8 +81,7 @@ func ParseRewriteList(rl options.RewriteList) (RewriteInstructions, error) {
 	var k int
 	for _, sri := range rl {
 		if len(sri) > 1 {
-			key := sri[0] + "-" + sri[1]
-			f, ok := rewriters[key]
+			f, ok := rewriters[instructionKey(sri[0], sri[1])]
 			if !ok {
 				return nil, errBadParams
 			}

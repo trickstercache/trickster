@@ -225,7 +225,6 @@ func StatusHandler(now func() time.Time, hc healthcheck.HealthChecker, backends 
 }
 
 func builder(now func() time.Time, hc healthcheck.HealthChecker, hd *healthDetail, backends backends.Backends, ready chan<- bool) {
-	updateStatusText(now, hc, hd, backends) // setup the initial status page text
 	notifier := make(chan bool, 32)
 	// track which statuses carry our subscriber, so registrations that
 	// appear at runtime (autodiscovered ALB members) get subscribed too
@@ -248,13 +247,16 @@ func builder(now func() time.Time, hc healthcheck.HealthChecker, hd *healthDetai
 			}
 		}
 	}
-	syncSubscriptions()
 	registrations := make(chan bool, 1)
 	if rn, ok := hc.(healthcheck.RegistrationNotifier); ok {
 		rn.SubscribeRegistrations(registrations)
 	}
+	syncSubscriptions()
 	closer := make(chan bool, 1)
 	hc.Subscribe(closer)
+	// built only once subscribed, so a status that changes during the build still triggers a
+	// rebuild; building first would lose a change landing between the build and the subscription
+	updateStatusText(now, hc, hd, backends)
 	for {
 		select {
 		case ready <- true:

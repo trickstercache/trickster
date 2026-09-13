@@ -238,6 +238,50 @@ func TestObjectProxyCachePreservedCORSVariesByOrigin(t *testing.T) {
 	}
 }
 
+func TestObjectProxyCachePreservedHostVariesByHost(t *testing.T) {
+	// the origin answers by the Host it is sent, so a preserved Host is part of the key; a path
+	// replacing the Host sends one value, so its objects are shared by every client Host
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	rsc.BackendOptions.PreserveHost = true
+	h := middleware.WithResourcesContext(rsc.BackendClient, rsc.BackendOptions,
+		rsc.CacheClient, rsc.PathConfig, rsc.Tracer, http.HandlerFunc(ObjectProxyCacheRequest))
+	base := request.ClearResources(r)
+	serve := func(i int, host, want string) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		req := base.Clone(base.Context())
+		req.Header = base.Header.Clone()
+		req.Host = host
+		h.ServeHTTP(recorder, req)
+		resp := recorder.Result()
+		resp.Body.Close()
+		if err := testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: want}); err != nil {
+			t.Errorf("request %d (%s): %v", i, host, err)
+		}
+	}
+	serve(1, "first.example.com", status.StatusKeyMiss)
+	serve(2, "second.example.com", status.StatusKeyMiss)
+	serve(3, "first.example.com", status.StatusHit)
+	serve(4, "second.example.com", status.StatusHit)
+	rsc.PathConfig.RequestHeaders = map[string]string{headers.NameHost: "fixed.example.com"}
+	serve(5, "third.example.com", status.StatusKeyMiss)
+	serve(6, "fourth.example.com", status.StatusHit)
+	// an empty Host entry changes nothing on the wire, so the client's Host keys again
+	rsc.PathConfig.RequestHeaders = map[string]string{headers.NameHost: ""}
+	serve(7, "fifth.example.com", status.StatusKeyMiss)
+	serve(8, "sixth.example.com", status.StatusKeyMiss)
+	serve(9, "fifth.example.com", status.StatusHit)
+	// a deleted Host sends the origin's own, one value for every client
+	rsc.PathConfig.RequestHeaders = map[string]string{"-" + headers.NameHost: ""}
+	serve(10, "seventh.example.com", status.StatusKeyMiss)
+	serve(11, "eighth.example.com", status.StatusHit)
+}
+
 func TestObjectProxyCachePartialHit(t *testing.T) {
 	ts, _, r, rsc, err := setupTestHarnessOPCRange(nil)
 	if err != nil {

@@ -1,0 +1,241 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+# TCP and UDP listeners relay a stream unread; a TCP and a UDP listener may share a port number
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: infra
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: db
+      port: 5432
+      protocol: TCP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: dns
+      port: 53
+      protocol: UDP
+      allowedRoutes:
+        namespaces:
+          from: All
+    - name: dns-tcp
+      port: 53
+      protocol: TCP
+      allowedRoutes:
+        namespaces:
+          from: All
+    # a hostname means nothing to a TCP stream
+    - name: named
+      port: 6000
+      protocol: TCP
+      hostname: db.example.com
+    # a kind the protocol cannot carry admits nothing
+    - name: wrong-kind
+      port: 7000
+      protocol: TCP
+      allowedRoutes:
+        kinds:
+          - kind: HTTPRoute
+    - name: rules
+      port: 7100
+      protocol: TCP
+      allowedRoutes:
+        namespaces:
+          from: All
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db-svc
+  namespace: data
+spec:
+  ports:
+    - name: pg
+      port: 5432
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: replica-svc
+  namespace: data
+spec:
+  ports:
+    - name: pg
+      port: 5432
+---
+# one port number over both transports, with different names and targets; the route's transport
+# selects the port, in either declaration order
+apiVersion: v1
+kind: Service
+metadata:
+  name: dns-svc
+  namespace: data
+spec:
+  ports:
+    - name: dns-tcp
+      port: 53
+      targetPort: 5300
+    - name: dns-udp
+      port: 53
+      targetPort: 5353
+      protocol: UDP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: resolver-svc
+  namespace: data
+spec:
+  ports:
+    - name: dns-udp
+      port: 53
+      targetPort: 5353
+      protocol: UDP
+    - name: dns-tcp
+      port: 53
+      targetPort: 5300
+---
+# a Service exposing the port over TCP alone cannot serve a UDPRoute
+apiVersion: v1
+kind: Service
+metadata:
+  name: tcp-only-svc
+  namespace: data
+spec:
+  ports:
+    - name: dns
+      port: 53
+---
+# the older route keeps the listener; its weights apportion connections, an unresolvable
+# reference refuses its share, and a zero weight receives none
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: db
+  namespace: data
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: db
+  rules:
+    - backendRefs:
+        - name: db-svc
+          port: 5432
+          weight: 3
+        - name: replica-svc
+          port: 5432
+        - name: missing-svc
+          port: 5432
+        - name: dns-svc
+          port: 53
+          weight: 0
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: late
+  namespace: data
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: db
+  rules:
+    - backendRefs:
+        - name: replica-svc
+          port: 5432
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: dns-tcp
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: dns-tcp
+  rules:
+    - backendRefs:
+        - name: dns-svc
+          port: 53
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: two-rules
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: rules
+  rules:
+    - backendRefs:
+        - name: db-svc
+          port: 5432
+    - backendRefs:
+        - name: replica-svc
+          port: 5432
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: dns
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: dns
+  rules:
+    - backendRefs:
+        - name: dns-svc
+          port: 53
+        - name: resolver-svc
+          port: 53
+        - name: tcp-only-svc
+          port: 53
+---
+# a UDPRoute cannot attach to a TCP listener
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: UDPRoute
+metadata:
+  name: misplaced
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: db
+  rules:
+    - backendRefs:
+        - name: dns-svc
+          port: 53
+---
+# nor an HTTPRoute
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web
+  namespace: data
+spec:
+  parentRefs:
+    - name: gw
+      namespace: infra
+      sectionName: db
+  rules:
+    - backendRefs:
+        - name: db-svc
+          port: 5432

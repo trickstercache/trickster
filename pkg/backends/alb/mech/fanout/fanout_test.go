@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
@@ -471,7 +472,7 @@ type errReader struct{}
 func (errReader) Read(_ []byte) (int, error) { return 0, fmt.Errorf("read failed") }
 
 func TestAllCloneErrorSurfaces(t *testing.T) {
-	parent, err := http.NewRequest(http.MethodPost, "http://trickstercache.org/", errReader{})
+	parent, err := http.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/", errReader{})
 	require.NoError(t, err)
 	t0, _ := albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("handler should not run when clone fails")
@@ -485,14 +486,14 @@ func TestAllCloneErrorSurfaces(t *testing.T) {
 }
 
 func TestPrimeBodyReadError(t *testing.T) {
-	parent, err := http.NewRequest(http.MethodPost, "http://trickstercache.org/", errReader{})
+	parent, err := http.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/", errReader{})
 	require.NoError(t, err)
 	_, perr := PrimeBody(parent)
 	require.Error(t, perr)
 }
 
 func TestPrepareCloneError(t *testing.T) {
-	parent, err := http.NewRequest(http.MethodPost, "http://trickstercache.org/", errReader{})
+	parent, err := http.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/", errReader{})
 	require.NoError(t, err)
 	_, _, perr := PrepareClone(context.Background(), parent, 0, Config{Mechanism: "test"})
 	require.Error(t, perr)

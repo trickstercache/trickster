@@ -128,3 +128,39 @@ func TestClone(t *testing.T) {
 		t.Fatal("mutating clone should not affect original")
 	}
 }
+
+func TestValidateShutdownOptions(t *testing.T) {
+	c := New()
+	if c.ReadyHandlerPath != DefaultReadyHandlerPath {
+		t.Errorf("ready handler path = %q; want %q", c.ReadyHandlerPath, DefaultReadyHandlerPath)
+	}
+	c.ShutdownDelay = -1
+	if err := c.Validate(); !errors.Is(err, ErrInvalidShutdownDelay) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidShutdownDelay)
+	}
+	c.ShutdownDelay = 0
+	c.ShutdownDrainTimeout = -1
+	if err := c.Validate(); !errors.Is(err, ErrInvalidShutdownDrainTimeout) {
+		t.Errorf("error = %v; want %v", err, ErrInvalidShutdownDrainTimeout)
+	}
+	c.ShutdownDrainTimeout = 0
+	if err := c.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestShutdownDrain(t *testing.T) {
+	var nilOptions *Options
+	if nilOptions.ShutdownDrain() != DefaultDrainTimeout {
+		t.Error("nil options must use the default drain timeout")
+	}
+	c := New()
+	c.ReloadDrainTimeout = timeconv.Duration(7 * time.Second)
+	if c.ShutdownDrain() != 7*time.Second {
+		t.Errorf("shutdown drain = %v; want the reload drain timeout", c.ShutdownDrain())
+	}
+	c.ShutdownDrainTimeout = timeconv.Duration(2 * time.Second)
+	if c.ShutdownDrain() != 2*time.Second {
+		t.Errorf("shutdown drain = %v; want the configured value", c.ShutdownDrain())
+	}
+}

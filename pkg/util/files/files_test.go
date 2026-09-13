@@ -31,7 +31,7 @@ func TestFileExistsAndReadable(t *testing.T) {
 	}
 
 	path := filepath.Join(dir, "readable.txt")
-	if err := os.WriteFile(path, []byte("trickster"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("trickster"), 0o644); err != nil {
 		t.Fatalf("failed to create temp file: %v", err)
 	}
 

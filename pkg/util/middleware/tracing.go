@@ -32,6 +32,9 @@ func Trace(tr *tracing.Tracer, next http.Handler) http.Handler {
 			defer span.End()
 
 			rsc := request.GetResources(r)
+			if rsc != nil {
+				rsc.SpanContext = span.SpanContext()
+			}
 			tspan.SetAttributes(tr, span, rsc.TracingAttributes()...)
 		}
 		next.ServeHTTP(w, r)

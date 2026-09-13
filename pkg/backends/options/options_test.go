@@ -19,10 +19,12 @@ package options
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
@@ -542,16 +544,22 @@ func TestValidateGraphiteOriginAuth(t *testing.T) {
 	}{
 		{"valid credential", newBackend(
 			&gro.Options{OriginAuthorization: "Bearer tok"}, nil), nil},
-		{"authorization with username", newBackend(
-			&gro.Options{OriginAuthorization: "Bearer tok", OriginUsername: "u"}, nil),
-			gro.ErrOriginAuthConflict},
+		{
+			"authorization with username", newBackend(
+				&gro.Options{OriginAuthorization: "Bearer tok", OriginUsername: "u"}, nil),
+			gro.ErrOriginAuthConflict,
+		},
 		{"password without username", newBackend(
 			&gro.Options{OriginPassword: "p"}, nil), gro.ErrOriginAuthNoUser},
-		{"credential with +Authorization path", newBackend(
-			&gro.Options{OriginUsername: "u", OriginPassword: "p"},
-			po.List{{Path: "/render",
-				RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"}}}),
-			gro.ErrOriginAuthAppend},
+		{
+			"credential with +Authorization path", newBackend(
+				&gro.Options{OriginUsername: "u", OriginPassword: "p"},
+				po.List{{
+					Path:           "/render",
+					RequestHeaders: map[string]string{"+" + strings.ToLower(headers.NameAuthorization): "x"},
+				}}),
+			gro.ErrOriginAuthAppend,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -708,7 +716,7 @@ func TestValidate(t *testing.T) {
 		{ // 2 - valid origin URL + strip trailing slash
 			to:       to,
 			loc:      &o.OriginURL,
-			val:      "http://trickstercache.org/test/path/",
+			val:      "http://" + appinfo.Domain + "/test/path/",
 			expected: nil,
 		},
 		{ // 3 - invalid cache key prefix
@@ -1092,5 +1100,90 @@ func TestInitializeH2CPriorKnowledge(t *testing.T) {
 	o.OriginURL = "https://example.com"
 	if err := o.Initialize("test"); err != nil {
 		t.Errorf("unexpected error without the option set: %v", err)
+	}
+}
+
+func TestValidateHosts(t *testing.T) {
+	tests := []struct {
+		name   string
+		hosts  []string
+		want   []string
+		reason string
+	}{
+		{name: "lowercased and trimmed", hosts: []string{" API.Example.com "}, want: []string{"api.example.com"}},
+		{name: "leading wildcard", hosts: []string{"*.example.com"}, want: []string{"*.example.com"}},
+		{name: "any-depth wildcard", hosts: []string{"**.Example.com."}, want: []string{"**.example.com"}},
+		{name: "empty", hosts: []string{""}, reason: hostReasonEmpty},
+		{name: "whitespace", hosts: []string{"api example.com"}, reason: hostReasonWhitespace},
+		{name: "bare wildcard", hosts: []string{"*"}, reason: hostReasonWildcard},
+		{name: "wildcard only", hosts: []string{"*."}, reason: hostReasonWildcard},
+		{name: "embedded wildcard", hosts: []string{"api.*.example.com"}, reason: hostReasonWildcard},
+		{name: "any-depth wildcard only", hosts: []string{"**."}, reason: hostReasonWildcard},
+		{name: "triple wildcard", hosts: []string{"***.example.com"}, reason: hostReasonWildcard},
+		{name: "both wildcard spellings", hosts: []string{"*.example.com", "**.example.com"}, reason: hostReasonBothWildcards},
+		{name: "nested wildcard", hosts: []string{"*.*.example.com"}, reason: hostReasonWildcard},
+		{name: "duplicate", hosts: []string{"api.example.com", "API.example.com"}, reason: hostReasonDuplicate},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			o := New()
+			o.Name = "test"
+			o.Provider = "rp"
+			o.OriginURL = "http://example.com"
+			o.Hosts = test.hosts
+			_, err := o.Validate()
+			if test.reason == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(o.Hosts, test.want) {
+					t.Errorf("hosts = %v; want %v", o.Hosts, test.want)
+				}
+				return
+			}
+			var hostErr *ErrInvalidHost
+			if !errors.As(err, &hostErr) || hostErr.Reason != test.reason {
+				t.Fatalf("error = %v; want invalid host with reason %q", err, test.reason)
+			}
+		})
+	}
+}
+
+func TestValidateAnyHostRouting(t *testing.T) {
+	o := New()
+	o.Name = "test"
+	o.Provider = "rp"
+	o.OriginURL = "http://example.com"
+	o.AnyHostRouting = true
+	if _, err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	o.Hosts = []string{"api.example.com"}
+	if _, err := o.Validate(); !errors.Is(err, ErrAnyHostRoutingWithHosts) {
+		t.Fatalf("error = %v; want %v", err, ErrAnyHostRoutingWithHosts)
+	}
+}
+
+func TestValidateMirrors(t *testing.T) {
+	o := New()
+	o.Name = "primary"
+	o.Provider = providers.ReverseProxyCacheShort
+	o.OriginURL = "http://example.com"
+	p := po.New()
+	p.Mirrors = []*po.MirrorOptions{{BackendName: "shadow"}, nil}
+	o.Paths = po.List{p, nil}
+	l := Lookup{"primary": o}
+	if err := l.validateMirrors(o); err == nil {
+		t.Error("expected an error for an undefined mirror backend")
+	}
+	tmpl := New()
+	tmpl.IsTemplate = true
+	l["shadow"] = tmpl
+	if err := l.validateMirrors(o); err == nil {
+		t.Error("expected an error for a template mirror backend")
+	}
+	l["shadow"] = New()
+	if err := l.validateMirrors(o); err != nil {
+		t.Errorf("unexpected error: %v", err)
 	}
 }

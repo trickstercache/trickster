@@ -18,6 +18,7 @@
 package tls
 
 import (
+	"crypto/tls"
 	"testing"
 )
 
@@ -54,3 +55,28 @@ func TestWriteKeyAndCert(t *testing.T) {
 }
 
 // func WriteTestKeyAndCert(isCA bool, keyPath, certPath string) error {
+
+func TestNamedKeyAndCert(t *testing.T) {
+	key, cert := NamedKeyAndCert("cert-a")
+	if _, err := tls.X509KeyPair(cert, key); err != nil {
+		t.Fatalf("pair does not load: %v", err)
+	}
+	if CommonName(cert) != "cert-a" {
+		t.Fatalf("expected common name cert-a, got %q", CommonName(cert))
+	}
+	_, again := NamedKeyAndCert("cert-a")
+	if string(cert) != string(again) {
+		t.Fatal("expected one pair per name")
+	}
+	_, other := NamedKeyAndCert("cert-b")
+	if string(cert) == string(other) {
+		t.Fatal("expected distinct pairs for distinct names")
+	}
+	if CommonName([]byte("garbage")) != "garbage" {
+		t.Fatal("expected the input back for a non-certificate")
+	}
+	unparsable := []byte("-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n")
+	if CommonName(unparsable) != string(unparsable) {
+		t.Fatal("expected the input back for an unparsable certificate")
+	}
+}

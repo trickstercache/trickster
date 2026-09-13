@@ -118,6 +118,7 @@ func (c *scriptedPhaseConn) SetReadDeadline(deadline time.Time) error {
 	c.readDeadlineCalls++
 	return nil
 }
+
 func (c *scriptedPhaseConn) SetWriteDeadline(time.Time) error {
 	c.writeDeadlineCalls++
 	return nil

@@ -16,7 +16,10 @@
 
 package config
 
-import logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
+import (
+	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
+)
 
 // LogManagerOptions returns every configured application, access and error log.
 func (c *Config) LogManagerOptions() []*logmanager.Options {
@@ -35,15 +38,21 @@ func (c *Config) LogManagerOptions() []*logmanager.Options {
 	if c.Logging != nil && c.Logging.LogFile != "" {
 		appendOption(c.Logging.ManagerOptions())
 	}
+	appendAccessLog := func(o *alo.Options) {
+		if o == nil {
+			return
+		}
+		if o.Filename != "" {
+			appendOption(o.AccessManagerOptions())
+		}
+		if o.ErrorFilename != "" {
+			appendOption(o.ErrorManagerOptions())
+		}
+	}
+	appendAccessLog(c.AccessLog)
 	for _, backend := range c.Backends {
-		if backend == nil || backend.AccessLog == nil {
-			continue
-		}
-		if backend.AccessLog.Filename != "" {
-			appendOption(backend.AccessLog.AccessManagerOptions())
-		}
-		if backend.AccessLog.ErrorFilename != "" {
-			appendOption(backend.AccessLog.ErrorManagerOptions())
+		if backend != nil {
+			appendAccessLog(backend.AccessLog)
 		}
 	}
 	return options

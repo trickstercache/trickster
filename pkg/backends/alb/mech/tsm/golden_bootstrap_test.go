@@ -31,7 +31,8 @@ import (
 func goldenSeries(name string, tags dataset.Tags, query string, pts ...struct {
 	e int64
 	v string
-}) *dataset.Series {
+},
+) *dataset.Series {
 	points := make(dataset.Points, len(pts))
 	for i, p := range pts {
 		points[i] = dataset.Point{Epoch: epoch.Epoch(p.e), Size: 32, Values: []any{p.v}}

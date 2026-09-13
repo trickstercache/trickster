@@ -327,8 +327,10 @@ func TestUnsupportedTextFeature(t *testing.T) {
 		{query: "SELECT '/*!80400 INTO @answer */'"},
 		{query: "SELECT \"/*!80400 INTO @answer */\""},
 		{query: `SELECT 'x\' /*!80400 INTO @answer */`},
-		{query: `SELECT 'x\' /*!80400 INTO @answer */`, noBackslashEscapes: true,
-			want: "versioned executable comments"},
+		{
+			query: `SELECT 'x\' /*!80400 INTO @answer */`, noBackslashEscapes: true,
+			want: "versioned executable comments",
+		},
 		{query: `SELECT 'it''s /*!80400 INTO @answer */'`, noBackslashEscapes: true},
 		{query: "SELECT `/*!80400 INTO @answer */`", noBackslashEscapes: true},
 		{query: "SELECT 1 /* ordinary /*!80400 INTO @answer */", noBackslashEscapes: true},
@@ -385,16 +387,26 @@ func TestResponseShapeClassification(t *testing.T) {
 		{query: "EXPLAIN FORMAT=JSON INTO @plan SELECT * FROM trips", wantShape: responseShapeOK},
 		{query: "DO 1", wantShape: responseShapeOK},
 		{query: "PURGE BINARY LOGS BEFORE '2026-01-01'", wantShape: responseShapeOK},
-		{query: "HELP 'SELECT'", wantShape: responseShapeUnsupported,
-			unsupported: "HELP statements"},
-		{query: "XA RECOVER", wantShape: responseShapeUnsupported,
-			unsupported: "XA statements"},
-		{query: "HANDLER trips READ FIRST LIMIT 2", wantShape: responseShapeUnsupported,
-			unsupported: "HANDLER statements"},
-		{query: "CACHE INDEX trips IN hot_cache", wantShape: responseShapeUnsupported,
-			unsupported: "CACHE INDEX statements"},
-		{query: "RESET REPLICA", wantShape: responseShapeUnsupported,
-			unsupported: "unclassified statements"},
+		{
+			query: "HELP 'SELECT'", wantShape: responseShapeUnsupported,
+			unsupported: "HELP statements",
+		},
+		{
+			query: "XA RECOVER", wantShape: responseShapeUnsupported,
+			unsupported: "XA statements",
+		},
+		{
+			query: "HANDLER trips READ FIRST LIMIT 2", wantShape: responseShapeUnsupported,
+			unsupported: "HANDLER statements",
+		},
+		{
+			query: "CACHE INDEX trips IN hot_cache", wantShape: responseShapeUnsupported,
+			unsupported: "CACHE INDEX statements",
+		},
+		{
+			query: "RESET REPLICA", wantShape: responseShapeUnsupported,
+			unsupported: "unclassified statements",
+		},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			parsed := parseQuery(tc.query)
@@ -649,6 +661,7 @@ func TestProtocolServerProxiesTextQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer client.Close()
 	result, err := client.ExecuteFetch("select 42", vtmysql.FETCH_ALL_ROWS, true)
 	if err != nil {
 		t.Fatal(err)
@@ -688,8 +701,6 @@ func TestProtocolServerProxiesTextQueries(t *testing.T) {
 	if got := originHandler.queryCount.Load(); got != 5 {
 		t.Fatalf("session-state bypass origin queries = %d, want 5", got)
 	}
-	client.Close()
-
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
@@ -916,8 +927,10 @@ func TestProtocolServerRequiredInBandTLS(t *testing.T) {
 	}
 	originAddr := originListener.Addr().(*net.TCPAddr)
 	server, err := NewProtocolServer(ProtocolConfig{
-		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
-			Uname: "origin", Pass: "origin-password"},
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password",
+		},
 		DownstreamUsers:        map[string]string{"client": "client-password"},
 		InboundTLS:             &tls.Config{Certificates: []tls.Certificate{certificate}, MinVersion: tls.VersionTLS12},
 		RequireSecureTransport: true, ConnectTimeout: time.Second, QueryTimeout: time.Second,
@@ -1053,7 +1066,7 @@ func TestOriginQueryTimeoutDiscardsUpstream(t *testing.T) {
 	}
 	release := make(chan struct{})
 	originHandler := &blockingOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}, release: release,
+		env: vtenv.NewTestEnv(), release: release,
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
@@ -1071,8 +1084,10 @@ func TestOriginQueryTimeoutDiscardsUpstream(t *testing.T) {
 	originAddr := originListener.Addr().(*net.TCPAddr)
 	server, err := NewProtocolServer(ProtocolConfig{
 		BackendName: "mysql-timeout-test", ProxyOnly: true,
-		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
-			Uname: "origin", Pass: "origin-password"},
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password",
+		},
 		DownstreamUsers: map[string]string{"client": "client-password"},
 		ConnectTimeout:  time.Second, QueryTimeout: 25 * time.Millisecond,
 	})
@@ -1114,7 +1129,7 @@ func TestReconnectReplaysTrackedDatabaseAndTimeZone(t *testing.T) {
 		t.Fatal(err)
 	}
 	originHandler := &recordingOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()},
+		env: vtenv.NewTestEnv(),
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
@@ -1132,8 +1147,10 @@ func TestReconnectReplaysTrackedDatabaseAndTimeZone(t *testing.T) {
 	originAddr := originListener.Addr().(*net.TCPAddr)
 	server, err := NewProtocolServer(ProtocolConfig{
 		BackendName: "mysql-replay-test", ProxyOnly: true,
-		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
-			Uname: "origin", Pass: "origin-password", DbName: "analytics"},
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password", DbName: "analytics",
+		},
 		DownstreamUsers: map[string]string{"client": "client-password"},
 		ConnectTimeout:  time.Second, QueryTimeout: time.Second,
 	})
@@ -1208,9 +1225,9 @@ func TestLiveQueriesPreserveAndHonorOriginStatusFlags(t *testing.T) {
 		t.Fatal(err)
 	}
 	originHandler := &protocolStateOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()},
-		statusFlags:       originFlags,
-		warnings:          originWarnings,
+		env:         vtenv.NewTestEnv(),
+		statusFlags: originFlags,
+		warnings:    originWarnings,
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
@@ -1228,8 +1245,10 @@ func TestLiveQueriesPreserveAndHonorOriginStatusFlags(t *testing.T) {
 	originAddr := originListener.Addr().(*net.TCPAddr)
 	server, err := NewProtocolServer(ProtocolConfig{
 		BackendName: "mysql-protocol-state", ProxyOnly: true,
-		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
-			Uname: "origin", Pass: "origin-password"},
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password",
+		},
 		DownstreamUsers: map[string]string{"client": "client-password"},
 		ConnectTimeout:  time.Second, QueryTimeout: time.Second,
 	})
@@ -1287,8 +1306,8 @@ func TestClientDisconnectDuringOriginExecutionReleasesSession(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	originHandler := &blockingOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()},
-		release:           release, started: started,
+		env:     vtenv.NewTestEnv(),
+		release: release, started: started,
 	}
 	origin, err := vtmysql.NewFromListener(originListener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
@@ -1305,8 +1324,10 @@ func TestClientDisconnectDuringOriginExecutionReleasesSession(t *testing.T) {
 	originAddr := originListener.Addr().(*net.TCPAddr)
 	server, err := NewProtocolServer(ProtocolConfig{
 		BackendName: "mysql-client-disconnect", ProxyOnly: true,
-		Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
-			Uname: "origin", Pass: "origin-password"},
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originAddr.Port,
+			Uname: "origin", Pass: "origin-password",
+		},
 		DownstreamUsers: map[string]string{"client": "client-password"},
 		ConnectTimeout:  time.Second, QueryTimeout: time.Second,
 	})
@@ -1368,7 +1389,7 @@ func TestOriginDisconnectConnectionState(t *testing.T) {
 				t.Fatal(err)
 			}
 			originHandler := &disconnectOriginHandler{
-				testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}, partial: tc.partial,
+				env: vtenv.NewTestEnv(), partial: tc.partial,
 			}
 			origin, err := vtmysql.NewFromListener(originListener,
 				newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
@@ -1386,8 +1407,10 @@ func TestOriginDisconnectConnectionState(t *testing.T) {
 			originAddr := originListener.Addr().(*net.TCPAddr)
 			server, err := NewProtocolServer(ProtocolConfig{
 				BackendName: backendName, ProxyOnly: true,
-				Upstream: vtmysql.ConnParams{Host: "127.0.0.1", Port: originAddr.Port,
-					Uname: "origin", Pass: "origin-password"},
+				Upstream: vtmysql.ConnParams{
+					Host: "127.0.0.1", Port: originAddr.Port,
+					Uname: "origin", Pass: "origin-password",
+				},
 				DownstreamUsers: map[string]string{"client": "client-password"},
 				ConnectTimeout:  time.Second, QueryTimeout: time.Second,
 			})
@@ -1438,7 +1461,7 @@ func TestProtocolServerDeltaCachesMissingExtent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originHandler := &deltaOriginHandler{testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}}
+	originHandler := &deltaOriginHandler{env: vtenv.NewTestEnv()}
 	origin, err := vtmysql.NewFromListener(originListener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)
@@ -1527,7 +1550,7 @@ func TestProtocolServerDeltaCachesMovingUnalignedRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	originHandler := &deltaOriginHandler{testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}}
+	originHandler := &deltaOriginHandler{env: vtenv.NewTestEnv()}
 	origin, err := vtmysql.NewFromListener(originListener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
 		0, 0, false, false, 0, 0, false)

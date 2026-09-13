@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -146,12 +147,12 @@ func TestFlushWriterReturnsWriteError(t *testing.T) {
 }
 
 func TestAbortOnCopyError(t *testing.T) {
-	underServer := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	underServer := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	underServer = underServer.WithContext(
 		context.WithValue(underServer.Context(), http.ServerContextKey, &http.Server{}))
-	bare := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	bare := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	// HTTP/3 carries quic-go's own server key, so the served marker stands in
-	h3 := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	h3 := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	h3 = h3.WithContext(tctx.WithServed(h3.Context()))
 	copyErr := errors.New("unexpected EOF")
 

@@ -229,3 +229,32 @@ func TestParseOptions(t *testing.T) {
 		t.Errorf("expected error for %s", expected)
 	}
 }
+
+func TestParseOptionsRMatchRequiresValidPattern(t *testing.T) {
+	c, err := newTestClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rwi := newTestRewriterInstructions()
+	ropts := newTestRuleOpts()
+	ropts.Operation = "rmatch"
+	ropts.OperationArg = ""
+	if err := c.parseOptions(ropts, rwi); err != ErrInvalidRegularExpression {
+		t.Errorf("expected %v got %v", ErrInvalidRegularExpression, err)
+	}
+	ropts = newTestRuleOpts()
+	ropts.Operation = "!rmatch"
+	ropts.OperationArg = "^("
+	if err := c.parseOptions(ropts, rwi); err == nil {
+		t.Error("expected an error for an invalid regular expression")
+	}
+	ropts = newTestRuleOpts()
+	ropts.Operation = "!rmatch"
+	ropts.OperationArg = "^trick.*$"
+	if err := c.parseOptions(ropts, rwi); err != nil {
+		t.Fatal(err)
+	}
+	if !c.rule.negateOpResult || c.rule.regex == nil {
+		t.Error("expected a negated rule bound to its compiled expression")
+	}
+}

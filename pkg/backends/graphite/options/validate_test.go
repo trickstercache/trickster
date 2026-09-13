@@ -34,14 +34,20 @@ func TestAuthHeader(t *testing.T) {
 	}{
 		{"nil options", nil, "", nil},
 		{"unset", &Options{}, "", nil},
-		{"basic", &Options{OriginUsername: "u", OriginPassword: "p"},
-			"Basic dTpw", nil},
+		{
+			"basic", &Options{OriginUsername: "u", OriginPassword: "p"},
+			"Basic dTpw", nil,
+		},
 		{"username only", &Options{OriginUsername: "u"}, "Basic dTo=", nil},
 		{"raw", &Options{OriginAuthorization: "Bearer tok"}, "Bearer tok", nil},
-		{"conflict", &Options{OriginAuthorization: "Bearer tok",
-			OriginUsername: "u"}, "", ErrOriginAuthConflict},
-		{"password without username", &Options{OriginPassword: "p"},
-			"", ErrOriginAuthNoUser},
+		{"conflict", &Options{
+			OriginAuthorization: "Bearer tok",
+			OriginUsername:      "u",
+		}, "", ErrOriginAuthConflict},
+		{
+			"password without username", &Options{OriginPassword: "p"},
+			"", ErrOriginAuthNoUser,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

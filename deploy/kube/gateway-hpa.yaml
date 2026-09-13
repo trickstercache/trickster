@@ -1,0 +1,23 @@
+# Optional: scales the controller on CPU against the requests in
+# gateway-deployment.yaml. Every replica programs and serves every route, so
+# scaling out adds data-plane capacity and nothing else. Remove `replicas`
+# from gateway-deployment.yaml when using it, or a re-apply resets the count.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: trickster-gateway
+  namespace: trickster
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: trickster-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

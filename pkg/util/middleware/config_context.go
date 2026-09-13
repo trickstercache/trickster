@@ -43,6 +43,7 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 	if p != nil && p.CORS != nil {
 		corsOptions = p.CORS
 	}
+	hideResult := p != nil && p.HideResultHeader
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o != nil && (o.LatencyMin > 0 || o.LatencyMax > 0) {
@@ -59,6 +60,9 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 		ctx := r.Context()
 		rsc, ok := context.Resources(ctx).(*request.Resources)
 		if !ok {
+			if hideResult {
+				w = HideResultHeader(w, resources)
+			}
 			cw := cors.Wrap(w, corsOptions)
 			defer cw.Finalize()
 			next.ServeHTTP(cw, r.WithContext(context.WithResources(r.Context(), resources)))
@@ -66,6 +70,11 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 		}
 		wrapResponse := rsc.FrontendCORS == nil
 		rsc.Merge(resources)
+		if hideResult {
+			// the resources may be the ones an outer middleware created, which is how the
+			// access log sees the withheld value
+			w = HideResultHeader(w, rsc)
+		}
 		if wrapResponse {
 			cw := cors.Wrap(w, rsc.FrontendCORS)
 			defer cw.Finalize()

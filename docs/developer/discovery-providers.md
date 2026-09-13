@@ -135,10 +135,11 @@ vendors, so a heavy SDK shows up in every clone.
 
 Two packages exist so that providers do not each re-derive them:
 
-- **`pkg/discovery/poller`** — the polling loop: jittered start, immediate
-  first iteration, per-iteration cadence chosen by the source (a DNS TTL
-  floor, a blocking query's `PollNow`), cancel-safe Start/Stop, and panic
-  isolation. A poll-based provider supplies a `poller.Source` and gets the
+- **`pkg/discovery/poller`** — the polling loop: immediate first iteration
+  (jitter is spent once on the wait that follows, so a fleet started
+  together de-phases without anyone's first answer being delayed),
+  per-iteration cadence chosen by the source (a DNS TTL floor, a blocking
+  query's `PollNow`), cancel-safe Start/Stop, and panic isolation. A poll-based provider supplies a `poller.Source` and gets the
   rest. `pkg/discovery/poller/http` is the outbound-HTTP source; per-poll
   request shaping (credentials, signing, blocking-query parameters) goes
   through its `RequestDecorator` rather than into the package.

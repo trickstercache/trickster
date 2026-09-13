@@ -235,7 +235,8 @@ func (f *fakeUpstream) GetImportedKeys(_ context.Context, _ flightsql.TableRef) 
 }
 
 func (f *fakeUpstream) GetCrossReference(_ context.Context,
-	_ flightsql.CrossTableRef) ([]byte, error) {
+	_ flightsql.CrossTableRef,
+) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.callCount++

@@ -367,8 +367,10 @@ func TestDeriveCacheKeyVariesByCORSOrigin(t *testing.T) {
 		{name: "replace", policy: &corso.Options{Mode: corso.ModeReplace}},
 		{name: "disable", policy: &corso.Options{Mode: corso.ModeDisable}},
 		{name: "legacy", policy: corso.Legacy()},
-		{name: "custom hasher preserve", policy: &corso.Options{Mode: corso.ModePreserve},
-			customHasher: true, wantDifferent: true},
+		{
+			name: "custom hasher preserve", policy: &corso.Options{Mode: corso.ModePreserve},
+			customHasher: true, wantDifferent: true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -380,6 +382,91 @@ func TestDeriveCacheKeyVariesByCORSOrigin(t *testing.T) {
 					got, tc.wantDifferent, first, second)
 			}
 		})
+	}
+}
+
+func TestDeriveCacheKeyVariesByPreservedHost(t *testing.T) {
+	// the origin sees the client's Host only when the backend preserves it, and then not when a
+	// path replaces it; the key follows the Host the origin sees, case being no part of a host
+	makeKey := func(preserve bool, host string, pc *po.Options, customHasher bool) string {
+		t.Helper()
+		if pc == nil {
+			pc = po.New()
+		}
+		if customHasher {
+			pc.KeyHasher = exampleKeyHasher
+		}
+		rsc := request.NewResources(&bo.Options{PreserveHost: preserve}, pc, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Host = host
+		r = request.SetResources(r, rsc)
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	updating := func(key, value string) func() *po.Options {
+		return func() *po.Options {
+			pc := po.New()
+			pc.RequestHeaders = map[string]string{key: value}
+			return pc
+		}
+	}
+	tests := []struct {
+		name          string
+		preserve      bool
+		pc            func() *po.Options
+		customHasher  bool
+		wantDifferent bool
+	}{
+		{name: "the origin's own host", preserve: false},
+		{name: "preserved", preserve: true, wantDifferent: true},
+		{
+			name: "preserved with a custom hasher", preserve: true, customHasher: true,
+			wantDifferent: true,
+		},
+		{name: "preserved but set by the path", preserve: true, pc: updating("Host", "fixed.example.com")},
+		{
+			name: "preserved, the path's set empty", preserve: true, pc: updating("Host", ""),
+			wantDifferent: true,
+		},
+		{
+			name: "preserved but appended by the path", preserve: true,
+			pc: updating("+Host", "fixed.example.com"),
+		},
+		{
+			name: "preserved, the path's append empty", preserve: true, pc: updating("+Host", ""),
+			wantDifferent: true,
+		},
+		{name: "preserved but deleted by the path", preserve: true, pc: updating("-Host", "")},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var first, second *po.Options
+			if tc.pc != nil {
+				first, second = tc.pc(), tc.pc()
+			}
+			a := makeKey(tc.preserve, "first.example.com", first, tc.customHasher)
+			b := makeKey(tc.preserve, "second.example.com", second, tc.customHasher)
+			if got := a != b; got != tc.wantDifferent {
+				t.Fatalf("cache keys differ = %v, want %v (%q, %q)", got, tc.wantDifferent, a, b)
+			}
+		})
+	}
+	// a request served with no path options is keyed by its Host too
+	noPath := func(host string) string {
+		rsc := request.NewResources(&bo.Options{PreserveHost: true}, nil, nil, nil, nil, nil)
+		r := httptest.NewRequest(http.MethodGet, "http://trickster.example.com/data", nil)
+		r.Host = host
+		return newProxyRequest(request.SetResources(r, rsc), nil).DeriveCacheKey("")
+	}
+	if a, b := noPath("first.example.com"), noPath("second.example.com"); a == b {
+		t.Fatalf("no path options: keys of two hosts are one: %q", a)
+	}
+	if a, b := makeKey(true, "Shop.Example.com", nil, false),
+		makeKey(true, "shop.example.com", nil, false); a != b {
+		t.Fatalf("a host's case split the key: %q vs %q", a, b)
+	}
+	if a, b := makeKey(false, "shop.example.com", nil, false),
+		makeKey(true, "", nil, false); a != b {
+		t.Fatalf("a backend not preserving the Host changed its keys: %q vs %q", a, b)
 	}
 }
 
@@ -633,8 +720,10 @@ func TestDeriveCacheKeyEffectiveIdentity(t *testing.T) {
 		return newProxyRequest(tr, nil)
 	}
 	path := func(hdrs, params map[string]string) *po.Options {
-		return &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
-			RequestHeaders: hdrs, RequestParams: params}
+		return &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target"},
+			RequestHeaders: hdrs, RequestParams: params,
+		}
 	}
 
 	// rotating a pinned credential rotates the key, with no inbound auth at
@@ -684,8 +773,10 @@ func TestDeriveCacheKeyUnambiguousEncoding(t *testing.T) {
 		return newProxyRequest(tr, nil)
 	}
 	path := func(hdrs, params map[string]string) *po.Options {
-		return &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
-			RequestHeaders: hdrs, RequestParams: params}
+		return &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target"},
+			RequestHeaders: hdrs, RequestParams: params,
+		}
 	}
 	const u = "http://127.0.0.1/render?target=a.b"
 
@@ -713,8 +804,10 @@ func TestDeriveCacheKeyUnambiguousEncoding(t *testing.T) {
 
 	// client-supplied elements have the same property: a keyed header and a
 	// keyed parameter with one name and value must not collide
-	hp := &po.Options{Path: "/render", CacheKeyParams: []string{"token"},
-		CacheKeyHeaders: []string{"Token"}}
+	hp := &po.Options{
+		Path: "/render", CacheKeyParams: []string{"token"},
+		CacheKeyHeaders: []string{"Token"},
+	}
 	viaParam := newPR(hp, nil, "http://127.0.0.1/render?token=abc").DeriveCacheKey("")
 	viaHeader := newPR(hp, map[string]string{"Token": "abc"},
 		"http://127.0.0.1/render").DeriveCacheKey("")
@@ -750,8 +843,10 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 	}
 
 	t.Run("replaced param does not fragment", func(t *testing.T) {
-		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target", "local"},
-			RequestParams: map[string]string{"local": "1"}}
+		pc := &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target", "local"},
+			RequestParams: map[string]string{"local": "1"},
+		}
 		keys := map[string]bool{}
 		for _, v := range []string{"", "0", "1", "junk", "aaaaaaaa"} {
 			keys[newPR(pc, nil, renderURL(v)).DeriveCacheKey("")] = true
@@ -762,8 +857,10 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 	})
 
 	t.Run("removed param does not fragment", func(t *testing.T) {
-		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target", "local"},
-			RequestParams: map[string]string{"-local": ""}}
+		pc := &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target", "local"},
+			RequestParams: map[string]string{"-local": ""},
+		}
 		if newPR(pc, nil, renderURL("0")).DeriveCacheKey("") !=
 			newPR(pc, nil, renderURL("5")).DeriveCacheKey("") {
 			t.Error("clients behind a removed parameter must share one cache key")
@@ -771,8 +868,10 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 	})
 
 	t.Run("appended param keeps the client component", func(t *testing.T) {
-		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target", "local"},
-			RequestParams: map[string]string{"+local": "1"}}
+		pc := &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target", "local"},
+			RequestParams: map[string]string{"+local": "1"},
+		}
 		if newPR(pc, nil, renderURL("0")).DeriveCacheKey("") ==
 			newPR(pc, nil, renderURL("5")).DeriveCacheKey("") {
 			t.Error("an appended parameter must still key the client's value")
@@ -780,8 +879,10 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 	})
 
 	t.Run("wildcard params honor replacement", func(t *testing.T) {
-		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"*"},
-			RequestParams: map[string]string{"local": "1"}}
+		pc := &po.Options{
+			Path: "/render", CacheKeyParams: []string{"*"},
+			RequestParams: map[string]string{"local": "1"},
+		}
 		if newPR(pc, nil, renderURL("0")).DeriveCacheKey("") !=
 			newPR(pc, nil, renderURL("5")).DeriveCacheKey("") {
 			t.Error("wildcard cache_key_params must key the effective, not inbound, value")
@@ -789,17 +890,21 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 	})
 
 	t.Run("replaced cache_key_header does not fragment", func(t *testing.T) {
-		pc := &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
+		pc := &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target"},
 			CacheKeyHeaders: []string{"X-Tenant"},
-			RequestHeaders:  map[string]string{"X-Tenant": "shared"}}
+			RequestHeaders:  map[string]string{"X-Tenant": "shared"},
+		}
 		k1 := newPR(pc, map[string]string{"X-Tenant": "t1"}, renderURL("")).DeriveCacheKey("")
 		k2 := newPR(pc, map[string]string{"X-Tenant": "t2"}, renderURL("")).DeriveCacheKey("")
 		if k1 != k2 {
 			t.Error("clients behind a pinned cache_key_header must share one cache key")
 		}
 		// and without the pin they stay separated
-		plain := &po.Options{Path: "/render", CacheKeyParams: []string{"target"},
-			CacheKeyHeaders: []string{"X-Tenant"}}
+		plain := &po.Options{
+			Path: "/render", CacheKeyParams: []string{"target"},
+			CacheKeyHeaders: []string{"X-Tenant"},
+		}
 		if newPR(plain, map[string]string{"X-Tenant": "t1"}, renderURL("")).DeriveCacheKey("") ==
 			newPR(plain, map[string]string{"X-Tenant": "t2"}, renderURL("")).DeriveCacheKey("") {
 			t.Error("distinct tenants must not share a key absent an override")
@@ -807,9 +912,11 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 	})
 
 	t.Run("replaced form field does not fragment", func(t *testing.T) {
-		pc := &po.Options{Path: "/render", CacheKeyParams: []string{},
+		pc := &po.Options{
+			Path: "/render", CacheKeyParams: []string{},
 			CacheKeyFormFields: []string{"local"},
-			RequestParams:      map[string]string{"local": "1"}}
+			RequestParams:      map[string]string{"local": "1"},
+		}
 		post := func(body string) *proxyRequest {
 			cfg := &bo.Options{Paths: po.List{pc}}
 			tr := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/render",

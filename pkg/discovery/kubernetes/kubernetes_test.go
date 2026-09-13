@@ -113,11 +113,9 @@ func addressesOf(s discovery.Snapshot) []string {
 
 func newSlice(name, svc string, port int32, eps ...discoveryv1.Endpoint) *discoveryv1.EndpointSlice {
 	return &discoveryv1.EndpointSlice{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: testNS,
-			Labels:    map[string]string{discoveryv1.LabelServiceName: svc},
-		},
+		Name:        name,
+		Namespace:   testNS,
+		Labels:      map[string]string{discoveryv1.LabelServiceName: svc},
 		AddressType: discoveryv1.AddressTypeIPv4,
 		Ports: []discoveryv1.EndpointPort{
 			{Name: new("web"), Port: new(port)},
@@ -146,15 +144,15 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 		),
 		// another namespace: excluded by the namespace-scoped informer
 		&discoveryv1.EndpointSlice{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "prom-other", Namespace: "elsewhere",
-				Labels: map[string]string{discoveryv1.LabelServiceName: "prom"},
-			},
+			Name: "prom-other", Namespace: "elsewhere",
+			Labels:      map[string]string{discoveryv1.LabelServiceName: "prom"},
 			AddressType: discoveryv1.AddressTypeIPv4,
 			Ports: []discoveryv1.EndpointPort{
-				{Name: new("web"), Port: new(int32(9090))}},
+				{Name: new("web"), Port: new(int32(9090))},
+			},
 			Endpoints: []discoveryv1.Endpoint{
-				endpoint("10.9.9.9", "prom-x", true, false)},
+				endpoint("10.9.9.9", "prom-x", true, false),
+			},
 		},
 	)
 	watching := watchEstablished(cs, "endpointslices")
@@ -198,21 +196,17 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 func TestServiceDiscovery(t *testing.T) {
 	cs := fake.NewClientset(
 		&corev1.Service{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "prom-a", Namespace: testNS,
-				Labels:      map[string]string{"app": "prom"},
-				Annotations: map[string]string{AnnotationScheme: "https"},
-			},
+			Name: "prom-a", Namespace: testNS,
+			Labels:      map[string]string{"app": "prom"},
+			Annotations: map[string]string{AnnotationScheme: "https"},
 			Spec: corev1.ServiceSpec{
 				ClusterIP: "10.96.0.10",
 				Ports:     []corev1.ServicePort{{Name: "web", Port: 9090}},
 			},
 		},
 		&corev1.Service{ // headless: skipped
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "prom-headless", Namespace: testNS,
-				Labels: map[string]string{"app": "prom"},
-			},
+			Name: "prom-headless", Namespace: testNS,
+			Labels: map[string]string{"app": "prom"},
 			Spec: corev1.ServiceSpec{
 				ClusterIP: corev1.ClusterIPNone,
 				Ports:     []corev1.ServicePort{{Name: "web", Port: 9090}},
@@ -247,17 +241,16 @@ func TestPodsDiscovery(t *testing.T) {
 			cond = corev1.ConditionTrue
 		}
 		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: name, Namespace: testNS,
-				Labels: map[string]string{"app": "prom"},
-			},
+			Name: name, Namespace: testNS,
+			Labels: map[string]string{"app": "prom"},
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{
 				Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: 9090}},
 			}}},
 			Status: corev1.PodStatus{
 				Phase: corev1.PodRunning, PodIP: ip,
 				Conditions: []corev1.PodCondition{
-					{Type: corev1.PodReady, Status: cond}},
+					{Type: corev1.PodReady, Status: cond},
+				},
 			},
 		}
 	}
@@ -304,7 +297,8 @@ func TestSubscribeStoppedAndLifecycle(t *testing.T) {
 	// Start and delivers an initial (empty) snapshot
 	col := newSnapCollector()
 	unsub, err := d.Subscribe(&do.Query{
-		Namespace: testNS, Service: "prom", Port: "web"}, col.handle)
+		Namespace: testNS, Service: "prom", Port: "web",
+	}, col.handle)
 	require.NoError(t, err)
 	defer unsub()
 	require.NoError(t, d.Start(t.Context()))
@@ -312,7 +306,8 @@ func TestSubscribeStoppedAndLifecycle(t *testing.T) {
 
 	require.NoError(t, d.Stop())
 	_, err = d.Subscribe(&do.Query{
-		Namespace: testNS, Service: "prom"}, col.handle)
+		Namespace: testNS, Service: "prom",
+	}, col.handle)
 	require.ErrorIs(t, err, ErrStopped)
 	require.NoError(t, d.Stop(), "Stop is idempotent")
 
@@ -323,12 +318,10 @@ func TestSubscribeStoppedAndLifecycle(t *testing.T) {
 func TestPodsReplicaGroupLabel(t *testing.T) {
 	pod := func(name, ip, replica string) *corev1.Pod {
 		return &corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{
-				Name: name, Namespace: testNS,
-				Labels: map[string]string{
-					"app":                "prom",
-					"prometheus/replica": replica,
-				},
+			Name: name, Namespace: testNS,
+			Labels: map[string]string{
+				"app":                "prom",
+				"prometheus/replica": replica,
 			},
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{
 				Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: 9090}},
@@ -336,7 +329,8 @@ func TestPodsReplicaGroupLabel(t *testing.T) {
 			Status: corev1.PodStatus{
 				Phase: corev1.PodRunning, PodIP: ip,
 				Conditions: []corev1.PodCondition{
-					{Type: corev1.PodReady, Status: corev1.ConditionTrue}},
+					{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+				},
 			},
 		}
 	}
@@ -373,10 +367,10 @@ func TestEndpointSlicesReplicaGroupLabel(t *testing.T) {
 	// the slice's endpoints reference target pods; groups come from the
 	// pods via the joined pod informer
 	mkPod := func(name, replica string) *corev1.Pod {
-		return &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		return &corev1.Pod{
 			Name: name, Namespace: testNS,
 			Labels: map[string]string{"prometheus/replica": replica},
-		}}
+		}
 	}
 	cs := fake.NewClientset(
 		newSlice("prom-abc", "prom", 9090,
@@ -419,8 +413,10 @@ func TestNewConstructorErrors(t *testing.T) {
 	_, err = New("d", &do.Options{Provider: "kubernetes"})
 	require.Error(t, err)
 	// in-cluster outside a cluster
-	_, err = New("d", &do.Options{Provider: "kubernetes",
-		Kubernetes: &kubeopts.Options{InCluster: true}})
+	_, err = New("d", &do.Options{
+		Provider:   "kubernetes",
+		Kubernetes: &kubeopts.Options{InCluster: true},
+	})
 	require.Error(t, err)
 }
 
@@ -428,7 +424,8 @@ func TestAmbiguousPortSkipsObjects(t *testing.T) {
 	slice := newSlice("prom-abc", "prom", 9090,
 		endpoint("10.0.0.1", "prom-0", true, false))
 	slice.Ports = append(slice.Ports, discoveryv1.EndpointPort{
-		Name: new("metrics"), Port: new(int32(9091))})
+		Name: new("metrics"), Port: new(int32(9091)),
+	})
 	cs := fake.NewClientset(slice)
 	d := NewWithClient("test", kube.NewFromClientset(cs))
 	require.NoError(t, d.Start(t.Context()))
@@ -438,7 +435,8 @@ func TestAmbiguousPortSkipsObjects(t *testing.T) {
 	// no port in the query, two declared ports: ambiguous; the slice is
 	// skipped (with a warn-once log) and the membership is empty
 	unsub, err := d.Subscribe(&do.Query{
-		Namespace: testNS, Service: "prom"}, col.handle)
+		Namespace: testNS, Service: "prom",
+	}, col.handle)
 	require.NoError(t, err)
 	defer unsub()
 	require.Empty(t, col.next(t))
@@ -446,10 +444,8 @@ func TestAmbiguousPortSkipsObjects(t *testing.T) {
 
 func TestServiceReplicaGroupLabel(t *testing.T) {
 	cs := fake.NewClientset(&corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "prom-a", Namespace: testNS,
-			Labels: map[string]string{"app": "prom", "shard": "s0"},
-		},
+		Name: "prom-a", Namespace: testNS,
+		Labels: map[string]string{"app": "prom", "shard": "s0"},
 		Spec: corev1.ServiceSpec{
 			ClusterIP: "10.96.0.10",
 			Ports:     []corev1.ServicePort{{Name: "web", Port: 9090}},

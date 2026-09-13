@@ -17,11 +17,13 @@
 package integration
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
@@ -32,7 +34,9 @@ func TestInfluxDB(t *testing.T) {
 	h := configHarness(t)
 	influxAddr := h.BaseAddr
 	h.start(t)
-	waitForInfluxDBData(t, "127.0.0.1:8086")
+	latest := waitForInfluxDBData(t, "127.0.0.1:8086")
+	dataRange := fmt.Sprintf(`range(start: %s, stop: %s)`,
+		latest.Add(-5*time.Minute).Format(time.RFC3339Nano), latest.Add(time.Minute).Format(time.RFC3339Nano))
 
 	fluxURL := "http://" + influxAddr + "/flux2/api/v2/query?org=trickster-dev"
 	post := func(t *testing.T, body, token string) (*http.Response, []byte) {
@@ -50,7 +54,10 @@ func TestInfluxDB(t *testing.T) {
 	}
 
 	t.Run("flux query", func(t *testing.T) {
-		resp, body := post(t, `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)", "type": "flux"}`, "trickster-dev-token")
+		query := `from(bucket: "trickster") |> ` + dataRange +
+			` |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)`
+		bodyJSON := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
+		resp, body := post(t, bodyJSON, "trickster-dev-token")
 		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 		require.NotEmpty(t, body)
 		hdr := parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
@@ -64,7 +71,10 @@ func TestInfluxDB(t *testing.T) {
 	}
 	for _, fc := range fluxCases {
 		t.Run("flux_"+fc.name, func(t *testing.T) {
-			q := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._field == \"usage_idle\") |> aggregateWindow(every: 1m, fn: ` + fc.fn + `) |> limit(n: 5)", "type": "flux"}`
+			query := `from(bucket: "trickster") |> ` + dataRange +
+				` |> filter(fn: (r) => r._field == "usage_idle") |> aggregateWindow(every: 1m, fn: ` +
+				fc.fn + `) |> limit(n: 5)`
+			q := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
 			resp, body := post(t, q, "trickster-dev-token")
 			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
 			lines := strings.Split(strings.TrimSpace(string(body)), "\n")

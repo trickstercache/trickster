@@ -32,8 +32,10 @@ func TestMemberKeyAndURL(t *testing.T) {
 }
 
 func TestMemberEqualAndClone(t *testing.T) {
-	m := Member{Name: "a", Scheme: "http", Address: "h:1", Weight: 2,
-		Ready: Ready, Labels: map[string]string{"k": "v"}}
+	m := Member{
+		Name: "a", Scheme: "http", Address: "h:1", Weight: 2,
+		Ready: Ready, Labels: map[string]string{"k": "v"},
+	}
 	c := m.Clone()
 	require.True(t, m.Equal(&c))
 	c.Labels["k"] = "other"

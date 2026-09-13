@@ -1,0 +1,100 @@
+discovery:
+    kgw--discovery:
+        provider: kubernetes
+        kubernetes:
+            in_cluster: true
+            qps: 20
+            burst: 40
+            timeout: 10s
+listeners:
+    kgw--listener-tcp-5432:
+        protocol: tcp
+        port: 5432
+    kgw--listener-udp-53:
+        protocol: udp
+        port: 53
+backends:
+    kgw--tcproute.data.db_r0:
+        provider: alb
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        alb:
+            mechanism: rr
+            pool:
+                - name: kgw--tcproute.data.db_r0_b0
+                  weight: 2
+                - name: kgw--tcproute.data.db_r0_b1
+                  weight: 1
+    kgw--tcproute.data.db_r0_b0:
+        provider: alb
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--tcproute.data.db_r0_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: data
+                    service: db-svc
+                    port: pg
+                    scheme: tcp
+    kgw--tcproute.data.db_r0_b0_tmpl:
+        provider: rp
+        is_template: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--tcproute.data.db_r0_b1:
+        provider: alb
+        listener_names:
+            - kgw--listener-tcp-5432
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--tcproute.data.db_r0_b1_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: data
+                    service: replica-svc
+                    port: pg
+                    scheme: tcp
+    kgw--tcproute.data.db_r0_b1_tmpl:
+        provider: rp
+        is_template: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--udproute.data.dns_r0:
+        provider: alb
+        listener_names:
+            - kgw--listener-udp-53
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        any_host_routing: true
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--udproute.data.dns_r0_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: data
+                    service: dns-svc
+                    port: dns-udp
+                    scheme: udp
+    kgw--udproute.data.dns_r0_b0_tmpl:
+        provider: rp
+        is_template: true
+        path_routing_disabled: true
+        path_defaults_disabled: true

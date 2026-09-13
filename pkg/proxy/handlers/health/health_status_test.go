@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -44,6 +45,7 @@ type stubHealthChecker struct {
 func (s *stubHealthChecker) Register(string, string, *ho.Options, *http.Client) (*healthcheck.Status, error) {
 	return &healthcheck.Status{}, nil
 }
+
 func (s *stubHealthChecker) RegisterVirtual(string, string) *healthcheck.Status {
 	return &healthcheck.Status{}
 }
@@ -67,6 +69,44 @@ func (b *configBackend) Configuration() *bo.Options { return b.cfg }
 func fixedNow() func() time.Time {
 	tm := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	return func() time.Time { return tm }
+}
+
+// flipOnSecondRead fails its status on the builder's second read of the statuses, the moment a
+// builder that builds before subscribing has read them but not yet subscribed
+type flipOnSecondRead struct {
+	stubHealthChecker
+	reads atomic.Int32
+	st    *healthcheck.Status
+}
+
+func (f *flipOnSecondRead) Statuses() healthcheck.StatusLookup {
+	if f.reads.Add(1) == 2 {
+		f.st.Set(healthcheck.StatusFailing)
+	}
+	return f.statuses
+}
+
+func TestStatusHandlerSeesChangeDuringStartup(t *testing.T) {
+	st := healthcheck.NewStatus("backend", providers.Prometheus, "",
+		healthcheck.StatusInitializing, time.Time{}, nil)
+	hc := &flipOnSecondRead{st: st}
+	hc.statuses = healthcheck.StatusLookup{"backend": st}
+	handler := StatusHandler(time.Now, hc, nil)
+	defer hc.Shutdown()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set(headers.NameAccept, headers.ValueApplicationJSON)
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+		if strings.Contains(w.Body.String(), `"unavailable":[{"name":"backend"`) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("a status change during startup never reached the page: %s", w.Body.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 func TestStatusHandlerNilHealthChecker(t *testing.T) {
@@ -164,13 +204,13 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	}}
 	hd := &healthDetail{}
 	bes := backends.Backends{
-		"rp-up":    &configBackend{mockBackend: mockBackend{name: "rp-up"}, cfg: rpOpts},
-		"rp-down":  &configBackend{mockBackend: mockBackend{name: "rp-down"}, cfg: rpOpts},
-		"no-probe": &configBackend{mockBackend: mockBackend{name: "no-probe"}, cfg: noProbeOpts},
+		"rp-up":    &configBackend{name: "rp-up", cfg: rpOpts},
+		"rp-down":  &configBackend{name: "rp-down", cfg: rpOpts},
+		"no-probe": &configBackend{name: "no-probe", cfg: noProbeOpts},
 		"edge":     albClient,
 		"virtual-alb": &configBackend{
-			mockBackend: mockBackend{name: "virtual-alb"},
-			cfg:         &bo.Options{Provider: providers.ALB},
+			name: "virtual-alb",
+			cfg:  &bo.Options{Provider: providers.ALB},
 		},
 	}
 
@@ -417,13 +457,13 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	}}
 	hd := &healthDetail{}
 	bes := backends.Backends{
-		"ok":           &configBackend{mockBackend: mockBackend{name: "ok"}, cfg: &bo.Options{Provider: providers.Prometheus}},
+		"ok":           &configBackend{name: "ok", cfg: &bo.Options{Provider: providers.Prometheus}},
 		"nil-be":       nil,
-		"rule-virt":    &configBackend{mockBackend: mockBackend{name: "rule-virt"}, cfg: ruleOpts},
+		"rule-virt":    &configBackend{name: "rule-virt", cfg: ruleOpts},
 		"down-edge":    albClient,
 		"missing-edge": albMissingClient,
 		"nil-cfg":      nilCfgClient,
-		"no-cfg":       &configBackend{mockBackend: mockBackend{name: "no-cfg"}, cfg: nil},
+		"no-cfg":       &configBackend{name: "no-cfg", cfg: nil},
 	}
 
 	updateStatusText(now, hc, hd, bes)

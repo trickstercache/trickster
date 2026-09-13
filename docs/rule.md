@@ -27,7 +27,7 @@ Optional Rule Parts
 - `ingress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request before rule execution.
 - `egress_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request after rule execution.
 - `nomatch_req_rewriter name` - provides the name of a Request Rewriter to operate on the Request after rule execution if the request did not match any cases.
-- `max_rule_executions` - limits the number of rules a Request is passed through, and aborts with a 400 status code when exceeded. Default is 16.
+- `max_rule_executions` - limits the number of rules a Request is passed through, and aborts with a 400 status code when exceeded. Default is 16. The first rule a request reaches sets its budget from this value; each later rule it passes through may lower the budget but not raise it.
 
 ### input_source permitted values
 
@@ -43,6 +43,8 @@ Optional Rule Parts
 | params        | ?param1=value                                        |
 | param         | (must be used with input_key as described below)     |
 | header        | (must be used with input_key as described below)     |
+| has_param     | true or false: whether the query parameter named by input_key is present, even if empty |
+| has_header    | true or false: whether the header named by input_key is present, even if empty |
 
 ### input_type permitted values and operations
 

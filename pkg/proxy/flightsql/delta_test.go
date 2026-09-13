@@ -295,11 +295,16 @@ func TestDeltaTierPreservesOrderBy(t *testing.T) {
 		t.Fatalf("rows = %d/%d, want 10 each", len(miss), len(hit))
 	}
 	want := [][]any{
-		{240 * int64(time.Second), "b"}, {240 * int64(time.Second), "a"},
-		{180 * int64(time.Second), "b"}, {180 * int64(time.Second), "a"},
-		{120 * int64(time.Second), "b"}, {120 * int64(time.Second), "a"},
-		{60 * int64(time.Second), "b"}, {60 * int64(time.Second), "a"},
-		{int64(0), "b"}, {int64(0), "a"},
+		{240 * int64(time.Second), "b"},
+		{240 * int64(time.Second), "a"},
+		{180 * int64(time.Second), "b"},
+		{180 * int64(time.Second), "a"},
+		{120 * int64(time.Second), "b"},
+		{120 * int64(time.Second), "a"},
+		{60 * int64(time.Second), "b"},
+		{60 * int64(time.Second), "a"},
+		{int64(0), "b"},
+		{int64(0), "a"},
 	}
 	for i, row := range want {
 		if hit[i][0] != row[0] || hit[i][1] != row[1] {

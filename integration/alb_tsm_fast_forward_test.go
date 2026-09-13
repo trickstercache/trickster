@@ -136,7 +136,7 @@ func TestALBTSMFastForwardUsesRangeEnd(t *testing.T) {
 	cfg.WriteString("        - prom-b\n")
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg.String()), 0644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(cfg.String()), 0o644))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

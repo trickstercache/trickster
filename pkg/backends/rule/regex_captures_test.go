@@ -82,7 +82,7 @@ func newRegexCaptureRule(t *testing.T) *rule {
 		NoMatchReqRewriterName: "no-match",
 		CaseOptions: ro.CaseOptionsList{
 			{
-				Matches:         []string{trueValue},
+				Matches:         []string{ro.ValueTrue},
 				ReqRewriterName: "capture-host",
 				NextRoute:       "destination",
 			},
@@ -99,7 +99,7 @@ func newRegexCaptureRule(t *testing.T) *rule {
 
 func TestRegexCaptureTokensIncludeOptionalGroups(t *testing.T) {
 	re := regexp.MustCompile(`(?P<optional>foo)?(?P<tenant>bar)`)
-	tokens := regexCaptureTokens(re, re.FindStringSubmatch("bar"))
+	tokens := rewriter.CaptureTokens(re, re.FindStringSubmatch("bar"))
 	wants := map[string]string{
 		"0":        "bar",
 		"1":        "",
@@ -296,7 +296,7 @@ func TestRegexCaptureTokensAreClearedOnNoMatch(t *testing.T) {
 
 func TestRegexCapturesAreUnavailableWithoutMatchingCase(t *testing.T) {
 	rule := newRegexCaptureRule(t)
-	rule.cases[0].matchValue = falseValue
+	rule.cases[0].matchValue = ro.ValueFalse
 	req, err := http.NewRequest(http.MethodGet,
 		`http://trickster.example/query/%7Bmylabel%3D%22abc%22%7D`, nil)
 	if err != nil {

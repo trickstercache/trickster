@@ -4,13 +4,19 @@ Trickster 2.1 includes a number of new features to give it even more uses in a n
 
 ## Features
 
+* **Kubernetes Gateway API and Ingress Controller** - Trickster now runs as a Kubernetes controller, serving `gateway.networking.k8s.io` GatewayClass, Gateway, HTTPRoute, GRPCRoute, TCPRoute, TLSRoute, UDPRoute, ReferenceGrant and BackendTLSPolicy objects, and `networking.k8s.io/v1` Ingress objects, translating them into its own configuration and reloading onto it in-process. Routes may be served through the Service's cluster IP or load balanced across discovered endpoints, TLS certificates arrive from Kubernetes Secrets without a reload, and status, conditions and Events are written back to every claimed object. Enable it with the new top-level `kubernetes` section. See [kubernetes-gateway.md](./kubernetes-gateway.md), [kubernetes-ingress.md](./kubernetes-ingress.md), [kubernetes-rbac.md](./kubernetes-rbac.md) and [kubernetes-deploy.md](./kubernetes-deploy.md).
+
+* **TricksterCachePolicy** - A custom resource that attaches caching behavior — a cache, TTLs, cache key components, CORS, header updates and time series acceleration — to Gateways, HTTPRoutes, Ingresses and Services, so a Prometheus or ClickHouse Service behind a route is accelerated rather than merely proxied. See [kubernetes-cache-policy.md](./kubernetes-cache-policy.md).
+
 * Auto-discovery - the ALB can now manage pool members through common auto-discovery mechanisms such as Kubernetes APIs, DNS A and SRV records, etc.
 
 * Config Management - We now support loading multiple config files in the same subdirectory below the main config. We've also added automatic config reloading when the file contents change - including automatic detection and reloading when a certificate is swapped out.
 
-* Loggng - We've added support for customizable access logging and error logging per backend in NCSA format.
+* Logging - We've added support for customizable access logging and error logging per backend in NCSA format, a top-level `access_log` that captures every request no backend handled, and logging to stdout or stderr for containerized deployments. See [access-logs.md](./access-logs.md).
 
-* Regex Path Matching - You can now define path routes with regexes to match incoming requests.
+* Regex Path Matching - You can now define path routes with regexes to match incoming requests, and expose their capture groups to request rewriters.
+
+* Wildcard Host Routing - A backend's `hosts` may name a single-label wildcard (`*.example.com`) or an any-depth wildcard (`**.example.com`), resolved by specificity ahead of global routes. See [paths.md](./paths.md).
 
 * We now support accelerating Graphite
 
@@ -22,7 +28,22 @@ Trickster 2.1 includes a number of new features to give it even more uses in a n
 
 * Streaming - Responses with an unknown length and Server-Sent Events streams are now flushed to the client as bytes arrive rather than buffered, and HTTP trailers are passed through.
 
+* Stream Listeners - Listeners can now relay TCP connections, TLS connections by server name without terminating them, and UDP datagrams to a backend or a load balancer pool, without reading what passes. Set `protocol: tcp`, `tls` or `udp` on a listener; see [configuring.md](./configuring.md#stream-listeners). The Kubernetes controller serves TCPRoute, TLSRoute and UDPRoute through them.
+
 * Cleartext HTTP/2 to Origins - Backends can now speak h2c to origins that serve it, using the new `h2c_prior_knowledge` backend option. It is cleartext HTTP/2 only with no HTTP/1 fallback, so it requires an `http://` origin that actually serves h2c, and cannot be combined with a non-HTTP upstream protocol such as ClickHouse's `native`.
+
+## Configuration & Security
+
+* **TLS Certificate Rotation and Runtime Certificates** - Serving certificates renewed in place on disk by tools such as certbot or cert-manager are detected and hot-swapped into the live listener, with no reload and without dropping established connections; `tls_watch_interval` tunes the backstop poll. The new `tls_runtime_certs` listener option keeps a TLS port open with no certificate files behind it, so certificates can be supplied to the running process instead — which is how the Kubernetes controller serves Gateway and Ingress TLS from Secrets. The mgmt listener exposes a read-only certificate inventory at `/trickster/certificates`, and certificate expiry, load, swap and validation metrics are available with example alerting rules. See [tls.md](./tls.md).
+
+* **Graceful Shutdown and Readiness** - A new readiness endpoint (`/trickster/ready`) reports whether the process is serving, and `mgmt.shutdown_delay` and `mgmt.shutdown_drain_timeout` hold listeners open and then drain in-flight requests on SIGTERM, so a rolling deployment is invisible to clients. `/trickster/ping` remains a liveness check. See [configuring.md](./configuring.md#graceful-shutdown-and-readiness).
+
+* **Real Client Addresses** - Listeners now accept the PROXY protocol, and the new `trusted_proxies` listener option resolves the real client address from `Forwarded`, `X-Forwarded-For` or `X-Real-IP` only when the connection comes from a trusted address. The resolved address is what the access log records and what `max_query_range` rejections are logged against. See [Trusted Proxies](./configuring.md#trusted-proxies).
 
 ## Breaking Changes
 
+* **Reserved object-name prefixes** - Object names beginning with a reserved prefix are now refused in every named configuration section (`backends`, `caches`, `listeners`, `discovery`, `rules`, `request_rewriters`, `negative_caches`, `tracing` and `authenticators`), because Trickster generates configuration under them at runtime. Currently, the only reserved prefix is `kgw--`, used by the Kubernetes controller. A configuration that defines such a name fails to load. See [Reserved Names](./configuring.md#reserved-names).
+
+## Installing
+
+You can build the 2.1 binary from the `main` branch, download binaries from the [Releases](http://github.com/trickstercache/trickster/releases) page, or use the `trickstercache/trickster` Docker image tag in containerized environments. Kubernetes deployments can start from the manifests in [deploy/kube](../deploy/kube) or the chart at <https://github.com/trickstercache/helm-charts>.

@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -32,8 +33,8 @@ const testVector = `{"status":"success","data":{"resultType":"vector","result":[
 	`"value":[1577836800,"1"]}]}}`
 
 const testVector2 = `{"status":"success","data":{"resultType":"vector","result":[` +
-	`{"metric":{"__name__":"go_memstats_alloc_bytes","instance":` +
-	`"trickstercache.org:8481","job":"trickster"},` +
+	`{"metric":{"__name__":"go_memstats_alloc_bytes","instance":"` +
+	appinfo.Domain + `:8481","job":"trickster"},` +
 	`"value":[1577836800,"1"]}]}}`
 
 func TestMergeAndWriteVector(t *testing.T) {

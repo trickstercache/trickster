@@ -24,7 +24,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
 )
 
 var testString = "Hey, I'm an http response body string."
@@ -238,7 +237,6 @@ func TestPCFReadWriteClose(t *testing.T) {
 	pcf.Write(buf)
 	pcf.Close()
 	err := pcf.AddClient(w)
-
 	if err != nil {
 		t.Errorf("expected nil from AddClient after clean Close, got %v", err)
 	}

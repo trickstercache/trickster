@@ -193,8 +193,10 @@ func TestRequestShape(t *testing.T) {
 	f.on("networkInterfaces", nicListBody())
 
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	_, err := s.inventory(t.Context())
 	require.NoError(t, err)
 
@@ -232,8 +234,10 @@ func TestPublicAddressTypeFetchesThePublicIPList(t *testing.T) {
 	p := testProvider(t, fakeOptions(f.URL))
 	m := baseMapping()
 	m.addressType = do.AddressPublic
-	s := &subscription{p: p, mapping: m,
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: m,
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	i, err := s.inventory(t.Context())
 	require.NoError(t, err)
 	require.True(t, f.askedFor("publicIPAddresses"))
@@ -270,8 +274,10 @@ func TestPowerStateIsOneExtraListNotOnePerVM(t *testing.T) {
 	p := testProvider(t, o)
 	m := baseMapping()
 	m.powerState = true
-	s := &subscription{p: p, mapping: m,
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: m,
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	i, err := s.inventory(t.Context())
 	require.NoError(t, err)
 	require.True(t, f.askedFor("statusOnly=true"))
@@ -322,8 +328,10 @@ func TestUnusableStatusListFailsRatherThanEmptyingThePool(t *testing.T) {
 	p := testProvider(t, o)
 	m := baseMapping()
 	m.powerState = true
-	s := &subscription{p: p, mapping: m,
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: m,
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 
 	_, err := s.inventory(t.Context())
 	require.Error(t, err)
@@ -343,8 +351,10 @@ func TestNoVMsWithPowerStateIsNotAnError(t *testing.T) {
 	p := testProvider(t, o)
 	m := baseMapping()
 	m.powerState = true
-	s := &subscription{p: p, mapping: m,
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: m,
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	_, err := s.inventory(t.Context())
 	require.NoError(t, err)
 }
@@ -368,8 +378,10 @@ func TestPaginationFollowsNextLink(t *testing.T) {
 	f.on("networkInterfaces", nicListBody())
 
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	i, err := s.inventory(t.Context())
 	require.NoError(t, err)
 	require.Len(t, i.vms, 2, "both pages accumulate")
@@ -387,8 +399,10 @@ func TestPaginationIsBounded(t *testing.T) {
 	f.on("networkInterfaces", nicListBody())
 
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	_, err := s.inventory(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "did not terminate")
@@ -406,8 +420,10 @@ func TestARMErrorCarriesCodeAndMessage(t *testing.T) {
 			`action 'Microsoft.Compute/virtualMachines/read' over scope."}}`
 	})
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	_, err := s.inventory(t.Context())
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "AuthorizationFailed")
@@ -438,8 +454,10 @@ func TestEmptyListExplainsAnUnregisteredProvider(t *testing.T) {
 	f.on("/providers/Microsoft.Compute?", `{"registrationState":"NotRegistered"}`)
 
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	inv, err := s.inventory(t.Context())
 	require.NoError(t, err, "an empty list is not a refresh failure")
 	require.Empty(t, inv.vms)
@@ -464,8 +482,10 @@ func TestEmptyListWithRegisteredProviderIsQuiet(t *testing.T) {
 	f.on("/providers/Microsoft.Compute?", `{"registrationState":"Registered"}`)
 
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	_, err := s.inventory(t.Context())
 	require.NoError(t, err)
 }
@@ -479,8 +499,10 @@ func TestRegistrationCheckFailureIsSwallowed(t *testing.T) {
 	// no handler for the provider path: the fake answers 404
 
 	p := testProvider(t, fakeOptions(f.URL))
-	s := &subscription{p: p, mapping: baseMapping(),
-		emitter: discovery.NewEmitter(func(discovery.Snapshot) {})}
+	s := &subscription{
+		p: p, mapping: baseMapping(),
+		emitter: discovery.NewEmitter(func(discovery.Snapshot) {}),
+	}
 	_, err := s.inventory(t.Context())
 	require.NoError(t, err)
 }

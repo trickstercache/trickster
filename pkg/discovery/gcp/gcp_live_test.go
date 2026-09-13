@@ -77,7 +77,8 @@ func liveOptions(t *testing.T) *do.Options {
 	return &do.Options{
 		Name:     "live-gcp",
 		Provider: "gcp",
-		GCP: &gcpopts.Options{Service: gcpopts.ServiceGCE,
+		GCP: &gcpopts.Options{
+			Service:         gcpopts.ServiceGCE,
 			Project:         project,
 			CredentialsFile: os.Getenv("TRICKSTER_GCP_CREDENTIALS_FILE"),
 		},

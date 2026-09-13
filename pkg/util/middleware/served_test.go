@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 )
 
@@ -29,7 +30,7 @@ func TestMarkServed(t *testing.T) {
 	h := MarkServed(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		served = tctx.IsServed(r.Context())
 	}))
-	r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	h.ServeHTTP(httptest.NewRecorder(), r)
 	if !served {
 		t.Error("expected the request to be marked as served")

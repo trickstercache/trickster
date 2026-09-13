@@ -1869,7 +1869,7 @@ func (h *protocolHandler) closeSession(c *vtmysql.Conn, final bool) {
 func (h *protocolHandler) shutdown(ctx context.Context) error {
 	h.closed.Store(true)
 	h.mtx.Lock()
-	for _, session := range h.sessions {
+	for downstream, session := range h.sessions {
 		session.mtx.Lock()
 		session.forced = true
 		if session.conn != nil {
@@ -1881,6 +1881,7 @@ func (h *protocolHandler) shutdown(ctx context.Context) error {
 			}
 		}
 		session.mtx.Unlock()
+		downstream.Close()
 	}
 	h.mtx.Unlock()
 	done := make(chan struct{})

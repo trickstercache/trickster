@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -138,7 +139,7 @@ func TestSetBodyWriter(t *testing.T) {
 		mapLock:          &sync.Mutex{},
 	}
 
-	PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header)
+	PrepareResponseWriter(pr.responseWriter, pr.upstreamResponse.StatusCode, pr.upstreamResponse.Header, nil)
 
 	pr.setBodyWriter()
 	if pr.cacheBuffer == nil {
@@ -165,7 +166,7 @@ func TestWriteResponseBody(t *testing.T) {
 
 // newServedRequest returns a request that abortOnCopyError will act on.
 func newServedRequest() *http.Request {
-	r := httptest.NewRequest(http.MethodGet, "http://trickstercache.org/", nil)
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
 	return r.WithContext(context.WithValue(r.Context(), http.ServerContextKey, &http.Server{}))
 }
 

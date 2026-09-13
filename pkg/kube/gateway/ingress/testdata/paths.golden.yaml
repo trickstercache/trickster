@@ -1,0 +1,52 @@
+backends:
+    kgw--ingress.shop.web_r0:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - default
+        cache_key_prefix: ingress.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /exact/thing
+              match_type: exact
+              handler: proxy
+              methods:
+                - '*'
+    kgw--ingress.shop.web_r1:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - default
+        cache_key_prefix: ingress.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /prefixed
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'
+    kgw--ingress.shop.web_r2:
+        provider: rp
+        origin_url: http://web-svc.shop.svc:8080
+        hosts:
+            - shop.example.com
+        listener_names:
+            - default
+        cache_key_prefix: ingress.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /implementation
+              match_type: segment
+              handler: proxy
+              methods:
+                - '*'

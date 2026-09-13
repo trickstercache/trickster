@@ -229,6 +229,7 @@ func (f *fakeMessageReader) Release()                         {}
 func (f *fakeMessageReader) Retain()                          {}
 func (f *fakeMessageReader) Read() (arrow.RecordBatch, error) { return nil, nil }
 func (f *fakeMessageReader) Chunk() flight.StreamChunk        { return flight.StreamChunk{Data: f.rec} }
+
 func (f *fakeMessageReader) LatestFlightDescriptor() *flight.FlightDescriptor {
 	return nil
 }
@@ -345,6 +346,8 @@ type fakeGetSqlInfo struct {
 func (f fakeGetSqlInfo) GetInfo() []uint32 { return f.info }
 
 // unused interface guards
-var _ flightsql.GetTables = fakeGetTables{}
-var _ flightsql.GetDBSchemas = fakeGetDBSchemas{}
-var _ flightsql.GetSqlInfo = fakeGetSqlInfo{}
+var (
+	_ flightsql.GetTables    = fakeGetTables{}
+	_ flightsql.GetDBSchemas = fakeGetDBSchemas{}
+	_ flightsql.GetSqlInfo   = fakeGetSqlInfo{}
+)

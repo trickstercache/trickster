@@ -1,0 +1,50 @@
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: trickster
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: trickstercache.org/gateway-controller
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+  namespace: shop
+spec:
+  ports:
+    - port: 8080
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: shop-tls
+  namespace: shop
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJMVENCMWFBREFnRUNBZ0VCTUFvR0NDcUdTTTQ5QkFNQ01CSXhFREFPQmdOVkJBTVRCMlpwZUhSMWNtVXcKSUJjTk1qQXdNVEF4TURBd01EQXdXaGdQTWpFd01EQXhNREV3TURBd01EQmFNQkl4RURBT0JnTlZCQU1UQjJacAplSFIxY21Vd1dUQVRCZ2NxaGtqT1BRSUJCZ2dxaGtqT1BRTUJCd05DQUFSeFl6LzJreUdLaEs1MWtqcjFwSUJ3CnArWkxHanJZWVgvOEplYUxveHhEOEVzNGV0MTZlRG9kUk96ZVp1ZVNTUGwyQjR0cFFUeFJmRWFSMmc4MkVzbTYKb3hvd0dEQVdCZ05WSFJFRUR6QU5nZ3RsZUdGdGNHeGxMbU52YlRBS0JnZ3Foa2pPUFFRREFnTkhBREJFQWlBUApmMW5LZnp0WTlXcDdzVVltclZLQzFYUlpGN2FyOTIwbmtXeVJua3dlNWdJZ052UmdFVHE2SWsvVEprb2RNL0NJClZzS0ZDL2t1bmhpM3dvNG5uckczZTZvPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+  tls.key: LS0tLS1CRUdJTiBFQyBQUklWQVRFIEtFWS0tLS0tCk1IY0NBUUVFSUVTc0g1RWRtc0x1bzdsdEJld2c4emt2TXRoeDMxV3FEcGd1NHV0d2RDNmpvQW9HQ0NxR1NNNDkKQXdFSG9VUURRZ0FFY1dNLzlwTWhpb1N1ZFpJNjlhU0FjS2ZtU3hvNjJHRi8vQ1htaTZNY1EvQkxPSHJkZW5nNgpIVVRzM21ibmtrajVkZ2VMYVVFOFVYeEdrZG9QTmhMSnVnPT0KLS0tLS1FTkQgRUMgUFJJVkFURSBLRVktLS0tLQo=
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+  namespace: shop
+spec:
+  ingressClassName: trickster
+  tls:
+    - hosts:
+        - shop.example.com
+      secretName: shop-tls
+  rules:
+    - host: shop.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-svc
+                port:
+                  number: 8080

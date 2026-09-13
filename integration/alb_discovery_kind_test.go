@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -31,6 +33,70 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// requestFailures classifies load-loop failures so that an assertion on a
+// zero-error rollout says what actually broke: transport errors by their
+// normalized message, and bad responses by status code plus Trickster's
+// result header. Offsets are milliseconds since the load started.
+type requestFailures struct {
+	mtx         sync.Mutex
+	byClass     map[string]int
+	first, last time.Duration
+	start       time.Time
+}
+
+// addrRE strips the dial/read target from a transport error so that the
+// same failure mode counts as one class regardless of ephemeral port
+var addrRE = regexp.MustCompile(`\b(tcp|udp) [0-9a-fA-F.:\[\]]+(->[0-9a-fA-F.:\[\]]+)?: `)
+
+func newRequestFailures() *requestFailures {
+	return &requestFailures{byClass: map[string]int{}, start: time.Now()}
+}
+
+func (f *requestFailures) record(class string) {
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+	f.byClass[class]++
+	at := time.Since(f.start)
+	if f.first == 0 || at < f.first {
+		f.first = at
+	}
+	if at > f.last {
+		f.last = at
+	}
+}
+
+func (f *requestFailures) transport(err error) {
+	f.record("transport: " + addrRE.ReplaceAllString(err.Error(), ""))
+}
+
+func (f *requestFailures) response(resp *http.Response) {
+	class := fmt.Sprintf("HTTP %d", resp.StatusCode)
+	if r := resp.Header.Get("X-Trickster-Result"); r != "" {
+		class += " (" + r + ")"
+	}
+	f.record(class)
+}
+
+func (f *requestFailures) String() string {
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+	if len(f.byClass) == 0 {
+		return "none"
+	}
+	classes := make([]string, 0, len(f.byClass))
+	for c := range f.byClass {
+		classes = append(classes, c)
+	}
+	slices.Sort(classes)
+	var b strings.Builder
+	fmt.Fprintf(&b, "first at +%dms, last at +%dms:",
+		f.first.Milliseconds(), f.last.Milliseconds())
+	for _, c := range classes {
+		fmt.Fprintf(&b, "\n  %6d  %s", f.byClass[c], c)
+	}
+	return b.String()
+}
 
 // TestALBDiscoveryKind is the plan step-34 Kubernetes scenario: an
 // in-cluster Trickster (deployed by `make kind-integration-start`; see
@@ -61,7 +127,8 @@ func TestALBDiscoveryKind(t *testing.T) {
 	kubectl := func(args ...string) string {
 		t.Helper()
 		out, err := exec.Command("kubectl", append([]string{
-			"--context", "kind-trickster-it", "-n", namespace}, args...)...).
+			"--context", "kind-trickster-it", "-n", namespace,
+		}, args...)...).
 			CombinedOutput()
 		require.NoError(t, err, "kubectl %v: %s", args, out)
 		return string(out)
@@ -101,6 +168,7 @@ func TestALBDiscoveryKind(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	var requests, errors atomic.Int64
+	failures := newRequestFailures()
 	for range 4 {
 		wg.Add(1)
 		go func() {
@@ -115,10 +183,12 @@ func TestALBDiscoveryKind(t *testing.T) {
 				requests.Add(1)
 				if err != nil {
 					errors.Add(1)
+					failures.transport(err)
 					continue
 				}
 				if resp.StatusCode != http.StatusOK {
 					errors.Add(1)
+					failures.response(resp)
 				}
 				_, _ = io.Copy(io.Discard, resp.Body)
 				resp.Body.Close()
@@ -126,16 +196,20 @@ func TestALBDiscoveryKind(t *testing.T) {
 		}()
 	}
 	kubectl("rollout", "restart", "deployment/webecho")
+	restarted := time.Since(failures.start)
 	kubectl("rollout", "status", "deployment/webecho", "--timeout=120s")
+	rolledOut := time.Since(failures.start)
 	// keep load flowing while the post-restart endpoints settle
 	time.Sleep(3 * time.Second)
 	close(stop)
 	wg.Wait()
-	t.Logf("rolling restart: requests=%d errors=%d",
-		requests.Load(), errors.Load())
+	t.Logf("rolling restart: requests=%d errors=%d (restart issued +%dms, rolled out +%dms); failures: %s",
+		requests.Load(), errors.Load(), restarted.Milliseconds(),
+		rolledOut.Milliseconds(), failures)
 	require.Positive(t, requests.Load())
 	require.Zero(t, errors.Load(),
-		"rolling restart under load must produce zero client errors")
+		"rolling restart under load must produce zero client errors; failures: %s",
+		failures)
 
 	// sever the API-server connection: pause the kind control-plane
 	// node's container. The workloads live on the worker node, so the

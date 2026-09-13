@@ -66,6 +66,40 @@ type opcResult struct {
 	body        []byte
 	elapsed     float64
 	cacheStatus status.LookupStatus
+	// varyNames, varyGeneration and varyKey record which request fields
+	// selected this response and the variant they selected, so a waiter can
+	// tell whether the result is one it may use at all
+	varyNames      []string
+	varyGeneration string
+	varyKey        string
+	// varyUnmatchable marks a response whose Vary nominates something the
+	// cache cannot compare. RFC 9111 4.1 has such a response match no request
+	// but the one it was fetched for, which an empty varyNames cannot express
+	// because a response with no Vary at all also has none.
+	varyUnmatchable bool
+}
+
+// variantKeyFor returns the secondary key the waiting request's own fields
+// select under the scheme this result was produced with.
+func (r *opcResult) variantKeyFor(pr *proxyRequest) string {
+	return varySecondaryKey(pr.primaryKey, r.varyGeneration, r.varyNames, pr.Header)
+}
+
+// suitableFor reports whether a result produced for one request may answer
+// another. RFC 9111 4.1: a response that nominated request fields answers only
+// a request selecting the same variant, so handing it to a waiter that selects
+// differently would serve one client's representation to another.
+func (r *opcResult) suitableFor(pr *proxyRequest) bool {
+	if r == nil {
+		return true
+	}
+	if r.varyUnmatchable {
+		return false
+	}
+	if len(r.varyNames) == 0 {
+		return true
+	}
+	return r.variantKeyFor(pr) == r.varyKey
 }
 
 // dpcResult is the shared result returned to singleflight waiters for DPC.

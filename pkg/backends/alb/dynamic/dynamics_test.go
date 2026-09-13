@@ -37,7 +37,8 @@ import (
 // for the manager's control plane.
 func TestConcurrentApplySnapshot(t *testing.T) {
 	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 
 	snapshots := make([]discovery.Snapshot, 8)
 	for i := range snapshots {
@@ -78,7 +79,8 @@ func TestConcurrentApplySnapshot(t *testing.T) {
 // the step-29 leak check for runtime instantiation/teardown.
 func TestTeardownReleasesResources(t *testing.T) {
 	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	// give members an actively-probing healthcheck so probe goroutine
 	// teardown is exercised; 127.0.0.1:1 refuses connections immediately
 	m.cfg.Template.HealthCheck.Interval = timeconv.Duration(10 * time.Millisecond)
@@ -125,9 +127,11 @@ func BenchmarkApplySnapshotChurn(b *testing.B) {
 	for _, n := range []int{10, 100, 500} {
 		b.Run(fmt.Sprintf("members-%d", n), func(b *testing.B) {
 			m, _, _ := newTestManager(b, &ao.DiscoveryOptions{
-				DiscovererName: "d", TemplateBackend: "rp-template"})
+				DiscovererName: "d", TemplateBackend: "rp-template",
+			})
 			snaps := []discovery.Snapshot{
-				makeChurnSnapshot(n, 0), makeChurnSnapshot(n, 1)}
+				makeChurnSnapshot(n, 0), makeChurnSnapshot(n, 1),
+			}
 			m.ApplySnapshot(snaps[0])
 			b.ReportAllocs()
 			b.ResetTimer()
@@ -142,7 +146,8 @@ func BenchmarkApplySnapshotChurn(b *testing.B) {
 // healthy discoverer re-emitting identical membership must be cheap
 func BenchmarkApplySnapshotUnchanged(b *testing.B) {
 	m, _, _ := newTestManager(b, &ao.DiscoveryOptions{
-		DiscovererName: "d", TemplateBackend: "rp-template"})
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
 	s := makeChurnSnapshot(100, 0)
 	m.ApplySnapshot(s)
 	b.ReportAllocs()

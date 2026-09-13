@@ -117,6 +117,7 @@ mgmt:
   config_handler_path: /trickster/config
   config_handler_listener: mgmt
   ping_handler_path: /trickster/ping
+  ready_handler_path: /trickster/ready
   health_handler_path: /trickster/health
   purge_by_key_path: /trickster/purge/key/
   purge_by_path_path: /trickster/purge/path/

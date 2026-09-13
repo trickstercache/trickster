@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -124,7 +125,10 @@ func passthroughRewrite(client backends.Backend) func(*httputil.ProxyRequest) {
 			r.Header.Set(headers.NameUpgrade, upgradeType)
 		}
 		// clear the Host header or it is forwarded upstream
-		r.Host = ""
+		// the client's Host is kept only when the backend asks; otherwise the origin's own is sent
+		if o == nil || !o.PreserveHost {
+			r.Host = ""
+		}
 
 		if rsc != nil {
 			if pc := rsc.PathConfig; pc != nil {
@@ -189,10 +193,22 @@ func passthroughModifyResponse(resp *http.Response) error {
 		}
 	}
 
+	// RFC 9111 4.4: a write the origin accepted supersedes whatever the cache
+	// holds for the target URI. Uncacheable methods route here rather than
+	// through the object cache, so this is where they reach a cache at all.
+	if rsc != nil && rsc.CacheClient != nil && r != nil &&
+		resp.StatusCode < http.StatusBadRequest && methods.IsStateChanging(r.Method) {
+		InvalidateTargetURI(r)
+	}
+
 	setStatusHeader(resp.StatusCode, resp.Header)
 	// matches the request-side strip in AddForwardingHeaders; ReverseProxy's
-	// own hop-header removal does not cover Accept-Encoding
+	// own hop-header removal does not cover Accept-Encoding. It runs before
+	// the Via below so an upstream Connection: Via cannot delete this hop.
 	headers.StripClientHeaders(resp.Header)
+	// RFC 9110 7.6.3: name this hop on the response, using the protocol the
+	// response was received over, so the client can see the path it traveled
+	headers.AddResponseVia(resp.Header, resp.Proto)
 	return nil
 }
 
@@ -211,6 +227,11 @@ func passthroughErrorHandler(w http.ResponseWriter, r *http.Request, err error) 
 		})
 	h := w.Header()
 	headers.SetResultsHeader(h, "HTTPProxy", status.LookupStatusProxyError.String(), "", nil, nil)
+	// a deadline that ran out is a gateway timeout; an origin that could not be reached is a bad gateway
+	if isTimeout(err) {
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return
+	}
 	w.WriteHeader(http.StatusBadGateway)
 }
 
@@ -245,7 +266,12 @@ type idleTimeoutTransport struct {
 }
 
 func (t *idleTimeoutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	resp, err := t.next.RoundTrip(r)
+	start := time.Now()
+	rsc := request.GetResources(r)
+	resp, err := doUpstream(t.next.RoundTrip, r, rsc)
+	if resp != nil {
+		rsc.SetUpstream(r.URL.Host, resp.StatusCode, time.Since(start))
+	}
 	if err != nil || resp == nil || resp.Body == nil {
 		return resp, err
 	}

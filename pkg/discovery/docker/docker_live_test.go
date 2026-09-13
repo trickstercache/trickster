@@ -61,8 +61,10 @@ func liveList(t *testing.T, q *do.Query) ([]container, mapping) {
 	s := &subscription{p: p, url: target}
 	cs, err := s.list(t.Context())
 	require.NoError(t, err)
-	return cs, mapping{scheme: "http", network: q.Network,
-		addressType: q.AddressType, port: q.Port, portLabel: q.PortLabel}
+	return cs, mapping{
+		scheme: "http", network: q.Network,
+		addressType: q.AddressType, port: q.Port, portLabel: q.PortLabel,
+	}
 }
 
 // The pinned API version must actually be served, and the response must
@@ -120,7 +122,8 @@ func TestLiveLabelFilterIsAccepted(t *testing.T) {
 	cs, _ := liveList(t, &do.Query{
 		Filters: map[string][]string{
 			"label": {"com.trickster.probe=definitely-not-set"},
-		}})
+		},
+	})
 	require.Empty(t, cs, "a label nothing carries must match nothing")
 }
 
@@ -130,7 +133,8 @@ func TestLiveUnknownFilterIsAnError(t *testing.T) {
 	p, err := newProvider("live-docker", liveOptions(t))
 	require.NoError(t, err)
 	target, err := p.listURL(&do.Query{
-		Filters: map[string][]string{"nonsense": {"x"}}})
+		Filters: map[string][]string{"nonsense": {"x"}},
+	})
 	require.NoError(t, err)
 	s := &subscription{p: p, url: target}
 	_, err = s.list(t.Context())
@@ -150,7 +154,8 @@ func TestLiveCaptureFixture(t *testing.T) {
 	p, err := newProvider("live-docker", liveOptions(t))
 	require.NoError(t, err)
 	target, err := p.listURL(&do.Query{
-		Filters: map[string][]string{"status": {"running", "exited"}}})
+		Filters: map[string][]string{"status": {"running", "exited"}},
+	})
 	require.NoError(t, err)
 	s := &subscription{p: p, url: target}
 	cs, err := s.list(t.Context())

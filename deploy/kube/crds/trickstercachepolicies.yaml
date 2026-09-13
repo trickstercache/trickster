@@ -1,0 +1,239 @@
+# The TricksterCachePolicy custom resource: caching policy attached to a Gateway, an HTTPRoute
+# (or one of its rules), a Service (or one of its ports), or an Ingress, read by the Trickster
+# Kubernetes controller. Install it before the controller starts; the controller probes for it
+# once at startup and serves routes without it when it is absent.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: trickstercachepolicies.trickstercache.org
+spec:
+  group: trickstercache.org
+  scope: Namespaced
+  names:
+    kind: TricksterCachePolicy
+    listKind: TricksterCachePolicyList
+    plural: trickstercachepolicies
+    singular: trickstercachepolicy
+    shortNames:
+      - tcpol
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Provider
+          type: string
+          jsonPath: .spec.provider
+        - name: Cache
+          type: string
+          jsonPath: .spec.cacheName
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required:
+            - spec
+          properties:
+            spec:
+              type: object
+              required:
+                - targetRefs
+              properties:
+                targetRefs:
+                  description: >-
+                    The objects in this namespace the policy governs. A more specific target
+                    overrides a less specific one field by field: Service over an HTTPRoute
+                    rule, over the HTTPRoute, over its Gateway; Service over an Ingress.
+                  type: array
+                  minItems: 1
+                  maxItems: 16
+                  items:
+                    type: object
+                    required:
+                      - kind
+                      - name
+                    properties:
+                      group:
+                        description: The target's API group; empty is the kind's own group.
+                        type: string
+                        maxLength: 253
+                      kind:
+                        type: string
+                        enum:
+                          - Gateway
+                          - HTTPRoute
+                          - Service
+                          - Ingress
+                      name:
+                        type: string
+                        minLength: 1
+                        maxLength: 253
+                      sectionName:
+                        description: >-
+                          Narrows an HTTPRoute target to one named rule, or a Service target
+                          to one named port.
+                        type: string
+                        minLength: 1
+                        maxLength: 253
+                handler:
+                  description: The path handler; proxycache serves from the object cache.
+                  type: string
+                  enum:
+                    - proxy
+                    - proxycache
+                provider:
+                  description: >-
+                    Serves the target through a time series provider, which accelerates
+                    the provider's own API paths rather than caching responses as opaque
+                    objects.
+                  type: string
+                  enum:
+                    - prometheus
+                    - influxdb
+                    - clickhouse
+                    - graphite
+                cacheName:
+                  description: A cache the Trickster configuration defines.
+                  type: string
+                  maxLength: 253
+                negativeCacheName:
+                  description: A negative cache the Trickster configuration defines.
+                  type: string
+                  maxLength: 253
+                maxTTL:
+                  description: >-
+                    Caps how long a cached object is served before revalidation; a
+                    duration with a unit, such as 10m.
+                  type: string
+                  pattern: '^[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)([0-9]+(ns|us|µs|ms|s|m|h|d|w|y))*$'
+                timeout:
+                  description: The upstream request timeout; a duration with a unit.
+                  type: string
+                  pattern: '^[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)([0-9]+(ns|us|µs|ms|s|m|h|d|w|y))*$'
+                collapsedForwarding:
+                  type: string
+                  enum:
+                    - basic
+                    - progressive
+                cacheKeyParams:
+                  description: Request query parameters hashed into the cache key.
+                  type: array
+                  maxItems: 64
+                  items:
+                    type: string
+                    minLength: 1
+                cacheKeyHeaders:
+                  description: Request headers hashed into the cache key.
+                  type: array
+                  maxItems: 64
+                  items:
+                    type: string
+                    minLength: 1
+                requestHeaders:
+                  description: >-
+                    Header updates on the way upstream; a name prefixed with '-' deletes
+                    the header and one prefixed with '+' appends to it.
+                  type: object
+                  additionalProperties:
+                    type: string
+                responseHeaders:
+                  description: Header updates on the way back, under the same spelling.
+                  type: object
+                  additionalProperties:
+                    type: string
+                cors:
+                  type: object
+                  properties:
+                    mode:
+                      description: How origin CORS headers combine with the configured ones.
+                      type: string
+                      enum:
+                        - preserve
+                        - merge
+                        - replace
+                        - disable
+                    headers:
+                      description: The CORS response headers merge and replace apply.
+                      type: object
+                      additionalProperties:
+                        type: string
+                healthMode:
+                  description: >-
+                    How discovered members are judged healthy in the endpoint routing mode.
+                  type: string
+                  enum:
+                    - probe
+                    - provider
+                resultHeader:
+                  description: >-
+                    Whether the X-Trickster-Result response header reaches the client;
+                    Expose unless set.
+                  type: string
+                  enum:
+                    - Expose
+                    - Hide
+            status:
+              type: object
+              properties:
+                ancestors:
+                  description: One entry per targetRef, written by the controller.
+                  type: array
+                  maxItems: 16
+                  items:
+                    type: object
+                    required:
+                      - ancestorRef
+                      - controllerName
+                    properties:
+                      ancestorRef:
+                        type: object
+                        required:
+                          - name
+                        properties:
+                          group:
+                            type: string
+                          kind:
+                            type: string
+                          namespace:
+                            type: string
+                          name:
+                            type: string
+                          sectionName:
+                            type: string
+                          port:
+                            type: integer
+                      controllerName:
+                        type: string
+                      conditions:
+                        type: array
+                        maxItems: 8
+                        items:
+                          type: object
+                          required:
+                            - type
+                            - status
+                            - reason
+                            - lastTransitionTime
+                          properties:
+                            type:
+                              type: string
+                            status:
+                              type: string
+                              enum:
+                                - "True"
+                                - "False"
+                                - Unknown
+                            reason:
+                              type: string
+                            message:
+                              type: string
+                            observedGeneration:
+                              type: integer
+                              format: int64
+                            lastTransitionTime:
+                              type: string
+                              format: date-time

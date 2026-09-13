@@ -322,7 +322,7 @@ func startBenchmarkOrigin(b *testing.B, result *sqltypes.Result) vtmysql.ConnPar
 		b.Fatal(err)
 	}
 	handler := &benchmarkOriginHandler{
-		testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}, result: result,
+		env: vtenv.NewTestEnv(), result: result,
 	}
 	server, err := vtmysql.NewFromListener(listener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), handler,
@@ -344,7 +344,7 @@ func startBenchmarkDeltaOrigin(b *testing.B) vtmysql.ConnParams {
 	if err != nil {
 		b.Fatal(err)
 	}
-	handler := &deltaOriginHandler{testOriginHandler: testOriginHandler{env: vtenv.NewTestEnv()}}
+	handler := &deltaOriginHandler{env: vtenv.NewTestEnv()}
 	server, err := vtmysql.NewFromListener(listener,
 		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), handler,
 		0, 0, false, false, 0, 0, false)

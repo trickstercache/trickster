@@ -38,6 +38,7 @@ func (a *testAuthenticator) Authenticate(*http.Request) (*types.AuthResult, erro
 	a.authCalls++
 	return a.result, a.err
 }
+
 func (*testAuthenticator) ExtractCredentials(*http.Request) (string, string, error) {
 	return "", "", nil
 }
@@ -53,7 +54,8 @@ func (*testAuthenticator) AddUser(string, string) error                         
 func (*testAuthenticator) RemoveUser(string)                                         {}
 func (a *testAuthenticator) Clone() types.Authenticator                              { return a }
 func (*testAuthenticator) ProxyPreserve() bool                                       { return false }
-func (a *testAuthenticator) Sanitize(*http.Request)                                  { a.sanitizeCalls++ }
+
+func (a *testAuthenticator) Sanitize(*http.Request) { a.sanitizeCalls++ }
 
 func TestMiddleware(t *testing.T) {
 	tests := []struct {
@@ -68,25 +70,35 @@ func TestMiddleware(t *testing.T) {
 		wantResponseHead string
 	}{
 		{name: "nil authenticator", wantStatus: http.StatusInternalServerError},
-		{name: "cached failure", authenticator: &testAuthenticator{},
-			cached: &types.AuthResult{Status: types.AuthFailed}, wantStatus: http.StatusUnauthorized},
-		{name: "cached success", authenticator: &testAuthenticator{},
+		{
+			name: "cached failure", authenticator: &testAuthenticator{},
+			cached: &types.AuthResult{Status: types.AuthFailed}, wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name: "cached success", authenticator: &testAuthenticator{},
 			cached: &types.AuthResult{Status: types.AuthSuccess}, wantStatus: http.StatusNoContent,
-			wantNext: true},
-		{name: "authentication error", authenticator: &testAuthenticator{err: errors.New("denied")},
-			wantStatus: http.StatusUnauthorized, wantAuthCalls: 1},
-		{name: "nil result", authenticator: &testAuthenticator{},
-			wantStatus: http.StatusUnauthorized, wantAuthCalls: 1},
+			wantNext: true,
+		},
+		{
+			name: "authentication error", authenticator: &testAuthenticator{err: errors.New("denied")},
+			wantStatus: http.StatusUnauthorized, wantAuthCalls: 1,
+		},
+		{
+			name: "nil result", authenticator: &testAuthenticator{},
+			wantStatus: http.StatusUnauthorized, wantAuthCalls: 1,
+		},
 		{name: "failed result copies challenge", authenticator: &testAuthenticator{result: &types.AuthResult{
 			Status: types.AuthFailed, ResponseHeaders: map[string]string{headers.NameWWWAuthenticate: "Basic"},
 		}}, wantStatus: http.StatusUnauthorized, wantAuthCalls: 1, wantResponseHead: "Basic"},
 		{name: "observed result", authenticator: &testAuthenticator{result: &types.AuthResult{
 			Status: types.AuthObserved,
 		}}, wantStatus: http.StatusNoContent, wantNext: true, wantAuthCalls: 1, wantAuthResult: true},
-		{name: "successful result", authenticator: &testAuthenticator{result: &types.AuthResult{
-			Status: types.AuthSuccess,
-		}}, wantStatus: http.StatusNoContent, wantNext: true, wantAuthCalls: 1,
-			wantSanitize: 1, wantAuthResult: true},
+		{
+			name: "successful result", authenticator: &testAuthenticator{result: &types.AuthResult{
+				Status: types.AuthSuccess,
+			}}, wantStatus: http.StatusNoContent, wantNext: true, wantAuthCalls: 1,
+			wantSanitize: 1, wantAuthResult: true,
+		},
 	}
 
 	for _, tc := range tests {

@@ -303,14 +303,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
 			if duration > limit {
 				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
-				clientIP := r.Header.Get(headers.NameXForwardedFor)
-				if clientIP == "" {
-					clientIP = r.RemoteAddr
-				}
 				logger.Warn("query rejected due to max_query_range limit",
 					logging.Pairs{
 						keys.BackendName: rsc.BackendOptions.Name,
-						"clientIP":       clientIP,
+						"clientIP":       request.ClientIP(r),
 						keys.Path:        r.URL.Path,
 						"statement":      trq.Statement,
 						"start":          trq.Extent.Start.String(),

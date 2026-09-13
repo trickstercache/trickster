@@ -21,3 +21,18 @@ package handlers
 import "net/http"
 
 type Lookup map[string]http.Handler
+
+// Names of the handlers that answer a request locally, without an upstream
+const (
+	// NameLocalResponse serves a configured fixed response
+	NameLocalResponse = "localresponse"
+	// NameRedirect answers with a redirection composed from the request
+	NameRedirect = "redirect"
+)
+
+// IsLocal reports whether a handler answers from configuration alone. A
+// request such a handler matches has no upstream to be tunneled to, so an
+// upgrade request is answered by the handler rather than diverted to one.
+func IsLocal(name string) bool {
+	return name == NameLocalResponse || name == NameRedirect
+}

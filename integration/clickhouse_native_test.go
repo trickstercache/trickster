@@ -93,7 +93,11 @@ func TestClickHouseNativeListenerCacheMatrix(t *testing.T) {
 	const step = int64(5 * 60)
 	start = start / step * step
 	end = ((end / step) + 1) * step
-	mid := start + ((end-start)/step/2)*step
+	// the delta cache proxies ranges ending before its retention window, which trails now, so
+	// the miss/partial-hit boundary is anchored to now rather than to the seeded data's midpoint
+	now := time.Now().Unix()
+	require.Less(t, now, end-step, "the seeded trips data has aged out; re-seed the ClickHouse fixture")
+	mid := max(now/step*step, start+step)
 	require.Less(t, mid, end)
 
 	for _, flow := range []struct {

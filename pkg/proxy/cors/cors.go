@@ -60,24 +60,18 @@ func Apply(h http.Header, o *corso.Options) {
 	updateHeaders(h, o.Headers)
 }
 
+// response headers may arrive in any spelling, so every operation removes
+// the header under all of them before writing its canonical form
 func updateHeaders(h http.Header, updates map[string]string) {
-	for configuredName, value := range updates {
-		if configuredName == "" {
-			continue
-		}
-		operation := byte(0)
-		name := configuredName
-		if name[0] == '+' || name[0] == '-' {
-			operation = name[0]
-			name = name[1:]
-		}
+	for key, value := range updates {
+		operation, name := headers.ParseUpdateKey(key)
 		if name == "" {
 			continue
 		}
 		switch operation {
-		case '-':
+		case headers.UpdateDelete:
 			deleteHeader(h, name)
-		case '+':
+		case headers.UpdateAppend:
 			values := takeHeader(h, name)
 			for _, existing := range values {
 				h.Add(name, existing)

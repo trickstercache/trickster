@@ -76,7 +76,7 @@ func TestALBUnavailableMemberNotQueried(t *testing.T) {
 		frontPort, metricsPort, mgmtPort, healthy.URL, broken.URL)
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(yaml), 0o644))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)

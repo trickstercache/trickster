@@ -130,7 +130,7 @@ func New() *Options {
 		InputDelimiter:    " ",
 		InputIndex:        -1,
 		MaxRuleExecutions: DefaultMaxRuleExecutions,
-		InputType:         "string",
+		InputType:         TypeString,
 	}
 }
 

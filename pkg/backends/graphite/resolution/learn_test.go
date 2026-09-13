@@ -99,20 +99,26 @@ func newHarness(t testing.TB, static [][2]string) *harness {
 	base, _ := url.Parse(srv.URL)
 	origin := &resolution.Origin{Base: base, Client: http.DefaultClient, Timeout: 5 * time.Second}
 	obs := newCounter()
-	reg := resolution.NewRegistry(resolution.RegistryOptions{TTL: time.Hour, NegativeTTL: time.Second,
-		NegativeTTLMax: 10 * time.Second, MaxEntries: 1000, Now: func() time.Time { return now }}, nil)
+	reg := resolution.NewRegistry(resolution.RegistryOptions{
+		TTL: time.Hour, NegativeTTL: time.Second,
+		NegativeTTLMax: 10 * time.Second, MaxEntries: 1000, Now: func() time.Time { return now },
+	}, nil)
 	reg.Observer = obs
 	exp := &resolution.Expander{Origin: origin, Registry: reg, Observer: obs, TTL: time.Minute}
 	st, err := resolution.NewStatic(static)
 	if err != nil {
 		t.Fatal(err)
 	}
-	learner := &resolution.Learner{Prober: &resolution.Prober{Origin: origin, Observer: obs},
+	learner := &resolution.Learner{
+		Prober:   &resolution.Prober{Origin: origin, Observer: obs},
 		Expander: exp, Registry: reg, Observer: obs, Concurrency: 2, Budget: 96, Name: "test",
-		Now: func() time.Time { return now }}
+		Now: func() time.Time { return now },
+	}
 	t.Cleanup(learner.Close)
-	res := &resolution.Resolver{Registry: reg, Expander: exp, Learner: learner, Static: st,
-		Observer: obs}
+	res := &resolution.Resolver{
+		Registry: reg, Expander: exp, Learner: learner, Static: st,
+		Observer: obs,
+	}
 	return &harness{stub: srv, registry: reg, learner: learner, resolver: res, expander: exp, obs: obs, now: now}
 }
 
@@ -152,8 +158,10 @@ func TestLearnDiscoversEveryLadder(t *testing.T) {
 			t.Logf("%s learned in %d probes", l, probes)
 			// the registry now answers every age exactly, with no more probes
 			before = h.obs.total()
-			for _, age := range []time.Duration{time.Minute, 6 * time.Hour, 6*time.Hour + time.Second,
-				7 * 24 * time.Hour, 40 * 24 * time.Hour, 10 * 365 * 24 * time.Hour} {
+			for _, age := range []time.Duration{
+				time.Minute, 6 * time.Hour, 6*time.Hour + time.Second,
+				7 * 24 * time.Hour, 40 * 24 * time.Hour, 10 * 365 * 24 * time.Hour,
+			} {
 				r := h.resolver.Resolve(context.Background(), []string{leaf}, 0, age, false)
 				s, _ := want.StepFor(age)
 				if r.Confidence != resolution.Exact || r.Step != s || r.MaxRetention != want.MaxRetention() {

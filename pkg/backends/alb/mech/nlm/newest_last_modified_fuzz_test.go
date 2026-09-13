@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
@@ -86,7 +87,7 @@ func FuzzNLMLastModifiedSelection(f *testing.F) {
 			h := &handler{}
 			h.SetPool(p)
 			w := httptest.NewRecorder()
-			r, _ := http.NewRequest("GET", "http://trickstercache.org/", nil)
+			r, _ := http.NewRequest("GET", "http://"+appinfo.Domain+"/", nil)
 			h.ServeHTTP(w, r)
 			return w.Code, w.Body.String(), parseSlotIdx(w.Body.String())
 		}

@@ -60,6 +60,10 @@ var ErrNilListener = errors.New("nil listener")
 // ErrNoSuchListener indicates an error that the provided listener name is unknown
 var ErrNoSuchListener = errors.New("no such listener")
 
+// ErrListenerGroupClosed indicates a listener start was refused because the
+// group has begun shutting down
+var ErrListenerGroupClosed = errors.New("listener group is shutting down")
+
 // ErrDrainTimeout indicates an error that the connection drain took longer than the requested timeout
 var ErrDrainTimeout = errors.New("timed out draining")
 

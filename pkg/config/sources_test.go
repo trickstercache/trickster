@@ -417,7 +417,7 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 			t.Fatal(err)
 		}
 		config.MgmtConfig.ReloadRateLimit = 0
-		if config.CheckAndMarkReloadInProgress() {
+		if config.CheckAndMarkReloadInProgress("", true) {
 			t.Fatal("freshly loaded config reported stale")
 		}
 		if config.HasConfigChanged() {
@@ -435,10 +435,10 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if !config.HasConfigChanged() || !config.HasConfigChanged() {
 			t.Error("same-timestamp content change was not detected without marking")
 		}
-		if !config.CheckAndMarkReloadInProgress() {
+		if !config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("same-timestamp content change did not make config stale")
 		}
-		if config.CheckAndMarkReloadInProgress() {
+		if config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("unchanged source reported stale after being marked")
 		}
 
@@ -446,7 +446,7 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if config.HasConfigChanged() {
 			t.Error("unsupported file was detected as a config source change")
 		}
-		if config.CheckAndMarkReloadInProgress() {
+		if config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("unsupported file made config stale")
 		}
 		addedPath := filepath.Join(includePath, "20-metrics.yml")
@@ -454,7 +454,7 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if !config.HasConfigChanged() {
 			t.Error("added config source was not detected without marking")
 		}
-		if !config.CheckAndMarkReloadInProgress() {
+		if !config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("added config source did not make config stale")
 		}
 		if err := os.Remove(addedPath); err != nil {
@@ -463,7 +463,7 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if !config.HasConfigChanged() {
 			t.Error("removed config source was not detected without marking")
 		}
-		if !config.CheckAndMarkReloadInProgress() {
+		if !config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("removed config source did not make config stale")
 		}
 	})
@@ -486,7 +486,7 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 			t.Error("added directory source did not make config stale")
 		}
 		config.Main.configRateLimitTime = time.Time{}
-		if !config.CheckAndMarkReloadInProgress() {
+		if !config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("IsStale unexpectedly marked the source snapshot")
 		}
 		if err := os.Remove(addedPath); err != nil {
@@ -495,7 +495,7 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if !config.HasConfigChanged() {
 			t.Error("removed directory source was not detected without marking")
 		}
-		if !config.CheckAndMarkReloadInProgress() {
+		if !config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("removed directory source did not make config stale")
 		}
 	})
@@ -524,7 +524,7 @@ func TestConfigSourceRateLimitAndClone(t *testing.T) {
 	clone.Main.configRateLimitTime = time.Now().Add(time.Minute)
 	originalFingerprint := clone.Main.configSourceFingerprint
 	writeConfigSourceTestFile(t, filepath.Join(includePath, "added.yaml"), "frontend:\n  listen_port: 9001\n")
-	if clone.CheckAndMarkReloadInProgress() {
+	if clone.CheckAndMarkReloadInProgress("", true) {
 		t.Error("rate-limited config source check triggered a reload")
 	}
 	if clone.Main.configSourceFingerprint != originalFingerprint {
@@ -532,7 +532,7 @@ func TestConfigSourceRateLimitAndClone(t *testing.T) {
 	}
 	clone.Main.configRateLimitTime = time.Time{}
 	clone.MgmtConfig.ReloadRateLimit = 0
-	if !clone.CheckAndMarkReloadInProgress() {
+	if !clone.CheckAndMarkReloadInProgress("", true) {
 		t.Error("clone did not detect a config source added after cloning")
 	}
 }

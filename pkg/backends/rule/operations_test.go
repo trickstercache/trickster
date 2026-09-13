@@ -19,6 +19,8 @@ package rule
 import (
 	"strconv"
 	"testing"
+
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 )
 
 func TestBToS(t *testing.T) {
@@ -48,9 +50,6 @@ func TestOperations(t *testing.T) {
 		expected          string
 	}{
 		{"string-eq", "test", "test", false, "true"},
-		{"string-rmatch", "/example/writer", "^.*\\/writer.*$", false, "true"},
-		{"string-rmatch", "mytesting", "^.*[test.*$", false, "false"},
-		{"string-rmatch", "mytesting", "^.*tst.*$", false, "false"},
 		{"string-contains", "test", "test", false, "true"},
 		{"string-contains", "test", "foo", false, "false"},
 		{"string-prefix", "test", "t", false, "true"},
@@ -103,5 +102,34 @@ func TestOperations(t *testing.T) {
 				t.Errorf("unknown operation %v", test.opKey)
 			}
 		})
+	}
+}
+
+func TestRegexOperation(t *testing.T) {
+	re, err := matching.NewRegex("^.*\\/writer.*$")
+	if err != nil {
+		t.Fatal(err)
+	}
+	op := regexOperation(re)
+	tests := []struct {
+		input    string
+		negate   bool
+		expected string
+	}{
+		{"/example/writer", false, "true"},
+		{"/example/writer", true, "false"},
+		{"/example/reader", false, "false"},
+		{"/example/reader", true, "true"},
+	}
+	for i, test := range tests {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			if got := op(test.input, "ignored", test.negate); got != test.expected {
+				t.Errorf("input: %s negate: %t got %s expected %s",
+					test.input, test.negate, got, test.expected)
+			}
+		})
+	}
+	if _, ok := operationFuncs[opStringRMatch]; ok {
+		t.Error("rmatch must be bound per rule, not looked up in the operation table")
 	}
 }

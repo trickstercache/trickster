@@ -21,7 +21,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -51,14 +50,14 @@ type ProtocolServer interface {
 // StartProtocolListener starts a protocol-terminating server on a Trickster
 // listener, preserving the common connection limit, metrics, and drain lifecycle.
 func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
-	port, connectionsLimit int, svr ProtocolServer, f func(), drainTimeout time.Duration,
+	port, connectionsLimit int, svr ProtocolServer, f func(), proxyProtocol *ProxyProtocolOptions,
 ) error {
 	l := &Listener{readyCh: make(chan struct{}), server: svr}
 	l.exitOnError.Store(f != nil)
 	l.setState(StateStarting)
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, nil, drainTimeout)
+	l.Listener, err = NewListener(address, port, connectionsLimit, nil, proxyProtocol)
 	if err != nil {
 		logger.ErrorSynchronous(protocol+" listener startup failed", logging.Pairs{
 			logKeyListenerName: listenerName, logKeyDetail: err,
@@ -73,9 +72,10 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 		logKeyListenerName: listenerName, logKeyPort: port, logKeyAddress: address,
 	})
 
-	lg.listenersLock.Lock()
-	lg.members[listenerName] = l
-	lg.listenersLock.Unlock()
+	if err := lg.publish(listenerName, l); err != nil {
+		l.refuse(listenerName)
+		return err
+	}
 	l.setState(StateReady)
 	l.markReady()
 
@@ -131,6 +131,21 @@ func (lg *Group) ProtocolRestartKey(listenerName string) (string, bool) {
 		return "", false
 	}
 	return keyer.ProtocolRestartKey(), true
+}
+
+// ProtocolServerAs returns the named listener's protocol server when it is a T, so a reload can
+// hand a running server its new configuration without the group knowing the server's type.
+func ProtocolServerAs[T any](lg *Group, listenerName string) (T, bool) {
+	var zero T
+	if lg == nil {
+		return zero, false
+	}
+	l := lg.Get(listenerName)
+	if l == nil || l.server == nil {
+		return zero, false
+	}
+	svr, ok := l.server.(T)
+	return svr, ok
 }
 
 // UpdateProtocolHandler updates a native protocol bridge without replacing its listener.

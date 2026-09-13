@@ -18,7 +18,6 @@ package rewriter
 
 import (
 	"fmt"
-	"net"
 	"net/http"
 	"net/url"
 	"slices"
@@ -26,6 +25,8 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/parts"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
@@ -43,29 +44,37 @@ type RewriteInstructions []rewriteInstruction
 // InstructionsLookup is a map of Options keyed by the RewriteInstructions Name
 type InstructionsLookup map[string]RewriteInstructions
 
+// instructionKey joins the part and action an instruction is spelled with
+func instructionKey(part, action string) string {
+	return part + "-" + action
+}
+
 var rewriters = map[string]func() rewriteInstruction{
-	"scheme-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
-	"header-set":       func() rewriteInstruction { return &rwiKeyBasedSetter{} },
-	"header-replace":   func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
-	"header-delete":    func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
-	"header-append":    func() rewriteInstruction { return &rwiKeyBasedAppender{} },
-	"path-set":         func() rewriteInstruction { return &rwiPathSetter{} },
-	"path-replace":     func() rewriteInstruction { return &rwiPathReplacer{} },
-	"param-set":        func() rewriteInstruction { return &rwiKeyBasedSetter{} },
-	"param-replace":    func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
-	"param-delete":     func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
-	"param-append":     func() rewriteInstruction { return &rwiKeyBasedAppender{} },
-	"params-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
-	"params-replace":   func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"method-set":       func() rewriteInstruction { return &rwiBasicSetter{} },
-	"host-set":         func() rewriteInstruction { return &rwiBasicSetter{} },
-	"host-replace":     func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"hostname-set":     func() rewriteInstruction { return &rwiBasicSetter{} },
-	"hostname-replace": func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"port-set":         func() rewriteInstruction { return &rwiBasicSetter{} },
-	"port-replace":     func() rewriteInstruction { return &rwiBasicReplacer{} },
-	"port-delete":      func() rewriteInstruction { return &rwiPortDeleter{} },
-	"chain-exec":       func() rewriteInstruction { return &rwiChainExecutor{} },
+	instructionKey(options.PartScheme, options.ActionSet):     func() rewriteInstruction { return &rwiBasicSetter{} },
+	instructionKey(options.PartHeader, options.ActionSet):     func() rewriteInstruction { return &rwiKeyBasedSetter{} },
+	instructionKey(options.PartHeader, options.ActionReplace): func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
+	instructionKey(options.PartHeader, options.ActionDelete):  func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
+	instructionKey(options.PartHeader, options.ActionAppend):  func() rewriteInstruction { return &rwiKeyBasedAppender{} },
+	instructionKey(options.PartPath, options.ActionSet):       func() rewriteInstruction { return &rwiPathSetter{} },
+	instructionKey(options.PartPath, options.ActionReplace):   func() rewriteInstruction { return &rwiPathReplacer{} },
+	instructionKey(options.PartPath, options.ActionPrefixReplace): func() rewriteInstruction {
+		return &rwiPathPrefixReplacer{}
+	},
+	instructionKey(options.PartParam, options.ActionSet):        func() rewriteInstruction { return &rwiKeyBasedSetter{} },
+	instructionKey(options.PartParam, options.ActionReplace):    func() rewriteInstruction { return &rwiKeyBasedReplacer{} },
+	instructionKey(options.PartParam, options.ActionDelete):     func() rewriteInstruction { return &rwiKeyBasedDeleter{} },
+	instructionKey(options.PartParam, options.ActionAppend):     func() rewriteInstruction { return &rwiKeyBasedAppender{} },
+	instructionKey(options.PartParams, options.ActionSet):       func() rewriteInstruction { return &rwiBasicSetter{} },
+	instructionKey(options.PartParams, options.ActionReplace):   func() rewriteInstruction { return &rwiBasicReplacer{} },
+	instructionKey(options.PartMethod, options.ActionSet):       func() rewriteInstruction { return &rwiBasicSetter{} },
+	instructionKey(options.PartHost, options.ActionSet):         func() rewriteInstruction { return &rwiBasicSetter{} },
+	instructionKey(options.PartHost, options.ActionReplace):     func() rewriteInstruction { return &rwiBasicReplacer{} },
+	instructionKey(options.PartHostname, options.ActionSet):     func() rewriteInstruction { return &rwiBasicSetter{} },
+	instructionKey(options.PartHostname, options.ActionReplace): func() rewriteInstruction { return &rwiBasicReplacer{} },
+	instructionKey(options.PartPort, options.ActionSet):         func() rewriteInstruction { return &rwiBasicSetter{} },
+	instructionKey(options.PartPort, options.ActionReplace):     func() rewriteInstruction { return &rwiBasicReplacer{} },
+	instructionKey(options.PartPort, options.ActionDelete):      func() rewriteInstruction { return &rwiPortDeleter{} },
+	instructionKey(options.PartChain, options.ActionExec):       func() rewriteInstruction { return &rwiChainExecutor{} },
 }
 
 type dictable interface {
@@ -76,18 +85,19 @@ type dictable interface {
 
 type dictFunc func(*http.Request) dictable
 
+// a nil request yields a nil interface rather than an interface over a nil map
 var dicts = map[string]dictFunc{
-	"header": func(r *http.Request) dictable {
+	options.PartHeader: func(r *http.Request) dictable {
 		if r == nil {
 			return nil
 		}
 		return r.Header
 	},
-	"param": func(r *http.Request) dictable {
+	options.PartParam: func(r *http.Request) dictable {
 		if r == nil || r.URL == nil {
 			return nil
 		}
-		return r.URL.Query()
+		return parts.Query(r)
 	},
 }
 
@@ -97,85 +107,42 @@ type (
 )
 
 var scalarGets = map[string]scalarGetFunc{
-	"params": func(r *http.Request) string {
-		if r == nil || r.URL == nil {
-			return ""
-		}
-		return r.URL.RawQuery
-	},
-	"method": func(r *http.Request) string {
-		if r == nil {
-			return ""
-		}
-		return r.Method
-	},
-	"host": func(r *http.Request) string {
-		if r == nil || r.URL == nil {
-			return ""
-		}
-		return r.URL.Host
-	},
-	"hostname": func(r *http.Request) string {
-		if r == nil || r.URL == nil {
-			return ""
-		}
-		return r.URL.Hostname()
-	},
-	"port": func(r *http.Request) string {
-		if r == nil || r.URL == nil {
-			return ""
-		}
-		return r.URL.Port()
-	},
+	options.PartParams:   parts.RawQuery,
+	options.PartMethod:   parts.Method,
+	options.PartHost:     parts.Host,
+	options.PartHostname: parts.Hostname,
+	options.PartPort:     parts.Port,
 }
 
+// a setter of an upstream URL component also records the rewrite, so the
+// upstream request and its cache key reflect the change
 var scalarSets = map[string]scalarSetFunc{
-	"scheme": func(r *http.Request, v string) {
+	options.PartScheme: func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
-			r.URL.Scheme = v
+			parts.SetScheme(r, v)
 			proxyurls.SetUpstreamScheme(r, v)
 		}
 	},
-	"params": func(r *http.Request, v string) {
+	options.PartParams: parts.SetRawQuery,
+	options.PartMethod: parts.SetMethod,
+	options.PartHost: func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
-			r.URL.RawQuery = v
-		}
-	},
-	"method": func(r *http.Request, v string) {
-		if r != nil {
-			r.Method = v
-		}
-	},
-	"host": func(r *http.Request, v string) {
-		if r != nil && r.URL != nil {
-			r.URL.Host = v
+			parts.SetHost(r, v)
 			proxyurls.SetUpstreamHost(r, v)
 		}
 	},
-	"hostname": func(r *http.Request, v string) {
+	options.PartHostname: func(r *http.Request, v string) {
 		if r != nil && r.URL != nil {
-			r.URL.Host = joinHostnamePort(v, r.URL.Port())
+			parts.SetHostname(r, v)
 			proxyurls.SetUpstreamHostname(r, v)
 		}
 	},
-	"port": func(r *http.Request, v string) {
-		if r == nil || r.URL == nil {
-			return
+	options.PartPort: func(r *http.Request, v string) {
+		if r != nil && r.URL != nil {
+			parts.SetPort(r, v)
+			proxyurls.SetUpstreamPort(r, v)
 		}
-		r.URL.Host = joinHostnamePort(r.URL.Hostname(), v)
-		proxyurls.SetUpstreamPort(r, v)
 	},
-}
-
-func joinHostnamePort(hostname, port string) string {
-	hostname = strings.TrimPrefix(strings.TrimSuffix(hostname, "]"), "[")
-	if port != "" {
-		return net.JoinHostPort(hostname, port)
-	}
-	if strings.Contains(hostname, ":") {
-		return "[" + hostname + "]"
-	}
-	return hostname
 }
 
 func (ris RewriteInstructions) String() string {
@@ -611,6 +578,62 @@ func (ri *rwiPathReplacer) HasTokens() bool {
 	return ri.hasTokens
 }
 
+// rwiPathPrefixReplacer replaces a leading path prefix, matched on a segment
+// boundary, with a replacement; the rest of the path is preserved.
+type rwiPathPrefixReplacer struct {
+	prefix, replacement string
+	hasTokens           bool
+}
+
+func (ri *rwiPathPrefixReplacer) String() string {
+	return fmt.Sprintf(
+		`{"type":"pathPrefixReplacer","prefix":"%s","replacement":"%s","tokens":"%t"}`,
+		ri.prefix, ri.replacement, ri.hasTokens)
+}
+
+func (ri *rwiPathPrefixReplacer) Parse(parts []string) error {
+	if len(parts) != 4 {
+		return errBadParams
+	}
+	ri.prefix = parts[2]
+	ri.replacement = parts[3]
+	if ri.prefix == "" {
+		return errBadParams
+	}
+	ri.hasTokens = checkTokens(ri.prefix) || checkTokens(ri.replacement)
+	return nil
+}
+
+func (ri *rwiPathPrefixReplacer) HasTokens() bool {
+	return ri.hasTokens
+}
+
+func (ri *rwiPathPrefixReplacer) Execute(r *http.Request) {
+	if r == nil || r.URL == nil {
+		return
+	}
+	prefix, replacement := ri.prefix, ri.replacement
+	if ri.hasTokens {
+		prefix = expandTokens(r, prefix)
+		replacement = expandTokens(r, replacement)
+	}
+	if rest, ok := matching.CutPathPrefix(r.URL.Path, prefix); ok {
+		r.URL.Path = joinPathPrefix(replacement, rest)
+	}
+}
+
+// joinPathPrefix concatenates a replacement prefix and remainder with exactly
+// one slash between them and a leading slash.
+func joinPathPrefix(replacement, rest string) string {
+	if !strings.HasPrefix(replacement, "/") {
+		replacement = "/" + replacement
+	}
+	if rest == "" {
+		return replacement
+	}
+	return strings.TrimSuffix(replacement, "/") + "/" + strings.TrimPrefix(rest, "/")
+}
+
 type rwiBasicSetter struct {
 	value     string
 	setter    scalarSetFunc
@@ -720,7 +743,7 @@ func (ri *rwiPortDeleter) Parse([]string) error {
 
 func (ri *rwiPortDeleter) Execute(r *http.Request) {
 	if r != nil && r.URL != nil {
-		r.URL.Host = joinHostnamePort(r.URL.Hostname(), "")
+		parts.SetPort(r, "")
 		proxyurls.SetUpstreamPort(r, "")
 	}
 }

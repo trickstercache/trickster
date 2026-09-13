@@ -55,7 +55,7 @@ import (
 // reintroduced, would leave one goroutine per in-flight op stuck on a
 // closed client (thousands under this storm). With the cache-rename
 // close fix in applyCachingConfig and CloseIdleConnections on old
-// backends in Hup, observed delta is ~0-3 goroutines across 12 reloads;
+// backends in Reload, observed delta is ~0-3 goroutines across 12 reloads;
 // 1/reload here is tight enough to catch a single-goroutine-per-reload
 // regression.
 func TestReloadStormDoesNotLeak(t *testing.T) {
@@ -122,7 +122,7 @@ backends:
 	}
 
 	cfgPath := filepath.Join(t.TempDir(), "trickster.yaml")
-	require.NoError(t, os.WriteFile(cfgPath, []byte(makeYAML("memA")), 0644))
+	require.NoError(t, os.WriteFile(cfgPath, []byte(makeYAML("memA")), 0o644))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -150,13 +150,13 @@ backends:
 	// reflects per-reload growth rather than first-reload setup churn.
 	doReload := func(cacheName string) {
 		tmp := cfgPath + ".tmp"
-		require.NoError(t, os.WriteFile(tmp, []byte(makeYAML(cacheName)), 0644))
+		require.NoError(t, os.WriteFile(tmp, []byte(makeYAML(cacheName)), 0o644))
 		require.NoError(t, os.Rename(tmp, cfgPath))
 		require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP))
 	}
 	for i, name := range []string{"memB", "memA", "memB", "memA"} {
 		doReload(name)
-		// Settle: SIGHUP -> Hup -> ApplyConfig is async wrt signal delivery,
+		// Settle: SIGHUP -> Reload -> ApplyConfig is async wrt signal delivery,
 		// so give each warmup reload a beat to complete before the next.
 		time.Sleep(500 * time.Millisecond)
 		_ = i
@@ -226,7 +226,7 @@ backends:
 			// Atomic write: write to sibling tmp then rename, so the reload's
 			// config loader never observes a half-written file.
 			tmp := cfgPath + ".tmp"
-			if err := os.WriteFile(tmp, []byte(makeYAML(current)), 0644); err != nil {
+			if err := os.WriteFile(tmp, []byte(makeYAML(current)), 0o644); err != nil {
 				t.Logf("write cfg: %v", err)
 				continue
 			}
@@ -236,7 +236,7 @@ backends:
 			}
 			// SIGHUP preserves the original -config arg via daemon.Start's
 			// closure. POST /trickster/config/reload drops args (the inner
-			// Hup that registers the handler does not forward them), causing
+			// Reload that registers the handler does not forward them), causing
 			// later reloads to load from /etc/trickster/trickster.yaml. Use
 			// SIGHUP here so the storm reliably exercises the cache-handoff
 			// path on the temp config.

@@ -118,7 +118,7 @@ helm-local:
 	kubectl config use-context minikube --namespace=trickster
 	kubectl scale --replicas=0 deployment/dev-trickster -n trickster
 	eval $$(minikube docker-env) \
-		&& docker build -f deploy/Dockerfile -t trickster:dev .
+		&& docker build -f Dockerfile -t trickster:dev .
 	kubectl set image deployment/dev-trickster trickster=trickster:dev -n trickster
 	kubectl scale --replicas=1 deployment/dev-trickster -n trickster
 
@@ -128,7 +128,7 @@ kube-local:
 	kubectl config use-context minikube
 	kubectl scale --replicas=0 deployment/trickster
 	eval $$(minikube docker-env) \
-		&& docker build -f deploy/Dockerfile -t trickster:dev .
+		&& docker build -f Dockerfile -t trickster:dev .
 	kubectl set image deployment/trickster trickster=trickster:dev
 	kubectl scale --replicas=1 deployment/trickster
 
@@ -137,22 +137,27 @@ DOCKER_TARGET ?= final
 docker:
 	docker buildx build \
 		--progress=plain \
-		--build-arg IMAGE_ARCH=$(IMAGE_ARCH) \
 		--build-arg GIT_LATEST_COMMIT_ID=$(GIT_LATEST_COMMIT_ID) \
 		--target $(DOCKER_TARGET) \
-		--build-arg GOARCH=$(GOARCH) \
 		--build-arg TAGVER=$(TAGVER) \
 		-f ./Dockerfile \
 		-t trickster:$(TAGVER) \
 		--platform linux/$(IMAGE_ARCH) \
 		.
 
+# the Dockerfile cross-compiles from BuildKit's TARGETARCH, so the target
+# platform selects both the binary and the final base image
+DOCKER_RELEASE_ARGS = --load --build-arg GIT_LATEST_COMMIT_ID=$(GIT_LATEST_COMMIT_ID) --build-arg TAGVER=$(TAGVER) -f ./Dockerfile
 .PHONY: docker-release
 docker-release:
 # linux x86 image
-	docker build --build-arg IMAGE_ARCH=amd64 --build-arg GOARCH=amd64 -f ./deploy/Dockerfile -t trickstercache/trickster:$(IMAGE_TAG) .
+	docker build --platform linux/amd64 $(DOCKER_RELEASE_ARGS) -t trickstercache/trickster:$(IMAGE_TAG) .
 # linux arm image
-	docker build --build-arg IMAGE_ARCH=arm64v8 --build-arg GOARCH=arm64 -f ./deploy/Dockerfile -t trickstercache/trickster:arm64v8-$(IMAGE_TAG) .
+	docker build --platform linux/arm64 $(DOCKER_RELEASE_ARGS) -t trickstercache/trickster:arm64v8-$(IMAGE_TAG) .
+	@for t in $(IMAGE_TAG):amd64 arm64v8-$(IMAGE_TAG):arm64; do \
+		want=$${t#*:}; got=$$(docker image inspect --format '{{.Architecture}}' trickstercache/trickster:$${t%:*}); \
+		[ "$$got" = "$$want" ] || { echo "trickstercache/trickster:$${t%:*} is $$got, expected $$want"; exit 1; }; \
+	done
 
 .PHONY: style
 style:
@@ -275,7 +280,7 @@ clean:
 	rm -rf ./trickster ./$(BUILD_SUBDIR)
 
 .PHONY: generate
-generate: perform-generate insert-license-headers
+generate: perform-generate insert-license-headers kube-configmap
 
 .PHONY: perform-generate
 perform-generate:
@@ -295,11 +300,17 @@ insert-license-headers:
 		fi ; \
 	done
 
-CODEGEN_PATHS ?= "'./pkg/**_gen.go'"
+CODEGEN_PATHS ?= "'./pkg/**_gen.go'" deploy/kube/configmap.yaml
 .PHONY: check-codegen
 check-codegen:
 	@$(MAKE) generate > /dev/null
 	@git diff --name-only --exit-code ${CODEGEN_PATHS}
+
+# deploy/kube/configmap.yaml is the example config wrapped in a ConfigMap;
+# it is generated so the two can never drift, and check-codegen enforces it
+.PHONY: kube-configmap
+kube-configmap:
+	@hack/gen-kube-configmap.sh examples/conf/example.full.yaml deploy/kube/configmap.yaml
 
 .PHONY: check-license-headers
 check-license-headers: SHELL:=/bin/sh
@@ -545,6 +556,91 @@ kind-integration-start:
 	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
 		deployment/webecho deployment/trickster --timeout=180s
 
+# Deploys the Kubernetes controller scenarios (TestIngressEndpointModeKind,
+# TestCachePolicyKind and the manual Ingress smoke test) into the running
+# kind cluster. The cache policy CRD goes first: the controller probes for
+# it once at startup.
+.PHONY: kind-integration-ingress
+kind-integration-ingress:
+	kubectl --context kind-$(KIND_CLUSTER) apply -f deploy/kube/crds/trickstercachepolicies.yaml
+	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established \
+		crd/trickstercachepolicies.trickstercache.org --timeout=60s
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress.yaml
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress-endpoint.yaml
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/cache-policy.yaml
+	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
+		deployment/trickster-ingress deployment/trickster-ingress-endpoint \
+		deployment/prometheus --timeout=180s
+
+# Deploys the Gateway API controller scenarios (TestGatewayKind,
+# TestIngressAnnotationsKind, TestGatewayRollingUpgradeKind and the conformance
+# suite) into the running kind cluster, after kind-integration-ingress. The
+# Gateway API CRDs come from the module go.mod pins, so the cluster serves the
+# version the controller is built against, and go first because the controller
+# probes for them once at startup. The experimental channel is installed
+# because HTTPRoute retries, which the controller implements, exist only
+# there. The Service's externalIPs are set to the worker node, which is how
+# the conformance suite reaches the ports its Gateways declare.
+GATEWAY_API_CRDS = $(shell cd integration/conformance && \
+	$(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api)/config/crd/experimental
+.PHONY: kind-integration-gateway
+kind-integration-gateway:
+	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k $(GATEWAY_API_CRDS)
+	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established crd --all --timeout=60s
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway.yaml
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress-annotations.yaml
+	@ip=$$(kubectl --context kind-$(KIND_CLUSTER) get node $(KIND_CLUSTER)-worker \
+		-o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}') && \
+	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it patch service trickster-gateway \
+		-p "{\"spec\":{\"externalIPs\":[\"$$ip\"]}}"
+	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
+		deployment/trickster-gateway deployment/webecho-canary deployment/httpbin --timeout=180s
+
+# Runs every kind scenario against the running cluster, once all three deploy
+# targets above have been applied
+.PHONY: kind-integration-test
+kind-integration-test:
+	cd integration && TRICKSTER_KIND_TEST=1 $(GO) test -v -timeout 30m -run 'Kind$$' .
+
+# Runs the Gateway API conformance suite (GATEWAY-HTTP profile) against the
+# controller kind-integration-gateway deployed and writes the report. The
+# suite reaches the Gateways at the worker node's address, which a Linux host
+# routes to directly; a macOS host cannot, so kind-conformance-docker runs the
+# same command inside a container on the kind network.
+CONFORMANCE_REPORT ?= integration/conformance/reports/$(TAGVER).yaml
+CONFORMANCE_TEST_ARGS = -v -timeout 90m -run TestConformance . -args -gateway-class=trickster -version=$(TAGVER)
+.PHONY: kind-conformance
+kind-conformance:
+	@mkdir -p $(dir $(CONFORMANCE_REPORT))
+	@tmp=$$(mktemp -d) && kind get kubeconfig --name $(KIND_CLUSTER) > $$tmp/config && \
+	cd integration/conformance && KUBECONFIG=$$tmp/config TRICKSTER_KIND_TEST=1 \
+		$(GO) test $(CONFORMANCE_TEST_ARGS) -report-output=$(abspath $(CONFORMANCE_REPORT))
+
+.PHONY: kind-conformance-docker
+kind-conformance-docker:
+	@mkdir -p $(dir $(CONFORMANCE_REPORT))
+	@tmp=$$(mktemp -d) && kind get kubeconfig --internal --name $(KIND_CLUSTER) > $$tmp/config && \
+	docker run --rm --network kind -v $$tmp:/kube:ro -v $(CURDIR):/src -w /src/integration/conformance \
+		-v trickster-conformance-gomod:/go/pkg/mod -v trickster-conformance-gocache:/root/.cache/go-build \
+		-e KUBECONFIG=/kube/config -e TRICKSTER_KIND_TEST=1 golang:1.27 \
+		go test $(CONFORMANCE_TEST_ARGS) -report-output=/src/$(CONFORMANCE_REPORT)
+
 .PHONY: kind-integration-stop
 kind-integration-stop:
 	kind delete cluster --name $(KIND_CLUSTER)
+
+# Soak tests run by hand, never on CI runners. TestALBDiscoverySoak needs
+# nothing but the host; TestGatewaySoakKind needs the kind cluster with the
+# gateway scenarios deployed. SOAK_TIMEOUT must exceed SOAK_DURATION by the
+# time the soak takes to set up and wind down.
+SOAK_DURATION ?= 60m
+SOAK_TIMEOUT ?= 90m
+.PHONY: soak
+soak:
+	cd integration && TRICKSTER_SOAK_TEST=1 TRICKSTER_SOAK_DURATION=$(SOAK_DURATION) \
+		$(GO) test -v -timeout $(SOAK_TIMEOUT) -run 'TestALBDiscoverySoak$$' .
+
+.PHONY: kind-soak
+kind-soak:
+	cd integration && TRICKSTER_SOAK_TEST=1 TRICKSTER_KIND_TEST=1 TRICKSTER_SOAK_DURATION=$(SOAK_DURATION) \
+		$(GO) test -v -timeout $(SOAK_TIMEOUT) -run 'TestGatewaySoakKind$$' .

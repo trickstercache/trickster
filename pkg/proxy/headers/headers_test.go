@@ -113,6 +113,77 @@ func TestUpdateRequestHeadersPreservesHostUpdate(t *testing.T) {
 	}
 }
 
+// HTTP header names are case-insensitive, and the transport sends r.Host, so
+// a Host update under any spelling or operator must reach r.Host and never
+// r.Header, where it would be ignored on the wire
+func TestFixesHost(t *testing.T) {
+	// the Host is fixed by an update that changes it: a set or append with a value, or a delete;
+	// an empty value changes nothing, and other headers say nothing about it
+	tests := []struct {
+		name    string
+		updates map[string]string
+		fixed   bool
+	}{
+		{name: "none"},
+		{name: "other header", updates: map[string]string{"X-Test": "v"}},
+		{name: "set", updates: map[string]string{"Host": "a.example.com"}, fixed: true},
+		{name: "set empty", updates: map[string]string{"Host": ""}},
+		{name: "append", updates: map[string]string{"+host": "a.example.com"}, fixed: true},
+		{name: "append empty", updates: map[string]string{"+Host": ""}},
+		{name: "delete", updates: map[string]string{"-HOST": ""}, fixed: true},
+		{
+			name: "empty set beside a delete", updates: map[string]string{"Host": "", "-Host": ""},
+			fixed: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FixesHost(tc.updates); got != tc.fixed {
+				t.Errorf("FixesHost(%v) = %v, want %v", tc.updates, got, tc.fixed)
+			}
+		})
+	}
+}
+
+func TestUpdateRequestHeadersHostIsCaseInsensitive(t *testing.T) {
+	for _, name := range []string{"HOST", "hOsT", "Host", "host"} {
+		t.Run(name, func(t *testing.T) {
+			r := &http.Request{Header: make(http.Header), Host: "origin.example.com"}
+			UpdateRequestHeaders(r, map[string]string{name: "tenant.example.com", "X-Test": "v"})
+			if r.Host != "tenant.example.com" {
+				t.Errorf("set: expected Host %q, got %q", "tenant.example.com", r.Host)
+			}
+			if got := r.Header.Get(NameHost); got != "" {
+				t.Errorf("set: Host must not be written to the header map, got %q", got)
+			}
+			if got := r.Header.Get("X-Test"); got != "v" {
+				t.Errorf("other headers must still be applied, got %q", got)
+			}
+
+			r = &http.Request{Header: make(http.Header), Host: "origin.example.com"}
+			UpdateRequestHeaders(r, map[string]string{"+" + name: "tenant.example.com"})
+			if r.Host != "tenant.example.com" {
+				t.Errorf("append: a single-valued header is replaced, got %q", r.Host)
+			}
+
+			r = &http.Request{Header: make(http.Header), Host: "origin.example.com"}
+			UpdateRequestHeaders(r, map[string]string{"-" + name: ""})
+			if r.Host != "" {
+				t.Errorf("delete: expected the configured Host cleared, got %q", r.Host)
+			}
+			if _, ok := r.Header[NameHost]; ok {
+				t.Error("delete: Host must not be written to the header map")
+			}
+
+			r = &http.Request{Header: make(http.Header), Host: "origin.example.com"}
+			UpdateRequestHeaders(r, map[string]string{name: ""})
+			if r.Host != "origin.example.com" {
+				t.Errorf("an empty set leaves Host alone, got %q", r.Host)
+			}
+		})
+	}
+}
+
 func TestRemoveClientHeaders(t *testing.T) {
 	headers := http.Header{}
 	headers.Set(NameAcceptEncoding, "test")

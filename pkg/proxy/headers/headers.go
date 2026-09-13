@@ -61,6 +61,21 @@ const (
 	ValuePublic = "public"
 	// ValueSharedMaxAge represents the HTTP Header Value of "s-maxage"
 	ValueSharedMaxAge = "s-maxage"
+
+	// ValueOnlyIfCached is the "only-if-cached" request Cache-Control directive
+	ValueOnlyIfCached = "only-if-cached"
+	// ValueMinFresh is the "min-fresh" request Cache-Control directive
+	ValueMinFresh = "min-fresh"
+	// ValueMaxStale is the "max-stale" request Cache-Control directive
+	ValueMaxStale = "max-stale"
+	// ValueImmutable is the "immutable" response Cache-Control directive
+	ValueImmutable = "immutable"
+	// ValueMustUnderstand is the "must-understand" response Cache-Control directive
+	ValueMustUnderstand = "must-understand"
+	// ValueStaleWhileRevalidate is the RFC 5861 "stale-while-revalidate" directive
+	ValueStaleWhileRevalidate = "stale-while-revalidate"
+	// ValueStaleIfError is the RFC 5861 "stale-if-error" directive
+	ValueStaleIfError = "stale-if-error"
 	// ValueTextPlain represents the HTTP Header Value of "text/plain"
 	ValueTextPlain = "text/plain"
 	// ValueTextYAML represents the HTTP Header Value of "text/yaml"
@@ -126,6 +141,11 @@ const (
 	NameIfNoneMatch = "If-None-Match"
 	// NameIfMatch represents the HTTP Header Name of "If-Match"
 	NameIfMatch = "If-Match"
+	// NameIfRange represents the HTTP Header Name of "If-Range"
+	NameIfRange = "If-Range"
+	// NameCDNCacheControl represents the HTTP Header Name of "CDN-Cache-Control",
+	// the RFC 9213 targeted field a CDN applies in preference to Cache-Control
+	NameCDNCacheControl = "CDN-Cache-Control"
 	// NameDate represents the HTTP Header Name of "date"
 	NameDate = "Date"
 	// NamePragma represents the HTTP Header Name of "pragma"
@@ -161,12 +181,23 @@ const (
 	NameVary = "Vary"
 	// NameAge represents the HTTP Header Name of "Age"
 	NameAge = "Age"
+	// NameCacheStatus represents the HTTP Header Name of "Cache-Status",
+	// the RFC 9211 field describing how a cache handled a request
+	NameCacheStatus = "Cache-Status"
 	// NameVia represents the HTTP Header Name of "Via"
 	NameVia = "Via"
+	// NameMaxForwards represents the HTTP Header Name of "Max-Forwards"
+	NameMaxForwards = "Max-Forwards"
+	// NameAllow represents the HTTP Header Name of "Allow"
+	NameAllow = "Allow"
 	// NameForwarded represents the HTTP Header Name of "Forwarded"
 	NameForwarded = "Forwarded"
 	// NameXForwardedFor represents the HTTP Header Name of "X-Forwarded-For"
 	NameXForwardedFor = "X-Forwarded-For"
+	// NameXRealIP represents the HTTP Header Name of "X-Real-IP"
+	NameXRealIP = "X-Real-IP"
+	// NameXRequestID represents the HTTP Header Name of "X-Request-ID"
+	NameXRequestID = "X-Request-ID"
 	// NameXForwardedHost represents the HTTP Header Name of "X-Forwarded-Host"
 	NameXForwardedHost = "X-Forwarded-Host"
 	// NameXForwardedProto represents the HTTP Header Name of "X-Forwarded-Proto"
@@ -227,46 +258,60 @@ func UpdateHeaders(headers http.Header, updates map[string]string) {
 	}
 }
 
-func updateHeader(headers http.Header, name, value string) {
+func updateHeader(headers http.Header, key, value string) {
+	op, name := ParseUpdateKey(key)
 	if name == "" {
 		return
 	}
-	if name[0:1] == "-" {
-		headers.Del(name[1:])
-		return
+	switch op {
+	case UpdateDelete:
+		headers.Del(name)
+	case UpdateAppend:
+		headers.Add(name, value)
+	default:
+		headers.Set(name, value)
 	}
-	if name[0:1] == "+" {
-		headers.Add(name[1:], value)
-		return
-	}
-	headers.Set(name, value)
 }
 
-// UpdateRequestHeaders updates r's headers with the provided updates
+// UpdateRequestHeaders updates r's headers with the provided updates. An
+// update to the Host header, under any spelling of the name, is applied to
+// r.Host rather than to r.Header, since that is what the transport sends:
+// set and append (a single-valued header has nothing to append to) replace
+// it, and delete clears it so the upstream URL's host is sent instead.
 func UpdateRequestHeaders(r *http.Request, updates map[string]string) {
 	if r == nil || r.Header == nil || len(updates) == 0 {
 		return
 	}
-	hhName := NameHost
-	var hhVal string
-	if v, ok := updates[hhName]; ok && v != "" {
-		hhVal = v
-	} else { // account for lowercase host value / http2
-		hhName = strings.ToLower(hhName)
-		if v, ok := updates[strings.ToLower(hhName)]; ok && v != "" {
-			hhVal = v
-		}
-	}
-	// promote Host header from r.Header to r.Host if present
-	if hhVal != "" {
-		r.Host = hhVal
-	}
 	for k, v := range updates {
-		if hhVal != "" && k == hhName {
+		if op, ok := hostUpdate(k); ok {
+			switch {
+			case op == UpdateDelete:
+				r.Host = ""
+			case v != "":
+				r.Host = v
+			}
 			continue
 		}
 		updateHeader(r.Header, k, v)
 	}
+}
+
+// FixesHost reports whether the updates leave the upstream Host independent of the client's: a
+// set or append with a value replaces it, a delete clears it, and an empty value changes nothing
+func FixesHost(updates map[string]string) bool {
+	for k, v := range updates {
+		if op, ok := hostUpdate(k); ok && (op == UpdateDelete || v != "") {
+			return true
+		}
+	}
+	return false
+}
+
+// hostUpdate reports whether an update key names the Host header, in any
+// case and behind any operator, and returns the operation
+func hostUpdate(key string) (UpdateOp, bool) {
+	op, name := ParseUpdateKey(key)
+	return op, strings.EqualFold(name, NameHost)
 }
 
 // ExtractHeader returns the value for the provided header name, and a boolean indicating if the header was present

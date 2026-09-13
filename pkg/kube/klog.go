@@ -30,14 +30,21 @@ import (
 
 var klogOnce sync.Once
 
-// routeKlogOnce redirects client-go's klog output into Trickster's logger
-// so operators get one log stream. Kubernetes informational chatter maps to
-// debug (client-go is verbose at info); errors stay errors.
+// maxKlogVerbosity caps the client-go chatter that reaches the log; levels above it dump request
+// and response bodies, which for a Secret watch would log certificate keys
+const maxKlogVerbosity = 5
+
 func routeKlogOnce() {
+	// kubernetes informational chatter maps to debug (client-go is verbose at
+	// info); errors stay errors.
 	klogOnce.Do(func() {
 		klog.SetLogger(logr.New(&klogSink{}))
 	})
 }
+
+// LogScope is the scope every Kubernetes log line carries, so the controller's and the client
+// library's lines can be selected together
+const LogScope = "kubernetes"
 
 // klogSink implements logr.LogSink over Trickster's logger
 type klogSink struct {
@@ -47,7 +54,7 @@ type klogSink struct {
 
 func (s *klogSink) Init(logr.RuntimeInfo) {}
 
-func (s *klogSink) Enabled(int) bool { return true }
+func (s *klogSink) Enabled(level int) bool { return level <= maxKlogVerbosity }
 
 func (s *klogSink) Info(_ int, msg string, kv ...any) {
 	logger.Debug(msg, s.pairs(kv))
@@ -73,7 +80,7 @@ func (s *klogSink) WithName(name string) logr.LogSink {
 }
 
 func (s *klogSink) pairs(kv []any) logging.Pairs {
-	p := logging.Pairs{"scope": "kubernetes"}
+	p := logging.Pairs{keys.Scope: LogScope}
 	if s.name != "" {
 		p["logger"] = s.name
 	}

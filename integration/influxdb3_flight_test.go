@@ -133,6 +133,10 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	h, flightPort := flightConfigHarness(t)
 	h.start(t)
 	waitForInfluxDB3Data(t, "127.0.0.1:8181")
+	seedNow := time.Now().UTC().Truncate(time.Minute)
+	seedFlightDeltaData(t, "127.0.0.1:8181", seedNow)
+	seedRange := fmt.Sprintf("time >= '%s' AND time < '%s'",
+		seedNow.Add(-15*time.Minute).Format(time.RFC3339), seedNow.Format(time.RFC3339))
 
 	tricksterFlightAddr := fmt.Sprintf("127.0.0.1:%d", flightPort)
 
@@ -156,7 +160,8 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	ctx = metadata.AppendToOutgoingContext(ctx, "database", "trickster")
 
 	t.Run("execute", func(t *testing.T) {
-		q := "SELECT avg(usage_idle) AS usage_idle FROM cpu WHERE cpu = 'cpu-total' LIMIT 10"
+		q := fmt.Sprintf("SELECT avg(v) AS v FROM flight_delta_test WHERE host = 'a' AND %s LIMIT 10",
+			seedRange)
 		info, err := client.Execute(ctx, q)
 		require.NoError(t, err)
 		require.NotEmpty(t, info.Endpoint)
@@ -174,7 +179,8 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 
 	t.Run("execute_cache_hit", func(t *testing.T) {
 		// Same exact query text — second Execute should hit the in-memory cache.
-		q := "SELECT host, avg(usage_idle) AS usage_idle FROM cpu WHERE cpu = 'cpu-total' GROUP BY host LIMIT 5"
+		q := fmt.Sprintf("SELECT host, avg(v) AS v FROM flight_delta_test WHERE %s GROUP BY host LIMIT 5",
+			seedRange)
 		for range 2 {
 			info, err := client.Execute(ctx, q)
 			require.NoError(t, err)
@@ -197,8 +203,7 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	// how long the environment's telegraf feed has been running.
 	t.Run("delta_tier", func(t *testing.T) {
 		direct := directFlightClient(t)
-		now := time.Now().UTC().Truncate(time.Minute)
-		seedFlightDeltaData(t, "127.0.0.1:8181", now)
+		now := seedNow
 
 		lower, upper := now.Add(-10*time.Minute), now.Add(-4*time.Minute)
 		query := func(from, to time.Time) string {
@@ -266,7 +271,9 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	})
 
 	t.Run("prepared_statement", func(t *testing.T) {
-		ps, err := client.Prepare(ctx, "SELECT avg(usage_idle) FROM cpu WHERE cpu = 'cpu-total' LIMIT 5")
+		q := fmt.Sprintf("SELECT avg(v) FROM flight_delta_test WHERE host = 'a' AND %s LIMIT 5",
+			seedRange)
+		ps, err := client.Prepare(ctx, q)
 		require.NoError(t, err, "Prepare should succeed (not Unimplemented)")
 		defer ps.Close(ctx)
 
@@ -288,7 +295,7 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	// get_schema exercises the schema RPCs ADBC drivers probe on connect
 	// before running any query.
 	t.Run("get_schema", func(t *testing.T) {
-		const q = "SELECT time, cpu, usage_idle FROM cpu LIMIT 1"
+		q := fmt.Sprintf("SELECT time, host, v FROM flight_delta_test WHERE %s LIMIT 1", seedRange)
 		for range 2 { // second call is served from cache
 			result, err := client.GetExecuteSchema(ctx, q)
 			require.NoError(t, err, "GetExecuteSchema should succeed (not Unimplemented)")
@@ -313,8 +320,7 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	// measurement as delta_tier.
 	t.Run("prepared_delta", func(t *testing.T) {
 		direct := directFlightClient(t)
-		now := time.Now().UTC().Truncate(time.Minute)
-		seedFlightDeltaData(t, "127.0.0.1:8181", now)
+		now := seedNow
 
 		q := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, "+
 			"avg(v) AS v FROM flight_delta_test WHERE time >= '%s' AND time < '%s' "+

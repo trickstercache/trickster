@@ -95,7 +95,7 @@ that provider's connection-level block:
 
 | provider | block | options |
 | ----- | ----- | ----- |
-| `kubernetes` | `kubernetes` | `in_cluster` (default true) or `kubeconfig` path — mutually exclusive |
+| `kubernetes` | `kubernetes` | `in_cluster` (default true) or `kubeconfig` path — mutually exclusive; plus `qps`, `burst`, `user_agent`, `timeout` |
 | `dns_srv`, `dns_a` | `dns` | `resolver` (host:port; default: system resolver), `interval` (poll cadence, default 30s, min 1s; record TTLs act as a floor) |
 | `file` | `file` | `poll_interval` (stat-poll fallback cadence, default 30s, min 1s) |
 | `http_sd` | `http` + `http_sd` | connection settings in the shared `http` block (below); `http_sd.format` selects the member-list document: `trickster` (default) or `prometheus` |
@@ -174,6 +174,18 @@ template's `healthcheck` config, and the ALB's `healthy_floor` applies
 exactly as it does to static members. If the template has no probe
 interval and the floor requires passing probes, the floor is reset to 0
 with a loud warning (as with static members).
+
+A new member's first probe runs the moment it is registered, and a member
+the provider reports **ready** is admitted to the pool immediately, ahead
+of that first result. This matters for rolling deploys: an orchestrator
+retires the old workload on the very readiness signal that announced the
+new one, so a pool that held the newcomer in `unknown` until its own probe
+completed would have no admissible member in between, and every request in
+that window would fail with a 502 even though a healthy workload was
+serving. From its first result on, the probe governs the member exactly as
+it does an established one: a member the provider reports not-ready, or
+one whose readiness the provider does not convey, waits for its first
+passing probe as before.
 
 In `provider` mode, readiness reported by the discoverer maps onto member
 health: ready members enter as passing (1), not-ready and terminating
@@ -308,10 +320,43 @@ discovery:
     kubernetes:
       in_cluster: true              # use the pod's service account (default)
       # kubeconfig: /path/to/kubeconfig   # or run against a remote cluster
+      qps: 20                       # sustained API request rate (default 20)
+      burst: 40                     # API request burst allowance (default 40)
+      timeout: 10s                  # bounds one-shot API calls (default 10s)
+      # user_agent: my-trickster/1  # default: trickster/<version> (<os>/<arch>)
 ```
 
 `in_cluster` and `kubeconfig` are mutually exclusive; with neither set,
 in-cluster is assumed.
+
+`qps` and `burst` are the client-side rate limit on API requests. The
+defaults are raised over the client-go defaults (5 and 10), which are sized
+for a one-shot CLI rather than a process that watches many objects.
+
+`timeout` bounds a single one-shot API call, such as the connectivity
+preflight run under `startup_policy: fail`. It is deliberately not applied
+to the REST client as a whole, whose timeout would also truncate the
+long-running watch streams the informers depend on.
+
+### Shared Watches
+
+Discoverers that agree on the connection (API server, credentials, identity)
+and on the query's server-side filtering (namespace, label selector, field
+selector) share one set of informers, so several ALBs selecting the same
+Service cost the API server one watch rather than one each. A watch is
+released when the last subscription using it stops, so unsubscribing one ALB
+never disturbs another. Nothing needs to be configured for this; it follows
+from the discoverer and query values being identical.
+
+### Startup Preflight
+
+When any ALB bound to a `kubernetes` discoverer sets `startup_policy: fail`,
+the discoverer contacts the API server's `/version` endpoint before any
+watch is established, bounded by `timeout`. Informers are lazy, so without
+this check an unreachable API server is indistinguishable from a Service
+with no endpoints yet: the process would start clean and serve an empty
+pool. Under the default `startup_policy: retry` the preflight is skipped and
+the discoverer keeps watching for the API server to come back.
 
 ### Query Kinds
 
@@ -358,7 +403,7 @@ query:
 `port` may be a named port, a number, or omitted when the target declares
 exactly one port; ambiguity is logged and the object skipped. The member
 scheme comes from `query.scheme` if set; otherwise a declared
-`appProtocol: https` on the selected port, or a `trickster.io/scheme`
+`appProtocol: https` on the selected port, or a `trickstercache.org/scheme`
 annotation on the watched Service/Pod, selects `https`; the default is
 `http`.
 

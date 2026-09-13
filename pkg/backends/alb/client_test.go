@@ -668,3 +668,34 @@ func TestObserveOnlyOpts(t *testing.T) {
 		t.Fatalf("observeOnlyOpts() = %+v", opts)
 	}
 }
+
+func TestClientPool(t *testing.T) {
+	// a pool mechanism exposes its pool once one is installed; a mechanism without one, and a
+	// client whose mechanism is unset, expose nothing
+	o := bo.New()
+	o.ALBOptions = ao.New()
+	o.ALBOptions.MechanismName = names.MechanismRR
+	o.ALBOptions.Pool = ao.Members("member")
+	c, err := NewClient("pooled", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl := c.(*Client)
+	if cl.Pool() != nil {
+		t.Error("a pool is exposed before any is installed")
+	}
+	member, err := backends.New("member", bo.New(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.ValidateAndStartPool(backends.Backends{"member": member}, healthcheck.StatusLookup{}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(cl.StopPool)
+	if cl.Pool() == nil || cl.Pool().ConfiguredLen() != 1 {
+		t.Error("the installed pool is not exposed")
+	}
+	if (&Client{}).Pool() != nil {
+		t.Error("a client without a mechanism exposes a pool")
+	}
+}

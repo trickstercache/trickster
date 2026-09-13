@@ -18,7 +18,9 @@ package rewriter
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -306,5 +308,94 @@ func TestExpandTokens(t *testing.T) {
 				t.Errorf("expandTokens(%q) = %q, want %q", test.input, got, test.want)
 			}
 		})
+	}
+}
+
+const (
+	prefixReplaceOld = "/old"
+	prefixReplaceNew = "/new"
+)
+
+func TestPathPrefixReplace(t *testing.T) {
+	tests := []struct {
+		name, prefix, replacement, path, want string
+	}{
+		{"nested path", prefixReplaceOld, prefixReplaceNew, "/old/items", "/new/items"},
+		{"exact prefix", prefixReplaceOld, prefixReplaceNew, "/old", "/new"},
+		{"trailing slash", prefixReplaceOld, prefixReplaceNew, "/old/", "/new/"},
+		{"strip to root", prefixReplaceOld, "/", "/old/items", "/items"},
+		{"strip exact to root", prefixReplaceOld, "/", "/old", "/"},
+		{"segment boundary", prefixReplaceOld, prefixReplaceNew, "/older/items", "/older/items"},
+		{"no match", "/other", prefixReplaceNew, "/old/items", "/old/items"},
+		{"slashed prefix", "/old/", prefixReplaceNew, "/old/items", "/new/items"},
+		{"unslashed values", "old", "new", "/old/items", "/new/items"},
+		{"double slash avoided", prefixReplaceOld, "/new/", "/old/items", "/new/items"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ri, err := ParseRewriteList(options.RewriteList{
+				[]string{"path", "prefix-replace", test.prefix, test.replacement},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := httptest.NewRequest(http.MethodGet, "http://example.com"+test.path, nil)
+			ri.Execute(r)
+			if r.URL.Path != test.want {
+				t.Errorf("path = %q; want %q", r.URL.Path, test.want)
+			}
+		})
+	}
+	for _, bad := range []options.RewriteList{
+		{[]string{"path", "prefix-replace", prefixReplaceOld}},
+		{[]string{"path", "prefix-replace", "", prefixReplaceNew}},
+	} {
+		if _, err := ParseRewriteList(bad); err == nil {
+			t.Errorf("expected a parse error for %v", bad)
+		}
+	}
+}
+
+func TestPathPrefixReplaceTokens(t *testing.T) {
+	ri, err := ParseRewriteList(options.RewriteList{
+		[]string{"path", "prefix-replace", "/${tenant}", "/t/${tenant}"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ri.HasTokens() {
+		t.Fatal("prefix-replace with tokens must report HasTokens")
+	}
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/acme/items", nil)
+	r = WithTokens(r, map[string]string{"tenant": "acme"})
+	ri.Execute(r)
+	if r.URL.Path != "/t/acme/items" {
+		t.Errorf("path = %q; want /t/acme/items", r.URL.Path)
+	}
+	ri.Execute(WithTokens(httptest.NewRequest(http.MethodGet, "http://example.com/acme/items", nil), nil))
+	ri.Execute(nil)
+}
+
+func TestWithPathCaptures(t *testing.T) {
+	re := regexp.MustCompile(`^/app(/|$)(?P<rest>.*)`)
+	var got map[string]string
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = tokensFromRequest(r)
+	})
+	h := WithPathCaptures(re, next)
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://example.com/app/x/y", nil))
+	if got["0"] != "/app/x/y" || got["1"] != "/" || got["2"] != "x/y" || got["rest"] != "x/y" {
+		t.Errorf("tokens = %v; want numeric and named captures", got)
+	}
+	got = nil
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "http://example.com/other", nil))
+	if got != nil {
+		t.Errorf("tokens = %v; want none for a non-matching path", got)
+	}
+	if WithPathCaptures(nil, next) == nil || WithPathCaptures(re, nil) != nil {
+		t.Error("nil regexp must pass next through and nil next must stay nil")
+	}
+	if CaptureTokens(re, nil) != nil {
+		t.Error("no matches must yield no tokens")
 	}
 }

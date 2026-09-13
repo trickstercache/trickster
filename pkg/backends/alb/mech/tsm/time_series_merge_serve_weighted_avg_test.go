@@ -522,11 +522,11 @@ func TestServeWeightedAvg(t *testing.T) {
 			region := "region-" + strconv.Itoa(i)
 			status := &healthcheck.Status{}
 			status.Set(healthcheck.StatusPassing)
-			backend := &weightedAvgStubBackend{stripKeysStubBackend: stripKeysStubBackend{
+			backend := &weightedAvgStubBackend{
 				cfg: &bo.Options{Prometheus: &prop.Options{Labels: map[string]string{
 					"region": region,
 				}}},
-			}}
+			}
 			targets[i] = pool.NewTarget(
 				taggedWeightedAvgMemberHandler(spec, dataset.Tags{"region": region}),
 				status,

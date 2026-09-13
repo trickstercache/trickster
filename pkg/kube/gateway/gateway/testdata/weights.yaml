@@ -1,0 +1,74 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: shop
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stable
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: split
+  namespace: shop
+spec:
+  parentRefs:
+    - name: gw
+  rules:
+    - backendRefs:
+        - name: stable
+          port: 8080
+          weight: 3
+        - name: canary
+          port: 8080
+          weight: 1
+        - name: retired
+          port: 8080
+          weight: 0
+        - name: missing
+          port: 8080
+    - matches:
+        - path:
+            type: Exact
+            value: /empty
+    - matches:
+        - path:
+            type: Exact
+            value: /zeroed
+      backendRefs:
+        - name: stable
+          port: 8080
+          weight: 0

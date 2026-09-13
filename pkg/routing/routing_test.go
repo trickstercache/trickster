@@ -20,9 +20,12 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
@@ -42,9 +45,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	logmgr "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
@@ -53,6 +58,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
+	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	testutil "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -261,8 +268,10 @@ func TestRegisterProxyRoutesGraphite(t *testing.T) {
 		map[string]string{headers.NameContentType: "application/json"})
 	defer origin.Close()
 
-	conf, err := config.Load([]string{"-log-level", "debug", "-origin-url", origin.URL,
-		"-provider", providers.Graphite})
+	conf, err := config.Load([]string{
+		"-log-level", "debug", "-origin-url", origin.URL,
+		"-provider", providers.Graphite,
+	})
 	if err != nil {
 		t.Fatalf("Could not load configuration: %s", err.Error())
 	}
@@ -791,6 +800,7 @@ func TestBackendRoutesOnMultipleHTTPListeners(t *testing.T) {
 		t.Fatal("duplicated backend clients for listener bindings")
 	}
 }
+
 func TestPassthroughLaneSelection(t *testing.T) {
 	conf := config.NewConfig()
 	o := conf.Backends["default"]
@@ -824,5 +834,616 @@ func TestPassthroughLaneSelection(t *testing.T) {
 	}
 	if isPassthroughPath(nil) {
 		t.Error("nil path options must not select the passthrough lane")
+	}
+}
+
+func TestRegisterPathRoutesRegexCaptures(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.Hosts = []string{"example.com"}
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+
+	var seenPath string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	})
+	hl := handlers.Lookup{"capture": capture}
+	strip, err := rewriter.ParseRewriteList(rwopts.RewriteList{[]string{"path", "set", "/${2}"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := po.New()
+	p.Path = `^/app(/|$)(.*)`
+	p.HandlerName = "capture"
+	p.Methods = []string{http.MethodGet}
+	p.ReqRewriter = strip
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, hl, rpc, oo, nil, nil)
+
+	serve := func(path, host string) int {
+		seenPath = ""
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if host != "" {
+			req.Host = host
+		}
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		return w.Code
+	}
+	// host routing: captures come from the request path as sent
+	if code := serve("/app/x/y", "example.com"); code != http.StatusOK || seenPath != "/x/y" {
+		t.Fatalf("host-routed capture: status %d path %q; want 200 /x/y", code, seenPath)
+	}
+	// path routing: captures come from the un-stripped /default/app/... path
+	if code := serve("/default/app/x/y", ""); code != http.StatusOK || seenPath != "/x/y" {
+		t.Fatalf("path-routed capture: status %d path %q; want 200 /x/y", code, seenPath)
+	}
+	if code := serve("/app", "example.com"); code != http.StatusOK || seenPath != "/" {
+		t.Fatalf("empty capture: status %d path %q; want 200 /", code, seenPath)
+	}
+}
+
+func TestNewAccessLoggerInheritsDefault(t *testing.T) {
+	conf := config.NewConfig()
+	conf.AccessLog = &alo.Options{Filename: logmgr.StreamStdout}
+	o := conf.Backends["default"]
+	o.Name = "default"
+	o.Provider = providers.ReverseProxyShort
+	al := newAccessLogger(conf, o)
+	if al == nil {
+		t.Fatal("backend without access_log must inherit the default")
+	}
+	al.Close()
+	o.AccessLog = &alo.Options{}
+	if newAccessLogger(conf, o) != nil {
+		t.Error("an explicit empty access_log must disable logging for the backend")
+	}
+	if newAccessLogger(conf, nil) != nil {
+		t.Error("nil backend must yield no logger")
+	}
+	rl := RouterAccessLogger(conf)
+	if rl == nil {
+		t.Fatal("expected a router-level logger from the default access_log")
+	}
+	rl.Close()
+	conf.AccessLog = &alo.Options{Filename: logmgr.StreamStdout, Format: "%{nope}x"}
+	o.AccessLog = nil
+	if RouterAccessLogger(conf) != nil || newAccessLogger(conf, o) != nil {
+		t.Error("an invalid default format must disable both loggers")
+	}
+	if RouterAccessLogger(nil) != nil {
+		t.Error("nil config must yield no logger")
+	}
+}
+
+func TestRegisterDefaultBackendRoutesRegexCaptures(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.IsDefault = true
+	oo.ListenerNames = []string{"default"}
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+
+	var seenPath, seenTenant string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenPath = r.URL.Path
+		seenTenant = r.Header.Get("X-Tenant")
+		w.WriteHeader(http.StatusOK)
+	})
+	strip, err := rewriter.ParseRewriteList(rwopts.RewriteList{
+		[]string{"path", "set", "/${rest}"},
+		[]string{"header", "set", "X-Tenant", "${1}"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := po.New()
+	p.Path = `^/(?P<tenant>[a-z]+)/app/(?P<rest>.*)`
+	p.HandlerName = "capture"
+	p.Handler = capture
+	p.Methods = []string{http.MethodGet}
+	p.ReqRewriter = strip
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	routers := map[string]router.Router{"default": lm.NewRouter()}
+	RegisterDefaultBackendRoutesForListeners(routers, conf, backends.Backends{"default": rpc}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/acme/app/x/y", nil)
+	w := httptest.NewRecorder()
+	routers["default"].ServeHTTP(w, req)
+	if w.Code != http.StatusOK || seenPath != "/x/y" || seenTenant != "acme" {
+		t.Fatalf("default-backend captures: status %d path %q tenant %q; want 200 /x/y acme",
+			w.Code, seenPath, seenTenant)
+	}
+}
+
+func TestDefaultAccessLogSkipsOptedOutBackend(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	logPath := filepath.Join(t.TempDir(), "default.access.log")
+	conf.AccessLog = &alo.Options{Filename: logPath, Format: "%U %>s %{backend}x"}
+	oo := conf.Backends["default"]
+	oo.Hosts = []string{"example.com"}
+	oo.AccessLog = &alo.Options{}
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	hl := handlers.Lookup{"ok": ok}
+	p := po.New()
+	p.Path = "/served"
+	p.HandlerName = "ok"
+	p.Methods = []string{http.MethodGet}
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, hl, rpc, oo, nil, nil)
+	rl := RouterAccessLogger(conf)
+	if rl == nil {
+		t.Fatal("expected a router-level logger")
+	}
+	h := accesslog.RouterMiddleware(rl, rtr)
+	for _, path := range []string{"/default/served", "/nope"} {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+	}
+	rl.Close()
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if len(lines) != 1 || lines[0] != "/nope 404 "+accesslog.UnmatchedName {
+		t.Fatalf("lines = %q; want only the unmatched request logged", lines)
+	}
+}
+
+const (
+	generatedHost      = "shop.example.com"
+	generatedOtherHost = "other.example.com"
+	generatedPath      = "/api"
+	generatedOffPath   = "/admin"
+	generatedBackend   = "shop"
+)
+
+// generatedBackendConfig builds a config holding one non-default backend that
+// proxies to origin and carries a single prefix path, the shape the
+// Kubernetes compiler emits for one route rule.
+func generatedBackendConfig(t *testing.T, origin string) (*config.Config, *bo.Options) {
+	t.Helper()
+	conf, err := config.Load([]string{"-origin-url", origin, "-provider", providers.ReverseProxyShort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := conf.Backends["default"]
+	// a backend named "default" is promoted to is_default, which registers
+	// root routes of its own and would mask what these tests assert
+	delete(conf.Backends, "default")
+	o.Name = generatedBackend
+	conf.Backends[generatedBackend] = o
+	p := po.New()
+	p.Path = generatedPath
+	p.MatchTypeName = matching.PathMatchNamePrefix
+	p.HandlerName = providers.Proxy
+	p.Methods = []string{http.MethodGet}
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	o.Paths = po.List{p}
+	return conf, o
+}
+
+func registerGeneratedBackend(t *testing.T, conf *config.Config, o *bo.Options) router.Router {
+	t.Helper()
+	client, err := reverseproxy.NewClient(o.Name, o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caches := registry.LoadCachesFromConfig(conf)
+	t.Cleanup(func() { registry.CloseCaches(caches) })
+	rtr := lm.NewRouter()
+	if err := RegisterProxyRoutes(conf, backends.Backends{o.Name: client},
+		rtr, nil, caches, nil, false); err != nil {
+		t.Fatal(err)
+	}
+	return rtr
+}
+
+func getGenerated(rtr router.Router, host, path string) int {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	w := httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	return w.Code
+}
+
+func TestPathDefaultsDisabledLimitsRoutesToConfiguredPaths(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	var hits atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+
+	// without the option the provider's own "/" catch-all is merged in and
+	// answers paths the configured route never attached
+	conf, o := generatedBackendConfig(t, origin.URL)
+	o.Hosts = []string{generatedHost}
+	o.PathRoutingDisabled = true
+	if code := getGenerated(registerGeneratedBackend(t, conf, o), generatedHost, generatedOffPath); code != http.StatusOK {
+		t.Fatalf("provider catch-all status = %d; want 200, so this test can detect its removal", code)
+	}
+
+	conf, o = generatedBackendConfig(t, origin.URL)
+	o.Hosts = []string{generatedHost}
+	o.PathRoutingDisabled = true
+	o.PathDefaultsDisabled = true
+	rtr := registerGeneratedBackend(t, conf, o)
+	before := hits.Load()
+	if code := getGenerated(rtr, generatedHost, generatedPath); code != http.StatusOK {
+		t.Errorf("configured path status = %d; want 200", code)
+	}
+	if code := getGenerated(rtr, generatedHost, generatedOffPath); code != http.StatusNotFound {
+		t.Errorf("unattached path status = %d; want 404", code)
+	}
+	if got := hits.Load() - before; got != 1 {
+		t.Errorf("origin hits = %d; want only the configured path to reach the backend", got)
+	}
+}
+
+func TestAnyHostRoutingRegistersHostlessRoutes(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+
+	// a hostless backend with path routing disabled registers nothing at all
+	conf, o := generatedBackendConfig(t, origin.URL)
+	o.PathRoutingDisabled = true
+	o.PathDefaultsDisabled = true
+	if code := getGenerated(registerGeneratedBackend(t, conf, o), generatedHost, generatedPath); code != http.StatusNotFound {
+		t.Fatalf("status = %d; want 404, so this test can detect the missing registration", code)
+	}
+
+	conf, o = generatedBackendConfig(t, origin.URL)
+	o.PathRoutingDisabled = true
+	o.PathDefaultsDisabled = true
+	o.AnyHostRouting = true
+	rtr := registerGeneratedBackend(t, conf, o)
+	for _, host := range []string{generatedHost, generatedOtherHost} {
+		if code := getGenerated(rtr, host, generatedPath); code != http.StatusOK {
+			t.Errorf("host %q status = %d; want the route to serve every hostname", host, code)
+		}
+	}
+	if code := getGenerated(rtr, generatedHost, generatedOffPath); code != http.StatusNotFound {
+		t.Errorf("unattached path status = %d; want 404", code)
+	}
+	if code := getGenerated(rtr, generatedHost, "/"+generatedBackend+generatedPath); code != http.StatusNotFound {
+		t.Errorf("backend-name path status = %d; want it to stay unexposed", code)
+	}
+}
+
+// A dispatch-only path is reachable through an ALB pool or a rule's
+// next_route, so it must live on the backend's own router and on no listener:
+// neither under the backend's hosts nor under its path-routing prefix
+func TestRegisterPathRoutesDispatchOnly(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.Hosts = []string{"example.com"}
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+	testHandler := http.HandlerFunc(testutil.BasicHTTPHandler)
+	hl := handlers.Lookup{"testHandler": testHandler}
+
+	newPath := func(path string, dispatchOnly bool) *po.Options {
+		p := po.New()
+		p.Path = path
+		p.MatchTypeName = matching.PathMatchNameExact
+		p.HandlerName = "testHandler"
+		p.Methods = []string{http.MethodGet}
+		p.DispatchOnly = dispatchOnly
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	oo.Paths = po.List{newPath("/open", false), newPath("/internal", true)}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, hl, rpc, oo, nil, nil)
+
+	serve := func(r router.Router, path, host string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if host != "" {
+			req.Host = host
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := serve(rtr, "/open", "example.com"); code != http.StatusOK {
+		t.Fatalf("expected 200 for the ordinary path, got %d", code)
+	}
+	if code := serve(rtr, "/default/open", ""); code != http.StatusOK {
+		t.Fatalf("expected 200 for the ordinary path under path routing, got %d", code)
+	}
+	if code := serve(rtr, "/internal", "example.com"); code != http.StatusNotFound {
+		t.Fatalf("a dispatch-only path must not register under the hosts, got %d", code)
+	}
+	if code := serve(rtr, "/default/internal", ""); code != http.StatusNotFound {
+		t.Fatalf("a dispatch-only path must not register under path routing, got %d", code)
+	}
+	if code := serve(oo.Router, "/internal", ""); code != http.StatusOK {
+		t.Fatalf("a dispatch-only path must be served by the backend's own router, got %d", code)
+	}
+}
+
+func TestRegisterPathRoutesConditioned(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.Hosts = []string{"example.com"}
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+	gold := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	plain := http.HandlerFunc(testutil.BasicHTTPHandler)
+	hl := handlers.Lookup{"gold": gold, "plain": plain}
+
+	newPath := func(path, handler string, mt matching.PathMatchName, hdrs []*po.Condition) *po.Options {
+		p := po.New()
+		p.Path = path
+		p.MatchTypeName = mt
+		p.HandlerName = handler
+		p.Methods = []string{http.MethodGet}
+		p.MatchHeaders = hdrs
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// the conditioned path is declared first, so it is tried first
+	oo.Paths = po.List{
+		newPath("/api", "gold", matching.PathMatchNameSegment,
+			[]*po.Condition{{Name: "X-Tenant", Value: "gold"}}),
+		newPath("/api", "plain", matching.PathMatchNameSegment, nil),
+	}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, hl, rpc, oo, nil, nil)
+
+	serve := func(r router.Router, path, host, tenant string) int {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if host != "" {
+			req.Host = host
+		}
+		if tenant != "" {
+			req.Header.Set("X-Tenant", tenant)
+		}
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		return w.Code
+	}
+	for _, r := range []router.Router{rtr, rpc.Router().(router.Router)} {
+		host := "example.com"
+		if r != rtr {
+			host = ""
+		}
+		if code := serve(r, "/api/items", host, "gold"); code != http.StatusAccepted {
+			t.Fatalf("expected the conditioned path for the gold tenant, got %d", code)
+		}
+		if code := serve(r, "/api/items", host, "silver"); code != http.StatusOK {
+			t.Fatalf("expected the unconditioned path for another tenant, got %d", code)
+		}
+		if code := serve(r, "/apiary", host, "gold"); code != http.StatusNotFound {
+			t.Fatalf("expected a segment miss to be not found, got %d", code)
+		}
+	}
+	if code := serve(rtr, "/default/api/items", "", "gold"); code != http.StatusAccepted {
+		t.Fatalf("expected the conditioned path under path routing, got %d", code)
+	}
+}
+
+func TestRegisterDefaultBackendRoutesSegment(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.IsDefault = true
+	oo.PathDefaultsDisabled = true
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+	p := po.New()
+	p.Path = "/seg"
+	p.MatchTypeName = matching.PathMatchNameSegment
+	p.HandlerName = "testHandler"
+	p.Handler = http.HandlerFunc(testutil.BasicHTTPHandler)
+	p.Methods = []string{http.MethodGet}
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	rtr := lm.NewRouter()
+	RegisterDefaultBackendRoutes(rtr, conf, backends.Backends{"default": rpc}, nil)
+	for path, want := range map[string]int{
+		"/seg": http.StatusOK, "/seg/x": http.StatusOK,
+		"/segment": http.StatusNotFound,
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Errorf("%s: expected %d got %d", path, want, w.Code)
+		}
+	}
+}
+
+func TestRegisterPathRoutesMirror(t *testing.T) {
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.Hosts = []string{"example.com"}
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+	shadowOpts := bo.New()
+	shadowOpts.Name = "shadow"
+	shadow, _ := reverseproxycache.NewClient("shadow", shadowOpts, lm.NewRouter(), nil, nil, nil)
+	mirrored := make(chan string, 4)
+	shadowHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mirrored <- r.URL.Path
+		w.WriteHeader(http.StatusOK)
+	})
+	hl := handlers.Lookup{"testHandler": http.HandlerFunc(testutil.BasicHTTPHandler), "shadow": shadowHandler}
+
+	newPath := func(path, handler string, mirror *po.MirrorOptions) *po.Options {
+		p := po.New()
+		p.Path = path
+		p.MatchTypeName = matching.PathMatchNameExact
+		p.HandlerName = handler
+		p.Methods = []string{http.MethodGet}
+		if mirror != nil {
+			p.Mirrors = []*po.MirrorOptions{mirror}
+		}
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	shadowOpts.Paths = po.List{newPath("/api", "shadow", nil)}
+	registerPathRoutes([]listenerRoute{{lm.NewRouter(), nil}}, conf, hl, shadow, shadowOpts, nil, nil, nil)
+
+	oo.Paths = po.List{
+		newPath("/api", "testHandler", &po.MirrorOptions{BackendName: "shadow"}),
+		newPath("/lonely", "testHandler", &po.MirrorOptions{BackendName: "missing"}),
+	}
+	rtr := lm.NewRouter()
+	clients := backends.Backends{"default": rpc, "shadow": shadow}
+	registerPathRoutes([]listenerRoute{{rtr, nil}}, conf, hl, rpc, oo, nil, nil, clients)
+
+	req := httptest.NewRequest(http.MethodGet, "/api", nil)
+	req.Host = "example.com"
+	w := httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for the mirrored path, got %d", w.Code)
+	}
+	select {
+	case path := <-mirrored:
+		if path != "/api" {
+			t.Errorf("mirrored path = %q; want /api", path)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request was not mirrored to the shadow backend")
+	}
+	// a path whose mirror backend is unavailable is served without one
+	req = httptest.NewRequest(http.MethodGet, "/lonely", nil)
+	req.Host = "example.com"
+	w = httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 for the path without a mirror, got %d", w.Code)
+	}
+}
+
+func TestDefaultBackendRoutesMirror(t *testing.T) {
+	// the default backend serves the hosts no other backend claims, and a mirror configured on
+	// its paths fires there too
+	logger.SetLogger(logging.ConsoleLogger(level.Info))
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatalf("Could not load configuration: %s", err.Error())
+	}
+	oo := conf.Backends["default"]
+	oo.IsDefault = true
+	rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+	shadowOpts := bo.New()
+	shadowOpts.Name = "shadow"
+	shadow, _ := reverseproxycache.NewClient("shadow", shadowOpts, lm.NewRouter(), nil, nil, nil)
+	mirrored := make(chan string, 4)
+	hl := handlers.Lookup{
+		"testHandler": http.HandlerFunc(testutil.BasicHTTPHandler),
+		"shadow": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mirrored <- r.URL.Path
+			w.WriteHeader(http.StatusOK)
+		}),
+	}
+	newPath := func(path, handler string, mirror *po.MirrorOptions) *po.Options {
+		p := po.New()
+		p.Path = path
+		p.MatchTypeName = matching.PathMatchNamePrefix
+		p.HandlerName = handler
+		p.Methods = []string{http.MethodGet}
+		if mirror != nil {
+			p.Mirrors = []*po.MirrorOptions{mirror}
+		}
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	shadowOpts.Paths = po.List{newPath("/", "shadow", nil)}
+	registerPathRoutes([]listenerRoute{{lm.NewRouter(), nil}}, conf, hl, shadow, shadowOpts, nil, nil, nil)
+	oo.Paths = po.List{newPath("/", "testHandler", &po.MirrorOptions{BackendName: "shadow"})}
+	for _, p := range oo.Paths {
+		p.Handler = hl[p.HandlerName]
+	}
+	rtr := lm.NewRouter()
+	RegisterDefaultBackendRoutes(rtr, conf, backends.Backends{"default": rpc, "shadow": shadow}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/anything", nil)
+	req.Host = "unclaimed.example.com"
+	w := httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 from the default backend, got %d", w.Code)
+	}
+	select {
+	case path := <-mirrored:
+		if path != "/anything" {
+			t.Errorf("mirrored path = %q; want /anything", path)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the default backend's request was not mirrored")
 	}
 }

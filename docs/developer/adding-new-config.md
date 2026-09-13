@@ -22,10 +22,10 @@ All new values that you add should have accompanying unit tests to ensure the mo
 
 The feature should be documented under `./docs` directory, in a suitable existing or new markdown file based on the nature of the feature. The documentation should show the key example configuration options and describe their expected results, and point to the example config file for more information.
 
-The [example config file](../examples/conf/example.full.yaml) should be updated to include the exhaustive description and options for the configuration value(s).
+The [example config file](../../examples/conf/example.full.yaml) should be updated to include the exhaustive description and options for the configuration value(s).
 
 ## Deployment
 
-The `./deploy/kube/configmap.yaml` must be updated to include the new configuration option(s). Generally this file contains a copy/paste of [example.full.yaml](../examples/conf/example.full.yaml).
+`./deploy/kube/configmap.yaml` is [example.full.yaml](../../examples/conf/example.full.yaml) wrapped in a ConfigMap. Regenerate it with `make kube-configmap` after editing the example; `make check-codegen` fails in CI when the two differ.
 
-The `./deploy/helm/trickster/values.yaml` file must be updated to mirror the configuration option(s) in `example.full.yaml`, and `./deploy/helm/trickster/templates/configmap.yaml` must be updated to map any new `yamlCaseValues` to their respective snake case values for config file generation via the template.
+The Helm chart lives in <https://github.com/trickstercache/helm-charts> and is built from the manifests in `./deploy/kube`; a new option that a chart value should drive needs a corresponding change there.

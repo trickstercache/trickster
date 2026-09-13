@@ -38,10 +38,13 @@ const (
 	KindPods = "pods"
 )
 
-// Scheme names accepted by Query.Scheme
+// Scheme names accepted by Query.Scheme; tcp and udp members are relayed by stream listeners,
+// which dial the member's address and read nothing of what passes
 const (
 	SchemeHTTP  = "http"
 	SchemeHTTPS = "https"
+	SchemeTCP   = "tcp"
+	SchemeUDP   = "udp"
 )
 
 // Query defines what an ALB selects from a discoverer. The meaningful
@@ -275,8 +278,10 @@ func (q *Query) Validate(albName string, o *Options) error {
 	if o == nil {
 		return NewErrInvalidQuery(albName, "no discoverer options provided")
 	}
-	if q.Scheme != "" && q.Scheme != SchemeHTTP && q.Scheme != SchemeHTTPS {
-		return NewErrInvalidQuery(albName, "'scheme' must be http or https")
+	switch q.Scheme {
+	case "", SchemeHTTP, SchemeHTTPS, SchemeTCP, SchemeUDP:
+	default:
+		return NewErrInvalidQuery(albName, "'scheme' must be http, https, tcp or udp")
 	}
 	accepted, ok := providerQueryFields[o.Provider]
 	if !ok {

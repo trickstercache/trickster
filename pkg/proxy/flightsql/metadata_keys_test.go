@@ -59,7 +59,8 @@ func TestKeyMetadataRPCsProxyAndCache(t *testing.T) {
 		call  func(*Server, int) (*arrow.Schema, <-chan flight.StreamChunk, error)
 		calls func(*fakeUpstream) int
 	}{
-		{"xdbc type info",
+		{
+			"xdbc type info",
 			func(s *Server, round int) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 				cmd := fakeXdbcTypeInfo{}
 				if round == 2 {
@@ -67,8 +68,10 @@ func TestKeyMetadataRPCsProxyAndCache(t *testing.T) {
 				}
 				return s.DoGetXdbcTypeInfo(context.Background(), cmd)
 			},
-			func(f *fakeUpstream) int { return f.xdbcTypeInfoCalls }},
-		{"primary keys",
+			func(f *fakeUpstream) int { return f.xdbcTypeInfoCalls },
+		},
+		{
+			"primary keys",
 			func(s *Server, round int) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 				ref := tableRef(nil, nil, "cpu")
 				if round == 2 {
@@ -76,8 +79,10 @@ func TestKeyMetadataRPCsProxyAndCache(t *testing.T) {
 				}
 				return s.DoGetPrimaryKeys(context.Background(), ref)
 			},
-			func(f *fakeUpstream) int { return f.primaryKeysCalls }},
-		{"exported keys",
+			func(f *fakeUpstream) int { return f.primaryKeysCalls },
+		},
+		{
+			"exported keys",
 			func(s *Server, round int) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 				ref := tableRef(nil, nil, "cpu")
 				if round == 2 {
@@ -85,8 +90,10 @@ func TestKeyMetadataRPCsProxyAndCache(t *testing.T) {
 				}
 				return s.DoGetExportedKeys(context.Background(), ref)
 			},
-			func(f *fakeUpstream) int { return f.exportedKeysCalls }},
-		{"imported keys",
+			func(f *fakeUpstream) int { return f.exportedKeysCalls },
+		},
+		{
+			"imported keys",
 			func(s *Server, round int) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 				ref := tableRef(nil, nil, "cpu")
 				if round == 2 {
@@ -94,8 +101,10 @@ func TestKeyMetadataRPCsProxyAndCache(t *testing.T) {
 				}
 				return s.DoGetImportedKeys(context.Background(), ref)
 			},
-			func(f *fakeUpstream) int { return f.importedKeysCalls }},
-		{"cross reference",
+			func(f *fakeUpstream) int { return f.importedKeysCalls },
+		},
+		{
+			"cross reference",
 			func(s *Server, round int) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 				ref := flightsql.CrossTableRef{
 					PKRef: tableRef(nil, nil, "cpu"),
@@ -106,7 +115,8 @@ func TestKeyMetadataRPCsProxyAndCache(t *testing.T) {
 				}
 				return s.DoGetCrossReference(context.Background(), ref)
 			},
-			func(f *fakeUpstream) int { return f.crossReferenceCalls }},
+			func(f *fakeUpstream) int { return f.crossReferenceCalls },
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
