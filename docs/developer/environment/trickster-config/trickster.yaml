@@ -125,6 +125,12 @@ backends:
     cache_name: mem1
     backfill_tolerance: 60s
     timeseries_retention_factor: 2048
+  druid1:
+    provider: druid
+    origin_url: 'http://127.0.0.1:8888'
+    cache_name: mem1
+    backfill_tolerance: 60s
+    timeseries_retention_factor: 2048
   graphite1:
     provider: graphite
     origin_url: 'http://127.0.0.1:8081'

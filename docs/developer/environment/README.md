@@ -149,8 +149,9 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 
 ## Included backends
 
-The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x and ClickHouse
-alongside Grafana. Trickster's dev config registers a matching backend for each, 
+The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
+Apache Druid, MySQL, and Graphite alongside Grafana. Trickster's dev config
+registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison.
 
@@ -194,6 +195,27 @@ Native clients can use either origin transport. See the
 [ClickHouse Support Guide](../../clickhouse.md) for TLS configuration,
 delta-cacheable SQL, supported formats and types, and Native limitations.
 
+## Apache Druid Details
+
+The environment runs Apache Druid's single-node nano configuration on direct
+port `8888`. Trickster registers the `druid1` backend and exposes it at
+`http://127.0.0.1:8480/druid1`. Grafana provisions `druid-direct` and
+`druid-trickster` datasources for origin-vs-cache comparison on the dashboard at
+<http://127.0.0.1:3000/d/trickster-druid/apache-druid>.
+
+Run `make developer-seed-data` to load the shared NYC taxi `trips` data through
+Druid's native batch-ingestion API. The Druid seeder uses the same source files
+and timestamp shift as the ClickHouse and MySQL seeders, then verifies the row
+count and shifted minimum and maximum timestamps through Druid SQL. Before
+loading, it marks any segments from the previous moving seed window unused so
+repeated runs do not accumulate stale rows. It runs in parallel with those two
+database seeders after the shared download step.
+
+The published Druid image contains the nano service scripts but not the Perl
+runtime used by its bundled supervisor. `druid-config/start-nano.sh` launches
+the same ZooKeeper, Coordinator/Overlord, Broker, Router, Historical, and Middle
+Manager processes with Bash inside the one development container.
+
 ## MySQL Details
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
@@ -219,16 +241,17 @@ and operations contract, see the [MySQL Provider Guide](../../mysql.md).
 The shared fetch step scans the source files for their actual pickup/dropoff
 bounds and derives one seconds-level shift that places the pickup midpoint at
 the seed instant. MySQL and ClickHouse apply that exact shift to every pickup
-and dropoff datetime and regenerate the related date columns. This preserves
-trip durations and partition/date relationships while placing approximately
-half of the pickup distribution before and half after the seed instant. To
-re-seed (for example, after the data ages out of range), run
+and dropoff datetime and regenerate the related date columns; Druid applies it
+to the primary `__time` timestamp. This preserves trip durations and
+partition/date relationships in the relational copies while placing
+approximately half of the pickup distribution before and half after the seed
+instant. To re-seed (for example, after the data ages out of range), run
 `make developer-seed-data`, which first populates the shared download cache
-via the `seed_data_fetch` service and then truncates and reloads ClickHouse
-and MySQL in parallel. The MySQL server and Grafana data-source sessions both
-run in UTC. Each seeder fails the workflow unless row count, exact shifted
-timestamp bounds, date consistency, and the database's expected query keys all
-validate after loading.
+via the `seed_data_fetch` service and then reloads ClickHouse, MySQL, and Druid
+in parallel. The MySQL server and Grafana data-source sessions both
+run in UTC. Every seeder validates row count and shifted timestamp bounds; the
+relational seeders additionally validate date consistency and the database's
+expected query keys.
 
 The provisioned Grafana MySQL dashboard is at
 <http://127.0.0.1:3000/d/trickster-mysql/mysql>. Its Data Source variable can

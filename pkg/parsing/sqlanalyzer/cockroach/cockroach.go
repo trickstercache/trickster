@@ -1062,6 +1062,7 @@ func parseSQLTime(value string) (time.Time, boundStyle, bool) {
 		layout string
 		style  boundStyle
 	}{
+		{"2006-01-02 15:04:05.999999999", boundSQLDateTime},
 		{"2006-01-02 15:04:05", boundSQLDateTime},
 		{"2006-01-02", boundSQLDate},
 		{time.RFC3339Nano, boundRFC3339},
@@ -1155,16 +1156,24 @@ func boundLiteral(style boundStyle, value time.Time) string {
 	case boundUnixNano:
 		return strconv.FormatInt(value.UnixNano(), 10)
 	case boundSQLDateTime, boundSQLDate:
-		return "'" + value.UTC().Format("2006-01-02 15:04:05") + "'"
+		return "'" + formatSQLTimestamp(value) + "'"
 	case boundRFC3339:
 		// RFC3339Nano renders whole seconds without a fractional component and
 		// preserves sub-second bound values when a dialect allows them.
 		return "'" + value.UTC().Format(time.RFC3339Nano) + "'"
 	case boundTimestampLiteral:
-		return "TIMESTAMP '" + value.UTC().Format("2006-01-02 15:04:05") + "'"
+		return "TIMESTAMP '" + formatSQLTimestamp(value) + "'"
 	default:
 		return strconv.FormatInt(value.Unix(), 10)
 	}
+}
+
+func formatSQLTimestamp(value time.Time) string {
+	layout := "2006-01-02 15:04:05"
+	if value.Nanosecond() != 0 {
+		layout += ".999999999"
+	}
+	return value.UTC().Format(layout)
 }
 
 func buildQueryArtifacts(

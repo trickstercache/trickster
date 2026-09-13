@@ -18,7 +18,7 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0 a
   - [x] Support for MySQL as Time Series
   - [x] Support for Graphite
   - [x] Support for InfluxDB 3.x (HTTP v3 API + Flight SQL)
-  - [ ] Support for Druid
+  - [x] Support for Druid
   - [x] Kube Ingress/Gateway API support
   - [ ] More easily-importable Trickster packages by other projects
 

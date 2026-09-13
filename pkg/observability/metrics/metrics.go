@@ -39,6 +39,7 @@ const (
 	sqlSubsystem       = "sql"
 	mysqlSubsystem     = "mysql"
 	graphiteSubsystem  = providers.Graphite
+	druidSubsystem     = providers.Druid
 	tlsSubsystem       = "tls"
 	accessLogSubsystem = "accesslog"
 )
@@ -451,6 +452,30 @@ var (
 			Help:      "Count of SQL cache-miss extent rewrite failures.",
 		},
 		[]string{keys.Backend_Name, keys.Dialect, keys.Reason},
+	)
+
+	// DruidQueryAnalysis counts native Druid query cache classifications using
+	// bounded mode and reason labels.
+	DruidQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: druidSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of native Druid query cache-eligibility classifications.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
+	)
+
+	// DruidQueryRewriteFailures counts failures to render a native Druid query
+	// for a cache-miss extent.
+	DruidQueryRewriteFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: druidSubsystem,
+			Name:      "query_rewrite_failures_total",
+			Help:      "Count of native Druid cache-miss extent rewrite failures.",
+		},
+		[]string{keys.Backend_Name, keys.Reason},
 	)
 
 	// SQLQueryCache counts native SQL protocol cache outcomes. Unlike the HTTP
@@ -921,6 +946,8 @@ func init() {
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
+	prometheus.MustRegister(DruidQueryAnalysis)
+	prometheus.MustRegister(DruidQueryRewriteFailures)
 	prometheus.MustRegister(SQLQueryCache)
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
@@ -964,6 +991,8 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyQueryRangeRejections,
 	SQLQueryAnalysis,
 	SQLQueryRewriteFailures,
+	DruidQueryAnalysis,
+	DruidQueryRewriteFailures,
 	SQLQueryCache,
 	MySQLConnections,
 	MySQLActiveConnections,

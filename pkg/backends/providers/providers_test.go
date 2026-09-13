@@ -51,6 +51,7 @@ func TestIsValidProvider(t *testing.T) {
 		{"invalid", false},
 		{InfluxDB, true},
 		{Graphite, true},
+		{Druid, true},
 	}
 
 	for i, test := range tests {
@@ -87,6 +88,12 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 	if GraphiteID.String() != Graphite {
 		t.Errorf("expected %s got %s", Graphite, GraphiteID.String())
 	}
+	if !IsSupportedTimeSeriesProvider(Druid) {
+		t.Error("expected Druid to be a supported time series provider")
+	}
+	if DruidID.String() != Druid {
+		t.Errorf("expected %s got %s", Druid, DruidID.String())
+	}
 }
 
 func TestMySQLUsesCache(t *testing.T) {
@@ -107,6 +114,9 @@ func TestHTTPTimeSeriesProviderNames(t *testing.T) {
 		if !IsSupportedTimeSeriesProvider(n) || !IsSupportedHTTPTimeSeriesProvider(n) {
 			t.Fatalf("%q is not a supported http time series provider", n)
 		}
+	}
+	if !IsSupportedHTTPTimeSeriesProvider(Druid) {
+		t.Fatal("druid is not registered as an http time series provider")
 	}
 	if IsSupportedHTTPTimeSeriesProvider(MySQL) || IsSupportedHTTPTimeSeriesProvider(ReverseProxy) {
 		t.Fatal("mysql and the reverse proxy are not http time series providers")
