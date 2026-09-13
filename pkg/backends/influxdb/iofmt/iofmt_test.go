@@ -33,6 +33,14 @@ func TestIsInfluxQL(t *testing.T) {
 	}
 }
 
+func TestV3OutputFormatsDoNotOverlapPromRemoteRead(t *testing.T) {
+	for _, format := range []byte{V3OutputJSON, V3OutputJSONL, V3OutputCSV} {
+		if Format(format).IsPromRemoteRead() {
+			t.Fatalf("v3 output format %d must not overlap PromRemoteRead", format)
+		}
+	}
+}
+
 func TestIsFlux(t *testing.T) {
 	if out := FluxJSONJSON.IsFlux(); !out {
 		t.Error("expected true")

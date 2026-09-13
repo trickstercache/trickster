@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -132,7 +133,7 @@ func TestUnmarshalJSONNullThenNumeric(t *testing.T) {
 
 func TestRoundTripJSON(t *testing.T) {
 	ds := testDataSet()
-	rlo := &timeseries.RequestOptions{OutputFormat: 32} // V3OutputJSON
+	rlo := &timeseries.RequestOptions{OutputFormat: iofmt.V3OutputJSON}
 	data, err := MarshalTimeseries(ds, rlo, 200)
 	if err != nil {
 		t.Fatal(err)

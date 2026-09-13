@@ -60,9 +60,9 @@ const (
 
 // V3 output format constants stored in RequestOptions.OutputFormat
 const (
-	V3OutputJSON  byte = 32
-	V3OutputJSONL byte = 33
-	V3OutputCSV   byte = 34
+	V3OutputJSON byte = byte(isV3SQL) + iota
+	V3OutputJSONL
+	V3OutputCSV
 )
 
 var ErrSupportedQueryLanguage = errors.New("unsupported query language")
