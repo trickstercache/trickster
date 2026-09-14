@@ -31,7 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"google.golang.org/protobuf/proto"
 )
 

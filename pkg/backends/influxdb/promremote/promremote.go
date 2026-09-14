@@ -30,11 +30,12 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote/prompb"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -141,15 +142,20 @@ func ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 		if rsc.BackendOptions.MaxShardSizePoints > 0 {
 			return trq, nil, false, errPointSharding
 		}
-		if rsc.BackendOptions.BackfillTolerancePoints > 0 && trq.PolicyStep <= 0 {
+		if trq.PolicyStep <= 0 && (rsc.BackendOptions.BackfillTolerancePoints > 0 ||
+			rsc.BackendOptions.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest ||
+			rsc.BackendOptions.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU) {
 			return trq, nil, false, errPointPolicyStep
 		}
 	}
 
 	rlo := &timeseries.RequestOptions{
-		OutputFormat:       byte(iofmt.PromRemoteRead),
-		FastForwardDisable: true,
-		ProviderRequest:    readRequest,
+		OutputFormat:            byte(iofmt.PromRemoteRead),
+		FastForwardDisable:      true,
+		ProviderRequest:         readRequest,
+		UpstreamAcceptEncoding:  ContentEncoding,
+		ResponseContentType:     ContentType,
+		ResponseContentEncoding: ContentEncoding,
 	}
 	return trq, rlo, false, nil
 }

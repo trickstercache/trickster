@@ -38,6 +38,13 @@ type RequestOptions struct {
 	// MarshalVariesByRequest should be true for any Backend provider that doesn't guarantee that a rendered
 	// response can be shared across all concurrent requests for the same cache key.
 	MarshalVariesByRequest bool
+	// UpstreamAcceptEncoding overrides DPC's HTTP encoding negotiation when the
+	// provider handles compression as part of its wire format.
+	UpstreamAcceptEncoding string
+	// ResponseContentType and ResponseContentEncoding describe the marshaled
+	// wire body, including when DPC marshals into a buffer rather than a response writer.
+	ResponseContentType     string
+	ResponseContentEncoding string
 }
 
 // ExtractFastForwardDisabled will look for the FastForwardUserDisableFlag in the provided string

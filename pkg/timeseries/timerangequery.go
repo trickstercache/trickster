@@ -48,6 +48,8 @@ type TimeRangeQuery struct {
 	IsOffset bool `msg:"-"`
 	// StepNS is the nanosecond representation for Step, required for MsgPack
 	StepNS int64 `msg:"step"`
+	// PolicyStepNS is the nanosecond representation for PolicyStep, required for MsgPack.
+	PolicyStepNS int64 `msg:"policy_step"`
 	// BackfillTolerance can be updated to override the overall backfill tolerance per query
 	BackfillTolerance time.Duration `msg:"-"`
 	// RecordLimit is the LIMIT value of the query
@@ -82,6 +84,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		PolicyStep:          trq.PolicyStep,
 		Phase:               trq.Phase,
 		StepNS:              trq.StepNS,
+		PolicyStepNS:        trq.PolicyStepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:            trq.IsOffset,
 		TimestampDefinition: trq.TimestampDefinition,
@@ -190,7 +193,7 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
 	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
-		urls.Size(trq.TemplateURL) + 11 // FFwDisable=1 IsOffset=1 StepNS=8 CustomData=1
+		urls.Size(trq.TemplateURL) + 19 // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}

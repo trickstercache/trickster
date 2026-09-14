@@ -28,11 +28,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote/prompb"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
-	"github.com/golang/snappy"
+	"github.com/klauspost/compress/snappy"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -220,6 +221,14 @@ func TestParseTimeRangeQueryPointPolicyFallbacks(t *testing.T) {
 		},
 		"backfill points without hints": {
 			options: &bo.Options{BackfillTolerancePoints: 2},
+			want:    errPointPolicyStep,
+		},
+		"oldest retention without hints": {
+			options: &bo.Options{TimeseriesEvictionMethod: evictionmethods.EvictionMethodOldest},
+			want:    errPointPolicyStep,
+		},
+		"lru retention without hints": {
+			options: &bo.Options{TimeseriesEvictionMethod: evictionmethods.EvictionMethodLRU},
 			want:    errPointPolicyStep,
 		},
 	}

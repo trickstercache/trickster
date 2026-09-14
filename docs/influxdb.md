@@ -29,8 +29,15 @@ responsible for its response and error behavior.
 Raw remote-read samples do not advertise a guaranteed interval, so point-count
 sharding cannot split their extents without risking gaps. Requests use the
 normal proxy path when `shard_max_size_points` is enabled; time-based sharding
-remains supported. Point-based backfill tolerance uses a positive
-`hints.step_ms`; a request without that hint also uses the normal proxy path.
+remains supported. Cache retention (`oldest` and `lru`) and point-based backfill
+tolerance use a positive `hints.step_ms`; a request without that hint uses the
+normal proxy path, including Prometheus instant queries with a zero step hint.
+The hint is retained in serialized cache entries and does not change the 1 ms
+precision used to locate missing raw samples.
+
+Cacheable remote reads request Snappy directly from InfluxDB to avoid an extra
+HTTP compression layer. Reconstructed responses carry `Content-Encoding: snappy`
+on cache misses, partial hits, and full hits.
 
 The `db`, `rp`, `u`, and `p` query parameters and the `Authorization` header are
 part of the cache identity. They are forwarded unchanged unless a path-level

@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -63,6 +64,30 @@ const (
 )
 
 var testConfigFile string
+
+func TestDPCUpstreamEncodingProfile(t *testing.T) {
+	original := dpcEncodingProfile.Clone()
+	for _, rlo := range []*timeseries.RequestOptions{
+		nil, {}, {UpstreamAcceptEncoding: "snappy"}, {UpstreamAcceptEncoding: "identity"},
+	} {
+		ep := dpcUpstreamEncodingProfile(rlo)
+		if ep == dpcEncodingProfile {
+			t.Fatal("request profile aliases the shared default")
+		}
+		if rlo == nil || rlo.UpstreamAcceptEncoding == "" {
+			if !reflect.DeepEqual(ep, original) {
+				t.Errorf("default HTTP encoding profile changed: %v", ep)
+			}
+		} else if ep.Supported != 0 || ep.SupportedHeaderVal != rlo.UpstreamAcceptEncoding ||
+			ep.ClientAcceptEncoding != rlo.UpstreamAcceptEncoding {
+			t.Errorf("provider encoding override not applied: %v", ep)
+		}
+		ep.SupportedHeaderVal = "modified"
+	}
+	if !reflect.DeepEqual(dpcEncodingProfile, original) {
+		t.Fatal("request overrides mutated the shared default")
+	}
+}
 
 func setupTestHarnessDPC() (*httptest.Server, *httptest.ResponseRecorder, *http.Request, *request.Resources, error) {
 	logger.SetLogger(logging.NoopLogger())

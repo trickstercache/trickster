@@ -533,10 +533,11 @@ func (ds *DataSet) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 // DefaultSizeCropper is the default SizeCropper Function
 func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent) {
 	step := ds.Step()
-	if step == 0 || sz <= 0 {
+	policyStep := ds.cachePolicyStep()
+	if step <= 0 || policyStep <= 0 || sz <= 0 {
 		return
 	}
-	tsc := ds.ExtentList.TimestampCount(step)
+	tsc := ds.ExtentList.TimestampCount(policyStep)
 	if tsc <= int64(sz) {
 		return
 	}
@@ -558,7 +559,7 @@ func (ds *DataSet) DefaultSizeCropper(sz int, t time.Time, lur timeseries.Extent
 		if el[i].Start.After(t) {
 			continue
 		}
-		ec := ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / step.Nanoseconds()) + 1
+		ec := ((el[i].End.UnixNano() - el[i].Start.UnixNano()) / policyStep.Nanoseconds()) + 1
 		tsc -= ec
 		remove = append(remove, el[i])
 	}
@@ -729,9 +730,20 @@ func (ds *DataSet) Step() time.Duration {
 	return 0
 }
 
-// TimestampCount returns the count of unique timestamps across all series in the DataSet
+// TimestampCount returns the number of logical cache-policy points covered by the DataSet.
 func (ds *DataSet) TimestampCount() int64 {
-	return ds.ExtentList.TimestampCount(ds.Step())
+	step := ds.cachePolicyStep()
+	if step <= 0 {
+		return 0
+	}
+	return ds.ExtentList.TimestampCount(step)
+}
+
+func (ds *DataSet) cachePolicyStep() time.Duration {
+	if ds.TimeRangeQuery != nil {
+		return ds.TimeRangeQuery.CachePolicyStep()
+	}
+	return 0
 }
 
 // Extents returns the DataSet's ExentList
@@ -763,6 +775,7 @@ func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Time
 	if err == nil {
 		if ds.TimeRangeQuery != nil {
 			ds.TimeRangeQuery.Step = time.Duration(ds.TimeRangeQuery.StepNS)
+			ds.TimeRangeQuery.PolicyStep = time.Duration(ds.TimeRangeQuery.PolicyStepNS)
 		} else {
 			ds.TimeRangeQuery = trq
 		}
@@ -780,6 +793,7 @@ func MarshalDataSet(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
 	}
 	if ds.TimeRangeQuery != nil {
 		ds.TimeRangeQuery.StepNS = ds.TimeRangeQuery.Step.Nanoseconds()
+		ds.TimeRangeQuery.PolicyStepNS = ds.TimeRangeQuery.PolicyStep.Nanoseconds()
 	}
 	return ds.MarshalMsg(nil)
 }
