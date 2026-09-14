@@ -18,7 +18,6 @@ package promql
 
 import (
 	"math"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 )
@@ -27,7 +26,7 @@ import (
 // can either leave on each shard or apply after globally merging its input.
 type LimitRatioAggregation struct {
 	Ratio            float64
-	InnerQuery       string
+	Inner            Expr
 	AggregationQuery string
 	Grouping         AggregationGrouping
 	SortSet          bool
@@ -37,30 +36,21 @@ type LimitRatioAggregation struct {
 // ParseLimitRatioAggregation parses an outer literal limit_ratio aggregation,
 // optionally wrapped in sort or sort_desc. Scalar parameter expressions are
 // deliberately rejected because TSM cannot safely evaluate them per shard.
-func ParseLimitRatioAggregation(query string) (LimitRatioAggregation, bool) {
-	spec, found := parseParameterizedAggregation(query, aggregation.LimitRatio)
+func ParseLimitRatioAggregation(e Expr) (LimitRatioAggregation, bool) {
+	spec, found := parseOuterAggregation(e, aggregation.LimitRatio)
 	if !found {
 		return LimitRatioAggregation{}, false
 	}
-	ratio, ok := parseLimitRatio(spec.Parameter)
-	if !ok {
+	ratio, ok := scalarLiteral(spec.Parameter)
+	if !ok || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < -1 || ratio > 1 {
 		return LimitRatioAggregation{}, false
 	}
-
 	return LimitRatioAggregation{
 		Ratio:            ratio,
-		InnerQuery:       spec.InnerQuery,
-		AggregationQuery: spec.AggregationQuery,
+		Inner:            spec.Inner,
+		AggregationQuery: spec.Aggregation.String(),
 		Grouping:         spec.Grouping,
 		SortSet:          spec.SortSet,
 		SortDescending:   spec.SortDescending,
 	}, true
-}
-
-func parseLimitRatio(input string) (float64, bool) {
-	ratio, ok := parsePromQLScalarLiteral(strings.TrimSpace(input))
-	if !ok || math.IsNaN(ratio) || math.IsInf(ratio, 0) || ratio < -1 || ratio > 1 {
-		return 0, false
-	}
-	return ratio, true
 }

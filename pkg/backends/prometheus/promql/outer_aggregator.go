@@ -14,192 +14,127 @@
  * limitations under the License.
  */
 
-// Package promql provides utilities for parsing and rewriting PromQL queries.
 package promql
 
 import (
 	"slices"
-	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// AllAggregators lists all known PromQL aggregation operators, sorted with
-// longer names first to avoid prefix collisions (e.g. count_values vs count).
-var AllAggregators = []aggregation.Operator{
-	aggregation.CountValues,
-	aggregation.LimitRatio,
-	aggregation.BottomK,
-	aggregation.LimitK,
-	aggregation.StdDev,
-	aggregation.StdVar,
-	aggregation.Quantile,
-	aggregation.TopK,
-	aggregation.Count,
-	aggregation.Group,
-	aggregation.Average,
-	aggregation.Sum,
-	aggregation.Minimum,
-	aggregation.Maximum,
+// AggregationGrouping holds an aggregation's sorted, de-duplicated by or
+// without labels.
+type AggregationGrouping struct {
+	Labels  []string
+	Without bool
 }
 
-// OuterAggregator returns the name of the outermost PromQL aggregation
-// operator in query (lowercased), and true if one was found. The remainder
-// of the query string is unchanged; this function only inspects the prefix.
-//
-// Examples:
-//
-//	OuterAggregator("sum(rate(http_requests_total[5m]))")        → "sum", true
-//	OuterAggregator("avg by (region) (requests)")               → "avg", true
-//	OuterAggregator("http_requests_total{job=\"api\"}")          → "",    false
-//	OuterAggregator("avg_over_time(cpu[5m])")                   → "",    false  (function, not aggregator)
-func OuterAggregator(query string) (string, bool) {
-	q := strings.TrimSpace(query)
-	ql := strings.ToLower(q)
-	for _, agg := range AllAggregators {
-		if !strings.HasPrefix(ql, agg) {
-			continue
-		}
-		rest := ql[len(agg):]
-		if len(rest) == 0 {
-			return agg, true
-		}
-		// Ensure the character immediately after the keyword is a valid
-		// non-identifier character so we don't match "avg_over_time" as "avg".
-		switch rest[0] {
-		case '(', ' ', '\t', '\n', '\r':
-			return agg, true
-		}
-	}
-	return "", false
+type outerAggregation struct {
+	Operator       string
+	Parameter      parser.Expr
+	Inner          Expr
+	Aggregation    Expr
+	Grouping       AggregationGrouping
+	SortSet        bool
+	SortDescending bool
+	inputPrefix    string
+	inputSuffix    string
 }
 
-// CompleteOuterAggregator returns the outer aggregation only when it consumes
-// the complete query. This lets callers distinguish sum(up) from shapes such
-// as sum(up) + vector(1), which cannot use the same cross-shard merge plan.
-func CompleteOuterAggregator(query string) (string, bool) {
-	agg, _, found := CompleteOuterAggregation(query)
-	return agg, found
+func parseOuterAggregation(e Expr, operators ...string) (outerAggregation, bool) {
+	sortSpec, sorted := ParseSortWrapper(e)
+	if sorted {
+		e = sortSpec.Inner
+	}
+	agg, ok := e.node.(*parser.AggregateExpr)
+	if !ok {
+		return outerAggregation{}, false
+	}
+	operator := agg.Op.String()
+	if !slices.Contains(operators, operator) {
+		return outerAggregation{}, false
+	}
+	aggRange, inputRange := agg.PositionRange(), agg.Expr.PositionRange()
+	return outerAggregation{
+		Operator:       operator,
+		Parameter:      agg.Param,
+		Inner:          e.child(agg.Expr),
+		Aggregation:    e,
+		Grouping:       aggregationGrouping(agg),
+		SortSet:        sorted,
+		SortDescending: sortSpec.Descending,
+		inputPrefix:    sourceRange(e.source, int(aggRange.Start), int(inputRange.Start)),
+		inputSuffix:    sourceRange(e.source, int(inputRange.End), int(aggRange.End)),
+	}, true
 }
 
-// CompleteOuterAggregation returns the outer aggregation and its vector input
-// only when the aggregation consumes the complete query.
-func CompleteOuterAggregation(query string) (string, string, bool) {
-	q := strings.TrimSpace(query)
-	agg, found := OuterAggregator(q)
-	if !found {
-		return "", "", false
+func aggregationGrouping(agg *parser.AggregateExpr) AggregationGrouping {
+	if len(agg.Grouping) == 0 {
+		return AggregationGrouping{Without: agg.Without}
 	}
-	rest := strings.TrimSpace(q[len(agg):])
-
-	var hasGrouping bool
-	if _, next, ok := parseGrouping(rest); ok {
-		hasGrouping = true
-		rest = next
-	}
-	if rest == "" || rest[0] != '(' {
-		return "", "", false
-	}
-	closeIdx := findMatchingCloser(rest, 0, '(', ')')
-	if closeIdx < 0 {
-		return "", "", false
-	}
-	args := strings.TrimSpace(rest[1:closeIdx])
-	trailer := strings.TrimSpace(rest[closeIdx+1:])
-	if !hasGrouping && trailer != "" {
-		if _, next, ok := parseGrouping(trailer); ok {
-			trailer = next
-		}
-	}
-	if trailer != "" || args == "" {
-		return "", "", false
-	}
-
-	input := args
-	switch agg {
-	case aggregation.CountValues, aggregation.TopK, aggregation.BottomK,
-		aggregation.Quantile, aggregation.LimitK, aggregation.LimitRatio:
-		comma := findTopLevelComma(args)
-		if comma < 0 || strings.TrimSpace(args[:comma]) == "" {
-			return "", "", false
-		}
-		input = strings.TrimSpace(args[comma+1:])
-	}
-	if input == "" || findTopLevelComma(input) >= 0 {
-		return "", "", false
-	}
-	return agg, input, true
+	labels := slices.Clone(agg.Grouping)
+	slices.Sort(labels)
+	return AggregationGrouping{Labels: slices.Compact(labels), Without: agg.Without}
 }
 
-// ContainsAggregator reports whether query contains an aggregation expression,
-// including one nested below a function or parenthesized expression.
-func ContainsAggregator(query string) bool {
-	q := strings.ToLower(query)
-	var quote byte
-	var escaped bool
-	for i := 0; i < len(q); {
-		c := q[i]
-		if quote != 0 {
-			i++
-			if escaped {
-				escaped = false
-				continue
-			}
-			if c == '\\' && quote != '`' {
-				escaped = true
-				continue
-			}
-			if c == quote {
-				quote = 0
-			}
-			continue
-		}
-		if c == '"' || c == '\'' || c == '`' {
-			quote = c
-			i++
-			continue
-		}
-		if !isPromQLIdentifierStart(c) {
-			i++
-			continue
-		}
-		start := i
-		for i < len(q) && isPromQLIdentifierPart(q[i]) {
-			i++
-		}
-		operator := q[start:i]
-		if !slices.Contains(AllAggregators, operator) {
-			continue
-		}
-		for i < len(q) && isPromQLSpace(q[i]) {
-			i++
-		}
-		if i < len(q) && q[i] == '(' {
-			return true
-		}
-		for _, grouping := range []string{"by", "without"} {
-			if strings.HasPrefix(q[i:], grouping) &&
-				(i+len(grouping) == len(q) || !isPromQLIdentifierPart(q[i+len(grouping)])) {
-				return true
-			}
-		}
+// CompleteOuterAggregation returns the operator and vector input of an
+// aggregation only when that aggregation is the complete expression.
+func CompleteOuterAggregation(e Expr) (string, Expr, bool) {
+	agg, ok := e.node.(*parser.AggregateExpr)
+	if !ok {
+		return "", Expr{}, false
 	}
-	return false
+	return agg.Op.String(), e.child(agg.Expr), true
 }
 
-// ReplaceOuterAggregator substitutes the outermost aggregator keyword in
-// query with replacement, preserving the rest of the query verbatim.
-// aggregator must match the lowercased aggregator as returned by OuterAggregator.
-//
-// Example:
-//
-//	ReplaceOuterAggregator("avg by (r) (errors)", "avg", "sum") → "sum by (r) (errors)"
-func ReplaceOuterAggregator(query, aggregator, replacement string) string {
-	q := strings.TrimSpace(query)
-	ql := strings.ToLower(q)
-	if strings.HasPrefix(ql, aggregator) {
-		// Preserve original casing for the remainder of the query
-		return replacement + q[len(aggregator):]
+// ReplaceOuterAggregator substitutes the complete outer aggregation's operator
+// with replacement, preserving the remaining source text verbatim.
+func ReplaceOuterAggregator(e Expr, aggregator, replacement string) string {
+	text := e.String()
+	agg, ok := e.node.(*parser.AggregateExpr)
+	if !ok || agg.Op.String() != aggregator || len(text) < len(aggregator) {
+		return text
 	}
-	return query
+	return replacement + text[len(aggregator):]
+}
+
+// ZeroFallback describes `aggregation or vector(0)`, where the zero supplies a
+// label-free result only when the aggregation has no matching series.
+type ZeroFallback struct {
+	Operator        string
+	Input           Expr
+	Grouping        AggregationGrouping
+	DefaultMatching bool
+}
+
+// ParseZeroFallback matches a complete `aggregation or vector(0)` expression.
+func ParseZeroFallback(e Expr) (ZeroFallback, bool) {
+	binary, ok := e.node.(*parser.BinaryExpr)
+	if !ok || binary.Op != parser.LOR || !isZeroVector(e.child(binary.RHS)) {
+		return ZeroFallback{}, false
+	}
+	lhs := e.child(binary.LHS)
+	agg, ok := lhs.node.(*parser.AggregateExpr)
+	if !ok {
+		return ZeroFallback{}, false
+	}
+	defaultMatching := true
+	if matching := binary.VectorMatching; matching != nil {
+		defaultMatching = !matching.On && len(matching.MatchingLabels) == 0
+	}
+	return ZeroFallback{
+		Operator:        agg.Op.String(),
+		Input:           lhs.child(agg.Expr),
+		Grouping:        aggregationGrouping(agg),
+		DefaultMatching: defaultMatching,
+	}, true
+}
+
+func isZeroVector(e Expr) bool {
+	call, ok := e.node.(*parser.Call)
+	if !ok || call.Func == nil || call.Func.Name != functionVector || len(call.Args) != 1 {
+		return false
+	}
+	value, ok := scalarLiteral(call.Args[0])
+	return ok && value == 0
 }

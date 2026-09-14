@@ -22,7 +22,7 @@ import "github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 // optionally wrapped in sort or sort_desc.
 type QuantileAggregation struct {
 	Phi              float64
-	InnerQuery       string
+	Inner            Expr
 	AggregationQuery string
 	Grouping         AggregationGrouping
 	SortSet          bool
@@ -32,19 +32,19 @@ type QuantileAggregation struct {
 // ParseQuantileAggregation parses an outer quantile with a literal scalar
 // parameter. Scalar expressions are left on the established warning fallback
 // because TSM cannot evaluate them once per global timestamp.
-func ParseQuantileAggregation(query string) (QuantileAggregation, bool) {
-	spec, found := parseParameterizedAggregation(query, aggregation.Quantile)
+func ParseQuantileAggregation(e Expr) (QuantileAggregation, bool) {
+	spec, found := parseOuterAggregation(e, aggregation.Quantile)
 	if !found {
 		return QuantileAggregation{}, false
 	}
-	phi, ok := parsePromQLScalarLiteral(spec.Parameter)
+	phi, ok := scalarLiteral(spec.Parameter)
 	if !ok {
 		return QuantileAggregation{}, false
 	}
 	return QuantileAggregation{
 		Phi:              phi,
-		InnerQuery:       spec.InnerQuery,
-		AggregationQuery: spec.AggregationQuery,
+		Inner:            spec.Inner,
+		AggregationQuery: spec.Aggregation.String(),
 		Grouping:         spec.Grouping,
 		SortSet:          spec.SortSet,
 		SortDescending:   spec.SortDescending,

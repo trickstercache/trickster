@@ -115,7 +115,7 @@ func TestParseQuantileAggregation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, found := ParseQuantileAggregation(tt.query)
+			got, found := ParseQuantileAggregation(parseOrZero(tt.query))
 			if found != tt.wantFound {
 				t.Fatalf("found got %t want %t: %#v", found, tt.wantFound, got)
 			}
@@ -129,8 +129,8 @@ func TestParseQuantileAggregation(t *testing.T) {
 			} else if got.Phi != tt.wantPhi {
 				t.Errorf("phi got %v want %v", got.Phi, tt.wantPhi)
 			}
-			if got.InnerQuery != tt.wantInner || got.AggregationQuery != tt.wantQuery {
-				t.Errorf("queries got inner=%q aggregation=%q", got.InnerQuery, got.AggregationQuery)
+			if got.Inner.String() != tt.wantInner || got.AggregationQuery != tt.wantQuery {
+				t.Errorf("queries got inner=%q aggregation=%q", got.Inner.String(), got.AggregationQuery)
 			}
 			if got.Grouping.Without != tt.wantGroup.Without ||
 				!slicesEqual(got.Grouping.Labels, tt.wantGroup.Labels) {

@@ -58,11 +58,11 @@ func TestParseVarianceAggregation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
-			spec, found := ParseVarianceAggregation(tt.query)
+			spec, found := ParseVarianceAggregation(parseOrZero(tt.query))
 			if !found {
 				t.Fatal("expected variance aggregation")
 			}
-			if spec.Operator != tt.operator || spec.InnerQuery != tt.inner ||
+			if spec.Operator != tt.operator || spec.Inner.String() != tt.inner ||
 				spec.SortSet != tt.sortSet || spec.SortDescending != tt.sortDescending ||
 				!reflect.DeepEqual(spec.Grouping, tt.grouping) {
 				t.Fatalf("unexpected parse: %#v", spec)
@@ -83,7 +83,7 @@ func TestParseVarianceAggregationRejectsOtherShapes(t *testing.T) {
 	}
 	for _, query := range queries {
 		t.Run(query, func(t *testing.T) {
-			if _, found := ParseVarianceAggregation(query); found {
+			if _, found := ParseVarianceAggregation(parseOrZero(query)); found {
 				t.Fatal("unexpected variance aggregation")
 			}
 		})
@@ -138,7 +138,7 @@ func TestVarianceVariantQuery(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.query+"/"+tt.operator, func(t *testing.T) {
-			spec, found := ParseVarianceAggregation(tt.query)
+			spec, found := ParseVarianceAggregation(parseOrZero(tt.query))
 			if !found {
 				t.Fatal("expected variance aggregation")
 			}
@@ -151,7 +151,7 @@ func TestVarianceVariantQuery(t *testing.T) {
 
 func TestVarianceVariantQueryAvoidsTemporaryLabelCollision(t *testing.T) {
 	const query = "stdvar by (__name__, __trickster_tsm_name__) (x)"
-	spec, found := ParseVarianceAggregation(query)
+	spec, found := ParseVarianceAggregation(parseOrZero(query))
 	if !found {
 		t.Fatal("expected variance aggregation")
 	}
@@ -183,7 +183,7 @@ func TestVarianceVariantQueryWithoutPreservesNonExcludedMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.query, func(t *testing.T) {
-			spec, found := ParseVarianceAggregation(tt.query)
+			spec, found := ParseVarianceAggregation(parseOrZero(tt.query))
 			if !found {
 				t.Fatal("expected variance aggregation")
 			}
