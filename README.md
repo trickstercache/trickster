@@ -49,9 +49,11 @@ Trickster works with virtually any Dashboard application that makes queries to a
 
 <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
 
-<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
+<img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md)
 
 <img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md)
+
+<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 

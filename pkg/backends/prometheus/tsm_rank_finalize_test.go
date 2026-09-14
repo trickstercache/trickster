@@ -183,6 +183,20 @@ func TestFinalizeTSMMergeSortWrapper(t *testing.T) {
 		}
 	})
 
+	t.Run("sort_desc orders merged zero fallback descending", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeries("a", "1", 100),
+			rankSeries("b", "3", 100),
+			rankSeries("c", "2", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("sort_desc(count(up) or vector(0))", ds)
+
+		if got, want := seriesNames(ds), []string{"b", "c", "a"}; !equalStrings(got, want) {
+			t.Fatalf("series got %v want %v", got, want)
+		}
+	})
+
 	t.Run("native histograms are omitted", func(t *testing.T) {
 		histogram := rankSeries("histogram", `{"count":"2","sum":"2.5"}`, 100)
 		histogram.Header.ValueFieldsList = timeseries.FieldDefinitions{{Name: histogramFieldName}}

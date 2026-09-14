@@ -40,8 +40,8 @@ func TestParseSortWrapper(t *testing.T) {
 			wantFound:      true,
 		},
 		{
-			name:           "case and surrounding whitespace",
-			query:          "  SORT_DESC \n (label_replace(up, \"dst\", \"$1\", \"src\", \"(.*)\"))  ",
+			name:           "surrounding whitespace",
+			query:          "  sort_desc \n (label_replace(up, \"dst\", \"$1\", \"src\", \"(.*)\"))  ",
 			wantInner:      "label_replace(up, \"dst\", \"$1\", \"src\", \"(.*)\")",
 			wantDescending: true,
 			wantFound:      true,
@@ -53,6 +53,13 @@ func TestParseSortWrapper(t *testing.T) {
 			wantDescending: true,
 			wantFound:      true,
 		},
+		{
+			name:      "redundant parentheses",
+			query:     "((sort(((sort_desc((sum(up))))))))",
+			wantInner: "sum(up)",
+			wantFound: true,
+		},
+		{name: "function names are case-sensitive", query: "SORT(sum(up))"},
 		{name: "plain expression", query: "sum(up)"},
 		{name: "empty wrapper", query: "sort()"},
 		{name: "trailing expression", query: "sort(sum(up)) + 1"},
@@ -61,12 +68,12 @@ func TestParseSortWrapper(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, found := ParseSortWrapper(tt.query)
+			got, found := ParseSortWrapper(parseOrZero(tt.query))
 			if found != tt.wantFound {
 				t.Fatalf("found got %v want %v", found, tt.wantFound)
 			}
-			if got.InnerQuery != tt.wantInner {
-				t.Errorf("inner query got %q want %q", got.InnerQuery, tt.wantInner)
+			if got.Inner.String() != tt.wantInner {
+				t.Errorf("inner query got %q want %q", got.Inner.String(), tt.wantInner)
 			}
 			if got.Descending != tt.wantDescending {
 				t.Errorf("descending got %v want %v", got.Descending, tt.wantDescending)

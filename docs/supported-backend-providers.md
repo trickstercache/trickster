@@ -14,17 +14,26 @@ Trickster operates as a fully-featured and highly-customizable reverse proxy cac
 
 Trickster fully supports the [Prometheus HTTP API (v1)](https://prometheus.io/docs/prometheus/latest/querying/api/), including Prometheus 3.x features like native histograms and UTF-8 metric names. Specify `'prometheus'` as the Provider when configuring Trickster. See the [Prometheus Support Document](./prometheus.md) for more information.
 
+### <img src="./images/external/clickhouse_logo.png" width=24 /> ClickHouse
+
+Trickster supports accelerating ClickHouse time series over both HTTP and the ClickHouse native binary protocol (port 9000), and is tested against the Vertamedia and official Grafana ClickHouse (v4+) datasource plugins. Specify `'clickhouse'` as the Provider when configuring Trickster.
+
+See the [ClickHouse Support Document](./clickhouse.md) for more information.
+
 ### <img src="./images/external/influx_logo_60.png" width=24 /> InfluxDB
 
 Trickster supports InfluxDB 1.x, 2.x, and 3.x. Specify `'influxdb'` as the Provider when configuring Trickster.
 
 See the [InfluxDB Support Document](./influxdb.md) for more information.
 
-### <img src="./images/external/clickhouse_logo.png" width=24 /> ClickHouse
+### <img src="./images/external/druid-logo.svg" width=24 /> Apache Druid
 
-Trickster supports accelerating ClickHouse time series over both HTTP and the ClickHouse native binary protocol (port 9000), and is tested against the Vertamedia and official Grafana ClickHouse (v4+) datasource plugins. Specify `'clickhouse'` as the Provider when configuring Trickster.
+Trickster accelerates fixed-width native JSON `timeseries`, `groupBy`, and
+`topN` queries plus eligible `TIME_FLOOR` SQL queries, with safe Object Proxy
+Cache fallback for other read-query shapes. Specify `'druid'` as the Provider
+when configuring Trickster.
 
-See the [ClickHouse Support Document](./clickhouse.md) for more information.
+See the [Apache Druid Support Document](./druid.md) for more information.
 
 ### <img src="./images/external/graphite-logo.svg" width=24 /> Graphite
 

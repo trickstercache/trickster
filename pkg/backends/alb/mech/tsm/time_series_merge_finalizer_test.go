@@ -367,8 +367,8 @@ func TestServeStandardMergesThroughSortWrapper(t *testing.T) {
 	logger.SetLogger(testLogger)
 
 	const (
-		outerQuery = "sort_desc(count by (service) (requests))"
-		innerQuery = "count by (service) (requests)"
+		outerQuery = "sort_desc(count by (service) (requests) or vector(0))"
+		innerQuery = "count by (service) (requests) or vector(0)"
 	)
 	be := &prometheusSortBackend{Client: &prometheus.Client{}}
 	qr := &queryRecorder{}

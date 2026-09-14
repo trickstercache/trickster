@@ -127,7 +127,7 @@ func TestParseRankAggregation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, found := ParseRankAggregation(tt.query)
+			got, found := ParseRankAggregation(parseOrZero(tt.query))
 			if found != tt.wantFound {
 				t.Fatalf("found got %v want %v", found, tt.wantFound)
 			}
@@ -140,8 +140,8 @@ func TestParseRankAggregation(t *testing.T) {
 			if got.K != tt.wantK {
 				t.Errorf("k got %d want %d", got.K, tt.wantK)
 			}
-			if got.InnerQuery != tt.wantInner {
-				t.Errorf("inner query got %q want %q", got.InnerQuery, tt.wantInner)
+			if got.Inner.String() != tt.wantInner {
+				t.Errorf("inner query got %q want %q", got.Inner.String(), tt.wantInner)
 			}
 			if got.Grouping.Without != tt.wantWithout {
 				t.Errorf("without got %v want %v", got.Grouping.Without, tt.wantWithout)

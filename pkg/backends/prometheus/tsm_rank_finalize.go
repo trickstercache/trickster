@@ -130,28 +130,33 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 	if !ok || ds == nil {
 		return
 	}
-	if spec, found := promql.ParseLimitRatioAggregation(query); found {
+	expr, err := promql.Parse(query)
+	if err != nil {
+		return
+	}
+	if spec, found := promql.ParseLimitRatioAggregation(expr); found {
 		finalizeLimitRatio(ds, spec)
 		return
 	}
-	if spec, found := promql.ParseLimitKAggregation(query); found {
+	if spec, found := promql.ParseLimitKAggregation(expr); found {
 		finalizeLimitKAggregation(ds, spec)
 		return
 	}
-	if spec, found := promql.ParseQuantileAggregation(query); found {
+	if spec, found := promql.ParseQuantileAggregation(expr); found {
 		finalizeQuantileAggregation(ds, spec)
 		return
 	}
-	if spec, found := promql.ParseVarianceAggregation(query); found {
+	if spec, found := promql.ParseVarianceAggregation(expr); found {
 		finalizeVarianceAggregation(ds, spec)
 		return
 	}
-	if spec, found := promql.ParseRankAggregation(query); found {
+	if spec, found := promql.ParseRankAggregation(expr); found {
 		finalizeRankAggregation(ds, spec)
 		return
 	}
-	if spec, found := promql.ParseSortWrapper(query); found {
-		if _, aggregationFound := promql.OuterAggregator(spec.InnerQuery); aggregationFound {
+	if spec, found := promql.ParseSortWrapper(expr); found {
+		_, _, aggregationFound := promql.CompleteOuterAggregation(spec.Inner)
+		if aggregationFound || zeroFallbackMergesBySum(spec.Inner) {
 			finalizeSortWrapper(ds, spec.Descending)
 		}
 	}

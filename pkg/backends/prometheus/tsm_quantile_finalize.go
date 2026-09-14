@@ -73,7 +73,7 @@ func finalizeQuantileAggregation(ds *dataset.DataSet, spec promql.QuantileAggreg
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
-	if dataSetContainsFinalizerInput(ds, spec.InnerQuery) {
+	if dataSetContainsFinalizerInput(ds, spec.Inner) {
 		if math.IsNaN(spec.Phi) || spec.Phi < 0 || spec.Phi > 1 {
 			appendWarningOnce(ds, invalidQuantileParameterWarning)
 		}

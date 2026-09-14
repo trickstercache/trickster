@@ -19,6 +19,7 @@ package registry
 import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
+	"github.com/trickstercache/trickster/v2/pkg/backends/druid"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/mysql"
@@ -35,6 +36,7 @@ func SupportedProviders() types.Lookup {
 	return types.Lookup{
 		providers.ALB:                    alb.NewClient,
 		providers.ClickHouse:             clickhouse.NewClient,
+		providers.Druid:                  druid.NewClient,
 		providers.Graphite:               graphite.NewClient,
 		providers.InfluxDB:               influxdb.NewClient,
 		providers.MySQL:                  mysql.NewClient,

@@ -430,18 +430,21 @@ get-msgpack:
 developer-start:
 	@cd docs/developer/environment && docker compose up -d
 	@echo "Waiting for Redis to be ready..."
-	@cd docs/developer/environment && if ! timeout 30 sh -c \
-		'until response=$$(docker compose exec -T redis redis-cli ping 2>&1); do \
-			echo "PING -> $${response:-no response}"; \
-			sleep 1; \
-		done; \
-		echo "PING -> $$response"'; then \
-		echo "WARNING: timed out waiting for Redis readiness; continuing anyway"; \
-	fi
+	@cd docs/developer/environment && attempts=0; \
+	while [ $$attempts -lt 30 ]; do \
+		response=$$(docker compose exec -T redis redis-cli ping 2>&1 || true); \
+		echo "PING -> $${response:-no response}"; \
+		case "$$response" in *PONG*) exit 0;; esac; \
+		attempts=$$((attempts + 1)); \
+		sleep 1; \
+	done; \
+	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	@echo "Waiting for Graphite to be ready..."
 	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
+	@echo "Waiting for Druid to be ready..."
+	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8888/status/health >/dev/null 2>&1; do sleep 2; done'
 	
 .PHONY: developer-stop
 developer-stop:
@@ -511,8 +514,7 @@ developer-delete:
 	@cd docs/developer/environment && docker compose down -v --remove-orphans
 
 .PHONY: developer-recreate
-developer-recreate: developer-delete
-	@cd docs/developer/environment && docker compose up -d
+developer-recreate: developer-delete developer-start
 
 .PHONY: dev-certs
 dev-certs:
@@ -524,12 +526,13 @@ h3-client:
 
 .PHONY: developer-seed-data
 developer-seed-data:
-	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql
+	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql druid
 	@cd docs/developer/environment && docker compose run --rm seed_data_fetch
 	@cd docs/developer/environment && \
 	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
 	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
-	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; exit $$rc
+	( cd docs/developer/environment && docker compose run --rm --no-deps druid_seed ) & pid3=$$!; \
+	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; wait $$pid3 || rc=1; exit $$rc
 	@cd docs/developer/environment && docker compose stop graphite_generator && \
 		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
 		docker compose up -d graphite_generator

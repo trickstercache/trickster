@@ -133,16 +133,16 @@ func TestParseLimitKAggregation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, found := ParseLimitKAggregation(tt.query)
+			got, found := ParseLimitKAggregation(parseOrZero(tt.query))
 			if found != tt.wantFound {
 				t.Fatalf("found got %t want %t: %#v", found, tt.wantFound, got)
 			}
 			if !found {
 				return
 			}
-			if got.K != tt.wantK || got.InnerQuery != tt.wantInner ||
+			if got.K != tt.wantK || got.Inner.String() != tt.wantInner ||
 				got.AggregationQuery != tt.wantQuery {
-				t.Errorf("got k=%d inner=%q aggregation=%q", got.K, got.InnerQuery, got.AggregationQuery)
+				t.Errorf("got k=%d inner=%q aggregation=%q", got.K, got.Inner.String(), got.AggregationQuery)
 			}
 			if got.Grouping.Without != tt.wantGroup.Without ||
 				!slicesEqual(got.Grouping.Labels, tt.wantGroup.Labels) {

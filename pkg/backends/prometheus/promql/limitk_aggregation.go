@@ -30,7 +30,7 @@ const prometheusLimitKMaxInt64 = 9223372036854774784.0
 // wrapped in sort or sort_desc.
 type LimitKAggregation struct {
 	K                int64
-	InnerQuery       string
+	Inner            Expr
 	AggregationQuery string
 	Grouping         AggregationGrouping
 	SortSet          bool
@@ -40,20 +40,20 @@ type LimitKAggregation struct {
 // ParseLimitKAggregation parses an outer limitk with a non-negative literal
 // scalar parameter. Prometheus truncates positive fractional parameters when
 // converting them to int64, after separately rejecting NaN and overflow.
-func ParseLimitKAggregation(query string) (LimitKAggregation, bool) {
-	spec, found := parseParameterizedAggregation(query, aggregation.LimitK)
+func ParseLimitKAggregation(e Expr) (LimitKAggregation, bool) {
+	spec, found := parseOuterAggregation(e, aggregation.LimitK)
 	if !found {
 		return LimitKAggregation{}, false
 	}
-	parameter, ok := parsePromQLScalarLiteral(spec.Parameter)
+	parameter, ok := scalarLiteral(spec.Parameter)
 	if !ok || math.IsNaN(parameter) || math.IsInf(parameter, 0) || parameter < 0 ||
 		parameter >= prometheusLimitKMaxInt64 {
 		return LimitKAggregation{}, false
 	}
 	return LimitKAggregation{
 		K:                int64(parameter),
-		InnerQuery:       spec.InnerQuery,
-		AggregationQuery: spec.AggregationQuery,
+		Inner:            spec.Inner,
+		AggregationQuery: spec.Aggregation.String(),
 		Grouping:         spec.Grouping,
 		SortSet:          spec.SortSet,
 		SortDescending:   spec.SortDescending,
