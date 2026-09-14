@@ -1,4 +1,9 @@
-CREATE TABLE IF NOT EXISTS trips
+-- Dropping first lets schema changes (renamed columns, enum members) take
+-- effect on an existing developer environment; every seed run reloads all rows.
+DROP TABLE IF EXISTS trips_seed;
+DROP TABLE IF EXISTS trips;
+
+CREATE TABLE trips
 (
     `trip_id` UInt32,
     `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
@@ -16,7 +21,7 @@ CREATE TABLE IF NOT EXISTS trips
     `trip_distance` Float64,
     `fare_amount` Float32,
     `extra` Float32,
-    `mta_tax` Float32,
+    `transit_tax` Float32,
     `tip_amount` Float32,
     `tolls_amount` Float32,
     `ehail_fee` Float32,
@@ -26,31 +31,28 @@ CREATE TABLE IF NOT EXISTS trips
     `trip_type` UInt8,
     `pickup` FixedString(25),
     `dropoff` FixedString(25),
-    `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
-    `pickup_nyct2010_gid` Int8,
-    `pickup_ctlabel` Float32,
-    `pickup_borocode` Int8,
-    `pickup_ct2010` String,
-    `pickup_boroct2010` String,
-    `pickup_cdeligibil` String,
-    `pickup_ntacode` FixedString(4),
-    `pickup_ntaname` String,
-    `pickup_puma` UInt16,
-    `dropoff_nyct2010_gid` UInt8,
-    `dropoff_ctlabel` Float32,
-    `dropoff_borocode` UInt8,
-    `dropoff_ct2010` String,
-    `dropoff_boroct2010` String,
-    `dropoff_cdeligibil` String,
-    `dropoff_ntacode` FixedString(4),
-    `dropoff_ntaname` String,
-    `dropoff_puma` UInt16
+    `cab_type` Enum8('orange' = 1, 'blue' = 2, 'purple' = 3),
+    `pickup_zone_gid` UInt8,
+    `pickup_tract_label` Float32,
+    `pickup_borough_code` Int8,
+    `pickup_borough_name` String,
+    `pickup_tract_code` String,
+    `pickup_district_class` String,
+    `pickup_neighborhood_code` FixedString(4),
+    `pickup_neighborhood_name` String,
+    `pickup_ward` UInt16,
+    `dropoff_zone_gid` UInt8,
+    `dropoff_tract_label` Float32,
+    `dropoff_borough_code` UInt8,
+    `dropoff_borough_name` String,
+    `dropoff_tract_code` String,
+    `dropoff_district_class` String,
+    `dropoff_neighborhood_code` FixedString(4),
+    `dropoff_neighborhood_name` String,
+    `dropoff_ward` UInt16
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 
-CREATE TABLE IF NOT EXISTS trips_seed AS trips;
-
-TRUNCATE TABLE trips;
-TRUNCATE TABLE trips_seed;
+CREATE TABLE trips_seed AS trips;

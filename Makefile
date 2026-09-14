@@ -179,6 +179,9 @@ LINT_FLAGS ?=
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+	@for m in hack/seedgen hack/druidseed; do \
+		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
+	done
 
 .PHONY: lint
 lint: check-imports spelling vulncheck gofix-diff golangci-lint
@@ -234,6 +237,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
+	@for m in hack/seedgen hack/druidseed; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -527,7 +531,7 @@ h3-client:
 .PHONY: developer-seed-data
 developer-seed-data:
 	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql druid
-	@cd docs/developer/environment && docker compose run --rm seed_data_fetch
+	@cd docs/developer/environment && docker compose run --rm seed_data_generate
 	@cd docs/developer/environment && \
 	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
 	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
@@ -536,6 +540,20 @@ developer-seed-data:
 	@cd docs/developer/environment && docker compose stop graphite_generator && \
 		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
 		docker compose up -d graphite_generator
+
+# regenerates the synthetic seed data to memory only and fails if its hash
+# differs from the one pinned in hack/seedgen; no network access is needed
+.PHONY: seed-verify
+seed-verify:
+	@cd hack/seedgen && $(GO) run . -verify-only
+
+# generates the synthetic seed data natively (no container) into the shared
+# seed-data directory the database seeders mount; SEED_PROFILE=small for a
+# tenth of the rows, SEED_FORCE=1 to overwrite a valid cached output
+.PHONY: seed-generate
+seed-generate:
+	@cd hack/seedgen && $(GO) run . -out ../../docs/developer/environment/docker-compose-data/seed-data \
+		$(if $(SEED_PROFILE),-profile $(SEED_PROFILE),) $(if $(SEED_FORCE),-force,)
 
 RUN_FLAGS ?=
 .PHONY: serve-dev

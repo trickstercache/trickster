@@ -12,6 +12,7 @@ prometheus-data/
 redis-data/
 trickster-data
 trips_*.gz
+seed-data.sha256
 __pycache__
 seed-window.env
 

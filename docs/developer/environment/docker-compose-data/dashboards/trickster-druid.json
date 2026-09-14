@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": "-- Grafana --",
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -12,41 +15,34 @@
       }
     ]
   },
-  "description": "NYC taxi trips seeded into Apache Druid with the same source-derived time shift used by ClickHouse and MySQL. Select either the direct or Trickster Druid datasource to compare responses.",
+  "description": "Synthetic Emberwick trips seeded into Apache Druid with the same source-derived time shift used by ClickHouse and MySQL. Select either the direct or Trickster Druid datasource to compare responses.",
   "editable": true,
-  "graphTooltip": 1,
-  "id": null,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
   "links": [],
   "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "title": "Trips Data",
+      "type": "row"
+    },
     {
       "datasource": {
         "type": "grafadruid-druid-datasource",
         "uid": "${datasource}"
       },
+      "description": "Fixed 5-minute buckets with a half-open time range, the delta-cache friendly pattern.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
           },
           "mappings": [],
           "thresholds": {
@@ -60,6 +56,39 @@
                 "value": 80
               }
             ]
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           }
         },
         "overrides": []
@@ -68,7 +97,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 1
       },
       "id": 1,
       "options": {
@@ -80,26 +109,29 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
-      "pluginVersion": "13.1.3",
       "targets": [
         {
+          "datasource": {
+            "type": "grafadruid-druid-datasource",
+            "uid": "${datasource}"
+          },
           "builder": {
             "query": "SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, COUNT(*) AS trips FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1",
             "queryType": "sql"
           },
-          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, COUNT(*) AS trips FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
-          "refId": "A",
           "settings": {
             "contextParameters": [],
             "format": "wide"
-          }
+          },
+          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, COUNT(*) AS trips FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
+          "refId": "A"
         }
       ],
-      "title": "Trips over time (5m buckets)",
+      "title": "# Trips Over Time (5m buckets)",
       "type": "timeseries"
     },
     {
@@ -107,30 +139,11 @@
         "type": "grafadruid-druid-datasource",
         "uid": "${datasource}"
       },
+      "description": "Grafana-driven dynamic bucket size via $__interval, with a 1m minimum interval on the panel.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
           },
           "mappings": [],
           "thresholds": {
@@ -144,6 +157,39 @@
                 "value": 80
               }
             ]
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           }
         },
         "overrides": []
@@ -152,7 +198,7 @@
         "h": 10,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 1
       },
       "id": 2,
       "options": {
@@ -164,57 +210,42 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
-      "pluginVersion": "13.1.3",
       "targets": [
         {
+          "datasource": {
+            "type": "grafadruid-druid-datasource",
+            "uid": "${datasource}"
+          },
           "builder": {
-            "query": "SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, AVG(fare_amount) AS avg_fare, AVG(tip_amount) AS avg_tip, AVG(total_amount) AS avg_total FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1",
+            "query": "SELECT MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / ${__interval_ms}) * ${__interval_ms} AS BIGINT)) AS bucket, COUNT(*) AS trips FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1",
             "queryType": "sql"
           },
-          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, AVG(fare_amount) AS avg_fare, AVG(tip_amount) AS avg_tip, AVG(total_amount) AS avg_total FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
-          "refId": "A",
           "settings": {
             "contextParameters": [],
             "format": "wide"
-          }
+          },
+          "expr": "{\"builder\":{\"query\":\"SELECT MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / ${__interval_ms}) * ${__interval_ms} AS BIGINT)) AS bucket, COUNT(*) AS trips FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
+          "refId": "A"
         }
       ],
-      "title": "Fare metrics (15m buckets)",
-      "type": "timeseries"
+      "title": "# Trips Over Time ($__interval)",
+      "type": "timeseries",
+      "interval": "1m"
     },
     {
       "datasource": {
         "type": "grafadruid-druid-datasource",
         "uid": "${datasource}"
       },
+      "description": "Multiple numeric value columns in a single time-series result.",
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisPlacement": "auto",
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            }
           },
           "mappings": [],
           "thresholds": {
@@ -228,7 +259,41 @@
                 "value": 80
               }
             ]
-          }
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "unit": "currencyUSD"
         },
         "overrides": []
       },
@@ -236,7 +301,7 @@
         "h": 10,
         "w": 12,
         "x": 0,
-        "y": 10
+        "y": 11
       },
       "id": 3,
       "options": {
@@ -248,26 +313,29 @@
         },
         "tooltip": {
           "hideZeros": false,
-          "mode": "single",
+          "mode": "multi",
           "sort": "none"
         }
       },
-      "pluginVersion": "13.1.3",
       "targets": [
         {
+          "datasource": {
+            "type": "grafadruid-druid-datasource",
+            "uid": "${datasource}"
+          },
           "builder": {
-            "query": "SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, cab_type, COUNT(*) AS trips FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1, 2 ORDER BY 1, 2",
+            "query": "SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, AVG(fare_amount) AS avg_fare, AVG(tip_amount) AS avg_tip, AVG(total_amount) AS avg_total FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1",
             "queryType": "sql"
           },
-          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, cab_type, COUNT(*) AS trips FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1, 2 ORDER BY 1, 2\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
-          "refId": "A",
           "settings": {
             "contextParameters": [],
             "format": "wide"
-          }
+          },
+          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, AVG(fare_amount) AS avg_fare, AVG(tip_amount) AS avg_tip, AVG(total_amount) AS avg_total FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
+          "refId": "A"
         }
       ],
-      "title": "Trips by cab type (15m buckets)",
+      "title": "Fare Metrics (15m buckets)",
       "type": "timeseries"
     },
     {
@@ -275,11 +343,158 @@
         "type": "grafadruid-druid-datasource",
         "uid": "${datasource}"
       },
+      "description": "A string dimension (cab_type) grouped with time to produce multiple series from one query.",
       "fieldConfig": {
         "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
           "custom": {
-            "align": "auto",
-            "filterable": true
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/orange/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/blue/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/purple/"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 11
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafadruid-druid-datasource",
+            "uid": "${datasource}"
+          },
+          "builder": {
+            "query": "SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, cab_type, COUNT(*) AS trips FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1, 2 ORDER BY 1, 2",
+            "queryType": "sql"
+          },
+          "settings": {
+            "contextParameters": [],
+            "format": "wide"
+          },
+          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT15M') AS bucket, cab_type, COUNT(*) AS trips FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1, 2 ORDER BY 1, 2\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Trips by Cab Type (15m buckets)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafadruid-druid-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Table-format query over the dashboard time range; not a time series.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
           },
           "mappings": [],
           "thresholds": {
@@ -301,33 +516,391 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 20
+        "y": 21
       },
-      "id": 4,
+      "id": 5,
       "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
         "showHeader": true
       },
-      "pluginVersion": "13.1.3",
       "targets": [
         {
+          "datasource": {
+            "type": "grafadruid-druid-datasource",
+            "uid": "${datasource}"
+          },
           "builder": {
-            "query": "SELECT TIME_FLOOR(__time, 'P1D') AS bucket, pickup_ntaname AS neighborhood, COUNT(*) AS trips, AVG(trip_distance) AS avg_distance_mi, AVG(total_amount) AS avg_total_usd FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1, 2 ORDER BY trips DESC",
+            "query": "SELECT pickup_neighborhood_name AS neighborhood, COUNT(*) AS trips, ROUND(AVG(trip_distance), 2) AS avg_distance_mi, ROUND(AVG(total_amount), 2) AS avg_total_usd FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY trips DESC LIMIT 10",
             "queryType": "sql"
           },
-          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'P1D') AS bucket, pickup_ntaname AS neighborhood, COUNT(*) AS trips, AVG(trip_distance) AS avg_distance_mi, AVG(total_amount) AS avg_total_usd FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1, 2 ORDER BY trips DESC\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"long\"}}",
-          "refId": "A",
           "settings": {
             "contextParameters": [],
             "format": "long"
-          }
+          },
+          "expr": "{\"builder\":{\"query\":\"SELECT pickup_neighborhood_name AS neighborhood, COUNT(*) AS trips, ROUND(AVG(trip_distance), 2) AS avg_distance_mi, ROUND(AVG(total_amount), 2) AS avg_total_usd FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY trips DESC LIMIT 10\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"long\"}}",
+          "refId": "A"
         }
       ],
-      "title": "Pickup neighborhoods",
+      "title": "Top Pickup Neighborhoods",
       "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafadruid-druid-datasource",
+        "uid": "${datasource}"
+      },
+      "description": "Share of trips per bucket not coded as cash; a conditional aggregate in one query.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green"
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafadruid-druid-datasource",
+            "uid": "${datasource}"
+          },
+          "builder": {
+            "query": "SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, 100.0 * SUM(CASE WHEN payment_type <> 'CSH' THEN 1 ELSE 0 END) / COUNT(*) AS card_use_rate FROM \"trips\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1",
+            "queryType": "sql"
+          },
+          "settings": {
+            "contextParameters": [],
+            "format": "wide"
+          },
+          "expr": "{\"builder\":{\"query\":\"SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, 100.0 * SUM(CASE WHEN payment_type <> 'CSH' THEN 1 ELSE 0 END) / COUNT(*) AS card_use_rate FROM \\\"trips\\\" WHERE __time >= MILLIS_TO_TIMESTAMP(${__from}) AND __time < MILLIS_TO_TIMESTAMP(${__to}) GROUP BY 1 ORDER BY 1\",\"queryType\":\"sql\"},\"settings\":{\"contextParameters\":[],\"format\":\"wide\"}}",
+          "refId": "A"
+        }
+      ],
+      "title": "% Trips Paid w/ Credit Card (5m buckets)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 101,
+      "title": "Trickster Performance",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prom_direct"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prom_direct"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(trickster_proxy_request_duration_seconds_bucket{backend_name=\"druid1\",provider=\"druid\",path=\"sqlquery\"}[$__rate_interval])))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Druid Request Duration (p95)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prom_direct"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prom_direct"
+          },
+          "editorMode": "code",
+          "expr": "sum by (cache_status) (rate(trickster_proxy_points_total{backend_name=\"druid1\",provider=\"druid\",path=\"sqlquery\"}[$__rate_interval]))",
+          "legendFormat": "{{cache_status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Returned Elements",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prom_direct"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prom_direct"
+          },
+          "editorMode": "code",
+          "expr": "sum by (operation, status) (rate(trickster_cache_operation_objects_total{cache_name=\"mem1\"}[$__rate_interval]))",
+          "legendFormat": "{{operation}} / {{status}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Operations",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prom_direct"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "id": 10,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prom_direct"
+          },
+          "editorMode": "code",
+          "expr": "100 * trickster_cache_usage_bytes{cache_name=\"mem1\"} / trickster_cache_max_usage_bytes{cache_name=\"mem1\"}",
+          "legendFormat": "{{cache_name}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Storage Utilization",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ds_prom_direct"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 60
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ds_prom_direct"
+          },
+          "editorMode": "code",
+          "expr": "sum by (reason) (rate(trickster_cache_events_total{cache_name=\"mem1\",event=\"eviction\"}[$__rate_interval]))",
+          "legendFormat": "{{reason}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Evictions",
+      "type": "timeseries"
     }
   ],
   "preload": false,
-  "refresh": "30s",
+  "refresh": "5s",
   "schemaVersion": 41,
   "tags": [
     "trickster",
@@ -341,6 +914,7 @@
           "text": "druid-direct",
           "value": "ds_druid_direct"
         },
+        "description": "",
         "name": "datasource",
         "options": [],
         "query": "grafadruid-druid-datasource",
@@ -354,8 +928,9 @@
     "from": "now-7d",
     "to": "now"
   },
-  "timezone": "browser",
+  "timepicker": {},
+  "timezone": "utc",
   "title": "Apache Druid",
   "uid": "trickster-druid",
-  "version": 1
+  "version": 2
 }

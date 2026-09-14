@@ -17,6 +17,7 @@
 package model
 
 import (
+	"bytes"
 	"io"
 	"net/http"
 	"strconv"
@@ -56,12 +57,17 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 		columns[i] = server.Column{Name: f.Name, Type: f.SDataType}
 	}
 	count := 0
+	valueIndexes := make(map[*dataset.Series]map[string]int, len(ds.Results[0].SeriesList))
 	for _, series := range ds.Results[0].SeriesList {
-		valueIndexes := make(map[string]int, len(series.Header.ValueFieldsList))
+		idx := make(map[string]int, len(series.Header.ValueFieldsList))
 		for i, f := range series.Header.ValueFieldsList {
-			valueIndexes[f.Name] = i
+			idx[f.Name] = i
 		}
-		for _, point := range series.Points {
+		valueIndexes[series] = idx
+	}
+	for _, row := range timeOrderedRows(ds.Results[0]) {
+		series, point := row.series, row.point
+		{
 			for i, f := range fields {
 				var value any
 				switch f.Role {
@@ -69,8 +75,11 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 					value = formatEpochForType(point.Epoch, f)
 				case timeseries.RoleTag:
 					value = series.Header.Tags[f.Name]
+					if value == nullToken && strings.HasPrefix(f.SDataType, "Nullable(") {
+						value = nil
+					}
 				case timeseries.RoleValue:
-					index, ok := valueIndexes[f.Name]
+					index, ok := valueIndexes[series][f.Name]
 					if !ok || index >= len(point.Values) {
 						return timeseries.ErrInvalidBody
 					}
@@ -83,7 +92,14 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 			count++
 		}
 	}
-	return server.EncodeNativeFormat(w, columns, values, uint64(count), revision)
+	// encode to memory first so a column that cannot be encoded yields an
+	// error instead of a truncated body behind an already-sent status
+	var buf bytes.Buffer
+	if err := server.EncodeNativeFormat(&buf, columns, values, uint64(count), revision); err != nil {
+		return err
+	}
+	_, err := w.Write(buf.Bytes())
+	return err
 }
 
 func formatEpochForType(ep epoch.Epoch, tfd timeseries.FieldDefinition) string {

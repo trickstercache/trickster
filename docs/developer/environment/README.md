@@ -155,6 +155,37 @@ registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison.
 
+## Seed data
+
+ClickHouse, MySQL, and Druid are all loaded with the same synthetic `trips`
+dataset: about 1.9 million cab rides in the fictional city of Emberwick over a
+12-week window, with the same 45-column schema, label cardinality, and
+daily/weekly usage curve as a real ride dataset. Nothing is downloaded: the
+`seed_data_generate` service runs `hack/seedgen` with `go run` on the
+`golang:1.27-alpine` image, with networking disabled, and writes
+`docker-compose-data/seed-data/trips_1.gz`, `trips_2.gz`, and
+`seed-window.env`. Every value is a pure function of the row number, so the
+uncompressed output is byte-identical on every machine and every run; the
+generator verifies its output against a SHA-256 pinned in `hack/seedgen/main.go`
+and fails if it drifts. `make seed-verify` runs that check without writing
+files, and CI runs it with `GOPROXY=off`.
+
+The timestamps in the files are fixed (12 weeks starting 2024-01-01). Each
+database loader shifts them so the midpoint of the window lands on the seed
+instant, giving six weeks of past data and six weeks of future data so live
+dashboards keep showing fresh points as time passes.
+
+To change the names, boroughs, cab colours, or shares, edit
+`hack/seedgen/theme.go`; to change the daily or weekly curve, edit
+`hack/seedgen/calendar.go`. After any intentional change, run
+`cd hack/seedgen && go run . -verify-only` to print the new hash, pin it in
+`main.go`, and run `go test ./...` there. `SEED_PROFILE=small` (or
+`-profile small`) produces a tenth of the rows for quick experiments and is
+what the CI integration job uses; pass `-force` to regenerate over a cached
+output. `make seed-generate` (with optional `SEED_PROFILE=small` and
+`SEED_FORCE=1`) runs the generator natively into the same directory without
+a container. See `hack/seedgen/README.md`.
+
 ## InfluxDB Details
 
 For InfluxDB 3.x, Trickster also exposes an Apache Arrow Flight SQL (gRPC)
@@ -203,13 +234,14 @@ port `8888`. Trickster registers the `druid1` backend and exposes it at
 `druid-trickster` datasources for origin-vs-cache comparison on the dashboard at
 <http://127.0.0.1:3000/d/trickster-druid/apache-druid>.
 
-Run `make developer-seed-data` to load the shared NYC taxi `trips` data through
-Druid's native batch-ingestion API. The Druid seeder uses the same source files
-and timestamp shift as the ClickHouse and MySQL seeders, then verifies the row
-count and shifted minimum and maximum timestamps through Druid SQL. Before
-loading, it marks any segments from the previous moving seed window unused so
-repeated runs do not accumulate stale rows. It runs in parallel with those two
-database seeders after the shared download step.
+Run `make developer-seed-data` to load the shared synthetic `trips` data
+through Druid's native batch-ingestion API. The Druid seeder
+(`hack/druidseed`, run with `go run` by the `druid_seed` service) uses the same
+generated files and timestamp shift as the ClickHouse and MySQL seeders, then
+verifies the row count and shifted minimum and maximum timestamps through
+Druid SQL. Before loading, it marks any segments from the previous moving seed
+window unused so repeated runs do not accumulate stale rows. It runs in
+parallel with those two database seeders after the shared generation step.
 
 The published Druid image contains the nano service scripts but not the Perl
 runtime used by its bundled supervisor. `druid-config/start-nano.sh` launches
@@ -219,10 +251,10 @@ Manager processes with Bash inside the one development container.
 ## MySQL Details
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
-with the same auto-phased NYC taxi `trips` dataset used by ClickHouse. The
-seeder shares the ClickHouse seeder's download cache
-(`docker-compose-data/clickhouse-config/seeding/data`), so the source files are
-only downloaded once regardless of which seeder runs first.
+with the same auto-phased synthetic `trips` dataset used by ClickHouse and
+Druid. All three seeders read the shared generated files in
+`docker-compose-data/seed-data`, so the data is generated once regardless of
+which seeder runs first (see [Seed data](#seed-data)).
 
 For the supported production configuration, security, SQL, caching, routing,
 and operations contract, see the [MySQL Provider Guide](../../mysql.md).
@@ -238,20 +270,18 @@ and operations contract, see the [MySQL Provider Guide](../../mysql.md).
     (read-only)
   * `grafana_ro` / `trickster-dev-grafana` — Grafana direct access (read-only)
 
-The shared fetch step scans the source files for their actual pickup/dropoff
-bounds and derives one seconds-level shift that places the pickup midpoint at
-the seed instant. MySQL and ClickHouse apply that exact shift to every pickup
-and dropoff datetime and regenerate the related date columns; Druid applies it
-to the primary `__time` timestamp. This preserves trip durations and
-partition/date relationships in the relational copies while placing
-approximately half of the pickup distribution before and half after the seed
-instant. To re-seed (for example, after the data ages out of range), run
-`make developer-seed-data`, which first populates the shared download cache
-via the `seed_data_fetch` service and then reloads ClickHouse, MySQL, and Druid
-in parallel. The MySQL server and Grafana data-source sessions both
-run in UTC. Every seeder validates row count and shifted timestamp bounds; the
-relational seeders additionally validate date consistency and the database's
-expected query keys.
+The generation step records the dataset's pickup/dropoff bounds and derives
+one seconds-level shift that places the pickup midpoint at the seed instant.
+MySQL and ClickHouse apply that exact shift to every pickup and dropoff
+datetime and regenerate the related date columns; Druid applies it to the
+primary `__time` timestamp. This preserves trip durations and partition/date
+relationships in the relational copies while placing approximately half of the
+pickup distribution before and half after the seed instant. To re-seed (for
+example, after the data ages out of range), run `make developer-seed-data`,
+which first runs the `seed_data_generate` service and then reloads ClickHouse,
+MySQL, and Druid in parallel. A Trickster started before the re-seed still
+holds the previous timeseries in its memory cache, so restart `make serve-dev`
+afterwards (or compare against a `-direct` datasource) to see the new data.
 
 The provisioned Grafana MySQL dashboard is at
 <http://127.0.0.1:3000/d/trickster-mysql/mysql>. Its Data Source variable can

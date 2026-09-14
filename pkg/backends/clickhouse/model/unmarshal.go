@@ -70,6 +70,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	if err != nil {
 		return nil, err
 	}
+	unescapeRows(rows)
 	// for ClickHouse TSV responses, the first 2 rows are annotation rows that
 	// describe the data fields and their types, while the fourth row is
 	// the standard Header Names row.
@@ -163,11 +164,26 @@ func stripSize(input string) string {
 	return input
 }
 
-// typeToFieldDataType is the DataTypeParserFunc passed to the Parser
+// unwrapColumnType strips Nullable(...) and LowCardinality(...) wrappers,
+// which change the encoding but not the value type.
+func unwrapColumnType(input string) string {
+	input = strings.TrimSpace(input)
+	for _, wrapper := range []string{"Nullable(", "LowCardinality("} {
+		if strings.HasPrefix(input, wrapper) && strings.HasSuffix(input, ")") {
+			return unwrapColumnType(input[len(wrapper) : len(input)-1])
+		}
+	}
+	return input
+}
+
+// typeToFieldDataType is the DataTypeParserFunc passed to the Parser. Wide
+// integers, network, enum and fixed-width text types travel as text so the
+// Native encoder can rebuild them exactly.
 func typeToFieldDataType(input string) timeseries.FieldDataType {
-	input = stripSize(input)
+	input = stripSize(unwrapColumnType(input))
 	switch input {
-	case "String", "UUID", "FixedString":
+	case "String", "UUID", "FixedString", "Enum8", "Enum16", "IPv4", "IPv6",
+		"Int128", "Int256", "UInt128", "UInt256":
 		return timeseries.String
 	case "Int8", "Int16", "Int32", "Int64":
 		return timeseries.Int64
@@ -175,9 +191,11 @@ func typeToFieldDataType(input string) timeseries.FieldDataType {
 		return timeseries.Uint64
 	case "Float32", "Float64", "Decimal", "Decimal32", "Decimal64", "Decimal128", "Decimal256":
 		return timeseries.Float64
+	case "Bool":
+		return timeseries.Bool
 	case "DateTime", "DateTime64":
 		return timeseries.DateTimeSQL
-	case "Date":
+	case "Date", "Date32":
 		return timeseries.DateSQL
 	case "Nothing":
 		return timeseries.Null
@@ -267,4 +285,84 @@ func parseClickHouseTimestamp(_, input string) (time.Time, error) {
 		return time.Parse(timeconv.SQLDateTimeSubSec9Layout, input)
 	}
 	return time.Parse(timeconv.SQLDateTimeLayout, input)
+}
+
+// unescapeRows decodes ClickHouse TSV escapes in place. The type row needs
+// it as much as the data (Enum declarations carry quotes), and the NULL
+// literal \N is left intact for the value parser.
+func unescapeRows(rows [][]string) {
+	for _, row := range rows {
+		for i, cell := range row {
+			if strings.IndexByte(cell, '\\') >= 0 {
+				row[i] = unescapeTSV(cell)
+			}
+		}
+	}
+}
+
+func unescapeTSV(s string) string {
+	if s == nullToken {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c != '\\' || i+1 >= len(s) {
+			b.WriteByte(c)
+			continue
+		}
+		i++
+		switch s[i] {
+		case 'b':
+			b.WriteByte('\b')
+		case 'f':
+			b.WriteByte('\f')
+		case 'r':
+			b.WriteByte('\r')
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case '0':
+			b.WriteByte(0)
+		case '\'', '\\':
+			b.WriteByte(s[i])
+		default:
+			b.WriteByte('\\')
+			b.WriteByte(s[i])
+		}
+	}
+	return b.String()
+}
+
+// escapeTSV applies ClickHouse's TSV escaping so values round-trip exactly.
+func escapeTSV(s string) string {
+	if strings.IndexFunc(s, func(r rune) bool { return r < ' ' || r == '\\' || r == '\'' }) < 0 {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 4)
+	for i := range len(s) {
+		switch c := s[i]; c {
+		case '\b':
+			b.WriteString("\\b")
+		case '\f':
+			b.WriteString("\\f")
+		case '\r':
+			b.WriteString("\\r")
+		case '\n':
+			b.WriteString("\\n")
+		case '\t':
+			b.WriteString("\\t")
+		case 0:
+			b.WriteString("\\0")
+		case '\'', '\\':
+			b.WriteByte('\\')
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }

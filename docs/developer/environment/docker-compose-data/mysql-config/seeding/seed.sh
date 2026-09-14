@@ -18,13 +18,12 @@
 
 # seed.sh (MySQL)
 #
-# This loads the same 2 large files of NYC taxi data used by the ClickHouse
-# seeder into the local MySQL database. The download cache directory is shared
-# with the ClickHouse seeder (mounted at /seeding/data), so whichever seeder
-# runs first downloads the files and the other reuses them. During loading,
-# all pickup and dropoff dates are shifted by the one offset derived from the
-# source dataset's actual pickup bounds. The source midpoint lands on the seed
-# instant, preserving trip durations and date/datetime relationships while
+# This loads the same two generated trips files used by the ClickHouse seeder
+# into the local MySQL database. The shared seed-data directory is mounted at
+# /seeding/data and is populated by the seed_data_generate service. During
+# loading, all pickup and dropoff dates are shifted by the one offset derived
+# from the generated dataset's pickup bounds. The source midpoint lands on the
+# seed instant, preserving trip durations and date/datetime relationships while
 # placing approximately half of the distribution on either side of seed time.
 #
 # Every run of the script will truncate the trips table and re-seed.
@@ -52,7 +51,7 @@ load_seed_metadata() {
     gzip -t "$FILE1"
     gzip -t "$FILE2"
     if [ ! -s "$SEED_METADATA" ]; then
-        echo "seed metadata is missing; run the seed_data_fetch service first"
+        echo "seed metadata is missing; run the seed_data_generate service first"
         exit 1
     fi
     # The metadata is generated from integers only by the shared fetcher.
@@ -87,13 +86,13 @@ load_file_transform_to_mysql() {
         (trip_id, vendor_id, @pickup_date, @pickup_datetime,
          @dropoff_date, @dropoff_datetime, store_and_fwd_flag, rate_code_id,
          pickup_longitude, pickup_latitude, dropoff_longitude, dropoff_latitude,
-         passenger_count, trip_distance, fare_amount, extra, mta_tax, tip_amount,
+         passenger_count, trip_distance, fare_amount, extra, transit_tax, tip_amount,
          tolls_amount, ehail_fee, improvement_surcharge, total_amount, payment_type,
-         trip_type, pickup, dropoff, cab_type, pickup_nyct2010_gid, pickup_ctlabel,
-         pickup_borocode, pickup_ct2010, pickup_boroct2010, pickup_cdeligibil,
-         pickup_ntacode, pickup_ntaname, pickup_puma, dropoff_nyct2010_gid,
-         dropoff_ctlabel, dropoff_borocode, dropoff_ct2010, dropoff_boroct2010,
-         dropoff_cdeligibil, dropoff_ntacode, dropoff_ntaname, dropoff_puma)
+         trip_type, pickup, dropoff, cab_type, pickup_zone_gid, pickup_tract_label,
+         pickup_borough_code, pickup_borough_name, pickup_tract_code, pickup_district_class,
+         pickup_neighborhood_code, pickup_neighborhood_name, pickup_ward, dropoff_zone_gid,
+         dropoff_tract_label, dropoff_borough_code, dropoff_borough_name, dropoff_tract_code,
+         dropoff_district_class, dropoff_neighborhood_code, dropoff_neighborhood_name, dropoff_ward)
         SET pickup_datetime = DATE_ADD(STR_TO_DATE(@pickup_datetime, '%Y-%m-%d %H:%i:%s'),
                                        INTERVAL $SHIFT_SECONDS SECOND),
             pickup_date = DATE(DATE_ADD(STR_TO_DATE(@pickup_datetime, '%Y-%m-%d %H:%i:%s'),

@@ -189,6 +189,16 @@ func normalizeColumnValue(value any, typ string) (any, error) {
 	if value == nil {
 		return nil, nil
 	}
+	// compound values that arrive as ClickHouse text literals (the TSV path)
+	// are parsed into the nested shapes the codecs below expect
+	if text, ok := value.(string); ok && (strings.HasPrefix(typ, "Array(") ||
+		strings.HasPrefix(typ, "Tuple(") || strings.HasPrefix(typ, "Map(")) {
+		parsed, err := ParseTextLiteral(text)
+		if err != nil {
+			return nil, err
+		}
+		value = parsed
+	}
 	if strings.HasPrefix(typ, "Array(") && strings.HasSuffix(typ, ")") {
 		items, ok := value.([]any)
 		if !ok {
@@ -202,6 +212,25 @@ func normalizeColumnValue(value any, typ string) (any, error) {
 				return nil, err
 			}
 			out[i] = normalized
+		}
+		return out, nil
+	}
+	if strings.HasPrefix(typ, "Map(") && strings.HasSuffix(typ, ")") {
+		items, ok := value.(map[string]any)
+		if !ok {
+			return value, nil
+		}
+		types := splitColumnTypes(typ[len("Map(") : len(typ)-1])
+		if len(types) != 2 {
+			return value, nil
+		}
+		out := make(map[string]any, len(items))
+		for k, item := range items {
+			normalized, err := normalizeColumnValue(item, types[1])
+			if err != nil {
+				return nil, err
+			}
+			out[k] = normalized
 		}
 		return out, nil
 	}

@@ -44,7 +44,7 @@ func TestClickHouseCacheMatrix(t *testing.T) {
 	// the delta cache proxies ranges ending before its retention window, which trails now, so
 	// the miss/partial-hit boundary is anchored to now rather than to the seeded data's midpoint
 	now := time.Now().Unix()
-	require.Less(t, now, end-step, "the seeded trips data has aged out; re-seed the ClickHouse fixture")
+	require.Less(t, now, end-step, "the seeded trips data has aged out; run `make developer-seed-data` to regenerate and reload it (no network needed)")
 	mid := max(now/step*step, start+step)
 	require.Less(t, mid, end)
 
