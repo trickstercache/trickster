@@ -37,6 +37,9 @@ type TimeRangeQuery struct {
 	Extent Extent `msg:"ex"`
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration `msg:"-"`
+	// PolicyStep optionally overrides Step for cache policies expressed in logical query points.
+	// It does not affect timestamp-grid operations such as extent normalization and gap detection.
+	PolicyStep time.Duration `msg:"-"`
 	// Phase is the bucket offset from the Unix epoch
 	Phase time.Duration `msg:"-"`
 	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
@@ -45,6 +48,8 @@ type TimeRangeQuery struct {
 	IsOffset bool `msg:"-"`
 	// StepNS is the nanosecond representation for Step, required for MsgPack
 	StepNS int64 `msg:"step"`
+	// PolicyStepNS is the nanosecond representation for PolicyStep, required for MsgPack.
+	PolicyStepNS int64 `msg:"policy_step"`
 	// BackfillTolerance can be updated to override the overall backfill tolerance per query
 	BackfillTolerance time.Duration `msg:"-"`
 	// RecordLimit is the LIMIT value of the query
@@ -76,8 +81,10 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	t := &TimeRangeQuery{
 		Statement:           trq.Statement,
 		Step:                trq.Step,
+		PolicyStep:          trq.PolicyStep,
 		Phase:               trq.Phase,
 		StepNS:              trq.StepNS,
+		PolicyStepNS:        trq.PolicyStepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:            trq.IsOffset,
 		TimestampDefinition: trq.TimestampDefinition,
@@ -107,6 +114,14 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	}
 
 	return t
+}
+
+// CachePolicyStep returns the duration used by point-based cache policies.
+func (trq *TimeRangeQuery) CachePolicyStep() time.Duration {
+	if trq.PolicyStep > 0 {
+		return trq.PolicyStep
+	}
+	return trq.Step
 }
 
 // NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
@@ -166,7 +181,7 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 	}
 
 	if points > 0 {
-		sd := time.Duration(points) * trq.Step
+		sd := time.Duration(points) * trq.CachePolicyStep()
 		if sd > def {
 			return sd
 		}
@@ -177,8 +192,8 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
-	size := len(trq.Statement) + 24 + 16 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + Phase=8
-		urls.Size(trq.TemplateURL) + 11 // FFwDisable=1 IsOffset=1 StepNS=8 CustomData=1
+	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
+		urls.Size(trq.TemplateURL) + 19 // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}

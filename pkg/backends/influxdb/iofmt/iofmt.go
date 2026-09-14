@@ -29,15 +29,19 @@ import (
 type Format byte
 
 const (
+	// must be in separate block for iota to reset to 0 for the remaining consts
 	Unknown Format = 0
+)
 
+const (
 	isInfluxql       Format = 1 << iota
 	isInfluxqlPost          // 2
 	isFlux                  // 4
 	isFluxInputJSON         // 8
 	isFluxOutputJSON        // 16
-	isV3SQL                 // 32
-	isV3InfluxQL            // 64
+	isPromRemoteRead        // 32
+	isV3SQL                 // 64
+	isV3InfluxQL            // 128
 
 	InfluxqlGet  = isInfluxql
 	InfluxqlPost = isInfluxql + isInfluxqlPost
@@ -48,15 +52,17 @@ const (
 	FluxRawJSON = isFlux + isFluxOutputJSON
 	FluxRawCsv  = isFlux
 
+	PromRemoteRead = isPromRemoteRead
+
 	V3SQL      = isV3SQL
 	V3InfluxQL = isV3InfluxQL
 )
 
 // V3 output format constants stored in RequestOptions.OutputFormat
 const (
-	V3OutputJSON  byte = 32
-	V3OutputJSONL byte = 33
-	V3OutputCSV   byte = 34
+	V3OutputJSON byte = byte(isV3SQL) + iota
+	V3OutputJSONL
+	V3OutputCSV
 )
 
 var ErrSupportedQueryLanguage = errors.New("unsupported query language")
@@ -75,6 +81,10 @@ func (f Format) IsFluxInputJSON() bool {
 
 func (f Format) IsFluxOutputJSON() bool {
 	return f&isFluxOutputJSON == isFluxOutputJSON
+}
+
+func (f Format) IsPromRemoteRead() bool {
+	return f&isPromRemoteRead == isPromRemoteRead
 }
 
 func (f Format) IsV3SQL() bool {

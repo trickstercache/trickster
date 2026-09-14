@@ -22,6 +22,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -105,8 +106,8 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 		case aggregation.StdDev, aggregation.StdVar, aggregation.Quantile,
 			aggregation.TopK, aggregation.BottomK, aggregation.LimitK,
 			aggregation.LimitRatio:
-			unsupportedWarning = `trickster: outer aggregator "` + agg + `" cannot be correctly ` +
-				`merged across fanout backends; results may be inaccurate`
+			unsupportedWarning = "trickster: outer aggregator " + strconv.Quote(agg) +
+				" cannot be correctly merged across fanout backends; results may be inaccurate"
 		}
 		if unsupportedWarning == "" {
 			unsupportedWarning = inputWarning
@@ -249,8 +250,8 @@ func shardInputWarning(operator string, input promql.Expr) string {
 			"cross-shard matching; results may be inaccurate"
 	}
 	if globalFunction, found := input.NonShardLocalFunction(); found {
-		return warningPrefix + `contains function "` + globalFunction +
-			`" that may require globally complete input; results may be inaccurate`
+		return warningPrefix + "contains function " + strconv.Quote(globalFunction) +
+			" that may require globally complete input; results may be inaccurate"
 	}
 	return ""
 }
@@ -276,8 +277,8 @@ func globalInnerMergeStrategy(operator string, inner promql.Expr) (int, string, 
 	case aggregation.Group:
 		return strategy, "", false
 	default:
-		return strategy, "trickster: " + operator + ` inner aggregator "` + innerAggregation +
-			`" cannot be correctly merged across fanout backends; results may be inaccurate`, false
+		return strategy, "trickster: " + operator + " inner aggregator " + strconv.Quote(innerAggregation) +
+			" cannot be correctly merged across fanout backends; results may be inaccurate", false
 	}
 }
 
@@ -406,8 +407,8 @@ func (c *Client) planLimitRatio(r *http.Request, query string,
 		case aggregation.Group:
 			// Deduplication unions the per-shard groups, whose values are all one.
 		default:
-			unsupportedWarning = `trickster: limit_ratio inner aggregator "` + agg +
-				`" cannot be correctly merged across fanout backends; results may be inaccurate`
+			unsupportedWarning = "trickster: limit_ratio inner aggregator " + strconv.Quote(agg) +
+				" cannot be correctly merged across fanout backends; results may be inaccurate"
 		}
 		if unsupportedWarning == "" {
 			unsupportedWarning = shardInputWarning(aggregation.LimitRatio, aggregationInput)

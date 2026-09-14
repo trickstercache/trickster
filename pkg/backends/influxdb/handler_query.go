@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -76,6 +77,9 @@ func isV3SelectQuery(r *http.Request) bool {
 func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
 ) {
+	if promremote.IsRequest(r) {
+		return promremote.ParseTimeRangeQuery(r)
+	}
 	f := iofmt.Detect(r)
 	switch {
 	case f.IsV3SQL():

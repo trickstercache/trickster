@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -43,6 +44,15 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 	return po.List{
+		{
+			Path:            promremote.Path,
+			HandlerName:     mnQuery,
+			Methods:         []string{http.MethodPost},
+			CacheKeyParams:  []string{"db", "rp", "u", "p"},
+			CacheKeyHeaders: []string{},
+			MatchTypeName:   matching.PathMatchNameExact,
+			MatchType:       matching.PathMatchTypeExact,
+		},
 		{
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,

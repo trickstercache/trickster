@@ -18,6 +18,7 @@ package influxdb
 
 import (
 	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -117,14 +118,28 @@ func TestMarshalTimeseries(t *testing.T) {
 		t.Fatalf("expected ErrBadRequest, got %v", err)
 	}
 
-	// OutputFormat with IsInfluxQL bit set routes to the influxql marshaler.
-	// That marshaler only accepts OutputFormat 0/1 for encoding, so an iofmt
-	// InfluxQL flag value exercises the routing branch (and surfaces its
-	// format validation error).
-	if _, err := MarshalTimeseries(ts, &timeseries.RequestOptions{
+	// InfluxqlGet is both the GET request-format flag and pretty JSON output
+	// after the Format bitmask was shifted down to use its previously empty bit.
+	b, err := MarshalTimeseries(ts, &timeseries.RequestOptions{
 		OutputFormat: byte(iofmt.InfluxqlGet),
+	}, 200)
+	if err != nil || len(b) == 0 {
+		t.Fatalf("expected pretty InfluxQL output, got %q, %v", b, err)
+	}
+
+	// InfluxqlPost retains the InfluxQL routing bit but is not a valid output
+	// format, so it exercises the route's format validation error.
+	if _, err = MarshalTimeseries(ts, &timeseries.RequestOptions{
+		OutputFormat: byte(iofmt.InfluxqlPost),
 	}, 200); err != timeseries.ErrUnknownFormat {
 		t.Fatalf("expected ErrUnknownFormat from influxql route, got %v", err)
+	}
+
+	b, err = MarshalTimeseries(ts, &timeseries.RequestOptions{
+		OutputFormat: iofmt.V3OutputJSON,
+	}, 200)
+	if err != nil || !json.Valid(b) {
+		t.Fatalf("expected v3 JSON output, got %q, %v", b, err)
 	}
 
 	ts, err = UnmarshalTimeseries([]byte(testFluxCSV), &timeseries.TimeRangeQuery{
@@ -133,7 +148,7 @@ func TestMarshalTimeseries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := MarshalTimeseries(ts, &timeseries.RequestOptions{
+	b, err = MarshalTimeseries(ts, &timeseries.RequestOptions{
 		OutputFormat: byte(iofmt.FluxRawCsv),
 	}, 200)
 	if err != nil {

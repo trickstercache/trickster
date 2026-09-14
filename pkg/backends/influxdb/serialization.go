@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -47,6 +48,9 @@ func UnmarshalTimeseries(data []byte,
 	if len(data) == 0 || trq == nil {
 		return nil, errors.ErrBadRequest
 	}
+	if promremote.IsParsedQuery(trq.ParsedQuery) {
+		return promremote.UnmarshalTimeseries(data, trq)
+	}
 	if isV3Query(trq) {
 		return isql.UnmarshalTimeseries(data, trq)
 	}
@@ -61,6 +65,9 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 ) (timeseries.Timeseries, error) {
 	if reader == nil || trq == nil {
 		return nil, errors.ErrBadRequest
+	}
+	if promremote.IsParsedQuery(trq.ParsedQuery) {
+		return promremote.UnmarshalTimeseriesReader(reader, trq)
 	}
 	if isV3Query(trq) {
 		return isql.UnmarshalTimeseriesReader(reader, trq)
@@ -77,6 +84,9 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 	if ts == nil || rlo == nil {
 		return nil, errors.ErrBadRequest
 	}
+	if iofmt.Format(rlo.OutputFormat).IsPromRemoteRead() {
+		return promremote.MarshalTimeseries(ts, rlo, status)
+	}
 	if rlo.OutputFormat >= iofmt.V3OutputJSON {
 		return isql.MarshalTimeseries(ts, rlo, status)
 	}
@@ -91,6 +101,9 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 ) error {
 	if ts == nil || rlo == nil || w == nil {
 		return errors.ErrBadRequest
+	}
+	if iofmt.Format(rlo.OutputFormat).IsPromRemoteRead() {
+		return promremote.MarshalTimeseriesWriter(ts, rlo, status, w)
 	}
 	if rlo.OutputFormat >= iofmt.V3OutputJSON {
 		return isql.MarshalTimeseriesWriter(ts, rlo, status, w)

@@ -95,7 +95,7 @@ func fetchFastForward(
 	if !trq.Extent.End.Equal(normalizedNow.Extent.End) {
 		return statusOff
 	}
-	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcEncodingProfile.Clone()))
+	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcUpstreamEncodingProfile(rlo)))
 	rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
 	rs.AlternateCacheTTL = time.Duration(o.FastForwardTTL)
 	ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
@@ -162,6 +162,17 @@ func finalizeDPCResponse(
 	// Respond to the user. Using the response headers from a Delta Response,
 	// so as to not map conflict with cacheData on WriteCache
 	logDeltaRoutine(dpStatus)
+	if rlo != nil && (rlo.ResponseContentType != "" || rlo.ResponseContentEncoding != "") {
+		if rh == nil {
+			rh = make(http.Header)
+		}
+		if rlo.ResponseContentType != "" {
+			rh.Set(headers.NameContentType, rlo.ResponseContentType)
+		}
+		if rlo.ResponseContentEncoding != "" {
+			rh.Set(headers.NameContentEncoding, rlo.ResponseContentEncoding)
+		}
+	}
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed, missRanges, failed, rh)
 
 	rsc.TS = rts
@@ -262,12 +273,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 	OldestRetainedTimestamp := time.Time{}
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
-		OldestRetainedTimestamp = now.Truncate(trq.Step).Add(-(trq.Step * time.Duration(o.TimeseriesRetention)))
+		retentionStep := trq.CachePolicyStep()
+		OldestRetainedTimestamp = now.Truncate(retentionStep).Add(-(retentionStep * time.Duration(o.TimeseriesRetention)))
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			logger.Debug("timerange end is too old to consider caching",
 				logging.Pairs{
 					"oldestRetainedTimestamp": OldestRetainedTimestamp,
-					"step":                    trq.Step, "retention": o.TimeseriesRetention,
+					"step":                    retentionStep, "retention": o.TimeseriesRetention,
 				})
 			if trq.OriginalBody != nil {
 				request.SetBody(r, trq.OriginalBody)
@@ -356,6 +368,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					cacheStatus = status.LookupStatusKeyMiss
 				} else {
 					cts = doc.timeseries.Clone() // Load the Cached Timeseries
+					if trq.PolicyStep > 0 {
+						// Raw-sample cache identity does not include the caller's policy hint.
+						cts.SetTimeRangeQuery(trq)
+					}
 					if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
 						el := cts.Extents()
 						tsc := cts.TimestampCount()
@@ -409,6 +425,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 				frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
 				frsc.TimeRangeQuery = trq
+				frsc.TSReqestOptions = rlo
 				var mts timeseries.List
 				var mresp *http.Response
 
@@ -638,6 +655,17 @@ var dpcEncodingProfile = &profile.Profile{
 	SupportedHeaderVal:   providers.AllSupportedWebProviders,
 }
 
+func dpcUpstreamEncodingProfile(rlo *timeseries.RequestOptions) *profile.Profile {
+	ep := dpcEncodingProfile.Clone()
+	if rlo != nil && rlo.UpstreamAcceptEncoding != "" {
+		ep.ClientAcceptEncoding = rlo.UpstreamAcceptEncoding
+		ep.SupportedHeaderVal = rlo.UpstreamAcceptEncoding
+		// The provider, not the HTTP encoding layer, handles this wire format.
+		ep.Supported = 0
+	}
+	return ep
+}
+
 func fetchTimeseries(
 	pr *proxyRequest,
 	trq *timeseries.TimeRangeQuery,
@@ -659,7 +687,7 @@ func fetchTimeseries(
 	}
 	setResourceSpanAttributes(rsc, span)
 
-	ctx = profile.ToContext(ctx, dpcEncodingProfile.Clone())
+	ctx = profile.ToContext(ctx, dpcUpstreamEncodingProfile(rsc.TSReqestOptions))
 	pr.upstreamRequest = request.SetResources(pr.upstreamRequest.WithContext(ctx), rsc)
 
 	start := time.Now()
@@ -786,7 +814,7 @@ func fetchExtents(
 				trace.ContextWithSpan(context.Background(), span),
 				mrsc))
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
-				dpcEncodingProfile.Clone()))
+				dpcUpstreamEncodingProfile(mrsc.TSReqestOptions)))
 			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e); err != nil {
 				logger.Error("could not rewrite cache-miss time range query",
 					logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})

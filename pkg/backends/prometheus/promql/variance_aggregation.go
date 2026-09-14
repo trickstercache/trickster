@@ -18,6 +18,7 @@ package promql
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
@@ -89,8 +90,7 @@ func VarianceVariantQuery(spec VarianceAggregation, operator string) string {
 	temporaryLabels := varianceTemporaryLabels(spec.Grouping, metadataLabels)
 	for _, label := range metadataLabels {
 		temporary := temporaryLabels[label]
-		input = `label_replace(` + input + `, "` + temporary + `", "$1", "` +
-			label + `", "(.*)")`
+		input = formatLabelReplace(input, temporary, "$1", label, "(.*)")
 		if spec.Grouping.Without {
 			finalGrouping.Labels = append(finalGrouping.Labels, temporary)
 		} else {
@@ -105,17 +105,22 @@ func VarianceVariantQuery(spec VarianceAggregation, operator string) string {
 	result := formatAggregation(operator, internalGrouping, input)
 	for _, label := range metadataLabels {
 		temporary := temporaryLabels[label]
-		result = `label_replace(` + result + `, "` + label + `", "$1", "` +
-			temporary + `", "(.*)")`
+		result = formatLabelReplace(result, label, "$1", temporary, "(.*)")
 	}
 	if !slices.Contains(metadataLabels, promMetricNameLabel) {
 		// Restoring __name__ clears Prometheus' delayed metadata-drop marker.
 		// When only __type__/__unit__ are retained, use a temporary metric name
 		// and let the final aggregation remove it again.
-		result = `label_replace(` + result + `, "` + promMetricNameLabel + `", "` +
-			varianceTemporaryMetric + `", "` + promMetricNameLabel + `", ".*")`
+		result = formatLabelReplace(result, promMetricNameLabel, varianceTemporaryMetric,
+			promMetricNameLabel, ".*")
 	}
 	return formatAggregation(aggregation.Sum, finalGrouping, result)
+}
+
+func formatLabelReplace(input, destination, replacement, source, expression string) string {
+	return "label_replace(" + input + ", " + strconv.Quote(destination) + ", " +
+		strconv.Quote(replacement) + ", " + strconv.Quote(source) + ", " +
+		strconv.Quote(expression) + ")"
 }
 
 func varianceTemporaryLabels(grouping AggregationGrouping, metadataLabels []string) map[string]string {

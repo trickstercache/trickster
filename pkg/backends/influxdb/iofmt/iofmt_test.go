@@ -33,6 +33,14 @@ func TestIsInfluxQL(t *testing.T) {
 	}
 }
 
+func TestV3OutputFormatsDoNotOverlapPromRemoteRead(t *testing.T) {
+	for _, format := range []byte{V3OutputJSON, V3OutputJSONL, V3OutputCSV} {
+		if Format(format).IsPromRemoteRead() {
+			t.Fatalf("v3 output format %d must not overlap PromRemoteRead", format)
+		}
+	}
+}
+
 func TestIsFlux(t *testing.T) {
 	if out := FluxJSONJSON.IsFlux(); !out {
 		t.Error("expected true")
@@ -63,6 +71,15 @@ func TestIsFluxOutputJSON(t *testing.T) {
 	}
 	if out := InfluxqlPost.IsFluxOutputJSON(); out {
 		t.Error("expected false")
+	}
+}
+
+func TestIsPromRemoteRead(t *testing.T) {
+	if !PromRemoteRead.IsPromRemoteRead() {
+		t.Fatal("expected remote-read format")
+	}
+	if FluxRawCsv.IsPromRemoteRead() {
+		t.Fatal("flux must not be detected as remote read")
 	}
 }
 

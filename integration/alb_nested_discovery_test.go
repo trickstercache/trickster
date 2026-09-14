@@ -118,6 +118,12 @@ func TestALBNestedDiscoveryWeightedOuter(t *testing.T) {
 	requireALBMemberState(t, healthURL, nestedDiscoveryOuter, nestedDiscoveryInnerA, "available", 10*time.Second)
 	requireALBMemberState(t, healthURL, nestedDiscoveryOuter, nestedDiscoveryInnerB, "available", 10*time.Second)
 
+	// Readiness checks may reach the leaves while the nested pools initialize.
+	// Measure only requests from the weighted-distribution window below.
+	leafA1.hits.Store(0)
+	leafA2.hits.Store(0)
+	leafB1.hits.Store(0)
+
 	// weighted round robin over a stable healthy set apportions exactly, so
 	// ten full cycles of the 3:1 pool split 30:10 between the inner ALBs.
 	// Count the responses to this request set instead of the leaves' lifetime
