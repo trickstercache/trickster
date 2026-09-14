@@ -130,7 +130,7 @@ services:
     volumes:
       - druid-data:/opt/druid/var
       - druid-shared:/opt/shared
-      - ./docker-compose-data/clickhouse-config/seeding/data:/seed-data:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
       - ./docker-compose-data/druid-config/start-nano.sh:/start-nano.sh:ro
     entrypoint: ["/bin/bash", "/start-nano.sh"]
     healthcheck:
@@ -161,24 +161,35 @@ services:
       start_period: 5s
     restart: always
 
-  # downloads the shared NYC taxi seed data cache used by both the clickhouse
-  # and mysql seeders, so they can run in any order or in parallel
-  seed_data_fetch:
-    image: clickhouse/clickhouse-server:25.3
+  # generates the shared synthetic trips seed data (hack/seedgen) that the
+  # clickhouse, mysql and druid seeders load. The output is byte-identical on
+  # every run, is verified against a pinned hash, and needs no network access,
+  # so the service runs with networking disabled to prove it.
+  seed_data_generate:
+    image: golang:1.27-alpine
+    network_mode: none
+    working_dir: /src
+    environment:
+      GOFLAGS: -mod=mod
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      SEED_OUT: /seed-data
+      SEED_PROFILE: ${SEED_PROFILE:-default}
     volumes:
-      - ./docker-compose-data/clickhouse-config/seeding:/seeding
-    entrypoint: /seeding/download.sh
-    build:
-      context: .
-      network: host
+      - ../../../hack/seedgen:/src:ro
+      - ./docker-compose-data/seed-data:/seed-data
+      - seedgen-gocache:/go-cache
+    entrypoint: ["go", "run", "."]
 
-  # clickouse-client, for seeding clickhouse on startup
+  # clickhouse-client, for seeding clickhouse on startup
   clickhouse_seed:
     links:
       - clickhouse
     image: clickhouse/clickhouse-server:26.7
     volumes:
       - ./docker-compose-data/clickhouse-config/seeding:/seeding
+      - ./docker-compose-data/seed-data:/seeding/data:ro
     entrypoint: /seeding/seed.sh
     build:
       context: .
@@ -186,26 +197,32 @@ services:
     depends_on:
       clickhouse:
         condition: service_started
-      seed_data_fetch:
+      seed_data_generate:
         condition: service_completed_successfully
 
-  # Druid native-batch seeder. It reads the same compressed TSV files and
-  # seed-window metadata as ClickHouse/MySQL; the batch transform shifts
-  # __time so the dashboard remains centered around the current time.
+  # Druid native-batch seeder (hack/druidseed). It reads the same generated
+  # TSV files and seed-window metadata as ClickHouse/MySQL; the batch transform
+  # shifts __time so the dashboard remains centered around the current time.
   druid_seed:
-    image: python:3.13-alpine
+    image: golang:1.27-alpine
+    working_dir: /src
     environment:
       DRUID_URL: http://druid:8888
       DRUID_DATASOURCE: trips
       DRUID_SEED_DATA: /seed-data
+      GOFLAGS: -mod=mod
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
     volumes:
-      - ./docker-compose-data/druid-config/seeding/seed.py:/seed.py:ro
-      - ./docker-compose-data/clickhouse-config/seeding/data:/seed-data:ro
-    entrypoint: ["python", "/seed.py"]
+      - ../../../hack/druidseed:/src:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - seedgen-gocache:/go-cache
+    entrypoint: ["go", "run", "."]
     depends_on:
       druid:
         condition: service_healthy
-      seed_data_fetch:
+      seed_data_generate:
         condition: service_completed_successfully
 
   # mysql
@@ -235,8 +252,8 @@ services:
       retries: 30
       start_period: 30s
 
-  # mysql client, for seeding mysql on startup; shares the NYC taxi download
-  # cache with the clickhouse seeder
+  # mysql client, for seeding mysql on startup from the shared generated
+  # seed data
   mysql_seed:
     image: mysql:8.4
     environment:
@@ -246,7 +263,7 @@ services:
       MYSQL_SEED_PASSWORD: trickster-dev-seed
     volumes:
       - ./docker-compose-data/mysql-config/seeding:/seeding
-      - ./docker-compose-data/clickhouse-config/seeding/data:/seeding/data
+      - ./docker-compose-data/seed-data:/seeding/data:ro
     entrypoint: /seeding/seed.sh
     build:
       context: .
@@ -254,7 +271,7 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-      seed_data_fetch:
+      seed_data_generate:
         condition: service_completed_successfully
 
   # graphite (carbon-cache + graphite-web, whisper storage)
@@ -387,6 +404,7 @@ services:
   # -- INTEGRATION CONTAINERS ABOVE --
 
 volumes:
+  seedgen-gocache:
   graphite-data:
   influxdbv2:
   influxdb3-data:

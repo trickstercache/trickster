@@ -250,7 +250,8 @@ func addValue(input string, vals []any, i int, t timeseries.FieldDataType) int {
 		}
 		vals[i] = v
 		return 8
-	case timeseries.String, timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
+	case timeseries.String, timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano,
+		timeseries.DateSQL, timeseries.TimeSQL, timeseries.DateTimeSQL:
 		vals[i] = input
 		return len(input)
 	case timeseries.Bool:

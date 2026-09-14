@@ -18,9 +18,9 @@
 
 # seed.sh
 #
-# This loads the two shared NYC taxi files into ClickHouse. The shared fetcher
-# derives one offset from the actual source pickup bounds; ClickHouse and MySQL
-# apply that exact offset to every pickup/dropoff date and datetime value.
+# This loads the two shared generated trips files into ClickHouse. The
+# seed_data_generate service derives one offset from the dataset's pickup
+# bounds; every seeder applies that exact offset to each pickup/dropoff value.
 #
 # Every run of the script will truncate the trips table and re-seed.
 # So developers can run this once every 2 months to always have "real-time" data
@@ -42,7 +42,7 @@ load_seed_metadata() {
     gzip -t "$FILE1"
     gzip -t "$FILE2"
     if [ ! -s "$SEED_METADATA" ]; then
-        echo "seed metadata is missing; run the seed_data_fetch service first"
+        echo "seed metadata is missing; run the seed_data_generate service first"
         exit 1
     fi
     # shellcheck disable=SC1090

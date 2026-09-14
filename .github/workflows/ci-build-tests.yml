@@ -94,6 +94,10 @@ jobs:
       - run: go mod vendor
       - name: Run tests
         run: make test
+      - name: Verify seed data generator is reproducible and offline
+        env:
+          GOPROXY: "off"
+        run: make seed-verify
       - name: Check coverage floor
         run: |
           COVERAGE=$(go tool cover -func=.coverprofile | tail -1 | awk '{print $3}' | tr -d '%')
@@ -128,6 +132,10 @@ jobs:
       TRICKSTER_DNS_TEST: "1"
       # CI containers cannot raise the UDP receive buffer; the warning is noise
       QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
+      # a tenth of the synthetic trips rows: the integration tests only need
+      # non-empty, correctly shaped data, and the three database loads are the
+      # slowest part of bringing the environment up
+      SEED_PROFILE: small
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-go@v6

@@ -17,6 +17,7 @@
 package model
 
 import (
+	"bufio"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -79,9 +80,24 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 		lookup[fd.Name] = fd
 	}
 
-	// at this point, we're going to write the TSV/CSV
+	// at this point, we're going to write the TSV/CSV. ClickHouse TSV never
+	// quotes; it escapes, so tab output bypasses the CSV writer's quoting.
 	cw := csv.NewWriter(w)
 	cw.Comma = rune(separator)
+	writeRow := cw.Write
+	if separator == '\t' {
+		bw := bufio.NewWriter(w)
+		defer bw.Flush()
+		writeRow = func(row []string) error {
+			for i, cell := range row {
+				if i > 0 {
+					_ = bw.WriteByte('\t')
+				}
+				_, _ = bw.WriteString(escapeTSV(cell))
+			}
+			return bw.WriteByte('\n')
+		}
+	}
 
 	// Helper function to write a row with field data
 	writeFieldRow := func(getValue func(timeseries.FieldDefinition) string) {
@@ -100,7 +116,7 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 		for _, fd = range vals {
 			row[fd.OutputPosition] = getValue(fd)
 		}
-		cw.Write(row)
+		_ = writeRow(row)
 	}
 
 	if writeNames || writeTypes {
@@ -109,8 +125,9 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 	if writeTypes {
 		writeFieldRow(func(fd timeseries.FieldDefinition) string { return fd.SDataType })
 	}
-	for _, s := range ds.Results[0].SeriesList {
-		for _, p := range s.Points {
+	for _, r := range timeOrderedRows(ds.Results[0]) {
+		s, p := r.series, r.point
+		{
 			row := make([]string, fieldCount)
 			var i int
 			for _, fd := range fds {
@@ -133,7 +150,7 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 					}
 				}
 			}
-			cw.Write(row)
+			_ = writeRow(row)
 		}
 	}
 	cw.Flush()

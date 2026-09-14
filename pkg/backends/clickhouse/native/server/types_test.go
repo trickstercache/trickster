@@ -91,14 +91,21 @@ func TestExtendedColumnCodecs(t *testing.T) {
 		{"UInt128", "340282366920938463463374607431768211455"},
 		{"Int128", "-170141183460469231731687303715884105728"},
 		{"Decimal(38, 9)", "12345678901234567890123456789.123456789"},
+		{"Decimal(18, 2)", "-14.83"},
+		{"UUID", "61f0c404-5cb3-11e7-907b-a6006ad3dba0"},
+		{"IPv4", "10.1.2.3"},
+		{"IPv6", "2001:db8::1"},
+		{"Date32", "1969-12-31"},
+		{"Enum8('orange' = 1, 'blue' = 2)", "blue"},
+		{"Nullable(Float64)", nil},
+		{"Nullable(Enum8('a' = 1))", "a"},
 		{"Array(Tuple(String, Nullable(UInt64)))", []any{[]any{"a", json.Number("18446744073709551615")}, []any{"b", nil}}},
 		{"Tuple(String, Array(DateTime64(3, 'America/Denver')))", []any{"times", []any{"2020-01-01 00:00:00.123"}}},
 	} {
 		t.Run(test.typ, func(t *testing.T) {
 			var out bytes.Buffer
 			if err := encodeColumnRevision(&out, test.typ, []any{test.value}, ServerRevision); err != nil {
-				col, _ := column.Type(test.typ).Column("x", &column.ServerContext{Revision: ServerRevision, Timezone: time.UTC})
-				t.Fatalf("scan type %s: %v", col.ScanType(), err)
+				t.Fatalf("encode: %v", err)
 			}
 			col, err := column.Type(test.typ).Column("x", &column.ServerContext{Revision: ServerRevision, Timezone: time.UTC})
 			if err != nil {
