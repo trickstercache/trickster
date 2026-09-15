@@ -27,6 +27,7 @@ import (
 const (
 	functionSort     = "sort"
 	functionSortDesc = "sort_desc"
+	functionTime     = "time"
 	functionVector   = "vector"
 )
 
@@ -120,6 +121,16 @@ func (e Expr) ContainsBinaryExpression() bool {
 	return e.find(func(node parser.Node) bool {
 		_, ok := node.(*parser.BinaryExpr)
 		return ok
+	}) != nil
+}
+
+// ContainsCrossShardBinaryExpression reports whether the expression contains
+// a vector-to-vector operation that may require series from another shard.
+func (e Expr) ContainsCrossShardBinaryExpression() bool {
+	return e.find(func(node parser.Node) bool {
+		binary, ok := node.(*parser.BinaryExpr)
+		return ok && binary.LHS.Type() == parser.ValueTypeVector &&
+			binary.RHS.Type() == parser.ValueTypeVector
 	}) != nil
 }
 

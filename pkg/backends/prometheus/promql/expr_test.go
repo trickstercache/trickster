@@ -155,6 +155,26 @@ func TestContainsBinaryExpression(t *testing.T) {
 	}
 }
 
+func TestContainsCrossShardBinaryExpression(t *testing.T) {
+	tests := map[string]bool{
+		"up + on (job) group_left down": true,
+		"up and on (job) ready":         true,
+		"up == bool down":               true,
+		"up == 1":                       false,
+		"1 < bool up":                   false,
+		"up / (time() - 1)":             false,
+		"rate(up[5m])":                  false,
+	}
+	for query, want := range tests {
+		if got := mustParse(t, query).ContainsCrossShardBinaryExpression(); got != want {
+			t.Errorf("ContainsCrossShardBinaryExpression(%q) = %v, want %v", query, got, want)
+		}
+	}
+	if (Expr{}).ContainsCrossShardBinaryExpression() {
+		t.Error("empty expression contains a cross-shard binary expression")
+	}
+}
+
 func TestNonShardLocalFunction(t *testing.T) {
 	tests := map[string]string{
 		"absent(up)":                       "absent",

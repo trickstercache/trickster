@@ -100,6 +100,19 @@ func TestAggregationGrouping(t *testing.T) {
 	}
 }
 
+func TestCompleteOuterAggregationGrouping(t *testing.T) {
+	want := AggregationGrouping{Labels: []string{"job", "zone"}, Without: true}
+	got, found := CompleteOuterAggregationGrouping(
+		mustParse(t, "sum without (zone, job) (up)"),
+	)
+	if !found || !reflect.DeepEqual(got, want) {
+		t.Fatalf("got (%#v, %v), want (%#v, true)", got, found, want)
+	}
+	if _, found := CompleteOuterAggregationGrouping(mustParse(t, "up")); found {
+		t.Fatal("non-aggregation unexpectedly returned grouping")
+	}
+}
+
 func TestParseZeroFallback(t *testing.T) {
 	tests := []struct {
 		query           string
