@@ -18,16 +18,20 @@ package prometheus
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
+
+const millisecondsPerSecond = float64(time.Second / time.Millisecond)
 
 func finalizeScalarBinaryWrapper(ds *dataset.DataSet, query string,
 	wrapper promql.ScalarBinaryWrapper,
 ) {
 	histogramOperations, _ := ds.ValueOperations.(promql.HistogramScalarOperations)
 	dropMetricName := wrapper.DropsMetricName()
+	usesEvaluationTime := wrapper.UsesEvaluationTime()
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 	for _, result := range ds.Results {
@@ -48,9 +52,15 @@ func finalizeScalarBinaryWrapper(ds *dataset.DataSet, query string,
 				if !ok {
 					continue
 				}
+				var evaluationTime float64
+				if usesEvaluationTime {
+					evaluationTime = float64(int64(point.Epoch)/int64(time.Millisecond)) /
+						millisecondsPerSecond
+				}
 				var value string
 				if isHistogramSeries(series) {
-					updated, keep := wrapper.ApplyHistogram(oldValue, histogramOperations)
+					updated, keep := wrapper.ApplyHistogram(oldValue, histogramOperations,
+						evaluationTime)
 					value, ok = updated.(string)
 					if !keep || !ok {
 						continue
@@ -60,7 +70,7 @@ func finalizeScalarBinaryWrapper(ds *dataset.DataSet, query string,
 					if err != nil {
 						continue
 					}
-					updated, keep := wrapper.ApplyFloat(parsed)
+					updated, keep := wrapper.ApplyFloat(parsed, evaluationTime)
 					if !keep {
 						continue
 					}

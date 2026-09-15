@@ -138,8 +138,8 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 }
 
 func (c *Client) finalizeTSMMerge(query string, ds *dataset.DataSet, expr promql.Expr) {
-	// servePlan calls this only when the planner queried wrapper.Inner, preventing
-	// the scalar operations from being applied twice.
+	// servePlan calls this only when the planner omitted these outer operations
+	// from its variants, preventing them from being applied twice.
 	if wrapper, found := promql.ParseScalarBinaryWrapper(expr); found {
 		c.finalizeTSMMerge(wrapper.Inner.String(), ds, wrapper.Inner)
 		finalizeScalarBinaryWrapper(ds, query, wrapper)

@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
@@ -108,6 +109,42 @@ func TestFinalizeTSMMergeScalarBinaryWrapper(t *testing.T) {
 		(&Client{}).FinalizeTSMMerge("sum by (job) (up) > bool 0", ds)
 
 		if got := seriesPointValues(ds)[""]; !equalStrings(got, []string{"0", "1"}) {
+			t.Fatalf("values got %v", got)
+		}
+	})
+
+	t.Run("applies unary negation", func(t *testing.T) {
+		series := rankSeries("up", "2", 100)
+		ds := rankDataSet(series)
+
+		(&Client{}).FinalizeTSMMerge("-sum(up)", ds)
+
+		if got := seriesPointValues(ds)[""]; !equalStrings(got, []string{"-2"}) {
+			t.Fatalf("values got %v", got)
+		}
+	})
+
+	t.Run("uses each point evaluation time", func(t *testing.T) {
+		series := rankSeriesWithTags("", dataset.Tags{}, "1726000000.123", 1)
+		series.Points[0].Epoch = epoch.FromMilliSecs(1726000015123)
+		ds := rankDataSet(series)
+
+		(&Client{}).FinalizeTSMMerge("time() - max(timestamp(up))", ds)
+
+		if got := seriesPointValues(ds)[""]; !equalStrings(got, []string{"15"}) {
+			t.Fatalf("values got %v", got)
+		}
+	})
+
+	t.Run("finalizes rank before scalar arithmetic", func(t *testing.T) {
+		ds := rankDataSet(
+			rankSeriesWithTags("", dataset.Tags{"pod": "a"}, "1", 100),
+			rankSeriesWithTags("", dataset.Tags{"pod": "b"}, "3", 100),
+		)
+
+		(&Client{}).FinalizeTSMMerge("topk(1, sum by (pod) (up)) * 8", ds)
+
+		if got := seriesPointValues(ds)[""]; !equalStrings(got, []string{"24"}) {
 			t.Fatalf("values got %v", got)
 		}
 	})

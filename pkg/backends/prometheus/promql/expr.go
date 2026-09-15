@@ -27,6 +27,7 @@ import (
 const (
 	functionSort     = "sort"
 	functionSortDesc = "sort_desc"
+	functionTime     = "time"
 	functionVector   = "vector"
 )
 

@@ -164,22 +164,26 @@ func (c *Client) planTSMMerge(r *http.Request, query string, expr promql.Expr,
 func (c *Client) planScalarBinaryWrapper(r *http.Request, query string,
 	wrapper promql.ScalarBinaryWrapper,
 ) (*merge.TSMMergePlan, bool, error) {
-	operator, _, found := promql.CompleteOuterAggregation(wrapper.Inner)
-	grouping, _ := promql.CompleteOuterAggregationGrouping(wrapper.Inner)
+	inner := wrapper.Inner
+	if sortWrapper, found := promql.ParseSortWrapper(inner); found {
+		inner = sortWrapper.Inner
+	}
+	operator, _, found := promql.CompleteOuterAggregation(inner)
 	if !found {
-		fallback, fallbackFound := promql.ParseZeroFallback(wrapper.Inner)
-		if !fallbackFound || !zeroFallbackMergesBySum(wrapper.Inner) {
+		fallback, fallbackFound := promql.ParseZeroFallback(inner)
+		if !fallbackFound || !zeroFallbackMergesBySum(inner) {
 			return nil, false, nil
 		}
-		operator, grouping = fallback.Operator, fallback.Grouping
+		operator = fallback.Operator
 	}
 	switch operator {
 	case aggregation.Sum, aggregation.Count, aggregation.CountValues,
-		aggregation.Average, aggregation.Minimum, aggregation.Maximum, aggregation.Group:
+		aggregation.Average, aggregation.Minimum, aggregation.Maximum, aggregation.Group,
+		aggregation.TopK, aggregation.BottomK:
 	default:
 		return nil, false, nil
 	}
-	if wrapper.DropsMetricName() && slices.Contains(grouping.Labels, promql.MetricNameLabel) {
+	if wrapper.DropsMetricName() && !scalarWrapperInnerDropsMetricName(wrapper.Inner) {
 		return nil, false, nil
 	}
 	innerQuery := wrapper.Inner.String()
@@ -201,6 +205,20 @@ func (c *Client) planScalarBinaryWrapper(r *http.Request, query string,
 		return nil, true, err
 	}
 	return plan, true, nil
+}
+
+func scalarWrapperInnerDropsMetricName(expr promql.Expr) bool {
+	if sortWrapper, found := promql.ParseSortWrapper(expr); found {
+		return scalarWrapperInnerDropsMetricName(sortWrapper.Inner)
+	}
+	if rank, found := promql.ParseRankAggregation(expr); found {
+		return scalarWrapperInnerDropsMetricName(rank.Inner)
+	}
+	if fallback, found := promql.ParseZeroFallback(expr); found {
+		return !slices.Contains(fallback.Grouping.Labels, promql.MetricNameLabel)
+	}
+	grouping, found := promql.CompleteOuterAggregationGrouping(expr)
+	return found && !slices.Contains(grouping.Labels, promql.MetricNameLabel)
 }
 
 func zeroFallbackMergesBySum(e promql.Expr) bool {
