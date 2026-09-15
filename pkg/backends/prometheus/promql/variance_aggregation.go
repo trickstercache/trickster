@@ -25,14 +25,15 @@ import (
 )
 
 const (
-	promMetricNameLabel     = "__name__"
+	// MetricNameLabel is Prometheus's reserved metric-name label.
+	MetricNameLabel         = "__name__"
 	promMetricTypeLabel     = "__type__"
 	promMetricUnitLabel     = "__unit__"
 	varianceTemporaryMetric = "__trickster_tsm_variance__"
 )
 
 var varianceMetadataLabels = map[string]string{
-	promMetricNameLabel: "__trickster_tsm_name__",
+	MetricNameLabel:     "__trickster_tsm_name__",
 	promMetricTypeLabel: "__trickster_tsm_type__",
 	promMetricUnitLabel: "__trickster_tsm_unit__",
 }
@@ -107,12 +108,12 @@ func VarianceVariantQuery(spec VarianceAggregation, operator string) string {
 		temporary := temporaryLabels[label]
 		result = formatLabelReplace(result, label, "$1", temporary, "(.*)")
 	}
-	if !slices.Contains(metadataLabels, promMetricNameLabel) {
+	if !slices.Contains(metadataLabels, MetricNameLabel) {
 		// Restoring __name__ clears Prometheus' delayed metadata-drop marker.
 		// When only __type__/__unit__ are retained, use a temporary metric name
 		// and let the final aggregation remove it again.
-		result = formatLabelReplace(result, promMetricNameLabel, varianceTemporaryMetric,
-			promMetricNameLabel, ".*")
+		result = formatLabelReplace(result, MetricNameLabel, varianceTemporaryMetric,
+			MetricNameLabel, ".*")
 	}
 	return formatAggregation(aggregation.Sum, finalGrouping, result)
 }

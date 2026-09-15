@@ -75,8 +75,13 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{`count_values("code", up) or vector(0)`, int(merge.StrategySum), standard, ""},
 		{"count(up) or on () vector(0)", int(merge.StrategySum), standard, ""},
 		{"sum(rate(requests[5m])) or vector(0)", int(merge.StrategySum), standard, ""},
+		{"count(up == 1) or vector(0)", int(merge.StrategySum), standard, ""},
+		{"(count(up == 1)) or vector(0)", int(merge.StrategySum), standard, ""},
+		{"count(1 == bool up) or vector(0)", int(merge.StrategySum), standard, ""},
 		// The zero fallback is only exact when each shard can evaluate the input alone.
 		{"sum(up + down) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"count((up == 1) and ready) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
+		{"count(up > scalar(foo)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
 		{"count(sum by (job) (up)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
 		{"count(absent(up)) or vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
 		{"sum by (job) (up) or on () vector(0)", int(merge.StrategyDedup), standard, "binary expression"},
@@ -88,6 +93,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"avg(up)", int(merge.StrategySum), weighted, ""},
 		{"avg by (region) (up)", int(merge.StrategySum), weighted, ""},
 		{"((avg(up)))", int(merge.StrategySum), weighted, ""},
+		{"avg(up > 0)", int(merge.StrategySum), weighted, ""},
 		{"avg(up + down)", int(merge.StrategySum), weighted, "binary expression"},
 		{"min(up)", int(merge.StrategyMin), standard, ""},
 		{"max(up)", int(merge.StrategyMax), standard, ""},
@@ -96,6 +102,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		// Rank aggregations are rewritten and finalized after merge.
 		{"topk(5, up)", int(merge.StrategyDedup), standard, ""},
 		{"topk(5, sum by (service) (up))", int(merge.StrategySum), standard, ""},
+		{"topk(5, count by (job) (up > 0))", int(merge.StrategySum), standard, ""},
 		{"topk(5, avg by (service) (up))", int(merge.StrategySum), weighted, ""},
 		{"sort_desc(topk(5, max(up)))", int(merge.StrategyMax), standard, ""},
 		{"bottomk(5, up)", int(merge.StrategyDedup), standard, ""},
@@ -103,6 +110,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		// Literal limit_ratio uses a shard-local fast path or globally merges a
 		// compatible inner aggregation before applying the ratio.
 		{"limit_ratio(0.5, up)", int(merge.StrategyDedup), standard, ""},
+		{"limit_ratio(0.5, up > 0)", int(merge.StrategyDedup), standard, ""},
 		{"limit_ratio by (job) (-0.5, rate(requests[5m]))", int(merge.StrategyDedup), standard, ""},
 		{"limit_ratio(0.5, count by (service) (requests))", int(merge.StrategySum), standard, ""},
 		{"limit_ratio(0.5, min(requests))", int(merge.StrategyMin), standard, ""},
@@ -123,6 +131,7 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sort(up)", int(merge.StrategyDedup), standard, ""},
 		// Float-only stddev/stdvar use paired count, mean, and variance inputs.
 		{"stddev(up)", int(merge.StrategyDedup), pooled, ""},
+		{"stddev(up > 0)", int(merge.StrategyDedup), pooled, ""},
 		{"stdvar without (instance) (rate(requests[5m]))", int(merge.StrategyDedup), pooled, ""},
 		{"sort_desc(stddev by (job) (up))", int(merge.StrategyDedup), pooled, ""},
 		// Numeric-compatible inner aggregations are completed globally before
@@ -165,13 +174,24 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"limit_ratio(0.5, sum(absent(up)))", int(merge.StrategyDedup), standard, "absent"},
 		{"limit_ratio(scalar(ratio), up)", int(merge.StrategyDedup), standard, aggregation.LimitRatio},
 		{"group(up)", int(merge.StrategyDedup), standard, ""},
+		// Literal scalar operations are finalized after their aggregation is merged.
+		{"sum(rate(requests[5m])) * 100", int(merge.StrategySum), standard, ""},
+		{"100 / count(up)", int(merge.StrategySum), standard, ""},
+		{"avg(up) / 2", int(merge.StrategySum), weighted, ""},
+		{"sum(up) > 0", int(merge.StrategySum), standard, ""},
+		{"sum(up) > bool 0", int(merge.StrategySum), standard, ""},
+		{"(count(up == 0) or vector(0)) > 0", int(merge.StrategySum), standard, ""},
+		{"stddev(up) * 2", int(merge.StrategyDedup), standard, "binary expression"},
+		{"topk(5, sum by (job) (up)) * 2", int(merge.StrategyDedup), standard, "binary expression"},
+		{"sum(up + down) * 100", int(merge.StrategyDedup), standard, "binary expression"},
+		{"(count(up) or vector(1)) * 2", int(merge.StrategyDedup), standard, "binary expression"},
+		{"sum by (__name__) (up) * 2", int(merge.StrategyDedup), standard, "binary expression"},
 		// Aggregations beneath other operations cannot be merged shard by shard.
 		{"abs(sum(up))", int(merge.StrategyDedup), standard, "outermost"},
 		{"-sum(up)", int(merge.StrategyDedup), standard, "outermost"},
 		{"histogram_quantile(0.9, sum by (le) (rate(x_bucket[5m])))", int(merge.StrategyDedup),
 			standard, "outermost"},
 		{"sum(up) + vector(1)", int(merge.StrategyDedup), standard, "binary expression"},
-		{"sum(up) > 0", int(merge.StrategyDedup), standard, "binary expression"},
 		// Queries that cannot be parsed are deduplicated with a warning.
 		{"sum by service (up)", int(merge.StrategyDedup), standard, "could not be parsed"},
 		{"SORT(sum(up))", int(merge.StrategyDedup), standard, "could not be parsed"},

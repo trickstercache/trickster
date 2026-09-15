@@ -125,6 +125,32 @@ func TestPrometheusHistogramOperationsDivide(t *testing.T) {
 	require.Equal(t, 9.0, histogram.buckets[0].count)
 }
 
+func TestPrometheusHistogramOperationsApplyScalarBinary(t *testing.T) {
+	value := `{"count":"18","sum":"34","buckets":[[0,"0","2","18"]]}`
+	operations := prometheusHistogramOperations{}
+
+	multiplied, handled := operations.ApplyScalarBinary(value, "*", 2, true)
+	require.True(t, handled)
+	histogram, err := parseNormalizedHistogram(multiplied)
+	require.NoError(t, err)
+	require.Equal(t, 36.0, histogram.count)
+	require.Equal(t, 68.0, histogram.sum)
+	require.Equal(t, 36.0, histogram.buckets[0].count)
+
+	divided, handled := operations.ApplyScalarBinary(value, "/", 2, false)
+	require.True(t, handled)
+	histogram, err = parseNormalizedHistogram(divided)
+	require.NoError(t, err)
+	require.Equal(t, 9.0, histogram.count)
+	require.Equal(t, 17.0, histogram.sum)
+	require.Equal(t, 9.0, histogram.buckets[0].count)
+
+	_, handled = operations.ApplyScalarBinary(value, "/", 2, true)
+	require.False(t, handled)
+	_, handled = operations.ApplyScalarBinary(value, "+", 2, false)
+	require.False(t, handled)
+}
+
 func TestPrometheusHistogramOperationsMergeOrderIndependent(t *testing.T) {
 	histograms := []string{
 		`{"count":"3","sum":"4","buckets":[` +

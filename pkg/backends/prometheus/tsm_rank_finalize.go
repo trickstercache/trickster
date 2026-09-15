@@ -134,6 +134,17 @@ func (c *Client) FinalizeTSMMerge(query string, ts timeseries.Timeseries) {
 	if err != nil {
 		return
 	}
+	c.finalizeTSMMerge(query, ds, expr)
+}
+
+func (c *Client) finalizeTSMMerge(query string, ds *dataset.DataSet, expr promql.Expr) {
+	// servePlan calls this only when the planner queried wrapper.Inner, preventing
+	// the scalar operations from being applied twice.
+	if wrapper, found := promql.ParseScalarBinaryWrapper(expr); found {
+		c.finalizeTSMMerge(wrapper.Inner.String(), ds, wrapper.Inner)
+		finalizeScalarBinaryWrapper(ds, query, wrapper)
+		return
+	}
 	if spec, found := promql.ParseLimitRatioAggregation(expr); found {
 		finalizeLimitRatio(ds, spec)
 		return

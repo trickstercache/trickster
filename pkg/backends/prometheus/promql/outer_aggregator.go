@@ -87,6 +87,16 @@ func CompleteOuterAggregation(e Expr) (string, Expr, bool) {
 	return agg.Op.String(), e.child(agg.Expr), true
 }
 
+// CompleteOuterAggregationGrouping returns the grouping of a complete outer
+// aggregation.
+func CompleteOuterAggregationGrouping(e Expr) (AggregationGrouping, bool) {
+	agg, ok := e.node.(*parser.AggregateExpr)
+	if !ok {
+		return AggregationGrouping{}, false
+	}
+	return aggregationGrouping(agg), true
+}
+
 // ReplaceOuterAggregator substitutes the complete outer aggregation's operator
 // with replacement, preserving the remaining source text verbatim.
 func ReplaceOuterAggregator(e Expr, aggregator, replacement string) string {

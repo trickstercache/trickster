@@ -22,6 +22,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -57,6 +58,17 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 	// An unparsable query leaves expr empty, so it falls through to deduplication.
 	expr, err := promql.Parse(query)
 	unparsable := err != nil && strings.TrimSpace(query) != ""
+	return c.planTSMMerge(r, query, expr, unparsable)
+}
+
+func (c *Client) planTSMMerge(r *http.Request, query string, expr promql.Expr,
+	unparsable bool,
+) (*merge.TSMMergePlan, error) {
+	if wrapper, found := promql.ParseScalarBinaryWrapper(expr); found {
+		if plan, handled, err := c.planScalarBinaryWrapper(r, query, wrapper); handled || err != nil {
+			return plan, err
+		}
+	}
 	if spec, found := promql.ParseLimitRatioAggregation(expr); found {
 		return c.planLimitRatio(r, query, spec)
 	}
@@ -122,6 +134,7 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 
 	variantRequest := r
 	if rewritten {
+		var err error
 		variantRequest, err = rewritePromQueryParam(r, fanout.String())
 		if err != nil {
 			return nil, fmt.Errorf("prepare tsm primary variant: %w", err)
@@ -146,6 +159,48 @@ func (c *Client) PlanTSMMerge(r *http.Request, query string) (*merge.TSMMergePla
 		return nil, err
 	}
 	return plan, nil
+}
+
+func (c *Client) planScalarBinaryWrapper(r *http.Request, query string,
+	wrapper promql.ScalarBinaryWrapper,
+) (*merge.TSMMergePlan, bool, error) {
+	operator, _, found := promql.CompleteOuterAggregation(wrapper.Inner)
+	grouping, _ := promql.CompleteOuterAggregationGrouping(wrapper.Inner)
+	if !found {
+		fallback, fallbackFound := promql.ParseZeroFallback(wrapper.Inner)
+		if !fallbackFound || !zeroFallbackMergesBySum(wrapper.Inner) {
+			return nil, false, nil
+		}
+		operator, grouping = fallback.Operator, fallback.Grouping
+	}
+	switch operator {
+	case aggregation.Sum, aggregation.Count, aggregation.CountValues,
+		aggregation.Average, aggregation.Minimum, aggregation.Maximum, aggregation.Group:
+	default:
+		return nil, false, nil
+	}
+	if wrapper.DropsMetricName() && slices.Contains(grouping.Labels, promql.MetricNameLabel) {
+		return nil, false, nil
+	}
+	innerQuery := wrapper.Inner.String()
+	innerRequest, err := rewritePromQueryParam(r, innerQuery)
+	if err != nil {
+		return nil, true, fmt.Errorf("prepare tsm scalar binary input: %w", err)
+	}
+	plan, err := c.planTSMMerge(innerRequest, innerQuery, wrapper.Inner, false)
+	if err != nil {
+		return nil, true, err
+	}
+	if plan.UnsupportedWarning != "" {
+		return nil, false, nil
+	}
+	plan.OriginalQuery = query
+	plan.Finalizer = merge.TSMFinalizerSpec{Enabled: true, Query: query}
+	plan.AllowSingleMemberBypass = false
+	if err := plan.Validate(); err != nil {
+		return nil, true, err
+	}
+	return plan, true, nil
 }
 
 func zeroFallbackMergesBySum(e promql.Expr) bool {
@@ -245,7 +300,7 @@ func shardInputWarning(operator string, input promql.Expr) string {
 		return warningPrefix + "contains a nested aggregation that cannot be " +
 			"correctly merged across fanout backends; results may be inaccurate"
 	}
-	if input.ContainsBinaryExpression() {
+	if input.ContainsCrossShardBinaryExpression() {
 		return warningPrefix + "contains a binary expression that may require " +
 			"cross-shard matching; results may be inaccurate"
 	}

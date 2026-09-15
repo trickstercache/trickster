@@ -123,6 +123,16 @@ func (e Expr) ContainsBinaryExpression() bool {
 	}) != nil
 }
 
+// ContainsCrossShardBinaryExpression reports whether the expression contains
+// a vector-to-vector operation that may require series from another shard.
+func (e Expr) ContainsCrossShardBinaryExpression() bool {
+	return e.find(func(node parser.Node) bool {
+		binary, ok := node.(*parser.BinaryExpr)
+		return ok && binary.LHS.Type() == parser.ValueTypeVector &&
+			binary.RHS.Type() == parser.ValueTypeVector
+	}) != nil
+}
+
 // NonShardLocalFunction returns the first called function whose result may
 // depend on seeing a globally complete vector rather than one fanout shard.
 func (e Expr) NonShardLocalFunction() (string, bool) {

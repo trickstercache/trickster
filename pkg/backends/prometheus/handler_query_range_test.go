@@ -22,7 +22,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	responsemerge "github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func TestQueryRangeHandler(t *testing.T) {
@@ -51,6 +54,20 @@ func TestQueryRangeHandler(t *testing.T) {
 	if rsc.BatchMergeFunc == nil {
 		t.Error("expected query range merge member to configure BatchMergeFunc")
 	}
+	accumulator := responsemerge.NewAccumulator()
+	items := []responsemerge.BatchItem{
+		{Data: dedupRangeDataSet("1"), Member: 0},
+		{Data: dedupRangeDataSet("2"), Member: 1},
+	}
+	handled, err := rsc.BatchMergeFunc(accumulator, items)
+	if err != nil || !handled {
+		t.Fatalf("dedup batch merge failed: handled=%v err=%v", handled, err)
+	}
+	merged := accumulator.GetTSData().(*dataset.DataSet)
+	points := merged.Results[0].SeriesList[0].Points
+	if len(points) != 1 || points[0].Values[0] != "2" {
+		t.Fatalf("dedup points got %#v, want one last-value-wins point", points)
+	}
 
 	resp := w.Result()
 
@@ -67,4 +84,11 @@ func TestQueryRangeHandler(t *testing.T) {
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
 	}
+}
+
+func dedupRangeDataSet(value string) *dataset.DataSet {
+	return &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{{
+		Header: dataset.SeriesHeader{Name: "up"},
+		Points: dataset.Points{{Epoch: epoch.Epoch(1), Values: []any{value}}},
+	}}}}}
 }
