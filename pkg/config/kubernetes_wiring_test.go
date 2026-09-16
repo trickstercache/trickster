@@ -17,6 +17,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
@@ -71,4 +73,38 @@ func TestOverlayCannotDefineTheKubernetesSection(t *testing.T) {
 	require.False(t, ok,
 		"an overlay that could rewrite the kubernetes section would let the "+
 			"controller redefine its own connection and class claims")
+}
+
+// A declared cache that no file backend names is the intended consumer of
+// controller-generated backends, so it must survive loading while the
+// controller is enabled and be pruned as unreferenced when it is not
+func TestKubernetesSectionKeepsUnreferencedCaches(t *testing.T) {
+	const base = `
+backends:
+  placeholder:
+    provider: rp
+    origin_url: http://127.0.0.1:1
+caches:
+  objects:
+    provider: memory
+`
+	tests := []struct {
+		name      string
+		extra     string
+		wantCache bool
+	}{
+		{"controller enabled", "kubernetes:\n  defaults:\n    routing_mode: service\n", true},
+		{"controller disabled", "kubernetes:\n  enabled: false\n  defaults:\n    routing_mode: service\n", false},
+		{"no kubernetes section", "", false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "trickster.yaml")
+			require.NoError(t, os.WriteFile(path, []byte(base+test.extra), 0o600))
+			c, err := Load([]string{"-config", path})
+			require.NoError(t, err)
+			_, ok := c.Caches["objects"]
+			require.Equal(t, test.wantCache, ok)
+		})
+	}
 }
