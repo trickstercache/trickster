@@ -1,10 +1,11 @@
 # Kubernetes controller cache policy scenario (phase 6). A real Prometheus is
-# deployed behind two Ingresses served by the trickster-ingress controller
+# deployed behind three Ingresses served by the trickster-ingress controller
 # that ingress.yaml deploys (NodePort 30082), and a TricksterCachePolicy on
 # each routes it through the prometheus provider: a range query is answered by
-# the Delta Proxy Cache rather than proxied, and the second Ingress hides the
-# X-Trickster-Result header. The CRD from deploy/kube/crds must be installed
-# before trickster-ingress starts, which `make kind-integration-ingress` does.
+# the Delta Proxy Cache rather than proxied, the second Ingress hides the
+# X-Trickster-Result header, and the third names a cache that only the
+# controller's generated backend uses. The CRD from deploy/kube/crds must be
+# installed before trickster-ingress starts, which `make kind-integration-ingress` does.
 #
 #   make kind-integration-start
 #   make kind-integration-ingress
@@ -112,3 +113,53 @@ spec:
       kind: Ingress
       name: prom-hidden
   resultHeader: Hide
+---
+# a second Service over the same Prometheus, so the policy below is the only
+# one that applies to the Ingress routed through it
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-named
+  namespace: trickster-it
+spec:
+  selector:
+    app: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prom-named
+  namespace: trickster-it
+spec:
+  ingressClassName: trickster
+  rules:
+    - host: named.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: prometheus-named
+                port:
+                  name: http
+---
+# names the 'objects' cache the controller's configuration declares but no
+# file backend references; if loading pruned it, this whole policy would be
+# rejected and the Ingress would be served as a plain reverse proxy
+apiVersion: trickstercache.org/v1alpha1
+kind: TricksterCachePolicy
+metadata:
+  name: prometheus-named
+  namespace: trickster-it
+spec:
+  targetRefs:
+    - kind: Service
+      name: prometheus-named
+  provider: prometheus
+  cacheName: objects
+  timeout: 30s

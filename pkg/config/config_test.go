@@ -433,8 +433,11 @@ func TestHasConfigChangedDoesNotApplyRateLimit(t *testing.T) {
 	if err := os.Chtimes(testFile, modified, modified); err != nil {
 		t.Fatal(err)
 	}
-	if !c.HasConfigChanged() || !c.HasConfigChanged() {
-		t.Error("read-only change check was unexpectedly rate limited")
+	// a read-only check must not mark the change as seen or rate limit itself
+	for range 2 {
+		if !c.HasConfigChanged() {
+			t.Error("read-only change check was unexpectedly rate limited")
+		}
 	}
 }
 

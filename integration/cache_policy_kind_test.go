@@ -36,7 +36,9 @@ import (
 // kind/README.md), routed through the prometheus provider by a
 // TricksterCachePolicy on its Service. A range query is served by the Delta
 // Proxy Cache rather than proxied, the same query is a cache hit the second
-// time, and the Ingress whose policy hides the result header carries none.
+// time, the Ingress whose policy hides the result header carries none, and a
+// policy naming a cache no file backend references is accepted, so its
+// Ingress is a Delta Proxy Cache key miss and then a hit rather than a proxy.
 //
 // Gated on TRICKSTER_KIND_TEST=1 like TestALBDiscoveryKind, and run after it
 // by the integration-kind CI job.
@@ -49,6 +51,7 @@ func TestCachePolicyKind(t *testing.T) {
 		frontAddr  = "127.0.0.1:30082"
 		host       = "prom.example.com"
 		hiddenHost = "hidden.example.com"
+		namedHost  = "named.example.com"
 		result     = "X-Trickster-Result"
 	)
 	// a fixed range, so the second request is the first one's cache object
@@ -109,6 +112,22 @@ func TestCachePolicyKind(t *testing.T) {
 	require.Equal(t, http.StatusOK, hidden.StatusCode, body)
 	require.Empty(t, hidden.Header.Get(result),
 		fmt.Sprintf("the policy hides the result header (got %q)", hidden.Header.Get(result)))
+
+	// the policy naming a cache only generated backends use is accepted: the
+	// route is a Delta Proxy Cache whose first query misses and second hits,
+	// not a reverse proxy that reports proxy-only on every request
+	named, body, err := get(namedHost, rangeURL)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, named.StatusCode, body)
+	res = named.Header.Get(result)
+	require.Contains(t, res, "engine=DeltaProxyCache",
+		"the named cache's policy should be accepted and its route a DPC: %s", res)
+	require.Contains(t, res, "status=kmiss", "the first query is a key miss: %s", res)
+	named, body, err = get(namedHost, rangeURL)
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, named.StatusCode, body)
+	res = named.Header.Get(result)
+	require.Regexp(t, `status=p?hit`, res, "the same range should be a cache hit: %s", res)
 
 	// a host no Ingress claims is not served
 	none, _, err := get("unclaimed.example.com", rangeURL)

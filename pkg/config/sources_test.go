@@ -432,8 +432,11 @@ func TestConfigSourceChangesAreStale(t *testing.T) {
 		if err := os.Chtimes(fragmentPath, info.ModTime(), info.ModTime()); err != nil {
 			t.Fatal(err)
 		}
-		if !config.HasConfigChanged() || !config.HasConfigChanged() {
-			t.Error("same-timestamp content change was not detected without marking")
+		// a read-only check must not mark the change as seen or rate limit itself
+		for range 2 {
+			if !config.HasConfigChanged() {
+				t.Error("same-timestamp content change was not detected without marking")
+			}
 		}
 		if !config.CheckAndMarkReloadInProgress("", true) {
 			t.Error("same-timestamp content change did not make config stale")

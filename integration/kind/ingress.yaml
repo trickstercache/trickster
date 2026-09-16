@@ -125,6 +125,12 @@ data:
         provider: rp
         origin_url: http://127.0.0.1:1
         listener_names: [default]
+    # no backend above names this cache; only a TricksterCachePolicy on a
+    # generated backend does, so it must survive loading for that policy to
+    # be accepted
+    caches:
+      objects:
+        provider: memory
     kubernetes:
       connection:
         in_cluster: true

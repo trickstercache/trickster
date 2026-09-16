@@ -138,9 +138,17 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 
 	if len(c.Caches) > 0 {
 		activeCaches := sets.NewStringSet()
-		for _, backend := range c.Backends {
-			if backend.CacheName != "" {
-				activeCaches.Set(backend.CacheName)
+		if c.Kubernetes.IsEnabled() {
+			// controller-generated backends may name any declared cache, so
+			// none can be pruned as unreferenced at file-load time
+			for k := range c.Caches {
+				activeCaches.Set(k)
+			}
+		} else {
+			for _, backend := range c.Backends {
+				if backend.CacheName != "" {
+					activeCaches.Set(backend.CacheName)
+				}
 			}
 		}
 		warnings, err := c.Caches.Initialize(activeCaches)

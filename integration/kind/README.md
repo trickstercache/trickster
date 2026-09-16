@@ -47,14 +47,18 @@ make kind-integration-stop
 
 ## Kubernetes controller cache policy scenario
 
-`cache-policy.yaml` deploys a real Prometheus behind two Ingresses served by
+`cache-policy.yaml` deploys a real Prometheus behind three Ingresses served by
 the `trickster-ingress` controller below, with a `TricksterCachePolicy` on the
-Prometheus Service selecting the `prometheus` provider and another on the
-second Ingress hiding `X-Trickster-Result`. `TestCachePolicyKind` asserts a
-range query is answered by the Delta Proxy Cache, that the same query is a
-cache hit the second time, and that the second Ingress carries no result
-header. The CRD from `deploy/kube/crds` is applied first, since the controller
-probes for it once at startup.
+Prometheus Service selecting the `prometheus` provider, another on the
+second Ingress hiding `X-Trickster-Result`, and a third on a second Service
+naming the `objects` cache that the controller's configuration declares but
+no file backend references. `TestCachePolicyKind` asserts a range query is
+answered by the Delta Proxy Cache, that the same query is a cache hit the
+second time, that the second Ingress carries no result header, and that the
+third Ingress reports a `kmiss` then a hit rather than degrading to a plain
+reverse proxy because its cache was pruned at load. The CRD from
+`deploy/kube/crds` is applied first, since the controller probes for it once
+at startup.
 
 ```sh
 make kind-integration-start
