@@ -86,6 +86,36 @@ func (prometheusHistogramOperations) DivideValue(value any, divisor float64) (an
 	return value, err == nil
 }
 
+func (prometheusHistogramOperations) ApplyScalarBinary(value any, operator string,
+	scalar float64, scalarLeft bool,
+) (any, bool) {
+	histogram, err := parseNormalizedHistogram(value)
+	if err != nil {
+		return nil, false
+	}
+	switch operator {
+	case "*":
+		histogram.count *= scalar
+		histogram.sum *= scalar
+		for i := range histogram.buckets {
+			histogram.buckets[i].count *= scalar
+		}
+	case "/":
+		if scalarLeft {
+			return nil, false
+		}
+		histogram.count /= scalar
+		histogram.sum /= scalar
+		for i := range histogram.buckets {
+			histogram.buckets[i].count /= scalar
+		}
+	default:
+		return nil, false
+	}
+	value, err = marshalNormalizedHistogram(histogram)
+	return value, err == nil
+}
+
 func (prometheusHistogramOperations) PairingHash(header *dataset.SeriesHeader,
 	queryStatement string,
 ) dataset.Hash {

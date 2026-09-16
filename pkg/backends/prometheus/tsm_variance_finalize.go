@@ -185,7 +185,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 			if group == nil {
 				header := series.Header.Clone()
 				header.Tags = tags
-				header.Name = tags["__name__"]
+				header.Name = tags[promql.MetricNameLabel]
 				header.TagFieldsList = nil
 				header.QueryStatement = spec.AggregationQuery
 				header.CalculateHash(true)
@@ -241,7 +241,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 func aggregationGroupingTags(tags dataset.Tags, grouping promql.AggregationGrouping) dataset.Tags {
 	if grouping.Without {
 		output := tags.Clone()
-		delete(output, "__name__")
+		delete(output, promql.MetricNameLabel)
 		for _, label := range grouping.Labels {
 			delete(output, label)
 		}

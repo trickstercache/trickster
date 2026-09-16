@@ -111,7 +111,7 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 		if groups[key] == nil {
 			header := series.Header.Clone()
 			header.Tags = tags
-			header.Name = tags["__name__"]
+			header.Name = tags[promql.MetricNameLabel]
 			header.TagFieldsList = nil
 			header.QueryStatement = spec.AggregationQuery
 			header.CalculateHash(true)
