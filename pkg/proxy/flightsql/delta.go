@@ -27,6 +27,9 @@ import (
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
@@ -182,6 +185,7 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	now := time.Now()
 	analysis := d.cfg.Analyzer.Analyze(query, now)
+	d.observeAnalysis(s.keyPrefix, analysis)
 	// nondeterministic statements are never cached; the substring check backs
 	// up the analyzer for statements it cannot parse
 	if analysis.Mode == sqlanalyzer.CacheModeNone ||
@@ -232,6 +236,23 @@ const (
 	metricMethodQuery = "QUERY"
 	metricPathQuery   = "query"
 )
+
+// observeAnalysis records the analyzer's classification of one statement,
+// which is the only signal for why a statement was not delta-cacheable.
+func (d *deltaRunner) observeAnalysis(backend string, analysis sqlanalyzer.Analysis) {
+	reason := string(analysis.Reason)
+	if reason == "" {
+		reason = "unknown"
+	}
+	metrics.SQLQueryAnalysis.WithLabelValues(backend, flightsqlDialect,
+		analysis.Mode.String(), reason).Inc()
+	if logger.Level() == level.Debug {
+		logger.Debug("flightsql query analyzed", logging.Pairs{
+			keys.BackendName: backend, keys.Cache_Mode: analysis.Mode.String(),
+			keys.Reason: reason,
+		})
+	}
+}
 
 // observeCache records one statement execution's cache outcome to the native
 // SQL cache counter and the standard proxy request metrics.

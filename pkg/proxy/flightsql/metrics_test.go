@@ -115,6 +115,55 @@ func TestServeObservesCacheOutcomes(t *testing.T) {
 	}
 }
 
+// TestServeObservesAnalysisClassifications verifies every statement execution
+// records exactly one analyzer classification under the flightsql dialect,
+// including executions that fail at the upstream.
+func TestServeObservesAnalysisClassifications(t *testing.T) {
+	up := &fakeUpstream{executeFn: rangedUpstream(t), ipcBytes: buildTestIPC(t)}
+	inner := newMemCache()
+	const backend = "flight-analysis-test"
+	srv := NewServer(up, inner,
+		WithCacheKeyPrefix(backend),
+		WithDeltaCache(DeltaConfig{
+			Analyzer:    testAnalyzer,
+			CacheClient: func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+			CacheTTL:    time.Hour,
+		}))
+
+	counter := func(mode sqlanalyzer.CacheMode, reason sqlanalyzer.AnalysisReason) float64 {
+		return testutil.ToFloat64(metrics.SQLQueryAnalysis.WithLabelValues(
+			backend, flightsqlDialect, mode.String(), string(reason)))
+	}
+
+	executeRows(t, srv, fmt.Sprintf(deltaQuery, 0, 600))
+	if got := counter(sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable); got != 1 {
+		t.Fatalf("delta/delta_cacheable = %v, want 1", got)
+	}
+
+	up.executeFn = nil // the remaining statements serve the canned payload
+	executeRows(t, srv, "SELECT * FROM cpu LIMIT 5")
+	if got := counter(sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedLimit); got != 1 {
+		t.Fatalf("object/unsupported_limit = %v, want 1", got)
+	}
+
+	executeRows(t, srv, "SELECT now(), * FROM cpu")
+	if got := counter(sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic); got != 1 {
+		t.Fatalf("none/nondeterministic = %v, want 1", got)
+	}
+
+	// a failed execution is still one classification, so the counter tracks
+	// statements analyzed rather than statements served
+	up.returnErr = errors.New("origin down")
+	if _, _, err := srv.DoGetStatement(t.Context(),
+		fakeStatementTicket{handle: []byte("SELECT now(), * FROM cpu")}); err == nil {
+		t.Fatal("upstream failure was swallowed")
+	}
+	up.returnErr = nil
+	if got := counter(sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic); got != 2 {
+		t.Fatalf("none/nondeterministic = %v, want 2", got)
+	}
+}
+
 // TestDeltaEngineFailureHooksAreWired verifies the engine's rewrite-failure
 // hook lands on the shared SQL rewrite metric.
 func TestDeltaEngineFailureHooksAreWired(t *testing.T) {
