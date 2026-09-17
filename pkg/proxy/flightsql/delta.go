@@ -57,6 +57,9 @@ type DeltaConfig struct {
 	CacheTTL time.Duration
 	// MaxObjectSize rejects oversized entries when positive.
 	MaxObjectSize int64
+	// RetentionPoints is the backend's timeseries_retention_factor, used to
+	// report requests whose range exceeds what the cache can retain.
+	RetentionPoints int
 	// BackfillTolerance widens the volatile tail excluded from cache storage.
 	BackfillTolerance time.Duration
 }
@@ -143,11 +146,12 @@ type deltaRunner struct {
 
 func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 	engineCfg := nativedelta.Config{
-		Protocol:      flightsqlDialect,
-		BackendName:   keyPrefix,
-		CacheClient:   cfg.CacheClient,
-		CacheTTL:      cfg.CacheTTL,
-		MaxObjectSize: cfg.MaxObjectSize,
+		Protocol:        flightsqlDialect,
+		BackendName:     keyPrefix,
+		CacheClient:     cfg.CacheClient,
+		CacheTTL:        cfg.CacheTTL,
+		MaxObjectSize:   cfg.MaxObjectSize,
+		RetentionPoints: cfg.RetentionPoints,
 		ObserveCacheFailure: func(reason string) {
 			observeCacheFailure(cfg.CacheClient, reason)
 		},
