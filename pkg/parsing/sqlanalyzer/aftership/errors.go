@@ -23,8 +23,12 @@ var (
 	ErrInvalidSQL = errors.New("invalid ClickHouse SQL")
 	// ErrNotTimeRangeQuery indicates that the statement cannot use delta caching.
 	ErrNotTimeRangeQuery = errors.New("query could not be identified as a time range query")
-	// ErrMissingTimeseries indicates that no supported bucket expression was found.
+	// ErrMissingTimeseries indicates that the select list contains no bucket
+	// expression, so the statement has no time axis at all.
 	ErrMissingTimeseries = errors.New("no supported timeseries expression found")
+	// ErrUnsupportedBucket indicates a recognized bucket function the analyzer
+	// cannot support, such as an unsupported interval or a timezone argument.
+	ErrUnsupportedBucket = errors.New("unsupported bucket expression")
 	// ErrNoLowerBound indicates that the query has no usable lower time bound.
 	ErrNoLowerBound = errors.New("no lower bound found in time range query")
 	// ErrNoUpperBound indicates that the query has no usable upper time bound.

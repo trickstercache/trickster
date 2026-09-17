@@ -208,11 +208,6 @@ type Options struct {
 	// AccessLog configures access and error logging for this backend
 	AccessLog *alo.Options `yaml:"access_log,omitempty"`
 
-	// DPCFallbackWarning, when true (default), logs a warning when a query cannot
-	// be parsed as a time range query and falls back from DPC to OPC. Set to false
-	// to suppress these warnings (they will still appear at debug level).
-	DPCFallbackWarning *bool `yaml:"dpc_fallback_warning,omitempty"`
-
 	// IsDefault indicates if this is the d.Default backend for any request not matching a configured route
 	IsDefault bool `yaml:"is_default,omitempty"`
 	// IsTemplate indicates this backend is held as a template for ALB

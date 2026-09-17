@@ -75,6 +75,39 @@ func TestAnalyzeReversedPredicates(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSelectListWithoutTimeAxis(t *testing.T) {
+	tests := []struct {
+		name string
+		expr string
+	}{
+		{"cast missing argument", "toInt32()"},
+		{"plain aggregate", "count()"},
+		{"non-bucket column", "service"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			query := "SELECT " + test.expr + " AS t, count() FROM events " +
+				"WHERE ts >= 120 AND ts < 240 GROUP BY t"
+			analysis := NewAnalyzer(Options{}).Analyze(query, time.Unix(500, 0))
+			if analysis.Mode != sqlanalyzer.CacheModeObject ||
+				analysis.Reason != sqlanalyzer.ReasonNotTimeRange || analysis.Err == nil {
+				t.Errorf("analysis = %+v, want not-time-range object caching", analysis)
+			}
+		})
+	}
+}
+
+// a statement with no FROM or time predicate at all, such as the Grafana
+// ClickHouse plugin's connection probe, has no time axis to bucket
+func TestAnalyzeMetadataProbeIsNotTimeRange(t *testing.T) {
+	analysis := NewAnalyzer(Options{}).Analyze(
+		"SELECT displayName(), version(), revision(), timezone()", time.Unix(500, 0))
+	if analysis.Mode != sqlanalyzer.CacheModeObject ||
+		analysis.Reason != sqlanalyzer.ReasonNotTimeRange {
+		t.Errorf("analysis = %+v, want not-time-range object caching", analysis)
+	}
+}
+
 func TestAnalyzeUnsupportedBucketBranches(t *testing.T) {
 	tests := []struct {
 		name string
@@ -87,7 +120,6 @@ func TestAnalyzeUnsupportedBucketBranches(t *testing.T) {
 		{"interval non-interval", "toStartOfInterval(ts, 60)"},
 		{"interval zero", "toStartOfInterval(ts, INTERVAL 0 minute)"},
 		{"interval unsupported unit", "toStartOfInterval(ts, INTERVAL 1 year)"},
-		{"cast missing argument", "toInt32()"},
 		{"intDiv missing argument", "intDiv(ts) * 60"},
 		{"intDiv non-column", "intDiv(1, 60) * 60"},
 		{"intDiv zero step", "intDiv(ts, 0) * 0"},
@@ -133,6 +165,12 @@ func TestAnalyzeRangeAndGroupingBranches(t *testing.T) {
 		{
 			"ambiguous upper bound",
 			"SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 60 AND ts < 180 AND ts < 240 GROUP BY t",
+			sqlanalyzer.ReasonAmbiguousTimeAxis,
+		},
+		{
+			"ambiguous select list buckets",
+			"SELECT toStartOfMinute(ts) AS t, toStartOfHour(ts) AS t2, count() FROM events " +
+				"WHERE ts >= 120 AND ts < 240 GROUP BY t, t2",
 			sqlanalyzer.ReasonAmbiguousTimeAxis,
 		},
 		{

@@ -146,7 +146,13 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	constants := collectConstants(selectQuery.With)
 	bucket, err := analyzeSelectList(selectQuery.SelectItems, constants)
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		reason := sqlanalyzer.ReasonUnsupportedBucket
+		if errors.Is(err, ErrMissingTimeseries) {
+			reason = sqlanalyzer.ReasonNotTimeRange
+		} else if errors.Is(err, ErrAmbiguousTimeAxis) {
+			reason = sqlanalyzer.ReasonAmbiguousTimeAxis
+		}
+		return sqlanalyzer.ObjectAnalysis(reason, err)
 	}
 	groups, err := analyzeGroupBy(selectQuery.GroupBy, selectQuery.SelectItems, bucket)
 	if err != nil {
@@ -281,12 +287,16 @@ type bucketSpec struct {
 
 func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (bucketSpec, error) {
 	var found *bucketSpec
+	var rejected bool
 	for _, item := range items {
 		if item == nil || item.Expr == nil {
 			continue
 		}
 		bucket, ok := matchBucket(item.Expr, constants)
 		if !ok {
+			// a bucket function the matcher cannot support is a different
+			// failure than a select list with no time axis at all
+			rejected = rejected || containsBucketCandidate(item.Expr)
 			continue
 		}
 		if found != nil {
@@ -300,9 +310,44 @@ func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (b
 		found = &bucket
 	}
 	if found == nil {
+		if rejected {
+			return bucketSpec{}, ErrUnsupportedBucket
+		}
 		return bucketSpec{}, ErrMissingTimeseries
 	}
 	return *found, nil
+}
+
+// bucketFunctionNames are the non-fixed-duration function names that indicate
+// an attempt to bucket a time axis, supported by the matcher or not.
+var bucketFunctionNames = map[string]struct{}{
+	"date_trunc": {}, "datetrunc": {}, "tostartofinterval": {}, "intdiv": {},
+}
+
+func isBucketFunctionName(name string) bool {
+	if _, ok := fixedBucketDurations[name]; ok {
+		return true
+	}
+	_, ok := bucketFunctionNames[name]
+	return ok
+}
+
+// containsBucketCandidate reports whether an expression references a bucket
+// function at any depth, including under casts the matcher does not unwrap.
+func containsBucketCandidate(expression chast.Expr) bool {
+	switch value := unwrapColumnExpr(expression).(type) {
+	case *chast.FunctionExpr:
+		if value.Name != nil && isBucketFunctionName(strings.ToLower(value.Name.Name)) {
+			return true
+		}
+		if slices.ContainsFunc(functionArgs(value), containsBucketCandidate) {
+			return true
+		}
+	case *chast.BinaryOperation:
+		return containsBucketCandidate(value.LeftExpr) ||
+			containsBucketCandidate(value.RightExpr)
+	}
+	return false
 }
 
 func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec, bool) {

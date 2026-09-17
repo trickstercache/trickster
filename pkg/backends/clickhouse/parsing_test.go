@@ -116,7 +116,8 @@ func TestUnsafeAndUnsupportedQueriesUseObjectCache(t *testing.T) {
 	}{
 		{"or predicate", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 OR ts < 200 GROUP BY t`, sqlanalyzer.ReasonUnsafePredicate},
 		{"not predicate", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE NOT (ts >= 100) GROUP BY t`, sqlanalyzer.ReasonUnsafePredicate},
-		{"not time series", `SELECT count() FROM events WHERE ts >= 100 GROUP BY service`, sqlanalyzer.ReasonUnsupportedBucket},
+		{"not time series", `SELECT count() FROM events WHERE ts >= 100 GROUP BY service`, sqlanalyzer.ReasonNotTimeRange},
+		{"metadata probe", `SELECT displayName(), version(), revision(), timezone()`, sqlanalyzer.ReasonNotTimeRange},
 		{"limit", `SELECT toStartOfMinute(ts) AS t, count() FROM events WHERE ts >= 100 GROUP BY t LIMIT 10`, sqlanalyzer.ReasonUnsupportedLimit},
 		{"unsupported interval", `SELECT toStartOfInterval(ts, INTERVAL 1 year) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t FORMAT JSON`, sqlanalyzer.ReasonUnsupportedBucket},
 		{"unsupported week mode", `SELECT toStartOfWeek(ts, 1) AS t, count() FROM events WHERE ts >= 100 AND ts < 200 GROUP BY t`, sqlanalyzer.ReasonUnsupportedBucket},

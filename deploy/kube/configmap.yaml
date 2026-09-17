@@ -710,13 +710,7 @@ data:
     #     # (X-Trickster-Result: phit) rather than truncating the merged response silently. default is 268435456 (256 MiB)
     #     max_capture_bytes: 268435456
 
-    #     # These next 7 settings only apply to Time Series backends
-
-    #     # dpc_fallback_warning, when true (default), logs a warning when a query cannot be parsed
-    #     # as a time range query and falls back from DPC (Delta Proxy Cache) to OPC (Object Proxy Cache).
-    #     # Set to false to suppress these warnings (they will still appear at debug level).
-    #     # Applies to SQL-based TSDB backends like ClickHouse that may receive non-time-series queries.
-    #     dpc_fallback_warning: true
+    #     # These next 6 settings only apply to Time Series backends
 
     #     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
     #     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
