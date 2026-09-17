@@ -797,8 +797,9 @@ func analyzeRanges(
 // bucket extent convention. Raw timestamp predicates must describe complete
 // buckets; otherwise a partial aggregate could be cached as a complete bucket.
 // When roundUnaligned is set, unaligned raw-column bounds are instead rounded
-// inward to the cadence (lower up, exclusive upper down), dropping partial
-// edge buckets per the contract's unaligned-bound provision. Predicates on
+// inward to the cadence (lower up, upper down), dropping partial edge buckets
+// per the contract's unaligned-bound provision. An inclusive upper is always
+// floored, since its boundary bucket is partial. Predicates on
 // the bucket output are discrete and can safely move by one cadence for
 // strict comparisons.
 func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
@@ -842,22 +843,58 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		return nil
 	}
 	if result.upper.inclusive {
-		return ErrUnsafePredicate
-	}
-	if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
-		if !roundUnaligned {
+		if result.upper.target == nil {
 			return ErrUnsafePredicate
 		}
-		result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		tick, ok := inclusiveUpperTick(result.upper.target.style)
+		if !ok || tick > bucket.step {
+			return ErrUnsafePredicate
+		}
+		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+			if !roundUnaligned {
+				return ErrUnsafePredicate
+			}
+			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		}
+		// col <= X reaches at most the first instant of the bucket holding X,
+		// so that bucket is partial; the floored value is the exclusive
+		// equivalent, and the rendered literal sits one tick below it.
+		result.upper.inclusive = false
+		result.upper.target.offset = bucket.step - tick
 		rounded = true
+	} else {
+		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+			if !roundUnaligned {
+				return ErrUnsafePredicate
+			}
+			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			rounded = true
+		}
+		result.upper.target.offset = bucket.step
 	}
-	result.upper.target.offset = bucket.step
 	// Rounding inward can leave no complete bucket; fail closed rather than
 	// requesting an inverted or empty window.
 	if rounded && !result.upper.value.After(result.lower.value) {
 		return ErrUnsafePredicate
 	}
 	return nil
+}
+
+// inclusiveUpperTick returns the resolution of a bound literal's style, used to
+// render an inclusive upper bound exactly one tick below the exclusive
+// boundary. A date-only literal cannot express that and fails closed.
+func inclusiveUpperTick(style boundStyle) (time.Duration, bool) {
+	switch style {
+	case boundUnixSeconds:
+		return time.Second, true
+	case boundUnixMilli:
+		return time.Millisecond, true
+	case boundUnixMicro:
+		return time.Microsecond, true
+	case boundUnixNano, boundSQLDateTime, boundRFC3339, boundTimestampLiteral:
+		return time.Nanosecond, true
+	}
+	return 0, false
 }
 
 func splitAnd(expr tree.Expr) (tree.Expr, tree.Expr, bool) {

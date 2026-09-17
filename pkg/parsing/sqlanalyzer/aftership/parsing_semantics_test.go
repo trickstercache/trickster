@@ -43,8 +43,17 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 			start: 120, end: 180, rendered: []string{"ts >= 300", "ts < 420"},
 		},
 		{name: "raw strict lower", predicate: "ts > 120 AND ts < 240", mode: sqlanalyzer.CacheModeObject},
-		{name: "raw inclusive upper", predicate: "ts >= 120 AND ts <= 240", mode: sqlanalyzer.CacheModeObject},
-		{name: "raw between", predicate: "ts BETWEEN 120 AND 240", mode: sqlanalyzer.CacheModeObject},
+		{
+			// an inclusive upper reaches only the first instant of the bucket
+			// at 240, so it yields the same complete-bucket window as ts < 240
+			name: "raw inclusive upper", predicate: "ts >= 120 AND ts <= 240", mode: sqlanalyzer.CacheModeDelta,
+			start: 120, end: 180, rendered: []string{"ts >= 300", "ts <= 419"},
+		},
+		{
+			name: "raw between", predicate: "ts BETWEEN 120 AND 240", mode: sqlanalyzer.CacheModeDelta,
+			start: 120, end: 180, rendered: []string{"ts BETWEEN 300 AND 419"},
+		},
+		{name: "raw unaligned inclusive upper", predicate: "ts >= 120 AND ts <= 241", mode: sqlanalyzer.CacheModeObject},
 		{name: "raw unaligned lower", predicate: "ts >= 121 AND ts < 240", mode: sqlanalyzer.CacheModeObject},
 		{name: "raw unaligned upper", predicate: "ts >= 120 AND ts < 241", mode: sqlanalyzer.CacheModeObject},
 		{

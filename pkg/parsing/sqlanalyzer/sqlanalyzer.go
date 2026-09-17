@@ -36,8 +36,12 @@
 // original comparator round-trips exactly.
 //
 // Bound rules: predicates on the raw timestamp column use an inclusive lower
-// bound and an exclusive upper bound. Aligned bounds describe complete cache
-// buckets directly. A dialect may accept unaligned bounds by rounding the
+// bound, and an upper bound of either comparator. An inclusive upper reaches
+// at most the first instant of the bucket holding it, so analyzers normalize
+// it to the exclusive equivalent on the bucket grid, dropping that partial
+// bucket, and report Bound{Inclusive: false} while rendering the statement's
+// original comparator. Aligned bounds describe complete cache buckets
+// directly. A dialect may accept unaligned bounds by rounding the
 // lower bound up and the upper bound down to the query cadence when the client
 // consumes only complete buckets, or by proving equivalent partial-edge
 // handling. When no complete bucket remains, both bounds normalize to the
