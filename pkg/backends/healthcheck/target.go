@@ -320,11 +320,12 @@ func (t *target) recordProbeResult(passed bool, detail string, err error, status
 		}
 	}
 	nst := StatusFailing
-	if (passed && successCnt >= t.recoveryThreshold) ||
-		(st == StatusPassing && errCnt < t.failureThreshold) {
+	switch {
+	case passed && (st == StatusInitializing || successCnt >= t.recoveryThreshold):
 		nst = StatusPassing
-	} else if st == StatusInitializing && errCnt < t.failureThreshold &&
-		successCnt < t.recoveryThreshold {
+	case st == StatusPassing && errCnt < t.failureThreshold:
+		nst = StatusPassing
+	case st == StatusInitializing && errCnt < t.failureThreshold:
 		nst = StatusInitializing
 	}
 	if st != nst {

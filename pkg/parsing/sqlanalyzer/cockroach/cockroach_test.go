@@ -368,6 +368,54 @@ func TestAnalyzeClassifiesUnsupportedQueries(t *testing.T) {
 	}
 }
 
+// TestInclusiveUpperMatchesHalfOpen verifies an inclusive upper bound yields
+// the same complete-bucket extent as the half-open form, and that rendering
+// emits a literal one tick below the exclusive boundary so the statement's
+// own comparator still selects exactly those buckets.
+func TestInclusiveUpperMatchesHalfOpen(t *testing.T) {
+	a := newStrictAnalyzer()
+	base := `SELECT date_bin(INTERVAL '1 hour', ts) AS bucket, count(*) AS value ` +
+		`FROM events WHERE %s GROUP BY 1`
+	analyze := func(predicate string) *sqlanalyzer.QueryPlan {
+		t.Helper()
+		got := a.Analyze(strings.Replace(base, "%s", predicate, 1), time.Time{})
+		if got.Mode != sqlanalyzer.CacheModeDelta {
+			t.Fatalf("Analyze(%s) = %s/%s (%v), want delta", predicate, got.Mode, got.Reason, got.Err)
+		}
+		return got.Plan
+	}
+
+	halfOpen := analyze(`ts >= 1704067200 AND ts < 1704153600`)
+	inclusive := analyze(`ts >= 1704067200 AND ts <= 1704153600`)
+	between := analyze(`ts BETWEEN 1704067200 AND 1704153600`)
+
+	want := halfOpen.RequestExtent(time.Time{})
+	for name, plan := range map[string]*sqlanalyzer.QueryPlan{
+		"inclusive": inclusive, "between": between,
+	} {
+		if plan.UpperBound.Inclusive {
+			t.Errorf("%s: upper bound inclusive, want normalized to exclusive", name)
+		}
+		if got := plan.RequestExtent(time.Time{}); !got.Start.Equal(want.Start) || !got.End.Equal(want.End) {
+			t.Errorf("%s: extent = [%s,%s], want [%s,%s]", name,
+				got.Start, got.End, want.Start, want.End)
+		}
+	}
+
+	// one hour of buckets ending at 1704081600; the inclusive comparator must
+	// stop one second short of that exclusive boundary
+	extent := timeseries.Extent{
+		Start: time.Unix(1704074400, 0).UTC(), End: time.Unix(1704078000, 0).UTC(),
+	}
+	rendered, err := inclusive.RenderExtent(extent)
+	if err != nil {
+		t.Fatalf("RenderExtent() error = %v", err)
+	}
+	if !strings.Contains(rendered, "ts <= 1704081599") {
+		t.Errorf("rendered = %s, want an inclusive upper of 1704081599", rendered)
+	}
+}
+
 func TestAnalyzePredicateSafety(t *testing.T) {
 	// The strict configuration exercises the contract's fail-closed defaults,
 	// including unaligned raw-column bounds.
@@ -382,8 +430,11 @@ func TestAnalyzePredicateSafety(t *testing.T) {
 		{"not", `NOT (ts >= 1704067200) AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
 		{"nested or", `ts >= 1704067200 AND (ts < 1704153600 OR tenant = 1)`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
 		{"exclusive lower", `ts > 1704067200 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"inclusive upper", `ts >= 1704067200 AND ts <= 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"between raw column", `ts BETWEEN 1704067200 AND 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
+		// aligned inclusive uppers describe complete buckets once the partial
+		// boundary bucket is dropped, so they need no rounding allowance
+		{"inclusive upper", `ts >= 1704067200 AND ts <= 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
+		{"between raw column", `ts BETWEEN 1704067200 AND 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
+		{"unaligned inclusive upper", `ts >= 1704067200 AND ts <= 1704153601`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
 		{"unaligned lower", `ts >= 1704067201 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
 		{"unaligned upper", `ts >= 1704067200 AND ts < 1704153601`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
 		{"duplicate lower", `ts >= 1704067200 AND ts >= 1704070800 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonAmbiguousTimeAxis},

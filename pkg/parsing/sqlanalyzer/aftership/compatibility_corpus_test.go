@@ -61,10 +61,10 @@ var clickHouseCompatibilityCorpus = []struct {
 		mode: sqlanalyzer.CacheModeDelta, reason: sqlanalyzer.ReasonDeltaCacheable, step: time.Minute,
 	},
 	{
-		name: "unsafe raw BETWEEN",
+		name: "raw BETWEEN",
 		query: "SELECT toStartOfMinute(ts) AS t, count() FROM events " +
 			"WHERE ts BETWEEN 120 AND 240 GROUP BY t",
-		mode: sqlanalyzer.CacheModeObject, reason: sqlanalyzer.ReasonUnsafePredicate,
+		mode: sqlanalyzer.CacheModeDelta, reason: sqlanalyzer.ReasonDeltaCacheable, step: time.Minute,
 	},
 	{
 		name: "timezone bucket",

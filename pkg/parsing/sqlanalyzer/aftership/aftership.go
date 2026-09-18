@@ -146,7 +146,13 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	constants := collectConstants(selectQuery.With)
 	bucket, err := analyzeSelectList(selectQuery.SelectItems, constants)
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		reason := sqlanalyzer.ReasonUnsupportedBucket
+		if errors.Is(err, ErrMissingTimeseries) {
+			reason = sqlanalyzer.ReasonNotTimeRange
+		} else if errors.Is(err, ErrAmbiguousTimeAxis) {
+			reason = sqlanalyzer.ReasonAmbiguousTimeAxis
+		}
+		return sqlanalyzer.ObjectAnalysis(reason, err)
 	}
 	groups, err := analyzeGroupBy(selectQuery.GroupBy, selectQuery.SelectItems, bucket)
 	if err != nil {
@@ -281,12 +287,16 @@ type bucketSpec struct {
 
 func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (bucketSpec, error) {
 	var found *bucketSpec
+	var rejected bool
 	for _, item := range items {
 		if item == nil || item.Expr == nil {
 			continue
 		}
 		bucket, ok := matchBucket(item.Expr, constants)
 		if !ok {
+			// a bucket function the matcher cannot support is a different
+			// failure than a select list with no time axis at all
+			rejected = rejected || containsBucketCandidate(item.Expr)
 			continue
 		}
 		if found != nil {
@@ -300,9 +310,44 @@ func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (b
 		found = &bucket
 	}
 	if found == nil {
+		if rejected {
+			return bucketSpec{}, ErrUnsupportedBucket
+		}
 		return bucketSpec{}, ErrMissingTimeseries
 	}
 	return *found, nil
+}
+
+// bucketFunctionNames are the non-fixed-duration function names that indicate
+// an attempt to bucket a time axis, supported by the matcher or not.
+var bucketFunctionNames = map[string]struct{}{
+	"date_trunc": {}, "datetrunc": {}, "tostartofinterval": {}, "intdiv": {},
+}
+
+func isBucketFunctionName(name string) bool {
+	if _, ok := fixedBucketDurations[name]; ok {
+		return true
+	}
+	_, ok := bucketFunctionNames[name]
+	return ok
+}
+
+// containsBucketCandidate reports whether an expression references a bucket
+// function at any depth, including under casts the matcher does not unwrap.
+func containsBucketCandidate(expression chast.Expr) bool {
+	switch value := unwrapColumnExpr(expression).(type) {
+	case *chast.FunctionExpr:
+		if value.Name != nil && isBucketFunctionName(strings.ToLower(value.Name.Name)) {
+			return true
+		}
+		if slices.ContainsFunc(functionArgs(value), containsBucketCandidate) {
+			return true
+		}
+	case *chast.BinaryOperation:
+		return containsBucketCandidate(value.LeftExpr) ||
+			containsBucketCandidate(value.RightExpr)
+	}
+	return false
 }
 
 func matchBucket(expression chast.Expr, constants map[string]int64) (bucketSpec, bool) {
@@ -855,9 +900,10 @@ func analyzeRanges(
 // bucket extent convention. Raw timestamp predicates must describe complete
 // buckets; otherwise a partial aggregate could be cached as a complete bucket.
 // When roundUnaligned is set, unaligned raw-column bounds are instead rounded
-// inward to the cadence (lower up, exclusive upper down), dropping partial
-// edge buckets. Predicates on the bucket output are discrete and can safely
-// move by one cadence for strict comparisons.
+// inward to the cadence (lower up, upper down), dropping partial edge buckets.
+// An inclusive upper is always floored, since its boundary bucket is partial.
+// Predicates on the bucket output are discrete and can safely move by one
+// cadence for strict comparisons.
 func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
 	rounded := false
 	if bucket.step < time.Second {
@@ -906,22 +952,65 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		return nil
 	}
 	if result.upper.inclusive {
-		return ErrUnsafePredicate
-	}
-	if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
-		if !roundUnaligned {
+		if result.upper.target == nil {
 			return ErrUnsafePredicate
 		}
-		result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		style, tick, ok := inclusiveUpperRender(result.upper.target.style)
+		if !ok || tick > bucket.step {
+			return ErrUnsafePredicate
+		}
+		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+			if !roundUnaligned {
+				return ErrUnsafePredicate
+			}
+			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		}
+		// col <= X reaches at most the first instant of the bucket holding X,
+		// so that bucket is partial; the floored value is the exclusive
+		// equivalent, and the rendered literal sits one tick below it.
+		result.upper.inclusive = false
+		result.upper.target.style = style
+		result.upper.target.offset = bucket.step - tick
 		rounded = true
+	} else {
+		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+			if !roundUnaligned {
+				return ErrUnsafePredicate
+			}
+			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			rounded = true
+		}
+		result.upper.target.offset = bucket.step
 	}
-	result.upper.target.offset = bucket.step
 	// Rounding inward can leave no complete bucket; fail closed rather than
 	// requesting an inverted or empty window.
 	if rounded && !result.upper.value.After(result.lower.value) {
 		return ErrUnsafePredicate
 	}
 	return nil
+}
+
+// inclusiveUpperRender returns the literal style and resolution to use when
+// rendering an inclusive upper bound, so the emitted value is exactly one tick
+// below the exclusive boundary. A style whose tick cannot be established, such
+// as a bare date, fails closed.
+func inclusiveUpperRender(style boundStyle) (boundStyle, time.Duration, bool) {
+	if style >= boundToDateTime64 && style <= boundToDateTime64+9 {
+		return boundToDateTime64 + 9, time.Nanosecond, true
+	}
+	switch style {
+	case boundUnixSeconds:
+		return boundUnixSeconds, time.Second, true
+	case boundUnixMilli:
+		return boundUnixMilli, time.Millisecond, true
+	case boundUnixMicro:
+		return boundUnixMicro, time.Microsecond, true
+	case boundUnixNano:
+		return boundUnixNano, time.Nanosecond, true
+	case boundToDateTime, boundSQLDateTime:
+		return boundToDateTime64 + 9, time.Nanosecond, true
+	}
+	return style, 0, false
 }
 
 func flattenConjunction(expression chast.Expr) ([]chast.Expr, error) {

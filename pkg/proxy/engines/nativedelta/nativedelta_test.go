@@ -27,8 +27,11 @@ import (
 	trickstercache "github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // payload is the test protocol representation: a set of rendered statements
@@ -177,6 +180,52 @@ func deltaRequest(plan *sqlanalyzer.QueryPlan, ops DeltaOps[*payload]) DeltaRequ
 	return DeltaRequest[*payload]{
 		Key: "dpc", FallbackKey: "dpc-fallback", EmptyKey: "dpc-empty",
 		Plan: plan, Now: time.Unix(3600, 0), RequireUpperBound: true, Ops: ops,
+	}
+}
+
+// TestExecuteDeltaObservesRetentionFactor verifies the shared engine reports a
+// request spanning more buckets than the backend can retain, which otherwise
+// degrades to a partial hit on every request with no other signal.
+func TestExecuteDeltaObservesRetentionFactor(t *testing.T) {
+	// testPlan uses a 1m step, so 0..600 exclusive is 10 buckets
+	const backend = "retention-engine-test"
+	newEngine := func(retentionPoints int) *Engine[*payload] {
+		return New(Config{
+			Protocol: "test", BackendName: backend,
+			CacheClient:     func() trickstercache.Cache { return newTestCache() },
+			CacheTTL:        time.Minute,
+			RetentionPoints: retentionPoints,
+		}, testCodec{})
+	}
+	exceeded := func() float64 {
+		return testutil.ToFloat64(
+			metrics.TimeseriesRetentionFactorExceeded.WithLabelValues(backend))
+	}
+
+	counts := 0
+	before := exceeded()
+	if _, _, err := newEngine(0).ExecuteDelta(
+		deltaRequest(testPlan(0, 600), testOps(&counts))); err != nil {
+		t.Fatalf("ExecuteDelta() error = %v", err)
+	}
+	if got := exceeded(); got != before {
+		t.Errorf("unlimited retention recorded %v overages, want none", got-before)
+	}
+
+	if _, _, err := newEngine(10).ExecuteDelta(
+		deltaRequest(testPlan(0, 600), testOps(&counts))); err != nil {
+		t.Fatalf("ExecuteDelta() error = %v", err)
+	}
+	if got := exceeded(); got != before {
+		t.Errorf("a window matching the factor recorded %v overages, want none", got-before)
+	}
+
+	if _, _, err := newEngine(9).ExecuteDelta(
+		deltaRequest(testPlan(0, 600), testOps(&counts))); err != nil {
+		t.Fatalf("ExecuteDelta() error = %v", err)
+	}
+	if got := exceeded(); got != before+1 {
+		t.Errorf("exceeded count = %v, want %v", got, before+1)
 	}
 }
 

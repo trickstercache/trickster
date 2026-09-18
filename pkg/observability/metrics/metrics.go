@@ -428,6 +428,20 @@ var (
 		[]string{keys.Backend_Name},
 	)
 
+	// TimeseriesRetentionFactorExceeded counts requests spanning more buckets
+	// than timeseries_retention_factor, whose cache entry is therefore cropped
+	// and whose cropped remainder is refetched on every request.
+	TimeseriesRetentionFactorExceeded = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "timeseries_retention_factor_exceeded_total",
+			Help: "Count of time series requests spanning more buckets than " +
+				"the backend's timeseries_retention_factor can retain.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
 	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
 	// dialect, and reason labels. Parse failures and OPC fallback are represented
 	// by the invalid_sql reason and object cache mode respectively.
@@ -944,6 +958,7 @@ func init() {
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
+	prometheus.MustRegister(TimeseriesRetentionFactorExceeded)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
@@ -989,6 +1004,7 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestElements,
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
+	TimeseriesRetentionFactorExceeded,
 	SQLQueryAnalysis,
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,

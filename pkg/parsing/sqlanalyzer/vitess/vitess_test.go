@@ -56,8 +56,9 @@ func TestAnalyzerGrafanaMacroExpansions(t *testing.T) {
 		unit  timeseries.FieldDataType
 		mode  sqlanalyzer.CacheMode
 	}{
-		{"timeGroupAlias and timeFilter", grafanaDateTimeQuery, 0, 0, sqlanalyzer.CacheModeObject},
-		{"timeGroup fill null", strings.Replace(grafanaDateTimeQuery, "300", "900", 2), 0, 0, sqlanalyzer.CacheModeObject},
+		{"timeGroupAlias and timeFilter", grafanaDateTimeQuery, 5 * time.Minute, timeseries.DateTimeUnixSecs, sqlanalyzer.CacheModeDelta},
+		{"timeGroup fill null", strings.Replace(grafanaDateTimeQuery, "300", "900", 2), 15 * time.Minute, timeseries.DateTimeUnixSecs, sqlanalyzer.CacheModeDelta},
+		{"unaligned timeFilter", strings.Replace(grafanaDateTimeQuery, "1785542400", "1785542401", 1), 5 * time.Minute, timeseries.DateTimeUnixSecs, sqlanalyzer.CacheModeDelta},
 		{"unixEpochGroup and unixEpochFilter", `SELECT cast(cast(pickup_epoch/(300) as signed)*300 as signed) AS time, count(*) FROM trips WHERE pickup_epoch > 1785542400 AND pickup_epoch < 1785628800 GROUP BY time ORDER BY time`, 0, 0, sqlanalyzer.CacheModeObject},
 		{"unixEpochNanoGroup and unixEpochNanoFilter", `SELECT cast(cast(pickup_ns/(300000000000) as signed)*300000000000 as signed) AS time, count(*) FROM trips WHERE pickup_ns > 1785542400000000000 AND pickup_ns < 1785628800000000000 GROUP BY time ORDER BY time`, 0, 0, sqlanalyzer.CacheModeObject},
 		{"timeFrom and timeTo", `SELECT cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time_sec, count(*) FROM events WHERE ts >= FROM_UNIXTIME(1785542400) AND ts < FROM_UNIXTIME(1785628800) GROUP BY time_sec ORDER BY time_sec`, time.Minute, timeseries.DateTimeUnixSecs, sqlanalyzer.CacheModeDelta},
@@ -100,7 +101,6 @@ func TestAnalyzerClassifiesUnsupportedQueries(t *testing.T) {
 		{"table result", "SELECT count(*) FROM trips", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
 		{"time without cadence", "SELECT UNIX_TIMESTAMP(ts) AS time_sec FROM events WHERE ts BETWEEN FROM_UNIXTIME(1785542400) AND FROM_UNIXTIME(1785628800)", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedBucket},
 		{"limit", grafanaDateTimeQuery + " LIMIT 10", sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsupportedLimit},
-		{"unaligned Grafana range", strings.Replace(grafanaDateTimeQuery, "1785542400", "1785542401", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
 		{"missing range", strings.Replace(grafanaDateTimeQuery, "WHERE pickup_datetime BETWEEN FROM_UNIXTIME(1785542400) AND FROM_UNIXTIME(1785628800)", "WHERE cab_type = 'yellow'", 1), sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonNotTimeRange},
 		{"union select", "SELECT 1 UNION SELECT 2", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonUnsupportedStatement},
 		{"random select", "SELECT RAND() FROM trips", sqlanalyzer.CacheModeNone, sqlanalyzer.ReasonNondeterministic},
@@ -532,8 +532,14 @@ func TestAnalyzerBoundOperatorMatrix(t *testing.T) {
 		}
 		t.Run(style.name+"/between", func(t *testing.T) {
 			query := fmt.Sprintf(`SELECT %s AS time, COUNT(*) AS value FROM events WHERE %s BETWEEN %s AND %s GROUP BY time ORDER BY time`, style.bucket, style.axis, style.lower, style.upper)
-			if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
-				t.Fatalf("BETWEEN was DPC: %+v", got.Plan)
+			got := a.Analyze(query, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeDelta {
+				t.Fatalf("BETWEEN was not DPC: %s/%s (%v)", got.Mode, got.Reason, got.Err)
+			}
+			// the inclusive upper normalizes to the exclusive equivalent, so
+			// BETWEEN and the half-open form share one extent
+			if got.Plan.UpperBound.Inclusive {
+				t.Errorf("upper bound = inclusive, want normalized to exclusive")
 			}
 		})
 		t.Run(style.name+"/reversed-between", func(t *testing.T) {

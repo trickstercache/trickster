@@ -185,6 +185,7 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 			CacheClient:       backend.Cache,
 			CacheTTL:          time.Duration(o.TimeseriesTTL),
 			MaxObjectSize:     int64(o.MaxObjectSizeBytes),
+			RetentionPoints:   o.TimeseriesRetentionFactor,
 			BackfillTolerance: time.Duration(o.BackfillTolerance),
 		}),
 	}

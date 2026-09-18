@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -73,6 +74,11 @@ type Config struct {
 	CacheTTL time.Duration
 	// MaxObjectSize rejects oversized entries when positive.
 	MaxObjectSize int64
+	// RetentionPoints is the backend's timeseries_retention_factor. Requests
+	// spanning more buckets are recorded against the retention metric, since
+	// their entry is cropped and the remainder refetched every time. Zero
+	// disables the check.
+	RetentionPoints int
 	// ObserveCacheFailure and ObserveRewriteFailure are optional metric hooks.
 	ObserveCacheFailure   func(reason string)
 	ObserveRewriteFailure func(reason string)
@@ -213,6 +219,9 @@ func (e *Engine[R]) ExecuteDelta(req DeltaRequest[R]) (R, cachestatus.LookupStat
 	if window.Empty {
 		return e.executeEmptyDelta(req, window)
 	}
+	metrics.ObserveTimeseriesRetentionFactor(e.cfg.BackendName,
+		timeseries.ExtentList{window.Output}.TimestampCount(req.Plan.Step),
+		e.cfg.RetentionPoints)
 	requested := window.Output
 
 	cached, found := e.Retrieve(req.Key)

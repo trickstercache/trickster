@@ -19,6 +19,7 @@ package druid
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -27,6 +28,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/druid/model"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
@@ -173,5 +175,205 @@ func TestParseDruidSQLFallbacks(t *testing.T) {
 				t.Fatalf("got trq=%v canOPC=%t err=%v", trq, canOPC, err)
 			}
 		})
+	}
+}
+
+// druidMillisBucket renders the millisecond-arithmetic bucket a dynamic
+// Grafana interval produces, around a range wide enough to hold whole buckets.
+func druidMillisBucket(selectExpr string) string {
+	return "SELECT " + selectExpr + ` AS bucket, COUNT(*) AS trips FROM "trips" ` +
+		`WHERE __time >= MILLIS_TO_TIMESTAMP(1788000000000) ` +
+		`AND __time < MILLIS_TO_TIMESTAMP(1789086400000) GROUP BY 1 ORDER BY 1`
+}
+
+// TestDruidMillisBucketIntervals covers every interval a dashboard can request.
+// Druid's TIME_FLOOR takes a literal ISO period, so a dynamic interval reaches
+// SQL only as a millisecond count.
+func TestDruidMillisBucketIntervals(t *testing.T) {
+	now := time.Now().UTC()
+	tests := []struct {
+		millis int64
+		want   time.Duration
+	}{
+		{1000, time.Second},
+		{10000, 10 * time.Second},
+		{60000, time.Minute},
+		{300000, 5 * time.Minute},
+		{900000, 15 * time.Minute},
+		{3600000, time.Hour},
+		{43200000, 12 * time.Hour},
+		{86400000, 24 * time.Hour},
+	}
+	for _, test := range tests {
+		t.Run(test.want.String(), func(t *testing.T) {
+			statement := druidMillisBucket(fmt.Sprintf(
+				"MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / %d) * %d AS BIGINT))",
+				test.millis, test.millis))
+			analysis := druidSQLAnalyzer.Analyze(normalizeDruidSQL(statement), now)
+			if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
+				t.Fatalf("Analyze() = %s/%s (%v), want delta", analysis.Mode,
+					analysis.Reason, analysis.Err)
+			}
+			if analysis.Plan.Step != test.want {
+				t.Errorf("step = %v, want %v", analysis.Plan.Step, test.want)
+			}
+			if !druidSQLPlanSupported(analysis.Plan) {
+				t.Error("plan shape rejected")
+			}
+		})
+	}
+}
+
+// TestDruidMillisBucketForms verifies the spellings of the same bucket, since
+// the FLOOR and the CAST are redundant over Druid's integer division.
+func TestDruidMillisBucketForms(t *testing.T) {
+	now := time.Now().UTC()
+	accepted := map[string]string{
+		"grafana":         `MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / 300000) * 300000 AS BIGINT))`,
+		"no cast":         `MILLIS_TO_TIMESTAMP(FLOOR(TIMESTAMP_TO_MILLIS(__time) / 300000) * 300000)`,
+		"no floor":        `MILLIS_TO_TIMESTAMP(TIMESTAMP_TO_MILLIS(__time) / 300000 * 300000)`,
+		"multiplier left": `MILLIS_TO_TIMESTAMP(300000 * FLOOR(TIMESTAMP_TO_MILLIS(__time) / 300000))`,
+		"extra parens":    `MILLIS_TO_TIMESTAMP(((FLOOR((TIMESTAMP_TO_MILLIS(__time)) / (300000))) * (300000)))`,
+		"lowercase":       `millis_to_timestamp(cast(floor(timestamp_to_millis(__time) / 300000) * 300000 as bigint))`,
+		"time_floor":      `TIME_FLOOR(__time, 'PT5M')`,
+	}
+	for name, selectExpr := range accepted {
+		t.Run(name, func(t *testing.T) {
+			analysis := druidSQLAnalyzer.Analyze(
+				normalizeDruidSQL(druidMillisBucket(selectExpr)), now)
+			if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
+				t.Fatalf("Analyze() = %s/%s (%v), want delta", analysis.Mode,
+					analysis.Reason, analysis.Err)
+			}
+			if analysis.Plan.Step != 5*time.Minute {
+				t.Errorf("step = %v, want 5m", analysis.Plan.Step)
+			}
+		})
+	}
+
+	rejected := map[string]string{
+		// truncating to one width and scaling by another is not a bucket
+		"mismatched factors": `MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / 300000) * 60000 AS BIGINT))`,
+		"zero divisor":       `MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / 0) * 0 AS BIGINT))`,
+		"negative divisor":   `MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / -300000) * -300000 AS BIGINT))`,
+		"other column":       `MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(dropoff_time) / 300000) * 300000 AS BIGINT))`,
+		"not a bucket":       `MILLIS_TO_TIMESTAMP(TIMESTAMP_TO_MILLIS(__time))`,
+	}
+	for name, selectExpr := range rejected {
+		t.Run("rejected/"+name, func(t *testing.T) {
+			analysis := druidSQLAnalyzer.Analyze(
+				normalizeDruidSQL(druidMillisBucket(selectExpr)), now)
+			if analysis.Mode == sqlanalyzer.CacheModeDelta {
+				t.Fatalf("Analyze() = delta with step %v, want object", analysis.Plan.Step)
+			}
+			if analysis.Reason != sqlanalyzer.ReasonUnsupportedBucket {
+				t.Errorf("reason = %s, want unsupported_bucket", analysis.Reason)
+			}
+		})
+	}
+}
+
+// TestDruidMillisBucketRendersWithoutCast pins the regression that made a
+// dashboard's dynamic-interval panel fail: the canonical statement is
+// re-rendered by the shared parser, which writes CAST(... AS BIGINT) with its
+// own type name, and Druid rejects that identifier.
+func TestDruidMillisBucketRendersWithoutCast(t *testing.T) {
+	now := time.Now().UTC()
+	statement := druidMillisBucket(
+		`MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / 60000) * 60000 AS BIGINT))`)
+	normalized := normalizeDruidSQL(statement)
+	analysis := druidSQLAnalyzer.Analyze(normalized, now)
+	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
+		t.Fatalf("Analyze() = %s/%s (%v), want delta", analysis.Mode,
+			analysis.Reason, analysis.Err)
+	}
+	extent := analysis.Plan.RequestExtent(now)
+	rendered, err := analysis.Plan.RenderExtent(extent)
+	if err != nil {
+		t.Fatalf("RenderExtent() error = %v", err)
+	}
+	for _, statement := range []string{analysis.Plan.CanonicalSQL, rendered} {
+		if strings.Contains(strings.ToUpper(statement), "CAST") {
+			t.Errorf("statement retains a cast Druid cannot parse: %s", statement)
+		}
+		if strings.Contains(strings.ToUpper(statement), "INT8") {
+			t.Errorf("statement uses the parser's own type name: %s", statement)
+		}
+	}
+	if !strings.Contains(rendered, "millis_to_timestamp") {
+		t.Errorf("rendered statement lost its bucket: %s", rendered)
+	}
+}
+
+// TestDruidMillisBucketCastFailsClosed verifies a cast the normalizer cannot
+// remove is rejected rather than rendered into SQL the origin refuses.
+func TestDruidMillisBucketCastFailsClosed(t *testing.T) {
+	now := time.Now().UTC()
+	statement := druidMillisBucket(
+		`MILLIS_TO_TIMESTAMP(FLOOR(CAST(TIMESTAMP_TO_MILLIS(__time) AS BIGINT) / 300000) * 300000)`)
+	analysis := druidSQLAnalyzer.Analyze(normalizeDruidSQL(statement), now)
+	if analysis.Mode == sqlanalyzer.CacheModeDelta {
+		t.Fatalf("Analyze() = delta, want object for an unremovable cast")
+	}
+	if analysis.Reason != sqlanalyzer.ReasonUnsupportedBucket {
+		t.Errorf("reason = %s, want unsupported_bucket", analysis.Reason)
+	}
+}
+
+// TestDruidSQLRenderable covers the constructs the shared parser reformats
+// into spellings Druid's planner rejects. Each rejected case was confirmed
+// against a live Druid: the original parses and the reformatted form does not.
+func TestDruidSQLRenderable(t *testing.T) {
+	unrenderable := map[string]string{
+		"bigint cast":  `SELECT CAST(x AS INT8) FROM trips`,
+		"float cast":   `SELECT CAST(x AS FLOAT8) FROM trips`,
+		"boolean cast": `SELECT CAST(x AS BOOL) FROM trips`,
+		"extract":      `SELECT extract('hour', __time) FROM trips`,
+		"pg cast":      `SELECT '1'::INTERVAL HOUR FROM trips`,
+	}
+	for name, canonical := range unrenderable {
+		t.Run(name, func(t *testing.T) {
+			if druidSQLRenderable(canonical) {
+				t.Errorf("statement reported renderable: %s", canonical)
+			}
+		})
+	}
+
+	renderable := map[string]string{
+		"double cast":    `SELECT CAST(x AS double) FROM trips`,
+		"varchar cast":   `SELECT CAST(x AS VARCHAR) FROM trips`,
+		"decimal cast":   `SELECT CAST(x AS DECIMAL) FROM trips`,
+		"timestamp cast": `SELECT CAST(x AS TIMESTAMP) FROM trips`,
+		"count distinct": `SELECT count(DISTINCT x) FROM trips`,
+		"time_floor":     `SELECT time_floor(__time, 'PT5M') FROM trips`,
+		"millis bucket":  `SELECT millis_to_timestamp(floor(timestamp_to_millis(__time) / 60000) * 60000) FROM trips`,
+		"quoted ident":   `SELECT "my col" FROM trips`,
+		"case":           `SELECT CASE WHEN x > 1 THEN 'a' ELSE 'b' END FROM trips`,
+	}
+	for name, canonical := range renderable {
+		t.Run(name, func(t *testing.T) {
+			if !druidSQLRenderable(canonical) {
+				t.Errorf("statement reported unrenderable: %s", canonical)
+			}
+		})
+	}
+}
+
+// TestDruidUnrenderableCastFailsClosed verifies a cast the parser would rewrite
+// into a type name Druid rejects sends the query to the object cache rather
+// than to the origin as SQL it refuses.
+func TestDruidUnrenderableCastFailsClosed(t *testing.T) {
+	now := time.Now().UTC()
+	statement := `SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, ` +
+		`CAST(COUNT(*) AS BIGINT) AS trips FROM "trips" ` +
+		`WHERE __time >= MILLIS_TO_TIMESTAMP(1788000000000) ` +
+		`AND __time < MILLIS_TO_TIMESTAMP(1789086400000) GROUP BY 1 ORDER BY 1`
+	analysis := druidSQLAnalyzer.Analyze(normalizeDruidSQL(statement), now)
+	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
+		t.Fatalf("Analyze() = %s/%s, want delta before the render guard",
+			analysis.Mode, analysis.Reason)
+	}
+	if druidSQLRenderable(analysis.Plan.CanonicalSQL) {
+		t.Errorf("canonical statement passed the guard: %s", analysis.Plan.CanonicalSQL)
 	}
 }

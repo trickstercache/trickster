@@ -287,6 +287,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			DoProxy(w, r, true)
 			return
 		}
+	} else {
+		// LRU eviction bounds the entry by bucket count rather than age, so a
+		// wider request is cropped on store and refetched on every request
+		metrics.ObserveTimeseriesRetentionFactor(o.Name,
+			timeseries.ExtentList{trq.Extent}.TimestampCount(trq.CachePolicyStep()),
+			o.TimeseriesRetentionFactor)
 	}
 
 	if err := client.SetExtent(pr.upstreamRequest, trq, &trq.Extent); err != nil {

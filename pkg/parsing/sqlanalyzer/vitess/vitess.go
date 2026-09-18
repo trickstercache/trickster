@@ -101,6 +101,11 @@ type bucketInfo struct {
 
 type rangeInfo struct {
 	lower, upper *mysqlBound
+	// upperSourceInclusive retains the statement's upper comparator after the
+	// bound itself is normalized to its exclusive equivalent, so rendering
+	// emits a literal the original operator still reads correctly.
+	upperSourceInclusive bool
+	upperTick            time.Duration
 }
 
 type mysqlBound struct {
@@ -447,17 +452,31 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 		return rangeInfo{}, ErrNotTimeRangeQuery
 	}
 	var out rangeInfo
-	if between, ok := where.Expr.(*sqlparser.BetweenExpr); ok && between.IsBetween {
-		if !sameTimeAxis(between.Left, bucket) {
-			return rangeInfo{}, ErrNotTimeRangeQuery
-		}
-		// Grafana's $__timeFilter expands to BETWEEN. Its inclusive upper
-		// timestamp selects only the boundary instant in the final bucket, so
-		// that bucket cannot be reused as a complete DPC bucket.
-		return rangeInfo{}, ErrUnsafePredicate
-	}
 	parts := sqlanalyzer.FlattenConjunction(where.Expr, nil, splitAnd, nil)
 	for _, part := range parts {
+		// Grafana's $__timeFilter expands to BETWEEN, whose bounds are both
+		// inclusive; the inclusive upper is normalized below.
+		if between, ok := part.(*sqlparser.BetweenExpr); ok {
+			if !sameTimeAxis(between.Left, bucket) {
+				if referencesTimeAxis(part, bucket) {
+					return rangeInfo{}, ErrUnsafePredicate
+				}
+				continue
+			}
+			if !between.IsBetween || out.lower != nil || out.upper != nil {
+				return rangeInfo{}, ErrUnsafePredicate
+			}
+			lower, err := parseBound(between.From, true)
+			if err != nil {
+				return rangeInfo{}, err
+			}
+			upper, err := parseBound(between.To, true)
+			if err != nil {
+				return rangeInfo{}, err
+			}
+			out.lower, out.upper = lower, upper
+			continue
+		}
 		cmp, ok := part.(*sqlparser.ComparisonExpr)
 		if !ok || !sameTimeAxis(cmp.Left, bucket) {
 			if referencesTimeAxis(part, bucket) {
@@ -480,9 +499,6 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 			}
 			out.lower = bound
 		case sqlparser.LessThanOp, sqlparser.LessEqualOp:
-			if inclusive {
-				return rangeInfo{}, ErrUnsafePredicate
-			}
 			if out.upper != nil {
 				return rangeInfo{}, ErrUnsafePredicate
 			}
@@ -499,6 +515,19 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 	}
 	if out.lower.value.After(out.upper.value) {
 		return rangeInfo{}, ErrUnsafePredicate
+	}
+	if out.upper.inclusive {
+		// col <= X reaches at most the first instant of the bucket holding X,
+		// so that bucket is partial; flooring yields the exclusive equivalent
+		// on the bucket grid, and the rendered literal sits one tick below it.
+		tick, ok := boundTick(out.upper.style)
+		if !ok || tick > bucket.step {
+			return rangeInfo{}, ErrUnsafePredicate
+		}
+		out.upperSourceInclusive = true
+		out.upperTick = tick
+		out.upper.value = sqlanalyzer.FloorBucket(out.upper.value, bucket.step, 0)
+		out.upper.inclusive = false
 	}
 	return out, nil
 }
@@ -569,6 +598,18 @@ func sameTimeAxis(expr sqlparser.Expr, bucket bucketInfo) bool {
 		return strings.EqualFold(axis, bucket.timeAxis)
 	}
 	return false
+}
+
+// boundTick returns the resolution of a bound literal's style, used to render
+// an inclusive upper bound exactly one tick below the exclusive boundary.
+func boundTick(style boundStyle) (time.Duration, bool) {
+	switch style {
+	case boundEpochNanos:
+		return time.Nanosecond, true
+	case boundEpochSeconds, boundFromUnixTime:
+		return time.Second, true
+	}
+	return 0, false
 }
 
 func parseBound(expr sqlparser.Expr, inclusive bool) (*mysqlBound, error) {
@@ -876,6 +917,7 @@ type renderer struct {
 	// source comparators so rendering a cache miss preserves their semantics.
 	lowerInclusive bool
 	upperInclusive bool
+	upperTick      time.Duration
 }
 
 func buildArtifacts(stmt *sqlparser.Select, rng rangeInfo, step time.Duration) (string, *renderer, error) {
@@ -902,8 +944,9 @@ func buildArtifacts(stmt *sqlparser.Select, rng rangeInfo, step time.Duration) (
 		template:   template,
 		lowerToken: lowerName, upperToken: upperName,
 		lower: rng.lower.style, upper: rng.upper.style,
-		lowerInclusive: rng.lower.inclusive, upperInclusive: rng.upper.inclusive,
-		step: step,
+		lowerInclusive: rng.lower.inclusive, upperInclusive: rng.upperSourceInclusive,
+		upperTick: rng.upperTick,
+		step:      step,
 	}, nil
 }
 
@@ -933,9 +976,9 @@ func (r *renderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	if !r.lowerInclusive {
 		lower = lower.Add(-r.step)
 	}
-	upper := extent.End
-	if !r.upperInclusive {
-		upper = upper.Add(r.step)
+	upper := extent.End.Add(r.step)
+	if r.upperInclusive {
+		upper = upper.Add(-r.upperTick)
 	}
 	return r.RenderTimeRange(lower, upper)
 }
