@@ -477,3 +477,55 @@ func TestFirstProbeIsImmediate(t *testing.T) {
 	}, 500*time.Millisecond, 5*time.Millisecond,
 		"first probe waited on startup jitter instead of running immediately")
 }
+
+func TestInitialProbeMarksAvailableImmediately(t *testing.T) {
+	probeErr := error(nil)
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		Interval:          timeconv.Duration(5 * time.Second),
+		FailureThreshold:  3,
+		RecoveryThreshold: 3,
+		Timeout:           timeconv.Duration(time.Second),
+	}, func(context.Context) error {
+		return probeErr
+	})
+	require.NoError(t, err)
+	require.Equal(t, StatusInitializing, target.status.Get())
+
+	target.probe(context.Background())
+	require.Equal(t, StatusPassing, target.status.Get(),
+		"a healthy target must not wait out recovery_threshold at startup")
+
+	// recovery from an actual failure still requires the full threshold
+	probeErr = errors.New("origin refused the connection")
+	for range 3 {
+		target.probe(context.Background())
+	}
+	require.Equal(t, StatusFailing, target.status.Get())
+
+	probeErr = nil
+	target.probe(context.Background())
+	require.Equal(t, StatusFailing, target.status.Get(), "one success must not clear a failure")
+	target.probe(context.Background())
+	require.Equal(t, StatusFailing, target.status.Get())
+	target.probe(context.Background())
+	require.Equal(t, StatusPassing, target.status.Get(), "third success recovers")
+}
+
+func TestInitialProbeFailureHoldsInitializing(t *testing.T) {
+	target, err := newProbeTarget("mysql", "mysql", &ho.Options{
+		Interval:          timeconv.Duration(5 * time.Second),
+		FailureThreshold:  3,
+		RecoveryThreshold: 3,
+		Timeout:           timeconv.Duration(time.Second),
+	}, func(context.Context) error {
+		return errors.New("origin refused the connection")
+	})
+	require.NoError(t, err)
+
+	target.probe(context.Background())
+	require.Equal(t, StatusInitializing, target.status.Get())
+	target.probe(context.Background())
+	require.Equal(t, StatusInitializing, target.status.Get())
+	target.probe(context.Background())
+	require.Equal(t, StatusFailing, target.status.Get())
+}
