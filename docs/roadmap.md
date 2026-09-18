@@ -1,6 +1,6 @@
 # Trickster Roadmap
 
-The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0 and 2.1, as well as supporting new time series applications and cloud native integrations. Additional details for Q3 and Q4 will be provided as the year progresses.
+The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 2.1 and 2.2; as well as supporting new time series applications and cloud native integrations. 
 
 ## Timeline
 
@@ -20,7 +20,21 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0 a
   - [x] Support for InfluxDB 3.x (HTTP v3 API + Flight SQL)
   - [x] Support for Druid
   - [x] Kube Ingress/Gateway API support
+  - [x] Support for HTTP/3 (QUIC) and improved HTTP/1.1 and HTTP/2 conformance
   - [ ] More easily-importable Trickster packages by other projects
+
+### Q4 2026
+
+- [ ] Trickster v2.2 Release
+  - [ ] Support for accelerating TimescaleDB
+  - [ ] Support for accelerating GrepTimeDB
+  - [ ] Support for accelerating QuestDB
+  - [ ] Support Access Control Lists (ACLs) for IPv4 and IPv6
+  - [ ] Support Rate Limiting w/ bucketing on configurable request attributes
+  - [ ] Support ALB Sticky Sessions
+  - [ ] Support L4 Load Balancing
+  - [ ] Support Media over Quick (MoQ) Relaying
+  - [ ] Improved support for accelerating distributed Mimir deployments
 
 ## Get Involved
 
