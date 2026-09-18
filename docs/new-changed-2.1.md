@@ -5,18 +5,17 @@ Trickster 2.1 includes a number of new features to give it even more uses in a n
 ## Features
 
 * **Kubernetes Gateway API and Ingress Controller** - Trickster now runs as a Kubernetes controller, serving `gateway.networking.k8s.io` GatewayClass, Gateway, HTTPRoute, GRPCRoute, TCPRoute, TLSRoute, UDPRoute, ReferenceGrant and BackendTLSPolicy objects, and `networking.k8s.io/v1` Ingress objects, translating them into its own configuration and reloading onto it in-process. Routes may be served through the Service's cluster IP or load balanced across discovered endpoints, TLS certificates arrive from Kubernetes Secrets without a reload, and status, conditions and Events are written back to every claimed object. Enable it with the new top-level `kubernetes` section. See [kubernetes-gateway.md](./kubernetes-gateway.md), [kubernetes-ingress.md](./kubernetes-ingress.md), [kubernetes-rbac.md](./kubernetes-rbac.md) and [kubernetes-deploy.md](./kubernetes-deploy.md).
-
-* **TricksterCachePolicy** - A custom resource that attaches caching behavior — a cache, TTLs, cache key components, CORS, header updates and time series acceleration — to Gateways, HTTPRoutes, Ingresses and Services, so a Prometheus or ClickHouse Service behind a route is accelerated rather than merely proxied. See [kubernetes-cache-policy.md](./kubernetes-cache-policy.md).
+   * **TricksterCachePolicy Custom Resource** - A custom resource that attaches caching behavior — a cache, TTLs, cache key components, CORS, header updates and time series acceleration — to Gateways, HTTPRoutes, Ingresses and Services, so a Prometheus or ClickHouse Service behind a route is accelerated rather than merely proxied. See [kubernetes-cache-policy.md](./kubernetes-cache-policy.md).
 
 * Auto-discovery - the ALB can now manage pool members through common [auto-discovery](./alb-autodiscovery.md) mechanisms such as Kubernetes APIs, DNS A and SRV records, etc.
 
-* Config Management - We now support loading multiple config files in the same subdirectory below the main config. We've also added automatic config reloading when the file contents change - including automatic detection and reloading when a certificate is swapped out.
+* Config - We now support loading multiple config files in the same subdirectory below the main config. We've also added automatic config reloading when the file contents change - including automatic detection and reloading when a TLS certificate is swapped out. See the [Configuring Documentation](./configuring.md#automatic-config-reload) for more info.
 
 * Logging - We've added support for customizable access logging and error logging per backend in NCSA format, a top-level `access_log` that captures every request no backend handled, and logging to stdout or stderr for containerized deployments. See [access-logs.md](./access-logs.md).
 
-* Regex Path Matching - You can now define path routes with regexes to match incoming requests, and expose their capture groups to request rewriters.
+* Regex Path Matching - You can now [define path routes with regexes](./paths.md#regex-paths) to match incoming requests, and expose their capture groups to request rewriters.
 
-* Wildcard Host Routing - A backend's `hosts` may name a single-label wildcard (`*.example.com`) or an any-depth wildcard (`**.example.com`), resolved by specificity ahead of global routes. See [paths.md](./paths.md).
+* Wildcard Host Routing - A backend's `hosts` may name a single-label wildcard (`*.example.com`) or an any-depth wildcard (`**.example.com`), resolved by specificity ahead of global routes. See [Path Configuration Documentation](./paths.md#host-resolution).
 
 * We now support accelerating [Graphite](./graphite.md)
 
@@ -42,10 +41,8 @@ Trickster 2.1 includes a number of new features to give it even more uses in a n
 
 * **Real Client Addresses** - Listeners now accept the PROXY protocol, and the new `trusted_proxies` listener option resolves the real client address from `Forwarded`, `X-Forwarded-For` or `X-Real-IP` only when the connection comes from a trusted address. The resolved address is what the access log records and what `max_query_range` rejections are logged against. See [Trusted Proxies](./configuring.md#trusted-proxies).
 
-## Breaking Changes
+## Developer Environment
 
-* **Reserved object-name prefixes** - Object names beginning with a reserved prefix are now refused in every named configuration section (`backends`, `caches`, `listeners`, `discovery`, `rules`, `request_rewriters`, `negative_caches`, `tracing` and `authenticators`), because Trickster generates configuration under them at runtime. Currently, the only reserved prefix is `kgw--`, used by the Kubernetes controller. A configuration that defines such a name fails to load. See [Reserved Names](./configuring.md#reserved-names).
+* All of the new supported backend time series providers are included in the Developer Env Docker Compose
 
-## Installing
-
-You can build the 2.1 binary from the `main` branch, download binaries from the [Releases](http://github.com/trickstercache/trickster/releases) page, or use the `trickstercache/trickster` Docker image tag in containerized environments. Kubernetes deployments can start from the manifests in [deploy/kube](../deploy/kube) or the chart at <https://github.com/trickstercache/helm-charts>.
+* We've refactored the Developer Environment Data Seeder job to use 100% locally-generated data. No more big S3 file downloads. This also speeds up the GitHub CI/CD integration tests that depend on the dev env. Seed data is generated once as a TSV, and all seedable databases (MySQL, Druid, ClickHouse) mount the same file to load the same data to enable cross-provider testing and verification.
