@@ -17,6 +17,8 @@ Trickster 2.1 includes a number of new features to give it even more uses in a n
 
 * Wildcard Host Routing - A backend's `hosts` may name a single-label wildcard (`*.example.com`) or an any-depth wildcard (`**.example.com`), resolved by specificity ahead of global routes. See [Path Configuration Documentation](./paths.md#host-resolution).
 
+* We now support accelerating [InfluxDB 3.x](./influxdb.md#influxdb-3x-support), including over Flight SQL (gRPC). Support for InfluxDB 1.x and 2.x remains and is unchanged.
+
 * We now support accelerating [Graphite](./graphite.md)
 
 * We now support accelerating [Apache Druid](./druid.md)
