@@ -41,6 +41,8 @@ services:
         condition: service_started
       mysql:
         condition: service_healthy
+      timescaledb:
+        condition: service_healthy
       druid:
         condition: service_healthy
 
@@ -162,9 +164,9 @@ services:
     restart: always
 
   # generates the shared synthetic trips seed data (hack/seedgen) that the
-  # clickhouse, mysql and druid seeders load. The output is byte-identical on
-  # every run, is verified against a pinned hash, and needs no network access,
-  # so the service runs with networking disabled to prove it.
+  # clickhouse, mysql, timescaledb and druid seeders load. The output is
+  # byte-identical on every run, is verified against a pinned hash, and needs
+  # no network access, so the service runs with networking disabled to prove it.
   seed_data_generate:
     image: golang:1.27-alpine
     network_mode: none
@@ -270,6 +272,66 @@ services:
       network: host
     depends_on:
       mysql:
+        condition: service_healthy
+      seed_data_generate:
+        condition: service_completed_successfully
+
+  # timescaledb (PostgreSQL 18 + TimescaleDB, Timescale License image so
+  # time_bucket_gapfill and other TSL features are testable). The image ships
+  # its own scripts in /docker-entrypoint-initdb.d, so the init SQL is mounted
+  # as a single file rather than over the whole directory. PostgreSQL 18 images
+  # keep data in /var/lib/postgresql/18/docker and refuse to start with a mount
+  # at the older /var/lib/postgresql/data, so the volume mounts one level up.
+  timescaledb:
+    image: timescale/timescaledb:2.30.1-pg18
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - 'postgres'
+      - '-c'
+      - 'timezone=UTC'
+      - '-c'
+      - 'log_timezone=UTC'
+    environment:
+      POSTGRES_PASSWORD: trickster-dev-root
+      POSTGRES_DB: trickster
+      TIMESCALEDB_TELEMETRY: "off"
+    ports:
+     - 5432:5432
+    build:
+      context: .
+      network: host
+    volumes:
+      - ./docker-compose-data/timescaledb-config/init/01-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - timescaledb-data:/var/lib/postgresql
+    restart: always
+    healthcheck:
+      # -h forces TCP: the entrypoint's temporary init server listens on the
+      # unix socket only, so the service is not healthy until init completes
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d trickster"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # psql client, for seeding timescaledb on startup from the shared generated
+  # seed data
+  timescaledb_seed:
+    image: timescale/timescaledb:2.30.1-pg18
+    environment:
+      TIMESCALEDB_SERVER_ADDR: timescaledb
+      TIMESCALEDB_DATABASE: trickster
+      TIMESCALEDB_SEED_USER: seeder
+      TIMESCALEDB_SEED_PASSWORD: trickster-dev-seed
+    volumes:
+      - ./docker-compose-data/timescaledb-config/seeding:/seeding
+      - ./docker-compose-data/seed-data:/seeding/data:ro
+    entrypoint: /seeding/seed.sh
+    build:
+      context: .
+      network: host
+    depends_on:
+      timescaledb:
         condition: service_healthy
       seed_data_generate:
         condition: service_completed_successfully
@@ -412,4 +474,5 @@ volumes:
   druid-shared:
   prometheus-data:
   mysql-data:
+  timescaledb-data:
   redis-data:

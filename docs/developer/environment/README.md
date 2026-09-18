@@ -150,15 +150,16 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 ## Included backends
 
 The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
-Apache Druid, MySQL, and Graphite alongside Grafana. Trickster's dev config
-registers a matching backend for each,
+Apache Druid, MySQL, TimescaleDB, and Graphite alongside Grafana. Trickster's
+dev config registers a matching backend for each (except TimescaleDB, which is
+direct-only for now; see [TimescaleDB Details](#timescaledb-details)),
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison.
 
 ## Seed data
 
-ClickHouse, MySQL, and Druid are all loaded with the same synthetic `trips`
-dataset: about 1.9 million cab rides in the fictional city of Emberwick over a
+ClickHouse, MySQL, TimescaleDB, and Druid are all loaded with the same
+synthetic `trips` dataset: about 1.9 million cab rides in the fictional city of Emberwick over a
 12-week window, with the same 45-column schema, label cardinality, and
 daily/weekly usage curve as a real ride dataset. Nothing is downloaded: the
 `seed_data_generate` service runs `hack/seedgen` with `go run` on the
@@ -185,6 +186,15 @@ what the CI integration job uses; pass `-force` to regenerate over a cached
 output. `make seed-generate` (with optional `SEED_PROFILE=small` and
 `SEED_FORCE=1`) runs the generator natively into the same directory without
 a container. See `hack/seedgen/README.md`.
+
+`make developer-seed-data` runs `hack/developer-seed-data.sh`, which
+regenerates the seed window and then runs every seeder concurrently. Set
+`SEED_TARGET` to a space- or comma-separated subset of `clickhouse`, `mysql`,
+`timescaledb`, `druid`, and `graphite` to scope the run, for example
+`SEED_TARGET=timescaledb make developer-seed-data`. The seed instant is
+recomputed on every run, so a scoped re-seed shifts only the selected
+databases; the others keep their previous shift, and dashboards that compare
+backends will disagree until a full run re-syncs them.
 
 ## InfluxDB Details
 
@@ -237,11 +247,11 @@ port `8888`. Trickster registers the `druid1` backend and exposes it at
 Run `make developer-seed-data` to load the shared synthetic `trips` data
 through Druid's native batch-ingestion API. The Druid seeder
 (`hack/druidseed`, run with `go run` by the `druid_seed` service) uses the same
-generated files and timestamp shift as the ClickHouse and MySQL seeders, then
-verifies the row count and shifted minimum and maximum timestamps through
+generated files and timestamp shift as the ClickHouse, MySQL, and TimescaleDB
+seeders, then verifies the row count and shifted minimum and maximum timestamps through
 Druid SQL. Before loading, it marks any segments from the previous moving seed
 window unused so repeated runs do not accumulate stale rows. It runs in
-parallel with those two database seeders after the shared generation step.
+parallel with the other database seeders after the shared generation step.
 
 The published Druid image contains the nano service scripts but not the Perl
 runtime used by its bundled supervisor. `druid-config/start-nano.sh` launches
@@ -251,8 +261,8 @@ Manager processes with Bash inside the one development container.
 ## MySQL Details
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
-with the same auto-phased synthetic `trips` dataset used by ClickHouse and
-Druid. All three seeders read the shared generated files in
+with the same auto-phased synthetic `trips` dataset used by ClickHouse,
+TimescaleDB, and Druid. All four seeders read the shared generated files in
 `docker-compose-data/seed-data`, so the data is generated once regardless of
 which seeder runs first (see [Seed data](#seed-data)).
 
@@ -272,14 +282,14 @@ and operations contract, see the [MySQL Provider Guide](../../mysql.md).
 
 The generation step records the dataset's pickup/dropoff bounds and derives
 one seconds-level shift that places the pickup midpoint at the seed instant.
-MySQL and ClickHouse apply that exact shift to every pickup and dropoff
-datetime and regenerate the related date columns; Druid applies it to the
+MySQL, TimescaleDB, and ClickHouse apply that exact shift to every pickup and
+dropoff datetime and regenerate the related date columns; Druid applies it to the
 primary `__time` timestamp. This preserves trip durations and partition/date
 relationships in the relational copies while placing approximately half of the
 pickup distribution before and half after the seed instant. To re-seed (for
 example, after the data ages out of range), run `make developer-seed-data`,
 which first runs the `seed_data_generate` service and then reloads ClickHouse,
-MySQL, and Druid in parallel. A Trickster started before the re-seed still
+MySQL, TimescaleDB, and Druid in parallel. A Trickster started before the re-seed still
 holds the previous timeseries in its memory cache, so restart `make serve-dev`
 afterwards (or compare against a `-direct` datasource) to see the new data.
 
@@ -346,3 +356,78 @@ seeding fails, inspect logs with
 `docker compose logs mysql mysql_seed` from `docs/developer/environment`, then
 re-run `make developer-seed-data`. The seed is idempotent and always truncates
 and reloads the `trips` table.
+
+## TimescaleDB Details
+
+The developer environment includes a pinned TimescaleDB container
+(`timescale/timescaledb:2.30.1-pg18`: TimescaleDB 2.30.1 on PostgreSQL 18)
+seeded with the same auto-phased synthetic `trips` dataset used by ClickHouse,
+MySQL, and Druid (see [Seed data](#seed-data)). The image is the Timescale
+License (TSL) build rather than the Apache-only `-oss` one, so
+`time_bucket_gapfill`, continuous aggregates, and compression are available
+for testing.
+
+Trickster does not proxy TimescaleDB yet. For now the environment provides
+only the direct path, which is the reference that the upcoming PostgreSQL
+wire-protocol listener will be verified against.
+
+* Port `5432`: direct PostgreSQL access
+* Port `8488`: reserved for Trickster's PostgreSQL wire-protocol listener
+  (nothing listens on it yet)
+* Database: `trickster`
+* Server time zone: `UTC`, set explicitly. Grafana's PostgreSQL data source
+  has no time zone option and sends none at connection startup, so its
+  sessions inherit this server default.
+* Development-only credentials (provisioned by
+  `docker-compose-data/timescaledb-config/init/01-users.sql`):
+  * `postgres` / `trickster-dev-root` — administration
+  * `seeder` / `trickster-dev-seed` — schema creation and seeding
+  * `trickster` / `trickster-dev-upstream` — reserved for Trickster's upstream
+    connection (read-only)
+  * `grafana_ro` / `trickster-dev-grafana` — Grafana direct access (read-only)
+
+The read-only roles receive `SELECT` through the seeder's default privileges,
+so dropping and re-creating the table on every seed never needs a re-grant.
+Authentication is SCRAM-SHA-256, the PostgreSQL default, for every connection
+that arrives over the network, including the published port `5432`. The
+image's `pg_hba.conf` trusts the container's own loopback and unix socket, so
+the smoke test below connects by service name to exercise the password:
+
+```sh
+docker compose exec -e PGPASSWORD=trickster-dev-grafana timescaledb \
+  psql -h timescaledb -U grafana_ro -d trickster -c "SELECT count(*) FROM trips"
+```
+
+`trips` is a hypertable partitioned on `pickup_datetime` with the default
+7-day chunks (13 for the 12-week dataset). It has the same columns as the
+MySQL table, with `pickup_datetime` and `dropoff_datetime` stored as
+`timestamptz`, plus TimescaleDB's default time index and an index on
+`(cab_type, pickup_datetime)`. PostgreSQL's `COPY` cannot transform values
+while loading the way MySQL's `LOAD DATA ... SET` does, so the seeder copies
+each file into an `UNLOGGED` all-text staging table and then moves the rows
+into the hypertable with an `INSERT ... SELECT` that applies the shift. It
+then validates the same facts as the MySQL seeder (row count, shifted bounds,
+centering on seed time, date/datetime agreement, indexes) along with the chunk
+count and the read-only grants.
+
+Grafana provisions the `timescaledb-direct` data source using its bundled
+PostgreSQL plugin with the TimescaleDB option enabled, so `$__timeGroup`
+expands to `time_bucket(...)`. The dashboard is at
+<http://127.0.0.1:3000/d/trickster-timescaledb/timescaledb>. It has the same
+panels as the MySQL dashboard and, because both databases hold the same rows,
+shows the same values over the same time range. Two panel queries differ from
+the MySQL versions only in dialect: the card-use rate counts with
+`FILTER (WHERE ...)`, and `round(avg(x), 2)` casts the average to `numeric`.
+The Trickster Performance row is already labeled for a `timescaledb1` backend
+and stays empty until Trickster serves one.
+
+Troubleshooting readiness: the `timescaledb` service has a healthcheck based on
+`pg_isready` over TCP, which only succeeds once the image's one-time
+initialization has finished; the seeder and Grafana wait for it to report
+healthy. If seeding fails, inspect logs with
+`docker compose logs timescaledb timescaledb_seed` from
+`docs/developer/environment`, then re-run `make developer-seed-data`. The seed
+is idempotent and always drops, re-creates, and reloads the `trips` table.
+PostgreSQL 18 images keep their data under `/var/lib/postgresql/18/docker`, so
+the `timescaledb-data` volume is mounted at `/var/lib/postgresql`; the init SQL
+only runs when that volume is empty (`make developer-delete` resets it).

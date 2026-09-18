@@ -428,3 +428,26 @@ datasources:
     connMaxLifetime: 14400
   secureJsonData:
     password: trickster-dev-grafana
+
+# TimescaleDB (Grafana built-in PostgreSQL data source). The plugin has no
+# time zone option and sends none at startup, so sessions use the server
+# default, which the timescaledb service sets to UTC.
+- name: timescaledb-direct
+  type: grafana-postgresql-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_timescaledb_direct
+  url: timescaledb:5432
+  user: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    database: trickster
+    sslmode: disable
+    postgresVersion: 1800
+    timescaledb: true
+    maxOpenConns: 5
+    maxIdleConns: 2
+    connMaxLifetime: 14400
+  secureJsonData:
+    password: trickster-dev-grafana
