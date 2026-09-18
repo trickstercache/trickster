@@ -21,6 +21,7 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,11 +42,14 @@ const druidSQLPath = "/druid/v2/sql"
 var (
 	errDruidSQLUnsupported = errors.New("druid SQL query is not eligible for delta caching")
 
-	// Druid SQL's TIME_FLOOR is deliberately the only bucket matcher enabled
-	// here. The shared analyzer still owns all predicate, grouping, ordering,
-	// canonicalization, and extent-rendering rules.
+	// TIME_FLOOR covers literal ISO periods; the millis matcher covers the
+	// arithmetic a dynamic interval produces. The shared analyzer still owns
+	// all predicate, grouping, ordering, canonicalization, and extent-rendering
+	// rules.
 	druidSQLAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-		BucketMatchers: []cockroach.BucketMatcher{druidTimeFloorMatcher},
+		BucketMatchers: []cockroach.BucketMatcher{
+			druidTimeFloorMatcher, druidMillisBucketMatcher,
+		},
 		// Druid stores __time as a timestamp and accepts RFC3339 literals. This
 		// also makes a numeric dashboard bound unambiguous at the origin.
 		RenderNumericBoundsAsRFC3339: true,
@@ -142,7 +146,7 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 	// MILLIS_TO_TIMESTAMP(<unix-millis>). Normalize only that exact literal
 	// form into the timestamp literal understood by the shared analyzer. The
 	// resulting renderer also sends valid Druid SQL for every missing extent.
-	normalizedQuery := normalizeDruidSQLMillisBounds(query)
+	normalizedQuery := normalizeDruidSQL(query)
 	analysis := druidSQLAnalyzer.Analyze(normalizedQuery, now)
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		if analysis.Mode == sqlanalyzer.CacheModeNone {
@@ -154,6 +158,10 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 	}
 	if !druidSQLPlanSupported(analysis.Plan) {
 		return c.reject(trq, ro, true, modeObject, reasonUnsupportedShape,
+			errDruidSQLUnsupported)
+	}
+	if !druidSQLRenderable(analysis.Plan.CanonicalSQL) {
+		return c.reject(trq, ro, true, modeObject, reasonSQLUnrenderable,
 			errDruidSQLUnsupported)
 	}
 
@@ -190,12 +198,14 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 	return trq, ro, true, nil
 }
 
-// normalizeDruidSQLMillisBounds adapts the literal dashboard-bound function
-// emitted by Grafana to a standard SQL timestamp literal. It deliberately
-// walks only WHERE: changing a selected function would change result values.
-// Invalid, qualified, or computed calls are left untouched and therefore fail
-// closed to the object cache in the shared analyzer.
-func normalizeDruidSQLMillisBounds(statement string) string {
+// normalizeDruidSQL adapts the dashboard-emitted forms that the shared analyzer
+// and the Druid origin cannot both accept: a literal MILLIS_TO_TIMESTAMP bound
+// becomes a standard SQL timestamp literal, and the redundant integer cast
+// around a millisecond bucket is dropped. In the select list only a recognized
+// bucket is unwrapped, so no expression changes value. Invalid, qualified, or
+// computed calls are left untouched and therefore fail closed to the object
+// cache in the shared analyzer.
+func normalizeDruidSQL(statement string) string {
 	parsed, err := parser.ParseOne(statement)
 	if err != nil {
 		return statement
@@ -205,16 +215,52 @@ func normalizeDruidSQLMillisBounds(statement string) string {
 		return statement
 	}
 	clause, ok := selectStmt.Select.(*tree.SelectClause)
-	if !ok || clause.Where == nil {
+	if !ok {
 		return statement
 	}
-	visitor := &druidMillisBoundVisitor{}
-	expr, changed := tree.WalkExpr(visitor, clause.Where.Expr)
+	changed := false
+	if clause.Where != nil {
+		expr, rewritten := tree.WalkExpr(&druidMillisBoundVisitor{}, clause.Where.Expr)
+		if rewritten {
+			clause.Where.Expr = expr
+			changed = true
+		}
+	}
+	for i, item := range clause.Exprs {
+		stripped, ok := stripDruidMillisBucketCast(item.Expr)
+		if !ok {
+			continue
+		}
+		clause.Exprs[i].Expr = stripped
+		changed = true
+	}
 	if !changed {
 		return statement
 	}
-	clause.Where.Expr = expr
 	return tree.AsString(selectStmt)
+}
+
+// stripDruidMillisBucketCast drops the integer cast a dashboard wraps around a
+// millisecond bucket. The cast is redundant over Druid's integer division, and
+// keeping it would render the canonical statement with the shared parser's own
+// type name, which Druid rejects. Only an operand this backend recognizes as a
+// bucket is unwrapped, so no other expression changes value.
+func stripDruidMillisBucketCast(expr tree.Expr) (tree.Expr, bool) {
+	function, ok := expr.(*tree.FuncExpr)
+	if !ok || len(function.Exprs) != 1 ||
+		!strings.EqualFold(function.Func.String(), "millis_to_timestamp") {
+		return nil, false
+	}
+	cast, ok := function.Exprs[0].(*tree.CastExpr)
+	if !ok {
+		return nil, false
+	}
+	if _, _, ok := druidMillisBucketOperands(cast.Expr); !ok {
+		return nil, false
+	}
+	replacement := *function
+	replacement.Exprs = tree.Exprs{cast.Expr}
+	return &replacement, true
 }
 
 type druidMillisBoundVisitor struct{}
@@ -472,6 +518,118 @@ func druidTimeFloorMatcher(name string, args []tree.Expr) (cockroach.BucketMatch
 		}
 	}
 	return cockroach.BucketMatch{TimeColumn: column, Step: step, Phase: phase}, true
+}
+
+// druidUnrenderableSQL matches the constructs the shared parser reformats into
+// spellings Druid's planner rejects: its own integer, float, and boolean type
+// names, the function form of EXTRACT, and PostgreSQL cast syntax. Every other
+// construct in the audited corpus round-trips unchanged.
+var druidUnrenderableSQL = regexp.MustCompile(
+	`(?i)\bINT8\b|\bFLOAT8\b|\bBOOL\b|::|\bextract\s*\(`)
+
+// druidSQLRenderable reports whether a canonical statement can be sent to the
+// origin. The canonical form is produced by re-formatting the parsed statement,
+// so a construct the parser spells differently than Druid accepts would be
+// rewritten into a query the origin refuses. Those fail closed to the object
+// cache instead.
+func druidSQLRenderable(canonical string) bool {
+	return !druidUnrenderableSQL.MatchString(canonical)
+}
+
+// druidMillisBucketMatcher recognizes the millisecond-arithmetic bucket used
+// for a dynamic interval. Druid's TIME_FLOOR needs a literal ISO period, so a
+// Grafana interval reaches SQL only as a millisecond count, producing
+// MILLIS_TO_TIMESTAMP(CAST(FLOOR(TIMESTAMP_TO_MILLIS(__time) / N) * N AS BIGINT)).
+// The FLOOR and the CAST are both optional, and the multiplier may be written
+// on either side of the product.
+func druidMillisBucketMatcher(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
+	if name != "millis_to_timestamp" || len(args) != 1 {
+		return cockroach.BucketMatch{}, false
+	}
+	column, step, ok := druidMillisBucketOperands(args[0])
+	if !ok {
+		return cockroach.BucketMatch{}, false
+	}
+	return cockroach.BucketMatch{TimeColumn: column, Step: step}, true
+}
+
+// druidMillisBucketOperands validates the FLOOR(TIMESTAMP_TO_MILLIS(col)/N)*N
+// arithmetic and reports its column and cadence. A CAST anywhere in the
+// expression is rejected rather than unwrapped: the canonical statement is
+// re-rendered by the shared parser, which writes casts with its own type
+// names, and Druid rejects those. normalizeDruidSQL removes the one redundant
+// cast a dashboard emits; anything left fails closed to the object cache.
+func druidMillisBucketOperands(expr tree.Expr) (string, time.Duration, bool) {
+	product, ok := unwrapDruidParens(expr).(*tree.BinaryExpr)
+	if !ok || product.Operator.String() != "*" {
+		return "", 0, false
+	}
+	quotient, multiplier, ok := druidMillisProduct(product)
+	if !ok {
+		return "", 0, false
+	}
+	column, divisor, ok := druidMillisQuotient(quotient)
+	// truncating to N and then scaling by anything else is not a bucket
+	if !ok || divisor <= 0 || divisor != multiplier {
+		return "", 0, false
+	}
+	step := time.Duration(divisor) * time.Millisecond
+	if step <= 0 {
+		return "", 0, false
+	}
+	return column, step, true
+}
+
+// unwrapDruidParens removes the parens that wrap millisecond arithmetic
+// without changing its value.
+func unwrapDruidParens(expr tree.Expr) tree.Expr {
+	for {
+		value, ok := expr.(*tree.ParenExpr)
+		if !ok {
+			return expr
+		}
+		expr = value.Expr
+	}
+}
+
+// druidMillisProduct splits a product into its non-literal operand and the
+// integer multiplier, which the statement may write on either side.
+func druidMillisProduct(product *tree.BinaryExpr) (tree.Expr, int64, bool) {
+	if multiplier, ok := druidSQLIntegerLiteral(unwrapDruidParens(product.Right)); ok {
+		return product.Left, multiplier, true
+	}
+	if multiplier, ok := druidSQLIntegerLiteral(unwrapDruidParens(product.Left)); ok {
+		return product.Right, multiplier, true
+	}
+	return nil, 0, false
+}
+
+// druidMillisQuotient matches TIMESTAMP_TO_MILLIS(__time) / N, with or without
+// the FLOOR that is redundant over Druid's integer division.
+func druidMillisQuotient(expr tree.Expr) (string, int64, bool) {
+	expr = unwrapDruidParens(expr)
+	if function, ok := expr.(*tree.FuncExpr); ok &&
+		strings.EqualFold(function.Func.String(), "floor") && len(function.Exprs) == 1 {
+		expr = unwrapDruidParens(function.Exprs[0])
+	}
+	division, ok := expr.(*tree.BinaryExpr)
+	if !ok || division.Operator.String() != "/" {
+		return "", 0, false
+	}
+	divisor, ok := druidSQLIntegerLiteral(unwrapDruidParens(division.Right))
+	if !ok {
+		return "", 0, false
+	}
+	millis, ok := unwrapDruidParens(division.Left).(*tree.FuncExpr)
+	if !ok || !strings.EqualFold(millis.Func.String(), "timestamp_to_millis") ||
+		len(millis.Exprs) != 1 {
+		return "", 0, false
+	}
+	column, ok := cockroach.ColumnName(unwrapDruidParens(millis.Exprs[0]))
+	if !ok || !strings.EqualFold(column, "__time") {
+		return "", 0, false
+	}
+	return column, divisor, true
 }
 
 func druidSQLTimestampLiteral(expr tree.Expr) (time.Time, bool) {

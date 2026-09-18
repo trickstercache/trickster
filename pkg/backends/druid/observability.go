@@ -50,6 +50,7 @@ const (
 	reasonSQLEligible            analysisReason = "sql_eligible"
 	reasonSQLUnsupported         analysisReason = "sql_unsupported"
 	reasonSQLUnsupportedFormat   analysisReason = "sql_unsupported_format"
+	reasonSQLUnrenderable        analysisReason = "sql_unrenderable"
 	reasonSQLInvalidQuery        analysisReason = "sql_invalid_query"
 )
 
