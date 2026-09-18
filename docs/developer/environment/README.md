@@ -151,8 +151,7 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 
 The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
 Apache Druid, MySQL, TimescaleDB, and Graphite alongside Grafana. Trickster's
-dev config registers a matching backend for each (except TimescaleDB, which is
-direct-only for now; see [TimescaleDB Details](#timescaledb-details)),
+dev config registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison.
 
@@ -367,13 +366,14 @@ License (TSL) build rather than the Apache-only `-oss` one, so
 `time_bucket_gapfill`, continuous aggregates, and compression are available
 for testing.
 
-Trickster does not proxy TimescaleDB yet. For now the environment provides
-only the direct path, which is the reference that the upcoming PostgreSQL
-wire-protocol listener will be verified against.
+Trickster serves TimescaleDB through its PostgreSQL wire-protocol listener,
+which is currently a reverse proxy only: every message is relayed to the
+origin and nothing is cached yet. The direct path is the reference that the
+proxied path is verified against.
 
 * Port `5432`: direct PostgreSQL access
-* Port `8488`: reserved for Trickster's PostgreSQL wire-protocol listener
-  (nothing listens on it yet)
+* Port `8488`: Trickster's PostgreSQL wire-protocol listener (`timescaledb1`,
+  `protocol: postgres`)
 * Database: `trickster`
 * Server time zone: `UTC`, set explicitly. Grafana's PostgreSQL data source
   has no time zone option and sends none at connection startup, so its
@@ -382,8 +382,8 @@ wire-protocol listener will be verified against.
   `docker-compose-data/timescaledb-config/init/01-users.sql`):
   * `postgres` / `trickster-dev-root` — administration
   * `seeder` / `trickster-dev-seed` — schema creation and seeding
-  * `trickster` / `trickster-dev-upstream` — reserved for Trickster's upstream
-    connection (read-only)
+  * `trickster` / `trickster-dev-upstream` — Trickster's upstream connection
+    (read-only)
   * `grafana_ro` / `trickster-dev-grafana` — Grafana direct access (read-only)
 
 The read-only roles receive `SELECT` through the seeder's default privileges,
@@ -410,16 +410,58 @@ then validates the same facts as the MySQL seeder (row count, shifted bounds,
 centering on seed time, date/datetime agreement, indexes) along with the chunk
 count and the read-only grants.
 
-Grafana provisions the `timescaledb-direct` data source using its bundled
-PostgreSQL plugin with the TimescaleDB option enabled, so `$__timeGroup`
-expands to `time_bucket(...)`. The dashboard is at
-<http://127.0.0.1:3000/d/trickster-timescaledb/timescaledb>. It has the same
+Grafana provisions the `timescaledb-direct` and `timescaledb-trickster` data
+sources using its bundled PostgreSQL plugin with the TimescaleDB option
+enabled, so `$__timeGroup` expands to `time_bucket(...)`. The dashboard is at
+<http://127.0.0.1:3000/d/trickster-timescaledb/timescaledb>, and its Data
+Source variable switches between the two; every panel must render identically
+through both. It has the same
 panels as the MySQL dashboard and, because both databases hold the same rows,
 shows the same values over the same time range. Two panel queries differ from
 the MySQL versions only in dialect: the card-use rate counts with
 `FILTER (WHERE ...)`, and `round(avg(x), 2)` casts the average to `numeric`.
-The Trickster Performance row is already labeled for a `timescaledb1` backend
-and stays empty until Trickster serves one.
+In the Trickster Performance row, the request duration and returned elements
+panels show traffic for the `timescaledb1` backend; the SQL analysis and cache
+panels stay empty until the listener caches.
+
+The `timescaledb1` backend uses `provider: timescaledb`, an alias of
+`postgres`: both names select the same engine, and metrics report
+`provider="postgres"`. A `postgres` listener maps to exactly one backend and
+keeps one upstream connection per client connection, so session state never
+crosses clients. The backend's authenticator decides how clients log in:
+
+* With `authenticator_name` (as configured here, `timescaledb-grafana`),
+  Trickster authenticates the client itself and then opens the origin session
+  with the `origin_url` credentials. It offers SCRAM-SHA-256, plus
+  SCRAM-SHA-256-PLUS when the listener has a certificate. A user whose stored
+  credential is a crypt hash or a PostgreSQL `md5` verifier needs a cleartext
+  password, which is refused without TLS unless the listener sets
+  `postgres.allow_cleartext_without_tls` (or `postgres.allow_md5` for the
+  legacy md5 method). Authenticator entries may be plaintext or PostgreSQL
+  `SCRAM-SHA-256$...` verifiers copied from `pg_authid`.
+* Without one, or with `observe_only: true`, the client's own authentication
+  exchange is relayed to the origin untouched and Trickster holds no
+  credentials. SCRAM-SHA-256-PLUS cannot succeed in this mode when both the
+  listener and the origin use TLS, because the client binds to Trickster's
+  certificate rather than the origin's.
+
+TLS is negotiated in-band on port `8488` (there is no separate `tls_port`),
+and TLS to the origin is independent of it: set the backend's
+`postgres.upstream_tls_mode` to `disable` (the default), `require`,
+`verify-ca`, or `verify-full`. Cancel requests work through the listener:
+clients receive a Trickster-issued cancellation key that is mapped to the
+origin's, and a client that disconnects mid-query has its statement canceled
+at the origin. For a smoke test through Trickster (with `make serve-dev`
+running):
+
+```sh
+docker compose exec -e PGPASSWORD=trickster-dev-grafana timescaledb \
+  psql -h host.docker.internal -p 8488 -U grafana_ro -d trickster \
+  -c "SELECT current_user, count(*) FROM trips"
+```
+
+`current_user` reports `trickster`, the origin role, because the listener
+terminates authentication.
 
 Troubleshooting readiness: the `timescaledb` service has a healthcheck based on
 `pg_isready` over TCP, which only succeeds once the image's one-time

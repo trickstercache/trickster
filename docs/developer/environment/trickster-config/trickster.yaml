@@ -4,6 +4,11 @@ listeners:
   mysql1:
     protocol: mysql
     port: 8486
+  # timescaledb1 accepts PostgreSQL wire-protocol connections and relays them
+  # to the single backend that maps to this listener (backends -> timescaledb1)
+  timescaledb1:
+    protocol: postgres
+    port: 8488
   # clickhouse-native exposes click1 through the ClickHouse binary protocol.
   clickhouse-native:
     protocol: clickhouse
@@ -14,6 +19,12 @@ listeners:
     port: 8485
 authenticators:
   mysql-grafana:
+    provider: basic
+    users:
+      grafana_ro: trickster-dev-grafana
+  # Trickster authenticates PostgreSQL clients against these users (SCRAM-SHA-256),
+  # then opens the origin session with the origin_url credentials
+  timescaledb-grafana:
     provider: basic
     users:
       grafana_ro: trickster-dev-grafana
@@ -118,6 +129,13 @@ backends:
     healthcheck:
       interval: 5s
       timeout: 3s
+  # provider 'timescaledb' is an alias of 'postgres'; proxy-only for now (no caching)
+  timescaledb1:
+    provider: timescaledb
+    origin_url: 'postgres://trickster:trickster-dev-upstream@127.0.0.1:5432/trickster'
+    listener_names: [timescaledb1]
+    authenticator_name: timescaledb-grafana
+    cache_name: mem1
   click1:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'
