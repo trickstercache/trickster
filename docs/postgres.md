@@ -105,6 +105,10 @@ TLS toward the origin is independent of the listener. Set the backend's
 
 ## Connections, limits, and lifecycle
 
+A result that outgrows the result limits is streamed to the client through a
+fixed buffer, however large its rows are; the limits bound what Trickster
+holds in memory, not what a client may read.
+
 Each client connection gets its own origin connection for its whole life, so
 session state never crosses clients, and Trickster adds no pooling. Put a
 pooler such as PgBouncer between Trickster and the origin if you need one.
@@ -295,8 +299,19 @@ function calls. A session with `standard_conforming_strings` off is relayed
 uncached as well. Transactions, DML, `SHOW`, `EXPLAIN`, and harmless settings
 such as `statement_timeout` and `application_name` do not end caching.
 
-Results whose bucket column cannot be read safely, for example under a
-non-ISO `DateStyle`, are cached as objects instead.
+PostgreSQL never announces `extra_float_digits` or `bytea_output`, and a role
+or database default can change them. With an authenticator, Trickster reads
+the session's effective values once at origin login, makes them part of the
+session identity, and returns to them on `RESET`. When the client's own login
+is relayed, Trickster cannot ask, so it only knows a value the client set
+itself.
+
+Results whose bucket column cannot be read safely are cached as objects
+instead: under a non-ISO `DateStyle`, and for a `float8` epoch bucket
+(`$__unixEpochGroup`, or the `date_part('epoch', ...)` form) whenever
+`extra_float_digits` is negative or unknown, since PostgreSQL may then render
+`1788998400` as `2e+09`. In relay-authentication mode such a panel needs the
+client to `SET extra_float_digits` (0 or higher) to use the delta cache.
 
 ## Failure behavior
 

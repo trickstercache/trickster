@@ -36,6 +36,11 @@ const (
 	cancelDrainTimeout = 5 * time.Second
 )
 
+// unannouncedSettingNames are read in this order by unannouncedSettingsSQL.
+var unannouncedSettingNames = []string{varExtraFloatDigits, varByteaOutput}
+
+const unannouncedSettingsSQL = "SELECT current_setting('extra_float_digits'), current_setting('bytea_output')"
+
 var errUpstreamTLSRefused = errors.New("postgres origin refused TLS")
 
 func (c *Config) dialUpstream(ctx context.Context) (net.Conn, error) {
@@ -101,14 +106,16 @@ func (c *Config) cancelUpstream(ctx context.Context, pid uint32, secret []byte) 
 }
 
 func (c *Config) loginUpstream(ctx context.Context, database string,
-	params map[string]string,
-) (*pgconn.HijackedConn, error) {
+	params map[string]string, probe bool,
+) (*pgconn.HijackedConn, map[string]string, error) {
+	// probe also reads the session's effective value of each result-shaping setting the
+	// origin never announces, which a role or database default may have changed.
 	if database == "" {
 		database = c.Upstream.Database
 	}
 	host, port, err := net.SplitHostPort(c.Upstream.Address)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Every setting pgconn would otherwise default from the process
 	// environment is given explicitly, then the dial and TLS are replaced.
@@ -120,7 +127,7 @@ func (c *Config) loginUpstream(ctx context.Context, database string,
 	config, err := pgconn.ParseConfig(dsn.String())
 	if err != nil {
 		// pgconn's parse errors embed the connection string; never surface them.
-		return nil, errors.New("invalid postgres upstream configuration")
+		return nil, nil, errors.New("invalid postgres upstream configuration")
 	}
 	config.Host, config.Fallbacks = host, nil
 	if n, err := strconv.ParseUint(port, 10, 16); err == nil {
@@ -131,14 +138,36 @@ func (c *Config) loginUpstream(ctx context.Context, database string,
 	config.ConnectTimeout = c.ConnectTimeout
 	conn, err := pgconn.ConnectConfig(ctx, config)
 	if err != nil {
-		return nil, fmt.Errorf("postgres upstream login: %w", sanitizeConnectError(err))
+		return nil, nil, fmt.Errorf("postgres upstream login: %w", sanitizeConnectError(err))
+	}
+	var defaults map[string]string
+	if probe {
+		if defaults, err = unannouncedSettings(ctx, conn); err != nil {
+			_ = conn.Close(ctx)
+			return nil, nil, fmt.Errorf("postgres upstream login: %w", sanitizeConnectError(err))
+		}
 	}
 	hijacked, err := conn.Hijack()
 	if err != nil {
 		_ = conn.Close(ctx)
+		return nil, nil, err
+	}
+	return hijacked, defaults, nil
+}
+
+func unannouncedSettings(ctx context.Context, conn *pgconn.PgConn) (map[string]string, error) {
+	results, err := conn.Exec(ctx, unannouncedSettingsSQL).ReadAll()
+	if err != nil {
 		return nil, err
 	}
-	return hijacked, nil
+	if len(results) != 1 || len(results[0].Rows) != 1 || len(results[0].Rows[0]) != len(unannouncedSettingNames) {
+		return nil, errors.New("unexpected answer to the settings probe")
+	}
+	defaults := make(map[string]string, len(unannouncedSettingNames))
+	for i, name := range unannouncedSettingNames {
+		defaults[name] = string(results[0].Rows[0][i])
+	}
+	return defaults, nil
 }
 
 // Probe checks the origin on a fresh connection. With origin credentials it logs in and
@@ -151,7 +180,7 @@ func (c *Config) Probe(ctx context.Context) error {
 		}
 		return conn.Close()
 	}
-	hijacked, err := c.loginUpstream(ctx, "", nil)
+	hijacked, _, err := c.loginUpstream(ctx, "", nil, false)
 	if err != nil {
 		return err
 	}

@@ -43,6 +43,8 @@ const (
 	varSessionAuthorization = "session_authorization"
 	varClientEncoding       = "client_encoding"
 	varSearchPath           = "search_path"
+	varExtraFloatDigits     = "extra_float_digits"
+	varByteaOutput          = "bytea_output"
 	varAll                  = "all"
 	// maxSetTokens bounds how much of a SET statement is read for its value.
 	maxSetTokens = 64

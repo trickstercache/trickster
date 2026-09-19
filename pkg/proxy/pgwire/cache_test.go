@@ -17,8 +17,11 @@
 package pgwire
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -558,5 +561,73 @@ func TestCacheMetricsStartAtZero(t *testing.T) {
 	}
 	if exported != want {
 		t.Fatalf("expected %d series at zero before any statement, got %d", want, exported)
+	}
+}
+
+func TestOversizedRowIsStreamedNotBuffered(t *testing.T) {
+	// one row far beyond the limit must reach the client whole without being held in memory
+	upstream := newFakeUpstream(t, nil)
+	config := cachedConfig(t, upstream)
+	config.MaxResultSizeBytes = 4096
+	_, address := startServer(t, config)
+	conn := mustDial(t, address, testClientUser, testClientPass)
+	for range 2 {
+		ctx, cancel := context.WithTimeout(context.Background(), fakeTimeout)
+		results, err := conn.Exec(ctx, fakeQueryWide).ReadAll()
+		cancel()
+		if err != nil || len(results) != 1 || len(results[0].Rows) != fakeWideRows {
+			t.Fatalf("expected %d rows, got %+v, %v", fakeWideRows, len(results), err)
+		}
+		rows := results[0].Rows
+		if string(rows[0][0]) != "1" || string(rows[1][0]) != "2" || string(rows[3][0]) != "4" ||
+			!bytes.Equal(rows[2][0], fakeWideValue()) {
+			t.Fatal("the rows around and including the oversized one must arrive intact and in order")
+		}
+	}
+	if got := upstream.received(); len(got) != 2 {
+		t.Fatalf("an oversized result is fetched once per request, never twice: %q", got)
+	}
+	if rows, err := queryRows(t, conn, fakeQueryOne); err != nil || rows != 1 {
+		t.Fatalf("the session must continue at a message boundary: %d rows, %v", rows, err)
+	}
+}
+
+func TestFrameWriterNeverGrowsItsBuffer(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	received := make(chan []byte, 1)
+	go func() {
+		all, _ := io.ReadAll(client)
+		received <- all
+	}()
+	const bufferSize = 64
+	small, large := []byte("small"), bytes.Repeat([]byte{'L'}, 10*bufferSize)
+	streamed := bytes.Repeat([]byte{'S'}, 7*bufferSize+3)
+	w := &frameWriter{conn: server, timeout: fakeTimeout, buffer: make([]byte, 0, bufferSize)}
+	w.frame(msgDataRow, small)
+	w.frame(msgDataRow, large)
+	w.frame(msgDataRow, bytes.Repeat([]byte{'F'}, bufferSize-frameHeaderLen))
+	w.stream(msgDataRow, bytes.NewReader(streamed), len(streamed))
+	w.frame(msgDataRow, small)
+	w.flush()
+	if w.err != nil || cap(w.buffer) != bufferSize {
+		t.Fatalf("err %v, buffer capacity %d", w.err, cap(w.buffer))
+	}
+	_ = server.Close()
+	var want []byte
+	for _, body := range [][]byte{small, large, bytes.Repeat([]byte{'F'}, bufferSize-frameHeaderLen), streamed, small} {
+		want = appendFrame(want, msgDataRow, body)
+	}
+	if got := <-received; !bytes.Equal(got, want) {
+		t.Fatalf("got %d bytes, want %d", len(got), len(want))
+	}
+	// a source that ends early and a closed client are both reported
+	short := &frameWriter{conn: server, timeout: fakeTimeout, buffer: make([]byte, 0, bufferSize)}
+	if short.stream(msgDataRow, bytes.NewReader(small), bufferSize); short.err == nil {
+		t.Fatal("expected a short read to fail")
+	}
+	closed := &frameWriter{conn: server, timeout: fakeTimeout, buffer: make([]byte, 0, bufferSize)}
+	if closed.frame(msgDataRow, large); closed.err == nil {
+		t.Fatal("expected a write to a closed connection to fail")
 	}
 }

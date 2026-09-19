@@ -27,6 +27,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -560,5 +561,44 @@ func TestGateBypassesBackslashEscapeSessions(t *testing.T) {
 	if outcome := s.gateQuery([]byte(gateDeltaQuery + "\x00")); outcome.eligible ||
 		analysisCount(t.Name(), sqlanalyzer.CacheModeNone, reasonSessionState) != 1 {
 		t.Fatalf("got %+v", outcome)
+	}
+}
+
+func TestUnannouncedSettingsComeFromTheSessionsDefaults(t *testing.T) {
+	// a role or database default is invisible on the wire, so it is read once at origin login
+	s := gateTestSession(t, nil)
+	floatAxis := func() error {
+		_, err := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, false, s.tracker.setting)
+		return err
+	}
+	apply := func(sql string) {
+		class := classify(sql, false)
+		s.tracker.observe(&class, true, true, false)
+		s.tracker.ready(false)
+	}
+	if floatAxis() == nil {
+		t.Fatal("a float time axis must fail closed while the effective extra_float_digits is unknown")
+	}
+	unknown := s.tracker.sessionIdentity()
+	s.tracker.sessionDefaults(map[string]string{varExtraFloatDigits: "-14", varByteaOutput: "hex"})
+	if floatAxis() == nil {
+		t.Fatal("a lossy role default must fail closed")
+	}
+	lossy := s.tracker.sessionIdentity()
+	apply("SET extra_float_digits = 1")
+	if err := floatAxis(); err != nil {
+		t.Fatalf("the client's own setting overrides the default: %v", err)
+	}
+	apply("RESET extra_float_digits")
+	if floatAxis() == nil {
+		t.Fatal("RESET returns to the session's default, not to PostgreSQL's")
+	}
+	s.tracker.sessionDefaults(map[string]string{varExtraFloatDigits: fakeDefaultFloatDigits, varByteaOutput: "hex"})
+	if err := floatAxis(); err != nil {
+		t.Fatal(err)
+	}
+	// sessions that render values differently never share cached answers
+	if exact := s.tracker.sessionIdentity(); exact == lossy || exact == unknown || lossy == unknown {
+		t.Fatal("the session's defaults must be part of its cache identity")
 	}
 }

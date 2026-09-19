@@ -19,8 +19,7 @@ package pgwire
 import "testing"
 
 const (
-	varExtraFloatDigits = "extra_float_digits"
-	varTenant           = "app.tenant"
+	varTenant = "app.tenant"
 )
 
 func TestClassifyKinds(t *testing.T) {

@@ -175,16 +175,16 @@ func TestTerminatedRefusesReplicationAndDefaultsDatabase(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), fakeTimeout)
 	defer cancel()
-	hijacked, err := config.loginUpstream(ctx, "", nil)
-	if err != nil {
-		t.Fatal(err)
+	hijacked, defaults, err := config.loginUpstream(ctx, "", nil, true)
+	if err != nil || defaults[varExtraFloatDigits] != fakeDefaultFloatDigits || defaults[varByteaOutput] == "" {
+		t.Fatalf("expected the session's unannounced settings, got %v, %v", defaults, err)
 	}
 	_ = hijacked.Conn.Close()
 	if database := upstream.lastStartup()[paramDatabase]; database != testDatabase {
 		t.Fatalf("expected the origin_url database %q, got %q", testDatabase, database)
 	}
 	config.Upstream.Address = "not-an-address"
-	if _, err = config.loginUpstream(ctx, "", nil); err == nil {
+	if _, _, err = config.loginUpstream(ctx, "", nil, false); err == nil {
 		t.Fatal("expected an invalid origin address to be rejected")
 	}
 }

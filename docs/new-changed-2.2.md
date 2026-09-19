@@ -1,6 +1,6 @@
 # Trickster 2.2
 
-Trickster 2.2 extends many of the new features introduced in 2.1, while adding support for delta-caching several new TSDB's that use the Postgres Query Dialect. 
+Trickster 2.2 extends many of the new features introduced in 2.1, while adding support for delta-caching several new TSDB's that use the Postgres Query Dialect.
 
 Trickster 2.2 just recently began development, so many of the planned features are still being designed or are under development.
 
@@ -28,4 +28,4 @@ All three of these newly-supported providers consume a new `pgwire` package for 
 
 ## HTTP Reverse Proxy Cache & Streaming
 
-**PLANNED** - **Media over QUIC (MoQ)** -- In Trickster 2.1, we introduced support for HTTP/3 (QUIC). We now offer support for MoQ Relaying through the reverse proxy cache.
+**PLANNED** - **Media over QUIC (MoQ)** -- In Trickster 2.1, we introduced support for HTTP/3 and QUIC. We now offer support for MoQ Relaying through the reverse proxy cache.

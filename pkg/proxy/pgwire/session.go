@@ -441,9 +441,12 @@ func (s *session) loginTerminated() error {
 	upstreamParams, _ := s.upstreamParams()
 	ctx, cancel := context.WithTimeout(context.Background(), s.server.config.HandshakeTimeout)
 	defer cancel()
-	hijacked, err := s.server.config.loginUpstream(ctx, s.database, upstreamParams)
+	hijacked, defaults, err := s.server.config.loginUpstream(ctx, s.database, upstreamParams, s.tracker != nil)
 	if err != nil {
 		return s.upstreamFailed(err)
+	}
+	if s.tracker != nil {
+		s.tracker.sessionDefaults(defaults)
 	}
 	if !s.setUpstream(hijacked.Conn) {
 		return net.ErrClosed

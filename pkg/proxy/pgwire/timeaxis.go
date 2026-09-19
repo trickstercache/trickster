@@ -74,11 +74,11 @@ func newTimeAxisDecoder(kind TimeAxisKind, unit timeseries.FieldDataType, naiveU
 			return nil, errTimeAxis
 		}
 		if kind == TimeAxisEpochFloat {
-			// negative extra_float_digits rounds an epoch to text like 2e+09
-			if digits, ok := settings("extra_float_digits"); ok {
-				if n, err := strconv.Atoi(digits); err != nil || n < 0 {
-					return nil, errTimeAxis
-				}
+			// negative extra_float_digits rounds an epoch to text like 2e+09, which can still land
+			// on the grid. The origin never announces the setting, so an unknown value fails closed.
+			digits, ok := settings(varExtraFloatDigits)
+			if n, err := strconv.Atoi(digits); !ok || err != nil || n < 0 {
+				return nil, errTimeAxis
 			}
 		}
 	default:

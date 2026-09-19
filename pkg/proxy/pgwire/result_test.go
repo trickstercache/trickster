@@ -220,7 +220,9 @@ func timeAxisSettings(values map[string]string) func(string) (string, bool) {
 }
 
 func TestTimeAxisDecoding(t *testing.T) {
-	iso := timeAxisSettings(map[string]string{"datestyle": "ISO, MDY", varTimeZone: "Etc/UTC"})
+	iso := timeAxisSettings(map[string]string{
+		"datestyle": "ISO, MDY", varTimeZone: "Etc/UTC", varExtraFloatDigits: fakeDefaultFloatDigits,
+	})
 	want := time.Date(2026, 9, 10, 8, 5, 0, 0, time.UTC)
 	for name, test := range map[string]struct {
 		kind TimeAxisKind
@@ -297,9 +299,12 @@ func TestTimeAxisDecoderFailsClosedOnSessionSettings(t *testing.T) {
 		"epoch without a unit":              {TimeAxisEpochInteger, timeseries.DateTimeRFC3339Nano, false, nil, false},
 		"float with lossy digits":           {TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, false, map[string]string{varExtraFloatDigits: "-3"}, false},
 		"float with unreadable digits":      {TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, false, map[string]string{varExtraFloatDigits: "x"}, false},
-		"float with default digits":         {TimeAxisEpochFloat, timeseries.DateTimeUnixMicro, false, nil, true},
-		"float with exact digits":           {TimeAxisEpochFloat, timeseries.DateTimeUnixNano, false, map[string]string{varExtraFloatDigits: "3"}, true},
-		"unknown kind":                      {0, 0, false, nil, false},
+		// the origin never announces the setting, and a role default of -14 renders 1788998400 as 2e+09
+		"float with unknown digits":     {TimeAxisEpochFloat, timeseries.DateTimeUnixMicro, false, nil, false},
+		"float with zero digits":        {TimeAxisEpochFloat, timeseries.DateTimeUnixMicro, false, map[string]string{varExtraFloatDigits: "0"}, true},
+		"numeric needs no float digits": {TimeAxisEpochNumeric, timeseries.DateTimeUnixSecs, false, nil, true},
+		"float with exact digits":       {TimeAxisEpochFloat, timeseries.DateTimeUnixNano, false, map[string]string{varExtraFloatDigits: "3"}, true},
+		"unknown kind":                  {0, 0, false, nil, false},
 	} {
 		_, err := newTimeAxisDecoder(test.kind, test.unit, test.naiveUTC, timeAxisSettings(test.settings))
 		if (err == nil) != test.ok {

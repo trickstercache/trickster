@@ -144,6 +144,32 @@ data:
     #     # keep a MySQL listener's origin and client credentials in a Secret
     #     # rather than a shared ConfigMap.
     #
+    #   # A listener with protocol postgres accepts PostgreSQL wire-protocol
+    #   # connections and requires exactly one mapped backend: one with provider
+    #   # postgres or timescaledb, or a User Router ALB over such backends (see
+    #   # examples/conf/postgres-user-router.yaml). TLS is negotiated in-band on
+    #   # the same port, so TLS ports are not supported.
+    #   postgres1:
+    #     protocol: postgres
+    #     port: 5432
+    #     # address: ''
+    #     # connections_limit: 0
+    #     # postgres:
+    #       # The startup and authentication exchange must finish within this timeout.
+    #       handshake_timeout: 10s
+    #       read_timeout: 30s
+    #       write_timeout: 30s
+    #       # idle_timeout bounds the wait for a client's next message.
+    #       idle_timeout: 5m
+    #       # statements larger than this are relayed without being analyzed or cached
+    #       max_query_size_bytes: 1048576
+    #       # With an authenticator, clients authenticate with SCRAM-SHA-256. A user
+    #       # stored as a PostgreSQL md5 hash can only log in when allow_md5 is set,
+    #       # and a plaintext exchange over a non-TLS connection only with
+    #       # allow_cleartext_without_tls. Both default to false.
+    #       allow_md5: false
+    #       allow_cleartext_without_tls: false
+    #
     #   # A ClickHouse listener accepts the Native binary protocol and maps to one
     #   # ClickHouse backend through that backend's listener_names option.
     #   clickhouse-native:
@@ -420,6 +446,52 @@ data:
       #   # SELECTs use DPC. The common cache_name, timeseries_ttl,
       #   # timeseries_retention_factor, backfill_tolerance, and
       #   # max_object_size_bytes backend settings apply.
+
+      # # example postgres backend, exposed by a listener with protocol postgres
+      # # (see the listeners section). Provider timescaledb is an alias of postgres.
+      # postgres1:
+      #   provider: timescaledb
+      #   # origin_url uses the postgres scheme; the port defaults to 5432 if omitted.
+      #   # Embedded passwords are redacted by sanitized configuration output.
+      #   origin_url: 'postgres://readonly:REDACTED@tsdb-origin.example.com:5432/database'
+      #   # listener_names must reference a listener whose protocol is postgres
+      #   listener_names: [postgres1]
+      #   # With an authenticator, Trickster authenticates clients itself against
+      #   # its users and logs in to the origin with the origin_url credentials.
+      #   # Without one, the client's own authentication exchange is relayed to the
+      #   # origin unchanged and the origin_url needs no credentials.
+      #   authenticator_name: example_auth_1
+      #   cache_name: default
+      #   # timeout bounds both origin connect and the wait for a cached statement's result
+      #   timeout: 1m
+      #   max_concurrent_conns: 20
+      #   postgres:
+      #     # TLS toward the origin: disable (default), require, verify-ca or
+      #     # verify-full, as libpq's sslmode. CAs and a client pair come from tls below.
+      #     upstream_tls_mode: verify-full
+      #     # a larger result is relayed to the client without being cached
+      #     max_result_rows: 100000
+      #     max_result_size_bytes: 67108864
+      #   # The native health check logs in to the origin on a fresh connection with
+      #   # the origin_url credentials and waits for ReadyForQuery; without origin
+      #   # credentials it only confirms the origin accepts connections. HTTP
+      #   # matching options do not apply.
+      #   healthcheck:
+      #     interval: 5s
+      #     timeout: 3s
+      #   # When a server certificate is configured, clients may upgrade in-band to
+      #   # TLS. Set require_tls to refuse plaintext clients.
+      #   require_tls: true
+      #   tls:
+      #     full_chain_cert_path: /etc/trickster/tls/server.crt
+      #     private_key_path: /etc/trickster/tls/server.key
+      #     certificate_authority_paths:
+      #       - /etc/trickster/tls/origin-ca.crt
+      #   # Deterministic SELECTs use OPC; time_bucket, date_bin and epoch-floor
+      #   # time-series SELECTs use DPC. The common cache_name, timeseries_ttl,
+      #   # timeseries_retention_factor, backfill_tolerance, sharding and
+      #   # max_object_size_bytes backend settings apply. proxy_only: true relays
+      #   # every statement without inspecting it.
 
       # # example graphite backend. Graphite is an ordinary HTTP backend; the
       # # settings below are the Graphite-specific ones. See /docs/graphite.md.

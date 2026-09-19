@@ -17,6 +17,7 @@
 package pgwire
 
 import (
+	"bytes"
 	"crypto/md5"
 	"crypto/tls"
 	"encoding/hex"
@@ -42,23 +43,28 @@ const (
 	fakeAuthSCRAM     = "scram"
 
 	// queries the fake origin understands
-	fakeQueryOne        = "select 1"
-	fakeQuerySlow       = "select pg_sleep(60)"
-	fakeQueryError      = "select 1/0"
-	fakeQueryMany       = "select generate_series(1, 5000)"
-	fakeManyRows        = 5000
-	fakeQueryBegin      = "BEGIN"
-	fakeBucketFunction  = "date_bin"
-	fakeHostColumn      = "host"
-	fakeBucketStep      = 5 * time.Minute
-	fakeZoneUTC         = "UTC"
-	fakeDateStyleISO    = "ISO, MDY"
-	fakeParamDateStyle  = "DateStyle"
-	fakeNoticeText      = "a notice from the origin"
-	sqlstateSyntaxError = "42601"
-	fakeQueryCommit     = "COMMIT"
-	fakeQuerySetZone    = "SET TIME ZONE "
-	fakeQueryPing       = "-- ping"
+	fakeQueryOne           = "select 1"
+	fakeQuerySlow          = "select pg_sleep(60)"
+	fakeQueryError         = "select 1/0"
+	fakeQueryMany          = "select generate_series(1, 5000)"
+	fakeManyRows           = 5000
+	fakeQueryBegin         = "BEGIN"
+	fakeBucketFunction     = "date_bin"
+	fakeHostColumn         = "host"
+	fakeBucketStep         = 5 * time.Minute
+	fakeZoneUTC            = "UTC"
+	fakeDateStyleISO       = "ISO, MDY"
+	fakeParamDateStyle     = "DateStyle"
+	fakeNoticeText         = "a notice from the origin"
+	sqlstateSyntaxError    = "42601"
+	fakeQueryCommit        = "COMMIT"
+	fakeQuerySetZone       = "SET TIME ZONE "
+	fakeQueryPing          = "-- ping"
+	fakeQueryWide          = "select wide"
+	fakeDefaultFloatDigits = "1"
+	fakeTextOID            = 25
+	fakeWideRowBytes       = 8 << 20
+	fakeWideRows           = 4
 
 	fakeServerVersion  = "18.6"
 	fakeLongSecretLen  = 32
@@ -91,6 +97,8 @@ type fakeUpstream struct {
 	notice     bool
 	dateStyle  string
 	timeOID    uint32
+	// floatDigits is the session's extra_float_digits, as a role default would set it
+	floatDigits string
 
 	mtx      sync.Mutex
 	nextPID  uint32
@@ -384,6 +392,23 @@ func (f *fakeUpstream) query(backend *pgproto3.Backend, pid uint32, sql string, 
 	case fakeQueryMany:
 		backend.Send(f.rowDescription())
 		f.rows(backend, fakeManyRows)
+	case unannouncedSettingsSQL:
+		digits := f.floatDigits
+		if digits == "" {
+			digits = fakeDefaultFloatDigits
+		}
+		backend.Send(&pgproto3.RowDescription{Fields: []pgproto3.FieldDescription{
+			{Name: []byte("current_setting"), DataTypeOID: fakeTextOID}, {Name: []byte("current_setting"), DataTypeOID: fakeTextOID},
+		}})
+		backend.Send(&pgproto3.DataRow{Values: [][]byte{[]byte(digits), []byte("hex")}})
+		backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT 1")})
+	case fakeQueryWide:
+		// two small rows, one far larger than any buffering limit, and one more
+		backend.Send(f.rowDescription())
+		for _, value := range [][]byte{[]byte("1"), []byte("2"), fakeWideValue(), []byte("4")} {
+			backend.Send(&pgproto3.DataRow{Values: [][]byte{value}})
+		}
+		backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT " + strconv.Itoa(fakeWideRows))})
 	case "", fakeQueryPing:
 		backend.Send(&pgproto3.EmptyQueryResponse{})
 	default:
@@ -480,4 +505,10 @@ func testServerTLS(t *testing.T) *tls.Config {
 		t.Fatal(err)
 	}
 	return &tls.Config{Certificates: []tls.Certificate{pair}, MinVersion: tls.VersionTLS12}
+}
+
+func fakeWideValue() []byte {
+	value := bytes.Repeat([]byte{'x'}, fakeWideRowBytes)
+	value[0], value[len(value)-1] = '<', '>'
+	return value
 }

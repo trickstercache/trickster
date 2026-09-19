@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"net"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgproto3"
@@ -161,6 +162,10 @@ func (s *session) readFetchBody(result *Result, typ byte, size int, discard bool
 		}
 		return nil, nil
 	}
+	if size > s.server.config.MaxResultSizeBytes {
+		// no row description, notice or error is legitimately larger than a whole result may be
+		return nil, errFrameLength
+	}
 	body := make([]byte, size)
 	_, err := io.ReadFull(s.upstreamReader, body)
 	return body, err
@@ -184,30 +189,81 @@ func (r *Result) keepRow(size int, reader *rowReader) error {
 }
 
 func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {
-	// Sends what was buffered and lets the origin pump forward the rest, so an
-	// oversized result is neither canceled nor fetched twice.
-	pending := make([]byte, pendingRowSize)
-	// the row whose header was read is taken whole, so the pump resumes at a boundary
-	if _, err := io.ReadFull(s.upstreamReader, pending); err != nil {
-		return err
-	}
-	out := make([]byte, 0, len(buffered.RowDescription)+len(buffered.data)+pendingRowSize+
-		frameHeaderLen*(buffered.Rows()+2))
+	// Sends what was buffered and lets the origin pump forward the rest, so an oversized
+	// result is neither canceled nor fetched twice. Nothing here is sized by the origin's row.
+	buffer := pumpBuffers.Get().(*[]byte)
+	defer pumpBuffers.Put(buffer)
+	out := &frameWriter{conn: s.client, timeout: s.server.config.WriteTimeout, buffer: (*buffer)[:0]}
 	if buffered.RowDescription != nil {
-		out = appendFrame(out, msgRowDescription, buffered.RowDescription)
+		out.frame(msgRowDescription, buffered.RowDescription)
 	}
 	for row := range buffered.ends {
-		out = appendFrame(out, msgDataRow, buffered.row(row))
+		out.frame(msgDataRow, buffered.row(row))
 	}
-	out = appendFrame(out, msgDataRow, pending)
-	if !writeAll(s.client, out, s.server.config.WriteTimeout) {
-		return io.ErrClosedPipe
+	// the row whose header was read is passed through whole, so the pump resumes at a boundary
+	out.stream(msgDataRow, s.upstreamReader, pendingRowSize)
+	if out.err != nil {
+		return out.err
 	}
 	// the parked pump completes this request when it sees ReadyForQuery
 	s.rows += int64(buffered.Rows() + 1)
 	s.relayResumed = true
 	s.countRequest(msgQuery)
 	return errRelayResumed
+}
+
+type frameWriter struct {
+	conn    net.Conn
+	timeout time.Duration
+	buffer  []byte
+	err     error
+}
+
+func (w *frameWriter) flush() {
+	if w.err == nil && len(w.buffer) > 0 && !writeAll(w.conn, w.buffer, w.timeout) {
+		w.err = io.ErrClosedPipe
+	}
+	w.buffer = w.buffer[:0]
+}
+
+func (w *frameWriter) header(typ byte, size int) {
+	if len(w.buffer)+frameHeaderLen > cap(w.buffer) {
+		w.flush()
+	}
+	w.buffer = append(w.buffer, typ)
+	// #nosec G115 -- a message body is bounded by the protocol's 1 GiB ceiling
+	w.buffer = binary.BigEndian.AppendUint32(w.buffer, uint32(size+frameLenSize))
+}
+
+func (w *frameWriter) frame(typ byte, body []byte) {
+	w.header(typ, len(body))
+	if len(w.buffer)+len(body) <= cap(w.buffer) {
+		w.buffer = append(w.buffer, body...)
+		return
+	}
+	// a body that does not fit is written from where it lies instead of being copied
+	w.flush()
+	if w.err == nil && !writeAll(w.conn, body, w.timeout) {
+		w.err = io.ErrClosedPipe
+	}
+}
+
+func (w *frameWriter) stream(typ byte, from io.Reader, size int) {
+	// forwards a message body of any size through the fixed buffer.
+	w.header(typ, size)
+	for size > 0 && w.err == nil {
+		if len(w.buffer) == cap(w.buffer) {
+			w.flush()
+		}
+		chunk := w.buffer[len(w.buffer):min(cap(w.buffer), len(w.buffer)+size)]
+		n, err := io.ReadFull(from, chunk)
+		w.buffer = w.buffer[:len(w.buffer)+n]
+		size -= n
+		if err != nil {
+			w.err = err
+		}
+	}
+	w.flush()
 }
 
 func (s *session) cancelFetch() {

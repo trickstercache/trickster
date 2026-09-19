@@ -53,7 +53,7 @@ var (
 	// clientIdentity lists result-shaping settings no origin announces, which
 	// can therefore only be followed by reading the client's SET statements.
 	clientIdentity = map[string]struct{}{
-		varRole: {}, "extra_float_digits": {}, "bytea_output": {},
+		varRole: {}, varExtraFloatDigits: {}, varByteaOutput: {},
 	}
 	// neutralSettings never change a result, so a session may set them freely.
 	neutralSettings = map[string]struct{}{
@@ -64,12 +64,15 @@ var (
 )
 
 type sessionTracker struct {
-	mtx              sync.Mutex
-	user             string
-	database         string
-	options          string
-	reported         map[string]string
-	client           map[string]string
+	mtx      sync.Mutex
+	user     string
+	database string
+	options  string
+	reported map[string]string
+	client   map[string]string
+	// defaults holds what the session started with for settings the origin never
+	// announces; a RESET returns to them. Empty when the origin login is the client's own.
+	defaults         map[string]string
 	pending          *statementClass
 	unsafe           string
 	identity         string
@@ -204,8 +207,17 @@ func (t *sessionTracker) setting(name string) (string, bool) {
 	if value, ok := t.reported[name]; ok {
 		return value, true
 	}
-	value, ok := t.client[name]
+	if value, ok := t.client[name]; ok {
+		return value, true
+	}
+	value, ok := t.defaults[name]
 	return value, ok
+}
+
+func (t *sessionTracker) sessionDefaults(defaults map[string]string) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	t.defaults, t.identity = defaults, ""
 }
 
 func (t *sessionTracker) utc() bool {
@@ -241,7 +253,7 @@ func (t *sessionTracker) sessionIdentity() string {
 	appendIdentityField(&identity, t.user)
 	appendIdentityField(&identity, t.database)
 	appendIdentityField(&identity, t.options)
-	for _, settings := range []map[string]string{t.reported, t.client} {
+	for _, settings := range []map[string]string{t.reported, t.client, t.defaults} {
 		names := make([]string, 0, len(settings))
 		for name := range settings {
 			names = append(names, name)
