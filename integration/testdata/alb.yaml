@@ -93,9 +93,9 @@ backends:
     alb:
       mechanism: rr
       pool:
-        - prom1
+        - name: prom1
+          weight: 2
         - prom2
-        - prom1
   alb-tsm:
     provider: alb
     alb:

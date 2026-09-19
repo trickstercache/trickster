@@ -96,6 +96,11 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		if o.ALBOptions != nil {
+			if w := o.ALBOptions.PoolRepeatWarning(k); w != "" {
+				c.addLoaderWarning(w)
+			}
+		}
 	}
 
 	if len(c.Discovery) > 0 {

@@ -220,7 +220,13 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
+	seen := sets.NewStringSet()
 	for _, m := range o.Pool {
+		// a pool holds each member once; options loaded from config are already de-duplicated
+		if seen.Contains(m.Name) {
+			continue
+		}
+		seen.Set(m.Name)
 		tc, ok := clients[m.Name]
 		if !ok {
 			return alberr.NewErrInvalidPoolMemberName(c.Name(), m.Name)

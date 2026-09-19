@@ -42,6 +42,8 @@ type Options struct {
 	// Pool provides the list of pool members (backend name + optional
 	// weight) to be used by the load balancer
 	Pool PoolMemberList `yaml:"pool,omitempty"`
+	// PoolRepeats lists the member names Initialize found repeated in Pool and removed
+	PoolRepeats []PoolRepeat `yaml:"-"`
 	// Discovery, when set, binds this ALB's pool to a named discoverer from
 	// the top-level 'discovery' config section; discovered members are
 	// additive to static Pool entries
@@ -152,12 +154,20 @@ func (o *Options) Clone() *Options {
 		c.Discovery = o.Discovery.Clone()
 	}
 	c.Pool = slices.Clone(o.Pool)
+	c.PoolRepeats = slices.Clone(o.PoolRepeats)
 	c.FGRStatusCodes = fsc
 	c.FgrCodesLookup = fscm
 	return c
 }
 
-func (o *Options) Initialize(_ string) error {
+func (o *Options) Initialize(name string) error {
+	pool, repeats, err := o.Pool.Dedupe(name)
+	if err != nil {
+		return err
+	}
+	if len(repeats) > 0 {
+		o.Pool, o.PoolRepeats = pool, repeats
+	}
 	if strings.HasPrefix(o.MechanismName, names.MechanismTSM) && o.MechanismName != names.MechanismTSM {
 		// shorten from tsmerge to tsm
 		o.MechanismName = names.MechanismTSM
@@ -185,6 +195,24 @@ func (o *Options) Initialize(_ string) error {
 	}
 
 	return nil
+}
+
+// PoolRepeatWarning returns the deprecation warning for member names that were repeated in
+// the pool, naming the weight that restores each one's former share; empty when none were.
+func (o *Options) PoolRepeatWarning(albName string) string {
+	if len(o.PoolRepeats) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "alb %q: repeating a pool member no longer increases its share;"+
+		" repeats were ignored. to keep the former split, set", albName)
+	for i, r := range o.PoolRepeats {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		fmt.Fprintf(&sb, " {name: %s, weight: %d}", r.Name, r.Weight)
+	}
+	return sb.String()
 }
 
 func (o *Options) Validate() (bool, error) {

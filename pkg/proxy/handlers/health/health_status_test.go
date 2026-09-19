@@ -422,7 +422,7 @@ func TestUpdateStatusTextEdgeCases(t *testing.T) {
 	albOpts.Provider = providers.ALB
 	albOpts.ALBOptions = ao.New()
 	albOpts.ALBOptions.MechanismName = names.MechanismRR
-	albOpts.ALBOptions.Pool = ao.Members("down-only", "down-only")
+	albOpts.ALBOptions.Pool = ao.Members("down-only")
 
 	downOnly := healthcheck.NewStatus("down-only", providers.Prometheus, "", healthcheck.StatusFailing, now().Add(-time.Minute), nil)
 

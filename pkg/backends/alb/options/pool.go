@@ -37,8 +37,8 @@ import (
 //
 // Weights apply to mechanisms that select a single member per request
 // (round_robin); fan-out mechanisms dispatch to every member regardless of
-// weight. A weight of 0 (or omitted) means 1. Weights replace the legacy
-// workaround of repeating a member name to increase its share.
+// weight. A weight of 0 (or omitted) means 1. A weight is the only way to
+// increase a member's share: a name repeated in the list is de-duplicated.
 type PoolMember struct {
 	Name   string `yaml:"name"`
 	Weight int    `yaml:"weight,omitempty"`
@@ -49,6 +49,56 @@ type PoolMemberList []PoolMember
 
 // ErrInvalidPoolWeight is returned when a pool entry has a negative weight
 var ErrInvalidPoolWeight = errors.New("pool member 'weight' cannot be negative")
+
+// ErrConflictingPoolWeights is returned when a pool lists one member under different weights
+var ErrConflictingPoolWeights = errors.New("pool member is repeated with different 'weight' values")
+
+// PoolRepeat describes a member name that a pool listed more than once
+type PoolRepeat struct {
+	Name string
+	// Count is how many times the name was listed
+	Count int
+	// Weight is the combined effective weight the repeated entries carried
+	Weight int
+}
+
+// Dedupe returns the list with repeated member names removed, the first occurrence winning,
+// and what was repeated. Repeats that set different explicit weights are an error.
+func (l PoolMemberList) Dedupe(albName string) (PoolMemberList, []PoolRepeat, error) {
+	seen := make(map[string]int, len(l))
+	var repeats []PoolRepeat
+	var repeatIdx map[string]int
+	out := l
+	for i, m := range l {
+		j, dup := seen[m.Name]
+		if !dup {
+			seen[m.Name] = i
+			if repeats != nil {
+				out = append(out, m)
+			}
+			continue
+		}
+		first := l[j]
+		if first.Weight > 0 && m.Weight > 0 && first.Weight != m.Weight {
+			return nil, nil, fmt.Errorf("%w (member %q of alb %q: %d and %d)",
+				ErrConflictingPoolWeights, m.Name, albName, first.Weight, m.Weight)
+		}
+		if repeats == nil {
+			// the first repeat: everything before it is kept as is
+			out = append(make(PoolMemberList, 0, len(l)-1), l[:i]...)
+			repeatIdx = make(map[string]int)
+		}
+		k, ok := repeatIdx[m.Name]
+		if !ok {
+			k = len(repeats)
+			repeatIdx[m.Name] = k
+			repeats = append(repeats, PoolRepeat{Name: m.Name, Count: 1, Weight: first.EffectiveWeight()})
+		}
+		repeats[k].Count++
+		repeats[k].Weight += m.EffectiveWeight()
+	}
+	return out, repeats, nil
+}
 
 // Members returns a PoolMemberList of the provided names, each with the
 // default weight

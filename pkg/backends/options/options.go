@@ -878,7 +878,7 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.Provider == providers.ALB {
 		if o.ALBOptions != nil {
-			if err := o.ALBOptions.Initialize(""); err != nil {
+			if err := o.ALBOptions.Initialize(o.Name); err != nil {
 				return err
 			}
 		}

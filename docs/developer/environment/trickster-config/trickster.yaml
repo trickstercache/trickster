@@ -105,9 +105,8 @@ backends:
     alb:
       mechanism: rr
       pool:
-        - prom1
-        - prom1
-        - prom1
+        - name: prom1
+          weight: 3
         - sim1
   mysql1:
     provider: mysql
