@@ -18,10 +18,16 @@ package pgwire
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -78,13 +84,52 @@ func (a nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 	return err
 }
 
-// ValidateUserRouter rejects User Router ALBs until routing by startup user is implemented.
-func (nativeListenerAdapter) ValidateUserRouter(_ *config.Config, name string, _ *bo.Options) error {
-	return fmt.Errorf("postgres user router %q: user routing is not supported for the postgres protocol", name)
+func (a nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string, backend *bo.Options) error {
+	if backend == nil || backend.ALBOptions == nil || backend.ALBOptions.UserRouter == nil {
+		return fmt.Errorf("postgres user router %q has no user-router configuration", name)
+	}
+	if backend.ALBOptions.MechanismName != names.MechanismUR {
+		return fmt.Errorf("postgres user router %q requires mechanism %q", name, names.MechanismUR)
+	}
+	if users, err := downstreamUsers(backend); err != nil {
+		return fmt.Errorf("postgres user router %q: %w", name, err)
+	} else if users == nil {
+		return fmt.Errorf("postgres user router %q requires an authenticator with users", name)
+	}
+	o := backend.ALBOptions.UserRouter
+	if o.DefaultBackend == "" && len(o.Users) == 0 {
+		return fmt.Errorf("postgres user router %q has no routes", name)
+	}
+	for username, mapping := range o.Users {
+		if mapping == nil {
+			return fmt.Errorf("postgres user router %q has an empty mapping for user %q", name, username)
+		}
+		if mapping.ToUser != "" || mapping.ToCredential != "" {
+			return fmt.Errorf("postgres user router %q does not support to_user or to_credential", name)
+		}
+		if mapping.ToBackend == "" {
+			return fmt.Errorf("postgres user router %q has an empty terminal route", name)
+		}
+	}
+	for _, target := range routeTargetNames(backend) {
+		terminal := c.Backends[target]
+		if terminal == nil {
+			return fmt.Errorf("postgres user router %q references missing backend %q", name, target)
+		}
+		if !a.ServesProvider(strings.ToLower(terminal.Provider)) {
+			return fmt.Errorf("postgres user router %q target %q must be a direct postgres backend", name, target)
+		}
+		if targetConfig, err := a.configFromOptions(terminal); err != nil {
+			return fmt.Errorf("postgres user router %q target %q: %w", name, target, err)
+		} else if targetConfig.Upstream.User == "" {
+			return fmt.Errorf("postgres user router %q target %q: origin URL must include a username", name, target)
+		}
+	}
+	return nil
 }
 
 func (a nativeListenerAdapter) Describe(c *config.Config, listenerName string) (native.Descriptor, error) {
-	protocolConfig, err := a.listenerConfig(c, listenerName)
+	protocolConfig, _, err := a.listenerConfig(c, listenerName)
 	if err != nil {
 		return native.Descriptor{}, err
 	}
@@ -92,21 +137,123 @@ func (a nativeListenerAdapter) Describe(c *config.Config, listenerName string) (
 }
 
 func (a nativeListenerAdapter) Build(request native.BuildRequest) (listener.ProtocolServer, error) {
-	protocolConfig, err := a.listenerConfig(request.Config, request.ListenerName)
+	protocolConfig, routed, err := a.listenerConfig(request.Config, request.ListenerName)
 	if err != nil {
 		return nil, err
-	}
-	if client := request.BackendClients.Get(protocolConfig.BackendName); client != nil {
-		protocolConfig.CacheProvider = client
 	}
 	protocolConfig.InboundTLS, err = request.Config.TLSCertConfigForListener(request.ListenerName)
 	if err != nil {
 		return nil, err
 	}
-	return NewServer(*protocolConfig)
+	if !routed {
+		if client := request.BackendClients.Get(protocolConfig.BackendName); client != nil {
+			protocolConfig.CacheProvider = client
+		}
+		return NewServer(*protocolConfig)
+	}
+	resolver, targets := a.routeRuntime(request)
+	if resolver == nil || len(targets) == 0 {
+		return nil, errors.New("no usable postgres route targets")
+	}
+	return NewRoutedServer(*protocolConfig, resolver, targets)
 }
 
-func (nativeListenerAdapter) RouteResolver(native.BuildRequest) backends.RouteResolver { return nil }
+func (a nativeListenerAdapter) RouteResolver(request native.BuildRequest) backends.RouteResolver {
+	resolver, _ := a.routeRuntime(request)
+	return resolver
+}
+
+type routeResolverProvider interface {
+	RouteResolver() backends.RouteResolver
+}
+
+func (a nativeListenerAdapter) isUserRouter(o *bo.Options) bool {
+	return o != nil && o.Provider == providers.ALB && o.ALBOptions != nil &&
+		o.ALBOptions.MechanismName == names.MechanismUR && o.ALBOptions.UserRouter != nil &&
+		a.ServesProvider(strings.ToLower(o.ALBOptions.UserRouter.TargetProvider))
+}
+
+func (a nativeListenerAdapter) routeRuntime(request native.BuildRequest) (backends.RouteResolver, map[string]Config) {
+	if request.Config == nil {
+		return nil, nil
+	}
+	var router *bo.Options
+	var routerName string
+	for name, o := range request.Config.Backends {
+		if o.UsesListener(request.ListenerName) {
+			router, routerName = o, name
+			break
+		}
+	}
+	if !a.isUserRouter(router) {
+		return nil, nil
+	}
+	provider, ok := request.BackendClients.Get(routerName).(routeResolverProvider)
+	if !ok || provider.RouteResolver() == nil {
+		return nil, nil
+	}
+	targets := make(map[string]Config)
+	for _, name := range routeTargetNames(router) {
+		target, err := a.configFromOptions(request.Config.Backends[name])
+		if err != nil {
+			return nil, nil
+		}
+		target.BackendName = name
+		if request.Listener != nil {
+			target.ApplyListenerOptions(request.Listener.Postgres)
+		}
+		if client := request.BackendClients.Get(name); client != nil {
+			target.CacheProvider = client
+		}
+		targets[name] = target
+	}
+	return provider.RouteResolver(), targets
+}
+
+func routeTargetNames(o *bo.Options) []string {
+	if o == nil || o.ALBOptions == nil || o.ALBOptions.UserRouter == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	if name := o.ALBOptions.UserRouter.DefaultBackend; name != "" {
+		seen[name] = struct{}{}
+	}
+	for _, mapping := range o.ALBOptions.UserRouter.Users {
+		if mapping != nil && mapping.ToBackend != "" {
+			seen[mapping.ToBackend] = struct{}{}
+		}
+	}
+	return slices.Sorted(maps.Keys(seen))
+}
+
+func (a nativeListenerAdapter) routerConfig(c *config.Config, name string, o *bo.Options) (*Config, error) {
+	users, err := downstreamUsers(o)
+	if err != nil {
+		return nil, err
+	}
+	routerConfig := Config{BackendName: name, Provider: providers.ALB, Users: users, RequireSecureTransport: o.RequireTLS}
+	// every route, credential and target setting restarts the listener, since sessions are pinned to a target
+	var identity strings.Builder
+	router := o.ALBOptions.UserRouter
+	appendRestartIdentityField(&identity, router.DefaultBackend)
+	for _, username := range slices.Sorted(maps.Keys(router.Users)) {
+		appendRestartIdentityField(&identity, username)
+		if mapping := router.Users[username]; mapping != nil {
+			appendRestartIdentityField(&identity, mapping.ToBackend)
+		}
+	}
+	appendRestartIdentityField(&identity, strconv.FormatBool(o.RequireTLS))
+	appendRestartIdentityField(&identity, tlsRestartIdentity(o))
+	appendRestartIdentityField(&identity, credentialRestartIdentity(users))
+	for _, target := range routeTargetNames(o) {
+		if targetConfig, err := a.configFromOptions(c.Backends[target]); err == nil {
+			appendRestartIdentityField(&identity, target)
+			appendRestartIdentityField(&identity, targetConfig.RestartKey)
+		}
+	}
+	routerConfig.RestartKey = checksum.Checksum(identity.String())
+	return &routerConfig, nil
+}
 
 func (a nativeListenerAdapter) configFromOptions(o *bo.Options) (Config, error) {
 	if o == nil {
@@ -115,26 +262,39 @@ func (a nativeListenerAdapter) configFromOptions(o *bo.Options) (Config, error) 
 	return ConfigFromOptions(o, a.engines.Get(strings.ToLower(o.Provider)))
 }
 
-func (a nativeListenerAdapter) listenerConfig(c *config.Config, listenerName string) (*Config, error) {
-	// returns the configuration of the single backend mapped to a
-	// postgres listener; common listener validation guarantees uniqueness.
+func (a nativeListenerAdapter) listenerConfig(c *config.Config, listenerName string) (*Config, bool, error) {
+	// returns the configuration of the single backend mapped to a postgres listener, and whether
+	// it is a user router; common listener validation guarantees uniqueness.
 	if c == nil {
-		return nil, errNoMappedBackend
+		return nil, false, errNoMappedBackend
 	}
 	for backendName, o := range c.Backends {
 		if !o.UsesListener(listenerName) {
 			continue
 		}
-		protocolConfig, err := a.configFromOptions(o)
+		var (
+			protocolConfig *Config
+			err            error
+		)
+		routed := a.isUserRouter(o)
+		if routed {
+			protocolConfig, err = a.routerConfig(c, backendName, o)
+		} else {
+			var direct Config
+			direct, err = a.configFromOptions(o)
+			protocolConfig = &direct
+		}
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		protocolConfig.BackendName = backendName
 		if listenerOptions := c.Listeners[listenerName]; listenerOptions != nil {
 			protocolConfig.ApplyListenerOptions(listenerOptions.Postgres)
+		} else if routed {
+			protocolConfig.ApplyListenerOptions(nil)
 		}
 		protocolConfig.RestartKey = backendName + ":" + protocolConfig.RestartKey
-		return &protocolConfig, nil
+		return protocolConfig, routed, nil
 	}
-	return nil, errNoMappedBackend
+	return nil, false, errNoMappedBackend
 }

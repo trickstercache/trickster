@@ -1675,7 +1675,7 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\",backend_name=\"graphite1\"}[$__rate_interval])) by (cache_status)",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\",backend_name=\"graphite1\"}[$__rate_interval])) by (cache_status)",
           "legendFormat": "{{cache_status}}",
           "range": true,
           "editorMode": "code"
@@ -1773,7 +1773,7 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\",backend_name=\"graphite1\",cache_status=~\"hit|phit|rhit\"}[$__rate_interval])) / sum(delta(trickster_proxy_requests_total{job=\"trickster\",backend_name=\"graphite1\",cache_status!=\"\"}[$__rate_interval]))",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\",backend_name=\"graphite1\",cache_status=~\"hit|phit|rhit\"}[$__rate_interval])) / sum(increase(trickster_proxy_requests_total{job=\"trickster\",backend_name=\"graphite1\",cache_status!=\"\"}[$__rate_interval]))",
           "legendFormat": "hit ratio",
           "range": true,
           "editorMode": "code"
@@ -1871,7 +1871,7 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(delta(trickster_proxy_points_total{job=\"trickster\",backend_name=\"graphite1\"}[$__rate_interval])) by (cache_status)",
+          "expr": "sum(increase(trickster_proxy_points_total{job=\"trickster\",backend_name=\"graphite1\"}[$__rate_interval])) by (cache_status)",
           "legendFormat": "{{cache_status}}",
           "range": true,
           "editorMode": "code"
@@ -2067,7 +2067,7 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\",cache_name=\"graphite_fs\"}[$__rate_interval])) by (operation, status)",
+          "expr": "sum(increase(trickster_cache_operation_objects_total{job=\"trickster\",cache_name=\"graphite_fs\"}[$__rate_interval])) by (operation, status)",
           "legendFormat": "{{operation}} {{status}}",
           "range": true,
           "editorMode": "code"
@@ -2291,7 +2291,7 @@
             "uid": "ds_prom_direct"
           },
           "refId": "A",
-          "expr": "(sum(delta(trickster_cache_events_total{job=\"trickster\",cache_name=\"graphite_fs\",event=\"eviction\"}[$__rate_interval])) by (reason)) or vector(0)",
+          "expr": "(sum(increase(trickster_cache_events_total{job=\"trickster\",cache_name=\"graphite_fs\",event=\"eviction\"}[$__rate_interval])) by (reason)) or vector(0)",
           "legendFormat": "{{reason}}",
           "range": true,
           "editorMode": "code"

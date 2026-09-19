@@ -738,7 +738,24 @@ func TestPostgresListenerServesEveryPostgresProvider(t *testing.T) {
 	router.ALBOptions.MechanismName = "ur"
 	router.ALBOptions.UserRouter = &uropt.Options{TargetProvider: providers.Postgres, DefaultBackend: "backend2"}
 	if err := Listeners(postgresListenerConfig(router)); err == nil ||
-		!strings.Contains(err.Error(), "user routing is not supported") {
-		t.Fatalf("expected the user router to be rejected for now, got %v", err)
+		!strings.Contains(err.Error(), "requires an authenticator") {
+		t.Fatalf("expected a user router without listener-facing users to be rejected, got %v", err)
+	}
+	router.AuthenticatorName = "pg-clients"
+	router.AuthOptions = &autho.Options{Users: configtypes.EnvStringMap{"client": "password"}}
+	routed := postgresListenerConfig(router)
+	if err := Listeners(routed); err == nil || !strings.Contains(err.Error(), "references missing backend") {
+		t.Fatalf("expected the missing target to be rejected, got %v", err)
+	}
+	// a target reached only through the router needs no listener of its own
+	target := bo.New()
+	target.Provider = providers.TimescaleDB
+	target.OriginURL = "postgres://user:password@example.com/database"
+	routed.Backends["backend2"] = target
+	if err := Listeners(routed); err != nil {
+		t.Fatalf("expected a user router over a postgres target to validate: %v", err)
+	}
+	if len(target.ListenerNames) != 0 {
+		t.Fatalf("the target must not be mapped to the HTTP listener: %v", target.ListenerNames)
 	}
 }

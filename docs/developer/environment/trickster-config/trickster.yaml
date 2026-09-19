@@ -129,13 +129,17 @@ backends:
     healthcheck:
       interval: 5s
       timeout: 3s
-  # provider 'timescaledb' is an alias of 'postgres'; proxy-only for now (no caching)
+  # provider 'timescaledb' is an alias of 'postgres'. The health check logs in to the
+  # origin with the origin_url credentials on a fresh connection.
   timescaledb1:
     provider: timescaledb
     origin_url: 'postgres://trickster:trickster-dev-upstream@127.0.0.1:5432/trickster'
     listener_names: [timescaledb1]
     authenticator_name: timescaledb-grafana
     cache_name: mem1
+    healthcheck:
+      interval: 5s
+      timeout: 3s
   click1:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'

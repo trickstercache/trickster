@@ -28,6 +28,9 @@ type cancelTarget struct {
 	secret     []byte
 	realPID    uint32
 	realSecret []byte
+	// origin is the configuration of the backend holding the session, which
+	// behind a user router is not the listener's own.
+	origin *Config
 }
 
 type cancelRegistry struct {
@@ -40,7 +43,7 @@ func newCancelRegistry() *cancelRegistry {
 	return &cancelRegistry{targets: make(map[uint32]*cancelTarget)}
 }
 
-func (r *cancelRegistry) register(realPID uint32, realSecret []byte) (uint32, []byte, error) {
+func (r *cancelRegistry) register(origin *Config, realPID uint32, realSecret []byte) (uint32, []byte, error) {
 	// issues a key whose secret is as long as the origin's, so it is
 	// valid for whichever protocol version the client negotiated.
 	secret := make([]byte, max(len(realSecret), legacySecretLen))
@@ -55,7 +58,7 @@ func (r *cancelRegistry) register(realPID uint32, realSecret []byte) (uint32, []
 			break
 		}
 	}
-	r.targets[r.nextPID] = &cancelTarget{secret: secret, realPID: realPID, realSecret: realSecret}
+	r.targets[r.nextPID] = &cancelTarget{secret: secret, realPID: realPID, realSecret: realSecret, origin: origin}
 	return r.nextPID, secret, nil
 }
 

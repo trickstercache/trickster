@@ -82,6 +82,11 @@ func startServer(t *testing.T, config Config) (*Server, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return server, serveTestServer(t, server)
+}
+
+func serveTestServer(t *testing.T, server *Server) string {
+	t.Helper()
 	l, err := net.Listen("tcp", fakeLoopbackListen)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +103,7 @@ func startServer(t *testing.T, config Config) (*Server, string) {
 			t.Errorf("serve: %v", err)
 		}
 	})
-	return server, l.Addr().String()
+	return l.Addr().String()
 }
 
 func dial(t *testing.T, address, user, password string, settings ...string) (*pgconn.PgConn, error) {
@@ -601,5 +606,35 @@ func TestPgOptionsDefaultsAreApplied(t *testing.T) {
 	c.ApplyListenerOptions(custom)
 	if !c.AllowMD5 || c.RestartKey == "" {
 		t.Fatal("listener options must apply and contribute to the restart key")
+	}
+}
+
+func TestProbe(t *testing.T) {
+	upstream := newFakeUpstream(t, cleartextUpstream)
+	ctx, cancel := context.WithTimeout(context.Background(), fakeTimeout)
+	defer cancel()
+	// with origin credentials the probe logs in; without them it can only connect
+	for name, config := range map[string]Config{
+		"login": terminatedConfig(upstream, testClientPass), "connect": testConfig(upstream),
+	} {
+		if err := config.Probe(ctx); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	if user := upstream.lastStartup()[paramUser]; user != testUpstreamUser {
+		t.Fatalf("the probe logged in as %q", user)
+	}
+	denied := terminatedConfig(upstream, testClientPass)
+	denied.Upstream.Password = "wrong"
+	if err := denied.Probe(ctx); err == nil || strings.Contains(err.Error(), testUpstreamUser) {
+		t.Fatalf("expected a sanitized login failure, got %v", err)
+	}
+	for name, config := range map[string]Config{
+		"login": terminatedConfig(upstream, testClientPass), "connect": testConfig(upstream),
+	} {
+		config.Upstream.Address = testUnusedAddress
+		if err := config.Probe(ctx); err == nil || strings.Contains(err.Error(), testUnusedAddress) {
+			t.Fatalf("%s: expected a sanitized connection failure, got %v", name, err)
+		}
 	}
 }

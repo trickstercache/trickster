@@ -517,8 +517,8 @@ a session setting as a side effect is not detected.
 
 The `timescaledb1` backend uses `provider: timescaledb`, an alias of
 `postgres`: both names select the same engine, and metrics report
-`provider="postgres"`. A `postgres` listener maps to exactly one backend and
-keeps one upstream connection per client connection, so session state never
+`provider="postgres"`. A `postgres` listener maps to exactly one backend (or one User
+Router, below) and keeps one upstream connection per client connection, so session state never
 crosses clients. The backend's authenticator decides how clients log in:
 
 * With `authenticator_name` (as configured here, `timescaledb-grafana`),
@@ -535,6 +535,16 @@ crosses clients. The backend's authenticator decides how clients log in:
   credentials. SCRAM-SHA-256-PLUS cannot succeed in this mode when both the
   listener and the origin use TLS, because the client binds to Trickster's
   certificate rather than the origin's.
+
+The backend's `healthcheck` block makes Trickster log in to the origin every
+5 seconds on a fresh connection, with the `origin_url` credentials, and wait
+for `ReadyForQuery`. A `postgres` listener can also front a User Router ALB
+whose targets are `postgres`/`timescaledb` backends: Trickster authenticates
+the client against the router's authenticator, routes on the startup user, and
+pins the session to that backend
+(`trickster_pgwire_route_selections_total{router_name,backend_name,outcome}`).
+The dev config has no router; `examples/conf/postgres-user-router.yaml` is a
+complete one.
 
 TLS is negotiated in-band on port `8488` (there is no separate `tls_port`),
 and TLS to the origin is independent of it: set the backend's

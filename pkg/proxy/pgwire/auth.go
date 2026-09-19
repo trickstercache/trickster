@@ -96,10 +96,10 @@ func isPasswordHash(credential string) bool {
 func (s *session) authenticate() error {
 	// runs the strongest method the user's stored credential allows.
 	// Unknown users get a mock SCRAM exchange, so they are indistinguishable.
-	entry := s.server.auth[s.user]
+	entry := s.front.auth[s.user]
 	switch {
 	case entry == nil:
-		return s.authenticateSCRAM(&scramServer{verifier: mockVerifier(s.server.mockSecret, s.user)})
+		return s.authenticateSCRAM(&scramServer{verifier: mockVerifier(s.front.mockSecret, s.user)})
 	case entry.scram != nil:
 		return s.authenticateSCRAM(&scramServer{verifier: entry.scram, known: true})
 	case entry.md5 && s.server.config.AllowMD5:

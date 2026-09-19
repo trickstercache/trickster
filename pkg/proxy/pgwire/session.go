@@ -77,6 +77,9 @@ const (
 var errStartup = errors.New("invalid startup packet")
 
 type session struct {
+	// front owns the listener; server is the backend the session runs on, which
+	// differs from front only once a user router has picked a target.
+	front             *Server
 	server            *Server
 	client            net.Conn
 	upstream          net.Conn
@@ -110,44 +113,56 @@ type session struct {
 }
 
 func (s *session) serve() {
-	backend := s.server.config.BackendName
-	s.server.countEvent(eventAccepted)
+	front := s.front
+	backend := front.config.BackendName
+	front.countEvent(eventAccepted)
 	metrics.PGWireActiveConnections.WithLabelValues(backend).Inc()
 	defer func() {
 		s.close()
 		if s.pid != 0 {
-			s.server.keys.release(s.pid)
+			front.keys.release(s.pid)
 		}
 		metrics.PGWireActiveConnections.WithLabelValues(backend).Dec()
-		s.server.countEvent(eventClosed)
-		s.server.untrack(s)
+		front.countEvent(eventClosed)
+		front.untrack(s)
 	}()
-	if timeout := s.server.config.HandshakeTimeout; timeout > 0 {
+	if timeout := front.config.HandshakeTimeout; timeout > 0 {
 		_ = s.client.SetDeadline(time.Now().Add(timeout))
 	}
 	proceed, err := s.startup()
 	if err != nil {
-		s.server.countError(classStartup)
+		front.countError(classStartup)
 		return
 	}
 	if !proceed {
 		return
 	}
-	if !s.server.reserveUpstream() {
-		s.server.countError(classAdmission)
+	routed := front.routes != nil
+	if routed {
+		// the route depends on who the client is, so it authenticates before a target is known
+		if s.authenticateClient() != nil || !s.route() {
+			return
+		}
+	}
+	target := s.server
+	if !target.reserveUpstream() {
+		target.countError(classAdmission)
 		s.fatal(sqlstateTooManyConns, "sorry, too many clients already")
 		return
 	}
-	defer s.server.releaseUpstream()
-	if s.server.config.Terminated() {
+	defer target.releaseUpstream()
+	switch {
+	case routed:
+		err = s.loginTerminated()
+	case target.config.Terminated():
 		err = s.connectTerminated()
-	} else {
+	default:
 		err = s.connectPassthrough()
 	}
 	if err != nil {
 		return
 	}
-	s.server.countEvent(eventAuthenticated)
+	front.countEvent(eventAuthenticated)
 	_ = s.client.SetDeadline(time.Time{})
 	_ = s.upstream.SetDeadline(time.Time{})
 	s.relay()
@@ -205,7 +220,7 @@ func (s *session) startup() (bool, error) {
 }
 
 func (s *session) answerSSLRequest() error {
-	base := s.server.inboundTLS.Load()
+	base := s.front.inboundTLS.Load()
 	if base == nil || s.secure {
 		_, err := s.client.Write([]byte{sslRefused})
 		return err
@@ -297,14 +312,14 @@ func (s *session) forwardCancel(key []byte) {
 	if len(key) < backendKeyPIDLen+legacySecretLen {
 		return
 	}
-	target := s.server.keys.lookup(binary.BigEndian.Uint32(key), key[backendKeyPIDLen:])
+	target := s.front.keys.lookup(binary.BigEndian.Uint32(key), key[backendKeyPIDLen:])
 	if target == nil {
 		s.server.countError(classCancel)
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.server.cancelBudget())
 	defer cancel()
-	if err := s.server.config.cancelUpstream(ctx, target.realPID, target.realSecret); err != nil {
+	if err := target.origin.cancelUpstream(ctx, target.realPID, target.realSecret); err != nil {
 		s.server.countError(classCancel)
 		return
 	}
@@ -383,7 +398,7 @@ func (s *session) issueKey(body []byte) ([]byte, error) {
 	}
 	s.realPID = binary.BigEndian.Uint32(body)
 	s.realSecret = slices.Clone(body[backendKeyPIDLen:])
-	pid, secret, err := s.server.keys.register(s.realPID, s.realSecret)
+	pid, secret, err := s.front.keys.register(&s.server.config, s.realPID, s.realSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -392,11 +407,18 @@ func (s *session) issueKey(body []byte) ([]byte, error) {
 }
 
 func (s *session) connectTerminated() error {
+	if err := s.authenticateClient(); err != nil {
+		return err
+	}
+	return s.loginTerminated()
+}
+
+func (s *session) authenticateClient() error {
 	if _, replication := s.params[paramReplication]; replication {
 		s.fatal(sqlstateUnsupported, "replication connections are not supported with an authenticator")
 		return errStartup
 	}
-	upstreamParams, protocolOptions := s.upstreamParams()
+	_, protocolOptions := s.upstreamParams()
 	// The origin session always speaks 3.0, so a newer request is negotiated
 	// down. PostgreSQL puts the whole version number in this field, not the minor.
 	if s.minor > protocolMinorBase || len(protocolOptions) > 0 {
@@ -407,14 +429,16 @@ func (s *session) connectTerminated() error {
 		}
 	}
 	if err := s.authenticate(); err != nil {
-		s.server.countError(classAuthentication)
-		s.server.logFailure("postgres client authentication failed", s.user, err)
+		s.front.countError(classAuthentication)
+		s.front.logFailure("postgres client authentication failed", s.user, err)
 		s.fatal(sqlstateInvalidPassword, fmt.Sprintf("password authentication failed for user %q", s.user))
 		return err
 	}
-	if err := s.send(&pgproto3.AuthenticationOk{}); err != nil {
-		return err
-	}
+	return s.send(&pgproto3.AuthenticationOk{})
+}
+
+func (s *session) loginTerminated() error {
+	upstreamParams, _ := s.upstreamParams()
 	ctx, cancel := context.WithTimeout(context.Background(), s.server.config.HandshakeTimeout)
 	defer cancel()
 	hijacked, err := s.server.config.loginUpstream(ctx, s.database, upstreamParams)

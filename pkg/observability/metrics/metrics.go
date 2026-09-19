@@ -573,6 +573,18 @@ var (
 		[]string{keys.Backend_Name, keys.Class},
 	)
 
+	// PGWireRouteSelections tracks bounded native User Router outcomes. Backend
+	// and router names come from configuration; usernames are never labels.
+	PGWireRouteSelections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "route_selections_total",
+			Help:      "Count of native PostgreSQL route-selection outcomes.",
+		},
+		[]string{keys.Router_Name, keys.Backend_Name, keys.Outcome},
+	)
+
 	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
 	// is exact | derived | configured | unknown and source is registry |
 	// response | probe | static | function | none; both label sets are
@@ -1005,6 +1017,7 @@ func init() {
 	prometheus.MustRegister(PGWireConnections)
 	prometheus.MustRegister(PGWireActiveConnections)
 	prometheus.MustRegister(PGWireConnectionErrors)
+	prometheus.MustRegister(PGWireRouteSelections)
 	prometheus.MustRegister(GraphiteResolutionLookups)
 	prometheus.MustRegister(GraphiteProbes)
 	prometheus.MustRegister(GraphiteLadders)
@@ -1054,6 +1067,7 @@ var backendSeriesVecs = []partialDeleter{
 	PGWireConnections,
 	PGWireActiveConnections,
 	PGWireConnectionErrors,
+	PGWireRouteSelections,
 	MySQLRouteSelections,
 	MySQLCommandLatency,
 	HealthcheckProbePanicRecovered,

@@ -141,6 +141,25 @@ func (c *Config) loginUpstream(ctx context.Context, database string,
 	return hijacked, nil
 }
 
+// Probe checks the origin on a fresh connection. With origin credentials it logs in and
+// waits for ReadyForQuery; without them it can only confirm the origin accepts connections.
+func (c *Config) Probe(ctx context.Context) error {
+	if c.Upstream.User == "" {
+		conn, err := c.dialUpstream(ctx)
+		if err != nil {
+			return fmt.Errorf("postgres health probe: %w", sanitizeConnectError(err))
+		}
+		return conn.Close()
+	}
+	hijacked, err := c.loginUpstream(ctx, "", nil)
+	if err != nil {
+		return err
+	}
+	_ = hijacked.Conn.SetDeadline(time.Now().Add(cancelDrainTimeout))
+	_, _ = hijacked.Conn.Write(appendFrame(nil, msgTerminate, nil))
+	return hijacked.Conn.Close()
+}
+
 func connectTimeoutSeconds(d time.Duration) int {
 	return max(int(d/time.Second), 1)
 }

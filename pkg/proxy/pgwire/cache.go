@@ -66,7 +66,25 @@ type cacheMetrics struct {
 	handles  sync.Map
 }
 
-func (m *cacheMetrics) observe(mode sqlanalyzer.CacheMode, lookup status.LookupStatus, rows int, elapsed time.Duration) {
+var primedCacheStatuses = map[sqlanalyzer.CacheMode][]status.LookupStatus{
+	sqlanalyzer.CacheModeObject: {status.LookupStatusHit, status.LookupStatusKeyMiss, status.LookupStatusProxyError},
+	sqlanalyzer.CacheModeDelta: {
+		status.LookupStatusHit, status.LookupStatusPartialHit, status.LookupStatusRangeMiss,
+		status.LookupStatusKeyMiss, status.LookupStatusProxyError,
+	},
+}
+
+func (m *cacheMetrics) prime() {
+	// exports every expected series at zero. A counter first seen at 1 has no earlier
+	// sample, so rate() and delta() would miss a backend's first partial hit after a restart.
+	for mode, statuses := range primedCacheStatuses {
+		for _, lookup := range statuses {
+			m.resolve(mode, lookup)
+		}
+	}
+}
+
+func (m *cacheMetrics) resolve(mode sqlanalyzer.CacheMode, lookup status.LookupStatus) cacheMetricHandles {
 	key := cacheMetricKey{mode: mode, status: lookup}
 	value, ok := m.handles.Load(key)
 	if !ok {
@@ -84,7 +102,11 @@ func (m *cacheMetrics) observe(mode sqlanalyzer.CacheMode, lookup status.LookupS
 				metricMethodQuery, label, httpStatus, metricPathQuery),
 		})
 	}
-	handles := value.(cacheMetricHandles)
+	return value.(cacheMetricHandles)
+}
+
+func (m *cacheMetrics) observe(mode sqlanalyzer.CacheMode, lookup status.LookupStatus, rows int, elapsed time.Duration) {
+	handles := m.resolve(mode, lookup)
 	handles.native.Inc()
 	handles.requests.Inc()
 	handles.elements.Add(float64(rows))

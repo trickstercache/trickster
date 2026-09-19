@@ -170,7 +170,7 @@ func gateTestSession(t *testing.T, params map[string]string) *session {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &session{server: server, user: testClientUser, database: testDatabase}
+	s := &session{front: server, server: server, user: testClientUser, database: testDatabase}
 	s.tracker = newSessionTracker(s.user, s.database, params)
 	s.txStatus.Store(txStatusIdle)
 	return s

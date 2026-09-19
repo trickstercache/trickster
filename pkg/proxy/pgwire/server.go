@@ -97,6 +97,7 @@ type Server struct {
 	mockSecret []byte
 	proxied    requestMetrics
 	failed     requestMetrics
+	routes     *routeTable
 	analysis   *analysisMetrics
 	cache      *cacheMetrics
 	delta      *nativedelta.Engine[*Result]
@@ -114,6 +115,10 @@ func NewServer(config Config) (*Server, error) {
 	if config.Upstream.Address == "" {
 		return nil, errors.New("postgres origin address is required")
 	}
+	return newServer(config)
+}
+
+func newServer(config Config) (*Server, error) {
 	s := &Server{
 		config: config, keys: newCancelRegistry(), sessions: make(map[*session]struct{}),
 		proxied: newRequestMetrics(config.BackendName, config.Provider,
@@ -124,6 +129,7 @@ func NewServer(config Config) (*Server, error) {
 	if config.Analyzer != nil {
 		s.analysis = &analysisMetrics{backend: config.BackendName, dialect: config.Dialect}
 		s.cache = &cacheMetrics{backend: config.BackendName, provider: config.Provider, dialect: config.Dialect}
+		s.cache.prime()
 		s.delta = s.newDeltaEngine()
 	}
 	s.setInboundTLS(config.InboundTLS)
@@ -171,7 +177,7 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 		backoff = acceptBackoff
-		sess := &session{server: s, client: conn}
+		sess := &session{front: s, server: s, client: conn}
 		sess.handoff.init()
 		if !s.track(sess) {
 			_ = conn.Close()

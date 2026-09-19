@@ -16,15 +16,22 @@
 package postgres
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
 
-const testBackendName = "postgres-test"
+const (
+	testBackendName  = "postgres-test"
+	testProbeTimeout = 5 * time.Second
+)
 
 func TestPostgresBackendContract(t *testing.T) {
 	o := bo.New()
@@ -59,5 +66,29 @@ func TestEngine(t *testing.T) {
 	}
 	if kind, ok := engine.TimeAxis(pgwire.OIDTimestampTZ); !ok || kind != pgwire.TimeAxisTimestampTZ {
 		t.Fatalf("unexpected time axis %v %t", kind, ok)
+	}
+}
+
+func TestHealthCheckProbe(t *testing.T) {
+	o := bo.New()
+	o.Name, o.Provider = testBackendName, providers.Postgres
+	// nothing listens on the discard port, so the probe fails without naming the origin
+	o.OriginURL = "postgres://origin:origin-password@127.0.0.1:9/trickster"
+	backend, err := NewClient(testBackendName, o, http.NotFoundHandler(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := backend.(*Client)
+	if client.DefaultHealthCheckConfig() == nil {
+		t.Fatal("expected protocol-neutral health check defaults")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), testProbeTimeout)
+	defer cancel()
+	if err = client.HealthCheckProbe()(ctx); err == nil || strings.Contains(err.Error(), "origin-password") {
+		t.Fatalf("expected a sanitized failure, got %v", err)
+	}
+	o.OriginURL = "://bad"
+	if err = client.HealthCheckProbe()(ctx); !errors.Is(err, errProbeConfig) {
+		t.Fatalf("expected a configuration error, got %v", err)
 	}
 }

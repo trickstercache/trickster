@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -524,5 +525,38 @@ func TestCachingIsOffWithoutACache(t *testing.T) {
 	}
 	if got := upstream.received(); len(got) != 2 || got[0] != gateObjectQuery {
 		t.Fatalf("with no cache every statement is relayed as written, got %q", got)
+	}
+}
+
+func TestCacheMetricsStartAtZero(t *testing.T) {
+	// a series born at 1 has no earlier sample, so rate() would miss the first partial hit after a restart
+	upstream := newFakeUpstream(t, nil)
+	config := gatedConfig(t, upstream)
+	if _, err := NewServer(config); err != nil {
+		t.Fatal(err)
+	}
+	exported := 0
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, family := range families {
+		if family.GetName() != "trickster_sql_query_cache_total" {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			for _, label := range metric.GetLabel() {
+				if label.GetName() == "backend_name" && label.GetValue() == config.BackendName {
+					exported++
+				}
+			}
+		}
+	}
+	want := 0
+	for _, statuses := range primedCacheStatuses {
+		want += len(statuses)
+	}
+	if exported != want {
+		t.Fatalf("expected %d series at zero before any statement, got %d", want, exported)
 	}
 }

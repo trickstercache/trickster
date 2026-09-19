@@ -342,7 +342,7 @@ func TestNativeListenerAdapterContract(t *testing.T) {
 		t.Fatal("ValidateBackend(nil) succeeded")
 	}
 	if err := adapter.ValidateUserRouter(nil, configTestName, nil); err == nil {
-		t.Fatal("ValidateUserRouter() must reject user routing for now")
+		t.Fatal("ValidateUserRouter() accepted a router with no options")
 	}
 	if adapter.RouteResolver(native.BuildRequest{}) != nil {
 		t.Fatal("expected no route resolver")
@@ -397,7 +397,7 @@ func TestNativeListenerAdapterDescribeAndBuild(t *testing.T) {
 func TestCancelRegistry(t *testing.T) {
 	registry := newCancelRegistry()
 	realSecret := []byte{1, 2, 3, 4}
-	pid, secret, err := registry.register(4242, realSecret)
+	pid, secret, err := registry.register(nil, 4242, realSecret)
 	if err != nil || pid == 0 || len(secret) != legacySecretLen {
 		t.Fatalf("register() = %d, %v, %v", pid, secret, err)
 	}
@@ -408,14 +408,14 @@ func TestCancelRegistry(t *testing.T) {
 	if registry.lookup(pid, []byte{0, 0, 0, 0}) != nil || registry.lookup(pid+1, secret) != nil {
 		t.Fatal("a wrong secret or process id must not match")
 	}
-	_, long, err := registry.register(1, make([]byte, fakeLongSecretLen))
+	_, long, err := registry.register(nil, 1, make([]byte, fakeLongSecretLen))
 	if err != nil || len(long) != fakeLongSecretLen {
 		t.Fatalf("expected a %d-byte secret, got %d, %v", fakeLongSecretLen, len(long), err)
 	}
 	// a wrapped counter must skip zero and any id still in use
 	registry.nextPID = ^uint32(0)
 	registry.targets[1] = &cancelTarget{}
-	wrapped, _, err := registry.register(7, realSecret)
+	wrapped, _, err := registry.register(nil, 7, realSecret)
 	if err != nil || wrapped == 0 || wrapped == 1 {
 		t.Fatalf("expected a fresh non-zero id, got %d, %v", wrapped, err)
 	}
