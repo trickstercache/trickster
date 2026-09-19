@@ -378,6 +378,7 @@ func TestUnreadableTimeAxisFallsBackToTheObjectCache(t *testing.T) {
 			sql := rangeQuery(cacheTestSelect, "08:00", "09:00", "1 ORDER BY 1")
 			want := directRows(t, upstream, sql)
 			upstream.forget()
+			hits := cacheCount(config.BackendName, sqlanalyzer.CacheModeDelta, status.LookupStatusHit)
 			for range 3 {
 				if got := rowsOf(t, conn, sql); !equalRows(got, want) {
 					t.Fatalf("got %v\nwant %v", got, want)
@@ -387,7 +388,7 @@ func TestUnreadableTimeAxisFallsBackToTheObjectCache(t *testing.T) {
 			if got := upstream.received(); len(got) != 2 || got[1] != sql {
 				t.Fatalf("expected a delta attempt and one object fetch, got %q", got)
 			}
-			if got := cacheCount(config.BackendName, sqlanalyzer.CacheModeDelta, status.LookupStatusHit); got != 2 {
+			if got := cacheCount(config.BackendName, sqlanalyzer.CacheModeDelta, status.LookupStatusHit) - hits; got != 2 {
 				t.Fatalf("counted %v hits, want 2", got)
 			}
 		})

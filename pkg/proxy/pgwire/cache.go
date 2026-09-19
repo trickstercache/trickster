@@ -217,11 +217,12 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 	var rejected *originError
 	switch {
 	case err == nil:
-		if !writeAll(s.client, result.encode(mode == sqlanalyzer.CacheModeDelta && descending(plan)),
-			s.server.config.WriteTimeout) {
+		response := result.encode(mode == sqlanalyzer.CacheModeDelta && descending(plan))
+		// counted before the client can see the answer, so a reader of both never finds the count behind
+		s.server.cache.observe(mode, lookup, result.Rows(), time.Since(started))
+		if !writeAll(s.client, response, s.server.config.WriteTimeout) {
 			return false, net.ErrClosed
 		}
-		s.server.cache.observe(mode, lookup, result.Rows(), time.Since(started))
 		return true, nil
 	case errors.Is(err, errRelayResumed) && s.relayResumed:
 		// this session's own oversized result is already flowing to the client
@@ -232,10 +233,10 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 		// the origin's answer to the client's own statement, or to its cancel
 		reply := appendFrame(appendFrame(nil, msgErrorResponse, rejected.body), msgReadyForQuery,
 			[]byte{byte(s.txStatus.Load())}) // #nosec G115 -- the stored value is one status byte
+		s.server.cache.observe(mode, status.LookupStatusProxyError, 0, time.Since(started))
 		if !writeAll(s.client, reply, s.server.config.WriteTimeout) {
 			return false, net.ErrClosed
 		}
-		s.server.cache.observe(mode, status.LookupStatusProxyError, 0, time.Since(started))
 		return true, nil
 	case rejected != nil:
 		// only the rewritten statement failed; the client's own may still succeed
