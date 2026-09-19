@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
@@ -75,3 +76,13 @@ func Engine() pgwire.Engine { return engine{} }
 func (engine) Name() string { return providers.Postgres }
 
 func (engine) DefaultPort() string { return DefaultPort }
+
+func (engine) Dialect() string { return providers.Postgres }
+
+func (engine) Analyzer() sqlanalyzer.DialectAnalyzer { return analyzer }
+
+func (engine) Defaults() pgwire.EngineDefaults { return pgwire.EngineDefaults{} }
+
+func (engine) TimeAxis(oid uint32) (pgwire.TimeAxisKind, bool) { return pgwire.StandardTimeAxis(oid) }
+
+func (engine) TimeSemantics() pgwire.TimeSemantics { return pgwire.TimeSemantics{} }

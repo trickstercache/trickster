@@ -21,7 +21,10 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"net"
+	"regexp"
+	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -39,11 +42,23 @@ const (
 	fakeAuthSCRAM     = "scram"
 
 	// queries the fake origin understands
-	fakeQueryOne   = "select 1"
-	fakeQuerySlow  = "select pg_sleep(60)"
-	fakeQueryError = "select 1/0"
-	fakeQueryMany  = "select generate_series(1, 5000)"
-	fakeManyRows   = 5000
+	fakeQueryOne        = "select 1"
+	fakeQuerySlow       = "select pg_sleep(60)"
+	fakeQueryError      = "select 1/0"
+	fakeQueryMany       = "select generate_series(1, 5000)"
+	fakeManyRows        = 5000
+	fakeQueryBegin      = "BEGIN"
+	fakeBucketFunction  = "date_bin"
+	fakeHostColumn      = "host"
+	fakeBucketStep      = 5 * time.Minute
+	fakeZoneUTC         = "UTC"
+	fakeDateStyleISO    = "ISO, MDY"
+	fakeParamDateStyle  = "DateStyle"
+	fakeNoticeText      = "a notice from the origin"
+	sqlstateSyntaxError = "42601"
+	fakeQueryCommit     = "COMMIT"
+	fakeQuerySetZone    = "SET TIME ZONE "
+	fakeQueryPing       = "-- ping"
 
 	fakeServerVersion  = "18.6"
 	fakeLongSecretLen  = 32
@@ -56,6 +71,8 @@ const (
 	fakeTestCertName   = "localhost"
 	fakeLoopbackListen = "127.0.0.1:0"
 )
+
+var fakeBoundPattern = regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z`)
 
 type fakeCancel struct {
 	pid    uint32
@@ -70,10 +87,15 @@ type fakeUpstream struct {
 	user       string
 	password   string
 	longSecret bool
+	reject     func(sql string) bool
+	notice     bool
+	dateStyle  string
+	timeOID    uint32
 
 	mtx      sync.Mutex
 	nextPID  uint32
 	startups []map[string]string
+	queries  []string
 	running  map[uint32]chan struct{}
 	cancels  chan fakeCancel
 	wg       sync.WaitGroup
@@ -194,12 +216,22 @@ func (f *fakeUpstream) session(backend *pgproto3.Backend, startup *pgproto3.Star
 	}
 	backend.Send(&pgproto3.AuthenticationOk{})
 	backend.Send(&pgproto3.ParameterStatus{Name: fakeParamVersion, Value: fakeServerVersion})
-	backend.Send(&pgproto3.ParameterStatus{Name: fakeParamTimeZone, Value: startup.Parameters[fakeParamTimeZone]})
+	zone := startup.Parameters[fakeParamTimeZone]
+	if zone == "" {
+		zone = fakeZoneUTC
+	}
+	dateStyle := f.dateStyle
+	if dateStyle == "" {
+		dateStyle = fakeDateStyleISO
+	}
+	backend.Send(&pgproto3.ParameterStatus{Name: fakeParamTimeZone, Value: zone})
+	backend.Send(&pgproto3.ParameterStatus{Name: fakeParamDateStyle, Value: dateStyle})
 	backend.Send(&pgproto3.BackendKeyData{ProcessID: pid, SecretKey: secret})
 	backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
 	if backend.Flush() != nil {
 		return
 	}
+	txStatus := byte('I')
 	for {
 		message, err := backend.Receive()
 		if err != nil {
@@ -207,8 +239,8 @@ func (f *fakeUpstream) session(backend *pgproto3.Backend, startup *pgproto3.Star
 		}
 		switch m := message.(type) {
 		case *pgproto3.Query:
-			f.query(backend, pid, m.String)
-			backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+			txStatus = f.query(backend, pid, m.String, txStatus)
+			backend.Send(&pgproto3.ReadyForQuery{TxStatus: txStatus})
 		case *pgproto3.Parse:
 			backend.Send(&pgproto3.ParseComplete{})
 		case *pgproto3.Bind:
@@ -218,7 +250,7 @@ func (f *fakeUpstream) session(backend *pgproto3.Backend, startup *pgproto3.Star
 		case *pgproto3.Execute:
 			f.rows(backend, 1)
 		case *pgproto3.Sync:
-			backend.Send(&pgproto3.ReadyForQuery{TxStatus: 'I'})
+			backend.Send(&pgproto3.ReadyForQuery{TxStatus: txStatus})
 		case *pgproto3.Terminate:
 			return
 		}
@@ -308,7 +340,32 @@ func (f *fakeUpstream) rows(backend *pgproto3.Backend, n int) {
 	backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT " + strconv.Itoa(n))})
 }
 
-func (f *fakeUpstream) query(backend *pgproto3.Backend, pid uint32, sql string) {
+func (f *fakeUpstream) query(backend *pgproto3.Backend, pid uint32, sql string, txStatus byte) byte {
+	f.mtx.Lock()
+	f.queries = append(f.queries, sql)
+	f.mtx.Unlock()
+	switch {
+	case f.reject != nil && f.reject(sql):
+		backend.Send(&pgproto3.ErrorResponse{Severity: "ERROR", Code: sqlstateSyntaxError, Message: "syntax error"})
+		return txStatus
+	case strings.Contains(sql, fakeBucketFunction):
+		f.buckets(backend, sql)
+		return txStatus
+	case sql == fakeQueryBegin:
+		backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("BEGIN")})
+		return 'T'
+	case sql == fakeQueryCommit:
+		backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("COMMIT")})
+		return 'I'
+	case strings.HasPrefix(sql, fakeQuerySetZone):
+		// the zone is a reported setting, so the change is announced
+		backend.Send(&pgproto3.ParameterStatus{Name: fakeParamTimeZone, Value: strings.Trim(sql[len(fakeQuerySetZone):], "' ")})
+		backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SET")})
+		return txStatus
+	case strings.HasPrefix(sql, "SET ") || strings.HasPrefix(sql, "RESET "):
+		backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SET")})
+		return txStatus
+	}
 	switch sql {
 	case fakeQuerySlow:
 		canceled := make(chan struct{})
@@ -327,12 +384,83 @@ func (f *fakeUpstream) query(backend *pgproto3.Backend, pid uint32, sql string) 
 	case fakeQueryMany:
 		backend.Send(f.rowDescription())
 		f.rows(backend, fakeManyRows)
-	case "":
+	case "", fakeQueryPing:
 		backend.Send(&pgproto3.EmptyQueryResponse{})
 	default:
 		backend.Send(f.rowDescription())
 		f.rows(backend, 1)
 	}
+	return txStatus
+}
+
+func (f *fakeUpstream) received() []string {
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+	return slices.Clone(f.queries)
+}
+
+func (f *fakeUpstream) forget() {
+	f.mtx.Lock()
+	f.queries = nil
+	f.mtx.Unlock()
+}
+
+func fakeBucketValue(bucket time.Time, host string) string {
+	// the origin's data is a pure function of the bucket and host
+	return strconv.Itoa(bucket.Hour()*100 + bucket.Minute() + len(host)*1000)
+}
+
+func (f *fakeUpstream) buckets(backend *pgproto3.Backend, sql string) {
+	// one row per five-minute bucket between the statement's two bounds, or
+	// two when the statement groups by host
+	bounds := fakeBoundPattern.FindAllString(sql, -1)
+	if len(bounds) < 2 {
+		backend.Send(&pgproto3.ErrorResponse{Severity: "ERROR", Code: sqlstateSyntaxError, Message: "no bounds"})
+		return
+	}
+	lower, _ := time.Parse(time.RFC3339Nano, bounds[0])
+	upper, _ := time.Parse(time.RFC3339Nano, bounds[1])
+	grouped, descending := strings.Contains(sql, fakeHostColumn), strings.Contains(sql, "DESC")
+	timeOID := f.timeOID
+	if timeOID == 0 {
+		timeOID = OIDTimestampTZ
+	}
+	fields := []pgproto3.FieldDescription{{Name: []byte("time"), DataTypeOID: timeOID, DataTypeSize: 8, TypeModifier: -1}}
+	if grouped {
+		fields = append(fields, pgproto3.FieldDescription{Name: []byte(fakeHostColumn), DataTypeOID: 25, DataTypeSize: -1, TypeModifier: -1})
+	}
+	fields = append(fields, pgproto3.FieldDescription{Name: []byte(fakeColumnName), DataTypeOID: OIDInt8, DataTypeSize: 8, TypeModifier: -1})
+	if f.notice {
+		backend.Send(&pgproto3.NoticeResponse{Severity: "NOTICE", Code: "00000", Message: fakeNoticeText})
+	}
+	backend.Send(&pgproto3.RowDescription{Fields: fields})
+	var times []time.Time
+	for bucket := lower.Truncate(fakeBucketStep); bucket.Before(upper); bucket = bucket.Add(fakeBucketStep) {
+		if !bucket.Before(lower) {
+			times = append(times, bucket)
+		}
+	}
+	if descending {
+		slices.Reverse(times)
+	}
+	rows := 0
+	for _, bucket := range times {
+		text := bucket.UTC().Format("2006-01-02 15:04:05") + "+00"
+		hosts := []string{""}
+		if grouped {
+			// within a bucket the origin orders hosts its own way: longest first
+			hosts = []string{"zeta-long", "alpha"}
+		}
+		for _, host := range hosts {
+			values := [][]byte{[]byte(text)}
+			if grouped {
+				values = append(values, []byte(host))
+			}
+			backend.Send(&pgproto3.DataRow{Values: append(values, []byte(fakeBucketValue(bucket, host)))})
+			rows++
+		}
+	}
+	backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT " + strconv.Itoa(rows))})
 }
 
 func (f *fakeUpstream) isRunning() bool {

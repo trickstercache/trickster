@@ -29,12 +29,14 @@ const typeErrorYAML = ": [1]"
 
 func TestOptionsDefaultsCloneAndValidate(t *testing.T) {
 	o := New()
-	if o.UpstreamTLSMode != TLSModeDisable {
+	// an empty mode defers to the engine's default
+	if o.UpstreamTLSMode != "" || o.MaxResultRows != DefaultMaxResultRows ||
+		o.MaxResultSizeBytes != DefaultMaxResultSizeBytes || o.Validate() != nil {
 		t.Fatalf("New() = %+v", o)
 	}
 	clone := o.Clone()
 	clone.UpstreamTLSMode = TLSModeRequire
-	if clone == o || o.UpstreamTLSMode != TLSModeDisable {
+	if clone == o || o.UpstreamTLSMode != "" {
 		t.Fatal("Clone did not produce an independent copy")
 	}
 	var nilOptions *Options
@@ -42,18 +44,29 @@ func TestOptionsDefaultsCloneAndValidate(t *testing.T) {
 		t.Fatal("nil options should clone and validate as nil")
 	}
 	for _, mode := range TLSModes() {
-		if err := (&Options{UpstreamTLSMode: mode}).Validate(); err != nil {
+		valid := New()
+		valid.UpstreamTLSMode = mode
+		if err := valid.Validate(); err != nil {
 			t.Fatalf("mode %q: %v", mode, err)
 		}
 	}
-	if err := (&Options{UpstreamTLSMode: "prefer"}).Validate(); err == nil {
-		t.Fatal("expected an unknown TLS mode to be rejected")
+	for name, mutate := range map[string]func(*Options){
+		"unknown mode":   func(o *Options) { o.UpstreamTLSMode = "prefer" },
+		"no rows":        func(o *Options) { o.MaxResultRows = 0 },
+		"no bytes":       func(o *Options) { o.MaxResultSizeBytes = 0 },
+		"too many bytes": func(o *Options) { o.MaxResultSizeBytes = MaxResultSizeLimitBytes + 1 },
+	} {
+		invalid := New()
+		mutate(invalid)
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("%s: expected a validation error", name)
+		}
 	}
 }
 
 func TestOptionsUnmarshalYAML(t *testing.T) {
 	var o Options
-	if err := yaml.Unmarshal([]byte("{}"), &o); err != nil || o.UpstreamTLSMode != TLSModeDisable {
+	if err := yaml.Unmarshal([]byte("{}"), &o); err != nil || o.UpstreamTLSMode != "" {
 		t.Fatalf("empty block = %+v, %v", o, err)
 	}
 	if err := yaml.Unmarshal([]byte("upstream_tls_mode: "+TLSModeVerifyFull), &o); err != nil ||
@@ -69,7 +82,8 @@ func TestListenerOptionsDefaultsCloneAndValidate(t *testing.T) {
 	o := NewListener()
 	if time.Duration(o.HandshakeTimeout) != DefaultHandshakeTimeout ||
 		time.Duration(o.IdleTimeout) != DefaultIdleTimeout ||
-		o.MaxMessageSizeBytes != DefaultMaxMessageSizeBytes || o.AllowMD5 || o.AllowCleartextWithoutTLS {
+		o.MaxMessageSizeBytes != DefaultMaxMessageSizeBytes || o.MaxQuerySizeBytes != DefaultMaxQuerySizeBytes ||
+		o.AllowMD5 || o.AllowCleartextWithoutTLS {
 		t.Fatalf("NewListener() = %+v", o)
 	}
 	if err := o.Validate(); err != nil {
@@ -91,6 +105,10 @@ func TestListenerOptionsDefaultsCloneAndValidate(t *testing.T) {
 		"idle":      func(o *ListenerOptions) { o.IdleTimeout = 0 },
 		"too small": func(o *ListenerOptions) { o.MaxMessageSizeBytes = 0 },
 		"too large": func(o *ListenerOptions) { o.MaxMessageSizeBytes = MaxProtocolMessageSizeBytes + 1 },
+		"no query":  func(o *ListenerOptions) { o.MaxQuerySizeBytes = 0 },
+		"query over message": func(o *ListenerOptions) {
+			o.MaxMessageSizeBytes, o.MaxQuerySizeBytes = 1024, 2048
+		},
 	} {
 		invalid := NewListener()
 		mutate(invalid)

@@ -21,6 +21,7 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
 
 const testBackendName = "postgres-test"
@@ -49,7 +50,14 @@ func TestPostgresBackendContract(t *testing.T) {
 
 func TestEngine(t *testing.T) {
 	engine := Engine()
-	if engine.Name() != providers.Postgres || engine.DefaultPort() != DefaultPort {
-		t.Fatalf("unexpected engine %q %q", engine.Name(), engine.DefaultPort())
+	if engine.Name() != providers.Postgres || engine.DefaultPort() != DefaultPort ||
+		engine.Dialect() != providers.Postgres {
+		t.Fatalf("unexpected engine %q %q %q", engine.Name(), engine.DefaultPort(), engine.Dialect())
+	}
+	if engine.Defaults() != (pgwire.EngineDefaults{}) || engine.TimeSemantics() != (pgwire.TimeSemantics{}) {
+		t.Fatal("PostgreSQL needs no connection defaults and gives zone-less timestamps no zone")
+	}
+	if kind, ok := engine.TimeAxis(pgwire.OIDTimestampTZ); !ok || kind != pgwire.TimeAxisTimestampTZ {
+		t.Fatalf("unexpected time axis %v %t", kind, ok)
 	}
 }

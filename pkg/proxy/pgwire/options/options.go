@@ -48,6 +48,15 @@ const (
 	MaxProtocolMessageSizeBytes = 0x3fffffff
 	// DefaultMaxMessageSizeBytes is the largest client message relayed to the origin.
 	DefaultMaxMessageSizeBytes = MaxProtocolMessageSizeBytes
+	// DefaultMaxResultRows bounds a result buffered for caching; a larger one is relayed uncached.
+	DefaultMaxResultRows = 100000
+	// DefaultMaxResultSizeBytes bounds the row data of a result buffered for caching.
+	DefaultMaxResultSizeBytes = 64 * 1024 * 1024
+	// MaxResultSizeLimitBytes is the largest configurable buffered result.
+	MaxResultSizeLimitBytes = 1 << 31
+	// DefaultMaxQuerySizeBytes is the largest statement considered for caching;
+	// a larger one is still relayed, but is never inspected.
+	DefaultMaxQuerySizeBytes = 1024 * 1024
 )
 
 var tlsModes = []string{TLSModeDisable, TLSModeRequire, TLSModeVerifyCA, TLSModeVerifyFull}
@@ -57,13 +66,18 @@ func TLSModes() []string { return slices.Clone(tlsModes) }
 
 // Options contains settings for a backend reached over the PostgreSQL wire protocol.
 type Options struct {
-	// UpstreamTLSMode selects TLS toward the origin, independent of listener TLS.
+	// UpstreamTLSMode selects TLS toward the origin, independent of listener
+	// TLS. Empty selects the engine's default, which is disable for PostgreSQL.
 	UpstreamTLSMode string `yaml:"upstream_tls_mode,omitempty"`
+	// MaxResultRows and MaxResultSizeBytes bound the results buffered for
+	// caching. A result over either limit is relayed and never cached.
+	MaxResultRows      int `yaml:"max_result_rows,omitempty"`
+	MaxResultSizeBytes int `yaml:"max_result_size_bytes,omitempty"`
 }
 
 // New returns the default backend options.
 func New() *Options {
-	return &Options{UpstreamTLSMode: TLSModeDisable}
+	return &Options{MaxResultRows: DefaultMaxResultRows, MaxResultSizeBytes: DefaultMaxResultSizeBytes}
 }
 
 // Clone returns an independent copy.
@@ -80,8 +94,14 @@ func (o *Options) Validate() error {
 	if o == nil {
 		return nil
 	}
-	if !slices.Contains(tlsModes, o.UpstreamTLSMode) {
+	if o.UpstreamTLSMode != "" && !slices.Contains(tlsModes, o.UpstreamTLSMode) {
 		return fmt.Errorf("postgres.upstream_tls_mode must be one of %v", tlsModes)
+	}
+	if o.MaxResultRows <= 0 {
+		return errors.New("postgres.max_result_rows must be greater than zero")
+	}
+	if o.MaxResultSizeBytes <= 0 || o.MaxResultSizeBytes > MaxResultSizeLimitBytes {
+		return fmt.Errorf("postgres.max_result_size_bytes must be between 1 and %d", MaxResultSizeLimitBytes)
 	}
 	return nil
 }
@@ -104,6 +124,7 @@ type ListenerOptions struct {
 	WriteTimeout        timeconv.Duration `yaml:"write_timeout,omitempty"`
 	IdleTimeout         timeconv.Duration `yaml:"idle_timeout,omitempty"`
 	MaxMessageSizeBytes int               `yaml:"max_message_size_bytes,omitempty"`
+	MaxQuerySizeBytes   int               `yaml:"max_query_size_bytes,omitempty"`
 	// AllowCleartextWithoutTLS lets Trickster-authenticated clients send a
 	// cleartext password over an unencrypted connection.
 	AllowCleartextWithoutTLS bool `yaml:"allow_cleartext_without_tls,omitempty"`
@@ -119,6 +140,7 @@ func NewListener() *ListenerOptions {
 		WriteTimeout:        timeconv.Duration(DefaultWriteTimeout),
 		IdleTimeout:         timeconv.Duration(DefaultIdleTimeout),
 		MaxMessageSizeBytes: DefaultMaxMessageSizeBytes,
+		MaxQuerySizeBytes:   DefaultMaxQuerySizeBytes,
 	}
 }
 
@@ -142,6 +164,9 @@ func (o *ListenerOptions) Validate() error {
 	if o.MaxMessageSizeBytes <= 0 || o.MaxMessageSizeBytes > MaxProtocolMessageSizeBytes {
 		return fmt.Errorf("postgres.max_message_size_bytes must be between 1 and %d",
 			MaxProtocolMessageSizeBytes)
+	}
+	if o.MaxQuerySizeBytes <= 0 || o.MaxQuerySizeBytes > o.MaxMessageSizeBytes {
+		return errors.New("postgres.max_query_size_bytes must be between 1 and max_message_size_bytes")
 	}
 	return nil
 }

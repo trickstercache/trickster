@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -59,6 +60,9 @@ const (
 	acceptBackoff       = 5 * time.Millisecond
 	acceptBackoffCeil   = time.Second
 	pumpBufferSizeBytes = 32 * 1024
+	// upstreamReaderSize is smaller than a pump buffer, so the pump's large
+	// reads bypass the reader's buffer and are never copied twice.
+	upstreamReaderSize = 4096
 )
 
 var pumpBuffers = sync.Pool{New: func() any {
@@ -93,6 +97,9 @@ type Server struct {
 	mockSecret []byte
 	proxied    requestMetrics
 	failed     requestMetrics
+	analysis   *analysisMetrics
+	cache      *cacheMetrics
+	delta      *nativedelta.Engine[*Result]
 	upstreams  atomic.Int64
 
 	mtx      sync.Mutex
@@ -113,6 +120,11 @@ func NewServer(config Config) (*Server, error) {
 			status.LookupStatusProxyOnly, metricHTTPStatusOK),
 		failed: newRequestMetrics(config.BackendName, config.Provider,
 			status.LookupStatusProxyError, metricHTTPStatusInternalError),
+	}
+	if config.Analyzer != nil {
+		s.analysis = &analysisMetrics{backend: config.BackendName, dialect: config.Dialect}
+		s.cache = &cacheMetrics{backend: config.BackendName, provider: config.Provider, dialect: config.Dialect}
+		s.delta = s.newDeltaEngine()
 	}
 	s.setInboundTLS(config.InboundTLS)
 	if config.Terminated() {
@@ -160,6 +172,7 @@ func (s *Server) Serve(l net.Listener) error {
 		}
 		backoff = acceptBackoff
 		sess := &session{server: s, client: conn}
+		sess.handoff.init()
 		if !s.track(sess) {
 			_ = conn.Close()
 			return nil

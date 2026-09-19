@@ -30,7 +30,9 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
@@ -72,14 +74,39 @@ type Config struct {
 	// InboundTLS enables answering SSLRequest with a TLS handshake.
 	InboundTLS *tls.Config
 	// RequireSecureTransport rejects clients that do not upgrade to TLS.
-	RequireSecureTransport   bool
-	ConnectTimeout           time.Duration
-	MaxUpstreamConnections   int64
-	HandshakeTimeout         time.Duration
-	ReadTimeout              time.Duration
-	WriteTimeout             time.Duration
-	IdleTimeout              time.Duration
-	MaxMessageSizeBytes      int
+	RequireSecureTransport bool
+	ConnectTimeout         time.Duration
+	MaxUpstreamConnections int64
+	HandshakeTimeout       time.Duration
+	ReadTimeout            time.Duration
+	WriteTimeout           time.Duration
+	IdleTimeout            time.Duration
+	MaxMessageSizeBytes    int
+	// MaxQuerySizeBytes bounds the statements the gate holds and inspects.
+	MaxQuerySizeBytes int
+	// Analyzer is nil for a backend that only relays (proxy_only, or an engine
+	// with no analyzer); the statement gate and session tracker are then off.
+	Analyzer sqlanalyzer.DialectAnalyzer
+	// Dialect labels SQL metrics and partitions cache keys.
+	Dialect        string
+	CacheKeyPrefix string
+	// Engine supplies the type and time semantics needed to read a result.
+	Engine Engine
+	// CacheProvider resolves the backend's cache at call time; Cache is a fixed one.
+	CacheProvider            interface{ Cache() cache.Cache }
+	Cache                    cache.Cache
+	CacheTTL                 time.Duration
+	MaxObjectSize            int64
+	RetentionPoints          int
+	BackfillWindow           time.Duration
+	BackfillPoints           int
+	ShardMaxRange            time.Duration
+	ShardStep                time.Duration
+	ShardMaxPoints           int
+	DoesShard                bool
+	QueryTimeout             time.Duration
+	MaxResultRows            int
+	MaxResultSizeBytes       int
 	AllowCleartextWithoutTLS bool
 	AllowMD5                 bool
 }
@@ -119,6 +146,21 @@ func ConfigFromOptions(o *bo.Options, engine Engine) (Config, error) {
 		RequireSecureTransport: o.RequireTLS,
 		ConnectTimeout:         time.Duration(o.Timeout),
 		MaxUpstreamConnections: int64(o.MaxConcurrentConns),
+		Dialect:                engine.Dialect(), CacheKeyPrefix: o.CacheKeyPrefix, Engine: engine,
+		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
+		RetentionPoints: o.TimeseriesRetentionFactor,
+		BackfillWindow:  time.Duration(o.BackfillTolerance), BackfillPoints: o.BackfillTolerancePoints,
+		ShardMaxRange: time.Duration(o.MaxShardSizeTime), ShardStep: time.Duration(o.ShardStep),
+		ShardMaxPoints: o.MaxShardSizePoints, DoesShard: o.DoesShard,
+		QueryTimeout: time.Duration(o.Timeout),
+	}
+	resultLimits := o.Postgres
+	if resultLimits == nil {
+		resultLimits = pgo.New()
+	}
+	c.MaxResultRows, c.MaxResultSizeBytes = resultLimits.MaxResultRows, resultLimits.MaxResultSizeBytes
+	if !o.ProxyOnly {
+		c.Analyzer = engine.Analyzer()
 	}
 	c.RestartKey = restartKey(o, users)
 	c.ApplyListenerOptions(nil)
@@ -137,6 +179,7 @@ func (c *Config) ApplyListenerOptions(o *pgo.ListenerOptions) {
 	c.WriteTimeout = time.Duration(o.WriteTimeout)
 	c.IdleTimeout = time.Duration(o.IdleTimeout)
 	c.MaxMessageSizeBytes = o.MaxMessageSizeBytes
+	c.MaxQuerySizeBytes = o.MaxQuerySizeBytes
 	c.AllowCleartextWithoutTLS = o.AllowCleartextWithoutTLS
 	c.AllowMD5 = o.AllowMD5
 }
@@ -171,16 +214,16 @@ func upstreamFromOptions(o *bo.Options, engine Engine) (Upstream, error) {
 	if o.TLS != nil && (o.TLS.ClientCertPath == "") != (o.TLS.ClientKeyPath == "") {
 		return Upstream{}, errors.New("postgres upstream mutual TLS requires both client_cert_path and client_key_path")
 	}
-	out.TLS, err = upstreamTLS(o, host)
+	out.TLS, err = upstreamTLS(o, host, engine.Defaults().UpstreamTLSMode)
 	return out, err
 }
 
-func upstreamTLS(o *bo.Options, host string) (*tls.Config, error) {
-	mode := pgo.TLSModeDisable
-	if o.Postgres != nil {
+func upstreamTLS(o *bo.Options, host, engineDefault string) (*tls.Config, error) {
+	mode := engineDefault
+	if o.Postgres != nil && o.Postgres.UpstreamTLSMode != "" {
 		mode = o.Postgres.UpstreamTLSMode
 	}
-	if mode == pgo.TLSModeDisable {
+	if mode == "" || mode == pgo.TLSModeDisable {
 		return nil, nil
 	}
 	config, err := o.TLS.ToClientTLSConfig()
@@ -258,6 +301,10 @@ func restartKey(o *bo.Options, users map[string]string) string {
 	for _, field := range []string{
 		o.OriginURL, strconv.FormatInt(int64(o.Timeout), 10), strconv.Itoa(o.MaxConcurrentConns),
 		strconv.FormatBool(o.RequireTLS), strconv.FormatBool(users != nil),
+		strconv.FormatBool(o.ProxyOnly), o.CacheKeyPrefix, o.CacheName,
+		fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%t", o.TimeseriesTTL, o.MaxObjectSizeBytes,
+			o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
+			o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard),
 		tlsRestartIdentity(o), credentialRestartIdentity(users),
 	} {
 		appendRestartIdentityField(&identity, field)

@@ -31,6 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	autht "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
@@ -47,10 +49,27 @@ const (
 	configTestPort      = "5432"
 )
 
-type testEngine struct{}
+type testEngine struct {
+	relayOnly bool
+	tlsMode   string
+}
 
 func (testEngine) Name() string        { return providers.Postgres }
 func (testEngine) DefaultPort() string { return configTestPort }
+func (testEngine) Dialect() string     { return providers.Postgres }
+func (e testEngine) Analyzer() sqlanalyzer.DialectAnalyzer {
+	if e.relayOnly {
+		return nil
+	}
+	return testAnalyzer
+}
+func (e testEngine) Defaults() EngineDefaults               { return EngineDefaults{UpstreamTLSMode: e.tlsMode} }
+func (testEngine) TimeAxis(oid uint32) (TimeAxisKind, bool) { return StandardTimeAxis(oid) }
+func (testEngine) TimeSemantics() TimeSemantics             { return TimeSemantics{} }
+
+var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
+	BucketMatchers: []cockroach.BucketMatcher{cockroach.DateBinMatcher}, RoundUnalignedTimeBounds: true,
+})
 
 func configTestOptions() *bo.Options {
 	o := bo.New()
@@ -85,7 +104,7 @@ func TestConfigFromOptions(t *testing.T) {
 
 func TestConfigFromOptionsRejections(t *testing.T) {
 	for name, mutate := range map[string]func(*bo.Options){
-		"unparsable URL":   func(o *bo.Options) { o.OriginURL = "://bad" },
+		"unparsable URL":    func(o *bo.Options) { o.OriginURL = "://bad" },
 		"wrong scheme":      func(o *bo.Options) { o.OriginURL = "mysql://origin@db.example/x" },
 		"no host":           func(o *bo.Options) { o.OriginURL = "postgres:///x" },
 		"port out of range": func(o *bo.Options) { o.OriginURL = "postgres://origin@db.example:70000/x" },
@@ -403,5 +422,44 @@ func TestCancelRegistry(t *testing.T) {
 	registry.release(pid)
 	if registry.lookup(pid, secret) != nil {
 		t.Fatal("a released key must not match")
+	}
+}
+
+func TestEngineSeam(t *testing.T) {
+	for oid, want := range map[uint32]TimeAxisKind{
+		OIDTimestampTZ: TimeAxisTimestampTZ, OIDTimestamp: TimeAxisTimestamp, OIDDate: TimeAxisDate,
+		OIDInt2: TimeAxisEpochInteger, OIDInt4: TimeAxisEpochInteger, OIDInt8: TimeAxisEpochInteger,
+		OIDFloat8: TimeAxisEpochFloat, OIDNumeric: TimeAxisEpochNumeric,
+	} {
+		if got, ok := StandardTimeAxis(oid); !ok || got != want {
+			t.Fatalf("oid %d: got %v %t, want %v", oid, got, ok, want)
+		}
+	}
+	const oidText = 25
+	if _, ok := StandardTimeAxis(oidText); ok {
+		t.Fatal("text cannot carry a time axis")
+	}
+
+	c, err := ConfigFromOptions(configTestOptions(), testEngine{})
+	if err != nil || c.Analyzer == nil || c.Dialect != providers.Postgres || c.MaxQuerySizeBytes != pgo.DefaultMaxQuerySizeBytes {
+		t.Fatalf("expected an inspecting config, got %+v, %v", c, err)
+	}
+	proxyOnly := configTestOptions()
+	proxyOnly.ProxyOnly = true
+	if c, err = ConfigFromOptions(proxyOnly, testEngine{}); err != nil || c.Analyzer != nil {
+		t.Fatalf("proxy_only must switch statement inspection off: %v", err)
+	}
+	if c, err = ConfigFromOptions(configTestOptions(), testEngine{relayOnly: true}); err != nil || c.Analyzer != nil {
+		t.Fatalf("an engine with no analyzer only relays: %v", err)
+	}
+
+	// the engine's TLS default applies only when the backend names no mode
+	if c, err = ConfigFromOptions(configTestOptions(), testEngine{tlsMode: pgo.TLSModeRequire}); err != nil || c.Upstream.TLS == nil {
+		t.Fatalf("expected the engine default to enable TLS: %v", err)
+	}
+	explicit := configTestOptions()
+	explicit.Postgres = &pgo.Options{UpstreamTLSMode: pgo.TLSModeDisable}
+	if c, err = ConfigFromOptions(explicit, testEngine{tlsMode: pgo.TLSModeRequire}); err != nil || c.Upstream.TLS != nil {
+		t.Fatalf("an explicit mode must override the engine default: %v", err)
 	}
 }

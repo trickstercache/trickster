@@ -16,6 +16,7 @@
 package pgwire
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/tls"
@@ -88,9 +89,13 @@ type session struct {
 	rawStartup []byte
 	minor      uint32
 
-	pid        uint32
-	realPID    uint32
-	realSecret []byte
+	tracker        *sessionTracker
+	upstreamReader *bufio.Reader
+	handoff        upstreamHandoff
+	relayResumed   bool
+	pid            uint32
+	realPID        uint32
+	realSecret     []byte
 
 	closeMtx sync.Mutex
 	closed   bool
@@ -100,6 +105,8 @@ type session struct {
 	txStatus     atomic.Uint32
 	rows         int64
 	failed       bool
+	emptyQuery   bool
+	completed    bool
 }
 
 func (s *session) serve() {
@@ -239,6 +246,9 @@ func (s *session) acceptStartupMessage(version uint32, packet []byte) (bool, err
 		return false, errStartup
 	}
 	s.database, s.params, s.rawStartup, s.minor = params[paramDatabase], params, packet, version&0xffff
+	if s.server.config.Analyzer != nil {
+		s.tracker = newSessionTracker(s.user, s.database, params)
+	}
 	return true, nil
 }
 
@@ -324,10 +334,13 @@ func (s *session) connectPassthrough() error {
 		if err != nil {
 			return s.upstreamFailed(err)
 		}
-		if typ == msgBackendKeyData {
+		switch typ {
+		case msgBackendKeyData:
 			if body, err = s.issueKey(body); err != nil {
 				return s.upstreamFailed(err)
 			}
+		case msgParameterStatus:
+			s.observeParameterStatus(body)
 		}
 		if _, err = s.client.Write(appendFrame(nil, typ, body)); err != nil {
 			return err
@@ -422,6 +435,9 @@ func (s *session) connectTerminated() error {
 	}
 	slices.Sort(names)
 	for _, name := range names {
+		if s.tracker != nil {
+			s.tracker.parameterStatus(name, hijacked.ParameterStatuses[name])
+		}
 		greeting = appendFrame(greeting, msgParameterStatus,
 			append(append([]byte(name), 0), append([]byte(hijacked.ParameterStatuses[name]), 0)...))
 	}
@@ -445,6 +461,18 @@ func (s *session) upstreamParams() (map[string]string, []string) {
 	}
 	slices.Sort(protocolOptions)
 	return params, protocolOptions
+}
+
+func (s *session) observeParameterStatus(body []byte) {
+	if s.tracker == nil {
+		return
+	}
+	name, rest, ok := bytes.Cut(body, []byte{0})
+	if !ok {
+		return
+	}
+	value, _, _ := bytes.Cut(rest, []byte{0})
+	s.tracker.parameterStatus(string(name), string(value))
 }
 
 func (s *session) upstreamFailed(err error) error {

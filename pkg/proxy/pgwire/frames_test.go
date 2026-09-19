@@ -30,15 +30,20 @@ type recordedFrame struct {
 }
 
 type recordingObserver struct {
-	frames []recordedFrame
-	firsts []byte
+	frames  []recordedFrame
+	firsts  []byte
+	capture byte
+	bodies  []string
 }
 
-func (r *recordingObserver) message(typ byte, bodyLen int) {
+func (r *recordingObserver) message(typ byte, bodyLen int) bool {
 	r.frames = append(r.frames, recordedFrame{typ, bodyLen})
+	return typ == r.capture
 }
 
 func (r *recordingObserver) firstByte(_, b byte) { r.firsts = append(r.firsts, b) }
+
+func (r *recordingObserver) body(_ byte, body []byte) { r.bodies = append(r.bodies, string(body)) }
 
 func framesTestStream() ([]byte, []recordedFrame) {
 	var stream []byte

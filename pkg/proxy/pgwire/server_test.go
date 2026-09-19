@@ -460,6 +460,12 @@ func TestRelayReportsRequestMetrics(t *testing.T) {
 	if rows, err := queryRows(t, conn, fakeQueryOne); err != nil || rows != 1 {
 		t.Fatalf("the session must survive a query error: %d rows, %v", rows, err)
 	}
+	// a driver's pool keepalive runs no statement and is not a request
+	for range 2 {
+		if rows, err := queryRows(t, conn, fakeQueryPing); err != nil || rows != 0 {
+			t.Fatalf("keepalive: %d rows, %v", rows, err)
+		}
+	}
 	if got := testutil.ToFloat64(server.proxied.requests) - proxied; got != 2 {
 		t.Fatalf("expected 2 proxied requests, got %v", got)
 	}

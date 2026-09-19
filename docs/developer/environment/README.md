@@ -366,10 +366,12 @@ License (TSL) build rather than the Apache-only `-oss` one, so
 `time_bucket_gapfill`, continuous aggregates, and compression are available
 for testing.
 
-Trickster serves TimescaleDB through its PostgreSQL wire-protocol listener,
-which is currently a reverse proxy only: every message is relayed to the
-origin and nothing is cached yet. The direct path is the reference that the
-proxied path is verified against.
+Trickster serves TimescaleDB through its PostgreSQL wire-protocol listener.
+It relays everything a client sends, and answers eligible `SELECT` statements
+from the backend's cache (`mem1` here): whole results through the Object Proxy
+Cache, and time-bucketed range queries through the Delta Proxy Cache, which
+fetches from the origin only the buckets it does not already hold. The direct
+path is the reference that the proxied path is verified against.
 
 * Port `5432`: direct PostgreSQL access
 * Port `8488`: Trickster's PostgreSQL wire-protocol listener (`timescaledb1`,
@@ -420,9 +422,98 @@ panels as the MySQL dashboard and, because both databases hold the same rows,
 shows the same values over the same time range. Two panel queries differ from
 the MySQL versions only in dialect: the card-use rate counts with
 `FILTER (WHERE ...)`, and `round(avg(x), 2)` casts the average to `numeric`.
-In the Trickster Performance row, the request duration and returned elements
-panels show traffic for the `timescaledb1` backend; the SQL analysis and cache
-panels stay empty until the listener caches.
+The Trickster Performance row shows the `timescaledb1` backend's request
+duration, returned elements, SQL classifications
+(`trickster_sql_query_analysis_total{backend_name="timescaledb1",dialect="postgres",cache_mode,reason}`),
+cache outcomes
+(`trickster_sql_query_cache_total{backend_name="timescaledb1",cache_mode,cache_status}`)
+and rewrite failures. The dashboard's `time_bucket` panels report
+`delta / delta_cacheable`: a refresh fetches only the buckets the cache does not
+hold yet. The top-N table is cached as a whole object
+(`object / unsupported_limit`), keyed on the statement's exact text, so it is a
+hit only while its range is unchanged.
+
+These bucket expressions use the delta cache:
+
+| Bucket | Notes |
+| --- | --- |
+| `time_bucket(width, col)` | what `$__timeGroup` writes with the TimescaleDB option on; the grid starts on Monday 2000-01-03 UTC |
+| `time_bucket(width, col, TIMESTAMPTZ '...')`, `time_bucket(width, col, '...'::interval)` | a typed origin or offset; an untyped third argument is the time zone overload and is not matched |
+| `time_bucket_gapfill(width, col)` | only for a single series with both range bounds in `WHERE`, and without `locf` or `interpolate` |
+| `floor(extract(epoch from col)/N)*N` | what `$__timeGroup` writes with the option off; also with `date_part('epoch', col)` |
+| `floor((col)/N)*N` | `$__unixEpochGroup`, over a column of epoch seconds with epoch-second bounds |
+| `date_bin(width, col, origin)` | PostgreSQL requires the origin |
+| `date_trunc('unit', col)` | only while the session `TimeZone` is UTC, since PostgreSQL truncates in the session zone |
+
+A width is a fixed-length interval such as `'300.000s'`, `'5 minutes'`,
+`INTERVAL '1 hour'` or `'7 days'`; months and years never match. A range whose
+bounds are not on the bucket grid, as Grafana's live ranges are, is rounded
+inward, so the partial first and last buckets are left out of the answer. A
+bound written without a zone (`'2026-09-17 00:00:00'`, `TIMESTAMP '...'`) is
+read in the session zone by PostgreSQL, so it qualifies only while that zone
+is UTC; Grafana's `Z`-suffixed bounds always do.
+
+A statement that fits none of these is cached as a whole object with the
+reason in the classification metric. So is one the SQL parser cannot write
+back faithfully (`FROM ONLY`, a `json` cast, a `U&'...'` string), one that calls
+a set-returning function, and a gapfill outside the form above. A statement
+that calls a volatile function or reads the clock anywhere but in a time bound
+(`random()`, `now()`, `current_date`, `pg_sleep()`, `nextval()`, ...) is never
+cached (`none / nondeterministic`). Statements the parser rejects outright,
+such as named-argument calls (`origin => ...`) or `GROUP BY ROLLUP`, are
+cached as objects too.
+
+Cached answers are the origin's own bytes: the row description and every row
+are stored exactly as received, and only the bucket column is read, to place
+rows on the time axis. That is safe because everything that changes how a
+value is rendered (`TimeZone`, `DateStyle`, `extra_float_digits`, and the rest
+of the session identity below) partitions the cache. The delta cache needs the
+bucket to be the leading `ORDER BY` term (either direction) or no `ORDER BY` at
+all; within a bucket rows keep the origin's order. It uses the backend's common
+`timeseries_ttl`, `timeseries_retention_factor`, `backfill_tolerance`,
+`backfill_tolerance_points`, sharding, `max_object_size_bytes`, `cache_name`
+and `cache_key_prefix` settings, and an open-ended range is never considered
+complete in its newest bucket.
+
+The cache always fails open to a plain relay of the client's own statement: when
+the origin rejects Trickster's rewritten sub-query
+(`trickster_sql_query_rewrite_failures_total{reason="origin_rejected"}`), when
+a result outgrows the backend's `postgres.max_result_rows` (100000) or
+`postgres.max_result_size_bytes` (64 MiB) limits (`reason="result_size"`), or
+when the bucket column cannot be read, for example under a non-ISO `DateStyle`
+(the statement is then cached as an object instead). Such a statement skips
+the cache until its marker expires, so it is not retried on every refresh. An
+oversized result of the client's own statement is handed back to the relay
+mid-stream rather than fetched twice. Errors from the origin are passed to the
+client verbatim and never cached, and a cancel request reaches a statement
+that is being fetched for the cache.
+
+Only a simple-protocol `Query` holding one row-returning statement is
+analyzed, and so cached. Others are relayed and counted with `cache_mode="none"` and the
+reason they were passed over: `multi_statement`, `in_transaction`,
+`pipelined`, `query_size` (larger than the listener's
+`postgres.max_query_size_bytes`, 1 MiB by default), or `session_state`.
+Extended-protocol statements are relayed and never analyzed. A relayed
+statement counts as a `proxy-only` request. A driver's pool keepalive does not:
+pgx, which Grafana uses, sends an empty `-- ping` query before each panel
+query, and it is relayed to the origin but left out of the request metrics. Setting
+`proxy_only: true` on the backend switches statement inspection and caching
+off entirely.
+
+`session_state` means the session did something whose effect on later results
+Trickster cannot follow, and it stays that way until the client reconnects.
+Trickster follows the settings the origin announces (`TimeZone`, `DateStyle`,
+`IntervalStyle`, `client_encoding`, `search_path` on PostgreSQL 18, and
+others), plus `role`, `extra_float_digits` and `bytea_output` from the
+client's own `SET` statements; all of them, with the user and database, will
+partition the cache. Any other `SET` (for example a custom `app.tenant` used
+by row-level security), `set_config()`, `SELECT ... INTO`, DDL, `DO`, `CALL`,
+and fast-path function calls end caching for the session. Transactions, DML,
+`SHOW`, `EXPLAIN`, and harmless settings such as `statement_timeout` and
+`application_name` do not. A session with `standard_conforming_strings` off is
+also relayed uncached, because its string constants follow other rules than the
+analyzer reads them by. One known gap: a user-defined function that changes
+a session setting as a side effect is not detected.
 
 The `timescaledb1` backend uses `provider: timescaledb`, an alias of
 `postgres`: both names select the same engine, and metrics report

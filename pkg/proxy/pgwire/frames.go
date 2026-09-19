@@ -47,9 +47,13 @@ const (
 var errFrameLength = errors.New("invalid message length")
 
 type frameObserver interface {
-	message(typ byte, bodyLen int)
+	message(typ byte, bodyLen int) bool
 	firstByte(typ, b byte)
+	body(typ byte, body []byte)
 }
+
+// maxCapturedBody bounds the bodies a scanner copies for its observer.
+const maxCapturedBody = 64 * 1024
 
 type frameScanner struct {
 	observer  frameObserver
@@ -59,6 +63,8 @@ type frameScanner struct {
 	remaining int
 	typ       byte
 	wantFirst bool
+	capturing bool
+	captured  []byte
 }
 
 func newFrameScanner(observer frameObserver, maxBody int) *frameScanner {
@@ -78,6 +84,13 @@ func (s *frameScanner) scan(chunk []byte) error {
 			}
 			n := min(s.remaining, len(chunk))
 			s.remaining -= n
+			if s.capturing {
+				s.captured = append(s.captured, chunk[:n]...)
+				if s.remaining == 0 {
+					s.capturing = false
+					s.observer.body(s.typ, s.captured)
+				}
+			}
 			chunk = chunk[n:]
 			continue
 		}
@@ -95,7 +108,9 @@ func (s *frameScanner) scan(chunk []byte) error {
 		s.typ = s.header[0]
 		s.remaining = int(length) - frameLenSize
 		s.wantFirst = s.typ == msgReadyForQuery && s.remaining > 0
-		s.observer.message(s.typ, s.remaining)
+		if s.observer.message(s.typ, s.remaining) && s.remaining > 0 && s.remaining <= maxCapturedBody {
+			s.capturing, s.captured = true, s.captured[:0]
+		}
 	}
 	return nil
 }

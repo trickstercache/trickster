@@ -96,6 +96,9 @@ func (a nativeListenerAdapter) Build(request native.BuildRequest) (listener.Prot
 	if err != nil {
 		return nil, err
 	}
+	if client := request.BackendClients.Get(protocolConfig.BackendName); client != nil {
+		protocolConfig.CacheProvider = client
+	}
 	protocolConfig.InboundTLS, err = request.Config.TLSCertConfigForListener(request.ListenerName)
 	if err != nil {
 		return nil, err
