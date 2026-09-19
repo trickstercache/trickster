@@ -53,6 +53,14 @@ var guardedWords = map[string]wordClass{
 	"pg_sleep": wordVolatile, "pg_sleep_for": wordVolatile, "pg_sleep_until": wordVolatile,
 	"set_config": wordVolatile, "current_setting": wordVolatile,
 	"pg_advisory_lock": wordVolatile, "pg_try_advisory_lock": wordVolatile, "pg_advisory_unlock": wordVolatile,
+	"pg_advisory_xact_lock": wordVolatile, "pg_try_advisory_xact_lock": wordVolatile,
+	"pg_advisory_lock_shared": wordVolatile, "pg_advisory_unlock_all": wordVolatile,
+	// functions called for what they do rather than what they return
+	"pg_notify": wordVolatile, "pg_cancel_backend": wordVolatile, "pg_terminate_backend": wordVolatile,
+	"pg_reload_conf": wordVolatile, "pg_switch_wal": wordVolatile, "pg_logical_emit_message": wordVolatile,
+	"lo_create": wordVolatile, "lo_creat": wordVolatile, "lo_import": wordVolatile, "lo_export": wordVolatile,
+	"lo_unlink": wordVolatile, "lo_put": wordVolatile, "lowrite": wordVolatile,
+	"dblink": wordVolatile, "dblink_exec": wordVolatile,
 
 	"now": wordClock, "statement_timestamp": wordClock, "transaction_timestamp": wordClock, "age": wordClock,
 	"current_timestamp": wordBareClock, "current_date": wordBareClock, "current_time": wordBareClock,

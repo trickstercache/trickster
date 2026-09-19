@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +44,7 @@ const (
 	pgwireConformanceTimeout  = 15 * time.Second
 	pgwireSQLStateCanceled    = "57014"
 	pgwireSQLStateBadPassword = "28P01"
+	pgwireSecondUser          = "pgwire_conformance_second"
 	pgwireTxIdle              = 'I'
 	pgwireTxOpen              = 'T'
 	pgwireTxFailed            = 'E'
@@ -66,6 +69,8 @@ type pgwireTarget struct {
 	ShowSQL              string
 	ObjectSQL            string
 	DeltaSQLs            []string
+	WeekSQL              string
+	ZoneSQL              string
 	SupportsCancel       bool
 	SupportsTransactions bool
 }
@@ -98,6 +103,10 @@ func pgwireTargets() []pgwireTarget {
 			"SELECT time_bucket_gapfill('1h', pickup_datetime) AS time, count(*) FROM trips " +
 				"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
 		},
+		// week buckets sit on the engine's own grid, which is not the Unix epoch's
+		WeekSQL: "SELECT time_bucket('7 days', pickup_datetime) AS time, count(*) FROM trips " +
+			"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
+		ZoneSQL:        "SET TIME ZONE 'Asia/Kolkata'",
 		SupportsCancel: true, SupportsTransactions: true,
 	}}
 }
@@ -134,7 +143,9 @@ func pgwireHarness(t *testing.T, target pgwireTarget) (tricksterHarness, string)
 		backend.CacheName = "mem1"
 		backend.AuthenticatorName = pgwireConformanceName
 		c.Authenticators[pgwireConformanceName] = &autho.Options{
-			Provider: "basic", Users: configtypes.EnvStringMap{target.ClientUser: target.ClientPassword},
+			Provider: "basic", Users: configtypes.EnvStringMap{
+				target.ClientUser: target.ClientPassword, pgwireSecondUser: target.ClientPassword,
+			},
 		}
 		c.Backends[pgwireConformanceName] = backend
 	})
@@ -373,9 +384,121 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			`trickster_sql_query_rewrite_failures_total{backend_name="`+pgwireConformanceName+`"`)
 	})
 
+	t.Run("a cached range answers its sub-ranges and later ranges fetch only what is new", func(t *testing.T) {
+		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer cached.Close(context.Background())
+		fresh, err := pgwireConnect(t, target.OriginAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer fresh.Close(context.Background())
+		start := time.Now().UTC().Add(-96 * time.Hour).Truncate(time.Hour)
+		statement := func(from, to time.Duration) string {
+			return fmt.Sprintf(target.DeltaSQLs[0], start.Add(from*time.Hour).Format(time.RFC3339),
+				start.Add(to*time.Hour).Format(time.RFC3339))
+		}
+		for _, step := range []struct {
+			from, to time.Duration
+			status   string
+			// the statement's key is range-independent and already cached elsewhere on the axis
+		}{{0, 6, "rmiss"}, {2, 4, "hit"}, {0, 6, "hit"}, {4, 9, "phit"}, {1, 8, "hit"}} {
+			before := pgwireCacheCount(t, metricsAddr, "delta", step.status)
+			want, err := pgwireQuery(t, fresh, statement(step.from, step.to))
+			require.NoError(t, err)
+			got, err := pgwireQuery(t, cached, statement(step.from, step.to))
+			require.NoError(t, err)
+			require.Equal(t, want, got, "hours %d to %d", step.from, step.to)
+			require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, "delta", step.status),
+				"hours %d to %d should be a %s", step.from, step.to, step.status)
+		}
+	})
+
+	t.Run("week buckets land on the origin's grid", func(t *testing.T) {
+		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer cached.Close(context.Background())
+		fresh, err := pgwireConnect(t, target.OriginAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer fresh.Close(context.Background())
+		// Monday-aligned bounds, so no partial edge bucket is dropped from the cached answer
+		upper := time.Now().UTC().Add(-7 * 24 * time.Hour).Truncate(24 * time.Hour)
+		for upper.Weekday() != time.Monday {
+			upper = upper.Add(-24 * time.Hour)
+		}
+		sql := fmt.Sprintf(target.WeekSQL, upper.Add(-21*24*time.Hour).Format(time.RFC3339), upper.Format(time.RFC3339))
+		before := pgwireCacheCount(t, metricsAddr, "delta", "hit")
+		want, err := pgwireQuery(t, fresh, sql)
+		require.NoError(t, err)
+		require.Len(t, want[0].Rows, 3)
+		for range 2 {
+			got, err := pgwireQuery(t, cached, sql)
+			require.NoError(t, err)
+			require.Equal(t, want, got)
+		}
+		// a bucket off the planned grid would have been refused and the statement relayed uncached
+		require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, "delta", "hit"))
+	})
+
+	t.Run("sessions with different identities do not share answers", func(t *testing.T) {
+		start := time.Now().UTC().Add(-120 * time.Hour).Truncate(time.Hour)
+		// the second statement stays delta-cacheable under any session zone
+		sql := fmt.Sprintf(target.DeltaSQLs[1], start.Format(time.RFC3339), start.Add(2*time.Hour).Format(time.RFC3339))
+		session := func(address, user string, settings ...string) []pgwireResult {
+			identity := target
+			identity.ClientUser = user
+			conn, err := pgwireConnect(t, address, identity, target.ClientPassword)
+			require.NoError(t, err)
+			defer conn.Close(context.Background())
+			for _, setting := range settings {
+				_, err = pgwireQuery(t, conn, setting)
+				require.NoError(t, err)
+			}
+			out, err := pgwireQuery(t, conn, sql)
+			require.NoError(t, err)
+			return out
+		}
+		misses := func() float64 { return pgwireCacheCount(t, metricsAddr, "delta", "kmiss") }
+		before := misses()
+		utc := session(proxyAddr, target.ClientUser)
+		require.Equal(t, session(target.OriginAddr, target.ClientUser), utc)
+		// this identity already holds the statement over other ranges, so it is no key miss
+		require.Equal(t, before, misses())
+		// a time zone changes how every timestamp is rendered, so it is another cache entry
+		zoned := session(proxyAddr, target.ClientUser, target.ZoneSQL)
+		require.Equal(t, session(target.OriginAddr, target.ClientUser, target.ZoneSQL), zoned)
+		require.NotEqual(t, utc, zoned)
+		require.Equal(t, before+1, misses())
+		// and so does the client's user, which row-level security may depend on
+		require.Equal(t, utc, session(proxyAddr, pgwireSecondUser))
+		require.Equal(t, before+2, misses())
+		// each identity is served from its own entry afterwards
+		hits := pgwireCacheCount(t, metricsAddr, "delta", "hit")
+		require.Equal(t, utc, session(proxyAddr, target.ClientUser))
+		require.Equal(t, zoned, session(proxyAddr, target.ClientUser, target.ZoneSQL))
+		require.Equal(t, hits+2, pgwireCacheCount(t, metricsAddr, "delta", "hit"))
+		_, body := getBody(t, "http://"+metricsAddr+"/metrics")
+		require.NotContains(t, body,
+			`trickster_sql_query_rewrite_failures_total{backend_name="`+pgwireConformanceName+`"`)
+	})
+
 	t.Run("relayed statements are classified", func(t *testing.T) {
 		_, body := getBody(t, "http://"+metricsAddr+"/metrics")
 		require.Contains(t, body, `trickster_sql_query_analysis_total{backend_name="`+pgwireConformanceName+`"`)
 		require.Contains(t, body, `trickster_proxy_requests_total{backend_name="`+pgwireConformanceName+`"`)
 	})
+}
+
+func pgwireCacheCount(t *testing.T, metricsAddr, mode, status string) float64 {
+	t.Helper()
+	_, body := getBody(t, "http://"+metricsAddr+"/metrics")
+	prefix := `trickster_sql_query_cache_total{backend_name="` + pgwireConformanceName + `",cache_mode="` + mode +
+		`",cache_status="` + status + `"`
+	for _, line := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		value, err := strconv.ParseFloat(line[strings.LastIndexByte(line, ' ')+1:], 64)
+		require.NoError(t, err)
+		return value
+	}
+	return 0
 }

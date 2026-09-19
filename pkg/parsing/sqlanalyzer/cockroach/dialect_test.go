@@ -182,3 +182,35 @@ func TestMaskPlaceholders(t *testing.T) {
 		t.Fatalf("got %q", masked)
 	}
 }
+
+func TestInclusiveUpperOneTickBelowBoundaryKeepsItsBucket(t *testing.T) {
+	a := NewAnalyzer(Options{
+		BucketMatchers: DataFusionBucketMatchers(), BoundPrecision: time.Microsecond, RoundUnalignedTimeBounds: true,
+	})
+	for name, test := range map[string]struct {
+		where string
+		upper time.Time
+	}{
+		// the whole 11:00 bucket is covered, so it is kept
+		"one tick below":  {"ts >= '2026-09-18T08:00:00Z' AND ts <= '2026-09-18T11:04:59.999999Z'", dialectExtent.End.Add(5 * time.Minute)},
+		"integer seconds": {"ts >= 1789718400 AND ts <= 1789729499", dialectExtent.End.Add(5 * time.Minute)},
+		// anything short of that leaves the bucket partial, so it is dropped
+		"two ticks below": {"ts >= '2026-09-18T08:00:00Z' AND ts <= '2026-09-18T11:04:59.999998Z'", dialectExtent.End},
+		"on the boundary": {"ts >= '2026-09-18T08:00:00Z' AND ts <= '2026-09-18T11:00:00Z'", dialectExtent.End},
+	} {
+		got := a.Analyze(dialectBucketSelect+test.where+dialectGrouped, time.Time{})
+		if got.Plan == nil || !got.Plan.UpperBound.Value.Equal(test.upper) || got.Plan.UpperBound.Inclusive {
+			t.Fatalf("%s: got %+v (%v)", name, got.Plan, got.Err)
+		}
+		// what the renderer writes for an extent reads back as that extent
+		rendered, err := got.Plan.RenderExtent(dialectExtent)
+		if err != nil {
+			t.Fatal(err)
+		}
+		again := a.Analyze(rendered, time.Time{})
+		if again.Plan == nil || !again.Plan.LowerBound.Value.Equal(dialectExtent.Start) ||
+			!again.Plan.UpperBound.Value.Equal(dialectExtent.End.Add(5*time.Minute)) {
+			t.Fatalf("%s: %s read back as %+v", name, rendered, again.Plan)
+		}
+	}
+}

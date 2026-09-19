@@ -1102,7 +1102,12 @@ func normalizePrimaryBounds(
 		if !ok || tick > bucket.step {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+		switch {
+		case sqlanalyzer.AlignedToBucket(result.upper.value.Add(tick), bucket.step, bucket.phase):
+			// col <= X with X one tick below a boundary covers that bucket whole; it is
+			// the form this renderer writes, so a rendered statement reads back unchanged
+			result.upper.value = result.upper.value.Add(tick)
+		case !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase):
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}

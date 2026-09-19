@@ -19,6 +19,8 @@ SET client_min_messages = warning;
 -- Dropping first lets schema changes take effect on an existing developer
 -- environment; every seed run reloads all rows anyway. Dropping a hypertable
 -- drops its chunks with it.
+-- The continuous aggregate depends on trips, so it goes first.
+DROP MATERIALIZED VIEW IF EXISTS trips_15m;
 DROP TABLE IF EXISTS trips;
 DROP TABLE IF EXISTS trips_staging;
 
@@ -28,6 +30,10 @@ CREATE TABLE trips
     vendor_id text NOT NULL,
     pickup_date date NOT NULL,
     pickup_datetime timestamptz NOT NULL,
+    -- pickup_datetime as epoch seconds. It is not in the MySQL/ClickHouse
+    -- copies; it exists so Grafana's $__unixEpochFilter / $__unixEpochGroup
+    -- macros, which need an integer time column, have something to run on.
+    pickup_epoch bigint NOT NULL,
     dropoff_date date,
     dropoff_datetime timestamptz,
     store_and_fwd_flag smallint,
@@ -76,6 +82,9 @@ CREATE TABLE trips
 SELECT create_hypertable('trips', by_range('pickup_datetime'));
 
 CREATE INDEX idx_cab_type_pickup_datetime ON trips (cab_type, pickup_datetime);
+-- Chunk exclusion only works on pickup_datetime, so epoch-filtered panels
+-- rely on this index instead.
+CREATE INDEX idx_pickup_epoch ON trips (pickup_epoch);
 
 -- COPY cannot transform values in flight the way MySQL's LOAD DATA ... SET
 -- does, so each file lands here as raw text and load_trips_from_staging.sql

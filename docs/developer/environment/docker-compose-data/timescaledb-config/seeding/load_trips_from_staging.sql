@@ -7,7 +7,7 @@
 
 INSERT INTO trips
 (
-    trip_id, vendor_id, pickup_date, pickup_datetime, dropoff_date,
+    trip_id, vendor_id, pickup_date, pickup_datetime, pickup_epoch, dropoff_date,
     dropoff_datetime, store_and_fwd_flag, rate_code_id, pickup_longitude,
     pickup_latitude, dropoff_longitude, dropoff_latitude, passenger_count,
     trip_distance, fare_amount, extra, transit_tax, tip_amount, tolls_amount,
@@ -24,6 +24,7 @@ SELECT
     s.vendor_id,
     (t.pickup_ts AT TIME ZONE 'UTC')::date,
     t.pickup_ts,
+    extract(epoch FROM t.pickup_ts)::bigint,
     (t.dropoff_ts AT TIME ZONE 'UTC')::date,
     t.dropoff_ts,
     NULLIF(s.store_and_fwd_flag, '')::smallint,

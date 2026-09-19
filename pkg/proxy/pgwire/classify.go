@@ -49,7 +49,10 @@ const (
 )
 
 var (
-	readKeywords    = map[string]struct{}{"select": {}, "values": {}, "table": {}, "with": {}}
+	readKeywords = map[string]struct{}{"select": {}, "values": {}, "table": {}, "with": {}}
+	// writeKeywords inside a read make it a write: a WITH query may change data
+	// (WITH gone AS (DELETE ... RETURNING *) SELECT ...), and FOR UPDATE takes locks.
+	writeKeywords   = map[string]struct{}{"insert": {}, "update": {}, "delete": {}, "merge": {}}
 	neutralKeywords = map[string]struct{}{
 		"begin": {}, "start": {}, "commit": {}, "end": {}, "rollback": {}, "abort": {},
 		"savepoint": {}, "release": {}, "show": {}, "explain": {}, "insert": {}, "update": {},
@@ -78,6 +81,8 @@ func classify(sql string, backslashEscapes bool) statementClass {
 		statements int
 		atStart    = true
 		first      []sqlscan.Token
+		// startedAsRead survives the statement being reclassified as a write
+		startedAsRead bool
 	)
 	for {
 		token, ok := scanner.Next()
@@ -93,7 +98,7 @@ func classify(sql string, backslashEscapes bool) statementClass {
 			statements++
 			kind := leadingKind(scanner, token)
 			if statements == 1 {
-				class.kind = kind
+				class.kind, startedAsRead = kind, kind == stmtRead
 			} else if kind != stmtRead && kind != stmtNeutral {
 				class.unsafe = true
 			}
@@ -105,8 +110,11 @@ func classify(sql string, backslashEscapes bool) statementClass {
 			switch {
 			case scanner.IsWord(token, "set_config"):
 				class.unsafe = true
-			case token.Depth == 0 && scanner.IsWord(token, "into") && class.kind == stmtRead:
+			case token.Depth == 0 && scanner.IsWord(token, "into") && startedAsRead:
 				class.unsafe = true
+			case statements == 1 && class.kind == stmtRead && isWriteKeyword(scanner.Text(token)):
+				// relayed like any other write: never cached, and no reason to distrust the session
+				class.kind = stmtNeutral
 			}
 		}
 	}
@@ -126,6 +134,14 @@ func classify(sql string, backslashEscapes bool) statementClass {
 		}
 	}
 	return class
+}
+
+func isWriteKeyword(word string) bool {
+	if len(word) < 5 || len(word) > 6 {
+		return false
+	}
+	_, ok := writeKeywords[strings.ToLower(word)]
+	return ok
 }
 
 func leadingKind(scanner *sqlscan.Scanner, token sqlscan.Token) statementKind {

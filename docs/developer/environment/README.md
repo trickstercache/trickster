@@ -404,20 +404,27 @@ docker compose exec -e PGPASSWORD=trickster-dev-grafana timescaledb \
 7-day chunks (13 for the 12-week dataset). It has the same columns as the
 MySQL table, with `pickup_datetime` and `dropoff_datetime` stored as
 `timestamptz`, plus TimescaleDB's default time index and an index on
-`(cab_type, pickup_datetime)`. PostgreSQL's `COPY` cannot transform values
+`(cab_type, pickup_datetime)`. Two things exist only in this copy, for the
+dashboard's cache-path panels: an indexed `pickup_epoch bigint` column holding
+`pickup_datetime` as epoch seconds (Grafana's `$__unixEpoch*` macros need an
+integer time column), and `trips_15m`, a continuous aggregate of trips and
+`total_amount` per 15 minutes and `cab_type`. The aggregate has no refresh
+policy, because the data never changes after a seed run; the seeder
+materializes it once. PostgreSQL's `COPY` cannot transform values
 while loading the way MySQL's `LOAD DATA ... SET` does, so the seeder copies
 each file into an `UNLOGGED` all-text staging table and then moves the rows
 into the hypertable with an `INSERT ... SELECT` that applies the shift. It
 then validates the same facts as the MySQL seeder (row count, shifted bounds,
 centering on seed time, date/datetime agreement, indexes) along with the chunk
-count and the read-only grants.
+count, `pickup_epoch` agreement, that `trips_15m` accounts for every row, and
+the read-only grants.
 
 Grafana provisions the `timescaledb-direct` and `timescaledb-trickster` data
 sources using its bundled PostgreSQL plugin with the TimescaleDB option
 enabled, so `$__timeGroup` expands to `time_bucket(...)`. The dashboard is at
 <http://127.0.0.1:3000/d/trickster-timescaledb/timescaledb>, and its Data
 Source variable switches between the two; every panel must render identically
-through both. It has the same
+through both. Its Trips Data row has the same
 panels as the MySQL dashboard and, because both databases hold the same rows,
 shows the same values over the same time range. Two panel queries differ from
 the MySQL versions only in dialect: the card-use rate counts with
@@ -432,6 +439,31 @@ and rewrite failures. The dashboard's `time_bucket` panels report
 hold yet. The top-N table is cached as a whole object
 (`object / unsupported_limit`), keyed on the statement's exact text, so it is a
 hit only while its range is unchanged.
+
+The Cache Path Exercises row has one panel per caching path that the MySQL
+clone does not reach. Each panel's description states what to expect in the
+SQL Analysis Classifications panel:
+
+| Panel | Statement shape | Expected |
+| --- | --- | --- |
+| Epoch Floor Buckets | `floor(extract(epoch from col)/300)*300` with `$__timeFilter` (`BETWEEN`) | `delta / delta_cacheable` |
+| Avg Total (`$__unixEpochGroup`) | `floor((pickup_epoch)/600)*600` with `$__unixEpochFilter` | `delta / delta_cacheable` |
+| Saltmarrow Trips, Gap-Filled | single-series `time_bucket_gapfill`, half-open range | `delta / delta_cacheable` |
+| Saltmarrow Trips, Last Value Carried Forward | `locf(...)` over gapfill | `object / unsupported_bucket` |
+| Trips, 1h Moving Average | window function over the buckets | `object / unsupported_format` |
+| Trips by Cab Type (`trips_15m`) | `time_bucket` over the continuous aggregate's bucket | `delta / delta_cacheable` |
+
+On a live range (`now-3h` to `now`, 5s refresh) a delta panel settles into
+`hit` on most refreshes and one `phit` each time a new bucket closes, fetching
+only that bucket; its first load after a restart is a `kmiss`, and widening
+the range is a `phit` for the part not held. The three object panels are a
+`kmiss` on every refresh of a live range, because the range is part of their
+key, and a `hit` only on a fixed range. Saltmarrow is the sparsest borough in
+the synthetic data, so its 5-minute series has real gaps to fill.
+
+Re-seeding rewrites the rows under whatever a running Trickster has cached.
+Restart Trickster after `make developer-seed-data`, or the direct and
+Trickster data sources will disagree over the ranges that were cached.
 
 These bucket expressions use the delta cache:
 

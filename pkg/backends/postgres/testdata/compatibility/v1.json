@@ -1,0 +1,1465 @@
+{
+ "schema_version": 1,
+ "corpus_version": "postgres-grafana-v1",
+ "minimum_interval": "1m",
+ "omissions": [
+  "builder-mode-captures",
+  "extended-protocol-statements"
+ ],
+ "cases": [
+  {
+   "name": "grafana_time_projection",
+   "macro_source": [
+    "$__time(pickup_datetime)",
+    "$__timeFilter(pickup_datetime)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT pickup_datetime AS \"time\", total_amount FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A raw time projection has no bucket, so it is only safe as a whole object.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_time_epoch_projection",
+   "macro_source": [
+    "$__timeEpoch(pickup_datetime)",
+    "$__timeFilter(pickup_datetime)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT extract(epoch from pickup_datetime) as \"time\", total_amount FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "An epoch projection without a grouping cadence establishes no reusable buckets.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_time_group_timescaledb_between",
+   "macro_source": [
+    "$__timeGroup(pickup_datetime,'5m')",
+    "$__timeFilter(pickup_datetime)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:05:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "2026-09-19T00:00:03.123Z",
+     "2026-09-19T03:00:07.456Z"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "The TimescaleDB-mode $__timeGroup bucket. The inclusive BETWEEN upper reaches only the first instant of its bucket, so it normalizes to the exclusive bound on the grid; the unaligned lower rounds up.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_time_group_alias_interval_half_open",
+   "macro_source": [
+    "$__timeGroupAlias(pickup_datetime,$__interval)",
+    "$__timeFrom()",
+    "$__timeTo()",
+    "$__interval"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('120.000s',pickup_datetime) AS \"time\", count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:03.123Z' AND pickup_datetime < '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "2m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:02:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "2026-09-19T00:00:03.123Z",
+     "2026-09-19T03:00:07.456Z"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "$__interval resolved to two minutes; explicit $__timeFrom/$__timeTo give the half-open range that loses nothing but the partial edges.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_time_group_vanilla_epoch_floor",
+   "macro_source": [
+    "$__timeGroupAlias(pickup_datetime,'5m')",
+    "$__timeFilter(pickup_datetime)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT floor(extract(epoch from pickup_datetime)/300)*300 AS \"time\", count(*) FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "unix_seconds",
+    "lower_bound": "2026-09-19T00:05:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>",
+     "extract(epoch FROM pickup_datetime)"
+    ],
+    "canonical_excludes": [
+     "2026-09-19T00:00:03.123Z",
+     "2026-09-19T03:00:07.456Z"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "The $__timeGroup bucket with the TimescaleDB option off: epoch seconds as a numeric, over a timestamp column with timestamp bounds.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_unix_epoch_group_alias_filter",
+   "macro_source": [
+    "$__unixEpochGroupAlias(pickup_epoch,'10m')",
+    "$__unixEpochFilter(pickup_epoch)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT floor((pickup_epoch)/600)*600 AS \"time\", count(*) FROM trips WHERE pickup_epoch >= 1789776003 AND pickup_epoch <= 1789786807 GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "10m",
+    "phase": "0s",
+    "input_unit": "unix_seconds",
+    "output_unit": "unix_seconds",
+    "lower_bound": "2026-09-19T00:10:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "1789776003",
+     "1789786807"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "An integer epoch-seconds column. The inclusive upper normalizes to the exclusive grid bound, rendered one second short of the next bucket.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_unix_epoch_group_from_to",
+   "macro_source": [
+    "$__unixEpochGroup(pickup_epoch,'10m')",
+    "$__unixEpochFrom()",
+    "$__unixEpochTo()"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT floor((pickup_epoch)/600)*600 AS time, count(*) FROM trips WHERE pickup_epoch >= 1789776003 AND pickup_epoch < 1789786807 GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "10m",
+    "phase": "0s",
+    "input_unit": "unix_seconds",
+    "output_unit": "unix_seconds",
+    "lower_bound": "2026-09-19T00:10:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "1789776003",
+     "1789786807"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "The unaliased macro with explicit integer bounds and a half-open range.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_unix_epoch_nano_filter",
+   "macro_source": [
+    "$__unixEpochNanoFilter(pickup_epoch)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT count(*) FROM trips WHERE pickup_epoch >= 1789776003123000000 AND pickup_epoch <= 1789786807456000000",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A range filter with no bucket is a whole object.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_metric_column_series",
+   "macro_source": [
+    "$__timeGroupAlias(pickup_datetime,'15m')",
+    "$__timeFrom()",
+    "$__timeTo()"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('900.000s',pickup_datetime) AS \"time\", cab_type AS metric, count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:03.123Z' AND pickup_datetime < '2026-09-19T03:00:07.456Z' GROUP BY time, cab_type ORDER BY time",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "15m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:15:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [
+     "metric"
+    ],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "2026-09-19T00:00:03.123Z",
+     "2026-09-19T03:00:07.456Z"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Grafana's multi-series shape: the metric column is a group column, and rows within a bucket keep the origin's order.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "grafana_top_n_table",
+   "macro_source": [
+    "$__timeFilter(pickup_datetime)"
+   ],
+   "query_origin": "Grafana PostgreSQL data source macro expansion, captured from executedQueryString",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT pickup_neighborhood_name AS neighborhood, count(*) AS trips FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY trips DESC LIMIT 10",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_limit",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "LIMIT cannot be preserved across merged extents.",
+   "grafana_version": "13.1.3"
+  },
+  {
+   "name": "time_bucket_interval_keyword",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket(INTERVAL '1 hour', pickup_datetime) AS time, avg(total_amount) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "1h",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "The INTERVAL keyword form of a width."
+  },
+  {
+   "name": "time_bucket_seven_day_phase",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('7 days', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-08-01T00:00:00Z' AND pickup_datetime < '2026-09-19T00:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "168h",
+    "phase": "96h",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-08-03T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-14T00:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "TimescaleDB's grid starts on Monday 2000-01-03, four days off the Unix epoch for a 7-day width; a wrong phase would reject every bucket the origin returns."
+  },
+  {
+   "name": "time_bucket_seven_hour_phase",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('7h'::interval, pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-08-01T00:00:00Z' AND pickup_datetime < '2026-09-19T00:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "7h",
+    "phase": "5h",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-08-01T06:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-18T23:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "A width that does not divide a day has a non-zero epoch phase on TimescaleDB's grid."
+  },
+  {
+   "name": "time_bucket_typed_origin",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('1h', pickup_datetime, TIMESTAMPTZ '2000-01-01 00:20:00+00') AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "1h",
+    "phase": "20m",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:20:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T02:20:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "A typed timestamptz third argument is the origin."
+  },
+  {
+   "name": "time_bucket_typed_offset",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('1h', pickup_datetime, '15m'::interval) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "1h",
+    "phase": "15m",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:15:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T02:15:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "A typed interval third argument is the offset."
+  },
+  {
+   "name": "time_bucket_untyped_third_argument",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('1h', pickup_datetime, 'Europe/Berlin') AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "An untyped string resolves to the time zone overload, whose grid follows DST."
+  },
+  {
+   "name": "time_bucket_month_width",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('1 month', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-08-01T00:00:00Z' AND pickup_datetime < '2026-09-19T00:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Calendar widths have no fixed cadence."
+  },
+  {
+   "name": "time_bucket_integer_width",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket(300, pickup_epoch) AS time, count(*) FROM trips WHERE pickup_epoch >= 1789776000 AND pickup_epoch < 1789786800 GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The integer-time overload is not modeled."
+  },
+  {
+   "name": "date_bin_zoned_origin",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT date_bin('15 minutes', pickup_datetime, TIMESTAMPTZ '2001-01-01 00:05:00+00') AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "15m",
+    "phase": "5m",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:05:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T02:50:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "PostgreSQL 14+ date_bin with its required origin."
+  },
+  {
+   "name": "date_trunc_under_utc",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT date_trunc('hour', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "1h",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "date_trunc truncates in the session zone, which is the epoch grid only under UTC."
+  },
+  {
+   "name": "date_trunc_under_local_zone",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "Asia/Kolkata",
+   "expanded_sql": "SELECT date_trunc('hour', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Under Asia/Kolkata the hour grid sits at :30; the fixed phase would be wrong, so it fails closed."
+  },
+  {
+   "name": "zoneless_bounds_under_utc",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19 00:00:00' AND pickup_datetime < '2026-09-19 03:00:00' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "datetime_sql",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "2026-09-19 00:00:00"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "A zone-less literal is a UTC instant only while the session zone is UTC."
+  },
+  {
+   "name": "zoneless_bounds_under_local_zone",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "America/New_York",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19 00:00:00' AND pickup_datetime < '2026-09-19 03:00:00' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "PostgreSQL reads the literal in the session zone, so the analyzer's UTC reading would be another range."
+  },
+  {
+   "name": "zoned_bounds_under_local_zone",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "America/New_York",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:03.123Z' AND pickup_datetime < '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:05:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "2026-09-19T00:00:03.123Z",
+     "2026-09-19T03:00:07.456Z"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Zone-suffixed bounds and time_bucket's UTC grid do not depend on the session zone."
+  },
+  {
+   "name": "open_ended_range",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "2026-09-19T00:00:00Z"
+    ],
+    "open_ended": true
+   },
+   "rationale": "No upper bound: a synthetic exclusive upper is added per fetch and the newest bucket is never considered complete."
+  },
+  {
+   "name": "gapfill_single_series",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket_gapfill('5m', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' AND pickup_borough_name = 'Saltmarrow' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "start and finish are inferred from the rendered WHERE range; an empty sub-range still returns the full NULL grid."
+  },
+  {
+   "name": "gapfill_locf",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket_gapfill('5m', pickup_datetime) AS time, locf(count(*)) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "locf reads the value before a gap, which a sub-range cannot see."
+  },
+  {
+   "name": "gapfill_interpolate",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket_gapfill('5m', pickup_datetime) AS time, interpolate(avg(total_amount)) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "interpolate reads across extent edges."
+  },
+  {
+   "name": "gapfill_multi_series",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket_gapfill('5m', pickup_datetime) AS time, cab_type, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1, 2 ORDER BY 1, 2",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A sub-range emits no rows for a series absent from it, where the full query has NULL rows."
+  },
+  {
+   "name": "gapfill_open_ended",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket_gapfill('5m', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The origin rejects this; a synthetic finish would turn its error into data."
+  },
+  {
+   "name": "gapfill_explicit_start_finish",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket_gapfill('5m', pickup_datetime, '2026-09-19T00:00:00Z', '2026-09-19T03:00:00Z') AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Explicit start and finish arguments are not rewritten per extent."
+  },
+  {
+   "name": "inclusive_upper_less_or_equal",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime <= '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "<= behaves as BETWEEN's upper."
+  },
+  {
+   "name": "reversed_operands",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE '2026-09-19T00:00:00Z' <= pickup_datetime AND '2026-09-19T03:00:00Z' > pickup_datetime GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Bounds written literal-first."
+  },
+  {
+   "name": "exclusive_lower_on_raw_column",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime > '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A strict lower bound on the raw column makes the first bucket partial."
+  },
+  {
+   "name": "no_complete_bucket",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('7 days', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:03.123Z' AND pickup_datetime < '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Rounding inward leaves no complete bucket."
+  },
+  {
+   "name": "two_lower_bounds",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' AND pickup_datetime >= '2026-09-19T01:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "ambiguous_time_axis",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Two lower bounds on the time axis are ambiguous."
+  },
+  {
+   "name": "epoch_column_timestamp_bounds",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT floor((pickup_epoch)/600)*600 AS time, count(*) FROM trips WHERE pickup_epoch >= '2026-09-19T00:00:00Z' AND pickup_epoch < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "An epoch column compared with timestamps is not the range the bucket is over."
+  },
+  {
+   "name": "epoch_column_millisecond_bounds",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT floor((pickup_epoch)/600)*600 AS time, count(*) FROM trips WHERE pickup_epoch >= 1789776000000 AND pickup_epoch < 1789786800000 GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Bounds in another epoch unit than the bucket's."
+  },
+  {
+   "name": "or_across_time_axis",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' OR cab_type = 'blue' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "OR can widen the range beyond the bounds."
+  },
+  {
+   "name": "not_between",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime NOT BETWEEN '2026-09-19T00:00:00Z' AND '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A negated range is not a range."
+  },
+  {
+   "name": "not_wrapped_bound",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE NOT (pickup_datetime < '2026-09-19T00:00:00Z') AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Negation hides the comparator's direction."
+  },
+  {
+   "name": "not_equal_on_time_axis",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' AND pickup_datetime <> '2026-09-19T01:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsafe_predicate",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "An inequality punches a hole in a bucket."
+  },
+  {
+   "name": "qualified_quoted_aliased",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', t.\"pickup_datetime\") AS \"time\", t.cab_type AS \"Cab\", count(*) FROM public.trips AS t WHERE t.pickup_datetime >= '2026-09-19T00:00:00Z' AND t.\"pickup_datetime\" < '2026-09-19T03:00:00Z' GROUP BY 1, 2 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [
+     "Cab"
+    ],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Qualified, quoted and aliased identifiers."
+  },
+  {
+   "name": "comments",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "/* panel 1 */ SELECT time_bucket('5m', pickup_datetime) AS time, -- bucket\n count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' /* range */ GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [
+     "panel 1"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Line and block comments are not part of the identity."
+  },
+  {
+   "name": "respelled_constructs",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, max(extract(dow FROM pickup_datetime)) AS dow, max(cab_type::text) AS cab, max(passenger_count::int) AS riders, count(*) FILTER (WHERE vendor_id <> current_user) AS n, max(\"binary\") AS b FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>",
+     "extract(dow FROM pickup_datetime)",
+     "cab_type::text",
+     "passenger_count::INT4",
+     "!= current_user)",
+     "max(\"binary\")"
+    ],
+    "canonical_excludes": [
+     "STRING",
+     "INT8",
+     "current_user()",
+     "extract('dow'"
+    ],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Constructs the parser's formatter writes in a way PostgreSQL rejects or changes are re-spelled."
+  },
+  {
+   "name": "filter_and_ordered_set",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, percentile_cont(0.95) WITHIN GROUP (ORDER BY total_amount) AS p95, count(*) FILTER (WHERE payment_type <> 'CSH') AS card FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Every aggregate is computed inside one bucket, so FILTER and ordered-set aggregates are safe."
+  },
+  {
+   "name": "descending_order",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1 DESC",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "5m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Buckets are replayed newest first."
+  },
+  {
+   "name": "continuous_aggregate_rebucketed",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('900s', bucket) AS time, cab_type AS metric, sum(trips) AS trips FROM trips_15m WHERE bucket >= '2026-09-19T00:00:00Z' AND bucket < '2026-09-19T03:00:00Z' GROUP BY 1, 2 ORDER BY 1",
+   "expected": {
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "15m",
+    "phase": "0s",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-19T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [
+     "metric"
+    ],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "canonical_contains": [
+     "<$TS1$>",
+     "<$TS2$>"
+    ],
+    "canonical_excludes": [],
+    "upper_bound": "2026-09-19T03:00:00Z",
+    "upper_inclusive": false
+   },
+   "rationale": "Re-bucketing a continuous aggregate's bucket column keeps it delta-cacheable."
+  },
+  {
+   "name": "continuous_aggregate_bare",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT bucket AS time, cab_type, trips FROM trips_15m WHERE bucket >= '2026-09-19T00:00:00Z' AND bucket < '2026-09-19T03:00:00Z' ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "No bucket function and no GROUP BY."
+  },
+  {
+   "name": "cte",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "WITH recent AS (SELECT * FROM trips) SELECT time_bucket('5m', pickup_datetime) AS time, count(*) FROM recent WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A CTE can carry its own range."
+  },
+  {
+   "name": "from_subquery",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, count(*) FROM (SELECT * FROM trips) AS t WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A subquery can carry its own range."
+  },
+  {
+   "name": "join",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', t.pickup_datetime) AS time, count(*) FROM trips t JOIN zones z ON z.gid = t.pickup_zone_gid WHERE t.pickup_datetime >= '2026-09-19T00:00:00Z' AND t.pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "ON clauses are not inspected."
+  },
+  {
+   "name": "window_function",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, avg(count(*)) OVER (ORDER BY time_bucket('5m', pickup_datetime) ROWS BETWEEN 11 PRECEDING AND CURRENT ROW) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A window frame spans buckets."
+  },
+  {
+   "name": "distinct_on",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT DISTINCT ON (cab_type) time_bucket('5m', pickup_datetime) AS time, cab_type FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' ORDER BY cab_type, 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "DISTINCT ON picks rows across buckets."
+  },
+  {
+   "name": "having",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 HAVING count(*) > 10 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "HAVING is evaluated per fetch and is kept off the delta path."
+  },
+  {
+   "name": "union",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 UNION ALL SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Compound selects."
+  },
+  {
+   "name": "from_only",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, count(*) FROM ONLY trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The parser drops ONLY, which changes the result on a hypertable."
+  },
+  {
+   "name": "json_cast",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, max(payload::json ->> 'a') FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The parser re-spells json as jsonb, another type."
+  },
+  {
+   "name": "unicode_escape_string",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' AND cab_type = U&'\\0062lue' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The parser reads U&'..' as an operator expression."
+  },
+  {
+   "name": "set_returning_function",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, generate_series(1, 3) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_format",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Set-returning functions are kept off the delta path."
+  },
+  {
+   "name": "named_arguments",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('1 day', pickup_datetime, origin => '2000-01-01') AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "invalid_sql",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The parser does not accept named-argument notation."
+  },
+  {
+   "name": "rollup",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY ROLLUP (1)",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "invalid_sql",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The parser does not accept ROLLUP."
+  },
+  {
+   "name": "ungrouped_bucket",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('5m', pickup_datetime) AS time, total_amount FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z'",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_grouping",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A bucket that is not grouped yields raw rows."
+  },
+  {
+   "name": "order_by_non_output",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' GROUP BY 1 ORDER BY max(total_amount)",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_ordering",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "An ordering the merged result cannot reproduce."
+  },
+  {
+   "name": "catalog_query",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT c.relname FROM pg_catalog.pg_class c WHERE c.relkind = 'r' ORDER BY 1",
+   "expected": {
+    "cache_mode": "object",
+    "analysis_reason": "unsupported_bucket",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Client introspection is a whole object."
+  },
+  {
+   "name": "volatile_select",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT random()",
+   "expected": {
+    "cache_mode": "none",
+    "analysis_reason": "nondeterministic",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A volatile result must never be replayed."
+  },
+  {
+   "name": "clock_select",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT now()",
+   "expected": {
+    "cache_mode": "none",
+    "analysis_reason": "nondeterministic",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "The clock outside a time bound is volatile."
+  },
+  {
+   "name": "volatile_predicate",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' AND total_amount < random() * 100 GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "none",
+    "analysis_reason": "nondeterministic",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "A volatile predicate changes each fetch."
+  },
+  {
+   "name": "clock_outside_bound",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT time_bucket('300.000s',pickup_datetime) AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:00Z' AND pickup_datetime < '2026-09-19T03:00:00Z' AND dropoff_datetime < now() GROUP BY 1 ORDER BY 1",
+   "expected": {
+    "cache_mode": "none",
+    "analysis_reason": "nondeterministic",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Only a clock read that is a time bound is resolved."
+  },
+  {
+   "name": "sleep",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "SELECT pg_sleep(30)",
+   "expected": {
+    "cache_mode": "none",
+    "analysis_reason": "nondeterministic",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Side-effecting functions are relayed."
+  },
+  {
+   "name": "not_a_read",
+   "macro_source": [],
+   "query_origin": "production-shaped statement",
+   "session_time_zone": "UTC",
+   "expanded_sql": "DELETE FROM trips WHERE trip_id = 1",
+   "expected": {
+    "cache_mode": "none",
+    "analysis_reason": "unsupported_statement",
+    "canonical_policy": "none",
+    "extent_rendering": false
+   },
+   "rationale": "Only SELECT is analyzed."
+  }
+ ]
+}

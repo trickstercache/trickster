@@ -92,6 +92,8 @@ load_file_transform_to_timescaledb() {
 
 finish_load_timescaledb() {
     psql_cmd -c "DROP TABLE trips_staging" -c "ANALYZE trips"
+    echo "materializing the trips_15m continuous aggregate"
+    psql_cmd -f create_continuous_aggregate.sql > /dev/null
 }
 
 validate_seed() {
@@ -106,7 +108,9 @@ validate_seed() {
                                 (pickup_datetime AT TIME ZONE 'UTC')::date),
                count(*) FILTER (WHERE dropoff_datetime IS NOT NULL AND
                                 dropoff_date IS DISTINCT FROM
-                                (dropoff_datetime AT TIME ZONE 'UTC')::date)
+                                (dropoff_datetime AT TIME ZONE 'UTC')::date),
+               count(*) FILTER (WHERE pickup_epoch <>
+                                extract(epoch FROM pickup_datetime)::bigint)
         FROM trips;")
     set -- $facts
     rows=$1
@@ -116,6 +120,7 @@ validate_seed() {
     max_dropoff=$5
     pickup_mismatches=$6
     dropoff_mismatches=$7
+    epoch_mismatches=$8
     if [ "$rows" -ne "$SOURCE_ROWS" ] || [ "$rows" -le 0 ]; then
         echo "seed validation failed: expected $SOURCE_ROWS non-empty rows, got $rows"
         exit 1
@@ -143,6 +148,10 @@ validate_seed() {
         echo "seed validation failed: date/datetime mismatch ($pickup_mismatches/$dropoff_mismatches)"
         exit 1
     fi
+    if [ "$epoch_mismatches" -ne 0 ]; then
+        echo "seed validation failed: $epoch_mismatches rows whose pickup_epoch disagrees with pickup_datetime"
+        exit 1
+    fi
     chunks=$(psql_cmd -A -t -c "SELECT coalesce(max(num_chunks), 0)
         FROM timescaledb_information.hypertables
         WHERE hypertable_schema = 'public' AND hypertable_name = 'trips';")
@@ -154,18 +163,26 @@ validate_seed() {
         FROM pg_indexes
         WHERE schemaname = 'public' AND tablename = 'trips'
           AND indexname IN ('trips_pickup_datetime_idx',
-                            'idx_cab_type_pickup_datetime');")
-    if [ "$indexes" -ne 2 ]; then
-        echo "seed validation failed: expected 2 query indexes, got $indexes"
+                            'idx_cab_type_pickup_datetime',
+                            'idx_pickup_epoch');")
+    if [ "$indexes" -ne 3 ]; then
+        echo "seed validation failed: expected 3 query indexes, got $indexes"
+        exit 1
+    fi
+    # Every row lands in exactly one 15-minute bucket of the continuous aggregate.
+    aggregated=$(psql_cmd -A -t -c "SELECT coalesce(sum(trips), 0)::bigint FROM trips_15m;")
+    if [ "$aggregated" -ne "$rows" ]; then
+        echo "seed validation failed: trips_15m covers $aggregated of $rows rows"
         exit 1
     fi
     # The read-only roles get SELECT through the seeder's default privileges
     # (init/01-users.sql); a missing grant would only surface later in Grafana.
     readers=$(psql_cmd -A -t -c "SELECT count(*)
         FROM (VALUES ('trickster'), ('grafana_ro')) AS r(name)
-        WHERE has_table_privilege(r.name, 'public.trips', 'SELECT');")
+        WHERE has_table_privilege(r.name, 'public.trips', 'SELECT')
+          AND has_table_privilege(r.name, 'public.trips_15m', 'SELECT');")
     if [ "$readers" -ne 2 ]; then
-        echo "seed validation failed: expected 2 read-only roles with SELECT on trips, got $readers"
+        echo "seed validation failed: expected 2 read-only roles with SELECT on trips and trips_15m, got $readers"
         exit 1
     fi
     echo "seed complete: $rows rows, pickup window $min_pickup..$max_pickup, chunks=$chunks, indexes=$indexes"
