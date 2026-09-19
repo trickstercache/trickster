@@ -43,7 +43,7 @@ configuring Trickster.
 
 See the [Graphite Support Document](./graphite.md) for more information.
 
-### PostgreSQL and TimescaleDB
+### <img src="./images/external/timescaledb_logo.svg" width=24 /> PostgreSQL and TimescaleDB
 
 Trickster accepts native PostgreSQL wire-protocol connections and accelerates
 time-bucketed queries against PostgreSQL and TimescaleDB, including the

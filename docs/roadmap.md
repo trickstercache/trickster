@@ -26,7 +26,7 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
 ### Q4 2026
 
 - [ ] Trickster v2.2 Release
-  - [ ] Support for accelerating TimescaleDB
+  - [x] Support for accelerating TimescaleDB
   - [ ] Support for accelerating GrepTimeDB
   - [ ] Support for accelerating QuestDB
   - [ ] Support Access Control Lists (ACLs) for IPv4 and IPv6
