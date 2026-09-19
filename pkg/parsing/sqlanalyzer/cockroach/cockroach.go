@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
+	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser/statements"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree/treebin"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree/treecmp"
@@ -75,6 +77,14 @@ type BucketMatch struct {
 	Step time.Duration
 	// Phase is the bucket alignment offset from the Unix epoch.
 	Phase time.Duration
+	// OutputUnit is the unit of the bucket's output values; zero means timestamps.
+	OutputUnit timeseries.FieldDataType
+	// ColumnUnit, when set, says the time column holds epoch counts of this
+	// unit; bounds written in any other form fail closed.
+	ColumnUnit timeseries.FieldDataType
+	// OutputColumn names the result column of an unaliased bucket, for engines
+	// that do not name it after the expression text.
+	OutputColumn string
 }
 
 // BucketMatcher inspects a lowercase function name and its arguments and
@@ -82,10 +92,48 @@ type BucketMatch struct {
 // time-bucketing function.
 type BucketMatcher func(name string, args []tree.Expr) (BucketMatch, bool)
 
+// ExprBucketMatcher recognizes a bucket written as an arbitrary select-list
+// expression, such as epoch arithmetic, rather than as one function call.
+type ExprBucketMatcher func(expr tree.Expr) (BucketMatch, bool)
+
+// LiftedClause describes a dialect clause a ClauseRewriter took out of a statement.
+type LiftedClause struct {
+	// Payload is defined by the rewriter and handed to ClauseBucketMatchers.
+	Payload any
+	// Bucket declares the time bucket when the clause itself defines it and no
+	// select-list function does. Its TimeColumn must appear in the select list.
+	Bucket *BucketMatch
+	// ImplicitGrouping marks a clause that groups by every plain select-list
+	// column without a GROUP BY, as a sampling clause does.
+	ImplicitGrouping bool
+}
+
+// ClauseRewriter adapts a dialect clause that the CockroachDB grammar cannot
+// parse. Lift rewrites the statement into SQL the parser accepts and returns
+// what it took out, or a nil clause when the statement has none. Restore
+// reverses Lift on SQL rendered from the rewritten statement, which may carry
+// time-bound placeholders. Implementations must ignore quoted and commented
+// text; package sqlscan finds token boundaries for that purpose.
+type ClauseRewriter interface {
+	Lift(statement string) (rewritten string, lifted *LiftedClause, err error)
+	Restore(rendered string, lifted *LiftedClause) (string, error)
+}
+
+// ClauseBucketMatcher is a BucketMatcher that also sees the statement's lifted clauses.
+type ClauseBucketMatcher func(name string, args []tree.Expr, clauses []*LiftedClause) (BucketMatch, bool)
+
 // Options configures an Analyzer for a specific backend dialect.
 type Options struct {
 	// BucketMatchers describe the dialect's time-bucketing functions.
 	BucketMatchers []BucketMatcher
+	// ExprBucketMatchers run on select-list items no BucketMatcher recognized.
+	ExprBucketMatchers []ExprBucketMatcher
+	// ClauseRewriters run in order before parsing and are reversed, last first,
+	// on the canonical SQL and on every rendered extent query.
+	ClauseRewriters []ClauseRewriter
+	// ClauseBucketMatchers describe bucketing functions whose cadence or
+	// alignment comes from a lifted clause rather than from their arguments.
+	ClauseBucketMatchers []ClauseBucketMatcher
 	// RenderNumericBoundsAsRFC3339 renders time bounds that were written as
 	// bare epoch integers back as quoted RFC3339 literals. Engines with strict
 	// type coercion, such as Apache DataFusion (InfluxDB 3), reject
@@ -99,6 +147,18 @@ type Options struct {
 	// cached. Dashboard clients such as Grafana emit live, unaligned ranges;
 	// without this option those queries fail closed to the object cache.
 	RoundUnalignedTimeBounds bool
+	// NakedIntIsInt4 parses the bare INT and INTEGER type names as 4-byte
+	// integers, as PostgreSQL defines them, instead of the parser's 8-byte default.
+	NakedIntIsInt4 bool
+	// BoundPrecision is the finest time resolution the engine stores. An inclusive
+	// upper bound renders one such tick below the boundary; zero means 1ns.
+	BoundPrecision time.Duration
+	// RejectZonelessBounds fails closed on time bounds written without a zone,
+	// for sessions where the engine would not read them as UTC.
+	RejectZonelessBounds bool
+	// PostRender re-spells what the parser's formatter gets wrong for the engine, in the
+	// canonical SQL and the extent template. The SQL may carry time-bound placeholders.
+	PostRender func(rendered string) (string, error)
 }
 
 // Analyzer converts CockroachDB-parsed SQL into Trickster's dialect-independent
@@ -277,10 +337,15 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if strings.TrimSpace(statement) == "" {
 		return sqlanalyzer.Analysis{Reason: sqlanalyzer.ReasonInvalidSQL, Err: ErrInvalidSQL}
 	}
-	parsed, err := parser.ParseOne(statement)
+	original := statement
+	statement, lifted, err := a.liftClauses(statement)
+	if err != nil {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+	}
+	parsed, err := a.parse(statement)
 	if err != nil {
 		mode := sqlanalyzer.CacheModeNone
-		if leadingKeywordIsSelect(statement) {
+		if leadingKeywordIsSelect(original) {
 			mode = sqlanalyzer.CacheModeObject
 		}
 		return sqlanalyzer.Analysis{
@@ -328,7 +393,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		}
 	}
 
-	bucket, bucketIndex, err := a.analyzeSelectList(clause.Exprs)
+	bucket, bucketIndex, err := a.analyzeSelectList(clause.Exprs, lifted)
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
@@ -340,7 +405,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedOrdering, err)
 	}
-	ranges, err := analyzeRanges(clause, bucket, now, a.opts.RoundUnalignedTimeBounds)
+	ranges, err := a.analyzeRanges(clause, bucket, now)
 	if err != nil {
 		reason := sqlanalyzer.ReasonNotTimeRange
 		if errors.Is(err, ErrUnsafePredicate) {
@@ -353,13 +418,19 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 
 	canonical, renderer := buildQueryArtifacts(selectStmt, clause, ranges, bucket,
 		a.opts.RenderNumericBoundsAsRFC3339)
+	if canonical, err = a.finishRender(canonical, lifted); err == nil {
+		renderer.template, err = a.finishRender(renderer.template, lifted)
+	}
+	if err != nil {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
+	}
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
 		TimeColumn:   bucket.timeColumn,
 		OutputColumn: bucket.outputColumn,
 		Step:         bucket.step,
 		Phase:        bucket.phase,
-		OutputUnit:   timeseries.DateTimeRFC3339Nano,
+		OutputUnit:   bucket.outputUnit,
 		InputUnit:    inputTypeForBound(ranges.lower.style),
 		LowerBound: &sqlanalyzer.Bound{
 			Value: ranges.lower.value, Inclusive: ranges.lower.inclusive,
@@ -376,6 +447,55 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	return sqlanalyzer.Analysis{
 		Mode: sqlanalyzer.CacheModeDelta, Reason: sqlanalyzer.ReasonDeltaCacheable, Plan: plan,
 	}
+}
+
+func (a *Analyzer) parse(statement string) (statements.Statement[tree.Statement], error) {
+	if a.opts.NakedIntIsInt4 {
+		return parser.ParseOneWithInt(statement, types.Int4)
+	}
+	return parser.ParseOne(statement)
+}
+
+func (a *Analyzer) finishRender(rendered string, lifted []liftedClause) (string, error) {
+	rendered, err := a.restoreClauses(rendered, lifted)
+	if err != nil || a.opts.PostRender == nil {
+		return rendered, err
+	}
+	if rendered, err = a.opts.PostRender(rendered); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrUnsupportedStatement, err)
+	}
+	return rendered, nil
+}
+
+// liftedClause pairs a lifted clause with the rewriter that can restore it.
+type liftedClause struct {
+	rewriter ClauseRewriter
+	clause   *LiftedClause
+}
+
+func (a *Analyzer) liftClauses(statement string) (string, []liftedClause, error) {
+	var lifted []liftedClause
+	for _, rewriter := range a.opts.ClauseRewriters {
+		rewritten, clause, err := rewriter.Lift(statement)
+		if err != nil {
+			return "", nil, fmt.Errorf("%w: %w", ErrUnsupportedBucket, err)
+		}
+		if clause != nil {
+			statement = rewritten
+			lifted = append(lifted, liftedClause{rewriter: rewriter, clause: clause})
+		}
+	}
+	return statement, lifted, nil
+}
+
+func (a *Analyzer) restoreClauses(rendered string, lifted []liftedClause) (string, error) {
+	var err error
+	for _, l := range slices.Backward(lifted) {
+		if rendered, err = l.rewriter.Restore(rendered, l.clause); err != nil {
+			return "", fmt.Errorf("%w: %w", ErrUnsupportedStatement, err)
+		}
+	}
+	return rendered, nil
 }
 
 // leadingKeywordIsSelect reports whether an unparsable statement still begins
@@ -498,38 +618,77 @@ type bucketSpec struct {
 	outputColumn string
 	step         time.Duration
 	phase        time.Duration
+	outputUnit   timeseries.FieldDataType
+	columnUnit   timeseries.FieldDataType
+	// implicitGrouping is set when a lifted clause, not a GROUP BY, groups the rows.
+	implicitGrouping bool
 }
 
-func (a *Analyzer) analyzeSelectList(items tree.SelectExprs) (bucketSpec, int, error) {
+// matchBucket tries the plain matchers, then the ones that read lifted clauses.
+func (a *Analyzer) matchBucket(name string, args []tree.Expr, clauses []*LiftedClause) (BucketMatch, bool) {
+	for _, matcher := range a.opts.BucketMatchers {
+		if match, ok := matcher(name, args); ok {
+			return match, true
+		}
+	}
+	for _, matcher := range a.opts.ClauseBucketMatchers {
+		if match, ok := matcher(name, args, clauses); ok {
+			return match, true
+		}
+	}
+	return BucketMatch{}, false
+}
+
+func (a *Analyzer) matchItem(expr tree.Expr, clauses []*LiftedClause) (BucketMatch, bool) {
+	if function, ok := expr.(*tree.FuncExpr); ok {
+		name := strings.ToLower(function.Func.String())
+		if match, ok := a.matchBucket(name, function.Exprs, clauses); ok {
+			return match, true
+		}
+	}
+	for _, matcher := range a.opts.ExprBucketMatchers {
+		if match, ok := matcher(expr); ok {
+			return match, true
+		}
+	}
+	return BucketMatch{}, false
+}
+
+func outputUnit(unit timeseries.FieldDataType) timeseries.FieldDataType {
+	if unit == 0 {
+		return timeseries.DateTimeRFC3339Nano
+	}
+	return unit
+}
+
+// clauseBucket finds the select-list column a lifted clause buckets by.
+func clauseBucket(items tree.SelectExprs, clauses []*LiftedClause) (bucketSpec, int, error) {
 	var found *bucketSpec
 	foundIndex := -1
-	for i, item := range items {
-		function, ok := item.Expr.(*tree.FuncExpr)
-		if !ok {
+	for _, clause := range clauses {
+		if clause.Bucket == nil {
 			continue
 		}
-		name := strings.ToLower(function.Func.String())
-		for _, matcher := range a.opts.BucketMatchers {
-			match, ok := matcher(name, function.Exprs)
-			if !ok {
+		if found != nil {
+			return bucketSpec{}, -1, ErrAmbiguousTimeAxis
+		}
+		for i, item := range items {
+			name, ok := ColumnName(item.Expr)
+			if !ok || name != clause.Bucket.TimeColumn {
 				continue
 			}
 			if found != nil {
 				return bucketSpec{}, -1, ErrAmbiguousTimeAxis
 			}
-			bucket := bucketSpec{
-				timeColumn: match.TimeColumn,
-				step:       match.Step,
-				phase:      match.Phase,
+			found = &bucketSpec{
+				timeColumn: name, outputColumn: name, step: clause.Bucket.Step,
+				phase: clause.Bucket.Phase, implicitGrouping: clause.ImplicitGrouping,
+				outputUnit: outputUnit(clause.Bucket.OutputUnit), columnUnit: clause.Bucket.ColumnUnit,
 			}
 			if item.As != "" {
-				bucket.outputColumn = string(item.As)
-			} else {
-				bucket.outputColumn = tree.AsString(item.Expr)
+				found.outputColumn = string(item.As)
 			}
-			found = &bucket
 			foundIndex = i
-			break
 		}
 	}
 	if found == nil || found.step <= 0 {
@@ -538,12 +697,84 @@ func (a *Analyzer) analyzeSelectList(items tree.SelectExprs) (bucketSpec, int, e
 	return *found, foundIndex, nil
 }
 
+func (a *Analyzer) analyzeSelectList(items tree.SelectExprs, lifted []liftedClause) (bucketSpec, int, error) {
+	clauses := make([]*LiftedClause, len(lifted))
+	for i := range lifted {
+		clauses[i] = lifted[i].clause
+	}
+	var found *bucketSpec
+	foundIndex := -1
+	for i, item := range items {
+		match, ok := a.matchItem(item.Expr, clauses)
+		if !ok {
+			continue
+		}
+		if found != nil {
+			return bucketSpec{}, -1, ErrAmbiguousTimeAxis
+		}
+		bucket := bucketSpec{
+			timeColumn: match.TimeColumn, step: match.Step, phase: match.Phase,
+			outputUnit: outputUnit(match.OutputUnit), columnUnit: match.ColumnUnit,
+		}
+		switch {
+		case item.As != "":
+			bucket.outputColumn = string(item.As)
+		case match.OutputColumn != "":
+			bucket.outputColumn = match.OutputColumn
+		default:
+			bucket.outputColumn = tree.AsString(item.Expr)
+		}
+		found = &bucket
+		foundIndex = i
+	}
+	if found == nil && len(clauses) > 0 {
+		return clauseBucket(items, clauses)
+	}
+	if found == nil || found.step <= 0 {
+		return bucketSpec{}, -1, ErrUnsupportedBucket
+	}
+	return *found, foundIndex, nil
+}
+
+// implicitGroups lists the plain select-list columns a sampling clause groups by.
+func implicitGroups(clause tree.GroupBy, items tree.SelectExprs, bucketIndex int) ([]string, error) {
+	if len(clause) != 0 {
+		return nil, ErrInvalidGroupByClause
+	}
+	var groups []string
+	for index, item := range items {
+		// A star expands to columns this analyzer cannot name, so the series
+		// identity the grouping implies would be unknown.
+		switch expr := item.Expr.(type) {
+		case tree.UnqualifiedStar, *tree.AllColumnsSelector:
+			return nil, ErrInvalidGroupByClause
+		case *tree.UnresolvedName:
+			if expr.Star {
+				return nil, ErrInvalidGroupByClause
+			}
+		}
+		if index == bucketIndex {
+			continue
+		}
+		if _, ok := ColumnName(item.Expr); !ok {
+			continue
+		}
+		if name, ok := outputName(item); ok {
+			groups = append(groups, name)
+		}
+	}
+	return groups, nil
+}
+
 func analyzeGroupBy(
 	clause tree.GroupBy,
 	items tree.SelectExprs,
 	bucket bucketSpec,
 	bucketIndex int,
 ) ([]string, error) {
+	if bucket.implicitGrouping {
+		return implicitGroups(clause, items, bucketIndex)
+	}
 	if len(clause) == 0 {
 		return nil, ErrInvalidGroupByClause
 	}
@@ -726,11 +957,10 @@ type rangeAnalysis struct {
 	lowerStyle   boundStyle
 }
 
-func analyzeRanges(
+func (a *Analyzer) analyzeRanges(
 	clause *tree.SelectClause,
 	bucket bucketSpec,
 	now time.Time,
-	roundUnaligned bool,
 ) (rangeAnalysis, error) {
 	result := rangeAnalysis{timeColumn: bucket.timeColumn}
 	if clause.Where == nil {
@@ -787,10 +1017,29 @@ func analyzeRanges(
 			where.Expr = &tree.AndExpr{Left: where.Expr, Right: expr}
 		}
 	}
-	if err := normalizePrimaryBounds(&result, bucket, roundUnaligned); err != nil {
+	if !a.boundStyleAllowed(result.lower.style, bucket) ||
+		result.upper != nil && !a.boundStyleAllowed(result.upper.style, bucket) {
+		return result, ErrUnsafePredicate
+	}
+	if err := normalizePrimaryBounds(&result, bucket, a.opts.RoundUnalignedTimeBounds,
+		a.opts.BoundPrecision); err != nil {
 		return result, err
 	}
 	return result, nil
+}
+
+func (a *Analyzer) boundStyleAllowed(style boundStyle, bucket bucketSpec) bool {
+	if bucket.columnUnit != 0 {
+		// an epoch column compared with a timestamp, or in another unit, is a different range
+		return inputTypeForBound(style) == bucket.columnUnit
+	}
+	if a.opts.RejectZonelessBounds {
+		switch style {
+		case boundSQLDateTime, boundSQLDate, boundTimestampLiteral:
+			return false
+		}
+	}
+	return true
 }
 
 // normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
@@ -802,7 +1051,9 @@ func analyzeRanges(
 // floored, since its boundary bucket is partial. Predicates on
 // the bucket output are discrete and can safely move by one cadence for
 // strict comparisons.
-func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
+func normalizePrimaryBounds(
+	result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool, precision time.Duration,
+) error {
 	rounded := false
 	lowerOnOutput := result.lower.target != nil &&
 		strings.EqualFold(result.lower.target.field, bucket.outputColumn) &&
@@ -847,10 +1098,16 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 			return ErrUnsafePredicate
 		}
 		tick, ok := inclusiveUpperTick(result.upper.target.style)
+		tick = max(tick, precision)
 		if !ok || tick > bucket.step {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+		switch {
+		case sqlanalyzer.AlignedToBucket(result.upper.value.Add(tick), bucket.step, bucket.phase):
+			// col <= X with X one tick below a boundary covers that bucket whole; it is
+			// the form this renderer writes, so a rendered statement reads back unchanged
+			result.upper.value = result.upper.value.Add(tick)
+		case !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase):
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}

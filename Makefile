@@ -530,16 +530,7 @@ h3-client:
 
 .PHONY: developer-seed-data
 developer-seed-data:
-	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql druid
-	@cd docs/developer/environment && docker compose run --rm seed_data_generate
-	@cd docs/developer/environment && \
-	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
-	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
-	( cd docs/developer/environment && docker compose run --rm --no-deps druid_seed ) & pid3=$$!; \
-	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; wait $$pid3 || rc=1; exit $$rc
-	@cd docs/developer/environment && docker compose stop graphite_generator && \
-		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
-		docker compose up -d graphite_generator
+	@hack/developer-seed-data.sh
 
 # regenerates the synthetic seed data to memory only and fails if its hash
 # differs from the one pinned in hack/seedgen; no network access is needed

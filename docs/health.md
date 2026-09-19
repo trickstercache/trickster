@@ -56,6 +56,34 @@ options are configuration errors for MySQL. Diagnostics exposed in health
 status and logs are limited to sanitized authentication, TLS, timeout,
 refused-connection, connection, and server-error categories.
 
+### Native PostgreSQL Health Checks
+
+A `postgres` or `timescaledb` backend is probed over the PostgreSQL wire
+protocol with the same scheduler, timeout, thresholds, status registry and
+metrics as every other health check. Each probe opens a fresh connection with
+the backend's `origin_url` credentials and upstream TLS mode, completes
+authentication, waits for the origin's `ReadyForQuery`, and ends the session
+cleanly. A backend whose `origin_url` has no username (one that relays its
+clients' own authentication) can only be checked for accepting connections.
+
+```yaml
+backends:
+  tsdb1:
+    provider: timescaledb
+    origin_url: postgres://health-user:password@tsdb.example:5432/analytics
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      failure_threshold: 3
+      recovery_threshold: 3
+```
+
+Only `interval`, `timeout`, `failure_threshold`, and `recovery_threshold`
+apply. Failures are reported as a login rejection with the origin's SQLSTATE,
+a timeout, or a connection failure; user names, addresses and passwords never
+appear in health status or logs. A native User Router refuses new sessions
+for a user whose backend is failing its health check.
+
 ### Basic Health Check Configuration Example
 
 ```yaml

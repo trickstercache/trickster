@@ -43,6 +43,18 @@ configuring Trickster.
 
 See the [Graphite Support Document](./graphite.md) for more information.
 
+### <img src="./images/external/timescaledb_logo.svg" width=24 /> PostgreSQL and TimescaleDB
+
+Trickster accepts native PostgreSQL wire-protocol connections and accelerates
+time-bucketed queries against PostgreSQL and TimescaleDB, including the
+statements Grafana's built-in PostgreSQL data source sends. Specify `postgres`
+(or its alias `timescaledb`) as the provider and expose it through a listener
+with `protocol: postgres`.
+
+See the [PostgreSQL and TimescaleDB Provider Guide](./postgres.md) for the
+supported clients, SQL, authentication, TLS, caching, routing, and operations
+contract.
+
 ### <img src="./images/external/mysql_logo_60.png" width=24 /> MySQL
 
 Trickster supports protocol-aware acceleration for supported MySQL

@@ -34,10 +34,14 @@ const cryptSaltAlphabet = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmno
 var ErrUnauthorized = errors.New("unauthorized")
 
 // VerifyPassword verifies a password against a stored hash
-// Supported formats: apr1 crypt, md5 crypt, bcrypt, sha-256 crypt, sha-512 crypt
+// Supported formats: apr1 crypt, md5 crypt, bcrypt, sha-256 crypt, sha-512 crypt,
+// PostgreSQL SCRAM-SHA-256 verifier
 func VerifyPassword(hash, password string) error {
 	if hash == password {
 		return nil
+	}
+	if IsSCRAMVerifier(hash) {
+		return verifySCRAMHash(hash, password)
 	}
 	if strings.HasPrefix(hash, "$apr1$") {
 		return verifyMD5CryptHash(hash, password, "$apr1$")
