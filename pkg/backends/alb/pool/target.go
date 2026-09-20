@@ -22,6 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 )
 
 // Target defines an alb pool target
@@ -33,6 +34,7 @@ type Target struct {
 	group    string
 	weight   int
 	probed   bool
+	dialable bool
 	addr     string
 	member   *lb.Member
 }
@@ -62,6 +64,7 @@ func NewWeightedTarget(handler http.Handler, hcStatus *healthcheck.Status,
 		t.name, t.group = backendIdentity(backend)
 		if cfg := backend.Configuration(); cfg != nil {
 			t.addr = cfg.Host
+			t.dialable = t.addr != "" && !hostnames.Reserved(t.addr)
 		}
 		if cfg := backend.Configuration(); cfg != nil &&
 			!backends.IsVirtual(cfg.Provider) {
@@ -109,6 +112,23 @@ func (t *Target) WithStatsOf(prev *Target) *Target {
 // Member returns the target's protocol-neutral pool member, whose Value is the target.
 func (t *Target) Member() *lb.Member {
 	return t.member
+}
+
+// Picker returns the balancer of a target whose backend is itself a load balancer, which is
+// how a pool of pools is followed to a member that can be dialed. It is nil for any other
+// target, and for a load balancer whose mechanism does not select one member.
+func (t *Target) Picker() lb.Picker {
+	if pp, ok := t.backend.(lb.PickerProvider); ok {
+		return pp.Picker()
+	}
+	return nil
+}
+
+// Dialable reports whether the target has an origin address that can be connected to. One
+// without an address, or under the reserved .invalid domain, holds its share of a stream
+// pool's flows and refuses them. It is decided once, when the target is built.
+func (t *Target) Dialable() bool {
+	return t.dialable
 }
 
 // Addr returns the host:port of the target's origin, captured when the target was built;

@@ -63,6 +63,8 @@ data:
 | `tracing_name`, `req_rewriter_name`, `authenticator_name` | a configured tracer, request rewriter or authenticator |
 | `timeout` | a duration with a unit, such as `30s` |
 | `health_mode` | `probe` or `provider`, for generated discovery-backed ALBs |
+| `load_balancing` | `rr`, `p2c`, `lc`, `lt` or `hrw`: how traffic is spread across a Service's endpoints in the endpoint routing mode |
+| `load_balancing_key` | what `hrw` keeps on one endpoint: `client_ip`, or `sni` on a TLSRoute; an HTTP route may also use `host`, `header:<name>`, `cookie:<name>` or `query:<name>` |
 
 Unlike an Ingress annotation, a GatewayClass may set the operator-tier names,
 because a GatewayClass is cluster-scoped infrastructure and whoever can write
@@ -465,7 +467,12 @@ unresolved reference, keeping its weight and refusing its share.
 
 Every connection, and every UDP client's session, is committed to one
 backendRef by weighted round robin, and in the endpoint routing mode to one
-of that Service's ready endpoints in turn; a member that cannot be dialed
+of that Service's ready endpoints, in turn unless the GatewayClass's
+`load_balancing` parameter names another mechanism. The split between
+backendRefs is always round robin, because Gateway API makes those weights an
+exact apportionment; the mechanism applies within each Service. A key that a
+route's listener cannot read, such as `sni` on a TCPRoute, is ignored in
+favor of the client address. A member that cannot be dialed
 refuses the connection rather than passing it to a sibling, an unresolved
 reference refuses its share without a lookup, and it is the Service's
 readiness that takes an endpoint out of rotation. The
@@ -473,7 +480,7 @@ readiness that takes an endpoint out of rotation. The
 judged by readiness, since no probe speaks the protocol they carry. A stream
 route caches nothing, and a `TricksterCachePolicy` cannot target one;
 `kubernetes.defaults` and a GatewayClass's parameters reach it only for
-`routing_mode`.
+`routing_mode`, `load_balancing` and `load_balancing_key`.
 
 The controller watches the three kinds only in a cluster whose experimental
 Gateway API channel serves them (`gateway.networking.k8s.io/v1alpha2`); see

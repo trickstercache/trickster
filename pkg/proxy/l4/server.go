@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 )
 
@@ -67,6 +66,15 @@ type Config struct {
 	// MaxConnections bounds the connections relayed at once, or the UDP sessions open at once;
 	// zero applies no bound to connections and the default bound to sessions
 	MaxConnections int
+	// Observer receives the listener's events; nil discards them
+	Observer Observer
+}
+
+func (c *Config) observer() Observer {
+	if c == nil || c.Observer == nil {
+		return nopObserver{}
+	}
+	return c.Observer
 }
 
 func (c *Config) table() *Table {
@@ -194,7 +202,7 @@ func (s *Server) track(conn net.Conn) bool {
 	}
 	s.conns[conn] = struct{}{}
 	s.workers.Add(1)
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, s.protocol).Inc()
+	s.cfg.Load().observer().Opened()
 	return true
 }
 
@@ -204,7 +212,7 @@ func (s *Server) untrack(conn net.Conn) {
 	delete(s.conns, conn)
 	s.slot.Broadcast()
 	s.mu.Unlock()
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, s.protocol).Dec()
+	s.cfg.Load().observer().Ended()
 	s.workers.Done()
 }
 
@@ -228,7 +236,7 @@ func (s *Server) untrackUpstream(conn net.Conn) {
 }
 
 func (s *Server) result(r string) {
-	metrics.ProxyStreamConnections.WithLabelValues(s.name, s.protocol, r).Inc()
+	s.cfg.Load().observer().Result(r)
 }
 
 func (s *Server) handle(client net.Conn) {
@@ -249,17 +257,18 @@ func (s *Server) handle(client net.Conn) {
 		s.result(ResultNoRoute)
 		return
 	}
-	addr, ok := up.Addr()
+	flow := flowOf(s.name, s.protocol, client.RemoteAddr(), host)
+	route, ok := up.Pick(flow)
 	if !ok {
 		s.result(ResultNoUpstream)
 		return
 	}
-	dialer := net.Dialer{Timeout: opts.Connect()}
-	upstream, err := dialer.DialContext(s.ctx, "tcp", addr)
-	if err != nil {
+	upstream, route := s.dial(up, flow, route, opts.Connect())
+	if upstream == nil {
 		s.result(ResultDialFailed)
 		return
 	}
+	defer route.Closed(nil)
 	if !s.trackUpstream(upstream) {
 		_ = upstream.Close()
 		s.result(ResultRefused)
@@ -267,9 +276,36 @@ func (s *Server) handle(client net.Conn) {
 	}
 	defer s.untrackUpstream(upstream)
 	s.result(ResultProxied)
-	in, out := relay(client, upstream, opts.Idle())
-	metrics.ProxyStreamBytes.WithLabelValues(s.name, s.protocol, DirectionIn).Add(float64(in))
-	metrics.ProxyStreamBytes.WithLabelValues(s.name, s.protocol, DirectionOut).Add(float64(out))
+	in, out := relay(client, upstream, opts.Idle(), route.FirstByte)
+	obs := cfg.observer()
+	obs.Bytes(DirectionIn, in)
+	obs.Bytes(DirectionOut, out)
+}
+
+// dial connects to the route, moving to another that the upstream offers when a dial fails,
+// all within one connect timeout. It returns the connection with the route it was made on,
+// or nil once no route is left; every route it tried has been told how its dial went.
+func (s *Server) dial(up Upstream, flow Flow, route Route, timeout time.Duration) (net.Conn, Route) {
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	defer cancel()
+	var dialer net.Dialer
+	for {
+		began := time.Now()
+		conn, err := dialer.DialContext(ctx, "tcp", route.Addr())
+		route.Dialed(time.Since(began), err)
+		if err == nil {
+			return conn, route
+		}
+		retrier, can := up.(Retrier)
+		if !can || route.Final() || ctx.Err() != nil {
+			return nil, nil
+		}
+		next, ok := retrier.Retry(flow, route)
+		if !ok {
+			return nil, nil
+		}
+		route = next
+	}
 }
 
 // Shutdown stops accepting and waits for relayed connections to end until ctx is done.
@@ -325,13 +361,13 @@ func (s *Server) ActiveConnections() int {
 // and to it; a side that ends cleanly half-closes its peer, and a side that fails closes both.
 // The idle timeout is the connection's: a direction that has read nothing for that long ends
 // the relay only when the other has moved nothing either.
-func relay(client, upstream net.Conn, idle time.Duration) (int64, int64) {
+func relay(client, upstream net.Conn, idle time.Duration, firstByte func()) (int64, int64) {
 	var in, out int64
 	var last atomic.Int64
 	last.Store(time.Now().UnixNano())
 	var wg sync.WaitGroup
-	wg.Go(func() { in = pipe(upstream, client, idle, &last) })
-	wg.Go(func() { out = pipe(client, upstream, idle, &last) })
+	wg.Go(func() { in = pipe(upstream, client, idle, &last, nil) })
+	wg.Go(func() { out = pipe(client, upstream, idle, &last, firstByte) })
 	wg.Wait()
 	return in, out
 }
@@ -341,7 +377,8 @@ var bufPool = sync.Pool{New: func() any {
 	return &b
 }}
 
-func pipe(dst, src net.Conn, idle time.Duration, last *atomic.Int64) int64 {
+// pipe copies src to dst until src ends; first, when set, is called once, on the first read
+func pipe(dst, src net.Conn, idle time.Duration, last *atomic.Int64, first func()) int64 {
 	bp := bufPool.Get().(*[]byte)
 	defer bufPool.Put(bp)
 	buf := *bp
@@ -352,6 +389,10 @@ func pipe(dst, src net.Conn, idle time.Duration, last *atomic.Int64) int64 {
 		}
 		nr, rerr := src.Read(buf)
 		if nr > 0 {
+			if first != nil {
+				first()
+				first = nil
+			}
 			now := time.Now()
 			last.Store(now.UnixNano())
 			if idle > 0 {

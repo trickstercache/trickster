@@ -42,6 +42,8 @@ type Options struct {
 	// Pool provides the list of pool members (backend name + optional
 	// weight) to be used by the load balancer
 	Pool PoolMemberList `yaml:"pool,omitempty"`
+	// Name is the ALB backend's name, set by Initialize
+	Name string `yaml:"-"`
 	// PoolRepeats lists the member names Initialize found repeated in Pool and removed
 	PoolRepeats []PoolRepeat `yaml:"-"`
 	// Discovery, when set, binds this ALB's pool to a named discoverer from
@@ -87,7 +89,9 @@ type Options struct {
 	NLMOptions NewestLastModifiedOptions `yaml:"nlm,omitempty"`
 	HRW        HRWOptions                `yaml:"hrw,omitempty"`
 	LT         LTOptions                 `yaml:"lt,omitempty"`
-	FGROptions FirstGoodResponseOptions  `yaml:"fgr,omitempty"`
+	// Stream holds what applies only when the ALB balances tcp, tls or udp flows
+	Stream     *StreamOptions           `yaml:"stream,omitempty"`
+	FGROptions FirstGoodResponseOptions `yaml:"fgr,omitempty"`
 }
 
 type FirstGoodResponseOptions struct {
@@ -154,6 +158,7 @@ func (o *Options) Clone() *Options {
 	c.PoolRepeats = slices.Clone(o.PoolRepeats)
 	c.FGRStatusCodes = slices.Clone(o.FGRStatusCodes)
 	c.FGROptions.StatusCodes = slices.Clone(o.FGROptions.StatusCodes)
+	c.Stream = o.Stream.Clone()
 	c.LT.StatusCodes = slices.Clone(o.LT.StatusCodes)
 	if o.LT.GoodCodes != nil {
 		table := *o.LT.GoodCodes
@@ -167,6 +172,9 @@ func (o *Options) Clone() *Options {
 }
 
 func (o *Options) Initialize(name string) error {
+	if name != "" {
+		o.Name = name
+	}
 	pool, repeats, err := o.Pool.Dedupe(name)
 	if err != nil {
 		return err

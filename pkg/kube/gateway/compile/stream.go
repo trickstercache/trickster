@@ -82,7 +82,7 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 		b.AnyHostRouting = len(r.Hostnames) == 0
 	}
 	if len(group.Members) == 1 && !group.Members[0].Invalid {
-		front, err := streamMember(doc, group, group.Members[0], eff, opts, listeners)
+		front, err := streamMember(doc, r, group, group.Members[0], eff, opts, listeners)
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 			front = unresolvedStreamBackend()
 		} else {
 			var err error
-			if front, err = streamMember(doc, group, m, eff, opts, listeners); err != nil {
+			if front, err = streamMember(doc, r, group, m, eff, opts, listeners); err != nil {
 				return err
 			}
 		}
@@ -116,7 +116,7 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 	return nil
 }
 
-func streamMember(doc *document, g ir.BackendGroup, m ir.BackendMember, eff effective,
+func streamMember(doc *document, r ir.Route, g ir.BackendGroup, m ir.BackendMember, eff effective,
 	opts *kubecfg.Options, listeners []string,
 ) (*backendDoc, error) {
 	// the member is a reverse proxy backend for its origin alone: the stream listener dials the
@@ -147,18 +147,17 @@ func streamMember(doc *document, g ir.BackendGroup, m ir.BackendMember, eff effe
 	return &backendDoc{
 		Provider:      providers.ALB,
 		ListenerNames: listeners,
-		ALB: &albDoc{
-			Mechanism: albnames.MechanismRR,
-			Discovery: &albDiscoveryDoc{
-				DiscovererName:  doc.discoverer(opts),
-				TemplateBackend: tmplName,
-				HealthMode:      ao.HealthModeProvider,
-				Query: &queryDoc{
-					Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
-					Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
-				},
+		// the endpoints are balanced by the policy's mechanism; a key must be one the route's
+		// listener can read, which is the client address, or the server name on a tls route
+		ALB: eff.endpointALB(&albDiscoveryDoc{
+			DiscovererName:  doc.discoverer(opts),
+			TemplateBackend: tmplName,
+			HealthMode:      ao.HealthModeProvider,
+			Query: &queryDoc{
+				Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
+				Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
 			},
-		},
+		}, func(ks ao.KeySource) bool { return ks.OnStream(r.Protocol == ir.ProtocolTLS) }),
 	}, nil
 }
 

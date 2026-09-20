@@ -23,6 +23,8 @@ const (
 	EventSnapshot EventKind = iota + 1
 	// EventPanic reports a panic recovered while rebuilding a snapshot.
 	EventPanic
+	// EventEjected reports a member taken out of selection for repeated connect failures.
+	EventEjected
 )
 
 // Event is one notification to an Observer. Fields beyond Kind are set as the kind requires.
@@ -35,6 +37,8 @@ type Event struct {
 	// Panic and Stack carry the recovered value and stack of an EventPanic
 	Panic any
 	Stack []byte
+	// Member names the member of an EventEjected
+	Member string
 }
 
 // Observer receives events from the core, which itself neither logs nor meters. Observe is

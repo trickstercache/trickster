@@ -24,6 +24,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 )
 
@@ -38,6 +40,14 @@ func testBackend(t *testing.T, name string, o *bo.Options) backends.Backend {
 	}
 	return b
 }
+
+// balanced is a backend that is itself a load balancer
+type balanced struct {
+	backends.Backend
+	picker lb.Picker
+}
+
+func (b balanced) Picker() lb.Picker { return b.picker }
 
 func TestTargetDescribesItsBackend(t *testing.T) {
 	o := bo.New()
@@ -58,6 +68,26 @@ func TestTargetDescribesItsBackend(t *testing.T) {
 	m := tgt.Member()
 	if m.Name() != "pg1" || m.Group() != "pg1" || m.Weight() != 1 || m.Value != tgt {
 		t.Errorf("member = %+v", m)
+	}
+	if !tgt.Dialable() || tgt.Picker() != nil {
+		t.Error("an origin with an address is dialable, and is not itself balanced")
+	}
+	// a member under the reserved .invalid domain, or with no address, can never be dialed
+	gone := bo.New()
+	gone.OriginURL = "tcp://unresolved.kgw.invalid:1"
+	if NewTarget(h, st, testBackend(t, "gone", gone)).Dialable() {
+		t.Error("a member under .invalid reports as dialable")
+	}
+	if NewTarget(h, st, testBackend(t, "hostless", bo.New())).Dialable() || NewTarget(h, st, nil).Dialable() {
+		t.Error("a member with no address reports as dialable")
+	}
+	// a member that is itself balanced offers its picker, or nil when it has none to offer
+	picker := lb.NewBalancer(rr.New())
+	if got := NewTarget(h, st, balanced{Backend: b, picker: picker}).Picker(); got != lb.Picker(picker) {
+		t.Errorf("nested picker = %v", got)
+	}
+	if NewTarget(h, st, balanced{Backend: b}).Picker() != nil {
+		t.Error("a balanced member with no picker offered one")
 	}
 	// with no health check interval the status can never leave Unchecked
 	if tgt.Probed() {

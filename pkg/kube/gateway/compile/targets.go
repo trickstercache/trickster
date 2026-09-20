@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
@@ -73,15 +72,12 @@ func newMemberTarget(doc *document, g ir.BackendGroup, m ir.BackendMember,
 	}
 	front := &backendDoc{
 		Provider: providers.ALB,
-		ALB: &albDoc{
-			Mechanism: albnames.MechanismRR,
-			Discovery: &albDiscoveryDoc{
-				DiscovererName:  doc.discoverer(opts),
-				TemplateBackend: tmplName,
-				HealthMode:      eff.healthMode,
-				Query:           query,
-			},
-		},
+		ALB: eff.endpointALB(&albDiscoveryDoc{
+			DiscovererName:  doc.discoverer(opts),
+			TemplateBackend: tmplName,
+			HealthMode:      eff.healthMode,
+			Query:           query,
+		}, ao.KeySource.OnHTTP),
 	}
 	return &memberTarget{
 		front: front, frontHandler: providers.ALB,

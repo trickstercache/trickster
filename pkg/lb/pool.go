@@ -22,6 +22,7 @@ import (
 	"slices"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 var (
@@ -149,15 +150,42 @@ func (p *Pool) rebuild() (ev Event, ok bool) {
 		return Event{}, false
 	}
 	// statuses are read here, not taken from a callback's arguments, which may be stale
+	nowNano := time.Now().UnixNano()
 	eligible := make([]*Member, 0, len(p.members))
 	for _, m := range p.members {
-		if m.eligible(p.floor) {
+		if m.eligible(p.floor, nowNano) {
 			eligible = append(eligible, m)
 		}
 	}
 	p.gen++
 	p.snap.Store(&Snapshot{Members: eligible, Gen: p.gen})
 	return Event{Kind: EventSnapshot, Gen: p.gen, Eligible: len(eligible), Configured: len(p.members)}, true
+}
+
+// eject takes m out of selection until the provided time, unless that would leave the pool
+// without a member or put more than maxPercent of its members out at once. It reports whether
+// the member was ejected; the caller then refreshes the pool.
+func (p *Pool) eject(m *Member, until time.Time, maxPercent int) bool {
+	p.mtx.Lock()
+	defer p.mtx.Unlock()
+	if p.stopped || !slices.Contains(p.members, m) {
+		return false
+	}
+	nowNano := time.Now().UnixNano()
+	var live, out int
+	for _, o := range p.members {
+		switch {
+		case o.stats.ejectedUntil.Load() > nowNano:
+			out++
+		case o.eligible(p.floor, nowNano):
+			live++
+		}
+	}
+	if m.stats.ejectedUntil.Load() > nowNano || live <= 1 || (out+1)*100 > maxPercent*len(p.members) {
+		return false
+	}
+	m.stats.ejectedUntil.Store(until.UnixNano())
+	return true
 }
 
 // Stop ends the pool's subscriptions. Its last snapshot stays readable and is never replaced.

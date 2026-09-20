@@ -37,3 +37,23 @@ func TestPoolObserverMetersRecoveredPanics(t *testing.T) {
 		t.Errorf("recovered panics metered = +%v, want +1", got)
 	}
 }
+
+func TestBalancerObserverMetersEjections(t *testing.T) {
+	c := metrics.ALBMemberEjections.WithLabelValues("observed-alb", "observed-member")
+	before := testutil.ToFloat64(c)
+	o := Balancer("observed-alb")
+	o.Observe(lb.Event{Kind: lb.EventSnapshot})
+	o.Observe(lb.Event{Kind: lb.EventPanic, Panic: "boom"})
+	if got := testutil.ToFloat64(c) - before; got != 0 {
+		t.Errorf("an event that is not an ejection was metered as one: +%v", got)
+	}
+	o.Observe(lb.Event{Kind: lb.EventEjected, Member: "observed-member"})
+	if got := testutil.ToFloat64(c) - before; got != 1 {
+		t.Errorf("ejections metered = +%v, want +1", got)
+	}
+	// a member that leaves takes its series with it
+	metrics.DeleteBackendSeries("observed-member")
+	if got := testutil.ToFloat64(metrics.ALBMemberEjections.WithLabelValues("observed-alb", "observed-member")); got != 0 {
+		t.Errorf("the series survived its member: %v", got)
+	}
+}

@@ -28,6 +28,24 @@ import (
 // WorkerRefresh labels a panic recovered while a pool rebuilt its snapshot.
 const WorkerRefresh = "refresh"
 
+// balancerObserver meters one ALB's balancer events
+type balancerObserver struct{ albName string }
+
+// Balancer returns the observer for the named ALB's balancer.
+func Balancer(albName string) lb.Observer {
+	return balancerObserver{albName: albName}
+}
+
+func (o balancerObserver) Observe(ev lb.Event) {
+	if ev.Kind != lb.EventEjected {
+		return
+	}
+	logger.Warn("alb pool member ejected after repeated connect failures", logging.Pairs{
+		"albName": o.albName, "member": ev.Member,
+	})
+	metrics.ALBMemberEjections.WithLabelValues(o.albName, ev.Member).Inc()
+}
+
 type poolObserver struct{}
 
 // Pool returns the observer every ALB pool reports to.

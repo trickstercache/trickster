@@ -38,6 +38,8 @@ type Options struct {
 	// GoodCodes are the response codes that count as a good answer, for a strategy that
 	// needs latency; nil counts every response as good.
 	GoodCodes *cfgtypes.StatusTable
+	// Balancer carries what the balancer itself is configured with, such as passive ejection.
+	Balancer lb.BalancerOptions
 }
 
 type handler struct {
@@ -54,14 +56,14 @@ type handler struct {
 // New returns the pool mechanism that serves HTTP with the provided strategy, which the
 // mechanism then owns. name is the mechanism's short name.
 func New(name types.Name, selector lb.Selector, opts ...Options) types.PickerMechanism {
-	b := lb.NewBalancer(selector)
-	h := &handler{
-		name: name, balancer: b,
-		tracked: b.Needs() != 0, timed: b.Needs().Has(lb.NeedLatency),
-	}
 	var o Options
 	if len(opts) > 0 {
 		o = opts[0]
+	}
+	b := lb.NewBalancer(selector, o.Balancer)
+	h := &handler{
+		name: name, balancer: b,
+		tracked: b.Needs() != 0, timed: b.Needs().Has(lb.NeedLatency),
 	}
 	h.goodCodes = o.GoodCodes
 	if b.Needs().Has(lb.NeedKey) {

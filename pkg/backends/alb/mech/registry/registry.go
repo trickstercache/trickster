@@ -18,6 +18,7 @@ package registry
 
 import (
 	"slices"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fr"
@@ -27,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
@@ -73,10 +75,12 @@ func roundRobin() types.RegistryEntry {
 	}
 }
 
-// strategy registers a selection strategy for HTTP; a strategy gains a plane in the change
-// that tests it there
+// strategy registers a selection strategy for the planes that commit one unit of work to one
+// member: requests, and tcp, tls and udp flows
 func strategy(name, shortName types.Name, fn types.NewSelectorFunc) types.RegistryEntry {
-	return types.RegistryEntry{Name: name, ShortName: shortName, Planes: types.PlaneHTTP, NewSelector: fn}
+	return types.RegistryEntry{
+		Name: name, ShortName: shortName, Planes: types.PlaneHTTP | types.PlaneStream, NewSelector: fn,
+	}
 }
 
 var registryByName = compileSupportedByName(registry)
@@ -128,7 +132,23 @@ func pickOptions(o *options.Options) pick.Options {
 	if o == nil {
 		return pick.Options{}
 	}
-	return pick.Options{Key: o.HRW.KeySource, IPv6Prefix: o.HRW.IPv6Prefix, GoodCodes: o.LT.GoodCodes}
+	return pick.Options{
+		Key: o.HRW.KeySource, IPv6Prefix: o.HRW.IPv6Prefix, GoodCodes: o.LT.GoodCodes,
+		Balancer: balancerOptions(o),
+	}
+}
+
+// balancerOptions translates what configures the balancer itself: passive ejection, which
+// only a stream listener's connect failures ever feed
+func balancerOptions(o *options.Options) lb.BalancerOptions {
+	bo := lb.BalancerOptions{Observer: observe.Balancer(o.Name)}
+	if o.Stream != nil && o.Stream.PassiveHealth != nil {
+		p := o.Stream.PassiveHealth
+		bo.Ejection = lb.EjectionOptions{
+			Failures: p.Failures, Duration: time.Duration(p.Eject), MaxPercent: p.MaxEjectedPercent,
+		}
+	}
+	return bo
 }
 
 // NewBalancer returns the named selection strategy as a balancer with no pool, for a plane
@@ -142,7 +162,10 @@ func NewBalancer(name types.Name, opts *options.Options) (*lb.Balancer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return lb.NewBalancer(s), nil
+	if opts == nil {
+		return lb.NewBalancer(s), nil
+	}
+	return lb.NewBalancer(s, balancerOptions(opts)), nil
 }
 
 func IsRegistered(name types.Name) bool {

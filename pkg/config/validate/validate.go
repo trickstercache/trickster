@@ -25,7 +25,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
-	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	albregistry "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
+	albtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
@@ -266,6 +267,8 @@ func Listeners(c *config.Config) error {
 	mappedProviders := make(map[string]map[string]string, len(c.Listeners))
 	nativeListeners := providerregistry.NativeListeners()
 	nativeTargets := nativeUserRouterTargets(c, nativeListeners)
+	// the load balancers that serve a stream listener; every other one serves requests
+	streamALBs := sets.NewStringSet()
 	for backendName, backend := range c.Backends {
 		if backend == nil || backend.IsTemplate {
 			// templates are never routed, so they map to no listener
@@ -336,7 +339,7 @@ func Listeners(c *config.Config) error {
 			return fmt.Errorf("listener %q configures stream options for protocol %q", name, options.Protocol)
 		}
 		if options.IsStream() {
-			if err := streamListener(c, name, options, mappedProviders[name]); err != nil {
+			if err := streamListener(c, name, options, mappedProviders[name], streamALBs); err != nil {
 				return err
 			}
 		}
@@ -429,7 +432,7 @@ func Listeners(c *config.Config) error {
 			}
 		}
 	}
-	return nil
+	return requestALBs(c, streamALBs)
 }
 
 // streamProviders are the providers a stream listener may relay to: one with an origin to dial,
@@ -438,8 +441,33 @@ var streamProviders = sets.New([]string{
 	providers.ReverseProxyShort, providers.ReverseProxy, providers.Proxy, providers.ALB,
 })
 
+// requestALBs holds the load balancers that serve no stream listener to what a request can
+// offer: no server name to key on, no connect to time, and no stream block to apply
+func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
+	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
+		backend := c.Backends[backendName]
+		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil ||
+			streamALBs.Contains(backendName) {
+			continue
+		}
+		o := backend.ALBOptions
+		if o.Stream != nil {
+			return fmt.Errorf("alb backend %q: 'stream' options apply only to an alb that serves a "+
+				"tcp, tls or udp listener", backendName)
+		}
+		if !o.HRW.KeySource.OnHTTP() {
+			return fmt.Errorf("alb backend %q: hrw.key %q can be read only on a tls listener",
+				backendName, o.HRW.Key)
+		}
+		if _, err := o.LTSignalFor(listener.ProtocolHTTP); err != nil {
+			return fmt.Errorf("alb backend %q: %w", backendName, err)
+		}
+	}
+	return nil
+}
+
 func streamListener(c *config.Config, name string, options *listener.Options,
-	mapped map[string]string,
+	mapped map[string]string, streamALBs sets.Set[string],
 ) error {
 	if err := options.Stream.Validate(); err != nil {
 		return fmt.Errorf("listener %q: %w", name, err)
@@ -461,10 +489,21 @@ func streamListener(c *config.Config, name string, options *listener.Options,
 				name, options.Protocol, backendName, provider)
 		}
 		if provider == providers.ALB && (backend.ALBOptions == nil ||
-			(backend.ALBOptions.MechanismName != albnames.MechanismRR &&
-				backend.ALBOptions.MechanismName != albnames.MechanismRoundRobin)) {
-			return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use the %s mechanism",
-				name, options.Protocol, backendName, albnames.MechanismRR)
+			!albregistry.Supports(backend.ALBOptions.MechanismName, albtypes.PlaneStream)) {
+			return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use a mechanism that "+
+				"balances connections: %s", name, options.Protocol, backendName,
+				strings.Join(albregistry.Supporting(albtypes.PlaneStream), ", "))
+		}
+		if provider == providers.ALB {
+			streamALBs.Set(backendName)
+			o := backend.ALBOptions
+			if !o.HRW.KeySource.OnStream(options.Protocol == listener.ProtocolTLS) {
+				return fmt.Errorf("listener %q with protocol %q cannot read alb backend %q's hrw.key %q: "+
+					"use client_ip, or sni on a tls listener", name, options.Protocol, backendName, o.HRW.Key)
+			}
+			if _, err := o.LTSignalFor(options.Protocol); err != nil {
+				return fmt.Errorf("listener %q: alb backend %q: %w", name, backendName, err)
+			}
 		}
 		if members.Contains(backendName) {
 			continue

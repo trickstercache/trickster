@@ -62,7 +62,7 @@ func (p Pick) FirstByte() {
 // the work panics, or the member's in-flight count leaks. A failed outcome records a latency
 // penalty, so a member that fails fast never looks fast.
 func (p Pick) Done(o Outcome) {
-	if p.member == nil || p.balancer == nil || p.balancer.needs == 0 {
+	if p.member == nil || p.balancer == nil || (p.balancer.needs == 0 && !p.balancer.ejects) {
 		return
 	}
 	st := p.member.stats
@@ -75,9 +75,12 @@ func (p Pick) Done(o Outcome) {
 			st.fails.Store(0)
 		}
 	case OutcomeFailed, OutcomeConnectFailed:
-		st.fails.Add(1)
+		fails := st.fails.Add(1)
 		if p.balancer.needs.Has(NeedLatency) {
 			p.penalize(st)
+		}
+		if o == OutcomeConnectFailed && p.balancer.ejects && int(fails) >= p.balancer.ejection.Failures {
+			p.balancer.eject(p.member)
 		}
 	case OutcomeCanceled:
 	}
@@ -119,10 +122,28 @@ type LatencyTuner interface {
 	Latency() LatencyOptions
 }
 
+// EjectionOptions configure passive ejection: taking a member out of selection when flows
+// keep failing to reach it, without waiting for a health check to notice. Only
+// OutcomeConnectFailed counts, never how a member answered.
+type EjectionOptions struct {
+	// Failures is how many consecutive connect failures eject a member; zero disables ejection.
+	Failures int
+	// Duration is how long an ejected member stays out. When it ends the member is selected
+	// again only if its Health, if it has one, still meets the pool's floor.
+	Duration time.Duration
+	// MaxPercent is the most of a pool's members that may be out at once, 1-100; the last
+	// live member is never ejected whatever the percentage. Zero means 50.
+	MaxPercent int
+}
+
 // BalancerOptions are the optional settings of a Balancer.
 type BalancerOptions struct {
 	// Pool is the balancer's first pool; SetPool installs one later.
 	Pool *Pool
+	// Ejection configures passive ejection; the zero value leaves it off.
+	Ejection EjectionOptions
+	// Observer receives the balancer's events; nil discards them.
+	Observer Observer
 }
 
 // Balancer binds a strategy to a swappable pool. It is the Picker behind every pick-one
@@ -133,6 +154,9 @@ type Balancer struct {
 	// nanoseconds, as float64 so the sampling path converts nothing
 	decay    float64
 	penalty  float64
+	ejects   bool
+	ejection EjectionOptions
+	observer Observer
 	pool     atomic.Pointer[Pool]
 	prepared atomic.Pointer[preparedSnapshot]
 }
@@ -159,10 +183,53 @@ func NewBalancer(selector Selector, opts ...BalancerOptions) *Balancer {
 			b.penalty = float64(lo.Penalty)
 		}
 	}
-	if len(opts) > 0 && opts[0].Pool != nil {
-		b.pool.Store(opts[0].Pool)
+	if len(opts) > 0 {
+		b.configure(opts[0])
 	}
 	return b
+}
+
+const (
+	// DefaultEjectionDuration is how long an ejected member stays out when none is set.
+	DefaultEjectionDuration = 30 * time.Second
+	// DefaultEjectionMaxPercent is the most of a pool that may be ejected when none is set.
+	DefaultEjectionMaxPercent = 50
+)
+
+func (b *Balancer) configure(o BalancerOptions) {
+	if o.Pool != nil {
+		b.pool.Store(o.Pool)
+	}
+	b.observer = o.Observer
+	if o.Ejection.Failures <= 0 {
+		return
+	}
+	b.ejects, b.ejection = true, o.Ejection
+	if b.ejection.Duration <= 0 {
+		b.ejection.Duration = DefaultEjectionDuration
+	}
+	if b.ejection.MaxPercent <= 0 || b.ejection.MaxPercent > 100 {
+		b.ejection.MaxPercent = DefaultEjectionMaxPercent
+	}
+}
+
+// eject takes a member out of selection for the ejection duration, if the pool can spare it.
+// It runs on a failure path only. The member returns through a refresh of whichever pool is
+// current when the time is up, since membership may have been swapped meanwhile.
+func (b *Balancer) eject(m *Member) {
+	p := b.pool.Load()
+	if p == nil || !p.eject(m, time.Now().Add(b.ejection.Duration), b.ejection.MaxPercent) {
+		return
+	}
+	p.Refresh()
+	time.AfterFunc(b.ejection.Duration, func() {
+		if cur := b.pool.Load(); cur != nil {
+			cur.Refresh()
+		}
+	})
+	if b.observer != nil {
+		b.observer.Observe(Event{Kind: EventEjected, Member: m.name})
+	}
 }
 
 // SetPool replaces the pool that picks are made from; nil leaves the balancer with none. The

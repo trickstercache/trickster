@@ -158,6 +158,7 @@ The **Highest Random Weight** (hrw) mechanism, also known as rendezvous hashing,
 | `header:<name>` | the first value of the named request header |
 | `cookie:<name>` | the value of the named cookie |
 | `query:<name>` | the value of the named query string parameter, as written in the URL |
+| `sni` | the TLS server name the client offered; only for an ALB that serves a `tls` [stream listener](#load-balancing-stream-listeners) |
 
 A request that lacks the configured key, such as one without the header, has no affinity to preserve and is routed to a member at random.
 
@@ -173,6 +174,42 @@ backends:
       hrw:
         key: header:X-Tenant
 ```
+
+### Load Balancing Stream Listeners
+
+The mechanisms that select one member, `rr`, `p2c`, `lc`, `lt` and `hrw`, also balance the connections of a `tcp` or `tls` [stream listener](./configuring.md) and the sessions of a `udp` one. They are the same mechanisms with the same weights; only what they measure differs. The mechanisms that fan a request out (`fr`, `fgr`, `nlm`, `tsm`) and the User Router need an HTTP request, and are refused on a stream listener.
+
+| | http | tcp and tls | udp |
+|-----|-----|-----|-----|
+| unit of work | a request | a connection | a session: one client address and port |
+| in flight (`p2c`, `lc`, `lt`) | requests being served | connections open | sessions open |
+| latency (`lt.signal`) | `first_write`: the first byte sent to the client | `connect` (default): the time to connect to the member; or `first_byte`: the member's first byte | `first_reply`: the member's first datagram |
+| `hrw.key` | `client_ip`, `host`, `header:`, `cookie:`, `query:` | `client_ip`; `sni` on a `tls` listener | `client_ip` |
+
+A connection or session stays on the member it was given until it ends, whatever the mechanism. `client_ip` is the address a [PROXY protocol](./configuring.md) header names when the listener trusts one.
+
+Two settings apply only to an ALB that serves a stream listener, under `alb.stream`:
+
+```yaml
+backends:
+  pg:
+    provider: alb
+    listener_names: [ postgres ]
+    alb:
+      mechanism: p2c
+      pool: [ pg1, pg2, pg3 ]
+      stream:
+        connect_retries: 1       # default 0
+        passive_health:          # off unless present
+          failures: 3            # default
+          eject: 30s             # default
+          max_ejected_percent: 50 # default
+```
+
+* `connect_retries` is how many other members a `tcp` or `tls` connection is offered when it cannot connect to the one it was given. All attempts share the listener's `stream.connect_timeout`. The default, 0, refuses the connection, which is what keeps a weighted split exact: a member under the reserved `.invalid` domain exists to refuse its share, and is never retried past. `udp` has no connect to fail, so it is not retried.
+* `passive_health` takes a member out of the pool after `failures` consecutive failed connects, for `eject`, without waiting for a health check. Only failures to reach the member count, never anything it sent. At most `max_ejected_percent` of the pool is out at once, and the last live member is never ejected. When `eject` ends the member returns, unless its health check has it down. On `udp`, where nothing connects, a member that answers a datagram with a port-unreachable is what counts as a failure.
+
+Health checks work as they do for HTTP pools: a `tcp://` member with a `healthcheck.interval` is probed by opening a connection to it. A `udp://` member has no generic probe; rely on [autodiscovery](./alb-autodiscovery.md) readiness or on `passive_health`.
 
 ### Weights and the Selection Mechanisms
 

@@ -556,6 +556,12 @@ type Policy struct {
 	AuthenticatorName string `json:"authenticator_name,omitempty"`
 	// HealthMode is the health mode of generated discovery-backed ALBs
 	HealthMode string `json:"health_mode,omitempty"`
+	// LoadBalancing is the mechanism that spreads traffic across a Service's endpoints in the
+	// endpoint routing mode; empty is round robin. The weights between a rule's backendRefs
+	// are always apportioned by round robin, whatever this says.
+	LoadBalancing string `json:"load_balancing,omitempty"`
+	// LoadBalancingKey is what the hrw mechanism keeps together, such as client_ip
+	LoadBalancingKey string `json:"load_balancing_key,omitempty"`
 	// Provider makes the generated backend a time series provider (prometheus, influxdb, ...)
 	// whose own API paths it then accelerates; only a cache policy sets it
 	Provider string `json:"provider,omitempty"`
@@ -587,6 +593,8 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.ReqRewriterName, o.ReqRewriterName)
 	overlayString(&out.AuthenticatorName, o.AuthenticatorName)
 	overlayString(&out.HealthMode, o.HealthMode)
+	overlayString(&out.LoadBalancing, o.LoadBalancing)
+	overlayString(&out.LoadBalancingKey, o.LoadBalancingKey)
 	overlayString(&out.Provider, o.Provider)
 	overlayString(&out.ResultHeader, o.ResultHeader)
 	if o.TimeoutMS > 0 {

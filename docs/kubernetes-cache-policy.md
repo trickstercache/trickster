@@ -100,6 +100,8 @@ spec:
 | `cors.mode` | `preserve`, `merge`, `replace`, `disable` | how origin CORS headers combine with the configured ones |
 | `cors.headers` | a map of headers | the CORS headers `merge` and `replace` apply |
 | `healthMode` | `probe`, `provider` | how discovered members are judged healthy in the endpoint routing mode |
+| `loadBalancing` | `rr`, `p2c`, `lc`, `lt`, `hrw` | how traffic is spread across a Service's endpoints in the endpoint routing mode; `rr` unless set. See [the ALB mechanisms](./alb.md) |
+| `loadBalancingKey` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `hrw` keeps on one endpoint; `client_ip` unless set |
 | `resultHeader` | `Expose`, `Hide` | whether `X-Trickster-Result` reaches the client; see below |
 
 In a header map a name prefixed with `-` deletes the header and one prefixed with `+`

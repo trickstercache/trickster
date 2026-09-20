@@ -73,6 +73,11 @@ const (
 	// HealthMode selects how the discovered members of a generated ALB are
 	// judged healthy in the endpoint routing mode: probe or provider
 	HealthMode = Prefix + "health-mode"
+	// LoadBalancing selects the mechanism that spreads traffic across a Service's endpoints
+	// in the endpoint routing mode: rr, p2c, lc, lt or hrw
+	LoadBalancing = Prefix + "load-balancing"
+	// LoadBalancingKey is what the hrw mechanism keeps together, such as client_ip
+	LoadBalancingKey = Prefix + "load-balancing-key"
 )
 
 // Problem is one rejected annotation, for logging and for the Events and
@@ -111,7 +116,7 @@ func (s *Set) ConfiguresPolicy() bool {
 	return p.Handler != "" || p.CacheName != "" || p.NegativeCacheName != "" ||
 		p.TimeoutMS > 0 || p.MaxTTLMS > 0 || p.CORSMode != "" ||
 		p.CollapsedForwarding != "" || p.RewriteTarget != "" ||
-		p.HealthMode != "" ||
+		p.HealthMode != "" || p.LoadBalancing != "" || p.LoadBalancingKey != "" ||
 		len(p.RequestHeaders) > 0 || len(p.ResponseHeaders) > 0 ||
 		len(p.CORSHeaders) > 0
 }
@@ -204,6 +209,10 @@ func (s *Set) apply(key, value string) (err error) {
 		return nil
 	case HealthMode:
 		s.Policy.HealthMode, err = translate.HealthMode(value)
+	case LoadBalancing:
+		s.Policy.LoadBalancing, err = translate.LoadBalancing(value)
+	case LoadBalancingKey:
+		s.Policy.LoadBalancingKey, err = translate.LoadBalancingKey(value)
 	default:
 		return errors.New(reasonUnknown)
 	}

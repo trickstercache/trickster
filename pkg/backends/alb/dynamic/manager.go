@@ -432,14 +432,18 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 			nb.HealthCheck.Overlay(hco)
 		}
 		var st *healthcheck.Status
+		var probe healthcheck.Probe
 		if prober, ok := client.(protocolHealthProber); ok {
+			// a backend may probe by protocol for some origins and by request for the rest
+			probe = prober.HealthCheckProbe()
+		}
+		if probe != nil {
 			registrar, rok := m.cfg.HealthChecker.(healthcheck.Registrar)
 			if !rok {
 				return nil, errors.New("health checker does not support protocol probes")
 			}
 			st, err = registrar.RegisterProbe(name,
-				m.healthDescription(nb.Provider), nb.HealthCheck,
-				prober.HealthCheckProbe())
+				m.healthDescription(nb.Provider), nb.HealthCheck, probe)
 		} else {
 			st, err = m.cfg.HealthChecker.Register(name,
 				m.healthDescription(nb.Provider),

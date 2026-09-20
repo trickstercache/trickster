@@ -159,6 +159,8 @@ leave an operator believing a setting is in force when it is not.
 | `trickstercache.org/use-regex` | `true`, `false` | compiles this object's `ImplementationSpecific` paths as anchored regular expressions |
 | `trickstercache.org/rewrite-target` | a path | rewrites the matched path on the way upstream |
 | `trickstercache.org/health-mode` | `probe`, `provider` | how discovered members are judged healthy in the endpoint routing mode |
+| `trickstercache.org/load-balancing` | `rr`, `p2c`, `lc`, `lt`, `hrw` | how traffic is spread across a Service's endpoints in the endpoint routing mode; `rr` unless set |
+| `trickstercache.org/load-balancing-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `hrw` keeps on one endpoint |
 
 Durations require a unit: `600` is rejected, `600s` is not.
 
@@ -305,6 +307,7 @@ independently. These are the equivalents:
 | `response-headers` | `responseHeaders`, a map, or a `ResponseHeaderModifier` filter |
 | `cors-mode`, `cors-headers` | `cors.mode`, `cors.headers` |
 | `health-mode` | `healthMode` |
+| `load-balancing`, `load-balancing-key` | `loadBalancing`, `loadBalancingKey` |
 | `use-regex` | an HTTPRoute path match of type `RegularExpression` |
 | `rewrite-target` | a `URLRewrite` filter, whose `ReplacePrefixMatch` replaces the matched prefix and `ReplaceFullPath` the whole path |
 

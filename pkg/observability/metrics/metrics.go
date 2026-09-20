@@ -223,6 +223,42 @@ var (
 		[]string{keys.Listener_Name, keys.Reason},
 	)
 
+	// ProxyStreamMemberConnections counts the connections and UDP sessions a stream listener
+	// committed to a load balancer pool member, by how they went
+	ProxyStreamMemberConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_connections_total",
+			Help:      "Count of connections and UDP sessions committed to a load balancer pool member, by result",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name, keys.Result},
+	)
+
+	// ProxyStreamMemberActiveConnections gauges the connections and UDP sessions open to a
+	// load balancer pool member
+	ProxyStreamMemberActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_active_connections",
+			Help:      "Number of connections and UDP sessions open to a load balancer pool member",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name},
+	)
+
+	// ProxyStreamMemberConnectDuration observes how long connecting to a pool member took
+	ProxyStreamMemberConnectDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_connect_duration_seconds",
+			Help:      "Time taken to connect to a load balancer pool member",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name},
+	)
+
 	// ProxyStreamBytes counts the bytes stream listeners relayed, in from clients and out to them
 	ProxyStreamBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -705,6 +741,18 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
+	// ALBMemberEjections counts pool members taken out of selection by passive health, which
+	// acts on repeated failures to connect rather than on a health check
+	ALBMemberEjections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "member_ejections_total",
+			Help:      "Count of ALB pool members ejected by passive health after repeated connect failures.",
+		},
+		[]string{keys.ALB_Name, keys.Member},
+	)
+
 	// ALBPoolRefreshPanicRecovered counts panics recovered while an ALB pool rebuilt its
 	// healthy-member snapshot; the pool keeps serving the snapshot it last published.
 	ALBPoolRefreshPanicRecovered = prometheus.NewCounterVec(
@@ -914,6 +962,10 @@ func init() {
 	prometheus.MustRegister(ProxyStreamConnections)
 	prometheus.MustRegister(ProxyStreamActiveConnections)
 	prometheus.MustRegister(ProxyStreamBytes)
+	prometheus.MustRegister(ProxyStreamMemberConnections)
+	prometheus.MustRegister(ProxyStreamMemberActiveConnections)
+	prometheus.MustRegister(ProxyStreamMemberConnectDuration)
+	prometheus.MustRegister(ALBMemberEjections)
 	prometheus.MustRegister(ProxyStreamDroppedDatagrams)
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
@@ -1018,6 +1070,9 @@ var backendSeriesVecs = []partialDeleter{
 	HealthcheckStatusNotifyPanicRecovered,
 	ALBPoolAdmitsFailing,
 	ALBPoolFloorReset,
+	ProxyStreamMemberConnections,
+	ProxyStreamMemberActiveConnections,
+	ProxyStreamMemberConnectDuration,
 }
 
 // DeleteBackendSeries removes every metric series labeled with the provided
@@ -1031,6 +1086,8 @@ func DeleteBackendSeries(backendName string) {
 	for _, v := range backendSeriesVecs {
 		v.DeletePartialMatch(labels)
 	}
+	// a pool member is named by the member label where the backend_name is its ALB's
+	ALBMemberEjections.DeletePartialMatch(prometheus.Labels{keys.Member: backendName})
 }
 
 // ALB Autodiscovery metrics

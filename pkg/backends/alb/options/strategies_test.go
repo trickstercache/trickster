@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -35,12 +36,13 @@ func TestParseKeySource(t *testing.T) {
 		"header: X-Tenant ": {Kind: KeyHeader, Name: "X-Tenant"},
 		"cookie:session":    {Kind: KeyCookie, Name: "session"},
 		"query:tenant":      {Kind: KeyQuery, Name: "tenant"},
+		"sni":               {Kind: KeySNI},
 	} {
 		got, err := ParseKeySource(in)
 		require.NoError(t, err, in)
 		require.Equal(t, want, got, in)
 	}
-	for _, in := range []string{"sni", "header:", "cookie: ", "query:a=b", "header:two words", "cookie:a;b", "ip", "header"} {
+	for _, in := range []string{"snI:x", "header:", "cookie: ", "query:a=b", "header:two words", "cookie:a;b", "ip", "header"} {
 		_, err := ParseKeySource(in)
 		require.ErrorIs(t, err, ErrInvalidKeySource, in)
 	}
@@ -68,7 +70,7 @@ func TestHRWOptions(t *testing.T) {
 	_, err = o.Validate()
 	require.NoError(t, err)
 
-	require.ErrorIs(t, load(t, "mechanism: hrw\nhrw:\n  key: sni\n").Initialize("alb1"), ErrInvalidKeySource)
+	require.ErrorIs(t, load(t, "mechanism: hrw\nhrw:\n  key: port\n").Initialize("alb1"), ErrInvalidKeySource)
 	bad := load(t, "mechanism: hrw\nhrw:\n  ipv6_prefix: 129\n")
 	require.NoError(t, bad.Initialize("alb1"))
 	_, err = bad.Validate()
@@ -81,7 +83,7 @@ func TestHRWOptions(t *testing.T) {
 func TestLTOptions(t *testing.T) {
 	o := load(t, "mechanism: lt\n")
 	require.NoError(t, o.Initialize("alb1"))
-	require.Equal(t, LTSignalFirstWrite, o.LT.Signal)
+	require.Empty(t, o.LT.Signal, "an unset signal is resolved per listener protocol, not at load")
 	require.Zero(t, o.LTDecay())
 	for _, code := range []int{200, 404, 500, 501, 505} {
 		require.True(t, o.LT.GoodCodes.Contains(code), code)
@@ -107,7 +109,7 @@ func TestLTOptions(t *testing.T) {
 	require.Equal(t, 499, o.LT.StatusCodes[0].End, "the clone shares its ranges with the original")
 
 	for doc, want := range map[string]error{
-		"mechanism: lt\nlt:\n  signal: connect\n":                        ErrInvalidLTSignal,
+		"mechanism: lt\nlt:\n  signal: last_byte\n":                      ErrInvalidLTSignal,
 		"mechanism: lt\nlt:\n  decay: -5s\n":                             ErrInvalidLTDecay,
 		"mechanism: lt\nlt:\n  status_codes: [{start: 500, end: 200}]\n": types.ErrInvalidStatusRange,
 	} {
@@ -137,5 +139,80 @@ func TestStrategyBlocksBelongToTheirMechanism(t *testing.T) {
 		require.NoError(t, o.Initialize("alb1"))
 		_, err := o.Validate()
 		require.NoError(t, err, mech)
+	}
+}
+
+func TestKeySourcePlanes(t *testing.T) {
+	for in, want := range map[string][3]bool{
+		// readable on: a tcp or udp listener, a tls listener, an http listener
+		"client_ip":       {true, true, true},
+		"sni":             {false, true, false},
+		"host":            {false, false, true},
+		"header:X-Tenant": {false, false, true},
+		"cookie:session":  {false, false, true},
+		"query:tenant":    {false, false, true},
+	} {
+		ks, err := ParseKeySource(in)
+		require.NoError(t, err)
+		require.Equal(t, want, [3]bool{ks.OnStream(false), ks.OnStream(true), ks.OnHTTP()}, in)
+	}
+}
+
+func TestLTSignalFor(t *testing.T) {
+	o := &Options{}
+	for protocol, want := range map[string]string{
+		"http": LTSignalFirstWrite, "tcp": LTSignalConnect, "tls": LTSignalConnect,
+		"udp": LTSignalFirstReply, "mysql": LTSignalFirstWrite,
+	} {
+		got, err := o.LTSignalFor(protocol)
+		require.NoError(t, err)
+		require.Equal(t, want, got, protocol)
+	}
+	o.LT.Signal = LTSignalFirstByte
+	got, err := o.LTSignalFor("tls")
+	require.NoError(t, err)
+	require.Equal(t, LTSignalFirstByte, got)
+	for _, protocol := range []string{"http", "udp"} {
+		_, err := o.LTSignalFor(protocol)
+		require.ErrorIs(t, err, ErrInvalidLTSignal, protocol)
+	}
+}
+
+func TestStreamOptions(t *testing.T) {
+	o := load(t, "mechanism: rr\nstream:\n  connect_retries: 2\n  passive_health: {}\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, 2, o.Stream.ConnectRetries)
+	require.Equal(t, DefaultPassiveFailures, o.Stream.PassiveHealth.Failures, "an empty block turns it on")
+	_, err := o.Validate()
+	require.NoError(t, err)
+
+	o = load(t, "mechanism: p2c\nstream:\n  passive_health: {failures: 5, eject: 10s, max_ejected_percent: 25}\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, PassiveHealthOptions{Failures: 5, Eject: timeconv.Duration(10 * time.Second), MaxEjectedPercent: 25},
+		*o.Stream.PassiveHealth)
+	c := o.Clone()
+	c.Stream.PassiveHealth.Failures = 9
+	c.Stream.ConnectRetries = 4
+	require.Equal(t, 5, o.Stream.PassiveHealth.Failures, "the clone shares its stream options")
+	require.Zero(t, o.Stream.ConnectRetries)
+	require.Nil(t, (*StreamOptions)(nil).Clone())
+
+	for doc, want := range map[string]error{
+		"stream:\n  connect_retries: -1\n":                        ErrInvalidConnectRetries,
+		"stream:\n  connect_retries: 11\n":                        ErrInvalidConnectRetries,
+		"stream:\n  passive_health: {failures: -1}\n":             ErrInvalidPassiveHealth,
+		"stream:\n  passive_health: {eject: -1s}\n":               ErrInvalidPassiveHealth,
+		"stream:\n  passive_health: {max_ejected_percent: 101}\n": ErrInvalidPassiveHealth,
+		"stream:\n  passive_health: {max_ejected_percent: -5}\n":  ErrInvalidPassiveHealth,
+		"lt:\n  signal: last_byte\n":                              ErrInvalidLTSignal,
+	} {
+		mech := "mechanism: rr\n"
+		if want == ErrInvalidLTSignal {
+			mech = "mechanism: lt\n"
+		}
+		bad := load(t, mech+doc)
+		require.NoError(t, bad.Initialize("alb1"))
+		_, err := bad.Validate()
+		require.ErrorIs(t, err, want, doc)
 	}
 }

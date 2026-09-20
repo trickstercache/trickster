@@ -36,20 +36,34 @@ const (
 	KeyCookie
 	// KeyQuery keys on the raw value of a query string parameter.
 	KeyQuery
+	// KeySNI keys on the TLS server name a client offered; tls stream listeners only.
+	KeySNI
 )
 
 // Key source spellings
 const (
 	KeySourceClientIP = "client_ip"
 	KeySourceHost     = "host"
+	KeySourceSNI      = "sni"
 	keyPrefixHeader   = "header:"
 	keyPrefixCookie   = "cookie:"
 	keyPrefixQuery    = "query:"
 )
 
-// ErrInvalidKeySource is returned for a key source that is not one of client_ip, host,
+// ErrInvalidKeySource is returned for a key source that is not one of client_ip, host, sni,
 // header:<name>, cookie:<name> or query:<name>.
 var ErrInvalidKeySource = errors.New("invalid key source")
+
+// OnStream reports whether a stream listener of the given protocol can read the key: the
+// client address always, the server name when the listener is tls, nothing of a request.
+func (k KeySource) OnStream(tlsListener bool) bool {
+	return k.Kind == KeyClientIP || (k.Kind == KeySNI && tlsListener)
+}
+
+// OnHTTP reports whether an HTTP listener can read the key, which is all but the server name.
+func (k KeySource) OnHTTP() bool {
+	return k.Kind != KeySNI
+}
 
 // KeySource is a parsed affinity key source.
 type KeySource struct {
@@ -66,6 +80,8 @@ func ParseKeySource(s string) (KeySource, error) {
 		return KeySource{Kind: KeyClientIP}, nil
 	case KeySourceHost:
 		return KeySource{Kind: KeyHost}, nil
+	case KeySourceSNI:
+		return KeySource{Kind: KeySNI}, nil
 	}
 	for prefix, kind := range map[string]KeyKind{
 		keyPrefixHeader: KeyHeader, keyPrefixCookie: KeyCookie, keyPrefixQuery: KeyQuery,
@@ -83,6 +99,6 @@ func ParseKeySource(s string) (KeySource, error) {
 		}
 		return KeySource{Kind: kind, Name: name}, nil
 	}
-	return KeySource{}, fmt.Errorf("%w %q: use %s, %s, %s<name>, %s<name> or %s<name>", ErrInvalidKeySource,
-		s, KeySourceClientIP, KeySourceHost, keyPrefixHeader, keyPrefixCookie, keyPrefixQuery)
+	return KeySource{}, fmt.Errorf("%w %q: use %s, %s, %s, %s<name>, %s<name> or %s<name>", ErrInvalidKeySource,
+		s, KeySourceClientIP, KeySourceHost, KeySourceSNI, keyPrefixHeader, keyPrefixCookie, keyPrefixQuery)
 }

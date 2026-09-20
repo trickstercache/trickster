@@ -81,8 +81,11 @@ func (m *Member) Health() Health { return m.health }
 // Stats returns the member's runtime state; never nil.
 func (m *Member) Stats() *Stats { return m.stats }
 
-// eligible reports whether the member's current status meets floor
-func (m *Member) eligible(floor int32) bool {
+// eligible reports whether the member's current status meets floor and it is not ejected
+func (m *Member) eligible(floor int32, nowNano int64) bool {
+	if m.stats.ejectedUntil.Load() > nowNano {
+		return false
+	}
 	return m.health == nil || m.health.Get() >= floor
 }
 

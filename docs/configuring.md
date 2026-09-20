@@ -181,12 +181,17 @@ it; every stream listener uses `port` and `address` alone.
 
 A stream listener's backend is a `reverseproxy` (`rp`) backend, whose
 `origin_url` supplies the host and port to dial and nothing more (the scheme
-may be `tcp://` or `udp://`), or an `alb` backend using the `rr` mechanism,
-whose pool members are such backends. Each connection or session is
-committed to one pool member chosen by weighted round robin, as an HTTP
-request is; a member that cannot be dialed refuses its share rather than
-passing it to a sibling, so it is health checks or discovery readiness that
-take a dead member out of rotation. A member whose origin host is under the
+may be `tcp://` or `udp://`), or an `alb` backend whose pool members are such
+backends. The ALB may use any mechanism that commits to one member: `rr`,
+`p2c`, `lc`, `lt` or `hrw` (see [Load Balancing Stream
+Listeners](./alb.md#load-balancing-stream-listeners)). Each connection or
+session is committed to one pool member for its whole life, chosen as an HTTP
+request's is. By default a member that cannot be dialed refuses its share
+rather than passing it to a sibling, so it is health checks, discovery
+readiness or passive health that take a dead member out of rotation; set
+`alb.stream.connect_retries` to try another member instead. A `tcp://` member
+with a `healthcheck.interval` is probed by opening a connection to it; a
+`udp://` member has no generic probe. A member whose origin host is under the
 reserved `.invalid` domain, which can never resolve, refuses its share
 without a lookup, which is how a share that must be refused is expressed. A
 discovery-backed ALB works too, and a `scheme` of `tcp` or `udp` on its

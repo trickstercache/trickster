@@ -25,10 +25,18 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 type protocolHealthProber interface {
 	HealthCheckProbe() healthcheck.Probe
+}
+
+// healthCheckRefuser is implemented by a backend that cannot actively probe some origins, and
+// says why; such a backend is left unprobed rather than probed in a way that can only fail
+type healthCheckRefuser interface {
+	HealthCheckUnsupported() string
 }
 
 // healthCheckFinalizer returns the effective options a probe registers with,
@@ -76,10 +84,23 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 		if f, ok := c.(healthCheckFinalizer); ok && probeOpts != nil {
 			probeOpts = f.FinalizeHealthCheckOptions(probeOpts)
 		}
+		if u, ok := c.(healthCheckRefuser); ok {
+			if why := u.HealthCheckUnsupported(); why != "" {
+				if probeOpts != nil && probeOpts.Interval > 0 {
+					logger.Warn("backend health check is not run", logging.Pairs{"backendName": k, "detail": why})
+				}
+				continue
+			}
+		}
 		var st *healthcheck.Status
 		var err error
+		var probe healthcheck.Probe
 		if prober, ok := c.(protocolHealthProber); ok {
-			st, err = registrar.RegisterProbe(k, bo.Provider, probeOpts, prober.HealthCheckProbe())
+			// a backend may probe by protocol for some origins and by request for the rest
+			probe = prober.HealthCheckProbe()
+		}
+		if probe != nil {
+			st, err = registrar.RegisterProbe(k, bo.Provider, probeOpts, probe)
 		} else {
 			st, err = hc.Register(k, bo.Provider, probeOpts, c.HealthCheckHTTPClient())
 		}

@@ -31,6 +31,13 @@ type Stats struct {
 	stamp atomic.Int64
 	// consecutive failed outcomes
 	fails atomic.Int32
+	// unix nanosecond time until which the member is ejected; it outlives a change of pool
+	ejectedUntil atomic.Int64
+}
+
+// Ejected reports whether the member is out of selection at now for repeated connect failures.
+func (s *Stats) Ejected(now time.Time) bool {
+	return s.ejectedUntil.Load() > now.UnixNano()
 }
 
 // Inflight returns the units of work currently committed to the member.

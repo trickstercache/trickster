@@ -155,3 +155,56 @@ func TestUsesCache(t *testing.T) {
 		t.Error("expected false")
 	}
 }
+
+// choosyBackend probes by protocol only when it has a probe to offer, and may refuse to be
+// probed at all
+type choosyBackend struct {
+	testBackend
+	probe   healthcheck.Probe
+	refusal string
+}
+
+func (tb *choosyBackend) HealthCheckProbe() healthcheck.Probe { return tb.probe }
+
+func (tb *choosyBackend) HealthCheckUnsupported() string { return tb.refusal }
+
+func TestStartHealthChecksByWhatABackendOffers(t *testing.T) {
+	newBackend := func(name string) Backend {
+		o := bo.New()
+		o.HealthCheck = ho.New()
+		o.HealthCheck.Interval = 0
+		c, err := New(name, o, nil, lm.NewRouter(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	var probed int
+	b := Backends{
+		// a backend with a protocol probe is probed with it
+		"protocol": &choosyBackend{Backend: newBackend("protocol"),
+			probe: func(context.Context) error { probed++; return nil }},
+		// one with none to offer for its origin falls back to the request probe
+		"request": &choosyBackend{Backend: newBackend("request")},
+		// one that cannot be probed is left out rather than probed in a way that must fail
+		"refuses": &choosyBackend{Backend: newBackend("refuses"), refusal: "no probe for this origin"},
+	}
+	b["refuses"].Configuration().HealthCheck.Interval = 1
+	hc, err := b.StartHealthChecks(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hc.Shutdown()
+	statuses := hc.Statuses()
+	if statuses["protocol"] == nil || statuses["request"] == nil {
+		t.Fatalf("registered = %v", statuses)
+	}
+	if statuses["refuses"] != nil {
+		t.Error("a backend that cannot be probed was registered for a probe")
+	}
+	w := httptest.NewRecorder()
+	statuses["protocol"].Prober()(w)
+	if probed != 1 {
+		t.Errorf("the protocol probe ran %d times", probed)
+	}
+}

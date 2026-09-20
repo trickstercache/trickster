@@ -1064,6 +1064,7 @@ data:
     #       hrw: # Highest Random Weight mechanism options, only applicable when mechanism is set to hrw
     #         # key is what a client's affinity follows: client_ip (default), host, header:<name>,
     #         # cookie:<name> or query:<name>. Requests sharing a key reach the same pool member.
+    #         # A stream listener can read client_ip, and sni (the TLS server name) when it is tls.
     #         key: client_ip
     #         # ipv6_prefix is how many leading bits of an IPv6 client address form a client_ip key.
     #         # default is 64, which keeps a client that rotates its privacy address on one member
@@ -1076,8 +1077,20 @@ data:
     #         # a latency penalty, so a member that fails fast never looks fast. Entries are single
     #         # codes or inclusive ranges. default is every code except 502, 503 and 504
     #         status_codes: [ { start: 100, end: 501 }, { start: 505, end: 599 } ]
-    #         # signal is what is timed. first_write (default) is the first byte sent to the client
+    #         # signal is what is timed. The default depends on the listener: first_write on http (the
+    #         # first byte sent to the client), connect on tcp and tls (or first_byte), first_reply on udp
     #         signal: first_write
+
+    #       stream: # only for an ALB that serves a tcp, tls or udp listener. See /docs/alb.md
+    #         # connect_retries is how many other pool members a tcp or tls connection is offered when
+    #         # it cannot connect to the one it was given. default is 0: the connection is refused
+    #         connect_retries: 0
+    #         # passive_health ejects a member after repeated failures to connect to it, without
+    #         # waiting for a health check. It is off unless this block is present
+    #         passive_health:
+    #           failures: 3               # consecutive failed connects that eject a member
+    #           eject: 30s                # how long it stays out
+    #           max_ejected_percent: 50   # never more of the pool than this, and never its last member
 
     # # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
     # #

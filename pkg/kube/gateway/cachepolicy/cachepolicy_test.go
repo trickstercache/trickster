@@ -171,6 +171,8 @@ func TestIndexLowersEveryField(t *testing.T) {
 		ResponseHeaders:     map[string]string{"+Vary": "Accept-Encoding"},
 		CORS:                &CORS{Mode: "merge", Headers: map[string]string{"Access-Control-Allow-Origin": "*"}},
 		HealthMode:          "probe",
+		LoadBalancing:       "p2c",
+		LoadBalancingKey:    "client_ip",
 		ResultHeader:        "Hide",
 	}
 	x := New([]*CachePolicy{p}, Config{Known: known()})
@@ -196,6 +198,7 @@ func TestIndexLowersEveryField(t *testing.T) {
 		ResponseHeaders: map[string]string{"+Vary": "Accept-Encoding"},
 		CORSMode:        "merge", CORSHeaders: map[string]string{"Access-Control-Allow-Origin": "*"},
 		HealthMode: "probe", ResultHeader: ir.ResultHeaderHide,
+		LoadBalancing: "p2c", LoadBalancingKey: "client_ip",
 	}, *got)
 	require.Equal(t, ir.KindCachePolicy, got.Source.Kind)
 	require.Equal(t, "uid-full", got.Source.UID)
@@ -231,6 +234,8 @@ func TestIndexRefusesAnInvalidSpecWhole(t *testing.T) {
 		"cors.mode":           func(s *Spec) { s.CORS = &CORS{Mode: "sometimes"} },
 		"cors.headers":        func(s *Spec) { s.CORS = &CORS{Headers: map[string]string{"bad name": "1"}} },
 		"healthMode":          func(s *Spec) { s.HealthMode = "guess" },
+		"loadBalancing":       func(s *Spec) { s.LoadBalancing = "tsm" },
+		"loadBalancingKey":    func(s *Spec) { s.LoadBalancingKey = "header:" },
 		"resultHeader":        func(s *Spec) { s.ResultHeader = "Maybe" },
 	}
 	for field, mutate := range cases {

@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
@@ -49,6 +50,27 @@ func HealthMode(v string) (string, error) {
 		return "", fmt.Errorf("must be %q or %q", ao.HealthModeProbe, ao.HealthModeProvider)
 	}
 	return v, nil
+}
+
+// LoadBalancing parses the mechanism that balances a Service's endpoints: one that commits
+// each request or connection to a single member, by its short name
+func LoadBalancing(v string) (string, error) {
+	if slices.Contains(loadBalancingMechanisms, v) {
+		return v, nil
+	}
+	return "", fmt.Errorf("must be one of %s", strings.Join(loadBalancingMechanisms, ", "))
+}
+
+var loadBalancingMechanisms = []string{
+	albnames.MechanismRR, albnames.MechanismP2C, albnames.MechanismLC, albnames.MechanismLT, albnames.MechanismHRW,
+}
+
+// LoadBalancingKey parses what the hrw mechanism keeps together
+func LoadBalancingKey(v string) (string, error) {
+	if _, err := ao.ParseKeySource(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(v), nil
 }
 
 // Handler parses a path handler name

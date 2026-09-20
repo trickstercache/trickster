@@ -33,10 +33,10 @@ import (
 // what each mechanism may serve; a change here is a change to what configs validate
 var wantPlanes = map[types.Name]types.Plane{
 	names.MechanismRR:  types.PlaneHTTP | types.PlaneStream,
-	names.MechanismP2C: types.PlaneHTTP,
-	names.MechanismHRW: types.PlaneHTTP,
-	names.MechanismLT:  types.PlaneHTTP,
-	names.MechanismLC:  types.PlaneHTTP,
+	names.MechanismP2C: types.PlaneHTTP | types.PlaneStream,
+	names.MechanismHRW: types.PlaneHTTP | types.PlaneStream,
+	names.MechanismLT:  types.PlaneHTTP | types.PlaneStream,
+	names.MechanismLC:  types.PlaneHTTP | types.PlaneStream,
 	names.MechanismFR:  types.PlaneHTTP,
 	names.MechanismFGR: types.PlaneHTTP,
 	names.MechanismNLM: types.PlaneHTTP,
@@ -90,7 +90,8 @@ func TestSupports(t *testing.T) {
 	require.False(t, Supports("nonexistent", types.PlaneHTTP))
 	require.False(t, Supports(names.MechanismRR, 0), "no plane is not a supported plane")
 
-	require.Equal(t, []types.Name{names.MechanismRR}, Supporting(types.PlaneStream))
+	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
+		names.MechanismP2C, names.MechanismRR}, Supporting(types.PlaneStream))
 	require.Equal(t, []types.Name{names.MechanismUR}, Supporting(types.PlaneNative))
 	require.Len(t, Supporting(types.PlaneHTTP), len(registry))
 }

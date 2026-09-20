@@ -271,3 +271,25 @@ func TestServicePortSelectsByTransport(t *testing.T) {
 	_, ok := ServicePort(only, PortRef{Number: 53, Protocol: corev1.ProtocolUDP})
 	require.False(t, ok)
 }
+
+func TestLoadBalancing(t *testing.T) {
+	for _, v := range []string{"rr", "p2c", "lc", "lt", "hrw"} {
+		got, err := LoadBalancing(v)
+		require.NoError(t, err)
+		require.Equal(t, v, got)
+	}
+	// only a mechanism that commits to one endpoint can balance a Service's endpoints
+	for _, v := range []string{"", "fr", "tsm", "ur", "round_robin", "RR"} {
+		_, err := LoadBalancing(v)
+		require.ErrorContains(t, err, "must be one of", v)
+	}
+	for _, v := range []string{"client_ip", "sni", "host", "header:X-Tenant", "cookie:session", "query:tenant"} {
+		got, err := LoadBalancingKey(" " + v + " ")
+		require.NoError(t, err)
+		require.Equal(t, v, got)
+	}
+	for _, v := range []string{"port", "header:", "cookie:a b"} {
+		_, err := LoadBalancingKey(v)
+		require.Error(t, err, v)
+	}
+}
