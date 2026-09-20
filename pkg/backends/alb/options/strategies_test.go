@@ -37,12 +37,17 @@ func TestParseKeySource(t *testing.T) {
 		"cookie:session":    {Kind: KeyCookie, Name: "session"},
 		"query:tenant":      {Kind: KeyQuery, Name: "tenant"},
 		"sni":               {Kind: KeySNI},
+		"user":              {Kind: KeyUser},
+		"proxy_tlv:0xEA":    {Kind: KeyProxyTLV, TLV: 0xEA},
+		"proxy_tlv: 5":      {Kind: KeyProxyTLV, TLV: 5},
 	} {
 		got, err := ParseKeySource(in)
 		require.NoError(t, err, in)
 		require.Equal(t, want, got, in)
 	}
-	for _, in := range []string{"snI:x", "header:", "cookie: ", "query:a=b", "header:two words", "cookie:a;b", "ip", "header"} {
+	for _, in := range []string{"snI:x", "header:", "cookie: ", "query:a=b", "header:two words", "cookie:a;b", "ip", "header",
+		"proxy_tlv:", "proxy_tlv:256", "proxy_tlv:-1", "proxy_tlv:authority",
+	} {
 		_, err := ParseKeySource(in)
 		require.ErrorIs(t, err, ErrInvalidKeySource, in)
 	}
@@ -143,18 +148,24 @@ func TestStrategyBlocksBelongToTheirMechanism(t *testing.T) {
 }
 
 func TestKeySourcePlanes(t *testing.T) {
-	for in, want := range map[string][3]bool{
-		// readable on: a tcp or udp listener, a tls listener, an http listener
-		"client_ip":       {true, true, true},
-		"sni":             {false, true, false},
-		"host":            {false, false, true},
-		"header:X-Tenant": {false, false, true},
-		"cookie:session":  {false, false, true},
-		"query:tenant":    {false, false, true},
+	for in, want := range map[string][5]bool{
+		// readable on: a tcp or udp listener, a tls listener, one that accepts the PROXY
+		// protocol, an http listener, a native protocol listener
+		"client_ip":       {true, true, true, true, true},
+		"sni":             {false, true, false, false, false},
+		"proxy_tlv:0xEA":  {false, false, true, false, false},
+		"user":            {false, false, false, false, true},
+		"host":            {false, false, false, true, false},
+		"header:X-Tenant": {false, false, false, true, false},
+		"cookie:session":  {false, false, false, true, false},
+		"query:tenant":    {false, false, false, true, false},
 	} {
 		ks, err := ParseKeySource(in)
 		require.NoError(t, err)
-		require.Equal(t, want, [3]bool{ks.OnStream(false), ks.OnStream(true), ks.OnHTTP()}, in)
+		require.Equal(t, want, [5]bool{
+			ks.OnStream(StreamListener{}), ks.OnStream(StreamListener{TLS: true}),
+			ks.OnStream(StreamListener{ProxyProtocol: true}), ks.OnHTTP(), ks.OnNative(),
+		}, in)
 	}
 }
 
@@ -215,4 +226,33 @@ func TestStreamOptions(t *testing.T) {
 		_, err := bad.Validate()
 		require.ErrorIs(t, err, want, doc)
 	}
+}
+
+func TestSpreadMechanismOptions(t *testing.T) {
+	for name, test := range map[string]struct {
+		doc  string
+		want error
+	}{
+		"race":               {"mechanism: race\n", nil},
+		"race width":         {"mechanism: connect_race\nstream:\n  race_width: 3\n", nil},
+		"race too narrow":    {"mechanism: race\nstream:\n  race_width: 1\n", ErrInvalidRaceWidth},
+		"race too wide":      {"mechanism: race\nstream:\n  race_width: 9\n", ErrInvalidRaceWidth},
+		"width without race": {"mechanism: rr\nstream:\n  race_width: 2\n", ErrRaceWidthOnlyForRace},
+		"race retries":       {"mechanism: race\nstream:\n  connect_retries: 1\n", ErrStreamOptionsNeedOneMember},
+		"mirror ejection":    {"mechanism: mirror\nstream:\n  passive_health:\n    failures: 2\n", ErrStreamOptionsNeedOneMember},
+		"mirror":             {"mechanism: udp_mirror\npool: [a, b, c, d, e, f, g, h]\n", nil},
+		"mirror too wide":    {"mechanism: mirror\npool: [a, b, c, d, e, f, g, h, i]\n", ErrTooManyMirrorMembers},
+		"mirror hrw block":   {"mechanism: mirror\nhrw:\n  key: host\n", ErrHRWOnlyForHRW},
+		"mirror lt block":    {"mechanism: mirror\nlt:\n  decay: 5s\n", ErrLTOnlyForLT},
+	} {
+		o := load(t, test.doc)
+		require.NoError(t, o.Initialize("alb1"), name)
+		_, err := o.Validate()
+		if test.want == nil {
+			require.NoError(t, err, name)
+			continue
+		}
+		require.ErrorIs(t, err, test.want, name)
+	}
+	require.NoError(t, (*StreamOptions)(nil).validateFor("race"))
 }

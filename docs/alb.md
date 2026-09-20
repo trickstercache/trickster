@@ -14,6 +14,8 @@ Trickster 2.x provides an Application Load Balancer that is easy to configure an
 | First Good Response | fgr | Speed | fans a request out to multiple backends, and returns the first response received with a status code < 400 |
 | Newest&nbsp;Last‑Modified | nlm | Freshness | fans a request out to multiple backends, and returns the response with the newest Last-Modified header |
 | User Router | ur | Control | Inspects the credentials in the Request and routes it based on the Username |
+| Connect Race | race | Speed | connects a `tcp` or `tls` stream connection to several pool members at once and relays over the first to connect |
+| UDP Mirror | mirror | Replication | copies every datagram of a `udp` stream session to every healthy pool member, and answers from the first |
 
 ## Integration with Backends
 
@@ -159,6 +161,8 @@ The **Highest Random Weight** (hrw) mechanism, also known as rendezvous hashing,
 | `cookie:<name>` | the value of the named cookie |
 | `query:<name>` | the value of the named query string parameter, as written in the URL |
 | `sni` | the TLS server name the client offered; only for an ALB that serves a `tls` [stream listener](#load-balancing-stream-listeners) |
+| `proxy_tlv:<type>` | the value of a [PROXY protocol](./configuring.md) version 2 TLV, such as `proxy_tlv:0xEA` for an AWS VPC endpoint ID; only for an ALB that serves a `tcp` or `tls` stream listener with `proxy_protocol` enabled. The type is one byte, written in decimal or `0x` hex. |
+| `user` | the user name a session authenticated as; only for an ALB that serves a [native protocol listener](#load-balancing-native-protocol-sessions) |
 
 A request that lacks the configured key, such as one without the header, has no affinity to preserve and is routed to a member at random.
 
@@ -177,18 +181,18 @@ backends:
 
 ### Load Balancing Stream Listeners
 
-The mechanisms that select one member, `rr`, `p2c`, `lc`, `lt` and `hrw`, also balance the connections of a `tcp` or `tls` [stream listener](./configuring.md) and the sessions of a `udp` one. They are the same mechanisms with the same weights; only what they measure differs. The mechanisms that fan a request out (`fr`, `fgr`, `nlm`, `tsm`) and the User Router need an HTTP request, and are refused on a stream listener.
+The mechanisms that select one member, `rr`, `p2c`, `lc`, `lt` and `hrw`, also balance the connections of a `tcp` or `tls` [stream listener](./configuring.md) and the sessions of a `udp` one. They are the same mechanisms with the same weights; only what they measure differs. The mechanisms that fan a request out (`fr`, `fgr`, `nlm`, `tsm`) and the User Router need an HTTP request, and are refused on a stream listener. Two more mechanisms, [`race` and `mirror`](#connect-race-and-udp-mirror), serve only stream listeners.
 
 | | http | tcp and tls | udp |
 |-----|-----|-----|-----|
 | unit of work | a request | a connection | a session: one client address and port |
 | in flight (`p2c`, `lc`, `lt`) | requests being served | connections open | sessions open |
 | latency (`lt.signal`) | `first_write`: the first byte sent to the client | `connect` (default): the time to connect to the member; or `first_byte`: the member's first byte | `first_reply`: the member's first datagram |
-| `hrw.key` | `client_ip`, `host`, `header:`, `cookie:`, `query:` | `client_ip`; `sni` on a `tls` listener | `client_ip` |
+| `hrw.key` | `client_ip`, `host`, `header:`, `cookie:`, `query:` | `client_ip`; `sni` on a `tls` listener; `proxy_tlv:<type>` with `proxy_protocol` | `client_ip` |
 
 A connection or session stays on the member it was given until it ends, whatever the mechanism. `client_ip` is the address a [PROXY protocol](./configuring.md) header names when the listener trusts one.
 
-Two settings apply only to an ALB that serves a stream listener, under `alb.stream`:
+Two settings apply only to an ALB that selects one member on a stream listener, under `alb.stream`:
 
 ```yaml
 backends:
@@ -210,6 +214,47 @@ backends:
 * `passive_health` takes a member out of the pool after `failures` consecutive failed connects, for `eject`, without waiting for a health check. Only failures to reach the member count, never anything it sent. At most `max_ejected_percent` of the pool is out at once, and the last live member is never ejected. When `eject` ends the member returns, unless its health check has it down. On `udp`, where nothing connects, a member that answers a datagram with a port-unreachable is what counts as a failure.
 
 Health checks work as they do for HTTP pools: a `tcp://` member with a `healthcheck.interval` is probed by opening a connection to it. A `udp://` member has no generic probe; rely on [autodiscovery](./alb-autodiscovery.md) readiness or on `passive_health`.
+
+#### Connect Race and UDP Mirror
+
+Two mechanisms exist only for stream listeners, because they commit one flow to several members at once. Both use every healthy member that has an address to dial, ignore `weight`, and take neither `connect_retries` nor `passive_health`. An ALB that uses one must be mapped to the stream listener directly; it cannot be a member of another ALB's pool.
+
+The **Connect Race** (`race`, or `connect_race`) mechanism serves `tcp` and `tls` listeners. Each client connection is connected to several members at once, within the listener's `stream.connect_timeout`; the first member to connect carries the connection, and the other attempts are closed. A member that is down or slow to accept costs the client nothing. `stream.race_width` is how many members are raced, from 2 to 8; the default is every member, up to 4. In a pool wider than the race, each connection starts one member further along, so the connects are shared across the pool. A race opens and discards connections on the members that lose, so use it where a connect is cheap for the member.
+
+The **UDP Mirror** (`mirror`, or `udp_mirror`) mechanism serves `udp` listeners. Every datagram a client sends is copied to every healthy member, which suits one-way protocols such as statsd, syslog and NetFlow. The first healthy member in pool order answers the session: only its replies are relayed to the client, and the other members' replies are discarded. A mirror pool has at most 8 members.
+
+```yaml
+backends:
+  statsd:
+    provider: alb
+    listener_names: [ statsd ]
+    alb:
+      mechanism: mirror
+      pool: [ statsd1, statsd2 ]
+  db:
+    provider: alb
+    listener_names: [ postgres ]
+    alb:
+      mechanism: race
+      pool: [ pg1, pg2, pg3 ]
+      stream:
+        race_width: 2
+```
+
+### Load Balancing Native Protocol Sessions
+
+A listener that speaks a backend's own wire protocol, such as a `mysql` [listener](./mysql.md), can map to an ALB that uses `rr`, `p2c`, `lc` or `hrw`. Each client session is committed to one pool member once it authenticates, and stays there until it ends; a session is the unit of work, so `p2c` and `lc` compare members by their open sessions. `hrw.key` is `client_ip` or `user`. `lt` is not available, since a session reports no latency to rank members by. Every pool member must be a backend of the listener's own provider, listed directly, and [autodiscovery](./alb-autodiscovery.md) is not supported. The ALB authenticates the listener's clients, so it carries the `authenticator_name` that a [User Router](#user-router) on the same listener would.
+
+```yaml
+backends:
+  replicas:
+    provider: alb
+    listener_names: [ mysql ]
+    authenticator_name: mysql-clients
+    alb:
+      mechanism: lc
+      pool: [ replica1, replica2 ]
+```
 
 ### Weights and the Selection Mechanisms
 
@@ -657,6 +702,48 @@ Each ALB has a configurable `healthy_floor` value, which is the threshold for de
 Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. A pool member in a permanent `unknown` state can never reach `available`, so a `healthy_floor: 1` ALB whose members lack health checks would have an empty pool and return `502` for every request. To avoid that, Trickster resets such an ALB's effective floor to `0` at startup, emits a warning naming the ALB and the un-probed members, and sets the `trickster_alb_pool_floor_reset{backend_name}` gauge to `1`. Configure a health check interval on those members if you want `healthy_floor: 1` to apply.
 
 Setting `healthy_floor` below `0` admits members the probe has confirmed `unavailable`, not just members in the transient `unknown` state. If your goal is to keep traffic flowing during the cold-start window before the first probes complete, lower the pool members' `recovery_threshold` so they transition out of `unknown` faster -- don't lower the floor. When `healthy_floor < 0` Trickster emits a startup warning and sets the `trickster_alb_pool_admits_failing{backend_name}` gauge to `1`.
+
+### Backup Pool Members
+
+A pool member marked `backup: true` stands by: it receives traffic only while no other member of the pool is in the healthy pool. As soon as one of the other members returns, the backup members stand down again. This applies to every mechanism that has a pool, and to stream and native protocol listeners as well as HTTP. A pool must have at least one member that is not a backup, unless its other members come from [autodiscovery](./alb-autodiscovery.md); discovered members are never backups.
+
+```yaml
+backends:
+  db:
+    provider: alb
+    listener_names: [ postgres ]
+    alb:
+      mechanism: rr
+      healthy_floor: 1
+      pool:
+        - primary
+        - name: standby
+          backup: true
+```
+
+Failover depends on the ALB learning that its other members are down, so give them a [health check interval](./health#example+health+check+configuration+for+use+in+alb) or, on a stream listener, `stream.passive_health`. While an ALB with backup members is dispatching to them, the `trickster_alb_pool_on_backup{backend_name}` gauge is `1`, and a warning is logged when it fails over.
+
+### ALBs as Pool Members
+
+An ALB that is a member of another ALB's pool is always treated as `available`, even when its own healthy pool is empty: it keeps its share of the outer pool's traffic and fails it. That is deliberate for weighted splits, where an empty member must not shift its share onto its siblings. Set `propagate_health: true` on the inner ALB to change that. It then reports `unavailable` to the pools it belongs to while it has no healthy member, and `available` otherwise, so an outer pool whose `healthy_floor` excludes `unavailable` members sends that share to its other members instead.
+
+```yaml
+backends:
+  region-east:
+    provider: alb
+    alb:
+      mechanism: rr
+      propagate_health: true
+      pool: [ east1, east2 ]
+  global:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - region-east
+        - name: region-west
+          backup: true
+```
 
 ### Example ALB Configuration Routing Only To Known Healthy Backends
 

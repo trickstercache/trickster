@@ -28,6 +28,9 @@ const (
 	MechanismHRW = "hrw"
 	MechanismLT  = "lt"
 	MechanismLC  = "lc"
+
+	MechanismRace   = "race"
+	MechanismMirror = "mirror"
 )
 
 // Mechanism long name constants
@@ -37,4 +40,6 @@ const (
 	MechanismHighestRandomWeight = "highest_random_weight"
 	MechanismLeastTime           = "least_time"
 	MechanismLeastConnections    = "least_connections"
+	MechanismConnectRace         = "connect_race"
+	MechanismUDPMirror           = "udp_mirror"
 )

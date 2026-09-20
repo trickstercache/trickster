@@ -407,20 +407,67 @@ func TestMemberSeriesAreCached(t *testing.T) {
 	u := &upstream{}
 	f := l4.Flow{Listener: "cached-listener", Protocol: l4.ProtocolTCP}
 	m := lb.NewMember(lb.MemberOptions{Name: "cached-member"})
-	first := u.seriesFor(m, f, "cached-member")
-	if u.seriesFor(m, f, "cached-member") != first {
+	first := u.series.seriesFor(m, f, "cached-member")
+	if u.series.seriesFor(m, f, "cached-member") != first {
 		t.Error("a member's series were resolved twice")
 	}
-	if allocs := testing.AllocsPerRun(100, func() { _ = u.seriesFor(m, f, "cached-member") }); allocs != 0 {
+	if allocs := testing.AllocsPerRun(100, func() { _ = u.series.seriesFor(m, f, "cached-member") }); allocs != 0 {
 		t.Errorf("a cached lookup allocates %v", allocs)
 	}
 	for range maxCachedSeries + 10 {
-		u.seriesFor(lb.NewMember(lb.MemberOptions{Name: "cached-member"}), f, "cached-member")
+		u.series.seriesFor(lb.NewMember(lb.MemberOptions{Name: "cached-member"}), f, "cached-member")
 	}
-	if got := u.seriesOf.Load(); got > maxCachedSeries {
+	if got := u.series.seriesOf.Load(); got > maxCachedSeries {
 		t.Errorf("the cache holds %d members' series", got)
 	}
-	if u.seriesFor(m, f, "cached-member") == nil {
+	if u.series.seriesFor(m, f, "cached-member") == nil {
 		t.Error("a member dropped from the cache could not be resolved again")
+	}
+}
+
+type tlvs map[byte]string
+
+func (h tlvs) ProxyTLV(typ byte) ([]byte, bool) {
+	v, ok := h[typ]
+	return []byte(v), ok
+}
+
+// keyed on a PROXY protocol TLV, every connection that carries one value shares a member
+func TestHRWKeysOnAProxyTLV(t *testing.T) {
+	m := origins(t, 5)
+	const endpoint = 0xEA
+	tlv := func(o *ao.Options) { o.HRW.Key = "proxy_tlv:0xEA" }
+	u := FromBackend(newALBWith(t, "alb", "hrw", tlv, up(m[0], 1), up(m[1], 1), up(m[2], 1), up(m[3], 1), up(m[4], 1)))
+	owner := func(client string, header l4.ProxyHeader) string {
+		f := clientFlow(l4.ProtocolTCP, client, "")
+		f.Proxy = header
+		r, ok := u.Pick(f)
+		if !ok {
+			t.Fatal("refused")
+		}
+		r.Dialed(0, l4.ErrAbandoned)
+		return r.Addr()
+	}
+	reached := make(map[string]bool)
+	for i := range 30 {
+		header := tlvs{endpoint: "vpce-" + strconv.Itoa(i), 0x02: "ignored"}
+		first := owner("198.51.100.1:1000", header)
+		reached[first] = true
+		if got := owner("203.0.113.77:2000", header); got != first {
+			t.Fatalf("endpoint %d reached %s from one client and %s from another", i, first, got)
+		}
+	}
+	if len(reached) < 4 {
+		t.Errorf("30 endpoints reached only %d of 5 members", len(reached))
+	}
+	// a connection with no header, without the TLV, or with an empty one has nothing to be kept by
+	for name, header := range map[string]l4.ProxyHeader{"none": nil, "other": tlvs{0x02: "x"}, "empty": tlvs{endpoint: ""}} {
+		spread := make(map[string]bool)
+		for range 60 {
+			spread[owner("198.51.100.1:1000", header)] = true
+		}
+		if len(spread) < 3 {
+			t.Errorf("%s: 60 unkeyed flows reached only %d members", name, len(spread))
+		}
 	}
 }

@@ -105,3 +105,37 @@ func TestTargetDescribesItsBackend(t *testing.T) {
 		t.Error("a member with a health check interval reports as unprobed")
 	}
 }
+
+type snapshotCounter struct{ snapshots int }
+
+func (c *snapshotCounter) Observe(ev lb.Event) {
+	if ev.Kind == lb.EventSnapshot {
+		c.snapshots++
+	}
+}
+
+func TestTargetTier(t *testing.T) {
+	primary := NewTarget(nil, healthcheck.NewStatus("p", "", "", healthcheck.StatusPassing, time.Time{}, nil), nil)
+	standby := NewTarget(nil, healthcheck.NewStatus("s", "", "", healthcheck.StatusPassing, time.Time{}, nil), nil)
+	stats := standby.Member().Stats()
+	if standby.WithTier(0) != standby || standby.Member().Stats() != stats {
+		t.Error("an unchanged tier rebuilt the member")
+	}
+	if standby.WithTier(1).Tier() != 1 || standby.Member().Tier() != 1 || standby.Member().Stats() != stats {
+		t.Errorf("tier = %d, member tier = %d", standby.Tier(), standby.Member().Tier())
+	}
+	if standby.WithTier(-4).Tier() != 0 {
+		t.Error("a negative tier is tier 0")
+	}
+	standby.WithTier(1)
+	counter := &snapshotCounter{}
+	p := New(Targets{standby, primary}, 1, counter)
+	defer p.Stop()
+	if got := p.Targets(); len(got) != 1 || got[0] != primary || counter.snapshots != 1 {
+		t.Fatalf("targets = %v after %d snapshots", got, counter.snapshots)
+	}
+	primary.HealthStatus().Set(healthcheck.StatusFailing)
+	if got := p.Targets(); len(got) != 1 || got[0] != standby || counter.snapshots != 2 {
+		t.Fatalf("targets = %v after %d snapshots", got, counter.snapshots)
+	}
+}

@@ -16,6 +16,8 @@
 
 package backends
 
+import "net/netip"
+
 // RouteHealthStatus exposes the protocol-neutral health state used to admit a
 // route target. It is intentionally smaller than healthcheck.Status so route
 // selection does not depend on a particular health-check transport.
@@ -42,6 +44,8 @@ type RouteInput struct {
 	Username      string
 	Credential    string
 	Authenticated bool
+	// Client is the address the session arrived from, when the protocol adapter knows it
+	Client netip.Addr
 	// FallbackOnMappedUnavailable preserves HTTP User Router availability
 	// semantics. Session protocols leave it false to prevent cross-target failover.
 	FallbackOnMappedUnavailable bool
@@ -66,6 +70,9 @@ type RouteDecision struct {
 	OutboundUsername   string
 	OutboundCredential string
 	ReplaceCredentials bool
+	// Release, when set, must be called once when the routed session ends, however it ends.
+	// A resolver that balances sessions across targets counts the ones in progress by it.
+	Release func()
 }
 
 // RouteResolver selects a runtime backend target for an authenticated identity.

@@ -572,6 +572,10 @@ func TestListenersStreamProtocols(t *testing.T) {
 		c.Backends = backends
 		return c
 	}
+	behindProxy := func(c *config.Config) *config.Config {
+		c.Listeners["relay"].ProxyProtocol = true
+		return c
+	}
 	albBackend := func(mechanism string) *bo.Options {
 		b := bo.New()
 		b.Provider = providers.ALB
@@ -620,7 +624,17 @@ func TestListenersStreamProtocols(t *testing.T) {
 		{"udp_alb_rr", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albBackend("rr"), "m1": member}), ""},
 		// the mechanisms a stream listener may use come from the registry, and the error names them
 		{"alb_fanout", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("fr"), "m1": member}),
-			"a mechanism that balances connections: hrw, lc, lt, p2c, rr"},
+			"a mechanism that serves a tcp listener: hrw, lc, lt, p2c, race, rr"},
+		{"udp_alb_fanout", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albBackend("fr"), "m1": member}),
+			"a mechanism that serves a udp listener: hrw, lc, lt, mirror, p2c, rr"},
+		// a mechanism that commits a flow to several members serves only the protocols it can
+		{"tcp_alb_race", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("race"), "m1": member}), ""},
+		{"tls_alb_connect_race", newConfig(listener.ProtocolTLS, bo.Lookup{"pool": albBackend("connect_race"), "m1": member}), ""},
+		{"udp_alb_mirror", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albBackend("mirror"), "m1": member}), ""},
+		{"udp_alb_race", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albBackend("race"), "m1": member}),
+			"mechanism \"race\" requires a tcp or tls listener"},
+		{"tcp_alb_mirror", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("udp_mirror"), "m1": member}),
+			"mechanism \"udp_mirror\" requires a udp listener"},
 		{"alb_router", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("ur"), "m1": member}), "requires alb backend"},
 		{"tcp_alb_p2c", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("p2c"), "m1": member}), ""},
 		{"udp_alb_lc", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albBackend("lc"), "m1": member}), ""},
@@ -633,7 +647,14 @@ func TestListenersStreamProtocols(t *testing.T) {
 			"cannot read alb backend \"pool\"'s hrw.key \"sni\""},
 		{"udp_hrw_sni", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeySNI, "sni")), "m1": member}), "cannot read"},
 		{"tcp_hrw_header", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyHeader, "header:X")), "m1": member}),
-			"use client_ip, or sni on a tls listener"},
+			"use client_ip, sni on a tls listener, or proxy_tlv:<type>"},
+		// a PROXY protocol TLV is there to read only where the header is accepted, which udp never does
+		{"tcp_hrw_tlv", behindProxy(newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})), ""},
+		{"tls_hrw_tlv", behindProxy(newConfig(listener.ProtocolTLS, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})), ""},
+		{"tcp_hrw_tlv_no_proxy_protocol", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member}),
+			"cannot read alb backend \"pool\"'s hrw.key \"proxy_tlv:0xEA\""},
+		{"udp_hrw_tlv", behindProxy(newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})),
+			"cannot read"},
 		// and a latency signal must be one the protocol has
 		{"tcp_lt_first_byte", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("lt", signal("first_byte")), "m1": member}), ""},
 		{"udp_lt_first_reply", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("lt", signal("first_reply")), "m1": member}), ""},
@@ -745,7 +766,11 @@ func TestRequestALBsRefuseStreamOnlySettings(t *testing.T) {
 		"first_write":  {func(o *ao.Options) { o.LT.Signal = ao.LTSignalFirstWrite }, ""},
 		"stream block": {func(o *ao.Options) { o.Stream = &ao.StreamOptions{} }, "'stream' options apply only"},
 		"sni key": {func(o *ao.Options) { o.HRW = ao.HRWOptions{Key: "sni", KeySource: ao.KeySource{Kind: ao.KeySNI}} },
-			"can be read only on a tls listener"},
+			"cannot be read from a request"},
+		"tlv key": {func(o *ao.Options) {
+			o.HRW = ao.HRWOptions{Key: "proxy_tlv:5", KeySource: ao.KeySource{Kind: ao.KeyProxyTLV, TLV: 5}}
+		},
+			"cannot be read from a request"},
 		"connect signal": {func(o *ao.Options) { o.LT.Signal = ao.LTSignalConnect }, "on a http listener (use first_write)"},
 	} {
 		err := requestALBs(alb(test.set), sets.NewStringSet())
@@ -759,5 +784,30 @@ func TestRequestALBsRefuseStreamOnlySettings(t *testing.T) {
 		if err := requestALBs(alb(test.set), sets.New([]string{"lb"})); err != nil {
 			t.Errorf("%s: a stream load balancer was held to request rules: %v", name, err)
 		}
+	}
+}
+
+// a mechanism that commits a flow to several members needs a stream listener of its own
+func TestSpreadMechanismsNeedAStreamListener(t *testing.T) {
+	alb := func(mechanism string, pool ...string) *bo.Options {
+		b := bo.New()
+		b.Provider = providers.ALB
+		b.ALBOptions = &ao.Options{MechanismName: mechanism, Pool: ao.Members(pool...)}
+		return b
+	}
+	c := config.NewConfig()
+	c.Backends = bo.Lookup{"racer": alb("race", "origin"), "origin": bo.New()}
+	if err := requestALBs(c, sets.NewStringSet()); err == nil ||
+		!strings.Contains(err.Error(), "mechanism \"race\" requires a tcp or tls listener") {
+		t.Errorf("a race on a request listener: %v", err)
+	}
+	if err := requestALBs(c, sets.New([]string{"racer"})); err != nil {
+		t.Errorf("a race on a stream listener: %v", err)
+	}
+	// and cannot be reached through another load balancer, which has one member to hand it
+	c.Backends["outer"] = alb("rr", "racer")
+	if err := requestALBs(c, sets.New([]string{"racer", "outer"})); err == nil ||
+		!strings.Contains(err.Error(), "cannot be a member of another alb's pool") {
+		t.Errorf("a race as a pool member: %v", err)
 	}
 }

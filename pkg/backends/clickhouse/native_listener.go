@@ -62,6 +62,10 @@ func (nativeListenerAdapter) ValidateUserRouter(*config.Config, string, *bo.Opti
 	return errors.New("ClickHouse native user routing is not supported")
 }
 
+func (nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Options) error {
+	return errors.New("ClickHouse native session balancing is not supported")
+}
+
 func (nativeListenerAdapter) RouteResolver(native.BuildRequest) backends.RouteResolver { return nil }
 
 func nativeBackend(c *config.Config, name string) (string, *bo.Options, error) {

@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/nlm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/pick"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/spread"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
@@ -42,24 +43,27 @@ import (
 // this slice is the one and only place to aggregate all registered Mechanisms
 var registry = []types.RegistryEntry{
 	roundRobin(),
-	strategy(names.MechanismPowerOfTwoChoices, names.MechanismP2C,
+	strategy(names.MechanismPowerOfTwoChoices, names.MechanismP2C, everyPlane,
 		func(*options.Options) (lb.Selector, error) { return p2c.New(), nil }),
-	strategy(names.MechanismHighestRandomWeight, names.MechanismHRW,
+	strategy(names.MechanismHighestRandomWeight, names.MechanismHRW, everyPlane,
 		func(*options.Options) (lb.Selector, error) { return hrw.New(), nil }),
-	strategy(names.MechanismLeastTime, names.MechanismLT,
+	// a native session reports no latency for least time to rank members by
+	strategy(names.MechanismLeastTime, names.MechanismLT, types.PlaneHTTP|types.PlaneStream,
 		func(o *options.Options) (lb.Selector, error) {
 			if o == nil {
 				return lt.New(lt.Options{}), nil
 			}
 			return lt.New(lt.Options{Decay: o.LTDecay()}), nil
 		}),
-	strategy(names.MechanismLeastConnections, names.MechanismLC,
+	strategy(names.MechanismLeastConnections, names.MechanismLC, everyPlane,
 		func(*options.Options) (lb.Selector, error) { return lc.New(), nil }),
 	fr.RegistryEntry(),
 	fr.RegistryEntryFGR(),
 	nlm.RegistryEntry(),
 	tsm.RegistryEntry(),
 	ur.RegistryEntry(),
+	spread.RegistryEntryRace(),
+	spread.RegistryEntryMirror(),
 }
 
 // roundRobin is a selection strategy, so it serves every plane that commits one unit of work
@@ -68,19 +72,20 @@ func roundRobin() types.RegistryEntry {
 	return types.RegistryEntry{
 		Name:      names.MechanismRoundRobin,
 		ShortName: names.MechanismRR,
-		Planes:    types.PlaneHTTP | types.PlaneStream,
+		Planes:    everyPlane,
 		NewSelector: func(*options.Options) (lb.Selector, error) {
 			return rr.New(), nil
 		},
 	}
 }
 
-// strategy registers a selection strategy for the planes that commit one unit of work to one
-// member: requests, and tcp, tls and udp flows
-func strategy(name, shortName types.Name, fn types.NewSelectorFunc) types.RegistryEntry {
-	return types.RegistryEntry{
-		Name: name, ShortName: shortName, Planes: types.PlaneHTTP | types.PlaneStream, NewSelector: fn,
-	}
+// everyPlane is where one unit of work is committed to one member: requests, tcp, tls and udp
+// flows, and the sessions of a native protocol listener
+const everyPlane = types.PlaneHTTP | types.PlaneStream | types.PlaneNative
+
+// strategy registers a selection strategy for the planes it can serve
+func strategy(name, shortName types.Name, planes types.Plane, fn types.NewSelectorFunc) types.RegistryEntry {
+	return types.RegistryEntry{Name: name, ShortName: shortName, Planes: planes, NewSelector: fn}
 }
 
 var registryByName = compileSupportedByName(registry)
@@ -177,6 +182,35 @@ func IsRegistered(name types.Name) bool {
 func Supports(name types.Name, plane types.Plane) bool {
 	entry, ok := registryByName[name]
 	return ok && entry.Planes.Has(plane)
+}
+
+// ServesProtocol reports whether the named mechanism can serve a stream listener of the given
+// protocol: tcp, tls or udp.
+func ServesProtocol(name types.Name, protocol string) bool {
+	entry, ok := registryByName[name]
+	if !ok || !entry.Planes.Has(types.PlaneStream) {
+		return false
+	}
+	return len(entry.Protocols) == 0 || slices.Contains(entry.Protocols, protocol)
+}
+
+// ServingProtocol returns the short names of the mechanisms that can serve a stream listener
+// of the given protocol, sorted.
+func ServingProtocol(protocol string) []types.Name {
+	var out []types.Name
+	for _, entry := range registry {
+		if ServesProtocol(entry.ShortName, protocol) {
+			out = append(out, entry.ShortName)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// StreamProtocols returns the stream protocols the named mechanism is limited to, or nil
+// when it serves them all or none.
+func StreamProtocols(name types.Name) []string {
+	return slices.Clone(registryByName[name].Protocols)
 }
 
 // Supporting returns the short names of the mechanisms that can serve plane, sorted.

@@ -59,6 +59,9 @@ type Adapter interface {
 	ValidateListener(*listenerconfig.Options) error
 	ValidateBackend(*bo.Options) error
 	ValidateUserRouter(*config.Config, string, *bo.Options) error
+	// ValidateBalancer validates an ALB whose selection strategy commits each of the
+	// listener's sessions to one member of its pool.
+	ValidateBalancer(*config.Config, string, *bo.Options) error
 	Describe(*config.Config, string) (Descriptor, error)
 	Build(BuildRequest) (listener.ProtocolServer, error)
 	RouteResolver(BuildRequest) backends.RouteResolver

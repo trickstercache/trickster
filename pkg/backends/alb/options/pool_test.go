@@ -20,6 +20,10 @@ import (
 	"strings"
 	"testing"
 
+	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
@@ -130,4 +134,42 @@ func TestInitializeDedupesPool(t *testing.T) {
 	require.Empty(t, (&Options{Pool: Members("a", "b")}).PoolRepeatWarning("alb3"))
 	conflict := &Options{Pool: PoolMemberList{{Name: "a", Weight: 2}, {Name: "a", Weight: 5}}}
 	require.ErrorIs(t, conflict.Initialize("alb4"), ErrConflictingPoolWeights)
+}
+
+func TestPoolMemberBackup(t *testing.T) {
+	var l PoolMemberList
+	require.NoError(t, yaml.Unmarshal([]byte(`
+- primary
+- name: standby
+  backup: true
+`), &l))
+	require.Equal(t, PoolMemberList{{Name: "primary"}, {Name: "standby", Backup: true}}, l)
+	require.Equal(t, 0, l[0].Tier())
+	require.Equal(t, BackupTier, l[1].Tier())
+	b, err := yaml.Marshal(l)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "- primary\n")
+	require.Contains(t, string(b), "backup: true")
+	var again PoolMemberList
+	require.NoError(t, yaml.Unmarshal(b, &again))
+	require.Equal(t, l, again)
+
+	require.False(t, l.AllBackups())
+	require.False(t, PoolMemberList{}.AllBackups())
+	standbys := PoolMemberList{{Name: "a", Backup: true}, {Name: "b", Backup: true}}
+	require.True(t, standbys.AllBackups())
+	all := sets.New([]string{"a", "b"})
+	require.ErrorIs(t, (&Options{Pool: standbys}).ValidatePool("alb1", all), ErrNoPrimaryPoolMember)
+	// discovered members are the primaries of a pool whose configured members all stand by
+	require.NoError(t, (&Options{Pool: standbys, Discovery: &DiscoveryOptions{}}).ValidatePool("alb1", all))
+}
+
+func TestPropagateHealthNeedsAPool(t *testing.T) {
+	o := &Options{MechanismName: names.MechanismUR, UserRouter: &ur.Options{}, PropagateHealth: true}
+	_, err := o.Validate()
+	require.ErrorIs(t, err, ErrPropagateHealthNoPool)
+	o = &Options{MechanismName: names.MechanismRR, PropagateHealth: true}
+	require.NoError(t, o.Initialize("alb1"))
+	_, err = o.Validate()
+	require.NoError(t, err)
 }

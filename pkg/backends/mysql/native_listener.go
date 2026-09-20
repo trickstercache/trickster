@@ -24,6 +24,8 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	albregistry "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
+	albtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
@@ -122,6 +124,17 @@ func (nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string, b
 	return nil
 }
 
+func (nativeListenerAdapter) ValidateBalancer(c *config.Config, name string, backend *bo.Options) error {
+	if !isNativeBalancer(c, backend) {
+		return fmt.Errorf("mysql load balancer %q requires a mechanism that balances sessions "+
+			"over a pool of direct mysql backends", name)
+	}
+	if _, err := DownstreamCredentialsFromOptions(backend); err != nil {
+		return fmt.Errorf("mysql load balancer %q: %w", name, err)
+	}
+	return nil
+}
+
 func (nativeListenerAdapter) Describe(c *config.Config, listenerName string) (native.Descriptor, error) {
 	protocolConfig, _, err := nativeProtocolConfig(c, listenerName)
 	if err != nil {
@@ -177,7 +190,7 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 		if !o.UsesListener(listenerName) {
 			continue
 		}
-		if isNativeUserRouter(o) {
+		if isNativeRouter(c, o) {
 			users, err := DownstreamCredentialsFromOptions(o)
 			if err != nil {
 				return nil, false, err
@@ -202,10 +215,31 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 	return nil, false, nil
 }
 
+// isNativeRouter reports whether o is an ALB that commits each MySQL session to a backend:
+// by the user it authenticated as, or by a strategy that balances sessions over a pool
+func isNativeRouter(c *config.Config, o *bo.Options) bool {
+	return isNativeUserRouter(o) || isNativeBalancer(c, o)
+}
+
 func isNativeUserRouter(o *bo.Options) bool {
 	return o != nil && o.Provider == providers.ALB && o.ALBOptions != nil &&
 		o.ALBOptions.MechanismName == names.MechanismUR && o.ALBOptions.UserRouter != nil &&
 		o.ALBOptions.UserRouter.TargetProvider == providers.MySQL
+}
+
+func isNativeBalancer(c *config.Config, o *bo.Options) bool {
+	if c == nil || o == nil || o.Provider != providers.ALB || o.ALBOptions == nil ||
+		o.ALBOptions.UserRouter != nil || len(o.ALBOptions.Pool) == 0 ||
+		o.ALBOptions.MechanismName == names.MechanismUR ||
+		!albregistry.Supports(o.ALBOptions.MechanismName, albtypes.PlaneNative) {
+		return false
+	}
+	for _, m := range o.ALBOptions.Pool {
+		if member := c.Backends[m.Name]; member == nil || member.Provider != providers.MySQL {
+			return false
+		}
+	}
+	return true
 }
 
 type routeResolverProvider interface {
@@ -219,7 +253,7 @@ type nativeRouteProvider interface {
 func nativeRouteRuntime(request native.BuildRequest) (backends.RouteResolver, map[string]ProtocolConfig) {
 	routerName := backendForListener(request.Config, request.ListenerName)
 	routerOptions := request.Config.Backends[routerName]
-	if !isNativeUserRouter(routerOptions) {
+	if !isNativeRouter(request.Config, routerOptions) {
 		return nil, nil
 	}
 	client := request.BackendClients.Get(routerName)
@@ -262,8 +296,14 @@ func backendForListener(c *config.Config, listenerName string) string {
 }
 
 func routeTargetNames(o *bo.Options) []string {
-	if o == nil || o.ALBOptions == nil || o.ALBOptions.UserRouter == nil {
+	if o == nil || o.ALBOptions == nil {
 		return nil
+	}
+	if o.ALBOptions.UserRouter == nil {
+		// a load balancer's sessions may be committed to any member of its pool
+		result := o.ALBOptions.Pool.Names()
+		slices.Sort(result)
+		return slices.Compact(result)
 	}
 	seen := make(map[string]struct{})
 	if name := o.ALBOptions.UserRouter.DefaultBackend; name != "" {

@@ -59,8 +59,18 @@ type targetsView struct {
 	targets Targets
 }
 
-// New returns a new Pool
-func New(targets Targets, healthyFloor int) Pool {
+// observers hands each event to every observer in turn
+type observers []lb.Observer
+
+func (o observers) Observe(ev lb.Event) {
+	for _, obs := range o {
+		obs.Observe(ev)
+	}
+}
+
+// New returns a new Pool. The observers are told of its events, the first snapshot included,
+// which is published before New returns.
+func New(targets Targets, healthyFloor int, extra ...lb.Observer) Pool {
 	p := &pool{targets: targets}
 	members := make([]*lb.Member, 0, len(targets))
 	names := make(map[string]struct{}, len(targets))
@@ -83,7 +93,11 @@ func New(targets Targets, healthyFloor int) Pool {
 		}
 		members = append(members, t.member)
 	}
-	core, err := lb.NewPool(members, healthyFloor, lb.PoolOptions{Observer: observe.Pool()})
+	observer := observe.Pool()
+	if len(extra) > 0 {
+		observer = append(observers{observer}, extra...)
+	}
+	core, err := lb.NewPool(members, healthyFloor, lb.PoolOptions{Observer: observer})
 	if err != nil {
 		// unreachable: nil and repeated members were filtered above
 		logger.Error("alb pool could not be built", logging.Pairs{"error": err.Error()})

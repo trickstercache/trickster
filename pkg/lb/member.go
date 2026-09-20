@@ -23,6 +23,9 @@ type MemberOptions struct {
 	Group string
 	// Weight is the member's relative share; values below 1 mean 1.
 	Weight int
+	// Tier is the member's failover tier. A pool selects from the lowest tier that has an
+	// eligible member, so a higher tier stands by; values below 0 mean 0.
+	Tier int
 	// Health is the member's health source; nil means always eligible.
 	Health Health
 	// Stats carries runtime state over from a member this one replaces; nil starts fresh.
@@ -36,6 +39,7 @@ type Member struct {
 	name   string
 	group  string
 	weight int
+	tier   int
 	hash   uint64
 	health Health
 	stats  *Stats
@@ -49,6 +53,7 @@ func NewMember(o MemberOptions) *Member {
 		name:   o.Name,
 		group:  o.Group,
 		weight: max(o.Weight, 1),
+		tier:   max(o.Tier, 0),
 		hash:   hashString(o.Name),
 		health: o.Health,
 		stats:  o.Stats,
@@ -71,6 +76,9 @@ func (m *Member) Group() string { return m.group }
 
 // Weight returns the member's relative share, always at least 1.
 func (m *Member) Weight() int { return m.weight }
+
+// Tier returns the member's failover tier, 0 being the first selected from.
+func (m *Member) Tier() int { return m.tier }
 
 // Hash returns a hash of the member's name that is stable across processes and restarts.
 func (m *Member) Hash() uint64 { return m.hash }

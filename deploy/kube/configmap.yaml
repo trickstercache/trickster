@@ -1021,7 +1021,8 @@ data:
     #       # mechanism defines the ALB pool member selection mechanism.
     #       # rr (round_robin), p2c (power_of_two_choices), lc (least_connections), lt (least_time)
     #       # and hrw (highest_random_weight) select one pool member per request; fr, fgr, nlm and
-    #       # tsm fan each request out to the pool; ur routes by user. See /docs/alb.md.
+    #       # tsm fan each request out to the pool; ur routes by user. race (connect_race) and mirror
+    #       # (udp_mirror) serve only tcp/tls and udp stream listeners. See /docs/alb.md.
     #       # values are rr, fr, fgr, nlm, or tsm. see the docs for detailed descriptions of each
     #       # rr - standard round robin
     #       # fr - fanout and return the First Response regardless of status code
@@ -1042,6 +1043,12 @@ data:
     #       #   - foo-01.example.com
     #       #   - name: foo-02.example.com
     #       #     weight: 3 # receives 3 of every 4 requests
+    #       #
+    #       # a backup entry stands by: it is used only while no other pool member is healthy. e.g.:
+    #       # pool:
+    #       #   - foo-01.example.com
+    #       #   - name: foo-02.example.com
+    #       #     backup: true
 
     #       # healthy_floor is the minimum health status for a Backend to be considered healthy in the pool
     #       #  1 indicates only backends positively reporting as healthy are included
@@ -1049,6 +1056,10 @@ data:
     #       # -1 includes all backends, regardless of reporting state
     #       # default is 0
     #       healthy_floor: 0
+
+    #       # propagate_health makes this ALB report itself unavailable, to any ALB that has it as a pool
+    #       # member, while it has no healthy member of its own. default is false: it keeps its share
+    #       propagate_health: false
 
     #       # max_capture_bytes overrides the backend-level max_capture_bytes for this ALB's fanout members.
     #       # Set this when the ALB's expected response shape differs from the backend default. When 0 (the
@@ -1064,7 +1075,9 @@ data:
     #       hrw: # Highest Random Weight mechanism options, only applicable when mechanism is set to hrw
     #         # key is what a client's affinity follows: client_ip (default), host, header:<name>,
     #         # cookie:<name> or query:<name>. Requests sharing a key reach the same pool member.
-    #         # A stream listener can read client_ip, and sni (the TLS server name) when it is tls.
+    #         # A stream listener can read client_ip, sni (the TLS server name) when it is tls, and
+    #         # proxy_tlv:<type> (a PROXY protocol v2 TLV, e.g. proxy_tlv:0xEA) when it accepts the
+    #         # PROXY protocol. A native protocol listener, such as mysql, can read client_ip and user.
     #         key: client_ip
     #         # ipv6_prefix is how many leading bits of an IPv6 client address form a client_ip key.
     #         # default is 64, which keeps a client that rotates its privacy address on one member
@@ -1091,6 +1104,10 @@ data:
     #           failures: 3               # consecutive failed connects that eject a member
     #           eject: 30s                # how long it stays out
     #           max_ejected_percent: 50   # never more of the pool than this, and never its last member
+    #         # race_width is how many pool members the race mechanism connects to at once, 2 to 8.
+    #         # default is every member, up to 4. connect_retries and passive_health do not apply to
+    #         # the race and mirror mechanisms
+    #         # race_width: 2
 
     # # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
     # #

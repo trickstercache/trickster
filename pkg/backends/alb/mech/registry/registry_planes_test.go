@@ -32,16 +32,20 @@ import (
 
 // what each mechanism may serve; a change here is a change to what configs validate
 var wantPlanes = map[types.Name]types.Plane{
-	names.MechanismRR:  types.PlaneHTTP | types.PlaneStream,
-	names.MechanismP2C: types.PlaneHTTP | types.PlaneStream,
-	names.MechanismHRW: types.PlaneHTTP | types.PlaneStream,
+	names.MechanismRR:  everyPlane,
+	names.MechanismP2C: everyPlane,
+	names.MechanismHRW: everyPlane,
+	// a native session reports no latency
 	names.MechanismLT:  types.PlaneHTTP | types.PlaneStream,
-	names.MechanismLC:  types.PlaneHTTP | types.PlaneStream,
+	names.MechanismLC:  everyPlane,
 	names.MechanismFR:  types.PlaneHTTP,
 	names.MechanismFGR: types.PlaneHTTP,
 	names.MechanismNLM: types.PlaneHTTP,
 	names.MechanismTSM: types.PlaneHTTP,
 	names.MechanismUR:  types.PlaneHTTP | types.PlaneNative,
+	// what commits a flow to several members at once is the stream relay's alone to carry out
+	names.MechanismRace:   types.PlaneStream,
+	names.MechanismMirror: types.PlaneStream,
 }
 
 // the strategies whose weights are an exact apportionment contract
@@ -55,10 +59,11 @@ func TestEntriesDeclareOneConstructorAndTheirPlanes(t *testing.T) {
 		want, ok := wantPlanes[e.ShortName]
 		require.True(t, ok, "%s has no expected planes", e.ShortName)
 		require.Equal(t, want, e.Planes, e.ShortName)
-		require.True(t, e.Planes.Has(types.PlaneHTTP), "%s must serve HTTP", e.ShortName)
-		// only a strategy can serve a plane that has no HTTP handler to call
+		// a mechanism serves requests, or is limited to the stream protocols it names; only a
+		// strategy serves both, since no other has a member to hand to a plane without a handler
+		require.NotEqual(t, e.Planes.Has(types.PlaneHTTP), len(e.Protocols) > 0, e.ShortName)
 		if e.NewSelector == nil {
-			require.False(t, e.Planes.Has(types.PlaneStream), e.ShortName)
+			require.Equal(t, len(e.Protocols) > 0, e.Planes.Has(types.PlaneStream), e.ShortName)
 		}
 	}
 }
@@ -81,8 +86,9 @@ func TestSupports(t *testing.T) {
 		require.True(t, Supports(name, types.PlaneHTTP), name)
 		require.True(t, Supports(name, types.PlaneStream), name)
 		require.True(t, Supports(name, types.PlaneHTTP|types.PlaneStream), name)
-		require.False(t, Supports(name, types.PlaneNative), name)
+		require.True(t, Supports(name, types.PlaneNative), name)
 	}
+	require.False(t, Supports(names.MechanismLT, types.PlaneNative))
 	require.False(t, Supports(names.MechanismFR, types.PlaneStream))
 	require.False(t, Supports(names.MechanismTSM, types.PlaneStream))
 	require.True(t, Supports(names.MechanismUR, types.PlaneNative))
@@ -91,9 +97,23 @@ func TestSupports(t *testing.T) {
 	require.False(t, Supports(names.MechanismRR, 0), "no plane is not a supported plane")
 
 	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
-		names.MechanismP2C, names.MechanismRR}, Supporting(types.PlaneStream))
-	require.Equal(t, []types.Name{names.MechanismUR}, Supporting(types.PlaneNative))
-	require.Len(t, Supporting(types.PlaneHTTP), len(registry))
+		names.MechanismMirror, names.MechanismP2C, names.MechanismRace, names.MechanismRR},
+		Supporting(types.PlaneStream))
+	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
+		names.MechanismP2C, names.MechanismRace, names.MechanismRR}, ServingProtocol("tcp"))
+	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
+		names.MechanismMirror, names.MechanismP2C, names.MechanismRR}, ServingProtocol("udp"))
+	require.True(t, ServesProtocol(names.MechanismConnectRace, "tls"))
+	require.False(t, ServesProtocol(names.MechanismRace, "udp"))
+	require.False(t, ServesProtocol(names.MechanismFR, "tcp"))
+	require.False(t, ServesProtocol("nonexistent", "tcp"))
+	require.Equal(t, []string{"udp"}, StreamProtocols(names.MechanismUDPMirror))
+	require.Empty(t, StreamProtocols(names.MechanismRR))
+	require.Empty(t, StreamProtocols("nonexistent"))
+	require.False(t, Supports(names.MechanismRace, types.PlaneHTTP))
+	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismP2C,
+		names.MechanismRR, names.MechanismUR}, Supporting(types.PlaneNative))
+	require.Len(t, Supporting(types.PlaneHTTP), len(registry)-2)
 }
 
 func TestNewWrapsAStrategyForHTTP(t *testing.T) {

@@ -157,7 +157,9 @@ func streamMember(doc *document, r ir.Route, g ir.BackendGroup, m ir.BackendMemb
 				Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
 				Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
 			},
-		}, func(ks ao.KeySource) bool { return ks.OnStream(r.Protocol == ir.ProtocolTLS) }),
+		}, func(ks ao.KeySource) bool {
+			return ks.OnStream(ao.StreamListener{TLS: r.Protocol == ir.ProtocolTLS})
+		}),
 	}, nil
 }
 

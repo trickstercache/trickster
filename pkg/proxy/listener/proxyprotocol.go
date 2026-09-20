@@ -64,3 +64,27 @@ func (o *ProxyProtocolOptions) policy(c proxyproto.ConnPolicyOptions) (proxyprot
 	}
 	return proxyproto.SKIP, nil
 }
+
+// ProxyTLV returns the value of the first PROXY protocol v2 TLV of the given type that the
+// connection's header carried; a connection without such a header has none.
+func (o *observedConnection) ProxyTLV(typ byte) ([]byte, bool) {
+	pc, ok := o.Conn.(*proxyproto.Conn)
+	if !ok {
+		return nil, false
+	}
+	// the header is read here if nothing has read it yet, within the listener's header timeout
+	h := pc.ProxyHeader()
+	if h == nil {
+		return nil, false
+	}
+	tlvs, err := h.TLVs()
+	if err != nil {
+		return nil, false
+	}
+	for _, tlv := range tlvs {
+		if byte(tlv.Type) == typ {
+			return tlv.Value, true
+		}
+	}
+	return nil, false
+}

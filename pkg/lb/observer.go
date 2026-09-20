@@ -30,10 +30,11 @@ const (
 // Event is one notification to an Observer. Fields beyond Kind are set as the kind requires.
 type Event struct {
 	Kind EventKind
-	// Gen, Eligible and Configured describe the snapshot of an EventSnapshot
+	// Gen, Eligible, Configured and Tier describe the snapshot of an EventSnapshot
 	Gen        uint64
 	Eligible   int
 	Configured int
+	Tier       int
 	// Panic and Stack carry the recovered value and stack of an EventPanic
 	Panic any
 	Stack []byte

@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -132,8 +133,8 @@ type streamLB struct {
 }
 
 // streamConfig writes the configuration: members are name -> address, and alb is the body of
-// the ALB's alb block below its pool, already indented
-func (s *streamLB) write(t *testing.T, members [][2]string, memberExtra, alb string) {
+// the ALB's alb block below its pool, already indented; the members named as backups stand by
+func (s *streamLB) write(t *testing.T, members [][2]string, memberExtra, alb string, backups ...string) {
 	t.Helper()
 	var sb strings.Builder
 	// the stream listener belongs with the preamble's own, ahead of its other sections
@@ -151,19 +152,25 @@ func (s *streamLB) write(t *testing.T, members [][2]string, memberExtra, alb str
 	sb.WriteString(alb)
 	sb.WriteString("      pool:\n")
 	for _, m := range members {
+		if slices.Contains(backups, m[0]) {
+			fmt.Fprintf(&sb, "        - {name: %s, backup: true}\n", m[0])
+			continue
+		}
 		fmt.Fprintf(&sb, "        - %s\n", m[0])
 	}
 	require.NoError(t, os.WriteFile(s.cfgPath, []byte(sb.String()), 0o644))
 }
 
-func startStreamLB(t *testing.T, protocol string, members [][2]string, memberExtra, alb string) *streamLB {
+func startStreamLB(t *testing.T, protocol string, members [][2]string, memberExtra, alb string,
+	backups ...string,
+) *streamLB {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 4)
 	s := &streamLB{
 		cfgPath: filepath.Join(t.TempDir(), "trickster.yaml"), protocol: protocol, ports: ports,
 		addr: fmt.Sprintf("127.0.0.1:%d", ports[3]),
 	}
-	s.write(t, members, memberExtra, alb)
+	s.write(t, members, memberExtra, alb, backups...)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	release()
@@ -407,4 +414,97 @@ func TestStreamLBReloadMidTraffic(t *testing.T) {
 	reply, err := bufio.NewReader(held).ReadString('\n')
 	require.NoError(t, err)
 	require.Equal(t, "a:still\n", reply, "a connection open across the reload moved or broke")
+}
+
+// a backup member takes connections only while no other member is available
+func TestStreamLBBackupMember(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Trickster; skipping in -short mode")
+	}
+	members, echoes := tcpMembers(t, "primary", "standby")
+	probe := "    healthcheck:\n      interval: 100ms\n      timeout: 500ms\n      failure_threshold: 1\n      recovery_threshold: 1\n"
+	s := startStreamLB(t, "tcp", members, probe, "      mechanism: rr\n      healthy_floor: 1\n", "standby")
+	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", s.ports[1])
+	requireHealthState(t, healthURL, "primary", "available", 10*time.Second)
+	requireHealthState(t, healthURL, "standby", "available", 10*time.Second)
+	for range 10 {
+		require.Equal(t, "primary", s.askAndClose(t), "the standby took a connection while the primary was up")
+	}
+	echoes["primary"].stop()
+	requireHealthState(t, healthURL, "primary", "unavailable", 10*time.Second)
+	for range 5 {
+		require.Equal(t, "standby", s.askAndClose(t))
+	}
+	echoes["primary"].restart(t)
+	requireHealthState(t, healthURL, "primary", "available", 10*time.Second)
+	require.Eventually(t, func() bool { return s.askAndClose(t) == "primary" }, 5*time.Second, 50*time.Millisecond)
+	for range 5 {
+		require.Equal(t, "primary", s.askAndClose(t), "the standby kept taking connections after the primary returned")
+	}
+}
+
+// a race connects to its members together, so a dead one costs a client nothing
+func TestStreamLBConnectRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Trickster; skipping in -short mode")
+	}
+	members, echoes := tcpMembers(t, "a", "b", "c")
+	s := startStreamLB(t, "tcp", members, "", "      mechanism: race\n")
+	for range 10 {
+		require.NotEmpty(t, s.askAndClose(t))
+	}
+	echoes["a"].stop()
+	echoes["b"].stop()
+	for range 10 {
+		require.Equal(t, "c", s.askAndClose(t), "the one live member did not win the race")
+	}
+}
+
+// every member of a mirror receives every datagram, and only the first answers the client
+func TestStreamLBUDPMirror(t *testing.T) {
+	if testing.Short() {
+		t.Skip("starts Trickster; skipping in -short mode")
+	}
+	var mu sync.Mutex
+	got := map[string][]string{}
+	sink := func(name string) string {
+		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = pc.Close() })
+		go func() {
+			buf := make([]byte, 1500)
+			for {
+				n, from, err := pc.ReadFrom(buf)
+				if err != nil {
+					return
+				}
+				mu.Lock()
+				got[name] = append(got[name], string(buf[:n]))
+				mu.Unlock()
+				_, _ = pc.WriteTo([]byte(name+":"+string(buf[:n])), from)
+			}
+		}()
+		return pc.LocalAddr().String()
+	}
+	members := [][2]string{{"a", sink("a")}, {"b", sink("b")}, {"c", sink("c")}}
+	s := startStreamLB(t, "udp", members, "", "      mechanism: mirror\n")
+	conn, err := net.Dial("udp", s.addr)
+	require.NoError(t, err)
+	defer conn.Close()
+	for _, msg := range []string{"one", "two", "three"} {
+		_, _ = conn.Write([]byte(msg))
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		buf := make([]byte, 32)
+		n, err := conn.Read(buf)
+		require.NoError(t, err)
+		require.Equal(t, "a:"+msg, string(buf[:n]))
+	}
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(got["a"]) == 3 && len(got["b"]) == 3 && len(got["c"]) == 3
+	}, 5*time.Second, 50*time.Millisecond, "not every member received every datagram")
+	_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	_, err = conn.Read(make([]byte, 32))
+	require.Error(t, err, "a mirror's reply reached the client")
 }

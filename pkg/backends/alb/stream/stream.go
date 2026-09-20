@@ -50,6 +50,9 @@ func FromBackend(b backends.Backend) l4.Upstream {
 		return nil
 	}
 	cfg := b.Configuration()
+	if sp, ok := b.(spreader); ok && sp.Spread() != 0 {
+		return newSpread(sp, cfg)
+	}
 	if pp, ok := b.(lb.PickerProvider); ok {
 		if p := pp.Picker(); p != nil {
 			u := &upstream{picker: p}
@@ -74,8 +77,12 @@ type upstream struct {
 	// balancers themselves are keyed and timed by their own
 	options *ao.Options
 	retries int
-	// the series of each member this listener has dialed, resolved once per member rather
-	// than looked up by label on every connection
+	series  seriesCache
+}
+
+// seriesCache holds the series of each member a listener has dialed, resolved once per member
+// rather than looked up by label on every connection
+type seriesCache struct {
 	series   sync.Map
 	seriesOf atomic.Int64
 }
@@ -94,7 +101,7 @@ const maxCachedSeries = 1024
 // seriesFor returns the member's series. The cache is keyed by the member itself, not its
 // name: a member that leaves has its series deleted, and one that returns under the same
 // name is a new member whose series must be resolved afresh.
-func (u *upstream) seriesFor(m *lb.Member, f l4.Flow, name string) *memberSeries {
+func (u *seriesCache) seriesFor(m *lb.Member, f l4.Flow, name string) *memberSeries {
 	if v, ok := u.series.Load(m); ok {
 		return v.(*memberSeries)
 	}
@@ -164,7 +171,7 @@ func (u *upstream) pick(f l4.Flow, avoid *lb.Member, attempt int) (l4.Route, boo
 		return nil, false
 	}
 	r.pick, r.addr = pk, t.Addr()
-	r.series = u.seriesFor(pk.Member(), f, t.Name())
+	r.series = u.series.seriesFor(pk.Member(), f, t.Name())
 	return r, true
 }
 
@@ -179,15 +186,25 @@ func optionsOf(m *lb.Member) *ao.Options {
 }
 
 // key is the flow's affinity key as one load balancer is configured to read it: the server
-// name a tls client offered, or else the client's address, never its port
+// name a tls client offered, a PROXY protocol TLV, or else the client's address, never its port
 func key(o *ao.Options, f l4.Flow) lb.Flow {
 	prefix := ao.DefaultIPv6Prefix
 	if o != nil {
-		if o.HRW.KeySource.Kind == ao.KeySNI {
+		switch o.HRW.KeySource.Kind {
+		case ao.KeySNI:
 			if f.ServerName == "" {
 				return lb.Flow{}
 			}
 			return lb.Flow{Key: lb.HashFold(f.ServerName), HasKey: true}
+		case ao.KeyProxyTLV:
+			if f.Proxy == nil {
+				return lb.Flow{}
+			}
+			v, ok := f.Proxy.ProxyTLV(o.HRW.KeySource.TLV)
+			if !ok || len(v) == 0 {
+				return lb.Flow{}
+			}
+			return lb.Flow{Key: lb.HashBytes(v), HasKey: true}
 		}
 		if o.HRW.IPv6Prefix > 0 {
 			prefix = o.HRW.IPv6Prefix

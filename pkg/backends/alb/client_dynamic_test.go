@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -274,5 +275,47 @@ func TestMemberInflightMetricFollowsTheALB(t *testing.T) {
 	defer rr.StopPool()
 	if got := memberInflightSeries(t, "untracked-metric-alb"); len(got) != 0 {
 		t.Errorf("round robin exported %v", got)
+	}
+}
+
+func TestClientSpread(t *testing.T) {
+	if got := newRRALB(t, "spread-rr").Spread(); got != 0 {
+		t.Errorf("a round robin ALB spreads: %d", got)
+	}
+	o := bo.New()
+	o.Provider = providers.ALB
+	o.ALBOptions = &ao.Options{MechanismName: "mirror"}
+	cl, err := NewClient("spread-mirror", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cl.(*Client)
+	if c.Spread() != types.SpreadMirror || c.Picker() != nil || c.RouteResolver() != nil {
+		t.Errorf("mirror ALB: spread %d, picker %v", c.Spread(), c.Picker())
+	}
+}
+
+func TestClientRouteResolver(t *testing.T) {
+	if newRRALB(t, "sessions-rr").RouteResolver() == nil {
+		t.Error("a round robin ALB does not balance sessions")
+	}
+	for _, mechanism := range []string{"fr", "lt"} {
+		o := bo.New()
+		o.Provider = providers.ALB
+		o.ALBOptions = &ao.Options{MechanismName: mechanism}
+		cl, err := NewClient("sessions-"+mechanism, o, nil, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cl.(*Client).RouteResolver() != nil {
+			t.Errorf("a %s ALB resolves routes", mechanism)
+		}
+	}
+	bare, err := backends.New("bare", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (&Client{Backend: bare}).RouteResolver() != nil {
+		t.Error("an ALB with no options resolves routes")
 	}
 }

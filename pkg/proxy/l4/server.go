@@ -243,6 +243,8 @@ func (s *Server) handle(client net.Conn) {
 	defer s.untrack(client)
 	cfg := s.cfg.Load()
 	opts := cfg.options()
+	// read before the connection is wrapped to replay what was peeked of it
+	proxy, _ := client.(ProxyHeader)
 	var host string
 	if s.protocol == ProtocolTLS {
 		var err error
@@ -258,12 +260,24 @@ func (s *Server) handle(client net.Conn) {
 		return
 	}
 	flow := flowOf(s.name, s.protocol, client.RemoteAddr(), host)
-	route, ok := up.Pick(flow)
-	if !ok {
-		s.result(ResultNoUpstream)
-		return
+	flow.Proxy = proxy
+	var upstream net.Conn
+	var route Route
+	if racer, races := up.(Racer); races {
+		routes := racer.Race(flow)
+		if len(routes) == 0 {
+			s.result(ResultNoUpstream)
+			return
+		}
+		upstream, route = s.race(routes, opts.Connect())
+	} else {
+		picked, ok := up.Pick(flow)
+		if !ok {
+			s.result(ResultNoUpstream)
+			return
+		}
+		upstream, route = s.dial(up, flow, picked, opts.Connect())
 	}
-	upstream, route := s.dial(up, flow, route, opts.Connect())
 	if upstream == nil {
 		s.result(ResultDialFailed)
 		return
@@ -306,6 +320,64 @@ func (s *Server) dial(up Upstream, flow Flow, route Route, timeout time.Duration
 		}
 		route = next
 	}
+}
+
+// raceState is what the dials of one race share: the first to connect takes it
+type raceState struct {
+	mu      sync.Mutex
+	settled sync.Cond
+	pending int
+	conn    net.Conn
+	route   Route
+	took    time.Duration
+}
+
+// race dials every route at once within the connect timeout and returns the first connection
+// made with its route, or nil when none connects. Every route is told how its dial went; one
+// that lost the race, or was cut short by it, was abandoned.
+func (s *Server) race(routes []Route, timeout time.Duration) (net.Conn, Route) {
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	// the winner ends the dials still in progress
+	defer cancel()
+	st := &raceState{pending: len(routes)}
+	st.settled.L = &st.mu
+	for _, route := range routes {
+		go func() {
+			var dialer net.Dialer
+			began := time.Now()
+			conn, err := dialer.DialContext(ctx, "tcp", route.Addr())
+			took := time.Since(began)
+			st.mu.Lock()
+			won := err == nil && st.conn == nil
+			lost := st.conn != nil
+			if won {
+				st.conn, st.route, st.took = conn, route, took
+			}
+			st.pending--
+			st.settled.Signal()
+			st.mu.Unlock()
+			switch {
+			case won:
+				// reported by the flow's own worker, ahead of anything else it reports
+			case lost:
+				if conn != nil {
+					_ = conn.Close()
+				}
+				route.Dialed(0, ErrAbandoned)
+			default:
+				route.Dialed(took, err)
+			}
+		}()
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for st.conn == nil && st.pending > 0 {
+		st.settled.Wait()
+	}
+	if st.conn != nil {
+		st.route.Dialed(st.took, nil)
+	}
+	return st.conn, st.route
 }
 
 // Shutdown stops accepting and waits for relayed connections to end until ctx is done.

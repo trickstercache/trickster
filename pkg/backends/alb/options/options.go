@@ -59,6 +59,10 @@ type Options struct {
 	// Unknown means the first health check hasn't returned yet, or the target
 	// backend has no health check interval configured.
 	HealthyFloor int `yaml:"healthy_floor,omitempty"`
+	// PropagateHealth makes the ALB unavailable, as a member of another ALB's pool, while none
+	// of its own members is available, so that pool dispatches to its other members instead
+	// of having this one fail its share.
+	PropagateHealth bool `yaml:"propagate_health,omitempty"`
 	// MaxCaptureBytes overrides the backend-level max_capture_bytes for this
 	// ALB's fanout members. Set this when the ALB's expected response shape
 	// differs from the backend default (e.g. a TSM fan-out of 50 small-payload
@@ -128,6 +132,7 @@ func DefaultFGRStatusCodes() types.StatusRanges {
 
 var (
 	ErrUserRouterRequired     = errors.New("'user_router' block is required")
+	ErrPropagateHealthNoPool  = errors.New("'propagate_health' is not valid for mechanism 'ur', which has no pool")
 	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
 	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
 )
@@ -243,6 +248,9 @@ func (o *Options) Validate() (bool, error) {
 		if o.UserRouter == nil {
 			return false, ErrUserRouterRequired
 		}
+		if o.PropagateHealth {
+			return false, ErrPropagateHealthNoPool
+		}
 	case names.MechanismTSM:
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 			return false, ErrInvalidOutputFormat
@@ -266,6 +274,10 @@ func (o *Options) Validate() (bool, error) {
 func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {
 	if err := o.Pool.Validate(backendName); err != nil {
 		return err
+	}
+	// discovered members are never backups, so a discovered pool may list only standbys
+	if o.Discovery == nil && o.Pool.AllBackups() {
+		return fmt.Errorf("%w (alb %q)", ErrNoPrimaryPoolMember, backendName)
 	}
 	for _, m := range o.Pool {
 		if _, ok := allBackends[m.Name]; !ok {

@@ -35,8 +35,10 @@ var (
 // Snapshot is an immutable view of a pool's eligible members. Holders may retain it, and must
 // not modify it.
 type Snapshot struct {
-	// Members holds only the members whose status met the floor, in pool order
+	// Members holds the eligible members of the lowest tier that has any, in pool order
 	Members []*Member
+	// Tier is the failover tier the members belong to; 0 when there are none
+	Tier int
 	// Gen increases with each snapshot a pool publishes, starting at 1
 	Gen uint64
 }
@@ -152,14 +154,23 @@ func (p *Pool) rebuild() (ev Event, ok bool) {
 	// statuses are read here, not taken from a callback's arguments, which may be stale
 	nowNano := time.Now().UnixNano()
 	eligible := make([]*Member, 0, len(p.members))
+	tier := 0
 	for _, m := range p.members {
-		if m.eligible(p.floor, nowNano) {
-			eligible = append(eligible, m)
+		if !m.eligible(p.floor, nowNano) || (len(eligible) > 0 && m.tier > tier) {
+			continue
 		}
+		if m.tier < tier {
+			// a lower tier has a live member after all; the standbys collected so far stand down
+			eligible = eligible[:0]
+		}
+		tier = m.tier
+		eligible = append(eligible, m)
 	}
 	p.gen++
-	p.snap.Store(&Snapshot{Members: eligible, Gen: p.gen})
-	return Event{Kind: EventSnapshot, Gen: p.gen, Eligible: len(eligible), Configured: len(p.members)}, true
+	p.snap.Store(&Snapshot{Members: eligible, Tier: tier, Gen: p.gen})
+	return Event{
+		Kind: EventSnapshot, Gen: p.gen, Eligible: len(eligible), Configured: len(p.members), Tier: tier,
+	}, true
 }
 
 // eject takes m out of selection until the provided time, unless that would leave the pool

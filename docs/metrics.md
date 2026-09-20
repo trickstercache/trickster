@@ -212,6 +212,7 @@ The following metrics are available for polling with any Trickster configuration
     * `backend_name` - the name of the configured ALB backend
 
 * `trickster_alb_pool_floor_reset` (Gauge) - 1 when an ALB pool's `healthy_floor` was reset to 0 at startup because pool members have no health check and could never reach the configured floor, 0 otherwise. See [alb.md](./alb.md#health-based-backend-selection).
+* `trickster_alb_pool_on_backup` (Gauge) - 1 while an ALB pool that has `backup` members is dispatching to them because no other member is available, 0 otherwise. Present only for pools with backup members. See [alb.md](./alb.md#backup-pool-members).
   * labels:
     * `backend_name` - the name of the configured ALB backend
 

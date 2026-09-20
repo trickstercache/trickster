@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/native"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
@@ -79,6 +80,69 @@ type Client struct {
 	// dynamicNames is the current discovered member-name list, for
 	// health/mgmt display
 	dynamicNames atomic.Pointer[[]string]
+
+	// healthMtx orders what the current pool's snapshots say about the ALB as a whole, and is
+	// held while the ALBs that pool this one react; the pool graph has no cycles
+	healthMtx sync.Mutex
+	// poolID names the current pool and lastGen its newest snapshot seen, so a superseded
+	// pool or a snapshot observed late cannot overwrite newer state
+	poolID, lastGen uint64
+	// hasBackups and onBackup track failover to the pool's backup members
+	hasBackups, onBackup bool
+	// health is the ALB's own status, which follows its pool; nil unless propagate_health
+	health *healthcheck.Status
+}
+
+// poolObserver reports one pool's snapshots to the client that built it
+type poolObserver struct {
+	c  *Client
+	id uint64
+}
+
+func (o poolObserver) Observe(ev lb.Event) {
+	if ev.Kind == lb.EventSnapshot {
+		o.c.observeSnapshot(o.id, ev)
+	}
+}
+
+const poolHealthDescription = "follows pool"
+
+func (c *Client) observeSnapshot(id uint64, ev lb.Event) {
+	c.healthMtx.Lock()
+	defer c.healthMtx.Unlock()
+	if id != c.poolID || ev.Gen <= c.lastGen {
+		return
+	}
+	c.lastGen = ev.Gen
+	if onBackup := ev.Tier > 0; c.hasBackups && onBackup != c.onBackup {
+		c.onBackup = onBackup
+		c.reportFailover(onBackup)
+	}
+	if c.health == nil {
+		return
+	}
+	if ev.Eligible > 0 {
+		c.health.Set(healthcheck.StatusPassing)
+		return
+	}
+	c.health.Set(healthcheck.StatusFailing)
+}
+
+func (c *Client) reportFailover(onBackup bool) {
+	if !onBackup {
+		metrics.ALBPoolOnBackup.WithLabelValues(c.Name()).Set(0)
+		logger.Info("alb pool returned to its primary members", logging.Pairs{keys.BackendName: c.Name()})
+		return
+	}
+	metrics.ALBPoolOnBackup.WithLabelValues(c.Name()).Set(1)
+	logger.Warn("alb pool failed over to its backup members: no other member is available",
+		logging.Pairs{keys.BackendName: c.Name()})
+}
+
+// HealthStatus returns the status that ALBs pooling this one watch, which follows whether
+// this ALB has an available member. It is nil unless propagate_health is set.
+func (c *Client) HealthStatus() *healthcheck.Status {
+	return c.health
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered.
@@ -119,6 +183,10 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			return nil, err
 		}
 		c.handler = m
+		if o.ALBOptions.PropagateHealth {
+			c.health = healthcheck.NewStatus(name, poolHealthDescription, "",
+				healthcheck.StatusUnchecked, time.Time{}, nil)
+		}
 		if pm, ok := m.(types.PickerMechanism); ok {
 			observe.Track(name, pm.Balancer())
 		}
@@ -248,6 +316,10 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			}
 		}
 		hc, ok := hcs[m.Name]
+		if ac, isALB := tc.(*Client); !ok && isALB && ac.health != nil {
+			// a load balancer that reports whether it has an available member
+			hc, ok = ac.health, true
+		}
 		if !ok {
 			// virtual backends (rule, alb) have no health checks; treat as passing
 			hc = healthcheck.NewStatus(m.Name, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
@@ -257,7 +329,8 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		if tracksStats {
 			kept = carryStats(c.Name(), m.Name)
 		}
-		t := pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()).WithStats(kept)
+		t := pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()).
+			WithTier(m.Tier()).WithStats(kept)
 		targets = append(targets, t)
 		stats[m.Name] = t.Member().Stats()
 	}
@@ -300,7 +373,20 @@ func (c *Client) swapPool(targets pool.Targets) {
 		return
 	}
 	oldPool := pm.Pool()
-	pm.SetPool(pool.New(targets, c.effectiveFloor(targets)))
+	hasBackups := slices.ContainsFunc(targets, func(t *pool.Target) bool { return t != nil && t.Tier() > 0 })
+	c.healthMtx.Lock()
+	c.poolID++
+	c.lastGen = 0
+	if c.hasBackups && !hasBackups {
+		metrics.ALBPoolOnBackup.DeleteLabelValues(c.Name())
+		c.onBackup = false
+	} else if hasBackups && !c.hasBackups {
+		metrics.ALBPoolOnBackup.WithLabelValues(c.Name()).Set(0)
+	}
+	c.hasBackups = hasBackups
+	observer := poolObserver{c: c, id: c.poolID}
+	c.healthMtx.Unlock()
+	pm.SetPool(pool.New(targets, c.effectiveFloor(targets), observer))
 	if oldPool != nil {
 		oldPool.Stop()
 	}
@@ -380,6 +466,15 @@ func (c *Client) Picker() lb.Picker {
 		return pm.Picker()
 	}
 	return nil
+}
+
+// Spread returns how the ALB's mechanism commits one flow to several members at once, or 0
+// for a mechanism that does not.
+func (c *Client) Spread() types.Spread {
+	if sm, ok := c.handler.(types.SpreadMechanism); ok {
+		return sm.Spread()
+	}
+	return 0
 }
 
 // DynamicPoolNames returns the names of the ALB's currently-discovered pool
@@ -620,11 +715,20 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	return nil
 }
 
-// RouteResolver returns the protocol-neutral resolver implemented by a User
-// Router ALB. Other ALB mechanisms do not select routes by authenticated user.
+// RouteResolver returns the protocol-neutral resolver a native protocol listener commits its
+// sessions by: a User Router's own, or one that balances sessions with the ALB's selection
+// strategy where that strategy serves sessions. It is nil for any other mechanism.
 func (c *Client) RouteResolver() backends.RouteResolver {
 	if h, ok := c.handler.(backends.RouteResolver); ok {
 		return h
+	}
+	cfg := c.Configuration()
+	if cfg == nil || cfg.ALBOptions == nil ||
+		!registry.Supports(cfg.ALBOptions.MechanismName, types.PlaneNative) {
+		return nil
+	}
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		return native.Resolver(pm.Picker(), cfg.ALBOptions)
 	}
 	return nil
 }

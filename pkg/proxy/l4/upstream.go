@@ -34,6 +34,15 @@ type Flow struct {
 	Client netip.AddrPort
 	// ServerName is the TLS server name the client offered; tls only
 	ServerName string
+	// Proxy reads the PROXY protocol header the connection arrived behind; nil without one
+	Proxy ProxyHeader
+}
+
+// ProxyHeader is implemented by a client connection that was accepted behind a PROXY protocol
+// header, which a listener's accepted connections may be.
+type ProxyHeader interface {
+	// ProxyTLV returns the value of the first version 2 TLV of the given type, if it has one.
+	ProxyTLV(typ byte) ([]byte, bool)
 }
 
 // Upstream chooses where a flow is relayed to.
@@ -48,6 +57,20 @@ type Upstream interface {
 type Retrier interface {
 	// Retry returns a route to try in place of failed, or false when there is none to offer.
 	Retry(f Flow, failed Route) (Route, bool)
+}
+
+// Racer is optionally implemented by an Upstream that connects a tcp or tls flow to several
+// routes at once. The relay keeps the first to connect and reports ErrAbandoned to the rest.
+type Racer interface {
+	// Race returns the routes to connect to together; none refuses the flow.
+	Race(Flow) []Route
+}
+
+// Mirrorer is optionally implemented by an Upstream whose udp flows are copied to further
+// routes: each receives every datagram the client sends, and its replies are discarded.
+type Mirrorer interface {
+	// Mirror returns the routes to copy the flow to, beside the primary route it was given.
+	Mirror(f Flow, primary Route) []Route
 }
 
 // Route is one committed choice of upstream. The relay reports what became of it: Dialed

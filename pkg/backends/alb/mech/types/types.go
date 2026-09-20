@@ -79,13 +79,33 @@ type PickerMechanism interface {
 	Balancer() *lb.Balancer
 }
 
+// Spread is how a mechanism commits one flow to several pool members at once.
+type Spread uint8
+
+const (
+	// SpreadRace connects to several members together and keeps the first to connect.
+	SpreadRace Spread = iota + 1
+	// SpreadMirror copies a flow's datagrams to every member and answers from the first.
+	SpreadMirror
+)
+
+// SpreadMechanism is a pool mechanism that commits a flow to several members at once, which
+// only a stream listener can do.
+type SpreadMechanism interface {
+	PoolMechanism
+	Spread() Spread
+}
+
 // RegistryEntry defines an entry in the ALB Registry. Exactly one of New and NewSelector is
 // set: New for a mechanism that is itself an HTTP handler, NewSelector for a strategy that
 // the registry wraps for whichever plane asks.
 type RegistryEntry struct {
-	Name        Name
-	ShortName   Name
-	Planes      Plane
+	Name      Name
+	ShortName Name
+	Planes    Plane
+	// Protocols limits a mechanism that serves PlaneStream to some of tcp, tls and udp;
+	// empty is all of them
+	Protocols   []string
 	New         NewMechanismFunc
 	NewSelector NewSelectorFunc
 }

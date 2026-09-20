@@ -128,6 +128,8 @@ type udpSession struct {
 	upstream net.Conn
 	// set once the upstream is dialed; told when the session ends
 	route Route
+	// the further upstreams that receive a copy of each datagram; fixed once the flow is open
+	mirrors []udpMirror
 	// set when the upstream refused a datagram, which is how an unreachable udp upstream shows
 	fault error
 	// queue is a ring of the datagrams waiting for the writer, in arrival order
@@ -135,6 +137,15 @@ type udpSession struct {
 	head, num int
 	last      atomic.Int64
 }
+
+// udpMirror is one further upstream a flow's datagrams are copied to
+type udpMirror struct {
+	conn  net.Conn
+	route Route
+}
+
+// MaxUDPMirrors bounds the upstreams one flow is copied to, each of which holds a socket.
+const MaxUDPMirrors = 7
 
 func newUDPSession(client net.Addr) *udpSession {
 	sess := &udpSession{client: client}
@@ -324,6 +335,7 @@ func (s *PacketServer) enqueue(sess *udpSession, payload []byte) {
 func (s *PacketServer) writer(sess *udpSession, up net.Conn) {
 	defer s.workers.Done()
 	sess.mu.Lock()
+	mirrors := sess.mirrors
 	for {
 		for sess.num == 0 && !sess.closed {
 			sess.wake.Wait()
@@ -341,6 +353,11 @@ func (s *PacketServer) writer(sess *udpSession, up net.Conn) {
 		// for as long as the write blocks, however soon its ring slot is reused
 		_ = up.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
 		n, err := up.Write(payload)
+		for _, m := range mirrors {
+			// a copy that cannot be written is lost; the flow answers to its own upstream alone
+			_ = m.conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
+			_, _ = m.conn.Write(payload)
+		}
 		s.queued.Add(-int64(len(payload)))
 		switch {
 		case err == nil:
@@ -390,12 +407,17 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 		route.Dialed(0, ErrAbandoned)
 		return nil, false
 	}
+	flow := flowOf(s.name, ProtocolUDP, sess.client, "")
 	ctx, cancel := context.WithTimeout(s.ctx, cfg.options().Connect())
 	began := time.Now()
 	conn, err := s.resolveAndDial(ctx, route.Addr())
+	route.Dialed(time.Since(began), err)
+	var mirrors []udpMirror
+	if err == nil {
+		mirrors = s.openMirrors(ctx, up, flow, route)
+	}
 	cancel()
 	s.releaseDial()
-	route.Dialed(time.Since(began), err)
 	if err != nil {
 		s.result(ResultDialFailed)
 		return nil, false
@@ -406,9 +428,11 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 		sess.mu.Unlock()
 		_ = conn.Close()
 		route.Closed(nil)
+		closeMirrors(mirrors)
 		return nil, false
 	}
 	sess.route = route
+	sess.mirrors = mirrors
 	// what the flow kept while opening leaves the opening budget and stays queued for the writer
 	var kept int64
 	for i := range sess.num {
@@ -422,6 +446,37 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 	sess.mu.Unlock()
 	s.settle(sess)
 	return conn, true
+}
+
+// openMirrors dials the further upstreams a mirroring upstream copies the flow to, within the
+// dial the flow already holds. One that cannot be dialed is told so and left out.
+func (s *PacketServer) openMirrors(ctx context.Context, up Upstream, flow Flow, primary Route) []udpMirror {
+	mirrorer, ok := up.(Mirrorer)
+	if !ok {
+		return nil
+	}
+	routes := mirrorer.Mirror(flow, primary)
+	for _, extra := range routes[min(len(routes), MaxUDPMirrors):] {
+		extra.Dialed(0, ErrAbandoned)
+	}
+	routes = routes[:min(len(routes), MaxUDPMirrors)]
+	mirrors := make([]udpMirror, 0, len(routes))
+	for _, route := range routes {
+		began := time.Now()
+		conn, err := s.resolveAndDial(ctx, route.Addr())
+		route.Dialed(time.Since(began), err)
+		if err == nil {
+			mirrors = append(mirrors, udpMirror{conn: conn, route: route})
+		}
+	}
+	return mirrors
+}
+
+func closeMirrors(mirrors []udpMirror) {
+	for _, m := range mirrors {
+		_ = m.conn.Close()
+		m.route.Closed(nil)
+	}
 }
 
 // settle moves a flow out of the opening count once it is open
@@ -572,6 +627,8 @@ func (s *PacketServer) end(key string, sess *udpSession) {
 		sess.route.Closed(sess.fault)
 		sess.route = nil
 	}
+	closeMirrors(sess.mirrors)
+	sess.mirrors = nil
 	if sess.state == flowOpening {
 		for sess.num > 0 {
 			n := int64(len(sess.pop()))

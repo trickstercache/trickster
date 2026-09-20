@@ -79,7 +79,19 @@ type StreamOptions struct {
 	// PassiveHealth takes a member out of the pool when connections keep failing to reach it,
 	// without waiting for a health check. Off unless set.
 	PassiveHealth *PassiveHealthOptions `yaml:"passive_health,omitempty"`
+	// RaceWidth is how many pool members the race mechanism connects to at once, from 2 to
+	// 8. The default is every member, up to 4.
+	RaceWidth int `yaml:"race_width,omitempty"`
 }
+
+// The bounds on how many members a race connects to at once, and on how many a mirror
+// copies each flow to, the one that answers it included
+const (
+	DefaultRaceWidth = 4
+	MinRaceWidth     = 2
+	MaxRaceWidth     = 8
+	MaxMirrorMembers = 8
+)
 
 // PassiveHealthOptions configure passive ejection.
 type PassiveHealthOptions struct {
@@ -95,6 +107,16 @@ type PassiveHealthOptions struct {
 var (
 	// ErrInvalidConnectRetries is returned for a stream.connect_retries outside 0-10.
 	ErrInvalidConnectRetries = errors.New("'stream.connect_retries' must be between 0 and 10")
+	// ErrInvalidRaceWidth is returned for a stream.race_width that is set outside 2-8.
+	ErrInvalidRaceWidth = errors.New("'stream.race_width' must be between 2 and 8")
+	// ErrRaceWidthOnlyForRace is returned when stream.race_width is set for another mechanism.
+	ErrRaceWidthOnlyForRace = errors.New("'stream.race_width' is only valid for mechanism 'race'")
+	// ErrTooManyMirrorMembers is returned for a mirror pool of more than MaxMirrorMembers.
+	ErrTooManyMirrorMembers = errors.New("mechanism 'mirror' supports a pool of at most 8 members")
+	// ErrStreamOptionsNeedOneMember is returned when a mechanism that commits a flow to
+	// several members is given the options of one that commits it to a single member.
+	ErrStreamOptionsNeedOneMember = errors.New("'stream.connect_retries' and 'stream.passive_health' " +
+		"are not valid for mechanisms 'race' and 'mirror'")
 	// ErrInvalidPassiveHealth is returned for a negative or out-of-range passive_health value.
 	ErrInvalidPassiveHealth = errors.New("'stream.passive_health' values cannot be negative, " +
 		"and 'max_ejected_percent' cannot exceed 100")
@@ -110,6 +132,25 @@ func (o *StreamOptions) validate() error {
 	if p := o.PassiveHealth; p != nil &&
 		(p.Failures < 0 || p.Eject < 0 || p.MaxEjectedPercent < 0 || p.MaxEjectedPercent > 100) {
 		return ErrInvalidPassiveHealth
+	}
+	if o.RaceWidth != 0 && (o.RaceWidth < MinRaceWidth || o.RaceWidth > MaxRaceWidth) {
+		return ErrInvalidRaceWidth
+	}
+	return nil
+}
+
+// validateFor holds the block to what the mechanism it configures can use
+func (o *StreamOptions) validateFor(mechanism string) error {
+	if o == nil {
+		return nil
+	}
+	race := mechanism == names.MechanismRace || mechanism == names.MechanismConnectRace
+	mirror := mechanism == names.MechanismMirror || mechanism == names.MechanismUDPMirror
+	if o.RaceWidth != 0 && !race {
+		return ErrRaceWidthOnlyForRace
+	}
+	if (race || mirror) && (o.ConnectRetries != 0 || o.PassiveHealth != nil) {
+		return ErrStreamOptionsNeedOneMember
 	}
 	return nil
 }
@@ -210,7 +251,20 @@ func (o *Options) validateStrategies() error {
 	if err := o.Stream.validate(); err != nil {
 		return err
 	}
+	if err := o.Stream.validateFor(o.MechanismName); err != nil {
+		return err
+	}
 	switch o.MechanismName {
+	case names.MechanismMirror, names.MechanismUDPMirror:
+		if len(o.Pool) > MaxMirrorMembers {
+			return ErrTooManyMirrorMembers
+		}
+		if !o.HRW.isZero() {
+			return ErrHRWOnlyForHRW
+		}
+		if !o.LT.isZero() {
+			return ErrLTOnlyForLT
+		}
 	case names.MechanismHRW, names.MechanismHighestRandomWeight:
 		if !o.LT.isZero() {
 			return ErrLTOnlyForLT

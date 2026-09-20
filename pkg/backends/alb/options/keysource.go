@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net/textproto"
+	"strconv"
 	"strings"
 )
 
@@ -38,6 +39,11 @@ const (
 	KeyQuery
 	// KeySNI keys on the TLS server name a client offered; tls stream listeners only.
 	KeySNI
+	// KeyProxyTLV keys on the value of a PROXY protocol v2 TLV; tcp and tls stream listeners
+	// that accept the PROXY protocol only.
+	KeyProxyTLV
+	// KeyUser keys on the name a session authenticated as; native protocol listeners only.
+	KeyUser
 )
 
 // Key source spellings
@@ -45,24 +51,49 @@ const (
 	KeySourceClientIP = "client_ip"
 	KeySourceHost     = "host"
 	KeySourceSNI      = "sni"
+	KeySourceUser     = "user"
 	keyPrefixHeader   = "header:"
 	keyPrefixCookie   = "cookie:"
 	keyPrefixQuery    = "query:"
+	keyPrefixProxyTLV = "proxy_tlv:"
 )
 
 // ErrInvalidKeySource is returned for a key source that is not one of client_ip, host, sni,
-// header:<name>, cookie:<name> or query:<name>.
+// user, header:<name>, cookie:<name>, query:<name> or proxy_tlv:<type>.
 var ErrInvalidKeySource = errors.New("invalid key source")
 
-// OnStream reports whether a stream listener of the given protocol can read the key: the
-// client address always, the server name when the listener is tls, nothing of a request.
-func (k KeySource) OnStream(tlsListener bool) bool {
-	return k.Kind == KeyClientIP || (k.Kind == KeySNI && tlsListener)
+// StreamListener is what decides which keys a stream listener can read.
+type StreamListener struct {
+	// TLS is set for a tls listener, which reads the server name a client offers
+	TLS bool
+	// ProxyProtocol is set for a tcp or tls listener that accepts a PROXY protocol header
+	ProxyProtocol bool
 }
 
-// OnHTTP reports whether an HTTP listener can read the key, which is all but the server name.
+// OnStream reports whether a stream listener can read the key: the client address always, the
+// server name when it is tls, a TLV when it accepts the PROXY protocol, nothing of a request.
+func (k KeySource) OnStream(l StreamListener) bool {
+	switch k.Kind {
+	case KeyClientIP:
+		return true
+	case KeySNI:
+		return l.TLS
+	case KeyProxyTLV:
+		return l.ProxyProtocol
+	}
+	return false
+}
+
+// OnHTTP reports whether an HTTP listener can read the key, which is any that is part of a
+// request or is the client address.
 func (k KeySource) OnHTTP() bool {
-	return k.Kind != KeySNI
+	return k.Kind != KeySNI && k.Kind != KeyProxyTLV && k.Kind != KeyUser
+}
+
+// OnNative reports whether a native protocol listener can read the key: the client address,
+// or the name its session authenticated as.
+func (k KeySource) OnNative() bool {
+	return k.Kind == KeyClientIP || k.Kind == KeyUser
 }
 
 // KeySource is a parsed affinity key source.
@@ -70,6 +101,8 @@ type KeySource struct {
 	Kind KeyKind
 	// Name is the header (in canonical form), cookie or query parameter; empty otherwise.
 	Name string
+	// TLV is the PROXY protocol v2 TLV type of a KeyProxyTLV
+	TLV byte
 }
 
 // ParseKeySource parses a key source; the empty string is client_ip.
@@ -82,6 +115,14 @@ func ParseKeySource(s string) (KeySource, error) {
 		return KeySource{Kind: KeyHost}, nil
 	case KeySourceSNI:
 		return KeySource{Kind: KeySNI}, nil
+	case KeySourceUser:
+		return KeySource{Kind: KeyUser}, nil
+	}
+	if t, ok := strings.CutPrefix(s, keyPrefixProxyTLV); ok {
+		// the type is a byte, written in decimal or, as the PROXY protocol does, 0x hex
+		if n, err := strconv.ParseUint(strings.TrimSpace(t), 0, 8); err == nil {
+			return KeySource{Kind: KeyProxyTLV, TLV: byte(n)}, nil
+		}
 	}
 	for prefix, kind := range map[string]KeyKind{
 		keyPrefixHeader: KeyHeader, keyPrefixCookie: KeyCookie, keyPrefixQuery: KeyQuery,
@@ -99,6 +140,7 @@ func ParseKeySource(s string) (KeySource, error) {
 		}
 		return KeySource{Kind: kind, Name: name}, nil
 	}
-	return KeySource{}, fmt.Errorf("%w %q: use %s, %s, %s, %s<name>, %s<name> or %s<name>", ErrInvalidKeySource,
-		s, KeySourceClientIP, KeySourceHost, KeySourceSNI, keyPrefixHeader, keyPrefixCookie, keyPrefixQuery)
+	return KeySource{}, fmt.Errorf("%w %q: use %s, %s, %s, %s, %s<name>, %s<name>, %s<name> or %s<type>",
+		ErrInvalidKeySource, s, KeySourceClientIP, KeySourceHost, KeySourceSNI, KeySourceUser,
+		keyPrefixHeader, keyPrefixCookie, keyPrefixQuery, keyPrefixProxyTLV)
 }

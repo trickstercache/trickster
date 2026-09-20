@@ -952,6 +952,18 @@ var (
 		},
 		[]string{keys.Backend_Name},
 	)
+
+	// ALBPoolOnBackup flags ALB pools that have backup members and are dispatching to them
+	// because no other member is available.
+	ALBPoolOnBackup = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_on_backup",
+			Help:      "1 while an ALB pool dispatches to its backup members because no other member is available; 0 otherwise.",
+		},
+		[]string{keys.Backend_Name},
+	)
 )
 
 func init() {
@@ -992,6 +1004,7 @@ func init() {
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
 	prometheus.MustRegister(ALBPoolAdmitsFailing)
 	prometheus.MustRegister(ALBPoolFloorReset)
+	prometheus.MustRegister(ALBPoolOnBackup)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheObjectOperationDuration)
 	prometheus.MustRegister(CacheByteOperations)
@@ -1070,6 +1083,7 @@ var backendSeriesVecs = []partialDeleter{
 	HealthcheckStatusNotifyPanicRecovered,
 	ALBPoolAdmitsFailing,
 	ALBPoolFloorReset,
+	ALBPoolOnBackup,
 	ProxyStreamMemberConnections,
 	ProxyStreamMemberActiveConnections,
 	ProxyStreamMemberConnectDuration,
