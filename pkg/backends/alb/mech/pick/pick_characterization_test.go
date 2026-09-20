@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rr
+package pick
 
 import (
 	"net/http"
@@ -24,7 +24,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
 )
 
 // sequenceRecorder collects the member index of each dispatch, in order
@@ -94,7 +96,7 @@ func TestRoundRobinEveryWindowIsExact(t *testing.T) {
 			rec := &sequenceRecorder{}
 			p := pool.New(recordedTargets(rec, weights), 0)
 			defer p.Stop()
-			h := &handler{}
+			h := newRR()
 			h.SetPool(p)
 			serveN(h, 7*sum(weights)+3)
 			assertEveryWindowExact(t, rec.seq, weights)
@@ -102,16 +104,17 @@ func TestRoundRobinEveryWindowIsExact(t *testing.T) {
 	}
 }
 
-// the rotation gives each member one contiguous weight-sized span, starting one past zero
-func TestRoundRobinSpanOrder(t *testing.T) {
+// the order of a rotation, from a fixed start: a heavier member's turns are spread through
+// it rather than taken back to back
+func TestRoundRobinSequence(t *testing.T) {
 	weights := []int{1, 3, 2}
 	rec := &sequenceRecorder{}
 	p := pool.New(recordedTargets(rec, weights), 0)
 	defer p.Stop()
-	h := &handler{}
+	h := New(names.MechanismRR, rr.NewAt(0))
 	h.SetPool(p)
 	serveN(h, 2*sum(weights))
-	want := []int{1, 1, 1, 2, 2, 0, 1, 1, 1, 2, 2, 0}
+	want := []int{1, 2, 1, 1, 2, 0, 1, 2, 1, 1, 2, 0}
 	if !slices.Equal(rec.seq, want) {
 		t.Errorf("weighted sequence = %v, want %v", rec.seq, want)
 	}
@@ -119,7 +122,7 @@ func TestRoundRobinSpanOrder(t *testing.T) {
 	rec = &sequenceRecorder{}
 	u := pool.New(recordedTargets(rec, []int{1, 1, 1}), 0)
 	defer u.Stop()
-	h = &handler{}
+	h = New(names.MechanismRR, rr.NewAt(0))
 	h.SetPool(u)
 	serveN(h, 6)
 	want = []int{1, 2, 0, 1, 2, 0}
@@ -135,7 +138,7 @@ func TestRoundRobinApportionmentSurvivesConcurrentSetPool(t *testing.T) {
 	rec := &sequenceRecorder{}
 	targets := recordedTargets(rec, weights)
 	first := pool.New(targets, 0)
-	h := &handler{}
+	h := newRR()
 	h.SetPool(first)
 
 	pools := []pool.Pool{first}

@@ -685,6 +685,9 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
 				return err
 			}
+			if _, err := o.ALBOptions.Validate(); err != nil {
+				return fmt.Errorf("invalid alb options for backend %q: %w", o.Name, err)
+			}
 			for _, m := range o.ALBOptions.Pool {
 				if t, ok := l[m.Name]; ok && t != nil && t.IsTemplate {
 					return NewErrTemplatePoolMember(m.Name, o.Name)

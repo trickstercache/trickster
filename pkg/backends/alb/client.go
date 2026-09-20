@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -38,6 +39,7 @@ import (
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -117,6 +119,9 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			return nil, err
 		}
 		c.handler = m
+		if pm, ok := m.(types.PickerMechanism); ok {
+			observe.Track(name, pm.Balancer())
+		}
 	}
 	return c, nil
 }
@@ -125,6 +130,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 // until all backends are processed, so the ALB's destination backend names
 // can be mapped to their respective clients
 func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) error {
+	defer forgetStatsExcept(clients)
 	for _, c := range clients {
 		if rc, ok := c.(*Client); ok {
 			err := rc.ValidateAndStartPool(clients, hcs)
@@ -220,6 +226,11 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
+	stats := make(map[string]*lb.Stats, len(o.Pool))
+	tracksStats := false
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		tracksStats = pm.Picker().Needs() != 0
+	}
 	seen := sets.NewStringSet()
 	for _, m := range o.Pool {
 		// a pool holds each member once; options loaded from config are already de-duplicated
@@ -241,8 +252,17 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			// virtual backends (rule, alb) have no health checks; treat as passing
 			hc = healthcheck.NewStatus(m.Name, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
-		targets = append(targets,
-			pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()))
+		// only a mechanism that keeps stats has any worth carrying over a reload
+		var kept *lb.Stats
+		if tracksStats {
+			kept = carryStats(c.Name(), m.Name)
+		}
+		t := pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()).WithStats(kept)
+		targets = append(targets, t)
+		stats[m.Name] = t.Member().Stats()
+	}
+	if tracksStats {
+		rememberStats(c.Name(), stats)
 	}
 	c.poolMtx.Lock()
 	c.staticTargets = targets
@@ -348,6 +368,16 @@ func (c *Client) SetDynamicTargets(dynamic pool.Targets) bool {
 func (c *Client) Pool() pool.Pool {
 	if pm, ok := c.handler.(types.PoolMechanism); ok {
 		return pm.Pool()
+	}
+	return nil
+}
+
+// Picker returns the balancer that commits one unit of work to one pool member, which is how
+// planes other than HTTP dispatch through this ALB. It is nil for a mechanism that does not
+// select one member: the fanout mechanisms and the user router.
+func (c *Client) Picker() lb.Picker {
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		return pm.Picker()
 	}
 	return nil
 }
@@ -608,6 +638,9 @@ func (c *Client) StopPool() {
 	c.poolMtx.Unlock()
 	if pm, ok := c.handler.(types.PoolMechanism); ok {
 		pm.StopPool()
+	}
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		observe.Untrack(c.Name(), pm.Balancer())
 	}
 }
 

@@ -24,11 +24,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 type countingHandler struct{ hits int }
@@ -165,5 +169,110 @@ func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 	wg.Wait()
 	if served.Load() == 0 {
 		t.Error("expected requests to reach pool members during the swaps")
+	}
+}
+
+func TestClientPicker(t *testing.T) {
+	c := newRRALB(t, "picker-alb")
+	defer c.StopPool()
+	pk := c.Picker()
+	if pk == nil {
+		t.Fatal("a round robin ALB has a picker")
+	}
+	if _, ok := pk.Pick(lb.Flow{}); ok {
+		t.Error("picked before any member was installed")
+	}
+	target := pool.NewWeightedTarget(&countingHandler{}, passingStatus(), nil, 1)
+	if !c.SetDynamicTargets(pool.Targets{target}) {
+		t.Fatal("swap rejected")
+	}
+	got, ok := pk.Pick(lb.Flow{})
+	if !ok || got.Member() != target.Member() {
+		t.Error("the picker does not follow the ALB's pool")
+	}
+
+	o := bo.New()
+	o.Provider = providers.ALB
+	o.ALBOptions = &ao.Options{MechanismName: "fr"}
+	cl, err := NewClient("fanout-alb", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cl.(*Client).Picker() != nil {
+		t.Error("a fanout ALB does not pick one member")
+	}
+}
+
+func memberInflightSeries(t *testing.T, albName string) map[string]float64 {
+	t.Helper()
+	families, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]float64)
+	for _, f := range families {
+		if f.GetName() != "trickster_alb_member_inflight" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			labels := make(map[string]string)
+			for _, l := range m.GetLabel() {
+				labels[l.GetName()] = l.GetValue()
+			}
+			if labels["alb_name"] == albName {
+				out[labels["member"]] = m.GetGauge().GetValue()
+			}
+		}
+	}
+	return out
+}
+
+// an ALB whose mechanism tracks in-flight work exports it per member until its pool stops
+func TestMemberInflightMetricFollowsTheALB(t *testing.T) {
+	o := bo.New()
+	o.Provider = providers.ALB
+	o.ALBOptions = &ao.Options{MechanismName: "lc"}
+	cl, err := NewClient("inflight-metric-alb", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cl.(*Client)
+	release := make(chan struct{})
+	entered := make(chan struct{})
+	mo := bo.New()
+	mo.Name = "slow-member"
+	member, err := backends.New("slow-member", mo, nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		entered <- struct{}{}
+		<-release
+	}), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.SetDynamicTargets(pool.Targets{pool.NewTarget(member.Router(), passingStatus(), member)}) {
+		t.Fatal("swap rejected")
+	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		c.Handlers()[providers.ALB].ServeHTTP(httptest.NewRecorder(),
+			httptest.NewRequest(http.MethodGet, "http://example.com/", nil))
+	})
+	<-entered
+	if got := memberInflightSeries(t, "inflight-metric-alb"); got["slow-member"] != 1 {
+		t.Errorf("series while a request is held = %v", got)
+	}
+	close(release)
+	wg.Wait()
+	if got := memberInflightSeries(t, "inflight-metric-alb"); got["slow-member"] != 0 {
+		t.Errorf("series after the request = %v", got)
+	}
+	c.StopPool()
+	if got := memberInflightSeries(t, "inflight-metric-alb"); len(got) != 0 {
+		t.Errorf("series after the pool stopped = %v", got)
+	}
+	// a mechanism that tracks nothing exports nothing
+	rr := newRRALB(t, "untracked-metric-alb")
+	defer rr.StopPool()
+	if got := memberInflightSeries(t, "untracked-metric-alb"); len(got) != 0 {
+		t.Errorf("round robin exported %v", got)
 	}
 }

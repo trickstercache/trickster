@@ -89,8 +89,8 @@ pool:
 	}
 }
 
-// maxGoroutinesPerPool is what one started ALB may hold while idle
-const maxGoroutinesPerPool = 2
+// maxGoroutinesPerPool is what one started ALB may hold while idle: a pool runs no workers
+const maxGoroutinesPerPool = 0
 
 func TestIdleGoroutinesPerALB(t *testing.T) {
 	const albs = 100

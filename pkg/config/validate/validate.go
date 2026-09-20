@@ -25,7 +25,6 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
 	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
@@ -463,7 +462,7 @@ func streamListener(c *config.Config, name string, options *listener.Options,
 		}
 		if provider == providers.ALB && (backend.ALBOptions == nil ||
 			(backend.ALBOptions.MechanismName != albnames.MechanismRR &&
-				backend.ALBOptions.MechanismName != rr.Name)) {
+				backend.ALBOptions.MechanismName != albnames.MechanismRoundRobin)) {
 			return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use the %s mechanism",
 				name, options.Protocol, backendName, albnames.MechanismRR)
 		}

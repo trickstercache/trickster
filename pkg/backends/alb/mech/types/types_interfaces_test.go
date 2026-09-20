@@ -21,15 +21,17 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/fr"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/nlm"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/pick"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
 )
 
 // TestPoolMechanismMembership pins which mechs implement PoolMechanism and
@@ -43,11 +45,7 @@ func TestPoolMechanismMembership(t *testing.T) {
 		wantsPool bool
 	}{
 		{"rr", func(t *testing.T) types.Mechanism {
-			m, err := rr.New(nil, nil)
-			if err != nil {
-				t.Fatalf("rr.New: %v", err)
-			}
-			return m
+			return pick.New(names.MechanismRR, rr.New())
 		}, true},
 		{"fr", func(t *testing.T) types.Mechanism {
 			m, err := fr.New(nil, nil)
@@ -93,5 +91,16 @@ func TestPoolMechanismMembership(t *testing.T) {
 					tc.name, isPool, tc.wantsPool)
 			}
 		})
+	}
+}
+
+func TestPlaneHas(t *testing.T) {
+	t.Parallel()
+	set := types.PlaneHTTP | types.PlaneStream
+	if !set.Has(types.PlaneHTTP) || !set.Has(types.PlaneStream) || !set.Has(types.PlaneHTTP|types.PlaneStream) {
+		t.Error("a plane in the set is reported missing")
+	}
+	if set.Has(types.PlaneNative) || set.Has(types.PlaneHTTP|types.PlaneNative) || set.Has(0) {
+		t.Error("a plane outside the set, or no plane, is reported present")
 	}
 }

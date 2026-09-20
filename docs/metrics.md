@@ -196,6 +196,11 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `backend_name` - the name of the configured ALB backend
 
+* `trickster_alb_member_inflight` (Gauge) - Current number of requests in flight to an ALB pool member. Exported for the mechanisms that track it (`p2c`, `lc`, `lt`); read when the metrics endpoint is scraped, at no cost to request routing.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
+
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 
 * `trickster_alb_discovery_members` (Gauge) - Current number of discovered ALB pool members

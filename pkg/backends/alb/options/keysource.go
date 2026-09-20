@@ -1,0 +1,88 @@
+/*
+ * Copyright 2026 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package options
+
+import (
+	"errors"
+	"fmt"
+	"net/textproto"
+	"strings"
+)
+
+// KeyKind is where a flow's affinity key is read from.
+type KeyKind uint8
+
+const (
+	// KeyClientIP keys on the client address, after trusted-proxy resolution; never the port.
+	KeyClientIP KeyKind = iota
+	// KeyHost keys on the request's host, without its port and without regard to case.
+	KeyHost
+	// KeyHeader keys on the first value of a request header.
+	KeyHeader
+	// KeyCookie keys on the value of a request cookie.
+	KeyCookie
+	// KeyQuery keys on the raw value of a query string parameter.
+	KeyQuery
+)
+
+// Key source spellings
+const (
+	KeySourceClientIP = "client_ip"
+	KeySourceHost     = "host"
+	keyPrefixHeader   = "header:"
+	keyPrefixCookie   = "cookie:"
+	keyPrefixQuery    = "query:"
+)
+
+// ErrInvalidKeySource is returned for a key source that is not one of client_ip, host,
+// header:<name>, cookie:<name> or query:<name>.
+var ErrInvalidKeySource = errors.New("invalid key source")
+
+// KeySource is a parsed affinity key source.
+type KeySource struct {
+	Kind KeyKind
+	// Name is the header (in canonical form), cookie or query parameter; empty otherwise.
+	Name string
+}
+
+// ParseKeySource parses a key source; the empty string is client_ip.
+func ParseKeySource(s string) (KeySource, error) {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "", KeySourceClientIP:
+		return KeySource{Kind: KeyClientIP}, nil
+	case KeySourceHost:
+		return KeySource{Kind: KeyHost}, nil
+	}
+	for prefix, kind := range map[string]KeyKind{
+		keyPrefixHeader: KeyHeader, keyPrefixCookie: KeyCookie, keyPrefixQuery: KeyQuery,
+	} {
+		name, ok := strings.CutPrefix(s, prefix)
+		if !ok {
+			continue
+		}
+		name = strings.TrimSpace(name)
+		if name == "" || strings.ContainsAny(name, " \t;=&,") {
+			break
+		}
+		if kind == KeyHeader {
+			name = textproto.CanonicalMIMEHeaderKey(name)
+		}
+		return KeySource{Kind: kind, Name: name}, nil
+	}
+	return KeySource{}, fmt.Errorf("%w %q: use %s, %s, %s<name>, %s<name> or %s<name>", ErrInvalidKeySource,
+		s, KeySourceClientIP, KeySourceHost, keyPrefixHeader, keyPrefixCookie, keyPrefixQuery)
+}

@@ -73,6 +73,9 @@ func TestDiscoveredWeightsReachThePool(t *testing.T) {
 		"a weight change must not rebuild the member's backend")
 	require.Same(t, before["myalb-m2"].HealthStatus(), after["myalb-m2"].HealthStatus(),
 		"a weight change must not reset the member's health")
+	require.Same(t, before["myalb-m2"].Member().Stats(), after["myalb-m2"].Member().Stats(),
+		"a weight change must not reset the member's runtime stats")
+	require.Equal(t, 7, after["myalb-m2"].Member().Weight())
 	require.Same(t, before["myalb-m1"], after["myalb-m1"], "an unchanged member keeps its target")
 	require.Same(t, before["myalb-m3"], after["myalb-m3"], "an unchanged member keeps its target")
 }

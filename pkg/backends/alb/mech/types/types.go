@@ -22,6 +22,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 )
 
 // Name is a type alias for the load balancing mechanism common name
@@ -49,9 +50,42 @@ type PoolMechanism interface {
 	Pool() pool.Pool
 }
 
-// RegistryEntry defines an entry in the ALB Registry
+// NewSelectorFunc returns a new selection strategy from the provided Options. It is where
+// config is translated into the protocol-neutral core's own option types.
+type NewSelectorFunc func(*options.Options) (lb.Selector, error)
+
+// Plane is a set of dispatch planes: the kinds of listener a mechanism can serve.
+type Plane uint8
+
+const (
+	// PlaneHTTP is request dispatch through an http.Handler.
+	PlaneHTTP Plane = 1 << iota
+	// PlaneStream is tcp, tls and udp relaying.
+	PlaneStream
+	// PlaneNative is a wire-protocol session server, such as MySQL.
+	PlaneNative
+)
+
+// Has reports whether every plane in want is in the set.
+func (p Plane) Has(want Plane) bool {
+	return want != 0 && p&want == want
+}
+
+// PickerMechanism is a pool mechanism that selects one member per unit of work, and so can
+// serve planes other than HTTP through its Picker.
+type PickerMechanism interface {
+	PoolMechanism
+	Picker() lb.Picker
+	Balancer() *lb.Balancer
+}
+
+// RegistryEntry defines an entry in the ALB Registry. Exactly one of New and NewSelector is
+// set: New for a mechanism that is itself an HTTP handler, NewSelector for a strategy that
+// the registry wraps for whichever plane asks.
 type RegistryEntry struct {
-	Name      Name
-	ShortName Name
-	New       NewMechanismFunc
+	Name        Name
+	ShortName   Name
+	Planes      Plane
+	New         NewMechanismFunc
+	NewSelector NewSelectorFunc
 }

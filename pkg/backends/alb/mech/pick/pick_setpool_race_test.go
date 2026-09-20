@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rr
+package pick
 
 import (
 	"net/http"
@@ -27,14 +27,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
-// SetPool writes h.pool while ServeHTTP reads it via h.pool.LiveTargets().
+// SetPool writes h.pool while ServeHTTP reads it via h.pool.Targets().
 // Interface field assignment is two-word and not atomic, so config reload
 // concurrent with in-flight requests should race.
 func TestRoundRobinSetPoolRace(t *testing.T) {
 	const cycles = 100
 
 	initial, _, _ := albpool.New(-1, []http.Handler{http.HandlerFunc(tu.BasicHTTPHandler)})
-	h := &handler{}
+	h := newRR()
 	h.SetPool(initial)
 
 	pools := make([]pool.Pool, 0, cycles+1)

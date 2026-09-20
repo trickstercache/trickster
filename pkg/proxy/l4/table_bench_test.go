@@ -73,7 +73,7 @@ func benchHolder(b *testing.B, name string, members pool.Targets) backends.Backe
 
 func benchmarkAddr(b *testing.B, up Upstream) {
 	b.Helper()
-	// let the pools' refresh workers drain so selection reads the cached member list
+	// the first read of each pool builds its cached member list; measure past that
 	deadline := time.Now().Add(2 * time.Second)
 	for testing.AllocsPerRun(1, func() { up.Addr() }) != 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)

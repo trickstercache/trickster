@@ -79,18 +79,22 @@ type Options struct {
 	UserRouter *ur.Options `yaml:"user_router,omitempty"`
 	//
 	// synthetic values
-	FgrCodesLookup sets.Set[int] `yaml:"-"`
+	// FGRGoodCodes is the compiled set of status codes that fgr accepts
+	FGRGoodCodes *types.StatusTable `yaml:"-"`
 
 	// mechanism-specific options
 	TSMOptions tsmoptions.Options        `yaml:"tsm,omitempty"`
 	NLMOptions NewestLastModifiedOptions `yaml:"nlm,omitempty"`
+	HRW        HRWOptions                `yaml:"hrw,omitempty"`
+	LT         LTOptions                 `yaml:"lt,omitempty"`
 	FGROptions FirstGoodResponseOptions  `yaml:"fgr,omitempty"`
 }
 
 type FirstGoodResponseOptions struct {
 	// StatusCodes provides an explicit list of status codes considered "good" when using
-	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
-	StatusCodes        []int              `yaml:"status_codes,omitempty"`
+	// the First Good Response (fgr) methodology: bare codes, inclusive {start, end} ranges,
+	// or a mix. By default, any code < 400 is good.
+	StatusCodes        types.StatusRanges `yaml:"status_codes,omitempty"`
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
 }
 
@@ -113,6 +117,11 @@ var _ types.ConfigOptions[Options] = &Options{}
 
 const defaultTSOutputFormat = providers.Prometheus
 
+// DefaultFGRStatusCodes returns the status codes fgr accepts when none are configured.
+func DefaultFGRStatusCodes() types.StatusRanges {
+	return types.StatusRanges{{Start: 100, End: 399}}
+}
+
 var (
 	ErrUserRouterRequired     = errors.New("'user_router' block is required")
 	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
@@ -134,18 +143,6 @@ func New() *Options {
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
-	var fsc []int
-	var fscm sets.Set[int]
-
-	if o.FGRStatusCodes != nil {
-		fsc = make([]int, len(o.FGRStatusCodes))
-		copy(fsc, o.FGRStatusCodes)
-	}
-
-	if o.FgrCodesLookup != nil {
-		fscm = o.FgrCodesLookup.Clone()
-	}
-
 	c := pointers.Clone(o)
 	if o.UserRouter != nil {
 		c.UserRouter = o.UserRouter.Clone()
@@ -155,8 +152,17 @@ func (o *Options) Clone() *Options {
 	}
 	c.Pool = slices.Clone(o.Pool)
 	c.PoolRepeats = slices.Clone(o.PoolRepeats)
-	c.FGRStatusCodes = fsc
-	c.FgrCodesLookup = fscm
+	c.FGRStatusCodes = slices.Clone(o.FGRStatusCodes)
+	c.FGROptions.StatusCodes = slices.Clone(o.FGROptions.StatusCodes)
+	c.LT.StatusCodes = slices.Clone(o.LT.StatusCodes)
+	if o.LT.GoodCodes != nil {
+		table := *o.LT.GoodCodes
+		c.LT.GoodCodes = &table
+	}
+	if o.FGRGoodCodes != nil {
+		table := *o.FGRGoodCodes
+		c.FGRGoodCodes = &table
+	}
 	return c
 }
 
@@ -176,16 +182,21 @@ func (o *Options) Initialize(name string) error {
 	case names.MechanismFGR:
 		// apply deprecated top-level FGRStatusCodes to new FROptions level
 		if len(o.FGRStatusCodes) > 0 && len(o.FGROptions.StatusCodes) == 0 {
-			o.FGROptions.StatusCodes = o.FGRStatusCodes
+			o.FGROptions.StatusCodes = types.StatusCodes(o.FGRStatusCodes...)
 		}
-		if len(o.FGROptions.StatusCodes) > 0 {
-			o.FgrCodesLookup = sets.NewIntSet()
-			o.FgrCodesLookup.SetAll(o.FGROptions.StatusCodes)
+		codes := o.FGROptions.StatusCodes
+		if len(codes) == 0 {
+			codes = DefaultFGRStatusCodes()
 		}
+		o.FGRGoodCodes = codes.Compile()
 	case names.MechanismTSM:
 		if o.OutputFormat == "" {
 			o.OutputFormat = defaultTSOutputFormat
 		}
+	}
+
+	if err := o.initializeStrategies(); err != nil {
+		return err
 	}
 
 	if o.Discovery != nil {
@@ -216,6 +227,9 @@ func (o *Options) PoolRepeatWarning(albName string) string {
 }
 
 func (o *Options) Validate() (bool, error) {
+	if err := o.FGROptions.StatusCodes.Validate(); err != nil {
+		return false, fmt.Errorf("fgr.status_codes: %w", err)
+	}
 	switch o.MechanismName {
 	case names.MechanismUR:
 		if o.UserRouter == nil {
@@ -229,6 +243,9 @@ func (o *Options) Validate() (bool, error) {
 		if o.OutputFormat != "" {
 			return false, ErrOutputFormatOnlyForTSM
 		}
+	}
+	if err := o.validateStrategies(); err != nil {
+		return false, err
 	}
 	if o.Discovery != nil {
 		if _, err := o.Discovery.Validate(); err != nil {

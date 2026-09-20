@@ -705,16 +705,14 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
-	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
-	// worker goroutines (checkHealth, listenStatusUpdates). A dead worker leaves
-	// the healthy-target snapshot stale; the per-call re-filter in Targets()
-	// still produces correct dispatch, but operator-visible gauges drift.
+	// ALBPoolRefreshPanicRecovered counts panics recovered while an ALB pool rebuilt its
+	// healthy-member snapshot; the pool keeps serving the snapshot it last published.
 	ALBPoolRefreshPanicRecovered = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
 			Subsystem: albSubsystem,
 			Name:      "pool_refresh_panic_recovered_total",
-			Help:      "Count of recovered panics in ALB pool refresh worker goroutines, by worker.",
+			Help:      "Count of panics recovered while an ALB pool rebuilt its healthy-member snapshot, by worker.",
 		},
 		[]string{keys.Worker},
 	)

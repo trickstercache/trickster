@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rr
+package pick
 
 import (
 	"net/http"
@@ -26,31 +26,25 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
-// nextTarget must skip targets whose hcStatus dropped below the pool's
-// healthyFloor since the snapshot was taken. Without the dispatch-time check,
-// rr would route to a member the pool already considers unavailable.
-func TestNextTargetSkipsStaleFailingTarget(t *testing.T) {
+// rr must not route to a member whose status dropped below the pool's healthyFloor: the very
+// next request after the transition already excludes it, with no wait for a refresh.
+func TestNextTargetSkipsFailingTargetImmediately(t *testing.T) {
 	var hits1, hits2 atomic.Int64
 	h1 := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { hits1.Add(1) })
 	h2 := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) { hits2.Add(1) })
 
 	p, _, sts := albpool.New(1, []http.Handler{h1, h2})
+	defer p.Stop()
 
 	sts[0].Set(healthcheck.StatusPassing)
 	sts[1].Set(healthcheck.StatusPassing)
+	if got := len(p.Targets()); got != 2 {
+		t.Fatalf("setup: expected 2 healthy targets, got %d", got)
+	}
 
-	albpool.WaitHealthy(t, p, 2)
-
-	// Stop the pool so no auto-refresh can repair a stale snapshot. This
-	// pins the test to the exact race window the dispatch-time re-check
-	// is meant to close.
-	p.Stop()
-
-	// Flip target 1 to Failing. The snapshot is now permanently stale until
-	// the dispatch-time re-check kicks in.
 	sts[1].Set(healthcheck.StatusFailing)
 
-	rr := &handler{}
+	rr := newRR()
 	rr.SetPool(p)
 	const reqs = 50
 	for range reqs {

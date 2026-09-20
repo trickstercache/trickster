@@ -501,9 +501,9 @@ func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Mem
 	}
 	if member.Weight != e.member.Weight {
 		// targets are immutable; rebuild this member's target around the
-		// same client and status
+		// same client, status and runtime stats
 		e.target = pool.NewWeightedTarget(e.client.Router(), e.status,
-			e.client, member.Weight)
+			e.client, member.Weight).WithStatsOf(e.target)
 		if e.external {
 			e.target = e.target.WithExternalHealth()
 		}

@@ -65,14 +65,8 @@ func New(healthyFloor int, hs []http.Handler) (pool.Pool,
 }
 
 // NewHealthy builds a pool with healthyFloor=-1 and pre-sets every target's
-// status to StatusPassing. It replaces the
-//
-//	p, _, st := albpool.New(-1, hs)
-//	for _, s := range st { s.Set(0) }
-//	time.Sleep(250 * time.Millisecond)
-//
-// boilerplate. Callers should still WaitHealthy if dispatch needs the live
-// list to converge, or invoke p.SetHealthy to bypass refresh entirely.
+// status to StatusPassing. The pool is dispatch-ready when it returns: status
+// changes reach a pool synchronously, so no wait is needed.
 func NewHealthy(handlers []http.Handler) (pool.Pool,
 	[]*pool.Target, []*healthcheck.Status,
 ) {

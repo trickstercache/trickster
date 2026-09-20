@@ -88,16 +88,3 @@ func TestNewRoundRobinNilOptions(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, names.MechanismRR, m.Name())
 }
-
-func TestNewNilConstructor(t *testing.T) {
-	original := registryByName
-	t.Cleanup(func() { registryByName = original })
-	registryByName = compileSupportedByName([]types.RegistryEntry{
-		{Name: "nil_constructor", ShortName: "nil"},
-	})
-	for _, name := range []string{"nil_constructor", "nil"} {
-		m, err := New(name, nil, nil)
-		require.ErrorIs(t, err, alberr.ErrUnsupportedMechanism)
-		require.Nil(t, m)
-	}
-}

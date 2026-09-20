@@ -63,8 +63,8 @@ func newDiscoveredPoolALB(t testing.TB, targets pool.Targets) *Client {
 	return c
 }
 
-// waitZeroAllocSteadyState spins until the pool's async refresh worker
-// has drained and dispatch serves the cached zero-alloc fast path
+// waitZeroAllocSteadyState spins until dispatch serves the pool's cached
+// target view, which the first read of a new snapshot builds
 func waitZeroAllocSteadyState(h http.Handler, w *httptest.ResponseRecorder, r *http.Request) {
 	deadline := time.Now().Add(2 * time.Second)
 	for testing.AllocsPerRun(1, func() { h.ServeHTTP(w, r) }) != 0 {

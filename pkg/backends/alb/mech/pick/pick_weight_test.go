@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package rr
+package pick
 
 import (
 	"net/http"
@@ -53,7 +53,7 @@ func TestWeightedRoundRobinExactApportionment(t *testing.T) {
 	}
 	p := pool.New(targets, 0)
 	defer p.Stop()
-	h := &handler{}
+	h := newRR()
 	h.SetPool(p)
 
 	const cycles = 5
@@ -85,7 +85,7 @@ func TestUniformWeightsUseRotation(t *testing.T) {
 	}
 	p := pool.New(targets, 0)
 	defer p.Stop()
-	h := &handler{}
+	h := newRR()
 	h.SetPool(p)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
@@ -100,7 +100,7 @@ func TestUniformWeightsUseRotation(t *testing.T) {
 }
 
 func TestServeHTTPNilAndEmptyPool(t *testing.T) {
-	h := &handler{}
+	h := newRR()
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
 	// no pool installed: 502
@@ -118,7 +118,7 @@ func TestServeHTTPNilAndEmptyPool(t *testing.T) {
 	}
 	// StopPool is safe with and without a pool
 	h.StopPool()
-	h2 := &handler{}
+	h2 := newRR()
 	h2.StopPool()
 	if h.Name() != "rr" {
 		t.Errorf("unexpected mechanism name %s", h.Name())
@@ -138,20 +138,19 @@ func TestNextTargetZeroAlloc(t *testing.T) {
 			targets[i] = pool.NewWeightedTarget(&countingHandler{}, passingStatus(), nil, w)
 		}
 		p := pool.New(targets, 0)
-		h := &handler{}
+		h := newRR()
 		h.SetPool(p)
-		// the pool's async refresh worker must drain its pending flag
-		// before Targets() serves the cached zero-alloc fast path; wait
+		// the first read of a snapshot builds the cached target view; wait
 		// for that steady state, then hold it to the bar
 		deadline := time.Now().Add(2 * time.Second)
-		for testing.AllocsPerRun(1, func() { h.nextTarget(p) }) != 0 {
+		for testing.AllocsPerRun(1, func() { nextTarget(h) }) != 0 {
 			if time.Now().After(deadline) {
 				break
 			}
 			time.Sleep(time.Millisecond)
 		}
 		if allocs := testing.AllocsPerRun(1000, func() {
-			if h.nextTarget(p) == nil {
+			if nextTarget(h) == nil {
 				t.Fatal("expected a target")
 			}
 		}); allocs != 0 {

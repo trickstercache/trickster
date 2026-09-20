@@ -5,6 +5,10 @@ Trickster 2.x provides an Application Load Balancer that is easy to configure an
 | Mechanism | Config | Provides | Description |
 |-----|-----|-----|----|
 | Round Robin | rr | Scaling | a basic, stateless round robin between healthy pool members |
+| Power of Two Choices | p2c | Scaling | draws two healthy pool members at random and routes to the one with fewer requests in flight |
+| Least Connections | lc | Scaling | routes to the healthy pool member with the fewest requests in flight |
+| Least Time | lt | Speed | routes to the healthy pool member with the lowest response latency, scaled by its requests in flight |
+| Highest Random Weight | hrw | Affinity | consistently routes each client, tenant or other key to the same healthy pool member |
 | Time Series Merge | tsm | Federation | uses scatter/gather to collect and merge data from multiple replica tsdb sources |
 | First Response | fr | Speed | fans a request out to multiple backends, and returns the first response received |
 | First Good Response | fgr | Speed | fans a request out to multiple backends, and returns the first response received with a status code < 400 |
@@ -29,7 +33,7 @@ Each mechanism has its own use cases and pitfalls. Be sure to read about each on
 
 A basic **Round Robin** rotates through a pool of healthy backends used to service client requests. Each time a client request is made to Trickster, the round robiner will identify the next healthy backend in the rotation schedule and route the request to it.
 
-The Trickster ALB is intended to support stateless workloads, and currently does not support Sticky Sessions or other advanced ALB capabilities.
+The Trickster ALB is intended to support stateless workloads, and currently does not support Sticky Sessions. For affinity without session state, see [Highest Random Weight](#highest-random-weight).
 
 #### Weighted Round Robin
 
@@ -42,13 +46,13 @@ pool:
     weight: 3         # receives 3 of every 4 requests
 ```
 
-Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
+Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. A heavier member's turns are spread through the rotation rather than taken back to back: two members weighted 3 and 2 are served `A B A A B`, not `A A A B B`. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
 
-Weights apply to mechanisms that select a single member per request (round robin). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
+Weights apply to every mechanism that selects a single member per request, though only Round Robin makes them an exact guarantee; see [Weights and the Selection Mechanisms](#weights-and-the-selection-mechanisms). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
 
 #### More About Our Round Robin Mechanism
 
-Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and each member owns a contiguous `weight`-sized span of that rotation. Selection remains lock- and allocation-free in both forms.
+Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and the result indexes a rotation schedule, computed once each time the set of healthy members changes, in which every member's turns are evenly spaced. Selection remains lock- and allocation-free in both forms. The counter starts at a random value, so a fleet of Trickster replicas started together does not send its first requests to the same pool member.
 
 #### Example Round Robin Configuration
 
@@ -89,6 +93,100 @@ backends:
 Here is the visual representation of this configuration:
 
 <img src="./images/alb-rr.png" width="800">
+
+### Power of Two Choices
+
+The **Power of Two Choices** (p2c) mechanism draws two healthy pool members at random and routes the request to whichever has fewer requests in flight. It keeps load nearly as even as inspecting every member would, at a cost that does not grow with the size of the pool, and unlike Round Robin it reacts to a member that has become slow: requests pile up there, so it loses more of its draws. It is a good default for large pools and for requests whose cost varies widely.
+
+```yaml
+backends:
+  api:
+    provider: alb
+    alb:
+      mechanism: p2c # or power_of_two_choices
+      pool: [ node01, node02, node03 ]
+```
+
+### Least Connections
+
+The **Least Connections** (lc) mechanism routes each request to the healthy pool member with the fewest requests in flight. It reads every member on every request, so it suits small pools; Power of Two Choices approximates it for large ones. While several members are tied, as all are when the pool is idle, they take turns.
+
+```yaml
+backends:
+  api:
+    provider: alb
+    alb:
+      mechanism: lc # or least_connections
+      pool: [ node01, node02 ]
+```
+
+### Least Time
+
+The **Least Time** (lt) mechanism routes each request to the healthy pool member that has been answering fastest. Each member's score is its latency average multiplied by one more than its requests in flight, and the lowest score wins, so a fast member is preferred until it is busy enough that a slower one would answer sooner.
+
+Latency is the time from routing a request to the first byte of its response. The average rises at once when a member slows down and falls gradually, over `lt.decay`, as it recovers. A few details keep the ranking honest:
+
+* A member with no requests yet, such as one just discovered, is scored as its fastest peer. It shares that peer's requests until its own first response ranks it, so it is neither flooded as the apparent fastest nor left waiting for a turn that an idle pool would never give it.
+* A failed request is recorded as a long latency rather than a short one, so a member that returns errors in a millisecond never looks fast. By default a response of `502`, `503` or `504` is a failure, as is one that was never completed; `lt.status_codes` sets the codes that count as a good answer instead, as bare codes, inclusive ranges, or both. A request the client abandoned counts neither way.
+* A member's average fades while it is passed over, so one ranked last on an old measurement or a past failure is tried again rather than ignored for good.
+* Averages survive a configuration reload and autodiscovery membership changes.
+
+When the pool is idle and its members are equally loaded, every request goes to the fastest member. That is the mechanism working as intended; choose `p2c` or `lc` to spread idle traffic instead.
+
+```yaml
+backends:
+  video:
+    provider: alb
+    alb:
+      mechanism: lt # or least_time
+      pool: [ edge01, edge02 ]
+      lt:
+        decay: 10s # default
+        status_codes: [ { start: 200, end: 499 } ] # optional; default is every code but 502, 503 and 504
+```
+
+### Highest Random Weight
+
+The **Highest Random Weight** (hrw) mechanism, also known as rendezvous hashing, routes every request that shares a key to the same healthy pool member. Use it to keep a client or tenant on one member's warm cache. When a member leaves the pool, only the keys it owned move, each to a different remaining member; when it returns, exactly those keys move back. The mapping depends only on the key and the members' names, so every Trickster replica agrees on it and a restart does not change it.
+
+`hrw.key` selects what is hashed:
+
+| Key | Follows |
+|-----|-----|
+| `client_ip` (default) | the client's IP address, after [trusted proxy](./configuring.md) resolution. The port is never part of the key. IPv6 addresses are keyed on their leading `hrw.ipv6_prefix` bits (default `64`), because privacy addressing changes the rest of a client's address over time. |
+| `host` | the request's host name, without its port and without regard to case |
+| `header:<name>` | the first value of the named request header |
+| `cookie:<name>` | the value of the named cookie |
+| `query:<name>` | the value of the named query string parameter, as written in the URL |
+
+A request that lacks the configured key, such as one without the header, has no affinity to preserve and is routed to a member at random.
+
+hrw balances keys, not requests. With many keys of similar volume the members' loads even out, but a single very busy key is always served by one member.
+
+```yaml
+backends:
+  tenants:
+    provider: alb
+    alb:
+      mechanism: hrw # or highest_random_weight
+      pool: [ cache01, cache02, cache03 ]
+      hrw:
+        key: header:X-Tenant
+```
+
+### Weights and the Selection Mechanisms
+
+Every mechanism that selects one member per request honors the pool `weight`, but what a weight promises differs:
+
+| Mechanism | A weight is | Guarantee |
+|-----|-----|-----|
+| rr | a share of requests | exact: `weight` of every `totalWeight` consecutive requests |
+| p2c | a capacity | proportional on average: heavier members are drawn more often and compared by requests in flight per unit of weight |
+| hrw | a share of the keys | proportional on average over many keys; changing a weight moves as few keys as possible |
+| lc | a capacity | members are kept at equal requests in flight per unit of weight |
+| lt | a bias | the score is divided by the weight, which shifts load under contention; an idle pool still sends every request to its best-scoring member |
+
+If you need a guaranteed split, use `rr`.
 
 ### Time Series Merge
 
@@ -278,7 +376,7 @@ This mechanism is useful in applications such as live internet television. Consi
 
 #### Custom Good Status Codes List
 
-By default, fgr will return the first response with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr.status_codes` configuration setting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list.
+By default, fgr will return the first response with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr.status_codes` configuration setting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list. An entry may be a single code or an inclusive range, and the two forms mix: `status_codes: [ { start: 200, end: 299 }, 304 ]`.
 
 #### First Good Response Configuration Example
 
