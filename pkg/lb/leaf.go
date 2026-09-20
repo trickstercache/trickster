@@ -28,15 +28,20 @@ type LeafPick struct {
 	depth  int
 }
 
-// FlowFunc supplies the flow for one level of a leaf pick. level is the picker about to be
-// asked, and via is the member whose payload offered it: nil for the outermost. It lets each
-// level be keyed the way that level is configured; it must not retain its arguments.
-type FlowFunc func(level Picker, via *Member) Flow
+// FlowFunc supplies the flow for one level of a leaf pick. depth is how many levels are above
+// it, level is the picker about to be asked, and via is the member whose payload offered it:
+// nil for the outermost. It lets each level be keyed the way that level is configured; it must
+// not retain its arguments. A retry may ask for the same depth more than once.
+type FlowFunc func(depth int, level Picker, via *Member) Flow
 
-// Repicker is implemented by a Picker that can pick again while avoiding a member, as
-// Balancer does.
+// Repicker is implemented by a Picker that can offer a flow its other members, as Balancer
+// does, for a caller retrying work that some members could not take.
 type Repicker interface {
-	Repick(Flow, *Member) (Pick, bool)
+	// Alternatives returns the eligible members that skip does not report, the picker's choice
+	// for the flow first and the others after it. It commits the flow to none of them.
+	Alternatives(f Flow, skip func(*Member) bool) []*Member
+	// Commit commits a flow to a member that Alternatives returned, as Pick would have.
+	Commit(*Member) (Pick, bool)
 }
 
 // PickLeaf commits a flow to a member that is not itself balanced, asking a member whose
@@ -45,47 +50,94 @@ type Repicker interface {
 // committed are then released without prejudice to their members, whose share is refused
 // rather than passed to a sibling.
 func PickLeaf(p Picker, f Flow) (LeafPick, bool) {
-	return pickLeaf(p, func(Picker, *Member) Flow { return f }, nil)
+	return pickLeaf(p, func(int, Picker, *Member) Flow { return f })
 }
 
 // PickLeafFunc is PickLeaf with each level's flow supplied by flow.
 func PickLeafFunc(p Picker, flow FlowFunc) (LeafPick, bool) {
-	return pickLeaf(p, flow, nil)
+	return pickLeaf(p, flow)
 }
 
-// RepickLeafFunc is PickLeafFunc for a caller retrying work that the leaf member failed
-// could not take: every level that can avoids it. It is not a selection path.
-func RepickLeafFunc(p Picker, flow FlowFunc, failed *Member) (LeafPick, bool) {
-	return pickLeaf(p, flow, failed)
-}
-
-func pickLeaf(p Picker, flow FlowFunc, avoid *Member) (LeafPick, bool) {
+func pickLeaf(p Picker, flow FlowFunc) (LeafPick, bool) {
 	var lp LeafPick
 	var via *Member
 	for lp.depth < MaxPickDepth && p != nil {
-		var pk Pick
-		var ok bool
-		if rp, can := p.(Repicker); can && avoid != nil {
-			pk, ok = rp.Repick(flow(p, via), avoid)
-		} else {
-			pk, ok = p.Pick(flow(p, via))
-		}
+		pk, ok := p.Pick(flow(lp.depth, p, via))
 		if !ok {
 			break
 		}
 		lp.levels[lp.depth] = pk
 		lp.depth++
 		// a payload that offers no picker is a leaf, whether or not it could have offered one
-		via, p = pk.Member(), nil
-		if pp, ok := via.Value.(PickerProvider); ok {
-			p = pp.Picker()
-		}
+		via, p = pk.Member(), pickerOf(pk.Member())
 		if p == nil {
 			return lp, true
 		}
 	}
 	lp.Done(OutcomeCanceled)
 	return LeafPick{}, false
+}
+
+func pickerOf(m *Member) Picker {
+	if pp, ok := m.Value.(PickerProvider); ok {
+		return pp.Picker()
+	}
+	return nil
+}
+
+// RepickLeafFunc is PickLeafFunc for a caller retrying work that the leaf members in failed
+// could not take. No level that can offer alternatives commits to one of them, and a member
+// whose own pool has no other leaf left is passed over for its siblings, so a leaf that can be
+// reached is never given up on. It is not a selection path.
+//
+// The search is one traversal: each level is asked for its alternatives once, in its own
+// order of preference, and each member is visited at most once, so the work is linear in the
+// members searched however many of them turn out to have nothing to offer.
+func RepickLeafFunc(p Picker, flow FlowFunc, failed ...*Member) (LeafPick, bool) {
+	tried := make(map[*Member]struct{}, len(failed))
+	for _, m := range failed {
+		tried[m] = struct{}{}
+	}
+	var lp LeafPick
+	if !lp.repick(p, nil, flow, func(m *Member) bool { _, ok := tried[m]; return ok }) {
+		return LeafPick{}, false
+	}
+	return lp, true
+}
+
+// repick extends lp from p down to a leaf, backing out of any member that leads to none. On
+// failure lp is left as it was found.
+func (lp *LeafPick) repick(p Picker, via *Member, flow FlowFunc, skip func(*Member) bool) bool {
+	if lp.depth >= MaxPickDepth {
+		return false
+	}
+	rp, can := p.(Repicker)
+	if !can {
+		// a picker with no alternatives to offer is asked for an ordinary pick
+		pk, ok := p.Pick(flow(lp.depth, p, via))
+		return ok && lp.extend(pk, flow, skip)
+	}
+	for _, m := range rp.Alternatives(flow(lp.depth, p, via), skip) {
+		if pk, ok := rp.Commit(m); ok && lp.extend(pk, flow, skip) {
+			return true
+		}
+	}
+	return false
+}
+
+// extend adds a committed pick to lp and follows it to a leaf, releasing it again, without
+// prejudice to its member, when it leads to none
+func (lp *LeafPick) extend(pk Pick, flow FlowFunc, skip func(*Member) bool) bool {
+	lp.levels[lp.depth] = pk
+	lp.depth++
+	next := pickerOf(pk.Member())
+	if next == nil || lp.repick(next, pk.Member(), flow, skip) {
+		return true
+	}
+	lp.depth--
+	lp.levels[lp.depth] = Pick{}
+	pk.Done(OutcomeCanceled)
+	return false
 }
 
 // Member returns the selected leaf member, or nil for the zero LeafPick.
@@ -114,6 +166,14 @@ func (lp LeafPick) Level(i int) Pick {
 func (lp LeafPick) Established(d time.Duration) {
 	for i := range lp.depth {
 		lp.levels[i].Established(d)
+	}
+}
+
+// Reached reports that the leaf member was reached. Only a leaf is ever blamed for a failed
+// connect, so only the leaf has a run of them to end.
+func (lp LeafPick) Reached() {
+	if lp.depth > 0 {
+		lp.levels[lp.depth-1].Reached()
 	}
 }
 

@@ -747,10 +747,14 @@ func TestListenersReservePortsByTransport(t *testing.T) {
 
 // a load balancer that serves no stream listener is held to what a request can offer
 func TestRequestALBsRefuseStreamOnlySettings(t *testing.T) {
-	alb := func(set func(*ao.Options)) *config.Config {
+	alb := func(set func(*ao.Options), listeners ...string) *config.Config {
 		c := config.NewConfig()
+		c.Listeners["relay"] = listener.New("relay")
+		c.Listeners["relay"].Protocol = listener.ProtocolTLS
+		c.Listeners["web"] = listener.New("web")
 		b := bo.New()
 		b.Provider = providers.ALB
+		b.ListenerNames = listeners
 		b.ALBOptions = &ao.Options{MechanismName: "hrw"}
 		set(b.ALBOptions)
 		notALB := bo.New()
@@ -780,9 +784,18 @@ func TestRequestALBsRefuseStreamOnlySettings(t *testing.T) {
 		case test.want != "" && (err == nil || !strings.Contains(err.Error(), test.want)):
 			t.Errorf("%s: error = %v, want %q", name, err, test.want)
 		}
-		// the same load balancer on a stream listener is somebody else's to judge
-		if err := requestALBs(alb(test.set), sets.New([]string{"lb"})); err != nil {
+		// the same load balancer on a stream listener alone is somebody else's to judge
+		if err := requestALBs(alb(test.set, "relay"), sets.New([]string{"lb"})); err != nil {
 			t.Errorf("%s: a stream load balancer was held to request rules: %v", name, err)
+		}
+		// one that serves requests as well is held to both, but for a stream block, which the
+		// stream listener it also serves has a use for
+		err = requestALBs(alb(test.set, "relay", "web"), sets.New([]string{"lb"}))
+		switch {
+		case (test.want == "" || name == "stream block") && err != nil:
+			t.Errorf("%s: on both planes: unexpected error: %v", name, err)
+		case test.want != "" && name != "stream block" && (err == nil || !strings.Contains(err.Error(), test.want)):
+			t.Errorf("%s: on both planes: error = %v, want %q", name, err, test.want)
 		}
 	}
 }
@@ -796,14 +809,23 @@ func TestSpreadMechanismsNeedAStreamListener(t *testing.T) {
 		return b
 	}
 	c := config.NewConfig()
+	c.Listeners["relay"] = listener.New("relay")
+	c.Listeners["relay"].Protocol = listener.ProtocolTCP
 	c.Backends = bo.Lookup{"racer": alb("race", "origin"), "origin": bo.New()}
 	if err := requestALBs(c, sets.NewStringSet()); err == nil ||
 		!strings.Contains(err.Error(), "mechanism \"race\" requires a tcp or tls listener") {
 		t.Errorf("a race on a request listener: %v", err)
 	}
+	c.Backends["racer"].ListenerNames = []string{"relay"}
 	if err := requestALBs(c, sets.New([]string{"racer"})); err != nil {
 		t.Errorf("a race on a stream listener: %v", err)
 	}
+	c.Backends["racer"].ListenerNames = []string{"relay", "default"}
+	if err := requestALBs(c, sets.New([]string{"racer"})); err == nil ||
+		!strings.Contains(err.Error(), "cannot serve http listener \"default\"") {
+		t.Errorf("a race on a stream and a request listener: %v", err)
+	}
+	c.Backends["racer"].ListenerNames = []string{"relay"}
 	// and cannot be reached through another load balancer, which has one member to hand it
 	c.Backends["outer"] = alb("rr", "racer")
 	if err := requestALBs(c, sets.New([]string{"racer", "outer"})); err == nil ||

@@ -119,3 +119,68 @@ func TestSessionKeysAreForNativeListeners(t *testing.T) {
 		t.Fatalf("error = %v", err)
 	}
 }
+
+// a load balancer mapped to listeners of two kinds must suit both
+func TestALBsOnTwoPlanesAreHeldToBoth(t *testing.T) {
+	web := func(c *config.Config) {
+		c.Listeners["web"] = listener.New("web")
+		c.Listeners["web"].ListenPort = 18480
+	}
+	t.Run("http and mysql", func(t *testing.T) {
+		for key, want := range map[string]string{
+			"client_ip": "",
+			"user":      "hrw.key \"user\" cannot be read from a request, which http listener \"web\" serves",
+		} {
+			c := replicaConfig("hrw")
+			web(c)
+			lb := c.Backends["replicas"]
+			lb.ListenerName, lb.ListenerNames = "", []string{"mysql1", "web"}
+			ks, err := ao.ParseKeySource(key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lb.ALBOptions.HRW = ao.HRWOptions{Key: key, KeySource: ks}
+			err = Listeners(c)
+			if (want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), want)) {
+				t.Errorf("%s: error = %v, want %q", key, err, want)
+			}
+		}
+	})
+	t.Run("http and tls", func(t *testing.T) {
+		for name, test := range map[string]struct {
+			mechanism string
+			set       func(*ao.Options)
+			want      string
+		}{
+			"client_ip": {"hrw", func(*ao.Options) {}, ""},
+			"sni": {"hrw", func(o *ao.Options) { o.HRW = ao.HRWOptions{Key: "sni", KeySource: ao.KeySource{Kind: ao.KeySNI}} },
+				"hrw.key \"sni\" cannot be read from a request"},
+			"host": {"hrw", func(o *ao.Options) { o.HRW = ao.HRWOptions{Key: "host", KeySource: ao.KeySource{Kind: ao.KeyHost}} },
+				"cannot read alb backend \"lb\"'s hrw.key \"host\""},
+			"default signal": {"lt", func(*ao.Options) {}, ""},
+			"connect signal": {"lt", func(o *ao.Options) { o.LT.Signal = ao.LTSignalConnect }, "on a http listener"},
+			"write signal":   {"lt", func(o *ao.Options) { o.LT.Signal = ao.LTSignalFirstWrite }, "on a tls listener"},
+			"stream block":   {"rr", func(o *ao.Options) { o.Stream = &ao.StreamOptions{ConnectRetries: 1} }, ""},
+			"race":           {"race", func(*ao.Options) {}, "cannot serve http listener \"web\""},
+		} {
+			c := config.NewConfig()
+			web(c)
+			c.Listeners["relay"] = listener.New("relay")
+			c.Listeners["relay"].Protocol = listener.ProtocolTLS
+			c.Listeners["relay"].ListenPort = 9443
+			lb := bo.New()
+			lb.Provider = providers.ALB
+			lb.ListenerNames = []string{"relay", "web"}
+			lb.ALBOptions = &ao.Options{MechanismName: test.mechanism, Pool: ao.Members("m1")}
+			test.set(lb.ALBOptions)
+			member := bo.New()
+			member.Provider = providers.ReverseProxyShort
+			member.OriginURL = "tcp://member.example.com:9000"
+			c.Backends = bo.Lookup{"lb": lb, "m1": member}
+			err := Listeners(c)
+			if (test.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), test.want)) {
+				t.Errorf("%s: error = %v, want %q", name, err, test.want)
+			}
+		}
+	})
+}

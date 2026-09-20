@@ -105,8 +105,6 @@ func (o poolObserver) Observe(ev lb.Event) {
 	}
 }
 
-const poolHealthDescription = "follows pool"
-
 func (c *Client) observeSnapshot(id uint64, ev lb.Event) {
 	c.healthMtx.Lock()
 	defer c.healthMtx.Unlock()
@@ -184,7 +182,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		}
 		c.handler = m
 		if o.ALBOptions.PropagateHealth {
-			c.health = healthcheck.NewStatus(name, poolHealthDescription, "",
+			c.health = healthcheck.NewStatus(name, providers.ALB, "",
 				healthcheck.StatusUnchecked, time.Time{}, nil)
 		}
 		if pm, ok := m.(types.PickerMechanism); ok {
@@ -316,8 +314,9 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			}
 		}
 		hc, ok := hcs[m.Name]
-		if ac, isALB := tc.(*Client); !ok && isALB && ac.health != nil {
-			// a load balancer that reports whether it has an available member
+		if ac, isALB := tc.(*Client); isALB && ac.health != nil {
+			// a load balancer that reports whether it has an available member is followed by
+			// that status, whatever the health checker holds for it
 			hc, ok = ac.health, true
 		}
 		if !ok {

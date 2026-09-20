@@ -171,3 +171,41 @@ func TestSnapshotsOfASupersededPoolAreIgnored(t *testing.T) {
 	late.Observe(lb.Event{Kind: lb.EventPanic})
 	require.Equal(t, healthcheck.StatusPassing, c.HealthStatus().Get())
 }
+
+type externalRegistrar interface {
+	RegisterExternal(name, description string, s *healthcheck.Status)
+}
+
+// the daemon registers every ALB with the health checker before it starts the pools; the status
+// an ALB keeps for itself must win over the synthetic one, and be the one the checker reports
+func TestHealthPropagatesThroughTheHealthChecker(t *testing.T) {
+	g := newGraph(t, "a1", "b1")
+	inner := g.alb(t, "inner-a", &ao.Options{MechanismName: "rr", Pool: ao.Members("a1"), PropagateHealth: true})
+	g.alb(t, "inner-b", &ao.Options{MechanismName: "rr", Pool: ao.Members("b1")})
+	outer := g.alb(t, "outer", &ao.Options{MechanismName: "rr", Pool: ao.Members("inner-a", "inner-b")})
+	for _, c := range g.clients {
+		if c.Configuration().Provider == "" {
+			c.Configuration().Provider = providers.ReverseProxyShort
+		}
+	}
+	hc, err := g.clients.StartHealthChecks(nil)
+	require.NoError(t, err)
+	t.Cleanup(hc.Shutdown)
+	for name, st := range g.health {
+		hc.(externalRegistrar).RegisterExternal(name, "test", st)
+	}
+	statuses := hc.Statuses()
+	require.Same(t, inner.HealthStatus(), statuses["inner-a"], "the checker reports the ALB's own status")
+	require.NotNil(t, statuses["inner-b"], "an ALB with no status of its own is still reported")
+	require.NoError(t, StartALBPools(g.clients, statuses))
+	t.Cleanup(func() { _ = StopPools(g.clients) })
+
+	require.Equal(t, []string{"inner-a", "inner-b"}, liveNames(outer))
+	g.health["a1"].Set(healthcheck.StatusFailing)
+	require.Equal(t, healthcheck.StatusFailing, statuses["inner-a"].Get())
+	require.Equal(t, []string{"inner-b"}, liveNames(outer))
+	g.health["b1"].Set(healthcheck.StatusFailing)
+	require.Equal(t, []string{"inner-b"}, liveNames(outer), "an ALB that does not propagate keeps its share")
+	g.health["a1"].Set(healthcheck.StatusPassing)
+	require.Equal(t, []string{"inner-a", "inner-b"}, liveNames(outer))
+}

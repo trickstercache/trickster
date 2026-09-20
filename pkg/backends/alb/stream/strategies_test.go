@@ -471,3 +471,190 @@ func TestHRWKeysOnAProxyTLV(t *testing.T) {
 		}
 	}
 }
+
+// exhaust offers a flow every route its upstream will give it, failing each, and returns the
+// addresses in the order they were tried
+func exhaust(t *testing.T, u l4.Upstream, flow l4.Flow) []string {
+	t.Helper()
+	r, ok := u.Pick(flow)
+	var tried []string
+	for ok {
+		tried = append(tried, r.Addr())
+		r.Dialed(time.Millisecond, errRefused)
+		r, ok = u.(l4.Retrier).Retry(flow, r)
+	}
+	return tried
+}
+
+func distinct(addrs []string) bool {
+	seen := make(map[string]bool, len(addrs))
+	for _, a := range addrs {
+		if seen[a] {
+			return false
+		}
+		seen[a] = true
+	}
+	return true
+}
+
+// a retry never returns to a member the flow has already failed to reach, whatever the strategy:
+// with enough retries every member is tried once, and then the flow is refused
+func TestConnectRetriesVisitEveryMemberOnce(t *testing.T) {
+	m := origins(t, 4)
+	retries := func(o *ao.Options) { o.Stream = &ao.StreamOptions{ConnectRetries: 10} }
+	for _, mech := range []string{"rr", "p2c", "lc", "lt", "hrw"} {
+		b := newALBWith(t, "distinct-"+mech, mech, retries, up(m[0], 1), up(m[1], 3), up(m[2], 1), up(m[3], 1))
+		u := FromBackend(b)
+		for i := range 20 {
+			flow := clientFlow(l4.ProtocolTCP, "198.51.100."+strconv.Itoa(i)+":5000", "")
+			if tried := exhaust(t, u, flow); len(tried) != 4 || !distinct(tried) {
+				t.Fatalf("%s: tried %v", mech, tried)
+			}
+		}
+		for addr, st := range statsOf(b) {
+			if st.Inflight() != 0 {
+				t.Errorf("%s: %s left %d in flight", mech, addr, st.Inflight())
+			}
+		}
+	}
+}
+
+// across nested pools too: a pool with no member left to try is passed over for its siblings
+func TestConnectRetriesCrossNestedPools(t *testing.T) {
+	m := origins(t, 5)
+	retries := func(o *ao.Options) { o.Stream = &ao.StreamOptions{ConnectRetries: 10} }
+	left := newALB(t, "left", "hrw", up(m[0], 1), up(m[1], 1))
+	right := newALB(t, "right", "rr", up(m[2], 1), up(m[3], 1), up(m[4], 1))
+	u := FromBackend(newALBWith(t, "outer", "rr", retries, up(left, 1), up(right, 1)))
+	for i := range 10 {
+		flow := clientFlow(l4.ProtocolTCP, "198.51.100."+strconv.Itoa(i)+":5000", "")
+		if tried := exhaust(t, u, flow); len(tried) != 5 || !distinct(tried) {
+			t.Fatalf("tried %v", tried)
+		}
+	}
+}
+
+// ejection follows the order of connects, not of connections ending: a long-lived connection
+// between two failed dials breaks the run when it connects, and says nothing when it closes
+func TestPassiveEjectionFollowsConnectOrder(t *testing.T) {
+	passive := func(o *ao.Options) {
+		o.Stream = &ao.StreamOptions{PassiveHealth: &ao.PassiveHealthOptions{Failures: 2, Eject: timeconv.Duration(time.Hour)}}
+	}
+	// a standby keeps the member ejectable: the last live member never is
+	pool := newALBWith(t, "ordered-alb", "rr", passive,
+		up(origin(t, "ordered-a", "10.0.0.1:9000"), 1), up(origin(t, "ordered-b", "10.0.0.2:9000"), 1))
+	u := FromBackend(pool)
+	flow := clientFlow(l4.ProtocolTCP, "198.51.100.1:5000", "")
+	st := statsOf(pool)["10.0.0.1:9000"]
+	toA := func() l4.Route {
+		for range 4 {
+			r, _ := u.Pick(flow)
+			if r.Addr() == "10.0.0.1:9000" {
+				return r
+			}
+			r.Dialed(time.Millisecond, nil)
+			r.Closed(nil)
+		}
+		t.Fatal("the member was never picked")
+		return nil
+	}
+	toA().Dialed(time.Millisecond, errRefused)
+	long := toA()
+	long.Dialed(time.Millisecond, nil)
+	if st.ConnectFailures() != 0 {
+		t.Fatal("a successful dial did not end the run of failed dials")
+	}
+	toA().Dialed(time.Millisecond, errRefused)
+	if st.Ejected(time.Now()) {
+		t.Fatal("ejected for two failed dials that a successful one came between")
+	}
+	long.Closed(nil)
+	if st.ConnectFailures() != 1 {
+		t.Errorf("connect failures after the long connection closed = %d", st.ConnectFailures())
+	}
+	toA().Dialed(time.Millisecond, errRefused)
+	if !st.Ejected(time.Now()) {
+		t.Error("two consecutive failed dials did not eject the member")
+	}
+
+	// a udp socket always opens, so only a reply, or a session that ends clean, is a success
+	udp := newALBWith(t, "ordered-udp", "rr", passive,
+		up(origin(t, "ordered-ua", "10.0.0.1:9000"), 1), up(origin(t, "ordered-ub", "10.0.0.2:9000"), 1))
+	uu := FromBackend(udp)
+	ust := statsOf(udp)["10.0.0.1:9000"]
+	session := func() l4.Route {
+		for range 4 {
+			r, _ := uu.Pick(clientFlow(l4.ProtocolUDP, "198.51.100.1:5000", ""))
+			r.Dialed(0, nil)
+			if r.Addr() == "10.0.0.1:9000" {
+				return r
+			}
+			r.Closed(nil)
+		}
+		t.Fatal("the member was never picked")
+		return nil
+	}
+	session().Closed(errRefused)
+	if ust.ConnectFailures() != 1 {
+		t.Fatalf("opening a udp socket reset the count: %d", ust.ConnectFailures())
+	}
+	answered := session()
+	answered.FirstByte()
+	if ust.ConnectFailures() != 0 {
+		t.Error("a reply did not end the run of unreachable sessions")
+	}
+	answered.Closed(nil)
+	session().Closed(errRefused)
+	session().Closed(nil)
+	if ust.ConnectFailures() != 0 || ust.Ejected(time.Now()) {
+		t.Error("a session that ended clean did not end the run")
+	}
+}
+
+// stubborn is a picker that cannot avoid members, and always offers the same one
+type stubborn struct{ b *lb.Balancer }
+
+func (s stubborn) Needs() lb.Needs { return s.b.Needs() }
+
+func (s stubborn) Pick(f lb.Flow) (lb.Pick, bool) { return s.b.Pick(f) }
+
+// a picker that offers a retry the member the flow already failed on is refused, not dialed again
+func TestRetryRefusesAMemberAlreadyTried(t *testing.T) {
+	pool := newALB(t, "stubborn-alb", "rr", up(origin(t, "stubborn-only", "10.0.0.1:9000"), 1))
+	u := &upstream{picker: stubborn{pool.(*alb.Client).Picker().(*lb.Balancer)}, retries: 3}
+	flow := clientFlow(l4.ProtocolTCP, "198.51.100.1:5000", "")
+	first, ok := u.Pick(flow)
+	if !ok {
+		t.Fatal("refused")
+	}
+	first.Dialed(time.Millisecond, errRefused)
+	if again, ok := u.Retry(flow, first); ok {
+		t.Errorf("retried onto %s, which had just failed", again.Addr())
+	}
+	for addr, st := range statsOf(pool) {
+		if st.Inflight() != 0 {
+			t.Errorf("%s left %d in flight", addr, st.Inflight())
+		}
+	}
+}
+
+// at the most retries a flow may have, under an affinity strategy over pools of one member
+// each, every retry starts at the same pool and must pass every pool already spent: the last
+// attempt passes ten of them, and still reaches a member that has not been tried
+func TestConnectRetriesReachPastManySpentPools(t *testing.T) {
+	retries := func(o *ao.Options) { o.Stream = &ao.StreamOptions{ConnectRetries: ao.MaxConnectRetries} }
+	var children []spec
+	for i := range ao.MaxConnectRetries + 2 {
+		name := strconv.Itoa(i)
+		child := newALB(t, "single-"+name, "rr", up(origin(t, "single-leaf-"+name, "10.0.1."+name+":9000"), 1))
+		children = append(children, up(child, 1))
+	}
+	u := FromBackend(newALBWith(t, "affinity-outer", "hrw", retries, children...))
+	for i := range 10 {
+		flow := clientFlow(l4.ProtocolTCP, "198.51.100."+strconv.Itoa(i)+":5000", "")
+		tried := exhaust(t, u, flow)
+		if len(tried) != ao.MaxConnectRetries+1 || !distinct(tried) {
+			t.Fatalf("client %d was offered %d members: %v", i, len(tried), tried)
+		}
+	}
+}

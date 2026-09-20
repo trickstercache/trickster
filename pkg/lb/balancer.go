@@ -17,6 +17,7 @@ package lb
 
 import (
 	"math"
+	"slices"
 	"sync/atomic"
 	"time"
 )
@@ -58,6 +59,15 @@ func (p Pick) FirstByte() {
 	}
 }
 
+// Reached reports that the member was reached, which ends its run of failures to reach it. A
+// caller that reports OutcomeConnectFailed reports this as soon as a connect succeeds, not when
+// the flow ends: only then are the failures that count toward ejection consecutive connects.
+func (p Pick) Reached() {
+	if p.member != nil && p.balancer != nil && p.balancer.ejects && p.member.stats.connectFails.Load() != 0 {
+		p.member.stats.connectFails.Store(0)
+	}
+}
+
 // Done reports that the flow ended. It must be called exactly once per Pick, including when
 // the work panics, or the member's in-flight count leaks. A failed outcome records a latency
 // penalty, so a member that fails fast never looks fast.
@@ -75,11 +85,13 @@ func (p Pick) Done(o Outcome) {
 			st.fails.Store(0)
 		}
 	case OutcomeFailed, OutcomeConnectFailed:
-		fails := st.fails.Add(1)
+		st.fails.Add(1)
 		if p.balancer.needs.Has(NeedLatency) {
 			p.penalize(st)
 		}
-		if o == OutcomeConnectFailed && p.balancer.ejects && int(fails) >= p.balancer.ejection.Failures {
+		// how a member answered never counts toward ejection, only whether it could be reached
+		if o == OutcomeConnectFailed && p.balancer.ejects &&
+			int(st.connectFails.Add(1)) >= p.balancer.ejection.Failures {
 			p.balancer.eject(p.member)
 		}
 	case OutcomeCanceled:
@@ -295,22 +307,54 @@ func (b *Balancer) commit(m *Member) (Pick, bool) {
 	return pk, true
 }
 
-// Repick commits the flow to an eligible member other than failed, for a caller retrying work
-// that failed could not take. It is not a selection path: it prepares a one-off snapshot.
-func (b *Balancer) Repick(f Flow, failed *Member) (Pick, bool) {
+// Alternatives returns the eligible members that skip does not report: the strategy's choice
+// among them for the flow first, then the others in pool order from there. It is not a
+// selection path: it prepares a one-off snapshot, once, however many members it returns.
+func (b *Balancer) Alternatives(f Flow, skip func(*Member) bool) []*Member {
 	p := b.pool.Load()
 	if p == nil {
-		return Pick{}, false
+		return nil
 	}
 	snap := p.Snapshot()
+	if len(snap.Members) == 0 {
+		return nil
+	}
 	others := make([]*Member, 0, len(snap.Members))
 	for _, m := range snap.Members {
-		if m != failed {
+		if skip == nil || !skip(m) {
 			others = append(others, m)
 		}
 	}
 	if len(others) == 0 {
+		return nil
+	}
+	first := b.selector.Prepare(&Snapshot{Members: others, Tier: snap.Tier, Gen: snap.Gen}).Select(f)
+	if first == nil {
+		return nil
+	}
+	i := slices.Index(others, first)
+	if i < 0 {
+		// the strategy's choice is honored as Pick honors it, even one it was never offered
+		return append([]*Member{first}, others...)
+	}
+	// rotate the choice to the front in place: three reversals, no second slice
+	slices.Reverse(others[:i])
+	slices.Reverse(others[i:])
+	slices.Reverse(others)
+	return others
+}
+
+// Commit commits a flow to a member that Alternatives returned, as Pick would have.
+func (b *Balancer) Commit(m *Member) (Pick, bool) {
+	return b.commit(m)
+}
+
+// Repick commits the flow to an eligible member that is none of failed, for a caller retrying
+// work those members could not take. It is not a selection path.
+func (b *Balancer) Repick(f Flow, failed ...*Member) (Pick, bool) {
+	alts := b.Alternatives(f, func(m *Member) bool { return slices.Contains(failed, m) })
+	if len(alts) == 0 {
 		return Pick{}, false
 	}
-	return b.commit(b.selector.Prepare(&Snapshot{Members: others, Gen: snap.Gen}).Select(f))
+	return b.commit(alts[0])
 }

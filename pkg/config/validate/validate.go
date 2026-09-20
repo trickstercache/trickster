@@ -483,8 +483,10 @@ var streamProviders = sets.New([]string{
 	providers.ReverseProxyShort, providers.ReverseProxy, providers.Proxy, providers.ALB,
 })
 
-// requestALBs holds the load balancers that serve no stream or native listener to what a
-// request can offer: no server name or session to key on, no connect to time, no stream block
+// requestALBs holds every load balancer that serves an http listener to what a request can
+// offer: no server name or session to key on and no connect to time. One that also serves a
+// stream or native listener was held to that listener's rules as well, so its settings must
+// suit every listener it serves. streamALBs names those that serve a stream or native listener.
 func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 	members := c.Backends.PoolMembers()
 	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
@@ -500,26 +502,43 @@ func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 			return fmt.Errorf("alb backend %q: mechanism %q cannot be a member of another alb's pool",
 				backendName, o.MechanismName)
 		}
-		if streamALBs.Contains(backendName) {
-			continue
-		}
-		if streamOnly {
-			return fmt.Errorf("alb backend %q: mechanism %q requires a %s listener", backendName,
-				o.MechanismName, strings.Join(albregistry.StreamProtocols(o.MechanismName), " or "))
-		}
-		if o.Stream != nil {
+		if o.Stream != nil && !streamALBs.Contains(backendName) {
 			return fmt.Errorf("alb backend %q: 'stream' options apply only to an alb that serves a "+
 				"tcp, tls or udp listener", backendName)
 		}
+		httpListener := servesHTTPListener(c, backend)
+		if httpListener == "" {
+			continue
+		}
+		if streamOnly {
+			return fmt.Errorf("alb backend %q: mechanism %q requires a %s listener, and cannot serve "+
+				"http listener %q", backendName, o.MechanismName,
+				strings.Join(albregistry.StreamProtocols(o.MechanismName), " or "), httpListener)
+		}
 		if !o.HRW.KeySource.OnHTTP() {
-			return fmt.Errorf("alb backend %q: hrw.key %q cannot be read from a request",
-				backendName, o.HRW.Key)
+			return fmt.Errorf("alb backend %q: hrw.key %q cannot be read from a request, which http "+
+				"listener %q serves", backendName, o.HRW.Key, httpListener)
 		}
 		if _, err := o.LTSignalFor(listener.ProtocolHTTP); err != nil {
 			return fmt.Errorf("alb backend %q: %w", backendName, err)
 		}
 	}
 	return nil
+}
+
+// servesHTTPListener returns the name of an http listener the backend is mapped to, or "" when
+// it has none. A backend that names no listener serves the default one, which is http.
+func servesHTTPListener(c *config.Config, backend *bo.Options) string {
+	if len(backend.ListenerNames) == 0 {
+		return listener.DefaultFrontendName
+	}
+	for _, name := range backend.ListenerNames {
+		lo := c.Listeners[name]
+		if lo == nil || lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP {
+			return name
+		}
+	}
+	return ""
 }
 
 func streamListener(c *config.Config, name string, options *listener.Options,

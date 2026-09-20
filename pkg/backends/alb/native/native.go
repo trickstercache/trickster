@@ -44,7 +44,7 @@ type resolver struct {
 
 func (r *resolver) ResolveRoute(in backends.RouteInput) (backends.RouteDecision, bool) {
 	// each load balancer passed through on the way to a member reads the key its own way
-	flowOf := func(p lb.Picker, via *lb.Member) lb.Flow {
+	flowOf := func(_ int, p lb.Picker, via *lb.Member) lb.Flow {
 		if !p.Needs().Has(lb.NeedKey) {
 			return lb.Flow{}
 		}
@@ -64,16 +64,13 @@ func (r *resolver) ResolveRoute(in backends.RouteInput) (backends.RouteDecision,
 		return backends.RouteDecision{Outcome: backends.RouteOutcomeUnavailable}, false
 	}
 	var once sync.Once
-	d := backends.RouteDecision{
+	// the target carries no status: the pool has already held the member to the load balancer's
+	// healthy_floor, which a second, fixed threshold must not overrule
+	return backends.RouteDecision{
 		Target:  backends.RouteTarget{Backend: t.Backend()},
 		Outcome: backends.RouteOutcomeSelected,
 		Release: func() { once.Do(func() { pk.Done(lb.OutcomeOK) }) },
-	}
-	if st := t.HealthStatus(); st != nil {
-		// a nil status must not become a non-nil interface
-		d.Target.Status = st
-	}
-	return d, true
+	}, true
 }
 
 func optionsOf(m *lb.Member) *ao.Options {

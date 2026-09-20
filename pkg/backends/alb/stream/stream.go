@@ -20,6 +20,7 @@ package stream
 
 import (
 	"errors"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -124,31 +125,48 @@ func (u *seriesCache) seriesFor(m *lb.Member, f l4.Flow, name string) *memberSer
 }
 
 func (u *upstream) Pick(f l4.Flow) (l4.Route, bool) {
-	return u.pick(f, nil, 0)
+	return u.pick(f, nil)
+}
+
+// retryState is what a route that is a retry carries; a flow's first route has none
+type retryState struct {
+	attempt int
+	// every member the flow failed to reach before this route
+	tried []*lb.Member
 }
 
 // Retry offers another member when a connection could not reach the one it was given, as
-// far as stream.connect_retries allows
+// far as stream.connect_retries allows, and never one the flow has already been offered
 func (u *upstream) Retry(f l4.Flow, failed l4.Route) (l4.Route, bool) {
 	prev, ok := failed.(*route)
-	if !ok || prev.attempt >= u.retries {
+	if !ok {
 		return nil, false
 	}
-	return u.pick(f, prev.pick.Member(), prev.attempt+1)
+	next := &retryState{attempt: 1}
+	if prev.retry != nil {
+		next.attempt = prev.retry.attempt + 1
+		next.tried = slices.Clip(prev.retry.tried)
+	}
+	if next.attempt > u.retries {
+		return nil, false
+	}
+	next.tried = append(next.tried, prev.pick.Member())
+	return u.pick(f, next)
 }
 
-func (u *upstream) pick(f l4.Flow, avoid *lb.Member, attempt int) (l4.Route, bool) {
-	r := &route{attempt: attempt}
-	level := 0
-	flowOf := func(p lb.Picker, via *lb.Member) lb.Flow {
+func (u *upstream) pick(f l4.Flow, retry *retryState) (l4.Route, bool) {
+	r := &route{retry: retry, udp: f.Protocol == l4.ProtocolUDP}
+	var tried []*lb.Member
+	if retry != nil {
+		tried = retry.tried
+	}
+	flowOf := func(depth int, p lb.Picker, via *lb.Member) lb.Flow {
 		o := u.options
 		if via != nil {
 			o = optionsOf(via)
 		}
-		if level < len(r.onConnect) {
-			r.onConnect[level] = timesConnect(o, f.Protocol)
-			level++
-		}
+		// a retry may try several members at one depth; the last one asked is the one kept
+		r.onConnect[depth] = timesConnect(o, f.Protocol)
 		if !p.Needs().Has(lb.NeedKey) {
 			return lb.Flow{}
 		}
@@ -156,12 +174,17 @@ func (u *upstream) pick(f l4.Flow, avoid *lb.Member, attempt int) (l4.Route, boo
 	}
 	var pk lb.LeafPick
 	var ok bool
-	if avoid == nil {
+	if len(tried) == 0 {
 		pk, ok = lb.PickLeafFunc(u.picker, flowOf)
 	} else {
-		pk, ok = lb.RepickLeafFunc(u.picker, flowOf, avoid)
+		pk, ok = lb.RepickLeafFunc(u.picker, flowOf, tried...)
 	}
 	if !ok {
+		return nil, false
+	}
+	if retry != nil && slices.Contains(tried, pk.Member()) {
+		// a picker that cannot avoid members offered one the flow has already failed to reach
+		pk.Done(lb.OutcomeCanceled)
 		return nil, false
 	}
 	t, ok := pk.Member().Value.(*pool.Target)
@@ -233,7 +256,9 @@ type route struct {
 	series *memberSeries
 	// for each load balancer passed through, whether it times the connect or the first byte
 	onConnect [lb.MaxPickDepth]bool
-	attempt   int
+	udp       bool
+	// nil unless the route is a retry
+	retry *retryState
 }
 
 func (r *route) Addr() string { return r.addr }
@@ -244,6 +269,10 @@ func (r *route) Final() bool { return false }
 func (r *route) Dialed(d time.Duration, err error) {
 	switch {
 	case err == nil:
+		if !r.udp {
+			// a udp socket opens whether or not anything listens; a reply is what reaches
+			r.pick.Reached()
+		}
 		for i := range r.pick.Depth() {
 			if r.onConnect[i] {
 				r.pick.Level(i).Established(d)
@@ -260,6 +289,7 @@ func (r *route) Dialed(d time.Duration, err error) {
 }
 
 func (r *route) FirstByte() {
+	r.pick.Reached()
 	for i := range r.pick.Depth() {
 		if !r.onConnect[i] {
 			r.pick.Level(i).FirstByte()
@@ -273,6 +303,10 @@ func (r *route) Closed(err error) {
 		r.pick.Done(lb.OutcomeConnectFailed)
 		r.series.unreachable.Inc()
 		return
+	}
+	if r.udp {
+		// a session that ended without a port-unreachable is all a one-way member ever shows
+		r.pick.Reached()
 	}
 	r.pick.Done(lb.OutcomeOK)
 	r.series.proxied.Inc()

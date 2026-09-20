@@ -28,10 +28,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/native"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
 )
@@ -95,7 +97,6 @@ func TestSessionsAreBalancedAndCounted(t *testing.T) {
 		require.True(t, ok)
 		require.Equal(t, backends.RouteOutcomeSelected, d.Outcome)
 		require.True(t, d.Target.Available())
-		require.Same(t, f.health[d.Target.Backend.Name()], d.Target.Status)
 		held = append(held, d)
 	}
 	// least connections: open sessions are shared out evenly, and stay counted while open
@@ -200,4 +201,41 @@ func TestForeignMembersAreRefused(t *testing.T) {
 	require.Equal(t, backends.RouteOutcomeUnavailable, d.Outcome)
 	require.Zero(t, m.Stats().Inflight())
 	require.Zero(t, m.Stats().Failures())
+}
+
+// the load balancer's healthy_floor alone decides which members take sessions, as it does for
+// requests and connections: a route the pool admits is never refused for its status afterwards
+func TestSessionsHonorTheHealthyFloor(t *testing.T) {
+	statuses := map[string]int32{
+		"failing": healthcheck.StatusFailing, "unchecked": healthcheck.StatusUnchecked, "passing": healthcheck.StatusPassing,
+	}
+	for floor, want := range map[int][]string{
+		-1: {"failing", "passing", "unchecked"},
+		0:  {"passing", "unchecked"},
+		1:  {"passing"},
+	} {
+		f := replicas(t, "failing", "unchecked", "passing")
+		for name, status := range statuses {
+			f.health[name].Set(status)
+			// probed, so a floor of 1 is not reset for members that could never reach it
+			f.clients[name].Configuration().HealthCheck = &ho.Options{Interval: timeconv.Duration(time.Second)}
+		}
+		c := f.alb(t, "floor"+strconv.Itoa(floor+1), &ao.Options{
+			MechanismName: "rr", HealthyFloor: floor, Pool: ao.Members("failing", "unchecked", "passing"),
+		})
+		f.start(t)
+		reached := map[string]bool{}
+		for range 12 {
+			d, ok := c.RouteResolver().ResolveRoute(backends.RouteInput{})
+			require.True(t, ok, "floor %d", floor)
+			require.True(t, d.Target.Available(), "floor %d refused %s after selecting it", floor, d.Target.Backend.Name())
+			reached[d.Target.Backend.Name()] = true
+			d.Release()
+		}
+		got := make([]string, 0, len(reached))
+		for name := range reached {
+			got = append(got, name)
+		}
+		require.ElementsMatch(t, want, got, "floor %d", floor)
+	}
 }

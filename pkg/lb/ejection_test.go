@@ -77,6 +77,7 @@ func failTo(t *testing.T, b *lb.Balancer, m *lb.Member, n int) {
 			n--
 			continue
 		}
+		pk.Reached()
 		pk.Done(lb.OutcomeOK)
 	}
 	t.Fatalf("%s was not picked often enough to fail %d more times", m.Name(), n)
@@ -97,6 +98,7 @@ func TestEjectionNeedsConsecutiveConnectFailures(t *testing.T) {
 	failTo(t, b, m[1], 2)
 	for range 3 {
 		pk, _ := b.Pick(lb.Flow{})
+		pk.Reached()
 		pk.Done(lb.OutcomeOK)
 	}
 	failTo(t, b, m[1], 2)
@@ -273,4 +275,46 @@ func TestEjectionIgnoresADepartedMember(t *testing.T) {
 	if len(ev.ejected()) != 0 {
 		t.Errorf("ejected %v from a stopped or absent pool", ev.ejected())
 	}
+}
+
+// what counts is whether each connect succeeded, in order: a flow that was reached long ago
+// and only now ends says nothing about the connects since, and how a member answered never counts
+func TestEjectionCountsConnectsNotFlows(t *testing.T) {
+	b, m, _, _ := ejecting(t, lb.EjectionOptions{Failures: 2, Duration: time.Hour}, 1)
+	only := m[0]
+	fail := func() {
+		pk, _ := b.Pick(lb.Flow{})
+		pk.Done(lb.OutcomeConnectFailed)
+	}
+	// fail, connect (and stay open), fail: the failures are not consecutive
+	fail()
+	long, _ := b.Pick(lb.Flow{})
+	long.Reached()
+	if only.Stats().ConnectFailures() != 0 {
+		t.Fatal("a successful connect did not end the run of failures")
+	}
+	fail()
+	if only.Stats().ConnectFailures() != 1 {
+		t.Fatalf("connect failures = %d", only.Stats().ConnectFailures())
+	}
+	// the long flow ending well does not excuse the failure since
+	long.Done(lb.OutcomeOK)
+	if only.Stats().ConnectFailures() != 1 {
+		t.Error("a flow's end reset the count of failed connects")
+	}
+	// a failed answer on a flow that was reached counts toward nothing
+	for range 5 {
+		pk, _ := b.Pick(lb.Flow{})
+		pk.Done(lb.OutcomeFailed)
+	}
+	if only.Stats().ConnectFailures() != 1 || only.Stats().Failures() < 5 {
+		t.Errorf("connect failures = %d, failures = %d", only.Stats().ConnectFailures(), only.Stats().Failures())
+	}
+	// reports on a pick that has no balancer, or one that does not eject, are harmless
+	lb.Pick{}.Reached()
+	plain := lb.NewBalancer(rr.NewAt(0), lb.BalancerOptions{Pool: b.Pool()})
+	pk, _ := plain.Pick(lb.Flow{})
+	pk.Reached()
+	pk.Done(lb.OutcomeOK)
+	lb.LeafPick{}.Reached()
 }

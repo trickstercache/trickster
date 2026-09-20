@@ -18,8 +18,10 @@ package backends
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
@@ -206,5 +208,72 @@ func TestStartHealthChecksByWhatABackendOffers(t *testing.T) {
 	statuses["protocol"].Prober()(w)
 	if probed != 1 {
 		t.Errorf("the protocol probe ran %d times", probed)
+	}
+}
+
+type statusOwner struct {
+	Backend
+	status *healthcheck.Status
+}
+
+func (o *statusOwner) HealthStatus() *healthcheck.Status { return o.status }
+
+// requestOnlyChecker is a health checker that cannot register a protocol probe
+type requestOnlyChecker struct{ healthcheck.HealthChecker }
+
+func TestVirtualBackendsReportTheirOwnStatus(t *testing.T) {
+	virtual := func(name string) Backend {
+		o := bo.New()
+		o.Provider = providers.ALB
+		c, err := New(name, o, nil, lm.NewRouter(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	own := healthcheck.NewStatus("follows", providers.ALB, "", healthcheck.StatusFailing, time.Time{}, nil)
+	hc, err := Backends{
+		"follows":   &statusOwner{Backend: virtual("follows"), status: own},
+		"keeps":     &statusOwner{Backend: virtual("keeps")},
+		"synthetic": virtual("synthetic"),
+	}.StartHealthChecks(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hc.Shutdown()
+	statuses := hc.Statuses()
+	if statuses["follows"] != own {
+		t.Error("a virtual backend's own status is not the one reported")
+	}
+	for _, name := range []string{"keeps", "synthetic"} {
+		if st := statuses[name]; st == nil || st.Get() != healthcheck.StatusPassing {
+			t.Errorf("%s: status = %v", name, st)
+		}
+	}
+}
+
+func TestRegisterHealthCheckNeedsAProbeRegistrar(t *testing.T) {
+	o := bo.New()
+	o.HealthCheck = ho.New()
+	c, err := New("protocol", o, nil, lm.NewRouter(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc := healthcheck.New()
+	defer hc.Shutdown()
+	probed := &choosyBackend{Backend: c, probe: func(context.Context) error { return nil }}
+	if _, err := RegisterHealthCheck(requestOnlyChecker{hc}, "protocol", "test", probed); !errors.Is(err, ErrNoProbeRegistrar) {
+		t.Errorf("error = %v", err)
+	}
+	if _, err := (Backends{"protocol": probed}).StartHealthChecks(nil); err != nil {
+		t.Errorf("a full health checker refused a protocol probe: %v", err)
+	}
+	bare, err := New("bare", bo.New(), nil, lm.NewRouter(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare.Configuration().HealthCheck = nil
+	if st, err := RegisterHealthCheck(hc, "bare", "test", bare); st != nil || err != nil {
+		t.Errorf("a backend with no health check: %v, %v", st, err)
 	}
 }

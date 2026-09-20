@@ -29,8 +29,10 @@ type Stats struct {
 	latency atomic.Uint64
 	// unix nanosecond time of the last latency sample
 	stamp atomic.Int64
-	// consecutive failed outcomes
+	// consecutive failed outcomes, of either kind
 	fails atomic.Int32
+	// consecutive failures to reach the member, which alone count toward ejection
+	connectFails atomic.Int32
 	// unix nanosecond time until which the member is ejected; it outlives a change of pool
 	ejectedUntil atomic.Int64
 }
@@ -62,6 +64,11 @@ func (s *Stats) LastSample() time.Time {
 // Failures returns the member's count of consecutive failed outcomes.
 func (s *Stats) Failures() int32 {
 	return s.fails.Load()
+}
+
+// ConnectFailures returns the member's count of consecutive failures to reach it.
+func (s *Stats) ConnectFailures() int32 {
+	return s.connectFails.Load()
 }
 
 // Faded returns the latency average as it stands at now, having faded toward zero since the
