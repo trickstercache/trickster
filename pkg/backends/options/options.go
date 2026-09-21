@@ -36,6 +36,7 @@ import (
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
@@ -197,6 +198,8 @@ type Options struct {
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
 	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
+	// Static holds options specific to static file server backends, which require it
+	Static *so.Options `yaml:"static,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -395,6 +398,10 @@ func (o *Options) Clone() *Options {
 		out.MySQL = o.MySQL.Clone()
 	}
 
+	if o.Static != nil {
+		out.Static = o.Static.Clone()
+	}
+
 	if o.AuthOptions != nil {
 		out.AuthOptions = o.AuthOptions.Clone()
 	}
@@ -509,6 +516,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
+	if err := o.validateStatic(); err != nil {
+		return false, err
+	}
 	if o.CORS != nil {
 		if _, err := o.CORS.Validate(); err != nil {
 			return false, err
@@ -527,6 +537,49 @@ func (o *Options) Validate() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// validateStatic requires the static block on a static backend and rejects it
+// elsewhere, along with the proxying options a static backend can't honor.
+func (o *Options) validateStatic() error {
+	if o.Provider != providers.Static {
+		if o.Static != nil {
+			return NewErrUnsupportedOption("static", o.Provider, o.Name)
+		}
+		return nil
+	}
+	if o.Static == nil {
+		return NewErrMissingStaticOptions(o.Name)
+	}
+	unsupported := []struct {
+		name string
+		set  bool
+	}{
+		{"paths", len(o.Paths) > 0},
+		{"req_rewriter_name", o.ReqRewriterName != ""},
+		{"origin_url", o.OriginURL != ""},
+		{"rule_name", o.RuleName != ""},
+		{"alb", o.ALBOptions != nil},
+		{"prometheus", o.Prometheus != nil},
+		{"mysql", o.MySQL != nil},
+		{"graphite", o.Graphite != nil},
+		{"influxdb", o.InfluxDB != nil},
+		{"sigv4", o.SigV4 != nil},
+		{"protocol", o.Protocol != ""},
+		{"h2c_prior_knowledge", o.H2CPriorKnowledge},
+		{"preserve_host", o.PreserveHost},
+		{"proxy_only", o.ProxyOnly},
+		{"is_template", o.IsTemplate},
+	}
+	for _, u := range unsupported {
+		if u.set {
+			return NewErrUnsupportedOption(u.name, o.Provider, o.Name)
+		}
+	}
+	if err := o.Static.Validate(); err != nil {
+		return fmt.Errorf("backend %s: %w", o.Name, err)
+	}
+	return nil
 }
 
 // Validate validates the Lookup collection of Backend Options
@@ -882,6 +935,9 @@ func (o *Options) Initialize(name string) error {
 				return err
 			}
 		}
+	}
+	if err := o.Static.Initialize(); err != nil {
+		return err
 	}
 
 	if o.HealthCheck != nil {

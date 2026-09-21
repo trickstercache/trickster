@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
 
@@ -42,6 +43,7 @@ func SupportedProviders() types.Lookup {
 		providers.MySQL:                  mysql.NewClient,
 		providers.Prometheus:             prometheus.NewClient,
 		providers.Rule:                   rule.NewClient,
+		providers.Static:                 static.NewClient,
 		providers.Proxy:                  reverseproxy.NewClient,
 		providers.ReverseProxyShort:      reverseproxy.NewClient,
 		providers.ReverseProxy:           reverseproxy.NewClient,

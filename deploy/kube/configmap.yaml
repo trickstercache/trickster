@@ -375,6 +375,60 @@ data:
     # Configuration options for mapping Origin(s)
     backends:
 
+      # # example static file server backend, which serves a local directory rather
+      # # than proxying to an origin. paths, req_rewriter_name, origin_url and other
+      # # proxying options are not valid for this provider.
+      # website:
+      #   provider: static
+      #   hosts: [ www.example.com ]
+      #   # authenticator_name optionally requires users to authenticate before any file is served
+      #   # authenticator_name: example_auth_1
+      #   # the static block, and its root, are required when the provider is static
+      #   static:
+      #     # root is the directory holding the content to serve. it must exist
+      #     root: /var/www/html
+      #     # default_file is served when a directory is requested. default is index.html
+      #     default_file: index.html
+      #     # cache_control is the Cache-Control header sent with every file. by default none is
+      #     # sent, and clients judge a file's freshness from its Last-Modified time
+      #     cache_control: no-cache
+      #     # cache_control_by_extension overrides cache_control for matching files
+      #     cache_control_by_extension:
+      #       .js: public, max-age=31536000, immutable
+      #       .css: public, max-age=31536000, immutable
+      #     # response_headers are attached to every response
+      #     response_headers:
+      #       X-Content-Type-Options: nosniff
+      #     # mime_types adds to and overrides the built-in Content-Types by file extension
+      #     mime_types:
+      #       .md: text/markdown; charset=utf-8
+      #     # not_found_file is a file within the root served in place of a plain 404 response.
+      #     # not_found_status is the status it is served with: 404 (the default) for an error
+      #     # page, or 200 for a single-page application whose routes exist only in the browser
+      #     not_found_file: errors/404.html
+      #     not_found_status: 404
+      #     # directory_listing lists a directory that has no default_file, rather than
+      #     # answering it with a 404. default is false
+      #     directory_listing: false
+      #     # cache configures the fileserver cache, which holds small files in memory and drops
+      #     # them when they change on disk. it is separate from, and unrelated to, the caches
+      #     # configured in the caches section, and a static backend does not use a cache_name
+      #     cache:
+      #       # disabled serves every request from disk. default is false
+      #       disabled: false
+      #       # max_file_size_bytes is the largest file held in memory. default is 1048576 (1 MiB)
+      #       max_file_size_bytes: 1048576
+      #       # max_size_bytes is the most memory the cache will use, counting each held file
+      #       # as its size plus 1 KiB of bookkeeping. default is 134217728 (128 MiB)
+      #       max_size_bytes: 134217728
+      #       # max_files is the most objects held (a file, and each compressed rendition of it, is
+      #       # one), which also bounds the directories watched. the least recently used make room
+      #       # for new ones once this or max_size_bytes is reached. default is 10000
+      #       max_files: 10000
+      #       # revalidation_interval is how often held files are compared to disk, as a
+      #       # backstop to filesystem change events. default is 10s
+      #       revalidation_interval: 10s
+
       # # example mysql backend, exposed by a listener with protocol mysql (see the
       # # listeners section). MySQL client connections to the listener are proxied
       # # to the origin. Exactly one mysql backend may map to a mysql listener.
@@ -673,11 +727,15 @@ data:
     #     # The default is false.
     #     multipart_ranges_disabled: false
 
-    #     # compressable_types defines the Content Types that will be compressed when stored in the Trickster cache
-    #     # reasonable defaults are set, so use this with care. To disable compression, set compressable_types: []
+    #     # compressible_types defines the Content Types that will be compressed when stored in the Trickster cache
+    #     # or sent to a client. reasonable defaults are set, so use this with care. To disable compression, set
+    #     # compressible_types: []
+    #     # The encoding used is the one the client's Accept-Encoding header weights highest (q) of those
+    #     # Trickster supports (zstd, br, gzip, deflate). Among equal weights, or when the client gives none,
+    #     # Trickster prefers them in that order. A wildcard (*) stands for the encodings the client didn't
+    #     # name. An encoding the client refuses (q=0), or weights below identity, is never used.
     #     # Default list is provided here:
-    #     compressable_types:
-    #     - text/javascript, text/css, text/plain, text/xml, text/json, application/json, application/javascript, application/xml ]
+    #     compressible_types: [ text/javascript, text/css, text/plain, text/xml, text/json, application/json, application/javascript, application/xml ]
 
     #     # timeout defines how long Trickster will wait before aborting an upstream http request. Default: 60s
     #     timeout: 60s

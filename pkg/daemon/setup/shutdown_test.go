@@ -20,13 +20,19 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -61,6 +67,22 @@ func TestShutdownStopsHealthChecks(t *testing.T) {
 	stopped := hits.Load()
 	time.Sleep(100 * time.Millisecond)
 	require.Equal(t, stopped, hits.Load(), "the target was probed after Shutdown")
+}
+
+func TestShutdownStopsStaticClients(t *testing.T) {
+	o := bo.New()
+	o.Provider = providers.Static
+	o.Static = so.New()
+	o.Static.Root = t.TempDir()
+	client, err := static.NewClient("site", o, nil, nil, nil, nil)
+	require.NoError(t, err)
+	clients := backends.Backends{"site": client}
+	static.StartClients(clients)
+
+	before := runtime.NumGoroutine()
+	Shutdown(&instance.ServerInstance{Backends: clients})
+	require.Eventually(t, func() bool { return runtime.NumGoroutine() < before },
+		5*time.Second, 5*time.Millisecond, "the static client's watcher kept running after Shutdown")
 }
 
 func TestShutdownStopsDiscovery(t *testing.T) {

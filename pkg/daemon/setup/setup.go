@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
@@ -161,6 +162,7 @@ func Shutdown(si *instance.ServerInstance) {
 	stopDiscovery(si)
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
+		static.StopClients(si.Backends)
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
@@ -263,6 +265,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
+		static.StopClients(si.Backends)
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
@@ -289,6 +292,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
 	}
+	static.StartClients(clients)
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg,

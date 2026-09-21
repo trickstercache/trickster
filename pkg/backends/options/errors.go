@@ -46,6 +46,31 @@ func NewErrMissingProvider(backendName string) error {
 	}
 }
 
+// ErrMissingStaticOptions is an error type for a static backend with no static block
+type ErrMissingStaticOptions struct {
+	error
+}
+
+// NewErrMissingStaticOptions returns a new missing static options error
+func NewErrMissingStaticOptions(backendName string) error {
+	return &ErrMissingStaticOptions{
+		error: fmt.Errorf(`missing static options for backend "%s"`, backendName),
+	}
+}
+
+// ErrUnsupportedOption is an error type for an option the backend's provider can't honor
+type ErrUnsupportedOption struct {
+	error
+}
+
+// NewErrUnsupportedOption returns a new unsupported option error
+func NewErrUnsupportedOption(option, provider, backendName string) error {
+	return &ErrUnsupportedOption{
+		error: fmt.Errorf(`option "%s" is not supported by provider "%s" for backend "%s"`,
+			option, provider, backendName),
+	}
+}
+
 // ErrMissingOriginURL is an error type for missing origin URL
 type ErrMissingOriginURL struct {
 	error
