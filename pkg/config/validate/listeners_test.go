@@ -683,3 +683,79 @@ func TestListenersReservePortsByTransport(t *testing.T) {
 		t.Fatalf("HTTP/3 and udp on one port: %v", err)
 	}
 }
+
+const pgTestListener = "pg1"
+
+func postgresListenerConfig(backend *bo.Options) *config.Config {
+	c := config.NewConfig()
+	c.Listeners[pgTestListener] = listener.New(pgTestListener)
+	c.Listeners[pgTestListener].Protocol = listener.ProtocolPostgres
+	c.Listeners[pgTestListener].ListenPort = 8488
+	backend.ListenerName = pgTestListener
+	c.Backends = bo.Lookup{"backend1": backend}
+	return c
+}
+
+func TestPostgresListenerServesEveryPostgresProvider(t *testing.T) {
+	for _, provider := range []string{providers.Postgres, providers.TimescaleDB} {
+		backend := bo.New()
+		backend.Provider = provider
+		backend.OriginURL = "postgres://user:password@example.com/database"
+		c := postgresListenerConfig(backend)
+		if err := Listeners(c); err != nil {
+			t.Fatalf("%s: %v", provider, err)
+		}
+		if !c.Listeners[pgTestListener].Active || c.Listeners[pgTestListener].Postgres == nil {
+			t.Fatalf("%s: the listener should be active with default postgres limits", provider)
+		}
+	}
+
+	if err := Listeners(postgresListenerConfig(mysqlBackend(pgTestListener))); err == nil ||
+		!strings.Contains(err.Error(), "cannot map to backend") {
+		t.Fatalf("expected a provider/protocol mismatch, got %v", err)
+	}
+
+	invalid := bo.New()
+	invalid.Provider = providers.TimescaleDB
+	invalid.OriginURL = "http://example.com"
+	if err := Listeners(postgresListenerConfig(invalid)); err == nil ||
+		!strings.Contains(err.Error(), "unsupported postgres origin scheme") {
+		t.Fatalf("expected the origin scheme to be rejected, got %v", err)
+	}
+
+	onHTTP := bo.New()
+	onHTTP.Provider = providers.TimescaleDB
+	onHTTP.OriginURL = "postgres://user:password@example.com/database"
+	c := config.NewConfig()
+	c.Backends = bo.Lookup{"backend1": onHTTP}
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "requires a listener with protocol") {
+		t.Fatalf("expected a postgres backend on an HTTP listener to be rejected, got %v", err)
+	}
+
+	router := bo.New()
+	router.Provider = providers.ALB
+	router.ALBOptions = ao.New()
+	router.ALBOptions.MechanismName = "ur"
+	router.ALBOptions.UserRouter = &uropt.Options{TargetProvider: providers.Postgres, DefaultBackend: "backend2"}
+	if err := Listeners(postgresListenerConfig(router)); err == nil ||
+		!strings.Contains(err.Error(), "requires an authenticator") {
+		t.Fatalf("expected a user router without listener-facing users to be rejected, got %v", err)
+	}
+	router.AuthenticatorName = "pg-clients"
+	router.AuthOptions = &autho.Options{Users: configtypes.EnvStringMap{"client": "password"}}
+	routed := postgresListenerConfig(router)
+	if err := Listeners(routed); err == nil || !strings.Contains(err.Error(), "references missing backend") {
+		t.Fatalf("expected the missing target to be rejected, got %v", err)
+	}
+	// a target reached only through the router needs no listener of its own
+	target := bo.New()
+	target.Provider = providers.TimescaleDB
+	target.OriginURL = "postgres://user:password@example.com/database"
+	routed.Backends["backend2"] = target
+	if err := Listeners(routed); err != nil {
+		t.Fatalf("expected a user router over a postgres target to validate: %v", err)
+	}
+	if len(target.ListenerNames) != 0 {
+		t.Fatalf("the target must not be mapped to the HTTP listener: %v", target.ListenerNames)
+	}
+}

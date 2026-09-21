@@ -133,7 +133,7 @@ jobs:
       # CI containers cannot raise the UDP receive buffer; the warning is noise
       QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
       # a tenth of the synthetic trips rows: the integration tests only need
-      # non-empty, correctly shaped data, and the three database loads are the
+      # non-empty, correctly shaped data, and the database loads are the
       # slowest part of bringing the environment up
       SEED_PROFILE: small
     steps:

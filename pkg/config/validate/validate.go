@@ -365,7 +365,7 @@ func Listeners(c *config.Config) error {
 				targetProvider = strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
 			}
 			if options.Protocol != listener.ProtocolHTTP && nativeAdapter != nil &&
-				targetProvider != nativeAdapter.BackendProvider() {
+				!nativeAdapter.ServesProvider(targetProvider) {
 				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
 					name, options.Protocol, backendName, provider)
 			}

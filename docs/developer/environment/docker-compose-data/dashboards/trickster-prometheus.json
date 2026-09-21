@@ -293,7 +293,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
           "instant": false,
           "legendFormat": "{{backend_name}}",
           "range": true,
@@ -358,7 +358,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "expr": "sum(increase(trickster_frontend_written_bytes_total{job=\"trickster\"}[$window])) by (backend_name)",
           "instant": false,
           "legendFormat": "{{backend_name}}",
           "range": true,
@@ -497,7 +497,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",http_status=~\"5..\"}[$window])) / sum(delta(trickster_frontend_requests_total{job=\"trickster\"}[$window]))",
+          "expr": "sum(increase(trickster_frontend_requests_total{job=\"trickster\",http_status=~\"5..\"}[$window])) / sum(increase(trickster_frontend_requests_total{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "5xx",
           "range": true,
@@ -1243,7 +1243,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (cache_status)",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (cache_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{cache_status}}",
@@ -1595,7 +1595,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[$window])) by (cache_name)",
+          "expr": "sum(increase(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[$window])) by (cache_name)",
           "legendFormat": "{{cache_name}}",
           "refId": "B"
         }
@@ -1708,7 +1708,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
+          "expr": "sum(increase(trickster_cache_operation_bytes_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1820,7 +1820,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
+          "expr": "sum(increase(trickster_cache_operation_objects_total{job=\"trickster\"}[$window])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1925,7 +1925,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\",cache_status=~\"hit|phit|rhit\"}[$window])) / sum(delta(trickster_proxy_requests_total{job=\"trickster\",cache_status!=\"\"}[$window]))",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\",cache_status=~\"hit|phit|rhit\"}[$window])) / sum(increase(trickster_proxy_requests_total{job=\"trickster\",cache_status!=\"\"}[$window]))",
           "instant": false,
           "legendFormat": "hit ratio",
           "range": true,
@@ -2028,7 +2028,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\"}[$window])) / sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window]))",
+          "expr": "sum(increase(trickster_frontend_requests_total{job=\"trickster\"}[$window])) / sum(increase(trickster_proxy_requests_total{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "frontend/origin",
           "range": true,
@@ -2155,7 +2155,7 @@
             "uid": "$datasource"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name, http_status)",
+          "expr": "sum(increase(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name, http_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}} - {{http_status}}",
@@ -2301,7 +2301,7 @@
             "uid": "$datasource"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name)",
+          "expr": "sum(increase(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",
@@ -2312,7 +2312,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window]))",
+          "expr": "sum(increase(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[$window]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "total",
@@ -2429,7 +2429,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
+              "options": "sum(increase(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -2471,7 +2471,7 @@
             "uid": "$datasource"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_proxy_requested_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(increase(trickster_proxy_requested_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "requested",
@@ -2482,7 +2482,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(increase(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "accepted",
@@ -2492,7 +2492,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_proxy_closed_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(increase(trickster_proxy_closed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "closed",
@@ -2502,7 +2502,7 @@
           "datasource": {
             "uid": "$datasource"
           },
-          "expr": "sum(delta(trickster_proxy_failed_connections_total{job=\"trickster\"}[$window])) ",
+          "expr": "sum(increase(trickster_proxy_failed_connections_total{job=\"trickster\"}[$window])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "failed",
@@ -2803,7 +2803,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_frontend_requests_total{job=\"trickster\",http_status=~\"5..\"}[$window])) / sum(delta(trickster_frontend_requests_total{job=\"trickster\"}[$window]))",
+          "expr": "sum(increase(trickster_frontend_requests_total{job=\"trickster\",http_status=~\"5..\"}[$window])) / sum(increase(trickster_frontend_requests_total{job=\"trickster\"}[$window]))",
           "instant": false,
           "legendFormat": "5xx error rate",
           "range": true,
@@ -2967,7 +2967,7 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "sum(delta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
+              "options": "sum(increase(trickster_proxy_accepted_connections_total{job=\"trickster\"}[$window])) "
             },
             "properties": [
               {
@@ -3009,7 +3009,7 @@
             "uid": "$datasource"
           },
           "editorMode": "code",
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\"}[$window])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",

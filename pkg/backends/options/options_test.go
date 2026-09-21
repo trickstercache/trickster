@@ -39,6 +39,7 @@ import (
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -1185,5 +1186,30 @@ func TestValidateMirrors(t *testing.T) {
 	l["shadow"] = New()
 	if err := l.validateMirrors(o); err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPostgresOptionsYAMLDefaultsClone(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  pg1:
+    provider: timescaledb
+    origin_url: postgres://user:password@example.com/database
+    postgres:
+      upstream_tls_mode: verify-full
+`, "pg1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("pg1"); err != nil {
+		t.Fatal(err)
+	}
+	if o.Postgres == nil || o.Postgres.UpstreamTLSMode != pgo.TLSModeVerifyFull {
+		t.Fatalf("unexpected postgres options: %#v", o.Postgres)
+	}
+	clone := o.Clone()
+	clone.Postgres.UpstreamTLSMode = pgo.TLSModeDisable
+	if o.Postgres.UpstreamTLSMode != pgo.TLSModeVerifyFull {
+		t.Fatal("clone mutated original postgres options")
 	}
 }

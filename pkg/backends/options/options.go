@@ -52,6 +52,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -194,6 +195,8 @@ type Options struct {
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
 	// MySQL holds limits specific to MySQL origin result processing.
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
+	// Postgres holds settings specific to PostgreSQL wire-protocol origins.
+	Postgres *pgo.Options `yaml:"postgres,omitempty"`
 	// Graphite holds options specific to graphite backends
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
@@ -394,6 +397,9 @@ func (o *Options) Clone() *Options {
 		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
+	if o.Postgres != nil {
+		out.Postgres = o.Postgres.Clone()
+	}
 	if o.MySQL != nil {
 		out.MySQL = o.MySQL.Clone()
 	}

@@ -29,12 +29,16 @@ type Provider int
 const (
 	// RPC represents the Reverse Proxy Cache backend provider
 	RPCID = Provider(iota)
-	// ALB represents the Application Load Balancer backend provider
-	ALBID
 	// RP represents the Reverse Proxy (no caching) backend provider
 	RPID
+	// Static represents the Static File Server backend provider
+	StaticID
+	// ALB represents the Application Load Balancer backend provider
+	ALBID
 	// Rule represents the Ruler backend provider
 	RuleID
+	//
+	// Accelerated Time Series Providers
 	// Prometheus represents the Prometheus backend provider
 	PrometheusID
 	// InfluxDB represents the InfluxDB backend provider
@@ -47,8 +51,8 @@ const (
 	GraphiteID
 	// Druid represents the Apache Druid backend provider
 	DruidID
-	// Static represents the Static File Server backend provider
-	StaticID
+	// Postgres represents the PostgreSQL wire-protocol backend provider
+	PostgresID
 
 	Backends = "backends"
 
@@ -68,7 +72,38 @@ const (
 	MySQL      = "mysql"
 	Graphite   = "graphite"
 	Druid      = "druid"
+	Postgres   = "postgres"
+
+	// provider name aliases
+
+	// TimescaleDB is an alias of Postgres; see Canonical.
+	TimescaleDB = "timescaledb"
 )
+
+// aliases maps an accepted provider name to the provider that implements it.
+var aliases = map[string]string{
+	TimescaleDB: Postgres,
+}
+
+// Canonical returns the implementing provider's name for an alias, or name itself.
+func Canonical(name string) string {
+	if canonical, ok := aliases[name]; ok {
+		return canonical
+	}
+	return name
+}
+
+// Aliases returns the sorted alias names that resolve to the canonical provider name.
+func Aliases(canonical string) []string {
+	var out []string
+	for alias, target := range aliases {
+		if target == canonical {
+			out = append(out, alias)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
 
 // Names is a map of Providers keyed by string name
 var Names = map[string]Provider{
@@ -82,6 +117,8 @@ var Names = map[string]Provider{
 	Graphite:               GraphiteID,
 	MySQL:                  MySQLID,
 	Druid:                  DruidID,
+	Postgres:               PostgresID,
+	TimescaleDB:            PostgresID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -95,19 +132,22 @@ func init() {
 	for k, v := range Names {
 		Values[v] = k
 	}
-	// ensure consistent reverse mapping for reverseproxycache as rpc
-	// and "rp" for proxy
+	// ensure consistent reverse mapping for reverseproxycache as rpc,
+	// "rp" for proxy and the canonical name for aliased providers
 	Values[RPCID] = ReverseProxyCacheShort
 	Values[RPID] = ReverseProxyShort
+	Values[PostgresID] = Postgres
 }
 
 var supportedTimeSeries = map[string]Provider{
-	Prometheus: PrometheusID,
-	InfluxDB:   InfluxDBID,
-	ClickHouse: ClickHouseID,
-	Graphite:   GraphiteID,
-	MySQL:      MySQLID,
-	Druid:      DruidID,
+	Prometheus:  PrometheusID,
+	InfluxDB:    InfluxDBID,
+	ClickHouse:  ClickHouseID,
+	Graphite:    GraphiteID,
+	MySQL:       MySQLID,
+	Druid:       DruidID,
+	Postgres:    PostgresID,
+	TimescaleDB: PostgresID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
@@ -117,7 +157,7 @@ func IsSupportedTimeSeriesProvider(name string) bool {
 }
 
 // supportedHTTPTimeSeries is the time series providers reached over HTTP, whose API paths the
-// proxy predefines; MySQL is served over its own wire protocol and has none
+// proxy predefines; MySQL and Postgres are served over their own wire protocols and have none
 var supportedHTTPTimeSeries = map[string]Provider{
 	Prometheus: PrometheusID,
 	InfluxDB:   InfluxDBID,

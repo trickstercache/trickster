@@ -38,6 +38,7 @@ const (
 	healthSubsystem     = "healthcheck"
 	sqlSubsystem        = "sql"
 	mysqlSubsystem      = "mysql"
+	pgwireSubsystem     = "pgwire"
 	graphiteSubsystem   = providers.Graphite
 	druidSubsystem      = providers.Druid
 	tlsSubsystem        = "tls"
@@ -606,6 +607,52 @@ var (
 		[]string{keys.Backend_Name, keys.Class},
 	)
 
+	// PGWireConnections tracks bounded PostgreSQL wire-protocol connection lifecycle outcomes.
+	PGWireConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "connections_total",
+			Help:      "Count of PostgreSQL wire-protocol connection lifecycle events.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// PGWireActiveConnections is the current authenticated-or-handshaking count.
+	PGWireActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "active_connections",
+			Help:      "Current PostgreSQL wire-protocol downstream connections.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// PGWireConnectionErrors tracks startup, authentication, protocol, and
+	// upstream failures without including user-controlled text in labels.
+	PGWireConnectionErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "errors_total",
+			Help:      "Count of PostgreSQL wire-protocol and origin failures.",
+		},
+		[]string{keys.Backend_Name, keys.Class},
+	)
+
+	// PGWireRouteSelections tracks bounded native User Router outcomes. Backend
+	// and router names come from configuration; usernames are never labels.
+	PGWireRouteSelections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "route_selections_total",
+			Help:      "Count of native PostgreSQL route-selection outcomes.",
+		},
+		[]string{keys.Router_Name, keys.Backend_Name, keys.Outcome},
+	)
+
 	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
 	// is exact | derived | configured | unknown and source is registry |
 	// response | probe | static | function | none; both label sets are
@@ -1041,6 +1088,10 @@ func init() {
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
 	prometheus.MustRegister(MySQLConnectionErrors)
+	prometheus.MustRegister(PGWireConnections)
+	prometheus.MustRegister(PGWireActiveConnections)
+	prometheus.MustRegister(PGWireConnectionErrors)
+	prometheus.MustRegister(PGWireRouteSelections)
 	prometheus.MustRegister(GraphiteResolutionLookups)
 	prometheus.MustRegister(GraphiteProbes)
 	prometheus.MustRegister(GraphiteLadders)
@@ -1087,6 +1138,10 @@ var backendSeriesVecs = []partialDeleter{
 	MySQLConnections,
 	MySQLActiveConnections,
 	MySQLConnectionErrors,
+	PGWireConnections,
+	PGWireActiveConnections,
+	PGWireConnectionErrors,
+	PGWireRouteSelections,
 	MySQLRouteSelections,
 	MySQLCommandLatency,
 	HealthcheckProbePanicRecovered,
