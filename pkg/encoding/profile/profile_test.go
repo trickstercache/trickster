@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -149,5 +150,31 @@ func TestGetDecoderInitializer(t *testing.T) {
 	f := p.GetDecoderInitializer()
 	if f != nil {
 		t.Error("expected nil function")
+	}
+}
+
+func TestGetEncoderInitializerHonorsClientPreference(t *testing.T) {
+	p := &Profile{
+		ContentType:   "text/plain",
+		CompressTypes: sets.New([]string{"text/plain"}),
+		Accepted:      providers.ParseAcceptEncoding("zstd;q=0.2, gzip;q=0.9, br;q=0.5"),
+	}
+	p.Supported = p.Accepted.Bitmap()
+	if _, name := p.GetEncoderInitializer(); name != providers.GZipValue {
+		t.Errorf("expected the client's most preferred encoding, got %q", name)
+	}
+	// narrowed since the header was read, the next most preferred that remains
+	p.Supported &^= providers.GZip
+	if _, name := p.GetEncoderInitializer(); name != providers.BrotliValue {
+		t.Errorf("expected the most preferred encoding still supported, got %q", name)
+	}
+	p.Supported = 0
+	if ei, _ := p.GetEncoderInitializer(); ei != nil {
+		t.Error("expected no encoder when nothing is supported")
+	}
+	// a profile built without a client's header keeps Trickster's own preference
+	p.Accepted, p.Supported = providers.Accepted{}, providers.GZip|providers.Brotli
+	if _, name := p.GetEncoderInitializer(); name != providers.BrotliValue {
+		t.Errorf("expected Trickster's preference without a client's, got %q", name)
 	}
 }

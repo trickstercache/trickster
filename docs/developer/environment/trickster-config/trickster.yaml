@@ -263,6 +263,12 @@ backends:
       - path: /
         match_type: prefix
         handler: proxycache
+  # static1 serves the files under static-site at http://127.0.0.1:8480/static1/
+  static1:
+    provider: static
+    static:
+      # relative to the root of the repo, where make serve-dev runs Trickster
+      root: docs/developer/environment/static-site
   mecone-rp:
     provider: reverseproxy
     origin_url: 'http://127.0.0.1:8497'

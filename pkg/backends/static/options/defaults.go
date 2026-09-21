@@ -14,19 +14,19 @@
  * limitations under the License.
  */
 
-package handlers
+package options
 
-import "testing"
+import "time"
 
-func TestIsLocal(t *testing.T) {
-	for _, name := range []string{NameLocalResponse, NameRedirect, NameStatic} {
-		if !IsLocal(name) {
-			t.Errorf("%q answers locally", name)
-		}
-	}
-	for _, name := range []string{"proxy", "proxycache", "alb", "health", ""} {
-		if IsLocal(name) {
-			t.Errorf("%q is not a local handler", name)
-		}
-	}
-}
+const (
+	// DefaultDefaultFile is the file served when a directory is requested
+	DefaultDefaultFile = "index.html"
+	// DefaultMaxFileSizeBytes is the largest file held in the fileserver cache
+	DefaultMaxFileSizeBytes = 1024 * 1024
+	// DefaultMaxSizeBytes is the total size of the fileserver cache
+	DefaultMaxSizeBytes = 128 * 1024 * 1024
+	// DefaultMaxFiles is the most files held in the fileserver cache
+	DefaultMaxFiles = 10000
+	// DefaultRevalidationInterval is how often held files are compared to disk
+	DefaultRevalidationInterval = 10 * time.Second
+)

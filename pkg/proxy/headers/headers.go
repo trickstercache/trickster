@@ -141,6 +141,8 @@ const (
 	NameIfNoneMatch = "If-None-Match"
 	// NameIfMatch represents the HTTP Header Name of "If-Match"
 	NameIfMatch = "If-Match"
+	// NameAcceptRanges represents the HTTP Header Name of "Accept-Ranges"
+	NameAcceptRanges = "Accept-Ranges"
 	// NameIfRange represents the HTTP Header Name of "If-Range"
 	NameIfRange = "If-Range"
 	// NameCDNCacheControl represents the HTTP Header Name of "CDN-Cache-Control",

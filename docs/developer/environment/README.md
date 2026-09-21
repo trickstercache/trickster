@@ -32,6 +32,16 @@ You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
 all data including named volumes.
 
+## Static File Server
+
+The `static1` backend in `trickster-config/trickster.yaml` serves the files under
+[static-site](./static-site/) with Trickster's [Static File Server](../../static.md)
+backend provider, at <http://127.0.0.1:8480/static1/>. It needs no container. Files
+added or changed under `static-site` are picked up while Trickster runs, with no restart.
+
+The site's `root` is relative to the root of the repo, which is where `make serve-dev`
+runs Trickster from.
+
 ## Graphite
 
 The environment runs a Graphite origin (`graphiteapp/graphite-statsd`: carbon-cache

@@ -103,6 +103,8 @@ const (
 	Variant              = "variant"
 	Worker               = "worker"
 
+	Encoding = "encoding"
+
 	// For Metrics Labels that use Underscores
 	ALB_Name       = "alb_name"
 	Backend_Name   = "backend_name"

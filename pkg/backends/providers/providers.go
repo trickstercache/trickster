@@ -29,12 +29,16 @@ type Provider int
 const (
 	// RPC represents the Reverse Proxy Cache backend provider
 	RPCID = Provider(iota)
-	// ALB represents the Application Load Balancer backend provider
-	ALBID
 	// RP represents the Reverse Proxy (no caching) backend provider
 	RPID
+	// Static represents the Static File Server backend provider
+	StaticID
+	// ALB represents the Application Load Balancer backend provider
+	ALBID
 	// Rule represents the Ruler backend provider
 	RuleID
+	//
+	// Accelerated Time Series Providers
 	// Prometheus represents the Prometheus backend provider
 	PrometheusID
 	// InfluxDB represents the InfluxDB backend provider
@@ -58,8 +62,9 @@ const (
 	ReverseProxyCache      = "reverseproxycache"
 	Proxy                  = "proxy"
 
-	Rule = "rule"
-	ALB  = "alb"
+	Rule   = "rule"
+	ALB    = "alb"
+	Static = "static"
 
 	Prometheus = "prometheus"
 	ClickHouse = "clickhouse"
@@ -117,6 +122,7 @@ var Names = map[string]Provider{
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
+	Static:                 StaticID,
 }
 
 // Values is a map of Providers valued by string name
@@ -206,12 +212,12 @@ func IsValidProvider(t string) bool {
 func NonCacheBackends() sets.Set[string] {
 	return sets.New([]string{
 		ReverseProxyShort,
-		ReverseProxy, ALB, Proxy, Rule,
+		ReverseProxy, ALB, Proxy, Rule, Static,
 	})
 }
 
 // NonOriginBackends returns a set of backend Providers that never proxy to an
-// Origin URL, but instead pass requests off to other Providers that do.
+// Origin URL; they pass requests to other Providers or answer them locally.
 func NonOriginBackends() sets.Set[string] {
-	return sets.New([]string{ALB, Rule})
+	return sets.New([]string{ALB, Rule, Static})
 }

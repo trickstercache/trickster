@@ -282,6 +282,37 @@ The following metrics are available only for Caches Types whose object lifecycle
     * `cache_name` - the name of the configured cache$
     * `provider` - the type of the configured cache
 
+The following metrics are available for [Static File Server](./static.md) Backends. Requests they serve are also counted, like those of any other Backend, by the `trickster_frontend_requests_*` metrics with a `provider` of `static`. Their Fileserver cache is separate from the caches above, and is not reported by the `trickster_cache_*` metrics.
+
+* `trickster_fileserver_responses_total` (Counter) - The total number of files served, by how the Fileserver cache figured in the response. Responses that send no file (such as a `404` with no not-found file, a redirect or a directory listing) are not counted.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `cache_status` - `hit` (served as it was held), `phit` (the file was held, and was encoded for the response and the rendition then held), `kmiss` (read from disk for the response, and then held) or `disk` (sent from disk without being held, as for a large file, a byte range, a `HEAD` or a `304`)
+    * `encoding` - the encoding of the rendition the file server sent: `identity`, `zstd`, `br`, `gzip` or `deflate`. A response counted as `identity` may still be encoded on its way out, as a large compressible file is.
+
+* `trickster_fileserver_cache_events_total` (Counter) - The total number of objects removed from the Fileserver cache.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `event` - `eviction` (the least recently used, removed to make room) or `invalidation` (removed because the file changed on disk, or the cache was stopped)
+
+A backend's series are published only once it is in service, so a configuration that is rejected publishes nothing. They are deleted when a reload removes or renames the backend; across a reload that keeps its name, the counters carry on rather than start over. The four gauges that follow are published only while the backend has a Fileserver cache, and are removed when it is disabled.
+
+* `trickster_fileserver_cache_usage_objects` (Gauge) - The current count of objects in the Fileserver cache, including files being read into it. Each held rendition of a file is an object.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
+* `trickster_fileserver_cache_usage_bytes` (Gauge) - The current accounted size of the Fileserver cache in bytes, which includes each object's bookkeeping allowance.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
+* `trickster_fileserver_cache_max_usage_objects` (Gauge) - The configured `max_files` of the Fileserver cache.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
+* `trickster_fileserver_cache_max_usage_bytes` (Gauge) - The configured `max_size_bytes` of the Fileserver cache.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
 The following metrics are available when the Kubernetes Gateway/Ingress controller is enabled (the top-level `kubernetes` section; see [kubernetes-gateway.md](./kubernetes-gateway.md)):
 
 * `trickster_kgw_reconciles_total` (Counter) - Count of controller reconcile passes, by result
