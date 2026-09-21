@@ -5,11 +5,11 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-        tag:
-          description: 'Tag to use for the image'
+        prebuilt:
+          description: 'Use the linux archives an earlier job in this run already uploaded'
           required: false
-          type: string
-          default: ''
+          type: boolean
+          default: false
 name: Publish Trickster Image
 
 concurrency:
@@ -20,7 +20,20 @@ env:
     org.opencontainers.image.description="Open Source HTTP Reverse Proxy Cache and Time Series Dashboard Accelerator"
 
 jobs:
+  # binaries compile natively here, never inside the image build
+  build:
+    if: ${{ !inputs.prebuilt }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-artifacts.yaml
+    with:
+      platforms: '["linux-amd64","linux-arm64"]'
+      version: ${{ github.ref_name }}
   publish-image:
+    needs:
+      - build
+    # still runs when the build job was skipped in favor of prebuilt archives
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,8 +42,19 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+      - name: Download linux archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: trickster-linux-*
+          path: ./bin
+          merge-multiple: true
+      - name: Unpack linux archives
+        run: |
+          for arch in amd64 arm64; do
+            mkdir -p ./dist/linux-${arch}
+            tar -xzf ./bin/trickster-*.linux-${arch}.tar.gz -C ./dist/linux-${arch} --strip-components=1
+          done
+      # no stage runs target-architecture code, so the build needs no QEMU
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Login to Docker Hub
@@ -45,6 +69,21 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # latest tracks the highest stable release and the bare major tag the highest
+      # within that major, so a backport, prerelease or branch push never moves them
+      - name: Determine floating tags
+        id: floating
+        run: |
+          stable="$(git ls-remote --tags --refs origin 'v*' | sed 's|.*refs/tags/||' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V || true)"
+          major="${GITHUB_REF_NAME%%.*}"
+          latest=false; newest_in_major=false
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            [ "${GITHUB_REF_NAME}" = "$(echo "${stable}" | tail -n 1)" ] && latest=true
+            [ "${GITHUB_REF_NAME}" = "$(echo "${stable}" | grep -E "^${major}\." | tail -n 1)" ] && newest_in_major=true
+          fi
+          echo "latest=${latest}" >> "$GITHUB_OUTPUT"
+          echo "newest_in_major=${newest_in_major}" >> "$GITHUB_OUTPUT"
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v6
@@ -56,9 +95,10 @@ jobs:
           annotations: ${{ env.oci_metadata }}
           labels:  ${{ env.oci_metadata }}
           flavor: |
-            latest=${{ github.ref_name == 'main' &&  'auto' || 'false' }}
+            latest=false
           tags: |
-            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ steps.floating.outputs.latest == 'true' }}
+            type=semver,pattern={{major}},enable=${{ steps.floating.outputs.newest_in_major == 'true' }}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{version}}
             type=ref,event=branch
@@ -77,11 +117,8 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            GIT_LATEST_COMMIT_ID=${{ github.sha }}
-            TAGVER=${{ github.ref_name }}
+            BIN_SOURCE=prebuilt
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Install Cosign
         uses: sigstore/cosign-installer@v4.1.2
       - name: Sign Images

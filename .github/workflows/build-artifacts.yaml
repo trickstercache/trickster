@@ -1,0 +1,53 @@
+on:
+  workflow_call:
+    inputs:
+      platforms:
+        description: 'JSON list of <os>-<arch> platforms to build'
+        required: false
+        type: string
+        default: '["darwin-amd64","darwin-arm64","linux-amd64","linux-arm64","windows-amd64"]'
+      version:
+        description: 'Version compiled into the binaries; a leading v is stripped'
+        required: true
+        type: string
+
+name: Build Trickster Release Artifacts
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        platform: ${{ fromJSON(inputs.platforms) }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        #
+      - name: install golang
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+        #
+      - name: Build binary and package third-party licenses
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          TAGVER="${VERSION#v}" make release-artifact-${{ matrix.platform }}
+        #
+      - name: Verify third-party license material
+        run: |
+          tar -tzf ./bin/trickster-*.${{ matrix.platform }}.tar.gz \
+            | grep -q '/third-party-licenses/vitess.io/vitess/go/LICENSE'
+        #
+      # each platform uploads under its own name so later jobs can pick a subset
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: trickster-${{ matrix.platform }}
+          path: ./bin/trickster-*.${{ matrix.platform }}.tar.gz
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7

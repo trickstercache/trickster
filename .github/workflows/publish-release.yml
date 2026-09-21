@@ -24,14 +24,21 @@ env:
   prerelease: ${{ inputs.prerelease || false }}
 
 jobs:
+  build:
+    name: Build ${{ inputs.job-suffix || '' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build-artifacts.yaml
+    with:
+      version: ${{ github.ref_name }}
   release:
     name: Publish Release ${{ inputs.job-suffix || '' }}
+    needs:
+      - build
     permissions:
       contents: write
       id-token: write
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.baretag.outputs.baretag }}
     steps:
       - name: Get current date
         id: date
@@ -44,21 +51,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         #
-      - name: install golang
-        uses: actions/setup-go@v6
+      - name: Download per-platform archives
+        uses: actions/download-artifact@v4
         with:
-          go-version-file: go.mod
+          pattern: trickster-*
+          path: ./bin
+          merge-multiple: true
         #
-      - name: Build project and package third-party licenses
+      - name: Generate checksums
         run: |
-          TAGVER=${{ steps.baretag.outputs.baretag }} make release
-        #
-      - name: Verify release third-party license material
-        run: |
-          tar -tzf ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
-            | grep -q '/third-party-licenses/'
-          tar -tzf ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
-            | grep -q '/third-party-licenses/vitess.io/vitess/go/LICENSE'
+          ./hack/release-sha256.sh ./bin/sha256sum.txt ./bin ${{ steps.baretag.outputs.baretag }}
         #
       - name: Create Release
         env:
@@ -71,11 +73,12 @@ jobs:
             --title "Release v${{ steps.baretag.outputs.baretag }} / ${{ steps.date.outputs.date }}" \
             --draft=${{ env.draft }} \
             --prerelease=${{ env.prerelease }} \
-            ./bin/trickster-${{ steps.baretag.outputs.baretag }}.tar.gz \
+            ./bin/trickster-${{ steps.baretag.outputs.baretag }}.*.tar.gz \
             ./bin/sha256sum.txt
+  # the image reuses the linux binaries built above, so it runs alongside the release
   publish-image:
     needs:
-      - release
+      - build
     uses: ./.github/workflows/publish-image.yaml
     permissions:
       contents: read
@@ -83,5 +86,5 @@ jobs:
       attestations: write
       id-token: write
     with:
-      tag: ${{ needs.release.outputs.tag }}
+      prebuilt: true
     secrets: inherit

@@ -29,12 +29,11 @@ GOARCH         ?= $(shell $(GO) env GOARCH)
 TAGVER         ?= $(shell git describe --tags --dirty --always)
 LDFLAGS         =-ldflags "-extldflags '-static' -w -s -X main.applicationBuildTime=$(BUILD_TIME) -X main.applicationGitCommitID=$(GIT_LATEST_COMMIT_ID) -X main.applicationVersion=$(TAGVER)"
 BUILD_SUBDIR   := bin
-PACKAGE_DIR    := ./$(BUILD_SUBDIR)/trickster-$(TAGVER)
-BIN_DIR        := $(PACKAGE_DIR)/bin
-CONF_DIR       := $(PACKAGE_DIR)/conf
 CGO_ENABLED    ?= 0
 BUMPER_FILE    := ./testdata/license_header_template.txt
 THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
+# `go tool` compiles for GOOS/GOARCH, so a cross-build must point this at a host-built binary
+GO_LICENSES    ?= $(GO) tool go-licenses
 GOLANG_CI_LINT_VERSION ?= v2.13.1
 
 .PHONY: go-mod-vendor
@@ -69,7 +68,7 @@ UNCLASSIFIED_LICENSE_MODULES := \
 
 .PHONY: third-party-licenses
 third-party-licenses:
-	$(GO) tool go-licenses save ./cmd/trickster \
+	$(GO_LICENSES) save ./cmd/trickster \
 		--force \
 		--save_path=$(THIRD_PARTY_LICENSES_DIR) \
 		--ignore=github.com/trickstercache/trickster/v2 \
