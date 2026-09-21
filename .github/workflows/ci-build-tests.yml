@@ -2,16 +2,14 @@ on:
   push:
     branches:
       - main
-      - v1.0.x
-      - v1.1.x
+      - 'v[0-9]+.*'
     tags:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
   pull_request:
     branches:
       - main
-      - v1.0.x
-      - v1.1.x
+      - 'v[0-9]+.*'
 
 name: CI Tests
 
