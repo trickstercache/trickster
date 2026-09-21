@@ -12,7 +12,7 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
 
 ### Q3 2026
 
-- [ ] Trickster v2.1 Release
+- [x] Trickster v2.1 Release
   - [x] Auto-reload config + `conf.d` directory support
   - [x] Support for [ALB Pool Autodiscovery](./alb-autodiscovery.md)
   - [x] Support for MySQL as Time Series
