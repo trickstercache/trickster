@@ -287,6 +287,14 @@ func writeTestConfig(t *testing.T, configPath string,
 			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
 		}
 	}
+	// the dev config's static roots are relative to the repo root, not to this package
+	for _, bo := range c.Backends {
+		if bo != nil && bo.Static != nil && bo.Static.Root != "" && !filepath.IsAbs(bo.Static.Root) {
+			if root := filepath.Join("..", bo.Static.Root); isDir(root) {
+				bo.Static.Root = root
+			}
+		}
+	}
 	c.Frontend = nil
 	c.Metrics = nil
 	c.MgmtConfig.ListenAddress = ""
@@ -299,6 +307,11 @@ func writeTestConfig(t *testing.T, configPath string,
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(path, out, 0o644))
 	return path
+}
+
+func isDir(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 func defaultCacheProviders() []cacheProviderCase {
