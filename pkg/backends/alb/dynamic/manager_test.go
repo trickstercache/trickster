@@ -17,8 +17,10 @@
 package dynamic
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -343,4 +345,88 @@ func TestManagerProbeModeReadinessWithoutProbe(t *testing.T) {
 	mem.Ready = discovery.Ready
 	require.NotPanics(t, func() { m.ApplySnapshot(discovery.Snapshot{mem}) })
 	require.NotContains(t, hc.Statuses(), "myalb-m1")
+}
+
+// a discovered member is health checked the way a configured one is: a udp origin, which
+// nothing can probe, follows the provider's readiness instead of an http probe that can only
+// fail, and a tcp origin is probed by connecting to it
+func TestManagerProbeModeByOriginProtocol(t *testing.T) {
+	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
+	probedTemplate(m)
+	m.cfg.Template.HealthCheck.FailureThreshold = 1
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	datagrams := discovery.Member{Name: "dns", Scheme: "udp", Address: "10.0.0.9:53", Ready: discovery.Ready}
+	pending := discovery.Member{Name: "pending", Scheme: "udp", Address: "10.0.0.10:53", Ready: discovery.NotReady}
+	stream := discovery.Member{Name: "db", Scheme: "tcp", Address: ln.Addr().String()}
+	m.ApplySnapshot(discovery.Snapshot{datagrams, pending, stream})
+
+	statuses := hc.Statuses()
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-dns"].Get(),
+		"a udp member the provider reports ready is available")
+	require.Equal(t, healthcheck.StatusFailing, statuses["myalb-pending"].Get())
+	require.Eventually(t, func() bool { return statuses["myalb-db"].Get() == healthcheck.StatusPassing },
+		5*time.Second, 10*time.Millisecond, "a tcp member is probed by connecting to it")
+	// no probe ever runs against the udp member, so it never goes down on one
+	time.Sleep(150 * time.Millisecond)
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-dns"].Get())
+
+	names := []string{}
+	for _, tgt := range c.Pool().Targets() {
+		names = append(names, tgt.Name())
+	}
+	require.ElementsMatch(t, []string{"myalb-dns", "myalb-db"}, names)
+
+	// and it goes on following the provider
+	pending.Ready = discovery.Ready
+	datagrams.Ready = discovery.NotReady
+	m.ApplySnapshot(discovery.Snapshot{datagrams, pending, stream})
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-pending"].Get())
+	require.Equal(t, healthcheck.StatusFailing, statuses["myalb-dns"].Get())
+}
+
+// a member that keeps its name while its origin changes from one that is probed to one that
+// cannot be leaves no probe behind: the retired origin is not contacted again
+func TestManagerProbeRetiredWhenAMemberBecomesUnprobeable(t *testing.T) {
+	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
+	probedTemplate(m)
+	m.cfg.Template.HealthCheck.Interval = timeconv.Duration(5 * time.Millisecond)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	var accepted atomic.Int64
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			_ = conn.Close()
+		}
+	}()
+
+	m.ApplySnapshot(discovery.Snapshot{{Name: "db", Scheme: "tcp", Address: ln.Addr().String()}})
+	require.Eventually(t, func() bool { return accepted.Load() > 2 }, 5*time.Second, 5*time.Millisecond,
+		"the tcp member was never probed")
+	probed := hc.Statuses()["myalb-db"]
+
+	m.ApplySnapshot(discovery.Snapshot{{Name: "db", Scheme: "udp", Address: "10.0.0.9:53", Ready: discovery.Ready}})
+	st := hc.Statuses()["myalb-db"]
+	require.NotSame(t, probed, st, "the member kept the status of the origin it left")
+	require.Equal(t, healthcheck.StatusPassing, st.Get())
+	// a probe in flight when the origin changed may still land; none starts after it
+	time.Sleep(50 * time.Millisecond)
+	settled := accepted.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, settled, accepted.Load(), "the retired origin is still being probed")
+	require.Equal(t, healthcheck.StatusPassing, hc.Statuses()["myalb-db"].Get())
 }

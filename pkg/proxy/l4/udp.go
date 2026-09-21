@@ -22,9 +22,8 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
-
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 // maxDatagram is the largest UDP payload a socket can carry.
@@ -127,11 +126,26 @@ type udpSession struct {
 	closed bool
 	// upstream is set once the flow is open, when its writer starts
 	upstream net.Conn
+	// set once the upstream is dialed; told when the session ends
+	route Route
+	// the further upstreams that receive a copy of each datagram; fixed once the flow is open
+	mirrors []udpMirror
+	// set when the upstream refused a datagram, which is how an unreachable udp upstream shows
+	fault error
 	// queue is a ring of the datagrams waiting for the writer, in arrival order
 	queue     [maxQueuedDatagrams][]byte
 	head, num int
 	last      atomic.Int64
 }
+
+// udpMirror is one further upstream a flow's datagrams are copied to
+type udpMirror struct {
+	conn  net.Conn
+	route Route
+}
+
+// MaxUDPMirrors bounds the upstreams one flow is copied to, each of which holds a socket.
+const MaxUDPMirrors = 7
 
 func newUDPSession(client net.Addr) *udpSession {
 	sess := &udpSession{client: client}
@@ -229,11 +243,11 @@ func (s *PacketServer) isClosed() bool {
 }
 
 func (s *PacketServer) result(r string) {
-	metrics.ProxyStreamConnections.WithLabelValues(s.name, ProtocolUDP, r).Inc()
+	s.cfg.Load().observer().Result(r)
 }
 
 func (s *PacketServer) dropped(reason string) {
-	metrics.ProxyStreamDroppedDatagrams.WithLabelValues(s.name, reason).Inc()
+	s.cfg.Load().observer().Dropped(reason)
 }
 
 // forward hands a datagram to its client's flow, opening the flow on a worker of its own, so the
@@ -271,7 +285,7 @@ func (s *PacketServer) admit(key string, client net.Addr) *udpSession {
 	s.sessions[key] = sess
 	s.opening++
 	s.workers.Add(1)
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, ProtocolUDP).Inc()
+	s.cfg.Load().observer().Opened()
 	return sess
 }
 
@@ -321,6 +335,7 @@ func (s *PacketServer) enqueue(sess *udpSession, payload []byte) {
 func (s *PacketServer) writer(sess *udpSession, up net.Conn) {
 	defer s.workers.Done()
 	sess.mu.Lock()
+	mirrors := sess.mirrors
 	for {
 		for sess.num == 0 && !sess.closed {
 			sess.wake.Wait()
@@ -338,10 +353,15 @@ func (s *PacketServer) writer(sess *udpSession, up net.Conn) {
 		// for as long as the write blocks, however soon its ring slot is reused
 		_ = up.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
 		n, err := up.Write(payload)
+		for _, m := range mirrors {
+			// a copy that cannot be written is lost; the flow answers to its own upstream alone
+			_ = m.conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
+			_, _ = m.conn.Write(payload)
+		}
 		s.queued.Add(-int64(len(payload)))
 		switch {
 		case err == nil:
-			metrics.ProxyStreamBytes.WithLabelValues(s.name, ProtocolUDP, DirectionIn).Add(float64(n))
+			s.cfg.Load().observer().Bytes(DirectionIn, int64(n))
 		case isTimeout(err):
 			s.dropped(DropWriteTimeout)
 		default:
@@ -378,16 +398,24 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 		s.result(ResultNoRoute)
 		return nil, false
 	}
-	addr, ok := up.Addr()
+	route, ok := up.Pick(flowOf(s.name, ProtocolUDP, sess.client, ""))
 	if !ok {
 		s.result(ResultNoUpstream)
 		return nil, false
 	}
 	if !s.acquireDial() {
+		route.Dialed(0, ErrAbandoned)
 		return nil, false
 	}
+	flow := flowOf(s.name, ProtocolUDP, sess.client, "")
 	ctx, cancel := context.WithTimeout(s.ctx, cfg.options().Connect())
-	conn, err := s.resolveAndDial(ctx, addr)
+	began := time.Now()
+	conn, err := s.resolveAndDial(ctx, route.Addr())
+	route.Dialed(time.Since(began), err)
+	var mirrors []udpMirror
+	if err == nil {
+		mirrors = s.openMirrors(ctx, up, flow, route)
+	}
 	cancel()
 	s.releaseDial()
 	if err != nil {
@@ -399,8 +427,12 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 		// the close pass has been through this flow; what was dialed after it is closed here
 		sess.mu.Unlock()
 		_ = conn.Close()
+		route.Closed(nil)
+		closeMirrors(mirrors)
 		return nil, false
 	}
+	sess.route = route
+	sess.mirrors = mirrors
 	// what the flow kept while opening leaves the opening budget and stays queued for the writer
 	var kept int64
 	for i := range sess.num {
@@ -414,6 +446,37 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 	sess.mu.Unlock()
 	s.settle(sess)
 	return conn, true
+}
+
+// openMirrors dials the further upstreams a mirroring upstream copies the flow to, within the
+// dial the flow already holds. One that cannot be dialed is told so and left out.
+func (s *PacketServer) openMirrors(ctx context.Context, up Upstream, flow Flow, primary Route) []udpMirror {
+	mirrorer, ok := up.(Mirrorer)
+	if !ok {
+		return nil
+	}
+	routes := mirrorer.Mirror(flow, primary)
+	for _, extra := range routes[min(len(routes), MaxUDPMirrors):] {
+		extra.Dialed(0, ErrAbandoned)
+	}
+	routes = routes[:min(len(routes), MaxUDPMirrors)]
+	mirrors := make([]udpMirror, 0, len(routes))
+	for _, route := range routes {
+		began := time.Now()
+		conn, err := s.resolveAndDial(ctx, route.Addr())
+		route.Dialed(time.Since(began), err)
+		if err == nil {
+			mirrors = append(mirrors, udpMirror{conn: conn, route: route})
+		}
+	}
+	return mirrors
+}
+
+func closeMirrors(mirrors []udpMirror) {
+	for _, m := range mirrors {
+		_ = m.conn.Close()
+		m.route.Closed(nil)
+	}
 }
 
 // settle moves a flow out of the opening count once it is open
@@ -516,17 +579,25 @@ func (s *PacketServer) reply(sess *udpSession, up net.Conn) {
 	bp := datagramPool.Get().(*[]byte)
 	defer datagramPool.Put(bp)
 	buf := *bp
+	sess.mu.Lock()
+	route := sess.route
+	sess.mu.Unlock()
+	replied := false
 	for {
 		idle := s.cfg.Load().options().UDPIdle()
 		_ = up.SetReadDeadline(time.Now().Add(idle))
 		n, err := up.Read(buf)
 		if n > 0 {
+			if !replied && route != nil {
+				replied = true
+				route.FirstByte()
+			}
 			sess.touch()
 			s.mu.Lock()
 			pc := s.conn
 			s.mu.Unlock()
 			if _, werr := pc.WriteTo(buf[:n], sess.client); werr == nil {
-				metrics.ProxyStreamBytes.WithLabelValues(s.name, ProtocolUDP, DirectionOut).Add(float64(n))
+				s.cfg.Load().observer().Bytes(DirectionOut, int64(n))
 			}
 		}
 		if err == nil {
@@ -535,6 +606,12 @@ func (s *PacketServer) reply(sess *udpSession, up net.Conn) {
 		if isTimeout(err) && sess.idleFor() < idle {
 			// the upstream was silent but the client was not; the session lives on
 			continue
+		}
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			// nothing is listening at the upstream: the only sign a udp member is down
+			sess.mu.Lock()
+			sess.fault = err
+			sess.mu.Unlock()
 		}
 		return
 	}
@@ -546,6 +623,12 @@ func (s *PacketServer) end(key string, sess *udpSession) {
 	if sess.upstream != nil {
 		_ = sess.upstream.Close()
 	}
+	if sess.route != nil {
+		sess.route.Closed(sess.fault)
+		sess.route = nil
+	}
+	closeMirrors(sess.mirrors)
+	sess.mirrors = nil
 	if sess.state == flowOpening {
 		for sess.num > 0 {
 			n := int64(len(sess.pop()))
@@ -560,7 +643,7 @@ func (s *PacketServer) end(key string, sess *udpSession) {
 		delete(s.sessions, key)
 	}
 	s.mu.Unlock()
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, ProtocolUDP).Dec()
+	s.cfg.Load().observer().Ended()
 	s.workers.Done()
 }
 

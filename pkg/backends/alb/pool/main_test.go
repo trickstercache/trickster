@@ -22,10 +22,8 @@ import (
 	"go.uber.org/goleak"
 )
 
-// goleak guards against pool/healthcheck goroutines outliving the tests that
-// created them. Pool spawns long-running listenStatusUpdates / checkHealth
-// goroutines; a regression that fails to stop them would leak until process
-// exit. -race won't catch leaks, only this will.
+// goleak holds the pool to running no goroutines of its own: health transitions reach it
+// synchronously, so a test that leaves one behind has reintroduced a worker.
 func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }

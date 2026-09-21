@@ -203,6 +203,8 @@ func (x *Index) lower(p *CachePolicy) (ir.Policy, error) {
 		{"requestHeaders", headerMap(&out.RequestHeaders, s.RequestHeaders)},
 		{"responseHeaders", headerMap(&out.ResponseHeaders, s.ResponseHeaders)},
 		{"healthMode", parse(&out.HealthMode, s.HealthMode, translate.HealthMode)},
+		{"loadBalancing", parse(&out.LoadBalancing, s.LoadBalancing, translate.LoadBalancing)},
+		{"loadBalancingKey", parse(&out.LoadBalancingKey, s.LoadBalancingKey, translate.LoadBalancingKey)},
 		{"resultHeader", parse(&out.ResultHeader, s.ResultHeader, translate.ResultHeader)},
 	}
 	if s.CORS != nil {

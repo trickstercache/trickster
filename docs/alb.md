@@ -5,11 +5,17 @@ Trickster 2.x provides an Application Load Balancer that is easy to configure an
 | Mechanism | Config | Provides | Description |
 |-----|-----|-----|----|
 | Round Robin | rr | Scaling | a basic, stateless round robin between healthy pool members |
+| Power of Two Choices | p2c | Scaling | draws two healthy pool members at random and routes to the one with fewer requests in flight |
+| Least Connections | lc | Scaling | routes to the healthy pool member with the fewest requests in flight |
+| Least Time | lt | Speed | routes to the healthy pool member with the lowest response latency, scaled by its requests in flight |
+| Highest Random Weight | hrw | Affinity | consistently routes each client, tenant or other key to the same healthy pool member |
 | Time Series Merge | tsm | Federation | uses scatter/gather to collect and merge data from multiple replica tsdb sources |
 | First Response | fr | Speed | fans a request out to multiple backends, and returns the first response received |
 | First Good Response | fgr | Speed | fans a request out to multiple backends, and returns the first response received with a status code < 400 |
 | Newest&nbsp;Last‑Modified | nlm | Freshness | fans a request out to multiple backends, and returns the response with the newest Last-Modified header |
 | User Router | ur | Control | Inspects the credentials in the Request and routes it based on the Username |
+| Connect Race | race | Speed | connects a `tcp` or `tls` stream connection to several pool members at once and relays over the first to connect |
+| UDP Mirror | mirror | Replication | copies every datagram of a `udp` stream session to every healthy pool member, and answers from the first |
 
 ## Integration with Backends
 
@@ -29,7 +35,7 @@ Each mechanism has its own use cases and pitfalls. Be sure to read about each on
 
 A basic **Round Robin** rotates through a pool of healthy backends used to service client requests. Each time a client request is made to Trickster, the round robiner will identify the next healthy backend in the rotation schedule and route the request to it.
 
-The Trickster ALB is intended to support stateless workloads, and currently does not support Sticky Sessions or other advanced ALB capabilities.
+The Trickster ALB is intended to support stateless workloads, and currently does not support Sticky Sessions. For affinity without session state, see [Highest Random Weight](#highest-random-weight).
 
 #### Weighted Round Robin
 
@@ -42,15 +48,13 @@ pool:
     weight: 3         # receives 3 of every 4 requests
 ```
 
-Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
+Apportionment is exact: over any `totalWeight` consecutive requests against a stable healthy pool, each member is selected exactly `weight` times. A heavier member's turns are spread through the rotation rather than taken back to back: two members weighted 3 and 2 are served `A B A A B`, not `A A A B B`. Weights also carry through from autodiscovery sources that convey them (DNS SRV record weights, member-file `weight` fields); see [ALB Autodiscovery](./alb-autodiscovery.md).
 
-The legacy workaround of repeating a member name multiple times in the pool list still functions, but explicit weights replace it and are preferred.
-
-Weights apply to mechanisms that select a single member per request (round robin). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
+Weights apply to every mechanism that selects a single member per request, though only Round Robin makes them an exact guarantee; see [Weights and the Selection Mechanisms](#weights-and-the-selection-mechanisms). Fan-out mechanisms (fr, fgr, nlm, tsm) dispatch to every healthy member regardless of weight.
 
 #### More About Our Round Robin Mechanism
 
-Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and each member owns a contiguous `weight`-sized span of that rotation. Selection remains lock- and allocation-free in both forms.
+Trickster's Round Robin Mechanism works by maintaining an atomic uint64 counter that increments each time a request is received by the ALB. With uniform weights, the ALB performs a modulo operation on the request's counter value, with the denominator being the count of healthy backends in the pool; the resulting value, ranging from `0` to `len(healthy_pool) - 1`, indicates the assigned backend based on the counter and current pool size. With mixed weights, the modulo denominator becomes the pool's total weight, and the result indexes a rotation schedule, computed once each time the set of healthy members changes, in which every member's turns are evenly spaced. Selection remains lock- and allocation-free in both forms. The counter starts at a random value, so a fleet of Trickster replicas started together does not send its first requests to the same pool member.
 
 #### Example Round Robin Configuration
 
@@ -91,6 +95,180 @@ backends:
 Here is the visual representation of this configuration:
 
 <img src="./images/alb-rr.png" width="800">
+
+### Power of Two Choices
+
+The **Power of Two Choices** (p2c) mechanism draws two healthy pool members at random and routes the request to whichever has fewer requests in flight. It keeps load nearly as even as inspecting every member would, at a cost that does not grow with the size of the pool, and unlike Round Robin it reacts to a member that has become slow: requests pile up there, so it loses more of its draws. It is a good default for large pools and for requests whose cost varies widely.
+
+```yaml
+backends:
+  api:
+    provider: alb
+    alb:
+      mechanism: p2c # or power_of_two_choices
+      pool: [ node01, node02, node03 ]
+```
+
+### Least Connections
+
+The **Least Connections** (lc) mechanism routes each request to the healthy pool member with the fewest requests in flight. It reads every member on every request, so it suits small pools; Power of Two Choices approximates it for large ones. While several members are tied, as all are when the pool is idle, they take turns.
+
+```yaml
+backends:
+  api:
+    provider: alb
+    alb:
+      mechanism: lc # or least_connections
+      pool: [ node01, node02 ]
+```
+
+### Least Time
+
+The **Least Time** (lt) mechanism routes each request to the healthy pool member that has been answering fastest. Each member's score is its latency average multiplied by one more than its requests in flight, and the lowest score wins, so a fast member is preferred until it is busy enough that a slower one would answer sooner.
+
+Latency is the time from routing a request to the first byte of its response. The average rises at once when a member slows down and falls gradually, over `lt.decay`, as it recovers. A few details keep the ranking honest:
+
+* A member with no requests yet, such as one just discovered, is scored as its fastest peer. It shares that peer's requests until its own first response ranks it, so it is neither flooded as the apparent fastest nor left waiting for a turn that an idle pool would never give it.
+* A failed request is recorded as a long latency rather than a short one, so a member that returns errors in a millisecond never looks fast. By default a response of `502`, `503` or `504` is a failure, as is one that was never completed; `lt.status_codes` sets the codes that count as a good answer instead, as bare codes, inclusive ranges, or both. A request the client abandoned counts neither way.
+* A member's average fades while it is passed over, so one ranked last on an old measurement or a past failure is tried again rather than ignored for good.
+* Averages survive a configuration reload and autodiscovery membership changes.
+
+When the pool is idle and its members are equally loaded, every request goes to the fastest member. That is the mechanism working as intended; choose `p2c` or `lc` to spread idle traffic instead.
+
+```yaml
+backends:
+  video:
+    provider: alb
+    alb:
+      mechanism: lt # or least_time
+      pool: [ edge01, edge02 ]
+      lt:
+        decay: 10s # default
+        status_codes: [ { start: 200, end: 499 } ] # optional; default is every code but 502, 503 and 504
+```
+
+### Highest Random Weight
+
+The **Highest Random Weight** (hrw) mechanism, also known as rendezvous hashing, routes every request that shares a key to the same healthy pool member. Use it to keep a client or tenant on one member's warm cache. When a member leaves the pool, only the keys it owned move, each to a different remaining member; when it returns, exactly those keys move back. The mapping depends only on the key and the members' names, so every Trickster replica agrees on it and a restart does not change it.
+
+`hrw.key` selects what is hashed:
+
+| Key | Follows |
+|-----|-----|
+| `client_ip` (default) | the client's IP address, after [trusted proxy](./configuring.md) resolution. The port is never part of the key. IPv6 addresses are keyed on their leading `hrw.ipv6_prefix` bits (default `64`), because privacy addressing changes the rest of a client's address over time. |
+| `host` | the request's host name, without its port and without regard to case |
+| `header:<name>` | the first value of the named request header |
+| `cookie:<name>` | the value of the named cookie |
+| `query:<name>` | the value of the named query string parameter, as written in the URL |
+| `sni` | the TLS server name the client offered; only for an ALB that serves a `tls` [stream listener](#load-balancing-stream-listeners) |
+| `proxy_tlv:<type>` | the value of a [PROXY protocol](./configuring.md) version 2 TLV, such as `proxy_tlv:0xEA` for an AWS VPC endpoint ID; only for an ALB that serves a `tcp` or `tls` stream listener with `proxy_protocol` enabled. The type is one byte, written in decimal or `0x` hex. |
+| `user` | the user name a session authenticated as; only for an ALB that serves a [native protocol listener](#load-balancing-native-protocol-sessions) |
+
+A request that lacks the configured key, such as one without the header, has no affinity to preserve and is routed to a member at random.
+
+hrw balances keys, not requests. With many keys of similar volume the members' loads even out, but a single very busy key is always served by one member.
+
+```yaml
+backends:
+  tenants:
+    provider: alb
+    alb:
+      mechanism: hrw # or highest_random_weight
+      pool: [ cache01, cache02, cache03 ]
+      hrw:
+        key: header:X-Tenant
+```
+
+### Load Balancing Stream Listeners
+
+The mechanisms that select one member, `rr`, `p2c`, `lc`, `lt` and `hrw`, also balance the connections of a `tcp` or `tls` [stream listener](./configuring.md) and the sessions of a `udp` one. They are the same mechanisms with the same weights; only what they measure differs. The mechanisms that fan a request out (`fr`, `fgr`, `nlm`, `tsm`) and the User Router need an HTTP request, and are refused on a stream listener. Two more mechanisms, [`race` and `mirror`](#connect-race-and-udp-mirror), serve only stream listeners.
+
+| | http | tcp and tls | udp |
+|-----|-----|-----|-----|
+| unit of work | a request | a connection | a session: one client address and port |
+| in flight (`p2c`, `lc`, `lt`) | requests being served | connections open | sessions open |
+| latency (`lt.signal`) | `first_write`: the first byte sent to the client | `connect` (default): the time to connect to the member; or `first_byte`: the member's first byte | `first_reply`: the member's first datagram |
+| `hrw.key` | `client_ip`, `host`, `header:`, `cookie:`, `query:` | `client_ip`; `sni` on a `tls` listener; `proxy_tlv:<type>` with `proxy_protocol` | `client_ip` |
+
+A connection or session stays on the member it was given until it ends, whatever the mechanism. `client_ip` is the address a [PROXY protocol](./configuring.md) header names when the listener trusts one.
+
+Two settings apply only to an ALB that selects one member on a stream listener, under `alb.stream`:
+
+```yaml
+backends:
+  pg:
+    provider: alb
+    listener_names: [ postgres ]
+    alb:
+      mechanism: p2c
+      pool: [ pg1, pg2, pg3 ]
+      stream:
+        connect_retries: 1       # default 0
+        passive_health:          # off unless present
+          failures: 3            # default
+          eject: 30s             # default
+          max_ejected_percent: 50 # default
+```
+
+* `connect_retries` is how many other members a `tcp` or `tls` connection is offered when it cannot connect to the one it was given. All attempts share the listener's `stream.connect_timeout`. The default, 0, refuses the connection, which is what keeps a weighted split exact: a member under the reserved `.invalid` domain exists to refuse its share, and is never retried past. `udp` has no connect to fail, so it is not retried.
+* `passive_health` takes a member out of the pool after `failures` consecutive failed connects, for `eject`, without waiting for a health check. Only failures to reach the member count, never anything it sent. At most `max_ejected_percent` of the pool is out at once, and the last live member is never ejected. When `eject` ends the member returns, unless its health check has it down. On `udp`, where nothing connects, a member that answers a datagram with a port-unreachable is what counts as a failure.
+
+Health checks work as they do for HTTP pools: a `tcp://` member with a `healthcheck.interval` is probed by opening a connection to it. A `udp://` member has no generic probe; rely on [autodiscovery](./alb-autodiscovery.md) readiness or on `passive_health`.
+
+#### Connect Race and UDP Mirror
+
+Two mechanisms exist only for stream listeners, because they commit one flow to several members at once. Both use every healthy member that has an address to dial, ignore `weight`, and take neither `connect_retries` nor `passive_health`. An ALB that uses one must be mapped to the stream listener directly; it cannot be a member of another ALB's pool.
+
+The **Connect Race** (`race`, or `connect_race`) mechanism serves `tcp` and `tls` listeners. Each client connection is connected to several members at once, within the listener's `stream.connect_timeout`; the first member to connect carries the connection, and the other attempts are closed. A member that is down or slow to accept costs the client nothing. `stream.race_width` is how many members are raced, from 2 to 8; the default is every member, up to 4. In a pool wider than the race, each connection starts one member further along, so the connects are shared across the pool. A race opens and discards connections on the members that lose, so use it where a connect is cheap for the member.
+
+The **UDP Mirror** (`mirror`, or `udp_mirror`) mechanism serves `udp` listeners. Every datagram a client sends is copied to every healthy member, which suits one-way protocols such as statsd, syslog and NetFlow. The first healthy member in pool order answers the session: only its replies are relayed to the client, and the other members' replies are discarded. A mirror pool has at most 8 members.
+
+```yaml
+backends:
+  statsd:
+    provider: alb
+    listener_names: [ statsd ]
+    alb:
+      mechanism: mirror
+      pool: [ statsd1, statsd2 ]
+  db:
+    provider: alb
+    listener_names: [ postgres ]
+    alb:
+      mechanism: race
+      pool: [ pg1, pg2, pg3 ]
+      stream:
+        race_width: 2
+```
+
+### Load Balancing Native Protocol Sessions
+
+A listener that speaks a backend's own wire protocol, such as a `mysql` [listener](./mysql.md), can map to an ALB that uses `rr`, `p2c`, `lc` or `hrw`. Each client session is committed to one pool member once it authenticates, and stays there until it ends; a session is the unit of work, so `p2c` and `lc` compare members by their open sessions. `hrw.key` is `client_ip` or `user`. `lt` is not available, since a session reports no latency to rank members by. Every pool member must be a backend of the listener's own provider, listed directly, and [autodiscovery](./alb-autodiscovery.md) is not supported. The ALB authenticates the listener's clients, so it carries the `authenticator_name` that a [User Router](#user-router) on the same listener would.
+
+```yaml
+backends:
+  replicas:
+    provider: alb
+    listener_names: [ mysql ]
+    authenticator_name: mysql-clients
+    alb:
+      mechanism: lc
+      pool: [ replica1, replica2 ]
+```
+
+### Weights and the Selection Mechanisms
+
+Every mechanism that selects one member per request honors the pool `weight`, but what a weight promises differs:
+
+| Mechanism | A weight is | Guarantee |
+|-----|-----|-----|
+| rr | a share of requests | exact: `weight` of every `totalWeight` consecutive requests |
+| p2c | a capacity | proportional on average: heavier members are drawn more often and compared by requests in flight per unit of weight |
+| hrw | a share of the keys | proportional on average over many keys; changing a weight moves as few keys as possible |
+| lc | a capacity | members are kept at equal requests in flight per unit of weight |
+| lt | a bias | the score is divided by the weight, which shifts load under contention; an idle pool still sends every request to its best-scoring member |
+
+If you need a guaranteed split, use `rr`.
 
 ### Time Series Merge
 
@@ -280,7 +458,7 @@ This mechanism is useful in applications such as live internet television. Consi
 
 #### Custom Good Status Codes List
 
-By default, fgr will return the first response with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr.status_codes` configuration setting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list.
+By default, fgr will return the first response with a status code < 400. However, you can optionally provide an explicit list of good status codes using the `fgr.status_codes` configuration setting, as shown in the example below. When set, Trickster will return the first response to be returned that has a status code found in the configured list. An entry may be a single code or an inclusive range, and the two forms mix: `status_codes: [ { start: 200, end: 299 }, 304 ]`.
 
 #### First Good Response Configuration Example
 
@@ -524,6 +702,48 @@ Each ALB has a configurable `healthy_floor` value, which is the threshold for de
 Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. A pool member in a permanent `unknown` state can never reach `available`, so a `healthy_floor: 1` ALB whose members lack health checks would have an empty pool and return `502` for every request. To avoid that, Trickster resets such an ALB's effective floor to `0` at startup, emits a warning naming the ALB and the un-probed members, and sets the `trickster_alb_pool_floor_reset{backend_name}` gauge to `1`. Configure a health check interval on those members if you want `healthy_floor: 1` to apply.
 
 Setting `healthy_floor` below `0` admits members the probe has confirmed `unavailable`, not just members in the transient `unknown` state. If your goal is to keep traffic flowing during the cold-start window before the first probes complete, lower the pool members' `recovery_threshold` so they transition out of `unknown` faster -- don't lower the floor. When `healthy_floor < 0` Trickster emits a startup warning and sets the `trickster_alb_pool_admits_failing{backend_name}` gauge to `1`.
+
+### Backup Pool Members
+
+A pool member marked `backup: true` stands by: it receives traffic only while no other member of the pool is in the healthy pool. As soon as one of the other members returns, the backup members stand down again. This applies to every mechanism that has a pool, and to stream and native protocol listeners as well as HTTP. A pool must have at least one member that is not a backup, unless its other members come from [autodiscovery](./alb-autodiscovery.md); discovered members are never backups.
+
+```yaml
+backends:
+  db:
+    provider: alb
+    listener_names: [ postgres ]
+    alb:
+      mechanism: rr
+      healthy_floor: 1
+      pool:
+        - primary
+        - name: standby
+          backup: true
+```
+
+Failover depends on the ALB learning that its other members are down, so give them a [health check interval](./health#example+health+check+configuration+for+use+in+alb) or, on a stream listener, `stream.passive_health`. While an ALB with backup members is dispatching to them, the `trickster_alb_pool_on_backup{backend_name}` gauge is `1`, and a warning is logged when it fails over.
+
+### ALBs as Pool Members
+
+An ALB that is a member of another ALB's pool is always treated as `available`, even when its own healthy pool is empty: it keeps its share of the outer pool's traffic and fails it. That is deliberate for weighted splits, where an empty member must not shift its share onto its siblings. Set `propagate_health: true` on the inner ALB to change that. It then reports `unavailable` to the pools it belongs to while it has no healthy member, and `available` otherwise, so an outer pool whose `healthy_floor` excludes `unavailable` members sends that share to its other members instead.
+
+```yaml
+backends:
+  region-east:
+    provider: alb
+    alb:
+      mechanism: rr
+      propagate_health: true
+      pool: [ east1, east2 ]
+  global:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - region-east
+        - name: region-west
+          backup: true
+```
 
 ### Example ALB Configuration Routing Only To Known Healthy Backends
 

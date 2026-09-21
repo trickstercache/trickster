@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/stream"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
@@ -211,7 +212,7 @@ func streamTable(t *testing.T, conf *config.Config, clients backends.Backends, l
 		if o.IsTemplate || members.Contains(name) || !o.UsesListener(listener) {
 			continue
 		}
-		up := l4.FromBackend(clients.Get(name))
+		up := stream.FromBackend(clients.Get(name))
 		require.NotNil(t, up, name)
 		hosts := o.Hosts
 		if !sni || len(hosts) == 0 {

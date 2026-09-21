@@ -124,6 +124,7 @@ func TestPolicyOverlayFillsEveryStringField(t *testing.T) {
 		Handler: "h", CacheName: "c", RoutingMode: "r", NegativeCacheName: "n", CORSMode: "m",
 		CollapsedForwarding: "cf", RewriteTarget: "/t", TracingName: "tr",
 		ReqRewriterName: "rw", AuthenticatorName: "a", HealthMode: "probe",
+		LoadBalancing: "hrw", LoadBalancingKey: "client_ip",
 		Provider: "graphite", ResultHeader: ResultHeaderHide,
 	}
 	got := Policy{}.Overlay(over)

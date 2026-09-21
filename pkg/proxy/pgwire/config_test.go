@@ -320,6 +320,9 @@ func TestNativeListenerAdapterContract(t *testing.T) {
 	if err := adapter.ValidateListener(nil); err == nil {
 		t.Fatal("ValidateListener(nil) succeeded")
 	}
+	if err := adapter.ValidateBalancer(nil, configTestName, nil); err == nil {
+		t.Fatal("ValidateBalancer() accepted a session balancer")
+	}
 	defaults := listenerconfig.New(configTestName)
 	if err := adapter.ValidateListener(defaults); err != nil || defaults.Postgres == nil {
 		t.Fatalf("ValidateListener(defaults) = %v, options = %+v", err, defaults.Postgres)

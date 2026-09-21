@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/stream"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
@@ -40,6 +41,7 @@ import (
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
+	l4observe "github.com/trickstercache/trickster/v2/pkg/proxy/l4/observe"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
@@ -354,7 +356,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 			!o.UsesListener(desired.listenerName) {
 			continue
 		}
-		up := l4.FromBackend(clients.Get(backendName))
+		up := stream.FromBackend(clients.Get(backendName))
 		if up == nil {
 			logger.Error("stream listener backend has no dialable origin", logging.Pairs{
 				keys.ListenerName: desired.listenerName, keys.BackendName: backendName,
@@ -380,6 +382,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 	return &l4.Config{
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
+		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
 	}
 }
 

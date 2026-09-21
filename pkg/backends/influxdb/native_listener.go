@@ -88,6 +88,10 @@ func (nativeListenerAdapter) ValidateUserRouter(*config.Config, string, *bo.Opti
 	return errors.New("InfluxDB Flight SQL user routing is not supported")
 }
 
+func (nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Options) error {
+	return errors.New("InfluxDB Flight SQL session balancing is not supported")
+}
+
 func (nativeListenerAdapter) RouteResolver(native.BuildRequest) backends.RouteResolver { return nil }
 
 // flightUpstreamAddress resolves the upstream Flight SQL host:port for a

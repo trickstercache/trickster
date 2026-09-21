@@ -22,6 +22,7 @@ package hostnames
 
 import (
 	"errors"
+	"net"
 	"strings"
 )
 
@@ -106,4 +107,18 @@ func ToAnyDepth(h string) string {
 		return AnyDepth + s
 	}
 	return h
+}
+
+// reservedTLD is the top-level domain reserved never to resolve
+const reservedTLD = ".invalid"
+
+// Reserved reports whether a host, or the host of a host:port address, is under the reserved
+// .invalid domain and so can never be resolved or connected to.
+func Reserved(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	return strings.HasSuffix(host, reservedTLD)
 }

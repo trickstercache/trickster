@@ -228,6 +228,9 @@ func TestNativeListenerAdapterValidation(t *testing.T) {
 	if err := a.ValidateUserRouter(nil, "", nil); err == nil {
 		t.Fatal("accepted native user routing")
 	}
+	if err := a.ValidateBalancer(nil, "", nil); err == nil {
+		t.Fatal("accepted native session balancing")
+	}
 	if resolver := a.RouteResolver(native.BuildRequest{}); resolver != nil {
 		t.Fatal("unexpected native route resolver")
 	}

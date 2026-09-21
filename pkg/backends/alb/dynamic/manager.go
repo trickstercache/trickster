@@ -26,7 +26,6 @@ package dynamic
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -89,12 +88,6 @@ type Config struct {
 // caller-managed statuses (provider-readiness health mode)
 type externalRegistrar interface {
 	RegisterExternal(name, description string, s *healthcheck.Status)
-}
-
-// protocolHealthProber mirrors the unexported interface consulted by
-// backends.StartHealthChecks for protocol-native probes (e.g. mysql)
-type protocolHealthProber interface {
-	HealthCheckProbe() healthcheck.Probe
 }
 
 // memberEntry is one live discovered member
@@ -414,48 +407,33 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		client, nb, c, m.cfg.Tracers)
 
 	e := &memberEntry{member: member, client: client}
-	if m.cfg.Options.HealthMode == ao.HealthModeProvider {
+	if m.cfg.Options.HealthMode != ao.HealthModeProvider && nb.HealthCheck != nil {
+		// the same registration a configured backend gets
+		st, err := backends.RegisterHealthCheck(m.cfg.HealthChecker, name,
+			m.healthDescription(nb.Provider), client)
+		if err != nil {
+			return nil, err
+		}
+		if st != nil {
+			if oldSt, ok := m.cfg.KnownStatuses[name]; ok && oldSt != nil {
+				if v := oldSt.Get(); v != healthcheck.StatusInitializing {
+					st.Set(v)
+				}
+			}
+			m.admitOnReadiness(name, st, member)
+			client.SetHealthCheckProbe(st.Prober())
+			e.status = st
+		}
+	}
+	if e.status == nil && (m.cfg.Options.HealthMode == ao.HealthModeProvider || nb.HealthCheck != nil) {
+		// the provider's readiness is the member's health: by configuration, or because its
+		// origin is one that cannot be probed
 		e.external = true
 		e.status = healthcheck.NewStatus(name, m.healthDescription(nb.Provider),
 			"", statusForReadyState(member.Ready), time.Time{}, nil)
 		if er, ok := m.cfg.HealthChecker.(externalRegistrar); ok {
 			er.RegisterExternal(name, m.healthDescription(nb.Provider), e.status)
 		}
-	} else if nb.HealthCheck != nil {
-		// mirror backends.StartHealthChecks: overlay the provider default
-		// healthcheck config, then register an active probe
-		hco := nb.HealthCheck
-		nb.HealthCheck = client.DefaultHealthCheckConfig()
-		if nb.HealthCheck == nil {
-			nb.HealthCheck = hco
-		} else {
-			nb.HealthCheck.Overlay(hco)
-		}
-		var st *healthcheck.Status
-		if prober, ok := client.(protocolHealthProber); ok {
-			registrar, rok := m.cfg.HealthChecker.(healthcheck.Registrar)
-			if !rok {
-				return nil, errors.New("health checker does not support protocol probes")
-			}
-			st, err = registrar.RegisterProbe(name,
-				m.healthDescription(nb.Provider), nb.HealthCheck,
-				prober.HealthCheckProbe())
-		} else {
-			st, err = m.cfg.HealthChecker.Register(name,
-				m.healthDescription(nb.Provider),
-				nb.HealthCheck, client.HealthCheckHTTPClient())
-		}
-		if err != nil {
-			return nil, err
-		}
-		if oldSt, ok := m.cfg.KnownStatuses[name]; ok && oldSt != nil {
-			if v := oldSt.Get(); v != healthcheck.StatusInitializing {
-				st.Set(v)
-			}
-		}
-		m.admitOnReadiness(name, st, member)
-		client.SetHealthCheckProbe(st.Prober())
-		e.status = st
 	}
 
 	e.target = pool.NewWeightedTarget(client.Router(), e.status, client,
@@ -501,9 +479,9 @@ func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Mem
 	}
 	if member.Weight != e.member.Weight {
 		// targets are immutable; rebuild this member's target around the
-		// same client and status
+		// same client, status and runtime stats
 		e.target = pool.NewWeightedTarget(e.client.Router(), e.status,
-			e.client, member.Weight)
+			e.client, member.Weight).WithStatsOf(e.target)
 		if e.external {
 			e.target = e.target.WithExternalHealth()
 		}

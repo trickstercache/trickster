@@ -19,6 +19,7 @@ package compile
 import (
 	"time"
 
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -61,6 +62,10 @@ type effective struct {
 	// judged healthy, and the probe it runs when that is by probing
 	healthMode  string
 	healthCheck *ho.Options
+	// loadBalancing and loadBalancingKey choose how an endpoint mode ALB spreads traffic
+	// across a Service's endpoints; the pool across a rule's backendRefs is always round robin
+	loadBalancing    string
+	loadBalancingKey string
 	// tsProvider is the time series provider the generated backend is, or empty for a plain
 	// reverse proxy; a provider accelerates its own API paths and always caches
 	tsProvider string
@@ -121,6 +126,23 @@ func resolveMember(opts *kubecfg.Options, rule, member *ir.Policy) effective {
 	return resolve(opts, &merged)
 }
 
+// endpointALB returns the ALB that balances one Service's endpoints, with the policy's
+// mechanism. A key that the listener cannot read, such as a request header on a tcp route,
+// is left at the default rather than compiled into a configuration that would not load.
+func (e effective) endpointALB(discovery *albDiscoveryDoc, readable func(ao.KeySource) bool) *albDoc {
+	alb := &albDoc{Mechanism: albnames.MechanismRR, Discovery: discovery}
+	if e.loadBalancing != "" {
+		alb.Mechanism = e.loadBalancing
+	}
+	if alb.Mechanism != albnames.MechanismHRW || e.loadBalancingKey == "" {
+		return alb
+	}
+	if ks, err := ao.ParseKeySource(e.loadBalancingKey); err == nil && readable(ks) {
+		alb.HRW = &albHRWDoc{Key: e.loadBalancingKey}
+	}
+	return alb
+}
+
 func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	e := effective{routingMode: opts.RoutingMode(), healthMode: ao.HealthModeProvider}
 	if d := opts.Defaults; d != nil {
@@ -145,6 +167,12 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	}
 	if p.HealthMode != "" {
 		e.healthMode = p.HealthMode
+	}
+	if p.LoadBalancing != "" {
+		e.loadBalancing = p.LoadBalancing
+	}
+	if p.LoadBalancingKey != "" {
+		e.loadBalancingKey = p.LoadBalancingKey
 	}
 	if p.CacheName != "" {
 		e.cacheName = p.CacheName

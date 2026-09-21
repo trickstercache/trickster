@@ -20,6 +20,10 @@ import (
 	"strings"
 	"testing"
 
+	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
+
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
@@ -70,4 +74,102 @@ func TestValidatePoolRejectsNegativeWeight(t *testing.T) {
 	o := &Options{Pool: PoolMemberList{{Name: "a", Weight: -2}}}
 	err := o.ValidatePool("alb1", nil)
 	require.ErrorIs(t, err, ErrInvalidPoolWeight)
+}
+
+func TestPoolMemberListDedupe(t *testing.T) {
+	unique := PoolMemberList{{Name: "a"}, {Name: "b", Weight: 3}}
+	got, repeats, err := unique.Dedupe("alb1")
+	require.NoError(t, err)
+	require.Empty(t, repeats)
+	require.Equal(t, unique, got)
+
+	// the first occurrence wins and keeps its position; each repeat is reported once with
+	// the share the entries used to carry together
+	got, repeats, err = PoolMemberList{
+		{Name: "a"}, {Name: "b", Weight: 2}, {Name: "a"}, {Name: "c"}, {Name: "a"},
+		{Name: "b", Weight: 2}, {Name: "d", Weight: 4}, {Name: "d"},
+	}.Dedupe("alb1")
+	require.NoError(t, err)
+	require.Equal(t, PoolMemberList{
+		{Name: "a"}, {Name: "b", Weight: 2}, {Name: "c"}, {Name: "d", Weight: 4},
+	}, got)
+	require.Equal(t, []PoolRepeat{
+		{Name: "a", Count: 3, Weight: 3},
+		{Name: "b", Count: 2, Weight: 4},
+		{Name: "d", Count: 2, Weight: 5},
+	}, repeats)
+
+	_, _, err = PoolMemberList{{Name: "a", Weight: 2}, {Name: "b"}, {Name: "a", Weight: 3}}.Dedupe("alb1")
+	require.ErrorIs(t, err, ErrConflictingPoolWeights)
+	require.ErrorContains(t, err, `member "a" of alb "alb1"`)
+
+	got, repeats, err = PoolMemberList(nil).Dedupe("alb1")
+	require.NoError(t, err)
+	require.Empty(t, got)
+	require.Empty(t, repeats)
+}
+
+func TestInitializeDedupesPool(t *testing.T) {
+	o := &Options{MechanismName: "rr", Pool: Members("a", "a", "b")}
+	src := o.Pool
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, Members("a", "b"), o.Pool)
+	require.Equal(t, Members("a", "a", "b"), src, "the configured list is not edited in place")
+	warning := o.PoolRepeatWarning("alb1")
+	require.Contains(t, warning, `alb "alb1"`)
+	require.Contains(t, warning, "{name: a, weight: 2}")
+
+	// a second pass finds nothing repeated and must not forget what the first one found
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, warning, o.PoolRepeatWarning("alb1"))
+	c := o.Clone()
+	require.Equal(t, o.PoolRepeats, c.PoolRepeats)
+	c.PoolRepeats[0].Name = "changed"
+	require.Equal(t, "a", o.PoolRepeats[0].Name)
+
+	two := &Options{Pool: Members("a", "a", "b", "b", "b")}
+	require.NoError(t, two.Initialize("alb2"))
+	require.Contains(t, two.PoolRepeatWarning("alb2"), "{name: a, weight: 2}, {name: b, weight: 3}")
+
+	require.Empty(t, (&Options{Pool: Members("a", "b")}).PoolRepeatWarning("alb3"))
+	conflict := &Options{Pool: PoolMemberList{{Name: "a", Weight: 2}, {Name: "a", Weight: 5}}}
+	require.ErrorIs(t, conflict.Initialize("alb4"), ErrConflictingPoolWeights)
+}
+
+func TestPoolMemberBackup(t *testing.T) {
+	var l PoolMemberList
+	require.NoError(t, yaml.Unmarshal([]byte(`
+- primary
+- name: standby
+  backup: true
+`), &l))
+	require.Equal(t, PoolMemberList{{Name: "primary"}, {Name: "standby", Backup: true}}, l)
+	require.Equal(t, 0, l[0].Tier())
+	require.Equal(t, BackupTier, l[1].Tier())
+	b, err := yaml.Marshal(l)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "- primary\n")
+	require.Contains(t, string(b), "backup: true")
+	var again PoolMemberList
+	require.NoError(t, yaml.Unmarshal(b, &again))
+	require.Equal(t, l, again)
+
+	require.False(t, l.AllBackups())
+	require.False(t, PoolMemberList{}.AllBackups())
+	standbys := PoolMemberList{{Name: "a", Backup: true}, {Name: "b", Backup: true}}
+	require.True(t, standbys.AllBackups())
+	all := sets.New([]string{"a", "b"})
+	require.ErrorIs(t, (&Options{Pool: standbys}).ValidatePool("alb1", all), ErrNoPrimaryPoolMember)
+	// discovered members are the primaries of a pool whose configured members all stand by
+	require.NoError(t, (&Options{Pool: standbys, Discovery: &DiscoveryOptions{}}).ValidatePool("alb1", all))
+}
+
+func TestPropagateHealthNeedsAPool(t *testing.T) {
+	o := &Options{MechanismName: names.MechanismUR, UserRouter: &ur.Options{}, PropagateHealth: true}
+	_, err := o.Validate()
+	require.ErrorIs(t, err, ErrPropagateHealthNoPool)
+	o = &Options{MechanismName: names.MechanismRR, PropagateHealth: true}
+	require.NoError(t, o.Initialize("alb1"))
+	_, err = o.Validate()
+	require.NoError(t, err)
 }

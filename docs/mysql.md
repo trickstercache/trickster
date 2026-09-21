@@ -74,8 +74,9 @@ backends:
       recovery_threshold: 2
 ```
 
-Exactly one direct MySQL backend or one supported MySQL User Router ALB maps to
-a MySQL listener. The origin URL must use the `mysql` scheme and include an
+Exactly one direct MySQL backend, one supported MySQL User Router ALB, or one
+[session-balancing ALB](#balancing-sessions-across-replicas) maps to a MySQL
+listener. The origin URL must use the `mysql` scheme and include an
 origin username. Percent-encode reserved username, password, and database
 characters. Configuration stringification and the sanitized management
 configuration redact an embedded origin password, but the source configuration
@@ -375,6 +376,53 @@ routed elsewhere.
 The verified username and selected terminal remain in cache identity. Route
 metrics use configured router/backend names and bounded outcomes, never the
 username.
+
+## Balancing sessions across replicas
+
+A MySQL listener can also map to an ALB that balances its sessions across a
+pool of direct MySQL backends, such as read replicas:
+
+```yaml
+backends:
+  replica-1:
+    provider: mysql
+    authenticator_name: app-clients
+    origin_url: mysql://app_ro:REDACTED@replica-1.example:3306/analytics
+    healthcheck:
+      interval: 5s
+
+  replica-2:
+    provider: mysql
+    authenticator_name: app-clients
+    origin_url: mysql://app_ro:REDACTED@replica-2.example:3306/analytics
+    healthcheck:
+      interval: 5s
+
+  replicas:
+    provider: alb
+    listener_names: [mysql-replicas]
+    authenticator_name: app-clients
+    alb:
+      mechanism: lc # rr, p2c, lc or hrw
+      pool:
+        - replica-1
+        - name: replica-2
+          weight: 2
+```
+
+The ALB owns the downstream authentication exchange, admission, and TLS, as a
+User Router does, and each pool member owns its origin credentials, cache,
+health, and query policy. A session is committed to one member after it
+authenticates and stays there until it ends. `lc` and `p2c` compare members by
+their open sessions; `hrw` keeps a client address (`hrw.key: client_ip`, the
+default) or a user name (`hrw.key: user`) on one member. `weight`, `backup`
+members, and `healthy_floor` apply as they do for any ALB. `lt`, the fanout
+mechanisms, nested ALBs, mixed providers, and autodiscovery are configuration
+errors. See
+[Load Balancing Native Protocol Sessions](./alb.md#load-balancing-native-protocol-sessions).
+
+A change of mechanism or weight applies to new sessions on reload; a change to
+the set of pool members restarts the listener.
 
 ## Metrics, logs, and health
 

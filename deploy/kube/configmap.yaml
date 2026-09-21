@@ -1149,6 +1149,10 @@ data:
     #     provider: alb
     #     alb:
     #       # mechanism defines the ALB pool member selection mechanism.
+    #       # rr (round_robin), p2c (power_of_two_choices), lc (least_connections), lt (least_time)
+    #       # and hrw (highest_random_weight) select one pool member per request; fr, fgr, nlm and
+    #       # tsm fan each request out to the pool; ur routes by user. race (connect_race) and mirror
+    #       # (udp_mirror) serve only tcp/tls and udp stream listeners. See /docs/alb.md.
     #       # values are rr, fr, fgr, nlm, or tsm. see the docs for detailed descriptions of each
     #       # rr - standard round robin
     #       # fr - fanout and return the First Response regardless of status code
@@ -1169,6 +1173,12 @@ data:
     #       #   - foo-01.example.com
     #       #   - name: foo-02.example.com
     #       #     weight: 3 # receives 3 of every 4 requests
+    #       #
+    #       # a backup entry stands by: it is used only while no other pool member is healthy. e.g.:
+    #       # pool:
+    #       #   - foo-01.example.com
+    #       #   - name: foo-02.example.com
+    #       #     backup: true
 
     #       # healthy_floor is the minimum health status for a Backend to be considered healthy in the pool
     #       #  1 indicates only backends positively reporting as healthy are included
@@ -1177,6 +1187,10 @@ data:
     #       # default is 0
     #       healthy_floor: 0
 
+    #       # propagate_health makes this ALB report itself unavailable, to any ALB that has it as a pool
+    #       # member, while it has no healthy member of its own. default is false: it keeps its share
+    #       propagate_health: false
+
     #       # max_capture_bytes overrides the backend-level max_capture_bytes for this ALB's fanout members.
     #       # Set this when the ALB's expected response shape differs from the backend default. When 0 (the
     #       # default), the parent Backend's max_capture_bytes is used, falling back to 268435456 (256 MiB).
@@ -1184,8 +1198,46 @@ data:
     #       fgr: # First Good Response mechanism options, only applicable when mechanism is set to fgr
     #         # status_codes is a list of status codes considered 'good' when using the fgr mechanism
     #         # when this is not set, any response code < 400 is considered good. Use this setting to
-    #         # provide an explicit list.
+    #         # provide an explicit list. An entry is a single code or an inclusive range, e.g.:
+    #         # status_codes: [ { start: 200, end: 299 }, 304 ]
     #         status_codes: [ 200 ] # this would consider only 200 OK's good, and not 204, 302, etc.
+
+    #       hrw: # Highest Random Weight mechanism options, only applicable when mechanism is set to hrw
+    #         # key is what a client's affinity follows: client_ip (default), host, header:<name>,
+    #         # cookie:<name> or query:<name>. Requests sharing a key reach the same pool member.
+    #         # A stream listener can read client_ip, sni (the TLS server name) when it is tls, and
+    #         # proxy_tlv:<type> (a PROXY protocol v2 TLV, e.g. proxy_tlv:0xEA) when it accepts the
+    #         # PROXY protocol. A native protocol listener, such as mysql, can read client_ip and user.
+    #         key: client_ip
+    #         # ipv6_prefix is how many leading bits of an IPv6 client address form a client_ip key.
+    #         # default is 64, which keeps a client that rotates its privacy address on one member
+    #         ipv6_prefix: 64
+
+    #       lt: # Least Time mechanism options, only applicable when mechanism is set to lt
+    #         # decay is how quickly a member's latency average follows a change. default is 10s
+    #         decay: 10s
+    #         # status_codes lists the response codes that count as a good answer; any other records
+    #         # a latency penalty, so a member that fails fast never looks fast. Entries are single
+    #         # codes or inclusive ranges. default is every code except 502, 503 and 504
+    #         status_codes: [ { start: 100, end: 501 }, { start: 505, end: 599 } ]
+    #         # signal is what is timed. The default depends on the listener: first_write on http (the
+    #         # first byte sent to the client), connect on tcp and tls (or first_byte), first_reply on udp
+    #         signal: first_write
+
+    #       stream: # only for an ALB that serves a tcp, tls or udp listener. See /docs/alb.md
+    #         # connect_retries is how many other pool members a tcp or tls connection is offered when
+    #         # it cannot connect to the one it was given. default is 0: the connection is refused
+    #         connect_retries: 0
+    #         # passive_health ejects a member after repeated failures to connect to it, without
+    #         # waiting for a health check. It is off unless this block is present
+    #         passive_health:
+    #           failures: 3               # consecutive failed connects that eject a member
+    #           eject: 30s                # how long it stays out
+    #           max_ejected_percent: 50   # never more of the pool than this, and never its last member
+    #         # race_width is how many pool members the race mechanism connects to at once, 2 to 8.
+    #         # default is every member, up to 4. connect_retries and passive_health do not apply to
+    #         # the race and mirror mechanisms
+    #         # race_width: 2
 
     # # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
     # #

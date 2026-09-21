@@ -41,7 +41,7 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: names.MechanismNLM, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: names.MechanismNLM, Planes: types.PlaneHTTP, New: New}
 }
 
 func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {

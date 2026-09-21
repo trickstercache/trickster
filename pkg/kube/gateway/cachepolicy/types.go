@@ -114,6 +114,12 @@ type Spec struct {
 	CORS *CORS `json:"cors,omitempty"`
 	// HealthMode is probe or provider, for the endpoint routing mode
 	HealthMode string `json:"healthMode,omitempty"`
+	// LoadBalancing is rr, p2c, lc, lt or hrw: how traffic is spread across a Service's
+	// endpoints in the endpoint routing mode
+	LoadBalancing string `json:"loadBalancing,omitempty"`
+	// LoadBalancingKey is what hrw keeps together: client_ip, host, sni, header:<name>,
+	// cookie:<name> or query:<name>
+	LoadBalancingKey string `json:"loadBalancingKey,omitempty"`
 	// ResultHeader is Expose or Hide: whether X-Trickster-Result reaches the client
 	ResultHeader string `json:"resultHeader,omitempty"`
 }

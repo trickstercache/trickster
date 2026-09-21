@@ -334,9 +334,9 @@ check-license-headers:
 
 .PHONY: check-fmtprints
 check-fmtprints: SHELL:=/bin/sh
-check-fmtprints: # fails if there are any fmt.Print* calls outside of the 3 approved files
+check-fmtprints: # fails if there are any fmt.Print* calls outside of the approved files
 	@cd pkg && \
-	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/'); \
+	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/' | grep -v '^lb/example_test.go:'); \
 	count=0; \
 	if [ -n "$$fmtprints" ]; then \
 		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \

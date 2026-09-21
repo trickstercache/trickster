@@ -40,6 +40,8 @@ func TestParseFullSet(t *testing.T) {
 		UseRegex:                      "true",
 		RewriteTarget:                 "/v2/${1}",
 		HealthMode:                    "probe",
+		LoadBalancing:                 "hrw",
+		LoadBalancingKey:              "header:X-Tenant",
 	})
 	require.Empty(t, problems)
 	require.True(t, set.UseRegex)
@@ -62,6 +64,8 @@ func TestParseFullSet(t *testing.T) {
 	require.Equal(t, map[string]string{"+Vary": "Accept-Encoding"}, p.ResponseHeaders)
 	require.Equal(t, "/v2/${1}", p.RewriteTarget)
 	require.Equal(t, "probe", p.HealthMode)
+	require.Equal(t, "hrw", p.LoadBalancing)
+	require.Equal(t, "header:X-Tenant", p.LoadBalancingKey)
 }
 
 // An annotation outside this controller's namespace is another
@@ -99,6 +103,8 @@ func TestParseRejections(t *testing.T) {
 		{"use regex", UseRegex, "yes please", "must be a boolean"},
 		{"rewrite whitespace", RewriteTarget, "/a b", "must not contain whitespace"},
 		{"health mode", HealthMode, "guess", "must be"},
+		{"load balancing", LoadBalancing, "fr", "must be one of rr, p2c, lc, lt, hrw"},
+		{"load balancing key", LoadBalancingKey, "port", "invalid key source"},
 		{"header shape", RequestHeaders, "X-A 1", "must be 'Name: value'"},
 		{"header name", RequestHeaders, "X A: 1", "not a valid header name"},
 		{"header operator only", ResponseHeaders, "-: 1", "not a valid header name"},

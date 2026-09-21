@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-package rr
+package pick
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
@@ -29,7 +28,7 @@ import (
 
 func TestHandleRoundRobin(t *testing.T) {
 	w := httptest.NewRecorder()
-	h := &handler{}
+	h := newRR()
 	h.ServeHTTP(w, nil)
 	if w.Code != http.StatusBadGateway {
 		t.Error("expected 502 got", w.Code)
@@ -64,12 +63,11 @@ func TestHandleRoundRobin(t *testing.T) {
 }
 
 func TestNextTarget(t *testing.T) {
-	p := pool.New(nil, -1)
-	h := &handler{}
+	p, _, _ := albpool.NewHealthy([]http.Handler{http.NotFoundHandler()})
+	h := newRR()
 	h.SetPool(p)
-	h.StopPool()
-	p.SetHealthy([]http.Handler{http.NotFoundHandler()})
-	n := h.nextTarget(p)
+	defer h.StopPool()
+	n := nextTarget(h)
 	if n == nil {
 		t.Error("expected non-nil target")
 	}
@@ -84,7 +82,7 @@ func TestRoundRobinProgression(t *testing.T) {
 	defer p.Stop()
 	albpool.WaitHealthy(t, p, 3)
 
-	rr := &handler{}
+	rr := newRR()
 	rr.SetPool(p)
 
 	// Fire 6 requests and verify rotation through all 3 backends.

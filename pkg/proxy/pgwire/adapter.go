@@ -128,6 +128,10 @@ func (a nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string,
 	return nil
 }
 
+func (nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Options) error {
+	return errors.New("postgres session balancing is not supported")
+}
+
 func (a nativeListenerAdapter) Describe(c *config.Config, listenerName string) (native.Descriptor, error) {
 	protocolConfig, _, err := a.listenerConfig(c, listenerName)
 	if err != nil {
