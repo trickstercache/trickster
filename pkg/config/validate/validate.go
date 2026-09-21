@@ -373,10 +373,11 @@ func Listeners(c *config.Config) error {
 					return err
 				}
 				streamALBs.Set(backendName)
-				targetProvider = nativeAdapter.BackendProvider()
+				// its pool members were each checked against the adapter's providers
+				continue
 			}
 			if options.Protocol != listener.ProtocolHTTP && nativeAdapter != nil &&
-				targetProvider != nativeAdapter.BackendProvider() {
+				!nativeAdapter.ServesProvider(targetProvider) {
 				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
 					name, options.Protocol, backendName, provider)
 			}
@@ -458,9 +459,10 @@ func sessionBalancer(c *config.Config, listenerName, protocol, backendName strin
 	o := backend.ALBOptions
 	for _, m := range o.Pool {
 		if member := c.Backends[m.Name]; member == nil ||
-			strings.ToLower(member.Provider) != adapter.BackendProvider() {
+			!adapter.ServesProvider(strings.ToLower(member.Provider)) {
 			return fmt.Errorf("listener %q with protocol %q requires every pool member of alb backend %q "+
-				"to be a %s backend: %q is not", listenerName, protocol, backendName, adapter.BackendProvider(), m.Name)
+				"to be a %s backend: %q is not", listenerName, protocol, backendName,
+				strings.Join(adapter.Providers(), " or "), m.Name)
 		}
 	}
 	if o.Discovery != nil {

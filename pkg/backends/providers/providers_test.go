@@ -122,3 +122,21 @@ func TestHTTPTimeSeriesProviderNames(t *testing.T) {
 		t.Fatal("mysql and the reverse proxy are not http time series providers")
 	}
 }
+
+func TestProviderAliases(t *testing.T) {
+	if Canonical(TimescaleDB) != Postgres || Canonical(Postgres) != Postgres || Canonical(MySQL) != MySQL {
+		t.Fatal("only an alias may resolve to a different provider")
+	}
+	if got := Aliases(Postgres); !slices.Equal(got, []string{TimescaleDB}) {
+		t.Fatalf("Aliases(%q) = %v", Postgres, got)
+	}
+	if got := Aliases(MySQL); len(got) != 0 {
+		t.Fatalf("Aliases(%q) = %v", MySQL, got)
+	}
+	if !IsValidProvider(TimescaleDB) || PostgresID.String() != Postgres {
+		t.Fatal("the alias must be a valid provider whose id reports the canonical name")
+	}
+	if IsSupportedHTTPTimeSeriesProvider(Postgres) || !IsSupportedTimeSeriesProvider(TimescaleDB) {
+		t.Fatal("postgres is a time series provider that is not reached over HTTP")
+	}
+}

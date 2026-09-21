@@ -59,7 +59,11 @@ func (nativeListenerAdapter) SupportsHTTP() bool { return true }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolFlightSQL }
 
-func (nativeListenerAdapter) BackendProvider() string { return providers.InfluxDB }
+func (nativeListenerAdapter) ServesProvider(provider string) bool {
+	return provider == providers.InfluxDB
+}
+
+func (nativeListenerAdapter) Providers() []string { return []string{providers.InfluxDB} }
 
 func (nativeListenerAdapter) Configured(*listenerconfig.Options) bool { return false }
 
