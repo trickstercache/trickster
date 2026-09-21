@@ -28,21 +28,22 @@ import (
 )
 
 const (
-	metricNamespace    = "trickster"
-	cacheSubsystem     = "cache"
-	proxySubsystem     = providers.Proxy
-	configSubsystem    = "config"
-	buildSubsystem     = "build"
-	frontendSubsystem  = "frontend"
-	albSubsystem       = "alb"
-	healthSubsystem    = "healthcheck"
-	sqlSubsystem       = "sql"
-	mysqlSubsystem     = "mysql"
-	pgwireSubsystem    = "pgwire"
-	graphiteSubsystem  = providers.Graphite
-	druidSubsystem     = providers.Druid
-	tlsSubsystem       = "tls"
-	accessLogSubsystem = "accesslog"
+	metricNamespace     = "trickster"
+	cacheSubsystem      = "cache"
+	proxySubsystem      = providers.Proxy
+	configSubsystem     = "config"
+	buildSubsystem      = "build"
+	frontendSubsystem   = "frontend"
+	albSubsystem        = "alb"
+	healthSubsystem     = "healthcheck"
+	sqlSubsystem        = "sql"
+	mysqlSubsystem      = "mysql"
+	pgwireSubsystem     = "pgwire"
+	graphiteSubsystem   = providers.Graphite
+	druidSubsystem      = providers.Druid
+	tlsSubsystem        = "tls"
+	accessLogSubsystem  = "accesslog"
+	fileserverSubsystem = "fileserver"
 )
 
 // Default histogram buckets used by trickster
@@ -392,6 +393,73 @@ var (
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
 		[]string{keys.Cache_Name, keys.Provider},
+	)
+
+	// FileserverResponses is a Counter of files served by static backends, by how the
+	// Fileserver cache was used and the encoding of the rendition the file server produced
+	FileserverResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "responses_total",
+			Help:      "Count of files served by a static backend, by Fileserver cache status and encoding.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Status, keys.Encoding},
+	)
+
+	// FileserverCacheEvents is a Counter of events that remove objects from a Fileserver cache
+	FileserverCacheEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_events_total",
+			Help:      "Count of objects removed from a static backend's Fileserver cache, by event.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// FileserverCacheObjects is a Gauge of the objects in a Fileserver cache, including loads in progress
+	FileserverCacheObjects = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_usage_objects",
+			Help:      "Number of objects in a static backend's Fileserver cache.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheBytes is a Gauge of the accounted bytes in a Fileserver cache, including loads in progress
+	FileserverCacheBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_usage_bytes",
+			Help:      "Number of accounted bytes in a static backend's Fileserver cache.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheMaxObjects is a Gauge of the most objects a Fileserver cache will hold
+	FileserverCacheMaxObjects = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_max_usage_objects",
+			Help:      "Maximum number of objects in a static backend's Fileserver cache before eviction.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheMaxBytes is a Gauge of the most accounted bytes a Fileserver cache will hold
+	FileserverCacheMaxBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_max_usage_bytes",
+			Help:      "Maximum number of accounted bytes in a static backend's Fileserver cache before eviction.",
+		},
+		[]string{keys.Backend_Name},
 	)
 
 	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
@@ -1060,6 +1128,12 @@ func init() {
 	prometheus.MustRegister(CacheBytes)
 	prometheus.MustRegister(CacheMaxObjects)
 	prometheus.MustRegister(CacheMaxBytes)
+	prometheus.MustRegister(FileserverResponses)
+	prometheus.MustRegister(FileserverCacheEvents)
+	prometheus.MustRegister(FileserverCacheObjects)
+	prometheus.MustRegister(FileserverCacheBytes)
+	prometheus.MustRegister(FileserverCacheMaxObjects)
+	prometheus.MustRegister(FileserverCacheMaxBytes)
 	prometheus.MustRegister(BuildInfo)
 	prometheus.MustRegister(LastReloadSuccessful)
 	prometheus.MustRegister(LastReloadSuccessfulTimestamp)

@@ -96,6 +96,18 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 	}
 }
 
+func TestStaticProvider(t *testing.T) {
+	if !IsValidProvider(Static) || StaticID.String() != Static {
+		t.Errorf("expected %s to be a valid provider", Static)
+	}
+	if !NonCacheBackends().Contains(Static) || !NonOriginBackends().Contains(Static) {
+		t.Error("expected static to need neither a cache nor an origin")
+	}
+	if IsSupportedTimeSeriesProvider(Static) {
+		t.Error("expected false")
+	}
+}
+
 func TestMySQLUsesCache(t *testing.T) {
 	if NonCacheBackends().Contains(MySQL) {
 		t.Fatal("MySQL must be initialized and validated with a cache")

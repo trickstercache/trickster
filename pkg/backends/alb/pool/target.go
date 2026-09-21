@@ -68,8 +68,8 @@ func NewWeightedTarget(handler http.Handler, hcStatus *healthcheck.Status,
 			t.dialable = t.addr != "" && !hostnames.Reserved(t.addr)
 		}
 		if cfg := backend.Configuration(); cfg != nil &&
-			!backends.IsVirtual(cfg.Provider) {
-			// non-virtual members are probed only when an active health
+			backends.HasOrigin(cfg.Provider) {
+			// members with an origin are probed only when an active health
 			// check interval is configured; unprobed members can never
 			// leave Unchecked and factor into healthy-floor resets
 			t.probed = cfg.HealthCheck != nil && cfg.HealthCheck.Interval > 0

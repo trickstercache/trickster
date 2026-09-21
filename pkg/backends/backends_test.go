@@ -156,6 +156,29 @@ func TestUsesCache(t *testing.T) {
 	if b {
 		t.Error("expected false")
 	}
+	if UsesCache(providers.Static) {
+		t.Error("expected false")
+	}
+	if !UsesCache(providers.Prometheus) {
+		t.Error("expected true")
+	}
+}
+
+func TestHasOrigin(t *testing.T) {
+	for _, provider := range []string{providers.ALB, providers.Rule, providers.Static} {
+		if HasOrigin(provider) {
+			t.Errorf("expected %s to have no origin", provider)
+		}
+	}
+	for _, provider := range []string{providers.Prometheus, providers.ReverseProxyCache} {
+		if !HasOrigin(provider) {
+			t.Errorf("expected %s to have an origin", provider)
+		}
+	}
+	// static answers locally, but does not front other backends
+	if IsVirtual(providers.Static) {
+		t.Error("expected static not to be virtual")
+	}
 }
 
 // choosyBackend probes by protocol only when it has a probe to offer, and may refuse to be

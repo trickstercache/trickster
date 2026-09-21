@@ -76,10 +76,9 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 		if k == "frontend" {
 			continue
 		}
-		if IsVirtual(bo.Provider) {
-			// Virtual backends have no upstream to probe. One that keeps a status of its
-			// own is reported by it, so the health page agrees with routing; any other
-			// gets a synthetic passing status.
+		if !HasOrigin(bo.Provider) {
+			// No upstream to probe: a backend that keeps its own status reports it, so the
+			// health page agrees with routing; any other gets a synthetic passing status.
 			if st := ownStatus(c); st != nil {
 				if er, ok := hc.(externalRegistrar); ok {
 					er.RegisterExternal(k, bo.Provider, st)
@@ -183,6 +182,12 @@ func IsVirtual(provider string) bool {
 	return provider == providers.ALB || provider == providers.Rule
 }
 
+// HasOrigin returns false if the backend never makes an outbound request of
+// its own: a virtual type, or one that answers from local content
+func HasOrigin(provider string) bool {
+	return !IsVirtual(provider) && provider != providers.Static
+}
+
 // CloseIdleConnections closes idle keep-alive conns on each backend's web and
 // health-check transports. Reload replaces the backend map without closing the
 // old map's transports, leaking persistConn readLoop/writeLoop goroutines until
@@ -208,8 +213,8 @@ func closeIdle(c *http.Client) {
 }
 
 // UsesCache returns true if the backend uses a cache
-// (anything except Virtuals and ReverseProxy)
+// (anything except Virtuals, Static and ReverseProxy)
 func UsesCache(provider string) bool {
-	return !IsVirtual(provider) && provider != providers.ReverseProxyShort &&
+	return HasOrigin(provider) && provider != providers.ReverseProxyShort &&
 		provider != providers.ReverseProxy
 }
