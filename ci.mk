@@ -21,6 +21,9 @@ RELEASE_PLATFORM  ?= $(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)
 RELEASE_OS         = $(word 1,$(subst -, ,$(RELEASE_PLATFORM)))
 RELEASE_ARCH       = $(word 2,$(subst -, ,$(RELEASE_PLATFORM)))
 RELEASE_EXT        = $(if $(filter windows,$(RELEASE_OS)),.exe,)
+# windows ships a zip, which Explorer opens natively; everything else ships a tarball
+ARCHIVE_EXT        = $(if $(filter windows,$(RELEASE_OS)),zip,tar.gz)
+ARCHIVE_CMD        = $(if $(filter zip,$(ARCHIVE_EXT)),zip -qr,tar -czf)
 PACKAGE_NAME       = trickster-$(TAGVER).$(RELEASE_PLATFORM)
 PACKAGE_DIR        = ./$(BUILD_SUBDIR)/$(PACKAGE_NAME)
 BIN_DIR            = $(PACKAGE_DIR)/bin
@@ -43,11 +46,11 @@ release-artifacts: $(addprefix release-artifact-,$(RELEASE_PLATFORMS))
 release-artifact-%:
 	$(MAKE) release-artifact RELEASE_PLATFORM=$*
 
-# builds ./bin/trickster-<version>.<os>-<arch>.tar.gz for RELEASE_PLATFORM
+# builds ./bin/trickster-<version>.<os>-<arch>.tar.gz (.zip on windows) for RELEASE_PLATFORM
 .PHONY: release-artifact
 release-artifact:
 	@test -n "$(RELEASE_OS)" -a -n "$(RELEASE_ARCH)" || { echo "RELEASE_PLATFORM must be <os>-<arch>" >&2; exit 1; }
-	rm -rf $(PACKAGE_DIR) $(PACKAGE_DIR).tar.gz
+	rm -rf $(PACKAGE_DIR) $(PACKAGE_DIR).$(ARCHIVE_EXT)
 	mkdir -p $(BIN_DIR) $(CONF_DIR)
 
 	GOOS= GOARCH= $(GO) build -o $(HOST_GO_LICENSES) github.com/google/go-licenses/v2
@@ -62,4 +65,4 @@ release-artifact:
 	GOOS=$(RELEASE_OS) GOARCH=$(RELEASE_ARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) \
 		-o $(BIN_DIR)/trickster$(RELEASE_EXT) -v $(TRICKSTER_MAIN)/*.go
 
-	tar -C ./$(BUILD_SUBDIR) -czf $(PACKAGE_DIR).tar.gz $(PACKAGE_NAME)
+	cd ./$(BUILD_SUBDIR) && $(ARCHIVE_CMD) $(PACKAGE_NAME).$(ARCHIVE_EXT) $(PACKAGE_NAME)

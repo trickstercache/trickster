@@ -39,15 +39,18 @@ jobs:
         #
       - name: Verify third-party license material
         run: |
-          tar -tzf ./bin/trickster-*.${{ matrix.platform }}.tar.gz \
-            | grep -q '/third-party-licenses/vitess.io/vitess/go/LICENSE'
+          archive="$(ls ./bin/trickster-*.${{ matrix.platform }}.*)"
+          case "${archive}" in
+            *.zip) unzip -Z1 "${archive}" ;;
+            *)     tar -tzf "${archive}" ;;
+          esac | grep -q '/third-party-licenses/vitess.io/vitess/go/LICENSE'
         #
       # each platform uploads under its own name so later jobs can pick a subset
       - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
           name: trickster-${{ matrix.platform }}
-          path: ./bin/trickster-*.${{ matrix.platform }}.tar.gz
+          path: ./bin/trickster-*.${{ matrix.platform }}.*
           if-no-files-found: error
           compression-level: 0
           retention-days: 7

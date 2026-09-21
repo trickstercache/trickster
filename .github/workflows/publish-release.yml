@@ -74,6 +74,7 @@ jobs:
             --draft=${{ env.draft }} \
             --prerelease=${{ env.prerelease }} \
             ./bin/trickster-${{ steps.baretag.outputs.baretag }}.*.tar.gz \
+            ./bin/trickster-${{ steps.baretag.outputs.baretag }}.*.zip \
             ./bin/sha256sum.txt
   # the image reuses the linux binaries built above, so it runs alongside the release
   publish-image:

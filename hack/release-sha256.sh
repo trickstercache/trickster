@@ -10,7 +10,13 @@ rm -f "${CHECKSUM_FILE}"
 
 # hash from inside the directory so the file lists bare archive names
 pushd "${BUILD_SUBDIR}" > /dev/null
-sha256sum trickster-"${TAGVER}".*.tar.gz > "$(basename "${CHECKSUM_FILE}")"
+shopt -s nullglob
+archives=(trickster-"${TAGVER}".*.tar.gz trickster-"${TAGVER}".*.zip)
+if [ ${#archives[@]} -eq 0 ]; then
+    echo "no release archives for ${TAGVER} in ${BUILD_SUBDIR}" >&2
+    exit 1
+fi
+sha256sum "${archives[@]}" > "$(basename "${CHECKSUM_FILE}")"
 popd > /dev/null
 
 cat "${CHECKSUM_FILE}"
