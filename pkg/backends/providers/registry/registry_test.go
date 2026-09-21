@@ -27,3 +27,32 @@ func TestDruidProviderIsRegistered(t *testing.T) {
 		t.Fatal("Druid provider is not registered")
 	}
 }
+
+func TestPostgresProvidersShareOneNativeAdapter(t *testing.T) {
+	supported := SupportedProviders()
+	if supported[providers.Postgres] == nil || supported[providers.TimescaleDB] == nil {
+		t.Fatal("postgres and its timescaledb alias must both be registered")
+	}
+	listeners := NativeListeners()
+	adapter := listeners.GetByProvider(providers.Postgres)
+	if adapter == nil || listeners.GetByProvider(providers.TimescaleDB) != adapter {
+		t.Fatal("both provider names must resolve to the same native adapter")
+	}
+	if listeners.Get(adapter.Protocol()) != adapter {
+		t.Fatal("the adapter must be registered under its own protocol")
+	}
+	for protocol, registered := range listeners {
+		names := registered.Providers()
+		if len(names) == 0 {
+			t.Fatalf("%s serves no providers", protocol)
+		}
+		for _, name := range names {
+			if !registered.ServesProvider(name) || listeners.GetByProvider(name) != registered {
+				t.Fatalf("%s lists %q but does not serve it exclusively", protocol, name)
+			}
+		}
+	}
+	if listeners.GetByProvider(providers.Prometheus) != nil {
+		t.Fatal("an HTTP-only provider must have no native adapter")
+	}
+}

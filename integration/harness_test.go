@@ -287,6 +287,20 @@ func writeTestConfig(t *testing.T, configPath string,
 			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
 		}
 	}
+	// The dev config binds its PostgreSQL wire-protocol listeners to fixed
+	// ports; drop them and the backends they serve, which need such a listener.
+	// Tests that want one add it back on a reserved port through mods.
+	for name, options := range c.Listeners {
+		if options == nil || options.Protocol != listener.ProtocolPostgres {
+			continue
+		}
+		delete(c.Listeners, name)
+		for backendName, backend := range c.Backends {
+			if backend != nil && backend.UsesListener(name) {
+				delete(c.Backends, backendName)
+			}
+		}
+	}
 	c.Frontend = nil
 	c.Metrics = nil
 	c.MgmtConfig.ListenAddress = ""
