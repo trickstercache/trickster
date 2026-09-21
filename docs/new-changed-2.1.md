@@ -2,9 +2,11 @@
 
 Trickster 2.1 adds tons of new features to put acceleration in even more places: Kubernetes routing, more supported backend providers, and modern protocols. 👌
 
+The next release of Trickster will be v2.2, which has been added to the [Roadmap](./roadmap.md).
+
 ### A Brand New Trick: Mecone v1.0
 
-Alongside Trickster v2.1, today we launch a new companion project, [Mecone](https://github.com/trickstercache/mecone) (pronounced like McConey) - a Reverse Proxy conformance tester that is extensible via YAML configs. We use Mecone to measure Trickster's conformance to the HTTP protocol specifications, and also compare its conformance against other industry solutions via published quarterly reports. Check out the Mecone repo to see how Trickster stacks up in [the Q3 2026 report](https://github.com/trickstercache/mecone/blob/main/soti/2026-q3-soti.md).
+Alongside Trickster v2.1, we've launched a new companion project, [Mecone](https://github.com/trickstercache/mecone) (pronounced like McConey) - a Reverse Proxy conformance tester that is extensible via YAML configs. We use Mecone to measure Trickster's conformance to the HTTP protocol specifications, and also compare its conformance against other industry solutions via published quarterly reports. Check out the Mecone repo to see how Trickster stacks up today in our maiden [State of the Industry report](https://github.com/trickstercache/mecone/blob/main/soti/2026-q3-soti.md).
 
 ## Trickster v2.1 Features
 
