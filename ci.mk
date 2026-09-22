@@ -15,35 +15,54 @@
 # Targets for building and releasing Trickster from a CI/CD pipeline
 # Not meant for local usage except for testing
 
-.PHONY: release
-release: clean go-mod-tidy go-mod-vendor release-artifacts release-sha256
+# one archive is published per platform, each holding a single binary
+RELEASE_PLATFORMS ?= darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64
+RELEASE_PLATFORM  ?= $(shell $(GO) env GOOS)-$(shell $(GO) env GOARCH)
+RELEASE_OS         = $(word 1,$(subst -, ,$(RELEASE_PLATFORM)))
+RELEASE_ARCH       = $(word 2,$(subst -, ,$(RELEASE_PLATFORM)))
+RELEASE_EXT        = $(if $(filter windows,$(RELEASE_OS)),.exe,)
+# windows ships a zip, which Explorer opens natively; everything else ships a tarball
+ARCHIVE_EXT        = $(if $(filter windows,$(RELEASE_OS)),zip,tar.gz)
+ARCHIVE_CMD        = $(if $(filter zip,$(ARCHIVE_EXT)),zip -qr,tar -czf)
+PACKAGE_NAME       = trickster-$(TAGVER).$(RELEASE_PLATFORM)
+PACKAGE_DIR        = ./$(BUILD_SUBDIR)/$(PACKAGE_NAME)
+BIN_DIR            = $(PACKAGE_DIR)/bin
+CONF_DIR           = $(PACKAGE_DIR)/conf
+HOST_GO_LICENSES   = $(CURDIR)/$(BUILD_SUBDIR)/.tools/go-licenses
 
-# generate sha256sum for all release artifacts
+.PHONY: release
+release: clean go-mod-tidy release-artifacts release-sha256
+
+# generate sha256sum for all release archives
 RELEASE_CHECKSUM_FILE=$(BUILD_SUBDIR)/sha256sum.txt
 .PHONY: release-sha256
 release-sha256:
-	./hack/release-sha256.sh $(RELEASE_CHECKSUM_FILE) $(BUILD_SUBDIR) $(TAGVER) $(BIN_DIR)
+	./hack/release-sha256.sh $(RELEASE_CHECKSUM_FILE) $(BUILD_SUBDIR) $(TAGVER)
 
 .PHONY: release-artifacts
-release-artifacts: clean
+release-artifacts: $(addprefix release-artifact-,$(RELEASE_PLATFORMS))
 
-	mkdir -p $(PACKAGE_DIR)
-	mkdir -p $(BIN_DIR)
-	mkdir -p $(CONF_DIR)
-	$(MAKE) THIRD_PARTY_LICENSES_DIR=$(PACKAGE_DIR)/third-party-licenses third-party-licenses
+# e.g., make release-artifact-linux-arm64
+release-artifact-%:
+	$(MAKE) release-artifact RELEASE_PLATFORM=$*
 
-	cp -r ./docs $(PACKAGE_DIR)
-	cp -r ./deploy $(PACKAGE_DIR)
-	cp ./README.md $(PACKAGE_DIR)
-	cp ./CONTRIBUTING.md $(PACKAGE_DIR)
-	cp ./LICENSE $(PACKAGE_DIR)
-	cp ./NOTICE $(PACKAGE_DIR)
+# builds ./bin/trickster-<version>.<os>-<arch>.tar.gz (.zip on windows) for RELEASE_PLATFORM
+.PHONY: release-artifact
+release-artifact:
+	@test -n "$(RELEASE_OS)" -a -n "$(RELEASE_ARCH)" || { echo "RELEASE_PLATFORM must be <os>-<arch>" >&2; exit 1; }
+	rm -rf $(PACKAGE_DIR) $(PACKAGE_DIR).$(ARCHIVE_EXT)
+	mkdir -p $(BIN_DIR) $(CONF_DIR)
+
+	GOOS= GOARCH= $(GO) build -o $(HOST_GO_LICENSES) github.com/google/go-licenses/v2
+	GOOS=$(RELEASE_OS) GOARCH=$(RELEASE_ARCH) $(MAKE) third-party-licenses \
+		GO_LICENSES=$(HOST_GO_LICENSES) THIRD_PARTY_LICENSES_DIR=$(PACKAGE_DIR)/third-party-licenses
+
+	# tracked files only, so local developer-environment data never ships
+	git archive HEAD docs deploy | tar -x -C $(PACKAGE_DIR)
+	cp ./README.md ./CONTRIBUTING.md ./LICENSE ./NOTICE $(PACKAGE_DIR)
 	cp ./examples/conf/*.yaml $(CONF_DIR)
 
-	GOOS=darwin  GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).darwin-amd64  -v $(TRICKSTER_MAIN)/*.go
-	GOOS=darwin  GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).darwin-arm64  -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).linux-amd64   -v $(TRICKSTER_MAIN)/*.go
-	GOOS=linux   GOARCH=arm64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).linux-arm64   -v $(TRICKSTER_MAIN)/*.go
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) -o $(BIN_DIR)/trickster-$(TAGVER).windows-amd64 -v $(TRICKSTER_MAIN)/*.go
+	GOOS=$(RELEASE_OS) GOARCH=$(RELEASE_ARCH) CGO_ENABLED=$(CGO_ENABLED) $(GO) build $(LDFLAGS) \
+		-o $(BIN_DIR)/trickster$(RELEASE_EXT) -v $(TRICKSTER_MAIN)/*.go
 
-	cd ./$(BUILD_SUBDIR) && tar cvfz ./trickster-$(TAGVER).tar.gz ./trickster-$(TAGVER)/*
+	cd ./$(BUILD_SUBDIR) && $(ARCHIVE_CMD) $(PACKAGE_NAME).$(ARCHIVE_EXT) $(PACKAGE_NAME)

@@ -33,6 +33,7 @@ integration/conformance/reports
 # output path
 OPATH
 bin
+dist
 vendor
 
 # MacOS and other operating system artifacts
