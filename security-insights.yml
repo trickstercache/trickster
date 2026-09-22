@@ -1,7 +1,7 @@
 header:
   schema-version: 2.0.0
-  last-updated: '2025-04-08'
-  last-reviewed: '2025-04-08'
+  last-updated: '2026-09-22'
+  last-reviewed: '2026-09-22'
   url: https://github.com/trickstercache/trickster
 
 project:
@@ -91,3 +91,15 @@ repository:
       self:
         comment: |
           Self assessment has not yet been completed.
+    tools:
+      - name: GitHub Secret Scanning
+        type: secret-scanning
+        rulesets:
+          - default
+        comment: |
+          GitHub-native secret scanning with push protection, validity checks and
+          non-provider patterns, enforced by the trickstercache org security configuration.
+        integration:
+          adhoc: true
+          ci: true
+          release: false
