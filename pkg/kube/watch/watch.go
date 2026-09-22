@@ -424,8 +424,8 @@ func ObjectKey(obj any) string {
 	return m.GetName()
 }
 
-// Start begins watching, blocks until every cache has synced, then delivers the first OnChange;
-// on an error the Watcher never started, and Stop is still safe to call
+// Start begins watching, blocks until every cache has synced and its handler has seen the initial
+// list, then delivers the first OnChange; on an error the Watcher never started, and Stop is still safe
 func (w *Watcher) Start(ctx context.Context) error {
 	w.mtx.Lock()
 	if w.stopped || w.started {
@@ -435,12 +435,13 @@ func (w *Watcher) Start(ctx context.Context) error {
 	w.started = true
 	runCtx, cancel := context.WithCancel(ctx)
 	w.cancel = cancel
+	handlers := w.handlerSyncs()
 	w.mtx.Unlock()
 
 	for _, h := range w.handles() {
 		h.Start()
 	}
-	if err := w.waitForSync(runCtx); err != nil {
+	if err := w.waitForSync(runCtx, handlers); err != nil {
 		return err
 	}
 	w.mtx.Lock()
@@ -466,13 +467,38 @@ func (w *Watcher) handles() []kube.FactoryHandle {
 	return out
 }
 
-func (w *Watcher) waitForSync(ctx context.Context) error {
+func (w *Watcher) handlerSyncs() []cache.InformerSynced {
+	var regs []registration
+	if w.cluster != nil {
+		regs = append(regs, w.cluster.regs...)
+	}
+	for _, s := range w.scopes {
+		regs = append(regs, s.regs...)
+	}
+	if w.published != nil {
+		regs = append(regs, w.published.regs...)
+	}
+	out := make([]cache.InformerSynced, 0, len(regs))
+	for _, r := range regs {
+		if r.handle != nil {
+			out = append(out, r.handle.HasSynced)
+		}
+	}
+	return out
+}
+
+func (w *Watcher) waitForSync(ctx context.Context, handlers []cache.InformerSynced) error {
 	for _, h := range w.handles() {
 		for typ, ok := range h.WaitForCacheSync(ctx.Done()) {
 			if !ok {
 				return fmt.Errorf("%w: %s", ErrCacheSync, typ.String())
 			}
 		}
+	}
+	// a synced cache has been listed, but its handlers hear the initial adds on another
+	// goroutine; the first delivery, and the counts it is measured by, must follow the last of them
+	if len(handlers) > 0 && !cache.WaitForCacheSync(ctx.Done(), handlers...) {
+		return fmt.Errorf("%w: event handlers", ErrCacheSync)
 	}
 	return ctx.Err()
 }
