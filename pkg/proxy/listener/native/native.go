@@ -20,6 +20,7 @@ package native
 import (
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -55,7 +56,7 @@ type Adapter interface {
 	ServesProvider(provider string) bool
 	// Providers returns the served provider names, for messages and docs only.
 	Providers() []string
-	SupportsHTTP() bool
+	SupportsHTTP(provider string) bool
 	Configured(*listenerconfig.Options) bool
 	ValidateListener(*listenerconfig.Options) error
 	ValidateBackend(*bo.Options) error
@@ -76,15 +77,42 @@ func (r Registry) Get(protocol string) Adapter {
 	return r[protocol]
 }
 
-// GetByProvider returns the adapter whose protocol serves the given backend
-// provider, or nil when no native protocol serves it.
+// GetByProvider returns the unique adapter serving provider, or nil when the
+// provider is unsupported or ambiguous. Use GetForProvider when a listener's
+// protocol is known.
 func (r Registry) GetByProvider(provider string) Adapter {
+	var found Adapter
 	for _, adapter := range r {
 		if adapter.ServesProvider(provider) {
-			return adapter
+			if found != nil {
+				return nil
+			}
+			found = adapter
 		}
 	}
+	return found
+}
+
+// GetForProvider returns the adapter serving provider over protocol.
+func (r Registry) GetForProvider(protocol, provider string) Adapter {
+	if a := r.Get(protocol); a != nil && a.ServesProvider(provider) {
+		return a
+	}
 	return nil
+}
+
+// ForProvider returns all matching adapters ordered by protocol.
+func (r Registry) ForProvider(provider string) []Adapter {
+	var out []Adapter
+	for _, a := range r {
+		if a.ServesProvider(provider) {
+			out = append(out, a)
+		}
+	}
+	slices.SortFunc(out, func(a, b Adapter) int {
+		return strings.Compare(a.Protocol(), b.Protocol())
+	})
+	return out
 }
 
 // ConfiguredProtocol returns the first, lexically ordered protocol whose

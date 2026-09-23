@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
+	"github.com/trickstercache/trickster/v2/pkg/backends/greptimedb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -44,6 +45,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
@@ -53,6 +55,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -798,6 +802,73 @@ func TestBackendRoutesOnMultipleHTTPListeners(t *testing.T) {
 	}
 	if clients[o.Name] != client || len(clients) != 2 {
 		t.Fatal("duplicated backend clients for listener bindings")
+	}
+}
+
+func TestGreptimeDBRoutesOnlyOnHTTPListeners(t *testing.T) {
+	var calls atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if user, password, ok := r.BasicAuth(); !ok || user != "grafana" || password != "client-password" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("X-Origin-URI", r.RequestURI)
+		w.Header().Set("X-Origin-Method", r.Method)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer origin.Close()
+	for _, exposeHTTP := range []bool{true, false} {
+		conf := config.NewConfig()
+		o := bo.New()
+		o.Provider, o.OriginURL = providers.GreptimeDB, origin.URL+"/prefix"
+		o.AuthOptions = &autho.Options{ProxyPreserve: true, Users: configtypes.EnvStringMap{"grafana": "client-password"}}
+		auth, err := basic.New(map[string]any{"options": o.AuthOptions})
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.AuthOptions.Authenticator = auth
+		o.ListenerNames = []string{"pg"}
+		if exposeHTTP {
+			o.ListenerNames = append(o.ListenerNames, "default")
+		}
+		if err := o.Initialize("greptime"); err != nil {
+			t.Fatal(err)
+		}
+		conf.Backends = bo.Lookup{o.Name: o}
+		conf.Listeners["pg"] = &listener.Options{Protocol: listener.ProtocolPostgres, ListenPort: 8489}
+		caches := registry.LoadCachesFromConfig(conf)
+		t.Cleanup(func() { registry.CloseCaches(caches) })
+		client, err := greptimedb.NewClient(o.Name, o, lm.NewRouter(), caches[o.CacheName], nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.HTTPClient = client.HTTPClient()
+		clients := backends.Backends{o.Name: client}
+		routers := map[string]router.Router{"default": lm.NewRouter(), "pg": lm.NewRouter()}
+		if err := RegisterProxyRoutesForListeners(conf, clients, routers, nil, caches, nil, false); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"/v1/sql?db=public", "/v1/prometheus/api/v1/query_range?query=up", "/v1/influxdb/write", "/v1/loki/api/v1/push"} {
+			for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions, http.MethodHead} {
+				for _, name := range []string{"default", "pg"} {
+					for range 2 {
+						before := calls.Load()
+						rec := httptest.NewRecorder()
+						req := httptest.NewRequest(method, "/greptime"+path, nil)
+						req.SetBasicAuth("grafana", "client-password")
+						routers[name].ServeHTTP(rec, req)
+						if name == "default" && exposeHTTP {
+							if rec.Code != http.StatusAccepted || rec.Header().Get("X-Origin-URI") != "/prefix"+path || rec.Header().Get("X-Origin-Method") != method || calls.Load() != before+1 {
+								t.Fatalf("%s %s: not relayed exactly once, status=%d headers=%v", method, path, rec.Code, rec.Header())
+							}
+						} else if rec.Code != http.StatusNotFound || calls.Load() != before {
+							t.Fatalf("HTTP route leaked onto %s (HTTP exposed=%t)", name, exposeHTTP)
+						}
+					}
+				}
+			}
+		}
 	}
 }
 

@@ -199,7 +199,7 @@ func TestNativeListenerAdapterValidation(t *testing.T) {
 	if NativeListenerAdapter().Protocol() != listenerconfig.ProtocolClickHouse {
 		t.Fatal("exported adapter has wrong protocol")
 	}
-	if a.Protocol() != listenerconfig.ProtocolClickHouse || !a.SupportsHTTP() || a.Configured(nil) {
+	if a.Protocol() != listenerconfig.ProtocolClickHouse || !a.SupportsHTTP(providers.ClickHouse) || a.Configured(nil) {
 		t.Fatal("unexpected ClickHouse adapter capabilities")
 	}
 	if err := a.ValidateListener(nil); err == nil {

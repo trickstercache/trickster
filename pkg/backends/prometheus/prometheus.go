@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -143,6 +144,7 @@ func roundTimestampsToMinute(qp url.Values) {
 // Client Implements Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
+	hooks              Hooks
 	instantRounder     time.Duration
 	hasTransformations bool
 	injectLabels       map[string]string
@@ -167,7 +169,16 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	cache cache.Cache, _ backends.Backends,
 	_ types.Lookup,
 ) (backends.Backend, error) {
-	c := &Client{}
+	return NewClientWithHooks(name, o, router, cache, Hooks{})
+}
+
+// NewClientWithHooks constructs the Prometheus client for a compatible provider.
+func NewClientWithHooks(name string, o *bo.Options, router http.Handler,
+	cache cache.Cache, hooks Hooks,
+) (*Client, error) {
+	hooks.CacheKeyParams = slices.Clone(hooks.CacheKeyParams)
+	hooks.CacheKeyHeaders = slices.Clone(hooks.CacheKeyHeaders)
+	c := &Client{hooks: hooks}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
 		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
@@ -231,7 +242,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upStart)
 	}
-	t, err := parseTime(p)
+	parse := parseTime
+	if c.hooks.PreserveQueryGrid {
+		parse = parseGridTime
+	}
+	t, err := parse(p)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -241,7 +256,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upEnd)
 	}
-	t, err = parseTime(p)
+	t, err = parse(p)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -252,10 +267,35 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, nil, false, errors.MissingURLParam(upStep)
 	}
 	step, err := parseDuration(p)
+	if c.hooks.PreserveQueryGrid {
+		step, err = time.ParseDuration(p + "s")
+		if err != nil {
+			step, err = tt.ParseDuration(p)
+		}
+		if err == nil && (step <= 0 || step%time.Millisecond != 0) {
+			err = timeseries.ErrUnknownFormat
+		}
+	}
 	if err != nil {
 		return nil, nil, false, err
 	}
 	trq.Step = step
+	if c.hooks.PreserveQueryGrid {
+		if trq.Extent.End.Before(trq.Extent.Start) {
+			return nil, nil, false, timeseries.ErrUnknownFormat
+		}
+		trq.Phase = time.Duration(trq.Extent.Start.UnixNano() % step.Nanoseconds())
+		if trq.Phase < 0 {
+			trq.Phase += step
+		}
+		trq.CacheKeyElements = map[string]string{"grid_phase_ns": strconv.FormatInt(int64(trq.Phase), 10)}
+		if trq.Phase != 0 {
+			// Shared epoch-aligned sharding cannot preserve an offset grid.
+			if o := c.Configuration(); o != nil && o.DoesShard {
+				return nil, nil, false, timeseries.ErrUnknownFormat
+			}
+		}
+	}
 
 	if containsOffsetKeyword(trq.Statement) {
 		trq.IsOffset = true
@@ -263,6 +303,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 
 	rlo.ExtractFastForwardDisabled(trq.Statement)
+	if c.hooks.PreserveQueryGrid && (trq.Phase != 0 || step%time.Second != 0) {
+		rlo.FastForwardDisable = true
+	}
 	trq.ExtractBackfillTolerance(trq.Statement)
 
 	if x := strings.Index(trq.Statement, timeseries.BackfillToleranceFlag); x > 1 {
@@ -279,6 +322,23 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 
 	return trq, rlo, true, nil
+}
+
+// parseGridTime accepts only the millisecond precision carried by Prometheus
+// responses, within the common dataset's nanosecond epoch range.
+func parseGridTime(value string) (time.Time, error) {
+	if v, err := strconv.ParseFloat(value, 64); err == nil {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > float64(math.MaxInt64/int64(time.Second)) || math.Round(v*1000)/1000 != v {
+			return time.Time{}, timeseries.ErrUnknownFormat
+		}
+	} else if v, err := time.Parse(time.RFC3339Nano, value); err == nil && v.Nanosecond()%int(time.Millisecond) != 0 {
+		return time.Time{}, timeseries.ErrUnknownFormat
+	}
+	t, err := parseTime(value)
+	if err == nil && (t.Year() < 1678 || t.Year() > 2261) {
+		err = timeseries.ErrUnknownFormat
+	}
+	return t, err
 }
 
 // parseVectorQuery parses the key parts of an Instantaneous Query from the inbound HTTP Request

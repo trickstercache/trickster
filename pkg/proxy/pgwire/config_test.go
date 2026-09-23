@@ -63,6 +63,7 @@ func (e testEngine) Analyzer() sqlanalyzer.DialectAnalyzer {
 	}
 	return testAnalyzer
 }
+
 func (e testEngine) Defaults() EngineDefaults               { return EngineDefaults{UpstreamTLSMode: e.tlsMode} }
 func (testEngine) TimeAxis(oid uint32) (TimeAxisKind, bool) { return StandardTimeAxis(oid) }
 func (testEngine) TimeSemantics() TimeSemantics             { return TimeSemantics{} }
@@ -302,7 +303,7 @@ func adapterTestConfig() *config.Config {
 
 func TestNativeListenerAdapterContract(t *testing.T) {
 	adapter := NewNativeListenerAdapter(NewEngines(testEngine{}))
-	if adapter.Protocol() != listenerconfig.ProtocolPostgres || adapter.SupportsHTTP() {
+	if adapter.Protocol() != listenerconfig.ProtocolPostgres || adapter.SupportsHTTP(providers.Postgres) {
 		t.Fatalf("unexpected identity %q", adapter.Protocol())
 	}
 	if !adapter.ServesProvider(providers.Postgres) || !adapter.ServesProvider(providers.TimescaleDB) ||

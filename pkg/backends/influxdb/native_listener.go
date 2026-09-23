@@ -55,7 +55,7 @@ func NativeListenerAdapter() native.Adapter { return nativeListenerAdapter{} }
 // SupportsHTTP is true because InfluxDB backends serve their primary HTTP
 // interface through ordinary HTTP listeners; Flight SQL is an additional
 // native endpoint.
-func (nativeListenerAdapter) SupportsHTTP() bool { return true }
+func (nativeListenerAdapter) SupportsHTTP(string) bool { return true }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolFlightSQL }
 

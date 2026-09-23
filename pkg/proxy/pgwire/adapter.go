@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -50,7 +51,9 @@ func NewNativeListenerAdapter(engines Engines) native.Adapter {
 	return &nativeListenerAdapter{engines: engines}
 }
 
-func (nativeListenerAdapter) SupportsHTTP() bool { return false }
+func (a nativeListenerAdapter) SupportsHTTP(provider string) bool {
+	return supportsHTTP(a.engines.Get(provider))
+}
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolPostgres }
 
@@ -75,10 +78,20 @@ func (nativeListenerAdapter) ValidateListener(o *listenerconfig.Options) error {
 }
 
 func (a nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
+	if o != nil && o.HasHTTPListener && a.SupportsHTTP(strings.ToLower(o.Provider)) {
+		u, err := url.Parse(o.OriginURL)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			return errors.New("an HTTP listener requires an http(s) origin_url; use a postgres listener for a pgwire-only backend")
+		}
+	}
 	if o != nil && o.Postgres != nil {
 		if err := o.Postgres.Validate(); err != nil {
 			return err
 		}
+	}
+	if o != nil && a.SupportsHTTP(strings.ToLower(o.Provider)) &&
+		!slices.Contains(o.NativeListenerProtocols, listenerconfig.ProtocolPostgres) {
+		return nil
 	}
 	_, err := a.configFromOptions(o)
 	return err

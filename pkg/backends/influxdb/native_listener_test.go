@@ -58,7 +58,7 @@ func TestFlightNativeListenerAdapterContract(t *testing.T) {
 	if adapter.Protocol() != listenerconfig.ProtocolFlightSQL {
 		t.Fatalf("Protocol() = %q", adapter.Protocol())
 	}
-	if !adapter.SupportsHTTP() {
+	if !adapter.SupportsHTTP(providers.InfluxDB) {
 		t.Fatal("SupportsHTTP() = false")
 	}
 	if adapter.Configured(listenerconfig.New("flight")) {

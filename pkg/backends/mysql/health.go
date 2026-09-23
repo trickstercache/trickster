@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/sqlerror"
@@ -54,6 +55,20 @@ func (c *Client) HealthCheckProbe() healthcheck.Probe {
 		}
 	}
 	return newMySQLHealthProbe(params, connectHealthOrigin)
+}
+
+// HealthCheckProbeForEngine derives origin credentials without requiring the
+// downstream authenticator, which may belong to a native user router or pool.
+func HealthCheckProbeForEngine(o *bo.Options, engine Engine) (healthcheck.Probe, error) {
+	options, err := upstreamOptionsForEngine(o, engine)
+	if err != nil {
+		return nil, err
+	}
+	params, err := upstreamConnParamsFromOptions(options)
+	if err != nil {
+		return nil, err
+	}
+	return newMySQLHealthProbe(params, connectHealthOrigin), nil
 }
 
 func connectHealthOrigin(ctx context.Context,

@@ -43,6 +43,8 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+      greptimedb:
+        condition: service_healthy
       druid:
         condition: service_healthy
 
@@ -164,7 +166,7 @@ services:
     restart: always
 
   # generates the shared synthetic trips seed data (hack/seedgen) that the
-  # clickhouse, mysql, timescaledb and druid seeders load. The output is
+  # clickhouse, mysql, timescaledb, greptimedb and druid seeders load. The output is
   # byte-identical on every run, is verified against a pinned hash, and needs
   # no network access, so the service runs with networking disabled to prove it.
   seed_data_generate:
@@ -336,6 +338,59 @@ services:
       seed_data_generate:
         condition: service_completed_successfully
 
+  # GreptimeDB standalone, with HTTP, gRPC, MySQL and PostgreSQL endpoints.
+  greptimedb:
+    # Includes #9295 (Grafana's comment-only PostgreSQL health query).
+    image: greptime/greptimedb-nightly:nightly-20260923-e91faa9df@sha256:657e0d3e5899f7e17db2bf6810264c1d1e8fff84055a90938201aedc86a19468
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - standalone
+      - start
+      - --config-file=/etc/greptimedb/standalone.toml
+      - --data-home=/greptimedb-data
+      - --user-provider=static_user_provider:file:/etc/greptimedb/users
+    volumes:
+      - ./docker-compose-data/greptimedb-config:/etc/greptimedb:ro
+      - greptimedb-data:/greptimedb-data
+    ports:
+      - 4000:4000
+      - 4001:4001
+      - 4002:4002
+      - 4003:4003
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:4000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  # SQL loader preserves the shared fixture's DATE and narrow numeric types.
+  greptimedb_seed:
+    image: golang:1.27-alpine
+    working_dir: /src
+    environment:
+      GREPTIMEDB_URL: http://greptimedb:4000
+      GREPTIMEDB_DATABASE: public
+      GREPTIMEDB_SEED_USER: seeder
+      GREPTIMEDB_SEED_PASSWORD: trickster-dev-seed
+      GREPTIMEDB_SEED_DATA: /seed-data
+      GOFLAGS: -mod=mod
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+    volumes:
+      - ../../../hack/greptimeseed:/src:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - seedgen-gocache:/go-cache
+    entrypoint: ["go", "run", "."]
+    depends_on:
+      greptimedb:
+        condition: service_healthy
+      seed_data_generate:
+        condition: service_completed_successfully
+
   # graphite (carbon-cache + graphite-web, whisper storage)
   graphite:
     image: graphiteapp/graphite-statsd:1.1.10-5
@@ -475,4 +530,5 @@ volumes:
   prometheus-data:
   mysql-data:
   timescaledb-data:
+  greptimedb-data:
   redis-data:

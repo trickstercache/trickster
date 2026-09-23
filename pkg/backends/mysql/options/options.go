@@ -48,8 +48,10 @@ const (
 // max_concurrent_conns, and max_object_size_bytes options supply the remaining
 // origin and cache limits.
 type Options struct {
-	MaxResultRows      int `yaml:"max_result_rows,omitempty"`
-	MaxResultSizeBytes int `yaml:"max_result_size_bytes,omitempty"`
+	// UpstreamURL separates the native endpoint from a provider's HTTP origin.
+	UpstreamURL        string `yaml:"upstream_url,omitempty"`
+	MaxResultRows      int    `yaml:"max_result_rows,omitempty"`
+	MaxResultSizeBytes int    `yaml:"max_result_size_bytes,omitempty"`
 }
 
 // New returns the default MySQL backend options.

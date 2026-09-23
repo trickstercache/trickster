@@ -52,7 +52,7 @@ type timeAxisDecoder struct {
 	unit timeseries.FieldDataType
 }
 
-func newTimeAxisDecoder(kind TimeAxisKind, unit timeseries.FieldDataType, naiveUTC bool,
+func newTimeAxisDecoder(kind TimeAxisKind, unit timeseries.FieldDataType, semantics TimeSemantics,
 	settings func(string) (string, bool),
 ) (*timeAxisDecoder, error) {
 	// checks that a column of this kind can be decoded under
@@ -63,7 +63,7 @@ func newTimeAxisDecoder(kind TimeAxisKind, unit timeseries.FieldDataType, naiveU
 		if style, ok := settings("datestyle"); !ok || !strings.HasPrefix(strings.ToUpper(style), settingISO) {
 			return nil, errTimeAxis
 		}
-		if kind != TimeAxisTimestampTZ && !naiveUTC {
+		if kind != TimeAxisTimestampTZ && !semantics.NaiveTimestampsAreUTC {
 			// a zone-less value is compared in the session zone at the origin
 			if zone, ok := settings(varTimeZone); !ok || !isUTCZone(zone) {
 				return nil, errTimeAxis
@@ -73,7 +73,7 @@ func newTimeAxisDecoder(kind TimeAxisKind, unit timeseries.FieldDataType, naiveU
 		if !isEpochUnit(unit) {
 			return nil, errTimeAxis
 		}
-		if kind == TimeAxisEpochFloat {
+		if kind == TimeAxisEpochFloat && !semantics.LosslessFloatText {
 			// negative extra_float_digits rounds an epoch to text like 2e+09, which can still land
 			// on the grid. The origin never announces the setting, so an unknown value fails closed.
 			digits, ok := settings(varExtraFloatDigits)

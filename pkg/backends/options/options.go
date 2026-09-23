@@ -270,6 +270,10 @@ type Options struct {
 	//
 	// Name is the Name of the backend, taken from the Key in the Backends Lookup Map
 	Name string `yaml:"-"`
+	// HasHTTPListener is derived from listener mappings during validation.
+	HasHTTPListener bool `yaml:"-"`
+	// NativeListenerProtocols includes direct and ALB-inherited protocol mappings.
+	NativeListenerProtocols []string `yaml:"-"`
 	// Router is a router.Router containing this backend's Path Routes; it is set during route registration
 	Router router.Router `yaml:"-"`
 	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
@@ -356,6 +360,7 @@ func (o *Options) Clone() *Options {
 	}
 	out.Hosts = slices.Clone(o.Hosts)
 	out.ListenerNames = slices.Clone(o.ListenerNames)
+	out.NativeListenerProtocols = slices.Clone(o.NativeListenerProtocols)
 	out.CompressibleTypeList = slices.Clone(o.CompressibleTypeList)
 	if o.CompressibleTypes != nil {
 		out.CompressibleTypes = maps.Clone(o.CompressibleTypes)
@@ -975,6 +980,28 @@ func (o *Options) CloneYAMLSafe() *Options {
 		if _, hasPassword := parsed.User.Password(); hasPassword {
 			parsed.User = url.UserPassword(parsed.User.Username(), "*****")
 			co.OriginURL = parsed.String()
+		}
+	}
+	if co.Postgres != nil && co.Postgres.UpstreamURL != "" {
+		parsed, err := url.Parse(co.Postgres.UpstreamURL)
+		if err != nil {
+			co.Postgres.UpstreamURL = "*****"
+		} else if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				parsed.User = url.UserPassword(parsed.User.Username(), "*****")
+				co.Postgres.UpstreamURL = parsed.String()
+			}
+		}
+	}
+	if co.MySQL != nil && co.MySQL.UpstreamURL != "" {
+		parsed, err := url.Parse(co.MySQL.UpstreamURL)
+		if err != nil {
+			co.MySQL.UpstreamURL = "*****"
+		} else if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				parsed.User = url.UserPassword(parsed.User.Username(), "*****")
+				co.MySQL.UpstreamURL = parsed.String()
+			}
 		}
 	}
 	// The runtime default is the backend name, but exporting that implicit

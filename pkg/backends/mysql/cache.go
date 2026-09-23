@@ -287,7 +287,7 @@ func (h *protocolHandler) finalizeDeltaResult(merged *sqltypes.Result,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	response, err := cropSortedResult(merged, timeIndex, plan.OutputUnit, requested)
+	response, err := h.cropSortedResult(merged, timeIndex, plan.OutputUnit, requested)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -360,7 +360,7 @@ func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
 			return nil, fetchErr
 		}
 		if row == nil {
-			statusFlags, _, stateErr := originProtocolState(upstream)
+			statusFlags, _, stateErr := h.originProtocolState(upstream)
 			if stateErr != nil {
 				return nil, stateErr
 			}
@@ -393,7 +393,7 @@ func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSessio
 ) string {
 	session.mtx.Lock()
 	database := session.database
-	timeZone := session.timeZone
+	timeZone := session.viewLocked().TimeZone
 	collation := session.collation
 	session.mtx.Unlock()
 	var identity strings.Builder
@@ -416,7 +416,11 @@ func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSessio
 		appendCacheIdentityField(&identity, part)
 	}
 	suffix := checksum.Checksum(identity.String())
-	return h.config.BackendName + "." + h.config.CacheKeyPrefix + ".mysql." + engine + "." + suffix
+	dialect := ""
+	if h.config.Engine != nil {
+		dialect = h.dialect() + "."
+	}
+	return h.config.BackendName + "." + h.config.CacheKeyPrefix + "." + dialect + "mysql." + engine + "." + suffix
 }
 
 func appendCacheIdentityField(identity *strings.Builder, value string) {
@@ -463,7 +467,7 @@ func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
 			if validateErr := comparator.validateRow(row); validateErr != nil {
 				return nil, validateErr
 			}
-			epoch, parseErr := resultEpoch(row[timeIndex], plan.OutputUnit)
+			epoch, parseErr := h.resultEpoch(row[timeIndex], plan.OutputUnit)
 			if parseErr != nil {
 				return nil, parseErr
 			}
@@ -541,7 +545,7 @@ func (h *protocolHandler) cropAndSortResult(result *sqltypes.Result,
 		if len(row) <= timeIndex {
 			return nil, errors.New("invalid MySQL delta result row")
 		}
-		epoch, parseErr := resultEpoch(row[timeIndex], plan.OutputUnit)
+		epoch, parseErr := h.resultEpoch(row[timeIndex], plan.OutputUnit)
 		if parseErr != nil {
 			return nil, parseErr
 		}
@@ -580,14 +584,14 @@ func (h *protocolHandler) cropAndSortResult(result *sqltypes.Result,
 
 // cropSortedResult crops a result already ordered by (epoch, group), as
 // guaranteed by mergeResults, without rebuilding group keys or sorting again.
-func cropSortedResult(result *sqltypes.Result, timeIndex int,
+func (h *protocolHandler) cropSortedResult(result *sqltypes.Result, timeIndex int,
 	unit timeseries.FieldDataType, extent timeseries.Extent,
 ) (*sqltypes.Result, error) {
-	start, err := sortedRowBoundary(result.Rows, timeIndex, unit, extent.Start.UnixNano(), false)
+	start, err := h.sortedRowBoundary(result.Rows, timeIndex, unit, extent.Start.UnixNano(), false)
 	if err != nil {
 		return nil, err
 	}
-	end, err := sortedRowBoundary(result.Rows, timeIndex, unit, extent.End.UnixNano(), true)
+	end, err := h.sortedRowBoundary(result.Rows, timeIndex, unit, extent.End.UnixNano(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -599,7 +603,7 @@ func cropSortedResult(result *sqltypes.Result, timeIndex int,
 	return out, nil
 }
 
-func sortedRowBoundary(rows [][]sqltypes.Value, timeIndex int,
+func (h *protocolHandler) sortedRowBoundary(rows [][]sqltypes.Value, timeIndex int,
 	unit timeseries.FieldDataType, target int64, after bool,
 ) (int, error) {
 	low, high := 0, len(rows)
@@ -608,7 +612,7 @@ func sortedRowBoundary(rows [][]sqltypes.Value, timeIndex int,
 		if len(rows[middle]) <= timeIndex {
 			return 0, errors.New("invalid MySQL delta result row")
 		}
-		epoch, err := resultEpoch(rows[middle][timeIndex], unit)
+		epoch, err := h.resultEpoch(rows[middle][timeIndex], unit)
 		if err != nil {
 			return 0, err
 		}
@@ -719,13 +723,15 @@ type groupColumn struct {
 // exactly are rejected outright, which costs DPC optimization rather than
 // correctness because the caller falls back to the object cache.
 type groupComparator struct {
-	columns []groupColumn
+	columns   []groupColumn
+	nullsLast bool
 }
 
 func (h *protocolHandler) newGroupComparator(fields []*querypb.Field,
 	indexes []int,
 ) (*groupComparator, error) {
-	c := &groupComparator{columns: make([]groupColumn, len(indexes))}
+	semantics := h.resultSemantics()
+	c := &groupComparator{columns: make([]groupColumn, len(indexes)), nullsLast: semantics.NullsLast}
 	for i, index := range indexes {
 		// resultIndexes has already proven every group index addresses a field.
 		field := fields[index]
@@ -751,6 +757,10 @@ func (h *protocolHandler) newGroupComparator(fields []*querypb.Field,
 			// deliberately absent: it can be negative, which byte order gets wrong.
 			column.kind = compareBytes
 		case sqltypes.IsText(field.Type):
+			if semantics.BinaryText {
+				column.kind = compareBytes
+				break
+			}
 			if field.Charset > math.MaxUint16 {
 				return nil, fmt.Errorf("MySQL group column %q uses collation %d, "+
 					"which Trickster cannot order", field.Name, field.Charset)
@@ -807,8 +817,14 @@ func (c *groupComparator) compare(left, right []sqltypes.Value) (int, error) {
 		case l.IsNull() && r.IsNull():
 			continue
 		case l.IsNull():
+			if c.nullsLast {
+				return 1, nil
+			}
 			return -1, nil
 		case r.IsNull():
+			if c.nullsLast {
+				return -1, nil
+			}
 			return 1, nil
 		}
 		order, err := column.compareValues(l, r)
@@ -940,7 +956,7 @@ func (h *protocolHandler) applyRetentionSorted(result *sqltypes.Result,
 		if len(row) <= timeIndex {
 			return nil, nil, errors.New("invalid MySQL delta result row")
 		}
-		epoch, err := resultEpoch(row[timeIndex], plan.OutputUnit)
+		epoch, err := h.resultEpoch(row[timeIndex], plan.OutputUnit)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1128,11 +1144,11 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 		if counter := h.metricHandles.analysis[key]; counter != nil {
 			counter.Inc()
 		} else {
-			metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
+			metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, h.dialect(),
 				analysis.Mode.String(), reason).Inc()
 		}
 	} else {
-		metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
+		metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, h.dialect(),
 			analysis.Mode.String(), reason).Inc()
 	}
 	if logger.Level() == level.Debug {
@@ -1144,7 +1160,7 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 }
 
 func (h *protocolHandler) observeRewriteFailure(reason string) {
-	metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName, mysqlDialect, reason).Inc()
+	metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName, h.dialect(), reason).Inc()
 	logger.Error("mysql query extent rewrite failed", logging.Pairs{
 		keys.BackendName: h.config.BackendName, keys.Reason: reason,
 	})
@@ -1158,7 +1174,7 @@ func (h *protocolHandler) observeCache(mode sqlanalyzer.CacheMode,
 		handles, ok = h.metricHandles.cache[cacheMetricKey{mode: mode, status: status}]
 	}
 	if !ok {
-		handles = resolveCacheMetricHandles(h.config.BackendName, mode, status)
+		handles = resolveCacheMetricHandles(h.config.BackendName, h.dialect(), mode, status)
 	}
 	handles.native.Inc()
 	handles.requests.Inc()
@@ -1172,7 +1188,7 @@ func (h *protocolHandler) observeCache(mode sqlanalyzer.CacheMode,
 	}
 }
 
-func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
+func newProtocolMetricHandles(backendName, dialect string) *protocolMetricHandles {
 	handles := &protocolMetricHandles{
 		connectLatency: metrics.MySQLCommandLatency.WithLabelValues(backendName, "connect"),
 		queryLatency:   metrics.MySQLCommandLatency.WithLabelValues(backendName, metricPathQuery),
@@ -1180,7 +1196,7 @@ func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
 		cache:          make(map[cacheMetricKey]cacheMetricHandles, 10),
 	}
 	for _, key := range analysisMetricKeys {
-		handles.analysis[key] = metrics.SQLQueryAnalysis.WithLabelValues(backendName, mysqlDialect,
+		handles.analysis[key] = metrics.SQLQueryAnalysis.WithLabelValues(backendName, dialect,
 			key.mode.String(), key.reason)
 	}
 	statuses := map[sqlanalyzer.CacheMode][]cachestatus.LookupStatus{
@@ -1202,13 +1218,13 @@ func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
 	for mode, values := range statuses {
 		for _, status := range values {
 			key := cacheMetricKey{mode: mode, status: status}
-			handles.cache[key] = resolveCacheMetricHandles(backendName, mode, status)
+			handles.cache[key] = resolveCacheMetricHandles(backendName, dialect, mode, status)
 		}
 	}
 	return handles
 }
 
-func resolveCacheMetricHandles(backendName string, mode sqlanalyzer.CacheMode,
+func resolveCacheMetricHandles(backendName, dialect string, mode sqlanalyzer.CacheMode,
 	status cachestatus.LookupStatus,
 ) cacheMetricHandles {
 	httpStatus := metricHTTPStatusOK
@@ -1217,13 +1233,13 @@ func resolveCacheMetricHandles(backendName string, mode sqlanalyzer.CacheMode,
 	}
 	statusLabel := status.String()
 	return cacheMetricHandles{
-		native: metrics.SQLQueryCache.WithLabelValues(backendName, mysqlDialect,
+		native: metrics.SQLQueryCache.WithLabelValues(backendName, dialect,
 			mode.String(), statusLabel),
-		requests: metrics.ProxyRequestStatus.WithLabelValues(backendName, mysqlDialect,
+		requests: metrics.ProxyRequestStatus.WithLabelValues(backendName, dialect,
 			metricMethodQuery, statusLabel, httpStatus, metricPathQuery),
-		elements: metrics.ProxyRequestElements.WithLabelValues(backendName, mysqlDialect,
+		elements: metrics.ProxyRequestElements.WithLabelValues(backendName, dialect,
 			statusLabel, metricPathQuery),
-		duration: metrics.ProxyRequestDuration.WithLabelValues(backendName, mysqlDialect,
+		duration: metrics.ProxyRequestDuration.WithLabelValues(backendName, dialect,
 			metricMethodQuery, statusLabel, httpStatus, metricPathQuery),
 	}
 }

@@ -76,7 +76,7 @@ func TestNativeListenerBalancesSessions(t *testing.T) {
 		"foreign member": {"rr", func(c *config.Config) {
 			c.Backends["replica-b"].Provider = providers.ReverseProxyShort
 			c.Backends["replica-b"].OriginURL = "http://example.com"
-		}, "to be a mysql backend: \"replica-b\" is not"},
+		}, "to be a greptimedb or mysql backend: \"replica-b\" is not"},
 		"missing member": {"rr", func(c *config.Config) { delete(c.Backends, "replica-b") }, "\"replica-b\" is not"},
 		"discovery": {"rr", func(c *config.Config) {
 			c.Backends["replicas"].ALBOptions.Discovery = &ao.DiscoveryOptions{}

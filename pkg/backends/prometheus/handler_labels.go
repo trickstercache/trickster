@@ -42,7 +42,9 @@ func (c *Client) LabelsHandler(w http.ResponseWriter, r *http.Request) {
 	qp, _, _ := params.GetRequestValues(r)
 
 	// start rounds down, end rounds up — see roundEndTimestampParameterToMinute
-	roundTimestampsToMinute(qp)
+	if !c.hooks.PreserveQueryGrid {
+		roundTimestampsToMinute(qp)
+	}
 
 	r.URL = u
 	params.SetRequestValues(r, qp)

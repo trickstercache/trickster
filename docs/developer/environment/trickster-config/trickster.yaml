@@ -9,6 +9,12 @@ listeners:
   timescaledb1:
     protocol: postgres
     port: 8488
+  greptimedb1:
+    protocol: postgres
+    port: 8489
+  greptimedb-mysql:
+    protocol: mysql
+    port: 8491
   # clickhouse-native exposes click1 through the ClickHouse binary protocol.
   clickhouse-native:
     protocol: clickhouse
@@ -28,6 +34,12 @@ authenticators:
     provider: basic
     users:
       grafana_ro: trickster-dev-grafana
+  greptimedb-grafana:
+    provider: basic
+    # HTTP still authenticates with the origin; pgwire uses upstream_url.
+    proxy_preserve: true
+    users:
+      grafana_ro: trickster-dev-grafana
 negative_caches:
   default:
     '400': 3s
@@ -42,6 +54,8 @@ caches:
   fs1:
     provider: filesystem
   graphite_fs:
+    provider: filesystem
+  greptimedb_fs:
     provider: filesystem
   redis:
     provider: redis
@@ -136,6 +150,21 @@ backends:
     listener_names: [timescaledb1]
     authenticator_name: timescaledb-grafana
     cache_name: mem1
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+  # One backend serves HTTP, pgwire and MySQL with separate native URLs.
+  greptimedb1:
+    provider: greptimedb
+    origin_url: 'http://127.0.0.1:4000'
+    listener_names: [default, greptimedb1, greptimedb-mysql]
+    authenticator_name: greptimedb-grafana
+    # A dedicated filesystem cache exposes storage gauges for this dashboard.
+    cache_name: greptimedb_fs
+    postgres:
+      upstream_url: 'postgres://trickster:trickster-dev-upstream@127.0.0.1:4003/public'
+    mysql:
+      upstream_url: 'mysql://trickster:trickster-dev-upstream@127.0.0.1:4002/public'
     healthcheck:
       interval: 5s
       timeout: 3s

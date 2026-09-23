@@ -105,7 +105,7 @@ func (s *session) route() bool {
 	metrics.PGWireRouteSelections.WithLabelValues(router, target.config.BackendName, string(decision.Outcome)).Inc()
 	s.server = target
 	if target.config.Analyzer != nil {
-		s.tracker = newSessionTracker(s.user, s.database, s.params)
+		s.tracker = newSessionTracker(s.user, s.database, s.params, s.server.config.Engine)
 	}
 	return true
 }

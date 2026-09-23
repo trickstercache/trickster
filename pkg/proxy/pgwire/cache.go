@@ -168,7 +168,7 @@ func (p *deltaPlan) rowReader(s *session, rowDescription []byte) (*rowReader, er
 		return nil, nativedelta.Unmergeable(errTimeColumn)
 	}
 	decoder, err := newTimeAxisDecoder(kind, p.plan.OutputUnit,
-		engine.TimeSemantics().NaiveTimestampsAreUTC, s.tracker.setting)
+		engine.TimeSemantics(), s.tracker.setting)
 	if err != nil {
 		return nil, nativedelta.Unmergeable(err)
 	}

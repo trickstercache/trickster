@@ -47,12 +47,19 @@ func TestPostgresProvidersShareOneNativeAdapter(t *testing.T) {
 			t.Fatalf("%s serves no providers", protocol)
 		}
 		for _, name := range names {
-			if !registered.ServesProvider(name) || listeners.GetByProvider(name) != registered {
-				t.Fatalf("%s lists %q but does not serve it exclusively", protocol, name)
+			if !registered.ServesProvider(name) || listeners.GetForProvider(protocol, name) != registered {
+				t.Fatalf("%s lists %q but does not serve it", protocol, name)
 			}
 		}
 	}
 	if listeners.GetByProvider(providers.Prometheus) != nil {
 		t.Fatal("an HTTP-only provider must have no native adapter")
+	}
+	if supported[providers.GreptimeDB] == nil || listeners.GetForProvider("postgres", providers.GreptimeDB) != adapter ||
+		!adapter.SupportsHTTP(providers.GreptimeDB) || adapter.SupportsHTTP(providers.Postgres) {
+		t.Fatal("GreptimeDB must share pgwire without changing PostgreSQL's HTTP capability")
+	}
+	if listeners.GetByProvider(providers.GreptimeDB) != nil || len(listeners.ForProvider(providers.GreptimeDB)) != 2 {
+		t.Fatal("GreptimeDB must retain both native adapters without an ambiguous default")
 	}
 }

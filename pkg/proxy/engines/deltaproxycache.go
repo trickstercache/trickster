@@ -355,6 +355,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			doc, cacheStatus, _, err = QueryCache(ctx, cache, key, nil, modeler.CacheUnmarshaler)
 			if cacheStatus == status.LookupStatusKeyMiss && errors.Is(err, tc.ErrKNF) {
 				cts, doc, elapsed, failedExts, severeFault = fetchTimeseries(pr, trq, client, modeler)
+				if rlo.FallbackToProxyOnError && len(failedExts) > 0 {
+					return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
+				}
 				if len(failedExts) > 0 && severeFault {
 					return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body, failedExts), nil
 				}
@@ -367,6 +370,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 						logging.Pairs{keys.Key: key, keys.BackendName: client.Name(), keys.Detail: err.Error()})
 					goWithRecover("dpc.cache.Remove.unmarshal", func() { cache.Remove(key) })
 					cts, doc, elapsed, failedExts, severeFault = fetchTimeseries(pr, trq, client, modeler)
+					if rlo.FallbackToProxyOnError && len(failedExts) > 0 {
+						return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
+					}
 					if len(failedExts) > 0 && severeFault {
 						return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body, failedExts), nil
 					}
@@ -438,6 +444,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				fetchHeaders := http.Header(doc.Headers).Clone()
 				mts, _, mresp, failedExts, severeFault = fetchExtents(missRanges, frsc,
 					fetchHeaders, client, pr, modeler.WireUnmarshalerReader, span)
+				if rlo.FallbackToProxyOnError && len(failedExts) > 0 {
+					return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
+				}
 				if len(failedExts) > 0 && severeFault {
 					// mresp.Body is only set inside fetchExtents's non-200
 					// branch; when every shard fails at the transport level
@@ -498,6 +507,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				rts = cts.Clone()
 			}
 			rts.SetTimeRangeQuery(trq)
+			if rlo.FallbackToProxyOnError {
+				if err := modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, io.Discard); err != nil {
+					return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
+				}
+			}
 
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
@@ -565,7 +579,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 		// handle sentinel statuses that require special responses
 		if result.cacheStatus == status.LookupStatusProxyOnly {
-			// LRU eviction determined the request is too old to cache
+			// Retention or provider response validation requires the original query.
 			if trq.OriginalBody != nil {
 				request.SetBody(r, trq.OriginalBody)
 			}
@@ -626,6 +640,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var severeFault bool
 
 	cts, doc, elapsed, failedExts, severeFault = fetchTimeseries(pr, trq, client, modeler)
+	if rlo.FallbackToProxyOnError && len(failedExts) > 0 {
+		if trq.OriginalBody != nil {
+			request.SetBody(r, trq.OriginalBody)
+		}
+		DoProxy(w, r, true)
+		return
+	}
 	if len(failedExts) > 0 && severeFault {
 		h := doc.SafeHeaderClone()
 		sc := dpcProxyErrorStatusCode(doc.StatusCode)
@@ -636,6 +657,15 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 	rts = cts.Clone()
 	rts.SetTimeRangeQuery(trq)
+	if rlo.FallbackToProxyOnError {
+		if err := modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, io.Discard); err != nil {
+			if trq.OriginalBody != nil {
+				request.SetBody(r, trq.OriginalBody)
+			}
+			DoProxy(w, r, true)
+			return
+		}
+	}
 
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 
@@ -710,9 +740,11 @@ func fetchTimeseries(
 		elapsed = time.Since(start)
 	}
 
+	// A fallback may reuse and mutate the request after this function returns.
+	method, target, userAgent := pr.Method, pr.URL.String(), pr.UserAgent()
 	goWithRecover("dpc.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName,
-			pr.Method, pr.URL.String(), pr.UserAgent(), resp.StatusCode, 0, elapsed.Seconds())
+			method, target, userAgent, resp.StatusCode, 0, elapsed.Seconds())
 	})
 
 	d := &HTTPDocument{
@@ -800,6 +832,7 @@ func fetchExtents(
 	errTs := make(timeseries.ExtentList, len(el))
 	// the meta-response aggregating all upstream responses
 	mresp := &http.Response{Header: h}
+	var errorHeaders http.Header
 
 	// limit concurrent upstream requests to avoid overwhelming the origin
 	eg := errgroup.Group{}
@@ -885,14 +918,18 @@ func fetchExtents(
 				var s string
 				if resp.Body != nil {
 					var readErr error
-					b, readErr = io.ReadAll(io.LimitReader(resp.Body, errorBodyCap))
+					b, readErr = io.ReadAll(io.LimitReader(getDecoderReader(resp), errorBodyCap))
 					if readErr != nil {
 						logger.Warn("failed to read upstream error response body",
 							logging.Pairs{keys.Detail: readErr.Error()})
 					}
 					s = string(b)
 					respLock.Lock()
-					mresp.Body = io.NopCloser(bytes.NewReader(b))
+					if resp.StatusCode == mresp.StatusCode {
+						mresp.Body = io.NopCloser(bytes.NewReader(b))
+						errorHeaders = resp.Header.Clone()
+						errorHeaders.Del(headers.NameContentLength)
+					}
 					respLock.Unlock()
 				}
 				if len(s) > 128 {
@@ -921,6 +958,9 @@ func fetchExtents(
 	trimmedList := errTs.TrimEmptyExtents()
 	if trimmedList.Len() == el.Len() {
 		fullFaults = true
+		if errorHeaders != nil {
+			mresp.Header = errorHeaders
+		}
 	}
 
 	return mts, uncachedValueCount.Load(), mresp, trimmedList, fullFaults

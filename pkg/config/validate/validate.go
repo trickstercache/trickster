@@ -269,6 +269,7 @@ func Listeners(c *config.Config) error {
 	mappedProviders := make(map[string]map[string]string, len(c.Listeners))
 	nativeListeners := providerregistry.NativeListeners()
 	nativeTargets := nativeUserRouterTargets(c, nativeListeners)
+	nativeProtocols := nativeBackendProtocols(c, nativeListeners)
 	// the load balancers that serve a stream or native listener; every other one serves requests
 	streamALBs := sets.NewStringSet()
 	for backendName, backend := range c.Backends {
@@ -277,18 +278,33 @@ func Listeners(c *config.Config) error {
 			continue
 		}
 		backend.NormalizeListenerNames()
-		if adapter := nativeListeners.GetByProvider(strings.ToLower(backend.Provider)); adapter != nil {
+		backend.HasHTTPListener = false
+		backend.NativeListenerProtocols = nativeProtocols[backendName]
+		listenerNames := backend.ListenerNames
+		if len(listenerNames) == 0 && !nativeTargets[backendName] {
+			listenerNames = []string{listener.DefaultFrontendName}
+		}
+		for _, name := range listenerNames {
+			if lo := c.Listeners[name]; lo != nil && (lo.Protocol == "" || strings.EqualFold(lo.Protocol, listener.ProtocolHTTP)) {
+				backend.HasHTTPListener = true
+			}
+		}
+		for _, adapter := range nativeListeners.ForProvider(strings.ToLower(backend.Provider)) {
 			if err := adapter.ValidateBackend(backend); err != nil {
 				return fmt.Errorf("%s backend %q: %w", adapter.Protocol(), backendName, err)
 			}
-			if nativeTargets[backendName] && len(backend.ListenerNames) == 0 {
-				continue
-			}
+		}
+		if nativeTargets[backendName] && len(backend.ListenerNames) == 0 {
+			continue
 		}
 		if backend.Provider == providers.ALB && backend.ALBOptions != nil &&
 			backend.ALBOptions.UserRouter != nil {
 			targetProvider := strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
-			if adapter := nativeListeners.GetByProvider(targetProvider); adapter != nil {
+			adapters := nativeListeners.ForProvider(targetProvider)
+			for _, adapter := range adapters {
+				if len(adapters) > 1 && !slices.Contains(backend.NativeListenerProtocols, adapter.Protocol()) {
+					continue
+				}
 				if err := adapter.ValidateUserRouter(c, backendName, backend); err != nil {
 					return err
 				}
@@ -381,9 +397,17 @@ func Listeners(c *config.Config) error {
 				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
 					name, options.Protocol, backendName, provider)
 			}
-			if adapter := nativeListeners.GetByProvider(targetProvider); options.Protocol == listener.ProtocolHTTP && adapter != nil && !adapter.SupportsHTTP() {
-				return fmt.Errorf("backend %q with provider %q requires a listener with protocol %q",
-					backendName, provider, adapter.Protocol())
+			if options.Protocol == listener.ProtocolHTTP {
+				adapters := nativeListeners.ForProvider(targetProvider)
+				allowed := len(adapters) == 0
+				var protocols []string
+				for _, adapter := range adapters {
+					allowed = allowed || adapter.SupportsHTTP(targetProvider)
+					protocols = append(protocols, adapter.Protocol())
+				}
+				if !allowed {
+					return fmt.Errorf("backend %q with provider %q requires a listener with protocol %q", backendName, provider, strings.Join(protocols, " or "))
+				}
 			}
 		}
 		if options.ListenPort < 0 || options.TLSListenPort < 0 {
@@ -634,7 +658,7 @@ func nativeUserRouterTargets(c *config.Config, nativeListeners native.Registry) 
 			}
 			continue
 		}
-		if nativeListeners.GetByProvider(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)) == nil {
+		if len(nativeListeners.ForProvider(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider))) == 0 {
 			continue
 		}
 		if name := backend.ALBOptions.UserRouter.DefaultBackend; name != "" {

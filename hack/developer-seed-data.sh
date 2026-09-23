@@ -11,7 +11,7 @@ cd "$(dirname "$0")/../docs/developer/environment"
 
 # Every trips database service <name> has a one-shot loader service <name>_seed.
 # graphite is seeded by its own generator and is handled separately below.
-ALL_TARGETS="clickhouse mysql timescaledb druid graphite"
+ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid graphite"
 read -r -a targets <<< "$(echo "${SEED_TARGET:-$ALL_TARGETS}" | tr ',' ' ')"
 
 trips_databases=()
@@ -34,6 +34,26 @@ seed_graphite() {
   docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed
   docker compose up -d graphite_generator
 }
+
+# developer-start can return while its one-shot loaders are still running.
+# All trips loaders share the fixture, even when only one database is reloaded.
+startup_services=()
+if [[ ${#trips_databases[@]} -gt 0 ]]; then
+  startup_services+=(seed_data_generate)
+  for db in $ALL_TARGETS; do
+    if [[ "$db" != graphite ]]; then startup_services+=("${db}_seed"); fi
+  done
+fi
+if [[ $graphite -eq 1 ]]; then startup_services+=(graphite_seed); fi
+startup_ids=$(docker compose ps -q --status running "${startup_services[@]}")
+for id in $startup_ids; do
+  echo "waiting for startup seeder $id"
+  status=$(docker wait "$id")
+  if [[ "$status" != 0 ]]; then
+    echo "startup seeder $id: FAILED (exit $status)" >&2
+    exit 1
+  fi
+done
 
 names=()
 pids=()

@@ -178,7 +178,7 @@ LINT_FLAGS ?=
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed; do \
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
 	done
 
@@ -236,7 +236,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -544,6 +544,11 @@ seed-verify:
 seed-generate:
 	@cd hack/seedgen && $(GO) run . -out ../../docs/developer/environment/docker-compose-data/seed-data \
 		$(if $(SEED_PROFILE),-profile $(SEED_PROFILE),) $(if $(SEED_FORCE),-force,)
+
+# Read-only direct GreptimeDB acceptance; does not start or reseed services.
+.PHONY: developer-greptimedb-check
+developer-greptimedb-check:
+	@GO="$(GO)" sh hack/greptimedb-check.sh
 
 RUN_FLAGS ?=
 .PHONY: serve-dev
