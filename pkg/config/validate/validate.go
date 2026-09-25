@@ -27,7 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	albregistry "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
 	albtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
-	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
@@ -41,6 +40,7 @@ import (
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -579,7 +579,7 @@ func streamListener(c *config.Config, name string, options *listener.Options,
 					name, options.Protocol, backendName, o.MechanismName,
 					strings.Join(albregistry.StreamProtocols(o.MechanismName), " or "))
 			}
-			if !o.HRW.KeySource.OnStream(ao.StreamListener{
+			if !o.HRW.KeySource.OnStream(flowkey.StreamListener{
 				TLS:           options.Protocol == listener.ProtocolTLS,
 				ProxyProtocol: options.ProxyProtocol && options.Protocol != listener.ProtocolUDP,
 			}) {

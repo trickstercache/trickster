@@ -22,17 +22,17 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	cfgtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 )
 
 // Options are what the adapter needs beyond the strategy itself.
 type Options struct {
 	// Key is where a request's affinity key is read from, for a strategy that needs one.
-	Key options.KeySource
+	Key flowkey.KeySource
 	// IPv6Prefix is how many leading bits of an IPv6 address form a client_ip key.
 	IPv6Prefix int
 	// GoodCodes are the response codes that count as a good answer, for a strategy that
@@ -49,7 +49,7 @@ type handler struct {
 	// resolved once: a strategy pays on dispatch only for what it needs
 	tracked   bool
 	timed     bool
-	key       keyFunc
+	key       func(*http.Request) flowkey.Value
 	goodCodes *cfgtypes.StatusTable
 }
 
@@ -67,7 +67,7 @@ func New(name types.Name, selector lb.Selector, opts ...Options) types.PickerMec
 	}
 	h.goodCodes = o.GoodCodes
 	if b.Needs().Has(lb.NeedKey) {
-		h.key = newKeyFunc(o.Key, o.IPv6Prefix)
+		h.key = flowkey.HTTP(o.Key, o.IPv6Prefix)
 	}
 	return h
 }
@@ -105,7 +105,8 @@ func (h *handler) Balancer() *lb.Balancer {
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var flow lb.Flow
 	if h.key != nil && r != nil {
-		flow = h.key(r)
+		v := h.key(r)
+		flow = lb.Flow{Key: v.Hash, HasKey: v.OK}
 	}
 	pk, ok := h.balancer.Pick(flow)
 	if !ok {

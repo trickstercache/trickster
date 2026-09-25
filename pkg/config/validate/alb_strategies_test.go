@@ -25,6 +25,7 @@ import (
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 
 	"github.com/stretchr/testify/require"
 )
@@ -77,7 +78,8 @@ func TestALBStrategyConfigs(t *testing.T) {
 	}{
 		"hrw block on rr":  {"mechanism: rr\nhrw:\n  key: host", ao.ErrHRWOnlyForHRW},
 		"lt block on p2c":  {"mechanism: p2c\nlt:\n  decay: 5s", ao.ErrLTOnlyForLT},
-		"bad key source":   {"mechanism: hrw\nhrw:\n  key: port", ao.ErrInvalidKeySource},
+		"bad key source":   {"mechanism: hrw\nhrw:\n  key: port", flowkey.ErrInvalidKeySource},
+		"request key":      {"mechanism: hrw\nhrw:\n  key: path", ao.ErrInvalidHRWKey},
 		"bad ipv6 prefix":  {"mechanism: hrw\nhrw:\n  ipv6_prefix: 200", ao.ErrInvalidIPv6Prefix},
 		"stream lt signal": {"mechanism: lt\nlt:\n  signal: connect", ao.ErrInvalidLTSignal},
 		"bad lt range":     {"mechanism: lt\nlt:\n  status_codes: [{start: 100, end: 900}]", types.ErrInvalidStatusRange},

@@ -67,7 +67,7 @@ var loadBalancingMechanisms = []string{
 
 // LoadBalancingKey parses what the hrw mechanism keeps together
 func LoadBalancingKey(v string) (string, error) {
-	if _, err := ao.ParseKeySource(v); err != nil {
+	if _, err := ao.ParseHRWKey(v); err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(v), nil

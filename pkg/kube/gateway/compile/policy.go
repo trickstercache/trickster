@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 func (i index) policy(rule ir.Rule) *ir.Policy {
@@ -129,7 +130,7 @@ func resolveMember(opts *kubecfg.Options, rule, member *ir.Policy) effective {
 // endpointALB returns the ALB that balances one Service's endpoints, with the policy's
 // mechanism. A key that the listener cannot read, such as a request header on a tcp route,
 // is left at the default rather than compiled into a configuration that would not load.
-func (e effective) endpointALB(discovery *albDiscoveryDoc, readable func(ao.KeySource) bool) *albDoc {
+func (e effective) endpointALB(discovery *albDiscoveryDoc, readable func(flowkey.KeySource) bool) *albDoc {
 	alb := &albDoc{Mechanism: albnames.MechanismRR, Discovery: discovery}
 	if e.loadBalancing != "" {
 		alb.Mechanism = e.loadBalancing
@@ -137,7 +138,7 @@ func (e effective) endpointALB(discovery *albDiscoveryDoc, readable func(ao.KeyS
 	if alb.Mechanism != albnames.MechanismHRW || e.loadBalancingKey == "" {
 		return alb
 	}
-	if ks, err := ao.ParseKeySource(e.loadBalancingKey); err == nil && readable(ks) {
+	if ks, err := ao.ParseHRWKey(e.loadBalancingKey); err == nil && readable(ks) {
 		alb.HRW = &albHRWDoc{Key: e.loadBalancingKey}
 	}
 	return alb

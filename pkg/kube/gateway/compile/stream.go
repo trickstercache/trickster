@@ -25,6 +25,7 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 // unresolvedStreamOriginURL is the origin a stream member that could not be resolved carries: a
@@ -157,8 +158,8 @@ func streamMember(doc *document, r ir.Route, g ir.BackendGroup, m ir.BackendMemb
 				Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
 				Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
 			},
-		}, func(ks ao.KeySource) bool {
-			return ks.OnStream(ao.StreamListener{TLS: r.Protocol == ir.ProtocolTLS})
+		}, func(ks flowkey.KeySource) bool {
+			return ks.OnStream(flowkey.StreamListener{TLS: r.Protocol == ir.ProtocolTLS})
 		}),
 	}, nil
 }

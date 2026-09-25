@@ -26,6 +26,7 @@ import (
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 // Resolver returns a route resolver that balances sessions with picker, which o configures.
@@ -85,9 +86,9 @@ func optionsOf(m *lb.Member) *ao.Options {
 // key is the session's affinity key as one load balancer is configured to read it: the name
 // it authenticated as, or else the client's address
 func key(o *ao.Options, in backends.RouteInput) lb.Flow {
-	prefix := ao.DefaultIPv6Prefix
+	prefix := flowkey.DefaultIPv6Prefix
 	if o != nil {
-		if o.HRW.KeySource.Kind == ao.KeyUser {
+		if o.HRW.KeySource.Kind == flowkey.KeyUser {
 			if in.Username == "" {
 				return lb.Flow{}
 			}

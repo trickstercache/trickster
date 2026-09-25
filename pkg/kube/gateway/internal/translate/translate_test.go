@@ -288,7 +288,7 @@ func TestLoadBalancing(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, v, got)
 	}
-	for _, v := range []string{"port", "header:", "cookie:a b"} {
+	for _, v := range []string{"port", "header:", "cookie:a b", "method", "path", "query"} {
 		_, err := LoadBalancingKey(v)
 		require.Error(t, err, v)
 	}

@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -211,32 +212,16 @@ func optionsOf(m *lb.Member) *ao.Options {
 // key is the flow's affinity key as one load balancer is configured to read it: the server
 // name a tls client offered, a PROXY protocol TLV, or else the client's address, never its port
 func key(o *ao.Options, f l4.Flow) lb.Flow {
-	prefix := ao.DefaultIPv6Prefix
+	var ks flowkey.KeySource
+	prefix := flowkey.DefaultIPv6Prefix
 	if o != nil {
-		switch o.HRW.KeySource.Kind {
-		case ao.KeySNI:
-			if f.ServerName == "" {
-				return lb.Flow{}
-			}
-			return lb.Flow{Key: lb.HashFold(f.ServerName), HasKey: true}
-		case ao.KeyProxyTLV:
-			if f.Proxy == nil {
-				return lb.Flow{}
-			}
-			v, ok := f.Proxy.ProxyTLV(o.HRW.KeySource.TLV)
-			if !ok || len(v) == 0 {
-				return lb.Flow{}
-			}
-			return lb.Flow{Key: lb.HashBytes(v), HasKey: true}
-		}
+		ks = o.HRW.KeySource
 		if o.HRW.IPv6Prefix > 0 {
 			prefix = o.HRW.IPv6Prefix
 		}
 	}
-	if !f.Client.IsValid() {
-		return lb.Flow{}
-	}
-	return lb.Flow{Key: lb.HashAddr(f.Client.Addr(), prefix), HasKey: true}
+	v := flowkey.StreamValue(ks, prefix, f)
+	return lb.Flow{Key: v.Hash, HasKey: v.OK}
 }
 
 // timesConnect reports whether one load balancer samples latency at the connect, which is a
