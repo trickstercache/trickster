@@ -65,6 +65,10 @@ data:
 | `health_mode` | `probe` or `provider`, for generated discovery-backed ALBs |
 | `load_balancing` | `rr`, `p2c`, `lc`, `lt` or `hrw`: how traffic is spread across a Service's endpoints in the endpoint routing mode |
 | `load_balancing_key` | what `hrw` keeps on one endpoint: `client_ip`, or `sni` on a TLSRoute; an HTTP route may also use `host`, `header:<name>`, `cookie:<name>` or `query:<name>` |
+| `sticky` | `cookie`, `header`, `table` or `none`: keeps a client on the endpoint it first reached, in the endpoint routing mode; see [Session persistence](#session-persistence) |
+| `sticky_key` | what `table` mode keeps a client's endpoint by, from the `load_balancing_key` vocabulary; `client_ip` unless set |
+| `sticky_ttl`, `sticky_idle` | a duration of at least `1s`: a session ends that long after it began, or once unused that long |
+| `sticky_secret` | the name of a Secret, in the ConfigMap's namespace and labeled `trickstercache.org/sticky-key`, whose `key` entry keys every session token the class's ALBs issue; see [The session key](#the-session-key) |
 
 Unlike an Ingress annotation, a GatewayClass may set the operator-tier names,
 because a GatewayClass is cluster-scoped infrastructure and whoever can write
@@ -398,8 +402,132 @@ repeats an idempotent request after a connection failure and after a
 response whose status is in `codes`, `attempts` times (once when unset, at
 most ten), waiting `backoff` between attempts. The Gateway API defines no
 retry budget, so every eligible request is retried. A value the data plane
-cannot express makes the route not served, and `sessionPersistence` is
-reported and ignored.
+cannot express makes the route not served. A rule's `sessionPersistence` is
+described next.
+
+## Session persistence
+
+A rule's `sessionPersistence` keeps a client on the backend it first reached,
+on the ALB that serves the rule, as [Sticky Sessions](./alb.md#sticky-sessions)
+describes. The client carries a signed token naming its backend, in a cookie
+or a request header, so any replica holding the same key honors it.
+
+| Field | Lowered to |
+|---|---|
+| `type: Cookie` (the default) | `sticky.mode: cookie` |
+| `type: Header` | `sticky.mode: header`: the token is issued in a response header, and the client sends it back in a request header of the same name |
+| `sessionName` | the cookie's or header's name |
+| `absoluteTimeout` | `sticky.ttl`; unset, a session has no absolute limit. A limit under one second is kept as one second, since a token keeps whole seconds |
+| `cookieConfig.lifetimeType: Session` (the default) | `sticky.cookie.lifetime: session`: the cookie has no `Max-Age` and ends with the browser session, while `absoluteTimeout` still ends the token |
+| `cookieConfig.lifetimeType: Permanent` | the cookie's `Max-Age` ends with the token |
+
+The Gateway API version this build reads has no idle timeout for a route's
+session.
+
+Where the session is kept depends on the rule's backendRefs and the routing
+mode:
+
+- **Several backendRefs.** The rule's round-robin ALB keeps the session, and
+  its token names the Service. In the endpoint routing mode it also names the
+  endpoint within that Service, so a session stays on one pod. In the
+  `service` routing mode kube-proxy chooses the endpoint, so a session stays
+  on its Service only; the controller reports this for the rule.
+- **One backendRef.** Only the endpoint routing mode has an ALB between the
+  rule and the Service's pods, and that ALB keeps the session. In the
+  `service` routing mode the rule is served without a session, and the
+  controller reports it.
+
+An unnamed cookie is named for the ALB that sets it,
+`trickster_sticky_<hash>`, since ALBs that serve one host must not share a
+cookie. An unnamed header is `X-Trickster-Session`. A `sessionName` beginning
+`__Host-` or `__Secure-` makes the cookie always `Secure`, as a browser
+requires, so it works only over HTTPS. A named cookie belongs to one route per
+host. A browser sends a host's cookies to every port and scheme it serves, so
+this holds across every listener, HTTP and HTTPS alike. When two routes set
+the same `sessionName` for a host they both serve, the older route keeps it,
+and the younger one is served without a session and told why. A route served
+under several hostnames uses its name once per host, which is allowed. A `sessionPersistence` value that
+cannot be expressed is reported, and the rule is served without a session.
+A GRPCRoute rule's `sessionPersistence` is lowered the same way.
+
+The token travels upstream with the request, and the cookie is set on the
+response outside any cache, so it is never part of a cached object. A shared
+cache in front of Trickster treats a response that sets a cookie as private,
+so prefer `type: Header` in front of cacheable content.
+
+### The session key
+
+Every replica must key tokens alike, or each refuses the others' tokens. A
+GatewayClass names the key's Secret with its `sticky_secret` parameter:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cached-gateway-params
+  namespace: trickster
+data:
+  sticky_secret: trickster-sticky-key
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trickster-sticky-key
+  namespace: trickster
+  labels:
+    trickstercache.org/sticky-key: ""
+type: Opaque
+stringData:
+  key: <at least 32 random bytes>
+```
+
+The Secret must be in the parameters ConfigMap's namespace, and a
+`namespace/name` value is refused with the class's other parameters. It must
+carry the `trickstercache.org/sticky-key` label, since the controller watches
+only labeled Secrets beside TLS ones. Its `key` entry must hold at least 32
+bytes. Every replica reads the same Secret, so every replica keys tokens
+alike. A change to it reaches the ALBs without a restart. Replacing the key
+starts every session over once, since tokens made with the old key are no
+longer honored. A Secret that is missing, unlabeled or too short is reported
+on the GatewayClass, which is still served, and its ALBs key their tokens per
+process until it is fixed. The key is kept in memory. The configuration view
+redacts it, and it is never logged.
+
+Without a class Secret, tokens are keyed with the file that
+`kubernetes.defaults.sticky_secret_file` names, which is how an Ingress-only
+deployment configures it. Mount the file from a Secret at the same path on
+every replica:
+
+```yaml
+kubernetes:
+  defaults:
+    routing_mode: endpoint
+    sticky_secret_file: /etc/trickster/sticky/key
+```
+
+With neither set, each process keys its tokens with a random key of its own.
+A replica then refuses the others' tokens and moves the session, and a
+restart ends every session. That suits a single replica only, and Trickster
+logs a warning for each ALB that issues tokens with such a key.
+
+### XBackendTrafficPolicy
+
+Where the cluster serves the experimental
+`gateway.networking.x-k8s.io/v1alpha1` `XBackendTrafficPolicy`, its
+`sessionPersistence` applies to every backendRef naming a targeted Service,
+lowered as above onto the ALB that balances that Service's endpoints. That
+ALB exists only in the endpoint routing mode, so elsewhere the policy is
+ignored. A rule's own `sessionPersistence` takes precedence, since its token
+already carries the Service and its endpoint. A `targetRef` must be a
+Service in the policy's namespace. When two policies target one Service, the
+older one applies and the younger one is reported. `retryConstraint` is
+reported and ignored. The policy's status is not written back. The controller
+reads the kind only where it may list and watch it; see
+[kubernetes-rbac.md](./kubernetes-rbac.md).
+
+A [TricksterCachePolicy's](./kubernetes-cache-policy.md) `sticky` fields,
+and the `sticky` class parameters above, apply to a Service's endpoint ALB
+when neither the rule nor the Service's traffic policy asks for a session.
 
 ## GRPCRoute
 
@@ -480,7 +608,11 @@ readiness that takes an endpoint out of rotation. The
 judged by readiness, since no probe speaks the protocol they carry. A stream
 route caches nothing, and a `TricksterCachePolicy` cannot target one;
 `kubernetes.defaults` and a GatewayClass's parameters reach it only for
-`routing_mode`, `load_balancing` and `load_balancing_key`.
+`routing_mode`, `load_balancing`, `load_balancing_key` and the `sticky`
+parameters. A stream route's session is always kept in a table, whatever
+`sticky` names: by `client_ip`, or by `sni` on a TLSRoute when `sticky_key`
+says so. The ALB the listener maps to keeps it for the whole path, so in the
+endpoint routing mode a client returns to the same Service and pod.
 
 The controller watches the three kinds only in a cluster whose experimental
 Gateway API channel serves them (`gateway.networking.k8s.io/v1alpha2`); see
@@ -663,6 +795,11 @@ Gateways merge on the port as described under Listeners. A deployment that
 needs Gateways at distinct addresses runs one controller Deployment per
 GatewayClass ([kubernetes-deploy.md](./kubernetes-deploy.md#ports-and-addresses)).
 
+The suite at the version this build pins has no session persistence tests,
+and names no feature for it, so `sessionPersistence` is outside the report.
+The kind scenario `TestGatewaySessionPersistenceKind` covers it instead,
+with a cookie and a header session over two Services.
+
 The report lists the extended features claimed. They cover query parameter,
 method and port matching, request and response header modification on rules
 and backendRefs, path, host, scheme and port rewrites and redirects, request
@@ -682,13 +819,9 @@ WebSocket and h2c backend protocols.
 | Multiple `RequestMirror` filters on one rule | A rule carries one mirror |
 | `BackendTLSPolicy` status, `subjectAltNames` | The policy is honored; its status is not written back and `subjectAltNames` is refused |
 | A `TLS` listener in `Terminate` mode | Not served; `Passthrough` only |
-| `sessionPersistence` | Reported and ignored |
+| `XBackendTrafficPolicy` status and `retryConstraint` | Its `sessionPersistence` is honored; its status is not written back and `retryConstraint` is ignored |
+| `sessionPersistence` in the `service` routing mode | Kept only on a rule with several backendRefs, and then on the Service alone; see [Session persistence](#session-persistence) |
 | Rate limiting | Rate-limit at the load balancer in front, or at the origin |
-
-Session affinity has no Gateway API equivalent here: a weighted rule
-apportions each request independently, so an origin that needs affinity
-should carry its own session state, or be served by a single `backendRef` in
-`routing_mode: service` so the Service's own session affinity applies.
 
 ## Generated configuration
 

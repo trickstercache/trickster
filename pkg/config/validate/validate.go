@@ -541,7 +541,7 @@ func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 			addWarning(c, w)
 		}
 	}
-	return stickyCookies(c)
+	return nil
 }
 
 // servesHTTPListener returns the name of an http listener the backend is mapped to, or "" when
@@ -745,6 +745,10 @@ func RoutesRulesAndPools(c *config.Config, clients backends.Backends) error {
 	// these validations can't be performed until the router tree is constructed
 	err = rule.ValidateOptions(clients, c.CompiledRewriters)
 	if err != nil {
+		return err
+	}
+	// which backends a listener reaches depends on the paths their clients register
+	if err = stickyCookies(c, listenerVisible(c, clients)); err != nil {
 		return err
 	}
 	return alb.ValidateClients(clients)

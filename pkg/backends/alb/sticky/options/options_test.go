@@ -54,7 +54,7 @@ func TestDefaults(t *testing.T) {
 	require.Zero(t, o.Idle)
 	require.Equal(t, OnUnavailableRepick, o.OnUnavailable)
 	require.Equal(t, CookieOptions{Name: DefaultCookieName, Path: DefaultCookiePath, Secure: SecureAuto,
-		HTTPOnly: o.Cookie.HTTPOnly, SameSite: SameSiteLax}, o.Cookie)
+		HTTPOnly: o.Cookie.HTTPOnly, SameSite: SameSiteLax, Lifetime: LifetimePermanent}, o.Cookie)
 	require.True(t, *o.Cookie.HTTPOnly)
 	require.Equal(t, TableOptions{Key: "", Learn: LearnRequest, IPv6Prefix: flowkey.DefaultIPv6Prefix,
 		MaxEntries: DefaultMaxEntries, KeySource: flowkey.KeySource{Kind: flowkey.KeyClientIP}}, o.Table)
@@ -135,6 +135,7 @@ func TestValidate(t *testing.T) {
 		"cookie: {name: __Host-s, secure: true, domain: example.com}\n": ErrInvalidCookie,
 		"cookie: {secure: maybe}\n":                                     ErrInvalidSecure,
 		"cookie: {same_site: loose}\n":                                  ErrInvalidSameSite,
+		"cookie: {lifetime: forever}\n":                                 ErrInvalidLifetime,
 		"cookie: {same_site: none, secure: false}\n":                    ErrSameSiteNoneInsecure,
 		"cookie: {same_site: none, secure: auto}\n":                     ErrSameSiteNoneInsecure,
 		"cookie: {same_site: none}\n":                                   ErrSameSiteNoneInsecure,
@@ -257,4 +258,10 @@ func TestSecretIsRedacted(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, string(out), key)
 	require.Contains(t, string(out), "secret: "+secret.Token)
+}
+
+func TestSecureCookieName(t *testing.T) {
+	require.True(t, SecureCookieName("__Secure-s"))
+	require.True(t, SecureCookieName("__Host-s"))
+	require.False(t, SecureCookieName("s"))
 }

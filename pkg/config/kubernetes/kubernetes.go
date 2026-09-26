@@ -33,6 +33,7 @@ import (
 	kubeopts "github.com/trickstercache/trickster/v2/pkg/kube/options"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -265,6 +266,9 @@ type DefaultsOptions struct {
 	// AccessLog is the access log configuration generated backends inherit;
 	// unset means they inherit the top-level access_log
 	AccessLog *alo.Options `yaml:"access_log,omitempty"`
+	// StickySecretFile is the file that keys the session tokens generated ALBs issue, mounted
+	// the same on every replica; unset keys them per process, which suits one replica only
+	StickySecretFile string `yaml:"sticky_secret_file,omitempty"`
 }
 
 // New returns an Options with default values, as though an empty 'kubernetes:' section had
@@ -452,6 +456,11 @@ func (d *DefaultsOptions) validate() error {
 	if d.HealthCheck != nil {
 		if _, err := d.HealthCheck.Validate(); err != nil {
 			return fmt.Errorf("kubernetes 'defaults.healthcheck': %w", err)
+		}
+	}
+	if d.StickySecretFile != "" {
+		if _, err := secret.ReadKey("", d.StickySecretFile); err != nil {
+			return fmt.Errorf("kubernetes 'defaults.sticky_secret_file': %w", err)
 		}
 	}
 	return nil

@@ -173,6 +173,10 @@ func TestIndexLowersEveryField(t *testing.T) {
 		HealthMode:          "probe",
 		LoadBalancing:       "p2c",
 		LoadBalancingKey:    "client_ip",
+		Sticky:              "table",
+		StickyKey:           "header:X-Tenant",
+		StickyTTL:           "2h",
+		StickyIdle:          "10m",
 		ResultHeader:        "Hide",
 	}
 	x := New([]*CachePolicy{p}, Config{Known: known()})
@@ -199,6 +203,7 @@ func TestIndexLowersEveryField(t *testing.T) {
 		CORSMode:        "merge", CORSHeaders: map[string]string{"Access-Control-Allow-Origin": "*"},
 		HealthMode: "probe", ResultHeader: ir.ResultHeaderHide,
 		LoadBalancing: "p2c", LoadBalancingKey: "client_ip",
+		Sticky: "table", StickyKey: "header:X-Tenant", StickyTTLMS: 7200000, StickyIdleMS: 600000,
 	}, *got)
 	require.Equal(t, ir.KindCachePolicy, got.Source.Kind)
 	require.Equal(t, "uid-full", got.Source.UID)
@@ -237,6 +242,10 @@ func TestIndexRefusesAnInvalidSpecWhole(t *testing.T) {
 		"loadBalancing":       func(s *Spec) { s.LoadBalancing = "tsm" },
 		"loadBalancingKey":    func(s *Spec) { s.LoadBalancingKey = "header:" },
 		"resultHeader":        func(s *Spec) { s.ResultHeader = "Maybe" },
+		"sticky":              func(s *Spec) { s.Sticky = "always" },
+		"stickyKey":           func(s *Spec) { s.StickyKey = "method" },
+		"stickyTTL":           func(s *Spec) { s.StickyTTL = "100ms" },
+		"stickyIdle":          func(s *Spec) { s.StickyIdle = "later" },
 	}
 	for field, mutate := range cases {
 		t.Run(field, func(t *testing.T) {

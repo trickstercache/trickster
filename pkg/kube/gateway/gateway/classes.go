@@ -17,17 +17,21 @@
 package gateway
 
 import (
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/annotations"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
+	"k8s.io/apimachinery/pkg/util/validation"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -44,7 +48,19 @@ const (
 	ParamHealthMode        = "health_mode"
 	ParamLoadBalancing     = "load_balancing"
 	ParamLoadBalancingKey  = "load_balancing_key"
+	ParamSticky            = "sticky"
+	ParamStickyKey         = "sticky_key"
+	ParamStickyTTL         = "sticky_ttl"
+	ParamStickyIdle        = "sticky_idle"
+	ParamStickySecret      = "sticky_secret"
 )
+
+// stickySecretKey is the entry of a sticky_secret Secret that holds the key
+const stickySecretKey = "key"
+
+// errStickySecretName refuses a sticky_secret that is not one Secret's name, such as one naming
+// another namespace, since a class's key lives beside its parameters
+var errStickySecretName = errors.New("must name a Secret in the parameters ConfigMap's namespace")
 
 var (
 	errEmptyParam   = errors.New("value is empty")
@@ -116,6 +132,9 @@ func (t *translator) classPolicy(src ir.Source, gc *gwapiv1.GatewayClass) (strin
 	if len(rejected) > 0 {
 		return "", "parameters rejected: " + strings.Join(rejected, "; ")
 	}
+	if p.StickySecret != "" {
+		p.StickySecret = t.stickyKey(src, ns, p.StickySecret)
+	}
 	if len(keys) == 0 {
 		return "", ""
 	}
@@ -144,6 +163,30 @@ var classParams = map[string]paramSetter{
 		p.LoadBalancingKey, err = translate.LoadBalancingKey(v)
 		return err
 	},
+	ParamSticky: func(_ *translator, p *ir.Policy, v string) (err error) {
+		p.Sticky, err = translate.Sticky(v)
+		return err
+	},
+	ParamStickyKey: func(_ *translator, p *ir.Policy, v string) (err error) {
+		p.StickyKey, err = translate.StickyKey(v)
+		return err
+	},
+	ParamStickyTTL: func(_ *translator, p *ir.Policy, v string) (err error) {
+		p.StickyTTLMS, err = translate.StickyDuration(v)
+		return err
+	},
+	ParamStickyIdle: func(_ *translator, p *ir.Policy, v string) (err error) {
+		p.StickyIdleMS, err = translate.StickyDuration(v)
+		return err
+	},
+	// the name is held here only until classPolicy resolves it into the key the Secret holds
+	ParamStickySecret: func(_ *translator, p *ir.Policy, v string) error {
+		if errs := validation.IsDNS1123Subdomain(v); len(errs) > 0 {
+			return fmt.Errorf("%w (got %q)", errStickySecretName, v)
+		}
+		p.StickySecret = v
+		return nil
+	},
 	ParamTimeout: func(_ *translator, p *ir.Policy, v string) error {
 		d, err := timeconv.ParsePositiveDuration(v)
 		if err != nil {
@@ -167,6 +210,29 @@ var classParams = map[string]paramSetter{
 	ParamAuthenticatorName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setKnown(&p.AuthenticatorName, v, t.known.Authenticators, "authenticator")
 	},
+}
+
+// stickyKey returns the key a sticky_secret Secret holds, base64-encoded so it travels as text, or
+// nothing when it cannot be read; the class is still served, its tokens keyed per process
+func (t *translator) stickyKey(src ir.Source, namespace, name string) string {
+	fail := func(format string, args ...any) string {
+		t.problems.RejectAs(ir.ReasonInvalidParameters, src, "parameter %q: secret %s/%s %s; "+
+			"session tokens are keyed per process", ParamStickySecret, namespace, name,
+			fmt.Sprintf(format, args...))
+		return ""
+	}
+	sec := t.cfg.Cache.KeySecret(namespace, name)
+	if sec == nil {
+		return fail("is not found, or is not labeled %s", annotations.LabelStickyKey)
+	}
+	key, ok := sec.Data[stickySecretKey]
+	if !ok {
+		return fail("has no %q entry", stickySecretKey)
+	}
+	if len(key) < secret.MinKeyBytes {
+		return fail("holds a %d-byte key, where at least %d are needed", len(key), secret.MinKeyBytes)
+	}
+	return base64.StdEncoding.EncodeToString(key)
 }
 
 func (t *translator) applyParameter(p *ir.Policy, key, value string) error {

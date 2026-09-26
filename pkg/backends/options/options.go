@@ -909,7 +909,9 @@ func (o *Options) Initialize(name string) error {
 		o.Host = parsedURL.Host
 		o.PathPrefix = parsedURL.Path
 	}
-	if o.H2CPriorKnowledge && !strings.EqualFold(o.Scheme, "http") {
+	// a template with no origin has no scheme yet; each discovered clone is checked with its own
+	if o.H2CPriorKnowledge && (!o.IsTemplate || o.OriginURL != "") &&
+		!strings.EqualFold(o.Scheme, "http") {
 		return fmt.Errorf(
 			"h2c_prior_knowledge requires an http:// origin_url (cleartext HTTP/2 only; no HTTP/1 fallback), got scheme %q",
 			o.Scheme)

@@ -82,10 +82,15 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 		b.Hosts = r.Hostnames
 		b.AnyHostRouting = len(r.Hostnames) == 0
 	}
+	// only the ALB a stream listener maps to keeps sessions, for the whole path beneath it
+	readable := streamReadable(r)
 	if len(group.Members) == 1 && !group.Members[0].Invalid {
 		front, err := streamMember(doc, r, group, group.Members[0], eff, opts, listeners)
 		if err != nil {
 			return err
+		}
+		if front.ALB != nil {
+			front.ALB.Sticky = eff.policySticky(name, true, readable)
 		}
 		attach(front)
 		doc.Backends[name] = front
@@ -111,7 +116,9 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 		doc.Backends[memberName] = front
 		pool = append(pool, &albPoolDoc{Name: memberName, Weight: m.Weight})
 	}
-	alb := &backendDoc{Provider: providers.ALB, ALB: &albDoc{Mechanism: albnames.MechanismRR, Pool: pool}}
+	alb := &backendDoc{Provider: providers.ALB, ALB: &albDoc{
+		Mechanism: albnames.MechanismRR, Pool: pool, Sticky: eff.policySticky(name, true, readable),
+	}}
 	attach(alb)
 	doc.Backends[name] = alb
 	return nil
@@ -158,10 +165,16 @@ func streamMember(doc *document, r ir.Route, g ir.BackendGroup, m ir.BackendMemb
 				Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
 				Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
 			},
-		}, func(ks flowkey.KeySource) bool {
-			return ks.OnStream(flowkey.StreamListener{TLS: r.Protocol == ir.ProtocolTLS})
-		}),
+		}, streamReadable(r)),
 	}, nil
+}
+
+// streamReadable reports whether a key can be read from a flow on the route's listener: the client
+// address, or the server name on a tls route
+func streamReadable(r ir.Route) func(flowkey.KeySource) bool {
+	return func(ks flowkey.KeySource) bool {
+		return ks.OnStream(flowkey.StreamListener{TLS: r.Protocol == ir.ProtocolTLS})
+	}
 }
 
 func unresolvedStreamBackend() *backendDoc {

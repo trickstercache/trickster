@@ -161,6 +161,9 @@ leave an operator believing a setting is in force when it is not.
 | `trickstercache.org/health-mode` | `probe`, `provider` | how discovered members are judged healthy in the endpoint routing mode |
 | `trickstercache.org/load-balancing` | `rr`, `p2c`, `lc`, `lt`, `hrw` | how traffic is spread across a Service's endpoints in the endpoint routing mode; `rr` unless set |
 | `trickstercache.org/load-balancing-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `hrw` keeps on one endpoint |
+| `trickstercache.org/sticky` | `cookie`, `header`, `table`, `none` | keeps a client on the endpoint it first reached, in the endpoint routing mode; see below |
+| `trickstercache.org/sticky-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `table` mode keeps a client's endpoint by; `client_ip` unless set |
+| `trickstercache.org/sticky-ttl`, `trickstercache.org/sticky-idle` | a duration of at least `1s` | a session ends that long after it began (`1h` unless set), or once unused that long |
 
 Durations require a unit: `600` is rejected, `600s` is not.
 
@@ -272,6 +275,22 @@ from the generated template, configured by `kubernetes.defaults.healthcheck`
 or, when that is unset, a probe of the origin's root every 5 seconds. See
 [alb-autodiscovery.md](./alb-autodiscovery.md) for the semantics of both.
 
+`trickstercache.org/sticky` keeps each client on the endpoint it first
+reached, on the Ingress backend's endpoint ALB, as
+[Sticky Sessions](./alb.md#sticky-sessions) describes:
+
+- `cookie` issues a signed token in a cookie named for that ALB,
+  `trickster_sticky_<hash>`.
+- `header` issues it in the `X-Trickster-Session` response header, for a
+  client that sends it back in the request header of that name.
+- `table` keeps the pin itself, by `sticky-key`.
+- `none` turns off a setting a less specific policy made.
+
+The annotation has no effect in the `service` routing mode, where kube-proxy
+chooses the endpoint. `kubernetes.defaults.sticky_secret_file` keys the
+tokens, as [configuring.md](./configuring.md) describes; without it they are
+honored only by the replica that issued them.
+
 ## Status and Events
 
 When `kubernetes.published_service` names the Service in front of Trickster,
@@ -309,6 +328,7 @@ independently. These are the equivalents:
 | `cors-mode`, `cors-headers` | `cors.mode`, `cors.headers` |
 | `health-mode` | `healthMode` |
 | `load-balancing`, `load-balancing-key` | `loadBalancing`, `loadBalancingKey` |
+| `sticky`, `sticky-key`, `sticky-ttl`, `sticky-idle` | `sticky`, `stickyKey`, `stickyTTL`, `stickyIdle`, or an HTTPRoute rule's `sessionPersistence` for a cookie or header session |
 | `use-regex` | an HTTPRoute path match of type `RegularExpression` |
 | `rewrite-target` | a `URLRewrite` filter, whose `ReplacePrefixMatch` replaces the matched prefix and `ReplaceFullPath` the whole path |
 

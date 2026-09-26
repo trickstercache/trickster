@@ -291,6 +291,7 @@ type albDoc struct {
 	Pool      []*albPoolDoc    `yaml:"pool,omitempty"`
 	Discovery *albDiscoveryDoc `yaml:"discovery,omitempty"`
 	HRW       *albHRWDoc       `yaml:"hrw,omitempty"`
+	Sticky    *albStickyDoc    `yaml:"sticky,omitempty"`
 }
 
 // albHRWDoc is what a generated ALB keeps together when its mechanism is hrw

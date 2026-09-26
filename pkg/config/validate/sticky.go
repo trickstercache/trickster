@@ -22,10 +22,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // issuesTokens reports whether an ALB's sticky mode is set to one that issues tokens, which only
@@ -61,33 +65,196 @@ func stickyOnFlows(listenerName, protocol, backendName string, o *ao.Options, re
 	return nil
 }
 
-// cookieID is what a browser tells cookies apart by, on one listener
+// reservedDefaultBackend is the name of the backend routing makes the default when none is marked
+const reservedDefaultBackend = "default"
+
+// cookieID is what a browser tells cookies apart by; it sends a cookie to every port and scheme of
+// a host, and one with no domain only to the host that set it, which cookieOwner carries
 type cookieID struct {
-	listener, name, domain, path string
+	name, domain, path string
 }
 
-// stickyCookies refuses two ALBs that set the same cookie on one http listener: in a browser,
-// each one's token would replace the other's, and neither session would last.
-func stickyCookies(c *config.Config) error {
-	owners := make(map[cookieID]string)
+// cookieOwner is an ALB that sets a cookie, and the hosts it serves; none serves every host
+type cookieOwner struct {
+	backend string
+	hosts   []string
+}
+
+// stickyCookies refuses two ALBs that set the same cookie, on any http listeners, for a host they
+// both serve: in a browser, each one's token would replace the other's, and neither would last.
+// visible reports whether a backend registers any path on a listener.
+func stickyCookies(c *config.Config, visible func(string) bool) error {
+	owners := make(map[cookieID][]cookieOwner)
+	served := servedHosts(c, visible)
 	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
 		backend := c.Backends[backendName]
 		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil {
 			continue
 		}
 		s := backend.ALBOptions.Sticky
-		if s == nil || s.ModeFor(true) != so.ModeCookie {
+		if s == nil || s.ModeFor(true) != so.ModeCookie || len(httpListenerNames(c, backend)) == 0 {
 			continue
 		}
-		for _, listenerName := range httpListenerNames(c, backend) {
-			id := cookieID{listenerName, s.Cookie.Name, strings.ToLower(s.Cookie.Domain), s.Cookie.Path}
-			if other, ok := owners[id]; ok {
-				return fmt.Errorf("alb backends %q and %q both set sticky cookie %q on http listener %q; "+
-					"give one of them its own sticky.cookie.name", other, backendName, s.Cookie.Name,
-					listenerName)
-			}
-			owners[id] = backendName
+		hosts, every := served(backendName)
+		if !every && len(hosts) == 0 {
+			// no client reaches it, as with a mirror's target, so no browser holds its cookie
+			continue
 		}
+		owner := cookieOwner{backend: backendName, hosts: hosts}
+		if every {
+			owner.hosts = nil
+		}
+		id := cookieID{s.Cookie.Name, strings.ToLower(s.Cookie.Domain), s.Cookie.Path}
+		for _, other := range owners[id] {
+			// a domain cookie reaches every host under it, whatever hosts the ALBs serve
+			if id.domain != "" || hostnames.ListsOverlap(owner.hosts, other.hosts) {
+				return fmt.Errorf("alb backends %q and %q both set sticky cookie %q for a host they "+
+					"both serve, which a browser shares across ports and schemes; give one of them its "+
+					"own sticky.cookie.name", other.backend, backendName, s.Cookie.Name)
+			}
+		}
+		owners[id] = append(owners[id], owner)
 	}
 	return nil
+}
+
+// servedHosts returns the hosts on which a backend answers clients, or every when it answers any
+// host: those its own routes answer for, joined by those of every backend dispatching into it, as a
+// pool member or a rule's route answers whatever host its dispatcher was reached on. None is a
+// backend no client reaches, such as one only mirrored to. Every reference that can dispatch a
+// client's request to a backend must be in dispatchers, or this reports too few hosts.
+func servedHosts(c *config.Config, visible func(string) bool) func(string) ([]string, bool) {
+	parents := dispatchers(c)
+	defaultName := defaultBackend(c)
+	// own returns the hosts a backend's own routes answer for, or every
+	own := func(name string) ([]string, bool) {
+		b := c.Backends[name]
+		if b == nil || name == defaultName {
+			return nil, true
+		}
+		// a backend's own routes exist only when a path registers on a listener; then path routing
+		// answers /name/... on every host, whatever hosts the backend also names
+		if !visible(name) {
+			return nil, false
+		}
+		if b.AnyHostRouting || !b.PathRoutingDisabled {
+			return nil, true
+		}
+		return b.Hosts, false
+	}
+	// a breadth-first walk up the dispatchers visits each backend once, however many paths lead
+	// to it, so a shared or cyclic dispatch graph costs its size and not its number of paths
+	return func(name string) ([]string, bool) {
+		queue := []string{name}
+		queued := sets.New([]string{name})
+		found := sets.NewStringSet()
+		var out []string
+		for i := 0; i < len(queue); i++ {
+			hosts, every := own(queue[i])
+			if every {
+				return nil, true
+			}
+			for _, h := range hosts {
+				if !found.Contains(h) {
+					found.Set(h)
+					out = append(out, h)
+				}
+			}
+			for _, parent := range parents[queue[i]] {
+				if !queued.Contains(parent) {
+					queued.Set(parent)
+					queue = append(queue, parent)
+				}
+			}
+		}
+		return out, false
+	}
+}
+
+// listenerVisible reports whether a backend registers any path on a listener, as routing does: one
+// of its configured paths, laid over its provider's defaults, that has methods, a handler its client
+// provides, and is not dispatch_only. A backend with no client is taken to register one.
+func listenerVisible(c *config.Config, clients backends.Backends) func(string) bool {
+	memo := make(map[string]bool)
+	return func(name string) bool {
+		if v, ok := memo[name]; ok {
+			return v
+		}
+		v := registersOnListener(c.Backends[name], clients[name])
+		memo[name] = v
+		return v
+	}
+}
+
+func registersOnListener(b *bo.Options, client backends.Backend) bool {
+	if b == nil || client == nil {
+		return true
+	}
+	paths := b.Paths
+	if !b.PathDefaultsDisabled {
+		paths = client.DefaultPathConfigs(b).Overlay(b.Paths)
+	}
+	handlers := client.Handlers()
+	for _, p := range paths {
+		if p == nil || p.DispatchOnly || len(p.Methods) == 0 {
+			continue
+		}
+		if p.Handler != nil || handlers[p.HandlerName] != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// defaultBackend returns the backend that answers requests no other route claims, on every host:
+// the one marked is_default, else the one named default
+func defaultBackend(c *config.Config) string {
+	for name, b := range c.Backends {
+		if b != nil && b.IsDefault {
+			return name
+		}
+	}
+	if _, ok := c.Backends[reservedDefaultBackend]; ok {
+		return reservedDefaultBackend
+	}
+	return ""
+}
+
+// dispatchers maps each backend to those whose clients it answers on their behalf: the ALBs whose
+// pool or user router names it, and the rule backends whose rules route to it. A mirror is not one,
+// as its response, and any cookie in it, is discarded.
+func dispatchers(c *config.Config) map[string][]string {
+	out := make(map[string][]string)
+	add := func(child, parent string) {
+		if child != "" && !slices.Contains(out[child], parent) {
+			out[child] = append(out[child], parent)
+		}
+	}
+	for name, b := range c.Backends {
+		if b == nil {
+			continue
+		}
+		if b.ALBOptions != nil {
+			for _, m := range b.ALBOptions.Pool {
+				add(m.Name, name)
+			}
+			if u := b.ALBOptions.UserRouter; u != nil {
+				add(u.DefaultBackend, name)
+				for _, m := range u.Users {
+					if m != nil {
+						add(m.ToBackend, name)
+					}
+				}
+			}
+		}
+		if r := c.Rules[b.RuleName]; b.RuleName != "" && r != nil {
+			add(r.NextRoute, name)
+			for _, cs := range r.CaseOptions {
+				if cs != nil {
+					add(cs.NextRoute, name)
+				}
+			}
+		}
+	}
+	return out
 }

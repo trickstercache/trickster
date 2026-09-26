@@ -67,6 +67,14 @@ type effective struct {
 	// across a Service's endpoints; the pool across a rule's backendRefs is always round robin
 	loadBalancing    string
 	loadBalancingKey string
+	// sticky, stickyKey, stickyTTL and stickyIdle keep a client on the endpoint an endpoint mode
+	// ALB first sent it to; stickySecret, else stickySecretFile, keys the tokens it issues
+	sticky           string
+	stickyKey        string
+	stickyTTL        time.Duration
+	stickyIdle       time.Duration
+	stickySecret     string
+	stickySecretFile string
 	// tsProvider is the time series provider the generated backend is, or empty for a plain
 	// reverse proxy; a provider accelerates its own API paths and always caches
 	tsProvider string
@@ -155,6 +163,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 		e.timeout = time.Duration(d.Timeout)
 		e.accessLog = d.AccessLog
 		e.healthCheck = d.HealthCheck
+		e.stickySecretFile = d.StickySecretFile
 		if d.HealthMode != "" {
 			e.healthMode = d.HealthMode
 		}
@@ -175,6 +184,10 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	if p.LoadBalancingKey != "" {
 		e.loadBalancingKey = p.LoadBalancingKey
 	}
+	e.sticky, e.stickyKey = p.Sticky, p.StickyKey
+	e.stickyTTL = time.Duration(p.StickyTTLMS) * time.Millisecond
+	e.stickyIdle = time.Duration(p.StickyIdleMS) * time.Millisecond
+	e.stickySecret = p.StickySecret
 	if p.CacheName != "" {
 		e.cacheName = p.CacheName
 	}

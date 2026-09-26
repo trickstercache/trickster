@@ -1,0 +1,218 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster
+spec:
+  controllerName: trickstercache.org/gateway-controller
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gw
+  namespace: shop
+spec:
+  gatewayClassName: trickster
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: a
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: b
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: carts
+  namespace: shop
+spec:
+  ports:
+    - name: http
+      port: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rpc
+  namespace: shop
+spec:
+  ports:
+    - name: grpc
+      port: 9000
+---
+# a named permanent cookie over two Services, served under two hosts; a header
+# session on one Service; a Service whose traffic policy asks for sessions;
+# and a session that cannot be kept
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: shop
+  namespace: shop
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+  hostnames:
+    - a.example.com
+    - b.example.com
+  rules:
+    - backendRefs:
+        - name: a
+          port: 8080
+        - name: b
+          port: 8080
+      sessionPersistence:
+        sessionName: shop
+        type: Cookie
+        absoluteTimeout: 1h
+        cookieConfig:
+          lifetimeType: Permanent
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: a
+          port: 8080
+      sessionPersistence:
+        sessionName: X-Session
+        type: Header
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /carts
+      backendRefs:
+        - name: carts
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /bad
+      backendRefs:
+        - name: a
+          port: 8080
+      sessionPersistence:
+        type: Header
+        cookieConfig:
+          lifetimeType: Session
+---
+# a younger route setting the same cookie for one of the same hosts, which
+# cannot have it, and one on another host, which can
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: younger
+  namespace: shop
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+  hostnames:
+    - b.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /younger
+      backendRefs:
+        - name: a
+          port: 8080
+        - name: b
+          port: 8080
+      sessionPersistence:
+        sessionName: shop
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: elsewhere
+  namespace: shop
+  creationTimestamp: "2026-02-02T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+  hostnames:
+    - c.example.com
+  rules:
+    - backendRefs:
+        - name: a
+          port: 8080
+        - name: b
+          port: 8080
+      sessionPersistence:
+        sessionName: shop
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: rpc
+  namespace: shop
+  creationTimestamp: "2026-03-01T00:00:00Z"
+spec:
+  parentRefs:
+    - name: gw
+  hostnames:
+    - rpc.example.com
+  rules:
+    - backendRefs:
+        - name: rpc
+          port: 9000
+      sessionPersistence:
+        type: Header
+---
+apiVersion: gateway.networking.x-k8s.io/v1alpha1
+kind: XBackendTrafficPolicy
+metadata:
+  name: carts
+  namespace: shop
+  creationTimestamp: "2026-01-01T00:00:00Z"
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: carts
+  sessionPersistence:
+    type: Cookie
+---
+# younger than the policy above, so its carts target is refused; its other
+# targets are a kind it cannot govern, and a Service no route reaches
+apiVersion: gateway.networking.x-k8s.io/v1alpha1
+kind: XBackendTrafficPolicy
+metadata:
+  name: later
+  namespace: shop
+  creationTimestamp: "2026-02-01T00:00:00Z"
+spec:
+  targetRefs:
+    - group: ""
+      kind: Service
+      name: carts
+    - group: apps
+      kind: Deployment
+      name: carts
+    - group: ""
+      kind: Service
+      name: unrouted
+  retryConstraint:
+    budget:
+      percent: 20
+  sessionPersistence:
+    type: Header
+    absoluteTimeout: 10m

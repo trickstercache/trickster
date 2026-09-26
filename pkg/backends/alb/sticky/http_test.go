@@ -149,6 +149,7 @@ func TestCookieAttributes(t *testing.T) {
 		"{}": "; Max-Age=3600; Path=/; HttpOnly; SameSite=Lax",
 		"ttl: 0\nidle: 10m\ncookie: {name: s, path: /app, domain: example.com, http_only: false, same_site: strict}": "; Path=/app; Domain=example.com; SameSite=Strict",
 		"ttl: 1h\nidle: 10m\ncookie: {secure: \"true\", same_site: none}":                                            "; Max-Age=600; Path=/; HttpOnly; SameSite=None; Secure",
+		"cookie: {lifetime: session}": "; Path=/; HttpOnly; SameSite=Lax",
 	} {
 		t.Run(doc, func(t *testing.T) {
 			p := persistence(t, doc)

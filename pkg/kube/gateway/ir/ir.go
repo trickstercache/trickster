@@ -126,6 +126,9 @@ const (
 	// KindBackendTLSPolicy is a policy attached to a Service rather than a
 	// route; problems with one are reported against the policy itself
 	KindBackendTLSPolicy = "BackendTLSPolicy"
+	// KindBackendTrafficPolicy is the experimental policy attached to a Service that asks for
+	// session persistence to its endpoints; problems with one are reported against it
+	KindBackendTrafficPolicy = "XBackendTrafficPolicy"
 	// KindCachePolicy is the caching policy attached to a Gateway, route or Service; problems
 	// with one are reported against the policy itself
 	KindCachePolicy = "TricksterCachePolicy"
@@ -244,6 +247,37 @@ type Rule struct {
 	Timeouts *RuleTimeouts `json:"timeouts,omitempty"`
 	// Retry repeats failed idempotent upstream requests the rule matches
 	Retry *RuleRetry `json:"retry,omitempty"`
+	// Session keeps a client on the backend the rule first sent it to, across every backendRef
+	Session *Session `json:"session,omitempty"`
+}
+
+// Session persistence types: where a client carries the token naming its backend
+const (
+	SessionCookie = "cookie"
+	SessionHeader = "header"
+)
+
+// Session keeps a client on the backend it was first sent to, as a route rule's or a Service's
+// sessionPersistence asks
+type Session struct {
+	// Type is cookie or header
+	Type string `json:"type"`
+	// Name is the cookie's or the header's; empty lets the compiler choose one
+	Name string `json:"name,omitempty"`
+	// AbsoluteMS ends a session this long after it began; 0 never does
+	AbsoluteMS int64 `json:"absolute_ms,omitempty"`
+	// Permanent gives a cookie a Max-Age that ends with its session, where otherwise the cookie
+	// ends with the browser session
+	Permanent bool `json:"permanent,omitempty"`
+}
+
+// Clone returns a copy of the session, nil for nil
+func (s *Session) Clone() *Session {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	return &out
 }
 
 // RuleTimeouts bounds a rule's upstream exchange, in milliseconds; zero is unbounded
@@ -467,6 +501,9 @@ type BackendMember struct {
 	// Policy optionally names a Policy entry overlaid on the rule's for this member alone, as a
 	// cache policy attached to the member's Service is
 	Policy string `json:"policy,omitempty"`
+	// Session keeps a client on one of the Service's endpoints, as a traffic policy attached to
+	// the Service asks; a rule's own Session takes its place
+	Session *Session `json:"session,omitempty"`
 }
 
 // BackendTLS is how an upstream's certificate is verified. Exactly one of
@@ -562,6 +599,18 @@ type Policy struct {
 	LoadBalancing string `json:"load_balancing,omitempty"`
 	// LoadBalancingKey is what the hrw mechanism keeps together, such as client_ip
 	LoadBalancingKey string `json:"load_balancing_key,omitempty"`
+	// Sticky keeps a client on the endpoint it was first sent to in the endpoint routing mode:
+	// cookie, header or table, or none to turn off a less specific policy's
+	Sticky string `json:"sticky,omitempty"`
+	// StickyKey is what table mode keeps a client's endpoint by, such as client_ip
+	StickyKey string `json:"sticky_key,omitempty"`
+	// StickyTTLMS and StickyIdleMS end a session that long after it began, and once unused that
+	// long; 0 takes the default
+	StickyTTLMS  int64 `json:"sticky_ttl_ms,omitempty"`
+	StickyIdleMS int64 `json:"sticky_idle_ms,omitempty"`
+	// StickySecret is the key, base64-encoded, that the Secret a class's parameters name holds for
+	// sticky tokens; it is in the IR so a rotation changes the hash, and only class parameters set it
+	StickySecret string `json:"sticky_secret,omitempty"`
 	// Provider makes the generated backend a time series provider (prometheus, influxdb, ...)
 	// whose own API paths it then accelerates; only a cache policy sets it
 	Provider string `json:"provider,omitempty"`
@@ -595,6 +644,9 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.HealthMode, o.HealthMode)
 	overlayString(&out.LoadBalancing, o.LoadBalancing)
 	overlayString(&out.LoadBalancingKey, o.LoadBalancingKey)
+	overlayString(&out.Sticky, o.Sticky)
+	overlayString(&out.StickyKey, o.StickyKey)
+	overlayString(&out.StickySecret, o.StickySecret)
 	overlayString(&out.Provider, o.Provider)
 	overlayString(&out.ResultHeader, o.ResultHeader)
 	if o.TimeoutMS > 0 {
@@ -602,6 +654,12 @@ func (p Policy) Overlay(o *Policy) Policy {
 	}
 	if o.MaxTTLMS > 0 {
 		out.MaxTTLMS = o.MaxTTLMS
+	}
+	if o.StickyTTLMS > 0 {
+		out.StickyTTLMS = o.StickyTTLMS
+	}
+	if o.StickyIdleMS > 0 {
+		out.StickyIdleMS = o.StickyIdleMS
 	}
 	out.RequestHeaders = overlayHeaders(out.RequestHeaders, o.RequestHeaders)
 	out.ResponseHeaders = overlayHeaders(out.ResponseHeaders, o.ResponseHeaders)
@@ -681,6 +739,7 @@ func (i *IR) Canonical() *IR {
 			rule.Filters = CloneFilters(rule.Filters)
 			rule.Timeouts = rule.Timeouts.Clone()
 			rule.Retry = rule.Retry.Clone()
+			rule.Session = rule.Session.Clone()
 		}
 	}
 	for pi := range out.Policies {
@@ -696,6 +755,7 @@ func (i *IR) Canonical() *IR {
 			m := &g.Members[mi]
 			m.Filters = CloneFilters(m.Filters)
 			m.TLS = m.TLS.Clone()
+			m.Session = m.Session.Clone()
 		}
 	}
 	return out

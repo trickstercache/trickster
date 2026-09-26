@@ -134,7 +134,7 @@ func NewHTTP(albName string, o *options.Options) (*HTTP, error) {
 	default:
 		p.name, p.secure, p.markPrivate = o.Cookie.Name, o.Cookie.Secure, o.Cookie.MarkPrivate
 		// a ttl of 0 keeps the cookie for the browser's session, whatever the idle timeout
-		p.maxAge = o.TTLDuration() > 0
+		p.maxAge = o.TTLDuration() > 0 && o.Cookie.Lifetime != options.LifetimeSession
 		p.attrs = cookieAttributes(o.Cookie)
 	}
 	c, err := NewCodec(o.Keys(), albName, o.TTLDuration(), time.Duration(o.Idle))

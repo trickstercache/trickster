@@ -1242,6 +1242,7 @@ backends:
 #           secure: auto            # auto (default) marks it Secure over TLS; or true, false
 #           http_only: true         # default
 #           same_site: lax          # lax (default), strict or none (requires secure: true)
+#           lifetime: permanent     # permanent (default) sets Max-Age from the token; session never does
 #           mark_private: false     # true adds Cache-Control: private to a response that sets it
 #         # header: # header mode only
 #         #   name: X-Trickster-Session
@@ -1778,3 +1779,8 @@ backends:
 #     # access_log:
 #     #   filename: stdout
 #     #   format: combined
+#     # sticky_secret_file keys the session tokens generated ALBs issue for a
+#     # route's sessionPersistence or a sticky annotation, parameter or policy:
+#     # at least 32 bytes, mounted from a Secret at the same path on every
+#     # replica. Unset, each process uses its own random key (one replica only).
+#     # sticky_secret_file: /etc/trickster/sticky/key

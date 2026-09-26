@@ -17,6 +17,9 @@
 package kubernetes
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -135,6 +138,20 @@ func TestValidateHealthMode(t *testing.T) {
 	o := valid(t)
 	o.Defaults.HealthMode = "guess"
 	require.ErrorIs(t, o.Validate(), ErrInvalidHealthMode)
+}
+
+func TestValidateStickySecretFile(t *testing.T) {
+	dir := t.TempDir()
+	good, short := filepath.Join(dir, "good"), filepath.Join(dir, "short")
+	require.NoError(t, os.WriteFile(good, []byte(strings.Repeat("k", 32)), 0o600))
+	require.NoError(t, os.WriteFile(short, []byte("k"), 0o600))
+	o := valid(t)
+	o.Defaults.StickySecretFile = good
+	require.NoError(t, o.Validate())
+	for _, file := range []string{short, filepath.Join(dir, "missing")} {
+		o.Defaults.StickySecretFile = file
+		require.ErrorContains(t, o.Validate(), "defaults.sticky_secret_file", file)
+	}
 }
 
 // The two namespace-scoping mechanisms answer the same question; both set

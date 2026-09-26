@@ -305,20 +305,26 @@ negative_caches:
 
 func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	// The overlay has to survive the real loader, not just a decode: names, cross-references
-	// and every option default are only checked there
+	// and every option default are only checked there, in both routing modes
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(baseConfig), 0o600))
 	for _, name := range goldenFixtures(t) {
-		t.Run(name, func(t *testing.T) {
-			model, _, o := translateFixture(t, name)
-			overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
-			require.NoError(t, err)
-			conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
-			require.NoError(t, err)
-			require.NoError(t, conf.Backends.Validate())
-			require.NoError(t, conf.Caches.Validate())
-			require.NoError(t, validate.Validate(conf))
-		})
+		for _, mode := range []string{kubecfg.RoutingModeService, kubecfg.RoutingModeEndpoint} {
+			t.Run(name+"/"+mode, func(t *testing.T) {
+				model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
+					o.Defaults.RoutingMode = mode
+				})
+				overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
+				require.NoError(t, err)
+				conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
+				require.NoError(t, err)
+				require.NoError(t, conf.Backends.Validate())
+				require.NoError(t, conf.Caches.Validate())
+				require.NoError(t, validate.Validate(conf))
+				require.NoError(t, conf.Process())
+				require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
+			})
+		}
 	}
 }
 
@@ -1067,4 +1073,11 @@ func TestTranslateCachePolicies(t *testing.T) {
 		}
 	}
 	require.Equal(t, "TricksterCachePolicy/shop/web-service", site.Members[0].Policy)
+}
+
+func TestTranslateStickyAnnotations(t *testing.T) {
+	// the endpoint ALB of each Ingress keeps its clients as its annotations ask
+	require.Empty(t, golden(t, "sticky", func(o *kubecfg.Options) {
+		o.Defaults.RoutingMode = kubecfg.RoutingModeEndpoint
+	}))
 }

@@ -60,6 +60,13 @@ const (
 	SecureNever  = "false"
 )
 
+// A cookie's lifetime: permanent gives it a Max-Age that ends with its token, and session leaves
+// it to end with the browser session while the ttl still ends its token
+const (
+	LifetimePermanent = "permanent"
+	LifetimeSession   = "session"
+)
+
 // The cookie's SameSite values
 const (
 	SameSiteLax    = "lax"
@@ -98,6 +105,8 @@ var (
 	ErrInvalidCookie = errors.New("invalid 'sticky.cookie'")
 	// ErrInvalidSecure is returned for a sticky.cookie.secure that is not auto, true or false.
 	ErrInvalidSecure = errors.New("'sticky.cookie.secure' must be auto, true or false")
+	// ErrInvalidLifetime is returned for a sticky.cookie.lifetime that is not permanent or session.
+	ErrInvalidLifetime = errors.New("'sticky.cookie.lifetime' must be permanent or session")
 	// ErrInvalidSameSite is returned for a sticky.cookie.same_site that is not lax, strict or none.
 	ErrInvalidSameSite = errors.New("'sticky.cookie.same_site' must be lax, strict or none")
 	// ErrSameSiteNoneInsecure is returned for same_site: none on a cookie not always marked Secure:
@@ -163,6 +172,9 @@ type CookieOptions struct {
 	HTTPOnly *bool `yaml:"http_only,omitempty"`
 	// SameSite is the cookie's SameSite: lax, the default, strict or none, which requires secure: true.
 	SameSite string `yaml:"same_site,omitempty"`
+	// Lifetime is permanent, the default, which gives the cookie a Max-Age that ends with its token
+	// when the token expires, or session, which never does, so it ends with the browser session.
+	Lifetime string `yaml:"lifetime,omitempty"`
 	// MarkPrivate adds Cache-Control: private to a response that sets the cookie, so that a
 	// shared cache does not store it.
 	MarkPrivate bool `yaml:"mark_private,omitempty"`
@@ -273,6 +285,9 @@ func (o *CookieOptions) initialize() {
 	if o.SameSite == "" {
 		o.SameSite = SameSiteLax
 	}
+	if o.Lifetime == "" {
+		o.Lifetime = LifetimePermanent
+	}
 }
 
 func (o *TableOptions) initialize() error {
@@ -334,6 +349,11 @@ func (o *CookieOptions) validate() error {
 	default:
 		return fmt.Errorf("%w: %q", ErrInvalidSecure, o.Secure)
 	}
+	switch o.Lifetime {
+	case "", LifetimePermanent, LifetimeSession:
+	default:
+		return fmt.Errorf("%w: %q", ErrInvalidLifetime, o.Lifetime)
+	}
 	switch o.SameSite {
 	case "", SameSiteLax, SameSiteStrict:
 	case SameSiteNone:
@@ -363,8 +383,7 @@ func (o *CookieOptions) validate() error {
 		return fmt.Errorf("%w: path %q must begin with /", ErrInvalidCookie, o.Path)
 	}
 	// a browser drops a prefixed cookie that lacks the attributes its prefix promises
-	prefixed := strings.HasPrefix(name, cookiePrefixSecure) || strings.HasPrefix(name, cookiePrefixHost)
-	if prefixed && o.Secure != SecureAlways {
+	if SecureCookieName(name) && o.Secure != SecureAlways {
 		return fmt.Errorf("%w: a %s or %s name requires secure: true", ErrInvalidCookie,
 			cookiePrefixSecure, cookiePrefixHost)
 	}
@@ -398,6 +417,12 @@ func (o *TableOptions) validate() error {
 		return ErrInvalidMaxEntries
 	}
 	return nil
+}
+
+// SecureCookieName reports whether a browser accepts a cookie of this name only when it is marked
+// Secure, as a __Secure- or __Host- prefix promises.
+func SecureCookieName(name string) bool {
+	return strings.HasPrefix(name, cookiePrefixSecure) || strings.HasPrefix(name, cookiePrefixHost)
 }
 
 // TTLDuration returns how long a session lasts from when it is first pinned; 0 is no limit.

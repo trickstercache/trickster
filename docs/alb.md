@@ -222,6 +222,7 @@ The settings, with their defaults:
           secure: auto           # auto marks it Secure when the request arrived over TLS; or true, false
           http_only: true
           same_site: lax         # lax, strict or none, which requires secure: true
+          lifetime: permanent    # or session, which never sets Max-Age; see below
           mark_private: false
         header:                  # header mode only
           name: X-Trickster-Session
@@ -240,9 +241,15 @@ In `cookie` and `header` mode the token carries the member, when the session beg
 
 A token is issued with the response to a client's first request, including the `101 Switching Protocols` that opens a WebSocket, when its session moves to another member, and, with `idle` set, once more than half of `idle` has passed since the token was issued, so that an active session does not lapse. A request sent to the member its token names is otherwise answered with no token, so a steady client sees none after its first.
 
-A cookie carries a `Max-Age` that ends with its token when `ttl` is set. With `ttl: 0` it is a browser-session cookie, and `idle` is still enforced by the token itself. Set `mark_private: true` to add `Cache-Control: private` to a response that sets the cookie. A shared cache should not store a response that sets a cookie, so in front of cacheable content prefer `header` or `table` mode, which leave responses as the members wrote them. The ALB adds the token outside any member's cache, so it is never part of a cached object.
+A cookie carries a `Max-Age` that ends with its token when `ttl` is set. With `ttl: 0`, or with `lifetime: session`, it is a browser-session cookie, and the token itself still enforces `ttl` and `idle`. Set `mark_private: true` to add `Cache-Control: private` to a response that sets the cookie. A shared cache should not store a response that sets a cookie, so in front of cacheable content prefer `header` or `table` mode, which leave responses as the members wrote them. The ALB adds the token outside any member's cache, so it is never part of a cached object.
 
-Two ALBs that set the same cookie, by name, domain and path, on one listener would each replace the other's token in a browser, so Trickster refuses to start with such a configuration. Give one of them its own `cookie.name`.
+Two ALBs that set the same cookie (by name, domain and path) for a host they both serve would each replace the other's token in a browser, so Trickster refuses to start with such a configuration. A browser sends a host's cookies to every port and scheme, so this holds across listeners. To resolve it, give one of them its own `cookie.name`.
+
+ALBs whose served hosts do not overlap may share a cookie name, as long as the cookie sets no `domain`. A cookie with no domain goes back only to the host that set it. The hosts an ALB serves are:
+
+- every host, when it is the default backend, or when one of its paths registers on a listener and it has `any_host_routing` or path routing on (the default). Path routing answers `/<alb name>/...` on every host, whatever `hosts` lists. A path registers on a listener unless it is marked `dispatch_only` or names a handler the ALB lacks. The ALB's default paths count, unless `path_defaults_disabled` is set;
+- otherwise, the `hosts` its listener-registered paths answer for, joined by the hosts of its dispatchers, since a dispatched request keeps the host it arrived on. Its dispatchers are the ALBs that name it in their pool or `user_router`, and the rules that route to it. An ALB with no `hosts`, `path_routing_disabled: true`, or only `dispatch_only` paths serves only its dispatchers' hosts;
+- no host, when nothing but a mirror reaches it. A mirror discards its target's response, so no cookie from it reaches a browser, and such an ALB never conflicts.
 
 #### The secret
 
