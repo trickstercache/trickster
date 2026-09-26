@@ -178,7 +178,7 @@ LINT_FLAGS ?=
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed; do \
+	@for m in hack/seedgen hack/druidseed hack/devorigin; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
 	done
 
@@ -229,14 +229,14 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen gotest check-fmtprints check-todos
+test: check-license-headers check-codegen gotest check-fmtprints check-todos check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -314,6 +314,14 @@ check-codegen:
 .PHONY: kube-configmap
 kube-configmap:
 	@hack/gen-kube-configmap.sh examples/conf/example.full.yaml deploy/kube/configmap.yaml
+
+# the dev environment builds hack/devorigin in an offline container, compiling
+# pkg/testutil/mocks from the repo, so those packages must stay stdlib-only
+.PHONY: check-devorigin-offline
+check-devorigin-offline:
+	@tmp=$$(mktemp -d) && trap 'chmod -R u+w "$$tmp"; rm -rf "$$tmp"' EXIT && \
+		cd hack/devorigin && GOMODCACHE="$$tmp" GOPROXY=off GOFLAGS=-mod=readonly $(GO) build -o /dev/null . && \
+		echo "hack/devorigin builds offline"
 
 .PHONY: check-license-headers
 check-license-headers: SHELL:=/bin/sh
@@ -444,6 +452,9 @@ developer-start:
 	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
+	@# devorigin compiles on start, so its container runs well before it serves
+	@echo "Waiting for devorigin to be ready..."
+	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8482/metrics >/dev/null 2>&1; do sleep 2; done'
 	@echo "Waiting for Graphite to be ready..."
 	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
 	@echo "Waiting for Druid to be ready..."

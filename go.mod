@@ -31,7 +31,6 @@ require (
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/stretchr/testify v1.12.1
 	github.com/tinylib/msgp v1.6.4
-	github.com/trickstercache/mockster v1.1.3
 	go.etcd.io/bbolt v1.5.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.71.0
 	go.opentelemetry.io/otel v1.46.0

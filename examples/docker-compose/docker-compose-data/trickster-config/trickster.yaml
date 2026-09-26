@@ -51,17 +51,17 @@ backends:
     backfill_tolerance: 60s
   sim1: # simulated prometheus cached with a memory cache, traces sent to Jaeger via OTLP/HTTP
     provider: prometheus
-    origin_url: 'http://mockster:8482/prometheus'
+    origin_url: 'http://devorigin:8482/prometheus'
     tracing_name: otlp1
     cache_name: mem1
   sim2: # simulated prometheus cached with a Redis cache, traces sent to Jaeger via OTLP/HTTP
     provider: prometheus
-    origin_url: 'http://mockster:8482/prometheus'
+    origin_url: 'http://devorigin:8482/prometheus'
     tracing_name: otlp1
     cache_name: rds1
   rpc1: # memory reverse proxy cache of the byterange request simulation endpoint, traces sent to Jaeger via OTLP/HTTP
     provider: reverseproxycache
-    origin_url: 'http://mockster:8482/byterange'
+    origin_url: 'http://devorigin:8482/byterange'
     tracing_name: otlp1
     cache_name: mem1
     paths:

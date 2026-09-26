@@ -699,8 +699,6 @@ github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhV
 github.com/tinylib/msgp v1.6.4 h1:mOwYbyYDLPj35mkA2BjjYejgJk9BuHxDdvRnb6v2ZcQ=
 github.com/tinylib/msgp v1.6.4/go.mod h1:RSp0LW9oSxFut3KzESt5Voq4GVWyS+PSulT77roAqEA=
 github.com/tmc/grpc-websocket-proxy v0.0.0-20190109142713-0ad062ec5ee5/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
-github.com/trickstercache/mockster v1.1.3 h1:fh1shXkQNeiOV3mgSioPpJf43MxRnq/pyCV6blDHzto=
-github.com/trickstercache/mockster v1.1.3/go.mod h1:0BKRfrZCVtmsrNSqHa/bVq+1QyPBIBpvA+L0IJ+vfpY=
 github.com/twpayne/go-geom v1.4.1 h1:LeivFqaGBRfyg0XJJ9pkudcptwhSSrYN9KZUW6HcgdA=
 github.com/twpayne/go-geom v1.4.1/go.mod h1:k/zktXdL+qnA6OgKsdEGUTA17jbQ2ZPTUa3CCySuGpE=
 github.com/twpayne/go-kml v1.5.2 h1:rFMw2/EwgkVssGS2MT6YfWSPZz6BgcJkLxQ53jnE8rQ=

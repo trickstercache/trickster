@@ -32,3 +32,10 @@ scrape_configs:
     static_configs:
     - targets: ['trickster:8481']
 
+  # trips seed data exposed as live metrics by devorigin. prometheus_seed
+  # backfills the same series with --label instance=devorigin:8482, so the
+  # target must keep this address for the history and live data to join up.
+  - job_name: 'trips'
+    static_configs:
+    - targets: ['devorigin:8482']
+
