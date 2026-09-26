@@ -90,6 +90,21 @@ func expectReset(t *testing.T, conn net.Conn) {
 	}
 }
 
+// expectResetDialing dials a server that resets on accept; the reset can reach the client before
+// its connect returns, when the dial reports it, or after, when the first read does
+func expectResetDialing(t *testing.T, addr string) {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if errors.Is(err, syscall.ECONNRESET) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	expectReset(t, conn)
+}
+
 // the peer stage runs before any byte is read and the flow stage before the pick, both with the
 // PROXY header the connection arrived behind
 func TestServerAsksEachStageInTurn(t *testing.T) {
@@ -161,7 +176,7 @@ func TestServerRejectsWithAReset(t *testing.T) {
 	for stage, adm := range map[string]*verdicts{"peer": {peer: Reject}, "flow": {flow: Reject}} {
 		counts := &countingObserver{}
 		_, addr := startServer(t, ProtocolTCP, admitted(t, up, adm, counts))
-		expectReset(t, dialTCP(t, addr))
+		expectResetDialing(t, addr)
 		waitFor(t, func() bool { _, results, _ := counts.snapshot(); return results[ResultDenied] == 1 })
 		if flows, _ := up.seen(); len(flows) != 0 {
 			t.Errorf("a connection rejected at the %s stage was picked an upstream", stage)
