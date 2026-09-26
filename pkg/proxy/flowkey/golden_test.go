@@ -56,6 +56,17 @@ func TestGoldenKeys(t *testing.T) {
 		t.Errorf("request client_ip resolved through a trusted proxy = %#x", got.Hash)
 	}
 
+	// a value learned from a response keys as the request that sends it back does
+	resp := http.Header{"X-Tenant": {"acme"}, "Set-Cookie": {"theme=dark; Path=/", "session=abc123; Path=/; HttpOnly"}}
+	for source, want := range map[string]uint64{
+		"header:X-Tenant": 0x130a76222d4427ef,
+		"cookie:session":  0xa3d3d132cee652ad,
+	} {
+		if got := HTTPResponse(sourcesOf(t, source)[0])(resp); !got.OK || got.Hash != want {
+			t.Errorf("response %s = %#x (%v), want %#x", source, got.Hash, got.OK, want)
+		}
+	}
+
 	f := flowOf("192.0.2.1:50000", "Shop.Example.COM")
 	f.Proxy = tlvs{0xEA: []byte("vpce-1")}
 	for source, want := range map[string]uint64{

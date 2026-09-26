@@ -120,6 +120,18 @@ func (k KeySource) OnNative() bool {
 	return k.Kind == KeyClientIP || k.Kind == KeyUser
 }
 
+// OnHTTPResponse reports whether the key can also be read from a response, as a value that an
+// upstream hands a client to send back: a header of the same name, or a cookie it sets.
+func (k KeySource) OnHTTPResponse() bool {
+	return k.Kind == KeyHeader || k.Kind == KeyCookie
+}
+
+// FollowsClient reports whether the key follows a client rather than the shape of a request
+// (its method, path or query string), and so can carry a client's affinity.
+func (k KeySource) FollowsClient() bool {
+	return k.Kind != KeyMethod && k.Kind != KeyPath && k.Kind != KeyRawQuery
+}
+
 // Requirement is what a request must have been through before a key can be read from it.
 type Requirement uint8
 

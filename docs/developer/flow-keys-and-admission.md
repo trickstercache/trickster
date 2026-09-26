@@ -2,13 +2,15 @@
 
 Features that sit in front of the backends and act per client, such as
 load-balancer affinity, access control, rate limiting and session
-persistence, share four building blocks. This guide describes each one as
+persistence, share five building blocks. This guide describes each one as
 it exists in the tree, the rules that come with it, and where a new
 feature plugs in:
 
 - [Flow keys](#flow-keys) (`pkg/proxy/flowkey`) read the part of a request
   or flow that a feature keys on, such as the client address, a header or
   the TLS server name, and hash it.
+- [Per-key tables](#per-key-tables) (`pkg/util/keytable`) keep a value for
+  each flow key, bounded in size and expiring on their own.
 - [Stream admission](#stream-admission) (`l4.Admission`) judges
   connections, UDP flows and datagrams on `tcp`, `tls` and `udp` listeners
   before anything is relayed.
@@ -89,11 +91,12 @@ if !o.HRW.KeySource.OnStream(flowkey.StreamListener{
 }
 ```
 
-A feature may accept fewer sources than `ParseKeySource` does. `hrw.key`
-is parsed by `ParseHRWKey` in `pkg/backends/alb/options/keysource.go`,
-which rejects `method`, `path` and `query` because they describe the
-shape of a request rather than a client. Wrap the parser the same way when
-some kinds make no sense for a feature.
+A feature may accept fewer sources than `ParseKeySource` does.
+`FollowsClient()` is false for `method`, `path` and `query`, which describe
+the shape of a request rather than a client. The ALB refuses those for
+`hrw.key` (`ParseHRWKey` in `pkg/backends/alb/options/keysource.go`) and for
+`sticky.table.key`, since no client's affinity can follow them. Check the
+same way when some kinds make no sense for a feature.
 
 ### What a key requires
 
@@ -191,11 +194,41 @@ type Value struct {
   Any value outside 1 to 127 keys the whole address, so pass
   `flowkey.DefaultIPv6Prefix` (64) unless the feature makes the prefix
   configurable.
+- **`HTTPResponse`** reads a key from a response's headers: the value an
+  upstream hands a client to send back. See
+  [keys learned from a response](#keys-learned-from-a-response).
 - **`user`** is read and hashed (`lb.HashString` of the name) by the
   native ALB adapter (`pkg/backends/alb/native`), because it comes from a
   native session's route input, which `flowkey` may not import. That
   adapter keys every other kind on the client address. The spelling and
   the kind still belong to `flowkey`.
+
+### Keys learned from a response
+
+```go
+func HTTPResponse(ks KeySource) func(http.Header) Value
+```
+
+An upstream often creates a session in its response, and the client first
+sends the value back on its next request. The ALB's `sticky.table.learn:
+response` stores a pin under that value as the response is written, so
+the next request finds it.
+
+- **What it reads.** `OnHTTPResponse()` is true only for `header:<name>`
+  and `cookie:<name>`, and `HTTPResponse` reads only those; any other kind
+  is a miss.
+  - For `header:<name>`, it reads the first value of the response header
+    of that name.
+  - For `cookie:<name>`, it reads the value that the last `Set-Cookie` for
+    that name sets. Whitespace is trimmed, as a browser trims it, and then
+    quotes, as `HTTP` trims them.
+  - A `Set-Cookie` whose last `Max-Age` is 0 or less deletes the cookie, so
+    it sets nothing.
+- **Both sides must agree.** The key read from a response must equal the
+  key `HTTP` reads from the request that sends the value back. The golden
+  test pins that, and a fuzz test checks it for every value a browser
+  returns unchanged.
+- It does not allocate, and like `HTTP` it is built once per configuration.
 
 ### Composite keys
 
@@ -251,8 +284,10 @@ hashes, for keys that must agree.
 `pkg/proxy/flowkey/golden_test.go` pins the hash of every kind that
 `flowkey` reads, for fixed inputs: the HTTP client address in IPv4, in
 IPv6 masked to /64 and resolved through a trusted proxy; host, header,
-cookie, query parameter, method, path and query string; the stream client
-address in IPv4 and IPv6; the server name; and a PROXY protocol TLV.
+cookie, query parameter, method, path and query string; the header and
+cookie keys learned from a response, which must equal the request's; the
+stream client address in IPv4 and IPv6; the server name; and a PROXY
+protocol TLV.
 `user`, which the native adapter hashes, is not pinned there. A change
 that moves any pinned key fails the test. Pin every kind that `flowkey`
 reads, and never edit a pinned value to make a refactor pass.
@@ -270,11 +305,13 @@ reads, and never edit a pinned value to make a refactor pass.
 3. Declare in `Requires` whether it is read from the principal or from the
    request body.
 4. Read it in `HTTP`, `StreamValue` or both, without allocating. An empty
-   value is `Value{}`.
+   value is `Value{}`. If a response can set it, read it in `HTTPResponse`
+   too, and include it in `OnHTTPResponse`.
 5. Pin its hash in `golden_test.go`, and cover its parsing, its
    requirements and each listener type in the package's tests.
-6. `ParseHRWKey` also names what it excludes, so `hrw.key` accepts the new
-   kind unless it is added there. If `hrw.key` accepts it, document it in
+6. `FollowsClient` names what it excludes, so `hrw.key` and
+   `sticky.table.key` accept the new kind unless it describes the shape of
+   a request and is added there. If they accept it, document it in
    [the ALB guide](../alb.md).
 
 ### Import boundary
@@ -299,6 +336,67 @@ on may import `pkg/proxy/l4`.** A feature's options package is imported by
 `pkg/config` once it is a configuration section. Its `l4.Admission`
 implementation has to return `l4.Verdict`, so it belongs in a separate
 package that only the daemon's wiring imports.
+
+## Per-key tables
+
+`keytable.Table[V]` ([keytable.go](../../pkg/util/keytable/keytable.go))
+holds one value per flow key. The ALB's sticky table mode keeps a member
+per key in one. A rate limiter can keep a counter per key in another.
+
+```go
+type Options struct {
+	TTL            time.Duration // an entry expires this long after it is stored; 0 never
+	Idle           time.Duration // an entry expires once unread this long; 0 never
+	MaxEntries     int           // default 100,000
+	RefuseWhenFull bool          // refuse a new key when full, rather than drop an entry for it
+}
+
+func New[V any](o Options) *Table[V]
+func (t *Table[V]) Get(key uint64, now int64) (V, bool)
+func (t *Table[V]) GetOrPut(key uint64, v V, now int64) (V, bool)
+func (t *Table[V]) Put(key uint64, v V, now int64) bool
+func (t *Table[V]) Len() int
+```
+
+- **Keys** are `Value.Hash`. Decide first what a miss (`OK` false) means,
+  since a table has no notion of one.
+- **Time.** `now` is in nanoseconds, from the same clock on every call to a
+  table. `Get` and `GetOrPut` mark an entry read, which is what `Idle`
+  measures from. A hot entry's last-read time is written at most once a
+  second, or once per sixteenth of `Idle` when that is shorter. So an
+  entry can expire that much sooner than `Idle` after its last read. Add
+  that margin to `Idle` when an entry must outlive it.
+- **Creating a value.** Call `Get` first. It takes only a read lock and
+  does not allocate. On a miss, build the value and call `GetOrPut`, which
+  returns the value some other caller stored in the meantime, if any.
+  Every caller racing to create a key's value then gets the same one. With
+  `Get` followed by `Put`, the last caller's value would replace the
+  others, and whatever they recorded in theirs would be lost.
+- **Values are copied** in and out. A value that must change in place, such
+  as a counter, should be a pointer that the feature synchronizes itself.
+- **Bounded.** The table is split into up to 64 separately locked shards,
+  each holding its share of `MaxEntries`. A table is full when the shard a
+  new key falls in is full, so it can refuse a key a little before it
+  holds `MaxEntries` in all. A new key in a full shard first drops the
+  expired entries among a sample of 8 of the shard's entries. If none has
+  expired:
+  - by default, the least recently read entry of the sample is dropped to
+    make room;
+  - with `RefuseWhenFull`, the key is refused instead: `GetOrPut` and `Put`
+    report false. Use this when losing a live entry would be wrong, as
+    losing a counter resets it. The feature decides what a refused key
+    gets, and `Len` against `MaxEntries` is its gauge.
+- **No goroutine.** An expired entry is skipped when read. Each shard
+  sweeps out its expired entries once every 256 new keys that arrive in
+  it, refused ones included, so a full table reclaims space even under a
+  flood of new keys.
+- **Cost.** A `Get` hit costs about 30 ns. `GetOrPut` and `Put` take the
+  shard's write lock and allocate one entry when they store.
+- **Reloads.** A table lives as long as whoever holds it. To keep entries
+  across a config reload, keep a registry of tables by name, and hand the
+  old table to the new configuration when the options that shape it are
+  unchanged. `sticky.TableFor` in `pkg/backends/alb/sticky` does this for
+  the ALB, as `pkg/backends/alb/statscarry.go` does for member stats.
 
 ## Stream admission
 

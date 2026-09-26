@@ -55,6 +55,8 @@ func TestParseKeySource(t *testing.T) {
 func TestKeySourcePlanes(t *testing.T) {
 	// what a request must have been through before the key can be read: nothing unless listed
 	requires := map[string]Requirement{KeySourceUser: RequiresPrincipal}
+	// keys that follow the shape of a request, not a client
+	shapes := map[string]bool{KeySourceMethod: true, KeySourcePath: true, KeySourceQuery: true}
 	for in, want := range map[string][5]bool{
 		// readable on: a tcp or udp listener, a tls listener, one that accepts the PROXY
 		// protocol, an http listener, a native protocol listener
@@ -83,6 +85,12 @@ func TestKeySourcePlanes(t *testing.T) {
 		}
 		if got := ks.Requires(); got != requires[in] {
 			t.Errorf("%s requires %b; want %b", in, got, requires[in])
+		}
+		if got := ks.OnHTTPResponse(); got != (ks.Kind == KeyHeader || ks.Kind == KeyCookie) {
+			t.Errorf("%s readable from a response = %v", in, got)
+		}
+		if got := ks.FollowsClient(); got != !shapes[in] {
+			t.Errorf("%s follows a client = %v", in, got)
 		}
 	}
 }

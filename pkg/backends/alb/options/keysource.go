@@ -83,8 +83,7 @@ func ParseHRWKey(s string) (flowkey.KeySource, error) {
 	if err != nil {
 		return ks, err
 	}
-	switch ks.Kind {
-	case flowkey.KeyMethod, flowkey.KeyPath, flowkey.KeyRawQuery:
+	if !ks.FollowsClient() {
 		return flowkey.KeySource{}, fmt.Errorf("%w: %q", ErrInvalidHRWKey, s)
 	}
 	return ks, nil

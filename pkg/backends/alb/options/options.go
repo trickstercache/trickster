@@ -27,6 +27,7 @@ import (
 	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	sticky "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -96,6 +97,9 @@ type Options struct {
 	// Stream holds what applies only when the ALB balances tcp, tls or udp flows
 	Stream     *StreamOptions           `yaml:"stream,omitempty"`
 	FGROptions FirstGoodResponseOptions `yaml:"fgr,omitempty"`
+	// Sticky keeps a client on the member it was first sent to; mechanisms that send each
+	// request or flow to one member only
+	Sticky *sticky.Options `yaml:"sticky,omitempty"`
 }
 
 type FirstGoodResponseOptions struct {
@@ -135,7 +139,23 @@ var (
 	ErrPropagateHealthNoPool  = errors.New("'propagate_health' is not valid for mechanism 'ur', which has no pool")
 	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
 	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
+	// ErrStickyMechanism is returned for a sticky block on a mechanism that does not send each
+	// request or flow to one member.
+	ErrStickyMechanism = errors.New("'sticky' is only valid for mechanisms rr, p2c, lc, lt and hrw")
 )
+
+// stickyMechanisms are the mechanisms that send each request or flow to one member, by both names
+var stickyMechanisms = sets.New([]string{
+	names.MechanismRR, names.MechanismRoundRobin, names.MechanismP2C, names.MechanismPowerOfTwoChoices,
+	names.MechanismLC, names.MechanismLeastConnections, names.MechanismLT, names.MechanismLeastTime,
+	names.MechanismHRW, names.MechanismHighestRandomWeight,
+})
+
+// SupportsSticky reports whether a mechanism sends each request or flow to one member, which
+// is what a session can be kept on.
+func SupportsSticky(mechanism string) bool {
+	return stickyMechanisms.Contains(mechanism)
+}
 
 // NewErrInvalidALBOptions returns an invalid ALB Options error
 func NewErrInvalidALBOptions(backendName string) error {
@@ -164,6 +184,7 @@ func (o *Options) Clone() *Options {
 	c.FGRStatusCodes = slices.Clone(o.FGRStatusCodes)
 	c.FGROptions.StatusCodes = slices.Clone(o.FGROptions.StatusCodes)
 	c.Stream = o.Stream.Clone()
+	c.Sticky = o.Sticky.Clone()
 	c.LT.StatusCodes = slices.Clone(o.LT.StatusCodes)
 	if o.LT.GoodCodes != nil {
 		table := *o.LT.GoodCodes
@@ -210,6 +231,12 @@ func (o *Options) Initialize(name string) error {
 
 	if err := o.initializeStrategies(); err != nil {
 		return err
+	}
+
+	if o.Sticky != nil {
+		if err := o.Sticky.Initialize(); err != nil {
+			return err
+		}
 	}
 
 	if o.Discovery != nil {
@@ -262,6 +289,14 @@ func (o *Options) Validate() (bool, error) {
 	}
 	if err := o.validateStrategies(); err != nil {
 		return false, err
+	}
+	if o.Sticky != nil {
+		if !SupportsSticky(o.MechanismName) {
+			return false, fmt.Errorf("%w, not %q", ErrStickyMechanism, o.MechanismName)
+		}
+		if err := o.Sticky.Validate(); err != nil {
+			return false, err
+		}
 	}
 	if o.Discovery != nil {
 		if _, err := o.Discovery.Validate(); err != nil {

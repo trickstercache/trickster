@@ -524,6 +524,10 @@ func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 		if _, err := o.LTSignalFor(listener.ProtocolHTTP); err != nil {
 			return fmt.Errorf("alb backend %q: %w", backendName, err)
 		}
+		// only an http listener is sent tokens, and there the mode defaults to cookie
+		if w := o.Sticky.KeyWarning(backendName); w != "" {
+			addWarning(c, w)
+		}
 	}
 	return nil
 }
