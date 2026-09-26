@@ -1,12 +1,14 @@
 # Docker Compose Example
 
-This composition will spin up service containers for Prometheus, Grafana, Jaeger, Redis, Trickster and Mockster that together demonstrate several basic end-to-end configurations for running Trickster in your environment with different cache and tracing provider options. Note - if you have any of these services running locally already, you may run into port conflicts and need to temporarily spin down the conflicting processes.
+This composition will spin up service containers for Prometheus, Grafana, Jaeger, Redis, Trickster and devorigin (a small origin service built from this repo) that together demonstrate several basic end-to-end configurations for running Trickster in your environment with different cache and tracing provider options. Note - if you have any of these services running locally already, you may run into port conflicts and need to temporarily spin down the conflicting processes.
 
 ## Getting Starting
 
 First, make sure you have Docker and Docker Compose installed. This varies from system-to-system, and this document assumes you have this handled already. Then, clone the Trickster Github project and change your working directory to `./examples/docker-compose`.
 
 To run the demo, from the demo directory, run `docker-compose up -d`
+
+The first start takes a minute or two longer than later ones: it generates the synthetic trips seed data, builds devorigin from the repo, and loads 15 days of trips history into Prometheus before Prometheus starts. All of this runs offline in `golang` and `prom/prometheus` containers.
 
 You can then interact with each of the services on their exposed ports (as defined in [Compose file](./docker-compose.yml)), or by running `docker logs $container_name`, `docker attach $container_name`, etc.
 
@@ -18,7 +20,9 @@ Speaking of, definitely review the various files in the `docker-compose-data` fo
 
 ## Example Datasources
 
-The `sim-*` datasources generate on-the-fly simulation data for any possible timerange, so you can immediately use them after starting up the environment. Note, however, that the simulated data is not representative of reality in any way.
+The `Trips (Prometheus)` dashboard has data as soon as the environment is up. Prometheus starts with the last 15 days of trips in the fictional city of Emberwick already loaded, and then scrapes new trips from devorigin as time passes. Use its datasource selector to compare querying Prometheus directly against querying it through the various Trickster caches. The seed data uses the `small` profile; for ten times as many trips, stop the demo with `docker-compose stop`, then start it with `SEED_PROFILE=default docker-compose up -d`. Prometheus is only reseeded while it is stopped.
+
+The `sim-*` datasources are backed by devorigin's Prometheus API simulator, which generates on-the-fly simulation data for any query and any possible timerange, so you can immediately use them after starting up the environment. Note, however, that the simulated data is not representative of reality in any way.
 
 The non-sim Prometheus container that backs the `prom-*` datasources polls the newly-running environment to generate metrics that will then populate the dashboard. Since the Prometheus container only collects and stores metrics while the environment is running, you'll need to wait a minute or two for those datasources to show any data on the dashoard in real-time.
 

@@ -290,6 +290,12 @@ type albDoc struct {
 	Mechanism string           `yaml:"mechanism,omitempty"`
 	Pool      []*albPoolDoc    `yaml:"pool,omitempty"`
 	Discovery *albDiscoveryDoc `yaml:"discovery,omitempty"`
+	HRW       *albHRWDoc       `yaml:"hrw,omitempty"`
+}
+
+// albHRWDoc is what a generated ALB keeps together when its mechanism is hrw
+type albHRWDoc struct {
+	Key string `yaml:"key,omitempty"`
 }
 
 // albDiscoveryDoc binds a generated ALB's pool to the generated discoverer:

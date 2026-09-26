@@ -523,7 +523,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (cache_status)",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (cache_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{cache_status}}",
@@ -824,7 +824,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[1m])) by (cache_name)",
+          "expr": "sum(increase(trickster_cache_events_total{event=\"eviction\",job=\"trickster\"}[1m])) by (cache_name)",
           "legendFormat": "{{cache_name}}",
           "refId": "B"
         }
@@ -918,7 +918,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_cache_operation_bytes_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(increase(trickster_cache_operation_bytes_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1013,7 +1013,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(delta(trickster_cache_operation_objects_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
+          "expr": "sum(increase(trickster_cache_operation_objects_total{job=\"trickster\"}[1m])) by (cache_name, operation)",
           "legendFormat": "{{cache_name}} - {{operation}}",
           "refId": "B"
         }
@@ -1119,7 +1119,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name, http_status)",
+          "expr": "sum(increase(trickster_frontend_requests_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name, http_status)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}} - {{http_status}}",
@@ -1221,14 +1221,14 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name)",
+          "expr": "sum(increase(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",
           "refId": "A"
         },
         {
-          "expr": "sum(idelta(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m]))",
+          "expr": "sum(increase(trickster_frontend_written_bytes_total{job=\"trickster\",job=\"trickster\"}[1m]))",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "total",
@@ -1281,7 +1281,7 @@
         "accepted": "purple",
         "failed": "dark-red",
         "requested": "semi-dark-yellow",
-        "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ": "light-purple"
+        "sum(increase(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ": "light-purple"
       },
       "bars": false,
       "dashLength": 10,
@@ -1324,28 +1324,28 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_proxy_requested_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(increase(trickster_proxy_requested_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "requested",
           "refId": "B"
         },
         {
-          "expr": "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(increase(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "accepted",
           "refId": "A"
         },
         {
-          "expr": "sum(idelta(trickster_proxy_closed_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(increase(trickster_proxy_closed_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "closed",
           "refId": "C"
         },
         {
-          "expr": "sum(idelta(trickster_proxy_failed_connections_total{job=\"trickster\"}[1m])) ",
+          "expr": "sum(increase(trickster_proxy_failed_connections_total{job=\"trickster\"}[1m])) ",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "failed",
@@ -1409,7 +1409,7 @@
     },
     {
       "aliasColors": {
-        "sum(idelta(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ": "light-purple"
+        "sum(increase(trickster_proxy_accepted_connections_total{job=\"trickster\"}[1m])) ": "light-purple"
       },
       "bars": false,
       "dashLength": 10,
@@ -1452,7 +1452,7 @@
       "steppedLine": false,
       "targets": [
         {
-          "expr": "sum(idelta(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (backend_name)",
+          "expr": "sum(increase(trickster_proxy_requests_total{job=\"trickster\"}[1m])) by (backend_name)",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{backend_name}}",

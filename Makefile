@@ -178,7 +178,7 @@ LINT_FLAGS ?=
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed; do \
+	@for m in hack/seedgen hack/druidseed hack/devorigin; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
 	done
 
@@ -229,14 +229,14 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen gotest check-fmtprints check-todos
+test: check-license-headers check-codegen gotest check-fmtprints check-todos check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -315,6 +315,14 @@ check-codegen:
 kube-configmap:
 	@hack/gen-kube-configmap.sh examples/conf/example.full.yaml deploy/kube/configmap.yaml
 
+# the dev environment builds hack/devorigin in an offline container, compiling
+# pkg/testutil/mocks from the repo, so those packages must stay stdlib-only
+.PHONY: check-devorigin-offline
+check-devorigin-offline:
+	@tmp=$$(mktemp -d) && trap 'chmod -R u+w "$$tmp"; rm -rf "$$tmp"' EXIT && \
+		cd hack/devorigin && GOMODCACHE="$$tmp" GOPROXY=off GOFLAGS=-mod=readonly $(GO) build -o /dev/null . && \
+		echo "hack/devorigin builds offline"
+
 .PHONY: check-license-headers
 check-license-headers: SHELL:=/bin/sh
 check-license-headers:
@@ -333,9 +341,9 @@ check-license-headers:
 
 .PHONY: check-fmtprints
 check-fmtprints: SHELL:=/bin/sh
-check-fmtprints: # fails if there are any fmt.Print* calls outside of the 3 approved files
+check-fmtprints: # fails if there are any fmt.Print* calls outside of the approved files
 	@cd pkg && \
-	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/'); \
+	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/' | grep -v '^lb/example_test.go:'); \
 	count=0; \
 	if [ -n "$$fmtprints" ]; then \
 		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \
@@ -444,6 +452,9 @@ developer-start:
 	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
 	@echo "Waiting for Prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
+	@# devorigin compiles on start, so its container runs well before it serves
+	@echo "Waiting for devorigin to be ready..."
+	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8482/metrics >/dev/null 2>&1; do sleep 2; done'
 	@echo "Waiting for Graphite to be ready..."
 	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
 	@echo "Waiting for Druid to be ready..."
@@ -529,16 +540,7 @@ h3-client:
 
 .PHONY: developer-seed-data
 developer-seed-data:
-	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql druid
-	@cd docs/developer/environment && docker compose run --rm seed_data_generate
-	@cd docs/developer/environment && \
-	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
-	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
-	( cd docs/developer/environment && docker compose run --rm --no-deps druid_seed ) & pid3=$$!; \
-	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; wait $$pid3 || rc=1; exit $$rc
-	@cd docs/developer/environment && docker compose stop graphite_generator && \
-		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
-		docker compose up -d graphite_generator
+	@hack/developer-seed-data.sh
 
 # regenerates the synthetic seed data to memory only and fails if its hash
 # differs from the one pinned in hack/seedgen; no network access is needed

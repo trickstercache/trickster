@@ -2,16 +2,14 @@ on:
   push:
     branches:
       - main
-      - v1.0.x
-      - v1.1.x
+      - 'v[0-9]+.*'
     tags:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
   pull_request:
     branches:
       - main
-      - v1.0.x
-      - v1.1.x
+      - 'v[0-9]+.*'
 
 name: CI Tests
 
@@ -133,7 +131,7 @@ jobs:
       # CI containers cannot raise the UDP receive buffer; the warning is noise
       QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
       # a tenth of the synthetic trips rows: the integration tests only need
-      # non-empty, correctly shaped data, and the three database loads are the
+      # non-empty, correctly shaped data, and the database loads are the
       # slowest part of bringing the environment up
       SEED_PROFILE: small
     steps:
@@ -149,6 +147,7 @@ jobs:
           cd docs/developer/environment
           docker compose ps
           docker compose logs --tail=30 redis prometheus mysql grafana coredns
+          docker compose logs --tail=30 devorigin prometheus_seed_generate prometheus_seed
           docker compose logs --tail=60 graphite graphite_seed graphite_generator
       - name: Run integration tests (with coverage)
         run: make integration-cover

@@ -13,24 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 // Package pool provides an application load balancer pool
 package pool
 
 import (
-	"net/http"
-	"sync"
 	"sync/atomic"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 )
 
 // Pool defines the interface for a load balancer pool
 type Pool interface {
-	// Targets returns the current set of dispatchable targets, re-filtered
-	// against each target's atomic hcStatus. This closes the race window
-	// between a status flip and the asynchronous healthy-list refresh, so it
-	// is the correct method for request dispatch.
+	// Targets returns the current set of dispatchable targets: the members whose health
+	// status meets the pool's floor. A health transition is reflected by the time the
+	// status change returns. The slice is shared; callers must not modify it.
 	Targets() Targets
 	// ConfiguredLen returns the number of pool members as configured, regardless
 	// of current health. Mechanisms compare this against len(Targets()) to
@@ -39,77 +38,82 @@ type Pool interface {
 	// ConfiguredTargets returns the configured target topology in pool order.
 	// The returned slice is a shallow copy and is safe for callers to retain.
 	ConfiguredTargets() Targets
-	// SetHealthy seeds the pool's healthy set from a handler list. Intended
-	// for tests and bootstrap paths that don't drive status updates through
-	// healthcheck subscribers.
-	SetHealthy([]http.Handler)
-	// Stop stops the pool and its health checker goroutines.
+	// Core returns the protocol-neutral pool that selection strategies pick from.
+	Core() *lb.Pool
+	// Stop ends the pool's health subscriptions; its dispatchable set is then frozen.
 	Stop()
-	// RefreshHealthy forces a refresh of the pool's healthy handlers list.
+	// RefreshHealthy forces a rebuild of the pool's dispatchable set.
 	RefreshHealthy()
 }
 
-// pool implements Pool
+// pool implements Pool over the protocol-neutral core
 type pool struct {
-	targets         Targets
-	healthyTargets  atomic.Pointer[Targets]
-	liveTargets     atomic.Pointer[Targets]
-	healthyHandlers atomic.Pointer[[]http.Handler]
-	refreshPending  atomic.Bool // sticky dirty flag indicating healthyTargets must be rebuilt
-	healthyFloor    int
-	done            chan struct{}
-	statusCh        chan bool // receives raw health status change notifications from targets
-	ch              chan bool
-	mtx             sync.Mutex
-	stopOnce        sync.Once
-	workers         sync.WaitGroup
+	targets Targets
+	core    *lb.Pool
+	view    atomic.Pointer[targetsView]
 }
 
-// scheduleRefresh marks the healthy list as dirty and coalesces wakeups for
-// the refresh worker. The pending flag preserves refresh intent even when
-// bursty status changes saturate the channel.
-func (p *pool) scheduleRefresh() {
-	p.refreshPending.Store(true)
-	select {
-	case p.ch <- true:
-	default:
+// targetsView is the Targets form of one core snapshot, built once per snapshot
+type targetsView struct {
+	snap    *lb.Snapshot
+	targets Targets
+}
+
+// observers hands each event to every observer in turn
+type observers []lb.Observer
+
+func (o observers) Observe(ev lb.Event) {
+	for _, obs := range o {
+		obs.Observe(ev)
 	}
 }
 
-func (p *pool) RefreshHealthy() {
-	p.mtx.Lock()
-	defer p.mtx.Unlock()
-	hh := make([]http.Handler, len(p.targets))
-	ht := make(Targets, len(p.targets))
-
-	var k int
-	for _, t := range p.targets {
+// New returns a new Pool. The observers are told of its events, the first snapshot included,
+// which is published before New returns.
+func New(targets Targets, healthyFloor int, extra ...lb.Observer) Pool {
+	p := &pool{targets: targets}
+	members := make([]*lb.Member, 0, len(targets))
+	names := make(map[string]struct{}, len(targets))
+	for _, t := range targets {
+		// a target with no health status can never be dispatched to
 		if t == nil || t.hcStatus == nil {
 			continue
 		}
-		if int(t.hcStatus.Get()) >= p.healthyFloor {
-			hh[k] = t.handler
-			ht[k] = t
-			k++
+		if t.name != "" {
+			if _, dup := names[t.name]; dup {
+				logger.Warn("alb pool member listed more than once; keeping the first",
+					logging.Pairs{"member": t.name})
+				continue
+			}
+			names[t.name] = struct{}{}
 		}
+		if t.member == nil {
+			// a target assembled without a constructor
+			t.bind(nil)
+		}
+		members = append(members, t.member)
 	}
-	hh = hh[:k]
-	ht = ht[:k]
-	p.healthyHandlers.Store(&hh)
-	p.healthyTargets.Store(&ht)
-	lt := ht
-	p.liveTargets.Store(&lt)
+	observer := observe.Pool()
+	if len(extra) > 0 {
+		observer = append(observers{observer}, extra...)
+	}
+	core, err := lb.NewPool(members, healthyFloor, lb.PoolOptions{Observer: observer})
+	if err != nil {
+		// unreachable: nil and repeated members were filtered above
+		logger.Error("alb pool could not be built", logging.Pairs{"error": err.Error()})
+		core, _ = lb.NewPool(nil, healthyFloor)
+	}
+	p.core = core
+	p.Targets()
+	return p
 }
 
-// snapshot returns the eventually-consistent healthy-targets snapshot. Snapshots
-// can lag behind atomic status flips; only the refresh worker and internal tests
-// should read this directly. Dispatch callers must use Targets().
-func (p *pool) snapshot() Targets {
-	t := p.healthyTargets.Load()
-	if t != nil {
-		return *t
-	}
-	return nil
+func (p *pool) Core() *lb.Pool {
+	return p.core
+}
+
+func (p *pool) RefreshHealthy() {
+	p.core.Refresh()
 }
 
 func (p *pool) ConfiguredLen() int {
@@ -121,55 +125,26 @@ func (p *pool) ConfiguredTargets() Targets {
 }
 
 func (p *pool) Targets() Targets {
-	if lt := p.liveTargets.Load(); lt != nil && !p.refreshPending.Load() {
-		cached := *lt
-		allLive := true
-		for _, t := range cached {
-			if t == nil || t.hcStatus == nil || int(t.hcStatus.Get()) < p.healthyFloor {
-				allLive = false
-				break
-			}
-		}
-		if allLive {
-			return cached
-		}
+	snap := p.core.Snapshot()
+	if v := p.view.Load(); v != nil && v.snap == snap {
+		return v.targets
 	}
-	hl := p.snapshot()
-	live := make(Targets, 0, len(hl))
-	for _, t := range hl {
-		if t == nil || t.hcStatus == nil || int(t.hcStatus.Get()) < p.healthyFloor {
-			continue
-		}
-		live = append(live, t)
-	}
-	return live
+	return p.buildView(snap)
 }
 
-func (p *pool) SetHealthy(h []http.Handler) {
-	p.healthyHandlers.Store(&h)
-	// Materialize parallel Targets each backed by a synthetic Passing status
-	// so dispatch-time re-checks against HealthyFloor won't reject them.
-	t := make(Targets, len(h))
-	for i, hh := range h {
-		st := &healthcheck.Status{}
-		st.Set(healthcheck.StatusPassing)
-		t[i] = NewTarget(hh, st, nil)
+// buildView runs once per snapshot, off the steady-state path. Racing builders store equal
+// views; one that stores a superseded view is corrected by the next call.
+func (p *pool) buildView(snap *lb.Snapshot) Targets {
+	targets := make(Targets, 0, len(snap.Members))
+	for _, m := range snap.Members {
+		if t, ok := m.Value.(*Target); ok {
+			targets = append(targets, t)
+		}
 	}
-	p.healthyTargets.Store(&t)
-	lt := t
-	p.liveTargets.Store(&lt)
+	p.view.Store(&targetsView{snap: snap, targets: targets})
+	return targets
 }
 
 func (p *pool) Stop() {
-	p.stopOnce.Do(func() {
-		close(p.done)
-		for _, t := range p.targets {
-			if t != nil && t.hcStatus != nil {
-				t.hcStatus.UnregisterSubscriber(p.statusCh)
-			}
-		}
-		// Wait for refresh goroutines so SetHealthy after Stop cannot
-		// be overwritten by a late RefreshHealthy.
-		p.workers.Wait()
-	})
+	p.core.Stop()
 }

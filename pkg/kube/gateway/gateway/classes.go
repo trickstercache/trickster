@@ -42,6 +42,8 @@ const (
 	ParamAuthenticatorName = "authenticator_name"
 	ParamTimeout           = "timeout"
 	ParamHealthMode        = "health_mode"
+	ParamLoadBalancing     = "load_balancing"
+	ParamLoadBalancingKey  = "load_balancing_key"
 )
 
 var (
@@ -132,6 +134,14 @@ var classParams = map[string]paramSetter{
 	},
 	ParamHealthMode: func(_ *translator, p *ir.Policy, v string) (err error) {
 		p.HealthMode, err = translate.HealthMode(v)
+		return err
+	},
+	ParamLoadBalancing: func(_ *translator, p *ir.Policy, v string) (err error) {
+		p.LoadBalancing, err = translate.LoadBalancing(v)
+		return err
+	},
+	ParamLoadBalancingKey: func(_ *translator, p *ir.Policy, v string) (err error) {
+		p.LoadBalancingKey, err = translate.LoadBalancingKey(v)
 		return err
 	},
 	ParamTimeout: func(_ *translator, p *ir.Policy, v string) error {

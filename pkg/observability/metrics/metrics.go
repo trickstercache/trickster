@@ -28,20 +28,22 @@ import (
 )
 
 const (
-	metricNamespace    = "trickster"
-	cacheSubsystem     = "cache"
-	proxySubsystem     = providers.Proxy
-	configSubsystem    = "config"
-	buildSubsystem     = "build"
-	frontendSubsystem  = "frontend"
-	albSubsystem       = "alb"
-	healthSubsystem    = "healthcheck"
-	sqlSubsystem       = "sql"
-	mysqlSubsystem     = "mysql"
-	graphiteSubsystem  = providers.Graphite
-	druidSubsystem     = providers.Druid
-	tlsSubsystem       = "tls"
-	accessLogSubsystem = "accesslog"
+	metricNamespace     = "trickster"
+	cacheSubsystem      = "cache"
+	proxySubsystem      = providers.Proxy
+	configSubsystem     = "config"
+	buildSubsystem      = "build"
+	frontendSubsystem   = "frontend"
+	albSubsystem        = "alb"
+	healthSubsystem     = "healthcheck"
+	sqlSubsystem        = "sql"
+	mysqlSubsystem      = "mysql"
+	pgwireSubsystem     = "pgwire"
+	graphiteSubsystem   = providers.Graphite
+	druidSubsystem      = providers.Druid
+	tlsSubsystem        = "tls"
+	accessLogSubsystem  = "accesslog"
+	fileserverSubsystem = "fileserver"
 )
 
 // Default histogram buckets used by trickster
@@ -223,6 +225,42 @@ var (
 		[]string{keys.Listener_Name, keys.Reason},
 	)
 
+	// ProxyStreamMemberConnections counts the connections and UDP sessions a stream listener
+	// committed to a load balancer pool member, by how they went
+	ProxyStreamMemberConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_connections_total",
+			Help:      "Count of connections and UDP sessions committed to a load balancer pool member, by result",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name, keys.Result},
+	)
+
+	// ProxyStreamMemberActiveConnections gauges the connections and UDP sessions open to a
+	// load balancer pool member
+	ProxyStreamMemberActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_active_connections",
+			Help:      "Number of connections and UDP sessions open to a load balancer pool member",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name},
+	)
+
+	// ProxyStreamMemberConnectDuration observes how long connecting to a pool member took
+	ProxyStreamMemberConnectDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_connect_duration_seconds",
+			Help:      "Time taken to connect to a load balancer pool member",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name},
+	)
+
 	// ProxyStreamBytes counts the bytes stream listeners relayed, in from clients and out to them
 	ProxyStreamBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -355,6 +393,73 @@ var (
 			Help:      "Trickster cache's Max Byte Threshold for triggering an eviction exercise.",
 		},
 		[]string{keys.Cache_Name, keys.Provider},
+	)
+
+	// FileserverResponses is a Counter of files served by static backends, by how the
+	// Fileserver cache was used and the encoding of the rendition the file server produced
+	FileserverResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "responses_total",
+			Help:      "Count of files served by a static backend, by Fileserver cache status and encoding.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Status, keys.Encoding},
+	)
+
+	// FileserverCacheEvents is a Counter of events that remove objects from a Fileserver cache
+	FileserverCacheEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_events_total",
+			Help:      "Count of objects removed from a static backend's Fileserver cache, by event.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// FileserverCacheObjects is a Gauge of the objects in a Fileserver cache, including loads in progress
+	FileserverCacheObjects = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_usage_objects",
+			Help:      "Number of objects in a static backend's Fileserver cache.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheBytes is a Gauge of the accounted bytes in a Fileserver cache, including loads in progress
+	FileserverCacheBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_usage_bytes",
+			Help:      "Number of accounted bytes in a static backend's Fileserver cache.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheMaxObjects is a Gauge of the most objects a Fileserver cache will hold
+	FileserverCacheMaxObjects = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_max_usage_objects",
+			Help:      "Maximum number of objects in a static backend's Fileserver cache before eviction.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheMaxBytes is a Gauge of the most accounted bytes a Fileserver cache will hold
+	FileserverCacheMaxBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_max_usage_bytes",
+			Help:      "Maximum number of accounted bytes in a static backend's Fileserver cache before eviction.",
+		},
+		[]string{keys.Backend_Name},
 	)
 
 	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
@@ -538,6 +643,52 @@ var (
 		[]string{keys.Backend_Name, keys.Class},
 	)
 
+	// PGWireConnections tracks bounded PostgreSQL wire-protocol connection lifecycle outcomes.
+	PGWireConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "connections_total",
+			Help:      "Count of PostgreSQL wire-protocol connection lifecycle events.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// PGWireActiveConnections is the current authenticated-or-handshaking count.
+	PGWireActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "active_connections",
+			Help:      "Current PostgreSQL wire-protocol downstream connections.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// PGWireConnectionErrors tracks startup, authentication, protocol, and
+	// upstream failures without including user-controlled text in labels.
+	PGWireConnectionErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "errors_total",
+			Help:      "Count of PostgreSQL wire-protocol and origin failures.",
+		},
+		[]string{keys.Backend_Name, keys.Class},
+	)
+
+	// PGWireRouteSelections tracks bounded native User Router outcomes. Backend
+	// and router names come from configuration; usernames are never labels.
+	PGWireRouteSelections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "route_selections_total",
+			Help:      "Count of native PostgreSQL route-selection outcomes.",
+		},
+		[]string{keys.Router_Name, keys.Backend_Name, keys.Outcome},
+	)
+
 	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
 	// is exact | derived | configured | unknown and source is registry |
 	// response | probe | static | function | none; both label sets are
@@ -705,16 +856,26 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
-	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
-	// worker goroutines (checkHealth, listenStatusUpdates). A dead worker leaves
-	// the healthy-target snapshot stale; the per-call re-filter in Targets()
-	// still produces correct dispatch, but operator-visible gauges drift.
+	// ALBMemberEjections counts pool members taken out of selection by passive health, which
+	// acts on repeated failures to connect rather than on a health check
+	ALBMemberEjections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "member_ejections_total",
+			Help:      "Count of ALB pool members ejected by passive health after repeated connect failures.",
+		},
+		[]string{keys.ALB_Name, keys.Member},
+	)
+
+	// ALBPoolRefreshPanicRecovered counts panics recovered while an ALB pool rebuilt its
+	// healthy-member snapshot; the pool keeps serving the snapshot it last published.
 	ALBPoolRefreshPanicRecovered = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
 			Subsystem: albSubsystem,
 			Name:      "pool_refresh_panic_recovered_total",
-			Help:      "Count of recovered panics in ALB pool refresh worker goroutines, by worker.",
+			Help:      "Count of panics recovered while an ALB pool rebuilt its healthy-member snapshot, by worker.",
 		},
 		[]string{keys.Worker},
 	)
@@ -906,6 +1067,18 @@ var (
 		},
 		[]string{keys.Backend_Name},
 	)
+
+	// ALBPoolOnBackup flags ALB pools that have backup members and are dispatching to them
+	// because no other member is available.
+	ALBPoolOnBackup = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_on_backup",
+			Help:      "1 while an ALB pool dispatches to its backup members because no other member is available; 0 otherwise.",
+		},
+		[]string{keys.Backend_Name},
+	)
 )
 
 func init() {
@@ -916,6 +1089,10 @@ func init() {
 	prometheus.MustRegister(ProxyStreamConnections)
 	prometheus.MustRegister(ProxyStreamActiveConnections)
 	prometheus.MustRegister(ProxyStreamBytes)
+	prometheus.MustRegister(ProxyStreamMemberConnections)
+	prometheus.MustRegister(ProxyStreamMemberActiveConnections)
+	prometheus.MustRegister(ProxyStreamMemberConnectDuration)
+	prometheus.MustRegister(ALBMemberEjections)
 	prometheus.MustRegister(ProxyStreamDroppedDatagrams)
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
@@ -942,6 +1119,7 @@ func init() {
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
 	prometheus.MustRegister(ALBPoolAdmitsFailing)
 	prometheus.MustRegister(ALBPoolFloorReset)
+	prometheus.MustRegister(ALBPoolOnBackup)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheObjectOperationDuration)
 	prometheus.MustRegister(CacheByteOperations)
@@ -950,6 +1128,12 @@ func init() {
 	prometheus.MustRegister(CacheBytes)
 	prometheus.MustRegister(CacheMaxObjects)
 	prometheus.MustRegister(CacheMaxBytes)
+	prometheus.MustRegister(FileserverResponses)
+	prometheus.MustRegister(FileserverCacheEvents)
+	prometheus.MustRegister(FileserverCacheObjects)
+	prometheus.MustRegister(FileserverCacheBytes)
+	prometheus.MustRegister(FileserverCacheMaxObjects)
+	prometheus.MustRegister(FileserverCacheMaxBytes)
 	prometheus.MustRegister(BuildInfo)
 	prometheus.MustRegister(LastReloadSuccessful)
 	prometheus.MustRegister(LastReloadSuccessfulTimestamp)
@@ -967,6 +1151,10 @@ func init() {
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
 	prometheus.MustRegister(MySQLConnectionErrors)
+	prometheus.MustRegister(PGWireConnections)
+	prometheus.MustRegister(PGWireActiveConnections)
+	prometheus.MustRegister(PGWireConnectionErrors)
+	prometheus.MustRegister(PGWireRouteSelections)
 	prometheus.MustRegister(GraphiteResolutionLookups)
 	prometheus.MustRegister(GraphiteProbes)
 	prometheus.MustRegister(GraphiteLadders)
@@ -1013,6 +1201,10 @@ var backendSeriesVecs = []partialDeleter{
 	MySQLConnections,
 	MySQLActiveConnections,
 	MySQLConnectionErrors,
+	PGWireConnections,
+	PGWireActiveConnections,
+	PGWireConnectionErrors,
+	PGWireRouteSelections,
 	MySQLRouteSelections,
 	MySQLCommandLatency,
 	HealthcheckProbePanicRecovered,
@@ -1020,6 +1212,10 @@ var backendSeriesVecs = []partialDeleter{
 	HealthcheckStatusNotifyPanicRecovered,
 	ALBPoolAdmitsFailing,
 	ALBPoolFloorReset,
+	ALBPoolOnBackup,
+	ProxyStreamMemberConnections,
+	ProxyStreamMemberActiveConnections,
+	ProxyStreamMemberConnectDuration,
 }
 
 // DeleteBackendSeries removes every metric series labeled with the provided
@@ -1033,6 +1229,8 @@ func DeleteBackendSeries(backendName string) {
 	for _, v := range backendSeriesVecs {
 		v.DeletePartialMatch(labels)
 	}
+	// a pool member is named by the member label where the backend_name is its ALB's
+	ALBMemberEjections.DeletePartialMatch(prometheus.Labels{keys.Member: backendName})
 }
 
 // ALB Autodiscovery metrics

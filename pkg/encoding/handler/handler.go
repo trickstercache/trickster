@@ -49,9 +49,10 @@ func HandleCompression(next http.Handler, compressTypes sets.Set[string]) http.H
 			Level:         -1,
 		}
 
-		// this checks the Client's accept-encoding header to identify any compatible encodings
-		enc := r.Header.Get(headers.NameAcceptEncoding)
-		ep.SupportedHeaderVal, ep.Supported = providers.GetCompatibleWebProviders(enc)
+		// this checks the Client's accept-encoding header to identify any compatible encodings,
+		// in the client's order of preference
+		ep.Accepted = providers.ParseAcceptEncoding(r.Header[headers.NameAcceptEncoding]...)
+		ep.SupportedHeaderVal, ep.Supported = ep.Accepted.String(), ep.Accepted.Bitmap()
 
 		r = r.WithContext(profile.ToContext(r.Context(), ep))
 

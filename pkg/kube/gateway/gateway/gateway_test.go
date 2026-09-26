@@ -2037,6 +2037,8 @@ func TestApplyParameterRejections(t *testing.T) {
 		"unknown key":           {"colour", "blue"},
 		"bad routing mode":      {ParamRoutingMode, "sideways"},
 		"bad health mode":       {ParamHealthMode, "guess"},
+		"bad load balancing":    {ParamLoadBalancing, "fr"},
+		"bad balancing key":     {ParamLoadBalancingKey, "port"},
 		"bad timeout":           {ParamTimeout, "45"},
 		"negative timeout":      {ParamTimeout, "-1s"},
 		"unknown cache":         {ParamCacheName, "nope"},
@@ -2055,6 +2057,10 @@ func TestApplyParameterRejections(t *testing.T) {
 	var p ir.Policy
 	require.NoError(t, tr.applyParameter(&p, ParamNegativeCacheName, "api-errors"))
 	require.Equal(t, "api-errors", p.NegativeCacheName)
+	require.NoError(t, tr.applyParameter(&p, ParamLoadBalancing, "hrw"))
+	require.NoError(t, tr.applyParameter(&p, ParamLoadBalancingKey, "sni"))
+	require.Equal(t, "hrw", p.LoadBalancing)
+	require.Equal(t, "sni", p.LoadBalancingKey)
 	// with nothing to check against, any name is accepted
 	free := &translator{}
 	require.NoError(t, free.applyParameter(&p, ParamReqRewriterName, "anything"))

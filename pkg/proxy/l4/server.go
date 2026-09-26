@@ -25,7 +25,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 )
 
@@ -67,6 +66,15 @@ type Config struct {
 	// MaxConnections bounds the connections relayed at once, or the UDP sessions open at once;
 	// zero applies no bound to connections and the default bound to sessions
 	MaxConnections int
+	// Observer receives the listener's events; nil discards them
+	Observer Observer
+}
+
+func (c *Config) observer() Observer {
+	if c == nil || c.Observer == nil {
+		return nopObserver{}
+	}
+	return c.Observer
 }
 
 func (c *Config) table() *Table {
@@ -194,7 +202,7 @@ func (s *Server) track(conn net.Conn) bool {
 	}
 	s.conns[conn] = struct{}{}
 	s.workers.Add(1)
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, s.protocol).Inc()
+	s.cfg.Load().observer().Opened()
 	return true
 }
 
@@ -204,7 +212,7 @@ func (s *Server) untrack(conn net.Conn) {
 	delete(s.conns, conn)
 	s.slot.Broadcast()
 	s.mu.Unlock()
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, s.protocol).Dec()
+	s.cfg.Load().observer().Ended()
 	s.workers.Done()
 }
 
@@ -228,13 +236,15 @@ func (s *Server) untrackUpstream(conn net.Conn) {
 }
 
 func (s *Server) result(r string) {
-	metrics.ProxyStreamConnections.WithLabelValues(s.name, s.protocol, r).Inc()
+	s.cfg.Load().observer().Result(r)
 }
 
 func (s *Server) handle(client net.Conn) {
 	defer s.untrack(client)
 	cfg := s.cfg.Load()
 	opts := cfg.options()
+	// read before the connection is wrapped to replay what was peeked of it
+	proxy, _ := client.(ProxyHeader)
 	var host string
 	if s.protocol == ProtocolTLS {
 		var err error
@@ -249,17 +259,30 @@ func (s *Server) handle(client net.Conn) {
 		s.result(ResultNoRoute)
 		return
 	}
-	addr, ok := up.Addr()
-	if !ok {
-		s.result(ResultNoUpstream)
-		return
+	flow := flowOf(s.name, s.protocol, client.RemoteAddr(), host)
+	flow.Proxy = proxy
+	var upstream net.Conn
+	var route Route
+	if racer, races := up.(Racer); races {
+		routes := racer.Race(flow)
+		if len(routes) == 0 {
+			s.result(ResultNoUpstream)
+			return
+		}
+		upstream, route = s.race(routes, opts.Connect())
+	} else {
+		picked, ok := up.Pick(flow)
+		if !ok {
+			s.result(ResultNoUpstream)
+			return
+		}
+		upstream, route = s.dial(up, flow, picked, opts.Connect())
 	}
-	dialer := net.Dialer{Timeout: opts.Connect()}
-	upstream, err := dialer.DialContext(s.ctx, "tcp", addr)
-	if err != nil {
+	if upstream == nil {
 		s.result(ResultDialFailed)
 		return
 	}
+	defer route.Closed(nil)
 	if !s.trackUpstream(upstream) {
 		_ = upstream.Close()
 		s.result(ResultRefused)
@@ -267,9 +290,94 @@ func (s *Server) handle(client net.Conn) {
 	}
 	defer s.untrackUpstream(upstream)
 	s.result(ResultProxied)
-	in, out := relay(client, upstream, opts.Idle())
-	metrics.ProxyStreamBytes.WithLabelValues(s.name, s.protocol, DirectionIn).Add(float64(in))
-	metrics.ProxyStreamBytes.WithLabelValues(s.name, s.protocol, DirectionOut).Add(float64(out))
+	in, out := relay(client, upstream, opts.Idle(), route.FirstByte)
+	obs := cfg.observer()
+	obs.Bytes(DirectionIn, in)
+	obs.Bytes(DirectionOut, out)
+}
+
+// dial connects to the route, moving to another that the upstream offers when a dial fails,
+// all within one connect timeout. It returns the connection with the route it was made on,
+// or nil once no route is left; every route it tried has been told how its dial went.
+func (s *Server) dial(up Upstream, flow Flow, route Route, timeout time.Duration) (net.Conn, Route) {
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	defer cancel()
+	var dialer net.Dialer
+	for {
+		began := time.Now()
+		conn, err := dialer.DialContext(ctx, "tcp", route.Addr())
+		route.Dialed(time.Since(began), err)
+		if err == nil {
+			return conn, route
+		}
+		retrier, can := up.(Retrier)
+		if !can || route.Final() || ctx.Err() != nil {
+			return nil, nil
+		}
+		next, ok := retrier.Retry(flow, route)
+		if !ok {
+			return nil, nil
+		}
+		route = next
+	}
+}
+
+// raceState is what the dials of one race share: the first to connect takes it
+type raceState struct {
+	mu      sync.Mutex
+	settled sync.Cond
+	pending int
+	conn    net.Conn
+	route   Route
+	took    time.Duration
+}
+
+// race dials every route at once within the connect timeout and returns the first connection
+// made with its route, or nil when none connects. Every route is told how its dial went; one
+// that lost the race, or was cut short by it, was abandoned.
+func (s *Server) race(routes []Route, timeout time.Duration) (net.Conn, Route) {
+	ctx, cancel := context.WithTimeout(s.ctx, timeout)
+	// the winner ends the dials still in progress
+	defer cancel()
+	st := &raceState{pending: len(routes)}
+	st.settled.L = &st.mu
+	for _, route := range routes {
+		go func() {
+			var dialer net.Dialer
+			began := time.Now()
+			conn, err := dialer.DialContext(ctx, "tcp", route.Addr())
+			took := time.Since(began)
+			st.mu.Lock()
+			won := err == nil && st.conn == nil
+			lost := st.conn != nil
+			if won {
+				st.conn, st.route, st.took = conn, route, took
+			}
+			st.pending--
+			st.settled.Signal()
+			st.mu.Unlock()
+			switch {
+			case won:
+				// reported by the flow's own worker, ahead of anything else it reports
+			case lost:
+				if conn != nil {
+					_ = conn.Close()
+				}
+				route.Dialed(0, ErrAbandoned)
+			default:
+				route.Dialed(took, err)
+			}
+		}()
+	}
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	for st.conn == nil && st.pending > 0 {
+		st.settled.Wait()
+	}
+	if st.conn != nil {
+		st.route.Dialed(st.took, nil)
+	}
+	return st.conn, st.route
 }
 
 // Shutdown stops accepting and waits for relayed connections to end until ctx is done.
@@ -325,13 +433,13 @@ func (s *Server) ActiveConnections() int {
 // and to it; a side that ends cleanly half-closes its peer, and a side that fails closes both.
 // The idle timeout is the connection's: a direction that has read nothing for that long ends
 // the relay only when the other has moved nothing either.
-func relay(client, upstream net.Conn, idle time.Duration) (int64, int64) {
+func relay(client, upstream net.Conn, idle time.Duration, firstByte func()) (int64, int64) {
 	var in, out int64
 	var last atomic.Int64
 	last.Store(time.Now().UnixNano())
 	var wg sync.WaitGroup
-	wg.Go(func() { in = pipe(upstream, client, idle, &last) })
-	wg.Go(func() { out = pipe(client, upstream, idle, &last) })
+	wg.Go(func() { in = pipe(upstream, client, idle, &last, nil) })
+	wg.Go(func() { out = pipe(client, upstream, idle, &last, firstByte) })
 	wg.Wait()
 	return in, out
 }
@@ -341,7 +449,8 @@ var bufPool = sync.Pool{New: func() any {
 	return &b
 }}
 
-func pipe(dst, src net.Conn, idle time.Duration, last *atomic.Int64) int64 {
+// pipe copies src to dst until src ends; first, when set, is called once, on the first read
+func pipe(dst, src net.Conn, idle time.Duration, last *atomic.Int64, first func()) int64 {
 	bp := bufPool.Get().(*[]byte)
 	defer bufPool.Put(bp)
 	buf := *bp
@@ -352,6 +461,10 @@ func pipe(dst, src net.Conn, idle time.Duration, last *atomic.Int64) int64 {
 		}
 		nr, rerr := src.Read(buf)
 		if nr > 0 {
+			if first != nil {
+				first()
+				first = nil
+			}
 			now := time.Now()
 			last.Store(now.UnixNano())
 			if idle > 0 {

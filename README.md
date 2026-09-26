@@ -30,10 +30,11 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
-* Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
-* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol.
+* Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md)
+* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol
 * Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting
+* Built-in [Static File Server](./docs/static.md) for hosting websites and other local content
 
 ## Time Series Database Accelerator
 
@@ -43,17 +44,11 @@ Trickster dramatically improves dashboard chart rendering times for end users by
 
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
 
-<img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md)
-
-<img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md)
-
-<img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
-
-<img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md)
-
-<img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md)
-
-<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
+| | | |
+|---|---|---|
+| <img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md) | <img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md) | <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md) |
+| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB](docs/timescaledb.md) | <img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md) | <img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md) |
+| <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md) | | |
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 

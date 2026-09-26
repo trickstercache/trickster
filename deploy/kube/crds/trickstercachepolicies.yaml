@@ -168,6 +168,24 @@ spec:
                   enum:
                     - probe
                     - provider
+                loadBalancing:
+                  description: >-
+                    The mechanism that spreads traffic across a Service's endpoints in the
+                    endpoint routing mode; rr unless set. The weights between a rule's
+                    backendRefs are always apportioned by rr.
+                  type: string
+                  enum:
+                    - rr
+                    - p2c
+                    - lc
+                    - lt
+                    - hrw
+                loadBalancingKey:
+                  description: >-
+                    What the hrw mechanism keeps on one endpoint: client_ip (the default),
+                    host, header:<name>, cookie:<name> or query:<name> for HTTP routes, and
+                    client_ip or sni for TCP, TLS and UDP routes.
+                  type: string
                 resultHeader:
                   description: >-
                     Whether the X-Trickster-Result response header reaches the client;

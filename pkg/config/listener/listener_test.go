@@ -25,6 +25,7 @@ import (
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -370,5 +371,43 @@ func TestStreamOptionsCloneEqualAndIsStream(t *testing.T) {
 	c.Stream = nil
 	if c.Equal(o) {
 		t.Error("a missing stream block must break equality")
+	}
+}
+
+func TestPostgresLimitsYAMLDefaultsCloneAndEquality(t *testing.T) {
+	var wrapped struct {
+		Listeners Lookup `yaml:"listeners"`
+	}
+	err := yaml.Unmarshal([]byte(`listeners:
+  pg1:
+    protocol: postgres
+    port: 5432
+    postgres:
+      idle_timeout: 1m
+      allow_md5: true
+`), &wrapped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := wrapped.Listeners["pg1"]
+	if o.Protocol != ProtocolPostgres || o.Postgres == nil || !o.Postgres.AllowMD5 ||
+		o.Postgres.IdleTimeout != timeconv.Duration(time.Minute) ||
+		o.Postgres.ReadTimeout != timeconv.Duration(pgo.DefaultReadTimeout) {
+		t.Fatalf("unexpected postgres limits: %#v", o.Postgres)
+	}
+	if err := o.Postgres.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	clone := o.Clone()
+	if !o.Equal(clone) {
+		t.Fatal("a clone should be equal")
+	}
+	clone.Postgres.AllowMD5 = false
+	if o.Equal(clone) || !o.Postgres.AllowMD5 {
+		t.Fatal("a postgres limit change should affect listener equality, not the original")
+	}
+	clone.Postgres = nil
+	if o.Equal(clone) {
+		t.Fatal("dropping the postgres block should affect listener equality")
 	}
 }

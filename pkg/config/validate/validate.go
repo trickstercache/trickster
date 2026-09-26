@@ -25,8 +25,10 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/rr"
-	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	albregistry "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
+	albtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
@@ -267,6 +269,8 @@ func Listeners(c *config.Config) error {
 	mappedProviders := make(map[string]map[string]string, len(c.Listeners))
 	nativeListeners := providerregistry.NativeListeners()
 	nativeTargets := nativeUserRouterTargets(c, nativeListeners)
+	// the load balancers that serve a stream or native listener; every other one serves requests
+	streamALBs := sets.NewStringSet()
 	for backendName, backend := range c.Backends {
 		if backend == nil || backend.IsTemplate {
 			// templates are never routed, so they map to no listener
@@ -337,7 +341,7 @@ func Listeners(c *config.Config) error {
 			return fmt.Errorf("listener %q configures stream options for protocol %q", name, options.Protocol)
 		}
 		if options.IsStream() {
-			if err := streamListener(c, name, options, mappedProviders[name]); err != nil {
+			if err := streamListener(c, name, options, mappedProviders[name], streamALBs); err != nil {
 				return err
 			}
 		}
@@ -363,9 +367,17 @@ func Listeners(c *config.Config) error {
 			if provider == providers.ALB && backend != nil && backend.ALBOptions != nil &&
 				backend.ALBOptions.UserRouter != nil {
 				targetProvider = strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)
+			} else if provider == providers.ALB && options.Protocol != listener.ProtocolHTTP && nativeAdapter != nil {
+				// a selection strategy balances the listener's sessions over its pool
+				if err := sessionBalancer(c, name, options.Protocol, backendName, backend, nativeAdapter); err != nil {
+					return err
+				}
+				streamALBs.Set(backendName)
+				// its pool members were each checked against the adapter's providers
+				continue
 			}
 			if options.Protocol != listener.ProtocolHTTP && nativeAdapter != nil &&
-				targetProvider != nativeAdapter.BackendProvider() {
+				!nativeAdapter.ServesProvider(targetProvider) {
 				return fmt.Errorf("listener %q with protocol %q cannot map to backend %q with provider %q",
 					name, options.Protocol, backendName, provider)
 			}
@@ -430,7 +442,41 @@ func Listeners(c *config.Config) error {
 			}
 		}
 	}
-	return nil
+	return requestALBs(c, streamALBs)
+}
+
+// sessionBalancer validates an ALB that a native protocol listener maps to without a user
+// router: its strategy must serve sessions, over a pool of the listener's own kind of backend
+func sessionBalancer(c *config.Config, listenerName, protocol, backendName string, backend *bo.Options,
+	adapter native.Adapter,
+) error {
+	if backend == nil || backend.ALBOptions == nil ||
+		!albregistry.Supports(backend.ALBOptions.MechanismName, albtypes.PlaneNative) {
+		return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use a mechanism that "+
+			"routes or balances sessions: %s", listenerName, protocol, backendName,
+			strings.Join(albregistry.Supporting(albtypes.PlaneNative), ", "))
+	}
+	o := backend.ALBOptions
+	for _, m := range o.Pool {
+		if member := c.Backends[m.Name]; member == nil ||
+			!adapter.ServesProvider(strings.ToLower(member.Provider)) {
+			return fmt.Errorf("listener %q with protocol %q requires every pool member of alb backend %q "+
+				"to be a %s backend: %q is not", listenerName, protocol, backendName,
+				strings.Join(adapter.Providers(), " or "), m.Name)
+		}
+	}
+	if o.Discovery != nil {
+		return fmt.Errorf("alb backend %q: 'discovery' is not supported on a %s listener", backendName, protocol)
+	}
+	if o.Stream != nil {
+		return fmt.Errorf("alb backend %q: 'stream' options apply only to an alb that serves a "+
+			"tcp, tls or udp listener", backendName)
+	}
+	if !o.HRW.KeySource.OnNative() {
+		return fmt.Errorf("listener %q with protocol %q cannot read alb backend %q's hrw.key %q: "+
+			"use client_ip or user", listenerName, protocol, backendName, o.HRW.Key)
+	}
+	return adapter.ValidateBalancer(c, backendName, backend)
 }
 
 // streamProviders are the providers a stream listener may relay to: one with an origin to dial,
@@ -439,8 +485,66 @@ var streamProviders = sets.New([]string{
 	providers.ReverseProxyShort, providers.ReverseProxy, providers.Proxy, providers.ALB,
 })
 
+// requestALBs holds every load balancer that serves an http listener to what a request can
+// offer: no server name or session to key on and no connect to time. One that also serves a
+// stream or native listener was held to that listener's rules as well, so its settings must
+// suit every listener it serves. streamALBs names those that serve a stream or native listener.
+func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
+	members := c.Backends.PoolMembers()
+	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
+		backend := c.Backends[backendName]
+		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil {
+			continue
+		}
+		o := backend.ALBOptions
+		// a mechanism that commits a flow to several members at once is the relay's to carry out
+		streamOnly := albregistry.Supports(o.MechanismName, albtypes.PlaneStream) &&
+			!albregistry.Supports(o.MechanismName, albtypes.PlaneHTTP)
+		if streamOnly && members.Contains(backendName) {
+			return fmt.Errorf("alb backend %q: mechanism %q cannot be a member of another alb's pool",
+				backendName, o.MechanismName)
+		}
+		if o.Stream != nil && !streamALBs.Contains(backendName) {
+			return fmt.Errorf("alb backend %q: 'stream' options apply only to an alb that serves a "+
+				"tcp, tls or udp listener", backendName)
+		}
+		httpListener := servesHTTPListener(c, backend)
+		if httpListener == "" {
+			continue
+		}
+		if streamOnly {
+			return fmt.Errorf("alb backend %q: mechanism %q requires a %s listener, and cannot serve "+
+				"http listener %q", backendName, o.MechanismName,
+				strings.Join(albregistry.StreamProtocols(o.MechanismName), " or "), httpListener)
+		}
+		if !o.HRW.KeySource.OnHTTP() {
+			return fmt.Errorf("alb backend %q: hrw.key %q cannot be read from a request, which http "+
+				"listener %q serves", backendName, o.HRW.Key, httpListener)
+		}
+		if _, err := o.LTSignalFor(listener.ProtocolHTTP); err != nil {
+			return fmt.Errorf("alb backend %q: %w", backendName, err)
+		}
+	}
+	return nil
+}
+
+// servesHTTPListener returns the name of an http listener the backend is mapped to, or "" when
+// it has none. A backend that names no listener serves the default one, which is http.
+func servesHTTPListener(c *config.Config, backend *bo.Options) string {
+	if len(backend.ListenerNames) == 0 {
+		return listener.DefaultFrontendName
+	}
+	for _, name := range backend.ListenerNames {
+		lo := c.Listeners[name]
+		if lo == nil || lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP {
+			return name
+		}
+	}
+	return ""
+}
+
 func streamListener(c *config.Config, name string, options *listener.Options,
-	mapped map[string]string,
+	mapped map[string]string, streamALBs sets.Set[string],
 ) error {
 	if err := options.Stream.Validate(); err != nil {
 		return fmt.Errorf("listener %q: %w", name, err)
@@ -462,10 +566,30 @@ func streamListener(c *config.Config, name string, options *listener.Options,
 				name, options.Protocol, backendName, provider)
 		}
 		if provider == providers.ALB && (backend.ALBOptions == nil ||
-			(backend.ALBOptions.MechanismName != albnames.MechanismRR &&
-				backend.ALBOptions.MechanismName != rr.Name)) {
-			return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use the %s mechanism",
-				name, options.Protocol, backendName, albnames.MechanismRR)
+			!albregistry.Supports(backend.ALBOptions.MechanismName, albtypes.PlaneStream)) {
+			return fmt.Errorf("listener %q with protocol %q requires alb backend %q to use a mechanism that "+
+				"serves a %s listener: %s", name, options.Protocol, backendName, options.Protocol,
+				strings.Join(albregistry.ServingProtocol(options.Protocol), ", "))
+		}
+		if provider == providers.ALB {
+			streamALBs.Set(backendName)
+			o := backend.ALBOptions
+			if !albregistry.ServesProtocol(o.MechanismName, options.Protocol) {
+				return fmt.Errorf("listener %q with protocol %q cannot serve alb backend %q: mechanism %q requires a %s listener",
+					name, options.Protocol, backendName, o.MechanismName,
+					strings.Join(albregistry.StreamProtocols(o.MechanismName), " or "))
+			}
+			if !o.HRW.KeySource.OnStream(ao.StreamListener{
+				TLS:           options.Protocol == listener.ProtocolTLS,
+				ProxyProtocol: options.ProxyProtocol && options.Protocol != listener.ProtocolUDP,
+			}) {
+				return fmt.Errorf("listener %q with protocol %q cannot read alb backend %q's hrw.key %q: use "+
+					"client_ip, sni on a tls listener, or proxy_tlv:<type> on a tcp or tls listener with proxy_protocol",
+					name, options.Protocol, backendName, o.HRW.Key)
+			}
+			if _, err := o.LTSignalFor(options.Protocol); err != nil {
+				return fmt.Errorf("listener %q: alb backend %q: %w", name, backendName, err)
+			}
 		}
 		if members.Contains(backendName) {
 			continue
@@ -491,15 +615,26 @@ func streamListener(c *config.Config, name string, options *listener.Options,
 	return nil
 }
 
+// nativeUserRouterTargets returns the backends that a native protocol listener reaches through
+// an ALB, which therefore need no listener of their own
 func nativeUserRouterTargets(c *config.Config, nativeListeners native.Registry) map[string]bool {
 	targets := make(map[string]bool)
 	if c == nil {
 		return targets
 	}
 	for _, backend := range c.Backends {
-		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil ||
-			backend.ALBOptions.UserRouter == nil ||
-			nativeListeners.GetByProvider(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)) == nil {
+		if backend == nil || backend.Provider != providers.ALB || backend.ALBOptions == nil {
+			continue
+		}
+		if backend.ALBOptions.UserRouter == nil {
+			if servesNativeListener(c, backend, nativeListeners) {
+				for _, m := range backend.ALBOptions.Pool {
+					targets[m.Name] = true
+				}
+			}
+			continue
+		}
+		if nativeListeners.GetByProvider(strings.ToLower(backend.ALBOptions.UserRouter.TargetProvider)) == nil {
 			continue
 		}
 		if name := backend.ALBOptions.UserRouter.DefaultBackend; name != "" {
@@ -512,6 +647,18 @@ func nativeUserRouterTargets(c *config.Config, nativeListeners native.Registry) 
 		}
 	}
 	return targets
+}
+
+// servesNativeListener reports whether any listener the backend names speaks a native protocol
+func servesNativeListener(c *config.Config, backend *bo.Options, nativeListeners native.Registry) bool {
+	backend.NormalizeListenerNames()
+	for _, name := range backend.ListenerNames {
+		if lo := c.Listeners[name]; lo != nil && !strings.EqualFold(lo.Protocol, listener.ProtocolHTTP) &&
+			nativeListeners.Get(strings.ToLower(lo.Protocol)) != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func addWarning(c *config.Config, warning string) {

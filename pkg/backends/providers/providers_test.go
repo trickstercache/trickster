@@ -96,6 +96,18 @@ func TestIsSupportedTimeSeriesProvider(t *testing.T) {
 	}
 }
 
+func TestStaticProvider(t *testing.T) {
+	if !IsValidProvider(Static) || StaticID.String() != Static {
+		t.Errorf("expected %s to be a valid provider", Static)
+	}
+	if !NonCacheBackends().Contains(Static) || !NonOriginBackends().Contains(Static) {
+		t.Error("expected static to need neither a cache nor an origin")
+	}
+	if IsSupportedTimeSeriesProvider(Static) {
+		t.Error("expected false")
+	}
+}
+
 func TestMySQLUsesCache(t *testing.T) {
 	if NonCacheBackends().Contains(MySQL) {
 		t.Fatal("MySQL must be initialized and validated with a cache")
@@ -120,5 +132,23 @@ func TestHTTPTimeSeriesProviderNames(t *testing.T) {
 	}
 	if IsSupportedHTTPTimeSeriesProvider(MySQL) || IsSupportedHTTPTimeSeriesProvider(ReverseProxy) {
 		t.Fatal("mysql and the reverse proxy are not http time series providers")
+	}
+}
+
+func TestProviderAliases(t *testing.T) {
+	if Canonical(TimescaleDB) != Postgres || Canonical(Postgres) != Postgres || Canonical(MySQL) != MySQL {
+		t.Fatal("only an alias may resolve to a different provider")
+	}
+	if got := Aliases(Postgres); !slices.Equal(got, []string{TimescaleDB}) {
+		t.Fatalf("Aliases(%q) = %v", Postgres, got)
+	}
+	if got := Aliases(MySQL); len(got) != 0 {
+		t.Fatalf("Aliases(%q) = %v", MySQL, got)
+	}
+	if !IsValidProvider(TimescaleDB) || PostgresID.String() != Postgres {
+		t.Fatal("the alias must be a valid provider whose id reports the canonical name")
+	}
+	if IsSupportedHTTPTimeSeriesProvider(Postgres) || !IsSupportedTimeSeriesProvider(TimescaleDB) {
+		t.Fatal("postgres is a time series provider that is not reached over HTTP")
 	}
 }

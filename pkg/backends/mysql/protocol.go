@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -546,7 +547,7 @@ func (a *credentialAuth) HandleUser(user string) bool {
 }
 
 func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user string,
-	authResponse []byte, _ net.Addr,
+	authResponse []byte, remote net.Addr,
 ) (vtmysql.Getter, error) {
 	password, ok := a.users[user]
 	expected := vtmysql.ScrambleMysqlNativePassword(salt, password)
@@ -557,9 +558,10 @@ func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user st
 	}
 	if a.resolver != nil {
 		decision, resolved := a.resolver.ResolveRoute(backends.RouteInput{
-			RouterName: a.backend, Username: user, Authenticated: true,
+			RouterName: a.backend, Username: user, Authenticated: true, Client: clientAddr(remote),
 		})
 		if !resolved || !decision.Target.Available() {
+			releaseRoute(decision)
 			outcome := decision.Outcome
 			if outcome == "" {
 				outcome = backends.RouteOutcomeNoRoute
@@ -616,6 +618,29 @@ type upstreamSession struct {
 // target for the same connection.
 type routedConnection struct {
 	target *protocolHandler
+	// release returns the session to the resolver that counted it; nil when it counts none
+	release func()
+}
+
+func releaseRoute(decision backends.RouteDecision) {
+	if decision.Release != nil {
+		decision.Release()
+	}
+}
+
+// clientAddr is the address a session arrived from, or the zero Addr when it is not an IP's
+func clientAddr(remote net.Addr) netip.Addr {
+	switch a := remote.(type) {
+	case *net.TCPAddr:
+		return a.AddrPort().Addr().Unmap()
+	case nil:
+		return netip.Addr{}
+	default:
+		if ap, err := netip.ParseAddrPort(a.String()); err == nil {
+			return ap.Addr().Unmap()
+		}
+	}
+	return netip.Addr{}
 }
 
 // routedProtocolHandler adapts Vitess's protocol-specific callbacks to a
@@ -675,7 +700,8 @@ func (h *routedProtocolHandler) activate(c *vtmysql.Conn) (*protocolHandler, err
 		return routed.target, nil
 	}
 	var target *protocolHandler
-	if decision, ok := c.ClientData.(backends.RouteDecision); ok && decision.Target.Backend != nil {
+	decision, _ := c.ClientData.(backends.RouteDecision)
+	if decision.Target.Backend != nil {
 		target = h.targets[decision.Target.Backend.Name()]
 	}
 	control := h.takeControl(c.ConnectionID)
@@ -683,13 +709,14 @@ func (h *routedProtocolHandler) activate(c *vtmysql.Conn) (*protocolHandler, err
 		// Activation failure is terminal for the connection. Recording it
 		// releases the pending control and blocks a second target selection.
 		c.ClientData = &routedConnection{}
+		releaseRoute(decision)
 		c.MarkForClose()
 		return nil, errNoRoute()
 	}
 	if control != nil {
 		target.setControl(c.ConnectionID, control)
 	}
-	c.ClientData = &routedConnection{target: target}
+	c.ClientData = &routedConnection{target: target, release: decision.Release}
 	target.NewConnection(c)
 	return target, nil
 }
@@ -728,6 +755,15 @@ func errNoRoute() error {
 func (h *routedProtocolHandler) ConnectionClosed(c *vtmysql.Conn) {
 	if target, err := h.target(c); err == nil {
 		target.ConnectionClosed(c)
+	}
+	switch routed := c.ClientData.(type) {
+	case *routedConnection:
+		if routed.release != nil {
+			routed.release()
+		}
+	case backends.RouteDecision:
+		// the session ended between its authentication and its first command
+		releaseRoute(routed)
 	}
 	h.mtx.Lock()
 	delete(h.controls, c.ConnectionID)

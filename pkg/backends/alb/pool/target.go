@@ -21,6 +21,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 )
 
 // Target defines an alb pool target
@@ -31,37 +33,14 @@ type Target struct {
 	name     string
 	group    string
 	weight   int
+	tier     int
 	probed   bool
+	dialable bool
+	addr     string
+	member   *lb.Member
 }
 
 type Targets []*Target
-
-// New returns a new Pool
-func New(targets Targets, healthyFloor int) Pool {
-	p := &pool{
-		targets:      targets,
-		done:         make(chan struct{}),
-		statusCh:     make(chan bool, 1),
-		ch:           make(chan bool, 1),
-		healthyFloor: healthyFloor,
-	}
-	p.scheduleRefresh()
-
-	for _, t := range targets {
-		if t == nil || t.hcStatus == nil {
-			continue
-		}
-		t.hcStatus.RegisterSubscriber(p.statusCh)
-	}
-	// populate the healthy snapshot synchronously so a pool installed by a
-	// runtime membership swap is dispatchable the moment SetPool returns,
-	// rather than 502ing until the async refresh worker's first pass
-	p.RefreshHealthy()
-	p.workers.Add(2)
-	go p.listenStatusUpdates()
-	go p.checkHealth()
-	return p
-}
 
 // NewTarget returns a new Target with the default weight of 1
 func NewTarget(handler http.Handler, hcStatus *healthcheck.Status,
@@ -84,9 +63,13 @@ func NewWeightedTarget(handler http.Handler, hcStatus *healthcheck.Status,
 	}
 	if backend != nil {
 		t.name, t.group = backendIdentity(backend)
+		if cfg := backend.Configuration(); cfg != nil {
+			t.addr = cfg.Host
+			t.dialable = t.addr != "" && !hostnames.Reserved(t.addr)
+		}
 		if cfg := backend.Configuration(); cfg != nil &&
-			!backends.IsVirtual(cfg.Provider) {
-			// non-virtual members are probed only when an active health
+			backends.HasOrigin(cfg.Provider) {
+			// members with an origin are probed only when an active health
 			// check interval is configured; unprobed members can never
 			// leave Unchecked and factor into healthy-floor resets
 			t.probed = cfg.HealthCheck != nil && cfg.HealthCheck.Interval > 0
@@ -95,7 +78,79 @@ func NewWeightedTarget(handler http.Handler, hcStatus *healthcheck.Status,
 	if t.group == "" {
 		t.group = t.name
 	}
+	t.bind(nil)
 	return t
+}
+
+// bind builds the target's core member, which points back at the target
+func (t *Target) bind(stats *lb.Stats) {
+	o := lb.MemberOptions{Name: t.name, Group: t.group, Weight: t.weight, Tier: t.tier, Stats: stats, Value: t}
+	if t.hcStatus != nil {
+		// a nil *Status must not become a non-nil Health
+		o.Health = t.hcStatus
+	}
+	t.member = lb.NewMember(o)
+}
+
+// WithStats gives the target runtime stats kept from an earlier target of the same member,
+// such as across a config reload; nil leaves its own. It returns the target.
+func (t *Target) WithStats(stats *lb.Stats) *Target {
+	if stats != nil {
+		t.bind(stats)
+	}
+	return t
+}
+
+// WithTier sets the target's failover tier: a pool dispatches to a tier above 0 only while no
+// member of a lower tier is available. It returns the target.
+func (t *Target) WithTier(tier int) *Target {
+	if tier = max(tier, 0); tier != t.tier {
+		t.tier = tier
+		t.bind(t.member.Stats())
+	}
+	return t
+}
+
+// Tier returns the target's failover tier, 0 unless it stands by for other members.
+func (t *Target) Tier() int {
+	return t.tier
+}
+
+// WithStatsOf carries prev's runtime stats over to the target that replaces it, so a member
+// rebuilt in place, such as for a weight change, is not reset. It returns the target.
+func (t *Target) WithStatsOf(prev *Target) *Target {
+	if prev != nil && prev.member != nil {
+		t.bind(prev.member.Stats())
+	}
+	return t
+}
+
+// Member returns the target's protocol-neutral pool member, whose Value is the target.
+func (t *Target) Member() *lb.Member {
+	return t.member
+}
+
+// Picker returns the balancer of a target whose backend is itself a load balancer, which is
+// how a pool of pools is followed to a member that can be dialed. It is nil for any other
+// target, and for a load balancer whose mechanism does not select one member.
+func (t *Target) Picker() lb.Picker {
+	if pp, ok := t.backend.(lb.PickerProvider); ok {
+		return pp.Picker()
+	}
+	return nil
+}
+
+// Dialable reports whether the target has an origin address that can be connected to. One
+// without an address, or under the reserved .invalid domain, holds its share of a stream
+// pool's flows and refuses them. It is decided once, when the target is built.
+func (t *Target) Dialable() bool {
+	return t.dialable
+}
+
+// Addr returns the host:port of the target's origin, captured when the target was built;
+// empty when its backend has none.
+func (t *Target) Addr() string {
+	return t.addr
 }
 
 // WithExternalHealth marks the target's health status as externally driven

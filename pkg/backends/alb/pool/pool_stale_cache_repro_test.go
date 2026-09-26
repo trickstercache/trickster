@@ -28,11 +28,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-// H1: simulate a dead refresh worker. Construct a pool but never start the
-// refresh goroutines, mimicking what happens if listenStatusUpdates or
-// checkHealth panicked and exited. Seed a populated cache and flip a target
-// Failing. If Targets() still returns the Failing one, repro.
-func TestRepro_H1_DeadRefreshWorker(t *testing.T) {
+// H1: no background worker stands between a status flip and dispatch, so there is none to
+// die: a Failing target is gone from Targets() by the time Set returns.
+func TestRepro_H1_NoRefreshWorker(t *testing.T) {
 	const n = 3
 	targets := make(Targets, n)
 	statuses := make([]*healthcheck.Status, n)
@@ -42,21 +40,8 @@ func TestRepro_H1_DeadRefreshWorker(t *testing.T) {
 		statuses[i] = st
 		targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
 	}
-	p := &pool{
-		targets:      targets,
-		done:         make(chan struct{}),
-		statusCh:     make(chan bool, 1),
-		ch:           make(chan bool, 1),
-		healthyFloor: 1,
-	}
-	all := append(Targets(nil), targets...)
-	p.healthyTargets.Store(&all)
-	p.liveTargets.Store(&all)
-	hh := make([]http.Handler, n)
-	for i, tt := range targets {
-		hh[i] = tt.handler
-	}
-	p.healthyHandlers.Store(&hh)
+	p := New(targets, 1)
+	defer p.Stop()
 
 	statuses[0].Set(healthcheck.StatusFailing)
 
@@ -111,8 +96,8 @@ func TestRepro_H1b_RealPoolFlapStorm(t *testing.T) {
 	})
 }
 
-// H2: saturate statusCh while refreshPending is being toggled, then flip
-// target 0 Failing and assert it propagates.
+// H2: flap every target concurrently, then flip target 0 Failing and assert
+// it propagates.
 func TestRepro_H2_ChannelDrop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const n = 10

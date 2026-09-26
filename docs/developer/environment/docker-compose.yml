@@ -41,6 +41,8 @@ services:
         condition: service_started
       mysql:
         condition: service_healthy
+      timescaledb:
+        condition: service_healthy
       druid:
         condition: service_healthy
 
@@ -65,6 +67,48 @@ services:
     ports:
      - 9090:9090
     restart: always
+    depends_on:
+      prometheus_seed:
+        condition: service_completed_successfully
+
+  # writes the last 15 days of the trips seed data as Prometheus metrics in
+  # OpenMetrics form (hack/devorigin), for prometheus_seed to import. Like
+  # seed_data_generate, it builds and runs with networking disabled.
+  prometheus_seed_generate:
+    image: golang:1.27-alpine
+    network_mode: none
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_OUT: /om/trips.om
+    volumes:
+      - ../../..:/repo:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - prometheus-seed-om:/om
+      - seedgen-gocache:/go-cache
+    entrypoint: ["go", "run", ".", "backfill"]
+    depends_on:
+      seed_data_generate:
+        condition: service_completed_successfully
+
+  # promtool, for seeding prometheus with the trips history before it starts.
+  # It runs as root to clean up the backfill file, then hands the data
+  # directory back to nobody; it skips reseeding while prometheus is running.
+  prometheus_seed:
+    image: prom/prometheus:v3.13.2
+    user: "0:0"
+    volumes:
+      - ../../../hack/devorigin/seed-prometheus.sh:/seed-prometheus.sh:ro
+      - prometheus-seed-om:/om
+      - prometheus-data:/prometheus
+    entrypoint: ["/bin/sh", "/seed-prometheus.sh"]
+    depends_on:
+      prometheus_seed_generate:
+        condition: service_completed_successfully
 
   # influxdb 2.x
   influxdb2:
@@ -162,9 +206,9 @@ services:
     restart: always
 
   # generates the shared synthetic trips seed data (hack/seedgen) that the
-  # clickhouse, mysql and druid seeders load. The output is byte-identical on
-  # every run, is verified against a pinned hash, and needs no network access,
-  # so the service runs with networking disabled to prove it.
+  # clickhouse, mysql, timescaledb and druid seeders load. The output is
+  # byte-identical on every run, is verified against a pinned hash, and needs
+  # no network access, so the service runs with networking disabled to prove it.
   seed_data_generate:
     image: golang:1.27-alpine
     network_mode: none
@@ -274,6 +318,66 @@ services:
       seed_data_generate:
         condition: service_completed_successfully
 
+  # timescaledb (PostgreSQL 18 + TimescaleDB, Timescale License image so
+  # time_bucket_gapfill and other TSL features are testable). The image ships
+  # its own scripts in /docker-entrypoint-initdb.d, so the init SQL is mounted
+  # as a single file rather than over the whole directory. PostgreSQL 18 images
+  # keep data in /var/lib/postgresql/18/docker and refuse to start with a mount
+  # at the older /var/lib/postgresql/data, so the volume mounts one level up.
+  timescaledb:
+    image: timescale/timescaledb:2.30.1-pg18
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - 'postgres'
+      - '-c'
+      - 'timezone=UTC'
+      - '-c'
+      - 'log_timezone=UTC'
+    environment:
+      POSTGRES_PASSWORD: trickster-dev-root
+      POSTGRES_DB: trickster
+      TIMESCALEDB_TELEMETRY: "off"
+    ports:
+     - 5432:5432
+    build:
+      context: .
+      network: host
+    volumes:
+      - ./docker-compose-data/timescaledb-config/init/01-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - timescaledb-data:/var/lib/postgresql
+    restart: always
+    healthcheck:
+      # -h forces TCP: the entrypoint's temporary init server listens on the
+      # unix socket only, so the service is not healthy until init completes
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d trickster"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # psql client, for seeding timescaledb on startup from the shared generated
+  # seed data
+  timescaledb_seed:
+    image: timescale/timescaledb:2.30.1-pg18
+    environment:
+      TIMESCALEDB_SERVER_ADDR: timescaledb
+      TIMESCALEDB_DATABASE: trickster
+      TIMESCALEDB_SEED_USER: seeder
+      TIMESCALEDB_SEED_PASSWORD: trickster-dev-seed
+    volumes:
+      - ./docker-compose-data/timescaledb-config/seeding:/seeding
+      - ./docker-compose-data/seed-data:/seeding/data:ro
+    entrypoint: /seeding/seed.sh
+    build:
+      context: .
+      network: host
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      seed_data_generate:
+        condition: service_completed_successfully
+
   # graphite (carbon-cache + graphite-web, whisper storage)
   graphite:
     image: graphiteapp/graphite-statsd:1.1.10-5
@@ -343,14 +447,41 @@ services:
 
   # Mocks
 
-  mockster:
-    image: tricksterproxy/mockster:latest
-    build:
-      context: .
-      network: host
+  # devorigin (hack/devorigin) serves the live trips metrics that prometheus
+  # scrapes, and the in-repo mock origins (pkg/testutil/mocks): a Prometheus
+  # API simulator under /prometheus/ and a Range request origin under
+  # /byterange/. It builds from the repo on start, with no network access.
+  devorigin:
+    image: golang:1.27-alpine
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_ADDR: ":8482"
+    volumes:
+      - ../../..:/repo:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - seedgen-gocache:/go-cache
+    entrypoint: ["/bin/sh", "-c", "go build -o /tmp/devorigin . && exec /tmp/devorigin serve"]
     restart: always
+    # healthy once it has compiled, caught up on the trips data, and is serving
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8482/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 180s
+      start_interval: 2s
+    # loopback only: the mocks do request-driven work, and Trickster reaches them
+    # from the host at 127.0.0.1:8482 while containers use devorigin:8482
     ports:
-     - 8482:8482
+     - 127.0.0.1:8482:8482
+    depends_on:
+      seed_data_generate:
+        condition: service_completed_successfully
 
   # Tracing
 
@@ -411,5 +542,7 @@ volumes:
   druid-data:
   druid-shared:
   prometheus-data:
+  prometheus-seed-om:
   mysql-data:
+  timescaledb-data:
   redis-data:

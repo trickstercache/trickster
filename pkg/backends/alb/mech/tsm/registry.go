@@ -25,7 +25,7 @@ import (
 
 // RegistryEntry adapts ALB options to the time-series merge constructor.
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: ShortName, New: newFromOptions}
+	return types.RegistryEntry{Name: Name, ShortName: ShortName, Planes: types.PlaneHTTP, New: newFromOptions}
 }
 
 func newFromOptions(o *options.Options, factories rt.Lookup) (types.Mechanism, error) {

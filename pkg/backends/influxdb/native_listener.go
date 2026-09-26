@@ -59,7 +59,11 @@ func (nativeListenerAdapter) SupportsHTTP() bool { return true }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolFlightSQL }
 
-func (nativeListenerAdapter) BackendProvider() string { return providers.InfluxDB }
+func (nativeListenerAdapter) ServesProvider(provider string) bool {
+	return provider == providers.InfluxDB
+}
+
+func (nativeListenerAdapter) Providers() []string { return []string{providers.InfluxDB} }
 
 func (nativeListenerAdapter) Configured(*listenerconfig.Options) bool { return false }
 
@@ -82,6 +86,10 @@ func (nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 
 func (nativeListenerAdapter) ValidateUserRouter(*config.Config, string, *bo.Options) error {
 	return errors.New("InfluxDB Flight SQL user routing is not supported")
+}
+
+func (nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Options) error {
+	return errors.New("InfluxDB Flight SQL session balancing is not supported")
 }
 
 func (nativeListenerAdapter) RouteResolver(native.BuildRequest) backends.RouteResolver { return nil }

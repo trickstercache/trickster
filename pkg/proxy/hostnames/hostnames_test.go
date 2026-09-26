@@ -72,3 +72,16 @@ func TestClassification(t *testing.T) {
 	require.Equal(t, "**.example.com", ToAnyDepth("**.example.com"))
 	require.Equal(t, "example.com", ToAnyDepth("example.com"))
 }
+
+func TestReserved(t *testing.T) {
+	for _, addr := range []string{"unresolved.kgw.invalid:1", "x.INVALID.:9", "x.invalid", "[x.invalid]:5"} {
+		if !Reserved(addr) {
+			t.Errorf("Reserved(%q) = false", addr)
+		}
+	}
+	for _, addr := range []string{"invalid.example.com:1", "10.0.0.1:1", "", "invalid", "[::1]:80"} {
+		if Reserved(addr) {
+			t.Errorf("Reserved(%q) = true", addr)
+		}
+	}
+}

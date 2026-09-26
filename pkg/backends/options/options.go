@@ -36,6 +36,7 @@ import (
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
@@ -51,6 +52,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -193,10 +195,14 @@ type Options struct {
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
 	// MySQL holds limits specific to MySQL origin result processing.
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
+	// Postgres holds settings specific to PostgreSQL wire-protocol origins.
+	Postgres *pgo.Options `yaml:"postgres,omitempty"`
 	// Graphite holds options specific to graphite backends
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
 	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
+	// Static holds options specific to static file server backends, which require it
+	Static *so.Options `yaml:"static,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -391,8 +397,15 @@ func (o *Options) Clone() *Options {
 		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
+	if o.Postgres != nil {
+		out.Postgres = o.Postgres.Clone()
+	}
 	if o.MySQL != nil {
 		out.MySQL = o.MySQL.Clone()
+	}
+
+	if o.Static != nil {
+		out.Static = o.Static.Clone()
 	}
 
 	if o.AuthOptions != nil {
@@ -509,6 +522,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
+	if err := o.validateStatic(); err != nil {
+		return false, err
+	}
 	if o.CORS != nil {
 		if _, err := o.CORS.Validate(); err != nil {
 			return false, err
@@ -527,6 +543,49 @@ func (o *Options) Validate() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// validateStatic requires the static block on a static backend and rejects it
+// elsewhere, along with the proxying options a static backend can't honor.
+func (o *Options) validateStatic() error {
+	if o.Provider != providers.Static {
+		if o.Static != nil {
+			return NewErrUnsupportedOption("static", o.Provider, o.Name)
+		}
+		return nil
+	}
+	if o.Static == nil {
+		return NewErrMissingStaticOptions(o.Name)
+	}
+	unsupported := []struct {
+		name string
+		set  bool
+	}{
+		{"paths", len(o.Paths) > 0},
+		{"req_rewriter_name", o.ReqRewriterName != ""},
+		{"origin_url", o.OriginURL != ""},
+		{"rule_name", o.RuleName != ""},
+		{"alb", o.ALBOptions != nil},
+		{"prometheus", o.Prometheus != nil},
+		{"mysql", o.MySQL != nil},
+		{"graphite", o.Graphite != nil},
+		{"influxdb", o.InfluxDB != nil},
+		{"sigv4", o.SigV4 != nil},
+		{"protocol", o.Protocol != ""},
+		{"h2c_prior_knowledge", o.H2CPriorKnowledge},
+		{"preserve_host", o.PreserveHost},
+		{"proxy_only", o.ProxyOnly},
+		{"is_template", o.IsTemplate},
+	}
+	for _, u := range unsupported {
+		if u.set {
+			return NewErrUnsupportedOption(u.name, o.Provider, o.Name)
+		}
+	}
+	if err := o.Static.Validate(); err != nil {
+		return fmt.Errorf("backend %s: %w", o.Name, err)
+	}
+	return nil
 }
 
 // Validate validates the Lookup collection of Backend Options
@@ -684,6 +743,9 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			}
 			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
 				return err
+			}
+			if _, err := o.ALBOptions.Validate(); err != nil {
+				return fmt.Errorf("invalid alb options for backend %q: %w", o.Name, err)
 			}
 			for _, m := range o.ALBOptions.Pool {
 				if t, ok := l[m.Name]; ok && t != nil && t.IsTemplate {
@@ -878,10 +940,13 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.Provider == providers.ALB {
 		if o.ALBOptions != nil {
-			if err := o.ALBOptions.Initialize(""); err != nil {
+			if err := o.ALBOptions.Initialize(o.Name); err != nil {
 				return err
 			}
 		}
+	}
+	if err := o.Static.Initialize(); err != nil {
+		return err
 	}
 
 	if o.HealthCheck != nil {

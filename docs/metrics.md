@@ -115,6 +115,25 @@ The following metrics are available for polling with any Trickster configuration
     * `protocol` - `tcp`, `tls` or `udp`
     * `direction` - `in` from the client to the backend, `out` from the backend to the client
 
+* `trickster_proxy_stream_member_connections_total` (Counter) - The number of connections and UDP sessions a stream listener committed to an ALB pool member.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `protocol` - `tcp`, `tls` or `udp`
+    * `backend_name` - the name of the pool member backend
+    * `result` - `proxied`, `dial_failed` (the member could not be connected to) or `unreachable` (a `udp` member answered a datagram with a port-unreachable)
+
+* `trickster_proxy_stream_member_active_connections` (Gauge) - The number of connections and UDP sessions open to an ALB pool member.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `protocol` - `tcp`, `tls` or `udp`
+    * `backend_name` - the name of the pool member backend
+
+* `trickster_proxy_stream_member_connect_duration_seconds` (Histogram) - The time taken to connect to an ALB pool member.
+  * labels:
+    * `listener_name` - the name of the configured listener
+    * `protocol` - `tcp`, `tls` or `udp`
+    * `backend_name` - the name of the pool member backend
+
 * `trickster_proxy_query_range_rejected_total` (Counter) - Trickster total number of queries rejected due to exceeding the `max_query_range` limit.
   * labels:
     * `backend` - the name of the configured backend rejecting the query
@@ -193,8 +212,19 @@ The following metrics are available for polling with any Trickster configuration
     * `backend_name` - the name of the configured ALB backend
 
 * `trickster_alb_pool_floor_reset` (Gauge) - 1 when an ALB pool's `healthy_floor` was reset to 0 at startup because pool members have no health check and could never reach the configured floor, 0 otherwise. See [alb.md](./alb.md#health-based-backend-selection).
+* `trickster_alb_pool_on_backup` (Gauge) - 1 while an ALB pool that has `backup` members is dispatching to them because no other member is available, 0 otherwise. Present only for pools with backup members. See [alb.md](./alb.md#backup-pool-members).
   * labels:
     * `backend_name` - the name of the configured ALB backend
+
+* `trickster_alb_member_inflight` (Gauge) - Current number of requests in flight to an ALB pool member. Exported for the mechanisms that track it (`p2c`, `lc`, `lt`), for requests and for stream connections and sessions alike; read when the metrics endpoint is scraped, at no cost to request routing.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
+
+* `trickster_alb_member_ejections_total` (Counter) - The number of times `alb.stream.passive_health` took a pool member out of selection after repeated connect failures.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
 
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 
@@ -281,6 +311,37 @@ The following metrics are available only for Caches Types whose object lifecycle
   * labels:
     * `cache_name` - the name of the configured cache$
     * `provider` - the type of the configured cache
+
+The following metrics are available for [Static File Server](./static.md) Backends. Requests they serve are also counted, like those of any other Backend, by the `trickster_frontend_requests_*` metrics with a `provider` of `static`. Their Fileserver cache is separate from the caches above, and is not reported by the `trickster_cache_*` metrics.
+
+* `trickster_fileserver_responses_total` (Counter) - The total number of files served, by how the Fileserver cache figured in the response. Responses that send no file (such as a `404` with no not-found file, a redirect or a directory listing) are not counted.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `cache_status` - `hit` (served as it was held), `phit` (the file was held, and was encoded for the response and the rendition then held), `kmiss` (read from disk for the response, and then held) or `disk` (sent from disk without being held, as for a large file, a byte range, a `HEAD` or a `304`)
+    * `encoding` - the encoding of the rendition the file server sent: `identity`, `zstd`, `br`, `gzip` or `deflate`. A response counted as `identity` may still be encoded on its way out, as a large compressible file is.
+
+* `trickster_fileserver_cache_events_total` (Counter) - The total number of objects removed from the Fileserver cache.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `event` - `eviction` (the least recently used, removed to make room) or `invalidation` (removed because the file changed on disk, or the cache was stopped)
+
+A backend's series are published only once it is in service, so a configuration that is rejected publishes nothing. They are deleted when a reload removes or renames the backend; across a reload that keeps its name, the counters carry on rather than start over. The four gauges that follow are published only while the backend has a Fileserver cache, and are removed when it is disabled.
+
+* `trickster_fileserver_cache_usage_objects` (Gauge) - The current count of objects in the Fileserver cache, including files being read into it. Each held rendition of a file is an object.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
+* `trickster_fileserver_cache_usage_bytes` (Gauge) - The current accounted size of the Fileserver cache in bytes, which includes each object's bookkeeping allowance.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
+* `trickster_fileserver_cache_max_usage_objects` (Gauge) - The configured `max_files` of the Fileserver cache.
+  * labels:
+    * `backend_name` - the name of the configured backend
+
+* `trickster_fileserver_cache_max_usage_bytes` (Gauge) - The configured `max_size_bytes` of the Fileserver cache.
+  * labels:
+    * `backend_name` - the name of the configured backend
 
 The following metrics are available when the Kubernetes Gateway/Ingress controller is enabled (the top-level `kubernetes` section; see [kubernetes-gateway.md](./kubernetes-gateway.md)):
 

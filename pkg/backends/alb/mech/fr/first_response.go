@@ -25,11 +25,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	cfgtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 const (
@@ -40,23 +40,23 @@ const (
 type handler struct {
 	mech.PoolHolder
 	fgr             bool
-	fgrCodes        sets.Set[int]
+	fgrCodes        *cfgtypes.StatusTable
 	options         options.FirstGoodResponseOptions
 	maxCaptureBytes int
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: FRName, ShortName: names.MechanismFR, New: New}
+	return types.RegistryEntry{Name: FRName, ShortName: names.MechanismFR, Planes: types.PlaneHTTP, New: New}
 }
 
 func RegistryEntryFGR() types.RegistryEntry {
-	return types.RegistryEntry{Name: FGRName, ShortName: names.MechanismFGR, New: NewFGR}
+	return types.RegistryEntry{Name: FGRName, ShortName: names.MechanismFGR, Planes: types.PlaneHTTP, New: NewFGR}
 }
 
 func NewFGR(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
 	return &handler{
 		fgr:             true,
-		fgrCodes:        o.FgrCodesLookup,
+		fgrCodes:        o.FGRGoodCodes,
 		options:         o.FGROptions,
 		maxCaptureBytes: o.MaxCaptureBytes,
 	}, nil
@@ -84,19 +84,18 @@ func (h *handler) StopPool() {
 }
 
 // qualifies returns the winner predicate for fanout.WaitForFirst. FR (non-
-// FGR) takes any captured response; FGR with no custom codes accepts any
-// status < 400; FGR with custom codes accepts only configured codes.
+// FGR) takes any captured response; FGR accepts the configured good codes,
+// which are any status < 400 unless set otherwise.
 // Truncated captures are filtered out by WaitForFirst before predicate is
 // called.
 func (h *handler) qualifies(r *fanout.Result) bool {
 	if !h.fgr {
 		return true
 	}
-	code := r.Capture.StatusCode()
-	if len(h.fgrCodes) > 0 {
-		return h.fgrCodes.Contains(code)
+	if h.fgrCodes == nil {
+		return r.Capture.StatusCode() < 400
 	}
-	return code < 400
+	return h.fgrCodes.Contains(r.Capture.StatusCode())
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

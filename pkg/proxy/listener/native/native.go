@@ -49,16 +49,20 @@ type BuildRequest struct {
 // protocol server, and expose a reloadable route resolver when applicable.
 type Adapter interface {
 	Protocol() string
-	// BackendProvider returns the backend provider name this adapter's
-	// protocol serves. Protocol and provider names need not match: a
-	// vendor-neutral protocol (e.g. flight-sql) can be served by a
-	// vendor-specific provider (e.g. influxdb).
-	BackendProvider() string
+	// ServesProvider reports whether this adapter's protocol serves the named
+	// backend provider. Protocol and provider names need not match, and one
+	// protocol (e.g. postgres) can serve several providers.
+	ServesProvider(provider string) bool
+	// Providers returns the served provider names, for messages and docs only.
+	Providers() []string
 	SupportsHTTP() bool
 	Configured(*listenerconfig.Options) bool
 	ValidateListener(*listenerconfig.Options) error
 	ValidateBackend(*bo.Options) error
 	ValidateUserRouter(*config.Config, string, *bo.Options) error
+	// ValidateBalancer validates an ALB whose selection strategy commits each of the
+	// listener's sessions to one member of its pool.
+	ValidateBalancer(*config.Config, string, *bo.Options) error
 	Describe(*config.Config, string) (Descriptor, error)
 	Build(BuildRequest) (listener.ProtocolServer, error)
 	RouteResolver(BuildRequest) backends.RouteResolver
@@ -76,7 +80,7 @@ func (r Registry) Get(protocol string) Adapter {
 // provider, or nil when no native protocol serves it.
 func (r Registry) GetByProvider(provider string) Adapter {
 	for _, adapter := range r {
-		if adapter.BackendProvider() == provider {
+		if adapter.ServesProvider(provider) {
 			return adapter
 		}
 	}
