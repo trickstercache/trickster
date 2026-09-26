@@ -95,6 +95,9 @@ func run(t suiteT, newSelector func() lb.Selector, o Options) {
 	t.Run("picks only eligible members", func(t suiteT) { testOnlyEligible(t, newSelector) })
 	t.Run("every member is reachable", func(t suiteT) { testReachable(t, newSelector) })
 	t.Run("repick excludes the failed member", func(t suiteT) { testRepick(t, newSelector) })
+	t.Run("a pinned member is honored", func(t suiteT) { testPinned(t, newSelector) })
+	t.Run("a pin the pool cannot honor falls through", func(t suiteT) { testPinFallsThrough(t, newSelector) })
+	t.Run("draining members take no new flows", func(t suiteT) { testDraining(t, newSelector) })
 	t.Run("in-flight accounting balances", func(t suiteT) { testInflight(t, newSelector) })
 	t.Run("adversarial snapshots terminate", func(t suiteT) { testAdversarial(t, newSelector) })
 	t.Run("zero allocations", func(t suiteT) { testZeroAlloc(t, newSelector) })
@@ -234,14 +237,119 @@ func testRepick(t suiteT, newSelector func() lb.Selector) {
 	}
 }
 
+func pinnedTo(f lb.Flow, m *lb.Member) lb.Flow {
+	f.Pin, f.HasPin = m.Hash(), true
+	return f
+}
+
+func testPinned(t suiteT, newSelector func() lb.Selector) {
+	f := newFlows()
+	members, _ := Members(1, 2, 1)
+	// a standby and a draining member keep the flows pinned to them as surely as a live member
+	all := append(slices.Clone(members),
+		lb.NewMember(lb.MemberOptions{Name: "standby", Tier: 1, Health: NewHealth(passing)}),
+		lb.NewMember(lb.MemberOptions{Name: "draining", Draining: true, Health: NewHealth(passing)}),
+	)
+	b := lb.NewBalancer(newSelector(), lb.BalancerOptions{Pool: newPool(t, all)})
+	for _, m := range all {
+		for range 16 {
+			pk, ok := b.Pick(pinnedTo(f.next(), m))
+			if !ok || pk.Member() != m || !pk.Pinned() {
+				t.Fatalf("a flow pinned to %s went to %v, pinned %v", m.Name(), pk.Member(), pk.Pinned())
+			}
+			pk.Done(lb.OutcomeOK)
+		}
+	}
+}
+
+func testPinFallsThrough(t suiteT, newSelector func() lb.Selector) {
+	f := newFlows()
+	members, healths := Members(1, 1, 1)
+	unnamed := lb.NewMember(lb.MemberOptions{Health: NewHealth(passing)})
+	pool := append(slices.Clone(members), unnamed)
+	b := lb.NewBalancer(newSelector(), lb.BalancerOptions{Pool: newPool(t, pool)})
+	// the strategy sees member 0 before it fails, so one that keeps selecting it is caught too
+	for range 8 {
+		if pk, ok := b.Pick(f.next()); ok {
+			pk.Done(lb.OutcomeOK)
+		}
+	}
+	healths[0].Set(failing)
+	for _, pin := range []lb.Flow{
+		{Pin: members[0].Hash(), HasPin: true},     // an ineligible member
+		{Pin: members[0].Hash() ^ 1, HasPin: true}, // no member at all
+		{Pin: unnamed.Hash(), HasPin: true},        // an unnamed member
+		{Pin: members[1].Hash()},                   // a pin the flow does not ask for
+	} {
+		for range 100 {
+			flow := f.next()
+			flow.Pin, flow.HasPin = pin.Pin, pin.HasPin
+			pk, ok := b.Pick(flow)
+			switch {
+			case !ok:
+				t.Fatal("no pick with eligible members")
+			case !slices.Contains(pool, pk.Member()):
+				t.Fatalf("a pin to %#x went to %s, which was never in the pool", pin.Pin, pk.Member().Name())
+			case pk.Member() == members[0] || pk.Pinned():
+				t.Fatalf("a pin to %#x went to %s, pinned %v, rather than to an eligible member the strategy chose",
+					pin.Pin, pk.Member().Name(), pk.Pinned())
+			}
+			pk.Done(lb.OutcomeOK)
+		}
+	}
+}
+
+func testDraining(t suiteT, newSelector func() lb.Selector) {
+	f := newFlows()
+	members, healths := Members(1, 2, 1)
+	b := lb.NewBalancer(newSelector(), lb.BalancerOptions{Pool: newPool(t, members)})
+	// the strategy sees member 1 take flows, then member 1 starts to drain: the same member,
+	// rebuilt with its health and stats, in a new pool
+	pickSequence(t, b, 16)
+	drained := slices.Clone(members)
+	drain := func(i int) {
+		drained[i] = lb.NewMember(lb.MemberOptions{
+			Name: members[i].Name(), Weight: members[i].Weight(), Health: healths[i],
+			Stats: members[i].Stats(), Draining: true,
+		})
+	}
+	drain(1)
+	b.SetPool(newPool(t, drained))
+	for _, m := range pickSequence(t, b, 2000) {
+		switch {
+		case m.Name() == drained[1].Name():
+			t.Fatalf("picked %s, which is draining and not eligible for new flows", m.Name())
+		case !slices.Contains(drained, m):
+			t.Fatalf("picked %s, which was never in the pool", m.Name())
+		}
+	}
+	// with every member draining no new flow is taken, and a pinned one still is
+	drain(0)
+	drain(2)
+	b.SetPool(newPool(t, drained))
+	if _, ok := b.Pick(f.next()); ok {
+		t.Fatal("a pool whose every member is draining took a new flow")
+	}
+	pk, ok := b.Pick(pinnedTo(f.next(), drained[2]))
+	if !ok || pk.Member() != drained[2] || !pk.Pinned() {
+		t.Fatal("a flow pinned to a draining member did not reach it")
+	}
+	pk.Done(lb.OutcomeOK)
+}
+
 func testInflight(t suiteT, newSelector func() lb.Selector) {
 	f := newFlows()
 	members, _ := Members(1, 2, 1)
 	sel := newSelector()
 	b := lb.NewBalancer(sel, lb.BalancerOptions{Pool: newPool(t, members)})
 	var open []lb.Pick
-	for range 64 {
-		pk, ok := b.Pick(f.next())
+	for i := range 64 {
+		// every other flow is pinned, which is accounted for as any other pick is
+		flow := f.next()
+		if i%2 == 1 {
+			flow = pinnedTo(flow, members[i%len(members)])
+		}
+		pk, ok := b.Pick(flow)
 		if !ok {
 			t.Fatal("no pick")
 		}
@@ -338,20 +446,22 @@ func testZeroAlloc(t suiteT, newSelector func() lb.Selector) {
 	for _, weights := range [][]int{uniform(6), {3, 1, 3, 1, 3, 1}} {
 		members, _ := Members(weights...)
 		b := lb.NewBalancer(newSelector(), lb.BalancerOptions{Pool: newPool(t, members)})
-		flow := newFlows().next()
-		// the first pick of a snapshot prepares it
-		if pk, ok := b.Pick(flow); ok {
-			pk.Done(lb.OutcomeOK)
-		}
-		allocs := testing.AllocsPerRun(1000, func() {
-			pk, ok := b.Pick(flow)
-			if !ok {
-				t.Fatal("no pick")
+		keyed := newFlows().next()
+		for _, flow := range []lb.Flow{keyed, pinnedTo(keyed, members[1])} {
+			// the first pick of a snapshot prepares it
+			if pk, ok := b.Pick(flow); ok {
+				pk.Done(lb.OutcomeOK)
 			}
-			pk.Done(lb.OutcomeOK)
-		})
-		if allocs != 0 {
-			t.Errorf("weights %v: a pick allocates %v times", weights, allocs)
+			allocs := testing.AllocsPerRun(1000, func() {
+				pk, ok := b.Pick(flow)
+				if !ok {
+					t.Fatal("no pick")
+				}
+				pk.Done(lb.OutcomeOK)
+			})
+			if allocs != 0 {
+				t.Errorf("weights %v, pinned %v: a pick allocates %v times", weights, flow.HasPin, allocs)
+			}
 		}
 	}
 }

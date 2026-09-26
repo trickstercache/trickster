@@ -251,6 +251,25 @@ func (p plainPicker) Needs() lb.Needs { return p.b.Needs() }
 
 func (p plainPicker) Pick(f lb.Flow) (lb.Pick, bool) { return p.b.Pick(f) }
 
+func TestLeafPicksHonorPinsAndRetriesDoNot(t *testing.T) {
+	a, b := leaf("a", 1), leaf("b", 1)
+	bal := poolOf(t, &countingSelector{}, a, b)
+	pinned := func(int, lb.Picker, *lb.Member) lb.Flow { return lb.Flow{Pin: b.Hash(), HasPin: true} }
+	for _, p := range []lb.Picker{bal, plainPicker{bal}} {
+		lp, ok := lb.PickLeafFunc(p, pinned)
+		if !ok || lp.Member() != b || !lp.Level(0).Pinned() {
+			t.Fatalf("leaf pick = %v, %v, pinned %v; want the pinned member", lp.Member(), ok, lp.Level(0).Pinned())
+		}
+		lp.Done(lb.OutcomeOK)
+		// a retry is a move, whether or not the picker has alternatives to offer
+		lp, ok = lb.RepickLeafFunc(p, pinned)
+		if !ok || lp.Member() != a || lp.Level(0).Pinned() {
+			t.Fatalf("retry = %v, %v, pinned %v; want the strategy's choice", lp.Member(), ok, lp.Level(0).Pinned())
+		}
+		lp.Done(lb.OutcomeOK)
+	}
+}
+
 // a retry avoids every member the flow has failed on, and moves on from a pool that has no
 // other member left to the pools beside it
 func TestRepickLeafAvoidsEveryFailedMember(t *testing.T) {

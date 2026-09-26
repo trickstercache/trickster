@@ -275,20 +275,27 @@ func TestSuiteRejectsBrokenStrategies(t *testing.T) {
 			name: "selects nothing", break_: func(s *broken) { s.declines = true },
 			checks: []string{
 				"no eligible member", "picks only eligible members", "every member is reachable",
-				"repick excludes the failed member", "in-flight accounting balances",
+				"repick excludes the failed member", "a pin the pool cannot honor falls through",
+				"draining members take no new flows", "in-flight accounting balances",
 				"adversarial snapshots terminate", "zero allocations", "concurrent picks and swaps",
 			},
 			says: "was not picked",
 		},
 		{
+			// a member that starts to drain is rebuilt in a new pool, so a stale strategy keeps it
 			name: "selects outside the snapshot", break_: func(s *broken) { s.stale = true },
-			checks: []string{"picks only eligible members", "repick excludes the failed member"},
-			says:   "not eligible",
+			checks: []string{
+				"picks only eligible members", "repick excludes the failed member",
+				"a pin the pool cannot honor falls through", "draining members take no new flows",
+			},
+			says: "not eligible",
 		},
 		{
 			name: "selects a member of no pool", break_: func(s *broken) { s.foreign = true },
 			checks: []string{
-				"picks only eligible members", "adversarial snapshots terminate", "concurrent picks and swaps",
+				"picks only eligible members", "a pin the pool cannot honor falls through",
+				"draining members take no new flows", "adversarial snapshots terminate",
+				"concurrent picks and swaps",
 			},
 			says: "never in the pool",
 		},

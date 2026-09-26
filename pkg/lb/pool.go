@@ -35,7 +35,8 @@ var (
 // Snapshot is an immutable view of a pool's eligible members. Holders may retain it, and must
 // not modify it.
 type Snapshot struct {
-	// Members holds the eligible members of the lowest tier that has any, in pool order
+	// Members holds the eligible members that are not draining, of the lowest tier that has any,
+	// in pool order
 	Members []*Member
 	// Tier is the failover tier the members belong to; 0 when there are none
 	Tier int
@@ -53,6 +54,7 @@ type PoolOptions struct {
 // Reading the subset costs one atomic load.
 type Pool struct {
 	members  []*Member
+	byHash   map[uint64]*Member
 	floor    int32
 	observer Observer
 	snap     atomic.Pointer[Snapshot]
@@ -63,23 +65,31 @@ type Pool struct {
 	subs    []Subscription
 }
 
-// NewPool returns a started Pool over members, whose snapshots hold the members with a health
-// status of at least floor. Membership is fixed: a change of membership is a new Pool.
+// NewPool returns a started Pool over members, whose snapshots hold the members that are not
+// draining and have a health status of at least floor. A change of membership is a new Pool.
 func NewPool(members []*Member, floor int, opts ...PoolOptions) (*Pool, error) {
 	names := make(map[string]struct{}, len(members))
+	byHash := make(map[uint64]*Member, len(members))
 	for _, m := range members {
 		if m == nil {
 			return nil, ErrNilMember
 		}
 		if m.name == "" {
+			// unnamed members share one hash, so a pin could never tell them apart
 			continue
 		}
 		if _, dup := names[m.name]; dup {
 			return nil, fmt.Errorf("%w: %s", ErrDuplicateMember, m.name)
 		}
 		names[m.name] = struct{}{}
+		if _, taken := byHash[m.hash]; taken {
+			// two names that hash alike make an ambiguous pin, so neither is pinnable
+			byHash[m.hash] = nil
+			continue
+		}
+		byHash[m.hash] = m
 	}
-	p := &Pool{members: slices.Clone(members), floor: clampFloor(floor)}
+	p := &Pool{members: slices.Clone(members), byHash: byHash, floor: clampFloor(floor)}
 	if len(opts) > 0 {
 		p.observer = opts[0].Observer
 	}
@@ -88,7 +98,8 @@ func NewPool(members []*Member, floor int, opts ...PoolOptions) (*Pool, error) {
 	// that queues behind the build rather than being lost
 	subs := make([]Subscription, 0, len(p.members))
 	for _, m := range p.members {
-		if n, ok := m.health.(Notifier); ok {
+		// a draining member is never in a snapshot, so its transitions need no rebuild
+		if n, ok := m.health.(Notifier); ok && !m.draining {
 			subs = append(subs, n.OnChange(p.onChange))
 		}
 	}
@@ -156,7 +167,7 @@ func (p *Pool) rebuild() (ev Event, ok bool) {
 	eligible := make([]*Member, 0, len(p.members))
 	tier := 0
 	for _, m := range p.members {
-		if !m.eligible(p.floor, nowNano) || (len(eligible) > 0 && m.tier > tier) {
+		if m.draining || !m.eligible(p.floor, nowNano) || (len(eligible) > 0 && m.tier > tier) {
 			continue
 		}
 		if m.tier < tier {
@@ -188,15 +199,24 @@ func (p *Pool) eject(m *Member, until time.Time, maxPercent int) bool {
 		switch {
 		case o.stats.ejectedUntil.Load() > nowNano:
 			out++
-		case o.eligible(p.floor, nowNano):
+		case !o.draining && o.eligible(p.floor, nowNano):
 			live++
 		}
 	}
-	if m.stats.ejectedUntil.Load() > nowNano || live <= 1 || (out+1)*100 > maxPercent*len(p.members) {
+	// the last live member that takes new flows stays; a draining member takes none
+	if m.stats.ejectedUntil.Load() > nowNano || (!m.draining && live <= 1) ||
+		(out+1)*100 > maxPercent*len(p.members) {
 		return false
 	}
 	m.stats.ejectedUntil.Store(until.UnixNano())
 	return true
+}
+
+func (p *Pool) pinned(h uint64) *Member {
+	if m := p.byHash[h]; m != nil && m.eligibleNow(p.floor) {
+		return m
+	}
+	return nil
 }
 
 // Stop ends the pool's subscriptions. Its last snapshot stays readable and is never replaced.
