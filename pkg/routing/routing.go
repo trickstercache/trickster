@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -63,7 +64,7 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 	if pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil {
 		h = handler.NamedMiddleware(pathOptions.AuthOptions.Name,
 			pathOptions.AuthOptions.Authenticator, h)
-	} else if pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+	} else if pathOptions.AuthenticatorName != reserved.ReferenceNone && backendOptions.AuthOptions != nil &&
 		backendOptions.AuthOptions.Authenticator != nil {
 		h = handler.NamedMiddleware(backendOptions.AuthOptions.Name,
 			backendOptions.AuthOptions.Authenticator, h)
@@ -73,7 +74,7 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
 	return pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil ||
-		pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+		pathOptions.AuthenticatorName != reserved.ReferenceNone && backendOptions.AuthOptions != nil &&
 			backendOptions.AuthOptions.Authenticator != nil
 }
 

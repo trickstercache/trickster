@@ -21,17 +21,15 @@ import (
 	"maps"
 	"slices"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	ct "github.com/trickstercache/trickster/v2/pkg/config/types"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/files"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"go.yaml.in/yaml/v3"
 )
-
-var restrictedNames = sets.New([]string{"", "none"})
 
 type Options struct {
 	Name            string                      `yaml:"-"` // populated from the Lookup key
@@ -80,7 +78,7 @@ func (o *Options) Initialize() error {
 }
 
 func (o *Options) Validate(f types.IsRegisteredFunc) error {
-	if restrictedNames.Contains(o.Name) {
+	if o.Name == "" || reserved.IsReference(o.Name) {
 		return ae.ErrInvalidName
 	}
 	if !f(o.Provider) {

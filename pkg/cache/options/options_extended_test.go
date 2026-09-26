@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"go.yaml.in/yaml/v3"
@@ -28,13 +29,15 @@ import (
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	o := New()
-	o.Name = ""
-	if ok, err := o.Validate(); ok || err != ErrInvalidName {
-		t.Fatalf("Validate() = (%v, %v), want invalid name", ok, err)
+	for _, name := range []string{"", reserved.ReferenceNone} {
+		o := New()
+		o.Name = name
+		if ok, err := o.Validate(); ok || err != ErrInvalidName {
+			t.Fatalf("Validate(%q) = (%v, %v), want invalid name", name, ok, err)
+		}
 	}
 
-	o = New()
+	o := New()
 	o.Name = "default"
 	o.Index.MaxSizeBytes = 100
 	o.Index.MaxSizeBackoffBytes = 200

@@ -44,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
@@ -53,11 +54,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -82,6 +86,49 @@ func TestShouldCaptureAuthForVirtualBackend(t *testing.T) {
 	if shouldCaptureAuth(path, backend) {
 		t.Error("ordinary unauthenticated backend should not seed resources")
 	}
+}
+
+func TestPathAuthenticatorReferences(t *testing.T) {
+	const backendAuthName, pathAuthName = "backend-auth", "path-auth"
+	backend := &bo.Options{AuthOptions: basicAuthOptions(t, backendAuthName, false)}
+	// the backend's authenticator admits no one and the path's own only observes, so the status
+	// shows which of them ran, if either
+	tests := []struct {
+		path   *po.Options
+		status int
+		auth   bool
+	}{
+		{po.New(), http.StatusUnauthorized, true},
+		{&po.Options{AuthenticatorName: pathAuthName, AuthOptions: basicAuthOptions(t, pathAuthName, true)},
+			http.StatusNoContent, true},
+		{&po.Options{AuthenticatorName: reserved.ReferenceNone}, http.StatusNoContent, false},
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for _, test := range tests {
+		w := httptest.NewRecorder()
+		r := request.SetResources(httptest.NewRequest(http.MethodGet, "/", nil), &request.Resources{})
+		attachAuthenticator(next, test.path, backend).ServeHTTP(w, r)
+		if w.Code != test.status {
+			t.Errorf("path authenticator %q: status = %d; want %d", test.path.AuthenticatorName, w.Code, test.status)
+		}
+		if got := hasAuthenticator(test.path, backend); got != test.auth {
+			t.Errorf("path authenticator %q: hasAuthenticator = %t; want %t",
+				test.path.AuthenticatorName, got, test.auth)
+		}
+	}
+}
+
+func basicAuthOptions(t *testing.T, name string, observeOnly bool) *autho.Options {
+	t.Helper()
+	o := &autho.Options{Name: name, Provider: basic.ID, ObserveOnly: observeOnly}
+	a, err := basic.New(map[string]any{"options": o})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Authenticator = a
+	return o
 }
 
 func TestRegisterHealthHandler(t *testing.T) {

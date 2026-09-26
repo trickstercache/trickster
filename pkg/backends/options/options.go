@@ -41,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
@@ -705,7 +706,7 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			}
 		}
 		for _, p := range o.Paths {
-			if p.AuthenticatorName != "none" && p.AuthenticatorName != "" {
+			if p.AuthenticatorName != reserved.ReferenceNone && p.AuthenticatorName != "" {
 				if p.AuthOptions, ok = a[p.AuthenticatorName]; !ok {
 					return NewErrInvalidAuthenticatorName(p.AuthenticatorName,
 						o.Name+"/"+p.Path)

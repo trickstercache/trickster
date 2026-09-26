@@ -27,6 +27,7 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
@@ -100,6 +101,9 @@ func TestValidateConfigMappingsSuccessPaths(t *testing.T) {
 		Path:              "/secure",
 		AuthenticatorName: "auth",
 		ReqRewriterName:   "rw",
+	}, {
+		Path:              "/public",
+		AuthenticatorName: reserved.ReferenceNone,
 	}}
 
 	l := Lookup{"backend": o}
@@ -116,6 +120,10 @@ func TestValidateConfigMappingsSuccessPaths(t *testing.T) {
 	}
 	if o.AuthOptions == nil {
 		t.Fatal("expected AuthOptions to be wired")
+	}
+	if o.Paths[0].AuthOptions == nil || o.Paths[1].AuthOptions != nil {
+		t.Fatalf("path AuthOptions = %v, %v; want the named authenticator, then none for %q",
+			o.Paths[0].AuthOptions, o.Paths[1].AuthOptions, reserved.ReferenceNone)
 	}
 	if len(o.NegativeCache) == 0 {
 		t.Fatal("expected NegativeCache map to be populated")

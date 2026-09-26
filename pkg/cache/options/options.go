@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -74,10 +75,7 @@ type Options struct {
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var (
-	restrictedNames = sets.New([]string{"", "none"})
-	ErrInvalidName  = errors.New("invalid cache name")
-)
+var ErrInvalidName = errors.New("invalid cache name")
 
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
@@ -140,7 +138,7 @@ func (o *Options) Equal(o2 *Options) bool {
 }
 
 func (o *Options) Validate() (bool, error) {
-	if restrictedNames.Contains(o.Name) {
+	if o.Name == "" || reserved.IsReference(o.Name) {
 		return false, ErrInvalidName
 	}
 	if o.Index == nil {

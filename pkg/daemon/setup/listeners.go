@@ -94,6 +94,12 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 	})
 }
 
+func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
+	// every request on the listener passes here ahead of the router, unmatched ones included; middleware
+	// added here goes between the access log and next, so its answers are logged against the real client
+	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger, next))
+}
+
 func applyListenerConfigs(conf, oldConf *config.Config,
 	listenerRouters map[string]router.Router, reloadHandler http.Handler,
 	metricsRouter router.Router, tracers tracing.Tracers, clients backends.Backends,
@@ -300,18 +306,16 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			continue
 		}
 		var r http.Handler
+		accessLogger := routerLogger
 		switch name {
 		case mgmt.ListenerNameMgmt:
-			r = accesslog.RouterMiddleware(routerLogger, managementRouter)
+			r = managementRouter
 		case mgmt.ListenerNameMetrics:
-			r = metricsRouter
+			r, accessLogger = metricsRouter, nil
 		default:
-			r = accesslog.RouterMiddleware(routerLogger,
-				guardReservedRoutes(reserved, listenerRouters[name]))
+			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
-		// the client IP is resolved outside the access log so unmatched
-		// requests are attributed to the real client too
-		r = clientip.Middleware(trustedProxies(options), r)
+		r = wrapListener(options, accessLogger, r)
 		if options.ListenPort > 0 {
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{

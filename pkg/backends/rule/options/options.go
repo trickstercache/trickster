@@ -22,9 +22,9 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -119,10 +119,7 @@ type CaseOptionsList []*CaseOptions
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var (
-	ErrInvalidName  = errors.New("invalid rule name")
-	restrictedNames = sets.New([]string{"", "none"})
-)
+var ErrInvalidName = errors.New("invalid rule name")
 
 // New returns a new Rule Options with default values
 func New() *Options {
@@ -174,7 +171,7 @@ func (l CaseOptionsList) Clone() CaseOptionsList {
 }
 
 func (o *Options) Validate() (bool, error) {
-	if restrictedNames.Contains(o.Name) {
+	if o.Name == "" || reserved.IsReference(o.Name) {
 		return false, ErrInvalidName
 	}
 	return true, nil
