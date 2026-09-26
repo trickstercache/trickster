@@ -221,6 +221,11 @@ The following metrics are available for polling with any Trickster configuration
     * `alb_name` - the name of the configured ALB backend
     * `member` - the name of the pool member backend
 
+* `trickster_alb_member_draining` (Gauge) - 1 for each ALB pool member that is [draining](./alb.md#draining-pool-members): marked `drain: true`, or discovered while terminating but still serving. It keeps its sticky sessions and takes no new work. Members that are not draining have no series; read when the metrics endpoint is scraped.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
+
 * `trickster_alb_member_ejections_total` (Counter) - The number of times `alb.stream.passive_health` took a pool member out of selection after repeated connect failures.
   * labels:
     * `alb_name` - the name of the configured ALB backend

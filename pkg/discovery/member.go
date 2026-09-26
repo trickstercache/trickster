@@ -37,8 +37,8 @@ const (
 	Ready
 	// NotReady means the provider reports the member not ready
 	NotReady
-	// Terminating means the provider reports the member shutting down; it
-	// should be removed from pools ahead of the member disappearing
+	// Terminating means the provider reports the member shutting down but still serving: it
+	// drains, keeping the sessions pinned to it while taking no new work
 	Terminating
 )
 

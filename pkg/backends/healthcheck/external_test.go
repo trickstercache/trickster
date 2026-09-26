@@ -114,3 +114,23 @@ func TestStatusRegistrationRetiresAnActiveProbe(t *testing.T) {
 		hc.Shutdown()
 	}
 }
+
+func TestNotifyChangeSignalsRegistrationSubscribers(t *testing.T) {
+	hc := New()
+	defer hc.Shutdown()
+	ch := make(chan bool, 1)
+	hc.(RegistrationNotifier).SubscribeRegistrations(ch)
+	cn, ok := hc.(ChangeNotifier)
+	if !ok {
+		t.Fatal("health checker does not relay changes")
+	}
+	cn.NotifyChange()
+	select {
+	case <-ch:
+	default:
+		t.Fatal("expected a registration signal")
+	}
+	// a full subscriber is skipped, never waited on
+	cn.NotifyChange()
+	cn.NotifyChange()
+}

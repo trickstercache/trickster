@@ -857,6 +857,10 @@ Failover depends on the ALB learning that its other members are down, so give th
 
 A pool member marked `drain: true` takes no new work but keeps the [sticky sessions](#sticky-sessions) it already has, for as long as it is available, so that it can be retired without ending them. Every mechanism leaves a draining member out when it selects a member or fans a request out; only a sticky session can reach it. A pool must have at least one member that is not draining, unless its other members come from [autodiscovery](./alb-autodiscovery.md). When every member of the primary tier drains, new work goes to the [backup members](#backup-pool-members).
 
+Discovered members drain too: a Kubernetes endpoint that is terminating but still serving, or a deleted pod that is still ready, stays in the pool as a draining member until it stops serving, so a rolling restart moves new sessions to the new pods while the old ones finish theirs. See [autodiscovery](./alb-autodiscovery.md#zero-error-rolling-deploys). This applies to every discovered pool, sticky or not.
+
+Draining members are listed on the [health status page](#all-backends-health-status-page) and exported by the `trickster_alb_member_draining{alb_name, member}` gauge, which is `1` for each draining member.
+
 ```yaml
 backends:
   app:
@@ -962,6 +966,8 @@ You can also provide a 'Accept: application/json' Header or query param ?json
 ```
 
 ### JSON Health Status
+
+Each ALB is listed with its pool members grouped by health: `a:[...]` (available), `u:[...]` (unavailable) and `nc:[...]` (not checked) in the text form, and `availablePoolMembers`, `unavailablePoolMembers`, `uncheckedPoolMembers` and `initializingPoolMembers` in the JSON and YAML forms. [Draining](#draining-pool-members) members are also listed under their health, and again in `d:[...]` (text) or `drainingPoolMembers` (JSON and YAML). An ALB is listed as available while its pool has a member it would send new work to: one that meets its `healthy_floor`, is not draining, and is in the tier in use. An ALB whose members all drain is therefore unavailable, whatever their health, although it still serves their sticky sessions.
 
 As the table footer from the plaintext version of the health status page indicates, you may also request a JSON version of the health status for machine consumption. The JSON version includes additional detail about any Backends marked as `unavailable`, and is structured as follows:
 

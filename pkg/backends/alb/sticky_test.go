@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
@@ -135,6 +136,27 @@ func TestDrainingMemberKeepsItsSessions(t *testing.T) {
 	for range 8 {
 		require.Equal(t, "a", (&session{h: after}).get(t))
 	}
+}
+
+func TestDrainingPoolNames(t *testing.T) {
+	g := namedGraph(t, "a", "b", "c")
+	c := g.routedALB(t, "drain-names", &ao.Options{MechanismName: "rr",
+		Pool: ao.PoolMemberList{{Name: "c", Drain: true}, {Name: "a"}, {Name: "b", Drain: true}}})
+	plain := g.routedALB(t, "drain-none", &ao.Options{MechanismName: "rr", Pool: ao.Members("a")})
+	g.start(t)
+	require.NotNil(t, c.CorePool())
+	require.Equal(t, []string{"b", "c"}, c.DrainingPoolNames())
+	require.Nil(t, plain.DrainingPoolNames())
+
+	// a mechanism that dispatches without a pool has no draining members
+	o := bo.New()
+	o.ALBOptions = ao.New()
+	o.ALBOptions.MechanismName = names.MechanismUR
+	o.ALBOptions.UserRouter = &uropt.Options{DefaultBackend: "a"}
+	ur, err := NewClient("drain-ur", o, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.Nil(t, ur.(*Client).CorePool())
+	require.Nil(t, ur.(*Client).DrainingPoolNames())
 }
 
 func TestStickyTablesAreForgottenWithTheirALB(t *testing.T) {

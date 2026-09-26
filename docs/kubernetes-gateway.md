@@ -495,7 +495,8 @@ ready endpoints, discovered from its EndpointSlices, rather than a backend
 addressing the Service's cluster IP. Each pool carries everything the
 backendRef would have carried — cache, timeout, TLS, filters. Endpoint churn
 reaches the pools without a configuration reload, and a rolling restart
-drains terminating endpoints before their pods stop. The controller's
+drains terminating endpoints before their pods stop: they take no new work
+and leave the pool once they stop serving. The controller's
 service account needs `endpointslices` list and watch for it; see
 [kubernetes-rbac.md](./kubernetes-rbac.md).
 

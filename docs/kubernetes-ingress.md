@@ -259,7 +259,8 @@ the controller generates a `discovery` entry over its own connection, a
 template backend carrying the rule's settings, and a discovery-backed ALB
 whose query selects the Service's port. Endpoint churn then reaches the pool
 without a configuration reload, and a rolling restart of the Deployment
-behind the Service drains terminating endpoints before their pods stop.
+behind the Service drains terminating endpoints before their pods stop: they
+take no new work and leave the pool once they stop serving.
 The controller's service account needs `endpointslices` list and watch for
 it; see [kubernetes-rbac.md](./kubernetes-rbac.md).
 

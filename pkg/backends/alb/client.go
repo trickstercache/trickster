@@ -399,6 +399,7 @@ func (c *Client) swapPool(targets pool.Targets) {
 	if oldPool != nil {
 		oldPool.Stop()
 	}
+	observe.TrackPool(c.Name(), c)
 }
 
 // effectiveFloor returns the healthy floor to enforce for the provided
@@ -465,6 +466,32 @@ func (c *Client) Pool() pool.Pool {
 		return pm.Pool()
 	}
 	return nil
+}
+
+// CorePool returns the protocol-neutral form of the current pool, or nil for a mechanism that
+// dispatches without one
+func (c *Client) CorePool() *lb.Pool {
+	if p := c.Pool(); p != nil {
+		return p.Core()
+	}
+	return nil
+}
+
+// DrainingPoolNames returns the names of the current pool's draining members, sorted, for
+// health and management display
+func (c *Client) DrainingPoolNames() []string {
+	p := c.CorePool()
+	if p == nil {
+		return nil
+	}
+	var names []string
+	for _, m := range p.Configured() {
+		if m.Draining() && m.Name() != "" {
+			names = append(names, m.Name())
+		}
+	}
+	slices.Sort(names)
+	return names
 }
 
 // Picker returns the balancer that commits one unit of work to one pool member, which is how
@@ -774,6 +801,7 @@ func (c *Client) StopPool() {
 	if pm, ok := c.handler.(types.PickerMechanism); ok {
 		observe.Untrack(c.Name(), pm.Balancer())
 	}
+	observe.UntrackPool(c.Name(), c)
 }
 
 // Boilerplate Interface Functions (to EOF)

@@ -62,6 +62,12 @@ type RegistrationNotifier interface {
 	SubscribeRegistrations(chan bool)
 }
 
+// ChangeNotifier is implemented by health checkers that relay a change their statuses do not
+// show, such as a pool member starting to drain, to their registration subscribers
+type ChangeNotifier interface {
+	NotifyChange()
+}
+
 // Lookup is a map of named Target references
 type Lookup map[string]*target
 
@@ -100,6 +106,11 @@ func (hc *healthChecker) SubscribeRegistrations(ch chan bool) {
 	hc.mtx.Lock()
 	hc.regSubscribers = append(hc.regSubscribers, ch)
 	hc.mtx.Unlock()
+}
+
+// NotifyChange signals the registration subscribers (non-blocking) without a registration
+func (hc *healthChecker) NotifyChange() {
+	hc.notifyRegistrations()
 }
 
 func (hc *healthChecker) notifyRegistrations() {

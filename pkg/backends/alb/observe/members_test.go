@@ -77,3 +77,48 @@ trickster_alb_member_inflight{alb_name="inflight-alb",member="b"} 2
 		t.Errorf("series after untracking = %d", got)
 	}
 }
+
+type poolSource struct{ p *lb.Pool }
+
+func (s *poolSource) CorePool() *lb.Pool { return s.p }
+
+func TestMemberDrainingIsCollectedAtScrapeTime(t *testing.T) {
+	p, err := lb.NewPool([]*lb.Member{
+		lb.NewMember(lb.MemberOptions{Name: "a"}),
+		lb.NewMember(lb.MemberOptions{Name: "b", Draining: true}),
+		lb.NewMember(lb.MemberOptions{Draining: true}),
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Stop()
+	src := &poolSource{p: p}
+	TrackPool("drain-alb", src)
+	TrackPool("", src)
+	TrackPool("no-source", nil)
+	empty := &poolSource{}
+	TrackPool("poolless-alb", empty)
+	defer UntrackPool("poolless-alb", empty)
+
+	// only named draining members are exported
+	want := `
+# HELP trickster_alb_member_draining 1 for each ALB pool member that is draining: it keeps its sticky sessions and takes no new work.
+# TYPE trickster_alb_member_draining gauge
+trickster_alb_member_draining{alb_name="drain-alb",member="b"} 1
+`
+	if err := testutil.CollectAndCompare(memberCollector{}, strings.NewReader(want)); err != nil {
+		t.Error(err)
+	}
+
+	// a reloaded ALB takes over its name; stopping the old one must not drop the new series
+	next := &poolSource{p: p}
+	TrackPool("drain-alb", next)
+	UntrackPool("drain-alb", src)
+	if got := testutil.CollectAndCount(memberCollector{}); got != 1 {
+		t.Errorf("series after the old ALB stopped = %d, want 1", got)
+	}
+	UntrackPool("drain-alb", next)
+	if got := testutil.CollectAndCount(memberCollector{}); got != 0 {
+		t.Errorf("series after untracking = %d", got)
+	}
+}

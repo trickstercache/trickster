@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
@@ -169,14 +170,92 @@ func TestManagerProviderHealthMode(t *testing.T) {
 	require.NotNil(t, st)
 	require.Equal(t, healthcheck.StatusPassing, st.Get())
 
-	// a readiness flip updates the same status in place
+	// a readiness flip updates the same status in place; a terminating member still serves
 	mem.Ready = discovery.Terminating
+	m.ApplySnapshot(discovery.Snapshot{mem})
+	require.Equal(t, healthcheck.StatusPassing, st.Get())
+
+	mem.Ready = discovery.NotReady
 	m.ApplySnapshot(discovery.Snapshot{mem})
 	require.Equal(t, healthcheck.StatusFailing, st.Get())
 
 	mem.Ready = discovery.ReadyUnknown
 	m.ApplySnapshot(discovery.Snapshot{mem})
 	require.Equal(t, healthcheck.StatusUnchecked, st.Get())
+}
+
+func configuredMember(t *testing.T, c *alb.Client, name string) *lb.Member {
+	t.Helper()
+	for _, mb := range c.Pool().Core().Configured() {
+		if mb.Name() == name {
+			return mb
+		}
+	}
+	t.Fatalf("%s is not in the pool", name)
+	return nil
+}
+
+// a member the provider reports terminating drains in place: it keeps its name, stats and so its
+// pins, takes no new work, and the health page is told; readiness returns it to new work
+func TestManagerTerminatingMembersDrain(t *testing.T) {
+	for _, mode := range []string{ao.HealthModeProbe, ao.HealthModeProvider} {
+		t.Run(mode, func(t *testing.T) {
+			m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
+				DiscovererName: "d", TemplateBackend: "rp-template", HealthMode: mode,
+			})
+			probedTemplate(m)
+			changes := make(chan bool, 1)
+			hc.(healthcheck.RegistrationNotifier).SubscribeRegistrations(changes)
+
+			a, b := member("a", "10.0.0.1:8080"), member("b", "10.0.0.2:8080")
+			a.Ready, b.Ready = discovery.Ready, discovery.Ready
+			m.ApplySnapshot(discovery.Snapshot{a, b})
+			was := configuredMember(t, c, "myalb-a")
+			require.False(t, was.Draining())
+			<-changes
+
+			a.Ready = discovery.Terminating
+			m.ApplySnapshot(discovery.Snapshot{a, b})
+			select {
+			case <-changes:
+			default:
+				t.Fatal("the health page was not told the member drains")
+			}
+			require.Equal(t, []string{"myalb-a", "myalb-b"}, m.MemberNames())
+			draining := configuredMember(t, c, "myalb-a")
+			require.True(t, draining.Draining())
+			require.Same(t, was.Stats(), draining.Stats(), "a draining member keeps its stats")
+			require.Equal(t, was.Hash(), draining.Hash(), "a draining member keeps its pins")
+			require.Equal(t, healthcheck.StatusPassing, hc.Statuses()["myalb-a"].Get())
+
+			targets := c.Pool().Targets()
+			require.Len(t, targets, 1)
+			require.Equal(t, "myalb-b", targets[0].Name())
+			for range 4 {
+				pk, ok := c.Picker().Pick(lb.Flow{})
+				require.True(t, ok)
+				require.Equal(t, "myalb-b", pk.Member().Name(), "a draining member took new work")
+				pk.Done(lb.OutcomeOK)
+			}
+			pk, ok := c.Picker().Pick(lb.Flow{Pin: was.Hash(), HasPin: true})
+			require.True(t, ok)
+			require.True(t, pk.Pinned())
+			require.Equal(t, "myalb-a", pk.Member().Name(), "a draining member lost its pinned flow")
+			pk.Done(lb.OutcomeOK)
+
+			a.Ready = discovery.Ready
+			m.ApplySnapshot(discovery.Snapshot{a, b})
+			require.False(t, configuredMember(t, c, "myalb-a").Draining())
+			require.Len(t, c.Pool().Targets(), 2)
+
+			// a member first discovered while terminating joins draining
+			late := member("late", "10.0.0.3:8080")
+			late.Ready = discovery.Terminating
+			m.ApplySnapshot(discovery.Snapshot{a, b, late})
+			require.True(t, configuredMember(t, c, "myalb-late").Draining())
+			require.Len(t, c.Pool().Targets(), 2)
+		})
+	}
 }
 
 func TestManagerInstantiationFailureRetries(t *testing.T) {
