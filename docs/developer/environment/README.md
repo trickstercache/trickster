@@ -32,6 +32,38 @@ You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
 all data including named volumes.
 
+## devorigin
+
+The `devorigin` service (`hack/devorigin`, run on the `golang:1.27-alpine`
+image) listens on port 8482, published on the host's loopback interface only,
+and serves three things:
+
+* `/metrics`: the trips seed data as live Prometheus metrics, which Prometheus
+  scrapes as the `trips` job (see [Seed data](#seed-data)).
+* `/prometheus/api/v1/query` and `/query_range`: a Prometheus API simulator
+  that returns repeatable synthetic data for any query and any time range, up
+  to the same 11,000-points-per-series resolution limit that Prometheus enforces.
+  Two selector labels change its behavior: `status_code` (for example
+  `up{status_code="500"}` answers 500) and `invalid_response_body=1`, which
+  answers with a body that cannot be decoded. The `sim1` and `sim2` backends
+  and the `sim-*` Grafana datasources use it, and so do the `alb1`, `alb3`,
+  and `alb4` pools, which pair it with the real Prometheus.
+* `/byterange/`: an origin that serves a fixed text body at any path, with
+  full single and multipart Range request support. The `rpc1` and `rpc2`
+  backends use it. Its query parameters are `max-age` (Cache-Control),
+  `status` (forces a response code), `ims` and `non-ims` (force a code only
+  when the request does or does not send If-Modified-Since), and `size` (up to
+  1 GiB). Requests with more than 64 ranges, or with ranges that add up to
+  more than 1 GiB, get the full body instead.
+
+The mocks live in `pkg/testutil/mocks`, where the unit tests use them too.
+They import only the standard library, so the service builds from the repo
+with no network access. To run it outside Docker:
+
+```bash
+cd hack/devorigin && go run . serve -seed-data ../../docs/developer/environment/docker-compose-data/seed-data -addr :8482
+```
+
 ## Static File Server
 
 The `static1` backend in `trickster-config/trickster.yaml` serves the files under
@@ -189,6 +221,32 @@ database loader shifts them so the midpoint of the window lands on the seed
 instant, giving six weeks of past data and six weeks of future data so live
 dashboards keep showing fresh points as time passes.
 
+Prometheus gets the same trips as metrics. `prometheus_seed_generate` runs
+`hack/devorigin backfill`, which writes the last 15 days of the metrics below as
+OpenMetrics, one sample per minute. `prometheus_seed` then empties the
+Prometheus data directory and imports the file with `promtool tsdb
+create-blocks-from openmetrics`, before Prometheus starts. From then on,
+Prometheus scrapes the same metrics live from `devorigin`. Counters include
+every trip since the start of the seed window, so the backfilled history and
+the live samples join up with no counter reset. Prometheus keeps its default
+15-day retention, which is why the backfill stops at 15 days.
+
+| Metric | Type | Labels |
+|---|---|---|
+| `trips_total` | counter | `borough`, `cab_type`, `payment_type` |
+| `trips_fares_dollars_total` | counter | `borough`, `cab_type` |
+| `trips_tips_dollars_total` | counter | `borough` |
+| `trips_passengers_total` | counter | `borough` |
+| `trips_in_progress` | gauge | `borough` |
+| `trips_distance_miles` | histogram | `borough` |
+
+All of them count trips by pickup time, except `trips_in_progress`, which
+drops a trip at its dropoff time. The `Trips (Prometheus)` dashboard charts them
+through any of the Prometheus datasources. `prometheus_seed` never replaces
+the data of a running Prometheus: a `make developer-start` against an already
+running environment keeps the current Prometheus data, so use
+`make developer-seed-data` (below) or restart the environment to reseed it.
+
 To change the names, boroughs, cab colours, or shares, edit
 `hack/seedgen/theme.go`; to change the daily or weekly curve, edit
 `hack/seedgen/calendar.go`. After any intentional change, run
@@ -203,9 +261,9 @@ a container. See `hack/seedgen/README.md`.
 `make developer-seed-data` runs `hack/developer-seed-data.sh`, which
 regenerates the seed window and then runs every seeder concurrently. Set
 `SEED_TARGET` to a space- or comma-separated subset of `clickhouse`, `mysql`,
-`timescaledb`, `greptimedb`, `druid`, and `graphite` to scope the run, for example
-`SEED_TARGET=timescaledb make developer-seed-data`. The seed instant is
-recomputed on every run, so a scoped re-seed shifts only the selected
+`timescaledb`, `greptimedb`, `druid`, `prometheus`, and `graphite` to scope the
+run, for example `SEED_TARGET=timescaledb make developer-seed-data`. The seed
+instant is recomputed on every run, so a scoped re-seed shifts only the selected
 databases; the others keep their previous shift, and dashboards that compare
 backends will disagree until a full run re-syncs them.
 
