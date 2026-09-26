@@ -295,6 +295,8 @@ func writeTestConfig(t *testing.T, configPath string,
 			}
 		}
 	}
+	// GreptimeDB's second native endpoint is likewise opt-in in this harness.
+	delete(c.Listeners, "greptimedb-mysql")
 	// The dev config binds its PostgreSQL wire-protocol listeners to fixed
 	// ports; drop them and the backends they serve, which need such a listener.
 	// Tests that want one add it back on a reserved port through mods.

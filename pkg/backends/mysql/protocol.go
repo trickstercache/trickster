@@ -75,6 +75,7 @@ var passwordHashPrefixes = [...]string{
 // authenticated upstream session and can grow to include certificate policy
 // without coupling it to the generic listener package.
 type ProtocolConfig struct {
+	Engine      Engine
 	BackendName string
 	RestartKey  string
 	Upstream    vtmysql.ConnParams
@@ -163,7 +164,11 @@ func upstreamConnParamsFromOptions(o *bo.Options) (vtmysql.ConnParams, error) {
 	if o == nil {
 		return vtmysql.ConnParams{}, errors.New("nil MySQL backend options")
 	}
-	u, err := url.Parse(o.OriginURL)
+	rawURL := o.OriginURL
+	if o.MySQL != nil && o.MySQL.UpstreamURL != "" {
+		rawURL = o.MySQL.UpstreamURL
+	}
+	u, err := url.Parse(rawURL)
 	if err != nil {
 		return vtmysql.ConnParams{}, fmt.Errorf("parse MySQL origin URL: %w", err)
 	}
@@ -431,11 +436,12 @@ func NewRoutedProtocolServer(config ProtocolConfig, resolver backends.RouteResol
 }
 
 func newProtocolHandler(config ProtocolConfig, env *vtenv.Environment) *protocolHandler {
-	return &protocolHandler{
+	h := &protocolHandler{
 		config: config, env: env, sessions: make(map[*vtmysql.Conn]*upstreamSession),
-		controls:      make(map[uint32]*phaseConn),
-		metricHandles: newProtocolMetricHandles(config.BackendName),
+		controls: make(map[uint32]*phaseConn),
 	}
+	h.metricHandles = newProtocolMetricHandles(config.BackendName, h.dialect())
+	return h
 }
 
 // Serve runs the protocol accept loop on l.
@@ -589,6 +595,7 @@ type upstreamSession struct {
 	warnings            uint16
 	database            string
 	timeZone            string
+	defaultTimeZone     string
 	collation           collations.ID // effective upstream collation
 	inTx                bool
 	cacheUnsafe         bool
@@ -883,7 +890,7 @@ type protocolHandler struct {
 func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
 	h.deltaOnce.Do(func() {
 		h.delta = nativedelta.New(nativedelta.Config{
-			Protocol:              mysqlDialect,
+			Protocol:              h.dialect(),
 			BackendName:           h.config.BackendName,
 			CacheClient:           h.cacheClient,
 			CacheTTL:              h.config.CacheTTL,
@@ -1054,6 +1061,18 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSNetError,
 			"Trickster could not restore the MySQL origin session")
 	}
+	if initializer, ok := h.config.Engine.(SessionInitializer); ok {
+		if h.config.ConnectTimeout > 0 {
+			_ = conn.GetRawConn().SetDeadline(time.Now().Add(h.config.ConnectTimeout))
+		}
+		view, initErr := initializer.InitSession(conn)
+		_ = conn.GetRawConn().SetDeadline(time.Time{})
+		if initErr != nil {
+			conn.Close()
+			return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSNetError, "Trickster could not read the origin session defaults")
+		}
+		session.defaultTimeZone = view.TimeZone
+	}
 	if h.closed.Load() {
 		conn.Close()
 		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSUnknownSQLState,
@@ -1166,7 +1185,12 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	if parsed.statementType != vtparser.StmtSelect {
 		return h.proxyQuery(session, query, parsed, callback)
 	}
-	analysis := defaultAnalyzer.AnalyzeParsed(query, parsed.statement, parsed.err)
+	if _, ok := h.config.Engine.(SessionInitializer); ok {
+		if err := h.connectSession(session); err != nil {
+			return err
+		}
+	}
+	analysis := h.analyzeQuery(query, parsed, session, time.Now())
 	h.observeAnalysis(parsed.statementType, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
@@ -1518,7 +1542,7 @@ func (h *protocolHandler) streamResultSet(session *upstreamSession, upstream *vt
 		return err
 	}
 	if len(fields) == 0 {
-		statusFlags, warnings, stateErr := originProtocolState(upstream)
+		statusFlags, warnings, stateErr := h.originProtocolState(upstream)
 		if stateErr != nil {
 			return stateErr
 		}
@@ -1541,7 +1565,7 @@ func (h *protocolHandler) streamResultSet(session *upstreamSession, upstream *vt
 			return fetchErr
 		}
 		if row == nil {
-			statusFlags, warnings, stateErr := originProtocolState(upstream)
+			statusFlags, warnings, stateErr := h.originProtocolState(upstream)
 			if stateErr != nil {
 				if emitted && session.downstream != nil {
 					session.downstream.MarkForClose()

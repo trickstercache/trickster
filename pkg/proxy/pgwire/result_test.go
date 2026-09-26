@@ -242,7 +242,7 @@ func TestTimeAxisDecoding(t *testing.T) {
 		"float epoch":         {TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, "1789027500", want},
 		"numeric epoch":       {TimeAxisEpochNumeric, timeseries.DateTimeUnixSecs, "1789027500.000", want},
 	} {
-		decoder, err := newTimeAxisDecoder(test.kind, test.unit, false, iso)
+		decoder, err := newTimeAxisDecoder(test.kind, test.unit, TimeSemantics{}, iso)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -250,7 +250,7 @@ func TestTimeAxisDecoding(t *testing.T) {
 			t.Fatalf("%s: got %v, %v; want %v", name, got, err, test.want)
 		}
 	}
-	zoned, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, false, iso)
+	zoned, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, TimeSemantics{}, iso)
 	for _, text := range []string{
 		"", "infinity", "-infinity", "12026-09-10 08:05:00+00", "2026-09-10 08:05:00+00 BC", "2026-09-10 08:05:00",
 		"2026-09-10 08:05:00Z", "2026-09-10 08:05:00.+00", "2026-09-10 08:05:00.1234567890+00", "2026-13-10 08:05:00+00",
@@ -261,21 +261,21 @@ func TestTimeAxisDecoding(t *testing.T) {
 			t.Fatalf("%q must fail closed, got %v", text, err)
 		}
 	}
-	naive, _ := newTimeAxisDecoder(TimeAxisTimestamp, 0, false, iso)
+	naive, _ := newTimeAxisDecoder(TimeAxisTimestamp, 0, TimeSemantics{}, iso)
 	if _, err := naive.decode([]byte("2026-09-10 08:05:00+00")); !errors.Is(err, errTimeAxis) {
 		t.Fatalf("a zone-less column cannot carry an offset, got %v", err)
 	}
-	date, _ := newTimeAxisDecoder(TimeAxisDate, 0, false, iso)
+	date, _ := newTimeAxisDecoder(TimeAxisDate, 0, TimeSemantics{}, iso)
 	if _, err := date.decode([]byte("2026-09-10 BC")); !errors.Is(err, errTimeAxis) {
 		t.Fatalf("expected a BC date to fail closed, got %v", err)
 	}
-	epoch, _ := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, false, iso)
+	epoch, _ := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, TimeSemantics{}, iso)
 	for _, text := range []string{"2e+09x", "1789027500.5", "1e300"} {
 		if _, err := epoch.decode([]byte(text)); !errors.Is(err, errTimeAxis) {
 			t.Fatalf("%q must fail closed, got %v", text, err)
 		}
 	}
-	integer, _ := newTimeAxisDecoder(TimeAxisEpochInteger, timeseries.DateTimeUnixSecs, false, iso)
+	integer, _ := newTimeAxisDecoder(TimeAxisEpochInteger, timeseries.DateTimeUnixSecs, TimeSemantics{}, iso)
 	for _, text := range []string{"abc", "9223372036854775807"} {
 		if _, err := integer.decode([]byte(text)); !errors.Is(err, errTimeAxis) {
 			t.Fatalf("%q must fail closed, got %v", text, err)
@@ -306,7 +306,7 @@ func TestTimeAxisDecoderFailsClosedOnSessionSettings(t *testing.T) {
 		"float with exact digits":       {TimeAxisEpochFloat, timeseries.DateTimeUnixNano, false, map[string]string{varExtraFloatDigits: "3"}, true},
 		"unknown kind":                  {0, 0, false, nil, false},
 	} {
-		_, err := newTimeAxisDecoder(test.kind, test.unit, test.naiveUTC, timeAxisSettings(test.settings))
+		_, err := newTimeAxisDecoder(test.kind, test.unit, TimeSemantics{NaiveTimestampsAreUTC: test.naiveUTC}, timeAxisSettings(test.settings))
 		if (err == nil) != test.ok {
 			t.Errorf("%s: err = %v, want ok = %t", name, err, test.ok)
 		}
@@ -314,7 +314,7 @@ func TestTimeAxisDecoderFailsClosedOnSessionSettings(t *testing.T) {
 }
 
 func TestBucketTime(t *testing.T) {
-	decoder, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, false, timeAxisSettings(map[string]string{"datestyle": "ISO"}))
+	decoder, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, TimeSemantics{}, timeAxisSettings(map[string]string{"datestyle": "ISO"}))
 	row := func(values ...[]byte) []byte {
 		body, _ := (&pgproto3.DataRow{Values: values}).Encode(nil)
 		return body[frameHeaderLen:]

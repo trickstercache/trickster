@@ -1,0 +1,22 @@
+default_timezone = "UTC"
+enable_telemetry = false
+
+[http]
+addr = "0.0.0.0:4000"
+
+[grpc]
+bind_addr = "0.0.0.0:4001"
+
+[mysql]
+enable = true
+addr = "0.0.0.0:4002"
+
+[postgres]
+enable = true
+addr = "0.0.0.0:4003"
+
+[influxdb]
+enable = true
+
+[logging]
+dir = ""

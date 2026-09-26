@@ -662,14 +662,14 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 				if start < l && end <= l && end > start {
 					s.Points = s.Points.CloneRange(start, end)
 					s.PointSize = s.Points.Size()
+					sl[index] = s
 				}
-				sl[index] = s
 				return nil
 			})
 			j++
 		}
 		eg.Wait()
-		ds.Results[i].SeriesList = sl[:j]
+		ds.Results[i].SeriesList = slices.DeleteFunc(sl[:j], func(s *Series) bool { return s == nil })
 	}
 }
 

@@ -1213,3 +1213,46 @@ backends:
 		t.Fatal("clone mutated original postgres options")
 	}
 }
+
+func TestPostgresUpstreamURLRedaction(t *testing.T) {
+	for _, raw := range []string{
+		"postgres://user:origin-secret@db.example/public",
+		"postgres://user:origin-secret%zz@db.example/public",
+	} {
+		o := New()
+		o.Postgres = pgo.New()
+		o.Postgres.UpstreamURL = raw
+		if safe := o.ToYAML(); strings.Contains(safe, "origin-secret") {
+			t.Fatal("YAML exposed pgwire upstream credentials")
+		}
+		if o.Postgres.UpstreamURL != raw {
+			t.Fatal("redaction changed the live configuration")
+		}
+	}
+	for _, raw := range []string{"postgres://db.example/public", "postgres://user@db.example/public"} {
+		o := New()
+		o.Postgres = pgo.New()
+		o.Postgres.UpstreamURL = raw
+		if o.CloneYAMLSafe().Postgres.UpstreamURL != raw {
+			t.Fatal("redaction changed a URL without a password")
+		}
+	}
+}
+
+func TestMySQLUpstreamURLCloneRedaction(t *testing.T) {
+	for _, raw := range []string{"mysql://user:origin-secret@db.example/public", "mysql://user:origin-secret%zz@db.example/public"} {
+		o := New()
+		o.MySQL = mo.New()
+		o.MySQL.UpstreamURL = raw
+		o.NativeListenerProtocols = []string{"mysql", "postgres"}
+		if strings.Contains(o.ToYAML(), "origin-secret") {
+			t.Fatal("YAML exposed MySQL upstream credentials")
+		}
+		clone := o.Clone()
+		clone.MySQL.UpstreamURL = "changed"
+		clone.NativeListenerProtocols[0] = "changed"
+		if o.MySQL.UpstreamURL != raw || o.NativeListenerProtocols[0] != "mysql" {
+			t.Fatal("clone mutated live options")
+		}
+	}
+}

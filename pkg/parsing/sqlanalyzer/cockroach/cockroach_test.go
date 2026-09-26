@@ -520,6 +520,31 @@ func TestRenderExtentIsConcurrent(t *testing.T) {
 	}
 }
 
+func TestPartialBucketMetadata(t *testing.T) {
+	for _, test := range []struct {
+		name, predicate string
+		drops           bool
+	}{
+		{"complete", "time >= 1704067200 AND time < 1704153600", false},
+		{"partial_lower", "time >= 1704067207 AND time < 1704153600", true},
+		{"partial_upper", "time >= 1704067200 AND time < 1704153607", true},
+		{"inclusive_aligned", "time >= 1704067200 AND time <= 1704153600", true},
+		{"inclusive_partial", "time >= 1704067200 AND time <= 1704153607", true},
+		{"inclusive_complete", "time >= 1704067200 AND time <= 1704153599", false},
+		{"open_aligned", "time >= 1704067200", false},
+		{"open_partial", "time >= 1704067207", true},
+		{"output_discrete", "bucket >= 1704067207 AND bucket <= 1704153607", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			statement := "SELECT date_bin(INTERVAL '10 seconds', time) AS bucket, avg(v) FROM cpu WHERE " + test.predicate + " GROUP BY 1"
+			got := newDataFusionAnalyzer().Analyze(statement, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil || got.Plan.DropsPartialBuckets != test.drops {
+				t.Fatalf("analysis=%+v plan=%+v, drops=%v", got, got.Plan, test.drops)
+			}
+		})
+	}
+}
+
 func rfc3339Literal(v time.Time) string {
 	return "'" + v.UTC().Format(time.RFC3339Nano) + "'"
 }

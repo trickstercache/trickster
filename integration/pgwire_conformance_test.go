@@ -21,12 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -53,6 +55,7 @@ const (
 type pgwireTarget struct {
 	Name                 string
 	Provider             string
+	Dialect              string
 	OriginAddr           string
 	Database             string
 	OriginUser           string
@@ -71,6 +74,7 @@ type pgwireTarget struct {
 	DeltaSQLs            []string
 	WeekSQL              string
 	ZoneSQL              string
+	ZoneChangesResults   bool
 	SupportsCancel       bool
 	SupportsTransactions bool
 }
@@ -79,7 +83,7 @@ func pgwireTargets() []pgwireTarget {
 	// The suite is the same for every engine the postgres listener can front;
 	// only these facts differ, so serving another engine means adding an entry.
 	return []pgwireTarget{{
-		Name: "timescaledb", Provider: providers.TimescaleDB, OriginAddr: "127.0.0.1:5432",
+		Name: "timescaledb", Provider: providers.TimescaleDB, Dialect: providers.Postgres, OriginAddr: "127.0.0.1:5432",
 		Database: "trickster", OriginUser: "trickster", OriginPassword: "trickster-dev-upstream",
 		ClientUser: "grafana_ro", ClientPassword: "trickster-dev-grafana",
 		ScalarSQL: "SELECT 42::int4 AS i, 'text'::text AS t, 1.50::numeric AS n, NULL::text AS z, " +
@@ -106,9 +110,47 @@ func pgwireTargets() []pgwireTarget {
 		// week buckets sit on the engine's own grid, which is not the Unix epoch's
 		WeekSQL: "SELECT time_bucket('7 days', pickup_datetime) AS time, count(*) FROM trips " +
 			"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
-		ZoneSQL:        "SET TIME ZONE 'Asia/Kolkata'",
+		ZoneSQL: "SET TIME ZONE 'Asia/Kolkata'", ZoneChangesResults: true,
 		SupportsCancel: true, SupportsTransactions: true,
+	}, {
+		Name: "greptimedb", Provider: providers.GreptimeDB, Dialect: providers.GreptimeDB, OriginAddr: "127.0.0.1:4003",
+		// GreptimeDB's read-only users cannot SET session variables. This fixture
+		// account is used only for conformance; the Grafana backend remains read-only.
+		Database: "public", OriginUser: "seeder", OriginPassword: "trickster-dev-seed",
+		ClientUser: "seeder", ClientPassword: "trickster-dev-seed",
+		ScalarSQL: "SELECT CAST(42 AS INT) AS i, 'text' AS t, CAST(1.50 AS DOUBLE) AS n, " +
+			"CAST(NULL AS STRING) AS z, TIMESTAMP '2026-01-02 03:04:05' AS ts, true AS b",
+		LargeSQL: "SELECT pickup_epoch, cab_type, passenger_count FROM trips " +
+			"ORDER BY pickup_epoch, cab_type, passenger_count LIMIT 50000", LargeRows: 50000,
+		MissingSQL:  "SELECT * FROM __missing_pgwire_conformance_table",
+		SetShowName: "TimeZone", SetShowSQL: "SET time_zone = 'Asia/Kolkata'", ShowSQL: "SHOW TIMEZONE",
+		ObjectSQL: "SELECT cab_type, count(*) FROM trips GROUP BY 1 ORDER BY 1",
+		DeltaSQLs: []string{
+			"SELECT date_bin(INTERVAL '5 minutes', pickup_datetime) AS time, cab_type, count(*) AS trips " +
+				"FROM trips WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1, 2 ORDER BY 1, 2",
+			"SELECT floor(extract(epoch FROM pickup_datetime)/900)*900 AS time, count(*) AS trips " +
+				"FROM trips WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
+			"SELECT date_bin('5m', pickup_datetime) AS time, count(*) AS trips " +
+				"FROM trips WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1 DESC",
+			"SELECT date_bin(INTERVAL '15 minutes', \"bucket\") AS time, sum(trips) AS trips " +
+				"FROM trips_15m WHERE \"bucket\" >= '%s' AND \"bucket\" < '%s' GROUP BY 1 ORDER BY 1",
+		},
+		WeekSQL: "SELECT date_trunc('week', pickup_datetime) AS time, count(*) FROM trips " +
+			"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
+		ZoneSQL: "SET LOCAL time_zone = 'Asia/Kolkata'",
+		// The tested origin stubs transaction status and CancelRequest; neither
+		// capability is usable.
+		SupportsCancel: false, SupportsTransactions: false,
 	}}
+}
+
+func pgwireRequireSQL(t *testing.T, scenario string, statements ...string) {
+	t.Helper()
+	for _, sql := range statements {
+		if sql == "" {
+			t.Skipf("the engine has no %s SQL configured", scenario)
+		}
+	}
 }
 
 func TestPGWireConformance(t *testing.T) {
@@ -275,6 +317,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("an error keeps its SQLSTATE and the session survives", func(t *testing.T) {
+		pgwireRequireSQL(t, "error recovery", target.MissingSQL)
 		_, _, wantErr, gotErr := both(target.MissingSQL)
 		require.Error(t, wantErr)
 		require.Equal(t, pgwireSQLState(wantErr), pgwireSQLState(gotErr))
@@ -288,11 +331,14 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 		if !target.SupportsTransactions {
 			t.Skip("the engine has no transactions")
 		}
+		pgwireRequireSQL(t, "transaction error", target.MissingSQL)
 		for _, step := range []struct {
 			sql    string
 			status byte
 		}{
-			{"BEGIN", pgwireTxOpen}, {"SELECT 1", pgwireTxOpen}, {target.MissingSQL, pgwireTxFailed},
+			{"BEGIN", pgwireTxOpen},
+			{"SELECT 1", pgwireTxOpen},
+			{target.MissingSQL, pgwireTxFailed},
 			{"ROLLBACK", pgwireTxIdle},
 		} {
 			_, _ = pgwireQuery(t, direct, step.sql)
@@ -303,6 +349,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("session settings reach the origin and are reported back", func(t *testing.T) {
+		pgwireRequireSQL(t, "session settings", target.SetShowSQL, target.ShowSQL)
 		_, err := pgwireQuery(t, proxied, target.SetShowSQL)
 		require.NoError(t, err)
 		_, err = pgwireQuery(t, direct, target.SetShowSQL)
@@ -315,6 +362,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("a large result arrives whole", func(t *testing.T) {
+		pgwireRequireSQL(t, "large result", target.LargeSQL)
 		want, got, wantErr, gotErr := both(target.LargeSQL)
 		require.NoError(t, wantErr)
 		require.NoError(t, gotErr)
@@ -326,6 +374,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 		if !target.SupportsCancel {
 			t.Skip("the engine does not implement cancel requests")
 		}
+		pgwireRequireSQL(t, "cancellation", target.SlowSQL)
 		failed := make(chan error, 1)
 		go func() {
 			_, err := pgwireQuery(t, proxied, target.SlowSQL)
@@ -346,6 +395,10 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("cached results agree with the origin", func(t *testing.T) {
+		pgwireRequireSQL(t, "object cache", target.ObjectSQL)
+		if len(target.DeltaSQLs) == 0 {
+			t.Skip("the engine has no delta-cache SQL configured")
+		}
 		// a fresh session: the one above changed its time zone, and with it its cache identity
 		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
 		require.NoError(t, err)
@@ -385,6 +438,10 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("a cached range answers its sub-ranges and later ranges fetch only what is new", func(t *testing.T) {
+		if len(target.DeltaSQLs) == 0 {
+			t.Skip("the engine has no delta-cache SQL configured")
+		}
+		pgwireRequireSQL(t, "delta cache", target.DeltaSQLs[0])
 		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
 		require.NoError(t, err)
 		defer cached.Close(context.Background())
@@ -401,18 +458,19 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			status   string
 			// the statement's key is range-independent and already cached elsewhere on the axis
 		}{{0, 6, "rmiss"}, {2, 4, "hit"}, {0, 6, "hit"}, {4, 9, "phit"}, {1, 8, "hit"}} {
-			before := pgwireCacheCount(t, metricsAddr, "delta", step.status)
+			before := pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", step.status)
 			want, err := pgwireQuery(t, fresh, statement(step.from, step.to))
 			require.NoError(t, err)
 			got, err := pgwireQuery(t, cached, statement(step.from, step.to))
 			require.NoError(t, err)
 			require.Equal(t, want, got, "hours %d to %d", step.from, step.to)
-			require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, "delta", step.status),
+			require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", step.status),
 				"hours %d to %d should be a %s", step.from, step.to, step.status)
 		}
 	})
 
 	t.Run("week buckets land on the origin's grid", func(t *testing.T) {
+		pgwireRequireSQL(t, "week buckets", target.WeekSQL)
 		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
 		require.NoError(t, err)
 		defer cached.Close(context.Background())
@@ -425,7 +483,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			upper = upper.Add(-24 * time.Hour)
 		}
 		sql := fmt.Sprintf(target.WeekSQL, upper.Add(-21*24*time.Hour).Format(time.RFC3339), upper.Format(time.RFC3339))
-		before := pgwireCacheCount(t, metricsAddr, "delta", "hit")
+		before := pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", "hit")
 		want, err := pgwireQuery(t, fresh, sql)
 		require.NoError(t, err)
 		require.Len(t, want[0].Rows, 3)
@@ -435,10 +493,15 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			require.Equal(t, want, got)
 		}
 		// a bucket off the planned grid would have been refused and the statement relayed uncached
-		require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, "delta", "hit"))
+		require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", "hit"))
 	})
 
 	t.Run("sessions with different identities do not share answers", func(t *testing.T) {
+		pgwireRequireSQL(t, "session time zone", target.ZoneSQL)
+		if len(target.DeltaSQLs) < 2 {
+			t.Skip("the engine has no session-aware delta-cache SQL configured")
+		}
+		pgwireRequireSQL(t, "session cache identity", target.DeltaSQLs[1])
 		start := time.Now().UTC().Add(-120 * time.Hour).Truncate(time.Hour)
 		// the second statement stays delta-cacheable under any session zone
 		sql := fmt.Sprintf(target.DeltaSQLs[1], start.Format(time.RFC3339), start.Add(2*time.Hour).Format(time.RFC3339))
@@ -456,25 +519,29 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			require.NoError(t, err)
 			return out
 		}
-		misses := func() float64 { return pgwireCacheCount(t, metricsAddr, "delta", "kmiss") }
+		misses := func() float64 { return pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", "kmiss") }
 		before := misses()
 		utc := session(proxyAddr, target.ClientUser)
 		require.Equal(t, session(target.OriginAddr, target.ClientUser), utc)
 		// this identity already holds the statement over other ranges, so it is no key miss
 		require.Equal(t, before, misses())
-		// a time zone changes how every timestamp is rendered, so it is another cache entry
+		// The session zone partitions the cache even for engines that render naive UTC timestamps.
 		zoned := session(proxyAddr, target.ClientUser, target.ZoneSQL)
 		require.Equal(t, session(target.OriginAddr, target.ClientUser, target.ZoneSQL), zoned)
-		require.NotEqual(t, utc, zoned)
+		if target.ZoneChangesResults {
+			require.NotEqual(t, utc, zoned)
+		} else {
+			require.Equal(t, utc, zoned)
+		}
 		require.Equal(t, before+1, misses())
 		// and so does the client's user, which row-level security may depend on
 		require.Equal(t, utc, session(proxyAddr, pgwireSecondUser))
 		require.Equal(t, before+2, misses())
 		// each identity is served from its own entry afterwards
-		hits := pgwireCacheCount(t, metricsAddr, "delta", "hit")
+		hits := pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", "hit")
 		require.Equal(t, utc, session(proxyAddr, target.ClientUser))
 		require.Equal(t, zoned, session(proxyAddr, target.ClientUser, target.ZoneSQL))
-		require.Equal(t, hits+2, pgwireCacheCount(t, metricsAddr, "delta", "hit"))
+		require.Equal(t, hits+2, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", "hit"))
 		_, body := getBody(t, "http://"+metricsAddr+"/metrics")
 		require.NotContains(t, body,
 			`trickster_sql_query_rewrite_failures_total{backend_name="`+pgwireConformanceName+`"`)
@@ -482,23 +549,31 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 
 	t.Run("relayed statements are classified", func(t *testing.T) {
 		_, body := getBody(t, "http://"+metricsAddr+"/metrics")
-		require.Contains(t, body, `trickster_sql_query_analysis_total{backend_name="`+pgwireConformanceName+`"`)
+		if target.ObjectSQL != "" || len(target.DeltaSQLs) != 0 {
+			require.Contains(t, body, `trickster_sql_query_analysis_total{backend_name="`+pgwireConformanceName+`"`)
+		}
 		require.Contains(t, body, `trickster_proxy_requests_total{backend_name="`+pgwireConformanceName+`"`)
 	})
 }
 
-func pgwireCacheCount(t *testing.T, metricsAddr, mode, status string) float64 {
+func pgwireCacheCount(t *testing.T, metricsAddr, dialect, mode, status string) float64 {
 	t.Helper()
-	_, body := getBody(t, "http://"+metricsAddr+"/metrics")
-	prefix := `trickster_sql_query_cache_total{backend_name="` + pgwireConformanceName + `",cache_mode="` + mode +
-		`",cache_status="` + status + `"`
-	for _, line := range strings.Split(body, "\n") {
-		if !strings.HasPrefix(line, prefix) {
-			continue
-		}
-		value, err := strconv.ParseFloat(line[strings.LastIndexByte(line, ' ')+1:], 64)
-		require.NoError(t, err)
-		return value
-	}
-	return 0
+	metrics := metricsutil.ScrapeURL(t, "http://"+metricsAddr+"/metrics", nil)
+	return metrics[metricsutil.Key("trickster_sql_query_cache_total", map[string]string{
+		"backend_name": pgwireConformanceName, "dialect": dialect, "cache_mode": mode, "cache_status": status,
+	})]
+}
+
+func TestPGWireCacheCountSeparatesDialects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprintln(w, `trickster_sql_query_cache_total{backend_name="pgwire-conformance",cache_mode="delta",cache_status="hit",dialect="greptimedb"} 7`)
+		_, _ = fmt.Fprintln(w, `trickster_sql_query_cache_total{dialect="postgres",cache_status="hit",cache_mode="delta",backend_name="pgwire-conformance"} 3`)
+		_, _ = fmt.Fprintln(w, `trickster_sql_query_cache_total{backend_name="other",cache_mode="delta",cache_status="hit",dialect="postgres"} 9`)
+		_, _ = fmt.Fprintln(w, `trickster_sql_query_cache_total{backend_name="pgwire-conformance",cache_mode="object",cache_status="hit",dialect="postgres"} 11`)
+	}))
+	defer server.Close()
+	address := strings.TrimPrefix(server.URL, "http://")
+	require.Equal(t, float64(7), pgwireCacheCount(t, address, providers.GreptimeDB, "delta", "hit"))
+	require.Equal(t, float64(3), pgwireCacheCount(t, address, providers.Postgres, "delta", "hit"))
+	require.Zero(t, pgwireCacheCount(t, address, providers.Postgres, "delta", "kmiss"))
 }

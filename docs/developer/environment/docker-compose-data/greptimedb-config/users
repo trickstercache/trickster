@@ -1,0 +1,4 @@
+# Public developer-environment credentials, not production accounts.
+grafana_ro:ro=trickster-dev-grafana
+trickster:ro=trickster-dev-upstream
+seeder=trickster-dev-seed

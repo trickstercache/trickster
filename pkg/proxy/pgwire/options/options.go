@@ -66,6 +66,9 @@ func TLSModes() []string { return slices.Clone(tlsModes) }
 
 // Options contains settings for a backend reached over the PostgreSQL wire protocol.
 type Options struct {
+	// UpstreamURL overrides origin_url for the PostgreSQL wire protocol.
+	// It includes the native host, optional credentials and database.
+	UpstreamURL string `yaml:"upstream_url,omitempty"`
 	// UpstreamTLSMode selects TLS toward the origin, independent of listener
 	// TLS. Empty selects the engine's default, which is disable for PostgreSQL.
 	UpstreamTLSMode string `yaml:"upstream_tls_mode,omitempty"`

@@ -127,12 +127,15 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TRICKSTER_MYSQL_CLI_TEST: "1"
+      TRICKSTER_GREPTIMEDB_MYSQL_ACCEPTANCE: "1"
+      TRICKSTER_GREPTIMEDB_PROMQL_ACCEPTANCE: "1"
+      GREPTIMEDB_REPORT_DIR: ${{ runner.temp }}/greptimedb-reports
       TRICKSTER_DNS_TEST: "1"
       # CI containers cannot raise the UDP receive buffer; the warning is noise
       QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
       # a tenth of the synthetic trips rows: the integration tests only need
       # non-empty, correctly shaped data, and the database loads are the
-      # slowest part of bringing the environment up
+      # slowest part of bringing the environment up (including GreptimeDB)
       SEED_PROFILE: small
     steps:
       - uses: actions/checkout@v6
@@ -153,6 +156,13 @@ jobs:
         run: make integration-cover
       - name: Run integration tests (with race detection enabled)
         run: make -C integration data-race-test
+      - name: Upload GreptimeDB acceptance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: greptimedb-acceptance-reports
+          path: ${{ runner.temp }}/greptimedb-reports
+          if-no-files-found: ignore
       - name: Send integration coverage
         if: github.repository_owner == 'trickstercache'
         uses: shogo82148/actions-goveralls@v1

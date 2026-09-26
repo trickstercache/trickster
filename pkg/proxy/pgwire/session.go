@@ -262,7 +262,7 @@ func (s *session) acceptStartupMessage(version uint32, packet []byte) (bool, err
 	}
 	s.database, s.params, s.rawStartup, s.minor = params[paramDatabase], params, packet, version&0xffff
 	if s.server.config.Analyzer != nil {
-		s.tracker = newSessionTracker(s.user, s.database, params)
+		s.tracker = newSessionTracker(s.user, s.database, params, s.server.config.Engine)
 	}
 	return true, nil
 }

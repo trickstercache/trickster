@@ -39,7 +39,9 @@ func (c *Client) SeriesHandler(w http.ResponseWriter, r *http.Request) {
 	qp, _, _ := params.GetRequestValues(r)
 
 	// Round Start and End times down to top of most recent minute for cacheability
-	roundTimestampsToMinute(qp)
+	if !c.hooks.PreserveQueryGrid {
+		roundTimestampsToMinute(qp)
+	}
 
 	r.URL = u
 	params.SetRequestValues(r, qp)
