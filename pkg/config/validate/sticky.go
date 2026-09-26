@@ -80,9 +80,8 @@ type cookieOwner struct {
 	hosts   []string
 }
 
-// stickyCookies refuses two ALBs that set the same cookie, on any http listeners, for a host they
-// both serve: in a browser, each one's token would replace the other's, and neither would last.
-// visible reports whether a backend registers any path on a listener.
+// stickyCookies refuses two ALBs that set one cookie for a shared host on any listeners, since
+// their tokens would thrash; visible says if a backend registers a listener path.
 func stickyCookies(c *config.Config, visible func(string) bool) error {
 	owners := make(map[cookieID][]cookieOwner)
 	served := servedHosts(c, visible)
@@ -118,11 +117,8 @@ func stickyCookies(c *config.Config, visible func(string) bool) error {
 	return nil
 }
 
-// servedHosts returns the hosts on which a backend answers clients, or every when it answers any
-// host: those its own routes answer for, joined by those of every backend dispatching into it, as a
-// pool member or a rule's route answers whatever host its dispatcher was reached on. None is a
-// backend no client reaches, such as one only mirrored to. Every reference that can dispatch a
-// client's request to a backend must be in dispatchers, or this reports too few hosts.
+// servedHosts returns a lookup of the hosts a backend answers, or every: its own routes' plus its
+// dispatchers', which must include every reference that can dispatch to it.
 func servedHosts(c *config.Config, visible func(string) bool) func(string) ([]string, bool) {
 	parents := dispatchers(c)
 	defaultName := defaultBackend(c)
@@ -171,9 +167,8 @@ func servedHosts(c *config.Config, visible func(string) bool) func(string) ([]st
 	}
 }
 
-// listenerVisible reports whether a backend registers any path on a listener, as routing does: one
-// of its configured paths, laid over its provider's defaults, that has methods, a handler its client
-// provides, and is not dispatch_only. A backend with no client is taken to register one.
+// listenerVisible says whether a backend registers a listener path, as routing does: a path with
+// methods and a client handler, not dispatch_only, over its defaults; or no client.
 func listenerVisible(c *config.Config, clients backends.Backends) func(string) bool {
 	memo := make(map[string]bool)
 	return func(name string) bool {
@@ -220,9 +215,8 @@ func defaultBackend(c *config.Config) string {
 	return ""
 }
 
-// dispatchers maps each backend to those whose clients it answers on their behalf: the ALBs whose
-// pool or user router names it, and the rule backends whose rules route to it. A mirror is not one,
-// as its response, and any cookie in it, is discarded.
+// dispatchers maps each backend to the ALBs (pool or user router) and rules that dispatch to it. A
+// mirror is not one, as its response and any cookie in it are discarded.
 func dispatchers(c *config.Config) map[string][]string {
 	out := make(map[string][]string)
 	add := func(child, parent string) {

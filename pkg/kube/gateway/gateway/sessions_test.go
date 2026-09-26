@@ -134,10 +134,14 @@ func TestLowerSession(t *testing.T) {
 		"bad cookie name":  {gwapiv1.SessionPersistence{SessionName: name("a b")}, nil, `sessionName "a b"`},
 		"bad header name":  {gwapiv1.SessionPersistence{Type: &header, SessionName: name("X S")}, nil, `sessionName "X S"`},
 		"bad timeout":      {gwapiv1.SessionPersistence{AbsoluteTimeout: d("soon")}, nil, "absoluteTimeout"},
-		"permanent, no timeout": {gwapiv1.SessionPersistence{CookieConfig: &gwapiv1.CookieConfig{LifetimeType: &permanent}}, nil,
-			"requires sessionPersistence.absoluteTimeout"},
+		"permanent, no timeout": {
+			gwapiv1.SessionPersistence{CookieConfig: &gwapiv1.CookieConfig{LifetimeType: &permanent}},
+			nil,
+			"requires sessionPersistence.absoluteTimeout",
+		},
 		"bad lifetime": {gwapiv1.SessionPersistence{CookieConfig: &gwapiv1.CookieConfig{
-			LifetimeType: new(gwapiv1.CookieLifetimeType("Forever"))}}, nil, "must be Session or Permanent"},
+			LifetimeType: new(gwapiv1.CookieLifetimeType("Forever")),
+		}}, nil, "must be Session or Permanent"},
 	} {
 		got, err := lowerSession(&test.in)
 		if test.err != "" {
@@ -252,7 +256,7 @@ func TestTranslateClassStickySecret(t *testing.T) {
 	require.Equal(t, base64.StdEncoding.EncodeToString(second), key)
 	require.NotEqual(t, before, after)
 
-	// a key that cannot be read is reported, and the class keys its tokens per process
+	// a key that cannot be read is reported, and the class keys its tokens as if it named none
 	for detail, secret := range map[string]*corev1.Secret{
 		"is not found, or is not labeled": nil,
 		"is not labeled " + annotations.LabelStickyKey: keySecret(false,
@@ -263,7 +267,7 @@ func TestTranslateClassStickySecret(t *testing.T) {
 		key, _, problems := classKey(t, secret)
 		require.Empty(t, key, detail)
 		containing(t, problems, "GatewayClass//trickster", `parameter "sticky_secret"`, detail,
-			"session tokens are keyed per process")
+			"session tokens are keyed by kubernetes.defaults.sticky_secret_file, else per process")
 		require.Equal(t, ir.ReasonInvalidParameters, problems[0].Reason)
 	}
 

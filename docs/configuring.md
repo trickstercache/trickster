@@ -287,7 +287,7 @@ The top-level `frontend` section and listener address/port fields under `metrics
 
 ## Configuration Validation
 
-Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration. The command runs every check that startup runs, including those that need the backend clients, such as route registration and sticky cookie conflicts. It opens no listener.
+Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration. The command runs every configuration check, including those that need the backend clients, such as route registration and sticky cookie conflicts. It opens no listener, cache or log file, builds no authenticator and starts no health check or discovery, so startup can still fail at one of those steps.
 
 ## Reloading the Configuration
 

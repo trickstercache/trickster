@@ -140,8 +140,10 @@ func TestDrainingMemberKeepsItsSessions(t *testing.T) {
 
 func TestDrainingPoolNames(t *testing.T) {
 	g := namedGraph(t, "a", "b", "c")
-	c := g.routedALB(t, "drain-names", &ao.Options{MechanismName: "rr",
-		Pool: ao.PoolMemberList{{Name: "c", Drain: true}, {Name: "a"}, {Name: "b", Drain: true}}})
+	c := g.routedALB(t, "drain-names", &ao.Options{
+		MechanismName: "rr",
+		Pool:          ao.PoolMemberList{{Name: "c", Drain: true}, {Name: "a"}, {Name: "b", Drain: true}},
+	})
 	plain := g.routedALB(t, "drain-none", &ao.Options{MechanismName: "rr", Pool: ao.Members("a")})
 	g.start(t)
 	require.NotNil(t, c.CorePool())
@@ -180,8 +182,10 @@ func TestStickyTableIsNotKeptThroughAnotherMode(t *testing.T) {
 	t.Cleanup(func() { ForgetUnusedStickyTables(backends.Backends{}) })
 	build := func(mode string) *Client {
 		g := namedGraph(t, "a", "b")
-		c := g.routedALB(t, "modes-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a", "b"),
-			Sticky: &so.Options{Mode: mode, Secret: stickySecret}})
+		c := g.routedALB(t, "modes-alb", &ao.Options{
+			MechanismName: "rr", Pool: ao.Members("a", "b"),
+			Sticky: &so.Options{Mode: mode, Secret: stickySecret},
+		})
 		g.start(t)
 		return c
 	}
@@ -226,8 +230,10 @@ func TestStickyFlowsTableIsKeptWhileAListenerUsesIt(t *testing.T) {
 	t.Cleanup(func() { ForgetUnusedStickyTables(backends.Backends{}) })
 	reload := func(listenerAsks bool) *Client {
 		g := namedGraph(t, "a", "b")
-		c := g.routedALB(t, "flows-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a", "b"),
-			Sticky: &so.Options{Secret: stickySecret}})
+		c := g.routedALB(t, "flows-alb", &ao.Options{
+			MechanismName: "rr", Pool: ao.Members("a", "b"),
+			Sticky: &so.Options{Secret: stickySecret},
+		})
 		require.NoError(t, StartALBPools(g.clients, g.health))
 		t.Cleanup(func() { _ = StopPools(g.clients) })
 		if listenerAsks {
@@ -254,8 +260,10 @@ func TestStickyFlowsTableIsKeptWhileAListenerUsesIt(t *testing.T) {
 func TestStickyTableIsSharedByEveryPlane(t *testing.T) {
 	t.Cleanup(func() { ForgetUnusedStickyTables(backends.Backends{}) })
 	g := namedGraph(t, "a")
-	c := g.routedALB(t, "planes-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a"),
-		Sticky: &so.Options{Mode: so.ModeTable}})
+	c := g.routedALB(t, "planes-alb", &ao.Options{
+		MechanismName: "rr", Pool: ao.Members("a"),
+		Sticky: &so.Options{Mode: so.ModeTable},
+	})
 	g.start(t)
 	require.Same(t, c.handler.(types.PickerMechanism).StickyTable(), c.StickyFlows().Table())
 }

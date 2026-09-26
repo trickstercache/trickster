@@ -242,9 +242,8 @@ func (h *handler) serveFollowing(w http.ResponseWriter, r *http.Request, flow lb
 	h.dispatch(pk, t.Handler(), w, r)
 }
 
-// pickPinned picks for the session's level, honoring its pin while the pinned member is eligible.
-// When it cannot pick it answers the request itself, refusing it when the pinned member is
-// unavailable and the session must not move.
+// pickPinned picks for the session's level, honoring an eligible pin; when it cannot, it answers
+// the request, refusing it if the pin is unavailable and must not move.
 func (h *handler) pickPinned(w http.ResponseWriter, r *http.Request, flow lb.Flow, s *sticky.Session,
 	level int,
 ) (lb.Pick, *pool.Target, bool) {

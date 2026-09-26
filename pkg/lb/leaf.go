@@ -88,9 +88,8 @@ func pickerOf(m *Member) Picker {
 // RepickLeafFunc is PickLeafFunc for a caller retrying work that the leaf members in failed
 // could not take. No level that can offer alternatives commits to one of them, and a member
 // whose own pool has no other leaf left is passed over for its siblings, so a leaf that can be
-// reached is never given up on. A level that offers alternatives tries the member its flow is
-// pinned to first, so a session moves no further than its failed members make it; a level that
-// offers none honors no pin, as it could hand back a failed member. It is not a selection path.
+// reached is never given up on. Levels offering alternatives try the pinned member first; others
+// honor no pin, as they could hand back a failed member. It is not a selection path.
 //
 // The search is one traversal: each level is asked for its alternatives once, in its own
 // order of preference, and each member is visited at most once, so the work is linear in the

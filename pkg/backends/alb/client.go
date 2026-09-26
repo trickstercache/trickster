@@ -776,9 +776,8 @@ func (c *Client) RouteResolver() backends.RouteResolver {
 	return nil
 }
 
-// StickyFlows returns what keeps the sessions of the ALB's stream and native flows, or nil when
-// it keeps none there. It is made when a listener first asks for it, so that only an ALB that a
-// stream or native listener serves holds a table for them.
+// StickyFlows returns the keeper of the ALB's stream and native sessions, or nil for none; built on
+// a listener's first ask, so only ALBs such listeners serve hold a table.
 func (c *Client) StickyFlows() *sticky.Flows {
 	c.flowsOnce.Do(func() {
 		if cfg := c.Configuration(); cfg != nil && cfg.ALBOptions != nil {

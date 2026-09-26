@@ -162,7 +162,7 @@ leave an operator believing a setting is in force when it is not.
 | `trickstercache.org/load-balancing` | `rr`, `p2c`, `lc`, `lt`, `hrw` | how traffic is spread across a Service's endpoints in the endpoint routing mode; `rr` unless set |
 | `trickstercache.org/load-balancing-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `hrw` keeps on one endpoint |
 | `trickstercache.org/sticky` | `cookie`, `header`, `table`, `none` | keeps a client on the endpoint it first reached, in the endpoint routing mode; see below |
-| `trickstercache.org/sticky-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `table` mode keeps a client's endpoint by; `client_ip` unless set |
+| `trickstercache.org/sticky-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `table` mode keeps a client's endpoint by; `client_ip` unless set. `sni`, `user` and `proxy_tlv:<type>` are accepted but cannot be read from a request, so they keep `client_ip` |
 | `trickstercache.org/sticky-ttl`, `trickstercache.org/sticky-idle` | a duration of at least `1s` | a session ends that long after it began (`1h` unless set), or once unused that long |
 
 Durations require a unit: `600` is rejected, `600s` is not.
@@ -263,7 +263,8 @@ template backend carrying the rule's settings, and a discovery-backed ALB
 whose query selects the Service's port. Endpoint churn then reaches the pool
 without a configuration reload, and a rolling restart of the Deployment
 behind the Service drains terminating endpoints before their pods stop: they
-take no new work and leave the pool once they stop serving.
+take no new clients, keep the sessions pinned to them, and leave the pool
+once they stop serving.
 The controller's service account needs `endpointslices` list and watch for
 it; see [kubernetes-rbac.md](./kubernetes-rbac.md).
 
@@ -280,16 +281,27 @@ reached, on the Ingress backend's endpoint ALB, as
 [Sticky Sessions](./alb.md#sticky-sessions) describes:
 
 - `cookie` issues a signed token in a cookie named for that ALB,
-  `trickster_sticky_<hash>`.
+  `trickster_sticky_<hash>`. The cookie's `Max-Age` ends with its token, at
+  most `sticky-ttl` (`1h` unless set) after the session began.
 - `header` issues it in the `X-Trickster-Session` response header, for a
   client that sends it back in the request header of that name.
-- `table` keeps the pin itself, by `sticky-key`.
-- `none` turns off a setting a less specific policy made.
+- `table` keeps the pin itself, by `sticky-key`. It adds nothing to
+  responses, so prefer it in front of cacheable content, within the key and
+  replica limits that
+  [Sticky Sessions and Caching](./alb.md#sticky-sessions-and-caching)
+  describes.
+
+An Ingress's annotations are its least specific settings, so `none`
+changes nothing in an annotation. It is for a
+[TricksterCachePolicy](./kubernetes-cache-policy.md) on the Ingress or a
+Service, which may set or override `sticky` for its backends, and whose
+`none` turns off the annotation's.
 
 The annotation has no effect in the `service` routing mode, where kube-proxy
 chooses the endpoint. `kubernetes.defaults.sticky_secret_file` keys the
-tokens, as [configuring.md](./configuring.md) describes; without it they are
-honored only by the replica that issued them.
+tokens, as [configuring.md](./configuring.md) describes. Without it they are
+honored only by the replica that issued them, and only until it restarts,
+and Trickster logs a warning for each ALB that issues such tokens.
 
 ## Status and Events
 

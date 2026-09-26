@@ -85,9 +85,8 @@ func (t *translator) memberSessions(src ir.Source, g *ir.BackendGroup, ruled boo
 	}
 }
 
-// claimCookie claims a session's cookie name for the site's host on every listener, returning the
-// owner that already set it for a host they share; only a named cookie can collide, as the rest
-// are named by the ALB that sets them
+// claimCookie claims a named session cookie for the site's host on every listener, returning the
+// owner already holding it for a shared host; unnamed cookies never collide
 func (t *translator) claimCookie(s *ir.Session, at sessionSite, owner string) (string, bool) {
 	if s.Type != ir.SessionCookie || s.Name == "" {
 		return "", true

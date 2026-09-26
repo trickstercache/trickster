@@ -99,8 +99,10 @@ func TestPathAuthenticatorReferences(t *testing.T) {
 		auth   bool
 	}{
 		{po.New(), http.StatusUnauthorized, true},
-		{&po.Options{AuthenticatorName: pathAuthName, AuthOptions: basicAuthOptions(t, pathAuthName, true)},
-			http.StatusNoContent, true},
+		{
+			&po.Options{AuthenticatorName: pathAuthName, AuthOptions: basicAuthOptions(t, pathAuthName, true)},
+			http.StatusNoContent, true,
+		},
 		{&po.Options{AuthenticatorName: reserved.ReferenceNone}, http.StatusNoContent, false},
 	}
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

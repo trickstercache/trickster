@@ -147,7 +147,7 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 	cs := fake.NewClientset(
 		newSlice("prom-abc", "prom", 9090,
 			endpoint("10.0.0.1", "prom-0", true, false),
-			endpoint("10.0.0.2", "prom-1", false, false), // not yet ready
+			endpoint("10.0.0.2", "prom-1", false, false),          // not yet ready
 			terminatingEndpoint("10.0.0.3", "prom-2", new(false)), // no longer serving: omitted
 			terminatingEndpoint("10.0.0.4", "prom-3", nil),        // serving unreported: draining
 		),

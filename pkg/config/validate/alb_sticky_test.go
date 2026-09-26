@@ -22,8 +22,8 @@ import (
 	"strings"
 	"testing"
 
-	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	sticky "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -412,8 +412,10 @@ func TestStickyCookiesSkipUnreachedALBs(t *testing.T) {
 		"mirror only":  {"mirrored": stickyALB(), "front": mirror, "direct": direct},
 		"unreferenced": {"orphan": stickyALB(), "direct": direct},
 		// a loop no client enters
-		"closed cycle": {"loop-a": withPool(stickyALB(), "loop-b"), "loop-b": withPool(stickyALB(), "loop-a"),
-			"direct": direct},
+		"closed cycle": {
+			"loop-a": withPool(stickyALB(), "loop-b"), "loop-b": withPool(stickyALB(), "loop-a"),
+			"direct": direct,
+		},
 	} {
 		c := config.NewConfig()
 		c.Backends = backends
@@ -502,8 +504,10 @@ func TestStickyCookiesThroughTheRouter(t *testing.T) {
 		"listener path": {"    path_defaults_disabled: true\n" +
 			"    paths: [{path: /, match_type: prefix, handler: alb, methods: ['*']}]", "for a host they both serve"},
 		// the provider's default path still registers the methods a dispatch-only path leaves
-		"defaults remain": {"    paths: [{path: /, match_type: prefix, handler: alb, methods: [GET], dispatch_only: true}]",
-			"for a host they both serve"},
+		"defaults remain": {
+			"    paths: [{path: /, match_type: prefix, handler: alb, methods: [GET], dispatch_only: true}]",
+			"for a host they both serve",
+		},
 		"provider defaults": {"", "for a host they both serve"},
 		// a path naming a handler the ALB does not have is skipped by the router
 		"unknown handler": {"    path_defaults_disabled: true\n" +

@@ -129,9 +129,8 @@ var (
 
 // Options configure an ALB's session persistence.
 type Options struct {
-	// Mode is how a client's member is remembered: cookie or header, a keyed token the client
-	// sends back (http only), or table, a pin the ALB keeps by a key read from each request or
-	// flow. The default is cookie on http listeners and table on the others.
+	// Mode is cookie or header, a token the client returns (http only), or table, a pin kept by a
+	// key read from each request or flow; unset is cookie on http, table elsewhere.
 	Mode string `yaml:"mode,omitempty"`
 	// TTL is how long a session lasts from when it is first pinned, however it is used; 0 ends a
 	// cookie's with the browser session and gives a table's pins no limit. The default is 1h.
@@ -450,9 +449,8 @@ func (o *Options) ModeFor(http bool) string {
 	return ModeTable
 }
 
-// KeyWarning returns, for an ALB that serves http listeners, the warning for tokens made with a
-// random per-process key, which neither a restart nor another replica honors; empty when a key
-// is configured or the mode in effect on http issues no token.
+// KeyWarning warns of an http-serving ALB issuing tokens under a per-process key, which restarts
+// and other replicas reject; empty when a key is set or no token is issued.
 func (o *Options) KeyWarning(albName string) string {
 	if o == nil || o.keys == nil || !o.keys.Ephemeral() {
 		return ""

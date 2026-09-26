@@ -53,11 +53,15 @@ func TestDefaults(t *testing.T) {
 	require.Equal(t, DefaultTTL, o.TTLDuration())
 	require.Zero(t, o.Idle)
 	require.Equal(t, OnUnavailableRepick, o.OnUnavailable)
-	require.Equal(t, CookieOptions{Name: DefaultCookieName, Path: DefaultCookiePath, Secure: SecureAuto,
-		HTTPOnly: o.Cookie.HTTPOnly, SameSite: SameSiteLax, Lifetime: LifetimePermanent}, o.Cookie)
+	require.Equal(t, CookieOptions{
+		Name: DefaultCookieName, Path: DefaultCookiePath, Secure: SecureAuto,
+		HTTPOnly: o.Cookie.HTTPOnly, SameSite: SameSiteLax, Lifetime: LifetimePermanent,
+	}, o.Cookie)
 	require.True(t, *o.Cookie.HTTPOnly)
-	require.Equal(t, TableOptions{Key: "", Learn: LearnRequest, IPv6Prefix: flowkey.DefaultIPv6Prefix,
-		MaxEntries: DefaultMaxEntries, KeySource: flowkey.KeySource{Kind: flowkey.KeyClientIP}}, o.Table)
+	require.Equal(t, TableOptions{
+		Key: "", Learn: LearnRequest, IPv6Prefix: flowkey.DefaultIPv6Prefix,
+		MaxEntries: DefaultMaxEntries, KeySource: flowkey.KeySource{Kind: flowkey.KeyClientIP},
+	}, o.Table)
 	require.Zero(t, o.Header, "only header mode uses a header")
 	require.True(t, o.Keys().Ephemeral())
 	require.Equal(t, DefaultTTL, (&Options{}).TTLDuration(), "the ttl defaults before Initialize too")

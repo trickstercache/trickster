@@ -278,12 +278,16 @@ func TestStickySessionsByUserAndAddress(t *testing.T) {
 	names := []string{"r1", "r2", "r3"}
 	for key, input := range map[string]func(i, from int) backends.RouteInput{
 		"user": func(i, from int) backends.RouteInput {
-			return backends.RouteInput{Username: "tenant" + strconv.Itoa(i), Authenticated: true,
-				Client: netip.AddrFrom4([4]byte{203, 0, 113, byte(from)})}
+			return backends.RouteInput{
+				Username: "tenant" + strconv.Itoa(i), Authenticated: true,
+				Client: netip.AddrFrom4([4]byte{203, 0, 113, byte(from)}),
+			}
 		},
 		"client_ip": func(i, from int) backends.RouteInput {
-			return backends.RouteInput{Username: "u" + strconv.Itoa(from), Authenticated: true,
-				Client: netip.AddrFrom4([4]byte{198, 51, 100, byte(i)})}
+			return backends.RouteInput{
+				Username: "u" + strconv.Itoa(from), Authenticated: true,
+				Client: netip.AddrFrom4([4]byte{198, 51, 100, byte(i)}),
+			}
 		},
 	} {
 		t.Run(key, func(t *testing.T) {

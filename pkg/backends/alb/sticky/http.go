@@ -230,9 +230,8 @@ func (p *HTTP) Finish(h http.Header, r *http.Request, s *Session) {
 	}
 }
 
-// FinishSwitch is Finish for a protocol switch, whose response the handler that took over the
-// connection writes itself from h, once it has added the upstream's headers. It returns what
-// learns the value that response sets, to run as it is written, or nil when there is none to learn.
+// FinishSwitch is Finish for a protocol switch whose taker writes h itself; it returns what learns
+// the value that response sets, to run as it is written, or nil.
 func (p *HTTP) FinishSwitch(h http.Header, r *http.Request, s *Session) func() {
 	if !p.settle(h, r, s) || p.learned == nil {
 		return nil

@@ -276,8 +276,10 @@ func TestStickyFlowsKeepTheirPathThroughNestedPools(t *testing.T) {
 			t.Fatalf("a reconnect reached %s, not %s", got, first)
 		}
 	}
-	pool := map[string]string{"10.0.0.1:9000": "left", "10.0.0.2:9000": "left", "10.0.0.3:9000": "right",
-		"10.0.0.4:9000": "right"}
+	pool := map[string]string{
+		"10.0.0.1:9000": "left", "10.0.0.2:9000": "left", "10.0.0.3:9000": "right",
+		"10.0.0.4:9000": "right",
+	}
 	flow := fromPort(l4.ProtocolTCP, 7000)
 	r, _ := u.Pick(flow)
 	r.Dialed(time.Millisecond, syscall.ECONNREFUSED)
@@ -347,7 +349,9 @@ func TestStickyFlowsByServerNameAndTLV(t *testing.T) {
 	byTLV := FromBackend(newALBWith(t, t.Name()+"-tlv", "rr", func(o *ao.Options) {
 		o.Sticky = &so.Options{Table: so.TableOptions{Key: "proxy_tlv:0xEA"}}
 	}, members...))
-	t.Cleanup(func() { sticky.ForgetTablesExcept(func(n string, _ *sticky.Table) bool { return n != t.Name()+"-tlv" }) })
+	t.Cleanup(func() {
+		sticky.ForgetTablesExcept(func(n string, _ *sticky.Table) bool { return n != t.Name()+"-tlv" })
+	})
 	reached := make(map[string]bool)
 	for i := range 4 {
 		host := "shop" + strconv.Itoa(i) + ".example.com"

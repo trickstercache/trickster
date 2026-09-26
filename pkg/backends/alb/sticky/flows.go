@@ -30,9 +30,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Flows keeps an ALB's sessions on stream and native listeners, which carry no token: it pins
-// each flow's or session's path in the ALB's table, by a key read from the flow, once the path's
-// member is reached. It is safe for concurrent use.
+// Flows pins an ALB's stream and native sessions in its table, by a key read from each flow, once
+// the flow's member is reached. It is safe for concurrent use.
 type Flows struct {
 	table   *Table
 	source  flowkey.KeySource
@@ -103,9 +102,8 @@ func (p *Flows) Begin(s *FlowSession, key flowkey.Value, now int64) {
 	}
 }
 
-// Flow returns f, which a pick at level is made with, pinned to the session's member there when
-// every level above was sent down its pin. picker is the level's; via is the member picked at the
-// level above, nil at the first.
+// Flow returns f pinned to the session's member at level when every level above followed its pin;
+// picker is the level's, via the member picked above it (nil at level 0).
 func (s *FlowSession) Flow(level int, picker lb.Picker, via *lb.Member, f lb.Flow) lb.Flow {
 	if level < 0 || level >= lb.MaxPickDepth {
 		return f
@@ -121,9 +119,8 @@ func (s *FlowSession) Flow(level int, picker lb.Picker, via *lb.Member, f lb.Flo
 	return f
 }
 
-// Stranded reports, for a pick that found no member, whether it had followed the session's pins
-// into a pool with nothing left to offer: the pinned path is unusable, not merely unchosen. Ask
-// it before Picked records the failed pick.
+// Stranded reports whether a pick that found no member had followed the session's pins into a pool
+// with nothing left. Callers must ask before Picked records the failed pick.
 func (s *FlowSession) Stranded() bool {
 	if s.found != foundPins || s.Chosen.Depth == 0 {
 		return false

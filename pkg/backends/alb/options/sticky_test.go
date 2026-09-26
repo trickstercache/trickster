@@ -43,15 +43,19 @@ func TestStickyBlock(t *testing.T) {
 }
 
 func TestStickyNeedsAMechanismThatPicksOne(t *testing.T) {
-	for _, mech := range []string{names.MechanismRR, names.MechanismPowerOfTwoChoices, names.MechanismLC,
-		names.MechanismLeastTime, names.MechanismHRW} {
+	for _, mech := range []string{
+		names.MechanismRR, names.MechanismPowerOfTwoChoices, names.MechanismLC,
+		names.MechanismLeastTime, names.MechanismHRW,
+	} {
 		o := load(t, "mechanism: "+mech+"\nsticky: {}\n")
 		require.NoError(t, o.Initialize("alb1"))
 		_, err := o.Validate()
 		require.NoError(t, err, mech)
 	}
-	for _, mech := range []string{names.MechanismFR, names.MechanismFGR, names.MechanismNLM, names.MechanismTSM,
-		names.MechanismRace, names.MechanismMirror, names.MechanismUDPMirror, ""} {
+	for _, mech := range []string{
+		names.MechanismFR, names.MechanismFGR, names.MechanismNLM, names.MechanismTSM,
+		names.MechanismRace, names.MechanismMirror, names.MechanismUDPMirror, "",
+	} {
 		o := load(t, "mechanism: "+mech+"\nsticky: {}\n")
 		require.NoError(t, o.Initialize("alb1"))
 		_, err := o.Validate()

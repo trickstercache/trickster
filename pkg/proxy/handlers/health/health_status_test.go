@@ -257,8 +257,10 @@ func TestUpdateStatusTextDrainingPoolMembers(t *testing.T) {
 		t.Fatalf("NewClient: %v", err)
 	}
 	albClient := cl.(*alb.Client)
-	bes := backends.Backends{"app1": member("app1"), "app2": member("app2"),
-		"app3": member("app3"), "drain-edge": albClient}
+	bes := backends.Backends{
+		"app1": member("app1"), "app2": member("app2"),
+		"app3": member("app3"), "drain-edge": albClient,
+	}
 	statuses := healthcheck.StatusLookup{}
 	for _, name := range []string{"app1", "app2", "app3"} {
 		statuses[name] = healthcheck.NewStatus(name, providers.ReverseProxyShort, "",
@@ -274,8 +276,10 @@ func TestUpdateStatusTextDrainingPoolMembers(t *testing.T) {
 	updateStatusText(fixedNow(), &stubHealthChecker{statuses: statuses}, hd, bes)
 	d := hd.detail.Load()
 	// a draining member is listed under its health too
-	for _, want := range []string{`"availablePoolMembers":["app1","app2"]`,
-		`"unavailablePoolMembers":["app3"]`, `"drainingPoolMembers":["app2","app3"]`} {
+	for _, want := range []string{
+		`"availablePoolMembers":["app1","app2"]`,
+		`"unavailablePoolMembers":["app3"]`, `"drainingPoolMembers":["app2","app3"]`,
+	} {
 		if !strings.Contains(d.json, want) {
 			t.Errorf("json lacks %s: %s", want, d.json)
 		}

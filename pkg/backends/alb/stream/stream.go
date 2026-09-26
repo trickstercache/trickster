@@ -49,11 +49,8 @@ type sessionKeeper interface {
 	StickyFlows() *sticky.Flows
 }
 
-// FromBackend returns an upstream over a backend. A load balancer that selects one member per
-// flow commits each flow to a healthy member, following a member that is itself such a load
-// balancer, and keeps it on the path it was first sent down when it keeps sessions; any other
-// backend is dialed at its origin host. It returns nil for a backend with neither. A member that
-// cannot be dialed refuses its share rather than passing it to a sibling.
+// FromBackend returns an upstream that commits each flow to a pick-one ALB's member, nested and
+// sticky as configured, or dials the backend's origin host; nil for a backend with neither.
 func FromBackend(b backends.Backend) l4.Upstream {
 	if b == nil {
 		return nil

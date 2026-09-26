@@ -137,6 +137,7 @@ func (c *cache) ReferenceGrants() []*gwapiv1.ReferenceGrant { return c.grants }
 func (c *cache) BackendTLSPolicies() []*gwapiv1.BackendTLSPolicy {
 	return c.policies
 }
+
 func (c *cache) BackendTrafficPolicies() []*gwapix.XBackendTrafficPolicy {
 	return c.traffic
 }

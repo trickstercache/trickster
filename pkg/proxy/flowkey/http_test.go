@@ -131,8 +131,12 @@ func TestHeaderCookieAndQueryValues(t *testing.T) {
 	}
 	want := Value{Hash: lb.HashString("abc123"), OK: true}
 	for _, lines := range [][]string{
-		{"session=abc123"}, {"theme=dark; session=abc123"}, {"theme=dark;session=abc123 ; x=1"},
-		{"theme=dark", "session=abc123"}, {`session="abc123"`}, {"xsession=no; session=abc123"},
+		{"session=abc123"},
+		{"theme=dark; session=abc123"},
+		{"theme=dark;session=abc123 ; x=1"},
+		{"theme=dark", "session=abc123"},
+		{`session="abc123"`},
+		{"xsession=no; session=abc123"},
 	} {
 		if got := cookie(jar(lines...)); got != want {
 			t.Errorf("cookies %q keyed %+v", lines, got)

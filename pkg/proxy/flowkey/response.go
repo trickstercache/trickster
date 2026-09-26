@@ -27,10 +27,8 @@ import (
 // attrMaxAge is the Set-Cookie attribute whose value, when not positive, deletes the cookie
 const attrMaxAge = "Max-Age"
 
-// HTTPResponse returns an extractor that reads the key source from a response's headers, as the
-// value an upstream hands a client to send back: a header of the same name, or the cookie that a
-// Set-Cookie sets. The key is the one HTTP reads from the request that sends the value back. A
-// source that OnHTTPResponse rejects is never present.
+// HTTPResponse extracts the value an upstream hands a client in the named header or Set-Cookie,
+// keyed as HTTP keys it coming back; sources OnHTTPResponse rejects never have one.
 func HTTPResponse(ks KeySource) func(http.Header) Value {
 	name := ks.Name
 	switch ks.Kind {
@@ -56,9 +54,8 @@ func HTTPResponse(ks KeySource) func(http.Header) Value {
 	return func(http.Header) Value { return Value{} }
 }
 
-// setCookieValue returns the key of the value a Set-Cookie line gives the named cookie, trimmed
-// of whitespace as a browser trims it and of quotes as HTTP trims them; a line that expires the
-// cookie at once deletes it, and so sets nothing
+// setCookieValue returns the key of a Set-Cookie line's value for the named cookie, trimmed as a
+// browser and HTTP trim it; a line that expires the cookie sets nothing
 func setCookieValue(line, name string) (Value, bool) {
 	pair, attrs, _ := strings.Cut(line, ";")
 	n, v, ok := strings.Cut(pair, "=")

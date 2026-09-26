@@ -57,9 +57,8 @@ func TableFor(albName string, o *options.Options) *Table {
 	return t
 }
 
-// ForgetTablesExcept drops every kept table that keep reports false for. A config build calls it
-// once its ALBs are running, keeping only the tables they hold, so a table no ALB uses is not
-// carried into a later config that asks for one again.
+// ForgetTablesExcept drops every kept table keep reports false for, so a table no running ALB holds
+// is not carried into a later config that asks for it again.
 func ForgetTablesExcept(keep func(albName string, t *Table) bool) {
 	tables.mtx.Lock()
 	defer tables.mtx.Unlock()

@@ -41,9 +41,9 @@ Ingress objects alone. Granting the verbs for resources the cluster does not
 define is harmless, so one Role covers both cases; a cluster that will never
 install the CRDs can leave them out.
 
-`secrets` access is narrowed server-side to `type=kubernetes.io/tls`, and, in
-a cluster that serves the Gateway API, to Secrets labeled
-`trickstercache.org/sticky-key`. The controller therefore never holds an
+`secrets` are read through two watches, each narrowed server-side: one to
+`type=kubernetes.io/tls`, and, in a cluster that serves the Gateway API, one
+to Secrets labeled `trickstercache.org/sticky-key`. The controller therefore never holds an
 application's credentials in memory. The grant
 itself cannot express that narrowing, which is the strongest reason to scope
 the controller to named namespaces where that is possible.
@@ -74,8 +74,10 @@ may list and watch the kind in every watched namespace. It asks with a
 lets every authenticated identity create, so that needs no grant here. Where
 the answer is no, it
 logs a warning and never reads the kind, rather than waiting on an informer
-that would never sync. An upgrade that keeps an older Role therefore starts,
-and the kind's `sessionPersistence` is ignored until the grant is added.
+that would never sync. A review that fails is treated as a refusal. An
+upgrade that keeps an older Role therefore starts, and the kind's
+`sessionPersistence` is ignored until the grant is added and the controller
+restarts, since it asks only at startup.
 
 `trickstercachepolicies` is this project's own custom resource
 ([kubernetes-cache-policy.md](./kubernetes-cache-policy.md)), installed from

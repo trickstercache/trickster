@@ -213,12 +213,12 @@ var classParams = map[string]paramSetter{
 }
 
 // stickyKey returns the key a sticky_secret Secret holds, base64-encoded so it travels as text, or
-// nothing when it cannot be read; the class is still served, its tokens keyed per process
+// nothing when it cannot be read; the class is still served, its tokens keyed as if none were named
 func (t *translator) stickyKey(src ir.Source, namespace, name string) string {
 	fail := func(format string, args ...any) string {
 		t.problems.RejectAs(ir.ReasonInvalidParameters, src, "parameter %q: secret %s/%s %s; "+
-			"session tokens are keyed per process", ParamStickySecret, namespace, name,
-			fmt.Sprintf(format, args...))
+			"session tokens are keyed by kubernetes.defaults.sticky_secret_file, else per process",
+			ParamStickySecret, namespace, name, fmt.Sprintf(format, args...))
 		return ""
 	}
 	sec := t.cfg.Cache.KeySecret(namespace, name)

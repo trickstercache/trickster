@@ -1220,15 +1220,19 @@ backends:
 #         signal: first_write
 
 #       sticky: # keeps each client on the member it was first sent to; rr, p2c, lc, lt and hrw only
-#         # mode is how a client's member is remembered: cookie (the default on http listeners),
-#         # header (the same signed token in a header, for API clients) or table (a table kept by the
-#         # ALB, by a key read from each request, connection or session; the default on tcp, tls, udp
-#         # and native listeners). Configure only the block for the mode in use
-#         mode: cookie
+#         # mode is how a client's member is remembered: cookie (a signed token in a cookie),
+#         # header (the same token in a header, for API clients) or table (a table kept by the ALB,
+#         # by a key read from each request, connection or session). Unset, the default, is cookie
+#         # on http listeners and table on tcp, tls, udp and native ones, and allows a cookie and a
+#         # table block; a mode that is set allows only its own block, and cookie or header is
+#         # refused on a listener that is not http
+#         # mode: cookie
 #         # ttl is a session's lifetime from its first request; 0 is no limit, and a browser-session
 #         # cookie. default is 1h
 #         ttl: 1h
-#         # idle ends a session unused this long. default is 0: never
+#         # idle ends a session left unused. A token counts it from when it was last issued and
+#         # is reissued after half of it, so an unused session ends between idle/2 and idle after its
+#         # last request; a table entry counts it from its last use. default is 0: never
 #         idle: 0
 #         # on_unavailable is repick (default), to move a session whose member is unavailable, or
 #         # reject, to answer 503, or refuse a connection, until its member is available again

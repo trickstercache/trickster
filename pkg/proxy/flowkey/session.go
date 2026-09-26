@@ -22,9 +22,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 )
 
-// Session reads the key source from a native protocol session once it has authenticated: the
-// name it authenticated as, or the address it arrived from, never its port. A source a session
-// cannot carry is never present.
+// Session reads the key source from an authenticated native session: its user name or its address
+// (never the port). A source a session cannot carry is never present.
 func Session(ks KeySource, v6Prefix int, user string, client netip.Addr) Value {
 	switch ks.Kind {
 	case KeyUser:

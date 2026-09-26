@@ -98,8 +98,8 @@ func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
 		return nil, nil, err
 	}
 	if conf.Flags != nil && conf.Flags.ValidateConfig {
-		// -validate-config runs every check startup does, including those that need the backend
-		// clients, and then serves nothing
+		// -validate-config runs every configuration check, including those that need the backend
+		// clients, but applies nothing: no listener, cache, authenticator or discovery is started
 		return conf, nil, nil
 	}
 	return conf, clients, nil

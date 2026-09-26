@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-// Package keytable is a bounded table of values by 64-bit key, whose entries expire a fixed time
-// after they are stored or once they go unread for long enough. It runs no goroutine: expired
-// entries are skipped when read and removed as later ones are stored.
+// Package keytable is a bounded, goroutine-free table of values by 64-bit key, whose entries expire
+// a fixed time after they are stored or once unread long enough.
 package keytable
 
 import (
@@ -49,9 +48,8 @@ type Options struct {
 	// Idle is how long an entry may go unread before it expires, to within a sixteenth of it or a
 	// second, whichever is less; 0 is forever.
 	Idle time.Duration
-	// MaxEntries bounds the table; the default is DefaultMaxEntries. A new key in a full part of
-	// the table drops the expired entries of a sample of that part's, or else its least recently
-	// read entry.
+	// MaxEntries bounds the table (default DefaultMaxEntries). A new key in a full shard drops a
+	// sample's expired entries, or else the sample's least recently read.
 	MaxEntries int
 	// RefuseWhenFull refuses a new key in a full part of the table unless the sample holds an
 	// expired entry, for entries that must not be lost while they live, such as counts.
@@ -139,9 +137,8 @@ func (t *Table[V]) Put(key uint64, v V, now int64) bool {
 	return true
 }
 
-// GetOrPut returns the value stored under the key unless it has expired, and marks it read, or
-// else stores v under the key and returns it. It reports false when the key has no value and a
-// table that refuses when full has no room for v. It takes a write lock, so try Get first.
+// GetOrPut returns the key's unexpired value, marking it read, or stores and returns v; false means
+// no value and a full, refusing table. It write-locks, so try Get first.
 func (t *Table[V]) GetOrPut(key uint64, v V, now int64) (V, bool) {
 	s := &t.shards[key&t.mask]
 	s.mtx.Lock()
@@ -179,9 +176,8 @@ func (t *Table[V]) markRead(e *entry[V], now int64) {
 	}
 }
 
-// admit makes room in the shard for a new key and counts it, or reports that there is none;
-// the caller holds the shard's write lock. Every new key counts toward the next sweep, refused
-// ones included, so a table that refuses still reclaims its expired entries.
+// admit makes room for a new key in the write-locked shard, or reports none; every new key counts
+// toward the next sweep, refused ones too, so a refusing table still reclaims.
 func (t *Table[V]) admit(s *shard[V], now int64) bool {
 	s.arrived++
 	if s.arrived%sweepEvery == 0 {
@@ -219,10 +215,8 @@ func (t *Table[V]) sweep(s *shard[V], now int64) {
 	}
 }
 
-// evict drops the expired entries among a sample of the shard's, or, when none is and the table
-// does not refuse, the least recently read of the sample, and reports whether it dropped any; the
-// caller holds the shard's write lock. The order a map is ranged in varies from one range to the
-// next, which is what makes the sample a sample.
+// evict drops a sample's expired entries, else (unless refusing) its least recently read, and
+// reports if any went; map range order makes the sample. The shard is write-locked.
 func (t *Table[V]) evict(s *shard[V], now int64) bool {
 	var (
 		victim  uint64

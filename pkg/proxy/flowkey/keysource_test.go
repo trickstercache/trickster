@@ -42,7 +42,8 @@ func TestParseKeySource(t *testing.T) {
 			t.Errorf("ParseKeySource(%q) = %+v, %v; want %+v", in, got, err, want)
 		}
 	}
-	for _, in := range []string{"snI:x", "header:", "cookie: ", "query:", "query:a=b", "header:two words",
+	for _, in := range []string{
+		"snI:x", "header:", "cookie: ", "query:", "query:a=b", "header:two words",
 		"cookie:a;b", "ip", "header", "path:/x", "method:GET", "proxy_tlv:", "proxy_tlv:256", "proxy_tlv:-1",
 		"proxy_tlv:authority",
 	} {

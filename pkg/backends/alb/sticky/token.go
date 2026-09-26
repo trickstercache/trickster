@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-// Package sticky keeps a client on the member of an ALB's pool that it was first sent to: by a
-// keyed token that the client sends back, or by a table of pins kept by a key read from each
-// request or flow.
+// Package sticky keeps a client on the ALB pool member it was first sent to, by a keyed token the
+// client sends back or by a table of pins keyed on each request or flow.
 package sticky
 
 import (
@@ -187,9 +186,8 @@ func (c *Codec) open(raw []byte, now int64) (Token, Status) {
 	return t, Valid
 }
 
-// Expires returns when the token stops being honored, in Unix seconds: its ttl from when the
-// session was first pinned or its idle timeout from when it was issued, whichever is first; 0
-// is never.
+// Expires returns when the token stops being honored, in Unix seconds (0 is never): ttl after the
+// session's first pin or idle after issue, whichever is first.
 func (c *Codec) Expires(t Token) int64 {
 	var exp int64
 	if c.ttl > 0 {
