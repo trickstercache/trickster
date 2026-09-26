@@ -1,7 +1,7 @@
 # Integration Tests
 
 End-to-end tests that boot real Trickster instances against the Docker Compose
-developer environment (Prometheus, ClickHouse, InfluxDB, Mockster, Redis).
+developer environment (Prometheus, ClickHouse, InfluxDB, devorigin, Redis).
 
 The MySQL matrix uses the pinned MySQL 8.4 and Grafana containers. It validates
 the maintained Go `database/sql` driver, the MySQL command-line client,

@@ -96,13 +96,6 @@ backends:
       pool:
         - prom1
         - sim1
-  alb2:
-    provider: alb
-    alb:
-      mechanism: nlm
-      pool:
-        - lm1
-        - lm2
   alb3:
     latency_min: 300ms
     provider: alb
@@ -231,21 +224,6 @@ backends:
     provider: prometheus
     origin_url: 'http://127.0.0.1:8482/prometheus'
     cache_name: mem1
-  flux-sim-1:
-    provider: influxdb
-    origin_url: 'http://127.0.0.1:8482/influxdb'
-    cache_name: mem1
-    max_idle_conns: 600
-    timeseries_retention_factor: 5184000
-    timeseries_ttl: 72h
-    max_ttl: 24h
-    max_object_size_bytes: 67108864
-  lm1:
-    provider: reverseproxycache
-    origin_url: 'http://127.0.0.1:8482/static/testing/test1'
-  lm2:
-    provider: reverseproxycache
-    origin_url: 'http://127.0.0.1:8482/static/testing/test2'
   rpc1:
     provider: reverseproxycache
     origin_url: 'http://127.0.0.1:8482/byterange'

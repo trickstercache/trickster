@@ -31,7 +31,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -45,6 +44,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/rangesim"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
@@ -338,7 +338,7 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 
 	// Fulfill the cache with the remaining parts
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -459,7 +459,7 @@ func TestFullArticuation(t *testing.T) {
 
 	r.Header.Del(headers.NameRange)
 	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -498,7 +498,7 @@ func TestFullArticuation(t *testing.T) {
 	}
 
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -779,7 +779,7 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -866,14 +866,14 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 	p.ResponseHeaders = headers
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
 
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusRevalidated})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -1428,7 +1428,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set(headers.NameCacheControl, "max-age=60")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, byterange.Body)
+			fmt.Fprint(w, rangesim.Body)
 		})
 		defer origin.Close()
 		rsc.BackendOptions.HTTPClient = origin.Client()
@@ -1493,7 +1493,7 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set(headers.NameCacheControl, "max-age=60")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, byterange.Body)
+			fmt.Fprint(w, rangesim.Body)
 		})
 		defer origin.Close()
 		rsc.BackendOptions.HTTPClient = origin.Client()

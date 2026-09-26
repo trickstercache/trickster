@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 
 	"github.com/stretchr/testify/require"
 )
@@ -182,15 +184,24 @@ func TestPrometheus(t *testing.T) {
 	})
 
 	t.Run("fast forward", func(t *testing.T) {
-		now := time.Now()
-		params := url.Values{
-			"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
-			"start": {fmt.Sprintf("%d", now.Add(-30*time.Minute).Unix())},
-			"end":   {fmt.Sprintf("%d", now.Unix())},
-			// step must exceed FastForwardTTL (default 15s) for fast-forward to activate
-			"step": {"60"},
-		}
-		_, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+		// step must exceed FastForwardTTL (default 15s) for fast-forward to activate
+		const step = time.Minute
+		// fast-forward needs the request's step-aligned end to be Trickster's
+		// step-aligned now, so an attempt that straddles a step boundary is retried
+		hdr, ok := stepwindow.Retry(step, 3, func(attempt int, now time.Time) http.Header {
+			if attempt > 0 {
+				t.Logf("attempt %d straddled a step boundary; retrying", attempt)
+			}
+			params := url.Values{
+				"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
+				"start": {fmt.Sprintf("%d", now.Add(-30*time.Minute).Unix())},
+				"end":   {fmt.Sprintf("%d", now.Unix())},
+				"step":  {strconv.Itoa(int(step / time.Second))},
+			}
+			_, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+			return hdr
+		})
+		require.True(t, ok, "every fast-forward attempt straddled a step boundary")
 		result := parseTricksterResult(hdr.Get(headers.NameTricksterResult))
 		t.Logf("fast forward: %s", hdr.Get(headers.NameTricksterResult))
 		require.Equal(t, "DeltaProxyCache", result["engine"])

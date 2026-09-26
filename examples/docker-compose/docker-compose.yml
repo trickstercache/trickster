@@ -8,6 +8,7 @@ services:
     image: prom/prometheus:v3.13.2
     volumes:
       - ./docker-compose-data/prometheus-config:/etc/prometheus
+      - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -18,6 +19,67 @@ services:
     networks:
       - trk-ex-back-tier
     restart: always
+    depends_on:
+      prometheus_seed:
+        condition: service_completed_successfully
+
+  # generates the synthetic trips seed data (hack/seedgen) that devorigin turns
+  # into Prometheus metrics. The small profile keeps the first start quick.
+  seed_data_generate:
+    image: golang:1.27-alpine
+    network_mode: none
+    working_dir: /src
+    environment:
+      GOFLAGS: -mod=mod
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      SEED_OUT: /seed-data
+      SEED_PROFILE: ${SEED_PROFILE:-small}
+    volumes:
+      - ../../hack/seedgen:/src:ro
+      - seed-data:/seed-data
+      - gocache:/go-cache
+    entrypoint: ["go", "run", "."]
+
+  # writes the last 15 days of the trips data as Prometheus metrics in
+  # OpenMetrics form (hack/devorigin), for prometheus_seed to import
+  prometheus_seed_generate:
+    image: golang:1.27-alpine
+    network_mode: none
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_OUT: /om/trips.om
+    volumes:
+      - ../..:/repo:ro
+      - seed-data:/seed-data:ro
+      - prometheus-seed-om:/om
+      - gocache:/go-cache
+    entrypoint: ["go", "run", ".", "backfill"]
+    depends_on:
+      seed_data_generate:
+        condition: service_completed_successfully
+
+  # imports that history with promtool before prometheus starts; it skips
+  # reseeding while prometheus is running
+  prometheus_seed:
+    image: prom/prometheus:v3.13.2
+    user: "0:0"
+    volumes:
+      - ../../hack/devorigin/seed-prometheus.sh:/seed-prometheus.sh:ro
+      - prometheus-seed-om:/om
+      - prometheus-data:/prometheus
+    entrypoint: ["/bin/sh", "/seed-prometheus.sh"]
+    networks:
+      - trk-ex-back-tier
+    depends_on:
+      prometheus_seed_generate:
+        condition: service_completed_successfully
 
   influxdb:
     image: influxdb:2.9
@@ -71,13 +133,33 @@ services:
       - trk-ex-front-tier
     restart: always
 
-  mockster:
-    image: trickstercache/mockster:latest
+  # devorigin (hack/devorigin) serves the live trips metrics that prometheus
+  # scrapes, a Prometheus API simulator under /prometheus/ and a Range request
+  # origin under /byterange/, building from the repo on start
+  devorigin:
+    image: golang:1.27-alpine
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_ADDR: ":8482"
+    volumes:
+      - ../..:/repo:ro
+      - seed-data:/seed-data:ro
+      - gocache:/go-cache
+    entrypoint: ["/bin/sh", "-c", "go build -o /tmp/devorigin . && exec /tmp/devorigin serve"]
+    # loopback only; the other containers reach it at devorigin:8482
     ports:
-      - 8482:8482
+      - 127.0.0.1:8482:8482
     networks:
       - trk-ex-back-tier
     restart: always
+    depends_on:
+      seed_data_generate:
+        condition: service_completed_successfully
 
   redis:
     image: redis:latest
@@ -108,7 +190,7 @@ services:
     image: trickstercache/trickster:2
     depends_on:
       - prometheus
-      - mockster
+      - devorigin
       - grafana
       - jaeger
       - redis
@@ -127,3 +209,7 @@ services:
 volumes:
   influxdbv2:
   redis-data:
+  prometheus-data:
+  prometheus-seed-om:
+  seed-data:
+  gocache:
