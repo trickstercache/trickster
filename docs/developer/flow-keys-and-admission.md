@@ -95,6 +95,60 @@ which rejects `method`, `path` and `query` because they describe the
 shape of a request rather than a client. Wrap the parser the same way when
 some kinds make no sense for a feature.
 
+### What a key requires
+
+Whether a listener can read a key says where the key can be read.
+`KeySource.Requires()` says when: what a request must have been through
+before the key has a value.
+
+```go
+type Requirement uint8
+
+const (
+	RequiresPrincipal Requirement = 1 << iota // the identity an authenticator established
+	RequiresBody                              // the request body, buffered and bounded
+)
+```
+
+- A kind read from the principal declares `RequiresPrincipal`, and one read
+  from the request body declares `RequiresBody`; every other kind requires
+  nothing. Today `user` is the only kind that requires anything, and only
+  native listeners read it, once their session has authenticated.
+- `Requirement.Has` tests a set, as `lb.Needs.Has` does.
+
+Where a feature sits decides which keys it may use. Validation should refuse
+the others, just as it refuses a key that a listener cannot read:
+
+- **Listener scope** reads only keys that require nothing. That covers
+  [the HTTP listener seam](#the-http-listener-seam) and
+  [stream admission](#stream-admission), which run before any authenticator
+  or body filter.
+- **Route scope,** in the route chain that `pkg/routing` builds, reads a
+  principal key only inside `attachAuthenticator`, and a body key only
+  inside `bodyfilter`. A feature placed ahead of the authenticator, for
+  example to turn away an unauthenticated flood cheaply, may key only on
+  what requires nothing.
+- **Not every route has a body filter.**
+  - Every route of a backend applies `attachAuthenticator`.
+  - Only the routes on a listener apply `bodyfilter`, and only to POST, PUT
+    and PATCH requests.
+  - A backend's own route has no body filter. `registerPathRoutes` gives
+    `applyMiddleware` no frontend options for it. That own route is what an
+    ALB pool, a rule's `next_route` and the ClickHouse native bridge
+    dispatch into. The bridge adds a filter only when its listener sets
+    `max_request_body_size_bytes`.
+- **The ALB's pick** therefore always runs inside the `attachAuthenticator`
+  of the route that reached it. So a strategy that the ALB keys, such as
+  `hrw`, sees the principal whenever that route has an authenticator. The
+  pick is inside a body filter only when some route the request passed
+  through applied one. A nested ALB, or one behind a rule, has only the
+  filter of the route the request entered by, if that route had one. With
+  `truncate_request_body_too_large` set, that filter may also have cut the
+  body short.
+- **No kind reads the body yet.** Before one does, either give a backend's
+  own route the body filter or have the key bound its own read, and state
+  the rule here to match.
+
 ### Extractors
 
 Build an extractor once, when a configuration is loaded or swapped, and
@@ -213,11 +267,13 @@ reads, and never edit a pinned value to make a refactor pass.
    kind there if HTTP cannot read it. The native ALB adapter keys every
    kind but `user` on the client address, so leave a new kind out of
    `OnNative` unless that adapter learns to read it.
-3. Read it in `HTTP`, `StreamValue` or both, without allocating. An empty
+3. Declare in `Requires` whether it is read from the principal or from the
+   request body.
+4. Read it in `HTTP`, `StreamValue` or both, without allocating. An empty
    value is `Value{}`.
-4. Pin its hash in `golden_test.go`, and cover its parsing and each
-   listener type in the package's tests.
-5. `ParseHRWKey` also names what it excludes, so `hrw.key` accepts the new
+5. Pin its hash in `golden_test.go`, and cover its parsing, its
+   requirements and each listener type in the package's tests.
+6. `ParseHRWKey` also names what it excludes, so `hrw.key` accepts the new
    kind unless it is added there. If `hrw.key` accepts it, document it in
    [the ALB guide](../alb.md).
 
@@ -482,6 +538,9 @@ func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, nex
   only when the top-level `access_log` is configured, and never on
   `metrics`; without it, such denials show only in the feature's own
   metrics.
+- **Only keys that require nothing.** The seam runs before any
+  authenticator or body filter, so a feature here may key only on sources
+  whose `Requires()` is zero (see [what a key requires](#what-a-key-requires)).
 - **No cost when nothing is configured.** With no trusted proxies and no
   access log, both wrappers return `next` unchanged. Added middleware must
   do the same: return `next` when the listener has nothing configured.

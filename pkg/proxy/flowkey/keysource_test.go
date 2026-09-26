@@ -53,6 +53,8 @@ func TestParseKeySource(t *testing.T) {
 }
 
 func TestKeySourcePlanes(t *testing.T) {
+	// what a request must have been through before the key can be read: nothing unless listed
+	requires := map[string]Requirement{KeySourceUser: RequiresPrincipal}
 	for in, want := range map[string][5]bool{
 		// readable on: a tcp or udp listener, a tls listener, one that accepts the PROXY
 		// protocol, an http listener, a native protocol listener
@@ -79,5 +81,16 @@ func TestKeySourcePlanes(t *testing.T) {
 		if got != want {
 			t.Errorf("%s is readable on %v; want %v", in, got, want)
 		}
+		if got := ks.Requires(); got != requires[in] {
+			t.Errorf("%s requires %b; want %b", in, got, requires[in])
+		}
+	}
+}
+
+func TestRequirementHas(t *testing.T) {
+	both := RequiresPrincipal | RequiresBody
+	if !both.Has(RequiresPrincipal) || !both.Has(both) || RequiresPrincipal.Has(RequiresBody) ||
+		!Requirement(0).Has(0) {
+		t.Error("a set of requirements misreports what it has")
 	}
 }

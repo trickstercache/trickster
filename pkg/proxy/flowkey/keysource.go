@@ -120,6 +120,30 @@ func (k KeySource) OnNative() bool {
 	return k.Kind == KeyClientIP || k.Kind == KeyUser
 }
 
+// Requirement is what a request must have been through before a key can be read from it.
+type Requirement uint8
+
+const (
+	// RequiresPrincipal marks a key read from the identity that an authenticator established.
+	RequiresPrincipal Requirement = 1 << iota
+	// RequiresBody marks a key read from the request body, once the body is buffered and bounded.
+	RequiresBody
+)
+
+// Has reports whether every requirement in want is present.
+func (r Requirement) Has(want Requirement) bool {
+	return r&want == want
+}
+
+// Requires reports what a request must have been through before the key can be read from it; a
+// key that requires nothing can be read anywhere, a listener's own middleware included.
+func (k KeySource) Requires() Requirement {
+	if k.Kind == KeyUser {
+		return RequiresPrincipal
+	}
+	return 0
+}
+
 var namedKinds = map[string]KeyKind{
 	keyPrefixHeader: KeyHeader, keyPrefixCookie: KeyCookie, keyPrefixQuery: KeyQuery,
 }
