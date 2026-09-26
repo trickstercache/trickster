@@ -24,7 +24,8 @@ const (
 	// DefaultProxyListenAddress is the default address that the HTTP frontend will listen on
 	DefaultProxyListenAddress = ""
 
-	// 8482 is reserved for mockster, allowing the default TLS port to end with 3
+	// 8482 is reserved for the developer environment's devorigin service,
+	// allowing the default TLS port to end with 3
 
 	// DefaultTLSProxyListenPort is the default port that the TLS frontend endpoint will listen on
 	DefaultTLSProxyListenPort = 8483

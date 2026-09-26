@@ -67,6 +67,48 @@ services:
     ports:
      - 9090:9090
     restart: always
+    depends_on:
+      prometheus_seed:
+        condition: service_completed_successfully
+
+  # writes the last 15 days of the trips seed data as Prometheus metrics in
+  # OpenMetrics form (hack/devorigin), for prometheus_seed to import. Like
+  # seed_data_generate, it builds and runs with networking disabled.
+  prometheus_seed_generate:
+    image: golang:1.27-alpine
+    network_mode: none
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_OUT: /om/trips.om
+    volumes:
+      - ../../..:/repo:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - prometheus-seed-om:/om
+      - seedgen-gocache:/go-cache
+    entrypoint: ["go", "run", ".", "backfill"]
+    depends_on:
+      seed_data_generate:
+        condition: service_completed_successfully
+
+  # promtool, for seeding prometheus with the trips history before it starts.
+  # It runs as root to clean up the backfill file, then hands the data
+  # directory back to nobody; it skips reseeding while prometheus is running.
+  prometheus_seed:
+    image: prom/prometheus:v3.13.2
+    user: "0:0"
+    volumes:
+      - ../../../hack/devorigin/seed-prometheus.sh:/seed-prometheus.sh:ro
+      - prometheus-seed-om:/om
+      - prometheus-data:/prometheus
+    entrypoint: ["/bin/sh", "/seed-prometheus.sh"]
+    depends_on:
+      prometheus_seed_generate:
+        condition: service_completed_successfully
 
   # influxdb 2.x
   influxdb2:
@@ -405,14 +447,41 @@ services:
 
   # Mocks
 
-  mockster:
-    image: tricksterproxy/mockster:latest
-    build:
-      context: .
-      network: host
+  # devorigin (hack/devorigin) serves the live trips metrics that prometheus
+  # scrapes, and the in-repo mock origins (pkg/testutil/mocks): a Prometheus
+  # API simulator under /prometheus/ and a Range request origin under
+  # /byterange/. It builds from the repo on start, with no network access.
+  devorigin:
+    image: golang:1.27-alpine
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_ADDR: ":8482"
+    volumes:
+      - ../../..:/repo:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - seedgen-gocache:/go-cache
+    entrypoint: ["/bin/sh", "-c", "go build -o /tmp/devorigin . && exec /tmp/devorigin serve"]
     restart: always
+    # healthy once it has compiled, caught up on the trips data, and is serving
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8482/metrics"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 180s
+      start_interval: 2s
+    # loopback only: the mocks do request-driven work, and Trickster reaches them
+    # from the host at 127.0.0.1:8482 while containers use devorigin:8482
     ports:
-     - 8482:8482
+     - 127.0.0.1:8482:8482
+    depends_on:
+      seed_data_generate:
+        condition: service_completed_successfully
 
   # Tracing
 
@@ -473,6 +542,7 @@ volumes:
   druid-data:
   druid-shared:
   prometheus-data:
+  prometheus-seed-om:
   mysql-data:
   timescaledb-data:
   redis-data:
