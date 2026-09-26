@@ -30,12 +30,13 @@ type Flow struct {
 	Client netip.AddrPort
 	// ServerName is the TLS server name the client offered; tls only
 	ServerName string
-	// Proxy reads the PROXY protocol header the connection arrived behind; nil without one
+	// Proxy reads the TLVs of a PROXY protocol header the connection arrived behind, and finds
+	// none without a header; it may be nil, and always is on udp
 	Proxy ProxyHeader
 }
 
-// ProxyHeader is implemented by a client connection that was accepted behind a PROXY protocol
-// header, which a listener's accepted connections may be.
+// ProxyHeader reads the PROXY protocol header a client connection arrived behind; every connection
+// a listener accepts implements it, and one that arrived without a header has no TLVs.
 type ProxyHeader interface {
 	// ProxyTLV returns the value of the first version 2 TLV of the given type, if it has one.
 	ProxyTLV(typ byte) ([]byte, bool)
