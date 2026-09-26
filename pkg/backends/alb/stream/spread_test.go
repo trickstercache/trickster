@@ -18,6 +18,7 @@ package stream
 
 import (
 	"slices"
+	"syscall"
 	"testing"
 	"time"
 
@@ -131,13 +132,13 @@ func TestSpreadRoutesCountTheirMember(t *testing.T) {
 		t.Error("a relayed connection was not counted for the member that won it alone")
 	}
 	failed := u.(l4.Racer).Race(f)[0]
-	failed.Dialed(time.Millisecond, errRefused)
+	failed.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	if count("m0", ResultDialFailed) != 1 {
 		t.Error("a failed connect was not counted")
 	}
 	unreachable := u.(l4.Racer).Race(f)[0]
 	unreachable.Dialed(time.Millisecond, nil)
-	unreachable.Closed(errRefused)
+	unreachable.Closed(syscall.ECONNREFUSED)
 	if count("m1", ResultUnreachable) != 1 {
 		t.Error("an unreachable member was not counted")
 	}

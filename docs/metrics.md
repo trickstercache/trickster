@@ -97,7 +97,7 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `listener_name` - the name of the configured listener
     * `protocol` - `tcp`, `tls` or `udp`
-    * `result` - `proxied`, or why the connection was closed instead: `not_tls` (a `tls` listener received no ClientHello), `no_route` (no backend routes the server name), `no_upstream` (the backend's pool has no dialable member, or the member chosen refuses its share), `dial_failed`, or `refused` (a `udp` listener at its session limit, or a connection arriving as the listener closes)
+    * `result` - `proxied`, or why the connection was closed instead: `not_tls` (a `tls` listener received no ClientHello), `no_route` (no backend routes the server name), `no_upstream` (the backend's pool has no dialable member, or the member chosen refuses its share), `dial_failed`, `refused` (a `udp` listener at its session limit, or a connection arriving as the listener closes), or `denied` (turned away by the listener's admission control before anything was relayed)
 
 * `trickster_proxy_stream_active_connections` (Gauge) - The number of connections and UDP sessions stream listeners are relaying.
   * labels:
@@ -107,7 +107,7 @@ The following metrics are available for polling with any Trickster configuration
 * `trickster_proxy_stream_dropped_datagrams_total` (Counter) - The number of datagrams `udp` listeners dropped rather than relayed.
   * labels:
     * `listener_name` - the name of the configured listener
-    * `reason` - `queue_full` (the client's flow, or every flow together, already held its allowance of datagrams waiting to be written) or `write_timeout` (the write to the backend blocked for the whole write bound)
+    * `reason` - `queue_full` (the client's flow, or every flow together, already held its allowance of datagrams waiting to be written), `write_timeout` (the write to the backend blocked for the whole write bound) or `denied` (turned away by the listener's admission control)
 
 * `trickster_proxy_stream_bytes_total` (Counter) - The bytes relayed by stream listeners.
   * labels:

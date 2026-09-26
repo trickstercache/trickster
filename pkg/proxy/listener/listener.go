@@ -112,6 +112,24 @@ func (o *observedConnection) CloseWrite() error {
 	return errors.ErrUnsupported
 }
 
+// Reset ends the connection with a reset rather than a close, so a relay may turn a client away
+// at once; it reaches the TCP connection beneath a PROXY protocol connection, and nothing else.
+func (o *observedConnection) Reset() error {
+	tc, ok := o.Conn.(*net.TCPConn)
+	if !ok {
+		if pc, wraps := o.Conn.(interface{ TCPConn() (*net.TCPConn, bool) }); wraps {
+			tc, ok = pc.TCPConn()
+		}
+	}
+	if !ok {
+		return errors.ErrUnsupported
+	}
+	if err := tc.SetLinger(0); err != nil {
+		return err
+	}
+	return o.Close()
+}
+
 func (o *observedConnection) Close() error {
 	if err := o.Conn.Close(); err != nil {
 		return err
