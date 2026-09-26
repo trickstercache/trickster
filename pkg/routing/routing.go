@@ -150,7 +150,7 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		// a handler that answers from configuration has no upstream for an
 		// upgrade to be tunneled to; diverting one would open a connection
 		// a local path promised never to make
-		h = middleware.UpgradeSwitch(passthrough, h)
+		h = routeUpgrades(client, passthrough, h)
 	}
 	h = middleware.MaxForwards(h)
 	if tr != nil {
@@ -177,6 +177,18 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		return accesslog.Handled(h)
 	}
 	return accesslog.Middleware(rl.logger, pathOpts.Path, withResources, h)
+}
+
+// routeUpgrades sends a route's protocol upgrades to its passthrough lane when it has an origin, to
+// its handler when that sends each request to one backend to tunnel them, else serves them as plain
+func routeUpgrades(client backends.Backend, passthrough, next http.Handler) http.Handler {
+	switch {
+	case client == nil || client.Configuration() == nil || backends.HasOrigin(client.Configuration().Provider):
+		return middleware.UpgradeSwitch(passthrough, next)
+	case backends.RelaysUpgrades(client):
+		return next
+	}
+	return middleware.IgnoreUpgrade(next)
 }
 
 type listenerRoute struct {

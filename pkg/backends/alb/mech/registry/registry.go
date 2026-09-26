@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/hrw"
@@ -129,18 +130,31 @@ func New(name types.Name, opts *options.Options,
 	if err != nil {
 		return nil, err
 	}
-	return pick.New(entry.ShortName, s, pickOptions(opts)), nil
+	po, err := pickOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	return pick.New(entry.ShortName, s, po), nil
 }
 
-// pickOptions carries to the HTTP adapter what a strategy's needs may call for
-func pickOptions(o *options.Options) pick.Options {
+// pickOptions carries to the HTTP adapter what a strategy's needs may call for, and the ALB's
+// session persistence
+func pickOptions(o *options.Options) (pick.Options, error) {
 	if o == nil {
-		return pick.Options{}
+		return pick.Options{}, nil
 	}
-	return pick.Options{
+	po := pick.Options{
 		Key: o.HRW.KeySource, IPv6Prefix: o.HRW.IPv6Prefix, GoodCodes: o.LT.GoodCodes,
-		Balancer: balancerOptions(o),
+		Balancer: balancerOptions(o), ALBName: o.Name,
 	}
+	if o.Sticky != nil {
+		st, err := sticky.NewHTTP(o.Name, o.Sticky)
+		if err != nil {
+			return pick.Options{}, err
+		}
+		po.Sticky = st
+	}
+	return po, nil
 }
 
 // balancerOptions translates what configures the balancer itself: passive ejection, which

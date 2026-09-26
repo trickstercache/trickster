@@ -114,6 +114,20 @@ func (c *snapshotCounter) Observe(ev lb.Event) {
 	}
 }
 
+func TestTargetDraining(t *testing.T) {
+	tgt := NewTarget(nil, healthcheck.NewStatus("d", "", "", healthcheck.StatusPassing, time.Time{}, nil), nil)
+	stats := tgt.Member().Stats()
+	if tgt.WithDraining(false) != tgt || tgt.Member().Draining() {
+		t.Error("an undrained target was built draining")
+	}
+	if !tgt.WithDraining(true).Member().Draining() || tgt.Member().Stats() != stats {
+		t.Error("a draining target's member does not drain, or lost its stats")
+	}
+	if !tgt.WithTier(1).Member().Draining() {
+		t.Error("a tier change undid draining")
+	}
+}
+
 func TestTargetTier(t *testing.T) {
 	primary := NewTarget(nil, healthcheck.NewStatus("p", "", "", healthcheck.StatusPassing, time.Time{}, nil), nil)
 	standby := NewTarget(nil, healthcheck.NewStatus("s", "", "", healthcheck.StatusPassing, time.Time{}, nil), nil)

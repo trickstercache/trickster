@@ -21,7 +21,10 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/util/keytable"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // Table is where an ALB keeps its pins in table mode: each key's path.
@@ -54,14 +57,45 @@ func TableFor(albName string, o *options.Options) *Table {
 	return t
 }
 
-// ForgetTablesExcept drops the table of every ALB that keep reports false for, such as one the
-// running config no longer has.
-func ForgetTablesExcept(keep func(albName string) bool) {
+// ForgetTablesExcept drops every kept table that keep reports false for. A config build calls it
+// once its ALBs are running, keeping only the tables they hold, so a table no ALB uses is not
+// carried into a later config that asks for one again.
+func ForgetTablesExcept(keep func(albName string, t *Table) bool) {
 	tables.mtx.Lock()
 	defer tables.mtx.Unlock()
-	for name := range tables.byALB {
-		if !keep(name) {
+	for name, k := range tables.byALB {
+		if !keep(name, k.table) {
 			delete(tables.byALB, name)
 		}
 	}
+}
+
+// entriesDesc describes the table gauge. It is filled at scrape time from the kept tables, so a
+// pin costs nothing for it and a table dropped at reload takes its series with it.
+var entriesDesc = prometheus.NewDesc(
+	"trickster_alb_sticky_entries",
+	"Current number of pins an ALB keeps in its sticky table, expired ones not yet removed included.",
+	[]string{keys.ALB_Name}, nil,
+)
+
+type entriesCollector struct{}
+
+func (entriesCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- entriesDesc
+}
+
+func (entriesCollector) Collect(ch chan<- prometheus.Metric) {
+	tables.mtx.Lock()
+	kept := make(map[string]*Table, len(tables.byALB))
+	for name, k := range tables.byALB {
+		kept[name] = k.table
+	}
+	tables.mtx.Unlock()
+	for name, t := range kept {
+		ch <- prometheus.MustNewConstMetric(entriesDesc, prometheus.GaugeValue, float64(t.Len()), name)
+	}
+}
+
+func init() {
+	prometheus.MustRegister(entriesCollector{})
 }

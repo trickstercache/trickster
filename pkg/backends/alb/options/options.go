@@ -310,9 +310,13 @@ func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string])
 	if err := o.Pool.Validate(backendName); err != nil {
 		return err
 	}
-	// discovered members are never backups, so a discovered pool may list only standbys
+	// discovered members are never backups and never drain, so a discovered pool may list only
+	// standbys or draining members
 	if o.Discovery == nil && o.Pool.AllBackups() {
 		return fmt.Errorf("%w (alb %q)", ErrNoPrimaryPoolMember, backendName)
+	}
+	if o.Discovery == nil && o.Pool.AllDraining() {
+		return fmt.Errorf("%w (alb %q)", ErrAllPoolMembersDraining, backendName)
 	}
 	for _, m := range o.Pool {
 		if _, ok := allBackends[m.Name]; !ok {

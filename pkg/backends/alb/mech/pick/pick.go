@@ -18,11 +18,15 @@
 package pick
 
 import (
+	"context"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	cfgtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
@@ -40,17 +44,27 @@ type Options struct {
 	GoodCodes *cfgtypes.StatusTable
 	// Balancer carries what the balancer itself is configured with, such as passive ejection.
 	Balancer lb.BalancerOptions
+	// ALBName is the name of the ALB the mechanism serves, which an outer ALB's session names.
+	ALBName string
+	// Sticky keeps each client on the member its session is pinned to; nil keeps no sessions.
+	Sticky *sticky.HTTP
 }
 
 type handler struct {
 	mech.PoolHolder
 	name     types.Name
+	albName  string
 	balancer *lb.Balancer
 	// resolved once: a strategy pays on dispatch only for what it needs
 	tracked   bool
 	timed     bool
 	key       func(*http.Request) flowkey.Value
 	goodCodes *cfgtypes.StatusTable
+	sticky    *sticky.HTTP
+	// follows is set once an ALB that keeps sessions has this one in its pool
+	follows atomic.Bool
+	// sessions is set when the mechanism keeps sessions or follows them, so one load gates both
+	sessions atomic.Bool
 }
 
 // New returns the pool mechanism that serves HTTP with the provided strategy, which the
@@ -62,10 +76,11 @@ func New(name types.Name, selector lb.Selector, opts ...Options) types.PickerMec
 	}
 	b := lb.NewBalancer(selector, o.Balancer)
 	h := &handler{
-		name: name, balancer: b,
+		name: name, albName: o.ALBName, balancer: b, sticky: o.Sticky,
 		tracked: b.Needs() != 0, timed: b.Needs().Has(lb.NeedLatency),
 	}
 	h.goodCodes = o.GoodCodes
+	h.sessions.Store(o.Sticky != nil)
 	if b.Needs().Has(lb.NeedKey) {
 		h.key = flowkey.HTTP(o.Key, o.IPv6Prefix)
 	}
@@ -102,11 +117,26 @@ func (h *handler) Balancer() *lb.Balancer {
 	return h.balancer
 }
 
+// FollowPins makes the mechanism pick the next level of the sessions of an ALB whose pool it is
+// in, when that ALB sends it one.
+func (h *handler) FollowPins() {
+	h.follows.Store(true)
+	h.sessions.Store(true)
+}
+
+// StickyTable returns the table the mechanism keeps its sessions in, or nil when it keeps none.
+func (h *handler) StickyTable() *sticky.Table {
+	return h.sticky.Table()
+}
+
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var flow lb.Flow
 	if h.key != nil && r != nil {
 		v := h.key(r)
 		flow = lb.Flow{Key: v.Hash, HasKey: v.OK}
+	}
+	if h.sessions.Load() && r != nil && h.serveSession(w, r, flow) {
+		return
 	}
 	pk, ok := h.balancer.Pick(flow)
 	if !ok {
@@ -119,6 +149,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	// dispatch, written out: this is every request's path, and the call would not be inlined
 	switch {
 	case !h.tracked:
 		t.Handler().ServeHTTP(w, r)
@@ -127,6 +158,114 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		h.serveTracked(pk, t.Handler(), w, r)
 	}
+}
+
+// serveSession serves a request as part of a session: the next level of an outer ALB's, or one
+// of its own; it reports false for a request it leaves to an ordinary pick
+func (h *handler) serveSession(w http.ResponseWriter, r *http.Request, flow lb.Flow) bool {
+	if h.follows.Load() {
+		if s := sticky.SessionFrom(r.Context()); s != nil && s.Claim(h.albName) {
+			h.serveFollowing(w, r, flow, s)
+			return true
+		}
+	}
+	if h.sticky == nil {
+		return false
+	}
+	h.serveSticky(w, r, flow)
+	return true
+}
+
+// target returns the pool target of a pick, or answers the request itself when there is none
+func target(pk lb.Pick, ok bool, w http.ResponseWriter, r *http.Request) (*pool.Target, bool) {
+	if !ok {
+		failures.HandleBadGateway(w, r)
+		return nil, false
+	}
+	t, ok := pk.Member().Value.(*pool.Target)
+	if !ok || t.Handler() == nil {
+		pk.Done(lb.OutcomeFailed)
+		failures.HandleBadGateway(w, r)
+		return nil, false
+	}
+	return t, true
+}
+
+func (h *handler) dispatch(pk lb.Pick, member http.Handler, w http.ResponseWriter, r *http.Request) {
+	switch {
+	case !h.tracked:
+		member.ServeHTTP(w, r)
+	case h.timed:
+		h.serveTimed(pk, member, w, r)
+	default:
+		h.serveTracked(pk, member, w, r)
+	}
+}
+
+// serveSticky keeps the request's session as the outermost ALB on its way that keeps sessions:
+// it reads the session's pins, and issues its token or stores its pins as the response begins
+func (h *handler) serveSticky(w http.ResponseWriter, r *http.Request, flow lb.Flow) {
+	fw := getWriter(w, lb.Pick{})
+	defer putWriter(fw)
+	s := &fw.local
+	h.sticky.Begin(r, s, time.Now())
+	fw.persist, fw.session, fw.req = h.sticky, s, r
+	pk, t, ok := h.pickPinned(fw, r, flow, s, 0)
+	if !ok {
+		return
+	}
+	if t.Picker() != nil {
+		// the member is an ALB, which picks the session's next level
+		var ctx context.Context
+		ctx, fw.session = sticky.Nest(r.Context(), s, pk.Member().Name())
+		r = r.WithContext(ctx)
+	}
+	fw.pick = pk
+	h.serveWritten(pk, t.Handler(), fw, r)
+	// a member that wrote nothing is answered with the headers as they stand when it returns
+	fw.finish()
+}
+
+// serveFollowing picks the next level of an outer ALB's session, whose pool this ALB is in
+func (h *handler) serveFollowing(w http.ResponseWriter, r *http.Request, flow lb.Flow, s *sticky.Session) {
+	pk, t, ok := h.pickPinned(w, r, flow, s, 1)
+	if !ok {
+		return
+	}
+	h.dispatch(pk, t.Handler(), w, r)
+}
+
+// pickPinned picks for the session's level, honoring its pin while the pinned member is eligible.
+// When it cannot pick it answers the request itself, refusing it when the pinned member is
+// unavailable and the session must not move.
+func (h *handler) pickPinned(w http.ResponseWriter, r *http.Request, flow lb.Flow, s *sticky.Session,
+	level int,
+) (lb.Pick, *pool.Target, bool) {
+	pin, pinned := s.Pin(level)
+	if pinned {
+		flow.Pin, flow.HasPin = pin, true
+	}
+	pk, ok := h.balancer.Pick(flow)
+	// a pin to a member that has left the pool starts a new session, as there is none to keep
+	if pinned && !pk.Pinned() && s.Rejects() && h.pinnable(pin) {
+		if ok {
+			pk.Done(lb.OutcomeCanceled)
+		}
+		s.Reject()
+		failures.HandleServiceUnavailable(w, r)
+		return lb.Pick{}, nil, false
+	}
+	t, ok := target(pk, ok, w, r)
+	if !ok {
+		return lb.Pick{}, nil, false
+	}
+	s.Record(level, pk.Member().Hash())
+	return pk, t, true
+}
+
+func (h *handler) pinnable(pin uint64) bool {
+	p := h.balancer.Pool()
+	return p != nil && p.Pinnable(pin)
 }
 
 // serveTracked reports the pick as done even when the member's handler panics, so the
@@ -142,13 +281,19 @@ func (h *handler) serveTracked(pk lb.Pick, member http.Handler, w http.ResponseW
 // outside the good set is a failure, and a client that went away is nobody's
 func (h *handler) serveTimed(pk lb.Pick, member http.Handler, w http.ResponseWriter, r *http.Request) {
 	fw := getWriter(w, pk)
+	defer putWriter(fw)
+	h.serveWritten(pk, member, fw, r)
+}
+
+// serveWritten dispatches through a writer that watches the member's first write, and reports
+// the pick as done as serveTracked and serveTimed do
+func (h *handler) serveWritten(pk lb.Pick, member http.Handler, fw *firstWriteWriter, r *http.Request) {
 	outcome := lb.OutcomeFailed
-	defer func() {
-		pk.Done(outcome)
-		putWriter(fw)
-	}()
+	defer func() { pk.Done(outcome) }()
 	member.ServeHTTP(fw, r)
 	switch {
+	case !h.timed:
+		outcome = lb.OutcomeOK
 	case r != nil && r.Context().Err() != nil:
 		outcome = lb.OutcomeCanceled
 	case h.goodCodes == nil || h.goodCodes.Contains(fw.code):

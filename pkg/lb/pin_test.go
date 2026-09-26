@@ -47,6 +47,10 @@ func TestPinnedPickFollowsEligibility(t *testing.T) {
 	// and when the pinned member falls below the floor, until it recovers
 	health.set(0)
 	expectPick(t, bal, pinTo(b), a, false)
+	// an unavailable member is still one a pin names; a hash of no member is not
+	if p := bal.Pool(); !p.Pinnable(b.Hash()) || p.Pinnable(b.Hash()^1) {
+		t.Error("Pinnable does not follow membership alone")
+	}
 	health.set(1)
 	expectPick(t, bal, pinTo(b), b, true)
 	if _, ok := NewBalancer(headSelector{}).Pick(pinTo(a)); ok {
@@ -119,6 +123,9 @@ func TestPinsNeedADistinctName(t *testing.T) {
 	anonymous := []*Member{NewMember(MemberOptions{}), NewMember(MemberOptions{Weight: 2})}
 	bal := NewBalancer(headSelector{}, BalancerOptions{Pool: mustPool(t, anonymous, 0)})
 	expectPick(t, bal, pinTo(anonymous[1]), anonymous[0], false)
+	if bal.Pool().Pinnable(anonymous[1].Hash()) {
+		t.Error("a pin to an unnamed member is reported as naming a member")
+	}
 	// names that hash alike make an ambiguous pin, so none of them is honored
 	head := NewMember(MemberOptions{Name: "head"})
 	x := NewMember(MemberOptions{Name: "x"})
@@ -129,6 +136,9 @@ func TestPinsNeedADistinctName(t *testing.T) {
 	bal.SetPool(mustPool(t, []*Member{head, x, y, z, w}, 0))
 	for _, m := range []*Member{x, y, z} {
 		expectPick(t, bal, pinTo(m), head, false)
+		if bal.Pool().Pinnable(m.Hash()) {
+			t.Errorf("an ambiguous pin to %s is reported as naming a member", m.Name())
+		}
 	}
 	expectPick(t, bal, pinTo(w), w, true)
 }

@@ -37,7 +37,7 @@ func tableOptions(t *testing.T, mutate func(*options.Options)) *options.Options 
 
 func TestTableCarriesAcrossReloads(t *testing.T) {
 	const name = "carry-test"
-	t.Cleanup(func() { ForgetTablesExcept(func(string) bool { return false }) })
+	t.Cleanup(func() { ForgetTablesExcept(func(string, *Table) bool { return false }) })
 
 	first := TableFor(name, tableOptions(t, nil))
 	first.Put(1, leaf, 0)
@@ -77,7 +77,7 @@ func TestTableCarriesAcrossReloads(t *testing.T) {
 }
 
 func TestTableForMakesItUnderTheOptions(t *testing.T) {
-	t.Cleanup(func() { ForgetTablesExcept(func(string) bool { return false }) })
+	t.Cleanup(func() { ForgetTablesExcept(func(string, *Table) bool { return false }) })
 	tbl := TableFor("made-test", tableOptions(t, func(o *options.Options) {
 		ttl := timeconv.Duration(10 * time.Second)
 		o.TTL, o.Idle, o.Table.MaxEntries = &ttl, timeconv.Duration(5*time.Second), 10
@@ -95,10 +95,10 @@ func TestTableForMakesItUnderTheOptions(t *testing.T) {
 }
 
 func TestForgetTablesExcept(t *testing.T) {
-	t.Cleanup(func() { ForgetTablesExcept(func(string) bool { return false }) })
+	t.Cleanup(func() { ForgetTablesExcept(func(string, *Table) bool { return false }) })
 	a := TableFor("forget-a", tableOptions(t, nil))
 	b := TableFor("forget-b", tableOptions(t, nil))
-	ForgetTablesExcept(func(name string) bool { return name == "forget-b" })
+	ForgetTablesExcept(func(name string, _ *Table) bool { return name == "forget-b" })
 	if TableFor("forget-a", tableOptions(t, nil)) == a {
 		t.Error("a forgotten ALB's table was carried")
 	}

@@ -143,6 +143,16 @@ func TestHeaderCookieAndQueryValues(t *testing.T) {
 			t.Errorf("cookies %q produced a key", lines)
 		}
 	}
+	// the raw reader gives the first such cookie's value, trimmed of quotes, and finds an empty one
+	if v, ok := Cookie(http.Header{"Cookie": {`a=1; session="tok"`, "session=later"}}, "session"); !ok || v != "tok" {
+		t.Errorf("Cookie = %q, %v", v, ok)
+	}
+	if v, ok := Cookie(http.Header{"Cookie": {"session="}}, "session"); !ok || v != "" {
+		t.Errorf("an empty cookie = %q, %v", v, ok)
+	}
+	if _, ok := Cookie(http.Header{"Cookie": {"sessions=x"}}, "session"); ok {
+		t.Error("Cookie matched another cookie's name")
+	}
 
 	query := httpFor(t, "query:tenant")
 	if got := query(request("http://example.com/q?a=1&tenant=acme&b=2", nil)); got != (Value{Hash: lb.HashString("acme"), OK: true}) {

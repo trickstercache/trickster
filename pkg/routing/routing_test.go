@@ -1494,3 +1494,64 @@ func TestDefaultBackendRoutesMirror(t *testing.T) {
 		t.Fatal("the default backend's request was not mirrored")
 	}
 }
+
+// an upgrade goes where it can be tunneled: to the passthrough lane of a backend with an origin, to
+// the handler of a virtual backend that sends each request to one backend, and nowhere otherwise
+func TestRouteUpgrades(t *testing.T) {
+	var tookPassthrough bool
+	var reached *http.Request
+	passthrough := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { tookPassthrough = true })
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { reached = r })
+	upgrade := func(h http.Handler) {
+		tookPassthrough, reached = false, nil
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		r.Header.Set("Connection", "Upgrade")
+		r.Header.Set("Upgrade", "websocket")
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	}
+	virtual := func(provider, mechanism string) backends.Backend {
+		o := bo.New()
+		o.Name, o.Provider = "v", provider
+		var c backends.Backend
+		var err error
+		if provider == providers.ALB {
+			o.ALBOptions = &options.Options{MechanismName: mechanism}
+			if err = o.ALBOptions.Initialize("v"); err != nil {
+				t.Fatal(err)
+			}
+			c, err = alb.NewClient("v", o, lm.NewRouter(), nil, nil, nil)
+		} else {
+			c, err = rule.NewClient("v", o, lm.NewRouter(), nil, nil, nil)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	o := bo.New()
+	o.Provider, o.OriginURL = providers.ReverseProxy, "http://example.com"
+	origin, err := reverseproxy.NewClient("origin", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgrade(routeUpgrades(origin, passthrough, next))
+	if !tookPassthrough || reached != nil {
+		t.Error("a backend with an origin did not tunnel its upgrade")
+	}
+	// a route with no backend has no passthrough lane either
+	upgrade(routeUpgrades(nil, nil, next))
+	if reached == nil {
+		t.Error("a route with no backend dropped its request")
+	}
+	for _, c := range []backends.Backend{virtual(providers.ALB, names.MechanismRR), virtual(providers.Rule, "")} {
+		upgrade(routeUpgrades(c, passthrough, next))
+		if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") == "" {
+			t.Errorf("%s did not hand its upgrade to its handler", c.Configuration().Provider)
+		}
+	}
+	// a fanout has no one backend to tunnel to, so it serves the request without the upgrade
+	upgrade(routeUpgrades(virtual(providers.ALB, names.MechanismFR), passthrough, next))
+	if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") != "" {
+		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
+	}
+}

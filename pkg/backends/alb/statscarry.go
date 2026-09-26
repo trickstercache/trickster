@@ -20,6 +20,8 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 )
 
@@ -58,4 +60,17 @@ func forgetStatsExcept(clients backends.Backends) {
 			delete(carriedStats.byALB, name)
 		}
 	}
+}
+
+// forgetStickyTablesExcept drops every sticky table that no running ALB holds, such as one whose
+// ALB left the config or stopped keeping its sessions in a table
+func forgetStickyTablesExcept(clients backends.Backends) {
+	sticky.ForgetTablesExcept(func(albName string, t *sticky.Table) bool {
+		c, ok := clients[albName].(*Client)
+		if !ok {
+			return false
+		}
+		pm, ok := c.handler.(types.PickerMechanism)
+		return ok && pm.StickyTable() == t
+	})
 }

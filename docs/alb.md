@@ -35,7 +35,7 @@ Each mechanism has its own use cases and pitfalls. Be sure to read about each on
 
 A basic **Round Robin** rotates through a pool of healthy backends used to service client requests. Each time a client request is made to Trickster, the round robiner will identify the next healthy backend in the rotation schedule and route the request to it.
 
-The Trickster ALB is intended to support stateless workloads, and currently does not support Sticky Sessions. For affinity without session state, see [Highest Random Weight](#highest-random-weight).
+To keep each client on the member it was first sent to, add [Sticky Sessions](#sticky-sessions) to the ALB. For affinity without session state, see [Highest Random Weight](#highest-random-weight).
 
 #### Weighted Round Robin
 
@@ -168,6 +168,8 @@ A request that lacks the configured key, such as one without the header, has no 
 
 hrw balances keys, not requests. With many keys of similar volume the members' loads even out, but a single very busy key is always served by one member.
 
+hrw keeps no state, so a key moves when a member joins the pool and wins it, and a client with no stable key has no affinity at all. To keep a client on its member for as long as its session lasts, whatever the pool does, add [Sticky Sessions](#sticky-sessions), which work with hrw as with every mechanism that selects one member.
+
 ```yaml
 backends:
   tenants:
@@ -178,6 +180,111 @@ backends:
       hrw:
         key: header:X-Tenant
 ```
+
+### Sticky Sessions
+
+An ALB whose mechanism selects one member per request, `rr`, `p2c`, `lc`, `lt` or `hrw`, can keep each client on the member it was first sent to. The mechanism chooses a new client's member; after that, the client's requests go to the same member for as long as its session lasts and that member is available, even as members join or leave the pool.
+
+```yaml
+backends:
+  app:
+    provider: alb
+    alb:
+      mechanism: p2c
+      pool: [ app1, app2, app3 ]
+      sticky:
+        ttl: 8h
+        secret_file: /etc/trickster/sticky.key
+```
+
+A session is kept in one of three ways, set by `sticky.mode`:
+
+| Mode | How the member is remembered | Suits |
+|-----|-----|-----|
+| `cookie` (the default on http listeners) | The ALB issues a signed token naming the member in a cookie, which the browser sends back. The ALB keeps no state. | browsers |
+| `header` | The same token in a response header, `X-Trickster-Session` by default, which the client sends back in a request header of the same name. | API clients and SDKs that do not keep cookies |
+| `table` | The ALB remembers each client's member by a key read from its requests, such as its address or a header. | clients with a stable identifier of their own, and upstreams that hand out their own session ids |
+
+The settings, with their defaults:
+
+```yaml
+      sticky:
+        mode: ""                 # cookie, header or table; unset is cookie
+        ttl: 1h                  # a session's lifetime from its first request; 0 is no limit
+        idle: 0                  # ends a session unused this long; 0 never does
+        on_unavailable: repick   # repick or reject; see below
+        secret: ""               # the key tokens are signed with; see below
+        secret_file: ""          # a file holding it, in place of secret
+        cookie:                  # cookie mode only
+          name: trickster_sticky
+          path: /
+          domain: ""             # unset keeps the cookie to the host that set it
+          secure: auto           # auto marks it Secure when the request arrived over TLS; or true, false
+          http_only: true
+          same_site: lax         # lax, strict or none, which requires secure: true
+          mark_private: false
+        header:                  # header mode only
+          name: X-Trickster-Session
+        table:                   # table mode only
+          key: client_ip
+          learn: request         # or response; see below
+          ipv6_prefix: 64
+          max_entries: 100000
+```
+
+`ttl` and `idle` are 0 or at least 1s. Configure only the block for the mode in use: a `cookie`, `header` or `table` block that the mode never reads is a configuration error.
+
+#### Tokens
+
+In `cookie` and `header` mode the token carries the member, when the session began and when the token was issued, signed with HMAC-SHA256 under a key derived from `sticky.secret`. A token is bound to the ALB that issued it, so another ALB does not honor it. A client cannot choose its own member, and a token that is altered, signed with another key, issued by another ALB or past its lifetime is treated as no token: the request starts a new session. It is never an error.
+
+A token is issued with the response to a client's first request, including the `101 Switching Protocols` that opens a WebSocket, when its session moves to another member, and, with `idle` set, once more than half of `idle` has passed since the token was issued, so that an active session does not lapse. A request sent to the member its token names is otherwise answered with no token, so a steady client sees none after its first.
+
+A cookie carries a `Max-Age` that ends with its token when `ttl` is set. With `ttl: 0` it is a browser-session cookie, and `idle` is still enforced by the token itself. Set `mark_private: true` to add `Cache-Control: private` to a response that sets the cookie. A shared cache should not store a response that sets a cookie, so in front of cacheable content prefer `header` or `table` mode, which leave responses as the members wrote them. The ALB adds the token outside any member's cache, so it is never part of a cached object.
+
+Two ALBs that set the same cookie, by name, domain and path, on one listener would each replace the other's token in a browser, so Trickster refuses to start with such a configuration. Give one of them its own `cookie.name`.
+
+#### The secret
+
+Every Trickster replica behind one address, and every restart, must sign with the same key for a session to survive moving between them. Set `secret` to at least 32 bytes, or `secret_file` to a file that holds them, such as a mounted Kubernetes Secret; trailing line breaks in the file are ignored. Tokens made with one key are never honored with another. A `secret` that still contains `${`, an environment variable reference that was not expanded, is refused rather than used as a publicly known key.
+
+With neither set, the ALB signs with a random key that lasts as long as the process, and Trickster logs a warning at startup. That suits a single instance that can afford to start every session over when it restarts.
+
+#### When the pinned member is unavailable
+
+With `on_unavailable: repick`, the default, a request whose member is unavailable goes to the member the mechanism chooses, and its session moves there. With `reject`, the ALB answers `503 Service Unavailable` instead, for applications that cannot survive a move, and the client keeps its token so that it returns to its member once that member is available again. A member that has left the pool has no session to return to, so its clients start new sessions in either case.
+
+A member that is [draining](#draining-pool-members) keeps its sessions while it is available.
+
+#### Table mode
+
+In `table` mode the ALB keeps a table of each client's member, by `table.key`, which takes the same values as [`hrw.key`](#highest-random-weight). A request without the key is balanced by the mechanism and not remembered. An entry lasts `ttl` from when it was stored and ends early when unused for `idle`. A full table drops the least recently used of a sample of its entries to make room.
+
+With `table.learn: response` and a `header:<name>` or `cookie:<name>` key, the ALB also remembers the value a member hands the client in its response, in the header of that name or in the `Set-Cookie` that sets that cookie. That keeps a session on the member that created it from the client's very next request, which is what an upstream that issues its own session ids needs. For example, for an MCP server whose replicas each know only the sessions they created:
+
+```yaml
+      sticky:
+        mode: table
+        table:
+          key: header:Mcp-Session-Id
+          learn: response
+```
+
+A response that sets a new value for a client moves its entry to the new value.
+
+A table is kept in each Trickster instance's memory. It survives a configuration reload that leaves the ALB's `mode`, `ttl`, `idle` and `table` settings unchanged, but not a restart, and it is not shared between replicas: use `cookie` or `header` mode where sessions must outlive either. With `key: client_ip`, every client behind one NAT address shares a session.
+
+#### Sticky Sessions and Nested ALBs
+
+When a sticky ALB's pool has ALBs in it, such as one per region or per service, its token or table entry keeps the whole path: the inner ALB the client was sent to and that ALB's member. The inner ALBs need no `sticky` block of their own. When only the inner member becomes unavailable, the session stays with its inner ALB and moves within it. The session covers one level of nesting: an ALB further in selects its member, or keeps sessions of its own if it has a `sticky` block, as it would with no outer session. An inner ALB directly in the sticky ALB's pool follows the outer session, and uses a `sticky` block of its own only for requests that reach it without going through the outer ALB.
+
+#### Sticky Session Metrics
+
+`trickster_alb_sticky_total{alb_name, result}` counts requests by how their session fared: `hit` (sent to its member), `miss` (no token or table entry), `expired`, `invalid`, `repick` (its member was unavailable and it moved) and `rejected`. In table mode an expired entry counts as a `miss`. `trickster_alb_sticky_entries{alb_name}` is the number of entries in a table-mode ALB's table.
+
+### WebSockets and Other Protocol Upgrades
+
+A request that asks to switch protocols, such as a WebSocket handshake, is tunneled by the pool member it is sent to when the ALB's mechanism sends each request to one member (`rr`, `p2c`, `lc`, `lt`, `hrw`) or is the [User Router](#user-router). The mechanisms that fan a request out (`fr`, `fgr`, `nlm`, `tsm`) have no one member to tunnel to, so they ignore the upgrade and serve the request as an ordinary one, as HTTP permits.
 
 ### Load Balancing Stream Listeners
 
@@ -722,6 +829,24 @@ backends:
 ```
 
 Failover depends on the ALB learning that its other members are down, so give them a [health check interval](./health#example+health+check+configuration+for+use+in+alb) or, on a stream listener, `stream.passive_health`. While an ALB with backup members is dispatching to them, the `trickster_alb_pool_on_backup{backend_name}` gauge is `1`, and a warning is logged when it fails over.
+
+### Draining Pool Members
+
+A pool member marked `drain: true` takes no new work but keeps the [sticky sessions](#sticky-sessions) it already has, for as long as it is available, so that it can be retired without ending them. Every mechanism leaves a draining member out when it selects a member or fans a request out; only a sticky session can reach it. A pool must have at least one member that is not draining, unless its other members come from [autodiscovery](./alb-autodiscovery.md). When every member of the primary tier drains, new work goes to the [backup members](#backup-pool-members).
+
+```yaml
+backends:
+  app:
+    provider: alb
+    alb:
+      mechanism: rr
+      sticky: {}
+      pool:
+        - app1
+        - app2
+        - name: app3
+          drain: true
+```
 
 ### ALBs as Pool Members
 

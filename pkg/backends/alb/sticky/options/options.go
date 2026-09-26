@@ -100,9 +100,9 @@ var (
 	ErrInvalidSecure = errors.New("'sticky.cookie.secure' must be auto, true or false")
 	// ErrInvalidSameSite is returned for a sticky.cookie.same_site that is not lax, strict or none.
 	ErrInvalidSameSite = errors.New("'sticky.cookie.same_site' must be lax, strict or none")
-	// ErrSameSiteNoneInsecure is returned for same_site: none on a cookie that may not be Secure,
-	// which a browser refuses.
-	ErrSameSiteNoneInsecure = errors.New("'sticky.cookie.same_site: none' requires that secure is not false")
+	// ErrSameSiteNoneInsecure is returned for same_site: none on a cookie not always marked Secure:
+	// a browser refuses such a cookie from any response that lacks Secure.
+	ErrSameSiteNoneInsecure = errors.New("'sticky.cookie.same_site: none' requires secure: true")
 	// ErrInvalidHeaderName is returned for a sticky.header.name that is not a valid header name.
 	ErrInvalidHeaderName = errors.New("invalid 'sticky.header.name'")
 	// ErrInvalidTableKey is returned for a sticky.table.key that names the shape of a request,
@@ -161,7 +161,7 @@ type CookieOptions struct {
 	Secure string `yaml:"secure,omitempty"`
 	// HTTPOnly keeps the cookie from scripts; the default is true.
 	HTTPOnly *bool `yaml:"http_only,omitempty"`
-	// SameSite is the cookie's SameSite: lax, the default, strict or none.
+	// SameSite is the cookie's SameSite: lax, the default, strict or none, which requires secure: true.
 	SameSite string `yaml:"same_site,omitempty"`
 	// MarkPrivate adds Cache-Control: private to a response that sets the cookie, so that a
 	// shared cache does not store it.
@@ -337,7 +337,9 @@ func (o *CookieOptions) validate() error {
 	switch o.SameSite {
 	case "", SameSiteLax, SameSiteStrict:
 	case SameSiteNone:
-		if o.Secure == SecureNever {
+		// auto would leave Secure off a request that arrived without TLS, as one behind a proxy that
+		// ends TLS does, and a browser drops that cookie
+		if o.Secure != SecureAlways {
 			return ErrSameSiteNoneInsecure
 		}
 	default:

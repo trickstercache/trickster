@@ -197,6 +197,10 @@ type Value struct {
 - **`HTTPResponse`** reads a key from a response's headers: the value an
   upstream hands a client to send back. See
   [keys learned from a response](#keys-learned-from-a-response).
+- **`Cookie(h http.Header, name string) (string, bool)`** returns the raw
+  value of a request cookie, quotes trimmed, without allocating. It is the
+  parser behind `cookie:<name>`. Use it when a feature needs the value
+  itself rather than its hash, as the ALB does to read its sticky token.
 - **`user`** is read and hashed (`lb.HashString` of the name) by the
   native ALB adapter (`pkg/backends/alb/native`), because it comes from a
   native session's route input, which `flowkey` may not import. That

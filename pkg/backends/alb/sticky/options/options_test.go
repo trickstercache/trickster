@@ -136,6 +136,8 @@ func TestValidate(t *testing.T) {
 		"cookie: {secure: maybe}\n":                                     ErrInvalidSecure,
 		"cookie: {same_site: loose}\n":                                  ErrInvalidSameSite,
 		"cookie: {same_site: none, secure: false}\n":                    ErrSameSiteNoneInsecure,
+		"cookie: {same_site: none, secure: auto}\n":                     ErrSameSiteNoneInsecure,
+		"cookie: {same_site: none}\n":                                   ErrSameSiteNoneInsecure,
 		"mode: header\nheader: {name: 'X Session'}\n":                   ErrInvalidHeaderName,
 		"table: {key: path}\n":                                          ErrInvalidTableKey,
 		"table: {key: method}\n":                                        ErrInvalidTableKey,
@@ -154,7 +156,7 @@ func TestValidate(t *testing.T) {
 	for _, doc := range []string{
 		"cookie: {name: __Host-s, secure: true, path: /}\n",
 		"cookie: {name: __Secure-s, secure: true, path: /app, domain: example.com}\n",
-		"cookie: {same_site: none}\n",
+		"cookie: {same_site: none, secure: true}\n",
 		"table: {key: 'cookie:s', learn: response}\n",
 		"mode: table\ntable: {key: user}\n",
 		"ttl: 1s\nidle: 1s\n",

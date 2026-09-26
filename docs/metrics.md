@@ -226,6 +226,15 @@ The following metrics are available for polling with any Trickster configuration
     * `alb_name` - the name of the configured ALB backend
     * `member` - the name of the pool member backend
 
+* `trickster_alb_sticky_total` (Counter) - The number of requests through an ALB with [sticky sessions](./alb.md#sticky-sessions), by how their session fared.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `result` - `hit` (sent to the member its session is pinned to), `miss` (no token or table entry), `expired` (a token past its `ttl` or `idle`; an expired table entry is a `miss`), `invalid` (a token that is altered, signed with another key or issued by another ALB), `repick` (its member was unavailable and the session moved) or `rejected` (its member was unavailable and `on_unavailable: reject` refused it)
+
+* `trickster_alb_sticky_entries` (Gauge) - The number of entries in the table of an ALB whose sticky sessions use `table` mode, expired entries not yet removed included; read when the metrics endpoint is scraped.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 
 * `trickster_alb_discovery_members` (Gauge) - Current number of discovered ALB pool members

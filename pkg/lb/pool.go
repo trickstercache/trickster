@@ -219,6 +219,12 @@ func (p *Pool) pinned(h uint64) *Member {
 	return nil
 }
 
+// Pinnable reports whether a pin to the member hash h names one of the pool's members, eligible
+// or not: a pin it cannot honor is then to a member that is unavailable rather than gone.
+func (p *Pool) Pinnable(h uint64) bool {
+	return p.byHash[h] != nil
+}
+
 // Stop ends the pool's subscriptions. Its last snapshot stays readable and is never replaced.
 func (p *Pool) Stop() {
 	p.mtx.Lock()

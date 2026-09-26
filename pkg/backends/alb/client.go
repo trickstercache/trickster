@@ -197,6 +197,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 // can be mapped to their respective clients
 func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	defer forgetStatsExcept(clients)
+	defer forgetStickyTablesExcept(clients)
 	for _, c := range clients {
 		if rc, ok := c.(*Client); ok {
 			err := rc.ValidateAndStartPool(clients, hcs)
@@ -323,13 +324,19 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			// virtual backends (rule, alb) have no health checks; treat as passing
 			hc = healthcheck.NewStatus(m.Name, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
+		if ac, isALB := tc.(*Client); isALB && o.Sticky != nil {
+			// a member that picks one of its own members carries this ALB's sessions a level down
+			if pm, isPicker := ac.handler.(types.PickerMechanism); isPicker {
+				pm.FollowPins()
+			}
+		}
 		// only a mechanism that keeps stats has any worth carrying over a reload
 		var kept *lb.Stats
 		if tracksStats {
 			kept = carryStats(c.Name(), m.Name)
 		}
 		t := pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()).
-			WithTier(m.Tier()).WithStats(kept)
+			WithTier(m.Tier()).WithDraining(m.Drain).WithStats(kept)
 		targets = append(targets, t)
 		stats[m.Name] = t.Member().Stats()
 	}
@@ -465,6 +472,13 @@ func (c *Client) Picker() lb.Picker {
 		return pm.Picker()
 	}
 	return nil
+}
+
+// RelaysUpgrades reports whether the ALB sends each request to one backend, which tunnels a protocol
+// upgrade the request asks for: a mechanism that selects one member, or the user router.
+func (c *Client) RelaysUpgrades() bool {
+	_, isUR := c.handler.(*ur.Handler)
+	return isUR || c.Picker() != nil
 }
 
 // Spread returns how the ALB's mechanism commits one flow to several members at once, or 0

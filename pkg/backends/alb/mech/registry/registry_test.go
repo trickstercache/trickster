@@ -24,6 +24,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
+	stickyoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
@@ -87,4 +89,16 @@ func TestNewRoundRobinNilOptions(t *testing.T) {
 	m, err := New(names.MechanismRR, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, names.MechanismRR, m.Name())
+}
+
+// a strategy's HTTP adapter is built with the ALB's session persistence, which must be initialized
+func TestNewBuildsStickyAdapters(t *testing.T) {
+	o := &options.Options{MechanismName: names.MechanismRR, Sticky: &stickyoptions.Options{}}
+	require.NoError(t, o.Initialize("sticky-registry"))
+	m, err := New(names.MechanismRR, o, nil)
+	require.NoError(t, err)
+	require.NotNil(t, m)
+	uninitialized := &options.Options{MechanismName: names.MechanismRR, Sticky: &stickyoptions.Options{}}
+	_, err = New(names.MechanismRR, uninitialized, nil)
+	require.ErrorIs(t, err, sticky.ErrNotInitialized)
 }

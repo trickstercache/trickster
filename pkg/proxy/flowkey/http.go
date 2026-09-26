@@ -57,12 +57,8 @@ func HTTP(ks KeySource, v6Prefix int) func(*http.Request) Value {
 		}
 	case KeyCookie:
 		return func(r *http.Request) Value {
-			for _, line := range r.Header[headers.NameCookie] {
-				if v, ok := scanPairs(line, name, ';'); ok {
-					return valueOf(strings.Trim(v, `"`))
-				}
-			}
-			return Value{}
+			v, _ := Cookie(r.Header, name)
+			return valueOf(v)
 		}
 	case KeyQuery:
 		return func(r *http.Request) Value {
@@ -117,6 +113,17 @@ func (c *Composite) fold(v Value) {
 	c.Hash = lb.Mix(c.Hash ^ v.Hash)
 }
 
+// Cookie returns the value of the first cookie of the name that the request headers carry, with
+// its quotes trimmed, without allocating.
+func Cookie(h http.Header, name string) (string, bool) {
+	for _, line := range h[headers.NameCookie] {
+		if v, ok := scanPairs(line, name, ';'); ok {
+			return strings.Trim(v, `"`), true
+		}
+	}
+	return "", false
+}
+
 // valueOf is the key of a string; an empty string identifies nothing
 func valueOf(v string) Value {
 	if v == "" {
@@ -135,12 +142,27 @@ func scanPairs(s, name string, sep byte) (string, bool) {
 		} else {
 			pair, s = s, ""
 		}
-		pair = strings.TrimLeft(pair, " \t")
+		pair = trimLeftBlank(pair)
 		if len(pair) > len(name) && pair[len(name)] == '=' && pair[:len(name)] == name {
-			return strings.TrimRight(pair[len(name)+1:], " \t"), true
+			return trimRightBlank(pair[len(name)+1:]), true
 		}
 	}
 	return "", false
+}
+
+// trimLeftBlank trims leading spaces and tabs; a loop, as a two-byte cutset costs a set per call
+func trimLeftBlank(s string) string {
+	for len(s) > 0 && (s[0] == ' ' || s[0] == '\t') {
+		s = s[1:]
+	}
+	return s
+}
+
+func trimRightBlank(s string) string {
+	for len(s) > 0 && (s[len(s)-1] == ' ' || s[len(s)-1] == '\t') {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 func hostValue(r *http.Request) Value {
