@@ -251,23 +251,57 @@ func (p plainPicker) Needs() lb.Needs { return p.b.Needs() }
 
 func (p plainPicker) Pick(f lb.Flow) (lb.Pick, bool) { return p.b.Pick(f) }
 
-func TestLeafPicksHonorPinsAndRetriesDoNot(t *testing.T) {
+func TestLeafPicksHonorPins(t *testing.T) {
 	a, b := leaf("a", 1), leaf("b", 1)
 	bal := poolOf(t, &countingSelector{}, a, b)
 	pinned := func(int, lb.Picker, *lb.Member) lb.Flow { return lb.Flow{Pin: b.Hash(), HasPin: true} }
-	for _, p := range []lb.Picker{bal, plainPicker{bal}} {
-		lp, ok := lb.PickLeafFunc(p, pinned)
-		if !ok || lp.Member() != b || !lp.Level(0).Pinned() {
-			t.Fatalf("leaf pick = %v, %v, pinned %v; want the pinned member", lp.Member(), ok, lp.Level(0).Pinned())
-		}
-		lp.Done(lb.OutcomeOK)
-		// a retry is a move, whether or not the picker has alternatives to offer
-		lp, ok = lb.RepickLeafFunc(p, pinned)
-		if !ok || lp.Member() != a || lp.Level(0).Pinned() {
-			t.Fatalf("retry = %v, %v, pinned %v; want the strategy's choice", lp.Member(), ok, lp.Level(0).Pinned())
+	expect := func(lp lb.LeafPick, ok bool, want *lb.Member, pinned bool) {
+		t.Helper()
+		if !ok || lp.Member() != want || lp.Level(0).Pinned() != pinned {
+			t.Fatalf("leaf = %v, %v, pinned %v; want %s", lp.Member(), ok, lp.Level(0).Pinned(), want.Name())
 		}
 		lp.Done(lb.OutcomeOK)
 	}
+	for _, p := range []lb.Picker{bal, plainPicker{bal}} {
+		lp, ok := lb.PickLeafFunc(p, pinned)
+		expect(lp, ok, b, true)
+	}
+	// a retry leads with the pinned member where the level can pass over a failed one
+	lp, ok := lb.RepickLeafFunc(bal, pinned, a)
+	expect(lp, ok, b, false)
+	lp, ok = lb.RepickLeafFunc(bal, pinned, b)
+	expect(lp, ok, a, false)
+	// a level that cannot pass over a failed member honors no pin
+	lp, ok = lb.RepickLeafFunc(plainPicker{bal}, pinned)
+	expect(lp, ok, a, false)
+}
+
+// a nested retry keeps the flow on its pinned pool and moves it only within that pool, until
+// the pool has no other member to offer
+func TestRepickLeafKeepsThePinnedPool(t *testing.T) {
+	a1, a2, b1 := leaf("a1", 1), leaf("a2", 1), leaf("b1", 1)
+	inA := lb.NewMember(lb.MemberOptions{Name: "a", Value: nested{poolOf(t, rr.NewAt(0), a1, a2)}})
+	inB := lb.NewMember(lb.MemberOptions{Name: "b", Value: nested{poolOf(t, rr.NewAt(0), b1)}})
+	// the outer rotation starts at b, which a pin to a must outrank
+	outer := poolOf(t, rr.NewAt(1), inA, inB)
+	flow := func(depth int, _ lb.Picker, _ *lb.Member) lb.Flow {
+		if depth == 0 {
+			return lb.Flow{Pin: inA.Hash(), HasPin: true}
+		}
+		return lb.Flow{Pin: a1.Hash(), HasPin: true}
+	}
+	for range 4 {
+		lp, ok := lb.RepickLeafFunc(outer, flow, a1)
+		if !ok || lp.Level(0).Member() != inA || lp.Member() != a2 {
+			t.Fatalf("retry = %v in %v, %v; want a2 in the pinned pool", lp.Member(), lp.Level(0).Member(), ok)
+		}
+		lp.Done(lb.OutcomeOK)
+	}
+	lp, ok := lb.RepickLeafFunc(outer, flow, a1, a2)
+	if !ok || lp.Member() != b1 {
+		t.Fatalf("retry = %v, %v; want b1 once the pinned pool has nothing left", lp.Member(), ok)
+	}
+	lp.Done(lb.OutcomeOK)
 }
 
 // a retry avoids every member the flow has failed on, and moves on from a pool that has no

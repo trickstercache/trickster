@@ -1222,7 +1222,8 @@ backends:
 #       sticky: # keeps each client on the member it was first sent to; rr, p2c, lc, lt and hrw only
 #         # mode is how a client's member is remembered: cookie (the default on http listeners),
 #         # header (the same signed token in a header, for API clients) or table (a table kept by the
-#         # ALB, by a key read from each request). Configure only the block for the mode in use
+#         # ALB, by a key read from each request, connection or session; the default on tcp, tls, udp
+#         # and native listeners). Configure only the block for the mode in use
 #         mode: cookie
 #         # ttl is a session's lifetime from its first request; 0 is no limit, and a browser-session
 #         # cookie. default is 1h
@@ -1230,7 +1231,7 @@ backends:
 #         # idle ends a session unused this long. default is 0: never
 #         idle: 0
 #         # on_unavailable is repick (default), to move a session whose member is unavailable, or
-#         # reject, to answer 503 until its member is available again
+#         # reject, to answer 503, or refuse a connection, until its member is available again
 #         on_unavailable: repick
 #         # secret signs cookie and header tokens: at least 32 bytes, the same on every replica.
 #         # secret_file reads it from a file instead. with neither, a random per-process key is used
@@ -1245,7 +1246,7 @@ backends:
 #         # header: # header mode only
 #         #   name: X-Trickster-Session
 #         # table: # table mode only
-#         #   key: client_ip        # any hrw.key value
+#         #   key: client_ip        # any hrw.key value the ALB's listeners can read
 #         #   learn: request        # response also remembers a header:/cookie: value a member sets
 #         #   ipv6_prefix: 64
 #         #   max_entries: 100000

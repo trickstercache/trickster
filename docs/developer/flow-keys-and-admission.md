@@ -31,9 +31,9 @@ A feature that adds a top-level configuration section should also follow
 
 ## Flow keys
 
-The ALB's `hrw` strategy uses flow keys on every plane today, and the
-Kubernetes controller uses the listener checks below to leave out a
-`loadBalancingKey` that a route's listener cannot read.
+The ALB's `hrw` strategy and its sticky table mode use flow keys on every
+plane today, and the Kubernetes controller uses the listener checks below
+to leave out a `loadBalancingKey` that a route's listener cannot read.
 
 ### Key sources
 
@@ -162,6 +162,7 @@ allocate.
 func HTTP(ks KeySource, v6Prefix int) func(*http.Request) Value
 func Stream(ks KeySource, v6Prefix int) func(flow.Flow) Value
 func StreamValue(ks KeySource, v6Prefix int, f flow.Flow) Value
+func Session(ks KeySource, v6Prefix int, user string, client netip.Addr) Value
 
 type Value struct {
 	Hash uint64
@@ -201,11 +202,14 @@ type Value struct {
   value of a request cookie, quotes trimmed, without allocating. It is the
   parser behind `cookie:<name>`. Use it when a feature needs the value
   itself rather than its hash, as the ALB does to read its sticky token.
-- **`user`** is read and hashed (`lb.HashString` of the name) by the
-  native ALB adapter (`pkg/backends/alb/native`), because it comes from a
-  native session's route input, which `flowkey` may not import. That
-  adapter keys every other kind on the client address. The spelling and
-  the kind still belong to `flowkey`.
+- **`Session`** reads a native protocol session once it has
+  authenticated: `user` hashes the name it authenticated as
+  (`lb.HashString`), and `client_ip` the address it arrived from. It takes
+  those two values rather than a session, since `flowkey` may not import
+  the backends' route input. Pass a name only when the protocol verified
+  it; a name the client merely claimed must key nothing. Every other kind
+  is a miss. The ALB's `hrw.key` and `sticky.table.key` both read native
+  sessions through it.
 
 ### Keys learned from a response
 
@@ -290,9 +294,9 @@ hashes, for keys that must agree.
 IPv6 masked to /64 and resolved through a trusted proxy; host, header,
 cookie, query parameter, method, path and query string; the header and
 cookie keys learned from a response, which must equal the request's; the
-stream client address in IPv4 and IPv6; the server name; and a PROXY
-protocol TLV.
-`user`, which the native adapter hashes, is not pinned there. A change
+stream client address in IPv4 and IPv6; the server name; a PROXY
+protocol TLV; and a native session's user and its client address in IPv4
+and IPv6, which key as a request or flow from the same address does. A change
 that moves any pinned key fails the test. Pin every kind that `flowkey`
 reads, and never edit a pinned value to make a refactor pass.
 
@@ -303,12 +307,12 @@ reads, and never edit a pinned value to make a refactor pass.
    error message.
 2. Decide which listeners can read it. `OnStream` and `OnNative` name what
    they allow, but `OnHTTP` names what it excludes, so exclude the new
-   kind there if HTTP cannot read it. The native ALB adapter keys every
-   kind but `user` on the client address, so leave a new kind out of
-   `OnNative` unless that adapter learns to read it.
+   kind there if HTTP cannot read it. `Session` reads only `user` and
+   `client_ip`, so leave a new kind out of `OnNative` unless `Session`
+   learns to read it.
 3. Declare in `Requires` whether it is read from the principal or from the
    request body.
-4. Read it in `HTTP`, `StreamValue` or both, without allocating. An empty
+4. Read it in `HTTP`, `StreamValue`, `Session` or several, without allocating. An empty
    value is `Value{}`. If a response can set it, read it in `HTTPResponse`
    too, and include it in `OnHTTPResponse`.
 5. Pin its hash in `golden_test.go`, and cover its parsing, its

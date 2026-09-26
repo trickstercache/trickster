@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/native"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -91,6 +92,9 @@ type Client struct {
 	hasBackups, onBackup bool
 	// health is the ALB's own status, which follows its pool; nil unless propagate_health
 	health *healthcheck.Status
+	// flows keeps the sessions of the ALB's stream and native flows, once a listener asks for it
+	flows     atomic.Pointer[sticky.Flows]
+	flowsOnce sync.Once
 }
 
 // poolObserver reports one pool's snapshots to the client that built it
@@ -197,7 +201,6 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 // can be mapped to their respective clients
 func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) error {
 	defer forgetStatsExcept(clients)
-	defer forgetStickyTablesExcept(clients)
 	for _, c := range clients {
 		if rc, ok := c.(*Client); ok {
 			err := rc.ValidateAndStartPool(clients, hcs)
@@ -741,9 +744,21 @@ func (c *Client) RouteResolver() backends.RouteResolver {
 		return nil
 	}
 	if pm, ok := c.handler.(types.PickerMechanism); ok {
-		return native.Resolver(pm.Picker(), cfg.ALBOptions)
+		return native.Resolver(pm.Picker(), cfg.ALBOptions, c.StickyFlows())
 	}
 	return nil
+}
+
+// StickyFlows returns what keeps the sessions of the ALB's stream and native flows, or nil when
+// it keeps none there. It is made when a listener first asks for it, so that only an ALB that a
+// stream or native listener serves holds a table for them.
+func (c *Client) StickyFlows() *sticky.Flows {
+	c.flowsOnce.Do(func() {
+		if cfg := c.Configuration(); cfg != nil && cfg.ALBOptions != nil {
+			c.flows.Store(sticky.NewFlows(c.Name(), cfg.ALBOptions.Sticky))
+		}
+	})
+	return c.flows.Load()
 }
 
 // StopPool stops this Client's pool and permanently rejects further swaps

@@ -82,4 +82,14 @@ func TestGoldenKeys(t *testing.T) {
 	if got := streamFor(t, "client_ip")(f); got.Hash != 0x136e302507a26a64 {
 		t.Errorf("flow client_ip of an IPv6 client = %#x", got.Hash)
 	}
+
+	// a native session keys as a request or flow from the same address does
+	for source, want := range map[string]uint64{"user": 0xc5d1556d66774a5c, "client_ip": 0x1e00e9a12f8249cb} {
+		if got := sessionFor(t, source)(sessionUser, netip.MustParseAddr("192.0.2.1")); !got.OK || got.Hash != want {
+			t.Errorf("session %s = %#x (%v), want %#x", source, got.Hash, got.OK, want)
+		}
+	}
+	if got := sessionFor(t, "client_ip")("", f.Client.Addr()); got.Hash != 0x136e302507a26a64 {
+		t.Errorf("session client_ip of an IPv6 client = %#x", got.Hash)
+	}
 }

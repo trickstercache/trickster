@@ -172,17 +172,84 @@ func TestEjectionSparesTheLastMemberTakingNewFlows(t *testing.T) {
 	}
 }
 
-func TestRetriesIgnorePins(t *testing.T) {
+func TestRetriesLeadWithAnEligiblePin(t *testing.T) {
 	a := NewMember(MemberOptions{Name: "a"})
 	b := NewMember(MemberOptions{Name: "b"})
 	c := NewMember(MemberOptions{Name: "c"})
 	bal := NewBalancer(headSelector{}, BalancerOptions{Pool: mustPool(t, []*Member{a, b, c}, 0)})
-	if alts := bal.Alternatives(pinTo(c), nil); len(alts) != 3 || alts[0] != a {
-		t.Errorf("alternatives = %v, want the strategy's choice first", names(&Snapshot{Members: alts}))
+	alts := bal.Alternatives(pinTo(c), nil)
+	if !slices.Equal(alts, []*Member{c, a, b}) {
+		t.Errorf("alternatives = %v, want the pinned member, then the strategy's choice",
+			names(&Snapshot{Members: alts}))
 	}
-	pk, ok := bal.Repick(pinTo(c), a)
-	if !ok || pk.Member() != b || pk.Pinned() {
-		t.Errorf("repick = %v, %v, pinned %v; want b, the strategy's choice", pk.Member(), ok, pk.Pinned())
+	expectRepick := func(f Flow, want *Member, failed ...*Member) {
+		t.Helper()
+		pk, ok := bal.Repick(f, failed...)
+		if !ok || pk.Member() != want || pk.Pinned() {
+			t.Fatalf("repick = %v, %v, pinned %v; want %s", pk.Member(), ok, pk.Pinned(), want.Name())
+		}
+		pk.Done(OutcomeOK)
 	}
-	pk.Done(OutcomeOK)
+	expectRepick(pinTo(c), c, a)
+	// a pinned member that failed is passed over for the strategy's choice
+	expectRepick(pinTo(c), a, c)
+	expectRepick(pinTo(a), b, a)
+	expectRepick(Flow{Pin: a.Hash() ^ 1, HasPin: true}, b, a)
+}
+
+func TestAlternativesLeadWithAPinOutsideTheSnapshot(t *testing.T) {
+	a := NewMember(MemberOptions{Name: "a"})
+	draining := NewMember(MemberOptions{Name: "draining", Draining: true})
+	bal := NewBalancer(headSelector{}, BalancerOptions{Pool: mustPool(t, []*Member{a, draining}, 0)})
+	if alts := bal.Alternatives(pinTo(draining), nil); !slices.Equal(alts, []*Member{draining, a}) {
+		t.Errorf("alternatives = %v", names(&Snapshot{Members: alts}))
+	}
+	if alts := bal.Alternatives(pinTo(draining), func(m *Member) bool { return m == a }); !slices.Equal(alts,
+		[]*Member{draining}) {
+		t.Errorf("alternatives with every other member failed = %v", names(&Snapshot{Members: alts}))
+	}
+	// a pool whose members all drain still offers the pinned one, and nothing without a pin
+	all := NewBalancer(headSelector{}, BalancerOptions{Pool: mustPool(t, []*Member{draining}, 0)})
+	if alts := all.Alternatives(pinTo(draining), nil); !slices.Equal(alts, []*Member{draining}) {
+		t.Errorf("alternatives of a draining pool = %v", names(&Snapshot{Members: alts}))
+	}
+	if alts := all.Alternatives(Flow{}, nil); alts != nil {
+		t.Errorf("alternatives of a draining pool without a pin = %v", names(&Snapshot{Members: alts}))
+	}
+	// a strategy that chooses the pinned member from outside what it was offered does not repeat it
+	stray := NewBalancer(fixedSelector{draining}, BalancerOptions{Pool: mustPool(t, []*Member{a, draining}, 0)})
+	if alts := stray.Alternatives(pinTo(draining), nil); !slices.Equal(alts, []*Member{draining, a}) {
+		t.Errorf("alternatives = %v", names(&Snapshot{Members: alts}))
+	}
+	// the strategy's refusal leaves the pin
+	refuses := NewBalancer(fixedSelector{}, BalancerOptions{Pool: mustPool(t, []*Member{a, draining}, 0)})
+	if alts := refuses.Alternatives(pinTo(draining), nil); !slices.Equal(alts, []*Member{draining}) {
+		t.Errorf("alternatives = %v", names(&Snapshot{Members: alts}))
+	}
+	if alts := refuses.Alternatives(Flow{}, nil); alts != nil {
+		t.Errorf("alternatives = %v", names(&Snapshot{Members: alts}))
+	}
+}
+
+// fixedSelector always chooses one member, which may be none, whatever it is offered
+type fixedSelector struct{ m *Member }
+
+func (fixedSelector) Name() string { return "fixed" }
+
+func (fixedSelector) Needs() Needs { return 0 }
+
+func (s fixedSelector) Prepare(*Snapshot) Prepared { return s }
+
+func (s fixedSelector) Select(Flow) *Member { return s.m }
+
+func TestBalancerPinnable(t *testing.T) {
+	a := NewMember(MemberOptions{Name: "a", Health: newHealth(-1)})
+	bal := NewBalancer(headSelector{})
+	if bal.Pinnable(a.Hash()) {
+		t.Error("a balancer with no pool has a pinnable member")
+	}
+	bal.SetPool(mustPool(t, []*Member{a}, 0))
+	if !bal.Pinnable(a.Hash()) || bal.Pinnable(a.Hash()^1) {
+		t.Error("pinnable does not follow the pool's members, eligible or not")
+	}
 }

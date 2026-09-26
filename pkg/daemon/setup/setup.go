@@ -297,6 +297,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg,
 		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler})
+	// only now has every stream and native listener taken the sticky table it keeps its flows in
+	alb.ForgetUnusedStickyTables(clients)
 
 	accesslog.CommitGeneration(
 		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)

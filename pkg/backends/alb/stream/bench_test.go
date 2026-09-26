@@ -20,6 +20,9 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 )
 
@@ -43,9 +46,14 @@ func benchPool(b *testing.B, name string, n, weight int) backends.Backend {
 // benchmarkPick measures what a connection costs the relay: the pick, and the route's reports
 func benchmarkPick(b *testing.B, u l4.Upstream) {
 	b.Helper()
+	benchmarkFlow(b, u, l4.Flow{})
+}
+
+func benchmarkFlow(b *testing.B, u l4.Upstream, f l4.Flow) {
+	b.Helper()
 	b.ReportAllocs()
 	for b.Loop() {
-		r, ok := u.Pick(l4.Flow{})
+		r, ok := u.Pick(f)
 		if !ok {
 			b.Fatal("refused")
 		}
@@ -81,4 +89,17 @@ func BenchmarkPoolUpstreamPickUniformParallel(b *testing.B) {
 			}
 		}
 	})
+}
+
+// a sticky pick: a client with a pin, one with none to find, and a flow with nothing to key on
+func BenchmarkPoolUpstreamPickSticky(b *testing.B) {
+	members := make([]spec, benchPoolSize)
+	for i := range members {
+		members[i] = up(origin(b, "sticky-"+strconv.Itoa(i), "10.0.0.1:"+strconv.Itoa(1000+i)), 1)
+	}
+	b.Cleanup(func() { sticky.ForgetTablesExcept(func(n string, _ *sticky.Table) bool { return n != "sticky" }) })
+	u := FromBackend(newALBWith(b, "sticky", "rr", func(o *ao.Options) { o.Sticky = &so.Options{} }, members...))
+	pinned := clientFlow(l4.ProtocolTCP, "198.51.100.1:5000", "")
+	b.Run("hit", func(b *testing.B) { benchmarkFlow(b, u, pinned) })
+	b.Run("keyless", func(b *testing.B) { benchmarkFlow(b, u, l4.Flow{}) })
 }

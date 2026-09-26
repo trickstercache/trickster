@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
@@ -43,10 +44,16 @@ const (
 	ResultUnreachable = "unreachable"
 )
 
+// sessionKeeper is a load balancer that keeps the sessions of its stream and native flows
+type sessionKeeper interface {
+	StickyFlows() *sticky.Flows
+}
+
 // FromBackend returns an upstream over a backend. A load balancer that selects one member per
 // flow commits each flow to a healthy member, following a member that is itself such a load
-// balancer; any other backend is dialed at its origin host. It returns nil for a backend with
-// neither. A member that cannot be dialed refuses its share rather than passing it to a sibling.
+// balancer, and keeps it on the path it was first sent down when it keeps sessions; any other
+// backend is dialed at its origin host. It returns nil for a backend with neither. A member that
+// cannot be dialed refuses its share rather than passing it to a sibling.
 func FromBackend(b backends.Backend) l4.Upstream {
 	if b == nil {
 		return nil
@@ -58,6 +65,9 @@ func FromBackend(b backends.Backend) l4.Upstream {
 	if pp, ok := b.(lb.PickerProvider); ok {
 		if p := pp.Picker(); p != nil {
 			u := &upstream{picker: p}
+			if sk, ok := b.(sessionKeeper); ok {
+				u.sticky = sk.StickyFlows()
+			}
 			if cfg != nil && cfg.ALBOptions != nil {
 				u.options = cfg.ALBOptions
 				if s := cfg.ALBOptions.Stream; s != nil {
@@ -79,7 +89,9 @@ type upstream struct {
 	// balancers themselves are keyed and timed by their own
 	options *ao.Options
 	retries int
-	series  seriesCache
+	// keeps each flow on the path its key is pinned to; nil keeps no sessions
+	sticky *sticky.Flows
+	series seriesCache
 }
 
 // seriesCache holds the series of each member a listener has dialed, resolved once per member
@@ -134,16 +146,23 @@ type retryState struct {
 	attempt int
 	// every member the flow failed to reach before this route
 	tried []*lb.Member
+	// the flow's session, carried from its first route
+	session *sticky.FlowSession
 }
 
 // Retry offers another member when a connection could not reach the one it was given, as
-// far as stream.connect_retries allows, and never one the flow has already been offered
+// far as stream.connect_retries allows, and never one the flow has already been offered. A
+// flow whose pinned member could not be reached is refused when its session must not move.
 func (u *upstream) Retry(f l4.Flow, failed l4.Route) (l4.Route, bool) {
 	prev, ok := failed.(*route)
 	if !ok {
 		return nil, false
 	}
-	next := &retryState{attempt: 1}
+	if s := prev.session; s != nil && s.Rejects() && s.OnPins() {
+		s.Refuse()
+		return nil, false
+	}
+	next := &retryState{attempt: 1, session: prev.session}
 	if prev.retry != nil {
 		next.attempt = prev.retry.attempt + 1
 		next.tried = slices.Clip(prev.retry.tried)
@@ -158,8 +177,12 @@ func (u *upstream) Retry(f l4.Flow, failed l4.Route) (l4.Route, bool) {
 func (u *upstream) pick(f l4.Flow, retry *retryState) (l4.Route, bool) {
 	r := &route{retry: retry, udp: f.Protocol == l4.ProtocolUDP}
 	var tried []*lb.Member
-	if retry != nil {
-		tried = retry.tried
+	switch {
+	case retry != nil:
+		tried, r.session = retry.tried, retry.session
+	case u.sticky != nil:
+		r.session = new(sticky.FlowSession)
+		u.sticky.Begin(r.session, u.sticky.StreamKey(f), time.Now().UnixNano())
 	}
 	flowOf := func(depth int, p lb.Picker, via *lb.Member) lb.Flow {
 		o := u.options
@@ -168,10 +191,15 @@ func (u *upstream) pick(f l4.Flow, retry *retryState) (l4.Route, bool) {
 		}
 		// a retry may try several members at one depth; the last one asked is the one kept
 		r.onConnect[depth] = timesConnect(o, f.Protocol)
-		if !p.Needs().Has(lb.NeedKey) {
-			return lb.Flow{}
+		var lf lb.Flow
+		if p.Needs().Has(lb.NeedKey) {
+			lf = key(o, f)
 		}
-		return key(o, f)
+		if r.session != nil {
+			// the load balancer the listener maps to keeps the session's whole path
+			lf = r.session.Flow(depth, p, via, lf)
+		}
+		return lf
 	}
 	var pk lb.LeafPick
 	var ok bool
@@ -179,6 +207,22 @@ func (u *upstream) pick(f l4.Flow, retry *retryState) (l4.Route, bool) {
 		pk, ok = lb.PickLeafFunc(u.picker, flowOf)
 	} else {
 		pk, ok = lb.RepickLeafFunc(u.picker, flowOf, tried...)
+	}
+	if s := r.session; s != nil {
+		stranded := !ok && len(tried) == 0 && s.Stranded()
+		s.Picked(pk)
+		if s.Rejects() && s.Unavailable() {
+			if ok {
+				pk.Done(lb.OutcomeCanceled)
+			}
+			s.Refuse()
+			return nil, false
+		}
+		if stranded {
+			// the pinned pool has no member left: the session moves to a pool that does
+			pk, ok = lb.RepickLeafFunc(u.picker, flowOf)
+			s.Picked(pk)
+		}
 	}
 	if !ok {
 		return nil, false
@@ -244,6 +288,16 @@ type route struct {
 	udp       bool
 	// nil unless the route is a retry
 	retry *retryState
+	// nil unless the load balancer keeps sessions; shared by the flow's retries
+	session *sticky.FlowSession
+}
+
+// reached notes that the route's member was reached, which settles the flow's session there
+func (r *route) reached() {
+	r.pick.Reached()
+	if r.session != nil {
+		r.session.Settle()
+	}
 }
 
 func (r *route) Addr() string { return r.addr }
@@ -256,7 +310,7 @@ func (r *route) Dialed(d time.Duration, err error) {
 	case err == nil:
 		if !r.udp {
 			// a udp socket opens whether or not anything listens; a reply is what reaches
-			r.pick.Reached()
+			r.reached()
 		}
 		for i := range r.pick.Depth() {
 			if r.onConnect[i] {
@@ -274,7 +328,7 @@ func (r *route) Dialed(d time.Duration, err error) {
 }
 
 func (r *route) FirstByte() {
-	r.pick.Reached()
+	r.reached()
 	for i := range r.pick.Depth() {
 		if !r.onConnect[i] {
 			r.pick.Level(i).FirstByte()
@@ -291,7 +345,7 @@ func (r *route) Closed(err error) {
 	}
 	if r.udp {
 		// a session that ended without a port-unreachable is all a one-way member ever shows
-		r.pick.Reached()
+		r.reached()
 	}
 	r.pick.Done(lb.OutcomeOK)
 	r.series.proxied.Inc()

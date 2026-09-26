@@ -149,13 +149,13 @@ func TestStickyTablesAreForgottenWithTheirALB(t *testing.T) {
 	g2.routedALB(t, "table-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a")})
 	g2.start(t)
 	require.NotSame(t, kept, sticky.TableFor("table-alb", o.Sticky))
-	require.NoError(t, StartALBPools(backends.Backends{}, nil))
+	ForgetUnusedStickyTables(backends.Backends{})
 }
 
 // a table is kept only while its ALB keeps sessions in it: one that switches to tokens and back
 // starts over, as its old pins may name members its clients have since left
 func TestStickyTableIsNotKeptThroughAnotherMode(t *testing.T) {
-	t.Cleanup(func() { _ = StartALBPools(backends.Backends{}, nil) })
+	t.Cleanup(func() { ForgetUnusedStickyTables(backends.Backends{}) })
 	build := func(mode string) *Client {
 		g := namedGraph(t, "a", "b")
 		c := g.routedALB(t, "modes-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a", "b"),
@@ -196,4 +196,60 @@ func TestALBRelaysUpgrades(t *testing.T) {
 	}}, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.True(t, ur.(*Client).RelaysUpgrades(), "the user router sends each request to one backend")
+}
+
+// an ALB takes the table for its stream and native flows when a listener first asks for it, and a
+// reload keeps that table only while a listener asks for it again before unused tables are forgotten
+func TestStickyFlowsTableIsKeptWhileAListenerUsesIt(t *testing.T) {
+	t.Cleanup(func() { ForgetUnusedStickyTables(backends.Backends{}) })
+	reload := func(listenerAsks bool) *Client {
+		g := namedGraph(t, "a", "b")
+		c := g.routedALB(t, "flows-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a", "b"),
+			Sticky: &so.Options{Secret: stickySecret}})
+		require.NoError(t, StartALBPools(g.clients, g.health))
+		t.Cleanup(func() { _ = StopPools(g.clients) })
+		if listenerAsks {
+			require.NotNil(t, c.StickyFlows())
+		}
+		ForgetUnusedStickyTables(g.clients)
+		return c
+	}
+	httpOnly := reload(false)
+	require.Nil(t, httpOnly.flows.Load(), "an ALB no stream or native listener serves took a table")
+	c := reload(true)
+	flows := c.StickyFlows()
+	require.Same(t, flows, c.StickyFlows(), "an ALB made its flows' persistence twice")
+	flows.Table().Put(1, sticky.Path{Depth: 1}, time.Now().UnixNano())
+	// a listener that asks again after a reload finds the pins; one that does not, loses them
+	require.Same(t, flows.Table(), reload(true).StickyFlows().Table())
+	reload(false)
+	again := reload(true).StickyFlows().Table()
+	require.NotSame(t, flows.Table(), again)
+	require.Zero(t, again.Len())
+}
+
+// a table-mode ALB keeps its requests and its flows in one table, which a reload carries whole
+func TestStickyTableIsSharedByEveryPlane(t *testing.T) {
+	t.Cleanup(func() { ForgetUnusedStickyTables(backends.Backends{}) })
+	g := namedGraph(t, "a")
+	c := g.routedALB(t, "planes-alb", &ao.Options{MechanismName: "rr", Pool: ao.Members("a"),
+		Sticky: &so.Options{Mode: so.ModeTable}})
+	g.start(t)
+	require.Same(t, c.handler.(types.PickerMechanism).StickyTable(), c.StickyFlows().Table())
+}
+
+func TestStickyFlowsNeedATable(t *testing.T) {
+	g := namedGraph(t, "a")
+	for name, o := range map[string]*ao.Options{
+		"flows-none":   {MechanismName: "rr", Pool: ao.Members("a")},
+		"flows-cookie": {MechanismName: "rr", Pool: ao.Members("a"), Sticky: &so.Options{Mode: so.ModeCookie}},
+		"flows-fanout": {MechanismName: "fr", Pool: ao.Members("a")},
+	} {
+		require.Nil(t, g.routedALB(t, name, o).StickyFlows(), name)
+	}
+	ur, err := NewClient("flows-ur", &bo.Options{Provider: providers.ALB, ALBOptions: &ao.Options{
+		MechanismName: "ur", UserRouter: &uropt.Options{DefaultBackend: "a"},
+	}}, nil, nil, nil, nil)
+	require.NoError(t, err)
+	require.Nil(t, ur.(*Client).StickyFlows())
 }

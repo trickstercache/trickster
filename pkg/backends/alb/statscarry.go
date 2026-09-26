@@ -62,13 +62,18 @@ func forgetStatsExcept(clients backends.Backends) {
 	}
 }
 
-// forgetStickyTablesExcept drops every sticky table that no running ALB holds, such as one whose
-// ALB left the config or stopped keeping its sessions in a table
-func forgetStickyTablesExcept(clients backends.Backends) {
+// ForgetUnusedStickyTables drops every sticky table that no running ALB holds, such as one whose
+// ALB left the config or stopped keeping its sessions in a table. A config build calls it once its
+// listeners are running, as an ALB takes the table for its stream and native flows only when a
+// listener first asks for it.
+func ForgetUnusedStickyTables(clients backends.Backends) {
 	sticky.ForgetTablesExcept(func(albName string, t *sticky.Table) bool {
 		c, ok := clients[albName].(*Client)
 		if !ok {
 			return false
+		}
+		if c.flows.Load().Table() == t {
+			return true
 		}
 		pm, ok := c.handler.(types.PickerMechanism)
 		return ok && pm.StickyTable() == t

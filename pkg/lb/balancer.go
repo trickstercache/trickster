@@ -321,41 +321,59 @@ func (b *Balancer) commit(m *Member) (Pick, bool) {
 	return pk, true
 }
 
-// Alternatives returns the eligible members that skip does not report: the strategy's choice
-// among them for the flow first, whatever its pin, then the others in pool order from there. It
-// is not a selection path: it prepares a one-off snapshot, once, however many members it returns.
+// Alternatives returns the eligible members that skip does not report: the member the flow is
+// pinned to first, whatever its tier and while it drains, then the strategy's choice among the
+// others, then the rest in pool order from there. It is not a selection path: it prepares a
+// one-off snapshot, once, however many members it returns.
 func (b *Balancer) Alternatives(f Flow, skip func(*Member) bool) []*Member {
 	p := b.pool.Load()
 	if p == nil {
 		return nil
 	}
-	snap := p.Snapshot()
-	if len(snap.Members) == 0 {
-		return nil
-	}
-	others := make([]*Member, 0, len(snap.Members))
-	for _, m := range snap.Members {
-		if skip == nil || !skip(m) {
-			others = append(others, m)
+	var lead *Member
+	if f.HasPin {
+		if m := p.pinned(f.Pin); m != nil && (skip == nil || !skip(m)) {
+			lead = m
 		}
 	}
-	if len(others) == 0 {
+	snap := p.Snapshot()
+	if lead == nil && len(snap.Members) == 0 {
 		return nil
 	}
-	first := b.selector.Prepare(&Snapshot{Members: others, Tier: snap.Tier, Gen: snap.Gen}).Select(f)
-	if first == nil {
+	out := make([]*Member, 0, len(snap.Members)+1)
+	if lead != nil {
+		out = append(out, lead)
+	}
+	led := len(out)
+	for _, m := range snap.Members {
+		if m != lead && (skip == nil || !skip(m)) {
+			out = append(out, m)
+		}
+	}
+	others := out[led:]
+	var first *Member
+	if len(others) > 0 {
+		first = b.selector.Prepare(&Snapshot{Members: others, Tier: snap.Tier, Gen: snap.Gen}).Select(f)
+	}
+	switch {
+	case first == nil && led == 0:
 		return nil
+	case first == nil:
+		// no other member, or a strategy that chooses none; the pin does not depend on it
+		return out[:led]
+	case first == lead:
+		return out
 	}
 	i := slices.Index(others, first)
 	if i < 0 {
 		// the strategy's choice is honored as Pick honors it, even one it was never offered
-		return append([]*Member{first}, others...)
+		return slices.Insert(out, led, first)
 	}
-	// rotate the choice to the front in place: three reversals, no second slice
+	// rotate the choice to the front of the others in place: three reversals, no second slice
 	slices.Reverse(others[:i])
 	slices.Reverse(others[i:])
 	slices.Reverse(others)
-	return others
+	return out
 }
 
 // Commit commits a flow to a member that Alternatives returned, as Pick would have.
@@ -363,8 +381,16 @@ func (b *Balancer) Commit(m *Member) (Pick, bool) {
 	return b.commit(m)
 }
 
-// Repick commits the flow to an eligible member that is none of failed, whatever its pin, for a
-// caller retrying work those members could not take, which is a move. It is not a selection path.
+// Pinnable reports whether the current pool has a member that the pin names, eligible or not: a
+// pin it cannot honor is then to a member that is unavailable rather than gone.
+func (b *Balancer) Pinnable(pin uint64) bool {
+	p := b.pool.Load()
+	return p != nil && p.Pinnable(pin)
+}
+
+// Repick commits the flow to an eligible member that is none of failed, for a caller retrying work
+// those members could not take: the member the flow is pinned to while it is one, else the
+// strategy's choice. It is not a selection path.
 func (b *Balancer) Repick(f Flow, failed ...*Member) (Pick, bool) {
 	alts := b.Alternatives(f, func(m *Member) bool { return slices.Contains(failed, m) })
 	if len(alts) == 0 {

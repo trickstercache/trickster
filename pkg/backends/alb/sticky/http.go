@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
-	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/cachecontrol"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
@@ -180,16 +179,10 @@ func cookieAttributes(c options.CookieOptions) [2]string {
 // Session is one request's passage through the persistence of the outermost ALB on its way that
 // keeps sessions: the path its token or table entry pins it to, and the path it is sent down.
 type Session struct {
+	passage
 	owner *HTTP
-	// Pins is the path the request is pinned to; its Depth is 0 when it has none.
-	Pins Path
-	// Chosen is the path the request is sent down, one level per ALB that picks a member for it.
-	Chosen   Path
-	now      time.Time
-	token    Token
-	key      flowkey.Value
-	found    found
-	rejected bool
+	now   time.Time
+	token Token
 	// via is the pool member that the owner sent the request to: an ALB, which picks the next level
 	via     string
 	claimed atomic.Bool
@@ -197,9 +190,7 @@ type Session struct {
 
 // Begin resets the session for the request and reads its pins, as of now.
 func (p *HTTP) Begin(r *http.Request, s *Session, now time.Time) {
-	s.owner, s.now, s.via = p, now, ""
-	s.Pins, s.Chosen, s.token, s.key = Path{}, Path{}, Token{}, flowkey.Value{}
-	s.found, s.rejected = foundNothing, false
+	s.passage, s.owner, s.now, s.token, s.via = passage{}, p, now, Token{}, ""
 	s.claimed.Store(false)
 	if p.table != nil {
 		if s.key = p.key(r); s.key.OK {
@@ -328,44 +319,6 @@ func markPrivate(h http.Header) {
 	h.Add(headers.NameCacheControl, headers.ValuePrivate)
 }
 
-func (s *Session) result() result {
-	switch {
-	case s.rejected:
-		return resultRejected
-	case s.found == foundInvalid:
-		return resultInvalid
-	case s.found == foundExpired:
-		return resultExpired
-	case s.found != foundPins:
-		return resultMiss
-	case s.Chosen != s.Pins:
-		return resultRepick
-	}
-	return resultHit
-}
-
-// Pin returns the member hash the session pins the pick at level to, if every level before it
-// was sent down its pin: a session moved at one level starts afresh below it.
-func (s *Session) Pin(level int) (uint64, bool) {
-	if level >= int(s.Pins.Depth) || level > int(s.Chosen.Depth) {
-		return 0, false
-	}
-	for i := range level {
-		if s.Chosen.Hashes[i] != s.Pins.Hashes[i] {
-			return 0, false
-		}
-	}
-	return s.Pins.Hashes[level], true
-}
-
-// Record notes the member picked at level, which is the path's last level so far.
-func (s *Session) Record(level int, hash uint64) {
-	if level < 0 || level >= lb.MaxPickDepth {
-		return
-	}
-	s.Chosen.Hashes[level], s.Chosen.Depth = hash, uint8(level+1)
-}
-
 // Rejects reports whether a request whose pinned member is unavailable is refused, not moved.
 func (s *Session) Rejects() bool {
 	return s.owner != nil && s.owner.reject
@@ -381,10 +334,7 @@ type sessionKey struct{}
 // Nest returns a context carrying a copy of the session to the pool member named via, an ALB
 // that picks the session's next level, and the copy, which the caller uses from then on.
 func Nest(ctx context.Context, s *Session, via string) (context.Context, *Session) {
-	c := &Session{
-		owner: s.owner, Pins: s.Pins, Chosen: s.Chosen, now: s.now, token: s.token,
-		key: s.key, found: s.found, rejected: s.rejected, via: via,
-	}
+	c := &Session{passage: s.passage, owner: s.owner, now: s.now, token: s.token, via: via}
 	return context.WithValue(ctx, sessionKey{}, c), c
 }
 

@@ -247,7 +247,7 @@ func (h *handler) pickPinned(w http.ResponseWriter, r *http.Request, flow lb.Flo
 	}
 	pk, ok := h.balancer.Pick(flow)
 	// a pin to a member that has left the pool starts a new session, as there is none to keep
-	if pinned && !pk.Pinned() && s.Rejects() && h.pinnable(pin) {
+	if pinned && !pk.Pinned() && s.Rejects() && h.balancer.Pinnable(pin) {
 		if ok {
 			pk.Done(lb.OutcomeCanceled)
 		}
@@ -261,11 +261,6 @@ func (h *handler) pickPinned(w http.ResponseWriter, r *http.Request, flow lb.Flo
 	}
 	s.Record(level, pk.Member().Hash())
 	return pk, t, true
-}
-
-func (h *handler) pinnable(pin uint64) bool {
-	p := h.balancer.Pool()
-	return p != nil && p.Pinnable(pin)
 }
 
 // serveTracked reports the pick as done even when the member's handler panics, so the

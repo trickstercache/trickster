@@ -183,7 +183,7 @@ backends:
 
 ### Sticky Sessions
 
-An ALB whose mechanism selects one member per request, `rr`, `p2c`, `lc`, `lt` or `hrw`, can keep each client on the member it was first sent to. The mechanism chooses a new client's member; after that, the client's requests go to the same member for as long as its session lasts and that member is available, even as members join or leave the pool.
+An ALB whose mechanism selects one member per request, `rr`, `p2c`, `lc`, `lt` or `hrw`, can keep each client on the member it was first sent to. The mechanism chooses a new client's member; after that, the client's requests go to the same member for as long as its session lasts and that member is available, even as members join or leave the pool. The same holds for the connections of a [stream listener](#load-balancing-stream-listeners) and the sessions of a [native protocol listener](#load-balancing-native-protocol-sessions); see [Stream and native listeners](#stream-and-native-listeners).
 
 ```yaml
 backends:
@@ -203,13 +203,13 @@ A session is kept in one of three ways, set by `sticky.mode`:
 |-----|-----|-----|
 | `cookie` (the default on http listeners) | The ALB issues a signed token naming the member in a cookie, which the browser sends back. The ALB keeps no state. | browsers |
 | `header` | The same token in a response header, `X-Trickster-Session` by default, which the client sends back in a request header of the same name. | API clients and SDKs that do not keep cookies |
-| `table` | The ALB remembers each client's member by a key read from its requests, such as its address or a header. | clients with a stable identifier of their own, and upstreams that hand out their own session ids |
+| `table` (the default on stream and native listeners) | The ALB remembers each client's member by a key read from its requests, connections or sessions, such as its address or a header. | clients with a stable identifier of their own, upstreams that hand out their own session ids, and every listener that is not http |
 
 The settings, with their defaults:
 
 ```yaml
       sticky:
-        mode: ""                 # cookie, header or table; unset is cookie
+        mode: ""                 # cookie, header or table; unset is cookie on http listeners, table on the others
         ttl: 1h                  # a session's lifetime from its first request; 0 is no limit
         idle: 0                  # ends a session unused this long; 0 never does
         on_unavailable: repick   # repick or reject; see below
@@ -274,13 +274,34 @@ A response that sets a new value for a client moves its entry to the new value.
 
 A table is kept in each Trickster instance's memory. It survives a configuration reload that leaves the ALB's `mode`, `ttl`, `idle` and `table` settings unchanged, but not a restart, and it is not shared between replicas: use `cookie` or `header` mode where sessions must outlive either. With `key: client_ip`, every client behind one NAT address shares a session.
 
+#### Stream and native listeners
+
+A `tcp`, `tls` or `udp` listener, or a native protocol listener such as `mysql`, carries no token, so an ALB keeps the sessions of its connections there in a table. `mode` is best left unset: an ALB that serves both http and stream listeners then issues cookies to its requests and keeps its connections in a table. `cookie` and `header` mode are refused on a listener that is not http. With `mode: table`, requests and connections share one table, so a client whose requests and connections share a key keeps one member for both.
+
+`table.key` is read from each connection or session, as `hrw.key` is:
+
+| Listener | `table.key` |
+|-----|-----|
+| `tcp` | `client_ip`; `proxy_tlv:<type>` with `proxy_protocol` |
+| `tls` | `client_ip`, `sni`; `proxy_tlv:<type>` with `proxy_protocol` |
+| `udp` | `client_ip` |
+| native (`mysql`) | `client_ip`, `user` |
+
+`client_ip` is the address a [PROXY protocol](./configuring.md) header names when the listener trusts one. `user` is the name a native session authenticated as. A connection or session without its key is balanced by the mechanism and not remembered.
+
+A connection is pinned to its member once it reaches it: a `tcp` or `tls` connection when it connects, a `udp` session when its member first answers, or when a one-way member's session ends with no port-unreachable, and a native session when it is handed to its member. A member that cannot be reached is never pinned. A `udp` session already stays with its member for its whole life; what a pin adds is that the client's next session, from any port, lands on the same member.
+
+With `on_unavailable: reject`, a connection whose pinned member is unavailable is refused, and so is one whose pinned member cannot be connected, however many `connect_retries` the ALB has: the retries would move the session. With `repick`, a failed connect is offered to other members as `connect_retries` allows, and its session moves to the one that connects. A native session that is refused fails to route, as it would with no member available.
+
 #### Sticky Sessions and Nested ALBs
 
-When a sticky ALB's pool has ALBs in it, such as one per region or per service, its token or table entry keeps the whole path: the inner ALB the client was sent to and that ALB's member. The inner ALBs need no `sticky` block of their own. When only the inner member becomes unavailable, the session stays with its inner ALB and moves within it. The session covers one level of nesting: an ALB further in selects its member, or keeps sessions of its own if it has a `sticky` block, as it would with no outer session. An inner ALB directly in the sticky ALB's pool follows the outer session, and uses a `sticky` block of its own only for requests that reach it without going through the outer ALB.
+When a sticky ALB's pool has ALBs in it, such as one per region or per service, its token or table entry keeps the whole path: the inner ALB the client was sent to and that ALB's member. The inner ALBs need no `sticky` block of their own. When only the inner member becomes unavailable, the session stays with its inner ALB and moves within it. When the inner ALB has no member left, the session moves to another inner ALB with `on_unavailable: repick`, and is refused with `reject`. On a stream listener, a connection retried after its inner member failed to connect is likewise offered the inner ALB's other members first. The session covers one level of nesting: an ALB further in selects its member, or keeps sessions of its own if it has a `sticky` block, as it would with no outer session. An inner ALB directly in the sticky ALB's pool follows the outer session, and uses a `sticky` block of its own only for requests that reach it without going through the outer ALB.
+
+On a stream listener only the ALB that the listener maps to keeps sessions: an inner ALB's own `sticky` block applies to its http listeners, and to stream listeners mapped to it directly, never to connections that reach it through another ALB.
 
 #### Sticky Session Metrics
 
-`trickster_alb_sticky_total{alb_name, result}` counts requests by how their session fared: `hit` (sent to its member), `miss` (no token or table entry), `expired`, `invalid`, `repick` (its member was unavailable and it moved) and `rejected`. In table mode an expired entry counts as a `miss`. `trickster_alb_sticky_entries{alb_name}` is the number of entries in a table-mode ALB's table.
+`trickster_alb_sticky_total{alb_name, result}` counts requests, connections and native sessions by how their session fared: `hit` (sent to its member), `miss` (no token or table entry), `expired`, `invalid`, `repick` (its member was unavailable and it moved) and `rejected`. In table mode an expired entry counts as a `miss`. A connection is counted once it reaches its member, or once it is refused; one that reaches no member is not counted. `trickster_alb_sticky_entries{alb_name}` is the number of entries in an ALB's table.
 
 ### WebSockets and Other Protocol Upgrades
 
@@ -297,7 +318,7 @@ The mechanisms that select one member, `rr`, `p2c`, `lc`, `lt` and `hrw`, also b
 | latency (`lt.signal`) | `first_write`: the first byte sent to the client | `connect` (default): the time to connect to the member; or `first_byte`: the member's first byte | `first_reply`: the member's first datagram |
 | `hrw.key` | `client_ip`, `host`, `header:`, `cookie:`, `query:` | `client_ip`; `sni` on a `tls` listener; `proxy_tlv:<type>` with `proxy_protocol` | `client_ip` |
 
-A connection or session stays on the member it was given until it ends, whatever the mechanism. `client_ip` is the address a [PROXY protocol](./configuring.md) header names when the listener trusts one.
+A connection or session stays on the member it was given until it ends, whatever the mechanism. `client_ip` is the address a [PROXY protocol](./configuring.md) header names when the listener trusts one. To keep a client's later connections on one member too, give the ALB a [`sticky`](#stream-and-native-listeners) block.
 
 Two settings apply only to an ALB that selects one member on a stream listener, under `alb.stream`:
 
@@ -362,6 +383,8 @@ backends:
       mechanism: lc
       pool: [ replica1, replica2 ]
 ```
+
+With a [`sticky`](#stream-and-native-listeners) block, a client's later sessions keep to the member its first one was given, by `client_ip` or, with `table.key: user`, by the name it authenticated as.
 
 ### Weights and the Selection Mechanisms
 
