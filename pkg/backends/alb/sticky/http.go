@@ -245,8 +245,12 @@ func (p *HTTP) FinishSwitch(h http.Header, r *http.Request, s *Session) func() {
 // settle counts the result and issues the session's token or pins its request's key, and reports
 // whether the session was sent to a member
 func (p *HTTP) settle(h http.Header, r *http.Request, s *Session) bool {
+	if !s.rejected && !s.reached() {
+		// the ALB answered a request that no member took, which counts toward no result
+		return false
+	}
 	p.results[s.result()].Inc()
-	if s.rejected || s.Chosen.Depth == 0 {
+	if s.rejected {
 		return false
 	}
 	if p.table == nil {
@@ -348,4 +352,10 @@ func SessionFrom(ctx context.Context) *Session {
 // that it asks: only that ALB, and only once, picks the session's next level.
 func (s *Session) Claim(albName string) bool {
 	return s.via != "" && s.via == albName && s.claimed.CompareAndSwap(false, true)
+}
+
+// reached reports whether the request reached a member: one was chosen at the first level, and an
+// ALB there that claimed the session chose one at the next
+func (s *Session) reached() bool {
+	return s.Chosen.Depth > 0 && (s.Chosen.Depth > 1 || !s.claimed.Load())
 }

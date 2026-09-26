@@ -296,6 +296,16 @@ func (b *Balancer) Pick(f Flow) (Pick, bool) {
 	return b.commit(ps.prepared.Select(f))
 }
 
+// CanPick reports, without committing anything, whether Pick would now find a member for the
+// flow: its eligible pinned member, or any member of the current snapshot.
+func (b *Balancer) CanPick(f Flow) bool {
+	p := b.pool.Load()
+	if p == nil {
+		return false
+	}
+	return (f.HasPin && p.pinned(f.Pin) != nil) || len(p.Snapshot().Members) > 0
+}
+
 // prepare is the rare path taken on the first pick of each snapshot. Racing callers build
 // equal values; one that stores a superseded value is corrected by the next pick.
 func (b *Balancer) prepare(snap *Snapshot) *preparedSnapshot {

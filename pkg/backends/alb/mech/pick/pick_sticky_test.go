@@ -38,9 +38,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/lb/lc"
 	"github.com/trickstercache/trickster/v2/pkg/lb/lt"
 	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/secret"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
@@ -318,6 +320,252 @@ func TestStickyRejectsAtTheNestedLevel(t *testing.T) {
 	require.Empty(t, w.Header().Get("Set-Cookie"))
 }
 
+// regions is an outer sticky ALB over two inner ALBs, east and west, of two leaves each
+type regions struct {
+	outer  *handler
+	inner  map[string]*handler
+	member map[string]member
+	leaves map[string]member
+}
+
+func stickyRegions(t *testing.T, doc string, outer lb.Selector, regionNames ...string) regions {
+	t.Helper()
+	g := regions{inner: map[string]*handler{}, member: map[string]member{}, leaves: map[string]member{}}
+	if len(regionNames) == 0 {
+		regionNames = []string{"east", "west"}
+	}
+	for _, name := range regionNames {
+		a := named(t, name+"-a", albpool.NamedHandler(name+"-a"))
+		b := named(t, name+"-b", albpool.NamedHandler(name+"-b"))
+		g.leaves[a.name], g.leaves[b.name] = a, b
+		h := New(names.MechanismRR, rr.New(), Options{ALBName: name}).(*handler)
+		h.SetPool(poolOf(t, a, b))
+		h.FollowPins()
+		g.inner[name], g.member[name] = h, nestedMember(t, name, h)
+	}
+	pooled := make([]member, len(regionNames))
+	for i, name := range regionNames {
+		pooled[i] = g.member[name]
+	}
+	g.outer = stickyALB(t, doc, outer, pooled...)
+	return g
+}
+
+// setRegion sets the health of every leaf of the named region
+func (g regions) setRegion(region string, status int32) {
+	for name, m := range g.leaves {
+		if strings.HasPrefix(name, region+"-") {
+			m.status.Set(status)
+		}
+	}
+}
+
+func stickyCount(t *testing.T, result string) float64 {
+	return testutil.ToFloat64(metrics.ALBStickyResults.WithLabelValues(t.Name(), result))
+}
+
+// stickyCounts is every result the test's ALB has counted, by result
+func stickyCounts(t *testing.T) map[string]float64 {
+	out := map[string]float64{}
+	for _, r := range []string{
+		sticky.ResultHit, sticky.ResultMiss, sticky.ResultExpired,
+		sticky.ResultInvalid, sticky.ResultRepick, sticky.ResultRejected,
+	} {
+		out[r] = stickyCount(t, r)
+	}
+	return out
+}
+
+func TestStickySessionLeavesAnInnerALBWithNothingLeft(t *testing.T) {
+	g := stickyRegions(t, "{}", lc.New())
+	c := &client{t: t, h: g.outer}
+	leaf := c.get(nil).Body.String()
+	region, _, _ := strings.Cut(leaf, "-")
+	before := stickyCounts(t)
+	// the pinned inner ALB has no member left, so the session moves to one that has
+	g.setRegion(region, healthcheck.StatusFailing)
+	w := c.get(nil)
+	require.Equal(t, http.StatusOK, w.Code)
+	moved := w.Body.String()
+	require.False(t, strings.HasPrefix(moved, region+"-"), "the session stayed in %s", region)
+	require.Equal(t, 2, c.issued, "a moved session was not issued a token for its new path")
+	require.Equal(t, before[sticky.ResultRepick]+1, stickyCount(t, sticky.ResultRepick))
+	for name, m := range g.member {
+		require.Zero(t, m.target.Member().Stats().Inflight(), "the pick of %s was not reported done", name)
+	}
+	// and stays where it moved once its first inner ALB recovers
+	g.setRegion(region, healthcheck.StatusPassing)
+	for range 4 {
+		require.Equal(t, moved, c.get(nil).Body.String())
+	}
+	require.Equal(t, 2, c.issued)
+}
+
+func TestStickyRejectsWhenItsInnerALBHasNothingLeft(t *testing.T) {
+	g := stickyRegions(t, "on_unavailable: reject", lc.New())
+	c := &client{t: t, h: g.outer}
+	leaf := c.get(nil).Body.String()
+	region, _, _ := strings.Cut(leaf, "-")
+	// the pinned leaf has left its inner ALB, and the one member left there is down: the session
+	// is refused at the outer level, whose pinned member is still in its pool
+	var rest member
+	for name, m := range g.leaves {
+		if name != leaf && strings.HasPrefix(name, region+"-") {
+			rest = m
+		}
+	}
+	rest.status.Set(healthcheck.StatusFailing)
+	g.inner[region].SetPool(poolOf(t, rest))
+	before := stickyCounts(t)
+	w := c.get(nil)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Empty(t, w.Header().Get("Set-Cookie"), "a refused request was issued a token")
+	require.Equal(t, before[sticky.ResultRejected]+1, stickyCount(t, sticky.ResultRejected))
+	for name, m := range g.member {
+		require.Zero(t, m.target.Member().Stats().Inflight(), "the pick of %s was not undone", name)
+	}
+	// the session keeps its inner ALB, which it returns to once that has a member again
+	rest.status.Set(healthcheck.StatusPassing)
+	require.Equal(t, rest.name, c.get(nil).Body.String())
+	require.Equal(t, 2, c.issued)
+}
+
+func TestStickySessionKeepsADrainingLeafOfAnInnerALB(t *testing.T) {
+	// an inner ALB that takes no new work still has the draining leaf a session is pinned to
+	g := stickyRegions(t, "{}", rr.New())
+	c := &client{t: t, h: g.outer}
+	leaf := c.get(nil).Body.String()
+	region, _, _ := strings.Cut(leaf, "-")
+	g.setRegion(region, healthcheck.StatusFailing)
+	pinned := g.leaves[leaf]
+	pinned.status.Set(healthcheck.StatusPassing)
+	var rest member
+	for name, m := range g.leaves {
+		if name != leaf && strings.HasPrefix(name, region+"-") {
+			rest = m
+		}
+	}
+	g.inner[region].SetPool(poolOf(t, member{name: leaf, target: pinned.target.WithDraining(true)}, rest))
+	before := stickyCounts(t)
+	for range 4 {
+		require.Equal(t, leaf, c.get(nil).Body.String())
+	}
+	require.Equal(t, 1, c.issued)
+	require.Equal(t, before[sticky.ResultHit]+4, stickyCount(t, sticky.ResultHit))
+}
+
+// preferring chooses the member named prefer whenever it is offered, else the first, and counts
+// requests in flight so that every commit shows
+type preferring struct{ prefer *string }
+
+func (preferring) Name() string { return "preferring" }
+
+func (preferring) Needs() lb.Needs { return lb.NeedInflight }
+
+func (p preferring) Prepare(snap *lb.Snapshot) lb.Prepared {
+	return preferred{members: snap.Members, prefer: p.prefer}
+}
+
+type preferred struct {
+	members []*lb.Member
+	prefer  *string
+}
+
+func (p preferred) Select(lb.Flow) *lb.Member {
+	for _, m := range p.members {
+		if m.Name() == *p.prefer {
+			return m
+		}
+	}
+	return p.members[0]
+}
+
+func TestStickySessionPassesOverEveryInnerALBWithNothingLeft(t *testing.T) {
+	prefer := "a"
+	g := stickyRegions(t, "{}", preferring{prefer: &prefer}, "a", "b", "c")
+	// the outer pool is a, b, a member with nothing to dispatch to, and c
+	idle := named(t, "idle", nil)
+	g.outer.SetPool(poolOf(t, g.member["a"], g.member["b"], idle, g.member["c"]))
+	cl := &client{t: t, h: g.outer}
+	require.True(t, strings.HasPrefix(cl.get(nil).Body.String(), "a-"))
+	// a and b have nothing left, and the strategy prefers b whenever it may
+	g.setRegion("a", healthcheck.StatusFailing)
+	g.setRegion("b", healthcheck.StatusFailing)
+	prefer = "b"
+	for range 4 {
+		w := cl.get(nil)
+		require.Equal(t, http.StatusOK, w.Code)
+		require.True(t, strings.HasPrefix(w.Body.String(), "c-"), "the session reached %s", w.Body.String())
+	}
+	require.Equal(t, 2, cl.issued)
+	for _, m := range []member{g.member["a"], g.member["b"], idle, g.member["c"]} {
+		require.Zero(t, m.target.Member().Stats().Inflight(), "%s was left with a request in flight", m.name)
+	}
+}
+
+// plainPicker is a balancer that cannot tell whether it has a member for a flow
+type plainPicker struct{ b *lb.Balancer }
+
+func (p plainPicker) Needs() lb.Needs { return p.b.Needs() }
+
+func (p plainPicker) Pick(f lb.Flow) (lb.Pick, bool) { return p.b.Pick(f) }
+
+func TestStickySessionStaysWithAnInnerALBThatCannotTell(t *testing.T) {
+	// an inner ALB that cannot tell whether it has a member left is sent the session, as before
+	a := named(t, "a", albpool.NamedHandler("a"))
+	inner := New(names.MechanismRR, rr.New(), Options{ALBName: "inner"}).(*handler)
+	inner.SetPool(poolOf(t, a))
+	inner.FollowPins()
+	opaque := namedBackend(t, "inner", inner, func(b backends.Backend) backends.Backend {
+		return innerALB{Backend: b, picker: plainPicker{b: inner.balancer}}
+	})
+	other := named(t, "other", albpool.NamedHandler("other"))
+	h := stickyALB(t, "{}", rr.New(), opaque, other)
+	// round robin sends one of two new sessions through the inner ALB
+	c := &client{t: t, h: h}
+	if c.get(nil).Body.String() != "a" {
+		c = &client{t: t, h: h}
+		require.Equal(t, "a", c.get(nil).Body.String())
+	}
+	a.status.Set(healthcheck.StatusFailing)
+	require.Equal(t, http.StatusBadGateway, c.get(nil).Code)
+}
+
+func TestStickyCountsNothingNoMemberTook(t *testing.T) {
+	// the ALB answers a request that no member took itself, with no token, and counts nothing for it
+	g := stickyRegions(t, "{}", rr.New())
+	c := &client{t: t, h: g.outer}
+	region, _, _ := strings.Cut(c.get(nil).Body.String(), "-")
+	before := stickyCounts(t)
+	// a session whose inner ALB has nothing left, with no other to move to
+	g.setRegion(region, healthcheck.StatusFailing)
+	g.outer.SetPool(poolOf(t, g.member[region]))
+	w := c.get(nil)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.Empty(t, w.Header().Get("Set-Cookie"))
+	// or whose every inner ALB has nothing left
+	g.outer.SetPool(poolOf(t, g.member["east"], g.member["west"]))
+	g.setRegion("east", healthcheck.StatusFailing)
+	g.setRegion("west", healthcheck.StatusFailing)
+	w = c.get(nil)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.Empty(t, w.Header().Get("Set-Cookie"))
+	// and new sessions, which each inner ALB fails in turn
+	for range 2 {
+		w = (&client{t: t, h: g.outer}).get(nil)
+		require.Equal(t, http.StatusBadGateway, w.Code)
+		require.Empty(t, w.Header().Get("Set-Cookie"))
+	}
+	// as does an ALB whose own pool has no member left
+	a := named(t, "a", albpool.NamedHandler("a"))
+	a.status.Set(healthcheck.StatusFailing)
+	g.outer.SetPool(poolOf(t, a))
+	w = c.get(nil)
+	require.Equal(t, http.StatusBadGateway, w.Code)
+	require.Empty(t, w.Header().Get("Set-Cookie"))
+	require.Equal(t, before, stickyCounts(t))
+}
+
 // the inner level keeps its own strategy's accounting while it follows the outer ALB's pins
 func TestStickyNestedLevelKeepsItsAccounting(t *testing.T) {
 	for name, selector := range map[string]lb.Selector{"tracked": lc.New(), "timed": lt.New(lt.Options{})} {
@@ -509,6 +757,11 @@ func BenchmarkStickyDispatch(b *testing.B) {
 	c.get(nil)
 	table := stickyALB(b, "mode: table", rr.New(), members(b)...)
 	(&client{t: b, h: table}).get(nil)
+	inner := New(names.MechanismRR, rr.New(), Options{ALBName: "inner"}).(*handler)
+	inner.SetPool(poolOf(b, members(b)...))
+	inner.FollowPins()
+	nested := &client{t: b, h: stickyALB(b, "{}", rr.New(), nestedMember(b, "inner", inner))}
+	nested.get(nil)
 	for name, tc := range map[string]struct {
 		h      http.Handler
 		cookie string
@@ -517,6 +770,7 @@ func BenchmarkStickyDispatch(b *testing.B) {
 		"cookie hit":   {cookie, c.cookie},
 		"cookie issue": {cookie, ""},
 		"table hit":    {table, ""},
+		"nested hit":   {nested.h, nested.cookie},
 	} {
 		b.Run(name, func(b *testing.B) {
 			r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)

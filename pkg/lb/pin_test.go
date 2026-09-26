@@ -253,3 +253,45 @@ func TestBalancerPinnable(t *testing.T) {
 		t.Error("pinnable does not follow the pool's members, eligible or not")
 	}
 }
+
+// trackedHead is headSelector with in-flight accounting, so that a commit would show
+type trackedHead struct{ headSelector }
+
+func (trackedHead) Needs() Needs { return NeedInflight }
+
+func TestBalancerCanPickAgreesWithPick(t *testing.T) {
+	bal := NewBalancer(trackedHead{})
+	if bal.CanPick(Flow{}) {
+		t.Error("a balancer with no pool can pick")
+	}
+	health := newHealth(1)
+	live := NewMember(MemberOptions{Name: "live"})
+	draining := NewMember(MemberOptions{Name: "draining", Health: health, Draining: true})
+	down := NewMember(MemberOptions{Name: "down", Health: newHealth(-1)})
+	agree := func(f Flow, want bool) {
+		t.Helper()
+		got := bal.CanPick(f)
+		for _, m := range []*Member{live, draining, down} {
+			if n := m.Stats().Inflight(); n != 0 {
+				t.Fatalf("CanPick left %s with %d in flight", m.Name(), n)
+			}
+		}
+		pk, ok := bal.Pick(f)
+		if ok {
+			pk.Done(OutcomeOK)
+		}
+		if got != want || ok != want {
+			t.Errorf("CanPick = %v and Pick = %v, want %v", got, ok, want)
+		}
+	}
+	bal.SetPool(mustPool(t, []*Member{live, draining, down}, 0))
+	agree(Flow{}, true)
+	agree(pinTo(down), true)
+	// with only a draining member and a failed one, only a pin to the draining member finds one
+	bal.SetPool(mustPool(t, []*Member{draining, down}, 0))
+	agree(Flow{}, false)
+	agree(pinTo(down), false)
+	agree(pinTo(draining), true)
+	health.set(-1)
+	agree(pinTo(draining), false)
+}

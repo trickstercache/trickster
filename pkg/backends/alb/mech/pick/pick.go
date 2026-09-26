@@ -214,7 +214,14 @@ func (h *handler) serveSticky(w http.ResponseWriter, r *http.Request, flow lb.Fl
 	if !ok {
 		return
 	}
-	if t.Picker() != nil {
+	inner := t.Picker()
+	if inner != nil && pk.Pinned() && !canPick(inner, s) {
+		if pk, t, ok = h.unstrand(fw, r, flow, s, pk); !ok {
+			return
+		}
+		inner = t.Picker()
+	}
+	if inner != nil {
 		// the member is an ALB, which picks the session's next level
 		var ctx context.Context
 		ctx, fw.session = sticky.Nest(r.Context(), s, pk.Member().Name())
@@ -261,6 +268,56 @@ func (h *handler) pickPinned(w http.ResponseWriter, r *http.Request, flow lb.Flo
 	}
 	s.Record(level, pk.Member().Hash())
 	return pk, t, true
+}
+
+// nestedPicker is the balancer of a pool member that is itself an ALB
+type nestedPicker interface {
+	CanPick(lb.Flow) bool
+}
+
+var _ nestedPicker = (*lb.Balancer)(nil)
+
+// canPick reports whether an ALB member can pick the session's next level, following the pin it
+// has there; one that cannot tell is assumed able to
+func canPick(inner lb.Picker, s *sticky.Session) bool {
+	np, ok := inner.(nestedPicker)
+	if !ok {
+		return true
+	}
+	var f lb.Flow
+	f.Pin, f.HasPin = s.Pin(1)
+	return np.CanPick(f)
+}
+
+// unstrand answers for a session pinned to an ALB member with nothing left to take it: reject
+// refuses it and keeps its pin, while repick moves it to the first other member that can take it
+func (h *handler) unstrand(w http.ResponseWriter, r *http.Request, flow lb.Flow, s *sticky.Session,
+	stranded lb.Pick,
+) (lb.Pick, *pool.Target, bool) {
+	// the stranded member was never reached
+	stranded.Done(lb.OutcomeCanceled)
+	if s.Rejects() {
+		s.Reject()
+		failures.HandleServiceUnavailable(w, r)
+		return lb.Pick{}, nil, false
+	}
+	// a moved session starts afresh below the first level, so an ALB member needs only a member;
+	// the stranded one has none, so the walk passes it over like any other
+	s.Chosen = sticky.Path{}
+	for _, m := range h.balancer.Alternatives(flow, nil) {
+		t, ok := m.Value.(*pool.Target)
+		if !ok || t.Handler() == nil {
+			continue
+		}
+		if inner := t.Picker(); inner != nil && !canPick(inner, s) {
+			continue
+		}
+		pk, _ := h.balancer.Commit(m)
+		s.Record(0, m.Hash())
+		return pk, t, true
+	}
+	failures.HandleBadGateway(w, r)
+	return lb.Pick{}, nil, false
 }
 
 // serveTracked reports the pick as done even when the member's handler panics, so the
