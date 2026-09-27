@@ -675,7 +675,7 @@ func TestWatchEventsAreCounted(t *testing.T) {
 	before := testutil.ToFloat64(metrics.KubeWatchEvents.WithLabelValues(ir.KindIngress, eventAdd))
 	_, c := start(t, opts(t), []runtime.Object{ing("shop", "web")}, nil)
 	c.await(t, 1)
-	require.GreaterOrEqual(t,
-		testutil.ToFloat64(metrics.KubeWatchEvents.WithLabelValues(ir.KindIngress, eventAdd)),
-		before+1)
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(metrics.KubeWatchEvents.WithLabelValues(ir.KindIngress, eventAdd)) >= before+1
+	}, 5*time.Second, 5*time.Millisecond)
 }

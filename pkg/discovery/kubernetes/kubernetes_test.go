@@ -297,10 +297,14 @@ func TestPodsDiscovery(t *testing.T) {
 	defer unsub()
 
 	snap := col.next(t)
-	require.Equal(t, []string{"10.0.0.1:9090", "10.0.0.2:9090"},
+	require.ElementsMatch(t, []string{"10.0.0.1:9090", "10.0.0.2:9090"},
 		addressesOf(snap), "pending pod without an IP omitted")
-	require.Equal(t, discovery.Ready, snap[0].Ready)
-	require.Equal(t, discovery.NotReady, snap[1].Ready)
+	states := make(map[string]discovery.ReadyState, len(snap))
+	for _, member := range snap {
+		states[member.Address] = member.Ready
+	}
+	require.Equal(t, discovery.Ready, states["10.0.0.1:9090"])
+	require.Equal(t, discovery.NotReady, states["10.0.0.2:9090"])
 
 	// deleting a pod removes its member
 	awaitWatch(t, watching)

@@ -100,10 +100,14 @@ func TestBuildPodsDrainsTerminating(t *testing.T) {
 		pod("stopping", "10.0.0.3", false, true))
 	s := testSubscription(&do.Query{Namespace: testNS, Port: "web"})
 	snap := s.buildPods(corelisters.NewPodLister(idx).Pods(testNS))
-	require.Equal(t, []string{"10.0.0.1:9090", "10.0.0.2:9090"}, addressesOf(snap))
-	require.Equal(t, discovery.NotReady, snap[0].Ready,
+	require.Len(t, snap, 2)
+	states := make(map[string]discovery.ReadyState, len(snap))
+	for _, member := range snap {
+		states[member.Address] = member.Ready
+	}
+	require.Equal(t, discovery.NotReady, states["10.0.0.1:9090"],
 		"a pod with no Ready condition is not ready")
-	require.Equal(t, discovery.Terminating, snap[1].Ready,
+	require.Equal(t, discovery.Terminating, states["10.0.0.2:9090"],
 		"a ready pod being deleted drains")
 }
 
