@@ -27,6 +27,7 @@ import (
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 
@@ -105,6 +106,11 @@ type Options struct {
 	// TrustedProxies lists the addresses or CIDRs of proxies whose PROXY protocol header
 	// and forwarding headers are believed when resolving the client IP; others are ignored.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+	// IPACLName is the access list applied to this listener. An empty name
+	// applies none. The reference none is not valid on a listener.
+	IPACLName string `yaml:"ip_acl_name,omitempty"`
+	// IPACL is the compiled list named by IPACLName.
+	IPACL *ipacl.List `yaml:"-"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
 	ServeTLS bool `yaml:"-"`
 	// Active indicates whether the listener has a configured purpose.

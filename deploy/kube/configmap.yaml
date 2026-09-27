@@ -84,6 +84,11 @@ data:
     #     # proxy otherwise. Default: false
     #     proxy_protocol: false
     #
+    #     # ip_acl_name applies a named ip_acls entry to every connection on this
+    #     # listener, including mgmt and metrics. none is not valid here.
+    #     # See docs/ip-acl.md
+    #     ip_acl_name: office
+    #
     #     # max_request_body_size_bytes indicates the maximum allowed request body size.
     #     # Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB.
     #     max_request_body_size_bytes: 10485760
@@ -398,6 +403,38 @@ data:
     #     "500": 3s
     #     "502": 3s
 
+    # # IP access lists. Attach one with ip_acl_name on a listener, backend, or path.
+    # # See docs/ip-acl.md. Files are read when the configuration is loaded or reloaded.
+    # ip_acls:
+    #   office:
+    #     # match is longest (default) or ordered. longest uses the longest matching
+    #     # prefix, and deny wins when the same prefix is both allowed and denied.
+    #     match: longest
+    #     # default is the verdict when nothing matches. deny (default) or allow.
+    #     default: deny
+    #     allow: [10.0.0.0/8, 192.168.1.5, 2001:db8::/32]
+    #     deny: [10.0.99.0/24]
+    #     # allow_file and deny_file are one address or CIDR per line. Blank lines
+    #     # and lines whose first non-space character is # are skipped.
+    #     # allow_file: /etc/trickster/office-allow.lst
+    #     # deny_file: /etc/trickster/blocklist.lst
+    #     # source is client_ip (default) or peer. peer is listener scope only.
+    #     source: client_ip
+    #     # action is reject (default) or drop. drop is not valid on a backend or
+    #     # path that HTTP serves.
+    #     action: reject
+    #     # status is the HTTP status used when action is reject. 400-599; default 403.
+    #     status: 403
+    #   # ordered judges rules from top to bottom. allow, deny, and *_file are
+    #   # refused in this mode; each rule sets exactly one of them.
+    #   legacy:
+    #     match: ordered
+    #     default: deny
+    #     rules:
+    #       - deny: 10.1.2.0/24
+    #       - allow: 10.0.0.0/8
+    #       - deny: all
+
     # Configuration options for mapping Origin(s)
     backends:
 
@@ -647,6 +684,10 @@ data:
         # listener_names maps this backend to compatible inbound listeners.
         # Unbound ordinary backends use default; mgmt and metrics are reserved.
         listener_names: [default]
+
+        # ip_acl_name applies a named ip_acls entry to every route of this backend.
+        # A path's ip_acl_name replaces it. none is not valid on a backend.
+        # ip_acl_name: office
 
         # provider identifies the backend provider.
         # Valid options are: prometheus, influxdb, clickhouse, graphite, mysql, rule, alb,
@@ -960,6 +1001,10 @@ data:
 
     #     # the paths section customizes the behavior of Trickster for specific paths for this Backend. See /docs/paths.md for more info.
     #     paths:
+    #       - path: /public/
+    #         # ip_acl_name replaces the backend list. none clears it for this path.
+    #         # The listener list still applies. See docs/ip-acl.md
+    #         ip_acl_name: none
     #       - path: /api/v1/admin/
     #         methods: [ '*' ]                                 # HTTP methods to be routed with this path config. * for all methods.
     #         match_type: prefix                             # match $path* (using exact will match just $path)

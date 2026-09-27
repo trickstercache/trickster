@@ -38,4 +38,6 @@ var (
 	ErrInvalidRule = errors.New("invalid ip acl rule")
 	// ErrInvalidFile is a list file that is missing, unreadable or not a file.
 	ErrInvalidFile = errors.New("invalid ip acl file")
+	// ErrInvalidName is an empty ACL name or the reserved reference none.
+	ErrInvalidName = errors.New("invalid ip acl name")
 )

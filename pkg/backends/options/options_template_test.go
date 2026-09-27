@@ -139,7 +139,7 @@ func TestValidateTemplatePoolMember(t *testing.T) {
 	l := Lookup{"t1": tmpl, "alb1": alb}
 	err := l.ValidateConfigMappings(
 		co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	var tpm *ErrTemplatePoolMember
 	require.ErrorAs(t, err, &tpm)
 }

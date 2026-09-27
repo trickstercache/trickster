@@ -41,6 +41,7 @@ import (
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -83,6 +84,9 @@ func Validate(c *config.Config) error {
 		return err
 	}
 	if err := Authenticators(c); err != nil {
+		return err
+	}
+	if err := IPACLs(c); err != nil {
 		return err
 	}
 	if err := Caches(c); err != nil {
@@ -242,7 +246,7 @@ func Backends(c *config.Config) error {
 		return errors.ErrNoValidBackends
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
-		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions); err != nil {
+		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions, c.IPACLs); err != nil {
 		return err
 	}
 	if err := c.Backends.ValidateDiscovery(c.Discovery); err != nil {
@@ -392,6 +396,9 @@ func Listeners(c *config.Config) error {
 		if _, err := clientip.ParseTrusted(options.TrustedProxies); err != nil {
 			return fmt.Errorf("listener %q: %w", name, err)
 		}
+		if err := bindListenerIPACL(c, name, options); err != nil {
+			return err
+		}
 
 		builtIn := name == listener.DefaultFrontendName ||
 			name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics
@@ -441,6 +448,9 @@ func Listeners(c *config.Config) error {
 				return err
 			}
 		}
+	}
+	if err := validateIPACLPlacements(c); err != nil {
+		return err
 	}
 	return requestALBs(c, streamALBs)
 }
@@ -686,6 +696,100 @@ func servesNativeListener(c *config.Config, backend *bo.Options, nativeListeners
 	for _, name := range backend.ListenerNames {
 		if lo := c.Listeners[name]; lo != nil && !strings.EqualFold(lo.Protocol, listener.ProtocolHTTP) &&
 			nativeListeners.Get(strings.ToLower(lo.Protocol)) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// IPACLs validates and compiles every named access list. Files are read here,
+// so a missing or unreadable file fails configuration loading.
+func IPACLs(c *config.Config) error {
+	if c == nil || len(c.IPACLs) == 0 {
+		return nil
+	}
+	warnings, err := c.IPACLs.Validate()
+	if err != nil {
+		return err
+	}
+	for _, warning := range warnings {
+		addWarning(c, warning)
+	}
+	return nil
+}
+
+// bindListenerIPACL resolves a listener's ip_acl_name. peer is valid here.
+// A native listener cannot take a client_ip list while proxy_protocol is on,
+// because the socket peer and the address in the header are different.
+// A client_ip list with proxy_protocol and no trusted_proxies is a warning:
+// every peer's header is believed.
+func bindListenerIPACL(c *config.Config, name string, options *listener.Options) error {
+	if options == nil || options.IPACLName == "" {
+		return nil
+	}
+	def := c.IPACLs[options.IPACLName]
+	if def == nil || def.Compiled == nil {
+		return fmt.Errorf("listener %q references undefined ip acl %q", name, options.IPACLName)
+	}
+	options.IPACL = def.Compiled
+	if options.IPACL.Source() != ipacl.ClientIP {
+		return nil
+	}
+	if providerregistry.NativeListeners().Get(options.Protocol) != nil && options.ProxyProtocol {
+		return fmt.Errorf("listener %q with protocol %q cannot use ip acl %q with source client_ip "+
+			"while proxy_protocol is enabled", name, options.Protocol, options.IPACLName)
+	}
+	if options.ProxyProtocol && len(options.TrustedProxies) == 0 {
+		addWarning(c, fmt.Sprintf("listener %q uses ip acl %q with source client_ip, proxy_protocol, "+
+			"and no trusted_proxies: every peer's header is believed", name, options.IPACLName))
+	}
+	return nil
+}
+
+// validateIPACLPlacements applies the checks that need listener protocols after
+// Listeners has assigned default listener names. drop is refused when HTTP
+// serves the backend. A backend ACL on a native listener is a warning: native
+// sessions are judged by the listener list only, and a ClickHouse native
+// bridge request has no client address.
+func validateIPACLPlacements(c *config.Config) error {
+	nativeListeners := providerregistry.NativeListeners()
+	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
+		backend := c.Backends[backendName]
+		if backend == nil {
+			continue
+		}
+		httpServed := backendServesHTTP(backend, c)
+		if backend.IPACL != nil && backend.IPACL.Action() == ipacl.Drop && httpServed {
+			return fmt.Errorf("backend %q uses ip acl %q with action drop, which is not valid "+
+				"when the backend is served over http", backendName, backend.IPACLName)
+		}
+		for _, path := range backend.Paths {
+			if path == nil || path.IPACL == nil || path.IPACL.Action() != ipacl.Drop || !httpServed {
+				continue
+			}
+			return fmt.Errorf("backend %q path %q uses ip acl %q with action drop, which is not valid "+
+				"when the backend is served over http", backendName, path.Path, path.IPACLName)
+		}
+		if backend.IPACL != nil && servesNativeListener(c, backend, nativeListeners) {
+			addWarning(c, fmt.Sprintf("backend %q has ip acl %q and is served by a native listener: "+
+				"native sessions are judged by the listener acl only, and a ClickHouse native bridge "+
+				"request to this backend has no client address and is denied",
+				backendName, backend.IPACLName))
+		}
+	}
+	return nil
+}
+
+// backendServesHTTP reports whether any listener already assigned to the backend
+// speaks HTTP. An empty listener list is not treated as the default frontend:
+// Listeners has already assigned that name to backends that use it.
+func backendServesHTTP(backend *bo.Options, c *config.Config) bool {
+	if backend == nil {
+		return false
+	}
+	for _, name := range backend.ListenerNames {
+		lo := c.Listeners[name]
+		if lo != nil && (lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP) {
 			return true
 		}
 	}

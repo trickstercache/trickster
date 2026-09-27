@@ -126,6 +126,32 @@ type ErrInvalidAuthenticatorName struct {
 	error
 }
 
+// ErrInvalidIPACLName is an error type for an ip_acl_name that is not defined.
+type ErrInvalidIPACLName struct {
+	error
+}
+
+// NewErrInvalidIPACLName returns a new invalid access-list name error.
+func NewErrInvalidIPACLName(aclName, backendName string) error {
+	return &ErrInvalidIPACLName{
+		error: fmt.Errorf(`invalid ip_acl_name "%s" provided in backend options "%s"`,
+			aclName, backendName),
+	}
+}
+
+// ErrIPACLSourcePeer is an error type for a peer-source list attached outside a listener.
+type ErrIPACLSourcePeer struct {
+	error
+}
+
+// NewErrIPACLSourcePeer returns an error for a peer-source list on a backend or path.
+func NewErrIPACLSourcePeer(aclName, where string) error {
+	return &ErrIPACLSourcePeer{
+		error: fmt.Errorf("ip acl %q with source peer is listener scope only and cannot be used by %s",
+			aclName, where),
+	}
+}
+
 // NewErrInvalidAuthenticatorName returns a new invalid authenticator name error
 func NewErrInvalidAuthenticatorName(authenticatorName, backendName string) error {
 	return &ErrInvalidAuthenticatorName{

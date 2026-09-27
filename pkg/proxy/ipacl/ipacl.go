@@ -149,6 +149,8 @@ type Options struct {
 	Status int `yaml:"status,omitempty"`
 	// Rules is the ordered-mode list. Each rule is one allow, deny or file.
 	Rules []Rule `yaml:"rules,omitempty"`
+	// Compiled is the immutable list Lookup.Validate built. Clone shares it.
+	Compiled *List `yaml:"-"`
 }
 
 // Rule is one ordered-mode step. Exactly one field is set.

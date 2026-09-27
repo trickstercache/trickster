@@ -52,6 +52,7 @@ import (
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -247,6 +248,9 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// IPACLName is the access list applied to this backend's routes. A path's
+	// ip_acl_name replaces it. The reference none is not valid on a backend.
+	IPACLName string `yaml:"ip_acl_name,omitempty"`
 	// SigV4 signs outbound requests to this backend's origin with AWS
 	// SigV4. It defaults to signing for Amazon Managed Service for
 	// Prometheus; set sigv4.service to sign for another AWS service.
@@ -300,6 +304,8 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+	// IPACL is the compiled list named by IPACLName.
+	IPACL *ipacl.List `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
@@ -680,7 +686,7 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
-	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup,
+	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup, acls ipacl.Lookup,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
@@ -694,6 +700,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if o.AuthOptions, ok = a[o.AuthenticatorName]; !ok {
 				return NewErrInvalidAuthenticatorName(o.AuthenticatorName, o.Name)
 			}
+		}
+		if o.IPACLName != "" {
+			list, err := resolveIPACL(acls, o.IPACLName, o.Name)
+			if err != nil {
+				return err
+			}
+			o.IPACL = list
 		}
 		if o.ReqRewriterName != "" {
 			if _, ok = rwl[o.ReqRewriterName]; !ok {
@@ -711,6 +724,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 					return NewErrInvalidAuthenticatorName(p.AuthenticatorName,
 						o.Name+"/"+p.Path)
 				}
+			}
+			if p.IPACLName != reserved.ReferenceNone && p.IPACLName != "" {
+				list, err := resolveIPACL(acls, p.IPACLName, o.Name+"/"+p.Path)
+				if err != nil {
+					return err
+				}
+				p.IPACL = list
 			}
 			if p.ReqRewriterName != "" {
 				if _, ok = rwl[p.ReqRewriterName]; !ok {
@@ -775,6 +795,19 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 		}
 	}
 	return nil
+}
+
+// resolveIPACL returns the compiled list named by a backend or path reference.
+// An empty name is not a reference. peer is listener scope only.
+func resolveIPACL(acls ipacl.Lookup, name, where string) (*ipacl.List, error) {
+	def := acls[name]
+	if def == nil || def.Compiled == nil {
+		return nil, NewErrInvalidIPACLName(name, where)
+	}
+	if def.Compiled.Source() == ipacl.Peer {
+		return nil, NewErrIPACLSourcePeer(name, where)
+	}
+	return def.Compiled, nil
 }
 
 // ValidateDiscovery validates each discovery-backed ALB in the Lookup

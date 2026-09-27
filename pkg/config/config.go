@@ -41,6 +41,7 @@ import (
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
@@ -65,6 +66,8 @@ type Config struct {
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
 	// Listeners maps inbound listener names to their configurations.
 	Listeners listener.Lookup `yaml:"listeners,omitempty"`
+	// IPACLs maps access-list names to their definitions.
+	IPACLs ipacl.Lookup `yaml:"ip_acls,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// AccessLog is the default access and error log configuration, inherited by
@@ -402,6 +405,10 @@ func (c *Config) Clone() *Config {
 		for k, v := range c.Authenticators {
 			nc.Authenticators[k] = v.Clone()
 		}
+	}
+
+	if len(c.IPACLs) > 0 {
+		nc.IPACLs = c.IPACLs.Clone()
 	}
 
 	nc.Kubernetes = c.Kubernetes.Clone()
