@@ -90,11 +90,11 @@ Fail-closed rules that apply to every dialect:
   An adapter may accelerate unaligned half-open ranges by rounding the lower
   bound up and the upper bound down to the query cadence when the client
   consumes only complete buckets, or by proving equivalent partial-edge
-  handling. When no complete bucket remains, both bounds normalize to the
+  handling. When no complete bucket remains, both bounds collapse to the
   rounded-up lower boundary. Strict lower bounds, inclusive upper bounds, and
   `BETWEEN` remain object-cache fallbacks unless an adapter proves equivalent
   handling.
-- Predicates on the **bucket output** are discrete and may be normalized
+- Predicates on the **bucket output** are discrete and may be aligned
   from any comparator to the first and last included buckets.
 - A query that cannot be delta-cached should remain object-cacheable
   whenever it is a well-formed read query.

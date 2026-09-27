@@ -151,7 +151,7 @@ Time range predicates must appear in a top-level `AND` conjunction of the `WHERE
 Two predicate targets are supported, with different rules:
 
 - **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`) and the upper bound exclusive (`<`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — are rounded inward to the nearest complete bucket (lower bound up, upper bound down), so partial edge buckets are omitted from the response rather than cached as complete aggregates. If no complete bucket remains after rounding, the query is served through the OPC. Other comparators — including `BETWEEN` — describe partial buckets whose aggregates cannot be safely cached, so those queries are served through the OPC.
-- **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster normalizes each comparator to the first and last included bucket.
+- **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster aligns each comparator to the first and last included bucket.
 
 Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)`, `toDateTime64(n, precision)`, or `toDate(n)` wrappers, `WITH`-clause constants, or `now()`/`now64()` with optional addition or subtraction of seconds. DateTime64 precision is retained. Floating epoch bounds and timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
 
@@ -184,9 +184,9 @@ Queries that are not cacheable as time series — such as `LIMIT`-based queries,
 
 Trickster exposes a `/ping` endpoint that returns a health check response, matching the endpoint provided by ClickHouse itself. This enables compatibility with clients and SDKs that probe `/ping` during connection initialization.
 
-### Normalization and "Fast Forwarding"
+### Step Alignment and "Fast Forwarding"
 
-Trickster will always normalize the calculated time range to fit the step size, so small variations in the time range will still result in actual queries for the entire time "bucket". In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket or within the configured backfill tolerance setting (whichever is greater).
+Trickster will always align the calculated time range to the step size, so small variations in the time range will still result in actual queries for the entire time "bucket". In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket or within the configured backfill tolerance setting (whichever is greater).
 
 Per-query behavior can be adjusted with comment directives such as `trickster-backfill-tolerance`; see [Per-Query Instructions](./per-query-instructions.md).
 

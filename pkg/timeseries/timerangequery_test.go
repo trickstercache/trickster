@@ -53,7 +53,7 @@ func TestNormalizeExtent(t *testing.T) {
 			rangeStart: 0, rangeEnd: (tmrw / 10) * 10,
 		},
 		{
-			name:  "zero step no normalization",
+			name:  "zero step no alignment",
 			start: 1, end: 103, stepSecs: 0,
 			rangeStart: 1, rangeEnd: 103,
 		},

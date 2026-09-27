@@ -275,9 +275,9 @@ GROUP BY time
 ORDER BY time
 ```
 
-Trickster normalizes the lower bound up and the exclusive upper bound down to
-the cadence and caches only complete buckets. A range with no complete bucket
-normalizes to an empty range. Inclusive upper bounds and Grafana's strict-lower
+Trickster rounds the lower bound up and the exclusive upper bound down to the
+cadence and caches only complete buckets. A range with no complete bucket
+rounds to an empty range. Inclusive upper bounds and Grafana's strict-lower
 `$__unixEpochFilter` expansion remain OPC because they do not prove the same
 complete-bucket semantics. Native `DATETIME`/`TIMESTAMP`, epoch-second integer,
 and the corpus's epoch-nanosecond adaptation are supported in their recorded

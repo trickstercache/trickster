@@ -477,7 +477,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	}
 }
 
-func normalizeTime(t time.Time, d time.Duration) time.Time {
+func alignTime(t time.Time, d time.Duration) time.Time {
 	return time.Unix((t.Unix()/int64(d.Seconds()))*int64(d.Seconds()), 0)
 	// return t.Truncate(d)
 }
@@ -504,7 +504,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -537,9 +537,9 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -583,7 +583,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	// test partial hit (needing a lower fragment)
 	phitEnd := extn.Start.Add(-step)
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = normalizeTime(extr.Start, step)
+	extn.Start = alignTime(extr.Start, step)
 
 	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "]"
 	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -625,13 +625,13 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing both upper and lower fragments)
-	phitEnd = normalizeTime(extr.Start.Add(-step), step)
-	phitStart = normalizeTime(extr.End.Add(step), step)
+	phitEnd = alignTime(extr.Start.Add(-step), step)
+	phitStart = alignTime(extr.End.Add(step), step)
 
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = normalizeTime(extr.Start, step)
+	extn.Start = alignTime(extr.Start, step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
@@ -698,7 +698,7 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	// First request: populate cache with successful data
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -737,9 +737,9 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	// Second request: partial hit - extend the upper range
 	// This should cause a partial hit where we need to fetch the new upper fragment.
 	// But we'll use a query that fails (queryReturnsBadGateway) for this fragment.
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour)
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	// The extent that we should fetch for the partial hit
 	extentToFetch := timeseries.Extent{Start: phitStart, End: extn.End}
@@ -801,7 +801,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -1739,7 +1739,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	end := now.Add(-12 * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -1772,9 +1772,9 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(6) * time.Hour) // Extend the top by 6 hours to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)

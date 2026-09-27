@@ -60,15 +60,15 @@ Most dashboards request from a time series database the entire time range of dat
 
 <img src="./docs/images/partial-cache-hit.png" width=1024 />
 
-#### 2. Step Boundary Normalization
+#### 2. Step Alignment
 
-When Trickster requests data from a tsdb, it adjusts the clients's requested time range slightly to ensure that all data points returned are aligned to normalized step boundaries. For example, if the step is 300s, all data points will fall on the clock 0's and 5's. This ensures that the data is highly cacheable, is conveyed visually to users in a more familiar way, and that all dashboard users see identical data on their screens.
+When Trickster requests data from a tsdb, it adjusts the client's requested time range slightly to ensure that all data points returned are aligned to step boundaries. For example, if the step is 300s, all data points will fall on the clock 0's and 5's. This ensures that the data is highly cacheable, is conveyed visually to users in a more familiar way, and that all dashboard users see identical data on their screens. Step alignment is also known as aligning queries with their step; Trickster versions before 2.2 called it Step Boundary Normalization.
 
-<img src="./docs/images/step-boundary-normalization.png" width=640 />
+<img src="./docs/images/step-alignment.png" width=640 />
 
 #### 3. Fast Forward
 
-Trickster's Fast Forward feature ensures that even with step boundary normalization, real-time graphs still always show the most recent data, regardless of how far away the next step boundary is. For example, if your chart step is 300s, and the time is currently 1:21p, you would normally be waiting another four minutes for a new data point at 1:25p. Trickster will break the step interval for the most recent data point and always include it in the response to clients requesting real-time data.
+Trickster's Fast Forward feature ensures that even with step alignment, real-time graphs still always show the most recent data, regardless of how far away the next step boundary is. For example, if your chart step is 300s, and the time is currently 1:21p, you would normally be waiting another four minutes for a new data point at 1:25p. Trickster will break the step interval for the most recent data point and always include it in the response to clients requesting real-time data.
 
 <img src="./docs/images/fast-forward.png" width=640 />
 

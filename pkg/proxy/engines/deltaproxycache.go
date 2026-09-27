@@ -122,7 +122,7 @@ func fetchFastForward(
 		ffStatus = status.StatusHit
 	}
 	// Merge Fast Forward data if present. This must be done after the Downstream Crop since
-	// the cropped extent was normalized to step boundaries and would remove fast forward data.
+	// the cropped extent was aligned to step boundaries and would remove fast forward data.
 	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
 	// returned time series, it will not be merged
 	if len(x) > 0 && x[0].End.After(trq.Extent.End) &&

@@ -395,7 +395,7 @@ hour boundaries. This keeps the time-series panels cadence-aligned for DPC.
 Unrounded and live-ending half-open ranges also use DPC. Trickster rounds the
 lower bound up and the upper bound down to the query cadence, so only complete
 chart buckets inside the requested range are cached. A range containing no
-complete bucket normalizes to an empty range. Refreshes within the same cadence
+complete bucket rounds to an empty range. Refreshes within the same cadence
 window can therefore be full cache hits. The limited top-N table panel uses OPC
 by design.
 
