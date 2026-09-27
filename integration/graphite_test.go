@@ -264,6 +264,10 @@ func TestGraphite(t *testing.T) {
 
 		_, hit := renderThroughTrickster(t, h, params)
 		require.Equal(t, "DeltaProxyCache", hit["engine"])
+		if hit["status"] == status.StatusPartialHit {
+			// A step rollover can add a new bucket; the partial hit fills it.
+			_, hit = renderThroughTrickster(t, h, params)
+		}
 		require.Equal(t, status.StatusHit, hit["status"])
 	})
 
