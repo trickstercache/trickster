@@ -55,6 +55,7 @@ func TestInfluxDB(t *testing.T) {
 
 	t.Run("flux query", func(t *testing.T) {
 		query := `from(bucket: "trickster") |> ` + dataRange +
+			` |> filter(fn: (r) => r._measurement == "cpu" and r._field == "usage_idle")` +
 			` |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)`
 		bodyJSON := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
 		resp, body := post(t, bodyJSON, "trickster-dev-token")
