@@ -117,7 +117,12 @@ func TestUnmarshalMultipleFluxTables(t *testing.T) {
 	if got := len(ds.Results[0].SeriesList[1].Points); got != 1 {
 		t.Fatalf("second table has %d points, want 1", got)
 	}
-	if _, err := MarshalTimeseries(ds, &timeseries.RequestOptions{}, 200); err != nil {
+	b, err := MarshalTimeseries(ds, &timeseries.RequestOptions{}, 200)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if got := strings.Count(string(b), "#datatype"); got != 2 {
+		t.Fatalf("marshaled %d table headers, want 2: %s", got, b)
+	}
+	assertFluxCSVTables(t, b, 3, 2)
 }

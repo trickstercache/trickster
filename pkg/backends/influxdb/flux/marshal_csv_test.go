@@ -17,10 +17,39 @@
 package flux
 
 import (
+	"bytes"
+	"encoding/csv"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
+
+func assertFluxCSVTables(t *testing.T, b []byte, wantRows, wantTables int) {
+	t.Helper()
+	reader := csv.NewReader(bytes.NewReader(b))
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows, tables int
+	var columns int
+	for _, record := range records {
+		if record[0] == "#datatype" {
+			tables++
+			columns = len(record)
+		} else if record[0] == "" && len(record) > 1 && record[1] != "result" {
+			rows++
+		}
+		if len(record) != columns {
+			t.Fatalf("table %d has %d columns, row has %d: %v", tables, columns, len(record), record)
+		}
+	}
+	if rows != wantRows || tables != wantTables {
+		t.Fatalf("parsed %d rows in %d tables, want %d rows in %d tables", rows, tables, wantRows, wantTables)
+	}
+}
 
 func TestMarshalTimeseriesCSVWriter(t *testing.T) {
 	_, err := MarshalTimeseries(nil, nil, 200)
@@ -51,4 +80,17 @@ func TestMarshalTimeseriesCSVWriter(t *testing.T) {
 	if string(b) != testDataSetAsCSV {
 		t.Error("unexpected CSV response\n" + string(b))
 	}
+}
+
+func TestMarshalTimeseriesCSVRepeatsTableHeader(t *testing.T) {
+	ds := testDataSet()
+	ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, ds.Results[0].SeriesList[0])
+	b, err := MarshalTimeseries(ds, &timeseries.RequestOptions{}, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(b), "#datatype"); got != 2 {
+		t.Fatalf("marshaled %d table headers, want 2: %s", got, b)
+	}
+	assertFluxCSVTables(t, b, 6, 2)
 }
