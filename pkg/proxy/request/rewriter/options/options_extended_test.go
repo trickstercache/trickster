@@ -19,18 +19,22 @@ package options
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
+
 	"go.yaml.in/yaml/v3"
 )
 
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	o := &Options{Name: ""}
-	if ok, err := o.Validate(); ok || err != ErrInvalidName {
-		t.Fatalf("Validate() = (%v, %v)", ok, err)
+	for _, name := range []string{"", reserved.ReferenceNone} {
+		o := &Options{Name: name}
+		if ok, err := o.Validate(); ok || err != ErrInvalidName {
+			t.Fatalf("Validate(%q) = (%v, %v)", name, ok, err)
+		}
 	}
 
-	o = &Options{Name: "rewrite-host"}
+	o := &Options{Name: "rewrite-host"}
 	if ok, err := o.Validate(); !ok || err != nil {
 		t.Fatalf("Validate() = (%v, %v)", ok, err)
 	}

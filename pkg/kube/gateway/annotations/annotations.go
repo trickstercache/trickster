@@ -42,6 +42,10 @@ import (
 // Prefix is the annotation namespace this controller owns
 const Prefix = appinfo.Domain + "/"
 
+// LabelStickyKey marks a Secret holding a key for session tokens, which a GatewayClass's parameters
+// may name; the controller watches only Secrets that carry it, beside the TLS ones
+const LabelStickyKey = Prefix + "sticky-key"
+
 // The annotation set this build understands
 const (
 	// Handler selects the path handler: proxy or proxycache
@@ -78,6 +82,14 @@ const (
 	LoadBalancing = Prefix + "load-balancing"
 	// LoadBalancingKey is what the hrw mechanism keeps together, such as client_ip
 	LoadBalancingKey = Prefix + "load-balancing-key"
+	// Sticky keeps a client on the endpoint it was first sent to in the endpoint routing mode:
+	// cookie, header or table, or none to turn it off
+	Sticky = Prefix + "sticky"
+	// StickyKey is what table mode keeps a client's endpoint by, such as client_ip
+	StickyKey = Prefix + "sticky-key"
+	// StickyTTL and StickyIdle end a session that long after it began, and once unused that long
+	StickyTTL  = Prefix + "sticky-ttl"
+	StickyIdle = Prefix + "sticky-idle"
 )
 
 // Problem is one rejected annotation, for logging and for the Events and
@@ -117,6 +129,7 @@ func (s *Set) ConfiguresPolicy() bool {
 		p.TimeoutMS > 0 || p.MaxTTLMS > 0 || p.CORSMode != "" ||
 		p.CollapsedForwarding != "" || p.RewriteTarget != "" ||
 		p.HealthMode != "" || p.LoadBalancing != "" || p.LoadBalancingKey != "" ||
+		p.Sticky != "" || p.StickyKey != "" || p.StickyTTLMS > 0 || p.StickyIdleMS > 0 ||
 		len(p.RequestHeaders) > 0 || len(p.ResponseHeaders) > 0 ||
 		len(p.CORSHeaders) > 0
 }
@@ -213,6 +226,14 @@ func (s *Set) apply(key, value string) (err error) {
 		s.Policy.LoadBalancing, err = translate.LoadBalancing(value)
 	case LoadBalancingKey:
 		s.Policy.LoadBalancingKey, err = translate.LoadBalancingKey(value)
+	case Sticky:
+		s.Policy.Sticky, err = translate.Sticky(value)
+	case StickyKey:
+		s.Policy.StickyKey, err = translate.StickyKey(value)
+	case StickyTTL:
+		s.Policy.StickyTTLMS, err = translate.StickyDuration(value)
+	case StickyIdle:
+		s.Policy.StickyIdleMS, err = translate.StickyDuration(value)
 	default:
 		return errors.New(reasonUnknown)
 	}

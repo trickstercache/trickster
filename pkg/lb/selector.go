@@ -38,8 +38,12 @@ func (n Needs) Has(want Needs) bool {
 type Flow struct {
 	// Key is a hash of whatever identifies the flow for affinity; stable across processes
 	Key uint64
+	// Pin is the Hash of the member the flow is to stay on, read only when HasPin is set
+	Pin uint64
 	// HasKey is false when the caller had nothing to derive a key from
 	HasKey bool
+	// HasPin asks a pick for the member Pin names, which it gets for as long as it is eligible
+	HasPin bool
 }
 
 // Selector is a load-balancing strategy. An instance holds the strategy's own state, such as

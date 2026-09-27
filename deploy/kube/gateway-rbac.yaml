@@ -23,6 +23,11 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["referencegrants", "backendtlspolicies"]
     verbs: ["list", "watch"]
+  # the experimental group's XBackendTrafficPolicy, read for sessionPersistence
+  # where the cluster serves it; without the grant the kind is skipped
+  - apiGroups: ["gateway.networking.x-k8s.io"]
+    resources: ["xbackendtrafficpolicies"]
+    verbs: ["list", "watch"]
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
       - gatewayclasses/status
@@ -43,7 +48,8 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses/status"]
     verbs: ["update"]
-  # backends, TLS certificates (narrowed server-side to kubernetes.io/tls),
+  # backends, TLS certificates (narrowed server-side to kubernetes.io/tls) and
+  # session token keys (to the trickstercache.org/sticky-key label),
   # GatewayClass parameters and BackendTLSPolicy CA bundles, and the
   # Namespace labels a Gateway's allowedRoutes selector reads
   - apiGroups: [""]

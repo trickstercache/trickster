@@ -20,10 +20,10 @@ import (
 	"bytes"
 	"encoding/csv"
 	"io"
-	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	dcsv "github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/csv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -51,29 +51,55 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	// Flux CSV responses may contain multiple result tables separated by blank
-	// lines, each with its own schema/column count. Allow variable fields per
-	// record so multi-table responses read without error; the downstream
-	// parser handles the single-table case and ignores structural rows it
-	// doesn't recognize.
+	// Each Flux table has its own annotations and may have a different schema.
 	cr := csv.NewReader(reader)
 	cr.FieldsPerRecord = -1
 	rows, err := cr.ReadAll()
 	if err != nil {
 		return nil, err
 	}
-	// for Flux CSV responses, the first 3 rows are annotation rows that
-	// describe the data fields and their types, while the fourth row is
-	// the standard Header Names row.
 	if len(rows) < dataStartRow {
 		return nil, timeseries.ErrInvalidBody
 	}
-	for i := range dataStartRow - 1 {
-		if len(rows[i]) == 0 || !strings.HasPrefix(rows[i][0], "#") {
+	var ds *dataset.DataSet
+	var resultsByName map[string]*dataset.Result
+	start := 0
+	for i := 1; i <= len(rows); i++ {
+		if i < len(rows) && (len(rows[i]) == 0 || rows[i][0] != "#datatype") {
+			continue
+		}
+		table := rows[start:i]
+		if len(table) < dataStartRow || len(table[0]) == 0 ||
+			table[0][0] != "#datatype" || len(table[1]) == 0 ||
+			table[1][0] != "#group" || len(table[2]) == 0 ||
+			table[2][0] != "#default" {
 			return nil, timeseries.ErrInvalidBody
 		}
+		parsed, err := parser.ToDataSet(table, trq)
+		if err != nil {
+			return nil, err
+		}
+		if ds == nil {
+			ds = parsed
+		} else {
+			if resultsByName == nil {
+				resultsByName = make(map[string]*dataset.Result, len(ds.Results)+len(parsed.Results))
+				for _, result := range ds.Results {
+					resultsByName[result.Name] = result
+				}
+			}
+			for _, result := range parsed.Results {
+				if existing := resultsByName[result.Name]; existing != nil {
+					existing.SeriesList = append(existing.SeriesList, result.SeriesList...)
+				} else {
+					ds.Results = append(ds.Results, result)
+					resultsByName[result.Name] = result
+				}
+			}
+		}
+		start = i
 	}
-	return parser.ToDataSet(rows, trq)
+	return ds, nil
 }
 
 // buildFieldDefinitions is the FieldParserFunc passed to the Parser

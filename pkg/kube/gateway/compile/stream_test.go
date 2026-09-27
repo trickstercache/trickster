@@ -170,17 +170,19 @@ func TestCompileStreamSkipsWhatItCannotServe(t *testing.T) {
 
 // a policy's mechanism balances each Service's endpoints; the weights between a rule's
 // backendRefs stay with round robin, since Gateway API makes them an exact apportionment
-func TestCompileLoadBalancingPolicy(t *testing.T) {
-	withPolicy := func(m *ir.IR, p ir.Policy) *ir.IR {
-		p.Name = "lb"
-		m.Policies = []ir.Policy{p}
-		for i := range m.Routes {
-			for j := range m.Routes[i].Rules {
-				m.Routes[i].Rules[j].Policy = "lb"
-			}
+// withPolicy governs every rule of the model by the one policy
+func withPolicy(m *ir.IR, p ir.Policy) *ir.IR {
+	p.Name = "lb"
+	m.Policies = []ir.Policy{p}
+	for i := range m.Routes {
+		for j := range m.Routes[i].Rules {
+			m.Routes[i].Rules[j].Policy = "lb"
 		}
-		return m
 	}
+	return m
+}
+
+func TestCompileLoadBalancingPolicy(t *testing.T) {
 	t.Run("tcp endpoints, weighted rule", func(t *testing.T) {
 		m := withPolicy(streamShape(ir.ProtocolTCP, tcpMember(0, "a-svc", 3), tcpMember(1, "b-svc", 1)),
 			ir.Policy{LoadBalancing: "p2c"})

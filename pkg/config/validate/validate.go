@@ -27,7 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	albregistry "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/registry"
 	albtypes "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
-	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
@@ -41,6 +40,7 @@ import (
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -500,6 +500,11 @@ func sessionBalancer(c *config.Config, listenerName, protocol, backendName strin
 		return fmt.Errorf("listener %q with protocol %q cannot read alb backend %q's hrw.key %q: "+
 			"use client_ip or user", listenerName, protocol, backendName, o.HRW.Key)
 	}
+	if err := stickyOnFlows(listenerName, protocol, backendName, o, func() bool {
+		return o.Sticky.Table.KeySource.OnNative()
+	}); err != nil {
+		return err
+	}
 	return adapter.ValidateBalancer(c, backendName, backend)
 }
 
@@ -534,6 +539,10 @@ func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 		}
 		httpListener := servesHTTPListener(c, backend)
 		if httpListener == "" {
+			if issuesTokens(o) {
+				return fmt.Errorf("alb backend %q: sticky.mode %q issues tokens, which only an http "+
+					"listener carries, and it serves none", backendName, o.Sticky.Mode)
+			}
 			continue
 		}
 		if streamOnly {
@@ -548,6 +557,13 @@ func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 		if _, err := o.LTSignalFor(listener.ProtocolHTTP); err != nil {
 			return fmt.Errorf("alb backend %q: %w", backendName, err)
 		}
+		if err := stickyOnRequests(backendName, httpListener, o); err != nil {
+			return err
+		}
+		// only an http listener is sent tokens, and there the mode defaults to cookie
+		if w := o.Sticky.KeyWarning(backendName); w != "" {
+			addWarning(c, w)
+		}
 	}
 	return nil
 }
@@ -555,16 +571,25 @@ func requestALBs(c *config.Config, streamALBs sets.Set[string]) error {
 // servesHTTPListener returns the name of an http listener the backend is mapped to, or "" when
 // it has none. A backend that names no listener serves the default one, which is http.
 func servesHTTPListener(c *config.Config, backend *bo.Options) string {
-	if len(backend.ListenerNames) == 0 {
-		return listener.DefaultFrontendName
+	if names := httpListenerNames(c, backend); len(names) > 0 {
+		return names[0]
 	}
+	return ""
+}
+
+// httpListenerNames returns the names of the http listeners the backend is mapped to, in order
+func httpListenerNames(c *config.Config, backend *bo.Options) []string {
+	if len(backend.ListenerNames) == 0 {
+		return []string{listener.DefaultFrontendName}
+	}
+	var out []string
 	for _, name := range backend.ListenerNames {
 		lo := c.Listeners[name]
 		if lo == nil || lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP {
-			return name
+			out = append(out, name)
 		}
 	}
-	return ""
+	return out
 }
 
 func streamListener(c *config.Config, name string, options *listener.Options,
@@ -603,13 +628,19 @@ func streamListener(c *config.Config, name string, options *listener.Options,
 					name, options.Protocol, backendName, o.MechanismName,
 					strings.Join(albregistry.StreamProtocols(o.MechanismName), " or "))
 			}
-			if !o.HRW.KeySource.OnStream(ao.StreamListener{
+			sl := flowkey.StreamListener{
 				TLS:           options.Protocol == listener.ProtocolTLS,
 				ProxyProtocol: options.ProxyProtocol && options.Protocol != listener.ProtocolUDP,
-			}) {
+			}
+			if !o.HRW.KeySource.OnStream(sl) {
 				return fmt.Errorf("listener %q with protocol %q cannot read alb backend %q's hrw.key %q: use "+
 					"client_ip, sni on a tls listener, or proxy_tlv:<type> on a tcp or tls listener with proxy_protocol",
 					name, options.Protocol, backendName, o.HRW.Key)
+			}
+			if err := stickyOnFlows(name, options.Protocol, backendName, o, func() bool {
+				return o.Sticky.Table.KeySource.OnStream(sl)
+			}); err != nil {
+				return err
 			}
 			if _, err := o.LTSignalFor(options.Protocol); err != nil {
 				return fmt.Errorf("listener %q: alb backend %q: %w", name, backendName, err)
@@ -738,6 +769,10 @@ func RoutesRulesAndPools(c *config.Config, clients backends.Backends) error {
 	// these validations can't be performed until the router tree is constructed
 	err = rule.ValidateOptions(clients, c.CompiledRewriters)
 	if err != nil {
+		return err
+	}
+	// which backends a listener reaches depends on the paths their clients register
+	if err = stickyCookies(c, listenerVisible(c, clients)); err != nil {
 		return err
 	}
 	return alb.ValidateClients(clients)

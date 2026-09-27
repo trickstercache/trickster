@@ -38,11 +38,12 @@ import (
 // extra is appended, already indented, under the alb block; slow names pool members that
 // answer with simulated latency.
 type strategyALB struct {
-	mech  string
-	extra string
-	stubs []*flappingStub
-	slow  map[int]string
-	front int
+	mech   string
+	extra  string
+	stubs  []*flappingStub
+	slow   map[int]string
+	front  int
+	health string
 }
 
 func startStrategyALB(t *testing.T, mech, extra string, poolSize int, slow map[int]string) *strategyALB {
@@ -78,9 +79,9 @@ func startStrategyALB(t *testing.T, mech, extra string, poolSize int, slow map[i
 	release()
 	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", ports[1]))
-	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", ports[1])
+	a.health = fmt.Sprintf("http://127.0.0.1:%d/trickster/health", ports[1])
 	for i := range a.stubs {
-		requireHealthState(t, healthURL, fmt.Sprintf("prom%d", i), "available", 10*time.Second)
+		requireHealthState(t, a.health, fmt.Sprintf("prom%d", i), "available", 10*time.Second)
 	}
 	return a
 }

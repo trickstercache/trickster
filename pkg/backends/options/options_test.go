@@ -1095,6 +1095,19 @@ func TestInitializeH2CPriorKnowledge(t *testing.T) {
 		})
 	}
 
+	// a template's discovered members supply the scheme, so one with no origin of its own passes,
+	// and one whose own origin is not http does not
+	for origin, expectErr := range map[string]bool{"": false, "https://example.com": true} {
+		o := New()
+		o.Provider = "rp"
+		o.IsTemplate = true
+		o.OriginURL = origin
+		o.H2CPriorKnowledge = true
+		if err := o.Initialize("tmpl"); (err != nil) != expectErr {
+			t.Errorf("template with origin %q: error = %v, want error %v", origin, err, expectErr)
+		}
+	}
+
 	// the default must remain unaffected by the new validation
 	o := New()
 	o.Provider = "rp"

@@ -63,3 +63,17 @@ func TestCompileSupportedByNamePanicsOnNameShortNameCollision(t *testing.T) {
 	}()
 	_ = compileSupportedByName(entries)
 }
+
+// a session is kept only where one member serves each request or flow, which is exactly the
+// mechanisms that are built from a selector
+func TestStickyMechanismsAreTheSelectors(t *testing.T) {
+	t.Parallel()
+	for _, entry := range registry {
+		want := entry.NewSelector != nil
+		for _, name := range []string{entry.Name, entry.ShortName} {
+			if got := options.SupportsSticky(name); got != want {
+				t.Errorf("SupportsSticky(%q) = %v, want %v", name, got, want)
+			}
+		}
+	}
+}

@@ -27,13 +27,16 @@ import (
 	rule "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	lo "github.com/trickstercache/trickster/v2/pkg/observability/logging/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
@@ -122,7 +125,7 @@ func TestRewritersRulesAndAuthenticators(t *testing.T) {
 	if err := Rewriters(c); err != nil {
 		t.Fatalf("Rewriters(valid) = %v", err)
 	}
-	c.RequestRewriters = rwopts.Lookup{"none": {}}
+	c.RequestRewriters = rwopts.Lookup{reserved.ReferenceNone: {}}
 	if err := Rewriters(c); err == nil {
 		t.Fatal("expected invalid rewriter name error")
 	}
@@ -134,17 +137,21 @@ func TestRewritersRulesAndAuthenticators(t *testing.T) {
 	if err := Rules(c); err != nil {
 		t.Fatalf("Rules(valid) = %v", err)
 	}
-	c.Rules = rule.Lookup{"none": rule.New()}
+	c.Rules = rule.Lookup{reserved.ReferenceNone: rule.New()}
 	if err := Rules(c); err == nil {
 		t.Fatal("expected invalid rule name error")
 	}
 
 	c = config.NewConfig()
 	c.Authenticators = auth.Lookup{
-		"example": {Provider: "basic"},
+		"example": {Provider: basic.ID},
 	}
 	if err := Authenticators(c); err != nil {
 		t.Fatalf("Authenticators(valid) = %v", err)
+	}
+	c.Authenticators = auth.Lookup{reserved.ReferenceNone: {Provider: basic.ID}}
+	if err := Authenticators(c); !stderrors.Is(err, ae.ErrInvalidName) {
+		t.Fatalf("Authenticators(%q) = %v; want %v", reserved.ReferenceNone, err, ae.ErrInvalidName)
 	}
 	c.Authenticators = auth.Lookup{
 		"example": {Provider: "not-a-provider"},

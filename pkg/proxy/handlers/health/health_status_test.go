@@ -17,6 +17,7 @@
 package health
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	uropt "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -230,6 +232,120 @@ func TestUpdateStatusTextBackendsAndALB(t *testing.T) {
 	}
 	if !strings.Contains(d.json, `"name":"edge"`) {
 		t.Fatalf("expected ALB section for edge: %s", d.json)
+	}
+}
+
+func TestUpdateStatusTextDrainingPoolMembers(t *testing.T) {
+	t.Parallel()
+
+	member := func(name string) *configBackend {
+		o := bo.New()
+		o.Name = name
+		o.Provider = providers.ReverseProxyShort
+		o.OriginURL = "http://example.com"
+		return &configBackend{name: name, cfg: o}
+	}
+	albOpts := bo.New()
+	albOpts.Provider = providers.ALB
+	albOpts.ALBOptions = ao.New()
+	albOpts.ALBOptions.MechanismName = names.MechanismRR
+	albOpts.ALBOptions.Pool = ao.Members("app1", "app2", "app3")
+	albOpts.ALBOptions.Pool[1].Drain = true
+	albOpts.ALBOptions.Pool[2].Drain = true
+	cl, err := alb.NewClient("drain-edge", albOpts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	albClient := cl.(*alb.Client)
+	bes := backends.Backends{
+		"app1": member("app1"), "app2": member("app2"),
+		"app3": member("app3"), "drain-edge": albClient,
+	}
+	statuses := healthcheck.StatusLookup{}
+	for _, name := range []string{"app1", "app2", "app3"} {
+		statuses[name] = healthcheck.NewStatus(name, providers.ReverseProxyShort, "",
+			healthcheck.StatusPassing, time.Time{}, nil)
+	}
+	statuses["app3"].Set(healthcheck.StatusFailing)
+	if err := albClient.ValidateAndStartPool(bes, statuses); err != nil {
+		t.Fatalf("ValidateAndStartPool: %v", err)
+	}
+	t.Cleanup(albClient.StopPool)
+
+	hd := &healthDetail{}
+	updateStatusText(fixedNow(), &stubHealthChecker{statuses: statuses}, hd, bes)
+	d := hd.detail.Load()
+	// a draining member is listed under its health too
+	for _, want := range []string{
+		`"availablePoolMembers":["app1","app2"]`,
+		`"unavailablePoolMembers":["app3"]`, `"drainingPoolMembers":["app2","app3"]`,
+	} {
+		if !strings.Contains(d.json, want) {
+			t.Errorf("json lacks %s: %s", want, d.json)
+		}
+	}
+	if !strings.Contains(d.text, "d:[app2,app3]") {
+		t.Errorf("text lacks the draining members: %s", d.text)
+	}
+	if !strings.Contains(d.yaml, "drainingPoolMembers:") {
+		t.Errorf("yaml lacks the draining members: %s", d.yaml)
+	}
+}
+
+// a discovered ALB whose members all drain takes no new work, so it is unavailable whatever their health
+func TestUpdateStatusTextAllDrainingALBIsUnavailable(t *testing.T) {
+	t.Parallel()
+
+	albOpts := bo.New()
+	albOpts.Provider = providers.ALB
+	albOpts.ALBOptions = ao.New()
+	albOpts.ALBOptions.MechanismName = names.MechanismRR
+	albOpts.ALBOptions.Discovery = &ao.DiscoveryOptions{DiscovererName: "d", TemplateBackend: "t"}
+	cl, err := alb.NewClient("drained", albOpts, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	albClient := cl.(*alb.Client)
+	statuses := healthcheck.StatusLookup{}
+	bes := backends.Backends{"drained": albClient}
+	if err := albClient.ValidateAndStartPool(bes, statuses); err != nil {
+		t.Fatalf("ValidateAndStartPool: %v", err)
+	}
+	t.Cleanup(albClient.StopPool)
+
+	// discovered members join the way autodiscovery adds them
+	discovered := func(name string, draining bool) *pool.Target {
+		o := bo.New()
+		o.Name = name
+		o.Provider = providers.ReverseProxyShort
+		st := healthcheck.NewStatus(name, providers.ReverseProxyShort, "",
+			healthcheck.StatusPassing, time.Time{}, nil)
+		statuses[name] = st
+		return pool.NewTarget(nil, st, &configBackend{name: name, cfg: o}).
+			WithExternalHealth().WithDraining(draining)
+	}
+	unavailable := func() bool {
+		hd := &healthDetail{}
+		updateStatusText(fixedNow(), &stubHealthChecker{statuses: statuses}, hd, bes)
+		var page healthStatus
+		if err := json.Unmarshal([]byte(hd.detail.Load().json), &page); err != nil {
+			t.Fatal(err)
+		}
+		for _, b := range page.Unavailable {
+			if b.Name == "drained" {
+				return true
+			}
+		}
+		return false
+	}
+
+	albClient.SetDynamicTargets(pool.Targets{discovered("d1", true), discovered("d2", true)})
+	if !unavailable() {
+		t.Fatal("an ALB whose members all drain is reported available")
+	}
+	albClient.SetDynamicTargets(pool.Targets{discovered("d1", true), discovered("d2", false)})
+	if unavailable() {
+		t.Fatal("an ALB with a member that takes new work is reported unavailable")
 	}
 }
 

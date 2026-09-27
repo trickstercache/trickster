@@ -28,7 +28,8 @@ type Pick struct {
 	member   *Member
 	balancer *Balancer
 	// monotonic nanoseconds since the process's epoch; set only for a strategy that needs latency
-	start int64
+	start  int64
+	pinned bool
 }
 
 // epoch anchors the monotonic clock readings that picks are timed with
@@ -41,6 +42,11 @@ func monotonic() int64 {
 // Member returns the selected member, whose Value is what the caller dispatches to.
 func (p Pick) Member() *Member {
 	return p.member
+}
+
+// Pinned reports whether the flow went to the member it was pinned to, not the strategy's choice.
+func (p Pick) Pinned() bool {
+	return p.pinned
 }
 
 // Established reports that the member was reached and how long that took, as a latency
@@ -143,8 +149,8 @@ type EjectionOptions struct {
 	// Duration is how long an ejected member stays out. When it ends the member is selected
 	// again only if its Health, if it has one, still meets the pool's floor.
 	Duration time.Duration
-	// MaxPercent is the most of a pool's members that may be out at once, 1-100; the last
-	// live member is never ejected whatever the percentage. Zero means 50.
+	// MaxPercent is the most of a pool's members that may be out at once, 1-100; the last live
+	// member that is not draining is never ejected, whatever the percentage. Zero means 50.
 	MaxPercent int
 }
 
@@ -265,11 +271,19 @@ func (b *Balancer) Needs() Needs {
 	return b.needs
 }
 
-// Pick commits one flow to an eligible member of the current pool.
+// Pick commits one flow to an eligible member of the current pool: the member the flow is pinned
+// to while it is eligible, whatever its tier and even while it drains, else the strategy's choice.
 func (b *Balancer) Pick(f Flow) (Pick, bool) {
 	p := b.pool.Load()
 	if p == nil {
 		return Pick{}, false
+	}
+	if f.HasPin {
+		if m := p.pinned(f.Pin); m != nil {
+			pk, _ := b.commit(m)
+			pk.pinned = true
+			return pk, true
+		}
 	}
 	snap := p.Snapshot()
 	if len(snap.Members) == 0 {
@@ -280,6 +294,16 @@ func (b *Balancer) Pick(f Flow) (Pick, bool) {
 		ps = b.prepare(snap)
 	}
 	return b.commit(ps.prepared.Select(f))
+}
+
+// CanPick reports, without committing anything, whether Pick would now find a member for the
+// flow: its eligible pinned member, or any member of the current snapshot.
+func (b *Balancer) CanPick(f Flow) bool {
+	p := b.pool.Load()
+	if p == nil {
+		return false
+	}
+	return (f.HasPin && p.pinned(f.Pin) != nil) || len(p.Snapshot().Members) > 0
 }
 
 // prepare is the rare path taken on the first pick of each snapshot. Racing callers build
@@ -307,41 +331,57 @@ func (b *Balancer) commit(m *Member) (Pick, bool) {
 	return pk, true
 }
 
-// Alternatives returns the eligible members that skip does not report: the strategy's choice
-// among them for the flow first, then the others in pool order from there. It is not a
-// selection path: it prepares a one-off snapshot, once, however many members it returns.
+// Alternatives lists the eligible members skip does not report: the pinned member (any tier, even
+// draining), the strategy's choice, then pool order, from a one-off snapshot.
 func (b *Balancer) Alternatives(f Flow, skip func(*Member) bool) []*Member {
 	p := b.pool.Load()
 	if p == nil {
 		return nil
 	}
-	snap := p.Snapshot()
-	if len(snap.Members) == 0 {
-		return nil
-	}
-	others := make([]*Member, 0, len(snap.Members))
-	for _, m := range snap.Members {
-		if skip == nil || !skip(m) {
-			others = append(others, m)
+	var lead *Member
+	if f.HasPin {
+		if m := p.pinned(f.Pin); m != nil && (skip == nil || !skip(m)) {
+			lead = m
 		}
 	}
-	if len(others) == 0 {
+	snap := p.Snapshot()
+	if lead == nil && len(snap.Members) == 0 {
 		return nil
 	}
-	first := b.selector.Prepare(&Snapshot{Members: others, Tier: snap.Tier, Gen: snap.Gen}).Select(f)
-	if first == nil {
+	out := make([]*Member, 0, len(snap.Members)+1)
+	if lead != nil {
+		out = append(out, lead)
+	}
+	led := len(out)
+	for _, m := range snap.Members {
+		if m != lead && (skip == nil || !skip(m)) {
+			out = append(out, m)
+		}
+	}
+	others := out[led:]
+	var first *Member
+	if len(others) > 0 {
+		first = b.selector.Prepare(&Snapshot{Members: others, Tier: snap.Tier, Gen: snap.Gen}).Select(f)
+	}
+	switch {
+	case first == nil && led == 0:
 		return nil
+	case first == nil:
+		// no other member, or a strategy that chooses none; the pin does not depend on it
+		return out[:led]
+	case first == lead:
+		return out
 	}
 	i := slices.Index(others, first)
 	if i < 0 {
 		// the strategy's choice is honored as Pick honors it, even one it was never offered
-		return append([]*Member{first}, others...)
+		return slices.Insert(out, led, first)
 	}
-	// rotate the choice to the front in place: three reversals, no second slice
+	// rotate the choice to the front of the others in place: three reversals, no second slice
 	slices.Reverse(others[:i])
 	slices.Reverse(others[i:])
 	slices.Reverse(others)
-	return others
+	return out
 }
 
 // Commit commits a flow to a member that Alternatives returned, as Pick would have.
@@ -349,8 +389,15 @@ func (b *Balancer) Commit(m *Member) (Pick, bool) {
 	return b.commit(m)
 }
 
-// Repick commits the flow to an eligible member that is none of failed, for a caller retrying
-// work those members could not take. It is not a selection path.
+// Pinnable reports whether the current pool has a member that the pin names, eligible or not: a
+// pin it cannot honor is then to a member that is unavailable rather than gone.
+func (b *Balancer) Pinnable(pin uint64) bool {
+	p := b.pool.Load()
+	return p != nil && p.Pinnable(pin)
+}
+
+// Repick commits the flow to an eligible member not in failed, for a retry: its pinned member while
+// eligible, else the strategy's choice. It is not a selection path.
 func (b *Balancer) Repick(f Flow, failed ...*Member) (Pick, bool) {
 	alts := b.Alternatives(f, func(m *Member) bool { return slices.Contains(failed, m) })
 	if len(alts) == 0 {

@@ -87,3 +87,8 @@ func (c *replayConn) Read(p []byte) (int, error) {
 func (c *replayConn) CloseWrite() error {
 	return closeWrite(c.Conn)
 }
+
+// Reset resets the underlying connection when it can be reset.
+func (c *replayConn) Reset() error {
+	return resetConn(c.Conn)
+}

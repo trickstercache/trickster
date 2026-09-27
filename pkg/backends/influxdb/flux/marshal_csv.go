@@ -142,30 +142,31 @@ func processSeriesHeader(st *state) {
 		return
 	}
 	st.fds = st.s.Header.FieldDefinitions()
-	if st.prev == nil { // TODO: also if schema has changed between s and prev
-		if st.t {
-			if err := printCsvDatatypeAnnotationRow(st.w, st.fds); err != nil {
-				logger.Error("failed to write csv datatype annotation row",
-					logging.Pairs{keys.Error: err})
-			}
+	if st.prev != nil {
+		_ = st.w.Write(nil)
+	}
+	if st.t {
+		if err := printCsvDatatypeAnnotationRow(st.w, st.fds); err != nil {
+			logger.Error("failed to write csv datatype annotation row",
+				logging.Pairs{keys.Error: err})
 		}
-		if st.g {
-			if err := printCsvGroupAnnotationRow(st.w, st.fds); err != nil {
-				logger.Error("failed to write csv group annotation row",
-					logging.Pairs{keys.Error: err})
-			}
+	}
+	if st.g {
+		if err := printCsvGroupAnnotationRow(st.w, st.fds); err != nil {
+			logger.Error("failed to write csv group annotation row",
+				logging.Pairs{keys.Error: err})
 		}
-		if st.d {
-			if err := printCsvDefaultAnnotationRow(st.w, st.fds); err != nil {
-				logger.Error("failed to write csv group annotation row",
-					logging.Pairs{keys.Error: err})
-			}
+	}
+	if st.d {
+		if err := printCsvDefaultAnnotationRow(st.w, st.fds); err != nil {
+			logger.Error("failed to write csv default annotation row",
+				logging.Pairs{keys.Error: err})
 		}
-		if st.h {
-			if err := printCsvHeaderRow(st.w, st.fds); err != nil {
-				logger.Error("failed to write csv header row",
-					logging.Pairs{keys.Error: err})
-			}
+	}
+	if st.h {
+		if err := printCsvHeaderRow(st.w, st.fds); err != nil {
+			logger.Error("failed to write csv header row",
+				logging.Pairs{keys.Error: err})
 		}
 	}
 	setStartStopTimes(st.fds, st.e)

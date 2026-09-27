@@ -20,8 +20,8 @@ import (
 	"errors"
 	"slices"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -42,10 +42,7 @@ type Lookup map[string]*Options
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var (
-	ErrInvalidName  = errors.New("invalid rewriter name")
-	restrictedNames = sets.New([]string{"", "none"})
-)
+var ErrInvalidName = errors.New("invalid rewriter name")
 
 // New returns a new Rewriter Options with default values
 func New() *Options {
@@ -68,7 +65,7 @@ func (o *Options) Initialize(_ string) error {
 
 // Validate returns an error if there are issues with the Rewriter options.
 func (o *Options) Validate() (bool, error) {
-	if restrictedNames.Contains(o.Name) {
+	if o.Name == "" || reserved.IsReference(o.Name) {
 		return false, ErrInvalidName
 	}
 	return true, nil

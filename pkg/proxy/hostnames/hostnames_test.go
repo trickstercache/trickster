@@ -85,3 +85,37 @@ func TestReserved(t *testing.T) {
 		}
 	}
 }
+
+func TestOverlap(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want bool
+	}{
+		{"", "example.com", true},
+		{"example.com", "EXAMPLE.com", true},
+		{"a.example.com", "b.example.com", false},
+		{"*.example.com", "a.example.com", true},
+		{"*.example.com", "a.b.example.com", false},
+		{"**.example.com", "a.b.example.com", true},
+		{"*.example.com", "example.com", false},
+		{"*.example.com", "**.example.com", true},
+		{"*.b.example.com", "**.example.com", true},
+		{"*.b.example.com", "*.example.com", false},
+		{"**.b.example.com", "*.example.com", false},
+		{"*.example.com", "**.b.example.com", false},
+		{"**.example.com", "**.b.example.com", true},
+		{"*.example.com", "*.example.org", false},
+		{"a.example.com", "*.example.org", false},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.want, Overlap(tt.a, tt.b), "%q and %q", tt.a, tt.b)
+		require.Equal(t, tt.want, Overlap(tt.b, tt.a), "%q and %q", tt.b, tt.a)
+	}
+}
+
+func TestListsOverlap(t *testing.T) {
+	require.True(t, ListsOverlap(nil, []string{"a.example.com"}))
+	require.True(t, ListsOverlap([]string{"a.example.com"}, nil))
+	require.True(t, ListsOverlap([]string{"a.example.com", "b.example.com"}, []string{"**.example.com"}))
+	require.False(t, ListsOverlap([]string{"a.example.com"}, []string{"b.example.com", "c.example.com"}))
+}

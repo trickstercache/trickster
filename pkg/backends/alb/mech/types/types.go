@@ -21,6 +21,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 )
@@ -77,6 +78,11 @@ type PickerMechanism interface {
 	PoolMechanism
 	Picker() lb.Picker
 	Balancer() *lb.Balancer
+	// FollowPins has the mechanism pick the next level of the sessions of an ALB that keeps
+	// sessions and has it in its pool.
+	FollowPins()
+	// StickyTable returns the table the mechanism keeps its sessions in, or nil when it keeps none.
+	StickyTable() *sticky.Table
 }
 
 // Spread is how a mechanism commits one flow to several pool members at once.

@@ -25,11 +25,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 const (
 	// DefaultIPv6Prefix is how many leading bits of an IPv6 client address form its key.
-	DefaultIPv6Prefix = 64
+	DefaultIPv6Prefix = flowkey.DefaultIPv6Prefix
 	// LTSignalFirstWrite samples latency at the first byte written to an HTTP client.
 	LTSignalFirstWrite = "first_write"
 	// LTSignalConnect samples the time to connect to the member; tcp and tls listeners.
@@ -183,14 +184,14 @@ var (
 
 // HRWOptions configures the highest random weight mechanism.
 type HRWOptions struct {
-	// Key is what a client's affinity follows: client_ip (the default), host,
-	// header:<name>, cookie:<name> or query:<name>.
+	// Key is what a client's affinity follows: client_ip (the default), host, header:<name>,
+	// cookie:<name>, query:<name>, sni, proxy_tlv:<type> or user.
 	Key string `yaml:"key,omitempty"`
 	// IPv6Prefix is how many leading bits of an IPv6 client address form a client_ip key.
 	// The default, 64, keeps a client that rotates its privacy address on one member.
 	IPv6Prefix int `yaml:"ipv6_prefix,omitempty"`
 	// KeySource is Key, parsed
-	KeySource KeySource `yaml:"-"`
+	KeySource flowkey.KeySource `yaml:"-"`
 }
 
 // LTOptions configures the least time mechanism.
@@ -226,7 +227,7 @@ func (o LTOptions) isZero() bool {
 func (o *Options) initializeStrategies() error {
 	switch o.MechanismName {
 	case names.MechanismHRW, names.MechanismHighestRandomWeight:
-		ks, err := ParseKeySource(o.HRW.Key)
+		ks, err := ParseHRWKey(o.HRW.Key)
 		if err != nil {
 			return fmt.Errorf("hrw.key: %w", err)
 		}
@@ -269,7 +270,7 @@ func (o *Options) validateStrategies() error {
 		if !o.LT.isZero() {
 			return ErrLTOnlyForLT
 		}
-		if _, err := ParseKeySource(o.HRW.Key); err != nil {
+		if _, err := ParseHRWKey(o.HRW.Key); err != nil {
 			return fmt.Errorf("hrw.key: %w", err)
 		}
 		if o.HRW.IPv6Prefix < 0 || o.HRW.IPv6Prefix > 128 {

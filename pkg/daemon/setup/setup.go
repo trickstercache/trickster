@@ -84,13 +84,8 @@ func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
 	if conf == nil {
 		return nil, nil, te.ErrInvalidOptions
 	}
-	if conf.Flags != nil {
-		if conf.Flags.PrintVersion {
-			return conf, nil, nil
-		}
-		if conf.Flags.ValidateConfig {
-			return conf, nil, nil
-		}
+	if conf.Flags != nil && conf.Flags.PrintVersion {
+		return conf, nil, nil
 	}
 	err = conf.Process()
 	if err != nil {
@@ -101,6 +96,11 @@ func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
 	err = validate.RoutesRulesAndPools(conf, clients)
 	if err != nil {
 		return nil, nil, err
+	}
+	if conf.Flags != nil && conf.Flags.ValidateConfig {
+		// -validate-config runs every configuration check, including those that need the backend
+		// clients, but applies nothing: no listener, cache, authenticator or discovery is started
+		return conf, nil, nil
 	}
 	return conf, clients, nil
 }
@@ -297,6 +297,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg,
 		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler})
+	// only now has every stream and native listener taken the sticky table it keeps its flows in
+	alb.ForgetUnusedStickyTables(clients)
 
 	accesslog.CommitGeneration(
 		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)

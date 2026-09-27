@@ -163,8 +163,8 @@ func TestALBDiscoveryKind(t *testing.T) {
 	scaleWebecho(4)
 	scaleWebecho(2)
 
-	// rolling restart under sustained load: terminating endpoints drain
-	// out before their pods die, so clients see zero errors
+	// rolling restart under sustained load: terminating endpoints take no
+	// new requests and leave before their pods die, so clients see zero errors
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	var requests, errors atomic.Int64
@@ -210,6 +210,9 @@ func TestALBDiscoveryKind(t *testing.T) {
 	require.Zero(t, errors.Load(),
 		"rolling restart under load must produce zero client errors; failures: %s",
 		failures)
+	// old pods stay as draining members until they stop serving; let the last one leave
+	// before the API goes away, or the paused control plane would keep it
+	waitDiscoveredMembers(t, metricsAddr, "disco-alb", 2, time.Minute)
 
 	// sever the API-server connection: pause the kind control-plane
 	// node's container. The workloads live on the worker node, so the

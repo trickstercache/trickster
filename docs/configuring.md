@@ -287,7 +287,7 @@ The top-level `frontend` section and listener address/port fields under `metrics
 
 ## Configuration Validation
 
-Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration.
+Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration. The command runs every configuration check, including those that need the backend clients, such as route registration and sticky cookie conflicts. It opens no listener, cache or log file, builds no authenticator and starts no health check or discovery, so startup can still fail at one of those steps.
 
 ## Reloading the Configuration
 
@@ -372,9 +372,12 @@ kubernetes:
     healthcheck:                # the active probe used when health_mode is probe
       path: /healthz
       interval: 5s
+    sticky_secret_file: /etc/trickster/sticky/key  # keys session tokens; the same on every replica
 ```
 
 `defaults.routing_mode` is required and has no default. In `service` mode a generated backend sends traffic to the Service's cluster IP and kube-proxy load balances it. In `endpoint` mode Trickster discovers the Service's endpoints and load balances across them itself, which is what makes zero-error rolling deploys and per-endpoint health possible. The two have different failure modes, so Trickster refuses to guess: a configuration that omits the mode fails validation rather than silently picking one. In `endpoint` mode, `defaults.health_mode` decides whether discovered endpoints are trusted on their EndpointSlice readiness (`provider`, the default) or actively probed (`probe`), and `defaults.healthcheck` is the probe used in the latter case; unset, it probes the origin's root every 5 seconds.
+
+`defaults.sticky_secret_file` names a file of at least 32 bytes that keys the session tokens every generated ALB issues, for a route's `sessionPersistence` or a `sticky` annotation, parameter or policy. Mount it from a Secret at the same path on every replica, so that each replica honors the others' tokens. A GatewayClass's `sticky_secret` parameter, which names a Secret, takes its place for that class's routes. Unset, each process uses a random key of its own, which suits a single replica only. See [kubernetes-gateway.md](./kubernetes-gateway.md#session-persistence).
 
 `gateway_class_controller_name` is the name this instance claims GatewayClasses with, and is also matched against an IngressClass's `spec.controller`. Objects belonging to any other controller are ignored entirely and never receive status, because writing status onto another controller's object is worse than ignoring it. An Ingress with no `spec.ingressClassName` is claimed only when one of this controller's IngressClasses is annotated `ingressclass.kubernetes.io/is-default-class: "true"`.
 

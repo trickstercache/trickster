@@ -265,6 +265,10 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 	// swap the pool before releasing removed members so requests never see
 	// a pool referencing a torn-down member
 	m.swapPoolLocked()
+	if cn, ok := m.cfg.HealthChecker.(healthcheck.ChangeNotifier); ok {
+		// the health page reads membership and draining from the pool, which registrations precede
+		cn.NotifyChange()
+	}
 
 	for name, e := range removed {
 		if _, replaced := m.members[name]; replaced {
@@ -436,12 +440,19 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		}
 	}
 
-	e.target = pool.NewWeightedTarget(client.Router(), e.status, client,
-		member.Weight)
-	if e.external {
-		e.target = e.target.WithExternalHealth()
-	}
+	e.target = e.newTarget(member)
 	return e, nil
+}
+
+// newTarget builds the member's pool target around its client and status; a member the
+// provider reports terminating drains, keeping its pinned sessions and taking no new work
+func (e *memberEntry) newTarget(member discovery.Member) *pool.Target {
+	t := pool.NewWeightedTarget(e.client.Router(), e.status, e.client, member.Weight).
+		WithDraining(member.Ready == discovery.Terminating)
+	if e.external {
+		t = t.WithExternalHealth()
+	}
+	return t
 }
 
 // healthDescription tags a discovered member on the health status page
@@ -467,7 +478,7 @@ func (m *Manager) admitOnReadiness(name string, st *healthcheck.Status,
 		logging.Pairs{keys.ALBName: m.albName, keys.Member: name})
 }
 
-// updateMember applies attribute-only changes (weight, readiness, labels)
+// updateMember applies attribute-only changes (weight, readiness, draining, labels)
 // to a live member without rebuilding its backend client
 func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Member) {
 	if member.Ready != e.member.Ready {
@@ -477,14 +488,11 @@ func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Mem
 			m.admitOnReadiness(name, e.status, member)
 		}
 	}
-	if member.Weight != e.member.Weight {
-		// targets are immutable; rebuild this member's target around the
-		// same client, status and runtime stats
-		e.target = pool.NewWeightedTarget(e.client.Router(), e.status,
-			e.client, member.Weight).WithStatsOf(e.target)
-		if e.external {
-			e.target = e.target.WithExternalHealth()
-		}
+	if member.Weight != e.member.Weight ||
+		(member.Ready == discovery.Terminating) != (e.member.Ready == discovery.Terminating) {
+		// targets are immutable; rebuild this member's target around the same client, status
+		// and runtime stats, so a member that starts draining keeps its name and so its pins
+		e.target = e.newTarget(member).WithStatsOf(e.target)
 	}
 	e.member = member
 }
@@ -580,15 +588,13 @@ func (m *Manager) MemberNames() []string {
 	return names
 }
 
-// statusForReadyState maps provider-reported readiness onto health check
-// status values: ready members are Passing, not-ready and terminating
-// members are Failing, and readiness-unknown members are Unchecked (see the
-// healthy_floor interaction notes on options.HealthModeProvider)
+// statusForReadyState maps provider readiness onto health: ready and terminating (still serving,
+// draining) members pass, not-ready ones fail and unknown ones are Unchecked
 func statusForReadyState(r discovery.ReadyState) int32 {
 	switch r {
-	case discovery.Ready:
+	case discovery.Ready, discovery.Terminating:
 		return healthcheck.StatusPassing
-	case discovery.NotReady, discovery.Terminating:
+	case discovery.NotReady:
 		return healthcheck.StatusFailing
 	}
 	return healthcheck.StatusUnchecked

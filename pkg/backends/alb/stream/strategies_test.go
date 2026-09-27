@@ -16,9 +16,9 @@
 package stream
 
 import (
-	"errors"
 	"net/netip"
 	"strconv"
+	"syscall"
 	"testing"
 	"time"
 
@@ -32,8 +32,6 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
-
-var errRefused = errors.New("connection refused")
 
 func origins(t testing.TB, n int) []backends.Backend {
 	t.Helper()
@@ -255,24 +253,24 @@ func TestConnectRetries(t *testing.T) {
 	}
 	flow := clientFlow(l4.ProtocolTCP, "198.51.100.1:5000", "")
 	first, _ := u.Pick(flow)
-	first.Dialed(time.Millisecond, errRefused)
+	first.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	second, ok := retrier.Retry(flow, first)
 	if !ok || second.Addr() == first.Addr() {
 		t.Fatalf("first retry = %v, %v", second, ok)
 	}
-	second.Dialed(time.Millisecond, errRefused)
+	second.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	third, ok := retrier.Retry(flow, second)
 	if !ok || third.Addr() == second.Addr() {
 		t.Fatalf("second retry = %v, %v", third, ok)
 	}
-	third.Dialed(time.Millisecond, errRefused)
+	third.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	if _, ok := retrier.Retry(flow, third); ok {
 		t.Error("a third retry was offered with connect_retries: 2")
 	}
 	// the default offers none, and a route that is not the adapter's is not retried
 	none := FromBackend(newALB(t, "none", "rr", up(m[0], 1), up(m[1], 1))).(l4.Retrier)
 	r, _ := none.(l4.Upstream).Pick(flow)
-	r.Dialed(time.Millisecond, errRefused)
+	r.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	if _, ok := none.Retry(flow, r); ok {
 		t.Error("a retry was offered with no connect_retries configured")
 	}
@@ -288,7 +286,7 @@ func TestConnectRetries(t *testing.T) {
 		if !ok {
 			continue
 		}
-		r.Dialed(time.Millisecond, errRefused)
+		r.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 		if next, ok := gone.(l4.Retrier).Retry(flow, r); ok {
 			t.Fatalf("retried onto %s, past a member that refuses its share", next.Addr())
 		}
@@ -312,7 +310,7 @@ func TestPassiveEjectionThroughTheAdapter(t *testing.T) {
 			t.Fatal("refused")
 		}
 		if r.Addr() == "10.0.0.2:9000" {
-			r.Dialed(time.Millisecond, errRefused)
+			r.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 			continue
 		}
 		r.Dialed(time.Millisecond, nil)
@@ -336,7 +334,7 @@ func TestPassiveEjectionThroughTheAdapter(t *testing.T) {
 		r, _ := uu.Pick(clientFlow(l4.ProtocolUDP, "198.51.100.1:5000", ""))
 		r.Dialed(0, nil)
 		if r.Addr() == "10.0.0.1:9000" {
-			r.Closed(errRefused)
+			r.Closed(syscall.ECONNREFUSED)
 			continue
 		}
 		r.Closed(nil)
@@ -362,10 +360,10 @@ func TestMemberMetrics(t *testing.T) {
 	}
 	r.Closed(nil)
 	r, _ = u.Pick(flow)
-	r.Dialed(time.Millisecond, errRefused)
+	r.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	r, _ = u.Pick(flow)
 	r.Dialed(0, nil)
-	r.Closed(errRefused)
+	r.Closed(syscall.ECONNREFUSED)
 	r, _ = u.Pick(flow)
 	r.Dialed(0, l4.ErrAbandoned)
 	if testutil.ToFloat64(active) != 0 {
@@ -480,7 +478,7 @@ func exhaust(t *testing.T, u l4.Upstream, flow l4.Flow) []string {
 	var tried []string
 	for ok {
 		tried = append(tried, r.Addr())
-		r.Dialed(time.Millisecond, errRefused)
+		r.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 		r, ok = u.(l4.Retrier).Retry(flow, r)
 	}
 	return tried
@@ -558,13 +556,13 @@ func TestPassiveEjectionFollowsConnectOrder(t *testing.T) {
 		t.Fatal("the member was never picked")
 		return nil
 	}
-	toA().Dialed(time.Millisecond, errRefused)
+	toA().Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	long := toA()
 	long.Dialed(time.Millisecond, nil)
 	if st.ConnectFailures() != 0 {
 		t.Fatal("a successful dial did not end the run of failed dials")
 	}
-	toA().Dialed(time.Millisecond, errRefused)
+	toA().Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	if st.Ejected(time.Now()) {
 		t.Fatal("ejected for two failed dials that a successful one came between")
 	}
@@ -572,7 +570,7 @@ func TestPassiveEjectionFollowsConnectOrder(t *testing.T) {
 	if st.ConnectFailures() != 1 {
 		t.Errorf("connect failures after the long connection closed = %d", st.ConnectFailures())
 	}
-	toA().Dialed(time.Millisecond, errRefused)
+	toA().Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	if !st.Ejected(time.Now()) {
 		t.Error("two consecutive failed dials did not eject the member")
 	}
@@ -594,7 +592,7 @@ func TestPassiveEjectionFollowsConnectOrder(t *testing.T) {
 		t.Fatal("the member was never picked")
 		return nil
 	}
-	session().Closed(errRefused)
+	session().Closed(syscall.ECONNREFUSED)
 	if ust.ConnectFailures() != 1 {
 		t.Fatalf("opening a udp socket reset the count: %d", ust.ConnectFailures())
 	}
@@ -604,7 +602,7 @@ func TestPassiveEjectionFollowsConnectOrder(t *testing.T) {
 		t.Error("a reply did not end the run of unreachable sessions")
 	}
 	answered.Closed(nil)
-	session().Closed(errRefused)
+	session().Closed(syscall.ECONNREFUSED)
 	session().Closed(nil)
 	if ust.ConnectFailures() != 0 || ust.Ejected(time.Now()) {
 		t.Error("a session that ended clean did not end the run")
@@ -627,7 +625,7 @@ func TestRetryRefusesAMemberAlreadyTried(t *testing.T) {
 	if !ok {
 		t.Fatal("refused")
 	}
-	first.Dialed(time.Millisecond, errRefused)
+	first.Dialed(time.Millisecond, syscall.ECONNREFUSED)
 	if again, ok := u.Retry(flow, first); ok {
 		t.Errorf("retried onto %s, which had just failed", again.Addr())
 	}

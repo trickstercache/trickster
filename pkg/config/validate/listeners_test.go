@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -588,9 +589,9 @@ func TestListenersStreamProtocols(t *testing.T) {
 		set(b.ALBOptions)
 		return b
 	}
-	keyed := func(kind ao.KeyKind, spelled string) func(*ao.Options) {
+	keyed := func(kind flowkey.KeyKind, spelled string) func(*ao.Options) {
 		return func(o *ao.Options) {
-			o.HRW = ao.HRWOptions{Key: spelled, KeySource: ao.KeySource{Kind: kind, Name: "X"}}
+			o.HRW = ao.HRWOptions{Key: spelled, KeySource: flowkey.KeySource{Kind: kind, Name: "X"}}
 		}
 	}
 	signal := func(s string) func(*ao.Options) { return func(o *ao.Options) { o.LT.Signal = s } }
@@ -642,18 +643,18 @@ func TestListenersStreamProtocols(t *testing.T) {
 		{"tcp_alb_hrw", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albBackend("hrw"), "m1": member}), ""},
 		// a key must be something the listener can read: the client address on any of them,
 		// the server name on tls alone, and nothing of a request
-		{"tls_hrw_sni", newConfig(listener.ProtocolTLS, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeySNI, "sni")), "m1": member}), ""},
-		{"tcp_hrw_sni", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeySNI, "sni")), "m1": member}),
+		{"tls_hrw_sni", newConfig(listener.ProtocolTLS, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeySNI, "sni")), "m1": member}), ""},
+		{"tcp_hrw_sni", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeySNI, "sni")), "m1": member}),
 			"cannot read alb backend \"pool\"'s hrw.key \"sni\""},
-		{"udp_hrw_sni", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeySNI, "sni")), "m1": member}), "cannot read"},
-		{"tcp_hrw_header", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyHeader, "header:X")), "m1": member}),
+		{"udp_hrw_sni", newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeySNI, "sni")), "m1": member}), "cannot read"},
+		{"tcp_hrw_header", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeyHeader, "header:X")), "m1": member}),
 			"use client_ip, sni on a tls listener, or proxy_tlv:<type>"},
 		// a PROXY protocol TLV is there to read only where the header is accepted, which udp never does
-		{"tcp_hrw_tlv", behindProxy(newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})), ""},
-		{"tls_hrw_tlv", behindProxy(newConfig(listener.ProtocolTLS, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})), ""},
-		{"tcp_hrw_tlv_no_proxy_protocol", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member}),
+		{"tcp_hrw_tlv", behindProxy(newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})), ""},
+		{"tls_hrw_tlv", behindProxy(newConfig(listener.ProtocolTLS, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})), ""},
+		{"tcp_hrw_tlv_no_proxy_protocol", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member}),
 			"cannot read alb backend \"pool\"'s hrw.key \"proxy_tlv:0xEA\""},
-		{"udp_hrw_tlv", behindProxy(newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("hrw", keyed(ao.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})),
+		{"udp_hrw_tlv", behindProxy(newConfig(listener.ProtocolUDP, bo.Lookup{"pool": albWith("hrw", keyed(flowkey.KeyProxyTLV, "proxy_tlv:0xEA")), "m1": member})),
 			"cannot read"},
 		// and a latency signal must be one the protocol has
 		{"tcp_lt_first_byte", newConfig(listener.ProtocolTCP, bo.Lookup{"pool": albWith("lt", signal("first_byte")), "m1": member}), ""},
@@ -766,13 +767,15 @@ func TestRequestALBsRefuseStreamOnlySettings(t *testing.T) {
 		want string
 	}{
 		"plain":        {func(*ao.Options) {}, ""},
-		"header key":   {func(o *ao.Options) { o.HRW.KeySource = ao.KeySource{Kind: ao.KeyHeader, Name: "X"} }, ""},
+		"header key":   {func(o *ao.Options) { o.HRW.KeySource = flowkey.KeySource{Kind: flowkey.KeyHeader, Name: "X"} }, ""},
 		"first_write":  {func(o *ao.Options) { o.LT.Signal = ao.LTSignalFirstWrite }, ""},
 		"stream block": {func(o *ao.Options) { o.Stream = &ao.StreamOptions{} }, "'stream' options apply only"},
-		"sni key": {func(o *ao.Options) { o.HRW = ao.HRWOptions{Key: "sni", KeySource: ao.KeySource{Kind: ao.KeySNI}} },
+		"sni key": {func(o *ao.Options) {
+			o.HRW = ao.HRWOptions{Key: "sni", KeySource: flowkey.KeySource{Kind: flowkey.KeySNI}}
+		},
 			"cannot be read from a request"},
 		"tlv key": {func(o *ao.Options) {
-			o.HRW = ao.HRWOptions{Key: "proxy_tlv:5", KeySource: ao.KeySource{Kind: ao.KeyProxyTLV, TLV: 5}}
+			o.HRW = ao.HRWOptions{Key: "proxy_tlv:5", KeySource: flowkey.KeySource{Kind: flowkey.KeyProxyTLV, TLV: 5}}
 		},
 			"cannot be read from a request"},
 		"connect signal": {func(o *ao.Options) { o.LT.Signal = ao.LTSignalConnect }, "on a http listener (use first_write)"},

@@ -14,6 +14,10 @@ Make sure the YAML annotation uses a `lowercase_no_spaces` naming convention, wh
 
 Once you have defined your configuration value(s), you must put them to work by referencing them elsewhere in the Trickster code, and used to determine or customize the application functionality. Exactly where this happens in the code depends upon the context and reach of your new configuration, and what features its state affects. Consult with a project maintainer if you have any questions.
 
+## Features That Key or Judge Traffic
+
+A feature that acts per client, such as access control or rate limiting, builds on shared pieces: flow keys to read what it keys on, admission on `tcp`, `tls` and `udp` listeners, the middleware seam for HTTP listeners, and the reserved `none` reference that lets a path clear what it inherits. [Flow Keys and Admission](flow-keys-and-admission.md) describes each one and where a feature plugs in. Reserved object names and reference words live in `pkg/config/reserved`; a new kind of named object validates its names against them.
+
 ## Tests
 
 All new values that you add should have accompanying unit tests to ensure the modifications the value makes to the application in the feature code work as designed. Unit Tests should include verification of: proper parsing of configuration value from test config files (in ./testdata), correct feature functionality enable/disable based on the configuration value, correct feature implementation, coverage of all executable lines of code. 

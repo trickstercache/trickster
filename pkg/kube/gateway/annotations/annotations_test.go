@@ -42,6 +42,10 @@ func TestParseFullSet(t *testing.T) {
 		HealthMode:                    "probe",
 		LoadBalancing:                 "hrw",
 		LoadBalancingKey:              "header:X-Tenant",
+		Sticky:                        "table",
+		StickyKey:                     "cookie:session",
+		StickyTTL:                     "2h",
+		StickyIdle:                    "15m",
 	})
 	require.Empty(t, problems)
 	require.True(t, set.UseRegex)
@@ -66,6 +70,21 @@ func TestParseFullSet(t *testing.T) {
 	require.Equal(t, "probe", p.HealthMode)
 	require.Equal(t, "hrw", p.LoadBalancing)
 	require.Equal(t, "header:X-Tenant", p.LoadBalancingKey)
+	require.Equal(t, "table", p.Sticky)
+	require.Equal(t, "cookie:session", p.StickyKey)
+	require.Equal(t, int64(7200000), p.StickyTTLMS)
+	require.Equal(t, int64(900000), p.StickyIdleMS)
+}
+
+// each sticky annotation alone configures a policy, so an object carrying only it is honored
+func TestStickyAnnotationsConfigurePolicy(t *testing.T) {
+	for key, value := range map[string]string{
+		Sticky: "cookie", StickyKey: "client_ip", StickyTTL: "1h", StickyIdle: "5m",
+	} {
+		set, problems := Parse(map[string]string{key: value})
+		require.Empty(t, problems, key)
+		require.True(t, set.ConfiguresPolicy(), key)
+	}
 }
 
 // An annotation outside this controller's namespace is another
@@ -105,6 +124,10 @@ func TestParseRejections(t *testing.T) {
 		{"health mode", HealthMode, "guess", "must be"},
 		{"load balancing", LoadBalancing, "fr", "must be one of rr, p2c, lc, lt, hrw"},
 		{"load balancing key", LoadBalancingKey, "port", "invalid key source"},
+		{"sticky", Sticky, "yes", "must be"},
+		{"sticky key", StickyKey, "path", "shape of a request"},
+		{"sticky ttl", StickyTTL, "500ms", "at least 1s"},
+		{"sticky idle", StickyIdle, "0s", "greater than zero"},
 		{"header shape", RequestHeaders, "X-A 1", "must be 'Name: value'"},
 		{"header name", RequestHeaders, "X A: 1", "not a valid header name"},
 		{"header operator only", ResponseHeaders, "-: 1", "not a valid header name"},

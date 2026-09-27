@@ -24,10 +24,11 @@ instance does not need them.
 | `gateway.networking.k8s.io` | `tcproutes`, `tlsroutes`, `udproutes` | get, list, watch | Namespaced | Stream route backend references and, for TLSRoute, server names; only in a cluster whose experimental Gateway API channel (`v1alpha2`) serves the kind, and `get` as above |
 | `gateway.networking.k8s.io` | `referencegrants` | list, watch | Namespaced | Permitting cross-namespace Service and Secret references |
 | `gateway.networking.k8s.io` | `backendtlspolicies` | list, watch | Namespaced | TLS to backends; only in a cluster whose Gateway API serves the kind |
+| `gateway.networking.x-k8s.io` | `xbackendtrafficpolicies` | list, watch | Namespaced | Session persistence a Service asks for; only in a cluster that serves the experimental kind |
 | `networking.k8s.io` | `ingressclasses` | list, watch | Cluster | Deciding which classes name this controller, and which is the cluster default |
 | `networking.k8s.io` | `ingresses` | get, list, watch | Namespaced | Hosts, paths, backends, TLS references; `get` as above |
 | (core) | `services` | list, watch | Namespaced | Resolving backend references to an address and port; also in `published_service`'s namespace, for its addresses |
-| (core) | `secrets` | list, watch | Namespaced | TLS certificates for HTTPS listeners |
+| (core) | `secrets` | list, watch | Namespaced | TLS certificates for HTTPS listeners, and the session token key a GatewayClass's `sticky_secret` names |
 | (core) | `configmaps` | list, watch | Namespaced | A GatewayClass's `parametersRef` and a BackendTLSPolicy's CA bundle; only in a cluster serving the Gateway API |
 | (core) | `namespaces` | list, watch | Cluster | When `namespace_selector` is configured, or the cluster serves the Gateway API |
 | `discovery.k8s.io` | `endpointslices` | list, watch | Namespaced | Only with `routing_mode: endpoint`: the generated discoverer reads the endpoints of every referenced Service over the controller's connection |
@@ -40,8 +41,10 @@ Ingress objects alone. Granting the verbs for resources the cluster does not
 define is harmless, so one Role covers both cases; a cluster that will never
 install the CRDs can leave them out.
 
-`secrets` access is narrowed server-side to `type=kubernetes.io/tls`, so the
-controller never holds an application's credentials in memory. The grant
+`secrets` are read through two watches, each narrowed server-side: one to
+`type=kubernetes.io/tls`, and, in a cluster that serves the Gateway API, one
+to Secrets labeled `trickstercache.org/sticky-key`. The controller therefore never holds an
+application's credentials in memory. The grant
 itself cannot express that narrowing, which is the strongest reason to scope
 the controller to named namespaces where that is possible.
 
@@ -62,6 +65,19 @@ namespaces as Services, so a reference into a namespace outside
 kinds, so a cluster may serve the group without it. The controller reads the
 served resources at startup and builds the informer only where the kind is
 served; a policy on a cluster without it is simply never seen.
+
+`xbackendtrafficpolicies` is in the Gateway API's experimental
+`gateway.networking.x-k8s.io` group, installed by its experimental channel.
+Before building its informer, the controller asks the API server whether it
+may list and watch the kind in every watched namespace. It asks with a
+`SelfSubjectAccessReview`, which Kubernetes' default `system:basic-user` role
+lets every authenticated identity create, so that needs no grant here. Where
+the answer is no, it
+logs a warning and never reads the kind, rather than waiting on an informer
+that would never sync. A review that fails is treated as a refusal. An
+upgrade that keeps an older Role therefore starts, and the kind's
+`sessionPersistence` is ignored until the grant is added and the controller
+restarts, since it asks only at startup.
 
 `trickstercachepolicies` is this project's own custom resource
 ([kubernetes-cache-policy.md](./kubernetes-cache-policy.md)), installed from

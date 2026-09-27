@@ -65,6 +65,8 @@ type backendStatus struct {
 	UnavailablePoolMembers  []string `json:"unavailablePoolMembers,omitempty" yaml:"unavailablePoolMembers,omitempty"`
 	UncheckedPoolMembers    []string `json:"uncheckedPoolMembers,omitempty" yaml:"uncheckedPoolMembers,omitempty"`
 	InitializingPoolMembers []string `json:"initializingPoolMembers,omitempty" yaml:"initializingPoolMembers,omitempty"`
+	// DrainingPoolMembers also appear under their health: they keep their sessions, take no new work
+	DrainingPoolMembers []string `json:"drainingPoolMembers,omitempty" yaml:"drainingPoolMembers,omitempty"`
 }
 
 type healthStatus struct {
@@ -488,10 +490,16 @@ func updateStatusText(now func() time.Time, hc healthcheck.HealthChecker, hd *he
 				UnavailablePoolMembers:  unavailableMembers,
 				UncheckedPoolMembers:    uncheckedMembers,
 				InitializingPoolMembers: initializingMembers,
+				DrainingPoolMembers:     albClient.DrainingPoolNames(),
 			}
 
-			// ALB is "available" if >= 1 pool member is either available or unchecked
-			if len(availableMembers) > 0 || len(uncheckedMembers) > 0 {
+			// an ALB with a pool is available while its snapshot has a member that takes new work,
+			// which leaves out draining members; one without (user router) by its members' health
+			available := len(availableMembers) > 0 || len(uncheckedMembers) > 0
+			if core := albClient.CorePool(); core != nil {
+				available = len(core.Snapshot().Members) > 0
+			}
+			if available {
 				status.Available = append(status.Available, albStatus)
 			} else {
 				status.Unavailable = append(status.Unavailable, albStatus)
@@ -531,7 +539,7 @@ func formatDetail(bs backendStatus) string {
 	if bs.Provider != providers.ALB {
 		return ""
 	}
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if len(bs.UnavailablePoolMembers) > 0 {
 		parts = append(parts, fmt.Sprintf("u:[%s]", strings.Join(bs.UnavailablePoolMembers, ",")))
 	}
@@ -540,6 +548,9 @@ func formatDetail(bs backendStatus) string {
 	}
 	if len(bs.UncheckedPoolMembers) > 0 {
 		parts = append(parts, fmt.Sprintf("nc:[%s]", strings.Join(bs.UncheckedPoolMembers, ",")))
+	}
+	if len(bs.DrainingPoolMembers) > 0 {
+		parts = append(parts, fmt.Sprintf("d:[%s]", strings.Join(bs.DrainingPoolMembers, ",")))
 	}
 	if len(parts) == 0 {
 		return ""

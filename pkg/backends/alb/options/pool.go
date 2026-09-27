@@ -40,11 +40,13 @@ import (
 // weight. A weight of 0 (or omitted) means 1. A weight is the only way to
 // increase a member's share: a name repeated in the list is de-duplicated.
 //
-// A backup member stands by: it is used only while no other member is available.
+// A backup member stands by: it is used only while no other member is available. A draining
+// member takes no new work, but keeps serving the sessions pinned to it.
 type PoolMember struct {
 	Name   string `yaml:"name"`
 	Weight int    `yaml:"weight,omitempty"`
 	Backup bool   `yaml:"backup,omitempty"`
+	Drain  bool   `yaml:"drain,omitempty"`
 }
 
 // BackupTier is the failover tier of a backup member; every other member is in tier 0
@@ -58,6 +60,9 @@ var ErrInvalidPoolWeight = errors.New("pool member 'weight' cannot be negative")
 
 // ErrNoPrimaryPoolMember is returned when every member of a pool is a backup
 var ErrNoPrimaryPoolMember = errors.New("pool needs at least one member that is not a 'backup'")
+
+// ErrAllPoolMembersDraining is returned when every member of a pool is draining
+var ErrAllPoolMembersDraining = errors.New("pool needs at least one member that is not draining")
 
 // ErrConflictingPoolWeights is returned when a pool lists one member under different weights
 var ErrConflictingPoolWeights = errors.New("pool member is repeated with different 'weight' values")
@@ -164,7 +169,7 @@ func (m *PoolMember) UnmarshalYAML(value *yaml.Node) error {
 // MarshalYAML renders unweighted members as plain name scalars so sanitized
 // config output matches the common input form
 func (m PoolMember) MarshalYAML() (any, error) {
-	if m.Weight == 0 && !m.Backup {
+	if m.Weight == 0 && !m.Backup && !m.Drain {
 		return m.Name, nil
 	}
 	type dumpPoolMember PoolMember
@@ -180,6 +185,16 @@ func (l PoolMemberList) Validate(albName string) error {
 		}
 	}
 	return nil
+}
+
+// AllDraining reports whether the list has members and every one of them is draining
+func (l PoolMemberList) AllDraining() bool {
+	for _, m := range l {
+		if !m.Drain {
+			return false
+		}
+	}
+	return len(l) > 0
 }
 
 // AllBackups reports whether the list has members and every one of them is a backup

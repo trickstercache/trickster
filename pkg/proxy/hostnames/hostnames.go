@@ -122,3 +122,57 @@ func Reserved(addr string) bool {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	return strings.HasSuffix(host, reservedTLD)
 }
+
+// Overlap reports whether some request host would match both hostnames, where an empty one
+// matches every host
+func Overlap(a, b string) bool {
+	a, b = strings.ToLower(a), strings.ToLower(b)
+	if a == "" || b == "" || a == b {
+		return true
+	}
+	aw, bw := IsWildcard(a), IsWildcard(b)
+	switch {
+	case aw && bw:
+		as, bs := Suffix(a), Suffix(b)
+		switch {
+		case as == bs:
+			return true
+		case strings.HasSuffix(as, "."+bs):
+			// a's hosts sit at least two labels under b's domain, which only an any-depth b reaches
+			return IsAnyDepth(b)
+		case strings.HasSuffix(bs, "."+as):
+			return IsAnyDepth(a)
+		}
+		return false
+	case aw:
+		return matches(a, b)
+	case bw:
+		return matches(b, a)
+	}
+	return false
+}
+
+// matches reports whether a wildcard matches a precise hostname
+func matches(wildcard, host string) bool {
+	label, ok := strings.CutSuffix(host, "."+Suffix(wildcard))
+	if !ok || label == "" {
+		return false
+	}
+	return IsAnyDepth(wildcard) || !strings.Contains(label, ".")
+}
+
+// ListsOverlap reports whether some request host would match an entry of each list, where an
+// empty list matches every host
+func ListsOverlap(a, b []string) bool {
+	if len(a) == 0 || len(b) == 0 {
+		return true
+	}
+	for _, x := range a {
+		for _, y := range b {
+			if Overlap(x, y) {
+				return true
+			}
+		}
+	}
+	return false
+}
