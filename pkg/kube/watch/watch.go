@@ -28,6 +28,7 @@ import (
 
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/kube"
+	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/annotations"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gatewayapi"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -47,6 +48,7 @@ import (
 	gwclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gwlisters "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1"
 	gwlistersv1a2 "sigs.k8s.io/gateway-api/pkg/client/listers/apis/v1alpha2"
+	gwlistersx "sigs.k8s.io/gateway-api/pkg/client/listers/apisx/v1alpha1"
 )
 
 // ErrNoClient is returned when the watcher has no Kubernetes client
@@ -64,11 +66,13 @@ var tlsSecretSelector = fields.OneTermEqualSelector(
 const (
 	KindService         = "Service"
 	KindSecret          = "Secret"
+	KindKeySecret       = "StickyKeySecret"
 	KindConfigMap       = "ConfigMap"
 	KindNamespace       = "Namespace"
 	KindReferenceGrant  = "ReferenceGrant"
 	KindPublishedSvc    = "PublishedService"
 	kindBackendTLS      = ir.KindBackendTLSPolicy
+	kindBackendTraffic  = ir.KindBackendTrafficPolicy
 	eventAdd            = "add"
 	eventUpdate         = "update"
 	eventDelete         = "delete"
@@ -90,6 +94,9 @@ type Config struct {
 	// AlphaResources are the resource names the cluster serves in the experimental Gateway API
 	// group version, where TCPRoute, TLSRoute and UDPRoute live; nil means all are
 	AlphaResources []string
+	// XResources are the resource names the cluster serves in the experimental x-k8s.io Gateway
+	// API group, where XBackendTrafficPolicy lives; nil means all are
+	XResources []string
 	// DynamicClient reads the cache policy resource; nil means the cluster does not serve it
 	// and no informer is built for it, since one would never sync
 	DynamicClient dynamic.Interface
@@ -133,6 +140,7 @@ type scope struct {
 
 	services   corelisters.ServiceLister
 	secretLst  corelisters.SecretLister
+	keySecrets corelisters.SecretLister
 	configMaps corelisters.ConfigMapLister
 	ingresses  netlisters.IngressLister
 	gateways   gwlisters.GatewayLister
@@ -143,6 +151,7 @@ type scope struct {
 	udpRoutes  gwlistersv1a2.UDPRouteLister
 	grants     gwlisters.ReferenceGrantLister
 	backendTLS gwlisters.BackendTLSPolicyLister
+	traffic    gwlistersx.XBackendTrafficPolicyLister
 	policies   *policyInformer
 
 	regs []registration
@@ -163,6 +172,10 @@ const (
 	resourceTLSRoutes = "tlsroutes"
 	resourceUDPRoutes = "udproutes"
 )
+
+func (w *Watcher) servesX(resource string) bool {
+	return w.cfg.XResources == nil || slices.Contains(w.cfg.XResources, resource)
+}
 
 func (w *Watcher) serves(resource string) bool {
 	return w.cfg.GatewayResources == nil ||
@@ -332,11 +345,20 @@ func (w *Watcher) buildScope(ns string, resync time.Duration) (*scope, error) {
 		// its CA bundle; nothing else reads ConfigMaps, so an Ingress-only controller holds none
 		cmInf := core.Factory().Core().V1().ConfigMaps()
 		s.configMaps = cmInf.Lister()
+		// a GatewayClass may also name a Secret keying session tokens; the label keeps the watch
+		// to those, as the TLS selector does for certificates
+		keys := w.cfg.Client.InformerFactory(kube.FactorySpec{
+			Namespace: ns, Resync: resync, LabelSelector: annotations.LabelStickyKey,
+		})
+		s.handles = append(s.handles, keys)
+		keyInf := keys.Factory().Core().V1().Secrets()
+		s.keySecrets = keyInf.Lister()
 		informers = append(informers,
 			kindInformer{ir.KindGateway, gwInf.Informer()},
 			kindInformer{ir.KindHTTPRoute, rtInf.Informer()},
 			kindInformer{KindReferenceGrant, rgInf.Informer()},
-			kindInformer{KindConfigMap, cmInf.Informer()})
+			kindInformer{KindConfigMap, cmInf.Informer()},
+			kindInformer{KindKeySecret, keyInf.Informer()})
 		if w.serves(resourceBackendTLSPolicies) {
 			btInf := gw.Factory().Gateway().V1().BackendTLSPolicies()
 			s.backendTLS = btInf.Lister()
@@ -346,6 +368,11 @@ func (w *Watcher) buildScope(ns string, resync time.Duration) (*scope, error) {
 			grInf := gw.Factory().Gateway().V1().GRPCRoutes()
 			s.grpcRoutes = grInf.Lister()
 			informers = append(informers, kindInformer{ir.KindGRPCRoute, grInf.Informer()})
+		}
+		if w.servesX(gatewayapi.ResourceBackendTrafficPolicies) {
+			inf := gw.Factory().Experimental().V1alpha1().XBackendTrafficPolicies()
+			s.traffic = inf.Lister()
+			informers = append(informers, kindInformer{kindBackendTraffic, inf.Informer()})
 		}
 		if w.servesAlpha(resourceTCPRoutes) {
 			inf := gw.Factory().Gateway().V1alpha2().TCPRoutes()

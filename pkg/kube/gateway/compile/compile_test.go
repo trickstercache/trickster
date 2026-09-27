@@ -17,6 +17,7 @@
 package compile
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -1055,7 +1056,7 @@ func TestCompiledRoutesAreSound(t *testing.T) {
 func everyShape() map[string]*ir.IR {
 	// everyShape is one IR per output shape the compiler emits, so an invariant
 	// asserted over it is asserted over the whole projection
-	return map[string]*ir.IR{
+	shapes := map[string]*ir.IR{
 		"single backend": simple(),
 		"weighted backends": func() *ir.IR {
 			g := group("shop", "web", 0,
@@ -1141,6 +1142,8 @@ func everyShape() map[string]*ir.IR {
 			return m
 		}(),
 	}
+	maps.Copy(shapes, stickyShapes())
+	return shapes
 }
 
 func filterShape() *ir.IR {
@@ -1235,6 +1238,9 @@ func TestCompiledConfigurationLoads(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, conf.Backends.Validate())
 			require.NoError(t, validate.Validate(conf))
+			// the checks that need the router, such as which hosts an ALB sets its cookie on
+			require.NoError(t, conf.Process())
+			require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
 		})
 	}
 }

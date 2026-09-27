@@ -288,8 +288,39 @@ func TestLoadBalancing(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, v, got)
 	}
-	for _, v := range []string{"port", "header:", "cookie:a b"} {
+	for _, v := range []string{"port", "header:", "cookie:a b", "method", "path", "query"} {
 		_, err := LoadBalancingKey(v)
+		require.Error(t, err, v)
+	}
+}
+
+func TestSticky(t *testing.T) {
+	for _, v := range []string{"cookie", "header", "table", "none"} {
+		got, err := Sticky(v)
+		require.NoError(t, err)
+		require.Equal(t, v, got)
+	}
+	for _, v := range []string{"", "Cookie", "true", "hrw"} {
+		_, err := Sticky(v)
+		require.ErrorContains(t, err, "must be", v)
+	}
+	for _, v := range []string{"client_ip", "sni", "host", "header:X-Tenant", "cookie:session", "query:tenant", "user"} {
+		got, err := StickyKey(" " + v + " ")
+		require.NoError(t, err)
+		require.Equal(t, v, got)
+	}
+	for _, v := range []string{"port", "header:", "method", "path", "query"} {
+		_, err := StickyKey(v)
+		require.Error(t, err, v)
+	}
+}
+
+func TestStickyDuration(t *testing.T) {
+	ms, err := StickyDuration("90s")
+	require.NoError(t, err)
+	require.Equal(t, int64(90000), ms)
+	for _, v := range []string{"", "0s", "-1m", "500ms", "soon"} {
+		_, err := StickyDuration(v)
 		require.Error(t, err, v)
 	}
 }

@@ -1,0 +1,95 @@
+discovery:
+    kgw--discovery:
+        provider: kubernetes
+        kubernetes:
+            in_cluster: true
+            qps: 20
+            burst: 40
+            timeout: 10s
+backends:
+    kgw--ingress.shop.api_r0:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - default
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /api
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: p2c
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--ingress.shop.api_r0_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: api-svc
+                    port: http
+            sticky:
+                mode: table
+                table:
+                    key: header:X-Tenant
+    kgw--ingress.shop.api_r0_b0_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: ingress.shop.api
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'
+    kgw--ingress.shop.web_r0:
+        provider: alb
+        hosts:
+            - shop.example.com
+        listener_names:
+            - default
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: segment
+              handler: alb
+              methods:
+                - '*'
+        alb:
+            mechanism: rr
+            discovery:
+                discoverer_name: kgw--discovery
+                template_backend: kgw--ingress.shop.web_r0_b0_tmpl
+                health_mode: provider
+                query:
+                    kind: endpointslices
+                    namespace: shop
+                    service: web-svc
+                    port: http
+            sticky:
+                mode: cookie
+                ttl: 30m0s
+                idle: 5m0s
+                cookie:
+                    name: trickster_sticky_4ba47d5514de
+    kgw--ingress.shop.web_r0_b0_tmpl:
+        provider: rp
+        is_template: true
+        cache_key_prefix: ingress.shop.web
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        preserve_host: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: proxy
+              methods:
+                - '*'

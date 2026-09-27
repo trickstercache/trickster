@@ -45,6 +45,12 @@ type Client struct {
 
 var _ types.NewBackendClientFunc = NewClient
 
+// RelaysUpgrades reports true: a rule sends each request to one backend, which tunnels a protocol
+// upgrade the request asks for.
+func (c *Client) RelaysUpgrades() bool {
+	return true
+}
+
 // NewClient returns a new Rules Router client reference
 func NewClient(name string, o *bo.Options, router http.Handler,
 	_ cache.Cache, clients backends.Backends,

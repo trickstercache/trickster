@@ -27,14 +27,18 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/native"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -140,9 +144,9 @@ func TestSessionsKeepToAMemberByUserOrAddress(t *testing.T) {
 	users, addrs := map[string]bool{}, map[string]bool{}
 	for i := range 30 {
 		user := "tenant" + strconv.Itoa(i)
-		first := owner(byUser, backends.RouteInput{Username: user, Client: here})
+		first := owner(byUser, backends.RouteInput{Username: user, Authenticated: true, Client: here})
 		users[first] = true
-		require.Equal(t, first, owner(byUser, backends.RouteInput{Username: user, Client: there}), user)
+		require.Equal(t, first, owner(byUser, backends.RouteInput{Username: user, Authenticated: true, Client: there}), user)
 
 		addr := netip.AddrFrom4([4]byte{198, 51, 100, byte(i)})
 		first = owner(byAddr, backends.RouteInput{Username: "a", Client: addr})
@@ -151,13 +155,18 @@ func TestSessionsKeepToAMemberByUserOrAddress(t *testing.T) {
 	}
 	require.GreaterOrEqual(t, len(users), 4)
 	require.GreaterOrEqual(t, len(addrs), 4)
-	// a session with nothing to key on is served all the same
+	// a session with nothing to key on is served all the same, as is one whose name is unverified
 	spread := map[string]bool{}
 	for range 60 {
 		spread[owner(byUser, backends.RouteInput{})] = true
 		spread[owner(byAddr, backends.RouteInput{})] = true
 	}
 	require.GreaterOrEqual(t, len(spread), 3)
+	unverified := map[string]bool{}
+	for range 60 {
+		unverified[owner(byUser, backends.RouteInput{Username: "tenant0", Client: here})] = true
+	}
+	require.GreaterOrEqual(t, len(unverified), 3, "a name the protocol did not verify keyed the session")
 }
 
 func TestNestedLoadBalancersKeyForThemselves(t *testing.T) {
@@ -170,7 +179,7 @@ func TestNestedLoadBalancersKeyForThemselves(t *testing.T) {
 	f.start(t)
 	seen := map[string]bool{}
 	for range 20 {
-		d, ok := outer.RouteResolver().ResolveRoute(backends.RouteInput{Username: "app"})
+		d, ok := outer.RouteResolver().ResolveRoute(backends.RouteInput{Username: "app", Authenticated: true})
 		require.True(t, ok)
 		seen[d.Target.Backend.Name()] = true
 		d.Release()
@@ -186,7 +195,7 @@ func TestOnlySessionStrategiesResolveRoutes(t *testing.T) {
 	f.start(t)
 	require.Nil(t, fanout.RouteResolver())
 	require.Nil(t, timed.RouteResolver(), "a native session reports no latency to rank members by")
-	require.Nil(t, native.Resolver(nil, nil))
+	require.Nil(t, native.Resolver(nil, nil, nil))
 }
 
 // a member whose payload is not a backend cannot take a session, and is not blamed for it
@@ -196,7 +205,7 @@ func TestForeignMembersAreRefused(t *testing.T) {
 	require.NoError(t, err)
 	defer p.Stop()
 	b := lb.NewBalancer(rr.NewAt(0), lb.BalancerOptions{Pool: p, Ejection: lb.EjectionOptions{Failures: 1}})
-	d, ok := native.Resolver(b, nil).ResolveRoute(backends.RouteInput{})
+	d, ok := native.Resolver(b, nil, nil).ResolveRoute(backends.RouteInput{})
 	require.False(t, ok)
 	require.Equal(t, backends.RouteOutcomeUnavailable, d.Outcome)
 	require.Zero(t, m.Stats().Inflight())
@@ -237,5 +246,151 @@ func TestSessionsHonorTheHealthyFloor(t *testing.T) {
 			got = append(got, name)
 		}
 		require.ElementsMatch(t, want, got, "floor %d", floor)
+	}
+}
+
+func stickyCount(t *testing.T, result string) float64 {
+	t.Helper()
+	return testutil.ToFloat64(metrics.ALBStickyResults.WithLabelValues(t.Name(), result))
+}
+
+// stickyALB is a round robin over the replicas that keeps each client's sessions as o says
+func (f *fixture) stickyALB(t *testing.T, o *so.Options, names ...string) *alb.Client {
+	t.Helper()
+	name := t.Name()
+	t.Cleanup(func() { sticky.ForgetTablesExcept(func(n string, _ *sticky.Table) bool { return n != name }) })
+	return f.alb(t, name, &ao.Options{MechanismName: "rr", Pool: ao.Members(names...), Sticky: o})
+}
+
+func resolve(t *testing.T, r backends.RouteResolver, in backends.RouteInput) string {
+	t.Helper()
+	d, ok := r.ResolveRoute(in)
+	if !ok {
+		return ""
+	}
+	d.Release()
+	return d.Target.Backend.Name()
+}
+
+// a user's sessions keep to the replica its first one was given, however the rotation turns, and
+// so do a client address's
+func TestStickySessionsByUserAndAddress(t *testing.T) {
+	names := []string{"r1", "r2", "r3"}
+	for key, input := range map[string]func(i, from int) backends.RouteInput{
+		"user": func(i, from int) backends.RouteInput {
+			return backends.RouteInput{
+				Username: "tenant" + strconv.Itoa(i), Authenticated: true,
+				Client: netip.AddrFrom4([4]byte{203, 0, 113, byte(from)}),
+			}
+		},
+		"client_ip": func(i, from int) backends.RouteInput {
+			return backends.RouteInput{
+				Username: "u" + strconv.Itoa(from), Authenticated: true,
+				Client: netip.AddrFrom4([4]byte{198, 51, 100, byte(i)}),
+			}
+		},
+	} {
+		t.Run(key, func(t *testing.T) {
+			f := replicas(t, names...)
+			c := f.stickyALB(t, &so.Options{Table: so.TableOptions{Key: key}}, names...)
+			f.start(t)
+			r := c.RouteResolver()
+			firsts := map[string]bool{}
+			for i := range 6 {
+				first := resolve(t, r, input(i, 0))
+				firsts[first] = true
+				for from := 1; from < 4; from++ {
+					require.Equal(t, first, resolve(t, r, input(i, from)), "session %d moved", i)
+				}
+			}
+			require.GreaterOrEqual(t, len(firsts), 2, "every session was pinned to one replica")
+			require.Equal(t, 6.0, stickyCount(t, sticky.ResultMiss))
+			require.Equal(t, 18.0, stickyCount(t, sticky.ResultHit))
+			require.Equal(t, 6, c.StickyFlows().Table().Len())
+		})
+	}
+}
+
+// a session whose pinned replica is down moves and is pinned anew, or is refused
+func TestStickySessionsWhenThePinnedReplicaIsDown(t *testing.T) {
+	for _, mode := range []string{so.OnUnavailableRepick, so.OnUnavailableReject} {
+		t.Run(mode, func(t *testing.T) {
+			f := replicas(t, "r1", "r2")
+			c := f.stickyALB(t, &so.Options{OnUnavailable: mode, Table: so.TableOptions{Key: "user"}}, "r1", "r2")
+			f.start(t)
+			r := c.RouteResolver()
+			in := backends.RouteInput{Username: "app", Authenticated: true}
+			first := resolve(t, r, in)
+			require.NotEmpty(t, first)
+			f.health[first].Set(healthcheck.StatusFailing)
+			d, ok := r.ResolveRoute(in)
+			if mode == so.OnUnavailableReject {
+				require.False(t, ok)
+				require.Equal(t, backends.RouteOutcomeUnavailable, d.Outcome)
+				require.Equal(t, 1.0, stickyCount(t, sticky.ResultRejected))
+				require.Equal(t, map[string]int64{"r1": 0, "r2": 0}, inflight(c), "a refused session holds a replica")
+				f.health[first].Set(healthcheck.StatusPassing)
+				require.Equal(t, first, resolve(t, r, in))
+				return
+			}
+			require.True(t, ok)
+			moved := d.Target.Backend.Name()
+			d.Release()
+			require.NotEqual(t, first, moved)
+			require.Equal(t, 1.0, stickyCount(t, sticky.ResultRepick))
+			f.health[first].Set(healthcheck.StatusPassing)
+			require.Equal(t, moved, resolve(t, r, in), "a moved session went back")
+		})
+	}
+}
+
+// an unverified name keys nothing, and a session with nothing to key on is served unpinned
+func TestStickySessionsNeedAKey(t *testing.T) {
+	f := replicas(t, "r1", "r2")
+	c := f.stickyALB(t, &so.Options{Table: so.TableOptions{Key: "user"}}, "r1", "r2")
+	f.start(t)
+	r := c.RouteResolver()
+	for range 4 {
+		require.NotEmpty(t, resolve(t, r, backends.RouteInput{Username: "app"}))
+	}
+	require.Zero(t, c.StickyFlows().Table().Len())
+	require.Equal(t, 4.0, stickyCount(t, sticky.ResultMiss))
+}
+
+// a pinned pool whose replicas are all down moves its sessions to a pool that has one, unless
+// they must not move
+func TestStickySessionsLeaveAPinnedPoolWithNothingLeft(t *testing.T) {
+	for _, mode := range []string{so.OnUnavailableRepick, so.OnUnavailableReject} {
+		t.Run(mode, func(t *testing.T) {
+			f := replicas(t, "a1", "a2", "b1", "b2")
+			f.alb(t, t.Name()+"-a", &ao.Options{MechanismName: "rr", Pool: ao.Members("a1", "a2")})
+			f.alb(t, t.Name()+"-b", &ao.Options{MechanismName: "rr", Pool: ao.Members("b1", "b2")})
+			c := f.stickyALB(t, &so.Options{OnUnavailable: mode, Table: so.TableOptions{Key: "user"}},
+				t.Name()+"-a", t.Name()+"-b")
+			f.start(t)
+			r := c.RouteResolver()
+			in := backends.RouteInput{Username: "app", Authenticated: true}
+			first := resolve(t, r, in)
+			pinned := []string{"a1", "a2"}
+			if first[0] == 'b' {
+				pinned = []string{"b1", "b2"}
+			}
+			for _, name := range pinned {
+				f.health[name].Set(healthcheck.StatusFailing)
+			}
+			got := resolve(t, r, in)
+			if mode == so.OnUnavailableReject {
+				require.Empty(t, got)
+				require.Equal(t, 1.0, stickyCount(t, sticky.ResultRejected))
+				return
+			}
+			require.NotEmpty(t, got)
+			require.NotEqual(t, first[0], got[0], "the session stayed in a pool with no replica up")
+			require.Equal(t, 1.0, stickyCount(t, sticky.ResultRepick))
+			for _, name := range pinned {
+				f.health[name].Set(healthcheck.StatusPassing)
+			}
+			require.Equal(t, got, resolve(t, r, in), "a moved session went back")
+		})
 	}
 }

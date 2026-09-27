@@ -4,6 +4,8 @@ The Rule Backend is not really a true Backend; it only routes inbound requests t
 
 A Rule is a single inspection operation performed against a single component of an inbound request, which determines the Next Backend to send the request to. The Next Backend can also be a rule Backend, so as to route requests through multiple Rules before arriving at a true Backend destination.
 
+A request that asks to switch protocols, such as a WebSocket handshake, is tunneled by the backend the rule sends it to.
+
 A rule can optionally rewrite multiple portions of the request before, during and after rule matching, by using [request rewriters](./request_rewriters.md), which allows for powerful and limitless combinations of request rewriting and routing.
 
 ## Rule Parts

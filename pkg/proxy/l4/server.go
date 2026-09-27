@@ -43,6 +43,7 @@ const (
 	ResultNoUpstream = "no_upstream"
 	ResultDialFailed = "dial_failed"
 	ResultRefused    = "refused"
+	ResultDenied     = "denied"
 )
 
 // Byte directions, as the bytes metric labels them.
@@ -68,6 +69,12 @@ type Config struct {
 	MaxConnections int
 	// Observer receives the listener's events; nil discards them
 	Observer Observer
+	// Admission judges each connection, session and datagram before it is relayed; nil admits all
+	Admission Admission
+	// datagrams caches Admission.Datagrams at Update, so the datagram path reads one field
+	datagrams bool
+	// gen numbers the published config, so a hold on a denied client outlives no swap
+	gen uint64
 }
 
 func (c *Config) observer() Observer {
@@ -245,6 +252,15 @@ func (s *Server) handle(client net.Conn) {
 	opts := cfg.options()
 	// read before the connection is wrapped to replay what was peeked of it
 	proxy, _ := client.(ProxyHeader)
+	adm := cfg.Admission
+	if adm != nil {
+		peer := flowOf(s.name, s.protocol, client.RemoteAddr(), "")
+		peer.Proxy = proxy
+		if v := adm.Peer(peer); v != Allow {
+			s.deny(client, v)
+			return
+		}
+	}
 	var host string
 	if s.protocol == ProtocolTLS {
 		var err error
@@ -261,6 +277,12 @@ func (s *Server) handle(client net.Conn) {
 	}
 	flow := flowOf(s.name, s.protocol, client.RemoteAddr(), host)
 	flow.Proxy = proxy
+	if adm != nil {
+		if v := adm.Flow(flow); v != Allow {
+			s.deny(client, v)
+			return
+		}
+	}
 	var upstream net.Conn
 	var route Route
 	if racer, races := up.(Racer); races {

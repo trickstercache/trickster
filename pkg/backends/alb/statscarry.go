@@ -20,6 +20,8 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 )
 
@@ -58,4 +60,20 @@ func forgetStatsExcept(clients backends.Backends) {
 			delete(carriedStats.byALB, name)
 		}
 	}
+}
+
+// ForgetUnusedStickyTables drops sticky tables no running ALB holds; call it after listeners start,
+// as ALBs take stream and native tables on a listener's first ask.
+func ForgetUnusedStickyTables(clients backends.Backends) {
+	sticky.ForgetTablesExcept(func(albName string, t *sticky.Table) bool {
+		c, ok := clients[albName].(*Client)
+		if !ok {
+			return false
+		}
+		if c.flows.Load().Table() == t {
+			return true
+		}
+		pm, ok := c.handler.(types.PickerMechanism)
+		return ok && pm.StickyTable() == t
+	})
 }

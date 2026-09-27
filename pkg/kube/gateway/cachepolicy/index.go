@@ -205,6 +205,10 @@ func (x *Index) lower(p *CachePolicy) (ir.Policy, error) {
 		{"healthMode", parse(&out.HealthMode, s.HealthMode, translate.HealthMode)},
 		{"loadBalancing", parse(&out.LoadBalancing, s.LoadBalancing, translate.LoadBalancing)},
 		{"loadBalancingKey", parse(&out.LoadBalancingKey, s.LoadBalancingKey, translate.LoadBalancingKey)},
+		{"sticky", parse(&out.Sticky, s.Sticky, translate.Sticky)},
+		{"stickyKey", parse(&out.StickyKey, s.StickyKey, translate.StickyKey)},
+		{"stickyTTL", stickyDuration(&out.StickyTTLMS, s.StickyTTL)},
+		{"stickyIdle", stickyDuration(&out.StickyIdleMS, s.StickyIdle)},
 		{"resultHeader", parse(&out.ResultHeader, s.ResultHeader, translate.ResultHeader)},
 	}
 	if s.CORS != nil {
@@ -245,6 +249,20 @@ func (x *Index) known(dst *string, v string, known interface{ Contains(string) b
 			return fmt.Errorf("no %s named %q is configured", kind, v)
 		}
 		*dst = v
+		return nil
+	}
+}
+
+func stickyDuration(dst *int64, v string) func() error {
+	return func() error {
+		if v == "" {
+			return nil
+		}
+		ms, err := translate.StickyDuration(v)
+		if err != nil {
+			return err
+		}
+		*dst = ms
 		return nil
 	}
 }

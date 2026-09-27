@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/native"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -91,6 +92,9 @@ type Client struct {
 	hasBackups, onBackup bool
 	// health is the ALB's own status, which follows its pool; nil unless propagate_health
 	health *healthcheck.Status
+	// flows keeps the sessions of the ALB's stream and native flows, once a listener asks for it
+	flows     atomic.Pointer[sticky.Flows]
+	flowsOnce sync.Once
 }
 
 // poolObserver reports one pool's snapshots to the client that built it
@@ -323,13 +327,19 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			// virtual backends (rule, alb) have no health checks; treat as passing
 			hc = healthcheck.NewStatus(m.Name, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
+		if ac, isALB := tc.(*Client); isALB && o.Sticky != nil {
+			// a member that picks one of its own members carries this ALB's sessions a level down
+			if pm, isPicker := ac.handler.(types.PickerMechanism); isPicker {
+				pm.FollowPins()
+			}
+		}
 		// only a mechanism that keeps stats has any worth carrying over a reload
 		var kept *lb.Stats
 		if tracksStats {
 			kept = carryStats(c.Name(), m.Name)
 		}
 		t := pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()).
-			WithTier(m.Tier()).WithStats(kept)
+			WithTier(m.Tier()).WithDraining(m.Drain).WithStats(kept)
 		targets = append(targets, t)
 		stats[m.Name] = t.Member().Stats()
 	}
@@ -389,6 +399,7 @@ func (c *Client) swapPool(targets pool.Targets) {
 	if oldPool != nil {
 		oldPool.Stop()
 	}
+	observe.TrackPool(c.Name(), c)
 }
 
 // effectiveFloor returns the healthy floor to enforce for the provided
@@ -457,6 +468,32 @@ func (c *Client) Pool() pool.Pool {
 	return nil
 }
 
+// CorePool returns the protocol-neutral form of the current pool, or nil for a mechanism that
+// dispatches without one
+func (c *Client) CorePool() *lb.Pool {
+	if p := c.Pool(); p != nil {
+		return p.Core()
+	}
+	return nil
+}
+
+// DrainingPoolNames returns the names of the current pool's draining members, sorted, for
+// health and management display
+func (c *Client) DrainingPoolNames() []string {
+	p := c.CorePool()
+	if p == nil {
+		return nil
+	}
+	var names []string
+	for _, m := range p.Configured() {
+		if m.Draining() && m.Name() != "" {
+			names = append(names, m.Name())
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
 // Picker returns the balancer that commits one unit of work to one pool member, which is how
 // planes other than HTTP dispatch through this ALB. It is nil for a mechanism that does not
 // select one member: the fanout mechanisms and the user router.
@@ -465,6 +502,13 @@ func (c *Client) Picker() lb.Picker {
 		return pm.Picker()
 	}
 	return nil
+}
+
+// RelaysUpgrades reports whether the ALB sends each request to one backend, which tunnels a protocol
+// upgrade the request asks for: a mechanism that selects one member, or the user router.
+func (c *Client) RelaysUpgrades() bool {
+	_, isUR := c.handler.(*ur.Handler)
+	return isUR || c.Picker() != nil
 }
 
 // Spread returns how the ALB's mechanism commits one flow to several members at once, or 0
@@ -727,9 +771,20 @@ func (c *Client) RouteResolver() backends.RouteResolver {
 		return nil
 	}
 	if pm, ok := c.handler.(types.PickerMechanism); ok {
-		return native.Resolver(pm.Picker(), cfg.ALBOptions)
+		return native.Resolver(pm.Picker(), cfg.ALBOptions, c.StickyFlows())
 	}
 	return nil
+}
+
+// StickyFlows returns the keeper of the ALB's stream and native sessions, or nil for none; built on
+// a listener's first ask, so only ALBs such listeners serve hold a table.
+func (c *Client) StickyFlows() *sticky.Flows {
+	c.flowsOnce.Do(func() {
+		if cfg := c.Configuration(); cfg != nil && cfg.ALBOptions != nil {
+			c.flows.Store(sticky.NewFlows(c.Name(), cfg.ALBOptions.Sticky))
+		}
+	})
+	return c.flows.Load()
 }
 
 // StopPool stops this Client's pool and permanently rejects further swaps
@@ -745,6 +800,7 @@ func (c *Client) StopPool() {
 	if pm, ok := c.handler.(types.PickerMechanism); ok {
 		observe.Untrack(c.Name(), pm.Balancer())
 	}
+	observe.UntrackPool(c.Name(), c)
 }
 
 // Boilerplate Interface Functions (to EOF)

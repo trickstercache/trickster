@@ -135,12 +135,21 @@ func endpoint(ip, podName string, ready, terminating bool) discoveryv1.Endpoint 
 	}
 }
 
+// terminatingEndpoint is an endpoint as the EndpointSlice controller writes it once its pod is
+// deleted: never ready, and serving while the pod's readiness still passes (nil: unreported)
+func terminatingEndpoint(ip, podName string, serving *bool) discoveryv1.Endpoint {
+	ep := endpoint(ip, podName, false, true)
+	ep.Conditions.Serving = serving
+	return ep
+}
+
 func TestEndpointSlicesDiscovery(t *testing.T) {
 	cs := fake.NewClientset(
 		newSlice("prom-abc", "prom", 9090,
 			endpoint("10.0.0.1", "prom-0", true, false),
-			endpoint("10.0.0.2", "prom-1", false, false), // not yet ready
-			endpoint("10.0.0.3", "prom-2", true, true),   // terminating: omitted
+			endpoint("10.0.0.2", "prom-1", false, false),          // not yet ready
+			terminatingEndpoint("10.0.0.3", "prom-2", new(false)), // no longer serving: omitted
+			terminatingEndpoint("10.0.0.4", "prom-3", nil),        // serving unreported: draining
 		),
 		// another namespace: excluded by the namespace-scoped informer
 		&discoveryv1.EndpointSlice{
@@ -168,19 +177,20 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 	defer unsub()
 
 	snap := col.next(t)
-	require.Equal(t, []string{"10.0.0.1:9090", "10.0.0.2:9090"},
-		addressesOf(snap), "terminating and other-namespace endpoints omitted")
+	require.Equal(t, []string{"10.0.0.1:9090", "10.0.0.2:9090", "10.0.0.4:9090"},
+		addressesOf(snap), "unserving and other-namespace endpoints omitted")
 	require.Equal(t, "prom-0", snap[0].Name)
 	require.Equal(t, discovery.Ready, snap[0].Ready)
 	require.Equal(t, discovery.NotReady, snap[1].Ready)
+	require.Equal(t, discovery.Terminating, snap[2].Ready)
 	require.Equal(t, "http", snap[0].Scheme)
 	require.Equal(t, testNS, snap[0].Labels["namespace"])
 	require.Equal(t, "prom", snap[0].Labels["service"])
 
-	// a rolling restart: prom-1 becomes ready, prom-0 starts terminating
+	// a rolling restart: prom-1 becomes ready, prom-0 starts terminating while it still serves
 	awaitWatch(t, watching)
 	updated := newSlice("prom-abc", "prom", 9090,
-		endpoint("10.0.0.1", "prom-0", true, true),
+		terminatingEndpoint("10.0.0.1", "prom-0", new(true)),
 		endpoint("10.0.0.2", "prom-1", true, false),
 	)
 	_, err = cs.DiscoveryV1().EndpointSlices(testNS).
@@ -188,9 +198,20 @@ func TestEndpointSlicesDiscovery(t *testing.T) {
 	require.NoError(t, err)
 
 	snap = col.next(t)
+	require.Equal(t, []string{"10.0.0.1:9090", "10.0.0.2:9090"}, addressesOf(snap))
+	require.Equal(t, discovery.Terminating, snap[0].Ready,
+		"a terminating member that still serves drains")
+	require.Equal(t, discovery.Ready, snap[1].Ready)
+
+	// its readiness probe fails: it leaves the pool before the pod is deleted
+	updated.Endpoints[0] = terminatingEndpoint("10.0.0.1", "prom-0", new(false))
+	_, err = cs.DiscoveryV1().EndpointSlices(testNS).
+		Update(context.Background(), updated, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	snap = col.next(t)
 	require.Equal(t, []string{"10.0.0.2:9090"}, addressesOf(snap),
-		"terminating member removed before pod deletion")
-	require.Equal(t, discovery.Ready, snap[0].Ready)
+		"a terminating member that no longer serves is removed")
 }
 
 func TestServiceDiscovery(t *testing.T) {

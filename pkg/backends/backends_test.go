@@ -275,6 +275,40 @@ func TestVirtualBackendsReportTheirOwnStatus(t *testing.T) {
 	}
 }
 
+// relay says whether a virtual backend sends each request to one backend
+type relay struct {
+	Backend
+	relays bool
+}
+
+func (r relay) RelaysUpgrades() bool { return r.relays }
+
+func TestRelaysUpgrades(t *testing.T) {
+	build := func(provider string) Backend {
+		o := bo.New()
+		o.Provider = provider
+		c, err := New("b", o, nil, lm.NewRouter(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	if !RelaysUpgrades(relay{Backend: build(providers.ALB), relays: true}) {
+		t.Error("a virtual backend that relays each request was not taken to relay upgrades")
+	}
+	for name, b := range map[string]Backend{
+		"a virtual backend that cannot":       relay{Backend: build(providers.ALB)},
+		"a virtual backend that does not say": build(providers.Rule),
+		"a backend with an origin":            relay{Backend: build(providers.ReverseProxy), relays: true},
+		"no backend":                          nil,
+		"no configuration":                    relay{Backend: &backend{}, relays: true},
+	} {
+		if RelaysUpgrades(b) {
+			t.Errorf("%s was taken to relay upgrades", name)
+		}
+	}
+}
+
 func TestRegisterHealthCheckNeedsAProbeRegistrar(t *testing.T) {
 	o := bo.New()
 	o.HealthCheck = ho.New()

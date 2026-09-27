@@ -21,6 +21,8 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/lbtest"
+	"github.com/trickstercache/trickster/v2/pkg/lb/lc"
+	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
 )
 
 // countingSelector always takes the first member, and counts how often it was prepared
@@ -205,5 +207,36 @@ func TestLatencyAccounting(t *testing.T) {
 	pk.Done(lb.OutcomeFailed)
 	if got := fresh[0].Stats().Latency(); got != lb.DefaultLatencyPenalty {
 		t.Errorf("default penalty = %v", got)
+	}
+}
+
+func BenchmarkPick(b *testing.B) {
+	members, _ := lbtest.Members(1, 1, 1, 1, 1, 1, 1, 1)
+	p, err := lb.NewPool(members, 1)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer p.Stop()
+	for _, strategy := range []struct {
+		name string
+		sel  lb.Selector
+	}{{"rr", rr.New()}, {"lc", lc.New()}} {
+		bal := lb.NewBalancer(strategy.sel, lb.BalancerOptions{Pool: p})
+		for _, flow := range []struct {
+			name string
+			f    lb.Flow
+		}{
+			{"unpinned", lb.Flow{}},
+			{"pinned", lb.Flow{Pin: members[5].Hash(), HasPin: true}},
+			{"pin falls through", lb.Flow{Pin: members[5].Hash() ^ 1, HasPin: true}},
+		} {
+			b.Run(strategy.name+"/"+flow.name, func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					pk, _ := bal.Pick(flow.f)
+					pk.Done(lb.OutcomeOK)
+				}
+			})
+		}
 	}
 }

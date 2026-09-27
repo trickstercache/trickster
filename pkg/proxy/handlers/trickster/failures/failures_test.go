@@ -51,6 +51,16 @@ func TestHandleBadGateway(t *testing.T) {
 	}
 }
 
+func TestHandleServiceUnavailable(t *testing.T) {
+	HandleServiceUnavailable(nil, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "http://0/trickster/", nil)
+	HandleServiceUnavailable(w, r)
+	if w.Result().StatusCode != 503 {
+		t.Errorf("expected %d got %d", 503, w.Result().StatusCode)
+	}
+}
+
 func TestHandleUnauthorized(t *testing.T) {
 	HandleUnauthorized(nil, nil)
 	w := httptest.NewRecorder()

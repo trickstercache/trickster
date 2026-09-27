@@ -22,28 +22,15 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/flow"
 )
 
 // Flow is what the relay knows about a connection or session before it chooses an upstream.
-type Flow struct {
-	// Listener is the name of the listener that accepted the flow
-	Listener string
-	// Protocol is the listener's: tcp, tls or udp
-	Protocol string
-	// Client is the peer, or the source a trusted PROXY protocol header named
-	Client netip.AddrPort
-	// ServerName is the TLS server name the client offered; tls only
-	ServerName string
-	// Proxy reads the PROXY protocol header the connection arrived behind; nil without one
-	Proxy ProxyHeader
-}
+type Flow = flow.Flow
 
 // ProxyHeader is implemented by a client connection that was accepted behind a PROXY protocol
 // header, which a listener's accepted connections may be.
-type ProxyHeader interface {
-	// ProxyTLV returns the value of the first version 2 TLV of the given type, if it has one.
-	ProxyTLV(typ byte) ([]byte, bool)
-}
+type ProxyHeader = flow.ProxyHeader
 
 // Upstream chooses where a flow is relayed to.
 type Upstream interface {

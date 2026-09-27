@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/hrw"
 	"github.com/trickstercache/trickster/v2/pkg/lb/lt"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 )
 
@@ -217,7 +218,7 @@ func TestKeyedDispatchIsSticky(t *testing.T) {
 	}
 	p, _, _ := albpool.NewHealthy(hs)
 	defer p.Stop()
-	ks, err := options.ParseKeySource("header:X-Tenant")
+	ks, err := flowkey.ParseKeySource("header:X-Tenant")
 	if err != nil {
 		t.Fatal(err)
 	}

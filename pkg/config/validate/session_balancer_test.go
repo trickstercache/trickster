@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 // replicaConfig maps a mysql listener to a load balancer over two mysql backends that have
@@ -59,9 +60,9 @@ func TestNativeListenerBalancesSessions(t *testing.T) {
 			t.Errorf("%s: a replica reached through the pool was given listeners %v", mechanism, names)
 		}
 	}
-	keyed := func(key string, kind ao.KeyKind) func(*config.Config) {
+	keyed := func(key string, kind flowkey.KeyKind) func(*config.Config) {
 		return func(c *config.Config) {
-			c.Backends["replicas"].ALBOptions.HRW = ao.HRWOptions{Key: key, KeySource: ao.KeySource{Kind: kind}}
+			c.Backends["replicas"].ALBOptions.HRW = ao.HRWOptions{Key: key, KeySource: flowkey.KeySource{Kind: kind}}
 		}
 	}
 	for name, test := range map[string]struct {
@@ -69,8 +70,8 @@ func TestNativeListenerBalancesSessions(t *testing.T) {
 		adjust    func(*config.Config)
 		want      string
 	}{
-		"user key":  {"hrw", keyed("user", ao.KeyUser), ""},
-		"host key":  {"hrw", keyed("host", ao.KeyHost), "use client_ip or user"},
+		"user key":  {"hrw", keyed("user", flowkey.KeyUser), ""},
+		"host key":  {"hrw", keyed("host", flowkey.KeyHost), "use client_ip or user"},
 		"fanout":    {"fr", nil, "routes or balances sessions: hrw, lc, p2c, rr, ur"},
 		"no timing": {"lt", nil, "routes or balances sessions"},
 		"foreign member": {"rr", func(c *config.Config) {
@@ -109,7 +110,7 @@ func TestSessionKeysAreForNativeListeners(t *testing.T) {
 	lb.Provider = providers.ALB
 	lb.ALBOptions = &ao.Options{
 		MechanismName: "hrw", Pool: ao.Members("origin"),
-		HRW: ao.HRWOptions{Key: "user", KeySource: ao.KeySource{Kind: ao.KeyUser}},
+		HRW: ao.HRWOptions{Key: "user", KeySource: flowkey.KeySource{Kind: flowkey.KeyUser}},
 	}
 	origin := bo.New()
 	origin.Provider = providers.ReverseProxyShort
@@ -135,7 +136,7 @@ func TestALBsOnTwoPlanesAreHeldToBoth(t *testing.T) {
 			web(c)
 			lb := c.Backends["replicas"]
 			lb.ListenerName, lb.ListenerNames = "", []string{"mysql1", "web"}
-			ks, err := ao.ParseKeySource(key)
+			ks, err := flowkey.ParseKeySource(key)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -153,9 +154,13 @@ func TestALBsOnTwoPlanesAreHeldToBoth(t *testing.T) {
 			want      string
 		}{
 			"client_ip": {"hrw", func(*ao.Options) {}, ""},
-			"sni": {"hrw", func(o *ao.Options) { o.HRW = ao.HRWOptions{Key: "sni", KeySource: ao.KeySource{Kind: ao.KeySNI}} },
+			"sni": {"hrw", func(o *ao.Options) {
+				o.HRW = ao.HRWOptions{Key: "sni", KeySource: flowkey.KeySource{Kind: flowkey.KeySNI}}
+			},
 				"hrw.key \"sni\" cannot be read from a request"},
-			"host": {"hrw", func(o *ao.Options) { o.HRW = ao.HRWOptions{Key: "host", KeySource: ao.KeySource{Kind: ao.KeyHost}} },
+			"host": {"hrw", func(o *ao.Options) {
+				o.HRW = ao.HRWOptions{Key: "host", KeySource: flowkey.KeySource{Kind: flowkey.KeyHost}}
+			},
 				"cannot read alb backend \"lb\"'s hrw.key \"host\""},
 			"default signal": {"lt", func(*ao.Options) {}, ""},
 			"connect signal": {"lt", func(o *ao.Options) { o.LT.Signal = ao.LTSignalConnect }, "on a http listener"},

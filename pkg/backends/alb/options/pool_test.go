@@ -164,6 +164,33 @@ func TestPoolMemberBackup(t *testing.T) {
 	require.NoError(t, (&Options{Pool: standbys, Discovery: &DiscoveryOptions{}}).ValidatePool("alb1", all))
 }
 
+func TestPoolMemberDrain(t *testing.T) {
+	var l PoolMemberList
+	require.NoError(t, yaml.Unmarshal([]byte(`
+- live
+- name: leaving
+  drain: true
+`), &l))
+	require.Equal(t, PoolMemberList{{Name: "live"}, {Name: "leaving", Drain: true}}, l)
+	b, err := yaml.Marshal(l)
+	require.NoError(t, err)
+	require.Contains(t, string(b), "drain: true")
+	var again PoolMemberList
+	require.NoError(t, yaml.Unmarshal(b, &again))
+	require.Equal(t, l, again)
+
+	require.False(t, l.AllDraining())
+	require.False(t, PoolMemberList{}.AllDraining())
+	leaving := PoolMemberList{{Name: "a", Drain: true}, {Name: "b", Drain: true}}
+	require.True(t, leaving.AllDraining())
+	all := sets.New([]string{"a", "b"})
+	require.ErrorIs(t, (&Options{Pool: leaving}).ValidatePool("alb1", all), ErrAllPoolMembersDraining)
+	require.NoError(t, (&Options{Pool: leaving, Discovery: &DiscoveryOptions{}}).ValidatePool("alb1", all))
+	// a draining primary with a standby hands new work to the standby, which is a pool that serves
+	standby := PoolMemberList{{Name: "a", Drain: true}, {Name: "b", Backup: true}}
+	require.NoError(t, (&Options{Pool: standby}).ValidatePool("alb1", all))
+}
+
 func TestPropagateHealthNeedsAPool(t *testing.T) {
 	o := &Options{MechanismName: names.MechanismUR, UserRouter: &ur.Options{}, PropagateHealth: true}
 	_, err := o.Validate()

@@ -188,6 +188,22 @@ func HasOrigin(provider string) bool {
 	return !IsVirtual(provider) && provider != providers.Static
 }
 
+// UpgradeRelay is a virtual backend that may send each request it serves to one backend, whose
+// own route then tunnels a protocol upgrade; RelaysUpgrades is false for one that cannot.
+type UpgradeRelay interface {
+	RelaysUpgrades() bool
+}
+
+// RelaysUpgrades reports whether the backend has no origin of its own and sends each request to
+// one backend, which can tunnel an upgrade the request asks for.
+func RelaysUpgrades(b Backend) bool {
+	if b == nil || b.Configuration() == nil || HasOrigin(b.Configuration().Provider) {
+		return false
+	}
+	r, ok := b.(UpgradeRelay)
+	return ok && r.RelaysUpgrades()
+}
+
 // CloseIdleConnections closes idle keep-alive conns on each backend's web and
 // health-check transports. Reload replaces the backend map without closing the
 // old map's transports, leaking persistConn readLoop/writeLoop goroutines until

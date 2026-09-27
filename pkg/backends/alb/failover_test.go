@@ -66,9 +66,11 @@ func (g *graph) alb(t *testing.T, name string, o *ao.Options) *Client {
 	return cl.(*Client)
 }
 
+// start starts the graph's pools as a config build does, one whose listeners are all http
 func (g *graph) start(t *testing.T) {
 	t.Helper()
 	require.NoError(t, StartALBPools(g.clients, g.health))
+	ForgetUnusedStickyTables(g.clients)
 	t.Cleanup(func() { _ = StopPools(g.clients) })
 }
 

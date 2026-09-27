@@ -58,6 +58,10 @@ func TestReference(t *testing.T) {
 	require.NotNil(t, ref)
 	require.Equal(t, "gateway.networking.k8s.io/v1", ref.APIVersion)
 	require.Equal(t, "GRPCRoute", ref.Kind)
+	ref = Reference(ir.Source{Kind: ir.KindBackendTrafficPolicy, Namespace: "shop", Name: "sticky"})
+	require.NotNil(t, ref)
+	require.Equal(t, "gateway.networking.x-k8s.io/v1alpha1", ref.APIVersion)
+	require.Equal(t, ir.KindBackendTrafficPolicy, ref.Kind)
 
 	ref = Reference(ir.Source{Kind: ir.KindIngress, Namespace: "shop", Name: "web"})
 	require.Equal(t, "networking.k8s.io/v1", ref.APIVersion)

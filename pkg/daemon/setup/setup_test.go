@@ -304,10 +304,32 @@ func TestBootstrapConfigValidateOnly(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsConflictingStickyCookies(t *testing.T) {
+	// the cookie check needs the backend clients, so -validate-config must reach it as startup does
+	path := writeConfig(t, `
+backends:
+  origin:
+    provider: rp
+    origin_url: 'http://example.com'
+  first:
+    provider: alb
+    alb: {mechanism: rr, pool: [{name: origin}], sticky: {}}
+  second:
+    provider: alb
+    alb: {mechanism: rr, pool: [{name: origin}], sticky: {}}
+`)
+	const want = `alb backends "first" and "second" both set sticky cookie "trickster_sticky"`
+	for _, args := range [][]string{{"-validate-config", "-config", path}, {"-config", path}} {
+		if _, _, err := BootstrapConfig(args...); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%v: error = %v, want %q", args, err, want)
+		}
+	}
+}
+
 func TestBootstrapConfigRoutesRulesAndPoolsError(t *testing.T) {
 	// two backends marked default fail during route registration, which only
-	// happens after the config itself validates cleanly
-	_, _, err := BootstrapConfig("-config", writeConfig(t, `
+	// happens after the config itself validates cleanly, and -validate-config reaches it too
+	path := writeConfig(t, `
 backends:
   test1:
     is_default: true
@@ -317,9 +339,11 @@ backends:
     is_default: true
     provider: rp
     origin_url: 'http://example.com'
-`))
-	if err == nil {
-		t.Error("expected an error for multiple default backends")
+`)
+	for _, args := range [][]string{{"-config", path}, {"-validate-config", "-config", path}} {
+		if _, _, err := BootstrapConfig(args...); err == nil {
+			t.Errorf("%v: expected an error for multiple default backends", args)
+		}
 	}
 }
 

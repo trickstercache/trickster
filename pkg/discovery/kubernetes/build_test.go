@@ -72,16 +72,21 @@ func TestBuildServicesSkipsUnaddressable(t *testing.T) {
 		"a Service conveys no readiness")
 }
 
-// A pod being deleted is already draining; leaving it in the pool sends
-// traffic to a container that is on its way down.
-func TestBuildPodsSkipsTerminating(t *testing.T) {
-	pod := func(name, ip string, deleting bool) *corev1.Pod {
+// A pod being deleted drains while it is still ready, as its endpoint does, and leaves the pool
+// once it is not.
+func TestBuildPodsDrainsTerminating(t *testing.T) {
+	pod := func(name, ip string, ready, deleting bool) *corev1.Pod {
 		p := &corev1.Pod{
 			Name: name, Namespace: testNS,
 			Spec: corev1.PodSpec{Containers: []corev1.Container{{
 				Ports: []corev1.ContainerPort{{Name: "web", ContainerPort: 9090}},
 			}}},
 			Status: corev1.PodStatus{Phase: corev1.PodRunning, PodIP: ip},
+		}
+		if ready {
+			p.Status.Conditions = []corev1.PodCondition{
+				{Type: corev1.PodReady, Status: corev1.ConditionTrue},
+			}
 		}
 		if deleting {
 			now := metav1.Now()
@@ -90,13 +95,16 @@ func TestBuildPodsSkipsTerminating(t *testing.T) {
 		}
 		return p
 	}
-	idx := newIndexer(t, pod("live", "10.0.0.1", false),
-		pod("terminating", "10.0.0.2", true))
+	idx := newIndexer(t, pod("live", "10.0.0.1", false, false),
+		pod("draining", "10.0.0.2", true, true),
+		pod("stopping", "10.0.0.3", false, true))
 	s := testSubscription(&do.Query{Namespace: testNS, Port: "web"})
 	snap := s.buildPods(corelisters.NewPodLister(idx).Pods(testNS))
-	require.Equal(t, []string{"10.0.0.1:9090"}, addressesOf(snap))
+	require.Equal(t, []string{"10.0.0.1:9090", "10.0.0.2:9090"}, addressesOf(snap))
 	require.Equal(t, discovery.NotReady, snap[0].Ready,
 		"a pod with no Ready condition is not ready")
+	require.Equal(t, discovery.Terminating, snap[1].Ready,
+		"a ready pod being deleted drains")
 }
 
 // An endpoint with no address is a slot the control plane has not filled

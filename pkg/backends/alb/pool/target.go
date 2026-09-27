@@ -34,6 +34,7 @@ type Target struct {
 	group    string
 	weight   int
 	tier     int
+	draining bool
 	probed   bool
 	dialable bool
 	addr     string
@@ -84,7 +85,10 @@ func NewWeightedTarget(handler http.Handler, hcStatus *healthcheck.Status,
 
 // bind builds the target's core member, which points back at the target
 func (t *Target) bind(stats *lb.Stats) {
-	o := lb.MemberOptions{Name: t.name, Group: t.group, Weight: t.weight, Tier: t.tier, Stats: stats, Value: t}
+	o := lb.MemberOptions{
+		Name: t.name, Group: t.group, Weight: t.weight, Tier: t.tier, Draining: t.draining,
+		Stats: stats, Value: t,
+	}
 	if t.hcStatus != nil {
 		// a nil *Status must not become a non-nil Health
 		o.Health = t.hcStatus
@@ -106,6 +110,16 @@ func (t *Target) WithStats(stats *lb.Stats) *Target {
 func (t *Target) WithTier(tier int) *Target {
 	if tier = max(tier, 0); tier != t.tier {
 		t.tier = tier
+		t.bind(t.member.Stats())
+	}
+	return t
+}
+
+// WithDraining marks the target draining: it takes no new work, while the sessions pinned to it
+// still reach it. It returns the target.
+func (t *Target) WithDraining(draining bool) *Target {
+	if draining != t.draining {
+		t.draining = draining
 		t.bind(t.member.Stats())
 	}
 	return t

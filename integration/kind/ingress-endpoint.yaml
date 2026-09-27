@@ -215,3 +215,26 @@ spec:
                 name: webecho
                 port:
                   name: web
+---
+# the same Service with a cookie keeping each client on the endpoint it first
+# reached
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: shop-sticky
+  namespace: trickster-it
+  annotations:
+    trickstercache.org/sticky: cookie
+spec:
+  ingressClassName: trickster-endpoint
+  rules:
+    - host: sticky-endpoint.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: webecho
+                port:
+                  name: web

@@ -856,6 +856,18 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
+	// ALBStickyResults counts the requests and flows of an ALB that keeps sessions, by how their
+	// session fared: hit, miss, expired, invalid, repick or rejected
+	ALBStickyResults = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "sticky_total",
+			Help:      "Count of requests and flows through an ALB that keeps sessions, by how their session fared.",
+		},
+		[]string{keys.ALB_Name, keys.Result},
+	)
+
 	// ALBMemberEjections counts pool members taken out of selection by passive health, which
 	// acts on repeated failures to connect rather than on a health check
 	ALBMemberEjections = prometheus.NewCounterVec(
@@ -1093,6 +1105,7 @@ func init() {
 	prometheus.MustRegister(ProxyStreamMemberActiveConnections)
 	prometheus.MustRegister(ProxyStreamMemberConnectDuration)
 	prometheus.MustRegister(ALBMemberEjections)
+	prometheus.MustRegister(ALBStickyResults)
 	prometheus.MustRegister(ProxyStreamDroppedDatagrams)
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)

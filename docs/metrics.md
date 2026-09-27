@@ -97,7 +97,7 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `listener_name` - the name of the configured listener
     * `protocol` - `tcp`, `tls` or `udp`
-    * `result` - `proxied`, or why the connection was closed instead: `not_tls` (a `tls` listener received no ClientHello), `no_route` (no backend routes the server name), `no_upstream` (the backend's pool has no dialable member, or the member chosen refuses its share), `dial_failed`, or `refused` (a `udp` listener at its session limit, or a connection arriving as the listener closes)
+    * `result` - `proxied`, or why the connection was closed instead: `not_tls` (a `tls` listener received no ClientHello), `no_route` (no backend routes the server name), `no_upstream` (the backend's pool has no dialable member, or the member chosen refuses its share), `dial_failed`, `refused` (a `udp` listener at its session limit, or a connection arriving as the listener closes), or `denied` (turned away by the listener's admission control before anything was relayed)
 
 * `trickster_proxy_stream_active_connections` (Gauge) - The number of connections and UDP sessions stream listeners are relaying.
   * labels:
@@ -107,7 +107,7 @@ The following metrics are available for polling with any Trickster configuration
 * `trickster_proxy_stream_dropped_datagrams_total` (Counter) - The number of datagrams `udp` listeners dropped rather than relayed.
   * labels:
     * `listener_name` - the name of the configured listener
-    * `reason` - `queue_full` (the client's flow, or every flow together, already held its allowance of datagrams waiting to be written) or `write_timeout` (the write to the backend blocked for the whole write bound)
+    * `reason` - `queue_full` (the client's flow, or every flow together, already held its allowance of datagrams waiting to be written), `write_timeout` (the write to the backend blocked for the whole write bound) or `denied` (turned away by the listener's admission control)
 
 * `trickster_proxy_stream_bytes_total` (Counter) - The bytes relayed by stream listeners.
   * labels:
@@ -221,10 +221,24 @@ The following metrics are available for polling with any Trickster configuration
     * `alb_name` - the name of the configured ALB backend
     * `member` - the name of the pool member backend
 
+* `trickster_alb_member_draining` (Gauge) - 1 for each ALB pool member that is [draining](./alb.md#draining-pool-members): marked `drain: true`, or discovered while terminating but still serving. It keeps its sticky sessions and takes no new work. Members that are not draining have no series; read when the metrics endpoint is scraped.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
+
 * `trickster_alb_member_ejections_total` (Counter) - The number of times `alb.stream.passive_health` took a pool member out of selection after repeated connect failures.
   * labels:
     * `alb_name` - the name of the configured ALB backend
     * `member` - the name of the pool member backend
+
+* `trickster_alb_sticky_total` (Counter) - The number of requests, stream connections and native sessions through an ALB with [sticky sessions](./alb.md#sticky-sessions), by how their session fared. Each is counted once it reaches its member or is refused, and not at all when it reaches no member; see [Sticky Session Metrics](./alb.md#sticky-session-metrics).
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `result` - `hit` (sent to the member its session is pinned to), `miss` (no token or table entry), `expired` (a token past its `ttl` or `idle`; an expired table entry is a `miss`), `invalid` (a token that is altered, signed with another key or issued by another ALB), `repick` (its member was unavailable and the session moved) or `rejected` (its member was unavailable and `on_unavailable: reject` refused it)
+
+* `trickster_alb_sticky_entries` (Gauge) - The number of entries in the table of an ALB that keeps sticky sessions in a table, on any listener, expired entries not yet removed included; read when the metrics endpoint is scraped.
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
 
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 

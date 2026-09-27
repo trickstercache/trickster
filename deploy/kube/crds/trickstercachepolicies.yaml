@@ -186,6 +186,36 @@ spec:
                     host, header:<name>, cookie:<name> or query:<name> for HTTP routes, and
                     client_ip or sni for TCP, TLS and UDP routes.
                   type: string
+                sticky:
+                  description: >-
+                    Keeps a client on the endpoint it was first sent to, in the endpoint
+                    routing mode: cookie or header (an issued token, HTTP routes only) or
+                    table (a pin kept by stickyKey). none turns off a less specific
+                    policy's. TCP, TLS and UDP routes always keep sessions in a table.
+                  type: string
+                  enum:
+                    - cookie
+                    - header
+                    - table
+                    - none
+                stickyKey:
+                  description: >-
+                    What table mode keeps a client's endpoint by: client_ip (the default),
+                    host, header:<name>, cookie:<name> or query:<name> for HTTP routes, and
+                    client_ip or sni for TCP, TLS and UDP routes.
+                  type: string
+                stickyTTL:
+                  description: >-
+                    Ends a session this long after it began; a duration with a unit of at
+                    least 1s. 1h unless set.
+                  type: string
+                  pattern: '^[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)([0-9]+(ns|us|µs|ms|s|m|h|d|w|y))*$'
+                stickyIdle:
+                  description: >-
+                    Ends a session unused for this long; a duration with a unit of at least
+                    1s. Never unless set.
+                  type: string
+                  pattern: '^[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)([0-9]+(ns|us|µs|ms|s|m|h|d|w|y))*$'
                 resultHeader:
                   description: >-
                     Whether the X-Trickster-Result response header reaches the client;

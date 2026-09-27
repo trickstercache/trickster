@@ -44,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
@@ -53,11 +54,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -82,6 +86,51 @@ func TestShouldCaptureAuthForVirtualBackend(t *testing.T) {
 	if shouldCaptureAuth(path, backend) {
 		t.Error("ordinary unauthenticated backend should not seed resources")
 	}
+}
+
+func TestPathAuthenticatorReferences(t *testing.T) {
+	const backendAuthName, pathAuthName = "backend-auth", "path-auth"
+	backend := &bo.Options{AuthOptions: basicAuthOptions(t, backendAuthName, false)}
+	// the backend's authenticator admits no one and the path's own only observes, so the status
+	// shows which of them ran, if either
+	tests := []struct {
+		path   *po.Options
+		status int
+		auth   bool
+	}{
+		{po.New(), http.StatusUnauthorized, true},
+		{
+			&po.Options{AuthenticatorName: pathAuthName, AuthOptions: basicAuthOptions(t, pathAuthName, true)},
+			http.StatusNoContent, true,
+		},
+		{&po.Options{AuthenticatorName: reserved.ReferenceNone}, http.StatusNoContent, false},
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for _, test := range tests {
+		w := httptest.NewRecorder()
+		r := request.SetResources(httptest.NewRequest(http.MethodGet, "/", nil), &request.Resources{})
+		attachAuthenticator(next, test.path, backend).ServeHTTP(w, r)
+		if w.Code != test.status {
+			t.Errorf("path authenticator %q: status = %d; want %d", test.path.AuthenticatorName, w.Code, test.status)
+		}
+		if got := hasAuthenticator(test.path, backend); got != test.auth {
+			t.Errorf("path authenticator %q: hasAuthenticator = %t; want %t",
+				test.path.AuthenticatorName, got, test.auth)
+		}
+	}
+}
+
+func basicAuthOptions(t *testing.T, name string, observeOnly bool) *autho.Options {
+	t.Helper()
+	o := &autho.Options{Name: name, Provider: basic.ID, ObserveOnly: observeOnly}
+	a, err := basic.New(map[string]any{"options": o})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Authenticator = a
+	return o
 }
 
 func TestRegisterHealthHandler(t *testing.T) {
@@ -1445,5 +1494,66 @@ func TestDefaultBackendRoutesMirror(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the default backend's request was not mirrored")
+	}
+}
+
+// an upgrade goes where it can be tunneled: to the passthrough lane of a backend with an origin, to
+// the handler of a virtual backend that sends each request to one backend, and nowhere otherwise
+func TestRouteUpgrades(t *testing.T) {
+	var tookPassthrough bool
+	var reached *http.Request
+	passthrough := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { tookPassthrough = true })
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { reached = r })
+	upgrade := func(h http.Handler) {
+		tookPassthrough, reached = false, nil
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		r.Header.Set("Connection", "Upgrade")
+		r.Header.Set("Upgrade", "websocket")
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	}
+	virtual := func(provider, mechanism string) backends.Backend {
+		o := bo.New()
+		o.Name, o.Provider = "v", provider
+		var c backends.Backend
+		var err error
+		if provider == providers.ALB {
+			o.ALBOptions = &options.Options{MechanismName: mechanism}
+			if err = o.ALBOptions.Initialize("v"); err != nil {
+				t.Fatal(err)
+			}
+			c, err = alb.NewClient("v", o, lm.NewRouter(), nil, nil, nil)
+		} else {
+			c, err = rule.NewClient("v", o, lm.NewRouter(), nil, nil, nil)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	o := bo.New()
+	o.Provider, o.OriginURL = providers.ReverseProxy, "http://example.com"
+	origin, err := reverseproxy.NewClient("origin", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgrade(routeUpgrades(origin, passthrough, next))
+	if !tookPassthrough || reached != nil {
+		t.Error("a backend with an origin did not tunnel its upgrade")
+	}
+	// a route with no backend has no passthrough lane either
+	upgrade(routeUpgrades(nil, nil, next))
+	if reached == nil {
+		t.Error("a route with no backend dropped its request")
+	}
+	for _, c := range []backends.Backend{virtual(providers.ALB, names.MechanismRR), virtual(providers.Rule, "")} {
+		upgrade(routeUpgrades(c, passthrough, next))
+		if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") == "" {
+			t.Errorf("%s did not hand its upgrade to its handler", c.Configuration().Provider)
+		}
+	}
+	// a fanout has no one backend to tunnel to, so it serves the request without the upgrade
+	upgrade(routeUpgrades(virtual(providers.ALB, names.MechanismFR), passthrough, next))
+	if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") != "" {
+		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
 	}
 }

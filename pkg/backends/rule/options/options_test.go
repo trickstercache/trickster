@@ -19,6 +19,8 @@ package options
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
+
 	"go.yaml.in/yaml/v3"
 )
 
@@ -96,7 +98,7 @@ func TestClone(t *testing.T) {
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	for _, name := range []string{"", "none"} {
+	for _, name := range []string{"", reserved.ReferenceNone} {
 		o := New()
 		o.Name = name
 		ok, err := o.Validate()

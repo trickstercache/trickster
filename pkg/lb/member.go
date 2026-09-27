@@ -15,6 +15,8 @@
  */
 package lb
 
+import "time"
+
 // MemberOptions describes a Member to NewMember.
 type MemberOptions struct {
 	// Name identifies the member. Named members must be unique within a pool.
@@ -28,6 +30,9 @@ type MemberOptions struct {
 	Tier int
 	// Health is the member's health source; nil means always eligible.
 	Health Health
+	// Draining keeps the member out of every snapshot, so no strategy gives it a new flow, while
+	// flows pinned to it still reach it for as long as it is eligible.
+	Draining bool
 	// Stats carries runtime state over from a member this one replaces; nil starts fresh.
 	Stats *Stats
 	// Value is the owner's payload, returned untouched by Member.Value.
@@ -36,13 +41,14 @@ type MemberOptions struct {
 
 // Member is one pool entry. It is immutable; its Stats and Health are live.
 type Member struct {
-	name   string
-	group  string
-	weight int
-	tier   int
-	hash   uint64
-	health Health
-	stats  *Stats
+	name     string
+	group    string
+	weight   int
+	tier     int
+	hash     uint64
+	health   Health
+	stats    *Stats
+	draining bool
 	// Value is the owner's payload: whatever it dispatches to. The core never reads it.
 	Value any
 }
@@ -50,14 +56,15 @@ type Member struct {
 // NewMember returns a Member for the provided options.
 func NewMember(o MemberOptions) *Member {
 	m := &Member{
-		name:   o.Name,
-		group:  o.Group,
-		weight: max(o.Weight, 1),
-		tier:   max(o.Tier, 0),
-		hash:   hashString(o.Name),
-		health: o.Health,
-		stats:  o.Stats,
-		Value:  o.Value,
+		name:     o.Name,
+		group:    o.Group,
+		weight:   max(o.Weight, 1),
+		tier:     max(o.Tier, 0),
+		hash:     hashString(o.Name),
+		health:   o.Health,
+		stats:    o.Stats,
+		draining: o.Draining,
+		Value:    o.Value,
 	}
 	if m.group == "" {
 		m.group = m.name
@@ -89,9 +96,20 @@ func (m *Member) Health() Health { return m.health }
 // Stats returns the member's runtime state; never nil.
 func (m *Member) Stats() *Stats { return m.stats }
 
+// Draining reports whether the member takes only the flows pinned to it.
+func (m *Member) Draining() bool { return m.draining }
+
 // eligible reports whether the member's current status meets floor and it is not ejected
 func (m *Member) eligible(floor int32, nowNano int64) bool {
 	if m.stats.ejectedUntil.Load() > nowNano {
+		return false
+	}
+	return m.health == nil || m.health.Get() >= floor
+}
+
+func (m *Member) eligibleNow(floor int32) bool {
+	// the clock is read only for a member that has been ejected at some time
+	if until := m.stats.ejectedUntil.Load(); until != 0 && until > time.Now().UnixNano() {
 		return false
 	}
 	return m.health == nil || m.health.Get() >= floor

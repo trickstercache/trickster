@@ -27,6 +27,7 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 )
 
@@ -77,7 +78,7 @@ func newMemberTarget(doc *document, g ir.BackendGroup, m ir.BackendMember,
 			TemplateBackend: tmplName,
 			HealthMode:      eff.healthMode,
 			Query:           query,
-		}, ao.KeySource.OnHTTP),
+		}, flowkey.KeySource.OnHTTP),
 	}
 	return &memberTarget{
 		front: front, frontHandler: providers.ALB,
