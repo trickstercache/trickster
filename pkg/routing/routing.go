@@ -47,6 +47,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -70,6 +72,26 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 			backendOptions.AuthOptions.Authenticator, h)
 	}
 	return h
+}
+
+// effectiveIPACL is the list enforced for this path. none clears the backend
+// list. An empty name inherits it. A named path list replaces it. The backend
+// list is not copied onto the path.
+func effectiveIPACL(path *po.Options, backend *bo.Options) *ipacl.List {
+	if path == nil {
+		return nil
+	}
+	switch path.IPACLName {
+	case reserved.ReferenceNone:
+		return nil
+	case "":
+		if backend == nil {
+			return nil
+		}
+		return backend.IPACL
+	default:
+		return path.IPACL
+	}
 }
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
@@ -161,6 +183,8 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	withResources := shouldCaptureAuth(pathOpts, o) || pathOpts.HideResultHeader ||
 		rl.logger.NeedsResources()
 	h = attachAuthenticator(h, pathOpts, o)
+	// the access list runs before authentication and before the cache handler
+	h = aclhandler.Middleware(effectiveIPACL(pathOpts, o), "", h)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
 	// WithResourcesContext must wrap outer than LimitQueryRange
 	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)

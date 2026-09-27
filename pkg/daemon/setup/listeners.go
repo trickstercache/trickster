@@ -40,6 +40,7 @@ import (
 	certs "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/certificates"
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	l4observe "github.com/trickstercache/trickster/v2/pkg/proxy/l4/observe"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -94,10 +95,15 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 	})
 }
 
-func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
-	// every request on the listener passes here ahead of the router, unmatched ones included; middleware
-	// added here goes between the access log and next, so its answers are logged against the real client
-	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger, next))
+func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, readyPath string,
+	next http.Handler,
+) http.Handler {
+	// client IP, then the router access log, then the listener access list, then next.
+	// next is the readiness guard on a proxy listener and the built-in router on mgmt
+	// and metrics. The list exempts readyPath and answers a denial itself, so the
+	// access log records that status against the resolved client.
+	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
+		aclhandler.Middleware(o.IPACL, readyPath, next)))
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -270,6 +276,10 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		return out
 	}
 	nativeListeners := providerregistry.NativeListeners()
+	readyPath := ""
+	if conf.MgmtConfig != nil {
+		readyPath = conf.MgmtConfig.ReadyHandlerPath
+	}
 	for name, options := range conf.Listeners {
 		if options == nil || !options.Active {
 			continue
@@ -315,7 +325,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		default:
 			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
-		r = wrapListener(options, accessLogger, r)
+		r = wrapListener(options, accessLogger, readyPath, r)
 		if options.ListenPort > 0 {
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
