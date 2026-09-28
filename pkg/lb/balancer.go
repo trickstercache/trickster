@@ -25,11 +25,17 @@ import (
 // Pick is one committed selection, returned by value. Its holder reports what became of the
 // flow; each report costs nothing unless the strategy declared a need for it.
 type Pick struct {
-	member   *Member
-	balancer *Balancer
+	member *Member
+	// the balancer and pool it was made from; with no more than four fields, a Pick stays in registers
+	in *installed
 	// monotonic nanoseconds since the process's epoch; set only for a strategy that needs latency
 	start  int64
 	pinned bool
+}
+
+type installed struct {
+	b    *Balancer
+	pool *Pool
 }
 
 // epoch anchors the monotonic clock readings that picks are timed with
@@ -44,6 +50,15 @@ func (p Pick) Member() *Member {
 	return p.member
 }
 
+// Pool returns the pool the member was picked from, whose payload holds what the owner decided for
+// that membership; nil for the zero Pick.
+func (p Pick) Pool() *Pool {
+	if p.in == nil {
+		return nil
+	}
+	return p.in.pool
+}
+
 // Pinned reports whether the flow went to the member it was pinned to, not the strategy's choice.
 func (p Pick) Pinned() bool {
 	return p.pinned
@@ -53,7 +68,7 @@ func (p Pick) Pinned() bool {
 // sample. A caller reports whichever of Established and FirstByte is its latency signal.
 func (p Pick) Established(d time.Duration) {
 	if p.tracks(NeedLatency) {
-		p.member.stats.observe(float64(d), time.Now().UnixNano(), p.balancer.decay)
+		p.member.stats.observe(float64(d), time.Now().UnixNano(), p.in.b.decay)
 	}
 }
 
@@ -61,7 +76,7 @@ func (p Pick) Established(d time.Duration) {
 // a latency sample.
 func (p Pick) FirstByte() {
 	if p.tracks(NeedLatency) {
-		p.member.stats.observe(float64(monotonic()-p.start), time.Now().UnixNano(), p.balancer.decay)
+		p.member.stats.observe(float64(monotonic()-p.start), time.Now().UnixNano(), p.in.b.decay)
 	}
 }
 
@@ -69,7 +84,7 @@ func (p Pick) FirstByte() {
 // caller that reports OutcomeConnectFailed reports this as soon as a connect succeeds, not when
 // the flow ends: only then are the failures that count toward ejection consecutive connects.
 func (p Pick) Reached() {
-	if p.member != nil && p.balancer != nil && p.balancer.ejects && p.member.stats.connectFails.Load() != 0 {
+	if p.member != nil && p.in != nil && p.in.b.ejects && p.member.stats.connectFails.Load() != 0 {
 		p.member.stats.connectFails.Store(0)
 	}
 }
@@ -78,11 +93,11 @@ func (p Pick) Reached() {
 // the work panics, or the member's in-flight count leaks. A failed outcome records a latency
 // penalty, so a member that fails fast never looks fast.
 func (p Pick) Done(o Outcome) {
-	if p.member == nil || p.balancer == nil || (p.balancer.needs == 0 && !p.balancer.ejects) {
+	if p.member == nil || p.in == nil || (p.in.b.needs == 0 && !p.in.b.ejects) {
 		return
 	}
-	st := p.member.stats
-	if p.balancer.needs.Has(NeedInflight) {
+	b, st := p.in.b, p.member.stats
+	if b.needs.Has(NeedInflight) {
 		st.inflight.Add(-1)
 	}
 	switch o {
@@ -92,26 +107,26 @@ func (p Pick) Done(o Outcome) {
 		}
 	case OutcomeFailed, OutcomeConnectFailed:
 		st.fails.Add(1)
-		if p.balancer.needs.Has(NeedLatency) {
+		if b.needs.Has(NeedLatency) {
 			p.penalize(st)
 		}
 		// how a member answered never counts toward ejection, only whether it could be reached
-		if o == OutcomeConnectFailed && p.balancer.ejects &&
-			int(st.connectFails.Add(1)) >= p.balancer.ejection.Failures {
-			p.balancer.eject(p.member)
+		if o == OutcomeConnectFailed && b.ejects &&
+			int(st.connectFails.Add(1)) >= b.ejection.Failures {
+			b.eject(p.member)
 		}
 	case OutcomeCanceled:
 	}
 }
 
 func (p Pick) tracks(n Needs) bool {
-	return p.member != nil && p.balancer != nil && p.balancer.needs.Has(n)
+	return p.member != nil && p.in != nil && p.in.b.needs.Has(n)
 }
 
 // penalize records a sample no lower than the penalty, the time the failure took, and twice
 // the current average, so repeated failures push a member further back, up to a ceiling
 func (p Pick) penalize(st *Stats) {
-	b := p.balancer
+	b := p.in.b
 	sample := max(b.penalty, float64(monotonic()-p.start), 2*math.Float64frombits(st.latency.Load()))
 	st.latency.Store(math.Float64bits(min(sample, b.penalty*penaltyCeiling)))
 	st.stamp.Store(time.Now().UnixNano())
@@ -175,7 +190,7 @@ type Balancer struct {
 	ejects   bool
 	ejection EjectionOptions
 	observer Observer
-	pool     atomic.Pointer[Pool]
+	cur      atomic.Pointer[installed]
 	prepared atomic.Pointer[preparedSnapshot]
 }
 
@@ -216,7 +231,7 @@ const (
 
 func (b *Balancer) configure(o BalancerOptions) {
 	if o.Pool != nil {
-		b.pool.Store(o.Pool)
+		b.SetPool(o.Pool)
 	}
 	b.observer = o.Observer
 	if o.Ejection.Failures <= 0 {
@@ -235,13 +250,13 @@ func (b *Balancer) configure(o BalancerOptions) {
 // It runs on a failure path only. The member returns through a refresh of whichever pool is
 // current when the time is up, since membership may have been swapped meanwhile.
 func (b *Balancer) eject(m *Member) {
-	p := b.pool.Load()
+	p := b.Pool()
 	if p == nil || !p.eject(m, time.Now().Add(b.ejection.Duration), b.ejection.MaxPercent) {
 		return
 	}
 	p.Refresh()
 	time.AfterFunc(b.ejection.Duration, func() {
-		if cur := b.pool.Load(); cur != nil {
+		if cur := b.Pool(); cur != nil {
 			cur.Refresh()
 		}
 	})
@@ -253,12 +268,20 @@ func (b *Balancer) eject(m *Member) {
 // SetPool replaces the pool that picks are made from; nil leaves the balancer with none. The
 // strategy's state carries over, so a rotation continues across a change of membership.
 func (b *Balancer) SetPool(p *Pool) {
-	b.pool.Store(p)
+	// each pool is installed anew, so the picks made from it name this pool and no other
+	if p == nil {
+		b.cur.Store(nil)
+		return
+	}
+	b.cur.Store(&installed{b: b, pool: p})
 }
 
 // Pool returns the balancer's current pool, or nil.
 func (b *Balancer) Pool() *Pool {
-	return b.pool.Load()
+	if in := b.cur.Load(); in != nil {
+		return in.pool
+	}
+	return nil
 }
 
 // Selector returns the balancer's strategy.
@@ -274,13 +297,14 @@ func (b *Balancer) Needs() Needs {
 // Pick commits one flow to an eligible member of the current pool: the member the flow is pinned
 // to while it is eligible, whatever its tier and even while it drains, else the strategy's choice.
 func (b *Balancer) Pick(f Flow) (Pick, bool) {
-	p := b.pool.Load()
-	if p == nil {
+	in := b.cur.Load()
+	if in == nil {
 		return Pick{}, false
 	}
+	p := in.pool
 	if f.HasPin {
 		if m := p.pinned(f.Pin); m != nil {
-			pk, _ := b.commit(m)
+			pk, _ := b.commit(in, m)
 			pk.pinned = true
 			return pk, true
 		}
@@ -293,13 +317,13 @@ func (b *Balancer) Pick(f Flow) (Pick, bool) {
 	if ps == nil || ps.snap != snap {
 		ps = b.prepare(snap)
 	}
-	return b.commit(ps.prepared.Select(f))
+	return b.commit(in, ps.prepared.Select(f))
 }
 
 // CanPick reports, without committing anything, whether Pick would now find a member for the
 // flow: its eligible pinned member, or any member of the current snapshot.
 func (b *Balancer) CanPick(f Flow) bool {
-	p := b.pool.Load()
+	p := b.Pool()
 	if p == nil {
 		return false
 	}
@@ -314,17 +338,17 @@ func (b *Balancer) prepare(snap *Snapshot) *preparedSnapshot {
 	return ps
 }
 
-func (b *Balancer) commit(m *Member) (Pick, bool) {
+func (b *Balancer) commit(in *installed, m *Member) (Pick, bool) {
 	if m == nil {
 		return Pick{}, false
 	}
 	if b.needs == 0 {
-		return Pick{member: m, balancer: b}, true
+		return Pick{member: m, in: in}, true
 	}
 	if b.needs.Has(NeedInflight) {
 		m.stats.inflight.Add(1)
 	}
-	pk := Pick{member: m, balancer: b}
+	pk := Pick{member: m, in: in}
 	if b.needs.Has(NeedLatency) {
 		pk.start = monotonic()
 	}
@@ -334,7 +358,10 @@ func (b *Balancer) commit(m *Member) (Pick, bool) {
 // Alternatives lists the eligible members skip does not report: the pinned member (any tier, even
 // draining), the strategy's choice, then pool order, from a one-off snapshot.
 func (b *Balancer) Alternatives(f Flow, skip func(*Member) bool) []*Member {
-	p := b.pool.Load()
+	return b.alternatives(b.Pool(), f, skip)
+}
+
+func (b *Balancer) alternatives(p *Pool, f Flow, skip func(*Member) bool) []*Member {
 	if p == nil {
 		return nil
 	}
@@ -384,24 +411,33 @@ func (b *Balancer) Alternatives(f Flow, skip func(*Member) bool) []*Member {
 	return out
 }
 
-// Commit commits a flow to a member that Alternatives returned, as Pick would have.
+// Commit commits a flow to a member that Alternatives returned, as Pick would have; false for a
+// member that has since left the pool
 func (b *Balancer) Commit(m *Member) (Pick, bool) {
-	return b.commit(m)
+	in := b.cur.Load()
+	if in == nil || m == nil || !in.pool.holds(m) {
+		return Pick{}, false
+	}
+	return b.commit(in, m)
 }
 
 // Pinnable reports whether the current pool has a member that the pin names, eligible or not: a
 // pin it cannot honor is then to a member that is unavailable rather than gone.
 func (b *Balancer) Pinnable(pin uint64) bool {
-	p := b.pool.Load()
+	p := b.Pool()
 	return p != nil && p.Pinnable(pin)
 }
 
 // Repick commits the flow to an eligible member not in failed, for a retry: its pinned member while
 // eligible, else the strategy's choice. It is not a selection path.
 func (b *Balancer) Repick(f Flow, failed ...*Member) (Pick, bool) {
-	alts := b.Alternatives(f, func(m *Member) bool { return slices.Contains(failed, m) })
+	in := b.cur.Load()
+	if in == nil {
+		return Pick{}, false
+	}
+	alts := b.alternatives(in.pool, f, func(m *Member) bool { return slices.Contains(failed, m) })
 	if len(alts) == 0 {
 		return Pick{}, false
 	}
-	return b.commit(alts[0])
+	return b.commit(in, alts[0])
 }

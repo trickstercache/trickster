@@ -846,6 +846,8 @@ data:
     #     # truncate, drop, partial, partial_start, partial_end or off. The provider's default applies when it is unset.
     #     # off sends each query to the origin with its range as the client sent it, and caches the response as an
     #     # object for one minute, keyed on that range.
+    #     # On an alb, step_alignment applies one mode to every pool member's HTTP requests. A tsm alb without it
+    #     # applies its first configured member's mode, so that the members it merges answer on one grid.
     #     # step_alignment: truncate
 
     #     # volatile_window prevents new datapoints that fall within the window (relative to time.Now) from being permanently

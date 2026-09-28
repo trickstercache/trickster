@@ -19,6 +19,7 @@ package options
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -69,6 +70,15 @@ func NewErrUnsupportedStepAlignment(mode, supported timeseries.StepAlignment, pr
 func NewErrStepAlignmentNotImplemented(mode timeseries.StepAlignment, provider, backendName string) error {
 	return fmt.Errorf(`%w: "%s" for backend "%s" (provider "%s")`,
 		ErrStepAlignmentNotImplemented, mode, backendName, provider)
+}
+
+// NewErrStepAlignmentUnsupportedByMembers returns an error naming the pool members of an ALB that
+// can't apply the mode it applies to every member
+func NewErrStepAlignmentUnsupportedByMembers(mode timeseries.StepAlignment, albName string,
+	members []string,
+) error {
+	return fmt.Errorf(`%w "%s" for alb "%s": pool members [%s] can't apply it`,
+		ErrUnsupportedStepAlignment, mode, albName, strings.Join(members, ", "))
 }
 
 // ErrMissingProvider is an error type for missing provider

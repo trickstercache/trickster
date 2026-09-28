@@ -260,6 +260,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	// the mode and warning come from the pool this request fans out to, never a newer or older one
+	alignment := p.Alignment()
+	r = mech.Align(r, alignment.Mode)
 	hl := p.Targets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -387,6 +390,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnMsg := plan.UnsupportedWarning
+	if alignment.Warning != "" {
+		warnMsg = joinWarnings(warnMsg, alignment.Warning)
+	}
 
 	// Collect injected label keys from pool backends so they can be stripped
 	// before merging. This ensures series from different backends hash
@@ -426,26 +432,30 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					"live_groups":       liveGroups,
 				})
 		}
-		dw := fmt.Sprintf("trickster: served from %d of %d replica groups; results may be incomplete",
-			liveGroups, configuredGroups)
-		if warnMsg == "" {
-			warnMsg = dw
-		} else {
-			warnMsg += "; " + dw
-		}
+		warnMsg = joinWarnings(warnMsg, fmt.Sprintf(
+			"trickster: served from %d of %d replica groups; results may be incomplete",
+			liveGroups, configuredGroups))
 	} else {
 		h.degradeActive.Store(false)
 	}
 
 	// A plan may explicitly allow direct proxying when no planned rewrite,
 	// reduction, finalization, warning, or injected-label cleanup is needed.
-	if l == 1 && len(stripKeys) == 0 && plan.AllowSingleMemberBypass && !degraded {
+	if l == 1 && len(stripKeys) == 0 && plan.AllowSingleMemberBypass && !degraded &&
+		alignment.Warning == "" {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}
 
 	h.servePlan(w, r, hl, rsc, plan, stripKeys, finalizer, warnMsg,
 		configuredTargets)
+}
+
+func joinWarnings(warnings, next string) string {
+	if warnings == "" {
+		return next
+	}
+	return warnings + "; " + next
 }
 
 // gatherResult captures the per-member fanout outcome used to assemble the

@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // Pool defines the interface for a load balancer pool
@@ -44,13 +45,23 @@ type Pool interface {
 	Stop()
 	// RefreshHealthy forces a rebuild of the pool's dispatchable set.
 	RefreshHealthy()
+	// Alignment returns the step alignment the pool's members answer under, fixed when it was built.
+	Alignment() Alignment
+}
+
+// Alignment is the step alignment mode that requests dispatched through one pool are answered under,
+// and the warning their merged responses carry
+type Alignment struct {
+	Mode    timeseries.StepAlignment
+	Warning string
 }
 
 // pool implements Pool over the protocol-neutral core
 type pool struct {
-	targets Targets
-	core    *lb.Pool
-	view    atomic.Pointer[targetsView]
+	targets   Targets
+	core      *lb.Pool
+	view      atomic.Pointer[targetsView]
+	alignment Alignment
 }
 
 // targetsView is the Targets form of one core snapshot, built once per snapshot
@@ -71,7 +82,12 @@ func (o observers) Observe(ev lb.Event) {
 // New returns a new Pool. The observers are told of its events, the first snapshot included,
 // which is published before New returns.
 func New(targets Targets, healthyFloor int, extra ...lb.Observer) Pool {
-	p := &pool{targets: targets}
+	return NewAligned(targets, healthyFloor, Alignment{}, extra...)
+}
+
+// NewAligned returns a new Pool, as New does, whose members answer under the step alignment a
+func NewAligned(targets Targets, healthyFloor int, a Alignment, extra ...lb.Observer) Pool {
+	p := &pool{targets: targets, alignment: a}
 	members := make([]*lb.Member, 0, len(targets))
 	names := make(map[string]struct{}, len(targets))
 	for _, t := range targets {
@@ -97,11 +113,11 @@ func New(targets Targets, healthyFloor int, extra ...lb.Observer) Pool {
 	if len(extra) > 0 {
 		observer = append(observers{observer}, extra...)
 	}
-	core, err := lb.NewPool(members, healthyFloor, lb.PoolOptions{Observer: observer})
+	core, err := lb.NewPool(members, healthyFloor, lb.PoolOptions{Observer: observer, Value: p})
 	if err != nil {
 		// unreachable: nil and repeated members were filtered above
 		logger.Error("alb pool could not be built", logging.Pairs{"error": err.Error()})
-		core, _ = lb.NewPool(nil, healthyFloor)
+		core, _ = lb.NewPool(nil, healthyFloor, lb.PoolOptions{Value: p})
 	}
 	p.core = core
 	p.Targets()
@@ -110,6 +126,21 @@ func New(targets Targets, healthyFloor int, extra ...lb.Observer) Pool {
 
 func (p *pool) Core() *lb.Pool {
 	return p.core
+}
+
+func (p *pool) Alignment() Alignment {
+	return p.alignment
+}
+
+// ModeOf returns the step alignment mode of the pool a pick was made from: zero for a pick from a
+// core pool that no Pool built
+func ModeOf(pk lb.Pick) timeseries.StepAlignment {
+	if cp := pk.Pool(); cp != nil {
+		if p, ok := cp.Value().(*pool); ok {
+			return p.alignment.Mode
+		}
+	}
+	return 0
 }
 
 func (p *pool) RefreshHealthy() {

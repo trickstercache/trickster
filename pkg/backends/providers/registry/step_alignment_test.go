@@ -121,7 +121,8 @@ func TestValidateStepAlignment(t *testing.T) {
 			"not a time series provider", providers.ReverseProxyCache, timeseries.StepAlignmentTruncate,
 			bo.ErrUnsupportedStepAlignment,
 		},
-		{"alb", providers.ALB, timeseries.StepAlignmentTruncate, bo.ErrStepAlignmentNotImplemented},
+		// an alb's members are validated against its mode once its pool is known
+		{"alb", providers.ALB, timeseries.StepAlignmentTruncate, nil},
 		// options built in code bypass YAML's single-name decoding
 		{
 			"two supported and applied modes", providers.Prometheus,
@@ -164,6 +165,47 @@ func TestValidateStepAlignment(t *testing.T) {
 				t.Errorf("the error should name the value: %v", err)
 			}
 		})
+	}
+}
+
+func TestStepAlignmentProfile(t *testing.T) {
+	const promApplied = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+		timeseries.StepAlignmentPartialEnd
+	withMode := func(mode timeseries.StepAlignment) *bo.Options {
+		o := bo.New()
+		o.StepAlignment = mode
+		return o
+	}
+	fastForwardDisabled := bo.New()
+	fastForwardDisabled.FastForwardDisable = true
+	tests := []struct {
+		name, provider        string
+		o                     *bo.Options
+		effective, applicable timeseries.StepAlignment
+	}{
+		{"the provider default", providers.Prometheus, nil, timeseries.StepAlignmentPartialEnd, promApplied},
+		{
+			"a configured mode", providers.Prometheus, withMode(timeseries.StepAlignmentOff),
+			timeseries.StepAlignmentOff, promApplied,
+		},
+		{
+			"fast_forward_disable", providers.Prometheus, fastForwardDisabled,
+			timeseries.StepAlignmentTruncate, promApplied,
+		},
+		// supported modes the provider doesn't apply yet are left out
+		{"applied modes only", providers.InfluxDB, nil, timeseries.StepAlignmentTruncate, timeseries.StepAlignmentOff},
+		{"not a time series provider", providers.ReverseProxyCache, nil, 0, 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			effective, applicable := backends.StepAlignmentProfile(newTestClient(t, test.provider, test.o))
+			if effective != test.effective || applicable != test.applicable {
+				t.Errorf("got (%s; %s) want (%s; %s)", effective, applicable, test.effective, test.applicable)
+			}
+		})
+	}
+	if effective, applicable := backends.StepAlignmentProfile(nil); effective != 0 || applicable != 0 {
+		t.Errorf("a nil backend has no profile, got (%s; %s)", effective, applicable)
 	}
 }
 

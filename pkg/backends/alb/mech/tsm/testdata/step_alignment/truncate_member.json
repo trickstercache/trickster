@@ -1,0 +1,35 @@
+{
+  "results": [
+    {
+      "statement_id": 0,
+      "series": [
+        {
+          "name": "rps",
+          "points": [
+            {
+              "epoch": 60000000000,
+              "size": 32,
+              "values": [
+                "10"
+              ]
+            },
+            {
+              "epoch": 120000000000,
+              "size": 32,
+              "values": [
+                "10"
+              ]
+            },
+            {
+              "epoch": 180000000000,
+              "size": 32,
+              "values": [
+                "10"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

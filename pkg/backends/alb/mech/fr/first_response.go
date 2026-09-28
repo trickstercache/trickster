@@ -104,6 +104,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	r = mech.Align(r, p.Alignment().Mode)
 	hl := p.Targets()
 	l := len(hl)
 	if l == 0 {

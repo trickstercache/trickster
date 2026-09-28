@@ -48,6 +48,8 @@ type Snapshot struct {
 type PoolOptions struct {
 	// Observer receives the pool's events; nil discards them.
 	Observer Observer
+	// Value is the owner's payload for the whole pool, returned untouched by Pool.Value.
+	Value any
 }
 
 // Pool is a fixed membership whose eligible subset is republished as member health changes.
@@ -57,6 +59,7 @@ type Pool struct {
 	byHash   map[uint64]*Member
 	floor    int32
 	observer Observer
+	value    any
 	snap     atomic.Pointer[Snapshot]
 	// held across read-build-publish so snapshots are published in order
 	mtx     sync.Mutex
@@ -91,7 +94,7 @@ func NewPool(members []*Member, floor int, opts ...PoolOptions) (*Pool, error) {
 	}
 	p := &Pool{members: slices.Clone(members), byHash: byHash, floor: clampFloor(floor)}
 	if len(opts) > 0 {
-		p.observer = opts[0].Observer
+		p.observer, p.value = opts[0].Observer, opts[0].Value
 	}
 	p.snap.Store(&Snapshot{})
 	// subscribe before the first build, so a transition between the two forces a rebuild
@@ -113,6 +116,19 @@ func NewPool(members []*Member, floor int, opts ...PoolOptions) (*Pool, error) {
 func clampFloor(floor int) int32 {
 	const lo, hi = -1 << 31, 1<<31 - 1
 	return int32(min(max(floor, lo), hi)) // #nosec G115 -- clamped to the int32 range
+}
+
+// Value returns the owner's payload for the pool, as PoolOptions set it. The core never reads it.
+func (p *Pool) Value() any {
+	return p.value
+}
+
+func (p *Pool) holds(m *Member) bool {
+	// eligible or not
+	if m.name != "" && p.byHash[m.hash] == m {
+		return true
+	}
+	return slices.Contains(p.members, m)
 }
 
 // Snapshot returns the pool's current eligible members; never nil.

@@ -45,11 +45,12 @@ func ValidateStepAlignment(b Backend, o *bo.Options) error {
 	if !o.StepAlignment.IsMode() {
 		return bo.NewErrInvalidStepAlignment(o.StepAlignment, o.Name)
 	}
+	if o.Provider == providers.ALB {
+		// an ALB applies its mode to its members, which the ALB validates once its pool is known
+		return nil
+	}
 	sa, ok := b.(timeseries.StepAligner)
 	if !ok {
-		if o.Provider == providers.ALB {
-			return bo.NewErrStepAlignmentNotImplemented(o.StepAlignment, o.Provider, o.Name)
-		}
 		return bo.NewErrUnsupportedStepAlignment(o.StepAlignment, 0, o.Provider, o.Name)
 	}
 	if supported, _ := sa.StepAlignments(); supported&o.StepAlignment == 0 {
@@ -60,4 +61,23 @@ func ValidateStepAlignment(b Backend, o *bo.Options) error {
 		return bo.NewErrStepAlignmentNotImplemented(o.StepAlignment, o.Provider, o.Name)
 	}
 	return nil
+}
+
+// StepAlignmentProfile returns the mode a backend applies when no request names one, and the modes
+// it can be told to apply; both are zero for a backend that applies no step alignment
+func StepAlignmentProfile(b Backend) (effective, applicable timeseries.StepAlignment) {
+	if b == nil {
+		return 0, 0
+	}
+	sa, ok := b.(timeseries.StepAligner)
+	o := b.Configuration()
+	if !ok || o == nil {
+		return 0, 0
+	}
+	supported, def := sa.StepAlignments()
+	effective = def
+	if o.StepAlignment != 0 {
+		effective = o.StepAlignment
+	}
+	return effective, supported & stepAlignmentsApplied[o.Provider]
 }
