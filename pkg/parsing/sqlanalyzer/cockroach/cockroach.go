@@ -1072,12 +1072,16 @@ func normalizePrimaryBounds(
 		strings.EqualFold(result.lower.target.field, bucket.outputColumn) &&
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
 	if lowerOnOutput {
+		first := timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 		if result.lower.inclusive {
-			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = first
 		} else {
 			result.lower.value = timeseries.FloorToGrid(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
+			first = result.lower.value.Add(bucket.step)
 		}
+		// output labels are discrete, so the raw range starts at the first label, on the grid
+		result.rawLower = sqlanalyzer.Bound{Value: first, Inclusive: true}
 	} else {
 		if !result.lower.inclusive {
 			return ErrUnsafePredicate
@@ -1098,12 +1102,15 @@ func normalizePrimaryBounds(
 		strings.EqualFold(result.upper.target.field, bucket.outputColumn) &&
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
 	if upperOnOutput {
+		end := timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
 		if result.upper.inclusive {
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
+			end = result.upper.value.Add(bucket.step)
 		} else {
-			result.upper.value = timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = end
 			result.upper.target.offset = bucket.step
 		}
+		result.rawUpper = &sqlanalyzer.Bound{Value: end}
 		return nil
 	}
 	if result.upper.inclusive {
@@ -1120,6 +1127,7 @@ func normalizePrimaryBounds(
 			// col <= X with X one tick below a boundary covers that bucket whole; it is
 			// the form this renderer writes, so a rendered statement reads back unchanged
 			result.upper.value = result.upper.value.Add(tick)
+			result.rawUpper = &sqlanalyzer.Bound{Value: result.upper.value}
 		case !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase):
 			if !roundUnaligned {
 				return ErrUnsafePredicate

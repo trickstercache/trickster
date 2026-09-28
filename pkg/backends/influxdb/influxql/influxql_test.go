@@ -114,10 +114,8 @@ func TestParseStatementRecordsRequestedRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the parsed maximum is inclusive, one nanosecond before the exclusive bound
-	want := timeseries.RequestedRange{
-		Start: start, End: start.Add(time.Hour - time.Nanosecond), EndInclusive: true,
-	}
+	// the parsed inclusive maximum, one nanosecond before the bound, is recorded half-open
+	want := timeseries.RequestedRange{Start: start, End: start.Add(time.Hour)}
 	if !trq.Requested.Start.Equal(want.Start) || !trq.Requested.End.Equal(want.End) ||
 		trq.Requested.EndInclusive != want.EndInclusive || trq.Requested.OpenEnded {
 		t.Errorf("requested range = %+v", trq.Requested)

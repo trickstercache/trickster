@@ -213,6 +213,19 @@ func TestRequestedRange(t *testing.T) {
 			QueryPlan{RawLower: &Bound{Value: lower, Inclusive: true}},
 			timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true},
 		},
+		// plans without raw bounds describe their range by the rounded bucket extent
+		{"rounded, exclusive upper", QueryPlan{
+			Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true}, UpperBound: &Bound{Value: upper},
+		}, timeseries.RequestedRange{Start: lower, End: upper}},
+		{"rounded, inclusive upper label", QueryPlan{
+			Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true},
+			UpperBound: &Bound{Value: upper, Inclusive: true},
+		}, timeseries.RequestedRange{Start: lower, End: upper.Add(time.Minute)}},
+		{
+			"rounded, open ended",
+			QueryPlan{Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true}},
+			timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

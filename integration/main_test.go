@@ -133,7 +133,7 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		now := time.Now()
 		step := 15 * time.Second
-		// Truncate end to step boundary to match DPC's NormalizeExtent.
+		// Truncate end to step boundary to match DPC's AlignExtent.
 		end := now.Truncate(step)
 		start := end.Add(-5 * time.Minute)
 		qp := url.Values{

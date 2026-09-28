@@ -28,6 +28,7 @@ import (
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -244,34 +245,44 @@ func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
 	}
 }
 
-func TestDeltaTierOpenEndedWindowExcludesVolatileTail(t *testing.T) {
+func TestDeltaTierOpenEndedWindowEndsBeforeTheStillFillingBucket(t *testing.T) {
 	up := &fakeUpstream{executeFn: rangedUpstream(t)}
 	srv := newDeltaTestServer(t, up)
-
-	lower := time.Now().Add(-10 * time.Minute).Truncate(time.Minute).Unix()
-	query := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, avg(v) AS v "+
-		"FROM m WHERE time >= %d GROUP BY 1, host", lower)
-	first := executeRows(t, srv, query)
-	if up.executeCalls != 1 || len(first) == 0 {
-		t.Fatalf("open-ended miss = %d calls, %d rows", up.executeCalls, len(first))
+	type attempt struct {
+		calls, firstRows, secondRows int
+		fetched                      string
+		bucket                       time.Time
 	}
-	// the still-filling tail is excluded from storage, so an immediate rerun
-	// refetches only the volatile buckets
-	second := executeRows(t, srv, query)
-	if up.executeCalls != 2 {
-		t.Fatalf("open-ended rerun made %d upstream calls, want 2", up.executeCalls)
+	// a bucket that closes between the two requests adds a fetch, so such attempts are retried
+	got, ok := stepwindow.Retry(time.Minute, 3, func(_ int, now time.Time) attempt {
+		up.executeCalls, up.executedQueries = 0, nil
+		lower := now.Add(-10 * time.Minute).Truncate(time.Minute).Unix()
+		query := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, avg(v) AS v "+
+			"FROM m WHERE time >= %d GROUP BY 1, host", lower)
+		first := executeRows(t, srv, query)
+		second := executeRows(t, srv, query)
+		a := attempt{
+			calls: up.executeCalls, firstRows: len(first), secondRows: len(second),
+			bucket: now.Truncate(time.Minute),
+		}
+		if len(up.executedQueries) > 0 {
+			a.fetched = up.executedQueries[0]
+		}
+		return a
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a bucket boundary")
 	}
-	if len(second) < len(first)-4 || len(second) > len(first)+4 {
-		t.Fatalf("open-ended rerun rows = %d vs %d", len(second), len(first))
+	// the first request fetches up to the still-filling bucket, and the repeat is a full hit
+	if got.calls != 1 || got.firstRows == 0 || got.secondRows != got.firstRows {
+		t.Fatalf("got %d upstream calls and %d then %d rows", got.calls, got.firstRows, got.secondRows)
 	}
-	tail := up.executedQueries[len(up.executedQueries)-1]
-	match := renderedBounds.FindStringSubmatch(tail)
+	match := renderedBounds.FindStringSubmatch(got.fetched)
 	if match == nil {
-		t.Fatalf("no bounds in volatile refetch %q", tail)
+		t.Fatalf("no bounds in %q", got.fetched)
 	}
-	refetchLower, _ := strconv.ParseInt(match[1], 10, 64)
-	if refetchLower <= lower {
-		t.Fatalf("volatile refetch re-fetched the whole window: %s", tail)
+	if upper, _ := strconv.ParseInt(match[2], 10, 64); upper != got.bucket.Unix() {
+		t.Fatalf("expected the fetch to end at the still-filling bucket %d: %s", got.bucket.Unix(), got.fetched)
 	}
 }
 

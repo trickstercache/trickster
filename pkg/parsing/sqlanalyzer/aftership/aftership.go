@@ -1042,12 +1042,16 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 
 	lowerOnOutput := result.lower.target != nil && result.lower.target.field == bucket.outputColumn
 	if lowerOnOutput {
+		first := timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 		if result.lower.inclusive {
-			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = first
 		} else {
 			result.lower.value = timeseries.FloorToGrid(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
+			first = result.lower.value.Add(bucket.step)
 		}
+		// output labels are discrete, so the raw range starts at the first label, on the grid
+		result.rawLower = sqlanalyzer.Bound{Value: first, Inclusive: true}
 	} else {
 		if !result.lower.inclusive {
 			return ErrUnsafePredicate
@@ -1066,12 +1070,15 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 	}
 	upperOnOutput := result.upper.target != nil && result.upper.target.field == bucket.outputColumn
 	if upperOnOutput {
+		end := timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
 		if result.upper.inclusive {
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
+			end = result.upper.value.Add(bucket.step)
 		} else {
-			result.upper.value = timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = end
 			result.upper.target.offset = bucket.step
 		}
+		result.rawUpper = &sqlanalyzer.Bound{Value: end}
 		return nil
 	}
 	if result.upper.inclusive {

@@ -197,9 +197,10 @@ func ParseBucketEdge(name string) (BucketEdge, bool) {
 
 // PartialBucket is an edge bucket whose rows are bounded by the client's raw range
 type PartialBucket struct {
-	Label          time.Time  // grid timestamp the origin labels the bucket with
+	Label          time.Time  // timestamp the origin labels the bucket with
 	Lower, Upper   time.Time  // raw half-open fetch bounds; a zero Upper means unbounded
-	UpperInclusive bool       // render the client's original inclusive upper form
+	LowerExclusive bool       // the client's lower bound excludes Lower
+	UpperInclusive bool       // the client's upper bound includes Upper
 	Edge           BucketEdge // the edge of the range the bucket sits on
 }
 

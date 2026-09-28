@@ -137,13 +137,19 @@ func (p *QueryPlan) RequestExtent(now time.Time) timeseries.Extent {
 	return extent
 }
 
-// RequestedRange returns the plan's raw bounds as the client's range; a missing upper bound is
-// open-ended and ends at now
+// RequestedRange returns the plan's raw bounds as the client's range, or its rounded bucket extent
+// when it has none; a missing upper bound is open-ended and ends at now
 func (p *QueryPlan) RequestedRange(now time.Time) timeseries.RequestedRange {
 	var r timeseries.RequestedRange
-	if p.RawLower != nil {
-		r.Start, r.StartExclusive = p.RawLower.Value, !p.RawLower.Inclusive
+	if p.RawLower == nil {
+		e := p.RequestExtent(now)
+		r.Start, r.End, r.OpenEnded = e.Start, e.End.Add(p.Step), p.UpperBound == nil
+		if r.OpenEnded {
+			r.End = now
+		}
+		return r
 	}
+	r.Start, r.StartExclusive = p.RawLower.Value, !p.RawLower.Inclusive
 	if p.RawUpper == nil {
 		r.End, r.OpenEnded = now, true
 	} else {

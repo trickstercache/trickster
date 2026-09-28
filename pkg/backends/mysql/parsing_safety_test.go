@@ -98,7 +98,8 @@ func TestAnalyzerRangeEdges(t *testing.T) {
 		{"unaligned", "1785542401", "1785542521", true, false},
 		{"aligned", "1785542400", "1785542520", true, false},
 		{"negative epoch", "-3600", "-3480", true, false},
-		{"far future", "7258118400", "7258118520", true, false},
+		// buckets that have not ended are never complete
+		{"far future", "7258118400", "7258118520", true, true},
 		{"seconds overflow", "9223372037", "9223372097", false, false},
 	}
 	for _, tc := range tests {

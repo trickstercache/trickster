@@ -55,7 +55,7 @@ type TimeRangeQuery struct {
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration `msg:"-"`
 	// PolicyStep optionally overrides Step for cache policies expressed in logical query points.
-	// It does not affect timestamp-grid operations such as extent normalization and gap detection.
+	// It does not affect timestamp-grid operations such as extent alignment and gap detection.
 	PolicyStep time.Duration `msg:"-"`
 	// Phase is the bucket offset from the Unix epoch
 	Phase time.Duration `msg:"-"`
@@ -158,11 +158,16 @@ func (trq *TimeRangeQuery) CachePolicyStep() time.Duration {
 	return trq.Step
 }
 
-// NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
-func (trq *TimeRangeQuery) NormalizeExtent() {
+// AlignExtent floors the Start and End of a TimeRangeQuery's Extent to its step grid, first capping
+// End at the current time unless the query uses an offset modifier
+func (trq *TimeRangeQuery) AlignExtent() {
+	trq.alignExtent(time.Now())
+}
+
+func (trq *TimeRangeQuery) alignExtent(now time.Time) {
 	if trq.Step > 0 {
-		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
-			trq.Extent.End = time.Now()
+		if !trq.IsOffset && trq.Extent.End.After(now) {
+			trq.Extent.End = now
 		}
 		trq.Extent.Start = FloorToGrid(trq.Extent.Start, trq.Step, trq.Phase)
 		trq.Extent.End = FloorToGrid(trq.Extent.End, trq.Step, trq.Phase)
@@ -217,7 +222,7 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 func (trq *TimeRangeQuery) Size() int {
 	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
 		urls.Size(trq.TemplateURL) + 20 + // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1 SampleModel=1
-		51 + 2 + 148 + 1 // Requested=51 StepAlignments=1 StepAlignment=1 Partials=2*74 PartialCount=1
+		51 + 2 + 150 + 1 // Requested=51 StepAlignments=1 StepAlignment=1 Partials=2*75 PartialCount=1
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}

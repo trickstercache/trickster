@@ -75,7 +75,7 @@ GROUP BY time, cab_type ORDER BY time, metric`
 }
 
 func TestParseUsesCanonicalCacheKey(t *testing.T) {
-	query, cacheable, err := Parse(safeDateTimeQuery, time.Time{})
+	query, cacheable, err := Parse(safeDateTimeQuery, time.Unix(1_800_000_000, 0))
 	if err != nil || !cacheable {
 		t.Fatalf("parse() = cacheable %t, err %v", cacheable, err)
 	}

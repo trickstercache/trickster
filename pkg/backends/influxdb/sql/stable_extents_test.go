@@ -27,8 +27,8 @@ import (
 )
 
 func TestOriginPhasedRefetchStartsOnBucket(t *testing.T) {
-	// an open-ended date_bin with an origin is delta cached on a 30m-phased hourly grid;
-	// the refetch after the volatile tail is trimmed must begin at a bucket boundary
+	// an open-ended date_bin on a 30m-phased hourly grid: the refetch after the volatile tail is
+	// trimmed begins at a bucket boundary and ends before the live bucket
 	now := time.Date(2024, 1, 2, 1, 0, 0, 0, time.UTC)
 	analysis := Analyzer().Analyze(`SELECT date_bin(INTERVAL '1 hour', time, `+
 		`TIMESTAMP '2024-01-01 00:30:00') AS time, sum(v) FROM t `+
@@ -55,7 +55,7 @@ func TestOriginPhasedRefetchStartsOnBucket(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"time" >= TIMESTAMP '2024-01-01 23:30:00'`,
-		`"time" < TIMESTAMP '2024-01-02 01:30:00'`,
+		`"time" < TIMESTAMP '2024-01-02 00:30:00'`,
 	} {
 		if !strings.Contains(rendered, want) {
 			t.Errorf("expected %s in %s", want, rendered)

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -35,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
@@ -268,20 +270,29 @@ func TestDeltaCacheRefetchesTheVolatileTail(t *testing.T) {
 	}
 }
 
-func TestOpenEndedRangeRunsToNow(t *testing.T) {
+func TestOpenEndedRangeEndsBeforeTheStillFillingBucket(t *testing.T) {
 	upstream := newFakeUpstream(t, nil)
 	_, address := startServer(t, cachedConfig(t, upstream))
 	conn := mustDial(t, address, testClientUser, testClientPass)
-	now := time.Now().UTC().Truncate(fakeBucketStep)
-	sql := fmt.Sprintf("%sWHERE ts >= '%s' GROUP BY 1 ORDER BY 1", cacheTestSelect,
-		now.Add(-time.Hour).Format(time.RFC3339))
-	if got := rowsOf(t, conn, sql); len(got) < 12 {
-		t.Fatalf("expected about an hour of buckets, got %v", got)
+	type attempt struct{ first, second, refetched []string }
+	// a bucket that closes between the two requests adds a fetch, so such attempts are retried
+	got, ok := stepwindow.Retry(fakeBucketStep, 3, func(_ int, now time.Time) attempt {
+		start := now.UTC().Truncate(fakeBucketStep).Add(-time.Hour)
+		sql := fmt.Sprintf("%sWHERE ts >= '%s' GROUP BY 1 ORDER BY 1", cacheTestSelect,
+			start.Format(time.RFC3339))
+		first := rowsOf(t, conn, sql)
+		upstream.forget()
+		return attempt{first: first, second: rowsOf(t, conn, sql), refetched: upstream.received()}
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a bucket boundary")
 	}
-	upstream.forget()
-	rowsOf(t, conn, sql)
-	if got := upstream.received(); len(got) != 1 || strings.Contains(got[0], now.Add(-time.Hour).Format(time.RFC3339)) {
-		t.Fatalf("expected only the still-filling bucket to be refetched, got %q", got)
+	// an hour of complete buckets, plus the command tag; the bucket holding now is left out
+	if len(got.first) != 13 || !slices.Equal(got.first, got.second) {
+		t.Fatalf("expected twelve complete buckets twice, got %v then %v", got.first, got.second)
+	}
+	if len(got.refetched) != 0 {
+		t.Fatalf("expected the repeat to be served from cache, got %q", got.refetched)
 	}
 }
 

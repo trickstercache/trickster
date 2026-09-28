@@ -176,10 +176,12 @@ func testOps(counts *int) DeltaOps[*payload] {
 	}
 }
 
+var testNow = time.Unix(2_000_000_000, 0) // every test window has ended by then
+
 func deltaRequest(plan *sqlanalyzer.QueryPlan, ops DeltaOps[*payload]) DeltaRequest[*payload] {
 	return DeltaRequest[*payload]{
 		Key: "dpc", FallbackKey: "dpc-fallback", EmptyKey: "dpc-empty",
-		Plan: plan, Now: time.Unix(3600, 0), RequireUpperBound: true, Ops: ops,
+		Plan: plan, Now: testNow, RequireUpperBound: true, Ops: ops,
 	}
 }
 
@@ -555,15 +557,28 @@ func TestBuildWindowBounds(t *testing.T) {
 		}
 	})
 
-	t.Run("open upper runs to the present when allowed", func(t *testing.T) {
+	t.Run("open upper runs to the still-filling bucket when allowed", func(t *testing.T) {
 		plan := testPlan(0, 0)
 		plan.UpperBound = nil
 		if _, err := BuildWindow(plan, now, true); !errors.Is(err, ErrUnsupportedBounds) {
 			t.Fatalf("required upper bound accepted an open plan: %v", err)
 		}
-		window, err := BuildWindow(plan, now, false)
-		if err != nil || !window.Output.End.Equal(now) {
-			t.Fatalf("open window = %+v, %v", window, err)
+		for _, now := range []time.Time{now, now.Add(30 * time.Second)} {
+			window, err := BuildWindow(plan, now, false)
+			if err != nil || !window.Output.End.Equal(time.Unix(3540, 0)) || !window.Upper.Equal(time.Unix(3600, 0)) {
+				t.Fatalf("open window at %d = %+v, %v", now.Unix(), window, err)
+			}
+		}
+	})
+
+	t.Run("buckets that have not ended are left out", func(t *testing.T) {
+		window, err := BuildWindow(testPlan(3000, 7200), now.Add(30*time.Second), true)
+		if err != nil || !window.Output.End.Equal(time.Unix(3540, 0)) {
+			t.Fatalf("window = %+v, %v", window, err)
+		}
+		if window, err = BuildWindow(testPlan(3600, 7200), now.Add(30*time.Second), true); err != nil ||
+			!window.Empty {
+			t.Fatalf("a window of unfinished buckets = %+v, %v", window, err)
 		}
 	})
 

@@ -77,7 +77,7 @@ func fetchFastForward(
 	o *bo.Options, cc *co.Options, cache tc.Cache,
 	client backends.TimeseriesBackend, rsc *request.Resources,
 	rlo *timeseries.RequestOptions, trq *timeseries.TimeRangeQuery,
-	normalizedNow *timeseries.TimeRangeQuery, modeler *timeseries.Modeler,
+	alignedNow *timeseries.TimeRangeQuery, modeler *timeseries.Modeler,
 	rts timeseries.Timeseries,
 ) string {
 	if rlo.FastForwardDisable {
@@ -92,7 +92,7 @@ func fetchFastForward(
 		return statusErr
 	}
 	// Only fast forward if the user request is for the absolute latest datapoint
-	if !trq.Extent.End.Equal(normalizedNow.Extent.End) {
+	if !trq.Extent.End.Equal(alignedNow.Extent.End) {
 		return statusOff
 	}
 	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcUpstreamEncodingProfile(rlo)))
@@ -126,7 +126,7 @@ func fetchFastForward(
 	// If the fast forward data point is older (e.g. cached) than the last datapoint in the
 	// returned time series, it will not be merged
 	if len(x) > 0 && x[0].End.After(trq.Extent.End) &&
-		len(x) == 1 && x[0].Start.Truncate(time.Second).After(normalizedNow.Extent.End) {
+		len(x) == 1 && x[0].Start.Truncate(time.Second).After(alignedNow.Extent.End) {
 		rts.Merge(false, ffts)
 	}
 	return ffStatus
@@ -267,9 +267,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	// providers whose marshaling depends on parameters outside the cache key
 	// must not share one pre-marshaled body across singleflight waiters
 	marshalVaries := rlo.MarshalVariesByRequest
-	// republish trq after normalize so concurrent readers see the normalized extent atomically
+	// republish trq after alignment so concurrent readers see the aligned extent atomically
 	rsc.Lock()
-	trq.NormalizeExtent()
+	trq.AlignExtent()
 	rsc.TimeRangeQuery = trq
 	rsc.Unlock()
 	now := time.Now()
@@ -315,11 +315,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		"|" + strconv.FormatInt(trq.Extent.End.UnixMilli(), 10)
 
 	// this is used to determine if Fast Forward should be activated for this request
-	normalizedNow := &timeseries.TimeRangeQuery{
+	alignedNow := &timeseries.TimeRangeQuery{
 		Extent: timeseries.Extent{Start: time.Unix(0, 0), End: now},
 		Step:   trq.Step,
 	}
-	normalizedNow.NormalizeExtent()
+	alignedNow.AlignExtent()
 
 	var doc *HTTPDocument
 	var elapsed time.Duration
@@ -547,7 +547,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			uncachedValueCount := rts.ValueCount() - cts.ValueCount()
 
 			ffStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
-				rlo, trq, normalizedNow, modeler, rts)
+				rlo, trq, alignedNow, modeler, rts)
 
 			// marshal the response timeseries to wire format, unless the
 			// provider renders per request (see MarshalVariesByRequest), in
@@ -658,7 +658,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
 
 	ffStatus := fetchFastForward(ctx, r, o, cc, cache, client, rsc,
-		rlo, trq, normalizedNow, modeler, rts)
+		rlo, trq, alignedNow, modeler, rts)
 
 	rts.SetExtents(nil) // so they are not included in the client response json
 	rh := doc.SafeHeaderClone()

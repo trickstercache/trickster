@@ -40,12 +40,8 @@ type Window struct {
 // window; callers should proxy the original statement instead.
 var ErrUnsupportedBounds = errors.New("unsupported delta request bounds")
 
-// BuildWindow converts a plan's comparator-preserving bounds into a bucket
-// window. Bounds are rounded inward to the cadence (lower up, upper down), so
-// partial edge buckets are excluded. When requireUpperBound is false, a plan
-// without an upper bound runs to the present: the window includes the bucket
-// containing now, and storage-side volatility (StableExtents) keeps that
-// still-filling bucket out of the cache.
+// BuildWindow plans a delta window from the plan's raw bounds, without partial or still-filling
+// buckets; a plan with no upper bound runs to now unless requireUpperBound rejects it
 func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 	requireUpperBound bool,
 ) (Window, error) {
@@ -55,36 +51,24 @@ func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 		(plan.UpperBound != nil && requireUpperBound && plan.UpperBound.Inclusive) {
 		return Window{}, ErrUnsupportedBounds
 	}
-	rawLower := plan.LowerBound.Value
-	var rawUpper time.Time
-	switch {
-	case plan.UpperBound == nil:
-		rawUpper = timeseries.FloorToGrid(now, plan.Step, plan.Phase).Add(plan.Step)
-	case plan.UpperBound.Inclusive:
-		// an inclusive upper names the final bucket; the equivalent exclusive
-		// bound is one cadence beyond it
-		rawUpper = plan.UpperBound.Value.Add(plan.Step)
-	default:
-		rawUpper = plan.UpperBound.Value
-	}
-	if rawUpper.Before(rawLower) {
+	r := plan.RequestedRange(now)
+	if r.End.Before(r.Start) {
 		return Window{}, ErrUnsupportedBounds
 	}
-	lower := timeseries.CeilToGrid(rawLower, plan.Step, plan.Phase)
-	upper := timeseries.FloorToGrid(rawUpper, plan.Step, plan.Phase)
-	if rawUpper.Sub(rawLower) < plan.Step || lower.After(upper) {
-		upper = lower
+	p := timeseries.PlanRange(r, plan.Step, plan.Phase, timeseries.SampleModelBucket,
+		timeseries.StepAlignmentDrop, now)
+	if !p.Full {
+		lower := timeseries.CeilToGrid(r.Start, plan.Step, plan.Phase)
+		return Window{
+			Output: timeseries.Extent{Start: lower, End: lower},
+			Lower:  lower, Upper: lower, Empty: true,
+		}, nil
 	}
-	window := Window{Lower: lower, Upper: upper}
-	if lower.Equal(upper) {
-		window.Output = timeseries.Extent{Start: lower, End: lower}
-		window.Empty = true
-		return window, nil
-	}
-	requested := timeseries.Extent{Start: lower, End: upper.Add(-plan.Step)}
-	window.Output = requested
-	window.Cacheable = timeseries.ExtentList{requested}
-	return window, nil
+	return Window{
+		Output:    p.Interior,
+		Cacheable: timeseries.ExtentList{p.Interior},
+		Lower:     p.Interior.Start, Upper: p.Interior.End.Add(plan.Step),
+	}, nil
 }
 
 // StableExtents removes buckets newer than now - window, floored to the phased grid, from a

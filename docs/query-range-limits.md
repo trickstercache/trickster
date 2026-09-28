@@ -24,7 +24,7 @@ Setting `max_query_range: 0` or omitting the field disables the range limit enfo
 
 ### How the Range Is Measured
 
-The limit is compared with the time range as the client sent it, before [step alignment](../README.md#2-step-alignment) or any other adjustment Trickster makes to the range it sends to the origin. A query without an end time is measured to the time of the request. InfluxQL reports a `time < end` bound as the last instant before `end`, so its range measures one nanosecond shorter.
+The limit is compared with the time range as the client sent it, before [step alignment](../README.md#2-step-alignment) or any other adjustment Trickster makes to the range it sends to the origin. A query without an end time is measured to the time of the request.
 
 ## Supported and Unsupported Backends
 

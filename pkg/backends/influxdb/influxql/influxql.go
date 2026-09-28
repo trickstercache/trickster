@@ -159,10 +159,10 @@ func ParseStatement(statement string, now time.Time,
 		}
 		if trq.Extent.Start.IsZero() {
 			trq.Extent = ex
-			// the parsed range's maximum is inclusive: E-1ns for time < E
-			trq.Requested = timeseries.RequestedRange{
-				Start: ex.Start, End: ex.End,
-				EndInclusive: !tr.Max.IsZero(), OpenEnded: tr.Max.IsZero(),
+			// timestamps are nanoseconds, so the parsed inclusive maximum ends a half-open range 1ns later
+			trq.Requested = timeseries.RequestedRange{Start: ex.Start, End: ex.End, OpenEnded: tr.Max.IsZero()}
+			if !trq.Requested.OpenEnded {
+				trq.Requested.End = ex.End.Add(time.Nanosecond)
 			}
 		} else if trq.Extent != ex {
 			// this condition means multiple queries were present, and had

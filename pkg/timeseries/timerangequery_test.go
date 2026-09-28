@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-func TestNormalizeExtent(t *testing.T) {
+func TestAlignExtent(t *testing.T) {
 	tmrw := time.Now().Add(time.Duration(24) * time.Hour).Unix()
 	expected := (time.Now().Unix() / 10) * 10
 
@@ -77,7 +77,7 @@ func TestNormalizeExtent(t *testing.T) {
 				IsOffset: test.isOffset,
 			}
 
-			trq.NormalizeExtent()
+			trq.AlignExtent()
 
 			if trq.Extent.Start.Unix() != test.rangeStart {
 				t.Errorf("rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
@@ -220,8 +220,8 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 346 {
-		t.Errorf("expected %d got %d", 346, size)
+	if size != 348 {
+		t.Errorf("expected %d got %d", 348, size)
 	}
 }
 
