@@ -50,9 +50,15 @@ var (
 	ErrUnsupportedLimit = errors.New("result limits cannot be delta cached")
 	// ErrSubquery indicates a subquery, whose own time range is not rewritten for sub-range fetches
 	ErrSubquery = errors.New("subqueries cannot be delta cached")
+	// ErrUnsupportedRange indicates a time range with a bound InfluxQL's time predicates can't express
+	ErrUnsupportedRange = errors.New("the time range cannot be rendered as InfluxQL")
 )
 
-const statementSeparator = ";\n" // as influxql.Statements.String joins statements
+const (
+	statementSeparator = ";\n" // as influxql.Statements.String joins statements
+	timeField          = "time"
+	nowFunction        = "now"
+)
 
 var crossBucketCalls = map[string]struct{}{
 	"derivative": {}, "non_negative_derivative": {}, "difference": {}, "non_negative_difference": {},
@@ -148,6 +154,7 @@ func ParseStatement(statement string, now time.Time,
 		if err != nil {
 			cacheError = err
 		}
+		nowUpper := hasNowUpper(sel.Condition)
 
 		// this section determines the time range of the query
 		ex := timeseries.Extent{Start: tr.Min, End: tr.Max}
@@ -159,8 +166,10 @@ func ParseStatement(statement string, now time.Time,
 		}
 		if trq.Extent.Start.IsZero() {
 			trq.Extent = ex
-			// timestamps are nanoseconds, so the parsed inclusive maximum ends a half-open range 1ns later
-			trq.Requested = timeseries.RequestedRange{Start: ex.Start, End: ex.End, OpenEnded: tr.Max.IsZero()}
+			// the parsed inclusive maximum ends a half-open range 1ns later; one ending at the statement's
+			// own now() runs to now as an open one does
+			trq.Requested = timeseries.RequestedRange{Start: ex.Start, End: now, OpenEnded: tr.Max.IsZero() ||
+				nowUpper && !tr.Max.Before(now.Add(-time.Nanosecond))}
 			if !trq.Requested.OpenEnded {
 				trq.Requested.End = ex.End.Add(time.Nanosecond)
 			}
@@ -174,9 +183,17 @@ func ParseStatement(statement string, now time.Time,
 			trq.TagFieldDefintions = dimensionTagFields(sel)
 		}
 
-		// this sets a zero time range for normalizing the query for cache key hashing
+		// a zero time range normalizes the key; SetTimeRange rewrites the condition in place, so one
+		// ending at now() is kept for rendering ranges that run to now
+		var condition influxql.Expr
+		if nowUpper {
+			condition = influxql.CloneExpr(sel.Condition)
+		}
 		sel.SetTimeRange(time.Time{}, time.Time{})
 		statements = append(statements, sel.String())
+		if condition != nil {
+			sel.Condition = condition
+		}
 
 		hasTimeQueryParts = true
 	}
@@ -202,8 +219,9 @@ func ParseStatement(statement string, now time.Time,
 // StepAlignments are the step alignment modes an InfluxQL query supports
 const StepAlignments = timeseries.StepAlignmentAll
 
-// DefaultStepAlignment is the mode an InfluxQL query uses when none is configured
-const DefaultStepAlignment = timeseries.StepAlignmentTruncate
+// DefaultStepAlignment is the mode an InfluxQL query uses when none is configured: the whole first
+// bucket, and the last one as far as the range goes
+const DefaultStepAlignment = timeseries.StepAlignmentPartialEnd
 
 // RenderTimeRange returns q's statements with every SELECT limited to [start, end). It renders
 // clones and never modifies q, which the concurrent fetches of one request share.
@@ -221,6 +239,82 @@ func RenderTimeRange(q *influxql.Query, start, end time.Time) string {
 		b.WriteString(s.String())
 	}
 	return b.String()
+}
+
+// RenderRange returns q's statements with every SELECT limited to a partial bucket's raw range; one
+// running to now keeps the statement's own end, a bare now() or none
+func RenderRange(q *influxql.Query, pb timeseries.PartialBucket) (string, error) {
+	if pb.LowerExclusive || pb.UpperInclusive {
+		return "", ErrUnsupportedRange
+	}
+	if !pb.Upper.IsZero() {
+		return RenderTimeRange(q, pb.Lower, pb.Upper), nil
+	}
+	lower := &influxql.BinaryExpr{
+		Op: influxql.GTE, LHS: &influxql.VarRef{Val: timeField},
+		RHS: &influxql.StringLiteral{Val: pb.Lower.UTC().Format(time.RFC3339Nano)},
+	}
+	var b strings.Builder
+	for i, s := range q.Statements {
+		if i > 0 {
+			b.WriteString(statementSeparator)
+		}
+		if sel, ok := s.(*influxql.SelectStatement); ok {
+			sel = sel.Clone()
+			var cond influxql.Expr = lower
+			if sel.Condition != nil {
+				cond = &influxql.BinaryExpr{Op: influxql.AND, LHS: withoutTimeBounds(sel.Condition), RHS: lower}
+			}
+			sel.Condition = influxql.Reduce(cond, nil)
+			s = sel
+		}
+		b.WriteString(s.String())
+	}
+	return b.String(), nil
+}
+
+func withoutTimeBounds(expr influxql.Expr) influxql.Expr {
+	// as SetTimeRange clears a condition's time bounds, but keeping a bare now() upper bound as written
+	switch e := expr.(type) {
+	case *influxql.BinaryExpr:
+		if isNowUpper(e) {
+			return e
+		}
+		if isTimeRef(e.LHS) {
+			return &influxql.BooleanLiteral{Val: true}
+		}
+		return &influxql.BinaryExpr{Op: e.Op, LHS: withoutTimeBounds(e.LHS), RHS: withoutTimeBounds(e.RHS)}
+	case *influxql.ParenExpr:
+		return &influxql.ParenExpr{Expr: withoutTimeBounds(e.Expr)}
+	case *influxql.Call:
+		return &influxql.BooleanLiteral{Val: true}
+	}
+	return expr
+}
+
+func hasNowUpper(expr influxql.Expr) bool {
+	// whether an AND of the condition's terms bounds time above by a bare now()
+	switch e := expr.(type) {
+	case *influxql.BinaryExpr:
+		if e.Op == influxql.AND {
+			return hasNowUpper(e.LHS) || hasNowUpper(e.RHS)
+		}
+		return isNowUpper(e)
+	case *influxql.ParenExpr:
+		return hasNowUpper(e.Expr)
+	}
+	return false
+}
+
+func isNowUpper(e *influxql.BinaryExpr) bool {
+	call, ok := e.RHS.(*influxql.Call)
+	return ok && (e.Op == influxql.LT || e.Op == influxql.LTE) && isTimeRef(e.LHS) &&
+		strings.EqualFold(call.Name, nowFunction) && len(call.Args) == 0
+}
+
+func isTimeRef(expr influxql.Expr) bool {
+	ref, ok := expr.(*influxql.VarRef)
+	return ok && strings.EqualFold(ref.Val, timeField)
 }
 
 func checkDeltaSafe(sel *influxql.SelectStatement) error {
@@ -342,7 +436,12 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent, q *influxql.Query,
 ) {
 	// the time range clause is '>= start AND < end', so one step is added to keep the last bucket
-	statement := RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step))
+	SetStatement(r, RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step)))
+}
+
+// SetStatement sets r's statement to one rendered for the origin, which answers in nanosecond
+// epochs and unchunked
+func SetStatement(r *http.Request, statement string) {
 	var v url.Values
 	switch r.Method {
 	case http.MethodGet:

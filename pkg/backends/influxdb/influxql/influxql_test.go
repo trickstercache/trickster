@@ -120,7 +120,7 @@ func TestParseStatementRecordsRequestedRange(t *testing.T) {
 		trq.Requested.EndInclusive != want.EndInclusive || trq.Requested.OpenEnded {
 		t.Errorf("requested range = %+v", trq.Requested)
 	}
-	if trq.StepAlignments != StepAlignments || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+	if trq.StepAlignments != StepAlignments || trq.StepAlignment != timeseries.StepAlignmentPartialEnd {
 		t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
 	}
 

@@ -401,11 +401,21 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 		t.Fatalf("rounded bounds rendered incorrectly: %s", rendered)
 	}
 
-	// Both bounds inside one bucket leave no complete bucket to cache.
+	// Both bounds inside one bucket leave no complete bucket, which the planner decides; the bounds
+	// meet at the rounded-up lower boundary.
 	empty := a.Analyze("SELECT toStartOfInterval(ts, INTERVAL 5 MINUTE) AS t, count() FROM events "+
 		"WHERE ts >= 1756671601 AND ts < 1756671899 GROUP BY t", time.Unix(1756758100, 0))
-	if empty.Mode == sqlanalyzer.CacheModeDelta || empty.Reason != sqlanalyzer.ReasonUnsafePredicate {
+	if empty.Mode != sqlanalyzer.CacheModeDelta || empty.Plan == nil {
 		t.Fatalf("empty rounded window = %s/%s (%v)", empty.Mode, empty.Reason, empty.Err)
+	}
+	if !empty.Plan.LowerBound.Value.Equal(time.Unix(1756671900, 0)) ||
+		!empty.Plan.UpperBound.Value.Equal(empty.Plan.LowerBound.Value) {
+		t.Fatalf("empty window bounds = %+v, %+v", empty.Plan.LowerBound, empty.Plan.UpperBound)
+	}
+	if p := timeseries.PlanRange(empty.Plan.RequestedRange(time.Unix(1756758100, 0)), empty.Plan.Step,
+		empty.Plan.Phase, timeseries.SampleModelBucket, timeseries.StepAlignmentDrop,
+		time.Unix(1756758100, 0)); p.Full {
+		t.Fatalf("empty window planned a complete bucket: %+v", p)
 	}
 
 	// Without the option, unaligned raw bounds still fail closed.

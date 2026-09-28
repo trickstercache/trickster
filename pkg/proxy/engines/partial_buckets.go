@@ -56,14 +56,17 @@ var (
 	ErrPartialBucketModel = errors.New("partial bucket response is not a dataset")
 )
 
-// FetchPartialBucket sends a provider's partial bucket request on path pc via the object proxy cache,
-// keyed as rendered and kept for partial_bucket_ttl, and returns its rows
+// FetchPartialBucket sends a provider's partial bucket request on path pc, or r's own when nil,
+// through the object proxy cache for partial_bucket_ttl and returns its rows
 func FetchPartialBucket(r *http.Request, pc *po.Options, trq *timeseries.TimeRangeQuery,
 	modeler *timeseries.Modeler,
 ) (*dataset.DataSet, status.LookupStatus, error) {
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.BackendOptions == nil || modeler == nil {
 		return nil, status.LookupStatusError, ErrPartialBucketFetch
+	}
+	if pc == nil {
+		pc = rsc.PathConfig
 	}
 	o := rsc.BackendOptions
 	qp, body, isBody := params.GetRequestValues(r)
@@ -85,7 +88,7 @@ func FetchPartialBucket(r *http.Request, pc *po.Options, trq *timeseries.TimeRan
 	if resp == nil || resp.StatusCode != http.StatusOK || len(b) == 0 {
 		return nil, status.LookupStatusProxyError, ErrPartialBucketFetch
 	}
-	ts, err := modeler.WireUnmarshalerReader(getDecoderReader(resp), trq)
+	ts, err := modeler.WireUnmarshalerReader(getTimeseriesReader(resp), trq)
 	if err != nil {
 		logger.Error("partial bucket unmarshaling failed", logging.Pairs{keys.Detail: err.Error()})
 		return nil, status.LookupStatusProxyError, err

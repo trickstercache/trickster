@@ -234,8 +234,6 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 		{"invalid context", http.MethodPost, headers.ValueApplicationJSON, `{"queryType":"timeseries","dataSource":"wiki","intervals":["` + testInterval + `"],"granularity":"minute","context":"bad"}`, true, reasonInvalidContext},
 		{"multi interval", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), `[`+strconvQuote(testInterval)+`]`, `[`+strconvQuote(testInterval)+`,"2024-02-01/2024-02-02"]`, 1), true, reasonMultipleIntervals},
 		{"invalid interval", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "not-an-interval", 1), true, reasonInvalidInterval},
-		{"unaligned interval start", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "2024-01-01T00:00:30Z/2024-01-02T00:00:00Z", 1), true, reasonUnalignedInterval},
-		{"unaligned interval end", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "2024-01-01T00:00:00Z/2024-01-02T00:00:30Z", 1), true, reasonUnalignedInterval},
 		{"unknown granularity", http.MethodPost, headers.ValueApplicationJSON, druidQuery("timeseries", `"fortnight"`), true, reasonUnsupportedGranularity},
 		{"by segment", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("topN", `"minute"`), "}") + `,"context":{"bySegment":true}}`, true, reasonUnsupportedShape},
 		{"numeric timestamps", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"serializeDateTimeAsLong":true}}`, true, reasonUnsupportedShape},
@@ -292,5 +290,28 @@ func TestParseTimeRangeQueryConvertsHalfOpenExtent(t *testing.T) {
 	}
 	if trq.StepAlignments != timeseries.StepAlignmentAll || trq.StepAlignment != timeseries.StepAlignmentPartial {
 		t.Fatalf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
+}
+
+func TestParseTimeRangeQueryPlansUnalignedIntervals(t *testing.T) {
+	// the engine plans an unaligned interval's edges by mode, so it is a delta plan like any other
+	for _, interval := range []string{
+		"2024-01-01T00:00:30Z/2024-01-01T00:03:00Z", "2024-01-01T00:00:00Z/2024-01-01T00:02:30Z",
+		"2024-01-01T00:00:10Z/2024-01-01T00:00:20Z",
+	} {
+		body := strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, interval, 1)
+		r := httptest.NewRequest(http.MethodPost, "http://trickster/druid/v2", strings.NewReader(body))
+		r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+		trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
+		if err != nil {
+			t.Fatalf("%s: %v", interval, err)
+		}
+		start, end, _ := strings.Cut(interval, "/")
+		if trq.Requested.Start.Format(time.RFC3339) != start || trq.Requested.End.Format(time.RFC3339) != end {
+			t.Errorf("%s: requested = %+v", interval, trq.Requested)
+		}
+		if !trq.Extent.Start.Equal(trq.Requested.Start.Truncate(time.Minute)) {
+			t.Errorf("%s: extent = %s", interval, trq.Extent.String())
+		}
 	}
 }

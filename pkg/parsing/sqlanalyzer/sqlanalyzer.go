@@ -142,6 +142,12 @@ type ExtentRenderer interface {
 	RenderExtent(extent timeseries.Extent) (string, error)
 }
 
+// RangeRenderer is an ExtentRenderer that also renders a raw time range, such as a partial
+// bucket's, which needn't sit on the bucket grid, with the statement's own comparators
+type RangeRenderer interface {
+	RenderRange(pb timeseries.PartialBucket) (string, error)
+}
+
 // QueryPlan contains only database-independent facts consumed by Trickster.
 type QueryPlan struct {
 	CanonicalSQL string
@@ -156,7 +162,10 @@ type QueryPlan struct {
 	// RawLower and RawUpper are the time bounds as the statement wrote them, before any rounding;
 	// RawUpper is nil when the statement has no upper bound
 	RawLower, RawUpper *Bound
-	GroupColumns       []string
+	// UpperIsNow reports an upper bound written as a bare now(), which a range running to now
+	// renders as written, so each request within a bucket renders the same statement
+	UpperIsNow   bool
+	GroupColumns []string
 	// ValueColumns names deterministic numeric result fields consumed as
 	// time-series values. Dialect adapters validate expressions statically and
 	// may validate concrete result types when rows arrive.
@@ -190,10 +199,26 @@ const DefaultStepAlignment = timeseries.StepAlignmentDrop
 // ErrMissingRenderer indicates that a plan cannot produce an origin query.
 var ErrMissingRenderer = errors.New("missing SQL query extent renderer")
 
+// ErrUnsupportedRange indicates a raw time range that a plan's renderer cannot express
+var ErrUnsupportedRange = errors.New("SQL query renderer cannot render the time range")
+
 // RenderExtent renders the query for an origin cache-miss extent.
 func (p *QueryPlan) RenderExtent(extent timeseries.Extent) (string, error) {
 	if p == nil || p.Renderer == nil {
 		return "", ErrMissingRenderer
 	}
 	return p.Renderer.RenderExtent(extent)
+}
+
+// RenderRange renders the query for a partial bucket's raw range, whose zero Upper means the range
+// runs to now
+func (p *QueryPlan) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	if p == nil || p.Renderer == nil {
+		return "", ErrMissingRenderer
+	}
+	rr, ok := p.Renderer.(RangeRenderer)
+	if !ok {
+		return "", ErrUnsupportedRange
+	}
+	return rr.RenderRange(pb)
 }

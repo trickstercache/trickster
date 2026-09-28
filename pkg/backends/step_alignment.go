@@ -25,19 +25,24 @@ import (
 var stepAlignmentsApplied = map[string]timeseries.StepAlignment{
 	providers.Prometheus: timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
 		timeseries.StepAlignmentPartialEnd,
-	providers.Graphite:   timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate,
-	providers.ClickHouse: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
-	// off is applied wherever a query supports it; a query that doesn't keeps its default
-	providers.InfluxDB:    timeseries.StepAlignmentOff,
-	providers.Druid:       timeseries.StepAlignmentOff,
+	providers.Graphite: timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate,
+	// a query that doesn't support the configured mode, such as Flux under partial, keeps its default
+	providers.ClickHouse:  timeseries.StepAlignmentAll,
+	providers.InfluxDB:    timeseries.StepAlignmentAll,
+	providers.Druid:       timeseries.StepAlignmentAll,
 	providers.MySQL:       timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
 	providers.Postgres:    timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
 	providers.TimescaleDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
 }
 
+var nativeStepAlignmentsApplied = map[string]timeseries.StepAlignment{
+	// narrows the modes of a backend a native listener also serves, where it applies fewer of them
+	providers.InfluxDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+}
+
 // ValidateStepAlignment checks a backend's configured step alignment against the modes its
-// provider supports and the modes it can apply
-func ValidateStepAlignment(b Backend, o *bo.Options) error {
+// provider supports and applies, including on a native listener that serves it
+func ValidateStepAlignment(b Backend, o *bo.Options, nativeListener bool) error {
 	if o == nil || o.StepAlignment == 0 {
 		return nil
 	}
@@ -57,7 +62,11 @@ func ValidateStepAlignment(b Backend, o *bo.Options) error {
 		return bo.NewErrUnsupportedStepAlignment(o.StepAlignment, supported, o.Provider, o.Name)
 	}
 	// a supported mode is refused, rather than ignored, until the provider applies it on every path
-	if stepAlignmentsApplied[o.Provider]&o.StepAlignment == 0 {
+	applied := stepAlignmentsApplied[o.Provider]
+	if narrowed, ok := nativeStepAlignmentsApplied[o.Provider]; ok && nativeListener {
+		applied &= narrowed
+	}
+	if applied&o.StepAlignment == 0 {
 		return bo.NewErrStepAlignmentNotImplemented(o.StepAlignment, o.Provider, o.Name)
 	}
 	return nil

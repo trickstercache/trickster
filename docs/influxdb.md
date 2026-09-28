@@ -78,7 +78,7 @@ GROUP BY 1
 
 SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, compound selects such as `UNION`, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
 
-Queries whose range reaches the present include the still-filling final bucket. Trickster serves that bucket but never caches it, so every request refreshes it from the origin. `volatile_window` applies only to complete buckets.
+The still-filling final bucket of a range that reaches the present is never cached. Under the SQL default `step_alignment`, `drop`, the response ends before it; the `partial` and `partial_end` modes, and InfluxQL's default `partial_end`, fetch it from the origin on each request. `volatile_window` applies only to complete buckets.
 
 ### Response Formats
 

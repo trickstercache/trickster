@@ -1557,3 +1557,23 @@ func TestRouteUpgrades(t *testing.T) {
 		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
 	}
 }
+
+func TestServedByNativeListener(t *testing.T) {
+	conf := config.NewConfig()
+	conf.Listeners = listener.Lookup{
+		"default": &listener.Options{},
+		"http":    &listener.Options{Protocol: listener.ProtocolHTTP},
+		"flight":  &listener.Options{Protocol: listener.ProtocolFlightSQL},
+	}
+	for want, names := range map[bool][]string{
+		false: {"default", "http", "unknown"},
+		true:  {"default", "flight"},
+	} {
+		if got := servedByNativeListener(conf, &bo.Options{ListenerNames: names}); got != want {
+			t.Errorf("%v: got %t", names, got)
+		}
+	}
+	if servedByNativeListener(conf, &bo.Options{}) {
+		t.Error("a backend with no listeners is served over HTTP")
+	}
+}

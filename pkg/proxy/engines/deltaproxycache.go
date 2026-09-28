@@ -55,6 +55,8 @@ const (
 	statusOff = "off"
 	statusErr = "err"
 
+	hnClickHouseFormat = "X-ClickHouse-Format"
+
 	// errorBodyCap bounds the amount of upstream error body copied into
 	// HTTPDocument on non-2xx responses. Protects singleflight waiters
 	// from a malicious or misconfigured origin that returns a huge error
@@ -852,6 +854,15 @@ func getDecoderReader(resp *http.Response) io.Reader {
 	return reader
 }
 
+func getTimeseriesReader(resp *http.Response) io.Reader {
+	// a response that names its format, as ClickHouse's do, tells the unmarshaler how to read it
+	reader := getDecoderReader(resp)
+	if format := resp.Header.Get(hnClickHouseFormat); format != "" {
+		return timeseries.NewFormatHintReader(reader, format)
+	}
+	return reader
+}
+
 func fetchConcurrencyLimit(o *bo.Options) int {
 	if o != nil && o.FetchConcurrencyLimit > 0 {
 		return o.FetchConcurrencyLimit
@@ -941,11 +952,7 @@ func fetchExtents(
 			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				dr := getDecoderReader(resp)
-				if format := resp.Header.Get("X-ClickHouse-Format"); format != "" {
-					dr = timeseries.NewFormatHintReader(dr, format)
-				}
-				nts, ferr := wur(dr, rsc.TimeRangeQuery)
+				nts, ferr := wur(getTimeseriesReader(resp), rsc.TimeRangeQuery)
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{keys.Detail: ferr.Error()})

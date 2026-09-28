@@ -194,6 +194,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		},
 		RawLower:     &ranges.rawLower,
 		RawUpper:     ranges.rawUpper,
+		UpperIsNow:   ranges.upperIsNow,
 		GroupColumns: groups,
 		OutputFormat: outputFormat,
 		Renderer:     renderer,
@@ -306,21 +307,53 @@ func expandsColumns(item *chast.SelectItem) bool {
 }
 
 type clickHouseRenderer struct {
-	template       string
+	template string
+	// openTemplate is the template without the upper bound added for a statement that has none
+	openTemplate   string
 	explicitFormat bool
 	bounds         []rendererBound
+	step           time.Duration
+	// upperTick is the resolution of an inclusive upper bound, which renders one tick below the
+	// exclusive boundary
+	upperTick time.Duration
 }
 
 func (r *clickHouseRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	statement := r.template
 	for _, bound := range r.bounds {
-		boundExtent := extent
-		if bound.endpoint == endpointLower {
-			boundExtent.Start = boundExtent.Start.Add(bound.offset)
-		} else {
-			boundExtent.End = boundExtent.End.Add(bound.offset)
+		statement = strings.ReplaceAll(statement, bound.token, bound.render(extent))
+	}
+	return statement, nil
+}
+
+// RenderRange implements sqlanalyzer.RangeRenderer.
+func (r *clickHouseRenderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	// raw lower bounds are inclusive, and only an inclusive upper bound yields an inclusive range
+	if pb.LowerExclusive || pb.UpperInclusive && r.upperTick == 0 {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	open := pb.Upper.IsZero()
+	statement := r.template
+	if open && r.openTemplate != "" {
+		statement = r.openTemplate
+	}
+	end := pb.Upper
+	if pb.UpperInclusive {
+		end = end.Add(r.upperTick)
+	}
+	// with its last label a step before the range's exclusive end, each bound's offset renders
+	// the range through that bound's own comparator
+	extent := timeseries.Extent{Start: pb.Lower, End: end.Add(-r.step)}
+	for _, bound := range r.bounds {
+		replacement := bound.original
+		if !open || bound.endpoint == endpointLower {
+			replacement = bound.render(extent)
+		} else if replacement == "" {
+			if !strings.Contains(statement, bound.token) {
+				continue
+			}
+			return "", sqlanalyzer.ErrUnsupportedRange
 		}
-		replacement := chast.Format(boundExpression(bound.endpoint, bound.style, boundExtent))
 		statement = strings.ReplaceAll(statement, bound.token, replacement)
 	}
 	return statement, nil
@@ -331,6 +364,17 @@ type rendererBound struct {
 	endpoint endpoint
 	style    boundStyle
 	offset   time.Duration
+	// original is a bare now() upper bound as written, which a range running to now keeps
+	original string
+}
+
+func (b rendererBound) render(extent timeseries.Extent) string {
+	if b.endpoint == endpointLower {
+		extent.Start = extent.Start.Add(b.offset)
+	} else {
+		extent.End = extent.End.Add(b.offset)
+	}
+	return chast.Format(boundExpression(b.endpoint, b.style, extent))
 }
 
 const (
@@ -889,6 +933,7 @@ type boundTarget struct {
 	field    string
 	offset   time.Duration
 	set      func(chast.Expr)
+	original string
 }
 
 type analyzedBound struct {
@@ -896,6 +941,8 @@ type analyzedBound struct {
 	inclusive bool
 	style     boundStyle
 	target    *boundTarget
+	// now reports a bound written as a bare now() or now64()
+	now bool
 }
 
 type predicateBound struct {
@@ -913,6 +960,7 @@ type rangeAnalysis struct {
 	lowerStyle   boundStyle
 	rawLower     sqlanalyzer.Bound
 	rawUpper     *sqlanalyzer.Bound
+	upperIsNow   bool
 }
 
 func (r *rangeAnalysis) recordRaw() {
@@ -1081,6 +1129,7 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		result.rawUpper = &sqlanalyzer.Bound{Value: end}
 		return nil
 	}
+	result.upperIsNow = result.upper.now
 	if result.upper.inclusive {
 		if result.upper.target == nil {
 			return ErrUnsafePredicate
@@ -1112,10 +1161,10 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		}
 		result.upper.target.offset = bucket.step
 	}
-	// Rounding inward can leave no complete bucket; fail closed rather than
-	// requesting an inverted or empty window.
+	// rounding inward can leave no complete bucket, which the planner sends as written; both bounds
+	// sit at the rounded-up lower boundary, so no inverted window is described
 	if rounded && !result.upper.value.After(result.lower.value) {
-		return ErrUnsafePredicate
+		result.upper.value = result.lower.value
 	}
 	return nil
 }
@@ -1261,6 +1310,9 @@ func analyzePredicate(
 			if !inclusive {
 				bound.target.offset = bucket.step
 			}
+			if bound.now {
+				bound.target.original = chast.Format(boundExpression)
+			}
 			predicate.upper = &bound
 		}
 		return predicate, true, nil
@@ -1342,7 +1394,7 @@ func evaluateBound(
 		}
 		name := strings.ToLower(value.Name.Name)
 		if name == "now" && len(functionArgs(value)) == 0 {
-			return analyzedBound{value: now, inclusive: inclusive, style: boundUnixSeconds}, true
+			return analyzedBound{value: now, inclusive: inclusive, style: boundUnixSeconds, now: true}, true
 		}
 		if name == "todatetime64" || name == "now64" {
 			args := functionArgs(value)
@@ -1361,7 +1413,10 @@ func evaluateBound(
 				if precision < 0 || precision > 9 {
 					return analyzedBound{}, false
 				}
-				return analyzedBound{value: truncatePrecision(now, precision), inclusive: inclusive, style: boundToDateTime64 + boundStyle(precision)}, true
+				return analyzedBound{
+					value: truncatePrecision(now, precision), inclusive: inclusive,
+					style: boundToDateTime64 + boundStyle(precision), now: true,
+				}, true
 			}
 			if len(args) != 2 {
 				return analyzedBound{}, false
@@ -1377,6 +1432,7 @@ func evaluateBound(
 			}
 			inner.value = truncatePrecision(inner.value, precision)
 			inner.style = boundToDateTime64 + boundStyle(precision)
+			inner.now = false
 			return inner, true
 		}
 		if name == toDateTimeFunction || name == "todate" {
@@ -1393,6 +1449,7 @@ func evaluateBound(
 			} else {
 				inner.style = boundToDate
 			}
+			inner.now = false
 			return inner, true
 		}
 	case *chast.Ident, *chast.NestedIdentifier:
@@ -1418,6 +1475,7 @@ func evaluateBound(
 		default:
 			return analyzedBound{}, false
 		}
+		left.now = false
 		return left, true
 	}
 	return analyzedBound{}, false
@@ -1437,7 +1495,7 @@ func analyzeFormat(format *chast.FormatClause) (byte, error) {
 func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step time.Duration) (string, *clickHouseRenderer) {
 	occupied := chast.Format(query)
 	bounds := make([]rendererBound, 0, len(ranges.targets)+1)
-	addBound := func(target endpoint, style boundStyle, offset time.Duration) chast.Expr {
+	addBound := func(target endpoint, style boundStyle, offset time.Duration, original string) chast.Expr {
 		index := len(bounds)
 		token := fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		for strings.Contains(occupied, token) {
@@ -1445,17 +1503,28 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 			token = fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		}
 		occupied += token
-		bounds = append(bounds, rendererBound{token: token, endpoint: target, style: style, offset: offset})
+		bounds = append(bounds, rendererBound{
+			token: token, endpoint: target, style: style, offset: offset, original: original,
+		})
 		return &chast.PlaceHolder{Type: token}
 	}
 	for _, target := range ranges.targets {
-		target.set(addBound(target.endpoint, target.style, target.offset))
+		target.set(addBound(target.endpoint, target.style, target.offset, target.original))
 	}
+	renderer := &clickHouseRenderer{explicitFormat: query.Format != nil, step: step}
+	if ranges.rawUpper != nil && ranges.rawUpper.Inclusive && ranges.upper != nil {
+		renderer.upperTick = step - ranges.upper.target.offset
+	}
+	format := query.Format
 	if ranges.addSynthetic != nil {
+		// a range running to now is rendered with no upper bound, as the statement was written
+		query.Format = templateFormat()
+		renderer.openTemplate = chast.Format(query)
+		query.Format = format
 		ranges.addSynthetic(&chast.BinaryOperation{
 			LeftExpr:  identifierExpression(ranges.timeColumn),
 			Operation: chast.TokenKindLT,
-			RightExpr: addBound(endpointUpper, ranges.lowerStyle, step),
+			RightExpr: addBound(endpointUpper, ranges.lowerStyle, step, ""),
 		})
 	}
 
@@ -1463,9 +1532,13 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 	for _, bound := range bounds {
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
-	explicitFormat := query.Format != nil
-	query.Format = &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
-	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds, explicitFormat: explicitFormat}
+	query.Format = templateFormat()
+	renderer.template, renderer.bounds = chast.Format(query), bounds
+	return canonical, renderer
+}
+
+func templateFormat() *chast.FormatClause {
+	return &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
 }
 
 func placeholderFor(target endpoint) string {

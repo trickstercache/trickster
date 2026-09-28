@@ -21,10 +21,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // Common URL Parameter Names
@@ -57,6 +60,36 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		c.observeRewriteFailure("render_error")
 		return fmt.Errorf("render ClickHouse extent: %w", err)
 	}
+	return c.setQuery(r, query)
+}
+
+// FetchPartialBucket fetches one partial bucket of r's query, rendered over the bucket's raw range,
+// through the object proxy cache
+func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	pb timeseries.PartialBucket, _ bool,
+) (*dataset.DataSet, status.LookupStatus, error) {
+	if r == nil || trq == nil {
+		return nil, status.LookupStatusError, errInvalidRewriteInput
+	}
+	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+	if !ok {
+		return nil, status.LookupStatusError, errMissingQueryPlan
+	}
+	query, err := plan.RenderRange(pb)
+	if err != nil {
+		return nil, status.LookupStatusError, fmt.Errorf("render ClickHouse partial bucket: %w", err)
+	}
+	nr, err := request.Clone(r)
+	if err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	if err := c.setQuery(nr, query); err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	return engines.FetchPartialBucket(nr, nil, trq, c.Modeler())
+}
+
+func (c *Client) setQuery(r *http.Request, query string) error {
 	if methods.HasBody(r.Method) {
 		request.SetBody(r, []byte(query))
 		return nil

@@ -421,6 +421,9 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if canonical, err = a.finishRender(canonical, lifted); err == nil {
 		renderer.template, err = a.finishRender(renderer.template, lifted)
 	}
+	if err == nil && renderer.openTemplate != "" {
+		renderer.openTemplate, err = a.finishRender(renderer.openTemplate, lifted)
+	}
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
@@ -437,6 +440,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		},
 		RawLower:     &ranges.rawLower,
 		RawUpper:     ranges.rawUpper,
+		UpperIsNow:   ranges.upperIsNow,
 		GroupColumns: groups,
 		Ordering:     ordering,
 		Renderer:     renderer,
@@ -935,6 +939,7 @@ type boundTarget struct {
 	field    string
 	offset   time.Duration
 	set      func(tree.Expr)
+	original string
 }
 
 type analyzedBound struct {
@@ -942,6 +947,8 @@ type analyzedBound struct {
 	inclusive bool
 	style     boundStyle
 	target    *boundTarget
+	// now reports a bound written as a bare now()
+	now bool
 }
 
 type predicateBound struct {
@@ -959,6 +966,7 @@ type rangeAnalysis struct {
 	lowerStyle   boundStyle
 	rawLower     sqlanalyzer.Bound
 	rawUpper     *sqlanalyzer.Bound
+	upperIsNow   bool
 }
 
 func (r *rangeAnalysis) recordRaw() {
@@ -1113,6 +1121,7 @@ func normalizePrimaryBounds(
 		result.rawUpper = &sqlanalyzer.Bound{Value: end}
 		return nil
 	}
+	result.upperIsNow = result.upper.now
 	if result.upper.inclusive {
 		if result.upper.target == nil {
 			return ErrUnsafePredicate
@@ -1150,10 +1159,10 @@ func normalizePrimaryBounds(
 		}
 		result.upper.target.offset = bucket.step
 	}
-	// Rounding inward can leave no complete bucket; fail closed rather than
-	// requesting an inverted or empty window.
+	// rounding inward can leave no complete bucket, which the planner sends as written; both bounds
+	// sit at the rounded-up lower boundary, so no inverted window is described
 	if rounded && !result.upper.value.After(result.lower.value) {
-		return ErrUnsafePredicate
+		result.upper.value = result.lower.value
 	}
 	return nil
 }
@@ -1272,6 +1281,9 @@ func analyzePredicate(expr tree.Expr, now time.Time) (predicateBound, bool, erro
 			bound.target = &boundTarget{
 				endpoint: endpointUpper, style: bound.style, field: field, set: setBound,
 			}
+			if bound.now {
+				bound.target.original = tree.AsString(boundExpr)
+			}
 			predicate.upper = &bound
 		}
 		return predicate, true, nil
@@ -1328,7 +1340,8 @@ func evaluateBound(expr tree.Expr, inclusive bool, now time.Time) (analyzedBound
 	case *tree.FuncExpr:
 		name := strings.ToLower(value.Func.String())
 		if (name == "now" || name == "current_timestamp") && len(value.Exprs) == 0 {
-			return analyzedBound{value: now, inclusive: inclusive, style: boundRFC3339}, true
+			// current_timestamp formats with parentheses, which not every dialect accepts
+			return analyzedBound{value: now, inclusive: inclusive, style: boundRFC3339, now: name == "now"}, true
 		}
 	case *tree.BinaryExpr:
 		offset, ok := intervalDuration(value.Right)
@@ -1347,6 +1360,7 @@ func evaluateBound(expr tree.Expr, inclusive bool, now time.Time) (analyzedBound
 		default:
 			return analyzedBound{}, false
 		}
+		left.now = false
 		return left, true
 	}
 	return analyzedBound{}, false
@@ -1428,10 +1442,16 @@ func (p *placeholderExpr) TypeCheck(
 
 type cockroachRenderer struct {
 	template string
-	bounds   []rendererBound
+	// openTemplate is the template without the upper bound added for a statement that has none
+	openTemplate string
+	bounds       []rendererBound
 	// numericAsRFC3339 renders numeric epoch bound styles as RFC3339 literals
 	// for dialects that reject Timestamp-to-integer comparisons.
 	numericAsRFC3339 bool
+	step             time.Duration
+	// upperTick is the resolution of an inclusive upper bound, which renders one tick below the
+	// exclusive boundary
+	upperTick time.Duration
 }
 
 type rendererBound struct {
@@ -1439,27 +1459,66 @@ type rendererBound struct {
 	endpoint endpoint
 	style    boundStyle
 	offset   time.Duration
+	// original is a bare now() upper bound as written, which a range running to now keeps
+	original string
 }
 
 // RenderExtent implements sqlanalyzer.ExtentRenderer.
 func (r *cockroachRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	statement := r.template
 	for _, bound := range r.bounds {
-		value := extent.Start
-		if bound.endpoint == endpointUpper {
-			value = extent.End
-		}
-		value = value.Add(bound.offset)
-		style := bound.style
-		if r.numericAsRFC3339 {
-			switch style {
-			case boundUnixSeconds, boundUnixMilli, boundUnixMicro, boundUnixNano:
-				style = boundRFC3339
-			}
-		}
-		statement = strings.ReplaceAll(statement, bound.token, boundLiteral(style, value))
+		statement = strings.ReplaceAll(statement, bound.token, r.render(bound, extent))
 	}
 	return statement, nil
+}
+
+// RenderRange implements sqlanalyzer.RangeRenderer.
+func (r *cockroachRenderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	// raw lower bounds are inclusive, and only an inclusive upper bound yields an inclusive range
+	if pb.LowerExclusive || pb.UpperInclusive && r.upperTick == 0 {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	open := pb.Upper.IsZero()
+	statement := r.template
+	if open && r.openTemplate != "" {
+		statement = r.openTemplate
+	}
+	end := pb.Upper
+	if pb.UpperInclusive {
+		end = end.Add(r.upperTick)
+	}
+	// with its last label a step before the range's exclusive end, each bound's offset renders
+	// the range through that bound's own comparator
+	extent := timeseries.Extent{Start: pb.Lower, End: end.Add(-r.step)}
+	for _, bound := range r.bounds {
+		replacement := bound.original
+		if !open || bound.endpoint == endpointLower {
+			replacement = r.render(bound, extent)
+		} else if replacement == "" {
+			if !strings.Contains(statement, bound.token) {
+				continue
+			}
+			return "", sqlanalyzer.ErrUnsupportedRange
+		}
+		statement = strings.ReplaceAll(statement, bound.token, replacement)
+	}
+	return statement, nil
+}
+
+func (r *cockroachRenderer) render(bound rendererBound, extent timeseries.Extent) string {
+	value := extent.Start
+	if bound.endpoint == endpointUpper {
+		value = extent.End
+	}
+	value = value.Add(bound.offset)
+	style := bound.style
+	if r.numericAsRFC3339 {
+		switch style {
+		case boundUnixSeconds, boundUnixMilli, boundUnixMicro, boundUnixNano:
+			style = boundRFC3339
+		}
+	}
+	return boundLiteral(style, value)
 }
 
 func boundLiteral(style boundStyle, value time.Time) string {
@@ -1500,7 +1559,7 @@ func buildQueryArtifacts(
 ) (string, *cockroachRenderer) {
 	occupied := tree.AsString(statement)
 	bounds := make([]rendererBound, 0, len(ranges.targets)+1)
-	addBound := func(target endpoint, style boundStyle, offset time.Duration) tree.Expr {
+	addBound := func(target endpoint, style boundStyle, offset time.Duration, original string) tree.Expr {
 		index := len(bounds)
 		token := fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		for strings.Contains(occupied, token) {
@@ -1508,17 +1567,25 @@ func buildQueryArtifacts(
 			token = fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		}
 		occupied += token
-		bounds = append(bounds, rendererBound{token: token, endpoint: target, style: style, offset: offset})
+		bounds = append(bounds, rendererBound{
+			token: token, endpoint: target, style: style, offset: offset, original: original,
+		})
 		return &placeholderExpr{token: token}
 	}
 	for _, target := range ranges.targets {
-		target.set(addBound(target.endpoint, target.style, target.offset))
+		target.set(addBound(target.endpoint, target.style, target.offset, target.original))
+	}
+	renderer := &cockroachRenderer{numericAsRFC3339: numericAsRFC3339, step: bucket.step}
+	if ranges.rawUpper != nil && ranges.rawUpper.Inclusive && ranges.upper != nil {
+		renderer.upperTick = bucket.step - ranges.upper.target.offset
 	}
 	if ranges.addSynthetic != nil {
+		// a range running to now is rendered with no upper bound, as the statement was written
+		renderer.openTemplate = tree.AsString(statement)
 		ranges.addSynthetic(&tree.ComparisonExpr{
 			Operator: treecmp.MakeComparisonOperator(treecmp.LT),
 			Left:     columnExpression(ranges.timeColumn),
-			Right:    addBound(endpointUpper, ranges.lowerStyle, bucket.step),
+			Right:    addBound(endpointUpper, ranges.lowerStyle, bucket.step, ""),
 		})
 	}
 
@@ -1527,10 +1594,8 @@ func buildQueryArtifacts(
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
 	_ = clause
-	return canonical, &cockroachRenderer{
-		template: tree.AsString(statement), bounds: bounds,
-		numericAsRFC3339: numericAsRFC3339,
-	}
+	renderer.template, renderer.bounds = tree.AsString(statement), bounds
+	return canonical, renderer
 }
 
 func placeholderFor(target endpoint) string {

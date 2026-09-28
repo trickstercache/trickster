@@ -130,12 +130,5 @@ func SetExtentV3InfluxQL(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent, q *influxql.Query,
 ) {
 	// the time range clause is '>= start AND < end', so one step is added to keep the last bucket
-	statement := ti.RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step))
-	if methods.HasBody(r.Method) {
-		request.SetBody(r, EncodeBody(r, statement))
-		return
-	}
-	v := r.URL.Query()
-	v.Set(ParamQuery, statement)
-	r.URL.RawQuery = v.Encode()
+	SetStatement(r, ti.RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step)))
 }

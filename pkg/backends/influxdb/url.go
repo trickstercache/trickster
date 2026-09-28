@@ -21,11 +21,16 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/flux"
 	ti "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote"
 	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	"github.com/influxdata/influxql"
 )
@@ -73,4 +78,43 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		return fmt.Errorf("unsupported InfluxDB parsed query type %T", trq.ParsedQuery)
 	}
 	return nil
+}
+
+// FetchPartialBucket fetches one partial bucket of r's InfluxQL or SQL query, rendered over its raw
+// range, through the object proxy cache; Flux and remote-read have none
+func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	pb timeseries.PartialBucket, _ bool,
+) (*dataset.DataSet, status.LookupStatus, error) {
+	if r == nil || trq == nil {
+		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+	}
+	var statement string
+	var set func(*http.Request, string)
+	var err error
+	switch q := trq.ParsedQuery.(type) {
+	case *isql.Query:
+		statement, err = q.Plan.RenderRange(pb)
+		set = isql.SetStatement
+	case *isql.V3InfluxQLQuery:
+		inner, ok := q.Inner.(*influxql.Query)
+		if !ok {
+			return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+		}
+		statement, err = ti.RenderRange(inner, pb)
+		set = isql.SetStatement
+	case *influxql.Query:
+		statement, err = ti.RenderRange(q, pb)
+		set = ti.SetStatement
+	default:
+		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+	}
+	if err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	nr, err := request.Clone(r)
+	if err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	set(nr, statement)
+	return engines.FetchPartialBucket(nr, nil, trq, c.Modeler())
 }

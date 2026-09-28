@@ -213,6 +213,11 @@ func TestRequestedRange(t *testing.T) {
 			QueryPlan{RawLower: &Bound{Value: lower, Inclusive: true}},
 			timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true},
 		},
+		// an upper bound written as now() runs to now as an open end does
+		{"now() upper", QueryPlan{
+			RawLower: &Bound{Value: lower, Inclusive: true}, RawUpper: &Bound{Value: upper, Inclusive: true},
+			UpperIsNow: true,
+		}, timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true}},
 		// plans without raw bounds describe their range by the rounded bucket extent
 		{"rounded, exclusive upper", QueryPlan{
 			Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true}, UpperBound: &Bound{Value: upper},

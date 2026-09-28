@@ -21,6 +21,7 @@ import (
 	goerrors "errors"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -524,6 +525,7 @@ func TestPoolSwapsNeverSplitARequestsAlignment(t *testing.T) {
 						return
 					default:
 					}
+					runtime.Gosched()
 					if i%2 == 0 {
 						c.SetDynamicTargets(discovered)
 						continue
@@ -532,7 +534,9 @@ func TestPoolSwapsNeverSplitARequestsAlignment(t *testing.T) {
 				}
 			}()
 			var withGraphite, withoutGraphite int
-			for i := range 300 {
+			// requests run until both pools have answered some, yielding so the swaps interleave on one CPU
+			for i := 0; i < 300 || (withGraphite == 0 || withoutGraphite == 0) && i < 100_000; i++ {
+				runtime.Gosched()
 				id := strconv.Itoa(i)
 				body := serveAs(c, context.Background(), id)
 				// only the pool that holds graphite needs truncate, and only its merges carry the warning

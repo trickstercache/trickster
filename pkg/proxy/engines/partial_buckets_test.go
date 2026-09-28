@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -39,6 +40,7 @@ import (
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/bucketsim"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -687,4 +689,26 @@ func TestPartialBucketFetchesThatCannotRunAreLeftOut(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestFetchPartialBucketPassesTheResponsesFormat(t *testing.T) {
+	// a response that names its format, as ClickHouse's Native answers do, is read in that format
+	ts, _, r, _, err := tu.NewTestInstance("", nil, http.StatusOK, "rows",
+		map[string]string{hnClickHouseFormat: "Native"}, "prometheus", "/", "error")
+	require.NoError(t, err)
+	defer ts.Close()
+	request.GetResources(r).BackendOptions.HTTPClient = &http.Client{}
+	var format string
+	modeler := &timeseries.Modeler{WireUnmarshalerReader: func(reader io.Reader,
+		_ *timeseries.TimeRangeQuery,
+	) (timeseries.Timeseries, error) {
+		if hint, ok := reader.(*timeseries.FormatHintReader); ok {
+			format = hint.Format
+		}
+		return &dataset.DataSet{}, nil
+	}}
+	_, st, err := FetchPartialBucket(r, nil, &timeseries.TimeRangeQuery{}, modeler)
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusKeyMiss, st)
+	require.Equal(t, "Native", format)
 }

@@ -155,7 +155,7 @@ Two predicate targets are supported, with different rules:
 
 Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)`, `toDateTime64(n, precision)`, or `toDate(n)` wrappers, `WITH`-clause constants, or `now()`/`now64()` with optional addition or subtraction of seconds. DateTime64 precision is retained. Floating epoch bounds and timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
 
-If no upper bound is present, Trickster inserts a safe upper bound into origin requests automatically and caches every complete bucket up to the current time. The still-filling bucket is returned but never cached, so each request refetches it.
+If no upper bound is present, Trickster inserts a safe upper bound into origin requests automatically and caches every complete bucket up to the current time. The still-filling bucket is never cached: under the default `step_alignment`, `drop`, the response ends before it, and the `partial` and `partial_end` modes fetch it from the origin on each request.
 
 Examples of delta-cacheable time range clauses (for a one-minute bucket cadence):
 

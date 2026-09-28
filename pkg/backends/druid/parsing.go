@@ -133,17 +133,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
 	}
+	// the step alignment mode decides the edges of an unaligned interval when the engine plans it
 	trq.Requested = timeseries.RequestedRange{Start: start, End: endExclusive}
-	alignedStart := timeseries.FloorToGrid(start, step, phase)
-	alignedEnd := timeseries.FloorToGrid(endExclusive, step, phase)
-	if !alignedStart.Equal(start) || !alignedEnd.Equal(endExclusive) {
-		return c.reject(trq, ro, true, modeObject, reasonUnalignedInterval, errObjectCache)
-	}
-	start = alignedStart
+	start = timeseries.FloorToGrid(start, step, phase)
 	end := timeseries.FloorToGrid(endExclusive.Add(-time.Nanosecond), step, phase)
-	if end.Before(start) {
-		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
-	}
 	dimensions, dimensionsOK := dimensionNames(queryType, document)
 	if !dimensionsOK {
 		return c.reject(trq, ro, true, modeObject, reasonUnsupportedDimension, errObjectCache)

@@ -20,7 +20,6 @@ backends:
 
 - `queryType` is `timeseries`, `groupBy`, or `topN`.
 - `intervals` contains exactly one ISO-8601 half-open interval.
-- Both interval boundaries align with the selected granularity and origin.
 - `granularity` has a fixed width:
   - a simple granularity from `second` through `day`;
   - a positive `duration` granularity in milliseconds; or
@@ -30,6 +29,12 @@ backends:
 Trickster removes the interval from the logical cache identity and rewrites
 only missing extents into Druid's `[start,end)` form. Druid's end is exclusive,
 so the final cached bucket is rendered as `extent.End + granularity`.
+
+An interval boundary inside a bucket is handled by the backend's
+`step_alignment`, which defaults to `partial` for native queries: complete
+buckets come from the delta cache, and each edge bucket is Druid's answer over
+the part of it the interval covers, fetched through the Object Proxy Cache for
+`partial_bucket_ttl` and never delta cached.
 
 The response model preserves native `timeseries`, `groupBy`, and `topN` JSON
 shapes. Grouping dimensions become DataSet tags internally. Hidden typed values
@@ -45,7 +50,6 @@ provide explicit freshness headers. This includes:
 - other native query types such as `scan`, `search`, `segmentMetadata`,
   `datasourceMetadata`, and `timeBoundary`;
 - multiple intervals;
-- interval boundaries that do not align with the selected granularity;
 - `all`, `none`, `week`, `month`, `quarter`, and `year` simple granularities;
 - calendar-width periods or period granularities in a non-UTC time zone;
 - timeseries `limit`, which keeps only the first rows of the whole result;
@@ -68,8 +72,9 @@ or explicit `resultFormat: "object"`, or `resultFormat: "array"` with
 - one `TIME_FLOOR(__time, <fixed UTC period>)` bucket expression with an
   explicit alias;
 - a `GROUP BY` containing that bucket and every selected dimension; and
-- a complete lower/upper time range on `__time` (unaligned edges are rounded
-  inward, so partial edge buckets are not cached).
+- a complete lower/upper time range on `__time` (unaligned edges follow the
+  backend's `step_alignment`, `drop` by default for SQL; partial edge buckets
+  are never delta cached).
 
 The shared CockroachDB SQL analyzer canonicalizes the statement and renders
 each missing extent while preserving the original JSON context on the wire.
