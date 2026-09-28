@@ -473,3 +473,72 @@ datasources:
     connMaxLifetime: 14400
   secureJsonData:
     password: trickster-dev-grafana
+
+# GreptimeDB direct SQL, using Grafana's bundled PostgreSQL plugin.
+- name: greptimedb-direct
+  type: grafana-postgresql-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_greptimedb_direct
+  url: greptimedb:4003
+  user: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    database: public
+    sslmode: disable
+    timescaledb: false
+    maxOpenConns: 5
+    maxIdleConns: 2
+    connMaxLifetime: 14400
+  secureJsonData:
+    password: trickster-dev-grafana
+
+- name: greptimedb-prom-direct
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_greptimedb_prom_direct
+  url: http://greptimedb:4000/v1/prometheus
+  basicAuth: true
+  basicAuthUser: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: POST
+  secureJsonData:
+    basicAuthPassword: trickster-dev-grafana
+
+- name: greptimedb-trickster
+  type: grafana-postgresql-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_greptimedb_trickster
+  url: host.docker.internal:8489
+  user: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    database: public
+    sslmode: disable
+    timescaledb: false
+    maxOpenConns: 5
+    maxIdleConns: 2
+    connMaxLifetime: 14400
+  secureJsonData:
+    password: trickster-dev-grafana
+
+- name: greptimedb-prom-trickster
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_greptimedb_prom_trickster
+  url: http://host.docker.internal:8480/greptimedb1/v1/prometheus
+  basicAuth: true
+  basicAuthUser: grafana_ro
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: POST
+  secureJsonData:
+    basicAuthPassword: trickster-dev-grafana

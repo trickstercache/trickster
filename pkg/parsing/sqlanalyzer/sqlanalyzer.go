@@ -166,6 +166,10 @@ type QueryPlan struct {
 	// renders as written, so each request within a bucket renders the same statement
 	UpperIsNow   bool
 	GroupColumns []string
+	// DropsPartialBuckets reports that range normalization excludes partial
+	// raw-time buckets. Consumers requiring the original SQL result must use
+	// object caching or proxying instead of rendering this plan.
+	DropsPartialBuckets bool
 	// ValueColumns names deterministic numeric result fields consumed as
 	// time-series values. Dialect adapters validate expressions statically and
 	// may validate concrete result types when rows arrive.

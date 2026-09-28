@@ -31,19 +31,37 @@ import (
 )
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {
-	c.TimeseriesBackend.RegisterHandlers(
-		handlers.Lookup{
-			"health":      http.HandlerFunc(c.HealthHandler),
-			"query_range": http.HandlerFunc(c.QueryRangeHandler),
-			"query":       http.HandlerFunc(c.QueryHandler),
-			"series":      http.HandlerFunc(c.SeriesHandler),
-			"proxycache":  http.HandlerFunc(c.ObjectProxyCacheHandler),
-			"proxy":       http.HandlerFunc(c.ProxyHandler),
-			"labels":      http.HandlerFunc(c.LabelsHandler),
-			"alerts":      http.HandlerFunc(c.AlertsHandler),
-			"admin":       http.HandlerFunc(c.UnsupportedHandler),
-		},
-	)
+	c.TimeseriesBackend.RegisterHandlers(c.HandlerLookup())
+}
+
+// HandlerLookup returns independent handler bindings for an embedding provider.
+func (c *Client) HandlerLookup() handlers.Lookup {
+	lookup := handlers.Lookup{
+		"health":      http.HandlerFunc(c.HealthHandler),
+		"query_range": http.HandlerFunc(c.QueryRangeHandler),
+		"query":       http.HandlerFunc(c.QueryHandler),
+		"series":      http.HandlerFunc(c.SeriesHandler),
+		"proxycache":  http.HandlerFunc(c.ObjectProxyCacheHandler),
+		"proxy":       http.HandlerFunc(c.ProxyHandler),
+		"labels":      http.HandlerFunc(c.LabelsHandler),
+		"alerts":      http.HandlerFunc(c.AlertsHandler),
+		"admin":       http.HandlerFunc(c.UnsupportedHandler),
+	}
+	if c.hooks.PrepareRequest != nil {
+		for name, handler := range lookup {
+			if name == "proxy" || name == "health" {
+				continue
+			}
+			lookup[name] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if !c.hooks.PrepareRequest(r) {
+					c.ProxyHandler(w, r)
+					return
+				}
+				handler.ServeHTTP(w, r)
+			})
+		}
+	}
+	return lookup
 }
 
 // MergeablePaths returns the list of Prometheus Paths for which Trickster supports
@@ -62,11 +80,27 @@ func MergeablePaths() []string {
 // MergeablePaths returns the list of Prometheus Paths for which Trickster supports
 // merging multiple documents into a single response
 func (c *Client) MergeablePaths() []string {
-	return MergeablePaths()
+	paths := MergeablePaths()
+	for i := range paths {
+		paths[i] = pathPrefix(c.hooks.PathPrefix) + paths[i]
+	}
+	return paths
 }
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
+	paths := WithPathPrefix(SupportedPaths(o), c.hooks.PathPrefix)
+	paths = WithCacheKeyParams(paths, c.hooks.CacheKeyParams...)
+	paths = WithCacheKeyHeaders(paths, c.hooks.CacheKeyHeaders...)
+	if o != nil {
+		o.FastForwardPath = paths[1].Clone()
+	}
+	return paths
+}
+
+// SupportedPaths returns a deep copy of the Prometheus route catalogue.
+// It does not mutate the provided backend options.
+func SupportedPaths(o *bo.Options) po.List {
 	var rhts map[string]string
 	if o != nil {
 		rhts = map[string]string{
@@ -276,6 +310,5 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 			MatchTypeName: matching.PathMatchNamePrefix,
 		},
 	}
-	o.FastForwardPath = paths[1].Clone()
-	return paths
+	return paths.Clone()
 }

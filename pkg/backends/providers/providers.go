@@ -53,6 +53,8 @@ const (
 	DruidID
 	// Postgres represents the PostgreSQL wire-protocol backend provider
 	PostgresID
+	// GreptimeDB represents the GreptimeDB backend provider.
+	GreptimeDBID
 
 	Backends = "backends"
 
@@ -73,6 +75,7 @@ const (
 	Graphite   = "graphite"
 	Druid      = "druid"
 	Postgres   = "postgres"
+	GreptimeDB = "greptimedb"
 
 	// provider name aliases
 
@@ -119,6 +122,7 @@ var Names = map[string]Provider{
 	Druid:                  DruidID,
 	Postgres:               PostgresID,
 	TimescaleDB:            PostgresID,
+	GreptimeDB:             GreptimeDBID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -148,6 +152,7 @@ var supportedTimeSeries = map[string]Provider{
 	Druid:       DruidID,
 	Postgres:    PostgresID,
 	TimescaleDB: PostgresID,
+	GreptimeDB:  GreptimeDBID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
@@ -164,6 +169,7 @@ var supportedHTTPTimeSeries = map[string]Provider{
 	ClickHouse: ClickHouseID,
 	Graphite:   GraphiteID,
 	Druid:      DruidID,
+	GreptimeDB: GreptimeDBID,
 }
 
 // IsSupportedHTTPTimeSeriesProvider returns true if the named provider is a time series
@@ -184,15 +190,15 @@ func HTTPTimeSeriesProviderNames() []string {
 	return out
 }
 
-var supportedTimeSeriesMerge = map[string]Provider{
-	Prometheus: PrometheusID,
+// IsPrometheusCompatible reports whether the provider exposes Prometheus APIs.
+func IsPrometheusCompatible(name string) bool {
+	return name == Prometheus || name == GreptimeDB
 }
 
 // IsSupportedTimeSeriesMergeProvider returns true if the provided time series is
 // supported by the Time Series Merge ALB mechanism
 func IsSupportedTimeSeriesMergeProvider(name string) bool {
-	_, ok := supportedTimeSeriesMerge[name]
-	return ok
+	return IsPrometheusCompatible(name)
 }
 
 func (t Provider) String() string {

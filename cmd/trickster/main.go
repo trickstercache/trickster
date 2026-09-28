@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak"
 )
 
 // application variables set at build time via go build's -ldflags
@@ -36,6 +37,8 @@ var (
 )
 
 func main() {
+	// from here on, test-only randomness panics unless a test launched this process
+	weak.RegisterUnlessTestMode()
 	appinfo.Set(appinfo.AppName, applicationVersion,
 		applicationBuildTime, applicationGitCommitID)
 	err := daemon.Start(context.Background(), os.Args[1:]...)

@@ -18,7 +18,6 @@ package dataset
 
 import (
 	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 )
 
 func testDataSet() *DataSet {
@@ -40,6 +40,24 @@ func testDataSet() *DataSet {
 	ds.RangeCropper = ds.DefaultRangeCropper
 	ds.Sorter = func() {}
 	return ds
+}
+
+func TestCropToRangeDropsSeriesWithoutMatchingPoints(t *testing.T) {
+	for _, bounds := range [][2]int64{{2, 3}, {5, 6}, {9, 10}} {
+		t.Run(fmt.Sprint(bounds), func(t *testing.T) {
+			ds := &DataSet{
+				ExtentList: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(12, 0)}},
+				Results: Results{&Result{SeriesList: SeriesList{
+					&Series{Points: Points{{Epoch: epoch.Epoch(time.Unix(4, 0).UnixNano()), Values: []any{1}}, {Epoch: epoch.Epoch(time.Unix(8, 0).UnixNano()), Values: []any{2}}}},
+					&Series{Points: Points{{Epoch: epoch.Epoch(time.Unix(bounds[0], 0).UnixNano()), Values: []any{3}}}},
+				}}},
+			}
+			ds.CropToRange(timeseries.Extent{Start: time.Unix(bounds[0], 0), End: time.Unix(bounds[1], 0)})
+			if ds.SeriesCount() != 1 || ds.ValueCount() != 1 || ds.Results[0].SeriesList[0].Points[0].Values[0] != 3 {
+				t.Fatalf("crop retained points from a disjoint series: %+v", ds.Results[0].SeriesList)
+			}
+		})
+	}
 }
 
 func genTestDataSet(seriesCount int, resultsCount int) *DataSet {
@@ -744,7 +762,7 @@ func genBenchmarkPoint(e epoch.Epoch, valuect int) Point {
 		Values: make([]any, valuect),
 	}
 	for i := range valuect {
-		out.Values[i] = rand.Int() % 1000
+		out.Values[i] = weaktest.IntN(1000)
 	}
 	return out
 }

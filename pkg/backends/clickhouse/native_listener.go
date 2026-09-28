@@ -41,7 +41,7 @@ type nativeListenerAdapter struct{}
 // NativeListenerAdapter returns ClickHouse's shared native-listener adapter.
 func NativeListenerAdapter() native.Adapter { return nativeListenerAdapter{} }
 
-func (nativeListenerAdapter) SupportsHTTP() bool { return true }
+func (nativeListenerAdapter) SupportsHTTP(string) bool { return true }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolClickHouse }
 

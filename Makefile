@@ -166,6 +166,12 @@ style:
 check-imports:
 	@go run hack/check-imports/main.go
 
+# fails the build if weak randomness crosses the application/test boundary;
+# pkg/util/weak/weaktest also panics at runtime once the application registers
+.PHONY: check-weak-random
+check-weak-random:
+	@go run hack/check-weak-random/main.go
+
 .PHONY: gofix-apply
 gofix-apply:
 	@go fix ./...
@@ -178,12 +184,12 @@ LINT_FLAGS ?=
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/devorigin; do \
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
 	done
 
 .PHONY: lint
-lint: check-imports spelling vulncheck gofix-diff golangci-lint
+lint: check-imports check-weak-random spelling vulncheck gofix-diff golangci-lint
 
 .PHONY: lint-all
 lint-all:
@@ -229,14 +235,14 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen gotest check-fmtprints check-todos check-devorigin-offline
+test: check-license-headers check-codegen check-weak-random gotest check-fmtprints check-todos check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -555,6 +561,11 @@ seed-verify:
 seed-generate:
 	@cd hack/seedgen && $(GO) run . -out ../../docs/developer/environment/docker-compose-data/seed-data \
 		$(if $(SEED_PROFILE),-profile $(SEED_PROFILE),) $(if $(SEED_FORCE),-force,)
+
+# Read-only direct GreptimeDB acceptance; does not start or reseed services.
+.PHONY: developer-greptimedb-check
+developer-greptimedb-check:
+	@GO="$(GO)" sh hack/greptimedb-check.sh
 
 RUN_FLAGS ?=
 .PHONY: serve-dev

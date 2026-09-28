@@ -20,12 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 	"reflect"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -369,7 +369,7 @@ func TestChunking(t *testing.T) {
 // TestRoundTripRandomized property-tests the round trip over randomized
 // schemas and values drawn from the supported type pool.
 func TestRoundTripRandomized(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+	rng := weaktest.NewRand(42, 0)
 	valueTypes := []arrow.DataType{
 		arrow.FixedWidthTypes.Boolean,
 		arrow.PrimitiveTypes.Int8, arrow.PrimitiveTypes.Int16,
@@ -383,7 +383,7 @@ func TestRoundTripRandomized(t *testing.T) {
 	randomCell := func(dt arrow.DataType) any {
 		switch dt.ID() {
 		case arrow.BOOL:
-			return rng.Intn(2) == 0
+			return rng.IntN(2) == 0
 		case arrow.INT8:
 			return int64(int8(rng.Int()))
 		case arrow.INT16:
@@ -391,7 +391,7 @@ func TestRoundTripRandomized(t *testing.T) {
 		case arrow.INT32:
 			return int64(int32(rng.Int()))
 		case arrow.INT64, arrow.TIMESTAMP:
-			return rng.Int63() - rng.Int63()
+			return rng.Int64() - rng.Int64()
 		case arrow.UINT8:
 			return int64(uint8(rng.Int()))
 		case arrow.UINT16:
@@ -405,7 +405,7 @@ func TestRoundTripRandomized(t *testing.T) {
 		case arrow.FLOAT64:
 			return rng.NormFloat64()
 		default: // string-ish
-			return fmt.Sprintf("s%d", rng.Intn(1000))
+			return fmt.Sprintf("s%d", rng.IntN(1000))
 		}
 	}
 
@@ -414,17 +414,17 @@ func TestRoundTripRandomized(t *testing.T) {
 			{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}},
 			{Name: "tag", Type: arrow.BinaryTypes.String},
 		}
-		for i := range 1 + rng.Intn(6) {
+		for i := range 1 + rng.IntN(6) {
 			fields = append(fields, arrow.Field{
 				Name:     fmt.Sprintf("v%d", i),
-				Type:     valueTypes[rng.Intn(len(valueTypes))],
+				Type:     valueTypes[rng.IntN(len(valueTypes))],
 				Nullable: true,
 			})
 		}
 		schema := arrow.NewSchema(fields, nil)
 
-		tagValues := []string{"a", "b", "c"}[:1+rng.Intn(3)]
-		rowCount := rng.Intn(50)
+		tagValues := []string{"a", "b", "c"}[:1+rng.IntN(3)]
+		rowCount := rng.IntN(50)
 		rows := make([][]any, rowCount)
 		for r := range rows {
 			cells := make([]any, len(fields))

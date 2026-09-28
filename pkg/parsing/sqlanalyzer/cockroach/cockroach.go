@@ -214,7 +214,7 @@ func ParseIntervalDuration(s string) (time.Duration, bool) {
 			return 0, false
 		}
 		unit, ok := intervalUnits[fields[i+1]]
-		if !ok {
+		if !ok || n > int64((1<<63-1-total)/unit) {
 			return 0, false
 		}
 		total += time.Duration(n) * unit
@@ -283,6 +283,10 @@ func DateBinMatcher(name string, args []tree.Expr) (BucketMatch, bool) {
 	if !ok {
 		return BucketMatch{}, false
 	}
+	return dateBinMatch(step, args)
+}
+
+func dateBinMatch(step time.Duration, args []tree.Expr) (BucketMatch, bool) {
 	column, ok := ColumnName(args[1])
 	if !ok {
 		return BucketMatch{}, false
@@ -438,12 +442,13 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		LowerBound: &sqlanalyzer.Bound{
 			Value: ranges.lower.value, Inclusive: ranges.lower.inclusive,
 		},
-		RawLower:     &ranges.rawLower,
-		RawUpper:     ranges.rawUpper,
-		UpperIsNow:   ranges.upperIsNow,
-		GroupColumns: groups,
-		Ordering:     ordering,
-		Renderer:     renderer,
+		RawLower:            &ranges.rawLower,
+		RawUpper:            ranges.rawUpper,
+		UpperIsNow:          ranges.upperIsNow,
+		GroupColumns:        groups,
+		DropsPartialBuckets: ranges.dropsPartialBuckets,
+		Ordering:            ordering,
+		Renderer:            renderer,
 	}
 	if ranges.upper != nil {
 		plan.UpperBound = &sqlanalyzer.Bound{
@@ -958,15 +963,16 @@ type predicateBound struct {
 }
 
 type rangeAnalysis struct {
-	lower        analyzedBound
-	upper        *analyzedBound
-	targets      []*boundTarget
-	addSynthetic func(tree.Expr)
-	timeColumn   string
-	lowerStyle   boundStyle
-	rawLower     sqlanalyzer.Bound
-	rawUpper     *sqlanalyzer.Bound
-	upperIsNow   bool
+	lower               analyzedBound
+	upper               *analyzedBound
+	targets             []*boundTarget
+	addSynthetic        func(tree.Expr)
+	timeColumn          string
+	lowerStyle          boundStyle
+	rawLower            sqlanalyzer.Bound
+	rawUpper            *sqlanalyzer.Bound
+	upperIsNow          bool
+	dropsPartialBuckets bool
 }
 
 func (r *rangeAnalysis) recordRaw() {
@@ -1100,6 +1106,7 @@ func normalizePrimaryBounds(
 			}
 			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
+			result.dropsPartialBuckets = true
 		}
 	}
 
@@ -1142,6 +1149,9 @@ func normalizePrimaryBounds(
 				return ErrUnsafePredicate
 			}
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
+			result.dropsPartialBuckets = true
+		default:
+			result.dropsPartialBuckets = true
 		}
 		// col <= X reaches at most the first instant of the bucket holding X,
 		// so that bucket is partial; the floored value is the exclusive
@@ -1156,6 +1166,7 @@ func normalizePrimaryBounds(
 			}
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			rounded = true
+			result.dropsPartialBuckets = true
 		}
 		result.upper.target.offset = bucket.step
 	}

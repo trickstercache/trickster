@@ -22,11 +22,14 @@ import (
 
 // DefaultHealthCheckConfig returns the default HealthCheck Config for this backend provider
 func (c *Client) DefaultHealthCheckConfig() *ho.Options {
+	if c.hooks.HealthCheckConfig != nil {
+		return c.hooks.HealthCheckConfig(c.BaseUpstreamURL())
+	}
 	o := ho.New()
 	u := c.BaseUpstreamURL()
 	o.Scheme = u.Scheme
 	o.Host = u.Host
-	o.Path = u.Path + "/api/v1/query"
+	o.Path = u.Path + pathPrefix(c.hooks.PathPrefix) + "/api/v1/query"
 	o.Query = "query=up"
 	return o
 }

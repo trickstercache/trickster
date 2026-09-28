@@ -17,6 +17,7 @@ package pgwire
 
 import (
 	"encoding/binary"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -73,29 +74,47 @@ type sessionTracker struct {
 	// defaults holds what the session started with for settings the origin never
 	// announces; a RESET returns to them. Empty when the origin login is the client's own.
 	defaults         map[string]string
+	assumed          map[string]string
+	settings         SessionSettings
 	pending          *statementClass
+	pendingReported  bool
 	unsafe           string
 	identity         string
 	backslashEscapes bool
 }
 
-func newSessionTracker(user, database string, params map[string]string) *sessionTracker {
+func newSessionTracker(user, database string, params map[string]string, engines ...Engine) *sessionTracker {
 	t := &sessionTracker{
 		user: user, database: database,
 		reported: make(map[string]string), client: make(map[string]string),
+		settings: SessionSettings{Tracked: clientIdentity, Neutral: neutralSettings},
+	}
+	if len(engines) > 0 && engines[0] != nil {
+		engine := engines[0]
+		if settings, ok := engine.(SessionSettingsEngine); ok {
+			t.settings = settings.SessionSettings()
+		}
+		semantics := engine.TimeSemantics()
+		t.assumed = map[string]string{
+			"datestyle": semantics.AssumedDateStyle, varTimeZone: semantics.AssumedTimeZone,
+			"intervalstyle":              semantics.AssumedIntervalStyle,
+			varStandardConformingStrings: semantics.AssumedStandardConformingStrings,
+			"integer_datetimes":          semantics.AssumedIntegerDatetimes,
+		}
+		maps.DeleteFunc(t.assumed, func(_, value string) bool { return value == "" })
 	}
 	for name, value := range params {
-		name = strings.ToLower(name)
+		name = t.settingName(name)
 		switch {
 		case name == paramUser || name == paramDatabase || name == paramReplication ||
 			strings.HasPrefix(name, protocolOptionPrefix):
 		case name == paramOptions:
 			t.options = value
 		default:
-			if _, neutral := neutralSettings[name]; neutral {
+			if _, neutral := t.settings.Neutral[name]; neutral {
 				continue
 			}
-			if !t.modeled(name) {
+			if !t.modeled(name) || t.settings.UnconfirmedStartup {
 				// an unknown startup setting is constant for the session, so it
 				// partitions the cache instead of disabling it
 				name = startupSettingPrefix + name
@@ -103,19 +122,28 @@ func newSessionTracker(user, database string, params map[string]string) *session
 			t.client[name] = value
 		}
 	}
+	t.updateLexicalOptions()
 	return t
+}
+
+func (t *sessionTracker) settingName(name string) string {
+	name = strings.ToLower(name)
+	if canonical, ok := t.settings.Aliases[name]; ok {
+		return canonical
+	}
+	return name
 }
 
 func (t *sessionTracker) modeled(name string) bool {
 	_, reported := reportedIdentity[name]
-	_, client := clientIdentity[name]
+	_, client := t.settings.Tracked[name]
 	return reported || client
 }
 
 func (t *sessionTracker) parameterStatus(name, value string) {
 	// records a setting the origin announced. It is authoritative:
 	// it reflects SET, RESET, rollbacks and function side effects alike.
-	name = strings.ToLower(name)
+	name = t.settingName(name)
 	if _, ok := reportedIdentity[name]; !ok {
 		return
 	}
@@ -124,9 +152,10 @@ func (t *sessionTracker) parameterStatus(name, value string) {
 	t.reported[name] = value
 	delete(t.client, name)
 	t.identity = ""
-	if name == varStandardConformingStrings {
-		t.backslashEscapes = value == settingOff
+	if t.pending != nil && t.pending.name == name {
+		t.pendingReported = true
 	}
+	t.updateLexicalOptions()
 }
 
 func (t *sessionTracker) lexicalOptions() bool {
@@ -144,18 +173,21 @@ func (t *sessionTracker) observe(class *statementClass, txIdle, settled, extende
 		t.markUnsafe(unsafeStatement)
 		return
 	}
-	if class.kind != stmtSet && class.kind != stmtReset && class.kind != stmtDiscardAll || class.local {
+	if class.kind != stmtSet && class.kind != stmtReset && class.kind != stmtDiscardAll ||
+		class.local && !t.settings.LocalPersists {
 		return
 	}
+	class.name = t.settingName(class.name)
 	if class.kind != stmtDiscardAll && class.name != varAll {
-		if _, neutral := neutralSettings[class.name]; neutral {
+		if _, neutral := t.settings.Neutral[class.name]; neutral {
 			return
 		}
 		if !t.modeled(class.name) {
 			t.markUnsafe(unsafeSetting)
 			return
 		}
-		if _, announced := t.reported[class.name]; announced {
+		_, tracked := t.settings.Tracked[class.name]
+		if _, announced := t.reported[class.name]; announced && !tracked {
 			return
 		}
 	}
@@ -170,6 +202,7 @@ func (t *sessionTracker) observe(class *statementClass, txIdle, settled, extende
 		t.markUnsafe(unsafeSetInTx)
 	default:
 		t.pending = class
+		t.pendingReported = false
 	}
 }
 
@@ -181,7 +214,7 @@ func (t *sessionTracker) ready(failed bool) {
 		return
 	}
 	t.pending = nil
-	if failed {
+	if failed || t.pendingReported {
 		return
 	}
 	t.identity = ""
@@ -194,9 +227,12 @@ func (t *sessionTracker) ready(failed bool) {
 		}
 	case class.isDefault:
 		delete(t.client, class.name)
+		delete(t.reported, class.name)
 	default:
 		t.client[class.name] = class.value
+		delete(t.reported, class.name)
 	}
+	t.updateLexicalOptions()
 }
 
 func (t *sessionTracker) setting(name string) (string, bool) {
@@ -204,20 +240,38 @@ func (t *sessionTracker) setting(name string) (string, bool) {
 	// the origin announced over what the client asked for.
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
+	return t.settingLocked(name)
+}
+
+func (t *sessionTracker) settingLocked(name string) (string, bool) {
 	if value, ok := t.reported[name]; ok {
 		return value, true
 	}
 	if value, ok := t.client[name]; ok {
 		return value, true
 	}
-	value, ok := t.defaults[name]
+	if value, ok := t.defaults[name]; ok {
+		return value, true
+	}
+	value, ok := t.assumed[name]
 	return value, ok
+}
+
+func (t *sessionTracker) updateLexicalOptions() {
+	value, _ := t.settingLocked(varStandardConformingStrings)
+	t.backslashEscapes = strings.EqualFold(value, settingOff)
 }
 
 func (t *sessionTracker) sessionDefaults(defaults map[string]string) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	t.defaults, t.identity = defaults, ""
+	// The probe observes the effective startup state, even if the origin ignored
+	// a requested parameter. Do not let the request override that observation.
+	for name := range defaults {
+		delete(t.client, name)
+	}
+	t.updateLexicalOptions()
 }
 
 func (t *sessionTracker) utc() bool {
@@ -253,7 +307,19 @@ func (t *sessionTracker) sessionIdentity() string {
 	appendIdentityField(&identity, t.user)
 	appendIdentityField(&identity, t.database)
 	appendIdentityField(&identity, t.options)
-	for _, settings := range []map[string]string{t.reported, t.client, t.defaults} {
+	reported := t.reported
+	if len(t.assumed) > 0 {
+		reported = maps.Clone(t.reported)
+		for name, value := range t.assumed {
+			_, announced := reported[name]
+			_, client := t.client[name]
+			_, probed := t.defaults[name]
+			if !announced && !client && !probed {
+				reported[name] = value
+			}
+		}
+	}
+	for _, settings := range []map[string]string{reported, t.client, t.defaults} {
 		names := make([]string, 0, len(settings))
 		for name := range settings {
 			names = append(names, name)
