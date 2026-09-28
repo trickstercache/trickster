@@ -102,10 +102,12 @@ type seeder struct {
 }
 
 type sqlOutput struct {
-	AffectedRows *int64 `json:"affectedrows"`
-	Records      *struct {
-		Rows [][]json.Number `json:"rows"`
-	} `json:"records"`
+	AffectedRows *int64      `json:"affectedrows"`
+	Records      *sqlRecords `json:"records"`
+}
+
+type sqlRecords struct {
+	Rows [][]json.Number `json:"rows"`
 }
 
 func main() {
@@ -230,9 +232,10 @@ func createTableSQL() string {
 	defs := make([]string, 0, len(columns)+3)
 	for _, c := range columns {
 		def := `"` + c.name + `" ` + c.kind
-		if c.name == "pickup_datetime" {
+		switch c.name {
+		case "pickup_datetime":
 			def += " NOT NULL TIME INDEX"
-		} else if c.name == "trip_id" || c.name == "vendor_id" || c.name == "cab_type" {
+		case "trip_id", "vendor_id", "cab_type":
 			def += " NOT NULL"
 		}
 		defs = append(defs, def)
@@ -288,9 +291,10 @@ func rowSQL(fields []string, shift int64) (string, error) {
 				values[i] = strconv.FormatFloat(n, 'g', -1, 64)
 			} else {
 				bits := 64
-				if c.kind == "SMALLINT" {
+				switch c.kind {
+				case "SMALLINT":
 					bits = 16
-				} else if c.kind == "INT" {
+				case "INT":
 					bits = 32
 				}
 				n, err := strconv.ParseInt(value, 10, bits)

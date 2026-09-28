@@ -132,7 +132,7 @@ func ParseTimeRangeQuery(r *http.Request, analyzer sqlanalyzer.DialectAnalyzer,
 	if trq.BackfillTolerance == 0 {
 		bf := time.Minute
 		if res := request.GetResources(r); res != nil && res.BackendOptions != nil {
-			bf = time.Duration(res.BackendOptions.BackfillTolerance)
+			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
 		if plan.UpperBound == nil && bf < trq.Step {
 			bf = trq.Step

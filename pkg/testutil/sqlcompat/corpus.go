@@ -190,11 +190,11 @@ func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyz
 			t.Fatalf("upper bound %+v, want %s", plan.UpperBound, want.UpperBound)
 		}
 		// every bound lies on the bucket grid, or partial buckets would be cached as whole ones
-		if !sqlanalyzer.AlignedToBucket(upper, step, phase) {
+		if !timeseries.OnGrid(upper, step, phase) {
 			t.Fatalf("upper bound %s is off the grid", upper)
 		}
 	}
-	if !sqlanalyzer.AlignedToBucket(lower, step, phase) {
+	if !timeseries.OnGrid(lower, step, phase) {
 		t.Fatalf("lower bound %s is off the grid", lower)
 	}
 	for _, fragment := range want.CanonicalContains {

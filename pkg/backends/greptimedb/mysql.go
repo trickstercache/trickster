@@ -140,8 +140,8 @@ func (a *mysqlDialectAnalyzer) AnalyzeParsed(query string, stmt sqlparser.Statem
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, errUnrenderable)
 	}
 	// Cache only complete buckets, matching the provider's HTTP and PGWire paths.
-	lower := sqlanalyzer.CeilBucket(p.LowerBound.Value, p.Step, p.Phase)
-	upper := sqlanalyzer.FloorBucket(p.UpperBound.Value, p.Step, p.Phase)
+	lower := timeseries.CeilToGrid(p.LowerBound.Value, p.Step, p.Phase)
+	upper := timeseries.FloorToGrid(p.UpperBound.Value, p.Step, p.Phase)
 	if !upper.After(lower) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, errUnrenderable)
 	}

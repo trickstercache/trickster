@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -133,9 +134,7 @@ func newHTTPHarness(t *testing.T, origin http.Handler) *httpHarness {
 func (h *httpHarness) query(t *testing.T, method, statement string, extra url.Values, hdr http.Header) *httptest.ResponseRecorder {
 	t.Helper()
 	values := url.Values{"sql": {statement}, "db": {"public"}}
-	for k, v := range extra {
-		values[k] = v
-	}
+	maps.Copy(values, extra)
 	path := "/v1/sql"
 	var body io.Reader
 	if method == "POST" {
@@ -232,7 +231,7 @@ func TestHTTPSQLCacheIdentity(t *testing.T) {
 			} {
 				t.Run(test.name, func(t *testing.T) {
 					before := len(origin.snapshot())
-					for i := 0; i < 2; i++ {
+					for i := range 2 {
 						w := h.query(t, "POST", statement, test.extra, test.headers)
 						_, status := headers.ParseResultEngineStatus(w.Header().Get(headers.NameTricksterResult))
 						want := "kmiss"
@@ -364,12 +363,14 @@ func TestHTTPSQLAuthenticatedGETPolicy(t *testing.T) {
 				}
 				origin.ServeHTTP(w, r)
 			}))
-			for i := range 2 {
-				status := "kmiss"
-				if shareable && i == 1 {
-					status = "hit"
+			// an authorized response is kept under its credential, as the delta cache's lanes keep
+			// them, so it hits for that credential; another shares it only when the origin allows
+			for i, credential := range []string{"Basic Zm9vOmJhcg==", "Basic Zm9vOmJhcg==", "Basic YmF6OnF1eA=="} {
+				status := "hit"
+				if i == 0 || i == 2 && !shareable {
+					status = "kmiss"
 				}
-				assertHTTPResult(t, h.query(t, "GET", "SELECT 9", nil, http.Header{"Authorization": {"Basic Zm9vOmJhcg=="}}), "ObjectProxyCache", status, -1)
+				assertHTTPResult(t, h.query(t, "GET", "SELECT 9", nil, http.Header{"Authorization": {credential}}), "ObjectProxyCache", status, -1)
 			}
 		})
 	}
