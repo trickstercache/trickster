@@ -107,11 +107,6 @@ func ParseV3InfluxQL(r *http.Request, f iofmt.Format,
 		if res != nil {
 			bf = time.Duration(res.BackendOptions.BackfillTolerance)
 		}
-		// open-ended InfluxQL ranges run to now; flooring the tolerance at one
-		// bucket keeps the still-filling final bucket out of the cache
-		if bf < trq.Step {
-			bf = trq.Step
-		}
 		trq.BackfillTolerance = bf
 	}
 	rlo := &timeseries.RequestOptions{
@@ -134,14 +129,8 @@ func ParseV3InfluxQL(r *http.Request, f iofmt.Format,
 func SetExtentV3InfluxQL(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent, q *influxql.Query,
 ) {
-	for _, s := range q.Statements {
-		if sel, ok := s.(*influxql.SelectStatement); ok {
-			// SetTimeRange emits '>= start AND < end', so one step is added to
-			// the end time to keep the final bucket in the results
-			sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
-		}
-	}
-	statement := q.String()
+	// the time range clause is '>= start AND < end', so one step is added to keep the last bucket
+	statement := ti.RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step))
 	if methods.HasBody(r.Method) {
 		request.SetBody(r, EncodeBody(r, statement))
 		return

@@ -25,7 +25,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -379,7 +378,7 @@ func bucketTime(body []byte, column int, decoder *timeAxisDecoder, step, phase t
 	if err != nil {
 		return 0, err
 	}
-	if !sqlanalyzer.AlignedToBucket(value, step, phase) {
+	if !timeseries.OnGrid(value, step, phase) {
 		// a value off the grid means the origin bucketed differently than planned
 		return 0, errTimeAxis
 	}

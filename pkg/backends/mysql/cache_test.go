@@ -414,7 +414,7 @@ func TestDeltaCoveragePlansExpectedOriginSQLAndMergedResult(t *testing.T) {
 		})
 	}
 
-	shards := need.Splice(plan.Step, 0, 0, 2)
+	shards := need.Splice(plan.Step, plan.Phase, 0, 0, 2)
 	if len(shards) != 3 {
 		t.Fatalf("sharded miss = %v, want three two-point extents", shards)
 	}

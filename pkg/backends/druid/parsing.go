@@ -133,13 +133,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
 	}
-	alignedStart := truncateToPhase(start, step, phase)
-	alignedEnd := truncateToPhase(endExclusive, step, phase)
+	alignedStart := timeseries.FloorToGrid(start, step, phase)
+	alignedEnd := timeseries.FloorToGrid(endExclusive, step, phase)
 	if !alignedStart.Equal(start) || !alignedEnd.Equal(endExclusive) {
 		return c.reject(trq, ro, true, modeObject, reasonUnalignedInterval, errObjectCache)
 	}
 	start = alignedStart
-	end := truncateToPhase(endExclusive.Add(-time.Nanosecond), step, phase)
+	end := timeseries.FloorToGrid(endExclusive.Add(-time.Nanosecond), step, phase)
 	if end.Before(start) {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
 	}
@@ -166,6 +166,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Step = step
 	trq.StepNS = step.Nanoseconds()
 	trq.Phase = phase
+	trq.SampleModel = timeseries.SampleModelBucket
 	trq.Extent = timeseries.Extent{Start: start, End: end}
 	trq.ParsedQuery = plan
 	trq.BackfillTolerance = druidBackfillTolerance(r)
@@ -396,7 +397,8 @@ func responseShapeSupported(queryType string, document map[string]any) bool {
 	}
 	switch queryType {
 	case queryTypeTimeseries:
-		return !booleanValue(context["grandTotal"])
+		// a limit keeps only the first rows of the whole result, which differ per sub-range fetch
+		return !booleanValue(context["grandTotal"]) && document["limit"] == nil
 	case queryTypeGroupBy:
 		return !booleanValue(context["resultAsArray"]) &&
 			!booleanValue(context["sortByDimsFirst"]) &&
@@ -581,16 +583,6 @@ func isUTCZone(zone string) bool {
 	default:
 		return false
 	}
-}
-
-func truncateToPhase(value time.Time, step, phase time.Duration) time.Time {
-	stepNS := step.Nanoseconds()
-	shifted := value.UnixNano() - phase.Nanoseconds()
-	quotient := shifted / stepNS
-	if shifted < 0 && shifted%stepNS != 0 {
-		quotient--
-	}
-	return time.Unix(0, quotient*stepNS+phase.Nanoseconds()).In(value.Location())
 }
 
 func dimensionNames(queryType string, document map[string]any) ([]string, bool) {

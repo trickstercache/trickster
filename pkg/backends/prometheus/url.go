@@ -18,7 +18,6 @@ package prometheus
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -31,8 +30,8 @@ func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
 ) error {
 	v, _, _ := params.GetRequestValues(r)
-	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
-	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
+	v.Set(upStart, formatTime(extent.Start))
+	v.Set(upEnd, formatTime(extent.End))
 	params.SetRequestValues(r, v)
 	return nil
 }

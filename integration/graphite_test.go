@@ -262,13 +262,11 @@ func TestGraphite(t *testing.T) {
 		// the learner converges in the background
 		waitForDelta(t, h, params)
 
-		_, hit := renderThroughTrickster(t, h, params)
+		hit := requireCacheHit(t, func() map[string]string {
+			_, result := renderThroughTrickster(t, h, params)
+			return result
+		})
 		require.Equal(t, "DeltaProxyCache", hit["engine"])
-		if hit["status"] == status.StatusPartialHit {
-			// A step rollover can add a new bucket; the partial hit fills it.
-			_, hit = renderThroughTrickster(t, h, params)
-		}
-		require.Equal(t, status.StatusHit, hit["status"])
 	})
 
 	t.Run("delta fetch across a partial range", func(t *testing.T) {
@@ -286,8 +284,10 @@ func TestGraphite(t *testing.T) {
 		require.NotEmpty(t, series)
 		require.Equal(t, fastHost01.step, observedStep(t, series))
 
-		_, again := renderThroughTrickster(t, h, wide)
-		require.Equal(t, status.StatusHit, again["status"])
+		requireCacheHit(t, func() map[string]string {
+			_, again := renderThroughTrickster(t, h, wide)
+			return again
+		})
 	})
 
 	t.Run("archive boundary crossing", func(t *testing.T) {

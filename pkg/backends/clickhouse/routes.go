@@ -18,6 +18,7 @@ package clickhouse
 
 import (
 	"net/http"
+	"slices"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -26,6 +27,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
+
+var transportParams = []string{
+	"query_id", "session_timeout", "session_check", "send_progress_in_http_headers",
+	"http_headers_progress_interval_ms", "wait_end_of_query", "buffer_size", "log_comment",
+	"log_queries", "quota_key", "add_http_cors_header",
+}
 
 func (c *Client) RegisterHandlers(handlers.Lookup) {
 	c.TimeseriesBackend.RegisterHandlers(
@@ -50,12 +57,14 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 			MatchTypeName: matching.PathMatchNameExact,
 		},
 		{
-			Path:           "/",
-			HandlerName:    "query",
-			Methods:        methods.GetAndPost(),
-			MatchType:      matching.PathMatchTypePrefix,
-			MatchTypeName:  matching.PathMatchNamePrefix,
-			CacheKeyParams: []string{"query", "database"},
+			Path:          "/",
+			HandlerName:   "query",
+			Methods:       methods.GetAndPost(),
+			MatchType:     matching.PathMatchTypePrefix,
+			MatchTypeName: matching.PathMatchNamePrefix,
+			// every other parameter is a query parameter or setting that can change the result
+			CacheKeyParams:         []string{"*"},
+			CacheKeyParamsExcluded: slices.Clone(transportParams),
 		},
 	}
 }

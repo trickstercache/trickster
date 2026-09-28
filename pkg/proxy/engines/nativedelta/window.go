@@ -59,7 +59,7 @@ func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 	var rawUpper time.Time
 	switch {
 	case plan.UpperBound == nil:
-		rawUpper = sqlanalyzer.FloorBucket(now, plan.Step, plan.Phase).Add(plan.Step)
+		rawUpper = timeseries.FloorToGrid(now, plan.Step, plan.Phase).Add(plan.Step)
 	case plan.UpperBound.Inclusive:
 		// an inclusive upper names the final bucket; the equivalent exclusive
 		// bound is one cadence beyond it
@@ -70,8 +70,8 @@ func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 	if rawUpper.Before(rawLower) {
 		return Window{}, ErrUnsupportedBounds
 	}
-	lower := sqlanalyzer.CeilBucket(rawLower, plan.Step, plan.Phase)
-	upper := sqlanalyzer.FloorBucket(rawUpper, plan.Step, plan.Phase)
+	lower := timeseries.CeilToGrid(rawLower, plan.Step, plan.Phase)
+	upper := timeseries.FloorToGrid(rawUpper, plan.Step, plan.Phase)
 	if rawUpper.Sub(rawLower) < plan.Step || lower.After(upper) {
 		upper = lower
 	}
@@ -87,17 +87,15 @@ func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 	return window, nil
 }
 
-// StableExtents removes the volatile tail — everything newer than
-// now - window, truncated to the cadence — from the extents recorded against
-// a cache entry, so recently written buckets are refetched rather than served
-// stale from cache. A non-positive window disables trimming.
-func StableExtents(extents timeseries.ExtentList, step time.Duration,
+// StableExtents removes buckets newer than now - window, floored to the phased grid, from a
+// cache entry's extents, and always removes the still-aggregating bucket containing now.
+func StableExtents(extents timeseries.ExtentList, step, phase time.Duration,
 	window time.Duration, now time.Time,
 ) timeseries.ExtentList {
-	if window <= 0 || len(extents) == 0 || step <= 0 {
+	if len(extents) == 0 || step <= 0 {
 		return extents
 	}
-	cutoff := now.Add(-window).Truncate(step)
+	cutoff := timeseries.FloorToGrid(now.Add(-max(window, 0)), step, phase)
 	if cutoff.After(extents[len(extents)-1].End) {
 		return extents
 	}
@@ -106,4 +104,12 @@ func StableExtents(extents timeseries.ExtentList, step time.Duration,
 	}
 	volatile := timeseries.ExtentList{{Start: cutoff, End: extents[len(extents)-1].End}}
 	return extents.Remove(volatile, step)
+}
+
+// VolatileWindow returns a plan's backfill tolerance: the largest of the configured duration,
+// the configured points times the plan's step, and the query's requested tolerance.
+func VolatileWindow(configured time.Duration, points int, step,
+	requested time.Duration,
+) time.Duration {
+	return max(configured, time.Duration(points)*step, requested)
 }

@@ -142,6 +142,60 @@ func TestClickHouse(t *testing.T) {
 		require.Equal(t, "DeltaProxyCache", hdr["engine"])
 	})
 
+	t.Run("query parameters key the cache", func(t *testing.T) {
+		get := func(value, queryID string) (string, map[string]string) {
+			params := url.Values{
+				"query":    {"SELECT {v:UInt8} AS x FORMAT JSONEachRow"},
+				"param_v":  {value},
+				"query_id": {queryID},
+			}
+			resp, err := http.Get("http://" + clickAddr + "/click1/?" + params.Encode())
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
+			return string(body), parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))
+		}
+		suffix := strconv.FormatInt(time.Now().UnixNano(), 10)
+		first, _ := get("1", "p1-"+suffix)
+		require.Contains(t, first, `"x":1`)
+		second, _ := get("2", "p2-"+suffix)
+		require.Contains(t, second, `"x":2`, "a different parameter value must not share a cache entry")
+		repeat, result := get("1", "p3-"+suffix)
+		require.Contains(t, repeat, `"x":1`)
+		require.Equal(t, "hit", result["status"], "a new query_id alone must not split the cache")
+	})
+
+	t.Run("session requests bypass the cache", func(t *testing.T) {
+		session := "trickster-it-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		base := "http://" + clickAddr + "/click1/?"
+		selectThreads := func() string {
+			params := url.Values{
+				"query":      {"SELECT getSetting('max_threads') AS x FORMAT JSONEachRow"},
+				"session_id": {session},
+			}
+			resp, err := http.Get(base + params.Encode())
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
+			require.Contains(t, resp.Header.Get(headers.NameTricksterResult), "engine=HTTPProxy")
+			return string(body)
+		}
+		before := selectThreads()
+		resp, err := http.Post(base+url.Values{"session_id": {session}}.Encode(), "text/plain",
+			strings.NewReader("SET max_threads = 3"))
+		require.NoError(t, err)
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		after := selectThreads()
+		require.Contains(t, after, `"x":3`, "the session's SET must reach the next query, got %s (was %s)",
+			after, before)
+	})
+
 	t.Run("non-select proxied", func(t *testing.T) {
 		params := url.Values{"query": {"SHOW TABLES"}}
 		u := "http://" + clickAddr + "/click1/?" + params.Encode()

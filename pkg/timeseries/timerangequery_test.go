@@ -97,10 +97,12 @@ func TestClone(t *testing.T) {
 			Extent:      Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)},
 			Step:        time.Duration(5) * time.Second,
 			Phase:       time.Second,
+			SampleModel: SampleModelBucket,
 			TemplateURL: u,
 		}
 		c := trq.Clone()
-		if c.Statement != trq.Statement || c.Step != trq.Step || c.Phase != trq.Phase {
+		if c.Statement != trq.Statement || c.Step != trq.Step || c.Phase != trq.Phase ||
+			c.SampleModel != trq.SampleModel {
 			t.Error("basic fields mismatch")
 		}
 		if c.TemplateURL == trq.TemplateURL {
@@ -202,8 +204,8 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 143 {
-		t.Errorf("expected %d got %d", 143, size)
+	if size != 144 {
+		t.Errorf("expected %d got %d", 144, size)
 	}
 }
 

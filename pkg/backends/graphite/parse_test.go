@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func newTestClient(t testing.TB, o *bo.Options) *Client {
@@ -100,6 +101,9 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	}
 	if trq.Step != 10*time.Second {
 		t.Errorf("expected the resolved 10s step, got %v", trq.Step)
+	}
+	if trq.SampleModel != timeseries.SampleModelStored {
+		t.Errorf("expected the stored sample model, got %d", trq.SampleModel)
 	}
 	if trq.CacheKeyElements["target"] != trq.Statement || trq.CacheKeyElements["step"] != "10s" ||
 		trq.CacheKeyElements["gen"] != "0" || trq.CacheKeyElements["leaves"] == "" {

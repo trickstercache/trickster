@@ -139,8 +139,12 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if hasSetOperation(selectQuery) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedStatement, ErrUnsupportedStatement)
 	}
-	if selectQuery.Limit != nil || selectQuery.LimitBy != nil {
+	if selectQuery.Limit != nil || selectQuery.LimitBy != nil || selectQuery.Top != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrLimitUnsupported)
+	}
+	// a sub-range fetch of these shapes computes different bucket values than the full query
+	if err := checkBucketLocality(selectQuery); err != nil {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 
 	constants := collectConstants(selectQuery.With)
@@ -157,6 +161,9 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	groups, err := analyzeGroupBy(selectQuery.GroupBy, selectQuery.SelectItems, bucket)
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
+	}
+	if !ordersByBucket(selectQuery.OrderBy, selectQuery.SelectItems, bucket) {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedOrdering, ErrUnsupportedOrdering)
 	}
 	ranges, err := analyzeRanges(selectQuery, bucket, constants, now, a.opts.RoundUnalignedTimeBounds)
 	if err != nil {
@@ -203,6 +210,99 @@ func hasSetOperation(query *chast.SelectQuery) bool {
 	return query.UnionAll != nil || query.UnionDistinct != nil || query.Except != nil || query.Intersect != nil
 }
 
+func checkBucketLocality(query *chast.SelectQuery) error {
+	var err error
+	tables := 0
+	chast.Walk(query, func(node chast.Expr) bool {
+		switch value := node.(type) {
+		case *chast.SelectQuery:
+			if value != query {
+				err = ErrNestedQuery
+			} else if value.WithTotal {
+				err = ErrCrossRowQuery
+			}
+		case *chast.SubQuery:
+			err = ErrNestedQuery
+		case *chast.JoinTableExpr:
+			// ARRAY JOIN expands rows in place, so only a second table source is a join
+			tables++
+			if tables > 1 {
+				err = ErrNestedQuery
+			}
+		case *chast.GroupByClause:
+			if value.WithTotals {
+				err = ErrCrossRowQuery
+			}
+		case *chast.WindowClause, *chast.WindowExpr, *chast.WindowFunctionExpr,
+			*chast.Fill, *chast.InterpolateClause:
+			err = ErrCrossRowQuery
+		case *chast.SettingsClause:
+			err = ErrQuerySettings
+		case *chast.FunctionExpr:
+			if value.Name != nil && isCrossRowFunction(value.Name.Name) {
+				err = ErrCrossRowQuery
+			}
+		}
+		return err == nil
+	})
+	return err
+}
+
+func isCrossRowFunction(name string) bool {
+	if len(name) > len(crossRowPrefix) && strings.EqualFold(name[:len(crossRowPrefix)], crossRowPrefix) {
+		return true
+	}
+	for _, function := range crossRowFunctions {
+		if len(name) == len(function) && strings.EqualFold(name, function) {
+			return true
+		}
+	}
+	return false
+}
+
+func ordersByBucket(clause *chast.OrderByClause, items []*chast.SelectItem, bucket bucketSpec) bool {
+	if clause == nil {
+		return true
+	}
+	// the response model emits rows ascending by bucket with ties in series order, so a
+	// single ascending bucket term is the only ordering it reproduces
+	if len(clause.Items) != 1 {
+		return false
+	}
+	order, ok := clause.Items[0].(*chast.OrderExpr)
+	if !ok || order.Alias != nil || order.Fill != nil ||
+		(order.Direction != chast.OrderDirectionNone && order.Direction != chast.OrderDirectionAsc) {
+		return false
+	}
+	switch value := unwrapColumnExpr(order.Expr).(type) {
+	case *chast.Ident:
+		return value.Name == bucket.outputColumn
+	case *chast.NumberLiteral:
+		position, err := strconv.Atoi(value.Literal)
+		if value.Base != 10 || err != nil || position != bucket.index+1 {
+			return false
+		}
+		return !slices.ContainsFunc(items[:bucket.index], expandsColumns)
+	default:
+		return expressionKey(value) == expressionKey(items[bucket.index].Expr)
+	}
+}
+
+func expandsColumns(item *chast.SelectItem) bool {
+	// a star or COLUMNS matcher can yield several result columns, shifting later positions
+	expands := false
+	chast.Walk(item, func(node chast.Expr) bool {
+		switch value := node.(type) {
+		case *chast.Ident:
+			expands = value.Name == starColumn
+		case *chast.FunctionExpr:
+			expands = value.Name != nil && strings.EqualFold(value.Name.Name, columnsFunction)
+		}
+		return !expands
+	})
+	return expands
+}
+
 type clickHouseRenderer struct {
 	template       string
 	explicitFormat bool
@@ -235,7 +335,15 @@ const (
 	day                = 24 * time.Hour
 	week               = 7 * day
 	toDateTimeFunction = "todatetime"
+	crossRowPrefix     = "running"
+	columnsFunction    = "columns"
+	starColumn         = "*"
 )
+
+var crossRowFunctions = [...]string{
+	"neighbor", "lagInFrame", "leadInFrame",
+	"rowNumberInBlock", "rowNumberInAllBlocks", "blockNumber", "blockSize",
+}
 
 var fixedBucketDurations = map[string]time.Duration{
 	"tomonday":                week,
@@ -280,6 +388,7 @@ var supportedFormats = map[string]byte{
 type bucketSpec struct {
 	timeColumn   string
 	outputColumn string
+	index        int
 	step         time.Duration
 	phase        time.Duration
 	outputUnit   timeseries.FieldDataType
@@ -288,7 +397,7 @@ type bucketSpec struct {
 func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (bucketSpec, error) {
 	var found *bucketSpec
 	var rejected bool
-	for _, item := range items {
+	for i, item := range items {
 		if item == nil || item.Expr == nil {
 			continue
 		}
@@ -302,6 +411,7 @@ func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (b
 		if found != nil {
 			return bucketSpec{}, ErrAmbiguousTimeAxis
 		}
+		bucket.index = i
 		if item.Alias != nil {
 			bucket.outputColumn = item.Alias.Name
 		} else {
@@ -920,20 +1030,20 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 	lowerOnOutput := result.lower.target != nil && result.lower.target.field == bucket.outputColumn
 	if lowerOnOutput {
 		if result.lower.inclusive {
-			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 		} else {
-			result.lower.value = sqlanalyzer.FloorBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.FloorToGrid(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
 		}
 	} else {
 		if !result.lower.inclusive {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
+		if !timeseries.OnGrid(result.lower.value, bucket.step, bucket.phase) {
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 	}
@@ -944,9 +1054,9 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 	upperOnOutput := result.upper.target != nil && result.upper.target.field == bucket.outputColumn
 	if upperOnOutput {
 		if result.upper.inclusive {
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 		} else {
-			result.upper.value = sqlanalyzer.CeilBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
 			result.upper.target.offset = bucket.step
 		}
 		return nil
@@ -959,11 +1069,11 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		if !ok || tick > bucket.step {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 		}
 		// col <= X reaches at most the first instant of the bucket holding X,
 		// so that bucket is partial; the floored value is the exclusive
@@ -973,11 +1083,11 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		result.upper.target.offset = bucket.step - tick
 		rounded = true
 	} else {
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 		result.upper.target.offset = bucket.step

@@ -28,12 +28,12 @@ import (
 
 const tq02 = `SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t, x, count() AS cnt ` +
 	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
-	`GROUP BY t, x ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
+	`GROUP BY t, x ORDER BY t FORMAT TabSeparatedWithNamesAndTypes`
 
 const tq03 = `SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 	`FROM testdb.test_table WHERE time_column >= toDateTime(1516665600) AND time_column < toDateTime(1516687200) ` +
 	`AND date_column >= toDate(1516665600) AND date_column <= toDate(1516687200) ` +
-	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`
+	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t FORMAT JSON`
 
 func TestParseBuildsTricksterArtifacts(t *testing.T) {
 	trq, options, canObjectCache, err := parse(tq03, nil)

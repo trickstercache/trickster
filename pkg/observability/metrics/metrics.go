@@ -547,6 +547,19 @@ var (
 		[]string{keys.Backend_Name},
 	)
 
+	// TimeseriesOffGridExtents counts delta fetch ranges whose bounds fell between buckets and
+	// were narrowed to whole buckets before the upstream request was rendered.
+	TimeseriesOffGridExtents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "timeseries_offgrid_extents_total",
+			Help: "Count of time series fetch ranges with bounds between buckets, " +
+				"narrowed to whole buckets before fetching.",
+		},
+		[]string{keys.Backend_Name, keys.Provider},
+	)
+
 	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
 	// dialect, and reason labels. Parse failures and OPC fallback are represented
 	// by the invalid_sql reason and object cache mode respectively.
@@ -1156,6 +1169,7 @@ func init() {
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(TimeseriesRetentionFactorExceeded)
+	prometheus.MustRegister(TimeseriesOffGridExtents)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
@@ -1206,6 +1220,7 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
 	TimeseriesRetentionFactorExceeded,
+	TimeseriesOffGridExtents,
 	SQLQueryAnalysis,
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,

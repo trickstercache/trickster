@@ -207,7 +207,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			if _, ok := overrides[p]; ok {
 				continue
 			}
-			if pc.ReplacesParam(p) {
+			if pc.ReplacesParam(p) || slices.Contains(pc.CacheKeyParamsExcluded, p) {
 				continue
 			}
 			kb.addValues(compParam, p, qp[p])

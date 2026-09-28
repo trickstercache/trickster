@@ -526,7 +526,7 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 		}
 		out.upperSourceInclusive = true
 		out.upperTick = tick
-		out.upper.value = sqlanalyzer.FloorBucket(out.upper.value, bucket.step, 0)
+		out.upper.value = timeseries.FloorToGrid(out.upper.value, bucket.step, 0)
 		out.upper.inclusive = false
 	}
 	return out, nil

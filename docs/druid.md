@@ -48,6 +48,7 @@ provide explicit freshness headers. This includes:
 - interval boundaries that do not align with the selected granularity;
 - `all`, `none`, `week`, `month`, `quarter`, and `year` simple granularities;
 - calendar-width periods or period granularities in a non-UTC time zone;
+- timeseries `limit`, which keeps only the first rows of the whole result;
 - groupBy limits or dimension-first result ordering; and
 - response-changing contexts such as `bySegment`, `serializeDateTimeAsLong`,
   timeseries `grandTotal`, or groupBy `resultAsArray`.

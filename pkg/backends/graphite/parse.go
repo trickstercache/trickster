@@ -244,6 +244,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	}
 	trq.Statement = strings.Join(canonical, "\n")
 	trq.Extent, trq.Step = d.Extent, d.Step
+	trq.SampleModel = timeseries.SampleModelStored
 
 	// key on canonical target, leaf set, step and registry generation, so a
 	// relearned ladder or changed expansion misses rather than collides

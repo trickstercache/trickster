@@ -40,6 +40,7 @@ const (
 	Entry                = "entry"
 	Error                = "error"
 	Event                = "event"
+	Extent               = "extent"
 	Failed               = "failed"
 	Fetched              = "fetched"
 	FFStatus             = "ffstatus"

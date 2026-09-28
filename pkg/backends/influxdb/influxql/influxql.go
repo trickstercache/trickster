@@ -17,6 +17,7 @@
 package influxql
 
 import (
+	"errors"
 	"maps"
 	"net/http"
 	"net/url"
@@ -36,6 +37,32 @@ import (
 
 	"github.com/influxdata/influxql"
 )
+
+var (
+	// ErrUnsupportedTimeZone indicates a non-UTC tz() clause, which shifts GROUP BY time() buckets
+	// by a zone offset that can change across daylight saving transitions
+	ErrUnsupportedTimeZone = errors.New("non-UTC tz() clauses cannot be delta cached")
+	// ErrCrossBucket indicates fill(previous|linear) or a transformation whose value in one bucket
+	// depends on other buckets, so a sub-range fetch would compute a different value
+	ErrCrossBucket = errors.New("values that depend on other time buckets cannot be delta cached")
+	// ErrUnsupportedLimit indicates LIMIT, OFFSET, SLIMIT or SOFFSET, which apply to the whole
+	// result rather than to each time bucket
+	ErrUnsupportedLimit = errors.New("result limits cannot be delta cached")
+	// ErrSubquery indicates a subquery, whose own time range is not rewritten for sub-range fetches
+	ErrSubquery = errors.New("subqueries cannot be delta cached")
+)
+
+const statementSeparator = ";\n" // as influxql.Statements.String joins statements
+
+var crossBucketCalls = map[string]struct{}{
+	"derivative": {}, "non_negative_derivative": {}, "difference": {}, "non_negative_difference": {},
+	"moving_average": {}, "cumulative_sum": {}, "elapsed": {}, "integral": {},
+	"exponential_moving_average": {}, "double_exponential_moving_average": {},
+	"triple_exponential_moving_average": {}, "triple_exponential_derivative": {},
+	"relative_strength_index": {}, "kaufmans_efficiency_ratio": {},
+	"kaufmans_adaptive_moving_average": {}, "chande_momentum_oscillator": {},
+	"holt_winters": {}, "holt_winters_with_fit": {},
+}
 
 var epochToFlag = map[string]byte{
 	"ns": 1,
@@ -75,7 +102,7 @@ func ParseStatement(statement string, now time.Time,
 	}
 
 	trq.Step = -1
-	var hasTimeQueryParts bool
+	var hasTimeQueryParts, hasPhase bool
 	statements := make([]string, 0, len(q.Statements))
 	var canObjectCache bool
 	for _, v := range q.Statements {
@@ -103,6 +130,19 @@ func ParseStatement(statement string, now time.Time,
 				// different step widths
 				cacheError = pe.ErrStepParse
 			}
+			if phase, err := groupByPhase(sel, step); err != nil {
+				cacheError = err
+			} else if !hasPhase {
+				trq.Phase, hasPhase = phase, true
+			} else if trq.Phase != phase {
+				cacheError = pe.ErrStepParse
+			}
+		}
+		if sel.Location != nil && sel.Location != time.UTC {
+			cacheError = ErrUnsupportedTimeZone
+		}
+		if err := checkDeltaSafe(sel); err != nil {
+			cacheError = err
 		}
 		_, tr, err := influxql.ConditionExpr(sel.Condition, valuer)
 		if err != nil {
@@ -140,6 +180,10 @@ func ParseStatement(statement string, now time.Time,
 		cacheError = pe.ErrNotTimeRangeQuery
 	}
 
+	if trq.Step > 0 {
+		trq.SampleModel = timeseries.SampleModelBucket
+	}
+
 	// this field is used as part of the data that calculates the cache key
 	trq.Statement = strings.Join(statements, " ; ")
 	trq.ParsedQuery = q
@@ -147,6 +191,66 @@ func ParseStatement(statement string, now time.Time,
 		ParamQuery: trq.Statement,
 	}
 	return trq, canObjectCache, cacheError
+}
+
+// RenderTimeRange returns q's statements with every SELECT limited to [start, end). It renders
+// clones and never modifies q, which the concurrent fetches of one request share.
+func RenderTimeRange(q *influxql.Query, start, end time.Time) string {
+	var b strings.Builder
+	for i, s := range q.Statements {
+		if i > 0 {
+			b.WriteString(statementSeparator)
+		}
+		if sel, ok := s.(*influxql.SelectStatement); ok {
+			sel = sel.Clone()
+			sel.SetTimeRange(start, end)
+			s = sel
+		}
+		b.WriteString(s.String())
+	}
+	return b.String()
+}
+
+func checkDeltaSafe(sel *influxql.SelectStatement) error {
+	if sel.Fill == influxql.PreviousFill || sel.Fill == influxql.LinearFill {
+		return ErrCrossBucket
+	}
+	if sel.Limit > 0 || sel.Offset > 0 || sel.SLimit > 0 || sel.SOffset > 0 {
+		return ErrUnsupportedLimit
+	}
+	for _, source := range sel.Sources {
+		if _, ok := source.(*influxql.SubQuery); ok {
+			return ErrSubquery
+		}
+	}
+	var crossBucket bool
+	for _, field := range sel.Fields {
+		influxql.WalkFunc(field.Expr, func(node influxql.Node) {
+			if call, ok := node.(*influxql.Call); ok && !crossBucket {
+				_, crossBucket = crossBucketCalls[strings.ToLower(call.Name)]
+			}
+		})
+		if crossBucket {
+			return ErrCrossBucket
+		}
+	}
+	return nil
+}
+
+func groupByPhase(sel *influxql.SelectStatement, step time.Duration) (time.Duration, error) {
+	if step <= 0 {
+		return 0, nil
+	}
+	offset, err := sel.GroupByOffset()
+	if err != nil {
+		return 0, err
+	}
+	// InfluxDB starts each bucket at the Unix-epoch grid shifted by the offset
+	phase := offset % step
+	if phase < 0 {
+		phase += step
+	}
+	return phase, nil
 }
 
 // dimensionTagFields extracts the plain tag names from a statement's GROUP BY
@@ -225,22 +329,17 @@ func ParseTimeRangeQuery(r *http.Request,
 func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent, q *influxql.Query,
 ) {
-	for _, s := range q.Statements {
-		if sel, ok := s.(*influxql.SelectStatement); ok {
-			// since setting timerange results in a clause of '>= start AND < end', we add the
-			// size of 1 step onto the end time so as to ensure it is included in the results
-			sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
-		}
-	}
+	// the time range clause is '>= start AND < end', so one step is added to keep the last bucket
+	statement := RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step))
 	var v url.Values
 	switch r.Method {
 	case http.MethodGet:
 		// GET request, query param is in the url
 		v, _, _ = params.GetRequestValues(r)
-		v.Set(ParamQuery, q.String())
+		v.Set(ParamQuery, statement)
 	case http.MethodPost:
 		// POST request; query param is in the body, others are in the url
-		rb := url.Values{ParamQuery: []string{q.String()}}.Encode()
+		rb := url.Values{ParamQuery: []string{statement}}.Encode()
 		request.SetBody(r, []byte(rb))
 		v = r.URL.Query()
 	default:

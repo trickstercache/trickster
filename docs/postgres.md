@@ -165,8 +165,10 @@ Each analyzed statement is counted in
 ### Delta-cacheable statements
 
 A statement uses the delta cache when it is a single-table `SELECT` that
-groups by one recognized time bucket and bounds the bucketed column with
-literal (or `now()`-relative) lower and upper limits joined by `AND`.
+groups by one recognized time bucket and bounds the bucketed column with a
+literal (or `now()`-relative) lower limit and, optionally, an upper limit
+joined by `AND`. A range with no upper limit runs to the present; its
+still-filling final bucket is refetched on every request and never cached.
 
 | Bucket | Notes |
 | --- | --- |

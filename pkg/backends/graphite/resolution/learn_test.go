@@ -296,9 +296,10 @@ func TestWildcardsAndLCM(t *testing.T) {
 		t.Fatalf("wildcard: %+v", r)
 	}
 	id := r.ExpansionID
-	// mixed steps normalize to the LCM
+	// graphite-web normalizes mixed steps to an LCM whose buckets move with from, so the
+	// expression is not delta-cacheable
 	r2 := h.resolver.Resolve(ctx, []string{"dev.fast.cpu.host01.percent", "odd.two"}, 0, 30*time.Minute, true)
-	if r2.Confidence != resolution.Derived || r2.Step != 30*time.Second || r2.MaxRetention != 24*time.Hour {
+	if r2.Confidence != resolution.Unknown || r2.Reason != "mixed_steps" || r2.Step != 0 {
 		t.Errorf("lcm: %+v", r2)
 	}
 	// a bare expression over mixed ladders is not predictable: graphite

@@ -358,19 +358,13 @@ func ParseTimeRangeQuery(r *http.Request, f iofmt.Format,
 		ro = &timeseries.RequestOptions{}
 	}
 	ro.OutputFormat = outputFormat
-	// a backfill-tolerance directive embedded in the statement wins; otherwise
-	// apply the backend default and floor it at one bucket for open-ended
-	// queries, whose request extent runs to now: without the floor the final,
-	// still-filling bucket would be cached as complete.
+	// a backfill-tolerance directive wins, else the backend default; the still-filling
+	// final bucket needs no tolerance because the engine never caches it
 	if trq.BackfillTolerance == 0 {
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
 			bf = time.Duration(res.BackendOptions.BackfillTolerance)
-		}
-		if q, ok := trq.ParsedQuery.(*Query); ok && q.Plan != nil &&
-			q.Plan.UpperBound == nil && bf < trq.Step {
-			bf = trq.Step
 		}
 		trq.BackfillTolerance = bf
 	}

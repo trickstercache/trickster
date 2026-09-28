@@ -30,6 +30,11 @@ Trickster supports the full [Prometheus HTTP API (v1)](https://prometheus.io/doc
 | `/api/v1/scrape_pools` | Object Proxy Cache | No |
 | `/api/v1/features` | Object Proxy Cache | No |
 
+### Range Query Notes
+
+- A `step` may be fractional seconds (for example `1.5` or `0.5`), as Prometheus accepts; Trickster keeps the fraction and sends sub-second `start` and `end` values with millisecond precision.
+- A `query_range` whose expression uses the `@ start()` or `@ end()` modifier is proxied without caching. Those modifiers resolve against each request's own range, so results fetched for part of a range could not be combined. A fixed `@ <timestamp>` is cached normally.
+
 ### Proxied Endpoints (not cached)
 
 | Endpoint | Notes |

@@ -29,7 +29,8 @@ import (
 
 // Common URL Parameter Names
 const (
-	upQuery = "query"
+	upQuery     = "query"
+	upSessionID = "session_id"
 )
 
 var (

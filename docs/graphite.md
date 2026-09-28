@@ -235,7 +235,7 @@ on `trickster_graphite_resolution_lookups_total`:
 | Confidence | Meaning | Behavior |
 |---|---|---|
 | `exact` | The step was read from an origin response for this metric at this age | Delta cached |
-| `derived` | Computed from known ladders — the LCM across a wildcard's leaves, or a step-altering function Trickster understands | Delta cached |
+| `derived` | Computed from known ladders — the shared step of a wildcard's leaves, or a step-altering function Trickster understands | Delta cached |
 | `configured` | From `static_retentions` only, not yet confirmed by probe | Delta cached, and a confirming probe is scheduled |
 | `unknown` | No usable step | Object cached |
 
@@ -352,6 +352,7 @@ is recorded on `trickster_graphite_fallbacks_total`:
 | `function_not_allowlisted` | A function in the target is not on the allowlist |
 | `unknown_step` | The step could not be resolved (metric not yet learned, probe failing, or the window is wholly beyond `maxRetention`) |
 | `missing_target` | No `target` parameter, or a wildcard that matches nothing |
+| `mixed_steps` | A function combines series stored at different steps. graphite-web consolidates them to their least common multiple starting from each series' first point, so the buckets move with `from` and cannot be stitched |
 | `parse_error` | The target expression, `from`/`until`, or `now` did not parse |
 | `non_series_format` | An image or pickle format, or `graphType=pie` |
 | `multi_target_step_mismatch` | Targets resolve to different steps and could not be split |

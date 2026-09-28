@@ -29,6 +29,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestParseTimeRangeQueryAdditionalInvalidInputs(t *testing.T) {
@@ -113,7 +114,7 @@ func TestParseHelpers(t *testing.T) {
 	if _, ok := composePeriodDuration(math.MaxInt64, 0, 0, 0, 0); ok {
 		t.Fatal("overflowing duration was accepted")
 	}
-	if truncateToPhase(time.Unix(-1, 500_000_000), time.Second, 0).UnixNano() != -1_000_000_000 {
+	if timeseries.FloorToGrid(time.Unix(-1, 500_000_000), time.Second, 0).UnixNano() != -1_000_000_000 {
 		t.Fatal("negative timestamp was not floored")
 	}
 	for _, zone := range []string{"UTC", "Etc/UTC", "GMT", "Etc/GMT"} {

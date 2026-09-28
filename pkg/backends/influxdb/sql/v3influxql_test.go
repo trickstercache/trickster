@@ -221,7 +221,9 @@ func TestAcceptHeaderDrivesFormat(t *testing.T) {
 // TestOpenEndedQueryBackfillFloor verifies queries without an upper time bound
 // get a backfill tolerance of at least one bucket so the still-filling final
 // bucket is never cached as complete.
-func TestOpenEndedQueryBackfillFloor(t *testing.T) {
+func TestOpenEndedQueryKeepsDefaultBackfill(t *testing.T) {
+	// the still-filling bucket is kept out of the cache by the engine, so an
+	// open-ended query's tolerance is not raised to its step
 	statement := "SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) " +
 		"FROM m WHERE time >= 1704067200 GROUP BY 1"
 	r := jsonPost(t, `{"q":"`+statement+`"}`)
@@ -229,17 +231,10 @@ func TestOpenEndedQueryBackfillFloor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trq.BackfillTolerance < time.Hour {
-		t.Fatalf("backfill tolerance = %s, want >= 1h", trq.BackfillTolerance)
+	if trq.BackfillTolerance != time.Minute {
+		t.Fatalf("backfill tolerance = %s, want 1m", trq.BackfillTolerance)
 	}
-
-	// a bounded query keeps the smaller default
-	trq, _, _, err = ParseTimeRangeQuery(
-		jsonPost(t, `{"q":"`+identityQuery+`"}`), iofmt.V3SQL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if trq.BackfillTolerance >= time.Hour {
-		t.Fatalf("bounded query backfill tolerance = %s, want < 1h", trq.BackfillTolerance)
+	if trq.SampleModel != timeseries.SampleModelBucket {
+		t.Fatalf("sample model = %d, want bucketed", trq.SampleModel)
 	}
 }

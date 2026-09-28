@@ -18,6 +18,7 @@ package prometheus
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -134,9 +135,15 @@ func TestParseDuration(t *testing.T) {
 		hasErr   bool
 	}{
 		{"integer seconds", "15", 15 * time.Second, false},
-		{"float seconds", "1.5", 1 * time.Second, false},
+		{"float seconds", "1.5", 1500 * time.Millisecond, false},
+		{"sub-second", "0.5", 500 * time.Millisecond, false},
+		{"milliseconds", "0.001", time.Millisecond, false},
 		{"duration string", "1m", 60 * time.Second, false},
 		{"invalid", "x", 0, true},
+		{"zero", "0", 0, true},
+		{"negative", "-1", 0, true},
+		{"not a number", "NaN", 0, true},
+		{"overflow", "1e20", 0, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -405,6 +412,45 @@ func TestParseVectorQuery(t *testing.T) {
 				t.Errorf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestContainsStartEndModifier(t *testing.T) {
+	tests := []struct {
+		stmt string
+		want bool
+	}{
+		{`rate(x[5m] @ start())`, true},
+		{`x @ end()`, true},
+		{`x @end ( )`, true},
+		{"sum(rate(x[5m] @\tstart()))", true},
+		{`x @ 1609746000`, false},
+		{`x @ 1609746000.5`, false},
+		{`rate(x[5m])`, false},
+		{`x{job="@ start()"}`, false},
+		{`x{job='@ end()'}`, false},
+		{"x{job=`@ end()`}", false},
+		{`x{job="esc\"@ start()"}`, false},
+		{`x @ startx`, false},
+		{``, false},
+	}
+	for _, test := range tests {
+		t.Run(test.stmt, func(t *testing.T) {
+			if got := containsStartEndModifier(test.stmt); got != test.want {
+				t.Errorf("containsStartEndModifier(%q) = %v, want %v", test.stmt, got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseTimeRangeQueryRefusesStartEndModifier(t *testing.T) {
+	qp := url.Values{
+		upQuery: {`rate(x[5m] @ start())`}, upStart: {"0"}, upEnd: {"3600"}, upStep: {"60"},
+	}
+	req := &http.Request{URL: &url.URL{RawQuery: qp.Encode()}}
+	trq, _, canOPC, err := (&Client{}).ParseTimeRangeQuery(req)
+	if !errors.Is(err, pe.ErrStartEndModifier) || canOPC || trq == nil {
+		t.Fatalf("expected a proxied request, got err=%v canOPC=%t trq=%v", err, canOPC, trq)
 	}
 }
 

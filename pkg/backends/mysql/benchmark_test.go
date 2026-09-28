@@ -213,7 +213,7 @@ func BenchmarkMySQLResultHandling(b *testing.B) {
 		b.Run(name+"/Sharding", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				shards := cached.extents.Splice(time.Minute, 0, 0, 100)
+				shards := cached.extents.Splice(time.Minute, 0, 0, 0, 100)
 				if len(shards) == 0 {
 					b.Fatal("sharding returned no extents")
 				}

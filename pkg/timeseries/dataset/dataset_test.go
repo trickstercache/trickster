@@ -672,6 +672,24 @@ func TestCropToRange(t *testing.T) {
 		t.Error("invalid extent in crop", exs)
 	}
 
+	t.Run("drop series with no points in range", func(t *testing.T) {
+		point := func(sec int64, v int) Point {
+			return Point{Epoch: epoch.Epoch(time.Unix(sec, 0).UnixNano()), Size: 32, Values: []any{v}}
+		}
+		inRange := &Series{Header: SeriesHeader{Name: "in"}, Points: Points{point(10, 1), point(20, 2)}}
+		after := &Series{Header: SeriesHeader{Name: "after"}, Points: Points{point(30, 3)}}
+		before := &Series{Header: SeriesHeader{Name: "before"}, Points: Points{point(5, 4)}}
+		ds := &DataSet{
+			Results:    []*Result{{SeriesList: []*Series{before, inRange, after}}},
+			ExtentList: timeseries.ExtentList{{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+		}
+		ds.DefaultRangeCropper(timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(20, 0)})
+		sl := ds.Results[0].SeriesList
+		if len(sl) != 1 || sl[0].Header.Name != "in" || len(sl[0].Points) != 2 {
+			t.Fatalf("expected only the in-range series to remain, got %d series", len(sl))
+		}
+	})
+
 	t.Run("remove empty or nil series", func(t *testing.T) {
 		// Create a fresh dataset for this test
 		ds := genTestDataSet(2, 2)

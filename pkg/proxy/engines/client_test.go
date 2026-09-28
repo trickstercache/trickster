@@ -80,6 +80,8 @@ type TestClient struct {
 	// setExtentErrorAfter causes calls after this count to fail. Zero causes
 	// every call to fail when setExtentErr is non-nil.
 	setExtentErrorAfter int64
+	// sampleModel is set on every parsed TimeRangeQuery
+	sampleModel timeseries.SampleModel
 }
 
 func NewTestClient(name string, o *bo.Options, router http.Handler,
@@ -231,7 +233,7 @@ func parseDuration(input string) (time.Duration, error) {
 func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
 ) {
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}, SampleModel: c.sampleModel}
 	rlo := &timeseries.RequestOptions{}
 	qp, _, _ := params.GetRequestValues(r)
 

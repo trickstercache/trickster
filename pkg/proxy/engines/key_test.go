@@ -577,6 +577,26 @@ func TestDeriveCacheKey_MultiValueParams(t *testing.T) {
 		}
 	})
 
+	t.Run("wildcard CacheKeyParams skips excluded params", func(t *testing.T) {
+		keyFor := func(rawURL string) string {
+			pc := &po.Options{
+				Path: "/", CacheKeyParams: []string{"*"}, CacheKeyParamsExcluded: []string{"query_id"},
+			}
+			cfg := &bo.Options{Paths: po.List{pc}}
+			rsc := request.NewResources(cfg, pc, nil, nil, nil, nil)
+			r := httptest.NewRequest(http.MethodGet, rawURL, nil)
+			r = r.WithContext(ct.WithResources(context.Background(), rsc))
+			return newProxyRequest(r, nil).DeriveCacheKey("")
+		}
+		base := keyFor("http://h/?query=SELECT+1&param_tenant=a&query_id=1")
+		if keyFor("http://h/?query=SELECT+1&param_tenant=a&query_id=2") != base {
+			t.Error("an excluded param must not change the key")
+		}
+		if keyFor("http://h/?query=SELECT+1&param_tenant=b&query_id=1") == base {
+			t.Error("a non-excluded param must change the key")
+		}
+	})
+
 	t.Run("single-value params unchanged", func(t *testing.T) {
 		// Ensure the multi-value change doesn't alter keys for single-value params.
 		// This uses the same config as TestDeriveCacheKey to confirm stability.

@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
@@ -108,6 +109,10 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		want := 6*time.Hour - time.Minute
 		if res.Extent.End.Sub(res.Extent.Start) != want {
 			t.Errorf("expected %s got %s", want, res.Extent.End.Sub(res.Extent.Start))
+		}
+		// the engine keeps a still-filling bucket volatile only for bucketed aggregates
+		if res.SampleModel != timeseries.SampleModelBucket {
+			t.Errorf("expected bucketed sample model, got %d", res.SampleModel)
 		}
 	}
 

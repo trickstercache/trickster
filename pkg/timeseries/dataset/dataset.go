@@ -659,17 +659,20 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			eg.Go(func() error {
 				l := len(s.Points)
 				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
+				// a series with no points in range is dropped, as CroppedClone does
 				if start < l && end <= l && end > start {
 					s.Points = s.Points.CloneRange(start, end)
 					s.PointSize = s.Points.Size()
+					sl[index] = s
 				}
-				sl[index] = s
 				return nil
 			})
 			j++
 		}
 		eg.Wait()
-		ds.Results[i].SeriesList = sl[:j]
+		ds.Results[i].SeriesList = slices.DeleteFunc(sl[:j], func(s *Series) bool {
+			return s == nil
+		})
 	}
 }
 

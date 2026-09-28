@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -1656,6 +1657,81 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusHit})
 	if err != nil {
 		t.Error(err)
+	}
+}
+
+func TestDeltaProxyCacheNeverCachesLiveBucket(t *testing.T) {
+	// a one-hour step keeps both requests inside one bucket in all but rare runs
+	const step = time.Hour
+	tests := []struct {
+		name     string
+		model    timeseries.SampleModel
+		eviction evictionmethods.TimeseriesEvictionMethod
+		repeat   string
+	}{
+		{
+			"bucket model, oldest eviction", timeseries.SampleModelBucket,
+			evictionmethods.EvictionMethodOldest, status.StatusPartialHit,
+		},
+		{
+			"bucket model, lru eviction", timeseries.SampleModelBucket,
+			evictionmethods.EvictionMethodLRU, status.StatusPartialHit,
+		},
+		{
+			"instant model caches its newest point", timeseries.SampleModelInstant,
+			evictionmethods.EvictionMethodOldest, status.StatusHit,
+		},
+	}
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts, w, r, rsc, err := setupTestHarnessDPC()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeTestHarness(ts, r)
+			client := rsc.BackendClient.(*TestClient)
+			client.sampleModel = test.model
+			client.RangeCacheKey = fmt.Sprintf("test-range-key-live-%d", i)
+			client.InstantCacheKey = fmt.Sprintf("test-instant-key-live-%d", i)
+			rsc.CacheConfig.Provider = "test"
+			o := rsc.BackendOptions
+			o.FastForwardDisable = true
+			o.BackfillTolerance, o.BackfillTolerancePoints = 0, 0
+			o.TimeseriesEvictionMethod = test.eviction
+
+			now := time.Now()
+			live := alignTime(now, step)
+			u := r.URL
+			u.Path = "/prometheus/api/v1/query_range"
+			u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s",
+				int(step.Seconds()), now.Add(-6*step).Unix(), now.Unix(), queryReturnsOKNoLatency,
+				client.RangeCacheKey, client.InstantCacheKey)
+			client.QueryRangeHandler(w, r)
+			if err = testResultHeaderPartMatch(w.Result().Header,
+				map[string]string{keys.Status: status.StatusKeyMiss}); err != nil {
+				t.Fatal(err)
+			}
+
+			w = httptest.NewRecorder()
+			client.QueryRangeHandler(w, r)
+			if !alignTime(time.Now(), step).Equal(live) {
+				t.Skip("the test crossed a bucket boundary")
+			}
+			resp := w.Result()
+			if err = testResultHeaderPartMatch(resp.Header,
+				map[string]string{keys.Status: test.repeat}); err != nil {
+				t.Fatal(err)
+			}
+			if test.repeat != status.StatusPartialHit {
+				return
+			}
+			// only the bucket containing now is refetched
+			fetched := "[" + timeseries.ExtentList{{Start: live, End: live}}.String() + "]"
+			if err = testResultHeaderPartMatch(resp.Header,
+				map[string]string{keys.Fetched: fetched}); err != nil {
+				t.Error(err)
+			}
+		})
 	}
 }
 

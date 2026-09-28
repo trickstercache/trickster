@@ -250,7 +250,7 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
 			fetchExtents := make(timeseries.ExtentList, 0, len(missing))
 			for _, extent := range missing {
-				fetchExtents = append(fetchExtents, timeseries.ExtentList{extent}.Splice(plan.Step,
+				fetchExtents = append(fetchExtents, timeseries.ExtentList{extent}.Splice(plan.Step, plan.Phase,
 					h.config.ShardMaxRange, h.config.ShardStep, h.config.ShardMaxPoints)...)
 			}
 			return fetchExtents
@@ -968,9 +968,9 @@ func (h *protocolHandler) applyRetentionSorted(result *sqltypes.Result,
 func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,
 	plan *sqlanalyzer.QueryPlan, now time.Time,
 ) timeseries.ExtentList {
-	window := max(h.config.BackfillWindow, time.Duration(h.config.BackfillPoints)*plan.Step,
-		plan.BackfillTolerance)
-	return nativedelta.StableExtents(extents, plan.Step, window, now)
+	window := nativedelta.VolatileWindow(h.config.BackfillWindow, h.config.BackfillPoints,
+		plan.Step, plan.BackfillTolerance)
+	return nativedelta.StableExtents(extents, plan.Step, plan.Phase, window, now)
 }
 
 func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, parsed parsedQuery) {

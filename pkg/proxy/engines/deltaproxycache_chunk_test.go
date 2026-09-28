@@ -759,8 +759,9 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucket(t *testing.T) {
 
 	step := time.Duration(3600) * time.Second
 
-	// kmiss write in bucket ending 2026-04-20T00:00Z; high-end read in next bucket
-	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+	// kmiss write in the chunk bucket ending 2026-04-19T12:00Z (420h chunks on the Unix epoch);
+	// high-end read in the next bucket
+	now := time.Date(2026, 4, 19, 23, 0, 0, 0, time.UTC)
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
@@ -841,7 +842,8 @@ func TestDeltaProxyCacheRequestRangeMissChunks_CrossBucketPreservesPriorChunks(t
 	o.TimeseriesRetention = 1 << 20 // pin against wallclock drift on fixed fixture
 
 	step := time.Duration(3600) * time.Second
-	now := time.Date(2026, 4, 20, 11, 0, 0, 0, time.UTC)
+	// the chunk bucket seam falls at 2026-04-19T12:00Z (420h chunks on the Unix epoch)
+	now := time.Date(2026, 4, 19, 23, 0, 0, 0, time.UTC)
 
 	runQuery := func(start, end time.Time) *http.Response {
 		u := r.URL

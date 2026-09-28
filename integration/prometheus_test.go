@@ -59,8 +59,10 @@ func TestPrometheus(t *testing.T) {
 				keys.Status: status.StatusKeyMiss,
 			})
 
-			_, hdr2 := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
-			requireTricksterResult(t, hdr2, map[string]string{keys.Status: status.StatusHit})
+			requireCacheHit(t, func() map[string]string {
+				_, hdr2 := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
+				return parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
+			})
 		})
 	})
 
@@ -395,10 +397,11 @@ func TestPrometheus(t *testing.T) {
 		require.Equal(t, status.StatusKeyMiss, result[keys.Status])
 
 		// Second request: cache hit
-		_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
-		result2 := parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
-		t.Logf("histogram cache hit: %s", hdr2.Get(headers.NameTricksterResult))
-		require.Equal(t, status.StatusHit, result2[keys.Status])
+		requireCacheHit(t, func() map[string]string {
+			_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+			t.Logf("histogram cache hit: %s", hdr2.Get(headers.NameTricksterResult))
+			return parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
+		})
 	})
 
 	t.Run("native histogram round-trip fidelity", func(t *testing.T) {

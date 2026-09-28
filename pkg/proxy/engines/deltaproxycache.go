@@ -268,13 +268,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.TimeRangeQuery = trq
 	rsc.Unlock()
 	now := time.Now()
+	// bfs is the start of the backfill tolerance window, on the query's grid
 	bt := trq.GetBackfillTolerance(time.Duration(o.BackfillTolerance), o.BackfillTolerancePoints)
-	bfs := now.Add(-bt).Truncate(trq.Step) // start of the backfill tolerance window
+	bfs := timeseries.FloorToGrid(now.Add(-bt), trq.Step, trq.Phase)
 
 	OldestRetainedTimestamp := time.Time{}
 	if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest {
 		retentionStep := trq.CachePolicyStep()
-		OldestRetainedTimestamp = now.Truncate(retentionStep).Add(-(retentionStep * time.Duration(o.TimeseriesRetention)))
+		OldestRetainedTimestamp = oldestRetained(trq, int64(o.TimeseriesRetention), now)
 		if trq.Extent.End.Before(OldestRetainedTimestamp) {
 			logger.Debug("timerange end is too old to consider caching",
 				logging.Pairs{
@@ -398,7 +399,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				vr = cts.VolatileExtents()
 			}
 			if cacheStatus == status.LookupStatusPartialHit {
-				missRanges = cts.Extents().CalculateDeltas(timeseries.ExtentList{trq.Extent}, trq.Step)
+				missRanges = gridExtents(cts.Extents(), rsc).CalculateDeltas(
+					timeseries.ExtentList{trq.Extent}, trq.Step)
 				// this is the backfill part of backfill tolerance. if there are any volatile
 				// ranges in the timeseries, this determines if any fall within the client's
 				// requested range and ensures they are re-requested. this only happens if
@@ -427,7 +429,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// this concurrently fetches all missing ranges from the origin
 			if cacheStatus != status.LookupStatusHit && len(missRanges) > 0 {
 				if o.DoesShard {
-					missRanges = missRanges.Splice(trq.Step, time.Duration(o.MaxShardSizeTime), time.Duration(o.ShardStep), o.MaxShardSizePoints)
+					missRanges = missRanges.Splice(trq.Step, trq.Phase,
+						time.Duration(o.MaxShardSizeTime), time.Duration(o.ShardStep),
+						o.MaxShardSizePoints)
 				}
 				frsc := request.NewResources(o, pc, cc, cache, client, rsc.Tracer)
 				frsc.TimeRangeQuery = trq
@@ -502,11 +506,20 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Backfill Tolerance before storing to cache
 			if cacheStatus != status.LookupStatusHit {
+				// a bucket still aggregating is served but never cached, so only complete
+				// buckets reach the cache
+				cacheEnd, bucketed := trq.LastCompleteLabel(now)
 				switch o.TimeseriesEvictionMethod {
 				case evictionmethods.EvictionMethodLRU:
 					cts.CropToSize(o.TimeseriesRetentionFactor, now, trq.Extent)
+					if x := cts.Extents(); bucketed && len(x) > 0 {
+						cts.CropToRange(timeseries.Extent{Start: x[0].Start, End: cacheEnd})
+					}
 				default:
-					cts.CropToRange(timeseries.Extent{End: now, Start: OldestRetainedTimestamp})
+					if !bucketed {
+						cacheEnd = now
+					}
+					cts.CropToRange(timeseries.Extent{End: cacheEnd, Start: OldestRetainedTimestamp})
 				}
 				// Don't cache datasets with empty extents
 				// (everything was cropped so there is nothing to cache)
@@ -651,6 +664,51 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		key, o, rlo, modeler, nil)
 }
 
+func oldestRetained(trq *timeseries.TimeRangeQuery, retention int64, now time.Time) time.Time {
+	// retention counts whole policy steps back from the current one, and the cutoff then
+	// lands on the query's grid so crops never split a bucket
+	policyStep := trq.CachePolicyStep()
+	cutoff := timeseries.FloorToGrid(now, policyStep, trq.Phase).
+		Add(-policyStep * time.Duration(retention))
+	return timeseries.FloorToGrid(cutoff, trq.Step, trq.Phase)
+}
+
+func gridFetchExtent(e timeseries.Extent, rsc *request.Resources) (timeseries.Extent, bool) {
+	trq := rsc.TimeRangeQuery
+	if trq == nil || trq.Step <= 0 || (timeseries.OnGrid(e.Start, trq.Step, trq.Phase) &&
+		timeseries.OnGrid(e.End, trq.Step, trq.Phase)) {
+		return e, true
+	}
+	// a bound between buckets would render a partial bucket that then merges into the cache as
+	// though it were complete, so only the whole buckets within the range are fetched
+	observeOffGridExtents(rsc, 1, e.String())
+	return e.ClampToGrid(trq.Step, trq.Phase)
+}
+
+func gridExtents(el timeseries.ExtentList, rsc *request.Resources) timeseries.ExtentList {
+	trq := rsc.TimeRangeQuery
+	if trq == nil {
+		return el
+	}
+	// coverage recorded off the grid leaves holes that no delta would refetch, so it is
+	// narrowed to the whole buckets it holds before the deltas are calculated
+	out, offGrid := el.ClampToGrid(trq.Step, trq.Phase)
+	if offGrid > 0 {
+		observeOffGridExtents(rsc, offGrid, el.String())
+	}
+	return out
+}
+
+func observeOffGridExtents(rsc *request.Resources, count int, detail string) {
+	var backendName, provider string
+	if o := rsc.BackendOptions; o != nil {
+		backendName, provider = o.Name, o.Provider
+	}
+	metrics.TimeseriesOffGridExtents.WithLabelValues(backendName, provider).Add(float64(count))
+	logger.Debug("narrowed off-grid extents to whole buckets",
+		logging.Pairs{keys.BackendName: backendName, keys.Extent: detail})
+}
+
 func logDeltaRoutine(p logging.Pairs) {
 	logger.Debug("delta routine completed", p)
 }
@@ -697,7 +755,7 @@ func fetchTimeseries(
 	pr.upstreamRequest = request.SetResources(pr.upstreamRequest.WithContext(ctx), rsc)
 
 	start := time.Now()
-	mts, _, resp, failedExts, faultStatus := fetchExtents(timeseries.ExtentList{trq.Extent}.Splice(trq.Step,
+	mts, _, resp, failedExts, faultStatus := fetchExtents(timeseries.ExtentList{trq.Extent}.Splice(trq.Step, trq.Phase,
 		time.Duration(o.MaxShardSizeTime), time.Duration(o.ShardStep), o.MaxShardSizePoints), rsc,
 		http.Header{}, client, pr, modeler.WireUnmarshalerReader, nil)
 	if resp != nil {
@@ -813,7 +871,10 @@ func fetchExtents(
 	for i := range el {
 		// This concurrently fetches gaps from the origin and adds their datasets to the merge list
 		eg.Go(func() error {
-			e := &el[i]
+			e, ok := gridFetchExtent(el[i], rsc)
+			if !ok {
+				return nil
+			}
 			rq := pr.Clone()
 			mrsc := rsc.Clone()
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
@@ -821,7 +882,7 @@ func fetchExtents(
 				mrsc))
 			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
 				dpcUpstreamEncodingProfile(mrsc.TSReqestOptions)))
-			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, e); err != nil {
+			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, &e); err != nil {
 				logger.Error("could not rewrite cache-miss time range query",
 					logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})
 				errTs[i] = el[i]
@@ -874,7 +935,7 @@ func fetchExtents(
 				}
 				uncachedValueCount.Add(nts.ValueCount())
 				nts.SetTimeRangeQuery(rsc.TimeRangeQuery)
-				nts.SetExtents(timeseries.ExtentList{*e})
+				nts.SetExtents(timeseries.ExtentList{e})
 				appendLock.Lock()
 				headers.Merge(h, resp.Header)
 				appendLock.Unlock()

@@ -29,9 +29,11 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
@@ -140,6 +142,21 @@ func (h tricksterHarness) queryProm(t *testing.T, backend, apiPath string, opts 
 	return pr, resp.Header.Clone()
 }
 
+func requireCacheHit(t *testing.T, request func() map[string]string,
+	msgAndArgs ...any,
+) map[string]string {
+	t.Helper()
+	// a step boundary passing between two identical requests adds a bucket to fetch, so only a
+	// partial hit is retried, once; any other status fails as is
+	result := request()
+	if result[keys.Status] == status.StatusPartialHit {
+		t.Logf("expected a hit, got a partial hit (%v); retrying once for a step rollover", result)
+		result = request()
+	}
+	require.Equal(t, status.StatusHit, result[keys.Status], msgAndArgs...)
+	return result
+}
+
 func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]string) {
 	t.Helper()
 	raw := hdr.Get(headers.NameTricksterResult)
@@ -179,8 +196,7 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 5)
-	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort :=
-		ports[0], ports[1], ports[2], ports[3], ports[4]
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort := ports[0], ports[1], ports[2], ports[3], ports[4]
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",

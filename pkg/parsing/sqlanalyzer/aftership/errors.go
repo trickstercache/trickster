@@ -16,7 +16,10 @@
 
 package aftership
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 var (
 	// ErrInvalidSQL indicates that the ClickHouse parser rejected the statement.
@@ -46,4 +49,13 @@ var (
 	ErrLimitUnsupported = errors.New("limit queries are not supported")
 	// ErrUnsupportedOutputFormat indicates the FORMAT value for the query is not supported
 	ErrUnsupportedOutputFormat = errors.New("unsupported output format requested")
+	// ErrCrossRowQuery indicates values in one time bucket can depend on rows in other
+	// buckets or on the whole result, as with window functions, WITH TOTALS or WITH FILL.
+	ErrCrossRowQuery = fmt.Errorf("%w: values depend on rows outside their time bucket", ErrUnsupportedStatement)
+	// ErrQuerySettings indicates a SETTINGS clause, whose effect on results is not modeled.
+	ErrQuerySettings = fmt.Errorf("%w: query-level SETTINGS", ErrUnsupportedStatement)
+	// ErrNestedQuery indicates a subquery or join, either of which can carry its own time filters.
+	ErrNestedQuery = fmt.Errorf("%w: subqueries and joins", ErrUnsupportedStatement)
+	// ErrUnsupportedOrdering indicates an ORDER BY other than the ascending bucket output column.
+	ErrUnsupportedOrdering = errors.New("unsupported ORDER BY clause")
 )

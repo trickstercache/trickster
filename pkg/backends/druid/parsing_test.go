@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/druid/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const testInterval = "2024-01-01T00:00:00Z/2024-01-02T00:00:00Z"
@@ -146,7 +147,7 @@ func TestParseTimeRangeQueryStructuredGranularities(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			interval := testInterval
 			if test.wantReason == "" {
-				start := truncateToPhase(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				start := timeseries.FloorToGrid(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 					test.step, test.phase)
 				interval = start.Format(time.RFC3339Nano) + "/" +
 					start.Add(2*test.step).Format(time.RFC3339Nano)
@@ -162,8 +163,10 @@ func TestParseTimeRangeQueryStructuredGranularities(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || trq.Step != test.step || trq.Phase != test.phase {
-				t.Fatalf("got step=%s phase=%s err=%v", trq.Step, trq.Phase, err)
+			if err != nil || trq.Step != test.step || trq.Phase != test.phase ||
+				trq.SampleModel != timeseries.SampleModelBucket {
+				t.Fatalf("got step=%s phase=%s model=%d err=%v", trq.Step, trq.Phase,
+					trq.SampleModel, err)
 			}
 		})
 	}
@@ -237,6 +240,7 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 		{"by segment", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("topN", `"minute"`), "}") + `,"context":{"bySegment":true}}`, true, reasonUnsupportedShape},
 		{"numeric timestamps", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"serializeDateTimeAsLong":true}}`, true, reasonUnsupportedShape},
 		{"timeseries grand total", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"grandTotal":true}}`, true, reasonUnsupportedShape},
+		{"timeseries limit", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"limit":5}`, true, reasonUnsupportedShape},
 		{"groupBy array", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"context":{"resultAsArray":true}}`, true, reasonUnsupportedShape},
 		{"groupBy dimension-first order", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"context":{"sortByDimsFirst":true}}`, true, reasonUnsupportedShape},
 		{"groupBy limit", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"limitSpec":{"type":"default","limit":10}}`, true, reasonUnsupportedShape},

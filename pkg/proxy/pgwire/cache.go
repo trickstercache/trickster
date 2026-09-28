@@ -300,7 +300,7 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan)
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
 			out := make(timeseries.ExtentList, 0, len(missing))
 			for _, extent := range missing {
-				out = append(out, timeseries.ExtentList{extent}.Splice(plan.Step,
+				out = append(out, timeseries.ExtentList{extent}.Splice(plan.Step, plan.Phase,
 					config.ShardMaxRange, config.ShardStep, config.ShardMaxPoints)...)
 			}
 			return out
@@ -326,12 +326,9 @@ func finalizeDelta(config *Config, plan *sqlanalyzer.QueryPlan, merged *Result, 
 		retained = kept
 		extents = all.Crop(timeseries.Extent{Start: time.Unix(0, first), End: all[len(all)-1].End})
 	}
-	window := max(config.BackfillWindow, time.Duration(config.BackfillPoints)*plan.Step, plan.BackfillTolerance)
-	if plan.UpperBound == nil {
-		// an open-ended range runs to now, whose bucket is still filling
-		window = max(window, plan.Step)
-	}
-	stable := nativedelta.StableExtents(extents, plan.Step, window, now)
+	window := nativedelta.VolatileWindow(config.BackfillWindow, config.BackfillPoints, plan.Step,
+		plan.BackfillTolerance)
+	stable := nativedelta.StableExtents(extents, plan.Step, plan.Phase, window, now)
 	if len(stable) == 0 {
 		return response, retained.slice(0, 0), stable, nil
 	}

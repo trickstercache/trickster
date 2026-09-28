@@ -150,12 +150,12 @@ Time range predicates must appear in a top-level `AND` conjunction of the `WHERE
 
 Two predicate targets are supported, with different rules:
 
-- **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`) and the upper bound exclusive (`<`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — are rounded inward to the nearest complete bucket (lower bound up, upper bound down), so partial edge buckets are omitted from the response rather than cached as complete aggregates. If no complete bucket remains after rounding, the query is served through the OPC. Other comparators — including `BETWEEN` — describe partial buckets whose aggregates cannot be safely cached, so those queries are served through the OPC.
+- **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`, or the lower end of `BETWEEN`); a strict `>` is served through the OPC. The upper bound may be exclusive (`<`) or inclusive (`<=`, or the upper end of `BETWEEN`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — are rounded inward to the nearest complete bucket (lower bound up, upper bound down), so partial edge buckets are omitted from the response rather than cached as complete aggregates. An inclusive upper bound always drops the bucket that contains it, because that bucket is only partly covered. If no complete bucket remains after rounding, the query is served through the OPC.
 - **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster aligns each comparator to the first and last included bucket.
 
 Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)`, `toDateTime64(n, precision)`, or `toDate(n)` wrappers, `WITH`-clause constants, or `now()`/`now64()` with optional addition or subtraction of seconds. DateTime64 precision is retained. Floating epoch bounds and timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
 
-If no upper bound is present, Trickster caches results up to the current time and inserts a safe upper bound into origin requests automatically.
+If no upper bound is present, Trickster inserts a safe upper bound into origin requests automatically and caches every complete bucket up to the current time. The still-filling bucket is returned but never cached, so each request refetches it.
 
 Examples of delta-cacheable time range clauses (for a one-minute bucket cadence):
 
@@ -172,13 +172,31 @@ Secondary date-range predicates whose values match the primary range — such as
 
 The `GROUP BY` clause must include the time bucket (by alias or by its full expression), and every non-aggregate column in the select list must also be grouped. Grouped columns become the series tags in the cached time series. Queries using `GROUP BY ... WITH CUBE/ROLLUP`, grouping on expressions that are not selected, or leaving a selected dimension ungrouped are served through the OPC.
 
+Queries whose values in one time bucket can depend on other buckets, or on the whole result, are also served through the OPC:
+
+- `LIMIT`, `LIMIT BY` and `TOP`;
+- window functions (`OVER (...)` or a `WINDOW` clause) and cross-row functions such as `neighbor`, `lagInFrame`, `leadInFrame` and the `running*` family;
+- `WITH TOTALS` and `ORDER BY ... WITH FILL` (including `INTERPOLATE`);
+- a query-level `SETTINGS` clause;
+- subqueries, common table expressions and joins, which can carry time filters of their own (`ARRAY JOIN` is still delta-cacheable).
+
+### Ordering
+
+Trickster rebuilds a delta-cached response from its cached buckets in ascending time order. A query is therefore delta-cacheable only with no `ORDER BY`, or with a single ascending term on the time bucket (by alias, by the bucket expression, or by its position, as in Grafana's `ORDER BY time`). Any other ordering — descending time, additional terms, or other columns — is served through the OPC, where the origin's row order is kept.
+
 ### Output Formats
 
 Delta-cacheable queries may specify `FORMAT JSON`, `CSV`, `CSVWithNames`, `TabSeparated` (`TSV`), `TabSeparatedWithNames`, or `TabSeparatedWithNamesAndTypes`, or omit the `FORMAT` clause. Trickster requests `TSVWithNamesAndTypes` from the origin and re-marshals cached data into the client's requested format.
 
 ### Non-Time-Series Queries
 
-Queries that are not cacheable as time series — such as `LIMIT`-based queries, queries with set operations (`UNION`, `EXCEPT`, `INTERSECT`), `SELECT 1` health checks, or SDK handshake requests — are transparently proxied to the upstream ClickHouse server. These requests are cached using the Object Proxy Cache (OPC) with per-query cache keys derived from the `query` and `database` URL parameters, ensuring that different SQL statements receive distinct cache entries.
+Queries that are not cacheable as time series — such as `LIMIT`-based queries, queries with set operations (`UNION`, `EXCEPT`, `INTERSECT`), `SELECT 1` health checks, or SDK handshake requests — are transparently proxied to the upstream ClickHouse server. These requests are cached using the Object Proxy Cache (OPC).
+
+### Cache Keys
+
+Both the OPC and the delta proxy cache key a request on its SQL statement and on every other URL parameter, because query parameters (`param_<name>` values for `{name:Type}` placeholders) and settings can change the result. The native listener forwards its query parameters and settings the same way. Only transport parameters that cannot change the result are left out of the key: `query_id`, `session_timeout`, `session_check`, `send_progress_in_http_headers`, `http_headers_progress_interval_ms`, `wait_end_of_query`, `buffer_size`, `log_comment`, `log_queries`, `quota_key`, and `add_http_cors_header`.
+
+Requests that carry a `session_id` are proxied without caching. A session's `SET` statements change the results of later queries in that session, and that state is not part of any cache key.
 
 ### Health and Ping Endpoint
 

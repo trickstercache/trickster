@@ -334,7 +334,7 @@ func TestBucketTime(t *testing.T) {
 	// a weekly bucket is phased from the Unix epoch, which began on a Thursday
 	weekly := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
 	phase := 4 * 24 * time.Hour
-	if !sqlanalyzer.AlignedToBucket(weekly, 7*24*time.Hour, phase) {
+	if !timeseries.OnGrid(weekly, 7*24*time.Hour, phase) {
 		t.Fatal("fixture: a Monday must lie on a Monday-phased weekly grid")
 	}
 	if _, err = bucketTime(row([]byte("2026-09-07 00:00:00+00")), 0, decoder, 7*24*time.Hour, phase); err != nil {
@@ -369,13 +369,15 @@ func TestFinalizeDelta(t *testing.T) {
 		t.Fatalf("an entirely volatile result keeps nothing: %d rows over %v, %v", retained.Rows(), extents, err)
 	}
 
-	// an open-ended range is never stable in its final, still-filling bucket
+	// the final, still-filling bucket is never stable, whether or not the range is
+	// open-ended; the complete bucket before it is kept
 	openEnded := &sqlanalyzer.QueryPlan{Step: step}
 	atTheEdge := time.Unix(0, resultTestBucket(15)).Add(time.Minute)
-	_, retained, _, err = finalizeDelta(&Config{}, openEnded, merged, all, requested, atTheEdge)
-	// one step back from now truncates to 08:10, so that bucket is volatile as well
-	if err != nil || labels(t, retained, false) != "a b SELECT 2" {
-		t.Fatalf("open-ended: %q, %v", labels(t, retained, false), err)
+	for name, p := range map[string]*sqlanalyzer.QueryPlan{"open-ended": openEnded, "closed": plan} {
+		_, retained, _, err = finalizeDelta(&Config{}, p, merged, all, requested, atTheEdge)
+		if err != nil || labels(t, retained, false) != "a b c SELECT 3" {
+			t.Fatalf("%s: %q, %v", name, labels(t, retained, false), err)
+		}
 	}
 	if _, _, _, err = finalizeDelta(&Config{}, plan, &Result{}, all, requested, longAfter); !errors.Is(err, errResultRow) {
 		t.Fatalf("an untimed result cannot be finalized, got %v", err)

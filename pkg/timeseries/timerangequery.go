@@ -29,6 +29,23 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
+// SampleModel describes what the value at a timestamp in a query's result represents
+type SampleModel byte
+
+const (
+	// SampleModelInstant values are evaluated at their timestamp, as in PromQL range queries
+	SampleModelInstant SampleModel = iota
+	// SampleModelBucket values aggregate every row in [timestamp, timestamp+step), so the
+	// bucket containing the current time is still filling
+	SampleModelBucket
+	// SampleModelBucketStop values aggregate every row in [timestamp-step, timestamp), as when
+	// Flux labels each window by its stop time
+	SampleModelBucketStop
+	// SampleModelStored values are whole storage buckets labeled by their start, as in
+	// Graphite's whisper files, whose newest bucket is still being written
+	SampleModelStored
+)
+
 // TimeRangeQuery represents a timeseries database query parsed from an inbound HTTP request
 type TimeRangeQuery struct {
 	// Statement is the timeseries database query (with tokenized timeranges where present) requested by the user
@@ -42,6 +59,8 @@ type TimeRangeQuery struct {
 	PolicyStep time.Duration `msg:"-"`
 	// Phase is the bucket offset from the Unix epoch
 	Phase time.Duration `msg:"-"`
+	// SampleModel describes what each timestamp's value represents
+	SampleModel SampleModel `msg:"-"`
 	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
 	TemplateURL *url.URL `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
@@ -83,6 +102,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		Step:                trq.Step,
 		PolicyStep:          trq.PolicyStep,
 		Phase:               trq.Phase,
+		SampleModel:         trq.SampleModel,
 		StepNS:              trq.StepNS,
 		PolicyStepNS:        trq.PolicyStepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
@@ -130,20 +150,9 @@ func (trq *TimeRangeQuery) NormalizeExtent() {
 		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
 			trq.Extent.End = time.Now()
 		}
-		trq.Extent.Start = truncateToPhase(trq.Extent.Start, trq.Step, trq.Phase)
-		trq.Extent.End = truncateToPhase(trq.Extent.End, trq.Step, trq.Phase)
+		trq.Extent.Start = FloorToGrid(trq.Extent.Start, trq.Step, trq.Phase)
+		trq.Extent.End = FloorToGrid(trq.Extent.End, trq.Step, trq.Phase)
 	}
-}
-
-func truncateToPhase(value time.Time, step, phase time.Duration) time.Time {
-	stepNS := step.Nanoseconds()
-	phaseNS := phase.Nanoseconds()
-	shifted := value.UnixNano() - phaseNS
-	quotient := shifted / stepNS
-	if shifted < 0 && shifted%stepNS != 0 {
-		quotient--
-	}
-	return time.Unix(0, quotient*stepNS+phaseNS).In(value.Location())
 }
 
 func (trq *TimeRangeQuery) String() string {
@@ -193,7 +202,7 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
 	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
-		urls.Size(trq.TemplateURL) + 19 // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1
+		urls.Size(trq.TemplateURL) + 20 // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1 SampleModel=1
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}

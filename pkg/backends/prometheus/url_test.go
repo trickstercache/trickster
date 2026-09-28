@@ -35,8 +35,8 @@ import (
 )
 
 func TestSetExtent(t *testing.T) {
-	start := time.Now().Add(time.Duration(-6) * time.Hour)
-	end := time.Now()
+	end := time.Now().Truncate(time.Second)
+	start := end.Add(time.Duration(-6) * time.Hour)
 
 	startSecs := fmt.Sprintf("%d", start.Unix())
 	endSecs := fmt.Sprintf("%d", end.Unix())
@@ -79,6 +79,14 @@ func TestSetExtent(t *testing.T) {
 	if int(r.ContentLength) != len(expected) {
 		b, _ := io.ReadAll(r.Body)
 		t.Errorf("expected %d got %d / %d", len(expected), r.ContentLength, len(b))
+	}
+
+	// a sub-second grid keeps its milliseconds so the origin evaluates on the same grid
+	r, _ = http.NewRequest(http.MethodGet, u.String(), nil)
+	e = &timeseries.Extent{Start: time.UnixMilli(1500), End: time.UnixMilli(-2500)}
+	pc.SetExtent(r, nil, e)
+	if expected := "end=-2.500&q=up&start=1.500"; r.URL.RawQuery != expected {
+		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r.URL.RawQuery)
 	}
 }
 

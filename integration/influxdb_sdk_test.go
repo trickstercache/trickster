@@ -86,7 +86,7 @@ func TestInfluxDBSDK(t *testing.T) {
 	// handling in flux.parseRange (which previously flowed to HTTPProxy).
 	t.Run("cache_hit_header", func(t *testing.T) {
 		fluxURL := "http://" + influxAddr + "/flux2/api/v2/query?org=trickster-dev"
-		body := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._measurement == \"cpu\" and r._field == \"usage_idle\") |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)", "type": "flux"}`
+		body := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._measurement == \"cpu\" and r._field == \"usage_idle\") |> aggregateWindow(every: 1m, fn: mean)", "type": "flux"}`
 		do := func() *http.Response {
 			req, err := http.NewRequest("POST", fluxURL, strings.NewReader(body))
 			require.NoError(t, err)

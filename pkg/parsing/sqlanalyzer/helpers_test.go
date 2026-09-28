@@ -88,50 +88,6 @@ func TestFlattenConjunction(t *testing.T) {
 	}
 }
 
-func TestBucketMath(t *testing.T) {
-	step := time.Minute
-	aligned := time.Unix(120, 0)
-	unaligned := time.Unix(150, 500)
-
-	if !AlignedToBucket(aligned, step, 0) || AlignedToBucket(unaligned, step, 0) {
-		t.Fatal("alignment misclassified")
-	}
-	if AlignedToBucket(aligned, 0, 0) {
-		t.Fatal("nonpositive step must never align")
-	}
-	if AlignedToBucket(aligned, step, 30*time.Second) {
-		t.Fatal("phase offset ignored")
-	}
-	if !AlignedToBucket(time.Unix(150, 0), step, 30*time.Second) {
-		t.Fatal("phase-aligned value misclassified")
-	}
-
-	if got := FloorBucket(unaligned, step, 0); !got.Equal(time.Unix(120, 0)) {
-		t.Fatalf("floor = %v", got)
-	}
-	if got := FloorBucket(unaligned, step, 30*time.Second); !got.Equal(time.Unix(150, 0)) {
-		t.Fatalf("phased floor = %v", got)
-	}
-	negative := time.Unix(-61, 500)
-	if got := FloorBucket(negative, step, 0); !got.Equal(time.Unix(-120, 0)) {
-		t.Fatalf("negative floor = %v", got)
-	}
-	if got := FloorBucket(unaligned, 0, 0); !got.Equal(unaligned) {
-		t.Fatalf("nonpositive step floor = %v", got)
-	}
-	loc := time.FixedZone("test", 3600)
-	if got := FloorBucket(unaligned.In(loc), step, 0); got.Location() != loc {
-		t.Fatal("floor must preserve location")
-	}
-
-	if got := CeilBucket(aligned, step, 0); !got.Equal(aligned) {
-		t.Fatalf("aligned ceil = %v", got)
-	}
-	if got := CeilBucket(unaligned, step, 0); !got.Equal(time.Unix(180, 0)) {
-		t.Fatalf("ceil = %v", got)
-	}
-}
-
 func TestUnixTime(t *testing.T) {
 	tests := []struct {
 		unit  timeseries.FieldDataType
@@ -206,6 +162,9 @@ func TestApplyToQuery(t *testing.T) {
 	if trq.Step != time.Minute || trq.StepNS != time.Minute.Nanoseconds() || trq.Phase != plan.Phase ||
 		trq.BackfillTolerance != plan.BackfillTolerance {
 		t.Fatalf("cadence not applied: %+v", trq)
+	}
+	if trq.SampleModel != timeseries.SampleModelBucket {
+		t.Fatalf("expected bucketed sample model, got %d", trq.SampleModel)
 	}
 	ts := trq.TimestampDefinition
 	if ts.Name != "t" || ts.DataType != timeseries.DateTimeUnixSecs ||

@@ -112,6 +112,24 @@ func (e *Engine[R]) observeCacheFailure(reason string) {
 	}
 }
 
+func (e *Engine[R]) gridExtents(el timeseries.ExtentList,
+	plan *sqlanalyzer.QueryPlan,
+) timeseries.ExtentList {
+	// a bound between buckets would render or record a partial bucket as though it were
+	// complete, so ranges are narrowed to the whole buckets they hold
+	out, offGrid := el.ClampToGrid(plan.Step, plan.Phase)
+	if offGrid > 0 {
+		metrics.TimeseriesOffGridExtents.WithLabelValues(e.cfg.BackendName,
+			e.cfg.Protocol).Add(float64(offGrid))
+		logger.Debug("narrowed off-grid extents to whole buckets",
+			logging.Pairs{
+				keys.Protocol: e.cfg.Protocol, keys.BackendName: e.cfg.BackendName,
+				keys.Extent: el.String(),
+			})
+	}
+	return out
+}
+
 func (e *Engine[R]) observeRewriteFailure(reason string) {
 	if e.cfg.ObserveRewriteFailure != nil {
 		e.cfg.ObserveRewriteFailure(reason)
@@ -228,10 +246,10 @@ func (e *Engine[R]) ExecuteDelta(req DeltaRequest[R]) (R, cachestatus.LookupStat
 	cacheStatus := cachestatus.LookupStatusKeyMiss
 	var covered timeseries.ExtentList
 	if found {
-		covered = cached.Extents
+		covered = e.gridExtents(cached.Extents, req.Plan)
 		cacheStatus = cachestatus.LookupStatusPartialHit
 	}
-	missing := covered.CalculateDeltas(window.Cacheable, req.Plan.Step)
+	missing := e.gridExtents(covered.CalculateDeltas(window.Cacheable, req.Plan.Step), req.Plan)
 	if len(missing) == 0 && found {
 		cropped, cropErr := req.Ops.CropResponse(cached.Payload, requested)
 		if cropErr == nil {

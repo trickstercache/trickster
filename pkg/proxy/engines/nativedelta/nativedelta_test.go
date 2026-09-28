@@ -598,15 +598,131 @@ func TestBuildWindowBounds(t *testing.T) {
 func TestStableExtentsTrimsVolatileTail(t *testing.T) {
 	now := time.Unix(600, 0)
 	extents := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
-	got := StableExtents(extents, time.Minute, 3*time.Minute, now)
+	got := StableExtents(extents, time.Minute, 0, 3*time.Minute, now)
 	if len(got) != 1 || !got[0].End.Equal(time.Unix(360, 0)) {
 		t.Fatalf("stable extents = %v", got)
 	}
-	if got := StableExtents(extents, time.Minute, 0, now); len(got) != 1 ||
-		!got[0].End.Equal(time.Unix(600, 0)) {
-		t.Fatalf("zero window trimmed: %v", got)
+	// the bucket containing now is still aggregating, so even a zero or negative
+	// window removes it, and only it
+	for _, window := range []time.Duration{0, -time.Minute} {
+		if got := StableExtents(extents, time.Minute, 0, window, now); len(got) != 1 ||
+			!got[0].End.Equal(time.Unix(540, 0)) {
+			t.Fatalf("window %s kept the live bucket: %v", window, got)
+		}
 	}
-	if got := StableExtents(extents, time.Minute, time.Hour, now); len(got) != 0 {
+	complete := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(540, 0)}}
+	if got := StableExtents(complete, time.Minute, 0, 0, now); len(got) != 1 ||
+		!got[0].End.Equal(time.Unix(540, 0)) {
+		t.Fatalf("zero window trimmed a complete bucket: %v", got)
+	}
+	if got := StableExtents(extents, time.Minute, 0, time.Hour, now); len(got) != 0 {
 		t.Fatalf("fully volatile extents survived: %v", got)
+	}
+}
+
+func TestVolatileWindow(t *testing.T) {
+	tests := []struct {
+		configured, step, requested, expected time.Duration
+		points                                int
+	}{
+		{time.Minute, time.Minute, 0, 3 * time.Minute, 3},
+		{5 * time.Minute, time.Minute, 0, 5 * time.Minute, 2},
+		{0, time.Minute, 2 * time.Minute, 2 * time.Minute, 0},
+		{0, time.Minute, 0, 0, 0},
+	}
+	for _, test := range tests {
+		if got := VolatileWindow(test.configured, test.points, test.step, test.requested); got != test.expected {
+			t.Errorf("VolatileWindow(%s, %d, %s, %s) = %s, want %s", test.configured, test.points,
+				test.step, test.requested, got, test.expected)
+		}
+	}
+}
+
+func TestStableExtentsKeepsTheGrid(t *testing.T) {
+	const day = 24 * time.Hour
+	at := func(d, h, m int) time.Time { return time.Date(2024, 1, d, h, m, 0, 0, time.UTC) }
+	tests := []struct {
+		name        string
+		step, phase time.Duration
+		extent      timeseries.Extent
+		window      time.Duration
+		now         time.Time
+		expectedEnd time.Time
+		expectedGap timeseries.Extent
+	}{
+		{
+			// the 23:30 bucket still holds rows inside the volatile hour, so it is refetched
+			name: "phased hourly buckets", step: time.Hour, phase: 30 * time.Minute,
+			extent: timeseries.Extent{Start: at(1, 22, 30), End: at(2, 0, 30)},
+			window: time.Hour, now: at(2, 1, 0), expectedEnd: at(1, 22, 30),
+			expectedGap: timeseries.Extent{Start: at(1, 23, 30), End: at(2, 0, 30)},
+		},
+		{
+			// weekly buckets from the Unix epoch fall on Thursdays
+			name: "weekly buckets on the epoch grid", step: 7 * day,
+			extent: timeseries.Extent{Start: at(4, 0, 0), End: at(25, 0, 0)},
+			window: day, now: at(26, 12, 0), expectedEnd: at(18, 0, 0),
+			expectedGap: timeseries.Extent{Start: at(25, 0, 0), End: at(25, 0, 0)},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := StableExtents(timeseries.ExtentList{test.extent}, test.step, test.phase,
+				test.window, test.now)
+			if len(got) != 1 || !got[0].End.Equal(test.expectedEnd) {
+				t.Fatalf("expected a stable end of %s, got %v", test.expectedEnd, got)
+			}
+			for _, e := range got {
+				if !timeseries.OnGrid(e.Start, test.step, test.phase) ||
+					!timeseries.OnGrid(e.End, test.step, test.phase) {
+					t.Errorf("stable extent %v is off the grid", e)
+				}
+			}
+			gaps := got.CalculateDeltas(timeseries.ExtentList{test.extent}, test.step)
+			if len(gaps) != 1 || !gaps[0].Start.Equal(test.expectedGap.Start) ||
+				!gaps[0].End.Equal(test.expectedGap.End) {
+				t.Errorf("expected gap %s, got %v", test.expectedGap, gaps)
+			}
+		})
+	}
+}
+
+func TestExecuteDeltaNarrowsOffGridCoverage(t *testing.T) {
+	// an entry stored with coverage ending between buckets must refetch the bucket that the
+	// coverage cut through, starting at that bucket's boundary
+	at := func(d, h, m int) time.Time { return time.Date(2024, 1, d, h, m, 0, 0, time.UTC) }
+	const backend = "offgrid-engine-test"
+	cache := newTestCache()
+	engine := New(Config{
+		Protocol: "test", BackendName: backend,
+		CacheClient: func() trickstercache.Cache { return cache },
+		CacheTTL:    time.Minute,
+	}, testCodec{})
+	engine.Store("dpc", &Entry[*payload]{
+		Payload: &payload{Statements: []string{"cached"}},
+		Extents: timeseries.ExtentList{{Start: at(1, 22, 30), End: at(1, 23, 0)}},
+	})
+	plan := &sqlanalyzer.QueryPlan{
+		CanonicalSQL: "canonical", Step: time.Hour, Phase: 30 * time.Minute,
+		LowerBound: &sqlanalyzer.Bound{Value: at(1, 22, 30), Inclusive: true},
+		UpperBound: &sqlanalyzer.Bound{Value: at(2, 1, 30)},
+		Renderer:   testRenderer{},
+	}
+	counter := metrics.TimeseriesOffGridExtents.WithLabelValues(backend, "test")
+	before := testutil.ToFloat64(counter)
+	var counts int
+	response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, testOps(&counts)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cacheStatus != status.LookupStatusPartialHit || counts != 1 {
+		t.Fatalf("expected one partial-hit fetch, got %s after %d fetches", cacheStatus, counts)
+	}
+	want := fmt.Sprintf("range(%d,%d)", at(1, 23, 30).Unix(), at(2, 0, 30).Unix())
+	if len(response.Statements) != 2 || response.Statements[1] != want {
+		t.Errorf("expected the refetch %s, got %v", want, response.Statements)
+	}
+	if got := testutil.ToFloat64(counter) - before; got != 1 {
+		t.Errorf("expected 1 off-grid count, got %v", got)
 	}
 }

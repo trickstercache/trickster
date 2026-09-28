@@ -1060,20 +1060,20 @@ func normalizePrimaryBounds(
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
 	if lowerOnOutput {
 		if result.lower.inclusive {
-			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 		} else {
-			result.lower.value = sqlanalyzer.FloorBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.FloorToGrid(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
 		}
 	} else {
 		if !result.lower.inclusive {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
+		if !timeseries.OnGrid(result.lower.value, bucket.step, bucket.phase) {
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 	}
@@ -1086,9 +1086,9 @@ func normalizePrimaryBounds(
 		!strings.EqualFold(bucket.outputColumn, bucket.timeColumn)
 	if upperOnOutput {
 		if result.upper.inclusive {
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 		} else {
-			result.upper.value = sqlanalyzer.CeilBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
 			result.upper.target.offset = bucket.step
 		}
 		return nil
@@ -1103,15 +1103,15 @@ func normalizePrimaryBounds(
 			return ErrUnsafePredicate
 		}
 		switch {
-		case sqlanalyzer.AlignedToBucket(result.upper.value.Add(tick), bucket.step, bucket.phase):
+		case timeseries.OnGrid(result.upper.value.Add(tick), bucket.step, bucket.phase):
 			// col <= X with X one tick below a boundary covers that bucket whole; it is
 			// the form this renderer writes, so a rendered statement reads back unchanged
 			result.upper.value = result.upper.value.Add(tick)
-		case !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase):
+		case !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase):
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 		}
 		// col <= X reaches at most the first instant of the bucket holding X,
 		// so that bucket is partial; the floored value is the exclusive
@@ -1120,11 +1120,11 @@ func normalizePrimaryBounds(
 		result.upper.target.offset = bucket.step - tick
 		rounded = true
 	} else {
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
+		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
 			if !roundUnaligned {
 				return ErrUnsafePredicate
 			}
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 		result.upper.target.offset = bucket.step

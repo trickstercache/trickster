@@ -59,7 +59,9 @@ Query requests on both query endpoints may arrive as URL parameters (GET), an `a
 
 ### InfluxQL over v3
 
-`/api/v3/query_influxql` requests use the same delta-proxy caching as the v1 `/query` endpoint (queries with a `GROUP BY time(...)` interval and a time-bounded `WHERE` clause), but speak the v3 request/response shapes: the v3 request document above and the v3 tabular response formats, including the `iox::measurement` column, which Trickster treats as a series tag alongside any `GROUP BY` tags.
+`/api/v3/query_influxql` requests use the same delta-proxy caching as the v1 `/query` endpoint (queries with a `GROUP BY time(...)` interval, optionally with an offset such as `time(1h, 15m)`, and a time-bounded `WHERE` clause; a non-UTC `tz()` clause shifts bucket boundaries by the zone offset, so those queries use the object proxy cache instead), but speak the v3 request/response shapes: the v3 request document above and the v3 tabular response formats, including the `iox::measurement` column, which Trickster treats as a series tag alongside any `GROUP BY` tags.
+
+On both `/query` and `/api/v3/query_influxql`, statements whose values in one time bucket depend on other buckets or on the whole result use the object proxy cache instead of delta caching: `fill(previous)` and `fill(linear)`; transformations such as `derivative()`, `non_negative_derivative()`, `difference()`, `moving_average()`, `cumulative_sum()`, `elapsed()`, `integral()` and the other technical analysis functions; `LIMIT`, `OFFSET`, `SLIMIT` and `SOFFSET`; and subqueries, whose own time ranges are not rewritten per fetch.
 
 ### SQL Query Caching
 
@@ -76,7 +78,7 @@ GROUP BY 1
 
 SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, compound selects such as `UNION`, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
 
-Queries without an upper time bound run to the present; for these, Trickster's backfill tolerance is floored at one bucket so the still-filling final bucket is always refreshed from the origin rather than cached as complete.
+Queries whose range reaches the present include the still-filling final bucket. Trickster serves that bucket but never caches it, so every request refreshes it from the origin. `backfill_tolerance` applies only to complete buckets.
 
 ### Response Formats
 
@@ -167,7 +169,15 @@ Trickster supports the Flux Query Language for general/basic usage with InfluxDB
 
 The delta-proxy cache accepts `now()` as a `range()` bound and handles queries with `aggregateWindow(every: ...)` -- the common Grafana shape. Multi-table Flux CSV responses (one table per series in the result set) are also read correctly.
 
-Trickster does not support advanced union-style queries (e.g., with multiple `from` clauses). In this rare use case, these responses will currently provide invalid data, however, a subsequent beta will proxy unsupported requests.
+`aggregateWindow` may also set `offset` and `timeSrc` (`"_stop"`, the default, or `"_start"`); Trickster aligns its fetches to the resulting window boundaries and labels. Queries whose windows cannot be mapped onto a fixed step grid are proxied without delta caching: a bare `window()` (its records keep their own `_time`), a `period` that differs from `every`, or a `location`.
+
+Queries whose values in one window depend on other windows, or on the whole range, are also proxied without delta caching:
+
+- `limit()`, `tail()`, `derivative()`, `difference()`, `cumulativeSum()`, `movingAverage()` and the other moving-average and technical analysis functions, `elapsed()`, `integral()`, `stateCount()` and `stateDuration()`;
+- `fill(usePrevious: true)`;
+- `timeShift()`, which moves labels off the window grid;
+- reducers, selectors and `sort()` that follow `aggregateWindow()`, such as `max()`, `last()` or `top()`, which collapse or reorder every window;
+- more than one `from()`, as in union and join queries.
 
 Trickster currently does not properly handle schema changes within a response CSV body (e.g., multiple CSVs in the same document with their own #annotation and header rows). We will fully support this use case in a future beta.
 

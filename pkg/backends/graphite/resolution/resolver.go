@@ -54,12 +54,11 @@ type Resolver struct {
 const (
 	reasonUnknownStep   = "unknown_step"
 	reasonMissingTarget = "missing_target"
+	reasonMixedSteps    = "mixed_steps"
 )
 
-// Resolve predicts the step for a target at the given `now - from` age.
-// fixedStep, when non-zero, fixes the output step (summarize). normalized
-// means a wrapping function normalizes mixed steps to their LCM; bare mixed
-// steps are Unknown. Nothing blocks on the origin except cached expansion.
+// Resolve predicts a target's step at a `now - from` age. fixedStep fixes the output step
+// (summarize); leaves at mixed steps are Unknown, normalized or not.
 func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, age time.Duration,
 	normalized bool,
 ) Resolution {
@@ -154,6 +153,14 @@ func (r *Resolver) Resolve(ctx context.Context, leafExprs []string, fixedStep, a
 			// series at its own step
 			res.Step, res.Confidence, res.Source = 0, Unknown, SourceNone
 			res.Reason = reasonUnknownStep
+			r.observe(res)
+			return res
+		}
+		if mixed {
+			// graphite-web consolidates each series from its own first point, so LCM buckets sit
+			// off the epoch grid at a phase that moves with from, and cannot be stitched
+			res.Step, res.Confidence, res.Source = 0, Unknown, SourceNone
+			res.Reason = reasonMixedSteps
 			r.observe(res)
 			return res
 		}

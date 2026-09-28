@@ -46,6 +46,13 @@ const (
 	TokenStart     = "start:"
 	TokenStop      = "stop:"
 	TokenCommaStop = "," + TokenStop
+	TokenTimeSrc   = "timeSrc:"
+	TokenOffset    = "offset:"
+	TokenPeriod    = "period:"
+	TokenLocation  = "location:"
+
+	timeSrcStart = `"_start"`
+	timeSrcStop  = `"_stop"`
 
 	TokenPlaceholderTimeRange = "<TIMERANGE_TOKEN>"
 
@@ -62,11 +69,63 @@ const (
 
 var ErrTimeRangeParsingFailed = errors.New("failed to parse time range")
 
+// ErrUnsupportedWindow indicates a windowing function whose output timestamps do not fall on a
+// fixed step grid that Trickster can map to and from the query's time range
+var ErrUnsupportedWindow = errors.New("unsupported flux window for delta caching")
+
+// ErrCrossBucket indicates a stage whose value in one bucket depends on other buckets or on the
+// whole range, so a sub-range fetch would compute a different value
+var ErrCrossBucket = errors.New("flux stages that span time buckets cannot be delta cached")
+
+// ErrMultipleSources indicates more than one from(), whose ranges are not rewritten together
+var ErrMultipleSources = errors.New("flux queries with more than one from() cannot be delta cached")
+
+const (
+	pipeForward         = "|>"
+	funcFrom            = "from"
+	funcAggregateWindow = "aggregateWindow"
+	funcFill            = "fill"
+	funcTimeShift       = "timeShift"
+	tokenUsePrevious    = "usePrevious:"
+	fluxTrue            = "true"
+)
+
+var crossBucketStages = map[string]struct{}{
+	"limit": {}, "tail": {}, "derivative": {}, "difference": {}, "cumulativeSum": {},
+	"movingAverage": {}, "exponentialMovingAverage": {}, "doubleEMA": {}, "tripleEMA": {},
+	"timedMovingAverage": {}, "kaufmansAMA": {}, "kaufmansER": {}, "chandeMomentumOscillator": {},
+	"relativeStrengthIndex": {}, "tripleExponentialDerivative": {}, "holtWinters": {},
+	"elapsed": {}, "stateDuration": {}, "stateCount": {}, "integral": {},
+}
+
+var wholeRangeStages = map[string]struct{}{
+	"mean": {}, "median": {}, "mode": {}, "sum": {}, "count": {}, "min": {}, "max": {},
+	"first": {}, "last": {}, "quantile": {}, "spread": {}, "stddev": {}, "top": {}, "bottom": {},
+	"highestMax": {}, "highestAverage": {}, "highestCurrent": {}, "lowestMin": {},
+	"lowestAverage": {}, "lowestCurrent": {}, "unique": {}, "distinct": {}, "sample": {},
+	"reduce": {}, "sort": {},
+}
+
 type Query struct {
-	original  string
-	tokenized string
-	step      time.Duration
-	extent    timeseries.Extent
+	original      string
+	tokenized     string
+	step          time.Duration
+	extent        timeseries.Extent
+	labelsAtStart bool
+}
+
+type windowSpec struct {
+	step, phase   time.Duration
+	labelsAtStart bool
+}
+
+func (q *Query) rangeBounds(e timeseries.Extent, step time.Duration) (time.Time, time.Time) {
+	// returns the range() bounds whose windows are labeled e.Start through e.End, inclusive;
+	// aggregateWindow labels each window with its stop time unless timeSrc is "_start"
+	if q.labelsAtStart {
+		return e.Start, e.End.Add(step)
+	}
+	return e.Start.Add(-step), e.End
 }
 
 type JSONRequestBody struct {
@@ -154,15 +213,27 @@ func ParseTimeRangeQuery(r *http.Request,
 		return nil, nil, false, te.MissingRequestParam(AttrQuery)
 	}
 	trq.Statement = frb.Query
-	tokenizedStmt, extent, step, err := ParseQuery(frb.Query)
+	tokenizedStmt, extent, w, err := parseQuery(frb.Query)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	q := &Query{
-		original:  frb.Query,
-		tokenized: tokenizedStmt,
-		step:      step,
-		extent:    extent,
+		original:      frb.Query,
+		tokenized:     tokenizedStmt,
+		step:          w.step,
+		extent:        extent,
+		labelsAtStart: w.labelsAtStart,
+	}
+	if w.step > 0 {
+		trq.SampleModel = timeseries.SampleModelBucket
+		if !w.labelsAtStart {
+			trq.SampleModel = timeseries.SampleModelBucketStop
+			// windows labeled by stop time put the first label at or after the range start
+			// one step beyond it
+			if extent.Start = extent.Start.Add(w.step); extent.Start.After(extent.End) {
+				extent.Start = extent.End
+			}
+		}
 	}
 	trq.CacheKeyElements = map[string]string{AttrQuery: tokenizedStmt}
 	qp := r.URL.Query()
@@ -180,12 +251,32 @@ func ParseTimeRangeQuery(r *http.Request,
 		}
 	}
 	trq.ParsedQuery = q
-	trq.Step = step
+	trq.Step = w.step
+	trq.Phase = w.phase
 	trq.Statement = tokenizedStmt
 	trq.TemplateURL = urls.Clone(r.URL)
 	trq.Extent = extent
 	rlo.ProviderRequest = frb
 	return trq, rlo, false, nil
+}
+
+func formatRangeTime(t time.Time) string {
+	// whole seconds keep the compact Unix form; sub-second bounds need a time literal
+	if t.Nanosecond() == 0 {
+		return strconv.FormatInt(t.Unix(), 10)
+	}
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func rangeExtent(trq *timeseries.TimeRangeQuery) timeseries.Extent {
+	if trq == nil {
+		return timeseries.Extent{}
+	}
+	if q, ok := trq.ParsedQuery.(*Query); ok {
+		start, stop := q.rangeBounds(trq.Extent, trq.Step)
+		return timeseries.Extent{Start: start, End: stop}
+	}
+	return trq.Extent
 }
 
 const setExtentErrorLogEvent = "read request body failed in flux.SetExtent"
@@ -202,19 +293,14 @@ func vndfluxToJSON(b []byte) *JSONRequestBody {
 func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	e *timeseries.Extent, q *Query,
 ) {
-	start := e.Start.Unix()
-	end := e.End.Unix()
-	// This fixes the "cannot query an empty range" condition
-	// see: https://github.com/influxdata/flux/issues/3543
-	if start >= end {
-		start = end - int64(trq.Step.Seconds())
-	}
+	// the bounds span at least one window, so a single-window extent never hits Flux's
+	// "cannot query an empty range" error
+	start, stop := q.rangeBounds(*e, trq.Step)
 
 	// this creates a new flux query string with TokenPlaceholderTimeRange
-	// replaced with the Start / End times from Extent e
+	// replaced with the range bounds for Extent e
 	s := strings.ReplaceAll(q.tokenized, TokenPlaceholderTimeRange,
-		fmt.Sprintf("%s %d, %s %d",
-			TokenStart, start, TokenStop, end))
+		TokenStart+" "+formatRangeTime(start)+", "+TokenStop+" "+formatRangeTime(stop))
 	// this reads the JSON body, unmarshals it to a map[string]any, swaps in the
 	// transformed query, marshals it back to a []byte and sets r.Body to it.
 	b, err := request.GetBody(r)
@@ -249,11 +335,21 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	request.SetBody(r, b)
 }
 
+// ParseQuery tokenizes the query's range() and returns the range extent and the
+// aggregateWindow step
 func ParseQuery(input string) (string, timeseries.Extent, time.Duration, error) {
+	s, e, w, err := parseQuery(input)
+	return s, e, w.step, err
+}
+
+func parseQuery(input string) (string, timeseries.Extent, windowSpec, error) {
 	var e timeseries.Extent
-	var d time.Duration
+	var w windowSpec
 	var err error
-	// // this puts all pipe operations on their own line
+	if err = checkStages(input); err != nil {
+		return "", e, w, err
+	}
+	// this puts all pipe operations on their own line
 	input = strings.ReplaceAll(input, "|>", "\n|>")
 	lines := strings.Split(input, "\n")
 	for i, line := range lines {
@@ -262,38 +358,147 @@ func ParseQuery(input string) (string, timeseries.Extent, time.Duration, error) 
 		case ri >= 0:
 			e, err = parseRange(line)
 			if err != nil {
-				return "", e, d, err
+				return "", e, w, err
 			}
 			lines[i] = tokenizeRangeLine(line, ri)
-		case strings.Contains(line, FuncAggregateWindow),
-			strings.Contains(line, FuncWindow):
-			d, err = parseStep(line)
+		case strings.Contains(line, FuncAggregateWindow):
+			w, err = parseAggregateWindow(line)
 			if err != nil {
-				return "", e, d, err
+				return "", e, w, err
 			}
+		case strings.Contains(line, FuncWindow):
+			// window() output keeps each record's own _time, which is not on a step grid
+			return "", e, w, ErrUnsupportedWindow
 		}
 	}
-	return strings.Join(lines, "\n"), e, d, err
+	return strings.Join(lines, "\n"), e, w, err
+}
+
+func checkStages(input string) error {
+	if countCalls(input, funcFrom) > 1 {
+		return ErrMultipleSources
+	}
+	// reducers are safe inside aggregateWindow's windows but collapse every bucket after it
+	var windowed bool
+	for stage := range strings.SplitSeq(input, pipeForward) {
+		name := stageName(stage)
+		switch name {
+		case "":
+			continue
+		case funcTimeShift:
+			return ErrUnsupportedWindow
+		case funcFill:
+			if v, ok := argValue(stage, tokenUsePrevious); ok && v == fluxTrue {
+				return ErrCrossBucket
+			}
+		}
+		if _, ok := crossBucketStages[name]; ok {
+			return ErrCrossBucket
+		}
+		if _, ok := wholeRangeStages[name]; ok && windowed {
+			return ErrCrossBucket
+		}
+		if name == funcAggregateWindow {
+			windowed = true
+		}
+	}
+	return nil
+}
+
+func stageName(stage string) string {
+	stage = strings.TrimSpace(stage)
+	if i := strings.IndexAny(stage, "( \t\r\n"); i >= 0 {
+		return stage[:i]
+	}
+	return stage
+}
+
+func countCalls(input, name string) int {
+	// counts name( calls, allowing space before the parenthesis and skipping longer identifiers
+	var n int
+	for i := strings.Index(input, name); i >= 0; {
+		after := strings.TrimLeft(input[i+len(name):], " \t")
+		if (i == 0 || !isIdentByte(input[i-1])) && strings.HasPrefix(after, "(") {
+			n++
+		}
+		next := strings.Index(input[i+len(name):], name)
+		if next < 0 {
+			break
+		}
+		i += len(name) + next
+	}
+	return n
+}
+
+func isIdentByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+func parseAggregateWindow(line string) (windowSpec, error) {
+	step, err := parseStep(line)
+	if err != nil {
+		return windowSpec{}, err
+	}
+	w := windowSpec{step: step}
+	// a period other than every overlaps windows, and a location shifts them by a zone offset
+	if step <= 0 || strings.Contains(line, TokenLocation) {
+		return w, ErrUnsupportedWindow
+	}
+	if strings.Contains(line, TokenPeriod) {
+		v, ok := argValue(line, TokenPeriod)
+		if !ok {
+			return w, ErrUnsupportedWindow
+		}
+		if period, err := time.ParseDuration(v); err != nil || period != step {
+			return w, ErrUnsupportedWindow
+		}
+	}
+	if strings.Contains(line, TokenOffset) {
+		v, ok := argValue(line, TokenOffset)
+		if !ok {
+			return w, ErrUnsupportedWindow
+		}
+		offset, err := time.ParseDuration(v)
+		if err != nil {
+			return w, err
+		}
+		// windows start on the Unix-epoch grid shifted by the offset
+		if w.phase = offset % step; w.phase < 0 {
+			w.phase += step
+		}
+	}
+	if strings.Contains(line, TokenTimeSrc) {
+		v, _ := argValue(line, TokenTimeSrc)
+		switch v {
+		case timeSrcStart:
+			w.labelsAtStart = true
+		case timeSrcStop:
+		default:
+			return w, ErrUnsupportedWindow
+		}
+	}
+	return w, nil
 }
 
 func parseStep(input string) (time.Duration, error) {
-	i := strings.Index(input, TokenEvery)
+	v, ok := argValue(input, TokenEvery)
+	if !ok {
+		return 0, ErrTimeRangeParsingFailed
+	}
+	return time.ParseDuration(v)
+}
+
+func argValue(input, token string) (string, bool) {
+	i := strings.Index(input, token)
 	if i < 0 {
-		return 0, ErrTimeRangeParsingFailed
+		return "", false
 	}
-	i += 6
-	input = input[i:]
-	i = strings.Index(input, ",")
-	j := strings.Index(input, ")")
-	switch {
-	case i >= 0 && i < j:
-		input = strings.TrimSpace(input[:i])
-	case j >= 0:
-		input = strings.TrimSpace(input[:j])
-	default:
-		return 0, ErrTimeRangeParsingFailed
+	input = input[i+len(token):]
+	j := strings.IndexAny(input, ",)")
+	if j < 0 {
+		return "", false
 	}
-	return time.ParseDuration(input)
+	return strings.TrimSpace(input[:j]), true
 }
 
 func parseRange(input string) (timeseries.Extent, error) {

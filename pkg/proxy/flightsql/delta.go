@@ -407,13 +407,9 @@ func (d *deltaRunner) finalize(merged *deltaPayload, allExtents timeseries.Exten
 		return nil, nil, nil, errors.New("invalid cropped flight delta dataset")
 	}
 
-	volatileWindow := max(d.cfg.BackfillTolerance, plan.BackfillTolerance)
-	if plan.UpperBound == nil {
-		// open-ended queries run to the present; at least the final bucket is
-		// still filling
-		volatileWindow = max(volatileWindow, plan.Step)
-	}
-	cacheExtents := nativedelta.StableExtents(allExtents, plan.Step, volatileWindow, now)
+	volatileWindow := nativedelta.VolatileWindow(d.cfg.BackfillTolerance, 0, plan.Step,
+		plan.BackfillTolerance)
+	cacheExtents := nativedelta.StableExtents(allExtents, plan.Step, plan.Phase, volatileWindow, now)
 	retainedDS := merged.DS
 	if len(cacheExtents) == 0 {
 		retainedDS, ok = merged.DS.CroppedClone(timeseries.Extent{
