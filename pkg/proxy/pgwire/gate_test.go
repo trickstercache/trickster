@@ -568,7 +568,7 @@ func TestUnannouncedSettingsComeFromTheSessionsDefaults(t *testing.T) {
 	// a role or database default is invisible on the wire, so it is read once at origin login
 	s := gateTestSession(t, nil)
 	floatAxis := func() error {
-		_, err := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, false, s.tracker.setting)
+		_, err := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, TimeSemantics{}, s.tracker.setting)
 		return err
 	}
 	apply := func(sql string) {

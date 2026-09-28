@@ -24,13 +24,16 @@ export QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING = 1
 
 test:
 	$(GO) test -v --failfast
+	$(GO) test -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 
 data-race-test:
 	$(GO) test -v --failfast --race
+	$(GO) test -v --race ./greptimedb
 
 cover:
 	$(GO) test -v --failfast -coverpkg=../... -coverprofile=.integration.coverprofile
+	$(GO) test -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 	$(GO) tool cover -func=.integration.coverprofile | tail -1
 

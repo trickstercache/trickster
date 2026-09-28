@@ -16,32 +16,26 @@
 
 package postgres
 
-import (
-	"strings"
+import "github.com/trickstercache/trickster/v2/pkg/parsing/sqlguard"
 
-	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlscan"
-)
-
-type wordClass uint8
+type wordClass = sqlguard.WordClass
 
 const (
 	// wordVolatile is a function whose result changes between identical calls.
-	wordVolatile wordClass = iota + 1
+	wordVolatile = sqlguard.Volatile
 	// wordClock reads the clock; as a time bound it is resolved, anywhere else it is volatile.
-	wordClock
+	wordClock = sqlguard.Clock
 	// wordBareClock is a clock function written without parentheses.
-	wordBareClock
+	wordBareClock = sqlguard.BareClock
 	// wordUnfaithful is a keyword or type the parser drops or re-spells with another meaning.
-	wordUnfaithful
+	wordUnfaithful = sqlguard.Unfaithful
 	// wordGapfill fills empty buckets from the range it is asked for.
-	wordGapfill
+	wordGapfill = sqlguard.Gapfill
 	// wordCarry reads values from outside the bucket it is reported in.
-	wordCarry
+	wordCarry = sqlguard.Carry
 	// wordSetReturning is a function that yields several rows per call.
-	wordSetReturning
+	wordSetReturning = sqlguard.SetReturning
 )
-
-const unicodeEscapePrefix = "u&"
 
 var guardedWords = map[string]wordClass{
 	"random": wordVolatile, "random_normal": wordVolatile, "setseed": wordVolatile,
@@ -90,58 +84,9 @@ type statementFacts struct {
 }
 
 func scanFacts(sql string) statementFacts {
-	// finds the guarded words of a statement outside quotes and comments.
-	// A function name counts only when a call follows it.
-	var facts statementFacts
-	scanner := sqlscan.New(sql, sqlscan.Options{})
-	pending := wordClass(0)
-	for {
-		token, more := scanner.Next()
-		if !more {
-			return facts
-		}
-		called := token.Kind == sqlscan.Punct && sql[token.Start] == '('
-		switch {
-		case !called:
-		case pending == wordVolatile:
-			facts.volatile = true
-		case pending == wordClock:
-			facts.clock = true
-		case pending == wordGapfill:
-			facts.gapfill = true
-		case pending == wordCarry:
-			facts.carries = true
-		case pending == wordSetReturning:
-			facts.setReturning = true
-		}
-		pending = 0
-		switch token.Kind {
-		case sqlscan.Word:
-			// the map is keyed in lower case; most words are already
-			word := sql[token.Start:token.End]
-			class, ok := guardedWords[word]
-			if !ok {
-				class = guardedWords[strings.ToLower(word)]
-			}
-			switch class {
-			case wordBareClock:
-				facts.clock = true
-			case wordUnfaithful:
-				facts.unfaithful = true
-			default:
-				pending = class
-			}
-		case sqlscan.QuotedIdent:
-			// a quoted name calls the same function; built-in names are lower case
-			if class := guardedWords[strings.Trim(sql[token.Start:token.End], `"`)]; class != wordUnfaithful {
-				pending = class
-			}
-			fallthrough
-		case sqlscan.String:
-			if token.End-token.Start > len(unicodeEscapePrefix) &&
-				strings.EqualFold(sql[token.Start:token.Start+len(unicodeEscapePrefix)], unicodeEscapePrefix) {
-				facts.unfaithful = true
-			}
-		}
+	facts := sqlguard.Scan(sql, guardedWords)
+	return statementFacts{
+		volatile: facts.Volatile, clock: facts.Clock, unfaithful: facts.Unfaithful,
+		gapfill: facts.Gapfill, carries: facts.Carries, setReturning: facts.SetReturning,
 	}
 }

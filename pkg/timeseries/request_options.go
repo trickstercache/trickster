@@ -45,6 +45,10 @@ type RequestOptions struct {
 	// wire body, including when DPC marshals into a buffer rather than a response writer.
 	ResponseContentType     string
 	ResponseContentEncoding string
+	// FallbackToProxyOnError retries the original read-only query when any
+	// extent fails or the merged response cannot be modeled faithfully.
+	// Providers enabling this must ensure that replaying the query is safe.
+	FallbackToProxyOnError bool
 }
 
 // ExtractFastForwardDisabled will look for the FastForwardUserDisableFlag in the provided string

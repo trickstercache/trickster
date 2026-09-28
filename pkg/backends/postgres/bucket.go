@@ -21,10 +21,8 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
-	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree/treebin"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/types"
 )
 
@@ -33,10 +31,7 @@ const (
 	fnTimeBucketGapfill = "time_bucket_gapfill"
 	fnDateBin           = "date_bin"
 	fnDateTrunc         = "date_trunc"
-	fnFloor             = "floor"
 	fnExtract           = "extract"
-	fnDatePart          = "date_part"
-	fieldEpoch          = "epoch"
 
 	// unnamedColumn is the result column name PostgreSQL gives an unaliased expression.
 	unnamedColumn = "?column?"
@@ -292,76 +287,9 @@ func dateTrunc(name string, args []tree.Expr) (cockroach.BucketMatch, bool) {
 }
 
 func epochFloor(expr tree.Expr) (cockroach.BucketMatch, bool) {
-	// matches floor(extract(epoch from column)/N)*N over a timestamp column, and
-	// floor((column)/N)*N over a column of epoch seconds. Both yield epoch seconds.
-	none := cockroach.BucketMatch{}
-	product, ok := unwrapParens(expr).(*tree.BinaryExpr)
-	if !ok || product.Operator.Symbol != treebin.Mult {
-		return none, false
+	match, ok := cockroach.EpochFloorMatcher(expr)
+	if ok {
+		match.OutputColumn = unnamedColumn
 	}
-	floored, multiplier := product.Left, product.Right
-	seconds, ok := positiveInteger(multiplier)
-	if !ok {
-		floored, multiplier = multiplier, floored
-		if seconds, ok = positiveInteger(multiplier); !ok {
-			return none, false
-		}
-	}
-	floor, ok := unwrapParens(floored).(*tree.FuncExpr)
-	if !ok || len(floor.Exprs) != 1 || !isPlainCall(floor, fnFloor) {
-		return none, false
-	}
-	quotient, ok := unwrapParens(floor.Exprs[0]).(*tree.BinaryExpr)
-	if !ok || quotient.Operator.Symbol != treebin.Div {
-		return none, false
-	}
-	// truncating to N and then scaling by anything else is not a bucket
-	if divisor, ok := positiveInteger(quotient.Right); !ok || divisor != seconds ||
-		seconds > int64((1<<63-1)/time.Second) {
-		return none, false
-	}
-	match := cockroach.BucketMatch{
-		Step: time.Duration(seconds) * time.Second, OutputUnit: timeseries.DateTimeUnixSecs,
-		OutputColumn: unnamedColumn,
-	}
-	source := unwrapParens(quotient.Left)
-	if column, ok := cockroach.ColumnName(source); ok {
-		match.TimeColumn, match.ColumnUnit = column, timeseries.DateTimeUnixSecs
-		return match, true
-	}
-	epoch, ok := source.(*tree.FuncExpr)
-	if !ok || len(epoch.Exprs) != 2 || !isPlainCall(epoch, fnExtract) && !isPlainCall(epoch, fnDatePart) {
-		return none, false
-	}
-	if field, ok := epoch.Exprs[0].(*tree.StrVal); !ok || !strings.EqualFold(field.RawString(), fieldEpoch) {
-		return none, false
-	}
-	if match.TimeColumn, ok = cockroach.ColumnName(unwrapParens(epoch.Exprs[1])); !ok {
-		return none, false
-	}
-	return match, true
-}
-
-func isPlainCall(function *tree.FuncExpr, name string) bool {
-	return function.Filter == nil && function.WindowDef == nil && len(function.OrderBy) == 0 &&
-		function.Type == 0 && strings.EqualFold(function.Func.String(), name)
-}
-
-func positiveInteger(expr tree.Expr) (int64, bool) {
-	number, ok := unwrapParens(expr).(*tree.NumVal)
-	if !ok {
-		return 0, false
-	}
-	value, err := number.AsInt64()
-	return value, err == nil && value > 0
-}
-
-func unwrapParens(expr tree.Expr) tree.Expr {
-	for {
-		paren, ok := expr.(*tree.ParenExpr)
-		if !ok {
-			return expr
-		}
-		expr = paren.Expr
-	}
+	return match, ok
 }

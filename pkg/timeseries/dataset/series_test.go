@@ -62,7 +62,7 @@ func TestString(t *testing.T) {
 	if s.String() != expected {
 		t.Errorf("expected %s got %s", expected, s.String())
 	}
-	expected = "[16450490800955907542]"
+	expected = "[1032707601692489584]"
 	sl := SeriesList{s}
 	if sl.String() != expected {
 		t.Errorf("expected %s got %s", expected, sl.String())

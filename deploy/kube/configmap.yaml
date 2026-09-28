@@ -501,6 +501,19 @@ data:
       #   # timeseries_retention_factor, backfill_tolerance, and
       #   # max_object_size_bytes backend settings apply.
 
+      # # GreptimeDB serves HTTP and either or both native protocols. See
+      # # examples/conf/greptimedb.yaml for the corresponding listeners/authenticator.
+      # greptimedb1:
+      #   provider: greptimedb
+      #   origin_url: http://greptime.example:4000
+      #   listener_names: [default, greptime-pg, greptime-mysql]
+      #   authenticator_name: greptime-readers
+      #   cache_name: default
+      #   postgres:
+      #     upstream_url: postgres://readonly:REPLACE_ME@greptime.example:4003/public
+      #   mysql:
+      #     upstream_url: mysql://readonly:REPLACE_ME@greptime.example:4002/public
+      #
       # # example postgres backend, exposed by a listener with protocol postgres
       # # (see the listeners section). Provider timescaledb is an alias of postgres.
       # postgres1:

@@ -25,6 +25,7 @@ linters:
     - intrange
     - exptostd
     - errorlint
+    - forbidigo
     - gocheckcompilerdirectives
     - mirror
     - importas
@@ -35,6 +36,13 @@ linters:
   settings:
     dupl:
       threshold: 150 # default is 100; have brought current codebase down to 75, but leaving default at 150 for now
+    forbidigo:
+      # Calls are centralized except for the standalone-core files excluded below.
+      analyze-types: true
+      forbid:
+        - pattern: ^rand\.[^.]+$
+          pkg: ^math/rand(/v2)?$
+          msg: use pkg/util/weak/compat in the application or pkg/util/weak/weaktest in tests
     lll:
       line-length: 180
     staticcheck:
@@ -159,6 +167,14 @@ linters:
       - common-false-positives
       - legacy
       - std-error-handling
+    rules:
+      - path: pkg/util/weak/
+        linters:
+          - forbidigo
+      # Keep the standalone load-balancing core's existing, audited randomness.
+      - path: ^pkg/lb/(hrw/hrw|p2c/p2c|rr/rr|lbtest/lbtest)\.go$
+        linters:
+          - forbidigo
     paths:
       - third_party$
       - builtin$

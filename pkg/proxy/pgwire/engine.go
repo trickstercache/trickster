@@ -72,6 +72,50 @@ type TimeSemantics struct {
 	// NaiveTimestampsAreUTC means TIMESTAMP WITHOUT TIME ZONE values are UTC
 	// instants whatever the session time zone is. PostgreSQL gives them no zone.
 	NaiveTimestampsAreUTC bool
+	// LosslessFloatText means float text always round-trips, independently of
+	// PostgreSQL's extra_float_digits setting. Otherwise that setting is required.
+	LosslessFloatText bool
+	// Assumed values are engine guarantees, used only when a setting is unknown.
+	// They must not stand in for configurable server or role defaults.
+	AssumedDateStyle                 string
+	AssumedTimeZone                  string
+	AssumedIntervalStyle             string
+	AssumedStandardConformingStrings string
+	AssumedIntegerDatetimes          string
+}
+
+// SessionDefaultsProbe reads effective settings after an origin login. Each
+// result must contain one non-null row; Names follows the flattened column order.
+// An empty SQL string disables the probe without supplying any settings.
+type SessionDefaultsProbe struct {
+	SQL   string
+	Names []string
+}
+
+// SessionDefaultsEngine overrides PostgreSQL's session-defaults query.
+type SessionDefaultsEngine interface {
+	SessionDefaultsProbe() SessionDefaultsProbe
+}
+
+// SessionSettings describes settings followed from successful client statements.
+// Names and alias targets are lower case. Tables must be immutable after use.
+type SessionSettings struct {
+	// Tracked replaces PostgreSQL's client-tracked table. Listed settings are
+	// followed even if the origin announced an initial value at login.
+	Tracked map[string]struct{}
+	// Neutral replaces PostgreSQL's table of settings that do not shape results.
+	Neutral map[string]struct{}
+	Aliases map[string]string
+	// UnconfirmedStartup partitions by requested startup parameters without
+	// treating them as effective settings until announced or probed.
+	UnconfirmedStartup bool
+	// LocalPersists is for origins whose SET LOCAL is session-scoped.
+	LocalPersists bool
+}
+
+// SessionSettingsEngine overrides PostgreSQL's client-setting semantics.
+type SessionSettingsEngine interface {
+	SessionSettings() SessionSettings
 }
 
 // EngineDefaults are the connection settings assumed when a backend sets none.
@@ -109,6 +153,17 @@ type Engine interface {
 	TimeAxis(oid uint32) (TimeAxisKind, bool)
 	// TimeSemantics returns the engine's timestamp semantics.
 	TimeSemantics() TimeSemantics
+}
+
+// HTTPEngine is an optional capability for providers that also expose HTTP.
+// Engines without it retain PostgreSQL's native-only behavior.
+type HTTPEngine interface {
+	SupportsHTTP() bool
+}
+
+func supportsHTTP(engine Engine) bool {
+	httpEngine, ok := engine.(HTTPEngine)
+	return ok && httpEngine.SupportsHTTP()
 }
 
 // Engines is the explicit registry of engines, keyed by canonical provider name.

@@ -24,6 +24,7 @@ package vitess
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,16 +62,37 @@ var (
 // Analyzer converts Vitess's MySQL AST into Trickster's dialect-independent
 // cache plan. It contains no mutable per-query state and is safe for concurrent use.
 type Analyzer struct {
-	parser *sqlparser.Parser
+	parser    *sqlparser.Parser
+	buckets   []BucketMatcher
+	functions map[string]struct{}
+}
+
+// BucketMatcher recognizes an epoch-aligned, fixed-width bucket over one column.
+// A dialect must also establish the origin's semantics for any added functions.
+type BucketMatcher func(sqlparser.Expr) (*sqlparser.ColName, time.Duration, timeseries.FieldDataType, bool)
+
+// Options adds dialect-specific syntax without changing MySQL's defaults.
+type Options struct {
+	BucketMatchers         []BucketMatcher
+	DeterministicFunctions []string
 }
 
 // NewAnalyzer returns an analyzer configured for MySQL 8 syntax.
 func NewAnalyzer() (*Analyzer, error) {
+	return NewAnalyzerWithOptions(Options{})
+}
+
+// NewAnalyzerWithOptions returns a parser with optional compatible-dialect rules.
+func NewAnalyzerWithOptions(options Options) (*Analyzer, error) {
 	p, err := sqlparser.New(sqlparser.Options{MySQLServerVersion: "8.0.0"})
 	if err != nil {
 		return nil, err
 	}
-	return &Analyzer{parser: p}, nil
+	functions := make(map[string]struct{}, len(options.DeterministicFunctions))
+	for _, name := range options.DeterministicFunctions {
+		functions[strings.ToLower(name)] = struct{}{}
+	}
+	return &Analyzer{parser: p, buckets: slices.Clone(options.BucketMatchers), functions: functions}, nil
 }
 
 var _ sqlanalyzer.DialectAnalyzer = (*Analyzer)(nil)
@@ -92,6 +114,7 @@ func (a *Analyzer) Parser() *sqlparser.Parser {
 }
 
 type bucketInfo struct {
+	expression   sqlparser.Expr
 	timeColumn   string
 	timeAxis     string
 	outputColumn string
@@ -157,7 +180,7 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 		}
 	}
 	if selectStmt.Cache != nil || selectStmt.Lock != sqlparser.NoLock || selectStmt.SQLCalcFoundRows ||
-		selectStmt.Into != nil || isNondeterministic(selectStmt) {
+		selectStmt.Into != nil || a.isNondeterministic(selectStmt) {
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
 			Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement,
@@ -170,7 +193,7 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 		len(selectStmt.Windows) > 0 || containsSubquery(selectStmt) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedResultShape)
 	}
-	bucket, err := analyzeBucket(selectStmt)
+	bucket, err := analyzeBucket(selectStmt, a.buckets...)
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
@@ -232,12 +255,15 @@ func containsSubquery(stmt sqlparser.SQLNode) bool {
 	return found
 }
 
-func isNondeterministic(stmt sqlparser.SQLNode) bool {
+func (a *Analyzer) isNondeterministic(stmt sqlparser.SQLNode) bool {
 	unsafe := false
 	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
 		switch n := node.(type) {
 		case *sqlparser.FuncExpr:
 			name := strings.ToLower(n.Name.String())
+			if _, allowed := a.functions[name]; allowed && n.Qualifier.IsEmpty() {
+				return true, nil
+			}
 			switch name {
 			case fromUnixTimeFunction, "coalesce", "floor", "ifnull", "round":
 				// These are the deterministic general functions used by supported
@@ -335,7 +361,7 @@ func sqlCommentText(statement string) string {
 	return comments.String()
 }
 
-func analyzeBucket(stmt *sqlparser.Select) (bucketInfo, error) {
+func analyzeBucket(stmt *sqlparser.Select, matchers ...BucketMatcher) (bucketInfo, error) {
 	if stmt.SelectExprs == nil {
 		return bucketInfo{}, ErrUnsupportedBucket
 	}
@@ -347,6 +373,17 @@ func analyzeBucket(stmt *sqlparser.Select) (bucketInfo, error) {
 		}
 		column, axis, seconds, unit, ok := matchBucketExpr(ae.Expr)
 		if !ok {
+			for _, match := range matchers {
+				col, step, outputUnit, matched := match(ae.Expr)
+				if !matched || col == nil || step <= 0 {
+					continue
+				}
+				column, axis, ok = columnReference(col)
+				seconds, unit = step, outputUnit
+				break
+			}
+		}
+		if !ok {
 			continue
 		}
 		alias := ae.As.String()
@@ -357,6 +394,7 @@ func analyzeBucket(stmt *sqlparser.Select) (bucketInfo, error) {
 			return bucketInfo{}, ErrUnsupportedBucket
 		}
 		candidate := bucketInfo{
+			expression: ae.Expr,
 			timeColumn: column, outputColumn: alias,
 			timeAxis: axis, step: seconds, unit: unit,
 		}
@@ -756,13 +794,13 @@ func selectOutputs(stmt *sqlparser.Select, bucket bucketInfo) ([]selectOutput, i
 			return nil, -1, ErrUnsupportedResultShape
 		}
 		seenNames[key] = struct{}{}
-		_, axis, _, _, isBucket := matchBucketExpr(aliased.Expr)
+		isBucket := aliased.Expr == bucket.expression
 		output := selectOutput{
 			expr: aliased.Expr, name: name, alias: alias,
 			sourceName: sourceName, sourceAxis: sourceAxis, bucket: isBucket,
 		}
 		if isBucket {
-			if bucketIndex >= 0 || !strings.EqualFold(axis, bucket.timeAxis) ||
+			if bucketIndex >= 0 ||
 				!strings.EqualFold(name, bucket.outputColumn) {
 				return nil, -1, ErrUnsupportedResultShape
 			}

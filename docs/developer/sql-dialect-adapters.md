@@ -1,5 +1,10 @@
 # Adding a SQL Dialect Adapter
 
+For another database using PostgreSQL's wire protocol, also follow
+[Adding a PostgreSQL Wire Engine](adding-pgwire-engine.md). It covers shared
+transport, session and time-axis hooks, multi-protocol providers and the
+compatibility-corpus runner.
+
 Trickster accelerates SQL-based time series backends (currently ClickHouse and
 MySQL) by
 parsing each query into a dialect-native abstract syntax tree, analyzing it

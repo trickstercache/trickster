@@ -10,9 +10,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../docs/developer/environment"
 
 # Every trips database service <name> has a one-shot loader service <name>_seed.
-# graphite is seeded by its own generator, and prometheus by a backfill of the
-# trips metrics that devorigin serves; both are handled separately below.
-ALL_TARGETS="clickhouse mysql timescaledb druid prometheus graphite"
+# graphite is seeded by its own generator and is handled separately below.
+ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid prometheus graphite"
 read -r -a targets <<< "$(echo "${SEED_TARGET:-$ALL_TARGETS}" | tr ',' ' ')"
 
 trips_databases=()
@@ -49,6 +48,27 @@ seed_prometheus() {
   docker compose run --rm --no-deps prometheus_seed
   docker compose up -d --no-deps prometheus devorigin
 }
+
+# developer-start can return while its one-shot loaders are still running.
+# All trips loaders share the fixture, even when only one database is reloaded;
+# prometheus_seed_generate reads it too, and ALL_TARGETS yields prometheus_seed.
+startup_services=()
+if [[ ${#trips_databases[@]} -gt 0 || $prometheus -eq 1 ]]; then
+  startup_services+=(seed_data_generate prometheus_seed_generate)
+  for db in $ALL_TARGETS; do
+    if [[ "$db" != graphite ]]; then startup_services+=("${db}_seed"); fi
+  done
+fi
+if [[ $graphite -eq 1 ]]; then startup_services+=(graphite_seed); fi
+startup_ids=$(docker compose ps -q --status running "${startup_services[@]}")
+for id in $startup_ids; do
+  echo "waiting for startup seeder $id"
+  status=$(docker wait "$id")
+  if [[ "$status" != 0 ]]; then
+    echo "startup seeder $id: FAILED (exit $status)" >&2
+    exit 1
+  fi
+done
 
 names=()
 pids=()

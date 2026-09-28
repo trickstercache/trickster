@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -33,6 +34,10 @@ func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
 	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
+	if c.hooks.PreserveQueryGrid {
+		v.Set(upStart, extent.Start.UTC().Format(time.RFC3339Nano))
+		v.Set(upEnd, extent.End.UTC().Format(time.RFC3339Nano))
+	}
 	params.SetRequestValues(r, v)
 	return nil
 }
