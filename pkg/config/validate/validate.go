@@ -203,7 +203,27 @@ func kubernetesReferences(c *config.Config) error {
 				d.AuthenticatorName)
 		}
 	}
+	if d.IPACLName != "" {
+		def := c.IPACLs[d.IPACLName]
+		if def == nil {
+			return newKubernetesRefError("defaults", "ip acl", d.IPACLName)
+		}
+		// compiled by IPACLs above. A peer or drop list exists, so it is not an
+		// undefined name; a generated backend still cannot use it.
+		if !kubernetesIPACLEligible(def.Compiled) {
+			return fmt.Errorf("kubernetes 'defaults' references ineligible ip acl %q: "+
+				"generated backends require source client_ip and action reject",
+				d.IPACLName)
+		}
+	}
 	return nil
+}
+
+// kubernetesIPACLEligible reports whether a compiled list may be named by a
+// generated backend. ClientIP and Reject are the zero values, which are also
+// the defaults. A nil list is not eligible.
+func kubernetesIPACLEligible(list *ipacl.List) bool {
+	return list != nil && list.Source() == ipacl.ClientIP && list.Action() == ipacl.Reject
 }
 
 func newKubernetesRefError(block, kind, name string) error {

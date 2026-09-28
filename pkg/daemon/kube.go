@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -406,6 +407,7 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		Tracers:        sets.New[string](nil),
 		Rewriters:      sets.New[string](nil),
 		Authenticators: sets.New[string](nil),
+		IPACLs:         sets.New[string](nil),
 	}
 	if conf != nil {
 		for name := range conf.Caches {
@@ -423,6 +425,11 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		for name := range conf.Authenticators {
 			next.Authenticators.Set(name)
 		}
+		for name, def := range conf.IPACLs {
+			if def != nil && kubernetesIPACLEligible(def.Compiled) {
+				next.IPACLs.Set(name)
+			}
+		}
 	}
 	previous := s.known.Swap(&next)
 	return previous == nil ||
@@ -430,7 +437,17 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.NegativeCaches, next.NegativeCaches) ||
 		!maps.Equal(previous.Tracers, next.Tracers) ||
 		!maps.Equal(previous.Rewriters, next.Rewriters) ||
-		!maps.Equal(previous.Authenticators, next.Authenticators)
+		!maps.Equal(previous.Authenticators, next.Authenticators) ||
+		!maps.Equal(previous.IPACLs, next.IPACLs)
+}
+
+// kubernetesIPACLEligible reports whether a compiled list may be named by a
+// generated backend. The same rule is kubernetesReferences in config
+// validation: client_ip and reject, which are the zero values. A nil list,
+// including one not yet compiled, is not eligible. CIDR edits do not change
+// eligibility, so they do not retranslate.
+func kubernetesIPACLEligible(list *ipacl.List) bool {
+	return list != nil && list.Source() == ipacl.ClientIP && list.Action() == ipacl.Reject
 }
 
 func marshalKubeOptions(o *kubecfg.Options) []byte {

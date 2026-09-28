@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube/controller"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 
 	"github.com/stretchr/testify/require"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -683,6 +684,71 @@ func TestKubeSupervisorResyncsOnCacheChange(t *testing.T) {
 	s.Apply(withCache, nil)
 	time.Sleep(20 * time.Millisecond)
 	require.Equal(t, int32(1), f.at(0).resyncs.Load())
+}
+
+func compiledACL(t *testing.T, opts ipacl.Options) *ipacl.Options {
+	t.Helper()
+	list, _, err := ipacl.Compile(opts)
+	require.NoError(t, err)
+	opts.Compiled = list
+	return &opts
+}
+
+func TestKubeSupervisorResyncsOnIPACLEligibility(t *testing.T) {
+	// Eligibility is what a running controller retranslates for. A peer or drop
+	// list is never a name a generated backend may use, and a CIDR edit of a
+	// list that stays eligible is a reload, not a retranslate.
+	f := install(t)
+	s, _ := newTestSupervisor(t)
+	conf := kubeConfig()
+	conf.IPACLs = ipacl.Lookup{
+		"office": compiledACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}}),
+		"edge":   compiledACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"}),
+		"wall":   compiledACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Action: "drop"}),
+	}
+	s.Apply(conf, nil)
+	eventually(t, func() bool { return f.count() == 1 }, "controller not started")
+	require.Equal(t, int32(0), f.at(0).resyncs.Load())
+	require.True(t, s.knownNames().IPACLs.Contains("office"))
+	require.False(t, s.knownNames().IPACLs.Contains("edge"))
+	require.False(t, s.knownNames().IPACLs.Contains("wall"))
+
+	// the same names, different prefixes: the set is unchanged, so nothing resyncs
+	edited := kubeConfig()
+	edited.IPACLs = ipacl.Lookup{
+		"office": compiledACL(t, ipacl.Options{Allow: []string{"192.0.2.0/24"}}),
+		"edge":   compiledACL(t, ipacl.Options{Allow: []string{"192.0.2.0/24"}, Source: "peer"}),
+		"wall":   compiledACL(t, ipacl.Options{Allow: []string{"192.0.2.0/24"}, Action: "drop"}),
+	}
+	s.Apply(edited, nil)
+	time.Sleep(20 * time.Millisecond)
+	require.Equal(t, int32(0), f.at(0).resyncs.Load())
+	require.Equal(t, 1, f.count(), "a CIDR edit must not restart the controller")
+	require.True(t, s.knownNames().IPACLs.Contains("office"))
+
+	// office becomes peer, so the eligible set loses it and the controller translates again
+	ineligible := kubeConfig()
+	ineligible.IPACLs = ipacl.Lookup{
+		"office": compiledACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"}),
+	}
+	s.Apply(ineligible, nil)
+	eventually(t, func() bool { return f.at(0).resyncs.Load() == 1 },
+		"losing eligibility did not ask the controller to translate again")
+	require.Equal(t, 1, f.count())
+	require.False(t, s.knownNames().IPACLs.Contains("office"))
+
+	// a new eligible list joins the set; the drop list beside it does not
+	added := kubeConfig()
+	added.IPACLs = ipacl.Lookup{
+		"office": compiledACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}}),
+		"wall":   compiledACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Action: "drop"}),
+	}
+	s.Apply(added, nil)
+	eventually(t, func() bool { return f.at(0).resyncs.Load() == 2 },
+		"regaining eligibility did not ask the controller to translate again")
+	require.Equal(t, 1, f.count())
+	require.True(t, s.knownNames().IPACLs.Contains("office"))
+	require.False(t, s.knownNames().IPACLs.Contains("wall"))
 }
 
 func TestKubeSupervisorSharesCertificateState(t *testing.T) {

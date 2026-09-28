@@ -76,6 +76,9 @@ type ConfiguredNames struct {
 	Tracers        sets.Set[string]
 	Rewriters      sets.Set[string]
 	Authenticators sets.Set[string]
+	// IPACLs are the access lists generated backends may name. A peer list or a
+	// drop list is left out: a generated backend cannot use either.
+	IPACLs sets.Set[string]
 }
 
 // Event reasons a Problem may carry; a Problem naming none is reported as Rejected
