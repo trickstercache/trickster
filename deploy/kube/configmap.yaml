@@ -844,6 +844,8 @@ data:
 
     #     # step_alignment selects what the backend does with partial buckets at the edges of a query's time range:
     #     # truncate, drop, partial, partial_start, partial_end or off. The provider's default applies when it is unset.
+    #     # off sends each query to the origin with its range as the client sent it, and caches the response as an
+    #     # object for one minute, keyed on that range.
     #     # step_alignment: truncate
 
     #     # volatile_window prevents new datapoints that fall within the window (relative to time.Now) from being permanently

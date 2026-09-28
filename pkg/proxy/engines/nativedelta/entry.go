@@ -118,6 +118,10 @@ func (e *Engine[R]) Retrieve(key string) (*Entry[R], bool) {
 // the binary envelope elsewhere. Failures are observed, never returned: a
 // failed store costs a future cache miss, not the current response.
 func (e *Engine[R]) Store(key string, entry *Entry[R]) {
+	e.store(key, entry, e.cfg.CacheTTL)
+}
+
+func (e *Engine[R]) store(key string, entry *Entry[R], ttl time.Duration) {
 	if entry == nil {
 		e.observeCacheFailure("encode_failure")
 		e.logCacheError("native delta cache encoding failed", "nil cache entry")
@@ -141,7 +145,7 @@ func (e *Engine[R]) Store(key string, entry *Entry[R]) {
 			}
 			return
 		}
-		if err := memoryCache.StoreReference(key, entry, e.cfg.CacheTTL); err != nil {
+		if err := memoryCache.StoreReference(key, entry, ttl); err != nil {
 			e.observeCacheFailure("store_failure")
 			e.logCacheError("native delta cache storage failed", err.Error())
 		}
@@ -166,7 +170,7 @@ func (e *Engine[R]) Store(key string, entry *Entry[R]) {
 		return
 	}
 	entry.size = len(data)
-	if err := cacheClient.Store(key, data, e.cfg.CacheTTL); err != nil {
+	if err := cacheClient.Store(key, data, ttl); err != nil {
 		e.observeCacheFailure("store_failure")
 		e.logCacheError("native delta cache storage failed", err.Error())
 	}

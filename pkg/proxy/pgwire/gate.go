@@ -47,6 +47,8 @@ const (
 	cacheKeyProtocol  = "pgwire"
 	cacheEngineObject = "opc"
 	cacheEngineDelta  = "dpc"
+	// off keeps its own objects, so one stored for the longer CacheTTL never answers it
+	cacheEngineUnaligned = "off"
 
 	logKeyCacheMode = "cache_mode"
 	logKeyReason    = "analysis_reason"
@@ -156,11 +158,14 @@ func (s *session) observeParse(body []byte) {
 func (s *session) cacheKey(analysis sqlanalyzer.Analysis, sql string) string {
 	// derives the key for an analyzed statement in this session. Every
 	// field is length-prefixed, so no two distinct identities can collide.
-	config := &s.server.config
-	engine, statement, suffix := cacheEngineObject, sql, ""
 	if analysis.Mode == sqlanalyzer.CacheModeDelta && analysis.Plan != nil {
-		engine, statement, suffix = cacheEngineDelta, analysis.Plan.CanonicalSQL, analysis.Plan.IdentitySuffix
+		return s.identityKey(cacheEngineDelta, analysis.Plan.CanonicalSQL, analysis.Plan.IdentitySuffix)
 	}
+	return s.identityKey(cacheEngineObject, sql, "")
+}
+
+func (s *session) identityKey(engine, statement, suffix string) string {
+	config := &s.server.config
 	var identity strings.Builder
 	identity.WriteByte(cacheIdentityVersion)
 	appendIdentityField(&identity, config.BackendName)

@@ -1176,21 +1176,25 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	h.observeAnalysis(parsed.statementType, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
+		servedMode := analysis.Mode
+		if h.unaligned(analysis) {
+			servedMode = sqlanalyzer.CacheModeObject
+		}
 		result, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
 		if cacheErr != nil {
-			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
+			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
 			return cacheErr
 		}
 		if limitErr := h.validateResult(session, result); limitErr != nil {
-			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
+			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
 			return limitErr
 		}
 		// Cached results deliberately report no origin warnings, but retain
 		// the status flags captured with the cached result.
 		h.setProtocolState(session, result.StatusFlags, 0)
-		h.observeCache(analysis.Mode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
+		h.observeCache(servedMode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
 		return callback(result)
 	}
 	if analysis.Mode == sqlanalyzer.CacheModeNone {

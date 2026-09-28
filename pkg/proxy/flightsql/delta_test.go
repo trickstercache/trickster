@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -190,6 +192,47 @@ func TestDeltaTierCachesByExtent(t *testing.T) {
 	}
 }
 
+func TestDeltaTierOffAnswersTheClientsStatementFromTheObjectTier(t *testing.T) {
+	up := &fakeUpstream{executeFn: rangedUpstream(t)}
+	inner := newMemCache()
+	// an object TTL unlike off's, so the test sees which one stored each statement
+	srv := NewServer(up, inner, WithCacheKeyPrefix("influx3"), WithCacheTTL(time.Hour), WithDeltaCache(DeltaConfig{
+		Analyzer:      testAnalyzer,
+		CacheClient:   func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+		CacheTTL:      time.Hour,
+		StepAlignment: timeseries.StepAlignmentOff,
+	}))
+	// off the grid at both ends, so the origin's own rows start at the raw lower bound
+	first, later := fmt.Sprintf(deltaQuery, 30, 630), fmt.Sprintf(deltaQuery, 30, 660)
+	for i, test := range []struct {
+		query    string
+		received []string
+	}{
+		{first, []string{first}},
+		{first, []string{first}},
+		{later, []string{first, later}},
+	} {
+		rows := executeRows(t, srv, test.query)
+		if len(rows) == 0 || rows[0][0] != 30*int64(time.Second) {
+			t.Fatalf("%d: expected the origin's rows from the raw lower bound, got %v", i, rows)
+		}
+		if !slices.Equal(up.executedQueries, test.received) {
+			t.Fatalf("%d: the origin received %q, want the client's statements %q", i,
+				up.executedQueries, test.received)
+		}
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	if len(inner.ttls) != 2 {
+		t.Errorf("expected one object per statement, got %d entries", len(inner.ttls))
+	}
+	for key, ttl := range inner.ttls {
+		if ttl != timeseries.StepAlignmentOffTTL {
+			t.Errorf("%s stored for %s, want %s", key, ttl, timeseries.StepAlignmentOffTTL)
+		}
+	}
+}
+
 func TestDeltaTierRoutesNonDeltaStatements(t *testing.T) {
 	up := &fakeUpstream{ipcBytes: buildTestIPC(t)}
 	srv := newDeltaTestServer(t, up)
@@ -210,8 +253,9 @@ func TestDeltaTierRoutesNonDeltaStatements(t *testing.T) {
 	}
 }
 
-func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
-	// the upstream returns a list-typed column the dataset model cannot express
+func unrepresentableIPC(t *testing.T) []byte {
+	t.Helper()
+	// a list-typed column the dataset model cannot express
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Nanosecond}},
 		{Name: "l", Type: arrow.ListOf(arrow.PrimitiveTypes.Int64)},
@@ -224,7 +268,11 @@ func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := &fakeUpstream{ipcBytes: ipcBytes}
+	return ipcBytes
+}
+
+func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
+	up := &fakeUpstream{ipcBytes: unrepresentableIPC(t)}
 	srv := newDeltaTestServer(t, up)
 
 	query := fmt.Sprintf(deltaQuery, 0, 600)
@@ -242,6 +290,41 @@ func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
 	executeRows(t, srv, query)
 	if up.executeCalls != callsAfterFirst {
 		t.Fatalf("marker did not short-circuit: %d calls", up.executeCalls)
+	}
+}
+
+func TestDeltaTierOffNeverServesAnObjectStoredForTheDefaultTTL(t *testing.T) {
+	up := &fakeUpstream{ipcBytes: unrepresentableIPC(t)}
+	inner := newMemCache()
+	newServer := func(mode timeseries.StepAlignment) *Server {
+		return NewServer(up, inner, WithCacheKeyPrefix("influx3"), WithCacheTTL(time.Hour),
+			WithDeltaCache(DeltaConfig{
+				Analyzer:      testAnalyzer,
+				CacheClient:   func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+				CacheTTL:      time.Hour,
+				StepAlignment: mode,
+			}))
+	}
+	query := fmt.Sprintf(deltaQuery, 0, 600)
+	// the unrepresentable plan falls back to the statement's object, kept for the object TTL
+	executeRows(t, newServer(0), query)
+	calls := up.executeCalls
+	off := newServer(timeseries.StepAlignmentOff)
+	executeRows(t, off, query)
+	executeRows(t, off, query)
+	if got := up.executeCalls - calls; got != 1 {
+		t.Fatalf("off reached the origin %d times, want once: never the fallback's object, then its own", got)
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	offEntries := 0
+	for _, ttl := range inner.ttls {
+		if ttl == timeseries.StepAlignmentOffTTL {
+			offEntries++
+		}
+	}
+	if offEntries != 1 {
+		t.Errorf("expected one object stored for %s, got %d", timeseries.StepAlignmentOffTTL, offEntries)
 	}
 }
 

@@ -80,6 +80,21 @@ func TestProviderStepAlignments(t *testing.T) {
 	}
 }
 
+func TestEveryTimeSeriesProviderAppliesOff(t *testing.T) {
+	for _, provider := range []string{
+		providers.Prometheus, providers.Graphite, providers.InfluxDB, providers.ClickHouse,
+		providers.Druid, providers.MySQL, providers.Postgres, providers.TimescaleDB,
+	} {
+		t.Run(provider, func(t *testing.T) {
+			o := bo.New()
+			o.Name, o.Provider, o.StepAlignment = "test", provider, timeseries.StepAlignmentOff
+			if err := backends.ValidateStepAlignment(newTestClient(t, provider, nil), o); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
 func TestPrometheusFastForwardDisableDefaultsToTruncate(t *testing.T) {
 	o := bo.New()
 	o.FastForwardDisable = true
@@ -98,7 +113,7 @@ func TestValidateStepAlignment(t *testing.T) {
 		{"unset", providers.ReverseProxyCache, 0, nil},
 		{"applied", providers.Prometheus, timeseries.StepAlignmentTruncate, nil},
 		{
-			"supported but not applied yet", providers.Prometheus, timeseries.StepAlignmentOff,
+			"supported but not applied yet", providers.Prometheus, timeseries.StepAlignmentDrop,
 			bo.ErrStepAlignmentNotImplemented,
 		},
 		{"unsupported", providers.Graphite, timeseries.StepAlignmentPartial, bo.ErrUnsupportedStepAlignment},

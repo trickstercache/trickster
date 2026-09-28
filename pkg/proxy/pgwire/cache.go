@@ -193,7 +193,13 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 		return false, nil
 	}
 	mode, plan := outcome.analysis.Mode, outcome.analysis.Plan
-	if mode == sqlanalyzer.CacheModeDelta && (plan == nil || !orderable(plan)) {
+	var unaligned bool
+	switch {
+	case mode != sqlanalyzer.CacheModeDelta:
+	case s.server.config.StepAlignment == timeseries.StepAlignmentOff:
+		// off answers with the origin's result to the client's statement, keyed on its raw range
+		mode, unaligned = sqlanalyzer.CacheModeObject, true
+	case plan == nil || !orderable(plan):
 		mode = sqlanalyzer.CacheModeObject
 	}
 	if _, bypassed := engine.Retrieve(outcome.key + keySuffixBypass); bypassed {
@@ -212,7 +218,7 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 	if mode == sqlanalyzer.CacheModeDelta {
 		result, lookup, err = s.executeDelta(outcome, plan)
 	} else {
-		result, lookup, err = s.executeObject(outcome.sql)
+		result, lookup, err = s.executeObject(outcome.sql, unaligned)
 	}
 	var rejected *originError
 	switch {
@@ -259,9 +265,12 @@ func (s *session) bypass(key, reason string) {
 	})
 }
 
-func (s *session) executeObject(sql string) (*Result, status.LookupStatus, error) {
-	key := s.cacheKey(sqlanalyzer.Analysis{Mode: sqlanalyzer.CacheModeObject}, sql)
-	return s.server.delta.ExecuteObject(key, func() (*Result, error) {
+func (s *session) executeObject(sql string, unaligned bool) (*Result, status.LookupStatus, error) {
+	engine, ttl := cacheEngineObject, time.Duration(0)
+	if unaligned {
+		engine, ttl = cacheEngineUnaligned, timeseries.StepAlignmentOffTTL
+	}
+	return s.server.delta.ExecuteObject(s.identityKey(engine, sql, ""), ttl, func() (*Result, error) {
 		return s.fetch(sql, true, nil)
 	})
 }
@@ -294,7 +303,7 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan)
 		) (*Result, *Result, timeseries.ExtentList, error) {
 			return finalizeDelta(config, plan, merged, all, requested, now)
 		},
-		ObjectFallback: func() (*Result, status.LookupStatus, error) { return s.executeObject(outcome.sql) },
+		ObjectFallback: func() (*Result, status.LookupStatus, error) { return s.executeObject(outcome.sql, false) },
 	}
 	if config.DoesShard {
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {

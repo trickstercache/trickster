@@ -23,12 +23,16 @@ import (
 )
 
 var stepAlignmentsApplied = map[string]timeseries.StepAlignment{
-	providers.Prometheus:  timeseries.StepAlignmentTruncate | timeseries.StepAlignmentPartialEnd,
-	providers.Graphite:    timeseries.StepAlignmentTruncate,
-	providers.ClickHouse:  timeseries.StepAlignmentDrop,
-	providers.MySQL:       timeseries.StepAlignmentDrop,
-	providers.Postgres:    timeseries.StepAlignmentDrop,
-	providers.TimescaleDB: timeseries.StepAlignmentDrop,
+	providers.Prometheus: timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+		timeseries.StepAlignmentPartialEnd,
+	providers.Graphite:   timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate,
+	providers.ClickHouse: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+	// off is applied wherever a query supports it; a query that doesn't keeps its default
+	providers.InfluxDB:    timeseries.StepAlignmentOff,
+	providers.Druid:       timeseries.StepAlignmentOff,
+	providers.MySQL:       timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+	providers.Postgres:    timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+	providers.TimescaleDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
 }
 
 // ValidateStepAlignment checks a backend's configured step alignment against the modes its

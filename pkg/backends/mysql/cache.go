@@ -53,16 +53,18 @@ import (
 )
 
 const (
-	cacheIdentityVersion          byte = 1
-	mysqlDialect                       = "mysql"
-	cacheModeOPC                       = "opc"
-	cacheModeDPC                       = "dpc"
-	cacheModeDPCEmpty                  = "dpc-empty"
-	cacheModeDPCFallback               = "dpc-fallback"
-	metricMethodQuery                  = "QUERY"
-	metricPathQuery                    = "query"
-	metricHTTPStatusOK                 = "200"
-	metricHTTPStatusInternalError      = "500"
+	cacheIdentityVersion byte = 1
+	mysqlDialect              = "mysql"
+	cacheModeOPC              = "opc"
+	cacheModeDPC              = "dpc"
+	cacheModeDPCEmpty         = "dpc-empty"
+	cacheModeDPCFallback      = "dpc-fallback"
+	// off keeps its own objects, so one stored for the longer CacheTTL never answers it
+	cacheModeOff                  = "off"
+	metricMethodQuery             = "QUERY"
+	metricPathQuery               = "query"
+	metricHTTPStatusOK            = "200"
+	metricHTTPStatusInternalError = "500"
 )
 
 type analysisMetricKey struct {
@@ -201,20 +203,32 @@ func (h *protocolHandler) executeCached(c *vtmysql.Conn, session *upstreamSessio
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
 	switch analysis.Mode {
 	case sqlanalyzer.CacheModeDelta:
+		if h.unaligned(analysis) {
+			return h.executeObject(c, session, query, true)
+		}
 		if analysis.Plan != nil {
 			return h.executeDelta(c, session, query, analysis.Plan)
 		}
 	case sqlanalyzer.CacheModeObject:
-		return h.executeObject(c, session, query)
+		return h.executeObject(c, session, query, false)
 	}
 	return nil, cachestatus.LookupStatusProxyOnly, errors.New("uncacheable MySQL query")
 }
 
+func (h *protocolHandler) unaligned(analysis sqlanalyzer.Analysis) bool {
+	// off answers a delta plan with the origin's result to the client's statement, keyed on its raw range
+	return analysis.Mode == sqlanalyzer.CacheModeDelta && h.config.StepAlignment == timeseries.StepAlignmentOff
+}
+
 func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSession,
-	query string,
+	query string, unaligned bool,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
-	key := h.queryCacheKey(c, session, cacheModeOPC, strings.TrimSpace(query))
-	return h.deltaEngine().ExecuteObject(key, func() (*sqltypes.Result, error) {
+	engine, ttl := cacheModeOPC, time.Duration(0)
+	if unaligned {
+		engine, ttl = cacheModeOff, timeseries.StepAlignmentOffTTL
+	}
+	key := h.queryCacheKey(c, session, engine, strings.TrimSpace(query))
+	return h.deltaEngine().ExecuteObject(key, ttl, func() (*sqltypes.Result, error) {
 		return h.executeOrigin(session, query)
 	})
 }
@@ -243,7 +257,7 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 			return h.finalizeDeltaResult(merged, allExtents, plan, requested, now)
 		},
 		ObjectFallback: func() (*sqltypes.Result, cachestatus.LookupStatus, error) {
-			return h.executeObject(c, session, query)
+			return h.executeObject(c, session, query, false)
 		},
 	}
 	if h.config.DoesShard {

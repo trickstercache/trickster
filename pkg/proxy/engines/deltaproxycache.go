@@ -97,7 +97,7 @@ func fetchFastForward(
 	}
 	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcUpstreamEncodingProfile(rlo)))
 	rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
-	rs.AlternateCacheTTL = time.Duration(o.PartialBucketTTL)
+	rs.AlternateCacheTTL, rs.PerCredentialCache = time.Duration(o.PartialBucketTTL), true
 	ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
 
 	_, ffSpan := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
@@ -162,17 +162,7 @@ func finalizeDPCResponse(
 	// Respond to the user. Using the response headers from a Delta Response,
 	// so as to not map conflict with cacheData on WriteCache
 	logDeltaRoutine(dpStatus)
-	if rlo != nil && (rlo.ResponseContentType != "" || rlo.ResponseContentEncoding != "") {
-		if rh == nil {
-			rh = make(http.Header)
-		}
-		if rlo.ResponseContentType != "" {
-			rh.Set(headers.NameContentType, rlo.ResponseContentType)
-		}
-		if rlo.ResponseContentEncoding != "" {
-			rh.Set(headers.NameContentEncoding, rlo.ResponseContentEncoding)
-		}
-	}
+	rh = setResponseFormat(rh, rlo)
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed, missRanges, failed, rh)
 
 	rsc.TS = rts
@@ -191,6 +181,23 @@ func finalizeDPCResponse(
 	} else {
 		modeler.WireMarshalWriter(rts, rlo, sc, w)
 	}
+}
+
+func setResponseFormat(rh http.Header, rlo *timeseries.RequestOptions) http.Header {
+	// the request options can name the content type and encoding of a marshaled body
+	if rlo == nil || (rlo.ResponseContentType == "" && rlo.ResponseContentEncoding == "") {
+		return rh
+	}
+	if rh == nil {
+		rh = make(http.Header)
+	}
+	if rlo.ResponseContentType != "" {
+		rh.Set(headers.NameContentType, rlo.ResponseContentType)
+	}
+	if rlo.ResponseContentEncoding != "" {
+		rh.Set(headers.NameContentEncoding, rlo.ResponseContentEncoding)
+	}
+	return rh
 }
 
 // DeltaProxyCache is used for Time Series Acceleration, but not for normal HTTP Object Caching
@@ -237,7 +244,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		if canOPC {
 			logger.Debug("could not parse time range query, using object proxy cache",
 				logging.Pairs{keys.Error: err.Error()})
-			rsc.AlternateCacheTTL = time.Minute
+			rsc.AlternateCacheTTL, rsc.PerCredentialCache = time.Minute, true
 			ObjectProxyCacheRequest(w, r)
 			return
 		}
@@ -255,10 +262,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		DoProxy(w, r, true)
 		return
 	}
+	resolveStepAlignment(ctx, o, trq, rsc.Tracer, span)
+	if trq.StepAlignment == timeseries.StepAlignmentOff {
+		serveUnaligned(w, r, rsc, trq, rlo, modeler)
+		return
+	}
 	var cacheStatus status.LookupStatus
 
 	pr := newProxyRequest(r, w)
-	resolveStepAlignment(ctx, o, trq, rsc.Tracer, span)
 	// Fast Forward is the live end of partial_end, so a resolved mode with no partial end skips it
 	if _, end := trq.StepAlignment.Edges(); trq.StepAlignment != 0 && end != timeseries.EdgePartial {
 		rlo.FastForwardDisable = true

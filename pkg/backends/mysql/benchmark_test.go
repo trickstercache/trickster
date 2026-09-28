@@ -293,7 +293,7 @@ func BenchmarkMySQLOPCHitComparison(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
 			if _, status, err := h.executeObject(connection, session,
-				query); err != nil || status != cachestatus.LookupStatusHit {
+				query, false); err != nil || status != cachestatus.LookupStatusHit {
 				b.Fatalf("cache hit status=%s err=%v", status, err)
 			}
 		}

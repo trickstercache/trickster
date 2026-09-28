@@ -294,7 +294,13 @@ func (s *Server) DoGetStatement(ctx context.Context,
 func (s *Server) objectTier(ctx context.Context,
 	query string,
 ) ([]byte, cachestatus.LookupStatus, error) {
-	key := s.tenantKey(ctx) + ":stmt:" + query
+	return s.objectTierFor(ctx, statementKeyKind, query, s.cacheTTL)
+}
+
+func (s *Server) objectTierFor(ctx context.Context,
+	kind, query string, ttl time.Duration,
+) ([]byte, cachestatus.LookupStatus, error) {
+	key := s.tenantKey(ctx) + kind + query
 	ipcBytes, cached := s.cacheGet(key)
 	if cached {
 		return ipcBytes, cachestatus.LookupStatusHit, nil
@@ -303,7 +309,9 @@ func (s *Server) objectTier(ctx context.Context,
 	if err != nil {
 		return nil, cachestatus.LookupStatusProxyError, fmt.Errorf("upstream execute: %w", err)
 	}
-	s.cacheSet(key, b)
+	if s.cache != nil {
+		s.cache.Set(key, b, ttl)
+	}
 	return b, cachestatus.LookupStatusKeyMiss, nil
 }
 

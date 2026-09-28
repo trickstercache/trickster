@@ -182,12 +182,14 @@ type DeltaRequest[R any] struct {
 	Ops               DeltaOps[R]
 }
 
-// ExecuteObject serves a request through the object cache: whole responses
-// cached briefly and returned verbatim, with concurrent identical requests
-// collapsed into one origin fetch.
-func (e *Engine[R]) ExecuteObject(key string,
+// ExecuteObject serves a request from the object cache, storing a whole response for ttl (zero keeps
+// CacheTTL) and collapsing concurrent identical requests into one origin fetch.
+func (e *Engine[R]) ExecuteObject(key string, ttl time.Duration,
 	fetch func() (R, error),
 ) (R, cachestatus.LookupStatus, error) {
+	if ttl <= 0 {
+		ttl = e.cfg.CacheTTL
+	}
 	type execution struct {
 		payload R
 		status  cachestatus.LookupStatus
@@ -200,7 +202,7 @@ func (e *Engine[R]) ExecuteObject(key string,
 		if fetchErr != nil {
 			return execution{}, fetchErr
 		}
-		e.Store(key, &Entry[R]{Payload: payload})
+		e.store(key, &Entry[R]{Payload: payload}, ttl)
 		return execution{payload: payload, status: cachestatus.LookupStatusKeyMiss}, nil
 	})
 	if err != nil {

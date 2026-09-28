@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -255,7 +256,16 @@ func Backends(c *config.Config) error {
 	if serveTLS && c.Frontend != nil {
 		c.Frontend.ServeTLS = true
 	}
-	return c.Backends.Validate()
+	if err := c.Backends.Validate(); err != nil {
+		return err
+	}
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		if o := c.Backends[name]; o != nil && o.ProxyOnly && o.StepAlignment == timeseries.StepAlignmentOff {
+			addWarning(c, fmt.Sprintf("backend %q sets step_alignment: off, which has no effect "+
+				"with proxy_only: true, since nothing is cached", name))
+		}
+	}
+	return nil
 }
 
 // Listeners validates inbound listener definitions and backend mappings.

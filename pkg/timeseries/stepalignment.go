@@ -60,6 +60,10 @@ const StepAlignmentPartialModes = StepAlignmentPartial | StepAlignmentPartialSta
 const StepAlignmentAll = StepAlignmentOff | StepAlignmentTruncate | StepAlignmentDrop |
 	StepAlignmentPartialModes
 
+// StepAlignmentOffTTL is how long an object cache keeps a response served under StepAlignmentOff,
+// whose key holds the client's raw range and whose buckets may still be filling
+const StepAlignmentOffTTL = time.Minute
+
 const stepAlignmentModeCount = 6
 
 var stepAlignmentNames = [stepAlignmentModeCount]string{

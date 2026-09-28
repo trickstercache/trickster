@@ -68,22 +68,26 @@ func (testCodec) Size(p *payload) int {
 type testCache struct {
 	mtx         sync.Mutex
 	data        map[string][]byte
+	ttls        map[string]time.Duration
 	storeErr    error
 	retrieveErr error
 	removeErr   error
 }
 
-func newTestCache() *testCache { return &testCache{data: make(map[string][]byte)} }
+func newTestCache() *testCache {
+	return &testCache{data: make(map[string][]byte), ttls: make(map[string]time.Duration)}
+}
 
 func (c *testCache) Connect() error { return nil }
 func (c *testCache) Close() error   { return nil }
 
-func (c *testCache) Store(key string, data []byte, _ time.Duration) error {
+func (c *testCache) Store(key string, data []byte, ttl time.Duration) error {
 	if c.storeErr != nil {
 		return c.storeErr
 	}
 	c.mtx.Lock()
 	c.data[key] = append([]byte(nil), data...)
+	c.ttls[key] = ttl
 	c.mtx.Unlock()
 	return nil
 }
@@ -420,20 +424,40 @@ func TestExecuteObject(t *testing.T) {
 		counts++
 		return &payload{Statements: []string{"whole"}}, nil
 	}
-	response, cacheStatus, err := engine.ExecuteObject("opc", fetch)
+	response, cacheStatus, err := engine.ExecuteObject("opc", 0, fetch)
 	if err != nil || cacheStatus != status.LookupStatusKeyMiss || counts != 1 ||
 		response.Statements[0] != "whole" {
 		t.Fatalf("object miss = %+v, %s, %v", response, cacheStatus, err)
 	}
-	_, cacheStatus, err = engine.ExecuteObject("opc", fetch)
+	_, cacheStatus, err = engine.ExecuteObject("opc", 0, fetch)
 	if err != nil || cacheStatus != status.LookupStatusHit || counts != 1 {
 		t.Fatalf("object hit = %s, %v (fetches=%d)", cacheStatus, err, counts)
 	}
-	_, cacheStatus, err = engine.ExecuteObject("opc-err", func() (*payload, error) {
+	_, cacheStatus, err = engine.ExecuteObject("opc-err", 0, func() (*payload, error) {
 		return nil, errors.New("origin down")
 	})
 	if err == nil || cacheStatus != status.LookupStatusProxyError {
 		t.Fatalf("object error = %s, %v", cacheStatus, err)
+	}
+}
+
+func TestExecuteObjectTTL(t *testing.T) {
+	c := newTestCache()
+	engine := newTestEngine(c)
+	fetch := func() (*payload, error) { return &payload{Statements: []string{"whole"}}, nil }
+	for _, test := range []struct {
+		key      string
+		ttl, got time.Duration
+	}{
+		{"configured", 0, time.Minute},
+		{"given", 5 * time.Second, 5 * time.Second},
+	} {
+		if _, _, err := engine.ExecuteObject(test.key, test.ttl, fetch); err != nil {
+			t.Fatal(err)
+		}
+		if c.ttls[test.key] != test.got {
+			t.Errorf("%s: stored for %s, want %s", test.key, c.ttls[test.key], test.got)
+		}
 	}
 }
 

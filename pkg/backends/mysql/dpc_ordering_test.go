@@ -323,37 +323,7 @@ func TestGroupOrderingRejectsUnorderableColumns(t *testing.T) {
 // TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch asserts that a plan whose
 // results can never be merged is recorded, so later requests degrade straight to
 // the object cache instead of fetching every delta extent and discarding it.
-func TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch(t *testing.T) {
-	origin, _, client := startLifecycleProxy(t, "mysql-dpc-fallback", time.Second,
-		func(config *ProtocolConfig) {
-			config.ProxyOnly = false
-			config.Cache = newTestCache()
-			config.CacheTTL = time.Hour
-		})
-	// The plan groups by an ENUM column, which DPC cannot order because the
-	// result header does not carry the declaration values.
-	origin.setResponder(func(string) *sqltypes.Result {
-		return &sqltypes.Result{
-			Fields: []*querypb.Field{
-				{Name: "time", Type: querypb.Type_INT64},
-				{Name: "tier", Type: querypb.Type_ENUM, Charset: uint32(utf8mb40900AICI)},
-				{Name: "value", Type: querypb.Type_INT64},
-			},
-			Rows: [][]sqltypes.Value{
-				{
-					sqltypes.NewInt64(0),
-					sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("small")),
-					sqltypes.NewInt64(1),
-				},
-				{
-					sqltypes.NewInt64(60),
-					sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("large")),
-					sqltypes.NewInt64(2),
-				},
-			},
-		}
-	})
-	const query = `SELECT
+const unorderableTierQuery = `SELECT
   cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time,
   tier AS tier,
   count(*) AS value
@@ -361,6 +331,40 @@ FROM events
 WHERE ts >= FROM_UNIXTIME(0) AND ts < FROM_UNIXTIME(180)
 GROUP BY time, tier
 ORDER BY time, tier`
+
+func unorderableTierResult(string) *sqltypes.Result {
+	// the plan groups by an ENUM column, which DPC cannot order because the result header does not carry
+	// the declaration values
+	return &sqltypes.Result{
+		Fields: []*querypb.Field{
+			{Name: "time", Type: querypb.Type_INT64},
+			{Name: "tier", Type: querypb.Type_ENUM, Charset: uint32(utf8mb40900AICI)},
+			{Name: "value", Type: querypb.Type_INT64},
+		},
+		Rows: [][]sqltypes.Value{
+			{
+				sqltypes.NewInt64(0),
+				sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("small")),
+				sqltypes.NewInt64(1),
+			},
+			{
+				sqltypes.NewInt64(60),
+				sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("large")),
+				sqltypes.NewInt64(2),
+			},
+		},
+	}
+}
+
+func TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch(t *testing.T) {
+	origin, _, client := startLifecycleProxy(t, "mysql-dpc-fallback", time.Second,
+		func(config *ProtocolConfig) {
+			config.ProxyOnly = false
+			config.Cache = newTestCache()
+			config.CacheTTL = time.Hour
+		})
+	origin.setResponder(unorderableTierResult)
+	const query = unorderableTierQuery
 
 	if _, err := client.ExecuteFetch(query, vtmysql.FETCH_ALL_ROWS, true); err != nil {
 		t.Fatal(err)
@@ -383,6 +387,44 @@ ORDER BY time, tier`
 // TestMergeRejectsCollationChangeBetweenParts asserts parts whose group column
 // changed collation are not merged, since every part would otherwise be ordered
 // by the first part's collation.
+func TestOffNeverServesAnObjectStoredForTheDefaultTTL(t *testing.T) {
+	const backend = "mysql-off-fallback"
+	cache := newTestCache()
+	shared := func(mode timeseries.StepAlignment) func(*ProtocolConfig) {
+		return func(config *ProtocolConfig) {
+			config.ProxyOnly, config.Cache, config.CacheTTL = false, cache, time.Hour
+			config.StepAlignment = mode
+		}
+	}
+	// the unorderable plan falls back to an object of the raw statement, stored for CacheTTL
+	origin, _, client := startLifecycleProxy(t, backend, time.Second, shared(0))
+	origin.setResponder(unorderableTierResult)
+	if _, err := client.ExecuteFetch(unorderableTierQuery, vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatal(err)
+	}
+	offOrigin, _, offClient := startLifecycleProxy(t, backend, time.Second, shared(timeseries.StepAlignmentOff))
+	offOrigin.setResponder(unorderableTierResult)
+	for range 2 {
+		if _, err := offClient.ExecuteFetch(unorderableTierQuery, vtmysql.FETCH_ALL_ROWS, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := offOrigin.statementCount("events"); got != 1 {
+		t.Fatalf("off reached the origin %d times, want once: never the fallback's object, then its own", got)
+	}
+	cache.mtx.Lock()
+	defer cache.mtx.Unlock()
+	offEntries := 0
+	for _, ttl := range cache.ttls {
+		if ttl == timeseries.StepAlignmentOffTTL {
+			offEntries++
+		}
+	}
+	if offEntries != 1 {
+		t.Errorf("expected one object stored for %s, got %d", timeseries.StepAlignmentOffTTL, offEntries)
+	}
+}
+
 func TestMergeRejectsCollationChangeBetweenParts(t *testing.T) {
 	plan := dpcOrderingPlan()
 	first := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI,

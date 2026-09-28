@@ -208,8 +208,14 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 			cachestatus.LookupStatusProxyOnly, 0, time.Since(now))
 		return s.streamIPCBytes(ctx, b)
 	}
-	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
-		b, lookupStatus, err := s.objectTier(ctx, query)
+	// off answers with the origin's result to the client's statement, keyed on its raw range
+	unaligned := d.cfg.StepAlignment == timeseries.StepAlignmentOff
+	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil || unaligned {
+		kind, ttl := statementKeyKind, s.cacheTTL
+		if unaligned && analysis.Mode == sqlanalyzer.CacheModeDelta {
+			kind, ttl = unalignedStatementKeyKind, timeseries.StepAlignmentOffTTL
+		}
+		b, lookupStatus, err := s.objectTierFor(ctx, kind, query, ttl)
 		d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeObject,
 			lookupStatus, 0, time.Since(now))
 		if err != nil {
@@ -237,6 +243,13 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 	}
 	return d.respond(ctx, s, payload, sortKeys(plan))
 }
+
+// object tier key kinds; off keeps its own statement objects, so one stored for the longer object TTL
+// never answers it
+const (
+	statementKeyKind          = ":stmt:"
+	unalignedStatementKeyKind = ":off:"
+)
 
 // Metric label constants shared with the other native SQL protocols.
 const (
