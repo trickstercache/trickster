@@ -121,8 +121,7 @@ func (a *mysqlDialectAnalyzer) AnalyzeParsed(query string, stmt sqlparser.Statem
 	// MySQL's integer division, epoch inference and implicit casts are not
 	// Greptime contracts. Timestamp bucket results are lossless in UTC only.
 	if !a.utc || p.OutputUnit != timeseries.DateTimeSQL || p.InputUnit != timeseries.DateTimeSQL ||
-		p.Step%time.Second != 0 ||
-		p.LowerBound.Value.UnixNano()%int64(p.Step) != 0 || p.UpperBound.Value.UnixNano()%int64(p.Step) != 0 {
+		p.Step%time.Second != 0 {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, errUnrenderable)
 	}
 	unsafe := false
@@ -140,6 +139,14 @@ func (a *mysqlDialectAnalyzer) AnalyzeParsed(query string, stmt sqlparser.Statem
 	if unsafe {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, errUnrenderable)
 	}
+	// Cache only complete buckets, matching the provider's HTTP and PGWire paths.
+	lower := sqlanalyzer.CeilBucket(p.LowerBound.Value, p.Step, p.Phase)
+	upper := sqlanalyzer.FloorBucket(p.UpperBound.Value, p.Step, p.Phase)
+	if !upper.After(lower) {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, errUnrenderable)
+	}
+	p.DropsPartialBuckets = !lower.Equal(p.LowerBound.Value) || !upper.Equal(p.UpperBound.Value)
+	p.LowerBound.Value, p.UpperBound.Value = lower, upper
 	return analysis
 }
 

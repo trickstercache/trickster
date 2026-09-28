@@ -121,9 +121,6 @@ func ParseTimeRangeQuery(r *http.Request, analyzer sqlanalyzer.DialectAnalyzer,
 		return trq, ro, true, errObject
 	}
 	plan := analysis.Plan
-	if plan.DropsPartialBuckets {
-		return trq, ro, true, errObject
-	}
 	plan.ApplyToQuery(trq)
 	trq.Extent = plan.RequestExtent(now)
 	input.values.Set("sql", plan.CanonicalSQL)

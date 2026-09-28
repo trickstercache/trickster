@@ -168,7 +168,7 @@ func TestHTTPSQLCacheEnvironment(t *testing.T) {
 	origin := strings.TrimRight(envOr("GREPTIMEDB_HTTP_URL", "http://127.0.0.1:4000"), "/") + "/v1/sql"
 	proxy := strings.TrimRight(envOr("GREPTIMEDB_PROXY_HTTP_URL", "http://127.0.0.1:8480/greptimedb1"), "/") + "/v1/sql"
 	nonce := fmt.Sprint(time.Now().UnixNano())
-	run := func(name, method, statement string, extra url.Values, hdr http.Header, engine, status string) {
+	run := func(name, method, statement string, extra url.Values, hdr http.Header, engine, status string, reference ...string) {
 		t.Run(name, func(t *testing.T) {
 			c := check{Name: name, Status: "PASS"}
 			defer func() {
@@ -181,7 +181,14 @@ func TestHTTPSQLCacheEnvironment(t *testing.T) {
 			for k, v := range extra {
 				values[k] = v
 			}
-			want, err := fetchHTTPSQL(origin, method, values, hdr)
+			originValues := url.Values{}
+			for k, v := range values {
+				originValues[k] = v
+			}
+			if len(reference) != 0 {
+				originValues.Set("sql", reference[0])
+			}
+			want, err := fetchHTTPSQL(origin, method, originValues, hdr)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -189,7 +196,7 @@ func TestHTTPSQLCacheEnvironment(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := writeJSON(filepath.Join(out, name+".json"), map[string]any{"query": statement, "origin": want, "proxy": got}); err != nil {
+			if err := writeJSON(filepath.Join(out, name+".json"), map[string]any{"query": statement, "reference_query": originValues.Get("sql"), "origin": want, "proxy": got}); err != nil {
 				t.Fatal(err)
 			}
 			if want.Status != http.StatusOK {
@@ -247,11 +254,14 @@ func TestHTTPSQLCacheEnvironment(t *testing.T) {
 					}
 					run(prefix+"_"+shape.name+"_repeat", method, wide, shape.params, nil, "ObjectProxyCache", status)
 				}
-				// Exact SQL semantics include both partial edge buckets.
+				// Compare the unaligned input against explicit complete-bucket SQL,
+				// without using the provider analyzer to construct the oracle.
 				unaligned := statement(r.From.Add(time.Second), r.To.Add(-time.Second))
-				run(prefix+"_unaligned", method, unaligned, nil, nil, "ObjectProxyCache", "kmiss")
+				aligned := statement(r.From.Add(15*time.Minute), r.To.Add(-15*time.Minute))
+				run(prefix+"_unaligned", method, unaligned, nil, nil, "DeltaProxyCache", "hit", aligned)
+				run(prefix+"_unaligned_cold", method, unaligned, nil, http.Header{"Cache-Control": {"no-cache"}}, "DeltaProxyCache", "purge", aligned)
 				inclusive := strings.Replace(wide, "pickup_datetime <", "pickup_datetime <=", 1)
-				run(prefix+"_inclusive_upper", method, inclusive, nil, nil, "ObjectProxyCache", "kmiss")
+				run(prefix+"_inclusive_upper", method, inclusive, nil, nil, "DeltaProxyCache", "kmiss", wide)
 				floating := strings.Replace(wide, "count(*) AS trips", "avg(total_amount) AS trips", 1)
 				run(prefix+"_float_miss", method, floating, nil, nil, "DeltaProxyCache", "kmiss")
 				run(prefix+"_float_hit", method, floating, nil, nil, "DeltaProxyCache", "hit")

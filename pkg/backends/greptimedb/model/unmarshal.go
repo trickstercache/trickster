@@ -19,12 +19,14 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
@@ -54,115 +56,239 @@ type response struct {
 }
 
 func UnmarshalTimeseries(body []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	return UnmarshalTimeseriesReader(bytes.NewReader(body), trq)
+	return stream.BytesUnmarshaler(newDecoder)(body, trq)
 }
 
 func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	if reader == nil || trq == nil {
+	return stream.ReaderUnmarshaler(newDecoder)(reader, trq)
+}
+
+type sqlDecoder struct {
+	trq           *timeseries.TimeRangeQuery
+	plan          *sqlanalyzer.QueryPlan
+	fields        timeseries.FieldDefinitions
+	orderedFloats []bool
+	builder       *dataset.Builder
+	row           []json.RawMessage
+	rowCount      uint64
+	tagErr        error
+}
+
+func newDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
+	if trq == nil {
 		return nil, timeseries.ErrInvalidBody
 	}
 	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
 	if !ok || plan == nil || trq.Step <= 0 {
 		return nil, timeseries.ErrInvalidBody
 	}
-	decoder := json.NewDecoder(reader)
-	decoder.UseNumber()
-	decoder.DisallowUnknownFields()
-	var body response
-	if err := decoder.Decode(&body); err != nil {
-		return nil, err
+	d := &sqlDecoder{trq: trq, plan: plan}
+	return stream.NewJSON(d.walk, func() (timeseries.Timeseries, error) {
+		ds, err := d.builder.Finish()
+		if err != nil {
+			return nil, err
+		}
+		return &dataSet{DataSet: ds, fields: d.fields}, nil
+	}), nil
+}
+
+func (d *sqlDecoder) walk(dec *json.Decoder) error {
+	dec.DisallowUnknownFields()
+	var hasOutput bool
+	var elapsed *uint64
+	err := stream.Object(dec, func(key string) error {
+		switch key {
+		case "output":
+			if hasOutput {
+				return timeseries.ErrInvalidBody
+			}
+			hasOutput = true
+			count := 0
+			err := stream.Array(dec, func() error {
+				count++
+				if count != 1 {
+					return timeseries.ErrInvalidBody
+				}
+				return stream.Object(dec, func(key string) error {
+					if key != "records" || d.builder != nil {
+						return timeseries.ErrInvalidBody
+					}
+					return d.readRecords(dec)
+				})
+			})
+			if err == nil && count != 1 {
+				return timeseries.ErrInvalidBody
+			}
+			return err
+		case "execution_time_ms":
+			if elapsed != nil {
+				return timeseries.ErrInvalidBody
+			}
+			return dec.Decode(&elapsed)
+		}
+		return timeseries.ErrInvalidBody
+	})
+	if err == nil && (!hasOutput || elapsed == nil || d.builder == nil) {
+		return timeseries.ErrInvalidBody
 	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF || len(body.Output) != 1 || body.ExecutionTime == nil {
-		return nil, timeseries.ErrInvalidBody
-	}
-	r := body.Output[0].Records
-	if r == nil || r.Rows == nil || r.Total == nil || *r.Total != uint64(len(r.Rows)) || len(r.Metrics) != 0 {
-		return nil, timeseries.ErrInvalidBody
-	}
-	fields, err := fieldDefinitions(r.Schema.Columns, plan)
+	return err
+}
+
+func (d *sqlDecoder) readRecords(dec *json.Decoder) error {
+	var rowsSeen bool
+	var total *uint64
+	var pending json.RawMessage
+	err := stream.Object(dec, func(key string) error {
+		switch key {
+		case "schema":
+			if d.builder != nil {
+				return timeseries.ErrInvalidBody
+			}
+			var schema schema
+			if err := dec.Decode(&schema); err != nil {
+				return err
+			}
+			return d.setSchema(schema.Columns)
+		case "rows":
+			if rowsSeen {
+				return timeseries.ErrInvalidBody
+			}
+			rowsSeen = true
+			if d.builder == nil {
+				// JSON object keys are unordered; only this alternate layout needs a buffer.
+				return dec.Decode(&pending)
+			}
+			return d.readRows(dec)
+		case "total_rows":
+			if total != nil {
+				return timeseries.ErrInvalidBody
+			}
+			return dec.Decode(&total)
+		case "metrics":
+			err := stream.Object(dec, func(string) error { return timeseries.ErrInvalidBody })
+			if errors.Is(err, stream.ErrNull) {
+				return nil
+			}
+			return err
+		}
+		return timeseries.ErrInvalidBody
+	})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	orderedFloats := make([]bool, len(fields))
+	if d.builder == nil || !rowsSeen || total == nil {
+		return timeseries.ErrInvalidBody
+	}
+	if pending != nil {
+		if err := d.readRows(json.NewDecoder(bytes.NewReader(pending))); err != nil {
+			return err
+		}
+	}
+	if *total != d.rowCount {
+		return timeseries.ErrInvalidBody
+	}
+	return nil
+}
+
+func (d *sqlDecoder) setSchema(columns []column) error {
+	fields, err := fieldDefinitions(columns, d.plan)
+	if err != nil {
+		return err
+	}
+	d.fields = fields
+	d.orderedFloats = make([]bool, len(fields))
+	var sf timeseries.SeriesFields
 	for i, field := range fields {
-		orderedFloats[i] = field.DataType == timeseries.Float64 && slices.ContainsFunc(plan.Ordering, func(term timeseries.OrderTerm) bool {
+		d.orderedFloats[i] = field.DataType == timeseries.Float64 && slices.ContainsFunc(d.plan.Ordering, func(term timeseries.OrderTerm) bool {
 			return term.Column == field.Name
 		})
-	}
-	result := &dataset.Result{SeriesList: dataset.SeriesList{}}
-	d := &dataSet{DataSet: &dataset.DataSet{
-		TimeRangeQuery: trq, ExtentList: timeseries.ExtentList{trq.Extent}, Results: dataset.Results{result},
-	}, fields: fields}
-	byKey := make(map[string]*dataset.Series)
-	for _, row := range r.Rows {
-		if len(row) != len(fields) {
-			return nil, timeseries.ErrInvalidBody
+		switch field.Role {
+		case timeseries.RoleTimestamp:
+			sf.Timestamp = field
+		case timeseries.RoleTag:
+			sf.Tags = append(sf.Tags, field)
+		case timeseries.RoleValue:
+			sf.Values = append(sf.Values, field)
 		}
-		header := dataset.SeriesHeader{Name: "sql", Tags: dataset.Tags{}, QueryStatement: trq.Statement}
-		point := dataset.Point{Size: 16}
-		for i, field := range fields {
-			// JSON null erases the distinction between SQL NULL and NaN/Inf,
-			// which have different positions in DataFusion's numeric ordering.
-			if orderedFloats[i] && row[i] == nil {
-				return nil, timeseries.ErrInvalidBody
+	}
+	d.builder = dataset.NewBuilder(d.trq, dataset.BuilderOptions{
+		Fields: sf, SeriesName: "sql", QueryStatement: d.trq.Statement,
+		Duplicates: dataset.DuplicatesError, TagString: d.tagString,
+	})
+	return nil
+}
+
+func (d *sqlDecoder) tagString(field timeseries.FieldDefinition, raw []byte) string {
+	value, err := decodeRawValue(raw, field.SDataType)
+	if err != nil {
+		d.tagErr = err
+		return ""
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		d.tagErr = err
+	}
+	return string(encoded)
+}
+
+func (d *sqlDecoder) readRows(dec *json.Decoder) error {
+	return stream.Array(dec, func() error {
+		if err := dec.Decode(&d.row); err != nil {
+			return err
+		}
+		if len(d.row) != len(d.fields) {
+			return timeseries.ErrInvalidBody
+		}
+		row := d.builder.Row()
+		tag := 0
+		for i, field := range d.fields {
+			raw := d.row[i]
+			// JSON null cannot distinguish SQL NULL from NaN/Inf for numeric sorting.
+			if d.orderedFloats[i] && bytes.Equal(raw, []byte("null")) {
+				return timeseries.ErrInvalidBody
 			}
-			v, err := decodeValue(row[i], field.SDataType)
+			if field.Role == timeseries.RoleTag {
+				row.SetTag(tag, raw)
+				tag++
+				continue
+			}
+			value, err := decodeRawValue(raw, field.SDataType)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			switch field.Role {
-			case timeseries.RoleTimestamp:
-				ep, err := parseEpoch(row[i], field)
-				if err != nil || !onGrid(ep, trq) {
-					return nil, timeseries.ErrInvalidTimeFormat
+			if field.Role == timeseries.RoleTimestamp {
+				ep, err := parseEpoch(json.Number(raw), field)
+				if err != nil || !onGrid(ep, d.trq) {
+					return timeseries.ErrInvalidTimeFormat
 				}
-				point.Epoch = epoch.Epoch(ep)
-				header.TimestampField = field
-			case timeseries.RoleTag:
-				encoded, err := json.Marshal(v)
-				if err != nil {
-					return nil, err
-				}
-				header.Tags[field.Name] = string(encoded)
-				header.TagFieldsList = append(header.TagFieldsList, field)
-			case timeseries.RoleValue:
-				point.Values = append(point.Values, v)
-				point.Size += 16
-				if s, ok := v.(string); ok {
-					point.Size += len(s)
-				}
-				header.ValueFieldsList = append(header.ValueFieldsList, field)
+				row.SetEpoch(epoch.Epoch(ep))
+			} else {
+				row.AddValue(value)
 			}
 		}
-		key := header.Tags.JSON()
-		series := byKey[key]
-		if series == nil {
-			header.CalculateSize()
-			series = &dataset.Series{Header: header}
-			byKey[key] = series
-			result.SeriesList = append(result.SeriesList, series)
+		if err := row.Commit(); err != nil {
+			return err
 		}
-		series.Points = append(series.Points, point)
-		series.PointSize += int64(point.Size)
+		d.rowCount++
+		return d.tagErr
+	})
+}
+
+func decodeRawValue(raw []byte, typ string) (any, error) {
+	if bytes.Equal(raw, []byte("null")) {
+		return nil, nil
 	}
-	for _, series := range result.SeriesList {
-		slices.SortFunc(series.Points, func(a, b dataset.Point) int {
-			if a.Epoch < b.Epoch {
-				return -1
-			}
-			if a.Epoch > b.Epoch {
-				return 1
-			}
-			return 0
-		})
-		for i := 1; i < len(series.Points); i++ {
-			if series.Points[i-1].Epoch == series.Points[i].Epoch {
-				return nil, timeseries.ErrInvalidBody
-			}
-		}
+	switch typ {
+	case "String":
+		var value string
+		err := json.Unmarshal(raw, &value)
+		return value, err
+	case "Boolean":
+		var value bool
+		err := json.Unmarshal(raw, &value)
+		return value, err
 	}
-	return d, nil
+	return decodeValue(json.Number(raw), typ)
 }
 
 func fieldDefinitions(columns []column, plan *sqlanalyzer.QueryPlan) (timeseries.FieldDefinitions, error) {

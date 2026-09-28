@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -250,10 +251,24 @@ func TestGreptimeMySQLRealServer(t *testing.T) {
 		agree(sql)
 		require.Equal(t, before, count("object", "hit"))
 	})
-	t.Run("partial buckets retain original query semantics", func(t *testing.T) {
+	t.Run("partial buckets align to complete buckets", func(t *testing.T) {
+		direct, proxy, _ := newSession(t)
+		statement := "SELECT DATE_BIN('1m',ts,FROM_UNIXTIME(0)) AS time,label,COUNT(*) AS aligned_total FROM " + table + " WHERE ts >= FROM_UNIXTIME(1767225601) AND ts < FROM_UNIXTIME(1767225779) GROUP BY time,label ORDER BY time,label"
+		aligned := strings.NewReplacer("1767225601", "1767225660", "1767225779", "1767225720").Replace(statement)
+		want := query(t, direct, aligned)
+		for _, status := range []string{"kmiss", "hit"} {
+			before := count("delta", status)
+			got := query(t, proxy, statement)
+			require.Equal(t, want.Fields, got.Fields)
+			require.Equal(t, want.Rows, got.Rows)
+			require.Equal(t, want.StatusFlags, got.StatusFlags)
+			require.Equal(t, before+1, count("delta", status))
+		}
+	})
+	t.Run("unsupported precision retains original query semantics", func(t *testing.T) {
 		_, _, agree := newSession(t)
 		for _, bounds := range []string{
-			"ts >= FROM_UNIXTIME(1767225601) AND ts < FROM_UNIXTIME(1767225780)",
+			"ts >= FROM_UNIXTIME(1767225601) AND ts < FROM_UNIXTIME(1767225610)",
 			"ts >= FROM_UNIXTIME(1767225600) AND ts <= FROM_UNIXTIME(1767225720)",
 		} {
 			sql := "SELECT DATE_BIN('1m',ts,FROM_UNIXTIME(0)) AS time,label,COUNT(*) AS total FROM " + table + " WHERE " + bounds + " GROUP BY time,label ORDER BY time,label"

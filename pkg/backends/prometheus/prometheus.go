@@ -284,6 +284,18 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		if trq.Extent.End.Before(trq.Extent.Start) {
 			return nil, nil, false, timeseries.ErrUnknownFormat
 		}
+		if c.hooks.AlignQueryGrid {
+			for _, at := range []*time.Time{&trq.Extent.Start, &trq.Extent.End} {
+				remainder := at.UnixNano() % int64(step)
+				if remainder < 0 {
+					remainder += int64(step)
+				}
+				*at = at.Add(-time.Duration(remainder))
+				if !at.Equal(time.Unix(0, at.UnixNano())) {
+					return nil, nil, false, timeseries.ErrUnknownFormat
+				}
+			}
+		}
 		trq.Phase = time.Duration(trq.Extent.Start.UnixNano() % step.Nanoseconds())
 		if trq.Phase < 0 {
 			trq.Phase += step

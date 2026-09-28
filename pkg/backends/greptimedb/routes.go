@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -56,6 +57,8 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	promPaths = prometheus.WithCacheKeyParams(promPaths, hooks.CacheKeyParams...)
 	promPaths = prometheus.WithCacheKeyHeaders(promPaths, hooks.CacheKeyHeaders...)
 	for _, p := range promPaths {
+		// Only the origin may authorize sharing authenticated responses.
+		delete(p.ResponseHeaders, headers.NameCacheControl)
 		// The request hook relays unsupported methods instead of masking the catch-all.
 		p.Methods = methods.AllHTTPMethods()
 		if o != nil && p.HandlerName == "query" {

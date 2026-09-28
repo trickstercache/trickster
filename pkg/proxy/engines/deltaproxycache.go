@@ -132,6 +132,33 @@ func fetchFastForward(
 	return ffStatus
 }
 
+// prepareDPCResponse validates before cache or client writes. When fast-forward
+// cannot change the data and rendering is request-independent, keep the bytes
+// instead of discarding a complete serialization and repeating it later.
+func prepareDPCResponse(rts timeseries.Timeseries, rlo *timeseries.RequestOptions,
+	modeler *timeseries.Modeler, statusCode int,
+) ([]byte, error) {
+	if !rlo.FallbackToProxyOnError {
+		return nil, nil
+	}
+	if !rlo.FastForwardDisable || rlo.MarshalVariesByRequest {
+		return nil, modeler.WireMarshalWriter(rts, rlo, statusCode, io.Discard)
+	}
+	extents := rts.Extents()
+	rts.SetExtents(nil)
+	var buf bytes.Buffer
+	err := modeler.WireMarshalWriter(rts, rlo, statusCode, &buf)
+	rts.SetExtents(extents)
+	if err != nil {
+		return nil, err
+	}
+	body := buf.Bytes()
+	if body == nil {
+		body = []byte{}
+	}
+	return body, nil
+}
+
 // finalizeDPCResponse writes metrics, logs, and the HTTP response for a DPC request.
 // If wireBody is non-nil, it is written directly (skipping marshal).
 // Otherwise rts is marshaled to the wire format.
@@ -507,10 +534,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				rts = cts.Clone()
 			}
 			rts.SetTimeRangeQuery(trq)
-			if rlo.FallbackToProxyOnError {
-				if err := modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, io.Discard); err != nil {
-					return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
-				}
+			wireBody, err := prepareDPCResponse(rts, rlo, modeler, doc.StatusCode)
+			if err != nil {
+				return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
 			}
 
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
@@ -549,8 +575,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// provider renders per request (see MarshalVariesByRequest), in
 			// which case each caller marshals the shared timeseries itself
 			rts.SetExtents(nil) // so they are not included in the client response json
-			var wireBody []byte
-			if !marshalVaries {
+			if wireBody == nil && !marshalVaries {
 				var buf bytes.Buffer
 				modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
 				wireBody = buf.Bytes()
@@ -657,14 +682,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	}
 	rts = cts.Clone()
 	rts.SetTimeRangeQuery(trq)
-	if rlo.FallbackToProxyOnError {
-		if err := modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, io.Discard); err != nil {
-			if trq.OriginalBody != nil {
-				request.SetBody(r, trq.OriginalBody)
-			}
-			DoProxy(w, r, true)
-			return
+	wireBody, err := prepareDPCResponse(rts, rlo, modeler, doc.StatusCode)
+	if err != nil {
+		if trq.OriginalBody != nil {
+			request.SetBody(r, trq.OriginalBody)
 		}
+		DoProxy(w, r, true)
+		return
 	}
 
 	tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", cacheStatus.String()))
@@ -675,10 +699,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rts.SetExtents(nil) // so they are not included in the client response json
 	rh := doc.SafeHeaderClone()
 	sc := doc.StatusCode
+	if rsc.TSTransformer != nil {
+		wireBody = nil
+	}
 
 	finalizeDPCResponse(w, r, rsc, rts, rh, sc,
 		cacheStatus, ffStatus, elapsed.Seconds(), missRanges, failedExts, uncachedValueCount,
-		key, o, rlo, modeler, nil)
+		key, o, rlo, modeler, wireBody)
 }
 
 func logDeltaRoutine(p logging.Pairs) {

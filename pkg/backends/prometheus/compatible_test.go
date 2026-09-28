@@ -22,11 +22,46 @@ import (
 	"net/url"
 	"slices"
 	"testing"
+	"time"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
+
+func TestCompatibleGridAlignment(t *testing.T) {
+	for _, tc := range []struct {
+		name, start, end, step string
+		wantStart, wantEnd     int64
+	}{
+		{"seconds", "1704067207.125", "1704067237.125", "15", 1704067200000, 1704067230000},
+		{"milliseconds", "1704067200.125", "1704067201.125", "0.5", 1704067200000, 1704067201000},
+		{"before_epoch", "-0.125", "15.125", "7", -7000, 14000},
+		{"nondivisor", "20.125", "35.125", "7", 14000, 35000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, align := range []bool{false, true} {
+				c, err := NewClientWithHooks("grid", nil, nil, nil, Hooks{PreserveQueryGrid: true, AlignQueryGrid: align})
+				if err != nil {
+					t.Fatal(err)
+				}
+				v := url.Values{"query": {"up"}, "start": {tc.start}, "end": {tc.end}, "step": {tc.step}}
+				trq, _, _, err := c.ParseTimeRangeQuery(httptest.NewRequest("GET", "/api/v1/query_range?"+v.Encode(), nil))
+				if err != nil {
+					t.Fatal(err)
+				}
+				start, end := time.UnixMilli(tc.wantStart), time.UnixMilli(tc.wantEnd)
+				if !align {
+					start, _ = parseGridTime(tc.start)
+					end, _ = parseGridTime(tc.end)
+				}
+				if !trq.Extent.Start.Equal(start) || !trq.Extent.End.Equal(end) || (align && trq.Phase != 0) {
+					t.Fatalf("align=%v: extent=%+v phase=%s", align, trq.Extent, trq.Phase)
+				}
+			}
+		})
+	}
+}
 
 func TestSupportedPathsIsolation(t *testing.T) {
 	o := bo.New()

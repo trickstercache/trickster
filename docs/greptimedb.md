@@ -110,18 +110,27 @@ protocol messages are always relayed.
 
 HTTP SQL supports GET and form-encoded POST with the default `greptimedb_v1`
 response format. A delta response retains typed schema, row ordering, NULLs
-and exact integer values. Alternate formats, `limit`, unknown options and
-unaligned bounds that would discard partial buckets fall back to the original
-query. Rebuilt responses do not claim the origin's execution duration or
-execution metrics.
+and exact integer values. Like PostgreSQL, unaligned SQL bounds round inward
+to complete buckets before delta caching; partial edge buckets are omitted.
+Alternate formats, `limit`, unknown options and ranges with no complete bucket
+retain the original query. Rebuilt responses do not claim the origin's
+execution duration or execution metrics. The default JSON response is decoded
+row by row into a DataSet, and its validated client serialization is reused.
 
 MySQL supports `DATE_BIN('1m', ts, FROM_UNIXTIME(0))` and fixed-width
 `DATE_TRUNC` buckets with verified UTC sessions, whole-second cadence and
-aligned half-open bounds. Other bucket origins, subsecond cadence and partial
-buckets use the original query instead. Timestamp results keep up to nine
+half-open bounds, rounded inward to complete buckets. Other bucket origins,
+subsecond cadence, inclusive upper bounds and ranges with no complete bucket
+use the original query instead. Timestamp results keep up to nine
 fractional digits, text groups are compared case-sensitively, and NULL ordering
 follows GreptimeDB. Unsupported or failed session changes conservatively
 disable caching for that connection.
+
+PromQL range endpoints round down to epoch-aligned steps, including 500ms
+steps, so equivalent aligned ranges share cached samples. Instant and metadata
+timestamps are unchanged. Route defaults do not grant permission to share
+authenticated object responses: only an origin's explicit cache policy can
+authorize that sharing.
 
 ### Grafana Macros
 

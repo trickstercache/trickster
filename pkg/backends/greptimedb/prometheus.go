@@ -42,6 +42,7 @@ func promHooks() prometheus.Hooks {
 		CacheKeyHeaders:   []string{databaseHeader, "X-Greptime-Timezone", "X-Greptime-Auth"},
 		PrepareRequest:    preparePromRequest,
 		PreserveQueryGrid: true,
+		AlignQueryGrid:    true,
 	}
 }
 

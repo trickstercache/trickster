@@ -181,10 +181,16 @@ func TestPrometheusCacheFlow(t *testing.T) {
 						t.Fatalf("wrong matrix: %s (%v)", w.Body.String(), err)
 					}
 					for n, point := range got.Data.Result[0].Values {
-						if point[0] != float64(start.Add(time.Duration(n)*step).UnixMilli())/1000 || point[1] != "2" {
+						if point[0] != float64(start.Truncate(step).Add(time.Duration(n)*step).UnixMilli())/1000 || point[1] != "2" {
 							t.Fatalf("changed evaluation grid: %v", point)
 						}
 					}
+				}
+				v.Set("start", start.Add(100*time.Millisecond).Format(time.RFC3339Nano))
+				w := h.promQuery(t, method, "query_range", v, nil)
+				engine, status := headers.ParseResultEngineStatus(w.Header().Get(headers.NameTricksterResult))
+				if w.Code != 200 || engine != "DeltaProxyCache" || status != "hit" {
+					t.Fatalf("equivalent aligned range missed cache: %d %s %s", w.Code, engine, status)
 				}
 				if calls.Load() != 2 {
 					t.Fatalf("expected initial and missing extent only: %d", calls.Load())
@@ -220,8 +226,8 @@ func TestPrometheusGridFallback(t *testing.T) {
 	}
 	c.Configuration().DoesShard = true
 	r := httptest.NewRequest("GET", promPath+"/api/v1/query_range?query=up&start=1704067207&end=1704067507&step=15", nil)
-	if _, _, _, err := c.ParseTimeRangeQuery(r); err != timeseries.ErrUnknownFormat {
-		t.Fatalf("offset grid must not use epoch-aligned sharding: %v", err)
+	if trq, _, _, err := c.ParseTimeRangeQuery(r); err != nil || trq.Phase != 0 {
+		t.Fatalf("step-aligned grid must support sharding: query=%+v err=%v", trq, err)
 	}
 }
 
@@ -256,7 +262,6 @@ func TestPrometheusCacheIdentity(t *testing.T) {
 				{"authorization_a", "", "Basic Zm9vOmJhcg==", "Authorization"},
 				{"authorization_b", "", "Basic YmFyOmJheg==", "Authorization"},
 				{"greptime_auth", "", "Basic YmFyOmJheg==", "X-Greptime-Auth"},
-				{"different_phase", "start", start.Add(time.Second).Format(time.RFC3339Nano), ""},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					v := url.Values{"query": {"up"}, "start": {start.Format(time.RFC3339Nano)}, "end": {start.Add(30 * time.Second).Format(time.RFC3339Nano)}, "step": {"15"}}

@@ -48,7 +48,9 @@ GET and POST requests. It checks miss, partial hit, hit, empty results, exact
 integers above 2^53, timezone identity, alternate formats, and unaligned ranges.
 Typed schema, row order and numeric values must agree with the origin; only
 execution duration is excluded. Unaligned raw-time bounds and inclusive upper
-bounds that cut through a bucket use the original SQL, not delta rewriting.
+bounds are checked against explicit complete-bucket reference SQL; the proxy
+receives the original unaligned SQL and must use delta caching, including on
+a cold request. Both submitted and reference queries are retained.
 Authenticated GET object responses are not stored unless the origin marks them
 shareable; a repeat miss in that case is the expected HTTP cache policy.
 
@@ -70,10 +72,12 @@ inspect its retained config to identify any fixture databases needing cleanup.
 
 Every origin and proxy response is retained in a new `promql-*` directory along
 with the generated config and the parent `go-test.jsonl`. The suite checks
-GET/POST miss/hit/partial/hit, shifted and 500ms grids, database/header/lookback
+GET/POST miss/hit/partial/hit, alignment of shifted and 500ms grids, database/header/lookback
 isolation, metadata, empty/error responses, URL-over-form precedence, and
 two-member merges against the complete dataset. Numeric sample spelling may
-differ (`2` versus `2.0`); numeric values and point timestamps must be equal.
+differ (`2` versus `2.0`); numeric values and point timestamps must be equal to
+the explicitly step-aligned origin request. Passthrough cases compare original
+requests without alignment.
 Series and metadata sets have no defined order. The shared merger's exact
 range-sort advisory is expected separately; other warnings are not discarded.
 

@@ -24,6 +24,7 @@ import (
 	"io"
 	"maps"
 	"math"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -56,6 +57,27 @@ type greptimePromFixture struct {
 	start              time.Time
 	databases          []string
 	sequence           int
+}
+
+// The reference uses explicit step-aligned endpoints; the proxy still receives
+// the caller's original range. Instant queries and passthrough tests do not use it.
+func (f *greptimePromFixture) alignedOrigin(t *testing.T, method, endpoint string, query, form url.Values, hdr http.Header) greptimePromResponse {
+	t.Helper()
+	query, form = maps.Clone(query), maps.Clone(form)
+	if endpoint == greptimePromPath+"query_range" {
+		values := query
+		if form != nil {
+			values = form
+		}
+		step, err := time.ParseDuration(values.Get("step") + "s")
+		require.NoError(t, err)
+		for _, name := range []string{"start", "end"} {
+			at, err := time.Parse(time.RFC3339Nano, values.Get(name))
+			require.NoError(t, err)
+			values.Set(name, at.Truncate(step).Format(time.RFC3339Nano))
+		}
+	}
+	return f.fetch(t, f.origin, method, endpoint, query, form, hdr)
 }
 
 func (f *greptimePromFixture) fetch(t *testing.T, base, method, endpoint string, query, form url.Values, hdr http.Header) greptimePromResponse {
@@ -142,7 +164,7 @@ func newGreptimePromFixture(t *testing.T) *greptimePromFixture {
 		t.Cleanup(func() { f.sql(t, "public", "DROP DATABASE "+db) })
 		f.sql(t, db, "CREATE TABLE fixture (greptime_timestamp TIMESTAMP(3) TIME INDEX, greptime_value DOUBLE, host STRING, PRIMARY KEY(host))")
 		var values []string
-		for point := 0; point < 20; point++ {
+		for point := -1; point < 20; point++ {
 			for host, value := range []int{1, 3, 10} {
 				if (i == 0 && host == 2) || (i == 1 && host != 2) {
 					continue
@@ -188,7 +210,8 @@ func newGreptimePromFixture(t *testing.T) *greptimePromFixture {
 	return f
 }
 
-// Compare numeric sample values rather than their JSON spelling (2 vs 2.0).
+// Compare numbers rather than their JSON spelling (2 vs 2.0). Rational
+// timestamps retain exact precision, including sub-millisecond differences.
 // Series order is insignificant; point order, labels and timestamps are exact.
 func greptimePromData(t *testing.T, response greptimePromResponse) map[string]any {
 	t.Helper()
@@ -211,6 +234,11 @@ func greptimePromData(t *testing.T, response greptimePromResponse) map[string]an
 		for _, raw := range points {
 			point := raw.([]any)
 			require.Len(t, point, 2)
+			stamp, ok := point[0].(json.Number)
+			require.True(t, ok)
+			exact, ok := new(big.Rat).SetString(stamp.String())
+			require.True(t, ok)
+			point[0] = exact.RatString()
 			value, err := strconv.ParseFloat(point[1].(string), 64)
 			require.NoError(t, err)
 			if !math.IsNaN(value) {
@@ -224,6 +252,19 @@ func greptimePromData(t *testing.T, response greptimePromResponse) map[string]an
 		return bytes.Compare(la, lb)
 	})
 	return doc
+}
+
+func TestGreptimePromDataTimestampComparison(t *testing.T) {
+	data := func(stamp string) map[string]any {
+		return greptimePromData(t, greptimePromResponse{
+			Code: http.StatusOK,
+			Body: json.RawMessage(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{},"values":[[` + stamp + `,"14"]]}]}}`),
+		})
+	}
+	require.Equal(t, data("1790567805"), data("1790567805.0"))
+	require.Equal(t, data("1790567805.125"), data("1.790567805125e9"))
+	require.NotEqual(t, data("1790567805.125"), data("1790567805.125000001"))
+	require.NotEqual(t, data("1790567805"), data("1790567806"))
 }
 
 func TestGreptimeDBPrometheus(t *testing.T) {
@@ -244,7 +285,7 @@ func TestGreptimeDBPrometheus(t *testing.T) {
 							query = url.Values{"db": v["db"]}
 							form = v
 						}
-						origin := f.fetch(t, f.origin, method, greptimePromPath+"query_range", query, form, nil)
+						origin := f.alignedOrigin(t, method, greptimePromPath+"query_range", query, form, nil)
 						proxy := f.fetch(t, f.proxy+"/direct", method, greptimePromPath+"query_range", query, form, nil)
 						require.Equal(t, greptimePromData(t, origin), greptimePromData(t, proxy))
 						engine, got := headers.ParseResultEngineStatus(proxy.Result)
@@ -257,7 +298,7 @@ func TestGreptimeDBPrometheus(t *testing.T) {
 						require.Len(t, matrix.Data.Result, 1)
 						require.Len(t, matrix.Data.Result[0].Values, points)
 						for n, point := range matrix.Data.Result[0].Values {
-							require.Equal(t, float64(f.start.Add(time.Duration(n)*step).UnixMilli())/1000, point[0])
+							require.Equal(t, float64(f.start.Truncate(step).Add(time.Duration(n)*step).UnixMilli())/1000, point[0])
 							value, err := strconv.ParseFloat(point[1].(string), 64)
 							require.NoError(t, err)
 							require.Equal(t, float64(14), value)
@@ -281,7 +322,7 @@ func TestGreptimeDBPrometheus(t *testing.T) {
 							query = url.Values{"db": v["db"]}
 							form = v
 						}
-						origin := f.fetch(t, f.origin, method, greptimePromPath+endpoint, query, form, nil)
+						origin := f.alignedOrigin(t, method, greptimePromPath+endpoint, query, form, nil)
 						proxy := f.fetch(t, f.proxy+"/merged", method, greptimePromPath+endpoint, query, form, nil)
 						want := greptimePromData(t, origin)
 						if endpoint == "query_range" && strings.HasPrefix(expression, "sort(") {
@@ -305,7 +346,7 @@ func TestGreptimeDBPrometheus(t *testing.T) {
 				} else {
 					v.Set("db", db)
 				}
-				origin := f.fetch(t, f.origin, http.MethodGet, greptimePromPath+"query_range", v, nil, hdr)
+				origin := f.alignedOrigin(t, http.MethodGet, greptimePromPath+"query_range", v, nil, hdr)
 				for range 2 {
 					proxy := f.fetch(t, f.proxy+"/direct", http.MethodGet, greptimePromPath+"query_range", v, nil, hdr)
 					require.Equal(t, greptimePromData(t, origin), greptimePromData(t, proxy))
@@ -326,7 +367,7 @@ func TestGreptimeDBPrometheus(t *testing.T) {
 	for _, lookback := range []string{"1s", "1m"} {
 		t.Run("lookback_"+lookback, func(t *testing.T) {
 			v := url.Values{"db": {f.databases[2]}, "query": {"fixture"}, "start": {f.start.Add(5 * time.Second).Format(time.RFC3339Nano)}, "end": {f.start.Add(35 * time.Second).Format(time.RFC3339Nano)}, "step": {"15"}, "lookback": {lookback}}
-			origin := f.fetch(t, f.origin, "GET", greptimePromPath+"query_range", v, nil, nil)
+			origin := f.alignedOrigin(t, "GET", greptimePromPath+"query_range", v, nil, nil)
 			for range 2 {
 				proxy := f.fetch(t, f.proxy+"/direct", "GET", greptimePromPath+"query_range", v, nil, nil)
 				require.Equal(t, greptimePromData(t, origin), greptimePromData(t, proxy))

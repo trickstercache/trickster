@@ -67,9 +67,9 @@ func TestHTTPSQLRequestModes(t *testing.T) {
 		object, delta           bool
 	}{
 		{"delta", httpSQL, "", true, true},
-		{"partial_lower", strings.Replace(httpSQL, "00:00:00Z", "00:00:01Z", 1), "", true, false},
-		{"partial_upper", strings.Replace(httpSQL, "01:00:00Z", "00:59:59Z", 1), "", true, false},
-		{"inclusive_upper", strings.Replace(httpSQL, "ts <", "ts <=", 1), "", true, false},
+		{"partial_lower", strings.Replace(httpSQL, "00:00:00Z", "00:00:01Z", 1), "", true, true},
+		{"partial_upper", strings.Replace(httpSQL, "01:00:00Z", "00:59:59Z", 1), "", true, true},
+		{"inclusive_upper", strings.Replace(httpSQL, "ts <", "ts <=", 1), "", true, true},
 		{"complete_inclusive_upper", strings.Replace(strings.Replace(httpSQL, "ts <", "ts <=", 1), "01:00:00Z", "00:59:59.999999999Z", 1), "", true, true},
 		{"count", "SELECT COUNT(*) FROM metrics", "", true, false},
 		{"limit", httpSQL, "&limit=1", true, false},

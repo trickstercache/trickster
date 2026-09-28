@@ -56,7 +56,7 @@ func TestMySQLBucketAnalysis(t *testing.T) {
 		strings.Replace(mysqlBucketQuery, "'1m'", "'500ms'", 1),
 		strings.Replace(mysqlBucketQuery, "'1m'", "'1500ms'", 1),
 		strings.Replace(mysqlBucketQuery, "FROM_UNIXTIME(0)", "FROM_UNIXTIME(1)", 1),
-		strings.Replace(mysqlBucketQuery, "1767225600", "1767225601", 1),
+		strings.Replace(mysqlBucketQuery, "1767225600", "1767225719", 1),
 		strings.Replace(mysqlBucketQuery, "ts <", "ts <=", 1),
 	} {
 		if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {

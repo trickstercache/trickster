@@ -736,9 +736,10 @@ can list just `greptimedb-mysql`; their health probe authenticates and sends
 
 MySQL SELECT queries use Vitess for analysis. The delta path supports UTC
 `DATE_BIN('5m', ts, FROM_UNIXTIME(0))` and fixed second/minute/hour/day
-`DATE_TRUNC` buckets with aligned, half-open `FROM_UNIXTIME(integer_seconds)`
-bounds. Widths must be positive whole seconds. Other deterministic SELECTs,
-including partial buckets and unverified timezones, use the object cache;
+`DATE_TRUNC` buckets with half-open `FROM_UNIXTIME(integer_seconds)` bounds,
+rounded inward to complete buckets. Widths must be positive whole seconds.
+Other deterministic SELECTs, including inclusive upper bounds, ranges with no
+complete bucket and unverified timezones, use the object cache;
 unknown functions and session state bypass caching. The adapter probes the
 actual session timezone and preserves nine-digit timestamp text, large integers,
 NULL ordering and bytewise string grouping. MySQL's `UNIX_TIMESTAMP` is not a
@@ -771,8 +772,8 @@ window functions and native `RANGE ... ALIGN` queries use the object cache;
 `TQL`, writes and volatile expressions are not cached. As with PostgreSQL,
 unaligned raw-time bounds are rounded inward to complete buckets.
 
-HTTP SQL keeps the original result for such unaligned ranges by falling back
-to object caching or proxying. The delta model preserves typed columns, nulls,
+HTTP SQL uses the same complete-bucket alignment as pgwire. Ranges without a
+complete bucket retain the original query. The delta model preserves typed columns, nulls,
 integer precision and ordering, including empty results. Unsupported schemas
 or a failed gap fetch retry the complete original SELECT instead of returning
 an incomplete result. Database, timezone and authentication identity are
@@ -782,13 +783,14 @@ delta caching. Authenticated GET object responses require origin permission
 for shared caching; GreptimeDB's default responses do not grant it.
 
 PromQL uses `/v1/prometheus/api/v1/` and shares the Prometheus cache/model
-implementation. Range queries retain their millisecond evaluation grid;
+implementation. Range endpoints round down to epoch-aligned steps while
+retaining millisecond precision;
 database URL/header selection and `lookback` are part of cache identity. URL
 parameters take precedence over POST form parameters, and a form-only `db`
 is ignored, matching GreptimeDB. Instant and metadata timestamps are not
 rounded. Unknown parameters, unsupported methods, finer-than-millisecond grids
-and `count_values` use passthrough. Offset grids bypass configured time sharding;
-fast-forward is disabled for offset or fractional-second grids.
+and `count_values` use passthrough. Aligned grids support configured time sharding;
+fast-forward is disabled for fractional-second grids.
 
 An ALB using these paths can set `output_format: greptimedb` for TSM. Numeric
 planning and reduction are shared with Prometheus, with Greptime-specific

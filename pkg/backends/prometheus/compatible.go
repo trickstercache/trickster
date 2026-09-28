@@ -38,6 +38,9 @@ type Hooks struct {
 	HealthCheckConfig func(*url.URL) *ho.Options
 	// PreserveQueryGrid retains caller timestamps rather than rounding them.
 	PreserveQueryGrid bool
+	// AlignQueryGrid rounds range endpoints down to epoch-aligned steps while
+	// retaining PreserveQueryGrid's millisecond parsing and wire precision.
+	AlignQueryGrid bool
 }
 
 func pathPrefix(prefix string) string {
