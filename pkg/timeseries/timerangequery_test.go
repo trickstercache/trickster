@@ -121,6 +121,22 @@ func TestClone(t *testing.T) {
 		}
 	})
 
+	t.Run("step alignment fields", func(t *testing.T) {
+		trq := &TimeRangeQuery{
+			Requested:      RequestedRange{Start: time.Unix(5, 0), End: time.Unix(10, 0), EndInclusive: true},
+			StepAlignments: StepAlignmentTruncate | StepAlignmentPartialEnd,
+			StepAlignment:  StepAlignmentPartialEnd,
+			Partials:       [2]PartialBucket{{Label: time.Unix(10, 0), Edge: BucketEdgeEnd}},
+			PartialCount:   1,
+		}
+		c := trq.Clone()
+		if c.Requested != trq.Requested || c.StepAlignments != trq.StepAlignments ||
+			c.StepAlignment != trq.StepAlignment || c.Partials != trq.Partials ||
+			c.PartialCount != trq.PartialCount {
+			t.Errorf("step alignment fields mismatch: %+v", c)
+		}
+	})
+
 	t.Run("ParsedQuery retained", func(t *testing.T) {
 		parsed := &struct{ value string }{value: "plan"}
 		trq := &TimeRangeQuery{Statement: "test", ParsedQuery: parsed}
@@ -204,8 +220,8 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 144 {
-		t.Errorf("expected %d got %d", 144, size)
+	if size != 346 {
+		t.Errorf("expected %d got %d", 346, size)
 	}
 }
 

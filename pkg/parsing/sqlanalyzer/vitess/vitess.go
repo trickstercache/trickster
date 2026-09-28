@@ -106,6 +106,14 @@ type rangeInfo struct {
 	// emits a literal the original operator still reads correctly.
 	upperSourceInclusive bool
 	upperTick            time.Duration
+	rawUpper             time.Time
+}
+
+func (r rangeInfo) rawUpperBound() *sqlanalyzer.Bound {
+	if r.upperSourceInclusive {
+		return &sqlanalyzer.Bound{Value: r.rawUpper, Inclusive: true}
+	}
+	return &sqlanalyzer.Bound{Value: r.upper.value, Inclusive: r.upper.inclusive}
 }
 
 type mysqlBound struct {
@@ -208,6 +216,8 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 		Step: bucket.step, Phase: 0, OutputUnit: bucket.unit, InputUnit: rng.lower.unit,
 		LowerBound:   &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
 		UpperBound:   &sqlanalyzer.Bound{Value: rng.upper.value, Inclusive: rng.upper.inclusive},
+		RawLower:     &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
+		RawUpper:     rng.rawUpperBound(),
 		GroupColumns: groups, ValueColumns: values, Renderer: extentRenderer,
 		BackfillTolerance: backfillTolerance, IdentitySuffix: identitySuffix,
 	}
@@ -526,6 +536,7 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 		}
 		out.upperSourceInclusive = true
 		out.upperTick = tick
+		out.rawUpper = out.upper.value
 		out.upper.value = timeseries.FloorToGrid(out.upper.value, bucket.step, 0)
 		out.upper.inclusive = false
 	}

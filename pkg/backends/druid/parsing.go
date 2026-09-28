@@ -133,6 +133,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
 	}
+	trq.Requested = timeseries.RequestedRange{Start: start, End: endExclusive}
 	alignedStart := timeseries.FloorToGrid(start, step, phase)
 	alignedEnd := timeseries.FloorToGrid(endExclusive, step, phase)
 	if !alignedStart.Equal(start) || !alignedEnd.Equal(endExclusive) {
@@ -167,6 +168,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.StepNS = step.Nanoseconds()
 	trq.Phase = phase
 	trq.SampleModel = timeseries.SampleModelBucket
+	trq.StepAlignments, trq.StepAlignment = timeseries.StepAlignmentAll, timeseries.StepAlignmentPartial
 	trq.Extent = timeseries.Extent{Start: start, End: end}
 	trq.ParsedQuery = plan
 	trq.BackfillTolerance = druidBackfillTolerance(r)
@@ -671,7 +673,7 @@ func druidBackfillTolerance(r *http.Request) time.Duration {
 	if resources == nil || resources.BackendOptions == nil {
 		return defaultTolerance
 	}
-	configured := time.Duration(resources.BackendOptions.BackfillTolerance)
+	configured := time.Duration(resources.BackendOptions.VolatileWindow)
 	if configured == 0 {
 		return defaultTolerance
 	}

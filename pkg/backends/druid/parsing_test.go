@@ -285,4 +285,12 @@ func TestParseTimeRangeQueryConvertsHalfOpenExtent(t *testing.T) {
 	if !trq.Extent.Start.Equal(wantStart) || !trq.Extent.End.Equal(wantEnd) {
 		t.Fatalf("extent = %s, want [%s, %s]", trq.Extent.String(), wantStart, wantEnd)
 	}
+	// the requested range keeps the interval's exclusive end
+	if !trq.Requested.Start.Equal(wantStart) || !trq.Requested.End.Equal(wantStart.Add(3*time.Minute)) ||
+		trq.Requested.EndInclusive {
+		t.Fatalf("requested = %+v", trq.Requested)
+	}
+	if trq.StepAlignments != timeseries.StepAlignmentAll || trq.StepAlignment != timeseries.StepAlignmentPartial {
+		t.Fatalf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
 }

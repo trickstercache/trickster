@@ -40,6 +40,7 @@ import (
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -160,6 +161,22 @@ func TestProtocolRestartKeyIncludesTransportSettings(t *testing.T) {
 	}
 	if third.RestartKey == fourth.RestartKey {
 		t.Fatal("downstream TLS requirement did not alter MySQL protocol restart key")
+	}
+	o.PartialBucketTTL = timeconv.Duration(time.Minute)
+	fifth, err := ProtocolConfigFromOptions(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fifth.PartialBucketTTL != time.Minute || fourth.RestartKey == fifth.RestartKey {
+		t.Fatal("partial_bucket_ttl was not copied, or did not alter the restart key")
+	}
+	o.StepAlignment = timeseries.StepAlignmentDrop
+	sixth, err := ProtocolConfigFromOptions(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sixth.StepAlignment != timeseries.StepAlignmentDrop || fifth.RestartKey == sixth.RestartKey {
+		t.Fatal("step_alignment was not copied, or did not alter the restart key")
 	}
 }
 

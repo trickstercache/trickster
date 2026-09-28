@@ -114,6 +114,13 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if res.SampleModel != timeseries.SampleModelBucket {
 			t.Errorf("expected bucketed sample model, got %d", res.SampleModel)
 		}
+		// the requested range is the statement's own, before the extent's inclusive end
+		if res.Requested.End.Sub(res.Requested.Start) != 6*time.Hour || res.Requested.EndInclusive {
+			t.Errorf("unexpected requested range %+v", res.Requested)
+		}
+		if res.StepAlignment != timeseries.StepAlignmentDrop {
+			t.Errorf("expected drop, got %s", res.StepAlignment)
+		}
 	}
 
 	req.URL.RawQuery = ""

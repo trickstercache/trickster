@@ -1050,7 +1050,7 @@ func testDPCFastForward(t *testing.T, chunked bool) {
 		}
 		client.InstantCacheKey = fmt.Sprintf("test-dpc-ff-key-instant-%d", attempt)
 		client.RangeCacheKey = fmt.Sprintf("test-dpc-ff-key-range-%d", attempt)
-		client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
+		client.fftime = now.Truncate(time.Duration(o.PartialBucketTTL))
 
 		extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 		extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -1590,7 +1590,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
+	o.VolatileWindow = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1696,7 +1696,7 @@ func TestDeltaProxyCacheNeverCachesLiveBucket(t *testing.T) {
 			rsc.CacheConfig.Provider = "test"
 			o := rsc.BackendOptions
 			o.FastForwardDisable = true
-			o.BackfillTolerance, o.BackfillTolerancePoints = 0, 0
+			o.VolatileWindow, o.VolatileWindowPoints = 0, 0
 			o.TimeseriesEvictionMethod = test.eviction
 
 			now := time.Now()
@@ -1748,7 +1748,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = timeconv.Duration(step + 1)
+	o.PartialBucketTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)

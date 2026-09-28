@@ -100,6 +100,7 @@ func (p *QueryPlan) ApplyToQuery(trq *timeseries.TimeRangeQuery) {
 	trq.StepNS = p.Step.Nanoseconds()
 	trq.Phase = p.Phase
 	trq.SampleModel = timeseries.SampleModelBucket
+	trq.StepAlignments, trq.StepAlignment = StepAlignments, DefaultStepAlignment
 	trq.BackfillTolerance = p.BackfillTolerance
 	trq.TimestampDefinition = timeseries.FieldDefinition{
 		Name:          p.OutputColumn,
@@ -134,4 +135,19 @@ func (p *QueryPlan) RequestExtent(now time.Time) timeseries.Extent {
 		}
 	}
 	return extent
+}
+
+// RequestedRange returns the plan's raw bounds as the client's range; a missing upper bound is
+// open-ended and ends at now
+func (p *QueryPlan) RequestedRange(now time.Time) timeseries.RequestedRange {
+	var r timeseries.RequestedRange
+	if p.RawLower != nil {
+		r.Start, r.StartExclusive = p.RawLower.Value, !p.RawLower.Inclusive
+	}
+	if p.RawUpper == nil {
+		r.End, r.OpenEnded = now, true
+	} else {
+		r.End, r.EndInclusive = p.RawUpper.Value, p.RawUpper.Inclusive
+	}
+	return r
 }

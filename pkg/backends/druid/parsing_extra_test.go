@@ -162,7 +162,7 @@ func TestBackfillToleranceSources(t *testing.T) {
 		t.Fatal("nil backend options did not use Druid default")
 	}
 	r = request.SetResources(jsonRequest(`{}`), &request.Resources{
-		BackendOptions: &bo.Options{BackfillTolerance: 2 * 60 * 1_000_000_000},
+		BackendOptions: &bo.Options{VolatileWindow: 2 * 60 * 1_000_000_000},
 	})
 	if druidBackfillTolerance(r) != 2*time.Minute {
 		t.Fatal("configured backfill tolerance was ignored")

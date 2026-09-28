@@ -159,6 +159,11 @@ func ParseStatement(statement string, now time.Time,
 		}
 		if trq.Extent.Start.IsZero() {
 			trq.Extent = ex
+			// the parsed range's maximum is inclusive: E-1ns for time < E
+			trq.Requested = timeseries.RequestedRange{
+				Start: ex.Start, End: ex.End,
+				EndInclusive: !tr.Max.IsZero(), OpenEnded: tr.Max.IsZero(),
+			}
 		} else if trq.Extent != ex {
 			// this condition means multiple queries were present, and had
 			// different time ranges
@@ -183,6 +188,7 @@ func ParseStatement(statement string, now time.Time,
 	if trq.Step > 0 {
 		trq.SampleModel = timeseries.SampleModelBucket
 	}
+	trq.StepAlignments, trq.StepAlignment = StepAlignments, DefaultStepAlignment
 
 	// this field is used as part of the data that calculates the cache key
 	trq.Statement = strings.Join(statements, " ; ")
@@ -192,6 +198,12 @@ func ParseStatement(statement string, now time.Time,
 	}
 	return trq, canObjectCache, cacheError
 }
+
+// StepAlignments are the step alignment modes an InfluxQL query supports
+const StepAlignments = timeseries.StepAlignmentAll
+
+// DefaultStepAlignment is the mode an InfluxQL query uses when none is configured
+const DefaultStepAlignment = timeseries.StepAlignmentTruncate
 
 // RenderTimeRange returns q's statements with every SELECT limited to [start, end). It renders
 // clones and never modifies q, which the concurrent fetches of one request share.

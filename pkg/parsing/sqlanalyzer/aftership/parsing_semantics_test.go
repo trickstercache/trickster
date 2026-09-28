@@ -386,6 +386,12 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 	if extent.Start.Unix() != 1756671900 || extent.End.Unix() != 1756757700 {
 		t.Fatalf("extent = [%d,%d]", extent.Start.Unix(), extent.End.Unix())
 	}
+	// the raw bounds keep the statement's own values
+	requested := got.Plan.RequestedRange(time.Unix(1756758100, 0))
+	if requested.Start.Unix() != 1756671691 || requested.End.Unix() != 1756758091 ||
+		requested.StartExclusive || requested.EndInclusive || requested.OpenEnded {
+		t.Fatalf("requested = %+v", requested)
+	}
 	rendered, err := got.Plan.RenderExtent(extent)
 	if err != nil {
 		t.Fatal(err)

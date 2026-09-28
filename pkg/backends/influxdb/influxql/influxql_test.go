@@ -106,6 +106,35 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	}
 }
 
+func TestParseStatementRecordsRequestedRange(t *testing.T) {
+	now := time.Date(2024, 1, 1, 2, 0, 0, 0, time.UTC)
+	start := time.Date(2024, 1, 1, 0, 0, 7, 0, time.UTC)
+	trq, _, err := ParseStatement(`SELECT mean(v) FROM m WHERE time >= '2024-01-01T00:00:07Z' AND `+
+		`time < '2024-01-01T01:00:07Z' GROUP BY time(1m)`, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the parsed maximum is inclusive, one nanosecond before the exclusive bound
+	want := timeseries.RequestedRange{
+		Start: start, End: start.Add(time.Hour - time.Nanosecond), EndInclusive: true,
+	}
+	if !trq.Requested.Start.Equal(want.Start) || !trq.Requested.End.Equal(want.End) ||
+		trq.Requested.EndInclusive != want.EndInclusive || trq.Requested.OpenEnded {
+		t.Errorf("requested range = %+v", trq.Requested)
+	}
+	if trq.StepAlignments != StepAlignments || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+		t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
+
+	trq, _, err = ParseStatement(`SELECT mean(v) FROM m WHERE time >= '2024-01-01T00:00:07Z' GROUP BY time(1m)`, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !trq.Requested.OpenEnded || !trq.Requested.End.Equal(now) || trq.Requested.EndInclusive {
+		t.Errorf("open-ended requested range = %+v", trq.Requested)
+	}
+}
+
 func TestParseStatementRefusesCrossBucketShapes(t *testing.T) {
 	const where = ` FROM m WHERE time >= '2024-01-01T00:00:00Z' AND time < '2024-01-01T01:00:00Z'`
 	const byMinute = ` GROUP BY time(1m)`

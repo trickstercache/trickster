@@ -194,7 +194,9 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 			CacheTTL:          time.Duration(o.TimeseriesTTL),
 			MaxObjectSize:     int64(o.MaxObjectSizeBytes),
 			RetentionPoints:   o.TimeseriesRetentionFactor,
-			BackfillTolerance: time.Duration(o.BackfillTolerance),
+			BackfillTolerance: time.Duration(o.VolatileWindow),
+			PartialBucketTTL:  time.Duration(o.PartialBucketTTL),
+			StepAlignment:     o.StepAlignment,
 		}),
 	}
 	if o.InfluxDB != nil && o.InfluxDB.FlightCacheTTL > 0 {

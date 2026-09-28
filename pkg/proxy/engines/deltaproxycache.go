@@ -84,7 +84,7 @@ func fetchFastForward(
 		return statusOff
 	}
 	// if the step resolution <= Fast Forward TTL, then no need to even try Fast Forward
-	if trq.Step <= time.Duration(o.FastForwardTTL) {
+	if trq.Step <= time.Duration(o.PartialBucketTTL) {
 		return statusOff
 	}
 	ffReq, err := client.FastForwardRequest(r)
@@ -97,7 +97,7 @@ func fetchFastForward(
 	}
 	ffReq = ffReq.WithContext(profile.ToContext(ffReq.Context(), dpcUpstreamEncodingProfile(rlo)))
 	rs := request.NewResources(o, o.FastForwardPath, cc, cache, client, rsc.Tracer)
-	rs.AlternateCacheTTL = time.Duration(o.FastForwardTTL)
+	rs.AlternateCacheTTL = time.Duration(o.PartialBucketTTL)
 	ffReq = ffReq.WithContext(tctx.WithResources(ffReq.Context(), rs))
 
 	_, ffSpan := tspan.NewChildSpan(ctx, rsc.Tracer, "FetchFastForward")
@@ -258,6 +258,11 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var cacheStatus status.LookupStatus
 
 	pr := newProxyRequest(r, w)
+	resolveStepAlignment(ctx, o, trq, rsc.Tracer, span)
+	// Fast Forward is the live end of partial_end, so a resolved mode with no partial end skips it
+	if _, end := trq.StepAlignment.Edges(); trq.StepAlignment != 0 && end != timeseries.EdgePartial {
+		rlo.FastForwardDisable = true
+	}
 	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	// providers whose marshaling depends on parameters outside the cache key
 	// must not share one pre-marshaled body across singleflight waiters
@@ -269,7 +274,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.Unlock()
 	now := time.Now()
 	// bfs is the start of the backfill tolerance window, on the query's grid
-	bt := trq.GetBackfillTolerance(time.Duration(o.BackfillTolerance), o.BackfillTolerancePoints)
+	bt := trq.GetBackfillTolerance(time.Duration(o.VolatileWindow), o.VolatileWindowPoints)
 	bfs := timeseries.FloorToGrid(now.Add(-bt), trq.Step, trq.Phase)
 
 	OldestRetainedTimestamp := time.Time{}

@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -105,6 +106,8 @@ type ProtocolConfig struct {
 	RetentionPoints        int
 	BackfillWindow         time.Duration
 	BackfillPoints         int
+	PartialBucketTTL       time.Duration
+	StepAlignment          timeseries.StepAlignment
 	ShardMaxRange          time.Duration
 	ShardStep              time.Duration
 	ShardMaxPoints         int
@@ -146,14 +149,16 @@ func ProtocolConfigFromOptions(o *bo.Options) (ProtocolConfig, error) {
 		MaxResultSizeBytes:     int64(mysqlOptions.MaxResultSizeBytes),
 		MaxUpstreamConnections: int64(o.MaxConcurrentConns), CacheKeyPrefix: o.CacheKeyPrefix,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
-		RetentionPoints: o.TimeseriesRetentionFactor,
-		BackfillWindow:  time.Duration(o.BackfillTolerance),
-		BackfillPoints:  o.BackfillTolerancePoints,
-		ShardMaxRange:   time.Duration(o.MaxShardSizeTime),
-		ShardStep:       time.Duration(o.ShardStep),
-		ShardMaxPoints:  o.MaxShardSizePoints,
-		DoesShard:       o.DoesShard,
-		ProxyOnly:       o.ProxyOnly,
+		RetentionPoints:  o.TimeseriesRetentionFactor,
+		BackfillWindow:   time.Duration(o.VolatileWindow),
+		BackfillPoints:   o.VolatileWindowPoints,
+		PartialBucketTTL: time.Duration(o.PartialBucketTTL),
+		StepAlignment:    o.StepAlignment,
+		ShardMaxRange:    time.Duration(o.MaxShardSizeTime),
+		ShardStep:        time.Duration(o.ShardStep),
+		ShardMaxPoints:   o.MaxShardSizePoints,
+		DoesShard:        o.DoesShard,
+		ProxyOnly:        o.ProxyOnly,
 	}
 	config.RestartKey = protocolRestartKey(o, downstreamUsers)
 	return config, nil
@@ -218,11 +223,12 @@ func protocolRestartKey(o *bo.Options, users map[string]string) string {
 	if o.MySQL != nil {
 		mysqlIdentity = fmt.Sprintf("%v", *o.MySQL)
 	}
-	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
+	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
 		o.Timeout,
 		o.MaxConcurrentConns,
 		o.CacheName, o.CacheKeyPrefix, o.TimeseriesTTL, o.MaxObjectSizeBytes,
-		o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
+		o.TimeseriesRetentionFactor, o.VolatileWindow, o.VolatileWindowPoints,
+		o.PartialBucketTTL, o.StepAlignment,
 		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard,
 		o.ProxyOnly, o.RequireTLS, tlsIdentity, credentials, mysqlIdentity)
 	return checksum.Checksum(value)

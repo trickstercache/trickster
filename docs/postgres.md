@@ -254,7 +254,7 @@ GROUP BY 1, 2 ORDER BY 1
 
 A bare `SELECT bucket, trips FROM trips_15m WHERE ...` has no bucket function
 and no `GROUP BY`, so it is cached as an object. Real-time aggregates change
-their newest buckets as data arrives; `backfill_tolerance` controls how much
+their newest buckets as data arrives; `volatile_window` controls how much
 of the recent past Trickster re-fetches on each request.
 
 ## Grafana macros and exact SQL shapes
@@ -377,7 +377,7 @@ when it fetches a sub-range, and the origin refused the result. The client is
 unaffected, since its own statement is relayed, but the statement is not
 cached. Please file an issue with the statement.
 
-**Stale data after a bulk rewrite.** Cached buckets older than the backfill
+**Stale data after a bulk rewrite.** Cached buckets older than the volatile
 window are not re-fetched until they expire (`timeseries_ttl`). After
 rewriting history, restart Trickster when using the memory cache, or clear
 the backend's keys from a persistent one.

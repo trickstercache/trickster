@@ -153,7 +153,10 @@ type QueryPlan struct {
 	InputUnit    timeseries.FieldDataType
 	LowerBound   *Bound
 	UpperBound   *Bound
-	GroupColumns []string
+	// RawLower and RawUpper are the time bounds as the statement wrote them, before any rounding;
+	// RawUpper is nil when the statement has no upper bound
+	RawLower, RawUpper *Bound
+	GroupColumns       []string
 	// ValueColumns names deterministic numeric result fields consumed as
 	// time-series values. Dialect adapters validate expressions statically and
 	// may validate concrete result types when rows arrive.
@@ -176,6 +179,13 @@ type QueryPlan struct {
 	OutputFormat byte
 	Renderer     ExtentRenderer
 }
+
+// StepAlignments are the step alignment modes a delta-cacheable SQL plan supports
+const StepAlignments = timeseries.StepAlignmentAll
+
+// DefaultStepAlignment is the mode a SQL plan uses when none is configured: partial buckets are
+// left out
+const DefaultStepAlignment = timeseries.StepAlignmentDrop
 
 // ErrMissingRenderer indicates that a plan cannot produce an origin query.
 var ErrMissingRenderer = errors.New("missing SQL query extent renderer")

@@ -515,7 +515,7 @@ connections indefinitely.
 3. For DPC, inspect the expanded SQL: require a literal cadence and `>=` lower,
    `<` upper raw-time predicates.
 4. Confirm the requested interval contains at least one complete cadence
-   bucket and that cache TTL, backfill tolerance, and retention are suitable.
+   bucket and that cache TTL, volatile window, and retention are suitable.
 5. Check username, selected backend, database, and time zone; these intentionally
    isolate keys.
 6. Inspect cache operation status and eviction metrics for admission failures

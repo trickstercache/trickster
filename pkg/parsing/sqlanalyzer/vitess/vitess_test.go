@@ -678,3 +678,25 @@ func BenchmarkRenderGrafanaExtent(b *testing.B) {
 		}
 	}
 }
+
+func TestAnalyzerKeepsRawBounds(t *testing.T) {
+	query := strings.Replace(grafanaDateTimeQuery, "1785628800", "1785628807", 1)
+	got := MustNewAnalyzer().Analyze(query, time.Time{})
+	if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil {
+		t.Fatalf("Analyze() = %s/%s (%v)", got.Mode, got.Reason, got.Err)
+	}
+	p := got.Plan
+	// BETWEEN's inclusive upper is floored to its exclusive grid equivalent, and kept raw
+	if !p.UpperBound.Value.Equal(time.Unix(1785628800, 0)) || p.UpperBound.Inclusive {
+		t.Fatalf("upper bound = %+v", p.UpperBound)
+	}
+	if !p.RawUpper.Value.Equal(time.Unix(1785628807, 0)) || !p.RawUpper.Inclusive ||
+		!p.RawLower.Value.Equal(time.Unix(1785542400, 0)) || !p.RawLower.Inclusive {
+		t.Fatalf("raw bounds = %+v, %+v", p.RawLower, p.RawUpper)
+	}
+	half := MustNewAnalyzer().Analyze(`SELECT UNIX_TIMESTAMP(ts) DIV 60 * 60 AS time_sec, count(*) FROM events `+
+		`WHERE ts >= FROM_UNIXTIME(1785542407) AND ts < FROM_UNIXTIME(1785628807) GROUP BY time_sec`, time.Time{})
+	if half.Plan == nil || !half.Plan.RawUpper.Value.Equal(time.Unix(1785628807, 0)) || half.Plan.RawUpper.Inclusive {
+		t.Fatalf("exclusive raw upper = %+v", half.Plan)
+	}
+}

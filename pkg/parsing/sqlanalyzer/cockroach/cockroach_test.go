@@ -470,6 +470,11 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 	if !got.Plan.UpperBound.Value.Equal(time.Unix(1704153600, 0)) || got.Plan.UpperBound.Inclusive {
 		t.Fatalf("rounded upper bound = %+v", got.Plan.UpperBound)
 	}
+	// the raw bounds keep the statement's own values
+	if !got.Plan.RawLower.Value.Equal(time.Unix(1704067207, 0)) || !got.Plan.RawLower.Inclusive ||
+		!got.Plan.RawUpper.Value.Equal(time.Unix(1704153607, 0)) || got.Plan.RawUpper.Inclusive {
+		t.Fatalf("raw bounds = %+v, %+v", got.Plan.RawLower, got.Plan.RawUpper)
+	}
 	rendered, err := got.Plan.RenderExtent(timeseries.Extent{
 		Start: time.Unix(1704067210, 0).UTC(), End: time.Unix(1704153590, 0).UTC(),
 	})

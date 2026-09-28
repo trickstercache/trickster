@@ -82,6 +82,8 @@ type TestClient struct {
 	setExtentErrorAfter int64
 	// sampleModel is set on every parsed TimeRangeQuery
 	sampleModel timeseries.SampleModel
+	// stepAlignments and stepAlignment are the supported modes and default of every parsed query
+	stepAlignments, stepAlignment timeseries.StepAlignment
 }
 
 func NewTestClient(name string, o *bo.Options, router http.Handler,
@@ -233,7 +235,10 @@ func parseDuration(input string) (time.Duration, error) {
 func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
 ) {
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}, SampleModel: c.sampleModel}
+	trq := &timeseries.TimeRangeQuery{
+		Extent: timeseries.Extent{}, SampleModel: c.sampleModel,
+		StepAlignments: c.stepAlignments, StepAlignment: c.stepAlignment,
+	}
 	rlo := &timeseries.RequestOptions{}
 	qp, _, _ := params.GetRequestValues(r)
 

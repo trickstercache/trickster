@@ -399,6 +399,9 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	if err != nil {
 		return nil, err
 	}
+	if err := backends.ValidateStepAlignment(client, nb); err != nil {
+		return nil, err
+	}
 	nb.HTTPClient = client.HTTPClient()
 	if c != nil {
 		client.SetCache(c)

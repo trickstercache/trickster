@@ -105,7 +105,7 @@ func ParseV3InfluxQL(r *http.Request, f iofmt.Format,
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
-			bf = time.Duration(res.BackendOptions.BackfillTolerance)
+			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
 		trq.BackfillTolerance = bf
 	}

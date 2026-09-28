@@ -19,6 +19,8 @@ package options
 import (
 	"errors"
 	"fmt"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // ErrInvalidMetadata is an error for invalid metadata
@@ -33,6 +35,41 @@ var ErrInvalidMaxShardSizeTime = errors.New(
 // 'shard_max_size_points' are used on the same backend
 var ErrInvalidMaxShardSize = errors.New(
 	"'shard_max_size_time' and 'shard_max_size_points' cannot both be non-zero")
+
+// ErrStepAlignmentWithFastForwardDisable is an error for a backend that sets both step_alignment
+// and the fast_forward_disable key it supersedes
+var ErrStepAlignmentWithFastForwardDisable = errors.New(
+	"'step_alignment' and 'fast_forward_disable' cannot both be set; remove 'fast_forward_disable'")
+
+// ErrUnsupportedStepAlignment is an error for a step_alignment the backend's provider doesn't support
+var ErrUnsupportedStepAlignment = errors.New("unsupported step_alignment")
+
+// ErrStepAlignmentNotImplemented is an error for a supported step_alignment that isn't available yet
+var ErrStepAlignmentNotImplemented = errors.New("step_alignment is not implemented yet")
+
+// NewErrInvalidStepAlignment returns an error for a step_alignment value that isn't exactly one mode
+func NewErrInvalidStepAlignment(value timeseries.StepAlignment, backendName string) error {
+	return fmt.Errorf(`%w for backend "%s": %#x is not exactly one mode`,
+		timeseries.ErrInvalidStepAlignment, backendName, uint8(value))
+}
+
+// NewErrUnsupportedStepAlignment returns an error naming the modes the backend's provider supports
+func NewErrUnsupportedStepAlignment(mode, supported timeseries.StepAlignment, provider,
+	backendName string,
+) error {
+	names := supported.String()
+	if names == "" {
+		names = "no step alignment modes"
+	}
+	return fmt.Errorf(`%w "%s" for backend "%s": provider "%s" supports %s`,
+		ErrUnsupportedStepAlignment, mode, backendName, provider, names)
+}
+
+// NewErrStepAlignmentNotImplemented returns an error for a mode the backend can't apply yet
+func NewErrStepAlignmentNotImplemented(mode timeseries.StepAlignment, provider, backendName string) error {
+	return fmt.Errorf(`%w: "%s" for backend "%s" (provider "%s")`,
+		ErrStepAlignmentNotImplemented, mode, backendName, provider)
+}
 
 // ErrMissingProvider is an error type for missing provider
 type ErrMissingProvider struct {

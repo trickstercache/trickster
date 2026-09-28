@@ -382,8 +382,8 @@ Deterministic `SELECT` results are cached through the Object Proxy Cache. A
 half-open, cadence-aligned time-series query that matches the supported Grafana
 grouping forms uses the Delta Proxy Cache, so expanding a dashboard range only
 fetches missing buckets from MySQL. MySQL uses the backend's common
-`timeseries_ttl`, `timeseries_retention_factor`, `backfill_tolerance`,
-`backfill_tolerance_points`, `max_object_size_bytes`, `cache_name`, and
+`timeseries_ttl`, `timeseries_retention_factor`, `volatile_window`,
+`volatile_window_points`, `max_object_size_bytes`, `cache_name`, and
 `cache_key_prefix` settings. Queries in transactions, and connections that
 have changed unsupported session state or executed mutations, bypass the
 cache. Grafana's literal `SET time_zone` initialization is supported and the
@@ -570,8 +570,8 @@ value is rendered (`TimeZone`, `DateStyle`, `extra_float_digits`, and the rest
 of the session identity below) partitions the cache. The delta cache needs the
 bucket to be the leading `ORDER BY` term (either direction) or no `ORDER BY` at
 all; within a bucket rows keep the origin's order. It uses the backend's common
-`timeseries_ttl`, `timeseries_retention_factor`, `backfill_tolerance`,
-`backfill_tolerance_points`, sharding, `max_object_size_bytes`, `cache_name`
+`timeseries_ttl`, `timeseries_retention_factor`, `volatile_window`,
+`volatile_window_points`, sharding, `max_object_size_bytes`, `cache_name`
 and `cache_key_prefix` settings, and an open-ended range is never considered
 complete in its newest bucket.
 

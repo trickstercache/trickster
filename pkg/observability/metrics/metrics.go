@@ -44,6 +44,7 @@ const (
 	tlsSubsystem        = "tls"
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
+	stepAlignSubsystem  = "step_alignment"
 )
 
 // Default histogram buckets used by trickster
@@ -531,6 +532,31 @@ var (
 			Help:      "Trickster total number of queries rejected due to exceeding the max_query_range limit.",
 		},
 		[]string{keys.Backend_Name},
+	)
+
+	// ProxyPartialBucketFetches counts partial bucket fetches through the object proxy cache, by the
+	// edge of the range the bucket sits on and the lookup's status
+	ProxyPartialBucketFetches = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "partial_bucket_fetches_total",
+			Help:      "Count of partial bucket fetches through the object proxy cache.",
+		},
+		[]string{keys.Backend_Name, keys.Provider, keys.Edge, keys.Status},
+	)
+
+	// StepAlignmentFallbacks counts requests for a step alignment mode the query doesn't support,
+	// which were served in the query's default mode instead
+	StepAlignmentFallbacks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: stepAlignSubsystem,
+			Name:      "fallbacks_total",
+			Help: "Count of requests for a step alignment mode the query does not support, " +
+				"served in the query's default mode.",
+		},
+		[]string{keys.Backend_Name, keys.Requested, keys.Applied},
 	)
 
 	// TimeseriesRetentionFactorExceeded counts requests spanning more buckets
@@ -1168,6 +1194,8 @@ func init() {
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
+	prometheus.MustRegister(ProxyPartialBucketFetches)
+	prometheus.MustRegister(StepAlignmentFallbacks)
 	prometheus.MustRegister(TimeseriesRetentionFactorExceeded)
 	prometheus.MustRegister(TimeseriesOffGridExtents)
 	prometheus.MustRegister(SQLQueryAnalysis)
@@ -1219,6 +1247,8 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestElements,
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
+	ProxyPartialBucketFetches,
+	StepAlignmentFallbacks,
 	TimeseriesRetentionFactorExceeded,
 	TimeseriesOffGridExtents,
 	SQLQueryAnalysis,

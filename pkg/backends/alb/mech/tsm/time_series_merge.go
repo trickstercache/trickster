@@ -299,7 +299,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if trq != nil {
-			duration := trq.Extent.End.Sub(trq.Extent.Start)
+			requested := trq.RequestedExtent()
+			duration := requested.End.Sub(requested.Start)
 			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
 			if duration > limit {
 				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
@@ -309,8 +310,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						"clientIP":       request.ClientIP(r),
 						keys.Path:        r.URL.Path,
 						"statement":      trq.Statement,
-						"start":          trq.Extent.Start.String(),
-						"end":            trq.Extent.End.String(),
+						"start":          requested.Start.String(),
+						"end":            requested.End.String(),
 						"duration":       duration.String(),
 						"limit":          limit.String(),
 					})

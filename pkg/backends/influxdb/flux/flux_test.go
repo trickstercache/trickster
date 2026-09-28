@@ -209,6 +209,13 @@ func TestParseTimeRangeQueryWindowLabels(t *testing.T) {
 		if !trq.Extent.Start.Equal(start.Add(time.Hour)) {
 			t.Errorf("expected start %s got %s", start.Add(time.Hour), trq.Extent.Start)
 		}
+		// the requested range is the client's range(), before the label shift
+		if !trq.Requested.Start.Equal(start) || !trq.Requested.End.Equal(end) || trq.Requested.EndInclusive {
+			t.Errorf("unexpected requested range %+v", trq.Requested)
+		}
+		if trq.StepAlignments != stepAlignments || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+			t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+		}
 	})
 
 	t.Run("range shorter than a step is clamped", func(t *testing.T) {

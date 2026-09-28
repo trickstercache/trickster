@@ -11,5 +11,5 @@ backends:
     provider: druid
     origin_url: http://druid-router:8888
     cache_name: default
-    backfill_tolerance: 60s
+    volatile_window: 60s
     timeseries_retention_factor: 2048

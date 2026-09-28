@@ -105,6 +105,13 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if trq.Extent.Start.UnixMilli() != start || trq.Extent.End.UnixMilli() != end-1 {
 		t.Fatalf("extent = %d..%d", trq.Extent.Start.UnixMilli(), trq.Extent.End.UnixMilli())
 	}
+	if trq.Requested.Start.UnixMilli() != start || trq.Requested.End.UnixMilli() != end ||
+		trq.Requested.EndInclusive {
+		t.Fatalf("requested = %+v", trq.Requested)
+	}
+	if trq.StepAlignments != timeseries.StepAlignmentTruncate || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+		t.Fatalf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
 	if trq.Step != time.Millisecond {
 		t.Fatalf("step = %s", trq.Step)
 	}
@@ -220,7 +227,7 @@ func TestParseTimeRangeQueryPointPolicyFallbacks(t *testing.T) {
 			want:    errPointSharding,
 		},
 		"backfill points without hints": {
-			options: &bo.Options{BackfillTolerancePoints: 2},
+			options: &bo.Options{VolatileWindowPoints: 2},
 			want:    errPointPolicyStep,
 		},
 		"oldest retention without hints": {

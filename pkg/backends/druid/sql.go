@@ -185,6 +185,7 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 		responseFormat, header, outputColumns...)
 	trq.ParsedQuery = sqlPlan
 	trq.Extent = plan.RequestExtent(now)
+	trq.Requested = plan.RequestedRange(now)
 	trq.BackfillTolerance = druidBackfillTolerance(r)
 	ro.BaseTimestampFieldName = plan.TimeColumn
 	ro.ProviderRequest = sqlPlan

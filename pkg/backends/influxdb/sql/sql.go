@@ -303,6 +303,7 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	// bare plan, so the plan is re-wrapped after ApplyToQuery installs it.
 	trq.ParsedQuery = &Query{Plan: plan}
 	trq.Extent = plan.RequestExtent(now)
+	trq.Requested = plan.RequestedRange(now)
 	trq.ExtractBackfillTolerance(statement)
 
 	options := &timeseries.RequestOptions{
@@ -364,7 +365,7 @@ func ParseTimeRangeQuery(r *http.Request, f iofmt.Format,
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
-			bf = time.Duration(res.BackendOptions.BackfillTolerance)
+			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
 		trq.BackfillTolerance = bf
 	}

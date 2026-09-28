@@ -53,7 +53,7 @@ on, and it is what makes one cached series able to serve every output format.
 ## Configuration
 
 Every common backend option applies (`cache_name`, `timeseries_ttl`,
-`timeseries_retention_factor`, `backfill_tolerance`, `max_object_size_bytes`,
+`timeseries_retention_factor`, `volatile_window`, `max_object_size_bytes`,
 `timeout`, `healthcheck`, `paths`, TLS, authenticators); two of them,
 `max_object_size_bytes` and `timeseries_retention_factor`, take
 Graphite-specific defaults, as [Sizing](#sizing) explains.

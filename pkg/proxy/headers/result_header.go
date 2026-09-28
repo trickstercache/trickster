@@ -18,6 +18,7 @@ package headers
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +35,100 @@ type ResultHeaderParts struct {
 	Fetched           timeseries.ExtentList
 	FailedFetch       timeseries.ExtentList
 	FastForwardStatus string
+	PartialBuckets    []PartialBucketResult
+}
+
+// PartialBucketResult reports one partial bucket fetch: its half-open fetched range, the edge of the
+// request's range it sits on, and its object proxy cache lookup status
+type PartialBucketResult struct {
+	Extent timeseries.Extent
+	Edge   timeseries.BucketEdge
+	Status string
+}
+
+const (
+	partialBucketSeparator = ";"
+	partialBucketFieldSep  = ":"
+)
+
+func writePartialBuckets(sb *strings.Builder, pbs []PartialBucketResult) {
+	for i, pb := range pbs {
+		if i > 0 {
+			sb.WriteString(partialBucketSeparator)
+		}
+		sb.WriteString(strconv.FormatInt(pb.Extent.Start.UnixMilli(), 10))
+		sb.WriteByte('-')
+		sb.WriteString(strconv.FormatInt(pb.Extent.End.UnixMilli(), 10))
+		sb.WriteString(partialBucketFieldSep)
+		sb.WriteString(pb.Edge.String())
+		sb.WriteString(partialBucketFieldSep)
+		sb.WriteString(pb.Status)
+	}
+}
+
+func parsePartialBuckets(val string) []PartialBucketResult {
+	val = strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
+	out := make([]PartialBucketResult, 0, strings.Count(val, partialBucketSeparator)+1)
+	for entry := range strings.SplitSeq(val, partialBucketSeparator) {
+		rng, rest, ok := strings.Cut(entry, partialBucketFieldSep)
+		if !ok {
+			continue
+		}
+		edge, st, ok := strings.Cut(rest, partialBucketFieldSep)
+		if !ok || st == "" {
+			continue
+		}
+		ext, ok := parseMillisRange(rng)
+		if !ok {
+			continue
+		}
+		be, ok := timeseries.ParseBucketEdge(edge)
+		if !ok {
+			continue
+		}
+		out = append(out, PartialBucketResult{Extent: ext, Edge: be, Status: st})
+	}
+	return out
+}
+
+func parseMillisRange(rng string) (timeseries.Extent, bool) {
+	if len(rng) < 3 {
+		return timeseries.Extent{}, false
+	}
+	// the separator follows the start's first character, so a minus there is the start's sign
+	i := strings.IndexByte(rng[1:], '-') + 1
+	if i == 0 {
+		return timeseries.Extent{}, false
+	}
+	start, err := strconv.ParseInt(rng[:i], 10, 64)
+	if err != nil {
+		return timeseries.Extent{}, false
+	}
+	end, err := strconv.ParseInt(rng[i+1:], 10, 64)
+	if err != nil {
+		return timeseries.Extent{}, false
+	}
+	return timeseries.Extent{Start: time.UnixMilli(start), End: time.UnixMilli(end)}, true
+}
+
+func mergePartialBuckets(a, b []PartialBucketResult) []PartialBucketResult {
+	if len(a) == 0 {
+		return b
+	}
+	out := a
+	for _, pb := range b {
+		i := slices.IndexFunc(out, func(x PartialBucketResult) bool {
+			return x.Edge == pb.Edge && x.Extent.Start.Equal(pb.Extent.Start) && x.Extent.End.Equal(pb.Extent.End)
+		})
+		// the same range and edge from two members merges as ffstatus does
+		switch {
+		case i < 0:
+			out = append(out, pb)
+		case out[i].Status != pb.Status:
+			out[i].Status = status.StatusPartialHit
+		}
+	}
+	return out
 }
 
 func (p ResultHeaderParts) String() string {
@@ -52,6 +147,11 @@ func (p ResultHeaderParts) String() string {
 	if p.FastForwardStatus != "" {
 		sb.WriteString("; ffstatus=")
 		sb.WriteString(p.FastForwardStatus)
+	}
+	if len(p.PartialBuckets) > 0 {
+		sb.WriteString("; " + keys.PartialBuckets + "=[")
+		writePartialBuckets(&sb, p.PartialBuckets)
+		sb.WriteString("]")
 	}
 	if len(p.FailedFetch) > 0 {
 		sb.WriteString("; failed=[")
@@ -110,6 +210,8 @@ func MergeResultHeaderVals(h1, h2 string) string {
 		r1.Fetched = merged.Compress(0)
 	}
 
+	r1.PartialBuckets = mergePartialBuckets(r1.PartialBuckets, r2.PartialBuckets)
+
 	if len(r1.FailedFetch) == 0 {
 		r1.FailedFetch = r2.FailedFetch
 	} else if len(r2.FailedFetch) > 0 {
@@ -143,25 +245,16 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 				if val != "" {
 					r.FastForwardStatus = val
 				}
+			case keys.PartialBuckets:
+				r.PartialBuckets = parsePartialBuckets(val)
 			case keys.Fetched, keys.Failed:
 				val = strings.NewReplacer("[", "", "]", "").Replace(val)
 				fparts := strings.Split(val, ";")
 				el := make(timeseries.ExtentList, len(fparts))
 				var k int
 				for _, fpart := range fparts {
-					if i = strings.Index(fpart, "-"); i > 0 && i < len(fpart)-1 {
-						start, err := strconv.ParseInt(fpart[0:i], 10, 64)
-						if err != nil {
-							continue
-						}
-						end, err := strconv.ParseInt(fpart[i+1:], 10, 64)
-						if err != nil {
-							continue
-						}
-						el[k] = timeseries.Extent{
-							Start: time.Unix(0, start*1000000),
-							End:   time.Unix(0, end*1000000),
-						}
+					if ext, ok := parseMillisRange(fpart); ok {
+						el[k] = ext
 						k++
 					}
 				}

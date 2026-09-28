@@ -52,6 +52,17 @@ Some object-name prefixes are reserved in every named section (`backends`, `cach
 
 Generated configuration is merged after all files and fragments, with the same deep-merge behavior. It may only add objects under the named sections above, so it can never change `main`, `frontend`, `logging`, `metrics`, or `mgmt` settings or replace a file-defined object. A change to the generated configuration makes the running configuration stale for reload purposes in the same way as a change to a file, and every reload (SIGHUP, the reload handler, and `auto_reload_interval`) carries the current generated configuration forward.
 
+### Renamed Backend Options
+
+These backend options were renamed. The former keys are still accepted, and apply only when the
+current key is not set; configuration dumps show only the current keys.
+
+| Former key | Current key |
+|---|---|
+| `backfill_tolerance` | `volatile_window` |
+| `backfill_tolerance_points` | `volatile_window_points` |
+| `fastforward_ttl` | `partial_bucket_ttl` |
+
 ### Configuring Secrets or Sensitive Information
 
 Trickster supports Environment variable substitution in its configuration file where sensitive information is expected.

@@ -47,7 +47,8 @@ func LimitQueryRange(next http.Handler) http.Handler {
 		if tsClient, ok := rsc.BackendClient.(backends.TimeseriesBackend); ok {
 			trq, _, _, err := tsClient.ParseTimeRangeQuery(r)
 			if err == nil && trq != nil {
-				duration := trq.Extent.End.Sub(trq.Extent.Start)
+				requested := trq.RequestedExtent()
+				duration := requested.End.Sub(requested.Start)
 				if duration > limit {
 					metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
 					logger.Warn("query rejected due to max_query_range limit",
@@ -56,8 +57,8 @@ func LimitQueryRange(next http.Handler) http.Handler {
 							"clientIP":       request.ClientIP(r),
 							keys.Path:        r.URL.Path,
 							"statement":      trq.Statement,
-							"start":          trq.Extent.Start.String(),
-							"end":            trq.Extent.End.String(),
+							"start":          requested.Start.String(),
+							"end":            requested.End.String(),
 							"duration":       duration.String(),
 							"limit":          limit.String(),
 						})

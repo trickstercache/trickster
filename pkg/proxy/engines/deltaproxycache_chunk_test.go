@@ -1367,7 +1367,7 @@ func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
+	o.VolatileWindow = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1451,7 +1451,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStepChunks(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = timeconv.Duration(step + 1)
+	o.PartialBucketTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)

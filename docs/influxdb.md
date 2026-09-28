@@ -29,8 +29,8 @@ responsible for its response and error behavior.
 Raw remote-read samples do not advertise a guaranteed interval, so point-count
 sharding cannot split their extents without risking gaps. Requests use the
 normal proxy path when `shard_max_size_points` is enabled; time-based sharding
-remains supported. Cache retention (`oldest` and `lru`) and point-based backfill
-tolerance use a positive `hints.step_ms`; a request without that hint uses the
+remains supported. Cache retention (`oldest` and `lru`) and `volatile_window_points`
+use a positive `hints.step_ms`; a request without that hint uses the
 normal proxy path, including Prometheus instant queries with a zero step hint.
 The hint is retained in serialized cache entries and does not change the 1 ms
 precision used to locate missing raw samples.
@@ -78,7 +78,7 @@ GROUP BY 1
 
 SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, compound selects such as `UNION`, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
 
-Queries whose range reaches the present include the still-filling final bucket. Trickster serves that bucket but never caches it, so every request refreshes it from the origin. `backfill_tolerance` applies only to complete buckets.
+Queries whose range reaches the present include the still-filling final bucket. Trickster serves that bucket but never caches it, so every request refreshes it from the origin. `volatile_window` applies only to complete buckets.
 
 ### Response Formats
 
@@ -122,7 +122,7 @@ The `authorization` and `database` headers are forwarded from the client through
 
 Statement queries are served through a three-tier cache:
 
-1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. A query's `ORDER BY` is carried through that rebuild, so a cache hit returns rows in the requested order; ordering terms that do not resolve to a select-list output fall to the next tier. Entries use the backend's `timeseries_ttl` and honor `backfill_tolerance`; still-filling buckets are always refetched. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
+1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. A query's `ORDER BY` is carried through that rebuild, so a cache hit returns rows in the requested order; ordering terms that do not resolve to a select-list output fall to the next tier. Entries use the backend's `timeseries_ttl` and honor `volatile_window`; still-filling buckets are always refetched. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
 2. **Object cache** — everything else cacheable is stored as the verbatim Arrow IPC byte stream, returned byte-identically, with a lifetime of `influxdb.flight_cache_ttl` (default 60s). Metadata RPCs and prepared statements always use this tier.
 3. **Proxy** — statements referencing nondeterministic functions (`now()`, `current_timestamp`, `random()`, ...) and non-SELECT statements are never cached.
 

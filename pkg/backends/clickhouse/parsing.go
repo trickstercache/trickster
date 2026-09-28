@@ -59,6 +59,7 @@ func parseAnalysis(
 	plan := analysis.Plan
 	plan.ApplyToQuery(trq)
 	trq.Extent = plan.RequestExtent(now)
+	trq.Requested = plan.RequestedRange(now)
 	trq.ExtractBackfillTolerance(statement)
 
 	options := &timeseries.RequestOptions{

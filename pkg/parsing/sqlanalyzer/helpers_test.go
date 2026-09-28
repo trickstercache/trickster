@@ -166,6 +166,9 @@ func TestApplyToQuery(t *testing.T) {
 	if trq.SampleModel != timeseries.SampleModelBucket {
 		t.Fatalf("expected bucketed sample model, got %d", trq.SampleModel)
 	}
+	if trq.StepAlignments != timeseries.StepAlignmentAll || trq.StepAlignment != timeseries.StepAlignmentDrop {
+		t.Fatalf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
 	ts := trq.TimestampDefinition
 	if ts.Name != "t" || ts.DataType != timeseries.DateTimeUnixSecs ||
 		ts.Role != timeseries.RoleTimestamp || ts.ProviderData1 != byte(timeseries.DateTimeUnixMilli) {
@@ -186,6 +189,37 @@ func TestApplyToQuery(t *testing.T) {
 	plan.ApplyToQuery(bare)
 	if bare.CacheKeyElements["query"] != plan.CanonicalSQL {
 		t.Fatal("nil cache key elements not initialized")
+	}
+}
+
+func TestRequestedRange(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	lower, upper := time.Unix(100, 0), time.Unix(900, 0)
+	tests := []struct {
+		name string
+		plan QueryPlan
+		want timeseries.RequestedRange
+	}{
+		{
+			"half open",
+			QueryPlan{RawLower: &Bound{Value: lower, Inclusive: true}, RawUpper: &Bound{Value: upper}},
+			timeseries.RequestedRange{Start: lower, End: upper},
+		},
+		{"exclusive lower, inclusive upper", QueryPlan{
+			RawLower: &Bound{Value: lower}, RawUpper: &Bound{Value: upper, Inclusive: true},
+		}, timeseries.RequestedRange{Start: lower, End: upper, StartExclusive: true, EndInclusive: true}},
+		{
+			"open ended",
+			QueryPlan{RawLower: &Bound{Value: lower, Inclusive: true}},
+			timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.plan.RequestedRange(now); got != test.want {
+				t.Errorf("got %+v want %+v", got, test.want)
+			}
+		})
 	}
 }
 

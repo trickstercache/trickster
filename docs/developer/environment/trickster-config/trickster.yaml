@@ -137,13 +137,13 @@ backends:
     origin_url: 'http://127.0.0.1:8123'
     listener_names: [default, clickhouse-native]
     cache_name: mem1
-    backfill_tolerance: 60s
+    volatile_window: 60s
     timeseries_retention_factor: 2048
   druid1:
     provider: druid
     origin_url: 'http://127.0.0.1:8888'
     cache_name: mem1
-    backfill_tolerance: 60s
+    volatile_window: 60s
     timeseries_retention_factor: 2048
   graphite1:
     provider: graphite
@@ -184,20 +184,20 @@ backends:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086/'
     cache_name: mem1
-    backfill_tolerance: 30s
+    volatile_window: 30s
     timeseries_retention_factor: 5184000
   flux2:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8086/'
     cache_name: mem1
-    backfill_tolerance: 30s
+    volatile_window: 30s
     timeseries_retention_factor: 5184000
   influx3:
     provider: influxdb
     origin_url: 'http://127.0.0.1:8181/'
     listener_names: [default, influx3-flight]
     cache_name: mem1
-    backfill_tolerance: 30s
+    volatile_window: 30s
     timeseries_retention_factor: 5184000
     influxdb:
       flight_upstream_address: '127.0.0.1:8181'

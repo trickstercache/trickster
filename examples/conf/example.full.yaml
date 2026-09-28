@@ -487,7 +487,7 @@ backends:
   #     client_key_path: /etc/trickster/tls/origin-client.key
   #   # Deterministic SELECTs use OPC; supported cadence-aligned time-series
   #   # SELECTs use DPC. The common cache_name, timeseries_ttl,
-  #   # timeseries_retention_factor, backfill_tolerance, and
+  #   # timeseries_retention_factor, volatile_window, and
   #   # max_object_size_bytes backend settings apply.
 
   # # example postgres backend, exposed by a listener with protocol postgres
@@ -532,7 +532,7 @@ backends:
   #       - /etc/trickster/tls/origin-ca.crt
   #   # Deterministic SELECTs use OPC; time_bucket, date_bin and epoch-floor
   #   # time-series SELECTs use DPC. The common cache_name, timeseries_ttl,
-  #   # timeseries_retention_factor, backfill_tolerance, sharding and
+  #   # timeseries_retention_factor, volatile_window, sharding and
   #   # max_object_size_bytes backend settings apply. proxy_only: true relays
   #   # every statement without inspecting it.
 
@@ -829,16 +829,21 @@ backends:
 #     # (X-Trickster-Result: phit) rather than truncating the merged response silently. default is 268435456 (256 MiB)
 #     max_capture_bytes: 268435456
 
-#     # These next 6 settings only apply to Time Series backends
+#     # These next settings only apply to Time Series backends
 
-#     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
+#     # step_alignment selects what the backend does with partial buckets at the edges of a query's time range:
+#     # truncate, drop, partial, partial_start, partial_end or off. The provider's default applies when it is unset.
+#     # step_alignment: truncate
+
+#     # volatile_window prevents new datapoints that fall within the window (relative to time.Now) from being permanently
 #     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
-#     # default is 0ms
-#     backfill_tolerance: 0ms
+#     # default is 0ms. The former name, backfill_tolerance, is still accepted when volatile_window is not set
+#     volatile_window: 0ms
 
-#     # backfill_tolerance_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
-#     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence
-#     backfill_tolerance_points: 0
+#     # volatile_window_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
+#     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence.
+#     # The former name, backfill_tolerance_points, is still accepted when volatile_window_points is not set
+#     volatile_window_points: 0
 
 #     # timeseries_retention_factor defines the maximum number of recent timestamps to cache for a given query. Default is 1024
 #     timeseries_retention_factor: 1024
@@ -850,11 +855,13 @@ backends:
 #     # the timeseries_retention_factor limit is reached. options are oldest and lru. Default is oldest
 #     timeseries_eviction_method: oldest
 
-#     # fast_forward_disable, when set to true, will turn off the fast forward feature for any requests proxied to this backend
+#     # fast_forward_disable, when set to true, will turn off the fast forward feature for any requests proxied to this backend.
+#     # For Prometheus it is the same as step_alignment: truncate, and it cannot be set alongside step_alignment
 #     fast_forward_disable: false
 
-#     # fastforward_ttl defines the relative expiration of cached fast forward data. default is 15s
-#     fastforward_ttl: 15s
+#     # partial_bucket_ttl defines the relative expiration of cached partial buckets, including fast forward data. default is 15s.
+#     # The former name, fastforward_ttl, is still accepted when partial_bucket_ttl is not set
+#     partial_bucket_ttl: 15s
 
 #     # shard_max_size_points defines the maximum size of a timeseries request in unique timestamps,
 #     # before sharding into multiple requests of this denomination and reconsitituting the results.

@@ -22,4 +22,4 @@ Supported for: All time series backends
 
 Usage: `SELECT time, count(*) FROM table  # trickster-backfill-tolerance:120`
 
-Notes: This overrides the backfill tolerance value for this query by the specified value (in seconds). Only integers are accepted.
+Notes: This overrides the backend's `volatile_window` for this query with the specified value (in seconds). Only integers are accepted.

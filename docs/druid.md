@@ -10,7 +10,7 @@ backends:
     provider: druid
     origin_url: http://druid-router:8888
     cache_name: default
-    backfill_tolerance: 60s
+    volatile_window: 60s
     timeseries_retention_factor: 2048
 ```
 
@@ -93,9 +93,9 @@ requests are proxied.
 
 SQL ingestion and management endpoints, ALB time-series merging,
 `scan`/`search` delta caching, and Fast Forward are not supported. Fast Forward
-is disabled for every Druid backend. A 60-second backfill
-tolerance is used when the backend does not configure one, so recently ingested
-buckets can be refreshed before segments settle.
+is disabled for every Druid backend. A 60-second `volatile_window` is used when
+the backend does not configure one, so recently ingested buckets can be
+refreshed before segments settle.
 
 ## Observability
 

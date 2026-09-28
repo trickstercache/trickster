@@ -61,6 +61,15 @@ type TimeRangeQuery struct {
 	Phase time.Duration `msg:"-"`
 	// SampleModel describes what each timestamp's value represents
 	SampleModel SampleModel `msg:"-"`
+	// Requested is the query's time range as the client sent it, before any alignment
+	Requested RequestedRange `msg:"-"`
+	// StepAlignments is the set of step alignment modes the query supports
+	StepAlignments StepAlignment `msg:"-"`
+	// StepAlignment is the query's step alignment mode: its default until the engine resolves it
+	StepAlignment StepAlignment `msg:"-"`
+	// Partials holds the partial edge buckets planned for the request, the first PartialCount of them
+	Partials     [2]PartialBucket `msg:"-"`
+	PartialCount uint8            `msg:"-"`
 	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
 	TemplateURL *url.URL `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
@@ -103,6 +112,11 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		PolicyStep:          trq.PolicyStep,
 		Phase:               trq.Phase,
 		SampleModel:         trq.SampleModel,
+		Requested:           trq.Requested,
+		StepAlignments:      trq.StepAlignments,
+		StepAlignment:       trq.StepAlignment,
+		Partials:            trq.Partials,
+		PartialCount:        trq.PartialCount,
 		StepNS:              trq.StepNS,
 		PolicyStepNS:        trq.PolicyStepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
@@ -202,7 +216,8 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
 	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
-		urls.Size(trq.TemplateURL) + 20 // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1 SampleModel=1
+		urls.Size(trq.TemplateURL) + 20 + // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1 SampleModel=1
+		51 + 2 + 148 + 1 // Requested=51 StepAlignments=1 StepAlignment=1 Partials=2*74 PartialCount=1
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}

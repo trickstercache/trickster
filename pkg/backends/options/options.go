@@ -58,6 +58,7 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
@@ -127,22 +128,24 @@ type Options struct {
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	// timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
-	// BackfillTolerance prevents values with timestamps newer than the provided number of
-	// milliseconds from being cached. this allows propagation of upstream backfill operations
-	// that modify recently-cached data
-	BackfillTolerance timeconv.Duration `yaml:"backfill_tolerance,omitempty"`
-	// BackfillTolerancePoints is similar to the MS version, except that it's final value is dependent
-	// on the query step value to determine the relative duration of backfill tolerance per-query
-	// When both are set, the higher of the two values is used
-	BackfillTolerancePoints int `yaml:"backfill_tolerance_points,omitempty"`
+	// VolatileWindow is how far back from now cached data is volatile and is refetched, so that late
+	// writes to recent timestamps reach the cache. Legacy key: backfill_tolerance
+	VolatileWindow timeconv.Duration `yaml:"volatile_window,omitempty"`
+	// VolatileWindowPoints is VolatileWindow in query steps; when both are set, the longer applies.
+	// Legacy key: backfill_tolerance_points
+	VolatileWindowPoints int `yaml:"volatile_window_points,omitempty"`
+	// StepAlignment names what the backend does with partial buckets at the edges of a time range
+	// query; zero uses the provider's default
+	StepAlignment timeseries.StepAlignment `yaml:"step_alignment,omitempty"`
 	// Paths is a list of Path Options that control the behavior of the given paths when requested
 	Paths po.List `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
 	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
 	// TimeseriesTTL specifies the cache TTL of timeseries objects
 	TimeseriesTTL timeconv.Duration `yaml:"timeseries_ttl,omitempty"`
-	// TimeseriesTTLMS specifies the cache TTL of fast forward data
-	FastForwardTTL timeconv.Duration `yaml:"fastforward_ttl,omitempty"`
+	// PartialBucketTTL specifies the cache TTL of partial buckets, including Fast Forward data.
+	// Legacy key: fastforward_ttl
+	PartialBucketTTL timeconv.Duration `yaml:"partial_bucket_ttl,omitempty"`
 	// MaxTTL specifies the maximum allowed TTL for any cache object
 	MaxTTL timeconv.Duration `yaml:"max_ttl,omitempty"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
@@ -304,8 +307,10 @@ type Options struct {
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
 
-	sizeExplicit      bool
-	retentionExplicit bool
+	sizeExplicit               bool
+	retentionExplicit          bool
+	stepAlignmentExplicit      bool
+	fastForwardDisableExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -313,15 +318,15 @@ var _ types.ConfigOptions[Options] = &Options{}
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            timeconv.Duration(DefaultBackfillTolerance),
-		BackfillTolerancePoints:      DefaultBackfillTolerancePoints,
+		VolatileWindow:               timeconv.Duration(DefaultVolatileWindow),
+		VolatileWindowPoints:         DefaultVolatileWindowPoints,
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
 		CompressibleTypeList:         DefaultCompressibleTypes(),
 		ChunkReadConcurrencyLimit:    DefaultChunkReadConcurrencyLimit,
 		ChunkWriteConcurrencyLimit:   DefaultChunkWriteConcurrencyLimit,
 		FetchConcurrencyLimit:        DefaultFetchConcurrencyLimit,
-		FastForwardTTL:               timeconv.Duration(DefaultFastForwardTTL),
+		PartialBucketTTL:             timeconv.Duration(DefaultPartialBucketTTL),
 		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
 		KeepAliveTimeout:             timeconv.Duration(DefaultKeepAliveTimeout),
@@ -507,6 +512,11 @@ func (o *Options) Validate() (bool, error) {
 	}
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return false, ErrInvalidMaxShardSize
+	}
+	// fast_forward_disable selects Prometheus's step alignment when step_alignment is absent
+	if o.Provider == providers.Prometheus && (o.stepAlignmentExplicit || o.StepAlignment != 0) &&
+		(o.fastForwardDisableExplicit || o.FastForwardDisable) {
+		return false, fmt.Errorf("%w: backend %s", ErrStepAlignmentWithFastForwardDisable, o.Name)
 	}
 
 	if o.ShardStep > 0 && o.MaxShardSizeTime > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
@@ -932,8 +942,8 @@ func (o *Options) Initialize(name string) error {
 	if o.TimeseriesTTL > o.MaxTTL {
 		o.TimeseriesTTL = o.MaxTTL
 	}
-	if o.FastForwardTTL > o.MaxTTL {
-		o.FastForwardTTL = o.MaxTTL
+	if o.PartialBucketTTL > o.MaxTTL {
+		o.PartialBucketTTL = o.MaxTTL
 	}
 	if o.TimeseriesEvictionMethodName != "" {
 		o.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
@@ -1020,11 +1030,43 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
+	// renamed and mutually exclusive keys decode again as pointers, so that their presence is exact
+	var keys renamedKeys
+	if err := value.Decode(&keys); err != nil {
+		return err
+	}
 	*o = Options(lo)
+	keys.apply(o)
 	o.sizeExplicit = yamlHasKey(value, "max_object_size_bytes")
 	o.retentionExplicit = yamlHasKey(value, "timeseries_retention_factor")
 	o.ApplyProviderSizingDefaults()
 	return nil
+}
+
+type renamedKeys struct {
+	PartialBucketTTL        *timeconv.Duration        `yaml:"partial_bucket_ttl"`
+	FastForwardTTL          *timeconv.Duration        `yaml:"fastforward_ttl"`
+	VolatileWindow          *timeconv.Duration        `yaml:"volatile_window"`
+	BackfillTolerance       *timeconv.Duration        `yaml:"backfill_tolerance"`
+	VolatileWindowPoints    *int                      `yaml:"volatile_window_points"`
+	BackfillTolerancePoints *int                      `yaml:"backfill_tolerance_points"`
+	StepAlignment           *timeseries.StepAlignment `yaml:"step_alignment"`
+	FastForwardDisable      *bool                     `yaml:"fast_forward_disable"`
+}
+
+func (k renamedKeys) apply(o *Options) {
+	// a legacy key applies only when its new key is absent
+	if k.PartialBucketTTL == nil && k.FastForwardTTL != nil {
+		o.PartialBucketTTL = *k.FastForwardTTL
+	}
+	if k.VolatileWindow == nil && k.BackfillTolerance != nil {
+		o.VolatileWindow = *k.BackfillTolerance
+	}
+	if k.VolatileWindowPoints == nil && k.BackfillTolerancePoints != nil {
+		o.VolatileWindowPoints = *k.BackfillTolerancePoints
+	}
+	o.stepAlignmentExplicit = k.StepAlignment != nil
+	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.

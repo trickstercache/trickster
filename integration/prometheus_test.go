@@ -186,7 +186,7 @@ func TestPrometheus(t *testing.T) {
 	})
 
 	t.Run("fast forward", func(t *testing.T) {
-		// step must exceed FastForwardTTL (default 15s) for fast-forward to activate
+		// step must exceed partial_bucket_ttl (default 15s) for fast-forward to activate
 		const step = time.Minute
 		// fast-forward needs the request's step-aligned end to be Trickster's
 		// step-aligned now, so an attempt that straddles a step boundary is retried
@@ -209,7 +209,7 @@ func TestPrometheus(t *testing.T) {
 		require.Equal(t, "DeltaProxyCache", result["engine"])
 		require.NotEmpty(t, result[keys.FFStatus], "expected ffstatus in X-Trickster-Result")
 		require.NotEqual(t, "off", result[keys.FFStatus],
-			"fast-forward should be attempted for a query ending at now with step > fastforward_ttl")
+			"fast-forward should be attempted for a query ending at now with step > partial_bucket_ttl")
 	})
 
 	t.Run("POST instant queries with different query params return different results", func(t *testing.T) {

@@ -192,6 +192,8 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		LowerBound: &sqlanalyzer.Bound{
 			Value: ranges.lower.value, Inclusive: ranges.lower.inclusive,
 		},
+		RawLower:     &ranges.rawLower,
+		RawUpper:     ranges.rawUpper,
 		GroupColumns: groups,
 		OutputFormat: outputFormat,
 		Renderer:     renderer,
@@ -909,6 +911,15 @@ type rangeAnalysis struct {
 	addSynthetic func(chast.Expr)
 	timeColumn   string
 	lowerStyle   boundStyle
+	rawLower     sqlanalyzer.Bound
+	rawUpper     *sqlanalyzer.Bound
+}
+
+func (r *rangeAnalysis) recordRaw() {
+	r.rawLower = sqlanalyzer.Bound{Value: r.lower.value, Inclusive: r.lower.inclusive}
+	if r.upper != nil {
+		r.rawUpper = &sqlanalyzer.Bound{Value: r.upper.value, Inclusive: r.upper.inclusive}
+	}
 }
 
 func analyzeRanges(
@@ -1000,6 +1011,8 @@ func analyzeRanges(
 			result.targets = append(result.targets, predicate.upper.target)
 		}
 	}
+	// keep the bounds as the statement wrote them, before rounding them to the grid
+	result.recordRaw()
 	if err := normalizePrimaryBounds(&result, bucket, roundUnaligned); err != nil {
 		return result, err
 	}

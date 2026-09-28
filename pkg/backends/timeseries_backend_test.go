@@ -21,6 +21,7 @@ import (
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestNewTimeseriesBackend(t *testing.T) {
@@ -36,6 +37,14 @@ func TestFastForwardRequest(t *testing.T) {
 	r, err := tb.FastForwardRequest(nil)
 	if r != nil || err != nil {
 		t.Error("expected nil")
+	}
+}
+
+func TestStepAlignments(t *testing.T) {
+	tb, _ := NewTimeseriesBackend("test1", nil, nil, nil, nil, nil)
+	if supported, def := tb.StepAlignments(); supported != timeseries.StepAlignmentTruncate ||
+		def != timeseries.StepAlignmentTruncate {
+		t.Errorf("the base backend supports truncate only, got %s (default %s)", supported, def)
 	}
 }
 

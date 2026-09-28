@@ -73,5 +73,6 @@ func Parse(statement string, now time.Time) (*timeseries.TimeRangeQuery, bool, e
 		return query, true, windowErr
 	}
 	query.Extent = window.Output
+	query.Requested = plan.RequestedRange(now)
 	return query, true, nil
 }

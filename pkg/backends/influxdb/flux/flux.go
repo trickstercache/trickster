@@ -181,6 +181,8 @@ func DefaultAnnotations() []string {
 	return []string{AnnotationDatatype, AnnotationGroup, AnnotationDefault}
 }
 
+const stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate // _stop labels move partial buckets
+
 func ParseTimeRangeQuery(r *http.Request,
 	f iofmt.Format) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions,
 	bool, error,
@@ -224,6 +226,8 @@ func ParseTimeRangeQuery(r *http.Request,
 		extent:        extent,
 		labelsAtStart: w.labelsAtStart,
 	}
+	trq.Requested = timeseries.RequestedRange{Start: extent.Start, End: extent.End}
+	trq.StepAlignments, trq.StepAlignment = stepAlignments, timeseries.StepAlignmentTruncate
 	if w.step > 0 {
 		trq.SampleModel = timeseries.SampleModelBucket
 		if !w.labelsAtStart {

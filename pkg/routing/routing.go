@@ -353,6 +353,9 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 			if err != nil {
 				return err
 			}
+			if err := backends.ValidateStepAlignment(client, o); err != nil {
+				return err
+			}
 			clients[k] = client
 			o.HTTPClient = client.HTTPClient()
 		}

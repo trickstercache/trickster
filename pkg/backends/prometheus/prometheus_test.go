@@ -266,6 +266,13 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if int(res.Extent.End.Sub(res.Extent.Start).Hours()) != 6 {
 			t.Errorf("expected 6 got %d", int(res.Extent.End.Sub(res.Extent.Start).Hours()))
 		}
+		want := timeseries.RequestedRange{Start: res.Extent.Start, End: res.Extent.End, EndInclusive: true}
+		if res.Requested != want {
+			t.Errorf("requested range = %+v", res.Requested)
+		}
+		if res.StepAlignments != stepAlignments || res.StepAlignment != timeseries.StepAlignmentPartialEnd {
+			t.Errorf("step alignment = %s of %s", res.StepAlignment, res.StepAlignments)
+		}
 	}
 
 	b := bytes.NewBufferString(qp.Encode())

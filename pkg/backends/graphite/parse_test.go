@@ -120,6 +120,13 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		trq.Extent.Start.Unix()%10 != 0 {
 		t.Errorf("unexpected extent end %v", trq.Extent.End)
 	}
+	// the requested range is the client's own, before whisper's alignment
+	if req := trq.Requested; req.End.Sub(req.Start) != 6*time.Hour || !req.EndInclusive || !req.OpenEnded {
+		t.Errorf("unexpected requested range %+v", req)
+	}
+	if trq.StepAlignments != stepAlignments || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+		t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
 	if !rlo.FastForwardDisable {
 		t.Error("fast forward must be disabled")
 	}

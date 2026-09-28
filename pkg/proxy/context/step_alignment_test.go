@@ -16,16 +16,24 @@
 
 package context
 
-type contextKey int
+import (
+	"context"
+	"testing"
 
-const (
-	resourcesKey contextKey = iota
-	hopsKey
-	rewriterHopsKey
-	healthCheckKey
-	requestBodyKey
-	servedKey
-	clientIPKey
-	mirroredKey
-	stepAlignmentKey
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
+
+func TestStepAlignment(t *testing.T) {
+	//nolint:staticcheck // a nil context must be tolerated
+	if got := StepAlignment(nil); got != 0 {
+		t.Errorf("nil context: got %s", got)
+	}
+	ctx := context.Background()
+	if got := StepAlignment(ctx); got != 0 {
+		t.Errorf("no override: got %s", got)
+	}
+	ctx = WithStepAlignment(ctx, timeseries.StepAlignmentOff)
+	if got := StepAlignment(ctx); got != timeseries.StepAlignmentOff {
+		t.Errorf("override: got %s", got)
+	}
+}

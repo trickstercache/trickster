@@ -219,6 +219,20 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	return c, err
 }
 
+const stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+	timeseries.StepAlignmentDrop | timeseries.StepAlignmentPartialEnd
+
+// StepAlignments returns the modes a range query supports and its default: partial_end, whose live
+// end is Fast Forward, or truncate when fast_forward_disable is set
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	if c.TimeseriesBackend != nil {
+		if o := c.Configuration(); o != nil && o.FastForwardDisable {
+			return stepAlignments, timeseries.StepAlignmentTruncate
+		}
+	}
+	return stepAlignments, timeseries.StepAlignmentPartialEnd
+}
+
 // parseTime converts a query time URL parameter to time.Time.
 // Copied from https://github.com/prometheus/prometheus/blob/master/web/api/v1/api.go
 func parseTime(s string) (time.Time, error) {
@@ -328,6 +342,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 			trq.BackfillTolerance = time.Second * time.Duration(i)
 		}
 	}
+
+	trq.Requested = timeseries.RequestedRange{
+		Start: trq.Extent.Start, End: trq.Extent.End, EndInclusive: true,
+	}
+	trq.StepAlignments, trq.StepAlignment = c.StepAlignments()
 
 	return trq, rlo, true, nil
 }

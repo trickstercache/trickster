@@ -62,6 +62,10 @@ type DeltaConfig struct {
 	RetentionPoints int
 	// BackfillTolerance widens the volatile tail excluded from cache storage.
 	BackfillTolerance time.Duration
+	// PartialBucketTTL bounds the lifetime of cached partial buckets.
+	PartialBucketTTL time.Duration
+	// StepAlignment is the backend's configured step alignment mode; zero uses the default.
+	StepAlignment timeseries.StepAlignment
 }
 
 // WithDeltaCache enables the delta tier on a Server.

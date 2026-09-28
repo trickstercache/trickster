@@ -75,6 +75,8 @@ type TimeseriesBackend interface {
 	// ProcessTransformations executes any provider-specific transformations, like injecting
 	// labels into the dataset
 	ProcessTransformations(timeseries.Timeseries)
+	// StepAligner reports the step alignment modes the provider supports, and its default
+	timeseries.StepAligner
 }
 
 // MergeableTimeseriesBackend defines the interface for mergeable time series
@@ -125,3 +127,8 @@ func (b *timeseriesBackend) Modeler() *timeseries.Modeler {
 
 // ProcessTransformations is the default implementation for the Timeseries Backend interface
 func (b *timeseriesBackend) ProcessTransformations(timeseries.Timeseries) {}
+
+// StepAlignments is the default implementation for the Timeseries Backend interface: truncate only
+func (b *timeseriesBackend) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return timeseries.StepAlignmentTruncate, timeseries.StepAlignmentTruncate
+}
