@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"sync/atomic"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/compat"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -67,7 +67,7 @@ func Mirror(backendName string, o *po.MirrorOptions, target backends.Backend, ne
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// sampling a share of traffic needs no unpredictability
-		if !tctx.IsMirrored(r.Context()) && (m.percent >= 100 || rand.IntN(100) < m.percent) { //nolint:gosec // traffic sampling
+		if !tctx.IsMirrored(r.Context()) && (m.percent >= 100 || compat.IntN(100) < m.percent) {
 			m.fire(r)
 		}
 		next.ServeHTTP(w, r)

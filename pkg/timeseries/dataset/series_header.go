@@ -20,7 +20,9 @@ package dataset
 
 import (
 	"fmt"
+	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/checksum/fnv"
@@ -57,24 +59,55 @@ type SeriesHeader struct {
 // seriesHeaderFNVHash is the shared FNV payload for CalculateHash; queryStatement
 // is the string mixed into the hash in the same position as QueryStatement.
 func seriesHeaderFNVHash(sh *SeriesHeader, queryStatement string) Hash {
+	// strings are length-prefixed and lists counted, so no two headers share an input;
+	// sameSeries must compare exactly these attributes
 	h := fnv.NewInlineFNV64a()
-	h.Write([]byte(sh.Name))
-	h.Write([]byte(queryStatement))
+	hashString(&h, sh.Name)
+	hashString(&h, queryStatement)
+	hashCount(&h, len(sh.Tags))
 	for _, k := range sh.Tags.Keys() {
-		h.Write([]byte(k))
-		h.Write([]byte(sh.Tags[k]))
+		hashString(&h, k)
+		hashString(&h, sh.Tags[k])
 	}
-	for _, fd := range sh.ValueFieldsList {
-		h.Write([]byte(fd.Name))
-		h.Write([]byte{byte(fd.DataType)})
-	}
-	for _, fd := range sh.UntrackedFieldsList {
-		h.Write([]byte(fd.Name))
-		h.Write([]byte{byte(fd.DataType)})
-	}
-	h.Write([]byte(sh.TimestampField.Name))
-	h.Write([]byte{byte(sh.TimestampField.DataType)})
+	hashFields(&h, sh.ValueFieldsList)
+	hashFields(&h, sh.UntrackedFieldsList)
+	hashField(&h, sh.TimestampField)
 	return Hash(h.Sum64())
+}
+
+func hashString(h *fnv.InlineFNV64a, s string) {
+	var buf [24]byte
+	_, _ = h.Write(append(strconv.AppendInt(buf[:0], int64(len(s)), 10), ':'))
+	_, _ = h.WriteString(s)
+}
+
+func hashCount(h *fnv.InlineFNV64a, n int) {
+	var buf [24]byte
+	_, _ = h.Write(append(strconv.AppendInt(buf[:0], int64(n), 10), '#'))
+}
+
+func hashField(h *fnv.InlineFNV64a, fd timeseries.FieldDefinition) {
+	hashString(h, fd.Name)
+	_, _ = h.Write([]byte{byte(fd.DataType)})
+}
+
+func hashFields(h *fnv.InlineFNV64a, fds timeseries.FieldDefinitions) {
+	hashCount(h, len(fds))
+	for _, fd := range fds {
+		hashField(h, fd)
+	}
+}
+
+func sameSeries(a, b *SeriesHeader) bool {
+	// compares exactly the attributes that seriesHeaderFNVHash covers
+	return a.Name == b.Name && a.QueryStatement == b.QueryStatement &&
+		maps.Equal(a.Tags, b.Tags) && sameField(a.TimestampField, b.TimestampField) &&
+		slices.EqualFunc(a.ValueFieldsList, b.ValueFieldsList, sameField) &&
+		slices.EqualFunc(a.UntrackedFieldsList, b.UntrackedFieldsList, sameField)
+}
+
+func sameField(a, b timeseries.FieldDefinition) bool {
+	return a.Name == b.Name && a.DataType == b.DataType
 }
 
 // CalculateHash sums the FNV64a hash for the Header and stores it to the Hash member

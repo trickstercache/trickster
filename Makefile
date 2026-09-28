@@ -166,6 +166,12 @@ style:
 check-imports:
 	@go run hack/check-imports/main.go
 
+# fails the build if weak randomness crosses the application/test boundary;
+# pkg/util/weak/weaktest also panics at runtime once the application registers
+.PHONY: check-weak-random
+check-weak-random:
+	@go run hack/check-weak-random/main.go
+
 .PHONY: gofix-apply
 gofix-apply:
 	@go fix ./...
@@ -183,7 +189,7 @@ golangci-lint:
 	done
 
 .PHONY: lint
-lint: check-imports spelling vulncheck gofix-diff golangci-lint
+lint: check-imports check-weak-random spelling vulncheck gofix-diff golangci-lint
 
 .PHONY: lint-all
 lint-all:
@@ -229,7 +235,7 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen gotest check-fmtprints check-todos check-devorigin-offline
+test: check-license-headers check-codegen check-weak-random gotest check-fmtprints check-todos check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest

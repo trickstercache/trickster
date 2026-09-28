@@ -30,3 +30,17 @@ func TestInlineFNV64a(t *testing.T) {
 		t.Errorf("unexpected checksum for '%s', wanted %d got %d", input, expected, result)
 	}
 }
+
+func TestInlineFNV64aWriteString(t *testing.T) {
+	h1, h2 := NewInlineFNV64a(), NewInlineFNV64a()
+	if _, err := h1.Write([]byte("trickster")); err != nil {
+		t.Fatal(err)
+	}
+	n, err := h2.WriteString("trickster")
+	if err != nil || n != len("trickster") {
+		t.Fatalf("unexpected WriteString result %d, %v", n, err)
+	}
+	if h1.Sum64() != h2.Sum64() {
+		t.Errorf("WriteString and Write disagree: %d != %d", h2.Sum64(), h1.Sum64())
+	}
+}

@@ -18,7 +18,6 @@ package dataset
 
 import (
 	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 )
 
 func testDataSet() *DataSet {
@@ -744,7 +744,7 @@ func genBenchmarkPoint(e epoch.Epoch, valuect int) Point {
 		Values: make([]any, valuect),
 	}
 	for i := range valuect {
-		out.Values[i] = rand.Int() % 1000
+		out.Values[i] = weaktest.IntN(1000)
 	}
 	return out
 }

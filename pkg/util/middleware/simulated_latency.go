@@ -17,10 +17,11 @@
 package middleware
 
 import (
-	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/compat"
 )
 
 const latencyHeaderName = "x-simulated-latency"
@@ -37,7 +38,7 @@ func processSimulatedLatency(w http.ResponseWriter, minLatency, maxLatency time.
 	if minMS >= maxMS {
 		ms = minMS
 	} else {
-		ms = (rand.Int63()%maxMS - minMS) + minMS // #nosec G404 -- we are OK with a weak random source, random-ish enough for our purposes, no security risk
+		ms = (compat.Int64()%maxMS - minMS) + minMS
 	}
 	if ms <= 0 {
 		return
