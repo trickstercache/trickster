@@ -45,7 +45,9 @@ func TestClickHouseCacheMatrix(t *testing.T) {
 	// the miss/partial-hit boundary is anchored to now rather than to the seeded data's midpoint
 	now := time.Now().Unix()
 	require.Less(t, now, end-step, "the seeded trips data has aged out; run `make developer-seed-data` to regenerate and reload it (no network needed)")
-	mid := max(now/step*step, start+step)
+	// the bucket holding now is still filling and never shown, so the first range ends a bucket before
+	// it, and the wide range, which runs past now, adds that complete bucket
+	mid := max(now/step*step-step, start+step)
 	require.Less(t, mid, end)
 
 	for _, backend := range []string{"click1", "click-native"} {

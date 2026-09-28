@@ -941,10 +941,12 @@ func TestDeltaProxyCacheRequestFastForwardUrlErrorChunks(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "err"})
+	// a range short of the latest point is never fast forwarded, so the request that fails isn't built
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: statusOff})
 	if err != nil {
 		t.Error(err)
 	}
+	requireLiveFastForwardError(t, true)
 }
 
 func TestDeltaProxyCacheRequestWithRefreshChunks(t *testing.T) {

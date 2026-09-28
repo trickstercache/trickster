@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -70,9 +71,10 @@ func resolveStepAlignment(ctx context.Context, o *bo.Options, trq *timeseries.Ti
 
 func serveUnaligned(w http.ResponseWriter, r *http.Request, rsc *request.Resources,
 	trq *timeseries.TimeRangeQuery, rlo *timeseries.RequestOptions, modeler *timeseries.Modeler,
+	ttl time.Duration,
 ) {
-	// off answers with the origin's response to the client's own request, through the object proxy
-	// cache under a key that holds the raw range
+	// the origin's answer to the client's own request, through the object proxy cache under a key
+	// holding the raw range, for off and for a range with no complete bucket
 	if trq.OriginalBody != nil {
 		request.SetBody(r, trq.OriginalBody)
 	}
@@ -81,7 +83,7 @@ func serveUnaligned(w http.ResponseWriter, r *http.Request, rsc *request.Resourc
 	rsc.Lock()
 	// the parser's template and key elements name the statement without its range
 	trq.TemplateURL, trq.CacheKeyElements = nil, elements
-	rsc.AlternateCacheTTL, rsc.PerCredentialCache = timeseries.StepAlignmentOffTTL, true
+	rsc.AlternateCacheTTL, rsc.PerCredentialCache = ttl, true
 	rsc.Unlock()
 	if rsc.TSTransformer == nil || modeler == nil {
 		ObjectProxyCacheRequest(w, r)

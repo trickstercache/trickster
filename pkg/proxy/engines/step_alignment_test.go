@@ -211,7 +211,7 @@ func TestServeUnalignedRelaysABodyItCannotModel(t *testing.T) {
 	trq := &timeseries.TimeRangeQuery{}
 	rsc.TimeRangeQuery = trq
 	w := httptest.NewRecorder()
-	serveUnaligned(w, r, rsc, trq, nil, tst.Modeler())
+	serveUnaligned(w, r, rsc, trq, nil, tst.Modeler(), timeseries.StepAlignmentOffTTL)
 	if w.Code != http.StatusOK || w.Body.String() != "test" {
 		t.Errorf("expected the origin's body as sent, got %d %q", w.Code, w.Body.String())
 	}
@@ -239,7 +239,7 @@ func TestServeUnalignedSendsTheClientsBody(t *testing.T) {
 		}}
 		rsc.TimeRangeQuery = trq
 		w := httptest.NewRecorder()
-		serveUnaligned(w, req, rsc, trq, nil, nil)
+		serveUnaligned(w, req, rsc, trq, nil, nil, timeseries.StepAlignmentOffTTL)
 		return dpcResponse{code: w.Code, body: w.Body.String(), header: w.Header()}
 	}
 	first, second := `{"range":[1,2]}`, `{"range":[1,3]}`
@@ -330,7 +330,7 @@ func TestServeUnalignedKeysRepeatedValuesApartFromOneValue(t *testing.T) {
 		trq := &timeseries.TimeRangeQuery{}
 		rsc.TimeRangeQuery = trq
 		w := httptest.NewRecorder()
-		serveUnaligned(w, req, rsc, trq, nil, nil)
+		serveUnaligned(w, req, rsc, trq, nil, nil, timeseries.StepAlignmentOffTTL)
 		resp := dpcResponse{code: w.Code, body: w.Body.String(), header: w.Header()}
 		requireResult(t, resp, engineOPC, test.lookup)
 		if resp.body != test.query {

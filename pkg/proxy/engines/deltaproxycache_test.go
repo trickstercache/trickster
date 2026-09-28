@@ -49,10 +49,15 @@ type gatedTransport struct {
 	inner http.RoundTripper
 	gate  <-chan struct{}
 	hits  *atomic.Int64
+	// seen, when set, is told of every request as it is sent
+	seen func(*http.Request)
 }
 
 func (g *gatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	g.hits.Add(1)
+	if g.seen != nil {
+		g.seen(req)
+	}
 	<-g.gate
 	return g.inner.RoundTrip(req)
 }
@@ -1172,8 +1177,36 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "err"})
+	// a range short of the latest point is never fast forwarded, so the request that fails isn't built
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: statusOff})
 	if err != nil {
+		t.Error(err)
+	}
+	requireLiveFastForwardError(t, false)
+}
+
+func requireLiveFastForwardError(t *testing.T, chunked bool) {
+	t.Helper()
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	rsc.CacheConfig.UseCacheChunking, rsc.CacheConfig.Provider = chunked, "test"
+	client := rsc.BackendClient.(*TestClient)
+	const step = 300 * time.Second
+	// a range reaching the latest point is fast forwarded, so the request that fails reports err
+	resp, ok := stepwindow.Retry(step, 3, func(attempt int, now time.Time) dpcResponse {
+		u := r.URL
+		u.Path = "/prometheus/api/v1/query_range"
+		u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&rangeKey=ff-err-%d&step=%d&start=%d&end=%d&query=%s",
+			attempt, int(step.Seconds()), now.Add(-time.Hour).Unix(), now.Unix(), queryReturnsOKNoLatency)
+		return serveDPC(client, r)
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a step boundary")
+	}
+	if err := testResultHeaderPartMatch(resp.header, map[string]string{keys.FFStatus: statusErr}); err != nil {
 		t.Error(err)
 	}
 }

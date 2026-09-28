@@ -66,6 +66,13 @@ func writePartialBuckets(sb *strings.Builder, pbs []PartialBucketResult) {
 	}
 }
 
+// PartialBucketsString returns partial bucket results as the result header lists them, unbracketed
+func PartialBucketsString(pbs []PartialBucketResult) string {
+	var sb strings.Builder
+	writePartialBuckets(&sb, pbs)
+	return sb.String()
+}
+
 func parsePartialBuckets(val string) []PartialBucketResult {
 	val = strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
 	out := make([]PartialBucketResult, 0, strings.Count(val, partialBucketSeparator)+1)
@@ -162,11 +169,16 @@ func (p ResultHeaderParts) String() string {
 }
 
 // SetResultsHeader adds a response header summarizing Trickster's handling of the HTTP request
-func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList, failedFetched timeseries.ExtentList) {
+func SetResultsHeader(headers http.Header, engine, status, ffstatus string, fetched timeseries.ExtentList,
+	failedFetched timeseries.ExtentList, partials ...PartialBucketResult,
+) {
 	if headers == nil || engine == "" {
 		return
 	}
-	p := ResultHeaderParts{Engine: engine, Status: status, Fetched: fetched, FailedFetch: failedFetched, FastForwardStatus: ffstatus}
+	p := ResultHeaderParts{
+		Engine: engine, Status: status, Fetched: fetched, FailedFetch: failedFetched,
+		FastForwardStatus: ffstatus, PartialBuckets: partials,
+	}
 	headers.Set(NameTricksterResult, p.String())
 }
 

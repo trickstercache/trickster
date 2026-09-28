@@ -20,9 +20,13 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
@@ -36,9 +40,23 @@ func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 	return nil
 }
 
-// FastForwardRequest returns an *http.Request crafted to collect Fast Forward
-// data from the Origin, based on the provided HTTP Request
-func (c *Client) FastForwardRequest(r *http.Request) (*http.Request, error) {
+// FetchPartialBucket fetches a range query's live point as Fast Forward: an instant query at its
+// end, via the object proxy cache. Instant points have no other partial bucket.
+func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	_ timeseries.PartialBucket, isLive bool,
+) (*dataset.DataSet, status.LookupStatus, error) {
+	if !isLive {
+		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+	}
+	ffReq, err := fastForwardRequest(r)
+	if err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	return engines.FetchPartialBucket(ffReq, c.Configuration().FastForwardPath, trq, c.Modeler())
+}
+
+func fastForwardRequest(r *http.Request) (*http.Request, error) {
+	// the range query's own request, as an instant query at its end
 	nr, err := request.Clone(r)
 	if err != nil {
 		return nil, err

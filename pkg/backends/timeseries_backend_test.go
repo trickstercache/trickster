@@ -17,9 +17,11 @@
 package backends
 
 import (
+	"errors"
 	"testing"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -31,12 +33,12 @@ func TestNewTimeseriesBackend(t *testing.T) {
 	}
 }
 
-func TestFastForwardRequest(t *testing.T) {
+func TestFetchPartialBucket(t *testing.T) {
 	tb, _ := NewTimeseriesBackend("test1", nil, nil, nil, nil, nil)
-	// should always return nil for the base Timeseries Backend
-	r, err := tb.FastForwardRequest(nil)
-	if r != nil || err != nil {
-		t.Error("expected nil")
+	// the base Timeseries Backend fetches no partial buckets
+	ds, st, err := tb.FetchPartialBucket(nil, nil, timeseries.PartialBucket{}, true)
+	if ds != nil || st != status.LookupStatusError || !errors.Is(err, ErrPartialBucketsUnsupported) {
+		t.Errorf("got %v %s %v", ds, st, err)
 	}
 }
 

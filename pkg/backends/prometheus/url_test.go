@@ -93,27 +93,11 @@ func TestSetExtent(t *testing.T) {
 func TestFastForwardURL(t *testing.T) {
 	expected := "q=up&time=1"
 
-	conf, err := config.Load([]string{
-		"-origin-url", "none:9090", "-provider",
-		providers.Prometheus, "-log-level", "debug",
-	})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
-
-	o := conf.Backends["default"]
-	client, err := NewClient("default", o, nil, nil, nil, nil)
-	if err != nil {
-		t.Error(err)
-	}
-
-	pc := client.(*Client)
-
 	u := &url.URL{Path: "/query_range", RawQuery: "q=up&start=1&end=1&step=1"}
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 	r = request.SetResources(r, &request.Resources{})
 
-	r2, err := pc.FastForwardRequest(r)
+	r2, err := fastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
 	}
@@ -127,27 +111,13 @@ func TestFastForwardURL(t *testing.T) {
 	r, _ = http.NewRequest(http.MethodPost, r2.URL.String(), b)
 	r = request.SetResources(r, &request.Resources{})
 
-	_, err = pc.FastForwardRequest(r)
+	_, err = fastForwardRequest(r)
 	if err != nil {
 		t.Error(err)
 	}
 }
 
 func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
-	conf, err := config.Load([]string{
-		"-origin-url", "none:9090", "-provider",
-		providers.Prometheus, "-log-level", "debug",
-	})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
-
-	client, err := NewClient("default", conf.Backends["default"], nil, nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pc := client.(*Client)
-
 	tests := []struct {
 		name        string
 		method      string
@@ -205,7 +175,7 @@ func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
 			}
 			r = request.SetResources(r, &request.Resources{})
 
-			got, err := pc.FastForwardRequest(r)
+			got, err := fastForwardRequest(r)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -239,21 +209,6 @@ func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
 }
 
 func TestFastForwardRequestEdgeCases(t *testing.T) {
-	conf, err := config.Load([]string{
-		"-origin-url", "none:9090", "-provider",
-		providers.Prometheus, "-log-level", "debug",
-	})
-	if err != nil {
-		t.Fatalf("Could not load configuration: %s", err.Error())
-	}
-
-	o := conf.Backends["default"]
-	client, err := NewClient("default", o, nil, nil, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pc := client.(*Client)
-
 	tests := []struct {
 		name         string
 		path         string
@@ -284,7 +239,7 @@ func TestFastForwardRequestEdgeCases(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			r, _ := http.NewRequest(http.MethodGet, test.path+"?q=up", nil)
 			r = request.SetResources(r, &request.Resources{})
-			r2, err := pc.FastForwardRequest(r)
+			r2, err := fastForwardRequest(r)
 			if err != nil {
 				t.Fatal(err)
 			}

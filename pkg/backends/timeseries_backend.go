@@ -17,6 +17,7 @@
 package backends
 
 import (
+	"errors"
 	"net/http"
 	"net/url"
 
@@ -24,9 +25,11 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // TimeseriesBackend is the primary interface for interoperating with Trickster and upstream TSDB's
@@ -43,11 +46,10 @@ type TimeseriesBackend interface {
 	Configuration() *bo.Options
 	// Name returns the name of the Backend
 	Name() string
-	// FastForwardRequest returns an *http.Request crafted to collect Fast Forward data
-	// from the Origin, based on the provided HTTP Request. If the inbound request is
-	// POST/PUT/PATCH, a Content-Type header and non-nil body with the query parameters
-	// must be set, in lieu of updated url query values, in the returned request
-	FastForwardRequest(*http.Request) (*http.Request, error)
+	// FetchPartialBucket fetches one partial bucket of r's query via the object proxy cache for
+	// partial_bucket_ttl and returns its rows; isLive marks the bucket holding now
+	FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery, pb timeseries.PartialBucket,
+		isLive bool) (*dataset.DataSet, status.LookupStatus, error)
 	// SetExtent updates an upstream request's timerange parameters based on the
 	// provided timeseries.Extent. It returns an error when the request cannot be
 	// rewritten safely; callers must not send that request to the origin.
@@ -101,9 +103,15 @@ func NewTimeseriesBackend(name string, o *bo.Options, registrar Registrar, route
 	return &timeseriesBackend{Backend: backend, modeler: modeler}, err
 }
 
-// FastForwardRequest is the default implementation for the Timeseries Backend interface
-func (b *timeseriesBackend) FastForwardRequest(_ *http.Request) (*http.Request, error) {
-	return nil, nil
+// ErrPartialBucketsUnsupported is returned by a provider that fetches no partial buckets
+var ErrPartialBucketsUnsupported = errors.New("the provider does not fetch partial buckets")
+
+// FetchPartialBucket is the default implementation for the Timeseries Backend interface: a provider
+// with no partial buckets fetches none
+func (b *timeseriesBackend) FetchPartialBucket(_ *http.Request, _ *timeseries.TimeRangeQuery,
+	_ timeseries.PartialBucket, _ bool,
+) (*dataset.DataSet, status.LookupStatus, error) {
+	return nil, status.LookupStatusError, ErrPartialBucketsUnsupported
 }
 
 // ParseTimeRangeQuery is the default implementation for the Timeseries Backend interface

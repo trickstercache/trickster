@@ -475,7 +475,7 @@ func recordResults(
 	path, ffStatus string,
 	elapsed float64,
 	extents, failed timeseries.ExtentList,
-	header http.Header,
+	header http.Header, partials ...headers.PartialBucketResult,
 ) {
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
@@ -498,5 +498,5 @@ func recordResults(
 			metrics.ProxyRequestDuration.WithLabelValues(lvs...).Observe(elapsed)
 		}
 	}
-	headers.SetResultsHeader(header, engine, s, ffStatus, extents, failed)
+	headers.SetResultsHeader(header, engine, s, ffStatus, extents, failed, partials...)
 }
