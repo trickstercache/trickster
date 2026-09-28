@@ -40,7 +40,9 @@ import (
 	certs "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/certificates"
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
+	streamacl "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/stream"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	l4observe "github.com/trickstercache/trickster/v2/pkg/proxy/l4/observe"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -359,11 +361,14 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 }
 
 // streamConfig builds a stream listener's routing table from the backends mapped to it: a tls
-// listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend
+// listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend.
+// Each backend list is kept with the upstream added to that table, and the admission asks the
+// table again when it enforces the list, so the route and the list are one lookup.
 func streamConfig(conf *config.Config, desired desiredListener, clients backends.Backends) *l4.Config {
 	// a pool member carries the listener name too, but is reached through its pool
 	members := conf.Backends.PoolMembers()
 	table := l4.NewTable()
+	backendACL := make(map[l4.Upstream]*ipacl.List)
 	for _, backendName := range slices.Sorted(maps.Keys(conf.Backends)) {
 		o := conf.Backends[backendName]
 		if o == nil || o.IsTemplate || members.Contains(backendName) ||
@@ -376,6 +381,9 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 				keys.ListenerName: desired.listenerName, keys.BackendName: backendName,
 			})
 			continue
+		}
+		if o.IPACL != nil {
+			backendACL[up] = o.IPACL
 		}
 		hosts := o.Hosts
 		if desired.options.Protocol != listenerconfig.ProtocolTLS || len(hosts) == 0 {
@@ -397,6 +405,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
 		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
+		Admission:      streamacl.New(desired.options.Protocol, desired.options.IPACL, table, backendACL),
 	}
 }
 
