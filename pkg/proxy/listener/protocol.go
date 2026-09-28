@@ -47,6 +47,16 @@ type ProtocolServer interface {
 	Serve(net.Listener) error
 }
 
+// acceptJudgesClientIP reports whether a client_ip list sees the socket peer.
+// A native listener without PROXY protocol has no other address. HTTP resolves
+// the client in middleware, and stream tcp and tls resolve it from Flow.Client.
+func acceptJudgesClientIP(protocol string, proxy *ProxyProtocolOptions) bool {
+	if proxy != nil && proxy.Enabled {
+		return false
+	}
+	return protocol != "tcp" && protocol != "tls"
+}
+
 // StartProtocolListener starts a protocol-terminating server on a Trickster
 // listener, preserving the common connection limit, metrics, and drain lifecycle.
 func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
@@ -57,7 +67,8 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 	l.setState(StateStarting)
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, nil, proxyProtocol)
+	l.Listener, err = NewListener(address, port, connectionsLimit, nil, proxyProtocol, &l.ipacl,
+		acceptJudgesClientIP(protocol, proxyProtocol))
 	if err != nil {
 		logger.ErrorSynchronous(protocol+" listener startup failed", logging.Pairs{
 			logKeyListenerName: listenerName, logKeyDetail: err,

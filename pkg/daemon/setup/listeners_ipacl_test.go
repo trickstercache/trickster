@@ -104,12 +104,8 @@ func TestListenerIPACL(t *testing.T) {
 
 	t.Run("readiness", func(t *testing.T) {
 		h := proxyWith(t, deny, mgmt.DefaultReadyHandlerPath)
-		req := httptest.NewRequest(http.MethodGet, mgmt.DefaultReadyHandlerPath, nil)
-		req.RemoteAddr = "192.0.2.9:1"
-		req.Host = "api.example.com"
-		w := httptest.NewRecorder()
-		h.ServeHTTP(w, req)
-		if w.Code != http.StatusServiceUnavailable || w.Body.String() != ready.BodyNotReady {
+		w := serve(h, http.MethodGet, mgmt.DefaultReadyHandlerPath, "192.0.2.9:1", "")
+		if w.Code != http.StatusTooManyRequests || w.Body.String() == ready.BodyNotReady {
 			t.Fatalf("ready = %d %q", w.Code, w.Body.String())
 		}
 	})
@@ -125,7 +121,7 @@ func TestListenerIPACL(t *testing.T) {
 	t.Run("custom ready path", func(t *testing.T) {
 		h := proxyWith(t, deny, "/custom-ready")
 		w := serve(h, http.MethodGet, "/custom-ready", "192.0.2.9:1", "")
-		if w.Code != http.StatusServiceUnavailable || w.Body.String() != ready.BodyNotReady {
+		if w.Code != http.StatusTooManyRequests || w.Body.String() == ready.BodyNotReady {
 			t.Fatalf("custom ready = %d %q", w.Code, w.Body.String())
 		}
 		w = serve(h, http.MethodGet, mgmt.DefaultReadyHandlerPath, "192.0.2.9:1", "")
@@ -159,7 +155,7 @@ func TestListenerIPACL(t *testing.T) {
 	t.Run("peer", func(t *testing.T) {
 		c := config.NewConfig()
 		front := c.Listeners[listenerconfig.DefaultFrontendName]
-		front.IPACL = mustList(t, ipacl.Options{Allow: []string{"10.1.1.1"}, Source: "peer"})
+		front.IPACL = mustList(t, ipacl.Options{Allow: []string{"192.0.2.9"}, Source: "peer"})
 		front.TrustedProxies = []string{"10.1.1.1"}
 		raw := lm.NewRouter()
 		if err := raw.RegisterRoute("/api", nil, nil, matching.PathMatchTypeExact, routeBody("route")); err != nil {
@@ -170,19 +166,21 @@ func TestListenerIPACL(t *testing.T) {
 		h := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router
 		w := serve(h, http.MethodGet, "/api", "10.1.1.1:9", "192.0.2.9")
 		if w.Code != http.StatusOK || w.Body.String() != "route" {
-			t.Fatalf("peer allow = %d %q", w.Code, w.Body.String())
+			t.Fatalf("http/1 peer = %d %q", w.Code, w.Body.String())
 		}
-		front.IPACL = mustList(t, ipacl.Options{Allow: []string{"192.0.2.9"}, Source: "peer"})
-		got = desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)
-		h = got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router
-		w = serve(h, http.MethodGet, "/api", "10.1.1.1:9", "192.0.2.9")
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("peer deny = %d; forwarded client must not be used", w.Code)
+		req := httptest.NewRequest(http.MethodGet, "/api", nil)
+		req.ProtoMajor = 3
+		req.RemoteAddr = "10.1.1.1:9"
+		req.Header.Set(headers.NameXForwardedFor, "192.0.2.9")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden || rec.Body.String() == "route" {
+			t.Fatalf("http/3 peer = %d %q", rec.Code, rec.Body.String())
 		}
 	})
 }
 
-func TestManagementListenerIPACLExemptsReadiness(t *testing.T) {
+func TestManagementListenerIPACLJudgesReadiness(t *testing.T) {
 	c := config.NewConfig()
 	c.Listeners[mgmt.ListenerNameMgmt].IPACL = mustList(t, ipacl.Options{
 		Allow: []string{"10.0.0.0/8"}, Status: http.StatusTooManyRequests,
@@ -200,7 +198,7 @@ func TestManagementListenerIPACLExemptsReadiness(t *testing.T) {
 		[]mgmtRoute{{path: readyPath, handler: ready.HandlerFunc(&ready.State{}, nil)}})
 	h := got[listenerKey(mgmt.ListenerNameMgmt, listenerconfig.ProtocolHTTP, false)].router
 	w := serve(h, http.MethodGet, readyPath, "192.0.2.9:1", "")
-	if w.Code != http.StatusServiceUnavailable || w.Body.String() != ready.BodyNotReady {
+	if w.Code != http.StatusTooManyRequests || w.Body.String() == ready.BodyNotReady {
 		t.Fatalf("mgmt ready = %d %q", w.Code, w.Body.String())
 	}
 	w = serve(h, http.MethodGet, "/api", "192.0.2.9:1", "")

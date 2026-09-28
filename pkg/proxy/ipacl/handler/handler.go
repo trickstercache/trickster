@@ -27,16 +27,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-// Middleware returns next when list or next is nil. readyPath, when set, is
-// served without consulting the list; listeners pass the configured readiness
-// path and route checks pass an empty one. A denial is the list's HTTP status
-// and does not call next. An address that cannot be parsed is denied.
-func Middleware(list *ipacl.List, readyPath string, next http.Handler) http.Handler {
+// Middleware returns next when list or next is nil. A client_ip list judges
+// request.ClientIP. A peer list judges r.RemoteAddr only for HTTP/3, which has
+// no TCP accept; every other peer list was judged on the socket and is skipped.
+// A denial is the list's HTTP status and does not call next. An address that
+// cannot be parsed is denied.
+func Middleware(list *ipacl.List, next http.Handler) http.Handler {
 	if list == nil || next == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if readyPath != "" && r.URL.Path == readyPath {
+		if list.Source() == ipacl.Peer && (r == nil || r.ProtoMajor != 3) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -50,8 +51,8 @@ func Middleware(list *ipacl.List, readyPath string, next http.Handler) http.Hand
 }
 
 // subject is the address the list judges. client_ip is the address already
-// resolved through trusted proxies. peer is the host of the connection's
-// remote address, which is the PROXY header source when that header was honored.
+// resolved through trusted proxies and the PROXY protocol. peer is the host of
+// r.RemoteAddr, which for HTTP/3 is the QUIC peer.
 func subject(list *ipacl.List, r *http.Request) string {
 	if list.Source() == ipacl.Peer {
 		if r == nil {

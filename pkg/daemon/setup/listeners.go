@@ -95,15 +95,14 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 	})
 }
 
-func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, readyPath string,
-	next http.Handler,
+func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler,
 ) http.Handler {
 	// client IP, then the router access log, then the listener access list, then next.
 	// next is the readiness guard on a proxy listener and the built-in router on mgmt
-	// and metrics. The list exempts readyPath and answers a denial itself, so the
-	// access log records that status against the resolved client.
+	// and metrics. client_ip is judged here. HTTP/3 peer is judged here. A plain or TLS
+	// peer list was judged at accept and passes through.
 	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
-		aclhandler.Middleware(o.IPACL, readyPath, next)))
+		aclhandler.Middleware(o.IPACL, next)))
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -172,6 +171,9 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		desired := newListeners[key]
 		old, existed := oldListeners[key]
 		if existed && !runtimeListenerNeedsRestart(lg, key, old, desired) && lg.Get(key) != nil {
+			if acceptTimeIPACL(desired) {
+				setListenerIPACL(lg, key, desired.options)
+			}
 			if desired.stream {
 				updateStreamListener(lg, key, streamConfig(conf, desired, clients))
 				continue
@@ -219,6 +221,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				})
 				continue
 			}
+			setListenerIPACL(lg, key, desired.options)
 			go lg.StartProtocolListener(key, desired.options.Protocol,
 				desired.address, desired.port, desired.options.ConnectionsLimit,
 				svr, errorFunc, proxyProtocolOptions(desired.options))
@@ -260,6 +263,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			listenerTracers = tracers
 			tracersAssigned = true
 		}
+		setListenerIPACL(lg, key, desired.options)
 		go lg.StartListener(key, desired.address, desired.port,
 			desired.options.ConnectionsLimit, tlsConfig, desired.router,
 			listenerTracers, errorFunc, time.Duration(desired.options.ReadHeaderTimeout),
@@ -276,10 +280,6 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		return out
 	}
 	nativeListeners := providerregistry.NativeListeners()
-	readyPath := ""
-	if conf.MgmtConfig != nil {
-		readyPath = conf.MgmtConfig.ReadyHandlerPath
-	}
 	for name, options := range conf.Listeners {
 		if options == nil || !options.Active {
 			continue
@@ -325,7 +325,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		default:
 			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
-		r = wrapListener(options, accessLogger, readyPath, r)
+		r = wrapListener(options, accessLogger, r)
 		if options.ListenPort > 0 {
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
@@ -408,6 +408,7 @@ func startStreamListener(lg *listener.Group, desired desiredListener, cfg *l4.Co
 		return
 	}
 	svr := l4.NewServer(desired.listenerName, protocol, cfg)
+	setListenerIPACL(lg, desired.key, desired.options)
 	go lg.StartProtocolListener(desired.key, protocol, desired.address, desired.port,
 		0, svr, errorFunc, proxyProtocolOptions(desired.options))
 }
@@ -451,6 +452,22 @@ func trustedProxies(options *listenerconfig.Options) clientip.Trusted {
 		return nil
 	}
 	return trusted
+}
+
+// acceptTimeIPACL reports listeners whose socket is opened by NewListener.
+// HTTP/3 and UDP have no TCP accept, so they do not use this list.
+func acceptTimeIPACL(desired desiredListener) bool {
+	if desired.http3 || desired.options == nil {
+		return false
+	}
+	return !desired.stream || desired.options.Protocol != listenerconfig.ProtocolUDP
+}
+
+func setListenerIPACL(lg *listener.Group, key string, o *listenerconfig.Options) {
+	if lg == nil || o == nil {
+		return
+	}
+	lg.SetIPACL(key, o.IPACL)
 }
 
 func proxyProtocolOptions(options *listenerconfig.Options) *listener.ProxyProtocolOptions {

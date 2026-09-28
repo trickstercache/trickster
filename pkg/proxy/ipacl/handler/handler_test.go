@@ -45,11 +45,11 @@ func TestMiddleware(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api", nil)
 	req.RemoteAddr = "192.0.2.9:1"
 	w := httptest.NewRecorder()
-	Middleware(nil, "/trickster/ready", next).ServeHTTP(w, req)
+	Middleware(nil, next).ServeHTTP(w, req)
 	if w.Code != http.StatusOK || w.Body.String() != "next" {
 		t.Fatalf("nil list = %d %q", w.Code, w.Body.String())
 	}
-	if Middleware(deny, "", nil) != nil {
+	if Middleware(deny, nil) != nil {
 		t.Fatal("nil next must pass through")
 	}
 
@@ -57,7 +57,7 @@ func TestMiddleware(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api", nil)
 		req.RemoteAddr = "192.0.2.9:1"
 		w := httptest.NewRecorder()
-		Middleware(deny, "", next).ServeHTTP(w, req)
+		Middleware(deny, next).ServeHTTP(w, req)
 		if w.Code != http.StatusTooManyRequests || w.Body.Len() != 0 {
 			t.Fatalf("deny = %d %q", w.Code, w.Body.String())
 		}
@@ -67,18 +67,18 @@ func TestMiddleware(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api", nil)
 		req.RemoteAddr = "192.0.2.9:1"
 		w := httptest.NewRecorder()
-		Middleware(allow, "", next).ServeHTTP(w, req)
+		Middleware(allow, next).ServeHTTP(w, req)
 		if w.Code != http.StatusOK || w.Body.String() != "next" {
 			t.Fatalf("allow = %d %q", w.Code, w.Body.String())
 		}
 	})
 
-	t.Run("ready path", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodPost, "/custom-ready", nil)
+	t.Run("readiness is judged", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/trickster/ready", nil)
 		req.RemoteAddr = "192.0.2.9:1"
 		w := httptest.NewRecorder()
-		Middleware(deny, "/custom-ready", next).ServeHTTP(w, req)
-		if w.Code != http.StatusOK || w.Body.String() != "next" {
+		Middleware(deny, next).ServeHTTP(w, req)
+		if w.Code != http.StatusTooManyRequests || w.Body.String() == "next" {
 			t.Fatalf("ready = %d %q", w.Code, w.Body.String())
 		}
 	})
@@ -87,7 +87,7 @@ func TestMiddleware(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api", nil)
 		req.RemoteAddr = "not-an-address"
 		w := httptest.NewRecorder()
-		Middleware(allow, "", next).ServeHTTP(w, req)
+		Middleware(allow, next).ServeHTTP(w, req)
 		if w.Code != http.StatusForbidden {
 			t.Fatalf("invalid = %d", w.Code)
 		}
@@ -98,29 +98,43 @@ func TestMiddleware(t *testing.T) {
 		req.RemoteAddr = "10.1.1.1:9"
 		req = req.WithContext(tctx.WithClientIP(req.Context(), "192.0.2.9"))
 		w := httptest.NewRecorder()
-		Middleware(allow, "", next).ServeHTTP(w, req)
+		Middleware(allow, next).ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
 			t.Fatalf("client ip = %d", w.Code)
 		}
 	})
 
-	t.Run("peer", func(t *testing.T) {
+	t.Run("http peer is not judged again", func(t *testing.T) {
+		peer := mustList(t, ipacl.Options{Allow: []string{"10.1.1.1"}, Source: "peer"})
+		req := httptest.NewRequest(http.MethodGet, "/trickster/ready", nil)
+		req.RemoteAddr = "198.51.100.8:9"
+		req = req.WithContext(tctx.WithClientIP(req.Context(), "10.1.1.1"))
+		w := httptest.NewRecorder()
+		Middleware(peer, next).ServeHTTP(w, req)
+		if w.Code != http.StatusOK || w.Body.String() != "next" {
+			t.Fatalf("http/1 peer = %d %q", w.Code, w.Body.String())
+		}
+	})
+
+	t.Run("http3 peer", func(t *testing.T) {
 		peer := mustList(t, ipacl.Options{Allow: []string{"10.1.1.1"}, Source: "peer"})
 		req := httptest.NewRequest(http.MethodGet, "/api", nil)
+		req.ProtoMajor = 3
 		req.RemoteAddr = "10.1.1.1:9"
 		req = req.WithContext(tctx.WithClientIP(req.Context(), "192.0.2.9"))
 		w := httptest.NewRecorder()
-		Middleware(peer, "", next).ServeHTTP(w, req)
+		Middleware(peer, next).ServeHTTP(w, req)
 		if w.Code != http.StatusOK {
-			t.Fatalf("peer allow = %d", w.Code)
+			t.Fatalf("http/3 peer allow = %d", w.Code)
 		}
-		req = httptest.NewRequest(http.MethodGet, "/api", nil)
+		req = httptest.NewRequest(http.MethodGet, "/trickster/ready", nil)
+		req.ProtoMajor = 3
 		req.RemoteAddr = "198.51.100.8:9"
 		req = req.WithContext(tctx.WithClientIP(req.Context(), "10.1.1.1"))
 		w = httptest.NewRecorder()
-		Middleware(peer, "", next).ServeHTTP(w, req)
-		if w.Code != http.StatusForbidden {
-			t.Fatalf("peer deny = %d; client ip must not be used", w.Code)
+		Middleware(peer, next).ServeHTTP(w, req)
+		if w.Code != http.StatusForbidden || w.Body.String() == "next" {
+			t.Fatalf("http/3 peer deny = %d %q", w.Code, w.Body.String())
 		}
 	})
 }

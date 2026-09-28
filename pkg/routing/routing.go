@@ -184,7 +184,7 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		rl.logger.NeedsResources()
 	h = attachAuthenticator(h, pathOpts, o)
 	// the access list runs before authentication and before the cache handler
-	h = aclhandler.Middleware(effectiveIPACL(pathOpts, o), "", h)
+	h = aclhandler.Middleware(effectiveIPACL(pathOpts, o), h)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
 	// WithResourcesContext must wrap outer than LimitQueryRange
 	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
