@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	vtmysql "vitess.io/vitess/go/mysql"
@@ -177,7 +178,8 @@ func TestMySQLDirectiveIdentityAndBackfill(t *testing.T) {
 		t.Fatalf("Parse() directive identity = %+v, %v", parsed, err)
 	}
 	extent := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
-	stable := (&protocolHandler{}).stableExtents(extent, plan30, time.Unix(600, 0))
+	window := nativedelta.VolatileWindow(0, 0, plan30.Step, plan30.BackfillTolerance)
+	stable := nativedelta.StableExtents(extent, plan30.Step, plan30.Phase, window, time.Unix(600, 0))
 	if len(stable) != 1 || !stable[0].End.Equal(time.Unix(480, 0)) {
 		t.Fatalf("directive backfill stable extent = %v", stable)
 	}

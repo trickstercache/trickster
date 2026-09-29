@@ -79,7 +79,8 @@ func (o *httpOrigin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := make([][]any, 0)
 	if fault != "empty" {
-		for current := start; current.Before(end); current = current.Add(15 * time.Minute) {
+		// labeled as date_bin labels them, so a range starting inside a bucket answers with its label
+		for current := start.Truncate(15 * time.Minute); current.Before(end); current = current.Add(15 * time.Minute) {
 			rows = append(rows, []any{current.UnixNano(), "a", current.Unix() / 900})
 		}
 	}

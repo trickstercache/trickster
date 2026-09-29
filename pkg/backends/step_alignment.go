@@ -29,6 +29,7 @@ var stepAlignmentsApplied = map[string]timeseries.StepAlignment{
 	// a query that doesn't support the configured mode, such as Flux under partial, keeps its default
 	providers.ClickHouse:  timeseries.StepAlignmentAll,
 	providers.InfluxDB:    timeseries.StepAlignmentAll,
+	providers.GreptimeDB:  timeseries.StepAlignmentAll,
 	providers.Druid:       timeseries.StepAlignmentAll,
 	providers.MySQL:       timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
 	providers.Postgres:    timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
@@ -37,7 +38,8 @@ var stepAlignmentsApplied = map[string]timeseries.StepAlignment{
 
 var nativeStepAlignmentsApplied = map[string]timeseries.StepAlignment{
 	// narrows the modes of a backend a native listener also serves, where it applies fewer of them
-	providers.InfluxDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+	providers.InfluxDB:   timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+	providers.GreptimeDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
 }
 
 // ValidateStepAlignment checks a backend's configured step alignment against the modes its

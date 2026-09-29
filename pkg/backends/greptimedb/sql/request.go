@@ -123,22 +123,13 @@ func ParseTimeRangeQuery(r *http.Request, analyzer sqlanalyzer.DialectAnalyzer,
 	plan := analysis.Plan
 	plan.ApplyToQuery(trq)
 	trq.Extent = plan.RequestExtent(now)
+	trq.Requested = plan.RequestedRange(now)
 	input.values.Set("sql", plan.CanonicalSQL)
 	trq.CacheKeyElements["greptime.http"] = input.values.Encode()
 	trq.CacheKeyElements["sql"] = plan.CanonicalSQL
 	trq.TemplateURL = urls.Clone(r.URL)
 	trq.TemplateURL.RawQuery = input.values.Encode()
 	ro.BaseTimestampFieldName = plan.TimeColumn
-	if trq.BackfillTolerance == 0 {
-		bf := time.Minute
-		if res := request.GetResources(r); res != nil && res.BackendOptions != nil {
-			bf = time.Duration(res.BackendOptions.VolatileWindow)
-		}
-		if plan.UpperBound == nil && bf < trq.Step {
-			bf = trq.Step
-		}
-		trq.BackfillTolerance = bf
-	}
 	return trq, ro, true, nil
 }
 
@@ -170,11 +161,31 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, extent *timeseri
 	if !ok || plan == nil {
 		return errRequest
 	}
-	input, err := extract(r)
+	statement, err := plan.RenderExtent(*extent)
 	if err != nil {
 		return err
 	}
-	statement, err := plan.RenderExtent(*extent)
+	return setStatement(r, statement)
+}
+
+// SetPartialBucket rewrites the effective SQL field to the query over one partial bucket's raw range.
+func SetPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery, pb timeseries.PartialBucket) error {
+	if trq == nil {
+		return errRequest
+	}
+	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+	if !ok || plan == nil {
+		return errRequest
+	}
+	statement, err := plan.RenderRange(pb)
+	if err != nil {
+		return err
+	}
+	return setStatement(r, statement)
+}
+
+func setStatement(r *http.Request, statement string) error {
+	input, err := extract(r)
 	if err != nil {
 		return err
 	}

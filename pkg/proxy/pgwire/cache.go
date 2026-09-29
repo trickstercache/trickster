@@ -31,7 +31,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
-	"github.com/jackc/pgx/v5/pgproto3"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -124,7 +123,8 @@ func (s *Server) newDeltaEngine() *nativedelta.Engine[*Result] {
 	return nativedelta.New[*Result](nativedelta.Config{
 		Protocol: cacheKeyProtocol, BackendName: s.config.BackendName, CacheClient: s.cacheClient,
 		CacheTTL: s.config.CacheTTL, MaxObjectSize: s.config.MaxObjectSize,
-		RetentionPoints: s.config.RetentionPoints,
+		RetentionPoints: s.config.RetentionPoints, VolatileWindow: s.config.BackfillWindow,
+		VolatileWindowPoints: s.config.BackfillPoints,
 		ObserveCacheFailure: func(reason string) {
 			if client := s.cacheClient(); client != nil && client.Configuration() != nil {
 				configuration := client.Configuration()
@@ -138,41 +138,6 @@ func (s *Server) newDeltaEngine() *nativedelta.Engine[*Result] {
 
 func (s *Server) observeRewriteFailure(reason string) {
 	metrics.SQLQueryRewriteFailures.WithLabelValues(s.config.BackendName, s.config.Dialect, reason).Inc()
-}
-
-type deltaPlan struct {
-	plan *sqlanalyzer.QueryPlan
-}
-
-func (p *deltaPlan) rowReader(s *session, rowDescription []byte) (*rowReader, error) {
-	var description pgproto3.RowDescription
-	if err := description.Decode(rowDescription); err != nil {
-		return nil, nativedelta.Unmergeable(err)
-	}
-	column := -1
-	for i := range description.Fields {
-		if string(description.Fields[i].Name) != p.plan.OutputColumn {
-			continue
-		}
-		if column >= 0 {
-			return nil, nativedelta.Unmergeable(errTimeColumn)
-		}
-		column = i
-	}
-	if column < 0 || description.Fields[column].Format != textFormat {
-		return nil, nativedelta.Unmergeable(errTimeColumn)
-	}
-	engine := s.server.config.Engine
-	kind, ok := engine.TimeAxis(description.Fields[column].DataTypeOID)
-	if !ok {
-		return nil, nativedelta.Unmergeable(errTimeColumn)
-	}
-	decoder, err := newTimeAxisDecoder(kind, p.plan.OutputUnit,
-		engine.TimeSemantics(), s.tracker.setting)
-	if err != nil {
-		return nil, nativedelta.Unmergeable(err)
-	}
-	return &rowReader{timeColumn: column, decoder: decoder, step: p.plan.Step, phase: p.plan.Phase}, nil
 }
 
 func orderable(plan *sqlanalyzer.QueryPlan) bool {
@@ -211,21 +176,27 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 	defer s.releaseUpstream()
 	started := time.Now()
 	var (
-		result *Result
+		answer nativedelta.Outcome[*Result]
 		lookup status.LookupStatus
 		err    error
 	)
 	if mode == sqlanalyzer.CacheModeDelta {
-		result, lookup, err = s.executeDelta(outcome, plan)
+		answer, lookup, err = s.executeDelta(outcome, plan)
 	} else {
-		result, lookup, err = s.executeObject(outcome.sql, unaligned)
+		answer.Object, lookup, err = s.executeObject(outcome.sql, unaligned)
 	}
 	var rejected *originError
 	switch {
 	case err == nil:
-		response := result.encode(mode == sqlanalyzer.CacheModeDelta && descending(plan))
+		var response []byte
+		var rows int
+		if answer.Delta != nil {
+			response, rows = encodeDelta(answer.Delta, plan), answer.Delta.Rows()
+		} else {
+			response, rows = answer.Object.encode(), answer.Object.Rows()
+		}
 		// counted before the client can see the answer, so a reader of both never finds the count behind
-		s.server.cache.observe(mode, lookup, result.Rows(), time.Since(started))
+		s.server.cache.observe(mode, lookup, rows, time.Since(started))
 		if !writeAll(s.client, response, s.server.config.WriteTimeout) {
 			return false, net.ErrClosed
 		}
@@ -275,12 +246,13 @@ func (s *session) executeObject(sql string, unaligned bool) (*Result, status.Loo
 	})
 }
 
-func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan) (*Result, status.LookupStatus, error) {
+func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan,
+) (nativedelta.Outcome[*Result], status.LookupStatus, error) {
 	config := &s.server.config
-	reader := &deltaPlan{plan: plan}
 	ops := nativedelta.DeltaOps[*Result]{
-		Fetch: func(statement string) (*Result, error) {
-			result, err := s.fetch(statement, false, reader)
+		Fetch: func(statement string) (*nativedelta.Delta, error) {
+			sink := newRowSink(plan)
+			_, err := s.fetch(statement, false, sink)
 			var rejected *originError
 			switch {
 			case errors.As(err, &rejected):
@@ -288,21 +260,16 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan)
 			case errors.Is(err, errTimeAxis), errors.Is(err, errResultRow):
 				err = nativedelta.Unmergeable(err)
 			}
-			return result, err
-		},
-		FetchOriginal: func() (*Result, error) { return s.fetch(outcome.sql, true, nil) },
-		Merge:         mergeResults,
-		CropResponse: func(payload *Result, requested timeseries.Extent) (*Result, error) {
-			if payload == nil || payload.times == nil {
-				return nil, errResultRow
+			if err != nil {
+				return nil, err
 			}
-			return payload.crop(requested), nil
+			rows, err := sink.finish()
+			if err != nil {
+				return nil, nativedelta.Unmergeable(err)
+			}
+			return rows, nil
 		},
-		Finalize: func(merged *Result, all timeseries.ExtentList, requested timeseries.Extent,
-			now time.Time,
-		) (*Result, *Result, timeseries.ExtentList, error) {
-			return finalizeDelta(config, plan, merged, all, requested, now)
-		},
+		FetchOriginal:  func() (*Result, error) { return s.fetch(outcome.sql, true, nil) },
 		ObjectFallback: func() (*Result, status.LookupStatus, error) { return s.executeObject(outcome.sql, false) },
 	}
 	if config.DoesShard {
@@ -319,29 +286,4 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan)
 		Key: outcome.key, FallbackKey: outcome.key + keySuffixFallback, EmptyKey: outcome.key + keySuffixEmpty,
 		Plan: plan, Now: time.Now(), Ops: ops,
 	})
-}
-
-func finalizeDelta(config *Config, plan *sqlanalyzer.QueryPlan, merged *Result, all timeseries.ExtentList,
-	requested timeseries.Extent, now time.Time,
-) (*Result, *Result, timeseries.ExtentList, error) {
-	// shapes the response and what is kept. Retention and the
-	// volatile tail bound only the stored object, never the client's response.
-	if merged == nil || merged.times == nil {
-		return nil, nil, nil, errResultRow
-	}
-	response := merged.crop(requested)
-	retained, extents := merged, all
-	if kept, first, trimmed := merged.retain(config.RetentionPoints); trimmed && len(all) > 0 {
-		retained = kept
-		extents = all.Crop(timeseries.Extent{Start: time.Unix(0, first), End: all[len(all)-1].End})
-	}
-	window := nativedelta.VolatileWindow(config.BackfillWindow, config.BackfillPoints, plan.Step,
-		plan.BackfillTolerance)
-	stable := nativedelta.StableExtents(extents, plan.Step, plan.Phase, window, now)
-	if len(stable) == 0 {
-		return response, retained.slice(0, 0), stable, nil
-	}
-	// rows newer than the stable coverage would outlive a bucket the origin later empties
-	retained = retained.crop(timeseries.Extent{Start: stable[0].Start, End: stable[len(stable)-1].End})
-	return response, retained, stable, nil
 }

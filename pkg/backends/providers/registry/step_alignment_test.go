@@ -42,6 +42,7 @@ func TestProviderStepAlignments(t *testing.T) {
 			timeseries.StepAlignmentTruncate,
 		},
 		{providers.InfluxDB, all, timeseries.StepAlignmentPartialEnd},
+		{providers.GreptimeDB, all, timeseries.StepAlignmentPartialEnd},
 		{providers.ClickHouse, all, timeseries.StepAlignmentDrop},
 		{providers.Druid, all, timeseries.StepAlignmentPartial},
 		{providers.MySQL, all, timeseries.StepAlignmentDrop},
@@ -75,7 +76,7 @@ func TestProviderStepAlignments(t *testing.T) {
 func TestEveryTimeSeriesProviderAppliesOff(t *testing.T) {
 	for _, provider := range []string{
 		providers.Prometheus, providers.Graphite, providers.InfluxDB, providers.ClickHouse,
-		providers.Druid, providers.MySQL, providers.Postgres, providers.TimescaleDB,
+		providers.Druid, providers.MySQL, providers.Postgres, providers.TimescaleDB, providers.GreptimeDB,
 	} {
 		t.Run(provider, func(t *testing.T) {
 			o := bo.New()
@@ -162,22 +163,24 @@ func TestValidateStepAlignment(t *testing.T) {
 }
 
 func TestNativeListenersNarrowTheAppliedModes(t *testing.T) {
-	// InfluxDB's Flight SQL listener applies fewer modes than its HTTP paths, so a backend it serves
-	// accepts only those
-	for mode, want := range map[timeseries.StepAlignment]error{
-		timeseries.StepAlignmentDrop:       nil,
-		timeseries.StepAlignmentOff:        nil,
-		timeseries.StepAlignmentPartial:    bo.ErrStepAlignmentNotImplemented,
-		timeseries.StepAlignmentPartialEnd: bo.ErrStepAlignmentNotImplemented,
-	} {
-		o := bo.New()
-		o.Name, o.Provider, o.StepAlignment = "test", providers.InfluxDB, mode
-		client := newTestClient(t, providers.InfluxDB, nil)
-		if err := backends.ValidateStepAlignment(client, o, true); !errors.Is(err, want) {
-			t.Errorf("%s: got %v want %v", mode, err, want)
-		}
-		if err := backends.ValidateStepAlignment(client, o, false); err != nil {
-			t.Errorf("%s over http: %v", mode, err)
+	// InfluxDB's Flight SQL listener and GreptimeDB's MySQL and PostgreSQL listeners apply fewer modes
+	// than their HTTP paths, so a backend one serves accepts only those
+	for _, provider := range []string{providers.InfluxDB, providers.GreptimeDB} {
+		for mode, want := range map[timeseries.StepAlignment]error{
+			timeseries.StepAlignmentDrop:       nil,
+			timeseries.StepAlignmentOff:        nil,
+			timeseries.StepAlignmentPartial:    bo.ErrStepAlignmentNotImplemented,
+			timeseries.StepAlignmentPartialEnd: bo.ErrStepAlignmentNotImplemented,
+		} {
+			o := bo.New()
+			o.Name, o.Provider, o.StepAlignment = "test", provider, mode
+			client := newTestClient(t, provider, nil)
+			if err := backends.ValidateStepAlignment(client, o, true); !errors.Is(err, want) {
+				t.Errorf("%s %s: got %v want %v", provider, mode, err, want)
+			}
+			if err := backends.ValidateStepAlignment(client, o, false); err != nil {
+				t.Errorf("%s %s over http: %v", provider, mode, err)
+			}
 		}
 	}
 	// a native listener that applies every mode its provider does narrows nothing

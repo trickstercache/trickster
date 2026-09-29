@@ -27,7 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // SetExtent will change the upstream request query to use the provided Extent
@@ -49,7 +48,7 @@ func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 // end, via the object proxy cache. Instant points have no other partial bucket.
 func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
 	_ timeseries.PartialBucket, isLive bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	if !isLive {
 		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
 	}

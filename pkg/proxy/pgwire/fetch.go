@@ -54,16 +54,9 @@ func newOriginError(body []byte) *originError {
 	return e
 }
 
-type rowReader struct {
-	timeColumn int
-	decoder    *timeAxisDecoder
-	step       time.Duration
-	phase      time.Duration
-}
-
-func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, error) {
-	// buffers one statement's result from the borrowed origin connection. original marks
-	// the client's own statement, whose result can go back to the relay if it outgrows the limits.
+func (s *session) fetch(sql string, original bool, sink *rowSink) (*Result, error) {
+	// buffers a statement's result from the borrowed connection, or hands its rows to sink;
+	// original marks the client's statement, whose result may go to the relay if too large
 	config := &s.server.config
 	if config.QueryTimeout > 0 {
 		_ = s.upstream.SetReadDeadline(time.Now().Add(config.QueryTimeout))
@@ -73,7 +66,6 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 	}
 	result := &Result{}
 	var (
-		reader   *rowReader
 		failure  error
 		overflow bool
 		header   [frameHeaderLen]byte
@@ -88,7 +80,11 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 		}
 		size := int(length - frameLenSize)
 		if header[0] == msgDataRow && !overflow && failure == nil {
-			if result.Rows() >= config.MaxResultRows || len(result.data)+size > config.MaxResultSizeBytes {
+			rows, bytes := result.Rows(), len(result.data)
+			if sink != nil {
+				rows, bytes = sink.rows, sink.bytes
+			}
+			if rows >= config.MaxResultRows || bytes+size > config.MaxResultSizeBytes {
 				if original {
 					return nil, s.resumeRelay(result, size)
 				}
@@ -96,15 +92,15 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 				s.cancelFetch()
 			}
 		}
-		body, err := s.readFetchBody(result, header[0], size, overflow || failure != nil)
+		body, err := s.readFetchBody(result, header[0], size, overflow || failure != nil, sink != nil)
 		if err != nil {
 			return nil, err
 		}
 		switch header[0] {
 		case msgRowDescription:
 			result.RowDescription = body
-			if plan != nil {
-				if reader, err = plan.rowReader(s, body); err != nil && failure == nil {
+			if sink != nil {
+				if err = sink.describe(s, body); err != nil && failure == nil {
 					failure = err
 				}
 			}
@@ -112,7 +108,12 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 			if overflow || failure != nil {
 				continue
 			}
-			if err = result.keepRow(size, reader); err != nil {
+			if sink != nil {
+				err = sink.row(body)
+			} else {
+				result.keepRow()
+			}
+			if err != nil {
 				failure = err
 			}
 		case msgCommandComplete:
@@ -139,21 +140,26 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 			if failure != nil {
 				return nil, failure
 			}
-			if reader != nil {
-				result.sortByTime()
-			}
 			return result, nil
 		}
 	}
 }
 
-func (s *session) readFetchBody(result *Result, typ byte, size int, discard bool) ([]byte, error) {
-	// reads a message body. A kept DataRow lands directly at the
-	// end of the result's row data, so a row is copied exactly once.
+func (s *session) readFetchBody(result *Result, typ byte, size int, discard, sunk bool) ([]byte, error) {
+	// reads a message body: a kept DataRow straight onto the result's row data, so it is copied once,
+	// or a sink's into the reused row buffer, for the sink to take its own copy
 	if typ == msgDataRow {
 		if discard {
 			_, err := io.CopyN(io.Discard, s.upstreamReader, int64(size))
 			return nil, err
+		}
+		if sunk {
+			if cap(s.rowBuffer) < size {
+				s.rowBuffer = make([]byte, size)
+			}
+			body := s.rowBuffer[:size]
+			_, err := io.ReadFull(s.upstreamReader, body)
+			return body, err
 		}
 		start := len(result.data)
 		result.data = append(result.data, make([]byte, size)...)
@@ -171,21 +177,9 @@ func (s *session) readFetchBody(result *Result, typ byte, size int, discard bool
 	return body, err
 }
 
-func (r *Result) keepRow(size int, reader *rowReader) error {
-	// records the row just read into the result's data, with its bucket time.
-	if reader == nil {
-		r.ends = append(r.ends, uint32(len(r.data))) // #nosec G115 -- bounded by MaxResultSizeBytes
-		return nil
-	}
-	start := len(r.data) - size
-	bucket, err := bucketTime(r.data[start:], reader.timeColumn, reader.decoder, reader.step, reader.phase)
-	if err != nil {
-		r.data = r.data[:start]
-		return err
-	}
+func (r *Result) keepRow() {
+	// records the row just read into the result's data
 	r.ends = append(r.ends, uint32(len(r.data))) // #nosec G115 -- bounded by MaxResultSizeBytes
-	r.times = append(r.times, bucket)
-	return nil
 }
 
 func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {

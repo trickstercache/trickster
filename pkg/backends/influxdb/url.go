@@ -30,7 +30,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	"github.com/influxdata/influxql"
 )
@@ -84,7 +83,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 // range, through the object proxy cache; Flux and remote-read have none
 func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
 	pb timeseries.PartialBucket, _ bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	if r == nil || trq == nil {
 		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
 	}

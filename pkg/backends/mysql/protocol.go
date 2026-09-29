@@ -902,6 +902,8 @@ func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
 			CacheTTL:              h.config.CacheTTL,
 			MaxObjectSize:         h.config.MaxObjectSize,
 			RetentionPoints:       h.config.RetentionPoints,
+			VolatileWindow:        h.config.BackfillWindow,
+			VolatileWindowPoints:  h.config.BackfillPoints,
 			ObserveCacheFailure:   h.observeCacheFailure,
 			ObserveRewriteFailure: h.observeRewriteFailure,
 		}, resultCodec{})

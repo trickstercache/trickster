@@ -61,6 +61,13 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	return c, err
 }
 
+// StepAlignments returns the modes GreptimeDB supports and its PromQL default; PromQL applies off,
+// truncate and partial_end, and SQL defaults to drop
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	_, def = c.Client.StepAlignments()
+	return timeseries.StepAlignmentAll, def
+}
+
 type engine struct{}
 
 var (

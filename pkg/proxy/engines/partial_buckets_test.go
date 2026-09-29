@@ -526,14 +526,14 @@ func TestMergeIntoKeepsEachBucketsOwnRow(t *testing.T) {
 	// an origin that answers each edge bucket with a neighbor too
 	pf.fetched[0] = partialFetch{
 		pb: timeseries.PartialBucket{Label: time.Unix(60, 0), Lower: time.Unix(67, 0), Upper: time.Unix(120, 0)},
-		ds: series(0, 60), status: status.LookupStatusKeyMiss,
+		ts: series(0, 60), status: status.LookupStatusKeyMiss,
 	}
 	pf.fetched[1] = partialFetch{
 		pb: timeseries.PartialBucket{
 			Label: time.Unix(240, 0), Lower: time.Unix(240, 0), Upper: time.Unix(253, 0),
 			Edge: timeseries.BucketEdgeEnd,
 		},
-		ds: series(240, 300), status: status.LookupStatusHit,
+		ts: series(240, 300), status: status.LookupStatusHit,
 	}
 	pbs, values := pf.mergeInto(rts, nil, time.Now(), nil, nil)
 	require.Equal(t, map[int64]string{60: "60", 120: "120", 180: "180", 240: "240"}, datasetValues(t, rts))
@@ -633,7 +633,7 @@ type heldPartials struct {
 
 func (h *heldPartials) FetchPartialBucket(r *http.Request, _ *timeseries.TimeRangeQuery,
 	_ timeseries.PartialBucket, _ bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	h.entered <- struct{}{}
 	<-r.Context().Done()
 	return nil, status.LookupStatusError, r.Context().Err()
@@ -661,7 +661,7 @@ type panickyPartials struct {
 
 func (panickyPartials) FetchPartialBucket(*http.Request, *timeseries.TimeRangeQuery,
 	timeseries.PartialBucket, bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	panic("partial bucket fetch")
 }
 
@@ -711,4 +711,12 @@ func TestFetchPartialBucketPassesTheResponsesFormat(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, status.LookupStatusKeyMiss, st)
 	require.Equal(t, "Native", format)
+	// a model must hold a DataSet, whose rows the bucket's label selects
+	modeler.WireUnmarshalerReader = func(io.Reader, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		return opaqueSeries{&dataset.DataSet{}}, nil
+	}
+	_, _, err = FetchPartialBucket(r, nil, &timeseries.TimeRangeQuery{}, modeler)
+	require.ErrorIs(t, err, ErrPartialBucketModel)
 }
+
+type opaqueSeries struct{ timeseries.Timeseries }

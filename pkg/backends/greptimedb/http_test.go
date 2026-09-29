@@ -208,10 +208,12 @@ func TestHTTPSQLTimezoneAndOverrides(t *testing.T) {
 }
 
 func TestHTTPSQLOpenEndedBackfill(t *testing.T) {
+	// an open end adds nothing to the configured volatile window, which the cache applies itself
 	statement := strings.Replace(httpSQL, " AND ts < '2024-01-01T01:00:00Z'", "", 1)
 	r := httptest.NewRequest(http.MethodGet, "/v1/sql?sql="+url.QueryEscape(statement), nil)
 	trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
-	if err != nil || trq.BackfillTolerance != 15*time.Minute {
+	if err != nil || trq.BackfillTolerance != 0 || !trq.Requested.OpenEnded ||
+		!trq.Requested.Start.Equal(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)) {
 		t.Fatalf("query=%+v err=%v", trq, err)
 	}
 }

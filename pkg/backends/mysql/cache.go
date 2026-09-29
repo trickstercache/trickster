@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -207,7 +206,19 @@ func (h *protocolHandler) executeCached(c *vtmysql.Conn, session *upstreamSessio
 			return h.executeObject(c, session, query, true)
 		}
 		if analysis.Plan != nil {
-			return h.executeDelta(c, session, query, analysis.Plan)
+			answer, lookup, err := h.executeDelta(c, session, query, analysis.Plan)
+			if err != nil || answer.Delta == nil {
+				return answer.Object, lookup, err
+			}
+			result, err := h.deltaResult(answer.Delta, analysis.Plan)
+			if err != nil {
+				// rows that cannot be rendered are no reason to fail the client's statement, nor to keep
+				h.observeRewriteFailure("render_delta_rows")
+				h.deltaEngine().RemoveDelta(h.planCacheKey(c, session, cacheModeDPC, analysis.Plan))
+				result, err = h.executeOrigin(session, query)
+				return result, cachestatus.LookupStatusProxyOnly, err
+			}
+			return result, lookup, nil
 		}
 	case sqlanalyzer.CacheModeObject:
 		return h.executeObject(c, session, query, false)
@@ -235,30 +246,18 @@ func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSessio
 
 func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession,
 	query string, plan *sqlanalyzer.QueryPlan,
-) (*sqltypes.Result, cachestatus.LookupStatus, error) {
+) (nativedelta.Outcome[*sqltypes.Result], cachestatus.LookupStatus, error) {
 	ops := nativedelta.DeltaOps[*sqltypes.Result]{
-		Fetch: func(statement string) (*sqltypes.Result, error) {
-			return h.executeOrigin(session, statement)
+		Fetch: func(statement string) (*nativedelta.Delta, error) {
+			return h.executeOriginRows(session, statement, plan)
 		},
 		FetchOriginal: func() (*sqltypes.Result, error) {
 			return h.executeOrigin(session, query)
 		},
-		Merge: func(parts []*sqltypes.Result) (*sqltypes.Result, error) {
-			return h.mergeResults(parts, plan)
-		},
-		CropResponse: func(payload *sqltypes.Result,
-			requested timeseries.Extent,
-		) (*sqltypes.Result, error) {
-			return h.cropAndSortResult(payload, plan, requested)
-		},
-		Finalize: func(merged *sqltypes.Result, allExtents timeseries.ExtentList,
-			requested timeseries.Extent, now time.Time,
-		) (*sqltypes.Result, *sqltypes.Result, timeseries.ExtentList, error) {
-			return h.finalizeDeltaResult(merged, allExtents, plan, requested, now)
-		},
 		ObjectFallback: func() (*sqltypes.Result, cachestatus.LookupStatus, error) {
 			return h.executeObject(c, session, query, false)
 		},
+		SameHeader: sameResultHeader,
 	}
 	if h.config.DoesShard {
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
@@ -274,12 +273,10 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 		ops.RenderEmpty = renderer.RenderTimeRange
 	}
 	return h.deltaEngine().ExecuteDelta(nativedelta.DeltaRequest[*sqltypes.Result]{
-		Key: h.queryCacheKey(c, session, cacheModeDPC, plan.CanonicalSQL, plan.IdentitySuffix),
-		FallbackKey: h.queryCacheKey(c, session, cacheModeDPCFallback,
-			plan.CanonicalSQL, plan.IdentitySuffix),
-		EmptyKey: h.queryCacheKey(c, session, cacheModeDPCEmpty,
-			plan.CanonicalSQL, plan.IdentitySuffix),
-		Plan: plan, Now: time.Now(),
+		Key:         h.planCacheKey(c, session, cacheModeDPC, plan),
+		FallbackKey: h.planCacheKey(c, session, cacheModeDPCFallback, plan),
+		EmptyKey:    h.planCacheKey(c, session, cacheModeDPCEmpty, plan),
+		Plan:        plan, Now: time.Now(),
 		// vitess delta plans always carry closed bounds; open-ended plans
 		// proxy rather than run to the present
 		RequireUpperBound: true,
@@ -287,35 +284,35 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	})
 }
 
-// finalizeDeltaResult keeps response shaping independent from cache retention.
-// Retention bounds only the stored cache object; it must never discard points
-// from the current client request after those points were fetched successfully.
-func (h *protocolHandler) finalizeDeltaResult(merged *sqltypes.Result,
-	allExtents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan,
-	requested timeseries.Extent, now time.Time,
-) (*sqltypes.Result, *sqltypes.Result, timeseries.ExtentList, error) {
-	if merged == nil {
-		return nil, nil, nil, errors.New("nil MySQL delta result")
-	}
-	timeIndex, _, err := resultIndexes(merged.Fields, plan)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	response, err := h.cropSortedResult(merged, timeIndex, plan.OutputUnit, requested)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	retained, retainedExtents, err := h.applyRetentionSorted(
-		merged, allExtents, plan, timeIndex)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	cacheExtents := h.stableExtents(retainedExtents, plan, now)
-	return response, retained, cacheExtents, nil
+func (h *protocolHandler) planCacheKey(c *vtmysql.Conn, session *upstreamSession, mode string,
+	plan *sqlanalyzer.QueryPlan,
+) string {
+	return h.queryCacheKey(c, session, mode, plan.CanonicalSQL, plan.IdentitySuffix)
 }
 
 func (h *protocolHandler) executeOrigin(session *upstreamSession,
 	query string,
+) (*sqltypes.Result, error) {
+	return h.fetchOrigin(session, query, nil)
+}
+
+func (h *protocolHandler) executeOriginRows(session *upstreamSession, statement string,
+	plan *sqlanalyzer.QueryPlan,
+) (*nativedelta.Delta, error) {
+	var sink *rowSink
+	result, err := h.fetchOrigin(session, statement, func(fields []*querypb.Field) (*rowSink, error) {
+		var err error
+		sink, err = h.newRowSink(plan, fields)
+		return sink, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sink.finish(result.StatusFlags)
+}
+
+func (h *protocolHandler) fetchOrigin(session *upstreamSession, query string,
+	sinkFor func([]*querypb.Field) (*rowSink, error),
 ) (*sqltypes.Result, error) {
 	if err := h.connectSession(session); err != nil {
 		return nil, err
@@ -327,14 +324,14 @@ func (h *protocolHandler) executeOrigin(session *upstreamSession,
 	err := h.runOriginQuery(session, upstream, parsedQuery{statementType: sqlparser.StmtSelect},
 		func() error {
 			var fetchErr error
-			result, fetchErr = h.collectOriginResult(session, upstream, query)
+			result, fetchErr = h.collectOriginResult(session, upstream, query, sinkFor)
 			return fetchErr
 		})
 	return result, err
 }
 
 func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream *vtmysql.Conn,
-	query string,
+	query string, sinkFor func([]*querypb.Field) (*rowSink, error),
 ) (*sqltypes.Result, error) {
 	if err := upstream.ExecuteStreamFetch(query); err != nil {
 		// The origin rejected the statement before opening a result stream, so
@@ -343,7 +340,12 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 	}
 	// Every failure from here on abandons a stream the origin is still
 	// sending, which leaves the connection desynchronized.
-	result, err := h.collectStreamedResult(session, upstream)
+	result, sinkErr, err := h.collectStreamedResult(session, upstream, sinkFor)
+	if err == nil && sinkErr != nil {
+		// rows the sink cannot model were still read to the end, so the stream stays in step
+		upstream.CloseResult()
+		return nil, sinkErr
+	}
 	if err != nil {
 		// The stream is abandoned partway through, and CloseResult would
 		// keep reading until the origin sends a remainder it may never send.
@@ -356,39 +358,54 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 }
 
 func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
-	upstream *vtmysql.Conn,
-) (*sqltypes.Result, error) {
+	upstream *vtmysql.Conn, sinkFor func([]*querypb.Field) (*rowSink, error),
+) (*sqltypes.Result, error, error) {
+	// returns the result, whose rows go to a sink when one is given, what the sink could not model,
+	// and what failed the stream
 	fields, err := upstream.Fields()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	size, overflow := resultFieldsSize(fields, h.config.MaxResultSizeBytes)
 	if overflow {
-		return nil, h.resultLimitExceeded(session)
+		return nil, nil, h.resultLimitExceeded(session)
 	}
-	result := &sqltypes.Result{Fields: fields, Rows: make([][]sqltypes.Value, 0,
-		min(h.config.MaxResultRows, resultBatchSize))}
+	var sink *rowSink
+	var sinkErr error
+	result := &sqltypes.Result{Fields: fields}
+	if sinkFor != nil {
+		sink, sinkErr = sinkFor(fields)
+	} else {
+		result.Rows = make([][]sqltypes.Value, 0, min(h.config.MaxResultRows, resultBatchSize))
+	}
+	rows := 0
 	for {
 		row, fetchErr := upstream.FetchNext(nil)
 		if fetchErr != nil {
-			return nil, fetchErr
+			return nil, nil, fetchErr
 		}
 		if row == nil {
 			statusFlags, _, stateErr := h.originProtocolState(upstream)
 			if stateErr != nil {
-				return nil, stateErr
+				return nil, nil, stateErr
 			}
 			result.StatusFlags = statusFlags
-			return result, nil
+			return result, sinkErr, nil
 		}
-		if len(result.Rows) >= h.config.MaxResultRows {
-			return nil, h.resultLimitExceeded(session)
+		if rows >= h.config.MaxResultRows {
+			return nil, nil, h.resultLimitExceeded(session)
 		}
 		size, overflow = addRowSize(size, row, h.config.MaxResultSizeBytes)
 		if overflow {
-			return nil, h.resultLimitExceeded(session)
+			return nil, nil, h.resultLimitExceeded(session)
 		}
-		result.Rows = append(result.Rows, row)
+		rows++
+		switch {
+		case sinkFor == nil:
+			result.Rows = append(result.Rows, row)
+		case sinkErr == nil:
+			sinkErr = sink.row(row)
+		}
 	}
 }
 
@@ -448,195 +465,6 @@ func appendCacheIdentityUint(identity *strings.Builder, value uint64) {
 	var encoded [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(encoded[:], value)
 	_, _ = identity.Write(encoded[:n])
-}
-
-func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
-	plan *sqlanalyzer.QueryPlan,
-) (*sqltypes.Result, error) {
-	if len(parts) == 0 || parts[0] == nil {
-		return nil, errors.New("empty MySQL delta result")
-	}
-	fields := parts[0].Fields
-	timeIndex, groupIndexes, err := resultIndexes(fields, plan)
-	if err != nil {
-		return nil, err
-	}
-	type keyedRow struct {
-		epoch int64
-		row   []sqltypes.Value
-	}
-	comparator, err := h.newGroupComparator(fields, groupIndexes)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]keyedRow, 0, totalRows(parts))
-	for _, part := range parts {
-		if part == nil || !compatibleFields(fields, part.Fields) {
-			return nil, errors.New("incompatible MySQL delta result fields")
-		}
-		for _, row := range part.Rows {
-			if len(row) != len(fields) {
-				return nil, errors.New("invalid MySQL delta result row")
-			}
-			if validateErr := comparator.validateRow(row); validateErr != nil {
-				return nil, validateErr
-			}
-			epoch, parseErr := h.resultEpoch(row[timeIndex], plan.OutputUnit)
-			if parseErr != nil {
-				return nil, parseErr
-			}
-			rows = append(rows, keyedRow{epoch: epoch, row: row})
-		}
-	}
-	var compareErr error
-	slices.SortStableFunc(rows, func(a, b keyedRow) int {
-		if a.epoch != b.epoch {
-			return cmp.Compare(a.epoch, b.epoch)
-		}
-		if compareErr != nil {
-			return 0
-		}
-		order, err := comparator.compare(a.row, b.row)
-		if err != nil {
-			compareErr = err
-		}
-		return order
-	})
-	if compareErr != nil {
-		return nil, compareErr
-	}
-	// MySQL equality is defined by the group columns' types and collations, not
-	// by their serialized bytes. Stable sorting preserves part order among
-	// equal rows, so replacing the prior representative retains the latest row.
-	compacted := rows[:0]
-	for _, candidate := range rows {
-		last := len(compacted) - 1
-		if last < 0 || compacted[last].epoch != candidate.epoch {
-			compacted = append(compacted, candidate)
-			continue
-		}
-		order, err := comparator.compare(compacted[last].row, candidate.row)
-		if err != nil {
-			return nil, err
-		}
-		if order == 0 {
-			compacted[last] = candidate
-			continue
-		}
-		compacted = append(compacted, candidate)
-	}
-	rows = compacted
-	out := cloneResultMetadata(parts[len(parts)-1])
-	out.Fields = fields
-	out.Rows = make([][]sqltypes.Value, len(rows))
-	for i := range rows {
-		out.Rows[i] = rows[i].row
-	}
-	return out, nil
-}
-
-func (h *protocolHandler) cropAndSortResult(result *sqltypes.Result,
-	plan *sqlanalyzer.QueryPlan, extent timeseries.Extent,
-) (*sqltypes.Result, error) {
-	if result == nil {
-		return nil, errors.New("nil MySQL delta result")
-	}
-	timeIndex, groupIndexes, err := resultIndexes(result.Fields, plan)
-	if err != nil {
-		return nil, err
-	}
-	comparator, err := h.newGroupComparator(result.Fields, groupIndexes)
-	if err != nil {
-		return nil, err
-	}
-	start, end := extent.Start.UnixNano(), extent.End.UnixNano()
-	type timedRow struct {
-		epoch int64
-		row   []sqltypes.Value
-	}
-	rows := make([]timedRow, 0, len(result.Rows))
-	for _, row := range result.Rows {
-		if len(row) <= timeIndex {
-			return nil, errors.New("invalid MySQL delta result row")
-		}
-		epoch, parseErr := h.resultEpoch(row[timeIndex], plan.OutputUnit)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		if epoch < start || epoch > end {
-			continue
-		}
-		if validateErr := comparator.validateRow(row); validateErr != nil {
-			return nil, validateErr
-		}
-		rows = append(rows, timedRow{epoch: epoch, row: row})
-	}
-	var compareErr error
-	slices.SortStableFunc(rows, func(a, b timedRow) int {
-		if a.epoch != b.epoch {
-			return cmp.Compare(a.epoch, b.epoch)
-		}
-		if compareErr != nil {
-			return 0
-		}
-		order, err := comparator.compare(a.row, b.row)
-		if err != nil {
-			compareErr = err
-		}
-		return order
-	})
-	if compareErr != nil {
-		return nil, compareErr
-	}
-	out := cloneResultMetadata(result)
-	out.Rows = make([][]sqltypes.Value, len(rows))
-	for i := range rows {
-		out.Rows[i] = rows[i].row
-	}
-	return out, nil
-}
-
-// cropSortedResult crops a result already ordered by (epoch, group), as
-// guaranteed by mergeResults, without rebuilding group keys or sorting again.
-func (h *protocolHandler) cropSortedResult(result *sqltypes.Result, timeIndex int,
-	unit timeseries.FieldDataType, extent timeseries.Extent,
-) (*sqltypes.Result, error) {
-	start, err := h.sortedRowBoundary(result.Rows, timeIndex, unit, extent.Start.UnixNano(), false)
-	if err != nil {
-		return nil, err
-	}
-	end, err := h.sortedRowBoundary(result.Rows, timeIndex, unit, extent.End.UnixNano(), true)
-	if err != nil {
-		return nil, err
-	}
-	if start > end {
-		return nil, errors.New("invalid MySQL delta result extent")
-	}
-	out := cloneResultMetadata(result)
-	out.Rows = slices.Clone(result.Rows[start:end])
-	return out, nil
-}
-
-func (h *protocolHandler) sortedRowBoundary(rows [][]sqltypes.Value, timeIndex int,
-	unit timeseries.FieldDataType, target int64, after bool,
-) (int, error) {
-	low, high := 0, len(rows)
-	for low < high {
-		middle := low + (high-low)/2
-		if len(rows[middle]) <= timeIndex {
-			return 0, errors.New("invalid MySQL delta result row")
-		}
-		epoch, err := h.resultEpoch(rows[middle][timeIndex], unit)
-		if err != nil {
-			return 0, err
-		}
-		if epoch > target || (!after && epoch == target) {
-			high = middle
-		} else {
-			low = middle + 1
-		}
-	}
-	return low, nil
 }
 
 func resultIndexes(fields []*querypb.Field,
@@ -943,64 +771,6 @@ func cloneResultMetadata(result *sqltypes.Result) *sqltypes.Result {
 		SessionStateChanges: result.SessionStateChanges, StatusFlags: result.StatusFlags,
 		Info: result.Info,
 	}
-}
-
-func totalRows(results []*sqltypes.Result) int {
-	total := 0
-	for _, result := range results {
-		if result != nil {
-			total += len(result.Rows)
-		}
-	}
-	return total
-}
-
-func (h *protocolHandler) applyRetentionSorted(result *sqltypes.Result,
-	extents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan, timeIndex int,
-) (*sqltypes.Result, timeseries.ExtentList, error) {
-	limit := h.config.RetentionPoints
-	if limit <= 0 || result == nil || len(result.Rows) <= limit || len(extents) == 0 {
-		return result, extents, nil
-	}
-	unique := 0
-	start := 0
-	var cutoff, previous int64
-	havePrevious := false
-	for i, row := range slices.Backward(result.Rows) {
-		if len(row) <= timeIndex {
-			return nil, nil, errors.New("invalid MySQL delta result row")
-		}
-		epoch, err := h.resultEpoch(row[timeIndex], plan.OutputUnit)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !havePrevious || epoch != previous {
-			unique++
-			if unique > limit {
-				start = i + 1
-				break
-			}
-			cutoff = epoch
-			previous = epoch
-			havePrevious = true
-		}
-	}
-	if unique <= limit {
-		return result, extents, nil
-	}
-	retained := cloneResultMetadata(result)
-	retained.Rows = slices.Clone(result.Rows[start:])
-	return retained, extents.Crop(timeseries.Extent{
-		Start: time.Unix(0, cutoff), End: extents[len(extents)-1].End,
-	}), nil
-}
-
-func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,
-	plan *sqlanalyzer.QueryPlan, now time.Time,
-) timeseries.ExtentList {
-	window := nativedelta.VolatileWindow(h.config.BackfillWindow, h.config.BackfillPoints,
-		plan.Step, plan.BackfillTolerance)
-	return nativedelta.StableExtents(extents, plan.Step, plan.Phase, window, now)
 }
 
 func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, parsed parsedQuery) {

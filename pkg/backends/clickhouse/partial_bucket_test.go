@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	"github.com/stretchr/testify/require"
 )
@@ -72,9 +73,10 @@ func TestFetchPartialBucket(t *testing.T) {
 
 	// the bucket's own range is sent once, then answered by the object cache
 	for _, want := range []status.LookupStatus{status.LookupStatusKeyMiss, status.LookupStatusHit} {
-		ds, st, err := client.FetchPartialBucket(r, trq, pb, false)
+		ts, st, err := client.FetchPartialBucket(r, trq, pb, false)
 		require.NoError(t, err)
 		require.Equal(t, want, st)
+		ds := ts.(*dataset.DataSet)
 		require.Len(t, ds.Results[0].SeriesList, 1)
 		points := ds.Results[0].SeriesList[0].Points
 		require.Len(t, points, 1)

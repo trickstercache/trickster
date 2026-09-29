@@ -76,7 +76,7 @@ func cleartextUpstream(f *fakeUpstream) {
 	f.authMode, f.user, f.password = fakeAuthCleartext, testUpstreamUser, testUpstreamPass
 }
 
-func startServer(t *testing.T, config Config) (*Server, string) {
+func startServer(t testing.TB, config Config) (*Server, string) {
 	t.Helper()
 	server, err := NewServer(config)
 	if err != nil {
@@ -85,7 +85,7 @@ func startServer(t *testing.T, config Config) (*Server, string) {
 	return server, serveTestServer(t, server)
 }
 
-func serveTestServer(t *testing.T, server *Server) string {
+func serveTestServer(t testing.TB, server *Server) string {
 	t.Helper()
 	l, err := net.Listen("tcp", fakeLoopbackListen)
 	if err != nil {
@@ -106,7 +106,7 @@ func serveTestServer(t *testing.T, server *Server) string {
 	return l.Addr().String()
 }
 
-func dial(t *testing.T, address, user, password string, settings ...string) (*pgconn.PgConn, error) {
+func dial(t testing.TB, address, user, password string, settings ...string) (*pgconn.PgConn, error) {
 	t.Helper()
 	if !strings.Contains(strings.Join(settings, "&"), "sslmode=") {
 		settings = append(settings, testSSLDisable)
@@ -129,7 +129,7 @@ func dial(t *testing.T, address, user, password string, settings ...string) (*pg
 	return pgconn.ConnectConfig(ctx, config)
 }
 
-func mustDial(t *testing.T, address, user, password string, settings ...string) *pgconn.PgConn {
+func mustDial(t testing.TB, address, user, password string, settings ...string) *pgconn.PgConn {
 	t.Helper()
 	conn, err := dial(t, address, user, password, settings...)
 	if err != nil {

@@ -42,7 +42,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // Prometheus API
@@ -351,7 +350,7 @@ func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 // bucket's raw range for the bucket model
 func (c *TestClient) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
 	pb timeseries.PartialBucket, isLive bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	if trq.SampleModel == timeseries.SampleModelInstant {
 		if !isLive {
 			return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported

@@ -86,7 +86,7 @@ type fakeCancel struct {
 }
 
 type fakeUpstream struct {
-	t          *testing.T
+	t          testing.TB
 	listener   net.Listener
 	tls        *tls.Config
 	authMode   string
@@ -109,7 +109,7 @@ type fakeUpstream struct {
 	wg       sync.WaitGroup
 }
 
-func newFakeUpstream(t *testing.T, mutate func(*fakeUpstream)) *fakeUpstream {
+func newFakeUpstream(t testing.TB, mutate func(*fakeUpstream)) *fakeUpstream {
 	t.Helper()
 	l, err := net.Listen("tcp", fakeLoopbackListen)
 	if err != nil {
@@ -494,7 +494,7 @@ func (f *fakeUpstream) isRunning() bool {
 	return len(f.running) > 0
 }
 
-func testServerTLS(t *testing.T) *tls.Config {
+func testServerTLS(t testing.TB) *tls.Config {
 	t.Helper()
 	key, cert, err := tlstest.GetTestKeyAndCertWithNames(fakeTestCertName)
 	if err != nil {

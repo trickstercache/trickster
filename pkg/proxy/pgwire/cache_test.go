@@ -63,7 +63,9 @@ func newByteCache() *byteCache {
 func (c *byteCache) Connect() error { return nil }
 func (c *byteCache) Close() error   { return nil }
 
-func (c *byteCache) Configuration() *cacheoptions.Options { return cacheoptions.New() }
+var byteCacheOptions = cacheoptions.New()
+
+func (c *byteCache) Configuration() *cacheoptions.Options { return byteCacheOptions }
 
 func (c *byteCache) Store(key string, data []byte, ttl time.Duration) error {
 	c.mtx.Lock()
@@ -102,7 +104,7 @@ func (c *byteCache) Remove(keys ...string) error {
 	return nil
 }
 
-func cachedConfig(t *testing.T, f *fakeUpstream) Config {
+func cachedConfig(t testing.TB, f *fakeUpstream) Config {
 	t.Helper()
 	c := gatedConfig(t, f)
 	c.Engine, c.Cache, c.CacheTTL = testEngine{}, newByteCache(), time.Hour

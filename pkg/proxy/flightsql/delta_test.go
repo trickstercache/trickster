@@ -192,6 +192,40 @@ func TestDeltaTierCachesByExtent(t *testing.T) {
 	}
 }
 
+func TestDeltaTierStoresOnlyRetainedStableRows(t *testing.T) {
+	// retention and the backfill tolerance trim what is cached, never the response, and the next
+	// request refetches exactly what was left out
+	for _, test := range []struct {
+		name    string
+		cfg     func(*DeltaConfig)
+		refetch string
+	}{
+		{"retention", func(c *DeltaConfig) { c.RetentionPoints = 5 }, "0"},
+		{"backfill tolerance", func(c *DeltaConfig) { c.BackfillTolerance = time.Since(time.Unix(300, 0)) }, "300"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			up := &fakeUpstream{executeFn: rangedUpstream(t)}
+			inner := newMemCache()
+			cfg := DeltaConfig{
+				Analyzer:    testAnalyzer,
+				CacheClient: func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+				CacheTTL:    time.Hour,
+			}
+			test.cfg(&cfg)
+			srv := NewServer(up, inner, WithCacheKeyPrefix("influx3"), WithDeltaCache(cfg))
+			for range 2 {
+				if rows := executeRows(t, srv, fmt.Sprintf(deltaQuery, 0, 600)); len(rows) != 20 {
+					t.Fatalf("response rows = %d, want 20", len(rows))
+				}
+			}
+			refetch := renderedBounds.FindStringSubmatch(up.executedQueries[len(up.executedQueries)-1])
+			if up.executeCalls != 2 || refetch == nil || refetch[1] != test.refetch {
+				t.Fatalf("upstream calls = %d, last fetch from %v", up.executeCalls, refetch)
+			}
+		})
+	}
+}
+
 func TestDeltaTierOffAnswersTheClientsStatementFromTheObjectTier(t *testing.T) {
 	up := &fakeUpstream{executeFn: rangedUpstream(t)}
 	inner := newMemCache()
@@ -269,6 +303,33 @@ func unrepresentableIPC(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return ipcBytes
+}
+
+func TestDeltaTierAnswersARangeWithNoRows(t *testing.T) {
+	// no rows leave nothing to name the time column, which the plan names instead
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Nanosecond}},
+		{Name: "host", Type: arrow.BinaryTypes.String},
+		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	}, nil)
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	record := builder.NewRecordBatch()
+	defer record.Release()
+	empty, err := EncodeRecords(schema, []arrow.RecordBatch{record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := &fakeUpstream{executeFn: func(string) ([]byte, error) { return empty, nil }}
+	srv := newDeltaTestServer(t, up)
+	for range 2 {
+		if rows := executeRows(t, srv, fmt.Sprintf(deltaQuery, 0, 600)); len(rows) != 0 {
+			t.Fatalf("rows = %v", rows)
+		}
+	}
+	if up.executeCalls != 1 {
+		t.Fatalf("upstream calls = %d, want the miss only", up.executeCalls)
+	}
 }
 
 func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {

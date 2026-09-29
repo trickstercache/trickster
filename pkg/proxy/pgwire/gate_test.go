@@ -42,7 +42,7 @@ const (
 	splitterTestMaxHeld = 1024
 )
 
-func gatedConfig(t *testing.T, f *fakeUpstream) Config {
+func gatedConfig(t testing.TB, f *fakeUpstream) Config {
 	t.Helper()
 	c := testConfig(f)
 	// a backend name per test keeps its metric series to itself

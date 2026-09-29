@@ -60,7 +60,7 @@ var (
 // through the object proxy cache for partial_bucket_ttl and returns its rows
 func FetchPartialBucket(r *http.Request, pc *po.Options, trq *timeseries.TimeRangeQuery,
 	modeler *timeseries.Modeler,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	rsc := request.GetResources(r)
 	if rsc == nil || rsc.BackendOptions == nil || modeler == nil {
 		return nil, status.LookupStatusError, ErrPartialBucketFetch
@@ -93,19 +93,19 @@ func FetchPartialBucket(r *http.Request, pc *po.Options, trq *timeseries.TimeRan
 		logger.Error("partial bucket unmarshaling failed", logging.Pairs{keys.Detail: err.Error()})
 		return nil, status.LookupStatusProxyError, err
 	}
-	ds, ok := ts.(*dataset.DataSet)
-	if !ok {
+	// the provider's model, which may carry more than its rows, as long as it holds a DataSet
+	if _, ok := ts.(dataset.Based); !ok {
 		return nil, status.LookupStatusProxyError, ErrPartialBucketModel
 	}
 	if isHit {
-		return ds, status.LookupStatusHit, nil
+		return ts, status.LookupStatusHit, nil
 	}
-	return ds, status.LookupStatusKeyMiss, nil
+	return ts, status.LookupStatusKeyMiss, nil
 }
 
 type partialFetch struct {
 	pb     timeseries.PartialBucket
-	ds     *dataset.DataSet
+	ts     timeseries.Timeseries
 	status status.LookupStatus
 	err    error
 }
@@ -165,7 +165,7 @@ func startPartialBuckets(r *http.Request, o *bo.Options, client backends.Timeser
 		pf.wg.Go(func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					f.ds, f.status, f.err = nil, status.LookupStatusError, ErrPartialBucketFetch
+					f.ts, f.status, f.err = nil, status.LookupStatusError, ErrPartialBucketFetch
 					logger.Error("partial bucket fetch panicked", logging.Pairs{keys.Detail: rec})
 				}
 			}()
@@ -174,7 +174,7 @@ func startPartialBuckets(r *http.Request, o *bo.Options, client backends.Timeser
 				return
 			}
 			defer pf.limiter.release()
-			f.ds, f.status, f.err = client.FetchPartialBucket(rq.WithContext(ctx), trq, f.pb, live)
+			f.ts, f.status, f.err = client.FetchPartialBucket(rq.WithContext(ctx), trq, f.pb, live)
 		})
 	}
 	return pf
@@ -221,14 +221,14 @@ func (pf *partialFetches) mergeInto(rts timeseries.Timeseries, o *bo.Options, no
 		res.Extent = timeseries.Extent{Start: f.pb.Lower, End: upper}
 		res.Edge = f.pb.Edge
 		switch {
-		case f.err != nil || f.ds == nil:
+		case f.err != nil || f.ts == nil:
 			// the bucket is left out of the response, as a failed Fast Forward is
 			res.Status = statusErr
 		default:
 			res.Status = f.status.String()
-			keepLabel(f.ds, f.pb.Label)
-			values += f.ds.ValueCount()
-			merged = append(merged, f.ds)
+			keepLabel(f.ts, f.pb.Label)
+			values += f.ts.ValueCount()
+			merged = append(merged, f.ts)
 			beforeInterior = beforeInterior || f.pb.Edge == timeseries.BucketEdgeStart
 		}
 		if o != nil {
@@ -244,8 +244,13 @@ func (pf *partialFetches) mergeInto(rts timeseries.Timeseries, o *bo.Options, no
 	return results, values
 }
 
-func keepLabel(ds *dataset.DataSet, label time.Time) {
+func keepLabel(ts timeseries.Timeseries, label time.Time) {
 	// the rows answered for the bucket's own label, and never a neighbor the origin also returned
+	b, ok := ts.(dataset.Based)
+	if !ok {
+		return
+	}
+	ds := b.Base()
 	e := epoch.Epoch(label.UnixNano())
 	for _, res := range ds.Results {
 		if res == nil {

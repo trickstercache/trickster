@@ -35,21 +35,10 @@ func resultTestBucket(minute int) int64 {
 	return time.Date(2026, 9, 10, 8, minute, 0, 0, time.UTC).UnixNano()
 }
 
-func testResult(rows ...string) *Result {
-	r := &Result{RowDescription: []byte(resultTestDescription), times: []int64{}}
-	for _, row := range rows {
-		minute, label, _ := strings.Cut(row, ":")
-		n := int(minute[0]-'0')*10 + int(minute[1]-'0')
-		body, _ := (&pgproto3.DataRow{Values: [][]byte{[]byte(label)}}).Encode(nil)
-		r.appendRow(body[frameHeaderLen:], resultTestBucket(n), true)
-	}
-	return r
-}
-
-func labels(t *testing.T, r *Result, descending bool) string {
+func labels(t *testing.T, stream []byte) string {
 	t.Helper()
+	// each DataRow's first column, then the CommandComplete tag
 	var out []string
-	stream := r.encode(descending)
 	for len(stream) > 0 {
 		typ, body, err := readFrame(bytes.NewReader(stream), pgMaxMessageBody)
 		if err != nil {
@@ -70,63 +59,13 @@ func labels(t *testing.T, r *Result, descending bool) string {
 	return strings.Join(out, " ")
 }
 
-func TestResultMergeCropAndOrder(t *testing.T) {
-	cached := testResult("00:a", "00:b", "05:c", "10:old")
-	fetched := testResult("10:new1", "10:new2", "15:d")
-	earlier := testResult("55:never") // sorts last: minute 55
-	merged, err := mergeResults([]*Result{cached, fetched, testResult(), earlier})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// the later part replaces bucket 10 whole; rows inside a bucket keep their order
-	if got := labels(t, merged, false); got != "a b c new1 new2 d never SELECT 7" {
-		t.Fatalf("merged: %q", got)
-	}
-	if got := labels(t, merged, true); got != "never d new1 new2 c a b SELECT 7" {
-		t.Fatalf("descending: %q", got)
-	}
-	extent := timeseries.Extent{Start: time.Unix(0, resultTestBucket(5)), End: time.Unix(0, resultTestBucket(10))}
-	if got := labels(t, merged.crop(extent), false); got != "c new1 new2 SELECT 3" {
-		t.Fatalf("cropped: %q", got)
-	}
-	empty := merged.crop(timeseries.Extent{Start: time.Unix(0, resultTestBucket(20)), End: time.Unix(0, resultTestBucket(30))})
-	if got := labels(t, empty, false); got != "SELECT 0" || empty.times == nil || empty.RowDescription == nil {
-		t.Fatalf("an empty crop keeps the row description and its delta nature: %q", got)
-	}
-	kept, first, trimmed := merged.retain(2)
-	if !trimmed || first != resultTestBucket(15) || labels(t, kept, false) != "d never SELECT 2" {
-		t.Fatalf("retain: %q from %d (%t)", labels(t, kept, false), first, trimmed)
-	}
-	for _, limit := range []int{0, 5, 99} {
-		if _, _, trimmed := merged.retain(limit); trimmed {
-			t.Fatalf("a limit of %d must keep everything", limit)
-		}
-	}
-	if _, err = mergeResults([]*Result{cached, nil}); !errors.Is(err, errResultRow) {
-		t.Fatalf("expected a nil part to be rejected, got %v", err)
-	}
-	object := &Result{}
-	object.appendRow([]byte{0, 0}, 0, false)
-	if _, err = mergeResults([]*Result{cached, object}); !errors.Is(err, errResultRow) {
-		t.Fatalf("expected an untimed part to be rejected, got %v", err)
-	}
-}
-
-func TestResultSortIsStableWithinABucket(t *testing.T) {
-	r := testResult("10:x", "10:y", "00:p", "05:m", "00:q")
-	r.sortByTime()
-	if got := labels(t, r, false); got != "p q m x y SELECT 5" {
-		t.Fatalf("sorted: %q", got)
-	}
-}
-
 func TestResultEncodeKeepsAnObjectsOwnTag(t *testing.T) {
 	object := &Result{RowDescription: []byte(resultTestDescription), Tag: "SELECT 1"}
-	object.appendRow([]byte{0, 1, 0, 0, 0, 1, 'v'}, 0, false)
-	if got := labels(t, object, true); got != "v SELECT 1" {
+	object.appendRow([]byte{0, 1, 0, 0, 0, 1, 'v'})
+	if got := labels(t, object.encode()); got != "v SELECT 1" {
 		t.Fatalf("object: %q", got)
 	}
-	if got := labels(t, &Result{}, false); got != "SELECT 0" {
+	if got := labels(t, (&Result{}).encode()); got != "SELECT 0" {
 		t.Fatalf("a result with no tag still completes: %q", got)
 	}
 }
@@ -157,12 +96,9 @@ func TestRowColumn(t *testing.T) {
 func TestResultCodecRoundTrip(t *testing.T) {
 	codec := resultCodec{}
 	object := &Result{RowDescription: []byte(resultTestDescription), Tag: "SELECT 2"}
-	object.appendRow([]byte("row-one"), 0, false)
-	object.appendRow([]byte("row-two!"), 0, false)
-	for name, original := range map[string]*Result{
-		"delta": testResult("00:a", "00:b", "05:c"), "empty delta": testResult(), "object": object,
-		"bare": {},
-	} {
+	object.appendRow([]byte("row-one"))
+	object.appendRow([]byte("row-two!"))
+	for name, original := range map[string]*Result{"object": object, "bare": {}} {
 		encoded, err := codec.Marshal(original)
 		if err != nil {
 			t.Fatal(err)
@@ -171,15 +107,14 @@ func TestResultCodecRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if !bytes.Equal(decoded.encode(false), original.encode(false)) || (decoded.times == nil) != (original.times == nil) ||
-			codec.Size(decoded) != codec.Size(original) {
+		if !bytes.Equal(decoded.encode(), original.encode()) || codec.Size(decoded) != codec.Size(original) {
 			t.Fatalf("%s: the round trip changed the result", name)
 		}
 	}
 	if _, err := codec.Marshal(nil); !errors.Is(err, errResultCodec) || codec.Size(nil) != 0 {
 		t.Fatalf("a nil result cannot be stored: %v", err)
 	}
-	valid, _ := codec.Marshal(testResult("00:a", "05:b"))
+	valid, _ := codec.Marshal(object)
 	for cut := range len(valid) {
 		if _, err := codec.Unmarshal(valid[:cut]); !errors.Is(err, errResultCodec) {
 			t.Fatalf("a %d-byte prefix must be rejected, got %v", cut, err)
@@ -193,10 +128,18 @@ func TestResultCodecRoundTrip(t *testing.T) {
 	if _, err := codec.Unmarshal(append(bytes.Clone(valid), 'x')); !errors.Is(err, errResultCodec) {
 		t.Fatalf("trailing bytes must be rejected, got %v", err)
 	}
+	// an entry written for delta rows, which carried bucket times, is a miss
+	timed := bytes.Clone(valid)
+	timed[1] = resultFlagTimes
+	if _, err := codec.Unmarshal(timed); !errors.Is(err, errResultCodec) {
+		t.Fatalf("a timed entry must be rejected, got %v", err)
+	}
 }
 
 func FuzzResultCodec(f *testing.F) {
-	valid, _ := resultCodec{}.Marshal(testResult("00:a", "05:b"))
+	object := &Result{RowDescription: []byte(resultTestDescription)}
+	object.appendRow([]byte("row"))
+	valid, _ := resultCodec{}.Marshal(object)
 	f.Add(valid)
 	f.Add([]byte{resultCodecVersion, resultFlagTimes, 0, 0, 0xff, 0xff, 0xff, 0xff, 0x0f})
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -205,7 +148,7 @@ func FuzzResultCodec(f *testing.F) {
 			return
 		}
 		// whatever decodes must be safe to read end to end
-		_ = decoded.encode(true)
+		_ = decoded.encode()
 		for i := range decoded.ends {
 			_ = decoded.row(i)
 		}
@@ -283,6 +226,34 @@ func TestTimeAxisDecoding(t *testing.T) {
 	}
 }
 
+func TestISOTimestampsParseAsTimeParseDoes(t *testing.T) {
+	// the parser never accepts what time.Parse refuses or reads it differently, and takes every
+	// canonical value; it refuses forms PostgreSQL never sends, like a padded hour
+	const layout = "2006-01-02 15:04:05"
+	var inputs []string
+	for _, base := range []string{
+		"2026-09-10 08:05:00", "2024-02-29 23:59:59", "2023-02-29 00:00:00", "2026-04-31 12:00:00",
+		"0000-01-01 00:00:00", "2026-12-31 24:00:00", "2026-01-01 00:60:00", "2026-01-01 00:00:60",
+	} {
+		inputs = append(inputs, base)
+		for i := range base {
+			for _, c := range "0139 -:a+" {
+				mutated := []byte(base)
+				mutated[i] = byte(c)
+				inputs = append(inputs, string(mutated))
+			}
+		}
+	}
+	for _, text := range inputs {
+		want, wantErr := time.Parse(layout, text)
+		got, err := parseISOTimestamp([]byte(text), false)
+		canonical := wantErr == nil && want.Format(layout) == text
+		if (err == nil && (wantErr != nil || !got.Equal(want))) || (err != nil && canonical) {
+			t.Fatalf("%q: got %v, %v; time.Parse gives %v, %v", text, got, err, want, wantErr)
+		}
+	}
+}
+
 func TestTimeAxisDecoderFailsClosedOnSessionSettings(t *testing.T) {
 	for name, test := range map[string]struct {
 		kind     TimeAxisKind
@@ -342,48 +313,6 @@ func TestBucketTime(t *testing.T) {
 	}
 }
 
-func TestFinalizeDelta(t *testing.T) {
-	step := 5 * time.Minute
-	plan := &sqlanalyzer.QueryPlan{Step: step, UpperBound: &sqlanalyzer.Bound{}}
-	merged := testResult("00:a", "05:b", "10:c", "15:d")
-	all := timeseries.ExtentList{{Start: time.Unix(0, resultTestBucket(0)), End: time.Unix(0, resultTestBucket(15))}}
-	requested := timeseries.Extent{Start: time.Unix(0, resultTestBucket(5)), End: time.Unix(0, resultTestBucket(15))}
-	longAfter := time.Unix(0, resultTestBucket(15)).Add(24 * time.Hour)
-
-	response, retained, extents, err := finalizeDelta(&Config{RetentionPoints: 2}, plan, merged, all, requested, longAfter)
-	if err != nil || labels(t, response, false) != "b c d SELECT 3" {
-		t.Fatalf("retention must never trim the response: %q, %v", labels(t, response, false), err)
-	}
-	if labels(t, retained, false) != "c d SELECT 2" || len(extents) != 1 || !extents[0].Start.Equal(time.Unix(0, resultTestBucket(10))) {
-		t.Fatalf("retained %q over %v", labels(t, retained, false), extents)
-	}
-
-	// ten minutes after the last bucket, a fifteen-minute tolerance leaves only the first stable
-	soonAfter := time.Unix(0, resultTestBucket(15)).Add(10 * time.Minute)
-	_, retained, extents, err = finalizeDelta(&Config{BackfillWindow: 15 * time.Minute}, plan, merged, all, requested, soonAfter)
-	if err != nil || labels(t, retained, false) != "a b SELECT 2" || len(extents) != 1 {
-		t.Fatalf("rows newer than the stable coverage must not be kept: %q over %v, %v", labels(t, retained, false), extents, err)
-	}
-	_, retained, extents, err = finalizeDelta(&Config{BackfillWindow: 48 * time.Hour}, plan, merged, all, requested, soonAfter)
-	if err != nil || retained.Rows() != 0 || len(extents) != 0 {
-		t.Fatalf("an entirely volatile result keeps nothing: %d rows over %v, %v", retained.Rows(), extents, err)
-	}
-
-	// the final, still-filling bucket is never stable, whether or not the range is
-	// open-ended; the complete bucket before it is kept
-	openEnded := &sqlanalyzer.QueryPlan{Step: step}
-	atTheEdge := time.Unix(0, resultTestBucket(15)).Add(time.Minute)
-	for name, p := range map[string]*sqlanalyzer.QueryPlan{"open-ended": openEnded, "closed": plan} {
-		_, retained, _, err = finalizeDelta(&Config{}, p, merged, all, requested, atTheEdge)
-		if err != nil || labels(t, retained, false) != "a b c SELECT 3" {
-			t.Fatalf("%s: %q, %v", name, labels(t, retained, false), err)
-		}
-	}
-	if _, _, _, err = finalizeDelta(&Config{}, plan, &Result{}, all, requested, longAfter); !errors.Is(err, errResultRow) {
-		t.Fatalf("an untimed result cannot be finalized, got %v", err)
-	}
-}
-
 func TestOrderable(t *testing.T) {
 	plan := &sqlanalyzer.QueryPlan{OutputColumn: "time"}
 	if !orderable(plan) || descending(plan) {
@@ -412,4 +341,9 @@ func TestUpstreamHandoff(t *testing.T) {
 	if !finished {
 		t.Fatal("expected the handoff to be finished")
 	}
+}
+
+func (r *Result) appendRow(body []byte) {
+	r.data = append(r.data, body...)
+	r.ends = append(r.ends, uint32(len(r.data))) // #nosec G115 -- test rows are small
 }

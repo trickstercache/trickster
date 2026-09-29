@@ -29,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // TimeseriesBackend is the primary interface for interoperating with Trickster and upstream TSDB's
@@ -46,10 +45,10 @@ type TimeseriesBackend interface {
 	Configuration() *bo.Options
 	// Name returns the name of the Backend
 	Name() string
-	// FetchPartialBucket fetches one partial bucket of r's query via the object proxy cache for
-	// partial_bucket_ttl and returns its rows; isLive marks the bucket holding now
+	// FetchPartialBucket fetches a partial bucket of r's query via the object proxy cache for
+	// partial_bucket_ttl, in the provider's model; isLive marks the bucket holding now
 	FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery, pb timeseries.PartialBucket,
-		isLive bool) (*dataset.DataSet, status.LookupStatus, error)
+		isLive bool) (timeseries.Timeseries, status.LookupStatus, error)
 	// SetExtent updates an upstream request's timerange parameters based on the
 	// provided timeseries.Extent. It returns an error when the request cannot be
 	// rewritten safely; callers must not send that request to the origin.
@@ -110,7 +109,7 @@ var ErrPartialBucketsUnsupported = errors.New("the provider does not fetch parti
 // with no partial buckets fetches none
 func (b *timeseriesBackend) FetchPartialBucket(_ *http.Request, _ *timeseries.TimeRangeQuery,
 	_ timeseries.PartialBucket, _ bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	return nil, status.LookupStatusError, ErrPartialBucketsUnsupported
 }
 

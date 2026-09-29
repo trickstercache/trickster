@@ -27,7 +27,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // SetExtent renders one cache-miss extent as Druid's half-open interval.
@@ -95,7 +94,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 // bucket's raw range, through the object proxy cache
 func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
 	pb timeseries.PartialBucket, _ bool,
-) (*dataset.DataSet, status.LookupStatus, error) {
+) (timeseries.Timeseries, status.LookupStatus, error) {
 	if r == nil || trq == nil {
 		return nil, status.LookupStatusError, errInvalidRewrite
 	}

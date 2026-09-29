@@ -19,6 +19,7 @@ package nativedelta
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -30,6 +31,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
@@ -72,6 +75,8 @@ type testCache struct {
 	storeErr    error
 	retrieveErr error
 	removeErr   error
+	provider    string
+	shared      bool // Retrieve returns the stored bytes themselves, as bbolt and memory do
 }
 
 func newTestCache() *testCache {
@@ -102,6 +107,9 @@ func (c *testCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
 	if !ok {
 		return nil, status.LookupStatusKeyMiss, trickstercache.ErrKNF
 	}
+	if c.shared {
+		return data, status.LookupStatusHit, nil
+	}
 	return append([]byte(nil), data...), status.LookupStatusHit, nil
 }
 
@@ -117,7 +125,13 @@ func (c *testCache) Remove(keys ...string) error {
 	return nil
 }
 
-func (c *testCache) Configuration() *cacheoptions.Options { return cacheoptions.New() }
+func (c *testCache) Configuration() *cacheoptions.Options {
+	o := cacheoptions.New()
+	if c.provider != "" {
+		o.Provider = c.provider
+	}
+	return o
+}
 
 func newTestEngine(c trickstercache.Cache) *Engine[*payload] {
 	return New(Config{
@@ -147,37 +161,60 @@ func testPlan(lower, upper int64) *sqlanalyzer.QueryPlan {
 	}
 }
 
-// testOps returns DeltaOps whose payloads carry the statements that produced
-// them. counts tracks upstream fetches.
+const testHeader = "columns"
+
 func testOps(counts *int) DeltaOps[*payload] {
+	// rows carry the statement that fetched them, so tests can assert which fetches composed a response
 	return DeltaOps[*payload]{
-		Fetch: func(statement string) (*payload, error) {
+		Fetch: func(statement string) (*Delta, error) {
 			*counts++
-			return &payload{Statements: []string{statement}}, nil
+			return testRows(statement), nil
 		},
 		FetchOriginal: func() (*payload, error) {
 			*counts++
 			return &payload{Statements: []string{"original"}}, nil
 		},
-		Merge: func(parts []*payload) (*payload, error) {
-			merged := &payload{}
-			for _, part := range parts {
-				merged.Statements = append(merged.Statements, part.Statements...)
-			}
-			return merged, nil
-		},
-		CropResponse: func(p *payload, _ timeseries.Extent) (*payload, error) {
-			return p, nil
-		},
-		Finalize: func(merged *payload, allExtents timeseries.ExtentList,
-			_ timeseries.Extent, _ time.Time,
-		) (*payload, *payload, timeseries.ExtentList, error) {
-			return merged, merged, allExtents, nil
-		},
 		ObjectFallback: func() (*payload, status.LookupStatus, error) {
 			return &payload{Statements: []string{"object"}}, status.LookupStatusKeyMiss, nil
 		},
 	}
+}
+
+func testRows(statement string) *Delta {
+	// a range(start,end) statement's rows are a point per minute of the range, and any other
+	// statement's a single point, each holding the statement
+	s := &dataset.Series{Header: dataset.SeriesHeader{Name: "rows"}}
+	ds := &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{s}}}}
+	var start, end int64
+	if _, err := fmt.Sscanf(statement, "range(%d,%d)", &start, &end); err != nil {
+		start, end = 0, 0
+	}
+	for at := start; at <= end; at += 60 {
+		s.Points = append(s.Points, dataset.Point{
+			Epoch: epoch.Epoch(time.Duration(at) * time.Second), Size: 1, Values: []any{statement},
+		})
+	}
+	ds.ExtentList = timeseries.ExtentList{{Start: time.Unix(start, 0), End: time.Unix(end, 0)}}
+	return &Delta{Header: []byte(testHeader), DS: ds}
+}
+
+func statements(o Outcome[*payload]) []string {
+	// the statements whose rows compose a response, in time order, or the object's own
+	if o.Delta == nil {
+		if o.Object == nil {
+			return nil
+		}
+		return o.Object.Statements
+	}
+	var out []string
+	for _, r := range o.Delta.DS.Results {
+		for row := range r.Rows(dataset.RowOrder{}) {
+			if st := row.Point.Values[0].(string); len(out) == 0 || out[len(out)-1] != st {
+				out = append(out, st)
+			}
+		}
+	}
+	return out
 }
 
 var testNow = time.Unix(2_000_000_000, 0) // every test window has ended by then
@@ -244,29 +281,40 @@ func TestExecuteDeltaMissThenHitThenPartial(t *testing.T) {
 	// full miss fetches the whole window as one rendered statement
 	response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
 	if err != nil || cacheStatus != status.LookupStatusKeyMiss || counts != 1 ||
-		response.Statements[0] != "range(0,540)" {
-		t.Fatalf("full miss = %+v, %s, %v (fetches=%d)", response, cacheStatus, err, counts)
+		!slices.Equal(statements(response), []string{"range(0,540)"}) {
+		t.Fatalf("full miss = %v, %s, %v (fetches=%d)", statements(response), cacheStatus, err, counts)
 	}
 
 	// identical window is a pure hit with no upstream fetch
 	response, cacheStatus, err = engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
-	if err != nil || cacheStatus != status.LookupStatusHit || counts != 1 {
-		t.Fatalf("hit = %+v, %s, %v (fetches=%d)", response, cacheStatus, err, counts)
+	if err != nil || cacheStatus != status.LookupStatusHit || counts != 1 ||
+		!slices.Equal(statements(response), []string{"range(0,540)"}) {
+		t.Fatalf("hit = %v, %s, %v (fetches=%d)", statements(response), cacheStatus, err, counts)
 	}
 
 	// widened window fetches only the missing extent and merges
 	response, cacheStatus, err = engine.ExecuteDelta(deltaRequest(testPlan(0, 900), ops))
 	if err != nil || cacheStatus != status.LookupStatusPartialHit || counts != 2 {
-		t.Fatalf("partial = %+v, %s, %v (fetches=%d)", response, cacheStatus, err, counts)
+		t.Fatalf("partial = %v, %s, %v (fetches=%d)", statements(response), cacheStatus, err, counts)
 	}
-	if len(response.Statements) != 2 || response.Statements[1] != "range(600,840)" {
-		t.Fatalf("partial fetch composed %v", response.Statements)
+	if got := statements(response); !slices.Equal(got, []string{"range(0,540)", "range(600,840)"}) {
+		t.Fatalf("partial fetch composed %v", got)
 	}
 
 	// a disjoint window is a range miss
 	_, cacheStatus, err = engine.ExecuteDelta(deltaRequest(testPlan(7200, 7800), ops))
 	if err != nil || cacheStatus != status.LookupStatusRangeMiss {
 		t.Fatalf("range miss status = %s, %v", cacheStatus, err)
+	}
+
+	// a delta entry stored directly is the one the next request finds
+	seeded := testRows("range(0,540)")
+	engine.StoreDelta("dpc", &Entry[*Delta]{Payload: seeded, Extents: seeded.DS.ExtentList})
+	if got, found := engine.RetrieveDelta("dpc"); !found || got.Payload.Rows() != 10 {
+		t.Fatalf("seeded entry = %+v, %t", got, found)
+	}
+	if _, cacheStatus, _ = engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops)); cacheStatus != status.LookupStatusHit {
+		t.Fatalf("seeded entry status = %s", cacheStatus)
 	}
 }
 
@@ -277,8 +325,8 @@ func TestExecuteDeltaFallbacks(t *testing.T) {
 		response, cacheStatus, err := engine.ExecuteDelta(
 			deltaRequest(&sqlanalyzer.QueryPlan{}, testOps(&counts)))
 		if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
-			response.Statements[0] != "original" {
-			t.Fatalf("bounds fallback = %+v, %s, %v", response, cacheStatus, err)
+			!slices.Equal(statements(response), []string{"original"}) {
+			t.Fatalf("bounds fallback = %v, %s, %v", statements(response), cacheStatus, err)
 		}
 	})
 
@@ -289,8 +337,8 @@ func TestExecuteDeltaFallbacks(t *testing.T) {
 		plan.Renderer = testRenderer{err: errors.New("render failed")}
 		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, testOps(&counts)))
 		if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
-			response.Statements[0] != "original" {
-			t.Fatalf("render fallback = %+v, %s, %v", response, cacheStatus, err)
+			!slices.Equal(statements(response), []string{"original"}) {
+			t.Fatalf("render fallback = %v, %s, %v", statements(response), cacheStatus, err)
 		}
 	})
 
@@ -298,7 +346,7 @@ func TestExecuteDeltaFallbacks(t *testing.T) {
 		engine := newTestEngine(newTestCache())
 		counts := 0
 		ops := testOps(&counts)
-		ops.Fetch = func(string) (*payload, error) { return nil, errors.New("origin down") }
+		ops.Fetch = func(string) (*Delta, error) { return nil, errors.New("origin down") }
 		_, cacheStatus, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
 		if err == nil || cacheStatus != status.LookupStatusProxyError {
 			t.Fatalf("fetch failure = %s, %v", cacheStatus, err)
@@ -306,16 +354,16 @@ func TestExecuteDeltaFallbacks(t *testing.T) {
 	})
 
 	t.Run("unmergeable marks the plan and serves the object path", func(t *testing.T) {
-		cacheClient := newTestCache()
-		engine := newTestEngine(cacheClient)
+		engine := newTestEngine(newTestCache())
 		counts := 0
 		ops := testOps(&counts)
-		ops.Merge = func([]*payload) (*payload, error) {
-			return nil, errors.New("unorderable group column")
+		ops.Fetch = func(string) (*Delta, error) {
+			counts++
+			return nil, Unmergeable(errors.New("schema not representable"))
 		}
 		response, _, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
-		if err != nil || response.Statements[0] != "object" {
-			t.Fatalf("unmergeable fallback = %+v, %v", response, err)
+		if err != nil || !slices.Equal(statements(response), []string{"object"}) {
+			t.Fatalf("unmergeable fallback = %v, %v", statements(response), err)
 		}
 		if _, blocked := engine.Retrieve("dpc-fallback"); !blocked {
 			t.Fatal("fallback marker was not stored")
@@ -323,54 +371,60 @@ func TestExecuteDeltaFallbacks(t *testing.T) {
 		// later requests skip the delta fetch entirely
 		fetchesBefore := counts
 		response, _, err = engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
-		if err != nil || response.Statements[0] != "object" || counts != fetchesBefore {
-			t.Fatalf("marker did not short-circuit: %+v (fetches %d->%d)",
-				response, fetchesBefore, counts)
+		if err != nil || !slices.Equal(statements(response), []string{"object"}) || counts != fetchesBefore {
+			t.Fatalf("marker did not short-circuit: %v (fetches %d->%d)",
+				statements(response), fetchesBefore, counts)
 		}
 	})
 
-	t.Run("unmergeable fetch error routes to the object path", func(t *testing.T) {
+	t.Run("columns that change between fetches are unmergeable", func(t *testing.T) {
 		engine := newTestEngine(newTestCache())
 		counts := 0
 		ops := testOps(&counts)
-		ops.Fetch = func(string) (*payload, error) {
-			return nil, Unmergeable(errors.New("schema not representable"))
-		}
-		response, _, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
-		if err != nil || response.Statements[0] != "object" {
-			t.Fatalf("unmergeable fetch fallback = %+v, %v", response, err)
-		}
-	})
-
-	t.Run("invalid cached axis refetches from scratch", func(t *testing.T) {
-		engine := newTestEngine(newTestCache())
-		counts := 0
-		ops := testOps(&counts)
-		cropErr := errors.New("bad axis")
-		ops.CropResponse = func(*payload, timeseries.Extent) (*payload, error) {
-			return nil, cropErr
-		}
 		if _, _, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops)); err != nil {
 			t.Fatal(err)
 		}
-		_, cacheStatus, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
-		if err != nil || cacheStatus != status.LookupStatusKeyMiss || counts != 2 {
-			t.Fatalf("invalid axis retry = %s, %v (fetches=%d)", cacheStatus, err, counts)
+		ops.Fetch = func(statement string) (*Delta, error) {
+			rows := testRows(statement)
+			rows.Header = []byte("other columns")
+			return rows, nil
+		}
+		response, _, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 900), ops))
+		if err != nil || !slices.Equal(statements(response), []string{"object"}) {
+			t.Fatalf("changed columns = %v, %v", statements(response), err)
+		}
+		if _, found := engine.deltas.retrieve("dpc"); found {
+			t.Fatal("the delta entry holding the old columns was kept")
+		}
+		// a listener can accept headers that differ only in what doesn't shape rows
+		engine = newTestEngine(newTestCache())
+		ops = testOps(&counts)
+		if _, _, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops)); err != nil {
+			t.Fatal(err)
+		}
+		ops.Fetch = func(statement string) (*Delta, error) {
+			rows := testRows(statement)
+			rows.Header = []byte("other columns")
+			return rows, nil
+		}
+		ops.SameHeader = func(a, b []byte) bool { return true }
+		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 900), ops))
+		if err != nil || cacheStatus != status.LookupStatusPartialHit || string(response.Delta.Header) != "other columns" {
+			t.Fatalf("accepted columns = %v, %s, %v", statements(response), cacheStatus, err)
 		}
 	})
 
-	t.Run("finalize failure is a proxy error", func(t *testing.T) {
+	t.Run("an entry with no rows refetches from scratch", func(t *testing.T) {
 		engine := newTestEngine(newTestCache())
 		counts := 0
-		ops := testOps(&counts)
-		ops.Finalize = func(*payload, timeseries.ExtentList, timeseries.Extent, time.Time,
-		) (*payload, *payload, timeseries.ExtentList, error) {
-			return nil, nil, nil, errors.New("finalize failed")
-		}
-		if _, cacheStatus, err := engine.ExecuteDelta(
-			deltaRequest(testPlan(0, 600), ops)); err == nil ||
-			cacheStatus != status.LookupStatusProxyError {
-			t.Fatalf("finalize failure = %s, %v", cacheStatus, err)
+		engine.deltas.store("dpc", &Entry[*Delta]{
+			Payload: &Delta{Header: []byte(testHeader)},
+			Extents: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(540, 0)}},
+		}, time.Minute)
+		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), testOps(&counts)))
+		if err != nil || cacheStatus != status.LookupStatusKeyMiss || counts != 1 ||
+			!slices.Equal(statements(response), []string{"range(0,540)"}) {
+			t.Fatalf("invalid entry retry = %v, %s, %v (fetches=%d)", statements(response), cacheStatus, err, counts)
 		}
 	})
 }
@@ -384,8 +438,8 @@ func TestExecuteDeltaEmptyWindow(t *testing.T) {
 	t.Run("no empty renderer proxies the original", func(t *testing.T) {
 		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, ops))
 		if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
-			response.Statements[0] != "original" {
-			t.Fatalf("empty window without renderer = %+v, %s, %v", response, cacheStatus, err)
+			!slices.Equal(statements(response), []string{"original"}) {
+			t.Fatalf("empty window without renderer = %v, %s, %v", statements(response), cacheStatus, err)
 		}
 	})
 
@@ -395,8 +449,8 @@ func TestExecuteDeltaEmptyWindow(t *testing.T) {
 		}
 		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, ops))
 		if err != nil || cacheStatus != status.LookupStatusKeyMiss ||
-			response.Statements[0] != "empty(0,0)" {
-			t.Fatalf("empty miss = %+v, %s, %v", response, cacheStatus, err)
+			!slices.Equal(statements(response), []string{"empty(0,0)"}) {
+			t.Fatalf("empty miss = %v, %s, %v", statements(response), cacheStatus, err)
 		}
 		fetches := counts
 		_, cacheStatus, err = engine.ExecuteDelta(deltaRequest(plan, ops))
@@ -411,8 +465,8 @@ func TestExecuteDeltaEmptyWindow(t *testing.T) {
 		}
 		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, ops))
 		if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
-			response.Statements[0] != "original" {
-			t.Fatalf("empty render failure = %+v, %s, %v", response, cacheStatus, err)
+			!slices.Equal(statements(response), []string{"original"}) {
+			t.Fatalf("empty render failure = %v, %s, %v", statements(response), cacheStatus, err)
 		}
 	})
 }
@@ -737,10 +791,10 @@ func TestExecuteDeltaNarrowsOffGridCoverage(t *testing.T) {
 		CacheClient: func() trickstercache.Cache { return cache },
 		CacheTTL:    time.Minute,
 	}, testCodec{})
-	engine.Store("dpc", &Entry[*payload]{
-		Payload: &payload{Statements: []string{"cached"}},
+	engine.deltas.store("dpc", &Entry[*Delta]{
+		Payload: testRows("cached"),
 		Extents: timeseries.ExtentList{{Start: at(1, 22, 30), End: at(1, 23, 0)}},
-	})
+	}, time.Minute)
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: "canonical", Step: time.Hour, Phase: 30 * time.Minute,
 		LowerBound: &sqlanalyzer.Bound{Value: at(1, 22, 30), Inclusive: true},
@@ -758,10 +812,78 @@ func TestExecuteDeltaNarrowsOffGridCoverage(t *testing.T) {
 		t.Fatalf("expected one partial-hit fetch, got %s after %d fetches", cacheStatus, counts)
 	}
 	want := fmt.Sprintf("range(%d,%d)", at(1, 23, 30).Unix(), at(2, 0, 30).Unix())
-	if len(response.Statements) != 2 || response.Statements[1] != want {
-		t.Errorf("expected the refetch %s, got %v", want, response.Statements)
+	if got := statements(response); len(got) != 1 || got[0] != want {
+		t.Errorf("expected the refetch %s, got %v", want, got)
 	}
 	if got := testutil.ToFloat64(counter) - before; got != 1 {
 		t.Errorf("expected 1 off-grid count, got %v", got)
+	}
+}
+
+func TestExecuteDeltaStoresOnlyRetainedStableRows(t *testing.T) {
+	// retention and the volatile window shrink what is stored, never the response, and the next
+	// request refetches exactly what was left out
+	for _, test := range []struct {
+		name    string
+		cfg     func(*Config)
+		refetch string
+	}{
+		{"retention", func(c *Config) { c.RetentionPoints = 5 }, "range(0,240)"},
+		{"volatile window", func(c *Config) { c.VolatileWindow = time.Since(time.Unix(300, 0)) }, "range(300,540)"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := Config{
+				Protocol: "test", BackendName: "retain-test", CacheTTL: time.Minute,
+				CacheClient: func() trickstercache.Cache { return nil },
+			}
+			cacheClient := newTestCache()
+			cfg.CacheClient = func() trickstercache.Cache { return cacheClient }
+			test.cfg(&cfg)
+			engine := New(cfg, testCodec{})
+			counts := 0
+			ops := testOps(&counts)
+			response, _, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
+			if err != nil || response.Delta.Rows() != 10 {
+				t.Fatalf("first response = %d rows, %v", response.Delta.Rows(), err)
+			}
+			var fetched []string
+			ops.Fetch = func(statement string) (*Delta, error) {
+				fetched = append(fetched, statement)
+				return testRows(statement), nil
+			}
+			response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(testPlan(0, 600), ops))
+			if err != nil || cacheStatus != status.LookupStatusPartialHit || response.Delta.Rows() != 10 ||
+				!slices.Equal(fetched, []string{test.refetch}) {
+				t.Fatalf("repeat = %d rows, %s, %v, fetched %v", response.Delta.Rows(), cacheStatus, err, fetched)
+			}
+		})
+	}
+}
+
+func TestDeltaCodec(t *testing.T) {
+	rows := testRows("range(0,120)")
+	data, err := deltaCodec{}.Marshal(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := deltaCodec{}.Unmarshal(data)
+	if err != nil || string(got.Header) != testHeader || got.Rows() != 3 {
+		t.Fatalf("round trip = %+v, %v", got, err)
+	}
+	if (deltaCodec{}).Size(rows) <= len(testHeader) || (deltaCodec{}).Size(nil) != 0 || (*Delta)(nil).Rows() != 0 {
+		t.Error("sizes and row counts")
+	}
+	for name, corrupt := range map[string][]byte{
+		"short": data[:3], "magic": append([]byte("XXXX"), data[4:]...),
+		"version": append(append([]byte(nil), data[:4]...), append([]byte{9}, data[5:]...)...),
+		"header":  append(append([]byte(nil), data[:5]...), 0xff, 0xff, 0xff, 0xff),
+		"rows":    append(append([]byte(nil), data[:9+len(testHeader)]...), 0xc1),
+	} {
+		if _, err := (deltaCodec{}).Unmarshal(corrupt); err == nil {
+			t.Errorf("%s: corrupt rows decoded", name)
+		}
+	}
+	if _, err := (deltaCodec{}).Marshal(&Delta{}); err == nil {
+		t.Error("a delta with no rows encoded")
 	}
 }
