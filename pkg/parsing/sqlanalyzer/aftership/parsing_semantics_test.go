@@ -53,9 +53,19 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 			name: "raw between", predicate: "ts BETWEEN 120 AND 240", mode: sqlanalyzer.CacheModeDelta,
 			start: 120, end: 180, rendered: []string{"ts BETWEEN 300 AND 419"},
 		},
-		{name: "raw unaligned inclusive upper", predicate: "ts >= 120 AND ts <= 241", mode: sqlanalyzer.CacheModeObject},
-		{name: "raw unaligned lower", predicate: "ts >= 121 AND ts < 240", mode: sqlanalyzer.CacheModeObject},
-		{name: "raw unaligned upper", predicate: "ts >= 120 AND ts < 241", mode: sqlanalyzer.CacheModeObject},
+		// unaligned bounds round inward to complete buckets, and the planner decides each mode's edges
+		{
+			name: "raw unaligned inclusive upper", predicate: "ts >= 120 AND ts <= 241", mode: sqlanalyzer.CacheModeDelta,
+			start: 120, end: 180, rendered: []string{"ts >= 300", "ts <= 419"},
+		},
+		{
+			name: "raw unaligned lower", predicate: "ts >= 121 AND ts < 240", mode: sqlanalyzer.CacheModeDelta,
+			start: 180, end: 180, rendered: []string{"ts >= 300", "ts < 420"},
+		},
+		{
+			name: "raw unaligned upper", predicate: "ts >= 120 AND ts < 241", mode: sqlanalyzer.CacheModeDelta,
+			start: 120, end: 180, rendered: []string{"ts >= 300", "ts < 420"},
+		},
 		{
 			name: "alias half open", predicate: "t >= 120 AND t < 240", mode: sqlanalyzer.CacheModeDelta,
 			start: 120, end: 180, rendered: []string{"t >= 300", "t < 420"},
@@ -365,7 +375,7 @@ func equalStrings(got, want []string) bool {
 }
 
 func TestRoundUnalignedTimeBounds(t *testing.T) {
-	a := NewAnalyzer(Options{RoundUnalignedTimeBounds: true})
+	a := NewAnalyzer(Options{})
 	// Grafana's $__fromTime/$__toTime expand to toDateTime(seconds) at
 	// live, unaligned instants.
 	query := "SELECT toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE) AS t, count() AS trips " +
@@ -416,11 +426,5 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 		empty.Plan.Phase, timeseries.SampleModelBucket, timeseries.StepAlignmentDrop,
 		time.Unix(1756758100, 0)); p.Full {
 		t.Fatalf("empty window planned a complete bucket: %+v", p)
-	}
-
-	// Without the option, unaligned raw bounds still fail closed.
-	strict := NewAnalyzer(Options{}).Analyze(query, time.Unix(1756758100, 0))
-	if strict.Mode == sqlanalyzer.CacheModeDelta || strict.Reason != sqlanalyzer.ReasonUnsafePredicate {
-		t.Fatalf("strict analysis = %s/%s (%v)", strict.Mode, strict.Reason, strict.Err)
 	}
 }

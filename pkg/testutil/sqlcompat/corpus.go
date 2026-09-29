@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/sqlanalyzertest"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -224,6 +225,20 @@ func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyz
 		t.Fatalf("rendered extent reads back as %v..%v, want %v..%v\n%s", again.Plan.LowerBound,
 			again.Plan.UpperBound, lower, end.Add(step), rendered)
 	}
+	// every mode's interior and partial buckets render and read back as planned, once all have ended
+	a := sessionAnalyzer{zone: tc.SessionTimeZone, analyze: analyze}
+	if _, err := sqlanalyzertest.RenderParity(a, plan, lower.AddDate(1, 0, 0)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type sessionAnalyzer struct {
+	zone    string
+	analyze Analyze
+}
+
+func (a sessionAnalyzer) Analyze(statement string, _ time.Time) sqlanalyzer.Analysis {
+	return a.analyze(a.zone, statement)
 }
 
 // CheckGrafanaMacros requires an explicit case for every bundled PostgreSQL macro.

@@ -26,10 +26,10 @@ import (
 )
 
 func TestDropParityWithThePlanner(t *testing.T) {
-	a := NewAnalyzer(Options{RoundUnalignedTimeBounds: true})
+	a := NewAnalyzer(Options{})
 	const base = int64(1_699_999_200)
 	now := time.Unix(base, 0).Add(30 * 24 * time.Hour)
-	var compared int
+	var compared, ranges int
 	check := func(query string) {
 		t.Helper()
 		got := a.Analyze(query, now)
@@ -43,6 +43,11 @@ func TestDropParityWithThePlanner(t *testing.T) {
 		if ok {
 			compared++
 		}
+		rendered, err := sqlanalyzertest.RenderParity(a, got.Plan, now)
+		if err != nil {
+			t.Fatalf("%s: %v", query, err)
+		}
+		ranges += rendered
 	}
 	buckets := []struct {
 		expr string
@@ -78,7 +83,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 	for _, c := range clickHouseCompatibilityCorpus {
 		check(c.query)
 	}
-	t.Logf("compared %d delta plans", compared)
+	t.Logf("compared %d delta plans and %d rendered ranges", compared, ranges)
 	if compared < 500 {
 		t.Fatalf("only %d delta plans were compared", compared)
 	}

@@ -68,7 +68,7 @@ func TestBuildWindowParity(t *testing.T) {
 	rfc := func(v int64) string { return time.Unix(v, 0).UTC().Format(time.RFC3339) }
 	mysql := vitess.MustNewAnalyzer()
 	datafusion := cockroach.NewAnalyzer(cockroach.Options{
-		BucketMatchers: cockroach.DataFusionBucketMatchers(), RoundUnalignedTimeBounds: true,
+		BucketMatchers: cockroach.DataFusionBucketMatchers(),
 	})
 	var compared int
 	check := func(a sqlanalyzer.DialectAnalyzer, query string, requireUpper bool) {

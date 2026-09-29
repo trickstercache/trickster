@@ -51,7 +51,7 @@ func TestParseCompactDuration(t *testing.T) {
 }
 
 func TestCompactDateBinMatcher(t *testing.T) {
-	a := NewAnalyzer(Options{BucketMatchers: []BucketMatcher{CompactDateBinMatcher(map[string]time.Duration{"m": time.Minute})}, RoundUnalignedTimeBounds: true})
+	a := NewAnalyzer(Options{BucketMatchers: []BucketMatcher{CompactDateBinMatcher(map[string]time.Duration{"m": time.Minute})}})
 	for _, bucket := range []string{"date_bin('5m', ts)", "date_bin('5m', ts, TIMESTAMP '1969-12-31T23:58:00Z')"} {
 		sql := "SELECT " + bucket + " AS time, count(*) FROM t WHERE ts >= '2026-01-01T00:00:00Z' AND ts < '2026-01-02T00:00:00Z' GROUP BY 1"
 		analysis := a.Analyze(sql, time.Now())

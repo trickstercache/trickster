@@ -230,6 +230,28 @@ func TestLivePartialBucket(t *testing.T) {
 		!slices.Equal(statements(Outcome[*payload]{Delta: cached.Payload}), []string{"range(3000,3540)"}) {
 		t.Fatalf("delta entry = %+v, %t", cached, found)
 	}
+	// truncate, like drop and partial_start, ends before the live bucket, closed or open, and an
+	// unaligned start reads its whole first bucket
+	fetched := len(recorder.statements())
+	for _, upper := range []int64{3620, -1} {
+		req := modeRequest(rawPlan(3030, upper), ops, timeseries.StepAlignmentTruncate)
+		req.Now, req.RequireUpperBound = now, false
+		response, _, err := engine.ExecuteDelta(req)
+		if err != nil || !maps.Equal(points(response), wantRange(3000, 3540, "range(3000,3540)")) {
+			t.Fatalf("truncate to %d = %v, %v", upper, points(response), err)
+		}
+	}
+	if len(recorder.statements()) != fetched {
+		t.Fatalf("truncate fetched partial buckets: %v", recorder.statements()[fetched:])
+	}
+}
+
+func wantRange(first, last int64, statement string) map[int64]string {
+	out := make(map[int64]string)
+	for at := first; at <= last; at += 60 {
+		out[at] = statement
+	}
+	return out
 }
 
 func TestPartialBucketFailuresLeaveTheBucketOut(t *testing.T) {
@@ -332,10 +354,12 @@ func TestConcurrentPartialsRunBesideTheInterior(t *testing.T) {
 		t.Fatalf("object path = %v, %v", statements(response), err)
 	}
 	// a plan already marked unmergeable doesn't fetch them
-	fetched, partials := counts, len(recorder.statements())
+	// (the previous request's abandoned fetches may still be finishing, so only this one's are checked)
+	fetched := counts
 	response, _, err = engine.ExecuteDelta(modeRequest(rawPlan(3031, 3631), ops, timeseries.StepAlignmentPartial))
 	if err != nil || !slices.Equal(statements(response), []string{"object"}) || counts != fetched ||
-		len(recorder.statements()) != partials {
+		slices.Contains(recorder.statements(), "partial(3000,3031,3060)") ||
+		slices.Contains(recorder.statements(), "partial(3600,3600,3631)") {
 		t.Fatalf("marked plan = %v, %v", statements(response), err)
 	}
 }

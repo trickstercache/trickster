@@ -84,9 +84,6 @@ var dialectAnalyzer sqlanalyzer.DialectAnalyzer = cockroach.NewAnalyzer(cockroac
 	// DataFusion rejects Timestamp-to-Int64 comparisons, so epoch-integer
 	// bounds must be rendered back to the origin as RFC3339 literals.
 	RenderNumericBoundsAsRFC3339: true,
-	// v3 dashboard clients emit live, unaligned time ranges; round them
-	// inward to complete buckets rather than failing closed.
-	RoundUnalignedTimeBounds: true,
 })
 
 // v3Request holds the fields of a v3 query request that Trickster recognizes,

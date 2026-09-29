@@ -67,8 +67,7 @@ func (c deltaTestCache) Remove(keys ...string) error {
 func (c deltaTestCache) Configuration() *cacheoptions.Options { return cacheoptions.New() }
 
 var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers:           cockroach.DataFusionBucketMatchers(),
-	RoundUnalignedTimeBounds: true,
+	BucketMatchers: cockroach.DataFusionBucketMatchers(),
 })
 
 var renderedBounds = regexp.MustCompile(`>= (\d+).* < (\d+)`)

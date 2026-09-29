@@ -56,12 +56,12 @@ func newDataFusionAnalyzer() *Analyzer {
 	return NewAnalyzer(Options{
 		BucketMatchers:               DataFusionBucketMatchers(),
 		RenderNumericBoundsAsRFC3339: true,
-		RoundUnalignedTimeBounds:     true,
 	})
 }
 
 // newStrictAnalyzer keeps the fail-closed defaults for generic dialects.
 func newStrictAnalyzer() *Analyzer {
+	// only the analyzer's own defaults, with no provider's matchers or bound options
 	return NewAnalyzer(Options{BucketMatchers: DataFusionBucketMatchers()})
 }
 
@@ -175,12 +175,13 @@ func TestAnalyzeDateBinOriginPhase(t *testing.T) {
 	if got.Plan.Phase != 30*time.Minute {
 		t.Fatalf("phase = %s, want 30m", got.Plan.Phase)
 	}
-	// The same bounds are not phase-aligned without the origin shift; a strict
-	// dialect fails them closed.
+	// without the origin shift the same bounds sit off the grid, so they round inward
 	unshifted := newStrictAnalyzer().Analyze(strings.Replace(query,
 		", TIMESTAMP '2024-01-01 00:30:00'", "", 1), time.Time{})
-	if unshifted.Mode == sqlanalyzer.CacheModeDelta {
-		t.Fatalf("unaligned bounds were delta-cacheable: %+v", unshifted.Plan)
+	if unshifted.Plan == nil || unshifted.Plan.Phase != 0 ||
+		!unshifted.Plan.LowerBound.Value.Equal(time.Unix(1704070800, 0)) ||
+		!unshifted.Plan.RawLower.Value.Equal(time.Unix(1704069000, 0)) {
+		t.Fatalf("unshifted plan = %+v", unshifted.Plan)
 	}
 }
 
@@ -417,8 +418,8 @@ func TestInclusiveUpperMatchesHalfOpen(t *testing.T) {
 }
 
 func TestAnalyzePredicateSafety(t *testing.T) {
-	// The strict configuration exercises the contract's fail-closed defaults,
-	// including unaligned raw-column bounds.
+	// the contract's fail-closed defaults; unaligned raw-column bounds round inward, keeping their raw
+	// values for the planner
 	a := newStrictAnalyzer()
 	base := `SELECT date_bin(INTERVAL '1 hour', ts) AS bucket, count(*) AS value FROM events WHERE %s GROUP BY 1`
 	tests := []struct {
@@ -434,9 +435,9 @@ func TestAnalyzePredicateSafety(t *testing.T) {
 		// boundary bucket is dropped, so they need no rounding allowance
 		{"inclusive upper", `ts >= 1704067200 AND ts <= 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
 		{"between raw column", `ts BETWEEN 1704067200 AND 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
-		{"unaligned inclusive upper", `ts >= 1704067200 AND ts <= 1704153601`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"unaligned lower", `ts >= 1704067201 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"unaligned upper", `ts >= 1704067200 AND ts < 1704153601`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
+		{"unaligned inclusive upper", `ts >= 1704067200 AND ts <= 1704153601`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
+		{"unaligned lower", `ts >= 1704067201 AND ts < 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
+		{"unaligned upper", `ts >= 1704067200 AND ts < 1704153601`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
 		{"duplicate lower", `ts >= 1704067200 AND ts >= 1704070800 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonAmbiguousTimeAxis},
 		{"reversed comparison", `1704067200 <= ts AND ts < 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
 		{"safe extra predicate", `ts >= 1704067200 AND ts < 1704153600 AND tenant = 1`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
@@ -452,10 +453,8 @@ func TestAnalyzePredicateSafety(t *testing.T) {
 	}
 }
 
-// TestRoundUnalignedTimeBounds covers the contract's unaligned-bound
-// provision: live dashboard ranges snap inward to complete buckets instead of
-// failing closed, and a range with no complete bucket still fails closed.
 func TestRoundUnalignedTimeBounds(t *testing.T) {
+	// live dashboard ranges snap inward to complete buckets, keeping their raw bounds for the planner
 	a := newDataFusionAnalyzer()
 	query := `SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle ` +
 		`FROM cpu WHERE cpu = 'cpu-total' AND time >= 1704067207 AND time < 1704153607 GROUP BY 1 ORDER BY 1`

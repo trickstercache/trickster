@@ -194,7 +194,7 @@ func TestMaskPlaceholders(t *testing.T) {
 
 func TestInclusiveUpperOneTickBelowBoundaryKeepsItsBucket(t *testing.T) {
 	a := NewAnalyzer(Options{
-		BucketMatchers: DataFusionBucketMatchers(), BoundPrecision: time.Microsecond, RoundUnalignedTimeBounds: true,
+		BucketMatchers: DataFusionBucketMatchers(), BoundPrecision: time.Microsecond,
 	})
 	for name, test := range map[string]struct {
 		where string

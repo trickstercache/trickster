@@ -32,7 +32,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 	analyzers := map[string]*Analyzer{
 		"datafusion": newDataFusionAnalyzer(),
 		"microsecond precision": NewAnalyzer(Options{
-			BucketMatchers: DataFusionBucketMatchers(), RoundUnalignedTimeBounds: true,
+			BucketMatchers: DataFusionBucketMatchers(),
 			BoundPrecision: time.Microsecond,
 		}),
 	}
@@ -60,7 +60,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 	}
 	for name, a := range analyzers {
 		t.Run(name, func(t *testing.T) {
-			var compared int
+			var compared, ranges int
 			check := func(query string) {
 				t.Helper()
 				got := a.Analyze(query, now)
@@ -74,6 +74,11 @@ func TestDropParityWithThePlanner(t *testing.T) {
 				if ok {
 					compared++
 				}
+				rendered, err := sqlanalyzertest.RenderParity(a, got.Plan, now)
+				if err != nil {
+					t.Fatalf("%s: %v", query, err)
+				}
+				ranges += rendered
 			}
 			for _, b := range buckets {
 				offsets := []int64{0, 1, b.step / 2, b.step - 1}
@@ -94,7 +99,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 				}
 			}
 			check(hourlyEpochQuery)
-			t.Logf("compared %d delta plans", compared)
+			t.Logf("compared %d delta plans and %d rendered ranges", compared, ranges)
 			if compared < 500 {
 				t.Fatalf("only %d delta plans were compared", compared)
 			}

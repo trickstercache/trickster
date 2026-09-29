@@ -140,13 +140,6 @@ type Options struct {
 	// Timestamp-to-Int64 comparisons but coerce string literals to timestamps.
 	// Bounds written as string or TIMESTAMP literals are unaffected.
 	RenderNumericBoundsAsRFC3339 bool
-	// RoundUnalignedTimeBounds accepts raw-time-column predicates that are not
-	// aligned to the bucket cadence by rounding the lower bound up and the
-	// exclusive upper bound down to the cadence, per the sqlanalyzer contract's
-	// unaligned-bound provision. Partial edge buckets are dropped rather than
-	// cached. Dashboard clients such as Grafana emit live, unaligned ranges;
-	// without this option those queries fail closed to the object cache.
-	RoundUnalignedTimeBounds bool
 	// NakedIntIsInt4 parses the bare INT and INTEGER type names as 4-byte
 	// integers, as PostgreSQL defines them, instead of the parser's 8-byte default.
 	NakedIntIsInt4 bool
@@ -1048,8 +1041,7 @@ func (a *Analyzer) analyzeRanges(
 	}
 	// keep the bounds as the statement wrote them, before rounding them to the grid
 	result.recordRaw()
-	if err := normalizePrimaryBounds(&result, bucket, a.opts.RoundUnalignedTimeBounds,
-		a.opts.BoundPrecision); err != nil {
+	if err := normalizePrimaryBounds(&result, bucket, a.opts.BoundPrecision); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -1072,14 +1064,14 @@ func (a *Analyzer) boundStyleAllowed(style boundStyle, bucket bucketSpec) bool {
 // normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
 // bucket extent convention. Raw timestamp predicates must describe complete
 // buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// When roundUnaligned is set, unaligned raw-column bounds are instead rounded
-// inward to the cadence (lower up, upper down), dropping partial edge buckets
-// per the contract's unaligned-bound provision. An inclusive upper is always
+// Unaligned raw-column bounds are rounded inward to the cadence (lower up, upper
+// down) per the contract's unaligned-bound provision; the raw bounds are kept, so
+// the planner decides each mode's edges. An inclusive upper is always
 // floored, since its boundary bucket is partial. Predicates on
 // the bucket output are discrete and can safely move by one cadence for
 // strict comparisons.
 func normalizePrimaryBounds(
-	result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool, precision time.Duration,
+	result *rangeAnalysis, bucket bucketSpec, precision time.Duration,
 ) error {
 	rounded := false
 	lowerOnOutput := result.lower.target != nil &&
@@ -1101,9 +1093,6 @@ func normalizePrimaryBounds(
 			return ErrUnsafePredicate
 		}
 		if !timeseries.OnGrid(result.lower.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
 			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
 			result.dropsPartialBuckets = true
@@ -1145,9 +1134,6 @@ func normalizePrimaryBounds(
 			result.upper.value = result.upper.value.Add(tick)
 			result.rawUpper = &sqlanalyzer.Bound{Value: result.upper.value}
 		case !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase):
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			result.dropsPartialBuckets = true
 		default:
@@ -1161,9 +1147,6 @@ func normalizePrimaryBounds(
 		rounded = true
 	} else {
 		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			rounded = true
 			result.dropsPartialBuckets = true

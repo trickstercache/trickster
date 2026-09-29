@@ -72,7 +72,7 @@ func (testEngine) TimeAxis(oid uint32) (TimeAxisKind, bool) { return StandardTim
 func (testEngine) TimeSemantics() TimeSemantics             { return TimeSemantics{} }
 
 var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers: []cockroach.BucketMatcher{cockroach.DateBinMatcher}, RoundUnalignedTimeBounds: true,
+	BucketMatchers: []cockroach.BucketMatcher{cockroach.DateBinMatcher},
 })
 
 func configTestOptions() *bo.Options {

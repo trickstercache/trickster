@@ -33,14 +33,7 @@ import (
 )
 
 // Options configures an Analyzer.
-type Options struct {
-	// RoundUnalignedTimeBounds accepts raw-time-column predicates that are not
-	// aligned to the bucket cadence by rounding the lower bound up and the
-	// exclusive upper bound down to the cadence. Partial edge buckets are
-	// dropped rather than cached. Dashboard clients such as Grafana emit live,
-	// unaligned ranges; without this option those queries fall back to the OPC.
-	RoundUnalignedTimeBounds bool
-}
+type Options struct{}
 
 // Analyzer produces ClickHouse cache plans and is safe for concurrent use.
 // Its zero value is ready to use.
@@ -165,7 +158,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if !ordersByBucket(selectQuery.OrderBy, selectQuery.SelectItems, bucket) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedOrdering, ErrUnsupportedOrdering)
 	}
-	ranges, err := analyzeRanges(selectQuery, bucket, constants, now, a.opts.RoundUnalignedTimeBounds)
+	ranges, err := analyzeRanges(selectQuery, bucket, constants, now)
 	if err != nil {
 		reason := sqlanalyzer.ReasonNotTimeRange
 		if errors.Is(err, ErrUnsafePredicate) {
@@ -975,7 +968,6 @@ func analyzeRanges(
 	bucket bucketSpec,
 	constants map[string]int64,
 	now time.Time,
-	roundUnaligned bool,
 ) (rangeAnalysis, error) {
 	result := rangeAnalysis{timeColumn: bucket.timeColumn}
 	var predicates []predicateBound
@@ -1061,7 +1053,7 @@ func analyzeRanges(
 	}
 	// keep the bounds as the statement wrote them, before rounding them to the grid
 	result.recordRaw()
-	if err := normalizePrimaryBounds(&result, bucket, roundUnaligned); err != nil {
+	if err := normalizePrimaryBounds(&result, bucket); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -1070,12 +1062,12 @@ func analyzeRanges(
 // normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
 // bucket extent convention. Raw timestamp predicates must describe complete
 // buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// When roundUnaligned is set, unaligned raw-column bounds are instead rounded
-// inward to the cadence (lower up, upper down), dropping partial edge buckets.
+// Unaligned raw-column bounds are rounded inward to the cadence (lower up, upper
+// down); the raw bounds are kept, so the planner decides each mode's edges.
 // An inclusive upper is always floored, since its boundary bucket is partial.
 // Predicates on the bucket output are discrete and can safely move by one
 // cadence for strict comparisons.
-func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
+func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
 	rounded := false
 	if bucket.step < time.Second {
 		for _, target := range result.targets {
@@ -1105,9 +1097,6 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 			return ErrUnsafePredicate
 		}
 		if !timeseries.OnGrid(result.lower.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
 			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
 		}
@@ -1139,9 +1128,6 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 			return ErrUnsafePredicate
 		}
 		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 		}
 		// col <= X reaches at most the first instant of the bucket holding X,
@@ -1153,9 +1139,6 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		rounded = true
 	} else {
 		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
 			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			rounded = true
 		}

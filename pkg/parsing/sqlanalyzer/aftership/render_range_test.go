@@ -33,7 +33,7 @@ const (
 )
 
 func TestRenderRange(t *testing.T) {
-	a := NewAnalyzer(Options{RoundUnalignedTimeBounds: true})
+	a := NewAnalyzer(Options{})
 	now := time.Unix(1756758100, 0)
 	u := func(sec int64) time.Time { return time.Unix(sec, 0) }
 	start := timeseries.PartialBucket{Lower: u(1756671607), Upper: u(1756671660)}
@@ -114,7 +114,7 @@ func TestRenderRange(t *testing.T) {
 }
 
 func TestUpperIsNow(t *testing.T) {
-	a := NewAnalyzer(Options{RoundUnalignedTimeBounds: true})
+	a := NewAnalyzer(Options{})
 	now := time.Unix(1756758100, 0)
 	for where, want := range map[string]bool{
 		" AND ts < now()":                  true,
