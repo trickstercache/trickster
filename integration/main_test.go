@@ -20,23 +20,36 @@ import (
 	"context"
 	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
 
 	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	// a fresh environment's Telegraf reaches back a few minutes, so this covers the recent ranges tests use
+	influxHistoryWait = 10 * time.Minute
+	influxHistoryQL   = `SELECT count("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' AND time >= '%s' AND time < '%s'`
+	influx3HistorySQL = `SELECT count(*) AS n FROM cpu WHERE cpu = 'cpu-total' AND time >= '%s' AND time < '%s'`
+
+	reloadAttemptsMetric = "trickster_config_reload_attempts_total"
 )
 
 func TestMain(m *testing.M) {
@@ -81,6 +94,36 @@ func startTrickster(t *testing.T, ctx context.Context, expected expectedStartErr
 	} else {
 		require.NoError(t, err)
 	}
+}
+
+func guardSIGHUP(t *testing.T) {
+	t.Helper()
+	// drops the SIGHUP receivers earlier daemons left and holds the test's own, so a SIGHUP sent
+	// before this test's daemon subscribes is ignored, not fatal to the test process
+	signal.Reset(syscall.SIGHUP)
+	guard := make(chan os.Signal, 1)
+	signal.Notify(guard, syscall.SIGHUP)
+	t.Cleanup(func() { signal.Stop(guard) })
+}
+
+func sighupUntilReloaded(t *testing.T, metricsAddr string) {
+	t.Helper()
+	// the daemon subscribes to SIGHUP only as its startup completes, so the signal is resent until
+	// a reload attempt is counted; without guardSIGHUP an early one is fatal
+	url := "http://" + metricsAddr + "/metrics"
+	before := metricsutil.ScrapeURL(t, url, nil)[reloadAttemptsMetric]
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		assert.NoError(collect, syscall.Kill(os.Getpid(), syscall.SIGHUP))
+		resp, err := http.Get(url)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		scraped, err := metricsutil.Parse(resp.Body)
+		if assert.NoError(collect, err) {
+			assert.Greater(collect, scraped[reloadAttemptsMetric], before)
+		}
+	}, 30*time.Second, 500*time.Millisecond, "SIGHUP never reloaded the config")
 }
 
 func checkTricksterMetrics(t *testing.T, address string) []string {
@@ -311,6 +354,88 @@ func waitForInfluxDB3Data(t *testing.T, influxAddr string) {
 		assert.Greater(collect, len(strings.TrimSpace(string(b))), 2,
 			"waiting for Telegraf to write data to InfluxDB 3")
 	}, 60*time.Second, 2*time.Second, "InfluxDB 3 data never became available")
+}
+
+func waitForInfluxDBHistory(t *testing.T, influxAddr string, from time.Time) {
+	t.Helper()
+	// Telegraf writes only from the environment's start, so a range reaching back past a fresh one waits
+	q := url.Values{"db": {offInfluxDB}, "epoch": {"s"}, "q": {fmt.Sprintf(influxHistoryQL,
+		from.UTC().Format(time.RFC3339), from.Add(time.Minute).UTC().Format(time.RFC3339))}}
+	waitForInfluxPoints(t, from, func() (*http.Request, error) {
+		req, err := http.NewRequest(http.MethodGet, "http://"+influxAddr+"/query?"+q.Encode(), nil)
+		if err == nil {
+			req.Header.Set("Authorization", offInfluxToken)
+		}
+		return req, err
+	}, func(b []byte) (float64, error) {
+		var doc struct {
+			Results []struct {
+				Series []struct {
+					Values [][]float64 `json:"values"`
+				} `json:"series"`
+			} `json:"results"`
+		}
+		err := json.Unmarshal(b, &doc)
+		var n float64
+		for _, r := range doc.Results {
+			for _, s := range r.Series {
+				for _, v := range s.Values {
+					n += v[len(v)-1]
+				}
+			}
+		}
+		return n, err
+	})
+}
+
+func waitForInfluxDB3History(t *testing.T, influxAddr string, from time.Time) {
+	t.Helper()
+	body, err := json.Marshal(map[string]string{"db": offInfluxDB, "q": fmt.Sprintf(influx3HistorySQL,
+		from.UTC().Format(time.RFC3339), from.Add(time.Minute).UTC().Format(time.RFC3339))})
+	require.NoError(t, err)
+	waitForInfluxPoints(t, from, func() (*http.Request, error) {
+		req, err := http.NewRequest(http.MethodPost, "http://"+influxAddr+"/api/v3/query_sql",
+			strings.NewReader(string(body)))
+		if err == nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		return req, err
+	}, func(b []byte) (float64, error) {
+		var rows []struct {
+			N float64 `json:"n"`
+		}
+		err := json.Unmarshal(b, &rows)
+		var n float64
+		for _, r := range rows {
+			n += r.N
+		}
+		return n, err
+	})
+}
+
+func waitForInfluxPoints(t *testing.T, from time.Time, request func() (*http.Request, error),
+	count func([]byte) (float64, error),
+) {
+	t.Helper()
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		req, err := request()
+		if !assert.NoError(collect, err) {
+			return
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		if !assert.NoError(collect, err) || !assert.Equal(collect, http.StatusOK, resp.StatusCode, "%s", b) {
+			return
+		}
+		n, err := count(b)
+		if assert.NoError(collect, err, "%s", b) {
+			assert.Positive(collect, n, "waiting for Telegraf's data from %s", from)
+		}
+	}, influxHistoryWait, 5*time.Second, "the origin never held Telegraf's data from %s", from)
 }
 
 type promResponse struct {

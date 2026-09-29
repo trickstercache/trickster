@@ -31,6 +31,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -203,11 +205,8 @@ func writeMembersFile(t *testing.T, path string, leaves ...*discoveryLeaf) {
 }
 
 func TestALBDiscoveryFileLiveEdit(t *testing.T) {
-	const (
-		frontPort   = 19510
-		metricsPort = 19511
-		mgmtPort    = 19512
-	)
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	leafA := newDiscoveryLeaf(t, "leafA")
 	leafB := newDiscoveryLeaf(t, "leafB")
 	leafC := newDiscoveryLeaf(t, "leafC")
@@ -218,6 +217,7 @@ func TestALBDiscoveryFileLiveEdit(t *testing.T) {
 	cfg := discoveryALBConfig(frontPort, metricsPort, mgmtPort,
 		"  d1:\n    provider: file",
 		"          path: "+membersPath)
+	release()
 	startDiscoveryTrickster(t, cfg)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)

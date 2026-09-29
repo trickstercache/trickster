@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -34,10 +35,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
+)
+
+const (
+	rolloverRetries   = 2
+	testShutdownDrain = 2 * time.Second
 )
 
 type tricksterHarness struct {
@@ -146,11 +153,14 @@ func requireCacheHit(t *testing.T, request func() map[string]string,
 	msgAndArgs ...any,
 ) map[string]string {
 	t.Helper()
-	// a step boundary passing between two identical requests adds a bucket to fetch, so only a
-	// partial hit is retried, once; any other status fails as is
+	// a step boundary passing between identical requests adds a bucket to fetch, so only a partial
+	// hit is retried, at most twice, as a short step can pass again
 	result := request()
-	if result[keys.Status] == status.StatusPartialHit {
-		t.Logf("expected a hit, got a partial hit (%v); retrying once for a step rollover", result)
+	for range rolloverRetries {
+		if result[keys.Status] != status.StatusPartialHit {
+			break
+		}
+		t.Logf("expected a hit, got a partial hit (%v); retrying for a step rollover", result)
 		result = request()
 	}
 	require.Equal(t, status.StatusHit, result[keys.Status], msgAndArgs...)
@@ -331,6 +341,8 @@ func writeTestConfig(t *testing.T, configPath string,
 	c.Metrics = nil
 	c.MgmtConfig.ListenAddress = ""
 	c.MgmtConfig.ListenPort = 0
+	// a connection a test leaves open would otherwise hold shutdown for the whole default drain
+	c.MgmtConfig.ShutdownDrainTimeout = timeconv.Duration(testShutdownDrain)
 	for _, mod := range mods {
 		mod(&c)
 	}

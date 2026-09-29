@@ -136,7 +136,8 @@ func TestALBDiscoveryKind(t *testing.T) {
 	scaleWebecho := func(replicas int) {
 		kubectl("scale", "deployment/webecho",
 			fmt.Sprintf("--replicas=%d", replicas))
-		waitDiscoveredMembers(t, metricsAddr, "disco-alb", float64(replicas))
+		// a removed pod stays a draining member through its preStop sleep
+		waitDiscoveredMembers(t, metricsAddr, "disco-alb", float64(replicas), time.Minute)
 	}
 
 	waitForTrickster(t, metricsAddr)

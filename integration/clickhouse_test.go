@@ -33,6 +33,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const clickHouseSessionLocked = "SESSION_IS_LOCKED"
+
 func TestClickHouseCacheMatrix(t *testing.T) {
 	h := configHarness(t)
 	h.start(t)
@@ -172,27 +174,39 @@ func TestClickHouse(t *testing.T) {
 	t.Run("session requests bypass the cache", func(t *testing.T) {
 		session := "trickster-it-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 		base := "http://" + clickAddr + "/click1/?"
+		// ClickHouse can still hold a session just after answering, so a follow-up can find it locked
+		inSession := func(send func() (*http.Response, error)) (*http.Response, string) {
+			t.Helper()
+			var resp *http.Response
+			var body string
+			require.Eventually(t, func() bool {
+				r, err := send()
+				if err != nil {
+					return false
+				}
+				defer r.Body.Close()
+				b, err := io.ReadAll(r.Body)
+				resp, body = r, string(b)
+				return err == nil && !strings.Contains(body, clickHouseSessionLocked)
+			}, 10*time.Second, 100*time.Millisecond, "the session stayed locked")
+			return resp, body
+		}
 		selectThreads := func() string {
 			params := url.Values{
 				"query":      {"SELECT getSetting('max_threads') AS x FORMAT JSONEachRow"},
 				"session_id": {session},
 			}
-			resp, err := http.Get(base + params.Encode())
-			require.NoError(t, err)
-			defer resp.Body.Close()
-			body, err := io.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", string(body))
+			resp, body := inSession(func() (*http.Response, error) { return http.Get(base + params.Encode()) })
+			require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", body)
 			require.Contains(t, resp.Header.Get(headers.NameTricksterResult), "engine=HTTPProxy")
-			return string(body)
+			return body
 		}
 		before := selectThreads()
-		resp, err := http.Post(base+url.Values{"session_id": {session}}.Encode(), "text/plain",
-			strings.NewReader("SET max_threads = 3"))
-		require.NoError(t, err)
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode)
+		resp, body := inSession(func() (*http.Response, error) {
+			return http.Post(base+url.Values{"session_id": {session}}.Encode(), "text/plain",
+				strings.NewReader("SET max_threads = 3"))
+		})
+		require.Equal(t, http.StatusOK, resp.StatusCode, "unexpected status: %s", body)
 		after := selectThreads()
 		require.Contains(t, after, `"x":3`, "the session's SET must reach the next query, got %s (was %s)",
 			after, before)

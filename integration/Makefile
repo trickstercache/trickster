@@ -22,33 +22,37 @@ integration-stop:
 # is the norm in CI containers and unactionable there
 export QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING = 1
 
+# the -race run takes several minutes and grows with the suite, so go test's
+# 10m default would end it mid-run on a slow runner
+TEST_TIMEOUT ?= 30m
+
 test:
-	$(GO) test -v --failfast
-	$(GO) test -v ./greptimedb
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast
+	$(GO) test -timeout $(TEST_TIMEOUT) -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 
 .PHONY: test-no-failfast
 test-no-failfast:
 	@status=0; \
-	$(GO) test -v || status=1; \
-	$(GO) test -v ./greptimedb || status=1; \
+	$(GO) test -timeout $(TEST_TIMEOUT) -v || status=1; \
+	$(GO) test -timeout $(TEST_TIMEOUT) -v ./greptimedb || status=1; \
 	../hack/filter-coverprofile.sh .integration.coverprofile || status=1; \
 	exit $$status
 
 data-race-test:
-	$(GO) test -v --failfast --race
-	$(GO) test -v --race ./greptimedb
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast --race
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --race ./greptimedb
 
 .PHONY: data-race-test-no-failfast
 data-race-test-no-failfast:
 	@status=0; \
-	$(GO) test -v --race || status=1; \
-	$(GO) test -v --race ./greptimedb || status=1; \
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --race || status=1; \
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --race ./greptimedb || status=1; \
 	exit $$status
 
 cover:
-	$(GO) test -v --failfast -coverpkg=../... -coverprofile=.integration.coverprofile
-	$(GO) test -v ./greptimedb
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast -coverpkg=../... -coverprofile=.integration.coverprofile
+	$(GO) test -timeout $(TEST_TIMEOUT) -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 	$(GO) tool cover -func=.integration.coverprofile | tail -1
 

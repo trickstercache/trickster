@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -153,8 +154,8 @@ func LoadAndValidateWithOverlay(overlay *config.Overlay, args ...string) (*confi
 	return cfg, nil
 }
 
-// Shutdown stops the instance's background workers that reach upstreams
-// (autodiscovery, ALB pools and health check probes) and waits for them to exit.
+// Shutdown stops the instance's background workers that reach upstreams (autodiscovery, ALB
+// pools, Graphite ladder learning and health check probes) and waits for them to exit.
 func Shutdown(si *instance.ServerInstance) {
 	if si == nil {
 		return
@@ -163,6 +164,7 @@ func Shutdown(si *instance.ServerInstance) {
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
 		static.StopClients(si.Backends)
+		graphite.StopClients(si.Backends)
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
@@ -288,6 +290,9 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	if err = applyDiscoveryConfig(si, newConf, clients, caches, tracers,
 		oldStatuses); err != nil {
+		// nothing will own the pools and checks this pass started, so they are stopped here
+		alb.StopPools(clients)
+		si.HealthChecker.Shutdown()
 		handleStartupIssue("autodiscovery setup failed",
 			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
@@ -308,6 +313,10 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	si.Config = newConf
 	si.Tracers = tracers
 	si.Caches = caches
+	if si.Backends != nil {
+		// retired only once the reload commits, since a rolled-back reload serves the old clients again
+		graphite.StopClients(si.Backends)
+	}
 	si.Backends = clients
 	// Reloads reuse the instance's group; publishing the same pointer again
 	// would race a forced shutdown without changing the active listeners.

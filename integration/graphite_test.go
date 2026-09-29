@@ -51,6 +51,8 @@ const (
 	// the dev env's dev.fast.* ladder is 10s:6h,60s:7d,10m:5y, so a query on
 	// either side of the 6h rung boundary is answered at a different step
 	fastRungBoundary = 6 * time.Hour
+	// older than any of the dev env's retentions, so only a complete ladder answers it
+	completeLadderAge = 10 * 365 * 24 * time.Hour
 )
 
 // a series the developer environment's generator keeps current
@@ -143,8 +145,26 @@ func observedStep(t *testing.T, series []graphiteSeriesJSON) time.Duration {
 // learning is in the background, so early requests are unaccelerated by design
 func waitForDelta(t *testing.T, h tricksterHarness, params url.Values) {
 	t.Helper()
+	waitForDeltaLane(t, h, func() url.Values { return params })
+}
+
+// waits for the full ladder: only a complete ladder knows maxRetention, so a
+// delta answer to a far-past query proves completeness; only those persist
+func waitForCompleteLadder(t *testing.T, h tricksterHarness, target string) {
+	t.Helper()
+	// each poll asks an age older than the last, which no partial ladder answers, even one holding the
+	// previous poll's observation; only a complete ladder reaches the delta lane
+	age := completeLadderAge
+	waitForDeltaLane(t, h, func() url.Values {
+		age += time.Second
+		return renderParams(target, fmt.Sprintf("-%ds", int64(age.Seconds())), "-5min")
+	})
+}
+
+func waitForDeltaLane(t *testing.T, h tricksterHarness, next func() url.Values) {
+	t.Helper()
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		resp, body := h.do(t, "/"+graphiteBackend+"/render", withParams(params))
+		resp, body := h.do(t, "/"+graphiteBackend+"/render", withParams(next()))
 		if !assert.Equal(collect, http.StatusOK, resp.StatusCode, "body: %.120s", string(body)) {
 			return
 		}
@@ -152,13 +172,6 @@ func waitForDelta(t *testing.T, h tricksterHarness, params url.Values) {
 		assert.Equal(collect, "DeltaProxyCache", got["engine"],
 			"still unaccelerated: %s", resp.Header.Get(headers.NameTricksterResult))
 	}, 90*time.Second, time.Second, "the ladder was never learned")
-}
-
-// waits for the full ladder: only a complete ladder knows maxRetention, so a
-// delta answer to a far-past query proves completeness; only those persist
-func waitForCompleteLadder(t *testing.T, h tricksterHarness, target string) {
-	t.Helper()
-	waitForDelta(t, h, renderParams(target, "-10y", "-5min"))
 }
 
 // sums the samples of one Graphite metric family for the graphite1 backend,
@@ -273,6 +286,8 @@ func TestGraphite(t *testing.T) {
 		h, _ := startGraphite(t, t.TempDir(), false)
 		narrow := renderParams(fastHost01.target, "-30min", "-5min")
 		waitForDelta(t, h, narrow)
+		// the wide window is older than any age a partial ladder has seen
+		waitForCompleteLadder(t, h, fastHost01.target)
 		renderThroughTrickster(t, h, narrow)
 
 		// a wider window over the same metric: the cache already holds the
@@ -299,6 +314,9 @@ func TestGraphite(t *testing.T) {
 		outside := renderParams(fastHost01.target,
 			fmt.Sprintf("-%ds", int(fastRungBoundary.Seconds())+1), "-5min")
 		waitForDelta(t, h, inside)
+		// outside is older than any age a partial ladder has seen
+		waitForCompleteLadder(t, h, fastHost01.target)
+		mispredictions := graphiteMetric(t, h.MetricsAddr, "step_mispredictions_total", "")
 
 		fine, got := renderThroughTrickster(t, h, inside)
 		require.Equal(t, "DeltaProxyCache", got["engine"])
@@ -312,7 +330,7 @@ func TestGraphite(t *testing.T) {
 		// been served from the finer window's entry
 		require.NotEqual(t, status.StatusHit, got2["status"])
 
-		require.Zero(t, graphiteMetric(t, h.MetricsAddr, "step_mispredictions_total", ""),
+		require.Equal(t, mispredictions, graphiteMetric(t, h.MetricsAddr, "step_mispredictions_total", ""),
 			"the step was mispredicted at a rung boundary")
 	})
 

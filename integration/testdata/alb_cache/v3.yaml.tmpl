@@ -23,7 +23,7 @@ backends:
       query: ""
       interval: 100ms
       timeout: 500ms
-      failure_threshold: 1
+      failure_threshold: 3
       recovery_threshold: 1
   prom-c2:
     provider: prometheus
@@ -34,7 +34,7 @@ backends:
       query: ""
       interval: 100ms
       timeout: 500ms
-      failure_threshold: 1
+      failure_threshold: 3
       recovery_threshold: 1
   alb-tsm-mixed-cache:
     provider: alb

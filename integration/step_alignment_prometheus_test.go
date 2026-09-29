@@ -51,7 +51,7 @@ func TestPrometheusDrop(t *testing.T) {
 	first := start.Truncate(promDropStep).Add(promDropStep)
 	params := func(from time.Time) requestOption {
 		return withParams(url.Values{
-			"query": {"up"}, "start": {strconv.FormatInt(from.Unix(), 10)},
+			"query": {offPromQuery}, "start": {strconv.FormatInt(from.Unix(), 10)},
 			"end": {strconv.FormatInt(end.Unix(), 10)}, "step": {strconv.Itoa(int(promDropStep.Seconds()))},
 		})
 	}
@@ -74,7 +74,7 @@ func TestPrometheusDrop(t *testing.T) {
 	// a query's directive chooses drop on a backend left at its default, partial_end
 	for _, attempt := range []string{"first", "repeat"} {
 		resp, body := h.do(t, "/"+offPromBackend+"/api/v1/query_range", withParams(url.Values{
-			"query": {"up # trickster-step-align:drop"}, "start": {strconv.FormatInt(start.Unix(), 10)},
+			"query": {offPromQuery + " # trickster-step-align:drop"}, "start": {strconv.FormatInt(start.Unix(), 10)},
 			"end": {strconv.FormatInt(end.Unix(), 10)}, "step": {strconv.Itoa(int(promDropStep.Seconds()))},
 		}))
 		require.Equal(t, http.StatusOK, resp.StatusCode, "directive %s: %.240s", attempt, body)
@@ -95,7 +95,7 @@ func TestPrometheusDrop(t *testing.T) {
 	} {
 		for _, attempt := range []string{"first", "repeat"} {
 			resp, body := h.do(t, "/"+backend+"/api/v1/query_range", withParams(url.Values{
-				"query": {"up"}, "start": {strconv.FormatInt(grid.Add(test.from).Unix(), 10)},
+				"query": {offPromQuery}, "start": {strconv.FormatInt(grid.Add(test.from).Unix(), 10)},
 				"end": {strconv.FormatInt(grid.Add(test.to).Unix(), 10)}, "step": {strconv.Itoa(int(promDropStep.Seconds()))},
 			}))
 			require.Equal(t, http.StatusOK, resp.StatusCode, "%s %s: %.240s", test.name, attempt, body)

@@ -171,7 +171,9 @@ func TestGreptimeMySQLRealServer(t *testing.T) {
 	t.Cleanup(func() { require.NoError(t, cache.Close()) })
 	server, err := backend.NewProtocolServer(backend.ProtocolConfig{
 		BackendName: table, Upstream: params, Engine: greptimedb.MySQLEngine(), Cache: cache, CacheTTL: time.Minute,
-		DownstreamUsers: map[string]string{"probe": "trickster-dev-probe"}, ConnectTimeout: 5 * time.Second, QueryTimeout: 10 * time.Second,
+		// a range holding no complete bucket is kept this long, so a repeat can't outlast it
+		PartialBucketTTL: time.Minute,
+		DownstreamUsers:  map[string]string{"probe": "trickster-dev-probe"}, ConnectTimeout: 5 * time.Second, QueryTimeout: 10 * time.Second,
 	})
 	require.NoError(t, err)
 	l, err := net.Listen("tcp", "127.0.0.1:0")
@@ -265,17 +267,19 @@ func TestGreptimeMySQLRealServer(t *testing.T) {
 			require.Equal(t, before+1, count("delta", status))
 		}
 	})
-	t.Run("unsupported precision retains original query semantics", func(t *testing.T) {
+	t.Run("unaligned ranges retain original query semantics", func(t *testing.T) {
 		_, _, agree := newSession(t)
-		for _, bounds := range []string{
-			"ts >= FROM_UNIXTIME(1767225601) AND ts < FROM_UNIXTIME(1767225610)",
-			"ts >= FROM_UNIXTIME(1767225600) AND ts <= FROM_UNIXTIME(1767225720)",
+		for _, test := range []struct{ bounds, mode string }{
+			// a range holding no complete bucket is a delta plan whose answer is the origin's own
+			{"ts >= FROM_UNIXTIME(1767225601) AND ts < FROM_UNIXTIME(1767225610)", "delta"},
+			// GreptimeDB's MySQL path never delta-plans an inclusive upper bound, so it's an object query
+			{"ts >= FROM_UNIXTIME(1767225600) AND ts <= FROM_UNIXTIME(1767225720)", "object"},
 		} {
-			sql := "SELECT DATE_BIN('1m',ts,FROM_UNIXTIME(0)) AS time,label,COUNT(*) AS total FROM " + table + " WHERE " + bounds + " GROUP BY time,label ORDER BY time,label"
+			sql := "SELECT DATE_BIN('1m',ts,FROM_UNIXTIME(0)) AS time,label,COUNT(*) AS total FROM " + table + " WHERE " + test.bounds + " GROUP BY time,label ORDER BY time,label"
 			agree(sql)
-			before := count("object", "hit")
+			before := count(test.mode, "hit")
 			agree(sql)
-			require.Equal(t, before+1, count("object", "hit"))
+			require.Equal(t, before+1, count(test.mode, "hit"), test.bounds)
 		}
 	})
 	t.Run("known transaction stubs still bypass caching", func(t *testing.T) {

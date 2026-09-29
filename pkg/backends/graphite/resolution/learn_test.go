@@ -407,6 +407,9 @@ func TestLearnFailures(t *testing.T) {
 	if _, err := h3.learner.Learn(cctx, "odd.two", nil); err == nil {
 		t.Error("expected a cancellation error")
 	}
+	if _, ok := h3.registry.Negative("odd.two"); ok {
+		t.Error("a canceled run must not negative-cache the leaf")
+	}
 }
 
 func TestScheduleDedupAndCap(t *testing.T) {
@@ -427,13 +430,44 @@ func TestScheduleDedupAndCap(t *testing.T) {
 	if _, _, ok := h.registry.Leaf("dev.fast.cpu.host01.percent"); !ok {
 		t.Error("scheduled run must complete")
 	}
-	// after Close the learner is cancelled: runs end immediately
+	// after Close the learner refuses runs, so it neither probes nor records anything
 	h.learner.Close()
+	before := h.stub.Renders.Load()
 	if h.learner.Schedule("odd.two", nil) {
-		h.learner.Wait()
+		t.Error("schedule after Close must be refused")
 	}
+	h.learner.Wait()
 	if _, _, ok := h.registry.Leaf("odd.two"); ok {
 		t.Error("a run after Close must not complete")
+	}
+	if _, ok := h.registry.Negative("odd.two"); ok {
+		t.Error("a run after Close must not negative-cache the leaf")
+	}
+	if n := h.stub.Renders.Load() - before; n != 0 {
+		t.Errorf("a closed learner probed the origin %d times", n)
+	}
+}
+
+func TestCloseCancelsRunWithoutRecording(t *testing.T) {
+	h := newHarness(t, nil)
+	h.addAll()
+	h.stub.Delay.Store(int64(time.Second))
+	const leaf = "dev.fast.cpu.host01.percent"
+	if !h.learner.Schedule(leaf, nil) {
+		t.Fatal("schedule must start")
+	}
+	for deadline := time.Now().Add(5 * time.Second); h.stub.Renders.Load() == 0; {
+		if time.Now().After(deadline) {
+			t.Fatal("the run never probed the origin")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	h.learner.Close()
+	if _, _, ok := h.registry.Leaf(leaf); ok {
+		t.Error("a run canceled by Close must not record a ladder")
+	}
+	if _, ok := h.registry.Negative(leaf); ok {
+		t.Error("a run canceled by Close must not negative-cache the leaf")
 	}
 }
 

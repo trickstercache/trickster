@@ -82,8 +82,10 @@ func TestStepAlignmentGold(t *testing.T) {
 
 	now := time.Now().UTC()
 	tripsFrom, tripsTo := offRange(now.Add(-26*time.Hour), time.Hour)
-	influxFrom, influxTo := offRange(latest.Add(-20*time.Minute), 10*time.Minute)
-	i3From, i3To := offRange(now.Add(-20*time.Minute), 10*time.Minute)
+	influxFrom, influxTo := recentRange(latest)
+	i3From, i3To := recentRange(now)
+	waitForInfluxDBHistory(t, offInfluxDB2Addr, influxFrom)
+	waitForInfluxDB3History(t, offInfluxDB3Addr, i3From)
 	influxQL := func(from, to time.Time) string {
 		return fmt.Sprintf(offInfluxQL, from.Format(time.RFC3339), to.Format(time.RFC3339))
 	}

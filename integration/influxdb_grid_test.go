@@ -41,6 +41,12 @@ const (
 	gridFluxPath     = "/api/v2/query?org=trickster-dev"
 	gridInfluxQLPath = "/query?db=trickster&epoch=s&q="
 	gridStatusPHit   = "phit"
+	// Telegraf's data reaches back only to the environment's start, so the ranges are recent and short:
+	// the wide range's three 1m buckets flank the warm range's middle one
+	gridWide     = 3 * time.Minute
+	gridWarmFrom = 2 * time.Minute
+	gridWarmTo   = time.Minute
+	gridOffset   = 30 * time.Second
 )
 
 func TestInfluxDBBucketGrids(t *testing.T) {
@@ -51,6 +57,7 @@ func TestInfluxDBBucketGrids(t *testing.T) {
 	latest := waitForInfluxDBData(t, gridInfluxOrigin)
 	// a fully written, minute-aligned end keeps every bucket complete and cacheable
 	end := latest.Truncate(time.Minute).Add(-2 * time.Minute)
+	waitForInfluxDBHistory(t, gridInfluxOrigin, end.Add(-gridWide-gridOffset))
 
 	t.Run("flux aggregateWindow stop-time labels", func(t *testing.T) {
 		query := func(start, stop time.Time) string {
@@ -68,9 +75,9 @@ func TestInfluxDBBucketGrids(t *testing.T) {
 			req.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
 			return gridDo(t, req, fluxBuckets)
 		}
-		post(t, h.BaseAddr+"/flux2", query(end.Add(-15*time.Minute), end.Add(-10*time.Minute)))
-		resp, got := post(t, h.BaseAddr+"/flux2", query(end.Add(-20*time.Minute), end))
-		_, want := post(t, gridInfluxOrigin, query(end.Add(-20*time.Minute), end))
+		post(t, h.BaseAddr+"/flux2", query(end.Add(-gridWarmFrom), end.Add(-gridWarmTo)))
+		resp, got := post(t, h.BaseAddr+"/flux2", query(end.Add(-gridWide), end))
+		_, want := post(t, gridInfluxOrigin, query(end.Add(-gridWide), end))
 		require.Equal(t, gridStatusPHit,
 			parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))["status"])
 		require.NotEmpty(t, want)
@@ -79,7 +86,7 @@ func TestInfluxDBBucketGrids(t *testing.T) {
 
 	t.Run("influxql offset buckets", func(t *testing.T) {
 		// a 30s offset puts every bucket boundary between minute boundaries
-		offsetEnd := end.Add(-30 * time.Second)
+		offsetEnd := end.Add(-gridOffset)
 		query := func(start, stop time.Time) string {
 			return url.QueryEscape(fmt.Sprintf(`SELECT count("usage_idle") FROM "cpu" WHERE `+
 				`"cpu" = 'cpu-total' AND time >= '%s' AND time < '%s' GROUP BY time(1m, 30s)`,
@@ -91,10 +98,9 @@ func TestInfluxDBBucketGrids(t *testing.T) {
 			require.NoError(t, err)
 			return gridDo(t, req, influxQLBuckets)
 		}
-		get(t, h.BaseAddr+"/flux2", query(offsetEnd.Add(-15*time.Minute),
-			offsetEnd.Add(-10*time.Minute)))
-		resp, got := get(t, h.BaseAddr+"/flux2", query(offsetEnd.Add(-20*time.Minute), offsetEnd))
-		_, want := get(t, gridInfluxOrigin, query(offsetEnd.Add(-20*time.Minute), offsetEnd))
+		get(t, h.BaseAddr+"/flux2", query(offsetEnd.Add(-gridWarmFrom), offsetEnd.Add(-gridWarmTo)))
+		resp, got := get(t, h.BaseAddr+"/flux2", query(offsetEnd.Add(-gridWide), offsetEnd))
+		_, want := get(t, gridInfluxOrigin, query(offsetEnd.Add(-gridWide), offsetEnd))
 		t.Logf("result: %s", resp.Header.Get(headers.NameTricksterResult))
 		require.Equal(t, gridStatusPHit,
 			parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))["status"])

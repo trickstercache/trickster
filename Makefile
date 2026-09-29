@@ -509,8 +509,16 @@ integration-env-disable:
 		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
 	@echo "integration containers disabled in $(COMPOSE_YML)"
 
+# one-shot loaders no service waits on, so developer-start can return while they still load
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed
+
 .PHONY: integration-start
 integration-start: integration-env-enable developer-start
+	@cd $(COMPOSE_ENV_DIR) && for id in $$(docker compose ps -q --status running $(INTEGRATION_SEEDERS)); do \
+		echo "Waiting for seeder $$id to finish..."; \
+		status=$$(docker wait $$id); \
+		if [ "$$status" != 0 ]; then echo "seeder $$id failed (exit $$status)" >&2; exit 1; fi; \
+	done
 
 .PHONY: integration-stop
 integration-stop:

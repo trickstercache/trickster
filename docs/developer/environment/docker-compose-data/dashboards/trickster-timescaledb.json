@@ -588,7 +588,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  pickup_neighborhood_name AS neighborhood,\n  count(*) AS trips,\n  round(avg(trip_distance)::numeric, 2) AS avg_distance_mi,\n  round(avg(total_amount)::numeric, 2) AS avg_total_usd\nFROM trips\nWHERE $__timeFilter(pickup_datetime)\nGROUP BY pickup_neighborhood_name\nORDER BY trips DESC\nLIMIT 10",
+          "rawSql": "SELECT\n  pickup_neighborhood_name AS neighborhood,\n  count(*) AS trips,\n  round(avg(trip_distance)::numeric, 2) AS avg_distance_mi,\n  round(avg(total_amount)::numeric, 2) AS avg_total_usd\nFROM trips\nWHERE $__timeFilter(pickup_datetime)\nGROUP BY pickup_neighborhood_name\nORDER BY trips DESC, neighborhood\nLIMIT 10",
           "refId": "A",
           "sql": {
             "columns": [

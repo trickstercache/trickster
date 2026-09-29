@@ -158,6 +158,15 @@ func (c *Client) Close() {
 	}
 }
 
+// StopClients stops background ladder learning in every Graphite client in the collection
+func StopClients(clients backends.Backends) {
+	for _, c := range clients {
+		if gc, ok := c.(*Client); ok {
+			gc.Close()
+		}
+	}
+}
+
 var _ types.NewBackendClientFunc = NewClient
 
 const stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate

@@ -39,8 +39,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -68,7 +66,8 @@ func TestStepAlignmentGoldNative(t *testing.T) {
 
 	now := time.Now().UTC()
 	tripsFrom, tripsTo := offRange(now.Add(-26*time.Hour), time.Hour)
-	i3From, i3To := offRange(now.Add(-20*time.Minute), 10*time.Minute)
+	i3From, i3To := recentRange(now)
+	waitForInfluxDB3History(t, offInfluxDB3Addr, i3From)
 
 	t.Run(offMySQLBackend, func(t *testing.T) {
 		requireMySQLDeveloperEnvironment(t)
@@ -121,15 +120,7 @@ func TestStepAlignmentGoldNative(t *testing.T) {
 		}
 		for _, mode := range goldModes {
 			t.Run(mode.String(), func(t *testing.T) {
-				var proxied *flightsql.Client
-				// the Flight listener starts in the background, so it can lag the daemon's readiness
-				require.Eventually(t, func() bool {
-					c, err := flightsql.NewClientCtx(context.Background(), addrs[goldBackend(offFlightBackend, mode)],
-						nil, nil, grpc.WithTransportCredentials(insecure.NewCredentials()))
-					proxied = c
-					return err == nil
-				}, 10*time.Second, 250*time.Millisecond, "flight sql listener never became ready")
-				t.Cleanup(func() { proxied.Close() })
+				proxied := readyFlightClient(t, addrs[goldBackend(offFlightBackend, mode)])
 				requireGoldNative(t, h.MetricsAddr, goldBackend(offFlightBackend, mode), mode, goldNativeInflux3Step,
 					i3From, i3To, func(from, to time.Time) map[int64]float64 { return query(direct, from, to) },
 					func() map[int64]float64 { return query(proxied, i3From, i3To) })

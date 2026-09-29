@@ -24,11 +24,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -215,7 +213,7 @@ func verifyClickHouseFlow(t *testing.T, db *sql.DB) {
 }
 
 func TestClickHouseNativeTLSAndReload(t *testing.T) {
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 	h, address, keyPath, certPath := clickHouseTLSHarness(t)
 	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
@@ -250,7 +248,7 @@ func TestClickHouseNativeTLSAndReload(t *testing.T) {
 	data, err = yaml.Marshal(&c)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(h.ConfigPath, data, 0o600))
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP))
+	sighupUntilReloaded(t, h.MetricsAddr)
 	require.Eventually(t, func() bool {
 		serial, err := clickHouseTLSSerial(address)
 		return err == nil && serial != before

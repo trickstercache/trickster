@@ -190,13 +190,18 @@ func shutdown(si *instance.ServerInstance, quiesced <-chan struct{}) {
 }
 
 func stopWorkers(si *instance.ServerInstance) {
-	// A reload left running after a forced drain owns the workers. Process exit
-	// reclaims them, so shutdown never waits on the reload lock.
-	if !mtx.TryLock() {
+	if mtx.TryLock() {
+		setup.Shutdown(si)
+		mtx.Unlock()
 		return
 	}
-	setup.Shutdown(si)
-	mtx.Unlock()
+	// a reload left running after a forced drain, or another instance's startup, holds the
+	// lock, so the workers are stopped once it is released instead of shutdown waiting on it
+	safego.Go(reloadGoroutinePanic("stopWorkers", "shutdown"), func() {
+		mtx.Lock()
+		defer mtx.Unlock()
+		setup.Shutdown(si)
+	})
 }
 
 // Reload is the single reload orchestrator for every source (SIGHUP, the mgmt handler, the

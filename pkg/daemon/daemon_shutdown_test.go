@@ -245,11 +245,18 @@ func TestStopWorkersYieldsToRunningReload(t *testing.T) {
 	hc.Subscribe(stopped)
 	mtx.Lock()
 	stopWorkers(&instance.ServerInstance{HealthChecker: hc})
-	mtx.Unlock()
 	select {
 	case <-stopped:
-		t.Error("a reload holding the lock owns the checker; shutdown must not stop it")
-	default:
+		mtx.Unlock()
+		t.Fatal("a reload holding the lock owns the checker; shutdown must not stop it")
+	case <-time.After(50 * time.Millisecond):
+	}
+	mtx.Unlock()
+	// the workers the reload leaves behind are stopped as soon as it releases the lock
+	select {
+	case <-stopped:
+	case <-time.After(shutdownTestDrain):
+		t.Fatal("the checker was left running after the reload released the lock")
 	}
 	stopWorkers(&instance.ServerInstance{})
 }

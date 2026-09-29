@@ -52,6 +52,9 @@ const (
 	offStartSkew = 7 * time.Second
 	offEndSkew   = 13 * time.Second
 	offShift     = time.Second
+	// Telegraf's data reaches back only to the environment's start, so its ranges are recent and short
+	recentSpan   = 3 * time.Minute
+	recentSettle = 2 * time.Minute
 
 	offPromAddr       = "127.0.0.1:9090"
 	offClickHouseAddr = "127.0.0.1:8123"
@@ -76,7 +79,9 @@ const (
 	offInfluxToken       = "Token " + offInfluxTokenVal
 	offModeObject        = "object"
 	offModeDelta         = "delta"
-	offSQLCacheTotal     = "trickster_sql_query_cache_total"
+	// scraped series hold only what Prometheus scraped since starting, but the trips series are backfilled
+	offPromQuery     = "sum(trips_in_progress)"
+	offSQLCacheTotal = "trickster_sql_query_cache_total"
 	// the dev env's ladder for dev.fast.*, so graphite delta-caches those leaves without learning them first
 	offGraphiteFast       = `^dev\.fast\.`
 	offGraphiteRetentions = "10s:6h,60s:7d,10m:5y"
@@ -120,8 +125,10 @@ func TestStepAlignmentOff(t *testing.T) {
 	now := time.Now().UTC()
 	promFrom, promTo := offRange(now.Add(-2*time.Hour), 30*time.Minute)
 	tripsFrom, tripsTo := offRange(now.Add(-26*time.Hour), time.Hour)
-	fluxFrom, fluxTo := offRange(latest.Add(-20*time.Minute), 10*time.Minute)
-	i3From, i3To := offRange(now.Add(-20*time.Minute), 10*time.Minute)
+	fluxFrom, fluxTo := recentRange(latest)
+	i3From, i3To := recentRange(now)
+	waitForInfluxDBHistory(t, offInfluxDB2Addr, fluxFrom)
+	waitForInfluxDB3History(t, offInfluxDB3Addr, i3From)
 	// unaligned native intervals take the object lane under any mode, so aligned ones show off bypassing the delta cache
 	druidFrom := now.Add(-26 * time.Hour).Truncate(time.Hour)
 	unix := func(ts time.Time) string { return strconv.FormatInt(ts.Unix(), 10) }
@@ -137,7 +144,7 @@ func TestStepAlignmentOff(t *testing.T) {
 			name: "prometheus", backend: offPromBackend, path: "/api/v1/query_range", origin: offPromAddr,
 			from: promFrom, to: promTo, opts: func(from, to time.Time) []requestOption {
 				return []requestOption{withParams(url.Values{
-					"query": {"up"}, "start": {unix(from)}, "end": {unix(to)}, "step": {"15"},
+					"query": {offPromQuery}, "start": {unix(from)}, "end": {unix(to)}, "step": {"15"},
 				})}
 			},
 		},
@@ -270,15 +277,7 @@ func TestStepAlignmentOff(t *testing.T) {
 
 	t.Run("influx3 flight sql", func(t *testing.T) {
 		direct := directFlightClient(t)
-		var proxied *flightsql.Client
-		// the Flight listener starts in the background, so it can lag the daemon's readiness
-		require.Eventually(t, func() bool {
-			c, err := flightsql.NewClientCtx(context.Background(), flightAddr, nil, nil,
-				grpc.WithTransportCredentials(insecure.NewCredentials()))
-			proxied = c
-			return err == nil
-		}, 10*time.Second, 250*time.Millisecond, "flight sql listener never became ready")
-		t.Cleanup(func() { proxied.Close() })
+		proxied := readyFlightClient(t, flightAddr)
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		t.Cleanup(cancel)
 		ctx = metadata.AppendToOutgoingContext(ctx, "database", offInfluxDB)
@@ -327,10 +326,33 @@ func stepAlignmentOffHarness(t *testing.T) (tricksterHarness, string, string) {
 		net.JoinHostPort(offLocalhost, strconv.Itoa(ports[1]))
 }
 
+func readyFlightClient(t *testing.T, addr string) *flightsql.Client {
+	t.Helper()
+	// the Flight listener starts in the background, after the daemon is ready, and a client connects
+	// only on its first call, so readiness is a listener that accepts
+	require.Eventually(t, func() bool {
+		conn, err := net.DialTimeout("tcp", addr, time.Second)
+		if err == nil {
+			_ = conn.Close()
+		}
+		return err == nil
+	}, 10*time.Second, 100*time.Millisecond, "flight sql listener never became ready")
+	c, err := flightsql.NewClientCtx(context.Background(), addr, nil, nil,
+		grpc.WithTransportCredentials(insecure.NewCredentials()))
+	require.NoError(t, err)
+	t.Cleanup(func() { c.Close() })
+	return c
+}
+
 func offRange(base time.Time, span time.Duration) (time.Time, time.Time) {
 	// a closed range from the minute of base, both of whose ends sit off the step grids
 	start := base.UTC().Truncate(time.Minute)
 	return start.Add(offStartSkew), start.Add(span + offEndSkew)
+}
+
+func recentRange(latest time.Time) (time.Time, time.Time) {
+	// the newest of Telegraf's data old enough to be fully written, as an offRange
+	return offRange(latest.Add(-recentSpan-recentSettle), recentSpan)
 }
 
 func withBody(contentType, body string) requestOption {
