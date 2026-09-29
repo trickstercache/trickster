@@ -70,11 +70,14 @@ func TestCompileStreamListeners(t *testing.T) {
 
 func TestCompileStreamSingleMember(t *testing.T) {
 	// one resolvable member is a reverse proxy backend for its origin, bound to the listener
-	doc, err := buildDocument(streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1)), serviceOpts(t), nil)
+	opts := serviceOpts(t)
+	opts.Defaults.IPACLName = "default-acl"
+	doc, err := buildDocument(streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1)), opts, nil)
 	require.NoError(t, err)
 	require.Len(t, doc.Backends, 1)
 	b := doc.Backends["kgw--tcproute.data.db_r0"]
 	require.NotNil(t, b)
+	require.Equal(t, "default-acl", b.IPACLName)
 	require.Equal(t, providers.ReverseProxyShort, b.Provider)
 	require.Equal(t, "tcp://db-svc.data.svc:5432", b.OriginURL)
 	require.Equal(t, []string{ListenerName(5432, ir.ProtocolTCP)}, b.ListenerNames)
@@ -92,10 +95,13 @@ func TestCompileStreamWeightedAndInvalid(t *testing.T) {
 	m := streamShape(ir.ProtocolTLS, tcpMember(0, "a-svc", 3), tcpMember(1, "b-svc", 1),
 		ir.BackendMember{RefIndex: 2, Weight: 2, Invalid: true, InvalidReason: "gone"})
 	m.Routes[0].Hostnames = []string{"shop.example.com", "**.api.example.com"}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	opts := serviceOpts(t)
+	opts.Defaults.IPACLName = "default-acl"
+	doc, err := buildDocument(m, opts, nil)
 	require.NoError(t, err)
 	front := doc.Backends["kgw--tcproute.data.db_r0"]
 	require.NotNil(t, front)
+	require.Equal(t, "default-acl", front.IPACLName)
 	require.Equal(t, providers.ALB, front.Provider)
 	require.Equal(t, "rr", front.ALB.Mechanism)
 	require.Equal(t, []string{"**.api.example.com", "shop.example.com"}, front.Hosts, "hostnames are emitted in canonical order")
@@ -110,12 +116,15 @@ func TestCompileStreamWeightedAndInvalid(t *testing.T) {
 	member := doc.Backends["kgw--tcproute.data.db_r0_b1"]
 	require.Equal(t, "tcp://b-svc.data.svc:5432", member.OriginURL)
 	require.True(t, member.PathRoutingDisabled)
+	require.Empty(t, member.IPACLName)
+	require.Empty(t, invalid.IPACLName)
 }
 
 func TestCompileStreamEndpointMode(t *testing.T) {
 	// in endpoint mode a member is a discovery pool over a template, judged by readiness rather
 	// than a probe, since no probe speaks the stream's protocol; udp members query a udp scheme
 	opts := endpointOpts(t)
+	opts.Defaults.IPACLName = "default-acl"
 	opts.Defaults.HealthMode = "probe"
 	m := streamShape(ir.ProtocolUDP, ir.BackendMember{RefIndex: 0, Weight: 1, Service: ir.ServiceTarget{
 		Namespace: "data", Name: "dns-svc", Port: 53, Scheme: ir.ProtocolUDP,
@@ -133,6 +142,8 @@ func TestCompileStreamEndpointMode(t *testing.T) {
 		Scheme: "udp",
 	}, front.ALB.Discovery.Query)
 	tmpl := doc.Backends[front.ALB.Discovery.TemplateBackend]
+	require.Equal(t, "default-acl", front.IPACLName)
+	require.Empty(t, tmpl.IPACLName)
 	require.True(t, tmpl.IsTemplate)
 	require.Empty(t, tmpl.OriginURL)
 	require.Nil(t, tmpl.HealthCheck)
