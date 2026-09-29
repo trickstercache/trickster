@@ -1059,15 +1059,9 @@ func analyzeRanges(
 	return result, nil
 }
 
-// normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
-// bucket extent convention. Raw timestamp predicates must describe complete
-// buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// Unaligned raw-column bounds are rounded inward to the cadence (lower up, upper
-// down); the raw bounds are kept, so the planner decides each mode's edges.
-// An inclusive upper is always floored, since its boundary bucket is partial.
-// Predicates on the bucket output are discrete and can safely move by one
-// cadence for strict comparisons.
 func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
+	// rounds unaligned raw bounds inward (kept raw for the planner), so no partial bucket is cached
+	// whole; an inclusive upper floors, and output-column bounds shift a step
 	rounded := false
 	if bucket.step < time.Second {
 		for _, target := range result.targets {

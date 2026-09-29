@@ -720,3 +720,61 @@ func TestFetchPartialBucketPassesTheResponsesFormat(t *testing.T) {
 }
 
 type opaqueSeries struct{ timeseries.Timeseries }
+
+func TestInstantModelDrop(t *testing.T) {
+	// drop starts at the first grid instant inside the range, truncate at the one before it, and
+	// neither fetches a live point for a past range
+	base := time.Now().Add(-6 * time.Hour).Truncate(pbStep)
+	start, end := base.Add(pbStartSkew), base.Add(pbBuckets*pbStep+pbEndSkew)
+	floorS, ceilS, floorE := base, base.Add(pbStep), base.Add(pbBuckets*pbStep)
+	for mode, first := range map[timeseries.StepAlignment]time.Time{
+		timeseries.StepAlignmentTruncate: floorS, timeseries.StepAlignmentDrop: ceilS,
+	} {
+		t.Run(mode.String(), func(t *testing.T) {
+			h := newBucketHarness(t, mode)
+			h.client.sampleModel = timeseries.SampleModelInstant
+			h.client.stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+				timeseries.StepAlignmentDrop | timeseries.StepAlignmentPartialEnd
+			resp := h.serve(start, end, 0)
+			requireResult(t, resp, engineDPC, status.StatusKeyMiss)
+			got := bucketValues(t, resp.body)
+			require.Equal(t, wholeBuckets(first, floorE, pbStep), got)
+			for label := range got {
+				require.False(t, mode == timeseries.StepAlignmentDrop && label < start.Unix(),
+					"drop evaluated %d, before the range's start", label)
+			}
+			require.Zero(t, h.client.liveFetches.Load())
+			requirePartialBuckets(t, resp)
+		})
+	}
+
+	t.Run("a range holding no grid instant answers none", func(t *testing.T) {
+		// the origin's answer comes through the object cache as sent, and its points, none on the grid,
+		// are left out
+		h := newBucketHarness(t, timeseries.StepAlignmentDrop)
+		h.client.sampleModel = timeseries.SampleModelInstant
+		h.client.stepAlignments = timeseries.StepAlignmentAll
+		start, end := base.Add(pbStartSkew), base.Add(50*time.Second)
+		for _, want := range []string{status.StatusKeyMiss, status.StatusHit} {
+			req := h.request(start, end, 0)
+			resp := serveDPC(h.client, req)
+			requireResult(t, resp, engineOPC, want)
+			require.Empty(t, bucketValues(t, resp.body), want)
+			require.Equal(t, time.Duration(h.client.Configuration().PartialBucketTTL),
+				request.GetResources(req).AlternateCacheTTL)
+		}
+		require.Equal(t, []string{upstreamRange(start, end)}, h.up.take())
+	})
+
+	t.Run("a range holding one grid instant answers it", func(t *testing.T) {
+		h := newBucketHarness(t, timeseries.StepAlignmentDrop)
+		h.client.sampleModel = timeseries.SampleModelInstant
+		h.client.stepAlignments = timeseries.StepAlignmentAll
+		start, end := base.Add(pbStartSkew), base.Add(pbStep+10*time.Second)
+		for _, want := range []string{status.StatusKeyMiss, status.StatusHit} {
+			resp := h.serve(start, end, 0)
+			requireResult(t, resp, engineDPC, want)
+			require.Equal(t, wholeBuckets(ceilS, ceilS, pbStep), bucketValues(t, resp.body), want)
+		}
+	})
+}

@@ -29,6 +29,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 	a := NewAnalyzer(Options{})
 	const base = int64(1_699_999_200)
 	now := time.Unix(base, 0).Add(30 * 24 * time.Hour)
+	// the matrix and the compatibility corpus query DateTime columns, which hold whole seconds
 	var compared, ranges int
 	check := func(query string) {
 		t.Helper()
@@ -43,7 +44,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 		if ok {
 			compared++
 		}
-		rendered, err := sqlanalyzertest.RenderParity(a, got.Plan, now)
+		rendered, err := sqlanalyzertest.RenderParity(a, got.Plan, now, time.Second)
 		if err != nil {
 			t.Fatalf("%s: %v", query, err)
 		}

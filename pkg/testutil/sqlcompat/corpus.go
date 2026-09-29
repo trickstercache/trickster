@@ -102,8 +102,9 @@ func loadCompatibilityCorpus(t testing.TB, path string) compatibilityCorpus {
 // Analyze evaluates a statement in the corpus case's effective session time zone.
 type Analyze func(zone, sql string) sqlanalyzer.Analysis
 
-// Run checks classification, plan facts, and exact extent render/read-back.
-func Run(t *testing.T, path string, analyze Analyze) {
+// Run checks classification, plan facts, and exact render/read-back of every mode's ranges against an
+// engine storing timestamps to precision.
+func Run(t *testing.T, path string, analyze Analyze, precision time.Duration) {
 	t.Helper()
 	corpus := loadCompatibilityCorpus(t, path)
 	if corpus.SchemaVersion != 1 || corpus.CorpusVersion == "" || corpus.MinimumInterval != corpusMinimumInterval {
@@ -141,12 +142,14 @@ func Run(t *testing.T, path string, analyze Analyze) {
 				}
 				return
 			}
-			assertCompatibilityPlan(t, tc, analysis.Plan, analyze)
+			assertCompatibilityPlan(t, tc, analysis.Plan, analyze, precision)
 		})
 	}
 }
 
-func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyzer.QueryPlan, analyze Analyze) {
+func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyzer.QueryPlan, analyze Analyze,
+	precision time.Duration,
+) {
 	t.Helper()
 	want := tc.Expected
 	if plan == nil || want.CanonicalPolicy != corpusPolicyRange || !want.ExtentRendering {
@@ -227,7 +230,7 @@ func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyz
 	}
 	// every mode's interior and partial buckets render and read back as planned, once all have ended
 	a := sessionAnalyzer{zone: tc.SessionTimeZone, analyze: analyze}
-	if _, err := sqlanalyzertest.RenderParity(a, plan, lower.AddDate(1, 0, 0)); err != nil {
+	if _, err := sqlanalyzertest.RenderParity(a, plan, lower.AddDate(1, 0, 0), precision); err != nil {
 		t.Fatal(err)
 	}
 }

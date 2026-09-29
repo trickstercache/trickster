@@ -29,12 +29,17 @@ func TestDropParityWithThePlanner(t *testing.T) {
 	const base = int64(1_699_999_200)
 	now := time.Unix(base, 0).Add(30 * 24 * time.Hour)
 	rfc := func(v int64) string { return time.Unix(v, 0).UTC().Format(time.RFC3339) }
-	analyzers := map[string]*Analyzer{
-		"datafusion": newDataFusionAnalyzer(),
-		"microsecond precision": NewAnalyzer(Options{
+	// each analyzer with the timestamp precision of the columns it fronts: DataFusion's nanoseconds, and
+	// PostgreSQL's microseconds
+	analyzers := map[string]struct {
+		a         *Analyzer
+		precision time.Duration
+	}{
+		"datafusion": {newDataFusionAnalyzer(), time.Nanosecond},
+		"microsecond precision": {NewAnalyzer(Options{
 			BucketMatchers: DataFusionBucketMatchers(),
 			BoundPrecision: time.Microsecond,
-		}),
+		}), time.Microsecond},
 	}
 	buckets := []struct {
 		expr string
@@ -58,7 +63,8 @@ func TestDropParityWithThePlanner(t *testing.T) {
 		func(v int64) string { return fmt.Sprintf("b < '%s'", rfc(v)) },
 		func(v int64) string { return fmt.Sprintf("b <= '%s'", rfc(v)) },
 	}
-	for name, a := range analyzers {
+	for name, analyzer := range analyzers {
+		a := analyzer.a
 		t.Run(name, func(t *testing.T) {
 			var compared, ranges int
 			check := func(query string) {
@@ -74,7 +80,7 @@ func TestDropParityWithThePlanner(t *testing.T) {
 				if ok {
 					compared++
 				}
-				rendered, err := sqlanalyzertest.RenderParity(a, got.Plan, now)
+				rendered, err := sqlanalyzertest.RenderParity(a, got.Plan, now, analyzer.precision)
 				if err != nil {
 					t.Fatalf("%s: %v", query, err)
 				}

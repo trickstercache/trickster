@@ -544,7 +544,9 @@ func TestPartialBucketMetadata(t *testing.T) {
 		{"partial_upper", "time >= 1704067200 AND time < 1704153607", true},
 		{"inclusive_aligned", "time >= 1704067200 AND time <= 1704153600", true},
 		{"inclusive_partial", "time >= 1704067200 AND time <= 1704153607", true},
-		{"inclusive_complete", "time >= 1704067200 AND time <= 1704153599", false},
+		// a nanosecond column holds rows between :59 and the boundary, which a whole second leaves out
+		{"inclusive_a_second_below", "time >= 1704067200 AND time <= 1704153599", true},
+		{"inclusive_complete", "time >= 1704067200 AND time <= '2024-01-01T23:59:59.999999999Z'", false},
 		{"open_aligned", "time >= 1704067200", false},
 		{"open_partial", "time >= 1704067207", true},
 		{"output_discrete", "bucket >= 1704067207 AND bucket <= 1704153607", false},

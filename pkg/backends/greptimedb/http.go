@@ -65,12 +65,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	*timeseries.RequestOptions, bool, error,
 ) {
 	if isPromRange(r) {
-		trq, ro, canOPC, err := c.Client.ParseTimeRangeQuery(r)
-		if trq != nil {
-			// PromQL doesn't apply drop yet, so a configured drop leaves it at its default
-			trq.StepAlignments &^= timeseries.StepAlignmentDrop
-		}
-		return trq, ro, canOPC, err
+		return c.Client.ParseTimeRangeQuery(r)
 	}
 	a := analyzer.zoned
 	if r != nil {

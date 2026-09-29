@@ -61,9 +61,9 @@ func TestRoutesRulesAndPoolsChecksALBStepAlignment(t *testing.T) {
 	}{
 		"a merge follows its leader": {"", ""},
 		"a mode a member can't apply": {
-			"  strict:\n    provider: alb\n    step_alignment: drop\n" +
+			"  strict:\n    provider: alb\n    step_alignment: partial\n" +
 				"    alb: {mechanism: rr, pool: [{name: prom-truncate}]}",
-			`unsupported step_alignment "drop" for alb "strict": pool members [prom-truncate] can't apply it`,
+			`unsupported step_alignment "partial" for alb "strict": pool members [prom-truncate] can't apply it`,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -29,7 +29,8 @@ func corpusAnalyze(zone, sql string) sqlanalyzer.Analysis {
 }
 
 func TestCompatibilityCorpus(t *testing.T) {
-	sqlcompat.Run(t, corpusPath, corpusAnalyze)
+	// GreptimeDB timestamps hold up to nanoseconds
+	sqlcompat.Run(t, corpusPath, corpusAnalyze, time.Nanosecond)
 }
 
 func TestCompatibilityCorpusCoversGrafanaMacros(t *testing.T) {

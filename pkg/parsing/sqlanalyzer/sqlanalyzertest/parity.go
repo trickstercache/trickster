@@ -48,9 +48,11 @@ func DropParity(plan *sqlanalyzer.QueryPlan, now time.Time) (bool, error) {
 	return true, nil
 }
 
-// RenderParity errs when a plan's statement, rendered for any mode's interior or partial buckets,
-// reads back through a as another range; it returns how many ranges it compared
-func RenderParity(a sqlanalyzer.DialectAnalyzer, plan *sqlanalyzer.QueryPlan, now time.Time) (int, error) {
+// RenderParity errs when a mode's interior or partial bucket, rendered and read back through a, selects
+// other rows of a column of this precision; it returns the ranges compared
+func RenderParity(a sqlanalyzer.DialectAnalyzer, plan *sqlanalyzer.QueryPlan, now time.Time,
+	precision time.Duration,
+) (int, error) {
 	if plan == nil || plan.RawLower == nil {
 		return 0, fmt.Errorf("plan %v has no raw bounds", plan)
 	}
@@ -73,7 +75,7 @@ func RenderParity(a sqlanalyzer.DialectAnalyzer, plan *sqlanalyzer.QueryPlan, no
 			return compared, fmt.Errorf("%s interior %s: %w", mode, p.Interior, err)
 		}
 		want := timeseries.RequestedRange{Start: p.Interior.Start, End: p.Interior.End.Add(plan.Step)}
-		if !sameRange(back, want) {
+		if !sameRange(back, want, precision) {
 			return compared, fmt.Errorf("%s interior %s reads back as %+v:\n%s", mode, p.Interior, back, statement)
 		}
 		compared++
@@ -89,7 +91,7 @@ func RenderParity(a sqlanalyzer.DialectAnalyzer, plan *sqlanalyzer.QueryPlan, no
 			want := timeseries.RequestedRange{
 				Start: pb.Lower, End: pb.Upper, StartExclusive: pb.LowerExclusive, EndInclusive: pb.UpperInclusive,
 			}
-			if !sameRange(back, want) {
+			if !sameRange(back, want, precision) {
 				return compared, fmt.Errorf("%s %s partial %+v reads back as %+v:\n%s", mode, pb.Edge, pb, back, statement)
 			}
 			compared++
@@ -107,31 +109,54 @@ func readBack(a sqlanalyzer.DialectAnalyzer, statement string, now time.Time) (t
 	return got.Plan.RequestedRange(now), nil
 }
 
-var ticks = [...]time.Duration{time.Nanosecond, time.Microsecond, time.Millisecond, time.Second}
-
-func sameRange(got, want timeseries.RequestedRange) bool {
-	// equal bounds, or an inclusive bound one literal tick inside an exclusive one; a zero wanted end
-	// is an open range
-	if want.End.IsZero() {
-		return got.OpenEnded && sameBound(got.Start, want.Start, got.StartExclusive, want.StartExclusive, 1)
+func sameRange(got, want timeseries.RequestedRange, precision time.Duration) bool {
+	// the same stored instants of a column holding timestamps to precision; a zero wanted end is open
+	if !sameLower(got, want, precision) {
+		return false
 	}
-	return !got.OpenEnded && sameBound(got.Start, want.Start, got.StartExclusive, want.StartExclusive, 1) &&
-		sameBound(got.End, want.End, !got.EndInclusive, !want.EndInclusive, -1)
+	if want.End.IsZero() {
+		return got.OpenEnded
+	}
+	return !got.OpenEnded && sameUpper(got, want, precision)
 }
 
-func sameBound(a, b time.Time, aOutside, bOutside bool, inward time.Duration) bool {
-	// an outside bound excludes its instant: a lower exclusive or an upper exclusive one
-	if aOutside == bOutside {
-		return a.Equal(b)
+func sameLower(got, want timeseries.RequestedRange, precision time.Duration) bool {
+	if precision <= 0 {
+		return got.StartExclusive == want.StartExclusive && got.Start.Equal(want.Start)
 	}
-	outside, inside := a, b
-	if bOutside {
-		outside, inside = b, a
+	return firstIncluded(got.Start, got.StartExclusive, precision) ==
+		firstIncluded(want.Start, want.StartExclusive, precision)
+}
+
+func sameUpper(got, want timeseries.RequestedRange, precision time.Duration) bool {
+	if precision <= 0 {
+		return got.EndInclusive == want.EndInclusive && got.End.Equal(want.End)
 	}
-	for _, tick := range ticks {
-		if outside.Add(inward * tick).Equal(inside) {
-			return true
-		}
+	return lastIncluded(got.End, got.EndInclusive, precision) == lastIncluded(want.End, want.EndInclusive, precision)
+}
+
+func firstIncluded(bound time.Time, exclusive bool, precision time.Duration) int64 {
+	// the first instant a lower bound admits among the multiples of precision a column stores
+	ns, p := bound.UnixNano(), int64(precision)
+	if exclusive {
+		return floorDiv(ns, p)*p + p
 	}
-	return false
+	return -floorDiv(-ns, p) * p
+}
+
+func lastIncluded(bound time.Time, inclusive bool, precision time.Duration) int64 {
+	// the last instant an upper bound admits among the multiples of precision a column stores
+	ns, p := bound.UnixNano(), int64(precision)
+	if inclusive {
+		return floorDiv(ns, p) * p
+	}
+	return -floorDiv(-ns, p)*p - p
+}
+
+func floorDiv(n, d int64) int64 {
+	q := n / d
+	if n%d != 0 && (n < 0) != (d < 0) {
+		q--
+	}
+	return q
 }

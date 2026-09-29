@@ -53,6 +53,8 @@ var (
 		// Druid stores __time as a timestamp and accepts RFC3339 literals. This
 		// also makes a numeric dashboard bound unambiguous at the origin.
 		RenderNumericBoundsAsRFC3339: true,
+		// __time holds milliseconds, so an inclusive end renders one millisecond below its boundary
+		BoundPrecision: time.Millisecond,
 	})
 )
 

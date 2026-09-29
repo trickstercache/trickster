@@ -18,6 +18,7 @@ package postgres
 
 import (
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/sqlcompat"
@@ -30,7 +31,8 @@ func corpusAnalyze(zone, sql string) sqlanalyzer.Analysis {
 }
 
 func TestCompatibilityCorpus(t *testing.T) {
-	sqlcompat.Run(t, corpusPath, corpusAnalyze)
+	// PostgreSQL timestamps hold microseconds
+	sqlcompat.Run(t, corpusPath, corpusAnalyze, time.Microsecond)
 }
 
 func TestCompatibilityCorpusCoversGrafanaMacros(t *testing.T) {

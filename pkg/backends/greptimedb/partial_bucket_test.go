@@ -164,7 +164,8 @@ func TestHTTPSQLPartialBucketFlow(t *testing.T) {
 	}
 }
 
-func TestPrometheusRangeQueriesKeepTheirDefaultUnderDrop(t *testing.T) {
+func TestPrometheusRangeQueriesApplyDrop(t *testing.T) {
+	// a configured drop reaches PromQL range queries, as Prometheus's own
 	h := newHTTPHarness(t, &httpOrigin{})
 	r := httptest.NewRequest(http.MethodGet, "http://trickster"+promPath+"/api/v1/query_range?"+url.Values{
 		"query": {"up"}, "start": {"0"}, "end": {"600"}, "step": {"60"},
@@ -176,10 +177,11 @@ func TestPrometheusRangeQueriesKeepTheirDefaultUnderDrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trq.StepAlignments&timeseries.StepAlignmentDrop != 0 || trq.StepAlignments&timeseries.StepAlignmentPartialEnd == 0 {
+	if trq.StepAlignments&timeseries.StepAlignmentDrop == 0 || trq.StepAlignments&timeseries.StepAlignmentPartialEnd == 0 {
 		t.Fatalf("PromQL modes = %s", trq.StepAlignments)
 	}
-	if unsupported := trq.ResolveStepAlignment(0, timeseries.StepAlignmentDrop); unsupported != timeseries.StepAlignmentDrop {
-		t.Fatalf("a configured drop was applied to PromQL as %s", trq.StepAlignment)
+	if unsupported := trq.ResolveStepAlignment(0, timeseries.StepAlignmentDrop); unsupported != 0 ||
+		trq.StepAlignment != timeseries.StepAlignmentDrop {
+		t.Fatalf("a configured drop resolved to %s (unsupported %s)", trq.StepAlignment, unsupported)
 	}
 }

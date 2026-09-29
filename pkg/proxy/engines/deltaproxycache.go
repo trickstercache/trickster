@@ -278,9 +278,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	rsc.TimeRangeQuery = trq
 	rsc.Unlock()
 	if !full {
-		// a range holding no complete bucket is all partial buckets, so the origin's own answer to it
-		// is served through the object proxy cache
-		serveUnaligned(w, r, rsc, trq, rlo, modeler, time.Duration(o.PartialBucketTTL))
+		// a range with no complete bucket is all partial buckets, so the origin's answer comes through
+		// the object proxy cache; an instant range here is drop's, with no grid instant
+		var instants *timeseries.Extent
+		if trq.SampleModel == timeseries.SampleModelInstant {
+			e := trq.Extent
+			instants = &e
+		}
+		serveAsSent(w, r, rsc, trq, rlo, modeler, time.Duration(o.PartialBucketTTL), instants)
 		return
 	}
 	var cacheStatus status.LookupStatus

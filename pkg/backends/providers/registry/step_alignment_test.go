@@ -104,11 +104,8 @@ func TestValidateStepAlignment(t *testing.T) {
 		want           error
 	}{
 		{"unset", providers.ReverseProxyCache, 0, nil},
-		{"applied", providers.Prometheus, timeseries.StepAlignmentTruncate, nil},
-		{
-			"supported but not applied yet", providers.Prometheus, timeseries.StepAlignmentDrop,
-			bo.ErrStepAlignmentNotImplemented,
-		},
+		{"supported", providers.Prometheus, timeseries.StepAlignmentTruncate, nil},
+		{"prometheus drop", providers.Prometheus, timeseries.StepAlignmentDrop, nil},
 		{"unsupported", providers.Graphite, timeseries.StepAlignmentPartial, bo.ErrUnsupportedStepAlignment},
 		{"every mode on the http paths", providers.InfluxDB, timeseries.StepAlignmentPartial, nil},
 		{
@@ -119,12 +116,12 @@ func TestValidateStepAlignment(t *testing.T) {
 		{"alb", providers.ALB, timeseries.StepAlignmentTruncate, nil},
 		// options built in code bypass YAML's single-name decoding
 		{
-			"two supported and applied modes", providers.Prometheus,
+			"two supported modes", providers.Prometheus,
 			timeseries.StepAlignmentTruncate | timeseries.StepAlignmentPartialEnd, timeseries.ErrInvalidStepAlignment,
 		},
 		{
-			"two modes, one applied", providers.Prometheus,
-			timeseries.StepAlignmentTruncate | timeseries.StepAlignmentDrop, timeseries.ErrInvalidStepAlignment,
+			"two modes, one supported", providers.Prometheus,
+			timeseries.StepAlignmentTruncate | timeseries.StepAlignmentPartial, timeseries.ErrInvalidStepAlignment,
 		},
 		{"an unknown bit", providers.Prometheus, 1 << 7, timeseries.ErrInvalidStepAlignment},
 		{
@@ -164,7 +161,7 @@ func TestValidateStepAlignment(t *testing.T) {
 
 func TestStepAlignmentProfile(t *testing.T) {
 	const promApplied = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
-		timeseries.StepAlignmentPartialEnd
+		timeseries.StepAlignmentDrop | timeseries.StepAlignmentPartialEnd
 	withMode := func(mode timeseries.StepAlignment) *bo.Options {
 		o := bo.New()
 		o.StepAlignment = mode

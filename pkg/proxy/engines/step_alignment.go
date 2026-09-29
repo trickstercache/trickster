@@ -39,6 +39,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -73,8 +74,15 @@ func serveUnaligned(w http.ResponseWriter, r *http.Request, rsc *request.Resourc
 	trq *timeseries.TimeRangeQuery, rlo *timeseries.RequestOptions, modeler *timeseries.Modeler,
 	ttl time.Duration,
 ) {
-	// the origin's answer to the client's own request, through the object proxy cache under a key
-	// holding the raw range, for off and for a range with no complete bucket
+	serveAsSent(w, r, rsc, trq, rlo, modeler, ttl, nil)
+}
+
+func serveAsSent(w http.ResponseWriter, r *http.Request, rsc *request.Resources,
+	trq *timeseries.TimeRangeQuery, rlo *timeseries.RequestOptions, modeler *timeseries.Modeler,
+	ttl time.Duration, instants *timeseries.Extent,
+) {
+	// the origin's answer to the client's request, through the object proxy cache under a key holding
+	// the raw range; instants, when set, bound the points the mode lets through
 	if trq.OriginalBody != nil {
 		request.SetBody(r, trq.OriginalBody)
 	}
@@ -85,11 +93,11 @@ func serveUnaligned(w http.ResponseWriter, r *http.Request, rsc *request.Resourc
 	trq.TemplateURL, trq.CacheKeyElements = nil, elements
 	rsc.AlternateCacheTTL, rsc.PerCredentialCache = ttl, true
 	rsc.Unlock()
-	if rsc.TSTransformer == nil || modeler == nil {
+	if modeler == nil || (rsc.TSTransformer == nil && instants == nil) {
 		ObjectProxyCacheRequest(w, r)
 		return
 	}
-	serveTransformedObject(w, r, rsc, trq, rlo, modeler)
+	serveTransformedObject(w, r, rsc, trq, rlo, modeler, instants)
 }
 
 func unalignedKeyElements(qp url.Values, body []byte, isBody bool, pc *po.Options) map[string]string {
@@ -114,6 +122,7 @@ func unalignedKeyElements(qp url.Values, body []byte, isBody bool, pc *po.Option
 
 func serveTransformedObject(w http.ResponseWriter, r *http.Request, rsc *request.Resources,
 	trq *timeseries.TimeRangeQuery, rlo *timeseries.RequestOptions, modeler *timeseries.Modeler,
+	instants *timeseries.Extent,
 ) {
 	// the response is modeled so the backend's transformations apply to it, as to a delta response
 	body, resp, _ := FetchViaObjectProxyCache(r)
@@ -134,7 +143,12 @@ func serveTransformedObject(w http.ResponseWriter, r *http.Request, rsc *request
 		Respond(w, resp.StatusCode, rh, bytes.NewReader(body))
 		return
 	}
-	rsc.TSTransformer(ts)
+	if instants != nil {
+		keepInstants(ts, *instants)
+	}
+	if rsc.TSTransformer != nil {
+		rsc.TSTransformer(ts)
+	}
 	rsc.TS = ts
 	// the body is marshaled again, so the origin's length and encoding no longer describe it
 	rh.Del(headers.NameContentLength)
@@ -146,4 +160,15 @@ func serveTransformedObject(w http.ResponseWriter, r *http.Request, rsc *request
 		return
 	}
 	modeler.WireMarshalWriter(ts, rlo, resp.StatusCode, w)
+}
+
+func keepInstants(ts timeseries.Timeseries, e timeseries.Extent) {
+	// only the points within e, inclusive, and only the series keeping one; an inverted e keeps none
+	b, ok := ts.(dataset.Based)
+	if !ok {
+		return
+	}
+	ds := b.Base()
+	view := ds.View(e)
+	ds.Results, ds.ExtentList = view.Results, view.ExtentList
 }

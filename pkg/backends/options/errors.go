@@ -45,9 +45,6 @@ var ErrStepAlignmentWithFastForwardDisable = errors.New(
 // ErrUnsupportedStepAlignment is an error for a step_alignment the backend's provider doesn't support
 var ErrUnsupportedStepAlignment = errors.New("unsupported step_alignment")
 
-// ErrStepAlignmentNotImplemented is an error for a supported step_alignment that isn't available yet
-var ErrStepAlignmentNotImplemented = errors.New("step_alignment is not implemented yet")
-
 // NewErrInvalidStepAlignment returns an error for a step_alignment value that isn't exactly one mode
 func NewErrInvalidStepAlignment(value timeseries.StepAlignment, backendName string) error {
 	return fmt.Errorf(`%w for backend "%s": %#x is not exactly one mode`,
@@ -64,12 +61,6 @@ func NewErrUnsupportedStepAlignment(mode, supported timeseries.StepAlignment, pr
 	}
 	return fmt.Errorf(`%w "%s" for backend "%s": provider "%s" supports %s`,
 		ErrUnsupportedStepAlignment, mode, backendName, provider, names)
-}
-
-// NewErrStepAlignmentNotImplemented returns an error for a mode the backend can't apply yet
-func NewErrStepAlignmentNotImplemented(mode timeseries.StepAlignment, provider, backendName string) error {
-	return fmt.Errorf(`%w: "%s" for backend "%s" (provider "%s")`,
-		ErrStepAlignmentNotImplemented, mode, backendName, provider)
 }
 
 // NewErrStepAlignmentUnsupportedByMembers returns an error naming the pool members of an ALB that

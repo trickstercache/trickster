@@ -326,7 +326,7 @@ func TestValidateStepAlignmentNamesMembersThatCantApplyTheMode(t *testing.T) {
 		pool      []string
 		lacking   string
 	}{
-		{"a mode a member doesn't apply yet", names.MechanismRR, timeseries.StepAlignmentDrop, []string{saLeader}, saLeader},
+		{"a mode a member doesn't support", names.MechanismRR, timeseries.StepAlignmentPartial, []string{saLeader}, saLeader},
 		{"a member without step alignment", names.MechanismRR, timeseries.StepAlignmentTruncate, []string{saLeader, saRPC}, saRPC},
 		{"a nested alb applies what its members all apply", names.MechanismRR, timeseries.StepAlignmentPartialEnd, []string{saLeader, saInner}, saInner},
 		{"members applying every mode but their own", names.MechanismRR, timeseries.StepAlignmentOff, []string{saLeader, saGraphite}, ""},

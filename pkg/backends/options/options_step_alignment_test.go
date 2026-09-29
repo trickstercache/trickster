@@ -180,7 +180,4 @@ func TestStepAlignmentErrors(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnsupportedStepAlignment)
 	require.Equal(t, `unsupported step_alignment "partial" for backend "g1": provider "graphite" supports off, truncate`,
 		err.Error())
-	err = NewErrStepAlignmentNotImplemented(timeseries.StepAlignmentOff, providers.Graphite, "g1")
-	require.ErrorIs(t, err, ErrStepAlignmentNotImplemented)
-	require.Contains(t, err.Error(), `"off" for backend "g1"`)
 }

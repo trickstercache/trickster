@@ -258,6 +258,34 @@ func TestPlanEdges(t *testing.T) {
 		}
 	})
 
+	t.Run("instant samples under drop start at the first instant inside the range", func(t *testing.T) {
+		for _, test := range []struct {
+			name       string
+			model      SampleModel
+			start, end int64
+			step       time.Duration
+			want       Extent
+			full       bool
+		}{
+			{"an unaligned start", SampleModelInstant, 630, 1_230, time.Minute, Extent{Start: time.Unix(660, 0), End: time.Unix(1_200, 0)}, true},
+			{"an aligned start", SampleModelInstant, 600, 1_230, time.Minute, Extent{Start: time.Unix(600, 0), End: time.Unix(1_200, 0)}, true},
+			{"one instant", SampleModelInstant, 630, 660, time.Minute, Extent{Start: time.Unix(660, 0), End: time.Unix(660, 0)}, true},
+			{"no instant", SampleModelInstant, 630, 650, time.Minute, Extent{Start: time.Unix(660, 0), End: time.Unix(600, 0)}, false},
+			{"stored samples keep truncate", SampleModelStored, 630, 1_230, time.Minute, Extent{Start: time.Unix(600, 0), End: time.Unix(1_200, 0)}, true},
+			{"no step", SampleModelInstant, 630, 1_230, 0, Extent{Start: time.Unix(630, 0), End: time.Unix(1_230, 0)}, true},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				trq := &TimeRangeQuery{
+					Step: test.step, SampleModel: test.model, StepAlignment: StepAlignmentDrop,
+					Extent: Extent{Start: time.Unix(test.start, 0), End: time.Unix(test.end, 0)},
+				}
+				if full := trq.PlanEdges(now); full != test.full || trq.Extent != test.want {
+					t.Errorf("got %s, %t; want %s, %t", trq.Extent, full, test.want, test.full)
+				}
+			})
+		}
+	})
+
 	for name, trq := range map[string]*TimeRangeQuery{
 		"instant samples":             {SampleModel: SampleModelInstant, Requested: requested},
 		"stored samples":              {SampleModel: SampleModelStored, Requested: requested},

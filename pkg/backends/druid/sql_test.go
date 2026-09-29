@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const druidSQLTestStatement = `SELECT TIME_FLOOR(__time, 'PT1H') AS bucket, SUM(v) AS value, host FROM foo WHERE __time >= TIMESTAMP '2024-01-01 00:00:00' AND __time < TIMESTAMP '2024-01-02 00:00:00' GROUP BY 1, host`
@@ -375,5 +376,22 @@ func TestDruidUnrenderableCastFailsClosed(t *testing.T) {
 	}
 	if druidSQLRenderable(analysis.Plan.CanonicalSQL) {
 		t.Errorf("canonical statement passed the guard: %s", analysis.Plan.CanonicalSQL)
+	}
+}
+
+func TestDruidSQLInclusiveEndsRenderAtMilliseconds(t *testing.T) {
+	// __time holds milliseconds, so an inclusive end renders one millisecond below its boundary: every
+	// row of the bucket, in a literal Druid parses
+	query := "SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, COUNT(*) AS trips FROM trips " +
+		"WHERE __time >= 1699999200000 AND __time <= 1700000400000 GROUP BY 1"
+	analysis := druidSQLAnalyzer.Analyze(query, time.Unix(1_800_000_000, 0))
+	if analysis.Plan == nil {
+		t.Fatalf("no delta plan: %+v", analysis)
+	}
+	rendered, err := analysis.Plan.RenderExtent(timeseries.Extent{
+		Start: time.UnixMilli(1699999200000), End: time.UnixMilli(1699999500000),
+	})
+	if err != nil || !strings.Contains(rendered, "__time <= '2023-11-14T22:09:59.999Z'") {
+		t.Fatalf("rendered %s, %v", rendered, err)
 	}
 }

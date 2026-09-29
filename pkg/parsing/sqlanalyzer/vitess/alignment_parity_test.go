@@ -54,7 +54,7 @@ func TestRenderParityWithThePlanner(t *testing.T) {
 							if got.Mode != sqlanalyzer.CacheModeDelta {
 								t.Fatalf("%s: %s (%v)", query, got.Reason, got.Err)
 							}
-							n, err := sqlanalyzertest.RenderParity(a, got.Plan, now)
+							n, err := sqlanalyzertest.RenderParity(a, got.Plan, now, time.Second)
 							if err != nil {
 								t.Fatalf("%s: %v", query, err)
 							}

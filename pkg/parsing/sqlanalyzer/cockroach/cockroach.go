@@ -1041,7 +1041,8 @@ func (a *Analyzer) analyzeRanges(
 	}
 	// keep the bounds as the statement wrote them, before rounding them to the grid
 	result.recordRaw()
-	if err := normalizePrimaryBounds(&result, bucket, a.opts.BoundPrecision); err != nil {
+	if err := normalizePrimaryBounds(&result, bucket, a.opts.BoundPrecision,
+		a.opts.RenderNumericBoundsAsRFC3339); err != nil {
 		return result, err
 	}
 	return result, nil
@@ -1061,18 +1062,11 @@ func (a *Analyzer) boundStyleAllowed(style boundStyle, bucket bucketSpec) bool {
 	return true
 }
 
-// normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
-// bucket extent convention. Raw timestamp predicates must describe complete
-// buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// Unaligned raw-column bounds are rounded inward to the cadence (lower up, upper
-// down) per the contract's unaligned-bound provision; the raw bounds are kept, so
-// the planner decides each mode's edges. An inclusive upper is always
-// floored, since its boundary bucket is partial. Predicates on
-// the bucket output are discrete and can safely move by one cadence for
-// strict comparisons.
 func normalizePrimaryBounds(
-	result *rangeAnalysis, bucket bucketSpec, precision time.Duration,
+	result *rangeAnalysis, bucket bucketSpec, precision time.Duration, numericAsRFC3339 bool,
 ) error {
+	// rounds unaligned raw bounds inward (kept raw for the planner), so no partial bucket is cached
+	// whole; an inclusive upper floors, and output-column bounds shift a step
 	rounded := false
 	lowerOnOutput := result.lower.target != nil &&
 		strings.EqualFold(result.lower.target.field, bucket.outputColumn) &&
@@ -1122,7 +1116,12 @@ func normalizePrimaryBounds(
 		if result.upper.target == nil {
 			return ErrUnsafePredicate
 		}
-		tick, ok := inclusiveUpperTick(result.upper.target.style)
+		// the tick of the literal the renderer writes, which an epoch integer rendered as RFC3339 refines
+		style := result.upper.target.style
+		if numericAsRFC3339 && numericStyle(style) {
+			style = boundRFC3339
+		}
+		tick, ok := inclusiveUpperTick(style)
 		tick = max(tick, precision)
 		if !ok || tick > bucket.step {
 			return ErrUnsafePredicate
@@ -1164,6 +1163,14 @@ func normalizePrimaryBounds(
 // inclusiveUpperTick returns the resolution of a bound literal's style, used to
 // render an inclusive upper bound exactly one tick below the exclusive
 // boundary. A date-only literal cannot express that and fails closed.
+func numericStyle(style boundStyle) bool {
+	switch style {
+	case boundUnixSeconds, boundUnixMilli, boundUnixMicro, boundUnixNano:
+		return true
+	}
+	return false
+}
+
 func inclusiveUpperTick(style boundStyle) (time.Duration, bool) {
 	switch style {
 	case boundUnixSeconds:
@@ -1506,11 +1513,8 @@ func (r *cockroachRenderer) render(bound rendererBound, extent timeseries.Extent
 	}
 	value = value.Add(bound.offset)
 	style := bound.style
-	if r.numericAsRFC3339 {
-		switch style {
-		case boundUnixSeconds, boundUnixMilli, boundUnixMicro, boundUnixNano:
-			style = boundRFC3339
-		}
+	if r.numericAsRFC3339 && numericStyle(style) {
+		style = boundRFC3339
 	}
 	return boundLiteral(style, value)
 }

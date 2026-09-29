@@ -345,6 +345,8 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, nil, false, err
 	}
 	trq.Step = step
+	// the range as the client sent it, before any grid alignment below
+	requested := timeseries.RequestedRange{Start: trq.Extent.Start, End: trq.Extent.End, EndInclusive: true}
 	if c.hooks.PreserveQueryGrid {
 		if trq.Extent.End.Before(trq.Extent.Start) {
 			return nil, nil, false, timeseries.ErrUnknownFormat
@@ -398,9 +400,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		}
 	}
 
-	trq.Requested = timeseries.RequestedRange{
-		Start: trq.Extent.Start, End: trq.Extent.End, EndInclusive: true,
-	}
+	trq.Requested = requested
 	trq.StepAlignments, trq.StepAlignment = c.StepAlignments()
 
 	return trq, rlo, true, nil

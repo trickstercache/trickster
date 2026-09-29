@@ -22,22 +22,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-var stepAlignmentsApplied = map[string]timeseries.StepAlignment{
-	providers.Prometheus: timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
-		timeseries.StepAlignmentPartialEnd,
-	providers.Graphite: timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate,
-	// a query that doesn't support the configured mode, such as Flux under partial, keeps its default
-	providers.ClickHouse:  timeseries.StepAlignmentAll,
-	providers.InfluxDB:    timeseries.StepAlignmentAll,
-	providers.GreptimeDB:  timeseries.StepAlignmentAll,
-	providers.Druid:       timeseries.StepAlignmentAll,
-	providers.MySQL:       timeseries.StepAlignmentAll,
-	providers.Postgres:    timeseries.StepAlignmentAll,
-	providers.TimescaleDB: timeseries.StepAlignmentAll,
-}
-
 // ValidateStepAlignment checks a backend's configured step alignment against the modes its
-// provider supports and applies
+// provider supports
 func ValidateStepAlignment(b Backend, o *bo.Options) error {
 	if o == nil || o.StepAlignment == 0 {
 		return nil
@@ -56,10 +42,6 @@ func ValidateStepAlignment(b Backend, o *bo.Options) error {
 	}
 	if supported, _ := sa.StepAlignments(); supported&o.StepAlignment == 0 {
 		return bo.NewErrUnsupportedStepAlignment(o.StepAlignment, supported, o.Provider, o.Name)
-	}
-	// a supported mode is refused, rather than ignored, until the provider applies it on every path
-	if stepAlignmentsApplied[o.Provider]&o.StepAlignment == 0 {
-		return bo.NewErrStepAlignmentNotImplemented(o.StepAlignment, o.Provider, o.Name)
 	}
 	return nil
 }
@@ -80,5 +62,5 @@ func StepAlignmentProfile(b Backend) (effective, applicable timeseries.StepAlign
 	if o.StepAlignment != 0 {
 		effective = o.StepAlignment
 	}
-	return effective, supported & stepAlignmentsApplied[o.Provider]
+	return effective, supported
 }

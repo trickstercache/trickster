@@ -102,8 +102,8 @@ func (pb PartialBucket) IsLive(step, phase time.Duration, now time.Time) bool {
 	return FloorToGrid(pb.Lower, step, phase).Add(step).After(now)
 }
 
-// PlanEdges sets Extent to the query's cacheable interior and Partials to its partial buckets under
-// StepAlignment, returning false when the range holds no complete bucket
+// PlanEdges sets Extent to the cacheable interior and Partials to the partial buckets under
+// StepAlignment; false means no complete bucket (for drop, no instant)
 func (trq *TimeRangeQuery) PlanEdges(now time.Time) bool {
 	switch trq.SampleModel {
 	case SampleModelBucket, SampleModelBucketStop:
@@ -119,6 +119,16 @@ func (trq *TimeRangeQuery) PlanEdges(now time.Time) bool {
 	// instant and stored samples, and queries whose parser recorded no requested range, keep the
 	// parser's extent and align it to the step
 	trq.PartialCount = 0
+	start := trq.Extent.Start
+	if !trq.Requested.IsZero() {
+		// a parser may already have aligned the extent, so drop starts from the client's own start
+		start = trq.Requested.Start
+	}
 	trq.alignExtent(now)
+	if trq.SampleModel == SampleModelInstant && trq.StepAlignment == StepAlignmentDrop {
+		// drop evaluates only at grid points inside the range; a range holding none has no interior
+		trq.Extent.Start = CeilToGrid(start, trq.Step, trq.Phase)
+		return !trq.Extent.Start.After(trq.Extent.End)
+	}
 	return true
 }
