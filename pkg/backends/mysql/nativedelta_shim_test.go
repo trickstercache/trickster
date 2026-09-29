@@ -74,13 +74,18 @@ type deltaRequestWindow struct {
 }
 
 func buildDeltaRequestWindow(plan *sqlanalyzer.QueryPlan) (deltaRequestWindow, error) {
-	window, err := nativedelta.BuildWindow(plan, time.Now(), true)
+	window, err := nativedelta.BuildWindow(plan, time.Now(), true, timeseries.StepAlignmentDrop)
 	if err != nil {
 		return deltaRequestWindow{}, err
 	}
+	// the half-open bounds the window's complete buckets render as
+	upper := window.Output.Start
+	if !window.Empty {
+		upper = window.Output.End.Add(plan.Step)
+	}
 	return deltaRequestWindow{
 		output: window.Output, cacheable: window.Cacheable,
-		lower: window.Lower, upper: window.Upper, empty: window.Empty,
+		lower: window.Output.Start, upper: upper, empty: window.Empty,
 	}, nil
 }
 

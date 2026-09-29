@@ -1050,6 +1050,31 @@ func (r *renderer) RenderTimeRange(lower, upper time.Time) (string, error) {
 	return sqlparser.String(stmt), nil
 }
 
+// RenderRange implements sqlanalyzer.RangeRenderer through the statement's own comparators; an
+// inclusive upper bound keeps the client's raw literal
+func (r *renderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	// vitess plans always carry an inclusive lower bound and an upper bound
+	if pb.LowerExclusive || pb.Upper.IsZero() || !r.lowerInclusive ||
+		(pb.UpperInclusive && !r.upperInclusive) {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	upper := pb.Upper
+	if r.upperInclusive && !pb.UpperInclusive {
+		// an exclusive end read through the statement's <= sits one tick below it
+		upper = upper.Add(-r.upperTick)
+	}
+	if !representable(pb.Lower, r.lower) || !representable(upper, r.upper) {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	return r.RenderTimeRange(pb.Lower, upper)
+}
+
+func representable(value time.Time, style boundStyle) bool {
+	// a literal of the style holds the value exactly, so no row moves across the rendered bound
+	tick, ok := boundTick(style)
+	return ok && value.UnixNano()%int64(tick) == 0
+}
+
 func renderBound(value time.Time, style boundStyle) sqlparser.Expr {
 	switch style {
 	case boundEpochNanos:

@@ -1744,19 +1744,19 @@ AND ts < FROM_UNIXTIME(%d) GROUP BY time ORDER BY time`, lower, upper)
 	if got := originHandler.queryCount.Load(); got != 1 {
 		t.Fatalf("moving delta origin queries = %d, want 1", got)
 	}
-	emptyFirst, err := client.ExecuteFetch(query(5, 25), vtmysql.FETCH_ALL_ROWS, true)
-	if err != nil {
-		t.Fatal(err)
+	// a range holding no complete bucket is the origin's own answer to each statement, and a repeat
+	// comes from the object tier
+	for _, bounds := range [][2]int{{5, 25}, {10, 20}, {5, 25}} {
+		partial, err := client.ExecuteFetch(query(bounds[0], bounds[1]), vtmysql.FETCH_ALL_ROWS, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(partial.Rows) != 1 || partial.Rows[0][0].ToString() != "0" {
+			t.Fatalf("%v answered %v", bounds, partial.Rows)
+		}
 	}
-	emptySecond, err := client.ExecuteFetch(query(10, 20), vtmysql.FETCH_ALL_ROWS, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(emptyFirst.Rows) != 0 || len(emptySecond.Rows) != 0 {
-		t.Fatalf("normalized empty row counts = %d, %d", len(emptyFirst.Rows), len(emptySecond.Rows))
-	}
-	if got := originHandler.queryCount.Load(); got != 2 {
-		t.Fatalf("normalized empty origin queries = %d, want 2", got)
+	if got := originHandler.queryCount.Load(); got != 3 {
+		t.Fatalf("partial range origin queries = %d, want 3", got)
 	}
 	client.Close()
 

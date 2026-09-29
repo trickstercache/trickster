@@ -31,20 +31,14 @@ var stepAlignmentsApplied = map[string]timeseries.StepAlignment{
 	providers.InfluxDB:    timeseries.StepAlignmentAll,
 	providers.GreptimeDB:  timeseries.StepAlignmentAll,
 	providers.Druid:       timeseries.StepAlignmentAll,
-	providers.MySQL:       timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
-	providers.Postgres:    timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
-	providers.TimescaleDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
-}
-
-var nativeStepAlignmentsApplied = map[string]timeseries.StepAlignment{
-	// narrows the modes of a backend a native listener also serves, where it applies fewer of them
-	providers.InfluxDB:   timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
-	providers.GreptimeDB: timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
+	providers.MySQL:       timeseries.StepAlignmentAll,
+	providers.Postgres:    timeseries.StepAlignmentAll,
+	providers.TimescaleDB: timeseries.StepAlignmentAll,
 }
 
 // ValidateStepAlignment checks a backend's configured step alignment against the modes its
-// provider supports and applies, including on a native listener that serves it
-func ValidateStepAlignment(b Backend, o *bo.Options, nativeListener bool) error {
+// provider supports and applies
+func ValidateStepAlignment(b Backend, o *bo.Options) error {
 	if o == nil || o.StepAlignment == 0 {
 		return nil
 	}
@@ -64,11 +58,7 @@ func ValidateStepAlignment(b Backend, o *bo.Options, nativeListener bool) error 
 		return bo.NewErrUnsupportedStepAlignment(o.StepAlignment, supported, o.Provider, o.Name)
 	}
 	// a supported mode is refused, rather than ignored, until the provider applies it on every path
-	applied := stepAlignmentsApplied[o.Provider]
-	if narrowed, ok := nativeStepAlignmentsApplied[o.Provider]; ok && nativeListener {
-		applied &= narrowed
-	}
-	if applied&o.StepAlignment == 0 {
+	if stepAlignmentsApplied[o.Provider]&o.StepAlignment == 0 {
 		return bo.NewErrStepAlignmentNotImplemented(o.StepAlignment, o.Provider, o.Name)
 	}
 	return nil

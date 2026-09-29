@@ -48,7 +48,7 @@ func nativeDeltaRewriteFailureRequest(_ *deltaRunner) nativedelta.DeltaRequest[[
 		Renderer:   failingRenderer{},
 	}
 	return nativedelta.DeltaRequest[[]byte]{
-		Key: "k", FallbackKey: "k:fallback", EmptyKey: "k:empty",
+		Key: "k", FallbackKey: "k:fallback",
 		Plan: plan, Now: time.Unix(3600, 0),
 		Ops: nativedelta.DeltaOps[[]byte]{
 			FetchOriginal: func() ([]byte, error) {

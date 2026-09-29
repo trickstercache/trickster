@@ -16,6 +16,7 @@
 package pgwire
 
 import (
+	"context"
 	"errors"
 	"net"
 	"sync"
@@ -36,7 +37,6 @@ import (
 
 const (
 	keySuffixFallback = ".fallback"
-	keySuffixEmpty    = ".empty"
 	keySuffixBypass   = ".bypass"
 
 	rewriteOriginRejected = "origin_rejected"
@@ -124,7 +124,8 @@ func (s *Server) newDeltaEngine() *nativedelta.Engine[*Result] {
 		Protocol: cacheKeyProtocol, BackendName: s.config.BackendName, CacheClient: s.cacheClient,
 		CacheTTL: s.config.CacheTTL, MaxObjectSize: s.config.MaxObjectSize,
 		RetentionPoints: s.config.RetentionPoints, VolatileWindow: s.config.BackfillWindow,
-		VolatileWindowPoints: s.config.BackfillPoints,
+		VolatileWindowPoints: s.config.BackfillPoints, PartialBucketTTL: s.config.PartialBucketTTL,
+		Provider: s.config.Provider,
 		ObserveCacheFailure: func(reason string) {
 			if client := s.cacheClient(); client != nil && client.Configuration() != nil {
 				configuration := client.Configuration()
@@ -241,9 +242,28 @@ func (s *session) executeObject(sql string, unaligned bool) (*Result, status.Loo
 	if unaligned {
 		engine, ttl = cacheEngineUnaligned, timeseries.StepAlignmentOffTTL
 	}
+	return s.objectTier(engine, sql, ttl, true)
+}
+
+func (s *session) objectTier(engine, sql string, ttl time.Duration, original bool,
+) (*Result, status.LookupStatus, error) {
 	return s.server.delta.ExecuteObject(s.identityKey(engine, sql, ""), ttl, func() (*Result, error) {
-		return s.fetch(sql, true, nil)
+		return s.fetch(sql, original, nil)
 	})
+}
+
+func (s *session) model(plan *sqlanalyzer.QueryPlan, result *Result) (*nativedelta.Delta, error) {
+	// an object-tier result's rows, modeled as a fetch's are
+	sink := newRowSink(plan)
+	if err := sink.describe(s, result.RowDescription); err != nil {
+		return nil, err
+	}
+	for i := range result.Rows() {
+		if err := sink.row(result.row(i)); err != nil {
+			return nil, err
+		}
+	}
+	return sink.finish()
 }
 
 func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan,
@@ -271,6 +291,11 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan,
 		},
 		FetchOriginal:  func() (*Result, error) { return s.fetch(outcome.sql, true, nil) },
 		ObjectFallback: func() (*Result, status.LookupStatus, error) { return s.executeObject(outcome.sql, false) },
+		// the session's one upstream connection runs its fetches in turn, so none is started early
+		FetchPartial: func(_ context.Context, statement string, ttl time.Duration) (*Result, status.LookupStatus, error) {
+			return s.objectTier(cacheEnginePartial, statement, ttl, statement == outcome.sql)
+		},
+		Model: func(result *Result) (*nativedelta.Delta, error) { return s.model(plan, result) },
 	}
 	if config.DoesShard {
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
@@ -283,7 +308,7 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan,
 		}
 	}
 	return s.server.delta.ExecuteDelta(nativedelta.DeltaRequest[*Result]{
-		Key: outcome.key, FallbackKey: outcome.key + keySuffixFallback, EmptyKey: outcome.key + keySuffixEmpty,
-		Plan: plan, Now: time.Now(), Ops: ops,
+		Key: outcome.key, FallbackKey: outcome.key + keySuffixFallback, Statement: outcome.sql,
+		Plan: plan, Now: time.Now(), StepAlignment: config.StepAlignment, Ops: ops,
 	})
 }

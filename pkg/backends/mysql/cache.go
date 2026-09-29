@@ -19,6 +19,7 @@ package mysql
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -56,10 +57,10 @@ const (
 	mysqlDialect              = "mysql"
 	cacheModeOPC              = "opc"
 	cacheModeDPC              = "dpc"
-	cacheModeDPCEmpty         = "dpc-empty"
 	cacheModeDPCFallback      = "dpc-fallback"
-	// off keeps its own objects, so one stored for the longer CacheTTL never answers it
+	// off and partial buckets keep their own objects, so one stored for another TTL never answers them
 	cacheModeOff                  = "off"
+	cacheModePartial              = "partial"
 	metricMethodQuery             = "QUERY"
 	metricPathQuery               = "query"
 	metricHTTPStatusOK            = "200"
@@ -176,10 +177,6 @@ func saturatedSize(size uint64) int {
 	return int(size)
 }
 
-type normalizedTimeRangeRenderer interface {
-	RenderTimeRange(lower, upper time.Time) (string, error)
-}
-
 func (h *protocolHandler) cacheEligible(session *upstreamSession) bool {
 	if h.config.ProxyOnly || h.cacheClient() == nil || session == nil {
 		return false
@@ -258,6 +255,17 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 			return h.executeObject(c, session, query, false)
 		},
 		SameHeader: sameResultHeader,
+		// the session's one upstream connection runs its fetches in turn, so none is started early
+		FetchPartial: func(_ context.Context, statement string, ttl time.Duration,
+		) (*sqltypes.Result, cachestatus.LookupStatus, error) {
+			key := h.queryCacheKey(c, session, cacheModePartial, strings.TrimSpace(statement))
+			return h.deltaEngine().ExecuteObject(key, ttl, func() (*sqltypes.Result, error) {
+				return h.executeOrigin(session, statement)
+			})
+		},
+		Model: func(result *sqltypes.Result) (*nativedelta.Delta, error) {
+			return h.modelResult(result, plan)
+		},
 	}
 	if h.config.DoesShard {
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
@@ -269,14 +277,11 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 			return fetchExtents
 		}
 	}
-	if renderer, ok := plan.Renderer.(normalizedTimeRangeRenderer); ok {
-		ops.RenderEmpty = renderer.RenderTimeRange
-	}
 	return h.deltaEngine().ExecuteDelta(nativedelta.DeltaRequest[*sqltypes.Result]{
 		Key:         h.planCacheKey(c, session, cacheModeDPC, plan),
 		FallbackKey: h.planCacheKey(c, session, cacheModeDPCFallback, plan),
-		EmptyKey:    h.planCacheKey(c, session, cacheModeDPCEmpty, plan),
-		Plan:        plan, Now: time.Now(),
+		Statement:   query, StepAlignment: h.config.StepAlignment,
+		Plan: plan, Now: time.Now(),
 		// vitess delta plans always carry closed bounds; open-ended plans
 		// proxy rather than run to the present
 		RequireUpperBound: true,
@@ -307,6 +312,21 @@ func (h *protocolHandler) executeOriginRows(session *upstreamSession, statement 
 	})
 	if err != nil {
 		return nil, err
+	}
+	return sink.finish(result.StatusFlags)
+}
+
+func (h *protocolHandler) modelResult(result *sqltypes.Result, plan *sqlanalyzer.QueryPlan,
+) (*nativedelta.Delta, error) {
+	// an object-tier result's rows, modeled as a fetch's are
+	sink, err := h.newRowSink(plan, result.Fields)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range result.Rows {
+		if err := sink.row(row); err != nil {
+			return nil, err
+		}
 	}
 	return sink.finish(result.StatusFlags)
 }

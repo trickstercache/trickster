@@ -66,7 +66,7 @@ func TestProviderStepAlignments(t *testing.T) {
 			// the default is what the provider does today, so configuring it must be accepted
 			o := bo.New()
 			o.Name, o.Provider, o.StepAlignment = "test", test.provider, def
-			if err := backends.ValidateStepAlignment(client, o, false); err != nil {
+			if err := backends.ValidateStepAlignment(client, o); err != nil {
 				t.Error(err)
 			}
 		})
@@ -81,7 +81,7 @@ func TestEveryTimeSeriesProviderAppliesOff(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			o := bo.New()
 			o.Name, o.Provider, o.StepAlignment = "test", provider, timeseries.StepAlignmentOff
-			if err := backends.ValidateStepAlignment(newTestClient(t, provider, nil), o, false); err != nil {
+			if err := backends.ValidateStepAlignment(newTestClient(t, provider, nil), o); err != nil {
 				t.Error(err)
 			}
 		})
@@ -144,7 +144,7 @@ func TestValidateStepAlignment(t *testing.T) {
 			if test.provider != providers.ALB {
 				client = newTestClient(t, test.provider, nil)
 			}
-			err := backends.ValidateStepAlignment(client, o, false)
+			err := backends.ValidateStepAlignment(client, o)
 			if test.want == nil {
 				if err != nil {
 					t.Error(err)
@@ -159,35 +159,6 @@ func TestValidateStepAlignment(t *testing.T) {
 				t.Errorf("the error should name the value: %v", err)
 			}
 		})
-	}
-}
-
-func TestNativeListenersNarrowTheAppliedModes(t *testing.T) {
-	// InfluxDB's Flight SQL listener and GreptimeDB's MySQL and PostgreSQL listeners apply fewer modes
-	// than their HTTP paths, so a backend one serves accepts only those
-	for _, provider := range []string{providers.InfluxDB, providers.GreptimeDB} {
-		for mode, want := range map[timeseries.StepAlignment]error{
-			timeseries.StepAlignmentDrop:       nil,
-			timeseries.StepAlignmentOff:        nil,
-			timeseries.StepAlignmentPartial:    bo.ErrStepAlignmentNotImplemented,
-			timeseries.StepAlignmentPartialEnd: bo.ErrStepAlignmentNotImplemented,
-		} {
-			o := bo.New()
-			o.Name, o.Provider, o.StepAlignment = "test", provider, mode
-			client := newTestClient(t, provider, nil)
-			if err := backends.ValidateStepAlignment(client, o, true); !errors.Is(err, want) {
-				t.Errorf("%s %s: got %v want %v", provider, mode, err, want)
-			}
-			if err := backends.ValidateStepAlignment(client, o, false); err != nil {
-				t.Errorf("%s %s over http: %v", provider, mode, err)
-			}
-		}
-	}
-	// a native listener that applies every mode its provider does narrows nothing
-	o := bo.New()
-	o.Name, o.Provider, o.StepAlignment = "test", providers.ClickHouse, timeseries.StepAlignmentPartial
-	if err := backends.ValidateStepAlignment(newTestClient(t, providers.ClickHouse, nil), o, true); err != nil {
-		t.Error(err)
 	}
 }
 
@@ -215,11 +186,7 @@ func TestStepAlignmentProfile(t *testing.T) {
 			"fast_forward_disable", providers.Prometheus, fastForwardDisabled,
 			timeseries.StepAlignmentTruncate, promApplied,
 		},
-		// supported modes the provider doesn't apply yet are left out
-		{
-			"applied modes only", providers.MySQL, nil, timeseries.StepAlignmentDrop,
-			timeseries.StepAlignmentOff | timeseries.StepAlignmentDrop,
-		},
+		{"a native listener's provider", providers.MySQL, nil, timeseries.StepAlignmentDrop, timeseries.StepAlignmentAll},
 		// a profile describes what reaches the backend over HTTP, as an ALB's requests do
 		{"every mode", providers.InfluxDB, nil, timeseries.StepAlignmentPartialEnd, timeseries.StepAlignmentAll},
 		{"not a time series provider", providers.ReverseProxyCache, nil, 0, 0},

@@ -904,6 +904,8 @@ func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
 			RetentionPoints:       h.config.RetentionPoints,
 			VolatileWindow:        h.config.BackfillWindow,
 			VolatileWindowPoints:  h.config.BackfillPoints,
+			PartialBucketTTL:      h.config.PartialBucketTTL,
+			Provider:              h.dialect(),
 			ObserveCacheFailure:   h.observeCacheFailure,
 			ObserveRewriteFailure: h.observeRewriteFailure,
 		}, resultCodec{})

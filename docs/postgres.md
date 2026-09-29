@@ -188,20 +188,22 @@ direction) are all fine.
 
 Four behaviors are worth knowing:
 
-- **Live ranges lose their partial edge buckets.** Bounds that are not on the
-  bucket grid, as Grafana's `now`-relative ranges never are, are rounded
-  inward, so the partial first and last buckets are left out of the answer
-  rather than cached as if they were complete. The still-filling bucket that
-  holds the present is partial too, so a range that reaches the present ends
-  before it. `col <= X` keeps X's bucket only when X is the last instant of it
-  (`...:59.999999`).
+- **Live ranges lose their partial edge buckets by default.** Under the
+  default `step_alignment`, `drop`, bounds that are not on the bucket grid, as
+  Grafana's `now`-relative ranges never are, are rounded inward, so the
+  partial first and last buckets are left out of the answer rather than cached
+  as if they were complete. The still-filling bucket that holds the present is
+  partial too, so a range that reaches the present ends before it. `col <= X`
+  keeps X's bucket only when X is the last instant of it (`...:59.999999`).
+  The `partial`, `partial_start` and `partial_end` modes instead fetch those
+  buckets from the origin over the client's own range, through the object
+  cache for `partial_bucket_ttl`, and never cache them with the complete ones;
+  `truncate` answers the whole first bucket.
 - **A range with no complete bucket is answered by the origin.** When nothing
-  complete remains, the client gets the origin's own result for its
-  statement, partial and still-filling buckets included. The statement is
-  cached as an object when rounding its bounds leaves no bucket at all, as for
-  a range inside one bucket or across a single boundary, and is passed
-  through uncached when the rounded range holds only buckets that have not
-  ended, as for an open range that starts inside the still-filling bucket.
+  complete remains, as for a range inside one bucket, across a single
+  boundary, or starting inside the still-filling bucket, the client gets the
+  origin's own result for its statement, partial and still-filling buckets
+  included, cached as an object for `partial_bucket_ttl`.
 - **Zone-less literals need a UTC session.** PostgreSQL reads
   `'2026-09-17 00:00:00'` and `TIMESTAMP '...'` in the session `TimeZone`, so
   such bounds (and origins) qualify only while that zone is UTC. Grafana's

@@ -47,8 +47,9 @@ const (
 	cacheKeyProtocol  = "pgwire"
 	cacheEngineObject = "opc"
 	cacheEngineDelta  = "dpc"
-	// off keeps its own objects, so one stored for the longer CacheTTL never answers it
+	// off and partial buckets keep their own objects, so one stored for another TTL never answers them
 	cacheEngineUnaligned = "off"
+	cacheEnginePartial   = "partial"
 
 	logKeyCacheMode = "cache_mode"
 	logKeyReason    = "analysis_reason"

@@ -20,6 +20,7 @@ package nativedelta
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -76,6 +77,11 @@ type Config struct {
 	// buckets a delta entry leaves out, so they are fetched again
 	VolatileWindow       time.Duration
 	VolatileWindowPoints int
+	// PartialBucketTTL is how long the object tier keeps a partial bucket, and the answer to a range
+	// holding no complete bucket; zero uses the backend default
+	PartialBucketTTL time.Duration
+	// Provider labels the partial bucket metric; empty uses Protocol
+	Provider string
 	// ObserveCacheFailure and ObserveRewriteFailure are optional metric hooks.
 	ObserveCacheFailure   func(reason string)
 	ObserveRewriteFailure func(reason string)
@@ -142,9 +148,14 @@ type DeltaOps[R any] struct {
 	SameHeader func(a, b []byte) bool
 	// Shard optionally splits missing extents into origin-sized fetches.
 	Shard func(missing timeseries.ExtentList) timeseries.ExtentList
-	// RenderEmpty optionally renders the statement for a window with no
-	// complete bucket; when nil, empty windows proxy the original statement.
-	RenderEmpty func(lower, upper time.Time) (string, error)
+	// FetchPartial answers a statement of partial buckets alone from the object tier, keeping it for ttl
+	// under its own key; when nil, such statements are proxied.
+	FetchPartial func(ctx context.Context, statement string, ttl time.Duration) (R, cachestatus.LookupStatus, error)
+	// Model converts an object-tier result into rows, as Fetch models a fetch.
+	Model func(R) (*Delta, error)
+	// ConcurrentPartials fetches the partial buckets beside the interior, for protocols whose origin
+	// calls may overlap; otherwise they are fetched after it.
+	ConcurrentPartials bool
 }
 
 // Outcome is a delta execution's response: the delta tier's rows, or else the object tier's or
@@ -157,10 +168,16 @@ type Outcome[R any] struct {
 // DeltaRequest describes one delta execution.
 type DeltaRequest[R any] struct {
 	// Key is the cache key for the plan's delta entry; FallbackKey marks the
-	// plan unmergeable; EmptyKey caches empty-window responses.
-	Key, FallbackKey, EmptyKey string
-	Plan                       *sqlanalyzer.QueryPlan
-	Now                        time.Time
+	// plan unmergeable.
+	Key, FallbackKey string
+	// Statement is the client's own statement.
+	Statement string
+	// Context bounds the request's partial bucket fetches; nil uses context.Background.
+	Context context.Context
+	Plan    *sqlanalyzer.QueryPlan
+	Now     time.Time
+	// StepAlignment is the request's mode; zero, off or one the plan doesn't support uses its default.
+	StepAlignment timeseries.StepAlignment
 	// RequireUpperBound proxies open-ended plans instead of running them to
 	// the present.
 	RequireUpperBound bool
@@ -198,28 +215,47 @@ func (e *Engine[R]) ExecuteObject(key string, ttl time.Duration,
 	return result.payload, result.status, nil
 }
 
-// ExecuteDelta answers from cached rows plus fetches of only the missing buckets, then stores the
-// merge; failures fall open to the object path or to the original statement
+// ExecuteDelta serves cached rows, fetching only missing buckets, plus partial edge buckets from the
+// object tier; failures fall open to the object path or the original
 func (e *Engine[R]) ExecuteDelta(req DeltaRequest[R]) (Outcome[R], cachestatus.LookupStatus, error) {
-	var none Outcome[R]
+	window, windowErr := BuildWindow(req.Plan, req.Now, req.RequireUpperBound, e.stepAlignment(req.StepAlignment))
+	if windowErr != nil {
+		return e.original(req)
+	}
+	if window.Empty {
+		return e.executeUnaligned(req)
+	}
 	lock := e.lock(req.Key)
-	defer e.unlock(req.Key, lock)
-
 	// A previous execution of this plan may have proven that its results
 	// cannot be delta-merged. The marker is keyed on the plan rather than the
 	// literal statement, because the statement's time bounds move with every
 	// request.
 	if _, blocked := e.objects.retrieve(req.FallbackKey); blocked {
+		e.unlock(req.Key, lock)
 		return e.objectFallback(req)
 	}
+	var partials *partialFetches
+	if req.Ops.ConcurrentPartials {
+		partials = e.fetchPartials(req, &window, true)
+	}
+	answer, lookup, err := e.executeInterior(req, &window)
+	// no lock is held across a partial bucket's origin round trip
+	e.unlock(req.Key, lock)
+	if err != nil || answer.Delta == nil {
+		// the response holds none of their rows, so it never waits for them
+		partials.abandon()
+		return answer, lookup, err
+	}
+	if partials == nil {
+		partials = e.fetchPartials(req, &window, false)
+	}
+	answer.Delta = e.withPartials(req, answer.Delta, partials)
+	return answer, lookup, nil
+}
 
-	window, windowErr := BuildWindow(req.Plan, req.Now, req.RequireUpperBound)
-	if windowErr != nil {
-		return e.original(req)
-	}
-	if window.Empty {
-		return e.executeEmptyDelta(req, window)
-	}
+func (e *Engine[R]) executeInterior(req DeltaRequest[R], window *Window,
+) (Outcome[R], cachestatus.LookupStatus, error) {
+	var none Outcome[R]
 	metrics.ObserveTimeseriesRetentionFactor(e.cfg.BackendName,
 		timeseries.ExtentList{window.Output}.TimestampCount(req.Plan.Step),
 		e.cfg.RetentionPoints)
@@ -354,31 +390,6 @@ func (e *Engine[R]) retain(plan *sqlanalyzer.QueryPlan, merged *Delta, all times
 
 func (d *Delta) view(e timeseries.Extent) *Delta {
 	return &Delta{Header: d.Header, DS: d.DS.View(e)}
-}
-
-func (e *Engine[R]) executeEmptyDelta(req DeltaRequest[R],
-	window Window,
-) (Outcome[R], cachestatus.LookupStatus, error) {
-	// a window with no complete bucket: the normalized statement's (typically empty) rows are cached whole
-	var none Outcome[R]
-	if req.Ops.RenderEmpty == nil {
-		e.observeRewriteFailure("render_empty_extent")
-		return e.original(req)
-	}
-	statement, err := req.Ops.RenderEmpty(window.Lower, window.Upper)
-	if err != nil {
-		e.observeRewriteFailure("render_empty_extent")
-		return e.original(req)
-	}
-	if cached, ok := e.deltas.retrieve(req.EmptyKey); ok && !cached.Marker && cached.Payload != nil {
-		return Outcome[R]{Delta: cached.Payload}, cachestatus.LookupStatusHit, nil
-	}
-	rows, err := req.Ops.Fetch(statement)
-	if err != nil {
-		return none, cachestatus.LookupStatusProxyError, err
-	}
-	e.deltas.store(req.EmptyKey, &Entry[*Delta]{Payload: rows}, e.cfg.CacheTTL)
-	return Outcome[R]{Delta: rows}, cachestatus.LookupStatusKeyMiss, nil
 }
 
 // Remove deletes the object-tier entry stored at key.

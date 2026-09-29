@@ -103,13 +103,14 @@ type deltaRunner struct {
 
 func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 	engineCfg := nativedelta.Config{
-		Protocol:        flightsqlDialect,
-		BackendName:     keyPrefix,
-		CacheClient:     cfg.CacheClient,
-		CacheTTL:        cfg.CacheTTL,
-		MaxObjectSize:   cfg.MaxObjectSize,
-		RetentionPoints: cfg.RetentionPoints,
-		VolatileWindow:  cfg.BackfillTolerance,
+		Protocol:         flightsqlDialect,
+		BackendName:      keyPrefix,
+		CacheClient:      cfg.CacheClient,
+		CacheTTL:         cfg.CacheTTL,
+		MaxObjectSize:    cfg.MaxObjectSize,
+		RetentionPoints:  cfg.RetentionPoints,
+		VolatileWindow:   cfg.BackfillTolerance,
+		PartialBucketTTL: cfg.PartialBucketTTL,
 		ObserveCacheFailure: func(reason string) {
 			observeCacheFailure(cfg.CacheClient, reason)
 		},
@@ -185,10 +186,10 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 	answer, lookupStatus, err := d.engine.ExecuteDelta(nativedelta.DeltaRequest[[]byte]{
 		Key:         baseKey,
 		FallbackKey: baseKey + ":fallback",
-		EmptyKey:    baseKey + ":empty",
-		Plan:        plan,
-		Now:         now,
-		Ops:         d.ops(ctx, s, query, plan, trq),
+		Statement:   query, StepAlignment: d.cfg.StepAlignment, Context: ctx,
+		Plan: plan,
+		Now:  now,
+		Ops:  d.ops(ctx, s, query, plan, trq),
 	})
 	// a verbatim result's row count is unknown without decoding it, so it reports none
 	d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeDelta,
@@ -202,11 +203,12 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 	return d.respond(ctx, s, answer.Delta, trq, sortKeys(plan))
 }
 
-// object tier key kinds; off keeps its own statement objects, so one stored for the longer object TTL
-// never answers it
+// object tier key kinds; off and partial buckets keep their own statement objects, so one stored for
+// another TTL never answers them
 const (
 	statementKeyKind          = ":stmt:"
 	unalignedStatementKeyKind = ":off:"
+	partialStatementKeyKind   = ":partial:"
 )
 
 // Metric label constants shared with the other native SQL protocols.
@@ -317,6 +319,15 @@ func (d *deltaRunner) ops(ctx context.Context, s *Server, query string,
 		ObjectFallback: func() ([]byte, cachestatus.LookupStatus, error) {
 			return s.objectTier(ctx, query)
 		},
+		FetchPartial: func(fetchCtx context.Context, statement string, ttl time.Duration,
+		) ([]byte, cachestatus.LookupStatus, error) {
+			return s.objectTierFor(fetchCtx, partialStatementKeyKind, statement, ttl)
+		},
+		Model: func(b []byte) (*nativedelta.Delta, error) {
+			return decodeToDelta(b, plan, trq)
+		},
+		// Flight calls share no connection, so a request's partial buckets are fetched beside its interior
+		ConcurrentPartials: true,
 	}
 }
 

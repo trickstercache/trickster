@@ -275,10 +275,15 @@ GROUP BY time
 ORDER BY time
 ```
 
-Trickster rounds the lower bound up and the upper bound down to the cadence and
-caches only complete buckets. An inclusive upper bound, such as the end of
-`BETWEEN`, also drops the bucket that contains it, because that bucket is only
-partly covered. A range with no complete bucket rounds to an empty range.
+Trickster caches only complete buckets. Under the default `step_alignment`,
+`drop`, it rounds the lower bound up and the upper bound down to the cadence,
+and an inclusive upper bound, such as the end of `BETWEEN`, also drops the
+bucket that contains it, because that bucket is only partly covered. The
+`partial`, `partial_start` and `partial_end` modes fetch those edge buckets
+from the origin over the client's own bounds, through the object cache for
+`partial_bucket_ttl`, and `truncate` answers the whole first bucket. A range
+with no complete bucket is answered with the origin's own result for the
+statement, cached as an object for `partial_bucket_ttl`.
 Grafana's strict-lower `$__unixEpochFilter` expansion remains OPC, because a
 strict lower bound does not cover the first bucket completely. Native `DATETIME`/`TIMESTAMP`, epoch-second integer,
 and the corpus's epoch-nanosecond adaptation are supported in their recorded

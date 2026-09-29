@@ -334,15 +334,6 @@ func RegisterHealthHandler(router router.Router, path string,
 		health.StatusHandler(nil, hc, backends))
 }
 
-func servedByNativeListener(conf *config.Config, o *bo.Options) bool {
-	for _, name := range o.ListenerNames {
-		if l := conf.Listeners[name]; l != nil && l.Protocol != "" && l.Protocol != listener.ProtocolHTTP {
-			return true
-		}
-	}
-	return false
-}
-
 func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 	conf *config.Config, k string, o *bo.Options, clients backends.Backends,
 	caches cache.Lookup, tracers tracing.Tracers, dryRun bool,
@@ -362,7 +353,7 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 			if err != nil {
 				return err
 			}
-			if err := backends.ValidateStepAlignment(client, o, servedByNativeListener(conf, o)); err != nil {
+			if err := backends.ValidateStepAlignment(client, o); err != nil {
 				return err
 			}
 			clients[k] = client

@@ -141,14 +141,26 @@ func newTestEngine(c trickstercache.Cache) *Engine[*payload] {
 	}, testCodec{})
 }
 
-// testRenderer renders extents as "range(start,end)".
-type testRenderer struct{ err error }
+// testRenderer renders extents as "range(start,end)" and partial buckets as "partial(label,lower,upper)",
+// with an open upper as -1.
+type testRenderer struct{ err, rangeErr error }
 
 func (r testRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	if r.err != nil {
 		return "", r.err
 	}
 	return fmt.Sprintf("range(%d,%d)", extent.Start.Unix(), extent.End.Unix()), nil
+}
+
+func (r testRenderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	if r.rangeErr != nil {
+		return "", r.rangeErr
+	}
+	upper := int64(-1)
+	if !pb.Upper.IsZero() {
+		upper = pb.Upper.Unix()
+	}
+	return fmt.Sprintf("partial(%d,%d,%d)", pb.Label.Unix(), pb.Lower.Unix(), upper), nil
 }
 
 func testPlan(lower, upper int64) *sqlanalyzer.QueryPlan {
@@ -181,12 +193,14 @@ func testOps(counts *int) DeltaOps[*payload] {
 }
 
 func testRows(statement string) *Delta {
-	// a range(start,end) statement's rows are a point per minute of the range, and any other
-	// statement's a single point, each holding the statement
+	// range(start,end) gives a point a minute, a partial bucket its label and both neighbors (a crop to
+	// the label drops them), anything else one point; each holds the statement
 	s := &dataset.Series{Header: dataset.SeriesHeader{Name: "rows"}}
 	ds := &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{s}}}}
-	var start, end int64
-	if _, err := fmt.Sscanf(statement, "range(%d,%d)", &start, &end); err != nil {
+	var start, end, label, lower, upper int64
+	if _, err := fmt.Sscanf(statement, "partial(%d,%d,%d)", &label, &lower, &upper); err == nil {
+		start, end = label-60, label+60
+	} else if _, err := fmt.Sscanf(statement, "range(%d,%d)", &start, &end); err != nil {
 		start, end = 0, 0
 	}
 	for at := start; at <= end; at += 60 {
@@ -221,7 +235,7 @@ var testNow = time.Unix(2_000_000_000, 0) // every test window has ended by then
 
 func deltaRequest(plan *sqlanalyzer.QueryPlan, ops DeltaOps[*payload]) DeltaRequest[*payload] {
 	return DeltaRequest[*payload]{
-		Key: "dpc", FallbackKey: "dpc-fallback", EmptyKey: "dpc-empty",
+		Key: "dpc", FallbackKey: "dpc-fallback", Statement: "client",
 		Plan: plan, Now: testNow, RequireUpperBound: true, Ops: ops,
 	}
 }
@@ -429,46 +443,34 @@ func TestExecuteDeltaFallbacks(t *testing.T) {
 	})
 }
 
-func TestExecuteDeltaEmptyWindow(t *testing.T) {
-	engine := newTestEngine(newTestCache())
+func TestRangeWithoutACompleteBucketIsTheOriginsAnswer(t *testing.T) {
 	counts := 0
-	ops := testOps(&counts)
-	plan := testPlan(0, 30) // no complete bucket
-
-	t.Run("no empty renderer proxies the original", func(t *testing.T) {
-		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, ops))
-		if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
-			!slices.Equal(statements(response), []string{"original"}) {
-			t.Fatalf("empty window without renderer = %v, %s, %v", statements(response), cacheStatus, err)
+	plan := testPlan(0, 30)
+	engine := newTestEngine(newTestCache())
+	response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, testOps(&counts)))
+	if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
+		!slices.Equal(statements(response), []string{"original"}) {
+		t.Fatalf("without an object tier = %v, %s, %v", statements(response), cacheStatus, err)
+	}
+	c := newTestCache()
+	engine = New(Config{
+		Protocol: "test", BackendName: "test-backend", CacheTTL: time.Minute, PartialBucketTTL: 7 * time.Second,
+		CacheClient: func() trickstercache.Cache { return c },
+	}, testCodec{})
+	ops, fetched := partialOps(engine, &counts)
+	for _, want := range []status.LookupStatus{status.LookupStatusKeyMiss, status.LookupStatusHit} {
+		response, cacheStatus, err = engine.ExecuteDelta(deltaRequest(plan, ops))
+		if err != nil || cacheStatus != want || !slices.Equal(statements(response), []string{"client"}) {
+			t.Fatalf("= %v, %s, %v; want %s", statements(response), cacheStatus, err, want)
 		}
-	})
-
-	t.Run("empty responses are cached whole", func(t *testing.T) {
-		ops.RenderEmpty = func(lower, upper time.Time) (string, error) {
-			return fmt.Sprintf("empty(%d,%d)", lower.Unix(), upper.Unix()), nil
-		}
-		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, ops))
-		if err != nil || cacheStatus != status.LookupStatusKeyMiss ||
-			!slices.Equal(statements(response), []string{"empty(0,0)"}) {
-			t.Fatalf("empty miss = %v, %s, %v", statements(response), cacheStatus, err)
-		}
-		fetches := counts
-		_, cacheStatus, err = engine.ExecuteDelta(deltaRequest(plan, ops))
-		if err != nil || cacheStatus != status.LookupStatusHit || counts != fetches {
-			t.Fatalf("empty hit = %s, %v (fetches=%d)", cacheStatus, err, counts)
-		}
-	})
-
-	t.Run("empty render failure proxies the original", func(t *testing.T) {
-		ops.RenderEmpty = func(time.Time, time.Time) (string, error) {
-			return "", errors.New("render failed")
-		}
-		response, cacheStatus, err := engine.ExecuteDelta(deltaRequest(plan, ops))
-		if err != nil || cacheStatus != status.LookupStatusProxyOnly ||
-			!slices.Equal(statements(response), []string{"original"}) {
-			t.Fatalf("empty render failure = %v, %s, %v", statements(response), cacheStatus, err)
-		}
-	})
+	}
+	// the client's own statement, whole, for the partial bucket TTL; the delta tier is never touched
+	if !slices.Equal(fetched.statements(), []string{"client"}) || c.ttls["partial:client"] != 7*time.Second {
+		t.Fatalf("fetched %v, stored for %s", fetched.statements(), c.ttls["partial:client"])
+	}
+	if _, found := engine.deltas.retrieve("dpc"); found {
+		t.Fatal("a range without a complete bucket was delta-cached")
+	}
 }
 
 func TestExecuteObject(t *testing.T) {
@@ -618,7 +620,7 @@ func TestBuildWindowBounds(t *testing.T) {
 	now := time.Unix(3600, 0)
 
 	t.Run("closed bounds normalize to cadence", func(t *testing.T) {
-		window, err := BuildWindow(testPlan(5, 185), now, true)
+		window, err := BuildWindow(testPlan(5, 185), now, true, timeseries.StepAlignmentDrop)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -629,8 +631,8 @@ func TestBuildWindowBounds(t *testing.T) {
 	})
 
 	t.Run("sub-cadence range is empty", func(t *testing.T) {
-		window, err := BuildWindow(testPlan(5, 25), now, true)
-		if err != nil || !window.Empty || !window.Lower.Equal(time.Unix(60, 0)) {
+		window, err := BuildWindow(testPlan(5, 25), now, true, timeseries.StepAlignmentDrop)
+		if err != nil || !window.Empty || !window.Output.Start.Equal(time.Unix(60, 0)) {
 			t.Fatalf("window = %+v, %v", window, err)
 		}
 	})
@@ -638,23 +640,24 @@ func TestBuildWindowBounds(t *testing.T) {
 	t.Run("open upper runs to the still-filling bucket when allowed", func(t *testing.T) {
 		plan := testPlan(0, 0)
 		plan.UpperBound = nil
-		if _, err := BuildWindow(plan, now, true); !errors.Is(err, ErrUnsupportedBounds) {
+		if _, err := BuildWindow(plan, now, true, timeseries.StepAlignmentDrop); !errors.Is(err, ErrUnsupportedBounds) {
 			t.Fatalf("required upper bound accepted an open plan: %v", err)
 		}
 		for _, now := range []time.Time{now, now.Add(30 * time.Second)} {
-			window, err := BuildWindow(plan, now, false)
-			if err != nil || !window.Output.End.Equal(time.Unix(3540, 0)) || !window.Upper.Equal(time.Unix(3600, 0)) {
+			window, err := BuildWindow(plan, now, false, timeseries.StepAlignmentDrop)
+			if err != nil || !window.Output.End.Equal(time.Unix(3540, 0)) || window.PartialCount != 0 {
 				t.Fatalf("open window at %d = %+v, %v", now.Unix(), window, err)
 			}
 		}
 	})
 
 	t.Run("buckets that have not ended are left out", func(t *testing.T) {
-		window, err := BuildWindow(testPlan(3000, 7200), now.Add(30*time.Second), true)
+		window, err := BuildWindow(testPlan(3000, 7200), now.Add(30*time.Second), true, timeseries.StepAlignmentDrop)
 		if err != nil || !window.Output.End.Equal(time.Unix(3540, 0)) {
 			t.Fatalf("window = %+v, %v", window, err)
 		}
-		if window, err = BuildWindow(testPlan(3600, 7200), now.Add(30*time.Second), true); err != nil ||
+		if window, err = BuildWindow(testPlan(3600, 7200), now.Add(30*time.Second), true,
+			timeseries.StepAlignmentDrop); err != nil ||
 			!window.Empty {
 			t.Fatalf("a window of unfinished buckets = %+v, %v", window, err)
 		}
@@ -663,10 +666,10 @@ func TestBuildWindowBounds(t *testing.T) {
 	t.Run("inclusive upper names the final bucket", func(t *testing.T) {
 		plan := testPlan(0, 0)
 		plan.UpperBound = &sqlanalyzer.Bound{Value: time.Unix(600, 0), Inclusive: true}
-		if _, err := BuildWindow(plan, now, true); !errors.Is(err, ErrUnsupportedBounds) {
+		if _, err := BuildWindow(plan, now, true, timeseries.StepAlignmentDrop); !errors.Is(err, ErrUnsupportedBounds) {
 			t.Fatalf("required exclusive upper accepted inclusive: %v", err)
 		}
-		window, err := BuildWindow(plan, now, false)
+		window, err := BuildWindow(plan, now, false, timeseries.StepAlignmentDrop)
 		if err != nil || !window.Output.End.Equal(time.Unix(600, 0)) {
 			t.Fatalf("inclusive window = %+v, %v", window, err)
 		}
@@ -681,7 +684,7 @@ func TestBuildWindowBounds(t *testing.T) {
 			testPlan(600, 0),
 		}
 		for i, plan := range invalid {
-			if _, err := BuildWindow(plan, now, false); err == nil {
+			if _, err := BuildWindow(plan, now, false, timeseries.StepAlignmentDrop); err == nil {
 				t.Fatalf("invalid plan %d accepted", i)
 			}
 		}

@@ -28,12 +28,16 @@ import (
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const (
 	deltaBenchFrom   = "2026-09-10T00:00:00Z"
 	deltaBenchMiddle = "2026-09-10T12:00:00Z"
 	deltaBenchTo     = "2026-09-11T00:00:00Z"
+	// both ends inside a bucket, so the partial modes fetch an edge bucket at each
+	deltaBenchEdgeFrom = "2026-09-10T00:02:00Z"
+	deltaBenchEdgeTo   = "2026-09-10T23:58:00Z"
 )
 
 func deltaBenchQuery(tenant int, from, to string) string {
@@ -90,6 +94,26 @@ func BenchmarkDeltaCache(b *testing.B) {
 				}
 			})
 			upstream.forget()
+			b.Run("PartialBucketsHit", func(b *testing.B) {
+				// a hit under partial, whose two edge buckets both come from the object tier
+				partial := cachedConfig(b, upstream)
+				partial.StepAlignment = timeseries.StepAlignmentPartial
+				if kind == "memory" {
+					partial.Cache = benchMemoryCache(b)
+				}
+				_, address := startServer(b, partial)
+				conn = mustDial(b, address, testClientUser, testClientPass)
+				edges := deltaBenchQuery(0, deltaBenchEdgeFrom, deltaBenchEdgeTo)
+				run(edges)
+				upstream.forget()
+				b.ReportAllocs()
+				for b.Loop() {
+					run(edges)
+				}
+				if sent := upstream.received(); len(sent) != 0 {
+					b.Fatalf("a hit reached the origin: %q", sent)
+				}
+			})
 		})
 	}
 }

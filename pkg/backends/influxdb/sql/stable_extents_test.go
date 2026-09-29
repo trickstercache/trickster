@@ -40,7 +40,7 @@ func TestOriginPhasedRefetchStartsOnBucket(t *testing.T) {
 	if plan.Phase != 30*time.Minute {
 		t.Fatalf("expected a 30m phase, got %s", plan.Phase)
 	}
-	window, err := nativedelta.BuildWindow(plan, now, false)
+	window, err := nativedelta.BuildWindow(plan, now, false, timeseries.StepAlignmentDrop)
 	if err != nil {
 		t.Fatal(err)
 	}

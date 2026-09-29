@@ -45,7 +45,7 @@ func roundedWindow(plan *sqlanalyzer.QueryPlan, now time.Time) nativedelta.Windo
 	if rawUpper.Sub(rawLower) < plan.Step || lower.After(upper) {
 		upper = lower
 	}
-	window := nativedelta.Window{Lower: lower, Upper: upper}
+	var window nativedelta.Window
 	if lower.Equal(upper) {
 		window.Output = timeseries.Extent{Start: lower, End: lower}
 		window.Empty = true
@@ -57,7 +57,7 @@ func roundedWindow(plan *sqlanalyzer.QueryPlan, now time.Time) nativedelta.Windo
 }
 
 func sameWindow(a, b nativedelta.Window) bool {
-	return a.Empty == b.Empty && a.Lower.Equal(b.Lower) && a.Upper.Equal(b.Upper) &&
+	return a.Empty == b.Empty && a.PartialCount == b.PartialCount &&
 		a.Output.Start.Equal(b.Output.Start) && a.Output.End.Equal(b.Output.End) &&
 		len(a.Cacheable) == len(b.Cacheable)
 }
@@ -78,7 +78,7 @@ func TestBuildWindowParity(t *testing.T) {
 			return
 		}
 		want := roundedWindow(got.Plan, past)
-		window, err := nativedelta.BuildWindow(got.Plan, past, requireUpper)
+		window, err := nativedelta.BuildWindow(got.Plan, past, requireUpper, timeseries.StepAlignmentDrop)
 		if err != nil {
 			return
 		}
@@ -132,7 +132,7 @@ func TestBuildWindowParity(t *testing.T) {
 	if got.Plan == nil {
 		t.Fatalf("expected a delta plan: %v", got.Err)
 	}
-	window, err := nativedelta.BuildWindow(got.Plan, now, false)
+	window, err := nativedelta.BuildWindow(got.Plan, now, false, timeseries.StepAlignmentDrop)
 	if err != nil {
 		t.Fatal(err)
 	}

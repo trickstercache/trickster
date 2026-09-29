@@ -24,14 +24,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// Window is a delta request window normalized to the plan's bucket cadence.
+// Window is a delta request window: the complete buckets it serves from the delta tier and the
+// partial buckets at its edges.
 type Window struct {
-	// Output is the inclusive-bucket extent of the client's request.
+	// Output is the inclusive-bucket extent of the complete buckets the response holds.
 	Output timeseries.Extent
 	// Cacheable is the extent list eligible for delta caching.
 	Cacheable timeseries.ExtentList
-	// Lower and Upper are the normalized half-open time bounds.
-	Lower, Upper time.Time
+	// Partials are the edge buckets fetched through the object tier and never delta-cached.
+	Partials     [2]timeseries.PartialBucket
+	PartialCount uint8
 	// Empty indicates the window contains no complete bucket.
 	Empty bool
 }
@@ -40,10 +42,10 @@ type Window struct {
 // window; callers should proxy the original statement instead.
 var ErrUnsupportedBounds = errors.New("unsupported delta request bounds")
 
-// BuildWindow plans a delta window from the plan's raw bounds, without partial or still-filling
-// buckets; a plan with no upper bound runs to now unless requireUpperBound rejects it
-func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
-	requireUpperBound bool,
+// BuildWindow plans a delta window from raw bounds under a mode, never with a still-filling complete
+// bucket; requireUpperBound rejects open plans, which otherwise run to now
+func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time, requireUpperBound bool,
+	mode timeseries.StepAlignment,
 ) (Window, error) {
 	if plan == nil || plan.Step <= 0 || plan.LowerBound == nil ||
 		!plan.LowerBound.Inclusive ||
@@ -55,19 +57,14 @@ func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 	if r.End.Before(r.Start) {
 		return Window{}, ErrUnsupportedBounds
 	}
-	p := timeseries.PlanRange(r, plan.Step, plan.Phase, timeseries.SampleModelBucket,
-		timeseries.StepAlignmentDrop, now)
+	p := timeseries.PlanRange(r, plan.Step, plan.Phase, timeseries.SampleModelBucket, mode, now)
 	if !p.Full {
 		lower := timeseries.CeilToGrid(r.Start, plan.Step, plan.Phase)
-		return Window{
-			Output: timeseries.Extent{Start: lower, End: lower},
-			Lower:  lower, Upper: lower, Empty: true,
-		}, nil
+		return Window{Output: timeseries.Extent{Start: lower, End: lower}, Empty: true}, nil
 	}
 	return Window{
-		Output:    p.Interior,
-		Cacheable: timeseries.ExtentList{p.Interior},
-		Lower:     p.Interior.Start, Upper: p.Interior.End.Add(plan.Step),
+		Output: p.Interior, Cacheable: timeseries.ExtentList{p.Interior},
+		Partials: p.Partials, PartialCount: p.PartialCount,
 	}, nil
 }
 

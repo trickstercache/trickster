@@ -110,8 +110,9 @@ protocol messages are always relayed.
 
 HTTP SQL supports GET and form-encoded POST with the default `greptimedb_v1`
 response format. A delta response retains typed schema, row ordering, NULLs
-and exact integer values. Like PostgreSQL, unaligned SQL bounds round inward
-to complete buckets before delta caching; partial edge buckets are omitted.
+and exact integer values. Like PostgreSQL, under the default `drop` step
+alignment, unaligned SQL bounds round inward to complete buckets before delta
+caching and partial edge buckets are omitted.
 Alternate formats, `limit`, unknown options and ranges with no complete bucket
 retain the original query. Rebuilt responses do not claim the origin's
 execution duration or execution metrics. The default JSON response is decoded
@@ -119,7 +120,8 @@ row by row into a DataSet, and its validated client serialization is reused.
 
 MySQL supports `DATE_BIN('1m', ts, FROM_UNIXTIME(0))` and fixed-width
 `DATE_TRUNC` buckets with verified UTC sessions, whole-second cadence and
-half-open bounds, rounded inward to complete buckets. Other bucket origins,
+half-open bounds, which the default `drop` step alignment rounds inward to
+complete buckets. Other bucket origins,
 subsecond cadence, inclusive upper bounds and ranges with no complete bucket
 use the original query instead. Timestamp results keep up to nine
 fractional digits, text groups are compared case-sensitively, and NULL ordering
