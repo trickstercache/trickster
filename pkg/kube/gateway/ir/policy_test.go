@@ -54,6 +54,9 @@ func TestPolicyOverlay(t *testing.T) {
 	require.Equal(t, []string{"b", "c"}, got.CacheKeyParams)
 	require.Equal(t, []string{"X-Tenant"}, got.CacheKeyHeaders)
 	require.Equal(t, "auth", got.AuthenticatorName)
+	require.Equal(t, "acl-a", Policy{IPACLName: "acl-a"}.Overlay(&Policy{}).IPACLName,
+		"an empty overlay keeps the class access list")
+	require.Equal(t, "acl-b", Policy{IPACLName: "acl-a"}.Overlay(&Policy{IPACLName: "acl-b"}).IPACLName)
 	require.Equal(t, "prometheus", got.Provider)
 	require.Equal(t, ResultHeaderExpose, got.ResultHeader)
 
@@ -130,7 +133,7 @@ func TestPolicyOverlayFillsEveryStringField(t *testing.T) {
 	over := &Policy{
 		Handler: "h", CacheName: "c", RoutingMode: "r", NegativeCacheName: "n", CORSMode: "m",
 		CollapsedForwarding: "cf", RewriteTarget: "/t", TracingName: "tr",
-		ReqRewriterName: "rw", AuthenticatorName: "a", HealthMode: "probe",
+		ReqRewriterName: "rw", AuthenticatorName: "a", IPACLName: "acl", HealthMode: "probe",
 		LoadBalancing: "hrw", LoadBalancingKey: "client_ip",
 		Sticky: "table", StickyKey: "host", StickySecret: "a2V5",
 		Provider: "graphite", ResultHeader: ResultHeaderHide,

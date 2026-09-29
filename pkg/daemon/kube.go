@@ -408,6 +408,7 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		Rewriters:      sets.New[string](nil),
 		Authenticators: sets.New[string](nil),
 		IPACLs:         sets.New[string](nil),
+		DefinedIPACLs:  sets.New[string](nil),
 	}
 	if conf != nil {
 		for name := range conf.Caches {
@@ -426,7 +427,11 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 			next.Authenticators.Set(name)
 		}
 		for name, def := range conf.IPACLs {
-			if def != nil && kubernetesIPACLEligible(def.Compiled) {
+			if def == nil {
+				continue
+			}
+			next.DefinedIPACLs.Set(name)
+			if kubernetesIPACLEligible(def.Compiled) {
 				next.IPACLs.Set(name)
 			}
 		}
@@ -438,7 +443,8 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.Tracers, next.Tracers) ||
 		!maps.Equal(previous.Rewriters, next.Rewriters) ||
 		!maps.Equal(previous.Authenticators, next.Authenticators) ||
-		!maps.Equal(previous.IPACLs, next.IPACLs)
+		!maps.Equal(previous.IPACLs, next.IPACLs) ||
+		!maps.Equal(previous.DefinedIPACLs, next.DefinedIPACLs)
 }
 
 // kubernetesIPACLEligible reports whether a compiled list may be named by a
