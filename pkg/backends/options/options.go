@@ -129,10 +129,9 @@ type Options struct {
 	// timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
 	// VolatileWindow is how far back from now cached data is volatile and is refetched, so that late
-	// writes to recent timestamps reach the cache. Legacy key: backfill_tolerance
+	// writes to recent timestamps reach the cache
 	VolatileWindow timeconv.Duration `yaml:"volatile_window,omitempty"`
 	// VolatileWindowPoints is VolatileWindow in query steps; when both are set, the longer applies.
-	// Legacy key: backfill_tolerance_points
 	VolatileWindowPoints int `yaml:"volatile_window_points,omitempty"`
 	// StepAlignment names what the backend does with partial buckets at the edges of a time range
 	// query; zero uses the provider's default
@@ -315,6 +314,8 @@ type Options struct {
 	retentionExplicit          bool
 	stepAlignmentExplicit      bool
 	fastForwardDisableExplicit bool
+	// set when a backend sets a volatile window key and its backfill_tolerance counterpart
+	volatileWindowConflict, volatileWindowPointsConflict bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -522,6 +523,13 @@ func (o *Options) Validate() (bool, error) {
 	if o.Provider == providers.Prometheus && (o.stepAlignmentExplicit || o.StepAlignment != 0) &&
 		(o.fastForwardDisableExplicit || o.FastForwardDisable) {
 		return false, fmt.Errorf("%w: backend %s", ErrStepAlignmentWithFastForwardDisable, o.Name)
+	}
+
+	if o.volatileWindowConflict {
+		return false, fmt.Errorf("%w: backend %s", ErrVolatileWindowWithBackfillTolerance, o.Name)
+	}
+	if o.volatileWindowPointsConflict {
+		return false, fmt.Errorf("%w: backend %s", ErrVolatileWindowPointsWithBackfillTolerancePoints, o.Name)
 	}
 
 	if o.ShardStep > 0 && o.MaxShardSizeTime > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
@@ -1086,11 +1094,19 @@ func (k renamedKeys) apply(o *Options) {
 	if k.PartialBucketTTL == nil && k.FastForwardTTL != nil {
 		o.PartialBucketTTL = *k.FastForwardTTL
 	}
-	if k.VolatileWindow == nil && k.BackfillTolerance != nil {
-		o.VolatileWindow = *k.BackfillTolerance
+	// backfill_tolerance and backfill_tolerance_points fill the volatile window keys when those are
+	// absent; setting both of a pair fails validation
+	if k.BackfillTolerance != nil {
+		if k.VolatileWindow == nil {
+			o.VolatileWindow = *k.BackfillTolerance
+		}
+		o.volatileWindowConflict = k.VolatileWindow != nil
 	}
-	if k.VolatileWindowPoints == nil && k.BackfillTolerancePoints != nil {
-		o.VolatileWindowPoints = *k.BackfillTolerancePoints
+	if k.BackfillTolerancePoints != nil {
+		if k.VolatileWindowPoints == nil {
+			o.VolatileWindowPoints = *k.BackfillTolerancePoints
+		}
+		o.volatileWindowPointsConflict = k.VolatileWindowPoints != nil
 	}
 	o.stepAlignmentExplicit = k.StepAlignment != nil
 	o.fastForwardDisableExplicit = k.FastForwardDisable != nil

@@ -87,10 +87,13 @@ func StableExtents(extents timeseries.ExtentList, step, phase time.Duration,
 	return extents.Remove(volatile, step)
 }
 
-// VolatileWindow returns a plan's backfill tolerance: the largest of the configured duration,
-// the configured points times the plan's step, and the query's requested tolerance.
+// VolatileWindow returns a plan's volatile window: the query's own when set, else the larger of
+// the configured duration and the configured points in plan steps.
 func VolatileWindow(configured time.Duration, points int, step,
 	requested time.Duration,
 ) time.Duration {
-	return max(configured, time.Duration(points)*step, requested)
+	if requested > 0 {
+		return requested
+	}
+	return max(configured, time.Duration(points)*step)
 }

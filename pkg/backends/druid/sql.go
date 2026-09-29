@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
@@ -177,6 +178,9 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 	planValue.ValueColumns = valueColumns
 	plan := &planValue
 	plan.ApplyToQuery(trq)
+	// the analyzer may read a rewritten statement, so directives come from the client's; a comment's
+	// directive wins over the same one in the context map
+	trq.Directives = directives.ParseWith(query, directives.SyntaxSQL, contextLookup(document))
 	sanitized["query"] = plan.CanonicalSQL
 	canonicalBody, _, _, err := marshalJSONObject(sanitized, nil)
 	if err != nil {
@@ -187,7 +191,7 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 	trq.ParsedQuery = sqlPlan
 	trq.Extent = plan.RequestExtent(now)
 	trq.Requested = plan.RequestedRange(now)
-	trq.BackfillTolerance = druidBackfillTolerance(r)
+	trq.VolatileWindow = druidVolatileWindow(r)
 	ro.BaseTimestampFieldName = plan.TimeColumn
 	ro.ProviderRequest = sqlPlan
 

@@ -37,6 +37,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
+// a statement asking for off itself
+const offDirective = "/* trickster-step-align:off */ "
+
 // deltaTestCache adapts the package's memCache-style store to the trickster
 // cache interface the delta engine consumes.
 type deltaTestCache struct{ inner *memCache }
@@ -192,7 +195,7 @@ func TestDeltaTierCachesByExtent(t *testing.T) {
 }
 
 func TestDeltaTierStoresOnlyRetainedStableRows(t *testing.T) {
-	// retention and the backfill tolerance trim what is cached, never the response, and the next
+	// retention and the volatile window trim what is cached, never the response, and the next
 	// request refetches exactly what was left out
 	for _, test := range []struct {
 		name    string
@@ -200,7 +203,7 @@ func TestDeltaTierStoresOnlyRetainedStableRows(t *testing.T) {
 		refetch string
 	}{
 		{"retention", func(c *DeltaConfig) { c.RetentionPoints = 5 }, "0"},
-		{"backfill tolerance", func(c *DeltaConfig) { c.BackfillTolerance = time.Since(time.Unix(300, 0)) }, "300"},
+		{"volatile window", func(c *DeltaConfig) { c.VolatileWindow = time.Since(time.Unix(300, 0)) }, "300"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			up := &fakeUpstream{executeFn: rangedUpstream(t)}
@@ -226,6 +229,12 @@ func TestDeltaTierStoresOnlyRetainedStableRows(t *testing.T) {
 }
 
 func TestDeltaTierOffAnswersTheClientsStatementFromTheObjectTier(t *testing.T) {
+	// off configured, and off asked for by a statement on a backend left at its default
+	t.Run("configured", func(t *testing.T) { offAnswersFromTheObjectTier(t, timeseries.StepAlignmentOff, "") })
+	t.Run("by directive", func(t *testing.T) { offAnswersFromTheObjectTier(t, 0, offDirective) })
+}
+
+func offAnswersFromTheObjectTier(t *testing.T, mode timeseries.StepAlignment, directive string) {
 	up := &fakeUpstream{executeFn: rangedUpstream(t)}
 	inner := newMemCache()
 	// an object TTL unlike off's, so the test sees which one stored each statement
@@ -233,10 +242,10 @@ func TestDeltaTierOffAnswersTheClientsStatementFromTheObjectTier(t *testing.T) {
 		Analyzer:      testAnalyzer,
 		CacheClient:   func() trickstercache.Cache { return deltaTestCache{inner: inner} },
 		CacheTTL:      time.Hour,
-		StepAlignment: timeseries.StepAlignmentOff,
+		StepAlignment: mode,
 	}))
 	// off the grid at both ends, so the origin's own rows start at the raw lower bound
-	first, later := fmt.Sprintf(deltaQuery, 30, 630), fmt.Sprintf(deltaQuery, 30, 660)
+	first, later := directive+fmt.Sprintf(deltaQuery, 30, 630), directive+fmt.Sprintf(deltaQuery, 30, 660)
 	for i, test := range []struct {
 		query    string
 		received []string

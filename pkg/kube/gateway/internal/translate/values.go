@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"golang.org/x/net/http/httpguts"
 )
@@ -144,6 +145,15 @@ func CollapsedForwarding(v string) (string, error) {
 			forwarding.CFNameProgressive)
 	}
 	return v, nil
+}
+
+// StepAlignment parses a step alignment mode name, in any case, into the name the configuration takes
+func StepAlignment(v string) (string, error) {
+	mode, err := timeseries.ParseStepAlignment(v)
+	if err != nil || mode == 0 {
+		return "", fmt.Errorf("must be one of %s", timeseries.StepAlignmentAll)
+	}
+	return mode.String(), nil
 }
 
 // Provider parses a time series provider name: one reached over HTTP, whose API paths the

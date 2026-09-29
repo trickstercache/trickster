@@ -345,21 +345,55 @@ func TestDeltaProxyCacheStepAlignmentGatesFastForward(t *testing.T) {
 			timeseries.StepAlignmentPartialEnd
 		step = 300 * time.Second
 	)
+	const (
+		stepDirective = " # trickster-step-align:partial_end"
+		ffDirective   = " # trickster-fast-forward:off"
+	)
 	tests := []struct {
-		name                 string
-		configured, override timeseries.StepAlignment
-		ffStatus             string
-		fallback             bool
+		name                          string
+		configured, override, allowed timeseries.StepAlignment
+		directive                     string
+		ffDisable                     bool
+		ffStatus                      string
+		fallback                      bool
 	}{
-		{"the default partial_end runs fast forward", 0, 0, status.StatusKeyMiss, false},
-		{"a configured truncate skips fast forward", timeseries.StepAlignmentTruncate, 0, statusOff, false},
+		{name: "the default partial_end runs fast forward", ffStatus: status.StatusKeyMiss},
 		{
-			"an override wins over the configured mode", timeseries.StepAlignmentTruncate,
-			timeseries.StepAlignmentPartialEnd, status.StatusKeyMiss, false,
+			name: "a configured truncate skips fast forward", configured: timeseries.StepAlignmentTruncate,
+			ffStatus: statusOff,
 		},
 		{
-			"an unsupported override keeps the default", 0, timeseries.StepAlignmentDrop,
-			status.StatusKeyMiss, true,
+			name: "an override wins over the configured mode", configured: timeseries.StepAlignmentTruncate,
+			override: timeseries.StepAlignmentPartialEnd, ffStatus: status.StatusKeyMiss,
+		},
+		{
+			name: "an unsupported override keeps the default", override: timeseries.StepAlignmentDrop,
+			ffStatus: status.StatusKeyMiss, fallback: true,
+		},
+		{
+			name: "a directive wins over the configured mode", configured: timeseries.StepAlignmentTruncate,
+			directive: stepDirective, ffStatus: status.StatusKeyMiss,
+		},
+		{
+			name: "an unsupported directive keeps the default", directive: " # trickster-step-align:drop",
+			ffStatus: status.StatusKeyMiss, fallback: true,
+		},
+		{name: "the legacy directive skips fast forward", directive: ffDirective, ffStatus: statusOff},
+		{
+			name: "a step alignment directive outranks the legacy one", directive: ffDirective + stepDirective,
+			configured: timeseries.StepAlignmentTruncate, ffStatus: status.StatusKeyMiss,
+		},
+		{
+			name: "fast_forward_disable yields to a directive", ffDisable: true,
+			configured: timeseries.StepAlignmentTruncate, directive: stepDirective, ffStatus: status.StatusKeyMiss,
+		},
+		{
+			name: "an ALB's mode wins over a directive a member lacks", override: timeseries.StepAlignmentTruncate,
+			directive: stepDirective, ffStatus: statusOff,
+		},
+		{
+			name: "a directive every ALB member supports wins over its mode", override: timeseries.StepAlignmentTruncate,
+			allowed: supported, directive: stepDirective, ffStatus: status.StatusKeyMiss,
 		},
 	}
 	for i, test := range tests {
@@ -372,7 +406,7 @@ func TestDeltaProxyCacheStepAlignmentGatesFastForward(t *testing.T) {
 			client := rsc.BackendClient.(*TestClient)
 			client.stepAlignments, client.stepAlignment = supported, timeseries.StepAlignmentPartialEnd
 			o := rsc.BackendOptions
-			o.FastForwardDisable, o.StepAlignment = false, test.configured
+			o.FastForwardDisable, o.StepAlignment = test.ffDisable, test.configured
 			fallbacks := metrics.StepAlignmentFallbacks.WithLabelValues(o.Name,
 				timeseries.StepAlignmentNameDrop, timeseries.StepAlignmentNamePartialEnd)
 			before := testutil.ToFloat64(fallbacks)
@@ -386,10 +420,12 @@ func TestDeltaProxyCacheStepAlignmentGatesFastForward(t *testing.T) {
 				u.Path = "/prometheus/api/v1/query_range"
 				u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
 					client.InstantCacheKey, client.RangeCacheKey, int(step.Seconds()),
-					now.Add(-time.Hour).Unix(), now.Unix(), queryReturnsOKNoLatency)
+					now.Add(-time.Hour).Unix(), now.Unix(), url.QueryEscape(queryReturnsOKNoLatency+test.directive))
 				req := r
 				if test.override != 0 {
-					req = r.WithContext(tctx.WithStepAlignment(r.Context(), test.override))
+					req = r.WithContext(tctx.WithStepAlignmentOverride(r.Context(), &tctx.StepAlignmentOverride{
+						Mode: test.override, Allowed: test.override | test.allowed,
+					}))
 				}
 				return serveDPC(client, req)
 			})

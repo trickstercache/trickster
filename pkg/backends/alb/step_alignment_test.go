@@ -72,6 +72,10 @@ const (
 		"every member uses truncate"
 )
 
+// the modes a Prometheus member supports
+const saPrometheusModes = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+	timeseries.StepAlignmentDrop | timeseries.StepAlignmentPartialEnd
+
 var saFactories = rt.Lookup{
 	providers.Prometheus:        prometheus.NewClient,
 	providers.Graphite:          graphite.NewClient,
@@ -300,6 +304,9 @@ func TestUserRouterAppliesItsStepAlignment(t *testing.T) {
 	serveThrough(c, context.Background())
 	require.Equal(t, []timeseries.StepAlignment{timeseries.StepAlignmentOff}, g.recorders[saLeader].seen())
 	require.False(t, c.entry == http.Handler(c.handler))
+	// a query's directive may choose any mode its targets all support
+	require.Equal(t, tctx.StepAlignmentOverride{Mode: timeseries.StepAlignmentOff, Allowed: saPrometheusModes},
+		*c.routerOverride.Load())
 }
 
 func TestTSMStepAlignmentSurvivesALeaderOutage(t *testing.T) {
@@ -401,18 +408,23 @@ func TestDiscoveredMembersFallBackToAModeTheyAllApply(t *testing.T) {
 	g.member(t, saRPC, providers.ReverseProxyCache, 0)
 	c := g.alignedALB(t, saALB, 0, &ao.Options{MechanismName: names.MechanismTSM, Pool: ao.Members(saLeader)})
 	g.start(t)
-	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentPartialEnd}, c.Pool().Alignment())
-
-	g.discover(t, c, saGraphite)
-	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentTruncate, Warning: saTruncateWarning},
+	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentPartialEnd, Allowed: saPrometheusModes},
 		c.Pool().Alignment())
+
+	// a directive may still choose any mode every member supports
+	g.discover(t, c, saGraphite)
+	require.Equal(t, pool.Alignment{
+		Mode: timeseries.StepAlignmentTruncate, Allowed: timeseries.StepAlignmentTruncate | timeseries.StepAlignmentOff,
+		Warning: saTruncateWarning,
+	}, c.Pool().Alignment())
 	require.Contains(t, serveAs(c, context.Background(), ""), saTruncateWarning)
 	require.Equal(t, []timeseries.StepAlignment{timeseries.StepAlignmentTruncate}, g.recorders[saGraphite].seen())
 
 	g.discover(t, c, saRPC)
 	require.Equal(t, pool.Alignment{Warning: saNoneWarning}, c.Pool().Alignment())
 	g.discover(t, c, "")
-	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentPartialEnd}, c.Pool().Alignment())
+	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentPartialEnd, Allowed: saPrometheusModes},
+		c.Pool().Alignment())
 }
 
 func TestPausedRequestKeepsItsPoolsAlignment(t *testing.T) {
@@ -571,7 +583,8 @@ func TestNestedALBMembersResolveByConfiguration(t *testing.T) {
 	c := g.alignedALB(t, saALB, 0, &ao.Options{MechanismName: names.MechanismTSM, Pool: ao.Members(saInner)})
 	g.start(t)
 	// a nested ALB's pool may start after this one's, so its mode comes from its members' configuration
-	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentOff}, c.Pool().Alignment())
+	require.Equal(t, pool.Alignment{Mode: timeseries.StepAlignmentOff, Allowed: saPrometheusModes},
+		c.Pool().Alignment())
 }
 
 func TestResolveStepAlignment(t *testing.T) {

@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -30,7 +31,9 @@ func TestPoolsCarryTheirAlignment(t *testing.T) {
 	st := &healthcheck.Status{}
 	st.Set(healthcheck.StatusPassing)
 	targets := Targets{NewTarget(http.NotFoundHandler(), st, nil)}
-	want := Alignment{Mode: timeseries.StepAlignmentTruncate, Warning: "w"}
+	want := Alignment{
+		Mode: timeseries.StepAlignmentTruncate, Allowed: timeseries.StepAlignmentAll, Warning: "w",
+	}
 	aligned := NewAligned(targets, 0, want)
 	defer aligned.Stop()
 	plain := New(targets, 0)
@@ -38,11 +41,16 @@ func TestPoolsCarryTheirAlignment(t *testing.T) {
 	if aligned.Alignment() != want || plain.Alignment() != (Alignment{}) {
 		t.Fatalf("got %+v and %+v", aligned.Alignment(), plain.Alignment())
 	}
+	override := aligned.StepAlignmentOverride()
+	if override == nil || *override != (tctx.StepAlignmentOverride{Mode: want.Mode, Allowed: want.Allowed}) ||
+		plain.StepAlignmentOverride() != nil {
+		t.Fatalf("overrides %+v and %+v", override, plain.StepAlignmentOverride())
+	}
 	// a pick reaches the alignment of the very pool it was made from
 	bal := lb.NewBalancer(rr.New(), lb.BalancerOptions{Pool: aligned.Core()})
 	pk, ok := bal.Pick(lb.Flow{})
-	if !ok || ModeOf(pk) != want.Mode {
-		t.Fatalf("pick mode: %v %s", ok, ModeOf(pk))
+	if !ok || OverrideOf(pk) != override {
+		t.Fatalf("pick override: %v %v", ok, OverrideOf(pk))
 	}
 	// a core pool that no Pool built has none
 	foreign, err := lb.NewPool([]*lb.Member{lb.NewMember(lb.MemberOptions{Name: "m"})}, 0,
@@ -52,10 +60,10 @@ func TestPoolsCarryTheirAlignment(t *testing.T) {
 	}
 	defer foreign.Stop()
 	bal.SetPool(foreign)
-	if pk, ok = bal.Pick(lb.Flow{}); !ok || ModeOf(pk) != 0 {
-		t.Fatalf("foreign pick mode: %v %s", ok, ModeOf(pk))
+	if pk, ok = bal.Pick(lb.Flow{}); !ok || OverrideOf(pk) != nil {
+		t.Fatalf("foreign pick override: %v %v", ok, OverrideOf(pk))
 	}
-	if ModeOf(lb.Pick{}) != 0 {
+	if OverrideOf(lb.Pick{}) != nil {
 		t.Fatal("the zero pick has no mode")
 	}
 }

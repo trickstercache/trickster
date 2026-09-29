@@ -160,12 +160,12 @@ func (s *session) cacheKey(analysis sqlanalyzer.Analysis, sql string) string {
 	// derives the key for an analyzed statement in this session. Every
 	// field is length-prefixed, so no two distinct identities can collide.
 	if analysis.Mode == sqlanalyzer.CacheModeDelta && analysis.Plan != nil {
-		return s.identityKey(cacheEngineDelta, analysis.Plan.CanonicalSQL, analysis.Plan.IdentitySuffix)
+		return s.identityKey(cacheEngineDelta, analysis.Plan.CanonicalSQL)
 	}
-	return s.identityKey(cacheEngineObject, sql, "")
+	return s.identityKey(cacheEngineObject, sql)
 }
 
-func (s *session) identityKey(engine, statement, suffix string) string {
+func (s *session) identityKey(engine, statement string) string {
 	config := &s.server.config
 	var identity strings.Builder
 	identity.WriteByte(cacheIdentityVersion)
@@ -175,7 +175,8 @@ func (s *session) identityKey(engine, statement, suffix string) string {
 	identity.WriteString(s.tracker.sessionIdentity())
 	appendIdentityField(&identity, engine)
 	appendIdentityField(&identity, statement)
-	appendIdentityField(&identity, suffix)
+	// a retired field that once held directives, which keys no longer do; it stays empty so keys don't change
+	appendIdentityField(&identity, "")
 	return strings.Join([]string{
 		config.BackendName, config.CacheKeyPrefix, cacheKeyProtocol, engine, checksum.Checksum(identity.String()),
 	}, cacheKeySeparator)

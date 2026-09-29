@@ -149,7 +149,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
-	r = mech.Align(r, pool.ModeOf(pk))
+	r = mech.Align(r, pool.OverrideOf(pk))
 	// dispatch, written out: this is every request's path, and the call would not be inlined
 	switch {
 	case !h.tracked:
@@ -222,7 +222,7 @@ func (h *handler) serveSticky(w http.ResponseWriter, r *http.Request, flow lb.Fl
 		}
 		inner = t.Picker()
 	}
-	r = mech.Align(r, pool.ModeOf(pk))
+	r = mech.Align(r, pool.OverrideOf(pk))
 	if inner != nil {
 		// the member is an ALB, which picks the session's next level
 		var ctx context.Context
@@ -241,7 +241,7 @@ func (h *handler) serveFollowing(w http.ResponseWriter, r *http.Request, flow lb
 	if !ok {
 		return
 	}
-	h.dispatch(pk, t.Handler(), w, mech.Align(r, pool.ModeOf(pk)))
+	h.dispatch(pk, t.Handler(), w, mech.Align(r, pool.OverrideOf(pk)))
 }
 
 // pickPinned picks for the session's level, honoring an eligible pin; when it cannot, it answers

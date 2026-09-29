@@ -22,8 +22,6 @@ import (
 	"encoding/json"
 	"maps"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -78,8 +76,10 @@ type TimeRangeQuery struct {
 	StepNS int64 `msg:"step"`
 	// PolicyStepNS is the nanosecond representation for PolicyStep, required for MsgPack.
 	PolicyStepNS int64 `msg:"policy_step"`
-	// BackfillTolerance can be updated to override the overall backfill tolerance per query
-	BackfillTolerance time.Duration `msg:"-"`
+	// VolatileWindow, when set, replaces the backend's volatile window for this query
+	VolatileWindow time.Duration `msg:"-"`
+	// Directives are the trickster-* directives in the query's comments
+	Directives Directives `msg:"-"`
 	// RecordLimit is the LIMIT value of the query
 	RecordLimit int `msg:"rl"`
 	// TimestampDefinition sets the definition for the Timestamp column in the in the timeseries based on the query
@@ -92,6 +92,9 @@ type TimeRangeQuery struct {
 	OriginalBody []byte `msg:"-"`
 	// CacheKeyElements contains parts of the request that are used to derive a Cache Key
 	CacheKeyElements map[string]string `msg:"cke"`
+	// KeyParamValues replace same-named request parameters in the cache key, as when a provider takes
+	// its directives out of a statement; a request without them keys as before
+	KeyParamValues map[string]string `msg:"-"`
 	// Ordering carries result-column sort terms needed when cached parts are
 	// rebuilt into a response. It is request-scoped and is not cached.
 	Ordering []OrderTerm `msg:"-"`
@@ -123,6 +126,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		IsOffset:            trq.IsOffset,
 		TimestampDefinition: trq.TimestampDefinition,
 		ParsedQuery:         trq.ParsedQuery,
+		Directives:          trq.Directives,
 	}
 
 	if trq.TagFieldDefintions != nil {
@@ -141,6 +145,10 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 
 	if len(trq.CacheKeyElements) > 0 {
 		t.CacheKeyElements = maps.Clone(trq.CacheKeyElements)
+	}
+
+	if len(trq.KeyParamValues) > 0 {
+		t.KeyParamValues = maps.Clone(trq.KeyParamValues)
 	}
 
 	if len(trq.Ordering) > 0 {
@@ -198,13 +206,13 @@ func (trq *TimeRangeQuery) String() string {
 	return string(b)
 }
 
-// GetBackfillTolerance will return the backfill tolerance for the query based on the provided
-// defaults, and any query-specific tolerance directives included in the query comments
-func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) time.Duration {
-	if trq.BackfillTolerance > 0 {
-		return trq.BackfillTolerance
+// GetVolatileWindow returns the query's volatile window: its own when set, else the larger of the
+// backend's duration and its points in query steps
+func (trq *TimeRangeQuery) GetVolatileWindow(def time.Duration, points int) time.Duration {
+	if trq.VolatileWindow > 0 {
+		return trq.VolatileWindow
 	}
-	if trq.BackfillTolerance < 0 {
+	if trq.VolatileWindow < 0 {
 		return 0
 	}
 
@@ -222,26 +230,9 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 func (trq *TimeRangeQuery) Size() int {
 	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
 		urls.Size(trq.TemplateURL) + 20 + // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1 SampleModel=1
-		51 + 2 + 150 + 1 // Requested=51 StepAlignments=1 StepAlignment=1 Partials=2*75 PartialCount=1
+		51 + 2 + 150 + 1 + 10 // Requested=51 StepAlignments=1 StepAlignment=1 Partials=2*75 PartialCount=1 Directives=10
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}
 	return size
-}
-
-// ExtractBackfillTolerance will look for the BackfillToleranceFlag in the provided string
-// and return the BackfillTolerance value if present
-func (trq *TimeRangeQuery) ExtractBackfillTolerance(input string) {
-	if x := strings.Index(input, BackfillToleranceFlag); x > 1 {
-		x += 29
-		y := x
-		for ; y < len(input); y++ {
-			if input[y] < 48 || input[y] > 57 {
-				break
-			}
-		}
-		if i, err := strconv.Atoi(input[x:y]); err == nil {
-			trq.BackfillTolerance = time.Second * time.Duration(i)
-		}
-	}
 }

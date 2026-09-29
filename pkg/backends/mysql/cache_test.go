@@ -388,8 +388,7 @@ func TestCacheIdentityIsolationAndCanonicalization(t *testing.T) {
 		session := &upstreamSession{database: database, timeZone: timeZone}
 		connection := &vtmysql.Conn{User: user}
 		if analysis.Plan != nil {
-			return h.queryCacheKey(connection, session, "dpc",
-				analysis.Plan.CanonicalSQL, analysis.Plan.IdentitySuffix)
+			return h.planCacheKey(connection, session, "dpc", analysis.Plan)
 		}
 		if analysis.Mode != sqlanalyzer.CacheModeObject {
 			tb.Fatalf("Analyze(%q): mode=%s reason=%s err=%v", query,

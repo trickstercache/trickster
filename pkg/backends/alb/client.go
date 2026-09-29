@@ -49,6 +49,7 @@ import (
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
@@ -99,8 +100,8 @@ type Client struct {
 	flows     atomic.Pointer[sticky.Flows]
 	flowsOnce sync.Once
 
-	// routerMode is a user router's step alignment mode, which it has no pool to carry
-	routerMode timeseries.StepAlignment
+	// routerOverride is a user router's step alignment, which it has no pool to carry
+	routerOverride atomic.Pointer[tctx.StepAlignmentOverride]
 	// staticAlignments profiles the configured members by name, as nested ALBs resolve only by config
 	staticAlignments map[string]memberAlignment
 	// alignmentWarning dedupes the step alignment fallback warning across swaps
@@ -196,7 +197,8 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		}
 		c.handler, c.entry = m, m
 		if _, isUR := m.(*ur.Handler); isUR && o.StepAlignment != 0 {
-			c.routerMode = o.StepAlignment
+			// the modes its targets all support are known once they are loaded
+			c.routerOverride.Store(&tctx.StepAlignmentOverride{Mode: o.StepAlignment, Allowed: o.StepAlignment})
 			c.entry = http.HandlerFunc(c.serveRouted)
 		}
 		if o.ALBOptions.PropagateHealth {
@@ -709,6 +711,10 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	h, ok := c.handler.(*ur.Handler)
 	if !ok {
 		return nil
+	}
+	if cur := c.routerOverride.Load(); cur != nil {
+		members := alignmentsOf(memberNames(conf.ALBOptions), clients, sets.New([]string{c.Name()}))
+		c.routerOverride.Store(&tctx.StepAlignmentOverride{Mode: cur.Mode, Allowed: allowedStepAlignments(members)})
 	}
 	if conf.AuthOptions != nil && conf.AuthOptions.Authenticator != nil {
 		// credential replacement is only allowed if users will be positively

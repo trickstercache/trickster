@@ -133,13 +133,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	var bf time.Duration
 	res := request.GetResources(r)
 	if res == nil {
-		// 60-second default backfill tolerance for ClickHouse
+		// 60-second default volatile window for ClickHouse
 		bf = time.Minute
 	} else {
 		bf = time.Duration(res.BackendOptions.VolatileWindow)
 	}
-	if trq.BackfillTolerance == 0 {
-		trq.BackfillTolerance = bf
+	if trq.VolatileWindow == 0 {
+		trq.VolatileWindow = bf
 	}
 	trq.TemplateURL = urls.Clone(r.URL)
 

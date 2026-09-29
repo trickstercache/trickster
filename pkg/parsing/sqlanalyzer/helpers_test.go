@@ -151,8 +151,9 @@ func TestApplyToQuery(t *testing.T) {
 		TimeColumn:   "ts", OutputColumn: "t",
 		Step: time.Minute, Phase: 4 * 24 * time.Hour,
 		OutputUnit: timeseries.DateTimeUnixSecs, InputUnit: timeseries.DateTimeUnixMilli,
-		GroupColumns: []string{"host", "region"}, BackfillTolerance: 30 * time.Second,
-		Ordering: []OrderTerm{{Column: "host"}, {Column: "t", Descending: true}},
+		GroupColumns: []string{"host", "region"},
+		Directives:   timeseries.Directives{VolatileWindow: 30 * time.Second},
+		Ordering:     []OrderTerm{{Column: "host"}, {Column: "t", Descending: true}},
 	}
 	trq := NewTimeRangeQuery("SELECT raw")
 	plan.ApplyToQuery(trq)
@@ -160,7 +161,7 @@ func TestApplyToQuery(t *testing.T) {
 		t.Fatalf("canonical not applied: %+v", trq)
 	}
 	if trq.Step != time.Minute || trq.StepNS != time.Minute.Nanoseconds() || trq.Phase != plan.Phase ||
-		trq.BackfillTolerance != plan.BackfillTolerance {
+		trq.Directives != plan.Directives {
 		t.Fatalf("cadence not applied: %+v", trq)
 	}
 	if trq.SampleModel != timeseries.SampleModelBucket {

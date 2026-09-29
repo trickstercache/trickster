@@ -144,8 +144,7 @@ func TestParseTimeRangeQuery(t *testing.T) {
 func TestParseTimeRangeQueryCanonicalizesMatchers(t *testing.T) {
 	first := sampleReadRequest(100, 200, 15)
 	second := sampleReadRequest(300, 400, 30)
-	second.Queries[0].Matchers[0], second.Queries[0].Matchers[1] =
-		second.Queries[0].Matchers[1], second.Queries[0].Matchers[0]
+	second.Queries[0].Matchers[0], second.Queries[0].Matchers[1] = second.Queries[0].Matchers[1], second.Queries[0].Matchers[0]
 
 	trq1, _, _, err := ParseTimeRangeQuery(newReadRequest(t, encodeReadRequest(t, first)))
 	if err != nil {
@@ -226,7 +225,7 @@ func TestParseTimeRangeQueryPointPolicyFallbacks(t *testing.T) {
 			step:    15_000,
 			want:    errPointSharding,
 		},
-		"backfill points without hints": {
+		"volatile window points without hints": {
 			options: &bo.Options{VolatileWindowPoints: 2},
 			want:    errPointPolicyStep,
 		},

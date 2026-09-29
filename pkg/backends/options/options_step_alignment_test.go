@@ -44,17 +44,6 @@ func TestRenamedKeys(t *testing.T) {
 			timeconv.Duration(20 * time.Second), timeconv.Duration(30 * time.Second),
 			timeconv.Duration(DefaultPartialBucketTTL),
 		},
-		{
-			"volatile_window", "backfill_tolerance", "40s", "50s",
-			func(o *Options) any { return o.VolatileWindow },
-			timeconv.Duration(40 * time.Second), timeconv.Duration(50 * time.Second),
-			timeconv.Duration(DefaultVolatileWindow),
-		},
-		{
-			"volatile_window_points", "backfill_tolerance_points", "3", "4",
-			func(o *Options) any { return o.VolatileWindowPoints },
-			3, 4, DefaultVolatileWindowPoints,
-		},
 	}
 	for _, f := range fields {
 		cases := []struct {
@@ -76,36 +65,17 @@ func TestRenamedKeys(t *testing.T) {
 		}
 	}
 
-	t.Run("each pair resolves on its own", func(t *testing.T) {
-		o, err := fromYAML(`
-backends:
-  test:
-    provider: clickhouse
-    volatile_window: 40s
-    backfill_tolerance_points: 4
-`, "test")
-		require.NoError(t, err)
-		require.Equal(t, timeconv.Duration(40*time.Second), o.VolatileWindow)
-		require.Equal(t, 4, o.VolatileWindowPoints)
-	})
-
 	t.Run("dumps emit only the new keys", func(t *testing.T) {
 		o, err := fromYAML(`
 backends:
   test:
     provider: clickhouse
     fastforward_ttl: 30s
-    backfill_tolerance: 50s
-    backfill_tolerance_points: 4
 `, "test")
 		require.NoError(t, err)
 		out := o.ToYAML()
-		for _, key := range []string{"fastforward_ttl", "backfill_tolerance"} {
-			require.NotContains(t, out, key)
-		}
-		for _, key := range []string{"partial_bucket_ttl: 30s", "volatile_window: 50s", "volatile_window_points: 4"} {
-			require.Contains(t, out, key)
-		}
+		require.NotContains(t, out, "fastforward_ttl")
+		require.Contains(t, out, "partial_bucket_ttl: 30s")
 	})
 }
 
@@ -172,6 +142,57 @@ func TestValidateStepAlignmentWithFastForwardDisable(t *testing.T) {
 		_, err := o.Validate()
 		require.ErrorIs(t, err, ErrStepAlignmentWithFastForwardDisable)
 	})
+}
+
+func TestVolatileWindowFallbackKeys(t *testing.T) {
+	const base = "backends:\n  test:\n    provider: clickhouse\n    origin_url: http://127.0.0.1\n"
+	for _, pair := range []struct {
+		key, fallback, val, fallbackVal string
+		get                             func(*Options) any
+		want, wantFallback, def         any
+		conflict                        error
+	}{
+		{
+			"volatile_window", "backfill_tolerance", "40s", "50s",
+			func(o *Options) any { return o.VolatileWindow },
+			timeconv.Duration(40 * time.Second), timeconv.Duration(50 * time.Second),
+			timeconv.Duration(DefaultVolatileWindow), ErrVolatileWindowWithBackfillTolerance,
+		},
+		{
+			"volatile_window_points", "backfill_tolerance_points", "3", "4",
+			func(o *Options) any { return o.VolatileWindowPoints },
+			3, 4, DefaultVolatileWindowPoints, ErrVolatileWindowPointsWithBackfillTolerancePoints,
+		},
+	} {
+		for _, test := range []struct {
+			name, keys string
+			want       any
+			err        error
+		}{
+			{"its own key", "    " + pair.key + ": " + pair.val + "\n", pair.want, nil},
+			{"the fallback key", "    " + pair.fallback + ": " + pair.fallbackVal + "\n", pair.wantFallback, nil},
+			{"neither key", "", pair.def, nil},
+			{
+				"both keys", "    " + pair.fallback + ": " + pair.fallbackVal + "\n    " + pair.key + ": " + pair.val + "\n",
+				pair.want, pair.conflict,
+			},
+		} {
+			t.Run(pair.key+"/"+test.name, func(t *testing.T) {
+				o, err := fromYAML(base+test.keys, "test")
+				require.NoError(t, err)
+				require.Equal(t, test.want, pair.get(o))
+				o.Name = "test"
+				_, err = o.Validate()
+				if test.err != nil {
+					require.ErrorIs(t, err, test.err)
+					return
+				}
+				require.NoError(t, err)
+				// a dump names only the volatile window keys
+				require.NotContains(t, o.ToYAML(), pair.fallback)
+			})
+		}
+	}
 }
 
 func TestStepAlignmentErrors(t *testing.T) {

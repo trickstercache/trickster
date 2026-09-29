@@ -53,10 +53,30 @@ const (
 	keyElementValueSeparator = "&"
 )
 
+func applyDirectives(trq *timeseries.TimeRangeQuery, rlo *timeseries.RequestOptions) {
+	// a query's volatile window replaces its provider's; the legacy Fast Forward directive applies
+	// unless a step alignment directive chose the mode, which then decides Fast Forward
+	d := trq.Directives
+	if d.VolatileWindow > 0 {
+		trq.VolatileWindow = d.VolatileWindow
+	}
+	if rlo != nil && d.FastForwardDisable && d.StepAlignment == 0 {
+		rlo.FastForwardDisable = true
+	}
+}
+
 func resolveStepAlignment(ctx context.Context, o *bo.Options, trq *timeseries.TimeRangeQuery,
 	tr *tracing.Tracer, span trace.Span,
 ) {
-	if unsupported := trq.ResolveStepAlignment(tctx.StepAlignment(ctx), o.StepAlignment); unsupported != 0 {
+	// an ALB's mode, unless the query's directive names one all its members support; else the
+	// directive, the backend's mode and the query's default, in that order
+	directive := trq.Directives.StepAlignment
+	unsupported := trq.ResolveStepAlignment(tctx.StepAlignmentOverrideOf(ctx).Requested(directive),
+		o.StepAlignment)
+	if unsupported == 0 && directive != 0 && trq.StepAlignment != directive {
+		unsupported = directive
+	}
+	if unsupported != 0 {
 		metrics.StepAlignmentFallbacks.WithLabelValues(o.Name, unsupported.String(),
 			trq.StepAlignment.String()).Inc()
 		logger.Debug("step alignment mode is not supported by the query; using its default",

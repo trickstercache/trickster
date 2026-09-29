@@ -265,6 +265,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		DoProxy(w, r, true)
 		return
 	}
+	applyDirectives(trq, rlo)
 	resolveStepAlignment(ctx, o, trq, rsc.Tracer, span)
 	if trq.StepAlignment == timeseries.StepAlignmentOff {
 		serveUnaligned(w, r, rsc, trq, rlo, modeler, timeseries.StepAlignmentOffTTL)
@@ -291,16 +292,20 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	var cacheStatus status.LookupStatus
 
 	pr := newProxyRequest(r, w)
-	// Fast Forward is the live end of partial_end, so a resolved mode with no partial end skips it
-	if _, end := trq.StepAlignment.Edges(); trq.StepAlignment != 0 && end != timeseries.EdgePartial {
+	// Fast Forward is partial_end's live end, so a resolved mode decides it; fast_forward_disable, which
+	// sets Prometheus's default mode, decides it only when no mode resolved
+	if trq.StepAlignment != 0 {
+		if _, end := trq.StepAlignment.Edges(); end != timeseries.EdgePartial {
+			rlo.FastForwardDisable = true
+		}
+	} else if o.FastForwardDisable {
 		rlo.FastForwardDisable = true
 	}
-	rlo.FastForwardDisable = o.FastForwardDisable || rlo.FastForwardDisable
 	// providers whose marshaling depends on parameters outside the cache key
 	// must not share one pre-marshaled body across singleflight waiters
 	marshalVaries := rlo.MarshalVariesByRequest
-	// bfs is the start of the backfill tolerance window, on the query's grid
-	bt := trq.GetBackfillTolerance(time.Duration(o.VolatileWindow), o.VolatileWindowPoints)
+	// bfs is the start of the volatile window window, on the query's grid
+	bt := trq.GetVolatileWindow(time.Duration(o.VolatileWindow), o.VolatileWindowPoints)
 	bfs := timeseries.FloorToGrid(now.Add(-bt), trq.Step, trq.Phase)
 
 	OldestRetainedTimestamp := time.Time{}
@@ -439,10 +444,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			if cacheStatus == status.LookupStatusPartialHit {
 				missRanges = gridExtents(cts.Extents(), rsc).CalculateDeltas(
 					timeseries.ExtentList{trq.Extent}, trq.Step)
-				// this is the backfill part of backfill tolerance. if there are any volatile
-				// ranges in the timeseries, this determines if any fall within the client's
-				// requested range and ensures they are re-requested. this only happens if
-				// the request is already a phit
+				// this refetches the volatile window: volatile ranges within the client's range are
+				// re-requested, which only happens when the request is already a phit
 				if bt > 0 && len(missRanges) > 0 && len(vr) > 0 {
 					// this checks the timeseries's volatile ranges for any overlap with
 					// the request extent, and adds those to the missRanges to refresh
@@ -503,19 +506,19 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
-			// this handles the tolerance part of backfill tolerance, by adding new tolerable ranges to
-			// the timeseries's volatile list, and removing those that no longer tolerate backfill
+			// this maintains the volatile window, by adding newly volatile ranges to
+			// the timeseries's volatile list, and removing those that are no longer volatile
 			if bt > 0 && cacheStatus != status.LookupStatusHit {
 				var shouldCompress bool
 				ve := cts.VolatileExtents()
-				// first, remove those that are now too old to tolerate backfill.
+				// first, remove those that are now too old to be volatile.
 				if len(cvr) > 0 {
 					// this updates the timeseries's volatile list to remove anything just fetched that is
-					// older than the current backfill tolerance timestamp; so it is now immutable in cache
+					// older than the start of the volatile window; so it is now immutable in cache
 					ve = ve.Remove(cvr, trq.Step)
 					shouldCompress = true
 				}
-				// now add in any new time ranges that should tolerate backfill
+				// now add in any new time ranges that are volatile
 				var adds timeseries.Extent
 				if trq.Extent.End.After(bfs) {
 					adds.End = trq.Extent.End
@@ -549,7 +552,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			}
 
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
-			// Backfill Tolerance before storing to cache
+			// Volatile Window before storing to cache
 			if cacheStatus != status.LookupStatusHit {
 				// a bucket still aggregating is served but never cached, so only complete
 				// buckets reach the cache

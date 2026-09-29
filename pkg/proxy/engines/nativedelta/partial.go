@@ -42,6 +42,14 @@ var (
 	errPartialColumns     = errors.New("partial bucket columns differ from the response's")
 )
 
+// RequestStepAlignment returns the mode plan's statement names in a directive, else configured
+func RequestStepAlignment(configured timeseries.StepAlignment, plan *sqlanalyzer.QueryPlan) timeseries.StepAlignment {
+	if plan != nil && plan.Directives.StepAlignment != 0 {
+		return plan.Directives.StepAlignment
+	}
+	return configured
+}
+
 func (e *Engine[R]) stepAlignment(requested timeseries.StepAlignment) timeseries.StepAlignment {
 	// off never reaches the engine: each listener answers it from its object tier
 	if requested == 0 {
@@ -95,9 +103,14 @@ func requestContext[R any](req DeltaRequest[R]) context.Context {
 }
 
 func (e *Engine[R]) fetchPartials(req DeltaRequest[R], window *Window, concurrent bool) *partialFetches {
+	// startPartials' goroutines move req to the heap on entry, which a window without partials never pays
 	if window.PartialCount == 0 {
 		return nil
 	}
+	return e.startPartials(req, window, concurrent)
+}
+
+func (e *Engine[R]) startPartials(req DeltaRequest[R], window *Window, concurrent bool) *partialFetches {
 	ctx, cancel := context.WithCancel(requestContext(req))
 	pf := &partialFetches{count: int(window.PartialCount), cancel: cancel}
 	for i := range pf.count {

@@ -14,12 +14,12 @@ Usage: `go_goroutines{job="trickster"}  # trickster-fast-forward:off`
 
 Notes: This can only be used to disable fast forward. A value of `on` will have no effect.
 
-### Backfill Tolerance
+### Volatile Window
 
-Instruction `trickster-backfill-tolerance`
+Instruction `trickster-volatile-window`
 
 Supported for: All time series backends
 
-Usage: `SELECT time, count(*) FROM table  # trickster-backfill-tolerance:120`
+Usage: `SELECT time, count(*) FROM table  -- trickster-volatile-window:120`
 
-Notes: This overrides the backend's `volatile_window` for this query with the specified value (in seconds). Only integers are accepted.
+Notes: This overrides the backend's `volatile_window` for this query with the specified value, in whole seconds or as a duration such as `90s`.

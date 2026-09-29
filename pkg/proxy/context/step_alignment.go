@@ -22,17 +22,44 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// WithStepAlignment returns ctx carrying a step alignment mode that overrides the backend's own, so
-// an ALB can apply one mode to every pool member
-func WithStepAlignment(ctx context.Context, mode timeseries.StepAlignment) context.Context {
-	return context.WithValue(ctx, stepAlignmentKey, mode)
+// StepAlignmentOverride is the step alignment an ALB applies to its pool members: Mode, unless a
+// query's directive names one of Allowed, the modes every member supports
+type StepAlignmentOverride struct {
+	Mode, Allowed timeseries.StepAlignment
 }
 
-// StepAlignment returns the step alignment mode ctx carries, or zero when it carries none
-func StepAlignment(ctx context.Context) timeseries.StepAlignment {
-	if ctx == nil {
-		return 0
+// Requested returns the mode a member resolves for a query whose directive names directive (zero for
+// none): the directive when o is nil or allows it, else o's Mode
+func (o *StepAlignmentOverride) Requested(directive timeseries.StepAlignment) timeseries.StepAlignment {
+	if o == nil || o.Mode == 0 || (directive != 0 && o.Allowed&directive != 0) {
+		return directive
 	}
-	mode, _ := ctx.Value(stepAlignmentKey).(timeseries.StepAlignment)
-	return mode
+	return o.Mode
+}
+
+// WithStepAlignmentOverride returns ctx carrying o, so an ALB can apply one mode to every pool member
+func WithStepAlignmentOverride(ctx context.Context, o *StepAlignmentOverride) context.Context {
+	return context.WithValue(ctx, stepAlignmentKey, o)
+}
+
+// WithStepAlignment returns ctx carrying mode as an override that only a directive naming mode matches
+func WithStepAlignment(ctx context.Context, mode timeseries.StepAlignment) context.Context {
+	return WithStepAlignmentOverride(ctx, &StepAlignmentOverride{Mode: mode, Allowed: mode})
+}
+
+// StepAlignmentOverrideOf returns the override ctx carries, or nil when it carries none
+func StepAlignmentOverrideOf(ctx context.Context) *StepAlignmentOverride {
+	if ctx == nil {
+		return nil
+	}
+	o, _ := ctx.Value(stepAlignmentKey).(*StepAlignmentOverride)
+	return o
+}
+
+// StepAlignment returns the mode ctx's override applies, or zero when it carries none
+func StepAlignment(ctx context.Context) timeseries.StepAlignment {
+	if o := StepAlignmentOverrideOf(ctx); o != nil {
+		return o.Mode
+	}
+	return 0
 }

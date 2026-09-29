@@ -377,7 +377,7 @@ func (e *Engine[R]) retain(plan *sqlanalyzer.QueryPlan, merged *Delta, all times
 		rows, extents = kept, all.Crop(timeseries.Extent{Start: oldest, End: all[len(all)-1].End})
 	}
 	window := VolatileWindow(e.cfg.VolatileWindow, e.cfg.VolatileWindowPoints, plan.Step,
-		plan.BackfillTolerance)
+		plan.Directives.VolatileWindow)
 	stable := StableExtents(extents, plan.Step, plan.Phase, window, now)
 	if len(stable) == 0 {
 		// an entry with no coverage keeps the header but no rows

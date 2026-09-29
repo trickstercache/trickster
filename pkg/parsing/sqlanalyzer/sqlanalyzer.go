@@ -174,12 +174,9 @@ type QueryPlan struct {
 	// time-series values. Dialect adapters validate expressions statically and
 	// may validate concrete result types when rows arrive.
 	ValueColumns []string
-	// BackfillTolerance is an optional normalized query directive. Zero uses
-	// backend defaults.
-	BackfillTolerance time.Duration
-	// IdentitySuffix contains normalized result- or cache-policy-affecting
-	// directives that are intentionally kept outside executable SQL.
-	IdentitySuffix string
+	// Directives are the trickster-* directives in the statement's comments. They change how a plan is
+	// served, never what a bucket holds, so they aren't part of its identity.
+	Directives timeseries.Directives
 	// Ordering carries the statement's ORDER BY terms, resolved to result
 	// column names, so a response rebuilt from merged cache parts is sorted the
 	// way the statement asked. Nil means the statement imposed no ordering and

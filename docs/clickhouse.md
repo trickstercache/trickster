@@ -206,7 +206,7 @@ Trickster exposes a `/ping` endpoint that returns a health check response, match
 
 Trickster will always align the calculated time range to the step size, so small variations in the time range will still result in actual queries for the entire time "bucket". In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket or within the configured `volatile_window` (whichever is greater).
 
-Per-query behavior can be adjusted with comment directives such as `trickster-backfill-tolerance`; see [Per-Query Instructions](./per-query-instructions.md).
+Per-query behavior can be adjusted with comment directives such as `trickster-volatile-window`; see [Per-Query Instructions](./per-query-instructions.md).
 
 ## Observability
 

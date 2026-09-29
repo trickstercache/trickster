@@ -74,6 +74,18 @@ func resolveStepAlignment(configured timeseries.StepAlignment, leader bool,
 	return mode, lacking
 }
 
+func allowedStepAlignments(members []memberAlignment) timeseries.StepAlignment {
+	// the modes every member supports, which a query's directive may choose over the ALB's mode
+	if len(members) == 0 {
+		return 0
+	}
+	allowed := timeseries.StepAlignmentAll
+	for _, m := range members {
+		allowed &= m.applicable
+	}
+	return allowed
+}
+
 func fallbackStepAlignment(members []memberAlignment) timeseries.StepAlignment {
 	// truncate when every member applies it, else none, which leaves each member to its own mode
 	for _, m := range members {
@@ -257,7 +269,7 @@ func (c *Client) alignPool(targets pool.Targets) pool.Alignment {
 		})
 	}
 	c.alignmentWarning = warning
-	return pool.Alignment{Mode: mode, Warning: warning}
+	return pool.Alignment{Mode: mode, Allowed: allowedStepAlignments(members), Warning: warning}
 }
 
 func (c *Client) targetAlignment(t *pool.Target) memberAlignment {
@@ -271,5 +283,5 @@ func (c *Client) targetAlignment(t *pool.Target) memberAlignment {
 
 func (c *Client) serveRouted(w http.ResponseWriter, r *http.Request) {
 	// a user router has no pool, so the mode set on it, fixed at load, is the one its targets answer under
-	c.handler.ServeHTTP(w, mech.Align(r, c.routerMode))
+	c.handler.ServeHTTP(w, mech.Align(r, c.routerOverride.Load()))
 }

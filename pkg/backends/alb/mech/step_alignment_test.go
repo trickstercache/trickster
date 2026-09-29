@@ -27,12 +27,12 @@ import (
 
 func TestAlign(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	const truncate = timeseries.StepAlignmentTruncate
-	if Align(r, 0) != r || Align(nil, truncate) != nil {
+	truncate := &tctx.StepAlignmentOverride{Mode: timeseries.StepAlignmentTruncate}
+	if Align(r, nil) != r || Align(nil, truncate) != nil {
 		t.Fatal("a pool without a mode leaves the request as it is")
 	}
-	if got := tctx.StepAlignment(Align(r, truncate).Context()); got != timeseries.StepAlignmentTruncate {
-		t.Fatalf("got %s", got)
+	if got := tctx.StepAlignmentOverrideOf(Align(r, truncate).Context()); got != truncate {
+		t.Fatalf("got %v", got)
 	}
 	// an ALB pooling this one chose first
 	outer := r.WithContext(tctx.WithStepAlignment(r.Context(), timeseries.StepAlignmentOff))

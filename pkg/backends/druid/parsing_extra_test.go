@@ -153,19 +153,19 @@ func TestDimensionAndCanonicalHelpers(t *testing.T) {
 	}
 }
 
-func TestBackfillToleranceSources(t *testing.T) {
-	if druidBackfillTolerance(nil) != time.Minute {
+func TestVolatileWindowSources(t *testing.T) {
+	if druidVolatileWindow(nil) != time.Minute {
 		t.Fatal("nil request did not use Druid default")
 	}
 	r := request.SetResources(jsonRequest(`{}`), &request.Resources{})
-	if druidBackfillTolerance(r) != time.Minute {
+	if druidVolatileWindow(r) != time.Minute {
 		t.Fatal("nil backend options did not use Druid default")
 	}
 	r = request.SetResources(jsonRequest(`{}`), &request.Resources{
 		BackendOptions: &bo.Options{VolatileWindow: 2 * 60 * 1_000_000_000},
 	})
-	if druidBackfillTolerance(r) != 2*time.Minute {
-		t.Fatal("configured backfill tolerance was ignored")
+	if druidVolatileWindow(r) != 2*time.Minute {
+		t.Fatal("configured volatile window was ignored")
 	}
 }
 

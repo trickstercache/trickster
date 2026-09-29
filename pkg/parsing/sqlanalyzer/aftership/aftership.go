@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	chast "github.com/AfterShip/clickhouse-sql-parser/parser"
 )
@@ -191,6 +192,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		GroupColumns: groups,
 		OutputFormat: outputFormat,
 		Renderer:     renderer,
+		Directives:   directives.Parse(statement, directives.SyntaxClickHouse),
 	}
 	if ranges.upper != nil {
 		plan.UpperBound = &sqlanalyzer.Bound{

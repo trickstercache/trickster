@@ -56,12 +56,10 @@ func parseAnalysis(
 	plan.ApplyToQuery(trq)
 	trq.Extent = plan.RequestExtent(now)
 	trq.Requested = plan.RequestedRange(now)
-	trq.ExtractBackfillTolerance(statement)
 
 	options := &timeseries.RequestOptions{
 		OutputFormat:           plan.OutputFormat,
 		BaseTimestampFieldName: plan.TimeColumn,
 	}
-	options.ExtractFastForwardDisabled(statement)
 	return trq, options, true, nil
 }

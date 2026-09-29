@@ -865,12 +865,11 @@ data:
 
     #     # volatile_window prevents new datapoints that fall within the window (relative to time.Now) from being permanently
     #     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
-    #     # default is 0ms. The former name, backfill_tolerance, is still accepted when volatile_window is not set
+    #     # default is 0ms
     #     volatile_window: 0ms
 
     #     # volatile_window_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
     #     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence.
-    #     # The former name, backfill_tolerance_points, is still accepted when volatile_window_points is not set
     #     volatile_window_points: 0
 
     #     # timeseries_retention_factor defines the maximum number of recent timestamps to cache for a given query. Default is 1024

@@ -220,8 +220,8 @@ func TestRefetchedBucketsKeepOnlyTheOriginsNewestRows(t *testing.T) {
 	// case-insensitive group replaces the older one rather than joining it
 	volatile := time.Since(time.Unix(0, 0))
 	for name, configure := range map[string]func(*ProtocolConfig){
-		"backfill window": func(config *ProtocolConfig) { config.BackfillWindow = volatile },
-		"backfill points": func(config *ProtocolConfig) { config.BackfillPoints = int(volatile/time.Minute) + 2 },
+		"volatile window":        func(config *ProtocolConfig) { config.VolatileWindow = volatile },
+		"volatile window points": func(config *ProtocolConfig) { config.VolatileWindowPoints = int(volatile/time.Minute) + 2 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			origin, _, client := startLifecycleProxy(t, "mysql-dpc-refetch", time.Second,

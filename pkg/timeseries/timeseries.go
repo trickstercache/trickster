@@ -23,14 +23,6 @@ import "time"
 // Second is 1B, because 1B Nanoseconds == 1 Second
 const Second = 1000000000
 
-// FastForwardUserDisableFlag is a string that is checked to determine if Fast Forward
-// should be selectively disabled for the provided query
-const FastForwardUserDisableFlag = "trickster-fast-forward:off"
-
-// BackfillToleranceFlag is a string that is checked to determine if Backfill Tolerance
-// should be adjusted for the provided query
-const BackfillToleranceFlag = "trickster-backfill-tolerance:"
-
 type timeSeriesCtxVal int
 
 const (
@@ -67,9 +59,8 @@ type Timeseries interface {
 	CroppedClone(Extent) Timeseries
 	// CropToRange should reduce time range of the Timeseries to the provided Extent
 	CropToRange(Extent)
-	// CropToSize should reduce time range of the Timeseries to the provided element size using
-	// a least-recently-used methodology, while limiting the upper extent to the provided time,
-	// in order to support backfill tolerance
+	// CropToSize should reduce the Timeseries to the element count, evicting the least recently used,
+	// and limit its upper extent to the time, which the volatile window relies on
 	CropToSize(int, time.Time, Extent)
 	// SeriesCount returns the number of individual Series in the Timeseries object
 	SeriesCount() int

@@ -208,8 +208,8 @@ func TestCachePolicyStep(t *testing.T) {
 	if got := trq.Clone().PolicyStepNS; got != trq.PolicyStepNS {
 		t.Fatalf("cloned serialized policy step = %d", got)
 	}
-	if got := trq.GetBackfillTolerance(0, 2); got != 30*time.Second {
-		t.Fatalf("backfill tolerance = %s", got)
+	if got := trq.GetVolatileWindow(0, 2); got != 30*time.Second {
+		t.Fatalf("volatile window = %s", got)
 	}
 }
 
@@ -220,36 +220,9 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 348 {
-		t.Errorf("expected %d got %d", 348, size)
+	if size != 358 {
+		t.Errorf("expected %d got %d", 358, size)
 	}
-}
-
-func TestExtractBackfillTolerance(t *testing.T) {
-	t.Run("valid flag", func(t *testing.T) {
-		trq := &TimeRangeQuery{}
-		trq.ExtractBackfillTolerance("testing trickster-backfill-tolerance:30 ")
-		if trq.BackfillTolerance != time.Second*30 {
-			t.Error("expected 30s got", trq.BackfillTolerance)
-		}
-	})
-
-	t.Run("flag not present", func(t *testing.T) {
-		trq := &TimeRangeQuery{}
-		trq.ExtractBackfillTolerance("no flag here")
-		if trq.BackfillTolerance != 0 {
-			t.Error("expected 0 got", trq.BackfillTolerance)
-		}
-	})
-
-	t.Run("flag at position 0", func(t *testing.T) {
-		trq := &TimeRangeQuery{}
-		trq.ExtractBackfillTolerance("trickster-backfill-tolerance:30")
-		// x > 1 check means position 0 is not extracted
-		if trq.BackfillTolerance != 0 {
-			t.Error("expected 0 for position 0, got", trq.BackfillTolerance)
-		}
-	})
 }
 
 func TestStringTRQ(t *testing.T) {
@@ -265,7 +238,7 @@ func TestStringTRQ(t *testing.T) {
 	}
 }
 
-func TestGetBackfillTolerance(t *testing.T) {
+func TestGetVolatileWindow(t *testing.T) {
 	tests := []struct {
 		name      string
 		tolerance time.Duration
@@ -312,10 +285,10 @@ func TestGetBackfillTolerance(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			trq := &TimeRangeQuery{
-				BackfillTolerance: test.tolerance,
-				Step:              test.step,
+				VolatileWindow: test.tolerance,
+				Step:           test.step,
 			}
-			if got := trq.GetBackfillTolerance(test.def, test.points); got != test.expected {
+			if got := trq.GetVolatileWindow(test.def, test.points); got != test.expected {
 				t.Errorf("expected %s got %s", test.expected, got)
 			}
 		})

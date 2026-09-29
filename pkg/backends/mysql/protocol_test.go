@@ -54,6 +54,9 @@ import (
 	"vitess.io/vitess/go/vt/vttls"
 )
 
+// a statement asking for off itself
+const offDirective = "/* trickster-step-align:off */ "
+
 func TestProtocolConfigFromOptions(t *testing.T) {
 	o := bo.New()
 	o.OriginURL = "mysql://user:p%40ss@db.example:3307/my%20db"
@@ -1587,6 +1590,14 @@ func (h *recordingDeltaOriginHandler) received() []string {
 }
 
 func TestProtocolServerOffAnswersTheClientsStatementFromTheObjectCache(t *testing.T) {
+	// off configured, and off asked for by a statement on a backend left at its default
+	t.Run("configured", func(t *testing.T) { offAnswersFromTheObjectCache(t, timeseries.StepAlignmentOff, "") })
+	t.Run("by directive", func(t *testing.T) { offAnswersFromTheObjectCache(t, 0, offDirective) })
+}
+
+func offAnswersFromTheObjectCache(t *testing.T, mode timeseries.StepAlignment, directive string) {
+	// each case counts its own lookups
+	backendName := "mysql-off-test-" + strings.ReplaceAll(t.Name(), "/", "-")
 	originListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -1613,10 +1624,10 @@ func TestProtocolServerOffAnswersTheClientsStatementFromTheObjectCache(t *testin
 		},
 		DownstreamUsers: map[string]string{"client": "client-password"},
 		ConnectTimeout:  time.Second,
-		BackendName:     "mysql-off-test",
+		BackendName:     backendName,
 		Cache:           cache,
 		CacheTTL:        time.Hour,
-		StepAlignment:   timeseries.StepAlignmentOff,
+		StepAlignment:   mode,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1634,7 +1645,7 @@ func TestProtocolServerOffAnswersTheClientsStatementFromTheObjectCache(t *testin
 	defer client.Close()
 	// off the grid at both ends
 	query := func(upper int) string {
-		return fmt.Sprintf(`SELECT
+		return directive + fmt.Sprintf(`SELECT
   cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time,
   count(*) AS value
 FROM events
@@ -1643,7 +1654,7 @@ GROUP BY time
 ORDER BY time`, upper)
 	}
 	count := func(mode sqlanalyzer.CacheMode, lookup status.LookupStatus) float64 {
-		return testutil.ToFloat64(metrics.SQLQueryCache.WithLabelValues("mysql-off-test", mysqlDialect,
+		return testutil.ToFloat64(metrics.SQLQueryCache.WithLabelValues(backendName, mysqlDialect,
 			mode.String(), lookup.String()))
 	}
 	for _, test := range []struct {

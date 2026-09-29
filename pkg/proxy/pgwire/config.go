@@ -99,8 +99,8 @@ type Config struct {
 	CacheTTL                 time.Duration
 	MaxObjectSize            int64
 	RetentionPoints          int
-	BackfillWindow           time.Duration
-	BackfillPoints           int
+	VolatileWindow           time.Duration
+	VolatileWindowPoints     int
 	PartialBucketTTL         time.Duration
 	StepAlignment            timeseries.StepAlignment
 	ShardMaxRange            time.Duration
@@ -154,7 +154,7 @@ func ConfigFromOptions(o *bo.Options, engine Engine) (Config, error) {
 		Dialect:                engine.Dialect(), CacheKeyPrefix: o.CacheKeyPrefix, Engine: engine,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
 		RetentionPoints: o.TimeseriesRetentionFactor,
-		BackfillWindow:  time.Duration(o.VolatileWindow), BackfillPoints: o.VolatileWindowPoints,
+		VolatileWindow:  time.Duration(o.VolatileWindow), VolatileWindowPoints: o.VolatileWindowPoints,
 		PartialBucketTTL: time.Duration(o.PartialBucketTTL), StepAlignment: o.StepAlignment,
 		ShardMaxRange: time.Duration(o.MaxShardSizeTime), ShardStep: time.Duration(o.ShardStep),
 		ShardMaxPoints: o.MaxShardSizePoints, DoesShard: o.DoesShard,

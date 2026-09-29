@@ -65,9 +65,6 @@ func Parse(statement string, now time.Time) (*timeseries.TimeRangeQuery, bool, e
 	}
 	plan := analysis.Plan
 	plan.ApplyToQuery(query)
-	if plan.IdentitySuffix != "" {
-		query.CacheKeyElements["mysql_directives"] = plan.IdentitySuffix
-	}
 	window, windowErr := nativedelta.BuildWindow(plan, now, true, sqlanalyzer.DefaultStepAlignment)
 	if windowErr != nil {
 		return query, true, windowErr

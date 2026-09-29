@@ -1358,7 +1358,7 @@ func TestDeltaProxyCacheRequestBadGatewayChunks(t *testing.T) {
 	}
 }
 
-func TestDeltaProxyCacheRequest_BackfillToleranceChunks(t *testing.T) {
+func TestDeltaProxyCacheRequest_VolatileWindowChunks(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	rsc.CacheConfig.UseCacheChunking = true
 	if err != nil {

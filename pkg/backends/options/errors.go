@@ -42,6 +42,16 @@ var ErrInvalidMaxShardSize = errors.New(
 var ErrStepAlignmentWithFastForwardDisable = errors.New(
 	"'step_alignment' and 'fast_forward_disable' cannot both be set; remove 'fast_forward_disable'")
 
+// ErrVolatileWindowWithBackfillTolerance is an error for a backend that sets both volatile_window
+// and backfill_tolerance
+var ErrVolatileWindowWithBackfillTolerance = errors.New(
+	"'volatile_window' and 'backfill_tolerance' cannot both be set; remove 'backfill_tolerance'")
+
+// ErrVolatileWindowPointsWithBackfillTolerancePoints is an error for a backend that sets both
+// volatile_window_points and backfill_tolerance_points
+var ErrVolatileWindowPointsWithBackfillTolerancePoints = errors.New(
+	"'volatile_window_points' and 'backfill_tolerance_points' cannot both be set; remove 'backfill_tolerance_points'")
+
 // ErrUnsupportedStepAlignment is an error for a step_alignment the backend's provider doesn't support
 var ErrUnsupportedStepAlignment = errors.New("unsupported step_alignment")
 

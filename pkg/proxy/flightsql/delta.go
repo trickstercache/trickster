@@ -60,8 +60,8 @@ type DeltaConfig struct {
 	// RetentionPoints is the backend's timeseries_retention_factor: the newest buckets an entry
 	// keeps, and the bound above which a request's range is reported as exceeding it.
 	RetentionPoints int
-	// BackfillTolerance widens the volatile tail excluded from cache storage.
-	BackfillTolerance time.Duration
+	// VolatileWindow widens the volatile tail excluded from cache storage.
+	VolatileWindow time.Duration
 	// PartialBucketTTL bounds the lifetime of cached partial buckets.
 	PartialBucketTTL time.Duration
 	// StepAlignment is the backend's configured step alignment mode; zero uses the default.
@@ -109,7 +109,7 @@ func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 		CacheTTL:         cfg.CacheTTL,
 		MaxObjectSize:    cfg.MaxObjectSize,
 		RetentionPoints:  cfg.RetentionPoints,
-		VolatileWindow:   cfg.BackfillTolerance,
+		VolatileWindow:   cfg.VolatileWindow,
 		PartialBucketTTL: cfg.PartialBucketTTL,
 		ObserveCacheFailure: func(reason string) {
 			observeCacheFailure(cfg.CacheClient, reason)
@@ -164,7 +164,7 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 		return s.streamIPCBytes(ctx, b)
 	}
 	// off answers with the origin's result to the client's statement, keyed on its raw range
-	unaligned := d.cfg.StepAlignment == timeseries.StepAlignmentOff
+	unaligned := nativedelta.RequestStepAlignment(d.cfg.StepAlignment, analysis.Plan) == timeseries.StepAlignmentOff
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil || unaligned {
 		kind, ttl := statementKeyKind, s.cacheTTL
 		if unaligned && analysis.Mode == sqlanalyzer.CacheModeDelta {
@@ -181,15 +181,16 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 
 	plan := analysis.Plan
 	trq := planTimeRangeQuery(plan)
-	baseKey := s.tenantKey(ctx) + ":dpc:" +
-		checksum.Checksum(plan.CanonicalSQL+"|"+plan.IdentitySuffix)
+	// the separator once preceded directive text, which keys no longer hold; it stays so keys don't change
+	baseKey := s.tenantKey(ctx) + ":dpc:" + checksum.Checksum(plan.CanonicalSQL+"|")
 	answer, lookupStatus, err := d.engine.ExecuteDelta(nativedelta.DeltaRequest[[]byte]{
 		Key:         baseKey,
 		FallbackKey: baseKey + ":fallback",
-		Statement:   query, StepAlignment: d.cfg.StepAlignment, Context: ctx,
-		Plan: plan,
-		Now:  now,
-		Ops:  d.ops(ctx, s, query, plan, trq),
+		Statement:   query, StepAlignment: nativedelta.RequestStepAlignment(d.cfg.StepAlignment, plan),
+		Context: ctx,
+		Plan:    plan,
+		Now:     now,
+		Ops:     d.ops(ctx, s, query, plan, trq),
 	})
 	// a verbatim result's row count is unknown without decoding it, so it reports none
 	d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeDelta,

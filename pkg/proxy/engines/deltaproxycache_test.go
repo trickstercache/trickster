@@ -1613,7 +1613,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	}
 }
 
-func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
+func TestDeltaProxyCacheRequest_VolatileWindow(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)

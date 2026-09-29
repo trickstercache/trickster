@@ -37,3 +37,35 @@ func TestStepAlignment(t *testing.T) {
 		t.Errorf("override: got %s", got)
 	}
 }
+
+func TestStepAlignmentOverrideRequested(t *testing.T) {
+	const drop, off, truncate = timeseries.StepAlignmentDrop, timeseries.StepAlignmentOff,
+		timeseries.StepAlignmentTruncate
+	var none *StepAlignmentOverride
+	o := &StepAlignmentOverride{Mode: truncate, Allowed: truncate | drop}
+	for _, test := range []struct {
+		name      string
+		o         *StepAlignmentOverride
+		directive timeseries.StepAlignment
+		want      timeseries.StepAlignment
+	}{
+		{"no override, no directive", none, 0, 0},
+		{"no override", none, off, off},
+		{"an override without a mode", &StepAlignmentOverride{Allowed: drop}, off, off},
+		{"no directive", o, 0, truncate},
+		{"a directive every member supports", o, drop, drop},
+		{"a directive a member lacks", o, off, truncate},
+	} {
+		if got := test.o.Requested(test.directive); got != test.want {
+			t.Errorf("%s: got %s", test.name, got)
+		}
+	}
+	ctx := WithStepAlignmentOverride(context.Background(), o)
+	if StepAlignmentOverrideOf(ctx) != o || StepAlignment(ctx) != truncate {
+		t.Fatal("the override was not carried")
+	}
+	//nolint:staticcheck // a nil context must be tolerated
+	if StepAlignmentOverrideOf(nil) != nil {
+		t.Fatal("a nil context carries no override")
+	}
+}

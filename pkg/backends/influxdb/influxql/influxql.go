@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"github.com/influxdata/influxql"
 )
@@ -412,6 +413,7 @@ func ParseTimeRangeQuery(r *http.Request,
 	if trq == nil {
 		return nil, nil, false, cacheError
 	}
+	trq.Directives = directives.Parse(statement, directives.SyntaxInfluxQL)
 	trq.TemplateURL = urls.Clone(r.URL)
 
 	if f.IsPost() {

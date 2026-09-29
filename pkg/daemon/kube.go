@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
@@ -40,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
@@ -336,7 +338,7 @@ func (s *kubeSupervisor) build(generation uint64, opts *kubecfg.Options,
 		CertState:     s.certState,
 		KnownNames:    s.knownNames,
 		Tracer:        s.tracer.Load,
-		ProviderPaths: providerPaths,
+		ProviderPaths: providerPaths, ProviderStepAlignments: providerStepAlignments,
 	})
 }
 
@@ -348,23 +350,48 @@ var providerPathsOnce = sync.OnceValue(func() map[string]po.List {
 
 func readProviderPaths(factories rt.Lookup) map[string]po.List {
 	out := make(map[string]po.List)
+	eachProviderClient(factories, func(name string, client backends.Backend, o *bo.Options) {
+		out[name] = client.DefaultPathConfigs(o)
+	})
+	return out
+}
+
+func eachProviderClient(factories rt.Lookup, visit func(string, backends.Backend, *bo.Options)) {
+	// a default client of each time series provider reached over HTTP
 	for name, factory := range factories {
 		if !providers.IsSupportedHTTPTimeSeriesProvider(name) {
 			continue
 		}
 		o := bo.New()
 		o.Provider = name
-		client, err := factory(name, o, nil, nil, nil, factories)
-		if err != nil {
-			continue
+		if client, err := factory(name, o, nil, nil, nil, factories); err == nil {
+			visit(name, client, o)
 		}
-		out[name] = client.DefaultPathConfigs(o)
 	}
-	return out
 }
 
 func providerPaths(provider string) po.List {
 	return providerPathsOnce()[provider]
+}
+
+// providerStepAlignmentsOnce reads the step alignment modes each time series provider supports once,
+// from the provider's own client
+var providerStepAlignmentsOnce = sync.OnceValue(func() map[string]timeseries.StepAlignment {
+	return readProviderStepAlignments(providerregistry.SupportedProviders())
+})
+
+func readProviderStepAlignments(factories rt.Lookup) map[string]timeseries.StepAlignment {
+	out := make(map[string]timeseries.StepAlignment)
+	eachProviderClient(factories, func(name string, client backends.Backend, _ *bo.Options) {
+		if sa, ok := client.(timeseries.StepAligner); ok {
+			out[name], _ = sa.StepAlignments()
+		}
+	})
+	return out
+}
+
+func providerStepAlignments(provider string) timeseries.StepAlignment {
+	return providerStepAlignmentsOnce()[provider]
 }
 
 func (s *kubeSupervisor) setTracer(opts *kubecfg.Options, tracers tracing.Tracers) {

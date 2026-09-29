@@ -31,7 +31,7 @@ import (
 
 const tq00 = `/* this tests a multi-line comment at the front, where the query continues after` +
 	`, and on the same line as, the comment closing delimiter
-  also, here we test: trickster-backfill-tolerance:30 */ WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x ` +
+  also, here we test: trickster-volatile-window:30 */ WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x ` +
 	` SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 as t, apple,` +
 	` count() as cnt FROM test_db.test_table PREWHERE some_column = 'myvalue' WHERE datetime >= 1589904000 AND datetime < 1589997600` +
 	` GROUP BY t, apple ORDER BY  t FORMAT TabSeparatedWithNamesAndTypes // test comment

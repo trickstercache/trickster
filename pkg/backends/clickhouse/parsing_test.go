@@ -139,13 +139,13 @@ func TestUnsafeAndUnsupportedQueriesUseObjectCache(t *testing.T) {
 }
 
 func TestDirectivesAreExtractedBeforeCanonicalization(t *testing.T) {
-	query := `/* trickster-backfill-tolerance:30 trickster-fast-forward:off */ ` + tq02
-	trq, options, _, err := parse(query, nil)
+	query := `/* trickster-volatile-window:30 trickster-fast-forward:off */ ` + tq02
+	trq, _, _, err := parse(query, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trq.BackfillTolerance != 30*time.Second || !options.FastForwardDisable {
-		t.Errorf("directives not extracted: tolerance=%s fast-forward=%t",
-			trq.BackfillTolerance, options.FastForwardDisable)
+	want := timeseries.Directives{VolatileWindow: 30 * time.Second, FastForwardDisable: true}
+	if trq.Directives != want {
+		t.Errorf("directives not extracted: %+v", trq.Directives)
 	}
 }

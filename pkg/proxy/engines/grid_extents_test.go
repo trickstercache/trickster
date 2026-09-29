@@ -46,7 +46,7 @@ func TestGridFetchExtent(t *testing.T) {
 		t.Errorf("expected no off-grid count for an on-grid extent, got %v", got)
 	}
 
-	// the refetch from an epoch-grid backfill start that once split the 23:30 bucket
+	// the refetch from an epoch-grid volatile window start that once split the 23:30 bucket
 	got, ok := gridFetchExtent(timeseries.Extent{Start: at(0, 0), End: at(1, 30)}, rsc)
 	if !ok || !got.Start.Equal(at(0, 30)) || !got.End.Equal(at(1, 30)) {
 		t.Errorf("expected 00:30-01:30, got %s (%t)", got, ok)

@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 var (
@@ -381,23 +382,12 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		rlo.FastForwardDisable = true
 	}
 
-	rlo.ExtractFastForwardDisabled(trq.Statement)
 	if c.hooks.PreserveQueryGrid && (trq.Phase != 0 || step%time.Second != 0) {
 		rlo.FastForwardDisable = true
 	}
-	trq.ExtractBackfillTolerance(trq.Statement)
-
-	if x := strings.Index(trq.Statement, timeseries.BackfillToleranceFlag); x > 1 {
-		x += 29
-		y := x
-		for ; y < len(trq.Statement); y++ {
-			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
-				break
-			}
-		}
-		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
-			trq.BackfillTolerance = time.Second * time.Duration(i)
-		}
+	trq.Directives = directives.Parse(trq.Statement, directives.SyntaxPromQL)
+	if keyed := directives.Strip(trq.Statement, directives.SyntaxPromQL); keyed != trq.Statement {
+		trq.KeyParamValues = map[string]string{upQuery: keyed}
 	}
 
 	trq.Requested = requested

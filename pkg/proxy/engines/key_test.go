@@ -978,3 +978,30 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 		}
 	})
 }
+
+func TestDeriveCacheKeyParamValues(t *testing.T) {
+	for _, params := range [][]string{{"query", "step"}, {"*"}} {
+		cfg := &bo.Options{Paths: po.List{{Path: "/", CacheKeyParams: params}}}
+		key := func(query string, values map[string]string) string {
+			rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+			if values != nil {
+				rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{KeyParamValues: values}
+			}
+			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/?step=60&"+query, nil)
+			return newProxyRequest(r.WithContext(ct.WithResources(context.Background(), rsc)), nil).
+				DeriveCacheKey("")
+		}
+		// a statement keyed without its directive shares the key of one sent without it
+		plain := key("query=up", nil)
+		if got := key("query=up%20%23%20trickster-step-align%3Adrop", map[string]string{"query": "up"}); got != plain {
+			t.Errorf("%v: the stand-in value keyed apart", params)
+		}
+		if got := key("query=up%20%23%20trickster-step-align%3Adrop", nil); got == plain {
+			t.Errorf("%v: the directive never reached the key", params)
+		}
+		// a repeated parameter is left as it is
+		if got := key("query=up&query=up", map[string]string{"query": "up"}); got == plain {
+			t.Errorf("%v: a repeated parameter was replaced", params)
+		}
+	}
+}

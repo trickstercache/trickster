@@ -31,6 +31,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 )
@@ -228,11 +229,6 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, err)
 	}
-	backfillTolerance := extractBackfillTolerance(statement, selectStmt)
-	identitySuffix := ""
-	if backfillTolerance > 0 {
-		identitySuffix = fmt.Sprintf("backfill_tolerance=%d", int64(backfillTolerance/time.Second))
-	}
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
 		TimeColumn:   bucket.timeColumn, OutputColumn: bucket.outputColumn,
@@ -242,7 +238,7 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 		RawLower:     &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
 		RawUpper:     rng.rawUpperBound(),
 		GroupColumns: groups, ValueColumns: values, Renderer: extentRenderer,
-		BackfillTolerance: backfillTolerance, IdentitySuffix: identitySuffix,
+		Directives: directives.Parse(statement, directives.SyntaxMySQL),
 	}
 	return sqlanalyzer.Analysis{
 		Mode:   sqlanalyzer.CacheModeDelta,
@@ -295,80 +291,6 @@ func (a *Analyzer) isNondeterministic(stmt sqlparser.SQLNode) bool {
 		return !unsafe, nil
 	}, stmt)
 	return unsafe
-}
-
-func extractBackfillTolerance(statement string, stmt *sqlparser.Select) time.Duration {
-	query := &timeseries.TimeRangeQuery{}
-	comments := sqlCommentText(statement)
-	if stmt != nil && stmt.Comments != nil {
-		comments += " " + strings.Join(stmt.Comments.GetComments(), " ")
-	}
-	query.ExtractBackfillTolerance("  " + comments)
-	return query.BackfillTolerance
-}
-
-func sqlCommentText(statement string) string {
-	var comments strings.Builder
-	for i := 0; i < len(statement); {
-		switch statement[i] {
-		case '\'', '"', '`':
-			quote := statement[i]
-			i++
-			for i < len(statement) {
-				if statement[i] == '\\' {
-					i += min(2, len(statement)-i)
-					continue
-				}
-				if statement[i] == quote {
-					i++
-					if i < len(statement) && statement[i] == quote {
-						i++
-						continue
-					}
-					break
-				}
-				i++
-			}
-		case '/':
-			if i+1 >= len(statement) || statement[i+1] != '*' {
-				i++
-				continue
-			}
-			end := strings.Index(statement[i+2:], "*/")
-			if end < 0 {
-				return comments.String()
-			}
-			comments.WriteString(statement[i+2 : i+2+end])
-			comments.WriteByte(' ')
-			i += end + 4
-		case '#':
-			end := strings.IndexByte(statement[i+1:], '\n')
-			if end < 0 {
-				comments.WriteString(statement[i+1:])
-				return comments.String()
-			}
-			comments.WriteString(statement[i+1 : i+1+end])
-			comments.WriteByte(' ')
-			i += end + 2
-		case '-':
-			if i+2 >= len(statement) || statement[i+1] != '-' ||
-				(statement[i+2] != ' ' && statement[i+2] != '\t') {
-				i++
-				continue
-			}
-			end := strings.IndexByte(statement[i+2:], '\n')
-			if end < 0 {
-				comments.WriteString(statement[i+2:])
-				return comments.String()
-			}
-			comments.WriteString(statement[i+2 : i+2+end])
-			comments.WriteByte(' ')
-			i += end + 3
-		default:
-			i++
-		}
-	}
-	return comments.String()
 }
 
 func analyzeBucket(stmt *sqlparser.Select, matchers ...BucketMatcher) (bucketInfo, error) {

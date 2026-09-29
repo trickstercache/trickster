@@ -44,6 +44,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
+// a statement asking for off itself
+const offDirective = "/* trickster-step-align:off */ "
+
 const (
 	cacheTestSelect = "SELECT date_bin(INTERVAL '5 minutes', ts, TIMESTAMP '2000-01-01') AS time, count(*) AS value FROM trips "
 	cacheTestHosts  = "SELECT date_bin(INTERVAL '5 minutes', ts, TIMESTAMP '2000-01-01') AS time, host, count(*) AS value FROM trips "
@@ -270,7 +273,7 @@ func TestCachePartitionsBySessionIdentity(t *testing.T) {
 func TestDeltaCacheRefetchesTheVolatileTail(t *testing.T) {
 	upstream := newFakeUpstream(t, nil)
 	config := cachedConfig(t, upstream)
-	config.BackfillWindow = 30 * time.Minute
+	config.VolatileWindow = 30 * time.Minute
 	_, address := startServer(t, config)
 	conn := mustDial(t, address, testClientUser, testClientPass)
 	now := time.Now().UTC().Truncate(fakeBucketStep)
@@ -314,14 +317,20 @@ func TestOpenEndedRangeEndsBeforeTheStillFillingBucket(t *testing.T) {
 }
 
 func TestOffAnswersTheClientsStatementFromTheObjectCache(t *testing.T) {
+	// off configured, and off asked for by a statement on a backend left at its default
+	t.Run("configured", func(t *testing.T) { offAnswersFromTheObjectCache(t, timeseries.StepAlignmentOff, "") })
+	t.Run("by directive", func(t *testing.T) { offAnswersFromTheObjectCache(t, 0, offDirective) })
+}
+
+func offAnswersFromTheObjectCache(t *testing.T, mode timeseries.StepAlignment, directive string) {
 	upstream := newFakeUpstream(t, nil)
 	config := cachedConfig(t, upstream)
-	config.StepAlignment = timeseries.StepAlignmentOff
+	config.StepAlignment = mode
 	_, address := startServer(t, config)
 	conn := mustDial(t, address, testClientUser, testClientPass)
 	// off the grid at both ends, so the origin's answer holds partial buckets
-	first := rangeQuery(cacheTestSelect, "08:02", "11:03", "1 ORDER BY 1")
-	later := rangeQuery(cacheTestSelect, "08:02", "11:04", "1 ORDER BY 1")
+	first := directive + rangeQuery(cacheTestSelect, "08:02", "11:03", "1 ORDER BY 1")
+	later := directive + rangeQuery(cacheTestSelect, "08:02", "11:04", "1 ORDER BY 1")
 	wantFirst, wantLater := directRows(t, upstream, first), directRows(t, upstream, later)
 	upstream.forget()
 	count := func(mode sqlanalyzer.CacheMode, lookup status.LookupStatus) float64 {

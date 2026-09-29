@@ -138,27 +138,6 @@ func TestAnalyzerClassifiesUnsupportedQueries(t *testing.T) {
 	}
 }
 
-func TestSQLCommentText(t *testing.T) {
-	tests := []struct {
-		name, statement, want string
-	}{
-		{"block", "SELECT '/* ignored */', \"# ignored\", `-- ignored` /* block */", " block  "},
-		{"escaped quote", `SELECT 'can\'t # comment' /* after */`, " after  "},
-		{"doubled quote", "SELECT 'it''s -- data' # tail", " tail"},
-		{"unterminated block", "SELECT 1 /* partial", ""},
-		{"hash line", "SELECT 1 # first\n# second", " first  second"},
-		{"dash line", "SELECT 1 -- first\n-- second", " first  second"},
-		{"operators", "SELECT 6/2, 3-1, 2--1", ""},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := sqlCommentText(tc.statement); got != tc.want {
-				t.Errorf("sqlCommentText() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestParserDefensiveBranches(t *testing.T) {
 	parse := func(source string) sqlparser.Expr {
 		t.Helper()

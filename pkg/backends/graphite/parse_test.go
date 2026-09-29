@@ -109,8 +109,8 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		trq.CacheKeyElements["gen"] != "0" || trq.CacheKeyElements["leaves"] == "" {
 		t.Errorf("unexpected cache key elements %v", trq.CacheKeyElements)
 	}
-	if trq.BackfillTolerance != DefaultBackfillTolerance {
-		t.Errorf("expected the default backfill tolerance, got %v", trq.BackfillTolerance)
+	if trq.VolatileWindow != DefaultVolatileWindow {
+		t.Errorf("expected the default volatile window, got %v", trq.VolatileWindow)
 	}
 	// the extent is the buckets whisper returns: (from, until] step-aligned
 	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 6*time.Hour-10*time.Second {

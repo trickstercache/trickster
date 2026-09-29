@@ -30,12 +30,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	reqmatching "github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // ProviderPaths returns the paths a time series provider predefines, handlers and cache key
 // components included; the compiler emits them itself, so a provider's paths never reach a
 // listener except through what a route awarded, and never without the route's policy
 type ProviderPaths func(provider string) po.List
+
+// ProviderStepAlignments returns the step alignment modes a time series provider supports
+type ProviderStepAlignments func(provider string) timeseries.StepAlignment
 
 // ErrNoProviderPaths indicates a rule selected a time series provider and the compiler was given
 // no source of its paths; serving the provider without them would silently accelerate nothing

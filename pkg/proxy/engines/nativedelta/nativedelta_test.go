@@ -725,6 +725,8 @@ func TestVolatileWindow(t *testing.T) {
 		{5 * time.Minute, time.Minute, 0, 5 * time.Minute, 2},
 		{0, time.Minute, 2 * time.Minute, 2 * time.Minute, 0},
 		{0, time.Minute, 0, 0, 0},
+		// a query's window replaces the configured one, narrower or wider
+		{5 * time.Minute, time.Minute, 30 * time.Second, 30 * time.Second, 10},
 	}
 	for _, test := range tests {
 		if got := VolatileWindow(test.configured, test.points, test.step, test.requested); got != test.expected {

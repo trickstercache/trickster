@@ -301,12 +301,10 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	trq.ParsedQuery = &Query{Plan: plan}
 	trq.Extent = plan.RequestExtent(now)
 	trq.Requested = plan.RequestedRange(now)
-	trq.ExtractBackfillTolerance(statement)
 
 	options := &timeseries.RequestOptions{
 		BaseTimestampFieldName: plan.TimeColumn,
 	}
-	options.ExtractFastForwardDisabled(statement)
 	return trq, options, true, nil
 }
 
@@ -356,15 +354,15 @@ func ParseTimeRangeQuery(r *http.Request, f iofmt.Format,
 		ro = &timeseries.RequestOptions{}
 	}
 	ro.OutputFormat = outputFormat
-	// a backfill-tolerance directive wins, else the backend default; the still-filling
+	// a volatile-window directive wins, else the backend default; the still-filling
 	// final bucket needs no tolerance because the engine never caches it
-	if trq.BackfillTolerance == 0 {
+	if trq.VolatileWindow == 0 {
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
 			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
-		trq.BackfillTolerance = bf
+		trq.VolatileWindow = bf
 	}
 	trq.TemplateURL = urls.Clone(r.URL)
 	if isBody {

@@ -35,6 +35,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser/statements"
@@ -442,6 +443,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		DropsPartialBuckets: ranges.dropsPartialBuckets,
 		Ordering:            ordering,
 		Renderer:            renderer,
+		Directives:          directives.Parse(original, directives.SyntaxSQL),
 	}
 	if ranges.upper != nil {
 		plan.UpperBound = &sqlanalyzer.Bound{
@@ -1160,9 +1162,6 @@ func normalizePrimaryBounds(
 	return nil
 }
 
-// inclusiveUpperTick returns the resolution of a bound literal's style, used to
-// render an inclusive upper bound exactly one tick below the exclusive
-// boundary. A date-only literal cannot express that and fails closed.
 func numericStyle(style boundStyle) bool {
 	switch style {
 	case boundUnixSeconds, boundUnixMilli, boundUnixMicro, boundUnixNano:
@@ -1171,6 +1170,8 @@ func numericStyle(style boundStyle) bool {
 	return false
 }
 
+// inclusiveUpperTick returns a literal style's resolution, the tick an inclusive upper bound
+// renders below the exclusive boundary; a date-only literal has none and fails closed
 func inclusiveUpperTick(style boundStyle) (time.Duration, bool) {
 	switch style {
 	case boundUnixSeconds:

@@ -519,9 +519,8 @@ func (ds *DataSet) FinalizeAvg(count int) {
 	}
 }
 
-// CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
-// using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
-// in order to support backfill tolerance
+// CropToSize reduces the Timeseries to sz elements, evicting the least recently used, and limits its
+// upper extent to t, which the volatile window relies on
 func (ds *DataSet) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 	if ds.SizeCropper != nil {
 		ds.SizeCropper(sz, t, lur)

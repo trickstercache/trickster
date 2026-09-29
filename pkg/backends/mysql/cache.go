@@ -225,7 +225,8 @@ func (h *protocolHandler) executeCached(c *vtmysql.Conn, session *upstreamSessio
 
 func (h *protocolHandler) unaligned(analysis sqlanalyzer.Analysis) bool {
 	// off answers a delta plan with the origin's result to the client's statement, keyed on its raw range
-	return analysis.Mode == sqlanalyzer.CacheModeDelta && h.config.StepAlignment == timeseries.StepAlignmentOff
+	return analysis.Mode == sqlanalyzer.CacheModeDelta &&
+		nativedelta.RequestStepAlignment(h.config.StepAlignment, analysis.Plan) == timeseries.StepAlignmentOff
 }
 
 func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSession,
@@ -280,7 +281,7 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	return h.deltaEngine().ExecuteDelta(nativedelta.DeltaRequest[*sqltypes.Result]{
 		Key:         h.planCacheKey(c, session, cacheModeDPC, plan),
 		FallbackKey: h.planCacheKey(c, session, cacheModeDPCFallback, plan),
-		Statement:   query, StepAlignment: h.config.StepAlignment,
+		Statement:   query, StepAlignment: nativedelta.RequestStepAlignment(h.config.StepAlignment, plan),
 		Plan: plan, Now: time.Now(),
 		// vitess delta plans always carry closed bounds; open-ended plans
 		// proxy rather than run to the present
@@ -292,7 +293,8 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 func (h *protocolHandler) planCacheKey(c *vtmysql.Conn, session *upstreamSession, mode string,
 	plan *sqlanalyzer.QueryPlan,
 ) string {
-	return h.queryCacheKey(c, session, mode, plan.CanonicalSQL, plan.IdentitySuffix)
+	// the second field once held directives, which keys no longer do; it stays empty so keys don't change
+	return h.queryCacheKey(c, session, mode, plan.CanonicalSQL, "")
 }
 
 func (h *protocolHandler) executeOrigin(session *upstreamSession,

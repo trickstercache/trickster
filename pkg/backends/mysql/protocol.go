@@ -105,8 +105,8 @@ type ProtocolConfig struct {
 	CacheTTL               time.Duration
 	MaxObjectSize          int64
 	RetentionPoints        int
-	BackfillWindow         time.Duration
-	BackfillPoints         int
+	VolatileWindow         time.Duration
+	VolatileWindowPoints   int
 	PartialBucketTTL       time.Duration
 	StepAlignment          timeseries.StepAlignment
 	ShardMaxRange          time.Duration
@@ -150,16 +150,16 @@ func ProtocolConfigFromOptions(o *bo.Options) (ProtocolConfig, error) {
 		MaxResultSizeBytes:     int64(mysqlOptions.MaxResultSizeBytes),
 		MaxUpstreamConnections: int64(o.MaxConcurrentConns), CacheKeyPrefix: o.CacheKeyPrefix,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
-		RetentionPoints:  o.TimeseriesRetentionFactor,
-		BackfillWindow:   time.Duration(o.VolatileWindow),
-		BackfillPoints:   o.VolatileWindowPoints,
-		PartialBucketTTL: time.Duration(o.PartialBucketTTL),
-		StepAlignment:    o.StepAlignment,
-		ShardMaxRange:    time.Duration(o.MaxShardSizeTime),
-		ShardStep:        time.Duration(o.ShardStep),
-		ShardMaxPoints:   o.MaxShardSizePoints,
-		DoesShard:        o.DoesShard,
-		ProxyOnly:        o.ProxyOnly,
+		RetentionPoints:      o.TimeseriesRetentionFactor,
+		VolatileWindow:       time.Duration(o.VolatileWindow),
+		VolatileWindowPoints: o.VolatileWindowPoints,
+		PartialBucketTTL:     time.Duration(o.PartialBucketTTL),
+		StepAlignment:        o.StepAlignment,
+		ShardMaxRange:        time.Duration(o.MaxShardSizeTime),
+		ShardStep:            time.Duration(o.ShardStep),
+		ShardMaxPoints:       o.MaxShardSizePoints,
+		DoesShard:            o.DoesShard,
+		ProxyOnly:            o.ProxyOnly,
 	}
 	config.RestartKey = protocolRestartKey(o, downstreamUsers)
 	return config, nil
@@ -902,8 +902,8 @@ func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
 			CacheTTL:              h.config.CacheTTL,
 			MaxObjectSize:         h.config.MaxObjectSize,
 			RetentionPoints:       h.config.RetentionPoints,
-			VolatileWindow:        h.config.BackfillWindow,
-			VolatileWindowPoints:  h.config.BackfillPoints,
+			VolatileWindow:        h.config.VolatileWindow,
+			VolatileWindowPoints:  h.config.VolatileWindowPoints,
 			PartialBucketTTL:      h.config.PartialBucketTTL,
 			Provider:              h.dialect(),
 			ObserveCacheFailure:   h.observeCacheFailure,

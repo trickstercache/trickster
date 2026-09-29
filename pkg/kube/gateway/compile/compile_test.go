@@ -116,7 +116,7 @@ func simple() *ir.IR {
 
 func emitted(t *testing.T, m *ir.IR, opts *kubecfg.Options) map[string]*backendDoc {
 	t.Helper()
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	return doc.Backends
 }
@@ -590,7 +590,7 @@ func TestCompilePolicyRoutingModeOverride(t *testing.T) {
 	// A policy may override the routing mode for one route
 	m := endpointShape()
 	m.Policies = []ir.Policy{{Name: "p1", RoutingMode: kubecfg.RoutingModeEndpoint}}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, providers.ALB, doc.Backends["kgw--httproute.shop.web_r0"].Provider,
 		"a per-route routing mode must reach the member compiler")
@@ -633,7 +633,7 @@ func TestCompileEndpointMode(t *testing.T) {
 	m := endpointShape()
 	m.Policies = nil
 	m.Routes[0].Rules[0].Policy = ""
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 
 	require.Len(t, doc.Discovery, 1)
@@ -689,7 +689,7 @@ func TestCompileEndpointModeProbe(t *testing.T) {
 	m := endpointShape()
 	m.Policies = nil
 	m.Routes[0].Rules[0].Policy = ""
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	front := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "probe", front.ALB.Discovery.HealthMode)
@@ -702,7 +702,7 @@ func TestCompileEndpointModeProbe(t *testing.T) {
 
 	// no configured health check: the default probe
 	opts.Defaults.HealthCheck = nil
-	doc, err = buildDocument(m, opts, nil)
+	doc, err = buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	tmpl = doc.Backends["kgw--httproute.shop.web_r0_b0_tmpl"]
 	require.Equal(t, &ho.Options{Interval: timeconv.Duration(kubecfg.DefaultProbeInterval)},
@@ -712,7 +712,7 @@ func TestCompileEndpointModeProbe(t *testing.T) {
 	opts.Defaults.HealthMode = "provider"
 	m.Policies = []ir.Policy{{Name: "p1", HealthMode: "probe"}}
 	m.Routes[0].Rules[0].Policy = "p1"
-	doc, err = buildDocument(m, opts, nil)
+	doc, err = buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "probe", doc.Backends["kgw--httproute.shop.web_r0"].ALB.Discovery.HealthMode)
 	require.NotNil(t, doc.Backends["kgw--httproute.shop.web_r0_b0_tmpl"].HealthCheck)
@@ -734,7 +734,7 @@ func TestCompileEndpointModeWeighted(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, endpointOpts(t), nil)
+	doc, err := buildDocument(m, endpointOpts(t), nil, nil)
 	require.NoError(t, err)
 	outer := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, providers.ALB, outer.Provider)
@@ -784,7 +784,7 @@ func TestCompileRedirect(t *testing.T) {
 		Routes:    []ir.Route{r},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Len(t, doc.Backends, 1)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
@@ -809,7 +809,7 @@ func TestCompileRedirect(t *testing.T) {
 	// mode changes nothing for a rule that forwards nowhere
 	r.Rules[0].Filters[0].Redirect.StatusCode = 0
 	m.Routes[0] = r
-	doc, err = buildDocument(m, endpointOpts(t), nil)
+	doc, err = buildDocument(m, endpointOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusFound, doc.Backends["kgw--httproute.shop.web_r0"].Paths[0].ResponseCode)
 	require.Empty(t, doc.Discovery)
@@ -847,7 +847,7 @@ func TestCompileHeaderFilters(t *testing.T) {
 		Routes:    []ir.Route{r}, Backends: []ir.BackendGroup{g},
 		Policies: []ir.Policy{p},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	path := doc.Backends["kgw--httproute.shop.web_r0"].Paths[0]
 	require.Equal(t, map[string]string{
@@ -889,7 +889,7 @@ func TestCompileURLRewrite(t *testing.T) {
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{r}, Backends: []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	alb := doc.Backends["kgw--httproute.shop.web_r0"]
 	for _, p := range alb.Paths {
@@ -908,7 +908,7 @@ func TestCompileURLRewrite(t *testing.T) {
 	// translators; the compiler ignores it rather than guessing a prefix
 	g.Members[1].Filters[0].URLRewrite.Path.Type = ir.PathReplacePrefix
 	m.Backends = []ir.BackendGroup{g}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, doc.Backends["kgw--httproute.shop.web_r0_b1"].Paths[0].ReqRewriterName)
 }
@@ -927,7 +927,7 @@ func TestCompileBackendTLS(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "https://web-svc.shop.svc:8443", b.OriginURL)
@@ -938,7 +938,7 @@ func TestCompileBackendTLS(t *testing.T) {
 
 	g.Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal", System: true}
 	m.Backends = []ir.BackendGroup{g}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, &tlsDoc{ServerName: "web.internal"}, doc.Backends["kgw--httproute.shop.web_r0"].TLS)
 }
@@ -1772,7 +1772,7 @@ func TestCompileRedirectCarriesOperatorControls(t *testing.T) {
 	opts.Defaults.ReqRewriterName = "strip"
 	opts.Defaults.TracingName = "otlp"
 	opts.Defaults.AccessLog = &alo.Options{Filename: "stdout", Format: "combined"}
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "gateway-auth", b.AuthenticatorName)
@@ -1791,7 +1791,7 @@ func TestCompileRedirectCarriesOperatorControls(t *testing.T) {
 		ResponseHeaders: map[string]string{"X-Policy": "1"},
 	}}
 	m.Routes[0].Rules[0].Policy = "p"
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	b = doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "class-auth", b.AuthenticatorName,
@@ -1819,7 +1819,7 @@ func TestCompileRedirectCarriesResponseHeaders(t *testing.T) {
 		})},
 		Backends: []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.NotEmpty(t, b.Paths)
@@ -1846,7 +1846,7 @@ func TestCompileRedirectUsesTheListenerPort(t *testing.T) {
 		r.Listeners = attach
 		doc, err := buildDocument(&ir.IR{
 			Listeners: listeners, Routes: []ir.Route{r}, Backends: []ir.BackendGroup{g},
-		}, serviceOpts(t), nil)
+		}, serviceOpts(t), nil, nil)
 		require.NoError(t, err)
 		return doc
 	}
@@ -1905,13 +1905,13 @@ func TestCompileBackendTLSExcludesSystemRoots(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.True(t, doc.Backends["kgw--httproute.shop.web_r0"].TLS.ExcludeSystemRoots)
 
 	g.Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal", System: true}
 	m.Backends = []ir.BackendGroup{g}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.False(t, doc.Backends["kgw--httproute.shop.web_r0"].TLS.ExcludeSystemRoots)
 }

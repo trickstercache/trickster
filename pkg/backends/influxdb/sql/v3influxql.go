@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"github.com/influxdata/influxql"
 )
@@ -100,14 +101,14 @@ func ParseV3InfluxQL(r *http.Request, f iofmt.Format,
 	trq.TagFieldDefintions = append(timeseries.FieldDefinitions{
 		{Name: measurementField, Role: timeseries.RoleTag},
 	}, trq.TagFieldDefintions...)
-	trq.ExtractBackfillTolerance(v3r.Query)
-	if trq.BackfillTolerance == 0 {
+	trq.Directives = directives.Parse(v3r.Query, directives.SyntaxInfluxQL)
+	if trq.VolatileWindow == 0 {
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
 			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
-		trq.BackfillTolerance = bf
+		trq.VolatileWindow = bf
 	}
 	rlo := &timeseries.RequestOptions{
 		OutputFormat:           outputFormat,

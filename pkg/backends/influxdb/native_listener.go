@@ -189,14 +189,14 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 		flightsql.WithCacheKeyPrefix(backendName),
 		flightsql.WithKeyScoper(influxFlightKeyScoper),
 		flightsql.WithDeltaCache(flightsql.DeltaConfig{
-			Analyzer:          isql.Analyzer(),
-			CacheClient:       backend.Cache,
-			CacheTTL:          time.Duration(o.TimeseriesTTL),
-			MaxObjectSize:     int64(o.MaxObjectSizeBytes),
-			RetentionPoints:   o.TimeseriesRetentionFactor,
-			BackfillTolerance: time.Duration(o.VolatileWindow),
-			PartialBucketTTL:  time.Duration(o.PartialBucketTTL),
-			StepAlignment:     o.StepAlignment,
+			Analyzer:         isql.Analyzer(),
+			CacheClient:      backend.Cache,
+			CacheTTL:         time.Duration(o.TimeseriesTTL),
+			MaxObjectSize:    int64(o.MaxObjectSizeBytes),
+			RetentionPoints:  o.TimeseriesRetentionFactor,
+			VolatileWindow:   time.Duration(o.VolatileWindow),
+			PartialBucketTTL: time.Duration(o.PartialBucketTTL),
+			StepAlignment:    o.StepAlignment,
 		}),
 	}
 	if o.InfluxDB != nil && o.InfluxDB.FlightCacheTTL > 0 {

@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 const (
@@ -43,8 +44,11 @@ const (
 	queryTypeTopN       = "topn"
 )
 
+// transientContextKeys are left out of cache identity: transport controls, and Trickster's directives
 var transientContextKeys = []string{
 	"priority", "queryDeadline", "queryId", "sqlQueryId", "timeout",
+	directives.Prefix + directives.NameFastForward, directives.Prefix + directives.NameVolatileWindow,
+	directives.Prefix + directives.NameBackfillTolerance, directives.Prefix + directives.NameStepAlign,
 }
 
 var fixedSimpleGranularities = map[string]time.Duration{
@@ -106,6 +110,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		trq.TemplateURL = urls.Clone(r.URL)
 	}
 	ro := &timeseries.RequestOptions{FastForwardDisable: true}
+	trq.Directives = contextDirectives(document)
 
 	if !slices.Contains([]string{queryTypeTimeseries, queryTypeGroupBy, queryTypeTopN}, queryType) {
 		return c.reject(trq, ro, true, modeObject, reasonUnsupportedQueryType, errObjectCache)
@@ -164,7 +169,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.StepAlignments, trq.StepAlignment = timeseries.StepAlignmentAll, timeseries.StepAlignmentPartial
 	trq.Extent = timeseries.Extent{Start: start, End: end}
 	trq.ParsedQuery = plan
-	trq.BackfillTolerance = druidBackfillTolerance(r)
+	trq.VolatileWindow = druidVolatileWindow(r)
 	ro.ProviderRequest = plan
 	c.observeAnalysis(modeDelta, reasonEligible)
 	return trq, ro, true, nil
@@ -660,7 +665,35 @@ func booleanValue(value any) bool {
 	}
 }
 
-func druidBackfillTolerance(r *http.Request) time.Duration {
+func contextDirectives(document map[string]any) timeseries.Directives {
+	// a native query has no comments, so its directives are keys of its context map
+	return directives.Read(contextLookup(document))
+}
+
+func contextLookup(document map[string]any) func(string) (string, bool) {
+	// the directive named in the query's context map, if any
+	context, _ := document["context"].(map[string]any)
+	return func(name string) (string, bool) {
+		value, ok := context[directives.Prefix+name]
+		return contextValue(value), ok
+	}
+}
+
+func contextValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		// a value no directive takes, which is ignored
+		return ""
+	}
+}
+
+func druidVolatileWindow(r *http.Request) time.Duration {
 	const defaultTolerance = time.Minute
 	resources := request.GetResources(r)
 	if resources == nil || resources.BackendOptions == nil {

@@ -69,6 +69,17 @@ func TestPrometheusDrop(t *testing.T) {
 		require.Equal(t, "off", parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))[keys.FFStatus],
 			attempt)
 	}
+	// a query's directive chooses drop on a backend left at its default, partial_end
+	for _, attempt := range []string{"first", "repeat"} {
+		resp, body := h.do(t, "/"+offPromBackend+"/api/v1/query_range", withParams(url.Values{
+			"query": {"up # trickster-step-align:drop"}, "start": {strconv.FormatInt(start.Unix(), 10)},
+			"end": {strconv.FormatInt(end.Unix(), 10)}, "step": {strconv.Itoa(int(promDropStep.Seconds()))},
+		}))
+		require.Equal(t, http.StatusOK, resp.StatusCode, "directive %s: %.240s", attempt, body)
+		require.Equal(t, want, promInstants(t, body), "directive %s", attempt)
+		require.Equal(t, "off", parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))[keys.FFStatus],
+			"directive %s", attempt)
+	}
 	// ranges shorter than a step: none holding no grid instant, and the one it holds
 	grid := start.Truncate(promDropStep)
 	for _, test := range []struct {

@@ -234,8 +234,7 @@ func TestRoundTimestampsToMinute_EndIncludesRecentData(t *testing.T) {
 func TestParseTimeRangeQuery(t *testing.T) {
 	logger.SetLogger(testLogger)
 	qp := url.Values(map[string][]string{
-		"query": {`up-` + timeseries.FastForwardUserDisableFlag + " " +
-			timeseries.BackfillToleranceFlag + "30a"},
+		"query": {"up # trickster-fast-forward:off trickster-volatile-window:30s"},
 		"start": {strconv.Itoa(int(time.Now().Add(time.Duration(-6) * time.Hour).Unix()))},
 		"end":   {strconv.Itoa(int(time.Now().Unix()))},
 		"step":  {"15"},

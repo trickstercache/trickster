@@ -123,8 +123,8 @@ func (s *Server) newDeltaEngine() *nativedelta.Engine[*Result] {
 	return nativedelta.New[*Result](nativedelta.Config{
 		Protocol: cacheKeyProtocol, BackendName: s.config.BackendName, CacheClient: s.cacheClient,
 		CacheTTL: s.config.CacheTTL, MaxObjectSize: s.config.MaxObjectSize,
-		RetentionPoints: s.config.RetentionPoints, VolatileWindow: s.config.BackfillWindow,
-		VolatileWindowPoints: s.config.BackfillPoints, PartialBucketTTL: s.config.PartialBucketTTL,
+		RetentionPoints: s.config.RetentionPoints, VolatileWindow: s.config.VolatileWindow,
+		VolatileWindowPoints: s.config.VolatileWindowPoints, PartialBucketTTL: s.config.PartialBucketTTL,
 		Provider: s.config.Provider,
 		ObserveCacheFailure: func(reason string) {
 			if client := s.cacheClient(); client != nil && client.Configuration() != nil {
@@ -162,7 +162,7 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 	var unaligned bool
 	switch {
 	case mode != sqlanalyzer.CacheModeDelta:
-	case s.server.config.StepAlignment == timeseries.StepAlignmentOff:
+	case nativedelta.RequestStepAlignment(s.server.config.StepAlignment, plan) == timeseries.StepAlignmentOff:
 		// off answers with the origin's result to the client's statement, keyed on its raw range
 		mode, unaligned = sqlanalyzer.CacheModeObject, true
 	case plan == nil || !orderable(plan):
@@ -247,7 +247,7 @@ func (s *session) executeObject(sql string, unaligned bool) (*Result, status.Loo
 
 func (s *session) objectTier(engine, sql string, ttl time.Duration, original bool,
 ) (*Result, status.LookupStatus, error) {
-	return s.server.delta.ExecuteObject(s.identityKey(engine, sql, ""), ttl, func() (*Result, error) {
+	return s.server.delta.ExecuteObject(s.identityKey(engine, sql), ttl, func() (*Result, error) {
 		return s.fetch(sql, original, nil)
 	})
 }
@@ -309,6 +309,7 @@ func (s *session) executeDelta(outcome gateOutcome, plan *sqlanalyzer.QueryPlan,
 	}
 	return s.server.delta.ExecuteDelta(nativedelta.DeltaRequest[*Result]{
 		Key: outcome.key, FallbackKey: outcome.key + keySuffixFallback, Statement: outcome.sql,
-		Plan: plan, Now: time.Now(), StepAlignment: config.StepAlignment, Ops: ops,
+		Plan: plan, Now: time.Now(), StepAlignment: nativedelta.RequestStepAlignment(config.StepAlignment, plan),
+		Ops: ops,
 	})
 }

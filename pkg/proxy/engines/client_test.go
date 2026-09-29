@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 // Prometheus API
@@ -293,9 +294,7 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 		rlo.FastForwardDisable = true
 	}
 
-	if strings.Contains(trq.Statement, timeseries.FastForwardUserDisableFlag) {
-		rlo.FastForwardDisable = true
-	}
+	trq.Directives = directives.Parse(trq.Statement, directives.SyntaxPromQL)
 
 	return trq, rlo, true, nil
 }

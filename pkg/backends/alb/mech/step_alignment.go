@@ -20,22 +20,21 @@ import (
 	"net/http"
 
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // Align returns r carrying the step alignment of the pool or pick it is dispatched through, so no
 // swap pairs a membership with another's mode; an outer ALB's mode stays
-func Align(r *http.Request, mode timeseries.StepAlignment) *http.Request {
-	if mode == 0 || r == nil {
+func Align(r *http.Request, o *tctx.StepAlignmentOverride) *http.Request {
+	if o == nil || r == nil {
 		// inlined, so a request through a pool without a mode costs one comparison
 		return r
 	}
-	return align(r, mode)
+	return align(r, o)
 }
 
-func align(r *http.Request, mode timeseries.StepAlignment) *http.Request {
-	if tctx.StepAlignment(r.Context()) != 0 {
+func align(r *http.Request, o *tctx.StepAlignmentOverride) *http.Request {
+	if tctx.StepAlignmentOverrideOf(r.Context()) != nil {
 		return r
 	}
-	return r.WithContext(tctx.WithStepAlignment(r.Context(), mode))
+	return r.WithContext(tctx.WithStepAlignmentOverride(r.Context(), o))
 }

@@ -262,7 +262,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// the mode and warning come from the pool this request fans out to, never a newer or older one
 	alignment := p.Alignment()
-	r = mech.Align(r, alignment.Mode)
+	r = mech.Align(r, p.StepAlignmentOverride())
 	hl := p.Targets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {

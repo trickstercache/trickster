@@ -101,7 +101,7 @@ func (p *QueryPlan) ApplyToQuery(trq *timeseries.TimeRangeQuery) {
 	trq.Phase = p.Phase
 	trq.SampleModel = timeseries.SampleModelBucket
 	trq.StepAlignments, trq.StepAlignment = StepAlignments, DefaultStepAlignment
-	trq.BackfillTolerance = p.BackfillTolerance
+	trq.Directives = p.Directives
 	trq.TimestampDefinition = timeseries.FieldDefinition{
 		Name:          p.OutputColumn,
 		DataType:      p.OutputUnit,

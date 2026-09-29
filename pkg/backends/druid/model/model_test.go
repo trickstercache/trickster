@@ -299,7 +299,8 @@ func TestModelHelpers(t *testing.T) {
 	}
 	normalized := normalizeJSONValue([]any{
 		json.Number("18446744073709551615"), json.Number("1.25"),
-		json.Number("not-a-number"), map[string]any{"n": json.Number("1")},
+		json.Number("not-a-number"),
+		map[string]any{"n": json.Number("1")},
 	})
 	values := normalized.([]any)
 	if _, ok := values[0].(uint64); !ok {

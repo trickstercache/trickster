@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 const (
@@ -239,7 +240,8 @@ func ParseTimeRangeQuery(r *http.Request,
 			}
 		}
 	}
-	trq.CacheKeyElements = map[string]string{AttrQuery: tokenizedStmt}
+	trq.Directives = directives.Parse(frb.Query, directives.SyntaxFlux)
+	trq.CacheKeyElements = map[string]string{AttrQuery: directives.Strip(tokenizedStmt, directives.SyntaxFlux)}
 	qp := r.URL.Query()
 	if qp != nil {
 		if v := qp.Get("org"); v != "" {

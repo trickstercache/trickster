@@ -407,6 +407,23 @@ func TestStepAlignmentResolution(t *testing.T) {
 	}
 }
 
+func TestAWindowWithoutPartialsAllocatesNothing(t *testing.T) {
+	engine := newTestEngine(nil)
+	ops, _ := partialOps(engine, new(int))
+	req := modeRequest(rawPlan(30, 630), ops, timeseries.StepAlignmentDrop)
+	var window Window
+	for _, concurrent := range []bool{true, false} {
+		allocs := testing.AllocsPerRun(100, func() {
+			if engine.fetchPartials(req, &window, concurrent) != nil {
+				t.Fatal("a window without partials started fetches")
+			}
+		})
+		if allocs != 0 {
+			t.Errorf("concurrent %t: %v allocations", concurrent, allocs)
+		}
+	}
+}
+
 func TestAbandonedPartialsNeverDelayAFallback(t *testing.T) {
 	// an interior that isn't answered from the delta tier cancels its concurrent partial buckets and
 	// returns without them, however long they would take
@@ -505,5 +522,25 @@ func TestPartialBucketsFollowTheRequestsContext(t *testing.T) {
 	}
 	if len(seen) != 2 || seen[0] != "request" || seen[1] != "request" {
 		t.Fatalf("partial fetches saw %v", seen)
+	}
+}
+
+func TestRequestStepAlignment(t *testing.T) {
+	const drop, partial = timeseries.StepAlignmentDrop, timeseries.StepAlignmentPartial
+	withDirective := &sqlanalyzer.QueryPlan{Directives: timeseries.Directives{StepAlignment: partial}}
+	for _, test := range []struct {
+		name       string
+		configured timeseries.StepAlignment
+		plan       *sqlanalyzer.QueryPlan
+		want       timeseries.StepAlignment
+	}{
+		{"no plan", drop, nil, drop},
+		{"no directive", drop, &sqlanalyzer.QueryPlan{}, drop},
+		{"a directive wins", drop, withDirective, partial},
+		{"a directive with nothing configured", 0, withDirective, partial},
+	} {
+		if got := RequestStepAlignment(test.configured, test.plan); got != test.want {
+			t.Errorf("%s: got %s", test.name, got)
+		}
 	}
 }
