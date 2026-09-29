@@ -18,8 +18,10 @@ package integration
 
 import (
 	"encoding/json"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -80,8 +82,9 @@ func TestPrometheusDrop(t *testing.T) {
 		require.Equal(t, "off", parseTricksterResult(resp.Header.Get(headers.NameTricksterResult))[keys.FFStatus],
 			"directive %s", attempt)
 	}
-	// ranges shorter than a step: none holding no grid instant, and the one it holds
-	grid := start.Truncate(promDropStep)
+	// ranges shorter than a step: none holding no grid instant, and the one it holds, anchored on the
+	// origin's earliest point so a gap in its data can't empty the expected instant
+	grid := time.Unix(slices.Min(slices.Collect(maps.Keys(want))), 0).Add(-promDropStep)
 	for _, test := range []struct {
 		name     string
 		from, to time.Duration

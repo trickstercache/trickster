@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testDataSet() *DataSet {
@@ -644,6 +647,28 @@ func TestCroppedClone(t *testing.T) {
 	exs = ds.Extents()
 	if len(exs) != 0 {
 		t.Error("invalid extent in clone", exs)
+	}
+}
+
+func TestCroppedCloneSkipsSeriesWithoutPointsInRange(t *testing.T) {
+	point := func(sec int64) Point {
+		return Point{Epoch: epoch.Epoch(time.Unix(sec, 0).UnixNano()), Values: []any{sec}}
+	}
+	inRange := &Series{Points: Points{point(5), point(10)}}
+	source := SeriesList{
+		&Series{Points: Points{point(25)}}, nil, inRange, &Series{}, &Series{Points: Points{point(30)}},
+	}
+	ds := &DataSet{
+		ExtentList: timeseries.ExtentList{{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+		Results:    Results{&Result{SeriesList: slices.Clone(source)}},
+	}
+	clone := ds.CroppedClone(timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)}).(*DataSet)
+	require.Len(t, clone.Results[0].SeriesList, 1)
+	require.NotSame(t, inRange, clone.Results[0].SeriesList[0])
+	require.Equal(t, inRange.Points, clone.Results[0].SeriesList[0].Points)
+	require.Equal(t, source, ds.Results[0].SeriesList, "the source's series list changed")
+	for i := range source {
+		require.Same(t, source[i], ds.Results[0].SeriesList[i])
 	}
 }
 

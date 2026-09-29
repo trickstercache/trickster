@@ -260,6 +260,13 @@ integration-test:
 	$(MAKE) -C integration test
 	$(MAKE) -C integration data-race-test
 
+.PHONY: integration-test-no-failfast
+integration-test-no-failfast:
+	@status=0; \
+	$(MAKE) -C integration test-no-failfast || status=1; \
+	$(MAKE) -C integration data-race-test-no-failfast || status=1; \
+	exit $$status
+
 .PHONY: integration-cover
 integration-cover:
 	$(MAKE) -C integration cover

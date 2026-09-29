@@ -52,6 +52,7 @@ make kind-soak SOAK_DURATION=60m SOAK_TIMEOUT=90m
 cd integration
 make test              # full suite, fail-fast
 make data-race-test    # full suite with -race
+make -C .. integration-test-no-failfast # full suite and race suite, continuing after failures
 go test -run TestALB   # single test
 TRICKSTER_MYSQL_CLI_TEST=1 go test -run TestMySQLRealServer -v
 ```

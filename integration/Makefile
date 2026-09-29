@@ -27,9 +27,24 @@ test:
 	$(GO) test -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 
+.PHONY: test-no-failfast
+test-no-failfast:
+	@status=0; \
+	$(GO) test -v || status=1; \
+	$(GO) test -v ./greptimedb || status=1; \
+	../hack/filter-coverprofile.sh .integration.coverprofile || status=1; \
+	exit $$status
+
 data-race-test:
 	$(GO) test -v --failfast --race
 	$(GO) test -v --race ./greptimedb
+
+.PHONY: data-race-test-no-failfast
+data-race-test-no-failfast:
+	@status=0; \
+	$(GO) test -v --race || status=1; \
+	$(GO) test -v --race ./greptimedb || status=1; \
+	exit $$status
 
 cover:
 	$(GO) test -v --failfast -coverpkg=../... -coverprofile=.integration.coverprofile

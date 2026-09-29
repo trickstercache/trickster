@@ -174,16 +174,9 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		}
 		eg.Wait()
 		if skips == 1 {
-			sl := make([]*Series, len(ds.Results[i].SeriesList))
-			var k int
-			for _, s := range ds.Results[i].SeriesList {
-				if s == nil {
-					continue
-				}
-				sl[k] = s
-				k++
-			}
-			ds.Results[i].SeriesList = sl[:k]
+			clone.Results[i].SeriesList = slices.DeleteFunc(clone.Results[i].SeriesList, func(s *Series) bool {
+				return s == nil
+			})
 		}
 	}
 	return clone
