@@ -60,14 +60,12 @@ var goldNativeProtocols = []struct{ backend, protocol string }{
 func TestStepAlignmentGoldNative(t *testing.T) {
 	// the gold test through the MySQL, PostgreSQL and Flight SQL listeners: each mode's answer, first
 	// and repeat, is the origin's own over the range that mode serves, by label
-	waitForInfluxDB3Data(t, offInfluxDB3Addr)
+	i3From, i3To := recentRange(seedInfluxDB3(t))
 	h, addrs := goldNativeHarness(t)
 	h.start(t)
 
 	now := time.Now().UTC()
 	tripsFrom, tripsTo := offRange(now.Add(-26*time.Hour), time.Hour)
-	i3From, i3To := recentRange(now)
-	waitForInfluxDB3History(t, offInfluxDB3Addr, i3From)
 
 	t.Run(offMySQLBackend, func(t *testing.T) {
 		requireMySQLDeveloperEnvironment(t)

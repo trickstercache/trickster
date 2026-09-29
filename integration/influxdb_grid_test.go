@@ -41,12 +41,12 @@ const (
 	gridFluxPath     = "/api/v2/query?org=trickster-dev"
 	gridInfluxQLPath = "/query?db=trickster&epoch=s&q="
 	gridStatusPHit   = "phit"
-	// Telegraf's data reaches back only to the environment's start, so the ranges are recent and short:
 	// the wide range's three 1m buckets flank the warm range's middle one
 	gridWide     = 3 * time.Minute
 	gridWarmFrom = 2 * time.Minute
 	gridWarmTo   = time.Minute
 	gridOffset   = 30 * time.Second
+	gridSettle   = 2 * time.Minute
 )
 
 func TestInfluxDBBucketGrids(t *testing.T) {
@@ -54,16 +54,14 @@ func TestInfluxDBBucketGrids(t *testing.T) {
 	// missing buckets are fetched on both sides of it; every bucket must match the origin
 	h := configHarness(t)
 	h.start(t)
-	latest := waitForInfluxDBData(t, gridInfluxOrigin)
-	// a fully written, minute-aligned end keeps every bucket complete and cacheable
-	end := latest.Truncate(time.Minute).Add(-2 * time.Minute)
-	waitForInfluxDBHistory(t, gridInfluxOrigin, end.Add(-gridWide-gridOffset))
+	// a minute-aligned end settled away from the newest points keeps every bucket complete and cacheable
+	end := seedInfluxDB2(t).Truncate(time.Minute).Add(-gridSettle)
 
 	t.Run("flux aggregateWindow stop-time labels", func(t *testing.T) {
 		query := func(start, stop time.Time) string {
 			return fmt.Sprintf(`{"query": %q, "type": "flux"}`, fmt.Sprintf(
 				`from(bucket: "trickster") |> range(start: %d, stop: %d)`+
-					` |> filter(fn: (r) => r._measurement == "cpu" and r._field == "usage_idle"`+
+					` |> filter(fn: (r) => r._measurement == "`+influxSeedMeasurement+`" and r._field == "usage_idle"`+
 					` and r.cpu == "cpu-total") |> aggregateWindow(every: 1m, fn: count)`+
 					` |> keep(columns: ["_time", "_value"])`, start.Unix(), stop.Unix()))
 		}
@@ -88,7 +86,7 @@ func TestInfluxDBBucketGrids(t *testing.T) {
 		// a 30s offset puts every bucket boundary between minute boundaries
 		offsetEnd := end.Add(-gridOffset)
 		query := func(start, stop time.Time) string {
-			return url.QueryEscape(fmt.Sprintf(`SELECT count("usage_idle") FROM "cpu" WHERE `+
+			return url.QueryEscape(fmt.Sprintf(`SELECT count("usage_idle") FROM "`+influxSeedMeasurement+`" WHERE `+
 				`"cpu" = 'cpu-total' AND time >= '%s' AND time < '%s' GROUP BY time(1m, 30s)`,
 				start.Format(time.RFC3339), stop.Format(time.RFC3339)))
 		}

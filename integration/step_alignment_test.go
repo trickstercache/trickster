@@ -52,7 +52,7 @@ const (
 	offStartSkew = 7 * time.Second
 	offEndSkew   = 13 * time.Second
 	offShift     = time.Second
-	// Telegraf's data reaches back only to the environment's start, so its ranges are recent and short
+	// the InfluxDB ranges lie inside the tests' seeded points, ending a settle before the newest
 	recentSpan   = 3 * time.Minute
 	recentSettle = 2 * time.Minute
 
@@ -92,11 +92,12 @@ const (
 		`"intervals":["%s/%s"],"aggregations":[{"type":"count","name":"trips"}]}`
 	offDruidSQL = `{"query":"SELECT TIME_FLOOR(__time, 'PT5M') AS bucket, COUNT(*) AS trips FROM trips ` +
 		`WHERE __time >= MILLIS_TO_TIMESTAMP(%d) AND __time < MILLIS_TO_TIMESTAMP(%d) GROUP BY 1 ORDER BY 1"}`
-	offInfluxQL = `SELECT mean("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' ` +
+	offInfluxQL = `SELECT mean("usage_idle") FROM "` + influxSeedMeasurement + `" WHERE "cpu" = 'cpu-total' ` +
 		`AND time >= '%s' AND time < '%s' GROUP BY time(10s)`
 	offFlux = `from(bucket: "trickster") |> range(start: %s, stop: %s) |> filter(fn: (r) => ` +
-		`r._measurement == "cpu" and r._field == "usage_idle" and r.cpu == "cpu-total") |> aggregateWindow(every: 1m, fn: mean)`
-	offInflux3SQL = "SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle FROM cpu " +
+		`r._measurement == "` + influxSeedMeasurement + `" and r._field == "usage_idle" and r.cpu == "cpu-total") |> aggregateWindow(every: 1m, fn: mean)`
+	offInflux3SQL = "SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle FROM " +
+		influxSeedMeasurement + " " +
 		"WHERE cpu = 'cpu-total' AND time >= '%s' AND time < '%s' GROUP BY 1 ORDER BY 1"
 	offMySQLSQL = "SELECT UNIX_TIMESTAMP(pickup_datetime) DIV 300 * 300 AS time, COUNT(*) AS value FROM trips " +
 		"WHERE pickup_datetime >= FROM_UNIXTIME(%d) AND pickup_datetime < FROM_UNIXTIME(%d) GROUP BY time ORDER BY time"
@@ -117,18 +118,14 @@ func TestStepAlignmentOff(t *testing.T) {
 	waitForPrometheusData(t, offPromAddr)
 	waitForClickHouseData(t, offClickHouseAddr)
 	waitForGraphiteData(t, graphiteWebAddr)
-	waitForInfluxDB3Data(t, offInfluxDB3Addr)
-	latest := waitForInfluxDBData(t, offInfluxDB2Addr)
+	fluxFrom, fluxTo := recentRange(seedInfluxDB2(t))
+	i3From, i3To := recentRange(seedInfluxDB3(t))
 	h, pgAddr, flightAddr := stepAlignmentOffHarness(t)
 	h.start(t)
 
 	now := time.Now().UTC()
 	promFrom, promTo := offRange(now.Add(-2*time.Hour), 30*time.Minute)
 	tripsFrom, tripsTo := offRange(now.Add(-26*time.Hour), time.Hour)
-	fluxFrom, fluxTo := recentRange(latest)
-	i3From, i3To := recentRange(now)
-	waitForInfluxDBHistory(t, offInfluxDB2Addr, fluxFrom)
-	waitForInfluxDB3History(t, offInfluxDB3Addr, i3From)
 	// unaligned native intervals take the object lane under any mode, so aligned ones show off bypassing the delta cache
 	druidFrom := now.Add(-26 * time.Hour).Truncate(time.Hour)
 	unix := func(ts time.Time) string { return strconv.FormatInt(ts.Unix(), 10) }
@@ -351,7 +348,7 @@ func offRange(base time.Time, span time.Duration) (time.Time, time.Time) {
 }
 
 func recentRange(latest time.Time) (time.Time, time.Time) {
-	// the newest of Telegraf's data old enough to be fully written, as an offRange
+	// a range of seeded points, ending a settle before latest, as an offRange
 	return offRange(latest.Add(-recentSpan-recentSettle), recentSpan)
 }
 

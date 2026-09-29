@@ -60,8 +60,8 @@ type goldCase struct {
 
 func TestStepAlignmentGold(t *testing.T) {
 	waitForClickHouseData(t, offClickHouseAddr)
-	waitForInfluxDB3Data(t, offInfluxDB3Addr)
-	latest := waitForInfluxDBData(t, offInfluxDB2Addr)
+	influxFrom, influxTo := recentRange(seedInfluxDB2(t))
+	i3From, i3To := recentRange(seedInfluxDB3(t))
 	backends := []string{offClickHouseBackend, offDruidBackend, offInfluxBackend, offFlightBackend}
 	h := configHarness(t, func(c *tkconfig.Config) {
 		// one copy of each backend per mode, reached over HTTP only
@@ -82,10 +82,6 @@ func TestStepAlignmentGold(t *testing.T) {
 
 	now := time.Now().UTC()
 	tripsFrom, tripsTo := offRange(now.Add(-26*time.Hour), time.Hour)
-	influxFrom, influxTo := recentRange(latest)
-	i3From, i3To := recentRange(now)
-	waitForInfluxDBHistory(t, offInfluxDB2Addr, influxFrom)
-	waitForInfluxDB3History(t, offInfluxDB3Addr, i3From)
 	influxQL := func(from, to time.Time) string {
 		return fmt.Sprintf(offInfluxQL, from.Format(time.RFC3339), to.Format(time.RFC3339))
 	}

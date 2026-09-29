@@ -154,8 +154,8 @@ func LoadAndValidateWithOverlay(overlay *config.Overlay, args ...string) (*confi
 	return cfg, nil
 }
 
-// Shutdown stops the instance's background workers that reach upstreams (autodiscovery, ALB
-// pools, Graphite ladder learning and health check probes) and waits for them to exit.
+// Shutdown stops the instance's upstream workers (discovery, ALB pools, Graphite learning,
+// health probes), waits for them to exit, then closes its caches.
 func Shutdown(si *instance.ServerInstance) {
 	if si == nil {
 		return
@@ -168,6 +168,22 @@ func Shutdown(si *instance.ServerInstance) {
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
+	}
+	// closed last, as the workers above may still write to them
+	closeCaches(si.Caches, si.MgmtOptions().ShutdownDrain())
+	si.Caches = nil
+}
+
+func closeCaches(caches cache.Lookup, drain time.Duration) {
+	for name, c := range caches {
+		// a close waits for in-flight operations, but for no longer than the shutdown drain
+		if m, ok := c.(*manager.Manager); ok {
+			m.SetCloseDrainTimeout(drain)
+		}
+		if err := c.Close(); err != nil {
+			logger.Warn("error closing cache during shutdown",
+				logging.Pairs{keys.CacheName: name, keys.Error: err.Error()})
+		}
 	}
 }
 

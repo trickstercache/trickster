@@ -98,12 +98,12 @@ each assertion so that timing can't change its outcome:
   hit with `requireCacheHit`, which retries only a `phit`, at most twice. Run a
   whole status sequence (for example `kmiss`, `hit`, `phit`) inside
   `stepwindow.Retry` so it restarts when a boundary passes.
-- **Fresh environments.** CI starts the containers minutes before the tests.
-  Prometheus holds history only for the backfilled `trips_*` series, and
-  InfluxDB only what Telegraf has written since it started. Use a recent range
-  (`recentRange`) and wait for the origin to hold it (`waitForInfluxDBHistory`,
-  `waitForInfluxDB3History`), and expect points only where the origin returned
-  them: a long-running environment can have gaps.
+- **Fresh environments.** CI starts the containers minutes before the tests,
+  so never wait for data to accumulate in real time. Prometheus holds history
+  only for the backfilled `trips_*` series. Don't query Telegraf's data: an
+  InfluxDB test writes its own points first with `seedInfluxDB2` or
+  `seedInfluxDB3`, which return the end of the span written, and queries the
+  `it_cpu` measurement within it (`recentRange`).
 - **Caches and state outlive a test.** The filesystem and Redis caches keep
   entries between the normal and `-race` runs, so a test that expects a miss
   needs a query no earlier run made (for example one carrying

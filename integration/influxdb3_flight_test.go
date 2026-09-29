@@ -132,7 +132,6 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	// Unique flight port per test to avoid collisions across parallel runs.
 	h, flightPort := flightConfigHarness(t)
 	h.start(t)
-	waitForInfluxDB3Data(t, "127.0.0.1:8181")
 	seedNow := time.Now().UTC().Truncate(time.Minute)
 	seedFlightDeltaData(t, "127.0.0.1:8181", seedNow)
 	seedRange := fmt.Sprintf("time >= '%s' AND time < '%s'",

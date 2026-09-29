@@ -18,9 +18,7 @@ package integration
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -44,11 +42,6 @@ import (
 )
 
 const (
-	// a fresh environment's Telegraf reaches back a few minutes, so this covers the recent ranges tests use
-	influxHistoryWait = 10 * time.Minute
-	influxHistoryQL   = `SELECT count("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' AND time >= '%s' AND time < '%s'`
-	influx3HistorySQL = `SELECT count(*) AS n FROM cpu WHERE cpu = 'cpu-total' AND time >= '%s' AND time < '%s'`
-
 	reloadAttemptsMetric = "trickster_config_reload_attempts_total"
 )
 
@@ -275,167 +268,6 @@ func waitForGraphiteData(t *testing.T, graphiteAddr string) {
 		}
 		assert.Greater(collect, values, 0, "waiting for the generator to write current data")
 	}, 2*time.Minute, 2*time.Second, "Graphite data never became available")
-}
-
-func waitForInfluxDBData(t *testing.T, influxAddr string) time.Time {
-	t.Helper()
-	var latest time.Time
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		req, err := http.NewRequest("POST",
-			"http://"+influxAddr+"/api/v2/query?org=trickster-dev",
-			strings.NewReader(`{"query": "from(bucket: \"trickster\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"cpu\" and r._field == \"usage_idle\") |> group() |> last(column: \"_time\") |> keep(columns: [\"_time\"])", "type": "flux"}`))
-		if !assert.NoError(collect, err) {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Token trickster-dev-token")
-		resp, err := http.DefaultClient.Do(req)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		if !assert.Equal(collect, http.StatusOK, resp.StatusCode,
-			"InfluxDB query failed: %s", strings.TrimSpace(string(b))) {
-			return
-		}
-		records, err := csv.NewReader(strings.NewReader(string(b))).ReadAll()
-		if !assert.NoError(collect, err) {
-			return
-		}
-		timeColumn := -1
-		for _, record := range records {
-			if len(record) == 0 || strings.HasPrefix(record[0], "#") {
-				continue
-			}
-			if timeColumn < 0 {
-				timeColumn = slices.Index(record, "_time")
-				continue
-			}
-			if timeColumn < 0 || timeColumn >= len(record) || record[timeColumn] == "" {
-				continue
-			}
-			latest, err = time.Parse(time.RFC3339Nano, record[timeColumn])
-			if !assert.NoError(collect, err) {
-				return
-			}
-			break
-		}
-		assert.False(collect, latest.IsZero(), "waiting for InfluxDB data")
-	}, 30*time.Second, 2*time.Second, "InfluxDB data never became available")
-	return latest
-}
-
-// waitForInfluxDB3Data polls the v3 SQL endpoint until rows land in the cpu
-// table (seeded by telegraf via v1-compat writes).
-func waitForInfluxDB3Data(t *testing.T, influxAddr string) {
-	t.Helper()
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		req, err := http.NewRequest("POST",
-			"http://"+influxAddr+"/api/v3/query_sql",
-			strings.NewReader(`{"q": "SELECT cpu FROM cpu LIMIT 1", "db": "trickster"}`))
-		if !assert.NoError(collect, err) {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		// v3 returns [] when no rows, [{...}] when rows exist
-		assert.Greater(collect, len(strings.TrimSpace(string(b))), 2,
-			"waiting for Telegraf to write data to InfluxDB 3")
-	}, 60*time.Second, 2*time.Second, "InfluxDB 3 data never became available")
-}
-
-func waitForInfluxDBHistory(t *testing.T, influxAddr string, from time.Time) {
-	t.Helper()
-	// Telegraf writes only from the environment's start, so a range reaching back past a fresh one waits
-	q := url.Values{"db": {offInfluxDB}, "epoch": {"s"}, "q": {fmt.Sprintf(influxHistoryQL,
-		from.UTC().Format(time.RFC3339), from.Add(time.Minute).UTC().Format(time.RFC3339))}}
-	waitForInfluxPoints(t, from, func() (*http.Request, error) {
-		req, err := http.NewRequest(http.MethodGet, "http://"+influxAddr+"/query?"+q.Encode(), nil)
-		if err == nil {
-			req.Header.Set("Authorization", offInfluxToken)
-		}
-		return req, err
-	}, func(b []byte) (float64, error) {
-		var doc struct {
-			Results []struct {
-				Series []struct {
-					Values [][]float64 `json:"values"`
-				} `json:"series"`
-			} `json:"results"`
-		}
-		err := json.Unmarshal(b, &doc)
-		var n float64
-		for _, r := range doc.Results {
-			for _, s := range r.Series {
-				for _, v := range s.Values {
-					n += v[len(v)-1]
-				}
-			}
-		}
-		return n, err
-	})
-}
-
-func waitForInfluxDB3History(t *testing.T, influxAddr string, from time.Time) {
-	t.Helper()
-	body, err := json.Marshal(map[string]string{"db": offInfluxDB, "q": fmt.Sprintf(influx3HistorySQL,
-		from.UTC().Format(time.RFC3339), from.Add(time.Minute).UTC().Format(time.RFC3339))})
-	require.NoError(t, err)
-	waitForInfluxPoints(t, from, func() (*http.Request, error) {
-		req, err := http.NewRequest(http.MethodPost, "http://"+influxAddr+"/api/v3/query_sql",
-			strings.NewReader(string(body)))
-		if err == nil {
-			req.Header.Set("Content-Type", "application/json")
-		}
-		return req, err
-	}, func(b []byte) (float64, error) {
-		var rows []struct {
-			N float64 `json:"n"`
-		}
-		err := json.Unmarshal(b, &rows)
-		var n float64
-		for _, r := range rows {
-			n += r.N
-		}
-		return n, err
-	})
-}
-
-func waitForInfluxPoints(t *testing.T, from time.Time, request func() (*http.Request, error),
-	count func([]byte) (float64, error),
-) {
-	t.Helper()
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		req, err := request()
-		if !assert.NoError(collect, err) {
-			return
-		}
-		resp, err := http.DefaultClient.Do(req)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if !assert.NoError(collect, err) || !assert.Equal(collect, http.StatusOK, resp.StatusCode, "%s", b) {
-			return
-		}
-		n, err := count(b)
-		if assert.NoError(collect, err, "%s", b) {
-			assert.Positive(collect, n, "waiting for Telegraf's data from %s", from)
-		}
-	}, influxHistoryWait, 5*time.Second, "the origin never held Telegraf's data from %s", from)
 }
 
 type promResponse struct {

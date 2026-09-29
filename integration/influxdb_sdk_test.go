@@ -36,9 +36,10 @@ func TestInfluxDBSDK(t *testing.T) {
 	h := configHarness(t)
 	influxAddr := h.BaseAddr
 	h.start(t)
-	latest := waitForInfluxDBData(t, "127.0.0.1:8086")
-	dataRange := fmt.Sprintf(`range(start: %s, stop: %s)`,
-		latest.Add(-5*time.Minute).Format(time.RFC3339Nano), latest.Add(time.Minute).Format(time.RFC3339Nano))
+	latest := seedInfluxDB2(t)
+	dataRange := fmt.Sprintf(`range(start: %s, stop: %s) |> filter(fn: (r) => r._measurement == %q)`,
+		latest.Add(-5*time.Minute).Format(time.RFC3339Nano), latest.Add(time.Minute).Format(time.RFC3339Nano),
+		influxSeedMeasurement)
 
 	serverURL := "http://" + influxAddr + "/flux2"
 	client := influxdb2.NewClient(serverURL, "trickster-dev-token")
@@ -86,7 +87,9 @@ func TestInfluxDBSDK(t *testing.T) {
 	// handling in flux.parseRange (which previously flowed to HTTPProxy).
 	t.Run("cache_hit_header", func(t *testing.T) {
 		fluxURL := "http://" + influxAddr + "/flux2/api/v2/query?org=trickster-dev"
-		body := `{"query": "from(bucket: \"trickster\") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._measurement == \"cpu\" and r._field == \"usage_idle\") |> aggregateWindow(every: 1m, fn: mean)", "type": "flux"}`
+		body := fmt.Sprintf(`{"query": %q, "type": "flux"}`, `from(bucket: "trickster") |> range(start: -1h, stop: now())`+
+			` |> filter(fn: (r) => r._measurement == "`+influxSeedMeasurement+`" and r._field == "usage_idle")`+
+			` |> aggregateWindow(every: 1m, fn: mean)`)
 		do := func() *http.Response {
 			req, err := http.NewRequest("POST", fluxURL, strings.NewReader(body))
 			require.NoError(t, err)
