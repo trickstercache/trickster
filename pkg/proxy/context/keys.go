@@ -27,4 +27,5 @@ const (
 	servedKey
 	clientIPKey
 	mirroredKey
+	stepAlignmentKey
 )

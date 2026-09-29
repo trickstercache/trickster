@@ -180,8 +180,10 @@ func newGreptimePromFixture(t *testing.T) *greptimePromFixture {
 	for _, name := range []string{"direct", "a", "b"} {
 		backend := map[string]any{
 			"provider": "greptimedb", "origin_url": f.origin, "cache_name": "memory", "fast_forward_disable": true,
-			"healthcheck": map[string]any{"path": "/health", "query": "", "interval": "100ms", "timeout": "2s", "failure_threshold": 1, "recovery_threshold": 1},
+			"healthcheck": map[string]any{"path": "/health", "query": "", "interval": "100ms", "timeout": "2s", "failure_threshold": 3, "recovery_threshold": 1},
 		}
+		// at a 500ms step the default retention reaches back only 512s, which a slow run could outlast
+		backend["timeseries_retention_factor"] = 1_000_000
 		if name != "direct" {
 			index := 0
 			if name == "b" {

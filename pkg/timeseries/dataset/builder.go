@@ -77,6 +77,9 @@ type Builder struct {
 	row      RowBuilder
 	arena    []any
 	chunk    int
+	bytes    []byte
+	byteSize int
+	blobs    [][]byte
 	finished bool
 }
 
@@ -109,8 +112,11 @@ type seriesBuild struct {
 const (
 	minValueChunk = 64
 	maxValueChunk = 4096
+	minByteChunk  = 4096
+	maxByteChunk  = 1 << 20
 	pointOverhead = 40 // a Point's Epoch, Size and Values slice header
 	valueOverhead = 16 // the interface header of each value
+	sliceHeader   = 24 // the slice header a *[]byte value points to
 )
 
 // NewBuilder returns a Builder for the provided query and options.
@@ -225,6 +231,8 @@ func valueSize(v any) int {
 		return valueOverhead + len(t)
 	case []byte:
 		return valueOverhead + len(t)
+	case *[]byte:
+		return valueOverhead + sliceHeader + len(*t)
 	case bool, int8, uint8:
 		return valueOverhead + 1
 	case int16, uint16:
@@ -257,6 +265,29 @@ func (r *RowBuilder) SetTag(i int, raw []byte) {
 // open series' ValueFieldsList.
 func (r *RowBuilder) AddValue(v any) {
 	r.values = append(r.values, v)
+}
+
+// AddBytes appends a copy of raw as the next value, a *[]byte for BytesValue; nil appends nil.
+// The copy and value live in the Builder's arenas, so it suits a reused buffer.
+func (r *RowBuilder) AddBytes(raw []byte) {
+	if raw == nil {
+		r.values = append(r.values, nil)
+		return
+	}
+	r.values = append(r.values, r.b.bytesValue(r.b.copyBytes(raw)))
+}
+
+// BytesValue returns the bytes of a value AddBytes appended, or of a []byte value.
+func BytesValue(v any) ([]byte, bool) {
+	switch t := v.(type) {
+	case *[]byte:
+		if t != nil {
+			return *t, true
+		}
+	case []byte:
+		return t, true
+	}
+	return nil, false
 }
 
 // Commit adds the row to its series: the open series in series mode, or else the
@@ -385,6 +416,27 @@ func (b *Builder) allocValues(n int) []any {
 	l := len(b.arena)
 	b.arena = b.arena[:l+n]
 	return b.arena[l : l+n : l+n]
+}
+
+func (b *Builder) bytesValue(raw []byte) *[]byte {
+	// a pointer boxes without an allocation, so the slice headers share chunks as the values do
+	if len(b.blobs) == cap(b.blobs) {
+		b.blobs = make([][]byte, 0, min(max(2*cap(b.blobs), minValueChunk), maxValueChunk))
+	}
+	b.blobs = append(b.blobs, raw)
+	return &b.blobs[len(b.blobs)-1]
+}
+
+func (b *Builder) copyBytes(raw []byte) []byte {
+	// values share chunked byte buffers to avoid an allocation per value
+	n := len(raw)
+	if cap(b.bytes)-len(b.bytes) < n {
+		b.byteSize = min(max(2*b.byteSize, minByteChunk), maxByteChunk)
+		b.bytes = make([]byte, 0, max(b.byteSize, n))
+	}
+	l := len(b.bytes)
+	b.bytes = append(b.bytes, raw...)
+	return b.bytes[l : l+n : l+n]
 }
 
 func (b *Builder) appendPoint(sb *seriesBuild, e epoch.Epoch, values []any, size int, owned bool) error {

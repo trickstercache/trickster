@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -104,8 +105,10 @@ type ProtocolConfig struct {
 	CacheTTL               time.Duration
 	MaxObjectSize          int64
 	RetentionPoints        int
-	BackfillWindow         time.Duration
-	BackfillPoints         int
+	VolatileWindow         time.Duration
+	VolatileWindowPoints   int
+	PartialBucketTTL       time.Duration
+	StepAlignment          timeseries.StepAlignment
 	ShardMaxRange          time.Duration
 	ShardStep              time.Duration
 	ShardMaxPoints         int
@@ -147,14 +150,16 @@ func ProtocolConfigFromOptions(o *bo.Options) (ProtocolConfig, error) {
 		MaxResultSizeBytes:     int64(mysqlOptions.MaxResultSizeBytes),
 		MaxUpstreamConnections: int64(o.MaxConcurrentConns), CacheKeyPrefix: o.CacheKeyPrefix,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
-		RetentionPoints: o.TimeseriesRetentionFactor,
-		BackfillWindow:  time.Duration(o.BackfillTolerance),
-		BackfillPoints:  o.BackfillTolerancePoints,
-		ShardMaxRange:   time.Duration(o.MaxShardSizeTime),
-		ShardStep:       time.Duration(o.ShardStep),
-		ShardMaxPoints:  o.MaxShardSizePoints,
-		DoesShard:       o.DoesShard,
-		ProxyOnly:       o.ProxyOnly,
+		RetentionPoints:      o.TimeseriesRetentionFactor,
+		VolatileWindow:       time.Duration(o.VolatileWindow),
+		VolatileWindowPoints: o.VolatileWindowPoints,
+		PartialBucketTTL:     time.Duration(o.PartialBucketTTL),
+		StepAlignment:        o.StepAlignment,
+		ShardMaxRange:        time.Duration(o.MaxShardSizeTime),
+		ShardStep:            time.Duration(o.ShardStep),
+		ShardMaxPoints:       o.MaxShardSizePoints,
+		DoesShard:            o.DoesShard,
+		ProxyOnly:            o.ProxyOnly,
 	}
 	config.RestartKey = protocolRestartKey(o, downstreamUsers)
 	return config, nil
@@ -223,11 +228,12 @@ func protocolRestartKey(o *bo.Options, users map[string]string) string {
 	if o.MySQL != nil {
 		mysqlIdentity = fmt.Sprintf("%v", *o.MySQL)
 	}
-	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
+	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
 		o.Timeout,
 		o.MaxConcurrentConns,
 		o.CacheName, o.CacheKeyPrefix, o.TimeseriesTTL, o.MaxObjectSizeBytes,
-		o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
+		o.TimeseriesRetentionFactor, o.VolatileWindow, o.VolatileWindowPoints,
+		o.PartialBucketTTL, o.StepAlignment,
 		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard,
 		o.ProxyOnly, o.RequireTLS, tlsIdentity, credentials, mysqlIdentity)
 	return checksum.Checksum(value)
@@ -896,6 +902,10 @@ func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
 			CacheTTL:              h.config.CacheTTL,
 			MaxObjectSize:         h.config.MaxObjectSize,
 			RetentionPoints:       h.config.RetentionPoints,
+			VolatileWindow:        h.config.VolatileWindow,
+			VolatileWindowPoints:  h.config.VolatileWindowPoints,
+			PartialBucketTTL:      h.config.PartialBucketTTL,
+			Provider:              h.dialect(),
 			ObserveCacheFailure:   h.observeCacheFailure,
 			ObserveRewriteFailure: h.observeRewriteFailure,
 		}, resultCodec{})
@@ -1194,21 +1204,25 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	h.observeAnalysis(parsed.statementType, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
+		servedMode := analysis.Mode
+		if h.unaligned(analysis) {
+			servedMode = sqlanalyzer.CacheModeObject
+		}
 		result, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
 		if cacheErr != nil {
-			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
+			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
 			return cacheErr
 		}
 		if limitErr := h.validateResult(session, result); limitErr != nil {
-			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
+			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
 			return limitErr
 		}
 		// Cached results deliberately report no origin warnings, but retain
 		// the status flags captured with the cached result.
 		h.setProtocolState(session, result.StatusFlags, 0)
-		h.observeCache(analysis.Mode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
+		h.observeCache(servedMode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
 		return callback(result)
 	}
 	if analysis.Mode == sqlanalyzer.CacheModeNone {

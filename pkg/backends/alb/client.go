@@ -49,6 +49,7 @@ import (
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
@@ -64,6 +65,9 @@ import (
 type Client struct {
 	backends.Backend
 	handler types.Mechanism // this is the actual handler for all request to this backend
+	// entry serves the ALB's requests: the handler, wrapped for a user router that applies a step
+	// alignment mode; a pool mechanism applies its pool's own mode as it dispatches
+	entry http.Handler
 
 	// poolMtx serializes pool swaps (startup, discovery updates) against
 	// StopPool; the request path never takes it -- mechanisms read the pool
@@ -95,6 +99,13 @@ type Client struct {
 	// flows keeps the sessions of the ALB's stream and native flows, once a listener asks for it
 	flows     atomic.Pointer[sticky.Flows]
 	flowsOnce sync.Once
+
+	// routerOverride is a user router's step alignment, which it has no pool to carry
+	routerOverride atomic.Pointer[tctx.StepAlignmentOverride]
+	// staticAlignments profiles the configured members by name, as nested ALBs resolve only by config
+	staticAlignments map[string]memberAlignment
+	// alignmentWarning dedupes the step alignment fallback warning across swaps
+	alignmentWarning string
 }
 
 // poolObserver reports one pool's snapshots to the client that built it
@@ -155,7 +166,7 @@ func (c *Client) HealthStatus() *healthcheck.Status {
 // has no matching handler for the requested name.
 func (c *Client) Handlers() handlers.Lookup {
 	return handlers.Lookup{
-		providers.ALB:   c.handler,
+		providers.ALB:   c.entry,
 		"localresponse": http.HandlerFunc(local.HandleLocalResponse),
 	}
 }
@@ -184,7 +195,12 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		if err != nil {
 			return nil, err
 		}
-		c.handler = m
+		c.handler, c.entry = m, m
+		if _, isUR := m.(*ur.Handler); isUR && o.StepAlignment != 0 {
+			// the modes its targets all support are known once they are loaded
+			c.routerOverride.Store(&tctx.StepAlignmentOverride{Mode: o.StepAlignment, Allowed: o.StepAlignment})
+			c.entry = http.HandlerFunc(c.serveRouted)
+		}
 		if o.ALBOptions.PropagateHealth {
 			c.health = healthcheck.NewStatus(name, providers.ALB, "",
 				healthcheck.StatusUnchecked, time.Time{}, nil)
@@ -252,6 +268,9 @@ func ValidateClients(clients backends.Backends) error {
 		if c, ok := v.(*Client); ok {
 			err := c.Validate(backendNames)
 			if err != nil {
+				return err
+			}
+			if err := c.validateStepAlignment(clients); err != nil {
 				return err
 			}
 		}
@@ -346,8 +365,17 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 	if tracksStats {
 		rememberStats(c.Name(), stats)
 	}
+	var alignments map[string]memberAlignment
+	if appliesStepAlignment(c.Configuration()) {
+		visited := sets.New([]string{c.Name()})
+		alignments = make(map[string]memberAlignment, len(targets))
+		for _, t := range targets {
+			alignments[t.Name()] = alignmentOf(t.Name(), clients, visited)
+		}
+	}
 	c.poolMtx.Lock()
 	c.staticTargets = targets
+	c.staticAlignments = alignments
 	c.swapPool(targets)
 	c.poolMtx.Unlock()
 	if o.HealthyFloor <= int(healthcheck.StatusFailing) {
@@ -395,7 +423,7 @@ func (c *Client) swapPool(targets pool.Targets) {
 	c.hasBackups = hasBackups
 	observer := poolObserver{c: c, id: c.poolID}
 	c.healthMtx.Unlock()
-	pm.SetPool(pool.New(targets, c.effectiveFloor(targets), observer))
+	pm.SetPool(pool.NewAligned(targets, c.effectiveFloor(targets), c.alignPool(targets), observer))
 	if oldPool != nil {
 		oldPool.Stop()
 	}
@@ -683,6 +711,10 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	h, ok := c.handler.(*ur.Handler)
 	if !ok {
 		return nil
+	}
+	if cur := c.routerOverride.Load(); cur != nil {
+		members := alignmentsOf(memberNames(conf.ALBOptions), clients, sets.New([]string{c.Name()}))
+		c.routerOverride.Store(&tctx.StepAlignmentOverride{Mode: cur.Mode, Allowed: allowedStepAlignments(members)})
 	}
 	if conf.AuthOptions != nil && conf.AuthOptions.Authenticator != nil {
 		// credential replacement is only allowed if users will be positively

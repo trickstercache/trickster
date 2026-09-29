@@ -10,7 +10,7 @@ backends:
     provider: druid
     origin_url: http://druid-router:8888
     cache_name: default
-    backfill_tolerance: 60s
+    volatile_window: 60s
     timeseries_retention_factor: 2048
 ```
 
@@ -20,7 +20,6 @@ backends:
 
 - `queryType` is `timeseries`, `groupBy`, or `topN`.
 - `intervals` contains exactly one ISO-8601 half-open interval.
-- Both interval boundaries align with the selected granularity and origin.
 - `granularity` has a fixed width:
   - a simple granularity from `second` through `day`;
   - a positive `duration` granularity in milliseconds; or
@@ -30,6 +29,16 @@ backends:
 Trickster removes the interval from the logical cache identity and rewrites
 only missing extents into Druid's `[start,end)` form. Druid's end is exclusive,
 so the final cached bucket is rendered as `extent.End + granularity`.
+
+An interval boundary inside a bucket is handled by the backend's
+`step_alignment`, which defaults to `partial` for native queries: complete
+buckets come from the delta cache, and each edge bucket is Druid's answer over
+the part of it the interval covers, fetched through the Object Proxy Cache for
+`partial_bucket_ttl` and never delta cached. A native query can choose its own
+mode, or its own volatile window, with keys in its `context` map, such as
+`"trickster-step-align": "drop"`, which Trickster leaves out of the cache key
+and Druid ignores. See [Step Alignment](./step-alignment.md) and
+[Per-Query Instructions](./per-query-instructions.md).
 
 The response model preserves native `timeseries`, `groupBy`, and `topN` JSON
 shapes. Grouping dimensions become DataSet tags internally. Hidden typed values
@@ -45,9 +54,9 @@ provide explicit freshness headers. This includes:
 - other native query types such as `scan`, `search`, `segmentMetadata`,
   `datasourceMetadata`, and `timeBoundary`;
 - multiple intervals;
-- interval boundaries that do not align with the selected granularity;
 - `all`, `none`, `week`, `month`, `quarter`, and `year` simple granularities;
 - calendar-width periods or period granularities in a non-UTC time zone;
+- timeseries `limit`, which keeps only the first rows of the whole result;
 - groupBy limits or dimension-first result ordering; and
 - response-changing contexts such as `bySegment`, `serializeDateTimeAsLong`,
   timeseries `grandTotal`, or groupBy `resultAsArray`.
@@ -67,8 +76,11 @@ or explicit `resultFormat: "object"`, or `resultFormat: "array"` with
 - one `TIME_FLOOR(__time, <fixed UTC period>)` bucket expression with an
   explicit alias;
 - a `GROUP BY` containing that bucket and every selected dimension; and
-- a complete lower/upper time range on `__time` (unaligned edges are rounded
-  inward, so partial edge buckets are not cached).
+- a complete lower/upper time range on `__time` (unaligned edges follow the
+  backend's [`step_alignment`](./step-alignment.md), `drop` by default for SQL;
+  partial edge buckets are never delta cached). A SQL comment such as
+  `-- trickster-step-align:partial` chooses the query's own mode, and wins over
+  the same key in the request's `context`.
 
 The shared CockroachDB SQL analyzer canonicalizes the statement and renders
 each missing extent while preserving the original JSON context on the wire.
@@ -92,9 +104,9 @@ requests are proxied.
 
 SQL ingestion and management endpoints, ALB time-series merging,
 `scan`/`search` delta caching, and Fast Forward are not supported. Fast Forward
-is disabled for every Druid backend. A 60-second backfill
-tolerance is used when the backend does not configure one, so recently ingested
-buckets can be refreshed before segments settle.
+is disabled for every Druid backend. A 60-second `volatile_window` is used when
+the backend does not configure one, so recently ingested buckets can be
+refreshed before segments settle.
 
 ## Observability
 

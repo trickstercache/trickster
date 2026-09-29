@@ -394,6 +394,25 @@ func TestHandlerCompressedQuery(t *testing.T) {
 	}
 }
 
+func TestHandlerCarriesDirectivesPastTheRewrite(t *testing.T) {
+	// the forwarded statement is rewritten without the client's comments, so its directives ride in
+	// a comment of their own
+	s := New(echoJSONHandler(), nil, false, "directives")
+	address := startTestProtocolServer(t, s)
+	db := chdriver.OpenDB(&chdriver.Options{Addr: []string{address}})
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var got string
+	query := "SELECT 1 /* trickster-step-align:drop trickster-volatile-window:90 */"
+	if err := db.QueryRowContext(ctx, query).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if want := "SELECT 1 FORMAT JSON /* trickster-volatile-window:1m30s trickster-step-align:drop */"; got != want {
+		t.Fatalf("forwarded %q, want %q", got, want)
+	}
+}
+
 func TestServerTLSRotation(t *testing.T) {
 	first := testTLSConfig(t)
 	s := New(echoJSONHandler(), first, true, "tls")

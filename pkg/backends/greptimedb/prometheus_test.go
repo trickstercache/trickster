@@ -447,3 +447,65 @@ func TestPrometheusCompressedError(t *testing.T) {
 		}
 	}
 }
+
+func TestPrometheusDropStaysInsideTheRange(t *testing.T) {
+	// GreptimeDB aligns a range's ends to the step grid before caching; under drop no point may come
+	// before the client's start, and a range holding no grid instant answers none
+	const step = 15 * time.Second
+	origin := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// the origin evaluates at its start and every step after, as PromQL does
+		if err := r.ParseForm(); err != nil {
+			t.Error(err)
+		}
+		start, _ := time.Parse(time.RFC3339Nano, r.Form.Get("start"))
+		end, _ := time.Parse(time.RFC3339Nano, r.Form.Get("end"))
+		values := make([][]any, 0)
+		for at := start; !at.After(end); at = at.Add(step) {
+			values = append(values, []any{float64(at.UnixMilli()) / 1000, "2"})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"status": "success", "data": map[string]any{
+			"resultType": "matrix", "result": []any{map[string]any{"metric": map[string]string{"job": "test"}, "values": values}},
+		}})
+	})
+	base := time.Now().UTC().Add(-time.Hour).Truncate(step)
+	for _, test := range []struct {
+		name       string
+		start, end time.Duration
+		want       []time.Duration
+	}{
+		{"an unaligned start", 7 * time.Second, 67 * time.Second, []time.Duration{15 * time.Second, 30 * time.Second, 45 * time.Second, time.Minute}},
+		{"no grid instant", 7 * time.Second, 12 * time.Second, nil},
+		{"one grid instant", 7 * time.Second, 20 * time.Second, []time.Duration{15 * time.Second}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHTTPHarness(t, origin)
+			h.resources.BackendOptions.StepAlignment = timeseries.StepAlignmentDrop
+			start := base.Add(test.start)
+			v := url.Values{"query": {"up"}, "db": {"public"}, "start": {start.Format(time.RFC3339Nano)},
+				"end": {base.Add(test.end).Format(time.RFC3339Nano)}, "step": {"15"}}
+			for _, attempt := range []string{"first", "repeat"} {
+				w := h.promQuery(t, http.MethodGet, "query_range", v, nil)
+				var got struct {
+					Data struct{ Result []struct{ Values [][]any } }
+				}
+				if err := json.Unmarshal(w.Body.Bytes(), &got); w.Code != http.StatusOK || err != nil {
+					t.Fatalf("%s: %d %s (%v)", attempt, w.Code, w.Body.String(), err)
+				}
+				var instants []time.Duration
+				for _, series := range got.Data.Result {
+					for _, point := range series.Values {
+						at := time.UnixMilli(int64(point[0].(float64) * 1000))
+						if at.Before(start) {
+							t.Fatalf("%s: a point at %s, before the start %s", attempt, at, start)
+						}
+						instants = append(instants, at.Sub(base))
+					}
+				}
+				if !slices.Equal(instants, test.want) {
+					t.Fatalf("%s: instants %v, want %v: %s", attempt, instants, test.want, w.Body.String())
+				}
+			}
+		})
+	}
+}

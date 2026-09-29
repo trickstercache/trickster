@@ -17,7 +17,6 @@
 package engines
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"math"
@@ -32,6 +31,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
@@ -39,8 +39,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 // Prometheus API
@@ -80,6 +82,15 @@ type TestClient struct {
 	// setExtentErrorAfter causes calls after this count to fail. Zero causes
 	// every call to fail when setExtentErr is non-nil.
 	setExtentErrorAfter int64
+	// sampleModel is set on every parsed TimeRangeQuery
+	sampleModel timeseries.SampleModel
+	// stepAlignments and stepAlignment are the supported modes and default of every parsed query
+	stepAlignments, stepAlignment timeseries.StepAlignment
+	// bucketRanges records the client's range, which may be open ended, and renders half-open
+	// ranges, as a bucketed origin such as bucketsim reads them
+	bucketRanges bool
+	// liveFetches counts the partial buckets fetched as the live bucket
+	liveFetches atomic.Int64
 }
 
 func NewTestClient(name string, o *bo.Options, router http.Handler,
@@ -231,7 +242,10 @@ func parseDuration(input string) (time.Duration, error) {
 func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 	*timeseries.RequestOptions, bool, error,
 ) {
-	trq := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{}}
+	trq := &timeseries.TimeRangeQuery{
+		Extent: timeseries.Extent{}, SampleModel: c.sampleModel,
+		StepAlignments: c.stepAlignments, StepAlignment: c.stepAlignment,
+	}
 	rlo := &timeseries.RequestOptions{}
 	qp, _, _ := params.GetRequestValues(r)
 
@@ -256,8 +270,13 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 			return nil, nil, false, err
 		}
 		trq.Extent.End = t
+	} else if c.bucketRanges {
+		trq.Extent.End, trq.Requested.OpenEnded = time.Now(), true
 	} else {
 		return nil, nil, false, errors.MissingURLParam(upEnd)
+	}
+	if c.bucketRanges {
+		trq.Requested.Start, trq.Requested.End = trq.Extent.Start, trq.Extent.End
 	}
 
 	if p := qp.Get(upStep); p != "" {
@@ -275,9 +294,7 @@ func (c *TestClient) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRange
 		rlo.FastForwardDisable = true
 	}
 
-	if strings.Contains(trq.Statement, timeseries.FastForwardUserDisableFlag) {
-		rlo.FastForwardDisable = true
-	}
+	trq.Directives = directives.Parse(trq.Statement, directives.SyntaxPromQL)
 
 	return trq, rlo, true, nil
 }
@@ -317,16 +334,52 @@ func (c *TestClient) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		return c.setExtentErr
 	}
 	v, _, _ := params.GetRequestValues(r)
+	end := extent.End
+	if c.bucketRanges {
+		// the extent's labels are inclusive, and the origin's end exclusive
+		end = end.Add(trq.Step)
+	}
 	v.Set(upStart, strconv.FormatInt(extent.Start.Unix(), 10))
-	v.Set(upEnd, strconv.FormatInt(extent.End.Unix(), 10))
+	v.Set(upEnd, strconv.FormatInt(end.Unix(), 10))
 	params.SetRequestValues(r, v)
 	return nil
 }
 
-// FastForwardRequest returns an *http.Request crafted to collect Fast Forward
-// data from the Origin, based on the provided HTTP Request
-func (c *TestClient) FastForwardRequest(r *http.Request) (*http.Request, error) {
-	nr := r.Clone(context.Background())
+// FetchPartialBucket fetches a live point as Fast Forward does for the instant model, and a partial
+// bucket's raw range for the bucket model
+func (c *TestClient) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	pb timeseries.PartialBucket, isLive bool,
+) (timeseries.Timeseries, status.LookupStatus, error) {
+	if trq.SampleModel == timeseries.SampleModelInstant {
+		if !isLive {
+			return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+		}
+		ffReq, err := c.fastForwardRequest(r)
+		if err != nil {
+			return nil, status.LookupStatusError, err
+		}
+		return FetchPartialBucket(ffReq, c.Configuration().FastForwardPath, trq, c.testModeler())
+	}
+	if isLive {
+		c.liveFetches.Add(1)
+	}
+	nr, err := request.Clone(r)
+	if err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	v, _, _ := params.GetRequestValues(nr)
+	v.Set(upStart, strconv.FormatInt(pb.Lower.Unix(), 10))
+	if pb.Upper.IsZero() {
+		v.Del(upEnd)
+	} else {
+		v.Set(upEnd, strconv.FormatInt(pb.Upper.Unix(), 10))
+	}
+	params.SetRequestValues(nr, v)
+	return FetchPartialBucket(nr, request.GetResources(r).PathConfig, trq, c.testModeler())
+}
+
+func (c *TestClient) fastForwardRequest(r *http.Request) (*http.Request, error) {
+	nr := r.Clone(r.Context())
 	u := nr.URL
 	if strings.HasSuffix(u.Path, "/query_range") {
 		u.Path = u.Path[0 : len(u.Path)-6]

@@ -16,10 +16,6 @@
 
 package timeseries
 
-import (
-	"strings"
-)
-
 // RequestOptions holds request-specific information about a query
 type RequestOptions struct {
 	// TimeFormat is a field usable by time series implementations to pass data between the parsed time range query
@@ -49,10 +45,4 @@ type RequestOptions struct {
 	// extent fails or the merged response cannot be modeled faithfully.
 	// Providers enabling this must ensure that replaying the query is safe.
 	FallbackToProxyOnError bool
-}
-
-// ExtractFastForwardDisabled will look for the FastForwardUserDisableFlag in the provided string
-// and set the flag appropriately in the subject RequestOptions
-func (ro *RequestOptions) ExtractFastForwardDisabled(input string) {
-	ro.FastForwardDisable = strings.Contains(input, FastForwardUserDisableFlag)
 }

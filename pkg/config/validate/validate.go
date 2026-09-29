@@ -46,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -255,7 +256,29 @@ func Backends(c *config.Config) error {
 	if serveTLS && c.Frontend != nil {
 		c.Frontend.ServeTLS = true
 	}
-	return c.Backends.Validate()
+	if err := c.Backends.Validate(); err != nil {
+		return err
+	}
+	warnStepAlignments(c)
+	return nil
+}
+
+func warnStepAlignments(c *config.Config) {
+	nativeListeners := providerregistry.NativeListeners()
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.StepAlignment == 0 {
+			continue
+		}
+		if o.ProxyOnly && o.StepAlignment == timeseries.StepAlignmentOff {
+			addWarning(c, fmt.Sprintf("backend %q sets step_alignment: off, which has no effect "+
+				"with proxy_only: true, since nothing is cached", name))
+		}
+		if o.Provider == providers.ALB && servesNativeListener(c, o, nativeListeners) {
+			addWarning(c, fmt.Sprintf("alb %q sets step_alignment, which it applies to its http "+
+				"requests only; the members it sends native protocol sessions to use their own", name))
+		}
+	}
 }
 
 // Listeners validates inbound listener definitions and backend mappings.
@@ -775,5 +798,11 @@ func RoutesRulesAndPools(c *config.Config, clients backends.Backends) error {
 	if err = stickyCookies(c, listenerVisible(c, clients)); err != nil {
 		return err
 	}
-	return alb.ValidateClients(clients)
+	if err = alb.ValidateClients(clients); err != nil {
+		return err
+	}
+	for _, w := range alb.StepAlignmentWarnings(clients) {
+		addWarning(c, w)
+	}
+	return nil
 }

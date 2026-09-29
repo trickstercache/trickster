@@ -226,6 +226,13 @@ func TestValueParsers(t *testing.T) {
 	require.Equal(t, "progressive", v)
 	_, err = CollapsedForwarding("x")
 	require.Error(t, err)
+	v, err = StepAlignment("Partial_End")
+	require.NoError(t, err)
+	require.Equal(t, "partial_end", v)
+	_, err = StepAlignment("exact")
+	require.ErrorContains(t, err, "must be one of")
+	_, err = StepAlignment(" ")
+	require.Error(t, err)
 }
 
 func TestHeaders(t *testing.T) {

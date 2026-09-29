@@ -56,12 +56,23 @@ func TestMySQLBucketAnalysis(t *testing.T) {
 		strings.Replace(mysqlBucketQuery, "'1m'", "'500ms'", 1),
 		strings.Replace(mysqlBucketQuery, "'1m'", "'1500ms'", 1),
 		strings.Replace(mysqlBucketQuery, "FROM_UNIXTIME(0)", "FROM_UNIXTIME(1)", 1),
-		strings.Replace(mysqlBucketQuery, "1767225600", "1767225719", 1),
 		strings.Replace(mysqlBucketQuery, "ts <", "ts <=", 1),
 	} {
 		if got := a.Analyze(query, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {
 			t.Fatalf("unsafe query admitted: %s", query)
 		}
+	}
+	// a range inside one bucket is the planner's to send as written: its bounds meet, and it plans no
+	// complete bucket
+	inside := a.Analyze(strings.Replace(mysqlBucketQuery, "1767225600", "1767225719", 1), time.Time{})
+	if inside.Mode != sqlanalyzer.CacheModeDelta || inside.Plan == nil ||
+		!inside.Plan.UpperBound.Value.Equal(inside.Plan.LowerBound.Value) {
+		t.Fatalf("a range inside one bucket = %+v", inside)
+	}
+	now := time.Unix(1767225720, 0)
+	if p := timeseries.PlanRange(inside.Plan.RequestedRange(now), inside.Plan.Step, inside.Plan.Phase,
+		timeseries.SampleModelBucket, timeseries.StepAlignmentPartial, now); p.Full {
+		t.Fatalf("a range inside one bucket planned %+v", p)
 	}
 	for _, zone := range []string{"", "+08:00", "America/New_York"} {
 		if got := MySQLEngine().Analyzer(mysql.SessionView{TimeZone: zone}).Analyze(mysqlBucketQuery, time.Time{}); got.Mode == sqlanalyzer.CacheModeDelta {

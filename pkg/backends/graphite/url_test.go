@@ -31,6 +31,37 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
+func TestSetExtentKeepsTheNewestBucket(t *testing.T) {
+	c := newTestClient(t, nil)
+	now := time.Date(2026, 9, 27, 12, 0, 5, 0, time.UTC)
+	c.timeNow = func() time.Time { return now }
+	// an absolute from whose offset within a step exceeds now's
+	from := now.Add(-7 * time.Hour).Add(-20 * time.Second)
+	r := getReq("target=a.b&from=" + strconv.FormatInt(from.Unix(), 10) + "&until=now&format=json")
+	trq, _, _, err := c.ParseTimeRangeQuery(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, _ := http.NewRequest(http.MethodGet, r.URL.String(), nil)
+	if err := c.SetExtent(up, trq, &trq.Extent); err != nil {
+		t.Fatal(err)
+	}
+	v, _, _ := params.GetRequestValues(up)
+	gotFrom, _ := strconv.ParseInt(v.Get("from"), 10, 64)
+	gotUntil, _ := strconv.ParseInt(v.Get("until"), 10, 64)
+	gotNow, _ := strconv.ParseInt(v.Get("now"), 10, 64)
+	rq := trq.ParsedQuery.(*RenderQuery)
+	if gotNow < gotUntil {
+		t.Errorf("pinned now %d trails until %d, so whisper would drop the newest bucket", gotNow, gotUntil)
+	}
+	if time.Duration(gotNow-gotFrom)*time.Second != rq.EffectiveAge {
+		t.Errorf("now-from = %ds, want the client's age %s", gotNow-gotFrom, rq.EffectiveAge)
+	}
+	if gotUntil != trq.Extent.End.Unix() {
+		t.Errorf("until = %d, want the last bucket %d", gotUntil, trq.Extent.End.Unix())
+	}
+}
+
 func TestSetExtent(t *testing.T) {
 	c := newTestClient(t, nil)
 	// a 7h-old query on the static ladder resolves to the 60s rung
@@ -53,10 +84,12 @@ func TestSetExtent(t *testing.T) {
 	from, _ := strconv.ParseInt(v.Get("from"), 10, 64)
 	until, _ := strconv.ParseInt(v.Get("until"), 10, 64)
 	now, _ := strconv.ParseInt(v.Get("now"), 10, 64)
-	// from sits one step before the first bucket so whisper's +step rounding
-	// lands on it; now is pinned so now-from keeps the original age and rung
-	if from != gap.Start.Add(-time.Minute).Unix() || until != gap.End.Unix() {
-		t.Errorf("from/until: %d %d want %d %d", from, until, gap.Start.Add(-time.Minute).Unix(), gap.End.Unix())
+	// from sits in the step before the first bucket, at the client's offset within a step, so
+	// whisper's +step rounding lands on it; now is pinned so now-from keeps the age and rung
+	wantFrom := timeseries.FloorToGrid(gap.Start.Add(-time.Minute), time.Minute, 0).
+		Add(time.Duration(rq.Now.Add(-rq.EffectiveAge).Unix()%60) * time.Second)
+	if from != wantFrom.Unix() || until != gap.End.Unix() {
+		t.Errorf("from/until: %d %d want %d %d", from, until, wantFrom.Unix(), gap.End.Unix())
 	}
 	if time.Duration(now-from)*time.Second != rq.EffectiveAge || rq.EffectiveAge != 7*time.Hour {
 		t.Errorf("now must be pinned to from + age: now-from=%ds age=%v", now-from, rq.EffectiveAge)

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/signal"
 	"strings"
 	"syscall"
 	"testing"
@@ -34,11 +33,11 @@ import (
 // streamStickyALB is the body of a round-robin ALB that keeps its flows' sessions in a table
 const streamStickyALB = "      mechanism: rr\n      sticky: {}\n"
 
-// stickyResults returns how many of the lb ALB's flows the sticky metric counts under result
+// stickyResults returns how many of the ALB's flows the sticky metric counts under result
 func (s *streamLB) stickyResults(t *testing.T, result string) float64 {
 	t.Helper()
 	return metricsutil.Scrape(t, s.ports[1])[metricsutil.Key("trickster_alb_sticky_total",
-		map[string]string{"alb_name": "lb", "result": result})]
+		map[string]string{"alb_name": s.name, "result": result})]
 }
 
 // reload rewrites the config and waits until Trickster has applied it
@@ -66,7 +65,7 @@ func TestStreamStickyKeepsAClientThroughAReload(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Trickster; skipping in -short mode")
 	}
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 	members, _ := tcpMembers(t, "a", "b", "c", "d")
 	s := startStreamLB(t, "tcp", members[:3], "", streamStickyALB)
 	first := s.askAndClose(t)
@@ -83,7 +82,7 @@ func TestStreamStickyKeepsAClientThroughAReload(t *testing.T) {
 		require.Equal(t, first, s.askAndClose(t), "a reload moved a pinned client")
 	}
 	require.EqualValues(t, 1, s.stickyResults(t, "miss"), "a reload dropped the client's pin")
-	entries := metricsutil.Key("trickster_alb_sticky_entries", map[string]string{"alb_name": "lb"})
+	entries := metricsutil.Key("trickster_alb_sticky_entries", map[string]string{"alb_name": s.name})
 	require.EqualValues(t, 1, metricsutil.Scrape(t, s.ports[1])[entries])
 }
 

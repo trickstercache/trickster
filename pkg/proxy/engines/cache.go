@@ -135,7 +135,8 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	// If we got a meta document and want to use cache chunking, do so
 	opts := rsc.BackendOptions
 	if c.Configuration().UseCacheChunking {
-		if trq := rsc.TimeRangeQuery; trq != nil {
+		// an object proxy cache document can carry a query for its key but holds no series
+		if trq := rsc.TimeRangeQuery; trq != nil && unmarshal != nil {
 			// Use timeseries chunk querying
 			err := executeTimeseriesChunkQuery(ctx, c, key, d, trq, unmarshal, opts)
 			if err != nil {
@@ -291,7 +292,7 @@ func WriteCache(ctx context.Context, c cache.Cache, key string, d *HTTPDocument,
 		rsc.Lock()
 		trq := rsc.TimeRangeQuery
 		rsc.Unlock()
-		if trq != nil {
+		if trq != nil && marshal != nil {
 			// Use timeseries chunking
 			chunker := NewTimeseriesChunkWriter(c, key, trq, marshal)
 			err = executeChunking(ctx, c, key, d, compress, ttl, chunker, opts)

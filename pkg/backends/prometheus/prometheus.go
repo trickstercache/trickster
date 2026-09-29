@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 var (
@@ -67,6 +68,10 @@ const (
 	mnFeatures        = "features"
 	mnNotificationsLv = "notifications/live"
 )
+
+const whitespace = " \t\r\n"
+
+var startEndModifiers = [...]string{"start", "end"}
 
 // Common URL Parameter Names
 const (
@@ -101,6 +106,34 @@ func containsOffsetKeyword(stmt string) bool {
 		case depth == 0 && i+len(target) <= len(stmt) &&
 			stmt[i:i+len(target)] == target:
 			return true
+		}
+	}
+	return false
+}
+
+func containsStartEndModifier(stmt string) bool {
+	// finds @ start() or @ end() outside string literals; a match inside a comment only
+	// costs caching, since the request is then proxied
+	var quote byte
+	for i := 0; i < len(stmt); i++ {
+		c := stmt[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote != '`' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'' || c == '`':
+			quote = c
+		case c == '@':
+			rest := strings.TrimLeft(stmt[i+1:], whitespace)
+			for _, fn := range startEndModifiers {
+				if strings.HasPrefix(rest, fn) &&
+					strings.HasPrefix(strings.TrimLeft(rest[len(fn):], whitespace), "(") {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -198,6 +231,20 @@ func NewClientWithHooks(name string, o *bo.Options, router http.Handler,
 	return c, err
 }
 
+const stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+	timeseries.StepAlignmentDrop | timeseries.StepAlignmentPartialEnd
+
+// StepAlignments returns the modes a range query supports and its default: partial_end, whose live
+// end is Fast Forward, or truncate when fast_forward_disable is set
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	if c.TimeseriesBackend != nil {
+		if o := c.Configuration(); o != nil && o.FastForwardDisable {
+			return stepAlignments, timeseries.StepAlignmentTruncate
+		}
+	}
+	return stepAlignments, timeseries.StepAlignmentPartialEnd
+}
+
 // parseTime converts a query time URL parameter to time.Time.
 // Copied from https://github.com/prometheus/prometheus/blob/master/web/api/v1/api.go
 func parseTime(s string) (time.Time, error) {
@@ -219,8 +266,22 @@ func parseDuration(input string) (time.Duration, error) {
 	if err != nil {
 		return tt.ParseDuration(input)
 	}
-	// assume v is in seconds
-	return time.Duration(int64(v)) * time.Second, nil
+	// v is in seconds and keeps its fraction, as Prometheus does; a step Prometheus would
+	// reject is refused here too
+	d := math.Round(v * float64(time.Second))
+	if math.IsNaN(d) || d <= 0 || d > math.MaxInt64 {
+		return 0, fmt.Errorf("cannot parse %q to a valid step", input)
+	}
+	return time.Duration(d), nil
+}
+
+func formatTime(t time.Time) string {
+	// Unix seconds, with the millisecond fraction Prometheus accepts only when present
+	ms := t.UnixMilli()
+	if ms%1000 == 0 {
+		return strconv.FormatInt(ms/1000, 10)
+	}
+	return strconv.FormatFloat(float64(ms)/1000, 'f', 3, 64)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -237,6 +298,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Statement = qp.Get(upQuery)
 	if trq.Statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
+	}
+	if containsStartEndModifier(trq.Statement) {
+		// each delta fetch would resolve start() and end() against its own sub-range, and the
+		// object cache key omits the range, so the request is proxied
+		return trq, rlo, false, errors.ErrStartEndModifier
 	}
 	p := qp.Get(upStart)
 	if p == "" {
@@ -280,6 +346,8 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, nil, false, err
 	}
 	trq.Step = step
+	// the range as the client sent it, before any grid alignment below
+	requested := timeseries.RequestedRange{Start: trq.Extent.Start, End: trq.Extent.End, EndInclusive: true}
 	if c.hooks.PreserveQueryGrid {
 		if trq.Extent.End.Before(trq.Extent.Start) {
 			return nil, nil, false, timeseries.ErrUnknownFormat
@@ -314,24 +382,16 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		rlo.FastForwardDisable = true
 	}
 
-	rlo.ExtractFastForwardDisabled(trq.Statement)
 	if c.hooks.PreserveQueryGrid && (trq.Phase != 0 || step%time.Second != 0) {
 		rlo.FastForwardDisable = true
 	}
-	trq.ExtractBackfillTolerance(trq.Statement)
-
-	if x := strings.Index(trq.Statement, timeseries.BackfillToleranceFlag); x > 1 {
-		x += 29
-		y := x
-		for ; y < len(trq.Statement); y++ {
-			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
-				break
-			}
-		}
-		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
-			trq.BackfillTolerance = time.Second * time.Duration(i)
-		}
+	trq.Directives = directives.Parse(trq.Statement, directives.SyntaxPromQL)
+	if keyed := directives.Strip(trq.Statement, directives.SyntaxPromQL); keyed != trq.Statement {
+		trq.KeyParamValues = map[string]string{upQuery: keyed}
 	}
+
+	trq.Requested = requested
+	trq.StepAlignments, trq.StepAlignment = c.StepAlignments()
 
 	return trq, rlo, true, nil
 }

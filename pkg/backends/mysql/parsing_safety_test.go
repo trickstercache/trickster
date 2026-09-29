@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	vtmysql "vitess.io/vitess/go/mysql"
@@ -98,7 +99,8 @@ func TestAnalyzerRangeEdges(t *testing.T) {
 		{"unaligned", "1785542401", "1785542521", true, false},
 		{"aligned", "1785542400", "1785542520", true, false},
 		{"negative epoch", "-3600", "-3480", true, false},
-		{"far future", "7258118400", "7258118520", true, false},
+		// buckets that have not ended are never complete
+		{"far future", "7258118400", "7258118520", true, true},
 		{"seconds overflow", "9223372037", "9223372097", false, false},
 	}
 	for _, tc := range tests {
@@ -131,53 +133,44 @@ func TestAnalyzerRangeEdges(t *testing.T) {
 	}
 }
 
-func TestMySQLDirectiveIdentityAndBackfill(t *testing.T) {
+func TestMySQLDirectivesLeaveIdentityAlone(t *testing.T) {
 	a := mustNewAnalyzer()
 	minuteQuery := strings.ReplaceAll(safeDateTimeQuery, "300", "60")
-	query30 := "/* trickster-backfill-tolerance:30 */ " + minuteQuery
-	query60 := "/* trickster-backfill-tolerance:60 */ " + minuteQuery
+	query30 := "/* trickster-volatile-window:30 */ " + minuteQuery
 	plan30 := a.Analyze(query30, time.Time{}).Plan
-	plan60 := a.Analyze(query60, time.Time{}).Plan
-	plan30Alternate := a.Analyze("-- trickster-backfill-tolerance:30\n"+minuteQuery,
-		time.Time{}).Plan
-	if plan30 == nil || plan60 == nil {
+	plan60 := a.Analyze("/* trickster-volatile-window:60 */ "+minuteQuery, time.Time{}).Plan
+	plan30Alternate := a.Analyze("-- trickster-volatile-window:30\n"+minuteQuery, time.Time{}).Plan
+	plain := a.Analyze(minuteQuery, time.Time{}).Plan
+	if plan30 == nil || plan60 == nil || plan30Alternate == nil || plain == nil {
 		t.Fatal("directive queries did not produce delta plans")
 	}
-	if plan30.BackfillTolerance != 30*time.Second ||
-		plan30.IdentitySuffix != "backfill_tolerance=30" {
-		t.Fatalf("30-second directive = %+v", plan30)
+	if plan30.Directives.VolatileWindow != 30*time.Second ||
+		plan30Alternate.Directives.VolatileWindow != 30*time.Second {
+		t.Fatalf("30-second directive = %+v, %+v", plan30.Directives, plan30Alternate.Directives)
 	}
 	h := &protocolHandler{config: ProtocolConfig{BackendName: "mysql1"}}
 	c := &vtmysql.Conn{User: "alice"}
 	session := &upstreamSession{database: "analytics", timeZone: "+00:00"}
-	key30 := h.queryCacheKey(c, session, "dpc", plan30.CanonicalSQL, plan30.IdentitySuffix)
-	key60 := h.queryCacheKey(c, session, "dpc", plan60.CanonicalSQL, plan60.IdentitySuffix)
-	if key30 == key60 {
-		t.Fatal("result-affecting directives share a DPC identity")
-	}
-	if plan30Alternate == nil || key30 != h.queryCacheKey(c, session, "dpc",
-		plan30Alternate.CanonicalSQL, plan30Alternate.IdentitySuffix) {
-		t.Fatal("equivalent directive comments do not share normalized identity")
+	// a directive changes how a plan is served, never what its buckets hold, so every form shares a key
+	key := h.planCacheKey(c, session, cacheModeDPC, plain)
+	for _, plan := range []*sqlanalyzer.QueryPlan{plan30, plan60, plan30Alternate} {
+		if got := h.planCacheKey(c, session, cacheModeDPC, plan); got != key {
+			t.Fatalf("a directive changed the DPC key: %+v", plan.Directives)
+		}
 	}
 	literalOnly := a.Analyze(strings.Replace(minuteQuery,
-		"WHERE ", "WHERE note = 'trickster-backfill-tolerance:99' AND ", 1), time.Time{}).Plan
-	if literalOnly == nil || literalOnly.BackfillTolerance != 0 {
+		"WHERE ", "WHERE note = 'trickster-volatile-window:99' AND ", 1), time.Time{}).Plan
+	if literalOnly == nil || !literalOnly.Directives.IsZero() {
 		t.Fatalf("directive-like SQL literal was interpreted as a directive: %+v", literalOnly)
 	}
-	literalQuery := strings.Replace(minuteQuery,
-		"WHERE ", "WHERE note = 'trickster-backfill-tolerance:99' AND ", 1)
-	literalParsed, _, literalErr := Parse(literalQuery, time.Time{})
-	if literalErr != nil || literalParsed.BackfillTolerance != 0 {
-		t.Fatalf("Parse() interpreted directive-like SQL literal: %+v, %v",
-			literalParsed, literalErr)
-	}
 	parsed, _, err := Parse(query30, time.Time{})
-	if err != nil || parsed.CacheKeyElements["mysql_directives"] != "backfill_tolerance=30" {
-		t.Fatalf("Parse() directive identity = %+v, %v", parsed, err)
+	if err != nil || parsed.Directives.VolatileWindow != 30*time.Second {
+		t.Fatalf("Parse() directives = %+v, %v", parsed, err)
 	}
 	extent := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
-	stable := (&protocolHandler{}).stableExtents(extent, plan30, time.Unix(600, 0))
+	window := nativedelta.VolatileWindow(0, 0, plan30.Step, plan30.Directives.VolatileWindow)
+	stable := nativedelta.StableExtents(extent, plan30.Step, plan30.Phase, window, time.Unix(600, 0))
 	if len(stable) != 1 || !stable[0].End.Equal(time.Unix(480, 0)) {
-		t.Fatalf("directive backfill stable extent = %v", stable)
+		t.Fatalf("directive volatile window stable extent = %v", stable)
 	}
 }

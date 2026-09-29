@@ -260,6 +260,13 @@ integration-test:
 	$(MAKE) -C integration test
 	$(MAKE) -C integration data-race-test
 
+.PHONY: integration-test-no-failfast
+integration-test-no-failfast:
+	@status=0; \
+	$(MAKE) -C integration test-no-failfast || status=1; \
+	$(MAKE) -C integration data-race-test-no-failfast || status=1; \
+	exit $$status
+
 .PHONY: integration-cover
 integration-cover:
 	$(MAKE) -C integration cover
@@ -405,12 +412,6 @@ install-codespell:
 
 .PHONY: spelling
 spelling:
-	@which mdspell ; \
-	if [ "$$?" != "0" ]; then \
-		echo "mdspell is not installed" ; \
-	else \
-		mdspell './README.md' './docs/**/*.md' ; \
-	fi
 	@which codespell ; \
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \
@@ -508,8 +509,16 @@ integration-env-disable:
 		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
 	@echo "integration containers disabled in $(COMPOSE_YML)"
 
+# one-shot loaders no service waits on, so developer-start can return while they still load
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed
+
 .PHONY: integration-start
 integration-start: integration-env-enable developer-start
+	@cd $(COMPOSE_ENV_DIR) && for id in $$(docker compose ps -q --status running $(INTEGRATION_SEEDERS)); do \
+		echo "Waiting for seeder $$id to finish..."; \
+		status=$$(docker wait $$id); \
+		if [ "$$status" != 0 ]; then echo "seeder $$id failed (exit $$status)" >&2; exit 1; fi; \
+	done
 
 .PHONY: integration-stop
 integration-stop:

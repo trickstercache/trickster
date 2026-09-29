@@ -31,6 +31,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 )
@@ -129,6 +130,14 @@ type rangeInfo struct {
 	// emits a literal the original operator still reads correctly.
 	upperSourceInclusive bool
 	upperTick            time.Duration
+	rawUpper             time.Time
+}
+
+func (r rangeInfo) rawUpperBound() *sqlanalyzer.Bound {
+	if r.upperSourceInclusive {
+		return &sqlanalyzer.Bound{Value: r.rawUpper, Inclusive: true}
+	}
+	return &sqlanalyzer.Bound{Value: r.upper.value, Inclusive: r.upper.inclusive}
 }
 
 type mysqlBound struct {
@@ -220,19 +229,16 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, err)
 	}
-	backfillTolerance := extractBackfillTolerance(statement, selectStmt)
-	identitySuffix := ""
-	if backfillTolerance > 0 {
-		identitySuffix = fmt.Sprintf("backfill_tolerance=%d", int64(backfillTolerance/time.Second))
-	}
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
 		TimeColumn:   bucket.timeColumn, OutputColumn: bucket.outputColumn,
 		Step: bucket.step, Phase: 0, OutputUnit: bucket.unit, InputUnit: rng.lower.unit,
 		LowerBound:   &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
 		UpperBound:   &sqlanalyzer.Bound{Value: rng.upper.value, Inclusive: rng.upper.inclusive},
+		RawLower:     &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
+		RawUpper:     rng.rawUpperBound(),
 		GroupColumns: groups, ValueColumns: values, Renderer: extentRenderer,
-		BackfillTolerance: backfillTolerance, IdentitySuffix: identitySuffix,
+		Directives: directives.Parse(statement, directives.SyntaxMySQL),
 	}
 	return sqlanalyzer.Analysis{
 		Mode:   sqlanalyzer.CacheModeDelta,
@@ -285,80 +291,6 @@ func (a *Analyzer) isNondeterministic(stmt sqlparser.SQLNode) bool {
 		return !unsafe, nil
 	}, stmt)
 	return unsafe
-}
-
-func extractBackfillTolerance(statement string, stmt *sqlparser.Select) time.Duration {
-	query := &timeseries.TimeRangeQuery{}
-	comments := sqlCommentText(statement)
-	if stmt != nil && stmt.Comments != nil {
-		comments += " " + strings.Join(stmt.Comments.GetComments(), " ")
-	}
-	query.ExtractBackfillTolerance("  " + comments)
-	return query.BackfillTolerance
-}
-
-func sqlCommentText(statement string) string {
-	var comments strings.Builder
-	for i := 0; i < len(statement); {
-		switch statement[i] {
-		case '\'', '"', '`':
-			quote := statement[i]
-			i++
-			for i < len(statement) {
-				if statement[i] == '\\' {
-					i += min(2, len(statement)-i)
-					continue
-				}
-				if statement[i] == quote {
-					i++
-					if i < len(statement) && statement[i] == quote {
-						i++
-						continue
-					}
-					break
-				}
-				i++
-			}
-		case '/':
-			if i+1 >= len(statement) || statement[i+1] != '*' {
-				i++
-				continue
-			}
-			end := strings.Index(statement[i+2:], "*/")
-			if end < 0 {
-				return comments.String()
-			}
-			comments.WriteString(statement[i+2 : i+2+end])
-			comments.WriteByte(' ')
-			i += end + 4
-		case '#':
-			end := strings.IndexByte(statement[i+1:], '\n')
-			if end < 0 {
-				comments.WriteString(statement[i+1:])
-				return comments.String()
-			}
-			comments.WriteString(statement[i+1 : i+1+end])
-			comments.WriteByte(' ')
-			i += end + 2
-		case '-':
-			if i+2 >= len(statement) || statement[i+1] != '-' ||
-				(statement[i+2] != ' ' && statement[i+2] != '\t') {
-				i++
-				continue
-			}
-			end := strings.IndexByte(statement[i+2:], '\n')
-			if end < 0 {
-				comments.WriteString(statement[i+2:])
-				return comments.String()
-			}
-			comments.WriteString(statement[i+2 : i+2+end])
-			comments.WriteByte(' ')
-			i += end + 3
-		default:
-			i++
-		}
-	}
-	return comments.String()
 }
 
 func analyzeBucket(stmt *sqlparser.Select, matchers ...BucketMatcher) (bucketInfo, error) {
@@ -564,7 +496,8 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 		}
 		out.upperSourceInclusive = true
 		out.upperTick = tick
-		out.upper.value = sqlanalyzer.FloorBucket(out.upper.value, bucket.step, 0)
+		out.rawUpper = out.upper.value
+		out.upper.value = timeseries.FloorToGrid(out.upper.value, bucket.step, 0)
 		out.upper.inclusive = false
 	}
 	return out, nil
@@ -1037,6 +970,31 @@ func (r *renderer) RenderTimeRange(lower, upper time.Time) (string, error) {
 		return false
 	}, nil).(sqlparser.Statement)
 	return sqlparser.String(stmt), nil
+}
+
+// RenderRange implements sqlanalyzer.RangeRenderer through the statement's own comparators; an
+// inclusive upper bound keeps the client's raw literal
+func (r *renderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	// vitess plans always carry an inclusive lower bound and an upper bound
+	if pb.LowerExclusive || pb.Upper.IsZero() || !r.lowerInclusive ||
+		(pb.UpperInclusive && !r.upperInclusive) {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	upper := pb.Upper
+	if r.upperInclusive && !pb.UpperInclusive {
+		// an exclusive end read through the statement's <= sits one tick below it
+		upper = upper.Add(-r.upperTick)
+	}
+	if !representable(pb.Lower, r.lower) || !representable(upper, r.upper) {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	return r.RenderTimeRange(pb.Lower, upper)
+}
+
+func representable(value time.Time, style boundStyle) bool {
+	// a literal of the style holds the value exactly, so no row moves across the rendered bound
+	tick, ok := boundTick(style)
+	return ok && value.UnixNano()%int64(tick) == 0
 }
 
 func renderBound(value time.Time, style boundStyle) sqlparser.Expr {

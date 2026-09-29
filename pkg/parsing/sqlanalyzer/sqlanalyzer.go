@@ -142,6 +142,12 @@ type ExtentRenderer interface {
 	RenderExtent(extent timeseries.Extent) (string, error)
 }
 
+// RangeRenderer is an ExtentRenderer that also renders a raw time range, such as a partial
+// bucket's, which needn't sit on the bucket grid, with the statement's own comparators
+type RangeRenderer interface {
+	RenderRange(pb timeseries.PartialBucket) (string, error)
+}
+
 // QueryPlan contains only database-independent facts consumed by Trickster.
 type QueryPlan struct {
 	CanonicalSQL string
@@ -153,6 +159,12 @@ type QueryPlan struct {
 	InputUnit    timeseries.FieldDataType
 	LowerBound   *Bound
 	UpperBound   *Bound
+	// RawLower and RawUpper are the time bounds as the statement wrote them, before any rounding;
+	// RawUpper is nil when the statement has no upper bound
+	RawLower, RawUpper *Bound
+	// UpperIsNow reports an upper bound written as a bare now(), which a range running to now
+	// renders as written, so each request within a bucket renders the same statement
+	UpperIsNow   bool
 	GroupColumns []string
 	// DropsPartialBuckets reports that range normalization excludes partial
 	// raw-time buckets. Consumers requiring the original SQL result must use
@@ -162,12 +174,9 @@ type QueryPlan struct {
 	// time-series values. Dialect adapters validate expressions statically and
 	// may validate concrete result types when rows arrive.
 	ValueColumns []string
-	// BackfillTolerance is an optional normalized query directive. Zero uses
-	// backend defaults.
-	BackfillTolerance time.Duration
-	// IdentitySuffix contains normalized result- or cache-policy-affecting
-	// directives that are intentionally kept outside executable SQL.
-	IdentitySuffix string
+	// Directives are the trickster-* directives in the statement's comments. They change how a plan is
+	// served, never what a bucket holds, so they aren't part of its identity.
+	Directives timeseries.Directives
 	// Ordering carries the statement's ORDER BY terms, resolved to result
 	// column names, so a response rebuilt from merged cache parts is sorted the
 	// way the statement asked. Nil means the statement imposed no ordering and
@@ -181,8 +190,18 @@ type QueryPlan struct {
 	Renderer     ExtentRenderer
 }
 
+// StepAlignments are the step alignment modes a delta-cacheable SQL plan supports
+const StepAlignments = timeseries.StepAlignmentAll
+
+// DefaultStepAlignment is the mode a SQL plan uses when none is configured: partial buckets are
+// left out
+const DefaultStepAlignment = timeseries.StepAlignmentDrop
+
 // ErrMissingRenderer indicates that a plan cannot produce an origin query.
 var ErrMissingRenderer = errors.New("missing SQL query extent renderer")
+
+// ErrUnsupportedRange indicates a raw time range that a plan's renderer cannot express
+var ErrUnsupportedRange = errors.New("SQL query renderer cannot render the time range")
 
 // RenderExtent renders the query for an origin cache-miss extent.
 func (p *QueryPlan) RenderExtent(extent timeseries.Extent) (string, error) {
@@ -190,4 +209,17 @@ func (p *QueryPlan) RenderExtent(extent timeseries.Extent) (string, error) {
 		return "", ErrMissingRenderer
 	}
 	return p.Renderer.RenderExtent(extent)
+}
+
+// RenderRange renders the query for a partial bucket's raw range, whose zero Upper means the range
+// runs to now
+func (p *QueryPlan) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	if p == nil || p.Renderer == nil {
+		return "", ErrMissingRenderer
+	}
+	rr, ok := p.Renderer.(RangeRenderer)
+	if !ok {
+		return "", ErrUnsupportedRange
+	}
+	return rr.RenderRange(pb)
 }

@@ -36,7 +36,9 @@ import (
 	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/sqltypes"
@@ -142,84 +144,80 @@ func BenchmarkMySQLResultHandling(b *testing.B) {
 				}
 			}
 		})
-		parts := []*sqltypes.Result{
-			{Fields: result.Fields, Rows: result.Rows[:rowCount/2]},
-			{Fields: result.Fields, Rows: result.Rows[rowCount/2:]},
-		}
-		b.Run(name+"/Merge", func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := dpcTestHandler.mergeResults(parts, plan); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-		reversed := &sqltypes.Result{Fields: result.Fields, Rows: slices.Clone(result.Rows)}
-		slices.Reverse(reversed.Rows)
-		extent := timeseries.Extent{
+		benchmarkDeltaOps(b, name, plan, result, timeseries.Extent{
 			Start: time.Unix(int64(rowCount/4*60), 0),
 			End:   time.Unix(int64((rowCount-rowCount/4-1)*60), 0),
-		}
-		b.Run(name+"/CropSort", func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := dpcTestHandler.cropAndSortResult(reversed, plan, extent); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-		groupedPlan := benchmarkGroupedPlan()
-		grouped := benchmarkGroupedResult(rowCount)
-		groupedParts := []*sqltypes.Result{
-			{Fields: grouped.Fields, Rows: grouped.Rows[:rowCount/2]},
-			{Fields: grouped.Fields, Rows: grouped.Rows[rowCount/2:]},
-		}
-		groupedReversed := &sqltypes.Result{Fields: grouped.Fields, Rows: slices.Clone(grouped.Rows)}
-		slices.Reverse(groupedReversed.Rows)
-		groupedExtent := timeseries.Extent{
-			Start: time.Unix(0, 0),
-			End:   time.Unix(int64(rowCount/8*60), 0),
-		}
-		b.Run(name+"/GroupedMerge", func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := dpcTestHandler.mergeResults(groupedParts, groupedPlan); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-		b.Run(name+"/GroupedCropSort", func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if _, err := dpcTestHandler.cropAndSortResult(groupedReversed, groupedPlan,
-					groupedExtent); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-		h := &protocolHandler{config: ProtocolConfig{RetentionPoints: max(1, rowCount/2)}}
-		b.Run(name+"/Retention", func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				retained, _, err := h.applyRetentionSorted(result, cached.extents, plan, 0)
-				if err != nil {
-					b.Fatal(err)
-				}
-				if len(retained.Rows) == 0 {
-					b.Fatal("retention removed all rows")
-				}
-			}
-		})
+		}, max(1, rowCount/2))
+		benchmarkDeltaOps(b, name+"/Grouped", benchmarkGroupedPlan(), benchmarkGroupedResult(rowCount),
+			timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(int64(rowCount/8*60), 0)}, 0)
 		b.Run(name+"/Sharding", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				shards := cached.extents.Splice(time.Minute, 0, 0, 100)
+				shards := cached.extents.Splice(time.Minute, 0, 0, 0, 100)
 				if len(shards) == 0 {
 					b.Fatal("sharding returned no extents")
 				}
 			}
 		})
 	}
+}
+
+func benchmarkDeltaOps(b *testing.B, name string, plan *sqlanalyzer.QueryPlan, result *sqltypes.Result,
+	crop timeseries.Extent, retain int,
+) {
+	half := len(result.Rows) / 2
+	parts := []*sqltypes.Result{
+		{Fields: result.Fields, Rows: result.Rows[:half]},
+		{Fields: result.Fields, Rows: result.Rows[half:]},
+	}
+	b.Run(name+"/Model", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, err := dpcTestHandler.deltaOf(plan, result); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	first, err := dpcTestHandler.deltaOf(plan, parts[0])
+	if err != nil {
+		b.Fatal(err)
+	}
+	second, err := dpcTestHandler.deltaOf(plan, parts[1])
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Run(name+"/Merge", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if merged := dataset.MergeDisjoint(nil, first.DS, second.DS); len(merged.Results) == 0 {
+				b.Fatal("merge returned no results")
+			}
+		}
+	})
+	whole, err := dpcTestHandler.deltaOf(plan, result)
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Run(name+"/CropRender", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			cropped := &nativedelta.Delta{Header: whole.Header, DS: whole.DS.View(crop)}
+			if _, err := dpcTestHandler.deltaResult(cropped, plan); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	if retain == 0 {
+		return
+	}
+	b.Run(name+"/Retention", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if retained, _, ok := whole.DS.RetainNewest(retain); !ok || len(retained.Results) == 0 {
+				b.Fatal("retention kept nothing")
+			}
+		}
+	})
 }
 
 func TestLargeCacheEnvelopeMemoryContract(t *testing.T) {
@@ -239,28 +237,32 @@ func TestLargeCacheEnvelopeMemoryContract(t *testing.T) {
 	if len(envelope) > maximum {
 		t.Fatalf("cache envelope = %d bytes, maximum contract = %d", len(envelope), maximum)
 	}
+	d, err := dpcTestHandler.deltaOf(benchmarkPlan(), result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if deltaBytes, err := deltaEnvelope(d); err != nil || len(deltaBytes) > maximum {
+		t.Fatalf("delta envelope = %d bytes, maximum contract = %d: %v", len(deltaBytes), maximum, err)
+	}
 }
 
 func BenchmarkMySQLLargeResultRetention(b *testing.B) {
-	result := benchmarkResult(10000)
-	plan := benchmarkPlan()
-	extents := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(599940, 0)}}
-	h := &protocolHandler{config: ProtocolConfig{RetentionPoints: 5000}}
-	envelope, err := marshalCachedQueryResult(&cachedQueryResult{result: result, extents: extents})
+	d, err := dpcTestHandler.deltaOf(benchmarkPlan(), benchmarkResult(10000))
+	if err != nil {
+		b.Fatal(err)
+	}
+	encoded, err := deltaEnvelope(d)
 	if err != nil {
 		b.Fatal(err)
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		retained, retainedExtents, err := h.applyRetentionSorted(result, extents, plan, 0)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if len(retained.Rows) != 5000 || len(retainedExtents) != 1 {
+		retained, _, ok := d.DS.RetainNewest(5000)
+		if !ok || (&nativedelta.Delta{DS: retained}).Rows() != 5000 {
 			b.Fatal("unexpected retained result")
 		}
 	}
-	b.ReportMetric(float64(len(envelope)), "retained-cache-B")
+	b.ReportMetric(float64(len(encoded)), "cache-B")
 }
 
 func BenchmarkMySQLOPCHitComparison(b *testing.B) {
@@ -293,7 +295,7 @@ func BenchmarkMySQLOPCHitComparison(b *testing.B) {
 		b.ResetTimer()
 		for b.Loop() {
 			if _, status, err := h.executeObject(connection, session,
-				query); err != nil || status != cachestatus.LookupStatusHit {
+				query, false); err != nil || status != cachestatus.LookupStatusHit {
 				b.Fatalf("cache hit status=%s err=%v", status, err)
 			}
 		}

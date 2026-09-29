@@ -30,6 +30,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -128,8 +129,12 @@ func TestProxyEnvironment(t *testing.T) {
 			if panel.ID == 5 || panel.ID == 22 || panel.ID == 23 || panel.ID == 24 {
 				cacheMode = "object"
 			}
-			for scenario, shift := range []time.Duration{0, 0, time.Hour} {
-				run(fmt.Sprintf("%s_panel_%d_%d", mode.name, panel.ID, scenario), func() error {
+			// an inclusive upper bound adds the bucket starting at the window's end, which a delta
+			// answer, made of complete buckets only, leaves out
+			inclusive := cacheMode == "delta" && slices.ContainsFunc(panel.Targets, hasInclusiveMacro)
+			// the third scenario overlaps the first, earlier, so it can never reach past now into seeded future rows
+			for scenario, shift := range []time.Duration{0, 0, -time.Hour} {
+				attempt := func() error {
 					before, err := sqlCacheCounts(g.client, mode.backend, cacheMode)
 					if err != nil {
 						return err
@@ -151,7 +156,21 @@ func TestProxyEnvironment(t *testing.T) {
 					}
 					status, err := cacheTransition(before, after, cacheMode, scenario)
 					r.Facts[fmt.Sprintf("%s_panel_%d_%d_cache", mode.name, panel.ID, scenario)] = map[string]any{"mode": cacheMode, "status": status, "before": before, "after": after}
+					if inclusive {
+						docs[0] = withoutRowsAt(docs[0], r.To.Add(shift))
+					}
 					return errors.Join(err, compareResponses(docs[0], docs[1]))
+				}
+				run(fmt.Sprintf("%s_panel_%d_%d", mode.name, panel.ID, scenario), func() error {
+					// the developer Trickster is shared, so a scenario that counted another client's request
+					// alongside its own is run again; a query counted twice on its own fails every attempt
+					var err error
+					for range sharedCounterAttempts {
+						if err = attempt(); !errors.Is(err, errOtherRequests) {
+							return err
+						}
+					}
+					return err
 				})
 			}
 		}
@@ -255,6 +274,66 @@ func TestProxyEnvironment(t *testing.T) {
 	})
 }
 
+const (
+	rewriteFailuresKey    = "rewrite failures"
+	sharedCounterAttempts = 3
+)
+
+var (
+	errOtherRequests = errors.New("other requests were counted alongside this one")
+	inclusiveMacros  = []string{"$__timeFilter(", "$__unixEpochFilter("}
+)
+
+func hasInclusiveMacro(target map[string]any) bool {
+	sql, _ := target["rawSql"].(string)
+	return slices.ContainsFunc(inclusiveMacros, func(macro string) bool { return strings.Contains(sql, macro) })
+}
+
+func withoutRowsAt(doc queryResponse, at time.Time) queryResponse {
+	stamp := json.Number(strconv.FormatInt(at.UnixMilli(), 10))
+	out := queryResponse{Results: make(map[string]queryResult, len(doc.Results))}
+	for ref, result := range doc.Results {
+		frames := slices.Clone(result.Frames)
+		for i, f := range frames {
+			col := slices.IndexFunc(f.Schema.Fields, func(fd field) bool { return fd.Type == "time" })
+			if col < 0 || col >= len(f.Data.Values) {
+				continue
+			}
+			drop := make(map[int]bool)
+			for row, v := range f.Data.Values[col] {
+				if v == stamp {
+					drop[row] = true
+				}
+			}
+			if len(drop) == 0 {
+				continue
+			}
+			keep := func(columns [][]any) [][]any {
+				if columns == nil {
+					return nil
+				}
+				kept := make([][]any, len(columns))
+				for c, values := range columns {
+					if values == nil {
+						continue
+					}
+					kept[c] = make([]any, 0, len(values))
+					for row, v := range values {
+						if !drop[row] {
+							kept[c] = append(kept[c], v)
+						}
+					}
+				}
+				return kept
+			}
+			frames[i].Data.Values, frames[i].Data.Nanos = keep(f.Data.Values), keep(f.Data.Nanos)
+		}
+		result.Frames = frames
+		out.Results[ref] = result
+	}
+	return out
+}
+
 func sqlCacheCounts(client *http.Client, backend, mode string) (map[string]float64, error) {
 	resp, err := client.Get(envOr("GREPTIMEDB_PROXY_METRICS_URL", "http://127.0.0.1:8481/metrics"))
 	if err != nil {
@@ -279,10 +358,11 @@ func sqlCacheCounts(client *http.Client, backend, mode string) (map[string]float
 			counts[labels["cache_status"]] += metric.GetCounter().GetValue()
 		}
 	}
+	// a long-lived developer Trickster may have counted failures before this run, so only new ones matter
 	for _, metric := range families["trickster_sql_query_rewrite_failures_total"].GetMetric() {
 		for _, label := range metric.GetLabel() {
-			if label.GetName() == "backend_name" && label.GetValue() == backend && metric.GetCounter().GetValue() > 0 {
-				return nil, fmt.Errorf("backend %s has SQL rewrite failures", backend)
+			if label.GetName() == "backend_name" && label.GetValue() == backend {
+				counts[rewriteFailuresKey] += metric.GetCounter().GetValue()
 			}
 		}
 	}
@@ -290,14 +370,17 @@ func sqlCacheCounts(client *http.Client, backend, mode string) (map[string]float
 }
 
 func cacheTransition(before, after map[string]float64, mode string, scenario int) (string, error) {
+	if after[rewriteFailuresKey] > before[rewriteFailuresKey] {
+		return "", fmt.Errorf("the query's SQL rewrite failed: before=%v after=%v", before, after)
+	}
 	status := ""
 	for name, value := range after {
 		delta := value - before[name]
-		if delta == 0 {
+		if delta == 0 || name == rewriteFailuresKey {
 			continue
 		}
 		if delta != 1 || status != "" {
-			return "", fmt.Errorf("expected one cache request, before=%v after=%v", before, after)
+			return "", fmt.Errorf("%w: before=%v after=%v", errOtherRequests, before, after)
 		}
 		status = name
 	}
@@ -336,10 +419,41 @@ func TestCacheTransition(t *testing.T) {
 			t.Fatalf("%+v: %v", tc, err)
 		}
 	}
+	if _, err := cacheTransition(map[string]float64{rewriteFailuresKey: 3},
+		map[string]float64{rewriteFailuresKey: 3, "hit": 1}, "delta", 1); err != nil {
+		t.Fatalf("an earlier rewrite failure failed a later query: %v", err)
+	}
+	if _, err := cacheTransition(nil, map[string]float64{rewriteFailuresKey: 1, "hit": 1}, "delta", 1); err == nil {
+		t.Fatal("accepted a query whose rewrite failed")
+	}
 	for _, counts := range []map[string]float64{{"hit": 2}, {"hit": 1, "kmiss": 1}, {"hit": -1}} {
-		if _, err := cacheTransition(nil, counts, "delta", 0); err == nil {
-			t.Fatalf("accepted %v", counts)
+		if _, err := cacheTransition(nil, counts, "delta", 0); !errors.Is(err, errOtherRequests) {
+			t.Fatalf("%v: %v", counts, err)
 		}
+	}
+	if _, err := cacheTransition(nil, nil, "delta", 0); err == nil || errors.Is(err, errOtherRequests) {
+		t.Fatalf("a query no cache counted must fail without a retry: %v", err)
+	}
+}
+
+func TestWithoutRowsAt(t *testing.T) {
+	end := time.Unix(1_790_380_800, 0)
+	var f frame
+	f.Schema.Fields = []field{{Name: "Time", Type: "time"}, {Name: "trips", Type: "number"}}
+	f.Data.Values = [][]any{
+		{json.Number("1790380500000"), json.Number("1790380800000")},
+		{json.Number("51"), json.Number("1")},
+	}
+	doc := queryResponse{Results: map[string]queryResult{"A": {Frames: []frame{f}}}}
+	got := withoutRowsAt(doc, end).Results["A"].Frames[0]
+	if want := [][]any{{json.Number("1790380500000")}, {json.Number("51")}}; !reflect.DeepEqual(got.Data.Values, want) {
+		t.Fatalf("values = %v, want %v", got.Data.Values, want)
+	}
+	if got.Data.Nanos != nil || len(doc.Results["A"].Frames[0].Data.Values[0]) != 2 {
+		t.Fatal("the source frame changed, or absent nanoseconds appeared")
+	}
+	if kept := withoutRowsAt(doc, end.Add(time.Hour)); !reflect.DeepEqual(kept, doc) {
+		t.Fatal("a response without rows at the instant changed")
 	}
 }
 

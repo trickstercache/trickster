@@ -44,6 +44,7 @@ import (
 const (
 	pgwireConformanceName     = "pgwire-conformance"
 	pgwireConformanceTimeout  = 15 * time.Second
+	pgwireCancelRetry         = time.Second
 	pgwireSQLStateCanceled    = "57014"
 	pgwireSQLStateBadPassword = "28P01"
 	pgwireSecondUser          = "pgwire_conformance_second"
@@ -253,6 +254,8 @@ func pgwireSQLState(err error) string {
 
 func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsAddr string) {
 	t.Helper()
+	// counters are process-wide, and another test may have used this backend name first
+	rewriteFailures := pgwireRewriteFailures(t, metricsAddr)
 	// every behavior a client sees through the listener is held to what it
 	// sees from the origin itself
 	direct, err := pgwireConnect(t, target.OriginAddr, target, target.ClientPassword)
@@ -380,15 +383,21 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			_, err := pgwireQuery(t, proxied, target.SlowSQL)
 			failed <- err
 		}()
-		time.Sleep(500 * time.Millisecond)
-		ctx, cancel := context.WithTimeout(context.Background(), pgwireConformanceTimeout)
-		defer cancel()
-		require.NoError(t, proxied.CancelRequest(ctx))
-		select {
-		case err := <-failed:
-			require.Equal(t, pgwireSQLStateCanceled, pgwireSQLState(err))
-		case <-time.After(pgwireConformanceTimeout):
-			t.Fatal("the statement was never canceled")
+		// the origin drops a cancel that arrives before the statement does, so it's resent while the
+		// statement runs; one reaching an idle session is ignored
+		deadline := time.After(pgwireConformanceTimeout)
+		for canceled := false; !canceled; {
+			ctx, cancel := context.WithTimeout(context.Background(), pgwireConformanceTimeout)
+			require.NoError(t, proxied.CancelRequest(ctx))
+			cancel()
+			select {
+			case err := <-failed:
+				require.Equal(t, pgwireSQLStateCanceled, pgwireSQLState(err))
+				canceled = true
+			case <-time.After(pgwireCancelRetry):
+			case <-deadline:
+				t.Fatal("the statement was never canceled")
+			}
 		}
 		_, err := pgwireQuery(t, proxied, "SELECT 1")
 		require.NoError(t, err, "the session must survive a cancel")
@@ -433,8 +442,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			require.Contains(t, body, `trickster_sql_query_cache_total{backend_name="`+pgwireConformanceName+
 				`",`+series, series)
 		}
-		require.NotContains(t, body,
-			`trickster_sql_query_rewrite_failures_total{backend_name="`+pgwireConformanceName+`"`)
+		require.Equal(t, rewriteFailures, pgwireRewriteFailures(t, metricsAddr))
 	})
 
 	t.Run("a cached range answers its sub-ranges and later ranges fetch only what is new", func(t *testing.T) {
@@ -542,9 +550,7 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 		require.Equal(t, utc, session(proxyAddr, target.ClientUser))
 		require.Equal(t, zoned, session(proxyAddr, target.ClientUser, target.ZoneSQL))
 		require.Equal(t, hits+2, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", "hit"))
-		_, body := getBody(t, "http://"+metricsAddr+"/metrics")
-		require.NotContains(t, body,
-			`trickster_sql_query_rewrite_failures_total{backend_name="`+pgwireConformanceName+`"`)
+		require.Equal(t, rewriteFailures, pgwireRewriteFailures(t, metricsAddr))
 	})
 
 	t.Run("relayed statements are classified", func(t *testing.T) {
@@ -554,6 +560,18 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 		}
 		require.Contains(t, body, `trickster_proxy_requests_total{backend_name="`+pgwireConformanceName+`"`)
 	})
+}
+
+func pgwireRewriteFailures(t *testing.T, metricsAddr string) float64 {
+	t.Helper()
+	var total float64
+	prefix := `trickster_sql_query_rewrite_failures_total{backend_name="` + pgwireConformanceName + `"`
+	for key, value := range metricsutil.ScrapeURL(t, "http://"+metricsAddr+"/metrics", nil) {
+		if strings.HasPrefix(key, prefix) {
+			total += value
+		}
+	}
+	return total
 }
 
 func pgwireCacheCount(t *testing.T, metricsAddr, dialect, mode, status string) float64 {

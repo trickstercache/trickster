@@ -33,6 +33,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
+	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -95,4 +99,15 @@ func TestShutdownStopsDiscovery(t *testing.T) {
 	Shutdown(si)
 	require.Nil(t, si.PoolManagers)
 	require.Nil(t, si.Discoverers)
+}
+
+func TestShutdownClosesCaches(t *testing.T) {
+	c := registry.NewCache("mem", cacheoptions.New())
+	si := &instance.ServerInstance{Caches: cache.Lookup{"mem": c}}
+	require.NoError(t, c.Store("k", []byte("v"), time.Minute))
+
+	Shutdown(si)
+	require.ErrorIs(t, c.Store("k", []byte("v"), time.Minute), manager.ErrCacheClosed)
+	require.Nil(t, si.Caches)
+	Shutdown(si)
 }

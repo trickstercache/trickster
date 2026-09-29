@@ -48,19 +48,22 @@ type Resources struct {
 	CacheClient       cache.Cache
 	BackendClient     backends.Backend
 	AlternateCacheTTL time.Duration
-	TimeRangeQuery    *timeseries.TimeRangeQuery
-	Tracer            *tracing.Tracer
-	IsMergeMember     bool
-	RequestBody       []byte
-	MergeFunc         merge.MergeFunc
-	BatchMergeFunc    merge.BatchMergeFunc
-	MergeRespondFunc  merge.RespondFunc
-	TSUnmarshaler     timeseries.UnmarshalerFunc
-	TSMarshaler       timeseries.MarshalWriterFunc
-	TSTransformer     func(timeseries.Timeseries)
-	TS                timeseries.Timeseries
-	TSReqestOptions   *timeseries.RequestOptions
-	TSMergeStrategy   int
+	// PerCredentialCache stores an unshared authorized response under its credential-bearing key, as
+	// the delta proxy cache does for the time series lanes that set it
+	PerCredentialCache bool
+	TimeRangeQuery     *timeseries.TimeRangeQuery
+	Tracer             *tracing.Tracer
+	IsMergeMember      bool
+	RequestBody        []byte
+	MergeFunc          merge.MergeFunc
+	BatchMergeFunc     merge.BatchMergeFunc
+	MergeRespondFunc   merge.RespondFunc
+	TSUnmarshaler      timeseries.UnmarshalerFunc
+	TSMarshaler        timeseries.MarshalWriterFunc
+	TSTransformer      func(timeseries.Timeseries)
+	TS                 timeseries.Timeseries
+	TSReqestOptions    *timeseries.RequestOptions
+	TSMergeStrategy    int
 	// TSDedupToleranceNanos is the tolerance window (in nanoseconds) for
 	// clustering near-duplicate samples produced by independent fan-out
 	// shards. Zero (default) preserves the legacy exact-epoch dedup behavior.
@@ -115,6 +118,7 @@ func (r *Resources) Clone() *Resources {
 		CacheClient:           r.CacheClient,
 		BackendClient:         r.BackendClient,
 		AlternateCacheTTL:     r.AlternateCacheTTL,
+		PerCredentialCache:    r.PerCredentialCache,
 		TimeRangeQuery:        r.TimeRangeQuery,
 		Tracer:                r.Tracer,
 		IsMergeMember:         r.IsMergeMember,
@@ -197,6 +201,7 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.CacheClient = r2.CacheClient
 	r.BackendClient = r2.BackendClient
 	r.AlternateCacheTTL = r2.AlternateCacheTTL
+	r.PerCredentialCache = r2.PerCredentialCache
 	r.TimeRangeQuery = r2.TimeRangeQuery
 	r.Tracer = r2.Tracer
 	if r2.AuthResult != nil {

@@ -21,7 +21,7 @@ package stepwindow
 import "time"
 
 // Same reports whether a and b fall in the same step-aligned window of Unix time,
-// which is how Trickster normalizes the end of a range query and its own now.
+// which is how Trickster aligns the end of a range query and its own now.
 func Same(a, b time.Time, step time.Duration) bool {
 	return step > 0 && window(a, step) == window(b, step)
 }

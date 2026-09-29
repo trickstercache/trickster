@@ -46,6 +46,7 @@ func TestParseFullSet(t *testing.T) {
 		StickyKey:                     "cookie:session",
 		StickyTTL:                     "2h",
 		StickyIdle:                    "15m",
+		StepAlignment:                 "Partial_End",
 	})
 	require.Empty(t, problems)
 	require.True(t, set.UseRegex)
@@ -74,6 +75,7 @@ func TestParseFullSet(t *testing.T) {
 	require.Equal(t, "cookie:session", p.StickyKey)
 	require.Equal(t, int64(7200000), p.StickyTTLMS)
 	require.Equal(t, int64(900000), p.StickyIdleMS)
+	require.Equal(t, "partial_end", p.StepAlignment, "a mode is read in any case")
 }
 
 // each sticky annotation alone configures a policy, so an object carrying only it is honored
@@ -187,6 +189,7 @@ func TestConfiguresPolicyPerField(t *testing.T) {
 		CollapsedForwarding: "basic",
 		RewriteTarget:       "/",
 		HealthMode:          "provider",
+		StepAlignment:       "drop",
 	}
 	for key, value := range fields {
 		t.Run(key, func(t *testing.T) {

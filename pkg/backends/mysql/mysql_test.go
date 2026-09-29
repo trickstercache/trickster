@@ -36,11 +36,14 @@ import (
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/replication"
 	"vitess.io/vitess/go/mysql/sqlerror"
@@ -486,7 +489,7 @@ func TestDeltaWindowValidationAndFlooring(t *testing.T) {
 		t.Fatalf("short unaligned window = %+v, %v", window, err)
 	}
 	negative := time.Unix(-61, 500)
-	if got := sqlanalyzer.FloorBucket(negative, time.Minute, 0); got.After(negative) || negative.Sub(got) >= time.Minute {
+	if got := timeseries.FloorToGrid(negative, time.Minute, 0); got.After(negative) || negative.Sub(got) >= time.Minute {
 		t.Fatalf("negative floor = %v for %v", got, negative)
 	}
 }
@@ -535,31 +538,51 @@ func TestDeltaResultValidationMatrix(t *testing.T) {
 		{Name: "metric", Type: querypb.Type_VARCHAR},
 		{Name: "value", Type: querypb.Type_INT64},
 	}
-	if _, err := dpcTestHandler.mergeResults(nil, plan); err == nil {
-		t.Fatal("empty merge succeeded")
+	sink, err := dpcTestHandler.newRowSink(plan, fields)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{{Fields: fields}, nil}, plan); err == nil {
-		t.Fatal("merge accepted nil part")
+	for name, row := range map[string][]sqltypes.Value{
+		"short row":    {sqltypes.NewInt64(1)},
+		"invalid time": {sqltypes.NewVarChar("bad"), sqltypes.NewVarChar("m"), sqltypes.NewInt64(1)},
+	} {
+		if err := sink.row(row); !errors.Is(err, nativedelta.ErrUnmergeable) {
+			t.Fatalf("the sink accepted a %s: %v", name, err)
+		}
+	}
+	header := func(fields []*querypb.Field) []byte {
+		data, err := resultCodec{}.Marshal(&sqltypes.Result{Fields: fields})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return data
 	}
 	badFields := []*querypb.Field{{Name: "time", Type: querypb.Type_INT64}}
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{{Fields: fields}, {Fields: badFields}}, plan); err == nil {
-		t.Fatal("merge accepted incompatible fields")
+	if sameResultHeader(header(fields), header(badFields)) || sameResultHeader([]byte("x"), header(fields)) ||
+		!sameResultHeader(header(fields), header(fields)) {
+		t.Fatal("result headers compared wrongly")
 	}
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{{Fields: fields, Rows: [][]sqltypes.Value{{sqltypes.NewInt64(1)}}}}, plan); err == nil {
-		t.Fatal("merge accepted short row")
+	if _, err := dpcTestHandler.deltaResult(&nativedelta.Delta{Header: []byte("x")}, plan); err == nil {
+		t.Fatal("an undecodable header rendered")
 	}
-	badTime := &sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{{
-		sqltypes.NewVarChar("bad"), sqltypes.NewVarChar("m"), sqltypes.NewInt64(1),
-	}}}
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{badTime}, plan); err == nil {
-		t.Fatal("merge accepted invalid time")
+	if _, err := dpcTestHandler.deltaResult(&nativedelta.Delta{Header: header(badFields)}, plan); err == nil {
+		t.Fatal("a header without the plan's columns rendered")
 	}
-	if _, err := dpcTestHandler.cropAndSortResult(nil, plan, timeseries.Extent{}); err == nil {
-		t.Fatal("nil crop succeeded")
+	row := []sqltypes.Value{sqltypes.NewInt64(60), sqltypes.NULL, sqltypes.NewInt64(1)}
+	got := make([]sqltypes.Value, len(fields))
+	if err := decodeRowBlob(got, appendRowBlob(nil, row), fields); err != nil || !got[1].IsNull() ||
+		got[0].ToString() != "60" {
+		t.Fatalf("row blob round trip = %v, %v", got, err)
 	}
-	if _, err := dpcTestHandler.cropAndSortResult(&sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{{}}}, plan,
-		timeseries.Extent{}); err == nil {
-		t.Fatal("crop accepted short row")
+	for name, blob := range map[string][]byte{
+		"short":    appendRowBlob(nil, row[:2]),
+		"trailing": append(appendRowBlob(nil, row), 0),
+		"overlong": {9, 'a'},
+		"varint":   {0xff},
+	} {
+		if err := decodeRowBlob(got, blob, fields); err == nil {
+			t.Fatalf("a %s row blob decoded", name)
+		}
 	}
 
 	for name, candidate := range map[string][]*querypb.Field{
@@ -831,58 +854,33 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 		{sqltypes.NewInt64(60), sqltypes.NewInt64(2)},
 	}}
 	extent := timeseries.Extent{Start: start, End: time.Unix(60, 0)}
-	key := h.queryCacheKey(c, session, "dpc", plan.CanonicalSQL, plan.IdentitySuffix)
-	h.storeCached(key, &cachedQueryResult{
-		result:  result,
-		extents: timeseries.ExtentList{extent},
-	})
-	got, status, err := h.executeDelta(c, session, "SELECT delta", plan)
+	key := h.planCacheKey(c, session, cacheModeDPC, plan)
+	d, err := h.deltaOf(plan, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.storeDelta(key, d, timeseries.ExtentList{extent})
+	analysis := sqlanalyzer.Analysis{Mode: sqlanalyzer.CacheModeDelta, Plan: plan}
+	got, status, err := h.executeCached(c, session, "SELECT delta", analysis)
 	if err != nil || status != cachestatus.LookupStatusHit || len(got.Rows) != 2 {
 		t.Fatalf("delta hit = %+v/%v/%v", got, status, err)
 	}
 
-	invalid := &sqltypes.Result{Fields: fields, Rows: [][]sqltypes.Value{
-		{sqltypes.NewVarChar("bad-time"), sqltypes.NewInt64(1)},
-	}}
-	h.storeCached(key, &cachedQueryResult{result: invalid, extents: timeseries.ExtentList{extent}})
-	if _, _, err := h.executeDelta(c, session, "SELECT delta", plan); err == nil {
-		t.Fatal("invalid cached time axis did not fall back to the unavailable origin")
+	// rows that cannot be rendered go to the origin, unavailable here, and leave the cache
+	rewrites := metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName,
+		mysqlDialect, "render_delta_rows")
+	before := testutil.ToFloat64(rewrites)
+	d.DS.Results[0].SeriesList[0].Points[0].Values[0] = []byte{0xff}
+	h.storeDelta(key, d, timeseries.ExtentList{extent})
+	if _, status, err := h.executeCached(c, session, "SELECT delta", analysis); err == nil ||
+		status != cachestatus.LookupStatusProxyOnly {
+		t.Fatalf("unrenderable rows = %s, %v; want the unavailable origin", status, err)
 	}
-	if _, found := h.retrieveCached(key); found {
-		t.Fatal("invalid cached time axis was retained")
+	if testutil.ToFloat64(rewrites) != before+1 {
+		t.Fatal("the render failure was not observed")
 	}
-	if _, _, _, err := h.finalizeDeltaResult(nil, nil, plan, extent, time.Now()); err == nil {
-		t.Fatal("nil finalized result succeeded")
-	}
-}
-
-func TestRetentionAndStableExtentGuardBranches(t *testing.T) {
-	h := &protocolHandler{}
-	plan := &sqlanalyzer.QueryPlan{
-		Step: time.Minute, OutputColumn: "time",
-		OutputUnit: timeseries.DateTimeUnixSecs,
-	}
-	extents := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
-	result := &sqltypes.Result{
-		Fields: []*querypb.Field{{Name: "other", Type: querypb.Type_INT64}},
-		Rows:   [][]sqltypes.Value{{sqltypes.NewInt64(1)}, {sqltypes.NewInt64(2)}},
-	}
-	if got, _, err := h.applyRetentionSorted(result, extents, plan, 0); err != nil || got != result {
-		t.Fatal("disabled retention changed the result")
-	}
-	h.config.RetentionPoints = 1
-	if _, _, err := h.applyRetentionSorted(result, extents, plan, 1); err == nil {
-		t.Fatal("invalid retention row was accepted")
-	}
-	if got := h.stableExtents(extents, plan, time.Unix(1200, 0)); len(got) != 1 {
-		t.Fatal("disabled backfill changed extents")
-	}
-	h.config.BackfillWindow = time.Minute
-	if got := h.stableExtents(extents, plan, time.Unix(1200, 0)); len(got) != 1 {
-		t.Fatal("expired backfill window changed extents")
-	}
-	if got := h.stableExtents(extents, plan, time.Unix(30, 0)); len(got) != 0 {
-		t.Fatal("fully volatile extents were retained")
+	if _, found := h.retrieveDelta(key); found {
+		t.Fatal("unrenderable rows were retained")
 	}
 }
 
@@ -984,9 +982,9 @@ func TestShardedDeltaAndMergeFallback(t *testing.T) {
 	c := &vtmysql.Conn{User: "client"}
 	session := &upstreamSession{database: "trickster", downstream: c}
 	result, status, err := h.executeDelta(c, session, query, analysis.Plan)
-	if err != nil || status != cachestatus.LookupStatusKeyMiss || len(result.Rows) != 5 ||
+	if err != nil || status != cachestatus.LookupStatusKeyMiss || result.Delta.Rows() != 5 ||
 		deltaOrigin.queryCount.Load() < 2 {
-		t.Fatalf("sharded delta = %d rows/%v/%v, origin queries=%d", len(result.Rows), status, err,
+		t.Fatalf("sharded delta = %d rows/%v/%v, origin queries=%d", result.Delta.Rows(), status, err,
 			deltaOrigin.queryCount.Load())
 	}
 	h.discardUpstream(session, session.conn)
@@ -1000,14 +998,14 @@ func TestShardedDeltaAndMergeFallback(t *testing.T) {
 	fallbackSession := &upstreamSession{database: "trickster", downstream: c}
 	// A plan whose results cannot be merged degrades to the object cache.
 	if result, status, err := fallback.executeDelta(c, fallbackSession, query,
-		analysis.Plan); err != nil || status != cachestatus.LookupStatusKeyMiss || result == nil {
+		analysis.Plan); err != nil || status != cachestatus.LookupStatusKeyMiss || result.Object == nil {
 		t.Fatalf("merge fallback = %v/%v/%v, want an object-cache miss", result, status, err)
 	}
 	before := emptyOrigin.queryCount.Load()
 	// The recorded fallback makes the next execution skip the delta attempt and
 	// read the object entry the first one stored.
 	if result, status, err := fallback.executeDelta(c, fallbackSession, query,
-		analysis.Plan); err != nil || status != cachestatus.LookupStatusHit || result == nil {
+		analysis.Plan); err != nil || status != cachestatus.LookupStatusHit || result.Object == nil {
 		t.Fatalf("repeat merge fallback = %v/%v/%v, want an object-cache hit", result, status, err)
 	}
 	if got := emptyOrigin.queryCount.Load(); got != before {

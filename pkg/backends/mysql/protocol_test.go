@@ -40,8 +40,10 @@ import (
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	vtmysql "vitess.io/vitess/go/mysql"
@@ -51,6 +53,9 @@ import (
 	"vitess.io/vitess/go/vt/vtenv"
 	"vitess.io/vitess/go/vt/vttls"
 )
+
+// a statement asking for off itself
+const offDirective = "/* trickster-step-align:off */ "
 
 func TestProtocolConfigFromOptions(t *testing.T) {
 	o := bo.New()
@@ -159,6 +164,22 @@ func TestProtocolRestartKeyIncludesTransportSettings(t *testing.T) {
 	}
 	if third.RestartKey == fourth.RestartKey {
 		t.Fatal("downstream TLS requirement did not alter MySQL protocol restart key")
+	}
+	o.PartialBucketTTL = timeconv.Duration(time.Minute)
+	fifth, err := ProtocolConfigFromOptions(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fifth.PartialBucketTTL != time.Minute || fourth.RestartKey == fifth.RestartKey {
+		t.Fatal("partial_bucket_ttl was not copied, or did not alter the restart key")
+	}
+	o.StepAlignment = timeseries.StepAlignmentDrop
+	sixth, err := ProtocolConfigFromOptions(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sixth.StepAlignment != timeseries.StepAlignmentDrop || fifth.RestartKey == sixth.RestartKey {
+		t.Fatal("step_alignment was not copied, or did not alter the restart key")
 	}
 }
 
@@ -1545,6 +1566,130 @@ ORDER BY time`, upper)
 	}
 }
 
+type recordingDeltaOriginHandler struct {
+	deltaOriginHandler
+	mtx     sync.Mutex
+	queries []string
+}
+
+func (h *recordingDeltaOriginHandler) ComQuery(c *vtmysql.Conn, query string,
+	callback func(*sqltypes.Result) error,
+) error {
+	if !isWarningCountQuery(query) {
+		h.mtx.Lock()
+		h.queries = append(h.queries, query)
+		h.mtx.Unlock()
+	}
+	return h.deltaOriginHandler.ComQuery(c, query, callback)
+}
+
+func (h *recordingDeltaOriginHandler) received() []string {
+	h.mtx.Lock()
+	defer h.mtx.Unlock()
+	return append([]string(nil), h.queries...)
+}
+
+func TestProtocolServerOffAnswersTheClientsStatementFromTheObjectCache(t *testing.T) {
+	// off configured, and off asked for by a statement on a backend left at its default
+	t.Run("configured", func(t *testing.T) { offAnswersFromTheObjectCache(t, timeseries.StepAlignmentOff, "") })
+	t.Run("by directive", func(t *testing.T) { offAnswersFromTheObjectCache(t, 0, offDirective) })
+}
+
+func offAnswersFromTheObjectCache(t *testing.T, mode timeseries.StepAlignment, directive string) {
+	// each case counts its own lookups
+	backendName := "mysql-off-test-" + strings.ReplaceAll(t.Name(), "/", "-")
+	originListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	originHandler := &recordingDeltaOriginHandler{env: vtenv.NewTestEnv()}
+	origin, err := vtmysql.NewFromListener(originListener,
+		newCredentialAuth(map[string]string{"origin": "origin-password"}, "", nil), originHandler,
+		0, 0, false, false, 0, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go origin.Accept()
+	defer origin.Shutdown()
+
+	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := newTestCache()
+	server, err := NewProtocolServer(ProtocolConfig{
+		Upstream: vtmysql.ConnParams{
+			Host: "127.0.0.1", Port: originListener.Addr().(*net.TCPAddr).Port,
+			Uname: "origin", Pass: "origin-password",
+		},
+		DownstreamUsers: map[string]string{"client": "client-password"},
+		ConnectTimeout:  time.Second,
+		BackendName:     backendName,
+		Cache:           cache,
+		CacheTTL:        time.Hour,
+		StepAlignment:   mode,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	go server.Serve(proxyListener)
+	defer server.Shutdown(context.Background())
+
+	client, err := vtmysql.Connect(context.Background(), &vtmysql.ConnParams{
+		Host: "127.0.0.1", Port: proxyListener.Addr().(*net.TCPAddr).Port,
+		Uname: "client", Pass: "client-password",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	// off the grid at both ends
+	query := func(upper int) string {
+		return directive + fmt.Sprintf(`SELECT
+  cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time,
+  count(*) AS value
+FROM events
+WHERE ts >= FROM_UNIXTIME(30) AND ts < FROM_UNIXTIME(%d)
+GROUP BY time
+ORDER BY time`, upper)
+	}
+	count := func(mode sqlanalyzer.CacheMode, lookup status.LookupStatus) float64 {
+		return testutil.ToFloat64(metrics.SQLQueryCache.WithLabelValues(backendName, mysqlDialect,
+			mode.String(), lookup.String()))
+	}
+	for _, test := range []struct {
+		upper    int
+		received []string
+	}{
+		{150, []string{query(150)}},
+		{150, []string{query(150)}},
+		{170, []string{query(150), query(170)}},
+	} {
+		if _, err := client.ExecuteFetch(query(test.upper), vtmysql.FETCH_ALL_ROWS, true); err != nil {
+			t.Fatal(err)
+		}
+		if got := originHandler.received(); strings.Join(got, "\n") != strings.Join(test.received, "\n") {
+			t.Fatalf("upper %d: the origin received %q, want the client's statements %q",
+				test.upper, got, test.received)
+		}
+	}
+	if count(sqlanalyzer.CacheModeObject, status.LookupStatusKeyMiss) != 2 ||
+		count(sqlanalyzer.CacheModeObject, status.LookupStatusHit) != 1 ||
+		count(sqlanalyzer.CacheModeDelta, status.LookupStatusKeyMiss) != 0 {
+		t.Error("off must be counted as object lookups, never as delta lookups")
+	}
+	cache.mtx.Lock()
+	defer cache.mtx.Unlock()
+	if len(cache.ttls) != 2 {
+		t.Errorf("expected one object per statement, got %d entries", len(cache.ttls))
+	}
+	for key, ttl := range cache.ttls {
+		if ttl != timeseries.StepAlignmentOffTTL {
+			t.Errorf("%s stored for %s, want %s", key, ttl, timeseries.StepAlignmentOffTTL)
+		}
+	}
+}
+
 func TestProtocolServerDeltaCachesMovingUnalignedRange(t *testing.T) {
 	originListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1610,19 +1755,19 @@ AND ts < FROM_UNIXTIME(%d) GROUP BY time ORDER BY time`, lower, upper)
 	if got := originHandler.queryCount.Load(); got != 1 {
 		t.Fatalf("moving delta origin queries = %d, want 1", got)
 	}
-	emptyFirst, err := client.ExecuteFetch(query(5, 25), vtmysql.FETCH_ALL_ROWS, true)
-	if err != nil {
-		t.Fatal(err)
+	// a range holding no complete bucket is the origin's own answer to each statement, and a repeat
+	// comes from the object tier
+	for _, bounds := range [][2]int{{5, 25}, {10, 20}, {5, 25}} {
+		partial, err := client.ExecuteFetch(query(bounds[0], bounds[1]), vtmysql.FETCH_ALL_ROWS, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(partial.Rows) != 1 || partial.Rows[0][0].ToString() != "0" {
+			t.Fatalf("%v answered %v", bounds, partial.Rows)
+		}
 	}
-	emptySecond, err := client.ExecuteFetch(query(10, 20), vtmysql.FETCH_ALL_ROWS, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(emptyFirst.Rows) != 0 || len(emptySecond.Rows) != 0 {
-		t.Fatalf("normalized empty row counts = %d, %d", len(emptyFirst.Rows), len(emptySecond.Rows))
-	}
-	if got := originHandler.queryCount.Load(); got != 2 {
-		t.Fatalf("normalized empty origin queries = %d, want 2", got)
+	if got := originHandler.queryCount.Load(); got != 3 {
+		t.Fatalf("partial range origin queries = %d, want 3", got)
 	}
 	client.Close()
 
@@ -1778,8 +1923,8 @@ func (h *deltaOriginHandler) ComQuery(_ *vtmysql.Conn, query string,
 	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
 		return fmt.Errorf("unexpected delta origin query: %s", query)
 	}
-	start := sqlanalyzer.FloorBucket(analysis.Plan.LowerBound.Value, analysis.Plan.Step, 0)
-	end := sqlanalyzer.FloorBucket(analysis.Plan.UpperBound.Value.Add(-time.Nanosecond), analysis.Plan.Step, 0)
+	start := timeseries.FloorToGrid(analysis.Plan.LowerBound.Value, analysis.Plan.Step, 0)
+	end := timeseries.FloorToGrid(analysis.Plan.UpperBound.Value.Add(-time.Nanosecond), analysis.Plan.Step, 0)
 	rows := make([][]sqltypes.Value, 0, int(end.Sub(start)/analysis.Plan.Step)+1)
 	for current := start; !current.After(end); current = current.Add(analysis.Plan.Step) {
 		rows = append(rows, []sqltypes.Value{
@@ -1859,22 +2004,28 @@ func (h *testOriginHandler) WarningCount(*vtmysql.Conn) uint16 { return 0 }
 type testCache struct {
 	mtx           sync.Mutex
 	data          map[string][]byte
+	ttls          map[string]time.Duration
 	storeErr      error
 	retrieveErr   error
 	removeErr     error
 	configuration *cacheoptions.Options
 }
 
-func newTestCache() *testCache { return &testCache{data: make(map[string][]byte)} }
+func newTestCache() *testCache {
+	return &testCache{data: make(map[string][]byte), ttls: make(map[string]time.Duration)}
+}
 
 func (c *testCache) Connect() error { return nil }
 
-func (c *testCache) Store(key string, data []byte, _ time.Duration) error {
+func (c *testCache) Store(key string, data []byte, ttl time.Duration) error {
 	if c.storeErr != nil {
 		return c.storeErr
 	}
 	c.mtx.Lock()
 	c.data[key] = append([]byte(nil), data...)
+	if c.ttls != nil {
+		c.ttls[key] = ttl
+	}
 	c.mtx.Unlock()
 	return nil
 }

@@ -96,9 +96,11 @@ type session struct {
 	upstreamReader *bufio.Reader
 	handoff        upstreamHandoff
 	relayResumed   bool
-	pid            uint32
-	realPID        uint32
-	realSecret     []byte
+	// rowBuffer holds the DataRow a delta fetch is reading, reused from row to row
+	rowBuffer  []byte
+	pid        uint32
+	realPID    uint32
+	realSecret []byte
 
 	closeMtx sync.Mutex
 	closed   bool

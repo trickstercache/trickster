@@ -260,6 +260,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	// the mode and warning come from the pool this request fans out to, never a newer or older one
+	alignment := p.Alignment()
+	r = mech.Align(r, p.StepAlignmentOverride())
 	hl := p.Targets() // should return a fanout list
 	l := len(hl)
 	if l == 0 {
@@ -299,7 +302,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if trq != nil {
-			duration := trq.Extent.End.Sub(trq.Extent.Start)
+			requested := trq.RequestedExtent()
+			duration := requested.End.Sub(requested.Start)
 			limit := time.Duration(rsc.BackendOptions.MaxQueryRange)
 			if duration > limit {
 				metrics.ProxyQueryRangeRejections.WithLabelValues(rsc.BackendOptions.Name).Inc()
@@ -309,8 +313,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						"clientIP":       request.ClientIP(r),
 						keys.Path:        r.URL.Path,
 						"statement":      trq.Statement,
-						"start":          trq.Extent.Start.String(),
-						"end":            trq.Extent.End.String(),
+						"start":          requested.Start.String(),
+						"end":            requested.End.String(),
 						"duration":       duration.String(),
 						"limit":          limit.String(),
 					})
@@ -386,6 +390,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnMsg := plan.UnsupportedWarning
+	if alignment.Warning != "" {
+		warnMsg = joinWarnings(warnMsg, alignment.Warning)
+	}
 
 	// Collect injected label keys from pool backends so they can be stripped
 	// before merging. This ensures series from different backends hash
@@ -425,26 +432,30 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					"live_groups":       liveGroups,
 				})
 		}
-		dw := fmt.Sprintf("trickster: served from %d of %d replica groups; results may be incomplete",
-			liveGroups, configuredGroups)
-		if warnMsg == "" {
-			warnMsg = dw
-		} else {
-			warnMsg += "; " + dw
-		}
+		warnMsg = joinWarnings(warnMsg, fmt.Sprintf(
+			"trickster: served from %d of %d replica groups; results may be incomplete",
+			liveGroups, configuredGroups))
 	} else {
 		h.degradeActive.Store(false)
 	}
 
 	// A plan may explicitly allow direct proxying when no planned rewrite,
 	// reduction, finalization, warning, or injected-label cleanup is needed.
-	if l == 1 && len(stripKeys) == 0 && plan.AllowSingleMemberBypass && !degraded {
+	if l == 1 && len(stripKeys) == 0 && plan.AllowSingleMemberBypass && !degraded &&
+		alignment.Warning == "" {
 		defaultHandler.ServeHTTP(w, r)
 		return
 	}
 
 	h.servePlan(w, r, hl, rsc, plan, stripKeys, finalizer, warnMsg,
 		configuredTargets)
+}
+
+func joinWarnings(warnings, next string) string {
+	if warnings == "" {
+		return next
+	}
+	return warnings + "; " + next
 }
 
 // gatherResult captures the per-member fanout outcome used to assemble the

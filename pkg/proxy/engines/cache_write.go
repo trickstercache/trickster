@@ -74,11 +74,19 @@ type TimeseriesChunkWriter struct {
 // NewTimeseriesChunkWriter creates a new TimeseriesChunkWriter
 func NewTimeseriesChunkWriter(c cache.Cache, key string, trq *timeseries.TimeRangeQuery, marshal timeseries.MarshalerFunc) *TimeseriesChunkWriter {
 	csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-	var cext timeseries.Extent
-	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
+	cext := timeseriesChunkExtent(trq, csize)
 	cct := int(cext.End.Sub(cext.Start) / csize)
 
 	return &TimeseriesChunkWriter{trq: trq, c: c, key: key, cext: cext, csize: csize, cct: cct, marshal: marshal}
+}
+
+func timeseriesChunkExtent(trq *timeseries.TimeRangeQuery, csize time.Duration) timeseries.Extent {
+	// chunks start on the query's phased grid, since each chunk stores the buckets labeled from
+	// its start through its last step and an off-grid start would leave a bucket in no chunk
+	return timeseries.Extent{
+		Start: timeseries.FloorToGrid(trq.Extent.Start, csize, trq.Phase),
+		End:   timeseries.FloorToGrid(trq.Extent.End, csize, trq.Phase).Add(csize),
+	}
 }
 
 func (tc *TimeseriesChunkWriter) ChunkCount() int {

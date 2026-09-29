@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/signal"
 	"path/filepath"
 	goruntime "runtime"
 	"sync"
@@ -65,7 +64,7 @@ func TestReloadStormDoesNotLeak(t *testing.T) {
 
 	// Reset SIGHUP so the daemon's signaling.Wait is the only receiver, then
 	// restore at end of test. (Mirrors TestLifecycle_ReloadPreservesHCStatus.)
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 
 	const buildInfo = `{"status":"success","data":{"version":"2.0"}}`
 	const queryResp = `{"status":"success","data":{"resultType":"vector","result":[` +

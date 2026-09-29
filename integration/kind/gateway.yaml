@@ -29,7 +29,7 @@ spec:
       labels:
         app: webecho-canary
     spec:
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: 20
       containers:
         - name: webecho
           image: traefik/whoami:v1.10.2
@@ -42,7 +42,7 @@ spec:
           lifecycle:
             preStop:
               sleep:
-                seconds: 5
+                seconds: 15
           readinessProbe:
             httpGet:
               path: /
@@ -309,7 +309,7 @@ spec:
     spec:
       serviceAccountName: trickster-gateway
       # covers the preStop sleep plus the default 30s shutdown drain
-      terminationGracePeriodSeconds: 45
+      terminationGracePeriodSeconds: 55
       # the conformance suite's Gateways declare ports 80 and 443, which the
       # container binds as nobody
       securityContext:
@@ -333,9 +333,9 @@ spec:
             periodSeconds: 1
           lifecycle:
             preStop:
-              # lets the endpoint removal propagate before SIGTERM arrives
+              # lets the endpoint removal propagate before SIGTERM arrives, with room for a loaded runner
               sleep:
-                seconds: 5
+                seconds: 15
           volumeMounts:
             - name: config
               mountPath: /etc/trickster

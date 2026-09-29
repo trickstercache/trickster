@@ -399,6 +399,10 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	if err != nil {
 		return nil, err
 	}
+	// a pool member is reached through its pool only, never through a native listener
+	if err := backends.ValidateStepAlignment(client, nb); err != nil {
+		return nil, err
+	}
 	nb.HTTPClient = client.HTTPClient()
 	if c != nil {
 		client.SetCache(c)

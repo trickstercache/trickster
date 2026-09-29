@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -48,10 +49,15 @@ type gatedTransport struct {
 	inner http.RoundTripper
 	gate  <-chan struct{}
 	hits  *atomic.Int64
+	// seen, when set, is told of every request as it is sent
+	seen func(*http.Request)
 }
 
 func (g *gatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	g.hits.Add(1)
+	if g.seen != nil {
+		g.seen(req)
+	}
 	<-g.gate
 	return g.inner.RoundTrip(req)
 }
@@ -477,7 +483,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	}
 }
 
-func normalizeTime(t time.Time, d time.Duration) time.Time {
+func alignTime(t time.Time, d time.Duration) time.Time {
 	return time.Unix((t.Unix()/int64(d.Seconds()))*int64(d.Seconds()), 0)
 	// return t.Truncate(d)
 }
@@ -504,7 +510,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -537,9 +543,9 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -583,7 +589,7 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	// test partial hit (needing a lower fragment)
 	phitEnd := extn.Start.Add(-step)
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = normalizeTime(extr.Start, step)
+	extn.Start = alignTime(extr.Start, step)
 
 	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "]"
 	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -625,13 +631,13 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing both upper and lower fragments)
-	phitEnd = normalizeTime(extr.Start.Add(-step), step)
-	phitStart = normalizeTime(extr.End.Add(step), step)
+	phitEnd = alignTime(extr.Start.Add(-step), step)
+	phitStart = alignTime(extr.End.Add(step), step)
 
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = normalizeTime(extr.Start, step)
+	extn.Start = alignTime(extr.Start, step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
@@ -698,7 +704,7 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	// First request: populate cache with successful data
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
@@ -737,9 +743,9 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	// Second request: partial hit - extend the upper range
 	// This should cause a partial hit where we need to fetch the new upper fragment.
 	// But we'll use a query that fails (queryReturnsBadGateway) for this fragment.
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour)
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	// The extent that we should fetch for the partial hit
 	extentToFetch := timeseries.Extent{Start: phitStart, End: extn.End}
@@ -801,7 +807,7 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -1049,7 +1055,7 @@ func testDPCFastForward(t *testing.T, chunked bool) {
 		}
 		client.InstantCacheKey = fmt.Sprintf("test-dpc-ff-key-instant-%d", attempt)
 		client.RangeCacheKey = fmt.Sprintf("test-dpc-ff-key-range-%d", attempt)
-		client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
+		client.fftime = now.Truncate(time.Duration(o.PartialBucketTTL))
 
 		extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
 		extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
@@ -1171,8 +1177,36 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "err"})
+	// a range short of the latest point is never fast forwarded, so the request that fails isn't built
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: statusOff})
 	if err != nil {
+		t.Error(err)
+	}
+	requireLiveFastForwardError(t, false)
+}
+
+func requireLiveFastForwardError(t *testing.T, chunked bool) {
+	t.Helper()
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	rsc.CacheConfig.UseCacheChunking, rsc.CacheConfig.Provider = chunked, "test"
+	client := rsc.BackendClient.(*TestClient)
+	const step = 300 * time.Second
+	// a range reaching the latest point is fast forwarded, so the request that fails reports err
+	resp, ok := stepwindow.Retry(step, 3, func(attempt int, now time.Time) dpcResponse {
+		u := r.URL
+		u.Path = "/prometheus/api/v1/query_range"
+		u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&rangeKey=ff-err-%d&step=%d&start=%d&end=%d&query=%s",
+			attempt, int(step.Seconds()), now.Add(-time.Hour).Unix(), now.Unix(), queryReturnsOKNoLatency)
+		return serveDPC(client, r)
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a step boundary")
+	}
+	if err := testResultHeaderPartMatch(resp.header, map[string]string{keys.FFStatus: statusErr}); err != nil {
 		t.Error(err)
 	}
 }
@@ -1579,7 +1613,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	}
 }
 
-func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
+func TestDeltaProxyCacheRequest_VolatileWindow(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
@@ -1589,7 +1623,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
+	o.VolatileWindow = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1659,6 +1693,81 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	}
 }
 
+func TestDeltaProxyCacheNeverCachesLiveBucket(t *testing.T) {
+	// a one-hour step keeps both requests inside one bucket in all but rare runs
+	const step = time.Hour
+	tests := []struct {
+		name     string
+		model    timeseries.SampleModel
+		eviction evictionmethods.TimeseriesEvictionMethod
+		repeat   string
+	}{
+		{
+			"bucket model, oldest eviction", timeseries.SampleModelBucket,
+			evictionmethods.EvictionMethodOldest, status.StatusPartialHit,
+		},
+		{
+			"bucket model, lru eviction", timeseries.SampleModelBucket,
+			evictionmethods.EvictionMethodLRU, status.StatusPartialHit,
+		},
+		{
+			"instant model caches its newest point", timeseries.SampleModelInstant,
+			evictionmethods.EvictionMethodOldest, status.StatusHit,
+		},
+	}
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts, w, r, rsc, err := setupTestHarnessDPC()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeTestHarness(ts, r)
+			client := rsc.BackendClient.(*TestClient)
+			client.sampleModel = test.model
+			client.RangeCacheKey = fmt.Sprintf("test-range-key-live-%d", i)
+			client.InstantCacheKey = fmt.Sprintf("test-instant-key-live-%d", i)
+			rsc.CacheConfig.Provider = "test"
+			o := rsc.BackendOptions
+			o.FastForwardDisable = true
+			o.VolatileWindow, o.VolatileWindowPoints = 0, 0
+			o.TimeseriesEvictionMethod = test.eviction
+
+			now := time.Now()
+			live := alignTime(now, step)
+			u := r.URL
+			u.Path = "/prometheus/api/v1/query_range"
+			u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s",
+				int(step.Seconds()), now.Add(-6*step).Unix(), now.Unix(), queryReturnsOKNoLatency,
+				client.RangeCacheKey, client.InstantCacheKey)
+			client.QueryRangeHandler(w, r)
+			if err = testResultHeaderPartMatch(w.Result().Header,
+				map[string]string{keys.Status: status.StatusKeyMiss}); err != nil {
+				t.Fatal(err)
+			}
+
+			w = httptest.NewRecorder()
+			client.QueryRangeHandler(w, r)
+			if !alignTime(time.Now(), step).Equal(live) {
+				t.Skip("the test crossed a bucket boundary")
+			}
+			resp := w.Result()
+			if err = testResultHeaderPartMatch(resp.Header,
+				map[string]string{keys.Status: test.repeat}); err != nil {
+				t.Fatal(err)
+			}
+			if test.repeat != status.StatusPartialHit {
+				return
+			}
+			// only the bucket containing now is refetched
+			fetched := "[" + timeseries.ExtentList{{Start: live, End: live}}.String() + "]"
+			if err = testResultHeaderPartMatch(resp.Header,
+				map[string]string{keys.Fetched: fetched}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
 func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
@@ -1672,7 +1781,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = timeconv.Duration(step + 1)
+	o.PartialBucketTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1739,7 +1848,7 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	end := now.Add(-12 * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
@@ -1772,9 +1881,9 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(6) * time.Hour) // Extend the top by 6 hours to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)

@@ -17,8 +17,8 @@
 package flightsql
 
 import (
+	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"time"
@@ -57,11 +57,15 @@ type DeltaConfig struct {
 	CacheTTL time.Duration
 	// MaxObjectSize rejects oversized entries when positive.
 	MaxObjectSize int64
-	// RetentionPoints is the backend's timeseries_retention_factor, used to
-	// report requests whose range exceeds what the cache can retain.
+	// RetentionPoints is the backend's timeseries_retention_factor: the newest buckets an entry
+	// keeps, and the bound above which a request's range is reported as exceeding it.
 	RetentionPoints int
-	// BackfillTolerance widens the volatile tail excluded from cache storage.
-	BackfillTolerance time.Duration
+	// VolatileWindow widens the volatile tail excluded from cache storage.
+	VolatileWindow time.Duration
+	// PartialBucketTTL bounds the lifetime of cached partial buckets.
+	PartialBucketTTL time.Duration
+	// StepAlignment is the backend's configured step alignment mode; zero uses the default.
+	StepAlignment timeseries.StepAlignment
 }
 
 // WithDeltaCache enables the delta tier on a Server.
@@ -73,85 +77,40 @@ func WithDeltaCache(cfg DeltaConfig) ServerOption {
 	}
 }
 
-// deltaPayload is the delta tier's cache representation: the response's
-// serialized Arrow schema alongside the tag-partitioned dataset, so merged
-// results are rebuilt into batches conforming to the original schema. Raw
-// carries verbatim IPC bytes on paths that bypass dataset modeling (proxied
-// originals, object-tier fallbacks); Raw is never stored in the delta cache.
-type deltaPayload struct {
-	Schema []byte
-	DS     *dataset.DataSet
-	Raw    []byte
-	// status preserves the object tier's lookup status through the
-	// ObjectFallback path.
-	status cachestatus.LookupStatus
+type ipcCodec struct{} // serializes the object tier's payloads, which are verbatim Arrow IPC streams
+
+func (ipcCodec) Marshal(b []byte) ([]byte, error) {
+	if b == nil {
+		return nil, errors.New("flight object payload is not cacheable")
+	}
+	return b, nil
 }
 
-// deltaCodec serializes delta payloads as a length-prefixed schema followed
-// by the msgpack dataset encoding.
-type deltaCodec struct{}
-
-func (deltaCodec) Marshal(p *deltaPayload) ([]byte, error) {
-	if p == nil || p.DS == nil || p.Raw != nil {
-		return nil, errors.New("flight delta payload is not cacheable")
-	}
-	dsBytes, err := dataset.MarshalDataSet(p.DS, nil, 0)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]byte, 4+len(p.Schema)+len(dsBytes))
-	// #nosec G115 -- a serialized Arrow schema is far below 4GiB.
-	binary.BigEndian.PutUint32(out[:4], uint32(len(p.Schema)))
-	copy(out[4:], p.Schema)
-	copy(out[4+len(p.Schema):], dsBytes)
-	return out, nil
+func (ipcCodec) Unmarshal(data []byte) ([]byte, error) {
+	return bytes.Clone(data), nil
 }
 
-func (deltaCodec) Unmarshal(data []byte) (*deltaPayload, error) {
-	if len(data) < 4 {
-		return nil, errors.New("truncated flight delta payload")
-	}
-	schemaLen := int(binary.BigEndian.Uint32(data[:4]))
-	if schemaLen < 0 || schemaLen > len(data)-4 {
-		return nil, errors.New("invalid flight delta schema length")
-	}
-	ts, err := dataset.UnmarshalDataSet(data[4+schemaLen:], nil)
-	if err != nil {
-		return nil, err
-	}
-	ds, ok := ts.(*dataset.DataSet)
-	if !ok {
-		return nil, errors.New("invalid flight delta dataset")
-	}
-	return &deltaPayload{Schema: append([]byte(nil), data[4:4+schemaLen]...), DS: ds}, nil
-}
-
-func (deltaCodec) Size(p *deltaPayload) int {
-	if p == nil {
-		return 0
-	}
-	size := len(p.Schema) + len(p.Raw)
-	if p.DS != nil {
-		size += int(p.DS.Size())
-	}
-	return size
+func (ipcCodec) Size(b []byte) int {
+	return len(b)
 }
 
 // deltaRunner routes statement queries across the delta, object, and proxy
 // tiers.
 type deltaRunner struct {
 	cfg    DeltaConfig
-	engine *nativedelta.Engine[*deltaPayload]
+	engine *nativedelta.Engine[[]byte]
 }
 
 func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 	engineCfg := nativedelta.Config{
-		Protocol:        flightsqlDialect,
-		BackendName:     keyPrefix,
-		CacheClient:     cfg.CacheClient,
-		CacheTTL:        cfg.CacheTTL,
-		MaxObjectSize:   cfg.MaxObjectSize,
-		RetentionPoints: cfg.RetentionPoints,
+		Protocol:         flightsqlDialect,
+		BackendName:      keyPrefix,
+		CacheClient:      cfg.CacheClient,
+		CacheTTL:         cfg.CacheTTL,
+		MaxObjectSize:    cfg.MaxObjectSize,
+		RetentionPoints:  cfg.RetentionPoints,
+		VolatileWindow:   cfg.VolatileWindow,
+		PartialBucketTTL: cfg.PartialBucketTTL,
 		ObserveCacheFailure: func(reason string) {
 			observeCacheFailure(cfg.CacheClient, reason)
 		},
@@ -163,7 +122,7 @@ func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
 	if engineCfg.CacheTTL <= 0 {
 		engineCfg.CacheTTL = DefaultCacheTTL
 	}
-	return &deltaRunner{cfg: cfg, engine: nativedelta.New(engineCfg, deltaCodec{})}
+	return &deltaRunner{cfg: cfg, engine: nativedelta.New(engineCfg, ipcCodec{})}
 }
 
 // observeCacheFailure records an engine cache failure against the configured
@@ -204,8 +163,14 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 			cachestatus.LookupStatusProxyOnly, 0, time.Since(now))
 		return s.streamIPCBytes(ctx, b)
 	}
-	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil {
-		b, lookupStatus, err := s.objectTier(ctx, query)
+	// off answers with the origin's result to the client's statement, keyed on its raw range
+	unaligned := nativedelta.RequestStepAlignment(d.cfg.StepAlignment, analysis.Plan) == timeseries.StepAlignmentOff
+	if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil || unaligned {
+		kind, ttl := statementKeyKind, s.cacheTTL
+		if unaligned && analysis.Mode == sqlanalyzer.CacheModeDelta {
+			kind, ttl = unalignedStatementKeyKind, timeseries.StepAlignmentOffTTL
+		}
+		b, lookupStatus, err := s.objectTierFor(ctx, kind, query, ttl)
 		d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeObject,
 			lookupStatus, 0, time.Since(now))
 		if err != nil {
@@ -216,23 +181,36 @@ func (d *deltaRunner) serve(ctx context.Context, s *Server,
 
 	plan := analysis.Plan
 	trq := planTimeRangeQuery(plan)
-	baseKey := s.tenantKey(ctx) + ":dpc:" +
-		checksum.Checksum(plan.CanonicalSQL+"|"+plan.IdentitySuffix)
-	payload, lookupStatus, err := d.engine.ExecuteDelta(nativedelta.DeltaRequest[*deltaPayload]{
+	// the separator once preceded directive text, which keys no longer hold; it stays so keys don't change
+	baseKey := s.tenantKey(ctx) + ":dpc:" + checksum.Checksum(plan.CanonicalSQL+"|")
+	answer, lookupStatus, err := d.engine.ExecuteDelta(nativedelta.DeltaRequest[[]byte]{
 		Key:         baseKey,
 		FallbackKey: baseKey + ":fallback",
-		EmptyKey:    baseKey + ":empty",
-		Plan:        plan,
-		Now:         now,
-		Ops:         d.ops(ctx, s, query, plan, trq),
+		Statement:   query, StepAlignment: nativedelta.RequestStepAlignment(d.cfg.StepAlignment, plan),
+		Context: ctx,
+		Plan:    plan,
+		Now:     now,
+		Ops:     d.ops(ctx, s, query, plan, trq),
 	})
+	// a verbatim result's row count is unknown without decoding it, so it reports none
 	d.observeCache(s.keyPrefix, sqlanalyzer.CacheModeDelta,
-		lookupStatus, payload.rowCount(), time.Since(now))
+		lookupStatus, answer.Delta.Rows(), time.Since(now))
 	if err != nil {
 		return nil, nil, err
 	}
-	return d.respond(ctx, s, payload, sortKeys(plan))
+	if answer.Delta == nil {
+		return s.streamIPCBytes(ctx, answer.Object)
+	}
+	return d.respond(ctx, s, answer.Delta, trq, sortKeys(plan))
 }
+
+// object tier key kinds; off and partial buckets keep their own statement objects, so one stored for
+// another TTL never answers them
+const (
+	statementKeyKind          = ":stmt:"
+	unalignedStatementKeyKind = ":off:"
+	partialStatementKeyKind   = ":partial:"
+)
 
 // Metric label constants shared with the other native SQL protocols.
 const (
@@ -278,26 +256,6 @@ func (d *deltaRunner) observeCache(backend string, mode sqlanalyzer.CacheMode,
 		Observe(elapsed.Seconds())
 }
 
-// rowCount reports the number of points a dataset payload carries; verbatim
-// payloads report zero, as their row count is unknown without decoding.
-func (p *deltaPayload) rowCount() int {
-	if p == nil || p.DS == nil {
-		return 0
-	}
-	points := 0
-	for _, result := range p.DS.Results {
-		if result == nil {
-			continue
-		}
-		for _, series := range result.SeriesList {
-			if series != nil {
-				points += len(series.Points)
-			}
-		}
-	}
-	return points
-}
-
 // sortKeys translates a plan's ORDER BY terms into the reconstruction's sort
 // keys, so rows rebuilt from merged cache parts come back in the order the
 // statement asked for rather than the model's time-major default.
@@ -316,23 +274,17 @@ func sortKeys(plan *sqlanalyzer.QueryPlan) []dsarrow.SortKey {
 	return keys
 }
 
-// respond streams a delta payload: verbatim bytes when present, otherwise the
-// dataset rebuilt into batches conforming to the preserved schema, ordered by
-// the statement's ORDER BY terms.
-func (d *deltaRunner) respond(ctx context.Context, s *Server,
-	payload *deltaPayload, keys []dsarrow.SortKey,
+func (d *deltaRunner) respond(ctx context.Context, s *Server, delta *nativedelta.Delta,
+	trq *timeseries.TimeRangeQuery, keys []dsarrow.SortKey,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
-	if payload == nil {
-		return nil, nil, errors.New("nil flight delta payload")
-	}
-	if payload.Raw != nil {
-		return s.streamIPCBytes(ctx, payload.Raw)
-	}
-	schema, err := flight.DeserializeSchema(payload.Schema, memory.DefaultAllocator)
+	// delta rows rebuilt into batches of the preserved schema, in the statement's ORDER BY order
+	schema, err := flight.DeserializeSchema(delta.Header, memory.DefaultAllocator)
 	if err != nil {
 		return nil, nil, fmt.Errorf("flight delta schema: %w", err)
 	}
-	records, err := dsarrow.ToRecords(schema, payload.DS, keys...)
+	// the rows may be shared with the cache, so the plan's time column is named on a new set of them
+	ds := &dataset.DataSet{TimeRangeQuery: trq, ExtentList: delta.DS.ExtentList, Results: delta.DS.Results}
+	records, err := dsarrow.ToRecords(schema, ds, keys...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("flight delta rebuild: %w", err)
 	}
@@ -349,95 +301,42 @@ func (d *deltaRunner) respond(ctx context.Context, s *Server,
 // ops builds the engine callbacks for one request.
 func (d *deltaRunner) ops(ctx context.Context, s *Server, query string,
 	plan *sqlanalyzer.QueryPlan, trq *timeseries.TimeRangeQuery,
-) nativedelta.DeltaOps[*deltaPayload] {
-	return nativedelta.DeltaOps[*deltaPayload]{
-		Fetch: func(statement string) (*deltaPayload, error) {
+) nativedelta.DeltaOps[[]byte] {
+	return nativedelta.DeltaOps[[]byte]{
+		Fetch: func(statement string) (*nativedelta.Delta, error) {
 			b, err := s.upstream.Execute(ctx, statement)
 			if err != nil {
 				return nil, fmt.Errorf("upstream execute: %w", err)
 			}
-			return decodeToPayload(b, plan, trq)
+			return decodeToDelta(b, plan, trq)
 		},
-		FetchOriginal: func() (*deltaPayload, error) {
+		FetchOriginal: func() ([]byte, error) {
 			b, err := s.upstream.Execute(ctx, query)
 			if err != nil {
 				return nil, fmt.Errorf("upstream execute: %w", err)
 			}
-			return &deltaPayload{Raw: b}, nil
+			return b, nil
 		},
-		Merge: mergePayloads,
-		CropResponse: func(payload *deltaPayload,
-			requested timeseries.Extent,
-		) (*deltaPayload, error) {
-			if payload == nil || payload.DS == nil {
-				return nil, errors.New("nil cached flight delta payload")
-			}
-			cropped, ok := payload.DS.CroppedClone(requested).(*dataset.DataSet)
-			if !ok {
-				return nil, errors.New("invalid cropped flight delta dataset")
-			}
-			return &deltaPayload{Schema: payload.Schema, DS: cropped}, nil
+		ObjectFallback: func() ([]byte, cachestatus.LookupStatus, error) {
+			return s.objectTier(ctx, query)
 		},
-		Finalize: func(merged *deltaPayload, allExtents timeseries.ExtentList,
-			requested timeseries.Extent, now time.Time,
-		) (*deltaPayload, *deltaPayload, timeseries.ExtentList, error) {
-			return d.finalize(merged, allExtents, requested, plan, now)
+		FetchPartial: func(fetchCtx context.Context, statement string, ttl time.Duration,
+		) ([]byte, cachestatus.LookupStatus, error) {
+			return s.objectTierFor(fetchCtx, partialStatementKeyKind, statement, ttl)
 		},
-		ObjectFallback: func() (*deltaPayload, cachestatus.LookupStatus, error) {
-			b, lookupStatus, err := s.objectTier(ctx, query)
-			if err != nil {
-				return nil, lookupStatus, err
-			}
-			return &deltaPayload{Raw: b, status: lookupStatus}, lookupStatus, nil
+		Model: func(b []byte) (*nativedelta.Delta, error) {
+			return decodeToDelta(b, plan, trq)
 		},
+		// Flight calls share no connection, so a request's partial buckets are fetched beside its interior
+		ConcurrentPartials: true,
 	}
 }
 
-// finalize crops the response to the request window and trims the volatile
-// tail from the stored entry so still-filling buckets are refetched.
-func (d *deltaRunner) finalize(merged *deltaPayload, allExtents timeseries.ExtentList,
-	requested timeseries.Extent, plan *sqlanalyzer.QueryPlan, now time.Time,
-) (*deltaPayload, *deltaPayload, timeseries.ExtentList, error) {
-	if merged == nil || merged.DS == nil {
-		return nil, nil, nil, errors.New("nil merged flight delta payload")
-	}
-	merged.DS.ExtentList = allExtents.Clone()
-	response, ok := merged.DS.CroppedClone(requested).(*dataset.DataSet)
-	if !ok {
-		return nil, nil, nil, errors.New("invalid cropped flight delta dataset")
-	}
-
-	volatileWindow := max(d.cfg.BackfillTolerance, plan.BackfillTolerance)
-	if plan.UpperBound == nil {
-		// open-ended queries run to the present; at least the final bucket is
-		// still filling
-		volatileWindow = max(volatileWindow, plan.Step)
-	}
-	cacheExtents := nativedelta.StableExtents(allExtents, plan.Step, volatileWindow, now)
-	retainedDS := merged.DS
-	if len(cacheExtents) == 0 {
-		retainedDS, ok = merged.DS.CroppedClone(timeseries.Extent{
-			Start: time.Unix(0, 0), End: time.Unix(0, 0),
-		}).(*dataset.DataSet)
-	} else if !cacheExtents[len(cacheExtents)-1].End.Equal(allExtents[len(allExtents)-1].End) {
-		retainedDS, ok = merged.DS.CroppedClone(timeseries.Extent{
-			Start: cacheExtents[0].Start, End: cacheExtents[len(cacheExtents)-1].End,
-		}).(*dataset.DataSet)
-	}
-	if !ok {
-		return nil, nil, nil, errors.New("invalid retained flight delta dataset")
-	}
-	retainedDS.ExtentList = cacheExtents.Clone()
-	retained := &deltaPayload{Schema: merged.Schema, DS: retainedDS}
-	return &deltaPayload{Schema: merged.Schema, DS: response}, retained, cacheExtents, nil
-}
-
-// decodeToPayload converts an upstream IPC response into the delta cache
-// representation, failing to the object tier (via ErrUnmergeable) when the
-// schema or data cannot be modeled.
-func decodeToPayload(ipcBytes []byte, plan *sqlanalyzer.QueryPlan,
+func decodeToDelta(ipcBytes []byte, plan *sqlanalyzer.QueryPlan,
 	trq *timeseries.TimeRangeQuery,
-) (*deltaPayload, error) {
+) (*nativedelta.Delta, error) {
+	// an upstream IPC response as delta rows headed by its serialized schema, or ErrUnmergeable,
+	// which sends the request to the object tier, when the rows can't be modeled
 	schema, records, err := DecodeRecords(ipcBytes)
 	defer func() {
 		for _, record := range records {
@@ -455,33 +354,10 @@ func decodeToPayload(ipcBytes []byte, plan *sqlanalyzer.QueryPlan,
 	if err != nil {
 		return nil, nativedelta.Unmergeable(err)
 	}
-	return &deltaPayload{
-		Schema: flight.SerializeSchema(schema, memory.DefaultAllocator),
+	return &nativedelta.Delta{
+		Header: flight.SerializeSchema(schema, memory.DefaultAllocator),
 		DS:     ds,
 	}, nil
-}
-
-// mergePayloads combines the cached payload and fetched parts; schema drift
-// between parts is unmergeable.
-func mergePayloads(parts []*deltaPayload) (*deltaPayload, error) {
-	if len(parts) == 0 || parts[0] == nil || parts[0].DS == nil {
-		return nil, errors.New("empty flight delta merge")
-	}
-	base := parts[0]
-	others := make([]timeseries.Timeseries, 0, len(parts)-1)
-	for _, part := range parts[1:] {
-		if part == nil || part.DS == nil {
-			return nil, errors.New("nil flight delta merge part")
-		}
-		if string(part.Schema) != string(base.Schema) {
-			return nil, errors.New("flight delta schema changed between fetches")
-		}
-		others = append(others, part.DS)
-	}
-	if len(others) > 0 {
-		base.DS.Merge(true, others...)
-	}
-	return base, nil
 }
 
 // planTimeRangeQuery carries the plan's response-shape facts to the dataset

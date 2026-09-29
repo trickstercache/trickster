@@ -55,7 +55,7 @@ func (c *stickyClient) get(t *testing.T) (int, int) {
 	t.Helper()
 	c.n++
 	q := url.Values{"query": {fmt.Sprintf(`up{sticky="%p-%d"}`, c, c.n)}}
-	u := fmt.Sprintf("http://127.0.0.1:%d/alb-strategy/api/v1/query?%s", c.a.front, q.Encode())
+	u := fmt.Sprintf("http://127.0.0.1:%d/%s/api/v1/query?%s", c.a.front, c.a.name, q.Encode())
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	require.NoError(t, err)
 	if c.cookie != "" {
@@ -183,7 +183,7 @@ func TestALBStickyTable(t *testing.T) {
 func tableGet(t *testing.T, a *strategyALB, n int, client string) (int, int) {
 	t.Helper()
 	q := url.Values{"query": {fmt.Sprintf(`up{table="%s-%d"}`, client, n)}}
-	u := fmt.Sprintf("http://127.0.0.1:%d/alb-strategy/api/v1/query?%s", a.front, q.Encode())
+	u := fmt.Sprintf("http://127.0.0.1:%d/%s/api/v1/query?%s", a.front, a.name, q.Encode())
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	require.NoError(t, err)
 	req.Header.Set("X-Client", client)

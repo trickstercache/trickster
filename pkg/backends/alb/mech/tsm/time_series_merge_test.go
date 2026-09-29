@@ -196,13 +196,18 @@ func TestLimitQueryRangeALB(t *testing.T) {
 			if r.Header.Get("X-Test-Range") == "exceed" {
 				days = 15
 			}
-			return &timeseries.TimeRangeQuery{
+			trq := &timeseries.TimeRangeQuery{
 				Statement: "up",
 				Extent: timeseries.Extent{
 					Start: now.Add(-time.Duration(days) * 24 * time.Hour),
 					End:   now,
 				},
-			}, nil, false, nil
+			}
+			if r.Header.Get("X-Test-Range") == "requested" {
+				// the aligned extent is inside the limit, but the client's range is not
+				trq.Requested = timeseries.RequestedRange{Start: now.Add(-15 * 24 * time.Hour), End: now}
+			}
+			return trq, nil, false, nil
 		},
 	}
 
@@ -258,6 +263,23 @@ func TestLimitQueryRangeALB(t *testing.T) {
 		val := testutil.ToFloat64(metrics.ProxyQueryRangeRejections.WithLabelValues("alb-test"))
 		if val != 1.0 {
 			t.Errorf("expected metric value to be 1.0, got %f", val)
+		}
+	})
+
+	t.Run("measures the requested range", func(t *testing.T) {
+		r := albpool.NewParentGET(t)
+		r.Header.Set("X-Test-Range", "requested")
+		rsc := request.NewResources(&bo.Options{
+			Name:          "alb-test",
+			MaxQueryRange: timeconv.Duration(14 * 24 * time.Hour),
+		}, nil, nil, nil, nil, nil)
+		rsc.IsMergeMember = true
+		r = request.SetResources(r, rsc)
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("expected 400, got %d", w.Code)
 		}
 	})
 }

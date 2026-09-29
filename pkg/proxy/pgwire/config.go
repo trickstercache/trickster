@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const (
@@ -98,8 +99,10 @@ type Config struct {
 	CacheTTL                 time.Duration
 	MaxObjectSize            int64
 	RetentionPoints          int
-	BackfillWindow           time.Duration
-	BackfillPoints           int
+	VolatileWindow           time.Duration
+	VolatileWindowPoints     int
+	PartialBucketTTL         time.Duration
+	StepAlignment            timeseries.StepAlignment
 	ShardMaxRange            time.Duration
 	ShardStep                time.Duration
 	ShardMaxPoints           int
@@ -151,7 +154,8 @@ func ConfigFromOptions(o *bo.Options, engine Engine) (Config, error) {
 		Dialect:                engine.Dialect(), CacheKeyPrefix: o.CacheKeyPrefix, Engine: engine,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
 		RetentionPoints: o.TimeseriesRetentionFactor,
-		BackfillWindow:  time.Duration(o.BackfillTolerance), BackfillPoints: o.BackfillTolerancePoints,
+		VolatileWindow:  time.Duration(o.VolatileWindow), VolatileWindowPoints: o.VolatileWindowPoints,
+		PartialBucketTTL: time.Duration(o.PartialBucketTTL), StepAlignment: o.StepAlignment,
 		ShardMaxRange: time.Duration(o.MaxShardSizeTime), ShardStep: time.Duration(o.ShardStep),
 		ShardMaxPoints: o.MaxShardSizePoints, DoesShard: o.DoesShard,
 		QueryTimeout: time.Duration(o.Timeout),
@@ -318,8 +322,9 @@ func restartKey(o *bo.Options, users map[string]string) string {
 		o.OriginURL, strconv.FormatInt(int64(o.Timeout), 10), strconv.Itoa(o.MaxConcurrentConns),
 		strconv.FormatBool(o.RequireTLS), strconv.FormatBool(users != nil),
 		strconv.FormatBool(o.ProxyOnly), o.CacheKeyPrefix, o.CacheName,
-		fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%t", o.TimeseriesTTL, o.MaxObjectSizeBytes,
-			o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
+		fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t", o.TimeseriesTTL, o.MaxObjectSizeBytes,
+			o.TimeseriesRetentionFactor, o.VolatileWindow, o.VolatileWindowPoints,
+			o.PartialBucketTTL, o.StepAlignment,
 			o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard),
 		tlsRestartIdentity(o), credentialRestartIdentity(users),
 	} {

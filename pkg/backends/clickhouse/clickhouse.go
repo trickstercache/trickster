@@ -49,6 +49,11 @@ type Client struct {
 
 var _ types.NewBackendClientFunc = NewClient
 
+// StepAlignments returns the step alignment modes ClickHouse supports, and its default
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return sqlanalyzer.StepAlignments, sqlanalyzer.DefaultStepAlignment
+}
+
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
 	cache cache.Cache, _ backends.Backends,
@@ -128,13 +133,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	var bf time.Duration
 	res := request.GetResources(r)
 	if res == nil {
-		// 60-second default backfill tolerance for ClickHouse
+		// 60-second default volatile window for ClickHouse
 		bf = time.Minute
 	} else {
-		bf = time.Duration(res.BackendOptions.BackfillTolerance)
+		bf = time.Duration(res.BackendOptions.VolatileWindow)
 	}
-	if trq.BackfillTolerance == 0 {
-		trq.BackfillTolerance = bf
+	if trq.VolatileWindow == 0 {
+		trq.VolatileWindow = bf
 	}
 	trq.TemplateURL = urls.Clone(r.URL)
 

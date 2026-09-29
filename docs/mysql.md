@@ -234,7 +234,7 @@ as supported. The corpus covers `$__time`, `$__timeEpoch`, `$__timeFilter`,
 `$__unixEpochGroup`, and `$__unixEpochGroupAlias`. Its documented minimum
 `$__interval` is one minute.
 
-Grafana's normal inclusive `$__timeFilter` expansion is OPC:
+Grafana's normal inclusive `$__timeFilter` expansion is delta-cached (DPC):
 
 ```sql
 SELECT
@@ -247,7 +247,7 @@ GROUP BY time
 ORDER BY time
 ```
 
-Compose `$__timeFrom()` and `$__timeTo()` into a half-open predicate for DPC:
+A half-open predicate composed from `$__timeFrom()` and `$__timeTo()` is also DPC:
 
 ```sql
 SELECT
@@ -275,11 +275,19 @@ GROUP BY time
 ORDER BY time
 ```
 
-Trickster normalizes the lower bound up and the exclusive upper bound down to
-the cadence and caches only complete buckets. A range with no complete bucket
-normalizes to an empty range. Inclusive upper bounds and Grafana's strict-lower
-`$__unixEpochFilter` expansion remain OPC because they do not prove the same
-complete-bucket semantics. Native `DATETIME`/`TIMESTAMP`, epoch-second integer,
+Trickster caches only complete buckets. Under the default `step_alignment`,
+`drop`, it rounds the lower bound up and the upper bound down to the cadence,
+and an inclusive upper bound, such as the end of `BETWEEN`, also drops the
+bucket that contains it, because that bucket is only partly covered. The
+`partial`, `partial_start` and `partial_end` modes fetch those edge buckets
+from the origin over the client's own bounds, through the object cache for
+`partial_bucket_ttl`, at a cost of up to two small origin queries per request,
+and `truncate` answers the whole first bucket. A range with no complete bucket
+is answered with the origin's own result for the statement, cached as an object
+for `partial_bucket_ttl`. A query can choose its own mode with a comment, such
+as `/* trickster-step-align:partial */`. See [Step Alignment](./step-alignment.md).
+Grafana's strict-lower `$__unixEpochFilter` expansion remains OPC, because a
+strict lower bound does not cover the first bucket completely. Native `DATETIME`/`TIMESTAMP`, epoch-second integer,
 and the corpus's epoch-nanosecond adaptation are supported in their recorded
 shapes.
 
@@ -514,7 +522,7 @@ connections indefinitely.
 3. For DPC, inspect the expanded SQL: require a literal cadence and `>=` lower,
    `<` upper raw-time predicates.
 4. Confirm the requested interval contains at least one complete cadence
-   bucket and that cache TTL, backfill tolerance, and retention are suitable.
+   bucket and that cache TTL, volatile window, and retention are suitable.
 5. Check username, selected backend, database, and time zone; these intentionally
    isolate keys.
 6. Inspect cache operation status and eviction metrics for admission failures

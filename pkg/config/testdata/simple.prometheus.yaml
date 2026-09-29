@@ -20,7 +20,7 @@ backends:
     timeseries_eviction_method: oldest
     negative_cache_name: default
     timeseries_ttl: 6h0m0s
-    fastforward_ttl: 15s
+    partial_bucket_ttl: 15s
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288

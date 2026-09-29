@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -35,11 +36,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
+
+// a statement asking for off itself
+const offDirective = "/* trickster-step-align:off */ "
 
 const (
 	cacheTestSelect = "SELECT date_bin(INTERVAL '5 minutes', ts, TIMESTAMP '2000-01-01') AS time, count(*) AS value FROM trips "
@@ -50,20 +56,36 @@ const (
 type byteCache struct {
 	mtx  sync.Mutex
 	data map[string][]byte
+	ttls map[string]time.Duration
 }
 
-func newByteCache() *byteCache { return &byteCache{data: make(map[string][]byte)} }
+func newByteCache() *byteCache {
+	return &byteCache{data: make(map[string][]byte), ttls: make(map[string]time.Duration)}
+}
 
 func (c *byteCache) Connect() error { return nil }
 func (c *byteCache) Close() error   { return nil }
 
-func (c *byteCache) Configuration() *cacheoptions.Options { return cacheoptions.New() }
+var byteCacheOptions = cacheoptions.New()
 
-func (c *byteCache) Store(key string, data []byte, _ time.Duration) error {
+func (c *byteCache) Configuration() *cacheoptions.Options { return byteCacheOptions }
+
+func (c *byteCache) Store(key string, data []byte, ttl time.Duration) error {
 	c.mtx.Lock()
 	c.data[key] = append([]byte(nil), data...)
+	c.ttls[key] = ttl
 	c.mtx.Unlock()
 	return nil
+}
+
+func (c *byteCache) storedTTLs() []time.Duration {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	out := make([]time.Duration, 0, len(c.ttls))
+	for _, ttl := range c.ttls {
+		out = append(out, ttl)
+	}
+	return out
 }
 
 func (c *byteCache) Retrieve(key string) ([]byte, status.LookupStatus, error) {
@@ -85,7 +107,7 @@ func (c *byteCache) Remove(keys ...string) error {
 	return nil
 }
 
-func cachedConfig(t *testing.T, f *fakeUpstream) Config {
+func cachedConfig(t testing.TB, f *fakeUpstream) Config {
 	t.Helper()
 	c := gatedConfig(t, f)
 	c.Engine, c.Cache, c.CacheTTL = testEngine{}, newByteCache(), time.Hour
@@ -251,7 +273,7 @@ func TestCachePartitionsBySessionIdentity(t *testing.T) {
 func TestDeltaCacheRefetchesTheVolatileTail(t *testing.T) {
 	upstream := newFakeUpstream(t, nil)
 	config := cachedConfig(t, upstream)
-	config.BackfillWindow = 30 * time.Minute
+	config.VolatileWindow = 30 * time.Minute
 	_, address := startServer(t, config)
 	conn := mustDial(t, address, testClientUser, testClientPass)
 	now := time.Now().UTC().Truncate(fakeBucketStep)
@@ -268,20 +290,116 @@ func TestDeltaCacheRefetchesTheVolatileTail(t *testing.T) {
 	}
 }
 
-func TestOpenEndedRangeRunsToNow(t *testing.T) {
+func TestOpenEndedRangeEndsBeforeTheStillFillingBucket(t *testing.T) {
 	upstream := newFakeUpstream(t, nil)
 	_, address := startServer(t, cachedConfig(t, upstream))
 	conn := mustDial(t, address, testClientUser, testClientPass)
-	now := time.Now().UTC().Truncate(fakeBucketStep)
-	sql := fmt.Sprintf("%sWHERE ts >= '%s' GROUP BY 1 ORDER BY 1", cacheTestSelect,
-		now.Add(-time.Hour).Format(time.RFC3339))
-	if got := rowsOf(t, conn, sql); len(got) < 12 {
-		t.Fatalf("expected about an hour of buckets, got %v", got)
+	type attempt struct{ first, second, refetched []string }
+	// a bucket that closes between the two requests adds a fetch, so such attempts are retried
+	got, ok := stepwindow.Retry(fakeBucketStep, 3, func(_ int, now time.Time) attempt {
+		start := now.UTC().Truncate(fakeBucketStep).Add(-time.Hour)
+		sql := fmt.Sprintf("%sWHERE ts >= '%s' GROUP BY 1 ORDER BY 1", cacheTestSelect,
+			start.Format(time.RFC3339))
+		first := rowsOf(t, conn, sql)
+		upstream.forget()
+		return attempt{first: first, second: rowsOf(t, conn, sql), refetched: upstream.received()}
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a bucket boundary")
 	}
+	// an hour of complete buckets, plus the command tag; the bucket holding now is left out
+	if len(got.first) != 13 || !slices.Equal(got.first, got.second) {
+		t.Fatalf("expected twelve complete buckets twice, got %v then %v", got.first, got.second)
+	}
+	if len(got.refetched) != 0 {
+		t.Fatalf("expected the repeat to be served from cache, got %q", got.refetched)
+	}
+}
+
+func TestOffAnswersTheClientsStatementFromTheObjectCache(t *testing.T) {
+	// off configured, and off asked for by a statement on a backend left at its default
+	t.Run("configured", func(t *testing.T) { offAnswersFromTheObjectCache(t, timeseries.StepAlignmentOff, "") })
+	t.Run("by directive", func(t *testing.T) { offAnswersFromTheObjectCache(t, 0, offDirective) })
+}
+
+func offAnswersFromTheObjectCache(t *testing.T, mode timeseries.StepAlignment, directive string) {
+	upstream := newFakeUpstream(t, nil)
+	config := cachedConfig(t, upstream)
+	config.StepAlignment = mode
+	_, address := startServer(t, config)
+	conn := mustDial(t, address, testClientUser, testClientPass)
+	// off the grid at both ends, so the origin's answer holds partial buckets
+	first := directive + rangeQuery(cacheTestSelect, "08:02", "11:03", "1 ORDER BY 1")
+	later := directive + rangeQuery(cacheTestSelect, "08:02", "11:04", "1 ORDER BY 1")
+	wantFirst, wantLater := directRows(t, upstream, first), directRows(t, upstream, later)
 	upstream.forget()
-	rowsOf(t, conn, sql)
-	if got := upstream.received(); len(got) != 1 || strings.Contains(got[0], now.Add(-time.Hour).Format(time.RFC3339)) {
-		t.Fatalf("expected only the still-filling bucket to be refetched, got %q", got)
+	count := func(mode sqlanalyzer.CacheMode, lookup status.LookupStatus) float64 {
+		return cacheCount(config.BackendName, mode, lookup)
+	}
+	misses, hits := count(sqlanalyzer.CacheModeObject, status.LookupStatusKeyMiss),
+		count(sqlanalyzer.CacheModeObject, status.LookupStatusHit)
+	deltas := count(sqlanalyzer.CacheModeDelta, status.LookupStatusKeyMiss)
+
+	if got := rowsOf(t, conn, first); !equalRows(got, wantFirst) {
+		t.Fatalf("off differs from the origin:\n%v\n%v", got, wantFirst)
+	}
+	if got := upstream.received(); len(got) != 1 || got[0] != first {
+		t.Fatalf("expected the client's own statement, got %q", got)
+	}
+	if got := rowsOf(t, conn, first); !equalRows(got, wantFirst) || len(upstream.received()) != 1 {
+		t.Fatalf("an identical statement must be answered from the object cache: %v", got)
+	}
+	if got := rowsOf(t, conn, later); !equalRows(got, wantLater) {
+		t.Fatalf("a later end differs from the origin:\n%v\n%v", got, wantLater)
+	}
+	if got := upstream.received(); len(got) != 2 || got[1] != later {
+		t.Fatalf("a later end must have its own entry, got %q", got)
+	}
+	if count(sqlanalyzer.CacheModeObject, status.LookupStatusKeyMiss)-misses != 2 ||
+		count(sqlanalyzer.CacheModeObject, status.LookupStatusHit)-hits != 1 ||
+		count(sqlanalyzer.CacheModeDelta, status.LookupStatusKeyMiss) != deltas {
+		t.Error("off must be counted as object lookups, never as delta lookups")
+	}
+	ttls := config.Cache.(*byteCache).storedTTLs()
+	if len(ttls) != 2 {
+		t.Errorf("expected an object for each statement, got %d", len(ttls))
+	}
+	for _, ttl := range ttls {
+		if ttl != timeseries.StepAlignmentOffTTL {
+			t.Errorf("stored for %s, want %s", ttl, timeseries.StepAlignmentOffTTL)
+		}
+	}
+}
+
+func TestOffNeverServesAnObjectStoredForTheDefaultTTL(t *testing.T) {
+	// a DateStyle the time axis can't read sends the delta plan to an object of the raw statement,
+	// stored for CacheTTL
+	upstream := newFakeUpstream(t, func(f *fakeUpstream) { f.dateStyle = "German, DMY" })
+	config := cachedConfig(t, upstream)
+	_, address := startServer(t, config)
+	sql := rangeQuery(cacheTestSelect, "08:00", "09:00", "1 ORDER BY 1")
+	want := rowsOf(t, mustDial(t, address, testClientUser, testClientPass), sql)
+	off := config
+	off.StepAlignment = timeseries.StepAlignmentOff
+	_, offAddress := startServer(t, off)
+	conn := mustDial(t, offAddress, testClientUser, testClientPass)
+	upstream.forget()
+	for range 2 {
+		if got := rowsOf(t, conn, sql); !equalRows(got, want) {
+			t.Fatalf("got %v\nwant %v", got, want)
+		}
+	}
+	if got := upstream.received(); len(got) != 1 || got[0] != sql {
+		t.Fatalf("off must fetch once, never the fallback's object, then serve its own, got %q", got)
+	}
+	offEntries := 0
+	for _, ttl := range config.Cache.(*byteCache).storedTTLs() {
+		if ttl == timeseries.StepAlignmentOffTTL {
+			offEntries++
+		}
+	}
+	if offEntries != 1 {
+		t.Errorf("expected one object stored for %s, got %d", timeseries.StepAlignmentOffTTL, offEntries)
 	}
 }
 

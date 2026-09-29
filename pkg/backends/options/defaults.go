@@ -29,8 +29,8 @@ import (
 const (
 	// DefaultTimeseriesTTL is the default Cache TTL for Time Series Objects
 	DefaultTimeseriesTTL = 6 * time.Hour
-	// DefaultFastForwardTTL is the default Cache TTL for Time Series Fast Forward Objects
-	DefaultFastForwardTTL = 15 * time.Second
+	// DefaultPartialBucketTTL is the default Cache TTL for partial buckets, including Fast Forward data
+	DefaultPartialBucketTTL = 15 * time.Second
 	// DefaultMaxTTL is the default Maximum TTL of any cache object
 	DefaultMaxTTL = 25 * time.Hour
 	// DefaultRevalidationFactor is the default Cache Object Freshness Lifetime to TTL multiplier
@@ -66,10 +66,10 @@ const (
 	DefaultBackendNegativeCacheName = "default"
 	// DefaultTracingConfigName is the default Tracing Config Name for Backends
 	DefaultTracingConfigName = "default"
-	// DefaultBackfillTolerance is the default Backfill Tolerance setting for Backends
-	DefaultBackfillTolerance = 0 * time.Millisecond
-	// DefaultBackfillTolerancePoints is the default Backfill Tolerance setting for Backends
-	DefaultBackfillTolerancePoints = 0
+	// DefaultVolatileWindow is the default Volatile Window setting for Backends
+	DefaultVolatileWindow = 0 * time.Millisecond
+	// DefaultVolatileWindowPoints is the default Volatile Window setting for Backends, in query steps
+	DefaultVolatileWindowPoints = 0
 	// DefaultKeepAliveTimeout is the default Keep Alive Timeout for Backends' upstream client pools
 	DefaultKeepAliveTimeout = 2 * time.Minute
 	// DefaultMaxIdleConns is the default number of Idle Connections in Backends' upstream client pools

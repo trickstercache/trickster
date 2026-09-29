@@ -50,7 +50,7 @@ func writeJSON(ds *dataset.DataSet, w io.Writer) error {
 		for j, s := range r.SeriesList {
 			w.Write([]byte(`{"columns":[`))
 			fds := s.Header.FieldDefinitions()
-			setStartStopTimes(fds, ds.TimeRangeQuery.Extent)
+			setStartStopTimes(fds, rangeExtent(ds.TimeRangeQuery))
 			for k, c := range fds {
 				if k == 0 {
 					continue

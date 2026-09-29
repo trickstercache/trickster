@@ -48,6 +48,10 @@ var ErrNotSelectStatement = errors.New("not a select statement")
 // ErrNotTimeRangeQuery indicates an error that the time series request does not contain a query
 var ErrNotTimeRangeQuery = errors.New("not a time range query")
 
+// ErrStartEndModifier indicates a PromQL @ start() or @ end() modifier, whose result depends on
+// the time range of each request
+var ErrStartEndModifier = errors.New("query uses an @ start() or @ end() modifier")
+
 // ErrNoRanges indicates an error that the range request does not contain any usable ranges
 var ErrNoRanges = errors.New("no usable ranges")
 

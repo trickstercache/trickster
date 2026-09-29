@@ -25,7 +25,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
@@ -38,10 +37,10 @@ import (
 func TestInfluxDB3HTTP(t *testing.T) {
 	h := configHarness(t) // flight disabled for http tests
 	h.start(t)
-	waitForInfluxDB3Data(t, "127.0.0.1:8181")
+	seeded := seedInfluxDB3(t)
 
 	baseURL := "http://" + h.BaseAddr + "/influx3"
-	now := time.Now().Unix()
+	now := seeded.Unix()
 	fiveMinAgo := now - 300
 
 	doGet := func(t *testing.T, path string, params url.Values) (*http.Response, []byte) {
@@ -58,7 +57,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 	t.Run("sql_cacheable", func(t *testing.T) {
 		q := fmt.Sprintf(
 			"SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle "+
-				"FROM cpu WHERE cpu = 'cpu-total' AND time >= %d AND time < %d GROUP BY 1 ORDER BY 1",
+				"FROM "+influxSeedMeasurement+" WHERE cpu = 'cpu-total' AND time >= %d AND time < %d GROUP BY 1 ORDER BY 1",
 			fiveMinAgo, now)
 		params := url.Values{"q": {q}, "db": {"trickster"}, "format": {"json"}}
 
@@ -81,7 +80,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 	t.Run("sql_grouped_by_tag", func(t *testing.T) {
 		q := fmt.Sprintf(
 			"SELECT date_bin(INTERVAL '10 seconds', time) AS time, cpu, avg(usage_idle) AS usage_idle "+
-				"FROM cpu WHERE time >= %d AND time < %d GROUP BY 1, cpu ORDER BY 1",
+				"FROM "+influxSeedMeasurement+" WHERE time >= %d AND time < %d GROUP BY 1, cpu ORDER BY 1",
 			fiveMinAgo, now)
 		params := url.Values{"q": {q}, "db": {"trickster"}, "format": {"json"}}
 
@@ -117,7 +116,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 	t.Run("sql_jsonl_format", func(t *testing.T) {
 		q := fmt.Sprintf(
 			"SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle "+
-				"FROM cpu WHERE cpu = 'cpu-total' AND time >= %d AND time < %d GROUP BY 1 ORDER BY 1",
+				"FROM "+influxSeedMeasurement+" WHERE cpu = 'cpu-total' AND time >= %d AND time < %d GROUP BY 1 ORDER BY 1",
 			fiveMinAgo, now)
 		params := url.Values{"q": {q}, "db": {"trickster"}, "format": {"jsonl"}}
 		resp, body := doGet(t, "/api/v3/query_sql", params)
@@ -136,7 +135,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 	t.Run("sql_csv_format", func(t *testing.T) {
 		q := fmt.Sprintf(
 			"SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle "+
-				"FROM cpu WHERE cpu = 'cpu-total' AND time >= %d AND time < %d GROUP BY 1 ORDER BY 1",
+				"FROM "+influxSeedMeasurement+" WHERE cpu = 'cpu-total' AND time >= %d AND time < %d GROUP BY 1 ORDER BY 1",
 			fiveMinAgo, now)
 		params := url.Values{"q": {q}, "db": {"trickster"}, "format": {"csv"}}
 		resp, body := doGet(t, "/api/v3/query_sql", params)
@@ -155,7 +154,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 	})
 
 	t.Run("influxql_v3_native", func(t *testing.T) {
-		q := `SELECT mean("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' AND time > now() - 5m GROUP BY time(10s)`
+		q := `SELECT mean("usage_idle") FROM "` + influxSeedMeasurement + `" WHERE "cpu" = 'cpu-total' AND time > now() - 5m GROUP BY time(10s)`
 		params := url.Values{"q": {q}, "db": {"trickster"}, "format": {"json"}}
 		resp, body := doGet(t, "/api/v3/query_influxql", params)
 		require.Equal(t, http.StatusOK, resp.StatusCode, "body: %s", string(body))
@@ -168,7 +167,7 @@ func TestInfluxDB3HTTP(t *testing.T) {
 	// document arrives in the POST body, is delta-cached, and grouped tag
 	// series survive the cached round trip.
 	t.Run("influxql_v3_json_post", func(t *testing.T) {
-		q := `SELECT mean("usage_idle") FROM "cpu" WHERE time > now() - 5m GROUP BY time(10s), "cpu"`
+		q := `SELECT mean("usage_idle") FROM "` + influxSeedMeasurement + `" WHERE time > now() - 5m GROUP BY time(10s), "cpu"`
 		document, err := json.Marshal(map[string]string{
 			"db": "trickster", "q": q, "format": "json",
 		})

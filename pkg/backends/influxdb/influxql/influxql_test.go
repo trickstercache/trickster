@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,6 +103,135 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if len(trq.OriginalBody) == 0 {
 			t.Error("expected OriginalBody to be set for POST")
 		}
+	}
+}
+
+func TestParseStatementRecordsRequestedRange(t *testing.T) {
+	now := time.Date(2024, 1, 1, 2, 0, 0, 0, time.UTC)
+	start := time.Date(2024, 1, 1, 0, 0, 7, 0, time.UTC)
+	trq, _, err := ParseStatement(`SELECT mean(v) FROM m WHERE time >= '2024-01-01T00:00:07Z' AND `+
+		`time < '2024-01-01T01:00:07Z' GROUP BY time(1m)`, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the parsed inclusive maximum, one nanosecond before the bound, is recorded half-open
+	want := timeseries.RequestedRange{Start: start, End: start.Add(time.Hour)}
+	if !trq.Requested.Start.Equal(want.Start) || !trq.Requested.End.Equal(want.End) ||
+		trq.Requested.EndInclusive != want.EndInclusive || trq.Requested.OpenEnded {
+		t.Errorf("requested range = %+v", trq.Requested)
+	}
+	if trq.StepAlignments != StepAlignments || trq.StepAlignment != timeseries.StepAlignmentPartialEnd {
+		t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
+
+	trq, _, err = ParseStatement(`SELECT mean(v) FROM m WHERE time >= '2024-01-01T00:00:07Z' GROUP BY time(1m)`, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !trq.Requested.OpenEnded || !trq.Requested.End.Equal(now) || trq.Requested.EndInclusive {
+		t.Errorf("open-ended requested range = %+v", trq.Requested)
+	}
+}
+
+func TestParseStatementRefusesCrossBucketShapes(t *testing.T) {
+	const where = ` FROM m WHERE time >= '2024-01-01T00:00:00Z' AND time < '2024-01-01T01:00:00Z'`
+	const byMinute = ` GROUP BY time(1m)`
+	tests := []struct {
+		name, statement string
+		expected        error
+	}{
+		{"plain aggregate", `SELECT mean(v)` + where + byMinute, nil},
+		{"fill with a value", `SELECT mean(v)` + where + byMinute + ` fill(0)`, nil},
+		{"fill none", `SELECT mean(v)` + where + byMinute + ` fill(none)`, nil},
+		{"fill previous", `SELECT mean(v)` + where + byMinute + ` fill(previous)`, ErrCrossBucket},
+		{"fill linear", `SELECT mean(v)` + where + byMinute + ` fill(linear)`, ErrCrossBucket},
+		{"derivative", `SELECT derivative(mean(v), 1m)` + where + byMinute, ErrCrossBucket},
+		{"non_negative_derivative", `SELECT non_negative_derivative(max(v))` + where + byMinute, ErrCrossBucket},
+		{"difference", `SELECT difference(mean(v))` + where + byMinute, ErrCrossBucket},
+		{"moving_average", `SELECT moving_average(mean(v), 3)` + where + byMinute, ErrCrossBucket},
+		{"cumulative_sum", `SELECT cumulative_sum(mean(v))` + where + byMinute, ErrCrossBucket},
+		{"elapsed", `SELECT elapsed(v)` + where, ErrCrossBucket},
+		{"integral", `SELECT integral(v)` + where + byMinute, ErrCrossBucket},
+		{"nested in math", `SELECT derivative(mean(v)) * 2` + where + byMinute, ErrCrossBucket},
+		{"upper case", `SELECT DERIVATIVE(MEAN(v))` + where + byMinute, ErrCrossBucket},
+		{"limit", `SELECT mean(v)` + where + byMinute + ` LIMIT 10`, ErrUnsupportedLimit},
+		{"offset", `SELECT mean(v)` + where + byMinute + ` LIMIT 10 OFFSET 5`, ErrUnsupportedLimit},
+		{"slimit", `SELECT mean(v)` + where + ` GROUP BY time(1m), host SLIMIT 2`, ErrUnsupportedLimit},
+		{"soffset", `SELECT mean(v)` + where + ` GROUP BY time(1m), host SLIMIT 2 SOFFSET 1`, ErrUnsupportedLimit},
+		{
+			"subquery", `SELECT mean(v) FROM (SELECT v FROM m WHERE time > now() - 1h)` +
+				` WHERE time >= '2024-01-01T00:00:00Z' AND time < '2024-01-01T01:00:00Z'` + byMinute,
+			ErrSubquery,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, canOPC, err := ParseStatement(test.statement, time.Now())
+			if !errors.Is(err, test.expected) {
+				t.Fatalf("expected %v got %v", test.expected, err)
+			}
+			if !canOPC {
+				t.Error("a refused statement must stay object cacheable")
+			}
+		})
+	}
+}
+
+func TestParseStatementBucketGrid(t *testing.T) {
+	const where = `SELECT mean(v) FROM m WHERE time >= '2024-01-01T00:00:00Z' AND ` +
+		`time < '2024-01-02T00:00:00Z' GROUP BY `
+	now := time.Date(2024, 1, 3, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		statement     string
+		expectedPhase time.Duration
+		expectedModel timeseries.SampleModel
+		expectedErr   error
+	}{
+		{"no offset", where + "time(1h)", 0, timeseries.SampleModelBucket, nil},
+		{
+			"positive offset", where + "time(1h, 15m)", 15 * time.Minute,
+			timeseries.SampleModelBucket, nil,
+		},
+		{
+			"negative offset wraps into the step", where + "time(1h, -15m)", 45 * time.Minute,
+			timeseries.SampleModelBucket, nil,
+		},
+		{
+			"offset beyond the step wraps", where + "time(1h, 75m)", 15 * time.Minute,
+			timeseries.SampleModelBucket, nil,
+		},
+		{"utc tz is allowed", where + "time(1h) tz('UTC')", 0, timeseries.SampleModelBucket, nil},
+		{
+			"zoned tz is refused", where + "time(1h) tz('America/Chicago')", 0,
+			timeseries.SampleModelBucket, ErrUnsupportedTimeZone,
+		},
+		{
+			"statements with different offsets are refused",
+			where + "time(1h, 15m); " + where + "time(1h, 30m)", 15 * time.Minute,
+			timeseries.SampleModelBucket, pe.ErrStepParse,
+		},
+		{
+			"no time bucket is an instant model", `SELECT v FROM m WHERE time >= now() - 1h`, 0,
+			timeseries.SampleModelInstant, pe.ErrStepParse,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			trq, _, err := ParseStatement(test.statement, now)
+			if trq == nil {
+				t.Fatalf("expected a parsed statement, got error %v", err)
+			}
+			if !errors.Is(err, test.expectedErr) {
+				t.Errorf("expected error %v got %v", test.expectedErr, err)
+			}
+			if trq.Phase != test.expectedPhase {
+				t.Errorf("expected phase %s got %s", test.expectedPhase, trq.Phase)
+			}
+			if trq.SampleModel != test.expectedModel {
+				t.Errorf("expected sample model %d got %d", test.expectedModel, trq.SampleModel)
+			}
+		})
 	}
 }
 
@@ -292,6 +422,35 @@ func TestParseTimeRangeQueryPrettyAndZeroStart(t *testing.T) {
 	}
 	if !trq.Extent.Start.Equal(time.Unix(0, 0)) {
 		t.Errorf("expected zero-unix start, got %v", trq.Extent.Start)
+	}
+}
+
+func TestRenderTimeRangeLeavesTheSharedQuery(t *testing.T) {
+	q, err := influxql.ParseQuery(`SELECT mean(v) FROM m WHERE time >= 0 GROUP BY time(1m); ` +
+		`SELECT max(v) FROM m WHERE time >= 0 GROUP BY time(1m)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := q.String()
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	const renders = 16
+	got := make([]string, renders)
+	var wg sync.WaitGroup
+	for i := range renders {
+		wg.Go(func() {
+			start := base.Add(time.Duration(i) * time.Hour)
+			got[i] = RenderTimeRange(q, start, start.Add(time.Hour))
+		})
+	}
+	wg.Wait()
+	for i, statement := range got {
+		start := base.Add(time.Duration(i) * time.Hour).Format(time.RFC3339Nano)
+		if strings.Count(statement, start) != 2 {
+			t.Errorf("render %d lost its own range %s: %s", i, start, statement)
+		}
+	}
+	if q.String() != original {
+		t.Errorf("the shared query was modified:\n%s\nwant\n%s", q.String(), original)
 	}
 }
 

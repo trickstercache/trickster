@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/sqlanalyzertest"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -101,8 +102,9 @@ func loadCompatibilityCorpus(t testing.TB, path string) compatibilityCorpus {
 // Analyze evaluates a statement in the corpus case's effective session time zone.
 type Analyze func(zone, sql string) sqlanalyzer.Analysis
 
-// Run checks classification, plan facts, and exact extent render/read-back.
-func Run(t *testing.T, path string, analyze Analyze) {
+// Run checks classification, plan facts, and exact render/read-back of every mode's ranges against an
+// engine storing timestamps to precision.
+func Run(t *testing.T, path string, analyze Analyze, precision time.Duration) {
 	t.Helper()
 	corpus := loadCompatibilityCorpus(t, path)
 	if corpus.SchemaVersion != 1 || corpus.CorpusVersion == "" || corpus.MinimumInterval != corpusMinimumInterval {
@@ -140,12 +142,14 @@ func Run(t *testing.T, path string, analyze Analyze) {
 				}
 				return
 			}
-			assertCompatibilityPlan(t, tc, analysis.Plan, analyze)
+			assertCompatibilityPlan(t, tc, analysis.Plan, analyze, precision)
 		})
 	}
 }
 
-func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyzer.QueryPlan, analyze Analyze) {
+func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyzer.QueryPlan, analyze Analyze,
+	precision time.Duration,
+) {
 	t.Helper()
 	want := tc.Expected
 	if plan == nil || want.CanonicalPolicy != corpusPolicyRange || !want.ExtentRendering {
@@ -190,11 +194,11 @@ func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyz
 			t.Fatalf("upper bound %+v, want %s", plan.UpperBound, want.UpperBound)
 		}
 		// every bound lies on the bucket grid, or partial buckets would be cached as whole ones
-		if !sqlanalyzer.AlignedToBucket(upper, step, phase) {
+		if !timeseries.OnGrid(upper, step, phase) {
 			t.Fatalf("upper bound %s is off the grid", upper)
 		}
 	}
-	if !sqlanalyzer.AlignedToBucket(lower, step, phase) {
+	if !timeseries.OnGrid(lower, step, phase) {
 		t.Fatalf("lower bound %s is off the grid", lower)
 	}
 	for _, fragment := range want.CanonicalContains {
@@ -224,6 +228,20 @@ func assertCompatibilityPlan(t *testing.T, tc compatibilityCase, plan *sqlanalyz
 		t.Fatalf("rendered extent reads back as %v..%v, want %v..%v\n%s", again.Plan.LowerBound,
 			again.Plan.UpperBound, lower, end.Add(step), rendered)
 	}
+	// every mode's interior and partial buckets render and read back as planned, once all have ended
+	a := sessionAnalyzer{zone: tc.SessionTimeZone, analyze: analyze}
+	if _, err := sqlanalyzertest.RenderParity(a, plan, lower.AddDate(1, 0, 0), precision); err != nil {
+		t.Fatal(err)
+	}
+}
+
+type sessionAnalyzer struct {
+	zone    string
+	analyze Analyze
+}
+
+func (a sessionAnalyzer) Analyze(statement string, _ time.Time) sqlanalyzer.Analysis {
+	return a.analyze(a.zone, statement)
 }
 
 // CheckGrafanaMacros requires an explicit case for every bundled PostgreSQL macro.

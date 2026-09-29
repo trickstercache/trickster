@@ -165,8 +165,9 @@ Each analyzed statement is counted in
 ### Delta-cacheable statements
 
 A statement uses the delta cache when it is a single-table `SELECT` that
-groups by one recognized time bucket and bounds the bucketed column with
-literal (or `now()`-relative) lower and upper limits joined by `AND`.
+groups by one recognized time bucket and bounds the bucketed column with a
+literal (or `now()`-relative) lower limit and, optionally, an upper limit
+joined by `AND`. A range with no upper limit runs to the present.
 
 | Bucket | Notes |
 | --- | --- |
@@ -185,13 +186,26 @@ A width is a fixed-length interval: `'300.000s'`, `'5 minutes'`, `'1h30m'`,
 and `last`, extra `GROUP BY` columns, and `ORDER BY` on the bucket (either
 direction) are all fine.
 
-Three behaviors are worth knowing:
+Four behaviors are worth knowing:
 
-- **Live ranges lose their partial edge buckets.** Bounds that are not on the
-  bucket grid, as Grafana's `now`-relative ranges never are, are rounded
-  inward, so the partial first and last buckets are left out of the answer
-  rather than cached as if they were complete. `col <= X` keeps X's bucket
-  only when X is the last instant of it (`...:59.999999`).
+- **Live ranges lose their partial edge buckets by default.** Under the
+  default `step_alignment`, `drop`, bounds that are not on the bucket grid, as
+  Grafana's `now`-relative ranges never are, are rounded inward, so the
+  partial first and last buckets are left out of the answer rather than cached
+  as if they were complete. The still-filling bucket that holds the present is
+  partial too, so a range that reaches the present ends before it. `col <= X`
+  keeps X's bucket only when X is the last instant of it (`...:59.999999`).
+  The `partial`, `partial_start` and `partial_end` modes instead fetch those
+  buckets from the origin over the client's own range, through the object
+  cache for `partial_bucket_ttl`, and never cache them with the complete ones,
+  at a cost of up to two small origin queries per request; `truncate` answers
+  the whole first bucket. A query can choose its own mode with a comment, such
+  as `-- trickster-step-align:partial`. See [Step Alignment](./step-alignment.md).
+- **A range with no complete bucket is answered by the origin.** When nothing
+  complete remains, as for a range inside one bucket, across a single
+  boundary, or starting inside the still-filling bucket, the client gets the
+  origin's own result for its statement, partial and still-filling buckets
+  included, cached as an object for `partial_bucket_ttl`.
 - **Zone-less literals need a UTC session.** PostgreSQL reads
   `'2026-09-17 00:00:00'` and `TIMESTAMP '...'` in the session `TimeZone`, so
   such bounds (and origins) qualify only while that zone is UTC. Grafana's
@@ -252,7 +266,7 @@ GROUP BY 1, 2 ORDER BY 1
 
 A bare `SELECT bucket, trips FROM trips_15m WHERE ...` has no bucket function
 and no `GROUP BY`, so it is cached as an object. Real-time aggregates change
-their newest buckets as data arrives; `backfill_tolerance` controls how much
+their newest buckets as data arrives; `volatile_window` controls how much
 of the recent past Trickster re-fetches on each request.
 
 ## Grafana macros and exact SQL shapes
@@ -375,7 +389,7 @@ when it fetches a sub-range, and the origin refused the result. The client is
 unaffected, since its own statement is relayed, but the statement is not
 cached. Please file an issue with the statement.
 
-**Stale data after a bulk rewrite.** Cached buckets older than the backfill
+**Stale data after a bulk rewrite.** Cached buckets older than the volatile
 window are not re-fetched until they expire (`timeseries_ttl`). After
 rewriting history, restart Trickster when using the memory cache, or clear
 the backend's keys from a persistent one.

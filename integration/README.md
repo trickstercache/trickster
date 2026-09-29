@@ -52,6 +52,7 @@ make kind-soak SOAK_DURATION=60m SOAK_TIMEOUT=90m
 cd integration
 make test              # full suite, fail-fast
 make data-race-test    # full suite with -race
+make -C .. integration-test-no-failfast # full suite and race suite, continuing after failures
 go test -run TestALB   # single test
 TRICKSTER_MYSQL_CLI_TEST=1 go test -run TestMySQLRealServer -v
 ```
@@ -85,6 +86,45 @@ returned harness.
 - Tests should use unique query expressions when sharing a Trickster boot across subtests to avoid OPC cache collisions.
 - Tests should be focused on specific features or scenarios, rather than trying to cover multiple features in a single test.
 - Follow the projects coding style and conventions, and ensure that tests are well-documented and easy to understand.
+
+### Avoiding flaky tests
+
+A test that fails without a defect in Trickster stops everyone's work, so write
+each assertion so that timing can't change its outcome:
+
+- **Step rollovers.** When a time series request's range depends on the current
+  time, a step boundary can pass between two identical requests, so the second
+  one fetches one more bucket and reports `phit` instead of `hit`. Assert the
+  hit with `requireCacheHit`, which retries only a `phit`, at most twice. Run a
+  whole status sequence (for example `kmiss`, `hit`, `phit`) inside
+  `stepwindow.Retry` so it restarts when a boundary passes.
+- **Fresh environments.** CI starts the containers minutes before the tests,
+  so never wait for data to accumulate in real time. Prometheus holds history
+  only for the backfilled `trips_*` series. Don't query Telegraf's data: an
+  InfluxDB test writes its own points first with `seedInfluxDB2` or
+  `seedInfluxDB3`, which return the end of the span written, and queries the
+  `it_cpu` measurement within it (`recentRange`).
+- **Caches and state outlive a test.** The filesystem and Redis caches keep
+  entries between the normal and `-race` runs, so a test that expects a miss
+  needs a query no earlier run made (for example one carrying
+  `time.Now().UnixNano()`). ALB member stats and sticky tables are kept per ALB
+  name for the life of the process, so give each test's ALB its own name.
+- **Metrics are process-wide.** Measure a counter before and after the action,
+  and only on labels no background activity (health checks, other backends)
+  also increments.
+- **Poll, don't sleep.** Wait for an asynchronous effect with
+  `require.Eventually`, allowing for the slower `-race` run, instead of sleeping
+  for a fixed time. A pool member meant to stay healthy uses a
+  `failure_threshold` above 1, so one slow probe can't take it out. A member
+  the test takes down keeps a `failure_threshold` of 1: a higher one delays
+  its removal, which default pools spend still routing to it, and a member
+  that flaps faster than the threshold never leaves its pool at all.
+- **Signals.** Call `guardSIGHUP` before a test's daemon starts, and send a
+  reload with `sighupUntilReloaded`: the daemon subscribes to SIGHUP only once
+  its startup completes, and an unguarded SIGHUP terminates the test process.
+- **Held origins.** A test origin that holds its response until the test
+  releases it must be released in a cleanup that runs before the server closes,
+  or a failed assertion hangs the suite.
 
 ## Adding a new test
 

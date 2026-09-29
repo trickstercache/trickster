@@ -20,7 +20,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/greptimedb/sql"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
@@ -92,4 +94,25 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery, exte
 		return c.Client.SetExtent(r, trq, extent)
 	}
 	return sql.SetExtent(r, trq, extent)
+}
+
+// FetchPartialBucket fetches a partial bucket through the object proxy cache: a PromQL range query's
+// live point as Fast Forward, or a SQL query over the bucket's raw range
+func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	pb timeseries.PartialBucket, isLive bool,
+) (timeseries.Timeseries, status.LookupStatus, error) {
+	if isPromRange(r) {
+		return c.Client.FetchPartialBucket(r, trq, pb, isLive)
+	}
+	if r == nil {
+		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+	}
+	nr, err := request.Clone(r)
+	if err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	if err := sql.SetPartialBucket(nr, trq, pb); err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	return engines.FetchPartialBucket(nr, nil, trq, c.sqlModeler)
 }

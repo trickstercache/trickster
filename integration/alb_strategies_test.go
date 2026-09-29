@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ import (
 // extra is appended, already indented, under the alb block; slow names pool members that
 // answer with simulated latency.
 type strategyALB struct {
+	name   string
 	mech   string
 	extra  string
 	stubs  []*flappingStub
@@ -46,10 +48,14 @@ type strategyALB struct {
 	health string
 }
 
+var strategyALBs atomic.Int64
+
 func startStrategyALB(t *testing.T, mech, extra string, poolSize int, slow map[int]string) *strategyALB {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 3)
-	a := &strategyALB{mech: mech, extra: extra, slow: slow, front: ports[0]}
+	// an ALB's member stats and sticky table outlive its daemon under its name, so each gets its own
+	name := fmt.Sprintf("alb-strategy-%d", strategyALBs.Add(1))
+	a := &strategyALB{name: name, mech: mech, extra: extra, slow: slow, front: ports[0]}
 	a.stubs = make([]*flappingStub, poolSize)
 	for i := range a.stubs {
 		a.stubs[i] = newFlappingStub(t, fmt.Sprintf("p%d", i), true)
@@ -63,7 +69,7 @@ func startStrategyALB(t *testing.T, mech, extra string, poolSize int, slow map[i
 			fmt.Fprintf(&sb, "    latency_min: %s\n    latency_max: %s\n", d, d)
 		}
 	}
-	sb.WriteString("  alb-strategy:\n    provider: alb\n    alb:\n")
+	fmt.Fprintf(&sb, "  %s:\n    provider: alb\n    alb:\n", name)
 	fmt.Fprintf(&sb, "      mechanism: %s\n", mech)
 	sb.WriteString("      healthy_floor: 1\n")
 	sb.WriteString(extra)
@@ -91,7 +97,7 @@ func startStrategyALB(t *testing.T, mech, extra string, poolSize int, slow map[i
 func (a *strategyALB) status(t *testing.T, n int, header http.Header) int {
 	t.Helper()
 	q := url.Values{"query": {fmt.Sprintf(`up{n="%d"}`, n)}}
-	u := fmt.Sprintf("http://127.0.0.1:%d/alb-strategy/api/v1/query?%s", a.front, q.Encode())
+	u := fmt.Sprintf("http://127.0.0.1:%d/%s/api/v1/query?%s", a.front, a.name, q.Encode())
 	req, err := http.NewRequest(http.MethodGet, u, nil)
 	require.NoError(t, err)
 	for k, v := range header {

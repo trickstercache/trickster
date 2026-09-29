@@ -735,15 +735,17 @@ func (pr *proxyRequest) determineCacheability() {
 	// This has to settle before any branch below can authorize storage --
 	// a negative-cached error is still an authenticated response.
 	switch {
-	case pr.sharedKey != "":
-		if !pr.cachingPolicy.IsShareable {
-			pr.writeToCache = false
-			return
-		}
+	case pr.sharedKey != "" && pr.cachingPolicy.IsShareable:
 		// the origin said this is shareable, so store it under the target URI
 		// rather than under the credential that happened to fetch it
 		pr.primaryKey = pr.sharedKey
 		pr.setVaryNames(pr.varyNames)
+	case pr.rsc.PerCredentialCache:
+		// a time series lane keeps the response under its credential-bearing key, as the delta
+		// proxy cache keeps the same data, so only that credential's requests can read it
+	case pr.sharedKey != "":
+		pr.writeToCache = false
+		return
 	case pr.hasConfiguredCredential() && !pr.cachingPolicy.IsShareable:
 		// the request reaches the origin authenticated even though the client
 		// sent no credential, and there is no per-credential key isolating the

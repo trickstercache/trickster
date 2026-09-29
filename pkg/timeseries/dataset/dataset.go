@@ -174,16 +174,9 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		}
 		eg.Wait()
 		if skips == 1 {
-			sl := make([]*Series, len(ds.Results[i].SeriesList))
-			var k int
-			for _, s := range ds.Results[i].SeriesList {
-				if s == nil {
-					continue
-				}
-				sl[k] = s
-				k++
-			}
-			ds.Results[i].SeriesList = sl[:k]
+			clone.Results[i].SeriesList = slices.DeleteFunc(clone.Results[i].SeriesList, func(s *Series) bool {
+				return s == nil
+			})
 		}
 	}
 	return clone
@@ -519,9 +512,8 @@ func (ds *DataSet) FinalizeAvg(count int) {
 	}
 }
 
-// CropToSize reduces the number of elements in the Timeseries to the provided count, by evicting elements
-// using a least-recently-used methodology. The time parameter limits the upper extent to the provided time,
-// in order to support backfill tolerance
+// CropToSize reduces the Timeseries to sz elements, evicting the least recently used, and limits its
+// upper extent to t, which the volatile window relies on
 func (ds *DataSet) CropToSize(sz int, t time.Time, lur timeseries.Extent) {
 	if ds.SizeCropper != nil {
 		ds.SizeCropper(sz, t, lur)
@@ -659,6 +651,7 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			eg.Go(func() error {
 				l := len(s.Points)
 				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
+				// a series with no points in range is dropped, as CroppedClone does
 				if start < l && end <= l && end > start {
 					s.Points = s.Points.CloneRange(start, end)
 					s.PointSize = s.Points.Size()
@@ -669,7 +662,9 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 			j++
 		}
 		eg.Wait()
-		ds.Results[i].SeriesList = slices.DeleteFunc(sl[:j], func(s *Series) bool { return s == nil })
+		ds.Results[i].SeriesList = slices.DeleteFunc(sl[:j], func(s *Series) bool {
+			return s == nil
+		})
 	}
 }
 

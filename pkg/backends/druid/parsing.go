@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 const (
@@ -43,8 +44,11 @@ const (
 	queryTypeTopN       = "topn"
 )
 
+// transientContextKeys are left out of cache identity: transport controls, and Trickster's directives
 var transientContextKeys = []string{
 	"priority", "queryDeadline", "queryId", "sqlQueryId", "timeout",
+	directives.Prefix + directives.NameFastForward, directives.Prefix + directives.NameVolatileWindow,
+	directives.Prefix + directives.NameBackfillTolerance, directives.Prefix + directives.NameStepAlign,
 }
 
 var fixedSimpleGranularities = map[string]time.Duration{
@@ -106,6 +110,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		trq.TemplateURL = urls.Clone(r.URL)
 	}
 	ro := &timeseries.RequestOptions{FastForwardDisable: true}
+	trq.Directives = contextDirectives(document)
 
 	if !slices.Contains([]string{queryTypeTimeseries, queryTypeGroupBy, queryTypeTopN}, queryType) {
 		return c.reject(trq, ro, true, modeObject, reasonUnsupportedQueryType, errObjectCache)
@@ -133,16 +138,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if err != nil {
 		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
 	}
-	alignedStart := truncateToPhase(start, step, phase)
-	alignedEnd := truncateToPhase(endExclusive, step, phase)
-	if !alignedStart.Equal(start) || !alignedEnd.Equal(endExclusive) {
-		return c.reject(trq, ro, true, modeObject, reasonUnalignedInterval, errObjectCache)
-	}
-	start = alignedStart
-	end := truncateToPhase(endExclusive.Add(-time.Nanosecond), step, phase)
-	if end.Before(start) {
-		return c.reject(trq, ro, true, modeObject, reasonInvalidInterval, errObjectCache)
-	}
+	// the step alignment mode decides the edges of an unaligned interval when the engine plans it
+	trq.Requested = timeseries.RequestedRange{Start: start, End: endExclusive}
+	start = timeseries.FloorToGrid(start, step, phase)
+	end := timeseries.FloorToGrid(endExclusive.Add(-time.Nanosecond), step, phase)
 	dimensions, dimensionsOK := dimensionNames(queryType, document)
 	if !dimensionsOK {
 		return c.reject(trq, ro, true, modeObject, reasonUnsupportedDimension, errObjectCache)
@@ -166,9 +165,11 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Step = step
 	trq.StepNS = step.Nanoseconds()
 	trq.Phase = phase
+	trq.SampleModel = timeseries.SampleModelBucket
+	trq.StepAlignments, trq.StepAlignment = timeseries.StepAlignmentAll, timeseries.StepAlignmentPartial
 	trq.Extent = timeseries.Extent{Start: start, End: end}
 	trq.ParsedQuery = plan
-	trq.BackfillTolerance = druidBackfillTolerance(r)
+	trq.VolatileWindow = druidVolatileWindow(r)
 	ro.ProviderRequest = plan
 	c.observeAnalysis(modeDelta, reasonEligible)
 	return trq, ro, true, nil
@@ -396,7 +397,8 @@ func responseShapeSupported(queryType string, document map[string]any) bool {
 	}
 	switch queryType {
 	case queryTypeTimeseries:
-		return !booleanValue(context["grandTotal"])
+		// a limit keeps only the first rows of the whole result, which differ per sub-range fetch
+		return !booleanValue(context["grandTotal"]) && document["limit"] == nil
 	case queryTypeGroupBy:
 		return !booleanValue(context["resultAsArray"]) &&
 			!booleanValue(context["sortByDimsFirst"]) &&
@@ -583,16 +585,6 @@ func isUTCZone(zone string) bool {
 	}
 }
 
-func truncateToPhase(value time.Time, step, phase time.Duration) time.Time {
-	stepNS := step.Nanoseconds()
-	shifted := value.UnixNano() - phase.Nanoseconds()
-	quotient := shifted / stepNS
-	if shifted < 0 && shifted%stepNS != 0 {
-		quotient--
-	}
-	return time.Unix(0, quotient*stepNS+phase.Nanoseconds()).In(value.Location())
-}
-
 func dimensionNames(queryType string, document map[string]any) ([]string, bool) {
 	var values []any
 	switch queryType {
@@ -673,13 +665,41 @@ func booleanValue(value any) bool {
 	}
 }
 
-func druidBackfillTolerance(r *http.Request) time.Duration {
+func contextDirectives(document map[string]any) timeseries.Directives {
+	// a native query has no comments, so its directives are keys of its context map
+	return directives.Read(contextLookup(document))
+}
+
+func contextLookup(document map[string]any) func(string) (string, bool) {
+	// the directive named in the query's context map, if any
+	context, _ := document["context"].(map[string]any)
+	return func(name string) (string, bool) {
+		value, ok := context[directives.Prefix+name]
+		return contextValue(value), ok
+	}
+}
+
+func contextValue(value any) string {
+	switch v := value.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		// a value no directive takes, which is ignored
+		return ""
+	}
+}
+
+func druidVolatileWindow(r *http.Request) time.Duration {
 	const defaultTolerance = time.Minute
 	resources := request.GetResources(r)
 	if resources == nil || resources.BackendOptions == nil {
 		return defaultTolerance
 	}
-	configured := time.Duration(resources.BackendOptions.BackfillTolerance)
+	configured := time.Duration(resources.BackendOptions.VolatileWindow)
 	if configured == 0 {
 		return defaultTolerance
 	}

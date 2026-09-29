@@ -24,9 +24,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -35,8 +33,7 @@ import (
 )
 
 func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
-	// Drop prior SIGHUP handlers so this test owns the only live receiver.
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -57,10 +54,7 @@ func TestLifecycle_ReloadPreservesHCStatus(t *testing.T) {
 	requireTargetAvailable(t, healthURL, "prom1", 15*time.Second)
 
 	rewriteGeneratedConfig(t, h.ConfigPath, "log_level: info", "log_level: warn")
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP),
-		"failed to send SIGHUP for in-process reload")
-
-	time.Sleep(500 * time.Millisecond)
+	sighupUntilReloaded(t, h.MetricsAddr)
 	requireTargetAvailable(t, healthURL, "prom1", 15*time.Second)
 }
 

@@ -163,7 +163,13 @@ func TestHTTPSQLCacheEnvironment(t *testing.T) {
 		t.Fatal(err)
 	}
 	r.Hashes["seed-window.env"] = fmt.Sprintf("%x", sha256.Sum256(raw))
-	r.To = time.Unix(seed["SEED_EPOCH"], 0).UTC().Truncate(24 * time.Hour)
+	// the delta cache holds only the newest 256h of 15m buckets, so the window ends a day ago rather than on the
+	// seed's day, which ages out of that; the seeded span still covers it
+	r.To = time.Now().UTC().Add(-24 * time.Hour)
+	if last := time.Unix(seed["SOURCE_PICKUP_MAX_EPOCH"]+seed["SHIFT_SECONDS"], 0).UTC(); last.Before(r.To) {
+		r.To = last
+	}
+	r.To = r.To.Truncate(24 * time.Hour)
 	r.From = r.To.Add(-48 * time.Hour)
 	origin := strings.TrimRight(envOr("GREPTIMEDB_HTTP_URL", "http://127.0.0.1:4000"), "/") + "/v1/sql"
 	proxy := strings.TrimRight(envOr("GREPTIMEDB_PROXY_HTTP_URL", "http://127.0.0.1:8480/greptimedb1"), "/") + "/v1/sql"

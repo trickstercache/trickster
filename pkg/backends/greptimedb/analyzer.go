@@ -69,7 +69,7 @@ func newAnalyzer(utc bool) *dialectAnalyzer {
 	}
 	return &dialectAnalyzer{inner: cockroach.NewAnalyzer(cockroach.Options{
 		BucketMatchers: matchers, ExprBucketMatchers: []cockroach.ExprBucketMatcher{cockroach.EpochFloorMatcher},
-		RoundUnalignedTimeBounds: true, NakedIntIsInt4: true,
+		NakedIntIsInt4: true,
 		// DataFusion truncates finer bounds instead of rounding up as PostgreSQL does.
 		BoundPrecision: time.Nanosecond, RejectZonelessBounds: !utc, PostRender: postRender,
 	})}

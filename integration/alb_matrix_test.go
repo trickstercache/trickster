@@ -405,7 +405,12 @@ func writeMatrixConfig(t *testing.T, c matrixCell, stubs []*flappingStub) string
 	sb.WriteString(promstub.Preamble(c.frontPort, c.metricsPort, c.mgmtPort))
 	sb.WriteString("backends:\n")
 	for i, s := range stubs {
-		sb.WriteString(promstub.BackendStanza(fmt.Sprintf("prom%d", i), s.URL()))
+		threshold := promstub.DefaultFailureThreshold
+		if i < c.downCount() {
+			// a flapper is down for less than three probes, so only a threshold of 1 churns the pool
+			threshold = 1
+		}
+		sb.WriteString(promstub.BackendStanzaWithThreshold(fmt.Sprintf("prom%d", i), s.URL(), threshold))
 	}
 	fmt.Fprintf(&sb, "  alb-%s:\n", c.mech)
 	sb.WriteString("    provider: alb\n")

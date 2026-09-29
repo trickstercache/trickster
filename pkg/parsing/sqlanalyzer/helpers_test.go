@@ -88,50 +88,6 @@ func TestFlattenConjunction(t *testing.T) {
 	}
 }
 
-func TestBucketMath(t *testing.T) {
-	step := time.Minute
-	aligned := time.Unix(120, 0)
-	unaligned := time.Unix(150, 500)
-
-	if !AlignedToBucket(aligned, step, 0) || AlignedToBucket(unaligned, step, 0) {
-		t.Fatal("alignment misclassified")
-	}
-	if AlignedToBucket(aligned, 0, 0) {
-		t.Fatal("nonpositive step must never align")
-	}
-	if AlignedToBucket(aligned, step, 30*time.Second) {
-		t.Fatal("phase offset ignored")
-	}
-	if !AlignedToBucket(time.Unix(150, 0), step, 30*time.Second) {
-		t.Fatal("phase-aligned value misclassified")
-	}
-
-	if got := FloorBucket(unaligned, step, 0); !got.Equal(time.Unix(120, 0)) {
-		t.Fatalf("floor = %v", got)
-	}
-	if got := FloorBucket(unaligned, step, 30*time.Second); !got.Equal(time.Unix(150, 0)) {
-		t.Fatalf("phased floor = %v", got)
-	}
-	negative := time.Unix(-61, 500)
-	if got := FloorBucket(negative, step, 0); !got.Equal(time.Unix(-120, 0)) {
-		t.Fatalf("negative floor = %v", got)
-	}
-	if got := FloorBucket(unaligned, 0, 0); !got.Equal(unaligned) {
-		t.Fatalf("nonpositive step floor = %v", got)
-	}
-	loc := time.FixedZone("test", 3600)
-	if got := FloorBucket(unaligned.In(loc), step, 0); got.Location() != loc {
-		t.Fatal("floor must preserve location")
-	}
-
-	if got := CeilBucket(aligned, step, 0); !got.Equal(aligned) {
-		t.Fatalf("aligned ceil = %v", got)
-	}
-	if got := CeilBucket(unaligned, step, 0); !got.Equal(time.Unix(180, 0)) {
-		t.Fatalf("ceil = %v", got)
-	}
-}
-
 func TestUnixTime(t *testing.T) {
 	tests := []struct {
 		unit  timeseries.FieldDataType
@@ -195,8 +151,9 @@ func TestApplyToQuery(t *testing.T) {
 		TimeColumn:   "ts", OutputColumn: "t",
 		Step: time.Minute, Phase: 4 * 24 * time.Hour,
 		OutputUnit: timeseries.DateTimeUnixSecs, InputUnit: timeseries.DateTimeUnixMilli,
-		GroupColumns: []string{"host", "region"}, BackfillTolerance: 30 * time.Second,
-		Ordering: []OrderTerm{{Column: "host"}, {Column: "t", Descending: true}},
+		GroupColumns: []string{"host", "region"},
+		Directives:   timeseries.Directives{VolatileWindow: 30 * time.Second},
+		Ordering:     []OrderTerm{{Column: "host"}, {Column: "t", Descending: true}},
 	}
 	trq := NewTimeRangeQuery("SELECT raw")
 	plan.ApplyToQuery(trq)
@@ -204,8 +161,14 @@ func TestApplyToQuery(t *testing.T) {
 		t.Fatalf("canonical not applied: %+v", trq)
 	}
 	if trq.Step != time.Minute || trq.StepNS != time.Minute.Nanoseconds() || trq.Phase != plan.Phase ||
-		trq.BackfillTolerance != plan.BackfillTolerance {
+		trq.Directives != plan.Directives {
 		t.Fatalf("cadence not applied: %+v", trq)
+	}
+	if trq.SampleModel != timeseries.SampleModelBucket {
+		t.Fatalf("expected bucketed sample model, got %d", trq.SampleModel)
+	}
+	if trq.StepAlignments != timeseries.StepAlignmentAll || trq.StepAlignment != timeseries.StepAlignmentDrop {
+		t.Fatalf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
 	}
 	ts := trq.TimestampDefinition
 	if ts.Name != "t" || ts.DataType != timeseries.DateTimeUnixSecs ||
@@ -227,6 +190,55 @@ func TestApplyToQuery(t *testing.T) {
 	plan.ApplyToQuery(bare)
 	if bare.CacheKeyElements["query"] != plan.CanonicalSQL {
 		t.Fatal("nil cache key elements not initialized")
+	}
+}
+
+func TestRequestedRange(t *testing.T) {
+	now := time.Unix(1_000, 0)
+	lower, upper := time.Unix(100, 0), time.Unix(900, 0)
+	tests := []struct {
+		name string
+		plan QueryPlan
+		want timeseries.RequestedRange
+	}{
+		{
+			"half open",
+			QueryPlan{RawLower: &Bound{Value: lower, Inclusive: true}, RawUpper: &Bound{Value: upper}},
+			timeseries.RequestedRange{Start: lower, End: upper},
+		},
+		{"exclusive lower, inclusive upper", QueryPlan{
+			RawLower: &Bound{Value: lower}, RawUpper: &Bound{Value: upper, Inclusive: true},
+		}, timeseries.RequestedRange{Start: lower, End: upper, StartExclusive: true, EndInclusive: true}},
+		{
+			"open ended",
+			QueryPlan{RawLower: &Bound{Value: lower, Inclusive: true}},
+			timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true},
+		},
+		// an upper bound written as now() runs to now as an open end does
+		{"now() upper", QueryPlan{
+			RawLower: &Bound{Value: lower, Inclusive: true}, RawUpper: &Bound{Value: upper, Inclusive: true},
+			UpperIsNow: true,
+		}, timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true}},
+		// plans without raw bounds describe their range by the rounded bucket extent
+		{"rounded, exclusive upper", QueryPlan{
+			Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true}, UpperBound: &Bound{Value: upper},
+		}, timeseries.RequestedRange{Start: lower, End: upper}},
+		{"rounded, inclusive upper label", QueryPlan{
+			Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true},
+			UpperBound: &Bound{Value: upper, Inclusive: true},
+		}, timeseries.RequestedRange{Start: lower, End: upper.Add(time.Minute)}},
+		{
+			"rounded, open ended",
+			QueryPlan{Step: time.Minute, LowerBound: &Bound{Value: lower, Inclusive: true}},
+			timeseries.RequestedRange{Start: lower, End: now, OpenEnded: true},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.plan.RequestedRange(now); got != test.want {
+				t.Errorf("got %+v want %+v", got, test.want)
+			}
+		})
 	}
 }
 

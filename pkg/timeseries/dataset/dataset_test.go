@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -26,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testDataSet() *DataSet {
@@ -647,6 +650,28 @@ func TestCroppedClone(t *testing.T) {
 	}
 }
 
+func TestCroppedCloneSkipsSeriesWithoutPointsInRange(t *testing.T) {
+	point := func(sec int64) Point {
+		return Point{Epoch: epoch.Epoch(time.Unix(sec, 0).UnixNano()), Values: []any{sec}}
+	}
+	inRange := &Series{Points: Points{point(5), point(10)}}
+	source := SeriesList{
+		&Series{Points: Points{point(25)}}, nil, inRange, &Series{}, &Series{Points: Points{point(30)}},
+	}
+	ds := &DataSet{
+		ExtentList: timeseries.ExtentList{{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+		Results:    Results{&Result{SeriesList: slices.Clone(source)}},
+	}
+	clone := ds.CroppedClone(timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)}).(*DataSet)
+	require.Len(t, clone.Results[0].SeriesList, 1)
+	require.NotSame(t, inRange, clone.Results[0].SeriesList[0])
+	require.Equal(t, inRange.Points, clone.Results[0].SeriesList[0].Points)
+	require.Equal(t, source, ds.Results[0].SeriesList, "the source's series list changed")
+	for i := range source {
+		require.Same(t, source[i], ds.Results[0].SeriesList[i])
+	}
+}
+
 func TestCropToRange(t *testing.T) {
 	// an extent fully inside of time series's extent
 	ex := timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(20, 0)}
@@ -689,6 +714,24 @@ func TestCropToRange(t *testing.T) {
 	if len(exs) != 0 {
 		t.Error("invalid extent in crop", exs)
 	}
+
+	t.Run("drop series with no points in range", func(t *testing.T) {
+		point := func(sec int64, v int) Point {
+			return Point{Epoch: epoch.Epoch(time.Unix(sec, 0).UnixNano()), Size: 32, Values: []any{v}}
+		}
+		inRange := &Series{Header: SeriesHeader{Name: "in"}, Points: Points{point(10, 1), point(20, 2)}}
+		after := &Series{Header: SeriesHeader{Name: "after"}, Points: Points{point(30, 3)}}
+		before := &Series{Header: SeriesHeader{Name: "before"}, Points: Points{point(5, 4)}}
+		ds := &DataSet{
+			Results:    []*Result{{SeriesList: []*Series{before, inRange, after}}},
+			ExtentList: timeseries.ExtentList{{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+		}
+		ds.DefaultRangeCropper(timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(20, 0)})
+		sl := ds.Results[0].SeriesList
+		if len(sl) != 1 || sl[0].Header.Name != "in" || len(sl[0].Points) != 2 {
+			t.Fatalf("expected only the in-range series to remain, got %d series", len(sl))
+		}
+	})
 
 	t.Run("remove empty or nil series", func(t *testing.T) {
 		// Create a fresh dataset for this test

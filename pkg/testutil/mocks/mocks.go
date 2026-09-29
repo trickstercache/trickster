@@ -21,12 +21,13 @@ package mocks
 import (
 	"net/http"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/bucketsim"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/promsim"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/rangesim"
 )
 
-// NewRouter returns a mux serving the Prometheus simulator under /prometheus/
-// and the Range request simulator under /byterange/.
+// NewRouter returns a mux serving the Prometheus simulator under /prometheus/, the bucketed origin
+// simulator under /bucketsim/ and the Range simulator under /byterange/.
 func NewRouter() *http.ServeMux {
 	mux := http.NewServeMux()
 	Register(mux)
@@ -36,5 +37,6 @@ func NewRouter() *http.ServeMux {
 // Register mounts every mock origin on the provided mux.
 func Register(mux *http.ServeMux) {
 	promsim.Register(mux)
+	bucketsim.Register(mux)
 	rangesim.Register(mux)
 }

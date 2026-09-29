@@ -224,6 +224,19 @@ spec:
                   enum:
                     - Expose
                     - Hide
+                stepAlignment:
+                  description: >-
+                    The step alignment mode of the time series backend that provider makes:
+                    what it does with the partial buckets at the edges of a range query. It
+                    must be one the provider supports; unset takes the provider's default.
+                  type: string
+                  enum:
+                    - truncate
+                    - drop
+                    - partial
+                    - partial_start
+                    - partial_end
+                    - "off"
             status:
               type: object
               properties:

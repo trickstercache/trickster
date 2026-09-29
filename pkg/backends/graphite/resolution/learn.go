@@ -54,6 +54,7 @@ type Learner struct {
 
 	mu       sync.Mutex
 	inflight map[string]struct{}
+	closed   bool
 	active   atomic.Int32
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -94,9 +95,12 @@ func (l *Learner) now() time.Time {
 	return time.Now()
 }
 
-// Close cancels in-flight runs and waits for them
+// Close cancels in-flight runs and waits for them; runs scheduled afterward are refused
 func (l *Learner) Close() {
 	l.init()
+	l.mu.Lock()
+	l.closed = true
+	l.mu.Unlock()
 	l.cancel()
 	l.wg.Wait()
 }
@@ -107,21 +111,22 @@ func (l *Learner) Wait() {
 }
 
 // Schedule starts learning a leaf in the background, confirming a non-nil hint
-// first; false when already in flight, over the cap, or Concurrency is negative.
+// first; false when already in flight, over the cap, closed, or Concurrency is negative.
 func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
 	if l.Concurrency < 0 {
 		return false
 	}
 	l.init()
 	l.mu.Lock()
-	if _, ok := l.inflight[leaf]; ok || (l.Concurrency > 0 && int(l.active.Load()) >= l.Concurrency) {
+	if _, ok := l.inflight[leaf]; ok || l.closed || (l.Concurrency > 0 && int(l.active.Load()) >= l.Concurrency) {
 		l.mu.Unlock()
 		return false
 	}
 	l.inflight[leaf] = struct{}{}
 	l.active.Add(1)
-	l.mu.Unlock()
+	// added under the lock so Close, once it has marked the learner closed, waits for every run
 	l.wg.Add(1)
+	l.mu.Unlock()
 	safego.Go(func(r any, stack []byte) {
 		logger.Error("graphite ladder learning panicked", logging.Pairs{
 			keys.BackendName: l.Name, keys.Leaf: leaf, keys.Panic: fmt.Sprint(r), keys.Stack: string(stack),
@@ -139,8 +144,8 @@ func (l *Learner) Schedule(leaf string, hint *Ladder) bool {
 	return true
 }
 
-// Learn discovers the ladder of one leaf synchronously and records it. On
-// failure the leaf is negative-cached and any partial ladder is still recorded.
+// Learn discovers the ladder of one leaf synchronously and records it. On failure the leaf is
+// negative-cached and any partial ladder is still recorded, unless ctx was canceled.
 func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder, error) {
 	l.init()
 	start := l.now()
@@ -184,6 +189,11 @@ func (l *Learner) Learn(ctx context.Context, leaf string, hint *Ladder) (*Ladder
 		ladder, err = run.discover()
 	}
 	if err != nil {
+		// a canceled run says nothing about the leaf, and the registry may be shared with the
+		// client that replaced this one, so it records nothing
+		if errors.Is(ctx.Err(), context.Canceled) {
+			return nil, err
+		}
 		if len(run.partial.Observations) > 0 {
 			if key, perr := l.Registry.SetLadder(leaf, run.partial); perr == nil {
 				_ = l.Registry.SetLeaf(leaf, key, Exact)

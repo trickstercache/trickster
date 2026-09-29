@@ -90,6 +90,8 @@ func (b Backends) StartHealthChecks(knownStatuses healthcheck.StatusLookup) (hea
 		}
 		st, err := RegisterHealthCheck(hc, k, bo.Provider, c)
 		if err != nil {
+			// the checks registered before this one are already probing
+			hc.Shutdown()
 			return nil, err
 		}
 		if st == nil {

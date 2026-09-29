@@ -122,7 +122,8 @@ func TestSetExtent(t *testing.T) {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		c.SetExtent(r, trq, ext)
 		b, _ := io.ReadAll(r.Body)
-		if !strings.Contains(string(b), fmt.Sprintf("start: %d", start.Unix())) {
+		// windows are labeled with their stop time, so the range starts one step early
+		if !strings.Contains(string(b), fmt.Sprintf("start: %d", start.Add(-time.Minute).Unix())) {
 			t.Errorf("expected flux body to include start unix, got %s", string(b))
 		}
 	})

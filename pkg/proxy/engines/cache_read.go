@@ -195,9 +195,8 @@ func (tcp *TimeseriesChunkQueryProcessor) Finalize() error {
 // executeTimeseriesChunkQuery performs timeseries chunk querying with early cancellation
 func executeTimeseriesChunkQuery(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, trq *timeseries.TimeRangeQuery, unmarshal timeseries.UnmarshalerFunc, opts *options.Options) error {
 	// Determine chunk extent and number of chunks
-	var cext timeseries.Extent
 	csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
+	cext := timeseriesChunkExtent(trq, csize)
 	cct := int(cext.End.Sub(cext.Start) / csize)
 
 	iterator := &TimeseriesChunkQueryIterator{

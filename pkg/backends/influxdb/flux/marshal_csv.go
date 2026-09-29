@@ -48,7 +48,7 @@ func marshalTimeseriesCSVWriter(ds *dataset.DataSet, frb *JSONRequestBody,
 		hw.WriteHeader(status)
 	}
 	st := &state{
-		e: ds.TimeRangeQuery.Extent,
+		e: rangeExtent(ds.TimeRangeQuery),
 		w: csv.NewWriter(w),
 	}
 	for _, s := range frb.Dialect.Annotations {

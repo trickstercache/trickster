@@ -139,11 +139,12 @@ func (a *mysqlDialectAnalyzer) AnalyzeParsed(query string, stmt sqlparser.Statem
 	if unsafe {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, errUnrenderable)
 	}
-	// Cache only complete buckets, matching the provider's HTTP and PGWire paths.
-	lower := sqlanalyzer.CeilBucket(p.LowerBound.Value, p.Step, p.Phase)
-	upper := sqlanalyzer.FloorBucket(p.UpperBound.Value, p.Step, p.Phase)
+	// Cache only complete buckets, as the HTTP and PGWire paths do; a range holding none is the
+	// planner's to send as written, so both bounds meet at the rounded-up lower one
+	lower := timeseries.CeilToGrid(p.LowerBound.Value, p.Step, p.Phase)
+	upper := timeseries.FloorToGrid(p.UpperBound.Value, p.Step, p.Phase)
 	if !upper.After(lower) {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, errUnrenderable)
+		upper = lower
 	}
 	p.DropsPartialBuckets = !lower.Equal(p.LowerBound.Value) || !upper.Equal(p.UpperBound.Value)
 	p.LowerBound.Value, p.UpperBound.Value = lower, upper

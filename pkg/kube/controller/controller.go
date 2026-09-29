@@ -134,6 +134,9 @@ type Config struct {
 	// ProviderPaths returns the paths a time series provider predefines, which the compiler
 	// serves a governed route through and a route may not declare itself; nil serves no provider
 	ProviderPaths compile.ProviderPaths
+	// ProviderStepAlignments returns the step alignment modes a time series provider supports, which
+	// a policy's mode is checked against; nil applies no policy's mode
+	ProviderStepAlignments compile.ProviderStepAlignments
 	// Recorder overrides the Event recorder built from the client, which is
 	// how tests capture Events
 	Recorder *events.Recorder
@@ -709,6 +712,7 @@ func (c *Controller) policyIndex() *cachepolicy.Index {
 	}
 	return cachepolicy.New(c.watcher.CachePolicies(), cachepolicy.Config{
 		Known: known, Exists: c.targetExists, ProviderPaths: c.providerPathNames,
+		ProviderStepAlignments: c.cfg.ProviderStepAlignments,
 	})
 }
 
@@ -743,7 +747,8 @@ func (c *Controller) targetExists(kind, namespace, name string) bool {
 func (c *Controller) compile(ctx context.Context, model *ir.IR,
 ) (*config.Overlay, compile.Manifest, error) {
 	_, span := c.span(ctx, spanCompile)
-	overlay, manifest, err := compile.CompileWith(model, c.cfg.Options, c.cfg.ProviderPaths)
+	overlay, manifest, err := compile.CompileWithProviders(model, c.cfg.Options, c.cfg.ProviderPaths,
+		c.cfg.ProviderStepAlignments)
 	endSpan(span, err)
 	return overlay, manifest, err
 }
