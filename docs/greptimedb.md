@@ -29,6 +29,17 @@ for Grafana's comment-only PostgreSQL health query. See the
 for the exact image and reproducible checks. The tested Grafana plugin is
 the bundled PostgreSQL datasource, not a GreptimeDB-specific plugin.
 
+## Step Alignment
+
+GreptimeDB's surfaces follow the [step alignment](./step-alignment.md) of the query language they carry:
+
+| Surface | Supported modes | Default |
+|---|---|---|
+| Prometheus HTTP API | `truncate`, `drop`, `partial_end`, `off` | `partial_end`, which is Fast Forward (`truncate` with `fast_forward_disable: true`) |
+| SQL, over HTTP, MySQL and PostgreSQL | all | `drop` |
+
+A backend's `step_alignment` may name any mode either supports; a PromQL query asked for `partial` or `partial_start` runs in its default instead, and the fallback is counted in `trickster_step_alignment_fallbacks_total`. The `partial` modes fetch each partial bucket as a small query of its own through the object cache, so they cost up to two extra origin queries per request. A query can choose its own mode with a comment, `# ...` in PromQL and `-- ...` or `/* ... */` in SQL; see [Per-Query Instructions](./per-query-instructions.md).
+
 ## Configuration
 
 The [complete example](../examples/conf/greptimedb.yaml) exposes HTTP on 8480,
@@ -120,8 +131,8 @@ row by row into a DataSet, and its validated client serialization is reused.
 
 MySQL supports `DATE_BIN('1m', ts, FROM_UNIXTIME(0))` and fixed-width
 `DATE_TRUNC` buckets with verified UTC sessions, whole-second cadence and
-half-open bounds, which the default `drop` step alignment rounds inward to
-complete buckets. Other bucket origins,
+half-open bounds, which the default `drop` [step alignment](./step-alignment.md)
+rounds inward to complete buckets. Other bucket origins,
 subsecond cadence, inclusive upper bounds and ranges with no complete bucket
 use the original query instead. Timestamp results keep up to nine
 fractional digits, text groups are compared case-sensitively, and NULL ordering

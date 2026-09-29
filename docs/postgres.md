@@ -197,8 +197,10 @@ Four behaviors are worth knowing:
   keeps X's bucket only when X is the last instant of it (`...:59.999999`).
   The `partial`, `partial_start` and `partial_end` modes instead fetch those
   buckets from the origin over the client's own range, through the object
-  cache for `partial_bucket_ttl`, and never cache them with the complete ones;
-  `truncate` answers the whole first bucket.
+  cache for `partial_bucket_ttl`, and never cache them with the complete ones,
+  at a cost of up to two small origin queries per request; `truncate` answers
+  the whole first bucket. A query can choose its own mode with a comment, such
+  as `-- trickster-step-align:partial`. See [Step Alignment](./step-alignment.md).
 - **A range with no complete bucket is answered by the origin.** When nothing
   complete remains, as for a range inside one bucket, across a single
   boundary, or starting inside the still-filling bucket, the client gets the

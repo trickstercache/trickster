@@ -281,9 +281,11 @@ and an inclusive upper bound, such as the end of `BETWEEN`, also drops the
 bucket that contains it, because that bucket is only partly covered. The
 `partial`, `partial_start` and `partial_end` modes fetch those edge buckets
 from the origin over the client's own bounds, through the object cache for
-`partial_bucket_ttl`, and `truncate` answers the whole first bucket. A range
-with no complete bucket is answered with the origin's own result for the
-statement, cached as an object for `partial_bucket_ttl`.
+`partial_bucket_ttl`, at a cost of up to two small origin queries per request,
+and `truncate` answers the whole first bucket. A range with no complete bucket
+is answered with the origin's own result for the statement, cached as an object
+for `partial_bucket_ttl`. A query can choose its own mode with a comment, such
+as `/* trickster-step-align:partial */`. See [Step Alignment](./step-alignment.md).
 Grafana's strict-lower `$__unixEpochFilter` expansion remains OPC, because a
 strict lower bound does not cover the first bucket completely. Native `DATETIME`/`TIMESTAMP`, epoch-second integer,
 and the corpus's epoch-nanosecond adaptation are supported in their recorded

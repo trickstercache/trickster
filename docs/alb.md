@@ -532,6 +532,14 @@ Native histogram samples are preserved through the merge rather than being numer
 
 Trickster ALB supports enforcing a `max_query_range` duration on ALB backends. For details on how to configure and use query range limits, see the [Query Range Limits](./query-range-limits.md) documentation.
 
+#### Step Alignment
+
+Members' responses combine at identical timestamps, so members must answer on one grid: a member that drops the partial bucket at the start while another returns it whole would merge into a series whose first points are summed over a subset of members. A `tsm` ALB therefore applies one [step alignment](./step-alignment.md) mode to every member. It uses its own `step_alignment` when set; otherwise it uses its first configured member's mode, whether or not that member is healthy, so a leader's outage doesn't move every open dashboard's grid. A query's `trickster-step-align` directive wins when every member supports the mode it names.
+
+A static pool member that can't apply the chosen mode fails the configuration. When autodiscovered members can't, the pool uses `truncate` if every member supports it, or otherwise leaves each member to its own mode, and adds a warning to the merged response.
+
+`step_alignment` on an ALB using any other mechanism applies that mode to every member too, so the chart's shape doesn't depend on which member answered. Without it, those mechanisms leave members to their own modes, and Trickster logs a warning at startup for each ALB whose members differ.
+
 #### Providers Supporting Time Series Merge
 
 Trickster currently supports Time Series Merging for the following TSDB Providers:
@@ -878,7 +886,7 @@ backends:
 
 ## Maintaining Healthy Pools With Automated Health Check Integrations
 
-Health Checks are configured per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health#example+health+check+configuration+for+use+in+alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.
+Health Checks are configured per-Backend as described in the [Health documentation](./health.md). Each Backend's health checker will notify all ALB pools of which it is a member when its health status changes, so long as it has been configured with a [health check interval](./health.md#example-health-check-configuration-for-use-in-alb) for automated checking. When an ALB is notified that the state of a pool member has changed, the ALB will reconstruct its list of healthy pool members before serving the next request.
 
 ## Health Check States
 
@@ -888,7 +896,7 @@ A backend will report one of three possible health states to its ALBs: `unavaila
 
 Each ALB has a configurable `healthy_floor` value, which is the threshold for determining which pool members are included in the healthy pool, based on their instantaneous health state. The `healthy_floor` represents the minimum acceptable health state value for inclusion in the healthy pool. The default `healthy_floor` value is `0`, meaning Backends in a state `>= 0` (`unknown` and `available`) are included in the healthy pool. Setting `healthy_floor: 1` would include only `available` Backends, while a value of `-1` will include all backends in the configured pool, including those marked as `unavailable`.
 
-Backends that do not have a [health check interval](./health#example+health+check+configuration+for+use+in+alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. A pool member in a permanent `unknown` state can never reach `available`, so a `healthy_floor: 1` ALB whose members lack health checks would have an empty pool and return `502` for every request. To avoid that, Trickster resets such an ALB's effective floor to `0` at startup, emits a warning naming the ALB and the un-probed members, and sets the `trickster_alb_pool_floor_reset{backend_name}` gauge to `1`. Configure a health check interval on those members if you want `healthy_floor: 1` to apply.
+Backends that do not have a [health check interval](./health.md#example-health-check-configuration-for-use-in-alb) configured will remain in a permanent state of `unknown`. Backends will also be in an `unknown` state from the time Trickster starts until the first of any configured automated health check is completed. A pool member in a permanent `unknown` state can never reach `available`, so a `healthy_floor: 1` ALB whose members lack health checks would have an empty pool and return `502` for every request. To avoid that, Trickster resets such an ALB's effective floor to `0` at startup, emits a warning naming the ALB and the un-probed members, and sets the `trickster_alb_pool_floor_reset{backend_name}` gauge to `1`. Configure a health check interval on those members if you want `healthy_floor: 1` to apply.
 
 Setting `healthy_floor` below `0` admits members the probe has confirmed `unavailable`, not just members in the transient `unknown` state. If your goal is to keep traffic flowing during the cold-start window before the first probes complete, lower the pool members' `recovery_threshold` so they transition out of `unknown` faster -- don't lower the floor. When `healthy_floor < 0` Trickster emits a startup warning and sets the `trickster_alb_pool_admits_failing{backend_name}` gauge to `1`.
 
@@ -910,7 +918,7 @@ backends:
           backup: true
 ```
 
-Failover depends on the ALB learning that its other members are down, so give them a [health check interval](./health#example+health+check+configuration+for+use+in+alb) or, on a stream listener, `stream.passive_health`. While an ALB with backup members is dispatching to them, the `trickster_alb_pool_on_backup{backend_name}` gauge is `1`, and a warning is logged when it fails over.
+Failover depends on the ALB learning that its other members are down, so give them a [health check interval](./health.md#example-health-check-configuration-for-use-in-alb) or, on a stream listener, `stream.passive_health`. While an ALB with backup members is dispatching to them, the `trickster_alb_pool_on_backup{backend_name}` gauge is `1`, and a warning is logged when it fails over.
 
 ### Draining Pool Members
 

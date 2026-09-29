@@ -34,7 +34,11 @@ An interval boundary inside a bucket is handled by the backend's
 `step_alignment`, which defaults to `partial` for native queries: complete
 buckets come from the delta cache, and each edge bucket is Druid's answer over
 the part of it the interval covers, fetched through the Object Proxy Cache for
-`partial_bucket_ttl` and never delta cached.
+`partial_bucket_ttl` and never delta cached. A native query can choose its own
+mode, or its own volatile window, with keys in its `context` map, such as
+`"trickster-step-align": "drop"`, which Trickster leaves out of the cache key
+and Druid ignores. See [Step Alignment](./step-alignment.md) and
+[Per-Query Instructions](./per-query-instructions.md).
 
 The response model preserves native `timeseries`, `groupBy`, and `topN` JSON
 shapes. Grouping dimensions become DataSet tags internally. Hidden typed values
@@ -73,8 +77,10 @@ or explicit `resultFormat: "object"`, or `resultFormat: "array"` with
   explicit alias;
 - a `GROUP BY` containing that bucket and every selected dimension; and
 - a complete lower/upper time range on `__time` (unaligned edges follow the
-  backend's `step_alignment`, `drop` by default for SQL; partial edge buckets
-  are never delta cached).
+  backend's [`step_alignment`](./step-alignment.md), `drop` by default for SQL;
+  partial edge buckets are never delta cached). A SQL comment such as
+  `-- trickster-step-align:partial` chooses the query's own mode, and wins over
+  the same key in the request's `context`.
 
 The shared CockroachDB SQL analyzer canonicalizes the statement and renders
 each missing extent while preserving the original JSON context on the wire.

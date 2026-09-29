@@ -57,7 +57,13 @@ Statement queries are served through three tiers:
    a delta hit returns rows in the order the statement asked for; ordering
    terms that do not resolve to a select-list output fall to the next tier.
    Responses whose schemas the delta model cannot represent fall automatically
-   to the next tier as well.
+   to the next tier as well. The partial buckets at a range's edges are never
+   delta-cached; the backend's [step alignment](./step-alignment.md) mode
+   decides what the response shows for them: `drop`, which leaves them out,
+   unless configured otherwise or chosen in a comment such as
+   `/* trickster-step-align:partial_end */`. The `partial` modes fetch each
+   partial bucket as a statement of its own through the object cache, and
+   `off` answers every statement from the object cache with its range as sent.
 2. **Object cache** — everything else cacheable is stored as the verbatim
    Arrow IPC byte stream and returned byte-identically, with a short,
    provider-configured lifetime. Metadata RPCs use this tier.

@@ -77,6 +77,19 @@ The following metrics are available for polling with any Trickster configuration
     * `backend_name` - the name of the configured backend fetching the range
     * `provider` - the type of the configured backend, or the native protocol (e.g., `mysql`)
 
+* `trickster_proxy_partial_bucket_fetches_total` (Counter) - The number of partial bucket fetches through the object cache, under a `partial` [step alignment](./step-alignment.md) mode.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `provider` - the backend provider
+    * `edge` - `start` or `end`: the edge of the requested range the bucket sits on
+    * `status` - the object cache result, such as `hit` or `kmiss`, or `err` when the fetch failed and the bucket was left out of the response
+
+* `trickster_step_alignment_fallbacks_total` (Counter) - The number of requests for a [step alignment](./step-alignment.md) mode the query doesn't support, served in the query's default mode instead.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `requested` - the mode asked for, by the backend's configuration, an ALB, or a `trickster-step-align` directive
+    * `applied` - the mode the request was served in
+
 * `trickster_proxy_request_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request

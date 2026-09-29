@@ -405,12 +405,6 @@ install-codespell:
 
 .PHONY: spelling
 spelling:
-	@which mdspell ; \
-	if [ "$$?" != "0" ]; then \
-		echo "mdspell is not installed" ; \
-	else \
-		mdspell './README.md' './docs/**/*.md' ; \
-	fi
 	@which codespell ; \
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \

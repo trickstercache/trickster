@@ -574,6 +574,10 @@ dashboard whose panels deliberately exercise archive boundaries, the retention
 edge, schema drift, non-allowlisted functions and mixed-ladder multi-target
 requests.
 
+## Step alignment
+
+Graphite supports the `truncate` [step alignment](./step-alignment.md) mode, its default, and `off`. Whisper stores and returns whole buckets only, so there are no partial buckets for the other modes to fetch, and configuring one fails at load. `off` sends each render request to Graphite as the client sent it, through the fallback lane, cached as an object for one minute. A render target has no comment syntax, so Graphite queries can't carry directives.
+
 ## Known gaps
 
 - **Fast Forward is not implemented.** Graphite's coarsest-rung behavior and

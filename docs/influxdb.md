@@ -80,6 +80,19 @@ SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins,
 
 The still-filling final bucket of a range that reaches the present is never cached. Under the SQL default `step_alignment`, `drop`, the response ends before it; the `partial` and `partial_end` modes, and InfluxQL's default `partial_end`, fetch it from the origin on each request. `volatile_window` applies only to complete buckets.
 
+### Step Alignment
+
+Each query language has its own [step alignment](./step-alignment.md) support and default:
+
+| Query language | Supported modes | Default |
+|---|---|---|
+| InfluxQL, 1.x and over 3.x | all | `partial_end` |
+| SQL, over HTTP and Flight SQL | all | `drop` |
+| Flux | `truncate`, `off` | `truncate` |
+| Prometheus remote read | `truncate` | `truncate` |
+
+A backend's `step_alignment` may name any of these modes; a query in a language that doesn't support it runs in that language's default, and the fallback is counted in `trickster_step_alignment_fallbacks_total`. The `partial` modes fetch each partial bucket as a small query of its own through the object cache, so they cost up to two extra origin queries per request. A query can choose its own mode with a comment: `-- trickster-step-align:drop` in InfluxQL and SQL, `// trickster-step-align:off` in Flux. See [Per-Query Instructions](./per-query-instructions.md).
+
 ### Response Formats
 
 Trickster supports the following v3 response formats, controlled by the `format` query parameter (in the URL or the request document) or, when no `format` is given, the `Accept` header (`application/json`, `application/jsonl`, `text/csv`, ...):

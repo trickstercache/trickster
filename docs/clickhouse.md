@@ -150,7 +150,7 @@ Time range predicates must appear in a top-level `AND` conjunction of the `WHERE
 
 Two predicate targets are supported, with different rules:
 
-- **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`, or the lower end of `BETWEEN`); a strict `>` is served through the OPC. The upper bound may be exclusive (`<`) or inclusive (`<=`, or the upper end of `BETWEEN`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — are rounded inward to the nearest complete bucket (lower bound up, upper bound down), so partial edge buckets are omitted from the response rather than cached as complete aggregates. An inclusive upper bound always drops the bucket that contains it, because that bucket is only partly covered. If no complete bucket remains after rounding, the query is served through the OPC.
+- **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`, or the lower end of `BETWEEN`); a strict `>` is served through the OPC. The upper bound may be exclusive (`<`) or inclusive (`<=`, or the upper end of `BETWEEN`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — leave partial buckets at the edges, which are never cached as complete aggregates; the backend's [step alignment](#step-alignment) mode decides what the response shows for them. Under the default, `drop`, they are left out, and an inclusive upper bound leaves out the bucket that contains it, because that bucket is only partly covered. A range with no complete bucket is sent to ClickHouse as written, and its response is cached as an object for `partial_bucket_ttl`.
 - **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster aligns each comparator to the first and last included bucket.
 
 Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)`, `toDateTime64(n, precision)`, or `toDate(n)` wrappers, `WITH`-clause constants, or `now()`/`now64()` with optional addition or subtraction of seconds. DateTime64 precision is retained. Floating epoch bounds and timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
@@ -202,11 +202,13 @@ Requests that carry a `session_id` are proxied without caching. A session's `SET
 
 Trickster exposes a `/ping` endpoint that returns a health check response, matching the endpoint provided by ClickHouse itself. This enables compatibility with clients and SDKs that probe `/ping` during connection initialization.
 
-### Step Alignment and "Fast Forwarding"
+### Step Alignment
 
-Trickster will always align the calculated time range to the step size, so small variations in the time range will still result in actual queries for the entire time "bucket". In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket or within the configured `volatile_window` (whichever is greater).
+ClickHouse supports every [step alignment](./step-alignment.md) mode, and defaults to `drop`: responses hold complete buckets only, so the partial buckets at the edges of a live range, and the still-filling bucket at the present, are left out. `truncate` answers the whole first bucket instead.
 
-Per-query behavior can be adjusted with comment directives such as `trickster-volatile-window`; see [Per-Query Instructions](./per-query-instructions.md).
+`partial`, `partial_start` and `partial_end` add the partial buckets as ClickHouse computes them over the client's own range. Each is a small query of its own, sent through the object cache and kept for `partial_bucket_ttl`, never in the time series cache, so these modes cost up to two extra origin queries per request. Fast Forward doesn't apply to ClickHouse; `partial_end` shows the still-filling bucket instead.
+
+Complete buckets inside the configured `volatile_window` are refetched until they settle. A query can choose its own mode or window with a comment directive, such as `/* trickster-step-align:partial_end */`; see [Per-Query Instructions](./per-query-instructions.md). Directives in `#` comments aren't read, because Trickster's ClickHouse SQL parser rejects them: a statement with one is served through the OPC, or proxied.
 
 ## Observability
 

@@ -6,9 +6,9 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 ## Load Balancing and Scaling
 
-**PLANNED** - **Layer 4 Load Balancing** - We extend our HTTP L7 ALB to support Layer 4 as well. Supported mechanisms beyond Round Robin are TBD.
+**Layer 4 Load Balancing** - We extend our HTTP L7 ALB to support Layer 4 as well. Supported mechanisms beyond Round Robin are TBD.
 
-**PLANNED** - We now support sticky sessions for the Round Robin Load Balancer mechanism. More mechanisms TBD, based on whether any new ones are added for L4.
+- We now support sticky sessions for the Load Balancer feature.
 
 **PLANNED** - We now provide a request rate limiter based on request attributes. it can be attached at the listener, backend, and path levels, with most specific winning.
 
@@ -20,7 +20,7 @@ All three of these newly-supported providers consume a new `pgwire` package for 
 
 **TimescaleDB** - You can now accelerate TimescaleDB with the delta proxy cache! If you are tired of playing whack-a-mole with new continuous aggregates to manage performance, Trickster can stop the madness. Even better - any Postgres-compatible database can be fronted by Trickster for a `SELECT` result cache.
 
-**PLANNED** - **GrepTimeDB** - We've added GrepTimeDB as an acceleration-supported backend time series provider.
+**GreptimeDB** - We've added GreptimeDB as an acceleration-supported backend time series provider.
 
 **PLANNED** - **QuestDB** - And we also now support accelerating QuestDB.
 
