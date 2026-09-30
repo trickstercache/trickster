@@ -67,7 +67,8 @@ func writeJSON(ds *dataset.DataSet, w io.Writer) error {
 				}
 			}
 			w.Write([]byte(`],"records":[`))
-			for k, c := range s.Points {
+			for k := range s.PointCount() {
+				c := *s.PointAt(k)
 				w.Write([]byte(`{"values":{`))
 				var o int
 				for n, fd := range fds {
@@ -78,7 +79,7 @@ func writeJSON(ds *dataset.DataSet, w io.Writer) error {
 					w.Write(b)
 					w.Write([]byte{':'})
 					var usedValue bool
-					b, usedValue = getCellValue(s.Header, fd, c, i, j)
+					b, usedValue = getCellValue(s.Header, fd, c, o, j)
 					w.Write(b)
 					if usedValue {
 						o++
@@ -88,7 +89,7 @@ func writeJSON(ds *dataset.DataSet, w io.Writer) error {
 					}
 				}
 				w.Write([]byte(`}}`))
-				if k < len(s.Points)-1 {
+				if k < s.PointCount()-1 {
 					w.Write([]byte(`,`))
 				}
 			}
@@ -150,7 +151,7 @@ func getCellValue(sh dataset.SeriesHeader, fd timeseries.FieldDefinition,
 		case startColumnName, stopColumnName:
 			if strings.Contains(fd.DefaultValue, ":") {
 				b, _ := json.Marshal(fd.DefaultValue)
-				return b, true
+				return b, false
 			}
 			return []byte(fd.DefaultValue), false
 		}

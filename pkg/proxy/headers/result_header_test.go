@@ -223,3 +223,71 @@ func TestResultHeaderPreEpochRanges(t *testing.T) {
 		}
 	})
 }
+
+func TestResultHeaderMergerMatchesFold(t *testing.T) {
+	t0 := time.UnixMilli(1700000000000)
+	pb := func(edge timeseries.BucketEdge, st string) string {
+		return ResultHeaderParts{PartialBuckets: []PartialBucketResult{{
+			Extent: timeseries.Extent{Start: t0, End: t0.Add(time.Minute)}, Edge: edge, Status: st,
+		}}}.String()
+	}
+	vals := []string{
+		"engine=DeltaProxyCache; status=hit; fetched=[1700000000000-1700003600000]; ffstatus=hit",
+		"engine=DeltaProxyCache; status=kmiss; fetched=[1700003600000-1700007200000]; failed=[5-6]",
+		"",
+		"engine=ObjectProxyCache; status=hit",
+		pb(timeseries.BucketEdgeEnd, "hit"),
+		pb(timeseries.BucketEdgeEnd, "kmiss"),
+		pb(timeseries.BucketEdgeStart, "hit"),
+		"engine=ALB; status=phit",
+		"not a header; x=",
+	}
+	// every ordered pick of up to four values
+	var picks [][]string
+	var pick func(prefix []string)
+	pick = func(prefix []string) {
+		picks = append(picks, prefix)
+		if len(prefix) == 4 {
+			return
+		}
+		for _, v := range vals {
+			pick(append(prefix[:len(prefix):len(prefix)], v))
+		}
+	}
+	pick(nil)
+	for _, p := range picks {
+		var want string
+		var m ResultHeaderMerger
+		for _, v := range p {
+			want = MergeResultHeaderVals(want, v)
+			m.Add(v)
+		}
+		if got := m.String(); got != want {
+			t.Fatalf("%q:\n got %s\nwant %s", p, got, want)
+		}
+	}
+}
+
+func TestResultHeaderMergerAfterString(t *testing.T) {
+	var m ResultHeaderMerger
+	m.Add("engine=DeltaProxyCache; status=hit")
+	m.Add("engine=DeltaProxyCache; status=kmiss")
+	first := m.String()
+	if first != m.String() {
+		t.Fatal("String is not stable")
+	}
+	m.Add("engine=DeltaProxyCache; status=hit; ffstatus=hit")
+	if want := MergeResultHeaderVals(first, "engine=DeltaProxyCache; status=hit; ffstatus=hit"); m.String() != want {
+		t.Fatalf("got %s want %s", m.String(), want)
+	}
+}
+
+func TestParseResultHeaderExtentLists(t *testing.T) {
+	r := ParseResultHeader("engine=DeltaProxyCache; fetched=[1000-2000;3000-4000;bad]; failed=[]")
+	if len(r.Fetched) != 2 || r.Fetched[1].End.UnixMilli() != 4000 {
+		t.Errorf("fetched = %v", r.Fetched)
+	}
+	if r.FailedFetch == nil || len(r.FailedFetch) != 0 {
+		t.Errorf("failed = %#v", r.FailedFetch)
+	}
+}

@@ -184,5 +184,6 @@ func NewModeler() *timeseries.Modeler {
 		WireMarshalWriter:     MarshalTimeseriesWriter,
 		CacheMarshaler:        dataset.MarshalDataSet,
 		CacheUnmarshaler:      dataset.UnmarshalDataSet,
+		WireMarshalReadsParts: true,
 	}
 }

@@ -45,6 +45,10 @@ const (
 // is returned, so a large read is not held for it; a damaged object is served once
 const DeferredVerifyLen = 10 << 20
 
+// a body whose every read opens the object anew is streamed in parts this large, so that few
+// reads do
+const streamChunkSize = 256 << 10
+
 // ErrKeyRequired is returned when an object is stored without a cache key
 var ErrKeyRequired = errors.New("cache key required")
 
@@ -62,6 +66,10 @@ var (
 	}}
 	prefixPool = sync.Pool{New: func() any {
 		b := make([]byte, header.PrefixLen)
+		return &b
+	}}
+	streamPool = sync.Pool{New: func() any {
+		b := make([]byte, streamChunkSize)
 		return &b
 	}}
 )
@@ -325,6 +333,35 @@ func (b *briefBody) Read(p []byte) (int, error) {
 		err = nil
 	}
 	return n, err
+}
+
+// WriteTo writes the rest of the body to w in parts of streamChunkSize, where a copy's own
+// buffer would open the object for every few KiB
+func (b *briefBody) WriteTo(w io.Writer) (int64, error) {
+	bp := streamPool.Get().(*[]byte)
+	defer streamPool.Put(bp)
+	var written int64
+	for b.next < b.size {
+		n, err := b.ReadAt(*bp, b.next)
+		b.next += int64(n)
+		if n > 0 {
+			wn, werr := w.Write((*bp)[:n])
+			written += int64(wn)
+			if werr == nil && wn < n {
+				werr = io.ErrShortWrite
+			}
+			if werr != nil {
+				return written, werr
+			}
+		}
+		switch {
+		case err != nil && !errors.Is(err, io.EOF):
+			return written, err
+		case n == 0:
+			return written, io.ErrNoProgress
+		}
+	}
+	return written, nil
 }
 
 // ReadAll returns the whole body, verified along with the meta section against the

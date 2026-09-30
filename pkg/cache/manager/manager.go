@@ -129,7 +129,9 @@ func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, t
 	if !ok {
 		return ErrReferencesUnsupported
 	}
-	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	if logger.DebugEnabled() {
+		logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	}
 	start := time.Now()
 	err := mc.StoreReference(cacheKey, data, ttl)
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySetDirect, metrics.KeyNone, float64(data.Size()), time.Since(start))
@@ -141,7 +143,9 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 		return ErrCacheClosed
 	}
 	defer cm.release()
-	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	if logger.DebugEnabled() {
+		logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	}
 	start := time.Now()
 	err := cm.Client.Store(cacheKey, byteData, ttl)
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySet, metrics.KeyNone, float64(len(byteData)), time.Since(start))
@@ -151,13 +155,19 @@ func (cm *Manager) Store(cacheKey string, byteData []byte, ttl time.Duration) er
 func (cm *Manager) observeRetrieval(cacheKey string, size int, s status.LookupStatus, err error, elapsed time.Duration) {
 	switch {
 	case errors.Is(err, cache.ErrKNF) || s == status.LookupStatusKeyMiss:
-		logger.Debug("cache miss", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		if logger.DebugEnabled() {
+			logger.Debug("cache miss", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		}
 		metrics.ObserveCacheMiss(cm.config.Name, cm.config.Provider, elapsed)
 	case status.IsSuccessful(s):
-		logger.Debug("cache retrieve", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		if logger.DebugEnabled() {
+			logger.Debug("cache retrieve", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		}
 		metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeyGet, status.StatusHit, float64(size), elapsed)
 	default:
-		logger.Debug("cache retrieve failed", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		if logger.DebugEnabled() {
+			logger.Debug("cache retrieve failed", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+		}
 		metrics.ObserveCacheEvent(cm.config.Name, cm.config.Provider, keys.Error, "failed to retrieve cache entry")
 	}
 }
@@ -221,7 +231,9 @@ func (cm *Manager) Remove(cacheKeys ...string) error {
 		return ErrCacheClosed
 	}
 	defer cm.release()
-	logger.Debug("cache remove", logging.Pairs{keys.Keys: cacheKeys, keys.Provider: cm.config.Provider})
+	if logger.DebugEnabled() {
+		logger.Debug("cache remove", logging.Pairs{keys.Keys: cacheKeys, keys.Provider: cm.config.Provider})
+	}
 	start := time.Now()
 	err := cm.Client.Remove(cacheKeys...)
 	// no byte count: the manager doesn't track object sizes; an index, when present, records freed bytes
@@ -305,7 +317,9 @@ func (cm *Manager) StoreSplit(cacheKey string, meta, body []byte, ttl time.Durat
 	if !ok {
 		return ErrSplitUnsupported
 	}
-	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	if logger.DebugEnabled() {
+		logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	}
 	start := time.Now()
 	err := sc.StoreSplit(cacheKey, meta, body, ttl)
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySet, metrics.KeyNone,

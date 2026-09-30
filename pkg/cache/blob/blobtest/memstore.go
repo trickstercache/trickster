@@ -24,6 +24,7 @@ import (
 	"io"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/blob"
@@ -55,6 +56,8 @@ type MemStore struct {
 	CanStream bool
 	// OnDeleteIf, when set, runs inside DeleteIf once the frame is found and before it is judged
 	OnDeleteIf func()
+	// Opens counts the objects Open has opened
+	Opens atomic.Int64
 }
 
 // NewMemStore returns an empty MemStore
@@ -146,6 +149,7 @@ func (s *MemStore) Open(key string) (blob.Blob, error) {
 	if !ok {
 		return nil, cache.ErrKNF
 	}
+	s.Opens.Add(1)
 	return s.blob(frame), nil
 }
 

@@ -19,12 +19,13 @@
 package dataset
 
 import (
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
 	"strings"
 	"sync"
+
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // Tags is a key/value pair associated with a Series to scope the cardinality of the DataSet
@@ -99,30 +100,46 @@ func (t Tags) String() string {
 	return t.StringsWithSep("=", ";")
 }
 
-// JSON returns a string representation of the Tags as a JSON object. Keys
-// are emitted in sorted order. Keys and values are escaped via encoding/json
-// since Prometheus label values are arbitrary UTF-8 (see data model spec)
-// and the older string-concat form produced invalid JSON for any value
-// containing `"` or `\`.
+// JSON returns the Tags as a JSON object with sorted keys, its keys and values escaped as
+// encoding/json escapes them, since Prometheus label values are arbitrary UTF-8
 func (t Tags) JSON() string {
 	if len(t) == 0 {
 		return "{}"
 	}
-	keys := t.Keys()
-	var sb strings.Builder
-	sb.WriteByte('{')
+	return string(t.AppendJSON(make([]byte, 0, t.jsonLen())))
+}
+
+// AppendJSON appends the Tags to dst as JSON() writes them
+func (t Tags) AppendJSON(dst []byte) []byte {
+	if len(t) == 0 {
+		return append(dst, '{', '}')
+	}
+	// most label sets are small enough that their keys sort on the stack
+	var arr [16]string
+	keys := arr[:0]
+	for k := range t {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	dst = append(dst, '{')
 	for i, k := range keys {
 		if i > 0 {
-			sb.WriteByte(',')
+			dst = append(dst, ',')
 		}
-		kb, _ := json.Marshal(k)
-		vb, _ := json.Marshal(t[k])
-		sb.Write(kb)
-		sb.WriteByte(':')
-		sb.Write(vb)
+		dst = tstrings.AppendJSON(dst, k)
+		dst = append(dst, ':')
+		dst = tstrings.AppendJSON(dst, t[k])
 	}
-	sb.WriteByte('}')
-	return sb.String()
+	return append(dst, '}')
+}
+
+// the length of the Tags as JSON, when nothing in them needs escaping
+func (t Tags) jsonLen() int {
+	n := 1
+	for k, v := range t {
+		n += len(k) + len(v) + 6
+	}
+	return n
 }
 
 // KVP returns a string representation of the Tags as "key"="value","key2"="value2"

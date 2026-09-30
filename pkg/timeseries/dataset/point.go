@@ -34,6 +34,8 @@ type Point struct {
 }
 
 // Points is a slice of type *Point
+//
+//msgp:ignore Points
 type Points []Point
 
 // Clone returns a perfect copy of the Point
@@ -82,10 +84,26 @@ func (p Points) Size() int64 {
 // Clone returns a perfect copy of the Points
 func (p Points) Clone() Points {
 	clone := make(Points, len(p))
-	for i, pt := range p {
-		clone[i] = pt.Clone()
-	}
+	clonePointsInto(clone, p)
 	return clone
+}
+
+// copies p into out, cutting every point's values from one backing array, each capped so an append
+// to one reallocates instead of overwriting the next
+func clonePointsInto(out, p Points) {
+	var n int
+	for i := range p {
+		n += len(p[i].Values)
+	}
+	slab := make([]any, n)
+	for i := range p {
+		out[i].Epoch, out[i].Size = p[i].Epoch, p[i].Size
+		if p[i].Values != nil {
+			k := copy(slab, p[i].Values)
+			out[i].Values = slab[:k:k]
+			slab = slab[k:]
+		}
+	}
 }
 
 // CloneRange returns a perfect copy of the Points, cloning only the
@@ -99,11 +117,7 @@ func (p Points) CloneRange(start, end int) Points {
 		return nil
 	}
 	clone := make(Points, size, size+10)
-	j := start
-	for i := range size {
-		clone[i] = p[j].Clone()
-		j++
-	}
+	clonePointsInto(clone, p[start:end])
 	return clone
 }
 

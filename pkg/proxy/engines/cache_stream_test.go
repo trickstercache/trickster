@@ -30,6 +30,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	encodings "github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -383,7 +384,7 @@ func TestStreamedObjectChangedMidResponse(t *testing.T) {
 	d := testDocument([]byte(streamBody()))
 	d.Ranges = nil
 	require.NoError(t, writeConcurrent(t.Context(), c, "k", d, false, time.Minute))
-	qr := queryDeferred(sc, "k")
+	qr := queryDeferred(sc, "k", encodings.Identity)
 	require.NoError(t, qr.err)
 	require.NotNil(t, qr.d.deferred)
 	part := make([]byte, 100)
@@ -449,7 +450,7 @@ func TestDeferredBody(t *testing.T) {
 	d.Ranges = nil
 	require.NoError(t, writeConcurrent(t.Context(), c, "k", d, false, time.Minute))
 
-	qr := queryDeferred(sc, "k")
+	qr := queryDeferred(sc, "k", encodings.Identity)
 	require.NoError(t, qr.err)
 	require.Nil(t, qr.d.Body)
 	require.NotNil(t, qr.d.deferred)
@@ -463,10 +464,10 @@ func TestDeferredBody(t *testing.T) {
 	require.NoError(t, none.materialize())
 	none.releaseBody()
 
-	qr = queryDeferred(sc, "absent")
+	qr = queryDeferred(sc, "absent", encodings.Identity)
 	require.ErrorIs(t, qr.err, cache.ErrKNF)
 
-	qr = queryDeferred(sc, "k")
+	qr = queryDeferred(sc, "k", encodings.Identity)
 	qr.d.deferred = failingBody{qr.d.deferred}
 	_, err := qr.d.readRanges(d.getByteRanges())
 	require.ErrorIs(t, err, errTest)
@@ -502,7 +503,7 @@ func TestQueryDeferredReadsWhole(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			require.NoError(t, writeConcurrent(t.Context(), c, test.name, test.d, test.compress, time.Minute))
-			qr := queryDeferred(sc, test.name)
+			qr := queryDeferred(sc, test.name, encodings.Identity)
 			require.NoError(t, qr.err)
 			require.Nil(t, qr.d.deferred)
 			want := queryConcurrent(t.Context(), c, test.name)
@@ -516,7 +517,7 @@ func TestQueryDeferredReadsWhole(t *testing.T) {
 		b, err := whole.MarshalMsg([]byte{0})
 		require.NoError(t, err)
 		require.NoError(t, c.Store("stored whole", b, time.Minute))
-		qr := queryDeferred(sc, "stored whole")
+		qr := queryDeferred(sc, "stored whole", encodings.Identity)
 		require.NoError(t, qr.err)
 		require.Nil(t, qr.d.deferred)
 		requireSameDocument(t, whole, qr.d)
@@ -524,7 +525,7 @@ func TestQueryDeferredReadsWhole(t *testing.T) {
 	t.Run("meta that cannot be decoded", func(t *testing.T) {
 		for name, meta := range map[string][]byte{"flag alone": {0}, "no length": {0, 0x80}, "no document": {0, 1, 0xc1}} {
 			require.NoError(t, c.(cache.SplitClient).StoreSplit(name, meta, []byte("b"), time.Minute))
-			require.Error(t, queryDeferred(sc, name).err, name)
+			require.Error(t, queryDeferred(sc, name, encodings.Identity).err, name)
 		}
 	})
 }

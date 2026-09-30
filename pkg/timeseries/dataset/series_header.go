@@ -65,7 +65,14 @@ func seriesHeaderFNVHash(sh *SeriesHeader, queryStatement string) Hash {
 	hashString(&h, sh.Name)
 	hashString(&h, queryStatement)
 	hashCount(&h, len(sh.Tags))
-	for _, k := range sh.Tags.Keys() {
+	// the keys are sorted in place on the stack for the usual handful of tags
+	var buf [16]string
+	keys := buf[:0]
+	for k := range sh.Tags {
+		keys = append(keys, k)
+	}
+	slices.Sort(keys)
+	for _, k := range keys {
 		hashString(&h, k)
 		hashString(&h, sh.Tags[k])
 	}

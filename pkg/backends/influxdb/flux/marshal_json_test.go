@@ -31,14 +31,14 @@ const jsonExpected = `{"results":[{"tables":[{"columns":[{"name":"result",` +
 	`"records":[{"values":{"result":"_result","table":0,` +
 	`"_start":"2020-01-01T00:00:00Z","_stop":"2020-01-01T00:02:00Z",` +
 	`"_time":"2020-01-01T00:00:00Z","avg_query":1.781,` +
-	`"avg_global_thread":1.781,"hostname":"localhost","_measurement":"cpu"}},` +
+	`"avg_global_thread":54.12348,"hostname":"localhost","_measurement":"cpu"}},` +
 	`{"values":{"result":"_result","table":0,"_start":"2020-01-01T00:00:00Z",` +
 	`"_stop":"2020-01-01T00:02:00Z","_time":"2020-01-01T00:01:00Z",` +
-	`"avg_query":2.429,"avg_global_thread":2.429,"hostname":"localhost",` +
+	`"avg_query":2.429,"avg_global_thread":57.91308,"hostname":"localhost",` +
 	`"_measurement":"cpu"}},{"values":{"result":"_result","table":0,` +
 	`"_start":"2020-01-01T00:00:00Z","_stop":"2020-01-01T00:02:00Z",` +
 	`"_time":"2020-01-01T00:02:00Z","avg_query":1.929,` +
-	`"avg_global_thread":1.929,"hostname":"localhost","_measurement":"cpu"}}]` +
+	`"avg_global_thread":55.21703,"hostname":"localhost","_measurement":"cpu"}}]` +
 	`}]}]}`
 
 func TestMarshalTimeseriesJSONWriter(t *testing.T) {

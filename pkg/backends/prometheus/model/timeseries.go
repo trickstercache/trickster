@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -91,6 +92,7 @@ func NewModeler() *timeseries.Modeler {
 		WireUnmarshaler:       UnmarshalTimeseries,
 		CacheMarshaler:        dataset.MarshalDataSet,
 		CacheUnmarshaler:      dataset.UnmarshalDataSet,
+		WireMarshalReadsParts: true,
 	}
 }
 
@@ -225,84 +227,94 @@ func MarshalTSOrVectorWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 		return marshalScalarWriter(ds, status, w)
 	}
 
-	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
+	e := Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}
+	startResponse(w, status)
+	jw := tbytes.NewChunkWriter(w)
+	jw.Buf = e.appendStart(jw.Buf)
 
 	resultType := Matrix
 	if isVector {
 		resultType = Vector
 	}
+	jw.Buf = append(jw.Buf, `,"data":{"resultType":"`...)
+	jw.Buf = append(jw.Buf, resultType...)
+	jw.Buf = append(jw.Buf, `","result":[`...)
 
-	w.Write([]byte(`,"data":{"resultType":"`))
-	w.Write([]byte(resultType))
-	w.Write([]byte(`","result":[`))
+	// series are grouped by tags, so a result object can hold both values and histograms for a mixed
+	// metric; the capacity past the output is scratch space for the grouping
+	groups := groupSeriesByTags(ds.Results[0].SeriesList, jw.Buf[len(jw.Buf):])
 
-	// Group series by metric tags so a single Prometheus result object can
-	// contain both "values" and "histograms" arrays when a metric has mixed types.
-	groups := groupSeriesByTags(ds.Results[0].SeriesList)
-
-	var buf [64]byte
 	var seriesSep bool
 	for _, g := range groups {
-		if (g.valueSer == nil || len(g.valueSer.Points) == 0) &&
-			(g.histSer == nil || len(g.histSer.Points) == 0) {
+		if (g.valueSer == nil || g.valueSer.PointCount() == 0) &&
+			(g.histSer == nil || g.histSer.PointCount() == 0) {
 			continue
 		}
+		if jw.Err() != nil {
+			// the client is gone, and the rest would be written nowhere
+			break
+		}
 		if seriesSep {
-			w.Write([]byte(`,{"metric":`))
+			jw.Buf = append(jw.Buf, `,{"metric":`...)
 		} else {
-			w.Write([]byte(`{"metric":`))
+			jw.Buf = append(jw.Buf, `{"metric":`...)
 			seriesSep = true
 		}
-		w.Write([]byte(g.tagsJSON))
+		jw.Buf = append(jw.Buf, g.tagsJSON...)
 
 		if isVector {
-			marshalVectorGroup(w, g, buf)
+			appendVectorGroup(&jw, g)
 		} else {
-			marshalMatrixGroup(w, g, buf)
+			appendMatrixGroup(&jw, g)
 		}
-		w.Write([]byte("}"))
+		jw.Buf = append(jw.Buf, '}')
 	}
-	w.Write([]byte("]}}"))
-	return nil
+	jw.Buf = append(jw.Buf, "]}}"...)
+	return jw.Close()
 }
 
 func marshalScalarWriter(ds *dataset.DataSet, status int, w io.Writer) error {
-	(&Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}).StartMarshal(w, status)
-	w.Write([]byte(`,"data":{"resultType":"scalar","result":`))
+	e := Envelope{ds.Status, ds.Error, ds.ErrorType, ds.Warnings}
+	startResponse(w, status)
+	jw := tbytes.NewChunkWriter(w)
+	jw.Buf = e.appendStart(jw.Buf)
+	jw.Buf = append(jw.Buf, `,"data":{"resultType":"scalar","result":`...)
 	for _, result := range ds.Results {
 		if result == nil {
 			continue
 		}
 		for _, series := range result.SeriesList {
-			if series == nil || len(series.Points) == 0 || len(series.Points[0].Values) == 0 {
+			if series == nil || series.PointCount() == 0 || len(series.PointAt(0).Values) == 0 {
 				continue
 			}
-			point := series.Points[0]
-			var buf [64]byte
-			w.Write([]byte{'['})
-			w.Write(strconv.AppendFloat(buf[:0], float64(point.Epoch)/1e9, 'f', -1, 64))
-			w.Write([]byte{','})
+			point := series.PointAt(0)
+			jw.Buf = append(jw.Buf, '[')
+			jw.Buf = appendEpochSeconds(jw.Buf, point.Epoch)
+			jw.Buf = append(jw.Buf, ',')
 			value, _ := point.Values[0].(string)
-			w.Write(strconv.AppendQuote(buf[:0], value))
-			w.Write([]byte(`]}}`))
-			return nil
+			jw.Buf = strconv.AppendQuote(jw.Buf, value)
+			jw.Buf = append(jw.Buf, `]}}`...)
+			return jw.Close()
 		}
 	}
-	w.Write([]byte(`[]}}`))
-	return nil
+	jw.Buf = append(jw.Buf, `[]}}`...)
+	return jw.Close()
 }
 
-func groupSeriesByTags(seriesList []*dataset.Series) []seriesGroup {
+// each series' tags are rendered into scratch to find its group, and copied out only for a
+// new group
+func groupSeriesByTags(seriesList []*dataset.Series, scratch []byte) []seriesGroup {
 	idx := make(map[string]int, len(seriesList))
-	var groups []seriesGroup
+	groups := make([]seriesGroup, 0, len(seriesList))
 	for _, s := range seriesList {
-		if s == nil || len(s.Points) == 0 {
+		if s == nil || s.PointCount() == 0 {
 			continue
 		}
-		tj := s.Header.Tags.JSON()
-		gi, exists := idx[tj]
+		scratch = s.Header.Tags.AppendJSON(scratch[:0])
+		gi, exists := idx[string(scratch)]
 		if !exists {
 			gi = len(groups)
+			tj := string(scratch)
 			idx[tj] = gi
 			groups = append(groups, seriesGroup{tagsJSON: tj})
 		}
@@ -321,50 +333,68 @@ func pointCmp(a, b dataset.Point) int {
 	return cmp.Compare(a.Epoch, b.Epoch)
 }
 
-func marshalVectorGroup(w io.Writer, g seriesGroup, buf [64]byte) {
-	if g.histSer != nil && len(g.histSer.Points) > 0 {
-		w.Write([]byte(`,"histogram":[`))
-		b := strconv.AppendFloat(buf[:0], float64(g.histSer.Points[0].Epoch)/1e9, 'f', -1, 64)
-		w.Write(b)
-		w.Write([]byte(`,`))
-		w.Write([]byte(g.histSer.Points[0].Values[0].(string)))
-		w.Write([]byte(`]`))
-	} else if g.valueSer != nil && len(g.valueSer.Points) > 0 {
-		w.Write([]byte(`,"value":[`))
-		b := strconv.AppendFloat(buf[:0], float64(g.valueSer.Points[0].Epoch)/1e9, 'f', -1, 64)
-		w.Write(b)
-		w.Write([]byte(`,"`))
-		w.Write([]byte(g.valueSer.Points[0].Values[0].(string)))
-		w.Write([]byte(`"]`))
+// appends e as the seconds Prometheus writes, as strconv.FormatFloat(e/1e9, 'f', -1) renders them;
+// a whole second, as a step-aligned point always is, needs no float formatting
+func appendEpochSeconds(dst []byte, e epoch.Epoch) []byte {
+	if e%1e9 == 0 {
+		// e/1e9 is exact in float64 here, as e is a whole number of seconds times 2^9 * 5^9
+		return strconv.AppendInt(dst, int64(e/1e9), 10)
+	}
+	return strconv.AppendFloat(dst, float64(e)/1e9, 'f', -1, 64)
+}
+
+func appendVectorGroup(jw *tbytes.ChunkWriter, g seriesGroup) {
+	if g.histSer != nil && g.histSer.PointCount() > 0 {
+		p := g.histSer.PointAt(0)
+		jw.Buf = append(jw.Buf, `,"histogram":[`...)
+		jw.Buf = appendEpochSeconds(jw.Buf, p.Epoch)
+		jw.Buf = append(jw.Buf, ',')
+		jw.Buf = append(jw.Buf, p.Values[0].(string)...)
+		jw.Buf = append(jw.Buf, ']')
+	} else if g.valueSer != nil && g.valueSer.PointCount() > 0 {
+		p := g.valueSer.PointAt(0)
+		jw.Buf = append(jw.Buf, `,"value":[`...)
+		jw.Buf = appendEpochSeconds(jw.Buf, p.Epoch)
+		jw.Buf = append(jw.Buf, `,"`...)
+		jw.Buf = append(jw.Buf, p.Values[0].(string)...)
+		jw.Buf = append(jw.Buf, `"]`...)
+	}
+	jw.FlushIfFull()
+}
+
+func appendMatrixGroup(jw *tbytes.ChunkWriter, g seriesGroup) {
+	if g.valueSer != nil && g.valueSer.PointCount() > 0 {
+		appendPointsArray(jw, g.valueSer, `,"values":[`, `,"`, `"]`)
+	}
+	if g.histSer != nil && g.histSer.PointCount() > 0 {
+		appendPointsArray(jw, g.histSer, `,"histograms":[`, `,`, `]`)
 	}
 }
 
-func marshalMatrixGroup(w io.Writer, g seriesGroup, buf [64]byte) {
-	if g.valueSer != nil && len(g.valueSer.Points) > 0 {
-		writePointsArray(w, g.valueSer.Points, `,"values":[`, `,"`, `"]`, buf)
+func appendPointsArray(jw *tbytes.ChunkWriter, s *dataset.Series, header, valPrefix, valSuffix string) {
+	// the points, read across the series' parts, may be a cached dataset's, which a marshal only
+	// reads, so any sort is of a copy
+	parts := s.PointParts()
+	if !s.IsSorted() {
+		parts = [3]dataset.Points{nil, slices.SortedFunc(slices.Values(s.FlatPoints()), pointCmp), nil}
 	}
-	if g.histSer != nil && len(g.histSer.Points) > 0 {
-		writePointsArray(w, g.histSer.Points, `,"histograms":[`, `,`, `]`, buf)
-	}
-}
-
-func writePointsArray(w io.Writer, pts dataset.Points, header, valPrefix, valSuffix string, buf [64]byte) {
-	if !slices.IsSortedFunc(pts, pointCmp) {
-		slices.SortFunc(pts, pointCmp)
-	}
-	w.Write([]byte(header))
-	for i, p := range pts {
-		if i > 0 {
-			w.Write([]byte{','})
+	jw.Buf = append(jw.Buf, header...)
+	first := true
+	for _, pts := range parts {
+		for i := range pts {
+			if !first {
+				jw.Buf = append(jw.Buf, ',')
+			}
+			first = false
+			jw.Buf = append(jw.Buf, '[')
+			jw.Buf = appendEpochSeconds(jw.Buf, pts[i].Epoch)
+			jw.Buf = append(jw.Buf, valPrefix...)
+			jw.Buf = append(jw.Buf, pts[i].Values[0].(string)...)
+			jw.Buf = append(jw.Buf, valSuffix...)
+			jw.FlushIfFull()
 		}
-		w.Write([]byte{'['})
-		b := strconv.AppendFloat(buf[:0], float64(p.Epoch)/1e9, 'f', -1, 64)
-		w.Write(b)
-		w.Write([]byte(valPrefix))
-		w.Write([]byte(p.Values[0].(string)))
-		w.Write([]byte(valSuffix))
 	}
-	w.Write([]byte(`]`))
+	jw.Buf = append(jw.Buf, ']')
 }
 
 func populateSeries(ds *dataset.DataSet, result []*WFResult,

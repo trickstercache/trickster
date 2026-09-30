@@ -451,7 +451,7 @@ func TestCacheExecutionGuardBranches(t *testing.T) {
 		{Mode: sqlanalyzer.CacheModeNone},
 		{Mode: sqlanalyzer.CacheModeDelta},
 	} {
-		if _, _, err := h.executeCached(&vtmysql.Conn{}, session, "SELECT 1", analysis); err == nil {
+		if _, _, _, err := h.executeCached(&vtmysql.Conn{}, session, "SELECT 1", analysis); err == nil {
 			t.Fatalf("executeCached(%v) unexpectedly succeeded", analysis.Mode)
 		}
 	}
@@ -689,7 +689,7 @@ func TestCacheOriginFallbackBranches(t *testing.T) {
 	h := newProtocolHandler(ProtocolConfig{BackendName: "mysql-fallback", Cache: newTestCache()}, nil)
 	c := &vtmysql.Conn{}
 	session := &upstreamSession{}
-	if _, _, err := h.executeCached(c, session, "SELECT 1", sqlanalyzer.Analysis{
+	if _, _, _, err := h.executeCached(c, session, "SELECT 1", sqlanalyzer.Analysis{
 		Mode: sqlanalyzer.CacheModeObject,
 	}); err == nil {
 		t.Fatal("object fallback without a session succeeded")
@@ -861,9 +861,14 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 	}
 	h.storeDelta(key, d, timeseries.ExtentList{extent})
 	analysis := sqlanalyzer.Analysis{Mode: sqlanalyzer.CacheModeDelta, Plan: plan}
-	got, status, err := h.executeCached(c, session, "SELECT delta", analysis)
-	if err != nil || status != cachestatus.LookupStatusHit || len(got.Rows) != 2 {
+	got, buffers, status, err := h.executeCached(c, session, "SELECT delta", analysis)
+	if err != nil || status != cachestatus.LookupStatusHit || len(got.Rows) != 2 || buffers == nil {
 		t.Fatalf("delta hit = %+v/%v/%v", got, status, err)
+	}
+	// released buffers keep no hold on the cached rows
+	buffers.release()
+	if got.Rows[0] != nil || len(buffers.values) != 0 {
+		t.Fatal("released buffers still refer to the cached rows")
 	}
 
 	// rows that cannot be rendered go to the origin, unavailable here, and leave the cache
@@ -872,7 +877,7 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 	before := testutil.ToFloat64(rewrites)
 	d.DS.Results[0].SeriesList[0].Points[0].Values[0] = []byte{0xff}
 	h.storeDelta(key, d, timeseries.ExtentList{extent})
-	if _, status, err := h.executeCached(c, session, "SELECT delta", analysis); err == nil ||
+	if _, _, status, err := h.executeCached(c, session, "SELECT delta", analysis); err == nil ||
 		status != cachestatus.LookupStatusProxyOnly {
 		t.Fatalf("unrenderable rows = %s, %v; want the unavailable origin", status, err)
 	}

@@ -714,3 +714,33 @@ func TestReconstituteResponsesRevalidationReadError(t *testing.T) {
 		t.Error("expected upstream response to be set")
 	}
 }
+
+type fetchCloneKey struct{}
+
+func TestFetchClone(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/api/v1/query_range?query=up", nil)
+	pr := newProxyRequest(r, nil)
+	rq, err := pr.fetchClone(context.WithValue(context.Background(), fetchCloneKey{}, "v"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rq.Request != pr.Request || rq.rsc != pr.rsc {
+		t.Error("the clone must share the client request and its resources")
+	}
+	if rq.upstreamRequest == pr.upstreamRequest {
+		t.Fatal("the upstream request must be a clone")
+	}
+	if rq.upstreamRequest.Context().Value(fetchCloneKey{}) != "v" {
+		t.Error("the upstream clone does not carry the context")
+	}
+	rq.upstreamRequest.URL.RawQuery = "query=down"
+	rq.upstreamRequest.Header.Set("X-Test", "1")
+	if pr.upstreamRequest.URL.RawQuery != "query=up" || pr.upstreamRequest.Header.Get("X-Test") != "" {
+		t.Error("a change to the clone reached the original upstream request")
+	}
+
+	pr.upstreamRequest = nil
+	if _, err := pr.fetchClone(context.Background()); !errors.Is(err, errNoUpstreamRequest) {
+		t.Errorf("expected errNoUpstreamRequest, got %v", err)
+	}
+}

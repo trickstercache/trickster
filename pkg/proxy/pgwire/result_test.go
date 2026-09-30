@@ -59,6 +59,15 @@ func labels(t *testing.T, stream []byte) string {
 	return strings.Join(out, " ")
 }
 
+// the whole response writeTo writes
+func (r *Result) encode() []byte {
+	var out bytes.Buffer
+	w := frameWriter{w: &out, buffer: make([]byte, 0, pumpBufferSizeBytes)}
+	r.writeTo(&w)
+	w.flush()
+	return out.Bytes()
+}
+
 func TestResultEncodeKeepsAnObjectsOwnTag(t *testing.T) {
 	object := &Result{RowDescription: []byte(resultTestDescription), Tag: "SELECT 1"}
 	object.appendRow([]byte{0, 1, 0, 0, 0, 1, 'v'})
@@ -109,6 +118,14 @@ func TestResultCodecRoundTrip(t *testing.T) {
 		}
 		if !bytes.Equal(decoded.encode(), original.encode()) || codec.Size(decoded) != codec.Size(original) {
 			t.Fatalf("%s: the round trip changed the result", name)
+		}
+		// the decoded result refers to the encoding, and an append to its data can't reach past it
+		if cap(decoded.data) != len(decoded.data) || cap(decoded.RowDescription) != len(decoded.RowDescription) {
+			t.Fatalf("%s: the decoded slices reach past their values", name)
+		}
+		appended, err := codec.AppendMarshal([]byte("envelope"), original)
+		if err != nil || string(appended[:8]) != "envelope" || !bytes.Equal(appended[8:], encoded) {
+			t.Fatalf("%s: appended = %x, %v", name, appended, err)
 		}
 	}
 	if _, err := codec.Marshal(nil); !errors.Is(err, errResultCodec) || codec.Size(nil) != 0 {

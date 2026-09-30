@@ -53,15 +53,15 @@ func (r *Result) Rows(order RowOrder) iter.Seq[Row] {
 		list := r.SeriesList
 		cursors := make([]rowCursor, 0, len(list))
 		for i, s := range list {
-			if s == nil || len(s.Points) == 0 {
+			if s == nil || s.PointCount() == 0 {
 				continue
 			}
 			start := 0
 			if order.Descending {
-				start = len(s.Points) - 1
+				start = s.PointCount() - 1
 			}
 			// #nosec G115 -- a series' length and a result's series count are far below 2^31
-			cursors = append(cursors, rowCursor{at: int64(s.Points[start].Epoch), point: int32(start), series: int32(i)})
+			cursors = append(cursors, rowCursor{at: int64(s.PointAt(start).Epoch), point: int32(start), series: int32(i)})
 		}
 		h := rowHeap{list: list, cursors: cursors, descending: order.Descending}
 		h.init()
@@ -70,7 +70,7 @@ func (r *Result) Rows(order RowOrder) iter.Seq[Row] {
 			for len(h.cursors) > 0 {
 				c := h.cursors[0]
 				s := list[c.series]
-				if !yield(Row{Series: s, Point: &s.Points[c.point], SeriesIndex: int(c.series)}) {
+				if !yield(Row{Series: s, Point: s.PointAt(int(c.point)), SeriesIndex: int(c.series)}) {
 					return
 				}
 				if h.advance(0) {
@@ -89,7 +89,7 @@ func (r *Result) Rows(order RowOrder) iter.Seq[Row] {
 			for len(h.cursors) > 0 && h.cursors[0].at == at {
 				c := h.cursors[0]
 				s := list[c.series]
-				group = append(group, Row{Series: s, Point: &s.Points[c.point], SeriesIndex: int(c.series)})
+				group = append(group, Row{Series: s, Point: s.PointAt(int(c.point)), SeriesIndex: int(c.series)})
 				if h.advance(0) {
 					h.down(0)
 				} else {
@@ -132,11 +132,11 @@ func (h *rowHeap) advance(i int) bool {
 	} else {
 		c.point++
 	}
-	points := h.list[c.series].Points
-	if c.point < 0 || int(c.point) >= len(points) {
+	s := h.list[c.series]
+	if c.point < 0 || int(c.point) >= s.PointCount() {
 		return false
 	}
-	c.at = int64(points[c.point].Epoch)
+	c.at = int64(s.PointAt(int(c.point)).Epoch)
 	return true
 }
 

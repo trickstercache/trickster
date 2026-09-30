@@ -35,6 +35,13 @@ jobs:
           version: v2.13.1
           args: --timeout 5m
           only-new-issues: true
+      # tests get the rules that replaced the Makefile's scans, as in make golangci-lint
+      - name: golangci-lint (tests)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+          args: --timeout 5m --tests --enable-only forbidigo,depguard,godox,goheader
+          only-new-issues: true
   docker:
     runs-on: ubuntu-latest
     steps:

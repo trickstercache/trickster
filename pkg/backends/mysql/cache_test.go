@@ -17,6 +17,7 @@
 package mysql
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -83,6 +84,31 @@ func TestCachedQueryResultRoundTrip(t *testing.T) {
 		len(got.result.Rows) != 1 || got.result.Rows[0][0].ToString() != "42" ||
 		len(got.extents) != 1 || !got.extents[0].Start.Equal(time.Unix(60, 0)) {
 		t.Fatalf("round trip mismatch: %+v", got)
+	}
+}
+
+func TestResultCodecAppendsInPlace(t *testing.T) {
+	result := &sqltypes.Result{
+		Fields:      []*querypb.Field{{Name: "t", Type: querypb.Type_INT64}, {Name: "m", Type: querypb.Type_VARCHAR}},
+		Rows:        [][]sqltypes.Value{{sqltypes.NewInt64(60), sqltypes.NewVarChar("cpu")}, {sqltypes.NewInt64(120), sqltypes.NULL}},
+		StatusFlags: 0x0102,
+	}
+	want, err := resultCodec{}.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := []byte("envelope")
+	got, err := resultCodec{}.AppendMarshal(bytes.Clone(prefix), result)
+	if err != nil || !bytes.Equal(got[:len(prefix)], prefix) || !bytes.Equal(got[len(prefix):], want) {
+		t.Fatalf("appended = %x, %v; want %x after the prefix", got, err, want)
+	}
+	back, err := resultCodec{}.Unmarshal(got[len(prefix):])
+	if err != nil || back.StatusFlags != result.StatusFlags || len(back.Rows) != 2 ||
+		back.Rows[0][1].ToString() != "cpu" || !back.Rows[1][1].IsNull() {
+		t.Fatalf("round trip = %+v, %v", back, err)
+	}
+	if _, err := (resultCodec{}).AppendMarshal(prefix, nil); err == nil {
+		t.Error("a nil result was marshaled")
 	}
 }
 

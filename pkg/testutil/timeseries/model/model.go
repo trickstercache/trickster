@@ -20,6 +20,7 @@ package model
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -175,16 +176,12 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 		}
 		w.Write([]byte(`},"values":[`))
 		sep = ""
-		slices.SortFunc(s.Points, func(a, b dataset.Point) int {
-			if a.Epoch < b.Epoch {
-				return -1
-			}
-			if a.Epoch > b.Epoch {
-				return 1
-			}
-			return 0
-		})
-		for _, p := range s.Points {
+		// the points may be a cached dataset's, which a marshal only reads, so any sort is of a copy
+		pts := s.Points
+		if !slices.IsSortedFunc(pts, pointCmp) {
+			pts = slices.SortedFunc(slices.Values(pts), pointCmp)
+		}
+		for _, p := range pts {
 			fmt.Fprintf(w, `%s[%s,"%s"]`,
 				sep,
 				strconv.FormatFloat(float64(p.Epoch)/1000000000, 'f', -1, 64),
@@ -197,4 +194,8 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	}
 	w.Write([]byte("]}}"))
 	return nil
+}
+
+func pointCmp(a, b dataset.Point) int {
+	return cmp.Compare(a.Epoch, b.Epoch)
 }

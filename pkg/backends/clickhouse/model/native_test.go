@@ -1215,3 +1215,7 @@ func TestCompoundNativeRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func formatEpochForType(ep epoch.Epoch, tfd timeseries.FieldDefinition) string {
+	return newNativeTimeFormat(tfd).format(ep)
+}

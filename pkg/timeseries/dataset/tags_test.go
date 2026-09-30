@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 	"unicode/utf8"
 
@@ -239,4 +240,29 @@ func TestStripTags(t *testing.T) {
 			t.Errorf("expected sum 30, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
 		}
 	})
+}
+
+func TestTagsAppendJSONMatchesMarshal(t *testing.T) {
+	large := Tags{}
+	for i := range 40 {
+		large["k"+strconv.Itoa(i)] = "v<" + strconv.Itoa(i) + ">"
+	}
+	for _, tags := range []Tags{
+		nil, {}, {"a": "b"}, large,
+		{"__name__": "up", "a<b>&c": "q\"uo\\te\n\t\x01", "u": "é 😀", "": ""},
+	} {
+		want, err := json.Marshal(map[string]string(tags))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(tags) == 0 {
+			want = []byte("{}")
+		}
+		if got := tags.JSON(); got != string(want) {
+			t.Errorf("JSON() = %s, want %s", got, want)
+		}
+		if got := tags.AppendJSON([]byte("x")); string(got) != "x"+string(want) {
+			t.Errorf("AppendJSON() = %s, want x%s", got, want)
+		}
+	}
 }

@@ -516,6 +516,8 @@ func allFanoutFailed(results []fanout.Result) bool {
 
 func aggregateStatus(results []gatherResult) (status int, statusHeader string, has2xx, hasNon2xx bool) {
 	var min2xx, maxErr int
+	// each member's header is parsed once, and the merge rendered once
+	var merged headers.ResultHeaderMerger
 	for _, res := range results {
 		if res.statusCode > 0 {
 			if res.statusCode >= 200 && res.statusCode < 300 {
@@ -532,10 +534,10 @@ func aggregateStatus(results []gatherResult) (status int, statusHeader string, h
 		}
 		if res.header != nil {
 			headers.StripMergeHeaders(res.header)
-			statusHeader = headers.MergeResultHeaderVals(statusHeader,
-				res.header.Get(headers.NameTricksterResult))
+			merged.Add(res.header.Get(headers.NameTricksterResult))
 		}
 	}
+	statusHeader = merged.String()
 	if has2xx {
 		status = min2xx
 	} else {
@@ -762,7 +764,10 @@ func (h *handler) serveStandard(
 					(sc < http.StatusOK || sc >= http.StatusMultipleChoices)),
 			}
 		},
-	})
+	}) // every member has returned, and what was decoded from its capture copied out of it; the
+	// results keep the captures' headers until the response is written
+	defer fanout.ReleaseCaptures(fanoutResults)
+
 	if parentCtx.Err() != nil {
 		return
 	}

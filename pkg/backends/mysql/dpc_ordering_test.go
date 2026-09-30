@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/collations"
@@ -534,4 +535,49 @@ func TestGroupOrderingPropagatesComparisonErrors(t *testing.T) {
 			t.Fatal("truncated an out-of-range collation to Unknown")
 		}
 	})
+}
+
+func TestGroupOrderingAcrossSparseBuckets(t *testing.T) {
+	plan := dpcOrderingPlan()
+	plan.Step = time.Minute
+	input := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI, nil)
+	// "c" is only in the first bucket and "a" only in the second, so neither bucket holds every series
+	for _, row := range []struct {
+		at    int64
+		group string
+	}{{0, "c"}, {0, "B"}, {60, "B"}, {60, "a"}} {
+		input.Rows = append(input.Rows, []sqltypes.Value{
+			sqltypes.NewInt64(row.at), sqltypes.NewVarChar(row.group), sqltypes.NewInt64(1),
+		})
+	}
+	d, err := dpcTestHandler.deltaOf(plan, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// series without rows yield none, wherever they are
+	r := d.DS.Results[0]
+	r.SeriesList = append(slices.Insert(r.SeriesList, 0, nil), &dataset.Series{})
+	got, err := dpcTestHandler.deltaResult(d, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order := groupOrder(got.Rows); !slices.Equal(order, []string{"B", "c", "a", "B"}) {
+		t.Fatalf("rows in order %v", order)
+	}
+}
+
+func TestRenderBuffersRelease(t *testing.T) {
+	(*renderBuffers)(nil).release()
+	// a buffer too large to keep is cleared but not kept
+	large := &renderBuffers{values: make([]sqltypes.Value, maxPooledRender/16)}
+	large.values[0] = sqltypes.NewVarChar("cached")
+	large.release()
+	if !large.values[0].IsNull() || len(large.values) != maxPooledRender/16 {
+		t.Fatal("a dropped buffer kept its values or was kept")
+	}
+	small := &renderBuffers{values: make([]sqltypes.Value, 4), rows: make([]sqltypes.Row, 1, 2)}
+	small.release()
+	if len(small.values) != 0 || len(small.rows) != 0 {
+		t.Fatal("a small buffer was not kept for reuse")
+	}
 }

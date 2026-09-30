@@ -19,9 +19,27 @@ package zstd
 import (
 	"io"
 
+	"github.com/trickstercache/trickster/v2/pkg/encoding/codecpool"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 
 	"github.com/klauspost/compress/zstd"
+)
+
+// a pooled encoder keeps a history of twice its window, 16 MiB at the default 8 MiB; RFC 9659 caps
+// HTTP's window at 8 MiB, and responses need far less
+const encoderWindow = 1 << 20
+
+var (
+	// a level can't be changed on a reused encoder, so each has its own pool
+	encoderPools [zstd.SpeedBestCompression + 1]*codecpool.Encoders
+	// one decoder at a time decodes in the caller's goroutine, and starts none of its own
+	decoderPool = codecpool.NewDecoders(func() codecpool.Decoder {
+		zr, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(1))
+		if err != nil {
+			panic("zstd: failed to create decoder: " + err.Error())
+		}
+		return zr
+	})
 )
 
 var (
@@ -38,6 +56,16 @@ func init() {
 	commonEncoder, err = zstd.NewWriter(nil)
 	if err != nil {
 		panic("zstd: failed to create encoder: " + err.Error())
+	}
+	for l := zstd.SpeedFastest; l <= zstd.SpeedBestCompression; l++ {
+		encoderPools[l] = codecpool.NewEncoders(func() codecpool.Encoder {
+			zw, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(l),
+				zstd.WithEncoderConcurrency(1), zstd.WithWindowSize(encoderWindow))
+			if err != nil {
+				panic("zstd: failed to create encoder: " + err.Error())
+			}
+			return zw
+		})
 	}
 }
 
@@ -72,26 +100,26 @@ func Encode(in []byte) ([]byte, error) {
 	return b, nil
 }
 
+// NewEncoder returns a pooled encoder writing to w, which returns to its pool when closed
 func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	if level < 1 {
-		level = 3
-	}
-	l := zstd.SpeedDefault
-	switch {
-	case level < 3:
-		l = zstd.SpeedFastest
-	case level > 3 && level < 8:
-		l = zstd.SpeedBetterCompression
-	case level > 7:
-		l = zstd.SpeedBestCompression
-	}
-	zw, _ := zstd.NewWriter(w, zstd.WithEncoderLevel(l))
-	return zw
+	return encoderPools[encoderLevel(level)].Get(w)
 }
 
+func encoderLevel(level int) zstd.EncoderLevel {
+	switch {
+	case level < 1, level == 3:
+		return zstd.SpeedDefault
+	case level < 3:
+		return zstd.SpeedFastest
+	case level < 8:
+		return zstd.SpeedBetterCompression
+	}
+	return zstd.SpeedBestCompression
+}
+
+// NewDecoder returns a pooled decoder reading from r, which returns to its pool when closed
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
-	zr, _ := zstd.NewReader(r)
-	return reader.NewReadCloserResetter(zr)
+	return decoderPool.Get(r)
 }
 
 // Detect reports whether in begins with an RFC 8878 Zstd frame magic

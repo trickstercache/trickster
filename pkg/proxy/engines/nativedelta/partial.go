@@ -220,6 +220,6 @@ func (e *Engine[R]) withPartials(req DeltaRequest[R], interior *Delta, pf *parti
 		return interior
 	}
 	// in time order, so no series needs sorting
-	trq := &timeseries.TimeRangeQuery{Step: req.Plan.Step, Phase: req.Plan.Phase}
-	return &Delta{Header: interior.Header, DS: dataset.MergeDisjoint(trq, start, interior.DS, end)}
+	// the interior's points stay in place, with the buckets beside them rather than copied in with them
+	return &Delta{Header: interior.Header, DS: dataset.MergeDisjointParts(req.Plan.Step, start, interior.DS, end)}
 }

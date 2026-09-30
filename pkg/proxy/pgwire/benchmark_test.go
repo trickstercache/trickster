@@ -17,6 +17,7 @@
 package pgwire
 
 import (
+	"io"
 	"strconv"
 	"testing"
 	"time"
@@ -86,6 +87,14 @@ func BenchmarkHitPath(b *testing.B) {
 			Protocol: "bench", CacheTTL: time.Hour, CacheClient: func() trickstercache.Cache { return cache },
 		}, resultCodec{})
 		engine.StoreDelta(name, &nativedelta.Entry[*nativedelta.Delta]{Payload: cached, Extents: cached.DS.ExtentList})
+		// as a cached answer is written: through a pooled buffer to the client
+		write := func(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) {
+			buffer := pumpBuffers.Get().(*[]byte)
+			out := frameWriter{w: io.Discard, buffer: (*buffer)[:0]}
+			writeDelta(&out, d, plan)
+			out.flush()
+			pumpBuffers.Put(buffer)
+		}
 		b.Run(name+"/bytes-hit", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
@@ -93,7 +102,7 @@ func BenchmarkHitPath(b *testing.B) {
 				if !ok {
 					b.Fatal("the entry was not cached")
 				}
-				_ = encodeDelta(&nativedelta.Delta{Header: entry.Payload.Header, DS: entry.Payload.DS.View(requested)}, plan)
+				write(&nativedelta.Delta{Header: entry.Payload.Header, DS: entry.Payload.DS.View(requested)}, plan)
 			}
 		})
 		b.Run(name+"/crop", func(b *testing.B) {
@@ -105,13 +114,13 @@ func BenchmarkHitPath(b *testing.B) {
 		b.Run(name+"/encode", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = encodeDelta(cached, plan)
+				write(cached, plan)
 			}
 		})
 		b.Run(name+"/encode-descending", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = encodeDelta(cached, descendingPlan)
+				write(cached, descendingPlan)
 			}
 		})
 		tail := benchDelta(buckets/10+1, benchSeries, start.Add(benchStep*time.Duration(buckets)))

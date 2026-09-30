@@ -36,11 +36,18 @@ func (el ExtentList) String() string {
 	if len(el) == 0 {
 		return ""
 	}
-	lines := make([]string, len(el))
-	for i, e := range el {
-		lines[i] = e.String()
+	return string(el.AppendString(make([]byte, 0, len(el)*28)))
+}
+
+// AppendString appends the ExtentList to dst as String renders it
+func (el ExtentList) AppendString(dst []byte) []byte {
+	for i := range el {
+		if i > 0 {
+			dst = append(dst, ';')
+		}
+		dst = el[i].AppendString(dst)
 	}
-	return strings.Join(lines, ";")
+	return dst
 }
 
 // Encompasses returns true if the provided extent is contained

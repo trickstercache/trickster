@@ -18,7 +18,6 @@ package flux
 
 import (
 	"bytes"
-	"encoding/csv"
 	"errors"
 	"net/http/httptest"
 	"strings"
@@ -26,6 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -134,6 +134,15 @@ func TestGetCellValueBranches(t *testing.T) {
 	}
 
 	b, used = getCellValue(sh, timeseries.FieldDefinition{
+		Name:         stopColumnName,
+		Role:         timeseries.RoleUntracked,
+		DefaultValue: "2020-01-01T00:00:00Z",
+	}, pt, 0, 0)
+	if used || string(b) != `"2020-01-01T00:00:00Z"` {
+		t.Fatalf("time stop = (%s, %v)", b, used)
+	}
+
+	b, used = getCellValue(sh, timeseries.FieldDefinition{
 		Role:         timeseries.RoleTag,
 		Name:         "missing",
 		DefaultValue: "def",
@@ -157,6 +166,12 @@ func TestGetCsvCellValueBranches(t *testing.T) {
 
 	sh := dataset.SeriesHeader{Tags: dataset.Tags{"host": "a"}}
 	pt := dataset.Point{Values: []any{nil, "", 9}}
+	getCsvCellValue := func(sh dataset.SeriesHeader, fd timeseries.FieldDefinition, p dataset.Point,
+		next, table int,
+	) (string, bool) {
+		c, used := csvCellFor(sh.Tags, &fd, &p, next)
+		return string(appendCsvCell(nil, &c, &p, table)), used
+	}
 
 	s, used := getCsvCellValue(sh, timeseries.FieldDefinition{
 		Role:         timeseries.RoleValue,
@@ -189,6 +204,15 @@ func TestGetCsvCellValueBranches(t *testing.T) {
 	}, pt, 0, 1)
 	if used || s != "z" {
 		t.Fatalf("default = (%q, %v)", s, used)
+	}
+
+	s, used = getCsvCellValue(sh, timeseries.FieldDefinition{Role: timeseries.RoleValue}, pt, 2, 1)
+	if !used || s != "9" {
+		t.Fatalf("value = (%q, %v)", s, used)
+	}
+	s, _ = getCsvCellValue(sh, timeseries.FieldDefinition{Role: timeseries.RoleUntracked, Name: tableColumnName}, pt, 0, 104)
+	if s != "104" {
+		t.Fatalf("table = %q", s)
 	}
 }
 
@@ -233,7 +257,7 @@ func TestCSVWriteErrorPaths(t *testing.T) {
 	st := &state{
 		s: s,
 		e: timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)},
-		w: csv.NewWriter(errWriter{}),
+		w: &csvRecords{cw: tbytes.NewChunkWriter(errWriter{})},
 		t: true,
 		g: true,
 		d: true,

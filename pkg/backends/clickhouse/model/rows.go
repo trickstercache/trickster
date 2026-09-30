@@ -18,6 +18,7 @@ package model
 
 import (
 	"cmp"
+	"iter"
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -29,21 +30,36 @@ type outputRow struct {
 	point  *dataset.Point
 }
 
-// timeOrderedRows flattens a result the way ClickHouse returns a bucketed,
-// grouped query: rows ordered by time, with each bucket's series in the
-// order the series are listed. Long-to-wide conversion in clients relies
-// on that order, so a series-major layout would render as one zigzag line.
-func timeOrderedRows(r *dataset.Result) []outputRow {
-	n := 0
+// rows by time with each bucket's series in list order, as ClickHouse returns a grouped query, which
+// clients' long-to-wide conversion relies on; the row count is returned too
+func timeOrderedRows(r *dataset.Result) (iter.Seq[outputRow], int) {
+	n, sorted := 0, true
 	for _, s := range r.SeriesList {
-		n += len(s.Points)
+		if s == nil {
+			continue
+		}
+		n += s.PointCount()
+		sorted = sorted && s.IsSorted()
+	}
+	if sorted {
+		// merging the sorted series breaks ties by series position, as the stable sort below does
+		return func(yield func(outputRow) bool) {
+			for row := range r.Rows(dataset.RowOrder{}) {
+				if !yield(outputRow{series: row.Series, point: row.Point}) {
+					return
+				}
+			}
+		}, n
 	}
 	rows := make([]outputRow, 0, n)
 	for _, s := range r.SeriesList {
-		for i := range s.Points {
-			rows = append(rows, outputRow{series: s, point: &s.Points[i]})
+		if s == nil {
+			continue
+		}
+		for i := range s.PointCount() {
+			rows = append(rows, outputRow{series: s, point: s.PointAt(i)})
 		}
 	}
 	slices.SortStableFunc(rows, func(a, b outputRow) int { return cmp.Compare(a.point.Epoch, b.point.Epoch) })
-	return rows
+	return slices.Values(rows), n
 }

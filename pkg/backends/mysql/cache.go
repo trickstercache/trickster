@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -109,18 +110,24 @@ type protocolMetricHandles struct {
 // two StatusFlags bytes followed by the vitess proto encoding.
 type resultCodec struct{}
 
-func (resultCodec) Marshal(result *sqltypes.Result) ([]byte, error) {
+func (c resultCodec) Marshal(result *sqltypes.Result) ([]byte, error) {
+	return c.AppendMarshal(nil, result)
+}
+
+// AppendMarshal writes the proto encoding in place after the status flags, where marshaling it on
+// its own would take a copy to put the flags first
+func (resultCodec) AppendMarshal(out []byte, result *sqltypes.Result) ([]byte, error) {
 	if result == nil {
 		return nil, errors.New("nil MySQL cache result")
 	}
 	protoResult := sqltypes.ResultToProto3(result)
-	resultBytes, err := protoResult.MarshalVT()
-	if err != nil {
+	size := protoResult.SizeVT()
+	out = binary.BigEndian.AppendUint16(slices.Grow(out, 2+size), result.StatusFlags)
+	start := len(out)
+	out = out[:start+size]
+	if _, err := protoResult.MarshalToSizedBufferVT(out[start:]); err != nil {
 		return nil, err
 	}
-	out := make([]byte, 2+len(resultBytes))
-	binary.BigEndian.PutUint16(out[:2], result.StatusFlags)
-	copy(out[2:], resultBytes)
 	return out, nil
 }
 
@@ -196,31 +203,37 @@ func (h *protocolHandler) cacheClient() cache.Cache {
 
 func (h *protocolHandler) executeCached(c *vtmysql.Conn, session *upstreamSession,
 	query string, analysis sqlanalyzer.Analysis,
-) (*sqltypes.Result, cachestatus.LookupStatus, error) {
+) (*sqltypes.Result, *renderBuffers, cachestatus.LookupStatus, error) {
+	// returns the result and, when its rows were rendered for this request alone, the buffers that
+	// hold them, which the caller releases once the result is written
 	switch analysis.Mode {
 	case sqlanalyzer.CacheModeDelta:
 		if h.unaligned(analysis) {
-			return h.executeObject(c, session, query, true)
+			result, lookup, err := h.executeObject(c, session, query, true)
+			return result, nil, lookup, err
 		}
 		if analysis.Plan != nil {
 			answer, lookup, err := h.executeDelta(c, session, query, analysis.Plan)
 			if err != nil || answer.Delta == nil {
-				return answer.Object, lookup, err
+				return answer.Object, nil, lookup, err
 			}
-			result, err := h.deltaResult(answer.Delta, analysis.Plan)
+			buffers := getRenderBuffers()
+			result, err := h.renderDelta(answer.Delta, analysis.Plan, buffers)
 			if err != nil {
+				buffers.release()
 				// rows that cannot be rendered are no reason to fail the client's statement, nor to keep
 				h.observeRewriteFailure("render_delta_rows")
 				h.deltaEngine().RemoveDelta(h.planCacheKey(c, session, cacheModeDPC, analysis.Plan))
 				result, err = h.executeOrigin(session, query)
-				return result, cachestatus.LookupStatusProxyOnly, err
+				return result, nil, cachestatus.LookupStatusProxyOnly, err
 			}
-			return result, lookup, nil
+			return result, buffers, lookup, nil
 		}
 	case sqlanalyzer.CacheModeObject:
-		return h.executeObject(c, session, query, false)
+		result, lookup, err := h.executeObject(c, session, query, false)
+		return result, nil, lookup, err
 	}
-	return nil, cachestatus.LookupStatusProxyOnly, errors.New("uncacheable MySQL query")
+	return nil, nil, cachestatus.LookupStatusProxyOnly, errors.New("uncacheable MySQL query")
 }
 
 func (h *protocolHandler) unaligned(analysis sqlanalyzer.Analysis) bool {
@@ -401,8 +414,9 @@ func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
 		result.Rows = make([][]sqltypes.Value, 0, min(h.config.MaxResultRows, resultBatchSize))
 	}
 	rows := 0
+	var reuse []sqltypes.Value
 	for {
-		row, fetchErr := upstream.FetchNext(nil)
+		row, fetchErr := upstream.FetchNext(reuse)
 		if fetchErr != nil {
 			return nil, nil, fetchErr
 		}
@@ -422,12 +436,15 @@ func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
 			return nil, nil, h.resultLimitExceeded(session)
 		}
 		rows++
-		switch {
-		case sinkFor == nil:
+		if sinkFor == nil {
 			result.Rows = append(result.Rows, row)
-		case sinkErr == nil:
+			continue
+		}
+		if sinkErr == nil {
 			sinkErr = sink.row(row)
 		}
+		// the sink copies what it keeps, so the next row is read into this one's slice
+		reuse = row[:0]
 	}
 }
 

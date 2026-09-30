@@ -18,15 +18,18 @@ package handler
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/gzip"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
-	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/zstd"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
@@ -112,7 +115,6 @@ func TestWrite(t *testing.T) {
 	}
 
 	ew.encoder = &responseEncoder{ResponseWriter: w}
-	ew.decoder = reader.NewReadCloserResetter(nil)
 	ew.Close()
 }
 
@@ -161,84 +163,115 @@ func TestWriteEncoded(t *testing.T) {
 	}
 }
 
+// writes an encoded body through ew in parts of chunk bytes, and closes it
+func writeInParts(t *testing.T, ew ResponseEncoder, body []byte, chunk int) {
+	t.Helper()
+	for b := body; len(b) > 0; {
+		n := min(chunk, len(b))
+		i, err := ew.Write(b[:n])
+		if err != nil || i != n {
+			t.Fatalf("write of %d bytes: %d, %v", n, i, err)
+		}
+		b = b[n:]
+	}
+	if err := ew.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestWriteDecoded(t *testing.T) {
-	const expected = "trickster"
-
-	w := httptest.NewRecorder()
-	ew := &responseEncoder{ResponseWriter: w}
-	ew.decoderInit = gzip.NewDecoder
-
-	b, err := gzip.Encode([]byte(expected))
+	want := benchJSONBody(200 << 10)
+	encoded, err := gzip.Encode(want)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
-	i, err := ew.writeDecoded(b)
-	if i != 34 {
-		t.Errorf("expected %d got %d", 34, i)
-	}
-	if err != nil {
-		t.Error(err)
-	}
-	s := w.Body.String()
-	if s != expected {
-		t.Errorf("expected %s got %s", expected, s)
-	}
-
-	// catch the reset clause
-	w = httptest.NewRecorder()
-	ew.ResponseWriter = w
-
-	i, err = ew.writeDecoded(b)
-	if i != 34 {
-		t.Errorf("expected %d got %d", 34, i)
-	}
-	if err != nil {
-		t.Error(err)
-	}
-	s = w.Body.String()
-	if s != expected {
-		t.Errorf("expected %s got %s", expected, s)
+	// a body that arrives in one write, and one that arrives in many
+	for _, chunk := range []int{len(encoded), 1000} {
+		w := httptest.NewRecorder()
+		ew := &responseEncoder{ResponseWriter: w, decoderInit: gzip.NewDecoder}
+		ew.selectWriter()
+		ew.prepared = true
+		writeInParts(t, ew, encoded, chunk)
+		if !bytes.Equal(w.Body.Bytes(), want) {
+			t.Errorf("chunk %d: got %d bytes, want %d", chunk, w.Body.Len(), len(want))
+		}
+		if ew.held != nil {
+			t.Error("the held body was not released")
+		}
 	}
 }
 
 func TestWriteTranscoded(t *testing.T) {
-	const expected = "trickster"
+	want := benchJSONBody(200 << 10)
+	encoded, err := gzip.Encode(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chunk := range []int{len(encoded), 1000} {
+		w := httptest.NewRecorder()
+		ew := &responseEncoder{ResponseWriter: w, decoderInit: gzip.NewDecoder,
+			encoder: zstd.NewEncoder(w, -1)}
+		ew.selectWriter()
+		ew.prepared = true
+		writeInParts(t, ew, encoded, chunk)
+		got, err := zstd.Decode(w.Body.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("chunk %d: got %d bytes, want %d", chunk, len(got), len(want))
+		}
+	}
+}
 
+func TestWriteDecodedCorrupt(t *testing.T) {
 	w := httptest.NewRecorder()
-	ew := &responseEncoder{ResponseWriter: w}
-	ew.decoderInit = gzip.NewDecoder
-	ew.encoder = NewEncoder(w, nil)
+	ew := &responseEncoder{ResponseWriter: w, decoderInit: gzip.NewDecoder}
+	ew.selectWriter()
+	ew.prepared = true
+	if _, err := ew.Write([]byte("this is not a gzip stream")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ew.Close(); err == nil {
+		t.Error("expected the decode to fail at close")
+	}
+}
 
-	b, err := gzip.Encode([]byte(expected))
+func TestHandleCompressionDecodesStreamedBody(t *testing.T) {
+	// through the middleware, as an engine serves a cached gzip object to a client that doesn't
+	// accept gzip, in the parts a streamed cache body is copied in
+	want := benchJSONBody(200 << 10)
+	encoded, err := gzip.Encode(want)
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
-	i, err := ew.writeTranscoded(b)
-	if i != 34 {
-		t.Errorf("expected %d got %d", 34, i)
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		profile.FromContext(r.Context()).ContentEncoding = providers.GZipValue
+		w.Header().Set(headers.NameContentType, headers.ValueApplicationJSON)
+		w.Header().Set(headers.NameContentEncoding, providers.GZipValue)
+		for b := encoded; len(b) > 0; {
+			n := min(1000, len(b))
+			w.Write(b[:n])
+			b = b[n:]
+		}
+	})
+	h := HandleCompression(next, sets.New([]string{headers.ValueApplicationJSON}))
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if ce := w.Header().Get(headers.NameContentEncoding); ce != "" {
+		t.Errorf("unexpected Content-Encoding %q", ce)
 	}
-	if err != nil {
-		t.Error(err)
+	if !bytes.Equal(w.Body.Bytes(), want) {
+		t.Errorf("got %d bytes, want %d", w.Body.Len(), len(want))
 	}
-	s := w.Body.String()
-	if s != expected {
-		t.Errorf("expected %s got %s", expected, s)
-	}
+}
 
-	// catch the reset clause
-	w = httptest.NewRecorder()
-	ew.encoder = NewEncoder(w, nil)
-
-	i, err = ew.writeTranscoded(b)
-	if i != 34 {
-		t.Errorf("expected %d got %d", 34, i)
-	}
-	if err != nil {
-		t.Error(err)
-	}
-	s = w.Body.String()
-	if s != expected {
-		t.Errorf("expected %s got %s", expected, s)
+func TestPutHeldBufferDropsLargeBuffers(t *testing.T) {
+	buf := bytes.NewBuffer(make([]byte, 0, maxPooledHeldBuffer+1))
+	putHeldBuffer(buf)
+	if got := heldBuffers.Get().(*bytes.Buffer); got == buf {
+		t.Error("a buffer over the limit was pooled")
 	}
 }
 

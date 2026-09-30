@@ -17,6 +17,7 @@
 package mech
 
 import (
+	"context"
 	"net/http"
 
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -37,4 +38,13 @@ func align(r *http.Request, o *tctx.StepAlignmentOverride) *http.Request {
 		return r
 	}
 	return r.WithContext(tctx.WithStepAlignmentOverride(r.Context(), o))
+}
+
+// AlignContext returns ctx carrying the step alignment o as Align does, for a caller that adds
+// more to the context and would otherwise copy the request once for each
+func AlignContext(ctx context.Context, o *tctx.StepAlignmentOverride) context.Context {
+	if o == nil || tctx.StepAlignmentOverrideOf(ctx) != nil {
+		return ctx
+	}
+	return tctx.WithStepAlignmentOverride(ctx, o)
 }

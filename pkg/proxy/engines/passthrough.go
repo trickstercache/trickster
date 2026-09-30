@@ -23,10 +23,10 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -42,25 +42,15 @@ import (
 	"golang.org/x/net/http/httpguts"
 )
 
-var passthroughBuffers = sync.Pool{
-	New: func() any {
-		b := make([]byte, HTTPBlockSize)
-		return &b
-	},
-}
-
+// lends ReverseProxy the same copy buffers as the caching engines
 type bufferPool struct{}
 
 func (bufferPool) Get() []byte {
-	return *passthroughBuffers.Get().(*[]byte)
+	return *tbytes.GetCopyBuffer()
 }
 
 func (bufferPool) Put(b []byte) {
-	if cap(b) != HTTPBlockSize {
-		return
-	}
-	b = b[:HTTPBlockSize]
-	passthroughBuffers.Put(&b)
+	tbytes.PutCopyBuffer(&b)
 }
 
 // NewPassthroughHandler returns a Handler that proxies to the backend without

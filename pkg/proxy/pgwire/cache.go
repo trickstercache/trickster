@@ -189,16 +189,15 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 	var rejected *originError
 	switch {
 	case err == nil:
-		var response []byte
 		var rows int
 		if answer.Delta != nil {
-			response, rows = encodeDelta(answer.Delta, plan), answer.Delta.Rows()
+			rows = answer.Delta.Rows()
 		} else {
-			response, rows = answer.Object.encode(), answer.Object.Rows()
+			rows = answer.Object.Rows()
 		}
 		// counted before the client can see the answer, so a reader of both never finds the count behind
 		s.server.cache.observe(mode, lookup, rows, time.Since(started))
-		if !writeAll(s.client, response, s.server.config.WriteTimeout) {
+		if !s.writeCached(answer.Delta, answer.Object, plan) {
 			return false, net.ErrClosed
 		}
 		return true, nil
@@ -225,6 +224,25 @@ func (s *session) serveCached(outcome gateOutcome) (bool, error) {
 		return false, nil
 	}
 	return false, err
+}
+
+// writes a cached answer through a pooled buffer, where rendering it whole would take a buffer
+// the size of the response
+func (s *session) writeCached(delta *nativedelta.Delta, object *Result, plan *sqlanalyzer.QueryPlan) bool {
+	buffer := pumpBuffers.Get().(*[]byte)
+	defer pumpBuffers.Put(buffer)
+	// one deadline for the whole response, as when it was written in one piece
+	if timeout := s.server.config.WriteTimeout; timeout > 0 {
+		_ = s.client.SetWriteDeadline(time.Now().Add(timeout))
+	}
+	out := frameWriter{w: s.client, buffer: (*buffer)[:0]}
+	if delta != nil {
+		writeDelta(&out, delta, plan)
+	} else {
+		object.writeTo(&out)
+	}
+	out.flush()
+	return out.err == nil
 }
 
 func (s *session) bypass(key, reason string) {

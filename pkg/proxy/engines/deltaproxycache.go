@@ -45,6 +45,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -107,9 +108,27 @@ func fetchLivePoint(r *http.Request, o *bo.Options, client backends.TimeseriesBa
 	// returned time series, it will not be merged
 	if len(x) > 0 && x[0].End.After(trq.Extent.End) &&
 		len(x) == 1 && x[0].Start.Truncate(time.Second).After(alignedNow.Extent.End) {
-		rts.Merge(false, ffts)
+		mergeResponse(rts, false, ffts)
 	}
 	return st.String()
+}
+
+// merges into rts, which is the caller's own or a view, adding what falls beside a series' points as
+// parts rather than copying its points (see dataset.MergeParts)
+func mergeResponse(rts timeseries.Timeseries, sortPoints bool, collection ...timeseries.Timeseries) {
+	if ds, ok := rts.(*dataset.DataSet); ok {
+		ds.MergeParts(sortPoints, collection...)
+		return
+	}
+	rts.Merge(sortPoints, collection...)
+}
+
+// rts with its series' points in one slice each, for a reader that reads Points alone
+func flatResponse(rts timeseries.Timeseries) timeseries.Timeseries {
+	if ds, ok := rts.(*dataset.DataSet); ok {
+		return ds.Flat()
+	}
+	return rts
 }
 
 // prepareDPCResponse validates before cache or client writes. When fast-forward
@@ -172,6 +191,10 @@ func finalizeDPCResponse(
 	rh = setResponseFormat(rh, rlo)
 	recordDPCResult(r, cacheStatus, sc, r.URL.Path, ffStatus, elapsed, missRanges, failed, rh, partials...)
 
+	// a transformer, a merge and a marshaler that reads Points alone take the points in one slice
+	if rsc.TSTransformer != nil || rsc.IsMergeMember || !modeler.WireMarshalReadsParts {
+		rts = flatResponse(rts)
+	}
 	rsc.TS = rts
 	Respond(w, 0, rh, nil) // body and code are nil so this only sets appropriate headers; no writes
 	if rsc.TSTransformer != nil {
@@ -374,7 +397,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		// isExecutor distinguishes the executor from waiters after Do returns,
 		// since singleflight.Do returns shared=true for the executor too.
 		var isExecutor bool
-		v, sfErr, _ := dpcGroup.Do(sfKey, func() (any, error) {
+		v, sfErr, shared := dpcGroup.Do(sfKey, func() (any, error) {
 			isExecutor = true
 			// buildErrorResult constructs a dpcResult for error responses.
 			buildErrorResult := func(sc int, h http.Header, body []byte, fext timeseries.ExtentList) *dpcResult {
@@ -389,6 +412,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			}
 
 			var cts timeseries.Timeseries
+			// ctsShared is true while cts is the dataset a memory cache holds, which is read in place
+			// and viewed before its first change, so that a hit copies nothing
+			var ctsShared bool
 			var doc *HTTPDocument
 			var elapsed time.Duration
 			var cacheStatus status.LookupStatus
@@ -423,9 +449,10 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					// entry was removed and data came from origin; don't inherit the pre-recovery status
 					cacheStatus = status.LookupStatusKeyMiss
 				} else {
-					cts = doc.timeseries.Clone() // Load the Cached Timeseries
+					cts, ctsShared = doc.timeseries, cache.Configuration().Provider == providerMemory
 					if trq.PolicyStep > 0 {
 						// Raw-sample cache identity does not include the caller's policy hint.
+						cts = ownView(cts, &ctsShared)
 						cts.SetTimeRangeQuery(trq)
 					}
 					if o.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU {
@@ -448,7 +475,12 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				vr = cts.VolatileExtents()
 			}
 			if cacheStatus == status.LookupStatusPartialHit {
-				missRanges = gridExtents(cts.Extents(), rsc).CalculateDeltas(
+				el := cts.Extents()
+				if ctsShared {
+					// the deltas are calculated by sorting the list in place
+					el = el.Clone()
+				}
+				missRanges = gridExtents(el, rsc).CalculateDeltas(
 					timeseries.ExtentList{trq.Extent}, trq.Step)
 				// this refetches the volatile window: volatile ranges within the client's range are
 				// re-requested, which only happens when the request is already a phit
@@ -508,6 +540,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if len(mts) > 0 {
 					// on phit, elapsed records the time spent waiting for all upstream requests to complete
 					elapsed = time.Since(now)
+					cts = ownView(cts, &ctsShared)
 					cts.Merge(true, mts...)
 				}
 			}
@@ -515,6 +548,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// this maintains the volatile window, by adding newly volatile ranges to
 			// the timeseries's volatile list, and removing those that are no longer volatile
 			if bt > 0 && cacheStatus != status.LookupStatusHit {
+				cts = ownView(cts, &ctsShared)
 				var shouldCompress bool
 				ve := cts.VolatileExtents()
 				// first, remove those that are now too old to be volatile.
@@ -544,13 +578,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
-			// cts is the cacheable time series, rts is the user's response timeseries
-			var rts timeseries.Timeseries
-			if cacheStatus != status.LookupStatusKeyMiss {
-				rts = cts.CroppedClone(trq.Extent)
-			} else {
-				rts = cts.Clone()
-			}
+			// cts is the cacheable time series, rts is the user's response timeseries, which reads the
+			// points of cts in place: from here on, cts is only cropped, which keeps copies, and stored
+			rts := responseView(cts, trq.Extent, cacheStatus != status.LookupStatusKeyMiss)
 			rts.SetTimeRangeQuery(trq)
 			wireBody, err := prepareDPCResponse(rts, rlo, modeler, doc.StatusCode)
 			if err != nil {
@@ -560,6 +590,7 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			// Crop the Cache Object down to the Sample Size or Age Retention Policy and the
 			// Volatile Window before storing to cache
 			if cacheStatus != status.LookupStatusHit {
+				cts = ownView(cts, &ctsShared)
 				// a bucket still aggregating is served but never cached, so only complete
 				// buckets reach the cache
 				cacheEnd, bucketed := trq.LastCompleteLabel(now)
@@ -597,18 +628,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 
 			ffStatus := fetchLivePoint(r, o, client, rlo, trq, alignedNow, rts)
 
-			// marshal the response timeseries to wire format, unless the
-			// provider renders per request (see MarshalVariesByRequest), in
-			// which case each caller marshals the shared timeseries itself
+			// the response timeseries is marshaled when a caller first serves it, unless the provider
+			// renders per request (see MarshalVariesByRequest), when each caller marshals it itself
 			rts.SetExtents(nil) // so they are not included in the client response json
-			if wireBody == nil && !marshalVaries {
-				var buf bytes.Buffer
-				modeler.WireMarshalWriter(rts, rlo, doc.StatusCode, &buf)
-				wireBody = buf.Bytes()
-			}
 
 			return &dpcResult{
 				wireBody:           wireBody,
+				modeler:            modeler,
+				rlo:                rlo,
 				rts:                rts,
 				headers:            doc.SafeHeaderClone(),
 				statusCode:         doc.StatusCode,
@@ -663,8 +690,14 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		sc := result.statusCode
 
 		if partials != nil {
-			// the partial buckets are this caller's own, so they join its own copy of the interior
-			rts := result.rts.Clone()
+			// the partial buckets join this caller's own view of the interior, or its own copy when
+			// a transformer or merge may write the tags and values a view shares with the cache
+			var rts timeseries.Timeseries
+			if rsc.TSTransformer != nil || rsc.IsMergeMember {
+				rts = result.rts.Clone()
+			} else {
+				rts = responseView(result.rts, timeseries.Extent{}, false)
+			}
 			pbs, values := partials.mergeInto(rts, o, now, rsc.Tracer, span)
 			finalizeDPCResponse(w, r, rsc, rts, rh, sc,
 				cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
@@ -686,10 +719,15 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 			return
 		}
 
-		// normal path: serve the pre-marshaled wire bytes directly
+		// normal path: callers that share the result serve one body marshaled for them all, and a
+		// caller alone with it marshals straight to its client, with no body the size of the response
+		var body []byte
+		if shared || result.wireBody != nil {
+			body = result.wire()
+		}
 		finalizeDPCResponse(w, r, rsc, result.rts, rh, sc,
 			cacheStatus, result.ffStatus, result.elapsed, result.missRanges,
-			result.failedExtents, result.uncachedValueCount, key, o, rlo, modeler, result.wireBody, nil)
+			result.failedExtents, result.uncachedValueCount, key, o, rlo, modeler, body, nil)
 		return
 	}
 
@@ -721,7 +759,8 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		Respond(w, sc, h, bytes.NewReader(doc.Body))
 		return
 	}
-	rts = cts.Clone()
+	// nothing else holds what was just fetched, as it isn't cached
+	rts = cts
 	rts.SetTimeRangeQuery(trq)
 	wireBody, err := prepareDPCResponse(rts, rlo, modeler, doc.StatusCode)
 	if err != nil {
@@ -749,6 +788,35 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 	finalizeDPCResponse(w, r, rsc, rts, rh, sc,
 		cacheStatus, ffStatus, elapsed.Seconds(), missRanges, failedExts, uncachedValueCount+values,
 		key, o, rlo, modeler, wireBody, pbs)
+}
+
+// a view of ts for a response, cropped to e when crop is set, with read-only points and values; a
+// model other than a DataSet is copied, as a view wouldn't carry its additions
+func responseView(ts timeseries.Timeseries, e timeseries.Extent, crop bool) timeseries.Timeseries {
+	ds, ok := ts.(*dataset.DataSet)
+	switch {
+	case ok && crop:
+		return ds.CroppedView(e)
+	case ok:
+		return ds.FullView()
+	case crop:
+		return ts.CroppedClone(e)
+	}
+	return ts.Clone()
+}
+
+// ts to change: while the cache shares it, a view, whose shared points, values and tags are never
+// written, or a clone for a model a view can't carry or hooks that might write them
+func ownView(ts timeseries.Timeseries, shared *bool) timeseries.Timeseries {
+	if !*shared {
+		return ts
+	}
+	*shared = false
+	if ds, ok := ts.(*dataset.DataSet); ok && ds.Merger == nil && ds.SizeCropper == nil &&
+		ds.RangeCropper == nil {
+		return ds.FullView()
+	}
+	return ts.Clone()
 }
 
 func oldestRetained(trq *timeseries.TimeRangeQuery, retention int64, now time.Time) time.Time {
@@ -917,26 +985,32 @@ func recordDPCResult(
 		elapsed, needed, failed, header, partials...)
 }
 
-func getDecoderReader(resp *http.Response) io.Reader {
-	var reader io.Reader = resp.Body
-	// if the content is encoded, it will need to be decoded
+// returns a reader of resp's body, decoded if it is encoded; the closer, when not nil, releases
+// the decoder once the reader is done with
+func getDecoderReader(resp *http.Response) (io.Reader, io.Closer) {
 	if ce := resp.Header.Get(headers.NameContentEncoding); ce != "" {
-		decoderInit := providers.GetDecoderInitializer(ce)
-		if decoderInit != nil {
-			reader = decoderInit(io.NopCloser(reader))
+		if decoderInit := providers.GetDecoderInitializer(ce); decoderInit != nil {
+			dec := decoderInit(resp.Body)
 			resp.Header.Del(headers.NameContentEncoding)
+			return dec, dec
 		}
 	}
-	return reader
+	return resp.Body, nil
 }
 
-func getTimeseriesReader(resp *http.Response) io.Reader {
+func getTimeseriesReader(resp *http.Response) (io.Reader, io.Closer) {
+	reader, closer := getDecoderReader(resp)
 	// a response that names its format, as ClickHouse's do, tells the unmarshaler how to read it
-	reader := getDecoderReader(resp)
 	if format := resp.Header.Get(hnClickHouseFormat); format != "" {
-		return timeseries.NewFormatHintReader(reader, format)
+		return timeseries.NewFormatHintReader(reader, format), closer
 	}
-	return reader
+	return reader, closer
+}
+
+func closeDecoder(c io.Closer) {
+	if c != nil {
+		c.Close()
+	}
 }
 
 func fetchConcurrencyLimit(o *bo.Options) int {
@@ -982,14 +1056,14 @@ func fetchExtents(
 			if !ok {
 				return nil
 			}
-			rq := pr.Clone()
 			mrsc := rsc.Clone()
-			rq.upstreamRequest = rq.upstreamRequest.WithContext(tctx.WithResources(
-				trace.ContextWithSpan(context.Background(), span),
-				mrsc))
-			rq.upstreamRequest = rq.upstreamRequest.WithContext(profile.ToContext(rq.upstreamRequest.Context(),
+			rq, err := pr.fetchClone(profile.ToContext(
+				tctx.WithResources(trace.ContextWithSpan(context.Background(), span), mrsc),
 				dpcUpstreamEncodingProfile(mrsc.TSReqestOptions)))
-			if err := client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, &e); err != nil {
+			if err == nil {
+				err = client.SetExtent(rq.upstreamRequest, rsc.TimeRangeQuery, &e)
+			}
+			if err != nil {
 				logger.Error("could not rewrite cache-miss time range query",
 					logging.Pairs{keys.Error: err.Error(), keys.BackendName: client.Name()})
 				errTs[i] = el[i]
@@ -1029,7 +1103,9 @@ func fetchExtents(
 			}
 
 			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				nts, ferr := wur(getTimeseriesReader(resp), rsc.TimeRangeQuery)
+				tr, dec := getTimeseriesReader(resp)
+				nts, ferr := wur(tr, rsc.TimeRangeQuery)
+				closeDecoder(dec)
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{keys.Detail: ferr.Error()})
@@ -1049,7 +1125,9 @@ func fetchExtents(
 				var s string
 				if resp.Body != nil {
 					var readErr error
-					b, readErr = io.ReadAll(io.LimitReader(getDecoderReader(resp), errorBodyCap))
+					dr, dec := getDecoderReader(resp)
+					b, readErr = io.ReadAll(io.LimitReader(dr, errorBodyCap))
+					closeDecoder(dec)
 					if readErr != nil {
 						logger.Warn("failed to read upstream error response body",
 							logging.Pairs{keys.Detail: readErr.Error()})

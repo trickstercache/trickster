@@ -201,10 +201,13 @@ func benchmarkDeltaOps(b *testing.B, name string, plan *sqlanalyzer.QueryPlan, r
 	b.Run(name+"/CropRender", func(b *testing.B) {
 		b.ReportAllocs()
 		for b.Loop() {
+			// as a hit is served: rendered into pooled buffers, released once written
 			cropped := &nativedelta.Delta{Header: whole.Header, DS: whole.DS.View(crop)}
-			if _, err := dpcTestHandler.deltaResult(cropped, plan); err != nil {
+			buffers := getRenderBuffers()
+			if _, err := dpcTestHandler.renderDelta(cropped, plan, buffers); err != nil {
 				b.Fatal(err)
 			}
+			buffers.release()
 		}
 	})
 	if retain == 0 {

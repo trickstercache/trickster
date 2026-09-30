@@ -151,7 +151,7 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 		eg.SetLimit(runtime.GOMAXPROCS(0))
 		var skips int32
 		for j, s := range ds.Results[i].SeriesList {
-			if s == nil || len(s.Points) == 0 {
+			if s == nil || s.PointCount() == 0 {
 				atomic.StoreInt32(&skips, 1)
 				continue
 			}
@@ -160,10 +160,11 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 				sc := &Series{
 					Header: s.Header.Clone(),
 				}
-				l := len(s.Points)
-				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
+				all := s.FlatPoints()
+				l := len(all)
+				start, end := all.findRange(startNS, endNS, 0, l-1)
 				if start < l && end <= l && end > start {
-					sc.Points = s.Points.CloneRange(start, end)
+					sc.Points = all.CloneRange(start, end)
 					sc.PointSize = sc.Points.Size()
 					clone.Results[n].SeriesList[j] = sc
 				} else {
@@ -643,12 +644,13 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		sl := make([]*Series, len(ds.Results[i].SeriesList))
 		var j int
 		for _, s := range ds.Results[i].SeriesList {
-			if s == nil || len(s.Points) == 0 {
+			if s == nil || s.PointCount() == 0 {
 				continue
 			}
 
 			index := j
 			eg.Go(func() error {
+				s.flatten()
 				l := len(s.Points)
 				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
 				// a series with no points in range is dropped, as CroppedClone does
@@ -694,7 +696,7 @@ func (ds *DataSet) ValueCount() int64 {
 			if s == nil {
 				continue
 			}
-			cnt += int64(len(s.Points))
+			cnt += int64(s.PointCount())
 		}
 	}
 	return cnt
@@ -859,7 +861,7 @@ func (ds *DataSet) PointCount() int {
 	var out int
 	for _, r := range ds.Results {
 		for _, s := range r.SeriesList {
-			if x, ok := numbers.SafeAdd(out, len(s.Points)); ok {
+			if x, ok := numbers.SafeAdd(out, s.PointCount()); ok {
 				out = x
 			}
 		}

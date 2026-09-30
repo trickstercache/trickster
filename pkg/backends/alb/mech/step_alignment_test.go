@@ -40,3 +40,18 @@ func TestAlign(t *testing.T) {
 		t.Fatal("the outer ALB's mode was replaced")
 	}
 }
+
+func TestAlignContext(t *testing.T) {
+	ctx := httptest.NewRequest(http.MethodGet, "/", nil).Context()
+	truncate := &tctx.StepAlignmentOverride{Mode: timeseries.StepAlignmentTruncate}
+	if AlignContext(ctx, nil) != ctx {
+		t.Fatal("a pool without a mode leaves the context as it is")
+	}
+	if got := tctx.StepAlignmentOverrideOf(AlignContext(ctx, truncate)); got != truncate {
+		t.Fatalf("got %v", got)
+	}
+	outer := tctx.WithStepAlignment(ctx, timeseries.StepAlignmentOff)
+	if AlignContext(outer, truncate) != outer {
+		t.Fatal("the outer ALB's mode was replaced")
+	}
+}

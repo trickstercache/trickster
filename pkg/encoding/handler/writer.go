@@ -22,10 +22,11 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
-	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -51,16 +52,28 @@ func NewEncoder(w http.ResponseWriter, ep *profile.Profile) ResponseEncoder {
 
 type writeFunc func([]byte) (int, error)
 
+// a held body larger than this is dropped after use, so that it doesn't keep its memory
+const maxPooledHeldBuffer = 1 << 20
+
+var heldBuffers = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+func putHeldBuffer(buf *bytes.Buffer) {
+	if buf.Cap() <= maxPooledHeldBuffer {
+		buf.Reset()
+		heldBuffers.Put(buf)
+	}
+}
+
 type responseEncoder struct {
 	prepared            bool
 	http.ResponseWriter // the writer that is sent through the compressor
 	EncodingProfile     *profile.Profile
 	encoder             io.WriteCloser
-	decoder             reader.ReadCloserResetter
-	buff                *bytes.Buffer
-	writeFunc           writeFunc
-	decoderInit         providers.DecoderInitializer
-	hijacked            bool
+	// an encoded body the client can't take is held here, and decoded whole at Close
+	held        *bytes.Buffer
+	writeFunc   writeFunc
+	decoderInit providers.DecoderInitializer
+	hijacked    bool
 }
 
 var _ http.Hijacker = (*responseEncoder)(nil)
@@ -164,19 +177,14 @@ func (ew *responseEncoder) prepareWriter() {
 }
 
 func (ew *responseEncoder) selectWriter() {
-	if ew.encoder == nil && ew.decoderInit != nil {
-		ew.writeFunc = ew.writeDecoded
-		return
-	}
-	if ew.encoder != nil && ew.decoderInit == nil {
+	switch {
+	case ew.decoderInit != nil:
+		ew.writeFunc = ew.writeHeld
+	case ew.encoder != nil:
 		ew.writeFunc = ew.writeEncoded
-		return
+	default:
+		ew.writeFunc = ew.writeDirect
 	}
-	if ew.encoder != nil && ew.decoderInit != nil {
-		ew.writeFunc = ew.writeTranscoded
-		return
-	}
-	ew.writeFunc = ew.writeDirect
 }
 
 func (ew *responseEncoder) writeDirect(b []byte) (int, error) {
@@ -188,42 +196,43 @@ func (ew *responseEncoder) writeEncoded(b []byte) (int, error) {
 	return len(b), err
 }
 
-// writeWithDecoding handles the common pattern of decoding data and copying to a destination
-func (ew *responseEncoder) writeWithDecoding(b []byte, dest io.Writer) (int, error) {
-	if ew.buff == nil {
-		ew.buff = bytes.NewBuffer(b)
-		ew.decoder = ew.decoderInit(io.NopCloser(ew.buff)) // new readcloser for bytes to go in
-	} else {
-		err := ew.decoder.Reset(reader.NewReadCloserResetterBytes(b))
-		if err != nil {
-			return 0, err
-		}
+// a decoder given part of a stream fails where the part ends, and can't take up the rest, so
+// an encoded body is held until Close
+func (ew *responseEncoder) writeHeld(b []byte) (int, error) {
+	if ew.held == nil {
+		ew.held = heldBuffers.Get().(*bytes.Buffer)
 	}
-	_, err := io.Copy(dest, ew.decoder)
-	return len(b), err
+	return ew.held.Write(b)
 }
 
-func (ew *responseEncoder) writeDecoded(b []byte) (int, error) {
-	return ew.writeWithDecoding(b, ew.ResponseWriter)
-}
-
-func (ew *responseEncoder) writeTranscoded(b []byte) (int, error) {
-	return ew.writeWithDecoding(b, ew.encoder)
+// decodes the held body to the encoder if there is one, or else to the client
+func (ew *responseEncoder) decodeHeld() error {
+	held := ew.held
+	ew.held = nil
+	defer putHeldBuffer(held)
+	var dest io.Writer = ew.ResponseWriter
+	if ew.encoder != nil {
+		dest = ew.encoder
+	}
+	// a reader, where the buffer itself would let a zstd decoder keep all it decodes
+	dec := ew.decoderInit(bytes.NewReader(held.Bytes()))
+	_, err := tbytes.Copy(dest, dec)
+	dec.Close()
+	return err
 }
 
 func (ew *responseEncoder) Close() error {
 	if ew.hijacked {
 		return nil
 	}
-	var err1, err2 error
+	var err error
+	if ew.held != nil {
+		err = ew.decodeHeld()
+	}
 	if ew.encoder != nil {
-		err1 = ew.encoder.Close()
+		if cerr := ew.encoder.Close(); err == nil {
+			err = cerr
+		}
 	}
-	if ew.decoder != nil {
-		err2 = ew.decoder.Close()
-	}
-	if err1 != nil {
-		return err1
-	}
-	return err2
+	return err
 }
