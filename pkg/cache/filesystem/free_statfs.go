@@ -27,5 +27,6 @@ func (s *Store) FreeBytes() (int64, error) {
 		return 0, err
 	}
 	// #nosec G115 -- block counts and sizes are far below the int64 range, and the types vary by platform
+	//nolint:unconvert // Statfs_t field types differ across Linux, Darwin, and FreeBSD.
 	return int64(st.Bavail) * int64(st.Bsize), nil
 }
