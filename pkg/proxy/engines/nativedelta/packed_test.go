@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	cacheproviders "github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -150,27 +149,6 @@ func TestPackedRows(t *testing.T) {
 			t.Fatal("trailing bytes decoded")
 		}
 	})
-}
-
-func TestRetrievedRowsSurviveBBoltsTransaction(t *testing.T) {
-	// bbolt's bytes are only valid within its read transaction, so the rows decoded from them are
-	// decoded from a copy
-	cacheClient := newTestCache()
-	cacheClient.provider, cacheClient.shared = cacheproviders.BBolt, true
-	engine := newTestEngine(cacheClient)
-	src := packedDelta(2, 10)
-	engine.StoreDelta("rows", &Entry[*Delta]{Payload: src, Extents: src.DS.ExtentList})
-	got, ok := engine.RetrieveDelta("rows")
-	if !ok {
-		t.Fatal("the rows were not cached")
-	}
-	// the transaction ends, and bbolt reuses its pages
-	clear(cacheClient.data["rows"])
-	first, _ := dataset.BytesValue(got.Payload.DS.Results[0].SeriesList[0].Points[1].Values[0])
-	want, _ := dataset.BytesValue(src.DS.Results[0].SeriesList[0].Points[1].Values[0])
-	if string(got.Payload.Header) != packedTestHeader || !bytes.Equal(first, want) {
-		t.Fatalf("rows changed with the cache's bytes: %q, %q", got.Payload.Header, first)
-	}
 }
 
 func BenchmarkDeltaCodec(b *testing.B) {

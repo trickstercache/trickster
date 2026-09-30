@@ -150,6 +150,12 @@ func (o *Options) Validate() (bool, error) {
 	if o.Index.MaxSizeObjects > 0 && o.Index.MaxSizeBackoffObjects > o.Index.MaxSizeObjects {
 		return false, errMaxSizeBackoffObjectsTooBig
 	}
+	if o.Index.ScanInterval < 0 || o.Index.ScanBatchSize < 0 || o.Index.ScanBatchPause < 0 {
+		return false, errNegativeScanOption
+	}
+	if o.Filesystem != nil && o.Filesystem.MinFreeBytes < 0 {
+		return false, errNegativeMinFreeBytes
+	}
 
 	return true, nil
 }
@@ -157,6 +163,8 @@ func (o *Options) Validate() (bool, error) {
 var (
 	errMaxSizeBackoffBytesTooBig   = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
 	errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+	errNegativeScanOption          = errors.New("ScanInterval, ScanBatchSize and ScanBatchPause can't be negative")
+	errNegativeMinFreeBytes        = errors.New("MinFreeBytes can't be negative")
 )
 
 // Initialize sets up the cache Options with default values and overlays

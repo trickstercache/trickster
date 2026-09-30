@@ -34,10 +34,14 @@ import (
 type sfResponseCapture struct {
 	inner io.Writer
 	buf   bytes.Buffer
+	// pr is the request whose response is captured, until it streams one from the cache
+	pr *proxyRequest
 }
 
 func (c *sfResponseCapture) Write(p []byte) (int, error) {
-	c.buf.Write(p)
+	if c.pr == nil || !c.pr.streaming {
+		c.buf.Write(p)
+	}
 	return c.inner.Write(p)
 }
 
@@ -66,6 +70,9 @@ type opcResult struct {
 	body        []byte
 	elapsed     float64
 	cacheStatus status.LookupStatus
+	// streamed marks a result whose body was read from the cache as it was written, and
+	// so was not kept for a waiter, which must read the cache for itself
+	streamed bool
 	// varyNames, varyGeneration and varyKey record which request fields
 	// selected this response and the variant they selected, so a waiter can
 	// tell whether the result is one it may use at all

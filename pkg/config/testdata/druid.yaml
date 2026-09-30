@@ -83,6 +83,9 @@ caches:
       max_size_bytes: 536870912
       max_size_backoff_bytes: 16777216
       max_size_backoff_objects: 100
+      scan_interval: 24h0m0s
+      scan_batch_size: 512
+      scan_batch_pause: 50ms
     redis:
       client_type: standard
       protocol: tcp

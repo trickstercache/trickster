@@ -17,7 +17,6 @@
 package nativedelta
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"math"
@@ -156,11 +155,6 @@ func (t *tier[P]) retrieve(key string) (*Entry[P], bool) {
 		t.observeCacheFailure(failureOversized)
 		t.remove(key, failureOversized)
 		return nil, false
-	}
-	if c := cacheClient.Configuration(); c != nil && c.Provider == cacheproviders.BBolt {
-		// codecs may keep referring to the bytes; bbolt's are only valid within its read transaction,
-		// while every other provider's are a private copy or never change
-		data = bytes.Clone(data)
 	}
 	entry, err := t.unmarshalEntry(data)
 	if err != nil {

@@ -112,6 +112,9 @@ type proxyRequest struct {
 	// credential-specific key
 	omitAuthFromKey bool
 	writeToCache    bool
+	// streaming is set when the response body is read from the cache as it is written,
+	// so that no copy of it is there to share with another request
+	streaming bool
 
 	// range handling
 	wantedRanges      byterange.Ranges
@@ -486,6 +489,7 @@ func (pr *proxyRequest) queryCache(ctx context.Context, c cache.Cache) error {
 		pr.hasStoredRepresentation() && !pr.ifRangeMatchesDocument() {
 		pr.wantsRanges = false
 		pr.wantedRanges = nil
+		d.releaseBody()
 		d, ls, nr, err = pr.queryKey(ctx, c)
 		pr.cacheDocument, pr.cacheStatus, pr.neededRanges = d, ls, nr
 	}
@@ -548,13 +552,29 @@ func (pr *proxyRequest) ifRangeMatchesDocument() bool {
 func (pr *proxyRequest) queryKey(ctx context.Context,
 	c cache.Cache,
 ) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
-	d, ls, nr, err := QueryCache(ctx, c, pr.key, pr.wantedRanges, nil)
+	// only a GET is answered with a body, which is what there is to gain by leaving it in the cache
+	deferBody := pr.Method == http.MethodGet
+	d, ls, nr, err := queryCache(ctx, c, pr.key, pr.wantedRanges, nil, deferBody)
 	if err == nil && d != nil && len(d.VaryNames) > 0 {
 		pr.varyGeneration = d.VaryGeneration
 		pr.setVaryNames(d.VaryNames)
-		d, ls, nr, err = QueryCache(ctx, c, pr.key, pr.wantedRanges, nil)
+		d, ls, nr, err = queryCache(ctx, c, pr.key, pr.wantedRanges, nil, deferBody)
 	}
 	return d, ls, nr, err
+}
+
+// a body that cannot be read leaves the request with nothing cached to answer from
+func (pr *proxyRequest) materializeDocument() {
+	if pr.cacheDocument == nil || pr.cacheDocument.deferred == nil {
+		return
+	}
+	if err := pr.cacheDocument.materialize(); err != nil {
+		logger.Error("cache body read error",
+			logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
+		pr.cacheDocument = nil
+		pr.cacheStatus = status.LookupStatusKeyMiss
+		pr.neededRanges = nil
+	}
 }
 
 // setVaryNames points this request's key at the variant the nominated fields
@@ -846,6 +866,18 @@ func (pr *proxyRequest) store() error {
 	return nil
 }
 
+// the body that was left in the cache is read as it is written
+func (pr *proxyRequest) streamDocument(d *HTTPDocument) {
+	pr.streaming = true
+	pr.responseBody = nil
+	pr.upstreamReader = d.deferred
+	if resp := pr.upstreamResponse; resp != nil && resp.StatusCode <= 299 {
+		resp.Header.Del(headers.NameContentLength)
+		pr.contentLength = d.deferred.Size()
+		resp.ContentLength = pr.contentLength
+	}
+}
+
 func (pr *proxyRequest) updateContentLength() {
 	resp := pr.upstreamResponse
 	if resp == nil || pr.responseBody == nil || pr.upstreamResponse.StatusCode > 299 {
@@ -921,14 +953,15 @@ func (pr *proxyRequest) prepareResponse() {
 		// we will need to stitch in a temporary content type header if it is a multipart response,
 		// but need the original content type and length if we are also writing to the cache
 		pr.trueContentType = resp.Header.Get(headers.NameContentType)
-		pr.contentLength = d.ContentLength
+		length := d.wholeLength()
+		pr.contentLength = length
 
 		// RFC 9110 14.2: when none of the requested ranges overlap the content,
 		// answer 416 naming the full length rather than an empty 206
-		if _, ok := pr.wantedRanges.Resolve(d.ContentLength); !ok {
+		if _, ok := pr.wantedRanges.Resolve(length); !ok {
 			resp.StatusCode = http.StatusRequestedRangeNotSatisfiable
 			resp.Header.Set(headers.NameContentRange,
-				"bytes */"+strconv.FormatInt(d.ContentLength, 10))
+				"bytes */"+strconv.FormatInt(length, 10))
 			resp.Header.Del(headers.NameContentLength)
 			resp.ContentLength = 0
 			pr.responseBody = nil
@@ -941,9 +974,21 @@ func (pr *proxyRequest) prepareResponse() {
 		if len(d.Ranges) > 0 {
 			d.LoadRangeParts()
 		}
+		parts, body := d.RangeParts, d.Body
+		if d.deferred != nil {
+			// only the ranges that were asked for are read from the cache
+			wanted, _ := pr.wantedRanges.Resolve(length)
+			var err error
+			if parts, err = d.readRanges(wanted); err != nil {
+				logger.Error("cache body read error",
+					logging.Pairs{keys.Key: pr.key, keys.Detail: err.Error()})
+				pr.bodyTruncated.Store(true)
+				abortOnCopyError(pr.clientWriter, pr.Request, err)
+			}
+		}
 		var h http.Header
 		pr.trueContentType = d.ContentType
-		h, pr.responseBody = d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
+		h, pr.responseBody = parts.ExtractResponseRange(pr.wantedRanges, length, d.ContentType, body)
 		headers.Merge(resp.Header, h)
 		pr.upstreamReader = bytes.NewReader(pr.responseBody)
 	} else if !pr.wantsRanges {
@@ -951,6 +996,10 @@ func (pr *proxyRequest) prepareResponse() {
 			resp.StatusCode = http.StatusOK
 		}
 		resp.Header.Del(headers.NameContentRange)
+		if d != nil && d.deferred != nil {
+			pr.streamDocument(d)
+			return
+		}
 		if pr.cacheStatus == status.LookupStatusHit || pr.cacheStatus == status.LookupStatusRevalidated ||
 			pr.cacheStatus == status.LookupStatusPartialHit {
 			pr.responseBody = d.Body

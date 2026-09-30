@@ -1,3 +1,5 @@
+//go:build linux || darwin || freebsd
+
 /*
  * Copyright 2018 The Trickster Authors
  *
@@ -14,35 +16,22 @@
  * limitations under the License.
  */
 
-package index
+package filesystem
 
 import (
-	"bytes"
+	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
-func TestObjectRoundTrip(t *testing.T) {
-	v := Object{
-		Key:   "test-key",
-		Size:  1024,
-		Value: []byte("cached-data"),
-	}
-	b, err := v.MarshalMsg(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var v2 Object
-	_, err = v2.UnmarshalMsg(b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if v2.Key != "test-key" {
-		t.Fatal("Key mismatch")
-	}
-	if v2.Size != 1024 {
-		t.Fatal("Size mismatch")
-	}
-	if !bytes.Equal(v2.Value, []byte("cached-data")) {
-		t.Fatal("Value mismatch")
-	}
+func TestFreeBytes(t *testing.T) {
+	s := newStore(t)
+	free, err := s.FreeBytes()
+	require.NoError(t, err)
+	require.Positive(t, free)
+
+	s.root = filepath.Join(s.root, "absent")
+	_, err = s.FreeBytes()
+	require.Error(t, err)
 }

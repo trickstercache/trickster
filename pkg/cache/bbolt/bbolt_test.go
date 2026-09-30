@@ -17,384 +17,322 @@
 package bbolt
 
 import (
+	"bytes"
+	"io"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	bo "github.com/trickstercache/trickster/v2/pkg/cache/bbolt/options"
-	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob/blobtest"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
+	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
 )
 
 const (
-	cacheProvider     = "bbolt"
-	cacheKey          = "cacheKey"
-	benchmarkKeyCount = 10
+	cacheProvider = "bbolt"
+	cacheKey      = "cacheKey"
+	testBucket    = "trickster_test"
 )
 
-func newCacheConfig(dbPath string) co.Options {
-	return co.Options{Provider: cacheProvider, BBolt: &bo.Options{
-		Filename: dbPath, Bucket: "trickster_test",
-	}, Index: &io.Options{ReapInterval: timeconv.Duration(time.Second)}}
+func newConfig(dbPath string) *co.Options {
+	return &co.Options{Provider: cacheProvider, BBolt: &bo.Options{Filename: dbPath, Bucket: testBucket}}
 }
 
-func setupBenchmark(b *testing.B) *CacheClient {
-	b.Helper()
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := b.TempDir() + "/test.db"
-	cacheConfig := co.Options{
-		Provider: cacheProvider,
-		BBolt:    &bo.Options{Filename: testDbPath, Bucket: "trickster_test"},
-		Index:    &io.Options{ReapInterval: timeconv.Duration(time.Second)},
-	}
-	bc := New(b.Name(), "", "", &cacheConfig)
-
-	if err := bc.Connect(); err != nil {
-		b.Fatal(err)
-	}
-	b.Cleanup(func() {
-		if err := bc.Close(); err != nil {
-			b.Error(err)
-		}
-	})
-	return bc
+func newStore(t testing.TB) *Store {
+	t.Helper()
+	s := NewStore(t.Name(), "", "", newConfig(filepath.Join(t.TempDir(), "test.db")))
+	require.NoError(t, s.Connect())
+	t.Cleanup(func() { s.Close() })
+	return s
 }
 
-func TestBBoltCache_Connect(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
-	// it should connect
-	err := bc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	bc.Close()
+func keep(blob.Blob) bool { return false }
+
+func TestConformance(t *testing.T) {
+	blobtest.RunStoreSuite(t, func(t *testing.T) blob.Store { return newStore(t) })
+	blobtest.RunMetaStoreSuite(t, func(t *testing.T) blob.MetaStore { return newStore(t) })
 }
 
-func TestBBoltCache_ConnectFailed(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected = `open /root/noaccess.bbolt:`
-	cacheConfig := newCacheConfig("/root/noaccess.bbolt")
-	bc := New(t.Name(), "", "", &cacheConfig)
-	// it should connect
-	err := bc.Connect()
-	if err == nil {
-		t.Errorf("expected error for %s", expected)
-		bc.Close()
-	}
-	if !strings.HasPrefix(err.Error(), expected) {
-		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
-	}
+func TestNewStoreDefaultsAndOverrides(t *testing.T) {
+	s := NewStore(t.Name(), "", "", nil)
+	require.Equal(t, bo.DefaultBBoltFile, s.Config.BBolt.Filename)
+	require.Equal(t, bo.DefaultBBoltBucket, s.Config.BBolt.Bucket)
+	require.False(t, s.Streamable())
+
+	path := filepath.Join(t.TempDir(), "override.db")
+	s = NewStore(t.Name(), path, "override_bucket", newConfig(filepath.Join(t.TempDir(), "base.db")))
+	require.Equal(t, path, s.Config.BBolt.Filename)
+	require.Equal(t, "override_bucket", s.Config.BBolt.Bucket)
 }
 
-func TestBBoltCache_ConnectBadBucketName(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected = `create bucket: bucket name required`
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	cacheConfig.BBolt.Bucket = ""
-	bc := New(t.Name(), "", "", &cacheConfig)
-	// it should connect
-	err := bc.Connect()
-	if err == nil {
-		t.Errorf("expected error for %s", expected)
-		bc.Close()
-	} else if err.Error() != expected {
-		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
-	}
+func TestNew(t *testing.T) {
+	c := New(t.Name(), filepath.Join(t.TempDir(), "test.db"), testBucket, nil)
+	require.Equal(t, t.Name(), c.Name)
+	require.Equal(t, testBucket, c.Config.BBolt.Bucket)
+	require.NoError(t, c.Connect())
+	require.NoError(t, c.Store(cacheKey, []byte("value"), time.Minute))
+	b, _, err := c.Retrieve(cacheKey)
+	require.NoError(t, err)
+	require.Equal(t, "value", string(b))
+
+	// an object is a miss once it has expired, with no reaper to have removed it
+	require.NoError(t, c.Store("brief", []byte("value"), time.Millisecond))
+	time.Sleep(2 * time.Millisecond)
+	_, _, err = c.Retrieve("brief")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.NoError(t, c.Close())
 }
 
-func TestBBoltCache_Store(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
+func TestConnectErrors(t *testing.T) {
+	s := NewStore(t.Name(), "", "", newConfig(filepath.Join(t.TempDir(), "absent", "test.db")))
+	require.Error(t, s.Connect())
+	require.NoError(t, s.Close(), "a store that never connected")
 
-	err := bc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer bc.Close()
-
-	// it should store a value
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
+	path := filepath.Join(t.TempDir(), "test.db")
+	cfg := newConfig(path)
+	cfg.BBolt.Bucket = ""
+	s = NewStore(t.Name(), "", "", cfg)
+	require.EqualError(t, s.Connect(), "create bucket: bucket name required")
+	// the file is released, so that a corrected configuration can open it
+	s = NewStore(t.Name(), "", "", newConfig(path))
+	require.NoError(t, s.Connect())
+	require.NoError(t, s.Close())
 }
 
-func BenchmarkCache_Store(b *testing.B) {
-	bc := setupBenchmark(b)
-	n := 0
-	for b.Loop() {
-		suffix := strconv.Itoa(n)
-		if err := bc.Store(cacheKey+suffix, []byte("data"+suffix), time.Minute); err != nil {
-			b.Fatal(err)
-		}
-		n++
+func TestUnconnected(t *testing.T) {
+	stores := map[string]*Store{
+		"never connected": NewStore(t.Name(), "", "", newConfig(filepath.Join(t.TempDir(), "test.db"))),
+		"closed":          newStore(t),
+	}
+	require.NoError(t, stores["closed"].Close())
+	for name, s := range stores {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, s.Put(cacheKey, []byte("h"), nil, nil))
+			_, err := s.Open(cacheKey)
+			require.Error(t, err)
+			require.NotErrorIs(t, err, cache.ErrKNF)
+			require.Error(t, s.Delete(cacheKey))
+			next, done, err := s.Scan("after", 1, keep)
+			require.Error(t, err)
+			require.False(t, done)
+			require.Equal(t, "after", next)
+
+			require.Error(t, s.AppendMeta("m", nil))
+			_, err = s.OpenMeta("m")
+			require.Error(t, err)
+			require.NotErrorIs(t, err, blob.ErrNoMeta)
+			require.Error(t, s.RemoveMeta("m"))
+			_, err = s.ListMeta()
+			require.Error(t, err)
+			w, err := s.CreateMeta("m")
+			require.NoError(t, err)
+			require.Error(t, w.Close())
+		})
 	}
 }
 
-func TestBBoltCache_Remove(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
+func TestLargeFrameIsNotPooled(t *testing.T) {
+	s := newStore(t)
+	body := bytes.Repeat([]byte("b"), maxPooledFrame+1)
+	require.NoError(t, s.Put(cacheKey, []byte("h"), nil, body))
+	b, err := s.Open(cacheKey)
+	require.NoError(t, err)
+	require.Equal(t, int64(len(body)+1), b.Size())
+	require.NoError(t, b.Close())
+}
 
-	err := bc.Connect()
-	if err != nil {
-		t.Error(err)
+func TestBlobReadAt(t *testing.T) {
+	b := &txBlob{value: []byte("0123")}
+	p := make([]byte, 2)
+	for _, off := range []int64{-1, 4, 5} {
+		n, err := b.ReadAt(p, off)
+		require.ErrorIs(t, err, io.EOF, off)
+		require.Zero(t, n, off)
 	}
-	defer bc.Close()
+	require.NoError(t, b.Close(), "a blob of a scan has no transaction of its own")
+}
 
-	// it should store a value
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
+// a Blob reads what was stored when it was opened, whatever is written to its key meanwhile
+func TestOpenBlobIsASnapshot(t *testing.T) {
+	s := newStore(t)
+	want := bytes.Repeat([]byte("v"), 1<<16)
+	require.NoError(t, s.Put(cacheKey, want, nil, nil))
+	b, err := s.Open(cacheKey)
+	require.NoError(t, err)
+	// small enough a write not to grow the file, which would wait for the Blob to close
+	require.NoError(t, s.Put(cacheKey, []byte("replaced"), nil, nil))
 
-	// it should retrieve a value
-	data, ls, err := bc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	bc.Remove(cacheKey)
+	got := make([]byte, b.Size())
+	_, err = b.ReadAt(got, 0)
+	require.NoError(t, err)
+	require.True(t, bytes.Equal(want, got))
+	require.NoError(t, b.Close())
+}
 
-	// it should be a cache miss
-	_, ls, err = bc.Retrieve(cacheKey)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", cacheKey)
+// what Retrieve returns is the caller's own, and outlasts the transaction it was read in
+func TestRetrievedBytesSurviveWrites(t *testing.T) {
+	c := New(t.Name(), filepath.Join(t.TempDir(), "test.db"), testBucket, nil)
+	require.NoError(t, c.Connect())
+	t.Cleanup(func() { c.Close() })
+	want := bytes.Repeat([]byte("v"), 1<<16)
+	require.NoError(t, c.Store(cacheKey, want, time.Minute))
+	got, _, err := c.Retrieve(cacheKey)
+	require.NoError(t, err)
+
+	// enough new data to grow the file, which moves where the database is mapped
+	grow := bytes.Repeat([]byte("g"), 1<<20)
+	for i := range 48 {
+		require.NoError(t, c.Store("grow-"+strconv.Itoa(i), grow, time.Minute))
 	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
+	require.NoError(t, c.Store(cacheKey, []byte("replaced"), time.Minute))
+	require.True(t, bytes.Equal(want, got))
+}
+
+func TestNestedBucket(t *testing.T) {
+	s := newStore(t)
+	const nested = "nested_bucket"
+	require.NoError(t, s.dbh.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.Bucket(s.bucket).CreateBucket([]byte(nested))
+		return err
+	}))
+	require.NoError(t, s.Put("a", []byte("frame"), nil, nil))
+
+	require.Error(t, s.Delete(nested))
+	_, err := s.Open(nested)
+	require.ErrorIs(t, err, cache.ErrKNF)
+
+	var n int
+	_, done, err := s.Scan("", 10, func(blob.Blob) bool { n++; return false })
+	require.NoError(t, err)
+	require.True(t, done)
+	require.Equal(t, 1, n, "a nested bucket is no frame")
+}
+
+// a frame put in a key's place after a scan looked at it is not the frame the scan removes
+func TestScanRemovesOnlyWhatItLookedAt(t *testing.T) {
+	s := newStore(t)
+	require.NoError(t, s.Put(cacheKey, []byte("first"), nil, nil))
+	require.NoError(t, s.Put("same length", []byte("first"), nil, nil))
+	looked := []fingerprint{fingerprintOf(cacheKey, []byte("first")), fingerprintOf("same length", []byte("first"))}
+	require.NoError(t, s.Put(cacheKey, []byte("second"), nil, nil))
+	require.NoError(t, s.deleteMatching(looked))
+	b, err := s.Open(cacheKey)
+	require.NoError(t, err)
+	require.NoError(t, b.Close())
+	_, err = s.Open("same length")
+	require.ErrorIs(t, err, cache.ErrKNF)
+
+	long := bytes.Repeat([]byte("x"), 2*fingerprintLen)
+	require.NoError(t, s.Put(cacheKey, long, nil, nil))
+	fp := fingerprintOf(cacheKey, long)
+	require.Len(t, fp.head, fingerprintLen)
+	require.True(t, fp.matches(long))
+	require.False(t, fp.matches(nil))
+	require.False(t, fp.matches(long[:len(long)-1]))
+	require.NoError(t, s.deleteMatching(nil))
+}
+
+func TestScanHoldsNoTransactionAcrossCalls(t *testing.T) {
+	s := newStore(t)
+	for i := range 5 {
+		require.NoError(t, s.Put("key-"+strconv.Itoa(i), []byte("frame"), nil, nil))
+	}
+	after, done, err := s.Scan("", 2, func(blob.Blob) bool { return true })
+	require.NoError(t, err)
+	require.False(t, done)
+	require.Equal(t, "key-1", after)
+	require.Zero(t, s.dbh.Stats().OpenTxN)
+	_, err = s.Open("key-0")
+	require.ErrorIs(t, err, cache.ErrKNF, "marked frames are removed once the read ends")
+}
+
+func TestMetaNames(t *testing.T) {
+	s := newStore(t)
+	for _, name := range []string{"", "a\x00b", "\x00"} {
+		_, err := s.CreateMeta(name)
+		require.ErrorIs(t, err, ErrInvalidMetaName)
+		require.ErrorIs(t, s.AppendMeta(name, nil), ErrInvalidMetaName)
+		_, err = s.OpenMeta(name)
+		require.ErrorIs(t, err, ErrInvalidMetaName)
+		require.ErrorIs(t, s.RemoveMeta(name), ErrInvalidMetaName)
 	}
 }
 
-func BenchmarkCache_Remove(b *testing.B) {
-	bc := setupBenchmark(b)
-	for b.Loop() {
-		b.StopTimer()
-		if err := bc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
-			b.Fatal(err)
-		}
-		b.StartTimer()
-		if err := bc.Remove(cacheKey); err != nil {
-			b.Fatal(err)
-		}
+func TestMetaSegments(t *testing.T) {
+	s := newStore(t)
+	// files whose names begin alike keep their segments apart
+	require.NoError(t, s.AppendMeta("journal", []byte("a")))
+	require.NoError(t, s.AppendMeta("journal.1", []byte("b")))
+	require.NoError(t, s.AppendMeta("journal", []byte("c")))
+	require.NoError(t, s.AppendMeta("j", []byte("d")))
+	// a key that is no segment is passed over
+	require.NoError(t, s.dbh.Update(func(tx *bbolt.Tx) error {
+		return tx.Bucket(s.meta).Put([]byte("stray"), []byte("x"))
+	}))
+
+	read := func(name string) string {
+		r, err := s.OpenMeta(name)
+		require.NoError(t, err)
+		defer r.Close()
+		b, err := io.ReadAll(r)
+		require.NoError(t, err)
+		return string(b)
 	}
+	require.Equal(t, "ac", read("journal"))
+	require.Equal(t, "b", read("journal.1"))
+	require.Equal(t, "d", read("j"))
+	names, err := s.ListMeta()
+	require.NoError(t, err)
+	require.Equal(t, []string{"j", "journal", "journal.1"}, names)
+
+	// content past one segment's size is split, and read back whole
+	w, err := s.CreateMeta("journal")
+	require.NoError(t, err)
+	large := bytes.Repeat([]byte("0123456789"), segmentSize/4)
+	_, err = w.Write(large)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	require.Equal(t, string(large), read("journal"))
+	require.Equal(t, "b", read("journal.1"))
+	require.Zero(t, s.dbh.Stats().OpenTxN)
 }
 
-func TestBBoltCache_BulkRemove(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
-
-	err := bc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer bc.Close()
-
-	// it should store a value
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
-	data, ls, err := bc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-	bc.Remove(cacheKey)
-
-	// it should be a cache miss
-	_, ls, err = bc.Retrieve(cacheKey)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", cacheKey)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
+func TestMetaNestedBucket(t *testing.T) {
+	s := newStore(t)
+	require.NoError(t, s.dbh.Update(func(tx *bbolt.Tx) error {
+		_, err := tx.Bucket(s.meta).CreateBucket(segmentKey([]byte("index\x00"), 0))
+		return err
+	}))
+	require.Error(t, s.RemoveMeta("index"))
+	w, err := s.CreateMeta("index")
+	require.NoError(t, err)
+	require.Error(t, w.Close())
 }
 
-func BenchmarkCache_BulkRemove(b *testing.B) {
-	bc := setupBenchmark(b)
-	keys := make([]string, benchmarkKeyCount)
-	values := make([][]byte, benchmarkKeyCount)
-	for n := range benchmarkKeyCount {
-		suffix := strconv.Itoa(n)
-		keys[n] = cacheKey + suffix
-		values[n] = []byte("data" + suffix)
-	}
-
-	for b.Loop() {
-		b.StopTimer()
-		for n, key := range keys {
-			if err := bc.Store(key, values[n], time.Minute); err != nil {
+func BenchmarkStore(b *testing.B) {
+	s := newStore(b)
+	hdr, body := make([]byte, 108), make([]byte, 1024)
+	require.NoError(b, s.Put(cacheKey, hdr, nil, body))
+	b.Run("open", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			f, err := s.Open(cacheKey)
+			if err != nil {
 				b.Fatal(err)
 			}
+			f.Close()
 		}
-		b.StartTimer()
-		if err := bc.Remove(keys...); err != nil {
-			b.Fatal(err)
-		}
-	}
-	b.ReportMetric(benchmarkKeyCount, "keys/op")
-}
-
-func TestBBoltCache_Retrieve(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
-
-	err := bc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer bc.Close()
-
-	err = bc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
-	data, ls, err := bc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-}
-
-func BenchmarkCache_Retrieve(b *testing.B) {
-	bc := setupBenchmark(b)
-	if err := bc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
-		b.Fatal(err)
-	}
-
-	for b.Loop() {
-		data, ls, err := bc.Retrieve(cacheKey)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if string(data) != "data" {
-			b.Fatalf("wanted %q, got %q", "data", data)
-		}
-		if ls != status.LookupStatusHit {
-			b.Fatalf("expected %s, got %s", status.LookupStatusHit, ls)
-		}
-	}
-}
-
-func TestClose(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
-	bc.dbh = nil
-	err := bc.Close()
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestBBoltCache_NewDefaultsAndOverrides(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
-	bc := New(t.Name(), "", "", nil)
-	if bc.Config == nil || bc.Config.BBolt == nil {
-		t.Fatal("expected default config with bbolt options")
-	}
-	if bc.Config.BBolt.Filename != bo.DefaultBBoltFile {
-		t.Errorf("expected default filename %q, got %q", bo.DefaultBBoltFile, bc.Config.BBolt.Filename)
-	}
-	if bc.Config.BBolt.Bucket != bo.DefaultBBoltBucket {
-		t.Errorf("expected default bucket %q, got %q", bo.DefaultBBoltBucket, bc.Config.BBolt.Bucket)
-	}
-
-	testDbPath := t.TempDir() + "/override.db"
-	cacheConfig := newCacheConfig(t.TempDir() + "/base.db")
-	bc2 := New(t.Name(), testDbPath, "override_bucket", &cacheConfig)
-	if bc2.Config.BBolt.Filename != testDbPath {
-		t.Errorf("expected filename override %q, got %q", testDbPath, bc2.Config.BBolt.Filename)
-	}
-	if bc2.Config.BBolt.Bucket != "override_bucket" {
-		t.Errorf("expected bucket override override_bucket, got %q", bc2.Config.BBolt.Bucket)
-	}
-}
-
-func TestBBoltCache_ClosedClientErrors(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
-	if err := bc.Connect(); err != nil {
-		t.Fatal(err)
-	}
-	if err := bc.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := bc.Store(cacheKey, []byte("data"), time.Minute); err == nil {
-		t.Error("expected error storing to closed client")
-	}
-	if err := bc.Remove(cacheKey); err == nil {
-		t.Error("expected error removing from closed client")
-	}
-}
-
-func TestBBoltCache_RemoveNestedBucketKey(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	testDbPath := t.TempDir() + "/test.db"
-	cacheConfig := newCacheConfig(testDbPath)
-	bc := New(t.Name(), "", "", &cacheConfig)
-	if err := bc.Connect(); err != nil {
-		t.Fatal(err)
-	}
-	defer bc.Close()
-
-	const nested = "nested_bucket"
-	err := bc.dbh.Update(func(tx *bbolt.Tx) error {
-		b := tx.Bucket([]byte(bc.Config.BBolt.Bucket))
-		_, err := b.CreateBucket([]byte(nested))
-		return err
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := bc.Remove(nested); err == nil {
-		t.Error("expected error removing nested bucket key")
-	}
+	b.Run("open/miss", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			s.Open("absent")
+		}
+	})
 }

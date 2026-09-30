@@ -17,311 +17,423 @@
 package filesystem
 
 import (
-	"strconv"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob/blobtest"
 	flo "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
-	io "github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
 )
 
 const (
-	cacheProvider     = "filesystem"
-	cacheKey          = "cacheKey"
-	benchmarkKeyCount = 10
+	cacheProvider = "filesystem"
+	digestKey     = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+	nativeKey     = "prefix|tenant:dpc:d41d8cd98f00b204e9800998ecf8427e"
 )
 
-func setupBenchmark(b *testing.B) *CacheClient {
-	b.Helper()
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	dir := b.TempDir() + "/cache/" + cacheProvider
-	cacheConfig := co.Options{
-		Provider:   cacheProvider,
-		Filesystem: &flo.Options{CachePath: dir}, Index: &io.Options{ReapInterval: timeconv.Duration(time.Second)},
-	}
-	fc := NewCache(b.Name(), &cacheConfig)
+func newStore(t testing.TB) *Store {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "cache", cacheProvider)
+	s := NewStore(t.Name(), &co.Options{Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir}})
+	require.NoError(t, s.Connect())
+	t.Cleanup(func() { require.NoError(t, s.Close()) })
+	return s
+}
 
-	if err := fc.Connect(); err != nil {
-		b.Fatal(err)
+func (s *Store) path(key string) string {
+	p, _ := s.appendPath(nil, key)
+	return string(p)
+}
+
+func keep(blob.Blob) bool { return false }
+
+func TestConformance(t *testing.T) {
+	blobtest.RunStoreSuite(t, func(t *testing.T) blob.Store { return newStore(t) })
+	blobtest.RunReplacementSuite(t, func(t *testing.T) blob.Store { return newStore(t) })
+	blobtest.RunMetaStoreSuite(t, func(t *testing.T) blob.MetaStore { return newStore(t) })
+}
+
+func TestNewCache(t *testing.T) {
+	cfg := &co.Options{Filesystem: &flo.Options{CachePath: filepath.Join(t.TempDir(), "cache")}}
+	c := NewCache(t.Name(), cfg)
+	require.Equal(t, t.Name(), c.Name)
+	require.Same(t, cfg, c.Config)
+	require.NoError(t, c.Connect())
+	require.NoError(t, c.Store(digestKey, []byte("value"), time.Minute))
+	b, _, err := c.Retrieve(digestKey)
+	require.NoError(t, err)
+	require.Equal(t, "value", string(b))
+
+	// an object is a miss once it has expired, with no reaper to have removed it
+	require.NoError(t, c.Store(nativeKey, []byte("value"), time.Millisecond))
+	time.Sleep(2 * time.Millisecond)
+	_, _, err = c.Retrieve(nativeKey)
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.NoError(t, c.Close())
+}
+
+func TestConnect(t *testing.T) {
+	s := newStore(t)
+	require.True(t, s.Streamable())
+	entries, err := os.ReadDir(s.root)
+	require.NoError(t, err)
+	require.Empty(t, entries, "the write probe is removed")
+
+	file := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(file, nil, fileMode))
+	s = NewStore(t.Name(), &co.Options{Filesystem: &flo.Options{CachePath: filepath.Join(file, "cache")}})
+	require.ErrorContains(t, s.Connect(), "directory is not writeable by trickster")
+}
+
+func TestIsDigest(t *testing.T) {
+	tests := []struct {
+		name, key string
+		want      bool
+	}{
+		{"sha256", digestKey, true},
+		{"md5", digestKey[:32], true},
+		{"31 characters", digestKey[:31], false},
+		{"33 characters", digestKey[:33], false},
+		{"63 characters", digestKey[:63], false},
+		{"65 characters", digestKey + "0", false},
+		{"uppercase", strings.ToUpper(digestKey), false},
+		{"one uppercase", digestKey[:63] + "A", false},
+		{"not hex", digestKey[:63] + "g", false},
+		{"alphanumeric", strings.Repeat("z", 32), false},
+		{"below the digits", digestKey[:63] + "/", false},
+		{"between the digits and letters", digestKey[:63] + ":", false},
+		{"separator", digestKey[:31] + string(separator), false},
+		{"empty", "", false},
 	}
-	b.Cleanup(func() {
-		if err := fc.Close(); err != nil {
-			b.Error(err)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, isDigest(test.key))
+		})
+	}
+}
+
+func TestPath(t *testing.T) {
+	s := newStore(t)
+	sep := string(separator)
+
+	require.Equal(t, s.root+sep+"9f"+sep+"86"+sep+digestKey, s.path(digestKey))
+	require.Equal(t, s.root+sep+"9f"+sep+"86"+sep+digestKey[:32], s.path(digestKey[:32]))
+
+	seen := map[string]string{}
+	for _, key := range append(blobtest.Keys, strings.Repeat("k", keyBufferSize+1), digestKey+".chunk") {
+		path := s.path(key)
+		rel, err := filepath.Rel(s.root, path)
+		require.NoError(t, err)
+		parts := strings.Split(rel, sep)
+		require.Len(t, parts, 3, key)
+		require.True(t, isShard(parts[0]) && isShard(parts[1]), key)
+		require.True(t, isDigest(parts[2]), "%s is named %s", key, parts[2])
+		require.Equal(t, parts[2][:4], parts[0]+parts[1], key)
+		if !isDigest(key) {
+			require.Len(t, parts[2], 2*hashedBytes, key)
+		}
+		require.Empty(t, seen[path], "%s shares a file with %s", key, seen[path])
+		seen[path] = key
+		require.Equal(t, path, s.path(key), "a key always has the same path")
+	}
+	// keys alike but for their case are hashed, and so have files apart on any filesystem
+	require.NotEqual(t, strings.ToLower(s.path(strings.ToUpper(digestKey))), s.path(digestKey))
+}
+
+func TestPutLeavesNoTemp(t *testing.T) {
+	s := newStore(t)
+	require.NoError(t, s.Put(digestKey, []byte("h"), []byte("m"), []byte("b")))
+	entries, err := os.ReadDir(filepath.Dir(s.path(digestKey)))
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	require.Equal(t, digestKey, entries[0].Name())
+	fi, err := entries[0].Info()
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(fileMode), fi.Mode().Perm())
+}
+
+func TestPutErrors(t *testing.T) {
+	t.Run("directory cannot be made", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, os.WriteFile(filepath.Join(s.root, "9f"), nil, fileMode))
+		require.Error(t, s.Put(digestKey, []byte("h"), nil, nil))
+	})
+	t.Run("rename fails", func(t *testing.T) {
+		s := newStore(t)
+		// a directory that is not empty stands where the file belongs
+		require.NoError(t, os.MkdirAll(filepath.Join(s.path(digestKey), "child"), dirMode))
+		require.Error(t, s.Put(digestKey, []byte("h"), nil, nil))
+		entries, err := os.ReadDir(filepath.Dir(s.path(digestKey)))
+		require.NoError(t, err)
+		require.Len(t, entries, 1, "the temporary file is removed")
+
+		require.Error(t, s.Delete(nativeKey, digestKey), "a failed removal is reported")
+	})
+}
+
+func TestOpenErrors(t *testing.T) {
+	s := newStore(t)
+	_, err := s.Open(digestKey)
+	require.ErrorIs(t, err, cache.ErrKNF)
+
+	if os.Geteuid() == 0 {
+		t.Skip("a privileged user can read any file")
+	}
+	require.NoError(t, s.Put(digestKey, []byte("h"), nil, nil))
+	require.NoError(t, os.Chmod(s.path(digestKey), 0))
+	_, err = s.Open(digestKey)
+	require.Error(t, err)
+	require.NotErrorIs(t, err, cache.ErrKNF, "a file that cannot be read is not a miss")
+}
+
+func TestWriteSections(t *testing.T) {
+	tests := []struct {
+		skip int
+		want string
+	}{
+		{0, "headmetabody"}, {2, "admetabody"}, {4, "metabody"}, {6, "tabody"}, {8, "body"}, {11, "y"}, {12, ""},
+	}
+	for _, test := range tests {
+		path := filepath.Join(t.TempDir(), "f")
+		f, err := os.Create(path)
+		require.NoError(t, err)
+		require.NoError(t, writeSections(f, test.skip, []byte("head"), []byte("meta"), []byte("body")))
+		require.NoError(t, f.Close())
+		got, err := os.ReadFile(path)
+		require.NoError(t, err)
+		require.Equal(t, test.want, string(got))
+		require.Error(t, writeSections(f, test.skip, []byte("head"), []byte("meta"), []byte("body!")), "closed file")
+	}
+}
+
+func TestWriteFrame(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "f")
+	f, err := os.Create(path)
+	require.NoError(t, err)
+	require.NoError(t, writeFrame(f, nil, nil, nil))
+	require.NoError(t, writeFrame(f, []byte("h"), nil, []byte("b")))
+	require.NoError(t, f.Close())
+	got, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.Equal(t, "hb", string(got))
+	require.Error(t, writeFrame(f, []byte("h"), nil, nil), "closed file")
+}
+
+func TestScanClearsWhatIsNotAFrame(t *testing.T) {
+	s := newStore(t)
+	require.NoError(t, s.Put(digestKey, []byte("frame"), nil, nil))
+	require.NoError(t, s.AppendMeta("journal", []byte("j")))
+	dir := filepath.Dir(s.path(digestKey))
+
+	// what a cache of an earlier layout leaves in the cache path itself
+	legacy := filepath.Join(s.root, "9f86d081884c7d65~4chunkdata")
+	require.NoError(t, os.WriteFile(legacy, []byte("legacy"), fileMode))
+	// what a write that never finished leaves behind, lately and long ago
+	fresh, stale := filepath.Join(dir, tempPrefix+"fresh"), filepath.Join(dir, tempPrefix+"stale")
+	require.NoError(t, os.WriteFile(fresh, []byte("torn"), fileMode))
+	require.NoError(t, os.WriteFile(stale, []byte("torn"), fileMode))
+	old := time.Now().Add(-2 * tempMaxAge)
+	require.NoError(t, os.Chtimes(stale, old, old))
+	// directories that are no part of the layout
+	require.NoError(t, os.MkdirAll(filepath.Join(s.root, "other", "deep"), dirMode))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "nested"), dirMode))
+	require.NoError(t, os.MkdirAll(filepath.Join(s.root, "9f", "zz"), dirMode))
+
+	var seen []string
+	next, done, err := s.Scan("", 10, func(b blob.Blob) bool {
+		p := make([]byte, b.Size())
+		b.ReadAt(p, 0)
+		seen = append(seen, string(p))
+		return false
+	})
+	require.NoError(t, err)
+	require.True(t, done)
+	require.Equal(t, "9f/86/"+digestKey, next)
+	require.Equal(t, []string{"frame"}, seen, "neither temporary nor metadata files are frames")
+
+	require.NoFileExists(t, legacy)
+	require.NoFileExists(t, stale)
+	require.FileExists(t, fresh, "a write may still be using it")
+	names, err := s.ListMeta()
+	require.NoError(t, err)
+	require.Equal(t, []string{"journal"}, names)
+}
+
+func TestScanResumes(t *testing.T) {
+	s := newStore(t)
+	// three directories, the second of them holding three frames
+	keys := []string{
+		"00aa" + digestKey[4:], "00bb" + digestKey[4:32], "00bb" + digestKey[4:], "00bb" + digestKey[4:63] + "f",
+		"11aa" + digestKey[4:],
+	}
+	for _, key := range keys {
+		require.NoError(t, s.Put(key, []byte(key), nil, nil))
+	}
+	for limit := 1; limit <= len(keys)+1; limit++ {
+		var seen []string
+		var after string
+		var done bool
+		var err error
+		for calls := 0; !done; calls++ {
+			require.LessOrEqual(t, calls, len(keys), "limit %d", limit)
+			after, done, err = s.Scan(after, limit, func(b blob.Blob) bool {
+				p := make([]byte, b.Size())
+				b.ReadAt(p, 0)
+				seen = append(seen, string(p))
+				return false
+			})
+			require.NoError(t, err)
+		}
+		require.Equal(t, keys, seen, "limit %d", limit)
+	}
+}
+
+func TestScanErrors(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("a privileged user can read any directory")
+	}
+	unreadable := func(t *testing.T, path string) {
+		t.Helper()
+		require.NoError(t, os.Chmod(path, 0))
+		t.Cleanup(func() { os.Chmod(path, dirMode) })
+	}
+	t.Run("cache path", func(t *testing.T) {
+		s := newStore(t)
+		unreadable(t, s.root)
+		_, _, err := s.Scan("", 1, keep)
+		require.Error(t, err, "pruning")
+		_, _, err = s.Scan("00/00/0", 1, keep)
+		require.Error(t, err, "listing")
+	})
+	t.Run("cache path is gone", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, os.RemoveAll(s.root))
+		_, done, err := s.Scan("00/00/0", 1, keep)
+		require.NoError(t, err)
+		require.True(t, done)
+	})
+	for name, depth := range map[string]int{"outer directory": 2, "inner directory": 1} {
+		t.Run(name, func(t *testing.T) {
+			s := newStore(t)
+			require.NoError(t, s.Put(digestKey, []byte("h"), nil, nil))
+			dir := s.path(digestKey)
+			for range depth {
+				dir = filepath.Dir(dir)
+			}
+			unreadable(t, dir)
+			_, _, err := s.Scan("", 1, keep)
+			require.Error(t, err)
+		})
+	}
+	t.Run("file", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, s.Put(digestKey, []byte("h"), nil, nil))
+		require.NoError(t, os.Chmod(s.path(digestKey), 0))
+		var visited bool
+		_, done, err := s.Scan("", 1, func(blob.Blob) bool { visited = true; return true })
+		require.NoError(t, err)
+		require.True(t, done)
+		require.False(t, visited, "a file that cannot be opened is passed over")
+		require.FileExists(t, s.path(digestKey))
+	})
+}
+
+func TestMetaNames(t *testing.T) {
+	s := newStore(t)
+	for _, name := range []string{"", ".hidden", "../escape", "a/b", `a\b`, "..", tempPrefix + "1"} {
+		_, err := s.CreateMeta(name)
+		require.ErrorIs(t, err, ErrInvalidMetaName, name)
+		require.ErrorIs(t, s.AppendMeta(name, nil), ErrInvalidMetaName, name)
+		_, err = s.OpenMeta(name)
+		require.ErrorIs(t, err, ErrInvalidMetaName, name)
+		require.ErrorIs(t, s.RemoveMeta(name), ErrInvalidMetaName, name)
+	}
+}
+
+func TestMetaErrors(t *testing.T) {
+	t.Run("directory cannot be made", func(t *testing.T) {
+		s := newStore(t)
+		require.NoError(t, os.WriteFile(filepath.Join(s.root, metaDir), nil, fileMode))
+		_, err := s.CreateMeta("index")
+		require.Error(t, err)
+		require.Error(t, s.AppendMeta("journal", []byte("j")))
+		_, err = s.OpenMeta("index")
+		require.Error(t, err)
+		require.NotErrorIs(t, err, blob.ErrNoMeta)
+		_, err = s.ListMeta()
+		require.Error(t, err)
+	})
+	t.Run("write and rename fail", func(t *testing.T) {
+		s := newStore(t)
+		w, err := s.CreateMeta("index")
+		require.NoError(t, err)
+		require.NoError(t, w.(*metaWriter).File.Close())
+		_, err = w.Write([]byte("lost"))
+		require.Error(t, err)
+		require.Error(t, w.Close())
+		_, err = s.OpenMeta("index")
+		require.ErrorIs(t, err, blob.ErrNoMeta, "a failed write replaces nothing")
+
+		// a directory that is not empty stands where the file belongs
+		require.NoError(t, os.MkdirAll(filepath.Join(s.root, metaDir, "index", "child"), dirMode))
+		w, err = s.CreateMeta("index")
+		require.NoError(t, err)
+		require.Error(t, w.Close())
+		require.Error(t, s.RemoveMeta("index"))
+		require.Error(t, s.AppendMeta("index", nil))
+		names, err := s.ListMeta()
+		require.NoError(t, err)
+		require.Empty(t, names, "neither directories nor temporary files are listed")
+	})
+}
+
+func BenchmarkAppendPath(b *testing.B) {
+	s := newStore(b)
+	for name, key := range map[string]string{"digest": digestKey, "hashed": nativeKey} {
+		b.Run(name, func(b *testing.B) {
+			var pb [pathBufferSize]byte
+			b.ReportAllocs()
+			for b.Loop() {
+				s.appendPath(pb[:0], key)
+			}
+		})
+	}
+}
+
+func BenchmarkStore(b *testing.B) {
+	s := newStore(b)
+	hdr, body := make([]byte, 108), make([]byte, 1024)
+	for name, key := range map[string]string{"digest": digestKey, "hashed": nativeKey} {
+		b.Run("put/"+name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := s.Put(key, hdr, nil, body); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		b.Run("open/"+name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				f, err := s.Open(key)
+				if err != nil {
+					b.Fatal(err)
+				}
+				f.Close()
+			}
+		})
+	}
+	b.Run("open/miss", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			s.Open("absent")
 		}
 	})
-	return fc
-}
-
-func newCacheConfig(t *testing.T) co.Options {
-	dir := t.TempDir() + "/cache/" + cacheProvider
-	return co.Options{
-		Provider: cacheProvider, Filesystem: &flo.Options{CachePath: dir},
-		Index: &io.Options{ReapInterval: timeconv.Duration(time.Second)},
-	}
-}
-
-func TestFilesystemCache_Connect(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := NewCache(t.Name(), &cacheConfig)
-
-	// it should connect
-	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestFilesystemCache_ConnectFailed(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected = `[/root/noaccess.trickster.filesystem.cache] directory is not writeable by trickster:`
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
-	fc := NewCache(t.Name(), &cacheConfig)
-	// it should connect
-	err := fc.Connect()
-	if err == nil {
-		t.Errorf("expected error for %s", expected)
-		fc.Close()
-	}
-	if !strings.HasPrefix(err.Error(), expected) {
-		t.Errorf("expected error '%s' got '%s'", expected, err.Error())
-	}
-}
-
-func TestFilesystemCache_Store(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	const expected1 = "invalid ttl: -1"
-	const expected2 = "open /root/noaccess.trickster.filesystem.cache/cacheKeydata:"
-
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := NewCache(t.Name(), &cacheConfig)
-
-	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should store a value
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should return an error
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(-1)*time.Second)
-	if err == nil {
-		t.Errorf("expected error for %s", expected1)
-	}
-	if err.Error() != expected1 {
-		t.Errorf("expected error '%s' got '%s'", expected1, err.Error())
-	}
-
-	cacheConfig.Filesystem.CachePath = "/root/noaccess.trickster.filesystem.cache"
-	// it should return an error
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err == nil {
-		t.Errorf("expected error for %s", expected2)
-	}
-	if !strings.HasPrefix(err.Error(), expected2) {
-		t.Errorf("expected error '%s' got '%s'", expected2, err.Error())
-	}
-}
-
-func BenchmarkCache_Store(b *testing.B) {
-	fc := setupBenchmark(b)
-	n := 0
-	for b.Loop() {
-		suffix := strconv.Itoa(n)
-		if err := fc.Store(cacheKey+suffix, []byte("data"+suffix), time.Minute); err != nil {
-			b.Fatal(err)
-		}
-		n++
-	}
-}
-
-func TestFilesystemCache_Retrieve(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := NewCache(t.Name(), &cacheConfig)
-
-	err := fc.Connect()
-	require.NoError(t, err)
-
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	require.NoError(t, err)
-
-	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey)
-	require.NoError(t, err)
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	require.Equal(t, status.LookupStatusHit, ls)
-
-	data, ls, err = fc.Retrieve(cacheKey)
-	require.NoError(t, err)
-
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-}
-
-func BenchmarkCache_Retrieve(b *testing.B) {
-	fc := setupBenchmark(b)
-	if err := fc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
-		b.Fatal(err)
-	}
-
-	for b.Loop() {
-		data, ls, err := fc.Retrieve(cacheKey)
-		if err != nil {
-			b.Fatal(err)
-		}
-		if string(data) != "data" {
-			b.Fatalf("wanted %q, got %q", "data", data)
-		}
-		if ls != status.LookupStatusHit {
-			b.Fatalf("expected %s, got %s", status.LookupStatusHit, ls)
-		}
-	}
-}
-
-func TestFilesystemCache_Remove(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := NewCache(t.Name(), &cacheConfig)
-
-	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer fc.Close()
-
-	// it should store a value
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	fc.Remove(cacheKey)
-
-	// it should be a cache miss
-	_, ls, err = fc.Retrieve(cacheKey)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", cacheKey)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
-}
-
-func BenchmarkCache_Remove(b *testing.B) {
-	fc := setupBenchmark(b)
-	for b.Loop() {
-		b.StopTimer()
-		if err := fc.Store(cacheKey, []byte("data"), time.Minute); err != nil {
-			b.Fatal(err)
-		}
-		b.StartTimer()
-		if err := fc.Remove(cacheKey); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func TestFilesystemCache_BulkRemove(t *testing.T) {
-	logger.SetLogger(logging.ConsoleLogger(level.Error))
-	cacheConfig := newCacheConfig(t)
-	cacheConfig.Filesystem.CachePath = t.TempDir() + "/cache"
-	fc := NewCache(t.Name(), &cacheConfig)
-
-	err := fc.Connect()
-	if err != nil {
-		t.Error(err)
-	}
-	defer fc.Close()
-
-	// it should store a value
-	err = fc.Store(cacheKey, []byte("data"), time.Duration(60)*time.Second)
-	if err != nil {
-		t.Error(err)
-	}
-
-	// it should retrieve a value
-	data, ls, err := fc.Retrieve(cacheKey)
-	if err != nil {
-		t.Error(err)
-	}
-	if string(data) != "data" {
-		t.Errorf("wanted \"%s\". got \"%s\".", "data", data)
-	}
-	if ls != status.LookupStatusHit {
-		t.Errorf("expected %s got %s", status.LookupStatusHit, ls)
-	}
-
-	fc.Remove(cacheKey)
-
-	// it should be a cache miss
-	_, ls, err = fc.Retrieve(cacheKey)
-	if err == nil {
-		t.Errorf("expected key not found error for %s", cacheKey)
-	}
-	if ls != status.LookupStatusKeyMiss {
-		t.Errorf("expected %s got %s", status.LookupStatusKeyMiss, ls)
-	}
-}
-
-func BenchmarkCache_BulkRemove(b *testing.B) {
-	fc := setupBenchmark(b)
-	keys := make([]string, benchmarkKeyCount)
-	values := make([][]byte, benchmarkKeyCount)
-	for n := range benchmarkKeyCount {
-		suffix := strconv.Itoa(n)
-		keys[n] = cacheKey + suffix
-		values[n] = []byte("data" + suffix)
-	}
-
-	for b.Loop() {
-		b.StopTimer()
-		for n, key := range keys {
-			if err := fc.Store(key, values[n], time.Minute); err != nil {
-				b.Fatal(err)
-			}
-		}
-		b.StartTimer()
-		if err := fc.Remove(keys...); err != nil {
-			b.Fatal(err)
-		}
-	}
-	b.ReportMetric(benchmarkKeyCount, "keys/op")
 }
