@@ -82,8 +82,13 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool) bool {
 
 func writeFiles(t *testing.T, content string, paths ...string) {
 	t.Helper()
+	// write-then-rename, since an in-place write's truncation is visible to a fast poll as empty content
 	for _, path := range paths {
-		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		tmp := path + ".tmp"
+		if err := os.WriteFile(tmp, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(tmp, path); err != nil {
 			t.Fatal(err)
 		}
 	}
