@@ -100,7 +100,9 @@ func FetchPartialBucket(r *http.Request, pc *po.Options, trq *timeseries.TimeRan
 	if resp == nil || resp.StatusCode != http.StatusOK || len(b) == 0 {
 		return nil, status.LookupStatusProxyError, ErrPartialBucketFetch
 	}
-	ts, err := modeler.WireUnmarshalerReader(getTimeseriesReader(resp), trq)
+	tr, dec := getTimeseriesReader(resp)
+	ts, err := modeler.WireUnmarshalerReader(tr, trq)
+	closeDecoder(dec)
 	if err != nil {
 		logger.Error("partial bucket unmarshaling failed", logging.Pairs{keys.Detail: err.Error()})
 		return nil, status.LookupStatusProxyError, err
@@ -250,9 +252,12 @@ func (pf *partialFetches) mergeInto(rts timeseries.Timeseries, o *bo.Options, no
 	}
 	if len(merged) > 0 {
 		// a start bucket's label precedes the interior's, so the points are sorted after it joins
-		rts.Merge(beforeInterior, merged...)
+		mergeResponse(rts, beforeInterior, merged...)
 	}
-	tspan.SetAttributes(tr, span, attribute.String(keys.PartialBuckets, headers.PartialBucketsString(results)))
+	// the attribute's string is only built for a span that records it
+	if tr != nil && span != nil && span.IsRecording() {
+		tspan.SetAttributes(tr, span, attribute.String(keys.PartialBuckets, headers.PartialBucketsString(results)))
+	}
 	return results, values
 }
 

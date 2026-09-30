@@ -17,10 +17,11 @@
 package flightsql
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -87,7 +88,8 @@ func (ipcCodec) Marshal(b []byte) ([]byte, error) {
 }
 
 func (ipcCodec) Unmarshal(data []byte) ([]byte, error) {
-	return bytes.Clone(data), nil
+	// the tier gives a codec data of its own, so the payload is that data, capped at its length
+	return slices.Clip(data), nil
 }
 
 func (ipcCodec) Size(b []byte) int {
@@ -97,8 +99,39 @@ func (ipcCodec) Size(b []byte) int {
 // deltaRunner routes statement queries across the delta, object, and proxy
 // tiers.
 type deltaRunner struct {
-	cfg    DeltaConfig
-	engine *nativedelta.Engine[[]byte]
+	cfg     DeltaConfig
+	engine  *nativedelta.Engine[[]byte]
+	schemas schemaMemo
+}
+
+// a server sees few distinct result schemas, but the memo is bounded in case it sees many
+const maxMemoSchemas = 256
+
+// holds entry schemas deserialized, by their serialized form, which every hit would otherwise
+// deserialize anew; an Arrow schema is immutable, so hits share one
+type schemaMemo struct {
+	mu sync.RWMutex
+	m  map[string]*arrow.Schema
+}
+
+func (sm *schemaMemo) get(header []byte) (*arrow.Schema, error) {
+	sm.mu.RLock()
+	schema, ok := sm.m[string(header)]
+	sm.mu.RUnlock()
+	if ok {
+		return schema, nil
+	}
+	schema, err := flight.DeserializeSchema(header, memory.DefaultAllocator)
+	if err != nil {
+		return nil, err
+	}
+	sm.mu.Lock()
+	if sm.m == nil || len(sm.m) >= maxMemoSchemas {
+		sm.m = make(map[string]*arrow.Schema)
+	}
+	sm.m[string(header)] = schema
+	sm.mu.Unlock()
+	return schema, nil
 }
 
 func newDeltaRunner(cfg DeltaConfig, keyPrefix string) *deltaRunner {
@@ -278,7 +311,7 @@ func (d *deltaRunner) respond(ctx context.Context, s *Server, delta *nativedelta
 	trq *timeseries.TimeRangeQuery, keys []dsarrow.SortKey,
 ) (*arrow.Schema, <-chan flight.StreamChunk, error) {
 	// delta rows rebuilt into batches of the preserved schema, in the statement's ORDER BY order
-	schema, err := flight.DeserializeSchema(delta.Header, memory.DefaultAllocator)
+	schema, err := d.schemas.get(delta.Header)
 	if err != nil {
 		return nil, nil, fmt.Errorf("flight delta schema: %w", err)
 	}
@@ -288,14 +321,7 @@ func (d *deltaRunner) respond(ctx context.Context, s *Server, delta *nativedelta
 	if err != nil {
 		return nil, nil, fmt.Errorf("flight delta rebuild: %w", err)
 	}
-	ipcBytes, err := EncodeRecords(schema, records)
-	for _, record := range records {
-		record.Release()
-	}
-	if err != nil {
-		return nil, nil, err
-	}
-	return s.streamIPCBytes(ctx, ipcBytes)
+	return s.streamRecords(ctx, schema, records)
 }
 
 // ops builds the engine callbacks for one request.

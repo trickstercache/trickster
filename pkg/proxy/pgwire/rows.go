@@ -142,7 +142,7 @@ func (k *rowSink) row(body []byte) error {
 	}
 	r.AddBytes(body)
 	if k.sequenced {
-		r.AddValue(int64(k.rows))
+		r.AddInt(int64(k.rows))
 	}
 	if err := r.Commit(); err != nil {
 		return errors.Join(errResultRow, err)
@@ -173,42 +173,34 @@ func sequenceOf(r dataset.Row) int64 {
 	if len(r.Point.Values) < 2 {
 		return 0
 	}
-	switch v := r.Point.Values[1].(type) {
-	case int64:
-		return v
-	case int:
-		return int64(v)
-	}
-	return 0
+	n, _ := dataset.IntValue(r.Point.Values[1])
+	return n
 }
 
-func encodeDelta(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) []byte {
+func writeDelta(w *frameWriter, d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) {
 	// delta rows as a whole response to one Query: buckets in the plan's order, and a bucket's rows in
 	// the origin's order when the plan orders by more than the bucket
 	order := dataset.RowOrder{Descending: descending(plan)}
 	if len(plan.Ordering) > 1 {
 		order.Compare = bySequence
 	}
-	size, rows := len(d.Header)+64, 0
-	for _, r := range d.DS.Results {
-		for _, s := range r.SeriesList {
-			for i := range s.Points {
-				body, _ := dataset.BytesValue(s.Points[i].Values[0])
-				size += frameHeaderLen + len(body)
-			}
-		}
-	}
-	out := make([]byte, 0, size)
 	if d.Header != nil {
-		out = appendFrame(out, msgRowDescription, d.Header)
+		w.frame(msgRowDescription, d.Header)
 	}
+	var rows int64
 	for _, r := range d.DS.Results {
 		for row := range r.Rows(order) {
 			body, _ := dataset.BytesValue(row.Point.Values[0])
-			out = appendFrame(out, msgDataRow, body)
+			w.frame(msgDataRow, body)
 			rows++
 		}
 	}
-	out = appendFrame(out, msgCommandComplete, append([]byte(selectTagPrefix+strconv.Itoa(rows)), 0))
-	return appendFrame(out, msgReadyForQuery, []byte{txStatusIdle})
+	writeSelectComplete(w, rows)
+}
+
+// frames a CommandComplete tagged with the rows a SELECT returned, and ReadyForQuery
+func writeSelectComplete(w *frameWriter, rows int64) {
+	var tag [len(selectTagPrefix) + 20]byte
+	w.commandComplete(strconv.AppendInt(append(tag[:0], selectTagPrefix...), rows, 10))
+	w.frame(msgReadyForQuery, readyIdle)
 }

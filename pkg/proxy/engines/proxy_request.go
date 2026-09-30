@@ -19,6 +19,7 @@ package engines
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptrace"
@@ -30,8 +31,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -198,6 +202,30 @@ func (pr *proxyRequest) Clone() *proxyRequest {
 	}
 }
 
+var errNoUpstreamRequest = errors.New("no upstream request to fetch with")
+
+// a buffer for a body the origin said is n bytes long, sized to it when that is within what the
+// cache would keep
+func (pr *proxyRequest) newCacheBuffer(n int64) *bytes.Buffer {
+	if n > 0 && pr.rsc != nil && pr.rsc.BackendOptions != nil && n <= int64(pr.rsc.BackendOptions.MaxObjectSizeBytes) {
+		return bytes.NewBuffer(make([]byte, 0, n))
+	}
+	return &bytes.Buffer{}
+}
+
+// a proxyRequest for one more origin Fetch alongside this one, with an upstream request cloned onto
+// ctx; it shares the client request, which a Fetch only reads
+func (pr *proxyRequest) fetchClone(ctx context.Context) (*proxyRequest, error) {
+	if pr.upstreamRequest == nil {
+		return nil, errNoUpstreamRequest
+	}
+	ur, err := request.CloneWithContext(ctx, pr.upstreamRequest)
+	if err != nil {
+		return nil, err
+	}
+	return &proxyRequest{Request: pr.Request, rsc: pr.rsc, upstreamRequest: ur, contentLength: -1}, nil
+}
+
 // Fetch makes an HTTP request to the Origin URL, bypassing the Cache.
 // A non-nil error indicates a mid-stream read failure; resp.StatusCode
 // still reflects the upstream status, so callers must check both.
@@ -211,7 +239,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 	}
 
 	start := time.Now()
-	reader, resp, _ := PrepareFetchReader(pr.upstreamRequest)
+	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
 
 	var body []byte
 	var err error
@@ -219,7 +247,7 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 		if o != nil && o.MaxObjectSizeBytes > 0 {
 			// +1 so reaching limit means overflow, not exactly-at-limit.
 			limit := int64(o.MaxObjectSizeBytes) + 1
-			body, err = io.ReadAll(io.LimitReader(reader, limit))
+			body, err = tbytes.ReadAllSized(io.LimitReader(reader, limit), min(contentLength, limit))
 			if err == nil && int64(len(body)) >= limit {
 				err = tpe.ErrUnexpectedUpstreamResponse
 				logger.Error("upstream response exceeded MaxObjectSizeBytes",
@@ -554,13 +582,26 @@ func (pr *proxyRequest) queryKey(ctx context.Context,
 ) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 	// only a GET is answered with a body, which is what there is to gain by leaving it in the cache
 	deferBody := pr.Method == http.MethodGet
-	d, ls, nr, err := queryCache(ctx, c, pr.key, pr.wantedRanges, nil, deferBody)
+	accept := pr.storedEncodings()
+	d, ls, nr, err := queryCache(ctx, c, pr.key, pr.wantedRanges, nil, deferBody, accept)
 	if err == nil && d != nil && len(d.VaryNames) > 0 {
 		pr.varyGeneration = d.VaryGeneration
 		pr.setVaryNames(d.VaryNames)
-		d, ls, nr, err = queryCache(ctx, c, pr.key, pr.wantedRanges, nil, deferBody)
+		d, ls, nr, err = queryCache(ctx, c, pr.key, pr.wantedRanges, nil, deferBody, accept)
 	}
 	return d, ls, nr, err
+}
+
+// the encodings a body the cache stored compressed may be sent in as it lies, which are those the
+// client accepts, unless it asks for ranges, which count the decoded body
+func (pr *proxyRequest) storedEncodings() providers.Provider {
+	if pr.wantsRanges || pr.Method != http.MethodGet {
+		return providers.Identity
+	}
+	if ep := profile.FromContext(pr.Request.Context()); ep != nil {
+		return ep.Supported
+	}
+	return providers.Identity
 }
 
 // a body that cannot be read leaves the request with nothing cached to answer from
@@ -644,7 +685,7 @@ func (pr *proxyRequest) setBodyWriter() {
 	}
 
 	if pr.writeToCache && pr.cacheBuffer == nil {
-		pr.cacheBuffer = &bytes.Buffer{}
+		pr.cacheBuffer = pr.newCacheBuffer(pr.upstreamResponse.ContentLength)
 
 		if pr.cachingPolicy.IsClientFresh {
 			// don't write response body to the client on a 304 Not Modified
@@ -670,7 +711,7 @@ func (pr *proxyRequest) writeResponseBody() {
 	if pr.upstreamReader == nil || pr.responseWriter == nil {
 		return
 	}
-	n, err := io.Copy(pr.responseWriter, pr.upstreamReader)
+	n, err := tbytes.Copy(pr.responseWriter, pr.upstreamReader)
 	if err != nil {
 		logger.Error("error copying upstream response body", logging.Pairs{keys.Error: err})
 		pr.bodyTruncated.Store(true)

@@ -187,7 +187,7 @@ func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {
 	// result is neither canceled nor fetched twice. Nothing here is sized by the origin's row.
 	buffer := pumpBuffers.Get().(*[]byte)
 	defer pumpBuffers.Put(buffer)
-	out := &frameWriter{conn: s.client, timeout: s.server.config.WriteTimeout, buffer: (*buffer)[:0]}
+	out := &frameWriter{w: deadlineWriter{s.client, s.server.config.WriteTimeout}, buffer: (*buffer)[:0]}
 	if buffered.RowDescription != nil {
 		out.frame(msgRowDescription, buffered.RowDescription)
 	}
@@ -206,16 +206,38 @@ func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {
 	return errRelayResumed
 }
 
+// frames messages into a fixed buffer, writing it out as it fills; after a failed write, the rest
+// are dropped
 type frameWriter struct {
+	w      io.Writer
+	buffer []byte
+	err    error
+}
+
+// sets a write deadline before each write, so each can take the timeout
+type deadlineWriter struct {
 	conn    net.Conn
 	timeout time.Duration
-	buffer  []byte
-	err     error
+}
+
+func (d deadlineWriter) Write(b []byte) (int, error) {
+	if d.timeout > 0 {
+		_ = d.conn.SetWriteDeadline(time.Now().Add(d.timeout))
+	}
+	return d.conn.Write(b)
+}
+
+func (w *frameWriter) write(b []byte) {
+	if w.err == nil {
+		if _, err := w.w.Write(b); err != nil {
+			w.err = io.ErrClosedPipe
+		}
+	}
 }
 
 func (w *frameWriter) flush() {
-	if w.err == nil && len(w.buffer) > 0 && !writeAll(w.conn, w.buffer, w.timeout) {
-		w.err = io.ErrClosedPipe
+	if len(w.buffer) > 0 {
+		w.write(w.buffer)
 	}
 	w.buffer = w.buffer[:0]
 }
@@ -237,9 +259,16 @@ func (w *frameWriter) frame(typ byte, body []byte) {
 	}
 	// a body that does not fit is written from where it lies instead of being copied
 	w.flush()
-	if w.err == nil && !writeAll(w.conn, body, w.timeout) {
-		w.err = io.ErrClosedPipe
+	w.write(body)
+}
+
+// frames a CommandComplete for tag, copied into the buffer so that the tag need not live on
+func (w *frameWriter) commandComplete(tag []byte) {
+	w.header(msgCommandComplete, len(tag)+1)
+	if len(w.buffer)+len(tag)+1 > cap(w.buffer) {
+		w.flush()
 	}
+	w.buffer = append(append(w.buffer, tag...), 0)
 }
 
 func (w *frameWriter) stream(typ byte, from io.Reader, size int) {

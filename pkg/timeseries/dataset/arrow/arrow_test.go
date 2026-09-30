@@ -622,3 +622,40 @@ func TestCompareValues(t *testing.T) {
 		})
 	}
 }
+
+func TestFromRecordsSizesPoints(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Second}},
+		{Name: "host", Type: arrow.BinaryTypes.String},
+		{Name: "note", Type: arrow.BinaryTypes.String},
+		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	}, nil)
+	build := func(n int) *dataset.DataSet {
+		rows := make([][]any, n)
+		for i := range rows {
+			rows[i] = []any{int64(1700000000 + i), "a", "a note of some length", float64(i)}
+		}
+		rec := makeRecord(t, schema, rows)
+		defer rec.Release()
+		ds, err := FromRecords(schema, []arrow.RecordBatch{rec}, testTRQ("host"))
+		if err != nil {
+			t.Fatalf("FromRecords: %v", err)
+		}
+		return ds
+	}
+	small, large := build(10), build(1000)
+	series := large.Results[0].SeriesList[0]
+	var sum int64
+	for _, p := range series.Points {
+		if p.Size != dataset.PointSize(p.Values) {
+			t.Fatalf("point size = %d, want %d", p.Size, dataset.PointSize(p.Values))
+		}
+		sum += int64(p.Size)
+	}
+	if series.PointSize != sum {
+		t.Fatalf("series point size = %d, want %d", series.PointSize, sum)
+	}
+	if grown := large.Size() - small.Size(); grown < 990*int64(len("a note of some length")) {
+		t.Fatalf("size grew by %d for 990 more rows", grown)
+	}
+}

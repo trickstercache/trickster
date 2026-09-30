@@ -181,11 +181,17 @@ gofix-diff:
 	@go fix -diff ./...
 
 LINT_FLAGS ?= 
+# tests are linted in a second pass by the rules that replaced the Makefile's scans, as the
+# full set of linters is not run over them
+TEST_LINTERS := forbidigo,depguard,godox,goheader
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
+	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
 	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do \
-		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
+		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
+			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
+			-c ../../.golangci.yml ./...) || exit 1; \
 	done
 
 .PHONY: lint
@@ -235,7 +241,7 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen check-weak-random gotest check-fmtprints check-todos check-devorigin-offline
+test: check-codegen check-weak-random gotest check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
@@ -335,66 +341,6 @@ check-devorigin-offline:
 	@tmp=$$(mktemp -d) && trap 'chmod -R u+w "$$tmp"; rm -rf "$$tmp"' EXIT && \
 		cd hack/devorigin && GOMODCACHE="$$tmp" GOPROXY=off GOFLAGS=-mod=readonly $(GO) build -o /dev/null . && \
 		echo "hack/devorigin builds offline"
-
-.PHONY: check-license-headers
-check-license-headers: SHELL:=/bin/sh
-check-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
-	do \
-		output=$$(grep 'Licensed under the Apache License' $$file) ; \
-		if [ "$$?" != "0" ]; then \
-			echo "" ; \
-			echo "Some project code files do not have the Trickster / Apache 2.0 license header." ; \
-			echo "Run 'make insert-license-headers' and commit the changes." ; \
-			echo "" ; \
-			exit 1 ; \
-		fi ; \
-	done ; \
-	echo "" ; echo "\033[1;32m✓\033[0m All code files have the required license header." ; echo ""
-
-.PHONY: check-fmtprints
-check-fmtprints: SHELL:=/bin/sh
-check-fmtprints: # fails if there are any fmt.Print* calls outside of the approved files
-	@cd pkg && \
-	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/' | grep -v '^lb/example_test.go:'); \
-	count=0; \
-	if [ -n "$$fmtprints" ]; then \
-		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \
-	fi; \
-	if [ "$$count" -ne 0 ]; then \
-		echo "" ; \
-		echo "\033[1;31m⨉\033[0m ($$count) unexpected fmt.Print*(s) must be removed from the codebase:"; \
-		echo "" ; \
-		echo "$$fmtprints" ; \
-		echo "" ; \
-		echo "" ; \
-		exit 1; \
-	fi ; \
-	echo "" ; echo "\033[1;32m✓\033[0m No unexpected fmt.Print* calls." ; echo ""
-
-.PHONY: check-todos
-check-todos: SHELL:=/bin/sh
-check-todos: # there are 11 known "TODO"s in the codebase. This check fails if more are added.
-	@cd pkg && \
-	todos=$$(git grep -in todo | grep -v 'context\.TODO'); \
-	count=0; \
-	if [ -n "$$todos" ]; then \
-		count="$$(echo "$$todos" | wc -l | tr -d '[:space:]')" ; \
-	fi; \
-	KNOWN_TODO_COUNT=7 ; \
-	if [ "$$count" -gt $$KNOWN_TODO_COUNT ]; then \
-		newtodos=$$(($$count - $$KNOWN_TODO_COUNT)) ; \
-		echo "" ; \
-		echo "\033[1;31m$$newtodos new TODOs found in the codebase.\033[0m Do not add any new TODOs to the codebase." ;\
-		echo "" ; \
-		echo "All TODOs:" ; \
-		echo "" ; \
-		echo "$$todos" | cut -b 1-100 ; \
-		echo "" ; \
-		echo "" ; \
-		exit 1; \
-	fi ; \
-	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
 
 .PHONY: install-codespell
 install-codespell:

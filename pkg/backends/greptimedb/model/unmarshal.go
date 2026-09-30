@@ -39,22 +39,6 @@ type schema struct {
 	Columns []column `json:"column_schemas"`
 }
 
-type records struct {
-	Schema  schema                     `json:"schema"`
-	Rows    [][]any                    `json:"rows"`
-	Total   *uint64                    `json:"total_rows"`
-	Metrics map[string]json.RawMessage `json:"metrics,omitempty"`
-}
-
-type output struct {
-	Records *records `json:"records"`
-}
-
-type response struct {
-	Output        []output `json:"output"`
-	ExecutionTime *uint64  `json:"execution_time_ms"`
-}
-
 func UnmarshalTimeseries(body []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	return stream.BytesUnmarshaler(newDecoder)(body, trq)
 }

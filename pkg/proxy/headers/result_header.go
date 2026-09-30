@@ -51,24 +51,40 @@ const (
 	partialBucketFieldSep  = ":"
 )
 
+// the longest a partial bucket's entry can be: a range, two separators, an edge and a status
+const partialBucketStringMax = 64
+
 func writePartialBuckets(sb *strings.Builder, pbs []PartialBucketResult) {
-	for i, pb := range pbs {
+	var buf [partialBucketStringMax]byte
+	for i := range pbs {
 		if i > 0 {
 			sb.WriteString(partialBucketSeparator)
 		}
-		sb.WriteString(strconv.FormatInt(pb.Extent.Start.UnixMilli(), 10))
-		sb.WriteByte('-')
-		sb.WriteString(strconv.FormatInt(pb.Extent.End.UnixMilli(), 10))
+		b := strconv.AppendInt(buf[:0], pbs[i].Extent.Start.UnixMilli(), 10)
+		b = append(b, '-')
+		b = strconv.AppendInt(b, pbs[i].Extent.End.UnixMilli(), 10)
+		sb.Write(b)
 		sb.WriteString(partialBucketFieldSep)
-		sb.WriteString(pb.Edge.String())
+		sb.WriteString(pbs[i].Edge.String())
 		sb.WriteString(partialBucketFieldSep)
-		sb.WriteString(pb.Status)
+		sb.WriteString(pbs[i].Status)
+	}
+}
+
+func writeExtentList(sb *strings.Builder, el timeseries.ExtentList) {
+	var buf [2 * 41]byte
+	for i := range el {
+		if i > 0 {
+			sb.WriteByte(';')
+		}
+		sb.Write(el[i].AppendString(buf[:0]))
 	}
 }
 
 // PartialBucketsString returns partial bucket results as the result header lists them, unbracketed
 func PartialBucketsString(pbs []PartialBucketResult) string {
 	var sb strings.Builder
+	sb.Grow(len(pbs) * partialBucketStringMax)
 	writePartialBuckets(&sb, pbs)
 	return sb.String()
 }
@@ -138,8 +154,13 @@ func mergePartialBuckets(a, b []PartialBucketResult) []PartialBucketResult {
 	return out
 }
 
+// the length of the header's names and separators, which String sizes its output from
+const resultHeaderFixedLen = len("engine=; status=; fetched=[]; ffstatus=; " + keys.PartialBuckets + "=[]; failed=[]")
+
 func (p ResultHeaderParts) String() string {
 	var sb strings.Builder
+	sb.Grow(resultHeaderFixedLen + len(p.Engine) + len(p.Status) + len(p.FastForwardStatus) +
+		(len(p.Fetched)+len(p.FailedFetch))*28 + len(p.PartialBuckets)*partialBucketStringMax)
 	sb.WriteString("engine=")
 	sb.WriteString(p.Engine)
 	if p.Status != "" {
@@ -148,7 +169,7 @@ func (p ResultHeaderParts) String() string {
 	}
 	if len(p.Fetched) > 0 {
 		sb.WriteString("; fetched=[")
-		sb.WriteString(p.Fetched.String())
+		writeExtentList(&sb, p.Fetched)
 		sb.WriteString("]")
 	}
 	if p.FastForwardStatus != "" {
@@ -162,7 +183,7 @@ func (p ResultHeaderParts) String() string {
 	}
 	if len(p.FailedFetch) > 0 {
 		sb.WriteString("; failed=[")
-		sb.WriteString(p.FailedFetch.String())
+		writeExtentList(&sb, p.FailedFetch)
 		sb.WriteString("]")
 	}
 	return sb.String()
@@ -193,10 +214,11 @@ func MergeResultHeaderVals(h1, h2 string) string {
 	if h1 == "" {
 		return h2
 	}
+	return MergeResultHeaderParts(parseResultHeaderVals(h1), parseResultHeaderVals(h2)).String()
+}
 
-	r1 := parseResultHeaderVals(h1)
-	r2 := parseResultHeaderVals(h2)
-
+// MergeResultHeaderParts merges r2 into r1 as MergeResultHeaderVals merges their header values
+func MergeResultHeaderParts(r1, r2 ResultHeaderParts) ResultHeaderParts {
 	if r1.Engine == "" {
 		r1.Engine = r2.Engine
 	}
@@ -213,27 +235,52 @@ func MergeResultHeaderVals(h1, h2 string) string {
 		r1.FastForwardStatus = status.StatusPartialHit
 	}
 
-	if len(r1.Fetched) == 0 {
-		r1.Fetched = r2.Fetched
-	} else if len(r2.Fetched) > 0 {
-		merged := make(timeseries.ExtentList, len(r1.Fetched)+len(r2.Fetched))
-		copy(merged, r1.Fetched)
-		copy(merged[len(r1.Fetched):], r2.Fetched)
-		r1.Fetched = merged.Compress(0)
-	}
-
+	r1.Fetched = mergeExtentLists(r1.Fetched, r2.Fetched)
 	r1.PartialBuckets = mergePartialBuckets(r1.PartialBuckets, r2.PartialBuckets)
+	r1.FailedFetch = mergeExtentLists(r1.FailedFetch, r2.FailedFetch)
+	return r1
+}
 
-	if len(r1.FailedFetch) == 0 {
-		r1.FailedFetch = r2.FailedFetch
-	} else if len(r2.FailedFetch) > 0 {
-		merged := make(timeseries.ExtentList, len(r1.FailedFetch)+len(r2.FailedFetch))
-		copy(merged, r1.FailedFetch)
-		copy(merged[len(r1.FailedFetch):], r2.FailedFetch)
-		r1.FailedFetch = merged.Compress(0)
+func mergeExtentLists(a, b timeseries.ExtentList) timeseries.ExtentList {
+	switch {
+	case len(a) == 0:
+		return b
+	case len(b) == 0:
+		return a
 	}
+	merged := make(timeseries.ExtentList, len(a)+len(b))
+	copy(merged, a)
+	copy(merged[len(a):], b)
+	return merged.Compress(0)
+}
 
-	return r1.String()
+// ResultHeaderMerger merges result header values into what successive MergeResultHeaderVals calls
+// would make, parsing each value once and rendering the merge once
+type ResultHeaderMerger struct {
+	val    string
+	parts  ResultHeaderParts
+	parsed bool
+}
+
+// Add merges h into the result
+func (m *ResultHeaderMerger) Add(h string) {
+	if !m.parsed {
+		if m.val == "" {
+			m.val = h
+			return
+		}
+		m.parts, m.parsed = parseResultHeaderVals(m.val), true
+	}
+	m.parts = MergeResultHeaderParts(m.parts, parseResultHeaderVals(h))
+}
+
+// String returns the merged header value
+func (m *ResultHeaderMerger) String() string {
+	if m.parsed {
+		m.val, m.parsed = m.parts.String(), false
+		m.parts = ResultHeaderParts{}
+	}
+	return m.val
 }
 
 func parseResultHeaderVals(h string) ResultHeaderParts {
@@ -260,21 +307,17 @@ func parseResultHeaderVals(h string) ResultHeaderParts {
 			case keys.PartialBuckets:
 				r.PartialBuckets = parsePartialBuckets(val)
 			case keys.Fetched, keys.Failed:
-				val = strings.NewReplacer("[", "", "]", "").Replace(val)
-				fparts := strings.Split(val, ";")
-				el := make(timeseries.ExtentList, len(fparts))
-				var k int
-				for _, fpart := range fparts {
+				val = strings.TrimSuffix(strings.TrimPrefix(val, "["), "]")
+				el := make(timeseries.ExtentList, 0, strings.Count(val, ";")+1)
+				for fpart := range strings.SplitSeq(val, ";") {
 					if ext, ok := parseMillisRange(fpart); ok {
-						el[k] = ext
-						k++
+						el = append(el, ext)
 					}
 				}
-
 				if key == keys.Fetched {
-					r.Fetched = el[:k]
+					r.Fetched = el
 				} else {
-					r.FailedFetch = el[:k]
+					r.FailedFetch = el
 				}
 			}
 		}

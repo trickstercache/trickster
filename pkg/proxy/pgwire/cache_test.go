@@ -722,7 +722,7 @@ func TestFrameWriterNeverGrowsItsBuffer(t *testing.T) {
 	const bufferSize = 64
 	small, large := []byte("small"), bytes.Repeat([]byte{'L'}, 10*bufferSize)
 	streamed := bytes.Repeat([]byte{'S'}, 7*bufferSize+3)
-	w := &frameWriter{conn: server, timeout: fakeTimeout, buffer: make([]byte, 0, bufferSize)}
+	w := &frameWriter{w: deadlineWriter{server, fakeTimeout}, buffer: make([]byte, 0, bufferSize)}
 	w.frame(msgDataRow, small)
 	w.frame(msgDataRow, large)
 	w.frame(msgDataRow, bytes.Repeat([]byte{'F'}, bufferSize-frameHeaderLen))
@@ -741,11 +741,11 @@ func TestFrameWriterNeverGrowsItsBuffer(t *testing.T) {
 		t.Fatalf("got %d bytes, want %d", len(got), len(want))
 	}
 	// a source that ends early and a closed client are both reported
-	short := &frameWriter{conn: server, timeout: fakeTimeout, buffer: make([]byte, 0, bufferSize)}
+	short := &frameWriter{w: deadlineWriter{server, fakeTimeout}, buffer: make([]byte, 0, bufferSize)}
 	if short.stream(msgDataRow, bytes.NewReader(small), bufferSize); short.err == nil {
 		t.Fatal("expected a short read to fail")
 	}
-	closed := &frameWriter{conn: server, timeout: fakeTimeout, buffer: make([]byte, 0, bufferSize)}
+	closed := &frameWriter{w: deadlineWriter{server, fakeTimeout}, buffer: make([]byte, 0, bufferSize)}
 	if closed.frame(msgDataRow, large); closed.err == nil {
 		t.Fatal("expected a write to a closed connection to fail")
 	}

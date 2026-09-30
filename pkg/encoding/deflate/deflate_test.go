@@ -75,3 +75,19 @@ func TestPooledEncoderRoundtrip(t *testing.T) {
 		}
 	}
 }
+
+func TestPooledEncodersRoundtripLevels(t *testing.T) {
+	want := bytes.Repeat([]byte("trickster pooled codec "), 512)
+	for _, level := range []int{-3, -2, -1, 0, 1, 9, 10} {
+		var buf bytes.Buffer
+		enc := NewEncoder(&buf, level)
+		enc.Write(want)
+		if err := enc.Close(); err != nil {
+			t.Fatal(err)
+		}
+		got, err := Decode(buf.Bytes())
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("level %d: round trip failed: %v", level, err)
+		}
+	}
+}

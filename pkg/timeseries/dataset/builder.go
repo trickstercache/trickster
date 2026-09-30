@@ -80,6 +80,7 @@ type Builder struct {
 	bytes    []byte
 	byteSize int
 	blobs    [][]byte
+	ints     []int64
 	finished bool
 }
 
@@ -277,6 +278,27 @@ func (r *RowBuilder) AddBytes(raw []byte) {
 	r.values = append(r.values, r.b.bytesValue(r.b.copyBytes(raw)))
 }
 
+// AddInt appends v as the next value, a *int64 for IntValue, which boxes without the allocation an
+// int64 over 255 would take
+func (r *RowBuilder) AddInt(v int64) {
+	r.values = append(r.values, r.b.intValue(v))
+}
+
+// IntValue returns the integer of a value AddInt appended, or of an int64 or int value.
+func IntValue(v any) (int64, bool) {
+	switch t := v.(type) {
+	case *int64:
+		if t != nil {
+			return *t, true
+		}
+	case int64:
+		return t, true
+	case int:
+		return int64(t), true
+	}
+	return 0, false
+}
+
 // BytesValue returns the bytes of a value AddBytes appended, or of a []byte value.
 func BytesValue(v any) ([]byte, bool) {
 	switch t := v.(type) {
@@ -425,6 +447,15 @@ func (b *Builder) bytesValue(raw []byte) *[]byte {
 	}
 	b.blobs = append(b.blobs, raw)
 	return &b.blobs[len(b.blobs)-1]
+}
+
+func (b *Builder) intValue(v int64) *int64 {
+	// the integers share chunks as the byte slice headers do, and never move once pointed to
+	if len(b.ints) == cap(b.ints) {
+		b.ints = make([]int64, 0, min(max(2*cap(b.ints), minValueChunk), maxValueChunk))
+	}
+	b.ints = append(b.ints, v)
+	return &b.ints[len(b.ints)-1]
 }
 
 func (b *Builder) copyBytes(raw []byte) []byte {

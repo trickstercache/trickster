@@ -83,15 +83,14 @@ func TestPackedRows(t *testing.T) {
 		}
 		for j, p := range s.Points {
 			wp := ws.Points[j]
-			wantSeq := wp.Values[1]
-			if n, ok := wantSeq.(int); ok {
-				wantSeq = int64(n)
-			}
+			wantSeq, _ := dataset.IntValue(wp.Values[1])
+			// decoded integers come back as the pointers AddInt appends, which box without allocating
+			seq, ok := p.Values[1].(*int64)
 			body, _ := dataset.BytesValue(p.Values[0])
 			wantBody, _ := dataset.BytesValue(wp.Values[0])
 			// decoded bytes come back as the arena pointers AddBytes appends, so they size as those do
 			if p.Epoch != wp.Epoch || !bytes.Equal(body, wantBody) ||
-				(wp.Values[0] == nil) != (p.Values[0] == nil) || p.Values[1] != wantSeq {
+				(wp.Values[0] == nil) != (p.Values[0] == nil) || !ok || *seq != wantSeq {
 				t.Fatalf("point %d/%d = %+v, want %+v", i, j, p, wp)
 			}
 		}

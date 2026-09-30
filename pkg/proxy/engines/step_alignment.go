@@ -85,7 +85,8 @@ func resolveStepAlignment(ctx context.Context, o *bo.Options, trq *timeseries.Ti
 				keys.Applied: trq.StepAlignment.String(),
 			})
 	}
-	if trq.StepAlignment != 0 {
+	// the attribute is only built for a span there is, as nearly every time series request gets here
+	if trq.StepAlignment != 0 && tr != nil && span != nil {
 		tspan.SetAttributes(tr, span, attribute.String(spanAttrStepAlignment, trq.StepAlignment.String()))
 	}
 }
@@ -154,9 +155,11 @@ func serveTransformedObject(w http.ResponseWriter, r *http.Request, rsc *request
 	var ts timeseries.Timeseries
 	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		var err error
-		if ts, err = modeler.WireUnmarshalerReader(getDecoderReader(resp), trq); err != nil {
+		dr, dec := getDecoderReader(resp)
+		if ts, err = modeler.WireUnmarshalerReader(dr, trq); err != nil {
 			ts = nil
 		}
+		closeDecoder(dec)
 	}
 	if ts == nil {
 		// an error, or a body that can't be modeled, is relayed as the origin sent it

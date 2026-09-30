@@ -59,6 +59,10 @@ func (ds *DataSet) View(e timeseries.Extent) *DataSet {
 			if s == nil {
 				continue
 			}
+			if s.HasParts() {
+				// a view reads one slice of points, so the parts are joined for it
+				s = &Series{Header: s.Header, Points: s.FlatPoints()}
+			}
 			from, to := pointsWithin(s.Points, start, end)
 			if from >= to {
 				continue
@@ -68,6 +72,102 @@ func (ds *DataSet) View(e timeseries.Extent) *DataSet {
 		out.Results = append(out.Results, vr)
 	}
 	return out
+}
+
+// FullView returns what Clone would, sharing ds's read-only points, values and tags; the rest is its
+// own, so merging into, cropping or re-extenting it leaves ds as is
+func (ds *DataSet) FullView() *DataSet {
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	out := ds.viewEnvelope()
+	if ds.ExtentList != nil {
+		out.ExtentList = ds.ExtentList.Clone()
+	}
+	if ds.VolatileExtentList != nil {
+		out.VolatileExtentList = ds.VolatileExtentList.Clone()
+	}
+	out.Results = make(Results, 0, len(ds.Results))
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		vr := &Result{
+			Name: r.Name, StatementID: r.StatementID, Error: r.Error,
+			SeriesList: make(SeriesList, len(r.SeriesList)),
+		}
+		for i, s := range r.SeriesList {
+			if s != nil {
+				vr.SeriesList[i] = &Series{
+					Header: s.Header, Points: slices.Clip(s.Points), PointSize: s.PointSize,
+					head: slices.Clip(s.head), tail: slices.Clip(s.tail),
+				}
+			}
+		}
+		out.Results = append(out.Results, vr)
+	}
+	return out
+}
+
+// CroppedView returns the DataSet CroppedClone would, sharing ds's points as FullView does
+func (ds *DataSet) CroppedView(e timeseries.Extent) *DataSet {
+	if len(ds.ExtentList) == 0 || ds.Results == nil {
+		return ds.FullView()
+	}
+	if ds.ExtentList.EncompassedBy(e) {
+		out := ds.FullView()
+		out.ExtentList = out.ExtentList.Crop(e)
+		return out
+	}
+	ds.UpdateLock.Lock()
+	defer ds.UpdateLock.Unlock()
+	out := ds.viewEnvelope()
+	out.Results = make(Results, len(ds.Results))
+	if ds.ExtentList.OutsideOf(e) {
+		for i, r := range ds.Results {
+			if r != nil {
+				out.Results[i] = &Result{StatementID: r.StatementID, Error: r.Error, SeriesList: make(SeriesList, 0)}
+			}
+		}
+		out.ExtentList = timeseries.ExtentList{}
+		return out
+	}
+	out.ExtentList = ds.ExtentList.Crop(e)
+	out.VolatileExtentList = ds.VolatileExtentList.Crop(e)
+	start, end := epoch.Epoch(e.Start.UnixNano()), epoch.Epoch(e.End.UnixNano())
+	for i, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		vr := &Result{StatementID: r.StatementID, Error: r.Error, SeriesList: make(SeriesList, 0, len(r.SeriesList))}
+		for _, s := range r.SeriesList {
+			if s == nil || s.PointCount() == 0 {
+				continue
+			}
+			all := s.FlatPoints()
+			l := len(all)
+			from, to := all.findRange(start, end, 0, l-1)
+			if from < l && to <= l && to > from {
+				pts := all[from:to:to]
+				vr.SeriesList = append(vr.SeriesList, &Series{Header: s.Header, Points: pts, PointSize: pts.Size()})
+			}
+		}
+		out.Results[i] = vr
+	}
+	return out
+}
+
+// the fields Clone and CroppedClone carry over besides the data; the caller holds ds.UpdateLock
+func (ds *DataSet) viewEnvelope() *DataSet {
+	return &DataSet{
+		SourceResultType: ds.SourceResultType,
+		Error:            ds.Error,
+		TimeRangeQuery:   ds.TimeRangeQuery,
+		Sorter:           ds.Sorter,
+		Merger:           ds.Merger,
+		SizeCropper:      ds.SizeCropper,
+		RangeCropper:     ds.RangeCropper,
+		ValueOperations:  ds.ValueOperations,
+	}
 }
 
 func pointsWithin(pts Points, start, end epoch.Epoch) (int, int) {
@@ -94,11 +194,32 @@ func MergeDisjoint(trq *timeseries.TimeRangeQuery, parts ...*DataSet) *DataSet {
 	if trq != nil {
 		step = trq.Step
 	}
-	out := &DataSet{TimeRangeQuery: trq}
+	out := MergeDisjointStep(step, parts...)
+	out.TimeRangeQuery = trq
+	return out
+}
+
+// MergeDisjointStep is MergeDisjoint for a caller with no TimeRangeQuery for the result to carry;
+// the parts' extents coalesce at step
+func MergeDisjointStep(step time.Duration, parts ...*DataSet) *DataSet {
+	return mergeDisjoint(step, false, parts)
+}
+
+// MergeDisjointParts is MergeDisjointStep for a response: of a series' time-ordered lists, the longest
+// stays in place as Points and the others become its head and tail
+func MergeDisjointParts(step time.Duration, parts ...*DataSet) *DataSet {
+	return mergeDisjoint(step, true, parts)
+}
+
+func mergeDisjoint(step time.Duration, withParts bool, parts []*DataSet) *DataSet {
+	out := &DataSet{}
+	// the bookkeeping for a merged series, which holds its first few parts' points inline
 	type merging struct {
-		s     *Series
-		lists []Points
+		s       *Series
+		lists   []Points
+		listBuf [3]Points
 	}
+	var free []merging
 	results := map[int]*Result{}
 	indexes := map[int]*seriesIndex[*merging]{}
 	var order []*merging
@@ -121,41 +242,88 @@ func MergeDisjoint(trq *timeseries.TimeRangeQuery, parts ...*DataSet) *DataSet {
 				out.Results = append(out.Results, mr)
 			}
 			index := indexes[r.StatementID]
-			for _, s := range r.SeriesList {
+			for i, s := range r.SeriesList {
 				if s == nil || len(s.Points) == 0 {
 					continue
 				}
 				hash := s.Header.CalculateHashWithQueryStatement(s.Header.QueryStatement)
 				m, found := index.find(hash, &s.Header)
 				if !found {
-					m = &merging{s: &Series{Header: s.Header}}
+					if len(free) == 0 {
+						// the first part's series are all new; a later part's are mostly merged already
+						n := len(r.SeriesList) - i
+						if len(order) > 0 {
+							n = min(n, maxMergingChunk)
+						}
+						free = make([]merging, n)
+					}
+					m, free = &free[0], free[1:]
+					m.s = &Series{Header: s.Header}
+					m.lists = m.listBuf[:0]
 					index.add(hash, m)
 					mr.SeriesList = append(mr.SeriesList, m.s)
 					order = append(order, m)
 				}
-				m.lists = append(m.lists, s.Points)
+				m.lists = append(m.lists, s.FlatPoints())
 			}
 		}
 	}
 	for _, m := range order {
-		m.s.Points = joinPoints(m.lists)
-		for i := range m.s.Points {
-			m.s.PointSize += int64(m.s.Points[i].Size)
+		if withParts {
+			m.s.head, m.s.Points, m.s.tail = splitPoints(m.lists)
+		} else {
+			m.s.Points = joinPoints(m.lists)
+		}
+		for _, part := range m.s.PointParts() {
+			for i := range part {
+				m.s.PointSize += int64(part[i].Size)
+			}
 		}
 	}
 	return out
 }
 
+// the head, points and tail that joinPoints's result would read as: when the lists are in time order,
+// the longest of them in place between the ones before and after it
+func splitPoints(lists []Points) (head, points, tail Points) {
+	if len(lists) == 1 || !listsOrdered(lists) {
+		return nil, joinPoints(lists), nil
+	}
+	longest := 0
+	for i := range lists {
+		if len(lists[i]) > len(lists[longest]) {
+			longest = i
+		}
+	}
+	if longest > 0 {
+		head = slices.Clip(slices.Concat(lists[:longest]...))
+	}
+	if longest < len(lists)-1 {
+		tail = slices.Concat(lists[longest+1:]...)
+	}
+	return head, slices.Clip(lists[longest]), tail
+}
+
+// whether each list's points come after the one before it's
+func listsOrdered(lists []Points) bool {
+	for i := 1; i < len(lists); i++ {
+		if prev := lists[i-1]; len(prev) > 0 && len(lists[i]) > 0 && lists[i][0].Epoch <= prev[len(prev)-1].Epoch {
+			return false
+		}
+	}
+	return true
+}
+
+// the most merge records a later part allocates at once, for series it adds
+const maxMergingChunk = 64
+
 func joinPoints(lists []Points) Points {
 	if len(lists) == 1 {
 		return slices.Clip(lists[0])
 	}
-	n, ordered := 0, true
-	for i, pts := range lists {
+	n, ordered := 0, listsOrdered(lists)
+	for _, pts := range lists {
 		n += len(pts)
-		if i > 0 && len(lists[i-1]) > 0 && pts[0].Epoch <= lists[i-1][len(lists[i-1])-1].Epoch {
-			ordered = false
-		}
 	}
 	out := make(Points, 0, n)
 	for _, pts := range lists {
@@ -176,8 +344,84 @@ func joinPoints(lists []Points) Points {
 	return out[:k+1]
 }
 
-// RetainNewest returns a view of ds's newest n epochs, counted across all series, and the oldest
-// epoch kept; retained is false when ds holds no more than n epochs.
+type tailCursor struct {
+	at     epoch.Epoch
+	points Points
+	i      int
+}
+
+// the nth newest distinct epoch across the results' sorted series, and whether an older one exists;
+// the series are walked newest first together, collecting and sorting nothing
+func newestEpoch(results Results, n int) (epoch.Epoch, bool) {
+	count := 0
+	for _, r := range results {
+		if r != nil {
+			count += len(r.SeriesList)
+		}
+	}
+	cursors := make([]tailCursor, 0, count)
+	for _, r := range results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s != nil && len(s.Points) > 0 {
+				last := len(s.Points) - 1
+				cursors = append(cursors, tailCursor{at: s.Points[last].Epoch, points: s.Points, i: last})
+			}
+		}
+	}
+	h := tailHeap(cursors)
+	h.init()
+	var at epoch.Epoch
+	for distinct := 0; len(h) > 0; {
+		if distinct == 0 || h[0].at != at {
+			if distinct == n {
+				return at, true
+			}
+			at = h[0].at
+			distinct++
+		}
+		if c := &h[0]; c.i > 0 {
+			c.i--
+			c.at = c.points[c.i].Epoch
+		} else {
+			h[0] = h[len(h)-1]
+			h = h[:len(h)-1]
+		}
+		h.down(0)
+	}
+	return 0, false
+}
+
+// a max-heap of the series' newest unvisited points
+type tailHeap []tailCursor
+
+func (h tailHeap) init() {
+	for i := len(h)/2 - 1; i >= 0; i-- {
+		h.down(i)
+	}
+}
+
+func (h tailHeap) down(i int) {
+	for {
+		largest, l := i, 2*i+1
+		if l < len(h) && h[l].at > h[largest].at {
+			largest = l
+		}
+		if r := l + 1; r < len(h) && h[r].at > h[largest].at {
+			largest = r
+		}
+		if largest == i {
+			return
+		}
+		h[i], h[largest] = h[largest], h[i]
+		i = largest
+	}
+}
+
+// RetainNewest returns a view of ds's newest n epochs across all its series, which must be sorted,
+// and the oldest epoch kept; retained is false when ds has no more than n epochs
 func (ds *DataSet) RetainNewest(n int) (view *DataSet, oldest time.Time, retained bool) {
 	if n <= 0 {
 		return ds, time.Time{}, false
@@ -197,26 +441,11 @@ func (ds *DataSet) RetainNewest(n int) (view *DataSet, oldest time.Time, retaine
 		// there can't be more epochs than points
 		return ds, time.Time{}, false
 	}
-	epochs := make([]epoch.Epoch, 0, points)
-	for _, r := range ds.Results {
-		if r == nil {
-			continue
-		}
-		for _, s := range r.SeriesList {
-			if s == nil {
-				continue
-			}
-			for i := range s.Points {
-				epochs = append(epochs, s.Points[i].Epoch)
-			}
-		}
-	}
-	slices.Sort(epochs)
-	epochs = slices.Compact(epochs)
-	if len(epochs) <= n {
+	at, ok := newestEpoch(ds.Results, n)
+	if !ok {
 		return ds, time.Time{}, false
 	}
-	oldest = time.Unix(0, int64(epochs[len(epochs)-n]))
+	oldest = time.Unix(0, int64(at))
 	// the view runs open-ended from the oldest epoch kept, so coverage past the newest point stays
 	return ds.View(timeseries.Extent{Start: oldest, End: time.Unix(0, math.MaxInt64)}), oldest, true
 }

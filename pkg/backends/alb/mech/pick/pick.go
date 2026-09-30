@@ -18,7 +18,6 @@
 package pick
 
 import (
-	"context"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -222,11 +221,12 @@ func (h *handler) serveSticky(w http.ResponseWriter, r *http.Request, flow lb.Fl
 		}
 		inner = t.Picker()
 	}
-	r = mech.Align(r, pool.OverrideOf(pk))
+	ctx := mech.AlignContext(r.Context(), pool.OverrideOf(pk))
 	if inner != nil {
 		// the member is an ALB, which picks the session's next level
-		var ctx context.Context
-		ctx, fw.session = sticky.Nest(r.Context(), s, pk.Member().Name())
+		ctx, fw.session = sticky.Nest(ctx, s, pk.Member().Name())
+	}
+	if ctx != r.Context() {
 		r = r.WithContext(ctx)
 	}
 	fw.pick = pk

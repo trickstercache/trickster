@@ -146,15 +146,18 @@ func TestClone(t *testing.T) {
 		}
 	})
 
-	t.Run("OriginalBody independent copy", func(t *testing.T) {
+	t.Run("OriginalBody shared", func(t *testing.T) {
 		trq := &TimeRangeQuery{
 			Statement:    "test",
 			OriginalBody: []byte("original"),
 		}
 		c := trq.Clone()
-		c.OriginalBody[0] = 'X'
-		if trq.OriginalBody[0] == 'X' {
-			t.Error("clone mutation affected original OriginalBody")
+		if &c.OriginalBody[0] != &trq.OriginalBody[0] {
+			t.Error("the body, which is only ever replaced, was copied")
+		}
+		c.OriginalBody = []byte("replaced")
+		if string(trq.OriginalBody) != "original" {
+			t.Error("replacing the clone's body replaced the original's")
 		}
 	})
 

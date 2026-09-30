@@ -23,9 +23,11 @@ import (
 	"net/http"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -263,6 +265,11 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 	case d.deferred != nil:
 		// the body is in the cache still, and the response reads from there what it serves
 		pr.upstreamReader = d.deferred
+		if d.storedEncoding != providers.Identity {
+			// as the cache compressed it, which the client accepts; another client is sent it decoded
+			pr.upstreamResponse.Header.Set(headers.NameContentEncoding, d.storedEncoding.String())
+			pr.upstreamResponse.Header.Add(headers.NameVary, headers.NameAcceptEncoding)
+		}
 	case pr.wantsRanges:
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)
@@ -504,10 +511,10 @@ func handlePCF(pr *proxyRequest) error {
 			defer reqs.Delete(pr.key)
 			var dest io.Writer = pcf
 			if pr.writeToCache {
-				pr.cacheBuffer = &bytes.Buffer{}
+				pr.cacheBuffer = pr.newCacheBuffer(contentLength)
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			n, err := io.Copy(dest, reader)
+			n, err := tbytes.Copy(dest, reader)
 			switch {
 			case err != nil:
 				logger.Error("pcf upstream copy failed",

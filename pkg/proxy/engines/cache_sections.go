@@ -21,13 +21,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"math/bits"
 	"sync"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
-
-	"github.com/andybalholm/brotli"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 )
 
 // one large document must not hold its buffer's memory long after it was stored
@@ -37,13 +37,28 @@ const maxPooledCompressBuffer = 1 << 20
 // this sizes no allocation
 const maxInflation = 1 << 16
 
+// reads that return nothing before a decoder is taken to have stalled, as io.ReadAll allows none
+const maxEmptyReads = 100
+
+// the level cacheCodec compresses at, which spends encode time once per write for a smaller object
+const cacheCompressionLevel = 6
+
+const (
+	// flagEncodedBit, set over a codec's provider bits, records what a stored document or body
+	// was compressed with
+	flagEncodedBit = 0x80
+	// flagLegacyCompressed marks an object compressed before the codec was recorded, which was
+	// always with brotli
+	flagLegacyCompressed = 1
+)
+
+// what the cache compresses with; each object records its codec, so a change here still reads
+// what was stored before, and a hit is served in the encoding it was stored in
+var cacheCodec = providers.Brotli
+
 var errSectionsCorrupt = errors.New("cached document sections are corrupt")
 
-var (
-	compressPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
-	deflaterPool = sync.Pool{New: func() any { return brotli.NewWriter(nil) }}
-	inflaterPool = sync.Pool{New: func() any { return brotli.NewReader(nil) }}
-)
+var compressPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 func putCompressBuffer(buf *bytes.Buffer) {
 	if buf.Cap() <= maxPooledCompressBuffer {
@@ -52,39 +67,65 @@ func putCompressBuffer(buf *bytes.Buffer) {
 	}
 }
 
-func deflateTo(buf *bytes.Buffer, b []byte) error {
-	w := deflaterPool.Get().(*brotli.Writer)
-	w.Reset(buf)
+// the flag byte for an object compressed with enc, which is 0 for one not compressed
+func encodingFlag(enc providers.Provider) byte {
+	if enc == providers.Identity {
+		return 0
+	}
+	return flagEncodedBit | byte(enc)
+}
+
+// the codec a flag byte records, and false for a byte no write could have made
+func flagEncoding(flag byte) (providers.Provider, bool) {
+	switch {
+	case flag == 0:
+		return providers.Identity, true
+	case flag == flagLegacyCompressed:
+		return providers.Brotli, true
+	case flag&flagEncodedBit == 0:
+		return providers.Identity, false
+	}
+	enc := providers.Provider(flag &^ flagEncodedBit)
+	return enc, bits.OnesCount8(byte(enc)) == 1 && providers.SelectDecoderInitializer(enc) != nil
+}
+
+// compresses b onto buf with the cache's codec
+func encodeTo(buf *bytes.Buffer, b []byte) error {
+	ei, _ := providers.SelectEncoderInitializer(cacheCodec)
+	w := ei(buf, cacheCompressionLevel)
 	_, err := w.Write(b)
 	if cerr := w.Close(); err == nil {
 		err = cerr
 	}
-	w.Reset(nil)
-	deflaterPool.Put(w)
 	return err
 }
 
-// a size over zero is the length b decompresses to, which spares the result being grown to fit
-func inflateAll(b []byte, size int) ([]byte, error) {
-	r := inflaterPool.Get().(*brotli.Reader)
-	r.Reset(bytes.NewReader(b))
-	var out []byte
-	var err error
-	if size > 0 {
-		out = make([]byte, size)
-		if _, err = io.ReadFull(r, out); err == nil {
-			// what is left must be the end of the stream, and nothing more
-			var rest [1]byte
-			if n, _ := r.Read(rest[:]); n > 0 {
-				err = errSectionsCorrupt
-			}
-		}
-	} else {
-		out, err = io.ReadAll(r)
+// decodes b, which enc compressed; a size over zero is the length b decompresses to, which spares
+// the result being grown to fit
+func decodeAll(enc providers.Provider, b []byte, size int) ([]byte, error) {
+	r := providers.SelectDecoderInitializer(enc)(bytes.NewReader(b))
+	defer r.Close()
+	if size <= 0 {
+		return io.ReadAll(r)
 	}
-	r.Reset(nil)
-	inflaterPool.Put(r)
-	return out, err
+	out := make([]byte, size)
+	if _, err := io.ReadFull(r, out); err != nil {
+		return nil, err
+	}
+	// what is left must be the end of the stream, whose trailer and checksum are checked on reaching it
+	var rest [1]byte
+	for range maxEmptyReads {
+		n, err := r.Read(rest[:])
+		switch {
+		case n > 0:
+			return nil, errSectionsCorrupt
+		case errors.Is(err, io.EOF):
+			return out, nil
+		case err != nil:
+			return nil, err
+		}
+	}
+	return nil, io.ErrNoProgress
 }
 
 func splitCache(c cache.Cache) (cache.SplitClient, bool) {
@@ -92,8 +133,8 @@ func splitCache(c cache.Cache) (cache.SplitClient, bool) {
 	return sc, ok && sc.SupportsSplit()
 }
 
-// the meta section is a byte that tells whether the body is compressed, the body's length and
-// the rest of the document; the body is never copied
+// the meta section is a byte that tells what the body is compressed with, if anything, the body's
+// length and the rest of the document; the body is never copied
 func writeSections(sc cache.SplitClient, key string, d *HTTPDocument, compress bool, ttl time.Duration) error {
 	m := d.ShallowCopy()
 	body := m.Body
@@ -105,10 +146,10 @@ func writeSections(sc cache.SplitClient, key string, d *HTTPDocument, compress b
 		buf := compressPool.Get().(*bytes.Buffer)
 		// every cache has done with the bytes it is given by the time it returns
 		defer putCompressBuffer(buf)
-		if err := deflateTo(buf, body); err != nil {
+		if err := encodeTo(buf, body); err != nil {
 			return err
 		}
-		meta[0], body = flagCompressed, buf.Bytes()
+		meta[0], body = encodingFlag(cacheCodec), buf.Bytes()
 	}
 	meta, err := m.MarshalMsg(meta)
 	if err != nil {
@@ -122,31 +163,38 @@ func streamCache(c cache.Cache) (cache.StreamClient, bool) {
 	return sc, ok && sc.SupportsStream()
 }
 
-// returns the length of the body, and whether it was stored compressed
-func decodeMeta(d *HTTPDocument, meta []byte) (uint64, bool, error) {
+// returns the length of the body once decoded, and what it was stored compressed with
+func decodeMeta(d *HTTPDocument, meta []byte) (uint64, providers.Provider, error) {
 	if len(meta) <= flagLen {
-		return 0, false, errSectionsCorrupt
+		return 0, providers.Identity, errSectionsCorrupt
+	}
+	enc, ok := flagEncoding(meta[0])
+	if !ok {
+		return 0, providers.Identity, errSectionsCorrupt
 	}
 	size, n := binary.Uvarint(meta[flagLen:])
 	if n <= 0 {
-		return 0, false, errSectionsCorrupt
+		return 0, providers.Identity, errSectionsCorrupt
 	}
 	_, err := d.UnmarshalMsg(meta[flagLen+n:])
-	return size, meta[0] == flagCompressed, err
+	emptyBodyIsNil(d)
+	return size, enc, err
 }
 
-// the whole of an object, stored as it is served, and what the body in the cache holds
-func (d *HTTPDocument) canDefer(size uint64, compressed bool, body cache.Body) bool {
+// the whole of an object, and what the body in the cache holds of it as enc stored it
+func (d *HTTPDocument) canDefer(size uint64, enc providers.Provider, body cache.Body) bool {
 	// an object whose origin gave no length for it is as long as its body
 	// #nosec G115 -- a body's length is never negative
-	return !compressed && size == uint64(body.Size()) && size > 0 &&
-		(d.ContentLength == body.Size() || d.ContentLength < 0) &&
+	whole := size > 0 && (d.ContentLength < 0 || uint64(d.ContentLength) == size) &&
 		len(d.Ranges) == 0 && len(d.StoredRangeParts) == 0 && len(d.VaryNames) == 0 &&
 		!d.IsMeta && !d.IsChunk
+	// #nosec G115 -- a body's length is never negative
+	return whole && (enc != providers.Identity || size == uint64(body.Size()))
 }
 
-// the body is left in the cache when it can be, for the response to read only what it serves
-func queryDeferred(sc cache.StreamClient, key string) *queryResult {
+// leaves the body in the cache when it can, for the response to read only what it serves; one stored
+// compressed is left only when accept has its codec, and is sent as stored
+func queryDeferred(sc cache.StreamClient, key string, accept providers.Provider) *queryResult {
 	qr := &queryResult{queryKey: key, d: &HTTPDocument{}}
 	var meta []byte
 	var body cache.Body
@@ -156,9 +204,15 @@ func queryDeferred(sc cache.StreamClient, key string) *queryResult {
 	}
 	if len(meta) > 0 {
 		var size uint64
-		var compressed bool
-		if size, compressed, qr.err = decodeMeta(qr.d, meta); qr.err == nil && qr.d.canDefer(size, compressed, body) {
-			qr.d.deferred = body
+		var enc providers.Provider
+		size, enc, qr.err = decodeMeta(qr.d, meta)
+		if qr.err == nil && (enc == providers.Identity || accept&enc != 0) && qr.d.canDefer(size, enc, body) {
+			qr.d.deferred, qr.d.storedEncoding, qr.d.storedSize = body, enc, size
+			if enc != providers.Identity && qr.d.ContentLength < 0 {
+				// the length is the decoded body's, which ranges and revalidation are counted in
+				// #nosec G115 -- bounded against the body's length when it is decoded
+				qr.d.ContentLength = int64(size)
+			}
 			return qr
 		}
 	}
@@ -182,24 +236,31 @@ func queryDeferred(sc cache.StreamClient, key string) *queryResult {
 
 // the document's body is the body section itself, unless that was compressed
 func decodeSections(d *HTTPDocument, meta, body []byte) error {
-	size, compressed, err := decodeMeta(d, meta)
+	size, enc, err := decodeMeta(d, meta)
 	if err != nil {
 		return err
 	}
-	if compressed {
-		if size > uint64(len(body))*maxInflation {
-			// no body compresses so well, and the length is not to be trusted with an allocation
-			return errSectionsCorrupt
-		}
-		// #nosec G115 -- the size was bounded against the body's length above
-		if body, err = inflateAll(body, int(size)); err != nil {
-			return err
-		}
-	} else if size != uint64(len(body)) {
-		return errSectionsCorrupt
+	if body, err = decodeBody(enc, body, size); err != nil {
+		return err
 	}
 	if len(body) > 0 {
 		d.Body = body
 	}
 	return nil
+}
+
+// the body enc stored, decoded to its size
+func decodeBody(enc providers.Provider, body []byte, size uint64) ([]byte, error) {
+	if enc == providers.Identity {
+		if size != uint64(len(body)) {
+			return nil, errSectionsCorrupt
+		}
+		return body, nil
+	}
+	if size > uint64(len(body))*maxInflation {
+		// no body compresses so well, and the length is not to be trusted with an allocation
+		return nil, errSectionsCorrupt
+	}
+	// #nosec G115 -- the size was bounded against the body's length above
+	return decodeAll(enc, body, int(size))
 }

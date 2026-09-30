@@ -413,3 +413,34 @@ func TestMergePoints(t *testing.T) {
 		})
 	}
 }
+
+func TestPointsCloneSharesOneSlab(t *testing.T) {
+	p := Points{
+		{Epoch: 1, Size: 10, Values: []any{"a", 1.5}},
+		{Epoch: 2, Size: 11, Values: nil},
+		{Epoch: 3, Size: 12, Values: []any{}},
+		{Epoch: 4, Size: 13, Values: []any{"b", 2.5}},
+	}
+	for _, clone := range []Points{p.Clone(), p.CloneRange(0, len(p))} {
+		if len(clone) != len(p) {
+			t.Fatalf("len %d", len(clone))
+		}
+		for i := range p {
+			if !PointsAreEqual(p[i], clone[i]) || (p[i].Values == nil) != (clone[i].Values == nil) {
+				t.Fatalf("point %d: %v != %v", i, clone[i], p[i])
+			}
+		}
+		// an append to one point must not reach the next, which follows it in the slab
+		clone[0].Values = append(clone[0].Values, "x")
+		if clone[3].Values[0] != "b" || p[0].Values[1] != 1.5 {
+			t.Fatal("an append overwrote a neighbor or the source")
+		}
+		clone[3].Values[0] = "changed"
+		if p[3].Values[0] != "b" {
+			t.Fatal("the clone shares values with its source")
+		}
+	}
+	if got := p.CloneRange(1, 3); len(got) != 2 || got[0].Epoch != 2 || got[1].Epoch != 3 {
+		t.Fatalf("CloneRange(1, 3) = %v", got)
+	}
+}

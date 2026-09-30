@@ -51,10 +51,17 @@ var ErrUnmergeable = errors.New("result cannot be modeled for delta caching")
 // Codec supplies the payload serialization for one protocol's object-tier cache entries.
 type Codec[R any] interface {
 	Marshal(payload R) ([]byte, error)
+	// Unmarshal is given data it owns, which the payload it returns may refer to rather than copy
 	Unmarshal(data []byte) (R, error)
 	// Size approximates the heap retained by payload, for typed
 	// memory-cache accounting.
 	Size(payload R) int
+}
+
+// AppendCodec is a Codec that can marshal a payload onto dst, which lets the tier write its envelope
+// first rather than copy the payload in after it
+type AppendCodec[R any] interface {
+	AppendMarshal(dst []byte, payload R) ([]byte, error)
 }
 
 // Config carries the engine's per-backend settings.
@@ -363,8 +370,7 @@ func mergeDeltas(plan *sqlanalyzer.QueryPlan, same func(a, b []byte) bool, parts
 		header = part.Header
 		sets = append(sets, part.DS)
 	}
-	trq := &timeseries.TimeRangeQuery{Step: plan.Step, Phase: plan.Phase}
-	return &Delta{Header: header, DS: dataset.MergeDisjoint(trq, sets...)}, nil
+	return &Delta{Header: header, DS: dataset.MergeDisjointStep(plan.Step, sets...)}, nil
 }
 
 func (e *Engine[R]) retain(plan *sqlanalyzer.QueryPlan, merged *Delta, all timeseries.ExtentList,

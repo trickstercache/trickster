@@ -47,12 +47,8 @@ type Resources struct {
 	CacheClient       cache.Cache
 	BackendClient     backends.Backend
 	AlternateCacheTTL time.Duration
-	// PerCredentialCache stores an unshared authorized response under its credential-bearing key, as
-	// the delta proxy cache does for the time series lanes that set it
-	PerCredentialCache bool
-	TimeRangeQuery     *timeseries.TimeRangeQuery
-	Tracer             *tracing.Tracer
-	IsMergeMember      bool
+	TimeRangeQuery    *timeseries.TimeRangeQuery
+	Tracer            *tracing.Tracer
 	// RequestBody caches the request body; it is only ever replaced, never written in place, so
 	// clones share it
 	RequestBody      []byte
@@ -62,18 +58,26 @@ type Resources struct {
 	TSUnmarshaler    timeseries.UnmarshalerFunc
 	TSMarshaler      timeseries.MarshalWriterFunc
 	TSTransformer    func(timeseries.Timeseries)
-	TS               timeseries.Timeseries
-	TSReqestOptions  *timeseries.RequestOptions
-	TSMergeStrategy  int
+	// TS is the timeseries the response was rendered from; it may share points with the cache, so a
+	// reader copies it before changing its points, their values or its series' tags
+	TS              timeseries.Timeseries
+	TSReqestOptions *timeseries.RequestOptions
+	TSMergeStrategy int
 	// TSDedupToleranceNanos is the tolerance window (in nanoseconds) for
 	// clustering near-duplicate samples produced by independent fan-out
 	// shards. Zero (default) preserves the legacy exact-epoch dedup behavior.
 	TSDedupToleranceNanos int64
 
-	Response       *http.Response
-	AuthResult     *auth.AuthResult
-	AlreadyEncoded bool
-	Cancelable     bool
+	Response   *http.Response
+	AuthResult *auth.AuthResult
+	// the bools sit together, where padding after each would take the struct up a size class
+
+	// PerCredentialCache stores an unshared authorized response under its credential-bearing key, as
+	// the delta proxy cache does for the time series lanes that set it
+	PerCredentialCache bool
+	IsMergeMember      bool
+	AlreadyEncoded     bool
+	Cancelable         bool
 	// HiddenResult is the X-Trickster-Result value withheld from the client by a path that
 	// hides it, kept so the access log can still record the result
 	HiddenResult string

@@ -1208,7 +1208,9 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 		if h.unaligned(analysis) {
 			servedMode = sqlanalyzer.CacheModeObject
 		}
-		result, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
+		result, buffers, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
+		// vitess copies each row out before the callback returns, so the rows' buffers can be reused
+		defer buffers.release()
 		if cacheErr != nil {
 			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))

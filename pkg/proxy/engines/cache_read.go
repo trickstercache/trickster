@@ -179,13 +179,20 @@ func (tcp *TimeseriesChunkQueryProcessor) ProcessChunk(index int, subkey string,
 		}
 	}
 	if qr.d.timeseries != nil {
-		tcp.ress[index] = qr.d.timeseries
+		ts := qr.d.timeseries
+		if c.Configuration().Provider == providerMemory {
+			// a memory cache's chunk is read in place, and the merge of the chunks takes over their
+			// series, so it is given views of them, whose series are its own
+			ts = responseView(ts, timeseries.Extent{}, false)
+		}
+		tcp.ress[index] = ts
 	}
 	return nil
 }
 
 func (tcp *TimeseriesChunkQueryProcessor) Finalize() error {
-	tcp.d.timeseries = tcp.ress.Merge(true)
+	// every chunk is this read's own, a view or a decoding, so the first needs no copy to merge into
+	tcp.d.timeseries = tcp.ress.Merge(false)
 	if tcp.d.timeseries != nil {
 		tcp.d.timeseries.SetExtents(tcp.d.timeseries.Extents().Compress(tcp.trq.Step))
 	}

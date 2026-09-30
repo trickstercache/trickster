@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http/httptest"
 	"reflect"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 )
 
 func query() *timeseries.TimeRangeQuery {
@@ -47,6 +49,23 @@ func query() *timeseries.TimeRangeQuery {
 
 func envelope(rows string, total int) string {
 	return fmt.Sprintf(`{"output":[{"records":{"schema":{"column_schemas":[{"name":"value","data_type":"UInt64"},{"name":"time","data_type":"TimestampNanosecond"},{"name":"host","data_type":"String"}]},"rows":%s,"total_rows":%d}}],"execution_time_ms":5}`, rows, total)
+}
+
+// the wire document, as the tests decode what the marshaler writes
+type records struct {
+	Schema  schema                     `json:"schema"`
+	Rows    [][]any                    `json:"rows"`
+	Total   *uint64                    `json:"total_rows"`
+	Metrics map[string]json.RawMessage `json:"metrics,omitempty"`
+}
+
+type output struct {
+	Records *records `json:"records"`
+}
+
+type response struct {
+	Output        []output `json:"output"`
+	ExecutionTime *uint64  `json:"execution_time_ms"`
 }
 
 func decoded(t testing.TB, body []byte) response {
@@ -284,10 +303,14 @@ func TestModelRequiresOrderingColumns(t *testing.T) {
 }
 
 func TestExactNumericSort(t *testing.T) {
-	rows := [][]any{{json.Number("9007199254740993")}, {json.Number("9.007199254740992e15")}, {nil}}
-	fields := timeseries.FieldDefinitions{{Name: "time"}}
+	var rows []greptimeRow
+	for _, v := range []any{json.Number("9007199254740993"), json.Number("9.007199254740992e15"), nil} {
+		rows = append(rows, greptimeRow{s: &greptimeSeries{}, p: &dataset.Point{Values: []any{v}}})
+	}
+	fields := timeseries.FieldDefinitions{{Name: "time", Role: timeseries.RoleValue}}
 	sortRows(rows, fields, []timeseries.OrderTerm{{Column: "time", NullsFirst: true}})
-	if rows[0][0] != nil || rows[1][0] != json.Number("9.007199254740992e15") || rows[2][0] != json.Number("9007199254740993") {
+	if rows[0].p.Values[0] != nil || rows[1].p.Values[0] != json.Number("9.007199254740992e15") ||
+		rows[2].p.Values[0] != json.Number("9007199254740993") {
 		t.Fatal("sort rounded distinct numbers", rows)
 	}
 }
@@ -476,4 +499,34 @@ func FuzzModelDecode(f *testing.F) {
 			t.Fatal(err)
 		}
 	})
+}
+
+func TestAppendEpochValueMatchesEpochValue(t *testing.T) {
+	rng := weaktest.NewRand(2, 9)
+	epochs := []int64{0, 1, -1, 999999999, -999999999, 1e9, -1e9, math.MaxInt64, math.MinInt64, math.MinInt64 + 1}
+	for range 2000 {
+		epochs = append(epochs, int64(rng.Uint64()), int64(rng.IntN(1e12))-5e11)
+	}
+	for _, unit := range []timeseries.FieldDataType{timeseries.DateTimeUnixSecs, timeseries.DateTimeUnixMilli,
+		timeseries.DateTimeUnixMicro, timeseries.DateTimeUnixNano} {
+		for _, typ := range []struct {
+			sdt string
+			dt  timeseries.FieldDataType
+		}{{"Float64", timeseries.Float64}, {"Int64", timeseries.Int64}, {"UInt64", timeseries.Uint64}} {
+			field := timeseries.FieldDefinition{SDataType: typ.sdt, DataType: typ.dt, ProviderData1: byte(unit)}
+			for _, ep := range epochs {
+				want, wantErr := epochValue(ep, field)
+				got, err := appendEpochValue(nil, ep, field)
+				if (err == nil) != (wantErr == nil) || checkEpochValue(ep, field) != wantErr {
+					t.Fatalf("%d as %s/%v: %v, want %v", ep, typ.sdt, unit, err, wantErr)
+				}
+				if wantErr != nil {
+					continue
+				}
+				if b, _ := json.Marshal(want); string(got) != string(b) {
+					t.Fatalf("%d as %s/%v: got %s want %s", ep, typ.sdt, unit, got, b)
+				}
+			}
+		}
+	}
 }

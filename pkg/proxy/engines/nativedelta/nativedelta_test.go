@@ -17,6 +17,7 @@
 package nativedelta
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"slices"
@@ -561,6 +562,51 @@ func TestEnvelopeRoundTripAndCorruption(t *testing.T) {
 	}
 }
 
+type appendTestCodec struct{ testCodec }
+
+func (c appendTestCodec) AppendMarshal(dst []byte, p *payload) ([]byte, error) {
+	data, err := c.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	return append(dst, data...), nil
+}
+
+func TestEnvelopeAppendsThePayload(t *testing.T) {
+	cfg := Config{Protocol: "test", BackendName: "test-backend", CacheTTL: time.Minute}
+	copying, appending := New(cfg, testCodec{}), New(cfg, appendTestCodec{})
+	for name, entry := range map[string]*Entry[*payload]{
+		"payload": {
+			Payload: &payload{Statements: []string{"a", "bc", "def"}},
+			Extents: timeseries.ExtentList{
+				{Start: time.Unix(60, 0), End: time.Unix(120, 0)},
+				{Start: time.Unix(180, 0), End: time.Unix(240, 0)},
+			},
+		},
+		"empty":  {Payload: &payload{}},
+		"marker": {Marker: true, Extents: timeseries.ExtentList{{Start: time.Unix(1, 0), End: time.Unix(2, 0)}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			want, err := copying.MarshalEntry(entry)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := appending.MarshalEntry(entry)
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatalf("appended envelope = %x, %v; want %x", got, err, want)
+			}
+			back, err := appending.UnmarshalEntry(got)
+			if err != nil || back.Marker != entry.Marker || len(back.Extents) != len(entry.Extents) {
+				t.Fatalf("round trip = %+v, %v", back, err)
+			}
+		})
+	}
+	failing := New(cfg, appendTestCodec{testCodec{marshalErr: errors.New("boom")}})
+	if _, err := failing.MarshalEntry(&Entry[*payload]{Payload: &payload{}}); err == nil {
+		t.Error("a payload that failed to marshal was enveloped")
+	}
+}
+
 func TestLocksOnlySerializeMatchingKeys(t *testing.T) {
 	engine := newTestEngine(nil)
 	leftLock := engine.lock("left")
@@ -890,5 +936,10 @@ func TestDeltaCodec(t *testing.T) {
 	}
 	if _, err := (deltaCodec{}).Marshal(&Delta{}); err == nil {
 		t.Error("a delta with no rows encoded")
+	}
+	prefix := []byte("envelope")
+	appended, err := deltaCodec{}.AppendMarshal(slices.Clone(prefix), rows)
+	if err != nil || !bytes.Equal(appended[:len(prefix)], prefix) || !bytes.Equal(appended[len(prefix):], data) {
+		t.Errorf("appended = %x, %v", appended, err)
 	}
 }

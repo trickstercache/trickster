@@ -33,7 +33,7 @@ import (
 
 func TestTSVEscapeRoundTrip(t *testing.T) {
 	for _, raw := range []string{"plain", "tab\there", "nl\nhere", "nul\x00\x00", "back\\slash", "it's", "\b\f\r", ""} {
-		if got := unescapeTSV(escapeTSV(raw)); got != raw {
+		if got := unescapeTSV(string(appendEscapedTSV(nil, raw))); got != raw {
 			t.Errorf("round trip %q -> %q", raw, got)
 		}
 	}
@@ -46,7 +46,7 @@ func TestTSVEscapeRoundTrip(t *testing.T) {
 	if got := unescapeTSV(`a\qb\`); got != `a\qb\` {
 		t.Errorf("unknown escape changed: %q", got)
 	}
-	if got := escapeTSV("IUA\x00\x00"); got != `IUA\0\0` {
+	if got := string(appendEscapedTSV(nil, "IUA\x00\x00")); got != `IUA\0\0` {
 		t.Errorf("escape nul: %q", got)
 	}
 }

@@ -259,6 +259,68 @@ func TestBriefBodyOfAChangedObject(t *testing.T) {
 	}
 }
 
+type limitedWriter struct {
+	bytes.Buffer
+	limit int
+}
+
+func (w *limitedWriter) Write(b []byte) (int, error) {
+	if w.Len()+len(b) > w.limit {
+		n, _ := w.Buffer.Write(b[:w.limit-w.Len()])
+		return n, nil
+	}
+	return w.Buffer.Write(b)
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errFault
+}
+
+func TestBriefBodyWriteTo(t *testing.T) {
+	c, s := stores()["brief"]()
+	want := bytes.Repeat([]byte("0123456789"), 60_000)
+	require.NoError(t, c.StoreSplit(testKey, []byte("meta"), want, time.Minute))
+	open := func() cache.Body {
+		_, body, _, err := c.OpenSplit(testKey)
+		require.NoError(t, err)
+		return body
+	}
+
+	body := open()
+	opens := s.Opens.Load()
+	var out bytes.Buffer
+	n, err := io.Copy(struct{ io.Writer }{&out}, body)
+	require.NoError(t, err)
+	require.EqualValues(t, len(want), n)
+	require.Equal(t, want, out.Bytes())
+	require.EqualValues(t, 3, s.Opens.Load()-opens, "600 KB streams in three parts")
+	n, err = body.(io.WriterTo).WriteTo(&out)
+	require.NoError(t, err)
+	require.Zero(t, n, "a body is written through once")
+
+	// a part already read is not read again
+	body = open()
+	_, err = io.ReadFull(body, make([]byte, 10))
+	require.NoError(t, err)
+	out.Reset()
+	_, err = body.(io.WriterTo).WriteTo(&out)
+	require.NoError(t, err)
+	require.Equal(t, want[10:], out.Bytes())
+
+	_, err = open().(io.WriterTo).WriteTo(failingWriter{})
+	require.ErrorIs(t, err, errFault)
+	_, err = open().(io.WriterTo).WriteTo(&limitedWriter{limit: 100})
+	require.ErrorIs(t, err, io.ErrShortWrite)
+
+	body = open()
+	time.Sleep(time.Millisecond)
+	require.NoError(t, c.StoreSplit(testKey, []byte("meta"), want, time.Minute))
+	_, err = body.(io.WriterTo).WriteTo(&out)
+	require.ErrorIs(t, err, blob.ErrObjectChanged)
+}
+
 func TestOpenSplitMisses(t *testing.T) {
 	c, s := newClient()
 	requireOpenMiss := func(key string) {

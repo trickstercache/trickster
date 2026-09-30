@@ -20,7 +20,6 @@ import (
 	"errors"
 	"math"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -98,21 +97,20 @@ func rowColumn(body []byte, index int) ([]byte, error) {
 	}
 }
 
-func (r *Result) encode() []byte {
-	// renders the whole response to one Query
-	out := make([]byte, 0, len(r.RowDescription)+len(r.data)+frameHeaderLen*(r.Rows()+3)+len(r.Tag)+16)
+// writes the whole response to one Query
+func (r *Result) writeTo(w *frameWriter) {
 	if r.RowDescription != nil {
-		out = appendFrame(out, msgRowDescription, r.RowDescription)
+		w.frame(msgRowDescription, r.RowDescription)
 	}
 	for row := range r.ends {
-		out = appendFrame(out, msgDataRow, r.row(row))
+		w.frame(msgDataRow, r.row(row))
 	}
-	tag := r.Tag
-	if tag == "" {
-		tag = selectTagPrefix + strconv.Itoa(r.Rows())
+	if r.Tag == "" {
+		writeSelectComplete(w, int64(r.Rows()))
+		return
 	}
-	out = appendFrame(out, msgCommandComplete, append([]byte(tag), 0))
-	return appendFrame(out, msgReadyForQuery, []byte{txStatusIdle})
+	w.commandComplete([]byte(r.Tag))
+	w.frame(msgReadyForQuery, readyIdle)
 }
 
 type resultCodec struct{}
@@ -124,14 +122,18 @@ func (resultCodec) Size(r *Result) int {
 	return len(r.RowDescription) + len(r.Tag) + len(r.data) + 4*len(r.ends)
 }
 
-func (resultCodec) Marshal(r *Result) ([]byte, error) {
+func (c resultCodec) Marshal(r *Result) ([]byte, error) {
+	return c.AppendMarshal(nil, r)
+}
+
+func (resultCodec) AppendMarshal(out []byte, r *Result) ([]byte, error) {
 	if r == nil {
 		return nil, errResultCodec
 	}
-	out := make([]byte, 0, len(r.RowDescription)+len(r.Tag)+len(r.data)+3*len(r.ends)+32)
+	out = slices.Grow(out, len(r.RowDescription)+len(r.Tag)+len(r.data)+3*len(r.ends)+32)
 	out = append(out, resultCodecVersion, 0)
 	out = appendBytes(out, r.RowDescription)
-	out = appendBytes(out, []byte(r.Tag))
+	out = append(binary.AppendUvarint(out, uint64(len(r.Tag))), r.Tag...)
 	out = binary.AppendUvarint(out, uint64(len(r.ends)))
 	previousEnd := uint32(0)
 	for _, end := range r.ends {
@@ -183,7 +185,8 @@ func (resultCodec) Unmarshal(data []byte) (*Result, error) {
 	if end != uint64(len(data)) {
 		return nil, errResultCodec
 	}
-	r.data = slices.Clone(data)
+	// the data is the codec's own, so the result refers to it, capped so an append can't reach past it
+	r.data = slices.Clip(data)
 	return r, nil
 }
 
@@ -197,7 +200,8 @@ func readBytes(data []byte) (value, rest []byte, ok bool) {
 		return nil, nil, false
 	}
 	end := n + int(size)
-	return slices.Clone(data[n:end]), data[end:], true
+	// capped, so an append to the value can't reach what follows it
+	return data[n:end:end], data[end:], true
 }
 
 func bucketTime(body []byte, column int, decoder *timeAxisDecoder, step, phase time.Duration) (int64, error) {

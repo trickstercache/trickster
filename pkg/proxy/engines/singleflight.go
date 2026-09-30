@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -109,10 +110,15 @@ func (r *opcResult) suitableFor(pr *proxyRequest) bool {
 	return r.variantKeyFor(pr) == r.varyKey
 }
 
-// dpcResult is the shared result returned to singleflight waiters for DPC.
-// Normal waiters serve wireBody directly; IsMergeMember/TSTransformer waiters use rts.
+// the result shared with DPC singleflight waiters: most serve wire(), while merge members and
+// transformers take rts
 type dpcResult struct {
-	wireBody           []byte
+	wireBody []byte
+	// the body is marshaled by the first caller to serve it, so none is made for callers that
+	// each marshal their own, as those with partial buckets do
+	wireOnce           sync.Once
+	modeler            *timeseries.Modeler
+	rlo                *timeseries.RequestOptions
 	rts                timeseries.Timeseries
 	headers            http.Header
 	statusCode         int
@@ -123,4 +129,20 @@ type dpcResult struct {
 	cacheStatus        status.LookupStatus
 	missRanges         timeseries.ExtentList
 	failedExtents      timeseries.ExtentList // populated only is case of failed extents
+}
+
+// the response body that every caller without its own partial buckets serves
+func (r *dpcResult) wire() []byte {
+	r.wireOnce.Do(func() {
+		if r.wireBody == nil {
+			var buf bytes.Buffer
+			ts := r.rts
+			if !r.modeler.WireMarshalReadsParts {
+				ts = flatResponse(ts)
+			}
+			r.modeler.WireMarshalWriter(ts, r.rlo, r.statusCode, &buf)
+			r.wireBody = buf.Bytes()
+		}
+	})
+	return r.wireBody
 }

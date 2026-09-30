@@ -99,6 +99,15 @@ func sinkRows(t *testing.T, plan *sqlanalyzer.QueryPlan, rows ...[]byte) *native
 	return d
 }
 
+// the whole response writeDelta writes
+func encodeDelta(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) []byte {
+	var out bytes.Buffer
+	w := frameWriter{w: &out, buffer: make([]byte, 0, pumpBufferSizeBytes)}
+	writeDelta(&w, d, plan)
+	w.flush()
+	return out.Bytes()
+}
+
 func valuesOf(t *testing.T, stream []byte) string {
 	t.Helper()
 	// each DataRow's host and value, then the CommandComplete tag
@@ -248,5 +257,17 @@ func TestRowSinkFailures(t *testing.T) {
 	}
 	if _, err := unordered.finish(); !errors.Is(err, errResultRow) {
 		t.Fatalf("a repeated group out of order: %v", err)
+	}
+}
+
+func TestCommandCompleteFlushesWhenFull(t *testing.T) {
+	var out bytes.Buffer
+	// room for the frame's header, but not its tag
+	w := frameWriter{w: &out, buffer: make([]byte, 0, 2*frameHeaderLen+4)}
+	w.frame(msgDataRow, []byte("abcd"))
+	writeSelectComplete(&w, 12345)
+	w.flush()
+	if got := valuesOf(t, out.Bytes()); !strings.HasSuffix(got, "SELECT 12345") {
+		t.Fatalf("got %q", got)
 	}
 }

@@ -17,11 +17,9 @@
 package sql
 
 import (
-	"bufio"
 	"bytes"
 	"cmp"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -31,10 +29,11 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 // MarshalTimeseries converts a Timeseries into a v3 response body
@@ -85,54 +84,98 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 // with no zone suffix, fractional seconds only when present.
 const v3TimestampOutputLayout = "2006-01-02T15:04:05.999999999"
 
-// v3Row is one output row with column order preserved.
-type v3Row struct {
+// a series' output layout: its columns, each one's JSON key, its tag values, and the column each
+// ordering term sorts by (-1 when it has none)
+type v3Series struct {
 	columns []string
-	values  []any
-	epoch   epoch.Epoch
+	keys    []string
+	tags    []string
+	order   []int
+}
+
+// one output row: a point, by reference, and the layout of its series
+type v3Row struct {
+	s *v3Series
+	p *dataset.Point
 }
 
 // dataSetRows flattens a DataSet into output rows: the timestamp column,
 // then the series' tag columns, then value columns, in header order.
 func dataSetRows(ds *dataset.DataSet) []v3Row {
-	var rows []v3Row
+	var ordering []timeseries.OrderTerm
+	if ds.TimeRangeQuery != nil {
+		ordering = ds.TimeRangeQuery.Ordering
+	}
+	count := 0
 	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
 		for _, series := range result.SeriesList {
-			tsName := series.Header.TimestampField.Name
-			if tsName == "" {
-				tsName = DefaultTimestampField
-			}
-			columns := make([]string, 0,
-				1+len(series.Header.TagFieldsList)+len(series.Header.ValueFieldsList))
-			columns = append(columns, tsName)
-			for _, fd := range series.Header.TagFieldsList {
-				columns = append(columns, fd.Name)
-			}
-			for _, fd := range series.Header.ValueFieldsList {
-				columns = append(columns, fd.Name)
-			}
-			for _, pt := range series.Points {
-				values := make([]any, 0, len(columns))
-				values = append(values,
-					time.Unix(0, int64(pt.Epoch)).UTC().Format(v3TimestampOutputLayout))
-				for _, fd := range series.Header.TagFieldsList {
-					values = append(values, series.Header.Tags[fd.Name])
-				}
-				for i := range series.Header.ValueFieldsList {
-					if i < len(pt.Values) {
-						values = append(values, pt.Values[i])
-					} else {
-						values = append(values, nil)
-					}
-				}
-				rows = append(rows, v3Row{columns: columns, values: values, epoch: pt.Epoch})
+			if series != nil {
+				count += series.PointCount()
 			}
 		}
 	}
-	if ds.TimeRangeQuery != nil {
-		sortV3Rows(rows, ds.TimeRangeQuery.Ordering)
+	rows := make([]v3Row, 0, count)
+	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
+		for _, series := range result.SeriesList {
+			if series == nil || series.PointCount() == 0 {
+				continue
+			}
+			s := newV3Series(series, ordering)
+			for i := range series.PointCount() {
+				rows = append(rows, v3Row{s: s, p: series.PointAt(i)})
+			}
+		}
 	}
+	sortV3Rows(rows, ordering)
 	return rows
+}
+
+func newV3Series(series *dataset.Series, ordering []timeseries.OrderTerm) *v3Series {
+	h := &series.Header
+	tsName := h.TimestampField.Name
+	if tsName == "" {
+		tsName = DefaultTimestampField
+	}
+	n := 1 + len(h.TagFieldsList) + len(h.ValueFieldsList)
+	s := &v3Series{
+		columns: make([]string, 0, n), keys: make([]string, 0, n),
+		tags: make([]string, len(h.TagFieldsList)), order: make([]int, len(ordering)),
+	}
+	s.columns = append(s.columns, tsName)
+	for i, fd := range h.TagFieldsList {
+		s.columns = append(s.columns, fd.Name)
+		s.tags[i] = h.Tags[fd.Name]
+	}
+	for _, fd := range h.ValueFieldsList {
+		s.columns = append(s.columns, fd.Name)
+	}
+	for _, name := range s.columns {
+		s.keys = append(s.keys, string(append(tstrings.AppendJSON(nil, name), ':')))
+	}
+	for t, term := range ordering {
+		s.order[t] = slices.Index(s.columns, term.Column)
+	}
+	return s
+}
+
+// the row's value in column i: its formatted time, a tag, or a value, nil when the point has none
+func (r v3Row) cell(i int) any {
+	switch {
+	case i == 0:
+		return time.Unix(0, int64(r.p.Epoch)).UTC().Format(v3TimestampOutputLayout)
+	case i <= len(r.s.tags):
+		return r.s.tags[i-1]
+	}
+	if j := i - 1 - len(r.s.tags); j < len(r.p.Values) {
+		return r.p.Values[j]
+	}
+	return nil
 }
 
 func sortV3Rows(rows []v3Row, ordering []timeseries.OrderTerm) {
@@ -140,8 +183,8 @@ func sortV3Rows(rows []v3Row, ordering []timeseries.OrderTerm) {
 		return
 	}
 	slices.SortStableFunc(rows, func(a, b v3Row) int {
-		for _, term := range ordering {
-			comparison := compareV3Row(a, b, term)
+		for t, term := range ordering {
+			comparison := compareV3Row(a, b, t, term)
 			if comparison == 0 {
 				continue
 			}
@@ -151,12 +194,16 @@ func sortV3Rows(rows []v3Row, ordering []timeseries.OrderTerm) {
 	})
 }
 
-func compareV3Row(a, b v3Row, term timeseries.OrderTerm) int {
-	av, aTimestamp, aFound := v3RowValue(a, term.Column)
-	bv, bTimestamp, bFound := v3RowValue(b, term.Column)
-	if !aFound || !bFound {
+func compareV3Row(a, b v3Row, t int, term timeseries.OrderTerm) int {
+	ai, bi := a.s.order[t], b.s.order[t]
+	if ai < 0 || bi < 0 {
 		return 0
 	}
+	if ai == 0 && bi == 0 {
+		// times, which are never null, compare as instants
+		return applyV3Direction(cmp.Compare(a.p.Epoch, b.p.Epoch), term.Descending)
+	}
+	av, bv := a.cell(ai), b.cell(bi)
 	if av == nil || bv == nil {
 		switch {
 		case av == nil && bv == nil:
@@ -171,9 +218,6 @@ func compareV3Row(a, b v3Row, term timeseries.OrderTerm) int {
 			return -1
 		}
 	}
-	if aTimestamp && bTimestamp {
-		return applyV3Direction(cmp.Compare(a.epoch, b.epoch), term.Descending)
-	}
 	return applyV3Direction(compareV3Value(av, bv), term.Descending)
 }
 
@@ -182,15 +226,6 @@ func applyV3Direction(comparison int, descending bool) int {
 		return -comparison
 	}
 	return comparison
-}
-
-func v3RowValue(row v3Row, column string) (any, bool, bool) {
-	for i, name := range row.columns {
-		if name == column {
-			return row.values[i], i == 0, true
-		}
-	}
-	return nil, false, false
 }
 
 func compareV3Value(a, b any) int {
@@ -236,126 +271,95 @@ func compareV3Value(a, b any) int {
 }
 
 func marshalJSON(w io.Writer, ds *dataset.DataSet) error {
-	rows := dataSetRows(ds)
-	buf := bufWriter(w)
-	if _, err := buf.WriteString("["); err != nil {
-		return err
-	}
-	for i, row := range rows {
-		if i > 0 {
-			if _, err := buf.WriteString(","); err != nil {
-				return err
-			}
-		}
-		if err := writeOrderedObject(buf, row); err != nil {
-			return err
-		}
-	}
-	if _, err := buf.WriteString("]\n"); err != nil {
-		return err
-	}
-	return buf.Flush()
+	return writeRows(w, dataSetRows(ds), '[', ',', "]\n")
 }
 
 func marshalJSONL(w io.Writer, ds *dataset.DataSet) error {
-	rows := dataSetRows(ds)
-	buf := bufWriter(w)
-	for _, row := range rows {
-		if err := writeOrderedObject(buf, row); err != nil {
-			return err
+	return writeRows(w, dataSetRows(ds), 0, '\n', "")
+}
+
+// writes rows as JSON objects in column order, which encoding/json's maps would sort, between open
+// and closing, with sep after each but the last (JSON) or every one (JSONL)
+func writeRows(w io.Writer, rows []v3Row, open, sep byte, closing string) error {
+	if err := checkRowValues(rows); err != nil {
+		return err
+	}
+	cw := tbytes.NewChunkWriter(w)
+	if open != 0 {
+		cw.Buf = append(cw.Buf, open)
+	}
+	for i, row := range rows {
+		if i > 0 && open != 0 {
+			cw.Buf = append(cw.Buf, sep)
 		}
-		if _, err := buf.WriteString("\n"); err != nil {
-			return err
+		cw.Buf = appendV3Object(cw.Buf, row)
+		if open == 0 {
+			cw.Buf = append(cw.Buf, sep)
+		}
+		cw.FlushIfFull()
+	}
+	cw.Buf = append(cw.Buf, closing...)
+	return cw.Close()
+}
+
+// nothing is written when a value can't be, as JSON has no NaN or infinities
+func checkRowValues(rows []v3Row) error {
+	for _, row := range rows {
+		n := min(len(row.p.Values), len(row.s.columns)-1-len(row.s.tags))
+		for _, v := range row.p.Values[:n] {
+			if err := tstrings.CheckJSONValue(v); err != nil {
+				return err
+			}
 		}
 	}
-	return buf.Flush()
+	return nil
+}
+
+func appendV3Object(b []byte, row v3Row) []byte {
+	s := row.s
+	b = append(b, '{')
+	for i, key := range s.keys {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = append(b, key...)
+		switch {
+		case i == 0:
+			// the layout writes nothing JSON escapes
+			b = append(b, '"')
+			b = time.Unix(0, int64(row.p.Epoch)).UTC().AppendFormat(b, v3TimestampOutputLayout)
+			b = append(b, '"')
+		case i <= len(s.tags):
+			b = tstrings.AppendJSON(b, s.tags[i-1])
+		default:
+			// the values were checked, so none fails
+			b, _ = tstrings.AppendJSONValue(b, row.cell(i))
+		}
+	}
+	return append(b, '}')
 }
 
 func marshalCSV(w io.Writer, ds *dataset.DataSet) error {
 	cw := csv.NewWriter(w)
 	defer cw.Flush()
-	var lastColumns []string
+	var lastColumns, record []string
 	for _, row := range dataSetRows(ds) {
 		// one header row per column layout; series sharing a layout share it
-		if !equalColumns(lastColumns, row.columns) {
-			if err := cw.Write(row.columns); err != nil {
+		if !slices.Equal(lastColumns, row.s.columns) {
+			if err := cw.Write(row.s.columns); err != nil {
 				return err
 			}
-			lastColumns = row.columns
+			lastColumns = row.s.columns
 		}
-		record := make([]string, len(row.values))
-		for i, v := range row.values {
-			record[i] = formatValue(v)
+		record = record[:0]
+		for i := range row.s.columns {
+			record = append(record, formatValue(row.cell(i)))
 		}
 		if err := cw.Write(record); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func equalColumns(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// flushWriter is the buffered-write surface shared by the JSON marshalers.
-type flushWriter interface {
-	io.Writer
-	WriteString(string) (int, error)
-	Flush() error
-}
-
-type nopFlushWriter struct{ *bytes.Buffer }
-
-func (nopFlushWriter) Flush() error { return nil }
-
-func bufWriter(w io.Writer) flushWriter {
-	if b, ok := w.(*bytes.Buffer); ok {
-		return nopFlushWriter{b}
-	}
-	return bufio.NewWriter(w)
-}
-
-// writeOrderedObject emits one row as a JSON object preserving column order,
-// which encoding/json's map marshaling would alphabetize away.
-func writeOrderedObject(w flushWriter, row v3Row) error {
-	if _, err := w.WriteString("{"); err != nil {
-		return err
-	}
-	for i, name := range row.columns {
-		if i > 0 {
-			if _, err := w.WriteString(","); err != nil {
-				return err
-			}
-		}
-		key, err := json.Marshal(name)
-		if err != nil {
-			return err
-		}
-		if _, err := w.Write(key); err != nil {
-			return err
-		}
-		if _, err := w.WriteString(":"); err != nil {
-			return err
-		}
-		value, err := json.Marshal(row.values[i])
-		if err != nil {
-			return err
-		}
-		if _, err := w.Write(value); err != nil {
-			return err
-		}
-	}
-	_, err := w.WriteString("}")
-	return err
 }
 
 func formatValue(v any) string {

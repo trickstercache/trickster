@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"net/http"
 	"strconv"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
@@ -39,6 +40,8 @@ type CaptureResponseWriter struct {
 	len        int
 	maxBytes   int
 	truncated  bool
+	// presized is set once WriteHeader has sized the body, which it does only once
+	presized bool
 }
 
 // NewCaptureResponseWriter returns a new CaptureResponseWriter
@@ -49,15 +52,33 @@ func NewCaptureResponseWriter() *CaptureResponseWriter {
 	}
 }
 
-// NewCaptureResponseWriterWithLimit returns a CaptureResponseWriter that drops
-// bytes past maxBytes and flips Truncated() to true. A non-positive maxBytes
-// means unlimited.
+// a writer whose body grew past this is dropped when released, so one large response doesn't keep
+// its memory
+const maxPooledBody = 1 << 20
+
+var writers = sync.Pool{New: func() any {
+	return &CaptureResponseWriter{header: make(http.Header)}
+}}
+
+// NewCaptureResponseWriterWithLimit returns a writer, perhaps a released one, that drops bytes past
+// maxBytes and flips Truncated() to true; a non-positive maxBytes means unlimited
 func NewCaptureResponseWriterWithLimit(maxBytes int) *CaptureResponseWriter {
-	return &CaptureResponseWriter{
-		header:     make(http.Header),
-		statusCode: http.StatusOK,
-		maxBytes:   maxBytes,
+	sw := writers.Get().(*CaptureResponseWriter)
+	sw.statusCode, sw.maxBytes = http.StatusOK, maxBytes
+	return sw
+}
+
+// Release lets the writer be reused. It is called at most once, after the response is complete, and
+// neither the writer nor what its Header or Body returned may be used after it.
+func (sw *CaptureResponseWriter) Release() {
+	if sw.body.Cap() > maxPooledBody {
+		return
 	}
+	sw.ResponseWriter = nil
+	clear(sw.header)
+	sw.body.Reset()
+	sw.len, sw.maxBytes, sw.truncated, sw.presized = 0, 0, false, false
+	writers.Put(sw)
 }
 
 // Header returns the response header map
@@ -74,9 +95,10 @@ func (sw *CaptureResponseWriter) WriteHeader(code int) {
 		code = http.StatusOK
 	}
 	sw.statusCode = code
-	if sw.body.Cap() != 0 {
+	if sw.presized {
 		return
 	}
+	sw.presized = true
 	n, err := strconv.Atoi(sw.header.Get(headers.NameContentLength))
 	if err != nil || n <= 0 {
 		return

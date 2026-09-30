@@ -33,11 +33,12 @@ func (c *Client) SetExtent(r *http.Request, _ *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent,
 ) error {
 	v, _, _ := params.GetRequestValues(r)
-	v.Set(upStart, formatTime(extent.Start))
-	v.Set(upEnd, formatTime(extent.End))
 	if c.hooks.PreserveQueryGrid {
 		v.Set(upStart, extent.Start.UTC().Format(time.RFC3339Nano))
 		v.Set(upEnd, extent.End.UTC().Format(time.RFC3339Nano))
+	} else {
+		v.Set(upStart, formatTime(extent.Start))
+		v.Set(upEnd, formatTime(extent.End))
 	}
 	params.SetRequestValues(r, v)
 	return nil

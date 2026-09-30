@@ -297,3 +297,32 @@ func TestSQLModelRejectsMalformedRows(t *testing.T) {
 		t.Fatalf("empty output = %q", buf.String())
 	}
 }
+
+func TestSQLModelOrdersTimesByEpoch(t *testing.T) {
+	plan := testSQLPlan()
+	trq := testSQLTRQ(plan)
+	body := []byte(`[{"bucket":"2024-01-01T00:00:00.0001Z","host":"b","value":2},{"bucket":"2024-01-01T00:00:00.000Z","host":"a","value":1}]`)
+	ts, err := UnmarshalTimeseries(body, trq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := ts.(*dataset.DataSet)
+	for _, desc := range []bool{false, true} {
+		ds.TimeRangeQuery.Ordering = []timeseries.OrderTerm{{Column: "bucket", Descending: desc}}
+		out, err := MarshalTimeseries(ds, &timeseries.RequestOptions{ProviderRequest: plan}, 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rows []map[string]any
+		if err := json.Unmarshal(out, &rows); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"a", "b"}
+		if desc {
+			want = []string{"b", "a"}
+		}
+		if len(rows) != 2 || rows[0]["host"] != want[0] || rows[1]["host"] != want[1] {
+			t.Fatalf("descending=%v: rows out of time order: %s", desc, out)
+		}
+	}
+}

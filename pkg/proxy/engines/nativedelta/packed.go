@@ -31,6 +31,9 @@ const (
 	packedInt
 )
 
+// the fewest integers a decode's chunk of them holds
+const minIntChunk = 64
+
 func packedRowsSize(ds *dataset.DataSet) (int, bool) {
 	// whether every value packs, as the delta tier's row bytes and sequences do, and the bytes it needs
 	size := 16 + 2*binary.MaxVarintLen64*len(ds.ExtentList)
@@ -45,8 +48,9 @@ func packedRowsSize(ds *dataset.DataSet) (int, bool) {
 			}
 			size += s.Header.Msgsize() + 2*binary.MaxVarintLen64
 			width := -1
-			for i := range s.Points {
-				values := s.Points[i].Values
+			pts := s.FlatPoints()
+			for i := range pts {
+				values := pts[i].Values
 				if width < 0 {
 					width = len(values)
 				} else if len(values) != width {
@@ -66,6 +70,8 @@ func packedRowsSize(ds *dataset.DataSet) (int, bool) {
 							size++
 						}
 					case int64, int:
+						size += 1 + binary.MaxVarintLen64
+					case *int64:
 						size += 1 + binary.MaxVarintLen64
 					default:
 						return 0, false
@@ -93,23 +99,34 @@ func appendPackedRows(out []byte, ds *dataset.DataSet) ([]byte, error) {
 				return nil, err
 			}
 			width := 0
-			if len(s.Points) > 0 {
-				width = len(s.Points[0].Values)
+			pts := s.FlatPoints()
+			if len(pts) > 0 {
+				width = len(pts[0].Values)
 			}
-			out = binary.AppendUvarint(binary.AppendUvarint(out, uint64(len(s.Points))), uint64(width))
-			for i := range s.Points {
-				out = binary.AppendVarint(out, int64(s.Points[i].Epoch))
-				for _, v := range s.Points[i].Values {
-					if raw, ok := dataset.BytesValue(v); ok {
-						out = binary.AppendUvarint(append(out, packedBytes), uint64(len(raw)))
-						out = append(out, raw...)
-						continue
-					}
-					switch v := v.(type) {
+			out = binary.AppendUvarint(binary.AppendUvarint(out, uint64(len(pts))), uint64(width))
+			for i := range pts {
+				out = binary.AppendVarint(out, int64(pts[i].Epoch))
+				// the switch is inline, as a call per value costs the encode a tenth of its time
+				for _, v := range pts[i].Values {
+					switch t := v.(type) {
+					case *[]byte:
+						if t == nil {
+							out = append(out, packedNull)
+							continue
+						}
+						out = append(binary.AppendUvarint(append(out, packedBytes), uint64(len(*t))), *t...)
+					case []byte:
+						out = append(binary.AppendUvarint(append(out, packedBytes), uint64(len(t))), t...)
+					case *int64:
+						if t == nil {
+							out = append(out, packedNull)
+							continue
+						}
+						out = binary.AppendVarint(append(out, packedInt), *t)
 					case int64:
-						out = binary.AppendVarint(append(out, packedInt), v)
+						out = binary.AppendVarint(append(out, packedInt), t)
 					case int:
-						out = binary.AppendVarint(append(out, packedInt), int64(v))
+						out = binary.AppendVarint(append(out, packedInt), int64(t))
 					default:
 						out = append(out, packedNull)
 					}
@@ -212,11 +229,12 @@ func readPackedSeries(p *packedReader) (*dataset.Series, error) {
 	if p.err || (n > 0 && width > len(p.data)/n) {
 		return nil, errDeltaCodec
 	}
-	// one allocation holds every point's values, and another the headers of their bytes, which box
-	// as pointers without an allocation each
+	// one allocation holds every point's values, another the headers of their bytes and a third
+	// their integers, which box as pointers without an allocation each
 	s.Points = make(dataset.Points, n)
 	values := make([]any, n*width)
 	blobs := make([][]byte, 0, n*width)
+	var ints []int64
 	for i := range s.Points {
 		at := epoch.Epoch(p.varint())
 		row := values[i*width : (i+1)*width : (i+1)*width]
@@ -231,7 +249,12 @@ func readPackedSeries(p *packedReader) (*dataset.Series, error) {
 				blobs = append(blobs, p.bytes())
 				row[j] = &blobs[len(blobs)-1]
 			case packedInt:
-				row[j] = p.varint()
+				if len(ints) == cap(ints) {
+					// a new chunk, as those already pointed to must not move
+					ints = make([]int64, 0, max(n, minIntChunk))
+				}
+				ints = append(ints, p.varint())
+				row[j] = &ints[len(ints)-1]
 			case packedNull:
 			default:
 				return nil, errDeltaCodec

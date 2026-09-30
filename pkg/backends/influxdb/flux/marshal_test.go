@@ -17,11 +17,15 @@
 package flux
 
 import (
+	"bytes"
+	"io"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func TestValidateMarshalerOptions(t *testing.T) {
@@ -172,3 +176,27 @@ const testDataSetAsCSV = `#datatype,string,long,dateTime:RFC3339,dateTime:RFC333
 ,,0,2020-01-01T00:00:00Z,2020-01-01T00:02:00Z,2020-01-01T00:01:00Z,2.429,57.91308,localhost,cpu
 ,,0,2020-01-01T00:00:00Z,2020-01-01T00:02:00Z,2020-01-01T00:02:00Z,1.929,55.21703,localhost,cpu
 `
+
+func TestMarshalReadsSeriesParts(t *testing.T) {
+	view := parts.Of(testDataSet(), epoch.Epoch(time.Minute))
+	if !view.HasParts() {
+		t.Fatal("the view has no parts")
+	}
+	for name, marshal := range map[string]func(*dataset.DataSet, io.Writer) error{
+		"csv": func(ds *dataset.DataSet, w io.Writer) error {
+			return marshalTimeseriesCSVWriter(ds, DefaultJSONRequestBody(), 200, w)
+		},
+		"json": func(ds *dataset.DataSet, w io.Writer) error { return marshalTimeseriesJSONWriter(ds, nil, 200, w) },
+	} {
+		var got, want bytes.Buffer
+		if err := marshal(view, &got); err != nil {
+			t.Fatal(err)
+		}
+		if err := marshal(view.Flat(), &want); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got.Bytes(), want.Bytes()) {
+			t.Fatalf("%s:\n got %s\nwant %s", name, got.Bytes(), want.Bytes())
+		}
+	}
+}

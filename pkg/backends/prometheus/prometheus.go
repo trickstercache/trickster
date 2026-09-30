@@ -114,6 +114,9 @@ func containsOffsetKeyword(stmt string) bool {
 func containsStartEndModifier(stmt string) bool {
 	// finds @ start() or @ end() outside string literals; a match inside a comment only
 	// costs caching, since the request is then proxied
+	if strings.IndexByte(stmt, '@') < 0 {
+		return false
+	}
 	var quote byte
 	for i := 0; i < len(stmt); i++ {
 		c := stmt[i]

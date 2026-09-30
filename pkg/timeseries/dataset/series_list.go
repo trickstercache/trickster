@@ -39,10 +39,19 @@ type SeriesList []*Series
 // Merge treats a *Series in both lists with identical headers as the same
 // series and merges its Points from sl2 into those from sl.
 func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
-	return sl.merge(sl2, func(p, p2 Points) Points { return MergePoints(p, p2, sortPoints) })
+	return sl.merge(sl2, pointsMerger(func(p, p2 Points) Points { return MergePoints(p, p2, sortPoints) }))
 }
 
-func (sl SeriesList) merge(sl2 SeriesList, mergePoints func(p, p2 Points) Points) SeriesList {
+// merges a series' points with one slice, as a merge of a series without parts always has
+func pointsMerger(mergePoints func(p, p2 Points) Points) func(cs, s *Series) {
+	return func(cs, s *Series) {
+		cs.flatten()
+		cs.Points = mergePoints(cs.Points, s.FlatPoints())
+		cs.PointSize = cs.Points.Size()
+	}
+}
+
+func (sl SeriesList) merge(sl2 SeriesList, mergeSeries func(cs, s *Series)) SeriesList {
 	if len(sl2) == 0 {
 		return sl.Clone()
 	}
@@ -83,8 +92,7 @@ func (sl SeriesList) merge(sl2 SeriesList, mergePoints func(p, p2 Points) Points
 		} else {
 			// series is in both sl1 and sl2; merge their points
 			wg.Go(func() {
-				cs.Points = mergePoints(cs.Points, s.Points)
-				cs.PointSize = cs.Points.Size()
+				mergeSeries(cs, s)
 			})
 		}
 	}
@@ -149,10 +157,13 @@ func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy
 // different timestamps.
 func (sl SeriesList) MergeWithOpts(sl2 SeriesList, opts MergeOpts) SeriesList {
 	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
+		if opts.parts {
+			return sl.merge(sl2, func(cs, s *Series) { mergeSeriesParts(cs, s, opts.SortPoints) })
+		}
 		// fast path: legacy exact-match dedup
 		return sl.Merge(sl2, opts.SortPoints)
 	}
-	return sl.merge(sl2, func(p, p2 Points) Points { return MergePointsWithOpts(p, p2, opts) })
+	return sl.merge(sl2, pointsMerger(func(p, p2 Points) Points { return MergePointsWithOpts(p, p2, opts) }))
 }
 
 // mergeCollection merges several member lists while preserving the same
@@ -239,11 +250,19 @@ func (sl SeriesList) mergeCollection(collection []SeriesList, opts MergeOpts) Se
 
 	eg := errgroup.Group{}
 	eg.SetLimit(runtime.GOMAXPROCS(0))
+	parts := opts.parts && opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0
 	for _, job := range jobs {
 		eg.Go(func() error {
+			if parts {
+				for _, next := range job.series {
+					mergeSeriesParts(job.target, next, opts.SortPoints)
+				}
+				return nil
+			}
+			job.target.flatten()
 			points := job.target.Points
 			for _, next := range job.series {
-				points = MergePointsWithOpts(points, next.Points, opts)
+				points = MergePointsWithOpts(points, next.FlatPoints(), opts)
 				job.target.Points = points
 			}
 			job.target.PointSize = points.Size()
@@ -289,6 +308,7 @@ func (sl SeriesList) SortPoints() {
 	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
 		eg.Go(func() error {
+			s.flatten()
 			slices.SortFunc(s.Points, pointCmp)
 			return nil
 		})

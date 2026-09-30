@@ -203,3 +203,8 @@ func unmarshalCachedQueryResult(data []byte) (*cachedQueryResult, error) {
 	}
 	return &cachedQueryResult{result: entry.Payload, extents: entry.Extents}, nil
 }
+
+func (h *protocolHandler) deltaResult(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) (*sqltypes.Result, error) {
+	// renders into buffers of its own, for tests that keep the result
+	return h.renderDelta(d, plan, &renderBuffers{})
+}

@@ -107,6 +107,26 @@ type Result struct {
 	// panic is reflected only in Failed; the panic value is logged + metered
 	// inside the fanout goroutine.
 	Err error
+	// the capture of a slot no caller will be given is released once the slot is done with it
+	unwanted bool
+}
+
+// ReleaseCaptures lets results' captures be reused once All returns, or WaitForFirst claims its
+// winner with no OnResult set; WaitForFirst releases the captures it doesn't return
+func ReleaseCaptures(results []Result) {
+	releaseCapturesExcept(results, -1)
+}
+
+// lets a capture be reused; a var, so tests can count releases
+var releaseCapture = (*capture.CaptureResponseWriter).Release
+
+func releaseCapturesExcept(results []Result, keep int) {
+	for i := range results {
+		if i != keep && results[i].Capture != nil {
+			releaseCapture(results[i].Capture)
+			results[i].Capture = nil
+		}
+	}
 }
 
 // Config configures one fanout call.
@@ -246,6 +266,16 @@ func WaitForFirst(ctx context.Context, parent *http.Request, targets pool.Target
 	claimed := -1
 	scatterDone := false
 	var scatterErr error
+	// once the caller returns without gathered, the slot it kept is its own and the rest are released
+	abandoned, kept := false, -1
+	abandon := func(keep int) {
+		kept = keep
+		if scatterDone {
+			releaseCapturesExcept(gathered, kept)
+			return
+		}
+		abandoned = true
+	}
 	var winnerResult Result
 	// winnerClaimedAt is published outside mu so loser goroutines completing
 	// after winner-claim can read it lock-free to compute their drain latency.
@@ -273,6 +303,8 @@ func WaitForFirst(ctx context.Context, parent *http.Request, targets pool.Target
 			metrics.ALBFanoutLoserDrain.
 				WithLabelValues(cfg.Mechanism, cfg.Variant).
 				Observe(float64(time.Now().UnixNano()-claimedAt) / 1e9)
+			// once there is a winner, the caller is given only its result
+			r.unwanted = true
 		}
 	}
 
@@ -281,6 +313,9 @@ func WaitForFirst(ctx context.Context, parent *http.Request, targets pool.Target
 		mu.Lock()
 		scatterErr = err
 		scatterDone = true
+		if abandoned {
+			releaseCapturesExcept(gathered, kept)
+		}
 		cond.Broadcast()
 		mu.Unlock()
 	}()
@@ -299,6 +334,7 @@ func WaitForFirst(ctx context.Context, parent *http.Request, targets pool.Target
 		if winnerIdx >= 0 {
 			results = make([]Result, len(targets))
 			results[winnerIdx] = winnerResult
+			abandon(winnerIdx)
 			return winnerIdx, results, nil
 		}
 		if scatterDone {
@@ -306,6 +342,7 @@ func WaitForFirst(ctx context.Context, parent *http.Request, targets pool.Target
 		}
 		if err := ctx.Err(); err != nil {
 			cancel()
+			abandon(-1)
 			return -1, make([]Result, len(targets)), err
 		}
 		cond.Wait()
@@ -412,6 +449,7 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 				if perSlot != nil {
 					perSlot(i, &results[i])
 				}
+				releaseIfUnwanted(&results[i])
 				return nil
 			}
 			// short_read wins over truncated; both can be true for the same
@@ -431,6 +469,7 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 			if cfg.OnResult != nil {
 				cfg.OnResult(i, &results[i])
 			}
+			releaseIfUnwanted(&results[i])
 			return nil
 		})
 	}
@@ -448,6 +487,13 @@ func scatterInto(ctx context.Context, parent *http.Request, targets pool.Targets
 		})
 	}
 	return results, err
+}
+
+func releaseIfUnwanted(r *Result) {
+	if r.unwanted && r.Capture != nil {
+		releaseCapture(r.Capture)
+		r.Capture = nil
+	}
 }
 
 // PrimeBody ensures parent has a Resources value and a cached body so

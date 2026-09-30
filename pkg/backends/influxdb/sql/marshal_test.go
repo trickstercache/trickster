@@ -19,11 +19,15 @@ package sql
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io"
+	"math"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -168,5 +172,78 @@ func TestMarshalNilTimeseries(t *testing.T) {
 	_, err := MarshalTimeseries(nil, rlo, 200)
 	if err == nil {
 		t.Error("expected error for nil timeseries")
+	}
+}
+
+func TestMarshalWritesNothingForAValueJSONCannotHold(t *testing.T) {
+	for _, of := range []byte{iofmt.V3OutputJSON, iofmt.V3OutputJSONL} {
+		rlo := &timeseries.RequestOptions{OutputFormat: of}
+		ds := testDataSet()
+		pts := ds.Results[0].SeriesList[0].Points
+		// a value past the series' columns is never written, so it can't fail the marshal
+		pts[0].Values = append(pts[0].Values, math.NaN())
+		var w bytes.Buffer
+		if err := MarshalTimeseriesWriter(ds, rlo, 200, &w); err != nil || w.Len() == 0 {
+			t.Fatalf("format %d: %v", of, err)
+		}
+		pts[1].Values[0] = math.Inf(1)
+		w.Reset()
+		if err := MarshalTimeseriesWriter(ds, rlo, 200, &w); err == nil || w.Len() != 0 {
+			t.Fatalf("format %d: wrote %q, %v", of, w.Bytes(), err)
+		}
+	}
+}
+
+func BenchmarkMarshalJSON(b *testing.B) {
+	for _, shape := range []struct{ series, points int }{{100, 1000}, {10, 60}} {
+		ds := &dataset.DataSet{Results: dataset.Results{{}}}
+		for i := range shape.series {
+			s := &dataset.Series{Header: dataset.SeriesHeader{
+				TimestampField:  timeseries.FieldDefinition{Name: "time"},
+				TagFieldsList:   timeseries.FieldDefinitions{{Name: "host"}},
+				ValueFieldsList: timeseries.FieldDefinitions{{Name: "usage_user"}, {Name: "count"}},
+				Tags:            dataset.Tags{"host": fmt.Sprintf("host-%d", i)},
+			}}
+			s.Points = make(dataset.Points, shape.points)
+			for j := range s.Points {
+				s.Points[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+					Values: []any{float64(i*j%9973) / 7, int64(j)}}
+			}
+			ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, s)
+		}
+		b.Run(fmt.Sprintf("%dx%d", shape.series, shape.points), func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				if err := MarshalTimeseriesWriter(ds, nil, 200, io.Discard); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestMarshalReadsSeriesParts(t *testing.T) {
+	ds := testDataSet()
+	s := ds.Results[0].SeriesList[0]
+	s.Header.TagFieldsList = timeseries.FieldDefinitions{{Name: "host"}}
+	s.Header.Tags = map[string]string{"host": "a"}
+	view := parts.Of(ds, epoch.Epoch(time.Minute))
+	if !view.HasParts() {
+		t.Fatal("the view has no parts")
+	}
+	for _, rlo := range []*timeseries.RequestOptions{nil, {OutputFormat: iofmt.V3OutputJSONL}, {OutputFormat: iofmt.V3OutputCSV}} {
+		for _, ordering := range [][]timeseries.OrderTerm{nil, {{Column: "time", Descending: true}}} {
+			view.TimeRangeQuery.Ordering = ordering
+			var got, want bytes.Buffer
+			if err := MarshalTimeseriesWriter(view, rlo, 200, &got); err != nil {
+				t.Fatal(err)
+			}
+			if err := MarshalTimeseriesWriter(view.Flat(), rlo, 200, &want); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got.Bytes(), want.Bytes()) || got.Len() == 0 {
+				t.Fatalf("got %s\nwant %s", got.Bytes(), want.Bytes())
+			}
+		}
 	}
 }

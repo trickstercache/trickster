@@ -144,7 +144,7 @@ func testDataSet2() *DataSet {
 	r1 := &Result{
 		StatementID: 0,
 		SeriesList: []*Series{
-			{sh1, newPoints(), s},
+			{Header: sh1, Points: newPoints(), PointSize: s},
 			nil,
 		},
 	}
@@ -152,9 +152,9 @@ func testDataSet2() *DataSet {
 	r2 := &Result{
 		StatementID: 1,
 		SeriesList: []*Series{
-			{sh2, newPoints(), s},
-			{sh3, newPoints(), s},
-			{sh4, newPoints(), s},
+			{Header: sh2, Points: newPoints(), PointSize: s},
+			{Header: sh3, Points: newPoints(), PointSize: s},
+			{Header: sh4, Points: newPoints(), PointSize: s},
 		},
 	}
 
@@ -942,7 +942,7 @@ func TestDefaultSizeCropper(t *testing.T) {
 		ds := &DataSet{
 			TimeRangeQuery: &timeseries.TimeRangeQuery{Step: step},
 			ExtentList:     extents,
-			Results:        []*Result{{StatementID: 0, SeriesList: []*Series{{sh, pts, pts.Size()}}}},
+			Results:        []*Result{{StatementID: 0, SeriesList: []*Series{{Header: sh, Points: pts, PointSize: pts.Size()}}}},
 		}
 		ds.Merger = ds.DefaultMerger
 		ds.SizeCropper = ds.DefaultSizeCropper

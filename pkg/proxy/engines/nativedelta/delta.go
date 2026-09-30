@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"math"
+	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -45,7 +46,7 @@ func (d *Delta) Rows() int {
 		}
 		for _, s := range r.SeriesList {
 			if s != nil {
-				n += len(s.Points)
+				n += s.PointCount()
 			}
 		}
 	}
@@ -68,7 +69,11 @@ const (
 	layoutPacked
 )
 
-func (deltaCodec) Marshal(d *Delta) ([]byte, error) {
+func (c deltaCodec) Marshal(d *Delta) ([]byte, error) {
+	return c.AppendMarshal(nil, d)
+}
+
+func (deltaCodec) AppendMarshal(out []byte, d *Delta) ([]byte, error) {
 	if d == nil || d.DS == nil || len(d.Header) > math.MaxUint32 {
 		return nil, errDeltaCodec
 	}
@@ -81,7 +86,7 @@ func (deltaCodec) Marshal(d *Delta) ([]byte, error) {
 		}
 		packedSize = len(rows)
 	}
-	out := make([]byte, 0, len(deltaCodecMagic)+1+4+len(d.Header)+1+packedSize)
+	out = slices.Grow(out, len(deltaCodecMagic)+1+4+len(d.Header)+1+packedSize)
 	out = append(out, deltaCodecMagic[:]...)
 	out = append(out, deltaCodecVersion)
 	// #nosec G115 -- bounded by math.MaxUint32 above

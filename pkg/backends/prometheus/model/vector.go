@@ -157,7 +157,8 @@ func hasNonNaNScalar(ds *dataset.DataSet) bool {
 			if series == nil {
 				continue
 			}
-			for _, point := range series.Points {
+			for i := range series.PointCount() {
+				point := series.PointAt(i)
 				if len(point.Values) == 0 {
 					continue
 				}

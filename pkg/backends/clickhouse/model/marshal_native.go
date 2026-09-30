@@ -51,45 +51,44 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 		return server.EncodeNativeFormat(w, nil, nil, 0, revision)
 	}
 	fields, _, _, _ := ds.FieldDefinitions()
+	rows, count := timeOrderedRows(ds.Results[0])
 	columns := make([]server.Column, len(fields))
 	values := make([][]any, len(fields))
+	times := make([]nativeTimeFormat, len(fields))
 	for i, f := range fields {
 		columns[i] = server.Column{Name: f.Name, Type: f.SDataType}
-	}
-	count := 0
-	valueIndexes := make(map[*dataset.Series]map[string]int, len(ds.Results[0].SeriesList))
-	for _, series := range ds.Results[0].SeriesList {
-		idx := make(map[string]int, len(series.Header.ValueFieldsList))
-		for i, f := range series.Header.ValueFieldsList {
-			idx[f.Name] = i
+		values[i] = make([]any, 0, count)
+		if f.Role == timeseries.RoleTimestamp {
+			times[i] = newNativeTimeFormat(f)
 		}
-		valueIndexes[series] = idx
 	}
-	for _, row := range timeOrderedRows(ds.Results[0]) {
+	layouts := make(map[*dataset.Series]*nativeSeries, len(ds.Results[0].SeriesList))
+	var layout *nativeSeries
+	var last *dataset.Series
+	for row := range rows {
 		series, point := row.series, row.point
-		{
-			for i, f := range fields {
-				var value any
-				switch f.Role {
-				case timeseries.RoleTimestamp:
-					value = formatEpochForType(point.Epoch, f)
-				case timeseries.RoleTag:
-					value = series.Header.Tags[f.Name]
-					if value == nullToken && strings.HasPrefix(f.SDataType, "Nullable(") {
-						value = nil
-					}
-				case timeseries.RoleValue:
-					index, ok := valueIndexes[series][f.Name]
-					if !ok || index >= len(point.Values) {
-						return timeseries.ErrInvalidBody
-					}
-					value = point.Values[index]
-				default:
-					value = f.DefaultValue
-				}
-				values[i] = append(values[i], value)
+		if series != last {
+			if layout = layouts[series]; layout == nil {
+				layout = newNativeSeries(series, fields)
+				layouts[series] = layout
 			}
-			count++
+			last = series
+		}
+		for i, f := range fields {
+			var value any
+			switch f.Role {
+			case timeseries.RoleTimestamp:
+				value = times[i].format(point.Epoch)
+			case timeseries.RoleValue:
+				index := layout.index[i]
+				if index < 0 || index >= len(point.Values) {
+					return timeseries.ErrInvalidBody
+				}
+				value = point.Values[index]
+			default:
+				value = layout.cells[i]
+			}
+			values[i] = append(values[i], value)
 		}
 	}
 	// encode to memory first so a column that cannot be encoded yields an
@@ -102,33 +101,77 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 	return err
 }
 
-func formatEpochForType(ep epoch.Epoch, tfd timeseries.FieldDefinition) string {
-	nanos := int64(ep)
-	t := time.Unix(nanos/1e9, nanos%1e9).UTC()
+// a series' cells that are the same on every row, boxed once, and the index of each value field's
+// value in a point (-1 when the series has no such field)
+type nativeSeries struct {
+	cells []any
+	index []int
+}
+
+func newNativeSeries(series *dataset.Series, fields timeseries.FieldDefinitions) *nativeSeries {
+	ns := &nativeSeries{cells: make([]any, len(fields)), index: make([]int, len(fields))}
+	for i, f := range fields {
+		ns.index[i] = -1
+		switch f.Role {
+		case timeseries.RoleTimestamp:
+		case timeseries.RoleTag:
+			value := series.Header.Tags[f.Name]
+			if value != nullToken || !strings.HasPrefix(f.SDataType, "Nullable(") {
+				ns.cells[i] = value
+			}
+		case timeseries.RoleValue:
+			// the last value field of a name is the one a lookup by name finds
+			for j, vf := range series.Header.ValueFieldsList {
+				if vf.Name == f.Name {
+					ns.index[i] = j
+				}
+			}
+		default:
+			ns.cells[i] = f.DefaultValue
+		}
+	}
+	return ns
+}
+
+// how a time column's field formats a point's time: with a layout, or as a count of units
+type nativeTimeFormat struct {
+	layout string
+	unit   timeseries.FieldDataType
+}
+
+func newNativeTimeFormat(tfd timeseries.FieldDefinition) nativeTimeFormat {
 	switch tfd.SDataType {
 	case TypeDateTime:
-		return t.Format(timeconv.SQLDateTimeLayout)
+		return nativeTimeFormat{layout: timeconv.SQLDateTimeLayout}
 	case TypeDate:
-		return t.Format("2006-01-02")
+		return nativeTimeFormat{layout: "2006-01-02"}
+	}
+	if strings.HasPrefix(tfd.SDataType, "DateTime64") {
+		precision, _ := strconv.Atoi(strings.TrimSpace(strings.Split(strings.TrimSuffix(strings.TrimPrefix(tfd.SDataType, "DateTime64("), ")"), ",")[0]))
+		if precision > 0 && precision <= 9 {
+			return nativeTimeFormat{layout: "2006-01-02 15:04:05." + strings.Repeat("0", precision)}
+		}
+		return nativeTimeFormat{layout: timeconv.SQLDateTimeLayout}
+	}
+	// otherwise epoch seconds, or the field's finer unit, as a string
+	return nativeTimeFormat{unit: tfd.DataType}
+}
+
+func (f nativeTimeFormat) format(ep epoch.Epoch) string {
+	nanos := int64(ep)
+	t := time.Unix(nanos/1e9, nanos%1e9).UTC()
+	if f.layout != "" {
+		return t.Format(f.layout)
+	}
+	switch f.unit {
+	case timeseries.DateTimeUnixMilli:
+		return strconv.FormatInt(t.UnixMilli(), 10)
+	case timeseries.DateTimeUnixMicro:
+		return strconv.FormatInt(t.UnixMicro(), 10)
+	case timeseries.DateTimeUnixNano:
+		return strconv.FormatInt(t.UnixNano(), 10)
 	default:
-		if strings.HasPrefix(tfd.SDataType, "DateTime64") {
-			precision, _ := strconv.Atoi(strings.TrimSpace(strings.Split(strings.TrimSuffix(strings.TrimPrefix(tfd.SDataType, "DateTime64("), ")"), ",")[0]))
-			if precision > 0 && precision <= 9 {
-				return t.Format("2006-01-02 15:04:05." + strings.Repeat("0", precision))
-			}
-			return t.Format(timeconv.SQLDateTimeLayout)
-		}
-		// Default: epoch seconds as string
-		switch tfd.DataType {
-		case timeseries.DateTimeUnixMilli:
-			return strconv.FormatInt(t.UnixMilli(), 10)
-		case timeseries.DateTimeUnixMicro:
-			return strconv.FormatInt(t.UnixMicro(), 10)
-		case timeseries.DateTimeUnixNano:
-			return strconv.FormatInt(t.UnixNano(), 10)
-		default:
-			return strconv.FormatInt(t.Unix(), 10)
-		}
+		return strconv.FormatInt(t.Unix(), 10)
 	}
 }
 

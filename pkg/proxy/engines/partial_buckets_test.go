@@ -183,9 +183,11 @@ func datasetValues(t *testing.T, ts timeseries.Timeseries) map[int64]string {
 	out := map[int64]string{}
 	for _, res := range ds.Results {
 		for _, s := range res.SeriesList {
-			for i, p := range s.Points {
+			// the points are read across the series' parts, which a merge may have added
+			pts := s.FlatPoints()
+			for i, p := range pts {
 				// merged points are served in order, whatever the marshaler does with them
-				require.True(t, i == 0 || s.Points[i-1].Epoch < p.Epoch, "points out of order")
+				require.True(t, i == 0 || pts[i-1].Epoch < p.Epoch, "points out of order")
 				out[time.Unix(0, int64(p.Epoch)).Unix()], _ = p.Values[0].(string)
 			}
 		}
@@ -822,4 +824,54 @@ func TestPartialBucketRequestIsolatesTheClientRequest(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, body, string(b))
 	require.Equal(t, body, string(rsc.RequestBody))
+}
+
+func TestPartialBucketConsumersLeaveTheCacheUnchanged(t *testing.T) {
+	// what a transformer or a merge may do to the dataset it's handed: write tags and values
+	vandalize := func(ts timeseries.Timeseries) {
+		ds := ts.(*dataset.DataSet)
+		ds.InjectTags(dataset.Tags{"vandal": "yes"})
+		for _, r := range ds.Results {
+			for _, s := range r.SeriesList {
+				for _, p := range s.Points {
+					p.Values[0] = "999"
+				}
+			}
+		}
+	}
+	for _, fail := range []bool{false, true} {
+		t.Run("fail="+strconv.FormatBool(fail), func(t *testing.T) {
+			h := newBucketHarness(t, timeseries.StepAlignmentPartial)
+			if fail {
+				h.query = pbQuery + "{" + bucketsim.ModFailUnaligned + "}"
+			}
+			base := time.Now().Add(-6 * time.Hour).Truncate(pbStep)
+			start, end := base.Add(pbStartSkew), base.Add(pbBuckets*pbStep+pbEndSkew)
+			want := h.serve(start, end, 0).body
+			const n = 4
+			var wg sync.WaitGroup
+			plain := make([]string, n)
+			for i := range n {
+				wg.Go(func() {
+					req := h.request(start, end, 0)
+					rsc := request.GetResources(req)
+					if i%2 == 0 {
+						rsc.TSTransformer = vandalize
+						serveDPC(h.client, req)
+						return
+					}
+					rsc.IsMergeMember = true
+					serveDPC(h.client, req)
+					vandalize(rsc.TS)
+					rsc.TS.(*dataset.DataSet).StripTags([]string{"vandal"})
+				})
+				wg.Go(func() { plain[i] = h.serve(start, end, 0).body })
+			}
+			wg.Wait()
+			for i := range n {
+				require.Equal(t, want, plain[i], "concurrent plain caller %d", i)
+			}
+			require.Equal(t, want, h.serve(start, end, 0).body)
+		})
+	}
 }

@@ -17,9 +17,12 @@
 package mysql
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"slices"
+	"sync"
+	"unsafe"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
@@ -152,13 +155,51 @@ func decodeRowBlob(row []sqltypes.Value, blob []byte, fields []*querypb.Field) e
 
 func sameResultHeader(a, b []byte) bool {
 	// parts merge when their columns are named, typed and collated alike
-	left, errLeft := resultCodec{}.Unmarshal(a)
-	right, errRight := resultCodec{}.Unmarshal(b)
-	return errLeft == nil && errRight == nil && compatibleFields(left.Fields, right.Fields)
+	left, err := resultCodec{}.Unmarshal(a)
+	if err != nil {
+		return false
+	}
+	if bytes.Equal(a, b) {
+		return true
+	}
+	right, err := resultCodec{}.Unmarshal(b)
+	return err == nil && compatibleFields(left.Fields, right.Fields)
 }
 
-func (h *protocolHandler) deltaResult(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) (*sqltypes.Result, error) {
-	// the rows in time order, and within a bucket by their group columns under MySQL's rules
+// a hit's rendered rows and their values, which are reused once the client has been sent them
+type renderBuffers struct {
+	values []sqltypes.Value
+	rows   []sqltypes.Row
+}
+
+// buffers that grew past this are dropped rather than kept for reuse
+const maxPooledRender = 1 << 20
+
+var renders = sync.Pool{New: func() any { return &renderBuffers{} }}
+
+func getRenderBuffers() *renderBuffers {
+	return renders.Get().(*renderBuffers)
+}
+
+func (b *renderBuffers) release() {
+	// clears the values, which refer to cached rows, and keeps the buffers for reuse; neither the result
+	// they rendered nor its rows may be used after it
+	if b == nil {
+		return
+	}
+	clear(b.values)
+	clear(b.rows[:cap(b.rows)])
+	if cap(b.values)*int(unsafe.Sizeof(sqltypes.Value{}))+cap(b.rows)*int(unsafe.Sizeof(sqltypes.Row{})) >
+		maxPooledRender {
+		return
+	}
+	b.values, b.rows = b.values[:0], b.rows[:0]
+	renders.Put(b)
+}
+
+func (h *protocolHandler) renderDelta(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan, b *renderBuffers,
+) (*sqltypes.Result, error) {
+	// the rows in time order, and within a bucket by their group columns under MySQL's rules, in b
 	meta, err := resultCodec{}.Unmarshal(d.Header)
 	if err != nil {
 		return nil, err
@@ -174,27 +215,19 @@ func (h *protocolHandler) deltaResult(d *nativedelta.Delta, plan *sqlanalyzer.Qu
 	out := cloneResultMetadata(meta)
 	width := len(meta.Fields)
 	rows := d.Rows()
-	out.Rows = make([]sqltypes.Row, 0, rows)
-	// every row's values share one allocation
-	values := make([]sqltypes.Value, rows*width)
-	var compareErr error
-	sortBucket := func(from int) {
-		slices.SortStableFunc(out.Rows[from:], func(a, b sqltypes.Row) int {
-			order, err := comparator.compare(a, b)
-			if err != nil && compareErr == nil {
-				compareErr = err
-			}
-			return order
-		})
-	}
+	// every row's values share one slab
+	b.values = slices.Grow(b.values[:0], rows*width)[:rows*width]
+	b.rows = slices.Grow(b.rows[:0], rows)
+	values := b.values
+	out.Rows = b.rows
 	for _, r := range d.DS.Results {
-		bucket, at := len(out.Rows), epoch.Epoch(0)
-		for row := range r.Rows(dataset.RowOrder{}) {
-			if len(out.Rows) > bucket && row.Point.Epoch != at {
-				sortBucket(bucket)
-				bucket = len(out.Rows)
+		if len(groups) > 0 {
+			if r, err = seriesInGroupOrder(r, comparator, meta.Fields); err != nil {
+				return nil, err
 			}
-			at = row.Point.Epoch
+		}
+		// the series are in group order, which is how the rows come out within each bucket
+		for row := range r.Rows(dataset.RowOrder{}) {
 			blob, _ := dataset.BytesValue(row.Point.Values[0])
 			next := len(out.Rows) * width
 			decoded := values[next : next+width : next+width]
@@ -203,7 +236,53 @@ func (h *protocolHandler) deltaResult(d *nativedelta.Delta, plan *sqlanalyzer.Qu
 			}
 			out.Rows = append(out.Rows, decoded)
 		}
-		sortBucket(bucket)
 	}
-	return out, compareErr
+	b.rows = out.Rows
+	return out, nil
+}
+
+// r, or a copy with its series in group order; a series' rows share group values and a bucket holds
+// one row per series, so this orders each bucket as sorting its rows would
+func seriesInGroupOrder(r *dataset.Result, comparator *groupComparator, fields []*querypb.Field,
+) (*dataset.Result, error) {
+	list := r.SeriesList
+	if len(list) < 2 {
+		return r, nil
+	}
+	width := len(fields)
+	// each series' group values, from its first row; a series without rows yields none and goes last
+	firsts := make([]sqltypes.Value, len(list)*width)
+	order := make([]int, 0, len(list))
+	for i, s := range list {
+		if s == nil || s.PointCount() == 0 {
+			continue
+		}
+		blob, _ := dataset.BytesValue(s.PointAt(0).Values[0])
+		if err := decodeRowBlob(firsts[i*width:(i+1)*width], blob, fields); err != nil {
+			return nil, err
+		}
+		order = append(order, i)
+	}
+	var compareErr error
+	slices.SortStableFunc(order, func(a, b int) int {
+		c, err := comparator.compare(firsts[a*width:(a+1)*width], firsts[b*width:(b+1)*width])
+		if err != nil && compareErr == nil {
+			compareErr = err
+		}
+		return c
+	})
+	if compareErr != nil {
+		return nil, compareErr
+	}
+	if len(order) == len(list) && slices.IsSorted(order) {
+		return r, nil
+	}
+	ordered := &dataset.Result{
+		StatementID: r.StatementID, Error: r.Error, Name: r.Name,
+		SeriesList: make(dataset.SeriesList, len(order)),
+	}
+	for i, index := range order {
+		ordered.SeriesList[i] = list[index]
+	}
+	return ordered, nil
 }

@@ -31,6 +31,10 @@ type Series struct {
 	Points Points `msg:"points"`
 	// PointSize is the memory utilization of the Points in bytes
 	PointSize int64 `msg:"ps"`
+
+	// points a response adds before and after Points without copying them in (see MergeParts); they
+	// are never stored, and Clone folds them into Points
+	head, tail Points
 }
 
 // Hash is a numeric value representing a calculated hash
@@ -57,8 +61,8 @@ func (s *Series) Size() int64 {
 // Clone returns a perfect, new copy of the Series
 func (s *Series) Clone() *Series {
 	clone := &Series{Header: s.Header.Clone(), PointSize: s.PointSize}
-	if s.Points != nil {
-		clone.Points = s.Points.Clone()
+	if pts := s.FlatPoints(); pts != nil {
+		clone.Points = pts.Clone()
 	}
 	return clone
 }

@@ -337,32 +337,27 @@ func unescapeTSV(s string) string {
 }
 
 // escapeTSV applies ClickHouse's TSV escaping so values round-trip exactly.
-func escapeTSV(s string) string {
-	if strings.IndexFunc(s, func(r rune) bool { return r < ' ' || r == '\\' || r == '\'' }) < 0 {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s) + 4)
+// appends s escaped as ClickHouse TSV escapes a field, which is never quoted
+func appendEscapedTSV(b []byte, s string) []byte {
 	for i := range len(s) {
 		switch c := s[i]; c {
 		case '\b':
-			b.WriteString("\\b")
+			b = append(b, '\\', 'b')
 		case '\f':
-			b.WriteString("\\f")
+			b = append(b, '\\', 'f')
 		case '\r':
-			b.WriteString("\\r")
+			b = append(b, '\\', 'r')
 		case '\n':
-			b.WriteString("\\n")
+			b = append(b, '\\', 'n')
 		case '\t':
-			b.WriteString("\\t")
+			b = append(b, '\\', 't')
 		case 0:
-			b.WriteString("\\0")
+			b = append(b, '\\', '0')
 		case '\'', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(c)
+			b = append(b, '\\', c)
 		default:
-			b.WriteByte(c)
+			b = append(b, c)
 		}
 	}
-	return b.String()
+	return b
 }

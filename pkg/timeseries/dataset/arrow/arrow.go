@@ -229,7 +229,9 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 			for i, columnIndex := range valueIndices {
 				values[i] = valueAt(rec.Column(columnIndex), row)
 			}
-			series.Points = append(series.Points, dataset.Point{Epoch: ep, Values: values})
+			size := dataset.PointSize(values)
+			series.Points = append(series.Points, dataset.Point{Epoch: ep, Size: size, Values: values})
+			series.PointSize += int64(size)
 		}
 	}
 
@@ -250,6 +252,8 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 type seriesContext struct {
 	series     *dataset.Series
 	valueIndex []int
+	// tagValues holds the series' tag value for each tag column, boxed once for all its rows
+	tagValues []any
 }
 
 // rowRef locates one output row: its epoch, its series, and its point.
@@ -304,11 +308,10 @@ func rowComparators(schema *arrow.Schema, tsIndex int, contexts []seriesContext,
 				return sign
 			})
 		default:
-			name := schema.Field(column).Name
 			nullsFirst := key.NullsFirst
 			out = append(out, func(a, b rowRef) int {
-				left := cellValue(contexts, a, column, name)
-				right := cellValue(contexts, b, column, name)
+				left := cellValue(contexts, a, column)
+				right := cellValue(contexts, b, column)
 				if left == nil || right == nil {
 					return nullOrder(left, right, nullsFirst)
 				}
@@ -321,10 +324,10 @@ func rowComparators(schema *arrow.Schema, tsIndex int, contexts []seriesContext,
 
 // cellValue resolves a row's value for one schema column: the series tag when
 // the column is a tag, otherwise the point's value.
-func cellValue(contexts []seriesContext, row rowRef, column int, name string) any {
-	sc := contexts[row.seriesIndex]
+func cellValue(contexts []seriesContext, row rowRef, column int) any {
+	sc := &contexts[row.seriesIndex]
 	if sc.valueIndex[column] < 0 {
-		return sc.series.Header.Tags[name]
+		return sc.tagValues[column]
 	}
 	position := sc.valueIndex[column]
 	if position >= len(row.point.Values) {
@@ -408,19 +411,32 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 	tsIndex := schema.FieldIndices(tsName)[0]
 	tsType := schema.Field(tsIndex).Type.(*arrow.TimestampType)
 
+	// Fields copies the schema's field list, so it is called once
+	fields := schema.Fields()
 	var contexts []seriesContext
+	var rowCount int
 	if len(ds.Results) > 0 {
-		for _, series := range ds.Results[0].SeriesList {
+		seriesList := ds.Results[0].SeriesList
+		contexts = make([]seriesContext, 0, len(seriesList))
+		// one slab of each per call, cut into a part per series
+		indexSlab := make([]int, len(seriesList)*len(fields))
+		tagSlab := make([]any, len(seriesList)*len(fields))
+		for _, series := range seriesList {
 			if series == nil {
 				continue
 			}
-			sc := seriesContext{series: series, valueIndex: make([]int, schema.NumFields())}
-			for i, field := range schema.Fields() {
+			n := len(contexts) * len(fields)
+			sc := seriesContext{
+				series: series, valueIndex: indexSlab[n : n+len(fields) : n+len(fields)],
+				tagValues: tagSlab[n : n+len(fields) : n+len(fields)],
+			}
+			for i, field := range fields {
 				sc.valueIndex[i] = -1
 				if i == tsIndex {
 					continue
 				}
-				if _, isTag := series.Header.Tags[field.Name]; isTag {
+				if tag, isTag := series.Header.Tags[field.Name]; isTag {
+					sc.tagValues[i] = tag
 					continue
 				}
 				position := slices.IndexFunc(series.Header.ValueFieldsList,
@@ -432,13 +448,14 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 				sc.valueIndex[i] = position
 			}
 			contexts = append(contexts, sc)
+			rowCount += series.PointCount()
 		}
 	}
 
-	var rows []rowRef
+	rows := make([]rowRef, 0, rowCount)
 	for seriesIndex, sc := range contexts {
-		for i := range sc.series.Points {
-			point := &sc.series.Points[i]
+		for i := range sc.series.PointCount() {
+			point := sc.series.PointAt(i)
 			rows = append(rows, rowRef{ep: point.Epoch, seriesIndex: seriesIndex, point: point})
 		}
 	}
@@ -459,23 +476,24 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 	for start := 0; start < len(rows); start += maxRowsPerBatch {
 		chunk := rows[start:min(start+maxRowsPerBatch, len(rows))]
 		builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+		builder.Reserve(len(chunk))
+		fieldBuilders := builder.Fields()
+		tsBuilder := fieldBuilders[tsIndex].(*array.TimestampBuilder)
 		for _, row := range chunk {
-			sc := contexts[row.seriesIndex]
-			for i, field := range schema.Fields() {
-				fieldBuilder := builder.Field(i)
+			sc := &contexts[row.seriesIndex]
+			for i, fieldBuilder := range fieldBuilders {
+				var err error
 				switch {
 				case i == tsIndex:
-					appendTimestamp(fieldBuilder.(*array.TimestampBuilder), row.ep, tsType)
+					appendTimestamp(tsBuilder, row.ep, tsType)
 				case sc.valueIndex[i] < 0:
-					if err := appendValue(fieldBuilder, sc.series.Header.Tags[field.Name]); err != nil {
-						builder.Release()
-						return nil, fmt.Errorf("column %q: %w", field.Name, err)
-					}
+					err = appendValue(fieldBuilder, sc.tagValues[i])
 				default:
-					if err := appendValue(fieldBuilder, row.point.Values[sc.valueIndex[i]]); err != nil {
-						builder.Release()
-						return nil, fmt.Errorf("column %q: %w", field.Name, err)
-					}
+					err = appendValue(fieldBuilder, row.point.Values[sc.valueIndex[i]])
+				}
+				if err != nil {
+					builder.Release()
+					return nil, fmt.Errorf("column %q: %w", fields[i].Name, err)
 				}
 			}
 		}

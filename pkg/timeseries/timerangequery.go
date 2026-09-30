@@ -57,19 +57,22 @@ type TimeRangeQuery struct {
 	PolicyStep time.Duration `msg:"-"`
 	// Phase is the bucket offset from the Unix epoch
 	Phase time.Duration `msg:"-"`
-	// SampleModel describes what each timestamp's value represents
-	SampleModel SampleModel `msg:"-"`
 	// Requested is the query's time range as the client sent it, before any alignment
 	Requested RequestedRange `msg:"-"`
+	// Partials holds the partial edge buckets planned for the request, the first PartialCount of them
+	Partials [2]PartialBucket `msg:"-"`
+	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
+	TemplateURL *url.URL `msg:"-"`
+	// the one-byte fields sit together, where padding after each would take the struct up a size class
+
+	// SampleModel describes what each timestamp's value represents
+	SampleModel SampleModel `msg:"-"`
 	// StepAlignments is the set of step alignment modes the query supports
 	StepAlignments StepAlignment `msg:"-"`
 	// StepAlignment is the query's step alignment mode: its default until the engine resolves it
 	StepAlignment StepAlignment `msg:"-"`
-	// Partials holds the partial edge buckets planned for the request, the first PartialCount of them
-	Partials     [2]PartialBucket `msg:"-"`
-	PartialCount uint8            `msg:"-"`
-	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
-	TemplateURL *url.URL `msg:"-"`
+	// PartialCount is how many of Partials are planned
+	PartialCount uint8 `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
 	IsOffset bool `msg:"-"`
 	// StepNS is the nanosecond representation for Step, required for MsgPack
@@ -88,7 +91,8 @@ type TimeRangeQuery struct {
 	TagFieldDefintions FieldDefinitions `msg:"-"`
 	// ParsedQuery is a member for the vendor-specific query object
 	ParsedQuery any `msg:"-"`
-	// OriginalBody is the original inbound request body untransformed if POST
+	// OriginalBody is the original inbound request body untransformed if POST. It is only ever
+	// replaced, never written in place, so clones share it
 	OriginalBody []byte `msg:"-"`
 	// CacheKeyElements contains parts of the request that are used to derive a Cache Key
 	CacheKeyElements map[string]string `msg:"cke"`
@@ -139,8 +143,7 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	}
 
 	if len(trq.OriginalBody) > 0 {
-		t.OriginalBody = make([]byte, len(trq.OriginalBody))
-		copy(t.OriginalBody, trq.OriginalBody)
+		t.OriginalBody = trq.OriginalBody
 	}
 
 	if len(trq.CacheKeyElements) > 0 {

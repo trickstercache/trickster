@@ -94,7 +94,7 @@ var cacheLookupStatusValues = []struct {
 }
 
 func (s LookupStatus) String() string {
-	if int(s) <= len(cacheLookupStatusValues) {
+	if s >= 0 && int(s) < len(cacheLookupStatusValues) {
 		return cacheLookupStatusValues[s].Value
 	}
 	return strconv.Itoa(int(s))

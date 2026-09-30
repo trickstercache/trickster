@@ -250,26 +250,50 @@ func (t *tier[P]) entrySize(entry *Entry[P]) int {
 }
 
 func (t *tier[P]) marshalEntry(entry *Entry[P]) ([]byte, error) {
+	if len(entry.Extents) > math.MaxUint32 {
+		return nil, errTooLargeToEncode
+	}
+	headerSize := 4 + 1 + 1 + 1 + 4 + len(entry.Extents)*16 + 4
+	if ac, ok := t.codec.(AppendCodec[P]); ok && !entry.Marker {
+		// the payload is marshaled after the envelope, whose length is written once it is known
+		out, err := ac.AppendMarshal(t.writeEnvelope(make([]byte, headerSize), entry, 0), entry.Payload)
+		if err != nil {
+			return nil, err
+		}
+		if len(out)-headerSize > math.MaxUint32 {
+			return nil, errTooLargeToEncode
+		}
+		// #nosec G115 -- bounded by math.MaxUint32 above.
+		binary.BigEndian.PutUint32(out[headerSize-4:headerSize], uint32(len(out)-headerSize))
+		return out, nil
+	}
 	var payload []byte
-	var flags byte
-	if entry.Marker {
-		flags |= envelopeMarkerFlag
-	} else {
+	if !entry.Marker {
 		var err error
 		payload, err = t.codec.Marshal(entry.Payload)
 		if err != nil {
 			return nil, err
 		}
 	}
-	if len(entry.Extents) > math.MaxUint32 || len(payload) > math.MaxUint32 {
-		return nil, errors.New("native delta cache entry is too large to encode")
+	if len(payload) > math.MaxUint32 {
+		return nil, errTooLargeToEncode
 	}
-	headerSize := 4 + 1 + 1 + 1 + 4 + len(entry.Extents)*16 + 4
-	out := make([]byte, headerSize+len(payload))
+	out := t.writeEnvelope(make([]byte, headerSize, headerSize+len(payload)), entry, len(payload))
+	return append(out, payload...), nil
+}
+
+var errTooLargeToEncode = errors.New("native delta cache entry is too large to encode")
+
+// writes the envelope into out, which is its length, and says the payload is size bytes long
+func (t *tier[P]) writeEnvelope(out []byte, entry *Entry[P], size int) []byte {
+	var flags byte
+	if entry.Marker {
+		flags |= envelopeMarkerFlag
+	}
 	copy(out, envelopeMagic[:])
 	out[4] = envelopeVersion
 	out[5] = flags
-	// #nosec G115 -- both lengths were bounded by math.MaxUint32 above.
+	// #nosec G115 -- the caller bounded the extent count by math.MaxUint32.
 	binary.BigEndian.PutUint32(out[7:11], uint32(len(entry.Extents)))
 	position := 11
 	for _, extent := range entry.Extents {
@@ -280,10 +304,9 @@ func (t *tier[P]) marshalEntry(entry *Entry[P]) ([]byte, error) {
 		binary.BigEndian.PutUint64(out[position+8:position+16], uint64(extent.End.UnixNano()))
 		position += 16
 	}
-	// #nosec G115 -- both lengths were bounded by math.MaxUint32 above.
-	binary.BigEndian.PutUint32(out[position:position+4], uint32(len(payload)))
-	copy(out[position+4:], payload)
-	return out, nil
+	// #nosec G115 -- the caller bounded the payload's length by math.MaxUint32.
+	binary.BigEndian.PutUint32(out[position:position+4], uint32(size))
+	return out
 }
 
 func (t *tier[P]) unmarshalEntry(data []byte) (*Entry[P], error) {

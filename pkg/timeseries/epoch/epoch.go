@@ -40,42 +40,60 @@ const (
 
 // Format returns the epoch as a string in the specified format
 func (e Epoch) Format(to timeseries.FieldDataType, quoteDateTimeSQL bool) string {
+	var buf [40]byte
+	return string(e.AppendFormat(buf[:0], to, quoteDateTimeSQL))
+}
+
+// AppendFormat appends the epoch to dst as Format writes it
+func (e Epoch) AppendFormat(dst []byte, to timeseries.FieldDataType, quoteDateTimeSQL bool) []byte {
 	switch to {
 	case timeseries.DateTimeUnixSecs:
-		return strconv.FormatInt(int64(e/BillionNS), 10)
+		return strconv.AppendInt(dst, int64(e/BillionNS), 10)
 	case timeseries.DateTimeUnixMilli:
-		return strconv.FormatInt(int64(e/MillionNS), 10)
+		return strconv.AppendInt(dst, int64(e/MillionNS), 10)
 	case timeseries.DateTimeUnixNano:
-		return strconv.FormatInt(int64(e), 10)
+		return strconv.AppendInt(dst, int64(e), 10)
 	case timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL,
 		timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
-		return FormatTime(time.Unix(0, int64(e)), to, quoteDateTimeSQL)
+		return AppendTime(dst, time.Unix(0, int64(e)), to, quoteDateTimeSQL)
 	}
-	return "0"
+	return append(dst, '0')
 }
 
 func FormatTime(t time.Time, to timeseries.FieldDataType, quoteDateTimeSQL bool) string {
-	var q string
-	if quoteDateTimeSQL {
-		q = "'"
-	}
+	var buf [40]byte
+	return string(AppendTime(buf[:0], t, to, quoteDateTimeSQL))
+}
+
+// AppendTime appends t to dst as FormatTime writes it
+func AppendTime(dst []byte, t time.Time, to timeseries.FieldDataType, quoteDateTimeSQL bool) []byte {
+	var layout string
 	switch to {
 	case timeseries.DateTimeUnixSecs:
-		return strconv.FormatInt(t.Unix(), 10)
+		return strconv.AppendInt(dst, t.Unix(), 10)
 	case timeseries.DateTimeUnixMilli:
-		return strconv.FormatInt(t.UnixMilli(), 10)
+		return strconv.AppendInt(dst, t.UnixMilli(), 10)
 	case timeseries.DateTimeUnixNano:
-		return strconv.FormatInt(t.UnixNano(), 10)
+		return strconv.AppendInt(dst, t.UnixNano(), 10)
 	case timeseries.DateTimeSQL:
-		return q + t.UTC().Format(timeconv.SQLDateTimeLayout) + q
+		layout = timeconv.SQLDateTimeLayout
 	case timeseries.DateSQL:
-		return q + t.UTC().Format(timeconv.SQLDateLayout) + q
+		layout = timeconv.SQLDateLayout
 	case timeseries.TimeSQL:
-		return q + t.UTC().Format(timeconv.SQLTimeLayout) + q
+		layout = timeconv.SQLTimeLayout
 	case timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
-		return t.UTC().Format(time.RFC3339)
+		return t.UTC().AppendFormat(dst, time.RFC3339)
+	default:
+		return append(dst, '0')
 	}
-	return "0"
+	if quoteDateTimeSQL {
+		dst = append(dst, '\'')
+	}
+	dst = t.UTC().AppendFormat(dst, layout)
+	if quoteDateTimeSQL {
+		dst = append(dst, '\'')
+	}
+	return dst
 }
 
 func FromSecs(input int64) Epoch {

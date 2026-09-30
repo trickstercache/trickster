@@ -17,15 +17,19 @@
 package influxql
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 
 	"github.com/influxdata/influxdb/models"
 )
@@ -36,52 +40,230 @@ const timeColumnName = "time"
 func MarshalTimeseries(ts timeseries.Timeseries,
 	rlo *timeseries.RequestOptions, _ int,
 ) ([]byte, error) {
-	if ts == nil {
-		return nil, timeseries.ErrUnknownFormat
-	}
-	ds, ok := ts.(*dataset.DataSet)
-	if !ok {
-		return nil, timeseries.ErrUnknownFormat
-	}
-	wfdoc, err := toWireFormat(ds, rlo)
+	ds, err := dataSetOf(ts)
 	if err != nil {
 		return nil, err
 	}
-	var b []byte
 	switch {
 	case rlo == nil || rlo.OutputFormat == 0:
-		b, err = json.Marshal(wfdoc)
+		var buf bytes.Buffer
+		if err := writeDocument(&buf, ds, rlo); err != nil {
+			return nil, err
+		}
+		return buf.Bytes(), nil
 	case rlo.OutputFormat == 1:
-		b, err = json.MarshalIndent(wfdoc, "", "  ")
+		wfdoc, err := toWireFormat(ds.Flat(), rlo)
+		if err != nil {
+			return nil, err
+		}
+		return json.MarshalIndent(wfdoc, "", "  ")
 	default:
-		err = timeseries.ErrUnknownFormat
+		return nil, timeseries.ErrUnknownFormat
 	}
-	return b, err
 }
 
 // MarshalTimeseriesWriter writes a Timeseries as a JSON blob to an io.Writer
 func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	rlo *timeseries.RequestOptions, _ int, w io.Writer,
 ) error {
-	if ts == nil {
-		return timeseries.ErrUnknownFormat
-	}
-	ds, ok := ts.(*dataset.DataSet)
-	if !ok {
-		return timeseries.ErrUnknownFormat
-	}
-	wfdoc, err := toWireFormat(ds, rlo)
+	ds, err := dataSetOf(ts)
 	if err != nil {
 		return err
 	}
 	if rw, ok := w.(http.ResponseWriter); ok && rw != nil {
 		rw.Header().Add(headers.NameContentType, headers.ValueApplicationJSON)
 	}
-	enc := json.NewEncoder(w)
 	if rlo != nil && rlo.OutputFormat == 1 {
+		wfdoc, err := toWireFormat(ds.Flat(), rlo)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
+		return enc.Encode(wfdoc)
 	}
-	return enc.Encode(wfdoc)
+	return writeDocument(w, ds, rlo, '\n')
+}
+
+func dataSetOf(ts timeseries.Timeseries) (*dataset.DataSet, error) {
+	if ts == nil {
+		return nil, timeseries.ErrUnknownFormat
+	}
+	ds, ok := ts.(*dataset.DataSet)
+	if !ok {
+		return nil, timeseries.ErrUnknownFormat
+	}
+	return ds, nil
+}
+
+// writes ds to w as encoding/json writes its wire format document, followed by suffix; nothing is
+// written when a value can't be, as JSON has no NaN or infinities
+func writeDocument(w io.Writer, ds *dataset.DataSet, rlo *timeseries.RequestOptions, suffix ...byte) error {
+	if err := checkValues(ds); err != nil {
+		return err
+	}
+	cw := tbytes.NewChunkWriter(w)
+	appendDocument(&cw, ds, newTimeFormat(rlo))
+	cw.Buf = append(cw.Buf, suffix...)
+	return cw.Close()
+}
+
+func checkValues(ds *dataset.DataSet) error {
+	if ds == nil {
+		return nil
+	}
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			for i := range s.PointCount() {
+				for _, v := range s.PointAt(i).Values {
+					if err := tstrings.CheckJSONValue(v); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// how a point's time is written: an RFC 3339 string, or an integer count of divisor nanoseconds
+type timeFormat struct {
+	rfc3339 bool
+	divisor int64
+}
+
+func newTimeFormat(rlo *timeseries.RequestOptions) timeFormat {
+	if rlo == nil || rlo.TimeFormat == 0 {
+		return timeFormat{rfc3339: true}
+	}
+	if m, ok := epochMultipliers[rlo.TimeFormat]; ok {
+		return timeFormat{divisor: m}
+	}
+	return timeFormat{divisor: 1}
+}
+
+func (f timeFormat) append(b []byte, e epoch.Epoch) []byte {
+	if f.rfc3339 {
+		b = append(b, '"')
+		b = time.Unix(0, int64(e)).UTC().AppendFormat(b, time.RFC3339Nano)
+		return append(b, '"')
+	}
+	return strconv.AppendInt(b, int64(e)/f.divisor, 10)
+}
+
+func appendDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, tf timeFormat) {
+	if ds == nil {
+		cw.Buf = append(cw.Buf, "null"...)
+		return
+	}
+	if len(ds.Results) == 0 {
+		cw.Buf = append(cw.Buf, `{"results":null}`...)
+		return
+	}
+	cw.Buf = append(cw.Buf, `{"results":[`...)
+	wrote := false
+	for _, r := range ds.Results {
+		if r == nil {
+			continue
+		}
+		if wrote {
+			cw.Buf = append(cw.Buf, ',')
+		}
+		wrote = true
+		cw.Buf = append(cw.Buf, `{"statement_id":`...)
+		cw.Buf = strconv.AppendInt(cw.Buf, int64(r.StatementID), 10)
+		series := false
+		for _, s := range r.SeriesList {
+			if s == nil {
+				continue
+			}
+			if series {
+				cw.Buf = append(cw.Buf, ',')
+			} else {
+				cw.Buf = append(cw.Buf, `,"series":[`...)
+				series = true
+			}
+			appendSeries(cw, s, tf)
+		}
+		if series {
+			cw.Buf = append(cw.Buf, ']')
+		}
+		cw.Buf = append(cw.Buf, '}')
+	}
+	cw.Buf = append(cw.Buf, "]}"...)
+}
+
+// appends s as a models.Row, whose name, tags and values are left out when empty
+func appendSeries(cw *tbytes.ChunkWriter, s *dataset.Series, tf timeFormat) {
+	h := &s.Header
+	at := h.TimestampField.OutputPosition
+	cw.Buf = append(cw.Buf, '{')
+	b := cw.Buf
+	if h.Name != "" {
+		b = append(b, `"name":`...)
+		b = tstrings.AppendJSON(b, h.Name)
+		b = append(b, ',')
+	}
+	if len(h.Tags) > 0 {
+		b = append(b, `"tags":`...)
+		b = h.Tags.AppendJSON(b)
+		b = append(b, ',')
+	}
+	b = append(b, `"columns":[`...)
+	timed := false
+	for i, fd := range h.ValueFieldsList {
+		if i == at {
+			b = append(b, `"`+timeColumnName+`",`...)
+			timed = true
+		}
+		b = tstrings.AppendJSON(b, fd.Name)
+		b = append(b, ',')
+	}
+	if !timed {
+		b = append(b, `"`+timeColumnName+`",`...)
+	}
+	b[len(b)-1] = ']'
+	values := false
+	for i := range s.PointCount() {
+		p := s.PointAt(i)
+		if len(p.Values) == 0 {
+			continue
+		}
+		if values {
+			b = append(b, ",["...)
+		} else {
+			b = append(b, `,"values":[[`...)
+			values = true
+		}
+		timed := false
+		for n, v := range p.Values {
+			if n == at {
+				b = append(tf.append(b, p.Epoch), ',')
+				timed = true
+			}
+			// the values were checked, so none fails
+			b, _ = tstrings.AppendJSONValue(b, v)
+			b = append(b, ',')
+		}
+		if !timed {
+			b = append(tf.append(b, p.Epoch), ',')
+		}
+		b[len(b)-1] = ']'
+		cw.Buf = b
+		cw.FlushIfFull()
+		b = cw.Buf
+	}
+	if values {
+		b = append(b, ']')
+	}
+	b = append(b, '}')
+	cw.Buf = b
 }
 
 func formatRFC3339Time(epoch epoch.Epoch, _ int64) any {

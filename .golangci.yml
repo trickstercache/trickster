@@ -26,6 +26,9 @@ linters:
     - exptostd
     - errorlint
     - forbidigo
+    - depguard
+    - godox
+    - goheader
     - gocheckcompilerdirectives
     - mirror
     - importas
@@ -43,6 +46,102 @@ linters:
         - pattern: ^rand\.[^.]+$
           pkg: ^math/rand(/v2)?$
           msg: use pkg/util/weak/compat in the application or pkg/util/weak/weaktest in tests
+        - pattern: ^fmt\.Print(f|ln)?$
+          pkg: ^fmt$
+          msg: log through pkg/observability/logging, or write to a writer the caller is given
+        - pattern: ^print(ln)?$
+          msg: log through pkg/observability/logging, or write to a writer the caller is given
+        - pattern: ^log\.(Print|Fatal|Panic)(f|ln)?$
+          pkg: ^log$
+          msg: log through pkg/observability/logging
+        - pattern: ^os\.(Stdout|Stderr)$
+          pkg: ^os$
+          msg: log through pkg/observability/logging, or write to a writer the caller is given
+        - pattern: ^http\.(Get|Head|Post|PostForm|DefaultClient)$
+          pkg: ^net/http$
+          msg: use the backend's or the component's configured HTTP client
+        - pattern: ^http\.DefaultTransport$
+          pkg: ^net/http$
+          msg: use the backend's or the component's configured transport
+        - pattern: ^context\.TODO$
+          pkg: ^context$
+          msg: pass the caller's context, or context.Background where there is none
+        - pattern: ^(zstd\.New(Writer|Reader)|brotli\.New(Writer|WriterLevel|WriterOptions|Reader)|gzip\.New(Writer|WriterLevel|Reader))$
+          pkg: ^(github\.com/klauspost/compress/(zstd|gzip)|github\.com/andybalholm/brotli|compress/gzip)$
+          msg: take a pooled codec from pkg/encoding (providers.Select*Initializer, or the codec's NewEncoder/NewDecoder)
+    depguard:
+      # Non-cryptographic randomness goes through pkg/util/weak: compat in the application, weaktest in
+      # tests and tooling. The application is cmd/ and pkg/, less tests, testutil and *test packages.
+      rules:
+        weak-random:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/pkg/util/weak/**"
+          deny:
+            - pkg: math/rand$
+              desc: use pkg/util/weak/compat in the application or pkg/util/weak/weaktest in tests
+        weak-random-v2:
+          list-mode: lax
+          files:
+            - $all
+            - "!**/pkg/util/weak/**"
+            # the standalone load-balancing core keeps its own audited randomness
+            - "!**/pkg/lb/hrw/hrw.go"
+            - "!**/pkg/lb/p2c/p2c.go"
+            - "!**/pkg/lb/rr/rr.go"
+            - "!**/pkg/lb/lbtest/lbtest.go"
+          deny:
+            - pkg: math/rand/v2
+              desc: use pkg/util/weak/compat in the application or pkg/util/weak/weaktest in tests
+        weaktest-in-application:
+          list-mode: lax
+          files:
+            - "**/cmd/**"
+            - "**/pkg/**"
+            - "!$test"
+            - "!**/testutil/**"
+            - "!**/*test/*.go"
+            - "!**/pkg/util/weak/**"
+          deny:
+            - pkg: github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest
+              desc: application code uses pkg/util/weak/compat
+        compat-outside-application:
+          list-mode: lax
+          files:
+            - $test
+            - "**/testutil/**"
+            - "**/*test/*.go"
+            - "**/hack/**"
+            - "**/examples/**"
+            - "!**/pkg/util/weak/**"
+          deny:
+            - pkg: github.com/trickstercache/trickster/v2/pkg/util/weak/compat
+              desc: tests and tooling use pkg/util/weak/weaktest
+    goheader:
+      values:
+        regexp:
+          YEAR: 20\d\d
+      # a block comment's lines keep their leading asterisks
+      template: |-
+        * Copyright {{ YEAR }} The Trickster Authors
+         *
+         * Licensed under the Apache License, Version 2.0 (the "License");
+         * you may not use this file except in compliance with the License.
+         * You may obtain a copy of the License at
+         *
+         *     http://www.apache.org/licenses/LICENSE-2.0
+         *
+         * Unless required by applicable law or agreed to in writing, software
+         * distributed under the License is distributed on an "AS IS" BASIS,
+         * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+         * See the License for the specific language governing permissions and
+         * limitations under the License.
+    godox:
+      keywords:
+        - TODO
+        - todo
+        - FIXME
     lll:
       line-length: 180
     staticcheck:
@@ -168,13 +267,54 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Each exclusion names the rule it lifts by its message, so a file excused one rule keeps the others.
       - path: pkg/util/weak/
         linters:
           - forbidigo
+        text: pkg/util/weak/compat
       # Keep the standalone load-balancing core's existing, audited randomness.
       - path: ^pkg/lb/(hrw/hrw|p2c/p2c|rr/rr|lbtest/lbtest)\.go$
         linters:
           - forbidigo
+        text: pkg/util/weak/compat
+      # The command line's usage and validation output is printed for a person at a terminal.
+      - path: ^pkg/(appinfo/usage/usage\.go|daemon/)
+        linters:
+          - forbidigo
+        text: fmt\.Print
+      # The logging package is where output streams are chosen.
+      - path: ^pkg/observability/logging/
+        linters:
+          - forbidigo
+        text: os\.(Stdout|Stderr)
+      - path: ^pkg/testutil/
+        linters:
+          - forbidigo
+        text: http\.DefaultTransport
+      # A test may reach its own test servers with Go's default client, stop at a fatal log, and build
+      # its fixtures with a codec of its own.
+      - path: _test\.go$
+        linters:
+          - forbidigo
+        text: ((http|log|context)\.|pooled codec)
+      # The codec packages are where the pooled codecs are built.
+      - path: ^pkg/encoding/
+        linters:
+          - forbidigo
+        text: pooled codec
+      # The TODOs there were before godox counted them; any other fails.
+      - linters:
+          - godox
+        source: (support comparison of other values via 'where'|set this at some point|Revisit when LRU is re-implemented)
+      # The license header check covers the project's own packages and commands.
+      - path: ^(hack|examples)/|^pkg/backends/influxdb/promremote/prompb/
+        linters:
+          - goheader
+      # Developer tools and example programs print for the person running them.
+      - path: ^(hack|examples)/
+        linters:
+          - forbidigo
+        text: (fmt\.Print|`print|os\.(Stdout|Stderr)|pooled codec)
     paths:
       - third_party$
       - builtin$

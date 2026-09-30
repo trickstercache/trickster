@@ -18,25 +18,48 @@ package model
 
 import (
 	"bytes"
-	"encoding/json"
 	"io"
 	"maps"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
-type renderedPoint struct {
-	epoch      epoch.Epoch
-	dimensions map[string]any
-	values     map[string]any
-	version    any
-	rank       int64
-	tagsKey    string
+// a series' output layout: each key's value in encoding/json's map key order, the fields giving a
+// point's version and rank (-1 when none), and its tags as a sort key
+type druidSeries struct {
+	tagsKey string
+	result  []druidCell
+	event   []druidCell
+	version int
+	rank    int
+}
+
+// a key, quoted and followed by its colon, and the index of the value it takes
+type druidCell struct {
+	key   string
+	index int
+}
+
+// one output point, by reference, with its rank
+type druidPoint struct {
+	s    *druidSeries
+	p    *dataset.Point
+	rank int64
+}
+
+func (dp *druidPoint) value(i int) any {
+	if i >= 0 && i < len(dp.p.Values) {
+		return dp.p.Values[i]
+	}
+	return nil
 }
 
 // MarshalTimeseries converts DataSet back into the native Druid response shape.
@@ -65,19 +88,30 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, options *timeseries.Reque
 	if plan == nil {
 		return timeseries.ErrUnknownFormat
 	}
-	points := renderedPoints(ds)
-	var output any
+	points := druidPoints(ds)
+	var render func(*tbytes.ChunkWriter, []druidPoint)
 	switch plan.QueryType() {
 	case queryTimeseries:
-		output = renderTimeseries(points, plan.Descending())
+		sortDruidPoints(points, plan.Descending(), false)
+		render = appendTimeseries
 	case queryGroupBy:
-		output = renderGroupBy(points, plan.Descending())
+		sortDruidPoints(points, plan.Descending(), true)
+		render = appendGroupBy
 	case queryTopN:
-		output = renderTopN(points, plan.Descending())
+		sortDruidPoints(points, plan.Descending(), true)
+		render = appendTopN
 	default:
 		return timeseries.ErrUnknownFormat
 	}
-	return json.NewEncoder(writer).Encode(output)
+	// the output is written as encoding/json would write it, so nothing is when a value can't be
+	if err := checkDruidValues(points, plan.QueryType()); err != nil {
+		return err
+	}
+	cw := tbytes.NewChunkWriter(writer)
+	cw.Buf = append(cw.Buf, '[')
+	render(&cw, points)
+	cw.Buf = append(cw.Buf, "]\n"...)
+	return cw.Close()
 }
 
 func sqlPlanForMarshal(ds *dataset.DataSet, options *timeseries.RequestOptions) *SQLQueryPlan {
@@ -110,102 +144,167 @@ func planForMarshal(ds *dataset.DataSet, options *timeseries.RequestOptions) *Qu
 	return nil
 }
 
-func renderedPoints(ds *dataset.DataSet) []renderedPoint {
-	var out []renderedPoint
+func druidPoints(ds *dataset.DataSet) []druidPoint {
+	count := 0
 	for _, result := range ds.Results {
 		if result == nil {
 			continue
 		}
 		for _, series := range result.SeriesList {
-			if series == nil {
+			if series != nil {
+				count += series.PointCount()
+			}
+		}
+	}
+	out := make([]druidPoint, 0, count)
+	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
+		for _, series := range result.SeriesList {
+			if series == nil || series.PointCount() == 0 {
 				continue
 			}
-			for _, point := range series.Points {
-				rendered := renderedPoint{
-					epoch: point.Epoch, dimensions: make(map[string]any),
-					values: make(map[string]any), tagsKey: series.Header.Tags.JSON(),
+			s := newDruidSeries(series)
+			for i := range series.PointCount() {
+				dp := druidPoint{s: s, p: series.PointAt(i)}
+				if s.rank >= 0 {
+					dp.rank = numericRank(dp.value(s.rank))
 				}
-				for i, field := range series.Header.ValueFieldsList {
-					var value any
-					if i < len(point.Values) {
-						value = point.Values[i]
-					}
-					switch field.ProviderData1 {
-					case fieldNativeDimension:
-						rendered.dimensions[field.Name] = value
-					case fieldNativeVersion:
-						rendered.version = value
-					case fieldNativeRank:
-						rendered.rank = numericRank(value)
-					default:
-						rendered.values[field.Name] = value
-					}
-				}
-				out = append(out, rendered)
+				out = append(out, dp)
 			}
 		}
 	}
 	return out
 }
 
-func renderTimeseries(points []renderedPoint, descending bool) []map[string]any {
-	sortRendered(points, descending, false)
-	out := make([]map[string]any, len(points))
-	for i, point := range points {
-		out[i] = map[string]any{
-			fieldTimestamp: formatTimestamp(point.epoch),
-			"result":       point.values,
+func newDruidSeries(series *dataset.Series) *druidSeries {
+	// a later field of the same name replaces an earlier one, and a value replaces a dimension
+	dimensions, values := map[string]int{}, map[string]int{}
+	s := &druidSeries{tagsKey: series.Header.Tags.JSON(), version: -1, rank: -1}
+	for i, field := range series.Header.ValueFieldsList {
+		switch field.ProviderData1 {
+		case fieldNativeDimension:
+			dimensions[field.Name] = i
+		case fieldNativeVersion:
+			s.version = i
+		case fieldNativeRank:
+			s.rank = i
+		default:
+			values[field.Name] = i
 		}
 	}
-	return out
+	s.result = druidCells(values)
+	maps.Copy(dimensions, values)
+	s.event = druidCells(dimensions)
+	return s
 }
 
-func renderGroupBy(points []renderedPoint, descending bool) []map[string]any {
-	sortRendered(points, descending, true)
-	out := make([]map[string]any, len(points))
-	for i, point := range points {
-		event := make(map[string]any, len(point.dimensions)+len(point.values))
-		maps.Copy(event, point.dimensions)
-		maps.Copy(event, point.values)
-		row := map[string]any{fieldTimestamp: formatTimestamp(point.epoch), "event": event}
-		if point.version != nil {
-			row["version"] = point.version
-		}
-		out[i] = row
+func druidCells(fields map[string]int) []druidCell {
+	names := slices.Sorted(maps.Keys(fields))
+	cells := make([]druidCell, len(names))
+	for i, name := range names {
+		cells[i] = druidCell{key: string(append(tstrings.AppendJSON(nil, name), ':')), index: fields[name]}
 	}
-	return out
+	return cells
 }
 
-func renderTopN(points []renderedPoint, descending bool) []map[string]any {
-	sortRendered(points, descending, true)
-	type bucket struct {
-		epoch epoch.Epoch
-		rows  []map[string]any
-	}
-	var buckets []bucket
-	for _, point := range points {
-		if len(buckets) == 0 || buckets[len(buckets)-1].epoch != point.epoch {
-			buckets = append(buckets, bucket{epoch: point.epoch})
+func checkDruidValues(points []druidPoint, queryType string) error {
+	for i := range points {
+		dp := &points[i]
+		cells := dp.s.event
+		switch queryType {
+		case queryTimeseries:
+			cells = dp.s.result
+		case queryGroupBy:
+			if err := tstrings.CheckJSONValue(dp.value(dp.s.version)); err != nil {
+				return err
+			}
 		}
-		row := make(map[string]any, len(point.dimensions)+len(point.values))
-		maps.Copy(row, point.dimensions)
-		maps.Copy(row, point.values)
-		buckets[len(buckets)-1].rows = append(buckets[len(buckets)-1].rows, row)
-	}
-	out := make([]map[string]any, len(buckets))
-	for i, bucket := range buckets {
-		out[i] = map[string]any{
-			fieldTimestamp: formatTimestamp(bucket.epoch),
-			"result":       bucket.rows,
+		for _, c := range cells {
+			if err := tstrings.CheckJSONValue(dp.value(c.index)); err != nil {
+				return err
+			}
 		}
 	}
-	return out
+	return nil
 }
 
-func sortRendered(points []renderedPoint, descending, rank bool) {
-	slices.SortStableFunc(points, func(a, b renderedPoint) int {
-		if a.epoch != b.epoch {
-			if (a.epoch < b.epoch) != descending {
+// the values were checked, so none fails
+func appendDruidObject(b []byte, dp *druidPoint, cells []druidCell) []byte {
+	b = append(b, '{')
+	for i, c := range cells {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = append(b, c.key...)
+		b, _ = tstrings.AppendJSONValue(b, dp.value(c.index))
+	}
+	return append(b, '}')
+}
+
+func appendTimeseries(cw *tbytes.ChunkWriter, points []druidPoint) {
+	for i := range points {
+		if i > 0 {
+			cw.Buf = append(cw.Buf, ',')
+		}
+		cw.Buf = append(cw.Buf, `{"result":`...)
+		cw.Buf = appendDruidObject(cw.Buf, &points[i], points[i].s.result)
+		cw.Buf = append(cw.Buf, `,"timestamp":`...)
+		cw.Buf = appendTimestamp(cw.Buf, points[i].p.Epoch)
+		cw.Buf = append(cw.Buf, '}')
+		cw.FlushIfFull()
+	}
+}
+
+func appendGroupBy(cw *tbytes.ChunkWriter, points []druidPoint) {
+	for i := range points {
+		dp := &points[i]
+		if i > 0 {
+			cw.Buf = append(cw.Buf, ',')
+		}
+		cw.Buf = append(cw.Buf, `{"event":`...)
+		cw.Buf = appendDruidObject(cw.Buf, dp, dp.s.event)
+		cw.Buf = append(cw.Buf, `,"timestamp":`...)
+		cw.Buf = appendTimestamp(cw.Buf, dp.p.Epoch)
+		if v := dp.value(dp.s.version); v != nil {
+			cw.Buf = append(cw.Buf, `,"version":`...)
+			cw.Buf, _ = tstrings.AppendJSONValue(cw.Buf, v)
+		}
+		cw.Buf = append(cw.Buf, '}')
+		cw.FlushIfFull()
+	}
+}
+
+// one row per epoch, which holds its points' events in order
+func appendTopN(cw *tbytes.ChunkWriter, points []druidPoint) {
+	for i := range points {
+		dp := &points[i]
+		first := i == 0 || points[i-1].p.Epoch != dp.p.Epoch
+		switch {
+		case i == 0:
+			cw.Buf = append(cw.Buf, `{"result":[`...)
+		case first:
+			cw.Buf = append(cw.Buf, `],"timestamp":`...)
+			cw.Buf = appendTimestamp(cw.Buf, points[i-1].p.Epoch)
+			cw.Buf = append(cw.Buf, `},{"result":[`...)
+		default:
+			cw.Buf = append(cw.Buf, ',')
+		}
+		cw.Buf = appendDruidObject(cw.Buf, dp, dp.s.event)
+		cw.FlushIfFull()
+	}
+	if n := len(points); n > 0 {
+		cw.Buf = append(cw.Buf, `],"timestamp":`...)
+		cw.Buf = appendTimestamp(cw.Buf, points[n-1].p.Epoch)
+		cw.Buf = append(cw.Buf, '}')
+	}
+}
+
+func sortDruidPoints(points []druidPoint, descending, rank bool) {
+	slices.SortStableFunc(points, func(a, b druidPoint) int {
+		if a.p.Epoch != b.p.Epoch {
+			if (a.p.Epoch < b.p.Epoch) != descending {
 				return -1
 			}
 			return 1
@@ -216,20 +315,28 @@ func sortRendered(points []renderedPoint, descending, rank bool) {
 			}
 			return 1
 		}
-		if a.tagsKey < b.tagsKey {
-			return -1
-		}
-		if a.tagsKey > b.tagsKey {
-			return 1
-		}
-		return 0
+		return strings.Compare(a.s.tagsKey, b.s.tagsKey)
 	})
 }
+
+// appends the timestamp as a JSON string; neither layout writes anything JSON escapes
+func appendTimestamp(b []byte, value epoch.Epoch) []byte {
+	timestamp := time.Unix(0, int64(value)).UTC()
+	b = append(b, '"')
+	if timestamp.Nanosecond()%int(time.Millisecond) == 0 {
+		b = timestamp.AppendFormat(b, druidMillisLayout)
+	} else {
+		b = timestamp.AppendFormat(b, time.RFC3339Nano)
+	}
+	return append(b, '"')
+}
+
+const druidMillisLayout = "2006-01-02T15:04:05.000Z"
 
 func formatTimestamp(value epoch.Epoch) string {
 	timestamp := time.Unix(0, int64(value)).UTC()
 	if timestamp.Nanosecond()%int(time.Millisecond) == 0 {
-		return timestamp.Format("2006-01-02T15:04:05.000Z")
+		return timestamp.Format(druidMillisLayout)
 	}
 	return timestamp.Format(time.RFC3339Nano)
 }

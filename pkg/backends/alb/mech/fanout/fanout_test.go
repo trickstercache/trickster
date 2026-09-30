@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,7 +31,9 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 
 	"github.com/stretchr/testify/require"
@@ -529,5 +532,269 @@ func TestAllNoLeaksOnCtxCancel(t *testing.T) {
 	case <-done:
 	case <-time.After(3 * time.Second):
 		t.Fatal("All did not return after ctx cancel")
+	}
+}
+
+func TestScatterReleasesUnwantedCaptures(t *testing.T) {
+	// a slot whose result no caller will be given has its capture released once it is done with it,
+	// and the others keep theirs
+	targets := make(pool.Targets, 3)
+	for i := range targets {
+		body := fmt.Sprintf("slot-%d", i)
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("X-Slot", body)
+			_, _ = w.Write([]byte(body))
+		}))
+	}
+	var unwanted atomic.Pointer[capture.CaptureResponseWriter]
+	cfg := Config{Mechanism: "test", OnResult: func(i int, r *Result) {
+		if i == 1 {
+			// the result is whole when OnResult is given it, and released after
+			require.Equal(t, "slot-1", string(r.Capture.Body()))
+			unwanted.Store(r.Capture)
+		}
+	}}
+	results, err := scatter(context.Background(), albpool.NewParentGET(t), targets, cfg, func(i int, r *Result) {
+		r.unwanted = i == 1
+	})
+	require.NoError(t, err)
+	require.Nil(t, results[1].Capture)
+	require.Empty(t, unwanted.Load().Body(), "the unwanted capture was not released")
+	require.Empty(t, unwanted.Load().Header())
+	for _, i := range []int{0, 2} {
+		require.Equal(t, fmt.Sprintf("slot-%d", i), string(results[i].Capture.Body()))
+	}
+	ReleaseCaptures(results)
+	for i := range results {
+		require.Nil(t, results[i].Capture)
+	}
+}
+
+type releaseCounter struct {
+	mu     sync.Mutex
+	counts map[*capture.CaptureResponseWriter]int
+}
+
+func countReleases(t *testing.T) *releaseCounter {
+	rc := &releaseCounter{counts: map[*capture.CaptureResponseWriter]int{}}
+	// the hook is restored only once the goroutines a failed test left behind have drained
+	before := goleak.IgnoreCurrent()
+	prev := releaseCapture
+	releaseCapture = func(c *capture.CaptureResponseWriter) {
+		rc.mu.Lock()
+		rc.counts[c]++
+		rc.mu.Unlock()
+		prev(c)
+	}
+	t.Cleanup(func() {
+		_ = goleak.Find(before)
+		releaseCapture = prev
+	})
+	return rc
+}
+
+func (rc *releaseCounter) of(c *capture.CaptureResponseWriter) int {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return rc.counts[c]
+}
+
+func (rc *releaseCounter) total() (n int, each bool) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	each = true
+	for _, c := range rc.counts {
+		n += c
+		each = each && c == 1
+	}
+	return n, each
+}
+
+func (rc *releaseCounter) requireEventually(t *testing.T, n int) {
+	t.Helper()
+	require.Eventually(t, func() bool { got, _ := rc.total(); return got >= n }, 2*time.Second, time.Millisecond)
+	got, each := rc.total()
+	require.Equal(t, n, got)
+	require.True(t, each, "a capture was released more than once")
+}
+
+type slotCaptures struct {
+	mu   sync.Mutex
+	byID map[int]*capture.CaptureResponseWriter
+}
+
+// records each slot's capture, which must not yet be released when a callback is given it
+func (sc *slotCaptures) onResult(t *testing.T, rc *releaseCounter) func(int, *Result) {
+	return func(i int, r *Result) {
+		if r.Capture == nil {
+			return
+		}
+		if rc.of(r.Capture) != 0 {
+			t.Errorf("slot %d's capture was released before its callback", i)
+		}
+		sc.mu.Lock()
+		sc.byID[i] = r.Capture
+		sc.mu.Unlock()
+	}
+}
+
+func TestWaitForFirstReleasesWhatTheCallerIsNotGiven(t *testing.T) {
+	good := func(r *Result) bool { return r.Capture.StatusCode() < 400 }
+	// the winner waits until the failed slot's callback has run and the canceled slot has started,
+	// which reach it in either order
+	for _, callbackFirst := range []bool{true, false} {
+		t.Run(fmt.Sprintf("a failed slot and a canceled one, callback first %t", callbackFirst), func(t *testing.T) {
+			rc := countReleases(t)
+			recorded, started := make(chan struct{}), make(chan struct{})
+			var callbacks, starts atomic.Int32
+			targets := make(pool.Targets, 3)
+			targets[0], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if !callbackFirst {
+					<-started
+				}
+				w.WriteHeader(http.StatusBadGateway)
+				_, _ = w.Write([]byte("failed"))
+			}))
+			targets[1], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				<-recorded
+				<-started
+				_, _ = w.Write([]byte("winner"))
+			}))
+			targets[2], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if callbackFirst {
+					<-recorded
+				}
+				starts.Add(1)
+				close(started)
+				<-r.Context().Done()
+				_, _ = w.Write([]byte("loser"))
+			}))
+			sc := &slotCaptures{byID: map[int]*capture.CaptureResponseWriter{}}
+			record := sc.onResult(t, rc)
+			cfg := Config{Mechanism: "test", OnResult: func(i int, r *Result) {
+				record(i, r)
+				if i == 0 {
+					callbacks.Add(1)
+					close(recorded)
+				}
+			}}
+			winner, results, err := WaitForFirst(context.Background(), albpool.NewParentGET(t), targets, cfg, good)
+			require.NoError(t, err)
+			require.Equal(t, 1, winner)
+			kept := results[winner].Capture
+			require.Equal(t, "winner", string(kept.Body()))
+			require.Equal(t, int32(1), callbacks.Load(), "the failed slot's callback")
+			require.Equal(t, int32(1), starts.Load(), "the canceled slot's start")
+			// the canceled slot is released as it returns, and the failed one once every slot has
+			rc.requireEventually(t, 2)
+			sc.mu.Lock()
+			failed := sc.byID[0]
+			sc.mu.Unlock()
+			require.NotNil(t, failed)
+			require.Equal(t, 1, rc.of(failed))
+			require.Zero(t, rc.of(kept), "the winner is the caller's to release")
+			ReleaseCaptures(results)
+			rc.requireEventually(t, 3)
+			rc.mu.Lock()
+			require.Len(t, rc.counts, 3, "a capture per slot")
+			rc.mu.Unlock()
+		})
+	}
+	t.Run("parent cancellation", func(t *testing.T) {
+		rc := countReleases(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		started := make(chan struct{}, 3)
+		targets := make(pool.Targets, 3)
+		for i := range targets {
+			targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				started <- struct{}{}
+				<-r.Context().Done()
+				_, _ = w.Write([]byte("late"))
+			}))
+		}
+		go func() {
+			for range targets {
+				<-started
+			}
+			cancel()
+		}()
+		winner, results, err := WaitForFirst(ctx, albpool.NewParentGET(t), targets, Config{Mechanism: "test"}, good)
+		require.ErrorIs(t, err, context.Canceled)
+		require.Equal(t, -1, winner)
+		ReleaseCaptures(results)
+		rc.requireEventually(t, 3)
+	})
+	t.Run("no winner", func(t *testing.T) {
+		rc := countReleases(t)
+		targets := make(pool.Targets, 3)
+		for i := range targets {
+			targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+		}
+		sc := &slotCaptures{byID: map[int]*capture.CaptureResponseWriter{}}
+		cfg := Config{Mechanism: "test", OnResult: sc.onResult(t, rc)}
+		winner, results, err := WaitForFirst(context.Background(), albpool.NewParentGET(t), targets, cfg, good)
+		require.NoError(t, err)
+		require.Equal(t, -1, winner)
+		// the gathered results are the caller's fallback, so nothing is released for it
+		n, _ := rc.total()
+		require.Zero(t, n)
+		for i := range results {
+			require.Equal(t, http.StatusServiceUnavailable, results[i].Capture.StatusCode())
+		}
+		ReleaseCaptures(results)
+		rc.requireEventually(t, 3)
+	})
+}
+
+func BenchmarkWaitForFirstReleasingCaptures(b *testing.B) {
+	// WaitForFirst over members that each answer 64 KiB, three failing before the good one, with the
+	// caller done with the winner as FGR is
+	body := bytes.Repeat([]byte("trickster "), 64<<10/10)
+	targets := make(pool.Targets, 4)
+	var failed sync.WaitGroup
+	for i := range targets {
+		code := http.StatusServiceUnavailable
+		if i == len(targets)-1 {
+			code = http.StatusOK
+		}
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			if code == http.StatusOK {
+				failed.Wait()
+			} else {
+				defer failed.Done()
+			}
+			w.Header().Set(headers.NameContentLength, strconv.Itoa(len(body)))
+			w.WriteHeader(code)
+			_, _ = w.Write(body)
+		}))
+	}
+	parent := albpool.NewParentGET(b)
+	good := func(r *Result) bool { return r.Capture.StatusCode() < 400 }
+	b.ReportAllocs()
+	for b.Loop() {
+		failed.Add(len(targets) - 1)
+		_, results, _ := WaitForFirst(context.Background(), parent, targets, Config{Mechanism: "bench"}, good)
+		ReleaseCaptures(results)
+	}
+}
+
+func BenchmarkAllReleasingCaptures(b *testing.B) {
+	// All over members that each answer 64 KiB, with the caller done with the captures as NLM is
+	body := bytes.Repeat([]byte("trickster "), 64<<10/10)
+	targets := make(pool.Targets, 4)
+	for i := range targets {
+		targets[i], _ = albpool.Target(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set(headers.NameContentLength, strconv.Itoa(len(body)))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(body)
+		}))
+	}
+	parent := albpool.NewParentGET(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		results, _ := All(context.Background(), parent, targets, Config{Mechanism: "bench"})
+		ReleaseCaptures(results)
 	}
 }

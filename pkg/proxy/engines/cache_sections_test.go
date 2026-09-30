@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
@@ -107,7 +108,7 @@ func TestSections(t *testing.T) {
 			require.Empty(t, sc.stored, "the document is not also stored whole")
 
 			if test.compressed {
-				require.Equal(t, byte(flagCompressed), sc.meta["k"][0])
+				require.Equal(t, encodingFlag(cacheCodec), sc.meta["k"][0])
 				require.Less(t, len(sc.body["k"]), len(test.body))
 			} else {
 				require.Zero(t, sc.meta["k"][0])
@@ -182,7 +183,7 @@ func TestSectionCacheReadsWholeDocument(t *testing.T) {
 			d := testDocument([]byte(strings.Repeat("compressible ", 100)))
 			require.NoError(t, writeConcurrent(context.Background(), whole, "k", d, compress, time.Minute))
 			stored := bytes.Clone(whole.stored["k"])
-			require.Equal(t, compress, stored[0] == flagCompressed)
+			require.Equal(t, compress, stored[0] == encodingFlag(cacheCodec))
 			qr := queryConcurrent(context.Background(), whole, "k")
 			require.NoError(t, qr.err)
 			requireSameDocument(t, d, qr.d)
@@ -194,7 +195,7 @@ func TestSectionCacheReadsWholeDocument(t *testing.T) {
 			requireSameDocument(t, d, qr.d)
 		})
 	}
-	require.Error(t, decodeDocument(&HTTPDocument{}, []byte{flagCompressed, 'x'}))
+	require.Error(t, decodeDocument(&HTTPDocument{}, []byte{encodingFlag(cacheCodec), 'x'}))
 	require.Error(t, decodeDocument(&HTTPDocument{}, []byte{0, 'x'}))
 	require.Error(t, decodeDocument(&HTTPDocument{}, nil))
 }
@@ -268,4 +269,25 @@ func BenchmarkDocumentRoundTrip(b *testing.B) {
 			})
 		}
 	}
+}
+
+func TestDecodeDocumentTakesTheBodyInPlace(t *testing.T) {
+	// a document stored whole, as badger and redis keep one, is decoded from the buffer its read owns,
+	// so its body is taken where it lies rather than copied
+	d := testDocument([]byte(strings.Repeat("trickster ", 100)))
+	b, err := d.MarshalMsg([]byte{0})
+	require.NoError(t, err)
+	got := &HTTPDocument{}
+	require.NoError(t, decodeDocument(got, b))
+	require.Equal(t, d.Body, got.Body)
+	start := uintptr(unsafe.Pointer(&b[0]))
+	at := uintptr(unsafe.Pointer(&got.Body[0]))
+	require.True(t, at > start && at < start+uintptr(len(b)), "the body was copied out of the read's buffer")
+
+	empty := testDocument(nil)
+	b, err = empty.MarshalMsg([]byte{0})
+	require.NoError(t, err)
+	got = &HTTPDocument{}
+	require.NoError(t, decodeDocument(got, b))
+	require.Nil(t, got.Body, "an empty body decodes as none")
 }
