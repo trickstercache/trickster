@@ -97,24 +97,16 @@ func TestFastForwardURL(t *testing.T) {
 	r, _ := http.NewRequest(http.MethodGet, u.String(), nil)
 	r = request.SetResources(r, &request.Resources{})
 
-	r2, err := fastForwardRequest(r)
-	if err != nil {
-		t.Error(err)
+	setFastForward(r)
+	if expected != r.URL.RawQuery {
+		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r.URL.RawQuery)
 	}
 
-	if expected != r2.URL.RawQuery {
-		t.Errorf("\nexpected [%s]\ngot [%s]", expected, r2.URL.RawQuery)
-	}
-
-	r2.URL.RawQuery = ""
+	r.URL.RawQuery = ""
 	b := bytes.NewBufferString(expected)
-	r, _ = http.NewRequest(http.MethodPost, r2.URL.String(), b)
+	r, _ = http.NewRequest(http.MethodPost, r.URL.String(), b)
 	r = request.SetResources(r, &request.Resources{})
-
-	_, err = fastForwardRequest(r)
-	if err != nil {
-		t.Error(err)
-	}
+	setFastForward(r)
 }
 
 func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
@@ -175,10 +167,8 @@ func TestFastForwardRequestPromotesEndToTime(t *testing.T) {
 			}
 			r = request.SetResources(r, &request.Resources{})
 
-			got, err := fastForwardRequest(r)
-			if err != nil {
-				t.Fatal(err)
-			}
+			setFastForward(r)
+			got := r
 			if got.URL.Path != "/api/v1/query" {
 				t.Fatalf("path got %q want %q", got.URL.Path, "/api/v1/query")
 			}
@@ -239,12 +229,9 @@ func TestFastForwardRequestEdgeCases(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			r, _ := http.NewRequest(http.MethodGet, test.path+"?q=up", nil)
 			r = request.SetResources(r, &request.Resources{})
-			r2, err := fastForwardRequest(r)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if r2.URL.Path != test.expectedPath {
-				t.Errorf("path: expected %q got %q", test.expectedPath, r2.URL.Path)
+			setFastForward(r)
+			if r.URL.Path != test.expectedPath {
+				t.Errorf("path: expected %q got %q", test.expectedPath, r.URL.Path)
 			}
 		})
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/promsim"
@@ -60,7 +61,9 @@ func TestFetchPartialBucketIsFastForward(t *testing.T) {
 
 	// the live point is an instant query at the range's end, kept in the object cache
 	for _, want := range []status.LookupStatus{status.LookupStatusKeyMiss, status.LookupStatusHit} {
-		ts, st, err := client.FetchPartialBucket(r, trq, pb, true)
+		rq, err := engines.PartialBucketRequest(r.Context(), r)
+		require.NoError(t, err)
+		ts, st, err := client.FetchPartialBucket(rq, trq, pb, true)
 		require.NoError(t, err)
 		require.Equal(t, want, st)
 		ds := ts.(*dataset.DataSet)

@@ -18,7 +18,6 @@ package request
 
 import (
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -54,16 +53,18 @@ type Resources struct {
 	TimeRangeQuery     *timeseries.TimeRangeQuery
 	Tracer             *tracing.Tracer
 	IsMergeMember      bool
-	RequestBody        []byte
-	MergeFunc          merge.MergeFunc
-	BatchMergeFunc     merge.BatchMergeFunc
-	MergeRespondFunc   merge.RespondFunc
-	TSUnmarshaler      timeseries.UnmarshalerFunc
-	TSMarshaler        timeseries.MarshalWriterFunc
-	TSTransformer      func(timeseries.Timeseries)
-	TS                 timeseries.Timeseries
-	TSReqestOptions    *timeseries.RequestOptions
-	TSMergeStrategy    int
+	// RequestBody caches the request body; it is only ever replaced, never written in place, so
+	// clones share it
+	RequestBody      []byte
+	MergeFunc        merge.MergeFunc
+	BatchMergeFunc   merge.BatchMergeFunc
+	MergeRespondFunc merge.RespondFunc
+	TSUnmarshaler    timeseries.UnmarshalerFunc
+	TSMarshaler      timeseries.MarshalWriterFunc
+	TSTransformer    func(timeseries.Timeseries)
+	TS               timeseries.Timeseries
+	TSReqestOptions  *timeseries.RequestOptions
+	TSMergeStrategy  int
 	// TSDedupToleranceNanos is the tolerance window (in nanoseconds) for
 	// clustering near-duplicate samples produced by independent fan-out
 	// shards. Zero (default) preserves the legacy exact-epoch dedup behavior.
@@ -122,7 +123,7 @@ func (r *Resources) Clone() *Resources {
 		TimeRangeQuery:        r.TimeRangeQuery,
 		Tracer:                r.Tracer,
 		IsMergeMember:         r.IsMergeMember,
-		RequestBody:           slices.Clone(r.RequestBody),
+		RequestBody:           r.RequestBody,
 		MergeFunc:             r.MergeFunc,
 		BatchMergeFunc:        r.BatchMergeFunc,
 		MergeRespondFunc:      r.MergeRespondFunc,
@@ -208,7 +209,7 @@ func (r *Resources) Merge(r2 *Resources) {
 		r.AuthResult = r2.AuthResult
 	}
 
-	r.RequestBody = slices.Clone(r2.RequestBody)
+	r.RequestBody = r2.RequestBody
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
 	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
 	r.MergeFunc = r2.MergeFunc

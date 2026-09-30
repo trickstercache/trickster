@@ -455,6 +455,9 @@ func TestPrepareRevalidationRequest(t *testing.T) {
 	if v != expected {
 		t.Errorf("expected %s got %s", expected, v)
 	}
+	if request.GetResources(pr.revalidationRequest) != pr.rsc {
+		t.Error("expected the revalidation request to share the request's resources")
+	}
 }
 
 func TestPrepareRevalidationRequestNoRange(t *testing.T) {
@@ -542,6 +545,53 @@ func TestPrepareUpstreamRequests(t *testing.T) {
 
 	if v != expected {
 		t.Errorf("expected %d got %d", expected, v)
+	}
+	for i, or := range pr.originRequests {
+		rsc := request.GetResources(or)
+		if rsc == nil || rsc == pr.rsc || rsc.BackendOptions != o {
+			t.Errorf("origin request %d: expected its own clone of the request's resources", i)
+		}
+	}
+}
+
+func TestPrepareRevalidationRequestReplacesResources(t *testing.T) {
+	r, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1/", nil)
+	upstream := request.SetResources(r, request.NewResources(nil, nil, nil, nil, nil, nil))
+	rsc := request.NewResources(&bo.Options{}, nil, nil, nil, nil, nil)
+	pr := proxyRequest{
+		Request:         r,
+		rsc:             rsc,
+		upstreamRequest: upstream,
+		cachingPolicy:   &CachingPolicy{},
+	}
+	pr.prepareRevalidationRequest()
+	if request.GetResources(pr.revalidationRequest) != rsc {
+		t.Error("expected the revalidation request to carry the proxy request's resources")
+	}
+}
+
+func TestNewProxyRequestSharesResources(t *testing.T) {
+	const body = "query=up"
+	r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", strings.NewReader(body))
+	rsc := request.NewResources(&bo.Options{}, nil, nil, nil, nil, nil)
+	r = request.SetResources(r, rsc)
+	ctx, cancel := context.WithCancel(r.Context())
+	r = r.WithContext(ctx)
+	pr := newProxyRequest(r, nil)
+	cancel()
+	if pr.rsc != rsc || request.GetResources(pr.upstreamRequest) != rsc {
+		t.Fatal("expected the upstream request to share the client request's resources")
+	}
+	if pr.upstreamRequest.Context().Err() != nil {
+		t.Error("expected the upstream request to be detached from the client's cancellation")
+	}
+	b, err := io.ReadAll(pr.upstreamRequest.Body)
+	if err != nil || string(b) != body {
+		t.Errorf("expected upstream body %q, got %q (%v)", body, b, err)
+	}
+	c := pr.Clone()
+	if request.GetResources(c.upstreamRequest) != rsc || request.GetResources(c.Request) != rsc {
+		t.Error("expected a proxy request clone to share the resources")
 	}
 }
 

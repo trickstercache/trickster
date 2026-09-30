@@ -91,7 +91,11 @@ func fetchLivePoint(r *http.Request, o *bo.Options, client backends.TimeseriesBa
 		Label: alignedNow.Extent.End, Lower: alignedNow.Extent.End, Upper: trq.Requested.End,
 		Edge: timeseries.BucketEdgeEnd,
 	}
-	ffts, st, err := client.FetchPartialBucket(r, trq, pb, true)
+	ffr, err := PartialBucketRequest(r.Context(), r)
+	if err != nil {
+		return statusErr
+	}
+	ffts, st, err := client.FetchPartialBucket(ffr, trq, pb, true)
 	if err != nil || ffts == nil {
 		return statusErr
 	}
@@ -247,7 +251,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		if canOPC {
 			logger.Debug("could not parse time range query, using object proxy cache",
 				logging.Pairs{keys.Error: err.Error()})
+			rsc.Lock()
 			rsc.AlternateCacheTTL, rsc.PerCredentialCache = time.Minute, true
+			rsc.Unlock()
 			ObjectProxyCacheRequest(w, r)
 			return
 		}

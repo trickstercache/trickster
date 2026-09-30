@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -70,7 +71,11 @@ func TestFetchPartialBucket(t *testing.T) {
 			}
 			// the bucket's own raw range is sent once, then answered by the object cache
 			for _, want := range []status.LookupStatus{status.LookupStatusKeyMiss, status.LookupStatusHit} {
-				ts, got, err := h.client.FetchPartialBucket(r, trq, pb, false)
+				rq, err := engines.PartialBucketRequest(r.Context(), r)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ts, got, err := h.client.FetchPartialBucket(rq, trq, pb, false)
 				if err != nil || got != want {
 					t.Fatalf("partial bucket = %+v, %s, %v; want %s", ts, got, err, want)
 				}

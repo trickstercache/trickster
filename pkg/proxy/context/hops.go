@@ -18,7 +18,6 @@ package context
 
 import (
 	"context"
-	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 )
@@ -45,37 +44,4 @@ func HopsIfSet(ctx context.Context) (int32, int32, bool) {
 		}
 	}
 	return 0, options.DefaultMaxRuleExecutions, false
-}
-
-// IncrementedRewriterHops returns the current incremented hop count from the ctx
-func IncrementedRewriterHops(ctx context.Context, i int32) int32 {
-	v := ctx.Value(rewriterHopsKey)
-	var p *int32
-	if v != nil {
-		if j, ok := v.(*int32); ok {
-			p = j
-		}
-	}
-	if p == nil {
-		return 0
-	}
-	i = atomic.AddInt32(p, i)
-	return i
-}
-
-// RewriterHops returns the RewriterHops data associated with the request
-func RewriterHops(ctx context.Context) int32 {
-	v := ctx.Value(rewriterHopsKey)
-	if v != nil {
-		if i, ok := v.(*int32); ok {
-			return atomic.LoadInt32(i)
-		}
-	}
-	return 0
-}
-
-// StartRewriterHops returns a context with rewriterHopsKey = 0
-func StartRewriterHops(ctx context.Context) context.Context {
-	var i int32
-	return context.WithValue(ctx, rewriterHopsKey, &i)
 }

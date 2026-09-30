@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -90,7 +91,9 @@ func TestFetchPartialBucket(t *testing.T) {
 			require.NoError(t, err)
 			// the bucket's own range is sent once, then answered by the object cache
 			for _, want := range []status.LookupStatus{status.LookupStatusKeyMiss, status.LookupStatusHit} {
-				ds, st, err := client.FetchPartialBucket(r, trq, test.pb, false)
+				rq, err := engines.PartialBucketRequest(r.Context(), r)
+				require.NoError(t, err)
+				ds, st, err := client.FetchPartialBucket(rq, trq, test.pb, false)
 				require.NoError(t, err)
 				require.Equal(t, want, st)
 				require.Equal(t, int64(1), ds.ValueCount())

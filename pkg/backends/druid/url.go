@@ -123,12 +123,8 @@ func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQu
 	default:
 		return nil, status.LookupStatusError, errMissingQueryPlan
 	}
-	nr, err := request.Clone(r)
-	if err != nil {
-		return nil, status.LookupStatusError, err
-	}
-	request.SetBody(nr, body)
-	return engines.FetchPartialBucket(nr, nil, trq, c.Modeler())
+	request.SetBody(r, body)
+	return engines.FetchPartialBucket(r, nil, trq, c.Modeler())
 }
 
 func (c *Client) sqlBody(r *http.Request, trq *timeseries.TimeRangeQuery, rendered string) ([]byte, error) {

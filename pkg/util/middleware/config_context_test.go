@@ -20,13 +20,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestWithResourcesContextAppliesLegacyCORS(t *testing.T) {
@@ -112,5 +116,51 @@ func TestWithResourcesContextKeepsClientFacingCORSAcrossNestedRoute(t *testing.T
 
 	if got := recorder.Result().Header.Get(headers.NameAllowOrigin); got != "https://public.example.com" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want client-facing policy", got)
+	}
+}
+
+func TestWithResourcesContextMergesIntoOuterResources(t *testing.T) {
+	o, p := bo.New(), po.New()
+	p.HideResultHeader = true
+	auth := &authtypes.AuthResult{Status: authtypes.AuthSuccess, Username: "outer"}
+	var seen *request.Resources
+	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rsc := request.GetResources(r)
+		seen = rsc
+		switch {
+		case rsc == nil:
+			t.Fatal("missing request resources")
+		case rsc.BackendOptions != o || rsc.PathConfig != p:
+			t.Error("the route's configuration was not applied")
+		case rsc.TimeRangeQuery != nil || rsc.AlternateCacheTTL != 0 || rsc.PerCredentialCache ||
+			rsc.RequestBody != nil || rsc.MergeFunc != nil:
+			t.Error("the route's engine state was not reset on entry")
+		case rsc.AuthResult != auth:
+			t.Error("the outer authentication was dropped")
+		}
+		// the engine's lane state stays with this request, never with the route
+		rsc.PerCredentialCache, rsc.AlternateCacheTTL = true, time.Minute
+		w.Header().Set(headers.NameTricksterResult, "engine=HTTPProxy; status=kmiss")
+		w.WriteHeader(http.StatusNoContent)
+	})
+	h := WithResourcesContext(nil, o, nil, p, nil, final)
+	for range 2 {
+		outer := &request.Resources{
+			AuthResult: auth, TimeRangeQuery: &timeseries.TimeRangeQuery{}, AlternateCacheTTL: time.Hour,
+			PerCredentialCache: true, RequestBody: []byte("body"),
+			MergeFunc: func(*merge.Accumulator, any, int) error { return nil },
+		}
+		recorder := httptest.NewRecorder()
+		h.ServeHTTP(recorder, request.SetResources(httptest.NewRequest(http.MethodGet, "/", nil), outer))
+		if seen != outer {
+			t.Fatal("expected the route to merge into the outer resources, not replace them")
+		}
+		res := recorder.Result()
+		if res.Header.Get(headers.NameTricksterResult) != "" || outer.HiddenResult == "" {
+			t.Error("expected the result header withheld and kept for the access log")
+		}
+		if res.Header.Get(headers.NameAllowOrigin) != "*" {
+			t.Error("expected the route's CORS policy applied when the outer resources had none")
+		}
 	}
 }

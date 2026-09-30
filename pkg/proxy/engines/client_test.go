@@ -39,7 +39,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tst "github.com/trickstercache/trickster/v2/pkg/testutil/timeseries/model"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
@@ -363,23 +362,19 @@ func (c *TestClient) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRan
 	if isLive {
 		c.liveFetches.Add(1)
 	}
-	nr, err := request.Clone(r)
-	if err != nil {
-		return nil, status.LookupStatusError, err
-	}
-	v, _, _ := params.GetRequestValues(nr)
+	v, _, _ := params.GetRequestValues(r)
 	v.Set(upStart, strconv.FormatInt(pb.Lower.Unix(), 10))
 	if pb.Upper.IsZero() {
 		v.Del(upEnd)
 	} else {
 		v.Set(upEnd, strconv.FormatInt(pb.Upper.Unix(), 10))
 	}
-	params.SetRequestValues(nr, v)
-	return FetchPartialBucket(nr, request.GetResources(r).PathConfig, trq, c.testModeler())
+	params.SetRequestValues(r, v)
+	return FetchPartialBucket(r, nil, trq, c.testModeler())
 }
 
 func (c *TestClient) fastForwardRequest(r *http.Request) (*http.Request, error) {
-	nr := r.Clone(r.Context())
+	nr := r
 	u := nr.URL
 	if strings.HasSuffix(u.Path, "/query_range") {
 		u.Path = u.Path[0 : len(u.Path)-6]

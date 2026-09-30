@@ -25,7 +25,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -52,23 +51,16 @@ func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQu
 	if !isLive {
 		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
 	}
-	ffReq, err := fastForwardRequest(r)
-	if err != nil {
-		return nil, status.LookupStatusError, err
-	}
-	return engines.FetchPartialBucket(ffReq, c.Configuration().FastForwardPath, trq, c.Modeler())
+	setFastForward(r)
+	return engines.FetchPartialBucket(r, c.Configuration().FastForwardPath, trq, c.Modeler())
 }
 
-func fastForwardRequest(r *http.Request) (*http.Request, error) {
+func setFastForward(r *http.Request) {
 	// the range query's own request, as an instant query at its end
-	nr, err := request.Clone(r)
-	if err != nil {
-		return nil, err
+	if strings.HasSuffix(r.URL.Path, "/query_range") {
+		r.URL.Path = r.URL.Path[0 : len(r.URL.Path)-6]
 	}
-	if strings.HasSuffix(nr.URL.Path, "/query_range") {
-		nr.URL.Path = nr.URL.Path[0 : len(nr.URL.Path)-6]
-	}
-	v, _, _ := params.GetRequestValues(nr)
+	v, _, _ := params.GetRequestValues(r)
 	evaluationTime := v.Get(upEnd)
 	v.Del(upStart)
 	v.Del(upEnd)
@@ -76,6 +68,5 @@ func fastForwardRequest(r *http.Request) (*http.Request, error) {
 	if evaluationTime != "" {
 		v.Set(upTime, evaluationTime)
 	}
-	params.SetRequestValues(nr, v)
-	return nr, nil
+	params.SetRequestValues(r, v)
 }
