@@ -19,6 +19,8 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"slices"
@@ -53,7 +55,6 @@ type sqlDecoder struct {
 	fields        timeseries.FieldDefinitions
 	orderedFloats []bool
 	builder       *dataset.Builder
-	row           []json.RawMessage
 	rowCount      uint64
 	tagErr        error
 }
@@ -76,8 +77,7 @@ func newDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 	}), nil
 }
 
-func (d *sqlDecoder) walk(dec *json.Decoder) error {
-	dec.DisallowUnknownFields()
+func (d *sqlDecoder) walk(dec *jsontext.Decoder) error {
 	var hasOutput bool
 	var elapsed *uint64
 	err := stream.Object(dec, func(key string) error {
@@ -108,7 +108,7 @@ func (d *sqlDecoder) walk(dec *json.Decoder) error {
 			if elapsed != nil {
 				return timeseries.ErrInvalidBody
 			}
-			return dec.Decode(&elapsed)
+			return stream.Decode(dec, &elapsed)
 		}
 		return timeseries.ErrInvalidBody
 	})
@@ -118,10 +118,10 @@ func (d *sqlDecoder) walk(dec *json.Decoder) error {
 	return err
 }
 
-func (d *sqlDecoder) readRecords(dec *json.Decoder) error {
+func (d *sqlDecoder) readRecords(dec *jsontext.Decoder) error {
 	var rowsSeen bool
 	var total *uint64
-	var pending json.RawMessage
+	var pending []byte
 	err := stream.Object(dec, func(key string) error {
 		switch key {
 		case "schema":
@@ -129,7 +129,7 @@ func (d *sqlDecoder) readRecords(dec *json.Decoder) error {
 				return timeseries.ErrInvalidBody
 			}
 			var schema schema
-			if err := dec.Decode(&schema); err != nil {
+			if err := stream.Decode(dec, &schema, jsonv2.RejectUnknownMembers(true)); err != nil {
 				return err
 			}
 			return d.setSchema(schema.Columns)
@@ -140,14 +140,16 @@ func (d *sqlDecoder) readRecords(dec *json.Decoder) error {
 			rowsSeen = true
 			if d.builder == nil {
 				// JSON object keys are unordered; only this alternate layout needs a buffer.
-				return dec.Decode(&pending)
+				raw, err := dec.ReadValue()
+				pending = bytes.Clone(raw)
+				return err
 			}
 			return d.readRows(dec)
 		case "total_rows":
 			if total != nil {
 				return timeseries.ErrInvalidBody
 			}
-			return dec.Decode(&total)
+			return stream.Decode(dec, &total)
 		case "metrics":
 			err := stream.Object(dec, func(string) error { return timeseries.ErrInvalidBody })
 			if errors.Is(err, stream.ErrNull) {
@@ -164,7 +166,7 @@ func (d *sqlDecoder) readRecords(dec *json.Decoder) error {
 		return timeseries.ErrInvalidBody
 	}
 	if pending != nil {
-		if err := d.readRows(json.NewDecoder(bytes.NewReader(pending))); err != nil {
+		if err := d.readRows(stream.NewJSONDecoder(bytes.NewReader(pending))); err != nil {
 			return err
 		}
 	}
@@ -215,26 +217,29 @@ func (d *sqlDecoder) tagString(field timeseries.FieldDefinition, raw []byte) str
 	return string(encoded)
 }
 
-func (d *sqlDecoder) readRows(dec *json.Decoder) error {
+func (d *sqlDecoder) readRows(dec *jsontext.Decoder) error {
 	return stream.Array(dec, func() error {
-		if err := dec.Decode(&d.row); err != nil {
-			return err
-		}
-		if len(d.row) != len(d.fields) {
-			return timeseries.ErrInvalidBody
-		}
 		row := d.builder.Row()
-		tag := 0
-		for i, field := range d.fields {
-			raw := d.row[i]
+		i, tag := 0, 0
+		// each value is read raw, valid only until the next read, and copied by the row as needed
+		err := stream.Array(dec, func() error {
+			if i >= len(d.fields) {
+				return timeseries.ErrInvalidBody
+			}
+			raw, err := dec.ReadValue()
+			if err != nil {
+				return err
+			}
+			field := d.fields[i]
 			// JSON null cannot distinguish SQL NULL from NaN/Inf for numeric sorting.
 			if d.orderedFloats[i] && bytes.Equal(raw, []byte("null")) {
 				return timeseries.ErrInvalidBody
 			}
+			i++
 			if field.Role == timeseries.RoleTag {
 				row.SetTag(tag, raw)
 				tag++
-				continue
+				return nil
 			}
 			value, err := decodeRawValue(raw, field.SDataType)
 			if err != nil {
@@ -246,9 +251,16 @@ func (d *sqlDecoder) readRows(dec *json.Decoder) error {
 					return timeseries.ErrInvalidTimeFormat
 				}
 				row.SetEpoch(epoch.Epoch(ep))
-			} else {
-				row.AddValue(value)
+				return nil
 			}
+			row.AddValue(value)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		if i != len(d.fields) {
+			return timeseries.ErrInvalidBody
 		}
 		if err := row.Commit(); err != nil {
 			return err

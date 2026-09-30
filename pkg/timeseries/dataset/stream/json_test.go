@@ -18,6 +18,8 @@ package stream
 
 import (
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"io"
 	"strings"
 	"testing"
@@ -28,16 +30,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func sumWalk(sum *int64) func(*json.Decoder) error {
+func sumWalk(sum *int64) func(*jsontext.Decoder) error {
 	// sums the numbers in {"n":[...]}, skipping any other keys
-	return func(dec *json.Decoder) error {
+	return func(dec *jsontext.Decoder) error {
 		return Object(dec, func(key string) error {
 			if key != "n" {
 				return Skip(dec)
 			}
 			return Array(dec, func() error {
 				var n json.Number
-				if err := dec.Decode(&n); err != nil {
+				if err := Decode(dec, &n); err != nil {
 					return err
 				}
 				v, err := n.Int64()
@@ -141,11 +143,11 @@ func TestJSONStickyError(t *testing.T) {
 }
 
 func TestJSONVisitorMisuse(t *testing.T) {
-	walks := map[string]func(*json.Decoder) error{
-		"object value not consumed": func(dec *json.Decoder) error {
+	walks := map[string]func(*jsontext.Decoder) error{
+		"object value not consumed": func(dec *jsontext.Decoder) error {
 			return Object(dec, func(string) error { return nil })
 		},
-		"array element not consumed": func(dec *json.Decoder) error {
+		"array element not consumed": func(dec *jsontext.Decoder) error {
 			return Object(dec, func(string) error {
 				return Array(dec, func() error { return nil })
 			})
@@ -159,10 +161,10 @@ func TestJSONVisitorMisuse(t *testing.T) {
 		})
 	}
 	// a visitor that consumes only part of a value leaves the walk misaligned
-	partial := func(dec *json.Decoder) error {
+	partial := func(dec *jsontext.Decoder) error {
 		return Object(dec, func(string) error {
 			return Array(dec, func() error {
-				_, err := dec.Token()
+				_, err := dec.ReadToken()
 				return err
 			})
 		})
@@ -172,9 +174,9 @@ func TestJSONVisitorMisuse(t *testing.T) {
 		_, err := j.ReadFrom(strings.NewReader(body))
 		require.ErrorIs(t, err, ErrUnexpectedToken, body)
 	}
-	keyed := func(dec *json.Decoder) error {
+	keyed := func(dec *jsontext.Decoder) error {
 		return Object(dec, func(string) error {
-			_, err := dec.Token()
+			_, err := dec.ReadToken()
 			return err
 		})
 	}
@@ -184,7 +186,7 @@ func TestJSONVisitorMisuse(t *testing.T) {
 }
 
 func TestJSONNestedErrors(t *testing.T) {
-	walk := func(dec *json.Decoder) error {
+	walk := func(dec *jsontext.Decoder) error {
 		return Object(dec, func(string) error {
 			return Array(dec, func() error { return Skip(dec) })
 		})
@@ -209,7 +211,7 @@ func TestJSONTagString(t *testing.T) {
 
 type windowReader struct {
 	r    io.Reader
-	dec  *json.Decoder
+	dec  *jsontext.Decoder
 	read int64
 	peak int64
 }
@@ -224,11 +226,11 @@ func (w *windowReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-func skipPeak(t *testing.T, body string, skip func(*json.Decoder) error) int64 {
+func skipPeak(t *testing.T, body string, skip func(*jsontext.Decoder) error) int64 {
 	t.Helper()
 	w := &windowReader{r: strings.NewReader(body)}
 	var sum int64
-	walk := func(dec *json.Decoder) error {
+	walk := func(dec *jsontext.Decoder) error {
 		w.dec = dec
 		return Object(dec, func(key string) error {
 			if key != "n" {
@@ -236,7 +238,7 @@ func skipPeak(t *testing.T, body string, skip func(*json.Decoder) error) int64 {
 			}
 			return Array(dec, func() error {
 				var n int64
-				err := dec.Decode(&n)
+				err := Decode(dec, &n)
 				sum += n
 				return err
 			})
@@ -261,7 +263,10 @@ func TestSkipDoesNotHoldValue(t *testing.T) {
 	body := sb.String()
 	require.Less(t, skipPeak(t, body, Skip), int64(64<<10))
 	// decoding the value whole holds nearly all of it, which shows the measurement works
-	whole := func(dec *json.Decoder) error { return dec.Decode(new(json.RawMessage)) }
+	whole := func(dec *jsontext.Decoder) error {
+		_, err := dec.ReadValue()
+		return err
+	}
 	require.Greater(t, skipPeak(t, body, whole), int64(len(body)/2))
 }
 
@@ -287,12 +292,44 @@ func TestSkip(t *testing.T) {
 		require.Error(t, err, test.body)
 	}
 	// with no value left to skip, Skip meets the closing delimiter instead
-	closing := func(dec *json.Decoder) error {
-		if _, err := dec.Token(); err != nil {
+	closing := func(dec *jsontext.Decoder) error {
+		if _, err := dec.ReadToken(); err != nil {
 			return err
 		}
 		return Skip(dec)
 	}
 	_, err := NewJSON(closing, finishEmpty).ReadFrom(strings.NewReader(`[]`))
 	require.ErrorIs(t, err, ErrUnexpectedToken)
+}
+
+func TestAppendStringAndDecode(t *testing.T) {
+	for raw, want := range map[string]string{
+		`""`: "", `"abc"`: "abc", `"a\"b"`: `a"b`, `"\u00e9"`: "\u00e9", `"éx"`: "\u00e9x", "\"\xff\"": "\ufffd",
+	} {
+		require.Equal(t, "x"+want, string(AppendString([]byte("x"), []byte(raw))), raw)
+	}
+	type strict struct {
+		A int `json:"a"`
+	}
+	walk := func(opts ...jsonv2.Options) func(dec *jsontext.Decoder) error {
+		return func(dec *jsontext.Decoder) error {
+			var v strict
+			return Decode(dec, &v, opts...)
+		}
+	}
+	_, err := NewJSON(walk(), finishEmpty).ReadFrom(strings.NewReader(`{"a":1,"b":2}`))
+	require.NoError(t, err)
+	_, err = NewJSON(walk(jsonv2.RejectUnknownMembers(true)), finishEmpty).ReadFrom(strings.NewReader(`{"a":1,"b":2}`))
+	require.Error(t, err)
+	// keys are unescaped, and a repeated key and invalid UTF-8 are read as encoding/json reads them
+	var keys []string
+	keyed := func(dec *jsontext.Decoder) error {
+		return ObjectBytes(dec, func(key []byte) error {
+			keys = append(keys, string(key))
+			return Skip(dec)
+		})
+	}
+	_, err = NewJSON(keyed, finishEmpty).ReadFrom(strings.NewReader("{\"a\\u0062\":1,\"x\":2,\"x\":\"\xff\",\"\\\"\":{}}"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"ab", "x", "x", `"`}, keys)
 }

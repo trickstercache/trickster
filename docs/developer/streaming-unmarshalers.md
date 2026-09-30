@@ -38,15 +38,23 @@ Today the proxy engine reads each upstream body into memory before calling the u
 
 ### JSON Documents
 
-`stream.NewJSON(walk, finish)` handles a single JSON document. The `walk` function receives an `encoding/json` `Decoder` with `UseNumber` set, and must consume exactly one value from it. Only whitespace may follow that value: a second JSON value fails with `ErrTrailingData`, and anything else fails as a syntax error. Three helpers let a walk hold only the current token or element in memory:
+`stream.NewJSON(walk, finish)` handles a single JSON document. The `walk` function receives an `encoding/json/jsontext` `Decoder` and must consume exactly one value from it. The decoder accepts a repeated object key and invalid UTF-8, as `encoding/json` does. Only whitespace may follow that value: a second JSON value fails with `ErrTrailingData`, and anything else fails as a syntax error. These helpers let a walk hold only the current token or value in memory:
 
 - `stream.Object(dec, func(key string) error)` calls the function for each key, in the order the keys arrive.
+- `stream.ObjectBytes(dec, func(key []byte) error)` is `Object` with each key as bytes, valid until the function reads from `dec`. Compare or copy the key first; a key compared in a `switch string(key)` costs no allocation.
 - `stream.Array(dec, func() error)` calls the function once for each element.
-- `stream.Skip(dec)` consumes and discards the next value a token at a time, so a large skipped value is never held in memory.
+- `stream.Skip(dec)` consumes and discards the next value without holding it, so a large skipped value is never in memory.
+- `stream.Decode(dec, &v, opts...)` decodes the next value into `v` with `encoding/json`'s semantics. Options such as `jsonv2.RejectUnknownMembers(true)` apply on top. Use it for small structures, like an envelope or a schema.
+- `stream.AppendString(dst, raw)` appends the text of a raw JSON string, unescaping it only when it has escapes.
 
-Each callback must consume the value it was called for, for example with `dec.Decode`, a nested `Object` or `Array`, or `Skip`. A callback that returns without doing so fails with `ErrValueNotConsumed`. `Object` and `Array` return `ErrNull` for a JSON `null` after consuming it, so a caller that accepts a null can check with `errors.Is` and carry on. They return `ErrUnexpectedToken` when the value is the wrong kind.
+Each callback must consume exactly the value it was called for, for example with `dec.ReadValue`, `Decode`, a nested `Object` or `Array`, or `Skip`:
 
-Decode every row into the same `[]json.RawMessage`. `encoding/json` reuses the slice and each element's buffer, so decoding rows stops allocating once those buffers have grown.
+- A callback that consumes nothing fails with `ErrValueNotConsumed`.
+- One that consumes only part of a value fails with `ErrUnexpectedToken`.
+- `Object` and `Array` return `ErrNull` for a JSON `null` after consuming it, so a caller that accepts a null can check with `errors.Is` and carry on.
+- They return `ErrUnexpectedToken` when the value is the wrong kind.
+
+Read row values with `dec.ReadValue()`, one element at a time. It returns the value's raw bytes without allocating, and they're valid only until the next read, so pass them straight to the Builder's adders or `SetTag`, which copy what they keep. Reading a small, fixed shape whole with one `ReadValue`, such as a `[time, value]` pair, is faster than reading it token by token. The Prometheus decoder does this, then splits the pair itself.
 
 JSON does not guarantee key order. If something you need first, such as a schema, might arrive after the data that depends on it, hold the early data as a `json.RawMessage` and process it once the schema has been read.
 
@@ -220,7 +228,8 @@ func newTSVDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 
 1. Write the decoder beside the provider's current unmarshaler.
 2. Run `streamtest.Conformance` over the provider's test bodies, with `Legacy` set to the current `WireUnmarshalerReader`. Sizes may differ, but everything else should match. Where the old behavior is a bug, assert the corrected result with `Want` instead, and point it out in the pull request.
-3. Compare the old and new decoders with `streamtest.Bench`.
-4. Point the Modeler's wire unmarshalers at the adapters, and remove the old model code.
+3. Add a test that decodes from a buffer, overwrites the buffer, and checks the result is unchanged. Callers reuse and release their input buffers once a decode returns, so a decoder must never keep references into its input.
+4. Compare the old and new decoders with `streamtest.Bench`.
+5. Point the Modeler's wire unmarshalers at the adapters, and move the old decoder into a `_test.go` file as the `Legacy` oracle.
 
 Formats that send each series as one block, with its points in time order, map directly onto series mode; examples are Prometheus, InfluxQL JSON and Graphite. Formats that send rows in no particular order use row mode and rely on the Builder to sort when needed; examples are InfluxDB 3 SQL, ClickHouse, Flux CSV and Druid. The MySQL provider's wire-protocol path never builds a DataSet, so it is not a candidate.

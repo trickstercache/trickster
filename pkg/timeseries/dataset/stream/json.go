@@ -19,6 +19,8 @@ package stream
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -39,10 +41,16 @@ var (
 	ErrValueNotConsumed = errors.New("visitor did not consume a JSON value")
 )
 
+// NewJSONDecoder returns a decoder of r like the one a JSON walk is given, which accepts a repeated
+// object member and invalid UTF-8 as encoding/json does.
+func NewJSONDecoder(r io.Reader) *jsontext.Decoder {
+	return jsontext.NewDecoder(r, jsontext.AllowDuplicateNames(true), jsontext.AllowInvalidUTF8(true))
+}
+
 // JSON is a Decoder for one JSON document that is walked token by token, so
-// only the current token or decoded element is held in memory.
+// only the current token or value is held in memory.
 type JSON struct {
-	walk   func(dec *json.Decoder) error
+	walk   func(dec *jsontext.Decoder) error
 	finish FinishFunc
 	buf    []byte
 	read   bool
@@ -52,9 +60,9 @@ type JSON struct {
 
 var _ Decoder = (*JSON)(nil)
 
-// NewJSON returns a JSON decoder. walk must consume exactly one JSON value
-// from dec, which has UseNumber set, and finish is called by Finish afterward.
-func NewJSON(walk func(dec *json.Decoder) error, finish FinishFunc) *JSON {
+// NewJSON returns a JSON decoder. walk must consume exactly one JSON value from dec, which accepts a
+// repeated object member and invalid UTF-8 as encoding/json does, and Finish then calls finish.
+func NewJSON(walk func(dec *jsontext.Decoder) error, finish FinishFunc) *JSON {
 	return &JSON{walk: walk, finish: finish}
 }
 
@@ -121,12 +129,11 @@ func (j *JSON) check() error {
 }
 
 func (j *JSON) run(r io.Reader) error {
-	dec := json.NewDecoder(r)
-	dec.UseNumber()
+	dec := NewJSONDecoder(r)
 	err := j.walk(dec)
 	if err == nil {
 		// only whitespace may follow the document
-		_, err = dec.Token()
+		_, err = dec.ReadToken()
 		if errors.Is(err, io.EOF) {
 			return nil
 		}
@@ -152,96 +159,133 @@ func (c *countingReader) Read(p []byte) (int, error) {
 }
 
 // Object consumes a JSON object from dec, calling fn with each key in arrival
-// order. fn must consume the key's value, e.g. with dec.Decode, Object, Array or Skip.
-func Object(dec *json.Decoder, fn func(key string) error) error {
-	if err := open(dec, '{'); err != nil {
+// order. fn must consume the key's value, e.g. with Decode, Object, Array, Skip or dec.ReadValue.
+func Object(dec *jsontext.Decoder, fn func(key string) error) error {
+	return ObjectBytes(dec, func(key []byte) error { return fn(string(key)) })
+}
+
+// ObjectBytes is Object with each key as its unescaped bytes, which are valid only until fn reads
+// from dec, so a key compared or copied first costs no allocation.
+func ObjectBytes(dec *jsontext.Decoder, fn func(key []byte) error) error {
+	if err := open(dec, jsontext.KindBeginObject); err != nil {
 		return err
 	}
-	for dec.More() {
-		tok, err := dec.Token()
+	depth := dec.StackDepth()
+	var escaped []byte
+	for {
+		switch dec.PeekKind() {
+		case jsontext.KindEndObject, jsontext.KindInvalid:
+			_, err := dec.ReadToken()
+			return err
+		}
+		name, err := dec.ReadValue()
 		if err != nil {
 			return err
 		}
-		key, ok := tok.(string)
-		if !ok {
-			return ErrUnexpectedToken
+		var key []byte
+		if n := len(name); n >= 2 && plainASCII(name[1:n-1]) {
+			key = name[1 : n-1]
+		} else {
+			escaped = AppendString(escaped[:0], name)
+			key = escaped
 		}
 		offset := dec.InputOffset()
 		if err := fn(key); err != nil {
 			return err
 		}
-		if dec.InputOffset() == offset {
-			return ErrValueNotConsumed
+		if err := consumed(dec, offset, depth); err != nil {
+			return err
 		}
 	}
-	return closeDelim(dec, '}')
 }
 
 // Array consumes a JSON array from dec, calling fn once per element. fn must
-// consume the element, e.g. with dec.Decode, Object, Array or Skip.
-func Array(dec *json.Decoder, fn func() error) error {
-	if err := open(dec, '['); err != nil {
+// consume the element, e.g. with Decode, Object, Array, Skip or dec.ReadValue.
+func Array(dec *jsontext.Decoder, fn func() error) error {
+	if err := open(dec, jsontext.KindBeginArray); err != nil {
 		return err
 	}
-	for dec.More() {
+	depth := dec.StackDepth()
+	for {
+		switch dec.PeekKind() {
+		case jsontext.KindEndArray, jsontext.KindInvalid:
+			_, err := dec.ReadToken()
+			return err
+		}
 		offset := dec.InputOffset()
 		if err := fn(); err != nil {
 			return err
 		}
-		if dec.InputOffset() == offset {
-			return ErrValueNotConsumed
-		}
-	}
-	return closeDelim(dec, ']')
-}
-
-// Skip consumes and discards the next JSON value from dec one token at a time, so a
-// large skipped value is never held in memory. It fails if no value comes next.
-func Skip(dec *json.Decoder) error {
-	var depth int
-	for {
-		tok, err := dec.Token()
-		if err != nil {
+		if err := consumed(dec, offset, depth); err != nil {
 			return err
 		}
-		switch tok {
-		case json.Delim('['), json.Delim('{'):
-			depth++
-		case json.Delim(']'), json.Delim('}'):
-			depth--
-		}
-		switch {
-		case depth < 0:
-			return ErrUnexpectedToken
-		case depth == 0:
-			return nil
-		}
 	}
 }
 
-func open(dec *json.Decoder, want json.Delim) error {
-	tok, err := dec.Token()
+// consumed reports whether a visitor read exactly one whole value: some input, and back to depth
+func consumed(dec *jsontext.Decoder, offset int64, depth int) error {
+	switch {
+	case dec.InputOffset() == offset:
+		return ErrValueNotConsumed
+	case dec.StackDepth() != depth:
+		return ErrUnexpectedToken
+	}
+	return nil
+}
+
+// Skip consumes and discards the next JSON value from dec without holding it in
+// memory. It fails if no value comes next.
+func Skip(dec *jsontext.Decoder) error {
+	switch dec.PeekKind() {
+	case jsontext.KindEndArray, jsontext.KindEndObject:
+		return ErrUnexpectedToken
+	}
+	return dec.SkipValue()
+}
+
+// Decode decodes the next JSON value from dec into v as encoding/json's Unmarshal
+// would, with any opts, such as jsonv2.RejectUnknownMembers, applied after its defaults.
+func Decode(dec *jsontext.Decoder, v any, opts ...jsonv2.Options) error {
+	if len(opts) == 0 {
+		return jsonv2.UnmarshalDecode(dec, v, json.DefaultOptionsV1())
+	}
+	return jsonv2.UnmarshalDecode(dec, v, jsonv2.JoinOptions(append([]jsonv2.Options{json.DefaultOptionsV1()}, opts...)...))
+}
+
+// AppendString appends the text of raw, a JSON string value as dec.ReadValue returns it, to dst.
+// Invalid UTF-8 is written as U+FFFD, as encoding/json decodes it.
+func AppendString(dst, raw []byte) []byte {
+	if n := len(raw); n >= 2 && plainASCII(raw[1:n-1]) {
+		return append(dst, raw[1:n-1]...)
+	}
+	// raw was validated as a JSON string by the decoder that read it, so the only error the
+	// unquote can report is invalid UTF-8, which it has already replaced
+	out, _ := jsontext.AppendUnquote(dst, raw)
+	return out
+}
+
+// reports whether b holds only ASCII without escapes, which a JSON string's text is as written
+func plainASCII(b []byte) bool {
+	for _, c := range b {
+		if c >= 0x80 || c == '\\' {
+			return false
+		}
+	}
+	return true
+}
+
+func open(dec *jsontext.Decoder, want jsontext.Kind) error {
+	tok, err := dec.ReadToken()
 	if err != nil {
 		return err
 	}
-	if tok == nil {
+	switch tok.Kind() {
+	case want:
+		return nil
+	case jsontext.KindNull:
 		return ErrNull
 	}
-	if d, ok := tok.(json.Delim); !ok || d != want {
-		return ErrUnexpectedToken
-	}
-	return nil
-}
-
-func closeDelim(dec *json.Decoder, want json.Delim) error {
-	tok, err := dec.Token()
-	if err != nil {
-		return err
-	}
-	if d, ok := tok.(json.Delim); !ok || d != want {
-		return ErrUnexpectedToken
-	}
-	return nil
+	return ErrUnexpectedToken
 }
 
 // JSONTagString is a BuilderOptions.TagString for JSON input: it unquotes JSON

@@ -23,6 +23,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"unsafe"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -64,6 +65,11 @@ type logBuffers struct {
 	cells                     []uint64
 	kinds                     []Kind
 	chunks                    [][]byte
+	series                    []logSeries
+	stats                     []logColumn
+	// Finish's grouping of rows by series: where each series' rows start, and the rows each keeps
+	ints []int
+	kept [][]int32
 }
 
 var logBufferPool = sync.Pool{New: func() any { return new(logBuffers) }}
@@ -96,12 +102,12 @@ func NewColumnLog(policy DuplicatePolicy) *ColumnLog {
 	b := logBufferPool.Get().(*logBuffers)
 	return &ColumnLog{
 		policy: policy, bufs: b, rowSeries: b.rowSeries, rowEpochs: b.rowEpochs, rowCells: b.rowCells,
-		cells: b.cells, kinds: b.kinds, spare: b.chunks,
+		cells: b.cells, kinds: b.kinds, spare: b.chunks, series: b.series, stats: b.stats,
 	}
 }
 
 // recycle pools the arrays the finished log used only while building, when they're not too large
-func (l *ColumnLog) recycle(perm []int32) {
+func (l *ColumnLog) recycle(perm []int32, ints []int, kept [][]int32) {
 	b := l.bufs
 	if b == nil {
 		return
@@ -109,10 +115,15 @@ func (l *ColumnLog) recycle(perm []int32) {
 	l.data = append(l.data, l.spare...)
 	chunks := l.data
 	b.rowSeries, b.rowCells, b.rowEpochs = l.rowSeries[:0], l.rowCells[:0], l.rowEpochs[:0]
-	b.cells, b.kinds = l.cells[:0], l.kinds[:0]
+	b.cells, b.kinds, b.series, b.stats = l.cells[:0], l.kinds[:0], l.series[:0], l.stats[:0]
 	l.bufs, l.rowSeries, l.rowEpochs, l.rowCells, l.cells, l.kinds, l.data, l.spare = nil, nil, nil, nil, nil, nil, nil, nil
+	l.series, l.stats = nil, nil
 	l.staged, l.stagedChunks, l.stagedOff = 0, 0, 0
-	size := 4*(cap(b.rowSeries)+cap(b.rowCells)+cap(perm)) + 8*(cap(b.rowEpochs)+cap(b.cells)) + cap(b.kinds)
+	// the kept rows are views of perm, which is pooled too
+	clear(kept)
+	size := 4*(cap(b.rowSeries)+cap(b.rowCells)+cap(perm)) + 8*(cap(b.rowEpochs)+cap(b.cells)+cap(ints)) +
+		cap(b.kinds) + int(unsafe.Sizeof(logSeries{}))*cap(b.series) + int(unsafe.Sizeof(logColumn{}))*cap(b.stats) +
+		int(unsafe.Sizeof([]int32{}))*cap(kept)
 	for i, c := range chunks {
 		size += cap(c)
 		chunks[i] = c[:0]
@@ -120,7 +131,7 @@ func (l *ColumnLog) recycle(perm []int32) {
 	if size > maxPooledLogBytes {
 		return
 	}
-	b.chunks, b.perm = chunks, perm[:0]
+	b.chunks, b.perm, b.ints, b.kept = chunks, perm[:0], ints[:0], kept[:0]
 	logBufferPool.Put(b)
 }
 
@@ -397,13 +408,18 @@ func (l *ColumnLog) Finish() ([]Segment, error) {
 	l.finished = true
 	segs := make([]Segment, len(l.series))
 	if len(l.rowEpochs) == 0 {
-		l.recycle(nil)
+		l.recycle(nil, nil, nil)
 		return segs, nil
 	}
-	perm, starts := l.groupRows()
-	defer l.recycle(perm)
+	perm, ints := l.groupRows()
+	starts := ints[:len(l.series)+1]
 	// sort and dedupe each series' rows, noting how many each keeps
-	kept := make([][]int32, len(l.series))
+	var kept [][]int32
+	if l.bufs != nil {
+		kept = l.bufs.kept
+	}
+	kept = slices.Grow(kept[:0], len(l.series))[:len(l.series)]
+	defer l.recycle(perm, ints, kept)
 	var totalRows, totalCells, totalTags, totalCols int
 	for i := range l.series {
 		s := &l.series[i]
@@ -487,23 +503,27 @@ type fixedColumn struct {
 }
 
 // groupRows returns the committed rows grouped by series, each series' rows in arrival order, and
-// where each series' rows start
+// where each series' rows start, followed by scratch the grouping used
 func (l *ColumnLog) groupRows() ([]int32, []int) {
-	starts := make([]int, len(l.series)+1)
+	n := len(l.series)
+	var ints []int
+	var perm []int32
+	if l.bufs != nil {
+		ints, perm = l.bufs.ints, l.bufs.perm
+	}
+	ints = slices.Grow(ints[:0], 2*n+1)[:2*n+1]
+	starts, next := ints[:n+1], ints[n+1:]
+	starts[0] = 0
 	for i := range l.series {
 		starts[i+1] = starts[i] + l.series[i].rows
 	}
-	next := slices.Clone(starts[:len(l.series)])
-	var perm []int32
-	if l.bufs != nil {
-		perm = l.bufs.perm
-	}
+	copy(next, starts[:n])
 	perm = slices.Grow(perm[:0], len(l.rowEpochs))[:len(l.rowEpochs)]
 	for r, s := range l.rowSeries {
 		perm[next[s]] = int32(r) // #nosec G115 -- row counts are far below 2^31
 		next[s]++
 	}
-	return perm, starts
+	return perm, ints
 }
 
 // dedupe applies the policy to rows sorted by epoch, keeping arrival order among equal epochs
