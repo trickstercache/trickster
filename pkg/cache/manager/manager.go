@@ -44,6 +44,14 @@ const DefaultCloseDrainHardTimeout = 30 * time.Second
 // touching the cache.
 var ErrCacheClosed = errors.New("cache is closed")
 
+// ErrSplitUnsupported is returned by StoreSplit/RetrieveSplit when the cache's
+// provider keeps objects whole
+var ErrSplitUnsupported = errors.New("cache provider does not keep objects in sections")
+
+// ErrReferencesUnsupported is returned by StoreReference/RetrieveReference when
+// the cache's provider keeps serialized objects only
+var ErrReferencesUnsupported = errors.New("cache provider does not keep object references")
+
 // Provide initialization options to the Manager / cache.Cache creation
 type CacheOptions struct {
 	UseIndex     bool
@@ -117,9 +125,13 @@ func (cm *Manager) StoreReference(cacheKey string, data cache.ReferenceObject, t
 		return ErrCacheClosed
 	}
 	defer cm.release()
+	mc, ok := cm.Client.(cache.MemoryCache)
+	if !ok {
+		return ErrReferencesUnsupported
+	}
 	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
 	start := time.Now()
-	err := cm.Client.(cache.MemoryCache).StoreReference(cacheKey, data, ttl)
+	err := mc.StoreReference(cacheKey, data, ttl)
 	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySetDirect, metrics.KeyNone, float64(data.Size()), time.Since(start))
 	return err
 }
@@ -155,8 +167,12 @@ func (cm *Manager) RetrieveReference(cacheKey string) (any, status.LookupStatus,
 		return nil, status.LookupStatusError, ErrCacheClosed
 	}
 	defer cm.release()
+	mc, ok := cm.Client.(cache.MemoryCache)
+	if !ok {
+		return nil, status.LookupStatusError, ErrReferencesUnsupported
+	}
 	start := time.Now()
-	v, s, err := cm.Client.(cache.MemoryCache).RetrieveReference(cacheKey)
+	v, s, err := mc.RetrieveReference(cacheKey)
 	elapsed := time.Since(start)
 	var size int
 	if ro, ok := v.(cache.ReferenceObject); ok {
@@ -270,6 +286,76 @@ func (cm *Manager) Connect() error {
 
 func (cm *Manager) Configuration() *options.Options {
 	return cm.config
+}
+
+// SupportsSplit reports whether the configured client keeps an object as two sections.
+// Callers must check this before the optional SplitClient methods.
+func (cm *Manager) SupportsSplit() bool {
+	sc, ok := cm.Client.(cache.SplitClient)
+	return ok && sc.SupportsSplit()
+}
+
+// StoreSplit stores an object of two sections, for a client that keeps them so
+func (cm *Manager) StoreSplit(cacheKey string, meta, body []byte, ttl time.Duration) error {
+	if !cm.acquire() {
+		return ErrCacheClosed
+	}
+	defer cm.release()
+	sc, ok := cm.Client.(cache.SplitClient)
+	if !ok {
+		return ErrSplitUnsupported
+	}
+	logger.Debug("cache store", logging.Pairs{keys.Key: cacheKey, keys.Provider: cm.config.Provider})
+	start := time.Now()
+	err := sc.StoreSplit(cacheKey, meta, body, ttl)
+	metrics.ObserveCacheOperation(cm.config.Name, cm.config.Provider, metrics.KeySet, metrics.KeyNone,
+		float64(len(meta)+len(body)), time.Since(start))
+	return err
+}
+
+// RetrieveSplit retrieves the two sections of an object, from a client that keeps them so.
+// What it returns is the caller's alone; concurrent retrievals each read the cache.
+func (cm *Manager) RetrieveSplit(cacheKey string) ([]byte, []byte, status.LookupStatus, error) {
+	if !cm.acquire() {
+		return nil, nil, status.LookupStatusError, ErrCacheClosed
+	}
+	defer cm.release()
+	sc, ok := cm.Client.(cache.SplitClient)
+	if !ok {
+		return nil, nil, status.LookupStatusError, ErrSplitUnsupported
+	}
+	start := time.Now()
+	meta, body, s, err := sc.RetrieveSplit(cacheKey)
+	cm.observeRetrieval(cacheKey, len(meta)+len(body), s, err, time.Since(start))
+	return meta, body, s, err
+}
+
+// SupportsStream reports whether the configured client reads an object in parts.
+// Callers must check this before the optional StreamClient methods.
+func (cm *Manager) SupportsStream() bool {
+	sc, ok := cm.Client.(cache.StreamClient)
+	return ok && sc.SupportsStream()
+}
+
+// OpenSplit opens an object for reading in parts, from a client that reads them so. The
+// body it returns outlasts the call, and is the caller's to close.
+func (cm *Manager) OpenSplit(cacheKey string) ([]byte, cache.Body, status.LookupStatus, error) {
+	if !cm.acquire() {
+		return nil, nil, status.LookupStatusError, ErrCacheClosed
+	}
+	defer cm.release()
+	sc, ok := cm.Client.(cache.StreamClient)
+	if !ok {
+		return nil, nil, status.LookupStatusError, ErrSplitUnsupported
+	}
+	start := time.Now()
+	meta, body, s, err := sc.OpenSplit(cacheKey)
+	size := len(meta)
+	if body != nil {
+		size += int(body.Size())
+	}
+	cm.observeRetrieval(cacheKey, size, s, err, time.Since(start))
+	return meta, body, s, err
 }
 
 // SupportsReferences reports whether the configured client can retain typed

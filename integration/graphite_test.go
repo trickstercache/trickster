@@ -24,8 +24,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -204,23 +202,6 @@ func graphiteMetric(t *testing.T, metricsAddr, family, match string) float64 {
 	return total
 }
 
-// the on-disk index a restart reads objects through: the filesystem cache
-// turns a key's dots into ~4 and suffixes every file with "data"
-func cacheIndexPath(dir string) string { return filepath.Join(dir, "cache~4indexdata") }
-
-// waits until the filesystem cache has written its index since the given
-// moment; an object stored but not yet indexed is invisible after a restart
-func waitForIndexFlush(t *testing.T, dir string, since time.Time) {
-	t.Helper()
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		fi, err := os.Stat(cacheIndexPath(dir))
-		if !assert.NoError(collect, err) {
-			return
-		}
-		assert.False(collect, fi.ModTime().Before(since), "the cache index has not been flushed yet")
-	}, 30*time.Second, 100*time.Millisecond, "the cache index was never written to %s", dir)
-}
-
 // writes points to carbon over the plaintext protocol, at step spacing ending
 // at the most recent step boundary, so a recent render window sees them
 func feedCarbon(t *testing.T, metric string, step time.Duration, points int) {
@@ -371,9 +352,7 @@ func TestGraphite(t *testing.T) {
 			dir := t.TempDir()
 			h, stop := startGraphite(t, dir, true)
 			waitForDelta(t, h, params)
-			learned := time.Now()
 			waitForCompleteLadder(t, h, "dev.medium.orders.us-east.count")
-			waitForIndexFlush(t, dir, learned)
 			stop()
 
 			// the same cache, a new process: the ladder was written through,

@@ -16,6 +16,7 @@
 package l4
 
 import (
+	"context"
 	"crypto/tls"
 	"go/parser"
 	"go/token"
@@ -293,14 +294,18 @@ func TestServerRetriesAFailedDial(t *testing.T) {
 
 // the connect timeout covers every attempt together, not each one
 func TestServerRetriesShareOneConnectTimeout(t *testing.T) {
-	// an address that accepts nothing and refuses nothing: the dial hangs until it times out
+	// a dial that neither connects nor fails hangs until the timeout, whatever the host's routing
 	blackhole := "192.0.2.1:9"
+	hang := func(ctx context.Context, _ string) (net.Conn, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
 	up := retrying{rotate(blackhole, blackhole, blackhole, blackhole)}
 	up.retries = 10
-	_, addr := startServer(t, ProtocolTCP, &Config{
+	_, addr := startServerWith(t, ProtocolTCP, &Config{
 		Table:   tableOf(t, map[string]Upstream{"": up}),
 		Options: &options.Options{ConnectTimeout: timeconv.Duration(150 * time.Millisecond)},
-	})
+	}, hang)
 	began := time.Now()
 	expectClosed(t, dialTCP(t, addr))
 	if took := time.Since(began); took > 2*time.Second {

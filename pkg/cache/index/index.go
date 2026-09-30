@@ -14,121 +14,84 @@
  * limitations under the License.
  */
 
-// Package index defines the Trickster Cache Index
+// Package index defines the Trickster Cache Index, which tracks what a cache that keeps
+// whatever it is given holds, and enforces the cache's retention for it
 package index
 
 import (
-	"bytes"
-	"slices"
-
-	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
-	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
-	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
+	"sync/atomic"
+	"time"
 )
 
-//go:generate go tool msgp
-
-// IndexKey is the key under which the index will write itself to its associated cache
+// IndexKey is a cache key reserved to the index, which no object may be stored under
 const IndexKey = "cache.index"
 
-// Object contains metadata about an item in the Cache
+// Object is what the index knows of one object in the cache. Times are Unix nanoseconds.
 type Object struct {
-	// Key represents the name of the Object and is the
-	// accessor in a hashed collection of Cache Objects
-	Key string `msg:"key"`
-	// Expiration represents the time that the Object expires from Cache
-	Expiration atomicx.Time `msg:"expiration,extension"`
-	// LastWrite is the time the object was last Written
-	LastWrite atomicx.Time `msg:"lastwrite,extension"`
-	// LastAccess is the time the object was last Accessed
-	LastAccess atomicx.Time `msg:"lastaccess,extension"`
-	// Size the size of the Object in bytes
-	Size int64 `msg:"size"`
-	// Value is the value of the Object stored in the Cache
-	// It is used by Caches but not by the Index
-	Value []byte `msg:"value,omitempty"`
-	// DirectValue is an interface value for storing objects by reference to a memory cache
-	// Since we'd never recover a memory cache index from memory on startup, no need to msgpk
-	ReferenceValue cache.ReferenceObject `msg:"-"`
+	// Key is the cache key the object is stored under
+	Key string
+
+	size       atomic.Int64
+	expiration atomic.Int64
+	lastWrite  atomic.Int64
+	lastAccess atomic.Int64
+	// sweep is the last sweep of the cache to have found the object there
+	sweep atomic.Uint64
+	// evicting marks an object chosen for eviction, so that it is not chosen twice
+	evicting atomic.Bool
+
+	// transient marks an object that will be gone too soon for the index to persist it
+	transient atomic.Bool
+
+	// the rest belong to the object's shard, and are guarded by its mutex
+
+	// slot is where the object sits among its shard's objects, and is negative when it does not
+	slot int
+	// due is the expiry bucket the object is in, and dueSlot its place there
+	due     int64
+	dueSlot int
+	// counted marks an object whose size is part of the index's totals
+	counted bool
+	// removed marks an object that has left the index
+	removed bool
 }
 
-func (o *Object) Equal(other *Object) bool {
-	return o.Key == other.Key &&
-		o.Expiration.Load().Equal(other.Expiration.Load()) &&
-		o.LastWrite.Load().Equal(other.LastWrite.Load()) &&
-		o.LastAccess.Load().Equal(other.LastAccess.Load()) &&
-		o.Size == other.Size &&
-		((o.ReferenceValue != nil && o.ReferenceValue == other.ReferenceValue) || bytes.Equal(o.Value, other.Value))
-}
-
-// ToBytes returns a serialized byte slice representing the Object
-func (o *Object) ToBytes() ([]byte, error) {
-	return o.MarshalMsg(nil)
-}
-
-// ObjectFromBytes returns a deserialized Cache Object from a serialized byte slice
-func ObjectFromBytes(data []byte) (*Object, error) {
-	o := &Object{}
-	_, err := o.UnmarshalMsg(data)
-	return o, err
-}
-
-func reap(cacheSize int64, objectCount int64, remainders objectsAtime, opts options.Options) (evictionType string, removals []string) {
-	if len(remainders) == 0 ||
-		((opts.MaxSizeBytes == 0 || cacheSize <= opts.MaxSizeBytes) &&
-			(opts.MaxSizeObjects == 0 || objectCount <= opts.MaxSizeObjects)) {
-		return // nothing to do
+// zero for the zero Time, which the atomic fields hold for no time at all
+func unixNano(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
 	}
-	switch {
-	case opts.MaxSizeBytes > 0 && cacheSize > opts.MaxSizeBytes:
-		evictionType = "size_bytes"
-	case opts.MaxSizeObjects > 0 && objectCount > opts.MaxSizeObjects:
-		evictionType = "size_objects"
-	default:
-		return
+	return t.UnixNano()
+}
+
+func fromUnixNano(n int64) time.Time {
+	if n == 0 {
+		return time.Time{}
 	}
+	return time.Unix(0, n)
+}
 
-	logger.Debug(
-		"max cache size reached. evicting least-recently-accessed records",
-		logging.Pairs{
-			"reason":         evictionType,
-			"cacheSizeBytes": cacheSize, "maxSizeBytes": opts.MaxSizeBytes,
-			"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
-		},
-	)
+// Size returns the length in bytes of the object's content
+func (o *Object) Size() int64 {
+	return o.size.Load()
+}
 
-	removals = make([]string, 0)
+// Expiration returns when the object expires, which is the zero Time when it never does
+func (o *Object) Expiration() time.Time {
+	return fromUnixNano(o.expiration.Load())
+}
 
-	slices.SortFunc(remainders, objectAtimeCmp)
+// LastWrite returns when the object was last written
+func (o *Object) LastWrite() time.Time {
+	return fromUnixNano(o.lastWrite.Load())
+}
 
-	var i int
-	j := len(remainders)
+// LastAccess returns when the object was last written or retrieved
+func (o *Object) LastAccess() time.Time {
+	return fromUnixNano(o.lastAccess.Load())
+}
 
-	if evictionType == "size_bytes" {
-		bytesNeeded := (cacheSize - opts.MaxSizeBytes)
-		if opts.MaxSizeBytes > opts.MaxSizeBackoffBytes {
-			bytesNeeded += opts.MaxSizeBackoffBytes
-		}
-		bytesSelected := int64(0)
-		for bytesSelected < bytesNeeded && i < j {
-			removals = append(removals, remainders[i].Key)
-			bytesSelected += remainders[i].Size
-			i++
-		}
-	} else {
-		objectsNeeded := (objectCount - opts.MaxSizeObjects)
-		if opts.MaxSizeObjects > opts.MaxSizeBackoffObjects {
-			objectsNeeded += opts.MaxSizeBackoffObjects
-		}
-		objectsSelected := int64(0)
-		for objectsSelected < objectsNeeded && i < j {
-			removals = append(removals, remainders[i].Key)
-			objectsSelected++
-			i++
-		}
-	}
-
-	return
+func (o *Object) expired(now int64) bool {
+	e := o.expiration.Load()
+	return e != 0 && e <= now
 }

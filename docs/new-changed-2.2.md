@@ -29,3 +29,13 @@ All three of these newly-supported providers consume a new `pgwire` package for 
 ## HTTP Reverse Proxy Cache & Streaming
 
 **PLANNED** - **Media over QUIC (MoQ)** -- In Trickster 2.1, we introduced support for HTTP/3 and QUIC. We now offer support for MoQ Relaying through the reverse proxy cache.
+
+**Disk Caches** - The Filesystem and bbolt caches are rebuilt for large caches and large objects. See [Disk Caches](./caches.md#disk-caches) for details.
+
+- Cached objects are self-describing and checksummed, and are written atomically, so an incomplete or damaged object is never served.
+- The Filesystem Cache spreads its files across two levels of directories, in place of a single directory.
+- A Cache Index that is lost or out of date is rebuilt from the cache in the background. Nothing in the cache is orphaned.
+- The Cache Index is persisted as a journal of changes, and its cost no longer grows with the size of the cache. Expiration and eviction no longer rank every object in the cache.
+- Large objects are served from a disk cache as they are read, and `Range` requests read only the ranges asked for, without holding the object in memory.
+- New options: `scan_interval`, `scan_batch_size` and `scan_batch_pause` for the Cache Index, and `min_free_bytes` for the Filesystem Cache.
+- **Upgrade note:** Filesystem and bbolt caches start cold after upgrading to 2.2, as objects cached by earlier versions are stored in another format. Trickster removes them on its own, in the background.

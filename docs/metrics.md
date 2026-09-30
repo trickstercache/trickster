@@ -323,6 +323,18 @@ The following metrics are available only for Caches Types whose object lifecycle
     * `provider` - the type of the configured cache experiencing the event
     * `event` - the name of the event being performed
     * `reason` - the reason the event occurred
+  * events and reasons:
+
+    | `event` | `reason` | counts |
+    | ----- | ----- | ----- |
+    | `eviction` | `ttl` | removals of expired objects, a batch at a time |
+    | `eviction` | `size_bytes`, `size_objects` | removals of least-recently-accessed objects from a cache over its size |
+    | `eviction` | `free_space` | removals of least-recently-accessed objects for `min_free_bytes` (Filesystem) |
+    | `invalid_object` | `expired`, `corrupt`, `unknown_format` | objects found to be unservable when read or swept, and removed (Filesystem and bbolt) |
+    | `index` | `compaction` | replacements of the Cache Index journal by a snapshot (Filesystem and bbolt) |
+    | `index` | `sweep` | completed sweeps of the cache (Filesystem and bbolt) |
+    | `sweep` | `adopted` | objects a sweep found in the cache that the Cache Index did not list |
+    | `sweep` | `dropped` | objects a sweep found the Cache Index to list that the cache no longer held |
 
 * `trickster_cache_usage_objects` (Gauge) - The current count of objects in the Trickster cache.
   * labels:

@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -36,13 +35,18 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
-	"github.com/andybalholm/brotli"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
 
 const (
 	providerMemory = "memory"
+
+	// flagCompressed marks a stored document, or the body of one, as compressed
+	flagCompressed = 1
+	flagLen        = 1
+	// minCompressLen is the size under which compressing costs more than it saves
+	minCompressLen = 512
 )
 
 type queryResult struct {
@@ -71,43 +75,62 @@ func queryConcurrent(_ context.Context, c cache.Cache, key string) *queryResult 
 			// can safely mutate fields like timeseries, isFulfillment, etc.
 			qr.d = d.ShallowCopy()
 		}
-	} else {
-		var b []byte
-		b, qr.lookupStatus, qr.err = c.Retrieve(key)
-
-		if qr.err != nil ||
-			(qr.lookupStatus != status.LookupStatusHit && qr.lookupStatus != status.LookupStatusProxyHit) {
+		return qr
+	}
+	if sc, ok := splitCache(c); ok {
+		var meta, body []byte
+		meta, body, qr.lookupStatus, qr.err = sc.RetrieveSplit(key)
+		if qr.err != nil || qr.lookupStatus != status.LookupStatusHit {
 			return qr
 		}
-
-		var inflate bool
-		// check and remove compression bit
-		if len(b) > 0 {
-			if b[0] == 1 {
-				inflate = true
-			}
-			b = b[1:]
-		}
-
-		if inflate {
-			// tl.Debug(rsc.Logger, "decompressing cached data", tl.Pairs{"cacheKey": key})
-			decoder := brotli.NewReader(bytes.NewReader(b))
-			b, qr.err = io.ReadAll(decoder)
-			if qr.err != nil {
-				return qr
-			}
-		}
-		_, qr.err = qr.d.UnmarshalMsg(b)
-		if qr.err != nil {
+		if len(meta) > 0 {
+			qr.err = decodeSections(qr.d, meta, body)
 			return qr
+		}
+		// an object that was stored whole
+		qr.err = decodeDocument(qr.d, body)
+		return qr
+	}
+	var b []byte
+	b, qr.lookupStatus, qr.err = c.Retrieve(key)
+	if qr.err != nil ||
+		(qr.lookupStatus != status.LookupStatusHit && qr.lookupStatus != status.LookupStatusProxyHit) {
+		return qr
+	}
+	qr.err = decodeDocument(qr.d, b)
+	return qr
+}
+
+// a document stored whole: a byte that tells whether what follows is compressed, and then the
+// document
+func decodeDocument(d *HTTPDocument, b []byte) error {
+	var inflate bool
+	// check and remove compression bit
+	if len(b) > 0 {
+		inflate = b[0] == flagCompressed
+		b = b[1:]
+	}
+	if inflate {
+		var err error
+		if b, err = inflateAll(b, 0); err != nil {
+			return err
 		}
 	}
-	return qr
+	_, err := d.UnmarshalMsg(b)
+	return err
 }
 
 // QueryCache queries the cache for an HTTPDocument and returns it
 func QueryCache(ctx context.Context, c cache.Cache, key string,
 	ranges byterange.Ranges, unmarshal timeseries.UnmarshalerFunc,
+) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
+	return queryCache(ctx, c, key, ranges, unmarshal, false)
+}
+
+// with deferBody, the body of a document that is the whole of its object is left in the cache,
+// for the caller to read or release
+func queryCache(ctx context.Context, c cache.Cache, key string,
+	ranges byterange.Ranges, unmarshal timeseries.UnmarshalerFunc, deferBody bool,
 ) (*HTTPDocument, status.LookupStatus, byterange.Ranges, error) {
 	rsc := tc.Resources(ctx).(*request.Resources)
 
@@ -121,7 +144,12 @@ func QueryCache(ctx context.Context, c cache.Cache, key string,
 	var lookupStatus status.LookupStatus
 
 	// Query document
-	qr := queryConcurrent(ctx, c, key)
+	var qr *queryResult
+	if sc, ok := streamCache(c); ok && deferBody && unmarshal == nil && !c.Configuration().UseCacheChunking {
+		qr = queryDeferred(sc, key)
+	} else {
+		qr = queryConcurrent(ctx, c, key)
+	}
 	if qr.err != nil {
 		tspan.SetAttributes(rsc.Tracer, span, attribute.String("cache.status", qr.lookupStatus.String()))
 		return qr.d, qr.lookupStatus, ranges, qr.err
@@ -227,29 +255,28 @@ func writeConcurrent(_ context.Context, c cache.Cache, key string, d *HTTPDocume
 		return mc.StoreReference(key, d, ttl)
 	}
 
-	// for non-memory, we have to serialize the document to a byte slice to store
-	b, err = d.MarshalMsg(nil)
+	if sc, ok := splitCache(c); ok {
+		return writeSections(sc, key, d, compress, ttl)
+	}
+
+	// the document is stored whole, after a byte that tells whether it is compressed
+	b = make([]byte, flagLen, flagLen+d.Msgsize())
+	b, err = d.MarshalMsg(b)
 	if err != nil {
 		return err
 	}
 
 	// skip compression for small payloads where overhead exceeds benefit
-	if compress && len(b) >= 512 {
-		buf := bytes.NewBuffer([]byte{1})
-		encoder := brotli.NewWriter(buf)
-		if _, err = encoder.Write(b); err != nil {
+	if compress && len(b)-flagLen >= minCompressLen {
+		buf := compressPool.Get().(*bytes.Buffer)
+		defer putCompressBuffer(buf)
+		buf.WriteByte(flagCompressed)
+		if err = deflateTo(buf, b[flagLen:]); err != nil {
 			return err
 		}
-		if err = encoder.Close(); err != nil {
-			return err
-		}
-		b = buf.Bytes()
-	} else {
-		buf := make([]byte, len(b)+1)
-		copy(buf[1:], b)
-		b = buf
+		// every cache has done with the bytes it is given by the time it returns
+		return c.Store(key, buf.Bytes(), ttl)
 	}
-
 	return c.Store(key, b, ttl)
 }
 
