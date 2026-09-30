@@ -465,7 +465,7 @@ integration-env-disable:
 	@echo "integration containers disabled in $(COMPOSE_YML)"
 
 # one-shot loaders no service waits on, so developer-start can return while they still load
-INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed questdb_seed
 
 .PHONY: integration-start
 integration-start: integration-env-enable developer-start

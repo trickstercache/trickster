@@ -11,7 +11,7 @@ cd "$(dirname "$0")/../docs/developer/environment"
 
 # Every trips database service <name> has a one-shot loader service <name>_seed.
 # graphite is seeded by its own generator and is handled separately below.
-ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid prometheus graphite"
+ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid questdb prometheus graphite"
 read -r -a targets <<< "$(echo "${SEED_TARGET:-$ALL_TARGETS}" | tr ',' ' ')"
 
 trips_databases=()

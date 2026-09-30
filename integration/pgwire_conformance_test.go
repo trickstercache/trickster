@@ -64,6 +64,7 @@ type pgwireTarget struct {
 	ClientUser           string
 	ClientPassword       string
 	ScalarSQL            string
+	ExtendedSQL          string
 	LargeSQL             string
 	LargeRows            int
 	SlowSQL              string
@@ -142,6 +143,30 @@ func pgwireTargets() []pgwireTarget {
 		// The tested origin stubs transaction status and CancelRequest; neither
 		// capability is usable.
 		SupportsCancel: false, SupportsTransactions: false,
+	}, {
+		Name: "questdb", Provider: providers.QuestDB, Dialect: providers.QuestDB, OriginAddr: "127.0.0.1:8812",
+		Database: "qdb", OriginUser: "grafana_ro", OriginPassword: "trickster-dev-grafana",
+		ClientUser: "grafana_ro", ClientPassword: "trickster-dev-grafana",
+		// QuestDB's timestamps are UTC TIMESTAMP values. Scalar and extended
+		// statements below also prove the relay contract before the cache cases.
+		ScalarSQL: "SELECT 42 AS i, 'text' AS t, 1.50 AS n, NULL AS z, " +
+			"CAST('2026-01-02T03:04:05.000000Z' AS TIMESTAMP) AS ts, 0.1 AS f, true AS b",
+		// QuestDB infers untyped extended-protocol parameters as doubles. Cast
+		// them explicitly so this shared conformance case has the same integer
+		// result shape as the PostgreSQL and GreptimeDB fixtures.
+		ExtendedSQL: "SELECT CAST($1 AS INT) + CAST($2 AS INT)",
+		MissingSQL:  "SELECT * FROM __missing_questdb_conformance_table",
+		ObjectSQL:   "SELECT cab_type, count() AS trips FROM trips GROUP BY cab_type ORDER BY cab_type",
+		DeltaSQLs: []string{
+			"SELECT pickup_datetime AS time, cab_type, count() AS trips FROM trips " +
+				"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' SAMPLE BY 5m ORDER BY 1, 2",
+			"SELECT timestamp_floor('5m', pickup_datetime) AS time, count() AS trips FROM trips " +
+				"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
+		},
+		// Direct QuestDB probes show BEGIN/ROLLBACK and failed-transaction
+		// ReadyForQuery states; the relay must preserve them even while the
+		// analyzer and cache paths are exercised by separate statements below.
+		SupportsCancel: false, SupportsTransactions: true,
 	}}
 }
 
@@ -310,13 +335,23 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("the extended protocol binds parameters", func(t *testing.T) {
+		extendedSQL := target.ExtendedSQL
+		if extendedSQL == "" {
+			extendedSQL = "SELECT $1::int4 + $2::int4"
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), pgwireConformanceTimeout)
 		defer cancel()
-		for _, conn := range []*pgconn.PgConn{direct, proxied} {
-			result := conn.ExecParams(ctx, "SELECT $1::int4 + $2::int4", [][]byte{[]byte("40"), []byte("2")}, nil, nil, nil).Read()
-			require.NoError(t, result.Err)
-			require.Equal(t, "42", string(result.Rows[0][0]))
-		}
+		params := [][]byte{[]byte("40"), []byte("2")}
+		want := direct.ExecParams(ctx, extendedSQL, params, nil, nil, nil).Read()
+		require.NoError(t, want.Err)
+		got := proxied.ExecParams(ctx, extendedSQL, params, nil, nil, nil).Read()
+		require.NoError(t, got.Err)
+		require.Len(t, want.Rows, 1)
+		require.Len(t, want.Rows[0], 1)
+		require.Equal(t, "42", string(want.Rows[0][0]))
+		require.Equal(t, want.FieldDescriptions, got.FieldDescriptions)
+		require.Equal(t, want.Rows, got.Rows)
+		require.Equal(t, want.CommandTag, got.CommandTag)
 	})
 
 	t.Run("an error keeps its SQLSTATE and the session survives", func(t *testing.T) {

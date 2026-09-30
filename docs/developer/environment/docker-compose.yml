@@ -24,7 +24,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource,grafadruid-druid-datasource
+      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource,grafadruid-druid-datasource,questdb-questdb-datasource
     volumes:
       - ./docker-compose-data/grafana-config:/etc/grafana
       - ./docker-compose-data/dashboards:/var/lib/grafana/dashboards
@@ -46,6 +46,8 @@ services:
       greptimedb:
         condition: service_healthy
       druid:
+        condition: service_healthy
+      questdb:
         condition: service_healthy
 
   # TSDBs
@@ -208,7 +210,7 @@ services:
     restart: always
 
   # generates the shared synthetic trips seed data (hack/seedgen) that the
-  # clickhouse, mysql, timescaledb, greptimedb and druid seeders load. The output is
+  # clickhouse, mysql, timescaledb, greptimedb, QuestDB and druid seeders load. The output is
   # byte-identical on every run, is verified against a pinned hash, and needs
   # no network access, so the service runs with networking disabled to prove it.
   seed_data_generate:
@@ -433,6 +435,58 @@ services:
       seed_data_generate:
         condition: service_completed_successfully
 
+  # QuestDB OSS: PostgreSQL wire protocol and the HTTP SQL/Web Console surface.
+  questdb:
+    image: questdb/questdb:10.0.1@sha256:67eaed863ebb2383227919ea9a5499a4a39ceca3862c20b974c84a10e11cdf89
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      QDB_TELEMETRY_ENABLED: "false"
+      QDB_PG_USER: admin
+      QDB_PG_PASSWORD: trickster-dev-root
+      QDB_PG_READONLY_USER_ENABLED: "true"
+      QDB_PG_READONLY_USER: grafana_ro
+      QDB_PG_READONLY_PASSWORD: trickster-dev-grafana
+      # OSS HTTP Basic auth is independent of the pgwire read-only account.
+      # The admin identity also loads the seed data, so it is intentionally not read-only.
+      QDB_HTTP_USER: admin
+      QDB_HTTP_PASSWORD: trickster-dev-root
+      # 10.0.1 does not expose the short /execute path by default.
+      QDB_HTTP_CONTEXT_EXECUTE: /execute,/api/v1/sql/execute
+    ports:
+      - 127.0.0.1:8812:8812
+      - 127.0.0.1:9010:9000
+    volumes:
+      - questdb-data:/var/lib/questdb
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent --show-error --user \"$$QDB_HTTP_USER:$$QDB_HTTP_PASSWORD\" 'http://127.0.0.1:9000/execute?query=SELECT%201' >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  # QuestDB seeder: loads the shared trips fixture through /imp, then applies
+  # the UTC shift and schema conversions through /execute.
+  questdb_seed:
+    image: trickster-questdb-seed:dev
+    build:
+      context: ./docker-compose-data/questdb-config/seeding
+      network: host
+    environment:
+      QUESTDB_URL: http://questdb:9000
+      QUESTDB_HTTP_USER: admin
+      QUESTDB_HTTP_PASSWORD: trickster-dev-root
+      QUESTDB_SEED_DATA: /seed-data
+    volumes:
+      - ./docker-compose-data/questdb-config/seeding:/seeding:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+    depends_on:
+      questdb:
+        condition: service_healthy
+      seed_data_generate:
+        condition: service_completed_successfully
+
   # graphite (carbon-cache + graphite-web, whisper storage)
   graphite:
     image: graphiteapp/graphite-statsd:1.1.10-5
@@ -601,4 +655,5 @@ volumes:
   mysql-data:
   timescaledb-data:
   greptimedb-data:
+  questdb-data:
   redis-data:

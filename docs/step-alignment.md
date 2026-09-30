@@ -205,6 +205,7 @@ ALB applies a mode.
 | MySQL | all | `drop` |
 | GreptimeDB PromQL | `truncate`, `drop`, `partial_end`, `off` | `partial_end` |
 | GreptimeDB SQL, over HTTP, MySQL and PostgreSQL | all | `drop` |
+| QuestDB SQL over PostgreSQL | all | `drop` |
 
 A backend accepts any mode one of its paths supports; a query on a path that
 doesn't support the configured mode runs in that path's default. Graphite has no

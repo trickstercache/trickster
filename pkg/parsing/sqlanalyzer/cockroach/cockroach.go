@@ -104,6 +104,11 @@ type LiftedClause struct {
 	// Bucket declares the time bucket when the clause itself defines it and no
 	// select-list function does. Its TimeColumn must appear in the select list.
 	Bucket *BucketMatch
+	// InferTimeColumn asks the analyzer to use the first select-list item when
+	// the dialect clause defines a bucket but does not name its timestamp
+	// column. The item must be a plain column reference; ambiguous expressions
+	// fail closed.
+	InferTimeColumn bool
 	// ImplicitGrouping marks a clause that groups by every plain select-list
 	// column without a GROUP BY, as a sampling clause does.
 	ImplicitGrouping bool
@@ -681,7 +686,14 @@ func clauseBucket(items tree.SelectExprs, clauses []*LiftedClause) (bucketSpec, 
 		}
 		for i, item := range items {
 			name, ok := ColumnName(item.Expr)
-			if !ok || name != clause.Bucket.TimeColumn {
+			if clause.InferTimeColumn {
+				// Sampling clauses such as QuestDB's SAMPLE BY apply to the
+				// designated timestamp, which is the first selected bare column.
+				// Do not guess from later group columns or computed expressions.
+				if i != 0 || !ok {
+					continue
+				}
+			} else if !ok || name != clause.Bucket.TimeColumn {
 				continue
 			}
 			if found != nil {
