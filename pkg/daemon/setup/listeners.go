@@ -40,7 +40,6 @@ import (
 	certs "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/certificates"
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	streamacl "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/stream"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
@@ -104,7 +103,7 @@ func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, nex
 	// and metrics. client_ip is judged here. HTTP/3 peer is judged here. A plain or TLS
 	// peer list was judged at accept and passes through.
 	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
-		aclhandler.Middleware(o.IPACL, next)))
+		aclhandler.Middleware(o.IPACL, o.IPACLName, aclhandler.ScopeListener, next)))
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -368,7 +367,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 	// a pool member carries the listener name too, but is reached through its pool
 	members := conf.Backends.PoolMembers()
 	table := l4.NewTable()
-	backendACL := make(map[l4.Upstream]*ipacl.List)
+	backendACL := make(map[l4.Upstream]streamacl.Attached)
 	for _, backendName := range slices.Sorted(maps.Keys(conf.Backends)) {
 		o := conf.Backends[backendName]
 		if o == nil || o.IsTemplate || members.Contains(backendName) ||
@@ -383,7 +382,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 			continue
 		}
 		if o.IPACL != nil {
-			backendACL[up] = o.IPACL
+			backendACL[up] = streamacl.Attached{List: o.IPACL, Name: o.IPACLName}
 		}
 		hosts := o.Hosts
 		if desired.options.Protocol != listenerconfig.ProtocolTLS || len(hosts) == 0 {
@@ -405,7 +404,9 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
 		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
-		Admission:      streamacl.New(desired.options.Protocol, desired.options.IPACL, table, backendACL),
+		Admission: streamacl.New(desired.options.Protocol, streamacl.Attached{
+			List: desired.options.IPACL, Name: desired.options.IPACLName,
+		}, table, backendACL),
 	}
 }
 
@@ -476,7 +477,7 @@ func setListenerIPACL(lg *listener.Group, key string, o *listenerconfig.Options)
 	if lg == nil || o == nil {
 		return
 	}
-	lg.SetIPACL(key, o.IPACL)
+	lg.SetIPACL(key, o.IPACL, o.IPACLName)
 }
 
 func proxyProtocolOptions(options *listenerconfig.Options) *listener.ProxyProtocolOptions {

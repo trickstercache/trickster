@@ -68,7 +68,7 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 
 	var err error
 	l.Listener, err = NewListener(address, port, connectionsLimit, nil, proxyProtocol, &l.ipacl,
-		acceptJudgesClientIP(protocol, proxyProtocol))
+		acceptJudgesClientIP(protocol, proxyProtocol), &l.ipaclDecisions)
 	if err != nil {
 		logger.ErrorSynchronous(protocol+" listener startup failed", logging.Pairs{
 			logKeyListenerName: listenerName, logKeyDetail: err,

@@ -94,6 +94,23 @@ func effectiveIPACL(path *po.Options, backend *bo.Options) *ipacl.List {
 	}
 }
 
+// routeACL is the list a route enforces and the scope the decision metric uses.
+// A path name is path scope. An inherited backend list is backend scope.
+func routeACL(path *po.Options, backend *bo.Options) (*ipacl.List, string, string) {
+	list := effectiveIPACL(path, backend)
+	if list == nil || path == nil {
+		return nil, "", ""
+	}
+	if path.IPACLName != "" && path.IPACLName != reserved.ReferenceNone {
+		return list, path.IPACLName, aclhandler.ScopePath
+	}
+	name := ""
+	if backend != nil {
+		name = backend.IPACLName
+	}
+	return list, name, aclhandler.ScopeBackend
+}
+
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
 	return pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil ||
 		pathOptions.AuthenticatorName != reserved.ReferenceNone && backendOptions.AuthOptions != nil &&
@@ -184,7 +201,8 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		rl.logger.NeedsResources()
 	h = attachAuthenticator(h, pathOpts, o)
 	// the access list runs before authentication and before the cache handler
-	h = aclhandler.Middleware(effectiveIPACL(pathOpts, o), h)
+	list, name, scope := routeACL(pathOpts, o)
+	h = aclhandler.Middleware(list, name, scope, h)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
 	// WithResourcesContext must wrap outer than LimitQueryRange
 	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)

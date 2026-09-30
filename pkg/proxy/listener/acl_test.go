@@ -36,9 +36,12 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func compileACL(t *testing.T, o ipacl.Options) *ipacl.List {
@@ -52,7 +55,7 @@ func compileACL(t *testing.T, o ipacl.Options) *ipacl.List {
 
 func aclListenerOn(t *testing.T, address string, list *atomic.Pointer[ipacl.List], proxy *ProxyProtocolOptions) net.Listener {
 	t.Helper()
-	ln, err := NewListener(address, 0, 0, nil, proxy, list, true)
+	ln, err := NewListener(address, 0, 0, nil, proxy, list, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +187,7 @@ func TestACLIPV6(t *testing.T) {
 	}
 	var list atomic.Pointer[ipacl.List]
 	list.Store(compileACL(t, ipacl.Options{Allow: []string{"::1"}, Source: "peer"}))
-	ln := newACLListener(raw, &list, true)
+	ln := newACLListener(raw, &list, nil, true)
 	t.Cleanup(func() { _ = ln.Close() })
 
 	allowed := acceptAsync(ln)
@@ -213,7 +216,7 @@ func TestACLClientIPMatchesPeerWithoutProxy(t *testing.T) {
 func TestACLClientIPWithProxyIsNotJudgedAtAccept(t *testing.T) {
 	var list atomic.Pointer[ipacl.List]
 	list.Store(compileACL(t, ipacl.Options{Source: "client_ip"}))
-	ln, err := NewListener("127.0.0.1", 0, 0, nil, &ProxyProtocolOptions{Enabled: true}, &list, false)
+	ln, err := NewListener("127.0.0.1", 0, 0, nil, &ProxyProtocolOptions{Enabled: true}, &list, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,7 +297,7 @@ func TestACLInvalidAddressIsDenied(t *testing.T) {
 	}}
 	var list atomic.Pointer[ipacl.List]
 	list.Store(compileACL(t, ipacl.Options{Allow: []string{"127.0.0.1"}, Source: "peer"}))
-	ln := newACLListener(raw, &list, true)
+	ln := newACLListener(raw, &list, nil, true)
 
 	got, err := ln.Accept()
 	if err != nil {
@@ -314,7 +317,7 @@ func TestACLInvalidAddressIsDenied(t *testing.T) {
 func TestACLDenialDoesNotHoldConnectionLimit(t *testing.T) {
 	var list atomic.Pointer[ipacl.List]
 	list.Store(compileACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"}))
-	ln, err := NewListener("127.0.0.1", 0, 1, nil, nil, &list, true)
+	ln, err := NewListener("127.0.0.1", 0, 1, nil, nil, &list, true, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +346,7 @@ func TestACLDenialDoesNotHoldConnectionLimit(t *testing.T) {
 }
 
 func TestACLListenerOrder(t *testing.T) {
-	plain, err := NewListener("127.0.0.1", 0, 0, nil, nil, nil, false)
+	plain, err := NewListener("127.0.0.1", 0, 0, nil, nil, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +356,7 @@ func TestACLListenerOrder(t *testing.T) {
 	}
 
 	full, err := NewListener("127.0.0.1", 0, 1, &tls.Config{MinVersion: tls.VersionTLS12},
-		&ProxyProtocolOptions{Enabled: true}, nil, false)
+		&ProxyProtocolOptions{Enabled: true}, nil, false, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,7 +431,7 @@ func TestACLNativeListener(t *testing.T) {
 
 	svr := &recordingProtocolServer{accepted: make(chan net.Conn, 1)}
 	deny := compileACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"})
-	lg.SetIPACL("native", deny)
+	lg.SetIPACL("native", deny, "")
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- lg.StartProtocolListener("native", "mysql", "127.0.0.1", 0, 0, svr, nil, nil)
@@ -454,7 +457,7 @@ func TestACLNativeListener(t *testing.T) {
 	default:
 	}
 
-	lg.SetIPACL("native", compileACL(t, ipacl.Options{Allow: []string{"127.0.0.1"}, Source: "peer"}))
+	lg.SetIPACL("native", compileACL(t, ipacl.Options{Allow: []string{"127.0.0.1"}, Source: "peer"}), "")
 	allowed, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -534,9 +537,9 @@ func TestHTTPPeerDenyResetsBeforeProxyHeader(t *testing.T) {
 	lg := NewGroup()
 	t.Cleanup(func() { _ = lg.Shutdown(time.Second) })
 	const name = "http-peer-deny"
-	lg.SetIPACL(name, list)
+	lg.SetIPACL(name, list, "")
 	go func() {
-		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, aclhandler.Middleware(list, okHandler()),
+		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, aclhandler.Middleware(list, "office", aclhandler.ScopeListener, okHandler()),
 			nil, nil, time.Second, &ProxyProtocolOptions{Enabled: true})
 	}()
 	ln := readyListener(t, lg, name)
@@ -549,9 +552,9 @@ func TestHTTPPeerProxyDoesNotRejudge(t *testing.T) {
 	lg := NewGroup()
 	t.Cleanup(func() { _ = lg.Shutdown(time.Second) })
 	const name = "http-peer-proxy"
-	lg.SetIPACL(name, list)
+	lg.SetIPACL(name, list, "")
 	go func() {
-		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, aclhandler.Middleware(list, okHandler()),
+		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, aclhandler.Middleware(list, "office", aclhandler.ScopeListener, okHandler()),
 			nil, nil, time.Second, &ProxyProtocolOptions{Enabled: true})
 	}()
 	ln := readyListener(t, lg, name)
@@ -573,8 +576,8 @@ func TestHTTPClientIPUsesForwardedClient(t *testing.T) {
 	lg := NewGroup()
 	t.Cleanup(func() { _ = lg.Shutdown(time.Second) })
 	const name = "http-client-ip"
-	lg.SetIPACL(name, list)
-	handler := clientip.Middleware(trusted, aclhandler.Middleware(list, okHandler()))
+	lg.SetIPACL(name, list, "")
+	handler := clientip.Middleware(trusted, aclhandler.Middleware(list, "office", aclhandler.ScopeListener, okHandler()))
 	go func() {
 		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, handler, nil, nil, time.Second, nil)
 	}()
@@ -589,5 +592,38 @@ func TestHTTPClientIPUsesForwardedClient(t *testing.T) {
 	code, body = httpExchange(t, ln.Addr().String(), request("198.51.100.8"))
 	if code != http.StatusForbidden || strings.Contains(body, "ok") {
 		t.Fatalf("other forwarded client = %d %q", code, body)
+	}
+}
+
+func TestAcceptCountsAllowAndDeny(t *testing.T) {
+	var list atomic.Pointer[ipacl.List]
+	list.Store(compileACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"}))
+	var dec atomic.Pointer[metrics.IPACLDecision]
+	dec.Store(metrics.NewIPACLDecision("accept-office", metrics.IPACLScopeListener))
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := newACLListener(inner, &list, &dec, true)
+	t.Cleanup(func() { _ = ln.Close() })
+	accepted := acceptAsync(ln)
+
+	beforeDeny := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(
+		"accept-office", metrics.IPACLScopeListener, "deny"))
+	dialDenied(t, ln)
+	expectNoAccept(t, accepted)
+	if got := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(
+		"accept-office", metrics.IPACLScopeListener, "deny")); got != beforeDeny+1 {
+		t.Fatalf("deny = %v, want %v", got, beforeDeny+1)
+	}
+
+	list.Store(compileACL(t, ipacl.Options{Allow: []string{"127.0.0.1"}, Source: "peer"}))
+	beforeAllow := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(
+		"accept-office", metrics.IPACLScopeListener, "allow"))
+	_ = dialListener(t, ln)
+	takeAccepted(t, accepted)
+	if got := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(
+		"accept-office", metrics.IPACLScopeListener, "allow")); got != beforeAllow+1 {
+		t.Fatalf("allow = %v, want %v", got, beforeAllow+1)
 	}
 }

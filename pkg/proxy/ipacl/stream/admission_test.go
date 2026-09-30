@@ -20,8 +20,11 @@ import (
 	"net/netip"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 func list(t *testing.T, o ipacl.Options) *ipacl.List {
@@ -43,10 +46,11 @@ func flow(protocol, serverName, ip string) l4.Flow {
 
 func TestNewSkipsListsTheRelayAlreadyHandled(t *testing.T) {
 	peer := list(t, ipacl.Options{Source: "peer", Allow: []string{"127.0.0.1"}})
-	if New(l4.ProtocolTCP, peer, nil, nil) != nil || New(l4.ProtocolTLS, peer, nil, nil) != nil {
+	if New(l4.ProtocolTCP, Attached{List: peer}, nil, nil) != nil ||
+		New(l4.ProtocolTLS, Attached{List: peer}, nil, nil) != nil {
 		t.Fatal("a tcp or tls peer list was handed to admission")
 	}
-	udp := New(l4.ProtocolUDP, peer, nil, nil)
+	udp := New(l4.ProtocolUDP, Attached{List: peer}, nil, nil)
 	if udp == nil || udp.Datagrams() {
 		t.Fatal("udp peer list was not an admission that leaves datagrams alone")
 	}
@@ -59,8 +63,8 @@ func TestNewSkipsListsTheRelayAlreadyHandled(t *testing.T) {
 	if err := table.Add("", up); err != nil {
 		t.Fatal(err)
 	}
-	if New(l4.ProtocolTCP, nil, table, map[l4.Upstream]*ipacl.List{
-		up: list(t, ipacl.Options{Source: "peer"}),
+	if New(l4.ProtocolTCP, Attached{}, table, map[l4.Upstream]Attached{
+		up: {List: list(t, ipacl.Options{Source: "peer"})},
 	}) != nil {
 		t.Fatal("a backend peer list was handed to admission")
 	}
@@ -79,14 +83,14 @@ func TestAdmissionMapsTheListAction(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			deny := list(t, ipacl.Options{Action: tc.action})
 			allow := list(t, ipacl.Options{Default: "allow", Action: tc.action})
-			adm := New(l4.ProtocolTCP, deny, nil, nil)
+			adm := New(l4.ProtocolTCP, Attached{List: deny}, nil, nil)
 			if got := adm.Peer(l4.Flow{Protocol: l4.ProtocolTCP, Client: netip.AddrPortFrom(client, 1)}); got != tc.want {
 				t.Fatalf("denied client verdict = %v, want %v", got, tc.want)
 			}
 			if got := adm.Peer(l4.Flow{Protocol: l4.ProtocolTCP}); got != tc.want {
 				t.Fatalf("missing client verdict = %v, want %v", got, tc.want)
 			}
-			allowed := New(l4.ProtocolTCP, allow, nil, nil)
+			allowed := New(l4.ProtocolTCP, Attached{List: allow}, nil, nil)
 			if got := allowed.Peer(l4.Flow{Protocol: l4.ProtocolTCP, Client: netip.AddrPortFrom(client, 1)}); got != l4.Allow {
 				t.Fatalf("allowed client verdict = %v", got)
 			}
@@ -105,7 +109,7 @@ func TestAdmissionOrdersListenerThenBackend(t *testing.T) {
 	}
 	listener := list(t, ipacl.Options{Action: "drop", Allow: []string{"192.0.2.9"}})
 	backend := list(t, ipacl.Options{Action: "reject"})
-	adm := New(l4.ProtocolTCP, listener, table, map[l4.Upstream]*ipacl.List{up: backend})
+	adm := New(l4.ProtocolTCP, Attached{List: listener}, table, map[l4.Upstream]Attached{up: {List: backend}})
 
 	// the listener allows this client, so the backend's reject is the flow verdict
 	allowed := flow(l4.ProtocolTCP, "", "192.0.2.9")
@@ -121,7 +125,7 @@ func TestAdmissionOrdersListenerThenBackend(t *testing.T) {
 		t.Fatalf("peer = %v, want the listener drop", got)
 	}
 
-	udp := New(l4.ProtocolUDP, listener, table, map[l4.Upstream]*ipacl.List{up: backend})
+	udp := New(l4.ProtocolUDP, Attached{List: listener}, table, map[l4.Upstream]Attached{up: {List: backend}})
 	if got := udp.Peer(flow(l4.ProtocolUDP, "", "192.0.2.9")); got != l4.Reject {
 		t.Fatalf("udp backend verdict = %v, want reject", got)
 	}
@@ -142,7 +146,7 @@ func TestTCPPeerListDoesNotJudgeTheProxySource(t *testing.T) {
 	// the socket list would deny the PROXY source; admission must not apply it
 	peer := list(t, ipacl.Options{Source: "peer", Allow: []string{"10.1.1.1"}})
 	backend := list(t, ipacl.Options{Default: "allow"})
-	adm := New(l4.ProtocolTCP, peer, table, map[l4.Upstream]*ipacl.List{up: backend})
+	adm := New(l4.ProtocolTCP, Attached{List: peer}, table, map[l4.Upstream]Attached{up: {List: backend}})
 	f := flow(l4.ProtocolTCP, "", "192.0.2.9")
 	if got := adm.Peer(f); got != l4.Allow {
 		t.Fatalf("peer = %v, want the PROXY source left alone", got)
@@ -166,10 +170,10 @@ func TestTLSBackendListFollowsTableLookup(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	adm := New(l4.ProtocolTLS, nil, table, map[l4.Upstream]*ipacl.List{
-		exact: list(t, ipacl.Options{Action: "reject", Allow: []string{"10.0.0.1"}}),
-		wild:  list(t, ipacl.Options{Action: "drop", Allow: []string{"127.0.0.1"}}),
-		catch: list(t, ipacl.Options{Action: "drop"}),
+	adm := New(l4.ProtocolTLS, Attached{}, table, map[l4.Upstream]Attached{
+		exact: {List: list(t, ipacl.Options{Action: "reject", Allow: []string{"10.0.0.1"}})},
+		wild:  {List: list(t, ipacl.Options{Action: "drop", Allow: []string{"127.0.0.1"}})},
+		catch: {List: list(t, ipacl.Options{Action: "drop"})},
 	})
 	if got := adm.Peer(flow(l4.ProtocolTLS, "", "127.0.0.1")); got != l4.Allow {
 		t.Fatalf("peer = %v, want allow before the route", got)
@@ -193,6 +197,25 @@ func TestTLSBackendListFollowsTableLookup(t *testing.T) {
 		// the verdict is the list stored on the upstream Lookup returned
 		if up == exact && got != l4.Reject || up == wild && got != l4.Allow || up == catch && got != l4.Drop {
 			t.Errorf("%s lookup %v disagreed with verdict %v", tc.name, up, got)
+		}
+	}
+}
+
+func TestRejectAndDropCountAsDeny(t *testing.T) {
+	client := netip.AddrPortFrom(netip.MustParseAddr("192.0.2.9"), 1)
+	for _, action := range []string{"reject", "drop"} {
+		name := "stream-" + action
+		before := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(name, metrics.IPACLScopeListener, "deny"))
+		adm := New(l4.ProtocolTCP, Attached{
+			List: list(t, ipacl.Options{Action: action}), Name: name,
+		}, nil, nil)
+		got := adm.Peer(l4.Flow{Protocol: l4.ProtocolTCP, Client: client})
+		if action == "drop" && got != l4.Drop || action == "reject" && got != l4.Reject {
+			t.Fatalf("%s verdict = %v", action, got)
+		}
+		if after := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(
+			name, metrics.IPACLScopeListener, "deny")); after != before+1 {
+			t.Fatalf("%s deny = %v, want %v", action, after, before+1)
 		}
 	}
 }

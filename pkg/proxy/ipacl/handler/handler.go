@@ -21,28 +21,40 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
+// Scopes an HTTP attachment passes to Middleware. They are the metric's scope label.
+const (
+	ScopeListener = metrics.IPACLScopeListener
+	ScopeBackend  = metrics.IPACLScopeBackend
+	ScopePath     = metrics.IPACLScopePath
+)
+
 // Middleware returns next when list or next is nil. A client_ip list judges
 // request.ClientIP. A peer list judges r.RemoteAddr only for HTTP/3, which has
 // no TCP accept; every other peer list was judged on the socket and is skipped.
 // A denial is the list's HTTP status and does not call next. An address that
-// cannot be parsed is denied.
-func Middleware(list *ipacl.List, next http.Handler) http.Handler {
+// cannot be parsed is denied. name and scope select the decision counters resolved
+// here; a skipped peer list was already counted at accept.
+func Middleware(list *ipacl.List, name, scope string, next http.Handler) http.Handler {
 	if list == nil || next == nil {
 		return next
 	}
+	decision := metrics.NewIPACLDecision(name, scope)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if list.Source() == ipacl.Peer && (r == nil || r.ProtoMajor != 3) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		addr, err := netip.ParseAddr(subject(list, r))
-		if err != nil || list.Check(addr) != ipacl.Allow {
+		allowed := err == nil && list.Check(addr) == ipacl.Allow
+		decision.Observe(allowed)
+		if !allowed {
 			failures.HandleMiscFailure(list.Status(), w)
 			return
 		}

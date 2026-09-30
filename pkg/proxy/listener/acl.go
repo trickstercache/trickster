@@ -22,6 +22,7 @@ import (
 	"net/netip"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 )
 
@@ -30,18 +31,21 @@ import (
 // a limited connection and never reads a header or starts a handshake.
 type aclListener struct {
 	net.Listener
-	list *atomic.Pointer[ipacl.List]
+	list      *atomic.Pointer[ipacl.List]
+	decisions *atomic.Pointer[metrics.IPACLDecision]
 	// judgeClientIP is set for a native listener without PROXY protocol, where the socket
 	// peer is the client. HTTP resolves client_ip in middleware. Stream tcp and tls resolve
 	// it from Flow.Client. A peer list is always judged here.
 	judgeClientIP bool
 }
 
-func newACLListener(inner net.Listener, list *atomic.Pointer[ipacl.List], judgeClientIP bool) net.Listener {
+func newACLListener(inner net.Listener, list *atomic.Pointer[ipacl.List],
+	decisions *atomic.Pointer[metrics.IPACLDecision], judgeClientIP bool,
+) net.Listener {
 	if list == nil {
 		list = &atomic.Pointer[ipacl.List]{}
 	}
-	return &aclListener{Listener: inner, list: list, judgeClientIP: judgeClientIP}
+	return &aclListener{Listener: inner, list: list, decisions: decisions, judgeClientIP: judgeClientIP}
 }
 
 func (a *aclListener) Accept() (net.Conn, error) {
@@ -51,17 +55,34 @@ func (a *aclListener) Accept() (net.Conn, error) {
 			return nil, err
 		}
 		list := a.list.Load()
-		if list == nil || a.allows(list, c) {
+		if list == nil || !a.judges(list) {
+			return c, nil
+		}
+		allowed := a.allows(list, c)
+		a.observe(allowed)
+		if allowed {
 			return c, nil
 		}
 		turnAway(c, list.Action())
 	}
 }
 
-func (a *aclListener) allows(list *ipacl.List, c net.Conn) bool {
-	if list.Source() == ipacl.ClientIP && !a.judgeClientIP {
-		return true
+// judges reports whether this socket applies the list. A client_ip list on HTTP or a
+// proxied stream is resolved later, so accepting it here is not a decision.
+func (a *aclListener) judges(list *ipacl.List) bool {
+	return list.Source() != ipacl.ClientIP || a.judgeClientIP
+}
+
+func (a *aclListener) observe(allowed bool) {
+	if a.decisions == nil {
+		return
 	}
+	if dec := a.decisions.Load(); dec != nil {
+		dec.Observe(allowed)
+	}
+}
+
+func (a *aclListener) allows(list *ipacl.List, c net.Conn) bool {
 	addr, ok := socketPeer(c)
 	if !ok {
 		return false

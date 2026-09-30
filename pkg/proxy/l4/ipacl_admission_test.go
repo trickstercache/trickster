@@ -63,9 +63,13 @@ func aclConfig(t *testing.T, protocol string, listener *ipacl.List, entries map[
 			t.Fatal(err)
 		}
 	}
+	attached := make(map[l4.Upstream]stream.Attached, len(lists))
+	for up, list := range lists {
+		attached[up] = stream.Attached{List: list, Name: "backend"}
+	}
 	return &l4.Config{
 		Table:     table,
-		Admission: stream.New(protocol, listener, table, lists),
+		Admission: stream.New(protocol, stream.Attached{List: listener, Name: "listener"}, table, attached),
 		Options:   &options.Options{ConnectTimeout: timeconv.Duration(2 * time.Second)},
 	}
 }

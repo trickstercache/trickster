@@ -21,27 +21,55 @@ package stream
 import (
 	"net/netip"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 )
+
+// Attached is one compiled list and the name its decision metric uses.
+type Attached struct {
+	List *ipacl.List
+	Name string
+}
+
+// counted is a list and the counters resolved when the admission was built.
+type counted struct {
+	list *ipacl.List
+	dec  *metrics.IPACLDecision
+}
+
+func attach(a Attached, scope string) *counted {
+	if a.List == nil {
+		return nil
+	}
+	c := &counted{list: a.List}
+	if a.Name != "" {
+		c.dec = metrics.NewIPACLDecision(a.Name, scope)
+	}
+	return c
+}
 
 // New returns the admission for a stream listener, or nil when the relay has
 // nothing to judge. A tcp or tls listener list whose source is the socket peer
 // is already enforced at accept, including when PROXY protocol is enabled, so
 // it is not asked again here. A backend list whose source is the socket peer
 // is not a stream placement and is not enforced.
-func New(protocol string, listener *ipacl.List, table *l4.Table, backend map[l4.Upstream]*ipacl.List) l4.Admission {
-	lists := make(map[l4.Upstream]*ipacl.List, len(backend))
-	for up, list := range backend {
-		if up == nil || list == nil || list.Source() == ipacl.Peer {
+func New(protocol string, listener Attached, table *l4.Table, backend map[l4.Upstream]Attached) l4.Admission {
+	lists := make(map[l4.Upstream]*counted, len(backend))
+	for up, attached := range backend {
+		if up == nil || attached.List == nil || attached.List.Source() == ipacl.Peer {
 			continue
 		}
-		lists[up] = list
+		lists[up] = attach(attached, metrics.IPACLScopeBackend)
 	}
-	if len(lists) == 0 && !judgesListener(protocol, listener) {
+	var listenerList *counted
+	if judgesListener(protocol, listener.List) {
+		listenerList = attach(listener, metrics.IPACLScopeListener)
+	}
+	if len(lists) == 0 && listenerList == nil {
 		return nil
 	}
-	return &admission{protocol: protocol, listener: listener, table: table, backend: lists}
+	return &admission{protocol: protocol, listener: listenerList, table: table, backend: lists}
 }
 
 // judgesListener reports whether the listener list is applied by admission.
@@ -59,9 +87,9 @@ func judgesListener(protocol string, listener *ipacl.List) bool {
 // admission is one listener's lists. It is immutable after New.
 type admission struct {
 	protocol string
-	listener *ipacl.List
+	listener *counted
 	table    *l4.Table
-	backend  map[l4.Upstream]*ipacl.List
+	backend  map[l4.Upstream]*counted
 }
 
 // Peer judges the listener list from Flow.Client, which the relay has already
@@ -97,17 +125,14 @@ func (a *admission) Datagrams() bool { return false }
 
 // listenerList is the listener list this admission applies. A tcp or tls peer
 // list was applied to the socket before PROXY replaced the connection address.
-func (a *admission) listenerList() *ipacl.List {
-	if !judgesListener(a.protocol, a.listener) {
-		return nil
-	}
+func (a *admission) listenerList() *counted {
 	return a.listener
 }
 
 // backendList is the list stored for the upstream Table.Lookup returns.
 // Calling Lookup again is the routing decision the relay just made; the lists
 // are keyed by that upstream, so selection and enforcement stay the same.
-func (a *admission) backendList(serverName string) *ipacl.List {
+func (a *admission) backendList(serverName string) *counted {
 	if a.table == nil {
 		return nil
 	}
@@ -115,12 +140,16 @@ func (a *admission) backendList(serverName string) *ipacl.List {
 }
 
 // judge maps one list onto a relay verdict. Check denies an invalid address.
-// A nil list allows. Reject and drop stay the list's own action.
-func judge(list *ipacl.List, addr netip.Addr) l4.Verdict {
-	if list == nil || list.Check(addr) == ipacl.Allow {
+// A nil list allows. Reject and drop stay the list's own action and both count as deny.
+func judge(c *counted, addr netip.Addr) l4.Verdict {
+	if c == nil || c.list == nil || c.list.Check(addr) == ipacl.Allow {
+		if c != nil && c.list != nil {
+			c.dec.Observe(true)
+		}
 		return l4.Allow
 	}
-	if list.Action() == ipacl.Drop {
+	c.dec.Observe(false)
+	if c.list.Action() == ipacl.Drop {
 		return l4.Drop
 	}
 	return l4.Reject
