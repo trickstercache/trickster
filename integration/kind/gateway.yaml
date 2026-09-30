@@ -248,6 +248,11 @@ metadata:
   namespace: trickster-it
 data:
   trickster.yaml: |
+    ip_acls:
+      deny-clients:
+        default: deny
+        source: client_ip
+        action: reject
     listeners:
       # the listener the annotation scenario's Ingress is served on; Gateway listeners
       # are generated from the Gateways themselves

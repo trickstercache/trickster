@@ -642,8 +642,9 @@ func TestTranslateIPACLParameter(t *testing.T) {
 	o := options(t)
 	overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
 	require.NoError(t, err)
-	require.NotContains(t, string(overlay.Data), "ip_acl_name",
-		"the class list is not yet copied onto a generated backend")
+	conf := decodeOverlay(t, overlay)
+	require.Equal(t, "office", conf.Backends["kgw--httproute.shop.web_r0"].IPACLName,
+		"the class list is copied onto the generated route backend")
 
 	refused := func(t *testing.T, name, detail string) {
 		t.Helper()
@@ -683,7 +684,7 @@ func TestTranslateIPACLParameter(t *testing.T) {
 
 func TestClassIPACLReachesTheRoutePolicy(t *testing.T) {
 	// The class list rides the policy a route already binds. HTTP, gRPC, and
-	// each stream protocol share that merge; none of them copies it onto a backend.
+	// each stream protocol share that merge. Compile copies it onto the route backend.
 	names := aclKnown()
 	knownNames := func() ir.ConfiguredNames { return names }
 	ns := gwapiv1.Namespace("infra")
