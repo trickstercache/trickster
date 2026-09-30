@@ -182,15 +182,8 @@ func ObjectBytes(dec *jsontext.Decoder, fn func(key []byte) error) error {
 		if err != nil {
 			return err
 		}
-		var key []byte
-		if n := len(name); n >= 2 && plainASCII(name[1:n-1]) {
-			key = name[1 : n-1]
-		} else {
-			escaped = AppendString(escaped[:0], name)
-			key = escaped
-		}
 		offset := dec.InputOffset()
-		if err := fn(key); err != nil {
+		if err := fn(StringText(name, &escaped)); err != nil {
 			return err
 		}
 		if err := consumed(dec, offset, depth); err != nil {

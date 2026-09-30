@@ -22,7 +22,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -30,11 +29,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
-
-	"github.com/influxdata/influxdb/models"
 )
 
-const timeColumnName = "time"
+const (
+	timeColumnName = "time"
+	jsonIndent     = "  "
+)
 
 // MarshalTimeseries converts a Timeseries into a JSON blob
 func MarshalTimeseries(ts timeseries.Timeseries,
@@ -52,11 +52,7 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 		}
 		return buf.Bytes(), nil
 	case rlo.OutputFormat == 1:
-		wfdoc, err := toWireFormat(ds.Flat(), rlo)
-		if err != nil {
-			return nil, err
-		}
-		return json.MarshalIndent(wfdoc, "", "  ")
+		return indentedDocument(ds, rlo)
 	default:
 		return nil, timeseries.ErrUnknownFormat
 	}
@@ -74,15 +70,27 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 		rw.Header().Add(headers.NameContentType, headers.ValueApplicationJSON)
 	}
 	if rlo != nil && rlo.OutputFormat == 1 {
-		wfdoc, err := toWireFormat(ds.Flat(), rlo)
+		b, err := indentedDocument(ds, rlo)
 		if err != nil {
 			return err
 		}
-		enc := json.NewEncoder(w)
-		enc.SetIndent("", "  ")
-		return enc.Encode(wfdoc)
+		_, err = w.Write(append(b, '\n'))
+		return err
 	}
 	return writeDocument(w, ds, rlo, '\n')
+}
+
+// indentedDocument returns the document as encoding/json's MarshalIndent writes it, two spaces a level
+func indentedDocument(ds *dataset.DataSet, rlo *timeseries.RequestOptions) ([]byte, error) {
+	var compact, out bytes.Buffer
+	if err := writeDocument(&compact, ds, rlo); err != nil {
+		return nil, err
+	}
+	out.Grow(compact.Len() + compact.Len()/2)
+	if err := json.Indent(&out, compact.Bytes(), "", jsonIndent); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 func dataSetOf(ts timeseries.Timeseries) (*dataset.DataSet, error) {
@@ -153,7 +161,7 @@ func newTimeFormat(rlo *timeseries.RequestOptions) timeFormat {
 func (f timeFormat) append(b []byte, e epoch.Epoch) []byte {
 	if f.rfc3339 {
 		b = append(b, '"')
-		b = time.Unix(0, int64(e)).UTC().AppendFormat(b, time.RFC3339Nano)
+		b = epoch.AppendCanonicalTime(b, e, true, true)
 		return append(b, '"')
 	}
 	return strconv.AppendInt(b, int64(e)/f.divisor, 10)
@@ -285,106 +293,4 @@ func appendSeries(cw *tbytes.ChunkWriter, s *dataset.Series, tf timeFormat) {
 	}
 	b = append(b, '}')
 	cw.Buf = b
-}
-
-func formatRFC3339Time(epoch epoch.Epoch, _ int64) any {
-	t := time.Unix(0, int64(epoch))
-	return t.UTC().Format(time.RFC3339Nano)
-}
-
-func formatEpochTime(epoch epoch.Epoch, m int64) any {
-	return int64(epoch) / m
-}
-
-func toWireFormat(ds *dataset.DataSet,
-	rlo *timeseries.RequestOptions,
-) (*WFDocument, error) {
-	if ds == nil {
-		return nil, nil
-	}
-	df, multiplier := getDateFormatter(rlo)
-	out := &WFDocument{}
-	lr := len(ds.Results)
-	if lr > 0 {
-		out.Results = make([]*WFResult, 0, lr)
-	}
-	for _, dr := range ds.Results {
-		res := &WFResult{
-			StatementID: dr.StatementID,
-		}
-		ls := len(dr.SeriesList)
-		if ls > 0 {
-			res.SeriesList = make([]*models.Row, 0, ls)
-		}
-		for _, s := range dr.SeriesList {
-			if s == nil {
-				continue
-			}
-			row := &models.Row{
-				Name: s.Header.Name,
-				Tags: s.Header.Tags,
-			}
-			row.Columns = make([]string, 0, len(s.Header.ValueFieldsList)+1)
-			var tsColumnAdded bool
-			for i, header := range s.Header.ValueFieldsList {
-				if i == s.Header.TimestampField.OutputPosition {
-					row.Columns = append(row.Columns, timeColumnName)
-					tsColumnAdded = true
-				}
-				row.Columns = append(row.Columns, header.Name)
-			}
-			if !tsColumnAdded {
-				row.Columns = append(row.Columns, timeColumnName)
-				tsColumnAdded = true
-			}
-
-			row.Values = make([][]any, 0, s.PointCount())
-
-			for _, p := range s.Points() {
-				if len(p.Values) == 0 {
-					continue
-				}
-				vals := make([]any, 0, len(p.Values))
-				var tsValAdded bool
-				for n, v := range p.Values {
-					if n == s.Header.TimestampField.OutputPosition {
-						vals = append(vals, df(p.Epoch, multiplier))
-						tsValAdded = true
-					}
-					vals = append(vals, v)
-				}
-				if !tsValAdded {
-					vals = append(vals, df(p.Epoch, multiplier))
-				}
-				row.Values = append(row.Values, vals)
-			}
-			res.SeriesList = append(res.SeriesList, row)
-		}
-		out.Results = append(out.Results, res)
-	}
-	return out, nil
-}
-
-type dateFormatter func(epoch.Epoch, int64) any
-
-func getDateFormatter(rlo *timeseries.RequestOptions) (dateFormatter, int64) {
-	var df dateFormatter
-	var tf byte
-	var multiplier int64
-
-	if rlo != nil {
-		tf = rlo.TimeFormat
-	}
-	switch tf {
-	case 0:
-		df = formatRFC3339Time
-	default:
-		if m, ok := epochMultipliers[tf]; ok {
-			multiplier = m
-		} else {
-			multiplier = 1
-		}
-		df = formatEpochTime
-	}
-	return df, multiplier
 }

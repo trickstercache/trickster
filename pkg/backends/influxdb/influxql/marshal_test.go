@@ -80,7 +80,7 @@ func TestMarshalTimeseries(t *testing.T) {
 // the output encoding/json gives the wire format document, which the marshalers must match
 func referenceMarshal(t *testing.T, ds *dataset.DataSet, rlo *timeseries.RequestOptions) []byte {
 	t.Helper()
-	wfdoc, err := toWireFormat(ds, rlo)
+	wfdoc, err := legacyToWireFormat(ds, rlo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestMarshalIndented(t *testing.T) {
 		marshalTestSeries("m", dataset.Tags{"k": "v"}, 0, []string{"v"}, dataset.Point{Epoch: 1, Values: []any{1.0}}),
 	}}}}
 	rlo := &timeseries.RequestOptions{OutputFormat: 1}
-	wfdoc, _ := toWireFormat(ds, rlo)
+	wfdoc, _ := legacyToWireFormat(ds, rlo)
 	want, _ := json.MarshalIndent(wfdoc, "", "  ")
 	got, err := MarshalTimeseries(ds, rlo, 200)
 	if err != nil || !bytes.Equal(got, want) {
@@ -226,6 +226,17 @@ func TestMarshalIndented(t *testing.T) {
 	}
 	if err := MarshalTimeseriesWriter(nil, rlo, 200, &w); err != timeseries.ErrUnknownFormat {
 		t.Fatal(err)
+	}
+	// a value JSON can't hold fails the document before any of it is written
+	nan := &dataset.DataSet{Results: []*dataset.Result{{SeriesList: []*dataset.Series{
+		marshalTestSeries("m", nil, 0, []string{"v"}, dataset.Point{Epoch: 1, Values: []any{math.NaN()}}),
+	}}}}
+	w.Reset()
+	if b, err := MarshalTimeseries(nan, rlo, 200); err == nil || b != nil {
+		t.Fatalf("marshaled %s, %v", b, err)
+	}
+	if err := MarshalTimeseriesWriter(nan, rlo, 200, &w); err == nil || w.Len() != 0 {
+		t.Fatalf("wrote %s, %v", w.Bytes(), err)
 	}
 }
 

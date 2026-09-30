@@ -21,7 +21,6 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
-	"time"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -30,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
@@ -281,9 +281,9 @@ func appendCsvCell(b []byte, c *csvCell, seg *dataset.Segment, row, table int) [
 		e := seg.Epoch(row)
 		switch c.fd.DataType {
 		case timeseries.DateTimeRFC3339:
-			return time.Unix(0, int64(e)).UTC().AppendFormat(b, time.RFC3339)
+			return epoch.AppendCanonicalTime(b, e, false, true)
 		case timeseries.DateTimeRFC3339Nano:
-			return time.Unix(0, int64(e)).UTC().AppendFormat(b, time.RFC3339Nano)
+			return epoch.AppendCanonicalTime(b, e, true, true)
 		}
 		return strconv.AppendInt(b, int64(e), 10)
 	case csvCellTable:

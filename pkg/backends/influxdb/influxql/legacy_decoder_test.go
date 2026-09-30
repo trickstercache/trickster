@@ -17,7 +17,6 @@
 package influxql
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -29,24 +28,28 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
+	"github.com/influxdata/influxdb/models"
 	"golang.org/x/sync/errgroup"
 )
 
-// Unmarshal performs a standard unmarshal of the bytes into the InfluxDB Wire Format Document,
-// and then converts it into the Common Time Series Format
-
-// UnmarshalTimeseries converts a JSON blob into a Timeseries
-func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	buf := bytes.NewReader(data)
-	return UnmarshalTimeseriesReader(buf, trq)
+// legacyWFDocument is the wire format document both legacy paths used
+type legacyWFDocument struct {
+	Results []*legacyWFResult `json:"results"`
+	Err     string            `json:"error,omitempty"`
 }
 
-// UnmarshalTimeseriesReader converts a JSON blob into a Timeseries via io.Reader
-func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+type legacyWFResult struct {
+	StatementID int           `json:"statement_id"`
+	SeriesList  []*models.Row `json:"series,omitempty"`
+	Err         string        `json:"error,omitempty"`
+}
+
+// legacyUnmarshalTimeseriesReader is the decoder the stream decoder replaced, kept as its oracle
+func legacyUnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 	if trq == nil {
 		return nil, timeseries.ErrNoTimerangeQuery
 	}
-	wfd := &WFDocument{}
+	wfd := &legacyWFDocument{}
 	err := json.NewDecoder(reader).Decode(wfd)
 	if err != nil {
 		return nil, err
@@ -102,7 +105,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
 			for vi, v := range wfd.Results[i].SeriesList[j].Values {
 				eg.Go(func() error {
-					pt, cols, err := pointFromValues(v, sh.TimestampField.OutputPosition)
+					pt, cols, err := legacyPointFromValues(v, sh.TimestampField.OutputPosition)
 					if err != nil {
 						errs[vi] = err
 						return err
@@ -142,14 +145,14 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 	return ds, nil
 }
 
-// tryParseTimestamp tries to parse a nanosecond timestamp from the value of a given field.
+// legacyTryParseTimestamp tries to parse a nanosecond timestamp from the value of a given field.
 // This assumes that, if a field is in number format, it is in nanoseconds; otherwise it
 // tried to parse some standard non-numeric formats. Returns -1 for invalid formats.
 //
-// tryParseTimestamp checks int ns, float ns and the following string formats:
+// legacyTryParseTimestamp checks int ns, float ns and the following string formats:
 //   - RFC3339
 //   - RFC3339 (Nanoseconds)
-func tryParseTimestamp(v any) int64 {
+func legacyTryParseTimestamp(v any) int64 {
 	if ns, ok := v.(int64); ok {
 		return ns
 	} else if fns, ok := v.(float64); ok {
@@ -164,11 +167,11 @@ func tryParseTimestamp(v any) int64 {
 	return -1
 }
 
-func pointFromValues(v []any, tsIndex int) (dataset.Point,
+func legacyPointFromValues(v []any, tsIndex int) (dataset.Point,
 	[]timeseries.FieldDataType, error,
 ) {
 	p := dataset.Point{}
-	ns := tryParseTimestamp(v[tsIndex])
+	ns := legacyTryParseTimestamp(v[tsIndex])
 	if ns == -1 {
 		return p, nil, timeseries.ErrInvalidTimeFormat
 	}
@@ -194,4 +197,107 @@ func pointFromValues(v []any, tsIndex int) (dataset.Point,
 		}
 	}
 	return p, fdts, nil
+}
+
+func legacyFormatRFC3339Time(epoch epoch.Epoch, _ int64) any {
+	t := time.Unix(0, int64(epoch))
+	return t.UTC().Format(time.RFC3339Nano)
+}
+
+func legacyFormatEpochTime(epoch epoch.Epoch, m int64) any {
+	return int64(epoch) / m
+}
+
+// legacyToWireFormat built the document the pretty path marshaled with encoding/json
+func legacyToWireFormat(ds *dataset.DataSet,
+	rlo *timeseries.RequestOptions,
+) (*legacyWFDocument, error) {
+	if ds == nil {
+		return nil, nil
+	}
+	df, multiplier := legacyDateFormatter(rlo)
+	out := &legacyWFDocument{}
+	lr := len(ds.Results)
+	if lr > 0 {
+		out.Results = make([]*legacyWFResult, 0, lr)
+	}
+	for _, dr := range ds.Results {
+		res := &legacyWFResult{
+			StatementID: dr.StatementID,
+		}
+		ls := len(dr.SeriesList)
+		if ls > 0 {
+			res.SeriesList = make([]*models.Row, 0, ls)
+		}
+		for _, s := range dr.SeriesList {
+			if s == nil {
+				continue
+			}
+			row := &models.Row{
+				Name: s.Header.Name,
+				Tags: s.Header.Tags,
+			}
+			row.Columns = make([]string, 0, len(s.Header.ValueFieldsList)+1)
+			var tsColumnAdded bool
+			for i, header := range s.Header.ValueFieldsList {
+				if i == s.Header.TimestampField.OutputPosition {
+					row.Columns = append(row.Columns, timeColumnName)
+					tsColumnAdded = true
+				}
+				row.Columns = append(row.Columns, header.Name)
+			}
+			if !tsColumnAdded {
+				row.Columns = append(row.Columns, timeColumnName)
+				tsColumnAdded = true
+			}
+
+			row.Values = make([][]any, 0, s.PointCount())
+
+			for _, p := range s.Points() {
+				if len(p.Values) == 0 {
+					continue
+				}
+				vals := make([]any, 0, len(p.Values))
+				var tsValAdded bool
+				for n, v := range p.Values {
+					if n == s.Header.TimestampField.OutputPosition {
+						vals = append(vals, df(p.Epoch, multiplier))
+						tsValAdded = true
+					}
+					vals = append(vals, v)
+				}
+				if !tsValAdded {
+					vals = append(vals, df(p.Epoch, multiplier))
+				}
+				row.Values = append(row.Values, vals)
+			}
+			res.SeriesList = append(res.SeriesList, row)
+		}
+		out.Results = append(out.Results, res)
+	}
+	return out, nil
+}
+
+type legacyDateFormatterFunc func(epoch.Epoch, int64) any
+
+func legacyDateFormatter(rlo *timeseries.RequestOptions) (legacyDateFormatterFunc, int64) {
+	var df legacyDateFormatterFunc
+	var tf byte
+	var multiplier int64
+
+	if rlo != nil {
+		tf = rlo.TimeFormat
+	}
+	switch tf {
+	case 0:
+		df = legacyFormatRFC3339Time
+	default:
+		if m, ok := epochMultipliers[tf]; ok {
+			multiplier = m
+		} else {
+			multiplier = 1
+		}
+		df = legacyFormatEpochTime
+	}
+	return df, multiplier
 }

@@ -19,14 +19,12 @@ package sql
 import (
 	"bytes"
 	"cmp"
-	"encoding/csv"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
@@ -80,10 +78,6 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 		return marshalJSON(w, ds)
 	}
 }
-
-// v3TimestampOutputLayout matches InfluxDB 3's native output shape: naive UTC
-// with no zone suffix, fractional seconds only when present.
-const v3TimestampOutputLayout = "2006-01-02T15:04:05.999999999"
 
 // a series' output layout: its columns, each one's JSON key, its tag values, and the column each
 // ordering term sorts by (-1 when it has none)
@@ -177,20 +171,6 @@ func (r v3Row) epoch() epoch.Epoch {
 func (r v3Row) valueColumn(i int) (int, bool) {
 	j := i - 1 - len(r.s.tags)
 	return j, j < r.seg.NumCols()
-}
-
-// the row's value in column i: its formatted time, a tag, or a value, nil when the row has none
-func (r v3Row) cell(i int) any {
-	switch {
-	case i == 0:
-		return time.Unix(0, int64(r.epoch())).UTC().Format(v3TimestampOutputLayout)
-	case i <= len(r.s.tags):
-		return r.s.tags[i-1]
-	}
-	if j, ok := r.valueColumn(i); ok {
-		return r.seg.Value(j, r.row)
-	}
-	return nil
 }
 
 // v3Cell is a row's tag or value in one column, read without boxing where its kind allows
@@ -366,48 +346,165 @@ func compareV3Value(a, b any) int {
 }
 
 func marshalJSON(w io.Writer, ds *dataset.DataSet) error {
-	return writeRows(w, dataSetRows(ds), '[', ',', "]\n")
+	return writeRows(w, ds, '[', ',', "]\n")
 }
 
 func marshalJSONL(w io.Writer, ds *dataset.DataSet) error {
-	return writeRows(w, dataSetRows(ds), 0, '\n', "")
+	return writeRows(w, ds, 0, '\n', "")
 }
 
-// writes rows as JSON objects in column order, which encoding/json's maps would sort, between open
+// writes the rows as JSON objects in column order, which encoding/json's maps would sort, between open
 // and closing, with sep after each but the last (JSON) or every one (JSONL)
-func writeRows(w io.Writer, rows []v3Row, open, sep byte, closing string) error {
-	if err := checkRowValues(rows); err != nil {
+func writeRows(w io.Writer, ds *dataset.DataSet, open, sep byte, closing string) error {
+	if err := checkValues(ds); err != nil {
 		return err
 	}
 	cw := tbytes.NewChunkWriter(w)
 	if open != 0 {
 		cw.Buf = append(cw.Buf, open)
 	}
-	for i, row := range rows {
-		if i > 0 && open != 0 {
+	first := true
+	eachRow(ds, func(row v3Row) {
+		if !first && open != 0 {
 			cw.Buf = append(cw.Buf, sep)
 		}
+		first = false
 		cw.Buf = appendV3Object(cw.Buf, row)
 		if open == 0 {
 			cw.Buf = append(cw.Buf, sep)
 		}
 		cw.FlushIfFull()
-	}
+	})
 	cw.Buf = append(cw.Buf, closing...)
 	return cw.Close()
 }
 
 // nothing is written when a value can't be, as JSON has no NaN or infinities
-func checkRowValues(rows []v3Row) error {
-	for _, row := range rows {
-		n := min(row.seg.NumCols(), len(row.s.columns)-1-len(row.s.tags))
-		for j := range n {
-			if err := row.seg.CheckJSON(j, row.row); err != nil {
-				return err
+func checkValues(ds *dataset.DataSet) error {
+	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
+		for _, series := range result.SeriesList {
+			if series == nil {
+				continue
+			}
+			// only the value columns a row's layout names are written
+			values := len(series.Header.ValueFieldsList)
+			segs := series.Segments()
+			for k := range segs {
+				for c := range min(segs[k].NumCols(), values) {
+					if err := segs[k].CheckColumnJSON(c); err != nil {
+						return err
+					}
+				}
 			}
 		}
 	}
 	return nil
+}
+
+// eachRow calls fn with each output row in the query's order: merged from the series as they're
+// read when the order starts with time, as stored without an order, and otherwise sorted
+func eachRow(ds *dataset.DataSet, fn func(v3Row)) {
+	var ordering []timeseries.OrderTerm
+	if ds.TimeRangeQuery != nil {
+		ordering = ds.TimeRangeQuery.Ordering
+	}
+	if len(ordering) == 0 {
+		for _, result := range ds.Results {
+			if result == nil {
+				continue
+			}
+			for _, series := range result.SeriesList {
+				if series == nil || series.PointCount() == 0 {
+					continue
+				}
+				s := newV3Series(series, nil)
+				segs := series.Segments()
+				for k := range segs {
+					for i := range segs[k].Len() {
+						fn(v3Row{s: s, seg: &segs[k], row: i})
+					}
+				}
+			}
+		}
+		return
+	}
+	if r, layouts, ok := timeOrdered(ds, ordering); ok {
+		order := dataset.RowOrder{Descending: ordering[0].Descending}
+		// descending reads each series backward, so rows tied on every term need their stored order
+		if len(ordering) > 1 || order.Descending {
+			order.Compare = func(a, b dataset.Row) int {
+				ra := v3Row{s: layouts[a.SeriesIndex], seg: a.Seg, row: a.Index}
+				rb := v3Row{s: layouts[b.SeriesIndex], seg: b.Seg, row: b.Index}
+				for t := 1; t < len(ordering); t++ {
+					if c := compareV3Row(ra, rb, t, ordering[t]); c != 0 {
+						return c
+					}
+				}
+				return compareStored(a, b)
+			}
+		}
+		for row := range r.Rows(order) {
+			fn(v3Row{s: layouts[row.SeriesIndex], seg: row.Seg, row: row.Index})
+		}
+		return
+	}
+	for _, row := range dataSetRows(ds) {
+		fn(row)
+	}
+}
+
+// timeOrdered returns the one result a time-first order can merge in order, and its series' layouts,
+// or false when there are others or a series isn't sorted
+func timeOrdered(ds *dataset.DataSet, ordering []timeseries.OrderTerm) (*dataset.Result, []*v3Series, bool) {
+	var r *dataset.Result
+	for _, result := range ds.Results {
+		if result == nil {
+			continue
+		}
+		if r != nil {
+			return nil, nil, false
+		}
+		r = result
+	}
+	if r == nil {
+		return nil, nil, false
+	}
+	layouts := make([]*v3Series, len(r.SeriesList))
+	for i, series := range r.SeriesList {
+		if series == nil || series.PointCount() == 0 {
+			continue
+		}
+		if !series.IsSorted() {
+			return nil, nil, false
+		}
+		// the time is each layout's first column
+		if layouts[i] = newV3Series(series, ordering); layouts[i].order[0] != 0 {
+			return nil, nil, false
+		}
+	}
+	return r, layouts, true
+}
+
+// compareStored orders rows as their series, and within one its Segments and rows, hold them
+func compareStored(a, b dataset.Row) int {
+	if c := cmp.Compare(a.SeriesIndex, b.SeriesIndex); c != 0 {
+		return c
+	}
+	if a.Seg != b.Seg {
+		segs := a.Series.Segments()
+		for k := range segs {
+			switch &segs[k] {
+			case a.Seg:
+				return -1
+			case b.Seg:
+				return 1
+			}
+		}
+	}
+	return cmp.Compare(a.Index, b.Index)
 }
 
 func appendV3Object(b []byte, row v3Row) []byte {
@@ -420,9 +517,10 @@ func appendV3Object(b []byte, row v3Row) []byte {
 		b = append(b, key...)
 		switch {
 		case i == 0:
-			// the layout writes nothing JSON escapes
+			// InfluxDB 3's own time: naive UTC, with a fraction only when it has one, which JSON
+			// doesn't escape
 			b = append(b, '"')
-			b = time.Unix(0, int64(row.epoch())).UTC().AppendFormat(b, v3TimestampOutputLayout)
+			b = epoch.AppendCanonicalTime(b, row.epoch(), true, false)
 			b = append(b, '"')
 		case i <= len(s.tags):
 			b = tstrings.AppendJSON(b, s.tags[i-1])
@@ -438,46 +536,62 @@ func appendV3Object(b []byte, row v3Row) []byte {
 	return append(b, '}')
 }
 
+// writes the rows as encoding/csv's Writer writes them, with a header record for each column layout
 func marshalCSV(w io.Writer, ds *dataset.DataSet) error {
-	cw := csv.NewWriter(w)
-	defer cw.Flush()
-	var lastColumns, record []string
-	for _, row := range dataSetRows(ds) {
-		// one header row per column layout; series sharing a layout share it
-		if !slices.Equal(lastColumns, row.s.columns) {
-			if err := cw.Write(row.s.columns); err != nil {
-				return err
+	cw := tbytes.NewChunkWriter(w)
+	var last *v3Series
+	var lastColumns []string
+	eachRow(ds, func(row v3Row) {
+		// series sharing a layout share its header
+		if row.s != last {
+			if !slices.Equal(lastColumns, row.s.columns) {
+				for i, name := range row.s.columns {
+					if i > 0 {
+						cw.Buf = append(cw.Buf, ',')
+					}
+					cw.Buf = tstrings.AppendCSVField(cw.Buf, name, ',')
+				}
+				cw.Buf = append(cw.Buf, '\n')
+				lastColumns = row.s.columns
 			}
-			lastColumns = row.s.columns
+			last = row.s
 		}
-		record = record[:0]
 		for i := range row.s.columns {
-			record = append(record, formatValue(row.cell(i)))
+			if i > 0 {
+				cw.Buf = append(cw.Buf, ',')
+			}
+			cw.Buf = appendCSVCell(cw.Buf, row, i)
 		}
-		if err := cw.Write(record); err != nil {
-			return err
-		}
-	}
-	return nil
+		cw.Buf = append(cw.Buf, '\n')
+		cw.FlushIfFull()
+	})
+	return cw.Close()
 }
 
-func formatValue(v any) string {
-	if v == nil {
-		return ""
+// appendCSVCell appends the row's column i as fmt's %v writes it, and a float without an exponent
+func appendCSVCell(b []byte, row v3Row, i int) []byte {
+	switch {
+	case i == 0:
+		// InfluxDB 3's own time, which CSV doesn't quote
+		return epoch.AppendCanonicalTime(b, row.epoch(), true, false)
+	case i <= len(row.s.tags):
+		return tstrings.AppendCSVField(b, row.s.tags[i-1], ',')
 	}
-	switch t := v.(type) {
-	case string:
-		return t
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case int64:
-		return strconv.FormatInt(t, 10)
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	default:
-		return fmt.Sprintf("%v", t)
+	j, ok := row.valueColumn(i)
+	if !ok {
+		return b
 	}
+	switch row.seg.KindAt(j, row.row) {
+	case dataset.KindNull:
+		return b
+	case dataset.KindString:
+		return tstrings.AppendCSVField(b, row.seg.Text(j, row.row), ',')
+	case dataset.KindFloat64:
+		return strconv.AppendFloat(b, row.seg.Float64(j, row.row), 'f', -1, 64)
+	case dataset.KindInt64:
+		return strconv.AppendInt(b, row.seg.Int64(j, row.row), 10)
+	case dataset.KindBool:
+		return strconv.AppendBool(b, row.seg.Bool(j, row.row))
+	}
+	return tstrings.AppendCSVField(b, fmt.Sprint(row.seg.Value(j, row.row)), ',')
 }

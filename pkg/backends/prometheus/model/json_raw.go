@@ -26,30 +26,19 @@ import (
 	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
-// The functions in this file read raw JSON values that a jsontext.Decoder has already validated, so
-// they only find the boundaries of what the grammar guarantees is there.
-
 // the most digits an integer literal may have and be exact as a float64 written back the same way
 const maxExactDigits = 15
 
-// pairOf returns the first two elements of raw, a JSON array, and how many elements it has; a
-// value that isn't an array has none
+// pairOf returns the first two elements of raw, a JSON array a decoder has validated, and how many
+// elements it has; a value that isn't an array has none
 func pairOf(raw []byte) (first, second []byte, n int) {
-	if len(raw) == 0 || raw[0] != '[' {
-		return nil, nil, 0
-	}
-	i := skipSpace(raw, 1)
-	for i < len(raw) && raw[i] != ']' {
-		end := valueEnd(raw, i)
+	els := stream.ArrayElements(raw)
+	for v, ok := els.Next(); ok; v, ok = els.Next() {
 		switch n++; n {
 		case 1:
-			first = raw[i:end]
+			first = v
 		case 2:
-			second = raw[i:end]
-		}
-		i = skipSpace(raw, end)
-		if i < len(raw) && raw[i] == ',' {
-			i = skipSpace(raw, i+1)
+			second = v
 		}
 	}
 	return first, second, n
@@ -61,64 +50,8 @@ func arrayLen(raw []byte) int {
 	return n
 }
 
-func skipSpace(raw []byte, i int) int {
-	for i < len(raw) {
-		switch raw[i] {
-		case ' ', '\t', '\n', '\r':
-			i++
-		default:
-			return i
-		}
-	}
-	return i
-}
-
-// valueEnd returns the index just past the JSON value that starts at raw[i]
-func valueEnd(raw []byte, i int) int {
-	switch raw[i] {
-	case '"':
-		return stringEnd(raw, i)
-	case '{', '[':
-		depth := 0
-		for j := i; j < len(raw); j++ {
-			switch raw[j] {
-			case '"':
-				j = stringEnd(raw, j) - 1
-			case '{', '[':
-				depth++
-			case '}', ']':
-				if depth--; depth == 0 {
-					return j + 1
-				}
-			}
-		}
-		return len(raw)
-	}
-	for j := i; j < len(raw); j++ {
-		switch raw[j] {
-		case ',', ']', '}', ':', ' ', '\t', '\n', '\r':
-			return j
-		}
-	}
-	return len(raw)
-}
-
-// stringEnd returns the index just past the JSON string that starts at raw[i]
-func stringEnd(raw []byte, i int) int {
-	for j := i + 1; j < len(raw); j++ {
-		switch raw[j] {
-		case '\\':
-			j++
-		case '"':
-			return j + 1
-		}
-	}
-	return len(raw)
-}
-
 type member struct {
-	name       []byte
-	start, end int
+	name, value []byte
 }
 
 // marshaler re-encodes raw JSON values, reusing its buffers; a nested object's names and members
@@ -128,31 +61,25 @@ type marshaler struct {
 	members []member
 }
 
-// append appends raw as encoding/json's Marshal writes what Unmarshal decodes it into as an any;
-// like Unmarshal, it fails for a number past a float64's range
-func (m *marshaler) append(dst, raw []byte) ([]byte, error) {
-	i := skipSpace(raw, 0)
-	if i == len(raw) {
+// append appends v, a JSON value a decoder has validated, as encoding/json's Marshal writes what
+// Unmarshal decodes it into as an any; like Unmarshal, it fails for a number past a float64's range
+func (m *marshaler) append(dst, v []byte) ([]byte, error) {
+	if len(v) == 0 {
 		return dst, timeseries.ErrInvalidBody
 	}
-	end := valueEnd(raw, i)
-	v := raw[i:end]
 	switch v[0] {
 	case '{':
 		return m.appendObject(dst, v)
 	case '[':
 		dst = append(dst, '[')
-		for j := skipSpace(v, 1); j < len(v) && v[j] != ']'; {
+		els := stream.ArrayElements(v)
+		for e, ok := els.Next(); ok; e, ok = els.Next() {
 			if dst[len(dst)-1] != '[' {
 				dst = append(dst, ',')
 			}
-			e := valueEnd(v, j)
 			var err error
-			if dst, err = m.append(dst, v[j:e]); err != nil {
+			if dst, err = m.append(dst, e); err != nil {
 				return dst, err
-			}
-			if j = skipSpace(v, e); j < len(v) && v[j] == ',' {
-				j = skipSpace(v, j+1)
 			}
 		}
 		return append(dst, ']'), nil
@@ -167,23 +94,18 @@ func (m *marshaler) append(dst, raw []byte) ([]byte, error) {
 func (m *marshaler) appendObject(dst, v []byte) ([]byte, error) {
 	nameMark, memberMark := len(m.names), len(m.members)
 	defer func() { m.names, m.members = m.names[:nameMark], m.members[:memberMark] }()
-	for j := skipSpace(v, 1); j < len(v) && v[j] != '}'; {
-		ne := stringEnd(v, j)
+	members := stream.ObjectMembers(v)
+	for name, value, ok := members.Next(); ok; name, value, ok = members.Next() {
 		start := len(m.names)
-		m.names = stream.AppendString(m.names, v[j:ne])
-		vs := skipSpace(v, skipSpace(v, ne)+1)
-		ve := valueEnd(v, vs)
-		m.members = append(m.members, member{name: m.names[start:len(m.names):len(m.names)], start: vs, end: ve})
-		if j = skipSpace(v, ve); j < len(v) && v[j] == ',' {
-			j = skipSpace(v, j+1)
-		}
+		m.names = stream.AppendString(m.names, name)
+		m.members = append(m.members, member{name: m.names[start:len(m.names):len(m.names)], value: value})
 	}
-	members := m.members[memberMark:]
+	sorted := m.members[memberMark:]
 	// a stable sort keeps a repeated name's members in order, so its last is the one kept
-	slices.SortStableFunc(members, func(a, b member) int { return bytes.Compare(a.name, b.name) })
+	slices.SortStableFunc(sorted, func(a, b member) int { return bytes.Compare(a.name, b.name) })
 	dst = append(dst, '{')
-	for k, mb := range members {
-		if k+1 < len(members) && bytes.Equal(members[k+1].name, mb.name) {
+	for k, mb := range sorted {
+		if k+1 < len(sorted) && bytes.Equal(sorted[k+1].name, mb.name) {
 			continue
 		}
 		if dst[len(dst)-1] != '{' {
@@ -192,7 +114,7 @@ func (m *marshaler) appendObject(dst, v []byte) ([]byte, error) {
 		dst = tstrings.AppendJSON(dst, string(mb.name))
 		dst = append(dst, ':')
 		var err error
-		if dst, err = m.append(dst, v[mb.start:mb.end]); err != nil {
+		if dst, err = m.append(dst, mb.value); err != nil {
 			return dst, err
 		}
 	}

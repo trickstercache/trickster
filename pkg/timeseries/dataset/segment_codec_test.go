@@ -182,3 +182,25 @@ func FuzzReadSegments(f *testing.F) {
 		readAllValues(t, blob)
 	})
 }
+
+func TestRefersToNothing(t *testing.T) {
+	rng := weaktest.NewRand(12, 12)
+	for range 100_000 {
+		tags := make([]Kind, rng.IntN(40))
+		for i := range tags {
+			tags[i] = Kind(rng.IntN(int(KindString)))
+			if rng.IntN(64) == 0 {
+				tags[i] = Kind(rng.IntN(256))
+			}
+		}
+		want := true
+		for _, k := range tags {
+			if k >= KindString {
+				want = false
+			}
+		}
+		if got := refersToNothing(tags); got != want {
+			t.Fatalf("%v: got %t, want %t", tags, got, want)
+		}
+	}
+}

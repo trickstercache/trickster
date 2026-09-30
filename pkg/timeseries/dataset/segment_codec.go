@@ -387,6 +387,8 @@ func (c *Column) valid() bool {
 		}
 	} else if len(c.tags) != len(c.vals) {
 		return false
+	} else if refersToNothing(c.tags) {
+		return true
 	}
 	for i, v := range c.vals {
 		k := c.KindAt(i)
@@ -402,6 +404,33 @@ func (c *Column) valid() bool {
 			if v >= uint64(len(c.ext)) {
 				return false
 			}
+		}
+	}
+	return true
+}
+
+// what each byte of a word of tags must stay below, and what, added to one below KindString, stays
+// below its high bit
+const (
+	tagHighBits  = 0x8080808080808080
+	tagBelowRefs = 0x0101010101010101 * uint64(0x80-KindString)
+)
+
+// refersToNothing reports whether every tag is a kind below KindString, whose values refer into
+// neither data nor ext, reading eight tags at a time; a Mixed column of numbers is such
+func refersToNothing(tags []Kind) bool {
+	// #nosec G103 -- a Kind is a byte
+	b := unsafe.Slice((*byte)(unsafe.Pointer(unsafe.SliceData(tags))), len(tags))
+	i := 0
+	for ; i+8 <= len(b); i += 8 {
+		// a byte below 0x80 plus tagBelowRefs's byte carries into its high bit when it is KindString or more
+		if w := binary.LittleEndian.Uint64(b[i:]); w&tagHighBits != 0 || (w+tagBelowRefs)&tagHighBits != 0 {
+			return false
+		}
+	}
+	for ; i < len(b); i++ {
+		if Kind(b[i]) >= KindString {
+			return false
 		}
 	}
 	return true

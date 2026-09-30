@@ -34,18 +34,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
-// maxJSONLLineBytes bounds a single JSONL row; rows wider than this fail the
+// legacyMaxJSONLLineBytes bounds a single JSONL row; rows wider than this fail the
 // unmarshal rather than silently truncating.
-const maxJSONLLineBytes = 32 * 1024 * 1024
+const legacyMaxJSONLLineBytes = 32 * 1024 * 1024
 
-// UnmarshalTimeseries converts a v3 response body into a Timeseries
-func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery,
-) (timeseries.Timeseries, error) {
-	return UnmarshalTimeseriesReader(bytes.NewReader(data), trq)
-}
-
-// UnmarshalTimeseriesReader converts a v3 response body into a Timeseries via io.Reader
-func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery,
+// legacyUnmarshalTimeseriesReader is the decoder the stream decoder replaced, kept as its oracle
+func legacyUnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery,
 ) (timeseries.Timeseries, error) {
 	// peek at first byte to determine format
 	br := bufio.NewReader(reader)
@@ -64,15 +58,15 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery,
 	}
 	switch of {
 	case iofmt.V3OutputJSONL:
-		return unmarshalJSONL(br, trq)
+		return legacyUnmarshalJSONL(br, trq)
 	case iofmt.V3OutputCSV:
-		return unmarshalCSV(br, trq)
+		return legacyUnmarshalCSV(br, trq)
 	default:
-		return unmarshalJSON(br, trq)
+		return legacyUnmarshalJSON(br, trq)
 	}
 }
 
-func unmarshalJSON(r io.Reader, trq *timeseries.TimeRangeQuery,
+func legacyUnmarshalJSON(r io.Reader, trq *timeseries.TimeRangeQuery,
 ) (timeseries.Timeseries, error) {
 	decoder := json.NewDecoder(r)
 	decoder.UseNumber()
@@ -84,40 +78,40 @@ func unmarshalJSON(r io.Reader, trq *timeseries.TimeRangeQuery,
 	rows := make([]map[string]any, 0, len(raw))
 	for i, message := range raw {
 		if i == 0 {
-			keys, err := orderedObjectKeys(message)
+			keys, err := legacyOrderedObjectKeys(message)
 			if err != nil {
 				return nil, err
 			}
 			columns = keys
 		}
-		row, err := decodeRow(message)
+		row, err := legacyDecodeRow(message)
 		if err != nil {
 			return nil, err
 		}
 		rows = append(rows, row)
 	}
-	return rowsToDataSet(columns, rows, trq)
+	return legacyRowsToDataSet(columns, rows, trq)
 }
 
-func unmarshalJSONL(r io.Reader, trq *timeseries.TimeRangeQuery,
+func legacyUnmarshalJSONL(r io.Reader, trq *timeseries.TimeRangeQuery,
 ) (timeseries.Timeseries, error) {
 	var columns []string
 	var rows []map[string]any
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), maxJSONLLineBytes)
+	scanner.Buffer(make([]byte, 64*1024), legacyMaxJSONLLineBytes)
 	for scanner.Scan() {
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 {
 			continue
 		}
 		if columns == nil {
-			keys, err := orderedObjectKeys(line)
+			keys, err := legacyOrderedObjectKeys(line)
 			if err != nil {
 				return nil, err
 			}
 			columns = keys
 		}
-		row, err := decodeRow(line)
+		row, err := legacyDecodeRow(line)
 		if err != nil {
 			return nil, err
 		}
@@ -126,10 +120,10 @@ func unmarshalJSONL(r io.Reader, trq *timeseries.TimeRangeQuery,
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	return rowsToDataSet(columns, rows, trq)
+	return legacyRowsToDataSet(columns, rows, trq)
 }
 
-func unmarshalCSV(r io.Reader, trq *timeseries.TimeRangeQuery,
+func legacyUnmarshalCSV(r io.Reader, trq *timeseries.TimeRangeQuery,
 ) (timeseries.Timeseries, error) {
 	cr := csv.NewReader(r)
 	records, err := cr.ReadAll()
@@ -151,11 +145,11 @@ func unmarshalCSV(r io.Reader, trq *timeseries.TimeRangeQuery,
 		}
 		rows = append(rows, row)
 	}
-	return rowsToDataSet(headers, rows, trq)
+	return legacyRowsToDataSet(headers, rows, trq)
 }
 
-// decodeRow unmarshals one response object preserving numeric fidelity.
-func decodeRow(raw []byte) (map[string]any, error) {
+// legacyDecodeRow unmarshals one response object preserving numeric fidelity.
+func legacyDecodeRow(raw []byte) (map[string]any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var row map[string]any
@@ -165,9 +159,9 @@ func decodeRow(raw []byte) (map[string]any, error) {
 	return row, nil
 }
 
-// orderedObjectKeys returns a JSON object's keys in document order, so column
+// legacyOrderedObjectKeys returns a JSON object's keys in document order, so column
 // ordering survives the map-based row representation.
-func orderedObjectKeys(raw []byte) ([]string, error) {
+func legacyOrderedObjectKeys(raw []byte) ([]string, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	token, err := decoder.Token()
 	if err != nil {
@@ -196,7 +190,7 @@ func orderedObjectKeys(raw []byte) ([]string, error) {
 	return keys, nil
 }
 
-func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.TimeRangeQuery,
+func legacyRowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.TimeRangeQuery,
 ) (*dataset.DataSet, error) {
 	if len(rows) == 0 {
 		ds := &dataset.DataSet{
@@ -241,7 +235,7 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 	for i, name := range fieldNames {
 		vfds[i] = timeseries.FieldDefinition{
 			Name:           name,
-			DataType:       detectFieldType(rows, name),
+			DataType:       legacyDetectFieldType(rows, name),
 			OutputPosition: i,
 			Role:           timeseries.RoleValue,
 		}
@@ -252,7 +246,7 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 	points := make(map[*dataset.Series]dataset.Points)
 	seriesKeys := make([]string, 0, 8)
 	for _, row := range rows {
-		ep, err := parseV3Timestamp(row[tsName])
+		ep, err := legacyParseV3Timestamp(row[tsName])
 		if err != nil {
 			// a row without a parseable timestamp cannot be placed on the
 			// time axis; skip it rather than emitting a zero-epoch point
@@ -264,7 +258,7 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 			tags = make(dataset.Tags, len(tagNames))
 			parts := make([]string, len(tagNames))
 			for i, name := range tagNames {
-				parts[i] = tagString(row[name])
+				parts[i] = legacyTagString(row[name])
 				tags[name] = parts[i]
 			}
 			key = strings.Join(parts, "\x00")
@@ -288,7 +282,7 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 		}
 		vals := make([]any, len(fieldNames))
 		for j, name := range fieldNames {
-			vals[j] = coerceValue(row[name], vfds[j].DataType)
+			vals[j] = legacyCoerceValue(row[name], vfds[j].DataType)
 		}
 		points[series] = append(points[series], dataset.Point{Epoch: ep, Values: vals})
 	}
@@ -307,7 +301,7 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 	return ds, nil
 }
 
-func tagString(v any) string {
+func legacyTagString(v any) string {
 	switch t := v.(type) {
 	case nil:
 		return ""
@@ -320,44 +314,44 @@ func tagString(v any) string {
 	}
 }
 
-// v3TimestampLayouts are the string timestamp shapes InfluxDB 3 emits. The
+// legacyV3TimestampLayouts are the string timestamp shapes InfluxDB 3 emits. The
 // native v3 output is naive UTC without a zone suffix (2026-08-29T01:33:10);
 // RFC3339 variants are accepted for robustness.
-var v3TimestampLayouts = []string{
+var legacyV3TimestampLayouts = []string{
 	"2006-01-02T15:04:05.999999999",
 	time.RFC3339Nano,
 	"2006-01-02 15:04:05.999999999",
 	"2006-01-02",
 }
 
-func parseV3Timestamp(v any) (epoch.Epoch, error) {
+func legacyParseV3Timestamp(v any) (epoch.Epoch, error) {
 	switch t := v.(type) {
 	case string:
-		for _, layout := range v3TimestampLayouts {
+		for _, layout := range legacyV3TimestampLayouts {
 			if ts, err := time.ParseInLocation(layout, t, time.UTC); err == nil {
 				return epoch.Epoch(ts.UnixNano()), nil
 			}
 		}
 		if n, err := strconv.ParseInt(t, 10, 64); err == nil {
-			return epochFromInteger(n), nil
+			return legacyEpochFromInteger(n), nil
 		}
 		return 0, timeseries.ErrInvalidTimeFormat
 	case float64:
-		return epochFromInteger(int64(t)), nil
+		return legacyEpochFromInteger(int64(t)), nil
 	case json.Number:
 		n, err := t.Int64()
 		if err != nil {
 			return 0, err
 		}
-		return epochFromInteger(n), nil
+		return legacyEpochFromInteger(n), nil
 	}
 	return 0, timeseries.ErrInvalidTimeFormat
 }
 
-// epochFromInteger infers the epoch unit of an integer timestamp by magnitude:
+// legacyEpochFromInteger infers the epoch unit of an integer timestamp by magnitude:
 // values below 1e11 are seconds, below 1e14 milliseconds, below 1e17
 // microseconds, and nanoseconds beyond.
-func epochFromInteger(value int64) epoch.Epoch {
+func legacyEpochFromInteger(value int64) epoch.Epoch {
 	magnitude := value
 	if magnitude < 0 {
 		magnitude = -magnitude
@@ -374,8 +368,8 @@ func epochFromInteger(value int64) epoch.Epoch {
 	}
 }
 
-// detectFieldType infers a column's type from its first non-null value.
-func detectFieldType(rows []map[string]any, name string) timeseries.FieldDataType {
+// legacyDetectFieldType infers a column's type from its first non-null value.
+func legacyDetectFieldType(rows []map[string]any, name string) timeseries.FieldDataType {
 	for _, row := range rows {
 		v := row[name]
 		if v == nil {
@@ -383,7 +377,7 @@ func detectFieldType(rows []map[string]any, name string) timeseries.FieldDataTyp
 		}
 		switch t := v.(type) {
 		case json.Number:
-			if isIntegerNumber(t) {
+			if legacyIsIntegerNumber(t) {
 				return timeseries.Int64
 			}
 			return timeseries.Float64
@@ -413,12 +407,12 @@ func detectFieldType(rows []map[string]any, name string) timeseries.FieldDataTyp
 	return timeseries.String
 }
 
-func isIntegerNumber(n json.Number) bool {
+func legacyIsIntegerNumber(n json.Number) bool {
 	s := n.String()
 	return !strings.ContainsAny(s, ".eE")
 }
 
-func coerceValue(v any, dt timeseries.FieldDataType) any {
+func legacyCoerceValue(v any, dt timeseries.FieldDataType) any {
 	if v == nil {
 		return nil
 	}

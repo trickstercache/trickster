@@ -21,7 +21,6 @@ import (
 	"io"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -66,29 +65,6 @@ const (
 	labelName     = "__name__"
 )
 
-// label names, and values no longer than maxInternedLen, are shared by the series of a response that
-// repeat them, up to maxInterned of them
-const (
-	maxInterned    = 4096
-	maxInternedLen = 64
-)
-
-// fieldName returns the one of names key matches as encoding/json matches a field, preferring an
-// exact match to one that ignores case, or "" for none
-func fieldName(key []byte, names ...string) string {
-	for _, n := range names {
-		if string(key) == n {
-			return n
-		}
-	}
-	for _, n := range names {
-		if strings.EqualFold(string(key), n) {
-			return n
-		}
-	}
-	return ""
-}
-
 // what a result held, as its first element shows, when it arrived before its resultType
 type resultShape uint8
 
@@ -125,7 +101,7 @@ type decoder struct {
 	hasExtent bool
 	el        element
 	scratch   []byte
-	interned  map[string]string
+	interned  stream.Interner
 	marshaler marshaler
 	// the series' value fields, shared by every series of their kind in the response
 	valueFields, histFields []timeseries.FieldDefinition
@@ -178,7 +154,7 @@ func (d *decoder) walk(dec *jsontext.Decoder) error {
 		return err
 	}
 	return stream.ObjectBytes(dec, func(key []byte) error {
-		switch fieldName(key, keyStatus, keyError, keyErrorType, keyWarnings, keyData) {
+		switch stream.FieldName(key, keyStatus, keyError, keyErrorType, keyWarnings, keyData) {
 		case keyStatus:
 			return stream.Decode(dec, &d.env.Status)
 		case keyError:
@@ -197,7 +173,7 @@ func (d *decoder) walk(dec *jsontext.Decoder) error {
 				return err
 			}
 			return stream.ObjectBytes(dec, func(key []byte) error {
-				switch fieldName(key, keyResultType, keyResult) {
+				switch stream.FieldName(key, keyResultType, keyResult) {
 				case keyResultType:
 					if d.typeSeen {
 						return timeseries.ErrInvalidBody
@@ -328,7 +304,7 @@ func (d *decoder) readElement(dec *jsontext.Decoder) error {
 	el.hasVecValue, el.hasVecHist, el.vecValueLen, el.vecHistLen = false, false, 0, 0
 	seen := el.seenBuf[:0]
 	err := stream.ObjectBytes(dec, func(k []byte) error {
-		key := fieldName(k, keyMetric, keyValues, keyHistograms, keyValue, keyHistogram)
+		key := stream.FieldName(k, keyMetric, keyValues, keyHistograms, keyValue, keyHistogram)
 		switch key {
 		case keyMetric:
 		case keyValues, keyHistograms:
@@ -376,7 +352,7 @@ func (d *decoder) readMetric(dec *jsontext.Decoder) error {
 	}
 	tags := dataset.Tags{}
 	err := stream.ObjectBytes(dec, func(key []byte) error {
-		name := d.intern(key, true)
+		name := d.interned.String(key, true)
 		raw, err := dec.ReadValue()
 		if err != nil {
 			return err
@@ -384,7 +360,7 @@ func (d *decoder) readMetric(dec *jsontext.Decoder) error {
 		switch raw.Kind() {
 		case jsontext.KindString:
 			d.scratch = stream.AppendString(d.scratch[:0], raw)
-			tags[name] = d.intern(d.scratch, len(d.scratch) <= maxInternedLen)
+			tags[name] = d.interned.Short(d.scratch)
 		case jsontext.KindNull:
 			tags[name] = ""
 		default:
@@ -397,21 +373,6 @@ func (d *decoder) readMetric(dec *jsontext.Decoder) error {
 	}
 	el.tags, el.name, el.metric = tags, tags[labelName], true
 	return d.flushPending()
-}
-
-// intern returns b as a string, shared with the response's earlier labels when share is set
-func (d *decoder) intern(b []byte, share bool) string {
-	if s, ok := d.interned[string(b)]; ok {
-		return s
-	}
-	s := string(b)
-	if share && len(d.interned) < maxInterned {
-		if d.interned == nil {
-			d.interned = make(map[string]string)
-		}
-		d.interned[s] = s
-	}
-	return s
 }
 
 // flushPending adds the samples read before the element's metric, values first
