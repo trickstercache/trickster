@@ -270,9 +270,12 @@ func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
 		pr.rsc.SetUpstream(pr.upstreamRequest.URL.Host, resp.StatusCode, elapsed)
 	}
 
+	// the client request is shared with the other fetches and the caller, who may change its headers
+	// once this returns, so what the log needs of it is read now
+	userAgent := pr.UserAgent()
 	goWithRecover("proxyRequest.Fetch.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
-			pr.upstreamRequest.URL.String(), pr.UserAgent(), resp.StatusCode, len(body), elapsed.Seconds())
+			pr.upstreamRequest.URL.String(), userAgent, resp.StatusCode, len(body), elapsed.Seconds())
 	})
 
 	return body, resp, elapsed, nil

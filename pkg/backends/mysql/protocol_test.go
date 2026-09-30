@@ -1080,6 +1080,18 @@ func waitForNoProtocolSessions(t *testing.T, handler *protocolHandler) {
 	t.Fatal("protocol session was not released")
 }
 
+func waitForNoActiveUpstreams(t *testing.T, handler *protocolHandler, when string) {
+	t.Helper()
+	// a session is dropped before its upstream is closed and uncounted
+	deadline := time.Now().Add(3 * time.Second)
+	for handler.activeUpstreams.Load() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if active := handler.activeUpstreams.Load(); active != 0 {
+		t.Fatalf("active upstreams %s = %d", when, active)
+	}
+}
+
 func TestOriginQueryTimeoutDiscardsUpstream(t *testing.T) {
 	originListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -1382,9 +1394,7 @@ func TestClientDisconnectDuringOriginExecutionReleasesSession(t *testing.T) {
 		t.Fatal("client query did not return after disconnect")
 	}
 	waitForNoProtocolSessions(t, server.handler)
-	if active := server.handler.activeUpstreams.Load(); active != 0 {
-		t.Fatalf("active upstreams after client disconnect = %d", active)
-	}
+	waitForNoActiveUpstreams(t, server.handler, "after client disconnect")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
