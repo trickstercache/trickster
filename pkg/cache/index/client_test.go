@@ -310,6 +310,7 @@ func TestRemoveFailure(t *testing.T) {
 	require.ErrorIs(t, idx.Remove("k"), errFault)
 	requireTotals(t, idx, 0, 0)
 	require.NoError(t, idx.Store("k", []byte("value"), time.Nanosecond))
+	time.Sleep(time.Millisecond)
 	idx.reapAt(time.Now().Add(time.Minute).UnixNano())
 	requireTotals(t, idx, 0, 0)
 }

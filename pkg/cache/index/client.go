@@ -602,7 +602,11 @@ func (idx *IndexedClient) evict(reason string, since time.Time, removals []strin
 			gone = append(gone, key)
 		} else if v, ok := idx.objects.Load(key); ok {
 			// spared, and so to be chosen again another time
-			v.(*Object).evicting.Store(false)
+			o := v.(*Object)
+			o.evicting.Store(false)
+			if reason == reasonTTL {
+				idx.shards.of(key).reschedule(o, start.UnixNano())
+			}
 		}
 	}
 	var err error

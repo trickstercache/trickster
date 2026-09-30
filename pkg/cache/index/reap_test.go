@@ -136,6 +136,7 @@ func TestReapInBatches(t *testing.T) {
 	for i := range n {
 		require.NoError(t, idx.Store("key-"+strconv.Itoa(i), []byte("1"), 15*time.Second))
 	}
+	time.Sleep(time.Millisecond)
 	idx.reapAt(time.Now().Add(time.Minute).UnixNano())
 	requireTotals(t, idx, 0, 0)
 	require.Empty(t, mc.data)
@@ -211,6 +212,7 @@ func TestEvictLeastRecentlyUsed(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			idx, mc := newPlainIndex(t, idleOpts())
 			fill(t, idx, 100)
+			time.Sleep(time.Millisecond)
 			reason := reasonBytes
 			if o.MaxSizeObjects > 0 {
 				reason = reasonObjects
@@ -239,6 +241,7 @@ func TestEvictLeastRecentlyUsed(t *testing.T) {
 func TestEvictAll(t *testing.T) {
 	idx, _ := newPlainIndex(t, idleOpts())
 	fill(t, idx, 10)
+	time.Sleep(time.Millisecond)
 	// more is asked for than the cache holds, as when its totals have drifted
 	idx.cacheSize.Add(100)
 	idx.evictOverage(&options.Options{MaxSizeBytes: 1}, time.Now())
@@ -422,6 +425,19 @@ func TestEvictSparesAFreshWrite(t *testing.T) {
 	require.True(t, held)
 	_, held = s.Frame("stale")
 	require.False(t, held)
+}
+
+func TestEvictReschedulesSparedTTL(t *testing.T) {
+	idx, _ := newPlainIndex(t, idleOpts())
+	require.NoError(t, idx.Store("k", []byte("1"), time.Nanosecond))
+	o, ok := idx.Object("k")
+	require.True(t, ok)
+	idx.shards.of("k").takeDue(nil, time.Now().Add(time.Minute).UnixNano())
+	require.Zero(t, o.due)
+
+	idx.evict(reasonTTL, o.LastWrite(), []string{"k"})
+	requireTotals(t, idx, 1, 1)
+	require.NotZero(t, o.due)
 }
 
 // a key that is stored while the reaper removes it ends up in the index and the cache, or in neither
