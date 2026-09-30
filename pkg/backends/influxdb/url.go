@@ -28,7 +28,6 @@ import (
 	isql "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/sql"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/influxdata/influxql"
@@ -110,10 +109,6 @@ func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQu
 	if err != nil {
 		return nil, status.LookupStatusError, err
 	}
-	nr, err := request.Clone(r)
-	if err != nil {
-		return nil, status.LookupStatusError, err
-	}
-	set(nr, statement)
-	return engines.FetchPartialBucket(nr, nil, trq, c.Modeler())
+	set(r, statement)
+	return engines.FetchPartialBucket(r, nil, trq, c.Modeler())
 }

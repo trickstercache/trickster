@@ -135,30 +135,29 @@ type proxyRequest struct {
 	bodyTruncated atomic.Bool
 }
 
-func cloneRequestWithSpan(r *http.Request) *http.Request {
+// cloneRequestWithSpan clones r to carry rsc (shared, not cloned) plus r's span and short-read
+// capture, without r's cancellation
+func cloneRequestWithSpan(r *http.Request, rsc *request.Resources) *http.Request {
 	if r == nil {
 		return nil
 	}
-	rsc := request.GetResources(r)
-	out, err := request.Clone(r)
+	baseCtx := request.RebindUpstreamShortReadCapture(context.Background(), r.Context())
+	ctx := tctx.WithResources(trace.ContextWithSpan(baseCtx, trace.SpanFromContext(r.Context())), rsc)
+	out, err := request.CloneWithContext(ctx, r)
 	if err != nil {
 		return nil
 	}
-	baseCtx := request.RebindUpstreamShortReadCapture(context.Background(), r.Context())
-	out = out.WithContext(tctx.WithResources(
-		trace.ContextWithSpan(baseCtx,
-			trace.SpanFromContext(r.Context())),
-		rsc))
 	return out
 }
 
 // newProxyRequest accepts the original inbound HTTP Request and Response
 // and returns a proxyRequest object
 func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
+	rsc := request.GetResources(r)
 	pr := &proxyRequest{
 		Request:         r,
-		rsc:             request.GetResources(r),
-		upstreamRequest: cloneRequestWithSpan(r),
+		rsc:             rsc,
+		upstreamRequest: cloneRequestWithSpan(r, rsc),
 		contentLength:   -1,
 		responseWriter:  w,
 		clientWriter:    w,
@@ -170,9 +169,9 @@ func newProxyRequest(r *http.Request, w io.Writer) *proxyRequest {
 
 func (pr *proxyRequest) Clone() *proxyRequest {
 	return &proxyRequest{
-		Request:            cloneRequestWithSpan(pr.Request),
+		Request:            cloneRequestWithSpan(pr.Request, request.GetResources(pr.Request)),
 		rsc:                pr.rsc,
-		upstreamRequest:    cloneRequestWithSpan(pr.upstreamRequest),
+		upstreamRequest:    cloneRequestWithSpan(pr.upstreamRequest, request.GetResources(pr.upstreamRequest)),
 		cacheDocument:      pr.cacheDocument,
 		key:                pr.key,
 		primaryKey:         pr.primaryKey,
@@ -277,13 +276,17 @@ func (pr *proxyRequest) relayInterimResponses(w io.Writer) {
 
 func (pr *proxyRequest) prepareRevalidationRequest() {
 	pr.revalidation = RevalStatusInProgress
+	// the revalidation shares the request's resources rather than a clone of them
+	ctx := pr.upstreamRequest.Context()
+	if request.GetResources(pr.upstreamRequest) != pr.rsc {
+		ctx = tctx.WithResources(ctx, pr.rsc)
+	}
 	var err error
-	pr.revalidationRequest, err = request.Clone(pr.upstreamRequest)
+	pr.revalidationRequest, err = request.CloneWithContext(ctx, pr.upstreamRequest)
 	if err != nil {
 		pr.revalidation = RevalStatusNone
 		return
 	}
-	pr.revalidationRequest = request.SetResources(pr.revalidationRequest, pr.rsc)
 	_, span := tspan.NewChildSpan(pr.revalidationRequest.Context(), pr.rsc.Tracer, "FetchRevlidation")
 	if span != nil {
 		setResourceSpanAttributes(pr.rsc, span)
@@ -353,11 +356,11 @@ func (pr *proxyRequest) prepareUpstreamRequests() {
 	// if we are articulating the origin range requests, break those out here
 	if len(pr.neededRanges) > 0 && pr.rsc.BackendOptions.DearticulateUpstreamRanges {
 		for _, r := range pr.neededRanges {
-			req, err := request.Clone(pr.upstreamRequest)
+			req, err := request.CloneWithContext(
+				tctx.WithResources(pr.upstreamRequest.Context(), pr.rsc.Clone()), pr.upstreamRequest)
 			if err != nil {
 				continue
 			}
-			req = request.SetResources(req, pr.rsc.Clone())
 			req.Header.Set(headers.NameRange, "bytes="+r.String())
 			pr.originRequests = append(pr.originRequests, req)
 		}

@@ -45,8 +45,8 @@ type TimeseriesBackend interface {
 	Configuration() *bo.Options
 	// Name returns the name of the Backend
 	Name() string
-	// FetchPartialBucket fetches a partial bucket of r's query via the object proxy cache for
-	// partial_bucket_ttl, in the provider's model; isLive marks the bucket holding now
+	// FetchPartialBucket fetches a partial bucket of r's query through the object proxy cache, in the
+	// provider's model; isLive marks the bucket holding now, and r is this fetch's own to rewrite in place
 	FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery, pb timeseries.PartialBucket,
 		isLive bool) (timeseries.Timeseries, status.LookupStatus, error)
 	// SetExtent updates an upstream request's timerange parameters based on the

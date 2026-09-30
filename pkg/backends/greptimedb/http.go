@@ -107,12 +107,8 @@ func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQu
 	if r == nil {
 		return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
 	}
-	nr, err := request.Clone(r)
-	if err != nil {
+	if err := sql.SetPartialBucket(r, trq, pb); err != nil {
 		return nil, status.LookupStatusError, err
 	}
-	if err := sql.SetPartialBucket(nr, trq, pb); err != nil {
-		return nil, status.LookupStatusError, err
-	}
-	return engines.FetchPartialBucket(nr, nil, trq, c.sqlModeler)
+	return engines.FetchPartialBucket(r, nil, trq, c.sqlModeler)
 }

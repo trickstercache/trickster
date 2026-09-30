@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -73,7 +74,9 @@ func TestFetchPartialBucket(t *testing.T) {
 
 	// the bucket's own range is sent once, then answered by the object cache
 	for _, want := range []status.LookupStatus{status.LookupStatusKeyMiss, status.LookupStatusHit} {
-		ts, st, err := client.FetchPartialBucket(r, trq, pb, false)
+		rq, err := engines.PartialBucketRequest(r.Context(), r)
+		require.NoError(t, err)
+		ts, st, err := client.FetchPartialBucket(rq, trq, pb, false)
 		require.NoError(t, err)
 		require.Equal(t, want, st)
 		ds := ts.(*dataset.DataSet)
@@ -99,7 +102,9 @@ func TestFetchPartialBucket(t *testing.T) {
 		require.NoError(t, err)
 		pb := pb
 		pb.Lower = label.Add(8 * time.Second)
-		_, st, err := client.FetchPartialBucket(post, trq, pb, false)
+		rq, err := engines.PartialBucketRequest(post.Context(), post)
+		require.NoError(t, err)
+		_, st, err := client.FetchPartialBucket(rq, trq, pb, false)
 		require.NoError(t, err)
 		require.Equal(t, status.LookupStatusKeyMiss, st)
 		sent := rec.Take()

@@ -56,34 +56,46 @@ var (
 	ErrPartialBucketModel = errors.New("partial bucket response is not a dataset")
 )
 
-// FetchPartialBucket sends a provider's partial bucket request on path pc, or r's own when nil,
-// through the object proxy cache for partial_bucket_ttl and returns its rows
+// PartialBucketRequest clones r onto ctx for one partial bucket fetch, carrying fresh Resources
+// with r's configuration, so a provider may rewrite the clone without touching r or its Resources
+func PartialBucketRequest(ctx context.Context, r *http.Request) (*http.Request, error) {
+	rsc := request.GetResources(r)
+	if rsc == nil {
+		return nil, ErrPartialBucketFetch
+	}
+	rs := request.NewResources(rsc.BackendOptions, rsc.PathConfig, rsc.CacheConfig, rsc.CacheClient,
+		rsc.BackendClient, rsc.Tracer)
+	ctx = profile.ToContext(ctx, dpcUpstreamEncodingProfile(rsc.TSReqestOptions))
+	return request.CloneWithContext(tctx.WithResources(ctx, rs), r)
+}
+
+// FetchPartialBucket sends r, built by PartialBucketRequest, on path pc (or r's own when nil) through
+// the object proxy cache for partial_bucket_ttl and returns its rows
 func FetchPartialBucket(r *http.Request, pc *po.Options, trq *timeseries.TimeRangeQuery,
 	modeler *timeseries.Modeler,
 ) (timeseries.Timeseries, status.LookupStatus, error) {
-	rsc := request.GetResources(r)
-	if rsc == nil || rsc.BackendOptions == nil || modeler == nil {
+	rs := request.GetResources(r)
+	// Resources that already hold a time range query belong to a client request, not to this fetch
+	if rs == nil || rs.BackendOptions == nil || rs.TimeRangeQuery != nil || modeler == nil {
 		return nil, status.LookupStatusError, ErrPartialBucketFetch
 	}
 	if pc == nil {
-		pc = rsc.PathConfig
+		pc = rs.PathConfig
 	}
-	o := rsc.BackendOptions
+	o := rs.BackendOptions
 	qp, body, isBody := params.GetRequestValues(r)
-	rs := request.NewResources(o, pc, rsc.CacheConfig, rsc.CacheClient, rsc.BackendClient, rsc.Tracer)
+	rs.PathConfig = pc
 	// every bucket range has its own entry, whatever parameters the path keys
 	rs.TimeRangeQuery = &timeseries.TimeRangeQuery{
 		CacheKeyElements: unalignedKeyElements(qp, body, isBody, pc),
 	}
 	rs.AlternateCacheTTL, rs.PerCredentialCache = time.Duration(o.PartialBucketTTL), true
-	ctx := profile.ToContext(r.Context(), dpcUpstreamEncodingProfile(rsc.TSReqestOptions))
-	_, span := tspan.NewChildSpan(ctx, rsc.Tracer, spanFetchPartialBucket)
+	_, span := tspan.NewChildSpan(r.Context(), rs.Tracer, spanFetchPartialBucket)
 	if span != nil {
-		ctx = trace.ContextWithSpan(ctx, span)
+		r = r.WithContext(trace.ContextWithSpan(r.Context(), span))
 		defer span.End()
 	}
 	setResourceSpanAttributes(rs, span)
-	r = r.WithContext(tctx.WithResources(ctx, rs))
 	b, resp, isHit := FetchViaObjectProxyCache(r)
 	if resp == nil || resp.StatusCode != http.StatusOK || len(b) == 0 {
 		return nil, status.LookupStatusProxyError, ErrPartialBucketFetch
@@ -156,7 +168,7 @@ func startPartialBuckets(r *http.Request, o *bo.Options, client backends.Timeser
 		f := &pf.fetched[i]
 		f.pb = trq.Partials[i]
 		// each fetch gets its own request and resources, so none races the interior's
-		rq, err := request.Clone(r)
+		rq, err := PartialBucketRequest(ctx, r)
 		if err != nil {
 			f.status, f.err = status.LookupStatusError, err
 			continue
@@ -174,7 +186,7 @@ func startPartialBuckets(r *http.Request, o *bo.Options, client backends.Timeser
 				return
 			}
 			defer pf.limiter.release()
-			f.ts, f.status, f.err = client.FetchPartialBucket(rq.WithContext(ctx), trq, f.pb, live)
+			f.ts, f.status, f.err = client.FetchPartialBucket(rq, trq, f.pb, live)
 		})
 	}
 	return pf

@@ -78,14 +78,10 @@ func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQu
 	if err != nil {
 		return nil, status.LookupStatusError, fmt.Errorf("render ClickHouse partial bucket: %w", err)
 	}
-	nr, err := request.Clone(r)
-	if err != nil {
+	if err := c.setQuery(r, query); err != nil {
 		return nil, status.LookupStatusError, err
 	}
-	if err := c.setQuery(nr, query); err != nil {
-		return nil, status.LookupStatusError, err
-	}
-	return engines.FetchPartialBucket(nr, nil, trq, c.Modeler())
+	return engines.FetchPartialBucket(r, nil, trq, c.Modeler())
 }
 
 func (c *Client) setQuery(r *http.Request, query string) error {

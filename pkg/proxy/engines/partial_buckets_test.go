@@ -639,11 +639,15 @@ func (h *heldPartials) FetchPartialBucket(r *http.Request, _ *timeseries.TimeRan
 	return nil, status.LookupStatusError, r.Context().Err()
 }
 
+func withTestResources(r *http.Request) *http.Request {
+	return request.SetResources(r, request.NewResources(&bo.Options{}, nil, nil, nil, nil, nil))
+}
+
 func TestStoppedPartialBucketsStopWaitingForASlot(t *testing.T) {
 	// at a limit of one, the second bucket waits on the first until the request stops them both
 	client := &heldPartials{TestClient: &TestClient{}, entered: make(chan struct{}, 2)}
 	trq := &timeseries.TimeRangeQuery{Step: pbStep, PartialCount: 2}
-	pf := startPartialBuckets(httptest.NewRequest(http.MethodGet, "/", nil),
+	pf := startPartialBuckets(withTestResources(httptest.NewRequest(http.MethodGet, "/", nil)),
 		&bo.Options{FetchConcurrencyLimit: 1}, client, trq, time.Now())
 	<-client.entered
 	time.Sleep(20 * time.Millisecond)
@@ -672,9 +676,11 @@ func TestPartialBucketFetchesThatCannotRunAreLeftOut(t *testing.T) {
 		r      *http.Request
 		client backends.TimeseriesBackend
 	}{
-		{"a panicking fetch", httptest.NewRequest(http.MethodGet, "/", nil), panickyPartials{&TestClient{}}},
-		{"an unreadable body", httptest.NewRequest(http.MethodPost, "/",
-			iotest.ErrReader(errors.New("unreadable"))), &TestClient{}},
+		{"a panicking fetch", withTestResources(httptest.NewRequest(http.MethodGet, "/", nil)),
+			panickyPartials{&TestClient{}}},
+		{"an unreadable body", withTestResources(httptest.NewRequest(http.MethodPost, "/",
+			iotest.ErrReader(errors.New("unreadable")))), &TestClient{}},
+		{"no resources", httptest.NewRequest(http.MethodGet, "/", nil), &TestClient{}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -707,7 +713,9 @@ func TestFetchPartialBucketPassesTheResponsesFormat(t *testing.T) {
 		}
 		return &dataset.DataSet{}, nil
 	}}
-	_, st, err := FetchPartialBucket(r, nil, &timeseries.TimeRangeQuery{}, modeler)
+	rq, err := PartialBucketRequest(r.Context(), r)
+	require.NoError(t, err)
+	_, st, err := FetchPartialBucket(rq, nil, &timeseries.TimeRangeQuery{}, modeler)
 	require.NoError(t, err)
 	require.Equal(t, status.LookupStatusKeyMiss, st)
 	require.Equal(t, "Native", format)
@@ -715,8 +723,15 @@ func TestFetchPartialBucketPassesTheResponsesFormat(t *testing.T) {
 	modeler.WireUnmarshalerReader = func(io.Reader, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
 		return opaqueSeries{&dataset.DataSet{}}, nil
 	}
-	_, _, err = FetchPartialBucket(r, nil, &timeseries.TimeRangeQuery{}, modeler)
+	rq, err = PartialBucketRequest(r.Context(), r)
+	require.NoError(t, err)
+	_, _, err = FetchPartialBucket(rq, nil, &timeseries.TimeRangeQuery{}, modeler)
 	require.ErrorIs(t, err, ErrPartialBucketModel)
+	// a request built for one fetch is not reused for another
+	_, _, err = FetchPartialBucket(rq, nil, &timeseries.TimeRangeQuery{}, modeler)
+	require.ErrorIs(t, err, ErrPartialBucketFetch)
+	_, err = PartialBucketRequest(context.Background(), httptest.NewRequest(http.MethodGet, "/", nil))
+	require.ErrorIs(t, err, ErrPartialBucketFetch)
 }
 
 type opaqueSeries struct{ timeseries.Timeseries }
@@ -777,4 +792,34 @@ func TestInstantModelDrop(t *testing.T) {
 			require.Equal(t, wholeBuckets(ceilS, ceilS, pbStep), bucketValues(t, resp.body), want)
 		}
 	})
+}
+
+func TestPartialBucketRequestIsolatesTheClientRequest(t *testing.T) {
+	const body = "query=select+1"
+	r := httptest.NewRequest(http.MethodPost, "http://127.0.0.1/", strings.NewReader(body))
+	rsc := request.NewResources(&bo.Options{}, nil, nil, nil, nil, nil)
+	rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{}
+	r = request.SetResources(r, rsc)
+	var wg sync.WaitGroup
+	for i := range 8 {
+		rq, err := PartialBucketRequest(r.Context(), r)
+		require.NoError(t, err)
+		rs := request.GetResources(rq)
+		require.NotSame(t, rsc, rs)
+		require.Same(t, rsc.BackendOptions, rs.BackendOptions)
+		require.Nil(t, rs.TimeRangeQuery)
+		wg.Go(func() {
+			// a provider's rewrite of the bucket's request
+			b, err := request.GetBody(rq)
+			if err != nil || string(b) != body {
+				t.Errorf("bucket request body = %q, %v", b, err)
+			}
+			request.SetBody(rq, []byte("query=select+"+strconv.Itoa(i)))
+		})
+	}
+	wg.Wait()
+	b, err := request.GetBody(r)
+	require.NoError(t, err)
+	require.Equal(t, body, string(b))
+	require.Equal(t, body, string(rsc.RequestBody))
 }

@@ -164,14 +164,18 @@ func TestClone(t *testing.T) {
 		if rsc2.AlternateCacheTTL != time.Minute {
 			t.Error("cloned resources should preserve AlternateCacheTTL")
 		}
-		// mutating the clone must not affect the original
+		if &rsc2.RequestBody[0] != &rsc.RequestBody[0] {
+			t.Error("expected the clone to share the cached body rather than copy it")
+		}
+		// mutating the clone must not affect the original, and a body is replaced rather than written
 		rsc2.AlternateCacheTTL = time.Hour
-		rsc2.RequestBody[0] = 'X'
+		out.Method = http.MethodPost
+		SetBody(out, []byte("replaced"))
 		if rsc.AlternateCacheTTL != time.Minute {
 			t.Error("mutating clone affected original AlternateCacheTTL")
 		}
-		if rsc.RequestBody[0] != 'o' {
-			t.Error("mutating clone affected original RequestBody")
+		if string(rsc.RequestBody) != "original" || string(rsc2.RequestBody) != "replaced" {
+			t.Errorf("replacing the clone's body affected the original: %q %q", rsc.RequestBody, rsc2.RequestBody)
 		}
 	})
 
