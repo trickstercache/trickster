@@ -34,7 +34,7 @@ type quantileFinalizeGroup struct {
 }
 
 type quantileCursor struct {
-	series     *dataset.Series
+	points     dataset.Points
 	pointIndex int
 	groupKey   string
 	order      int
@@ -46,8 +46,8 @@ func (h quantileCursorHeap) Len() int { return len(h) }
 
 func (h quantileCursorHeap) Less(i, j int) bool {
 	a, b := h[i], h[j]
-	aEpoch := a.series.Points[a.pointIndex].Epoch
-	bEpoch := b.series.Points[b.pointIndex].Epoch
+	aEpoch := a.points[a.pointIndex].Epoch
+	bEpoch := b.points[b.pointIndex].Epoch
 	if aEpoch != bEpoch {
 		return aEpoch < bEpoch
 	}
@@ -103,7 +103,7 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 	cursors := make(quantileCursorHeap, 0, len(result.SeriesList))
 
 	for order, series := range result.SeriesList {
-		if series == nil || isHistogramSeries(series) || len(series.Points) == 0 {
+		if series == nil || isHistogramSeries(series) || series.PointCount() == 0 {
 			continue
 		}
 		tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
@@ -119,21 +119,21 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 			groups[key] = &quantileFinalizeGroup{header: header}
 			groupOrder = append(groupOrder, key)
 		}
-		heap.Push(&cursors, &quantileCursor{series: series, groupKey: key, order: order})
+		heap.Push(&cursors, &quantileCursor{points: series.Points(), groupKey: key, order: order})
 	}
 
 	for len(cursors) > 0 {
-		pointEpoch := cursors[0].series.Points[cursors[0].pointIndex].Epoch
+		pointEpoch := cursors[0].points[cursors[0].pointIndex].Epoch
 		valuesByGroup := make(map[string][]float64)
 		for len(cursors) > 0 &&
-			cursors[0].series.Points[cursors[0].pointIndex].Epoch == pointEpoch {
+			cursors[0].points[cursors[0].pointIndex].Epoch == pointEpoch {
 			cursor := heap.Pop(&cursors).(*quantileCursor)
-			point := cursor.series.Points[cursor.pointIndex]
+			point := cursor.points[cursor.pointIndex]
 			if value, ok := variancePointFloat(point); ok {
 				valuesByGroup[cursor.groupKey] = append(valuesByGroup[cursor.groupKey], value)
 			}
 			cursor.pointIndex++
-			if cursor.pointIndex < len(cursor.series.Points) {
+			if cursor.pointIndex < len(cursor.points) {
 				heap.Push(&cursors, cursor)
 			}
 		}
@@ -142,7 +142,6 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 			formatted := strconv.FormatFloat(value, 'f', -1, 64)
 			groups[key].points = append(groups[key].points, dataset.Point{
 				Epoch:  pointEpoch,
-				Size:   len(formatted) + 32,
 				Values: []any{formatted},
 			})
 		}
@@ -154,11 +153,7 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 		if len(group.points) == 0 {
 			continue
 		}
-		output = append(output, &dataset.Series{
-			Header:    group.header,
-			Points:    group.points,
-			PointSize: group.points.Size(),
-		})
+		output = append(output, dataset.NewSeries(group.header, group.points))
 	}
 	result.SeriesList = output
 }

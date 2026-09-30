@@ -68,16 +68,16 @@ func commitRows(t *testing.T, b *Builder, rows ...testRow) {
 }
 
 func pointEpochs(s *Series) []epoch.Epoch {
-	out := make([]epoch.Epoch, len(s.Points))
-	for i, p := range s.Points {
+	out := make([]epoch.Epoch, s.PointCount())
+	for i, p := range s.Points() {
 		out[i] = p.Epoch
 	}
 	return out
 }
 
 func pointValues(s *Series) []any {
-	out := make([]any, len(s.Points))
-	for i, p := range s.Points {
+	out := make([]any, s.PointCount())
+	for i, p := range s.Points() {
 		out[i] = p.Values[0]
 	}
 	return out
@@ -85,12 +85,7 @@ func pointValues(s *Series) []any {
 
 func requireSizes(t *testing.T, s *Series) {
 	t.Helper()
-	var total int64
-	for _, p := range s.Points {
-		require.Equal(t, PointSize(p.Values), p.Size)
-		total += int64(p.Size)
-	}
-	require.Equal(t, total, s.PointSize)
+	require.Positive(t, s.Size())
 	require.Positive(t, s.Header.Size)
 }
 
@@ -140,8 +135,8 @@ func TestBuilderSortsOnlyUnorderedSeries(t *testing.T) {
 		testRow{e: 2, host: "b", v: 4.0},
 		testRow{e: 2, host: "a", v: 5.0},
 	)
-	require.True(t, b.results[0].series[0].unordered)
-	require.False(t, b.results[0].series[1].unordered)
+	require.True(t, b.log.series[b.results[0].series[0].id].unordered)
+	require.False(t, b.log.series[b.results[0].series[1].id].unordered)
 	ds, err := b.Finish()
 	require.NoError(t, err)
 	require.Nil(t, ds.ExtentList)
@@ -210,13 +205,10 @@ func TestBuilderDuplicateError(t *testing.T) {
 func TestBuilderFirstWinsReleasesValues(t *testing.T) {
 	b := NewBuilder(nil, BuilderOptions{Fields: testBuilderFields(), Duplicates: DuplicatesFirstWins})
 	commitRows(t, b, testRow{e: 1, host: "a", v: 1.0})
-	used := len(b.arena)
+	used := len(b.log.cells)
+	// a dropped duplicate's values are rolled back from the log
 	commitRows(t, b, testRow{e: 1, host: "a", v: 2.0})
-	require.Len(t, b.arena, used)
-	// values that are not the latest allocation cannot be released
-	b.releaseValues([]any{1})
-	b.releaseValues(nil)
-	require.Len(t, b.arena, used)
+	require.Len(t, b.log.cells, used)
 }
 
 func TestBuilderTags(t *testing.T) {
@@ -321,7 +313,7 @@ func TestBuilderSeriesMode(t *testing.T) {
 		require.NoError(t, r.Commit())
 	}
 	require.NoError(t, b.AppendPoint(Point{Epoch: 4, Values: []any{"42"}}))
-	require.NoError(t, b.AppendPoint(Point{Epoch: 5, Values: []any{"7"}, Size: 99}))
+	require.NoError(t, b.AppendPoint(Point{Epoch: 5, Values: []any{"7"}}))
 
 	r := b.Row()
 	r.SetEpoch(6)
@@ -353,8 +345,7 @@ func TestBuilderSeriesMode(t *testing.T) {
 	require.Len(t, sl, 2)
 	require.Equal(t, "up", sl[0].Header.Name)
 	require.Equal(t, []epoch.Epoch{1, 2, 3, 4, 5}, pointEpochs(sl[0]))
-	require.Equal(t, PointSize([]any{"42"}), sl[0].Points[3].Size)
-	require.Equal(t, 99, sl[0].Points[4].Size)
+	require.Equal(t, []any{"1", "1", "1", "42", "7"}, pointValues(sl[0]))
 	require.Equal(t, "down", sl[1].Header.Name)
 }
 
@@ -435,39 +426,34 @@ func TestBuilderFinished(t *testing.T) {
 	require.ErrorIs(t, r.Commit(), ErrBuilderFinished)
 }
 
-func TestBuilderValueChunks(t *testing.T) {
+func TestBuilderManyAndWideRows(t *testing.T) {
+	const rows, wideValues = 200, 10000
 	b := NewBuilder(nil, BuilderOptions{})
 	b.StartSeries(SeriesHeader{Name: "s"})
-	for i := range 3 * minValueChunk {
+	for i := range rows {
 		r := b.Row()
 		r.SetEpoch(epoch.Epoch(i))
 		r.AddValue(int64(i))
 		require.NoError(t, r.Commit())
 	}
-	require.Equal(t, 2*minValueChunk, b.chunk)
+	b.StartSeries(SeriesHeader{Name: "wide"})
 	wide := b.Row()
-	wide.SetEpoch(epoch.Epoch(3 * minValueChunk))
-	for i := range 2 * maxValueChunk {
-		wide.AddValue(i)
+	wide.SetEpoch(1)
+	for i := range wideValues {
+		wide.AddValue(int64(i))
 	}
 	require.NoError(t, wide.Commit())
 	ds, err := b.Finish()
 	require.NoError(t, err)
-	pts := ds.Results[0].SeriesList[0].Points
-	require.Len(t, pts, 3*minValueChunk+1)
-	for i, p := range pts[:3*minValueChunk] {
+	pts := ds.Results[0].SeriesList[0].Points()
+	require.Len(t, pts, rows)
+	for i, p := range pts {
 		require.Equal(t, []any{int64(i)}, p.Values)
-		require.Equal(t, 1, cap(p.Values))
 	}
-	require.Len(t, pts[3*minValueChunk].Values, 2*maxValueChunk)
-}
-
-func TestPointSize(t *testing.T) {
-	require.Equal(t, pointOverhead, PointSize(nil))
-	values := []any{nil, "abc", []byte("ab"), true, int8(1), uint8(1), int16(1), uint16(1),
-		int32(1), uint32(1), float32(1), int64(1), 1.0, uint64(1), 1}
-	want := pointOverhead + len(values)*valueOverhead + 3 + 2 + 3 + 4 + 12 + 32
-	require.Equal(t, want, PointSize(values))
+	widePts := ds.Results[0].SeriesList[1].Points()
+	require.Len(t, widePts, 1)
+	require.Len(t, widePts[0].Values, wideValues)
+	require.Equal(t, int64(wideValues-1), widePts[0].Values[wideValues-1])
 }
 
 func BenchmarkBuilderRows(b *testing.B) {

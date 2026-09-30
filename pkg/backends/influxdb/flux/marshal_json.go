@@ -68,7 +68,7 @@ func writeJSON(ds *dataset.DataSet, w io.Writer) error {
 			}
 			w.Write([]byte(`],"records":[`))
 			for k := range s.PointCount() {
-				c := *s.PointAt(k)
+				c := s.PointAt(k)
 				w.Write([]byte(`{"values":{`))
 				var o int
 				for n, fd := range fds {

@@ -188,7 +188,7 @@ func TestParserToDataSet(t *testing.T) {
 	for _, r := range ds.Results {
 		seriesByResult[r.Name] = len(r.SeriesList)
 		for _, s := range r.SeriesList {
-			pointsBySeries[s.Header.Name] = len(s.Points)
+			pointsBySeries[s.Header.Name] = s.PointCount()
 			if s.Header.Tags["host"] == "" {
 				t.Fatalf("series %q missing host tag", s.Header.Name)
 			}
@@ -212,7 +212,7 @@ func TestParserToDataSet(t *testing.T) {
 	for _, r := range ds.Results {
 		for _, s := range r.SeriesList {
 			if s.Header.Tags["host"] == "host-a" && r.Name == "_result1" {
-				found = s.Points[0]
+				found = s.Points()[0]
 			}
 		}
 	}
@@ -259,7 +259,7 @@ func TestParserSkipsHeaderAndMalformedRows(t *testing.T) {
 	totalPoints := 0
 	for _, r := range ds.Results {
 		for _, s := range r.SeriesList {
-			totalPoints += len(s.Points)
+			totalPoints += s.PointCount()
 		}
 	}
 	if totalPoints != 3 {
@@ -285,11 +285,11 @@ func TestParserInvalidTimestampSkipped(t *testing.T) {
 		t.Fatalf("unexpected result layout: %#v", ds.Results)
 	}
 	s := ds.Results[0].SeriesList[0]
-	if len(s.Points) != 1 {
-		t.Fatalf("expected 1 point after skipping invalid timestamp, got %d", len(s.Points))
+	if s.PointCount() != 1 {
+		t.Fatalf("expected 1 point after skipping invalid timestamp, got %d", s.PointCount())
 	}
-	if s.Points[0].Epoch != 2000 {
-		t.Fatalf("point epoch = %d, want 2000", s.Points[0].Epoch)
+	if s.Points()[0].Epoch != 2000 {
+		t.Fatalf("point epoch = %d, want 2000", s.Points()[0].Epoch)
 	}
 }
 
@@ -348,7 +348,7 @@ func TestParserEmptyValueSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ToDataSet: %v", err)
 	}
-	pt := ds.Results[0].SeriesList[0].Points[0]
+	pt := ds.Results[0].SeriesList[0].Points()[0]
 	if pt.Values[0] != nil {
 		t.Fatalf("expected empty value slot, got %#v", pt.Values[0])
 	}
@@ -365,32 +365,28 @@ func TestAddValue(t *testing.T) {
 		input    string
 		typ      timeseries.FieldDataType
 		wantVal  any
-		wantSize int
 	}{
-		{name: "int64", input: "42", typ: timeseries.Int64, wantVal: int64(42), wantSize: 8},
-		{name: "float64", input: "3.14", typ: timeseries.Float64, wantVal: 3.14, wantSize: 8},
-		{name: "string", input: "hello", typ: timeseries.String, wantVal: "hello", wantSize: 5},
-		{name: "bool-true", input: "true", typ: timeseries.Bool, wantVal: true, wantSize: 1},
-		{name: "byte", input: "7", typ: timeseries.Byte, wantVal: int64(7), wantSize: 1},
-		{name: "int16", input: "1000", typ: timeseries.Int16, wantVal: int64(1000), wantSize: 2},
-		{name: "uint64", input: "9007199254740991", typ: timeseries.Uint64, wantVal: uint64(9007199254740991), wantSize: 8},
-		{name: "datetime-rfc3339", input: "2020-01-02T03:04:05Z", typ: timeseries.DateTimeRFC3339, wantVal: "2020-01-02T03:04:05Z", wantSize: 20},
-		{name: "date-sql", input: "2020-01-02", typ: timeseries.DateSQL, wantVal: "2020-01-02", wantSize: 10},
-		{name: "datetime-sql", input: "2020-01-02 03:04:05", typ: timeseries.DateTimeSQL, wantVal: "2020-01-02 03:04:05", wantSize: 19},
-		{name: "time-sql", input: "03:04:05", typ: timeseries.TimeSQL, wantVal: "03:04:05", wantSize: 8},
-		{name: "unknown", input: "x", typ: timeseries.Unknown, wantVal: nil, wantSize: 0},
-		{name: "null", input: "x", typ: timeseries.Null, wantVal: nil, wantSize: 0},
-		{name: "invalid-int64", input: "nope", typ: timeseries.Int64, wantVal: nil, wantSize: 0},
+		{name: "int64", input: "42", typ: timeseries.Int64, wantVal: int64(42)},
+		{name: "float64", input: "3.14", typ: timeseries.Float64, wantVal: 3.14},
+		{name: "string", input: "hello", typ: timeseries.String, wantVal: "hello"},
+		{name: "bool-true", input: "true", typ: timeseries.Bool, wantVal: true},
+		{name: "byte", input: "7", typ: timeseries.Byte, wantVal: int64(7)},
+		{name: "int16", input: "1000", typ: timeseries.Int16, wantVal: int64(1000)},
+		{name: "uint64", input: "9007199254740991", typ: timeseries.Uint64, wantVal: uint64(9007199254740991)},
+		{name: "datetime-rfc3339", input: "2020-01-02T03:04:05Z", typ: timeseries.DateTimeRFC3339, wantVal: "2020-01-02T03:04:05Z"},
+		{name: "date-sql", input: "2020-01-02", typ: timeseries.DateSQL, wantVal: "2020-01-02"},
+		{name: "datetime-sql", input: "2020-01-02 03:04:05", typ: timeseries.DateTimeSQL, wantVal: "2020-01-02 03:04:05"},
+		{name: "time-sql", input: "03:04:05", typ: timeseries.TimeSQL, wantVal: "03:04:05"},
+		{name: "unknown", input: "x", typ: timeseries.Unknown, wantVal: nil},
+		{name: "null", input: "x", typ: timeseries.Null, wantVal: nil},
+		{name: "invalid-int64", input: "nope", typ: timeseries.Int64, wantVal: nil},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			vals := make([]any, 1)
-			size := addValue(tc.input, vals, 0, tc.typ)
-			if size != tc.wantSize {
-				t.Fatalf("addValue size = %d, want %d", size, tc.wantSize)
-			}
+			addValue(tc.input, vals, 0, tc.typ)
 			if tc.wantVal == nil {
 				if vals[0] != nil {
 					t.Fatalf("addValue value = %#v, want nil", vals[0])

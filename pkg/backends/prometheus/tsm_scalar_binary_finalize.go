@@ -43,8 +43,9 @@ func finalizeScalarBinaryWrapper(ds *dataset.DataSet, query string,
 			if series == nil {
 				continue
 			}
-			keptPoints := series.Points[:0]
-			for _, point := range series.Points {
+			points := series.Points()
+			keptPoints := points[:0]
+			for _, point := range points {
 				if len(point.Values) == 0 {
 					continue
 				}
@@ -76,15 +77,13 @@ func finalizeScalarBinaryWrapper(ds *dataset.DataSet, query string,
 					}
 					value = strconv.FormatFloat(updated, 'f', -1, 64)
 				}
-				point.Size += len(value) - len(oldValue)
 				point.Values[0] = value
 				keptPoints = append(keptPoints, point)
 			}
 			if len(keptPoints) == 0 {
 				continue
 			}
-			series.Points = keptPoints
-			series.PointSize = keptPoints.Size()
+			series.SetPoints(keptPoints)
 			series.Header.QueryStatement = query
 			if dropMetricName {
 				series.Header.Name = ""

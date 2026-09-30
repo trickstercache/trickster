@@ -164,16 +164,18 @@ func (ops prometheusHistogramOperations) FinalizeMerge(ds *dataset.DataSet,
 				continue
 			}
 			sampleTypes := make(map[epoch.Epoch]uint8)
-			for _, series := range group.floats {
-				for _, point := range series.Points {
-					sampleTypes[point.Epoch] |= 1
+			markEpochs := func(list []*dataset.Series, bit uint8) {
+				for _, series := range list {
+					segs := series.Segments()
+					for i := range segs {
+						for _, e := range segs[i].Epochs() {
+							sampleTypes[e] |= bit
+						}
+					}
 				}
 			}
-			for _, series := range group.histograms {
-				for _, point := range series.Points {
-					sampleTypes[point.Epoch] |= 2
-				}
-			}
+			markEpochs(group.floats, 1)
+			markEpochs(group.histograms, 2)
 			mixedEpochs := make(map[epoch.Epoch]struct{})
 			for sampleEpoch, sampleType := range sampleTypes {
 				if sampleType == 3 {
@@ -185,19 +187,15 @@ func (ops prometheusHistogramOperations) FinalizeMerge(ds *dataset.DataSet,
 			}
 			mixedSamples += len(mixedEpochs)
 			for _, series := range append(group.floats, group.histograms...) {
-				kept := series.Points[:0]
-				for _, point := range series.Points {
-					if _, mixed := mixedEpochs[point.Epoch]; !mixed {
-						kept = append(kept, point)
-					}
-				}
-				series.Points = kept
-				series.PointSize = kept.Size()
+				series.SetSegments(series.Segments().Filter(func(seg *dataset.Segment, i int) bool {
+					_, mixed := mixedEpochs[seg.Epoch(i)]
+					return !mixed
+				}))
 			}
 		}
 		kept := result.SeriesList[:0]
 		for _, series := range result.SeriesList {
-			if series != nil && len(series.Points) > 0 {
+			if series != nil && series.PointCount() > 0 {
 				kept = append(kept, series)
 			}
 		}

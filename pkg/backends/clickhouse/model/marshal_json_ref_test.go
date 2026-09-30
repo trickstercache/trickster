@@ -55,11 +55,11 @@ func referenceWireFormat(ds *dataset.DataSet) (*WFDocument, error) {
 		return d, nil
 	}
 	for _, s := range ds.Results[0].SeriesList {
-		maxRowCount += len(s.Points)
+		maxRowCount += s.PointCount()
 	}
 	data := make(WFData, maxRowCount)
 	for _, s := range ds.Results[0].SeriesList {
-		for _, p := range s.Points {
+		for _, p := range s.Points() {
 			item := make(WFDataItem, fieldCount)
 			var i int
 			for _, fd := range fds {
@@ -167,9 +167,9 @@ func TestMarshalJSONMatchesEncodingJSON(t *testing.T) {
 		timeseries.DateTimeRFC3339Nano,
 	} {
 		ds := jsonTestDataSet(tf, fds,
-			&dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"host<1>": "a&b"}}, Points: points},
-			&dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{}}, Points: points[:2]},
-			&dataset.Series{})
+			dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"host<1>": "a&b"}}, points),
+			dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{}}, points[:2]),
+			dataset.NewSeries(dataset.SeriesHeader{}, nil))
 		requireJSONReference(t, fmt.Sprint("time format ", tf), ds)
 	}
 	// two fields sharing a position, the later one winning
@@ -179,7 +179,7 @@ func TestMarshalJSONMatchesEncodingJSON(t *testing.T) {
 		{Name: "b", Role: timeseries.RoleValue, OutputPosition: 1},
 	}
 	requireJSONReference(t, "shared position", jsonTestDataSet(timeseries.DateTimeUnixSecs, shared,
-		&dataset.Series{Points: dataset.Points{{Epoch: 1e9, Values: []any{1.0, 2.0}}, {Epoch: 2e9, Values: []any{3.0}}}}))
+		dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{{Epoch: 1e9, Values: []any{1.0, 2.0}}, {Epoch: 2e9, Values: []any{3.0}}})))
 
 	rng := weaktest.NewRand(9, 4)
 	for trial := range 50 {
@@ -191,13 +191,13 @@ func TestMarshalJSONMatchesEncodingJSON(t *testing.T) {
 		}
 		var series []*dataset.Series
 		for range 1 + rng.IntN(3) {
-			s := &dataset.Series{}
+			s := dataset.NewSeries(dataset.SeriesHeader{}, nil)
 			for p := range rng.IntN(20) {
 				vals := make([]any, rng.IntN(width+1))
 				for i := range vals {
 					vals[i] = rng.NormFloat64() * math.Pow(10, float64(rng.IntN(40)-20))
 				}
-				s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(int64(p) * 1e9), Values: vals})
+				s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(int64(p) * 1e9), Values: vals}))
 			}
 			series = append(series, s)
 		}
@@ -211,7 +211,7 @@ func TestTimeOrderedRowsMatchesAStableSort(t *testing.T) {
 		r := &dataset.Result{}
 		sorted := trial%3 != 0
 		for range rng.IntN(5) {
-			s := &dataset.Series{}
+			s := dataset.NewSeries(dataset.SeriesHeader{}, nil)
 			at := rng.IntN(4)
 			for range rng.IntN(8) {
 				if sorted {
@@ -219,17 +219,20 @@ func TestTimeOrderedRowsMatchesAStableSort(t *testing.T) {
 				} else {
 					at = rng.IntN(6)
 				}
-				s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(at), Values: []any{len(s.Points)}})
+				s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(at), Values: []any{s.PointCount()}}))
 			}
 			r.SeriesList = append(r.SeriesList, s)
 		}
 		var want []outputRow
 		for _, s := range r.SeriesList {
-			for i := range s.Points {
-				want = append(want, outputRow{series: s, point: &s.Points[i]})
+			segs := s.Segments()
+			for k := range segs {
+				for i := range segs[k].Len() {
+					want = append(want, outputRow{series: s, seg: &segs[k], i: i})
+				}
 			}
 		}
-		slices.SortStableFunc(want, func(a, b outputRow) int { return cmp.Compare(a.point.Epoch, b.point.Epoch) })
+		slices.SortStableFunc(want, func(a, b outputRow) int { return cmp.Compare(a.epoch(), b.epoch()) })
 		rows, n := timeOrderedRows(r)
 		got := slices.Collect(rows)
 		if n != len(want) || len(got) != len(want) {
@@ -251,10 +254,10 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 	}
 	var series []*dataset.Series
 	for i := range 3 {
-		s := &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprint("h", i)}}}
+		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprint("h", i)}}, nil)
 		for j := range 5 {
-			s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-				Values: []any{float64(i*j) / 3}})
+			s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+				Values: []any{float64(i*j) / 3}}))
 		}
 		series = append(series, s)
 	}

@@ -23,7 +23,6 @@ import (
 	"io"
 	"runtime"
 	"slices"
-	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -98,7 +97,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			}
 			sh.CalculateSize()
 			pts := make(dataset.Points, len(wfd.Results[i].SeriesList[j].Values))
-			var sz int64
 			var eg errgroup.Group
 			eg.SetLimit(runtime.GOMAXPROCS(0))
 			errs := make([]error, len(wfd.Results[i].SeriesList[j].Values))
@@ -118,7 +116,6 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 						}
 					}
 					pts[vi] = pt
-					atomic.AddInt64(&sz, int64(pt.Size))
 					wfd.Results[i].SeriesList[j].Values[vi] = nil
 					return nil
 				})
@@ -127,6 +124,8 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			if err := errors.Join(errs...); err != nil {
 				return nil, err
 			}
+			// a row at epoch zero leaves an empty point, which no series holds
+			pts = slices.DeleteFunc(pts, func(p dataset.Point) bool { return p.Values == nil })
 			slices.SortFunc(pts, func(a, b dataset.Point) int {
 				if a.Epoch < b.Epoch {
 					return -1
@@ -136,12 +135,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 				}
 				return 0
 			})
-			s := &dataset.Series{
-				Header:    sh,
-				Points:    pts,
-				PointSize: sz,
-			}
-			ds.Results[i].SeriesList[j] = s
+			ds.Results[i].SeriesList[j] = dataset.NewSeries(sh, pts)
 			wfd.Results[i].SeriesList[j].Values = nil
 		}
 	}
@@ -181,25 +175,20 @@ func pointFromValues(v []any, tsIndex int) (dataset.Point,
 	p.Values = append(make([]any, 0, len(v)-1), v[:tsIndex]...)
 	p.Values = append(p.Values, v[tsIndex+1:]...)
 	p.Epoch = epoch.Epoch(ns)
-	p.Size = 12
 	fdts := make([]timeseries.FieldDataType, len(p.Values))
 	for x := range p.Values {
 		if p.Values[x] == nil {
 			continue
 		}
-		switch t := p.Values[x].(type) {
+		switch p.Values[x].(type) {
 		case string:
 			fdts[x] = timeseries.String
-			p.Size += len(t)
 		case bool:
 			fdts[x] = timeseries.Bool
-			p.Size++
 		case int64, int:
 			fdts[x] = timeseries.Int64
-			p.Size += 8
 		case float64, float32:
 			fdts[x] = timeseries.Float64
-			p.Size += 8
 		default:
 			return p, nil, timeseries.ErrInvalidTimeFormat
 		}

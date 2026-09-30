@@ -85,20 +85,16 @@ func TestUnmarshalTimeseries(t *testing.T) {
 func TestMarshalTimeseries_EscapesTagValues(t *testing.T) {
 	ds := &dataset.DataSet{
 		Results: dataset.Results{{
-			SeriesList: dataset.SeriesList{{
-				Header: dataset.SeriesHeader{
-					Name: "up",
-					Tags: dataset.Tags{
-						"__name__": "up",
-						"path":     `/api/v1/query?q="a"`,
-					},
+			SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{
+				Name: "up",
+				Tags: dataset.Tags{
+					"__name__": "up",
+					"path":     `/api/v1/query?q="a"`,
 				},
-				Points: dataset.Points{{
-					Epoch:  1435781430000000000,
-					Size:   33,
-					Values: []any{"1"},
-				}},
-			}},
+			}, dataset.Points{{
+				Epoch:  1435781430000000000,
+				Values: []any{"1"},
+			}})},
 		}},
 	}
 	b, err := MarshalTimeseries(ds, nil, 200)
@@ -132,10 +128,10 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 		t.Fatalf("expected 1 series, got %d", len(ds.Results[0].SeriesList))
 	}
 	s := ds.Results[0].SeriesList[0]
-	if len(s.Points) != 1 {
-		t.Fatalf("expected 1 point, got %d", len(s.Points))
+	if s.PointCount() != 1 {
+		t.Fatalf("expected 1 point, got %d", s.PointCount())
 	}
-	got := int64(s.Points[0].Epoch)
+	got := int64(s.Points()[0].Epoch)
 	want := int64(1554730772113000000)
 	if diff := got - want; diff < -1000 || diff > 1000 {
 		t.Errorf("expected epoch ~%d, got %d (diff=%d)", want, got, diff)

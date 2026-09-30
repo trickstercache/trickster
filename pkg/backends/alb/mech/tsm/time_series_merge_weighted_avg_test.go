@@ -40,7 +40,7 @@ func TestPruneUnpairedWeightedAvgSeries(t *testing.T) {
 		if got := series[0].Header.Tags["region"]; got != "us-east-1" {
 			t.Errorf("expected surviving series region=us-east-1, got %q", got)
 		}
-		if got := series[0].Points[0].Values[0]; got != "10" {
+		if got := series[0].Points()[0].Values[0]; got != "10" {
 			t.Errorf("paired series should finalize to 100/10=10, got %v", got)
 		}
 		if len(sumDS.Warnings) == 0 {
@@ -62,7 +62,7 @@ func TestPruneUnpairedWeightedAvgSeries(t *testing.T) {
 		sumDS := loadGoldenDataSet(t, "weighted_avg/baseline_no_prune_sum")
 		countDS := loadGoldenDataSet(t, "weighted_avg/baseline_no_prune_count")
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		got := sumDS.Results[0].SeriesList[0].Points[0].Values[0]
+		got := sumDS.Results[0].SeriesList[0].Points()[0].Values[0]
 		if got != "200" {
 			t.Fatalf("baseline assumption invalid: expected raw sum 200, got %v", got)
 		}
@@ -87,12 +87,9 @@ func TestPruneUnpairedWeightedAvgSeries(t *testing.T) {
 			return &dataset.DataSet{
 				Results: dataset.Results{{
 					StatementID: 0,
-					SeriesList: dataset.SeriesList{{
-						Header: dataset.SeriesHeader{
-							Name: "rps", Tags: dataset.Tags{"region": "us-west-2"},
-						},
-						Points: dataset.Points{{Epoch: epoch.Epoch(100), Size: 32, Values: []any{"200"}}},
-					}},
+					SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{
+						Name: "rps", Tags: dataset.Tags{"region": "us-west-2"},
+					}, dataset.Points{{Epoch: epoch.Epoch(100), Values: []any{"200"}}})},
 				}},
 			}
 		}
@@ -137,7 +134,7 @@ func TestPruneUnpairedWeightedAvgSeries(t *testing.T) {
 		}
 		sumDS.FinalizeWeightedAvg(countDS, "")
 
-		pts := sumDS.Results[0].SeriesList[0].Points
+		pts := sumDS.Results[0].SeriesList[0].Points()
 		if len(pts) != 1 {
 			t.Fatalf("expected 1 point after dropping unpaired epoch, got %d (%v)", len(pts), pts)
 		}

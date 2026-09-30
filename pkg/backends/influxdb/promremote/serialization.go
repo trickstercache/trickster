@@ -129,7 +129,6 @@ func fromWireSeries(wireSeries *prompb.TimeSeries,
 	header.CalculateSize()
 
 	points := make(dataset.Points, len(wireSeries.Samples))
-	var pointSize int64
 	for i, sample := range wireSeries.Samples {
 		if sample == nil {
 			return nil, errInvalidSample
@@ -140,16 +139,14 @@ func fromWireSeries(wireSeries *prompb.TimeSeries,
 		}
 		points[i] = dataset.Point{
 			Epoch:  epoch.Epoch(sample.Timestamp * nanosPerMillisecond),
-			Size:   20,
 			Values: []any{sample.Value},
 		}
-		pointSize += int64(points[i].Size)
 	}
 	slices.SortFunc(points, func(a, b dataset.Point) int {
 		return cmpEpoch(a.Epoch, b.Epoch)
 	})
 
-	return &dataset.Series{Header: header, Points: points, PointSize: pointSize}, nil
+	return dataset.NewSeries(header, points), nil
 }
 
 func cmpEpoch(a, b epoch.Epoch) int {
@@ -223,21 +220,21 @@ func toWireSeries(series *dataset.Series) (*prompb.TimeSeries, error) {
 	for _, name := range series.Header.Tags.Keys() {
 		labels = append(labels, &prompb.Label{Name: name, Value: series.Header.Tags[name]})
 	}
-	samples := make([]*prompb.Sample, len(series.Points))
-	for i, point := range series.Points {
-		if len(point.Values) != 1 {
-			return nil, errInvalidSample
-		}
-		value, ok := point.Values[0].(float64)
-		if !ok {
-			return nil, errInvalidSample
-		}
-		if int64(point.Epoch)%nanosPerMillisecond != 0 {
-			return nil, errUnexpectedTimeStep
-		}
-		samples[i] = &prompb.Sample{
-			Timestamp: int64(point.Epoch) / nanosPerMillisecond,
-			Value:     value,
+	samples := make([]*prompb.Sample, 0, series.PointCount())
+	segs := series.Segments()
+	for k := range segs {
+		seg := &segs[k]
+		for i, e := range seg.Epochs() {
+			if seg.NumCols() != 1 || seg.KindAt(0, i) != dataset.KindFloat64 {
+				return nil, errInvalidSample
+			}
+			if int64(e)%nanosPerMillisecond != 0 {
+				return nil, errUnexpectedTimeStep
+			}
+			samples = append(samples, &prompb.Sample{
+				Timestamp: int64(e) / nanosPerMillisecond,
+				Value:     seg.Float64(0, i),
+			})
 		}
 	}
 	return &prompb.TimeSeries{Labels: labels, Samples: samples}, nil

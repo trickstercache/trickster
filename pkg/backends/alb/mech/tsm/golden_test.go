@@ -31,7 +31,6 @@ import (
 // minimal and explicit avoids depending on future dataset struct tags.
 type goldenPoint struct {
 	Epoch  int64 `json:"epoch"`
-	Size   int   `json:"size"`
 	Values []any `json:"values"`
 }
 
@@ -66,12 +65,11 @@ func toGolden(ds *dataset.DataSet) goldenDataSet {
 				Name:           s.Header.Name,
 				Tags:           map[string]string(s.Header.Tags),
 				QueryStatement: s.Header.QueryStatement,
-				Points:         make([]goldenPoint, len(s.Points)),
+				Points:         make([]goldenPoint, s.PointCount()),
 			}
-			for i, p := range s.Points {
+			for i, p := range s.Points() {
 				gs.Points[i] = goldenPoint{
 					Epoch:  int64(p.Epoch),
-					Size:   p.Size,
 					Values: append([]any(nil), p.Values...),
 				}
 			}
@@ -91,18 +89,14 @@ func fromGolden(g goldenDataSet) *dataset.DataSet {
 			for k, gp := range gs.Points {
 				points[k] = dataset.Point{
 					Epoch:  epoch.Epoch(gp.Epoch),
-					Size:   gp.Size,
 					Values: gp.Values,
 				}
 			}
-			series[j] = &dataset.Series{
-				Header: dataset.SeriesHeader{
-					Name:           gs.Name,
-					Tags:           dataset.Tags(gs.Tags),
-					QueryStatement: gs.QueryStatement,
-				},
-				Points: points,
-			}
+			series[j] = dataset.NewSeries(dataset.SeriesHeader{
+				Name:           gs.Name,
+				Tags:           dataset.Tags(gs.Tags),
+				QueryStatement: gs.QueryStatement,
+			}, points)
 		}
 		ds.Results[i] = &dataset.Result{StatementID: gr.StatementID, SeriesList: series}
 	}

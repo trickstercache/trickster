@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
@@ -55,10 +56,15 @@ type sqlSeries struct {
 	order   []int
 }
 
-// one output row: a point, by reference, and the layout of its series
+// one output row: where its series holds it, and the layout of its series
 type sqlRow struct {
-	s *sqlSeries
-	p *dataset.Point
+	s   *sqlSeries
+	seg *dataset.Segment
+	row int
+}
+
+func (r sqlRow) epoch() epoch.Epoch {
+	return r.seg.Epoch(r.row)
 }
 
 // the row's value in column i; a time is formatted, which only rare comparisons need
@@ -66,12 +72,12 @@ func (r sqlRow) value(i int) any {
 	c := &r.s.columns[i]
 	switch c.role {
 	case sqlColumnTimestamp:
-		return formatTimestamp(r.p.Epoch)
+		return formatTimestamp(r.epoch())
 	case sqlColumnTag:
 		return r.s.tags[i]
 	}
-	if c.index < len(r.p.Values) {
-		return r.p.Values[c.index]
+	if c.index < r.seg.NumCols() {
+		return r.seg.Value(c.index, r.row)
 	}
 	return nil
 }
@@ -81,11 +87,19 @@ func (r sqlRow) appendValue(b []byte, i int) []byte {
 	if i < 0 {
 		return append(b, "null"...)
 	}
-	if r.s.columns[i].role == sqlColumnTimestamp {
-		return appendTimestamp(b, r.p.Epoch)
+	c := &r.s.columns[i]
+	switch c.role {
+	case sqlColumnTimestamp:
+		return appendTimestamp(b, r.epoch())
+	case sqlColumnTag:
+		b, _ = tstrings.AppendJSONValue(b, r.s.tags[i])
+		return b
 	}
-	b, _ = tstrings.AppendJSONValue(b, r.value(i))
-	return b
+	if c.index < r.seg.NumCols() {
+		b, _ = r.seg.AppendJSON(b, c.index, r.row)
+		return b
+	}
+	return append(b, "null"...)
 }
 
 func marshalSQLTimeseriesWriter(ds *dataset.DataSet, marker *SQLQueryPlan,
@@ -135,8 +149,8 @@ func marshalSQLTimeseriesWriter(ds *dataset.DataSet, marker *SQLQueryPlan,
 
 func checkSQLRow(row sqlRow, sources []int) error {
 	for _, i := range sources {
-		if i >= 0 && row.s.columns[i].role == sqlColumnValue {
-			if err := tstrings.CheckJSONValue(row.value(i)); err != nil {
+		if c := &row.s.columns[i]; i >= 0 && c.role == sqlColumnValue && c.index < row.seg.NumCols() {
+			if err := row.seg.CheckJSON(c.index, row.row); err != nil {
 				return err
 			}
 		}
@@ -286,8 +300,11 @@ func sqlOutputRows(ds *dataset.DataSet, ordering []timeseries.OrderTerm) []sqlRo
 				continue
 			}
 			s := newSQLSeries(series, ordering)
-			for i := range series.PointCount() {
-				rows = append(rows, sqlRow{s: s, p: series.PointAt(i)})
+			segs := series.Segments()
+			for k := range segs {
+				for i := range segs[k].Len() {
+					rows = append(rows, sqlRow{s: s, seg: &segs[k], row: i})
+				}
 			}
 		}
 	}
@@ -384,7 +401,7 @@ func sortSQLRows(rows []sqlRow, ordering []timeseries.OrderTerm) {
 			var comparison int
 			if a.s.columns[ai].role == sqlColumnTimestamp && b.s.columns[bi].role == sqlColumnTimestamp {
 				// times are never null; their text mixes millisecond and nanosecond forms, so compare epochs
-				comparison = cmp.Compare(a.p.Epoch, b.p.Epoch)
+				comparison = cmp.Compare(a.epoch(), b.epoch())
 			} else {
 				av, bv := a.value(ai), b.value(bi)
 				if nulls, handled := compareSQLNulls(av, bv, term.NullsFirst); handled {
@@ -402,7 +419,7 @@ func sortSQLRows(rows []sqlRow, ordering []timeseries.OrderTerm) {
 				return comparison
 			}
 		}
-		return cmp.Compare(a.p.Epoch, b.p.Epoch)
+		return cmp.Compare(a.epoch(), b.epoch())
 	})
 }
 

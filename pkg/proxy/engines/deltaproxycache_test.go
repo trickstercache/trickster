@@ -2431,10 +2431,7 @@ func TestDeltaProxyCacheRequestLeavesCachedDataUnchanged(t *testing.T) {
 	// what any reader may do: its points are read-only, but it owns the shape around them
 	reshape := func(ts timeseries.Timeseries) {
 		ds := ts.(*dataset.DataSet)
-		ds.Merge(true, &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{{
-			Header: dataset.SeriesHeader{Tags: dataset.Tags{"extra": "1"}},
-			Points: dataset.Points{{Epoch: 1, Values: []any{"1"}}},
-		}}}}})
+		ds.Merge(true, &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"extra": "1"}}, dataset.Points{{Epoch: 1, Values: []any{"1"}}})}}}})
 		ds.CropToRange(timeseries.Extent{Start: extr.Start, End: extr.Start.Add(step)})
 		for _, r := range ds.Results {
 			r.SeriesList = r.SeriesList[:0]
@@ -2445,10 +2442,12 @@ func TestDeltaProxyCacheRequestLeavesCachedDataUnchanged(t *testing.T) {
 		ds := ts.(*dataset.DataSet)
 		for _, r := range ds.Results {
 			for _, s := range r.SeriesList {
-				for i := range s.Points {
-					s.Points[i].Values[0] = "999"
-					s.Points[i].Epoch++
+				pts := s.Points()
+				for i := range pts {
+					pts[i].Values[0] = "999"
+					pts[i].Epoch++
 				}
+				s.SetPoints(pts)
 				s.Header.Tags["vandal"] = "yes"
 			}
 		}
@@ -2555,7 +2554,7 @@ func TestDeltaProxyCacheRequestPartialHitLeavesCachedEntry(t *testing.T) {
 		fmt.Fprintf(&b, "%v %v", stored.ExtentList, stored.VolatileExtentList)
 		for _, r := range stored.Results {
 			for _, s := range r.SeriesList {
-				fmt.Fprintf(&b, " %p %v", s, s.Points)
+				fmt.Fprintf(&b, " %p %v", s, s.Points())
 			}
 		}
 		return b.String()

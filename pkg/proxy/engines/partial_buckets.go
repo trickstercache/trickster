@@ -277,15 +277,9 @@ func keepLabel(ts timeseries.Timeseries, label time.Time) {
 			if s == nil {
 				continue
 			}
-			n := 0
-			for _, p := range s.Points {
-				if p.Epoch == e {
-					s.Points[n] = p
-					n++
-				}
-			}
-			s.Points = s.Points[:n]
-			s.PointSize = s.Points.Size()
+			s.SetSegments(s.Segments().Filter(func(seg *dataset.Segment, i int) bool {
+				return seg.Epoch(i) == e
+			}))
 		}
 	}
 	ds.ExtentList = timeseries.ExtentList{{Start: label, End: label}}

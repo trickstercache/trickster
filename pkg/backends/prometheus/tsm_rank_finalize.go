@@ -221,7 +221,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 				continue
 			}
 			group := rankGroupKey(series.Header.Tags, spec.Grouping)
-			for i, point := range series.Points {
+			for i, point := range series.Points() {
 				value, ok := rankPointValue(point)
 				if !ok {
 					continue
@@ -336,8 +336,9 @@ func keepSelectedRankPoints(
 		if len(selectedPoints) == 0 {
 			continue
 		}
-		keptPoints := series.Points[:0]
-		for i, point := range series.Points {
+		points := series.Points()
+		keptPoints := points[:0]
+		for i, point := range points {
 			if _, ok := selectedPoints[i]; ok {
 				keptPoints = append(keptPoints, point)
 			}
@@ -345,8 +346,7 @@ func keepSelectedRankPoints(
 		if len(keptPoints) == 0 {
 			continue
 		}
-		series.Points = keptPoints
-		series.PointSize = series.Points.Size()
+		series.SetPoints(keptPoints)
 		keptSeries = append(keptSeries, series)
 	}
 	return keptSeries
@@ -373,19 +373,19 @@ func sortInstantSeries(seriesList dataset.SeriesList, descending bool) {
 	if len(seriesList) < 2 {
 		return
 	}
-	if seriesList[0] == nil || len(seriesList[0].Points) != 1 {
+	if seriesList[0] == nil || seriesList[0].PointCount() != 1 {
 		return
 	}
-	epoch := seriesList[0].Points[0].Epoch
+	epoch := seriesList[0].PointAt(0).Epoch
 	for _, series := range seriesList {
-		if series == nil || len(series.Points) != 1 || series.Points[0].Epoch != epoch {
+		if series == nil || series.PointCount() != 1 || series.PointAt(0).Epoch != epoch {
 			return
 		}
 	}
 
 	items := make([]sortItem, 0, len(seriesList))
 	for _, series := range seriesList {
-		value, ok := rankPointValue(series.Points[0])
+		value, ok := rankPointValue(series.PointAt(0))
 		if !ok {
 			value = math.NaN()
 		}

@@ -95,6 +95,8 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 	fieldTypes := responseFieldTypes(points, plan.Dimensions(), valueNames)
 	result := &dataset.Result{StatementID: 0, Name: plan.QueryType()}
 	seriesByTags := make(map[string]*dataset.Series)
+	// each series' points, until they're set on it
+	seriesPoints := make(map[*dataset.Series]dataset.Points)
 	for _, source := range points {
 		tags := make(dataset.Tags, len(source.dimensions))
 		for _, name := range plan.Dimensions() {
@@ -108,14 +110,13 @@ func UnmarshalTimeseriesReader(reader io.Reader,
 			seriesByTags[key] = series
 			result.SeriesList = append(result.SeriesList, series)
 		}
-		values := pointValues(source, plan, valueNames)
-		point := dataset.Point{
+		seriesPoints[series] = append(seriesPoints[series], dataset.Point{
 			Epoch:  epoch.Epoch(source.timestamp.UnixNano()),
-			Values: values,
-			Size:   pointSize(values),
-		}
-		series.Points = append(series.Points, point)
-		series.PointSize += int64(point.Size)
+			Values: pointValues(source, plan, valueNames),
+		})
+	}
+	for series, pts := range seriesPoints {
+		series.SetPoints(pts)
 	}
 	slices.SortFunc(result.SeriesList, func(a, b *dataset.Series) int {
 		return stringsCompare(a.Header.Tags.JSON(), b.Header.Tags.JSON())
@@ -379,11 +380,6 @@ func tagString(value any) string {
 		return fmt.Sprint(value)
 	}
 	return string(b)
-}
-
-func pointSize(values []any) int {
-	b, _ := json.Marshal(values)
-	return len(b) + 32
 }
 
 func stringsCompare(a, b string) int {

@@ -329,12 +329,12 @@ func TestRenderedPointsToleratesSparseDataSet(t *testing.T) {
 			nil,
 			{SeriesList: dataset.SeriesList{
 				nil,
-				{Header: dataset.SeriesHeader{
+				dataset.NewSeries(dataset.SeriesHeader{
 					Tags: dataset.Tags{"tag": "x"},
 					ValueFieldsList: timeseries.FieldDefinitions{
 						{Name: "missing", Role: timeseries.RoleValue},
 					},
-				}, Points: dataset.Points{{Epoch: 0}}},
+				}, dataset.Points{{Epoch: 0}}),
 			}},
 		},
 	}

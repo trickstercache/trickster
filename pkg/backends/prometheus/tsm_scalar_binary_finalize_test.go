@@ -126,7 +126,9 @@ func TestFinalizeTSMMergeScalarBinaryWrapper(t *testing.T) {
 
 	t.Run("uses each point evaluation time", func(t *testing.T) {
 		series := rankSeriesWithTags("", dataset.Tags{}, "1726000000.123", 1)
-		series.Points[0].Epoch = epoch.FromMilliSecs(1726000015123)
+		pts := series.Points()
+		pts[0].Epoch = epoch.FromMilliSecs(1726000015123)
+		series.SetPoints(pts)
 		ds := rankDataSet(series)
 
 		(&Client{}).FinalizeTSMMerge("time() - max(timestamp(up))", ds)
@@ -191,18 +193,18 @@ func TestFinalizeTSMMergeScalarBinaryWrapper(t *testing.T) {
 
 	t.Run("drops malformed points", func(t *testing.T) {
 		series := rankSeries("up", "2", 400)
-		series.Points = append(dataset.Points{
+		series.SetPoints(append(dataset.Points{
 			{},
 			{Values: []any{1}},
 			{Values: []any{"invalid"}},
-		}, series.Points...)
+		}, series.Points()...))
 		ds := rankDataSet(nil, series)
 		ds.Results = append(dataset.Results{nil}, ds.Results...)
 
 		(&Client{}).FinalizeTSMMerge("sum(up) * 2", ds)
 
-		if len(series.Points) != 1 || series.Points[0].Values[0] != "4" {
-			t.Fatalf("points got %v", series.Points)
+		if series.PointCount() != 1 || series.Points()[0].Values[0] != "4" {
+			t.Fatalf("points got %v", series.Points())
 		}
 	})
 }

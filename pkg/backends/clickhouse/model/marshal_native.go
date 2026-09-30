@@ -66,7 +66,7 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 	var layout *nativeSeries
 	var last *dataset.Series
 	for row := range rows {
-		series, point := row.series, row.point
+		series := row.series
 		if series != last {
 			if layout = layouts[series]; layout == nil {
 				layout = newNativeSeries(series, fields)
@@ -78,13 +78,13 @@ func marshalTimeseriesNative(w io.Writer, ds *dataset.DataSet, options *timeseri
 			var value any
 			switch f.Role {
 			case timeseries.RoleTimestamp:
-				value = times[i].format(point.Epoch)
+				value = times[i].format(row.epoch())
 			case timeseries.RoleValue:
 				index := layout.index[i]
-				if index < 0 || index >= len(point.Values) {
+				if index < 0 || index >= row.seg.NumCols() {
 					return timeseries.ErrInvalidBody
 				}
-				value = point.Values[index]
+				value = row.seg.Value(index, row.i)
 			default:
 				value = layout.cells[i]
 			}

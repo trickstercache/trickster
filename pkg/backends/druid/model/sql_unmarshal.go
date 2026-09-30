@@ -270,6 +270,8 @@ func sqlRowsToDataSet(columns []string, rows []map[string]any,
 	}
 
 	seriesByKey := make(map[string]*dataset.Series)
+	// each series' points, until they're set on it
+	points := make(map[*dataset.Series]dataset.Points)
 	seriesKeys := make([]string, 0, 8)
 	result := &dataset.Result{Name: sqlResultName}
 	for _, row := range rows {
@@ -294,7 +296,7 @@ func sqlRowsToDataSet(columns []string, rows []map[string]any,
 				QueryStatement: trq.Statement,
 			}
 			header.CalculateSize()
-			series = &dataset.Series{Header: header}
+			series = dataset.NewSeries(header, nil)
 			seriesByKey[key] = series
 			seriesKeys = append(seriesKeys, key)
 			result.SeriesList = append(result.SeriesList, series)
@@ -303,13 +305,11 @@ func sqlRowsToDataSet(columns []string, rows []map[string]any,
 		for i, index := range valueIndices {
 			values[i] = normalizeJSONValue(row[columns[index]])
 		}
-		point := dataset.Point{Epoch: ep, Values: values}
-		point.Size = pointSize(values)
-		series.Points = append(series.Points, point)
-		series.PointSize += int64(point.Size)
+		points[series] = append(points[series], dataset.Point{Epoch: ep, Values: values})
 	}
 	for _, series := range result.SeriesList {
-		slices.SortStableFunc(series.Points, func(a, b dataset.Point) int {
+		pts := points[series]
+		slices.SortStableFunc(pts, func(a, b dataset.Point) int {
 			if a.Epoch < b.Epoch {
 				return -1
 			}
@@ -318,6 +318,7 @@ func sqlRowsToDataSet(columns []string, rows []map[string]any,
 			}
 			return 0
 		})
+		series.SetPoints(pts)
 	}
 	slices.Sort(seriesKeys)
 	ordered := make(dataset.SeriesList, 0, len(seriesKeys))

@@ -22,11 +22,10 @@ package dataset
 
 import (
 	"io"
-	"runtime"
+	"math"
 	"slices"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -34,8 +33,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // DataSet is the Common Time Series Format that Trickster uses to
@@ -86,8 +83,8 @@ type Marshaler func(*DataSet, *timeseries.RequestOptions, int) ([]byte, error)
 // MarshalWriter is a function that serializes the DataSet via an io.Writer
 type MarshalWriter func(io.Writer, *DataSet, *timeseries.RequestOptions, int) error
 
-// CroppedClone returns a new, perfect copy of the DataSet, efficiently
-// cropped to the provided Extent. CroppedClone assumes the DataSet is sorted.
+// CroppedClone returns a copy of the DataSet cropped to the provided Extent, with its own headers and
+// sharing its read-only rows. CroppedClone assumes the DataSet is sorted.
 func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 	x := len(ds.ExtentList)
 	if x == 0 || ds.Results == nil {
@@ -146,44 +143,22 @@ func (ds *DataSet) CroppedClone(e timeseries.Extent) timeseries.Timeseries {
 			StatementID: ds.Results[i].StatementID,
 			Error:       ds.Results[i].Error,
 		}
-		clone.Results[i].SeriesList = make([]*Series, len(ds.Results[i].SeriesList))
-		eg := errgroup.Group{}
-		eg.SetLimit(runtime.GOMAXPROCS(0))
-		var skips int32
-		for j, s := range ds.Results[i].SeriesList {
-			if s == nil || s.PointCount() == 0 {
-				atomic.StoreInt32(&skips, 1)
+		clone.Results[i].SeriesList = make([]*Series, 0, len(ds.Results[i].SeriesList))
+		for _, s := range ds.Results[i].SeriesList {
+			if s == nil {
 				continue
 			}
-			n := i
-			eg.Go(func() error {
-				sc := &Series{
-					Header: s.Header.Clone(),
-				}
-				all := s.FlatPoints()
-				l := len(all)
-				start, end := all.findRange(startNS, endNS, 0, l-1)
-				if start < l && end <= l && end > start {
-					sc.Points = all.CloneRange(start, end)
-					sc.PointSize = sc.Points.Size()
-					clone.Results[n].SeriesList[j] = sc
-				} else {
-					atomic.StoreInt32(&skips, 1)
-				}
-				return nil
-			})
-		}
-		eg.Wait()
-		if skips == 1 {
-			clone.Results[i].SeriesList = slices.DeleteFunc(clone.Results[i].SeriesList, func(s *Series) bool {
-				return s == nil
-			})
+			// the rows are read-only, so the clone shares them
+			if v := s.segs.View(startNS, endNS); v.Len() > 0 {
+				clone.Results[i].SeriesList = append(clone.Results[i].SeriesList,
+					&Series{Header: s.Header.Clone(), segs: v})
+			}
 		}
 	}
 	return clone
 }
 
-// Clone returns a new, perfect copy of the DataSet
+// Clone returns a copy of the DataSet with its own headers, sharing its read-only rows
 func (ds *DataSet) Clone() timeseries.Timeseries {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
@@ -425,14 +400,17 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 			if s == nil {
 				continue
 			}
-			h := pairingHash(&s.Header)
-			ec := make(epochCounts, len(s.Points))
-			for _, pt := range s.Points {
-				if len(pt.Values) > 0 {
-					ec[pt.Epoch] = parseFloat(pt.Values[0])
+			ec := make(epochCounts, s.PointCount())
+			for i := range s.segs {
+				seg := &s.segs[i]
+				if seg.NumCols() == 0 {
+					continue
+				}
+				for j := range seg.Len() {
+					ec[seg.epochs[j]] = seg.floatAt(0, j)
 				}
 			}
-			seriesMap[h] = ec
+			seriesMap[pairingHash(&s.Header)] = ec
 		}
 	}
 	// Divide accumulated sum values by their corresponding total counts
@@ -454,33 +432,19 @@ func (ds *DataSet) FinalizeWeightedAvg(countDS *DataSet, pairingQueryStatement s
 			if !ok {
 				continue
 			}
-			kept := s.Points[:0]
-			dropped := 0
-			for i := range s.Points {
-				if len(s.Points[i].Values) == 0 {
-					kept = append(kept, s.Points[i])
-					continue
-				}
-				cnt, ok := ec[s.Points[i].Epoch]
+			var dropped int
+			s.segs, dropped = s.segs.mapFirstValue(func(seg *Segment, i int) (cellValue, bool, bool) {
+				cnt, ok := ec[seg.epochs[i]]
 				if !ok || cnt == 0 {
-					dropped++
-					continue
+					return cellValue{}, false, false
 				}
 				if ds.ValueOperations != nil {
-					if value, handled := ds.ValueOperations.DivideValue(
-						s.Points[i].Values[0], cnt,
-					); handled {
-						setPointValue(&s.Points[i], 0, value)
-						kept = append(kept, s.Points[i])
-						continue
+					if value, handled := ds.ValueOperations.DivideValue(seg.Value(0, i), cnt); handled {
+						return valueCell(value), true, true
 					}
 				}
-				sum := parseFloat(s.Points[i].Values[0])
-				s.Points[i].Values[0] = strconv.FormatFloat(sum/cnt, 'f', -1, 64)
-				kept = append(kept, s.Points[i])
-			}
-			s.Points = kept
-			s.PointSize = kept.Size()
+				return floatTextCell(seg.floatAt(0, i) / cnt), true, true
+			})
 			if dropped > 0 {
 				ds.Warnings = append(ds.Warnings,
 					"trickster: weighted-avg series "+s.Header.Name+
@@ -506,9 +470,14 @@ func (ds *DataSet) FinalizeAvg(count int) {
 			if s == nil {
 				continue
 			}
-			for i := range s.Points {
-				finalizeAvg(&s.Points[i], count)
-			}
+			// a value that isn't a number is left as it is
+			s.segs, _ = s.segs.mapFirstValue(func(seg *Segment, i int) (cellValue, bool, bool) {
+				v := seg.floatAt(0, i)
+				if math.IsNaN(v) {
+					return cellValue{}, false, true
+				}
+				return floatTextCell(v / float64(count)), true, true
+			})
 		}
 	}
 }
@@ -639,34 +608,18 @@ func (ds *DataSet) DefaultRangeCropper(e timeseries.Extent) {
 		if len(ds.Results[i].SeriesList) == 0 {
 			continue
 		}
-		eg := errgroup.Group{}
-		eg.SetLimit(runtime.GOMAXPROCS(0))
-		sl := make([]*Series, len(ds.Results[i].SeriesList))
-		var j int
+		sl := ds.Results[i].SeriesList[:0]
 		for _, s := range ds.Results[i].SeriesList {
-			if s == nil || s.PointCount() == 0 {
+			if s == nil {
 				continue
 			}
-
-			index := j
-			eg.Go(func() error {
-				s.flatten()
-				l := len(s.Points)
-				start, end := s.Points.findRange(startNS, endNS, 0, l-1)
-				// a series with no points in range is dropped, as CroppedClone does
-				if start < l && end <= l && end > start {
-					s.Points = s.Points.CloneRange(start, end)
-					s.PointSize = s.Points.Size()
-					sl[index] = s
-				}
-				return nil
-			})
-			j++
+			// a series with no rows in range is dropped, as CroppedClone does
+			if s.segs = s.segs.View(startNS, endNS); s.segs.Len() > 0 {
+				sl = append(sl, s)
+			}
 		}
-		eg.Wait()
-		ds.Results[i].SeriesList = slices.DeleteFunc(sl[:j], func(s *Series) bool {
-			return s == nil
-		})
+		clear(ds.Results[i].SeriesList[len(sl):])
+		ds.Results[i].SeriesList = sl
 	}
 }
 
@@ -765,19 +718,30 @@ func (ds *DataSet) Sort() {
 	}
 }
 
-// UnmarshalDataSet unmarshals the dataset from a msgpack-formatted byte slice
+// UnmarshalDataSet unmarshals the dataset from a msgpack-formatted byte slice that MarshalDataSet
+// wrote. Its rows may share b's memory, or an aligned copy of it, which then must not change.
 func UnmarshalDataSet(b []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	ds := &DataSet{}
-	_, err := ds.UnmarshalMsg(b)
-	if err == nil {
-		if ds.TimeRangeQuery != nil {
-			ds.TimeRangeQuery.Step = time.Duration(ds.TimeRangeQuery.StepNS)
-			ds.TimeRangeQuery.PolicyStep = time.Duration(ds.TimeRangeQuery.PolicyStepNS)
-		} else {
-			ds.TimeRangeQuery = trq
-		}
+	ds, err := ReadDataSet(AlignedBlob(b), trq)
+	if ds == nil {
+		ds = &DataSet{}
 	}
 	return ds, err
+}
+
+// ReadDataSet unmarshals a dataset from b without copying it; its rows share b's memory where they
+// land aligned, so b must not change afterward.
+func ReadDataSet(b []byte, trq *timeseries.TimeRangeQuery) (*DataSet, error) {
+	ds := &DataSet{}
+	if _, err := ds.UnmarshalMsg(b); err != nil {
+		return ds, err
+	}
+	if ds.TimeRangeQuery != nil {
+		ds.TimeRangeQuery.Step = time.Duration(ds.TimeRangeQuery.StepNS)
+		ds.TimeRangeQuery.PolicyStep = time.Duration(ds.TimeRangeQuery.PolicyStepNS)
+	} else {
+		ds.TimeRangeQuery = trq
+	}
+	return ds, nil
 }
 
 // MarshalDataSet marshals the dataset into a msgpack-formatted byte slice
@@ -788,11 +752,17 @@ func MarshalDataSet(ts timeseries.Timeseries, _ *timeseries.RequestOptions,
 	if !ok || ds == nil {
 		return nil, timeseries.ErrUnknownFormat
 	}
+	return AppendDataSet(nil, ds)
+}
+
+// AppendDataSet appends the dataset's msgpack encoding to dst. Its rows' words are aligned from the
+// start of dst, so a decode of the whole buffer from an aligned address can share them.
+func AppendDataSet(dst []byte, ds *DataSet) ([]byte, error) {
 	if ds.TimeRangeQuery != nil {
 		ds.TimeRangeQuery.StepNS = ds.TimeRangeQuery.Step.Nanoseconds()
 		ds.TimeRangeQuery.PolicyStepNS = ds.TimeRangeQuery.PolicyStep.Nanoseconds()
 	}
-	return ds.MarshalMsg(nil)
+	return ds.MarshalMsg(dst)
 }
 
 // VolatileExtents returns the list of time Extents in the dataset that should be re-fetched

@@ -73,7 +73,9 @@ type pooledVarianceOutput struct {
 	results map[pooledVarianceResultKey]*dataset.Result
 	series  map[pooledVarianceSeriesKey]*dataset.Series
 	points  map[pooledVariancePointKey]pooledVariancePointRef
-	query   string
+	// each series' points, whose states merge in place until finish sets them on it
+	pointLists map[*dataset.Series]dataset.Points
+	query      string
 }
 
 func reducePooledVariancePlan(
@@ -239,34 +241,40 @@ func indexPooledVariancePoints(
 				result: resultKey,
 				hash:   series.Header.CalculateHashWithQueryStatement(pairingQuery),
 			}
-			for pointIndex, point := range series.Points {
-				if pointIndex&255 == 0 {
-					if err := ctx.Err(); err != nil {
-						return index, err
+			segs := series.Segments()
+			pointIndex := -1
+			for k := range segs {
+				seg := &segs[k]
+				for row, e := range seg.Epochs() {
+					pointIndex++
+					if pointIndex&255 == 0 {
+						if err := ctx.Err(); err != nil {
+							return index, err
+						}
 					}
-				}
-				key := pooledVariancePointKey{series: seriesKey, epoch: point.Epoch}
-				if _, seen := index.values[key]; !seen {
-					if _, invalid := index.invalid[key]; !invalid {
-						index.order = append(index.order, key)
+					key := pooledVariancePointKey{series: seriesKey, epoch: e}
+					if _, seen := index.values[key]; !seen {
+						if _, invalid := index.invalid[key]; !invalid {
+							index.order = append(index.order, key)
+						}
 					}
+					value, ok := pooledVarianceFloat(seg, row)
+					if !ok {
+						delete(index.values, key)
+						index.invalid[key] = struct{}{}
+						continue
+					}
+					if prior, exists := index.values[key]; exists &&
+						math.Float64bits(prior.value) != math.Float64bits(value) {
+						delete(index.values, key)
+						index.invalid[key] = struct{}{}
+						continue
+					}
+					if _, invalid := index.invalid[key]; invalid {
+						continue
+					}
+					index.values[key] = pooledVarianceValue{value: value, series: series}
 				}
-				value, ok := pooledVarianceFloat(point)
-				if !ok {
-					delete(index.values, key)
-					index.invalid[key] = struct{}{}
-					continue
-				}
-				if prior, exists := index.values[key]; exists &&
-					math.Float64bits(prior.value) != math.Float64bits(value) {
-					delete(index.values, key)
-					index.invalid[key] = struct{}{}
-					continue
-				}
-				if _, invalid := index.invalid[key]; invalid {
-					continue
-				}
-				index.values[key] = pooledVarianceValue{value: value, series: series}
 			}
 		}
 	}
@@ -350,25 +358,24 @@ func pairPooledVarianceMember(
 	return points, dropped, nil
 }
 
-func pooledVarianceFloat(point dataset.Point) (float64, bool) {
-	if len(point.Values) == 0 {
+func pooledVarianceFloat(seg *dataset.Segment, row int) (float64, bool) {
+	if seg.NumCols() == 0 {
 		return 0, false
 	}
-	switch value := point.Values[0].(type) {
-	case string:
-		parsed, err := strconv.ParseFloat(value, 64)
+	switch seg.KindAt(0, row) {
+	case dataset.KindString:
+		parsed, err := strconv.ParseFloat(seg.Text(0, row), 64)
 		return parsed, err == nil
-	case float64:
-		return value, true
-	case float32:
-		return float64(value), true
-	case int:
-		return float64(value), true
-	case int64:
-		return float64(value), true
-	default:
-		return 0, false
+	case dataset.KindFloat64:
+		return seg.Float64(0, row), true
+	case dataset.KindInt64:
+		return float64(seg.Int64(0, row)), true
+	case dataset.KindExt:
+		if value, ok := seg.Value(0, row).(float32); ok {
+			return float64(value), true
+		}
 	}
+	return 0, false
 }
 
 func newPooledVarianceOutput(ds *dataset.DataSet, query string) *pooledVarianceOutput {
@@ -396,11 +403,12 @@ func newPooledVarianceOutput(ds *dataset.DataSet, query string) *pooledVarianceO
 		clone.TimeRangeQuery.Statement = query
 	}
 	output := &pooledVarianceOutput{
-		dataset: clone,
-		results: make(map[pooledVarianceResultKey]*dataset.Result),
-		series:  make(map[pooledVarianceSeriesKey]*dataset.Series),
-		points:  make(map[pooledVariancePointKey]pooledVariancePointRef),
-		query:   query,
+		dataset:    clone,
+		results:    make(map[pooledVarianceResultKey]*dataset.Result),
+		series:     make(map[pooledVarianceSeriesKey]*dataset.Series),
+		points:     make(map[pooledVariancePointKey]pooledVariancePointRef),
+		pointLists: make(map[*dataset.Series]dataset.Points),
+		query:      query,
 	}
 	for _, result := range ds.Results {
 		if result == nil {
@@ -432,7 +440,7 @@ func (o *pooledVarianceOutput) mergePoint(
 	state dataset.PooledVarianceState,
 ) {
 	if ref, found := o.points[key]; found {
-		point := &ref.series.Points[ref.index]
+		point := &o.pointLists[ref.series][ref.index]
 		current := point.Values[0].(dataset.PooledVarianceState)
 		point.Values[0] = current.Merge(state)
 		return
@@ -451,21 +459,21 @@ func (o *pooledVarianceOutput) mergePoint(
 		header.QueryStatement = o.query
 		header.CalculateHash(true)
 		header.CalculateSize()
-		series = &dataset.Series{Header: header}
+		series = dataset.NewSeries(header, nil)
 		result.SeriesList = append(result.SeriesList, series)
 		o.series[key.series] = series
 	}
-	series.Points = append(series.Points, dataset.Point{
+	o.pointLists[series] = append(o.pointLists[series], dataset.Point{
 		Epoch:  key.epoch,
-		Size:   56,
 		Values: []any{state},
 	})
-	o.points[key] = pooledVariancePointRef{series: series, index: len(series.Points) - 1}
+	o.points[key] = pooledVariancePointRef{series: series, index: len(o.pointLists[series]) - 1}
 }
 
 func (o *pooledVarianceOutput) finish() {
 	for _, series := range o.series {
-		slices.SortFunc(series.Points, func(a, b dataset.Point) int {
+		pts := o.pointLists[series]
+		slices.SortFunc(pts, func(a, b dataset.Point) int {
 			switch {
 			case a.Epoch < b.Epoch:
 				return -1
@@ -475,6 +483,6 @@ func (o *pooledVarianceOutput) finish() {
 				return 0
 			}
 		})
-		series.PointSize = series.Points.Size()
+		series.SetPoints(pts)
 	}
 }

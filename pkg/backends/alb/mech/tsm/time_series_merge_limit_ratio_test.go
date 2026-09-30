@@ -72,18 +72,14 @@ func limitRatioMemberHandler(values map[string]string, extraTags dataset.Tags,
 		for service, value := range values {
 			tags := dataset.Tags{"service": service}
 			tags.Merge(extraTags.Clone())
-			seriesList = append(seriesList, &dataset.Series{
-				Header: dataset.SeriesHeader{
-					Name:           "requests",
-					Tags:           tags,
-					QueryStatement: query,
-				},
-				Points: dataset.Points{{
-					Epoch:  epoch.Epoch(100),
-					Size:   32,
-					Values: []any{value},
-				}},
-			})
+			seriesList = append(seriesList, dataset.NewSeries(dataset.SeriesHeader{
+				Name:           "requests",
+				Tags:           tags,
+				QueryStatement: query,
+			}, dataset.Points{{
+				Epoch:  epoch.Epoch(100),
+				Values: []any{value},
+			}}))
 		}
 
 		rsc := request.GetResources(r)
@@ -156,7 +152,7 @@ func limitRatioRespondFunc(w http.ResponseWriter, _ *http.Request,
 				continue
 			}
 			for _, series := range result.SeriesList {
-				if series == nil || len(series.Points) == 0 || len(series.Points[0].Values) == 0 {
+				if series == nil || series.PointCount() == 0 || len(series.Points()[0].Values) == 0 {
 					continue
 				}
 				name := series.Header.Tags["service"]
@@ -164,7 +160,7 @@ func limitRatioRespondFunc(w http.ResponseWriter, _ *http.Request,
 					name += "[" + replica + "]"
 				}
 				parts = append(parts, fmt.Sprintf("%s=%v", name,
-					series.Points[0].Values[0]))
+					series.Points()[0].Values[0]))
 			}
 		}
 	}

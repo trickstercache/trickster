@@ -145,37 +145,31 @@ func TestListMerge(t *testing.T) {
 	// verify Merge deduplicates correctly even when hashes haven't been pre-calculated
 	t.Run("uncached hashes", func(t *testing.T) {
 		// create series with fresh headers (hash field = 0)
-		s1 := &Series{
-			Header: SeriesHeader{Name: "metric", Tags: Tags{"env": "prod"}},
-			Points: testPoints(),
-		}
-		s2 := &Series{
-			Header: SeriesHeader{Name: "metric", Tags: Tags{"env": "prod"}},
-			Points: Points{{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 16, Values: []any{1}}},
-		}
+		s1 := NewSeries(SeriesHeader{Name: "metric", Tags: Tags{"env": "prod"}}, testPoints())
+		s2 := NewSeries(SeriesHeader{Name: "metric", Tags: Tags{"env": "prod"}}, Points{{Epoch: epoch.Epoch(15 * timeseries.Second), Values: []any{1}}})
 		out := SeriesList{s1}.Merge(SeriesList{s2}, true)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series (deduped), got %d", len(out))
 		}
-		if len(out[0].Points) != 3 {
-			t.Errorf("expected 3 points after merge, got %d", len(out[0].Points))
+		if out[0].PointCount() != 3 {
+			t.Errorf("expected 3 points after merge, got %d", out[0].PointCount())
 		}
 	})
 
 	// verify point merging when same series appears in both lists
 	t.Run("point merge on overlap", func(t *testing.T) {
 		s1 := testSeries()
-		s1.Points = testPoints() // epochs 5, 10
-		s2 := testSeries()       // same header hash
-		s2.Points = Points{
-			{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
-		}
+		s1.SetPoints(testPoints()) // epochs 5, 10
+		s2 := testSeries()         // same header hash
+		s2.SetPoints(Points{
+			{Epoch: epoch.Epoch(15 * timeseries.Second), Values: []any{1, 34}},
+		})
 		out := SeriesList{s1}.Merge(SeriesList{s2}, true)
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
-		if len(out[0].Points) != 3 {
-			t.Errorf("expected 3 points after merge, got %d", len(out[0].Points))
+		if out[0].PointCount() != 3 {
+			t.Errorf("expected 3 points after merge, got %d", out[0].PointCount())
 		}
 	})
 }
@@ -187,14 +181,10 @@ func TestListMergeWithStrategy(t *testing.T) {
 		for i, pt := range points {
 			p[i] = Point{
 				Epoch:  epoch.Epoch(pt.epoch),
-				Size:   32,
 				Values: []any{pt.value},
 			}
 		}
-		return &Series{
-			Header: SeriesHeader{Name: name, Tags: tags},
-			Points: p,
-		}
+		return NewSeries(SeriesHeader{Name: name, Tags: tags}, p)
 	}
 
 	type ev = struct {
@@ -210,14 +200,14 @@ func TestListMergeWithStrategy(t *testing.T) {
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
-		if len(out[0].Points) != 2 {
-			t.Fatalf("expected 2 points, got %d", len(out[0].Points))
+		if out[0].PointCount() != 2 {
+			t.Fatalf("expected 2 points, got %d", out[0].PointCount())
 		}
-		if out[0].Points[0].Values[0] != "40" {
-			t.Errorf("expected sum 40, got %v", out[0].Points[0].Values[0])
+		if out[0].Points()[0].Values[0] != "40" {
+			t.Errorf("expected sum 40, got %v", out[0].Points()[0].Values[0])
 		}
-		if out[0].Points[1].Values[0] != "60" {
-			t.Errorf("expected sum 60, got %v", out[0].Points[1].Values[0])
+		if out[0].Points()[1].Values[0] != "60" {
+			t.Errorf("expected sum 60, got %v", out[0].Points()[1].Values[0])
 		}
 	})
 
@@ -237,8 +227,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
-		if out[0].Points[0].Values[0] != "20" {
-			t.Errorf("expected avg 20, got %v", out[0].Points[0].Values[0])
+		if out[0].Points()[0].Values[0] != "20" {
+			t.Errorf("expected avg 20, got %v", out[0].Points()[0].Values[0])
 		}
 	})
 
@@ -246,8 +236,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		s1 := makeSeries("disk", Tags{}, ev{100, "50"})
 		s2 := makeSeries("disk", Tags{}, ev{100, "20"})
 		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyMin)
-		if out[0].Points[0].Values[0] != "20" {
-			t.Errorf("expected min 20, got %v", out[0].Points[0].Values[0])
+		if out[0].Points()[0].Values[0] != "20" {
+			t.Errorf("expected min 20, got %v", out[0].Points()[0].Values[0])
 		}
 	})
 
@@ -255,8 +245,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		s1 := makeSeries("disk", Tags{}, ev{100, "50"})
 		s2 := makeSeries("disk", Tags{}, ev{100, "20"})
 		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyMax)
-		if out[0].Points[0].Values[0] != "50" {
-			t.Errorf("expected max 50, got %v", out[0].Points[0].Values[0])
+		if out[0].Points()[0].Values[0] != "50" {
+			t.Errorf("expected max 50, got %v", out[0].Points()[0].Values[0])
 		}
 	})
 
@@ -264,8 +254,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		s1 := makeSeries("req", Tags{}, ev{100, "999"})
 		s2 := makeSeries("req", Tags{}, ev{100, "888"})
 		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyCount)
-		if out[0].Points[0].Values[0] != "2" {
-			t.Errorf("expected count 2, got %v", out[0].Points[0].Values[0])
+		if out[0].Points()[0].Values[0] != "2" {
+			t.Errorf("expected count 2, got %v", out[0].Points()[0].Values[0])
 		}
 	})
 
@@ -277,8 +267,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
 		// dedup: last value wins
-		if out[0].Points[0].Values[0] != "30" {
-			t.Errorf("expected dedup value 30, got %v", out[0].Points[0].Values[0])
+		if out[0].Points()[0].Values[0] != "30" {
+			t.Errorf("expected dedup value 30, got %v", out[0].Points()[0].Values[0])
 		}
 	})
 
@@ -301,8 +291,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
-		if len(out[0].Points) != 2 {
-			t.Fatalf("expected 2 points (no overlap), got %d", len(out[0].Points))
+		if out[0].PointCount() != 2 {
+			t.Fatalf("expected 2 points (no overlap), got %d", out[0].PointCount())
 		}
 	})
 }
@@ -363,8 +353,8 @@ func TestSortByTags(t *testing.T) {
 	})
 
 	t.Run("empty vs non-empty tags are deterministic", func(t *testing.T) {
-		sEmpty := &Series{Header: SeriesHeader{Name: "aaa", Tags: Tags{}}, Points: testPoints()}
-		sTagged := &Series{Header: SeriesHeader{Name: "bbb", Tags: Tags{"z": "1"}}, Points: testPoints()}
+		sEmpty := NewSeries(SeriesHeader{Name: "aaa", Tags: Tags{}}, testPoints())
+		sTagged := NewSeries(SeriesHeader{Name: "bbb", Tags: Tags{"z": "1"}}, testPoints())
 		sl := SeriesList{sTagged, sEmpty}
 		sl.SortByTags()
 		sl2 := SeriesList{sEmpty, sTagged}
@@ -375,8 +365,8 @@ func TestSortByTags(t *testing.T) {
 	})
 
 	t.Run("same tags different names", func(t *testing.T) {
-		s1 := &Series{Header: SeriesHeader{Name: "beta", Tags: Tags{"env": "prod"}}, Points: testPoints()}
-		s2 := &Series{Header: SeriesHeader{Name: "alpha", Tags: Tags{"env": "prod"}}, Points: testPoints()}
+		s1 := NewSeries(SeriesHeader{Name: "beta", Tags: Tags{"env": "prod"}}, testPoints())
+		s2 := NewSeries(SeriesHeader{Name: "alpha", Tags: Tags{"env": "prod"}}, testPoints())
 		sl := SeriesList{s1, s2}
 		sl.SortByTags()
 		if sl[0].Header.Name != "alpha" || sl[1].Header.Name != "beta" {
@@ -392,22 +382,22 @@ func TestSortByTags(t *testing.T) {
 
 func TestSortPoints(t *testing.T) {
 	s1 := testSeries()
-	s1.Points = Points{
-		{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1}},
-		{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{2}},
-	}
+	s1.SetPoints(Points{
+		{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{1}},
+		{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{2}},
+	})
 	s2 := testSeries2()
-	s2.Points = Points{
-		{Epoch: epoch.Epoch(20 * timeseries.Second), Size: 27, Values: []any{3}},
-		{Epoch: epoch.Epoch(1 * timeseries.Second), Size: 27, Values: []any{4}},
-	}
+	s2.SetPoints(Points{
+		{Epoch: epoch.Epoch(20 * timeseries.Second), Values: []any{3}},
+		{Epoch: epoch.Epoch(1 * timeseries.Second), Values: []any{4}},
+	})
 	sl := SeriesList{s1, s2}
 	sl.SortPoints()
 
-	if !slices.IsSortedFunc(sl[0].Points, pointCmp) {
+	if !slices.IsSortedFunc(sl[0].Points(), legacyPointCmp) {
 		t.Error("series 0 points not sorted")
 	}
-	if !slices.IsSortedFunc(sl[1].Points, pointCmp) {
+	if !slices.IsSortedFunc(sl[1].Points(), legacyPointCmp) {
 		t.Error("series 1 points not sorted")
 	}
 }

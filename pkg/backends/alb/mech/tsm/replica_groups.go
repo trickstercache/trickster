@@ -355,12 +355,11 @@ func dataSetPointKeys(ds *dataset.DataSet, pairingQuery string) map[replicaPoint
 				continue
 			}
 			hash := ds.PairingHash(&series.Header, pairingQuery)
-			for _, point := range series.Points {
-				keys[replicaPointKey{
-					statement: result.StatementID,
-					series:    hash,
-					epoch:     int64(point.Epoch),
-				}] = struct{}{}
+			segs := series.Segments()
+			for k := range segs {
+				for _, e := range segs[k].Epochs() {
+					keys[replicaPointKey{statement: result.StatementID, series: hash, epoch: int64(e)}] = struct{}{}
+				}
 			}
 		}
 	}
@@ -382,21 +381,11 @@ func pruneDataSetPoints(ds *dataset.DataSet, pairingQuery string,
 				continue
 			}
 			hash := ds.PairingHash(&series.Header, pairingQuery)
-			var pointCount int
-			for _, point := range series.Points {
-				key := replicaPointKey{
-					statement: result.StatementID,
-					series:    hash,
-					epoch:     int64(point.Epoch),
-				}
-				if _, ok := complete[key]; !ok {
-					continue
-				}
-				series.Points[pointCount] = point
-				pointCount++
-			}
-			series.Points = series.Points[:pointCount]
-			if pointCount == 0 {
+			series.SetSegments(series.Segments().Filter(func(seg *dataset.Segment, i int) bool {
+				_, ok := complete[replicaPointKey{statement: result.StatementID, series: hash, epoch: int64(seg.Epoch(i))}]
+				return ok
+			}))
+			if series.PointCount() == 0 {
 				continue
 			}
 			result.SeriesList[seriesCount] = series
@@ -423,7 +412,7 @@ func replicaConflictCount(contributions []*gatherContribution) int {
 					continue
 				}
 				hash := series.Header.CalculateHash()
-				for _, point := range series.Points {
+				for _, point := range series.Points() {
 					key := replicaPointKey{
 						statement: result.StatementID,
 						series:    hash,

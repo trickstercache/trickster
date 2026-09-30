@@ -8,21 +8,18 @@
           "points": [
             {
               "epoch": 67000000000,
-              "size": 32,
               "values": [
                 "8"
               ]
             },
             {
               "epoch": 127000000000,
-              "size": 32,
               "values": [
                 "8"
               ]
             },
             {
               "epoch": 187000000000,
-              "size": 32,
               "values": [
                 "8"
               ]

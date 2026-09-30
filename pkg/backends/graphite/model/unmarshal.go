@@ -186,7 +186,7 @@ func unmarshalJSON(body []byte, trq *timeseries.TimeRangeQuery) ([]*dataset.Seri
 			} else if i > 1 && dp.ts != ws.Datapoints[0].ts+int64(i)*stepSecs {
 				return nil, spacingViolation(trq, predicted, ws.Target)
 			}
-			pts[i] = dataset.Point{Epoch: epoch.FromSecs(dp.ts), Values: vals[i : i+1 : i+1], Size: 24}
+			pts[i] = dataset.Point{Epoch: epoch.FromSecs(dp.ts), Values: vals[i : i+1 : i+1]}
 			if !dp.null {
 				vals[i] = dp.val
 			}
@@ -286,7 +286,7 @@ func seriesStep(sh *dataset.SeriesHeader) int64 {
 }
 
 func newPoint(e epoch.Epoch, v *float64) dataset.Point {
-	p := dataset.Point{Epoch: e, Values: []any{nil}, Size: 24}
+	p := dataset.Point{Epoch: e, Values: []any{nil}}
 	if v != nil {
 		p.Values[0] = *v
 	}
@@ -326,5 +326,5 @@ func newSeries(name string, tags map[string]string, pts dataset.Points,
 		ValueFieldsList: timeseries.FieldDefinitions{{Name: ValueFieldName, DataType: timeseries.Float64, Role: timeseries.RoleValue, OutputPosition: 1}},
 	}
 	sh.CalculateSize()
-	return &dataset.Series{Header: sh, Points: pts, PointSize: int64(len(pts)) * 24}, nil
+	return dataset.NewSeries(sh, pts), nil
 }

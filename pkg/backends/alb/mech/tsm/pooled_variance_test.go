@@ -45,17 +45,14 @@ func pooledVarianceTestDataSet(query string, tags dataset.Tags, values ...any) *
 		Results: dataset.Results{{
 			StatementID: 4,
 			Name:        "result",
-			SeriesList: dataset.SeriesList{{
-				Header: dataset.SeriesHeader{
-					Name:                tags["__name__"],
-					Tags:                tags,
-					QueryStatement:      query,
-					ValueFieldsList:     timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.String}},
-					TimestampField:      timeseries.FieldDefinition{Name: "time"},
-					UntrackedFieldsList: nil,
-				},
-				Points: points,
-			}},
+			SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{
+				Name:                tags["__name__"],
+				Tags:                tags,
+				QueryStatement:      query,
+				ValueFieldsList:     timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.String}},
+				TimestampField:      timeseries.FieldDefinition{Name: "time"},
+				UntrackedFieldsList: nil,
+			}, points)},
 		}},
 	}
 }
@@ -128,9 +125,9 @@ func TestReducePooledVariancePlan(t *testing.T) {
 		t.Fatalf("output: %#v", accumulator.GetTSData())
 	}
 	series := ds.Results[0].SeriesList[0]
-	state, ok := series.Points[0].Values[0].(dataset.PooledVarianceState)
+	state, ok := series.Points()[0].Values[0].(dataset.PooledVarianceState)
 	if !ok {
-		t.Fatalf("point value type: %T", series.Points[0].Values[0])
+		t.Fatalf("point value type: %T", series.Points()[0].Values[0])
 	}
 	if got, want := state.PopulationVariance(), 384.0/49.0; math.Abs(got-want) > 1e-12 {
 		t.Fatalf("variance got %.17g want %.17g", got, want)
@@ -178,7 +175,7 @@ func TestReducePooledVariancePlanDropsUnpairedPoints(t *testing.T) {
 		t.Fatalf("warnings: %v", warnings)
 	}
 	ds := accumulator.GetTSData().(*dataset.DataSet)
-	points := ds.Results[0].SeriesList[0].Points
+	points := ds.Results[0].SeriesList[0].Points()
 	if len(points) != 1 || points[0].Epoch != 100 {
 		t.Fatalf("points: %#v", points)
 	}
@@ -295,13 +292,10 @@ func BenchmarkReducePooledVariancePlan(b *testing.B) {
 						Values: []any{value},
 					}
 				}
-				ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, &dataset.Series{
-					Header: dataset.SeriesHeader{
-						Tags:           dataset.Tags{"group": strconv.Itoa(group)},
-						QueryStatement: queries[variant],
-					},
-					Points: points,
-				})
+				ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, dataset.NewSeries(dataset.SeriesHeader{
+					Tags:           dataset.Tags{"group": strconv.Itoa(group)},
+					QueryStatement: queries[variant],
+				}, points))
 			}
 			members[shard][variant] = ds
 		}

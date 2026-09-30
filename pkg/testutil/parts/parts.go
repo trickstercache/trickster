@@ -30,9 +30,10 @@ func Of(base *dataset.DataSet, step epoch.Epoch) *dataset.DataSet {
 	live := shifted(base, false, step)
 	if len(live.Results) > 0 && len(base.Results) > 0 && len(base.Results[0].SeriesList) > 0 {
 		if s := base.Results[0].SeriesList[0]; s != nil && s.PointCount() > 0 {
-			extra := &dataset.Series{Header: s.Header.Clone(), Points: dataset.Points{*s.PointAt(0)}}
+			p := s.PointAt(0)
+			p.Epoch = s.PointAt(s.PointCount()-1).Epoch + 2*step
+			extra := dataset.NewSeries(s.Header.Clone(), dataset.Points{p})
 			extra.Header.Name += "_live"
-			extra.Points[0].Epoch = s.PointAt(s.PointCount()-1).Epoch + 2*step
 			live.Results[0].SeriesList = append(live.Results[0].SeriesList, extra)
 		}
 	}
@@ -52,13 +53,13 @@ func shifted(base *dataset.DataSet, first bool, step epoch.Epoch) *dataset.DataS
 			if s == nil || s.PointCount() == 0 {
 				continue
 			}
-			p := *s.PointAt(s.PointCount() - 1)
+			p := s.PointAt(s.PointCount() - 1)
 			p.Epoch += step
 			if first {
-				p = *s.PointAt(0)
+				p = s.PointAt(0)
 				p.Epoch -= step
 			}
-			nr.SeriesList = append(nr.SeriesList, &dataset.Series{Header: s.Header, Points: dataset.Points{p}})
+			nr.SeriesList = append(nr.SeriesList, dataset.NewSeries(s.Header, dataset.Points{p}))
 		}
 		out.Results = append(out.Results, nr)
 	}

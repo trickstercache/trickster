@@ -110,8 +110,8 @@ func requireReferenceOutput(t *testing.T, name string, ds *dataset.DataSet) {
 
 func marshalTestSeries(name string, tags dataset.Tags, at int, fields []string, points ...dataset.Point,
 ) *dataset.Series {
-	s := &dataset.Series{Header: dataset.SeriesHeader{Name: name, Tags: tags,
-		TimestampField: timeseries.FieldDefinition{Name: "time", OutputPosition: at}}, Points: points}
+	s := dataset.NewSeries(dataset.SeriesHeader{Name: name, Tags: tags,
+		TimestampField: timeseries.FieldDefinition{Name: "time", OutputPosition: at}}, points)
 	for _, f := range fields {
 		s.Header.ValueFieldsList = append(s.Header.ValueFieldsList, timeseries.FieldDefinition{Name: f})
 	}
@@ -182,7 +182,7 @@ func TestMarshalMatchesEncodingJSON(t *testing.T) {
 					for i := range values {
 						values[i] = value()
 					}
-					s.Points = append(s.Points, at(int64(1700000000+60*p), int64(rng.IntN(1e9)), values...))
+					s.SetPoints(append(s.Points(), at(int64(1700000000+60*p), int64(rng.IntN(1e9)), values...)))
 				}
 				res.SeriesList = append(res.SeriesList, s)
 			}
@@ -246,7 +246,7 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 				for i := range values {
 					values[i] = float64(rng.IntN(100))
 				}
-				s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*p) * 1e9), Values: values})
+				s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*p) * 1e9), Values: values}))
 			}
 			r.SeriesList = append(r.SeriesList, s)
 		}

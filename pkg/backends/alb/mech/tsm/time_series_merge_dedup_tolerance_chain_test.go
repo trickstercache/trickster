@@ -39,14 +39,10 @@ func tolerantStubHandler(epochNs int64, value, marker string) http.Handler {
 		if rsc != nil {
 			rsc.TS = &dataset.DataSet{
 				Results: dataset.Results{{
-					SeriesList: dataset.SeriesList{{
-						Header: dataset.SeriesHeader{Name: "rps", Tags: dataset.Tags{}},
-						Points: dataset.Points{{
-							Epoch:  epoch.Epoch(epochNs),
-							Size:   32,
-							Values: []any{value},
-						}},
-					}},
+					SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Name: "rps", Tags: dataset.Tags{}}, dataset.Points{{
+						Epoch:  epoch.Epoch(epochNs),
+						Values: []any{value},
+					}})},
 				}},
 			}
 			rsc.MergeFunc = merge.TimeseriesMergeFuncTolerant(nil, rsc.TSDedupToleranceNanos)
@@ -74,7 +70,7 @@ func tolerantRespondFunc(_ string) merge.RespondFunc {
 		}
 		var sb strings.Builder
 		sb.WriteString("MERGED:")
-		for _, p := range ds.Results[0].SeriesList[0].Points {
+		for _, p := range ds.Results[0].SeriesList[0].Points() {
 			sb.WriteString(strconv.FormatInt(int64(p.Epoch), 10))
 			sb.WriteByte('=')
 			if len(p.Values) > 0 {

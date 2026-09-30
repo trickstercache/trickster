@@ -97,10 +97,10 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 		require.True(t, ok)
 		require.Len(t, ds.Results, 1)
 		require.Len(t, ds.Results[0].SeriesList, 2)
-		require.Len(t, ds.Results[0].SeriesList[0].Points, 3)
-		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points[0].Epoch)
-		require.Equal(t, epoch.Epoch(1435781445000000000), ds.Results[0].SeriesList[0].Points[1].Epoch)
-		require.Equal(t, epoch.Epoch(1435781460000000000), ds.Results[0].SeriesList[0].Points[2].Epoch)
+		require.Len(t, ds.Results[0].SeriesList[0].Points(), 3)
+		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points()[0].Epoch)
+		require.Equal(t, epoch.Epoch(1435781445000000000), ds.Results[0].SeriesList[0].Points()[1].Epoch)
+		require.Equal(t, epoch.Epoch(1435781460000000000), ds.Results[0].SeriesList[0].Points()[2].Epoch)
 	})
 
 	t.Run("round trip preserves scalar wire shape", func(t *testing.T) {
@@ -194,11 +194,9 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 	t.Run("valid vector write", func(t *testing.T) {
 		w := httptest.NewRecorder()
 		var s1 *dataset.Series
-		s2 := &dataset.Series{
-			Points: []dataset.Point{
-				{Epoch: 1234567980, Values: []any{"12345"}},
-			},
-		}
+		s2 := dataset.NewSeries(dataset.SeriesHeader{}, []dataset.Point{
+			{Epoch: 1234567980, Values: []any{"12345"}},
+		})
 		err := MarshalTSOrVectorWriter(&dataset.DataSet{
 			Results: []*dataset.Result{
 				{SeriesList: []*dataset.Series{s1, s2}},
@@ -211,16 +209,13 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	t.Run("matrix write with sorted output", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		s := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "up", "job": "test"},
-			},
-			Points: dataset.Points{
-				{Epoch: 1435781460000000000, Values: []any{"3"}},
-				{Epoch: 1435781430000000000, Values: []any{"1"}},
-				{Epoch: 1435781445000000000, Values: []any{"2"}},
-			},
-		}
+		s := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "up", "job": "test"},
+		}, dataset.Points{
+			{Epoch: 1435781460000000000, Values: []any{"3"}},
+			{Epoch: 1435781430000000000, Values: []any{"1"}},
+			{Epoch: 1435781445000000000, Values: []any{"2"}},
+		})
 		err := MarshalTSOrVectorWriter(&dataset.DataSet{
 			Status: "success",
 			Results: []*dataset.Result{
@@ -242,15 +237,12 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	t.Run("exact JSON output", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		s := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "up"},
-			},
-			Points: dataset.Points{
-				{Epoch: 1000000000000000000, Values: []any{"1"}},
-				{Epoch: 2000000000000000000, Values: []any{"2"}},
-			},
-		}
+		s := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "up"},
+		}, dataset.Points{
+			{Epoch: 1000000000000000000, Values: []any{"1"}},
+			{Epoch: 2000000000000000000, Values: []any{"2"}},
+		})
 		err := MarshalTSOrVectorWriter(&dataset.DataSet{
 			Status: "success",
 			Results: []*dataset.Result{
@@ -268,22 +260,16 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	t.Run("matrix multi-series", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		s1 := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "up", "instance": "a"},
-			},
-			Points: dataset.Points{
-				{Epoch: 1000000000000000000, Values: []any{"1"}},
-			},
-		}
-		s2 := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "up", "instance": "b"},
-			},
-			Points: dataset.Points{
-				{Epoch: 2000000000000000000, Values: []any{"2"}},
-			},
-		}
+		s1 := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "up", "instance": "a"},
+		}, dataset.Points{
+			{Epoch: 1000000000000000000, Values: []any{"1"}},
+		})
+		s2 := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "up", "instance": "b"},
+		}, dataset.Points{
+			{Epoch: 2000000000000000000, Values: []any{"2"}},
+		})
 		err := MarshalTSOrVectorWriter(&dataset.DataSet{
 			Status: "success",
 			Results: []*dataset.Result{
@@ -305,20 +291,14 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	t.Run("vector skips empty series", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		empty := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "empty"},
-			},
-			Points: dataset.Points{},
-		}
-		withPoints := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "has_data"},
-			},
-			Points: dataset.Points{
-				{Epoch: 1000000000000000000, Values: []any{"42"}},
-			},
-		}
+		empty := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "empty"},
+		}, dataset.Points{})
+		withPoints := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "has_data"},
+		}, dataset.Points{
+			{Epoch: 1000000000000000000, Values: []any{"42"}},
+		})
 		err := MarshalTSOrVectorWriter(&dataset.DataSet{
 			Status: "success",
 			Results: []*dataset.Result{
@@ -339,15 +319,12 @@ func TestMarshalTSOrVectorWriter(t *testing.T) {
 
 	t.Run("vector uses first point only", func(t *testing.T) {
 		w := httptest.NewRecorder()
-		s := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{"__name__": "multi"},
-			},
-			Points: dataset.Points{
-				{Epoch: 1000000000000000000, Values: []any{"first"}},
-				{Epoch: 2000000000000000000, Values: []any{"second"}},
-			},
-		}
+		s := dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{"__name__": "multi"},
+		}, dataset.Points{
+			{Epoch: 1000000000000000000, Values: []any{"first"}},
+			{Epoch: 2000000000000000000, Values: []any{"second"}},
+		})
 		err := MarshalTSOrVectorWriter(&dataset.DataSet{
 			Status: "success",
 			Results: []*dataset.Result{
@@ -382,8 +359,8 @@ func TestUnmarshalScalar(t *testing.T) {
 		require.Len(t, ds.Results, 1)
 		require.Equal(t, string(Scalar), ds.SourceResultType)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		require.Len(t, ds.Results[0].SeriesList[0].Points, 1)
-		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points[0].Epoch)
+		require.Len(t, ds.Results[0].SeriesList[0].Points(), 1)
+		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points()[0].Epoch)
 	})
 
 	t.Run("malformed result not array", func(t *testing.T) {
@@ -410,7 +387,7 @@ func TestUnmarshalScalar(t *testing.T) {
 		// → no points created
 		require.Len(t, ds.Results, 1)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		require.Empty(t, ds.Results[0].SeriesList[0].Points)
+		require.Empty(t, ds.Results[0].SeriesList[0].Points())
 	})
 
 	t.Run("single element array", func(t *testing.T) {
@@ -427,7 +404,7 @@ func TestUnmarshalScalar(t *testing.T) {
 		// Single element → len(pr.Value)==1 != 2, so no points
 		require.Len(t, ds.Results, 1)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		require.Empty(t, ds.Results[0].SeriesList[0].Points)
+		require.Empty(t, ds.Results[0].SeriesList[0].Points())
 	})
 }
 
@@ -450,7 +427,7 @@ func TestPopulateSeriesMalformedPoints(t *testing.T) {
 	}
 	require.Len(t, ds.Results, 1)
 	require.Len(t, ds.Results[0].SeriesList, 1)
-	pts := ds.Results[0].SeriesList[0].Points
+	pts := ds.Results[0].SeriesList[0].Points()
 	require.Len(t, pts, 2, "malformed points must be compacted out")
 	require.Equal(t, epoch.Epoch(1435781430000000000), pts[0].Epoch)
 	require.Equal(t, epoch.Epoch(1435781460000000000), pts[1].Epoch)
@@ -496,9 +473,9 @@ func TestUnmarshalHistogramMatrix(t *testing.T) {
 
 	s := ds.Results[0].SeriesList[0]
 	require.Equal(t, fieldNameHistogram, s.Header.ValueFieldsList[0].Name)
-	require.Len(t, s.Points, 2)
-	require.Equal(t, epoch.Epoch(1435781430000000000), s.Points[0].Epoch)
-	require.Equal(t, epoch.Epoch(1435781445000000000), s.Points[1].Epoch)
+	require.Len(t, s.Points(), 2)
+	require.Equal(t, epoch.Epoch(1435781430000000000), s.Points()[0].Epoch)
+	require.Equal(t, epoch.Epoch(1435781445000000000), s.Points()[1].Epoch)
 
 	// Round-trip: marshal and verify valid JSON
 	b, err := MarshalTimeseries(ds, nil, 200)
@@ -524,8 +501,8 @@ func TestUnmarshalMixedMatrix(t *testing.T) {
 	histSer := ds.Results[0].SeriesList[1]
 	require.Equal(t, "value", valueSer.Header.ValueFieldsList[0].Name)
 	require.Equal(t, fieldNameHistogram, histSer.Header.ValueFieldsList[0].Name)
-	require.Len(t, valueSer.Points, 2)
-	require.Len(t, histSer.Points, 1)
+	require.Len(t, valueSer.Points(), 2)
+	require.Len(t, histSer.Points(), 1)
 
 	// Round-trip marshal
 	b, err := MarshalTimeseries(ds, nil, 200)
@@ -550,7 +527,7 @@ func TestUnmarshalHistogramVector(t *testing.T) {
 
 	s := ds.Results[0].SeriesList[0]
 	require.Equal(t, fieldNameHistogram, s.Header.ValueFieldsList[0].Name)
-	require.Len(t, s.Points, 1)
+	require.Len(t, s.Points(), 1)
 
 	// Vector marshal: call MarshalTSOrVectorWriter directly with isVector=true
 	var buf strings.Builder

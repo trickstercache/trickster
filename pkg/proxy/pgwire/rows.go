@@ -142,7 +142,7 @@ func (k *rowSink) row(body []byte) error {
 	}
 	r.AddBytes(body)
 	if k.sequenced {
-		r.AddInt(int64(k.rows))
+		r.AddInt64(int64(k.rows))
 	}
 	if err := r.Commit(); err != nil {
 		return errors.Join(errResultRow, err)
@@ -170,11 +170,10 @@ func bySequence(a, b dataset.Row) int {
 }
 
 func sequenceOf(r dataset.Row) int64 {
-	if len(r.Point.Values) < 2 {
+	if r.Seg.NumCols() < 2 || r.KindAt(1) != dataset.KindInt64 {
 		return 0
 	}
-	n, _ := dataset.IntValue(r.Point.Values[1])
-	return n
+	return r.Int64(1)
 }
 
 func writeDelta(w *frameWriter, d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) {
@@ -190,7 +189,10 @@ func writeDelta(w *frameWriter, d *nativedelta.Delta, plan *sqlanalyzer.QueryPla
 	var rows int64
 	for _, r := range d.DS.Results {
 		for row := range r.Rows(order) {
-			body, _ := dataset.BytesValue(row.Point.Values[0])
+			var body []byte
+			if row.KindAt(0).IsBytes() {
+				body = row.Bytes(0)
+			}
 			w.frame(msgDataRow, body)
 			rows++
 		}

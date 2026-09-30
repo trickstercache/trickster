@@ -77,7 +77,7 @@ func TestUnmarshalJSON(t *testing.T) {
 	}
 	s := ds.Results[0].SeriesList[0]
 	if s.Header.Name != "dev.fast.cpu.host01.percent" || s.Header.Tags["name"] != s.Header.Name ||
-		len(s.Points) != 4 || s.Points[0].Values[0] != 27.082 || s.Points[0].Epoch != 1787349970*1e9 {
+		s.PointCount() != 4 || s.Points()[0].Values[0] != 27.082 || s.Points()[0].Epoch != 1787349970*1e9 {
 		t.Errorf("unexpected series %+v", s)
 	}
 	if ds.TimeRangeQuery.Step != 10*time.Second {
@@ -88,7 +88,7 @@ func TestUnmarshalJSON(t *testing.T) {
 	}
 	// nulls round-trip as nil values, not zeros, and count as points
 	ds = mustUnmarshal(t, sampleNulls, 10*time.Second)
-	p := ds.Results[0].SeriesList[0].Points
+	p := ds.Results[0].SeriesList[0].Points()
 	if len(p) != 3 || p[0].Values[0] != nil || p[2].Values[0] != 1.5 {
 		t.Errorf("null handling: %+v", p)
 	}
@@ -138,8 +138,8 @@ func TestUnmarshalJSON(t *testing.T) {
 
 func TestUnmarshalRaw(t *testing.T) {
 	ds := mustUnmarshal(t, sampleRaw, 0)
-	if len(ds.Results[0].SeriesList) != 2 || len(ds.Results[0].SeriesList[0].Points) != 4 ||
-		ds.Results[0].SeriesList[1].Points[0].Epoch != 1787350200*1e9 {
+	if len(ds.Results[0].SeriesList) != 2 || ds.Results[0].SeriesList[0].PointCount() != 4 ||
+		ds.Results[0].SeriesList[1].Points()[0].Epoch != 1787350200*1e9 {
 		t.Fatalf("unexpected raw parse %+v", ds.Results[0].SeriesList)
 	}
 	// raw and json parses render identically
@@ -147,11 +147,11 @@ func TestUnmarshalRaw(t *testing.T) {
 		t.Errorf("raw->json:\n%s\n%s", got, sampleJSON)
 	}
 	ds = mustUnmarshal(t, "a.b,100,130,10|None,1.5,None\n", 0)
-	if p := ds.Results[0].SeriesList[0].Points; len(p) != 3 || p[0].Values[0] != nil || p[1].Values[0] != 1.5 {
+	if p := ds.Results[0].SeriesList[0].Points(); len(p) != 3 || p[0].Values[0] != nil || p[1].Values[0] != 1.5 {
 		t.Errorf("raw nulls %+v", p)
 	}
 	ds = mustUnmarshal(t, "a,b,c,100,110,10|\n", 0)
-	if s := ds.Results[0].SeriesList[0]; s.Header.Name != "a,b,c" || len(s.Points) != 0 {
+	if s := ds.Results[0].SeriesList[0]; s.Header.Name != "a,b,c" || s.PointCount() != 0 {
 		t.Errorf("raw comma name / empty values: %+v", s)
 	}
 	for _, bad := range []string{"nopipe", "a,1,2|1", "a,x,2,3|1", "a,1,x,3|1", "a,1,2,x|1", "a,1,2,0|1", "a,1,2,10|x"} {
@@ -340,7 +340,7 @@ func TestConsolidation(t *testing.T) {
 		t.Error("pyMod")
 	}
 	// a series with no points and a step-less query renders safely
-	empty := &dataset.DataSet{TimeRangeQuery: &timeseries.TimeRangeQuery{}, Results: []*dataset.Result{{SeriesList: []*dataset.Series{{Header: dataset.SeriesHeader{Name: "e"}}}}, nil}}
+	empty := &dataset.DataSet{TimeRangeQuery: &timeseries.TimeRangeQuery{}, Results: []*dataset.Result{{SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{Name: "e"}, nil)}}, nil}}
 	if got := render(t, empty, RenderOptions{MaxDataPoints: 2}); got != `[{"target": "e", "tags": {}, "datapoints": []}]` {
 		t.Errorf("empty series: %s", got)
 	}
@@ -390,10 +390,7 @@ func TestPyJSONString(t *testing.T) {
 		t.Error("empty tags")
 	}
 	// infinities in JSON
-	ds := &dataset.DataSet{TimeRangeQuery: trq(10 * time.Second), Results: []*dataset.Result{{SeriesList: []*dataset.Series{{
-		Header: dataset.SeriesHeader{Name: "i", Tags: dataset.Tags{"name": "i"}},
-		Points: dataset.Points{newPoint(100e9, new(math.Inf(1))), newPoint(110e9, new(math.Inf(-1))), newPoint(120e9, new(math.NaN()))},
-	}}}}}
+	ds := &dataset.DataSet{TimeRangeQuery: trq(10 * time.Second), Results: []*dataset.Result{{SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{Name: "i", Tags: dataset.Tags{"name": "i"}}, dataset.Points{newPoint(100e9, new(math.Inf(1))), newPoint(110e9, new(math.Inf(-1))), newPoint(120e9, new(math.NaN()))})}}}}
 	if got := render(t, ds, RenderOptions{}); got != `[{"target": "i", "tags": {"name": "i"}, "datapoints": [[1e9999, 100], [-Infinity, 110], [null, 120]]}]` {
 		t.Errorf("infinities: %s", got)
 	}
@@ -405,7 +402,7 @@ func TestPyJSONString(t *testing.T) {
 func TestNaNVersusNull(t *testing.T) {
 	// one null, one NaN, one ordinary value
 	ds := mustUnmarshal(t, "a.b,100,130,10|None,nan,1.5\n", 0)
-	pts := ds.Results[0].SeriesList[0].Points
+	pts := ds.Results[0].SeriesList[0].Points()
 	if pts[0].Values[0] != nil {
 		t.Fatal("None must decode as null")
 	}

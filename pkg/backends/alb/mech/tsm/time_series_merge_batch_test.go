@@ -36,15 +36,11 @@ func batchContributionDataSet(value int) *dataset.DataSet {
 	return &dataset.DataSet{
 		Results: dataset.Results{{
 			StatementID: 0,
-			SeriesList: dataset.SeriesList{{
-				Header: dataset.SeriesHeader{
-					Name:           "requests",
-					Tags:           dataset.Tags{"service": "api"},
-					QueryStatement: "sum by (service) (requests)",
-				},
-				Points:    points,
-				PointSize: points.Size(),
-			}},
+			SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{
+				Name:           "requests",
+				Tags:           dataset.Tags{"service": "api"},
+				QueryStatement: "sum by (service) (requests)",
+			}, points)},
 		}},
 	}
 }
@@ -82,10 +78,10 @@ func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 		t.Fatalf("merge count got %d want 3", accumulator.MergeCount)
 	}
 	if len(got.Results) != 1 || len(got.Results[0].SeriesList) != 1 ||
-		len(got.Results[0].SeriesList[0].Points) != 1 {
+		got.Results[0].SeriesList[0].PointCount() != 1 {
 		t.Fatalf("unexpected merged shape: %#v", got.Results)
 	}
-	if value := fmt.Sprint(got.Results[0].SeriesList[0].Points[0].Values[0]); value != "6" {
+	if value := fmt.Sprint(got.Results[0].SeriesList[0].Points()[0].Values[0]); value != "6" {
 		t.Fatalf("merged value got %q want 6", value)
 	}
 }

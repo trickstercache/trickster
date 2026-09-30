@@ -143,17 +143,14 @@ func aggregationMergeHandler(values map[string]string, qr *queryRecorder) http.H
 
 		seriesList := make(dataset.SeriesList, 0, len(values))
 		for service, value := range values {
-			seriesList = append(seriesList, &dataset.Series{
-				Header: dataset.SeriesHeader{
-					Name:           "count",
-					Tags:           dataset.Tags{"service": service},
-					QueryStatement: query,
-				},
-				Points: dataset.Points{{
-					Epoch:  epoch.Epoch(100),
-					Values: []any{value},
-				}},
-			})
+			seriesList = append(seriesList, dataset.NewSeries(dataset.SeriesHeader{
+				Name:           "count",
+				Tags:           dataset.Tags{"service": service},
+				QueryStatement: query,
+			}, dataset.Points{{
+				Epoch:  epoch.Epoch(100),
+				Values: []any{value},
+			}}))
 		}
 
 		rsc := request.GetResources(r)
@@ -180,11 +177,11 @@ func aggregationRespondFunc(w http.ResponseWriter, _ *http.Request,
 	}
 	parts := make([]string, 0, len(ds.Results[0].SeriesList))
 	for _, series := range ds.Results[0].SeriesList {
-		if series == nil || len(series.Points) == 0 || len(series.Points[0].Values) == 0 {
+		if series == nil || series.PointCount() == 0 || len(series.Points()[0].Values) == 0 {
 			continue
 		}
 		parts = append(parts, fmt.Sprintf("%s=%v", series.Header.Tags["service"],
-			series.Points[0].Values[0]))
+			series.Points()[0].Values[0]))
 	}
 	_, _ = w.Write([]byte(strings.Join(parts, ",")))
 }

@@ -22,12 +22,18 @@ import (
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
-// outputRow pairs a point with the series it belongs to.
+// outputRow locates a row: its series, and where the series holds it.
 type outputRow struct {
 	series *dataset.Series
-	point  *dataset.Point
+	seg    *dataset.Segment
+	i      int
+}
+
+func (r outputRow) epoch() epoch.Epoch {
+	return r.seg.Epoch(r.i)
 }
 
 // rows by time with each bucket's series in list order, as ClickHouse returns a grouped query, which
@@ -45,7 +51,7 @@ func timeOrderedRows(r *dataset.Result) (iter.Seq[outputRow], int) {
 		// merging the sorted series breaks ties by series position, as the stable sort below does
 		return func(yield func(outputRow) bool) {
 			for row := range r.Rows(dataset.RowOrder{}) {
-				if !yield(outputRow{series: row.Series, point: row.Point}) {
+				if !yield(outputRow{series: row.Series, seg: row.Seg, i: row.Index}) {
 					return
 				}
 			}
@@ -56,10 +62,13 @@ func timeOrderedRows(r *dataset.Result) (iter.Seq[outputRow], int) {
 		if s == nil {
 			continue
 		}
-		for i := range s.PointCount() {
-			rows = append(rows, outputRow{series: s, point: s.PointAt(i)})
+		segs := s.Segments()
+		for k := range segs {
+			for i := range segs[k].Len() {
+				rows = append(rows, outputRow{series: s, seg: &segs[k], i: i})
+			}
 		}
 	}
-	slices.SortStableFunc(rows, func(a, b outputRow) int { return cmp.Compare(a.point.Epoch, b.point.Epoch) })
+	slices.SortStableFunc(rows, func(a, b outputRow) int { return cmp.Compare(a.epoch(), b.epoch()) })
 	return slices.Values(rows), n
 }

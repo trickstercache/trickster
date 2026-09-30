@@ -437,13 +437,13 @@ func TestMarshalTimeseriesNative_RoundTrip(t *testing.T) {
 	}
 	gotSeries := got.Results[0].SeriesList[0]
 	wantSeries := ds.Results[0].SeriesList[0]
-	if len(gotSeries.Points) != len(wantSeries.Points) {
-		t.Fatalf("points: want %d got %d", len(wantSeries.Points), len(gotSeries.Points))
+	if gotSeries.PointCount() != wantSeries.PointCount() {
+		t.Fatalf("points: want %d got %d", wantSeries.PointCount(), gotSeries.PointCount())
 	}
-	for i := range wantSeries.Points {
-		if gotSeries.Points[i].Epoch != wantSeries.Points[i].Epoch {
+	for i := range wantSeries.Points() {
+		if gotSeries.Points()[i].Epoch != wantSeries.Points()[i].Epoch {
 			t.Errorf("point %d epoch: want %d got %d", i,
-				wantSeries.Points[i].Epoch, gotSeries.Points[i].Epoch)
+				wantSeries.Points()[i].Epoch, gotSeries.Points()[i].Epoch)
 		}
 	}
 }
@@ -587,7 +587,7 @@ func TestUnmarshalTimeseriesNativeReader_MultiBlock(t *testing.T) {
 	ds := ts.(*dataset.DataSet)
 	total := 0
 	for _, s := range ds.Results[0].SeriesList {
-		total += len(s.Points)
+		total += s.PointCount()
 	}
 	if total != 3 {
 		t.Fatalf("expected 3 total points across blocks, got %d", total)

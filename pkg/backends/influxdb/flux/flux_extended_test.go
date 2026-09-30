@@ -169,8 +169,9 @@ func TestGetCsvCellValueBranches(t *testing.T) {
 	getCsvCellValue := func(sh dataset.SeriesHeader, fd timeseries.FieldDefinition, p dataset.Point,
 		next, table int,
 	) (string, bool) {
-		c, used := csvCellFor(sh.Tags, &fd, &p, next)
-		return string(appendCsvCell(nil, &c, &p, table)), used
+		seg := dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{p}).Segments()[0]
+		c, used := csvCellFor(sh.Tags, &fd, &seg, 0, next)
+		return string(appendCsvCell(nil, &c, &seg, 0, table)), used
 	}
 
 	s, used := getCsvCellValue(sh, timeseries.FieldDefinition{
@@ -245,15 +246,12 @@ func TestCSVWriteErrorPaths(t *testing.T) {
 			OutputPosition: 4,
 		},
 	}
-	s := &dataset.Series{
-		Header: dataset.SeriesHeader{
-			TagFieldsList:       []timeseries.FieldDefinition{fds[1]},
-			UntrackedFieldsList: []timeseries.FieldDefinition{fds[0], fds[2]},
-			TimestampField:      fds[3],
-			ValueFieldsList:     []timeseries.FieldDefinition{fds[4]},
-		},
-		Points: []dataset.Point{{Epoch: 1, Values: []any{huge}}},
-	}
+	s := dataset.NewSeries(dataset.SeriesHeader{
+		TagFieldsList:       []timeseries.FieldDefinition{fds[1]},
+		UntrackedFieldsList: []timeseries.FieldDefinition{fds[0], fds[2]},
+		TimestampField:      fds[3],
+		ValueFieldsList:     []timeseries.FieldDefinition{fds[4]},
+	}, []dataset.Point{{Epoch: 1, Values: []any{huge}}})
 	st := &state{
 		s: s,
 		e: timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)},

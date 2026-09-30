@@ -149,8 +149,8 @@ func TestRowSink(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, s := range series {
-		for _, p := range s.Points {
-			body, _ := dataset.BytesValue(p.Values[0])
+		for _, p := range s.Points() {
+			body, _ := p.Values[0].([]byte)
 			seen[string(body)] = true
 		}
 	}

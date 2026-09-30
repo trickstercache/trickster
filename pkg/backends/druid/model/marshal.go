@@ -48,16 +48,41 @@ type druidCell struct {
 	index int
 }
 
-// one output point, by reference, with its rank
+// one output row: where its series holds it, and its rank
 type druidPoint struct {
 	s    *druidSeries
-	p    *dataset.Point
+	seg  *dataset.Segment
+	row  int
 	rank int64
 }
 
+func (dp *druidPoint) epoch() epoch.Epoch {
+	return dp.seg.Epoch(dp.row)
+}
+
+func (dp *druidPoint) has(i int) bool {
+	return i >= 0 && i < dp.seg.NumCols()
+}
+
+// value returns value i, boxed, or nil when the row has none
 func (dp *druidPoint) value(i int) any {
-	if i >= 0 && i < len(dp.p.Values) {
-		return dp.p.Values[i]
+	if dp.has(i) {
+		return dp.seg.Value(i, dp.row)
+	}
+	return nil
+}
+
+// appendJSON appends value i as JSON, or null when the row has none
+func (dp *druidPoint) appendJSON(b []byte, i int) ([]byte, error) {
+	if dp.has(i) {
+		return dp.seg.AppendJSON(b, i, dp.row)
+	}
+	return append(b, "null"...), nil
+}
+
+func (dp *druidPoint) checkJSON(i int) error {
+	if dp.has(i) {
+		return dp.seg.CheckJSON(i, dp.row)
 	}
 	return nil
 }
@@ -166,12 +191,15 @@ func druidPoints(ds *dataset.DataSet) []druidPoint {
 				continue
 			}
 			s := newDruidSeries(series)
-			for i := range series.PointCount() {
-				dp := druidPoint{s: s, p: series.PointAt(i)}
-				if s.rank >= 0 {
-					dp.rank = numericRank(dp.value(s.rank))
+			segs := series.Segments()
+			for k := range segs {
+				for i := range segs[k].Len() {
+					dp := druidPoint{s: s, seg: &segs[k], row: i}
+					if s.rank >= 0 {
+						dp.rank = numericRank(dp.value(s.rank))
+					}
+					out = append(out, dp)
 				}
-				out = append(out, dp)
 			}
 		}
 	}
@@ -217,12 +245,12 @@ func checkDruidValues(points []druidPoint, queryType string) error {
 		case queryTimeseries:
 			cells = dp.s.result
 		case queryGroupBy:
-			if err := tstrings.CheckJSONValue(dp.value(dp.s.version)); err != nil {
+			if err := dp.checkJSON(dp.s.version); err != nil {
 				return err
 			}
 		}
 		for _, c := range cells {
-			if err := tstrings.CheckJSONValue(dp.value(c.index)); err != nil {
+			if err := dp.checkJSON(c.index); err != nil {
 				return err
 			}
 		}
@@ -238,7 +266,7 @@ func appendDruidObject(b []byte, dp *druidPoint, cells []druidCell) []byte {
 			b = append(b, ',')
 		}
 		b = append(b, c.key...)
-		b, _ = tstrings.AppendJSONValue(b, dp.value(c.index))
+		b, _ = dp.appendJSON(b, c.index)
 	}
 	return append(b, '}')
 }
@@ -251,7 +279,7 @@ func appendTimeseries(cw *tbytes.ChunkWriter, points []druidPoint) {
 		cw.Buf = append(cw.Buf, `{"result":`...)
 		cw.Buf = appendDruidObject(cw.Buf, &points[i], points[i].s.result)
 		cw.Buf = append(cw.Buf, `,"timestamp":`...)
-		cw.Buf = appendTimestamp(cw.Buf, points[i].p.Epoch)
+		cw.Buf = appendTimestamp(cw.Buf, points[i].epoch())
 		cw.Buf = append(cw.Buf, '}')
 		cw.FlushIfFull()
 	}
@@ -266,10 +294,10 @@ func appendGroupBy(cw *tbytes.ChunkWriter, points []druidPoint) {
 		cw.Buf = append(cw.Buf, `{"event":`...)
 		cw.Buf = appendDruidObject(cw.Buf, dp, dp.s.event)
 		cw.Buf = append(cw.Buf, `,"timestamp":`...)
-		cw.Buf = appendTimestamp(cw.Buf, dp.p.Epoch)
-		if v := dp.value(dp.s.version); v != nil {
+		cw.Buf = appendTimestamp(cw.Buf, dp.epoch())
+		if dp.has(dp.s.version) && dp.seg.KindAt(dp.s.version, dp.row) != dataset.KindNull {
 			cw.Buf = append(cw.Buf, `,"version":`...)
-			cw.Buf, _ = tstrings.AppendJSONValue(cw.Buf, v)
+			cw.Buf, _ = dp.appendJSON(cw.Buf, dp.s.version)
 		}
 		cw.Buf = append(cw.Buf, '}')
 		cw.FlushIfFull()
@@ -280,13 +308,13 @@ func appendGroupBy(cw *tbytes.ChunkWriter, points []druidPoint) {
 func appendTopN(cw *tbytes.ChunkWriter, points []druidPoint) {
 	for i := range points {
 		dp := &points[i]
-		first := i == 0 || points[i-1].p.Epoch != dp.p.Epoch
+		first := i == 0 || points[i-1].epoch() != dp.epoch()
 		switch {
 		case i == 0:
 			cw.Buf = append(cw.Buf, `{"result":[`...)
 		case first:
 			cw.Buf = append(cw.Buf, `],"timestamp":`...)
-			cw.Buf = appendTimestamp(cw.Buf, points[i-1].p.Epoch)
+			cw.Buf = appendTimestamp(cw.Buf, points[i-1].epoch())
 			cw.Buf = append(cw.Buf, `},{"result":[`...)
 		default:
 			cw.Buf = append(cw.Buf, ',')
@@ -296,15 +324,15 @@ func appendTopN(cw *tbytes.ChunkWriter, points []druidPoint) {
 	}
 	if n := len(points); n > 0 {
 		cw.Buf = append(cw.Buf, `],"timestamp":`...)
-		cw.Buf = appendTimestamp(cw.Buf, points[n-1].p.Epoch)
+		cw.Buf = appendTimestamp(cw.Buf, points[n-1].epoch())
 		cw.Buf = append(cw.Buf, '}')
 	}
 }
 
 func sortDruidPoints(points []druidPoint, descending, rank bool) {
 	slices.SortStableFunc(points, func(a, b druidPoint) int {
-		if a.p.Epoch != b.p.Epoch {
-			if (a.p.Epoch < b.p.Epoch) != descending {
+		if a.epoch() != b.epoch() {
+			if (a.epoch() < b.epoch()) != descending {
 				return -1
 			}
 			return 1

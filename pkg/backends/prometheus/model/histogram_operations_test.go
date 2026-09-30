@@ -52,27 +52,23 @@ func TestPrometheusHistogramOperationsDatasetMergeUpdatesSize(t *testing.T) {
 	newDataSet := func(value string) *dataset.DataSet {
 		return &dataset.DataSet{
 			ValueOperations: prometheusValueOperations,
-			Results: dataset.Results{{SeriesList: dataset.SeriesList{{
-				Header: dataset.SeriesHeader{
-					Tags:            dataset.Tags{"service": "api"},
-					QueryStatement:  "sum by (service) (requests)",
-					ValueFieldsList: timeseries.FieldDefinitions{{Name: fieldNameHistogram}},
-				},
-				Points: dataset.Points{{
-					Epoch:  epoch.Epoch(1),
-					Size:   len(value) + 32,
-					Values: []any{value},
-				}},
-			}}}},
+			Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{
+				Tags:            dataset.Tags{"service": "api"},
+				QueryStatement:  "sum by (service) (requests)",
+				ValueFieldsList: timeseries.FieldDefinitions{{Name: fieldNameHistogram}},
+			}, dataset.Points{{
+				Epoch:  epoch.Epoch(1),
+				Values: []any{value},
+			}})}}},
 		}
 	}
 	left := newDataSet(leftValue)
 	left.MergeWithStrategy(true, int(merge.StrategySum), newDataSet(rightValue))
 
 	series := left.Results[0].SeriesList[0]
-	value := series.Points[0].Values[0].(string)
-	require.Equal(t, len(value)+32, series.Points[0].Size)
-	require.Equal(t, series.Points.Size(), series.PointSize)
+	value := series.Points()[0].Values[0].(string)
+	// the merged value's bytes are what the series' size counts
+	require.GreaterOrEqual(t, series.Segments().Size(), int64(len(value)))
 }
 
 func TestPrometheusHistogramOperationsMergeSpanBuckets(t *testing.T) {
@@ -197,28 +193,22 @@ func TestPrometheusHistogramOperationsDropMixedSamples(t *testing.T) {
 	ds := &dataset.DataSet{
 		ValueOperations: prometheusValueOperations,
 		Results: dataset.Results{{SeriesList: dataset.SeriesList{
-			{
-				Header: floatHeader,
-				Points: dataset.Points{
-					{Epoch: epoch.Epoch(1), Values: []any{"1"}},
-					{Epoch: epoch.Epoch(2), Values: []any{"2"}},
-				},
-			},
-			{
-				Header: histogramHeader,
-				Points: dataset.Points{
-					{Epoch: epoch.Epoch(2), Values: []any{`{"count":"1","sum":"2"}`}},
-					{Epoch: epoch.Epoch(3), Values: []any{`{"count":"1","sum":"3"}`}},
-				},
-			},
+			dataset.NewSeries(floatHeader, dataset.Points{
+				{Epoch: epoch.Epoch(1), Values: []any{"1"}},
+				{Epoch: epoch.Epoch(2), Values: []any{"2"}},
+			}),
+			dataset.NewSeries(histogramHeader, dataset.Points{
+				{Epoch: epoch.Epoch(2), Values: []any{`{"count":"1","sum":"2"}`}},
+				{Epoch: epoch.Epoch(3), Values: []any{`{"count":"1","sum":"3"}`}},
+			}),
 		}}},
 	}
 
 	ds.FinalizeValueMerge(int(merge.StrategySum))
 
 	require.Len(t, ds.Results[0].SeriesList, 2)
-	require.Equal(t, epoch.Epoch(1), ds.Results[0].SeriesList[0].Points[0].Epoch)
-	require.Equal(t, epoch.Epoch(3), ds.Results[0].SeriesList[1].Points[0].Epoch)
+	require.Equal(t, epoch.Epoch(1), ds.Results[0].SeriesList[0].Points()[0].Epoch)
+	require.Equal(t, epoch.Epoch(3), ds.Results[0].SeriesList[1].Points()[0].Epoch)
 	require.Equal(t, []string{mixedFloatHistogramWarning}, ds.Warnings)
 
 	ds.FinalizeValueMerge(int(merge.StrategySum))

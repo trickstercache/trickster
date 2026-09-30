@@ -85,7 +85,7 @@ func TestFetchPartialBucket(t *testing.T) {
 					len(ds.Results[0].SeriesList) != 1 {
 					t.Fatalf("partial bucket = %T %+v", ts, ds)
 				}
-				points := ds.Results[0].SeriesList[0].Points
+				points := ds.Results[0].SeriesList[0].Points()
 				if len(points) != 1 || int64(points[0].Epoch) != start.UnixNano() {
 					t.Fatalf("partial bucket points = %+v", points)
 				}

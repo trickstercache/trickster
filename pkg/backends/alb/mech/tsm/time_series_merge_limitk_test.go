@@ -74,34 +74,28 @@ func limitKMemberHandler(spec limitKMemberSpec, recorder *queryRecorder) http.Ha
 
 		seriesList := make(dataset.SeriesList, 0, len(spec.values)+len(spec.histograms))
 		for instance, value := range spec.values {
-			seriesList = append(seriesList, &dataset.Series{
-				Header: dataset.SeriesHeader{
-					Name:           "up",
-					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.backendName},
-					QueryStatement: query,
-					ValueFieldsList: timeseries.FieldDefinitions{{
-						Name: "value", DataType: timeseries.String,
-					}},
-				},
-				Points: dataset.Points{{
-					Epoch: epoch.Epoch(100), Values: []any{value},
+			seriesList = append(seriesList, dataset.NewSeries(dataset.SeriesHeader{
+				Name:           "up",
+				Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.backendName},
+				QueryStatement: query,
+				ValueFieldsList: timeseries.FieldDefinitions{{
+					Name: "value", DataType: timeseries.String,
 				}},
-			})
+			}, dataset.Points{{
+				Epoch: epoch.Epoch(100), Values: []any{value},
+			}}))
 		}
 		for instance, value := range spec.histograms {
-			seriesList = append(seriesList, &dataset.Series{
-				Header: dataset.SeriesHeader{
-					Name:           "up",
-					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.backendName},
-					QueryStatement: query,
-					ValueFieldsList: timeseries.FieldDefinitions{{
-						Name: "histogram", DataType: timeseries.String,
-					}},
-				},
-				Points: dataset.Points{{
-					Epoch: epoch.Epoch(100), Values: []any{value},
+			seriesList = append(seriesList, dataset.NewSeries(dataset.SeriesHeader{
+				Name:           "up",
+				Tags:           dataset.Tags{"__name__": "up", "instance": instance, "replica": spec.backendName},
+				QueryStatement: query,
+				ValueFieldsList: timeseries.FieldDefinitions{{
+					Name: "histogram", DataType: timeseries.String,
 				}},
-			})
+			}, dataset.Points{{
+				Epoch: epoch.Epoch(100), Values: []any{value},
+			}}))
 		}
 		seriesList.SortByTags()
 
@@ -135,14 +129,14 @@ func limitKRespondFunc(w http.ResponseWriter, _ *http.Request, accum *responseme
 	}
 	parts := make([]string, 0, len(ds.Results[0].SeriesList))
 	for _, series := range ds.Results[0].SeriesList {
-		if series == nil || len(series.Points) == 0 || len(series.Points[0].Values) == 0 {
+		if series == nil || series.PointCount() == 0 || len(series.Points()[0].Values) == 0 {
 			continue
 		}
 		name := series.Header.Tags["instance"]
 		if replica := series.Header.Tags["replica"]; replica != "" {
 			name += "[" + replica + "]"
 		}
-		parts = append(parts, name+"="+formatAny(series.Points[0].Values[0]))
+		parts = append(parts, name+"="+formatAny(series.Points()[0].Values[0]))
 	}
 	_, _ = w.Write([]byte("MERGED:" + strings.Join(parts, ",") +
 		"|warnings=" + strings.Join(dsWarnings(ds), ",")))

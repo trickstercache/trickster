@@ -32,14 +32,10 @@ func compareBase() *dataset.DataSet {
 	series := func(host string, values ...any) *dataset.Series {
 		pts := make(dataset.Points, len(values))
 		for i, v := range values {
-			pts[i] = dataset.Point{Epoch: 1, Size: 10, Values: []any{v}}
+			pts[i] = dataset.Point{Epoch: 1, Values: []any{v}}
 		}
-		return &dataset.Series{
-			Header: dataset.SeriesHeader{Name: "s", Tags: dataset.Tags{"host": host},
-				ValueFieldsList: timeseries.FieldDefinitions{fd}, Size: 5},
-			Points:    pts,
-			PointSize: 10,
-		}
+		return dataset.NewSeries(dataset.SeriesHeader{Name: "s", Tags: dataset.Tags{"host": host},
+			ValueFieldsList: timeseries.FieldDefinitions{fd}, Size: 5}, pts)
 	}
 	return &dataset.DataSet{
 		Status:     "success",
@@ -96,23 +92,21 @@ func TestCompare(t *testing.T) {
 			ds.Results[0].SeriesList[0].Header.UntrackedFieldsList = timeseries.FieldDefinitions{{Name: "u"}}
 		}, ".untrackedFields:", CompareOptions{}},
 		{"header size", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.Size = 6 }, ".headerSize:", CompareOptions{}},
-		{"point size", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].PointSize = 6 }, ".pointSize:", CompareOptions{}},
-		{"points", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].Points = nil }, "series[1].points: want 1", CompareOptions{}},
-		{"epoch", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].Points[0].Epoch = 2 }, ".points[0].epoch:", CompareOptions{}},
-		{"size", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].Points[0].Size = 2 }, ".points[0].size:", CompareOptions{}},
-		{"value count", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].Points[0].Values = nil },
+		{"points", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].SetPoints(nil) }, "series[1].points: want 1", CompareOptions{}},
+		{"epoch", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Epoch = 2 }) }, ".points[0].epoch:", CompareOptions{}},
+		{"value count", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values = nil }) },
 			".points[0].values:", CompareOptions{}},
-		{"float", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].Points[0].Values[0] = 2.0 },
+		{"float", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values[0] = 2.0 }) },
 			".points[0].values[0]: want 1, got 2", CompareOptions{}},
-		{"float type", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].Points[0].Values[0] = int64(1) },
+		{"float type", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values[0] = int64(1) }) },
 			".points[0].values[0]:", CompareOptions{}},
-		{"nan", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Points[0].Values[0] = 1.0 },
+		{"nan", func(ds *dataset.DataSet) { editPoint(ds, 0, 0, func(p *dataset.Point) { p.Values[0] = 1.0 }) },
 			".points[0].values[0]:", CompareOptions{}},
-		{"float32", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Points[1].Values[0] = float32(1) },
+		{"float32", func(ds *dataset.DataSet) { editPoint(ds, 0, 1, func(p *dataset.Point) { p.Values[0] = float32(1) }) },
 			".points[1].values[0]:", CompareOptions{}},
-		{"bytes", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Points[2].Values[0] = []byte("c") },
+		{"bytes", func(ds *dataset.DataSet) { editPoint(ds, 0, 2, func(p *dataset.Point) { p.Values[0] = []byte("c") }) },
 			".points[2].values[0]:", CompareOptions{}},
-		{"other", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Points[3].Values[0] = map[string]int{} },
+		{"other", func(ds *dataset.DataSet) { editPoint(ds, 0, 3, func(p *dataset.Point) { p.Values[0] = map[string]int{} }) },
 			".points[3].values[0]:", CompareOptions{}},
 	}
 	for _, test := range tests {
@@ -128,7 +122,7 @@ func TestCompare(t *testing.T) {
 func TestCompareOptions(t *testing.T) {
 	got := compareBase()
 	s := got.Results[0].SeriesList[0]
-	s.Header.Size, s.PointSize, s.Points[0].Size = 1, 2, 3
+	s.Header.Size = 1
 	require.Error(t, Compare(compareBase(), got, CompareOptions{}))
 	require.NoError(t, Compare(compareBase(), got, CompareOptions{IgnoreSizes: true}))
 
@@ -139,4 +133,12 @@ func TestCompareOptions(t *testing.T) {
 	require.NoError(t, Compare(compareBase(), got, CompareOptions{IgnoreSeriesOrder: true}))
 	// reordering must not mutate either DataSet
 	require.Nil(t, got.Results[0].SeriesList[0])
+}
+
+// editPoint edits point i of series s in a copy of its points, then stores the copy
+func editPoint(ds *dataset.DataSet, s, i int, edit func(*dataset.Point)) {
+	series := ds.Results[0].SeriesList[s]
+	pts := series.Points()
+	edit(&pts[i])
+	series.SetPoints(pts)
 }

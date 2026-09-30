@@ -66,21 +66,16 @@ type BuilderOptions struct {
 	TagString func(fd timeseries.FieldDefinition, raw []byte) string
 }
 
-// Builder assembles a DataSet in a single pass from rows or points in any order.
-// A Builder is not safe for concurrent use.
+// Builder assembles a DataSet in a single pass from rows or points in any order, holding every
+// series' rows by column in a few shared slabs. A Builder is not safe for concurrent use.
 type Builder struct {
 	trq      *timeseries.TimeRangeQuery
 	opts     BuilderOptions
+	log      *ColumnLog
 	results  []*resultBuild
 	result   *resultBuild
 	current  *seriesBuild
 	row      RowBuilder
-	arena    []any
-	chunk    int
-	bytes    []byte
-	byteSize int
-	blobs    [][]byte
-	ints     []int64
 	finished bool
 }
 
@@ -91,7 +86,6 @@ type RowBuilder struct {
 	epoch    epoch.Epoch
 	hasEpoch bool
 	invalid  bool
-	values   []any
 	tagBuf   []byte
 	tagOff   []int
 	key      []byte
@@ -105,28 +99,23 @@ type resultBuild struct {
 }
 
 type seriesBuild struct {
-	s         *Series
-	expected  int
-	unordered bool
+	s  *Series
+	id int
 }
-
-const (
-	minValueChunk = 64
-	maxValueChunk = 4096
-	minByteChunk  = 4096
-	maxByteChunk  = 1 << 20
-	pointOverhead = 40 // a Point's Epoch, Size and Values slice header
-	valueOverhead = 16 // the interface header of each value
-	sliceHeader   = 24 // the slice header a *[]byte value points to
-)
 
 // NewBuilder returns a Builder for the provided query and options.
 func NewBuilder(trq *timeseries.TimeRangeQuery, opts BuilderOptions) *Builder {
-	b := &Builder{trq: trq, opts: opts}
+	b := &Builder{trq: trq, opts: opts, log: NewColumnLog(opts.Duplicates)}
 	b.row.b = b
 	b.row.tagOff = make([]int, 2*len(opts.Fields.Tags))
 	b.row.reset()
 	return b
+}
+
+// Grow reserves room for rows more rows holding cells values and dataBytes bytes of bytes values,
+// as a decoder that knows its input's size can estimate them.
+func (b *Builder) Grow(rows, cells, dataBytes int) {
+	b.log.Grow(rows, cells, dataBytes)
 }
 
 // SetResult ends any open series and directs subsequent rows and series to the
@@ -170,20 +159,19 @@ func (b *Builder) Row() *RowBuilder {
 	return &b.row
 }
 
-// AppendPoint appends p to the series opened by StartSeries. When p.Size is 0,
-// it is set by PointSize.
+// AppendPoint appends p to the series opened by StartSeries.
 func (b *Builder) AppendPoint(p Point) error {
 	if b.finished {
 		return ErrBuilderFinished
 	}
-	sb := b.current
-	if sb == nil || (sb.expected > 0 && len(p.Values) != sb.expected) {
+	b.row.reset()
+	if b.current == nil {
 		return ErrInvalidRow
 	}
-	if p.Size == 0 {
-		p.Size = PointSize(p.Values)
+	for _, v := range p.Values {
+		b.log.AddValue(v)
 	}
-	return b.appendPoint(sb, p.Epoch, p.Values, p.Size, false)
+	return b.log.Commit(b.current.id, p.Epoch)
 }
 
 // Finish sorts only the series that arrived out of order, applies the duplicate
@@ -195,6 +183,10 @@ func (b *Builder) Finish() (*DataSet, error) {
 	b.currentResult()
 	b.finished = true
 	b.current = nil
+	segs, err := b.log.Finish()
+	if err != nil {
+		return nil, err
+	}
 	ds := &DataSet{TimeRangeQuery: b.trq, Results: make(Results, len(b.results))}
 	if b.trq != nil {
 		ds.ExtentList = timeseries.ExtentList{b.trq.Extent}
@@ -202,9 +194,11 @@ func (b *Builder) Finish() (*DataSet, error) {
 	for i, rb := range b.results {
 		rb.r.SeriesList = make(SeriesList, len(rb.series))
 		for j, sb := range rb.series {
-			if err := b.finishSeries(sb); err != nil {
-				return nil, err
+			if segs[sb.id].Len() > 0 {
+				// each series' one Segment is cut from a shared list, capped so an append reallocates
+				sb.s.segs = segs[sb.id : sb.id+1 : sb.id+1]
 			}
+			sb.s.Header.CalculateSize()
 			rb.r.SeriesList[j] = sb.s
 		}
 		if b.opts.SortSeries {
@@ -213,35 +207,6 @@ func (b *Builder) Finish() (*DataSet, error) {
 		ds.Results[i] = rb.r
 	}
 	return ds, nil
-}
-
-// PointSize returns the estimated memory, in bytes, of a Point holding values.
-func PointSize(values []any) int {
-	n := pointOverhead
-	for _, v := range values {
-		n += valueSize(v)
-	}
-	return n
-}
-
-func valueSize(v any) int {
-	switch t := v.(type) {
-	case nil:
-		return valueOverhead
-	case string:
-		return valueOverhead + len(t)
-	case []byte:
-		return valueOverhead + len(t)
-	case *[]byte:
-		return valueOverhead + sliceHeader + len(*t)
-	case bool, int8, uint8:
-		return valueOverhead + 1
-	case int16, uint16:
-		return valueOverhead + 2
-	case int32, uint32, float32:
-		return valueOverhead + 4
-	}
-	return valueOverhead + 8
 }
 
 // SetEpoch sets the row's timestamp.
@@ -262,54 +227,50 @@ func (r *RowBuilder) SetTag(i int, raw []byte) {
 	r.tagOff[2*i+1] = len(r.tagBuf)
 }
 
-// AddValue appends the next value, per BuilderOptions.Fields.Values or the
-// open series' ValueFieldsList.
+// AddValue appends the next value, per BuilderOptions.Fields.Values or the open series'
+// ValueFieldsList, by its Go type; the typed adders avoid boxing it.
 func (r *RowBuilder) AddValue(v any) {
-	r.values = append(r.values, v)
+	r.b.log.AddValue(v)
 }
 
-// AddBytes appends a copy of raw as the next value, a *[]byte for BytesValue; nil appends nil.
-// The copy and value live in the Builder's arenas, so it suits a reused buffer.
+// AddNull appends a null as the next value.
+func (r *RowBuilder) AddNull() {
+	r.b.log.AddNull()
+}
+
+// AddBool appends a bool as the next value.
+func (r *RowBuilder) AddBool(v bool) {
+	r.b.log.AddBool(v)
+}
+
+// AddInt64 appends an int64 as the next value.
+func (r *RowBuilder) AddInt64(v int64) {
+	r.b.log.AddInt64(v)
+}
+
+// AddUint64 appends a uint64 as the next value.
+func (r *RowBuilder) AddUint64(v uint64) {
+	r.b.log.AddUint64(v)
+}
+
+// AddFloat64 appends a float64 as the next value.
+func (r *RowBuilder) AddFloat64(v float64) {
+	r.b.log.AddFloat64(v)
+}
+
+// AddString appends a copy of raw as the next value, as text.
+func (r *RowBuilder) AddString(raw []byte) {
+	r.b.log.AddString(raw)
+}
+
+// AddBytes appends a copy of raw as the next value, as bytes; nil appends a null.
 func (r *RowBuilder) AddBytes(raw []byte) {
-	if raw == nil {
-		r.values = append(r.values, nil)
-		return
-	}
-	r.values = append(r.values, r.b.bytesValue(r.b.copyBytes(raw)))
+	r.b.log.AddBytes(raw)
 }
 
-// AddInt appends v as the next value, a *int64 for IntValue, which boxes without the allocation an
-// int64 over 255 would take
-func (r *RowBuilder) AddInt(v int64) {
-	r.values = append(r.values, r.b.intValue(v))
-}
-
-// IntValue returns the integer of a value AddInt appended, or of an int64 or int value.
-func IntValue(v any) (int64, bool) {
-	switch t := v.(type) {
-	case *int64:
-		if t != nil {
-			return *t, true
-		}
-	case int64:
-		return t, true
-	case int:
-		return int64(t), true
-	}
-	return 0, false
-}
-
-// BytesValue returns the bytes of a value AddBytes appended, or of a []byte value.
-func BytesValue(v any) ([]byte, bool) {
-	switch t := v.(type) {
-	case *[]byte:
-		if t != nil {
-			return *t, true
-		}
-	case []byte:
-		return t, true
-	}
-	return nil, false
+// AddNumber appends a copy of raw, a number's literal text, as the next value.
+func (r *RowBuilder) AddNumber(raw []byte) {
+	r.b.log.AddNumber(raw)
 }
 
 // Commit adds the row to its series: the open series in series mode, or else the
@@ -320,37 +281,34 @@ func (r *RowBuilder) Commit() error {
 		return ErrBuilderFinished
 	}
 	if !r.hasEpoch || r.invalid {
+		r.reset()
 		return ErrInvalidRow
 	}
 	sb := b.current
-	expected := len(b.opts.Fields.Values)
-	if sb != nil {
-		if slices.ContainsFunc(r.tagOff, func(o int) bool { return o >= 0 }) {
-			return ErrInvalidRow
-		}
-		expected = sb.expected
-	}
-	if expected > 0 && len(r.values) != expected {
+	if sb != nil && slices.ContainsFunc(r.tagOff, func(o int) bool { return o >= 0 }) {
+		r.reset()
 		return ErrInvalidRow
 	}
 	if sb == nil {
+		// a row that can't fit its series is refused before the series is created for it
+		if n := len(b.opts.Fields.Values); n > 0 && b.log.Staged() != n {
+			r.reset()
+			return ErrInvalidRow
+		}
 		sb = r.series()
 	}
-	var values []any
-	if len(r.values) > 0 {
-		values = b.allocValues(len(r.values))
-		copy(values, r.values)
-	}
-	err := b.appendPoint(sb, r.epoch, values, PointSize(values), true)
+	err := b.log.Commit(sb.id, r.epoch)
 	r.reset()
 	return err
 }
 
+// reset discards any values the row staged and not committed
 func (r *RowBuilder) reset() {
+	if !r.b.finished {
+		r.b.log.Rollback()
+	}
 	r.hasEpoch = false
 	r.invalid = false
-	clear(r.values)
-	r.values = r.values[:0]
 	r.tagBuf = r.tagBuf[:0]
 	for i := range r.tagOff {
 		r.tagOff[i] = -1
@@ -412,7 +370,12 @@ func (b *Builder) seriesFor(rb *resultBuild, h SeriesHeader, cloneFields bool) *
 		h.ValueFieldsList = slices.Clone(h.ValueFieldsList)
 		h.UntrackedFieldsList = slices.Clone(h.UntrackedFieldsList)
 	}
-	sb := &seriesBuild{s: &Series{Header: h}, expected: len(h.ValueFieldsList)}
+	// a series that declares no value fields takes its width from its first row
+	cols := len(h.ValueFieldsList)
+	if cols == 0 {
+		cols = -1
+	}
+	sb := &seriesBuild{s: &Series{Header: h}, id: b.log.AddSeries(cols)}
 	rb.index.add(hash, sb)
 	rb.series = append(rb.series, sb)
 	return sb
@@ -427,125 +390,4 @@ func (b *Builder) currentResult() *resultBuild {
 		b.SetResult(0, "")
 	}
 	return b.result
-}
-
-func (b *Builder) allocValues(n int) []any {
-	// points share chunked backing arrays to avoid an allocation per point
-	if cap(b.arena)-len(b.arena) < n {
-		b.chunk = min(max(2*b.chunk, minValueChunk), maxValueChunk)
-		b.arena = make([]any, 0, max(b.chunk, n))
-	}
-	l := len(b.arena)
-	b.arena = b.arena[:l+n]
-	return b.arena[l : l+n : l+n]
-}
-
-func (b *Builder) bytesValue(raw []byte) *[]byte {
-	// a pointer boxes without an allocation, so the slice headers share chunks as the values do
-	if len(b.blobs) == cap(b.blobs) {
-		b.blobs = make([][]byte, 0, min(max(2*cap(b.blobs), minValueChunk), maxValueChunk))
-	}
-	b.blobs = append(b.blobs, raw)
-	return &b.blobs[len(b.blobs)-1]
-}
-
-func (b *Builder) intValue(v int64) *int64 {
-	// the integers share chunks as the byte slice headers do, and never move once pointed to
-	if len(b.ints) == cap(b.ints) {
-		b.ints = make([]int64, 0, min(max(2*cap(b.ints), minValueChunk), maxValueChunk))
-	}
-	b.ints = append(b.ints, v)
-	return &b.ints[len(b.ints)-1]
-}
-
-func (b *Builder) copyBytes(raw []byte) []byte {
-	// values share chunked byte buffers to avoid an allocation per value
-	n := len(raw)
-	if cap(b.bytes)-len(b.bytes) < n {
-		b.byteSize = min(max(2*b.byteSize, minByteChunk), maxByteChunk)
-		b.bytes = make([]byte, 0, max(b.byteSize, n))
-	}
-	l := len(b.bytes)
-	b.bytes = append(b.bytes, raw...)
-	return b.bytes[l : l+n : l+n]
-}
-
-func (b *Builder) appendPoint(sb *seriesBuild, e epoch.Epoch, values []any, size int, owned bool) error {
-	s := sb.s
-	if n := len(s.Points); n > 0 && !sb.unordered {
-		last := &s.Points[n-1]
-		switch {
-		case e < last.Epoch:
-			sb.unordered = true
-		case e == last.Epoch:
-			switch b.opts.Duplicates {
-			case DuplicatesError:
-				return ErrDuplicateEpoch
-			case DuplicatesFirstWins:
-				if owned {
-					b.releaseValues(values)
-				}
-				return nil
-			case DuplicatesLastWins:
-				s.PointSize += int64(size - last.Size)
-				last.Values, last.Size = values, size
-				return nil
-			}
-		}
-	}
-	s.Points = append(s.Points, Point{Epoch: e, Size: size, Values: values})
-	s.PointSize += int64(size)
-	return nil
-}
-
-func (b *Builder) releaseValues(values []any) {
-	// only the most recent allocation can be returned to its chunk
-	n := len(values)
-	l := len(b.arena)
-	if n == 0 || l < n || &b.arena[l-n] != &values[0] {
-		return
-	}
-	clear(values)
-	b.arena = b.arena[:l-n]
-}
-
-func (b *Builder) finishSeries(sb *seriesBuild) error {
-	s := sb.s
-	if sb.unordered {
-		// a stable sort keeps arrival order among equal epochs for the duplicate policy
-		slices.SortStableFunc(s.Points, pointCmp)
-		if b.opts.Duplicates != DuplicatesKeep {
-			if err := b.dedupe(s); err != nil {
-				return err
-			}
-		}
-	}
-	s.Header.CalculateSize()
-	return nil
-}
-
-func (b *Builder) dedupe(s *Series) error {
-	pts := s.Points
-	k := 0
-	for i := 1; i < len(pts); i++ {
-		if pts[i].Epoch != pts[k].Epoch {
-			k++
-			pts[k] = pts[i]
-			continue
-		}
-		switch b.opts.Duplicates {
-		case DuplicatesError:
-			return ErrDuplicateEpoch
-		case DuplicatesLastWins:
-			s.PointSize -= int64(pts[k].Size)
-			pts[k] = pts[i]
-		default:
-			s.PointSize -= int64(pts[i].Size)
-		}
-	}
-	if len(pts) > 0 {
-		clear(pts[k+1:])
-		s.Points = pts[:k+1]
-	}
-	return nil
 }

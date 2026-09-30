@@ -154,10 +154,10 @@ type retained struct {
 // retain keeps copies of s live until they hold about budget bytes of heap: it measures one copy's
 // live size after a collection, then builds as many more as the budget needs
 func retain(s shape, budget int64) retained {
-	runtime.GC()
+	collect()
 	before := heapStats()
 	r := retained{kept: []timeseries.Timeseries{s.build()}}
-	runtime.GC()
+	collect()
 	perCopy := max(int64(heapStats().alloc)-int64(before.alloc), 1)
 	n := max(int((budget+perCopy-1)/perCopy), 1)
 	for len(r.kept) < n {
@@ -167,7 +167,7 @@ func retain(s shape, budget int64) retained {
 	for _, ts := range r.kept {
 		reported += ts.Size()
 	}
-	runtime.GC()
+	collect()
 	after := heapStats()
 	points := float64(len(r.kept) * s.pointCount())
 	r.liveBytes = float64(int64(after.alloc) - int64(before.alloc))
@@ -175,6 +175,13 @@ func retain(s shape, budget int64) retained {
 	r.objectsPerPoint = (float64(after.objects) - float64(before.objects)) / points
 	r.sizeRatio = float64(reported) / r.liveBytes
 	return r
+}
+
+// collect runs two collections, the second dropping what sync.Pools kept through the first, so pooled
+// build buffers aren't counted as a copy's
+func collect() {
+	runtime.GC()
+	runtime.GC()
 }
 
 type heap struct {

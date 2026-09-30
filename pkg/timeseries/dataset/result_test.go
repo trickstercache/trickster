@@ -50,7 +50,7 @@ func TestResultClone(t *testing.T) {
 }
 
 func TestResultSize(t *testing.T) {
-	const expected = 116
+	const expected = 164
 	i := testResult().Size()
 	if i != expected {
 		t.Errorf("expected %d got %d", expected, i)

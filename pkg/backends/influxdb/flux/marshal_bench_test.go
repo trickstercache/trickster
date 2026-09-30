@@ -31,13 +31,14 @@ func BenchmarkMarshalCSV(b *testing.B) {
 		ds := testDataSet()
 		ds.Results[0].SeriesList = nil
 		for i := range shape.series {
-			s := &dataset.Series{Header: header.Clone()}
+			s := dataset.NewSeries(header.Clone(), nil)
 			s.Header.Tags["hostname"] = fmt.Sprintf("host-%d", i)
-			s.Points = make(dataset.Points, shape.points)
-			for j := range s.Points {
-				s.Points[j] = dataset.Point{Epoch: epoch.Epoch(int64(1577836800+60*j) * 1e9),
+			pts := make(dataset.Points, shape.points)
+			for j := range pts {
+				pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1577836800+60*j) * 1e9),
 					Values: []any{float64(i*j%9973) / 7, float64(j) + 0.5}}
 			}
+			s.SetPoints(pts)
 			ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, s)
 		}
 		frb := DefaultJSONRequestBody()

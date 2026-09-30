@@ -72,11 +72,19 @@ Use row mode for formats that send one row per point, such as SQL results and TS
 r := b.Row()      // reused, and valid until the next call to Row
 r.SetEpoch(ep)
 r.SetTag(0, host) // an index into BuilderOptions.Fields.Tags; the bytes are copied
-r.AddValue(v)     // in BuilderOptions.Fields.Values order
+r.AddFloat64(v)   // values in BuilderOptions.Fields.Values order
 if err := r.Commit(); err != nil {
 	return err
 }
 ```
+
+Each value is added with the adder for its type, so it is written straight into its column without being boxed:
+
+- `AddFloat64`, `AddInt64`, `AddUint64`, `AddBool` and `AddNull`;
+- `AddString(raw)` for text and `AddBytes(raw)` for binary values, both copying `raw`;
+- `AddNumber(raw)` for a number kept as its literal text, like a `json.Number`.
+
+`AddValue(v)` takes a value that is already boxed, like one `stream.ParseValue` returns, and picks the adder by its Go type. When a decoder knows a value's type as it reads it, the typed adder saves boxing it.
 
 The Builder remembers each raw tag encoding it has seen, so a row that repeats an earlier row's tag bytes finds its series with one lookup that does not allocate. A new encoding is converted with `TagString` and matched against the existing series by header, so equivalent encodings, such as `"a"` and `"\u0061"` in JSON, share a series. A tag that is never set is left out of the series' `Tags`, so an unset tag and an empty one produce different series.
 
@@ -97,7 +105,7 @@ for _, p := range points {
 b.EndSeries()
 ```
 
-Rows committed while a series is open go to that series and may not set tags. `StartSeries` reopens the series with an identical header if there is one, so a series that arrives in pieces becomes one series. `AppendPoint` adds a `Point` you have already built. For formats that return several statements, `SetResult(statementID, name)` sends later rows and series to another result, creating it if needed.
+Rows committed while a series is open go to that series and may not set tags. `StartSeries` reopens the series with an identical header if there is one, so a series that arrives in pieces becomes one series. `AppendPoint` adds a `Point` you have already built, adding its values with `AddValue`. For formats that return several statements, `SetResult(statementID, name)` sends later rows and series to another result, creating it if needed.
 
 ### Finishing
 
@@ -105,7 +113,7 @@ The Builder matches series the same way merges do: the header hash finds candida
 
 `Finish` returns the DataSet. It sorts only the series whose points arrived out of order, using a stable sort that keeps arrival order among equal epochs, and then applies the duplicate policy. When a series' points do arrive in order, duplicates are handled as they arrive, so `DuplicatesError` fails the `Commit` immediately. `Finish` also calculates each series header's size, and sets the DataSet's `TimeRangeQuery` and `ExtentList` from the query.
 
-Point values are carved from shared, chunked backing arrays, so a point does not need an allocation of its own. `dataset.PointSize` is the size estimate the Builder records for each point.
+The Builder logs rows as they arrive and lays them out by column when it finishes: each series holds its epochs in one array and each value column in another, all cut from a few arrays the whole DataSet shares, with text and binary values in one shared byte array. So a row does not need an allocation of its own, and a series' size is the size of its arrays. `Series.Points()` returns a copy of a series' rows as `Point` values for code that needs them, but readers on a hot path should read the columns in place through `Series.Segments()` or `Result.Rows`.
 
 `ErrInvalidRow` and `ErrDuplicateEpoch` wrap `timeseries.ErrInvalidBody`, and `ErrBuilderFinished` reports use after `Finish`. `ErrInvalidRow` covers:
 

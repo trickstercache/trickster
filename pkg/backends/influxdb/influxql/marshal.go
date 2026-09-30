@@ -120,9 +120,11 @@ func checkValues(ds *dataset.DataSet) error {
 			if s == nil {
 				continue
 			}
-			for i := range s.PointCount() {
-				for _, v := range s.PointAt(i).Values {
-					if err := tstrings.CheckJSONValue(v); err != nil {
+			segs := s.Segments()
+			for k := range segs {
+				seg := &segs[k]
+				for c := range seg.NumCols() {
+					if err := seg.CheckColumnJSON(c); err != nil {
 						return err
 					}
 				}
@@ -200,6 +202,9 @@ func appendDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, tf timeFormat) 
 }
 
 // appends s as a models.Row, whose name, tags and values are left out when empty
+// the most columns of a series whose floats are read without their kinds
+const maxFloatColumns = 8
+
 func appendSeries(cw *tbytes.ChunkWriter, s *dataset.Series, tf timeFormat) {
 	h := &s.Header
 	at := h.TimestampField.OutputPosition
@@ -230,34 +235,50 @@ func appendSeries(cw *tbytes.ChunkWriter, s *dataset.Series, tf timeFormat) {
 	}
 	b[len(b)-1] = ']'
 	values := false
-	for i := range s.PointCount() {
-		p := s.PointAt(i)
-		if len(p.Values) == 0 {
+	segs := s.Segments()
+	// each all-float column is read as a []float64, skipping the kind switch for each of its values
+	var floatBuf [maxFloatColumns][]float64
+	for k := range segs {
+		seg := &segs[k]
+		cols := seg.NumCols()
+		if cols == 0 {
 			continue
 		}
-		if values {
-			b = append(b, ",["...)
-		} else {
-			b = append(b, `,"values":[[`...)
-			values = true
+		floats := floatBuf[:0]
+		for n := range min(cols, maxFloatColumns) {
+			col := seg.Col(n)
+			fs, _ := col.Float64s()
+			floats = append(floats, fs)
 		}
-		timed := false
-		for n, v := range p.Values {
-			if n == at {
-				b = append(tf.append(b, p.Epoch), ',')
-				timed = true
+		for i, e := range seg.Epochs() {
+			if values {
+				b = append(b, ",["...)
+			} else {
+				b = append(b, `,"values":[[`...)
+				values = true
 			}
-			// the values were checked, so none fails
-			b, _ = tstrings.AppendJSONValue(b, v)
-			b = append(b, ',')
+			timed := false
+			for n := range cols {
+				if n == at {
+					b = append(tf.append(b, e), ',')
+					timed = true
+				}
+				// the values were checked, so none fails
+				if n < len(floats) && floats[n] != nil {
+					b, _ = tstrings.AppendJSONFloat(b, floats[n][i], 64)
+				} else {
+					b, _ = seg.AppendJSON(b, n, i)
+				}
+				b = append(b, ',')
+			}
+			if !timed {
+				b = append(tf.append(b, e), ',')
+			}
+			b[len(b)-1] = ']'
+			cw.Buf = b
+			cw.FlushIfFull()
+			b = cw.Buf
 		}
-		if !timed {
-			b = append(tf.append(b, p.Epoch), ',')
-		}
-		b[len(b)-1] = ']'
-		cw.Buf = b
-		cw.FlushIfFull()
-		b = cw.Buf
 	}
 	if values {
 		b = append(b, ']')
@@ -317,9 +338,9 @@ func toWireFormat(ds *dataset.DataSet,
 				tsColumnAdded = true
 			}
 
-			row.Values = make([][]any, 0, len(s.Points))
+			row.Values = make([][]any, 0, s.PointCount())
 
-			for _, p := range s.Points {
+			for _, p := range s.Points() {
 				if len(p.Values) == 0 {
 					continue
 				}

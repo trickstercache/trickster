@@ -185,8 +185,14 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 		}
 	}
 
-	seriesByKey := make(map[string]*dataset.Series)
+	// every series' rows go through one log, which sorts any that arrive out of order
+	type keyed struct {
+		series *dataset.Series
+		id     int
+	}
+	seriesByKey := make(map[string]keyed)
 	var seriesKeys []string
+	log := dataset.NewColumnLog(dataset.DuplicatesKeep)
 	for _, rec := range records {
 		if rec == nil {
 			continue
@@ -221,24 +227,30 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 					QueryStatement:  trq.Statement,
 				}
 				sh.CalculateSize()
-				series = &dataset.Series{Header: sh}
+				series = keyed{series: dataset.NewSeries(sh, nil), id: log.AddSeries(len(valueIndices))}
 				seriesByKey[key] = series
 				seriesKeys = append(seriesKeys, key)
 			}
-			values := make([]any, len(valueIndices))
-			for i, columnIndex := range valueIndices {
-				values[i] = valueAt(rec.Column(columnIndex), row)
+			for _, columnIndex := range valueIndices {
+				log.AddValue(valueAt(rec.Column(columnIndex), row))
 			}
-			size := dataset.PointSize(values)
-			series.Points = append(series.Points, dataset.Point{Epoch: ep, Size: size, Values: values})
-			series.PointSize += int64(size)
+			if err := log.Commit(series.id, ep); err != nil {
+				return nil, err
+			}
 		}
 	}
-
+	segs, err := log.Finish()
+	if err != nil {
+		return nil, err
+	}
 	slices.Sort(seriesKeys)
 	seriesList := make(dataset.SeriesList, len(seriesKeys))
 	for i, key := range seriesKeys {
-		seriesList[i] = seriesByKey[key]
+		k := seriesByKey[key]
+		if segs[k.id].Len() > 0 {
+			k.series.SetSegments(segs[k.id : k.id+1 : k.id+1])
+		}
+		seriesList[i] = k.series
 	}
 	return &dataset.DataSet{
 		TimeRangeQuery: trq,
@@ -256,11 +268,12 @@ type seriesContext struct {
 	tagValues []any
 }
 
-// rowRef locates one output row: its epoch, its series, and its point.
+// rowRef locates one output row: its epoch, its series, and where the series holds it.
 type rowRef struct {
 	ep          epoch.Epoch
 	seriesIndex int
-	point       *dataset.Point
+	seg         *dataset.Segment
+	row         int
 }
 
 // defaultRowOrder is the time-major fallback ordering — ascending epoch, then
@@ -330,10 +343,10 @@ func cellValue(contexts []seriesContext, row rowRef, column int) any {
 		return sc.tagValues[column]
 	}
 	position := sc.valueIndex[column]
-	if position >= len(row.point.Values) {
+	if position >= row.seg.NumCols() {
 		return nil
 	}
-	return row.point.Values[position]
+	return row.seg.Value(position, row.row)
 }
 
 // nullOrder places nulls ahead of or behind non-null values independently of
@@ -454,9 +467,12 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 
 	rows := make([]rowRef, 0, rowCount)
 	for seriesIndex, sc := range contexts {
-		for i := range sc.series.PointCount() {
-			point := sc.series.PointAt(i)
-			rows = append(rows, rowRef{ep: point.Epoch, seriesIndex: seriesIndex, point: point})
+		segs := sc.series.Segments()
+		for k := range segs {
+			seg := &segs[k]
+			for i, ep := range seg.Epochs() {
+				rows = append(rows, rowRef{ep: ep, seriesIndex: seriesIndex, seg: seg, row: i})
+			}
 		}
 	}
 	comparators, err := rowComparators(schema, tsIndex, contexts, keys)
@@ -489,7 +505,7 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 				case sc.valueIndex[i] < 0:
 					err = appendValue(fieldBuilder, sc.tagValues[i])
 				default:
-					err = appendValue(fieldBuilder, row.point.Values[sc.valueIndex[i]])
+					err = appendCell(fieldBuilder, row.seg, sc.valueIndex[i], row.row)
 				}
 				if err != nil {
 					builder.Release()
@@ -580,6 +596,48 @@ func valueAt(column arrow.Array, row int) any {
 		return s
 	}
 	return nil
+}
+
+// appendCell writes a Segment's value into an Arrow builder, reading the common kinds without boxing
+// them and converting the rest as appendValue does
+func appendCell(builder array.Builder, seg *dataset.Segment, c, i int) error {
+	switch k := seg.KindAt(c, i); b := builder.(type) {
+	case *array.Float64Builder:
+		if k == dataset.KindFloat64 {
+			b.Append(seg.Float64(c, i))
+			return nil
+		}
+	case *array.Int64Builder:
+		if k == dataset.KindInt64 {
+			b.Append(seg.Int64(c, i))
+			return nil
+		}
+	case *array.Uint64Builder:
+		if k == dataset.KindUint64 {
+			b.Append(seg.Uint64(c, i))
+			return nil
+		}
+	case *array.BooleanBuilder:
+		if k == dataset.KindBool {
+			b.Append(seg.Bool(c, i))
+			return nil
+		}
+	case *array.StringBuilder:
+		if k == dataset.KindString {
+			b.Append(seg.Text(c, i))
+			return nil
+		}
+	case *array.BinaryDictionaryBuilder:
+		if k == dataset.KindString {
+			return b.AppendString(seg.Text(c, i))
+		}
+	case *array.TimestampBuilder:
+		if k == dataset.KindInt64 {
+			b.Append(arrow.Timestamp(seg.Int64(c, i)))
+			return nil
+		}
+	}
+	return appendValue(builder, seg.Value(c, i))
 }
 
 // appendValue writes a normalized dataset value into an Arrow builder,

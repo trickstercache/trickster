@@ -93,7 +93,7 @@ func FuzzAppendEpochSeconds(f *testing.F) {
 
 func TestMarshalLeavesUnsortedPointsInPlace(t *testing.T) {
 	ds := benchMatrix(1, 3)
-	pts := ds.Results[0].SeriesList[0].Points
+	pts := ds.Results[0].SeriesList[0].Points()
 	pts[0], pts[2] = pts[2], pts[0]
 	first := pts[0].Epoch
 	var w countingWriter

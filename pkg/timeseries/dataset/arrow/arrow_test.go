@@ -139,8 +139,8 @@ func TestRoundTripAllTypes(t *testing.T) {
 	}
 	for i, wantHost := range []string{"a", "b"} {
 		series := ds.Results[0].SeriesList[i]
-		if series.Header.Tags["host"] != wantHost || len(series.Points) != 2 {
-			t.Fatalf("series %d = tags %v, %d points", i, series.Header.Tags, len(series.Points))
+		if series.Header.Tags["host"] != wantHost || series.PointCount() != 2 {
+			t.Fatalf("series %d = tags %v, %d points", i, series.Header.Tags, series.PointCount())
 		}
 	}
 	h0 := ds.Results[0].SeriesList[0].Header.CalculateHash()
@@ -644,17 +644,6 @@ func TestFromRecordsSizesPoints(t *testing.T) {
 		return ds
 	}
 	small, large := build(10), build(1000)
-	series := large.Results[0].SeriesList[0]
-	var sum int64
-	for _, p := range series.Points {
-		if p.Size != dataset.PointSize(p.Values) {
-			t.Fatalf("point size = %d, want %d", p.Size, dataset.PointSize(p.Values))
-		}
-		sum += int64(p.Size)
-	}
-	if series.PointSize != sum {
-		t.Fatalf("series point size = %d, want %d", series.PointSize, sum)
-	}
 	if grown := large.Size() - small.Size(); grown < 990*int64(len("a note of some length")) {
 		t.Fatalf("size grew by %d for 990 more rows", grown)
 	}

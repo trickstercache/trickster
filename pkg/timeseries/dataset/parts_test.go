@@ -43,11 +43,9 @@ func mergedState(ds *DataSet) string {
 				out += "nil,"
 				continue
 			}
-			out += fmt.Sprintf("%s %d %d[", s.Header.Name, s.PointSize, s.PointCount())
-			for _, part := range s.PointParts() {
-				for _, p := range part {
-					out += fmt.Sprintf("%d:%v ", p.Epoch, p.Values)
-				}
+			out += fmt.Sprintf("%s %d[", s.Header.Name, s.PointCount())
+			for _, p := range s.Points() {
+				out += fmt.Sprintf("%d:%v ", p.Epoch, p.Values)
 			}
 			out += "],"
 		}
@@ -60,7 +58,7 @@ func randomMergeSet(rng *weaktest.Rand, names []string, lo, hi int, sorted bool)
 	for r := range 1 + rng.IntN(2) {
 		res := &Result{StatementID: r}
 		for range rng.IntN(4) {
-			s := &Series{Header: SeriesHeader{Name: names[rng.IntN(len(names))]}}
+			s := NewSeries(SeriesHeader{Name: names[rng.IntN(len(names))]}, nil)
 			at := lo
 			for range rng.IntN(6) {
 				if sorted {
@@ -71,10 +69,8 @@ func randomMergeSet(rng *weaktest.Rand, names []string, lo, hi int, sorted bool)
 				} else {
 					at = lo + rng.IntN(hi-lo+1)
 				}
-				s.Points = append(s.Points, Point{Epoch: epoch.Epoch(at), Size: 1 + rng.IntN(3),
-					Values: []any{rng.IntN(100)}})
+				s.SetPoints(append(s.Points(), Point{Epoch: epoch.Epoch(at), Values: []any{rng.IntN(100)}}))
 			}
-			s.PointSize = s.Points.Size()
 			res.SeriesList = append(res.SeriesList, s)
 		}
 		ds.Results = append(ds.Results, res)
@@ -140,10 +136,10 @@ func TestMergePartsMatchesMerge(t *testing.T) {
 		for i, r := range got.Results {
 			var rows, flat []string
 			for row := range r.Rows(RowOrder{}) {
-				rows = append(rows, fmt.Sprint(row.SeriesIndex, row.Point.Epoch))
+				rows = append(rows, fmt.Sprint(row.SeriesIndex, row.Epoch()))
 			}
 			for row := range got.Flat().Results[i].Rows(RowOrder{}) {
-				flat = append(flat, fmt.Sprint(row.SeriesIndex, row.Point.Epoch))
+				flat = append(flat, fmt.Sprint(row.SeriesIndex, row.Epoch()))
 			}
 			if !slices.Equal(rows, flat) {
 				t.Fatalf("trial %d: rows %v, flattened %v", trial, rows, flat)
@@ -186,10 +182,10 @@ func TestMergeDisjointPartsMatchesMergeDisjoint(t *testing.T) {
 			var rows, flat []string
 			for _, order := range []RowOrder{{}, {Descending: true}} {
 				for row := range r.Rows(order) {
-					rows = append(rows, fmt.Sprint(row.SeriesIndex, row.Point.Epoch, row.Point.Values))
+					rows = append(rows, fmt.Sprint(row.SeriesIndex, row.Epoch(), rowValues(row)))
 				}
 				for row := range want.Results[i].Rows(order) {
-					flat = append(flat, fmt.Sprint(row.SeriesIndex, row.Point.Epoch, row.Point.Values))
+					flat = append(flat, fmt.Sprint(row.SeriesIndex, row.Epoch(), rowValues(row)))
 				}
 			}
 			if !slices.Equal(rows, flat) {
@@ -209,17 +205,17 @@ func BenchmarkResponseWithPartialBuckets(b *testing.B) {
 	bucket := func(at int) *DataSet {
 		r := &Result{}
 		for i := range series {
-			r.SeriesList = append(r.SeriesList, &Series{Header: SeriesHeader{Name: fmt.Sprint("s", i)},
-				Points: Points{{Epoch: epoch.Epoch(at), Size: 8, Values: []any{1.0}}}})
+			r.SeriesList = append(r.SeriesList, NewSeries(SeriesHeader{Name: fmt.Sprint("s", i)}, Points{{Epoch: epoch.Epoch(at), Values: []any{1.0}}}))
 		}
 		return &DataSet{Results: Results{r}}
 	}
 	cached := bucket(0)
 	for _, s := range cached.Results[0].SeriesList {
-		s.Points = make(Points, points)
-		for j := range s.Points {
-			s.Points[j] = Point{Epoch: epoch.Epoch(j + 1), Size: 8, Values: []any{float64(j)}}
+		pts := make(Points, points)
+		for j := range pts {
+			pts[j] = Point{Epoch: epoch.Epoch(j + 1), Values: []any{float64(j)}}
 		}
+		s.SetPoints(pts)
 	}
 	for name, merge := range map[string]func(*DataSet, bool, ...timeseries.Timeseries){
 		"merge": (*DataSet).Merge, "parts": (*DataSet).MergeParts,

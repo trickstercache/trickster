@@ -47,10 +47,7 @@ func replicaContribution(member int, values map[int64]string) *gatherContributio
 		})
 	}
 	ds := &dataset.DataSet{Results: dataset.Results{{
-		SeriesList: dataset.SeriesList{{
-			Header: dataset.SeriesHeader{Name: "result"},
-			Points: points,
-		}},
+		SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Name: "result"}, points)},
 	}}}
 	return &gatherContribution{
 		data:           ds,
@@ -86,7 +83,7 @@ func TestReplicaGroupCoalescingPrecedesCrossShardReduction(t *testing.T) {
 		t.Fatalf("merge failures = %v", failedMembers)
 	}
 	ds := accumulator.GetTSData().(*dataset.DataSet)
-	points := ds.Results[0].SeriesList[0].Points
+	points := ds.Results[0].SeriesList[0].Points()
 	got := make(map[int64]string, len(points))
 	for _, point := range points {
 		got[int64(point.Epoch)] = point.Values[0].(string)
@@ -105,7 +102,7 @@ func TestReplicaGroupTolerantDedupKeepsConfiguredFirst(t *testing.T) {
 
 	logical := coalesceReplicaGroup(contributions, 5)
 	ds := logical.data.(*dataset.DataSet)
-	points := ds.Results[0].SeriesList[0].Points
+	points := ds.Results[0].SeriesList[0].Points()
 	if len(points) != 1 {
 		t.Fatalf("points = %v, want one tolerant-deduped point", points)
 	}

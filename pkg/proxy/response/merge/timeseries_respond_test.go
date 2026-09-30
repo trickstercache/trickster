@@ -114,7 +114,7 @@ func TestTimeseriesRespondFuncWithStrategy(t *testing.T) {
 		rf := TimeseriesRespondFuncWithStrategy(
 			func(ts timeseries.Timeseries, _ *timeseries.RequestOptions, _ int, _ io.Writer) error {
 				ds := ts.(*dataset.DataSet)
-				finalized = ds.Results[0].SeriesList[0].Points[0].Values[0].(string)
+				finalized = ds.Results[0].SeriesList[0].Points()[0].Values[0].(string)
 				return nil
 			},
 			nil,

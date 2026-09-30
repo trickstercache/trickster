@@ -58,44 +58,28 @@ var (
 	errDeltaCodec   = errors.New("invalid native delta rows")
 )
 
-const deltaCodecVersion byte = 1 // changes with the encoding, so entries of another version are misses
+// changes with the encoding, so entries of another version are misses; 2 holds rows by column
+const deltaCodecVersion byte = 2
 
 type deltaCodec struct{}
-
-const (
-	// the rows follow the header as a msgpack DataSet, or packed when every value is a row's bytes,
-	// NULL or an integer, which decodes with no per-value parsing
-	layoutDataSet byte = iota
-	layoutPacked
-)
 
 func (c deltaCodec) Marshal(d *Delta) ([]byte, error) {
 	return c.AppendMarshal(nil, d)
 }
 
+// AppendMarshal appends the header and then the rows as a DataSet, whose words are aligned from the
+// start of out, so an entry read back into its own buffer decodes without copying its rows
 func (deltaCodec) AppendMarshal(out []byte, d *Delta) ([]byte, error) {
 	if d == nil || d.DS == nil || len(d.Header) > math.MaxUint32 {
 		return nil, errDeltaCodec
 	}
-	packedSize, packable := packedRowsSize(d.DS)
-	var rows []byte
-	if !packable {
-		var err error
-		if rows, err = dataset.MarshalDataSet(d.DS, nil, 0); err != nil {
-			return nil, err
-		}
-		packedSize = len(rows)
-	}
-	out = slices.Grow(out, len(deltaCodecMagic)+1+4+len(d.Header)+1+packedSize)
+	out = slices.Grow(out, len(deltaCodecMagic)+1+4+len(d.Header)+d.DS.Msgsize())
 	out = append(out, deltaCodecMagic[:]...)
 	out = append(out, deltaCodecVersion)
 	// #nosec G115 -- bounded by math.MaxUint32 above
 	out = binary.BigEndian.AppendUint32(out, uint32(len(d.Header)))
 	out = append(out, d.Header...)
-	if !packable {
-		return append(append(out, layoutDataSet), rows...), nil
-	}
-	return appendPackedRows(append(out, layoutPacked), d.DS)
+	return dataset.AppendDataSet(out, d.DS)
 }
 
 func (deltaCodec) Unmarshal(data []byte) (*Delta, error) {
@@ -109,26 +93,15 @@ func (deltaCodec) Unmarshal(data []byte) (*Delta, error) {
 	if uint64(size) >= uint64(len(data)-prefix) {
 		return nil, errDeltaCodec
 	}
-	// the header and the rows' values refer to data, which the tier hands over as the codec's own
+	// the header and the rows refer to data, which the tier hands over as the codec's own
 	body := data[prefix:]
-	header, layout, rows := body[:size:size], body[size], body[size+1:]
-	switch layout {
-	case layoutPacked:
-		ds, err := readPackedRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		return &Delta{Header: header, DS: ds}, nil
-	case layoutDataSet:
-		ts, err := dataset.UnmarshalDataSet(rows, nil)
-		if err != nil {
-			return nil, err
-		}
-		if ds, ok := ts.(*dataset.DataSet); ok {
-			return &Delta{Header: header, DS: ds}, nil
-		}
+	header := body[:size:size]
+	ds := &dataset.DataSet{}
+	rest, err := ds.UnmarshalMsg(body[size:])
+	if err != nil || len(rest) != 0 {
+		return nil, errDeltaCodec
 	}
-	return nil, errDeltaCodec
+	return &Delta{Header: header, DS: ds}, nil
 }
 
 func (deltaCodec) Size(d *Delta) int {

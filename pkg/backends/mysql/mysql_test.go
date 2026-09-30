@@ -875,7 +875,9 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 	rewrites := metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName,
 		mysqlDialect, "render_delta_rows")
 	before := testutil.ToFloat64(rewrites)
-	d.DS.Results[0].SeriesList[0].Points[0].Values[0] = []byte{0xff}
+	unrenderable := d.DS.Results[0].SeriesList[0].Points()
+	unrenderable[0].Values[0] = []byte{0xff}
+	d.DS.Results[0].SeriesList[0].SetPoints(unrenderable)
 	h.storeDelta(key, d, timeseries.ExtentList{extent})
 	if _, _, status, err := h.executeCached(c, session, "SELECT delta", analysis); err == nil ||
 		status != cachestatus.LookupStatusProxyOnly {

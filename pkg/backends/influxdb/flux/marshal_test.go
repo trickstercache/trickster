@@ -66,102 +66,99 @@ func testDataSet() *dataset.DataSet {
 		Results: []*dataset.Result{
 			{
 				SeriesList: []*dataset.Series{
-					{
-						Header: dataset.SeriesHeader{
-							QueryStatement: testTRQ.Statement,
-							Tags: dataset.Tags{
-								"hostname":     "localhost",
-								"_measurement": "cpu",
+					dataset.NewSeries(dataset.SeriesHeader{
+						QueryStatement: testTRQ.Statement,
+						Tags: dataset.Tags{
+							"hostname":     "localhost",
+							"_measurement": "cpu",
+						},
+						TimestampField: timeseries.FieldDefinition{
+							Name:           timeAltColumnName,
+							DataType:       timeseries.DateTimeRFC3339,
+							SDataType:      TypeRFC3339,
+							Role:           timeseries.RoleTimestamp,
+							OutputPosition: 5,
+						},
+						TagFieldsList: []timeseries.FieldDefinition{
+							{
+								Name:           "hostname",
+								OutputPosition: 8,
+								SDataType:      TypeString,
+								Role:           timeseries.RoleTag,
 							},
-							TimestampField: timeseries.FieldDefinition{
-								Name:           timeAltColumnName,
+							{
+								Name:           resultColumnName,
+								OutputPosition: 1,
+								SDataType:      TypeString,
+								DataType:       timeseries.String,
+								Role:           timeseries.RoleTag,
+								DefaultValue:   "_result",
+							},
+							{
+								Name:           "_measurement",
+								OutputPosition: 9,
+								SDataType:      TypeString,
+								DataType:       timeseries.String,
+								Role:           timeseries.RoleTag,
+							},
+						},
+						ValueFieldsList: []timeseries.FieldDefinition{
+							{
+								Name:           "avg_query",
+								OutputPosition: 6,
+								SDataType:      TypeDouble,
+								DataType:       timeseries.Float64,
+								Role:           timeseries.RoleValue,
+							},
+							{
+								Name:           "avg_global_thread",
+								OutputPosition: 7,
+								SDataType:      TypeDouble,
+								DataType:       timeseries.Float64,
+								Role:           timeseries.RoleValue,
+							},
+						},
+						UntrackedFieldsList: []timeseries.FieldDefinition{
+							{
+								// role for empty CSV first column
+								Role: timeseries.RoleUntracked,
+							},
+							{
+								Name:           tableColumnName,
+								OutputPosition: 2,
+								Role:           timeseries.RoleUntracked,
+								SDataType:      TypeLong,
+								DataType:       timeseries.Int64,
+							},
+							{
+								Name:           startColumnName,
 								DataType:       timeseries.DateTimeRFC3339,
 								SDataType:      TypeRFC3339,
-								Role:           timeseries.RoleTimestamp,
-								OutputPosition: 5,
+								Role:           timeseries.RoleUntracked,
+								OutputPosition: 3,
 							},
-							TagFieldsList: []timeseries.FieldDefinition{
-								{
-									Name:           "hostname",
-									OutputPosition: 8,
-									SDataType:      TypeString,
-									Role:           timeseries.RoleTag,
-								},
-								{
-									Name:           resultColumnName,
-									OutputPosition: 1,
-									SDataType:      TypeString,
-									DataType:       timeseries.String,
-									Role:           timeseries.RoleTag,
-									DefaultValue:   "_result",
-								},
-								{
-									Name:           "_measurement",
-									OutputPosition: 9,
-									SDataType:      TypeString,
-									DataType:       timeseries.String,
-									Role:           timeseries.RoleTag,
-								},
-							},
-							ValueFieldsList: []timeseries.FieldDefinition{
-								{
-									Name:           "avg_query",
-									OutputPosition: 6,
-									SDataType:      TypeDouble,
-									DataType:       timeseries.Float64,
-									Role:           timeseries.RoleValue,
-								},
-								{
-									Name:           "avg_global_thread",
-									OutputPosition: 7,
-									SDataType:      TypeDouble,
-									DataType:       timeseries.Float64,
-									Role:           timeseries.RoleValue,
-								},
-							},
-							UntrackedFieldsList: []timeseries.FieldDefinition{
-								{
-									// role for empty CSV first column
-									Role: timeseries.RoleUntracked,
-								},
-								{
-									Name:           tableColumnName,
-									OutputPosition: 2,
-									Role:           timeseries.RoleUntracked,
-									SDataType:      TypeLong,
-									DataType:       timeseries.Int64,
-								},
-								{
-									Name:           startColumnName,
-									DataType:       timeseries.DateTimeRFC3339,
-									SDataType:      TypeRFC3339,
-									Role:           timeseries.RoleUntracked,
-									OutputPosition: 3,
-								},
-								{
-									Name:           stopColumnName,
-									DataType:       timeseries.DateTimeRFC3339,
-									SDataType:      TypeRFC3339,
-									Role:           timeseries.RoleUntracked,
-									OutputPosition: 4,
-								},
+							{
+								Name:           stopColumnName,
+								DataType:       timeseries.DateTimeRFC3339,
+								SDataType:      TypeRFC3339,
+								Role:           timeseries.RoleUntracked,
+								OutputPosition: 4,
 							},
 						},
-						Points: []dataset.Point{
-							{
-								Epoch:  1577836800000000000,
-								Values: []any{1.781, 54.12348},
-							},
-							{
-								Epoch:  1577836860000000000,
-								Values: []any{2.429, 57.91308},
-							},
-							{
-								Epoch:  1577836920000000000,
-								Values: []any{1.929, 55.21703},
-							},
+					}, []dataset.Point{
+						{
+							Epoch:  1577836800000000000,
+							Values: []any{1.781, 54.12348},
 						},
-					},
+						{
+							Epoch:  1577836860000000000,
+							Values: []any{2.429, 57.91308},
+						},
+						{
+							Epoch:  1577836920000000000,
+							Values: []any{1.929, 55.21703},
+						},
+					}),
 				},
 			},
 		},

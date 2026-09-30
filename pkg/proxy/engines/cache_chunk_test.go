@@ -628,9 +628,9 @@ func TestTimeseriesChunkMergeLeavesMemoryChunks(t *testing.T) {
 		t.Fatalf("the default cache is %s", c.Configuration().Provider)
 	}
 	series := func(host string, epochs ...int64) *dataset.Series {
-		s := &dataset.Series{Header: dataset.SeriesHeader{Name: "m", Tags: dataset.Tags{"host": host}}}
+		s := dataset.NewSeries(dataset.SeriesHeader{Name: "m", Tags: dataset.Tags{"host": host}}, nil)
 		for _, e := range epochs {
-			s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(e), Size: 1, Values: []any{"1"}})
+			s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(e), Values: []any{"1"}}))
 		}
 		return s
 	}
@@ -649,7 +649,7 @@ func TestTimeseriesChunkMergeLeavesMemoryChunks(t *testing.T) {
 		var out []int
 		for _, ch := range chunks {
 			for _, s := range ch.Results[0].SeriesList {
-				out = append(out, len(s.Points))
+				out = append(out, s.PointCount())
 			}
 		}
 		return out
@@ -678,7 +678,7 @@ func TestTimeseriesChunkMergeLeavesMemoryChunks(t *testing.T) {
 			b = s
 		}
 	}
-	if b == nil || len(b.Points) != 3 {
+	if b == nil || b.PointCount() != 3 {
 		t.Fatalf("the merged series b is %v", b)
 	}
 }

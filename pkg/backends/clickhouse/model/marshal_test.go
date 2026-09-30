@@ -215,14 +215,12 @@ func TestMarshalXSVHeadersAndEdges(t *testing.T) {
 	// No value/tag fields => ErrNoTimerangeQuery
 	empty := &dataset.DataSet{
 		Results: []*dataset.Result{{
-			SeriesList: []*dataset.Series{{
-				Header: dataset.SeriesHeader{
-					TimestampField: timeseries.FieldDefinition{
-						Name:     "t",
-						DataType: 0,
-					},
+			SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{
+				TimestampField: timeseries.FieldDefinition{
+					Name:     "t",
+					DataType: 0,
 				},
-			}},
+			}, nil)},
 		}},
 	}
 	err = marshalTimeseriesXSV(new(bytes.Buffer), empty, nil, false, false, ',')
@@ -242,66 +240,63 @@ func TestMarshalXSVHeadersAndEdges(t *testing.T) {
 func TestMarshalXSVUntrackedAndSkips(t *testing.T) {
 	ds := &dataset.DataSet{
 		Results: []*dataset.Result{{
-			SeriesList: []*dataset.Series{{
-				Header: dataset.SeriesHeader{
-					TimestampField: timeseries.FieldDefinition{
+			SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{
+				TimestampField: timeseries.FieldDefinition{
+					Name:           "t",
+					DataType:       timeseries.DateTimeUnixMilli,
+					SDataType:      "UInt64",
+					Role:           timeseries.RoleTimestamp,
+					OutputPosition: 0,
+				},
+				TagFieldsList: []timeseries.FieldDefinition{
+					{
+						// Same name as timestamp is skipped in header rows.
 						Name:           "t",
-						DataType:       timeseries.DateTimeUnixMilli,
-						SDataType:      "UInt64",
-						Role:           timeseries.RoleTimestamp,
+						Role:           timeseries.RoleTag,
 						OutputPosition: 0,
+						SDataType:      "String",
 					},
-					TagFieldsList: []timeseries.FieldDefinition{
-						{
-							// Same name as timestamp is skipped in header rows.
-							Name:           "t",
-							Role:           timeseries.RoleTag,
-							OutputPosition: 0,
-							SDataType:      "String",
-						},
-						{
-							Name:           "host",
-							Role:           timeseries.RoleTag,
-							OutputPosition: 99, // skipped: beyond fieldCount
-							SDataType:      "String",
-						},
-						{
-							Name:           "env",
-							Role:           timeseries.RoleTag,
-							OutputPosition: 1,
-							SDataType:      "String",
-						},
+					{
+						Name:           "host",
+						Role:           timeseries.RoleTag,
+						OutputPosition: 99, // skipped: beyond fieldCount
+						SDataType:      "String",
 					},
-					ValueFieldsList: []timeseries.FieldDefinition{
-						{
-							Name:           "v",
-							Role:           timeseries.RoleValue,
-							OutputPosition: 2,
-							SDataType:      "Float64",
-						},
+					{
+						Name:           "env",
+						Role:           timeseries.RoleTag,
+						OutputPosition: 1,
+						SDataType:      "String",
 					},
-					UntrackedFieldsList: []timeseries.FieldDefinition{
-						{
-							Name:           "meta",
-							Role:           timeseries.RoleUntracked,
-							OutputPosition: 3,
-							DefaultValue:   "x",
-							SDataType:      "String",
-						},
-						{
-							Name:           "skip",
-							Role:           timeseries.RoleUntracked,
-							OutputPosition: -1, // skipped in data rows
-							DefaultValue:   "nope",
-							SDataType:      "String",
-						},
-					},
-					Tags: dataset.Tags{"env": "prod"},
 				},
-				Points: []dataset.Point{
-					{Epoch: 1577836800000000000, Values: []any{"1.5"}},
+				ValueFieldsList: []timeseries.FieldDefinition{
+					{
+						Name:           "v",
+						Role:           timeseries.RoleValue,
+						OutputPosition: 2,
+						SDataType:      "Float64",
+					},
 				},
-			}},
+				UntrackedFieldsList: []timeseries.FieldDefinition{
+					{
+						Name:           "meta",
+						Role:           timeseries.RoleUntracked,
+						OutputPosition: 3,
+						DefaultValue:   "x",
+						SDataType:      "String",
+					},
+					{
+						Name:           "skip",
+						Role:           timeseries.RoleUntracked,
+						OutputPosition: -1, // skipped in data rows
+						DefaultValue:   "nope",
+						SDataType:      "String",
+					},
+				},
+				Tags: dataset.Tags{"env": "prod"},
+			}, []dataset.Point{
+				{Epoch: 1577836800000000000, Values: []any{"1.5"}},
+			})},
 		}},
 	}
 
@@ -330,49 +325,46 @@ func TestMarshalXSVUntrackedAndSkips(t *testing.T) {
 func TestMarshalXSVHeaderTagSkips(t *testing.T) {
 	ds := &dataset.DataSet{
 		Results: []*dataset.Result{{
-			SeriesList: []*dataset.Series{{
-				Header: dataset.SeriesHeader{
-					TimestampField: timeseries.FieldDefinition{
-						Name:           "t",
-						DataType:       timeseries.DateTimeUnixMilli,
-						SDataType:      "UInt64",
-						Role:           timeseries.RoleTimestamp,
+			SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{
+				TimestampField: timeseries.FieldDefinition{
+					Name:           "t",
+					DataType:       timeseries.DateTimeUnixMilli,
+					SDataType:      "UInt64",
+					Role:           timeseries.RoleTimestamp,
+					OutputPosition: 0,
+				},
+				TagFieldsList: []timeseries.FieldDefinition{
+					{
+						Name:           "t", // same as timestamp: skipped in header row
+						Role:           timeseries.RoleTag,
 						OutputPosition: 0,
+						SDataType:      "String",
 					},
-					TagFieldsList: []timeseries.FieldDefinition{
-						{
-							Name:           "t", // same as timestamp: skipped in header row
-							Role:           timeseries.RoleTag,
-							OutputPosition: 0,
-							SDataType:      "String",
-						},
-						{
-							Name:           "host",
-							Role:           timeseries.RoleTag,
-							OutputPosition: 99, // > fieldCount: skipped in header row
-							SDataType:      "String",
-						},
-						{
-							Name:           "env",
-							Role:           timeseries.RoleTag,
-							OutputPosition: 1,
-							SDataType:      "String",
-						},
+					{
+						Name:           "host",
+						Role:           timeseries.RoleTag,
+						OutputPosition: 99, // > fieldCount: skipped in header row
+						SDataType:      "String",
 					},
-					ValueFieldsList: []timeseries.FieldDefinition{
-						{
-							Name:           "v",
-							Role:           timeseries.RoleValue,
-							OutputPosition: 2,
-							SDataType:      "Float64",
-						},
+					{
+						Name:           "env",
+						Role:           timeseries.RoleTag,
+						OutputPosition: 1,
+						SDataType:      "String",
 					},
-					Tags: dataset.Tags{"env": "prod"},
 				},
-				Points: []dataset.Point{
-					{Epoch: 1577836800000000000, Values: []any{"1.5"}},
+				ValueFieldsList: []timeseries.FieldDefinition{
+					{
+						Name:           "v",
+						Role:           timeseries.RoleValue,
+						OutputPosition: 2,
+						SDataType:      "Float64",
+					},
 				},
-			}},
+				Tags: dataset.Tags{"env": "prod"},
+			}, []dataset.Point{
+				{Epoch: 1577836800000000000, Values: []any{"1.5"}},
+			})},
 		}},
 	}
 

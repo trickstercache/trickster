@@ -54,8 +54,8 @@ func TestUnmarshalJSON(t *testing.T) {
 	if len(ds.Results[0].SeriesList) != 1 {
 		t.Fatalf("expected 1 series, got %d", len(ds.Results[0].SeriesList))
 	}
-	if len(ds.Results[0].SeriesList[0].Points) != 2 {
-		t.Fatalf("expected 2 points, got %d", len(ds.Results[0].SeriesList[0].Points))
+	if ds.Results[0].SeriesList[0].PointCount() != 2 {
+		t.Fatalf("expected 2 points, got %d", ds.Results[0].SeriesList[0].PointCount())
 	}
 }
 
@@ -70,8 +70,8 @@ func TestUnmarshalJSONL(t *testing.T) {
 	if !ok {
 		t.Fatal("expected *dataset.DataSet")
 	}
-	if len(ds.Results[0].SeriesList[0].Points) != 2 {
-		t.Fatalf("expected 2 points, got %d", len(ds.Results[0].SeriesList[0].Points))
+	if ds.Results[0].SeriesList[0].PointCount() != 2 {
+		t.Fatalf("expected 2 points, got %d", ds.Results[0].SeriesList[0].PointCount())
 	}
 }
 
@@ -86,8 +86,8 @@ func TestUnmarshalCSV(t *testing.T) {
 	if !ok {
 		t.Fatal("expected *dataset.DataSet")
 	}
-	if len(ds.Results[0].SeriesList[0].Points) != 2 {
-		t.Fatalf("expected 2 points, got %d", len(ds.Results[0].SeriesList[0].Points))
+	if ds.Results[0].SeriesList[0].PointCount() != 2 {
+		t.Fatalf("expected 2 points, got %d", ds.Results[0].SeriesList[0].PointCount())
 	}
 }
 
@@ -125,7 +125,7 @@ func TestUnmarshalJSONNullThenNumeric(t *testing.T) {
 	if !ok {
 		t.Fatal("expected *dataset.DataSet")
 	}
-	pts := ds.Results[0].SeriesList[0].Points
+	pts := ds.Results[0].SeriesList[0].Points()
 	if len(pts) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(pts))
 	}
@@ -147,8 +147,8 @@ func TestRoundTripJSON(t *testing.T) {
 	if !ok {
 		t.Fatal("expected *dataset.DataSet")
 	}
-	if len(ds2.Results[0].SeriesList[0].Points) != 2 {
+	if ds2.Results[0].SeriesList[0].PointCount() != 2 {
 		t.Fatalf("expected 2 points after round-trip, got %d",
-			len(ds2.Results[0].SeriesList[0].Points))
+			ds2.Results[0].SeriesList[0].PointCount())
 	}
 }

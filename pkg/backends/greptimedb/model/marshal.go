@@ -31,6 +31,7 @@ import (
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
@@ -62,8 +63,8 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 	}
 	// the output is written as encoding/json would write it, so nothing is when a value can't be
 	for _, row := range rows {
-		for _, v := range row.p.Values {
-			if err := tstrings.CheckJSONValue(v); err != nil {
+		for j := range row.seg.NumCols() {
+			if err := row.seg.CheckJSON(j, row.row); err != nil {
 				return err
 			}
 		}
@@ -94,9 +95,9 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, _ *timeseries.RequestOpti
 			switch field.Role {
 			case timeseries.RoleTimestamp:
 				// the time was checked when the rows were built
-				cw.Buf, _ = appendEpochValue(cw.Buf, int64(row.p.Epoch), field)
+				cw.Buf, _ = appendEpochValue(cw.Buf, int64(row.epoch()), field)
 			case timeseries.RoleValue:
-				cw.Buf, _ = tstrings.AppendJSONValue(cw.Buf, row.p.Values[vi])
+				cw.Buf, _ = row.seg.AppendJSON(cw.Buf, vi, row.row)
 				vi++
 			default:
 				cw.Buf = append(cw.Buf, row.s.cells[i]...)
@@ -118,16 +119,21 @@ type greptimeSeries struct {
 	cells [][]byte
 }
 
-// one output row: a point, by reference, and its series
+// one output row: where its series holds it, and its series
 type greptimeRow struct {
-	s *greptimeSeries
-	p *dataset.Point
+	s   *greptimeSeries
+	seg *dataset.Segment
+	row int
+}
+
+func (r greptimeRow) epoch() epoch.Epoch {
+	return r.seg.Epoch(r.row)
 }
 
 // the row's value in column i, which is not its time
 func (r greptimeRow) value(i int, fields timeseries.FieldDefinitions, valueIndex []int) any {
 	if fields[i].Role == timeseries.RoleValue {
-		return r.p.Values[valueIndex[i]]
+		return r.seg.Value(valueIndex[i], r.row)
 	}
 	return r.s.tags[i]
 }
@@ -150,7 +156,7 @@ func greptimeRows(d *dataSet) ([]greptimeRow, error) {
 		}
 		for _, series := range result.SeriesList {
 			if series != nil {
-				count += len(series.Points)
+				count += series.PointCount()
 			}
 		}
 	}
@@ -188,12 +194,15 @@ func greptimeRows(d *dataSet) ([]greptimeRow, error) {
 				}
 				s.tags[i] = v
 			}
-			for i := range series.Points {
-				p := &series.Points[i]
-				if err := checkPoint(p, d.fields, timeFields, valueFields); err != nil {
-					return nil, err
+			segs := series.Segments()
+			for k := range segs {
+				seg := &segs[k]
+				for i := range seg.Len() {
+					if err := checkRow(seg, i, d.fields, timeFields, valueFields); err != nil {
+						return nil, err
+					}
+					rows = append(rows, greptimeRow{s: s, seg: seg, row: i})
 				}
-				rows = append(rows, greptimeRow{s: s, p: p})
 			}
 		}
 	}
@@ -202,20 +211,20 @@ func greptimeRows(d *dataSet) ([]greptimeRow, error) {
 
 // fails as building the row field by field did: at the first bad time, or the value field past the
 // last value, whichever is first, or after all fields when values are left over
-func checkPoint(p *dataset.Point, fields timeseries.FieldDefinitions, timeFields, valueFields []int) error {
+func checkRow(seg *dataset.Segment, row int, fields timeseries.FieldDefinitions, timeFields, valueFields []int) error {
 	stop := len(fields)
-	if n := len(p.Values); n < len(valueFields) {
+	if n := seg.NumCols(); n < len(valueFields) {
 		stop = valueFields[n]
 	}
 	for _, i := range timeFields {
 		if i >= stop {
 			break
 		}
-		if err := checkEpochValue(int64(p.Epoch), fields[i]); err != nil {
+		if err := checkEpochValue(int64(seg.Epoch(row)), fields[i]); err != nil {
 			return err
 		}
 	}
-	if len(p.Values) != len(valueFields) {
+	if seg.NumCols() != len(valueFields) {
 		return timeseries.ErrInvalidBody
 	}
 	return nil
@@ -314,7 +323,7 @@ func sortRows(rows []greptimeRow, fields timeseries.FieldDefinitions, ordering [
 			var comparison int
 			if fields[term.index].Role == timeseries.RoleTimestamp {
 				// every row's time has the same field, so the times order as their epochs do
-				comparison = cmp.Compare(a.p.Epoch, b.p.Epoch)
+				comparison = cmp.Compare(a.epoch(), b.epoch())
 			} else {
 				av, bv := a.value(term.index, fields, valueIndex), b.value(term.index, fields, valueIndex)
 				if av == nil || bv == nil {

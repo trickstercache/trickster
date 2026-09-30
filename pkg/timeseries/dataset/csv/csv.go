@@ -28,7 +28,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
-	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -119,7 +118,9 @@ type parser struct {
 }
 
 type csvState struct {
-	ds            *dataset.DataSet
+	ds *dataset.DataSet
+	// each series' points, by name, until they're set on it
+	points        map[string]dataset.Points
 	rowSeriesKeys seriesKeyDataCacheItems
 	seriesOrder   seriesKeyDataCacheItems
 	seriesCounts  sets.StringCounterSet
@@ -179,7 +180,7 @@ func (p *parser) analyzeCSV(sf timeseries.SeriesFields,
 			out.seriesCounts.Increment(kd.resultID, 1)
 		}
 	}
-	out.ds = emptyDataSet(sf, out.seriesCounts, out.pointCounts, out.seriesOrder)
+	out.ds, out.points = emptyDataSet(sf, out.seriesCounts, out.pointCounts, out.seriesOrder)
 	return out, nil
 }
 
@@ -202,7 +203,7 @@ func (p *parser) populateFromCSV(state *csvState, matrix [][]string) error {
 	}
 	for _, s := range lkp {
 		if i, ok := state.pointsUsed.Value(s.Header.Name); ok {
-			s.Points = s.Points[:i]
+			s.SetPoints(state.points[s.Header.Name][:i])
 		}
 	}
 	return nil
@@ -222,70 +223,55 @@ func (p *parser) addRowToSeries(state *csvState, row []string, s *dataset.Series
 		if row[fd.OutputPosition] == "" {
 			continue
 		}
-		pt.Size, _ = numbers.SafeAdd(pt.Size,
-			addValue(row[fd.OutputPosition], pt.Values, i, fd.DataType))
+		addValue(row[fd.OutputPosition], pt.Values, i, fd.DataType)
 	}
 	i, _, _ := state.pointsUsed.Increment(s.Header.Name, 1)
-	if ps, ok := numbers.SafeAdd64(s.PointSize, int64(pt.Size)); ok {
-		s.PointSize = ps
-	}
-	s.Points[i] = pt
+	state.points[s.Header.Name][i] = pt
 }
 
-// addValue parses the input to a number and adds to the values slice. the
-// memory size in bytes of the parsed value is returned.
-func addValue(input string, vals []any, i int, t timeseries.FieldDataType) int {
+// addValue parses the input by its data type into vals[i], which stays nil when it doesn't parse
+func addValue(input string, vals []any, i int, t timeseries.FieldDataType) {
 	switch t {
 	case timeseries.Int64:
 		v, err := strconv.ParseInt(input, 10, 64)
 		if err != nil {
-			return 0
+			return
 		}
 		vals[i] = v
-		return 8
 	case timeseries.Float64:
 		v, err := strconv.ParseFloat(input, 64)
 		if err != nil {
-			return 0
+			return
 		}
 		vals[i] = v
-		return 8
 	case timeseries.String, timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano,
 		timeseries.DateSQL, timeseries.TimeSQL, timeseries.DateTimeSQL:
 		vals[i] = input
-		return len(input)
 	case timeseries.Bool:
 		v, err := strconv.ParseBool(input)
 		if err != nil {
-			return 0
+			return
 		}
 		vals[i] = v
-		return 1
 	case timeseries.Byte:
 		v, err := strconv.ParseInt(input, 10, 8)
 		if err != nil {
-			return 0
+			return
 		}
 		vals[i] = v
-		return 1
 	case timeseries.Int16:
 		v, err := strconv.ParseInt(input, 10, 16)
 		if err != nil {
-			return 0
+			return
 		}
 		vals[i] = v
-		return 2
 	case timeseries.Uint64:
 		v, err := strconv.ParseUint(input, 10, 64)
 		if err != nil {
-			return 0
+			return
 		}
 		vals[i] = v
-		return 8
-	case timeseries.Unknown, timeseries.Null:
-		return 0
 	}
-	return 0
 }
 
 func getSeriesKeyData(row []string, sf timeseries.SeriesFields) seriesKeyDataCacheItem {
@@ -311,7 +297,8 @@ func getSeriesKeyData(row []string, sf timeseries.SeriesFields) seriesKeyDataCac
 
 func emptyDataSet(sf timeseries.SeriesFields, sbr, pbc sets.StringCounterSet,
 	so seriesKeyDataCacheItems,
-) *dataset.DataSet {
+) (*dataset.DataSet, map[string]dataset.Points) {
+	points := make(map[string]dataset.Points, len(so))
 	rsl := make(map[string]dataset.SeriesList, 16)
 	used := sets.NewStringCounterSetCap(len(so))
 	out := &dataset.DataSet{}
@@ -331,17 +318,15 @@ func emptyDataSet(sf timeseries.SeriesFields, sbr, pbc sets.StringCounterSet,
 				SeriesList: sl,
 			})
 		}
-		s := &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Name:                kd.s,
-				TimestampField:      sf.Timestamp,
-				TagFieldsList:       sf.Tags,
-				ValueFieldsList:     sf.Values,
-				UntrackedFieldsList: sf.Untracked,
-				Tags:                kd.seriesKeyData.Map(),
-			},
-			Points: make(dataset.Points, pc),
-		}
+		s := dataset.NewSeries(dataset.SeriesHeader{
+			Name:                kd.s,
+			TimestampField:      sf.Timestamp,
+			TagFieldsList:       sf.Tags,
+			ValueFieldsList:     sf.Values,
+			UntrackedFieldsList: sf.Untracked,
+			Tags:                kd.seriesKeyData.Map(),
+		}, nil)
+		points[kd.s] = make(dataset.Points, pc)
 		si, _ := used.Value(kd.resultID)
 		if si < 0 {
 			si = 0
@@ -350,7 +335,7 @@ func emptyDataSet(sf timeseries.SeriesFields, sbr, pbc sets.StringCounterSet,
 		sl[si] = s
 	}
 	out.Results = ro
-	return out
+	return out, points
 }
 
 func (d seriesKeyData) String(prefix string) string {

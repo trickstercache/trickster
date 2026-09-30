@@ -31,7 +31,6 @@ func makeNsPoints(vals ...ev) Points {
 	for i, v := range vals {
 		p[i] = Point{
 			Epoch:  epoch.Epoch(v.epoch),
-			Size:   32,
 			Values: []any{v.value},
 		}
 	}
@@ -51,7 +50,7 @@ func TestSortAndDedupeWithinTolerance(t *testing.T) {
 		ev{60_004_000_000, "20.0"},
 		ev{120_000_000_000, "30.0"},
 	)
-	out := sortAndDedupeTolerant(p, tol)
+	out := mergePoints(p, nil, MergeOpts{SortPoints: true, ToleranceNanos: tol})
 	require.Len(t, out, 3)
 	require.Equal(t, epoch.Epoch(1_000_000_000), out[0].Epoch)
 	require.Equal(t, "1.0", out[0].Values[0])
@@ -71,7 +70,7 @@ func TestSortAndDedupeToleranceZeroExactMatch(t *testing.T) {
 		ev{100, "3.0"},
 		ev{200, "4.0"},
 	)
-	out := sortAndDedupeTolerant(p, 0)
+	out := mergePoints(p, nil, MergeOpts{SortPoints: true, ToleranceNanos: 0})
 	require.Len(t, out, 3)
 	require.Equal(t, epoch.Epoch(100), out[0].Epoch)
 	require.Equal(t, "3.0", out[0].Values[0])
@@ -93,7 +92,7 @@ func TestSortAndDedupeToleranceClusterChain(t *testing.T) {
 		ev{115, "c"},
 		ev{200, "d"},
 	)
-	out := sortAndDedupeTolerant(p, tol)
+	out := mergePoints(p, nil, MergeOpts{SortPoints: true, ToleranceNanos: tol})
 	require.Len(t, out, 3)
 	require.Equal(t, epoch.Epoch(100), out[0].Epoch)
 	require.Equal(t, "a", out[0].Values[0])
@@ -113,7 +112,7 @@ func TestMergePointsWithOptsTolerance(t *testing.T) {
 		ev{1_007_000_000, "3"},
 		ev{60_004_000_000, "4"},
 	)
-	out := MergePointsWithOpts(p1, p2, MergeOpts{
+	out := mergePoints(p1, p2, MergeOpts{
 		SortPoints:     true,
 		Strategy:       merge.StrategyDedup,
 		ToleranceNanos: tol,
@@ -130,11 +129,11 @@ func TestMergePointsWithOptsToleranceZeroParity(t *testing.T) {
 	// (current Trickster default).
 	p1 := makeNsPoints(ev{100, "1"}, ev{200, "2"})
 	p2 := makeNsPoints(ev{100, "3"}, ev{300, "4"})
-	out := MergePointsWithOpts(p1, p2, MergeOpts{
+	out := mergePoints(p1, p2, MergeOpts{
 		SortPoints:     true,
 		Strategy:       merge.StrategyDedup,
 		ToleranceNanos: 0,
 	})
-	legacy := MergePoints(p1.Clone(), p2.Clone(), true)
+	legacy := mergePoints(p1, p2, MergeOpts{SortPoints: true})
 	require.Equal(t, legacy, out)
 }

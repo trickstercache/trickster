@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
 	"github.com/tinylib/msgp/msgp"
 )
@@ -136,25 +137,35 @@ func flatten(ds *dataset.DataSet) []*series {
 			if ss := seriesStep(&s.Header); ss > 0 {
 				sr.step = ss
 			}
-			if len(s.Points) > 0 {
-				sr.start = int64(s.Points[0].Epoch) / int64(time.Second)
-				if len(s.Points) > 1 {
-					sr.step = (int64(s.Points[1].Epoch) - int64(s.Points[0].Epoch)) / int64(time.Second)
+			if n := s.PointCount(); n > 0 {
+				segs := s.Segments()
+				epochs := make([]epoch.Epoch, 0, 2)
+				sr.values = make([]float64, n)
+				sr.valid = make([]uint64, (n+63)/64)
+				i := 0
+				var last epoch.Epoch
+				for k := range segs {
+					seg := &segs[k]
+					for r, e := range seg.Epochs() {
+						if len(epochs) < 2 {
+							epochs = append(epochs, e)
+						}
+						last = e
+						if seg.NumCols() > 0 && seg.KindAt(0, r) == dataset.KindFloat64 {
+							sr.values[i] = seg.Float64(0, r)
+							sr.valid[i>>6] |= 1 << (uint(i) & 63) //nolint:gosec // bounded index
+						}
+						i++
+					}
+				}
+				sr.start = int64(epochs[0]) / int64(time.Second)
+				if len(epochs) > 1 {
+					sr.step = (int64(epochs[1]) - int64(epochs[0])) / int64(time.Second)
 				}
 				if sr.step <= 0 {
 					sr.step = 1
 				}
-				sr.end = int64(s.Points[len(s.Points)-1].Epoch)/int64(time.Second) + sr.step
-				sr.values = make([]float64, len(s.Points))
-				sr.valid = make([]uint64, (len(s.Points)+63)/64)
-				for i, p := range s.Points {
-					if len(p.Values) > 0 {
-						if f, ok := p.Values[0].(float64); ok {
-							sr.values[i] = f
-							sr.valid[i>>6] |= 1 << (uint(i) & 63) //nolint:gosec // bounded index
-						}
-					}
-				}
+				sr.end = int64(last)/int64(time.Second) + sr.step
 			}
 			out = append(out, sr)
 		}

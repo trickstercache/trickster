@@ -64,7 +64,7 @@ func TestQueryRangeHandler(t *testing.T) {
 		t.Fatalf("dedup batch merge failed: handled=%v err=%v", handled, err)
 	}
 	merged := accumulator.GetTSData().(*dataset.DataSet)
-	points := merged.Results[0].SeriesList[0].Points
+	points := merged.Results[0].SeriesList[0].Points()
 	if len(points) != 1 || points[0].Values[0] != "2" {
 		t.Fatalf("dedup points got %#v, want one last-value-wins point", points)
 	}
@@ -87,8 +87,5 @@ func TestQueryRangeHandler(t *testing.T) {
 }
 
 func dedupRangeDataSet(value string) *dataset.DataSet {
-	return &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{{
-		Header: dataset.SeriesHeader{Name: "up"},
-		Points: dataset.Points{{Epoch: epoch.Epoch(1), Values: []any{value}}},
-	}}}}}
+	return &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Name: "up"}, dataset.Points{{Epoch: epoch.Epoch(1), Values: []any{value}}})}}}}
 }

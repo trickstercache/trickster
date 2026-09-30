@@ -17,7 +17,6 @@
 package flux
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -201,17 +200,20 @@ func processSeriesHeader(st *state) {
 func processCsvSeriesData(st *state) {
 	processSeriesHeader(st)
 	st.cells = slices.Grow(st.cells[:0], len(st.fds))[:len(st.fds)]
-	for i := range st.s.PointCount() {
-		processCsvRowData(st, st.s.PointAt(i))
+	segs := st.s.Segments()
+	for k := range segs {
+		for i := range segs[k].Len() {
+			processCsvRowData(st, &segs[k], i)
+		}
 	}
 }
 
-// one cell of a data row: text written as it is, or a point's time, value or table number
+// one cell of a data row: text written as it is, or a row's time, value (by column) or table number
 type csvCell struct {
-	kind  byte
-	text  string
-	fd    *timeseries.FieldDefinition
-	value any
+	kind byte
+	text string
+	fd   *timeseries.FieldDefinition
+	col  int
 }
 
 const (
@@ -221,13 +223,13 @@ const (
 	csvCellTable
 )
 
-func processCsvRowData(st *state, p *dataset.Point) {
+func processCsvRowData(st *state, seg *dataset.Segment, row int) {
 	clear(st.cells)
 	// the fields fill the positions in their own order, a later one replacing an earlier
 	var o int
 	for i := range st.fds {
 		fd := &st.fds[i]
-		c, usedVal := csvCellFor(st.s.Header.Tags, fd, p, o)
+		c, usedVal := csvCellFor(st.s.Header.Tags, fd, seg, row, o)
 		if usedVal {
 			o++
 		}
@@ -240,14 +242,14 @@ func processCsvRowData(st *state, p *dataset.Point) {
 		if i > 0 {
 			b = append(b, ',')
 		}
-		b = appendCsvCell(b, &st.cells[i], p, st.k)
+		b = appendCsvCell(b, &st.cells[i], seg, row, st.k)
 	}
 	b = append(b, '\n')
 	st.w.cw.Buf = b
 	st.w.cw.FlushIfFull()
 }
 
-func csvCellFor(tags dataset.Tags, fd *timeseries.FieldDefinition, p *dataset.Point, nextValue int,
+func csvCellFor(tags dataset.Tags, fd *timeseries.FieldDefinition, seg *dataset.Segment, row, nextValue int,
 ) (csvCell, bool) {
 	switch fd.Role {
 	case timeseries.RoleTimestamp:
@@ -255,12 +257,13 @@ func csvCellFor(tags dataset.Tags, fd *timeseries.FieldDefinition, p *dataset.Po
 	case timeseries.RoleTag:
 		return csvCell{text: tags[fd.Name]}, false
 	case timeseries.RoleValue:
-		if nextValue < len(p.Values) {
-			v := p.Values[nextValue]
-			if s, ok := v.(string); v == nil || ok && s == "" {
+		if nextValue < seg.NumCols() {
+			// a null or empty text takes the field's default
+			if k := seg.KindAt(nextValue, row); k == dataset.KindNull ||
+				k == dataset.KindString && len(seg.Bytes(nextValue, row)) == 0 {
 				return csvCell{text: fd.DefaultValue}, true
 			}
-			return csvCell{kind: csvCellValue, value: v}, true
+			return csvCell{kind: csvCellValue, col: nextValue}, true
 		}
 	case timeseries.RoleUntracked:
 		if fd.Name == tableColumnName {
@@ -272,36 +275,24 @@ func csvCellFor(tags dataset.Tags, fd *timeseries.FieldDefinition, p *dataset.Po
 
 // appends the cell as fmt's %v writes it, quoted as encoding/csv quotes it; a time or a number
 // holds nothing that needs quoting
-func appendCsvCell(b []byte, c *csvCell, p *dataset.Point, table int) []byte {
+func appendCsvCell(b []byte, c *csvCell, seg *dataset.Segment, row, table int) []byte {
 	switch c.kind {
 	case csvCellTime:
+		e := seg.Epoch(row)
 		switch c.fd.DataType {
 		case timeseries.DateTimeRFC3339:
-			return time.Unix(0, int64(p.Epoch)).UTC().AppendFormat(b, time.RFC3339)
+			return time.Unix(0, int64(e)).UTC().AppendFormat(b, time.RFC3339)
 		case timeseries.DateTimeRFC3339Nano:
-			return time.Unix(0, int64(p.Epoch)).UTC().AppendFormat(b, time.RFC3339Nano)
+			return time.Unix(0, int64(e)).UTC().AppendFormat(b, time.RFC3339Nano)
 		}
-		return strconv.AppendInt(b, int64(p.Epoch), 10)
+		return strconv.AppendInt(b, int64(e), 10)
 	case csvCellTable:
 		return strconv.AppendInt(b, int64(table), 10)
 	case csvCellValue:
-		switch v := c.value.(type) {
-		case string:
-			return tstrings.AppendCSVField(b, v, ',')
-		case float64:
-			return strconv.AppendFloat(b, v, 'g', -1, 64)
-		case float32:
-			return strconv.AppendFloat(b, float64(v), 'g', -1, 32)
-		case int64:
-			return strconv.AppendInt(b, v, 10)
-		case int:
-			return strconv.AppendInt(b, int64(v), 10)
-		case uint64:
-			return strconv.AppendUint(b, v, 10)
-		case bool:
-			return strconv.AppendBool(b, v)
+		if out, ok := seg.AppendFormatted(b, c.col, row); ok {
+			return out
 		}
-		return tstrings.AppendCSVField(b, fmt.Sprint(c.value), ',')
+		return tstrings.AppendCSVField(b, seg.FormatText(c.col, row), ',')
 	}
 	return tstrings.AppendCSVField(b, c.text, ',')
 }

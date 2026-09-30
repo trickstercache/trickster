@@ -19,7 +19,6 @@ package model
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -65,10 +64,10 @@ func marshalTimeseriesJSON(w io.Writer, ds *dataset.DataSet,
 
 // one output position of a row, which is left out when it has no key
 type jsonCell struct {
-	key   string
-	role  timeseries.FieldRole
-	tag   string
-	value any
+	key  string
+	role timeseries.FieldRole
+	tag  string
+	col  int
 }
 
 // appends ds as encoding/json writes its WFDocument: each row holds its fields in output position
@@ -117,60 +116,63 @@ func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeser
 		if s == nil {
 			continue
 		}
-		for pi := range s.PointCount() {
-			p := s.PointAt(pi)
-			clear(cells)
-			// the fields fill the positions in their own order, a later one replacing an earlier
-			var vi int
-			for _, fd := range fds {
-				at := fd.OutputPosition
-				if at < 0 || at >= n {
-					continue
-				}
-				switch fd.Role {
-				case timeseries.RoleTimestamp:
-					cells[at] = jsonCell{key: meta[at].Name, role: fd.Role}
-				case timeseries.RoleTag:
-					cells[at] = jsonCell{key: meta[at].Name, role: fd.Role, tag: s.Header.Tags[fd.Name]}
-				case timeseries.RoleValue:
-					if vi >= len(p.Values) {
+		segs := s.Segments()
+		for k := range segs {
+			seg := &segs[k]
+			for pi := range seg.Len() {
+				clear(cells)
+				// the fields fill the positions in their own order, a later one replacing an earlier
+				var vi int
+				for _, fd := range fds {
+					at := fd.OutputPosition
+					if at < 0 || at >= n {
 						continue
 					}
-					cells[at] = jsonCell{key: meta[at].Name, role: fd.Role, value: p.Values[vi]}
-					vi++
+					switch fd.Role {
+					case timeseries.RoleTimestamp:
+						cells[at] = jsonCell{key: meta[at].Name, role: fd.Role}
+					case timeseries.RoleTag:
+						cells[at] = jsonCell{key: meta[at].Name, role: fd.Role, tag: s.Header.Tags[fd.Name]}
+					case timeseries.RoleValue:
+						if vi >= seg.NumCols() {
+							continue
+						}
+						cells[at] = jsonCell{key: meta[at].Name, role: fd.Role, col: vi}
+						vi++
+					}
 				}
-			}
-			if rows > 0 {
-				b = append(b, ',')
-			}
-			rows++
-			b = append(b, '{')
-			sep := false
-			for i := range cells {
-				c := &cells[i]
-				if c.key == "" {
-					continue
-				}
-				if sep {
+				if rows > 0 {
 					b = append(b, ',')
 				}
-				sep = true
-				b = tstrings.AppendJSON(b, c.key)
-				b = append(b, ':')
-				switch c.role {
-				case timeseries.RoleTimestamp:
-					// a formatted time holds nothing JSON escapes
-					b = append(p.Epoch.AppendFormat(append(b, '"'), tf, false), '"')
-				case timeseries.RoleTag:
-					b = tstrings.AppendJSON(b, c.tag)
-				default:
-					b = appendValueString(b, c.value)
+				rows++
+				b = append(b, '{')
+				sep := false
+				for i := range cells {
+					c := &cells[i]
+					if c.key == "" {
+						continue
+					}
+					if sep {
+						b = append(b, ',')
+					}
+					sep = true
+					b = tstrings.AppendJSON(b, c.key)
+					b = append(b, ':')
+					switch c.role {
+					case timeseries.RoleTimestamp:
+						// a formatted time holds nothing JSON escapes
+						b = append(seg.Epoch(pi).AppendFormat(append(b, '"'), tf, false), '"')
+					case timeseries.RoleTag:
+						b = tstrings.AppendJSON(b, c.tag)
+					default:
+						b = appendValueString(b, seg, c.col, pi)
+					}
 				}
+				b = append(b, '}')
+				cw.Buf = b
+				cw.FlushIfFull()
+				b = cw.Buf
 			}
-			b = append(b, '}')
-			cw.Buf = b
-			cw.FlushIfFull()
-			b = cw.Buf
 		}
 	}
 	b = append(b, `],"rows":`...)
@@ -179,25 +181,13 @@ func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeser
 	cw.Buf = b
 }
 
-// appends v as a JSON string of what fmt's %v writes for it
-func appendValueString(b []byte, v any) []byte {
-	switch t := v.(type) {
-	case string:
-		return tstrings.AppendJSON(b, t)
-	case float64:
-		return append(strconv.AppendFloat(append(b, '"'), t, 'g', -1, 64), '"')
-	case float32:
-		return append(strconv.AppendFloat(append(b, '"'), float64(t), 'g', -1, 32), '"')
-	case int64:
-		return append(strconv.AppendInt(append(b, '"'), t, 10), '"')
-	case int:
-		return append(strconv.AppendInt(append(b, '"'), int64(t), 10), '"')
-	case uint64:
-		return append(strconv.AppendUint(append(b, '"'), t, 10), '"')
-	case bool:
-		return append(strconv.AppendBool(append(b, '"'), t), '"')
-	case nil:
-		return append(b, `"<nil>"`...)
+// appends a value as a JSON string of what fmt's %v writes for it
+func appendValueString(b []byte, seg *dataset.Segment, c, i int) []byte {
+	// a null's "<nil>" holds characters JSON escapes, so it's written as text
+	if seg.KindAt(c, i) != dataset.KindNull {
+		if out, ok := seg.AppendFormatted(append(b, '"'), c, i); ok {
+			return append(out, '"')
+		}
 	}
-	return tstrings.AppendJSON(b, fmt.Sprint(v))
+	return tstrings.AppendJSON(b, seg.FormatText(c, i))
 }

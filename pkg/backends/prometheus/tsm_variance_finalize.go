@@ -76,12 +76,20 @@ func hasPooledVarianceState(ds *dataset.DataSet) bool {
 			if series == nil {
 				continue
 			}
-			for _, point := range series.Points {
-				if len(point.Values) == 0 {
+			// a state is held boxed, so only boxed values are read to look for one
+			segs := series.Segments()
+			for k := range segs {
+				seg := &segs[k]
+				if seg.NumCols() == 0 {
 					continue
 				}
-				if _, ok := point.Values[0].(dataset.PooledVarianceState); ok {
-					return true
+				for i := range seg.Len() {
+					if seg.KindAt(0, i) != dataset.KindExt {
+						continue
+					}
+					if _, ok := seg.Value(0, i).(dataset.PooledVarianceState); ok {
+						return true
+					}
 				}
 			}
 		}
@@ -99,8 +107,9 @@ func finalizePooledVarianceStates(ds *dataset.DataSet, operator string) {
 			if series == nil {
 				continue
 			}
-			keptPoints := series.Points[:0]
-			for _, point := range series.Points {
+			points := series.Points()
+			keptPoints := points[:0]
+			for _, point := range points {
 				if len(point.Values) == 0 {
 					appendWarningOnce(ds, invalidPooledVarianceWarning)
 					continue
@@ -113,14 +122,12 @@ func finalizePooledVarianceStates(ds *dataset.DataSet, operator string) {
 				value := varianceFinalValue(state, operator)
 				formatted := strconv.FormatFloat(value, 'f', -1, 64)
 				point.Values[0] = formatted
-				point.Size = len(formatted) + 32
 				keptPoints = append(keptPoints, point)
 			}
 			if len(keptPoints) == 0 {
 				continue
 			}
-			series.Points = keptPoints
-			series.PointSize = keptPoints.Size()
+			series.SetPoints(keptPoints)
 			keptSeries = append(keptSeries, series)
 		}
 		result.SeriesList = keptSeries
@@ -197,7 +204,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 				groups[key] = group
 				groupOrder = append(groupOrder, key)
 			}
-			for _, point := range series.Points {
+			for _, point := range series.Points() {
 				value, ok := variancePointFloat(point)
 				if !ok {
 					continue
@@ -221,18 +228,13 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 				)
 				points = append(points, dataset.Point{
 					Epoch:  pointEpoch,
-					Size:   len(formatted) + 32,
 					Values: []any{formatted},
 				})
 			}
 			if len(points) == 0 {
 				continue
 			}
-			output = append(output, &dataset.Series{
-				Header:    group.header,
-				Points:    points,
-				PointSize: points.Size(),
-			})
+			output = append(output, dataset.NewSeries(group.header, points))
 		}
 		result.SeriesList = output
 	}

@@ -82,56 +82,53 @@ func testDataSet() *dataset.DataSet {
 		Results: []*dataset.Result{
 			{
 				SeriesList: []*dataset.Series{
-					{
-						Header: dataset.SeriesHeader{
-							QueryStatement: testTRQ.Statement,
-							Tags: dataset.Tags{
-								"hostname": "localhost",
-							},
-							TimestampField: timeseries.FieldDefinition{
-								Name:      "t",
-								DataType:  timeseries.DateTimeUnixMilli,
-								SDataType: "UInt64",
-								Role:      timeseries.RoleTimestamp,
-							},
-							TagFieldsList: []timeseries.FieldDefinition{
-								{
-									Name:           "hostname",
-									OutputPosition: 1,
-									SDataType:      "String",
-									Role:           timeseries.RoleTag,
-								},
-							},
-							ValueFieldsList: []timeseries.FieldDefinition{
-								{
-									Name:           "avg_query",
-									OutputPosition: 2,
-									SDataType:      "Float64",
-									Role:           timeseries.RoleValue,
-								},
-								{
-									Name:           "avg_global_thread",
-									OutputPosition: 3,
-									SDataType:      "Float64",
-									Role:           timeseries.RoleValue,
-								},
+					dataset.NewSeries(dataset.SeriesHeader{
+						QueryStatement: testTRQ.Statement,
+						Tags: dataset.Tags{
+							"hostname": "localhost",
+						},
+						TimestampField: timeseries.FieldDefinition{
+							Name:      "t",
+							DataType:  timeseries.DateTimeUnixMilli,
+							SDataType: "UInt64",
+							Role:      timeseries.RoleTimestamp,
+						},
+						TagFieldsList: []timeseries.FieldDefinition{
+							{
+								Name:           "hostname",
+								OutputPosition: 1,
+								SDataType:      "String",
+								Role:           timeseries.RoleTag,
 							},
 						},
-						Points: []dataset.Point{
+						ValueFieldsList: []timeseries.FieldDefinition{
 							{
-								Epoch:  1577836800000000000,
-								Values: []any{"1", "54"},
+								Name:           "avg_query",
+								OutputPosition: 2,
+								SDataType:      "Float64",
+								Role:           timeseries.RoleValue,
 							},
 							{
-								Epoch:  1577836860000000000,
-								Values: []any{"1", "27"},
-							},
-							{
-								Epoch:  1577836920000000000,
-								Values: []any{"1", "39"},
+								Name:           "avg_global_thread",
+								OutputPosition: 3,
+								SDataType:      "Float64",
+								Role:           timeseries.RoleValue,
 							},
 						},
-					},
+					}, []dataset.Point{
+						{
+							Epoch:  1577836800000000000,
+							Values: []any{"1", "54"},
+						},
+						{
+							Epoch:  1577836860000000000,
+							Values: []any{"1", "27"},
+						},
+						{
+							Epoch:  1577836920000000000,
+							Values: []any{"1", "39"},
+						},
+					}),
 				},
 			},
 		},

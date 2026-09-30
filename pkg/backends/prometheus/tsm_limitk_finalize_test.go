@@ -42,7 +42,7 @@ func TestFinalizeTSMMergeLimitKUsesStableFirstVisitedOrder(t *testing.T) {
 	got := ds.Results[0].SeriesList
 	if len(got) != 2 || got[0].Header.Tags["instance"] != "a" ||
 		got[1].Header.Tags["instance"] != "m" ||
-		got[0].Points[0].Values[0] != "100" || got[1].Points[0].Values[0] != "50" {
+		got[0].Points()[0].Values[0] != "100" || got[1].Points()[0].Values[0] != "50" {
 		t.Fatalf("selected series: %#v", got)
 	}
 }
@@ -60,7 +60,7 @@ func TestFinalizeTSMMergeLimitKAfterWeightedAverage(t *testing.T) {
 	(&Client{}).FinalizeTSMMerge("limitk(1, "+inner+")", ds)
 	got := ds.Results[0].SeriesList
 	if len(got) != 1 || got[0].Header.Tags["service"] != "api" ||
-		got[0].Points[0].Values[0] != "2" {
+		got[0].Points()[0].Values[0] != "2" {
 		t.Fatalf("selected series: %#v", got)
 	}
 }
@@ -175,7 +175,7 @@ func TestFinalizeTSMMergeLimitKSparseRangeChangesMembership(t *testing.T) {
 	got := ds.Results[0].SeriesList
 	if len(got) != 2 || got[0].Header.Tags["instance"] != "a" ||
 		got[1].Header.Tags["instance"] != "b" ||
-		got[0].Points[0].Epoch != 100 || got[1].Points[0].Epoch != 200 {
+		got[0].Points()[0].Epoch != 100 || got[1].Points()[0].Epoch != 200 {
 		t.Fatalf("selected range: %#v", got)
 	}
 }
@@ -201,12 +201,12 @@ func TestFinalizeTSMMergeLimitKWithoutGroupingSparseRange(t *testing.T) {
 	(&Client{}).FinalizeTSMMerge("limitk without (instance) (1, up)", ds)
 	got := ds.Results[0].SeriesList
 	if len(got) != 4 || got[0].Header.Tags["instance"] != "a" ||
-		got[0].Header.Tags["job"] != "api" || got[0].Points[0].Epoch != 100 ||
+		got[0].Header.Tags["job"] != "api" || got[0].Points()[0].Epoch != 100 ||
 		got[1].Header.Tags["instance"] != "a" || got[1].Header.Tags["job"] != "db" ||
-		got[1].Points[0].Epoch != 200 || got[2].Header.Tags["instance"] != "b" ||
-		got[2].Header.Tags["job"] != "api" || got[2].Points[0].Epoch != 200 ||
+		got[1].Points()[0].Epoch != 200 || got[2].Header.Tags["instance"] != "b" ||
+		got[2].Header.Tags["job"] != "api" || got[2].Points()[0].Epoch != 200 ||
 		got[3].Header.Tags["instance"] != "b" || got[3].Header.Tags["job"] != "db" ||
-		got[3].Points[0].Epoch != 100 {
+		got[3].Points()[0].Epoch != 100 {
 		t.Fatalf("selected grouped range: %#v", got)
 	}
 }
@@ -264,8 +264,8 @@ func TestFinalizeTSMMergeLimitKPreservesFloatAndHistogramSamples(t *testing.T) {
 	}
 	if len(got) != 2 || gotFloat == nil || gotHistogram == nil ||
 		gotFloat.Header.Tags["instance"] != "a" || gotHistogram.Header.Tags["instance"] != "a" ||
-		gotFloat.Points[0].Values[0] != "1" ||
-		gotHistogram.Points[0].Values[0] != `{"count":"2","sum":"3"}` {
+		gotFloat.Points()[0].Values[0] != "1" ||
+		gotHistogram.Points()[0].Values[0] != `{"count":"2","sum":"3"}` {
 		t.Fatalf("mixed samples: %#v", got)
 	}
 }
@@ -343,19 +343,16 @@ func BenchmarkFinalizeTSMMergeLimitK(b *testing.B) {
 		for j := range pointCount {
 			value := strconv.Itoa(i*pointCount + j)
 			points = append(points, dataset.Point{
-				Epoch: epoch.Epoch(j + 1), Size: len(value) + 32, Values: []any{value},
+				Epoch: epoch.Epoch(j + 1), Values: []any{value},
 			})
 		}
-		series = append(series, &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{
-					"instance": fmt.Sprintf("instance-%04d", i), "job": fmt.Sprintf("job-%02d", i%10),
-				},
-				QueryStatement:  inner,
-				ValueFieldsList: timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.String}},
+		series = append(series, dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{
+				"instance": fmt.Sprintf("instance-%04d", i), "job": fmt.Sprintf("job-%02d", i%10),
 			},
-			Points: points,
-		})
+			QueryStatement:  inner,
+			ValueFieldsList: timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.String}},
+		}, points))
 	}
 	base := varianceFinalizeDataSet(inner, series...)
 	base.TimeRangeQuery.Step = time.Second

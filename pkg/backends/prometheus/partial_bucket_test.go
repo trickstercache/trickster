@@ -68,7 +68,7 @@ func TestFetchPartialBucketIsFastForward(t *testing.T) {
 		require.Equal(t, want, st)
 		ds := ts.(*dataset.DataSet)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		points := ds.Results[0].SeriesList[0].Points
+		points := ds.Results[0].SeriesList[0].Points()
 		require.Len(t, points, 1)
 		require.Equal(t, end.UnixNano(), int64(points[0].Epoch))
 	}

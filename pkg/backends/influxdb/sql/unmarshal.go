@@ -248,6 +248,8 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 	}
 
 	seriesByKey := make(map[string]*dataset.Series)
+	// each series' points, until they're set on it
+	points := make(map[*dataset.Series]dataset.Points)
 	seriesKeys := make([]string, 0, 8)
 	for _, row := range rows {
 		ep, err := parseV3Timestamp(row[tsName])
@@ -288,13 +290,14 @@ func rowsToDataSet(columns []string, rows []map[string]any, trq *timeseries.Time
 		for j, name := range fieldNames {
 			vals[j] = coerceValue(row[name], vfds[j].DataType)
 		}
-		series.Points = append(series.Points, dataset.Point{Epoch: ep, Values: vals})
+		points[series] = append(points[series], dataset.Point{Epoch: ep, Values: vals})
 	}
 
 	slices.Sort(seriesKeys)
 	seriesList := make(dataset.SeriesList, len(seriesKeys))
 	for i, key := range seriesKeys {
 		seriesList[i] = seriesByKey[key]
+		seriesList[i].SetPoints(points[seriesList[i]])
 	}
 	ds := &dataset.DataSet{
 		TimeRangeQuery: trq,

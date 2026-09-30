@@ -39,16 +39,13 @@ import (
 func wantSeries(name string, tags dataset.Tags, fields timeseries.SeriesFields,
 	points ...dataset.Point,
 ) *dataset.Series {
-	return &dataset.Series{
-		Header: dataset.SeriesHeader{
-			Name:            name,
-			Tags:            tags,
-			TimestampField:  fields.Timestamp,
-			TagFieldsList:   fields.Tags,
-			ValueFieldsList: fields.Values,
-		},
-		Points: points,
-	}
+	return dataset.NewSeries(dataset.SeriesHeader{
+		Name:            name,
+		Tags:            tags,
+		TimestampField:  fields.Timestamp,
+		TagFieldsList:   fields.Tags,
+		ValueFieldsList: fields.Values,
+	}, points)
 }
 
 func wantDataSet(series ...*dataset.Series) *dataset.DataSet {
@@ -183,12 +180,14 @@ func legacyRows(r io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeser
 		} else if str, ok := row[2].(string); ok {
 			v, _ = json.Number(str).Float64()
 		}
-		s.Points = append(s.Points, pt(ms, v))
+		s.SetPoints(append(s.Points(), pt(ms, v)))
 	}
 	sl := make(dataset.SeriesList, 0, len(byHost))
 	for _, host := range slices.Sorted(maps.Keys(byHost)) {
 		s := byHost[host]
-		slices.SortStableFunc(s.Points, func(a, b dataset.Point) int { return cmp.Compare(a.Epoch, b.Epoch) })
+		pts := s.Points()
+		slices.SortStableFunc(pts, func(a, b dataset.Point) int { return cmp.Compare(a.Epoch, b.Epoch) })
+		s.SetPoints(pts)
 		sl = append(sl, s)
 	}
 	ds := wantDataSet(sl...)

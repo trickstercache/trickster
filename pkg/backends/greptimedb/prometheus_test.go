@@ -372,7 +372,7 @@ func TestPrometheusMergePlanContract(t *testing.T) {
 			t.Fatal("wrong quantile result")
 		}
 		s := ds.Results[0].SeriesList[0]
-		if s.Header.Name != "up" || s.Header.Tags["__name__"] != "up" || s.Points[0].Values[0] != "3" {
+		if s.Header.Name != "up" || s.Header.Tags["__name__"] != "up" || s.Points()[0].Values[0] != "3" {
 			t.Fatalf("lost Greptime metric identity: %+v", s)
 		}
 	})

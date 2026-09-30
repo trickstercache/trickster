@@ -72,7 +72,7 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	logicalOrder := make([]*limitKLogicalSeries, 0, len(result.SeriesList))
 	lastTagsKey := ""
 	for _, series := range result.SeriesList {
-		if series == nil || len(series.Points) == 0 {
+		if series == nil || series.PointCount() == 0 {
 			continue
 		}
 		tagsKey := series.Header.Tags.JSON()
@@ -92,7 +92,7 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	}
 	kept := result.SeriesList[:0]
 	for _, series := range result.SeriesList {
-		if series != nil && len(series.Points) > 0 {
+		if series != nil && series.PointCount() > 0 {
 			kept = append(kept, series)
 		}
 	}
@@ -103,19 +103,21 @@ func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 	selectedCounts map[rankBucketKey]int64,
 ) {
 	indexes := make([]int, len(logical.members))
+	points := make([]dataset.Points, len(logical.members))
 	kept := make([]dataset.Points, len(logical.members))
 	for i, series := range logical.members {
-		kept[i] = series.Points[:0]
+		points[i] = series.Points()
+		kept[i] = points[i][:0]
 	}
 
 	for {
 		var pointEpoch epoch.Epoch
 		found := false
-		for i, series := range logical.members {
-			if indexes[i] >= len(series.Points) {
+		for i := range logical.members {
+			if indexes[i] >= len(points[i]) {
 				continue
 			}
-			candidateEpoch := series.Points[indexes[i]].Epoch
+			candidateEpoch := points[i][indexes[i]].Epoch
 			if !found || candidateEpoch < pointEpoch {
 				pointEpoch = candidateEpoch
 				found = true
@@ -130,10 +132,10 @@ func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 		if selected {
 			selectedCounts[bucket]++
 		}
-		for i, series := range logical.members {
-			for indexes[i] < len(series.Points) &&
-				series.Points[indexes[i]].Epoch == pointEpoch {
-				point := series.Points[indexes[i]]
+		for i := range logical.members {
+			for indexes[i] < len(points[i]) &&
+				points[i][indexes[i]].Epoch == pointEpoch {
+				point := points[i][indexes[i]]
 				if selected {
 					kept[i] = append(kept[i], point)
 				}
@@ -143,7 +145,6 @@ func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 	}
 
 	for i, series := range logical.members {
-		series.Points = kept[i]
-		series.PointSize = kept[i].Size()
+		series.SetPoints(kept[i])
 	}
 }

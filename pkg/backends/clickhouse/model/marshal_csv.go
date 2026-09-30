@@ -17,10 +17,8 @@
 package model
 
 import (
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -124,7 +122,7 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 	cells := make([]xsvCell, fieldCount)
 	rows, _ := timeOrderedRows(ds.Results[0])
 	for r := range rows {
-		s, p := r.series, r.point
+		s := r.series
 		clear(cells)
 		var i int
 		for f := range fds {
@@ -142,8 +140,8 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 			case timeseries.RoleTag:
 				cells[fd.OutputPosition] = xsvCell{text: s.Header.Tags[fd.Name]}
 			case timeseries.RoleValue:
-				if i < len(p.Values) {
-					cells[fd.OutputPosition] = xsvCell{kind: xsvCellValue, value: p.Values[i]}
+				if i < r.seg.NumCols() {
+					cells[fd.OutputPosition] = xsvCell{kind: xsvCellValue, col: i}
 					i++
 				}
 			}
@@ -153,7 +151,7 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 			if c > 0 {
 				b = append(b, separator)
 			}
-			b = appendXSVCell(b, &cells[c], p, appendField)
+			b = appendXSVCell(b, &cells[c], r, appendField)
 		}
 		b = append(b, '\n')
 		cw.Buf = b
@@ -162,12 +160,12 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 	return cw.Close()
 }
 
-// one cell of a data row: text, or a point's time or value
+// one cell of a data row: text, or a row's time or value, by its column
 type xsvCell struct {
-	kind  byte
-	text  string
-	fd    *timeseries.FieldDefinition
-	value any
+	kind byte
+	text string
+	fd   *timeseries.FieldDefinition
+	col  int
 }
 
 const (
@@ -177,30 +175,15 @@ const (
 )
 
 // appends the cell as fmt's %v writes it; a time or a number holds nothing to quote or escape
-func appendXSVCell(b []byte, c *xsvCell, p *dataset.Point, appendField func([]byte, string) []byte) []byte {
+func appendXSVCell(b []byte, c *xsvCell, r outputRow, appendField func([]byte, string) []byte) []byte {
 	switch c.kind {
 	case xsvCellTime:
-		return p.Epoch.AppendFormat(b, c.fd.DataType, false)
+		return r.epoch().AppendFormat(b, c.fd.DataType, false)
 	case xsvCellValue:
-		switch v := c.value.(type) {
-		case string:
-			return appendField(b, v)
-		case float64:
-			return strconv.AppendFloat(b, v, 'g', -1, 64)
-		case float32:
-			return strconv.AppendFloat(b, float64(v), 'g', -1, 32)
-		case int64:
-			return strconv.AppendInt(b, v, 10)
-		case int:
-			return strconv.AppendInt(b, int64(v), 10)
-		case uint64:
-			return strconv.AppendUint(b, v, 10)
-		case bool:
-			return strconv.AppendBool(b, v)
-		case nil:
-			return append(b, "<nil>"...)
+		if out, ok := r.seg.AppendFormatted(b, c.col, r.i); ok {
+			return out
 		}
-		return appendField(b, fmt.Sprint(c.value))
+		return appendField(b, r.seg.FormatText(c.col, r.i))
 	}
 	return appendField(b, c.text)
 }

@@ -62,8 +62,8 @@ func TestGroupedRowsPartitionIntoSeries(t *testing.T) {
 		if series.Header.Tags["host"] != wantHost {
 			t.Fatalf("series %d tags = %v, want host=%s", i, series.Header.Tags, wantHost)
 		}
-		if len(series.Points) != 2 {
-			t.Fatalf("series %d has %d points, want 2", i, len(series.Points))
+		if series.PointCount() != 2 {
+			t.Fatalf("series %d has %d points, want 2", i, series.PointCount())
 		}
 		if len(series.Header.TagFieldsList) != 1 ||
 			series.Header.TagFieldsList[0].Name != "host" {
@@ -165,7 +165,7 @@ func TestTypeFidelity(t *testing.T) {
 			t.Fatal(err)
 		}
 		ds := ts.(*dataset.DataSet)
-		if v := ds.Results[0].SeriesList[0].Points[0].Values[0]; v != int64(42) {
+		if v := ds.Results[0].SeriesList[0].Points()[0].Values[0]; v != int64(42) {
 			t.Fatalf("csv integer = %v (%T), want int64(42)", v, v)
 		}
 	})
@@ -177,7 +177,7 @@ func TestTypeFidelity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points
+		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()
 		if points[0].Values[0] != nil {
 			t.Fatalf("null not preserved: %v", points[0].Values[0])
 		}
@@ -222,7 +222,7 @@ func TestUnmarshalRobustness(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points
+		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()
 		if len(points) != 1 || points[0].Epoch == 0 {
 			t.Fatalf("bad-timestamp row not skipped: %+v", points)
 		}

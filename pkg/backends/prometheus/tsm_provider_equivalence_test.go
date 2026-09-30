@@ -205,7 +205,7 @@ func finalizedSnapshot(t *testing.T, query string) string {
 	var out strings.Builder
 	for _, series := range ds.Results[0].SeriesList {
 		out.WriteString(series.Header.Name + series.Header.Tags.JSON())
-		for _, point := range series.Points {
+		for _, point := range series.Points() {
 			for _, value := range point.Values {
 				out.WriteString(" " + value.(string))
 			}
