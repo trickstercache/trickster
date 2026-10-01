@@ -56,6 +56,7 @@ type effective struct {
 	tracingName       string
 	rewriterName      string
 	authenticatorName string
+	geoACLName        string // gates only the backend a rule attaches, so each request is judged once
 	timeout           time.Duration
 	handlerName       string
 	accessLog         *alo.Options
@@ -162,6 +163,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 		e.tracingName = d.TracingName
 		e.rewriterName = d.ReqRewriterName
 		e.authenticatorName = d.AuthenticatorName
+		e.geoACLName = d.GeoACLName
 		e.timeout = time.Duration(d.Timeout)
 		e.accessLog = d.AccessLog
 		e.healthCheck = d.HealthCheck
@@ -213,6 +215,9 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	}
 	if p.AuthenticatorName != "" {
 		e.authenticatorName = p.AuthenticatorName
+	}
+	if p.GeoACLName != "" {
+		e.geoACLName = p.GeoACLName
 	}
 	return e
 }

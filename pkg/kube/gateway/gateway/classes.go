@@ -44,6 +44,7 @@ const (
 	ParamTracingName       = "tracing_name"
 	ParamReqRewriterName   = "req_rewriter_name"
 	ParamAuthenticatorName = "authenticator_name"
+	ParamGeoACLName        = "geo_acl_name"
 	ParamTimeout           = "timeout"
 	ParamHealthMode        = "health_mode"
 	ParamLoadBalancing     = "load_balancing"
@@ -209,6 +210,9 @@ var classParams = map[string]paramSetter{
 	},
 	ParamAuthenticatorName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setKnown(&p.AuthenticatorName, v, t.known.Authenticators, "authenticator")
+	},
+	ParamGeoACLName: func(t *translator, p *ir.Policy, v string) error {
+		return t.setKnown(&p.GeoACLName, v, t.known.GeoACLs, "geo ACL")
 	},
 }
 

@@ -141,6 +141,8 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 		}
 	}
 
+	c.GeoLocators.Initialize()
+
 	if len(c.Caches) > 0 {
 		activeCaches := sets.NewStringSet()
 		if c.Kubernetes.IsEnabled() {

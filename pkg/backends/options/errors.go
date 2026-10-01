@@ -182,6 +182,18 @@ func NewErrInvalidAuthenticatorName(authenticatorName, backendName string) error
 	}
 }
 
+// ErrInvalidGeoACLName is an error type for a geo_acl_name that names no geo ACL
+type ErrInvalidGeoACLName struct {
+	error
+}
+
+// NewErrInvalidGeoACLName returns a new invalid geo ACL name error
+func NewErrInvalidGeoACLName(geoACLName, backendName string) error {
+	return &ErrInvalidGeoACLName{
+		error: fmt.Errorf(`invalid geo_acl_name %q provided in backend options %q`, geoACLName, backendName),
+	}
+}
+
 // ErrInvalidTracingName is an error type for invalid tracing name
 type ErrInvalidTracingName struct {
 	error

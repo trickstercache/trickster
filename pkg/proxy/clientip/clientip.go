@@ -81,10 +81,19 @@ func (t Trusted) containsString(s string) bool {
 // Resolve returns the client IP for r: the peer address unless the peer is a
 // trusted proxy, in which case the nearest untrusted hop it forwarded for.
 func Resolve(r *http.Request, trusted Trusted) string {
+	ip, _ := resolve(r, trusted)
+	return ip
+}
+
+func resolve(r *http.Request, trusted Trusted) (string, bool) {
 	peer := PeerIP(r.RemoteAddr)
 	if len(trusted) == 0 || !trusted.containsString(peer) {
-		return peer
+		return peer, false
 	}
+	return resolveHops(r, trusted, peer), true
+}
+
+func resolveHops(r *http.Request, trusted Trusted, peer string) string {
 	hops := headers.HopsFromHeader(r.Header)
 	for i, hop := range slices.Backward(hops) {
 		addr := hopAddr(hop.RemoteAddr)
@@ -102,6 +111,24 @@ func Resolve(r *http.Request, trusted Trusted) string {
 		return ip
 	}
 	return peer
+}
+
+// FromNetAddr returns the unmapped IP address a connection arrived from, or the zero Addr when
+// remote is nil or not an IP address
+func FromNetAddr(remote net.Addr) netip.Addr {
+	switch a := remote.(type) {
+	case *net.TCPAddr:
+		return a.AddrPort().Addr().Unmap()
+	case *net.UDPAddr:
+		return a.AddrPort().Addr().Unmap()
+	case nil:
+		return netip.Addr{}
+	default:
+		if ap, err := netip.ParseAddrPort(a.String()); err == nil {
+			return ap.Addr().Unmap()
+		}
+	}
+	return netip.Addr{}
 }
 
 // PeerIP returns the host portion of a net address of the form host:port.
@@ -127,16 +154,16 @@ func hopAddr(s string) string {
 	return s
 }
 
-// Middleware resolves the client IP once per request and records it on the
-// request context for the access log and any handler that needs it.
+// Middleware resolves the client IP once per request and records it on the request context, with
+// whether the peer is a trusted proxy, for the access log and any handler.
 func Middleware(trusted Trusted, next http.Handler) http.Handler {
 	if len(trusted) == 0 || next == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := Resolve(r, trusted)
+		ip, peerTrusted := resolve(r, trusted)
 		if ip != "" {
-			r = r.WithContext(tctx.WithClientIP(r.Context(), ip))
+			r = r.WithContext(tctx.WithResolvedClient(r.Context(), ip, peerTrusted))
 		}
 		next.ServeHTTP(w, r)
 	})

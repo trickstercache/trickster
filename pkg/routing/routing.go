@@ -45,6 +45,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
+	geoacl "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl"
+	geohandler "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -70,6 +72,25 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 			backendOptions.AuthOptions.Authenticator, h)
 	}
 	return h
+}
+
+func attachGeoACL(h http.Handler, pathOptions *po.Options, backendOptions *bo.Options) http.Handler {
+	return geohandler.New(geoACLFor(pathOptions, backendOptions), h)
+}
+
+func geoACLFor(pathOptions *po.Options, backendOptions *bo.Options) *geoacl.ACL {
+	o := pathOptions.GeoACLOptions
+	if o == nil {
+		if pathOptions.GeoACLName == reserved.ReferenceNone {
+			return nil
+		}
+		o = backendOptions.GeoACLOptions
+	}
+	if o == nil {
+		return nil
+	}
+	a, _ := o.Compiled.(*geoacl.ACL)
+	return a
 }
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
@@ -161,6 +182,8 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	withResources := shouldCaptureAuth(pathOpts, o) || pathOpts.HideResultHeader ||
 		rl.logger.NeedsResources()
 	h = attachAuthenticator(h, pathOpts, o)
+	// outside the authenticator, so a refused client never reaches a credential check, and ahead of the cache
+	h = attachGeoACL(h, pathOpts, o)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
 	// WithResourcesContext must wrap outer than LimitQueryRange
 	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)

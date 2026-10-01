@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -433,6 +434,8 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		Tracers:        sets.New[string](nil),
 		Rewriters:      sets.New[string](nil),
 		Authenticators: sets.New[string](nil),
+		GeoACLs:        sets.New[string](nil),
+		StreamGeoACLs:  sets.New[string](nil),
 	}
 	if conf != nil {
 		for name := range conf.Caches {
@@ -450,6 +453,15 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		for name := range conf.Authenticators {
 			next.Authenticators.Set(name)
 		}
+		for name, o := range conf.GeoACLs {
+			if o == nil {
+				continue
+			}
+			next.GeoACLs.Set(name)
+			if l := conf.GeoLocators[o.LocatorName()]; l != nil && geoproviders.ReadsAddresses(l.Provider) {
+				next.StreamGeoACLs.Set(name)
+			}
+		}
 	}
 	previous := s.known.Swap(&next)
 	return previous == nil ||
@@ -457,7 +469,9 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.NegativeCaches, next.NegativeCaches) ||
 		!maps.Equal(previous.Tracers, next.Tracers) ||
 		!maps.Equal(previous.Rewriters, next.Rewriters) ||
-		!maps.Equal(previous.Authenticators, next.Authenticators)
+		!maps.Equal(previous.Authenticators, next.Authenticators) ||
+		!maps.Equal(previous.GeoACLs, next.GeoACLs) ||
+		!maps.Equal(previous.StreamGeoACLs, next.StreamGeoACLs)
 }
 
 func marshalKubeOptions(o *kubecfg.Options) []byte {

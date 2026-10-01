@@ -45,6 +45,7 @@ const (
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
 	stepAlignSubsystem  = "step_alignment"
+	geoSubsystem        = "geo"
 )
 
 // Default histogram buckets used by trickster
@@ -544,6 +545,39 @@ var (
 			Help:      "Count of partial bucket fetches through the object proxy cache.",
 		},
 		[]string{keys.Backend_Name, keys.Provider, keys.Edge, keys.Status},
+	)
+
+	// GeoACLDecisions counts geo ACL judgments by the plane they were made on and their result
+	GeoACLDecisions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: geoSubsystem,
+			Name:      "acl_decisions_total",
+			Help:      "Count of geo ACL decisions, by plane and result.",
+		},
+		[]string{keys.Geo_ACL, keys.Plane, keys.Result},
+	)
+
+	// GeoLocatorLookups counts geo locator lookups by whether they placed the client
+	GeoLocatorLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: geoSubsystem,
+			Name:      "locator_lookups_total",
+			Help:      "Count of geo locator lookups, by result.",
+		},
+		[]string{keys.Geo_Locator, keys.Result},
+	)
+
+	// GeoLocatorReloads counts the loads of a geo locator's replaced files by whether they were taken
+	GeoLocatorReloads = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: geoSubsystem,
+			Name:      "locator_reloads_total",
+			Help:      "Count of geo locator data file loads, by result.",
+		},
+		[]string{keys.Geo_Locator, keys.Result},
 	)
 
 	// StepAlignmentFallbacks counts requests for a step alignment mode the query doesn't support,
@@ -1196,6 +1230,9 @@ func init() {
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(ProxyPartialBucketFetches)
 	prometheus.MustRegister(StepAlignmentFallbacks)
+	prometheus.MustRegister(GeoACLDecisions)
+	prometheus.MustRegister(GeoLocatorLookups)
+	prometheus.MustRegister(GeoLocatorReloads)
 	prometheus.MustRegister(TimeseriesRetentionFactorExceeded)
 	prometheus.MustRegister(TimeseriesOffGridExtents)
 	prometheus.MustRegister(SQLQueryAnalysis)

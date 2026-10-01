@@ -41,6 +41,8 @@ import (
 	mo "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
@@ -85,6 +87,10 @@ type Config struct {
 	MgmtConfig *mgmt.Options `yaml:"mgmt,omitempty"`
 	// Authenticators provides configurations for Authenticating users
 	Authenticators auth.Lookup `yaml:"authenticators,omitempty"`
+	// GeoLocators provides named lookups that place a client address
+	GeoLocators geolocopts.Lookup `yaml:"geo_locators,omitempty"`
+	// GeoACLs provides named lists of the locations that may reach the backends and paths naming them
+	GeoACLs geoaclopts.Lookup `yaml:"geo_acls,omitempty"`
 	// Kubernetes configures the Kubernetes Gateway/Ingress controller. The
 	// controller does not exist unless this section is present.
 	Kubernetes *kubecfg.Options `yaml:"kubernetes,omitempty"`
@@ -404,6 +410,8 @@ func (c *Config) Clone() *Config {
 		}
 	}
 
+	nc.GeoLocators = c.GeoLocators.Clone()
+	nc.GeoACLs = c.GeoACLs.Clone()
 	nc.Kubernetes = c.Kubernetes.Clone()
 
 	return nc

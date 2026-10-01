@@ -63,6 +63,8 @@ var overlaySections = map[string]struct{}{
 	"backends":          {},
 	"caches":            {},
 	"discovery":         {},
+	"geo_acls":          {},
+	"geo_locators":      {},
 	"listeners":         {},
 	"negative_caches":   {},
 	"request_rewriters": {},

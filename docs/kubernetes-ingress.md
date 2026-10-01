@@ -204,11 +204,13 @@ it:
 | `tracing_name` | the configured tracer generated backends report to |
 | `req_rewriter_name` | a configured rewriter every generated backend runs, ahead of any route's own |
 | `authenticator_name` | the configured authenticator every generated backend is behind |
+| `geo_acl_name` | the configured [geo ACL](./geo-acl.md) that gates the backend each route attaches |
 
-`authenticator_name` in particular has no annotation and will not get one: an
-annotation that can name an authenticator is one that can also omit it, and
-whoever can create an Ingress in their own namespace would then be able to
-take their route out from behind authentication. A name in `defaults` that
+`authenticator_name` and `geo_acl_name` in particular have no annotation and
+will not get one: an annotation that can name an authenticator or a geo ACL
+is one that can also omit it or name a looser one, and whoever can create an
+Ingress in their own namespace would then be able to take their route out
+from behind it. A name in `defaults` that
 the configuration does not define fails startup, rather than the first
 reconcile, because it is the operator's own mistake to see immediately.
 

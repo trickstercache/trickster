@@ -301,7 +301,18 @@ negative_caches:
   api-errors:
     "404": 30s
     "502": 5s
+geo_locators:
+  default:
+    provider: geofeed
+    geofeed:
+      entries: ["192.0.2.0/24,US"]
+geo_acls:
+  ` + overlayGeoACL + `:
+    allow: [US]
+    exempt: [private]
 `
+
+const overlayGeoACL = "north-america" // the geo ACL the generated backends are put behind as they load
 
 func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	// The overlay has to survive the real loader, not just a decode: names, cross-references
@@ -313,6 +324,7 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 			t.Run(name+"/"+mode, func(t *testing.T) {
 				model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
 					o.Defaults.RoutingMode = mode
+					o.Defaults.GeoACLName = overlayGeoACL
 				})
 				overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
 				require.NoError(t, err)

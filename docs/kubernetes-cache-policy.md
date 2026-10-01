@@ -112,8 +112,10 @@ In a header map a name prefixed with `-` deletes the header and one prefixed wit
 appends to it rather than replacing, exactly as in the annotations and in Trickster's own
 `request_headers`. Durations require a unit. `cacheName` and `negativeCacheName` select
 among what the operator configured; the operator-tier names — a tracer, a request
-rewriter, an authenticator — have no field here either, for the reason given in the
-Ingress document: a policy that could name an authenticator could also omit one.
+rewriter, an authenticator, a geo ACL — have no field here either, for the reason given in
+the Ingress document: a policy that could name an authenticator or a geo ACL could also
+omit one. A route's geo ACL stays as `kubernetes.defaults` or its class set it, whatever
+policy the route carries.
 
 `maxTTL`, `cacheName`, `negativeCacheName`, `cacheKeyParams` and `cacheKeyHeaders` take
 effect only on a route that caches: one whose effective handler is `proxycache`, from

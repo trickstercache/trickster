@@ -99,8 +99,8 @@ func (m *mirror) fire(r *http.Request) {
 }
 
 func mirrorRequest(r *http.Request) (*http.Request, error) {
-	// a bodied request is buffered on the original's resources so both can read it, and the
-	// copy is detached from the client's context so neither cancels the other
+	// a bodied request is buffered on the original's resources so both can read it; the copy keeps the
+	// client IP but not the client's context, so neither cancels the other
 	var body io.Reader = http.NoBody
 	var length int64
 	if methods.HasBody(r.Method) {
@@ -111,7 +111,7 @@ func mirrorRequest(r *http.Request) (*http.Request, error) {
 		body = bytes.NewReader(b)
 		length = int64(len(b))
 	}
-	ctx := tctx.WithMirrored(context.Background())
+	ctx := tctx.WithClientIPOf(tctx.WithMirrored(context.Background()), r.Context())
 	out, err := http.NewRequestWithContext(ctx, r.Method, r.URL.String(), body)
 	if err != nil {
 		return nil, err

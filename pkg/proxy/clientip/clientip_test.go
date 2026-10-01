@@ -17,6 +17,7 @@
 package clientip
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -127,8 +128,9 @@ func TestMiddleware(t *testing.T) {
 	trusted, err := ParseTrusted([]string{"10.0.0.0/8"})
 	require.NoError(t, err)
 	var got string
+	var peerTrusted bool
 	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		got = tctx.ClientIP(r.Context())
+		got, peerTrusted = tctx.ClientIP(r.Context()), tctx.PeerTrusted(r.Context())
 	})
 	require.Nil(t, Middleware(trusted, nil))
 	h := Middleware(nil, next)
@@ -141,8 +143,34 @@ func TestMiddleware(t *testing.T) {
 	h = Middleware(trusted, next)
 	h.ServeHTTP(httptest.NewRecorder(), r)
 	require.Equal(t, "203.0.113.9", got)
+	require.True(t, peerTrusted)
+
+	// a peer that is no trusted proxy is the client, and its headers are not believed
+	r.RemoteAddr = "198.51.100.1:1234"
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	require.Equal(t, "198.51.100.1", got)
+	require.False(t, peerTrusted)
 
 	r.RemoteAddr = ""
 	h.ServeHTTP(httptest.NewRecorder(), r)
 	require.Empty(t, got)
+}
+
+type namedAddr string
+
+func (namedAddr) Network() string { return "test" }
+
+func (a namedAddr) String() string { return string(a) }
+
+func TestFromNetAddr(t *testing.T) {
+	for want, remote := range map[string]net.Addr{
+		"198.51.100.7": &net.TCPAddr{IP: net.ParseIP("198.51.100.7"), Port: 1},
+		"198.51.100.8": &net.UDPAddr{IP: net.ParseIP("::ffff:198.51.100.8"), Port: 1},
+		"2001:db8::1":  namedAddr("[2001:db8::1]:3306"),
+		"203.0.113.4":  namedAddr("[::ffff:203.0.113.4]:3306"),
+	} {
+		require.Equal(t, netip.MustParseAddr(want), FromNetAddr(remote), "%v", remote)
+	}
+	require.False(t, FromNetAddr(nil).IsValid())
+	require.False(t, FromNetAddr(namedAddr("pipe")).IsValid())
 }

@@ -41,6 +41,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 	"github.com/trickstercache/trickster/v2/pkg/kube/controller"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
+	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -1071,4 +1074,27 @@ func getReady(t *testing.T, port int) (int, string) {
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, string(b)
+}
+
+func TestSetKnownNamesGeoACLs(t *testing.T) {
+	// a stream route can take only a geo ACL whose locator places a bare address, and adding or removing a geo
+	// ACL republishes the names, so routes naming it are translated again
+	const anyRoute, httpOnly = "north-america", "edge-countries"
+	s := &kubeSupervisor{}
+	conf := config.NewConfig()
+	require.True(t, s.setKnownNames(conf))
+	require.False(t, s.setKnownNames(conf))
+	conf.GeoLocators = geolocopts.Lookup{
+		geolocopts.DefaultName: {Provider: geoproviders.Geofeed},
+		"edge":                 {Provider: geoproviders.Header},
+	}
+	conf.GeoACLs = geoaclopts.Lookup{anyRoute: {}, httpOnly: {GeoLocatorName: "edge"}, "unset": nil}
+	require.True(t, s.setKnownNames(conf))
+	known := s.known.Load()
+	require.True(t, known.GeoACLs.Contains(anyRoute) && known.GeoACLs.Contains(httpOnly))
+	require.True(t, known.StreamGeoACLs.Contains(anyRoute))
+	require.False(t, known.StreamGeoACLs.Contains(httpOnly))
+	require.False(t, s.setKnownNames(conf))
+	delete(conf.GeoACLs, anyRoute)
+	require.True(t, s.setKnownNames(conf))
 }

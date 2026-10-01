@@ -17,6 +17,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -293,6 +294,110 @@ request_rewriters:
 	if conf.Rules["route-rule"].CaseOptions[0].NextRoute != "prom-b" {
 		t.Errorf("expected original rule case backend reference to remain unchanged")
 	}
+}
+
+func TestSanitizedCloneKubernetesReferences(t *testing.T) {
+	const yml = `
+caches:
+  edge-cache:
+    provider: memory%s
+negative_caches:
+  misses:
+    "404": 5s
+authenticators:
+  staff:
+    provider: basic
+tracing:
+  private-traces:
+    provider: stdout
+listeners:
+  ingress-listener:
+    port: 9000
+backends:
+  web:
+    provider: reverseproxycache
+    origin_url: http://web.private.example
+    cache_name: edge-cache
+    negative_cache_name: misses
+geo_locators:
+  default:
+    provider: geofeed
+geo_acls:
+  customer-region:
+    allow: [US]
+kubernetes:
+  ingress:
+    listener_names: [ingress-listener]
+  defaults:
+    routing_mode: service
+    cache_name: edge-cache
+    negative_cache_name: misses
+    tracing_name: private-traces
+    authenticator_name: staff
+    geo_acl_name: customer-region
+`
+	// negative caches keep their names, even when an ordinary cache, which is renamed, shares one
+	for name, sameNamedCache := range map[string]string{
+		"own name":            "",
+		"shared with a cache": "\n  misses:\n    provider: memory",
+	} {
+		t.Run(name, func(t *testing.T) {
+			conf := NewConfig()
+			if err := conf.loadYAMLConfig(fmt.Sprintf(yml, sameNamedCache)); err != nil {
+				t.Fatal(err)
+			}
+			delete(conf.Backends, "default") // seeded by NewConfig, naming neither cache
+
+			sanitized := conf.SanitizedClone()
+			d := sanitized.Kubernetes.Defaults
+			for field, ok := range map[string]bool{
+				"cache_name":          hasKey(sanitized.Caches, d.CacheName),
+				"negative_cache_name": hasKey(sanitized.NegativeCacheConfigs, d.NegativeCacheName),
+				"tracing_name":        hasKey(sanitized.TracingOptions, d.TracingName),
+				"authenticator_name":  hasKey(sanitized.Authenticators, d.AuthenticatorName),
+				"geo_acl_name":        hasKey(sanitized.GeoACLs, d.GeoACLName),
+				"ingress listener":    hasKey(sanitized.Listeners, sanitized.Kubernetes.Ingress.ListenerNames[0]),
+			} {
+				if !ok {
+					t.Errorf("the kubernetes %s names no sanitized definition in its own section", field)
+				}
+			}
+			if d.NegativeCacheName != "misses" {
+				t.Errorf("expected the negative cache to keep its name, got %q", d.NegativeCacheName)
+			}
+			if d.GeoACLName != "geo-acl-1" {
+				t.Errorf("expected the default geo ACL to be renamed, got %q", d.GeoACLName)
+			}
+			for _, b := range sanitized.Backends {
+				if b.NegativeCacheName != d.NegativeCacheName || b.CacheName != d.CacheName {
+					t.Errorf("backend caches %q and %q differ from the kubernetes defaults' %q and %q",
+						b.CacheName, b.NegativeCacheName, d.CacheName, d.NegativeCacheName)
+				}
+			}
+
+			out := conf.SanitizedString()
+			for _, privateValue := range []string{
+				"edge-cache", "private-traces", "staff", "customer-region", "ingress-listener",
+			} {
+				if strings.Contains(out, privateValue) {
+					t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)
+				}
+			}
+
+			if d := conf.Kubernetes.Defaults; d.GeoACLName != "customer-region" || d.CacheName != "edge-cache" ||
+				d.NegativeCacheName != "misses" {
+				t.Errorf("expected original kubernetes defaults to remain unchanged")
+			}
+			if conf.Kubernetes.Ingress.ListenerNames[0] != "ingress-listener" {
+				t.Errorf("expected original ingress listener names to remain unchanged")
+			}
+		})
+	}
+}
+
+func hasKey[V any](m map[string]V, k string) bool {
+	_, ok := m[k]
+	return ok
 }
 
 func TestConfigStringsRedactDSNAndAuthenticatorPasswords(t *testing.T) {

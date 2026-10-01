@@ -31,6 +31,8 @@ import (
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
@@ -38,6 +40,9 @@ import (
 const (
 	sanitizedSecret   = "*****"
 	sanitizedEndpoint = "example.com"
+	sanitizedValue    = "redacted"
+	geoLocatorPrefix  = "geo-locator"
+	geoACLPrefix      = "geo-acl"
 )
 
 var unsanitizedPathHeaders = map[string]struct{}{
@@ -62,6 +67,8 @@ func (c *Config) SanitizedClone() *Config {
 	listenerNameMap := anonymizedListenerNames(cp.Listeners)
 	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
 	tracingNameMap := anonymizedTracingNames(cp.TracingOptions)
+	geoLocatorNameMap := anonymizedGeoNames(cp.GeoLocators, geoLocatorPrefix)
+	geoACLNameMap := anonymizedGeoNames(cp.GeoACLs, geoACLPrefix)
 
 	renamedCaches := make(cache.Lookup, len(cp.Caches))
 	for oldName, opts := range cp.Caches {
@@ -112,6 +119,7 @@ func (c *Config) SanitizedClone() *Config {
 				opts.ListenerName = newListenerName
 			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
+			sanitizeGeoACLReferences(opts, geoACLNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
 			sanitizeGraphiteOriginCredentials(opts)
@@ -144,7 +152,23 @@ func (c *Config) SanitizedClone() *Config {
 	}
 	cp.TracingOptions = renamedTracing
 
+	cp.GeoLocators = sanitizeGeoLocators(cp.GeoLocators, geoLocatorNameMap)
+	cp.GeoACLs = sanitizeGeoACLs(cp.GeoACLs, geoACLNameMap, geoLocatorNameMap)
 	sanitizeRequestRewriters(cp.RequestRewriters)
+
+	if k := cp.Kubernetes; k != nil {
+		if d := k.Defaults; d != nil {
+			d.CacheName = renamed(cacheNameMap, d.CacheName)
+			d.TracingName = renamed(tracingNameMap, d.TracingName)
+			d.AuthenticatorName = renamed(authNameMap, d.AuthenticatorName)
+			d.GeoACLName = renamed(geoACLNameMap, d.GeoACLName)
+		}
+		if k.Ingress != nil {
+			for i, name := range k.Ingress.ListenerNames {
+				k.Ingress.ListenerNames[i] = renamed(listenerNameMap, name)
+			}
+		}
+	}
 
 	for _, opts := range cp.Rules {
 		sanitizeRuleReferences(opts, backendNameMap)
@@ -358,6 +382,78 @@ func sanitizeAuthenticatorUsers(opts *auth.Options) {
 	opts.Users = users
 }
 
+func anonymizedGeoNames[V any](m map[string]V, prefix string) map[string]string {
+	// default keeps its name, since a geo ACL names that locator by omission
+	out := make(map[string]string, len(m))
+	var n int
+	for _, name := range sortedKeys(m) {
+		if name == geolocopts.DefaultName {
+			out[name] = name
+			continue
+		}
+		n++
+		out[name] = fmt.Sprintf("%s-%d", prefix, n)
+	}
+	return out
+}
+
+func sanitizeGeoACLReferences(opts *bo.Options, geoACLNameMap map[string]string) {
+	if newName, ok := geoACLNameMap[opts.GeoACLName]; ok {
+		opts.GeoACLName = newName
+	}
+	for _, path := range opts.Paths {
+		if path == nil {
+			continue
+		}
+		if newName, ok := geoACLNameMap[path.GeoACLName]; ok {
+			path.GeoACLName = newName
+		}
+	}
+}
+
+func sanitizeGeoLocators(locators geolocopts.Lookup, nameMap map[string]string) geolocopts.Lookup {
+	if locators == nil {
+		return nil
+	}
+	out := make(geolocopts.Lookup, len(locators))
+	for oldName, opts := range locators {
+		newName := nameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			if opts.Geofeed != nil {
+				for i := range opts.Geofeed.Entries {
+					opts.Geofeed.Entries[i] = sanitizedValue
+				}
+			}
+		}
+		out[newName] = opts
+	}
+	return out
+}
+
+func sanitizeGeoACLs(acls geoaclopts.Lookup, nameMap, locatorNameMap map[string]string) geoaclopts.Lookup {
+	if acls == nil {
+		return nil
+	}
+	out := make(geoaclopts.Lookup, len(acls))
+	for oldName, opts := range acls {
+		newName := nameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			if newLocator, ok := locatorNameMap[opts.GeoLocatorName]; ok {
+				opts.GeoLocatorName = newLocator
+			}
+			for i, e := range opts.Exempt {
+				if !strings.EqualFold(strings.TrimSpace(e), geoaclopts.ExemptPrivate) {
+					opts.Exempt[i] = sanitizedValue
+				}
+			}
+		}
+		out[newName] = opts
+	}
+	return out
+}
+
 func sanitizeRequestRewriters(rewriters map[string]*rwopts.Options) {
 	for _, opts := range rewriters {
 		if opts == nil {
@@ -424,6 +520,13 @@ func sanitizeGraphiteOriginCredentials(opts *bo.Options) {
 func shouldSanitizePathHeader(name string) bool {
 	_, ok := unsanitizedPathHeaders[strings.ToLower(name)]
 	return !ok
+}
+
+func renamed(nameMap map[string]string, name string) string {
+	if newName, ok := nameMap[name]; ok {
+		return newName
+	}
+	return name
 }
 
 func sortedKeys[V any](m map[string]V) []string {

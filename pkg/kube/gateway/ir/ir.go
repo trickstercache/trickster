@@ -76,6 +76,10 @@ type ConfiguredNames struct {
 	Tracers        sets.Set[string]
 	Rewriters      sets.Set[string]
 	Authenticators sets.Set[string]
+	// GeoACLs are every geo ACL; StreamGeoACLs are those whose locator places a bare address, which
+	// a stream route needs
+	GeoACLs       sets.Set[string]
+	StreamGeoACLs sets.Set[string]
 }
 
 // Event reasons a Problem may carry; a Problem naming none is reported as Rejected
@@ -591,6 +595,9 @@ type Policy struct {
 	TracingName       string `json:"tracing_name,omitempty"`
 	ReqRewriterName   string `json:"req_rewriter_name,omitempty"`
 	AuthenticatorName string `json:"authenticator_name,omitempty"`
+	// GeoACLName names the configured geo ACL that gates the backend a route attaches to; like the
+	// names above, only the configuration or a class's parameters set it
+	GeoACLName string `json:"geo_acl_name,omitempty"`
 	// HealthMode is the health mode of generated discovery-backed ALBs
 	HealthMode string `json:"health_mode,omitempty"`
 	// LoadBalancing is the mechanism that spreads traffic across a Service's endpoints in the
@@ -644,6 +651,7 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.TracingName, o.TracingName)
 	overlayString(&out.ReqRewriterName, o.ReqRewriterName)
 	overlayString(&out.AuthenticatorName, o.AuthenticatorName)
+	overlayString(&out.GeoACLName, o.GeoACLName)
 	overlayString(&out.HealthMode, o.HealthMode)
 	overlayString(&out.LoadBalancing, o.LoadBalancing)
 	overlayString(&out.LoadBalancingKey, o.LoadBalancingKey)

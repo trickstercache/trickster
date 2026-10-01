@@ -28,6 +28,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	georegistry "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
@@ -61,6 +62,8 @@ type ServerInstance struct {
 	CertMonitor  *monitor.Monitor
 	// Tracers holds the tracers the applied configuration registered, by name
 	Tracers tracing.Tracers
+	// GeoLocators holds the running geo locators of the applied configuration, by name
+	GeoLocators georegistry.Set
 }
 
 // SetMgmtOptions publishes the management options of a newly applied config.

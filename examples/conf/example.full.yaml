@@ -801,6 +801,11 @@ backends:
 #     # tracing_name selects the distributed tracing configuration (crafted below) to be used with this backend. default is default
 #     tracing_name: default
 
+#     # geo_acl_name names a geo ACL (in the geo_acls key, below) that judges this backend's clients by where they are,
+#     # on every listener that serves it. A path's geo_acl_name replaces it, and geo_acl_name: none on a path clears it.
+#     # A member of an alb that serves a native protocol, tcp, tls or udp listener may not name one; set it on the alb.
+#     geo_acl_name: north-america
+
 #     # dearticulate_upstream_ranges, when true, instructs Trickster to make multiple parallel requests to the backend for each
 #     # range needed to fulfill the client request, rather than making a multipart range request. default is false
 #     # This setting applies only to object request byte ranges and not time series requests (they are always dearticulated)
@@ -1016,6 +1021,7 @@ backends:
 #         match_type: prefix                   # this path is routed using prefix matching
 #         handler: proxycache                  # this path is routed through the cache
 #         req_rewriter_name: example-rewriter  # name of a rewriter to modify the request prior to handling
+#         geo_acl_name: europe                 # replaces the backend's geo ACL for this path; none clears it
 #         cache_key_params: [ ex_param1, ex_param2 ]       # the cache key will be hashed with these query parameters (GET)
 #         cache_key_form_fields: [ ex_param1, ex_param2 ]  # or these form fields (POST)
 #         cache_key_headers: [ X-Example-Header ]            # and these request headers, when present in the incoming request
@@ -1589,6 +1595,107 @@ backends:
 #       # realm is the realm valid shown to on the Basic Auth Login modal. If not set, the realm will default
 #       # to the authenticator name (e.g., example_auth_1)
 #       realm: custom-realm-name
+
+# # Geo Locators place a client address. A geo ACL uses the locator named default unless it names another, so
+# # several geo ACLs can share one database. See /docs/geo-acl.md
+# geo_locators:
+#   default:
+#     # provider (required) is how the locator places clients: mmdb, geofeed or header
+#     provider: mmdb
+#     # the mmdb provider reads a MaxMind DB format file: MaxMind GeoIP2 and GeoLite2, DB-IP, IPinfo, or an
+#     # IP2Location MMDB edition. Trickster ships no database; mount one, and keep it updated, yourself
+#     mmdb:
+#       # path (required) is the database file. a Country file places countries and continents; a City
+#       # file adds first-level subdivisions
+#       path: /var/lib/GeoIP/GeoLite2-Country.mmdb
+#       # schema says where the file's records keep the location fields: auto (default) chooses from the
+#       # file's database_type; geoip2 is MaxMind's layout, which DB-IP and IP2Location follow; ipinfo is
+#       # IPinfo's; custom takes the paths in fields
+#       schema: auto
+#       # fields are the record paths of each location field when schema is custom. country is required
+#       # fields:
+#       #   country: [country, iso_code]
+#       #   continent: [continent, code]
+#       #   subdivision: [subdivisions, 0, iso_code]
+#       # reload_interval is how often the file is checked for a replacement, besides change events. A
+#       # replacement is swapped in while serving; one that fails to load leaves the last good file in place.
+#       # 10s to 24h; default is 5m
+#       reload_interval: 5m
+#       # max_age logs a warning while the loaded file was built longer ago than this. default is 0 (never)
+#       max_age: 0s
+
+#   city:
+#     provider: mmdb
+#     mmdb:
+#       path: /var/lib/GeoIP/GeoLite2-City.mmdb
+
+#   corrections:
+#     provider: geofeed
+#     # the geofeed provider places addresses by RFC 8805 lines: prefix,country,region,city,postal code.
+#     # city and postal code are ignored; a line with no location places no one
+#     geofeed:
+#       # entries are inline lines; one beats a file's line for the same prefix
+#       entries:
+#         - 203.0.113.0/24,DE,DE-BE
+#         - 2001:db8::/32,US,US-CA
+#       # files are geofeed files, watched and swapped in as mmdb files are. Write a new file and rename it
+#       # over the old one; a replacement that loses every entry is refused
+#       files: [ /etc/trickster/private-relay.csv ]
+#       # reload_interval is as above. default is 5m
+#       reload_interval: 5m
+
+#   edge:
+#     provider: header
+#     # the header provider reads a location header that a CDN or load balancer in front of Trickster set. It
+#     # believes the header only from the listener's trusted_proxies, and judges HTTP requests only
+#     header:
+#       # country (required) is the header holding a country code
+#       country: CF-IPCountry
+#       # subdivision optionally names a header holding a subdivision code, such as CloudFront-Viewer-Country-Region
+#       subdivision: ''
+#       # continent optionally names a header holding a continent code
+#       continent: ''
+#       # unknown_values are header values that mean no location. default is [XX, T1, ZZ, '-']
+#       unknown_values: [ XX, T1, ZZ, '-' ]
+
+# # Geo ACLs restrict backends and paths, which name them with geo_acl_name, by where their clients are.
+# # HTTP refusals are a 403 by default; native protocol listeners refuse a session in their own error form,
+# # and tcp, tls and udp listeners reset or drop it. See /docs/geo-acl.md
+# geo_acls:
+#   north-america:
+#     # geo_locator_name names the locator that places clients. default is default
+#     geo_locator_name: default
+#     # allow lists the only locations allowed, and deny the locations denied; set one, never both. An entry is a
+#     # country (US), a first-level subdivision (US-TX), or a continent (continent:EU)
+#     allow: [ US, CA, MX ]
+#     # unknown judges a client the locator cannot place: allow or deny. default is as an unlisted location,
+#     # which is deny for an allow list and allow for a deny list
+#     unknown: deny
+#     # exempt lists addresses and prefixes allowed without a lookup; private stands for every non-routable range
+#     exempt: [ private, 198.51.100.0/24 ]
+#     # action is what a denial does: reject (default), or count, which counts it, allows the client and names
+#     # the geo ACL in an X-Trickster-Geo-Denied request header to the origin
+#     action: reject
+#     # message is what a refused client is told, in every protocol. it is one line of at most 255 bytes
+#     message: This resource is not available in your geographical area.
+#     # response shapes the HTTP refusal
+#     response:
+#       # status is from 400 to 599. default is 403; 451 is for a legal demand, and wants a Link header with
+#       # rel="blocked-by"
+#       status: 403
+#       # headers are merged over the default Cache-Control: no-store and Content-Type: text/plain; charset=utf-8
+#       headers:
+#         Cache-Control: no-store
+#       # body replaces the message and a newline as the body
+#       body: "This resource is not available in your geographical area.\n"
+
+#   europe:
+#     allow: [ continent:EU ]
+
+#   no-restricted-states:
+#     # first-level subdivisions need a locator that serves them, such as an mmdb City file
+#     geo_locator_name: city
+#     deny: [ US-TX, US-UT ]
 
 # # A complete native MySQL User Router example, including its listener,
 # # authenticator, two direct terminal origins, isolated caches, and default

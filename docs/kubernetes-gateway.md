@@ -61,6 +61,7 @@ data:
 | `routing_mode` | `service` or `endpoint` |
 | `cache_name`, `negative_cache_name` | a configured cache or negative cache |
 | `tracing_name`, `req_rewriter_name`, `authenticator_name` | a configured tracer, request rewriter or authenticator |
+| `geo_acl_name` | a configured [geo ACL](./geo-acl.md), which gates the backend each of the class's routes attaches, and none of its pool members, templates or mirror targets. A stream route needs one whose locator places addresses; under a geo ACL that reads headers, the class's stream routes are refused rather than served ungated |
 | `timeout` | a duration with a unit, such as `30s` |
 | `health_mode` | `probe` or `provider`, for generated discovery-backed ALBs |
 | `load_balancing` | `rr`, `p2c`, `lc`, `lt` or `hrw`: how traffic is spread across a Service's endpoints in the endpoint routing mode |

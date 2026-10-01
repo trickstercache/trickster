@@ -26,6 +26,9 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	geofeedopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed/options"
+	headeropts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/header/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
 	"github.com/stretchr/testify/require"
@@ -161,4 +164,24 @@ func TestValidateKubernetesAuthenticatorReference(t *testing.T) {
 	c.Kubernetes.Defaults.AuthenticatorName = "absent"
 	require.ErrorContains(t, Validate(c),
 		`kubernetes 'defaults' references undefined authenticator "absent"`)
+}
+
+func TestValidateKubernetesGeoACLReference(t *testing.T) {
+	// a geo ACL in the defaults gates every generated route, stream routes included, so its locator must
+	// place a bare address
+	c := baseConfig(t)
+	c.Kubernetes = kubecfg.New()
+	c.Kubernetes.Defaults.RoutingMode = kubecfg.RoutingModeService
+	c.Kubernetes.Defaults.GeoACLName = "absent"
+	require.ErrorContains(t, Validate(c), `kubernetes 'defaults' references undefined geo ACL "absent"`)
+
+	geoACL(c, geoACLEdge, geoLocatorEdge, nil)
+	c.Kubernetes.Defaults.GeoACLName = geoACLEdge
+	c.GeoLocators[geoLocatorEdge].Header = &headeropts.Options{Country: "CF-IPCountry"}
+	require.ErrorContains(t, Validate(c), "judges HTTP requests only")
+
+	geoACL(c, geoACLNorthAmerica, geolocopts.DefaultName, nil)
+	c.GeoLocators[geolocopts.DefaultName].Geofeed = &geofeedopts.Options{Entries: []string{"192.0.2.0/24,US"}}
+	c.Kubernetes.Defaults.GeoACLName = geoACLNorthAmerica
+	require.NoError(t, Validate(c))
 }

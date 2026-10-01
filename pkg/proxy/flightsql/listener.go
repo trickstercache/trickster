@@ -20,14 +20,21 @@ import (
 	"context"
 	"crypto/tls"
 	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/flight/flightsql"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
+	"google.golang.org/grpc/status"
 )
 
 // preparedReapInterval is how often the listener sweeps for idle prepared
@@ -44,6 +51,7 @@ type ProtocolServer struct {
 	tlsConfig  atomic.Pointer[tls.Config]
 	stopReaper chan struct{}
 	closeOnce  sync.Once
+	gate       backends.SessionGateSlot
 }
 
 // NewProtocolServer returns a ProtocolServer exposing srv over Flight SQL.
@@ -65,6 +73,8 @@ func NewProtocolServer(srv *Server, restartKey string, tlsConfig *tls.Config) *P
 			},
 		})))
 	}
+	// gRPC calls share connections, so every call is judged, unary and streaming alike
+	options = append(options, grpc.ChainUnaryInterceptor(s.admitUnary), grpc.ChainStreamInterceptor(s.admitStream))
 	g := grpc.NewServer(options...)
 	flight.RegisterFlightServiceServer(g, flightsql.NewFlightServer(srv))
 	s.grpc = g
@@ -129,6 +139,43 @@ func (s *ProtocolServer) Shutdown(ctx context.Context) error {
 		s.grpc.Stop()
 		return ctx.Err()
 	}
+}
+
+// UpdateSessionGate switches the gate that judges each call
+func (s *ProtocolServer) UpdateSessionGate(gate backends.SessionGate) {
+	s.gate.Store(gate)
+}
+
+func (s *ProtocolServer) admit(ctx context.Context) error {
+	if !s.gate.Holds() {
+		return nil
+	}
+	var addr netip.Addr
+	if p, ok := peer.FromContext(ctx); ok {
+		addr = clientip.FromNetAddr(p.Addr)
+	}
+	if d := s.gate.Admit(addr); d != nil {
+		return status.Error(codes.PermissionDenied, d.Message)
+	}
+	return nil
+}
+
+func (s *ProtocolServer) admitUnary(ctx context.Context, req any, _ *grpc.UnaryServerInfo,
+	handler grpc.UnaryHandler,
+) (any, error) {
+	if err := s.admit(ctx); err != nil {
+		return nil, err
+	}
+	return handler(ctx, req)
+}
+
+func (s *ProtocolServer) admitStream(srv any, ss grpc.ServerStream, _ *grpc.StreamServerInfo,
+	handler grpc.StreamHandler,
+) error {
+	if err := s.admit(ss.Context()); err != nil {
+		return err
+	}
+	return handler(srv, ss)
 }
 
 // ProtocolRestartKey identifies the backend configuration used by this server.

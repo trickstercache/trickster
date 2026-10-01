@@ -222,24 +222,3 @@ func TestRoutedSessionsAreReleasedOnce(t *testing.T) {
 		}
 	})
 }
-
-type namedAddr string
-
-func (namedAddr) Network() string { return "test" }
-
-func (a namedAddr) String() string { return string(a) }
-
-func TestClientAddr(t *testing.T) {
-	for want, remote := range map[string]net.Addr{
-		"198.51.100.7": &net.TCPAddr{IP: net.ParseIP("198.51.100.7"), Port: 1},
-		"2001:db8::1":  namedAddr("[2001:db8::1]:3306"),
-		"203.0.113.4":  namedAddr("[::ffff:203.0.113.4]:3306"),
-	} {
-		if got := clientAddr(remote); got != netip.MustParseAddr(want) {
-			t.Errorf("clientAddr(%v) = %v, want %s", remote, got, want)
-		}
-	}
-	if clientAddr(nil).IsValid() || clientAddr(namedAddr("pipe")).IsValid() {
-		t.Error("an address that is not an IP's produced one")
-	}
-}

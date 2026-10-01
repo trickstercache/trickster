@@ -50,6 +50,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -249,6 +250,8 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// GeoACLName names the geo ACL that judges this Backend's clients by their location; a Path's replaces it
+	GeoACLName string `yaml:"geo_acl_name,omitempty"`
 	// SigV4 signs outbound requests to this backend's origin with AWS
 	// SigV4. It defaults to signing for Amazon Managed Service for
 	// Prometheus; set sigv4.service to sign for another AWS service.
@@ -306,6 +309,9 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+	// GeoACLOptions is the geo ACL named by GeoACLName. Clones share it, so the ACL compiled into it when the
+	// configuration is applied reaches every copy, a discovered member's included.
+	GeoACLOptions *geoaclopts.Options `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
@@ -689,6 +695,46 @@ func (l Lookup) validateMirrors(o *Options) error {
 		}
 	}
 	return nil
+}
+
+// ValidateGeoACLNames resolves each backend's and path's geo_acl_name to the geo ACL it names. A path's
+// none clears its backend's; on a backend, none names nothing and fails.
+func (l Lookup) ValidateGeoACLNames(g geoaclopts.Lookup) error {
+	for _, o := range l {
+		if o == nil {
+			continue
+		}
+		o.GeoACLOptions = nil
+		if o.GeoACLName != "" {
+			if o.GeoACLOptions = g[o.GeoACLName]; o.GeoACLOptions == nil {
+				return NewErrInvalidGeoACLName(o.GeoACLName, o.Name)
+			}
+		}
+		for _, p := range o.Paths {
+			if p == nil {
+				continue
+			}
+			p.GeoACLOptions = nil
+			if p.GeoACLName == "" || p.GeoACLName == reserved.ReferenceNone {
+				continue
+			}
+			if p.GeoACLOptions = g[p.GeoACLName]; p.GeoACLOptions == nil {
+				return NewErrInvalidGeoACLName(p.GeoACLName, o.Name+"/"+p.Path)
+			}
+		}
+	}
+	return nil
+}
+
+// ClearGeoACLNames clears the backend's and paths' geo_acl_name from a restart identity, since a running
+// native server is handed its geo ACL on reload
+func (o *Options) ClearGeoACLNames() {
+	o.GeoACLName = ""
+	for _, p := range o.Paths {
+		if p != nil {
+			p.GeoACLName = ""
+		}
+	}
 }
 
 // ValidateBackendName ensures the backend name is permitted against the

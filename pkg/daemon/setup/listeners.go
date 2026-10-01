@@ -185,6 +185,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				if resolver := desired.native.RouteResolver(request); resolver != nil {
 					lg.UpdateProtocolRouteResolver(key, resolver)
 				}
+				if gate := sessionGateFor(conf, desired.listenerName); !lg.UpdateProtocolSessionGate(key, gate) &&
+					gate != nil {
+					logger.Error("native listener does not judge sessions by a geo ACL", logging.Pairs{
+						keys.ListenerName: desired.listenerName,
+					})
+				}
 				if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
 					lg.UpdateProtocolTLSConfig(key, tlsConfig)
 				} else {
@@ -211,6 +217,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 					keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol,
 					keys.Error: err.Error(),
 				})
+				continue
+			}
+			if !setSessionGate(svr, sessionGateFor(conf, desired.listenerName)) {
+				logger.Error("native listener not started: its server cannot judge sessions by a geo ACL",
+					logging.Pairs{keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol})
 				continue
 			}
 			go lg.StartProtocolListener(key, desired.options.Protocol,
@@ -354,6 +365,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 	// a pool member carries the listener name too, but is reached through its pool
 	members := conf.Backends.PoolMembers()
 	table := l4.NewTable()
+	geo := newGeoStreamAdmission(desired.options.Protocol)
 	for _, backendName := range slices.Sorted(maps.Keys(conf.Backends)) {
 		o := conf.Backends[backendName]
 		if o == nil || o.IsTemplate || members.Contains(backendName) ||
@@ -371,6 +383,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		if desired.options.Protocol != listenerconfig.ProtocolTLS || len(hosts) == 0 {
 			hosts = []string{""}
 		}
+		geo.add(o, hosts)
 		for _, h := range hosts {
 			if err := table.Add(h, up); err != nil {
 				// validation refused the duplicates, so this names a bug rather than a config
@@ -387,6 +400,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
 		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
+		Admission:      geo.admission(),
 	}
 }
 

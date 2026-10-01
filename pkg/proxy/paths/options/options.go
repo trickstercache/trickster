@@ -34,6 +34,7 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	reqmatching "github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
@@ -95,6 +96,8 @@ type Options struct {
 	HideResultHeader bool `yaml:"hide_result_header,omitempty"`
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Path
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// GeoACLName names the geo ACL that judges this Path's clients, replacing its Backend's; none clears it
+	GeoACLName string `yaml:"geo_acl_name,omitempty"`
 	// DispatchOnly registers the path on the backend's own router only, so it is
 	// reachable through an ALB pool or a rule's next_route but never from a listener
 	DispatchOnly bool `yaml:"dispatch_only,omitempty"`
@@ -138,6 +141,8 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+	// GeoACLOptions is the geo ACL named by GeoACLName, shared by clones as a Backend's is
+	GeoACLOptions *geoaclopts.Options `yaml:"-"`
 
 	// identityKeyPart is the request_headers/request_params digest,
 	// precomputed by Initialize; see IdentityKeyPart

@@ -30,6 +30,7 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
   - [ ] Support for accelerating GreptimeDB
   - [ ] Support for accelerating QuestDB
   - [ ] Support Access Control Lists (ACLs) for IPv4 and IPv6
+  - [x] Support [Geo ACLs](./geo-acl.md) restricting backends and paths by client location
   - [ ] Support Rate Limiting w/ bucketing on configurable request attributes
   - [x] Support ALB Sticky Sessions
   - [x] Support L4 Load Balancing

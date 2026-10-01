@@ -90,6 +90,26 @@ The following metrics are available for polling with any Trickster configuration
     * `requested` - the mode asked for, by the backend's configuration, an ALB, or a `trickster-step-align` directive
     * `applied` - the mode the request was served in
 
+* `trickster_geo_acl_decisions_total` (Counter) - The number of clients a [geo ACL](./geo-acl.md) judged.
+  * labels:
+    * `geo_acl` - the name of the geo ACL
+    * `plane` - `http`, `native` or `stream`: the kind of listener the client was judged on
+    * `result` - `allowed`, `denied`, `counted` (denied, but the geo ACL only counts) or `exempt` (allowed with no lookup)
+
+* `trickster_geo_locator_lookups_total` (Counter) - The number of lookups a geo locator answered. A rising rate of `not_found` can mean the listener's `trusted_proxies` is wrong, so every client resolves to a proxy's private address.
+  * labels:
+    * `geo_locator` - the name of the geo locator
+    * `result` - `found`, `not_found` or `error`
+
+* `trickster_geo_locator_reloads_total` (Counter) - The number of replaced data files a geo locator loaded or refused, keeping the last good one.
+  * labels:
+    * `geo_locator` - the name of the geo locator
+    * `result` - `success` or `error`
+
+* `trickster_geo_locator_build_timestamp_seconds` (Gauge) - When the database an `mmdb` geo locator has loaded was built, in seconds since the epoch.
+  * labels:
+    * `geo_locator` - the name of the geo locator
+
 * `trickster_proxy_request_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request

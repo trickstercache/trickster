@@ -41,6 +41,7 @@ import (
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
+	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -84,6 +85,9 @@ func Validate(c *config.Config) error {
 		return err
 	}
 	if err := Authenticators(c); err != nil {
+		return err
+	}
+	if err := Geo(c); err != nil {
 		return err
 	}
 	if err := Caches(c); err != nil {
@@ -200,6 +204,18 @@ func kubernetesReferences(c *config.Config) error {
 				d.AuthenticatorName)
 		}
 	}
+	if d.GeoACLName != "" {
+		o := c.GeoACLs[d.GeoACLName]
+		if o == nil {
+			return newKubernetesRefError("defaults", "geo ACL", d.GeoACLName)
+		}
+		// any route the controller generates may be a stream route, which judges a bare address
+		if !geoReadsAddresses(c, o) {
+			return fmt.Errorf("kubernetes 'defaults' geo ACL %q uses a %s geo locator, which judges HTTP "+
+				"requests only, but generated stream routes take the defaults too; name it in an HTTP "+
+				"GatewayClass's parameters instead", d.GeoACLName, geoproviders.Header)
+		}
+	}
 	return nil
 }
 
@@ -244,6 +260,9 @@ func Backends(c *config.Config) error {
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
 		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions); err != nil {
+		return err
+	}
+	if err := c.Backends.ValidateGeoACLNames(c.GeoACLs); err != nil {
 		return err
 	}
 	if err := c.Backends.ValidateDiscovery(c.Discovery); err != nil {
@@ -488,6 +507,9 @@ func Listeners(c *config.Config) error {
 				return err
 			}
 		}
+	}
+	if err := geoListeners(c, nativeTargets); err != nil {
+		return err
 	}
 	return requestALBs(c, streamALBs)
 }

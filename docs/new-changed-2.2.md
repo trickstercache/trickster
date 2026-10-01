@@ -14,6 +14,14 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **PLANNED** - We've also added IP Access Control Lists to restrict access to certain backend resources by IP. it can be attached at the listener, backend, and path levels, with most specific winning.
 
+**Geo ACLs** - Backends and paths can now be restricted by where their clients are. See [Geo ACLs](./geo-acl.md) for details.
+
+- A geo ACL allows or denies countries, first-level subdivisions such as US states, and continents, and is attached by name to a backend or a path, the path's replacing the backend's.
+- Clients are placed by a MaxMind DB format file (MaxMind GeoIP2 and GeoLite2, DB-IP, IPinfo, IP2Location), RFC 8805 geofeed entries, or a location header a trusted CDN sets. A replaced file is swapped in while serving.
+- HTTP refusals are a configurable 403 with a configurable message. MySQL, PostgreSQL, ClickHouse and Flight SQL listeners refuse a session in their own error form before any credential is checked, and TCP, TLS and UDP listeners refuse a stream.
+- A geo ACL can count rather than refuse, to stage a list before enforcing it.
+- The Kubernetes controller can put generated routes behind a geo ACL from `kubernetes.defaults` or a GatewayClass's parameters.
+
 ## New Acceleration-supported TSDBs
 
 All three of these newly-supported providers consume a new `pgwire` package for the postgres wire protocol, along with a common lexer and per-dialect parsers. Any future Postgres-compatible providers Trickster supports will reuse this for faster bootstrapping.

@@ -29,9 +29,17 @@ import (
 	"net/http/httptest"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
+)
+
+const (
+	exceptionIPAddressNotAllowed = 195 // IP_ADDRESS_NOT_ALLOWED, a refusal for where a client is
+	exceptionName                = "DB::Exception"
 )
 
 // Handler translates native requests into the backend's HTTP handler pipeline.
@@ -39,10 +47,17 @@ type Handler struct {
 	// QueryHandler is the HTTP handler that processes ClickHouse queries
 	// (typically the backend's router or QueryHandler).
 	QueryHandler http.Handler
+	// Gate judges each session by where it is from; nil judges none
+	Gate *backends.SessionGateSlot
 }
 
 // HandleConnection serves a ClickHouse native session.
 func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
+	// each query is dispatched as a request, which the route chain judges by the session's address
+	addr := clientip.FromNetAddr(conn.RemoteAddr())
+	if addr.IsValid() {
+		ctx = tctx.WithClientIP(ctx, addr.String())
+	}
 	r := newProtoReader(conn)
 	bw := bufio.NewWriterSize(conn, 128*1024)
 	w := newProtoWriter(bw)
@@ -58,6 +73,12 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 	hello, err := readClientHello(r)
 	if err != nil {
 		return fmt.Errorf("read client hello: %w", err)
+	}
+	// the session is judged by where it is from before the server's hello, and before any credential
+	if d := h.Gate.Admit(addr); d != nil {
+		_ = writeException(w, exceptionIPAddressNotAllowed, exceptionName, d.Message)
+		_ = bw.Flush()
+		return nil
 	}
 
 	if err := writeServerHello(w); err != nil {

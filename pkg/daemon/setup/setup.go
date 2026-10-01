@@ -52,6 +52,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	georegistry "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/registry"
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
@@ -169,6 +170,8 @@ func Shutdown(si *instance.ServerInstance) {
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
 	}
+	si.GeoLocators.Close()
+	si.GeoLocators = nil
 	// closed last, as the workers above may still write to them
 	closeCaches(si.Caches, si.MgmtOptions().ShutdownDrain())
 	si.Caches = nil
@@ -211,6 +214,18 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if err := buildAuthenticators(newConf); err != nil {
 		return err
 	}
+	geoLocators, err := buildGeo(si, newConf)
+	if err != nil {
+		handleStartupIssue("geo ACL setup failed", logging.Pairs{keys.Detail: err.Error()}, errorFunc)
+		return err
+	}
+	geoCommitted := false
+	defer func() {
+		// an apply that fails closes the locators it opened, and none of those still serving
+		if !geoCommitted {
+			geoLocators.CloseExcept(si.GeoLocators)
+		}
+	}()
 
 	if err := reconfigureLogWriters(newConf); err != nil {
 		handleStartupIssue("log writer reconfiguration failed",
@@ -334,6 +349,11 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		graphite.StopClients(si.Backends)
 	}
 	si.Backends = clients
+	// as are the geo locators this configuration no longer keeps
+	si.GeoLocators.CloseExcept(geoLocators)
+	si.GeoLocators = geoLocators
+	georegistry.Publish(geoLocators)
+	geoCommitted = true
 	// Reloads reuse the instance's group; publishing the same pointer again
 	// would race a forced shutdown without changing the active listeners.
 	if firstStartup {
