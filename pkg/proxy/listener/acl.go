@@ -22,6 +22,9 @@ import (
 	"net/netip"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 )
@@ -32,7 +35,7 @@ import (
 type aclListener struct {
 	net.Listener
 	list      *atomic.Pointer[ipacl.List]
-	decisions *atomic.Pointer[metrics.IPACLDecision]
+	decisions *atomic.Pointer[acceptACL]
 	// judgeClientIP is set for a native listener without PROXY protocol, where the socket
 	// peer is the client. HTTP resolves client_ip in middleware. Stream tcp and tls resolve
 	// it from Flow.Client. A peer list is always judged here.
@@ -40,7 +43,7 @@ type aclListener struct {
 }
 
 func newACLListener(inner net.Listener, list *atomic.Pointer[ipacl.List],
-	decisions *atomic.Pointer[metrics.IPACLDecision], judgeClientIP bool,
+	decisions *atomic.Pointer[acceptACL], judgeClientIP bool,
 ) net.Listener {
 	if list == nil {
 		list = &atomic.Pointer[ipacl.List]{}
@@ -63,6 +66,7 @@ func (a *aclListener) Accept() (net.Conn, error) {
 		if allowed {
 			return c, nil
 		}
+		a.logDenial(list, c)
 		turnAway(c, list.Action())
 	}
 }
@@ -73,13 +77,38 @@ func (a *aclListener) judges(list *ipacl.List) bool {
 	return list.Source() != ipacl.ClientIP || a.judgeClientIP
 }
 
-func (a *aclListener) observe(allowed bool) {
+func (a *aclListener) decision() *acceptACL {
 	if a.decisions == nil {
-		return
+		return nil
 	}
-	if dec := a.decisions.Load(); dec != nil {
-		dec.Observe(allowed)
+	return a.decisions.Load()
+}
+
+func (a *aclListener) observe(allowed bool) {
+	if dec := a.decision(); dec != nil {
+		dec.dec.Observe(allowed)
 	}
+}
+
+// logDenial records one denial. The address is the socket peer when it parses,
+// and the raw remote address when it does not.
+func (a *aclListener) logDenial(list *ipacl.List, c net.Conn) {
+	name := ""
+	if dec := a.decision(); dec != nil {
+		name = dec.name
+	}
+	addr := ""
+	if parsed, ok := socketPeer(c); ok {
+		addr = parsed.String()
+	} else if c != nil && c.RemoteAddr() != nil {
+		addr = c.RemoteAddr().String()
+	}
+	logger.Debug("ip acl denied", logging.Pairs{
+		keys.IP_ACL:  name,
+		keys.Scope:   metrics.IPACLScopeListener,
+		keys.Address: addr,
+		keys.Action:  list.Action().String(),
+	})
 }
 
 func (a *aclListener) allows(list *ipacl.List, c net.Conn) bool {

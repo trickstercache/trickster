@@ -18,6 +18,8 @@ package keys
 
 const (
 	ALBName              = "albName"
+	Action               = "action"
+	Address              = "address"
 	AgeBucket            = "ageBucket"
 	BackendName          = "backendName"
 	BackendProvider      = "backendProvider"

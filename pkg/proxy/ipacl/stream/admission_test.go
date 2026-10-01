@@ -17,9 +17,14 @@
 package stream
 
 import (
+	"bytes"
 	"net/netip"
+	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
@@ -217,5 +222,48 @@ func TestRejectAndDropCountAsDeny(t *testing.T) {
 			name, metrics.IPACLScopeListener, "deny")); after != before+1 {
 			t.Fatalf("%s deny = %v, want %v", action, after, before+1)
 		}
+	}
+}
+
+func TestStreamDenialLog(t *testing.T) {
+	buf := &bytes.Buffer{}
+	lg := logging.StreamLogger(buf, level.Debug)
+	lg.SetLogAsynchronous(false)
+	logger.SetLogger(lg)
+	t.Cleanup(func() { logger.SetLogger(logging.NoopLogger()) })
+	client := netip.AddrPortFrom(netip.MustParseAddr("192.0.2.9"), 1)
+	adm := New(l4.ProtocolTCP, Attached{
+		List: list(t, ipacl.Options{Action: "drop"}), Name: "stream-log",
+	}, nil, nil)
+	if got := adm.Peer(l4.Flow{Protocol: l4.ProtocolTCP, Client: client}); got != l4.Drop {
+		t.Fatalf("verdict = %v", got)
+	}
+	line := buf.String()
+	for _, want := range []string{
+		"level=debug", "ip_acl=stream-log", "scope=listener", "address=192.0.2.9", "action=drop",
+	} {
+		if !strings.Contains(line, want) {
+			t.Errorf("log %q missing %q", line, want)
+		}
+	}
+
+	buf.Reset()
+	allowed := New(l4.ProtocolTCP, Attached{
+		List: list(t, ipacl.Options{Default: "allow", Action: "reject"}), Name: "stream-allow",
+	}, nil, nil)
+	if got := allowed.Peer(l4.Flow{Protocol: l4.ProtocolTCP, Client: client}); got != l4.Allow {
+		t.Fatalf("allow = %v", got)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("allow logged %q", buf.String())
+	}
+
+	buf.Reset()
+	logger.SetLogLevel(level.Info)
+	if got := adm.Peer(l4.Flow{Protocol: l4.ProtocolTCP, Client: client}); got != l4.Drop {
+		t.Fatalf("verdict = %v", got)
+	}
+	if buf.Len() != 0 {
+		t.Fatalf("info logged %q", buf.String())
 	}
 }

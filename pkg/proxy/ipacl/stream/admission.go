@@ -21,6 +21,9 @@ package stream
 import (
 	"net/netip"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
@@ -34,15 +37,17 @@ type Attached struct {
 
 // counted is a list and the counters resolved when the admission was built.
 type counted struct {
-	list *ipacl.List
-	dec  *metrics.IPACLDecision
+	list  *ipacl.List
+	dec   *metrics.IPACLDecision
+	name  string
+	scope string
 }
 
 func attach(a Attached, scope string) *counted {
 	if a.List == nil {
 		return nil
 	}
-	c := &counted{list: a.List}
+	c := &counted{list: a.List, name: a.Name, scope: scope}
 	if a.Name != "" {
 		c.dec = metrics.NewIPACLDecision(a.Name, scope)
 	}
@@ -149,6 +154,12 @@ func judge(c *counted, addr netip.Addr) l4.Verdict {
 		return l4.Allow
 	}
 	c.dec.Observe(false)
+	logger.Debug("ip acl denied", logging.Pairs{
+		keys.IP_ACL:  c.name,
+		keys.Scope:   c.scope,
+		keys.Address: addr.String(),
+		keys.Action:  c.list.Action().String(),
+	})
 	if c.list.Action() == ipacl.Drop {
 		return l4.Drop
 	}

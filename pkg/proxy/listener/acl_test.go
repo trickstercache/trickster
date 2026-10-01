@@ -18,6 +18,7 @@ package listener
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -35,6 +36,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
@@ -598,8 +600,11 @@ func TestHTTPClientIPUsesForwardedClient(t *testing.T) {
 func TestAcceptCountsAllowAndDeny(t *testing.T) {
 	var list atomic.Pointer[ipacl.List]
 	list.Store(compileACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"}))
-	var dec atomic.Pointer[metrics.IPACLDecision]
-	dec.Store(metrics.NewIPACLDecision("accept-office", metrics.IPACLScopeListener))
+	var dec atomic.Pointer[acceptACL]
+	dec.Store(&acceptACL{
+		dec:  metrics.NewIPACLDecision("accept-office", metrics.IPACLScopeListener),
+		name: "accept-office",
+	})
 	inner, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -625,5 +630,84 @@ func TestAcceptCountsAllowAndDeny(t *testing.T) {
 	if got := testutil.ToFloat64(metrics.IPACLDecisions.WithLabelValues(
 		"accept-office", metrics.IPACLScopeListener, "allow")); got != beforeAllow+1 {
 		t.Fatalf("allow = %v, want %v", got, beforeAllow+1)
+	}
+}
+
+// lockedBuffer lets the accept goroutine write a log line while the test reads it.
+// The TCP reset that dialDenied waits on is not a race-detector edge.
+type lockedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
+}
+
+func (b *lockedBuffer) Len() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Len()
+}
+
+func (b *lockedBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.Buffer.Reset()
+}
+
+func TestAcceptDenialLog(t *testing.T) {
+	buf := &lockedBuffer{}
+	lg := logging.StreamLogger(buf, level.Debug)
+	lg.SetLogAsynchronous(false)
+	logger.SetLogger(lg)
+	t.Cleanup(func() { logger.SetLogger(logging.NoopLogger()) })
+
+	var list atomic.Pointer[ipacl.List]
+	list.Store(compileACL(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"}))
+	var dec atomic.Pointer[acceptACL]
+	dec.Store(&acceptACL{
+		dec:  metrics.NewIPACLDecision("accept-log", metrics.IPACLScopeListener),
+		name: "accept-log",
+	})
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln := newACLListener(inner, &list, &dec, true)
+	t.Cleanup(func() { _ = ln.Close() })
+	accepted := acceptAsync(ln)
+	dialDenied(t, ln)
+	expectNoAccept(t, accepted)
+	line := buf.String()
+	for _, want := range []string{"level=debug", "ip_acl=accept-log", "scope=listener", "address=127.0.0.1", "action=reject"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("log %q missing %q", line, want)
+		}
+	}
+
+	buf.Reset()
+	logger.SetLogLevel(level.Info)
+	dialDenied(t, ln)
+	expectNoAccept(t, accepted)
+	if buf.Len() != 0 {
+		t.Fatalf("info logged %q", buf.String())
+	}
+
+	buf.Reset()
+	logger.SetLogLevel(level.Debug)
+	list.Store(compileACL(t, ipacl.Options{Allow: []string{"127.0.0.1"}, Source: "peer"}))
+	_ = dialListener(t, ln)
+	takeAccepted(t, accepted)
+	if buf.Len() != 0 {
+		t.Fatalf("allow logged %q", buf.String())
 	}
 }

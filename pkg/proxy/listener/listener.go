@@ -94,9 +94,9 @@ type Listener struct {
 	readyCh      chan struct{}
 	readyOnce    sync.Once
 	// ipacl is the accept-time list. A reload stores a new pointer; nil admits every peer.
-	// ipaclDecisions are the counters resolved for that list. Nil records nothing.
+	// ipaclDecisions are the counters and ACL name for that list. Nil records nothing.
 	ipacl          atomic.Pointer[ipacl.List]
-	ipaclDecisions atomic.Pointer[metrics.IPACLDecision]
+	ipaclDecisions atomic.Pointer[acceptACL]
 }
 
 type observedConnection struct {
@@ -221,7 +221,7 @@ func (lg *Group) publish(name string, l *Listener) error {
 	}
 	if attached, ok := lg.pendingACL[name]; ok {
 		l.ipacl.Store(attached.list)
-		l.ipaclDecisions.Store(attached.dec)
+		l.ipaclDecisions.Store(attached.slot)
 		delete(lg.pendingACL, name)
 	}
 	lg.members[name] = l
@@ -233,11 +233,18 @@ func (lg *Group) publish(name string, l *Listener) error {
 	return nil
 }
 
+// acceptACL is the accept-time counters and the name the denial log uses.
+// The name is not a metric label lookup and is not stored on the compiled list.
+type acceptACL struct {
+	dec  *metrics.IPACLDecision
+	name string
+}
+
 // attachedACL is a list stored for a listener that is not published yet, with the
 // counters resolved from the list's name.
 type attachedACL struct {
 	list *ipacl.List
-	dec  *metrics.IPACLDecision
+	slot *acceptACL
 }
 
 // SetIPACL swaps the accept-time list for a running listener, or holds it until that listener
@@ -247,22 +254,25 @@ func (lg *Group) SetIPACL(name string, list *ipacl.List, aclName string) {
 	if lg == nil || name == "" {
 		return
 	}
-	var dec *metrics.IPACLDecision
-	if list != nil && aclName != "" {
-		dec = metrics.NewIPACLDecision(aclName, metrics.IPACLScopeListener)
+	var slot *acceptACL
+	if list != nil {
+		slot = &acceptACL{name: aclName}
+		if aclName != "" {
+			slot.dec = metrics.NewIPACLDecision(aclName, metrics.IPACLScopeListener)
+		}
 	}
 	lg.listenersLock.Lock()
 	defer lg.listenersLock.Unlock()
 	if l := lg.members[name]; l != nil {
 		l.ipacl.Store(list)
-		l.ipaclDecisions.Store(dec)
+		l.ipaclDecisions.Store(slot)
 		delete(lg.pendingACL, name)
 		return
 	}
 	if lg.pendingACL == nil {
 		lg.pendingACL = make(map[string]attachedACL)
 	}
-	lg.pendingACL[name] = attachedACL{list: list, dec: dec}
+	lg.pendingACL[name] = attachedACL{list: list, slot: slot}
 }
 
 // refuse closes a bound but unpublished listener and logs the refusal.
@@ -339,7 +349,7 @@ func (l *Listener) WaitForReady(timeout time.Duration) bool {
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	tlsConfig *tls.Config, proxyProtocol *ProxyProtocolOptions, acl *atomic.Pointer[ipacl.List],
-	judgeClientIP bool, decisions *atomic.Pointer[metrics.IPACLDecision],
+	judgeClientIP bool, decisions *atomic.Pointer[acceptACL],
 ) (net.Listener, error) {
 	listenerType := "http"
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))

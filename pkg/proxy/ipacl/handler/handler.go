@@ -21,9 +21,13 @@ import (
 	"net/http"
 	"net/netip"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
@@ -38,7 +42,8 @@ const (
 // Middleware returns next when list or next is nil. A client_ip list judges
 // request.ClientIP. A peer list judges r.RemoteAddr only for HTTP/3, which has
 // no TCP accept; every other peer list was judged on the socket and is skipped.
-// A denial is the list's HTTP status and does not call next. An address that
+// reject writes the list's HTTP status, an empty body and Cache-Control: no-store.
+// drop panics with http.ErrAbortHandler and writes nothing. An address that
 // cannot be parsed is denied. name and scope select the decision counters resolved
 // here; a skipped peer list was already counted at accept.
 func Middleware(list *ipacl.List, name, scope string, next http.Handler) http.Handler {
@@ -51,10 +56,23 @@ func Middleware(list *ipacl.List, name, scope string, next http.Handler) http.Ha
 			next.ServeHTTP(w, r)
 			return
 		}
-		addr, err := netip.ParseAddr(subject(list, r))
+		judged := subject(list, r)
+		addr, err := netip.ParseAddr(judged)
 		allowed := err == nil && list.Check(addr) == ipacl.Allow
 		decision.Observe(allowed)
 		if !allowed {
+			logger.Debug("ip acl denied", logging.Pairs{
+				keys.IP_ACL:  name,
+				keys.Scope:   scope,
+				keys.Address: judged,
+				keys.Action:  list.Action().String(),
+			})
+			if list.Action() == ipacl.Drop {
+				panic(http.ErrAbortHandler)
+			}
+			if w != nil {
+				w.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
+			}
 			failures.HandleMiscFailure(list.Status(), w)
 			return
 		}
