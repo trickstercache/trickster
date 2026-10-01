@@ -104,6 +104,11 @@ type LiftedClause struct {
 	// Bucket declares the time bucket when the clause itself defines it and no
 	// select-list function does. Its TimeColumn must appear in the select list.
 	Bucket *BucketMatch
+	// InferTimeColumn asks the analyzer to use the first select-list item when
+	// the dialect clause defines a bucket but does not name its timestamp
+	// column. The item must be a plain column reference; ambiguous expressions
+	// fail closed.
+	InferTimeColumn bool
 	// ImplicitGrouping marks a clause that groups by every plain select-list
 	// column without a GROUP BY, as a sampling clause does.
 	ImplicitGrouping bool
@@ -150,6 +155,9 @@ type Options struct {
 	// RejectZonelessBounds fails closed on time bounds written without a zone,
 	// for sessions where the engine would not read them as UTC.
 	RejectZonelessBounds bool
+	// IsVolatileFunction recognizes functions that are nondeterministic in the
+	// target dialect, in addition to the PostgreSQL-compatible defaults.
+	IsVolatileFunction func(name string) bool
 	// PostRender re-spells what the parser's formatter gets wrong for the engine, in the
 	// canonical SQL and the extent template. The SQL may carry time-bound placeholders.
 	PostRender func(rendered string) (string, error)
@@ -384,7 +392,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if !singleTableFrom(clause) || containsWindowFunction(clause.Exprs) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 	}
-	if containsVolatileFunction(clause.Exprs) {
+	if containsVolatileFunction(clause.Exprs, a.opts.IsVolatileFunction) {
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
 			Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement,
@@ -585,7 +593,7 @@ var volatileFunctions = map[string]struct{}{
 // containsVolatileFunction reports whether the select list references a
 // nondeterministic function. Volatile functions remain acceptable inside WHERE
 // time bounds, where analysis resolves them to concrete times.
-func containsVolatileFunction(items tree.SelectExprs) bool {
+func containsVolatileFunction(items tree.SelectExprs, isDialectVolatile func(string) bool) bool {
 	volatile := false
 	for _, item := range items {
 		if item.Expr == nil || volatile {
@@ -594,7 +602,8 @@ func containsVolatileFunction(items tree.SelectExprs) bool {
 		walkExprTree(item.Expr, func(node tree.Expr) bool {
 			if function, ok := node.(*tree.FuncExpr); ok {
 				name := strings.ToLower(function.Func.String())
-				if _, unsafe := volatileFunctions[name]; unsafe {
+				if _, unsafe := volatileFunctions[name]; unsafe ||
+					isDialectVolatile != nil && isDialectVolatile(name) {
 					volatile = true
 				}
 			}
@@ -681,7 +690,14 @@ func clauseBucket(items tree.SelectExprs, clauses []*LiftedClause) (bucketSpec, 
 		}
 		for i, item := range items {
 			name, ok := ColumnName(item.Expr)
-			if !ok || name != clause.Bucket.TimeColumn {
+			if clause.InferTimeColumn {
+				// Sampling clauses such as QuestDB's SAMPLE BY apply to the
+				// designated timestamp, which is the first selected bare column.
+				// Do not guess from later group columns or computed expressions.
+				if i != 0 || !ok {
+					continue
+				}
+			} else if !ok || name != clause.Bucket.TimeColumn {
 				continue
 			}
 			if found != nil {

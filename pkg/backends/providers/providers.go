@@ -55,6 +55,8 @@ const (
 	PostgresID
 	// GreptimeDB represents the GreptimeDB backend provider.
 	GreptimeDBID
+	// QuestDB represents the QuestDB backend provider.
+	QuestDBID
 
 	Backends = "backends"
 
@@ -76,6 +78,7 @@ const (
 	Druid      = "druid"
 	Postgres   = "postgres"
 	GreptimeDB = "greptimedb"
+	QuestDB    = "questdb"
 
 	// provider name aliases
 
@@ -123,6 +126,7 @@ var Names = map[string]Provider{
 	Postgres:               PostgresID,
 	TimescaleDB:            PostgresID,
 	GreptimeDB:             GreptimeDBID,
+	QuestDB:                QuestDBID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -153,6 +157,7 @@ var supportedTimeSeries = map[string]Provider{
 	Postgres:    PostgresID,
 	TimescaleDB: PostgresID,
 	GreptimeDB:  GreptimeDBID,
+	QuestDB:     QuestDBID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
@@ -170,6 +175,7 @@ var supportedHTTPTimeSeries = map[string]Provider{
 	Graphite:   GraphiteID,
 	Druid:      DruidID,
 	GreptimeDB: GreptimeDBID,
+	QuestDB:    QuestDBID,
 }
 
 // IsSupportedHTTPTimeSeriesProvider returns true if the named provider is a time series

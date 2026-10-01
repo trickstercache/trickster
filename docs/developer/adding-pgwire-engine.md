@@ -102,7 +102,7 @@ do not download another independent dataset. Give the seeder a writer role
 and Grafana/Trickster read-only origin roles.
 
 Reserved ports are 8480 HTTP, 8485 Flight SQL, 8486 MySQL, 8487 ClickHouse,
-8488 PostgreSQL/TimescaleDB, 8489 GreptimeDB pgwire and 8490 future QuestDB.
+8488 PostgreSQL/TimescaleDB, 8489 GreptimeDB pgwire and 8490 QuestDB pgwire.
 GreptimeDB MySQL uses 8491. Check host occupancy and bind remote acceptance
 ports to loopback. Pin an upstream image that passes direct Grafana health
 and queries before validating Trickster. Record nightly and stable builds

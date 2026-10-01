@@ -64,6 +64,7 @@ type pgwireTarget struct {
 	ClientUser           string
 	ClientPassword       string
 	ScalarSQL            string
+	ExtendedSQL          string
 	LargeSQL             string
 	LargeRows            int
 	SlowSQL              string
@@ -73,6 +74,8 @@ type pgwireTarget struct {
 	ShowSQL              string
 	ObjectSQL            string
 	DeltaSQLs            []string
+	SparseBoundsSQL      string
+	SparseFillSQL        string
 	WeekSQL              string
 	ZoneSQL              string
 	ZoneChangesResults   bool
@@ -142,6 +145,33 @@ func pgwireTargets() []pgwireTarget {
 		// The tested origin stubs transaction status and CancelRequest; neither
 		// capability is usable.
 		SupportsCancel: false, SupportsTransactions: false,
+	}, {
+		Name: "questdb", Provider: providers.QuestDB, Dialect: providers.QuestDB, OriginAddr: "127.0.0.1:8812",
+		Database: "qdb", OriginUser: "grafana_ro", OriginPassword: "trickster-dev-grafana",
+		ClientUser: "grafana_ro", ClientPassword: "trickster-dev-grafana",
+		// QuestDB's timestamps are UTC TIMESTAMP values. Scalar and extended
+		// statements below also prove the relay contract before the cache cases.
+		ScalarSQL: "SELECT 42 AS i, 'text' AS t, 1.50 AS n, NULL AS z, " +
+			"CAST('2026-01-02T03:04:05.000000Z' AS TIMESTAMP) AS ts, 0.1 AS f, true AS b",
+		// QuestDB infers untyped extended-protocol parameters as doubles. Cast
+		// them explicitly so this shared conformance case has the same integer
+		// result shape as the PostgreSQL and GreptimeDB fixtures.
+		ExtendedSQL: "SELECT CAST($1 AS INT) + CAST($2 AS INT)",
+		MissingSQL:  "SELECT * FROM __missing_questdb_conformance_table",
+		ObjectSQL:   "SELECT cab_type, count() AS trips FROM trips GROUP BY cab_type ORDER BY cab_type",
+		DeltaSQLs: []string{
+			"SELECT pickup_datetime AS time, cab_type, count() AS trips FROM trips " +
+				"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' SAMPLE BY 5m ORDER BY 1, 2",
+			"SELECT timestamp_floor('5m', pickup_datetime) AS time, count() AS trips FROM trips " +
+				"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
+		},
+		SparseBoundsSQL: "SELECT min(pickup_datetime), max(pickup_datetime) FROM sparse_trips",
+		SparseFillSQL: "SELECT pickup_datetime AS time, avg(value) AS value FROM sparse_trips " +
+			"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' SAMPLE BY 10m FILL(NULL) ORDER BY 1",
+		// Direct QuestDB probes show BEGIN/ROLLBACK and failed-transaction
+		// ReadyForQuery states; the relay must preserve them even while the
+		// analyzer and cache paths are exercised by separate statements below.
+		SupportsCancel: false, SupportsTransactions: true,
 	}}
 }
 
@@ -252,6 +282,18 @@ func pgwireSQLState(err error) string {
 	return ""
 }
 
+func parsePGWireTimestamp(value string) (time.Time, error) {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999",
+	} {
+		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported pgwire timestamp %q", value)
+}
+
 func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsAddr string) {
 	t.Helper()
 	// counters are process-wide, and another test may have used this backend name first
@@ -310,13 +352,23 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 	})
 
 	t.Run("the extended protocol binds parameters", func(t *testing.T) {
+		extendedSQL := target.ExtendedSQL
+		if extendedSQL == "" {
+			extendedSQL = "SELECT $1::int4 + $2::int4"
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), pgwireConformanceTimeout)
 		defer cancel()
-		for _, conn := range []*pgconn.PgConn{direct, proxied} {
-			result := conn.ExecParams(ctx, "SELECT $1::int4 + $2::int4", [][]byte{[]byte("40"), []byte("2")}, nil, nil, nil).Read()
-			require.NoError(t, result.Err)
-			require.Equal(t, "42", string(result.Rows[0][0]))
-		}
+		params := [][]byte{[]byte("40"), []byte("2")}
+		want := direct.ExecParams(ctx, extendedSQL, params, nil, nil, nil).Read()
+		require.NoError(t, want.Err)
+		got := proxied.ExecParams(ctx, extendedSQL, params, nil, nil, nil).Read()
+		require.NoError(t, got.Err)
+		require.Len(t, want.Rows, 1)
+		require.Len(t, want.Rows[0], 1)
+		require.Equal(t, "42", string(want.Rows[0][0]))
+		require.Equal(t, want.FieldDescriptions, got.FieldDescriptions)
+		require.Equal(t, want.Rows, got.Rows)
+		require.Equal(t, want.CommandTag, got.CommandTag)
 	})
 
 	t.Run("an error keeps its SQLSTATE and the session survives", func(t *testing.T) {
@@ -474,6 +526,51 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			require.Equal(t, want, got, "hours %d to %d", step.from, step.to)
 			require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", step.status),
 				"hours %d to %d should be a %s", step.from, step.to, step.status)
+		}
+	})
+
+	t.Run("range-dependent NULL fill stays on the object path", func(t *testing.T) {
+		pgwireRequireSQL(t, "sparse NULL fill", target.SparseBoundsSQL, target.SparseFillSQL)
+		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer cached.Close(context.Background())
+		fresh, err := pgwireConnect(t, target.OriginAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer fresh.Close(context.Background())
+
+		bounds, err := pgwireQuery(t, fresh, target.SparseBoundsSQL)
+		require.NoError(t, err)
+		require.Len(t, bounds, 1)
+		require.Len(t, bounds[0].Rows, 1)
+		require.Len(t, bounds[0].Rows[0], 2)
+		minimum, err := parsePGWireTimestamp(bounds[0].Rows[0][0])
+		require.NoError(t, err)
+		maximum, err := parsePGWireTimestamp(bounds[0].Rows[0][1])
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Minute, maximum.Sub(minimum))
+
+		query := func(start, end time.Time) string {
+			return fmt.Sprintf(target.SparseFillSQL, start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
+		}
+		queries := []string{
+			query(minimum.Add(-time.Minute), maximum.Add(time.Minute)),
+			query(minimum.Add(10*time.Minute), maximum.Add(-10*time.Minute)),
+			query(minimum.Add(-20*time.Minute), maximum.Add(20*time.Minute)),
+		}
+		beforeDelta := map[string]float64{}
+		for _, status := range []string{"kmiss", "rmiss", "hit", "phit"} {
+			beforeDelta[status] = pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", status)
+		}
+		for i, sql := range queries {
+			want, err := pgwireQuery(t, fresh, sql)
+			require.NoError(t, err)
+			got, err := pgwireQuery(t, cached, sql)
+			require.NoError(t, err)
+			require.Equal(t, want, got, "sparse range %d", i)
+		}
+		for status, before := range beforeDelta {
+			require.Equal(t, before, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", status),
+				"FILL(NULL) must not use delta cache status %s", status)
 		}
 	})
 

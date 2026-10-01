@@ -192,18 +192,19 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 ## Included backends
 
 The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
-Apache Druid, MySQL, TimescaleDB, and Graphite alongside Grafana. Trickster's
+Apache Druid, MySQL, TimescaleDB, QuestDB, and Graphite alongside Grafana. Trickster's
 dev config registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison.
 
 GreptimeDB also provides direct SQL and PromQL queries, a pgwire SQL cache,
-and an HTTP proxy;
-see [GreptimeDB Details](#greptimedb-details).
+and an HTTP proxy; QuestDB provides direct HTTP and pgwire validation plus
+native pgwire SQL caching. See [GreptimeDB Details](#greptimedb-details) and
+[QuestDB Details](#questdb-details).
 
 ## Seed data
 
-ClickHouse, MySQL, TimescaleDB, GreptimeDB, and Druid are all loaded with the same
+ClickHouse, MySQL, TimescaleDB, GreptimeDB, QuestDB, and Druid are all loaded with the same
 synthetic `trips` dataset: about 1.9 million cab rides in the fictional city of Emberwick over a
 12-week window, with the same 45-column schema, label cardinality, and
 daily/weekly usage curve as a real ride dataset. Nothing is downloaded: the
@@ -261,7 +262,7 @@ a container. See `hack/seedgen/README.md`.
 `make developer-seed-data` runs `hack/developer-seed-data.sh`, which
 regenerates the seed window and then runs every seeder concurrently. Set
 `SEED_TARGET` to a space- or comma-separated subset of `clickhouse`, `mysql`,
-`timescaledb`, `greptimedb`, `druid`, `prometheus`, and `graphite` to scope the
+`timescaledb`, `greptimedb`, `questdb`, `druid`, `prometheus`, and `graphite` to scope the
 run, for example `SEED_TARGET=timescaledb make developer-seed-data`. The seed
 instant is recomputed on every run, so a scoped re-seed shifts only the selected
 databases; the others keep their previous shift, and dashboards that compare
@@ -318,8 +319,8 @@ port `8888`. Trickster registers the `druid1` backend and exposes it at
 Run `make developer-seed-data` to load the shared synthetic `trips` data
 through Druid's native batch-ingestion API. The Druid seeder
 (`hack/druidseed`, run with `go run` by the `druid_seed` service) uses the same
-generated files and timestamp shift as the ClickHouse, MySQL, and TimescaleDB
-seeders, then verifies the row count and shifted minimum and maximum timestamps through
+generated files and timestamp shift as the ClickHouse, MySQL, TimescaleDB, and
+QuestDB seeders, then verifies the row count and shifted minimum and maximum timestamps through
 Druid SQL. Before loading, it marks any segments from the previous moving seed
 window unused so repeated runs do not accumulate stale rows. It runs in
 parallel with the other database seeders after the shared generation step.
@@ -333,7 +334,7 @@ Manager processes with Bash inside the one development container.
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
 with the same auto-phased synthetic `trips` dataset used by ClickHouse,
-TimescaleDB, GreptimeDB, and Druid. All five seeders read the shared generated files in
+TimescaleDB, GreptimeDB, QuestDB, and Druid. All six seeders read the shared generated files in
 `docker-compose-data/seed-data`, so the data is generated once regardless of
 which seeder runs first (see [Seed data](#seed-data)).
 
@@ -360,7 +361,7 @@ relationships in the relational copies while placing approximately half of the
 pickup distribution before and half after the seed instant. To re-seed (for
 example, after the data ages out of range), run `make developer-seed-data`,
 which first runs the `seed_data_generate` service and then reloads ClickHouse,
-MySQL, TimescaleDB, GreptimeDB, and Druid in parallel. A Trickster started before the re-seed still
+MySQL, TimescaleDB, GreptimeDB, QuestDB, and Druid in parallel. A Trickster started before the re-seed still
 holds the previous timeseries in its memory cache, so restart `make serve-dev`
 afterwards (or compare against a `-direct` datasource) to see the new data.
 
@@ -682,6 +683,82 @@ is idempotent and always drops, re-creates, and reloads the `trips` table.
 PostgreSQL 18 images keep their data under `/var/lib/postgresql/18/docker`, so
 the `timescaledb-data` volume is mounted at `/var/lib/postgresql`; the init SQL
 only runs when that volume is empty (`make developer-delete` resets it).
+
+## QuestDB Details
+
+The `questdb` service runs QuestDB OSS 10.0.1, pinned to image digest
+`sha256:67eaed863ebb2383227919ea9a5499a4a39ceca3862c20b974c84a10e11cdf89`.
+Its data lives in the `questdb-data` named volume, and telemetry is disabled.
+
+| Surface | Address | Credentials |
+| --- | --- | --- |
+| PostgreSQL wire protocol, admin | `127.0.0.1:8812` | `admin` / `trickster-dev-root` |
+| PostgreSQL wire protocol, read-only | `127.0.0.1:8812` | `grafana_ro` / `trickster-dev-grafana` |
+| HTTP SQL and Web Console | <http://127.0.0.1:9010> | `admin` / `trickster-dev-root` |
+
+Host port 9010 maps to QuestDB's HTTP port 9000 because ClickHouse already uses
+host port 9000. Both published QuestDB ports bind to loopback. Port 8490 is
+reserved for Trickster's QuestDB pgwire listener; the container alone does not
+start that listener. ILP/TCP port 9009 is not published.
+
+QuestDB OSS uses cleartext password authentication over pgwire and does not
+provide pgwire TLS. Use `sslmode=disable` for this local origin. The read-only
+pgwire account rejects writes, while the separate OSS HTTP Basic admin identity
+is write-capable so the seed loader can use it. The HTTP and pgwire credentials
+are intentionally distinct. These credentials are for an isolated developer
+environment, not a public deployment.
+
+Start just the origin, then query it directly:
+
+```bash
+docker compose -f docs/developer/environment/docker-compose.yml up -d --wait questdb
+PGPASSWORD=trickster-dev-grafana psql 'host=127.0.0.1 port=8812 user=grafana_ro dbname=qdb sslmode=disable' -c 'SELECT 1'
+curl --fail --user admin:trickster-dev-root --get \
+  --data-urlencode 'query=SELECT 1' http://127.0.0.1:9010/execute
+```
+
+The health check uses authenticated `/execute`. QuestDB 10.0.1 defaults to
+`/exec` and `/api/v1/sql/execute`, so this service explicitly configures the
+short `/execute` alias with `QDB_HTTP_CONTEXT_EXECUTE`. The original `/exec`
+endpoint remains available for the Web Console on the remapped HTTP port.
+SQL requests require HTTP Basic auth.
+
+`questdb_seed` consumes the same `trips_1.gz`, `trips_2.gz`, and
+`seed-window.env` files as the other trips databases. It imports each file into
+an all-`STRING` staging table through `/imp`, then creates the typed,
+day-partitioned WAL table through `/execute`, applies the UTC shift, regenerates
+the date columns, and creates the `trips_15m` materialized view. It waits for
+the view to cover the complete source row count and checks the shifted bounds,
+date/datetime relationships, and `pickup_epoch`. Use
+`SEED_TARGET=questdb make developer-seed-data` to reload only QuestDB; the
+loader drops and rebuilds its task-owned tables on every run.
+
+Grafana installs the official `questdb-questdb-datasource` plugin and provisions
+`questdb-direct` (UID `ds_questdb_direct`) against the QuestDB pgwire listener.
+The direct comparison dashboard is
+<http://127.0.0.1:3000/d/trickster-questdb/questdb>. Its first six panels cover
+fixed and dynamic `SAMPLE BY` buckets, numeric aggregates, grouped series,
+tables, and a `CASE` aggregate. The remaining panels exercise the QuestDB
+timestamp-floor, `FILL`, window, materialized-view, `1M`, `$now-6h..$now`,
+`$today;1d`, and `/* trickster-step-align:partial_end */` query shapes that the
+provider will need to preserve. The dashboard is direct-origin validation;
+the QuestDB datasource through Trickster exercises HTTP passthrough and native
+cache behavior separately. Fixed-width `SAMPLE BY` and `timestamp_floor`
+queries use the native delta cache; unsupported QuestDB syntax is relayed or
+object-cached conservatively.
+
+The `questdb-trickster` datasource uses Trickster's port `8490` and exercises
+the pgwire path with the read-only `grafana_ro` role. The backend also accepts
+the `admin` identity for authenticated HTTP smoke tests and preserves that
+credential to the QuestDB HTTP origin. Both paths are cleartext in this
+developer environment; do not expose them outside the host.
+
+The first six direct QuestDB panels and their TimescaleDB counterparts are the
+cross-backend correctness gate: with one generated seed window they must return
+the same frame shape and values. QuestDB targets use the official plugin's SQL
+target fields (`queryType: sql`, numeric `format`, and `selectedFormat`) rather
+than PostgreSQL target fields, and deliberately avoid PostgreSQL-only casts such
+as `::numeric`.
 
 ## GreptimeDB Details
 

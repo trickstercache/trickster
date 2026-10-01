@@ -67,6 +67,14 @@ the provider and map native listeners explicitly. See the
 [GreptimeDB Provider Guide](./greptimedb.md) for configuration, cache eligibility,
 Grafana macros, authentication and upstream compatibility limits.
 
+### QuestDB
+
+Trickster proxies QuestDB's HTTP surface and accelerates eligible QuestDB SQL
+over the PostgreSQL wire protocol. Specify `questdb` as the provider and map a
+`protocol: postgres` listener for native clients. See the
+[QuestDB Provider Guide](./questdb.md) for configuration, cache eligibility,
+authentication and upstream compatibility limits.
+
 ### <img src="./images/external/mysql_logo_60.png" width=24 /> MySQL
 
 Trickster supports protocol-aware acceleration for supported MySQL

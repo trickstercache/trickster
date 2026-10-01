@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
@@ -48,6 +49,7 @@ func TestProviderStepAlignments(t *testing.T) {
 		{providers.MySQL, all, timeseries.StepAlignmentDrop},
 		{providers.Postgres, all, timeseries.StepAlignmentDrop},
 		{providers.TimescaleDB, all, timeseries.StepAlignmentDrop},
+		{providers.QuestDB, sqlanalyzer.StepAlignments, sqlanalyzer.DefaultStepAlignment},
 	}
 	for _, test := range tests {
 		t.Run(test.provider, func(t *testing.T) {
@@ -77,6 +79,7 @@ func TestEveryTimeSeriesProviderAppliesOff(t *testing.T) {
 	for _, provider := range []string{
 		providers.Prometheus, providers.Graphite, providers.InfluxDB, providers.ClickHouse,
 		providers.Druid, providers.MySQL, providers.Postgres, providers.TimescaleDB, providers.GreptimeDB,
+		providers.QuestDB,
 	} {
 		t.Run(provider, func(t *testing.T) {
 			o := bo.New()
