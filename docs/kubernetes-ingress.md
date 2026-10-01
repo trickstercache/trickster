@@ -203,6 +203,7 @@ it:
 | `tracing_name` | the configured tracer generated backends report to |
 | `req_rewriter_name` | a configured rewriter every generated backend runs, ahead of any route's own |
 | `authenticator_name` | the configured authenticator every generated backend is behind |
+| `ip_acl_name` | the access list every generated backend names; see [ip-acl.md](./ip-acl.md) |
 
 `authenticator_name` in particular has no annotation and will not get one: an
 annotation that can name an authenticator is one that can also omit it, and
@@ -210,6 +211,12 @@ whoever can create an Ingress in their own namespace would then be able to
 take their route out from behind authentication. A name in `defaults` that
 the configuration does not define fails startup, rather than the first
 reconcile, because it is the operator's own mistake to see immediately.
+
+`ip_acl_name` likewise has no Ingress annotation and no `TricksterCachePolicy`
+field. An Ingress author cannot select another list or clear the configured
+default with `none`. The list must use `source: client_ip` and `action: reject`.
+A name the configuration does not define, and a list that is not eligible,
+both fail startup. The list syntax is in [ip-acl.md](./ip-acl.md).
 
 `max-ttl`, `cache-name` and `negative-cache-name` describe caching, so they take
 effect only on a route that caches — one whose effective handler is

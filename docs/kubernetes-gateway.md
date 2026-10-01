@@ -54,6 +54,7 @@ data:
   negative_cache_name: api-errors
   timeout: 45s
   authenticator_name: gateway-auth
+  ip_acl_name: office
 ```
 
 | Key | Value |
@@ -61,6 +62,7 @@ data:
 | `routing_mode` | `service` or `endpoint` |
 | `cache_name`, `negative_cache_name` | a configured cache or negative cache |
 | `tracing_name`, `req_rewriter_name`, `authenticator_name` | a configured tracer, request rewriter or authenticator |
+| `ip_acl_name` | a configured access list with `source: client_ip` and `action: reject`. When set, it overrides `kubernetes.defaults.ip_acl_name` for this class's route backends. See [ip-acl.md](./ip-acl.md) |
 | `timeout` | a duration with a unit, such as `30s` |
 | `health_mode` | `probe` or `provider`, for generated discovery-backed ALBs |
 | `load_balancing` | `rr`, `p2c`, `lc`, `lt` or `hrw`: how traffic is spread across a Service's endpoints in the endpoint routing mode |
@@ -69,6 +71,8 @@ data:
 | `sticky_key` | what `table` mode keeps a client's endpoint by, from the `load_balancing_key` vocabulary; `client_ip` unless set, or when the route's listener cannot read it |
 | `sticky_ttl`, `sticky_idle` | a duration of at least `1s`: a session ends that long after it began (`1h` unless set), or once unused that long. A route's `sessionPersistence` does not use them |
 | `sticky_secret` | the name of a Secret, in the ConfigMap's namespace and labeled `trickstercache.org/sticky-key`, whose `key` entry keys every session token the class's ALBs issue; see [The session key](#the-session-key) |
+
+A non-empty `ip_acl_name` is copied onto the generated HTTP, gRPC, and stream route backends, in both the `service` and `endpoint` routing modes. It is not copied onto pool members, endpoint templates, or mirrors. An empty value leaves `kubernetes.defaults.ip_acl_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a list that is not `client_ip` and `reject`, cannot be honored: the class is not served, as for any other parameter that names something the configuration does not define.
 
 Unlike an Ingress annotation, a GatewayClass may set the operator-tier names,
 because a GatewayClass is cluster-scoped infrastructure and whoever can write

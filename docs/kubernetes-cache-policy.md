@@ -111,7 +111,7 @@ In a header map a name prefixed with `-` deletes the header and one prefixed wit
 appends to it rather than replacing, exactly as in the annotations and in Trickster's own
 `request_headers`. Durations require a unit. `cacheName` and `negativeCacheName` select
 among what the operator configured; the operator-tier names — a tracer, a request
-rewriter, an authenticator — have no field here either, for the reason given in the
+rewriter, an authenticator, and an IP access list — have no field here either, for the reason given in the
 Ingress document: a policy that could name an authenticator could also omit one.
 
 `maxTTL`, `cacheName`, `negativeCacheName`, `cacheKeyParams` and `cacheKeyHeaders` take
@@ -161,7 +161,9 @@ Three things follow:
   conflict, since every provider predefines it as a plain proxy catch-all.
 
 The generated backend carries only what the policy and the configured defaults describe:
-an origin, a cache, timeouts, headers. Provider settings with no policy field — a
+an origin, a cache, timeouts, headers. An IP access list name, when the backend has one,
+comes from `kubernetes.defaults.ip_acl_name` or the GatewayClass `ip_acl_name` parameter,
+not from this policy. Provider settings with no policy field — a
 Prometheus `instant_round`, an InfluxDB `flux` block, a Graphite `render` section — take
 their defaults. MySQL is served over its own wire protocol rather than HTTP and cannot be
 selected.

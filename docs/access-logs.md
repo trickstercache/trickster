@@ -18,11 +18,17 @@ backends:
 ```
 
 - The access log receives one line per request handled by the backend and is
-  written only when `filename` is set.
+  written only when `filename` is set. An HTTP listener access list whose
+  action is `drop` aborts the request with `http.ErrAbortHandler` inside the
+  access-log middleware's `next.ServeHTTP`, before that completion line is
+  written, so the dropped request has no access-log line. `reject` writes the
+  list's HTTP status and is logged on this path. See [ip-acl.md](./ip-acl.md).
 - The error log receives one line per request whose response status is at or
   above `error_threshold` (default `400`) and is written only when
   `error_filename` is set. An error-logged request also appears in the access
-  log when both are configured.
+  log when both are configured. A listener access-list `reject` whose status
+  is at or above that threshold is included. A `drop` writes no status, so it
+  is not an error-log line either.
 - Two backends may share a filename; they will safely share the underlying
   file and its rotation.
 - When `instance_id` is set in the main config, it is inserted into log
