@@ -282,6 +282,18 @@ func pgwireSQLState(err error) string {
 	return ""
 }
 
+func parsePGWireTimestamp(value string) (time.Time, error) {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		"2006-01-02 15:04:05.999999999",
+	} {
+		if parsed, err := time.ParseInLocation(layout, value, time.UTC); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported pgwire timestamp %q", value)
+}
+
 func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsAddr string) {
 	t.Helper()
 	// counters are process-wide, and another test may have used this backend name first
@@ -531,9 +543,9 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 		require.Len(t, bounds, 1)
 		require.Len(t, bounds[0].Rows, 1)
 		require.Len(t, bounds[0].Rows[0], 2)
-		minimum, err := time.Parse(time.RFC3339Nano, bounds[0].Rows[0][0])
+		minimum, err := parsePGWireTimestamp(bounds[0].Rows[0][0])
 		require.NoError(t, err)
-		maximum, err := time.Parse(time.RFC3339Nano, bounds[0].Rows[0][1])
+		maximum, err := parsePGWireTimestamp(bounds[0].Rows[0][1])
 		require.NoError(t, err)
 		require.Equal(t, 30*time.Minute, maximum.Sub(minimum))
 
