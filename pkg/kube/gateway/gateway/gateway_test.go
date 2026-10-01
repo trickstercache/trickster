@@ -876,13 +876,16 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 			t.Run(name+"/"+mode, func(t *testing.T) {
 				model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
 					o.Defaults.RoutingMode = mode
+					o.Defaults.IPACLName = "office"
 				})
 				overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
 				require.NoError(t, err)
+				require.Contains(t, string(overlay.Data), "ip_acl_name: office")
 				conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
 				require.NoError(t, err)
 				require.NoError(t, conf.Backends.Validate())
 				require.NoError(t, validate.Validate(conf))
+				requireResolvedOfficeACL(t, conf)
 				require.NoError(t, conf.Process())
 				require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
 			})
@@ -890,9 +893,28 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	}
 }
 
+// requireResolvedOfficeACL reports that validation compiled the file's office
+// list onto at least one generated backend.
+func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
+	t.Helper()
+	for _, b := range conf.Backends {
+		if b != nil && b.IPACLName == "office" && b.IPACL != nil {
+			return
+		}
+	}
+	t.Fatal("generated config did not resolve ip acl office onto a backend")
+}
+
 // baseConfig is the file configuration the generated overlay is merged
 // onto; it defines what the fixtures' parameters name
 const baseConfig = `
+ip_acls:
+  office:
+    source: client_ip
+    action: reject
+    default: deny
+    allow:
+      - 192.0.2.0/24
 backends:
   default:
     provider: rp
