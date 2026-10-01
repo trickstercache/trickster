@@ -3,16 +3,32 @@
 # in the developer environment concurrently, then reports each seeder's result.
 #
 # Usage: hack/developer-seed-data.sh   (run from anywhere; SEED_PROFILE is honored)
+#   Without SEED_TARGET, only the databases that are already running are reseeded.
 #   SEED_TARGET scopes the run to specific targets, space- or comma-separated:
 #   SEED_TARGET=timescaledb make developer-seed-data
 set -euo pipefail
 
 cd "$(dirname "$0")/../docs/developer/environment"
 
+# Each database is in its own compose profile; enabling them all makes every
+# service addressable no matter which profiles the environment was started with.
+export COMPOSE_PROFILES='*'
+
 # Every trips database service <name> has a one-shot loader service <name>_seed.
 # graphite is seeded by its own generator and is handled separately below.
 ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid questdb prometheus graphite"
-read -r -a targets <<< "$(echo "${SEED_TARGET:-$ALL_TARGETS}" | tr ',' ' ')"
+if [[ -z "${SEED_TARGET:-}" ]]; then
+  running=" $(docker compose ps --status running --services | tr '\n' ' ') "
+  SEED_TARGET=""
+  for t in $ALL_TARGETS; do
+    case "$running" in *" $t "*) SEED_TARGET+=" $t" ;; esac
+  done
+  if [[ -z "$SEED_TARGET" ]]; then
+    echo "no seeded databases are running; start the environment or set SEED_TARGET (valid: $ALL_TARGETS)" >&2
+    exit 1
+  fi
+fi
+read -r -a targets <<< "$(echo "$SEED_TARGET" | tr ',' ' ')"
 
 trips_databases=()
 graphite=0
