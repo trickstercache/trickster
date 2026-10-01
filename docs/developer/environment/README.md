@@ -689,12 +689,25 @@ only runs when that volume is empty (`make developer-delete` resets it).
 The `questdb` service runs QuestDB OSS 10.0.1, pinned to image digest
 `sha256:67eaed863ebb2383227919ea9a5499a4a39ceca3862c20b974c84a10e11cdf89`.
 Its data lives in the `questdb-data` named volume, and telemetry is disabled.
+`make developer-start` runs `hack/developer-credentials.sh` to generate random
+backend credentials in the ignored
+`docker-compose-data/credentials.env` file with owner-only
+permissions. The generator currently supplies QuestDB credentials; additional
+backends can use the same workflow. Existing credentials are reused across
+restarts. QuestDB, Grafana,
+and the seeder load this file; `make serve-dev` uses an ignored rendered
+`trickster-config/trickster.generated.yaml` with matching credentials. The pgwire
+conformance tests also read the generated credentials. `make developer-credentials`
+prepares both files without starting containers, for direct Compose use.
+The seeder accepts `QUESTDB_HTTP_PASSWORD` as an explicit override.
+To rotate the passwords, stop the environment, delete `credentials.env`, and
+restart with `make developer-start`; restart `make serve-dev` as well.
 
 | Surface | Address | Credentials |
 | --- | --- | --- |
-| PostgreSQL wire protocol, admin | `127.0.0.1:8812` | `admin` / `trickster-dev-root` |
-| PostgreSQL wire protocol, read-only | `127.0.0.1:8812` | `grafana_ro` / `trickster-dev-grafana` |
-| HTTP SQL and Web Console | <http://127.0.0.1:9010> | `admin` / `trickster-dev-root` |
+| PostgreSQL wire protocol, admin | `127.0.0.1:8812` | `admin` / generated admin password |
+| PostgreSQL wire protocol, read-only | `127.0.0.1:8812` | `grafana_ro` / generated reader password |
+| HTTP SQL and Web Console | <http://127.0.0.1:9010> | `admin` / generated admin password |
 
 Host port 9010 maps to QuestDB's HTTP port 9000 because ClickHouse already uses
 host port 9000. Both published QuestDB ports bind to loopback. Port 8490 is
@@ -711,9 +724,11 @@ environment, not a public deployment.
 Start just the origin, then query it directly:
 
 ```bash
+make developer-credentials
 docker compose -f docs/developer/environment/docker-compose.yml up -d --wait questdb
-PGPASSWORD=trickster-dev-grafana psql 'host=127.0.0.1 port=8812 user=grafana_ro dbname=qdb sslmode=disable' -c 'SELECT 1'
-curl --fail --user admin:trickster-dev-root --get \
+. docs/developer/environment/docker-compose-data/credentials.env
+PGPASSWORD="$QDB_PG_READONLY_PASSWORD" psql 'host=127.0.0.1 port=8812 user=grafana_ro dbname=qdb sslmode=disable' -c 'SELECT 1'
+curl --fail --user "admin:$QDB_HTTP_PASSWORD" --get \
   --data-urlencode 'query=SELECT 1' http://127.0.0.1:9010/execute
 ```
 

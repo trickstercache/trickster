@@ -69,7 +69,7 @@ The QuestDB analyzer has a deliberately narrow delta-cache surface:
 | Query shape | Result |
 | --- | --- |
 | `SAMPLE BY 5m`, `15m`, and other positive fixed `s/m/h/d` widths | Delta cache |
-| `SAMPLE BY ... FILL(NULL)` | Delta cache |
+| `SAMPLE BY ... FILL(NULL)` | Object cache; fill rows depend on the selected range |
 | `timestamp_floor('5m', timestamp_column)` with grouped output | Delta cache |
 | `floor(extract(epoch FROM ts)/N)*N` | Delta cache when the bounds and result are renderable |
 | Other deterministic reads | Object cache or relay, according to the normal pgwire policy |

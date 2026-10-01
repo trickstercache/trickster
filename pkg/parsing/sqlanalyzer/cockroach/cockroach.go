@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlscan"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
@@ -155,8 +156,8 @@ type Options struct {
 	// RejectZonelessBounds fails closed on time bounds written without a zone,
 	// for sessions where the engine would not read them as UTC.
 	RejectZonelessBounds bool
-	// IsVolatileFunction recognizes functions that are nondeterministic in the
-	// target dialect, in addition to the PostgreSQL-compatible defaults.
+	// IsVolatileFunction receives lowercase names and recognizes nondeterministic
+	// dialect functions in addition to the PostgreSQL-compatible defaults.
 	IsVolatileFunction func(name string) bool
 	// PostRender re-spells what the parser's formatter gets wrong for the engine, in the
 	// canonical SQL and the extent template. The SQL may carry time-bound placeholders.
@@ -346,18 +347,15 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	original := statement
 	statement, lifted, err := a.liftClauses(statement)
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
 	parsed, err := a.parse(statement)
 	if err != nil {
-		mode := sqlanalyzer.CacheModeNone
+		err = fmt.Errorf("%w: %w", ErrInvalidSQL, err)
 		if leadingKeywordIsSelect(original) {
-			mode = sqlanalyzer.CacheModeObject
+			return a.objectAnalysis(original, sqlanalyzer.ReasonInvalidSQL, err)
 		}
-		return sqlanalyzer.Analysis{
-			Mode: mode, Reason: sqlanalyzer.ReasonInvalidSQL,
-			Err: fmt.Errorf("%w: %w", ErrInvalidSQL, err),
-		}
+		return sqlanalyzer.Analysis{Reason: sqlanalyzer.ReasonInvalidSQL, Err: err}
 	}
 	selectStmt, ok := parsed.AST.(*tree.Select)
 	if !ok {
@@ -370,7 +368,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if !ok || len(selectStmt.Locking) > 0 {
 		if _, compound := selectStmt.Select.(*tree.UnionClause); compound &&
 			len(selectStmt.Locking) == 0 {
-			return sqlanalyzer.ObjectAnalysis(
+			return a.objectAnalysis(original,
 				sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 		}
 		return sqlanalyzer.Analysis{
@@ -379,18 +377,18 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		}
 	}
 	if selectStmt.Limit != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrUnsupportedLimit)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedLimit, ErrUnsupportedLimit)
 	}
 	if selectStmt.With != nil || clause.Distinct || len(clause.DistinctOn) > 0 ||
 		clause.Having != nil || len(clause.Window) > 0 || containsSubquery(clause) {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 	}
 	// Joins and multi-table selects can carry time predicates in ON clauses
 	// this analyzer never inspects, and inline window frames span rows across
 	// bucket boundaries; per-extent delta computation would return wrong
 	// values for either, so both fail closed to the object cache.
 	if !singleTableFrom(clause) || containsWindowFunction(clause.Exprs) {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 	}
 	if containsVolatileFunction(clause.Exprs, a.opts.IsVolatileFunction) {
 		return sqlanalyzer.Analysis{
@@ -401,15 +399,15 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 
 	bucket, bucketIndex, err := a.analyzeSelectList(clause.Exprs, lifted)
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
 	groups, bucketGroup, err := analyzeGroupBy(clause.GroupBy, clause.Exprs, bucket, bucketIndex)
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
 	ordering, err := analyzeOrderBy(selectStmt.OrderBy, clause.Exprs)
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedOrdering, err)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedOrdering, err)
 	}
 	ranges, err := a.analyzeRanges(clause, bucket, now)
 	if err != nil {
@@ -419,7 +417,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		} else if errors.Is(err, ErrAmbiguousTimeAxis) {
 			reason = sqlanalyzer.ReasonAmbiguousTimeAxis
 		}
-		return sqlanalyzer.ObjectAnalysis(reason, err)
+		return a.objectAnalysis(original, reason, err)
 	}
 
 	canonical, renderer := buildQueryArtifacts(selectStmt, clause, ranges, bucket,
@@ -431,7 +429,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		renderer.openTemplate, err = a.finishRender(renderer.openTemplate, lifted)
 	}
 	if err != nil {
-		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
+		return a.objectAnalysis(original, sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
@@ -462,6 +460,35 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	return sqlanalyzer.Analysis{
 		Mode: sqlanalyzer.CacheModeDelta, Reason: sqlanalyzer.ReasonDeltaCacheable, Plan: plan,
 	}
+}
+
+func (a *Analyzer) objectAnalysis(statement string, reason sqlanalyzer.AnalysisReason, err error) sqlanalyzer.Analysis {
+	// Unsupported syntax still needs a volatility check before its result can be cached.
+	// Scan tokens so strings and comments cannot be mistaken for function calls.
+	scanner := sqlscan.New(statement, sqlscan.Options{})
+	var previous sqlscan.Token
+	for {
+		token, ok := scanner.Next()
+		if !ok {
+			break
+		}
+		if token.Kind == sqlscan.Punct && scanner.Text(token) == "(" &&
+			(previous.Kind == sqlscan.Word || previous.Kind == sqlscan.QuotedIdent) {
+			name := scanner.Text(previous)
+			if previous.Kind == sqlscan.QuotedIdent {
+				if name[0] != '"' {
+					// Unicode escapes are not decoded by the scanner, so do not cache these calls.
+					return sqlanalyzer.Analysis{Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement}
+				}
+				name = strings.ReplaceAll(name[1:len(name)-1], `""`, `"`)
+			}
+			if isVolatileFunction(strings.ToLower(name), a.opts.IsVolatileFunction) {
+				return sqlanalyzer.Analysis{Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement}
+			}
+		}
+		previous = token
+	}
+	return sqlanalyzer.ObjectAnalysis(reason, err)
 }
 
 func (a *Analyzer) parse(statement string) (statements.Statement[tree.Statement], error) {
@@ -590,6 +617,11 @@ var volatileFunctions = map[string]struct{}{
 	"random": {}, "gen_random_uuid": {}, "uuid_generate_v4": {},
 }
 
+func isVolatileFunction(name string, isDialectVolatile func(string) bool) bool {
+	_, unsafe := volatileFunctions[name]
+	return unsafe || isDialectVolatile != nil && isDialectVolatile(name)
+}
+
 // containsVolatileFunction reports whether the select list references a
 // nondeterministic function. Volatile functions remain acceptable inside WHERE
 // time bounds, where analysis resolves them to concrete times.
@@ -601,9 +633,13 @@ func containsVolatileFunction(items tree.SelectExprs, isDialectVolatile func(str
 		}
 		walkExprTree(item.Expr, func(node tree.Expr) bool {
 			if function, ok := node.(*tree.FuncExpr); ok {
-				name := strings.ToLower(function.Func.String())
-				if _, unsafe := volatileFunctions[name]; unsafe ||
-					isDialectVolatile != nil && isDialectVolatile(name) {
+				var name string
+				if unresolved, ok := function.Func.FunctionReference.(*tree.UnresolvedName); ok {
+					name = unresolved.Parts[0]
+				} else {
+					name = function.Func.String()
+				}
+				if isVolatileFunction(strings.ToLower(name), isDialectVolatile) {
 					volatile = true
 				}
 			}

@@ -137,6 +137,77 @@ func TestAnalyzerQuestDBVolatileFunctions(t *testing.T) {
 	}
 }
 
+func TestAnalyzerVolatileFallbacks(t *testing.T) {
+	for name, sql := range map[string]string{
+		"standalone":             "SELECT systimestamp()",
+		"limit":                  "SELECT systimestamp() FROM trips LIMIT 1",
+		"distinct":               "SELECT DISTINCT sysdate() FROM trips",
+		"union":                  "SELECT systimestamp() UNION ALL SELECT systimestamp()",
+		"cte":                    "WITH clock AS (SELECT systimestamp()) SELECT * FROM clock",
+		"subquery":               "SELECT (SELECT systimestamp()) FROM trips",
+		"join":                   "SELECT systimestamp() FROM trips a JOIN trips b ON a.cab_type = b.cab_type",
+		"null fill":              "SELECT pickup_datetime, avg(rnd_double())" + questDBTestRange + " SAMPLE BY 5m FILL(NULL)",
+		"previous fill":          "SELECT pickup_datetime, avg(rnd_double())" + questDBTestRange + " SAMPLE BY 5m FILL(PREV)",
+		"dialect syntax":         "SELECT systimestamp() FROM trips LATEST ON pickup_datetime PARTITION BY cab_type",
+		"predicate":              "SELECT count() FROM trips WHERE rnd_double() > 0.5",
+		"qualified":              "SELECT qdb.systimestamp()",
+		"quoted":                 `SELECT "SYSTIMESTAMP"()`,
+		"comment between tokens": "SELECT SyStImEsTaMp /* clock */ ()",
+		"quoted delta":           `SELECT pickup_datetime, "SYSTIMESTAMP"()` + questDBTestRange + " SAMPLE BY 5m",
+		"qualified delta":        "SELECT pickup_datetime, qdb.systimestamp()" + questDBTestRange + " SAMPLE BY 5m",
+
+		"default clock": "SELECT now()",
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := analyzer.Analyze(sql, questDBTestNow)
+			if got.Mode != sqlanalyzer.CacheModeNone || got.Reason != sqlanalyzer.ReasonNondeterministic {
+				t.Fatalf("got %v / %v / %v", got.Mode, got.Reason, got.Err)
+			}
+		})
+	}
+}
+
+func TestAnalyzerVolatilePolicy(t *testing.T) {
+	for _, expression := range []string{
+		"now_ns()", "today()", "tomorrow()", "yesterday()",
+		"timestamp_shuffle('2026-09-18T08:00:00Z', '2026-09-18T11:00:00Z')",
+		"rnd_geohash(8)", "rnd_interval()", "rnd_log(1.0, 2.0)",
+		"rnd_double_array(2, 2, 0)", "rnd_uuid4()", "rnd_symbol_weighted()",
+	} {
+		for _, sql := range []string{
+			"SELECT " + expression,
+			"SELECT " + expression + " FROM trips",
+			"SELECT pickup_datetime AS time, " + expression + " AS value" + questDBTestRange + " SAMPLE BY 5m",
+		} {
+			t.Run(sql, func(t *testing.T) {
+				got := analyzer.Analyze(sql, questDBTestNow)
+				if got.Mode != sqlanalyzer.CacheModeNone || got.Reason != sqlanalyzer.ReasonNondeterministic {
+					t.Fatalf("got %v / %v / %v", got.Mode, got.Reason, got.Err)
+				}
+			})
+		}
+	}
+}
+
+func TestAnalyzerVolatilityIgnoresNonCalls(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT 'systimestamp()' FROM trips LIMIT 1",
+		"SELECT $$rnd_double()$$ FROM trips",
+		"SELECT systimestamp FROM trips",
+		`SELECT "systimestamp" FROM trips`,
+		"SELECT count() FROM trips /* systimestamp() */",
+		"SELECT count() FROM trips -- rnd_double()",
+		"SELECT count() FROM trips WHERE pickup_datetime > '2026-09-18T08:00:00Z'",
+	} {
+		t.Run(sql, func(t *testing.T) {
+			got := analyzer.Analyze(sql, questDBTestNow)
+			if got.Mode != sqlanalyzer.CacheModeObject {
+				t.Fatalf("got %v / %v / %v", got.Mode, got.Reason, got.Err)
+			}
+		})
+	}
+}
+
 func timeRangeExtent() timeseries.Extent {
 	return timeseries.Extent{
 		Start: questDBTestNow.Add(-2 * time.Hour),

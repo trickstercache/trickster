@@ -30,7 +30,7 @@ set -eu
 SEED_DATA="${QUESTDB_SEED_DATA:-/seed-data}"
 QDB_URL="${QUESTDB_URL:-http://questdb:9000}"
 QDB_USER="${QUESTDB_HTTP_USER:-grafana_ro}"
-QDB_PASSWORD="${QUESTDB_HTTP_PASSWORD:-trickster-dev-grafana}"
+QDB_PASSWORD="${QUESTDB_HTTP_PASSWORD:-${QDB_HTTP_PASSWORD:?QuestDB HTTP password is required}}"
 FILE1="$SEED_DATA/trips_1.gz"
 FILE2="$SEED_DATA/trips_2.gz"
 SEED_METADATA="$SEED_DATA/seed-window.env"

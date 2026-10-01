@@ -52,8 +52,8 @@ authenticators:
     # path, whose credential is preserved to QuestDB.
     proxy_preserve: true
     users:
-      grafana_ro: trickster-dev-grafana
-      admin: trickster-dev-root
+      grafana_ro: ${QDB_PG_READONLY_PASSWORD}
+      admin: ${QDB_HTTP_PASSWORD}
 negative_caches:
   default:
     '400': 3s
@@ -184,12 +184,12 @@ backends:
     authenticator_name: questdb-grafana
     cache_name: mem1
     postgres:
-      upstream_url: 'postgres://grafana_ro:trickster-dev-grafana@127.0.0.1:8812/qdb'
+      upstream_url: 'postgres://grafana_ro:${QDB_PG_READONLY_PASSWORD}@127.0.0.1:8812/qdb'
     healthcheck:
       interval: 5s
       timeout: 3s
       headers:
-        Authorization: 'Basic YWRtaW46dHJpY2tzdGVyLWRldi1yb290'
+        Authorization: 'Basic ${QDB_HTTP_AUTHORIZATION}'
   click1:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'

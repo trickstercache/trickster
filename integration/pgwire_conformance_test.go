@@ -24,6 +24,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -147,8 +149,8 @@ func pgwireTargets() []pgwireTarget {
 		SupportsCancel: false, SupportsTransactions: false,
 	}, {
 		Name: "questdb", Provider: providers.QuestDB, Dialect: providers.QuestDB, OriginAddr: "127.0.0.1:8812",
-		Database: "qdb", OriginUser: "grafana_ro", OriginPassword: "trickster-dev-grafana",
-		ClientUser: "grafana_ro", ClientPassword: "trickster-dev-grafana",
+		Database: "qdb", OriginUser: "grafana_ro",
+		ClientUser: "grafana_ro",
 		// QuestDB's timestamps are UTC TIMESTAMP values. Scalar and extended
 		// statements below also prove the relay contract before the cache cases.
 		ScalarSQL: "SELECT 42 AS i, 'text' AS t, 1.50 AS n, NULL AS z, " +
@@ -184,6 +186,52 @@ func pgwireRequireSQL(t *testing.T, scenario string, statements ...string) {
 	}
 }
 
+func pgwireQuestDBPassword(envFile string) (string, error) {
+	if password := os.Getenv("QDB_PG_READONLY_PASSWORD"); password != "" {
+		return password, nil
+	}
+	data, err := os.ReadFile(envFile)
+	if err != nil {
+		return "", err
+	}
+	for line := range strings.SplitSeq(string(data), "\n") {
+		if password, ok := strings.CutPrefix(line, "QDB_PG_READONLY_PASSWORD="); ok && password != "" {
+			return password, nil
+		}
+	}
+	return "", errors.New("QuestDB reader password is missing; run make developer-credentials")
+}
+
+func TestPGWireQuestDBPassword(t *testing.T) {
+	for name, test := range map[string]struct {
+		environment string
+		contents    string
+		missing     bool
+		want        string
+	}{
+		"generated file":       {contents: "QDB_HTTP_PASSWORD=admin-value\nQDB_PG_READONLY_PASSWORD=reader-value\n", want: "reader-value"},
+		"environment override": {environment: "override-value", missing: true, want: "override-value"},
+		"missing file":         {missing: true},
+		"missing reader":       {contents: "QDB_HTTP_PASSWORD=admin-value\n"},
+		"empty reader":         {contents: "QDB_PG_READONLY_PASSWORD=\n"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("QDB_PG_READONLY_PASSWORD", test.environment)
+			filename := filepath.Join(t.TempDir(), "credentials.env")
+			if !test.missing {
+				require.NoError(t, os.WriteFile(filename, []byte(test.contents), 0600))
+			}
+			got, err := pgwireQuestDBPassword(filename)
+			if test.want == "" {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, test.want, got)
+			}
+		})
+	}
+}
+
 func TestPGWireConformance(t *testing.T) {
 	for _, target := range pgwireTargets() {
 		t.Run(target.Name, func(t *testing.T) {
@@ -192,6 +240,11 @@ func TestPGWireConformance(t *testing.T) {
 				t.Skipf("developer %s is unavailable at %s: %v", target.Name, target.OriginAddr, err)
 			}
 			_ = probe.Close()
+			if target.Provider == providers.QuestDB {
+				password, err := pgwireQuestDBPassword("../docs/developer/environment/docker-compose-data/credentials.env")
+				require.NoError(t, err)
+				target.OriginPassword, target.ClientPassword = password, password
+			}
 			harness, proxyAddr := pgwireHarness(t, target)
 			harness.start(t)
 			runPGWireConformance(t, target, proxyAddr, harness.MetricsAddr)

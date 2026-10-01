@@ -129,7 +129,7 @@ func TestRejectZonelessBounds(t *testing.T) {
 		"ts >= '2026-09-18 08:00:00' AND ts < '2026-09-18 11:00:00'":                sqlanalyzer.CacheModeObject,
 		"ts >= '2026-09-18T08:00:00Z' AND ts < TIMESTAMP '2026-09-18 11:00:00'":     sqlanalyzer.CacheModeObject,
 		"ts >= '2026-09-18' AND ts < '2026-09-19T00:00:00Z'":                        sqlanalyzer.CacheModeObject,
-		"ts >= '2026-09-18 08:00:00'::timestamp - INTERVAL '1 hour' AND ts < now()": sqlanalyzer.CacheModeObject,
+		"ts >= '2026-09-18 08:00:00'::timestamp - INTERVAL '1 hour' AND ts < now()": sqlanalyzer.CacheModeNone,
 	} {
 		got := a.Analyze(dialectBucketSelect+where+dialectGrouped, dialectExtent.End)
 		if got.Mode != mode || mode == sqlanalyzer.CacheModeObject && got.Reason != sqlanalyzer.ReasonUnsafePredicate {
@@ -195,6 +195,23 @@ func TestDialectVolatileFunction(t *testing.T) {
 	got := a.Analyze(query, time.Time{})
 	if got.Mode != sqlanalyzer.CacheModeNone || got.Reason != sqlanalyzer.ReasonNondeterministic {
 		t.Fatalf("got %v / %v / %v", got.Mode, got.Reason, got.Err)
+	}
+}
+
+func TestObjectAnalysisVolatileFunctions(t *testing.T) {
+	a := NewAnalyzer(Options{IsVolatileFunction: func(name string) bool { return name == "engine_clock" }})
+	for _, sql := range []string{
+		"SELECT engine_clock()", "SELECT ENGINE_CLOCK /* clock */ () FROM m LIMIT 1",
+		"SELECT engine_clock() FROM m UNION ALL SELECT 1",
+		`SELECT "engine_clock"()`, `SELECT U&"engine\005fclock"()`,
+		"SELECT random() FROM m LIMIT 1", "SELECT now()",
+	} {
+		t.Run(sql, func(t *testing.T) {
+			got := a.Analyze(sql, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeNone || got.Reason != sqlanalyzer.ReasonNondeterministic {
+				t.Fatalf("got %v / %v / %v", got.Mode, got.Reason, got.Err)
+			}
+		})
 	}
 }
 
