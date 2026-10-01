@@ -633,6 +633,33 @@ func TestBuilderAddValueField(t *testing.T) {
 	require.Len(t, b.opts.Fields.Values, 2)
 }
 
+func TestBuilderStartNewSeries(t *testing.T) {
+	h := SeriesHeader{Name: "a", Tags: Tags{"name": "a"}, ValueFieldsList: timeseries.FieldDefinitions{{Name: "v"}}}
+	b := NewBuilder(nil, BuilderOptions{})
+	for i, v := range []float64{1, 2, 3} {
+		// a series listed twice is two series, and StartSeries finds the first
+		switch i {
+		case 2:
+			b.StartSeries(h)
+		default:
+			b.StartNewSeries(h)
+		}
+		rb := b.Row()
+		rb.SetEpoch(epoch.Epoch(i))
+		rb.AddFloat64(v)
+		require.NoError(t, rb.Commit())
+	}
+	ds, err := b.Finish()
+	require.NoError(t, err)
+	sl := ds.Results[0].SeriesList
+	require.Len(t, sl, 2)
+	require.Equal(t, Points{{Epoch: 0, Values: []any{1.0}}, {Epoch: 2, Values: []any{3.0}}}, sl[0].Points())
+	require.Equal(t, Points{{Epoch: 1, Values: []any{2.0}}}, sl[1].Points())
+	// a finished Builder opens nothing
+	b.StartNewSeries(h)
+	require.ErrorIs(t, b.AppendPoint(Point{}), ErrBuilderFinished)
+}
+
 func TestSeriesReorderValues(t *testing.T) {
 	fields := testBuilderFields()
 	fields.Values = append(fields.Values, timeseries.FieldDefinition{Name: "w", Role: timeseries.RoleValue})

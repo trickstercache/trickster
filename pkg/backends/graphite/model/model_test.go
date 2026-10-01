@@ -390,7 +390,7 @@ func TestPyJSONString(t *testing.T) {
 		t.Error("empty tags")
 	}
 	// infinities in JSON
-	ds := &dataset.DataSet{TimeRangeQuery: trq(10 * time.Second), Results: []*dataset.Result{{SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{Name: "i", Tags: dataset.Tags{"name": "i"}}, dataset.Points{newPoint(100e9, new(math.Inf(1))), newPoint(110e9, new(math.Inf(-1))), newPoint(120e9, new(math.NaN()))})}}}}
+	ds := &dataset.DataSet{TimeRangeQuery: trq(10 * time.Second), Results: []*dataset.Result{{SeriesList: []*dataset.Series{dataset.NewSeries(dataset.SeriesHeader{Name: "i", Tags: dataset.Tags{"name": "i"}}, dataset.Points{legacyNewPoint(100e9, new(math.Inf(1))), legacyNewPoint(110e9, new(math.Inf(-1))), legacyNewPoint(120e9, new(math.NaN()))})}}}}
 	if got := render(t, ds, RenderOptions{}); got != `[{"target": "i", "tags": {"name": "i"}, "datapoints": [[1e9999, 100], [-Infinity, 110], [null, 120]]}]` {
 		t.Errorf("infinities: %s", got)
 	}

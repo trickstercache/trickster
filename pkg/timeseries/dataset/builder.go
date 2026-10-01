@@ -150,6 +150,16 @@ func (b *Builder) StartSeries(h SeriesHeader) {
 	b.current = b.seriesFor(b.currentResult(), h, false)
 }
 
+// StartNewSeries is StartSeries, but opens a series of its own even beside one of an identical header,
+// as a response that lists one series twice holds two.
+func (b *Builder) StartNewSeries(h SeriesHeader) {
+	if b.finished {
+		return
+	}
+	rb := b.currentResult()
+	b.current = b.newSeries(rb, h, h.CalculateHashWithQueryStatement(h.QueryStatement), false)
+}
+
 // EndSeries returns the Builder to row mode, where rows are grouped into series by their tags.
 func (b *Builder) EndSeries() {
 	b.current = nil
@@ -378,6 +388,10 @@ func (b *Builder) seriesFor(rb *resultBuild, h SeriesHeader, cloneFields bool) *
 	if sb, ok := rb.index.find(hash, &h); ok {
 		return sb
 	}
+	return b.newSeries(rb, h, hash, cloneFields)
+}
+
+func (b *Builder) newSeries(rb *resultBuild, h SeriesHeader, hash Hash, cloneFields bool) *seriesBuild {
 	if cloneFields {
 		h.TagFieldsList = slices.Clone(h.TagFieldsList)
 		h.ValueFieldsList = slices.Clone(h.ValueFieldsList)

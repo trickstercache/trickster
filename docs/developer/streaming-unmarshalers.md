@@ -137,7 +137,7 @@ for _, p := range points {
 b.EndSeries()
 ```
 
-Rows committed while a series is open go to that series and may not set tags. `StartSeries` reopens the series with an identical header if there is one, so a series that arrives in pieces becomes one series. `AppendPoint` adds a `Point` you have already built, adding its values with `AddValue`. For formats that return several statements, `SetResult(statementID, name)` sends later rows and series to another result, creating it if needed.
+Rows committed while a series is open go to that series and may not set tags. `StartSeries` reopens the series with an identical header if there is one, so a series that arrives in pieces becomes one series. `StartNewSeries` opens a new series even when one has an identical header, for a format such as Graphite's, where a response that lists one series twice holds two. `AppendPoint` adds a `Point` you have already built, adding its values with `AddValue`. For formats that return several statements, `SetResult(statementID, name)` sends later rows and series to another result, creating it if needed.
 
 ### Finishing
 
