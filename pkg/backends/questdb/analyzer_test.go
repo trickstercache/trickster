@@ -44,10 +44,6 @@ func TestAnalyzerSampleBy(t *testing.T) {
 			sql:  "SELECT pickup_datetime AS time, cab_type, count() AS trips" + questDBTestRange + " SAMPLE BY 15m",
 			step: 15 * time.Minute, groups: []string{"cab_type"},
 		},
-		"explicit null fill": {
-			sql:  "SELECT pickup_datetime AS time, avg(total_amount) AS value" + questDBTestRange + " SAMPLE BY 10m FILL(NULL) ORDER BY time",
-			step: 10 * time.Minute,
-		},
 		"multiline proxy query": {
 			sql: `SELECT pickup_datetime AS time, cab_type, count() AS trips
 FROM trips
@@ -101,6 +97,7 @@ func TestAnalyzerFailsClosed(t *testing.T) {
 	for name, sql := range map[string]string{
 		"month sample":           "SELECT pickup_datetime AS time, count()" + questDBTestRange + " SAMPLE BY 1M",
 		"previous fill":          "SELECT pickup_datetime AS time, count()" + questDBTestRange + " SAMPLE BY 5m FILL(PREV)",
+		"null fill":              "SELECT pickup_datetime AS time, count()" + questDBTestRange + " SAMPLE BY 5m FILL(NULL)",
 		"clause owned bounds":    "SELECT pickup_datetime AS time, count()" + questDBTestRange + " SAMPLE BY 5m FROM '2026-09-18T08:00:00Z' TO '2026-09-18T11:00:00Z'",
 		"duplicate fill":         "SELECT pickup_datetime AS time, count()" + questDBTestRange + " SAMPLE BY 5m FILL(NULL) FILL(NULL)",
 		"explicit group":         "SELECT pickup_datetime AS time, cab_type, count()" + questDBTestRange + " GROUP BY cab_type SAMPLE BY 5m",
@@ -114,6 +111,29 @@ func TestAnalyzerFailsClosed(t *testing.T) {
 				t.Fatalf("got %v / %v / %v", analysis.Mode, analysis.Reason, analysis.Err)
 			}
 		})
+	}
+}
+
+func TestAnalyzerQuestDBVolatileFunctions(t *testing.T) {
+	for _, name := range []string{
+		"sysdate", "systimestamp", "systimestamp_ns",
+		"rnd_double", "rnd_int", "rnd_timestamp", "rnd_varchar",
+	} {
+		t.Run(name, func(t *testing.T) {
+			analysis := analyzer.Analyze("SELECT "+name+"() FROM trips", questDBTestNow)
+			if analysis.Mode != sqlanalyzer.CacheModeNone || analysis.Reason != sqlanalyzer.ReasonNondeterministic {
+				t.Fatalf("got %v / %v / %v", analysis.Mode, analysis.Reason, analysis.Err)
+			}
+		})
+	}
+
+	analysis := analyzer.Analyze(
+		"SELECT pickup_datetime AS time, rnd_double() AS value"+questDBTestRange+
+			" SAMPLE BY 5m",
+		questDBTestNow,
+	)
+	if analysis.Mode != sqlanalyzer.CacheModeNone || analysis.Reason != sqlanalyzer.ReasonNondeterministic {
+		t.Fatalf("delta query got %v / %v / %v", analysis.Mode, analysis.Reason, analysis.Err)
 	}
 }
 

@@ -72,7 +72,9 @@ create_tables() {
     sql_execute 'DROP MATERIALIZED VIEW IF EXISTS trips_15m'
     sql_execute 'DROP TABLE IF EXISTS trips'
     sql_execute 'DROP TABLE IF EXISTS trips_staging'
+    sql_execute 'DROP TABLE IF EXISTS sparse_trips'
     sql_execute "$(cat /seeding/create_trips.sql)"
+    sql_execute "$(cat /seeding/create_sparse.sql)"
 }
 
 import_file() {
@@ -153,6 +155,17 @@ load_file() {
     sql_execute 'DROP TABLE trips_staging'
 }
 
+seed_sparse_table() {
+    # Keep two observations thirty minutes apart. SAMPLE BY FILL(NULL) then
+    # has a gap whose rendered rows depend on the selected range.
+    sql_execute "INSERT INTO sparse_trips
+        SELECT dateadd('m', 2, pickup_datetime), 1.0
+        FROM trips ORDER BY pickup_datetime LIMIT 1"
+    sql_execute "INSERT INTO sparse_trips
+        SELECT dateadd('m', 32, pickup_datetime), 2.0
+        FROM trips ORDER BY pickup_datetime LIMIT 1"
+}
+
 validate_seed() {
     echo "validating seeded QuestDB data"
     facts=$(sql_export "SELECT count() AS rows,
@@ -225,6 +238,7 @@ load_seed_metadata
 create_tables
 load_file "$FILE1"
 load_file "$FILE2"
+seed_sparse_table
 sql_execute "$(cat /seeding/create_rollup.sql)"
 wait_for_rollup "$SOURCE_ROWS"
 validate_seed

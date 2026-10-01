@@ -184,6 +184,20 @@ func TestPostRender(t *testing.T) {
 	}
 }
 
+func TestDialectVolatileFunction(t *testing.T) {
+	a := NewAnalyzer(Options{
+		BucketMatchers: DataFusionBucketMatchers(),
+		IsVolatileFunction: func(name string) bool {
+			return name == "engine_clock"
+		},
+	})
+	query := strings.Replace(hourlyEpochQuery, "avg(temperature)", "engine_clock()", 1)
+	got := a.Analyze(query, time.Time{})
+	if got.Mode != sqlanalyzer.CacheModeNone || got.Reason != sqlanalyzer.ReasonNondeterministic {
+		t.Fatalf("got %v / %v / %v", got.Mode, got.Reason, got.Err)
+	}
+}
+
 func TestMaskPlaceholders(t *testing.T) {
 	const sql = "ts >= <$TRICKSTER_TS1_0$> AND ts < <$TS2$> AND note = $$x$$"
 	masked := MaskPlaceholders(sql)

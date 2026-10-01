@@ -74,6 +74,8 @@ type pgwireTarget struct {
 	ShowSQL              string
 	ObjectSQL            string
 	DeltaSQLs            []string
+	SparseBoundsSQL      string
+	SparseFillSQL        string
 	WeekSQL              string
 	ZoneSQL              string
 	ZoneChangesResults   bool
@@ -163,6 +165,9 @@ func pgwireTargets() []pgwireTarget {
 			"SELECT timestamp_floor('5m', pickup_datetime) AS time, count() AS trips FROM trips " +
 				"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' GROUP BY 1 ORDER BY 1",
 		},
+		SparseBoundsSQL: "SELECT min(pickup_datetime), max(pickup_datetime) FROM sparse_trips",
+		SparseFillSQL: "SELECT pickup_datetime AS time, avg(value) AS value FROM sparse_trips " +
+			"WHERE pickup_datetime >= '%s' AND pickup_datetime < '%s' SAMPLE BY 10m FILL(NULL) ORDER BY 1",
 		// Direct QuestDB probes show BEGIN/ROLLBACK and failed-transaction
 		// ReadyForQuery states; the relay must preserve them even while the
 		// analyzer and cache paths are exercised by separate statements below.
@@ -509,6 +514,51 @@ func runPGWireConformance(t *testing.T, target pgwireTarget, proxyAddr, metricsA
 			require.Equal(t, want, got, "hours %d to %d", step.from, step.to)
 			require.Equal(t, before+1, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", step.status),
 				"hours %d to %d should be a %s", step.from, step.to, step.status)
+		}
+	})
+
+	t.Run("range-dependent NULL fill stays on the object path", func(t *testing.T) {
+		pgwireRequireSQL(t, "sparse NULL fill", target.SparseBoundsSQL, target.SparseFillSQL)
+		cached, err := pgwireConnect(t, proxyAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer cached.Close(context.Background())
+		fresh, err := pgwireConnect(t, target.OriginAddr, target, target.ClientPassword)
+		require.NoError(t, err)
+		defer fresh.Close(context.Background())
+
+		bounds, err := pgwireQuery(t, fresh, target.SparseBoundsSQL)
+		require.NoError(t, err)
+		require.Len(t, bounds, 1)
+		require.Len(t, bounds[0].Rows, 1)
+		require.Len(t, bounds[0].Rows[0], 2)
+		minimum, err := time.Parse(time.RFC3339Nano, bounds[0].Rows[0][0])
+		require.NoError(t, err)
+		maximum, err := time.Parse(time.RFC3339Nano, bounds[0].Rows[0][1])
+		require.NoError(t, err)
+		require.Equal(t, 30*time.Minute, maximum.Sub(minimum))
+
+		query := func(start, end time.Time) string {
+			return fmt.Sprintf(target.SparseFillSQL, start.UTC().Format(time.RFC3339Nano), end.UTC().Format(time.RFC3339Nano))
+		}
+		queries := []string{
+			query(minimum.Add(-time.Minute), maximum.Add(time.Minute)),
+			query(minimum.Add(10*time.Minute), maximum.Add(-10*time.Minute)),
+			query(minimum.Add(-20*time.Minute), maximum.Add(20*time.Minute)),
+		}
+		beforeDelta := map[string]float64{}
+		for _, status := range []string{"kmiss", "rmiss", "hit", "phit"} {
+			beforeDelta[status] = pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", status)
+		}
+		for i, sql := range queries {
+			want, err := pgwireQuery(t, fresh, sql)
+			require.NoError(t, err)
+			got, err := pgwireQuery(t, cached, sql)
+			require.NoError(t, err)
+			require.Equal(t, want, got, "sparse range %d", i)
+		}
+		for status, before := range beforeDelta {
+			require.Equal(t, before, pgwireCacheCount(t, metricsAddr, target.Dialect, "delta", status),
+				"FILL(NULL) must not use delta cache status %s", status)
 		}
 	})
 

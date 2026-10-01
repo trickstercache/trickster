@@ -100,7 +100,6 @@ func parseSampleByBody(body string) (time.Duration, error) {
 	if !ok {
 		return 0, errUnsupportedSampleBy
 	}
-	seenFill := false
 	for {
 		token, more := scanner.Next()
 		if !more {
@@ -109,10 +108,6 @@ func parseSampleByBody(body string) (time.Duration, error) {
 		if token.Kind != sqlscan.Word || !strings.EqualFold(scanner.Text(token), "fill") {
 			return 0, errUnsupportedSampleBy
 		}
-		if seenFill {
-			return 0, errUnsupportedSampleBy
-		}
-		seenFill = true
 		open, more := scanner.Next()
 		if !more || open.Kind != sqlscan.Punct || scanner.Text(open) != "(" {
 			return 0, errUnsupportedSampleBy
@@ -125,6 +120,10 @@ func parseSampleByBody(body string) (time.Duration, error) {
 		if !more || close.Kind != sqlscan.Punct || scanner.Text(close) != ")" {
 			return 0, errUnsupportedSampleBy
 		}
+		// QuestDB fills only the gaps between observations in the selected
+		// range. The generated NULL rows therefore depend on the surrounding
+		// range and cannot be merged from independent delta extents.
+		return 0, errUnsupportedSampleBy
 	}
 }
 

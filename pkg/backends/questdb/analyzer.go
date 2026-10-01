@@ -17,6 +17,7 @@
 package questdb
 
 import (
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
@@ -25,6 +26,16 @@ import (
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
 )
 
+var questDBVolatileFunctions = map[string]struct{}{
+	"sysdate": {}, "systimestamp": {}, "systimestamp_ns": {},
+	"rnd_bin": {}, "rnd_boolean": {}, "rnd_byte": {}, "rnd_char": {},
+	"rnd_date": {}, "rnd_decimal": {}, "rnd_double": {},
+	"rnd_double_array": {}, "rnd_float": {}, "rnd_int": {}, "rnd_ipv4": {},
+	"rnd_long": {}, "rnd_long256": {}, "rnd_short": {}, "rnd_str": {},
+	"rnd_symbol": {}, "rnd_symbol_weighted": {}, "rnd_symbol_zipf": {},
+	"rnd_timestamp": {}, "rnd_timestamp_ns": {}, "rnd_uuid4": {}, "rnd_varchar": {},
+}
+
 var analyzer = cockroach.NewAnalyzer(cockroach.Options{
 	BucketMatchers: []cockroach.BucketMatcher{timestampFloorMatcher},
 	ExprBucketMatchers: []cockroach.ExprBucketMatcher{
@@ -32,6 +43,10 @@ var analyzer = cockroach.NewAnalyzer(cockroach.Options{
 	},
 	ClauseRewriters: []cockroach.ClauseRewriter{sampleByRewriter{}},
 	NakedIntIsInt4:  true,
+	IsVolatileFunction: func(name string) bool {
+		_, ok := questDBVolatileFunctions[strings.ToLower(name)]
+		return ok
+	},
 	// QuestDB's PostgreSQL wire protocol renders TIMESTAMP with six digits
 	// of fractional precision. Inclusive upper bounds must round at that
 	// precision when an extent is rendered.

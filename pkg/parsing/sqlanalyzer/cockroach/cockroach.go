@@ -155,6 +155,9 @@ type Options struct {
 	// RejectZonelessBounds fails closed on time bounds written without a zone,
 	// for sessions where the engine would not read them as UTC.
 	RejectZonelessBounds bool
+	// IsVolatileFunction recognizes functions that are nondeterministic in the
+	// target dialect, in addition to the PostgreSQL-compatible defaults.
+	IsVolatileFunction func(name string) bool
 	// PostRender re-spells what the parser's formatter gets wrong for the engine, in the
 	// canonical SQL and the extent template. The SQL may carry time-bound placeholders.
 	PostRender func(rendered string) (string, error)
@@ -389,7 +392,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if !singleTableFrom(clause) || containsWindowFunction(clause.Exprs) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedStatement)
 	}
-	if containsVolatileFunction(clause.Exprs) {
+	if containsVolatileFunction(clause.Exprs, a.opts.IsVolatileFunction) {
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
 			Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement,
@@ -590,7 +593,7 @@ var volatileFunctions = map[string]struct{}{
 // containsVolatileFunction reports whether the select list references a
 // nondeterministic function. Volatile functions remain acceptable inside WHERE
 // time bounds, where analysis resolves them to concrete times.
-func containsVolatileFunction(items tree.SelectExprs) bool {
+func containsVolatileFunction(items tree.SelectExprs, isDialectVolatile func(string) bool) bool {
 	volatile := false
 	for _, item := range items {
 		if item.Expr == nil || volatile {
@@ -599,7 +602,8 @@ func containsVolatileFunction(items tree.SelectExprs) bool {
 		walkExprTree(item.Expr, func(node tree.Expr) bool {
 			if function, ok := node.(*tree.FuncExpr); ok {
 				name := strings.ToLower(function.Func.String())
-				if _, unsafe := volatileFunctions[name]; unsafe {
+				if _, unsafe := volatileFunctions[name]; unsafe ||
+					isDialectVolatile != nil && isDialectVolatile(name) {
 					volatile = true
 				}
 			}
