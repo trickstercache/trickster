@@ -93,6 +93,35 @@ func TestParseDruidSQLQuery(t *testing.T) {
 	}
 }
 
+func TestDruidSQLOrdering(t *testing.T) {
+	asc := func(name string) timeseries.OrderTerm { return timeseries.OrderTerm{Column: name, NullsFirst: true} }
+	for _, c := range []struct {
+		groupBy, orderBy string
+		want             []timeseries.OrderTerm
+	}{
+		// Druid writes the bucket first unless the GROUP BY ends with it, then the other groups in order
+		{"1, 2, 3", "", []timeseries.OrderTerm{asc("bucket"), asc("host"), asc("dc")}},
+		{"host, 1, dc", "", []timeseries.OrderTerm{asc("bucket"), asc("host"), asc("dc")}},
+		{"dc, host, 1", "", []timeseries.OrderTerm{asc("dc"), asc("host"), asc("bucket")}},
+		// the ORDER BY leads, its nulls lowest, and the groups break its ties
+		{"1, 2, 3", "ORDER BY value DESC, host", []timeseries.OrderTerm{
+			{Column: "value", Descending: true}, asc("host"), asc("bucket"), asc("dc"),
+		}},
+		{"1, 2, 3", "ORDER BY bucket DESC", []timeseries.OrderTerm{{Column: "bucket", Descending: true}, asc("host"), asc("dc")}},
+	} {
+		statement := `SELECT TIME_FLOOR(__time, 'PT1H') AS bucket, host, dc, SUM(v) AS value FROM foo WHERE ` +
+			`__time >= TIMESTAMP '2024-01-01 00:00:00' AND __time < TIMESTAMP '2024-01-02 00:00:00' GROUP BY ` +
+			c.groupBy + " " + c.orderBy
+		trq, _, _, err := (&Client{}).ParseTimeRangeQuery(druidSQLTestRequest(`{"query":` + strconvQuote(statement) + `}`))
+		if err != nil {
+			t.Fatalf("%s %s: %v", c.groupBy, c.orderBy, err)
+		}
+		if !slices.Equal(trq.Ordering, c.want) {
+			t.Errorf("%s %s: ordering %v, want %v", c.groupBy, c.orderBy, trq.Ordering, c.want)
+		}
+	}
+}
+
 func TestParseDruidSQLArrayHeaderQuery(t *testing.T) {
 	body := `{"resultFormat":"array","header":true,"context":{"sqlTimeZone":"UTC"},"query":` + strconvQuote(druidSQLTestStatement) + `}`
 	r := druidSQLTestRequest(body)

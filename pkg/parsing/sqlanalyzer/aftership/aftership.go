@@ -174,6 +174,9 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 
+	readsZone := readsSessionZone(selectQuery, selectQuery.SelectItems[bucket.index].Expr)
+	zonedBounds := zonedBound(ranges.lower.style) || zonedBound(ranges.lowerStyle) ||
+		(ranges.upper != nil && zonedBound(ranges.upper.style))
 	canonical, renderer := buildQueryArtifacts(selectQuery, ranges, bucket.step)
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
@@ -193,6 +196,8 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		OutputFormat: outputFormat,
 		Renderer:     renderer,
 		Directives:   directives.Parse(statement, directives.SyntaxClickHouse),
+		ReadsZone:    readsZone,
+		ZonedBounds:  zonedBounds,
 	}
 	if ranges.upper != nil {
 		plan.UpperBound = &sqlanalyzer.Bound{
@@ -1397,6 +1402,14 @@ func evaluateBound(
 					style: boundToDateTime64 + boundStyle(precision), now: true,
 				}, true
 			}
+			// a zone may follow, which only UTC's, as bounds are rendered, reads as the analysis does
+			if len(args) == 3 {
+				zone, ok := unwrapColumnExpr(args[2]).(*chast.StringLiteral)
+				if !ok || zone.Literal != utcZone {
+					return analyzedBound{}, false
+				}
+				args = args[:2]
+			}
 			if len(args) != 2 {
 				return analyzedBound{}, false
 			}
@@ -1533,8 +1546,10 @@ func boundExpression(target endpoint, style boundStyle, extent timeseries.Extent
 		value = extent.End
 	}
 	if style >= boundToDateTime64 && style <= boundToDateTime64+9 {
+		// the text names its zone, so the session's doesn't change the instant
 		return functionExpression("toDateTime64", &chast.StringLiteral{Literal: value.UTC().Format("2006-01-02 15:04:05.999999999")},
-			&chast.NumberLiteral{Literal: strconv.Itoa(int(style - boundToDateTime64)), Base: 10})
+			&chast.NumberLiteral{Literal: strconv.Itoa(int(style - boundToDateTime64)), Base: 10},
+			&chast.StringLiteral{Literal: utcZone})
 	}
 	seconds := &chast.NumberLiteral{Literal: strconv.FormatInt(value.Unix(), 10), Base: 10}
 	switch style {

@@ -54,12 +54,11 @@ func TestSeriesHeaderHashIsUnambiguous(t *testing.T) {
 }
 
 func collidingSeries(host string, epochs ...epoch.Epoch) *Series {
-	s := &Series{Header: SeriesHeader{Name: "s", Tags: Tags{"host": host}}}
+	s := NewSeries(SeriesHeader{Name: "s", Tags: Tags{"host": host}}, nil)
 	s.Header.hash = 7 // every series here shares one hash
 	for _, e := range epochs {
-		s.Points = append(s.Points, Point{Epoch: e, Size: 16, Values: []any{int64(e)}})
+		s.SetPoints(append(seriesPoints(s), Point{Epoch: e, Values: []any{int64(e)}}))
 	}
-	s.PointSize = s.Points.Size()
 	return s
 }
 

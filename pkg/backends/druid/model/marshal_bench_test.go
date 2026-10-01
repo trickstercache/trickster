@@ -32,16 +32,17 @@ func benchDruidDataSet(series, points int) *dataset.DataSet {
 	r := &dataset.Result{}
 	for i := range series {
 		page := fmt.Sprintf("page-%d", i)
-		s := &dataset.Series{Header: dataset.SeriesHeader{
+		s := dataset.NewSeries(dataset.SeriesHeader{
 			Tags:            dataset.Tags{"page": page},
 			TagFieldsList:   timeseries.FieldDefinitions{{Name: "page"}},
 			ValueFieldsList: timeseries.FieldDefinitions{{Name: "page", ProviderData1: fieldNativeDimension}, {Name: "count"}, {Name: "added"}},
-		}}
-		s.Points = make(dataset.Points, points)
-		for j := range s.Points {
-			s.Points[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+		}, nil)
+		pts := make(dataset.Points, points)
+		for j := range pts {
+			pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
 				Values: []any{page, int64(i * j % 97), float64(i*j%9973) / 7}}
 		}
+		s.SetPoints(pts)
 		r.SeriesList = append(r.SeriesList, s)
 	}
 	return &dataset.DataSet{Results: dataset.Results{r}}

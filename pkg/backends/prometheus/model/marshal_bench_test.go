@@ -45,16 +45,13 @@ func benchMatrix(series, points int) *dataset.DataSet {
 				Values: []any{strconv.FormatFloat(float64(i*j)/7, 'f', -1, 64)},
 			}
 		}
-		sl[i] = &dataset.Series{
-			Header: dataset.SeriesHeader{
-				Tags: dataset.Tags{
-					"__name__": "node_cpu_seconds_total", "job": "node",
-					"mode": "idle", "instance": "host-" + strconv.Itoa(i) + ":9100",
-				},
-				ValueFieldsList: []timeseries.FieldDefinition{{Name: "value"}},
+		sl[i] = dataset.NewSeries(dataset.SeriesHeader{
+			Tags: dataset.Tags{
+				"__name__": "node_cpu_seconds_total", "job": "node",
+				"mode": "idle", "instance": "host-" + strconv.Itoa(i) + ":9100",
 			},
-			Points: pts,
-		}
+			ValueFieldsList: []timeseries.FieldDefinition{{Name: "value"}},
+		}, pts)
 	}
 	return &dataset.DataSet{Results: dataset.Results{{SeriesList: sl}}}
 }

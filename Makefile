@@ -227,6 +227,15 @@ benchmark-graphite:
 	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \
 		-benchmem -count=5
 
+# DataSet build, cache codec and retained-heap measurements; run by hand, never on CI runners
+DSBENCH_BUDGET_MB ?= 1024
+DSBENCH_LOAD ?= 5s
+.PHONY: benchmark-dataset
+benchmark-dataset:
+	@go test ./pkg/timeseries/dataset/dsbench -run '^$$' -bench . -benchmem -count=6
+	@TRICKSTER_DSBENCH=1 TRICKSTER_DSBENCH_BUDGET_MB=$(DSBENCH_BUDGET_MB) TRICKSTER_DSBENCH_LOAD=$(DSBENCH_LOAD) \
+		go test ./pkg/timeseries/dataset/dsbench -run '^TestRetainedHeap$$' -v -count=1 -timeout 30m
+
 .PHONY: benchmark-mysql-acceptance
 benchmark-mysql-acceptance:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \

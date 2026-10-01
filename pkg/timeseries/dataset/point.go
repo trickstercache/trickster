@@ -14,227 +14,48 @@
  * limitations under the License.
  */
 
-//go:generate go tool msgp
-
 package dataset
 
 import (
+	"reflect"
 	"slices"
-	"sort"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
-	"github.com/trickstercache/trickster/v2/pkg/util/cmp"
 )
 
-// Point represents a timeseries data point
+// Point is one row of a series: its epoch and values. Series hold their rows by column, so a Point
+// only builds a series or reads a row where speed doesn't matter.
 type Point struct {
-	Epoch  epoch.Epoch `msg:"epoch"`
-	Size   int         `msg:"size"`
-	Values []any       `msg:"values"`
+	Epoch  epoch.Epoch
+	Values []any
 }
 
-// Points is a slice of type *Point
-//
-//msgp:ignore Points
+// Points is a list of Points.
 type Points []Point
 
-// Clone returns a perfect copy of the Point
+// Clone returns a copy of the Point with its own Values slice.
 func (p *Point) Clone() Point {
-	clone := Point{
-		Epoch: p.Epoch,
-		Size:  p.Size,
-	}
-	if p.Values != nil {
-		clone.Values = make([]any, len(p.Values))
-		copy(clone.Values, p.Values)
-	}
-	return clone
+	return Point{Epoch: p.Epoch, Values: slices.Clone(p.Values)}
 }
 
-// Equal returns true if p and p2 are exactly equal
+// PointsAreEqual reports whether p1 and p2 hold the same epoch and deeply equal values.
 func PointsAreEqual(p1, p2 Point) bool {
-	if p1.Epoch != p2.Epoch || p1.Size != p2.Size ||
-		len(p1.Values) != len(p2.Values) {
-		return false
-	}
-	for i, v := range p1.Values {
-		if !cmp.Equal(p2.Values[i], v) {
-			return false
-		}
-		continue
-	}
-
-	return true
+	return p1.Epoch == p2.Epoch && reflect.DeepEqual(p1.Values, p2.Values)
 }
 
-// Equal returns true if both slices are exactly equal
+// Equal reports whether both lists hold the same points.
 func (p Points) Equal(p2 Points) bool {
 	return slices.EqualFunc(p, p2, PointsAreEqual)
 }
 
-// Size returns the memory utilization of the Points in bytes
-func (p Points) Size() int64 {
-	var c int64 = 16
-	for _, pt := range p {
-		c += int64(pt.Size)
-	}
-	return c
-}
-
-// Clone returns a perfect copy of the Points
+// Clone returns a copy of the Points, each with its own Values slice.
 func (p Points) Clone() Points {
-	clone := make(Points, len(p))
-	clonePointsInto(clone, p)
-	return clone
-}
-
-// copies p into out, cutting every point's values from one backing array, each capped so an append
-// to one reallocates instead of overwriting the next
-func clonePointsInto(out, p Points) {
-	var n int
-	for i := range p {
-		n += len(p[i].Values)
-	}
-	slab := make([]any, n)
-	for i := range p {
-		out[i].Epoch, out[i].Size = p[i].Epoch, p[i].Size
-		if p[i].Values != nil {
-			k := copy(slab, p[i].Values)
-			out[i].Values = slab[:k:k]
-			slab = slab[k:]
-		}
-	}
-}
-
-// CloneRange returns a perfect copy of the Points, cloning only the
-// points in the provided index range (upper-bound exclusive)
-func (p Points) CloneRange(start, end int) Points {
-	if end < start {
+	if p == nil {
 		return nil
 	}
-	size := end - start
-	if size > len(p) {
-		return nil
-	}
-	clone := make(Points, size, size+10)
-	clonePointsInto(clone, p[start:end])
-	return clone
-}
-
-func pointCmp(a, b Point) int {
-	if a.Epoch < b.Epoch {
-		return -1
-	}
-	if a.Epoch > b.Epoch {
-		return 1
-	}
-	return 0
-}
-
-// Len returns the length of a slice of time series data points
-func (p Points) Len() int {
-	return len(p)
-}
-
-// Less returns true if i comes before j
-func (p Points) Less(i, j int) bool {
-	return p[i].Epoch < p[j].Epoch
-}
-
-// Swap modifies a slice of time series data points by swapping the values in indexes i and j
-func (p Points) Swap(i, j int) {
-	p[i], p[j] = p[j], p[i]
-}
-
-// findRange finds both the start and end indices for a time range that is between the start and end epochs.
-func (p Points) findRange(startEpoch, endEpoch epoch.Epoch, s, e int) (int, int) {
-	if len(p) == 0 || s > e {
-		return 0, 0
-	}
-
-	// find start index (looking for the first index after s and before e where Epoch >= startEpoch)
-	idxStart := sort.Search((e-s)+1, func(i int) bool {
-		return p[s+i].Epoch >= startEpoch
-	})
-	startPos := s + idxStart
-	if startPos > e {
-		return startPos, startPos
-	}
-
-	// find end index (starting from e and going backwards to s, looking for the first index where Epoch <= endEpoch)
-	idxEnd := sort.Search((e-s)+1, func(i int) bool {
-		return p[e-i].Epoch <= endEpoch
-	})
-	endPos := max(
-		// guard against empty range
-		e-idxEnd+1, startPos,
-	)
-	return startPos, endPos
-}
-
-// sortAndDedupeTolerant sorts and deduplicates p in-place. When toleranceNanos
-// is 0, only points with bit-identical Epoch values collapse, and the
-// highest-index (latest-seen) value wins -- this preserves the legacy
-// sortAndDedupe semantics. When toleranceNanos is >0, adjacent points (after
-// stable sort) whose Epoch difference is within the window cluster together
-// and the FIRST point in the cluster wins; this matches Trickster's
-// first-seen idiom and produces deterministic output regardless of fanout
-// order. The boundary is inclusive (epoch_b - epoch_a <= toleranceNanos).
-func sortAndDedupeTolerant(p Points, toleranceNanos int64) Points {
-	if len(p) == 0 {
-		return p
-	}
-	// sort, keeping order between equal elements
-	slices.SortStableFunc(p, func(a, b Point) int {
-		if a.Epoch < b.Epoch {
-			return -1
-		} else if a.Epoch > b.Epoch {
-			return 1
-		}
-		return 0
-	})
-	if toleranceNanos <= 0 {
-		var k int
-		for i := range p {
-			if i == 0 {
-				continue // skip first iteration since there's nothing to compare
-			}
-			// if Epochs match, the higher-index (latest) version wins de-duplication
-			if p[k].Epoch == p[i].Epoch {
-				p[k] = p[i]
-			} else {
-				// at a new Epoch; advance the index
-				k++
-				// if previous points were deduped, this one must must shift forward
-				if k < i {
-					p[k] = p[i]
-				}
-			}
-		}
-		return p[:k+1]
-	}
-	// tolerance > 0: cluster runs whose successive deltas are within tolerance.
-	// First-seen wins so identical inputs always produce identical outputs
-	// regardless of which shard's response landed first.
-	var k int
+	out := make(Points, len(p))
 	for i := range p {
-		if i == 0 {
-			continue
-		}
-		if int64(p[i].Epoch-p[k].Epoch) <= toleranceNanos {
-			// within the cluster: drop this point, keep the earlier (k) survivor
-			continue
-		}
-		k++
-		if k < i {
-			p[k] = p[i]
-		}
+		out[i] = p[i].Clone()
 	}
-	return p[:k+1]
-}
-
-// Merge returns a new Points slice of p and p2 merged together. If sort is true
-// the new slice is sorted and dupe-killed before being returned
-func MergePoints(p, p2 Points, sortPoints bool) Points {
-	return MergePointsWithOpts(p, p2, MergeOpts{SortPoints: sortPoints})
+	return out
 }

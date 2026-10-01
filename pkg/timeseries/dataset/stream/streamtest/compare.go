@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -153,18 +154,15 @@ func compareSeries(want, got *dataset.Series, o CompareOptions) error {
 		return fmt.Errorf(".untrackedFields: want %v, got %v", wh.UntrackedFieldsList, gh.UntrackedFieldsList)
 	case !o.IgnoreSizes && wh.Size != gh.Size:
 		return fmt.Errorf(".headerSize: want %d, got %d", wh.Size, gh.Size)
-	case !o.IgnoreSizes && want.PointSize != got.PointSize:
-		return fmt.Errorf(".pointSize: want %d, got %d", want.PointSize, got.PointSize)
-	case len(want.Points) != len(got.Points):
-		return fmt.Errorf(".points: want %d, got %d", len(want.Points), len(got.Points))
+	case want.PointCount() != got.PointCount():
+		return fmt.Errorf(".points: want %d, got %d", want.PointCount(), got.PointCount())
 	}
-	for i := range want.Points {
-		wp, gp := &want.Points[i], &got.Points[i]
+	wantPoints, gotPoints := dspoints.Of(want), dspoints.Of(got)
+	for i := range wantPoints {
+		wp, gp := &wantPoints[i], &gotPoints[i]
 		switch {
 		case wp.Epoch != gp.Epoch:
 			return fmt.Errorf(".points[%d].epoch: want %d, got %d", i, wp.Epoch, gp.Epoch)
-		case !o.IgnoreSizes && wp.Size != gp.Size:
-			return fmt.Errorf(".points[%d].size: want %d, got %d", i, wp.Size, gp.Size)
 		case len(wp.Values) != len(gp.Values):
 			return fmt.Errorf(".points[%d].values: want %v, got %v", i, wp.Values, gp.Values)
 		}
@@ -174,6 +172,10 @@ func compareSeries(want, got *dataset.Series, o CompareOptions) error {
 					wp.Values[j], gp.Values[j])
 			}
 		}
+	}
+	// the rows' memory follows from their values, so it differs only in how they're held
+	if !o.IgnoreSizes && want.Segments().Size() != got.Segments().Size() {
+		return fmt.Errorf(".size: want %d, got %d", want.Segments().Size(), got.Segments().Size())
 	}
 	return nil
 }

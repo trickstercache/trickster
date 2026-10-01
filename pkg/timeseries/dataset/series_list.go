@@ -37,17 +37,15 @@ type SeriesList []*Series
 // to adaptively reorder the existing+merged list such that it best emulates
 // the fully constituted series order as it would be served by the origin.
 // Merge treats a *Series in both lists with identical headers as the same
-// series and merges its Points from sl2 into those from sl.
+// series and merges its rows from sl2 into those from sl.
 func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
-	return sl.merge(sl2, pointsMerger(func(p, p2 Points) Points { return MergePoints(p, p2, sortPoints) }))
+	return sl.merge(sl2, segmentsMerger(MergeOpts{SortPoints: sortPoints}))
 }
 
-// merges a series' points with one slice, as a merge of a series without parts always has
-func pointsMerger(mergePoints func(p, p2 Points) Points) func(cs, s *Series) {
+// merges a series' rows with MergeSegments
+func segmentsMerger(opts MergeOpts) func(cs, s *Series) {
 	return func(cs, s *Series) {
-		cs.flatten()
-		cs.Points = mergePoints(cs.Points, s.FlatPoints())
-		cs.PointSize = cs.Points.Size()
+		cs.segs = MergeSegments(cs.segs, s.segs, opts)
 	}
 }
 
@@ -158,12 +156,12 @@ func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy
 func (sl SeriesList) MergeWithOpts(sl2 SeriesList, opts MergeOpts) SeriesList {
 	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
 		if opts.parts {
-			return sl.merge(sl2, func(cs, s *Series) { mergeSeriesParts(cs, s, opts.SortPoints) })
+			return sl.merge(sl2, func(cs, s *Series) { cs.segs = MergeSegmentParts(cs.segs, s.segs, opts.SortPoints) })
 		}
 		// fast path: legacy exact-match dedup
 		return sl.Merge(sl2, opts.SortPoints)
 	}
-	return sl.merge(sl2, pointsMerger(func(p, p2 Points) Points { return MergePointsWithOpts(p, p2, opts) }))
+	return sl.merge(sl2, segmentsMerger(opts))
 }
 
 // mergeCollection merges several member lists while preserving the same
@@ -253,19 +251,14 @@ func (sl SeriesList) mergeCollection(collection []SeriesList, opts MergeOpts) Se
 	parts := opts.parts && opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0
 	for _, job := range jobs {
 		eg.Go(func() error {
-			if parts {
-				for _, next := range job.series {
-					mergeSeriesParts(job.target, next, opts.SortPoints)
-				}
-				return nil
-			}
-			job.target.flatten()
-			points := job.target.Points
+			// each step is stored at once, as a member may be the target itself
 			for _, next := range job.series {
-				points = MergePointsWithOpts(points, next.FlatPoints(), opts)
-				job.target.Points = points
+				if parts {
+					job.target.segs = MergeSegmentParts(job.target.segs, next.segs, opts.SortPoints)
+				} else {
+					job.target.segs = MergeSegments(job.target.segs, next.segs, opts)
+				}
 			}
-			job.target.PointSize = points.Size()
 			return nil
 		})
 	}
@@ -303,15 +296,11 @@ func (sl SeriesList) SortByTags() {
 	})
 }
 
+// SortPoints sorts each series' rows by epoch, keeping their order within an epoch
 func (sl SeriesList) SortPoints() {
-	eg := errgroup.Group{}
-	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
-		eg.Go(func() error {
-			s.flatten()
-			slices.SortFunc(s.Points, pointCmp)
-			return nil
-		})
+		if s != nil {
+			s.segs = s.segs.Sorted()
+		}
 	}
-	eg.Wait()
 }

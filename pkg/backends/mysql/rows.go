@@ -228,7 +228,7 @@ func (h *protocolHandler) renderDelta(d *nativedelta.Delta, plan *sqlanalyzer.Qu
 		}
 		// the series are in group order, which is how the rows come out within each bucket
 		for row := range r.Rows(dataset.RowOrder{}) {
-			blob, _ := dataset.BytesValue(row.Point.Values[0])
+			blob := rowBlob(row.Seg, row.Index)
 			next := len(out.Rows) * width
 			decoded := values[next : next+width : next+width]
 			if err := decodeRowBlob(decoded, blob, meta.Fields); err != nil {
@@ -239,6 +239,14 @@ func (h *protocolHandler) renderDelta(d *nativedelta.Delta, plan *sqlanalyzer.Qu
 	}
 	b.rows = out.Rows
 	return out, nil
+}
+
+// rowBlob returns a row's packed values, or nil for a null row
+func rowBlob(seg *dataset.Segment, i int) []byte {
+	if seg.NumCols() == 0 || !seg.KindAt(0, i).IsBytes() {
+		return nil
+	}
+	return seg.Bytes(0, i)
 }
 
 // r, or a copy with its series in group order; a series' rows share group values and a bucket holds
@@ -257,7 +265,14 @@ func seriesInGroupOrder(r *dataset.Result, comparator *groupComparator, fields [
 		if s == nil || s.PointCount() == 0 {
 			continue
 		}
-		blob, _ := dataset.BytesValue(s.PointAt(0).Values[0])
+		var blob []byte
+		if segs := s.Segments(); len(segs) > 0 {
+			seg := &segs[0]
+			for k := 1; seg.Len() == 0 && k < len(segs); k++ {
+				seg = &segs[k]
+			}
+			blob = rowBlob(seg, 0)
+		}
 		if err := decodeRowBlob(firsts[i*width:(i+1)*width], blob, fields); err != nil {
 			return nil, err
 		}

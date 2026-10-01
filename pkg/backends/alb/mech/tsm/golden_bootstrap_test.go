@@ -38,12 +38,9 @@ func goldenSeries(name string, tags dataset.Tags, query string, pts ...struct {
 ) *dataset.Series {
 	points := make(dataset.Points, len(pts))
 	for i, p := range pts {
-		points[i] = dataset.Point{Epoch: epoch.Epoch(p.e), Size: 32, Values: []any{p.v}}
+		points[i] = dataset.Point{Epoch: epoch.Epoch(p.e), Values: []any{p.v}}
 	}
-	return &dataset.Series{
-		Header: dataset.SeriesHeader{Name: name, Tags: tags, QueryStatement: query},
-		Points: points,
-	}
+	return dataset.NewSeries(dataset.SeriesHeader{Name: name, Tags: tags, QueryStatement: query}, points)
 }
 
 func dsWith(series ...*dataset.Series) *dataset.DataSet {

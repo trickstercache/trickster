@@ -36,23 +36,30 @@ func BenchmarkMarshalJSON(b *testing.B) {
 	for _, shape := range []struct{ series, points int }{{100, 1000}, {10, 60}} {
 		series := make([]*dataset.Series, shape.series)
 		for i := range series {
-			s := &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}}
-			s.Points = make(dataset.Points, shape.points)
-			for j := range s.Points {
-				s.Points[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+			s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}, nil)
+			pts := make(dataset.Points, shape.points)
+			for j := range pts {
+				pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
 					Values: []any{float64(i*j%9973) / 7, int64(j)}}
 			}
+			s.SetPoints(pts)
 			series[i] = s
 		}
-		ds := jsonTestDataSet(timeseries.DateTimeUnixMilli, fds, series...)
-		b.Run(fmt.Sprintf("%dx%d", shape.series, shape.points), func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if err := marshalTimeseriesJSON(io.Discard, ds, nil, 200); err != nil {
-					b.Fatal(err)
-				}
+		for _, tf := range []timeseries.FieldDataType{timeseries.DateTimeUnixMilli, timeseries.DateTimeSQL} {
+			ds := jsonTestDataSet(tf, fds, series...)
+			name := fmt.Sprintf("%dx%d", shape.series, shape.points)
+			if tf == timeseries.DateTimeSQL {
+				name += "/sql"
 			}
-		})
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					if err := marshalTimeseriesJSON(io.Discard, ds, nil, 200); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
 	}
 }
 
@@ -65,12 +72,13 @@ func BenchmarkMarshalXSV(b *testing.B) {
 	}
 	series := make([]*dataset.Series, 100)
 	for i := range series {
-		s := &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}}
-		s.Points = make(dataset.Points, 1000)
-		for j := range s.Points {
-			s.Points[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}, nil)
+		pts := make(dataset.Points, 1000)
+		for j := range pts {
+			pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
 				Values: []any{float64(i*j%9973) / 7, int64(j)}}
 		}
+		s.SetPoints(pts)
 		series[i] = s
 	}
 	ds := jsonTestDataSet(timeseries.DateTimeUnixMilli, fds, series...)
@@ -99,12 +107,13 @@ func BenchmarkMarshalNative(b *testing.B) {
 	}
 	series := make([]*dataset.Series, 100)
 	for i := range series {
-		s := &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}}
-		s.Points = make(dataset.Points, 1000)
-		for j := range s.Points {
-			s.Points[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}, nil)
+		pts := make(dataset.Points, 1000)
+		for j := range pts {
+			pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
 				Values: []any{float64(i*j%9973) / 7, int64(j)}}
 		}
+		s.SetPoints(pts)
 		series[i] = s
 	}
 	ds := jsonTestDataSet(timeseries.DateTimeUnixMilli, fds, series...)

@@ -17,7 +17,6 @@
 package model
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -26,11 +25,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
-	_ *timeseries.RequestOptions, writeNames bool, writeTypes bool,
+	rlo *timeseries.RequestOptions, writeNames bool, writeTypes bool,
 	separator byte,
 ) error {
 	fds, tags, vals, tfd := ds.FieldDefinitions()
@@ -58,17 +56,20 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 		fmtHeader = fmtPart
 	}
 
+	opts := formatOptions(rlo)
 	if hw, ok := w.(http.ResponseWriter); ok && hw != nil {
 		hw.Header().Set(headers.NameContentType, ctHeader)
 		hw.Header().Set(formatHeader, fmtHeader)
+		hw.Header().Set(TimezoneHeader, opts.ZoneName())
+	}
+
+	// a response without rows has no fields to name, and is empty
+	if len(ds.Results) == 0 || len(fds) == 0 {
+		return nil
 	}
 
 	if (len(tags) == 0 && len(vals) == 0) || tfd.DataType < 1 {
 		return timeseries.ErrNoTimerangeQuery
-	}
-
-	if len(ds.Results) == 0 {
-		return nil
 	}
 
 	fieldCount := len(fds)
@@ -76,30 +77,17 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 		return timeseries.ErrTableHeader
 	}
 
-	// ClickHouse TSV never quotes; it escapes. CSV quotes as encoding/csv's Writer does.
-	appendField := func(b []byte, field string) []byte {
-		if separator == '\t' {
-			return appendEscapedTSV(b, field)
-		}
-		return tstrings.AppendCSVField(b, field, separator)
-	}
 	cw := tbytes.NewChunkWriter(w)
-	writeRow := func(row []string) {
-		for i, cell := range row {
-			if i > 0 {
-				cw.Buf = append(cw.Buf, separator)
-			}
-			cw.Buf = appendField(cw.Buf, cell)
-		}
-		cw.Buf = append(cw.Buf, '\n')
-	}
-
-	// Helper function to write a row with field data
-	writeFieldRow := func(getValue func(timeseries.FieldDefinition) string) {
+	// the header rows are text, which TSV escapes and CSV quotes
+	writeFieldRow := func(name bool) {
 		row := make([]string, fieldCount)
 		set := func(fd timeseries.FieldDefinition) {
 			if fd.OutputPosition >= 0 && fd.OutputPosition < fieldCount {
-				row[fd.OutputPosition] = getValue(fd)
+				if name {
+					row[fd.OutputPosition] = fd.Name
+				} else {
+					row[fd.OutputPosition] = fd.SDataType
+				}
 			}
 		}
 		set(tfd)
@@ -111,49 +99,30 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 		for _, fd := range vals {
 			set(fd)
 		}
-		writeRow(row)
+		for i, cell := range row {
+			if i > 0 {
+				cw.Buf = append(cw.Buf, separator)
+			}
+			cw.Buf = appendXSVText(cw.Buf, cell, 0, separator)
+		}
+		cw.Buf = append(cw.Buf, '\n')
 	}
-
 	if writeNames || writeTypes {
-		writeFieldRow(func(fd timeseries.FieldDefinition) string { return fd.Name })
+		writeFieldRow(true)
 	}
 	if writeTypes {
-		writeFieldRow(func(fd timeseries.FieldDefinition) string { return fd.SDataType })
+		writeFieldRow(false)
 	}
-	// each row's cells by position; a field that writes text keeps it, and the others reference it
-	cells := make([]xsvCell, fieldCount)
 	rows, _ := timeOrderedRows(ds.Results[0])
+	layout := newOutLayout(fds, opts, len(ds.Results[0].SeriesList))
 	for r := range rows {
-		s, p := r.series, r.point
-		clear(cells)
-		var i int
-		for f := range fds {
-			fd := &fds[f]
-			if fd.OutputPosition >= fieldCount || fd.OutputPosition < 0 {
-				continue
-			}
-			switch fd.Role {
-			case timeseries.RoleTimestamp:
-				cells[fd.OutputPosition] = xsvCell{kind: xsvCellTime, fd: fd}
-			case timeseries.RoleUntracked:
-				if fd.DefaultValue != "" {
-					cells[fd.OutputPosition] = xsvCell{text: fd.DefaultValue}
-				}
-			case timeseries.RoleTag:
-				cells[fd.OutputPosition] = xsvCell{text: s.Header.Tags[fd.Name]}
-			case timeseries.RoleValue:
-				if i < len(p.Values) {
-					cells[fd.OutputPosition] = xsvCell{kind: xsvCellValue, value: p.Values[i]}
-					i++
-				}
-			}
-		}
+		cells := layout.rowCells(r)
 		b := cw.Buf
 		for c := range cells {
 			if c > 0 {
 				b = append(b, separator)
 			}
-			b = appendXSVCell(b, &cells[c], p, appendField)
+			b = appendXSVCell(b, &cells[c], r, opts.DateTimeFormat, separator)
 		}
 		b = append(b, '\n')
 		cw.Buf = b
@@ -162,45 +131,99 @@ func marshalTimeseriesXSV(w io.Writer, ds *dataset.DataSet,
 	return cw.Close()
 }
 
-// one cell of a data row: text, or a point's time or value
-type xsvCell struct {
-	kind  byte
-	text  string
-	fd    *timeseries.FieldDefinition
-	value any
+// nullXSV is how TSV and CSV write a NULL
+const nullXSV = nullToken
+
+// appendXSVCell appends a cell as ClickHouse writes it in TSV or CSV
+func appendXSVCell(b []byte, c *outCell, r outputRow, format, sep byte) []byte {
+	switch c.kind {
+	case cellNone:
+		return b
+	case cellText:
+		return appendXSVText(b, c.text, 0, sep)
+	case cellTime:
+		f := c.f
+		switch f.class {
+		case classDateTime:
+			b = quoteCSV(b, sep)
+			return quoteCSV(f.appendTime(b, r.epoch(), format), sep)
+		case classDate:
+			b = quoteCSV(b, sep)
+			return quoteCSV(r.epoch().AppendFormat(b, timeseries.DateSQL, false), sep)
+		}
+		return r.epoch().AppendFormat(b, f.fd.DataType, false)
+	case cellTag:
+		if c.null {
+			return append(b, nullXSV...)
+		}
+		return appendXSVString(b, c.f, c.text, format, sep)
+	}
+	seg, col, i := r.seg, c.col, r.i
+	switch seg.KindAt(col, i) {
+	case dataset.KindNull:
+		return append(b, nullXSV...)
+	case dataset.KindFloat64:
+		if c.f.class == classDecimal {
+			return strconv.AppendFloat(b, seg.Float64(col, i), 'f', -1, 64)
+		}
+		return appendFloat(b, seg.Float64(col, i))
+	case dataset.KindInt64:
+		return strconv.AppendInt(b, seg.Int64(col, i), 10)
+	case dataset.KindUint64:
+		return strconv.AppendUint(b, seg.Uint64(col, i), 10)
+	case dataset.KindBool:
+		return strconv.AppendBool(b, seg.Bool(col, i))
+	case dataset.KindString:
+		return appendXSVString(b, c.f, seg.Text(col, i), format, sep)
+	}
+	return appendXSVText(b, seg.FormatText(col, i), 0, sep)
 }
 
-const (
-	xsvCellText byte = iota
-	xsvCellTime
-	xsvCellValue
-)
-
-// appends the cell as fmt's %v writes it; a time or a number holds nothing to quote or escape
-func appendXSVCell(b []byte, c *xsvCell, p *dataset.Point, appendField func([]byte, string) []byte) []byte {
-	switch c.kind {
-	case xsvCellTime:
-		return p.Epoch.AppendFormat(b, c.fd.DataType, false)
-	case xsvCellValue:
-		switch v := c.value.(type) {
-		case string:
-			return appendField(b, v)
-		case float64:
-			return strconv.AppendFloat(b, v, 'g', -1, 64)
-		case float32:
-			return strconv.AppendFloat(b, float64(v), 'g', -1, 32)
-		case int64:
-			return strconv.AppendInt(b, v, 10)
-		case int:
-			return strconv.AppendInt(b, int64(v), 10)
-		case uint64:
-			return strconv.AppendUint(b, v, 10)
-		case bool:
-			return strconv.AppendBool(b, v)
-		case nil:
-			return append(b, "<nil>"...)
+// appendXSVString appends a tag's or value's text by its type: a number bare, a DateTime in the
+// request's zone and format, and other text escaped (TSV) or quoted (CSV)
+func appendXSVString(b []byte, f *outField, text string, format, sep byte) []byte {
+	switch f.class {
+	case classNumber, classDecimal, classFloat, classBool:
+		return append(b, text...)
+	case classDateTime:
+		b = quoteCSV(b, sep)
+		return quoteCSV(f.appendStoredTime(b, []byte(text), format), sep)
+	case classCompound:
+		// TSV writes a compound's literal as it is, its elements escaped within it
+		if sep == '\t' {
+			return append(b, text...)
 		}
-		return appendField(b, fmt.Sprint(c.value))
 	}
-	return appendField(b, c.text)
+	return appendXSVText(b, text, f.fixed, sep)
+}
+
+// appendXSVText appends text padded with NULs to width, escaped as ClickHouse TSV escapes it or quoted
+// as its CSV quotes every text
+func appendXSVText(b []byte, text string, width int, sep byte) []byte {
+	if sep == '\t' {
+		b = appendEscapedTSV(b, text)
+		for range width - len(text) {
+			b = append(b, '\\', '0')
+		}
+		return b
+	}
+	b = append(b, '"')
+	for i := range len(text) {
+		if text[i] == '"' {
+			b = append(b, '"')
+		}
+		b = append(b, text[i])
+	}
+	for range width - len(text) {
+		b = append(b, 0)
+	}
+	return append(b, '"')
+}
+
+// quoteCSV appends CSV's quote, and nothing for TSV
+func quoteCSV(b []byte, sep byte) []byte {
+	if sep == '\t' {
+		return b
+	}
+	return append(b, '"')
 }

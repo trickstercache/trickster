@@ -36,15 +36,11 @@ func batchMergeSeries(name, host string, values ...string) *Series {
 			Values: []any{value},
 		}
 	}
-	return &Series{
-		Header: SeriesHeader{
-			Name:           name,
-			Tags:           Tags{"host": host},
-			QueryStatement: "fixture",
-		},
-		Points:    points,
-		PointSize: points.Size(),
-	}
+	return NewSeries(SeriesHeader{
+		Name:           name,
+		Tags:           Tags{"host": host},
+		QueryStatement: "fixture",
+	}, points)
 }
 
 func batchMergeFixture() []*DataSet {

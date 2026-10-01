@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 
+	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -31,8 +32,10 @@ import (
 
 // Common URL Parameter Names
 const (
-	upQuery     = "query"
-	upSessionID = "session_id"
+	upQuery = "query"
+	// the date_time_output_format Trickster asks the origin for
+	dateTimeOutputISO = "iso"
+	upSessionID       = "session_id"
 )
 
 var (
@@ -84,17 +87,20 @@ func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQu
 	return engines.FetchPartialBucket(r, nil, trq, c.Modeler())
 }
 
+// setQuery sets the upstream request's query, asking for its DateTimes as ISO 8601 UTC, which reads
+// the same in any zone and across a clock's repeated hour
 func (c *Client) setQuery(r *http.Request, query string) error {
-	if methods.HasBody(r.Method) {
-		request.SetBody(r, []byte(query))
-		return nil
-	}
 	if r.URL == nil {
 		c.observeRewriteFailure("invalid_request")
 		return errInvalidRewriteRequest
 	}
 	parameters := r.URL.Query()
-	parameters.Set(upQuery, query)
+	parameters.Set(modelch.SettingDateTimeOutput, dateTimeOutputISO)
+	if methods.HasBody(r.Method) {
+		request.SetBody(r, []byte(query))
+	} else {
+		parameters.Set(upQuery, query)
+	}
 	r.URL.RawQuery = parameters.Encode()
 	return nil
 }

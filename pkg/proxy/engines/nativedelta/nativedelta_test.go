@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -196,7 +197,7 @@ func testOps(counts *int) DeltaOps[*payload] {
 func testRows(statement string) *Delta {
 	// range(start,end) gives a point a minute, a partial bucket its label and both neighbors (a crop to
 	// the label drops them), anything else one point; each holds the statement
-	s := &dataset.Series{Header: dataset.SeriesHeader{Name: "rows"}}
+	s := dataset.NewSeries(dataset.SeriesHeader{Name: "rows"}, nil)
 	ds := &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{s}}}}
 	var start, end, label, lower, upper int64
 	if _, err := fmt.Sscanf(statement, "partial(%d,%d,%d)", &label, &lower, &upper); err == nil {
@@ -205,9 +206,9 @@ func testRows(statement string) *Delta {
 		start, end = 0, 0
 	}
 	for at := start; at <= end; at += 60 {
-		s.Points = append(s.Points, dataset.Point{
-			Epoch: epoch.Epoch(time.Duration(at) * time.Second), Size: 1, Values: []any{statement},
-		})
+		s.SetPoints(append(dspoints.Of(s), dataset.Point{
+			Epoch: epoch.Epoch(time.Duration(at) * time.Second), Values: []any{statement},
+		}))
 	}
 	ds.ExtentList = timeseries.ExtentList{{Start: time.Unix(start, 0), End: time.Unix(end, 0)}}
 	return &Delta{Header: []byte(testHeader), DS: ds}
@@ -224,7 +225,7 @@ func statements(o Outcome[*payload]) []string {
 	var out []string
 	for _, r := range o.Delta.DS.Results {
 		for row := range r.Rows(dataset.RowOrder{}) {
-			if st := row.Point.Values[0].(string); len(out) == 0 || out[len(out)-1] != st {
+			if st := row.Value(0).(string); len(out) == 0 || out[len(out)-1] != st {
 				out = append(out, st)
 			}
 		}

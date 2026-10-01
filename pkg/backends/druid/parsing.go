@@ -158,8 +158,10 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return c.reject(trq, ro, false, modeProxy, reasonInvalidJSON, errInvalidJSON)
 	}
 
-	plan := model.NewQueryPlan(queryType, dimensions, valueFieldNames(document),
-		booleanValue(document["descending"]), renderBody[:intervalStart], renderBody[intervalEnd:])
+	valueFields, aggregations := valueFieldNames(document)
+	plan := model.NewQueryPlan(queryType, dimensions, valueFields,
+		booleanValue(document["descending"]), renderBody[:intervalStart], renderBody[intervalEnd:]).
+		WithAggregations(aggregations)
 	trq.Statement = string(cacheBody)
 	trq.CacheKeyElements["query"] = trq.Statement
 	trq.Step = step
@@ -638,9 +640,15 @@ func dimensionName(value any) (string, bool) {
 	return "", false
 }
 
-func valueFieldNames(document map[string]any) []string {
+// valueFieldNames returns the aggregations' and then the post-aggregations' names, each once, and
+// how many are aggregations
+func valueFieldNames(document map[string]any) ([]string, int) {
 	var out []string
-	for _, key := range []string{"aggregations", "postAggregations"} {
+	var aggregations int
+	for i, key := range []string{"aggregations", "postAggregations"} {
+		if i == 1 {
+			aggregations = len(out)
+		}
 		values, _ := document[key].([]any)
 		for _, value := range values {
 			definition, _ := value.(map[string]any)
@@ -650,7 +658,7 @@ func valueFieldNames(document map[string]any) []string {
 			}
 		}
 	}
-	return out
+	return out, aggregations
 }
 
 func booleanValue(value any) bool {

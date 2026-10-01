@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -80,7 +81,7 @@ func TestMarshalTimeseries(t *testing.T) {
 // the output encoding/json gives the wire format document, which the marshalers must match
 func referenceMarshal(t *testing.T, ds *dataset.DataSet, rlo *timeseries.RequestOptions) []byte {
 	t.Helper()
-	wfdoc, err := toWireFormat(ds, rlo)
+	wfdoc, err := legacyToWireFormat(ds, rlo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,8 +111,8 @@ func requireReferenceOutput(t *testing.T, name string, ds *dataset.DataSet) {
 
 func marshalTestSeries(name string, tags dataset.Tags, at int, fields []string, points ...dataset.Point,
 ) *dataset.Series {
-	s := &dataset.Series{Header: dataset.SeriesHeader{Name: name, Tags: tags,
-		TimestampField: timeseries.FieldDefinition{Name: "time", OutputPosition: at}}, Points: points}
+	s := dataset.NewSeries(dataset.SeriesHeader{Name: name, Tags: tags,
+		TimestampField: timeseries.FieldDefinition{Name: "time", OutputPosition: at}}, points)
 	for _, f := range fields {
 		s.Header.ValueFieldsList = append(s.Header.ValueFieldsList, timeseries.FieldDefinition{Name: f})
 	}
@@ -182,7 +183,7 @@ func TestMarshalMatchesEncodingJSON(t *testing.T) {
 					for i := range values {
 						values[i] = value()
 					}
-					s.Points = append(s.Points, at(int64(1700000000+60*p), int64(rng.IntN(1e9)), values...))
+					s.SetPoints(append(dspoints.Of(s), at(int64(1700000000+60*p), int64(rng.IntN(1e9)), values...)))
 				}
 				res.SeriesList = append(res.SeriesList, s)
 			}
@@ -214,7 +215,7 @@ func TestMarshalIndented(t *testing.T) {
 		marshalTestSeries("m", dataset.Tags{"k": "v"}, 0, []string{"v"}, dataset.Point{Epoch: 1, Values: []any{1.0}}),
 	}}}}
 	rlo := &timeseries.RequestOptions{OutputFormat: 1}
-	wfdoc, _ := toWireFormat(ds, rlo)
+	wfdoc, _ := legacyToWireFormat(ds, rlo)
 	want, _ := json.MarshalIndent(wfdoc, "", "  ")
 	got, err := MarshalTimeseries(ds, rlo, 200)
 	if err != nil || !bytes.Equal(got, want) {
@@ -226,6 +227,17 @@ func TestMarshalIndented(t *testing.T) {
 	}
 	if err := MarshalTimeseriesWriter(nil, rlo, 200, &w); err != timeseries.ErrUnknownFormat {
 		t.Fatal(err)
+	}
+	// a value JSON can't hold fails the document before any of it is written
+	nan := &dataset.DataSet{Results: []*dataset.Result{{SeriesList: []*dataset.Series{
+		marshalTestSeries("m", nil, 0, []string{"v"}, dataset.Point{Epoch: 1, Values: []any{math.NaN()}}),
+	}}}}
+	w.Reset()
+	if b, err := MarshalTimeseries(nan, rlo, 200); err == nil || b != nil {
+		t.Fatalf("marshaled %s, %v", b, err)
+	}
+	if err := MarshalTimeseriesWriter(nan, rlo, 200, &w); err == nil || w.Len() != 0 {
+		t.Fatalf("wrote %s, %v", w.Bytes(), err)
 	}
 }
 
@@ -246,7 +258,7 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 				for i := range values {
 					values[i] = float64(rng.IntN(100))
 				}
-				s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*p) * 1e9), Values: values})
+				s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*p) * 1e9), Values: values}))
 			}
 			r.SeriesList = append(r.SeriesList, s)
 		}

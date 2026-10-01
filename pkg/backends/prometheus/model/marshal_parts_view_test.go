@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -33,7 +34,7 @@ func partsTestSet(rng *weaktest.Rand, lo, hi int, hosts []string) *dataset.DataS
 	r := &dataset.Result{}
 	for _, host := range hosts {
 		hist := rng.IntN(4) == 0
-		s := &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"job": "node", "instance": host}}}
+		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"job": "node", "instance": host}}, nil)
 		if hist {
 			s.Header.ValueFieldsList = []timeseries.FieldDefinition{{Name: fieldNameHistogram}}
 		} else {
@@ -44,7 +45,7 @@ func partsTestSet(rng *weaktest.Rand, lo, hi int, hosts []string) *dataset.DataS
 			if hist {
 				v = `{"count":"` + v + `"}`
 			}
-			s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(at) * 15e9, Values: []any{v}})
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(at) * 15e9, Values: []any{v}}))
 		}
 		r.SeriesList = append(r.SeriesList, s)
 	}

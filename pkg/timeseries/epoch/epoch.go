@@ -53,9 +53,27 @@ func (e Epoch) AppendFormat(dst []byte, to timeseries.FieldDataType, quoteDateTi
 		return strconv.AppendInt(dst, int64(e/MillionNS), 10)
 	case timeseries.DateTimeUnixNano:
 		return strconv.AppendInt(dst, int64(e), 10)
-	case timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL,
-		timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
-		return AppendTime(dst, time.Unix(0, int64(e)), to, quoteDateTimeSQL)
+	case timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL:
+		// as AppendTime writes it, without building a time.Time
+		if quoteDateTimeSQL {
+			dst = append(dst, '\'')
+		}
+		days, sod, _ := splitEpoch(e)
+		if to != timeseries.TimeSQL {
+			dst = appendDate(dst, days)
+		}
+		if to == timeseries.DateTimeSQL {
+			dst = append(dst, ' ')
+		}
+		if to != timeseries.DateSQL {
+			dst = appendClock(dst, sod)
+		}
+		if quoteDateTimeSQL {
+			dst = append(dst, '\'')
+		}
+		return dst
+	case timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano:
+		return AppendCanonicalTime(dst, e, false, true)
 	}
 	return append(dst, '0')
 }

@@ -556,7 +556,7 @@ func TestGroupOrderingAcrossSparseBuckets(t *testing.T) {
 	}
 	// series without rows yield none, wherever they are
 	r := d.DS.Results[0]
-	r.SeriesList = append(slices.Insert(r.SeriesList, 0, nil), &dataset.Series{})
+	r.SeriesList = append(slices.Insert(r.SeriesList, 0, nil), dataset.NewSeries(dataset.SeriesHeader{}, nil))
 	got, err := dpcTestHandler.deltaResult(d, plan)
 	if err != nil {
 		t.Fatal(err)

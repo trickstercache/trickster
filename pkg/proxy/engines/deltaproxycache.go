@@ -56,7 +56,8 @@ const (
 	statusOff = "off"
 	statusErr = "err"
 
-	hnClickHouseFormat = "X-ClickHouse-Format"
+	hnClickHouseFormat   = "X-ClickHouse-Format"
+	hnClickHouseTimezone = "X-ClickHouse-Timezone"
 
 	// errorBodyCap bounds the amount of upstream error body copied into
 	// HTTPDocument on non-2xx responses. Protects singleflight waiters
@@ -1002,7 +1003,9 @@ func getTimeseriesReader(resp *http.Response) (io.Reader, io.Closer) {
 	reader, closer := getDecoderReader(resp)
 	// a response that names its format, as ClickHouse's do, tells the unmarshaler how to read it
 	if format := resp.Header.Get(hnClickHouseFormat); format != "" {
-		return timeseries.NewFormatHintReader(reader, format), closer
+		hr := timeseries.NewFormatHintReader(reader, format)
+		hr.Timezone = resp.Header.Get(hnClickHouseTimezone)
+		return hr, closer
 	}
 	return reader, closer
 }
@@ -1083,7 +1086,12 @@ func fetchExtents(
 			}
 			setResourceSpanAttributes(mrsc, spanMR)
 
-			body, resp, _, fetchErr := rq.Fetch()
+			f, fetchErr := rq.fetchDecoded(func(resp *http.Response) (timeseries.Timeseries, error) {
+				tr, dec := getTimeseriesReader(resp)
+				defer closeDecoder(dec)
+				return wur(tr, rsc.TimeRangeQuery)
+			})
+			resp := f.resp
 			if resp != nil {
 				setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, spanMR)
 			}
@@ -1102,10 +1110,9 @@ func fetchExtents(
 				return nil
 			}
 
-			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				tr, dec := getTimeseriesReader(resp)
-				nts, ferr := wur(tr, rsc.TimeRangeQuery)
-				closeDecoder(dec)
+			// an empty 200 holds nothing to cache, and fails nothing
+			if resp.StatusCode == http.StatusOK && (f.ts != nil || f.decodeErr != nil) {
+				nts, ferr := f.ts, f.decodeErr
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{keys.Detail: ferr.Error()})

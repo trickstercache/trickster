@@ -112,9 +112,7 @@ func (m *modeRecorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	// answers as a merge member, so a merging ALB's response carries its warnings
 	if rsc := request.GetResources(r); rsc != nil {
-		rsc.TS = &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{{
-			Header: dataset.SeriesHeader{Name: saLeader},
-		}}}}}
+		rsc.TS = &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Name: saLeader}, nil)}}}}
 		rsc.MergeFunc, rsc.MergeRespondFunc = saMergeFunc, respondWithWarnings
 	}
 	w.WriteHeader(http.StatusOK)

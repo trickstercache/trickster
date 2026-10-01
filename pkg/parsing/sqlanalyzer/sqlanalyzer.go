@@ -166,6 +166,8 @@ type QueryPlan struct {
 	// renders as written, so each request within a bucket renders the same statement
 	UpperIsNow   bool
 	GroupColumns []string
+	// BucketGroupIndex is the bucket's place among the GROUP BY terms, which GroupColumns leaves out
+	BucketGroupIndex int
 	// DropsPartialBuckets reports that range normalization excludes partial
 	// raw-time buckets. Consumers requiring the original SQL result must use
 	// object caching or proxying instead of rendering this plan.
@@ -188,6 +190,12 @@ type QueryPlan struct {
 	// it, and no shared code interprets it.
 	OutputFormat byte
 	Renderer     ExtentRenderer
+	// ReadsZone reports that the statement reads the session's time zone other than through its bucket,
+	// whose alignment a provider checks against the zone: its rows then depend on the zone
+	ReadsZone bool
+	// ZonedBounds reports a primary time bound written as text or a date, which the database reads in
+	// the session's zone and the analysis reads as UTC, so it's only right in UTC
+	ZonedBounds bool
 }
 
 // StepAlignments are the step alignment modes a delta-cacheable SQL plan supports

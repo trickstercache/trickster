@@ -61,6 +61,16 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		c.ProxyHandler(w, r)
 		return
 	}
+	// a response's DateTimes are written in the server's zone unless the request sets its own; until
+	// the server's zone is known, a request that needs it is proxied, which learns it
+	if _, ok := sessionZone(qp, sqlQuery); !ok && !c.resolveZone(r.Context()) {
+		logger.Debug("ClickHouse time zone is not known yet, proxying", logging.Pairs{
+			keys.BackendName: c.observabilityBackendName(),
+			keys.Dialect:     clickHouseDialect,
+		})
+		c.ProxyHandler(w, r)
+		return
+	}
 	r.URL = urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	engines.DeltaProxyCacheRequest(w, r, c.Modeler())
 }

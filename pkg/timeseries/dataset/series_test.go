@@ -24,33 +24,28 @@ import (
 
 func testSeries() *Series {
 	sh := testSeriesHeader()
-	return &Series{
-		Header: sh,
-		Points: testPoints(),
-	}
+	return NewSeries(sh, testPoints())
 }
 
 func testSeries2() *Series {
 	sh := testSeriesHeader2()
-	return &Series{
-		Header: sh,
-		Points: testPoints(),
-	}
+	return NewSeries(sh, testPoints())
 }
 
 func testSeries3() *Series {
 	sh := testSeriesHeader3()
-	return &Series{
-		Header: sh,
-		Points: testPoints(),
-	}
+	return NewSeries(sh, testPoints())
 }
 
 func TestSeriesSize(t *testing.T) {
 	s := testSeries()
-	size := s.Size()
-	if size != 72 {
-		t.Errorf("expected %d got %d", 72, size)
+	// two rows of two int64 values: 8 bytes per epoch and per value
+	const rows = 2 * 8 * (1 + 2)
+	if got := s.Segments().Size(); got != rows {
+		t.Errorf("rows take %d bytes, want %d", got, rows)
+	}
+	if want := 16 + int64(s.Header.Size) + rows; s.Size() != want {
+		t.Errorf("expected %d got %d", want, s.Size())
 	}
 }
 
@@ -142,7 +137,7 @@ func TestSeriesClone(t *testing.T) {
 		t.Error("series clone mismatch")
 	}
 
-	if s2.Points[0].Epoch != s.Points[0].Epoch {
+	if seriesPoints(s2)[0].Epoch != seriesPoints(s)[0].Epoch {
 		t.Error("series clone mismatch")
 	}
 }

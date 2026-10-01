@@ -17,7 +17,7 @@
 package stream_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
 	"errors"
 	"time"
 
@@ -95,15 +95,14 @@ func newMatrixDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 	valueFields := timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.Float64,
 		Role: timeseries.RoleValue}}
 	var status string
-	var pair []json.RawMessage
-	series := func(dec *json.Decoder) error {
+	series := func(dec *jsontext.Decoder) error {
 		defer b.EndSeries()
 		var open bool
 		return stream.Object(dec, func(key string) error {
 			switch key {
 			case "metric":
 				var tags dataset.Tags
-				if err := dec.Decode(&tags); err != nil {
+				if err := stream.Decode(dec, &tags); err != nil {
 					return err
 				}
 				b.StartSeries(dataset.SeriesHeader{Name: "matrix", Tags: tags, ValueFieldsList: valueFields})
@@ -114,34 +113,41 @@ func newMatrixDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 					return errMetricFirst
 				}
 				return stream.Array(dec, func() error {
-					if err := dec.Decode(&pair); err != nil {
-						return err
-					}
-					if len(pair) != 2 {
-						return timeseries.ErrInvalidBody
-					}
-					ep, err := epoch.ParseDecimal(pair[0], timeseries.DateTimeUnixSecs)
-					if err != nil {
-						return err
-					}
-					v, err := stream.ParseJSONValue(pair[1], timeseries.Float64)
-					if err != nil {
-						return err
-					}
+					// each [time, "value"] pair is read an element at a time, as raw bytes valid
+					// only until the next read, so nothing is copied that the row doesn't keep
 					r := b.Row()
-					r.SetEpoch(ep)
-					r.AddValue(v)
+					n := 0
+					err := stream.Array(dec, func() error {
+						raw, err := dec.ReadValue()
+						if err != nil {
+							return err
+						}
+						switch n++; n {
+						case 1:
+							ep, err := epoch.ParseDecimal(raw, timeseries.DateTimeUnixSecs)
+							r.SetEpoch(ep)
+							return err
+						case 2:
+							v, err := stream.ParseJSONValue(raw, timeseries.Float64)
+							r.AddValue(v)
+							return err
+						}
+						return timeseries.ErrInvalidBody
+					})
+					if err != nil || n != 2 {
+						return errors.Join(err, timeseries.ErrInvalidBody)
+					}
 					return r.Commit()
 				})
 			}
 			return stream.Skip(dec)
 		})
 	}
-	walk := func(dec *json.Decoder) error {
+	walk := func(dec *jsontext.Decoder) error {
 		return stream.Object(dec, func(key string) error {
 			switch key {
 			case "status":
-				return dec.Decode(&status)
+				return stream.Decode(dec, &status)
 			case "data":
 				return stream.Object(dec, func(key string) error {
 					if key != "result" {
@@ -168,36 +174,43 @@ func newRowsDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 	// any order, checking the trailing total once all rows are read
 	b := dataset.NewBuilder(trq, dataset.BuilderOptions{Fields: rowFields, SeriesName: "rows",
 		TagString: stream.JSONTagString, SortSeries: true})
-	var row []json.RawMessage
 	var count, total int
-	walk := func(dec *json.Decoder) error {
+	walk := func(dec *jsontext.Decoder) error {
 		return stream.Object(dec, func(key string) error {
 			switch key {
 			case "rows":
 				return stream.Array(dec, func() error {
-					if err := dec.Decode(&row); err != nil {
-						return err
-					}
-					if len(row) != 3 {
-						return timeseries.ErrInvalidBody
-					}
-					ep, err := epoch.ParseDecimal(row[0], timeseries.DateTimeUnixMilli)
-					if err != nil {
-						return err
-					}
-					v, err := stream.ParseJSONValue(row[2], timeseries.Float64)
-					if err != nil {
-						return err
-					}
 					r := b.Row()
-					r.SetEpoch(ep)
-					r.SetTag(0, row[1])
-					r.AddValue(v)
+					n := 0
+					err := stream.Array(dec, func() error {
+						raw, err := dec.ReadValue()
+						if err != nil {
+							return err
+						}
+						switch n++; n {
+						case 1:
+							ep, err := epoch.ParseDecimal(raw, timeseries.DateTimeUnixMilli)
+							r.SetEpoch(ep)
+							return err
+						case 2:
+							// the tag's bytes are copied
+							r.SetTag(0, raw)
+							return nil
+						case 3:
+							v, err := stream.ParseJSONValue(raw, timeseries.Float64)
+							r.AddValue(v)
+							return err
+						}
+						return timeseries.ErrInvalidBody
+					})
+					if err != nil || n != 3 {
+						return errors.Join(err, timeseries.ErrInvalidBody)
+					}
 					count++
 					return r.Commit()
 				})
 			case "total":
-				return dec.Decode(&total)
+				return stream.Decode(dec, &total)
 			}
 			return stream.Skip(dec)
 		})

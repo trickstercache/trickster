@@ -17,12 +17,15 @@
 package dataset
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -68,16 +71,16 @@ func commitRows(t *testing.T, b *Builder, rows ...testRow) {
 }
 
 func pointEpochs(s *Series) []epoch.Epoch {
-	out := make([]epoch.Epoch, len(s.Points))
-	for i, p := range s.Points {
+	out := make([]epoch.Epoch, s.PointCount())
+	for i, p := range seriesPoints(s) {
 		out[i] = p.Epoch
 	}
 	return out
 }
 
 func pointValues(s *Series) []any {
-	out := make([]any, len(s.Points))
-	for i, p := range s.Points {
+	out := make([]any, s.PointCount())
+	for i, p := range seriesPoints(s) {
 		out[i] = p.Values[0]
 	}
 	return out
@@ -85,12 +88,7 @@ func pointValues(s *Series) []any {
 
 func requireSizes(t *testing.T, s *Series) {
 	t.Helper()
-	var total int64
-	for _, p := range s.Points {
-		require.Equal(t, PointSize(p.Values), p.Size)
-		total += int64(p.Size)
-	}
-	require.Equal(t, total, s.PointSize)
+	require.Positive(t, s.Size())
 	require.Positive(t, s.Header.Size)
 }
 
@@ -129,6 +127,17 @@ func TestBuilderRowMode(t *testing.T) {
 	sl[0].Header.ValueFieldsList[0].DataType = timeseries.Int64
 	require.Equal(t, timeseries.Float64, sl[1].Header.ValueFieldsList[0].DataType)
 	require.Equal(t, timeseries.Float64, fields.Values[0].DataType)
+	// a series can be named from its tags instead
+	b = NewBuilder(trq, BuilderOptions{Fields: fields, SeriesName: "sql",
+		NameSeries: func(tags Tags) string { return "host=" + tags["host"] }})
+	commitRows(t, b, testRow{e: 1, host: "a", v: 1.0}, testRow{e: 1, host: "b", v: 2.0},
+		testRow{e: 2, host: "a", v: 3.0})
+	ds, err = b.Finish()
+	require.NoError(t, err)
+	sl = ds.Results[0].SeriesList
+	require.Len(t, sl, 2)
+	require.Equal(t, "host=a", sl[0].Header.Name)
+	require.Equal(t, "host=b", sl[1].Header.Name)
 }
 
 func TestBuilderSortsOnlyUnorderedSeries(t *testing.T) {
@@ -140,8 +149,8 @@ func TestBuilderSortsOnlyUnorderedSeries(t *testing.T) {
 		testRow{e: 2, host: "b", v: 4.0},
 		testRow{e: 2, host: "a", v: 5.0},
 	)
-	require.True(t, b.results[0].series[0].unordered)
-	require.False(t, b.results[0].series[1].unordered)
+	require.True(t, b.log.series[b.results[0].series[0].id].unordered)
+	require.False(t, b.log.series[b.results[0].series[1].id].unordered)
 	ds, err := b.Finish()
 	require.NoError(t, err)
 	require.Nil(t, ds.ExtentList)
@@ -210,13 +219,10 @@ func TestBuilderDuplicateError(t *testing.T) {
 func TestBuilderFirstWinsReleasesValues(t *testing.T) {
 	b := NewBuilder(nil, BuilderOptions{Fields: testBuilderFields(), Duplicates: DuplicatesFirstWins})
 	commitRows(t, b, testRow{e: 1, host: "a", v: 1.0})
-	used := len(b.arena)
+	used := len(b.log.cells)
+	// a dropped duplicate's values are rolled back from the log
 	commitRows(t, b, testRow{e: 1, host: "a", v: 2.0})
-	require.Len(t, b.arena, used)
-	// values that are not the latest allocation cannot be released
-	b.releaseValues([]any{1})
-	b.releaseValues(nil)
-	require.Len(t, b.arena, used)
+	require.Len(t, b.log.cells, used)
 }
 
 func TestBuilderTags(t *testing.T) {
@@ -321,7 +327,7 @@ func TestBuilderSeriesMode(t *testing.T) {
 		require.NoError(t, r.Commit())
 	}
 	require.NoError(t, b.AppendPoint(Point{Epoch: 4, Values: []any{"42"}}))
-	require.NoError(t, b.AppendPoint(Point{Epoch: 5, Values: []any{"7"}, Size: 99}))
+	require.NoError(t, b.AppendPoint(Point{Epoch: 5, Values: []any{"7"}}))
 
 	r := b.Row()
 	r.SetEpoch(6)
@@ -353,8 +359,7 @@ func TestBuilderSeriesMode(t *testing.T) {
 	require.Len(t, sl, 2)
 	require.Equal(t, "up", sl[0].Header.Name)
 	require.Equal(t, []epoch.Epoch{1, 2, 3, 4, 5}, pointEpochs(sl[0]))
-	require.Equal(t, PointSize([]any{"42"}), sl[0].Points[3].Size)
-	require.Equal(t, 99, sl[0].Points[4].Size)
+	require.Equal(t, []any{"1", "1", "1", "42", "7"}, pointValues(sl[0]))
 	require.Equal(t, "down", sl[1].Header.Name)
 }
 
@@ -435,39 +440,34 @@ func TestBuilderFinished(t *testing.T) {
 	require.ErrorIs(t, r.Commit(), ErrBuilderFinished)
 }
 
-func TestBuilderValueChunks(t *testing.T) {
+func TestBuilderManyAndWideRows(t *testing.T) {
+	const rows, wideValues = 200, 10000
 	b := NewBuilder(nil, BuilderOptions{})
 	b.StartSeries(SeriesHeader{Name: "s"})
-	for i := range 3 * minValueChunk {
+	for i := range rows {
 		r := b.Row()
 		r.SetEpoch(epoch.Epoch(i))
 		r.AddValue(int64(i))
 		require.NoError(t, r.Commit())
 	}
-	require.Equal(t, 2*minValueChunk, b.chunk)
+	b.StartSeries(SeriesHeader{Name: "wide"})
 	wide := b.Row()
-	wide.SetEpoch(epoch.Epoch(3 * minValueChunk))
-	for i := range 2 * maxValueChunk {
-		wide.AddValue(i)
+	wide.SetEpoch(1)
+	for i := range wideValues {
+		wide.AddValue(int64(i))
 	}
 	require.NoError(t, wide.Commit())
 	ds, err := b.Finish()
 	require.NoError(t, err)
-	pts := ds.Results[0].SeriesList[0].Points
-	require.Len(t, pts, 3*minValueChunk+1)
-	for i, p := range pts[:3*minValueChunk] {
+	pts := seriesPoints(ds.Results[0].SeriesList[0])
+	require.Len(t, pts, rows)
+	for i, p := range pts {
 		require.Equal(t, []any{int64(i)}, p.Values)
-		require.Equal(t, 1, cap(p.Values))
 	}
-	require.Len(t, pts[3*minValueChunk].Values, 2*maxValueChunk)
-}
-
-func TestPointSize(t *testing.T) {
-	require.Equal(t, pointOverhead, PointSize(nil))
-	values := []any{nil, "abc", []byte("ab"), true, int8(1), uint8(1), int16(1), uint16(1),
-		int32(1), uint32(1), float32(1), int64(1), 1.0, uint64(1), 1}
-	want := pointOverhead + len(values)*valueOverhead + 3 + 2 + 3 + 4 + 12 + 32
-	require.Equal(t, want, PointSize(values))
+	widePts := seriesPoints(ds.Results[0].SeriesList[1])
+	require.Len(t, widePts, 1)
+	require.Len(t, widePts[0].Values, wideValues)
+	require.Equal(t, int64(wideValues-1), widePts[0].Values[wideValues-1])
 }
 
 func BenchmarkBuilderRows(b *testing.B) {
@@ -580,5 +580,220 @@ func TestSameSeries(t *testing.T) {
 		b := base()
 		mutate(&b)
 		require.False(t, sameSeries(&a, &b), name)
+	}
+}
+
+func TestBuilderAddValueField(t *testing.T) {
+	trq := testBuilderTRQ()
+	fields := testBuilderFields()
+	b := NewBuilder(trq, BuilderOptions{Fields: fields, SeriesName: "sql"})
+	row := func(e epoch.Epoch, host string, vals ...any) {
+		r := b.Row()
+		r.SetEpoch(e)
+		r.SetTag(0, []byte(host))
+		for _, v := range vals {
+			r.AddValue(v)
+		}
+		require.NoError(t, r.Commit())
+	}
+	// "a" has two rows and "b" one before the field is added; "c" comes after it, and "b" never
+	// has another row, so it's widened as it's finished
+	row(2, "a", 1.0)
+	row(1, "a", 2.0)
+	row(1, "b", 3.0)
+	b.AddValueField(timeseries.FieldDefinition{Name: "w", Role: timeseries.RoleValue})
+	row(3, "a", 4.0, "x")
+	row(1, "c", 5.0, int64(7))
+	row(0, "a", 6.0, nil)
+	// a row of the old width no longer fits
+	r := b.Row()
+	r.SetEpoch(9)
+	r.SetTag(0, []byte("a"))
+	r.AddValue(1.0)
+	require.ErrorIs(t, r.Commit(), ErrInvalidRow)
+	ds, err := b.Finish()
+	require.NoError(t, err)
+	sl := ds.Results[0].SeriesList
+	require.Len(t, sl, 3)
+	want := map[string][][]any{
+		"a": {{6.0, nil}, {2.0, nil}, {1.0, nil}, {4.0, "x"}},
+		"b": {{3.0, nil}},
+		"c": {{5.0, int64(7)}},
+	}
+	for _, s := range sl {
+		require.Len(t, s.Header.ValueFieldsList, 2)
+		require.Equal(t, "w", s.Header.ValueFieldsList[1].Name)
+		var got [][]any
+		for _, p := range seriesPoints(s) {
+			got = append(got, p.Values)
+		}
+		require.Equal(t, want[s.Header.Tags["host"]], got)
+	}
+	// the builder's own fields are its options' copy, so the caller's aren't changed
+	require.Len(t, fields.Values, 1)
+	// a field added once finished is ignored
+	b.AddValueField(timeseries.FieldDefinition{Name: "z"})
+	require.Len(t, b.opts.Fields.Values, 2)
+}
+
+func TestBuilderStartNewSeries(t *testing.T) {
+	h := SeriesHeader{Name: "a", Tags: Tags{"name": "a"}, ValueFieldsList: timeseries.FieldDefinitions{{Name: "v"}}}
+	b := NewBuilder(nil, BuilderOptions{})
+	for i, v := range []float64{1, 2, 3} {
+		// a series listed twice is two series, and StartSeries finds the first
+		switch i {
+		case 2:
+			b.StartSeries(h)
+		default:
+			b.StartNewSeries(h)
+		}
+		rb := b.Row()
+		rb.SetEpoch(epoch.Epoch(i))
+		rb.AddFloat64(v)
+		require.NoError(t, rb.Commit())
+	}
+	ds, err := b.Finish()
+	require.NoError(t, err)
+	sl := ds.Results[0].SeriesList
+	require.Len(t, sl, 2)
+	require.Equal(t, Points{{Epoch: 0, Values: []any{1.0}}, {Epoch: 2, Values: []any{3.0}}}, seriesPoints(sl[0]))
+	require.Equal(t, Points{{Epoch: 1, Values: []any{2.0}}}, seriesPoints(sl[1]))
+	// a finished Builder opens nothing
+	b.StartNewSeries(h)
+	require.ErrorIs(t, b.AppendPoint(Point{}), ErrBuilderFinished)
+}
+
+func TestSeriesReorderValues(t *testing.T) {
+	fields := testBuilderFields()
+	fields.Values = append(fields.Values, timeseries.FieldDefinition{Name: "w", Role: timeseries.RoleValue})
+	b := NewBuilder(testBuilderTRQ(), BuilderOptions{Fields: fields})
+	for e := range 3 {
+		r := b.Row()
+		r.SetEpoch(epoch.Epoch(e))
+		r.SetTag(0, []byte("a"))
+		r.AddFloat64(float64(e))
+		r.AddString([]byte("x"))
+		require.NoError(t, r.Commit())
+	}
+	ds, err := b.Finish()
+	require.NoError(t, err)
+	s := ds.Results[0].SeriesList[0]
+	shared := NewSeriesOf(s.Header, s.Segments())
+	s.ReorderValues([]int{1, 0})
+	require.Equal(t, []string{"w", "v"}, []string{s.Header.ValueFieldsList[0].Name, s.Header.ValueFieldsList[1].Name})
+	require.Equal(t, []any{"x", 2.0}, seriesPoints(s)[2].Values)
+	// a series sharing the Segments keeps its order
+	require.Equal(t, []any{2.0, "x"}, seriesPoints(shared)[2].Values)
+	empty := &Series{}
+	empty.ReorderValues([]int{0})
+	require.Zero(t, empty.PointCount())
+}
+
+// rows of 100 series in the orders a response can hold them: each time's rows in turn, each series'
+// rows in a run, and no order
+func BenchmarkBuilderRowOrders(b *testing.B) {
+	const series, points = 100, 1000
+	hosts := make([][]byte, series)
+	for i := range hosts {
+		hosts[i] = []byte("host-" + strconv.Itoa(i))
+	}
+	timeMajor := make([][2]int, 0, series*points)
+	for p := range points {
+		for s := range series {
+			timeMajor = append(timeMajor, [2]int{s, p})
+		}
+	}
+	seriesMajor := make([][2]int, 0, series*points)
+	for s := range series {
+		for p := range points {
+			seriesMajor = append(seriesMajor, [2]int{s, p})
+		}
+	}
+	shuffled := slices.Clone(timeMajor)
+	weaktest.NewRand(7, 7).Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+	fields := timeseries.SeriesFields{Tags: timeseries.FieldDefinitions{{Name: "host"}},
+		Values: timeseries.FieldDefinitions{{Name: "v"}}}
+	for name, rows := range map[string][][2]int{"time-major": timeMajor, "series-major": seriesMajor, "shuffled": shuffled} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				bl := NewBuilder(nil, BuilderOptions{Fields: fields})
+				for _, sp := range rows {
+					r := bl.Row()
+					r.SetEpoch(epoch.Epoch(sp[1]))
+					r.SetTag(0, hosts[sp[0]])
+					r.AddFloat64(float64(sp[1]))
+					if err := r.Commit(); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if _, err := bl.Finish(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// rows find their series by their tags whatever order they come in, an unset tag naming another series
+// than an empty one, and a series predicted from the last row only when its tags match
+func TestBuilderRowsFindTheirSeries(t *testing.T) {
+	rng := weaktest.NewRand(9, 9)
+	// each combination's tags, nil for unset
+	combos := [][2][]byte{{[]byte("a"), []byte("x")}, {[]byte("a"), nil}, {[]byte(""), nil}, {nil, nil},
+		{nil, []byte("")}, {[]byte("b"), []byte("x")}, {[]byte("ab"), []byte("")}, {[]byte("a"), []byte("")}}
+	fields := timeseries.SeriesFields{Tags: timeseries.FieldDefinitions{{Name: "t0"}, {Name: "t1"}},
+		Values: timeseries.FieldDefinitions{{Name: "v"}}}
+	name := func(tags [2][]byte) string {
+		var n string
+		for _, tag := range tags {
+			if tag == nil {
+				n += "|unset"
+			} else {
+				n += "|=" + string(tag)
+			}
+		}
+		return n
+	}
+	for trial := range 60 {
+		bl := NewBuilder(nil, BuilderOptions{Fields: fields})
+		want := make(map[string][]float64)
+		for i := range 50 + rng.IntN(200) {
+			var c int
+			switch trial % 3 {
+			case 0:
+				c = i % len(combos)
+			case 1:
+				c = i / 40 % len(combos)
+			default:
+				c = rng.IntN(len(combos))
+			}
+			r := bl.Row()
+			r.SetEpoch(epoch.Epoch(i))
+			for k, tag := range combos[c] {
+				if tag != nil {
+					r.SetTag(k, tag)
+				}
+			}
+			r.AddFloat64(float64(i))
+			require.NoError(t, r.Commit())
+			want[name(combos[c])] = append(want[name(combos[c])], float64(i))
+		}
+		ds, err := bl.Finish()
+		require.NoError(t, err)
+		require.Len(t, ds.Results[0].SeriesList, len(want))
+		for _, s := range ds.Results[0].SeriesList {
+			var key [2][]byte
+			for k, fd := range fields.Tags {
+				if v, ok := s.Header.Tags[fd.Name]; ok {
+					key[k] = []byte(v)
+				}
+			}
+			var got []float64
+			for _, p := range seriesPoints(s) {
+				got = append(got, p.Values[0].(float64))
+			}
+			require.Equal(t, want[name(key)], got, "trial %d, tags %v", trial, s.Header.Tags)
+		}
 	}
 }

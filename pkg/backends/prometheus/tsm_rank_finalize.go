@@ -21,7 +21,6 @@ import (
 	"container/heap"
 	"math"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
@@ -221,12 +220,13 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 				continue
 			}
 			group := rankGroupKey(series.Header.Tags, spec.Grouping)
-			for i, point := range series.Points {
-				value, ok := rankPointValue(point)
+			for c := newRowCursor(series.Segments()); !c.done(); c.next() {
+				value, ok := sampleFloat(c.seg(), c.i)
 				if !ok {
 					continue
 				}
-				key := rankBucketKey{epoch: int64(point.Epoch), group: group}
+				i := c.n
+				key := rankBucketKey{epoch: int64(c.epoch()), group: group}
 				bucket := buckets[key]
 				if bucket == nil {
 					bucket = &rankCandidateHeap{operator: spec.Operator}
@@ -242,13 +242,13 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			}
 		}
 
-		selected := make(map[*dataset.Series]map[int]struct{})
+		selected := make(map[*dataset.Series][]bool)
 		for _, candidates := range buckets {
 			for _, candidate := range candidates.items {
 				if selected[candidate.series] == nil {
-					selected[candidate.series] = make(map[int]struct{})
+					selected[candidate.series] = make([]bool, candidate.series.PointCount())
 				}
-				selected[candidate.series][candidate.pointIdx] = struct{}{}
+				selected[candidate.series][candidate.pointIdx] = true
 			}
 		}
 		result.SeriesList = keepSelectedRankPoints(result.SeriesList, selected)
@@ -260,21 +260,6 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			sortInstantSeries(result.SeriesList, descending)
 		}
 	}
-}
-
-func rankPointValue(point dataset.Point) (float64, bool) {
-	if len(point.Values) == 0 {
-		return 0, false
-	}
-	v, ok := point.Values[0].(string)
-	if !ok {
-		return 0, false
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return 0, false
-	}
-	return f, true
 }
 
 func compareRankCandidateValues(a, b rankCandidate, operator string) int {
@@ -325,28 +310,14 @@ func rankGroupKey(tags dataset.Tags, grouping promql.AggregationGrouping) string
 }
 
 func keepSelectedRankPoints(
-	seriesList dataset.SeriesList, selected map[*dataset.Series]map[int]struct{},
+	seriesList dataset.SeriesList, selected map[*dataset.Series][]bool,
 ) dataset.SeriesList {
 	keptSeries := seriesList[:0]
 	for _, series := range seriesList {
-		if series == nil {
+		if series == nil || selected[series] == nil {
 			continue
 		}
-		selectedPoints := selected[series]
-		if len(selectedPoints) == 0 {
-			continue
-		}
-		keptPoints := series.Points[:0]
-		for i, point := range series.Points {
-			if _, ok := selectedPoints[i]; ok {
-				keptPoints = append(keptPoints, point)
-			}
-		}
-		if len(keptPoints) == 0 {
-			continue
-		}
-		series.Points = keptPoints
-		series.PointSize = series.Points.Size()
+		series.SetSegments(series.Segments().Keep(selected[series]))
 		keptSeries = append(keptSeries, series)
 	}
 	return keptSeries
@@ -373,19 +344,27 @@ func sortInstantSeries(seriesList dataset.SeriesList, descending bool) {
 	if len(seriesList) < 2 {
 		return
 	}
-	if seriesList[0] == nil || len(seriesList[0].Points) != 1 {
+	first := func(series *dataset.Series) (*dataset.Segment, int, bool) {
+		if series == nil || series.PointCount() != 1 {
+			return nil, 0, false
+		}
+		return series.RowAt(0)
+	}
+	seg, row, ok := first(seriesList[0])
+	if !ok {
 		return
 	}
-	epoch := seriesList[0].Points[0].Epoch
+	epoch := seg.Epoch(row)
 	for _, series := range seriesList {
-		if series == nil || len(series.Points) != 1 || series.Points[0].Epoch != epoch {
+		if seg, row, ok := first(series); !ok || seg.Epoch(row) != epoch {
 			return
 		}
 	}
 
 	items := make([]sortItem, 0, len(seriesList))
 	for _, series := range seriesList {
-		value, ok := rankPointValue(series.Points[0])
+		seg, row, _ := series.RowAt(0)
+		value, ok := sampleFloat(seg, row)
 		if !ok {
 			value = math.NaN()
 		}

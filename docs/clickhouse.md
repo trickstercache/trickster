@@ -188,6 +188,31 @@ Trickster rebuilds a delta-cached response from its cached buckets in ascending 
 
 Delta-cacheable queries may specify `FORMAT JSON`, `CSV`, `CSVWithNames`, `TabSeparated` (`TSV`), `TabSeparatedWithNames`, or `TabSeparatedWithNamesAndTypes`, or omit the `FORMAT` clause. Trickster requests `TSVWithNamesAndTypes` from the origin and re-marshals cached data into the client's requested format.
 
+Trickster writes each format as ClickHouse writes it:
+
+- **NULL** is `\N` in TSV and CSV, and `null` in JSON. An empty string stays an empty string.
+- **Numbers** are bare JSON numbers, and floats use ClickHouse's text (`1e21`, `1e-7`, `nan`, `inf`). JSON writes NaN and infinities as `null`.
+- **CSV** quotes every text value. A `FixedString` is padded to its width.
+- **Compound values:** `Array`, `Map` and `Tuple` values are their ClickHouse literals in TSV and CSV, and JSON arrays and objects in JSON.
+
+Responses honor `output_format_json_quote_64bit_integers`, `output_format_json_quote_decimals`, `output_format_json_quote_denormals` and `date_time_output_format`.
+
+#### Time Zones
+
+A `DateTime` without a zone in its type is written in the session's time zone: the request's `session_timezone` URL parameter, or else the server's. Trickster caches UTC and writes each response in its client's zone, so clients in different zones share cache entries.
+
+The settings that change only how a response is written aren't part of the cache key: `date_time_output_format`, the JSON quote settings, `default_format`, and `client_protocol_version`.
+
+The zone is part of the key only when it changes which rows a query returns:
+- **Buckets that start on the zone's clock:** a daily bucket starts at the zone's midnight, and an hourly bucket in a zone offset by a half hour starts on the half hour. The zone is keyed unless every offset it has over the queried range is a whole number of buckets. So hourly and finer buckets in New York or UTC share entries; Kolkata hourly buckets, and daily buckets outside UTC, don't.
+- **Zone-sensitive expressions:** another date or time function that reads the zone, such as `toHour()` or `today()`, or text compared as a time.
+
+A query whose time bounds are text (`ts >= '2026-09-29 00:00:00'`) or dates (`toDate(…)`) is read by ClickHouse in the session's zone. Outside UTC it's served through the OPC rather than delta-cached.
+
+Trickster asks the origin for `date_time_output_format=iso`, which writes every `DateTime` as UTC. Its cache holds UTC, without the ambiguity of the hour a clock repeats when daylight saving time ends. It writes its `DateTime64` range bounds with an explicit `'UTC'` zone, so the session's zone doesn't move them.
+
+Trickster learns the server's zone from the `X-ClickHouse-Timezone` header of the origin's responses. A backend that hasn't seen one yet asks the server with `SELECT timezone()` before it caches a query. If that probe fails, for example because the origin requires credentials, Trickster proxies the request uncached to learn the zone from the response. If the zone is still unknown after that, Trickster assumes UTC and logs a warning.
+
 ### Non-Time-Series Queries
 
 Queries that are not cacheable as time series — such as `LIMIT`-based queries, queries with set operations (`UNION`, `EXCEPT`, `INTERSECT`), `SELECT 1` health checks, or SDK handshake requests — are transparently proxied to the upstream ClickHouse server. These requests are cached using the Object Proxy Cache (OPC).

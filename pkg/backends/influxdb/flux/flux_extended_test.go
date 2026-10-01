@@ -29,7 +29,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func TestValidateMarshalerOptionsBranches(t *testing.T) {
@@ -83,84 +82,6 @@ func (fakeTimeseries) CroppedClone(timeseries.Extent) timeseries.Timeseries {
 func (fakeTimeseries) CropToRange(timeseries.Extent)                {}
 func (fakeTimeseries) CropToSize(int, time.Time, timeseries.Extent) {}
 
-func TestGetFormattedTimestamp(t *testing.T) {
-	t.Parallel()
-
-	e := epoch.Epoch(1577836800000000000)
-	if got := getFormattedTimestamp(e, timeseries.FieldDefinition{
-		DataType: timeseries.DateTimeRFC3339,
-	}); got != "2020-01-01T00:00:00Z" {
-		t.Fatalf("rfc3339 = %v", got)
-	}
-	if got := getFormattedTimestamp(e, timeseries.FieldDefinition{
-		DataType: timeseries.DateTimeRFC3339Nano,
-	}); got != "2020-01-01T00:00:00Z" {
-		t.Fatalf("rfc3339nano = %v", got)
-	}
-	if got := getFormattedTimestamp(e, timeseries.FieldDefinition{}); got != e {
-		t.Fatalf("raw epoch = %v", got)
-	}
-}
-
-func TestGetCellValueBranches(t *testing.T) {
-	t.Parallel()
-
-	sh := dataset.SeriesHeader{Tags: dataset.Tags{}}
-	pt := dataset.Point{Epoch: 1, Values: []any{nil, "", 3.14}}
-
-	b, used := getCellValue(sh, timeseries.FieldDefinition{
-		Role:         timeseries.RoleValue,
-		DefaultValue: "fallback",
-	}, pt, 0, 0)
-	if !used || string(b) != `"fallback"` {
-		t.Fatalf("nil value = (%s, %v)", b, used)
-	}
-
-	b, used = getCellValue(sh, timeseries.FieldDefinition{
-		Role:         timeseries.RoleValue,
-		DefaultValue: "empty",
-	}, pt, 1, 0)
-	if !used || string(b) != `"empty"` {
-		t.Fatalf("empty string = (%s, %v)", b, used)
-	}
-
-	b, used = getCellValue(sh, timeseries.FieldDefinition{
-		Name:         startColumnName,
-		Role:         timeseries.RoleUntracked,
-		DefaultValue: "12345",
-	}, pt, 0, 0)
-	if used || string(b) != "12345" {
-		t.Fatalf("numeric start = (%s, %v)", b, used)
-	}
-
-	b, used = getCellValue(sh, timeseries.FieldDefinition{
-		Name:         stopColumnName,
-		Role:         timeseries.RoleUntracked,
-		DefaultValue: "2020-01-01T00:00:00Z",
-	}, pt, 0, 0)
-	if used || string(b) != `"2020-01-01T00:00:00Z"` {
-		t.Fatalf("time stop = (%s, %v)", b, used)
-	}
-
-	b, used = getCellValue(sh, timeseries.FieldDefinition{
-		Role:         timeseries.RoleTag,
-		Name:         "missing",
-		DefaultValue: "def",
-	}, pt, 0, 0)
-	if used || string(b) != `"def"` {
-		t.Fatalf("missing tag = (%s, %v)", b, used)
-	}
-
-	b, used = getCellValue(sh, timeseries.FieldDefinition{
-		Role:         timeseries.RoleUntracked,
-		Name:         "other",
-		DefaultValue: "x",
-	}, pt, 0, 0)
-	if used || string(b) != `"x"` {
-		t.Fatalf("default untracked = (%s, %v)", b, used)
-	}
-}
-
 func TestGetCsvCellValueBranches(t *testing.T) {
 	t.Parallel()
 
@@ -169,8 +90,9 @@ func TestGetCsvCellValueBranches(t *testing.T) {
 	getCsvCellValue := func(sh dataset.SeriesHeader, fd timeseries.FieldDefinition, p dataset.Point,
 		next, table int,
 	) (string, bool) {
-		c, used := csvCellFor(sh.Tags, &fd, &p, next)
-		return string(appendCsvCell(nil, &c, &p, table)), used
+		seg := dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{p}).Segments()[0]
+		c, used := csvCellFor(sh.Tags, &fd, &seg, 0, next)
+		return string(appendCsvCell(nil, &c, &seg, 0, table)), used
 	}
 
 	s, used := getCsvCellValue(sh, timeseries.FieldDefinition{
@@ -245,15 +167,12 @@ func TestCSVWriteErrorPaths(t *testing.T) {
 			OutputPosition: 4,
 		},
 	}
-	s := &dataset.Series{
-		Header: dataset.SeriesHeader{
-			TagFieldsList:       []timeseries.FieldDefinition{fds[1]},
-			UntrackedFieldsList: []timeseries.FieldDefinition{fds[0], fds[2]},
-			TimestampField:      fds[3],
-			ValueFieldsList:     []timeseries.FieldDefinition{fds[4]},
-		},
-		Points: []dataset.Point{{Epoch: 1, Values: []any{huge}}},
-	}
+	s := dataset.NewSeries(dataset.SeriesHeader{
+		TagFieldsList:       []timeseries.FieldDefinition{fds[1]},
+		UntrackedFieldsList: []timeseries.FieldDefinition{fds[0], fds[2]},
+		TimestampField:      fds[3],
+		ValueFieldsList:     []timeseries.FieldDefinition{fds[4]},
+	}, []dataset.Point{{Epoch: 1, Values: []any{huge}}})
 	st := &state{
 		s: s,
 		e: timeseries.Extent{Start: time.Unix(1, 0), End: time.Unix(2, 0)},
@@ -374,28 +293,28 @@ func TestTypeToFieldDataTypeUnknown(t *testing.T) {
 func TestParseTimeField(t *testing.T) {
 	t.Parallel()
 
-	e, err := parseTimeField("2020-01-01T00:00:00Z", timeseries.FieldDefinition{
+	e, err := parseTimeField([]byte("2020-01-01T00:00:00Z"), timeseries.FieldDefinition{
 		DataType: timeseries.DateTimeRFC3339,
 	})
 	if err != nil || e == 0 {
 		t.Fatalf("rfc3339 = (%v, %v)", e, err)
 	}
 
-	_, err = parseTimeField("2020-01-01T00:00:00Z", timeseries.FieldDefinition{
+	_, err = parseTimeField([]byte("2020-01-01T00:00:00Z"), timeseries.FieldDefinition{
 		DataType: timeseries.DateTimeRFC3339Nano,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, err = parseTimeField("bad", timeseries.FieldDefinition{
+	_, err = parseTimeField([]byte("bad"), timeseries.FieldDefinition{
 		DataType: timeseries.DateTimeRFC3339,
 	})
 	if err == nil {
 		t.Fatal("expected parse error")
 	}
 
-	_, err = parseTimeField("2020-01-01T00:00:00Z", timeseries.FieldDefinition{})
+	_, err = parseTimeField([]byte("2020-01-01T00:00:00Z"), timeseries.FieldDefinition{})
 	if err != timeseries.ErrInvalidTimeFormat {
 		t.Fatalf("invalid format = %v", err)
 	}

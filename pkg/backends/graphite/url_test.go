@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -168,27 +169,27 @@ func TestTrimToExtent(t *testing.T) {
 	pts := func(secs ...int64) dataset.Points {
 		out := make(dataset.Points, len(secs))
 		for i, s := range secs {
-			out[i] = dataset.Point{Epoch: epoch.FromSecs(s), Size: 24, Values: []any{float64(s)}}
+			out[i] = dataset.Point{Epoch: epoch.FromSecs(s), Values: []any{float64(s)}}
 		}
 		return out
 	}
-	s := &dataset.Series{Points: pts(100, 110, 120, 130), PointSize: 96}
+	s := dataset.NewSeries(dataset.SeriesHeader{}, pts(100, 110, 120, 130))
 	ds := &dataset.DataSet{Results: []*dataset.Result{nil, {SeriesList: []*dataset.Series{nil, s}}}}
 	trimToExtent(ds, timeseries.Extent{})
-	if len(s.Points) != 4 {
+	if s.PointCount() != 4 {
 		t.Fatal("a zero extent must not trim")
 	}
 	trimToExtent(ds, timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(130, 0)})
-	if len(s.Points) != 4 || s.PointSize != 96 {
+	if s.PointCount() != 4 {
 		t.Fatal("points inside the extent must be kept")
 	}
 	trimToExtent(ds, timeseries.Extent{Start: time.Unix(110, 0), End: time.Unix(120, 0)})
-	if len(s.Points) != 2 || s.Points[0].Epoch != epoch.FromSecs(110) || s.PointSize != 48 {
-		t.Errorf("head and tail must be trimmed: %v (size %d)", s.Points, s.PointSize)
+	if s.PointCount() != 2 || dspoints.Of(s)[0].Epoch != epoch.FromSecs(110) {
+		t.Errorf("head and tail must be trimmed: %v", dspoints.Of(s))
 	}
 	trimToExtent(ds, timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)})
-	if len(s.Points) != 0 || s.PointSize != 0 {
-		t.Errorf("a disjoint extent must trim every point: %v (size %d)", s.Points, s.PointSize)
+	if s.PointCount() != 0 {
+		t.Errorf("a disjoint extent must trim every point: %v", dspoints.Of(s))
 	}
 
 	trq := &timeseries.TimeRangeQuery{
@@ -199,7 +200,7 @@ func TestTrimToExtent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points; len(p) != 2 || p[0].Epoch != epoch.FromSecs(110) {
+	if p := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0]); len(p) != 2 || p[0].Epoch != epoch.FromSecs(110) {
 		t.Errorf("a fetch must be trimmed to the request's extent: %v", p)
 	}
 	if _, err := unmarshalFetch(strings.NewReader(`[{`), trq); err == nil {

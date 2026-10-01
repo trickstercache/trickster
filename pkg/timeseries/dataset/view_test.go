@@ -38,17 +38,16 @@ func viewSet(series map[string][]int) *DataSet {
 	ds := &DataSet{TimeRangeQuery: &timeseries.TimeRangeQuery{Step: viewStep}, Results: Results{{}}}
 	lo, hi := -1, -1
 	for _, host := range sortedKeys(series) {
-		s := &Series{Header: SeriesHeader{Name: "m", Tags: Tags{"host": host}}}
+		s := NewSeries(SeriesHeader{Name: "m", Tags: Tags{"host": host}}, nil)
 		for _, minute := range series[host] {
-			s.Points = append(s.Points, Point{
-				Epoch: epoch.Epoch(time.Duration(minute) * viewStep), Size: 1, Values: []any{host, minute},
-			})
+			s.SetPoints(append(seriesPoints(s), Point{
+				Epoch: epoch.Epoch(time.Duration(minute) * viewStep), Values: []any{host, minute},
+			}))
 			if lo < 0 || minute < lo {
 				lo = minute
 			}
 			hi = max(hi, minute)
 		}
-		s.PointSize = int64(len(s.Points))
 		ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, s)
 	}
 	if lo >= 0 {
@@ -86,7 +85,7 @@ func minutesOf(ds *DataSet) map[string][]int {
 	out := map[string][]int{}
 	for _, r := range ds.Results {
 		for _, s := range r.SeriesList {
-			for _, p := range s.Points {
+			for _, p := range seriesPoints(s) {
 				out[s.Header.Tags["host"]] = append(out[s.Header.Tags["host"]], int(time.Duration(p.Epoch)/viewStep))
 			}
 		}
@@ -101,10 +100,11 @@ func TestView(t *testing.T) {
 	// inclusive at both ends; a series with nothing in range is left out
 	require.Equal(t, map[string][]int{"a": {2, 3, 4}, "b": {4}}, minutesOf(v))
 	require.Equal(t, [][2]int{{2, 4}}, extentMinutes(v.ExtentList))
-	// points are shared, never copied, and the source is untouched
-	require.Same(t, &src.Results[0].SeriesList[0].Points[1], &v.Results[0].SeriesList[0].Points[0])
+	// rows are shared, never copied, and the source is untouched
+	require.Same(t, &src.Results[0].SeriesList[0].Segments()[0].Epochs()[1],
+		&v.Results[0].SeriesList[0].Segments()[0].Epochs()[0])
 	require.Equal(t, before, fmt.Sprint(minutesOf(src)))
-	require.Equal(t, int64(3), v.Results[0].SeriesList[0].PointSize)
+	require.Equal(t, 3, v.Results[0].SeriesList[0].PointCount())
 	// a series wholly inside the range is the source's own
 	whole := src.View(timeseries.Extent{Start: minuteTime(0), End: minuteTime(9)})
 	require.Same(t, src.Results[0].SeriesList[1], whole.Results[0].SeriesList[1])
@@ -126,16 +126,32 @@ func TestMergeDisjoint(t *testing.T) {
 	require.Equal(t, []string{"a", "b", "c"}, hosts)
 	// coverage merges as the parts held it, gap and all
 	require.Equal(t, [][2]int{{1, 2}, {5, 7}}, extentMinutes(merged.ExtentList))
-	require.Equal(t, int64(5), merged.Results[0].SeriesList[0].PointSize)
-	// a series from one part only is that part's own points
-	require.Same(t, &older.Results[0].SeriesList[1].Points[0], &merged.Results[0].SeriesList[2].Points[0])
+	require.Equal(t, 5, merged.Results[0].SeriesList[0].PointCount())
+	// a series from one part only is that part's own rows
+	require.Same(t, &older.Results[0].SeriesList[1].Segments()[0].Epochs()[0],
+		&merged.Results[0].SeriesList[2].Segments()[0].Epochs()[0])
+
+	// a merge stored each time rows are added shares their memory until they span too many Segments
+	stored := viewSet(map[string][]int{"a": {0}})
+	for minute := 1; minute <= maxStoredSegments; minute++ {
+		stored = MergeDisjoint(stored.TimeRangeQuery, stored, viewSet(map[string][]int{"a": {minute}}))
+		segs := stored.Results[0].SeriesList[0].Segments()
+		want := minute + 1
+		if want > maxStoredSegments {
+			want = 1
+		}
+		require.Len(t, segs, want)
+	}
+	require.Equal(t, 1+maxStoredSegments, stored.Results[0].SeriesList[0].PointCount())
 
 	// where parts share an epoch, the later part's point wins
 	first := viewSet(map[string][]int{"a": {1, 2}})
 	second := viewSet(map[string][]int{"a": {2}})
-	second.Results[0].SeriesList[0].Points[0].Values = []any{"a", "newer"}
+	newerPts := seriesPoints(second.Results[0].SeriesList[0])
+	newerPts[0].Values = []any{"a", "newer"}
+	second.Results[0].SeriesList[0].SetPoints(newerPts)
 	over := MergeDisjoint(first.TimeRangeQuery, first, second, nil)
-	pts := over.Results[0].SeriesList[0].Points
+	pts := seriesPoints(over.Results[0].SeriesList[0])
 	require.Len(t, pts, 2)
 	require.Equal(t, "newer", pts[1].Values[1])
 	require.Empty(t, MergeDisjoint(nil).Results)
@@ -184,11 +200,11 @@ func TestRetainNewestMatchesSortingEveryEpoch(t *testing.T) {
 		ds := &DataSet{Results: Results{{}, nil, {}}}
 		var all []epoch.Epoch
 		for i := range 1 + rng.IntN(6) {
-			s := &Series{}
+			s := NewSeries(SeriesHeader{}, nil)
 			at := -rng.IntN(20)
 			for range rng.IntN(12) {
 				at = min(at+rng.IntN(3), 0)
-				s.Points = append(s.Points, Point{Epoch: epoch.Epoch(at)})
+				s.SetPoints(append(seriesPoints(s), Point{Epoch: epoch.Epoch(at)}))
 				all = append(all, epoch.Epoch(at))
 			}
 			r := ds.Results[2*(i%2)]
@@ -196,8 +212,19 @@ func TestRetainNewestMatchesSortingEveryEpoch(t *testing.T) {
 		}
 		slices.Sort(all)
 		all = slices.Compact(all)
+		var lists []Segments
+		for _, r := range ds.Results {
+			if r == nil {
+				continue
+			}
+			for _, s := range r.SeriesList {
+				if s != nil {
+					lists = append(lists, s.Segments())
+				}
+			}
+		}
 		for n := range len(all) + 2 {
-			got, ok := newestEpoch(ds.Results, n+1)
+			got, ok := NewestEpoch(lists, n+1)
 			want := len(all) > n+1
 			if ok != want || (ok && got != all[len(all)-n-1]) {
 				t.Fatalf("trial %d, n %d: got %d, %v; epochs %v", trial, n+1, got, ok, all)
@@ -208,12 +235,12 @@ func TestRetainNewestMatchesSortingEveryEpoch(t *testing.T) {
 
 func TestRows(t *testing.T) {
 	r := viewSet(map[string][]int{"a": {1, 3}, "b": {1, 2}, "c": {3}}).Results[0]
-	r.SeriesList = append(r.SeriesList, nil, &Series{})
+	r.SeriesList = append(r.SeriesList, nil, NewSeries(SeriesHeader{}, nil))
 	collect := func(order RowOrder, limit int) []string {
 		var out []string
 		for row := range r.Rows(order) {
 			out = append(out, fmt.Sprintf("%s%d", row.Series.Header.Tags["host"],
-				time.Duration(row.Point.Epoch)/viewStep))
+				time.Duration(row.Epoch())/viewStep))
 			if len(out) == limit {
 				break
 			}
@@ -235,6 +262,7 @@ func TestRows(t *testing.T) {
 }
 
 func TestAddBytes(t *testing.T) {
+	const bigBytes, rows = 2 << 20, 10000
 	b := NewBuilder(nil, BuilderOptions{Fields: timeseries.SeriesFields{
 		Values: timeseries.FieldDefinitions{{Name: "raw"}},
 	}})
@@ -249,14 +277,13 @@ func TestAddBytes(t *testing.T) {
 	row.SetEpoch(2)
 	row.AddBytes(nil)
 	require.NoError(t, row.Commit())
-	// a value larger than a chunk gets a chunk of its own
-	big := make([]byte, 2*maxByteChunk)
+	// a value larger than the log's chunks gets a chunk of its own
+	big := make([]byte, bigBytes)
 	row = b.Row()
 	row.SetEpoch(3)
 	row.AddBytes(big)
 	require.NoError(t, row.Commit())
-	// enough rows to fill a chunk of the slice headers the values point to
-	for i := range 2 * maxValueChunk {
+	for i := range rows {
 		row = b.Row()
 		row.SetEpoch(epoch.Epoch(4 + i))
 		row.AddBytes([]byte{byte(i)})
@@ -264,25 +291,12 @@ func TestAddBytes(t *testing.T) {
 	}
 	ds, err := b.Finish()
 	require.NoError(t, err)
-	pts := ds.Results[0].SeriesList[0].Points
-	first, ok := BytesValue(pts[0].Values[0])
-	require.True(t, ok)
-	require.Equal(t, []byte("first"), first)
+	pts := seriesPoints(ds.Results[0].SeriesList[0])
+	require.Equal(t, []byte("first"), pts[0].Values[0])
 	require.Nil(t, pts[1].Values[0])
-	own, _ := BytesValue(pts[2].Values[0])
-	require.Len(t, own, 2*maxByteChunk)
+	require.Len(t, pts[2].Values[0], bigBytes)
 	for i, p := range pts[3:] {
-		got, _ := BytesValue(p.Values[0])
-		require.Equal(t, []byte{byte(i)}, got, i)
-	}
-	// each value's size counts the bytes and the header it points to
-	require.Equal(t, pointOverhead+valueOverhead+sliceHeader+len("first"), pts[0].Size)
-	raw, ok := BytesValue([]byte("raw"))
-	require.True(t, ok)
-	require.Equal(t, []byte("raw"), raw)
-	for _, v := range []any{(*[]byte)(nil), "text", nil} {
-		_, ok := BytesValue(v)
-		require.False(t, ok, "%T", v)
+		require.Equal(t, []byte{byte(i)}, p.Values[0], i)
 	}
 }
 
@@ -291,7 +305,7 @@ func TestAddBytes(t *testing.T) {
 func viewEdgeSet() *DataSet {
 	ds := viewSet(map[string][]int{"a": {1, 2, 3, 4, 5}, "b": {2, 4}, "c": {5}})
 	ds.Results[0].Name = "r0"
-	ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, nil, &Series{Header: SeriesHeader{Name: "empty"}})
+	ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, nil, NewSeries(SeriesHeader{Name: "empty"}, nil))
 	ds.Results = append(ds.Results, nil, &Result{StatementID: 2, Name: "r2", Error: "partial",
 		SeriesList: SeriesList{viewSet(map[string][]int{"d": {1, 3}}).Results[0].SeriesList[0]}})
 	ds.VolatileExtentList = timeseries.ExtentList{{Start: minuteTime(4), End: minuteTime(5)}}
@@ -341,7 +355,7 @@ func viewSnapshot(ds *DataSet) string {
 				b.WriteString(" nil series\n")
 				continue
 			}
-			fmt.Fprintf(&b, " %q %v %d %d %v\n", s.Header.Name, s.Header.Tags, s.PointSize, len(s.Points), s.Points)
+			fmt.Fprintf(&b, " %q %v %d %v\n", s.Header.Name, s.Header.Tags, s.PointCount(), seriesPoints(s))
 		}
 	}
 	return b.String()
@@ -358,8 +372,8 @@ func TestViewsLeaveTheirSourceAsItWas(t *testing.T) {
 			src := viewEdgeSet()
 			before := viewSnapshot(src)
 			v := view(src)
-			require.Same(t, &src.Results[0].SeriesList[0].Points[1].Values[0], &v.Results[0].SeriesList[0].Points[1].Values[0],
-				"a view shares its source's values")
+			require.Same(t, &src.Results[0].SeriesList[0].Segments()[0].Epochs()[1],
+				&v.Results[0].SeriesList[0].Segments()[0].Epochs()[1], "a view shares its source's rows")
 			// a merge adds to and overlaps the view's series, and brings a new one
 			v.Merge(true, viewSet(map[string][]int{"a": {3, 6}, "e": {7}}))
 			v.Merge(false, viewSet(map[string][]int{"b": {8}}))

@@ -94,7 +94,7 @@ func points(o Outcome[*payload]) map[int64]string {
 	out := make(map[int64]string)
 	for _, r := range o.Delta.DS.Results {
 		for row := range r.Rows(dataset.RowOrder{}) {
-			out[int64(row.Point.Epoch)/int64(time.Second)] = row.Point.Values[0].(string)
+			out[int64(row.Epoch())/int64(time.Second)] = row.Value(0).(string)
 		}
 	}
 	return out

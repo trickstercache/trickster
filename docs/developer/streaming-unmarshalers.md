@@ -7,9 +7,9 @@ The packages described here let a provider decode a response in one pass, straig
 | Package | Provides |
 | --- | --- |
 | [`pkg/timeseries/dataset`](../../pkg/timeseries/dataset/builder.go) | `Builder`, which assembles a DataSet from rows or points in any order |
-| [`pkg/timeseries/dataset/stream`](../../pkg/timeseries/dataset/stream/stream.go) | the `Decoder` interface, line and JSON decoders, value parsers, and Modeler adapters |
+| [`pkg/timeseries/dataset/stream`](../../pkg/timeseries/dataset/stream/stream.go) | the `Decoder` interface, line, CSV and JSON decoders, raw JSON scanners, value parsers, and Modeler adapters |
 | [`pkg/timeseries/dataset/stream/streamtest`](../../pkg/timeseries/dataset/stream/streamtest/streamtest.go) | conformance checks and benchmarks for decoders |
-| [`pkg/timeseries/epoch`](../../pkg/timeseries/epoch/parse.go) | `ParseDecimal`, exact parsing of numeric timestamps |
+| [`pkg/timeseries/epoch`](../../pkg/timeseries/epoch/parse.go) | `ParseDecimal`, exact parsing of numeric timestamps, and allocation-free parsing and formatting of RFC 3339 times |
 
 ## How It Fits Together
 
@@ -26,40 +26,72 @@ func NewModeler() *timeseries.Modeler {
 
 `ReaderUnmarshaler` passes the response body to the decoder's `ReadFrom`, so decoding happens while the body is read. If you feed a decoder yourself, call `ReadFrom` instead of using `io.Copy`. When the source is a `bytes.Reader`, `io.Copy` uses the reader's `WriteTo`, which delivers the whole body in a single `Write`, and the JSON decoder then has to buffer all of it before it can start.
 
-Today the proxy engine reads each upstream body into memory before calling the unmarshaler, so the current savings come from skipping the intermediate model. Once the engine passes response bodies through directly, the same decoders will read from the network with no changes.
+The Delta Proxy Cache gives each origin fetch's `200` body to the provider's `WireUnmarshalerReader` as it arrives, decompressed and bounded by `max_object_size_bytes`, so decoding overlaps the network and the body is never held whole. A read that fails or passes the size limit fails the fetch, whatever the decoder returned, and nothing from it is cached. The engine reads to the end whatever the decoder leaves, so a decoder can stop at an error without draining its input.
 
 ## Choosing a Decoder
 
 ### Newline-Delimited Formats
 
-`stream.NewLines(onLine, finish)` handles formats with one record per line, such as TSV, CSV without quoted newlines, and JSON Lines. It calls `onLine` for each line without its `\n` or `\r\n` terminator, even when the line was split across `Write` calls, and delivers a final unterminated line during `Finish`. The line is only valid during the call. Lines longer than 16 MiB fail with `ErrLineTooLong` before they are buffered, so an overlong line cannot grow memory; `SetMaxLineBytes` changes the limit.
+`stream.NewLines(onLine, finish)` handles formats with one record per line, such as TSV. It calls `onLine` for each line without its `\n` or `\r\n` terminator, even when the line was split across `Write` calls, and delivers a final unterminated line during `Finish`. The line is only valid during the call. Lines longer than 16 MiB fail with `ErrLineTooLong` before they are buffered, so an overlong line cannot grow memory; `SetMaxLineBytes` changes the limit.
 
 `stream.SplitFields(line, sep, dst)` splits a line into fields without allocating, reusing `dst`. It does not interpret quotes or escapes, so unescape fields yourself where the format requires it.
 
+### CSV
+
+`stream.NewCSV(onRecord, finish)` splits records as `encoding/csv`'s `Reader` does with its defaults: a quoted field may hold commas, doubled quotes and line breaks, `\r\n` ends a line as `\n` does, and empty lines are skipped. `onRecord` gets each record's fields, which are valid only during the call. A record without quotes is passed on as slices of the input, so it costs no copy or allocation; a record with quoted fields is unquoted into a buffer the decoder reuses.
+
+- `SetFieldsPerRecord(n)` works as the `Reader`'s `FieldsPerRecord` does: `0`, the default, requires every record to have as many fields as the first, and a negative `n` allows any number.
+- A quote in a field that isn't quoted fails with `ErrCSVBareQuote`, a quoted field that is never closed or has text after its closing quote fails with `ErrCSVQuote`, and a record of the wrong width fails with `ErrCSVFieldCount`. All three wrap `timeseries.ErrInvalidBody`.
+- Lines are limited as `Lines` limits them, per line of a quoted field that spans several.
+
 ### JSON Documents
 
-`stream.NewJSON(walk, finish)` handles a single JSON document. The `walk` function receives an `encoding/json` `Decoder` with `UseNumber` set, and must consume exactly one value from it. Only whitespace may follow that value: a second JSON value fails with `ErrTrailingData`, and anything else fails as a syntax error. Three helpers let a walk hold only the current token or element in memory:
+`stream.NewJSON(walk, finish)` handles a single JSON document. The `walk` function receives an `encoding/json/jsontext` `Decoder` and must consume exactly one value from it. The decoder accepts a repeated object key and invalid UTF-8, as `encoding/json` does. Only whitespace may follow that value: a second JSON value fails with `ErrTrailingData`, and anything else fails as a syntax error. These helpers let a walk hold only the current token or value in memory:
 
 - `stream.Object(dec, func(key string) error)` calls the function for each key, in the order the keys arrive.
+- `stream.ObjectBytes(dec, func(key []byte) error)` is `Object` with each key as bytes, valid until the function reads from `dec`. Compare or copy the key first; a key compared in a `switch string(key)` costs no allocation.
 - `stream.Array(dec, func() error)` calls the function once for each element.
-- `stream.Skip(dec)` consumes and discards the next value a token at a time, so a large skipped value is never held in memory.
+- `stream.Skip(dec)` consumes and discards the next value without holding it, so a large skipped value is never in memory.
+- `stream.Decode(dec, &v, opts...)` decodes the next value into `v` with `encoding/json`'s semantics. Options such as `jsonv2.RejectUnknownMembers(true)` apply on top. Use it for small structures, like an envelope or a schema.
+- `stream.AppendString(dst, raw)` appends the text of a raw JSON string, unescaping it only when it has escapes.
+- `stream.StringText(raw, &buf)` returns the text of a raw JSON string: `raw`'s own bytes when nothing in it is escaped, or else the text decoded into `buf`.
+- `stream.FieldName(key, names...)` matches a key against field names as `encoding/json` matches struct fields, exactly and then ignoring case.
+- `stream.Interner` converts bytes to strings, sharing one string for each name, and each short value, that a response repeats.
 
-Each callback must consume the value it was called for, for example with `dec.Decode`, a nested `Object` or `Array`, or `Skip`. A callback that returns without doing so fails with `ErrValueNotConsumed`. `Object` and `Array` return `ErrNull` for a JSON `null` after consuming it, so a caller that accepts a null can check with `errors.Is` and carry on. They return `ErrUnexpectedToken` when the value is the wrong kind.
+Each callback must consume exactly the value it was called for, for example with `dec.ReadValue`, `Decode`, a nested `Object` or `Array`, or `Skip`:
 
-Decode every row into the same `[]json.RawMessage`. `encoding/json` reuses the slice and each element's buffer, so decoding rows stops allocating once those buffers have grown.
+- A callback that consumes nothing fails with `ErrValueNotConsumed`.
+- One that consumes only part of a value fails with `ErrUnexpectedToken`.
+- `Object` and `Array` return `ErrNull` for a JSON `null` after consuming it, so a caller that accepts a null can check with `errors.Is` and carry on.
+- They return `ErrUnexpectedToken` when the value is the wrong kind.
 
-JSON does not guarantee key order. If something you need first, such as a schema, might arrive after the data that depends on it, hold the early data as a `json.RawMessage` and process it once the schema has been read.
+Read row values with `dec.ReadValue()`, one element at a time. It returns the value's raw bytes without allocating, and they're valid only until the next read, so pass them straight to the Builder's adders or `SetTag`, which copy what they keep. Reading a small row whole with one `ReadValue`, such as a `[time, value]` pair or a row object, is faster than reading it token by token. The decoder has already validated those bytes, so `stream.ArrayElements(raw)` and `stream.ObjectMembers(raw)` can walk them without checking the grammar again. The Prometheus and InfluxQL decoders read each row array this way, and the InfluxDB 3 SQL decoder each row object.
+
+JSON does not guarantee key order. If something you need first, such as a schema, might arrive after the data that depends on it, copy the early data's raw bytes into a buffer the decoder reuses, and walk them with `stream.NewJSONDecoder(bytes.NewReader(buf))` once the schema has been read. The InfluxQL decoder does this for a series' values that arrive before its columns.
+
+A JSON Lines body is a sequence of JSON values. A walk given to `NewJSON` reads it by calling `dec.ReadValue` until it returns `io.EOF`.
+
+### Several Formats in One Endpoint
+
+`stream.Sniff(pick)` returns a Decoder for a body whose format its first byte tells. `pick` gets that byte and returns the Decoder to give the whole body to. An empty body fails at `Finish` with `timeseries.ErrInvalidBody`. The InfluxDB 3 SQL decoder uses it to tell a JSON array, JSON Lines and CSV apart.
 
 ### Other Formats
 
 A format that fits neither decoder can implement `stream.Decoder` directly. The conformance checks feed a decoder with `Write` calls, with a single `ReadFrom` call, or with `Write` calls followed by one `ReadFrom`, and expect the same result each way. Errors should be sticky, and `Finish` is called once.
+
+The ClickHouse Native decoder (`clickhouse/model/decoder_native.go`) is an example for a binary format of self-contained blocks:
+- It buffers its input and reads each block once all of it has arrived, then drops it. Only the block being received is held, not the whole body.
+- A block that hasn't all arrived is read again only once the buffer has doubled, so the reads it repeats cost at most as much as the body itself.
+- `ReadFrom` reads straight into the buffer, and the buffer and the block's column storage are pooled between decodes.
+- Each column is read whole into typed storage, and the rows are then added to a row-mode Builder.
 
 ## Building the DataSet
 
 `dataset.NewBuilder(trq, opts)` returns a Builder for one response. `BuilderOptions` sets:
 
 - `Fields`: the timestamp, tag and value fields of each row.
-- `SeriesName` and `QueryStatement`: copied into each series header the Builder creates.
+- `SeriesName` and `QueryStatement`: copied into each series header the Builder creates. `NameSeries`, when set, names each new series from its tags instead, once per series.
+- `AddValueField`, in row mode, adds a value field after rows were committed. A format that leaves null values out, as InfluxDB 3's JSON does, uses it to add a column it first sees on a later row. Series created earlier are widened, and their earlier rows hold null in the new column.
 - `Duplicates`: what to do with points in one series that share an epoch: `DuplicatesKeep`, `DuplicatesFirstWins`, `DuplicatesLastWins` or `DuplicatesError`.
 - `SortSeries`: sorts each result's series by their tags when the build finishes.
 - `TagString`: converts a tag's raw bytes to its value in the series' `Tags`. By default the bytes are used as they are; `stream.JSONTagString` unquotes JSON strings.
@@ -72,11 +104,19 @@ Use row mode for formats that send one row per point, such as SQL results and TS
 r := b.Row()      // reused, and valid until the next call to Row
 r.SetEpoch(ep)
 r.SetTag(0, host) // an index into BuilderOptions.Fields.Tags; the bytes are copied
-r.AddValue(v)     // in BuilderOptions.Fields.Values order
+r.AddFloat64(v)   // values in BuilderOptions.Fields.Values order
 if err := r.Commit(); err != nil {
 	return err
 }
 ```
+
+Each value is added with the adder for its type, so it is written straight into its column without being boxed:
+
+- `AddFloat64`, `AddInt64`, `AddUint64`, `AddBool` and `AddNull`;
+- `AddString(raw)` for text and `AddBytes(raw)` for binary values, both copying `raw`;
+- `AddNumber(raw)` for a number kept as its literal text, like a `json.Number`.
+
+`AddValue(v)` takes a value that is already boxed, like one `stream.ParseValue` returns, and picks the adder by its Go type. When a decoder knows a value's type as it reads it, the typed adder saves boxing it.
 
 The Builder remembers each raw tag encoding it has seen, so a row that repeats an earlier row's tag bytes finds its series with one lookup that does not allocate. A new encoding is converted with `TagString` and matched against the existing series by header, so equivalent encodings, such as `"a"` and `"\u0061"` in JSON, share a series. A tag that is never set is left out of the series' `Tags`, so an unset tag and an empty one produce different series.
 
@@ -97,7 +137,7 @@ for _, p := range points {
 b.EndSeries()
 ```
 
-Rows committed while a series is open go to that series and may not set tags. `StartSeries` reopens the series with an identical header if there is one, so a series that arrives in pieces becomes one series. `AppendPoint` adds a `Point` you have already built. For formats that return several statements, `SetResult(statementID, name)` sends later rows and series to another result, creating it if needed.
+Rows committed while a series is open go to that series and may not set tags. `StartSeries` reopens the series with an identical header if there is one, so a series that arrives in pieces becomes one series. `StartNewSeries` opens a new series even when one has an identical header, for a format such as Graphite's, where a response that lists one series twice holds two. `AppendPoint` adds a `Point` you have already built, adding its values with `AddValue`. For formats that return several statements, `SetResult(statementID, name)` sends later rows and series to another result, creating it if needed.
 
 ### Finishing
 
@@ -105,7 +145,7 @@ The Builder matches series the same way merges do: the header hash finds candida
 
 `Finish` returns the DataSet. It sorts only the series whose points arrived out of order, using a stable sort that keeps arrival order among equal epochs, and then applies the duplicate policy. When a series' points do arrive in order, duplicates are handled as they arrive, so `DuplicatesError` fails the `Commit` immediately. `Finish` also calculates each series header's size, and sets the DataSet's `TimeRangeQuery` and `ExtentList` from the query.
 
-Point values are carved from shared, chunked backing arrays, so a point does not need an allocation of its own. `dataset.PointSize` is the size estimate the Builder records for each point.
+The Builder logs rows as they arrive and lays them out by column when it finishes: each series holds its epochs in one array and each value column in another, all cut from a few arrays the whole DataSet shares, with text and binary values in one shared byte array. So a row does not need an allocation of its own, and a series' size is the size of its arrays. Read the columns in place through `Series.Segments()` or `Result.Rows`; [Columnar DataSets](./columnar-datasets.md) covers reading them, and writing a response from them.
 
 `ErrInvalidRow` and `ErrDuplicateEpoch` wrap `timeseries.ErrInvalidBody`, and `ErrBuilderFinished` reports use after `Finish`. `ErrInvalidRow` covers:
 
@@ -128,6 +168,10 @@ A provider that wraps the DataSet in its own `Timeseries` type can do so in its 
   - text types, and RFC 3339 and SQL date and time types, return `string`;
   - empty text is `nil` for any type except text;
   - `Unknown` infers a `bool` or number from JSON-style literals and falls back to `string`.
+- `epoch.ParseRFC3339(raw, layout)` parses a time as `time.Parse` does with `time.RFC3339` or `time.RFC3339Nano`. `epoch.ParseCanonicalTime(raw, zoned)` parses only the canonical UTC form, `YYYY-MM-DDTHH:MM:SS` with an optional fraction, followed by `Z` when `zoned` and by nothing when not, and reports whether it did. Neither allocates for a canonical time, and they return exactly what `time.Parse` would.
+- `epoch.AppendCanonicalTime(dst, e, fraction, zoned)` is the inverse for renderers: it writes what `time.Time.AppendFormat` writes with `time.RFC3339`, `time.RFC3339Nano`, or `time.RFC3339Nano` without its zone. It is as fast as Go's own formatting of the two RFC 3339 layouts, and more than three times faster for the zone-less one, which Go formats through its general layout engine.
+- `epoch.ParseSQLDateTime(raw)` and `epoch.ParseSQLDate(raw)` parse `YYYY-MM-DD HH:MM:SS`, with an optional fraction after a period, and `YYYY-MM-DD`. They return exactly what `time.Parse` returns in UTC with `2006-01-02 15:04:05.999999999` and `2006-01-02`, and report `false` for any other text so a caller can fall back. Neither allocates.
+- `Epoch.AppendFormat` writes the SQL date and time layouts without building a `time.Time`, more than three times faster than `time.Time.AppendFormat`, and RFC 3339 with `AppendCanonicalTime`.
 - `stream.ParseJSONValue(raw, dt)` parses a raw JSON value. `null` is `nil`, and quoted values are unquoted first, so numbers that an API sends as strings still parse as numbers.
 
 Parse errors wrap `stream.ErrInvalidValue`, which wraps `timeseries.ErrInvalidBody`.
@@ -146,7 +190,7 @@ It reports each result that differs, and checks that a failed read surfaces as a
 - `Want`: the DataSet every feed must produce, ignoring sizes.
 - `Legacy`: an existing unmarshaler whose DataSet must match, ignoring sizes.
 - `Shuffle`: reorders the body without changing its meaning; the result must match apart from series order. `streamtest.ShuffleLines(n)` shuffles every line after the first `n`.
-- `Unwrap`: extracts the DataSet from a provider's wrapper type.
+- `Unwrap`: extracts the DataSet from a provider's wrapper type. It applies to the legacy result too, so it can also normalize a difference the new decoder makes on purpose; the InfluxQL tests use it to compare numbers the old decoder always made float64s.
 
 `streamtest.Compare(want, got, opts)` reports the first difference between two DataSets, for your own assertions. `streamtest.Bench` measures an unmarshaler the way the proxy engine calls it, so an old and a new decoder can be compared side by side:
 
@@ -212,7 +256,8 @@ func newTSVDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 
 1. Write the decoder beside the provider's current unmarshaler.
 2. Run `streamtest.Conformance` over the provider's test bodies, with `Legacy` set to the current `WireUnmarshalerReader`. Sizes may differ, but everything else should match. Where the old behavior is a bug, assert the corrected result with `Want` instead, and point it out in the pull request.
-3. Compare the old and new decoders with `streamtest.Bench`.
-4. Point the Modeler's wire unmarshalers at the adapters, and remove the old model code.
+3. Add a test that decodes from a buffer, overwrites the buffer, and checks the result is unchanged. Callers reuse and release their input buffers once a decode returns, so a decoder must never keep references into its input.
+4. Compare the old and new decoders with `streamtest.Bench`.
+5. Point the Modeler's wire unmarshalers at the adapters, and move the old decoder into a `_test.go` file as the `Legacy` oracle.
 
-Formats that send each series as one block, with its points in time order, map directly onto series mode; examples are Prometheus, InfluxQL JSON and Graphite. Formats that send rows in no particular order use row mode and rely on the Builder to sort when needed; examples are InfluxDB 3 SQL, ClickHouse, Flux CSV and Druid. The MySQL provider's wire-protocol path never builds a DataSet, so it is not a candidate.
+Formats that send each series as one block, with its points in time order, map directly onto series mode; examples are Prometheus, InfluxQL JSON and Graphite. Flux CSV uses series mode too: each of its tables is one series, and each can have a different schema, which row mode's fixed fields can't follow. Formats that send rows in no particular order use row mode and rely on the Builder to sort when needed; examples are InfluxDB 3 SQL, ClickHouse and Druid. ClickHouse's series interleave row by row, as a `GROUP BY` bucket holds one row per series, so it uses row mode with `NameSeries` rather than reopening a series for every row. The MySQL provider's wire-protocol path never builds a DataSet, so it is not a candidate.

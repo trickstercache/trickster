@@ -103,6 +103,8 @@ Trickster supports the following v3 response formats, controlled by the `format`
 
 The `parquet` and `pretty` formats are not supported for caching and will be proxied through.
 
+InfluxDB 3 leaves a row's null values out of JSON and JSON Lines, so a column can first appear on any row. Trickster reads every column a response names, on whichever row first names it.
+
 ### v1/v2 Compatibility
 
 InfluxDB 3.x ships with v1 and v2 compatibility endpoints. Trickster's existing InfluxQL support works against these endpoints with no additional configuration — just point Trickster at the v3 instance and query via `/query`.
@@ -181,6 +183,8 @@ Note: InfluxDB 3 Core 3.10 reports a parameter schema at prepare time but does n
 Trickster supports the Flux Query Language for general/basic usage with InfluxDB 1.x and 2.x. Flux is not supported in InfluxDB 3.x.
 
 The delta-proxy cache accepts `now()` as a `range()` bound and handles queries with `aggregateWindow(every: ...)` -- the common Grafana shape. Multi-table Flux CSV responses (one table per series in the result set) are also read correctly.
+
+InfluxDB answers Flux queries only in annotated CSV. Trickster can also answer them in JSON when the request's `Accept` header asks for `application/json`. Each table's records are written as objects, and a NaN or infinite value is written as `null`, as InfluxDB 3's JSON writes it.
 
 `aggregateWindow` may also set `offset` and `timeSrc` (`"_stop"`, the default, or `"_start"`); Trickster aligns its fetches to the resulting window boundaries and labels. Queries whose windows cannot be mapped onto a fixed step grid are proxied without delta caching: a bare `window()` (its records keep their own `_time`), a `period` that differs from `every`, or a `location`.
 

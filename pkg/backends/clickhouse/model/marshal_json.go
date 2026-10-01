@@ -19,10 +19,11 @@ package model
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -50,30 +51,26 @@ func (d WFDataItem) MarshalJSON() ([]byte, error) {
 }
 
 func marshalTimeseriesJSON(w io.Writer, ds *dataset.DataSet,
-	_ *timeseries.RequestOptions, _ int,
+	rlo *timeseries.RequestOptions, _ int,
 ) error {
 	fds, _, _, _ := ds.FieldDefinitions()
+	opts := formatOptions(rlo)
 	if hw, ok := w.(http.ResponseWriter); ok && hw != nil {
 		hw.Header().Set(formatHeader, "JSON")
 		hw.Header().Set(headers.NameContentType, headers.ValueApplicationJSON)
+		hw.Header().Set(TimezoneHeader, opts.ZoneName())
 	}
 	cw := tbytes.NewChunkWriter(w)
-	appendJSONDocument(&cw, ds, fds)
+	appendJSONDocument(&cw, ds, fds, opts)
 	cw.Buf = append(cw.Buf, '\n')
 	return cw.Close()
 }
 
-// one output position of a row, which is left out when it has no key
-type jsonCell struct {
-	key   string
-	role  timeseries.FieldRole
-	tag   string
-	value any
-}
-
-// appends ds as encoding/json writes its WFDocument: each row holds its fields in output position
-// order, named by the meta, with each value written as fmt's %v writes it
-func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeseries.FieldDefinitions) {
+// appends ds as ClickHouse's JSON format holds it: the meta, then each row by time as an object of its
+// fields in output position order, each value typed as its column's type writes it
+func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeseries.FieldDefinitions,
+	opts *FormatOptions,
+) {
 	n := len(fds)
 	meta := make(WFMeta, n)
 	for _, fd := range fds {
@@ -83,6 +80,7 @@ func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeser
 	}
 	cw.Buf = append(cw.Buf, `{"meta":[`...)
 	b := cw.Buf
+	keys := make([][]byte, n)
 	for i, m := range meta {
 		if i > 0 {
 			b = append(b, ',')
@@ -91,6 +89,7 @@ func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeser
 		if m.Name != "" {
 			b = append(b, `"name":`...)
 			b = tstrings.AppendJSON(b, m.Name)
+			keys[i] = append(tstrings.AppendJSON(nil, m.Name), ':')
 		}
 		if m.Type != "" {
 			if m.Name != "" {
@@ -102,102 +101,183 @@ func appendJSONDocument(cw *tbytes.ChunkWriter, ds *dataset.DataSet, fds timeser
 		b = append(b, '}')
 	}
 	if len(ds.Results) == 0 {
-		b = append(b, `],"data":null,"rows":0}`...)
+		b = append(b, `],"data":[],"rows":0}`...)
 		cw.Buf = b
 		return
 	}
 	b = append(b, `],"data":[`...)
-	var tf timeseries.FieldDataType
-	if ds.TimeRangeQuery != nil {
-		tf = ds.TimeRangeQuery.TimestampDefinition.DataType
-	}
-	cells := make([]jsonCell, n)
-	rows := 0
-	for _, s := range ds.Results[0].SeriesList {
-		if s == nil {
-			continue
+	rows, _ := timeOrderedRows(ds.Results[0])
+	layout := newOutLayout(fds, opts, len(ds.Results[0].SeriesList))
+	written := 0
+	for r := range rows {
+		cells := layout.rowCells(r)
+		if written > 0 {
+			b = append(b, ',')
 		}
-		for pi := range s.PointCount() {
-			p := s.PointAt(pi)
-			clear(cells)
-			// the fields fill the positions in their own order, a later one replacing an earlier
-			var vi int
-			for _, fd := range fds {
-				at := fd.OutputPosition
-				if at < 0 || at >= n {
-					continue
-				}
-				switch fd.Role {
-				case timeseries.RoleTimestamp:
-					cells[at] = jsonCell{key: meta[at].Name, role: fd.Role}
-				case timeseries.RoleTag:
-					cells[at] = jsonCell{key: meta[at].Name, role: fd.Role, tag: s.Header.Tags[fd.Name]}
-				case timeseries.RoleValue:
-					if vi >= len(p.Values) {
-						continue
-					}
-					cells[at] = jsonCell{key: meta[at].Name, role: fd.Role, value: p.Values[vi]}
-					vi++
-				}
+		written++
+		b = append(b, '{')
+		sep := false
+		for i := range cells {
+			c := &cells[i]
+			// a position without a name or a cell is left out
+			if c.kind == cellNone || keys[i] == nil {
+				continue
 			}
-			if rows > 0 {
+			if sep {
 				b = append(b, ',')
 			}
-			rows++
-			b = append(b, '{')
-			sep := false
-			for i := range cells {
-				c := &cells[i]
-				if c.key == "" {
-					continue
-				}
-				if sep {
-					b = append(b, ',')
-				}
-				sep = true
-				b = tstrings.AppendJSON(b, c.key)
-				b = append(b, ':')
-				switch c.role {
-				case timeseries.RoleTimestamp:
-					// a formatted time holds nothing JSON escapes
-					b = append(p.Epoch.AppendFormat(append(b, '"'), tf, false), '"')
-				case timeseries.RoleTag:
-					b = tstrings.AppendJSON(b, c.tag)
-				default:
-					b = appendValueString(b, c.value)
-				}
-			}
-			b = append(b, '}')
-			cw.Buf = b
-			cw.FlushIfFull()
-			b = cw.Buf
+			sep = true
+			b = append(b, keys[i]...)
+			b = appendJSONCell(b, c, r, opts)
 		}
+		b = append(b, '}')
+		cw.Buf = b
+		cw.FlushIfFull()
+		b = cw.Buf
 	}
 	b = append(b, `],"rows":`...)
-	b = strconv.AppendInt(b, int64(rows), 10)
+	b = strconv.AppendInt(b, int64(written), 10)
 	b = append(b, '}')
 	cw.Buf = b
 }
 
-// appends v as a JSON string of what fmt's %v writes for it
-func appendValueString(b []byte, v any) []byte {
-	switch t := v.(type) {
-	case string:
-		return tstrings.AppendJSON(b, t)
-	case float64:
-		return append(strconv.AppendFloat(append(b, '"'), t, 'g', -1, 64), '"')
-	case float32:
-		return append(strconv.AppendFloat(append(b, '"'), float64(t), 'g', -1, 32), '"')
-	case int64:
-		return append(strconv.AppendInt(append(b, '"'), t, 10), '"')
-	case int:
-		return append(strconv.AppendInt(append(b, '"'), int64(t), 10), '"')
-	case uint64:
-		return append(strconv.AppendUint(append(b, '"'), t, 10), '"')
-	case bool:
-		return append(strconv.AppendBool(append(b, '"'), t), '"')
-	case nil:
-		return append(b, `"<nil>"`...)
+// the JSON literal of a NULL, and of a NaN or an infinity unless they're quoted
+const jsonNull = "null"
+
+// appendJSONCell appends a cell as ClickHouse's JSON writes its column's type
+func appendJSONCell(b []byte, c *outCell, r outputRow, opts *FormatOptions) []byte {
+	f := c.f
+	switch c.kind {
+	case cellText:
+		return tstrings.AppendJSON(b, c.text)
+	case cellTime:
+		switch f.class {
+		case classDateTime:
+			return append(f.appendTime(append(b, '"'), r.epoch(), opts.DateTimeFormat), '"')
+		case classDate:
+			return append(r.epoch().AppendFormat(append(b, '"'), timeseries.DateSQL, false), '"')
+		}
+		q := f.wide && opts.QuoteInt64
+		return quoteIf(r.epoch().AppendFormat(quoteIf(b, q), f.fd.DataType, false), q)
+	case cellTag:
+		if c.null {
+			return append(b, jsonNull...)
+		}
+		return appendJSONText(b, f, c.text, opts)
 	}
-	return tstrings.AppendJSON(b, fmt.Sprint(v))
+	seg, col, i := r.seg, c.col, r.i
+	switch seg.KindAt(col, i) {
+	case dataset.KindNull:
+		return append(b, jsonNull...)
+	case dataset.KindFloat64:
+		v := seg.Float64(col, i)
+		if f.class == classDecimal {
+			return quoteIf(strconv.AppendFloat(quoteIf(b, opts.QuoteDecimals), v, 'f', -1, 64), opts.QuoteDecimals)
+		}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			if opts.QuoteDenormals {
+				return append(appendFloat(append(b, '"'), v), '"')
+			}
+			return append(b, jsonNull...)
+		}
+		return appendFloat(b, v)
+	case dataset.KindInt64:
+		q := f.wide && opts.QuoteInt64
+		return quoteIf(strconv.AppendInt(quoteIf(b, q), seg.Int64(col, i), 10), q)
+	case dataset.KindUint64:
+		q := f.wide && opts.QuoteInt64
+		return quoteIf(strconv.AppendUint(quoteIf(b, q), seg.Uint64(col, i), 10), q)
+	case dataset.KindBool:
+		return strconv.AppendBool(b, seg.Bool(col, i))
+	case dataset.KindString:
+		return appendJSONText(b, f, seg.Text(col, i), opts)
+	}
+	out, err := seg.AppendJSON(b, col, i)
+	if err != nil {
+		return append(b, jsonNull...)
+	}
+	return out
+}
+
+// quoteIf appends a JSON string's quote when quoted, which opens or closes a quoted number
+func quoteIf(b []byte, quoted bool) []byte {
+	if quoted {
+		return append(b, '"')
+	}
+	return b
+}
+
+// appendJSONText appends a tag's or value's text by its column's type: a number bare, a compound
+// value as JSON, a DateTime in the request's zone and format, and other text as a JSON string
+func appendJSONText(b []byte, f *outField, text string, opts *FormatOptions) []byte {
+	switch f.class {
+	case classNumber:
+		if isJSONNumber(text) {
+			q := f.wide && opts.QuoteInt64
+			return quoteIf(append(quoteIf(b, q), text...), q)
+		}
+	case classFloat:
+		if isJSONNumber(text) {
+			return append(b, text...)
+		}
+		if v, err := strconv.ParseFloat(text, 64); err == nil && (math.IsNaN(v) || math.IsInf(v, 0)) {
+			if opts.QuoteDenormals {
+				return append(appendFloat(append(b, '"'), v), '"')
+			}
+			return append(b, jsonNull...)
+		}
+	case classDecimal:
+		if isJSONNumber(text) {
+			return quoteIf(append(quoteIf(b, opts.QuoteDecimals), text...), opts.QuoteDecimals)
+		}
+	case classBool:
+		if text == "true" || text == "false" {
+			return append(b, text...)
+		}
+	case classDateTime:
+		return append(f.appendStoredTime(append(b, '"'), []byte(text), opts.DateTimeFormat), '"')
+	case classCompound:
+		if out, ok := appendLiteralJSON(b, text, tupleNames(f.fd.SDataType)); ok {
+			return out
+		}
+	}
+	if f.fixed > len(text) {
+		text += strings.Repeat("\x00", f.fixed-len(text))
+	}
+	return tstrings.AppendJSON(b, text)
+}
+
+// isJSONNumber reports whether text is a JSON number: a sign, an integer without leading zeros, and an
+// optional fraction and exponent
+func isJSONNumber(text string) bool {
+	i := 0
+	if i < len(text) && text[i] == '-' {
+		i++
+	}
+	digits := func() int {
+		start := i
+		for i < len(text) && text[i] >= '0' && text[i] <= '9' {
+			i++
+		}
+		return i - start
+	}
+	if n := digits(); n == 0 || (n > 1 && text[i-n] == '0') {
+		return false
+	}
+	if i < len(text) && text[i] == '.' {
+		i++
+		if digits() == 0 {
+			return false
+		}
+	}
+	if i < len(text) && (text[i] == 'e' || text[i] == 'E') {
+		i++
+		if i < len(text) && (text[i] == '+' || text[i] == '-') {
+			i++
+		}
+		if digits() == 0 {
+			return false
+		}
+	}
+	return i == len(text)
 }

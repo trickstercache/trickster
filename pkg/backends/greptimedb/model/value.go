@@ -66,27 +66,39 @@ func decodeValue(value any, typ string) (any, error) {
 		if !ok {
 			return nil, timeseries.ErrInvalidBody
 		}
-		bits := 64
-		for _, width := range []int{8, 16, 32} {
-			if typ == "Int"+strconv.Itoa(width) || typ == "UInt"+strconv.Itoa(width) || typ == "Float"+strconv.Itoa(width) {
-				bits = width
-			}
-		}
+		bits := typeBits(typ)
 		switch kind {
 		case timeseries.Int64:
 			return strconv.ParseInt(string(n), 10, bits)
 		case timeseries.Uint64:
 			return strconv.ParseUint(string(n), 10, bits)
 		case timeseries.Float64:
-			// JSON carries a decimal rendering of a Float32; do not widen a
-			// rounded binary32 and change that decimal during reconstruction.
-			v, err := strconv.ParseFloat(string(n), 64)
-			if err == nil && !math.IsNaN(v) && !math.IsInf(v, 0) && (bits == 64 || math.Abs(v) <= math.MaxFloat32) {
+			if v, ok := parseFloat(string(n), bits); ok {
 				return v, nil
 			}
 		}
 	}
 	return nil, timeseries.ErrInvalidBody
+}
+
+// typeBits returns the width in bits of a GreptimeDB number type, and 64 for any other type
+func typeBits(typ string) int {
+	switch typ {
+	case "Int8", "UInt8":
+		return 8
+	case "Int16", "UInt16":
+		return 16
+	case "Int32", "UInt32", "Float32":
+		return 32
+	}
+	return 64
+}
+
+// parseFloat parses a JSON number as a float of the width, failing one out of range; a Float32 isn't
+// widened from binary32, so the decimal JSON carried is the one written back
+func parseFloat(s string, bits int) (float64, bool) {
+	v, err := strconv.ParseFloat(s, 64)
+	return v, err == nil && (bits == 64 || math.Abs(v) <= math.MaxFloat32)
 }
 
 func axisScale(field timeseries.FieldDefinition) int64 {

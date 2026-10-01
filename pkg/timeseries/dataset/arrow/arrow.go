@@ -26,8 +26,10 @@
 package arrow
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"iter"
 	"math"
 	"slices"
 	"strings"
@@ -185,8 +187,14 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 		}
 	}
 
-	seriesByKey := make(map[string]*dataset.Series)
+	// every series' rows go through one log, which sorts any that arrive out of order
+	type keyed struct {
+		series *dataset.Series
+		id     int
+	}
+	seriesByKey := make(map[string]keyed)
 	var seriesKeys []string
+	log := dataset.NewColumnLog(dataset.DuplicatesKeep)
 	for _, rec := range records {
 		if rec == nil {
 			continue
@@ -221,24 +229,30 @@ func FromRecords(schema *arrow.Schema, records []arrow.RecordBatch,
 					QueryStatement:  trq.Statement,
 				}
 				sh.CalculateSize()
-				series = &dataset.Series{Header: sh}
+				series = keyed{series: dataset.NewSeries(sh, nil), id: log.AddSeries(len(valueIndices))}
 				seriesByKey[key] = series
 				seriesKeys = append(seriesKeys, key)
 			}
-			values := make([]any, len(valueIndices))
-			for i, columnIndex := range valueIndices {
-				values[i] = valueAt(rec.Column(columnIndex), row)
+			for _, columnIndex := range valueIndices {
+				log.AddValue(valueAt(rec.Column(columnIndex), row))
 			}
-			size := dataset.PointSize(values)
-			series.Points = append(series.Points, dataset.Point{Epoch: ep, Size: size, Values: values})
-			series.PointSize += int64(size)
+			if err := log.Commit(series.id, ep); err != nil {
+				return nil, err
+			}
 		}
 	}
-
+	segs, err := log.Finish()
+	if err != nil {
+		return nil, err
+	}
 	slices.Sort(seriesKeys)
 	seriesList := make(dataset.SeriesList, len(seriesKeys))
 	for i, key := range seriesKeys {
-		seriesList[i] = seriesByKey[key]
+		k := seriesByKey[key]
+		if segs[k.id].Len() > 0 {
+			k.series.SetSegments(segs[k.id : k.id+1 : k.id+1])
+		}
+		seriesList[i] = k.series
 	}
 	return &dataset.DataSet{
 		TimeRangeQuery: trq,
@@ -256,11 +270,12 @@ type seriesContext struct {
 	tagValues []any
 }
 
-// rowRef locates one output row: its epoch, its series, and its point.
+// rowRef locates one output row: its epoch, its series, and where the series holds it.
 type rowRef struct {
 	ep          epoch.Epoch
 	seriesIndex int
-	point       *dataset.Point
+	seg         *dataset.Segment
+	row         int
 }
 
 // defaultRowOrder is the time-major fallback ordering — ascending epoch, then
@@ -310,6 +325,9 @@ func rowComparators(schema *arrow.Schema, tsIndex int, contexts []seriesContext,
 		default:
 			nullsFirst := key.NullsFirst
 			out = append(out, func(a, b rowRef) int {
+				if c, ok := compareCells(contexts, a, b, column, nullsFirst); ok {
+					return sign * c
+				}
 				left := cellValue(contexts, a, column)
 				right := cellValue(contexts, b, column)
 				if left == nil || right == nil {
@@ -330,10 +348,65 @@ func cellValue(contexts []seriesContext, row rowRef, column int) any {
 		return sc.tagValues[column]
 	}
 	position := sc.valueIndex[column]
-	if position >= len(row.point.Values) {
+	if position >= row.seg.NumCols() {
 		return nil
 	}
-	return row.point.Values[position]
+	return row.seg.Value(position, row.row)
+}
+
+// compareCells compares two rows' values of a value column as compareValues does, without boxing, when
+// they're of one kind, two nulls being equal; it's false otherwise
+func compareCells(contexts []seriesContext, a, b rowRef, column int, nullsFirst bool) (int, bool) {
+	ka, ok := cellKind(contexts, a, column)
+	if !ok {
+		return 0, false
+	}
+	kb, ok := cellKind(contexts, b, column)
+	if !ok || ka != kb {
+		return 0, false
+	}
+	pa, pb := contexts[a.seriesIndex].valueIndex[column], contexts[b.seriesIndex].valueIndex[column]
+	switch ka {
+	case dataset.KindNull:
+		return 0, true
+	case dataset.KindString:
+		return strings.Compare(a.seg.Text(pa, a.row), b.seg.Text(pb, b.row)), true
+	case dataset.KindFloat64:
+		return compareFloats(a.seg.Float64(pa, a.row), b.seg.Float64(pb, b.row)), true
+	case dataset.KindInt64:
+		return compareFloats(float64(a.seg.Int64(pa, a.row)), float64(b.seg.Int64(pb, b.row))), true
+	case dataset.KindUint64:
+		return compareFloats(float64(a.seg.Uint64(pa, a.row)), float64(b.seg.Uint64(pb, b.row))), true
+	case dataset.KindBool:
+		return compareValues(a.seg.Bool(pa, a.row), b.seg.Bool(pb, b.row)), true
+	}
+	return 0, false
+}
+
+// cellKind returns the kind of a row's value in a value column, null when its row is narrower; it's false
+// for a tag column
+func cellKind(contexts []seriesContext, row rowRef, column int) (dataset.Kind, bool) {
+	position := contexts[row.seriesIndex].valueIndex[column]
+	switch {
+	case position < 0:
+		return 0, false
+	case position >= row.seg.NumCols():
+		return dataset.KindNull, true
+	}
+	return row.seg.KindAt(position, row.row), true
+}
+
+// compareFloats orders floats by IEEE 754 totalOrder, as Arrow's Rust sorts and so DataFusion do:
+// -NaN, -Inf, negatives, -0, +0, positives, +Inf, then NaN, with NaNs ordered by their bits
+func compareFloats(a, b float64) int {
+	return cmp.Compare(totalOrderKey(a), totalOrderKey(b))
+}
+
+// totalOrderKey maps a float's bits to an integer that orders as totalOrder does: a negative float's
+// bits but the sign are flipped, so it orders backward from the positives
+func totalOrderKey(f float64) int64 {
+	k := int64(math.Float64bits(f))    // #nosec G115 -- the key is the float's bits, reinterpreted
+	return k ^ int64(uint64(k>>63)>>1) // #nosec G115 -- a mask of the 63 bits after the sign
 }
 
 // nullOrder places nulls ahead of or behind non-null values independently of
@@ -377,13 +450,7 @@ func compareValues(a, b any) int {
 	if leftErr != nil || rightErr != nil {
 		return strings.Compare(fmt.Sprint(a), fmt.Sprint(b))
 	}
-	switch {
-	case left < right:
-		return -1
-	case left > right:
-		return 1
-	}
-	return 0
+	return compareFloats(left, right)
 }
 
 // ToRecords rebuilds record batches conforming to schema from a DataSet
@@ -452,16 +519,99 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 		}
 	}
 
-	rows := make([]rowRef, 0, rowCount)
-	for seriesIndex, sc := range contexts {
-		for i := range sc.series.PointCount() {
-			point := sc.series.PointAt(i)
-			rows = append(rows, rowRef{ep: point.Epoch, seriesIndex: seriesIndex, point: point})
-		}
-	}
 	comparators, err := rowComparators(schema, tsIndex, contexts, keys)
 	if err != nil {
 		return nil, err
+	}
+	var out []arrow.RecordBatch
+	var builder *array.RecordBuilder
+	var fieldBuilders []array.Builder
+	var tsBuilder *array.TimestampBuilder
+	written, batched := 0, 0
+	// a key's column was found by rowComparators
+	timeFirst := len(keys) == 0 || schema.FieldIndices(keys[0].Column)[0] == tsIndex
+	for row := range orderedRows(contexts, rowCount, comparators, keys, timeFirst) {
+		if builder == nil {
+			builder = array.NewRecordBuilder(memory.DefaultAllocator, schema)
+			builder.Reserve(min(maxRowsPerBatch, rowCount-written))
+			fieldBuilders = builder.Fields()
+			tsBuilder = fieldBuilders[tsIndex].(*array.TimestampBuilder)
+		}
+		sc := &contexts[row.seriesIndex]
+		for i, fieldBuilder := range fieldBuilders {
+			switch {
+			case i == tsIndex:
+				appendTimestamp(tsBuilder, row.ep, tsType)
+			case sc.valueIndex[i] < 0:
+				err = appendValue(fieldBuilder, sc.tagValues[i])
+			default:
+				err = appendCell(fieldBuilder, row.seg, sc.valueIndex[i], row.row)
+			}
+			if err != nil {
+				builder.Release()
+				return nil, fmt.Errorf("column %q: %w", fields[i].Name, err)
+			}
+		}
+		written++
+		if batched++; batched == maxRowsPerBatch {
+			out = append(out, builder.NewRecordBatch())
+			builder.Release()
+			builder, batched = nil, 0
+		}
+	}
+	if builder != nil {
+		out = append(out, builder.NewRecordBatch())
+		builder.Release()
+	}
+	return out, nil
+}
+
+// orderedRows yields the rows by the keys, then time-major: merged from sorted series when the keys
+// start with time or there are none, and otherwise sorted
+func orderedRows(contexts []seriesContext, rowCount int, comparators []func(a, b rowRef) int,
+	keys []SortKey, timeFirst bool,
+) iter.Seq[rowRef] {
+	r := &dataset.Result{SeriesList: make(dataset.SeriesList, len(contexts))}
+	for i := range contexts {
+		r.SeriesList[i] = contexts[i].series
+		timeFirst = timeFirst && contexts[i].series.IsSorted()
+	}
+	if timeFirst {
+		order := dataset.RowOrder{}
+		rest := comparators
+		if len(keys) > 0 {
+			order.Descending, rest = keys[0].Descending, comparators[1:]
+		}
+		// the merge breaks ties by series order, but for the later keys, and for the stored order of a
+		// series' own ties, which a descending merge reads backward
+		if len(rest) > 0 || order.Descending {
+			order.Compare = func(a, b dataset.Row) int {
+				ra, rb := refOf(a), refOf(b)
+				for _, compare := range rest {
+					if c := compare(ra, rb); c != 0 {
+						return c
+					}
+				}
+				return dataset.CompareStored(a, b)
+			}
+		}
+		return func(yield func(rowRef) bool) {
+			for row := range r.Rows(order) {
+				if !yield(refOf(row)) {
+					return
+				}
+			}
+		}
+	}
+	rows := make([]rowRef, 0, rowCount)
+	for seriesIndex, sc := range contexts {
+		segs := sc.series.Segments()
+		for k := range segs {
+			seg := &segs[k]
+			for i, ep := range seg.Epochs() {
+				rows = append(rows, rowRef{ep: ep, seriesIndex: seriesIndex, seg: seg, row: i})
+			}
+		}
 	}
 	slices.SortStableFunc(rows, func(a, b rowRef) int {
 		for _, compare := range comparators {
@@ -471,37 +621,11 @@ func ToRecords(schema *arrow.Schema, ds *dataset.DataSet,
 		}
 		return defaultRowOrder(a, b)
 	})
+	return slices.Values(rows)
+}
 
-	var out []arrow.RecordBatch
-	for start := 0; start < len(rows); start += maxRowsPerBatch {
-		chunk := rows[start:min(start+maxRowsPerBatch, len(rows))]
-		builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
-		builder.Reserve(len(chunk))
-		fieldBuilders := builder.Fields()
-		tsBuilder := fieldBuilders[tsIndex].(*array.TimestampBuilder)
-		for _, row := range chunk {
-			sc := &contexts[row.seriesIndex]
-			for i, fieldBuilder := range fieldBuilders {
-				var err error
-				switch {
-				case i == tsIndex:
-					appendTimestamp(tsBuilder, row.ep, tsType)
-				case sc.valueIndex[i] < 0:
-					err = appendValue(fieldBuilder, sc.tagValues[i])
-				default:
-					err = appendValue(fieldBuilder, row.point.Values[sc.valueIndex[i]])
-				}
-				if err != nil {
-					builder.Release()
-					return nil, fmt.Errorf("column %q: %w", fields[i].Name, err)
-				}
-			}
-		}
-		rec := builder.NewRecordBatch()
-		builder.Release()
-		out = append(out, rec)
-	}
-	return out, nil
+func refOf(row dataset.Row) rowRef {
+	return rowRef{ep: row.Epoch(), seriesIndex: row.SeriesIndex, seg: row.Seg, row: row.Index}
 }
 
 // timestampAt converts a timestamp cell to Unix-nanosecond epoch.
@@ -580,6 +704,52 @@ func valueAt(column arrow.Array, row int) any {
 		return s
 	}
 	return nil
+}
+
+// appendCell writes a Segment's value into an Arrow builder, reading the common kinds without boxing
+// them and converting the rest as appendValue does
+func appendCell(builder array.Builder, seg *dataset.Segment, c, i int) error {
+	switch k := seg.KindAt(c, i); b := builder.(type) {
+	case *array.Float64Builder:
+		if k == dataset.KindFloat64 {
+			b.Append(seg.Float64(c, i))
+			return nil
+		}
+	case *array.Int64Builder:
+		if k == dataset.KindInt64 {
+			b.Append(seg.Int64(c, i))
+			return nil
+		}
+	case *array.Uint64Builder:
+		if k == dataset.KindUint64 {
+			b.Append(seg.Uint64(c, i))
+			return nil
+		}
+	case *array.BooleanBuilder:
+		if k == dataset.KindBool {
+			b.Append(seg.Bool(c, i))
+			return nil
+		}
+	case *array.StringBuilder:
+		if k == dataset.KindString {
+			b.Append(seg.Text(c, i))
+			return nil
+		}
+	case *array.BinaryDictionaryBuilder:
+		if k == dataset.KindString {
+			// Append copies only a new value, where AppendString copies every one; it reads nil as a null
+			if v := seg.Bytes(c, i); v != nil {
+				return b.Append(v)
+			}
+			return b.AppendString("")
+		}
+	case *array.TimestampBuilder:
+		if k == dataset.KindInt64 {
+			b.Append(arrow.Timestamp(seg.Int64(c, i)))
+			return nil
+		}
+	}
+	return appendValue(builder, seg.Value(c, i))
 }
 
 // appendValue writes a normalized dataset value into an Arrow builder,

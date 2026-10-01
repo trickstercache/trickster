@@ -17,19 +17,24 @@
 package model
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/json"
 	"io"
+	"iter"
 	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 type sqlOutputColumn struct {
@@ -45,20 +50,27 @@ const (
 	sqlColumnValue
 )
 
-// a series' output layout: its columns, each tag column's value decoded once, each output key in
-// position order with the column it writes, and each ordering term's column
+// a series' layout: its columns, tags decoded and as JSON, keys in position order with the columns they
+// write, each ordering term's column, and whether time is written in milliseconds
 type sqlSeries struct {
 	columns []sqlOutputColumn
 	tags    []any
+	tagJSON []string
 	keys    []string
 	sources []int
 	order   []int
+	millis  bool
 }
 
-// one output row: a point, by reference, and the layout of its series
+// one output row: where its series holds it, and the layout of its series
 type sqlRow struct {
-	s *sqlSeries
-	p *dataset.Point
+	s   *sqlSeries
+	seg *dataset.Segment
+	row int
+}
+
+func (r sqlRow) epoch() epoch.Epoch {
+	return r.seg.Epoch(r.row)
 }
 
 // the row's value in column i; a time is formatted, which only rare comparisons need
@@ -66,26 +78,36 @@ func (r sqlRow) value(i int) any {
 	c := &r.s.columns[i]
 	switch c.role {
 	case sqlColumnTimestamp:
-		return formatTimestamp(r.p.Epoch)
+		return formatTimestamp(r.epoch())
 	case sqlColumnTag:
 		return r.s.tags[i]
 	}
-	if c.index < len(r.p.Values) {
-		return r.p.Values[c.index]
+	if c.index < r.seg.NumCols() {
+		return r.seg.Value(c.index, r.row)
 	}
 	return nil
 }
 
-// appends the row's value in column i as JSON; the values were checked, so none fails
-func (r sqlRow) appendValue(b []byte, i int) []byte {
+// appends the row's value in column i as Druid wrote it; the values were checked, so none fails
+func (r sqlRow) appendValue(b []byte, i int, tt *timeText) []byte {
 	if i < 0 {
 		return append(b, "null"...)
 	}
-	if r.s.columns[i].role == sqlColumnTimestamp {
-		return appendTimestamp(b, r.p.Epoch)
+	c := &r.s.columns[i]
+	switch c.role {
+	case sqlColumnTimestamp:
+		if r.s.millis {
+			return strconv.AppendInt(b, int64(r.epoch())/int64(time.Millisecond), 10)
+		}
+		return tt.append(b, r.epoch())
+	case sqlColumnTag:
+		return append(b, r.s.tagJSON[i]...)
 	}
-	b, _ = tstrings.AppendJSONValue(b, r.value(i))
-	return b
+	if c.index < r.seg.NumCols() {
+		b, _ = appendDruidValue(b, r.seg, c.index, r.row)
+		return b
+	}
+	return append(b, "null"...)
 }
 
 func marshalSQLTimeseriesWriter(ds *dataset.DataSet, marker *SQLQueryPlan,
@@ -101,20 +123,21 @@ func marshalSQLTimeseriesWriter(ds *dataset.DataSet, marker *SQLQueryPlan,
 	if ds != nil && ds.TimeRangeQuery != nil {
 		ordering = ds.TimeRangeQuery.Ordering
 	}
-	rows := sqlOutputRows(ds, ordering)
-	sortSQLRows(rows, ordering)
+	o := newSQLOrder(ds, ordering)
 	if marker.ResponseFormat() == SQLResponseArray {
-		return marshalSQLArrayRows(rows, marker, writer)
+		return marshalSQLArrayRows(o, marker, writer)
 	}
 	// the output is written as encoding/json would write it, so nothing is when a value can't be
-	for _, row := range rows {
-		if err := checkSQLRow(row, row.s.sources); err != nil {
+	for _, s := range o.series {
+		if err := checkSQLSeries(s, o.layouts[s], o.layouts[s].sources); err != nil {
 			return err
 		}
 	}
 	cw := tbytes.NewChunkWriter(writer)
 	cw.Buf = append(cw.Buf, '[')
-	for i, row := range rows {
+	var tt timeText
+	i := 0
+	for row := range o.rows() {
 		if i > 0 {
 			cw.Buf = append(cw.Buf, ',')
 		}
@@ -124,55 +147,57 @@ func marshalSQLTimeseriesWriter(ds *dataset.DataSet, marker *SQLQueryPlan,
 				cw.Buf = append(cw.Buf, ',')
 			}
 			cw.Buf = append(cw.Buf, key...)
-			cw.Buf = row.appendValue(cw.Buf, row.s.sources[j])
+			cw.Buf = row.appendValue(cw.Buf, row.s.sources[j], &tt)
 		}
 		cw.Buf = append(cw.Buf, '}')
 		cw.FlushIfFull()
+		i++
 	}
 	cw.Buf = append(cw.Buf, "]\n"...)
 	return cw.Close()
 }
 
-func checkSQLRow(row sqlRow, sources []int) error {
+// checkSQLSeries checks every value a series' rows write, a column at a time
+func checkSQLSeries(series *dataset.Series, layout *sqlSeries, sources []int) error {
+	segs := series.Segments()
 	for _, i := range sources {
-		if i >= 0 && row.s.columns[i].role == sqlColumnValue {
-			if err := tstrings.CheckJSONValue(row.value(i)); err != nil {
-				return err
+		if i < 0 || layout.columns[i].role != sqlColumnValue {
+			continue
+		}
+		for k := range segs {
+			if c := layout.columns[i].index; c < segs[k].NumCols() {
+				if err := checkDruidColumn(&segs[k], c); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
 }
 
-func marshalSQLArrayRows(rows []sqlRow, marker *SQLQueryPlan, writer io.Writer) error {
+func marshalSQLArrayRows(o *sqlOrder, marker *SQLQueryPlan, writer io.Writer) error {
 	if marker == nil || !marker.Header() {
 		return timeseries.ErrUnknownFormat
 	}
 	var first []sqlOutputColumn
-	if len(rows) > 0 {
-		first = rows[0].s.columns
+	for row := range o.rows() {
+		first = row.s.columns
+		break
 	}
 	columns := sqlOutputColumns(first, marker)
 	if hw, ok := writer.(http.ResponseWriter); ok {
 		hw.Header().Set(headers.NameContentType, headers.ValueApplicationJSON)
 	}
 	// each series' column for each output column: the first of that name, if any
-	sources := map[*sqlSeries][]int{}
-	for _, row := range rows {
-		if _, ok := sources[row.s]; ok {
-			continue
-		}
+	sources := make(map[*sqlSeries][]int, len(o.layouts))
+	for _, s := range o.series {
+		layout := o.layouts[s]
 		src := make([]int, len(columns))
 		for i, column := range columns {
-			src[i] = slices.IndexFunc(row.s.columns, func(c sqlOutputColumn) bool { return c.name == column.name })
+			src[i] = slices.IndexFunc(layout.columns, func(c sqlOutputColumn) bool { return c.name == column.name })
 		}
-		sources[row.s] = src
-		if err := checkSQLTags(row.s, src); err != nil {
-			return err
-		}
-	}
-	for _, row := range rows {
-		if err := checkSQLRow(row, sources[row.s]); err != nil {
+		sources[layout] = src
+		if err := checkSQLSeries(s, layout, src); err != nil {
 			return err
 		}
 	}
@@ -182,34 +207,23 @@ func marshalSQLArrayRows(rows []sqlRow, marker *SQLQueryPlan, writer io.Writer) 
 		if i > 0 {
 			cw.Buf = append(cw.Buf, ',')
 		}
-		cw.Buf = tstrings.AppendJSON(cw.Buf, column.name)
+		cw.Buf = appendJacksonString(cw.Buf, column.name)
 	}
 	cw.Buf = append(cw.Buf, ']')
-	for _, row := range rows {
+	var tt timeText
+	for row := range o.rows() {
 		cw.Buf = append(cw.Buf, ",["...)
 		for i, source := range sources[row.s] {
 			if i > 0 {
 				cw.Buf = append(cw.Buf, ',')
 			}
-			cw.Buf = row.appendValue(cw.Buf, source)
+			cw.Buf = row.appendValue(cw.Buf, source, &tt)
 		}
 		cw.Buf = append(cw.Buf, ']')
 		cw.FlushIfFull()
 	}
 	cw.Buf = append(cw.Buf, "]\n"...)
 	return cw.Close()
-}
-
-// a series' tag values are decoded once, so they are checked once
-func checkSQLTags(s *sqlSeries, sources []int) error {
-	for _, i := range sources {
-		if i >= 0 && s.columns[i].role == sqlColumnTag {
-			if err := tstrings.CheckJSONValue(s.tags[i]); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
 }
 
 func sqlOutputColumns(first []sqlOutputColumn, marker *SQLQueryPlan) []sqlOutputColumn {
@@ -261,41 +275,199 @@ func sqlColumnNameIndex(columns []string, name string) int {
 	return -1
 }
 
-func sqlOutputRows(ds *dataset.DataSet, ordering []timeseries.OrderTerm) []sqlRow {
+// sqlOrder yields a DataSet's rows in the query's order, with each series' layout
+type sqlOrder struct {
+	ds       *dataset.DataSet
+	ordering []timeseries.OrderTerm
+	// each series' layout, by series and by its position in the one result a time-first order merges
+	layouts map[*dataset.Series]*sqlSeries
+	series  []*dataset.Series
+	merged  []*sqlSeries
+	result  *dataset.Result
+	// whether the terms after time are all tags, which the merged series are sorted by
+	byTags bool
+}
+
+func newSQLOrder(ds *dataset.DataSet, ordering []timeseries.OrderTerm) *sqlOrder {
+	o := &sqlOrder{ds: ds, ordering: ordering, layouts: map[*dataset.Series]*sqlSeries{}}
 	if ds == nil {
-		return nil
+		return o
 	}
-	count := 0
+	results := 0
+	var layouts sqlLayouts
 	for _, result := range ds.Results {
 		if result == nil {
 			continue
 		}
+		results++
+		o.result = result
 		for _, series := range result.SeriesList {
-			if series != nil {
-				count += series.PointCount()
+			if series != nil && series.PointCount() > 0 {
+				o.layouts[series] = layouts.series(series, ordering)
+				o.series = append(o.series, series)
 			}
 		}
+	}
+	// a single result of sorted series, ordered by time first, merges in order
+	if results != 1 || len(ordering) == 0 {
+		o.result = nil
+		return o
+	}
+	o.merged = make([]*sqlSeries, len(o.result.SeriesList))
+	o.byTags = true
+	for i, series := range o.result.SeriesList {
+		layout := o.layouts[series]
+		if layout == nil {
+			continue
+		}
+		if !series.IsSorted() || layout.order[0] != 0 {
+			o.result = nil
+			return o
+		}
+		o.merged[i] = layout
+		for _, c := range layout.order[1:] {
+			o.byTags = o.byTags && (c < 0 || layout.columns[c].role == sqlColumnTag)
+		}
+	}
+	if o.byTags {
+		o.sortByTags()
+	}
+	return o
+}
+
+// sortByTags orders a copy of the result's series as the order's terms after time order their rows,
+// which are all tags, so the rows of an epoch merge in series order
+func (o *sqlOrder) sortByTags() {
+	idx := make([]int, len(o.result.SeriesList))
+	for i := range idx {
+		idx[i] = i
+	}
+	slices.SortStableFunc(idx, func(a, b int) int {
+		// a series without rows has no layout, and sorts last
+		la, lb := o.merged[a], o.merged[b]
+		if la == nil || lb == nil {
+			return cmp.Compare(boolInt(la == nil), boolInt(lb == nil))
+		}
+		return compareSQLTerms(sqlRow{s: la}, sqlRow{s: lb}, o.ordering[1:], 1, nil, nil)
+	})
+	sorted := &dataset.Result{
+		StatementID: o.result.StatementID, Name: o.result.Name,
+		SeriesList: make(dataset.SeriesList, len(idx)),
+	}
+	merged := make([]*sqlSeries, len(idx))
+	for i, j := range idx {
+		sorted.SeriesList[i], merged[i] = o.result.SeriesList[j], o.merged[j]
+	}
+	o.result, o.merged = sorted, merged
+}
+
+// rows yields the rows: as stored without an order, merged by time when the order starts with it, and
+// otherwise sorted
+func (o *sqlOrder) rows() iter.Seq[sqlRow] {
+	return func(yield func(sqlRow) bool) {
+		if o.ds == nil {
+			return
+		}
+		if len(o.ordering) == 0 || o.result == nil {
+			rows := o.stored()
+			sortSQLRows(rows, o.ordering)
+			for _, row := range rows {
+				if !yield(row) {
+					return
+				}
+			}
+			return
+		}
+		order := dataset.RowOrder{Descending: o.ordering[0].Descending}
+		switch {
+		case o.byTags && order.Descending:
+			// descending reads each series backward, so rows tied on every term need their stored order
+			order.Compare = dataset.CompareStored
+		case o.byTags:
+		case len(o.ordering) > 1 || order.Descending:
+			order.Compare = func(a, b dataset.Row) int {
+				ra := sqlRow{s: o.merged[a.SeriesIndex], seg: a.Seg, row: a.Index}
+				rb := sqlRow{s: o.merged[b.SeriesIndex], seg: b.Seg, row: b.Index}
+				if c := compareSQLTerms(ra, rb, o.ordering[1:], 1, nil, nil); c != 0 {
+					return c
+				}
+				return dataset.CompareStored(a, b)
+			}
+		}
+		for row := range o.result.Rows(order) {
+			if !yield(sqlRow{s: o.merged[row.SeriesIndex], seg: row.Seg, row: row.Index}) {
+				return
+			}
+		}
+	}
+}
+
+// stored returns the rows as the results and series hold them
+func (o *sqlOrder) stored() []sqlRow {
+	count := 0
+	for series := range o.layouts {
+		count += series.PointCount()
 	}
 	rows := make([]sqlRow, 0, count)
-	for _, result := range ds.Results {
+	for _, result := range o.ds.Results {
 		if result == nil {
 			continue
 		}
 		for _, series := range result.SeriesList {
-			if series == nil || series.PointCount() == 0 {
+			s := o.layouts[series]
+			if s == nil {
 				continue
 			}
-			s := newSQLSeries(series, ordering)
-			for i := range series.PointCount() {
-				rows = append(rows, sqlRow{s: s, p: series.PointAt(i)})
+			segs := series.Segments()
+			for k := range segs {
+				for i := range segs[k].Len() {
+					rows = append(rows, sqlRow{s: s, seg: &segs[k], row: i})
+				}
 			}
 		}
 	}
 	return rows
 }
 
-func newSQLSeries(series *dataset.Series, ordering []timeseries.OrderTerm) *sqlSeries {
+// sqlLayouts lays out series, sharing the last layout's columns and keys with a series of its fields
+type sqlLayouts struct {
+	header *dataset.SeriesHeader
+	last   *sqlSeries
+}
+
+func (l *sqlLayouts) series(series *dataset.Series, ordering []timeseries.OrderTerm) *sqlSeries {
 	h := &series.Header
+	var s *sqlSeries
+	if l.last != nil && sameSQLFields(l.header, h) {
+		shared := *l.last
+		s = &shared
+	} else {
+		s = newSQLSeries(h, ordering)
+	}
+	s.tags, s.tagJSON = make([]any, len(s.columns)), make([]string, len(s.columns))
+	for i, column := range s.columns {
+		if column.role == sqlColumnTag {
+			s.tags[i], s.tagJSON[i] = sqlTagOutputValue(h.Tags[column.name])
+		}
+	}
+	l.header, l.last = h, s
+	return s
+}
+
+func sameSQLFields(a, b *dataset.SeriesHeader) bool {
+	at, bt := &a.TimestampField, &b.TimestampField
+	return at.Name == bt.Name && at.OutputPosition == bt.OutputPosition && at.DataType == bt.DataType &&
+		sameSQLFieldList(a.TagFieldsList, b.TagFieldsList) && sameSQLFieldList(a.ValueFieldsList, b.ValueFieldsList)
+}
+
+func sameSQLFieldList(a, b timeseries.FieldDefinitions) bool {
+	return slices.EqualFunc(a, b, func(x, y timeseries.FieldDefinition) bool {
+		return x.Name == y.Name && x.OutputPosition == y.OutputPosition
+	})
+}
+
+// newSQLSeries returns the layout of a series of header h, but its tags
+func newSQLSeries(h *dataset.SeriesHeader, ordering []timeseries.OrderTerm) *sqlSeries {
 	columns := make([]sqlOutputColumn, 0, 1+len(h.TagFieldsList)+len(h.ValueFieldsList))
 	timestamp := h.TimestampField
 	if timestamp.Name == "" {
@@ -321,11 +493,9 @@ func newSQLSeries(series *dataset.Series, ordering []timeseries.OrderTerm) *sqlS
 			columns[i].pos = i
 		}
 	}
-	s := &sqlSeries{columns: columns, tags: make([]any, len(columns)), order: make([]int, len(ordering))}
-	for i, column := range columns {
-		if column.role == sqlColumnTag {
-			s.tags[i] = sqlTagOutputValue(h.Tags[column.name])
-		}
+	s := &sqlSeries{
+		columns: columns, order: make([]int, len(ordering)),
+		millis: timestamp.DataType == timeseries.DateTimeUnixMilli,
 	}
 	// keys in position order, each writing the first column of its name
 	byPos := make([]int, len(columns))
@@ -336,7 +506,7 @@ func newSQLSeries(series *dataset.Series, ordering []timeseries.OrderTerm) *sqlS
 	s.keys, s.sources = make([]string, len(byPos)), make([]int, len(byPos))
 	for j, i := range byPos {
 		name := columns[i].name
-		s.keys[j] = string(append(tstrings.AppendJSON(nil, name), ':'))
+		s.keys[j] = string(append(appendJacksonString(nil, name), ':'))
 		s.sources[j] = slices.IndexFunc(columns, func(c sqlOutputColumn) bool { return c.name == name })
 	}
 	for t, term := range ordering {
@@ -347,14 +517,56 @@ func newSQLSeries(series *dataset.Series, ordering []timeseries.OrderTerm) *sqlS
 	return s
 }
 
-func sqlTagOutputValue(value string) any {
-	decoder := json.NewDecoder(strings.NewReader(value))
-	decoder.UseNumber()
-	var decoded any
-	if err := decoder.Decode(&decoded); err == nil {
-		return normalizeJSONValue(decoded)
+// sqlTagOutputValue returns a tag's value, which a decoded tag holds as the JSON Druid wrote, and the
+// JSON written of it: that JSON, or a tag that isn't JSON as a string
+func sqlTagOutputValue(value string) (any, string) {
+	switch value {
+	case jsonNullText:
+		return nil, value
+	case jsonTrue:
+		return true, value
+	case jsonFalse:
+		return false, value
 	}
-	return value
+	if text, ok := plainJSONString(value); ok {
+		return text, value
+	}
+	if i, ok := jsonInteger(value); ok {
+		return i, value
+	}
+	if raw := []byte(value); json.Valid(raw) {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		var decoded any
+		// raw is valid, so it decodes
+		_ = decoder.Decode(&decoded)
+		return normalizeJSONValue(decoded), value
+	}
+	return value, string(appendJacksonString(nil, value))
+}
+
+// plainJSONString returns the text of a JSON string that escapes nothing
+func plainJSONString(s string) (string, bool) {
+	if len(s) < 2 || s[0] != '"' || s[len(s)-1] != '"' {
+		return "", false
+	}
+	text := s[1 : len(s)-1]
+	for i := range len(text) {
+		if c := text[i]; c < 0x20 || c == '"' || c == '\\' {
+			return "", false
+		}
+	}
+	return text, utf8.ValidString(text)
+}
+
+// jsonInteger returns the value of a JSON integer that an int64 holds
+func jsonInteger(s string) (int64, bool) {
+	digits := strings.TrimPrefix(s, "-")
+	if digits == "" || digits[0] < '0' || digits[0] > '9' || (digits[0] == '0' && len(digits) > 1) {
+		return 0, false
+	}
+	i, err := strconv.ParseInt(s, 10, 64)
+	return i, err == nil
 }
 
 func validSQLColumnPositions(columns []sqlOutputColumn) bool {
@@ -372,38 +584,203 @@ func validSQLColumnPositions(columns []sqlOutputColumn) bool {
 }
 
 func sortSQLRows(rows []sqlRow, ordering []timeseries.OrderTerm) {
-	if len(ordering) == 0 {
+	if len(ordering) == 0 || len(rows) < 2 {
 		return
 	}
-	slices.SortStableFunc(rows, func(a, b sqlRow) int {
-		for t, term := range ordering {
-			ai, bi := a.s.order[t], b.s.order[t]
-			if ai < 0 || bi < 0 {
-				continue
-			}
-			var comparison int
-			if a.s.columns[ai].role == sqlColumnTimestamp && b.s.columns[bi].role == sqlColumnTimestamp {
-				// times are never null; their text mixes millisecond and nanosecond forms, so compare epochs
-				comparison = cmp.Compare(a.p.Epoch, b.p.Epoch)
-			} else {
-				av, bv := a.value(ai), b.value(bi)
-				if nulls, handled := compareSQLNulls(av, bv, term.NullsFirst); handled {
-					if nulls != 0 {
-						return nulls
-					}
-					continue
+	// a number held as its text is parsed once for the sort, not at each of its comparisons
+	terms := len(ordering)
+	var numbers []sqlNumberKey
+	for i := range rows {
+		for t := range ordering {
+			if k, ok := rows[i].numberKey(t); ok {
+				if numbers == nil {
+					numbers = make([]sqlNumberKey, len(rows)*terms)
 				}
-				comparison = compareSQLValue(av, bv, false)
-			}
-			if comparison != 0 {
-				if term.Descending {
-					comparison = -comparison
-				}
-				return comparison
+				numbers[i*terms+t] = k
 			}
 		}
-		return cmp.Compare(a.p.Epoch, b.p.Epoch)
+	}
+	if numbers == nil {
+		slices.SortStableFunc(rows, func(a, b sqlRow) int {
+			if c := compareSQLTerms(a, b, ordering, 0, nil, nil); c != 0 {
+				return c
+			}
+			return cmp.Compare(a.epoch(), b.epoch())
+		})
+		return
+	}
+	perm := make([]int, len(rows))
+	for i := range perm {
+		perm[i] = i
+	}
+	slices.SortStableFunc(perm, func(i, j int) int {
+		if c := compareSQLTerms(rows[i], rows[j], ordering, 0, numbers[i*terms:(i+1)*terms],
+			numbers[j*terms:(j+1)*terms]); c != 0 {
+			return c
+		}
+		return cmp.Compare(rows[i].epoch(), rows[j].epoch())
 	})
+	sorted := make([]sqlRow, len(rows))
+	for i, j := range perm {
+		sorted[i] = rows[j]
+	}
+	copy(rows, sorted)
+}
+
+// sqlNumberKey is a number held as its text, parsed, and whether it parsed
+type sqlNumberKey struct {
+	f      float64
+	parsed bool
+}
+
+// numberKey parses the row's value for ordering term t when it's a number held as its text
+func (r sqlRow) numberKey(t int) (sqlNumberKey, bool) {
+	i := r.s.order[t]
+	if i < 0 || r.s.columns[i].role != sqlColumnValue {
+		return sqlNumberKey{}, false
+	}
+	c := r.s.columns[i].index
+	if c >= r.seg.NumCols() || r.seg.KindAt(c, r.row) != dataset.KindNumber {
+		return sqlNumberKey{}, false
+	}
+	f, ok := sqlNumberAt(r.seg, c, r.row, dataset.KindNumber)
+	return sqlNumberKey{f: f, parsed: ok}, true
+}
+
+// compareSQLTerms orders two rows by the ordering's terms, the first being term first of the order; an,
+// when not nil, holds a's numbers parsed for each term, and bn b's
+func compareSQLTerms(a, b sqlRow, ordering []timeseries.OrderTerm, first int, an, bn []sqlNumberKey) int {
+	for i, term := range ordering {
+		t := first + i
+		ai, bi := a.s.order[t], b.s.order[t]
+		if ai < 0 || bi < 0 {
+			continue
+		}
+		var comparison int
+		if a.s.columns[ai].role == sqlColumnTimestamp && b.s.columns[bi].role == sqlColumnTimestamp {
+			// times are never null; their text mixes millisecond and nanosecond forms, so compare epochs
+			comparison = cmp.Compare(a.epoch(), b.epoch())
+		} else if ka, kb, ok := a.cellKinds(b, ai, bi); ok && (ka == dataset.KindNull || kb == dataset.KindNull) {
+			if ka == kb {
+				continue
+			}
+			if (ka == dataset.KindNull) == term.NullsFirst {
+				return -1
+			}
+			return 1
+		} else if c, ok := compareSQLCells(a, b, ai, bi, ka, kb, parsedAt(an, i), parsedAt(bn, i)); ok {
+			comparison = c
+		} else {
+			av, bv := a.value(ai), b.value(bi)
+			if nulls, handled := compareSQLNulls(av, bv, term.NullsFirst); handled {
+				if nulls != 0 {
+					return nulls
+				}
+				continue
+			}
+			comparison = compareSQLValue(av, bv, false)
+		}
+		if comparison != 0 {
+			if term.Descending {
+				comparison = -comparison
+			}
+			return comparison
+		}
+	}
+	return 0
+}
+
+// cellKinds returns the kinds of two rows' values in value columns ai and bi, null for a row without the
+// column; it's false unless both are value columns
+func (r sqlRow) cellKinds(o sqlRow, ai, bi int) (dataset.Kind, dataset.Kind, bool) {
+	ca, cb := &r.s.columns[ai], &o.s.columns[bi]
+	if ca.role != sqlColumnValue || cb.role != sqlColumnValue {
+		return 0, 0, false
+	}
+	ka, kb := dataset.KindNull, dataset.KindNull
+	if ca.index < r.seg.NumCols() {
+		ka = r.seg.KindAt(ca.index, r.row)
+	}
+	if cb.index < o.seg.NumCols() {
+		kb = o.seg.KindAt(cb.index, o.row)
+	}
+	return ka, kb, true
+}
+
+// parsedAt returns term i's parsed number, or nil when there are none
+func parsedAt(numbers []sqlNumberKey, i int) *sqlNumberKey {
+	if numbers == nil {
+		return nil
+	}
+	return &numbers[i]
+}
+
+// compareSQLCells compares two rows' non-null values as compareSQLValue does, unboxed, when their kinds
+// allow, or reports false; na and nb, when not nil, hold a number text's value parsed
+func compareSQLCells(a, b sqlRow, ai, bi int, ka, kb dataset.Kind, na, nb *sqlNumberKey) (int, bool) {
+	sa, ca, sb, cb := a.seg, a.s.columns[ai].index, b.seg, b.s.columns[bi].index
+	if ka == kb {
+		switch ka {
+		case dataset.KindInt64:
+			return cmp.Compare(sa.Int64(ca, a.row), sb.Int64(cb, b.row)), true
+		case dataset.KindUint64:
+			return cmp.Compare(sa.Uint64(ca, a.row), sb.Uint64(cb, b.row)), true
+		case dataset.KindFloat64:
+			return compareSQLFloats(sa.Float64(ca, a.row), sb.Float64(cb, b.row)), true
+		case dataset.KindString:
+			return cmp.Compare(sa.Text(ca, a.row), sb.Text(cb, b.row)), true
+		case dataset.KindBool:
+			return cmp.Compare(boolInt(sa.Bool(ca, a.row)), boolInt(sb.Bool(cb, b.row))), true
+		}
+	}
+	// a number held as its text compares with any number by value
+	if ka != dataset.KindNumber && kb != dataset.KindNumber {
+		return 0, false
+	}
+	af, aok := numberOf(sa, ca, a.row, ka, na)
+	bf, bok := numberOf(sb, cb, b.row, kb, nb)
+	if !aok || !bok {
+		return 0, false
+	}
+	return compareSQLFloats(af, bf), true
+}
+
+// numberOf returns a number value of kind k as a float64, from parsed when it holds a number text's
+func numberOf(seg *dataset.Segment, c, i int, k dataset.Kind, parsed *sqlNumberKey) (float64, bool) {
+	if k == dataset.KindNumber && parsed != nil {
+		return parsed.f, parsed.parsed
+	}
+	return sqlNumberAt(seg, c, i, k)
+}
+
+// sqlNumberAt returns a number value of kind k as a float64, as sqlNumber does
+func sqlNumberAt(seg *dataset.Segment, c, i int, k dataset.Kind) (float64, bool) {
+	switch k {
+	case dataset.KindInt64:
+		return float64(seg.Int64(c, i)), true
+	case dataset.KindUint64:
+		return float64(seg.Uint64(c, i)), true
+	case dataset.KindFloat64:
+		return seg.Float64(c, i), true
+	case dataset.KindNumber:
+		f, err := strconv.ParseFloat(seg.Text(c, i), 64)
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// compareSQLFloats orders floats with NaN after every number
+func compareSQLFloats(a, b float64) int {
+	aNaN, bNaN := math.IsNaN(a), math.IsNaN(b)
+	switch {
+	case aNaN && bNaN:
+		return 0
+	case aNaN:
+		return 1
+	case bNaN:
+		return -1
+	}
+	return cmp.Compare(a, b)
 }
 
 func compareSQLNulls(a, b any, nullsFirst bool) (int, bool) {
@@ -424,6 +801,14 @@ func compareSQLValue(a, b any, timestamp bool) int {
 	if timestamp {
 		return cmp.Compare(fmtSQLValue(a), fmtSQLValue(b))
 	}
+	// a number other than an int64 is held as its text, and compares with any number by value
+	if an, bn := isSQLNumberText(a), isSQLNumberText(b); an || bn {
+		if af, aok := sqlNumber(a); aok {
+			if bf, bok := sqlNumber(b); bok {
+				return compareSQLValue(af, bf, false)
+			}
+		}
+	}
 	switch av := a.(type) {
 	case int64:
 		if bv, ok := b.(int64); ok {
@@ -435,17 +820,7 @@ func compareSQLValue(a, b any, timestamp bool) int {
 		}
 	case float64:
 		if bv, ok := b.(float64); ok {
-			aNaN, bNaN := math.IsNaN(av), math.IsNaN(bv)
-			switch {
-			case aNaN && bNaN:
-				return 0
-			case aNaN:
-				return 1
-			case bNaN:
-				return -1
-			default:
-				return cmp.Compare(av, bv)
-			}
+			return compareSQLFloats(av, bv)
 		}
 	case string:
 		if bv, ok := b.(string); ok {
@@ -466,12 +841,43 @@ func compareSQLValue(a, b any, timestamp bool) int {
 	return cmp.Compare(fmtSQLValue(a), fmtSQLValue(b))
 }
 
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func isSQLNumberText(value any) bool {
+	_, ok := value.(json.Number)
+	return ok
+}
+
+// sqlNumber returns a number value as a float64
+func sqlNumber(value any) (float64, bool) {
+	switch v := value.(type) {
+	case int64:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case float64:
+		return v, true
+	case json.Number:
+		f, err := strconv.ParseFloat(string(v), 64)
+		return f, err == nil
+	}
+	return 0, false
+}
+
 func fmtSQLValue(value any) string {
 	if value == nil {
 		return ""
 	}
-	if text, ok := value.(string); ok {
-		return text
+	switch v := value.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
 	}
 	b, err := json.Marshal(value)
 	if err != nil {

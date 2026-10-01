@@ -33,9 +33,11 @@ type QueryPlan struct {
 	queryType   string
 	dimensions  []string
 	valueFields []string
-	descending  bool
-	renderStart []byte
-	renderEnd   []byte
+	// how many value fields lead the others as aggregations; -1 when unknown, which counts them all
+	aggregations int
+	descending   bool
+	renderStart  []byte
+	renderEnd    []byte
 }
 
 // SQLQueryPlan marks a Druid SQL request and carries the shared immutable SQL
@@ -118,13 +120,34 @@ func NewQueryPlan(queryType string, dimensions, valueFields []string, descending
 	renderStart, renderEnd []byte,
 ) *QueryPlan {
 	return &QueryPlan{
-		queryType:   queryType,
-		dimensions:  slices.Clone(dimensions),
-		valueFields: slices.Clone(valueFields),
-		descending:  descending,
-		renderStart: bytes.Clone(renderStart),
-		renderEnd:   bytes.Clone(renderEnd),
+		queryType:    queryType,
+		dimensions:   slices.Clone(dimensions),
+		valueFields:  slices.Clone(valueFields),
+		aggregations: -1,
+		descending:   descending,
+		renderStart:  bytes.Clone(renderStart),
+		renderEnd:    bytes.Clone(renderEnd),
 	}
+}
+
+// WithAggregations returns a copy of the plan whose first n value fields are its aggregations and
+// the rest its post-aggregations.
+func (p *QueryPlan) WithAggregations(n int) *QueryPlan {
+	out := *p
+	out.aggregations = n
+	return &out
+}
+
+// Aggregations returns how many of the value fields are aggregations, which precede the
+// post-aggregations; when the plan doesn't say, every value field counts.
+func (p *QueryPlan) Aggregations() int {
+	if p == nil {
+		return 0
+	}
+	if p.aggregations < 0 || p.aggregations > len(p.valueFields) {
+		return len(p.valueFields)
+	}
+	return p.aggregations
 }
 
 // ValueFields returns a copy of the declared aggregation output names.

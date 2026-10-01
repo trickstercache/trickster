@@ -24,6 +24,9 @@ import "io"
 type FormatHintReader struct {
 	io.Reader
 	Format string
+	// Timezone, when set, names the zone the response writes times in that don't name their own
+	// (e.g., the X-ClickHouse-Timezone header).
+	Timezone string
 }
 
 // NewFormatHintReader wraps a reader with a format hint.

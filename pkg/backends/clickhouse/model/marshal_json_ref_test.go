@@ -22,104 +22,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
+
+	"github.com/stretchr/testify/require"
 )
-
-// the WFDocument encoding/json was given before the marshaler appended its output directly
-func referenceWireFormat(ds *dataset.DataSet) (*WFDocument, error) {
-	fds, _, _, _ := ds.FieldDefinitions()
-	fieldCount := len(fds)
-	d := &WFDocument{
-		Meta: make(WFMeta, fieldCount),
-	}
-	for _, fd := range fds {
-		if fd.OutputPosition >= fieldCount || fd.OutputPosition < 0 {
-			continue
-		}
-		d.Meta[fd.OutputPosition] = WFMetaItem{
-			Name: fd.Name,
-			Type: fd.SDataType,
-		}
-	}
-	var maxRowCount, k int
-	if len(ds.Results) == 0 {
-		d.Rows = &k
-		return d, nil
-	}
-	for _, s := range ds.Results[0].SeriesList {
-		maxRowCount += len(s.Points)
-	}
-	data := make(WFData, maxRowCount)
-	for _, s := range ds.Results[0].SeriesList {
-		for _, p := range s.Points {
-			item := make(WFDataItem, fieldCount)
-			var i int
-			for _, fd := range fds {
-				if fd.OutputPosition > fieldCount {
-					continue
-				}
-				switch fd.Role {
-				case timeseries.RoleTimestamp:
-					item[fd.OutputPosition] = WFDataItemElement{
-						Key:   d.Meta[fd.OutputPosition].Name,
-						Value: p.Epoch.Format(ds.TimeRangeQuery.TimestampDefinition.DataType, false),
-					}
-				case timeseries.RoleTag:
-					item[fd.OutputPosition] = WFDataItemElement{
-						Key:   d.Meta[fd.OutputPosition].Name,
-						Value: s.Header.Tags[fd.Name],
-					}
-				case timeseries.RoleValue:
-					if i >= len(p.Values) {
-						continue
-					}
-					item[fd.OutputPosition] = WFDataItemElement{
-						Key:   d.Meta[fd.OutputPosition].Name,
-						Value: fmt.Sprintf("%v", p.Values[i]),
-					}
-					i++
-				}
-			}
-			var j int
-			for i := range item {
-				if item[i].Key == "" {
-					continue
-				}
-				item[j] = item[i]
-				j++
-			}
-			data[k] = item[:j]
-			k++
-		}
-	}
-	d.Data = data[:k]
-	d.Rows = &k
-	return d, nil
-}
-
-func requireJSONReference(t *testing.T, name string, ds *dataset.DataSet) {
-	t.Helper()
-	wf, err := referenceWireFormat(ds)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var want bytes.Buffer
-	if err := json.NewEncoder(&want).Encode(wf); err != nil {
-		t.Fatal(err)
-	}
-	var got bytes.Buffer
-	if err := marshalTimeseriesJSON(&got, ds, nil, 200); err != nil || !bytes.Equal(got.Bytes(), want.Bytes()) {
-		t.Fatalf("%s:\n got %s, %v\nwant %s", name, got.Bytes(), err, want.Bytes())
-	}
-}
 
 func jsonTestDataSet(tf timeseries.FieldDataType, fds []timeseries.FieldDefinition, series ...*dataset.Series,
 ) *dataset.DataSet {
@@ -141,68 +57,136 @@ func jsonTestDataSet(tf timeseries.FieldDataType, fds []timeseries.FieldDefiniti
 	}
 }
 
-func TestMarshalJSONMatchesEncodingJSON(t *testing.T) {
-	requireJSONReference(t, "fixture", testDataSet())
-	requireJSONReference(t, "no results", &dataset.DataSet{})
-	fds := []timeseries.FieldDefinition{
-		{Name: "t", Role: timeseries.RoleTimestamp, SDataType: "DateTime", OutputPosition: 0},
-		{Name: "host<1>", Role: timeseries.RoleTag, SDataType: "String", OutputPosition: 1},
-		{Name: "v", Role: timeseries.RoleValue, SDataType: "Float64", OutputPosition: 3},
-		{Name: "w", Role: timeseries.RoleValue, OutputPosition: 2},
-		{Name: "", Role: timeseries.RoleValue, SDataType: "Int64", OutputPosition: 4},
-		{Name: "u", Role: timeseries.RoleUntracked, OutputPosition: 5},
-		{Name: "far", Role: timeseries.RoleValue, OutputPosition: 9},
+// jsonValues returns each row's value of field name in a JSON document, as its raw JSON
+func jsonValues(t *testing.T, doc []byte, name string) []string {
+	t.Helper()
+	var d struct {
+		Data []map[string]json.RawMessage `json:"data"`
+		Rows int                          `json:"rows"`
 	}
-	values := [][]any{
-		{1.5, "x\"<y>", nil}, {-0.0, true, int64(-3)}, {1e21, float32(0.1), uint64(7)}, {math.NaN(), math.Inf(-1)},
-		{12, []byte("b"), time.Duration(5)}, {"\u2028\xff"}, {},
+	require.NoError(t, json.Unmarshal(doc, &d), "%s", doc)
+	require.Len(t, d.Data, d.Rows)
+	out := make([]string, len(d.Data))
+	for i, row := range d.Data {
+		out[i] = string(row[name])
 	}
-	var points dataset.Points
-	for i, v := range values {
-		points = append(points, dataset.Point{Epoch: epoch.Epoch(1577836800123456789 + int64(i)*60e9), Values: v})
-	}
-	for _, tf := range []timeseries.FieldDataType{
-		0, timeseries.DateTimeUnixSecs, timeseries.DateTimeUnixMilli, timeseries.DateTimeUnixNano,
-		timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL, timeseries.DateTimeRFC3339,
-		timeseries.DateTimeRFC3339Nano,
-	} {
-		ds := jsonTestDataSet(tf, fds,
-			&dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"host<1>": "a&b"}}, Points: points},
-			&dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{}}, Points: points[:2]},
-			&dataset.Series{})
-		requireJSONReference(t, fmt.Sprint("time format ", tf), ds)
-	}
-	// two fields sharing a position, the later one winning
-	shared := []timeseries.FieldDefinition{
-		{Name: "t", Role: timeseries.RoleTimestamp, OutputPosition: 0},
-		{Name: "a", Role: timeseries.RoleValue, OutputPosition: 1},
-		{Name: "b", Role: timeseries.RoleValue, OutputPosition: 1},
-	}
-	requireJSONReference(t, "shared position", jsonTestDataSet(timeseries.DateTimeUnixSecs, shared,
-		&dataset.Series{Points: dataset.Points{{Epoch: 1e9, Values: []any{1.0, 2.0}}, {Epoch: 2e9, Values: []any{3.0}}}}))
+	return out
+}
 
-	rng := weaktest.NewRand(9, 4)
-	for trial := range 50 {
-		width := 1 + rng.IntN(4)
-		fds := []timeseries.FieldDefinition{{Name: "time", Role: timeseries.RoleTimestamp, OutputPosition: width}}
-		for i := range width {
-			fds = append(fds, timeseries.FieldDefinition{Name: fmt.Sprint("f", i), Role: timeseries.RoleValue,
-				SDataType: "Float64", OutputPosition: i})
+func TestMarshalJSONAsClickHouseWritesIt(t *testing.T) {
+	ny, _ := LoadZone("America/New_York")
+	// each as ClickHouse 26.7 writes it, by its column's type
+	for _, c := range []struct {
+		typ   string
+		value any
+		opts  FormatOptions
+		want  string
+	}{
+		{"Int8", int64(-1), FormatOptions{}, "-1"},
+		{"UInt64", uint64(18446744073709551615), FormatOptions{}, "18446744073709551615"},
+		{"UInt64", uint64(7), FormatOptions{QuoteInt64: true}, `"7"`},
+		{"Int32", int64(7), FormatOptions{QuoteInt64: true}, "7"},
+		{"Int256", "-10", FormatOptions{}, "-10"},
+		{"Int256", "-10", FormatOptions{QuoteInt64: true}, `"-10"`},
+		{"Float64", 14.318181818181818, FormatOptions{}, "14.318181818181818"},
+		{"Float64", 1e100, FormatOptions{}, "1e100"},
+		{"Float64", 1e-7, FormatOptions{}, "1e-7"},
+		{"Float64", math.NaN(), FormatOptions{}, "null"},
+		{"Float64", math.Inf(-1), FormatOptions{}, "null"},
+		{"Float64", math.Inf(-1), FormatOptions{QuoteDenormals: true}, `"-inf"`},
+		{"Float64", "1", FormatOptions{}, "1"},
+		{"Float64", "nan", FormatOptions{QuoteDenormals: true}, `"nan"`},
+		{"Float32", 163.43, FormatOptions{}, "163.43"},
+		{"Decimal(18, 3)", 139.0, FormatOptions{}, "139"},
+		{"Decimal(18, 9)", 1e-7, FormatOptions{}, "0.0000001"},
+		{"Decimal(18, 3)", 139.5, FormatOptions{QuoteDecimals: true}, `"139.5"`},
+		{"Bool", true, FormatOptions{}, "true"},
+		{"String", `a"b,c`, FormatOptions{}, `"a\"b,c"`},
+		{"String", "", FormatOptions{}, `""`},
+		{"Nullable(String)", nil, FormatOptions{}, "null"},
+		{"Nullable(Float64)", nil, FormatOptions{}, "null"},
+		{"FixedString(4)", "ab", FormatOptions{}, `"ab\u0000\u0000"`},
+		{"UUID", "61f0c404-5cb3-11e7-907b-a6006ad3dba0", FormatOptions{}, `"61f0c404-5cb3-11e7-907b-a6006ad3dba0"`},
+		{"Date", "2026-09-01", FormatOptions{}, `"2026-09-01"`},
+		{"DateTime", "2026-09-01 01:02:03", FormatOptions{}, `"2026-09-01 01:02:03"`},
+		{"DateTime", "2026-09-01 05:02:03", FormatOptions{Zone: ny}, `"2026-09-01 01:02:03"`},
+		{"DateTime64(3)", "2026-09-01 01:02:03.500", FormatOptions{DateTimeFormat: DateTimeISO}, `"2026-09-01T01:02:03.500Z"`},
+		{"DateTime", "1970-01-01 00:00:01", FormatOptions{DateTimeFormat: DateTimeUnix}, `"1"`},
+		{"Enum8('orange' = 1)", "orange", FormatOptions{}, `"orange"`},
+		{"Array(UInt8)", "[1,2]", FormatOptions{}, "[1,2]"},
+		{"Array(String)", "['x','y\\'z']", FormatOptions{}, `["x","y'z"]`},
+		{"Map(String, UInt8)", "{'k':1,'j':2}", FormatOptions{}, `{"k":1,"j":2}`},
+		{"Map(UInt8, Float64)", "{1:nan,2:NULL}", FormatOptions{}, `{"1":null,"2":null}`},
+		{"Tuple(UInt8, String)", "(1,'x')", FormatOptions{}, `[1,"x"]`},
+		{"Tuple(a UInt8, b String)", "(1,'x')", FormatOptions{}, `{"a":1,"b":"x"}`},
+		{"Array(Tuple(UInt8, Bool))", "[(1,true)]", FormatOptions{}, `[[1,true]]`},
+		{"Array(UInt8)", "[1,", FormatOptions{}, `"[1,"`},
+		{"IPv4", "1.2.3.4", FormatOptions{}, `"1.2.3.4"`},
+	} {
+		fds := []timeseries.FieldDefinition{
+			{Name: "t", Role: timeseries.RoleTimestamp, SDataType: "DateTime", DataType: timeseries.DateTimeSQL},
+			{Name: "v", Role: timeseries.RoleValue, SDataType: c.typ, OutputPosition: 1},
 		}
-		var series []*dataset.Series
-		for range 1 + rng.IntN(3) {
-			s := &dataset.Series{}
-			for p := range rng.IntN(20) {
-				vals := make([]any, rng.IntN(width+1))
-				for i := range vals {
-					vals[i] = rng.NormFloat64() * math.Pow(10, float64(rng.IntN(40)-20))
-				}
-				s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(int64(p) * 1e9), Values: vals})
-			}
-			series = append(series, s)
-		}
-		requireJSONReference(t, fmt.Sprint("trial ", trial), jsonTestDataSet(timeseries.DateTimeUnixMilli, fds, series...))
+		ds := jsonTestDataSet(timeseries.DateTimeSQL, fds, dataset.NewSeries(dataset.SeriesHeader{},
+			dataset.Points{{Epoch: 1e9, Values: []any{c.value}}}))
+		var got bytes.Buffer
+		require.NoError(t, marshalTimeseriesJSON(&got, ds, &timeseries.RequestOptions{ProviderRequest: c.opts}, 200))
+		require.Equal(t, []string{c.want}, jsonValues(t, got.Bytes(), "v"), "%s %v", c.typ, c.value)
 	}
+}
+
+func TestMarshalJSONTimesAndTags(t *testing.T) {
+	ny, _ := LoadZone("America/New_York")
+	fds := []timeseries.FieldDefinition{
+		{Name: "t", Role: timeseries.RoleTimestamp, SDataType: "DateTime64(3)", DataType: timeseries.DateTimeSQL},
+		{Name: "host", Role: timeseries.RoleTag, SDataType: "Nullable(String)", OutputPosition: 1},
+		{Name: "code", Role: timeseries.RoleTag, SDataType: "FixedString(3)", OutputPosition: 2},
+		{Name: "n", Role: timeseries.RoleTag, SDataType: "UInt64", OutputPosition: 3},
+		{Name: "v", Role: timeseries.RoleValue, SDataType: "Float64", OutputPosition: 4},
+		{Name: "u", Role: timeseries.RoleUntracked, DefaultValue: "x", OutputPosition: 5},
+	}
+	at := epoch.Epoch(time.Date(2026, 11, 1, 5, 30, 0, 5e8, time.UTC).UnixNano())
+	ds := jsonTestDataSet(timeseries.DateTimeSQL, fds,
+		dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"code": "a", "n": "7"}}, dataset.Points{{Epoch: at + 1e9, Values: []any{1.0}}}),
+		dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"host": "", "code": "abc", "n": "8"}}, dataset.Points{{Epoch: at, Values: []any{2.0}}}))
+	var got bytes.Buffer
+	rlo := &timeseries.RequestOptions{ProviderRequest: FormatOptions{Zone: ny}}
+	require.NoError(t, marshalTimeseriesJSON(&got, ds, rlo, 200))
+	// rows by time across series; a NULL tag, an empty one, a padded one and a number one
+	require.Equal(t, []string{`"2026-11-01 01:30:00.500"`, `"2026-11-01 01:30:01.500"`}, jsonValues(t, got.Bytes(), "t"))
+	require.Equal(t, []string{`""`, "null"}, jsonValues(t, got.Bytes(), "host"))
+	require.Equal(t, []string{`"abc"`, `"a\u0000\u0000"`}, jsonValues(t, got.Bytes(), "code"))
+	require.Equal(t, []string{"8", "7"}, jsonValues(t, got.Bytes(), "n"))
+	require.Equal(t, []string{`"x"`, `"x"`}, jsonValues(t, got.Bytes(), "u"))
+	rw := httptest.NewRecorder()
+	require.NoError(t, marshalTimeseriesJSON(rw, ds, rlo, 200))
+	require.Equal(t, "America/New_York", rw.Header().Get(TimezoneHeader))
+	// a time given in units is a number, quoted when a 64-bit one is
+	fds[0] = timeseries.FieldDefinition{Name: "t", Role: timeseries.RoleTimestamp, SDataType: "UInt64", DataType: timeseries.DateTimeUnixSecs}
+	ds = jsonTestDataSet(timeseries.DateTimeUnixSecs, fds[:1], dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{{Epoch: 2e9}}))
+	got.Reset()
+	require.NoError(t, marshalTimeseriesJSON(&got, ds, &timeseries.RequestOptions{ProviderRequest: FormatOptions{QuoteInt64: true}}, 200))
+	require.Equal(t, []string{`"2"`}, jsonValues(t, got.Bytes(), "t"))
+}
+
+func TestMarshalJSONIsValid(t *testing.T) {
+	rng := weaktest.NewRand(9, 4)
+	for trial := range 300 {
+		ds := randomNativeDataSet(rng)
+		for _, opts := range []FormatOptions{{}, {QuoteInt64: true, QuoteDecimals: true, QuoteDenormals: true, DateTimeFormat: DateTimeISO}} {
+			var got bytes.Buffer
+			require.NoError(t, marshalTimeseriesJSON(&got, ds, &timeseries.RequestOptions{ProviderRequest: opts}, 200))
+			require.True(t, json.Valid(got.Bytes()), "trial %d: %s", trial, got.Bytes())
+			var rows int
+			for _, s := range ds.Results[0].SeriesList {
+				rows += s.PointCount()
+			}
+			require.Len(t, jsonValues(t, got.Bytes(), "t"), rows)
+		}
+	}
+	var empty bytes.Buffer
+	require.NoError(t, marshalTimeseriesJSON(&empty, &dataset.DataSet{}, nil, 200))
+	require.Equal(t, `{"meta":[],"data":[],"rows":0}`+"\n", empty.String())
 }
 
 func TestTimeOrderedRowsMatchesAStableSort(t *testing.T) {
@@ -211,7 +195,7 @@ func TestTimeOrderedRowsMatchesAStableSort(t *testing.T) {
 		r := &dataset.Result{}
 		sorted := trial%3 != 0
 		for range rng.IntN(5) {
-			s := &dataset.Series{}
+			s := dataset.NewSeries(dataset.SeriesHeader{}, nil)
 			at := rng.IntN(4)
 			for range rng.IntN(8) {
 				if sorted {
@@ -219,17 +203,20 @@ func TestTimeOrderedRowsMatchesAStableSort(t *testing.T) {
 				} else {
 					at = rng.IntN(6)
 				}
-				s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(at), Values: []any{len(s.Points)}})
+				s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(at), Values: []any{s.PointCount()}}))
 			}
 			r.SeriesList = append(r.SeriesList, s)
 		}
 		var want []outputRow
-		for _, s := range r.SeriesList {
-			for i := range s.Points {
-				want = append(want, outputRow{series: s, point: &s.Points[i]})
+		for j, s := range r.SeriesList {
+			segs := s.Segments()
+			for k := range segs {
+				for i := range segs[k].Len() {
+					want = append(want, outputRow{series: s, seg: &segs[k], i: i, list: j})
+				}
 			}
 		}
-		slices.SortStableFunc(want, func(a, b outputRow) int { return cmp.Compare(a.point.Epoch, b.point.Epoch) })
+		slices.SortStableFunc(want, func(a, b outputRow) int { return cmp.Compare(a.epoch(), b.epoch()) })
 		rows, n := timeOrderedRows(r)
 		got := slices.Collect(rows)
 		if n != len(want) || len(got) != len(want) {
@@ -251,10 +238,10 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 	}
 	var series []*dataset.Series
 	for i := range 3 {
-		s := &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprint("h", i)}}}
+		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprint("h", i)}}, nil)
 		for j := range 5 {
-			s.Points = append(s.Points, dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-				Values: []any{float64(i*j) / 3}})
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+				Values: []any{float64(i*j) / 3}}))
 		}
 		series = append(series, s)
 	}

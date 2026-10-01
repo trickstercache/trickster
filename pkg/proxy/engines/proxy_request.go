@@ -42,7 +42,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
-	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
@@ -224,61 +223,6 @@ func (pr *proxyRequest) fetchClone(ctx context.Context) (*proxyRequest, error) {
 		return nil, err
 	}
 	return &proxyRequest{Request: pr.Request, rsc: pr.rsc, upstreamRequest: ur, contentLength: -1}, nil
-}
-
-// Fetch makes an HTTP request to the Origin URL, bypassing the Cache.
-// A non-nil error indicates a mid-stream read failure; resp.StatusCode
-// still reflects the upstream status, so callers must check both.
-func (pr *proxyRequest) Fetch() ([]byte, *http.Response, time.Duration, error) {
-	o := pr.rsc.BackendOptions
-	pc := pr.rsc.PathConfig
-
-	var handlerName string
-	if pc != nil {
-		handlerName = pc.HandlerName
-	}
-
-	start := time.Now()
-	reader, resp, contentLength := PrepareFetchReader(pr.upstreamRequest)
-
-	var body []byte
-	var err error
-	if reader != nil {
-		if o != nil && o.MaxObjectSizeBytes > 0 {
-			// +1 so reaching limit means overflow, not exactly-at-limit.
-			limit := int64(o.MaxObjectSizeBytes) + 1
-			body, err = tbytes.ReadAllSized(io.LimitReader(reader, limit), min(contentLength, limit))
-			if err == nil && int64(len(body)) >= limit {
-				err = tpe.ErrUnexpectedUpstreamResponse
-				logger.Error("upstream response exceeded MaxObjectSizeBytes",
-					logging.Pairs{keys.URL: pr.URL.String(), "max": o.MaxObjectSizeBytes})
-			}
-		} else {
-			body, err = io.ReadAll(reader)
-		}
-		resp.Body.Close()
-		resp.Body = io.NopCloser(bytes.NewReader(body))
-	}
-	if err != nil {
-		logger.Error("error reading body from http response",
-			logging.Pairs{keys.URL: pr.URL.String(), keys.Detail: err.Error()})
-		return body, resp, 0, err
-	}
-
-	elapsed := time.Since(start) // includes any time required to decompress the document for deserialization
-	if resp != nil {
-		pr.rsc.SetUpstream(pr.upstreamRequest.URL.Host, resp.StatusCode, elapsed)
-	}
-
-	// the client request is shared with the other fetches and the caller, who may change its headers
-	// once this returns, so what the log needs of it is read now
-	userAgent := pr.UserAgent()
-	goWithRecover("proxyRequest.Fetch.logUpstreamRequest", func() {
-		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
-			pr.upstreamRequest.URL.String(), userAgent, resp.StatusCode, len(body), elapsed.Seconds())
-	})
-
-	return body, resp, elapsed, nil
 }
 
 // relayInterimResponses forwards 1xx responses from the origin to the client as

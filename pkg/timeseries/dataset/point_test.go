@@ -17,8 +17,6 @@
 package dataset
 
 import (
-	"slices"
-	"strconv"
 	"testing"
 	"time"
 
@@ -32,13 +30,11 @@ func testPoints() Points {
 	return Points{
 		Point{
 			Epoch:  epoch.Epoch(5 * timeseries.Second),
-			Size:   27,
-			Values: []any{1, 37},
+			Values: []any{int64(1), int64(37)},
 		},
 		Point{
 			Epoch:  epoch.Epoch(10 * timeseries.Second),
-			Size:   27,
-			Values: []any{1, 24},
+			Values: []any{int64(1), int64(24)},
 		},
 	}
 }
@@ -47,18 +43,15 @@ func testPoints2() Points {
 	return Points{
 		Point{
 			Epoch:  epoch.Epoch(5 * timeseries.Second),
-			Size:   27,
-			Values: []any{1, 37},
+			Values: []any{int64(1), int64(37)},
 		},
 		Point{
 			Epoch:  epoch.Epoch(10 * timeseries.Second),
-			Size:   27,
-			Values: []any{1, 25},
+			Values: []any{int64(1), int64(25)},
 		},
 		Point{
 			Epoch:  epoch.Epoch(15 * timeseries.Second),
-			Size:   27,
-			Values: []any{1, 34},
+			Values: []any{int64(1), int64(34)},
 		},
 	}
 }
@@ -67,8 +60,7 @@ func testPoints3() Points {
 	return Points{
 		Point{
 			Epoch:  epoch.Epoch(10 * timeseries.Second),
-			Size:   27,
-			Values: []any{1, 24},
+			Values: []any{int64(1), int64(24)},
 		},
 	}
 }
@@ -78,7 +70,6 @@ func genTestPoints(baseEpoch, n int) Points {
 	for i := range n {
 		points[i] = Point{
 			Epoch:  epoch.Epoch((i * 10 * timeseries.Second) + baseEpoch),
-			Size:   27,
 			Values: []any{1, 24 + (i * 5)},
 		}
 	}
@@ -98,7 +89,7 @@ func TestPointEqual(t *testing.T) {
 	if b {
 		t.Error("expected false")
 	}
-	p2.Values = []any{1, 37}
+	p2.Values = []any{int64(1), int64(37)}
 	p2.Epoch = p1.Epoch
 	b = PointsAreEqual(p1, p2)
 	if !b {
@@ -117,11 +108,10 @@ func BenchmarkPointsAreEqual(b *testing.B) {
 func TestPointClone(t *testing.T) {
 	p := &Point{
 		Epoch:  epoch.Epoch(1),
-		Size:   27,
 		Values: []any{1},
 	}
 	p2 := p.Clone()
-	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] || p2.Size != p.Size {
+	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] {
 		t.Error("clone mismatch")
 	}
 }
@@ -129,38 +119,10 @@ func TestPointClone(t *testing.T) {
 func BenchmarkPointClone(b *testing.B) {
 	p := &Point{
 		Epoch:  epoch.Epoch(1),
-		Size:   27,
 		Values: []any{1},
 	}
 	for b.Loop() {
 		p.Clone()
-	}
-}
-
-func TestPointsCloneRange(t *testing.T) {
-	tests := []struct {
-		start, end, expLen, epoch int
-	}{
-		{0, 1, 1, 5 * timeseries.Second},
-		{0, 2, 2, 5 * timeseries.Second},
-		{1, 1, 0, 0},
-		{1, 2, 1, 10 * timeseries.Second},
-		{2, 1, 0, 0},
-		{0, 3, 0, 0},
-	}
-
-	for i, test := range tests {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			pts := testPoints().CloneRange(test.start, test.end)
-			if len(pts) != test.expLen {
-				t.Errorf("expected %d got %d", test.expLen, len(pts))
-			}
-			if len(pts) > 0 {
-				if pts[0].Epoch != epoch.Epoch(test.epoch) {
-					t.Errorf("expected %d got %d", test.epoch, pts[0].Epoch)
-				}
-			}
-		})
 	}
 }
 
@@ -174,13 +136,13 @@ func TestPointsClone(t *testing.T) {
 
 	p := pts[0]
 	p2 := pts2[0]
-	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] || p2.Size != p.Size {
+	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] {
 		t.Error("clone mismatch")
 	}
 
 	p = pts[1]
 	p2 = pts2[1]
-	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] || p2.Size != p.Size {
+	if p2.Epoch != p.Epoch || p2.Values[0] != p.Values[0] {
 		t.Error("clone mismatch")
 	}
 
@@ -189,36 +151,13 @@ func TestPointsClone(t *testing.T) {
 	}
 }
 
-func TestPointsSize(t *testing.T) {
-	pts := testPoints()
-	size := pts.Size()
-	require.Equal(t, int64(70), size)
-}
-
-func BenchmarkPointsSize(b *testing.B) {
-	pts := genTestPoints(0, 1000)
-	for b.Loop() {
-		pts.Size()
-	}
-}
-
-func TestPointsSort(t *testing.T) {
-	pts := testPoints()
-	pts[0].Epoch = 100 * timeseries.Second
-	slices.SortFunc(pts, pointCmp)
-	p := pts[0]
-	if p.Epoch != 10*timeseries.Second {
-		t.Error("sort mismatch")
-	}
-}
-
 func TestFindRange(t *testing.T) {
 	pts := Points{
-		Point{Epoch: epoch.Epoch(1 * time.Second), Size: 1, Values: []any{1}},
-		Point{Epoch: epoch.Epoch(3 * time.Second), Size: 1, Values: []any{2}},
-		Point{Epoch: epoch.Epoch(5 * time.Second), Size: 1, Values: []any{3}},
-		Point{Epoch: epoch.Epoch(7 * time.Second), Size: 1, Values: []any{4}},
-		Point{Epoch: epoch.Epoch(9 * time.Second), Size: 1, Values: []any{5}},
+		Point{Epoch: epoch.Epoch(1 * time.Second), Values: []any{int64(1)}},
+		Point{Epoch: epoch.Epoch(3 * time.Second), Values: []any{int64(2)}},
+		Point{Epoch: epoch.Epoch(5 * time.Second), Values: []any{int64(3)}},
+		Point{Epoch: epoch.Epoch(7 * time.Second), Values: []any{int64(4)}},
+		Point{Epoch: epoch.Epoch(9 * time.Second), Values: []any{int64(5)}},
 	}
 
 	tests := []struct {
@@ -278,30 +217,21 @@ func TestFindRange(t *testing.T) {
 			wantEnd:    3,
 		},
 	}
+	segs := segmentsFromPoints(pts)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotStart, gotEnd := pts.findRange(tt.startEpoch, tt.endEpoch, 0, len(pts)-1)
-			require.Equal(t, tt.wantStart, gotStart, "start value not expected")
-			require.Equal(t, tt.wantEnd, gotEnd, "end value not expected")
-			require.LessOrEqual(t, gotStart, gotEnd)
-			require.False(t, gotStart < 0 || gotStart > len(pts), "start index out of bounds")
-			require.False(t, gotEnd < 0 || gotEnd > len(pts), "end index out of bounds")
+			got := seriesPoints(NewSeriesOf(SeriesHeader{}, segs.View(tt.startEpoch, tt.endEpoch)))
+			if tt.wantStart == tt.wantEnd {
+				require.Empty(t, got)
+				return
+			}
+			require.Equal(t, pts[tt.wantStart:tt.wantEnd], got)
 		})
 	}
 
 	t.Run("empty points", func(t *testing.T) {
-		start, end := Points{}.findRange(epoch.Epoch(1*time.Second), epoch.Epoch(5*time.Second), 0, -1)
-		require.False(t, start != 0 || end != 0, "should return 0,0")
+		require.Zero(t, Segments(nil).View(epoch.Epoch(1*time.Second), epoch.Epoch(5*time.Second)).Len())
 	})
-}
-
-func BenchmarkFindRange(b *testing.B) {
-	pts := genTestPoints(0, 10000) // Create a large dataset for meaningful benchmarks
-	startEpoch := epoch.Epoch(2500 * time.Second)
-	endEpoch := epoch.Epoch(7500 * time.Second)
-	for b.Loop() {
-		_, _ = pts.findRange(startEpoch, endEpoch, 0, len(pts)-1)
-	}
 }
 
 func TestMergePoints(t *testing.T) {
@@ -315,9 +245,9 @@ func TestMergePoints(t *testing.T) {
 			p1:   testPoints(),
 			p2:   testPoints2(),
 			expected: Points{
-				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
-				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 25}},
-				{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{int64(1), int64(37)}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{int64(1), int64(25)}},
+				{Epoch: epoch.Epoch(15 * timeseries.Second), Values: []any{int64(1), int64(34)}},
 			},
 			sortPoints: true,
 		},
@@ -326,9 +256,9 @@ func TestMergePoints(t *testing.T) {
 			p1:   testPoints2(),
 			p2:   testPoints(),
 			expected: Points{
-				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
-				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 24}},
-				{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{int64(1), int64(37)}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{int64(1), int64(24)}},
+				{Epoch: epoch.Epoch(15 * timeseries.Second), Values: []any{int64(1), int64(34)}},
 			},
 			sortPoints: true,
 		},
@@ -358,9 +288,9 @@ func TestMergePoints(t *testing.T) {
 			p1:   testPoints2(),
 			p2:   testPoints3(),
 			expected: Points{
-				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
-				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 24}},
-				{Epoch: epoch.Epoch(15 * timeseries.Second), Size: 27, Values: []any{1, 34}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{int64(1), int64(37)}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{int64(1), int64(24)}},
+				{Epoch: epoch.Epoch(15 * timeseries.Second), Values: []any{int64(1), int64(34)}},
 			},
 			sortPoints: true,
 		},
@@ -381,15 +311,15 @@ func TestMergePoints(t *testing.T) {
 		{
 			name: "no sort — concatenated order preserved",
 			p1: Points{
-				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{1}},
 			},
 			p2: Points{
-				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{2}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{2}},
 			},
 			// without sorting, p2 comes after p1 in concatenation order
 			expected: Points{
-				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1}},
-				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{2}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{int64(1)}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{int64(2)}},
 			},
 			sortPoints: false,
 		},
@@ -398,15 +328,15 @@ func TestMergePoints(t *testing.T) {
 			p1:   testPoints(),
 			p2:   testPoints(),
 			expected: Points{
-				{Epoch: epoch.Epoch(5 * timeseries.Second), Size: 27, Values: []any{1, 37}},
-				{Epoch: epoch.Epoch(10 * timeseries.Second), Size: 27, Values: []any{1, 24}},
+				{Epoch: epoch.Epoch(5 * timeseries.Second), Values: []any{int64(1), int64(37)}},
+				{Epoch: epoch.Epoch(10 * timeseries.Second), Values: []any{int64(1), int64(24)}},
 			},
 			sortPoints: true,
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			out := MergePoints(test.p1, test.p2, test.sortPoints)
+			out := mergePoints(test.p1, test.p2, MergeOpts{SortPoints: test.sortPoints})
 			if !out.Equal(test.expected) {
 				t.Errorf("expected:\n%v\ngot:\n%v\n", test.expected, out)
 			}
@@ -414,33 +344,16 @@ func TestMergePoints(t *testing.T) {
 	}
 }
 
-func TestPointsCloneSharesOneSlab(t *testing.T) {
+func TestPointsCloneOwnsValues(t *testing.T) {
 	p := Points{
-		{Epoch: 1, Size: 10, Values: []any{"a", 1.5}},
-		{Epoch: 2, Size: 11, Values: nil},
-		{Epoch: 3, Size: 12, Values: []any{}},
-		{Epoch: 4, Size: 13, Values: []any{"b", 2.5}},
+		{Epoch: 1, Values: []any{"a", 1.5}},
+		{Epoch: 2, Values: nil},
+		{Epoch: 3, Values: []any{"b", 2.5}},
 	}
-	for _, clone := range []Points{p.Clone(), p.CloneRange(0, len(p))} {
-		if len(clone) != len(p) {
-			t.Fatalf("len %d", len(clone))
-		}
-		for i := range p {
-			if !PointsAreEqual(p[i], clone[i]) || (p[i].Values == nil) != (clone[i].Values == nil) {
-				t.Fatalf("point %d: %v != %v", i, clone[i], p[i])
-			}
-		}
-		// an append to one point must not reach the next, which follows it in the slab
-		clone[0].Values = append(clone[0].Values, "x")
-		if clone[3].Values[0] != "b" || p[0].Values[1] != 1.5 {
-			t.Fatal("an append overwrote a neighbor or the source")
-		}
-		clone[3].Values[0] = "changed"
-		if p[3].Values[0] != "b" {
-			t.Fatal("the clone shares values with its source")
-		}
-	}
-	if got := p.CloneRange(1, 3); len(got) != 2 || got[0].Epoch != 2 || got[1].Epoch != 3 {
-		t.Fatalf("CloneRange(1, 3) = %v", got)
-	}
+	clone := p.Clone()
+	require.True(t, clone.Equal(p))
+	require.Nil(t, clone[1].Values)
+	clone[2].Values[0] = "changed"
+	require.Equal(t, "b", p[2].Values[0], "the clone shares values with its source")
+	require.Nil(t, Points(nil).Clone())
 }

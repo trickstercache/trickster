@@ -99,19 +99,8 @@ func trimToExtent(ds *dataset.DataSet, e timeseries.Extent) {
 			if s == nil {
 				continue
 			}
-			// points are ascending, so only each end is examined
-			i, j := 0, len(s.Points)
-			for i < j && s.Points[i].Epoch < start {
-				s.PointSize -= int64(s.Points[i].Size)
-				i++
-			}
-			for j > i && s.Points[j-1].Epoch > end {
-				s.PointSize -= int64(s.Points[j-1].Size)
-				j--
-			}
-			if i > 0 || j < len(s.Points) {
-				s.Points = s.Points[i:j]
-			}
+			// rows are ascending, so a view trims each end
+			s.SetSegments(s.Segments().View(start, end))
 		}
 	}
 }

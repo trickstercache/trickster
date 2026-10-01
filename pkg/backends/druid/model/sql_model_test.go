@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -77,8 +78,8 @@ func TestSQLModelRoundTripObjectRows(t *testing.T) {
 	if len(ds.Results) != 1 || len(ds.Results[0].SeriesList) != 2 {
 		t.Fatalf("unexpected series: %#v", ds.Results)
 	}
-	if len(ds.Results[0].SeriesList[0].Points) != 2 {
-		t.Fatalf("unexpected points: %#v", ds.Results[0].SeriesList[0].Points)
+	if ds.Results[0].SeriesList[0].PointCount() != 2 {
+		t.Fatalf("unexpected points: %#v", dspoints.Of(ds.Results[0].SeriesList[0]))
 	}
 	out, err := MarshalTimeseries(ds, &timeseries.RequestOptions{ProviderRequest: plan}, 200)
 	if err != nil {
@@ -151,7 +152,7 @@ func TestSQLModelAcceptsDruidNumericMilliseconds(t *testing.T) {
 		t.Fatal(err)
 	}
 	ds := ts.(*dataset.DataSet)
-	if got := ds.Results[0].SeriesList[0].Points[0].Epoch; got != 1704067200000000000 {
+	if got := dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch; got != 1704067200000000000 {
 		t.Fatalf("epoch = %d", got)
 	}
 }
@@ -268,7 +269,7 @@ func TestSQLModelMergesNullOnlyAndNumericExtents(t *testing.T) {
 	if got := len(ds.Results[0].SeriesList); got != 1 {
 		t.Fatalf("series count after merge = %d, want 1", got)
 	}
-	if got := len(ds.Results[0].SeriesList[0].Points); got != 2 {
+	if got := ds.Results[0].SeriesList[0].PointCount(); got != 2 {
 		t.Fatalf("point count after merge = %d, want 2", got)
 	}
 }
