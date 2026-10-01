@@ -1,3 +1,10 @@
+# Each TSDB backend and its seeders belong to a profile named for the backend
+# (e.g., mysql, clickhouse), plus the all-providers and integration profiles.
+# Integration-test-only services belong only to the integration profile.
+# Services with no profile (caches, UIs, Prometheus, devorigin, tracing)
+# always start. Select profiles with COMPOSE_PROFILES, e.g. COMPOSE_PROFILES=mysql,
+# or with the developer-start-<profile> targets in the repo's Makefile.
+
 services:
 
   # caches
@@ -36,21 +43,28 @@ services:
     restart: always
     ports:
      - 3000:3000
+    # other TSDBs are in their own profiles, so Grafana waits only for those enabled
     depends_on:
       influxdb2:
         condition: service_started
+        required: false
       prometheus:
         condition: service_started
       mysql:
         condition: service_healthy
+        required: false
       timescaledb:
         condition: service_healthy
+        required: false
       greptimedb:
         condition: service_healthy
+        required: false
       druid:
         condition: service_healthy
+        required: false
       questdb:
         condition: service_healthy
+        required: false
 
   # TSDBs
 
@@ -118,6 +132,7 @@ services:
 
   # influxdb 2.x
   influxdb2:
+    profiles: [influxdb, all-providers, integration]
     image: influxdb:2.9
     volumes:
       # Mount for influxdb data directory and configuration
@@ -134,6 +149,7 @@ services:
 
   # influxdb 2.0 cli, for seeding influxdb on startup
   influxdb2_seed:
+    profiles: [influxdb, all-providers, integration]
     links:
       - influxdb2
     image: influxdb:2.9
@@ -152,6 +168,7 @@ services:
 
   # influxdb 3.x
   influxdb3:
+    profiles: [influxdb, all-providers, integration]
     image: quay.io/influxdb/influxdb3-core:latest
     ports:
       - 8181:8181
@@ -172,6 +189,7 @@ services:
   # distroless, so start-nano.sh supplies the same five Druid services plus
   # ZooKeeper without relying on the upstream Perl supervisor.
   druid:
+    profiles: [druid, all-providers, integration]
     image: apache/druid:37.0.0
     environment:
       DRUID_LOG_DIR: /opt/druid/log
@@ -193,6 +211,7 @@ services:
 
   # clickhouse
   clickhouse:
+    profiles: [clickhouse, all-providers, integration]
     image: clickhouse/clickhouse-server:26.7
     ports:
      - 9000:9000
@@ -234,6 +253,7 @@ services:
 
   # clickhouse-client, for seeding clickhouse on startup
   clickhouse_seed:
+    profiles: [clickhouse, all-providers, integration]
     links:
       - clickhouse
     image: clickhouse/clickhouse-server:26.7
@@ -254,6 +274,7 @@ services:
   # TSV files and seed-window metadata as ClickHouse/MySQL; the batch transform
   # shifts __time so the dashboard remains centered around the current time.
   druid_seed:
+    profiles: [druid, all-providers, integration]
     image: golang:1.27-alpine
     working_dir: /src
     environment:
@@ -277,6 +298,7 @@ services:
 
   # mysql
   mysql:
+    profiles: [mysql, all-providers, integration]
     image: mysql:8.4
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -305,6 +327,7 @@ services:
   # mysql client, for seeding mysql on startup from the shared generated
   # seed data
   mysql_seed:
+    profiles: [mysql, all-providers, integration]
     image: mysql:8.4
     environment:
       MYSQL_SERVER_ADDR: mysql
@@ -331,6 +354,7 @@ services:
   # keep data in /var/lib/postgresql/18/docker and refuse to start with a mount
   # at the older /var/lib/postgresql/data, so the volume mounts one level up.
   timescaledb:
+    profiles: [timescaledb, all-providers, integration]
     image: timescale/timescaledb:2.30.1-pg18
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -365,6 +389,7 @@ services:
   # psql client, for seeding timescaledb on startup from the shared generated
   # seed data
   timescaledb_seed:
+    profiles: [timescaledb, all-providers, integration]
     image: timescale/timescaledb:2.30.1-pg18
     environment:
       TIMESCALEDB_SERVER_ADDR: timescaledb
@@ -386,6 +411,7 @@ services:
 
   # GreptimeDB standalone, with HTTP, gRPC, MySQL and PostgreSQL endpoints.
   greptimedb:
+    profiles: [greptimedb, all-providers, integration]
     # Includes #9295 (Grafana's comment-only PostgreSQL health query).
     image: greptime/greptimedb-nightly:nightly-20260923-e91faa9df@sha256:657e0d3e5899f7e17db2bf6810264c1d1e8fff84055a90938201aedc86a19468
     extra_hosts:
@@ -414,6 +440,7 @@ services:
 
   # SQL loader preserves the shared fixture's DATE and narrow numeric types.
   greptimedb_seed:
+    profiles: [greptimedb, all-providers, integration]
     image: golang:1.27-alpine
     working_dir: /src
     environment:
@@ -439,6 +466,7 @@ services:
 
   # QuestDB OSS: PostgreSQL wire protocol and the HTTP SQL/Web Console surface.
   questdb:
+    profiles: [questdb, all-providers, integration]
     image: questdb/questdb:10.0.1@sha256:67eaed863ebb2383227919ea9a5499a4a39ceca3862c20b974c84a10e11cdf89
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -470,6 +498,7 @@ services:
   # QuestDB seeder: loads the shared trips fixture through /imp, then applies
   # the UTC shift and schema conversions through /execute.
   questdb_seed:
+    profiles: [questdb, all-providers, integration]
     image: trickster-questdb-seed:dev
     build:
       context: ./docker-compose-data/questdb-config/seeding
@@ -491,6 +520,7 @@ services:
 
   # graphite (carbon-cache + graphite-web, whisper storage)
   graphite:
+    profiles: [graphite, all-providers, integration]
     image: graphiteapp/graphite-statsd:1.1.10-5
     ports:
      - 8081:80     # graphite-web (render / metrics APIs)
@@ -517,6 +547,7 @@ services:
   # validates it through graphite-web, then exits. Also run by
   # `make developer-seed-data` (with GRAPHITE_SEED_FORCE=1 to recreate files).
   graphite_seed:
+    profiles: [graphite, all-providers, integration]
     image: graphiteapp/graphite-statsd:1.1.10-5
     entrypoint: ["/opt/graphite/bin/python3", "/generator/generator.py", "seed"]
     environment:
@@ -538,6 +569,7 @@ services:
   # streams the same deterministic function of time into carbon (port 2003)
   # at every step boundary, forever. See graphite-config/generator.py.
   graphite_generator:
+    profiles: [graphite, all-providers, integration]
     image: graphiteapp/graphite-statsd:1.1.10-5
     entrypoint: ["/opt/graphite/bin/python3", "/generator/generator.py", "stream"]
     environment:
@@ -614,6 +646,7 @@ services:
   # polling
 
   telegraf:
+    profiles: [influxdb, all-providers, integration]
     image: telegraf:1.39-alpine
     restart: always
     volumes:
@@ -622,28 +655,22 @@ services:
       - influxdb2
       - influxdb3
 
-  # -- INTEGRATION CONTAINERS BELOW --
-  # Integration-test-only services. These stay commented out so developer
-  # workstations never run them; `make integration-start` (repo root)
-  # uncomments everything between the BELOW/ABOVE markers before bringing
-  # the environment up, and `make integration-stop` comments them back out
-  # after stopping it. Lines in this section are toggled by prefixing '#'
-  # at column 0 -- do not hand-edit the commenting style.
-  #
-  # coredns serves the mutable trickster.test zone for the ALB
-  # autodiscovery dns_srv/dns_a integration tests; the zone file lives in
-  # the gitignored docker-compose-data/coredns-zones/ directory, seeded by
+  # Integration-test-only services
+
+  # coredns serves the mutable trickster.test zone for the ALB autodiscovery
+  # dns_srv/dns_a integration tests; the zone file lives in the gitignored
+  # docker-compose-data/coredns-zones/ directory, seeded by
   # make integration-start and rewritten by the tests mid-run.
-#  coredns:
-#    image: coredns/coredns:1.12.0
-#    command: -conf /etc/coredns/Corefile
-#    ports:
-#      - 5399:53/udp
-#      - 5399:53/tcp
-#    volumes:
-#      - ./docker-compose-data/coredns/Corefile:/etc/coredns/Corefile:ro
-#      - ./docker-compose-data/coredns-zones:/zones
-  # -- INTEGRATION CONTAINERS ABOVE --
+  coredns:
+    profiles: [integration]
+    image: coredns/coredns:1.12.0
+    command: -conf /etc/coredns/Corefile
+    ports:
+      - 5399:53/udp
+      - 5399:53/tcp
+    volumes:
+      - ./docker-compose-data/coredns/Corefile:/etc/coredns/Corefile:ro
+      - ./docker-compose-data/coredns-zones:/zones
 
 volumes:
   seedgen-gocache:

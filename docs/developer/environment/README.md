@@ -30,7 +30,46 @@ for verification purposes.
 
 You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
-all data including named volumes.
+all data including named volumes. Both act on every profile, whichever ones the
+environment was started with.
+
+### Compose Profiles
+
+Each TSDB backend runs in its own [Compose profile](https://docs.docker.com/compose/how-tos/profiles/),
+so you can start only the databases you are working on and save memory, CPU
+and disk. The services with no profile always start: `redis`, `grafana`,
+`prometheus` (and its seeders), `devorigin` (and the `seed_data_generate`
+loader it needs), and `jaeger`. Prometheus is always on because it also
+scrapes your local Trickster for the
+[Trickster Status](http://127.0.0.1:3000/d/uAJ8w1wZz/trickster-status) dashboard.
+
+| Profile | Services | Make target |
+|---|---|---|
+| `influxdb` | `influxdb2`, `influxdb3`, their seeder, and `telegraf` | `make developer-start-influxdb` |
+| `clickhouse` | `clickhouse` and its seeder | `make developer-start-clickhouse` |
+| `druid` | `druid` and its seeder | `make developer-start-druid` |
+| `mysql` | `mysql` and its seeder | `make developer-start-mysql` |
+| `timescaledb` | `timescaledb` (the `postgres` provider) and its seeder | `make developer-start-timescaledb` |
+| `greptimedb` | `greptimedb` and its seeder | `make developer-start-greptimedb` |
+| `questdb` | `questdb` and its seeder | `make developer-start-questdb` |
+| `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
+| `all-providers` | every TSDB backend above | `make developer-start` |
+| `integration` | every TSDB backend, plus the integration-only `coredns` | `make integration-start` |
+
+`make developer-start` reads the `COMPOSE_PROFILES` variable, which defaults to
+`all-providers` and takes a comma-separated list, so you can combine backends:
+
+```bash
+make developer-start COMPOSE_PROFILES=mysql,clickhouse
+```
+
+`make developer-recreate` deletes the whole environment, including every
+profile's volumes, then starts it again with `COMPOSE_PROFILES`.
+Grafana's datasources for backends that are not running will show errors.
+
+Starting with more profiles later adds their services to the running
+environment. `make developer-seed-data` reseeds only the databases that are
+running, unless you name them with `SEED_TARGET`.
 
 ## devorigin
 
@@ -195,7 +234,7 @@ The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
 Apache Druid, MySQL, TimescaleDB, QuestDB, and Graphite alongside Grafana. Trickster's
 dev config registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
-comparison.
+comparison. Each backend runs in its own profile; see [Compose Profiles](#compose-profiles).
 
 GreptimeDB also provides direct SQL and PromQL queries, a pgwire SQL cache,
 and an HTTP proxy; QuestDB provides direct HTTP and pgwire validation plus

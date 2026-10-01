@@ -33,13 +33,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The dns_srv / dns_a scenarios run against the CoreDNS integration
-// container (see the "-- INTEGRATION CONTAINERS BELOW --" section of the
-// developer compose file), which serves the mutable trickster.test zone
-// from the gitignored coredns-zones directory. `make integration-start`
-// enables the container and seeds the zone. When CoreDNS is not running,
-// these tests skip -- unless TRICKSTER_DNS_TEST=1 (set in CI) makes its
-// absence a failure.
+// The dns_srv / dns_a scenarios run against the CoreDNS container in the
+// developer compose file's integration profile, which serves the mutable
+// trickster.test zone from the gitignored coredns-zones directory.
+// `make integration-start` seeds the zone and starts the profile. When
+// CoreDNS is not running, these tests skip -- unless TRICKSTER_DNS_TEST=1
+// (set in CI) makes its absence a failure.
 
 const (
 	coreDNSAddr = "127.0.0.1:5399"
