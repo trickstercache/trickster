@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -33,6 +34,7 @@ import (
 	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	autht "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
@@ -40,6 +42,7 @@ import (
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	tlso "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const (
@@ -63,12 +66,13 @@ func (e testEngine) Analyzer() sqlanalyzer.DialectAnalyzer {
 	}
 	return testAnalyzer
 }
+
 func (e testEngine) Defaults() EngineDefaults               { return EngineDefaults{UpstreamTLSMode: e.tlsMode} }
 func (testEngine) TimeAxis(oid uint32) (TimeAxisKind, bool) { return StandardTimeAxis(oid) }
 func (testEngine) TimeSemantics() TimeSemantics             { return TimeSemantics{} }
 
 var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers: []cockroach.BucketMatcher{cockroach.DateBinMatcher}, RoundUnalignedTimeBounds: true,
+	BucketMatchers: []cockroach.BucketMatcher{cockroach.DateBinMatcher},
 })
 
 func configTestOptions() *bo.Options {
@@ -91,6 +95,12 @@ func TestConfigFromOptions(t *testing.T) {
 	if c.Upstream != want || !c.Terminated() || c.Provider != providers.Postgres ||
 		c.BackendName != configTestName || c.RestartKey == "" || c.IdleTimeout != pgo.DefaultIdleTimeout {
 		t.Fatalf("unexpected config %+v", c)
+	}
+	tuned := configTestOptions()
+	tuned.PartialBucketTTL, tuned.StepAlignment = timeconv.Duration(time.Minute), timeseries.StepAlignmentDrop
+	if c, err = ConfigFromOptions(tuned, testEngine{}); err != nil ||
+		c.PartialBucketTTL != time.Minute || c.StepAlignment != timeseries.StepAlignmentDrop {
+		t.Fatalf("partial_bucket_ttl and step_alignment were not copied: %+v, %v", c, err)
 	}
 
 	passthrough := configTestOptions()
@@ -263,10 +273,12 @@ func TestRestartKeyTracksRuntimeIdentity(t *testing.T) {
 		t.Fatal("the restart key must be stable")
 	}
 	for name, mutate := range map[string]func(*bo.Options){
-		"origin":      func(o *bo.Options) { o.OriginURL = "postgres://origin@other.example/x" },
-		"credentials": func(o *bo.Options) { o.AuthOptions.Users[testClientUser] = "rotated" },
-		"auth mode":   func(o *bo.Options) { o.AuthOptions.ObserveOnly = true },
-		"tls mode":    func(o *bo.Options) { o.Postgres = &pgo.Options{UpstreamTLSMode: pgo.TLSModeRequire} },
+		"origin":             func(o *bo.Options) { o.OriginURL = "postgres://origin@other.example/x" },
+		"credentials":        func(o *bo.Options) { o.AuthOptions.Users[testClientUser] = "rotated" },
+		"auth mode":          func(o *bo.Options) { o.AuthOptions.ObserveOnly = true },
+		"tls mode":           func(o *bo.Options) { o.Postgres = &pgo.Options{UpstreamTLSMode: pgo.TLSModeRequire} },
+		"partial bucket ttl": func(o *bo.Options) { o.PartialBucketTTL = timeconv.Duration(time.Minute) },
+		"step alignment":     func(o *bo.Options) { o.StepAlignment = timeseries.StepAlignmentDrop },
 		"tls files": func(o *bo.Options) {
 			o.TLS = &tlso.Options{FullChainCertPath: certPath, PrivateKeyPath: keyPath, ClientCertPath: "absent.pem", ClientKeyPath: "absent.key"}
 		},
@@ -302,7 +314,7 @@ func adapterTestConfig() *config.Config {
 
 func TestNativeListenerAdapterContract(t *testing.T) {
 	adapter := NewNativeListenerAdapter(NewEngines(testEngine{}))
-	if adapter.Protocol() != listenerconfig.ProtocolPostgres || adapter.SupportsHTTP() {
+	if adapter.Protocol() != listenerconfig.ProtocolPostgres || adapter.SupportsHTTP(providers.Postgres) {
 		t.Fatalf("unexpected identity %q", adapter.Protocol())
 	}
 	if !adapter.ServesProvider(providers.Postgres) || !adapter.ServesProvider(providers.TimescaleDB) ||

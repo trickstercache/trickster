@@ -844,12 +844,22 @@
    "session_time_zone": "UTC",
    "expanded_sql": "SELECT time_bucket('7 days', pickup_datetime) AS time, count(*) FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:03.123Z' AND pickup_datetime < '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
    "expected": {
-    "cache_mode": "object",
-    "analysis_reason": "unsafe_predicate",
-    "canonical_policy": "none",
-    "extent_rendering": false
+    "cache_mode": "delta",
+    "analysis_reason": "delta_cacheable",
+    "cadence": "168h",
+    "phase": "96h",
+    "input_unit": "rfc3339",
+    "output_unit": "timestamp",
+    "lower_bound": "2026-09-21T00:00:00Z",
+    "lower_inclusive": true,
+    "output_column": "time",
+    "group_columns": [],
+    "canonical_policy": "range_independent",
+    "extent_rendering": true,
+    "upper_bound": "2026-09-21T00:00:00Z",
+    "upper_inclusive": false
    },
-   "rationale": "Rounding inward leaves no complete bucket."
+   "rationale": "Rounding inward leaves no complete bucket, so both bounds meet at the rounded-up lower boundary and the planner, which finds no complete bucket, sends the statement as written."
   },
   {
    "name": "two_lower_bounds",

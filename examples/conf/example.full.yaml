@@ -243,6 +243,13 @@
 #       max_size_objects: 0
 #       # max_size_backoff_objects indicates how far under max_size_objects the cache size must be to complete object-size-based eviction exercise. default is 100
 #       max_size_backoff_objects: 100
+#       # scan_interval defines how long the Cache Index waits between sweeps of the cache, in which it lists objects it
+#       # did not know of and drops those the cache no longer holds. 0 disables the periodic sweep. default is 24h
+#       scan_interval: 24h
+#       # scan_batch_size is how many objects a sweep of the cache reads before it pauses. default is 512
+#       scan_batch_size: 512
+#       # scan_batch_pause is how long a sweep of the cache pauses after each batch of objects. default is 50ms
+#       scan_batch_pause: 50ms
 
 #     ## Configuration options when using a Memory Cache #######
 #     memory:
@@ -325,6 +332,9 @@
 #       # cache_path defines the directory location under which the Trickster cache will be maintained
 #       # default is /tmp/trickster
 #       cache_path: /tmp/trickster
+#       # min_free_bytes is the space to keep free on the filesystem that holds cache_path. when less is free, the
+#       # cache evicts least-recently-accessed items as it does when it is over max_size_bytes. default is 0 (disabled)
+#       min_free_bytes: 0
 
 #     ## Configuration options when using a bbolt Cache ####################
 #     bbolt:
@@ -524,9 +534,22 @@ backends:
   #     client_key_path: /etc/trickster/tls/origin-client.key
   #   # Deterministic SELECTs use OPC; supported cadence-aligned time-series
   #   # SELECTs use DPC. The common cache_name, timeseries_ttl,
-  #   # timeseries_retention_factor, backfill_tolerance, and
+  #   # timeseries_retention_factor, volatile_window, and
   #   # max_object_size_bytes backend settings apply.
 
+  # # GreptimeDB serves HTTP and either or both native protocols. See
+  # # examples/conf/greptimedb.yaml for the corresponding listeners/authenticator.
+  # greptimedb1:
+  #   provider: greptimedb
+  #   origin_url: http://greptime.example:4000
+  #   listener_names: [default, greptime-pg, greptime-mysql]
+  #   authenticator_name: greptime-readers
+  #   cache_name: default
+  #   postgres:
+  #     upstream_url: postgres://readonly:REPLACE_ME@greptime.example:4003/public
+  #   mysql:
+  #     upstream_url: mysql://readonly:REPLACE_ME@greptime.example:4002/public
+  #
   # # example postgres backend, exposed by a listener with protocol postgres
   # # (see the listeners section). Provider timescaledb is an alias of postgres.
   # postgres1:
@@ -569,7 +592,7 @@ backends:
   #       - /etc/trickster/tls/origin-ca.crt
   #   # Deterministic SELECTs use OPC; time_bucket, date_bin and epoch-floor
   #   # time-series SELECTs use DPC. The common cache_name, timeseries_ttl,
-  #   # timeseries_retention_factor, backfill_tolerance, sharding and
+  #   # timeseries_retention_factor, volatile_window, sharding and
   #   # max_object_size_bytes backend settings apply. proxy_only: true relays
   #   # every statement without inspecting it.
 
@@ -870,16 +893,24 @@ backends:
 #     # (X-Trickster-Result: phit) rather than truncating the merged response silently. default is 268435456 (256 MiB)
 #     max_capture_bytes: 268435456
 
-#     # These next 6 settings only apply to Time Series backends
+#     # These next settings only apply to Time Series backends
 
-#     # backfill_tolerance prevents new datapoints that fall within the tolerance window (relative to time.Now) from being permanently
+#     # step_alignment selects what the backend does with partial buckets at the edges of a query's time range:
+#     # truncate, drop, partial, partial_start, partial_end or off. The provider's default applies when it is unset.
+#     # off sends each query to the origin with its range as the client sent it, and caches the response as an
+#     # object for one minute, keyed on that range.
+#     # On an alb, step_alignment applies one mode to every pool member's HTTP requests. A tsm alb without it
+#     # applies its first configured member's mode, so that the members it merges answer on one grid.
+#     # step_alignment: truncate
+
+#     # volatile_window prevents new datapoints that fall within the window (relative to time.Now) from being permanently
 #     # cached. Think of it as "the newest N milliseconds of real-time data are preliminary and subject to updates, so refresh them periodically"
 #     # default is 0ms
-#     backfill_tolerance: 0ms
+#     volatile_window: 0ms
 
-#     # backfill_tolerance_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
-#     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence
-#     backfill_tolerance_points: 0
+#     # volatile_window_points works like the duration version, except the methodology is based on # of intervaled timestamps (points) in the series
+#     # instead of a relative time. You can set both values and the one impacting the most number of elements in the time series takes precedence.
+#     volatile_window_points: 0
 
 #     # timeseries_retention_factor defines the maximum number of recent timestamps to cache for a given query. Default is 1024
 #     timeseries_retention_factor: 1024
@@ -891,11 +922,13 @@ backends:
 #     # the timeseries_retention_factor limit is reached. options are oldest and lru. Default is oldest
 #     timeseries_eviction_method: oldest
 
-#     # fast_forward_disable, when set to true, will turn off the fast forward feature for any requests proxied to this backend
+#     # fast_forward_disable, when set to true, will turn off the fast forward feature for any requests proxied to this backend.
+#     # For Prometheus it is the same as step_alignment: truncate, and it cannot be set alongside step_alignment
 #     fast_forward_disable: false
 
-#     # fastforward_ttl defines the relative expiration of cached fast forward data. default is 15s
-#     fastforward_ttl: 15s
+#     # partial_bucket_ttl defines the relative expiration of cached partial buckets, including fast forward data. default is 15s.
+#     # The former name, fastforward_ttl, is still accepted when partial_bucket_ttl is not set
+#     partial_bucket_ttl: 15s
 
 #     # shard_max_size_points defines the maximum size of a timeseries request in unique timestamps,
 #     # before sharding into multiple requests of this denomination and reconsitituting the results.

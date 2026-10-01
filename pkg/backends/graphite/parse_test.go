@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func newTestClient(t testing.TB, o *bo.Options) *Client {
@@ -101,12 +102,15 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if trq.Step != 10*time.Second {
 		t.Errorf("expected the resolved 10s step, got %v", trq.Step)
 	}
+	if trq.SampleModel != timeseries.SampleModelStored {
+		t.Errorf("expected the stored sample model, got %d", trq.SampleModel)
+	}
 	if trq.CacheKeyElements["target"] != trq.Statement || trq.CacheKeyElements["step"] != "10s" ||
 		trq.CacheKeyElements["gen"] != "0" || trq.CacheKeyElements["leaves"] == "" {
 		t.Errorf("unexpected cache key elements %v", trq.CacheKeyElements)
 	}
-	if trq.BackfillTolerance != DefaultBackfillTolerance {
-		t.Errorf("expected the default backfill tolerance, got %v", trq.BackfillTolerance)
+	if trq.VolatileWindow != DefaultVolatileWindow {
+		t.Errorf("expected the default volatile window, got %v", trq.VolatileWindow)
 	}
 	// the extent is the buckets whisper returns: (from, until] step-aligned
 	if d := trq.Extent.End.Sub(trq.Extent.Start); d != 6*time.Hour-10*time.Second {
@@ -115,6 +119,13 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if trq.Extent.End.After(time.Now()) || trq.Extent.End.Before(before.Add(-10*time.Second).Truncate(10*time.Second)) ||
 		trq.Extent.Start.Unix()%10 != 0 {
 		t.Errorf("unexpected extent end %v", trq.Extent.End)
+	}
+	// the requested range is the client's own, before whisper's alignment
+	if req := trq.Requested; req.End.Sub(req.Start) != 6*time.Hour || !req.EndInclusive || !req.OpenEnded {
+		t.Errorf("unexpected requested range %+v", req)
+	}
+	if trq.StepAlignments != stepAlignments || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+		t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
 	}
 	if !rlo.FastForwardDisable {
 		t.Error("fast forward must be disabled")

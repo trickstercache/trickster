@@ -44,6 +44,7 @@ const (
 	tlsSubsystem        = "tls"
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
+  stepAlignSubsystem  = "step_alignment"
 	ipACLSubsystem      = "ip_acl"
 )
 
@@ -555,6 +556,31 @@ var (
 		[]string{keys.Backend_Name},
 	)
 
+	// ProxyPartialBucketFetches counts partial bucket fetches through the object proxy cache, by the
+	// edge of the range the bucket sits on and the lookup's status
+	ProxyPartialBucketFetches = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "partial_bucket_fetches_total",
+			Help:      "Count of partial bucket fetches through the object proxy cache.",
+		},
+		[]string{keys.Backend_Name, keys.Provider, keys.Edge, keys.Status},
+	)
+
+	// StepAlignmentFallbacks counts requests for a step alignment mode the query doesn't support,
+	// which were served in the query's default mode instead
+	StepAlignmentFallbacks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: stepAlignSubsystem,
+			Name:      "fallbacks_total",
+			Help: "Count of requests for a step alignment mode the query does not support, " +
+				"served in the query's default mode.",
+		},
+		[]string{keys.Backend_Name, keys.Requested, keys.Applied},
+	)
+
 	// TimeseriesRetentionFactorExceeded counts requests spanning more buckets
 	// than timeseries_retention_factor, whose cache entry is therefore cropped
 	// and whose cropped remainder is refetched on every request.
@@ -567,6 +593,19 @@ var (
 				"the backend's timeseries_retention_factor can retain.",
 		},
 		[]string{keys.Backend_Name},
+	)
+
+	// TimeseriesOffGridExtents counts delta fetch ranges whose bounds fell between buckets and
+	// were narrowed to whole buckets before the upstream request was rendered.
+	TimeseriesOffGridExtents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "timeseries_offgrid_extents_total",
+			Help: "Count of time series fetch ranges with bounds between buckets, " +
+				"narrowed to whole buckets before fetching.",
+		},
+		[]string{keys.Backend_Name, keys.Provider},
 	)
 
 	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
@@ -1205,7 +1244,10 @@ func init() {
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
+	prometheus.MustRegister(ProxyPartialBucketFetches)
+	prometheus.MustRegister(StepAlignmentFallbacks)
 	prometheus.MustRegister(TimeseriesRetentionFactorExceeded)
+	prometheus.MustRegister(TimeseriesOffGridExtents)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
@@ -1255,7 +1297,10 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestElements,
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
+	ProxyPartialBucketFetches,
+	StepAlignmentFallbacks,
 	TimeseriesRetentionFactorExceeded,
+	TimeseriesOffGridExtents,
 	SQLQueryAnalysis,
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,

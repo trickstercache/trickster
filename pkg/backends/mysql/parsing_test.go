@@ -64,18 +64,18 @@ GROUP BY time, cab_type ORDER BY time, metric`
 			sqltypes.NewInt64(1785542400), sqltypes.NewVarChar("yellow"), sqltypes.NewInt64(4),
 		}},
 	}
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{result}, analysis.Plan); err != nil {
+	if _, err := dpcTestHandler.deltaOf(analysis.Plan, result); err != nil {
 		t.Fatalf("aliased dimension could not be modeled: %v", err)
 	}
 	result.Fields[2] = &querypb.Field{Name: "trips", Type: querypb.Type_VARCHAR}
 	result.Rows[0][2] = sqltypes.NewVarChar("not numeric")
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{result}, analysis.Plan); err == nil {
+	if _, err := dpcTestHandler.deltaOf(analysis.Plan, result); err == nil {
 		t.Fatal("non-numeric value field was accepted for DPC merging")
 	}
 }
 
 func TestParseUsesCanonicalCacheKey(t *testing.T) {
-	query, cacheable, err := Parse(safeDateTimeQuery, time.Time{})
+	query, cacheable, err := Parse(safeDateTimeQuery, time.Unix(1_800_000_000, 0))
 	if err != nil || !cacheable {
 		t.Fatalf("parse() = cacheable %t, err %v", cacheable, err)
 	}

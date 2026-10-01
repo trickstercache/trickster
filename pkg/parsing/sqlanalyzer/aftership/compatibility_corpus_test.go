@@ -58,7 +58,7 @@ var clickHouseCompatibilityCorpus = []struct {
 		query: "WITH filtered AS (SELECT ts, service FROM events WHERE environment = 'prod') " +
 			"SELECT toStartOfMinute(ts) AS t, service, count() AS cnt FROM filtered " +
 			"WHERE ts >= 120 AND ts < 240 GROUP BY t, service FORMAT JSON",
-		mode: sqlanalyzer.CacheModeDelta, reason: sqlanalyzer.ReasonDeltaCacheable, step: time.Minute,
+		mode: sqlanalyzer.CacheModeObject, reason: sqlanalyzer.ReasonUnsupportedFormat,
 	},
 	{
 		name: "raw BETWEEN",

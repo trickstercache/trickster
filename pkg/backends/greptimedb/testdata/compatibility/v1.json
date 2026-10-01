@@ -1,0 +1,417 @@
+{
+  "schema_version": 1,
+  "corpus_version": "greptimedb-grafana-v1",
+  "minimum_interval": "1m",
+  "omissions": [
+    "builder-mode-captures",
+    "extended-protocol-statements",
+    "RANGE ALIGN delta caching",
+    "TQL delta caching"
+  ],
+  "cases": [
+    {
+      "name": "grafana_time",
+      "macro_source": [
+        "SELECT $__time(pickup_datetime), total_amount FROM trips WHERE $__timeFilter(pickup_datetime) ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS \"time\", total_amount FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "The projection supplies no reusable bucket cadence; cache only the complete result."
+    },
+    {
+      "name": "grafana_time_epoch",
+      "macro_source": [
+        "SELECT $__timeEpoch(pickup_datetime), total_amount FROM trips WHERE $__timeFilter(pickup_datetime) ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT extract(epoch from pickup_datetime) as \"time\", total_amount FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "The projection supplies no reusable bucket cadence; cache only the complete result."
+    },
+    {
+      "name": "grafana_time_group",
+      "macro_source": [
+        "SELECT $__timeGroup(pickup_datetime,'5m') AS time, count(*) AS trips FROM trips WHERE $__timeFilter(pickup_datetime) GROUP BY 1 ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT floor(extract(epoch from pickup_datetime)/300)*300 AS time, count(*) AS trips FROM trips WHERE pickup_datetime BETWEEN '2026-09-19T00:00:03.123Z' AND '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "unix_seconds",
+        "lower_bound": "2026-09-19T00:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-19T03:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed five-minute buckets normalize the deliberately unaligned range to complete buckets."
+    },
+    {
+      "name": "grafana_time_group_alias",
+      "macro_source": [
+        "SELECT $__timeGroupAlias(pickup_datetime,$__interval), count(*) AS trips FROM trips WHERE pickup_datetime >= $__timeFrom() AND pickup_datetime < $__timeTo() GROUP BY 1 ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT floor(extract(epoch from pickup_datetime)/300)*300 AS \"time\", count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-09-19T00:00:03.123Z' AND pickup_datetime < '2026-09-19T03:00:07.456Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "unix_seconds",
+        "lower_bound": "2026-09-19T00:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-19T03:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed five-minute buckets normalize the deliberately unaligned range to complete buckets."
+    },
+    {
+      "name": "grafana_unix_filter",
+      "macro_source": [
+        "SELECT pickup_epoch AS time, total_amount FROM trips WHERE $__unixEpochFilter(pickup_epoch) ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_epoch AS time, total_amount FROM trips WHERE pickup_epoch >= 1789776003 AND pickup_epoch <= 1789786807 ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "The projection supplies no reusable bucket cadence; cache only the complete result."
+    },
+    {
+      "name": "grafana_unix_nano_filter",
+      "macro_source": [
+        "SELECT pickup_epoch AS time, total_amount FROM trips WHERE $__unixEpochNanoFilter(pickup_epoch * 1000000000) ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_epoch AS time, total_amount FROM trips WHERE pickup_epoch * 1000000000 >= 1789776003123000000 AND pickup_epoch * 1000000000 <= 1789786807456000000 ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "The projection supplies no reusable bucket cadence; cache only the complete result."
+    },
+    {
+      "name": "grafana_unix_group",
+      "macro_source": [
+        "SELECT $__unixEpochGroup(pickup_epoch,'5m') AS time, count(*) AS trips FROM trips WHERE pickup_epoch >= $__unixEpochFrom() AND pickup_epoch < $__unixEpochTo() GROUP BY 1 ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT floor((pickup_epoch)/300)*300 AS time, count(*) AS trips FROM trips WHERE pickup_epoch >= 1789776003 AND pickup_epoch < 1789786807 GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "unix_seconds",
+        "output_unit": "unix_seconds",
+        "lower_bound": "2026-09-19T00:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-19T03:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed five-minute buckets normalize the deliberately unaligned range to complete buckets."
+    },
+    {
+      "name": "grafana_unix_group_alias",
+      "macro_source": [
+        "SELECT $__unixEpochGroupAlias(pickup_epoch,'5m'), count(*) AS trips FROM trips WHERE $__unixEpochFilter(pickup_epoch) GROUP BY 1 ORDER BY 1"
+      ],
+      "query_origin": "Grafana PostgreSQL datasource executedQueryString, direct GreptimeDB official nightly-20260923-e91faa9df, timescaledb=false",
+      "grafana_version": "13.1.3",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT floor((pickup_epoch)/300)*300 AS \"time\", count(*) AS trips FROM trips WHERE pickup_epoch >= 1789776003 AND pickup_epoch <= 1789786807 GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "unix_seconds",
+        "output_unit": "unix_seconds",
+        "lower_bound": "2026-09-19T00:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-19T03:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed five-minute buckets normalize the deliberately unaligned range to complete buckets."
+    },
+    {
+      "name": "date_bin_interval",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT date_bin(INTERVAL '5 minutes',pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "timestamp",
+        "lower_bound": "2026-01-01T00:00:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-01-01T01:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed-width buckets render and read back with the original identity and exact requested extent."
+    },
+    {
+      "name": "date_bin_compact",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT date_bin('5m',pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "timestamp",
+        "lower_bound": "2026-01-01T00:00:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-01-01T01:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed-width buckets render and read back with the original identity and exact requested extent."
+    },
+    {
+      "name": "date_bin_interval_cast",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT date_bin('5 minutes'::interval,pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "timestamp",
+        "lower_bound": "2026-01-01T00:00:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-01-01T01:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed-width buckets render and read back with the original identity and exact requested extent."
+    },
+    {
+      "name": "date_part_epoch",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT floor(date_part('epoch',pickup_datetime)/300)*300 AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "unix_seconds",
+        "lower_bound": "2026-01-01T00:00:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-01-01T01:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>"
+        ]
+      },
+      "rationale": "Fixed-width buckets render and read back with the original identity and exact requested extent."
+    },
+    {
+      "name": "calendar_month",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT date_trunc('month',pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "Calendar months have no fixed cache cadence."
+    },
+    {
+      "name": "fractional_compact",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT date_bin('0.5s',pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "Compact widths require positive integer components."
+    },
+    {
+      "name": "submicrosecond",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT date_bin('5ns',pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "PostgreSQL text timestamps do not carry nanosecond buckets losslessly."
+    },
+    {
+      "name": "unknown_zone",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "America/New_York",
+      "expanded_sql": "SELECT date_trunc('minute',pickup_datetime) AS time,count(*) AS trips FROM trips WHERE pickup_datetime >= '2026-01-01T00:00:00Z' AND pickup_datetime < '2026-01-01T01:00:00Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "date_trunc requires a verified UTC session."
+    },
+    {
+      "name": "range_align",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT sum(fare_amount) RANGE '5m' FROM trips ALIGN '5m'",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "invalid_sql",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "The dialect extension is only eligible for whole-result caching."
+    },
+    {
+      "name": "range_volatile",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT random() RANGE '5m' FROM trips ALIGN '5m'",
+      "expected": {
+        "cache_mode": "none",
+        "analysis_reason": "nondeterministic",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "Lexical safety checks still apply when the AST parser cannot read a dialect clause."
+    },
+    {
+      "name": "tql",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "TQL EVAL (0, 1, '1s') up",
+      "expected": {
+        "cache_mode": "none",
+        "analysis_reason": "invalid_sql",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "TQL is relayed without SQL cache rewrites."
+    },
+    {
+      "name": "write",
+      "query_origin": "Hand-written DataFusion SQL regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "INSERT INTO trips VALUES (1)",
+      "expected": {
+        "cache_mode": "none",
+        "analysis_reason": "unsupported_statement",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "Mutations never enter a read-result cache."
+    }
+  ]
+}

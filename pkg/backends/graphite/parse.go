@@ -243,7 +243,9 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		canonical[i], keys[i] = t.Canonical, t.Resolution.ExpansionID
 	}
 	trq.Statement = strings.Join(canonical, "\n")
-	trq.Extent, trq.Step = d.Extent, d.Step
+	trq.Extent, trq.Step, trq.Requested = d.Extent, d.Step, d.Requested
+	trq.SampleModel = timeseries.SampleModelStored
+	trq.StepAlignments, trq.StepAlignment = stepAlignments, timeseries.StepAlignmentTruncate
 
 	// key on canonical target, leaf set, step and registry generation, so a
 	// relearned ladder or changed expansion misses rather than collides
@@ -256,8 +258,8 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	// carbon writes are not instantaneous and the newest rung is fine-grained,
 	// so unless configured, tolerate two steps and at least 30s of rewrites
-	if o := c.Configuration(); o != nil && o.BackfillTolerance == 0 && o.BackfillTolerancePoints == 0 {
-		trq.BackfillTolerance = max(2*d.Step, DefaultBackfillTolerance)
+	if o := c.Configuration(); o != nil && o.VolatileWindow == 0 && o.VolatileWindowPoints == 0 {
+		trq.VolatileWindow = max(2*d.Step, DefaultVolatileWindow)
 	}
 
 	// marshal-time parameters are deliberately not in the cache key, so
@@ -319,9 +321,9 @@ func ageBucket(age time.Duration) string {
 	return ">1y"
 }
 
-// DefaultBackfillTolerance is the minimum backfill tolerance applied when
+// DefaultVolatileWindow is the minimum volatile window applied when
 // the backend configures none
-const DefaultBackfillTolerance = 30 * time.Second
+const DefaultVolatileWindow = 30 * time.Second
 
 var deltaOwnedParams = sets.New([]string{
 	upTarget, "target[]", "from", "until", "now", "tz", "format", "jsonp",

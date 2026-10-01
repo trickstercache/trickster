@@ -42,17 +42,14 @@ func (errReader) Read([]byte) (int, error) { return 0, errors.New("read fail") }
 
 const fqAbsoluteTimeMS string = `from("test-bucket")
   |> range(start: 2023-01-01T00:00:00.000Z, stop: 2023-01-08T00:00:00.000Z)
-  |> window(every: 5m)
-  |> mean()
+  |> aggregateWindow(every: 5m, fn: mean)
 `
 
 const fqAbsoluteTimeTokenized = `from("test-bucket")
   
 |> range(<TIMERANGE_TOKEN>)
   
-|> window(every: 5m)
-  
-|> mean()
+|> aggregateWindow(every: 5m, fn: mean)
 `
 
 const testFluxQuery1 = `from("test-bucket")
@@ -92,9 +89,48 @@ func TestParseQuery(t *testing.T) {
 // resolved to the current time. This is Grafana's default `stop` value for
 // Flux queries — without this, aggregateWindow dashboards fall through to
 // HTTPProxy instead of being delta-proxy cached.
+func TestParseQueryRefusesCrossBucketStages(t *testing.T) {
+	const source = `from(bucket: "b") |> range(start: -1h, stop: now()) |> filter(fn: (r) => r._measurement == "m")`
+	const window = ` |> aggregateWindow(every: 1m, fn: mean)`
+	tests := []struct {
+		name, query string
+		expected    error
+	}{
+		{"windowed", source + window, nil},
+		{"per-row stages after the window", source + window + ` |> map(fn: (r) => ({r with _value: r._value * 2.0}))`, nil},
+		{"fill with a value", source + window + ` |> fill(value: 0.0)`, nil},
+		{"fill without previous", source + window + ` |> fill(usePrevious: false)`, nil},
+		{"reducer before the window", source + ` |> max()` + window, nil},
+		{"limit", source + window + ` |> limit(n: 5)`, ErrCrossBucket},
+		{"tail", source + window + ` |> tail(n: 5)`, ErrCrossBucket},
+		{"derivative", source + window + ` |> derivative(unit: 1m)`, ErrCrossBucket},
+		{"difference", source + window + ` |> difference()`, ErrCrossBucket},
+		{"cumulativeSum", source + window + ` |> cumulativeSum()`, ErrCrossBucket},
+		{"movingAverage", source + window + ` |> movingAverage(n: 3)`, ErrCrossBucket},
+		{"elapsed", source + ` |> elapsed(unit: 1s)` + window, ErrCrossBucket},
+		{"fill previous", source + window + ` |> fill(usePrevious: true)`, ErrCrossBucket},
+		{"fill previous across lines", source + window + " |> fill(\n  usePrevious: true\n)", ErrCrossBucket},
+		{"reducer after the window", source + window + ` |> max()`, ErrCrossBucket},
+		{"sort after the window", source + window + ` |> sort(columns: ["_value"])`, ErrCrossBucket},
+		{"timeShift", source + window + ` |> timeShift(duration: 30s)`, ErrUnsupportedWindow},
+		{
+			"two sources", `a = ` + source + window + "\nb = " + source + window +
+				"\njoin(tables: {a: a, b: b}, on: [\"_time\"])", ErrMultipleSources,
+		},
+		{"one source with spaces", `from (bucket: "b") |> range(start: -1h, stop: now())` + window, nil},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, _, err := parseQuery(test.query); !errors.Is(err, test.expected) {
+				t.Fatalf("expected %v got %v", test.expected, err)
+			}
+		})
+	}
+}
+
 func TestParseQuery_Now(t *testing.T) {
 	before := time.Now()
-	q := `from(bucket: "trickster") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)`
+	q := `from(bucket: "trickster") |> range(start: -1h, stop: now()) |> aggregateWindow(every: 1m, fn: mean)`
 	_, e, d, err := ParseQuery(q)
 	if err != nil {
 		t.Fatalf("ParseQuery(now()): %v", err)
@@ -127,9 +163,144 @@ func TestParseTimeRangeQuery(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	} else {
-		if int(trq.Extent.End.Sub(trq.Extent.Start).Hours()) != int(timeconv.Day.Hours()) {
-			t.Errorf("expected %d got %d", int(timeconv.Day.Hours()), int(trq.Extent.End.Sub(trq.Extent.Start).Hours()))
+		// the first stop-time window label is one step after the range start
+		want := int((timeconv.Day - time.Minute).Minutes())
+		if got := int(trq.Extent.End.Sub(trq.Extent.Start).Minutes()); got != want {
+			t.Errorf("expected %d minutes got %d", want, got)
 		}
+		if trq.SampleModel != timeseries.SampleModelBucketStop {
+			t.Errorf("expected stop-labeled bucket sample model, got %d", trq.SampleModel)
+		}
+	}
+}
+
+func TestParseTimeRangeQueryWindowLabels(t *testing.T) {
+	parse := func(t *testing.T, query string) *timeseries.TimeRangeQuery {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, "https://blah.com/",
+			strings.NewReader(query))
+		req.Header.Set(headers.NameContentType, headers.ValueApplicationFlux)
+		trq, _, _, err := ParseTimeRangeQuery(req, iofmt.FluxRawCsv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return trq
+	}
+	const rangeLine = `from(bucket: "b") |> range(start: 1704067200, stop: 1704153600) `
+	start, end := time.Unix(1704067200, 0).UTC(), time.Unix(1704153600, 0).UTC()
+
+	t.Run("start-time labels keep the range start", func(t *testing.T) {
+		trq := parse(t, rangeLine+
+			`|> aggregateWindow(every: 1h, fn: mean, timeSrc: "_start", offset: 15m)`)
+		if !trq.Extent.Start.Equal(start) || !trq.Extent.End.Equal(end) {
+			t.Errorf("expected extent %s-%s got %s", start, end, trq.Extent)
+		}
+		if trq.Phase != 15*time.Minute {
+			t.Errorf("expected phase 15m got %s", trq.Phase)
+		}
+		q := trq.ParsedQuery.(*Query)
+		if !q.labelsAtStart {
+			t.Error("expected start-time labels")
+		}
+	})
+
+	t.Run("stop-time labels start one step later", func(t *testing.T) {
+		trq := parse(t, rangeLine+`|> aggregateWindow(every: 1h, fn: mean)`)
+		if !trq.Extent.Start.Equal(start.Add(time.Hour)) {
+			t.Errorf("expected start %s got %s", start.Add(time.Hour), trq.Extent.Start)
+		}
+		// the requested range is the client's range(), before the label shift
+		if !trq.Requested.Start.Equal(start) || !trq.Requested.End.Equal(end) || trq.Requested.EndInclusive {
+			t.Errorf("unexpected requested range %+v", trq.Requested)
+		}
+		if trq.StepAlignments != stepAlignments || trq.StepAlignment != timeseries.StepAlignmentTruncate {
+			t.Errorf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+		}
+	})
+
+	t.Run("range shorter than a step is clamped", func(t *testing.T) {
+		trq := parse(t, `from(bucket: "b") |> range(start: 1704067200, stop: 1704067230) `+
+			`|> aggregateWindow(every: 1h, fn: mean)`)
+		if !trq.Extent.Start.Equal(trq.Extent.End) {
+			t.Errorf("expected an empty extent, got %s", trq.Extent)
+		}
+	})
+
+	t.Run("raw query without windows is not bucketed", func(t *testing.T) {
+		trq := parse(t, rangeLine+`|> filter(fn: (r) => r._field == "v")`)
+		if trq.SampleModel != timeseries.SampleModelInstant || !trq.Extent.Start.Equal(start) {
+			t.Errorf("unexpected raw query parse: model %d extent %s", trq.SampleModel,
+				trq.Extent)
+		}
+	})
+}
+
+func TestSetExtentWindowLabels(t *testing.T) {
+	start := time.Unix(1704067200, 0).UTC()
+	end := start.Add(3 * time.Hour)
+	tests := []struct {
+		name          string
+		labelsAtStart bool
+		ext           timeseries.Extent
+		expected      string
+	}{
+		{
+			"stop-time labels", false,
+			timeseries.Extent{Start: start, End: end},
+			"range(start: 1704063600, stop: 1704078000)",
+		},
+		{
+			"start-time labels", true,
+			timeseries.Extent{Start: start, End: end},
+			"range(start: 1704067200, stop: 1704081600)",
+		},
+		{
+			"single window", false,
+			timeseries.Extent{Start: end, End: end},
+			"range(start: 1704074400, stop: 1704078000)",
+		},
+		{
+			"sub-second bounds use time literals", true,
+			timeseries.Extent{
+				Start: start.Add(500 * time.Millisecond), End: start.Add(500 * time.Millisecond),
+			},
+			"range(start: 2024-01-01T00:00:00.5Z, stop: 2024-01-01T01:00:00.5Z)",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			q := &Query{
+				tokenized: testFluxQueryTokenized1, step: time.Hour,
+				labelsAtStart: test.labelsAtStart,
+			}
+			trq := &timeseries.TimeRangeQuery{Step: time.Hour, ParsedQuery: q}
+			r, _ := http.NewRequest(http.MethodPost, "https://example.com/",
+				strings.NewReader(testFluxQueryTokenized1))
+			r.Header.Set(headers.NameContentType, headers.ValueApplicationFlux)
+			SetExtent(r, trq, &test.ext, q)
+			b, _ := io.ReadAll(r.Body)
+			var out JSONRequestBody
+			if err := json.Unmarshal(b, &out); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(out.Query, test.expected) {
+				t.Errorf("expected %s in %s", test.expected, out.Query)
+			}
+			// the _start and _stop output columns report the same range bounds
+			trq.Extent = test.ext
+			rs, rp := q.rangeBounds(test.ext, time.Hour)
+			if re := rangeExtent(trq); !re.Start.Equal(rs) || !re.End.Equal(rp) {
+				t.Errorf("expected range extent %s-%s got %s", rs, rp, re)
+			}
+		})
+	}
+
+	if e := rangeExtent(nil); !e.Start.IsZero() || !e.End.IsZero() {
+		t.Error("expected a zero extent for a nil query")
+	}
+	plain := &timeseries.TimeRangeQuery{Extent: timeseries.Extent{Start: start, End: end}}
+	if e := rangeExtent(plain); !e.Start.Equal(start) || !e.End.Equal(end) {
+		t.Errorf("expected the query extent without a parsed flux query, got %s", e)
 	}
 }
 
@@ -229,7 +400,7 @@ func TestParseTimeRangeQueryBranches(t *testing.T) {
 }
 
 func TestSetExtent(t *testing.T) {
-	now := time.Now()
+	now := time.Now().Truncate(time.Second)
 
 	start := now.Add(-7 * 24 * time.Hour)
 	end := now.Add(-6 * 24 * time.Hour)
@@ -248,7 +419,8 @@ func TestSetExtent(t *testing.T) {
 	e := &timeseries.Extent{Start: start, End: end}
 	SetExtent(r, trq, e, q)
 
-	newRange := fmt.Sprintf("range(start: %d, stop: %d)", start.Unix(), end.Unix())
+	// stop-time labels start..end come from windows beginning one step before start
+	newRange := fmt.Sprintf("range(start: %d, stop: %d)", start.Add(-q.step).Unix(), end.Unix())
 	expected := strings.Replace(testFluxJsonTokenized1, "<TIMERANGE_TOKEN>", newRange, 1)
 	b, _ := io.ReadAll(r.Body)
 	if string(b) != expected {
@@ -328,7 +500,7 @@ func TestSetExtentBranches(t *testing.T) {
 		if err := json.Unmarshal(b, &out); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out.Query, fmt.Sprintf("start: %d", start.Unix())) {
+		if !strings.Contains(out.Query, fmt.Sprintf("start: %d", start.Add(-q.step).Unix())) {
 			t.Fatalf("query = %s", out.Query)
 		}
 		if out.Now != "now-token" {

@@ -17,11 +17,15 @@
 package flux
 
 import (
+	"bytes"
+	"io"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
 func TestValidateMarshalerOptions(t *testing.T) {
@@ -62,102 +66,99 @@ func testDataSet() *dataset.DataSet {
 		Results: []*dataset.Result{
 			{
 				SeriesList: []*dataset.Series{
-					{
-						Header: dataset.SeriesHeader{
-							QueryStatement: testTRQ.Statement,
-							Tags: dataset.Tags{
-								"hostname":     "localhost",
-								"_measurement": "cpu",
+					dataset.NewSeries(dataset.SeriesHeader{
+						QueryStatement: testTRQ.Statement,
+						Tags: dataset.Tags{
+							"hostname":     "localhost",
+							"_measurement": "cpu",
+						},
+						TimestampField: timeseries.FieldDefinition{
+							Name:           timeAltColumnName,
+							DataType:       timeseries.DateTimeRFC3339,
+							SDataType:      TypeRFC3339,
+							Role:           timeseries.RoleTimestamp,
+							OutputPosition: 5,
+						},
+						TagFieldsList: []timeseries.FieldDefinition{
+							{
+								Name:           "hostname",
+								OutputPosition: 8,
+								SDataType:      TypeString,
+								Role:           timeseries.RoleTag,
 							},
-							TimestampField: timeseries.FieldDefinition{
-								Name:           timeAltColumnName,
+							{
+								Name:           resultColumnName,
+								OutputPosition: 1,
+								SDataType:      TypeString,
+								DataType:       timeseries.String,
+								Role:           timeseries.RoleTag,
+								DefaultValue:   "_result",
+							},
+							{
+								Name:           "_measurement",
+								OutputPosition: 9,
+								SDataType:      TypeString,
+								DataType:       timeseries.String,
+								Role:           timeseries.RoleTag,
+							},
+						},
+						ValueFieldsList: []timeseries.FieldDefinition{
+							{
+								Name:           "avg_query",
+								OutputPosition: 6,
+								SDataType:      TypeDouble,
+								DataType:       timeseries.Float64,
+								Role:           timeseries.RoleValue,
+							},
+							{
+								Name:           "avg_global_thread",
+								OutputPosition: 7,
+								SDataType:      TypeDouble,
+								DataType:       timeseries.Float64,
+								Role:           timeseries.RoleValue,
+							},
+						},
+						UntrackedFieldsList: []timeseries.FieldDefinition{
+							{
+								// role for empty CSV first column
+								Role: timeseries.RoleUntracked,
+							},
+							{
+								Name:           tableColumnName,
+								OutputPosition: 2,
+								Role:           timeseries.RoleUntracked,
+								SDataType:      TypeLong,
+								DataType:       timeseries.Int64,
+							},
+							{
+								Name:           startColumnName,
 								DataType:       timeseries.DateTimeRFC3339,
 								SDataType:      TypeRFC3339,
-								Role:           timeseries.RoleTimestamp,
-								OutputPosition: 5,
+								Role:           timeseries.RoleUntracked,
+								OutputPosition: 3,
 							},
-							TagFieldsList: []timeseries.FieldDefinition{
-								{
-									Name:           "hostname",
-									OutputPosition: 8,
-									SDataType:      TypeString,
-									Role:           timeseries.RoleTag,
-								},
-								{
-									Name:           resultColumnName,
-									OutputPosition: 1,
-									SDataType:      TypeString,
-									DataType:       timeseries.String,
-									Role:           timeseries.RoleTag,
-									DefaultValue:   "_result",
-								},
-								{
-									Name:           "_measurement",
-									OutputPosition: 9,
-									SDataType:      TypeString,
-									DataType:       timeseries.String,
-									Role:           timeseries.RoleTag,
-								},
-							},
-							ValueFieldsList: []timeseries.FieldDefinition{
-								{
-									Name:           "avg_query",
-									OutputPosition: 6,
-									SDataType:      TypeDouble,
-									DataType:       timeseries.Float64,
-									Role:           timeseries.RoleValue,
-								},
-								{
-									Name:           "avg_global_thread",
-									OutputPosition: 7,
-									SDataType:      TypeDouble,
-									DataType:       timeseries.Float64,
-									Role:           timeseries.RoleValue,
-								},
-							},
-							UntrackedFieldsList: []timeseries.FieldDefinition{
-								{
-									// role for empty CSV first column
-									Role: timeseries.RoleUntracked,
-								},
-								{
-									Name:           tableColumnName,
-									OutputPosition: 2,
-									Role:           timeseries.RoleUntracked,
-									SDataType:      TypeLong,
-									DataType:       timeseries.Int64,
-								},
-								{
-									Name:           startColumnName,
-									DataType:       timeseries.DateTimeRFC3339,
-									SDataType:      TypeRFC3339,
-									Role:           timeseries.RoleUntracked,
-									OutputPosition: 3,
-								},
-								{
-									Name:           stopColumnName,
-									DataType:       timeseries.DateTimeRFC3339,
-									SDataType:      TypeRFC3339,
-									Role:           timeseries.RoleUntracked,
-									OutputPosition: 4,
-								},
+							{
+								Name:           stopColumnName,
+								DataType:       timeseries.DateTimeRFC3339,
+								SDataType:      TypeRFC3339,
+								Role:           timeseries.RoleUntracked,
+								OutputPosition: 4,
 							},
 						},
-						Points: []dataset.Point{
-							{
-								Epoch:  1577836800000000000,
-								Values: []any{1.781, 54.12348},
-							},
-							{
-								Epoch:  1577836860000000000,
-								Values: []any{2.429, 57.91308},
-							},
-							{
-								Epoch:  1577836920000000000,
-								Values: []any{1.929, 55.21703},
-							},
+					}, []dataset.Point{
+						{
+							Epoch:  1577836800000000000,
+							Values: []any{1.781, 54.12348},
 						},
-					},
+						{
+							Epoch:  1577836860000000000,
+							Values: []any{2.429, 57.91308},
+						},
+						{
+							Epoch:  1577836920000000000,
+							Values: []any{1.929, 55.21703},
+						},
+					}),
 				},
 			},
 		},
@@ -172,3 +173,27 @@ const testDataSetAsCSV = `#datatype,string,long,dateTime:RFC3339,dateTime:RFC333
 ,,0,2020-01-01T00:00:00Z,2020-01-01T00:02:00Z,2020-01-01T00:01:00Z,2.429,57.91308,localhost,cpu
 ,,0,2020-01-01T00:00:00Z,2020-01-01T00:02:00Z,2020-01-01T00:02:00Z,1.929,55.21703,localhost,cpu
 `
+
+func TestMarshalReadsSeriesParts(t *testing.T) {
+	view := parts.Of(testDataSet(), epoch.Epoch(time.Minute))
+	if !view.HasParts() {
+		t.Fatal("the view has no parts")
+	}
+	for name, marshal := range map[string]func(*dataset.DataSet, io.Writer) error{
+		"csv": func(ds *dataset.DataSet, w io.Writer) error {
+			return marshalTimeseriesCSVWriter(ds, DefaultJSONRequestBody(), 200, w)
+		},
+		"json": func(ds *dataset.DataSet, w io.Writer) error { return marshalTimeseriesJSONWriter(ds, nil, 200, w) },
+	} {
+		var got, want bytes.Buffer
+		if err := marshal(view, &got); err != nil {
+			t.Fatal(err)
+		}
+		if err := marshal(view.Flat(), &want); err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got.Bytes(), want.Bytes()) {
+			t.Fatalf("%s:\n got %s\nwant %s", name, got.Bytes(), want.Bytes())
+		}
+	}
+}

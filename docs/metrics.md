@@ -78,6 +78,24 @@ The following metrics are available for polling with any Trickster configuration
     * `cache_status` - status codes are described [here](./caches.md#cache-status)
     * `path` - the Path portion of the requested URL
 
+* `trickster_proxy_timeseries_offgrid_extents_total` (Counter) - The number of time series fetch ranges whose bounds fell between buckets and were narrowed to whole buckets before fetching. A non-zero value points to a step or phase mismatch between Trickster and the origin; please report it.
+  * labels:
+    * `backend_name` - the name of the configured backend fetching the range
+    * `provider` - the type of the configured backend, or the native protocol (e.g., `mysql`)
+
+* `trickster_proxy_partial_bucket_fetches_total` (Counter) - The number of partial bucket fetches through the object cache, under a `partial` [step alignment](./step-alignment.md) mode.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `provider` - the backend provider
+    * `edge` - `start` or `end`: the edge of the requested range the bucket sits on
+    * `status` - the object cache result, such as `hit` or `kmiss`, or `err` when the fetch failed and the bucket was left out of the response
+
+* `trickster_step_alignment_fallbacks_total` (Counter) - The number of requests for a [step alignment](./step-alignment.md) mode the query doesn't support, served in the query's default mode instead.
+  * labels:
+    * `backend_name` - the name of the configured backend
+    * `requested` - the mode asked for, by the backend's configuration, an ALB, or a `trickster-step-align` directive
+    * `applied` - the mode the request was served in
+
 * `trickster_proxy_request_duration_seconds` (Histogram) - Time required to proxy a given Prometheus query.
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request
@@ -167,7 +185,7 @@ The following metrics are available for polling with any Trickster configuration
 * `trickster_graphite_fallbacks_total` (Counter) - Count of render requests served without delta caching. Labels never include a target expression.
   * labels:
     * `backend_name` - the name of the configured Graphite backend
-    * `reason` - `parse_error`, `non_series_format`, `function_not_allowlisted`, `unknown_step`, `missing_target`, `multi_target_step_mismatch`, `passthrough_max_data_points`, `misprediction`, `client_identity`, `tz_unavailable`, or `resolution_identity`
+    * `reason` - `parse_error`, `non_series_format`, `function_not_allowlisted`, `unknown_step`, `missing_target`, `mixed_steps`, `multi_target_step_mismatch`, `passthrough_max_data_points`, `misprediction`, `client_identity`, `tz_unavailable`, or `resolution_identity`
 * `trickster_sql_query_analysis_total` (Counter) - Count of SQL query cache-eligibility classifications. Labels never include query text.
   * labels:
     * `backend_name` - the name of the configured backend analyzing the query
@@ -311,6 +329,18 @@ The following metrics are available only for Caches Types whose object lifecycle
     * `provider` - the type of the configured cache experiencing the event
     * `event` - the name of the event being performed
     * `reason` - the reason the event occurred
+  * events and reasons:
+
+    | `event` | `reason` | counts |
+    | ----- | ----- | ----- |
+    | `eviction` | `ttl` | removals of expired objects, a batch at a time |
+    | `eviction` | `size_bytes`, `size_objects` | removals of least-recently-accessed objects from a cache over its size |
+    | `eviction` | `free_space` | removals of least-recently-accessed objects for `min_free_bytes` (Filesystem) |
+    | `invalid_object` | `expired`, `corrupt`, `unknown_format` | objects found to be unservable when read or swept, and removed (Filesystem and bbolt) |
+    | `index` | `compaction` | replacements of the Cache Index journal by a snapshot (Filesystem and bbolt) |
+    | `index` | `sweep` | completed sweeps of the cache (Filesystem and bbolt) |
+    | `sweep` | `adopted` | objects a sweep found in the cache that the Cache Index did not list |
+    | `sweep` | `dropped` | objects a sweep found the Cache Index to list that the cache no longer held |
 
 * `trickster_cache_usage_objects` (Gauge) - The current count of objects in the Trickster cache.
   * labels:

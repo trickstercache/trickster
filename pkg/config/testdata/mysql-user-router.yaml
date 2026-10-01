@@ -15,7 +15,7 @@ backends:
     timeseries_eviction_method: oldest
     negative_cache_name: default
     timeseries_ttl: 6h0m0s
-    fastforward_ttl: 15s
+    partial_bucket_ttl: 15s
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
@@ -52,7 +52,7 @@ backends:
     timeseries_eviction_method: oldest
     negative_cache_name: default
     timeseries_ttl: 6h0m0s
-    fastforward_ttl: 15s
+    partial_bucket_ttl: 15s
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 524288
@@ -106,7 +106,7 @@ backends:
     timeseries_eviction_method: oldest
     negative_cache_name: default
     timeseries_ttl: 6h0m0s
-    fastforward_ttl: 15s
+    partial_bucket_ttl: 15s
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 8388608
@@ -149,7 +149,7 @@ backends:
     timeseries_eviction_method: oldest
     negative_cache_name: default
     timeseries_ttl: 6h0m0s
-    fastforward_ttl: 15s
+    partial_bucket_ttl: 15s
     max_ttl: 25h0m0s
     revalidation_factor: 2
     max_object_size_bytes: 8388608
@@ -183,6 +183,9 @@ caches:
       max_size_bytes: 536870912
       max_size_backoff_bytes: 16777216
       max_size_backoff_objects: 100
+      scan_interval: 24h0m0s
+      scan_batch_size: 512
+      scan_batch_pause: 50ms
     redis:
       client_type: standard
       protocol: tcp
@@ -211,6 +214,9 @@ caches:
       max_size_bytes: 536870912
       max_size_backoff_bytes: 16777216
       max_size_backoff_objects: 100
+      scan_interval: 24h0m0s
+      scan_batch_size: 512
+      scan_batch_pause: 50ms
     redis:
       client_type: standard
       protocol: tcp
@@ -239,6 +245,9 @@ caches:
       max_size_bytes: 536870912
       max_size_backoff_bytes: 16777216
       max_size_backoff_objects: 100
+      scan_interval: 24h0m0s
+      scan_batch_size: 512
+      scan_batch_pause: 50ms
     redis:
       client_type: standard
       protocol: tcp

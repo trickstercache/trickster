@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"net/http/httptrace"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -117,15 +118,17 @@ type engineResult struct {
 	err    error
 }
 
-const engineBurstAdmissionWindow = 250 * time.Millisecond
+const (
+	engineFlightWait = 10 * time.Second
+	// frames on the stack of every request inside the delta proxy cache's in-flight group
+	engineFlightFrame  = "singleflight.(*Group).Do("
+	engineRequestFrame = "engines.DeltaProxyCacheRequest("
+)
 
-// doEngineRangeBurst holds the origin until every client has written its
-// request to Trickster and gives the server time to admit those requests into
-// the in-flight group. WroteRequest only confirms a socket write; without the
-// admission window, a busy runner can leave a handler queued until after the
-// first origin response has completed and the singleflight entry is gone.
 func doEngineRangeBurst(t *testing.T, f *engineFixture, params url.Values, n int, release func()) []engineResult {
 	t.Helper()
+	// the origin is held until every request has joined the in-flight group, not just been written: a
+	// busy runner can queue a handler until the first fetch is over
 	start := make(chan struct{})
 	written := make(chan struct{}, n)
 	results := make(chan engineResult, n)
@@ -175,18 +178,48 @@ func doEngineRangeBurst(t *testing.T, f *engineFixture, params url.Values, n int
 			break
 		}
 	}
-	if allWritten {
-		time.Sleep(engineBurstAdmissionWindow)
-	}
+	joined := allWritten && waitForEngineFlight(n)
 	release()
 	wg.Wait()
 	close(results)
 	require.True(t, allWritten, "not all requests were written to Trickster before timeout")
+	require.True(t, joined, "not all requests joined the in-flight fetch before timeout")
 	collected := make([]engineResult, 0, n)
 	for result := range results {
 		collected = append(collected, result)
 	}
 	return collected
+}
+
+func waitForEngineFlight(n int) bool {
+	// the daemon runs in this process, so its goroutines show every request in the delta proxy cache's
+	// in-flight group: the executor and each waiter sit inside singleflight's Do
+	deadline := time.Now().Add(engineFlightWait)
+	for engineFlightCount() < n {
+		if time.Now().After(deadline) {
+			return false
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return true
+}
+
+func engineFlightCount() int {
+	buf := make([]byte, 1<<20)
+	for {
+		if n := runtime.Stack(buf, true); n < len(buf) {
+			buf = buf[:n]
+			break
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+	var count int
+	for g := range strings.SplitSeq(string(buf), "\n\n") {
+		if strings.Contains(g, engineFlightFrame) && strings.Contains(g, engineRequestFrame) {
+			count++
+		}
+	}
+	return count
 }
 
 func TestEngines_PCF_Collapse(t *testing.T) {

@@ -40,6 +40,7 @@ import (
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlsopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestValidateNilConfig(t *testing.T) {
@@ -202,6 +203,32 @@ func TestBackendsRequiresEntries(t *testing.T) {
 	c.Caches = co.Lookup{"default": co.New()}
 	if err := Backends(c); err != nil {
 		t.Fatalf("Backends(valid) = %v", err)
+	}
+}
+
+func TestBackendsWarnsOffWithProxyOnly(t *testing.T) {
+	t.Parallel()
+
+	backend := func(name string, proxyOnly bool) *bo.Options {
+		return &bo.Options{
+			Name: name, Provider: providers.Prometheus, OriginURL: "http://example.com:9090",
+			CacheName: "default", ProxyOnly: proxyOnly, StepAlignment: timeseries.StepAlignmentOff,
+		}
+	}
+	c := config.NewConfig()
+	c.Caches = co.Lookup{"default": co.New()}
+	c.Backends = bo.Lookup{"cached": backend("cached", false), "proxied": backend("proxied", true)}
+	if err := Backends(c); err != nil {
+		t.Fatal(err)
+	}
+	var warned []string
+	for _, w := range c.LoaderWarnings {
+		if strings.Contains(w, "step_alignment") {
+			warned = append(warned, w)
+		}
+	}
+	if len(warned) != 1 || !strings.Contains(warned[0], `backend "proxied"`) {
+		t.Errorf("expected one warning for the proxy_only backend, got %q", warned)
 	}
 }
 

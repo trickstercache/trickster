@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 )
 
@@ -131,6 +133,45 @@ func TestStartHealthChecks(t *testing.T) {
 	}
 }
 
+func TestStartHealthChecksFailureStopsStartedChecks(t *testing.T) {
+	const interval = time.Millisecond
+	newProbed := func(name, path string) *countingProbeBackend {
+		o := bo.New()
+		o.HealthCheck = ho.New()
+		o.HealthCheck.Interval = timeconv.Duration(interval)
+		o.HealthCheck.Path = path
+		c, _ := New(name, o, nil, lm.NewRouter(), nil)
+		return &countingProbeBackend{Backend: c}
+	}
+	// map order decides whether the good check starts before the bad one fails, so a few
+	// rounds make it all but certain that a leak leaves a started check behind
+	for range 8 {
+		good := newProbed("good", "")
+		b := Backends{"good": good, "bad": newProbed("bad", "/health")}
+		hc, err := b.StartHealthChecks(nil)
+		if err == nil || hc != nil {
+			t.Fatalf("StartHealthChecks = %v, %v; want an error", hc, err)
+		}
+		before := good.calls.Load()
+		time.Sleep(20 * interval)
+		if after := good.calls.Load(); after != before {
+			t.Fatalf("a check started before the failure kept probing: %d calls, then %d", before, after)
+		}
+	}
+}
+
+type countingProbeBackend struct {
+	testBackend
+	calls atomic.Int64
+}
+
+func (cb *countingProbeBackend) HealthCheckProbe() healthcheck.Probe {
+	return func(context.Context) error {
+		cb.calls.Add(1)
+		return nil
+	}
+}
+
 type testBackend struct {
 	Backend
 }
@@ -207,8 +248,10 @@ func TestStartHealthChecksByWhatABackendOffers(t *testing.T) {
 	var probed int
 	b := Backends{
 		// a backend with a protocol probe is probed with it
-		"protocol": &choosyBackend{Backend: newBackend("protocol"),
-			probe: func(context.Context) error { probed++; return nil }},
+		"protocol": &choosyBackend{
+			Backend: newBackend("protocol"),
+			probe:   func(context.Context) error { probed++; return nil },
+		},
 		// one with none to offer for its origin falls back to the request probe
 		"request": &choosyBackend{Backend: newBackend("request")},
 		// one that cannot be probed is left out rather than probed in a way that must fail

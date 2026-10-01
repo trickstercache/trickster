@@ -56,12 +56,12 @@ func newDataFusionAnalyzer() *Analyzer {
 	return NewAnalyzer(Options{
 		BucketMatchers:               DataFusionBucketMatchers(),
 		RenderNumericBoundsAsRFC3339: true,
-		RoundUnalignedTimeBounds:     true,
 	})
 }
 
 // newStrictAnalyzer keeps the fail-closed defaults for generic dialects.
 func newStrictAnalyzer() *Analyzer {
+	// only the analyzer's own defaults, with no provider's matchers or bound options
 	return NewAnalyzer(Options{BucketMatchers: DataFusionBucketMatchers()})
 }
 
@@ -149,8 +149,15 @@ func TestAnalyzePlanShape(t *testing.T) {
 	}
 	plan := got.Plan
 	if plan.TimeColumn != "ts" || plan.OutputColumn != "bucket" ||
-		!slices.Equal(plan.GroupColumns, []string{"host", "region"}) {
+		!slices.Equal(plan.GroupColumns, []string{"host", "region"}) || plan.BucketGroupIndex != 0 {
 		t.Fatalf("unexpected plan shape: %+v", plan)
+	}
+	// the bucket's place among the GROUP BY terms
+	for groupBy, want := range map[string]int{"host, 1, region": 1, "host, region, bucket": 2} {
+		got := a.Analyze(strings.Replace(query, "1, host, region", groupBy, 1), time.Time{})
+		if got.Plan == nil || got.Plan.BucketGroupIndex != want {
+			t.Fatalf("GROUP BY %s: %+v", groupBy, got)
+		}
 	}
 	if !plan.LowerBound.Value.Equal(time.Unix(1704067200, 0)) || !plan.LowerBound.Inclusive {
 		t.Fatalf("lower bound = %+v", plan.LowerBound)
@@ -175,12 +182,13 @@ func TestAnalyzeDateBinOriginPhase(t *testing.T) {
 	if got.Plan.Phase != 30*time.Minute {
 		t.Fatalf("phase = %s, want 30m", got.Plan.Phase)
 	}
-	// The same bounds are not phase-aligned without the origin shift; a strict
-	// dialect fails them closed.
+	// without the origin shift the same bounds sit off the grid, so they round inward
 	unshifted := newStrictAnalyzer().Analyze(strings.Replace(query,
 		", TIMESTAMP '2024-01-01 00:30:00'", "", 1), time.Time{})
-	if unshifted.Mode == sqlanalyzer.CacheModeDelta {
-		t.Fatalf("unaligned bounds were delta-cacheable: %+v", unshifted.Plan)
+	if unshifted.Plan == nil || unshifted.Plan.Phase != 0 ||
+		!unshifted.Plan.LowerBound.Value.Equal(time.Unix(1704070800, 0)) ||
+		!unshifted.Plan.RawLower.Value.Equal(time.Unix(1704069000, 0)) {
+		t.Fatalf("unshifted plan = %+v", unshifted.Plan)
 	}
 }
 
@@ -417,8 +425,8 @@ func TestInclusiveUpperMatchesHalfOpen(t *testing.T) {
 }
 
 func TestAnalyzePredicateSafety(t *testing.T) {
-	// The strict configuration exercises the contract's fail-closed defaults,
-	// including unaligned raw-column bounds.
+	// the contract's fail-closed defaults; unaligned raw-column bounds round inward, keeping their raw
+	// values for the planner
 	a := newStrictAnalyzer()
 	base := `SELECT date_bin(INTERVAL '1 hour', ts) AS bucket, count(*) AS value FROM events WHERE %s GROUP BY 1`
 	tests := []struct {
@@ -434,9 +442,9 @@ func TestAnalyzePredicateSafety(t *testing.T) {
 		// boundary bucket is dropped, so they need no rounding allowance
 		{"inclusive upper", `ts >= 1704067200 AND ts <= 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
 		{"between raw column", `ts BETWEEN 1704067200 AND 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
-		{"unaligned inclusive upper", `ts >= 1704067200 AND ts <= 1704153601`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"unaligned lower", `ts >= 1704067201 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
-		{"unaligned upper", `ts >= 1704067200 AND ts < 1704153601`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonUnsafePredicate},
+		{"unaligned inclusive upper", `ts >= 1704067200 AND ts <= 1704153601`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
+		{"unaligned lower", `ts >= 1704067201 AND ts < 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
+		{"unaligned upper", `ts >= 1704067200 AND ts < 1704153601`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
 		{"duplicate lower", `ts >= 1704067200 AND ts >= 1704070800 AND ts < 1704153600`, sqlanalyzer.CacheModeObject, sqlanalyzer.ReasonAmbiguousTimeAxis},
 		{"reversed comparison", `1704067200 <= ts AND ts < 1704153600`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
 		{"safe extra predicate", `ts >= 1704067200 AND ts < 1704153600 AND tenant = 1`, sqlanalyzer.CacheModeDelta, sqlanalyzer.ReasonDeltaCacheable},
@@ -452,10 +460,8 @@ func TestAnalyzePredicateSafety(t *testing.T) {
 	}
 }
 
-// TestRoundUnalignedTimeBounds covers the contract's unaligned-bound
-// provision: live dashboard ranges snap inward to complete buckets instead of
-// failing closed, and a range with no complete bucket still fails closed.
 func TestRoundUnalignedTimeBounds(t *testing.T) {
+	// live dashboard ranges snap inward to complete buckets, keeping their raw bounds for the planner
 	a := newDataFusionAnalyzer()
 	query := `SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(usage_idle) AS usage_idle ` +
 		`FROM cpu WHERE cpu = 'cpu-total' AND time >= 1704067207 AND time < 1704153607 GROUP BY 1 ORDER BY 1`
@@ -470,6 +476,11 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 	if !got.Plan.UpperBound.Value.Equal(time.Unix(1704153600, 0)) || got.Plan.UpperBound.Inclusive {
 		t.Fatalf("rounded upper bound = %+v", got.Plan.UpperBound)
 	}
+	// the raw bounds keep the statement's own values
+	if !got.Plan.RawLower.Value.Equal(time.Unix(1704067207, 0)) || !got.Plan.RawLower.Inclusive ||
+		!got.Plan.RawUpper.Value.Equal(time.Unix(1704153607, 0)) || got.Plan.RawUpper.Inclusive {
+		t.Fatalf("raw bounds = %+v, %+v", got.Plan.RawLower, got.Plan.RawUpper)
+	}
 	rendered, err := got.Plan.RenderExtent(timeseries.Extent{
 		Start: time.Unix(1704067210, 0).UTC(), End: time.Unix(1704153590, 0).UTC(),
 	})
@@ -481,11 +492,21 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 		t.Fatalf("rounded bounds rendered incorrectly: %s", rendered)
 	}
 
-	// Both bounds inside one bucket leave no complete bucket to cache.
+	// Both bounds inside one bucket leave no complete bucket, which the planner decides; the bounds
+	// meet at the rounded-up lower boundary.
 	empty := a.Analyze(`SELECT date_bin(INTERVAL '10 seconds', time) AS time, avg(v) FROM cpu `+
 		`WHERE time >= 1704067201 AND time < 1704067209 GROUP BY 1`, time.Time{})
-	if empty.Mode == sqlanalyzer.CacheModeDelta || empty.Reason != sqlanalyzer.ReasonUnsafePredicate {
+	if empty.Mode != sqlanalyzer.CacheModeDelta || empty.Plan == nil {
 		t.Fatalf("empty rounded window = %s/%s (%v)", empty.Mode, empty.Reason, empty.Err)
+	}
+	if !empty.Plan.LowerBound.Value.Equal(time.Unix(1704067210, 0)) ||
+		!empty.Plan.UpperBound.Value.Equal(empty.Plan.LowerBound.Value) {
+		t.Fatalf("empty window bounds = %+v, %+v", empty.Plan.LowerBound, empty.Plan.UpperBound)
+	}
+	now := time.Unix(1704153607, 0)
+	if p := timeseries.PlanRange(empty.Plan.RequestedRange(now), empty.Plan.Step, empty.Plan.Phase,
+		timeseries.SampleModelBucket, timeseries.StepAlignmentDrop, now); p.Full {
+		t.Fatalf("empty window planned a complete bucket: %+v", p)
 	}
 }
 
@@ -517,6 +538,33 @@ func TestRenderExtentIsConcurrent(t *testing.T) {
 			!strings.Contains(output, "< "+rfc3339Literal(start.Add(2*plan.Step))) {
 			t.Fatalf("render %d used another extent: %s", i, output)
 		}
+	}
+}
+
+func TestPartialBucketMetadata(t *testing.T) {
+	for _, test := range []struct {
+		name, predicate string
+		drops           bool
+	}{
+		{"complete", "time >= 1704067200 AND time < 1704153600", false},
+		{"partial_lower", "time >= 1704067207 AND time < 1704153600", true},
+		{"partial_upper", "time >= 1704067200 AND time < 1704153607", true},
+		{"inclusive_aligned", "time >= 1704067200 AND time <= 1704153600", true},
+		{"inclusive_partial", "time >= 1704067200 AND time <= 1704153607", true},
+		// a nanosecond column holds rows between :59 and the boundary, which a whole second leaves out
+		{"inclusive_a_second_below", "time >= 1704067200 AND time <= 1704153599", true},
+		{"inclusive_complete", "time >= 1704067200 AND time <= '2024-01-01T23:59:59.999999999Z'", false},
+		{"open_aligned", "time >= 1704067200", false},
+		{"open_partial", "time >= 1704067207", true},
+		{"output_discrete", "bucket >= 1704067207 AND bucket <= 1704153607", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			statement := "SELECT date_bin(INTERVAL '10 seconds', time) AS bucket, avg(v) FROM cpu WHERE " + test.predicate + " GROUP BY 1"
+			got := newDataFusionAnalyzer().Analyze(statement, time.Time{})
+			if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil || got.Plan.DropsPartialBuckets != test.drops {
+				t.Fatalf("analysis=%+v plan=%+v, drops=%v", got, got.Plan, test.drops)
+			}
+		})
 	}
 }
 

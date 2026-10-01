@@ -1,5 +1,10 @@
 # Adding a SQL Dialect Adapter
 
+For another database using PostgreSQL's wire protocol, also follow
+[Adding a PostgreSQL Wire Engine](adding-pgwire-engine.md). It covers shared
+transport, session and time-axis hooks, multi-protocol providers and the
+compatibility-corpus runner.
+
 Trickster accelerates SQL-based time series backends (currently ClickHouse and
 MySQL) by
 parsing each query into a dialect-native abstract syntax tree, analyzing it
@@ -85,16 +90,18 @@ metric label values.
 
 Fail-closed rules that apply to every dialect:
 
-- Predicates on the **raw timestamp column** use an inclusive lower bound and
-  an exclusive upper bound. Aligned bounds describe complete buckets directly.
-  An adapter may accelerate unaligned half-open ranges by rounding the lower
-  bound up and the upper bound down to the query cadence when the client
-  consumes only complete buckets, or by proving equivalent partial-edge
-  handling. When no complete bucket remains, both bounds normalize to the
-  rounded-up lower boundary. Strict lower bounds, inclusive upper bounds, and
-  `BETWEEN` remain object-cache fallbacks unless an adapter proves equivalent
-  handling.
-- Predicates on the **bucket output** are discrete and may be normalized
+- Predicates on the **raw timestamp column** need an inclusive lower bound; a
+  strict lower bound is an object-cache fallback. The upper bound may be
+  exclusive or inclusive (`<=`, or the end of `BETWEEN`). An inclusive upper
+  is floored to the bucket boundary and rendered as its exclusive equivalent,
+  because the bucket holding it is only partly covered. Aligned bounds
+  describe complete buckets directly. An adapter may accelerate unaligned
+  ranges by rounding the lower bound up and the upper bound down to the query
+  cadence when the client consumes only complete buckets, or by proving
+  equivalent partial-edge handling. When no complete bucket remains, the
+  aftership and cockroach adapters fall back to the object cache, and vitess
+  renders an empty window.
+- Predicates on the **bucket output** are discrete and may be aligned
   from any comparator to the first and last included buckets.
 - A query that cannot be delta-cached should remain object-cacheable
   whenever it is a well-formed read query.

@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -407,6 +409,45 @@ func TestApplyConfig(t *testing.T) {
 	}
 	if si.Config != conf2 {
 		t.Error("expected the instance config to be replaced on reload")
+	}
+}
+
+const graphiteConfig = `
+backends:
+  g1:
+    provider: graphite
+    origin_url: 'http://127.0.0.1:1'
+`
+
+func TestReloadAndShutdownStopGraphiteLearners(t *testing.T) {
+	accepts := func(clients backends.Backends) bool {
+		return clients["g1"].(*graphite.Client).Resolver().Learner.Schedule("x.y", nil)
+	}
+	apply := func(si *instance.ServerInstance) backends.Backends {
+		conf, clients, err := BootstrapConfig("-config", writeConfig(t, graphiteConfig))
+		if err != nil {
+			t.Fatal(err)
+		}
+		quietListeners(conf)
+		if err := ApplyConfig(si, conf, clients, nil, nil, si.Listeners); err != nil {
+			t.Fatal(err)
+		}
+		return clients
+	}
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	si := &instance.ServerInstance{Listeners: group}
+	old := apply(si)
+	current := apply(si)
+	if accepts(old) {
+		t.Error("a committed reload left the old client's learner running")
+	}
+	if !accepts(current) {
+		t.Error("the reload stopped the new client's learner")
+	}
+	Shutdown(si)
+	if accepts(current) {
+		t.Error("shutdown left the client's learner running")
 	}
 }
 

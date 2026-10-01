@@ -132,6 +132,9 @@ func readFrame(r io.Reader, maxBody int) (typ byte, body []byte, err error) {
 	return header[0], body, nil
 }
 
+// the body of a ReadyForQuery outside a transaction, which is only ever read
+var readyIdle = []byte{txStatusIdle}
+
 func appendFrame(dst []byte, typ byte, body []byte) []byte {
 	dst = append(dst, typ)
 	// #nosec G115 -- callers only pass bodies bounded by the protocol ceiling

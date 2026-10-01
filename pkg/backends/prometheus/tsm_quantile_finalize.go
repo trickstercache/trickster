@@ -20,7 +20,6 @@ import (
 	"container/heap"
 	"math"
 	"slices"
-	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -30,28 +29,22 @@ const invalidQuantileParameterWarning = "PromQL warning: quantile parameter is N
 
 type quantileFinalizeGroup struct {
 	header dataset.SeriesHeader
-	points dataset.Points
+	series int
+	values []float64
 }
 
 type quantileCursor struct {
-	series     *dataset.Series
-	pointIndex int
-	groupKey   string
-	order      int
+	rowCursor
+	group *quantileFinalizeGroup
 }
 
 type quantileCursorHeap []*quantileCursor
 
 func (h quantileCursorHeap) Len() int { return len(h) }
 
+// Less orders cursors by epoch; an epoch's values are sorted for its quantile, so ties needn't be broken
 func (h quantileCursorHeap) Less(i, j int) bool {
-	a, b := h[i], h[j]
-	aEpoch := a.series.Points[a.pointIndex].Epoch
-	bEpoch := b.series.Points[b.pointIndex].Epoch
-	if aEpoch != bEpoch {
-		return aEpoch < bEpoch
-	}
-	return a.order < b.order
+	return h[i].epoch() < h[j].epoch()
 }
 
 func (h quantileCursorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
@@ -99,16 +92,18 @@ func finalizeQuantileAggregation(ds *dataset.DataSet, spec promql.QuantileAggreg
 
 func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregation) {
 	groups := make(map[string]*quantileFinalizeGroup)
-	groupOrder := make([]string, 0)
+	groupOrder := make([]*quantileFinalizeGroup, 0)
 	cursors := make(quantileCursorHeap, 0, len(result.SeriesList))
+	out := newTextSeriesLog()
 
-	for order, series := range result.SeriesList {
-		if series == nil || isHistogramSeries(series) || len(series.Points) == 0 {
+	for _, series := range result.SeriesList {
+		if series == nil || isHistogramSeries(series) || series.PointCount() == 0 {
 			continue
 		}
 		tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
 		key := tags.JSON()
-		if groups[key] == nil {
+		group := groups[key]
+		if group == nil {
 			header := series.Header.Clone()
 			header.Tags = tags
 			header.Name = tags[promql.MetricNameLabel]
@@ -116,49 +111,43 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 			header.QueryStatement = spec.AggregationQuery
 			header.CalculateHash(true)
 			header.CalculateSize()
-			groups[key] = &quantileFinalizeGroup{header: header}
-			groupOrder = append(groupOrder, key)
+			group = &quantileFinalizeGroup{header: header, series: out.addSeries()}
+			groups[key] = group
+			groupOrder = append(groupOrder, group)
 		}
-		heap.Push(&cursors, &quantileCursor{series: series, groupKey: key, order: order})
+		heap.Push(&cursors, &quantileCursor{rowCursor: newRowCursor(series.Segments()), group: group})
 	}
 
+	// the groups given a value at the current epoch
+	var touched []*quantileFinalizeGroup
 	for len(cursors) > 0 {
-		pointEpoch := cursors[0].series.Points[cursors[0].pointIndex].Epoch
-		valuesByGroup := make(map[string][]float64)
-		for len(cursors) > 0 &&
-			cursors[0].series.Points[cursors[0].pointIndex].Epoch == pointEpoch {
+		pointEpoch := cursors[0].epoch()
+		touched = touched[:0]
+		for len(cursors) > 0 && cursors[0].epoch() == pointEpoch {
 			cursor := heap.Pop(&cursors).(*quantileCursor)
-			point := cursor.series.Points[cursor.pointIndex]
-			if value, ok := variancePointFloat(point); ok {
-				valuesByGroup[cursor.groupKey] = append(valuesByGroup[cursor.groupKey], value)
+			if value, ok := sampleNumber(cursor.seg(), cursor.i); ok {
+				if len(cursor.group.values) == 0 {
+					touched = append(touched, cursor.group)
+				}
+				cursor.group.values = append(cursor.group.values, value)
 			}
-			cursor.pointIndex++
-			if cursor.pointIndex < len(cursor.series.Points) {
+			if cursor.next(); !cursor.done() {
 				heap.Push(&cursors, cursor)
 			}
 		}
-		for key, values := range valuesByGroup {
-			value := prometheusValueQuantile(spec.Phi, values)
-			formatted := strconv.FormatFloat(value, 'f', -1, 64)
-			groups[key].points = append(groups[key].points, dataset.Point{
-				Epoch:  pointEpoch,
-				Size:   len(formatted) + 32,
-				Values: []any{formatted},
-			})
+		for _, group := range touched {
+			out.add(group.series, pointEpoch, prometheusValueQuantile(spec.Phi, group.values))
+			group.values = group.values[:0]
 		}
 	}
 
+	rows := out.finish()
 	output := make(dataset.SeriesList, 0, len(groupOrder))
-	for _, key := range groupOrder {
-		group := groups[key]
-		if len(group.points) == 0 {
+	for _, group := range groupOrder {
+		if rows[group.series] == nil {
 			continue
 		}
-		output = append(output, &dataset.Series{
-			Header:    group.header,
-			Points:    group.points,
-			PointSize: group.points.Size(),
-		})
+		output = append(output, dataset.NewSeriesOf(group.header, rows[group.series]))
 	}
 	result.SeriesList = output
 }

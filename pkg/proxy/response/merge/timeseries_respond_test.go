@@ -23,6 +23,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
@@ -114,7 +115,7 @@ func TestTimeseriesRespondFuncWithStrategy(t *testing.T) {
 		rf := TimeseriesRespondFuncWithStrategy(
 			func(ts timeseries.Timeseries, _ *timeseries.RequestOptions, _ int, _ io.Writer) error {
 				ds := ts.(*dataset.DataSet)
-				finalized = ds.Results[0].SeriesList[0].Points[0].Values[0].(string)
+				finalized = dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0].(string)
 				return nil
 			},
 			nil,

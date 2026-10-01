@@ -84,9 +84,6 @@ var dialectAnalyzer sqlanalyzer.DialectAnalyzer = cockroach.NewAnalyzer(cockroac
 	// DataFusion rejects Timestamp-to-Int64 comparisons, so epoch-integer
 	// bounds must be rendered back to the origin as RFC3339 literals.
 	RenderNumericBoundsAsRFC3339: true,
-	// v3 dashboard clients emit live, unaligned time ranges; round them
-	// inward to complete buckets rather than failing closed.
-	RoundUnalignedTimeBounds: true,
 })
 
 // v3Request holds the fields of a v3 query request that Trickster recognizes,
@@ -303,12 +300,11 @@ func parse(statement string) (*timeseries.TimeRangeQuery, *timeseries.RequestOpt
 	// bare plan, so the plan is re-wrapped after ApplyToQuery installs it.
 	trq.ParsedQuery = &Query{Plan: plan}
 	trq.Extent = plan.RequestExtent(now)
-	trq.ExtractBackfillTolerance(statement)
+	trq.Requested = plan.RequestedRange(now)
 
 	options := &timeseries.RequestOptions{
 		BaseTimestampFieldName: plan.TimeColumn,
 	}
-	options.ExtractFastForwardDisabled(statement)
 	return trq, options, true, nil
 }
 
@@ -358,21 +354,15 @@ func ParseTimeRangeQuery(r *http.Request, f iofmt.Format,
 		ro = &timeseries.RequestOptions{}
 	}
 	ro.OutputFormat = outputFormat
-	// a backfill-tolerance directive embedded in the statement wins; otherwise
-	// apply the backend default and floor it at one bucket for open-ended
-	// queries, whose request extent runs to now: without the floor the final,
-	// still-filling bucket would be cached as complete.
-	if trq.BackfillTolerance == 0 {
+	// a volatile-window directive wins, else the backend default; the still-filling
+	// final bucket needs no tolerance because the engine never caches it
+	if trq.VolatileWindow == 0 {
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
-			bf = time.Duration(res.BackendOptions.BackfillTolerance)
+			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
-		if q, ok := trq.ParsedQuery.(*Query); ok && q.Plan != nil &&
-			q.Plan.UpperBound == nil && bf < trq.Step {
-			bf = trq.Step
-		}
-		trq.BackfillTolerance = bf
+		trq.VolatileWindow = bf
 	}
 	trq.TemplateURL = urls.Clone(r.URL)
 	if isBody {

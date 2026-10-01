@@ -16,9 +16,15 @@
 
 package clickhouse
 
-import "github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
+import (
+	"errors"
+
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
+)
 
 var (
+	// ErrZonedBounds indicates time bounds written as text or dates in a session whose zone isn't UTC.
+	ErrZonedBounds = errors.New("time bounds read in a time zone other than UTC can't use delta caching")
 	// ErrInvalidSQL indicates that the ClickHouse parser rejected the statement.
 	ErrInvalidSQL = aftership.ErrInvalidSQL
 	// ErrNotTimeRangeQuery indicates that the statement cannot use delta caching.

@@ -39,6 +39,7 @@ func NewModeler() *timeseries.Modeler {
 		WireUnmarshaler:       UnmarshalTimeseries,
 		CacheMarshaler:        dataset.MarshalDataSet,
 		CacheUnmarshaler:      dataset.UnmarshalDataSet,
+		WireMarshalReadsParts: true,
 	}
 }
 
@@ -85,12 +86,15 @@ func MarshalTimeseries(ts timeseries.Timeseries,
 		return nil, errors.ErrBadRequest
 	}
 	if iofmt.Format(rlo.OutputFormat).IsPromRemoteRead() {
+		if ds, ok := ts.(*dataset.DataSet); ok {
+			ts = ds.Flat()
+		}
 		return promremote.MarshalTimeseries(ts, rlo, status)
 	}
 	if rlo.OutputFormat >= iofmt.V3OutputJSON {
 		return isql.MarshalTimeseries(ts, rlo, status)
 	}
-	if iofmt.Format(rlo.OutputFormat).IsInfluxQL() {
+	if isInfluxQLOutput(rlo) {
 		return influxql.MarshalTimeseries(ts, rlo, status)
 	}
 	return flux.MarshalTimeseries(ts, rlo, status)
@@ -103,15 +107,25 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 		return errors.ErrBadRequest
 	}
 	if iofmt.Format(rlo.OutputFormat).IsPromRemoteRead() {
+		// the remote-read marshaler reads Points alone
+		if ds, ok := ts.(*dataset.DataSet); ok {
+			ts = ds.Flat()
+		}
 		return promremote.MarshalTimeseriesWriter(ts, rlo, status, w)
 	}
 	if rlo.OutputFormat >= iofmt.V3OutputJSON {
 		return isql.MarshalTimeseriesWriter(ts, rlo, status, w)
 	}
-	if rlo.OutputFormat < 4 {
+	if isInfluxQLOutput(rlo) {
 		return influxql.MarshalTimeseriesWriter(ts, rlo, status, w)
 	}
 	return flux.MarshalTimeseriesWriter(ts, rlo, status, w)
+}
+
+// InfluxQL requests set OutputFormat to 0 (plain) or 1 (pretty), while Flux requests carry their
+// Flux format, which always has the Flux bit
+func isInfluxQLOutput(rlo *timeseries.RequestOptions) bool {
+	return !iofmt.Format(rlo.OutputFormat).IsFlux()
 }
 
 // isV3Query returns true if the parsed query is a v3 query type (either the

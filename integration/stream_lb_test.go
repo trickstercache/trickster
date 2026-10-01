@@ -22,13 +22,11 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"testing"
 	"time"
 
@@ -126,11 +124,15 @@ func udpEchoBackend(t *testing.T, name string) string {
 
 // streamLB is a running Trickster with one stream listener bound to one ALB
 type streamLB struct {
+	name     string
 	cfgPath  string
 	addr     string
 	protocol string
 	ports    []int
+	relay    int
 }
+
+var streamLBs atomic.Int64
 
 // streamConfig writes the configuration: members are name -> address, and alb is the body of
 // the ALB's alb block below its pool, already indented; the members named as backups stand by
@@ -139,7 +141,7 @@ func (s *streamLB) write(t *testing.T, members [][2]string, memberExtra, alb str
 	var sb strings.Builder
 	// the stream listener belongs with the preamble's own, ahead of its other sections
 	relay := fmt.Sprintf("listeners:\n  relay:\n    address: 127.0.0.1\n    protocol: %s\n    port: %d\n"+
-		"    stream:\n      connect_timeout: 2s\n", s.protocol, s.ports[3])
+		"    stream:\n      connect_timeout: 2s\n", s.protocol, s.relay)
 	sb.WriteString(strings.Replace(promstub.Preamble(s.ports[0], s.ports[1], s.ports[2]), "listeners:\n", relay, 1))
 	sb.WriteString("backends:\n")
 	sb.WriteString("  none:\n    provider: rp\n    origin_url: http://127.0.0.1:1\n")
@@ -148,7 +150,7 @@ func (s *streamLB) write(t *testing.T, members [][2]string, memberExtra, alb str
 			m[0], map[bool]string{true: "udp", false: "tcp"}[s.protocol == "udp"], m[1])
 		sb.WriteString(memberExtra)
 	}
-	sb.WriteString("  lb:\n    provider: alb\n    listener_names: [relay]\n    alb:\n")
+	fmt.Fprintf(&sb, "  %s:\n    provider: alb\n    listener_names: [relay]\n    alb:\n", s.name)
 	sb.WriteString(alb)
 	sb.WriteString("      pool:\n")
 	for _, m := range members {
@@ -166,14 +168,24 @@ func startStreamLB(t *testing.T, protocol string, members [][2]string, memberExt
 ) *streamLB {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 4)
+	relay, releaseRelay := ports[3], func() {}
+	if protocol == "udp" {
+		// a tcp reservation holds no udp port, which an echo member may already have taken
+		var udp []int
+		udp, releaseRelay = portutil.ReserveUDP(t, 1)
+		relay = udp[0]
+	}
 	s := &streamLB{
+		// an ALB's sticky table outlives its daemon under its name, so each daemon's gets its own
+		name:    fmt.Sprintf("lb%d", streamLBs.Add(1)),
 		cfgPath: filepath.Join(t.TempDir(), "trickster.yaml"), protocol: protocol, ports: ports,
-		addr: fmt.Sprintf("127.0.0.1:%d", ports[3]),
+		relay: relay, addr: fmt.Sprintf("127.0.0.1:%d", relay),
 	}
 	s.write(t, members, memberExtra, alb, backups...)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	release()
+	releaseRelay()
 	runTrickster(t, ctx, "-config", s.cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", ports[1]))
 	return s
@@ -328,7 +340,7 @@ func TestStreamLBConnectProbe(t *testing.T) {
 		t.Skip("starts Trickster; skipping in -short mode")
 	}
 	members, echoes := tcpMembers(t, "a", "b")
-	probe := "    healthcheck:\n      interval: 100ms\n      timeout: 500ms\n      failure_threshold: 1\n      recovery_threshold: 1\n"
+	probe := "    healthcheck:\n      interval: 100ms\n      timeout: 500ms\n      failure_threshold: 3\n      recovery_threshold: 1\n"
 	s := startStreamLB(t, "tcp", members, probe, "      mechanism: rr\n      healthy_floor: 1\n")
 	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", s.ports[1])
 	requireHealthState(t, healthURL, "a", "available", 10*time.Second)
@@ -393,7 +405,7 @@ func TestStreamLBReloadMidTraffic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Trickster; skipping in -short mode")
 	}
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 	members, _ := tcpMembers(t, "a", "b")
 	s := startStreamLB(t, "tcp", members[:1], "", "      mechanism: rr\n")
 	name, held := s.ask(t)
@@ -404,7 +416,7 @@ func TestStreamLBReloadMidTraffic(t *testing.T) {
 	// the daemon reloads only a config whose file is newer than the one it loaded
 	future := time.Now().Add(2 * time.Second)
 	require.NoError(t, os.Chtimes(s.cfgPath, future, future))
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP))
+	sighupUntilReloaded(t, fmt.Sprintf("127.0.0.1:%d", s.ports[1]))
 	require.Eventually(t, func() bool { return s.askAndClose(t) == "b" }, 15*time.Second, 100*time.Millisecond,
 		"new connections never reached the reloaded pool")
 
@@ -422,7 +434,7 @@ func TestStreamLBBackupMember(t *testing.T) {
 		t.Skip("starts Trickster; skipping in -short mode")
 	}
 	members, echoes := tcpMembers(t, "primary", "standby")
-	probe := "    healthcheck:\n      interval: 100ms\n      timeout: 500ms\n      failure_threshold: 1\n      recovery_threshold: 1\n"
+	probe := "    healthcheck:\n      interval: 100ms\n      timeout: 500ms\n      failure_threshold: 3\n      recovery_threshold: 1\n"
 	s := startStreamLB(t, "tcp", members, probe, "      mechanism: rr\n      healthy_floor: 1\n", "standby")
 	healthURL := fmt.Sprintf("http://127.0.0.1:%d/trickster/health", s.ports[1])
 	requireHealthState(t, healthURL, "primary", "available", 10*time.Second)

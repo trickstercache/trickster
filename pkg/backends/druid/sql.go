@@ -22,6 +22,7 @@ import (
 	"mime"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/parser"
 	"github.com/cockroachdb/cockroachdb-parser/pkg/sql/sem/tree"
@@ -53,7 +55,8 @@ var (
 		// Druid stores __time as a timestamp and accepts RFC3339 literals. This
 		// also makes a numeric dashboard bound unambiguous at the origin.
 		RenderNumericBoundsAsRFC3339: true,
-		RoundUnalignedTimeBounds:     true,
+		// __time holds milliseconds, so an inclusive end renders one millisecond below its boundary
+		BoundPrecision: time.Millisecond,
 	})
 )
 
@@ -174,8 +177,12 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 	// metadata to a shallow copy; all referenced analyzer fields remain read-only.
 	planValue := *analysis.Plan
 	planValue.ValueColumns = valueColumns
+	planValue.Ordering = druidSQLOrdering(analysis.Plan)
 	plan := &planValue
 	plan.ApplyToQuery(trq)
+	// the analyzer may read a rewritten statement, so directives come from the client's; a comment's
+	// directive wins over the same one in the context map
+	trq.Directives = directives.ParseWith(query, directives.SyntaxSQL, contextLookup(document))
 	sanitized["query"] = plan.CanonicalSQL
 	canonicalBody, _, _, err := marshalJSONObject(sanitized, nil)
 	if err != nil {
@@ -185,7 +192,8 @@ func (c *Client) parseSQLTimeRangeQuery(r *http.Request) (
 		responseFormat, header, outputColumns...)
 	trq.ParsedQuery = sqlPlan
 	trq.Extent = plan.RequestExtent(now)
-	trq.BackfillTolerance = druidBackfillTolerance(r)
+	trq.Requested = plan.RequestedRange(now)
+	trq.VolatileWindow = druidVolatileWindow(r)
 	ro.BaseTimestampFieldName = plan.TimeColumn
 	ro.ProviderRequest = sqlPlan
 
@@ -318,6 +326,33 @@ func druidSQLIntegerLiteral(expr tree.Expr) (int64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// druidSQLOrdering returns Druid's row order for a grouped query: its ORDER BY, nulls lowest, then each
+// group ascending, the bucket first unless the GROUP BY ends with it
+func druidSQLOrdering(plan *sqlanalyzer.QueryPlan) []sqlanalyzer.OrderTerm {
+	bucketLast := plan.BucketGroupIndex >= len(plan.GroupColumns)
+	groups := make([]string, 0, len(plan.GroupColumns)+1)
+	if !bucketLast {
+		groups = append(groups, plan.OutputColumn)
+	}
+	groups = append(groups, plan.GroupColumns...)
+	if bucketLast {
+		groups = append(groups, plan.OutputColumn)
+	}
+	out := make([]sqlanalyzer.OrderTerm, 0, len(plan.Ordering)+len(groups))
+	for _, term := range plan.Ordering {
+		term.NullsFirst = !term.Descending
+		out = append(out, term)
+	}
+	for _, name := range groups {
+		if !slices.ContainsFunc(out, func(term sqlanalyzer.OrderTerm) bool {
+			return strings.EqualFold(term.Column, name)
+		}) {
+			out = append(out, sqlanalyzer.OrderTerm{Column: name, NullsFirst: true})
+		}
+	}
+	return out
 }
 
 // druidSQLOutputColumns records the exact SELECT-list order needed to rebuild

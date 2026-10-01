@@ -18,7 +18,7 @@ package dataset
 
 import (
 	"fmt"
-	"math/rand"
+	"slices"
 	"testing"
 	"time"
 
@@ -26,6 +26,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
+
+	"github.com/stretchr/testify/require"
 )
 
 func testDataSet() *DataSet {
@@ -42,6 +45,24 @@ func testDataSet() *DataSet {
 	return ds
 }
 
+func TestCropToRangeDropsSeriesWithoutMatchingPoints(t *testing.T) {
+	for _, bounds := range [][2]int64{{2, 3}, {5, 6}, {9, 10}} {
+		t.Run(fmt.Sprint(bounds), func(t *testing.T) {
+			ds := &DataSet{
+				ExtentList: timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(12, 0)}},
+				Results: Results{&Result{SeriesList: SeriesList{
+					NewSeries(SeriesHeader{}, Points{{Epoch: epoch.Epoch(time.Unix(4, 0).UnixNano()), Values: []any{1}}, {Epoch: epoch.Epoch(time.Unix(8, 0).UnixNano()), Values: []any{2}}}),
+					NewSeries(SeriesHeader{}, Points{{Epoch: epoch.Epoch(time.Unix(bounds[0], 0).UnixNano()), Values: []any{3}}}),
+				}}},
+			}
+			ds.CropToRange(timeseries.Extent{Start: time.Unix(bounds[0], 0), End: time.Unix(bounds[1], 0)})
+			if ds.SeriesCount() != 1 || ds.ValueCount() != 1 || seriesPoints(ds.Results[0].SeriesList[0])[0].Values[0] != int64(3) {
+				t.Fatalf("crop retained points from a disjoint series: %+v", ds.Results[0].SeriesList)
+			}
+		})
+	}
+}
+
 func genTestDataSet(seriesCount int, resultsCount int) *DataSet {
 	if resultsCount <= 0 {
 		logger.Error("resultsCount must be greater than 0", nil)
@@ -55,11 +76,7 @@ func genTestDataSet(seriesCount int, resultsCount int) *DataSet {
 			sh.Name = "test" + string(fmt.Sprintf("%d-%d", i, j))
 			sh.CalculateHash()
 			points := newPoints()
-			seriesList[j] = &Series{
-				Header:    sh,
-				Points:    points,
-				PointSize: points.Size(),
-			}
+			seriesList[j] = NewSeries(sh, points)
 		}
 		r := &Result{
 			StatementID: i,
@@ -92,10 +109,8 @@ func generateNewPoints(points, interval, offset int, valueFn func(i int) []any) 
 	for i := range points {
 		epochTime := epoch.Epoch((offset + interval + i*interval) * timeseries.Second)
 		values := valueFn(i)
-		size := 16 * len(values)
 		result[i] = Point{
 			Epoch:  epochTime,
-			Size:   size,
 			Values: values,
 		}
 	}
@@ -118,12 +133,11 @@ func testDataSet2() *DataSet {
 	sh4 := testSeriesHeader()
 	sh4.Name = "test4"
 	sh4.CalculateHash()
-	s := newPoints().Size()
 	// r1 s1
 	r1 := &Result{
 		StatementID: 0,
 		SeriesList: []*Series{
-			{sh1, newPoints(), s},
+			NewSeries(sh1, newPoints()),
 			nil,
 		},
 	}
@@ -131,9 +145,9 @@ func testDataSet2() *DataSet {
 	r2 := &Result{
 		StatementID: 1,
 		SeriesList: []*Series{
-			{sh2, newPoints(), s},
-			{sh3, newPoints(), s},
-			{sh4, newPoints(), s},
+			NewSeries(sh2, newPoints()),
+			NewSeries(sh3, newPoints()),
+			NewSeries(sh4, newPoints()),
 		},
 	}
 
@@ -284,12 +298,12 @@ func TestMergeWithStrategy(t *testing.T) {
 	) *DataSet {
 		p := make(Points, len(points))
 		for i, pt := range points {
-			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Values: []any{pt.value}}
 		}
 		return &DataSet{
 			Results: Results{
 				{StatementID: stmtID, SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+					NewSeries(SeriesHeader{Name: name, Tags: tags}, p),
 				}},
 			},
 		}
@@ -307,7 +321,7 @@ func TestMergeWithStrategy(t *testing.T) {
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
-		pts := ds1.Results[0].SeriesList[0].Points
+		pts := seriesPoints(ds1.Results[0].SeriesList[0])
 		if len(pts) != 2 {
 			t.Fatalf("expected 2 points, got %d", len(pts))
 		}
@@ -327,8 +341,8 @@ func TestMergeWithStrategy(t *testing.T) {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
 		// dedup: last value wins
-		if ds1.Results[0].SeriesList[0].Points[0].Values[0] != "9" {
-			t.Errorf("expected dedup value 9, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
+		if seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0] != "9" {
+			t.Errorf("expected dedup value 9, got %v", seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0])
 		}
 	})
 
@@ -360,7 +374,7 @@ func TestMergeWithStrategy(t *testing.T) {
 		// Use sum for pairwise accumulation (as the merge func does for avg)
 		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2, ds3)
 		ds1.FinalizeAvg(3) // 3 datasets total
-		pts := ds1.Results[0].SeriesList[0].Points
+		pts := seriesPoints(ds1.Results[0].SeriesList[0])
 		if pts[0].Values[0] != "20" {
 			t.Errorf("expected avg 20, got %v", pts[0].Values[0])
 		}
@@ -375,12 +389,12 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 	) *DataSet {
 		p := make(Points, len(points))
 		for i, pt := range points {
-			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Size: 32, Values: []any{pt.value}}
+			p[i] = Point{Epoch: epoch.Epoch(pt.epoch), Values: []any{pt.value}}
 		}
 		return &DataSet{
 			Results: Results{
 				{StatementID: stmtID, SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: name, Tags: tags}, Points: p},
+					NewSeries(SeriesHeader{Name: name, Tags: tags}, p),
 				}},
 			},
 		}
@@ -399,7 +413,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		sumDS := makeDS(0, "requests", Tags{}, ep{100, "60"}, ep{200, "40"})
 		countDS := makeDS(0, "requests", Tags{}, ep{100, "3"}, ep{200, "1"})
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		pts := sumDS.Results[0].SeriesList[0].Points
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 2 {
 			t.Fatalf("expected 2 points, got %d", len(pts))
 		}
@@ -416,7 +430,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 	t.Run("nil countDS is a no-op", func(t *testing.T) {
 		ds := makeDS(0, "up", Tags{}, ep{100, "10"})
 		ds.FinalizeWeightedAvg(nil, "")
-		if ds.Results[0].SeriesList[0].Points[0].Values[0] != "10" {
+		if seriesPoints(ds.Results[0].SeriesList[0])[0].Values[0] != "10" {
 			t.Error("expected unchanged value '10'")
 		}
 	})
@@ -425,7 +439,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		sumDS := makeDS(0, "m", Tags{}, ep{100, "50"}, ep{200, "80"})
 		countDS := makeDS(0, "m", Tags{}, ep{100, "5"}) // no epoch 200
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		pts := sumDS.Results[0].SeriesList[0].Points
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 1 {
 			t.Fatalf("expected 1 paired point, got %d", len(pts))
 		}
@@ -439,13 +453,13 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 	})
 
 	t.Run("distinct QueryStatement not conflated when pairing string empty", func(t *testing.T) {
-		pSum := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
-		pCnt := Point{Epoch: 100, Size: 32, Values: []any{"4"}}
+		pSum := Point{Epoch: 100, Values: []any{"100"}}
+		pCnt := Point{Epoch: 100, Values: []any{"4"}}
 		sumDS := &DataSet{
 			Results: Results{{
 				StatementID: 0,
 				SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points: Points{pSum}},
+					NewSeries(SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points{pSum}),
 				},
 			}},
 		}
@@ -453,27 +467,27 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 			Results: Results{{
 				StatementID: 0,
 				SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points: Points{pCnt}},
+					NewSeries(SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points{pCnt}),
 				},
 			}},
 		}
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		if sumDS.Results[0].SeriesList[0].Points[0].Values[0] != "100" {
+		if seriesPoints(sumDS.Results[0].SeriesList[0])[0].Values[0] != "100" {
 			t.Errorf("with empty pairing, mismatched statement hashes must skip divide; got %v",
-				sumDS.Results[0].SeriesList[0].Points[0].Values[0])
+				seriesPoints(sumDS.Results[0].SeriesList[0])[0].Values[0])
 		}
 	})
 
 	t.Run("different QueryStatement on sum vs count rewrite still pairs", func(t *testing.T) {
 		// Real ALB path: sum and count sub-queries produce different trq.Statement /
 		// SeriesHeader.QueryStatement; FinalizeWeightedAvg must still align series.
-		pSum := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
-		pCnt := Point{Epoch: 100, Size: 32, Values: []any{"4"}}
+		pSum := Point{Epoch: 100, Values: []any{"100"}}
+		pCnt := Point{Epoch: 100, Values: []any{"4"}}
 		sumDS := &DataSet{
 			Results: Results{{
 				StatementID: 0,
 				SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points: Points{pSum}},
+					NewSeries(SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "sum(x)"}, Points{pSum}),
 				},
 			}},
 		}
@@ -481,12 +495,12 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 			Results: Results{{
 				StatementID: 0,
 				SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points: Points{pCnt}},
+					NewSeries(SeriesHeader{Name: "m", Tags: Tags{}, QueryStatement: "count(x)"}, Points{pCnt}),
 				},
 			}},
 		}
 		sumDS.FinalizeWeightedAvg(countDS, "avg(x)")
-		got := sumDS.Results[0].SeriesList[0].Points[0].Values[0]
+		got := seriesPoints(sumDS.Results[0].SeriesList[0])[0].Values[0]
 		if got != "25" {
 			t.Errorf("weighted avg = 100/4: got %v, want 25", got)
 		}
@@ -494,16 +508,16 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 
 	t.Run("multiple series matched by hash", func(t *testing.T) {
 		// Two separate series (different tag sets)
-		sumRegionA := Point{Epoch: 100, Size: 32, Values: []any{"100"}}
-		sumRegionB := Point{Epoch: 100, Size: 32, Values: []any{"200"}}
-		cntRegionA := Point{Epoch: 100, Size: 32, Values: []any{"10"}}
-		cntRegionB := Point{Epoch: 100, Size: 32, Values: []any{"5"}}
+		sumRegionA := Point{Epoch: 100, Values: []any{"100"}}
+		sumRegionB := Point{Epoch: 100, Values: []any{"200"}}
+		cntRegionA := Point{Epoch: 100, Values: []any{"10"}}
+		cntRegionB := Point{Epoch: 100, Values: []any{"5"}}
 		sumDS := &DataSet{
 			Results: Results{{
 				StatementID: 0,
 				SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points: Points{sumRegionA}},
-					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points: Points{sumRegionB}},
+					NewSeries(SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points{sumRegionA}),
+					NewSeries(SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points{sumRegionB}),
 				},
 			}},
 		}
@@ -511,15 +525,15 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 			Results: Results{{
 				StatementID: 0,
 				SeriesList: SeriesList{
-					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points: Points{cntRegionA}},
-					{Header: SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points: Points{cntRegionB}},
+					NewSeries(SeriesHeader{Name: "rps", Tags: Tags{"region": "us-east-1"}}, Points{cntRegionA}),
+					NewSeries(SeriesHeader{Name: "rps", Tags: Tags{"region": "us-west-2"}}, Points{cntRegionB}),
 				},
 			}},
 		}
 		sumDS.FinalizeWeightedAvg(countDS, "")
 		for _, s := range sumDS.Results[0].SeriesList {
 			region := s.Header.Tags["region"]
-			got := s.Points[0].Values[0]
+			got := seriesPoints(s)[0].Values[0]
 			switch region {
 			case "us-east-1":
 				if got != "10" { // 100/10
@@ -537,7 +551,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 func TestSize(t *testing.T) {
 	ds := testDataSet()
 	s := ds.Size()
-	const expected = 237
+	const expected = 285
 
 	if s != expected {
 		t.Errorf("expected %d got %d", expected, s)
@@ -629,6 +643,28 @@ func TestCroppedClone(t *testing.T) {
 	}
 }
 
+func TestCroppedCloneSkipsSeriesWithoutPointsInRange(t *testing.T) {
+	point := func(sec int64) Point {
+		return Point{Epoch: epoch.Epoch(time.Unix(sec, 0).UnixNano()), Values: []any{sec}}
+	}
+	inRange := NewSeries(SeriesHeader{}, Points{point(5), point(10)})
+	source := SeriesList{
+		NewSeries(SeriesHeader{}, Points{point(25)}), nil, inRange, NewSeries(SeriesHeader{}, nil), NewSeries(SeriesHeader{}, Points{point(30)}),
+	}
+	ds := &DataSet{
+		ExtentList: timeseries.ExtentList{{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+		Results:    Results{&Result{SeriesList: slices.Clone(source)}},
+	}
+	clone := ds.CroppedClone(timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)}).(*DataSet)
+	require.Len(t, clone.Results[0].SeriesList, 1)
+	require.NotSame(t, inRange, clone.Results[0].SeriesList[0])
+	require.Equal(t, seriesPoints(inRange), seriesPoints(clone.Results[0].SeriesList[0]))
+	require.Equal(t, source, ds.Results[0].SeriesList, "the source's series list changed")
+	for i := range source {
+		require.Same(t, source[i], ds.Results[0].SeriesList[i])
+	}
+}
+
 func TestCropToRange(t *testing.T) {
 	// an extent fully inside of time series's extent
 	ex := timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(20, 0)}
@@ -672,6 +708,24 @@ func TestCropToRange(t *testing.T) {
 		t.Error("invalid extent in crop", exs)
 	}
 
+	t.Run("drop series with no points in range", func(t *testing.T) {
+		point := func(sec int64, v int) Point {
+			return Point{Epoch: epoch.Epoch(time.Unix(sec, 0).UnixNano()), Values: []any{v}}
+		}
+		inRange := NewSeries(SeriesHeader{Name: "in"}, Points{point(10, 1), point(20, 2)})
+		after := NewSeries(SeriesHeader{Name: "after"}, Points{point(30, 3)})
+		before := NewSeries(SeriesHeader{Name: "before"}, Points{point(5, 4)})
+		ds := &DataSet{
+			Results:    []*Result{{SeriesList: []*Series{before, inRange, after}}},
+			ExtentList: timeseries.ExtentList{{Start: time.Unix(5, 0), End: time.Unix(30, 0)}},
+		}
+		ds.DefaultRangeCropper(timeseries.Extent{Start: time.Unix(10, 0), End: time.Unix(20, 0)})
+		sl := ds.Results[0].SeriesList
+		if len(sl) != 1 || sl[0].Header.Name != "in" || sl[0].PointCount() != 2 {
+			t.Fatalf("expected only the in-range series to remain, got %d series", len(sl))
+		}
+	})
+
 	t.Run("remove empty or nil series", func(t *testing.T) {
 		// Create a fresh dataset for this test
 		ds := genTestDataSet(2, 2)
@@ -694,7 +748,7 @@ func TestCropToRange(t *testing.T) {
 
 		// Now explicitly set the points to nil for the first series
 		ds = genTestDataSet(2, 2)
-		ds.Results[0].SeriesList[0].Points = nil
+		ds.Results[0].SeriesList[0].SetPoints(nil)
 
 		// Crop again - this should remove the series with nil points
 		ex = timeseries.Extent{Start: time.Unix(15, 0), End: time.Unix(125, 0)}
@@ -726,7 +780,7 @@ func genBenchmarkPoint(e epoch.Epoch, valuect int) Point {
 		Values: make([]any, valuect),
 	}
 	for i := range valuect {
-		out.Values[i] = rand.Int() % 1000
+		out.Values[i] = weaktest.IntN(1000)
 	}
 	return out
 }
@@ -735,14 +789,13 @@ func genBenchmarkDataset(pointct int) *DataSet {
 	if pointct > 1000 {
 		pointct = 1000
 	}
-	bmSeries := &Series{
-		Points: make(Points, pointct),
-	}
-	for i := 0; i < pointct; i++ {
+	pts := make(Points, pointct)
+	for i := range pts {
 		back := pointct - i
 		t := epoch.Epoch(time.Now().Unix() - int64(back))
-		bmSeries.Points[i] = genBenchmarkPoint(t, 4)
+		pts[i] = genBenchmarkPoint(t, 4)
 	}
+	bmSeries := NewSeries(SeriesHeader{}, pts)
 	res := &Result{
 		StatementID: 0,
 		SeriesList:  []*Series{bmSeries},
@@ -771,7 +824,7 @@ func TestDataSetFieldDefinitions(t *testing.T) {
 		}
 		ds := &DataSet{
 			Results: []*Result{{
-				SeriesList: SeriesList{&Series{Header: sh}},
+				SeriesList: SeriesList{NewSeries(sh, nil)},
 			}},
 		}
 		all, tags, vals, tfd := ds.FieldDefinitions()
@@ -808,8 +861,8 @@ func TestDataSetFieldDefinitions(t *testing.T) {
 		ds := &DataSet{
 			Results: []*Result{{
 				SeriesList: SeriesList{
-					&Series{Header: sh},
-					&Series{Header: sh}, // same field names
+					NewSeries(sh, nil),
+					NewSeries(sh, nil), // same field names
 				},
 			}},
 		}
@@ -873,7 +926,6 @@ func TestDefaultSizeCropper(t *testing.T) {
 			for ts := start; !ts.After(end); ts = ts.Add(step) {
 				pts = append(pts, Point{
 					Epoch:  epoch.Epoch(ts.UnixNano()),
-					Size:   16,
 					Values: []any{1},
 				})
 			}
@@ -881,7 +933,7 @@ func TestDefaultSizeCropper(t *testing.T) {
 		ds := &DataSet{
 			TimeRangeQuery: &timeseries.TimeRangeQuery{Step: step},
 			ExtentList:     extents,
-			Results:        []*Result{{StatementID: 0, SeriesList: []*Series{{sh, pts, pts.Size()}}}},
+			Results:        []*Result{{StatementID: 0, SeriesList: []*Series{NewSeries(sh, pts)}}},
 		}
 		ds.Merger = ds.DefaultMerger
 		ds.SizeCropper = ds.DefaultSizeCropper

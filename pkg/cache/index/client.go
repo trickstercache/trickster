@@ -19,11 +19,14 @@ package index
 import (
 	"context"
 	"errors"
+	"hash/maphash"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -31,32 +34,118 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	gm "github.com/trickstercache/trickster/v2/pkg/observability/metrics"
-	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
+
+	"github.com/prometheus/client_golang/prometheus"
 )
 
-//go:generate go tool msgp
+const (
+	// keyLockCount is how many locks keys are spread over. It must be a power of two.
+	keyLockCount = 4096
+	keyLockMask  = keyLockCount - 1
 
+	workerFlusher = "flusher"
+	workerReaper  = "reaper"
+	workerScanner = "scanner"
+
+	eventEviction    = "eviction"
+	eventIndex       = "index"
+	reasonCompaction = "compaction"
+	reasonSweep      = "sweep"
+	reasonAdopted    = "adopted"
+	reasonDropped    = "dropped"
+	reasonTTL        = "ttl"
+	reasonBytes      = "size_bytes"
+	reasonObjects    = "size_objects"
+	reasonFreeSpace  = "free_space"
+)
+
+// IndexedClient implements the cache.Client and cache.SplitClient interfaces
 var (
-	// IndexedClient implements the cache.Client and cache.MemoryCache interfaces
-	_ cache.Client      = &IndexedClient{}
-	_ cache.MemoryCache = &IndexedClient{}
+	_ cache.Client       = &IndexedClient{}
+	_ cache.SplitClient  = &IndexedClient{}
+	_ cache.StreamClient = &IndexedClient{}
 )
 
-var (
-	ErrIndexInvalidCacheKey = errors.New("cannot store index")
-	ErrInvalidCacheBackend  = errors.New("invalid cache backend for reference access")
-)
+// ErrSplitUnsupported is returned by StoreSplit, RetrieveSplit and OpenSplit when the
+// underlying cache keeps objects whole, or cannot leave them open
+var ErrSplitUnsupported = errors.New("cache does not keep objects in sections")
 
-// maxIndexBytes caps the index blob read from the backing cache at startup so
-// a poisoned shared backend can't drive unbounded msgpack decode allocation.
-// Exposed as a var so tests can lower the threshold without allocating hundreds of MiB.
-var maxIndexBytes = 256 << 20
+var ErrIndexInvalidCacheKey = errors.New("cannot store index")
 
 // IndexedClientOptions modify an IndexedClient's behavior.
 type IndexedClientOptions struct {
 	NeedsFlushInterval bool
 	NeedsReapInterval  bool
+	// MinFreeBytes is the space the index keeps free on the cache's medium, when the
+	// cache can report it, by evicting as it would for a cache that is over its size
+	MinFreeBytes int64
+}
+
+// a cache that can hold the index's own files
+type metaStorer interface {
+	MetaStore() (blob.MetaStore, bool)
+}
+
+// a cache that can report the space left on its medium
+type freeSpacer interface {
+	FreeBytes() (int64, bool)
+}
+
+// IndexedClient tracks what a cache that keeps all it is given holds, like filesystem or
+// bbolt, and enforces retention for it. Redis manages its own, and has no index.
+type IndexedClient struct {
+	// Client is the underlying cache client used by the Index
+	Client cache.Client
+
+	// objects holds each *Object in the cache by its key, and is read without locking
+	objects sync.Map
+	shards  shards
+	// cacheSize is the size of the cache in bytes, and objectCount the count of its objects
+	cacheSize   atomic.Int64
+	objectCount atomic.Int64
+
+	name          string
+	cacheProvider string
+	options       atomic.Pointer[options.Options]
+	ico           IndexedClientOptions
+	objectsGauge  prometheus.Gauge
+	bytesGauge    prometheus.Gauge
+
+	// journal persists the index, and is nil when the index is not persisted
+	journal *journal
+	// scanner lists what the cache really holds, and is nil when the cache cannot
+	scanner cache.Scanner
+	// split keeps objects in two sections, and is nil when the cache cannot
+	split cache.SplitClient
+	// stream reads objects in parts, and is nil when the cache cannot
+	stream cache.StreamClient
+	// keyLocks serialize the storing and removing of a key, each of which changes the
+	// cache and then the index, so that neither sees the other half done
+	keyLocks [keyLockCount]sync.Mutex
+	free     freeSpacer
+	// lastFlush is when the index was last persisted, in Unix nanoseconds
+	lastFlush atomic.Int64
+	// pressure is set by a write that takes the cache over its size, to hasten the reaper
+	pressure atomic.Bool
+	// sweeps numbers the sweeps of the cache, and sweepDue asks for one at the start
+	sweeps   atomic.Uint64
+	sweepDue bool
+
+	isClosing     atomic.Bool
+	cancel        context.CancelFunc
+	wg            sync.WaitGroup
+	flusherExited atomic.Bool
+	reaperExited  atomic.Bool
+	scannerExited atomic.Bool
+
+	// used only in tests: fields to interact with client goroutines
+	forceFlush chan bool
+	hasFlushed chan bool
+	forceReap  chan bool
+	hasReaped  chan bool
+	forceSweep chan bool
+	hasSwept   chan bool
 }
 
 func NewIndexedClient(
@@ -71,41 +160,34 @@ func NewIndexedClient(
 		name:          cacheName,
 		cacheProvider: cacheProvider,
 		cancel:        cancel,
+		objectsGauge:  gm.CacheObjects.WithLabelValues(cacheName, cacheProvider),
+		bytesGauge:    gm.CacheBytes.WithLabelValues(cacheName, cacheProvider),
 		forceFlush:    make(chan bool),
 		hasFlushed:    make(chan bool, 1),
 		forceReap:     make(chan bool),
 		hasReaped:     make(chan bool, 1),
+		forceSweep:    make(chan bool),
+		hasSwept:      make(chan bool, 1),
 	}
-	indexExpiry := o.IndexExpiry
 	idx.options.Store(o)
-
-	options := &IndexedClientOptions{}
 	for _, opt := range opts {
-		opt(options)
+		opt(&idx.ico)
 	}
+	idx.scanner, _ = client.(cache.Scanner)
+	if sc, ok := client.(cache.SplitClient); ok && sc.SupportsSplit() {
+		idx.split = sc
+	}
+	if sc, ok := client.(cache.StreamClient); ok && sc.SupportsStream() {
+		idx.stream = sc
+	}
+	idx.free, _ = client.(freeSpacer)
 
-	if options.NeedsFlushInterval || o.FlushInterval > 0 {
-		// check to see if an index was cached already from a previous run
-		b, s, err := client.Retrieve(IndexKey)
-		if err != nil && options.NeedsFlushInterval {
-			logger.Warn("cache index was not loaded",
-				logging.Pairs{keys.CacheName: cacheName, keys.Error: err.Error()})
-		} else if len(b) > 0 && s == status.LookupStatusHit {
-			if len(b) > maxIndexBytes {
-				// Reject oversized blobs to bound alloc on poisoned shared-backend writes.
-				logger.Warn("cache index too large; discarding",
-					logging.Pairs{keys.CacheName: cacheName, "bytes": len(b), "max": maxIndexBytes})
-			} else {
-				idx.UnmarshalMsg(b)
-				if time.Since(idx.LastFlush.Load()) > time.Duration(indexExpiry) {
-					idx.Clear()
-				}
-			}
-		}
-		if o.FlushInterval > 0 {
+	if idx.ico.NeedsFlushInterval || o.FlushInterval > 0 {
+		idx.load(client, time.Duration(o.IndexExpiry))
+		if o.FlushInterval > 0 && idx.journal != nil {
 			idx.wg.Add(1)
 			go idx.flusher(ctx)
-		} else if options.NeedsFlushInterval {
+		} else if idx.ico.NeedsFlushInterval {
 			logger.Warn("cache index flusher was not started, recommended for provider",
 				logging.Pairs{keys.CacheName: idx.name, keys.CacheProvider: idx.cacheProvider, "flushInterval": o.FlushInterval})
 		}
@@ -114,9 +196,14 @@ func NewIndexedClient(
 	if o.ReapInterval > 0 {
 		idx.wg.Add(1)
 		go idx.reaper(ctx)
-	} else if options.NeedsReapInterval {
+	} else if idx.ico.NeedsReapInterval {
 		logger.Warn("cache reaper was not started, recommended for provider",
 			logging.Pairs{keys.CacheName: idx.name, keys.CacheProvider: idx.cacheProvider, "reapInterval": o.ReapInterval})
+	}
+
+	if idx.scanner != nil && (idx.sweepDue || o.ScanInterval > 0) {
+		idx.wg.Add(1)
+		go idx.scannerWorker(ctx)
 	}
 
 	gm.CacheMaxObjects.WithLabelValues(cacheName, cacheProvider).Set(float64(o.MaxSizeObjects))
@@ -124,44 +211,117 @@ func NewIndexedClient(
 	return idx
 }
 
-// The IndexedClient maintains metadata about a cache.Client when Retention enforcement is managed internally,
-// like memory or bbolt. It is not used for independently managed caches like Redis.
-type IndexedClient struct {
-	// Client is the underlying cache client used by the Index
-	Client cache.Client `msg:"-"`
-	// CacheSize represents the size of the cache in bytes
-	CacheSize int64 `msg:"cache_size"`
-	// ObjectCount represents the count of objects in the Cache
-	ObjectCount int64 `msg:"object_count"`
-	// Objects is a map of Objects in the Cache
-	Objects SyncObjects `msg:"objects"`
-	// Time the index was last flushed
-	LastFlush atomicx.Time `msg:"LastFlush,extension"`
+// whatever is missing from what was persisted is left for a sweep of the cache to find
+func (idx *IndexedClient) load(client cache.Client, expiry time.Duration) {
+	ms, ok := client.(metaStorer)
+	if !ok {
+		return
+	}
+	store, ok := ms.MetaStore()
+	if !ok {
+		return
+	}
+	idx.journal = &journal{store: store}
+	nowNano := time.Now().UnixNano()
+	l, err := idx.journal.load(func(r *record) {
+		if r.op == opAdd && (r.expiration == 0 || r.expiration > nowNano) {
+			idx.restore(r)
+			return
+		}
+		// removed, or expired since: neither is journaled again, as the journal has it already
+		idx.unlist(r.key)
+	})
+	stale := expiry > 0 && l.lastFlush > 0 && nowNano-l.lastFlush > int64(expiry)
+	if err != nil || stale {
+		if err != nil {
+			logger.Warn("cache index was not loaded",
+				logging.Pairs{keys.CacheName: idx.name, keys.Error: err.Error()})
+		}
+		idx.Clear()
+		idx.journal.markLossy()
+		l.whole = false
+	}
+	idx.lastFlush.Store(l.lastFlush)
+	// an index that is whole and was closed in good order lists all the cache holds
+	idx.sweepDue = !l.whole || !l.clean
+}
 
-	// internal index configuration
-	name          string               `msg:"-"`
-	cacheProvider string               `msg:"-"`
-	options       atomic.Value         `msg:"-"`
-	ico           IndexedClientOptions `msg:"-"`
-	lastWrite     atomicx.Time         `msg:"-"`
-	isClosing     atomic.Bool
-	cancel        context.CancelFunc
-	wg            sync.WaitGroup
-	flusherExited atomic.Bool
-	reaperExited  atomic.Bool
+var keyLockSeed = maphash.MakeSeed()
 
-	// used only in tests: fields to interact with client goroutines
-	forceFlush chan bool
-	hasFlushed chan bool
-	forceReap  chan bool
-	hasReaped  chan bool
+func (idx *IndexedClient) keyLock(cacheKey string) *sync.Mutex {
+	return &idx.keyLocks[maphash.String(keyLockSeed, cacheKey)&keyLockMask]
+}
+
+// each lock once, in one order, so that batches never deadlock one another
+func (idx *IndexedClient) lockKeys(cacheKeys []string) func() {
+	var few [evictionBatch]int
+	stripes := few[:0]
+	for _, key := range cacheKeys {
+		stripes = append(stripes, int(maphash.String(keyLockSeed, key)&keyLockMask))
+	}
+	slices.Sort(stripes)
+	stripes = slices.Compact(stripes)
+	for _, i := range stripes {
+		idx.keyLocks[i].Lock()
+	}
+	return func() {
+		for _, i := range stripes {
+			idx.keyLocks[i].Unlock()
+		}
+	}
+}
+
+// Size returns the size in bytes of the objects in the cache
+func (idx *IndexedClient) Size() int64 {
+	return idx.cacheSize.Load()
+}
+
+// Count returns the count of objects in the cache
+func (idx *IndexedClient) Count() int64 {
+	return idx.objectCount.Load()
+}
+
+// Object returns what the index knows of the object stored under cacheKey
+func (idx *IndexedClient) Object(cacheKey string) (*Object, bool) {
+	v, ok := idx.objects.Load(cacheKey)
+	if !ok {
+		return nil, false
+	}
+	return v.(*Object), true
+}
+
+// Keys returns the cache keys of the objects in the cache, in no particular order
+func (idx *IndexedClient) Keys() []string {
+	keys := make([]string, 0, max(idx.objectCount.Load(), 0))
+	idx.objects.Range(func(k, _ any) bool {
+		keys = append(keys, k.(string))
+		return true
+	})
+	return keys
+}
+
+// a shard at a time, under that shard's lock alone
+func (idx *IndexedClient) each(yield func(o *Object) bool) {
+	var scratch []*Object
+	for i := range idx.shards {
+		scratch = idx.shards[i].appendAll(scratch[:0])
+		for _, o := range scratch {
+			if !yield(o) {
+				return
+			}
+		}
+	}
 }
 
 // Clear the index from its currently tracked cache objects
 func (idx *IndexedClient) Clear() {
-	idx.Objects.Clear()
-	atomic.StoreInt64(&idx.CacheSize, 0)
-	atomic.StoreInt64(&idx.ObjectCount, 0)
+	idx.objects.Clear()
+	for i := range idx.shards {
+		idx.shards[i].clear()
+	}
+	idx.cacheSize.Store(0)
+	idx.objectCount.Store(0)
+	idx.observeSize(0, 0)
 }
 
 // UpdateOptions updates the existing IndexedClient with a new Options reference
@@ -174,106 +334,172 @@ func (idx *IndexedClient) Connect() error {
 	return nil
 }
 
-func (idx *IndexedClient) updateIndex(cacheKey string, size int64, la, lw, e time.Time) {
-	// store the object (except for the data) in the index
-	obj := &Object{
-		Key:  cacheKey,
-		Size: size,
-	}
-	obj.LastAccess.Store(la)
-	obj.LastWrite.Store(lw)
-	if !e.IsZero() {
-		obj.Expiration.Store(e)
-	}
-
-	// update the index totals
-	var cacheSize, count int64
-	if o, ok := idx.Objects.Load(cacheKey); ok {
-		oldObj := o.(*Object)
-		cacheSize = atomic.AddInt64(&idx.CacheSize, obj.Size-oldObj.Size)
-		count = atomic.LoadInt64(&idx.ObjectCount)
-	} else {
-		cacheSize = atomic.AddInt64(&idx.CacheSize, obj.Size)
-		count = atomic.AddInt64(&idx.ObjectCount, 1)
-	}
-	metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, cacheSize, count)
-	idx.lastWrite.Store(time.Now())
-	idx.Objects.Store(cacheKey, obj)
+func (idx *IndexedClient) observeSize(size, count int64) {
+	idx.objectsGauge.Set(float64(count))
+	idx.bytesGauge.Set(float64(size))
 }
 
-func (idx *IndexedClient) StoreReference(cacheKey string, data cache.ReferenceObject, ttl time.Duration) error {
-	if cacheKey == IndexKey {
-		return ErrIndexInvalidCacheKey
+// notes a cache that has grown past its size, which hastens the reaper
+func (idx *IndexedClient) count(size, objects int64) {
+	total := idx.cacheSize.Add(size)
+	n := idx.objectCount.Add(objects)
+	idx.observeSize(total, n)
+	if size <= 0 && objects <= 0 {
+		return
 	}
-	mc, ok := idx.Client.(cache.MemoryCache)
-	if !ok {
-		return ErrInvalidCacheBackend
+	o := idx.options.Load()
+	if ((o.MaxSizeBytes > 0 && total > o.MaxSizeBytes) || (o.MaxSizeObjects > 0 && n > o.MaxSizeObjects)) &&
+		!idx.pressure.Load() {
+		idx.pressure.Store(true)
 	}
-	if err := mc.StoreReference(cacheKey, data, ttl); err != nil {
-		return err
+}
+
+// returns the object's entry, and whether the entry was a transient one before
+func (idx *IndexedClient) put(cacheKey string, size, lastAccess, lastWrite, expiration int64, transient bool) (*Object, bool) {
+	s := idx.shards.of(cacheKey)
+	for {
+		v, ok := idx.objects.Load(cacheKey)
+		if !ok {
+			o := &Object{Key: cacheKey, slot: noSlot}
+			o.transient.Store(transient)
+			o.size.Store(size)
+			o.lastAccess.Store(lastAccess)
+			o.lastWrite.Store(lastWrite)
+			o.expiration.Store(expiration)
+			if v, ok = idx.objects.LoadOrStore(cacheKey, o); !ok {
+				if counted, inserted := s.insert(o, lastWrite); inserted {
+					idx.count(counted, 1)
+				}
+				return o, true
+			}
+		}
+		o := v.(*Object)
+		if delta, ok := s.update(o, size, expiration, lastWrite); ok {
+			o.lastAccess.Store(lastAccess)
+			idx.count(delta, 0)
+			return o, o.transient.Swap(transient)
+		}
+		// the object left the index as it was being written, and is listed anew
 	}
-	now := time.Now()
-	var expiry time.Time
-	if ttl > 0 {
-		expiry = now.Add(ttl)
+}
+
+func (idx *IndexedClient) updateIndex(cacheKey string, size int64, la, lw, e time.Time) {
+	transient := !e.IsZero() && e.Sub(lw) < transientTTL
+	o, was := idx.put(cacheKey, size, la.UnixNano(), lw.UnixNano(), unixNano(e), transient)
+	switch {
+	case !transient:
+		idx.journal.add(o)
+	case !was:
+		// what the journal holds of the object is no longer so, and is not to be restored
+		idx.journal.remove(cacheKey)
 	}
-	idx.updateIndex(cacheKey, int64(data.Size()), now, now, expiry)
-	return nil
+}
+
+// an object read back from the journal is not journaled again
+func (idx *IndexedClient) restore(r *record) {
+	idx.put(r.key, r.size, r.lastAccess, r.lastWrite, r.expiration, false)
 }
 
 func (idx *IndexedClient) Store(cacheKey string, byteData []byte, ttl time.Duration) error {
 	if cacheKey == IndexKey {
 		return ErrIndexInvalidCacheKey
 	}
-	// wrap input value with Object + timing/size information
-	obj := &Object{
-		Key:   cacheKey,
-		Value: byteData,
-		Size:  int64(len(byteData)),
+	mu := idx.keyLock(cacheKey)
+	mu.Lock()
+	defer mu.Unlock()
+	if err := idx.Client.Store(cacheKey, byteData, ttl); err != nil {
+		return err
 	}
 	now := time.Now()
-	obj.LastAccess.Store(now)
-	obj.LastWrite.Store(now)
 	var expiry time.Time
 	if ttl > 0 {
 		expiry = now.Add(ttl)
-		obj.Expiration.Store(expiry)
 	}
-	// store the object in the cache
-	b, err := obj.ToBytes()
-	if err != nil {
-		return err
-	}
-	if err := idx.Client.Store(cacheKey, b, ttl); err != nil {
-		return err
-	}
-	idx.updateIndex(cacheKey, obj.Size, now, now, expiry)
+	idx.updateIndex(cacheKey, int64(len(byteData)), now, now, expiry)
 	return nil
 }
 
-func (idx *IndexedClient) updateAccessTime(cacheKey string) {
-	o, ok := idx.Objects.Load(cacheKey)
-	if !ok {
-		return
-	}
-	obj := o.(*Object)
-	now := time.Now()
-	obj.LastAccess.Store(now)
+// SupportsSplit reports whether the underlying cache keeps objects in two sections
+func (idx *IndexedClient) SupportsSplit() bool {
+	return idx.split != nil
 }
 
-func (idx *IndexedClient) RetrieveReference(cacheKey string) (any, status.LookupStatus, error) {
+// StoreSplit implements the cache.SplitClient interface, and lists the object as Store does
+func (idx *IndexedClient) StoreSplit(cacheKey string, meta, body []byte, ttl time.Duration) error {
 	if cacheKey == IndexKey {
-		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
+		return ErrIndexInvalidCacheKey
 	}
-	mc, ok := idx.Client.(cache.MemoryCache)
-	if !ok {
-		return nil, status.LookupStatusError, ErrInvalidCacheBackend
+	if idx.split == nil {
+		return ErrSplitUnsupported
 	}
-	v, s, err := mc.RetrieveReference(cacheKey)
-	if err == nil && s == status.LookupStatusHit {
-		idx.updateAccessTime(cacheKey)
+	mu := idx.keyLock(cacheKey)
+	mu.Lock()
+	defer mu.Unlock()
+	if err := idx.split.StoreSplit(cacheKey, meta, body, ttl); err != nil {
+		return err
 	}
-	return v, s, err
+	now := time.Now()
+	var expiry time.Time
+	if ttl > 0 {
+		expiry = now.Add(ttl)
+	}
+	idx.updateIndex(cacheKey, int64(len(meta)+len(body)), now, now, expiry)
+	return nil
+}
+
+// RetrieveSplit implements the cache.SplitClient interface, and notes the access as Retrieve does
+func (idx *IndexedClient) RetrieveSplit(cacheKey string) ([]byte, []byte, status.LookupStatus, error) {
+	if cacheKey == IndexKey {
+		return nil, nil, status.LookupStatusError, ErrIndexInvalidCacheKey
+	}
+	if idx.split == nil {
+		return nil, nil, status.LookupStatusError, ErrSplitUnsupported
+	}
+	now := time.Now()
+	meta, body, s, err := idx.split.RetrieveSplit(cacheKey)
+	if err != nil {
+		if errors.Is(err, cache.ErrKNF) {
+			idx.forgetUnlessWrittenSince(cacheKey, now)
+		}
+		return nil, nil, s, err
+	}
+	if s != status.LookupStatusHit {
+		return nil, nil, s, err
+	}
+	idx.updateAccessTime(cacheKey, now)
+	return meta, body, s, nil
+}
+
+// SupportsStream reports whether the underlying cache reads objects in parts
+func (idx *IndexedClient) SupportsStream() bool {
+	return idx.stream != nil
+}
+
+// OpenSplit implements the cache.StreamClient interface, and notes the access as Retrieve does
+func (idx *IndexedClient) OpenSplit(cacheKey string) ([]byte, cache.Body, status.LookupStatus, error) {
+	if cacheKey == IndexKey {
+		return nil, nil, status.LookupStatusError, ErrIndexInvalidCacheKey
+	}
+	if idx.stream == nil {
+		return nil, nil, status.LookupStatusError, ErrSplitUnsupported
+	}
+	now := time.Now()
+	meta, body, s, err := idx.stream.OpenSplit(cacheKey)
+	if err != nil {
+		if errors.Is(err, cache.ErrKNF) {
+			idx.forgetUnlessWrittenSince(cacheKey, now)
+		}
+		return nil, nil, s, err
+	}
+	idx.updateAccessTime(cacheKey, now)
+	return meta, body, s, nil
+}
+
+// the access time is the one time.Now of a retrieval, taken before the cache is read
+func (idx *IndexedClient) updateAccessTime(cacheKey string, at time.Time) {
+	if v, ok := idx.objects.Load(cacheKey); ok {
+		v.(*Object).lastAccess.Store(at.UnixNano())
+	}
 }
 
 // Retrieve implements the cache.Client interface, looking up the object and updating the index last access time
@@ -281,19 +507,65 @@ func (idx *IndexedClient) Retrieve(cacheKey string) ([]byte, status.LookupStatus
 	if cacheKey == IndexKey {
 		return nil, status.LookupStatusError, ErrIndexInvalidCacheKey
 	}
+	now := time.Now()
 	data, s, err := idx.Client.Retrieve(cacheKey)
 	if err != nil {
+		if errors.Is(err, cache.ErrKNF) {
+			// the cache no longer holds what the index lists, so the index lets it go
+			idx.forgetUnlessWrittenSince(cacheKey, now)
+		}
 		return nil, s, err
 	}
 	if s != status.LookupStatusHit {
 		return nil, s, err
 	}
-	o, err := ObjectFromBytes(data)
-	if err != nil {
-		return nil, status.LookupStatusError, err
+	idx.updateAccessTime(cacheKey, now)
+	return data, s, nil
+}
+
+// drops the object from the index without journaling it, and returns the bytes it had
+// accounted for
+func (idx *IndexedClient) unlist(cacheKey string) (*Object, int64) {
+	v, ok := idx.objects.LoadAndDelete(cacheKey)
+	if !ok {
+		return nil, 0
 	}
-	idx.updateAccessTime(cacheKey)
-	return o.Value, s, nil
+	o := v.(*Object)
+	size := idx.shards.of(cacheKey).remove(o)
+	idx.count(-size, -1)
+	return o, size
+}
+
+// drops the object from the index alone; the cache is left to the caller
+func (idx *IndexedClient) forget(cacheKey string) int64 {
+	o, size := idx.unlist(cacheKey)
+	if o != nil && !o.transient.Load() {
+		idx.journal.remove(cacheKey)
+	}
+	return size
+}
+
+// an object written since it was chosen for removal is no longer the object that was to go,
+// and stays
+func (idx *IndexedClient) forgetUnlessWrittenSince(cacheKey string, since time.Time) (int64, bool) {
+	v, ok := idx.objects.Load(cacheKey)
+	if !ok {
+		return 0, false
+	}
+	o := v.(*Object)
+	s := idx.shards.of(cacheKey)
+	s.mu.Lock()
+	if o.lastWrite.Load() >= since.UnixNano() || !idx.objects.CompareAndDelete(cacheKey, o) {
+		s.mu.Unlock()
+		return 0, false
+	}
+	size := s.removeLocked(o)
+	s.mu.Unlock()
+	idx.count(-size, -1)
+	if !o.transient.Load() {
+		idx.journal.remove(cacheKey)
+	}
+	return size, true
 }
 
 // Remove implements the cache.Client interface and removes the object from the cache and index
@@ -305,27 +577,43 @@ func (idx *IndexedClient) Remove(cacheKeys ...string) error {
 }
 
 func (idx *IndexedClient) remove(cacheKeys []string) (int64, error) {
+	unlock := idx.lockKeys(cacheKeys)
+	defer unlock()
 	var released int64
-	// remove the objects from the index
 	for _, key := range cacheKeys {
-		if o, ok := idx.Objects.Load(key); ok {
-			obj := o.(*Object)
-			released += obj.Size
-			size := atomic.AddInt64(&idx.CacheSize, -obj.Size)
-			count := atomic.AddInt64(&idx.ObjectCount, -1)
-			idx.Objects.Delete(key)
-			metrics.ObserveCacheSizeChange(idx.name, idx.cacheProvider, size, count)
-		}
+		released += idx.forget(key)
 	}
-	idx.lastWrite.Store(time.Now())
 	return released, idx.Client.Remove(cacheKeys...)
 }
 
-func (idx *IndexedClient) evict(reason string, removals []string) {
-	metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, "eviction", reason)
+// removals chosen before since, from the index and the cache alike; any written again in the
+// meantime are left alone
+func (idx *IndexedClient) evict(reason string, since time.Time, removals []string) {
+	metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, eventEviction, reason)
 	// reaper removals bypass the cache manager, so the deletion is recorded here
 	start := time.Now()
-	released, err := idx.remove(removals)
+	unlock := idx.lockKeys(removals)
+	var released int64
+	// under the locks, what the index still lists as older than since is what the cache holds
+	gone := removals[:0]
+	for _, key := range removals {
+		if size, dropped := idx.forgetUnlessWrittenSince(key, since); dropped {
+			released += size
+			gone = append(gone, key)
+		} else if v, ok := idx.objects.Load(key); ok {
+			// spared, and so to be chosen again another time
+			o := v.(*Object)
+			o.evicting.Store(false)
+			if reason == reasonTTL {
+				idx.shards.of(key).reschedule(o, start.UnixNano())
+			}
+		}
+	}
+	var err error
+	if len(gone) > 0 {
+		err = idx.Client.Remove(gone...)
+	}
+	unlock()
 	metrics.ObserveCacheDel(idx.name, idx.cacheProvider, float64(released), time.Since(start))
 	if err != nil {
 		logger.Error("reap remove error", logging.Pairs{keys.CacheName: idx.name, keys.Error: err})
@@ -334,39 +622,45 @@ func (idx *IndexedClient) evict(reason string, removals []string) {
 
 // Stop the indexed cache, flush its state, and close the underlying cache
 func (idx *IndexedClient) Close() error {
-	idx.cancel() // stop the reaper & flusher
+	idx.cancel() // stop the workers
 	idx.isClosing.Store(true)
-	idx.wg.Wait() // wait for flusher/reaper goroutines to exit
-	if idx.ico.NeedsFlushInterval {
-		idx.flushOnce()
+	idx.wg.Wait() // wait for the worker goroutines to exit
+	if idx.journal != nil {
+		now := time.Now()
+		if err := idx.journal.close(now, idx.each); err != nil {
+			logger.Warn("unable to persist cache index on close",
+				logging.Pairs{keys.CacheName: idx.name, keys.Detail: err.Error()})
+		} else {
+			idx.lastFlush.Store(now.UnixNano())
+		}
 	}
 	idx.Clear()
 	return idx.Client.Close()
 }
 
-// flusher periodically calls the cache's index flush func that writes the cache index to disk
+// tells a test that waits on done that a worker has finished a pass
+func signal(done chan bool) {
+	select {
+	case done <- true:
+	default:
+		// drop message if no listener
+	}
+}
+
 func (idx *IndexedClient) flusher(ctx context.Context) {
 	defer idx.wg.Done()
-	safego.Run(idx.workerPanicHandler("flusher", &idx.flusherExited), func() {
+	safego.Run(idx.workerPanicHandler(workerFlusher, &idx.flusherExited), func() {
 	FLUSHER:
 		for {
-			fi := idx.options.Load().(*options.Options).FlushInterval
+			fi := idx.options.Load().FlushInterval
 			select {
 			case <-ctx.Done():
 				break FLUSHER
 			case <-time.After(time.Duration(fi)):
-				if idx.lastWrite.Load().Before(idx.LastFlush.Load()) {
-					continue
-				}
 			case <-idx.forceFlush:
 			}
 			idx.flushOnce()
-			select {
-			case idx.hasFlushed <- true:
-				// signal that a flush has occurred
-			default:
-				// drop message if no listener
-			}
+			signal(idx.hasFlushed)
 		}
 		idx.flusherExited.Store(true)
 	})
@@ -388,122 +682,25 @@ func (idx *IndexedClient) workerPanicHandler(worker string, exited *atomic.Bool)
 	}
 }
 
-// clone the msgpack encoded fields of the IndexedClient structure
-// not meant to be a deep clone / usable client, just a snapshot of the index state
-func (idx *IndexedClient) clone() *IndexedClient {
-	clone := &IndexedClient{
-		CacheSize:   atomic.LoadInt64(&idx.CacheSize),
-		ObjectCount: atomic.LoadInt64(&idx.ObjectCount),
-	}
-	clone.LastFlush.Store(idx.LastFlush.Load())
-	idx.Objects.Range(func(key, value any) bool {
-		clone.Objects.Store(key, value)
-		return true
-	})
-	return clone
-}
-
+// a journal that has grown large, or lost records, is replaced by a snapshot of the index
 func (idx *IndexedClient) flushOnce() {
-	idx.LastFlush.Store(time.Now()) // update flush time, so that it is marshalled / stored
-	clone := idx.clone()
-	bytes, err := clone.MarshalMsg(nil)
-	if err != nil {
-		logger.Warn("unable to serialize index for flushing",
-			logging.Pairs{keys.CacheName: idx.name, keys.Detail: err.Error()})
+	if idx.journal == nil {
 		return
 	}
-	idx.Client.Store(IndexKey, bytes, time.Duration(idx.options.Load().(*options.Options).IndexExpiry))
-}
-
-// reaper continually iterates through the cache to find expired elements and removes them
-func (idx *IndexedClient) reaper(ctx context.Context) {
-	defer idx.wg.Done()
-	safego.Run(idx.workerPanicHandler("reaper", &idx.reaperExited), func() {
-	REAPER:
-		for {
-			ri := idx.options.Load().(*options.Options).ReapInterval
-			select {
-			case <-ctx.Done():
-				break REAPER
-			case <-time.After(time.Duration(ri)):
-			case <-idx.forceReap:
-			}
-			idx.reap()
-			select {
-			case idx.hasReaped <- true:
-				// signal that a reap has occurred
-			default:
-				// drop message if no listener
-			}
-		}
-		idx.reaperExited.Store(true)
-	})
-}
-
-// reap makes a single iteration through the cache index to to find and remove expired elements
-// and evict least-recently-accessed elements to maintain the Maximum allowed Cache Size
-func (idx *IndexedClient) reap() {
-	cacheSize := atomic.LoadInt64(&idx.CacheSize)
-	objectCount := max(atomic.LoadInt64(&idx.ObjectCount), 0)
-	removals := make([]string, 0, objectCount/10) // estimate ~10% expired per cycle
-	remainders := make(objectsAtime, 0, objectCount)
-
-	var cacheChanged bool
-
 	now := time.Now()
-
-	idx.Objects.Range(func(_, value any) bool {
-		o := value.(*Object)
-		if exp := o.Expiration.Load(); exp.Before(now) && !exp.IsZero() {
-			removals = append(removals, o.Key)
-		} else {
-			remainders = append(remainders, o)
+	compact, err := idx.journal.flush(now)
+	if err != nil {
+		logger.Warn("unable to persist cache index changes",
+			logging.Pairs{keys.CacheName: idx.name, keys.Detail: err.Error()})
+	}
+	if compact {
+		metrics.ObserveCacheEvent(idx.name, idx.cacheProvider, eventIndex, reasonCompaction)
+		if err = idx.journal.compact(now, idx.each); err != nil {
+			logger.Warn("unable to persist cache index",
+				logging.Pairs{keys.CacheName: idx.name, keys.Detail: err.Error()})
 		}
-		return true
-	})
-
-	if len(removals) > 0 {
-		idx.evict("ttl", removals)
-		cacheChanged = true
-		cacheSize = atomic.LoadInt64(&idx.CacheSize)
 	}
-	objectCount = atomic.LoadInt64(&idx.ObjectCount)
-	opts := idx.options.Load().(*options.Options)
-
-	evictionType, removals := reap(cacheSize, objectCount, remainders, *opts)
-	if len(removals) > 0 {
-		idx.evict(evictionType, removals)
-		cacheChanged = true
-
-		logger.Debug("size-based cache eviction exercise completed",
-			logging.Pairs{
-				"reason":         evictionType,
-				"cacheSizeBytes": cacheSize, "maxSizeBytes": opts.MaxSizeBytes,
-				"cacheSizeObjects": objectCount, "maxSizeObjects": opts.MaxSizeObjects,
-			})
+	if err == nil {
+		idx.lastFlush.Store(now.UnixNano())
 	}
-	if cacheChanged {
-		idx.lastWrite.Store(time.Now())
-	}
-}
-
-type objectsAtime []*Object
-
-func objectAtimeCmp(a, b *Object) int {
-	return a.LastAccess.Load().Compare(b.LastAccess.Load())
-}
-
-// Len returns the number of elements in the subject slice
-func (o objectsAtime) Len() int {
-	return len(o)
-}
-
-// Less returns true if i comes before j
-func (o objectsAtime) Less(i, j int) bool {
-	return o[i].LastAccess.Load().Before(o[j].LastAccess.Load())
-}
-
-// Swap modifies the subject slice by swapping the values in indexes i and j
-func (o objectsAtime) Swap(i, j int) {
-	o[i], o[j] = o[j], o[i]
 }

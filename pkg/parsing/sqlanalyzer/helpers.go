@@ -44,38 +44,6 @@ func FlattenConjunction[E any](expr E, normalize func(E) E,
 	return append(out, expr)
 }
 
-// AlignedToBucket reports whether value falls exactly on a bucket boundary of
-// the given step cadence and phase offset.
-func AlignedToBucket(value time.Time, step, phase time.Duration) bool {
-	if step <= 0 {
-		return false
-	}
-	return (value.UnixNano()-phase.Nanoseconds())%step.Nanoseconds() == 0
-}
-
-// FloorBucket returns the start of the bucket containing value for the given
-// step cadence and phase offset. The value's location is preserved.
-func FloorBucket(value time.Time, step, phase time.Duration) time.Time {
-	if step <= 0 {
-		return value
-	}
-	remainder := (value.UnixNano() - phase.Nanoseconds()) % step.Nanoseconds()
-	if remainder < 0 {
-		remainder += step.Nanoseconds()
-	}
-	return value.Add(-time.Duration(remainder))
-}
-
-// CeilBucket returns value when already bucket-aligned, and otherwise the
-// start of the next bucket for the given step cadence and phase offset.
-func CeilBucket(value time.Time, step, phase time.Duration) time.Time {
-	floor := FloorBucket(value, step, phase)
-	if floor.Equal(value) {
-		return floor
-	}
-	return floor.Add(step)
-}
-
 // UnixTime converts an integer epoch value in the precision indicated by unit
 // to a time. Non-epoch units are interpreted as Unix seconds.
 func UnixTime(value int64, unit timeseries.FieldDataType) time.Time {
@@ -131,7 +99,9 @@ func (p *QueryPlan) ApplyToQuery(trq *timeseries.TimeRangeQuery) {
 	trq.Step = p.Step
 	trq.StepNS = p.Step.Nanoseconds()
 	trq.Phase = p.Phase
-	trq.BackfillTolerance = p.BackfillTolerance
+	trq.SampleModel = timeseries.SampleModelBucket
+	trq.StepAlignments, trq.StepAlignment = StepAlignments, DefaultStepAlignment
+	trq.Directives = p.Directives
 	trq.TimestampDefinition = timeseries.FieldDefinition{
 		Name:          p.OutputColumn,
 		DataType:      p.OutputUnit,
@@ -165,4 +135,25 @@ func (p *QueryPlan) RequestExtent(now time.Time) timeseries.Extent {
 		}
 	}
 	return extent
+}
+
+// RequestedRange returns the plan's raw bounds as the client's range, or its rounded bucket extent
+// when it has none; a missing or now() upper bound runs to now
+func (p *QueryPlan) RequestedRange(now time.Time) timeseries.RequestedRange {
+	var r timeseries.RequestedRange
+	if p.RawLower == nil {
+		e := p.RequestExtent(now)
+		r.Start, r.End, r.OpenEnded = e.Start, e.End.Add(p.Step), p.UpperBound == nil
+		if r.OpenEnded {
+			r.End = now
+		}
+		return r
+	}
+	r.Start, r.StartExclusive = p.RawLower.Value, !p.RawLower.Inclusive
+	if p.RawUpper == nil || p.UpperIsNow {
+		r.End, r.OpenEnded = now, true
+	} else {
+		r.End, r.EndInclusive = p.RawUpper.Value, p.RawUpper.Inclusive
+	}
+	return r
 }

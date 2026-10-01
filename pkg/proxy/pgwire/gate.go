@@ -47,6 +47,9 @@ const (
 	cacheKeyProtocol  = "pgwire"
 	cacheEngineObject = "opc"
 	cacheEngineDelta  = "dpc"
+	// off and partial buckets keep their own objects, so one stored for another TTL never answers them
+	cacheEngineUnaligned = "off"
+	cacheEnginePartial   = "partial"
 
 	logKeyCacheMode = "cache_mode"
 	logKeyReason    = "analysis_reason"
@@ -156,11 +159,14 @@ func (s *session) observeParse(body []byte) {
 func (s *session) cacheKey(analysis sqlanalyzer.Analysis, sql string) string {
 	// derives the key for an analyzed statement in this session. Every
 	// field is length-prefixed, so no two distinct identities can collide.
-	config := &s.server.config
-	engine, statement, suffix := cacheEngineObject, sql, ""
 	if analysis.Mode == sqlanalyzer.CacheModeDelta && analysis.Plan != nil {
-		engine, statement, suffix = cacheEngineDelta, analysis.Plan.CanonicalSQL, analysis.Plan.IdentitySuffix
+		return s.identityKey(cacheEngineDelta, analysis.Plan.CanonicalSQL)
 	}
+	return s.identityKey(cacheEngineObject, sql)
+}
+
+func (s *session) identityKey(engine, statement string) string {
+	config := &s.server.config
 	var identity strings.Builder
 	identity.WriteByte(cacheIdentityVersion)
 	appendIdentityField(&identity, config.BackendName)
@@ -169,7 +175,8 @@ func (s *session) cacheKey(analysis sqlanalyzer.Analysis, sql string) string {
 	identity.WriteString(s.tracker.sessionIdentity())
 	appendIdentityField(&identity, engine)
 	appendIdentityField(&identity, statement)
-	appendIdentityField(&identity, suffix)
+	// a retired field that once held directives, which keys no longer do; it stays empty so keys don't change
+	appendIdentityField(&identity, "")
 	return strings.Join([]string{
 		config.BackendName, config.CacheKeyPrefix, cacheKeyProtocol, engine, checksum.Checksum(identity.String()),
 	}, cacheKeySeparator)

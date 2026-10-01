@@ -20,13 +20,65 @@ When running Trickster in a Docker container, ensure your node hosting the conta
 
 ## Filesystem
 
-The Filesystem Cache is a popular option when you have larger dashboard setup (e.g., many different dashboards with many varying queries, Dashboard as a Service for several teams running their own Prometheus instances, etc.) that requires more storage space than you wish to accommodate in RAM. A Filesystem Cache configuration keeps the Trickster RAM footprint small, and is generally comparable in performance to In-Memory. Trickster performance can be degraded when using the Filesystem Cache if disk i/o becomes a bottleneck (e.g., many concurrent dashboard users).
+The Filesystem Cache is a popular option when you need more storage space than you wish to accommodate in RAM: a large dashboard setup (e.g., many different dashboards with many varying queries, Dashboard as a Service for several teams running their own Prometheus instances, etc.), or large objects like media and downloads. A Filesystem Cache configuration keeps the Trickster RAM footprint small. Trickster performance can be degraded when using the Filesystem Cache if disk i/o becomes a bottleneck.
 
 The default Filesystem Cache path is `/tmp/trickster`. The sample configuration demonstrates how to specify a custom cache path. Ensure that the user account running Trickster has read/write access to the custom directory or the application will exit on startup upon testing filesystem access. All users generally have access to /tmp so there is no concern about permissions in the default case.
+
+A local filesystem (e.g., ext4 or XFS) is recommended. Network filesystems are discouraged, as they are slow to create, rename and list the many files a cache is made of.
+
+See [Disk Caches](#disk-caches) for how the Filesystem Cache lays out, recovers and bounds what it stores.
 
 ## bbolt
 
 The BoltDB Cache is a popular key/value store, created by [Ben Johnson](https://github.com/benbjohnson). [CoreOS's bbolt fork](https://github.com/etcd-io/bbolt) is the version implemented in Trickster. A bbolt store is a filesystem-based solution that stores the entire database in a single file. Trickster, by default, creates the database at `trickster.db` and uses a bucket name of 'trickster' for storing key/value data. See the example config file for details on customizing this aspect of your Trickster deployment. The same guidance about filesystem permissions described in the Filesystem Cache section above apply to a bbolt Cache.
+
+bbolt commits each write to disk before it returns, so it is slower to store an object than the Filesystem Cache, and is as fast or faster to read one. It is a good fit for caches of many small objects, since it does not spend a file on each.
+
+See [Disk Caches](#disk-caches) for how the bbolt Cache recovers and bounds what it stores.
+
+## Disk Caches
+
+The Filesystem and bbolt Caches keep whatever they are given, so Trickster manages the lifecycle of their objects with a Cache Index, which it holds in memory and persists to the cache.
+
+### Stored Objects
+
+Each object is stored with a header that holds its cache key, its expiration and a checksum of its content. An object that is found to be expired, incomplete or damaged when it is read is treated as a cache miss and removed. The checksum of an object of 10 MiB or more is verified after the object is returned rather than before, so that a large read is not held for it; such an object, if damaged, is served once and then removed. The format of what is stored is private to Trickster and versioned: objects stored by a version that used another format are treated as cache misses and removed, so a disk cache can be cold after an upgrade. The release notes say when that is so.
+
+The Filesystem Cache writes each object to a new file and renames it into place, so a reader never finds part of an object, even after a crash. Files are spread across two levels of directories under `cache_path`, named for the first characters of the file's name, to keep any one directory small:
+
+```text
+/tmp/trickster/9f/86/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+/tmp/trickster/_meta/
+```
+
+A file is named for its cache key when the key is a lowercase hex digest of 32 or 64 characters, as the keys of HTTP objects are, and otherwise for a hash of the key. The `_meta` directory holds the Cache Index.
+
+### Serving Large Objects
+
+An object proxied through the [Reverse Proxy Cache](./paths.md) is stored in two sections: what describes it (status, headers, caching policy) and its body. When the whole of an object is cached uncompressed, a `GET` that is a fresh cache hit reads the body from the disk cache as it is written to the client, and a `Range` request reads only the ranges that were asked for. Neither holds the object in memory, whatever its size. Objects that Trickster compresses in the cache (see `compressible_types`) are read whole, as are objects that must first be revalidated.
+
+### Cache Index
+
+| Setting | Default | Description |
+| ----- | ----- | ----- |
+| `reap_interval` | `3s` | how often expired objects are removed, and a cache that is over its size is brought back within it |
+| `flush_interval` | `5s` | how often changes to the index are persisted |
+| `index_expiry` | `8760h` | how old a persisted index can be, and still be used at startup |
+| `max_size_bytes` | `536870912` | the size in bytes at which least-recently-accessed objects are evicted |
+| `max_size_backoff_bytes` | `16777216` | how far under `max_size_bytes` an eviction takes the cache |
+| `max_size_objects` | `0` | the count of objects at which least-recently-accessed objects are evicted; `0` for no limit |
+| `max_size_backoff_objects` | `100` | how far under `max_size_objects` an eviction takes the cache |
+| `scan_interval` | `24h` | how often the cache is swept; `0` to sweep only when the index cannot be trusted |
+| `scan_batch_size` | `512` | how many objects a sweep reads before it pauses |
+| `scan_batch_pause` | `50ms` | how long a sweep pauses after each batch |
+
+The Filesystem Cache also accepts `min_free_bytes`, the space to keep free on the filesystem that holds `cache_path`. When less is free, the cache evicts as it does when it is over `max_size_bytes`. It is supported on Unix-like systems.
+
+**Persistence.** The index is persisted as a snapshot and a journal of the changes made since. Each `flush_interval`, the changes are appended to the journal; once the journal has grown to half the size of the snapshot, a new snapshot replaces both. Objects that expire within a minute of being stored are not persisted.
+
+**Recovery.** When Trickster starts with an index that was persisted by a clean shutdown, it is used as it is. When the index is missing, expired, damaged, or was not closed by a clean shutdown, Trickster uses what it can of it and sweeps the cache in the background, while serving requests. A sweep reads the header of every object, `scan_batch_size` at a time, and lists the objects the index did not know of, so that nothing in the cache is orphaned. It also removes what can't be served: objects that are expired or damaged, files left by an interrupted write, and objects stored by a version of Trickster that used another format.
+
+**Eviction.** Objects are evicted in the order they were least recently accessed. In a cache of more than 1024 objects, the object to evict is the least recently accessed of 32 taken at random, which costs the same however large the cache is, and closely follows the true order. A write that takes the cache over its size has the reaper act within a second, without waiting for `reap_interval`.
 
 ## BadgerDB
 

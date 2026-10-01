@@ -59,6 +59,14 @@ See the [PostgreSQL and TimescaleDB Provider Guide](./postgres.md) for the
 supported clients, SQL, authentication, TLS, caching, routing, and operations
 contract.
 
+### <img src="./images/external/greptime-logo.svg" width=24 /> GreptimeDB
+
+Trickster accelerates eligible GreptimeDB SQL queries over HTTP, PostgreSQL
+and MySQL, plus its Prometheus-compatible range API. Specify `greptimedb` as
+the provider and map native listeners explicitly. See the
+[GreptimeDB Provider Guide](./greptimedb.md) for configuration, cache eligibility,
+Grafana macros, authentication and upstream compatibility limits.
+
 ### <img src="./images/external/mysql_logo_60.png" width=24 /> MySQL
 
 Trickster supports protocol-aware acceleration for supported MySQL

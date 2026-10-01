@@ -177,6 +177,23 @@ func TestSetCacheAttachesRegistryStore(t *testing.T) {
 	}
 }
 
+func TestStopClientsClosesLearners(t *testing.T) {
+	o := bo.New()
+	o.Graphite = gro.New()
+	g, err := NewClient("g7", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := backends.New("other", bo.New(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	StopClients(backends.Backends{"g7": g, "other": other})
+	if g.(*Client).learner.Schedule("x.y", nil) {
+		t.Error("a stopped client's learner still accepts runs")
+	}
+}
+
 func TestResolutionWiring(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "graphite"})

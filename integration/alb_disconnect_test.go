@@ -252,6 +252,12 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 		settleFloor  = 2500 * time.Millisecond
 	)
 	time.Sleep(settleFloor)
+	// the stubs have answered by now; the idle keep-alive connections left behind, and their goroutines
+	// on both ends, are test scaffolding rather than a leak
+	for _, s := range stubsArr {
+		s.srv.CloseClientConnections()
+	}
+	client.CloseIdleConnections()
 
 	var (
 		post  int

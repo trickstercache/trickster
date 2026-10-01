@@ -79,3 +79,4 @@ AGENTS.md
 docs/developer/environment/docker-compose-data/coredns-zones/
 
 integration/conformance/reports
+integration/greptimedb/reports

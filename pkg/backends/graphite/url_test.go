@@ -26,10 +26,42 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
+
+func TestSetExtentKeepsTheNewestBucket(t *testing.T) {
+	c := newTestClient(t, nil)
+	now := time.Date(2026, 9, 27, 12, 0, 5, 0, time.UTC)
+	c.timeNow = func() time.Time { return now }
+	// an absolute from whose offset within a step exceeds now's
+	from := now.Add(-7 * time.Hour).Add(-20 * time.Second)
+	r := getReq("target=a.b&from=" + strconv.FormatInt(from.Unix(), 10) + "&until=now&format=json")
+	trq, _, _, err := c.ParseTimeRangeQuery(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up, _ := http.NewRequest(http.MethodGet, r.URL.String(), nil)
+	if err := c.SetExtent(up, trq, &trq.Extent); err != nil {
+		t.Fatal(err)
+	}
+	v, _, _ := params.GetRequestValues(up)
+	gotFrom, _ := strconv.ParseInt(v.Get("from"), 10, 64)
+	gotUntil, _ := strconv.ParseInt(v.Get("until"), 10, 64)
+	gotNow, _ := strconv.ParseInt(v.Get("now"), 10, 64)
+	rq := trq.ParsedQuery.(*RenderQuery)
+	if gotNow < gotUntil {
+		t.Errorf("pinned now %d trails until %d, so whisper would drop the newest bucket", gotNow, gotUntil)
+	}
+	if time.Duration(gotNow-gotFrom)*time.Second != rq.EffectiveAge {
+		t.Errorf("now-from = %ds, want the client's age %s", gotNow-gotFrom, rq.EffectiveAge)
+	}
+	if gotUntil != trq.Extent.End.Unix() {
+		t.Errorf("until = %d, want the last bucket %d", gotUntil, trq.Extent.End.Unix())
+	}
+}
 
 func TestSetExtent(t *testing.T) {
 	c := newTestClient(t, nil)
@@ -53,10 +85,12 @@ func TestSetExtent(t *testing.T) {
 	from, _ := strconv.ParseInt(v.Get("from"), 10, 64)
 	until, _ := strconv.ParseInt(v.Get("until"), 10, 64)
 	now, _ := strconv.ParseInt(v.Get("now"), 10, 64)
-	// from sits one step before the first bucket so whisper's +step rounding
-	// lands on it; now is pinned so now-from keeps the original age and rung
-	if from != gap.Start.Add(-time.Minute).Unix() || until != gap.End.Unix() {
-		t.Errorf("from/until: %d %d want %d %d", from, until, gap.Start.Add(-time.Minute).Unix(), gap.End.Unix())
+	// from sits in the step before the first bucket, at the client's offset within a step, so
+	// whisper's +step rounding lands on it; now is pinned so now-from keeps the age and rung
+	wantFrom := timeseries.FloorToGrid(gap.Start.Add(-time.Minute), time.Minute, 0).
+		Add(time.Duration(rq.Now.Add(-rq.EffectiveAge).Unix()%60) * time.Second)
+	if from != wantFrom.Unix() || until != gap.End.Unix() {
+		t.Errorf("from/until: %d %d want %d %d", from, until, wantFrom.Unix(), gap.End.Unix())
 	}
 	if time.Duration(now-from)*time.Second != rq.EffectiveAge || rq.EffectiveAge != 7*time.Hour {
 		t.Errorf("now must be pinned to from + age: now-from=%ds age=%v", now-from, rq.EffectiveAge)
@@ -135,27 +169,27 @@ func TestTrimToExtent(t *testing.T) {
 	pts := func(secs ...int64) dataset.Points {
 		out := make(dataset.Points, len(secs))
 		for i, s := range secs {
-			out[i] = dataset.Point{Epoch: epoch.FromSecs(s), Size: 24, Values: []any{float64(s)}}
+			out[i] = dataset.Point{Epoch: epoch.FromSecs(s), Values: []any{float64(s)}}
 		}
 		return out
 	}
-	s := &dataset.Series{Points: pts(100, 110, 120, 130), PointSize: 96}
+	s := dataset.NewSeries(dataset.SeriesHeader{}, pts(100, 110, 120, 130))
 	ds := &dataset.DataSet{Results: []*dataset.Result{nil, {SeriesList: []*dataset.Series{nil, s}}}}
 	trimToExtent(ds, timeseries.Extent{})
-	if len(s.Points) != 4 {
+	if s.PointCount() != 4 {
 		t.Fatal("a zero extent must not trim")
 	}
 	trimToExtent(ds, timeseries.Extent{Start: time.Unix(100, 0), End: time.Unix(130, 0)})
-	if len(s.Points) != 4 || s.PointSize != 96 {
+	if s.PointCount() != 4 {
 		t.Fatal("points inside the extent must be kept")
 	}
 	trimToExtent(ds, timeseries.Extent{Start: time.Unix(110, 0), End: time.Unix(120, 0)})
-	if len(s.Points) != 2 || s.Points[0].Epoch != epoch.FromSecs(110) || s.PointSize != 48 {
-		t.Errorf("head and tail must be trimmed: %v (size %d)", s.Points, s.PointSize)
+	if s.PointCount() != 2 || dspoints.Of(s)[0].Epoch != epoch.FromSecs(110) {
+		t.Errorf("head and tail must be trimmed: %v", dspoints.Of(s))
 	}
 	trimToExtent(ds, timeseries.Extent{Start: time.Unix(200, 0), End: time.Unix(300, 0)})
-	if len(s.Points) != 0 || s.PointSize != 0 {
-		t.Errorf("a disjoint extent must trim every point: %v (size %d)", s.Points, s.PointSize)
+	if s.PointCount() != 0 {
+		t.Errorf("a disjoint extent must trim every point: %v", dspoints.Of(s))
 	}
 
 	trq := &timeseries.TimeRangeQuery{
@@ -166,7 +200,7 @@ func TestTrimToExtent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points; len(p) != 2 || p[0].Epoch != epoch.FromSecs(110) {
+	if p := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0]); len(p) != 2 || p[0].Epoch != epoch.FromSecs(110) {
 		t.Errorf("a fetch must be trimmed to the request's extent: %v", p)
 	}
 	if _, err := unmarshalFetch(strings.NewReader(`[{`), trq); err == nil {

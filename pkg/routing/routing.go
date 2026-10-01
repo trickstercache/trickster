@@ -275,7 +275,7 @@ func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backe
 			}
 			routes = append(routes, listenerRoute{r, frontendOptions(conf, name)})
 		}
-		if len(o.ListenerNames) == 0 && registry.NativeListeners().GetByProvider(strings.ToLower(o.Provider)) == nil {
+		if len(o.ListenerNames) == 0 && len(registry.NativeListeners().ForProvider(strings.ToLower(o.Provider))) == 0 {
 			return nil
 		}
 		return routes
@@ -393,6 +393,9 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 		if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
 			client, err := f(k, o, lm.NewRouter(), c, clients, cf)
 			if err != nil {
+				return err
+			}
+			if err := backends.ValidateStepAlignment(client, o); err != nil {
 				return err
 			}
 			clients[k] = client

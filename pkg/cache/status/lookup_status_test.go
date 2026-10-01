@@ -17,6 +17,7 @@
 package status
 
 import (
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -30,6 +31,9 @@ func TestLookupStatusString(t *testing.T) {
 		{LookupStatusHit, StatusHit},
 		{LookupStatusKeyMiss, StatusKeyMiss},
 		{LookupStatus(99), "99"},
+		{MaxLookupStatus(), StatusProxyHit},
+		{MaxLookupStatus() + 1, strconv.Itoa(int(MaxLookupStatus()) + 1)},
+		{LookupStatus(-1), "-1"},
 	}
 	for _, c := range cases {
 		require.Equal(t, c.want, c.lookup.String())

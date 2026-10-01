@@ -179,13 +179,20 @@ func (tcp *TimeseriesChunkQueryProcessor) ProcessChunk(index int, subkey string,
 		}
 	}
 	if qr.d.timeseries != nil {
-		tcp.ress[index] = qr.d.timeseries
+		ts := qr.d.timeseries
+		if c.Configuration().Provider == providerMemory {
+			// a memory cache's chunk is read in place, and the merge of the chunks takes over their
+			// series, so it is given views of them, whose series are its own
+			ts = responseView(ts, timeseries.Extent{}, false)
+		}
+		tcp.ress[index] = ts
 	}
 	return nil
 }
 
 func (tcp *TimeseriesChunkQueryProcessor) Finalize() error {
-	tcp.d.timeseries = tcp.ress.Merge(true)
+	// every chunk is this read's own, a view or a decoding, so the first needs no copy to merge into
+	tcp.d.timeseries = tcp.ress.Merge(false)
 	if tcp.d.timeseries != nil {
 		tcp.d.timeseries.SetExtents(tcp.d.timeseries.Extents().Compress(tcp.trq.Step))
 	}
@@ -195,9 +202,8 @@ func (tcp *TimeseriesChunkQueryProcessor) Finalize() error {
 // executeTimeseriesChunkQuery performs timeseries chunk querying with early cancellation
 func executeTimeseriesChunkQuery(ctx context.Context, c cache.Cache, key string, d *HTTPDocument, trq *timeseries.TimeRangeQuery, unmarshal timeseries.UnmarshalerFunc, opts *options.Options) error {
 	// Determine chunk extent and number of chunks
-	var cext timeseries.Extent
 	csize := trq.Step * time.Duration(c.Configuration().TimeseriesChunkFactor)
-	cext.Start, cext.End = trq.Extent.Start.Truncate(csize), trq.Extent.End.Truncate(csize).Add(csize)
+	cext := timeseriesChunkExtent(trq, csize)
 	cct := int(cext.End.Sub(cext.Start) / csize)
 
 	iterator := &TimeseriesChunkQueryIterator{

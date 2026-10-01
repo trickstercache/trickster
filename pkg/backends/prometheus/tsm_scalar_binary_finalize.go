@@ -38,53 +38,42 @@ func finalizeScalarBinaryWrapper(ds *dataset.DataSet, query string,
 		if result == nil {
 			continue
 		}
+		rows := rewriteFirstValues(result.SeriesList, func(series *dataset.Series, seg *dataset.Segment, i int,
+			dst []byte,
+		) ([]byte, bool) {
+			if seg.NumCols() == 0 || seg.KindAt(0, i) != dataset.KindString {
+				return dst, false
+			}
+			oldValue := seg.Text(0, i)
+			var evaluationTime float64
+			if usesEvaluationTime {
+				evaluationTime = float64(int64(seg.Epoch(i))/int64(time.Millisecond)) /
+					millisecondsPerSecond
+			}
+			if isHistogramSeries(series) {
+				updated, keep := wrapper.ApplyHistogram(oldValue, histogramOperations, evaluationTime)
+				value, ok := updated.(string)
+				if !keep || !ok {
+					return dst, false
+				}
+				return append(dst, value...), true
+			}
+			parsed, err := strconv.ParseFloat(oldValue, 64)
+			if err != nil {
+				return dst, false
+			}
+			updated, keep := wrapper.ApplyFloat(parsed, evaluationTime)
+			if !keep {
+				return dst, false
+			}
+			return strconv.AppendFloat(dst, updated, 'f', -1, 64), true
+		})
 		keptSeries := result.SeriesList[:0]
-		for _, series := range result.SeriesList {
-			if series == nil {
+		for si, series := range result.SeriesList {
+			if rows[si] == nil {
 				continue
 			}
-			keptPoints := series.Points[:0]
-			for _, point := range series.Points {
-				if len(point.Values) == 0 {
-					continue
-				}
-				oldValue, ok := point.Values[0].(string)
-				if !ok {
-					continue
-				}
-				var evaluationTime float64
-				if usesEvaluationTime {
-					evaluationTime = float64(int64(point.Epoch)/int64(time.Millisecond)) /
-						millisecondsPerSecond
-				}
-				var value string
-				if isHistogramSeries(series) {
-					updated, keep := wrapper.ApplyHistogram(oldValue, histogramOperations,
-						evaluationTime)
-					value, ok = updated.(string)
-					if !keep || !ok {
-						continue
-					}
-				} else {
-					parsed, err := strconv.ParseFloat(oldValue, 64)
-					if err != nil {
-						continue
-					}
-					updated, keep := wrapper.ApplyFloat(parsed, evaluationTime)
-					if !keep {
-						continue
-					}
-					value = strconv.FormatFloat(updated, 'f', -1, 64)
-				}
-				point.Size += len(value) - len(oldValue)
-				point.Values[0] = value
-				keptPoints = append(keptPoints, point)
-			}
-			if len(keptPoints) == 0 {
-				continue
-			}
-			series.Points = keptPoints
-			series.PointSize = keptPoints.Size()
+			series.SetSegments(rows[si])
 			series.Header.QueryStatement = query
 			if dropMetricName {
 				series.Header.Name = ""

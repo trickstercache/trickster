@@ -21,7 +21,10 @@ import (
 	"fmt"
 	"net/http"
 
+	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -30,6 +33,9 @@ import (
 // Common URL Parameter Names
 const (
 	upQuery = "query"
+	// the date_time_output_format Trickster asks the origin for
+	dateTimeOutputISO = "iso"
+	upSessionID       = "session_id"
 )
 
 var (
@@ -56,16 +62,45 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		c.observeRewriteFailure("render_error")
 		return fmt.Errorf("render ClickHouse extent: %w", err)
 	}
-	if methods.HasBody(r.Method) {
-		request.SetBody(r, []byte(query))
-		return nil
+	return c.setQuery(r, query)
+}
+
+// FetchPartialBucket fetches one partial bucket of r's query, rendered over the bucket's raw range,
+// through the object proxy cache
+func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	pb timeseries.PartialBucket, _ bool,
+) (timeseries.Timeseries, status.LookupStatus, error) {
+	if r == nil || trq == nil {
+		return nil, status.LookupStatusError, errInvalidRewriteInput
 	}
+	plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan)
+	if !ok {
+		return nil, status.LookupStatusError, errMissingQueryPlan
+	}
+	query, err := plan.RenderRange(pb)
+	if err != nil {
+		return nil, status.LookupStatusError, fmt.Errorf("render ClickHouse partial bucket: %w", err)
+	}
+	if err := c.setQuery(r, query); err != nil {
+		return nil, status.LookupStatusError, err
+	}
+	return engines.FetchPartialBucket(r, nil, trq, c.Modeler())
+}
+
+// setQuery sets the upstream request's query, asking for its DateTimes as ISO 8601 UTC, which reads
+// the same in any zone and across a clock's repeated hour
+func (c *Client) setQuery(r *http.Request, query string) error {
 	if r.URL == nil {
 		c.observeRewriteFailure("invalid_request")
 		return errInvalidRewriteRequest
 	}
 	parameters := r.URL.Query()
-	parameters.Set(upQuery, query)
+	parameters.Set(modelch.SettingDateTimeOutput, dateTimeOutputISO)
+	if methods.HasBody(r.Method) {
+		request.SetBody(r, []byte(query))
+	} else {
+		parameters.Set(upQuery, query)
+	}
 	r.URL.RawQuery = parameters.Encode()
 	return nil
 }

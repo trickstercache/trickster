@@ -67,6 +67,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	r = mech.Align(r, p.StepAlignmentOverride())
 	hl := p.Targets()
 	l := len(hl)
 	if l == 0 {
@@ -90,6 +91,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		MaxCaptureBytes:  h.maxCaptureBytes,
 		Context:          tctx.ClearResources,
 	})
+	// every slot has returned, and what is written from a capture is copied as it is written
+	defer fanout.ReleaseCaptures(results)
 
 	newestIdx := -1
 	var newestTime time.Time

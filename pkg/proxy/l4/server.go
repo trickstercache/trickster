@@ -114,7 +114,9 @@ type Server struct {
 	// ctx ends every pending upstream dial when the server is closed
 	ctx    context.Context
 	cancel context.CancelFunc
-	mu     sync.Mutex
+	// connect opens a connection to an upstream address
+	connect func(context.Context, string) (net.Conn, error)
+	mu      sync.Mutex
 	// slot wakes an accept waiting on the connection bound when a connection ends
 	slot     sync.Cond
 	listener net.Listener
@@ -131,6 +133,7 @@ func NewServer(name, protocol string, cfg *Config) *Server {
 	s := &Server{
 		name: name, protocol: protocol,
 		conns: make(map[net.Conn]struct{}), upstreams: make(map[net.Conn]struct{}),
+		connect: dialUpstream,
 	}
 	s.slot.L = &s.mu
 	s.ctx, s.cancel = context.WithCancel(context.Background())
@@ -324,10 +327,9 @@ func (s *Server) handle(client net.Conn) {
 func (s *Server) dial(up Upstream, flow Flow, route Route, timeout time.Duration) (net.Conn, Route) {
 	ctx, cancel := context.WithTimeout(s.ctx, timeout)
 	defer cancel()
-	var dialer net.Dialer
 	for {
 		began := time.Now()
-		conn, err := dialer.DialContext(ctx, "tcp", route.Addr())
+		conn, err := s.connect(ctx, route.Addr())
 		route.Dialed(time.Since(began), err)
 		if err == nil {
 			return conn, route
@@ -342,6 +344,11 @@ func (s *Server) dial(up Upstream, flow Flow, route Route, timeout time.Duration
 		}
 		route = next
 	}
+}
+
+func dialUpstream(ctx context.Context, addr string) (net.Conn, error) {
+	var d net.Dialer
+	return d.DialContext(ctx, ProtocolTCP, addr)
 }
 
 // raceState is what the dials of one race share: the first to connect takes it
@@ -365,9 +372,8 @@ func (s *Server) race(routes []Route, timeout time.Duration) (net.Conn, Route) {
 	st.settled.L = &st.mu
 	for _, route := range routes {
 		go func() {
-			var dialer net.Dialer
 			began := time.Now()
-			conn, err := dialer.DialContext(ctx, "tcp", route.Addr())
+			conn, err := s.connect(ctx, route.Addr())
 			took := time.Since(began)
 			st.mu.Lock()
 			won := err == nil && st.conn == nil

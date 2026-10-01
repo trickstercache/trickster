@@ -135,6 +135,9 @@ type Options struct {
 	// CacheKeyBody includes the complete request body in the cache identity.
 	// It is provider-owned and intentionally not configurable by end users.
 	CacheKeyBody bool `yaml:"-"`
+	// CacheKeyParamsExcluded names transport-only query parameters that a "*" CacheKeyParams leaves
+	// out of the cache key. It is provider-owned and not configurable by end users.
+	CacheKeyParamsExcluded []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
@@ -221,6 +224,7 @@ func (o *Options) Clone() *Options {
 	out.MatchHeaders = cloneConditions(o.MatchHeaders)
 	out.MatchQueryParams = cloneConditions(o.MatchQueryParams)
 	out.CacheKeyParams = slices.Clone(o.CacheKeyParams)
+	out.CacheKeyParamsExcluded = slices.Clone(o.CacheKeyParamsExcluded)
 	out.CacheKeyHeaders = slices.Clone(o.CacheKeyHeaders)
 	out.CacheKeyFormFields = slices.Clone(o.CacheKeyFormFields)
 

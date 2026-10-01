@@ -166,6 +166,12 @@ style:
 check-imports:
 	@go run hack/check-imports/main.go
 
+# fails the build if weak randomness crosses the application/test boundary;
+# pkg/util/weak/weaktest also panics at runtime once the application registers
+.PHONY: check-weak-random
+check-weak-random:
+	@go run hack/check-weak-random/main.go
+
 .PHONY: gofix-apply
 gofix-apply:
 	@go fix ./...
@@ -175,15 +181,21 @@ gofix-diff:
 	@go fix -diff ./...
 
 LINT_FLAGS ?= 
+# tests are linted in a second pass by the rules that replaced the Makefile's scans, as the
+# full set of linters is not run over them
+TEST_LINTERS := forbidigo,depguard,godox,goheader
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/devorigin; do \
-		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
+	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do \
+		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
+			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
+			-c ../../.golangci.yml ./...) || exit 1; \
 	done
 
 .PHONY: lint
-lint: check-imports spelling vulncheck gofix-diff golangci-lint
+lint: check-imports check-weak-random spelling vulncheck gofix-diff golangci-lint
 
 .PHONY: lint-all
 lint-all:
@@ -215,6 +227,15 @@ benchmark-graphite:
 	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \
 		-benchmem -count=5
 
+# DataSet build, cache codec and retained-heap measurements; run by hand, never on CI runners
+DSBENCH_BUDGET_MB ?= 1024
+DSBENCH_LOAD ?= 5s
+.PHONY: benchmark-dataset
+benchmark-dataset:
+	@go test ./pkg/timeseries/dataset/dsbench -run '^$$' -bench . -benchmem -count=6
+	@TRICKSTER_DSBENCH=1 TRICKSTER_DSBENCH_BUDGET_MB=$(DSBENCH_BUDGET_MB) TRICKSTER_DSBENCH_LOAD=$(DSBENCH_LOAD) \
+		go test ./pkg/timeseries/dataset/dsbench -run '^TestRetainedHeap$$' -v -count=1 -timeout 30m
+
 .PHONY: benchmark-mysql-acceptance
 benchmark-mysql-acceptance:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \
@@ -229,14 +250,14 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen gotest check-fmtprints check-todos check-devorigin-offline
+test: check-codegen check-weak-random gotest check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -253,6 +274,13 @@ data-race-test-inspect:
 integration-test:
 	$(MAKE) -C integration test
 	$(MAKE) -C integration data-race-test
+
+.PHONY: integration-test-no-failfast
+integration-test-no-failfast:
+	@status=0; \
+	$(MAKE) -C integration test-no-failfast || status=1; \
+	$(MAKE) -C integration data-race-test-no-failfast || status=1; \
+	exit $$status
 
 .PHONY: integration-cover
 integration-cover:
@@ -323,66 +351,6 @@ check-devorigin-offline:
 		cd hack/devorigin && GOMODCACHE="$$tmp" GOPROXY=off GOFLAGS=-mod=readonly $(GO) build -o /dev/null . && \
 		echo "hack/devorigin builds offline"
 
-.PHONY: check-license-headers
-check-license-headers: SHELL:=/bin/sh
-check-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
-	do \
-		output=$$(grep 'Licensed under the Apache License' $$file) ; \
-		if [ "$$?" != "0" ]; then \
-			echo "" ; \
-			echo "Some project code files do not have the Trickster / Apache 2.0 license header." ; \
-			echo "Run 'make insert-license-headers' and commit the changes." ; \
-			echo "" ; \
-			exit 1 ; \
-		fi ; \
-	done ; \
-	echo "" ; echo "\033[1;32m✓\033[0m All code files have the required license header." ; echo ""
-
-.PHONY: check-fmtprints
-check-fmtprints: SHELL:=/bin/sh
-check-fmtprints: # fails if there are any fmt.Print* calls outside of the approved files
-	@cd pkg && \
-	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/' | grep -v '^lb/example_test.go:'); \
-	count=0; \
-	if [ -n "$$fmtprints" ]; then \
-		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \
-	fi; \
-	if [ "$$count" -ne 0 ]; then \
-		echo "" ; \
-		echo "\033[1;31m⨉\033[0m ($$count) unexpected fmt.Print*(s) must be removed from the codebase:"; \
-		echo "" ; \
-		echo "$$fmtprints" ; \
-		echo "" ; \
-		echo "" ; \
-		exit 1; \
-	fi ; \
-	echo "" ; echo "\033[1;32m✓\033[0m No unexpected fmt.Print* calls." ; echo ""
-
-.PHONY: check-todos
-check-todos: SHELL:=/bin/sh
-check-todos: # there are 11 known "TODO"s in the codebase. This check fails if more are added.
-	@cd pkg && \
-	todos=$$(git grep -in todo | grep -v 'context\.TODO'); \
-	count=0; \
-	if [ -n "$$todos" ]; then \
-		count="$$(echo "$$todos" | wc -l | tr -d '[:space:]')" ; \
-	fi; \
-	KNOWN_TODO_COUNT=7 ; \
-	if [ "$$count" -gt $$KNOWN_TODO_COUNT ]; then \
-		newtodos=$$(($$count - $$KNOWN_TODO_COUNT)) ; \
-		echo "" ; \
-		echo "\033[1;31m$$newtodos new TODOs found in the codebase.\033[0m Do not add any new TODOs to the codebase." ;\
-		echo "" ; \
-		echo "All TODOs:" ; \
-		echo "" ; \
-		echo "$$todos" | cut -b 1-100 ; \
-		echo "" ; \
-		echo "" ; \
-		exit 1; \
-	fi ; \
-	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
-
 .PHONY: install-codespell
 install-codespell:
 	# if brew is available, use it to install codespell
@@ -399,17 +367,11 @@ install-codespell:
 
 .PHONY: spelling
 spelling:
-	@which mdspell ; \
-	if [ "$$?" != "0" ]; then \
-		echo "mdspell is not installed" ; \
-	else \
-		mdspell './README.md' './docs/**/*.md' ; \
-	fi
 	@which codespell ; \
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \
 	else \
-		codespell --skip='vendor,bin,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
+		codespell --skip='trickster-data,vendor,bin,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
 	fi
 
 .PHONY: serve
@@ -502,8 +464,16 @@ integration-env-disable:
 		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
 	@echo "integration containers disabled in $(COMPOSE_YML)"
 
+# one-shot loaders no service waits on, so developer-start can return while they still load
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed
+
 .PHONY: integration-start
 integration-start: integration-env-enable developer-start
+	@cd $(COMPOSE_ENV_DIR) && for id in $$(docker compose ps -q --status running $(INTEGRATION_SEEDERS)); do \
+		echo "Waiting for seeder $$id to finish..."; \
+		status=$$(docker wait $$id); \
+		if [ "$$status" != 0 ]; then echo "seeder $$id failed (exit $$status)" >&2; exit 1; fi; \
+	done
 
 .PHONY: integration-stop
 integration-stop:
@@ -555,6 +525,11 @@ seed-verify:
 seed-generate:
 	@cd hack/seedgen && $(GO) run . -out ../../docs/developer/environment/docker-compose-data/seed-data \
 		$(if $(SEED_PROFILE),-profile $(SEED_PROFILE),) $(if $(SEED_FORCE),-force,)
+
+# Read-only direct GreptimeDB acceptance; does not start or reseed services.
+.PHONY: developer-greptimedb-check
+developer-greptimedb-check:
+	@GO="$(GO)" sh hack/greptimedb-check.sh
 
 RUN_FLAGS ?=
 .PHONY: serve-dev

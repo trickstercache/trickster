@@ -104,6 +104,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	r = mech.Align(r, p.StepAlignmentOverride())
 	hl := p.Targets()
 	l := len(hl)
 	if l == 0 {
@@ -128,6 +129,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	winner, results, _ := fanout.WaitForFirst(r.Context(), r, hl, cfg, h.qualifies)
+	// what the caller is given is done with here: the winner alone, or, with none, every slot's
+	// result once all have returned
+	defer fanout.ReleaseCaptures(results)
 	if r.Context().Err() != nil {
 		return
 	}

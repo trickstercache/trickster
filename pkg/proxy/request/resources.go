@@ -18,7 +18,6 @@ package request
 
 import (
 	"net/http"
-	"slices"
 	"sync"
 	"time"
 
@@ -50,26 +49,35 @@ type Resources struct {
 	AlternateCacheTTL time.Duration
 	TimeRangeQuery    *timeseries.TimeRangeQuery
 	Tracer            *tracing.Tracer
-	IsMergeMember     bool
-	RequestBody       []byte
-	MergeFunc         merge.MergeFunc
-	BatchMergeFunc    merge.BatchMergeFunc
-	MergeRespondFunc  merge.RespondFunc
-	TSUnmarshaler     timeseries.UnmarshalerFunc
-	TSMarshaler       timeseries.MarshalWriterFunc
-	TSTransformer     func(timeseries.Timeseries)
-	TS                timeseries.Timeseries
-	TSReqestOptions   *timeseries.RequestOptions
-	TSMergeStrategy   int
+	// RequestBody caches the request body; it is only ever replaced, never written in place, so
+	// clones share it
+	RequestBody      []byte
+	MergeFunc        merge.MergeFunc
+	BatchMergeFunc   merge.BatchMergeFunc
+	MergeRespondFunc merge.RespondFunc
+	TSUnmarshaler    timeseries.UnmarshalerFunc
+	TSMarshaler      timeseries.MarshalWriterFunc
+	TSTransformer    func(timeseries.Timeseries)
+	// TS is the timeseries the response was rendered from; it may share points with the cache, so a
+	// reader copies it before changing its points, their values or its series' tags
+	TS              timeseries.Timeseries
+	TSReqestOptions *timeseries.RequestOptions
+	TSMergeStrategy int
 	// TSDedupToleranceNanos is the tolerance window (in nanoseconds) for
 	// clustering near-duplicate samples produced by independent fan-out
 	// shards. Zero (default) preserves the legacy exact-epoch dedup behavior.
 	TSDedupToleranceNanos int64
 
-	Response       *http.Response
-	AuthResult     *auth.AuthResult
-	AlreadyEncoded bool
-	Cancelable     bool
+	Response   *http.Response
+	AuthResult *auth.AuthResult
+	// the bools sit together, where padding after each would take the struct up a size class
+
+	// PerCredentialCache stores an unshared authorized response under its credential-bearing key, as
+	// the delta proxy cache does for the time series lanes that set it
+	PerCredentialCache bool
+	IsMergeMember      bool
+	AlreadyEncoded     bool
+	Cancelable         bool
 	// HiddenResult is the X-Trickster-Result value withheld from the client by a path that
 	// hides it, kept so the access log can still record the result
 	HiddenResult string
@@ -115,10 +123,11 @@ func (r *Resources) Clone() *Resources {
 		CacheClient:           r.CacheClient,
 		BackendClient:         r.BackendClient,
 		AlternateCacheTTL:     r.AlternateCacheTTL,
+		PerCredentialCache:    r.PerCredentialCache,
 		TimeRangeQuery:        r.TimeRangeQuery,
 		Tracer:                r.Tracer,
 		IsMergeMember:         r.IsMergeMember,
-		RequestBody:           slices.Clone(r.RequestBody),
+		RequestBody:           r.RequestBody,
 		MergeFunc:             r.MergeFunc,
 		BatchMergeFunc:        r.BatchMergeFunc,
 		MergeRespondFunc:      r.MergeRespondFunc,
@@ -197,13 +206,14 @@ func (r *Resources) Merge(r2 *Resources) {
 	r.CacheClient = r2.CacheClient
 	r.BackendClient = r2.BackendClient
 	r.AlternateCacheTTL = r2.AlternateCacheTTL
+	r.PerCredentialCache = r2.PerCredentialCache
 	r.TimeRangeQuery = r2.TimeRangeQuery
 	r.Tracer = r2.Tracer
 	if r2.AuthResult != nil {
 		r.AuthResult = r2.AuthResult
 	}
 
-	r.RequestBody = slices.Clone(r2.RequestBody)
+	r.RequestBody = r2.RequestBody
 	r.IsMergeMember = r.IsMergeMember || r2.IsMergeMember
 	r.AlreadyEncoded = r.AlreadyEncoded || r2.AlreadyEncoded
 	r.MergeFunc = r2.MergeFunc

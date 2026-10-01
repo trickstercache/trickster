@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/parts"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
@@ -155,9 +154,19 @@ func (ris RewriteInstructions) String() string {
 
 // Execute executes the Rewriter Instructions on the provided HTTP Request
 func (ris RewriteInstructions) Execute(r *http.Request) {
+	ris.execute(r, 0)
+}
+
+func (ris RewriteInstructions) execute(r *http.Request, chained int32) int32 {
+	// chained counts the chained rewriter runs so far in this execution, which a chain caps
 	for _, instr := range ris {
+		if ce, ok := instr.(*rwiChainExecutor); ok {
+			chained = ce.execute(r, chained)
+			continue
+		}
 		instr.Execute(r)
 	}
+	return chained
 }
 
 // HasTokens returns true when an instruction consumes rewrite tokens.
@@ -773,17 +782,19 @@ func (ri *rwiChainExecutor) Parse(parts []string) error {
 }
 
 func (ri *rwiChainExecutor) Execute(r *http.Request) {
+	ri.execute(r, 0)
+}
+
+func (ri *rwiChainExecutor) execute(r *http.Request, chained int32) int32 {
 	if ri.rewriter == nil {
-		return
+		return chained
 	}
-
-	// this incmements the RewriterHops counter for the request
-	// and only executes the chained rewriter the counter is below the max allowed (32)
-	h := context.IncrementedRewriterHops(r.Context(), 1)
-
-	if h < options.MaxRewriterChainExecutions {
-		ri.rewriter.Execute(r)
+	// every chained run counts toward the cap, so a cyclic chain always stops
+	chained++
+	if chained >= options.MaxRewriterChainExecutions {
+		return chained
 	}
+	return ri.rewriter.execute(r, chained)
 }
 
 func (ri *rwiChainExecutor) HasTokens() bool {

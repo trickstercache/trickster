@@ -39,7 +39,7 @@ func Clone(r *http.Request) (*http.Request, error) {
 	if rsc != nil {
 		ctx = tctx.WithResources(ctx, rsc)
 	}
-	return cloneWithContext(ctx, r)
+	return CloneWithContext(ctx, r)
 }
 
 // CloneWithoutResources clones the HTTP request and body reader without cloning Resources.
@@ -48,10 +48,15 @@ func CloneWithoutResources(r *http.Request) (*http.Request, error) {
 	if r == nil {
 		return nil, nil
 	}
-	return cloneWithContext(context.Background(), r)
+	return CloneWithContext(context.Background(), r)
 }
 
-func cloneWithContext(ctx context.Context, r *http.Request) (*http.Request, error) {
+// CloneWithContext clones the HTTP request and body reader onto ctx, which supplies the clone's
+// Resources as-is; no Resources are cloned
+func CloneWithContext(ctx context.Context, r *http.Request) (*http.Request, error) {
+	if r == nil {
+		return nil, nil
+	}
 	out := r.Clone(ctx)
 	if r.Method == http.MethodPost || r.Method == http.MethodPut ||
 		r.Method == http.MethodPatch {

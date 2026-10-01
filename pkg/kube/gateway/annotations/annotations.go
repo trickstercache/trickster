@@ -90,6 +90,8 @@ const (
 	// StickyTTL and StickyIdle end a session that long after it began, and once unused that long
 	StickyTTL  = Prefix + "sticky-ttl"
 	StickyIdle = Prefix + "sticky-idle"
+	// StepAlignment is the step alignment mode of a time series backend a cache policy generates
+	StepAlignment = Prefix + "step-alignment"
 )
 
 // Problem is one rejected annotation, for logging and for the Events and
@@ -130,6 +132,7 @@ func (s *Set) ConfiguresPolicy() bool {
 		p.CollapsedForwarding != "" || p.RewriteTarget != "" ||
 		p.HealthMode != "" || p.LoadBalancing != "" || p.LoadBalancingKey != "" ||
 		p.Sticky != "" || p.StickyKey != "" || p.StickyTTLMS > 0 || p.StickyIdleMS > 0 ||
+		p.StepAlignment != "" ||
 		len(p.RequestHeaders) > 0 || len(p.ResponseHeaders) > 0 ||
 		len(p.CORSHeaders) > 0
 }
@@ -234,6 +237,8 @@ func (s *Set) apply(key, value string) (err error) {
 		s.Policy.StickyTTLMS, err = translate.StickyDuration(value)
 	case StickyIdle:
 		s.Policy.StickyIdleMS, err = translate.StickyDuration(value)
+	case StepAlignment:
+		s.Policy.StepAlignment, err = translate.StepAlignment(value)
 	default:
 		return errors.New(reasonUnknown)
 	}

@@ -65,10 +65,8 @@ func TestSeriesHeaderRoundTrip(t *testing.T) {
 }
 
 func TestSeriesRoundTrip(t *testing.T) {
-	v := Series{
-		Header:    SeriesHeader{Name: "mem.free"},
-		PointSize: 4096,
-	}
+	pts := Points{{Epoch: 1, Values: []any{1.5, "a"}}, {Epoch: 2, Values: []any{nil, "bc"}}}
+	v := *NewSeries(SeriesHeader{Name: "mem.free"}, pts)
 	b, err := v.MarshalMsg(nil)
 	if err != nil {
 		t.Fatal(err)
@@ -81,8 +79,8 @@ func TestSeriesRoundTrip(t *testing.T) {
 	if v2.Header.Name != "mem.free" {
 		t.Fatal("Header.Name mismatch")
 	}
-	if v2.PointSize != 4096 {
-		t.Fatal("PointSize mismatch")
+	if !seriesPoints(&v2).Equal(pts) {
+		t.Fatalf("points mismatch: %v", seriesPoints(&v2))
 	}
 }
 

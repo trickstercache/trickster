@@ -19,6 +19,7 @@ package mysql
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -38,23 +39,53 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 )
 
-type nativeListenerAdapter struct{}
+type nativeListenerAdapter struct{ engines map[string]Engine }
 
 var _ native.Adapter = nativeListenerAdapter{}
 
 // NativeListenerAdapter returns the MySQL implementation of the native
 // listener extension point.
 func NativeListenerAdapter() native.Adapter {
-	return nativeListenerAdapter{}
+	return &nativeListenerAdapter{}
 }
 
-func (nativeListenerAdapter) SupportsHTTP() bool { return false }
+// NewNativeListenerAdapter serves MySQL and the supplied compatible engines.
+func NewNativeListenerAdapter(engines ...Engine) native.Adapter {
+	a := &nativeListenerAdapter{engines: make(map[string]Engine, len(engines))}
+	for _, e := range engines {
+		if e != nil && e.Name() != providers.MySQL {
+			a.engines[e.Name()] = e
+		}
+	}
+	return a
+}
+
+func (a nativeListenerAdapter) SupportsHTTP(provider string) bool {
+	e := a.engines[provider]
+	return e != nil && e.SupportsHTTP()
+}
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolMySQL }
 
-func (nativeListenerAdapter) ServesProvider(provider string) bool { return provider == providers.MySQL }
+func (a nativeListenerAdapter) ServesProvider(provider string) bool {
+	return provider == providers.MySQL || a.engines[provider] != nil
+}
 
-func (nativeListenerAdapter) Providers() []string { return []string{providers.MySQL} }
+func (a nativeListenerAdapter) Providers() []string {
+	names := []string{providers.MySQL}
+	for name := range a.engines {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+func (a nativeListenerAdapter) configFromOptions(o *bo.Options) (ProtocolConfig, error) {
+	if o == nil {
+		return ProtocolConfig{}, errors.New("nil MySQL backend options")
+	}
+	return ProtocolConfigForEngine(o, a.engines[strings.ToLower(o.Provider)])
+}
 
 func (nativeListenerAdapter) Configured(o *listenerconfig.Options) bool {
 	return o != nil && o.MySQL != nil
@@ -70,17 +101,28 @@ func (nativeListenerAdapter) ValidateListener(o *listenerconfig.Options) error {
 	return o.MySQL.Validate()
 }
 
-func (nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
+func (a nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 	if o != nil && o.MySQL != nil {
 		if err := o.MySQL.Validate(); err != nil {
 			return err
 		}
 	}
-	_, err := ProtocolConfigFromOptions(o)
+	if o != nil && a.SupportsHTTP(strings.ToLower(o.Provider)) {
+		if o.HasHTTPListener {
+			u, err := url.Parse(o.OriginURL)
+			if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+				return errors.New("an HTTP listener requires an http(s) origin_url; use a mysql listener for a MySQL-only backend")
+			}
+		}
+		if !slices.Contains(o.NativeListenerProtocols, listenerconfig.ProtocolMySQL) {
+			return nil
+		}
+	}
+	_, err := a.configFromOptions(o)
 	return err
 }
 
-func (nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string, backend *bo.Options) error {
+func (a nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string, backend *bo.Options) error {
 	if backend == nil || backend.ALBOptions == nil || backend.ALBOptions.UserRouter == nil {
 		return fmt.Errorf("mysql user router %q has no user-router configuration", name)
 	}
@@ -102,7 +144,7 @@ func (nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string, b
 		if terminal == nil {
 			return fmt.Errorf("mysql user router %q references missing backend %q", name, target)
 		}
-		if terminal.Provider != providers.MySQL {
+		if !a.ServesProvider(strings.ToLower(terminal.Provider)) {
 			return fmt.Errorf("mysql user router %q target %q must be a direct mysql backend", name, target)
 		}
 		return nil
@@ -126,8 +168,8 @@ func (nativeListenerAdapter) ValidateUserRouter(c *config.Config, name string, b
 	return nil
 }
 
-func (nativeListenerAdapter) ValidateBalancer(c *config.Config, name string, backend *bo.Options) error {
-	if !isNativeBalancer(c, backend) {
+func (a nativeListenerAdapter) ValidateBalancer(c *config.Config, name string, backend *bo.Options) error {
+	if !a.isNativeBalancer(c, backend) {
 		return fmt.Errorf("mysql load balancer %q requires a mechanism that balances sessions "+
 			"over a pool of direct mysql backends", name)
 	}
@@ -137,8 +179,8 @@ func (nativeListenerAdapter) ValidateBalancer(c *config.Config, name string, bac
 	return nil
 }
 
-func (nativeListenerAdapter) Describe(c *config.Config, listenerName string) (native.Descriptor, error) {
-	protocolConfig, _, err := nativeProtocolConfig(c, listenerName)
+func (a nativeListenerAdapter) Describe(c *config.Config, listenerName string) (native.Descriptor, error) {
+	protocolConfig, _, err := a.nativeProtocolConfig(c, listenerName)
 	if err != nil {
 		return native.Descriptor{}, err
 	}
@@ -148,8 +190,8 @@ func (nativeListenerAdapter) Describe(c *config.Config, listenerName string) (na
 	return native.Descriptor{RestartKey: protocolConfig.RestartKey}, nil
 }
 
-func (nativeListenerAdapter) Build(request native.BuildRequest) (listener.ProtocolServer, error) {
-	protocolConfig, routed, err := nativeProtocolConfig(request.Config, request.ListenerName)
+func (a nativeListenerAdapter) Build(request native.BuildRequest) (listener.ProtocolServer, error) {
+	protocolConfig, routed, err := a.nativeProtocolConfig(request.Config, request.ListenerName)
 	if err != nil {
 		return nil, err
 	}
@@ -170,21 +212,21 @@ func (nativeListenerAdapter) Build(request native.BuildRequest) (listener.Protoc
 	if !routed {
 		return NewProtocolServer(*protocolConfig)
 	}
-	resolver, targets := nativeRouteRuntime(request)
+	resolver, targets := a.nativeRouteRuntime(request)
 	if resolver == nil || len(targets) == 0 {
 		return nil, errors.New("no usable native route targets")
 	}
 	return NewRoutedProtocolServer(*protocolConfig, resolver, targets)
 }
 
-func (nativeListenerAdapter) RouteResolver(request native.BuildRequest) backends.RouteResolver {
-	resolver, _ := nativeRouteRuntime(request)
+func (a nativeListenerAdapter) RouteResolver(request native.BuildRequest) backends.RouteResolver {
+	resolver, _ := a.nativeRouteRuntime(request)
 	return resolver
 }
 
 // nativeProtocolConfig returns the configuration of the single backend mapped
 // to a MySQL listener; common listener validation guarantees uniqueness.
-func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfig, bool, error) {
+func (a nativeListenerAdapter) nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfig, bool, error) {
 	if c == nil {
 		return nil, false, nil
 	}
@@ -192,7 +234,7 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 		if !o.UsesListener(listenerName) {
 			continue
 		}
-		if isNativeRouter(c, o) {
+		if a.isNativeRouter(c, o) {
 			users, err := DownstreamCredentialsFromOptions(o)
 			if err != nil {
 				return nil, false, err
@@ -204,10 +246,10 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 			if listenerOptions := c.Listeners[listenerName]; listenerOptions != nil {
 				protocolConfig.ApplyListenerOptions(listenerOptions.MySQL)
 			}
-			protocolConfig.RestartKey = backendName + ":" + routedRestartKey(c, o, users)
+			protocolConfig.RestartKey = backendName + ":" + a.routedRestartKey(c, o, users)
 			return &protocolConfig, true, nil
 		}
-		protocolConfig, err := ProtocolConfigFromOptions(o)
+		protocolConfig, err := a.configFromOptions(o)
 		if listenerOptions := c.Listeners[listenerName]; listenerOptions != nil {
 			protocolConfig.ApplyListenerOptions(listenerOptions.MySQL)
 		}
@@ -219,17 +261,17 @@ func nativeProtocolConfig(c *config.Config, listenerName string) (*ProtocolConfi
 
 // isNativeRouter reports whether o is an ALB that commits each MySQL session to a backend:
 // by the user it authenticated as, or by a strategy that balances sessions over a pool
-func isNativeRouter(c *config.Config, o *bo.Options) bool {
-	return isNativeUserRouter(o) || isNativeBalancer(c, o)
+func (a nativeListenerAdapter) isNativeRouter(c *config.Config, o *bo.Options) bool {
+	return a.isNativeUserRouter(o) || a.isNativeBalancer(c, o)
 }
 
-func isNativeUserRouter(o *bo.Options) bool {
+func (a nativeListenerAdapter) isNativeUserRouter(o *bo.Options) bool {
 	return o != nil && o.Provider == providers.ALB && o.ALBOptions != nil &&
 		o.ALBOptions.MechanismName == names.MechanismUR && o.ALBOptions.UserRouter != nil &&
-		o.ALBOptions.UserRouter.TargetProvider == providers.MySQL
+		a.ServesProvider(strings.ToLower(o.ALBOptions.UserRouter.TargetProvider))
 }
 
-func isNativeBalancer(c *config.Config, o *bo.Options) bool {
+func (a nativeListenerAdapter) isNativeBalancer(c *config.Config, o *bo.Options) bool {
 	if c == nil || o == nil || o.Provider != providers.ALB || o.ALBOptions == nil ||
 		o.ALBOptions.UserRouter != nil || len(o.ALBOptions.Pool) == 0 ||
 		o.ALBOptions.MechanismName == names.MechanismUR ||
@@ -237,7 +279,7 @@ func isNativeBalancer(c *config.Config, o *bo.Options) bool {
 		return false
 	}
 	for _, m := range o.ALBOptions.Pool {
-		if member := c.Backends[m.Name]; member == nil || member.Provider != providers.MySQL {
+		if member := c.Backends[m.Name]; member == nil || !a.ServesProvider(strings.ToLower(member.Provider)) {
 			return false
 		}
 	}
@@ -252,10 +294,10 @@ type nativeRouteProvider interface {
 	MySQLRouteConfig() (ProtocolConfig, error)
 }
 
-func nativeRouteRuntime(request native.BuildRequest) (backends.RouteResolver, map[string]ProtocolConfig) {
+func (a nativeListenerAdapter) nativeRouteRuntime(request native.BuildRequest) (backends.RouteResolver, map[string]ProtocolConfig) {
 	routerName := backendForListener(request.Config, request.ListenerName)
 	routerOptions := request.Config.Backends[routerName]
-	if !isNativeRouter(request.Config, routerOptions) {
+	if !a.isNativeRouter(request.Config, routerOptions) {
 		return nil, nil
 	}
 	client := request.BackendClients.Get(routerName)
@@ -324,7 +366,7 @@ func routeTargetNames(o *bo.Options) []string {
 	return result
 }
 
-func routedRestartKey(c *config.Config, router *bo.Options, users map[string]string) string {
+func (a nativeListenerAdapter) routedRestartKey(c *config.Config, router *bo.Options, users map[string]string) string {
 	var identity strings.Builder
 	appendRestartIdentityField(&identity, userRouterRestartIdentity(router.ALBOptions.UserRouter))
 	appendRestartIdentityField(&identity, strconv.FormatBool(router.RequireTLS))
@@ -332,7 +374,7 @@ func routedRestartKey(c *config.Config, router *bo.Options, users map[string]str
 	appendRestartIdentityField(&identity, credentialRestartIdentity(users))
 	for _, name := range routeTargetNames(router) {
 		if target := c.Backends[name]; target != nil {
-			if protocolConfig, err := ProtocolConfigFromOptions(target); err == nil {
+			if protocolConfig, err := a.configFromOptions(target); err == nil {
 				appendRestartIdentityField(&identity, name)
 				appendRestartIdentityField(&identity, protocolConfig.RestartKey)
 			}

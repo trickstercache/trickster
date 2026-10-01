@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -260,9 +261,9 @@ func TestRankCandidateHeapMatchesFullSort(t *testing.T) {
 	candidates := make([]rankCandidate, len(values))
 	for i, value := range values {
 		candidates[i] = rankCandidate{
-			series: &dataset.Series{Header: dataset.SeriesHeader{Tags: dataset.Tags{
+			series: dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{
 				"rank": []string{"c", "a", "nan", "b", "a", "z", "inf", "ninf", "c", "d"}[i],
-			}}},
+			}}, nil),
 			value: value,
 			order: i,
 		}
@@ -327,14 +328,10 @@ func rankSeriesWithTags(name string, tags dataset.Tags, valuesAndEpochs ...any) 
 	for i := 0; i < len(valuesAndEpochs); i += 2 {
 		points = append(points, dataset.Point{
 			Epoch:  epoch.Epoch(valuesAndEpochs[i+1].(int) * 1e9),
-			Size:   32,
 			Values: []any{valuesAndEpochs[i].(string)},
 		})
 	}
-	return &dataset.Series{
-		Header: dataset.SeriesHeader{Name: name, Tags: tags},
-		Points: points,
-	}
+	return dataset.NewSeries(dataset.SeriesHeader{Name: name, Tags: tags}, points)
 }
 
 func seriesNames(ds *dataset.DataSet) []string {
@@ -359,7 +356,7 @@ func seriesPointValues(ds *dataset.DataSet) map[string][]string {
 		if series == nil {
 			continue
 		}
-		for _, point := range series.Points {
+		for _, point := range dspoints.Of(series) {
 			if len(point.Values) > 0 {
 				out[series.Header.Name] = append(out[series.Header.Name], point.Values[0].(string))
 			}

@@ -46,6 +46,7 @@ func newMemberTarget(doc *document, g ir.BackendGroup, m ir.BackendMember,
 	eff effective, opts *kubecfg.Options,
 ) (*memberTarget, error) {
 	origin := originBackend(m, eff)
+	origin.StepAlignment = doc.stepAlignment(eff)
 	switch eff.routingMode {
 	case kubecfg.RoutingModeService:
 		return &memberTarget{front: origin, frontHandler: eff.handler()}, nil

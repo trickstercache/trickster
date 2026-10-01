@@ -19,6 +19,7 @@ package epoch
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -74,5 +75,31 @@ func TestFormat(t *testing.T) {
 				t.Errorf("got %s expected %s", out, test.exp1)
 			}
 		})
+	}
+}
+
+func TestAppendFormatMatchesFormat(t *testing.T) {
+	types := []timeseries.FieldDataType{
+		0, timeseries.DateTimeUnixSecs, timeseries.DateTimeUnixMilli, timeseries.DateTimeUnixNano,
+		timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL, timeseries.DateTimeRFC3339,
+		timeseries.DateTimeRFC3339Nano, timeseries.String,
+	}
+	for _, e := range []Epoch{0, 1577836800123456789, -86400 * BillionNS, 1, 9223372036 * BillionNS} {
+		for _, typ := range types {
+			for _, quote := range []bool{false, true} {
+				want := e.Format(typ, quote)
+				if got := string(e.AppendFormat([]byte("x"), typ, quote)); got != "x"+want {
+					t.Errorf("%d as %v: got %s want x%s", e, typ, got, want)
+				}
+				tm := time.Unix(0, int64(e))
+				if got := string(AppendTime(nil, tm, typ, quote)); got != FormatTime(tm, typ, quote) {
+					t.Errorf("%d as %v: AppendTime %s", e, typ, got)
+				}
+			}
+		}
+	}
+	// RFC 3339 is written to the second, even when nanoseconds are asked for
+	if got := Epoch(1577836800123456789).Format(timeseries.DateTimeRFC3339Nano, true); got != "2020-01-01T00:00:00Z" {
+		t.Errorf("got %s", got)
 	}
 }

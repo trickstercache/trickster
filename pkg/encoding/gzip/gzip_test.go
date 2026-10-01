@@ -125,3 +125,37 @@ func TestDecompress(t *testing.T) {
 		}
 	})
 }
+
+func TestPooledEncodersKeepTheirLevel(t *testing.T) {
+	// the header's XFL byte is 2 for the best compression and 4 for the fastest
+	xfl := func(level int) byte {
+		var buf bytes.Buffer
+		enc := NewEncoder(&buf, level)
+		enc.Write([]byte("trickster"))
+		enc.Close()
+		return buf.Bytes()[8]
+	}
+	for range 3 {
+		if got := xfl(gzip.BestCompression); got != 2 {
+			t.Fatalf("best compression XFL = %d", got)
+		}
+		if got := xfl(gzip.BestSpeed); got != 4 {
+			t.Fatalf("best speed XFL = %d, a writer of another level was reused", got)
+		}
+	}
+	// an unknown level falls back to the default, which is neither
+	if got := xfl(42); got != 0 {
+		t.Fatalf("default XFL = %d", got)
+	}
+}
+
+func TestNewDecoderBadHeader(t *testing.T) {
+	dec := NewDecoder(bytes.NewReader([]byte("trickster is not gzip")))
+	if dec == nil {
+		t.Fatal("expected a decoder whose reads fail")
+	}
+	if _, err := dec.Read(make([]byte, 8)); !errors.Is(err, gzip.ErrHeader) {
+		t.Errorf("expected gzip.ErrHeader, got %v", err)
+	}
+	dec.Close()
+}

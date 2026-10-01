@@ -19,22 +19,7 @@ package influxql
 import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-
-	"github.com/influxdata/influxdb/models"
 )
-
-// WFDocument the Wire Format Document for the timeseries
-type WFDocument struct {
-	Results []*WFResult `json:"results"`
-	Err     string      `json:"error,omitempty"`
-}
-
-// WFResult is the Result section of the WFD
-type WFResult struct {
-	StatementID int           `json:"statement_id"`
-	SeriesList  []*models.Row `json:"series,omitempty"`
-	Err         string        `json:"error,omitempty"`
-}
 
 var epochMultipliers = map[byte]int64{
 	1: 1,             // nanoseconds

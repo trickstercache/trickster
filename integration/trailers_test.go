@@ -17,10 +17,13 @@
 package integration
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -66,6 +69,7 @@ func TestResponseTrailers(t *testing.T) {
 // incrementally rather than held until net/http's buffer fills.
 func TestStreamingResponseFlush(t *testing.T) {
 	release := make(chan struct{})
+	releaseHeld := sync.OnceFunc(func() { close(release) })
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -75,12 +79,19 @@ func TestStreamingResponseFlush(t *testing.T) {
 		w.Write([]byte("data: second\n\n"))
 		http.NewResponseController(w).Flush()
 	}))
-	defer origin.Close()
+	t.Cleanup(origin.Close)
+	// runs before origin.Close, which would otherwise wait forever on a handler a failed test never released
+	t.Cleanup(releaseHeld)
 
 	h := configHarness(t, addPassthroughBackend("sseproxy", origin.URL))
 	h.start(t)
 
-	resp, err := http.Get("http://" + h.BaseAddr + "/sseproxy/events")
+	// a proxy that buffers never delivers the first event, so the read is bounded
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+h.BaseAddr+"/sseproxy/events", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
@@ -90,7 +101,7 @@ func TestStreamingResponseFlush(t *testing.T) {
 	_, err = io.ReadFull(resp.Body, buf)
 	require.NoError(t, err)
 	require.Equal(t, "data: first\n\n", string(buf))
-	close(release)
+	releaseHeld()
 
 	rest, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)

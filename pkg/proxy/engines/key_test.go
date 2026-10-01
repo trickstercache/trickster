@@ -577,6 +577,26 @@ func TestDeriveCacheKey_MultiValueParams(t *testing.T) {
 		}
 	})
 
+	t.Run("wildcard CacheKeyParams skips excluded params", func(t *testing.T) {
+		keyFor := func(rawURL string) string {
+			pc := &po.Options{
+				Path: "/", CacheKeyParams: []string{"*"}, CacheKeyParamsExcluded: []string{"query_id"},
+			}
+			cfg := &bo.Options{Paths: po.List{pc}}
+			rsc := request.NewResources(cfg, pc, nil, nil, nil, nil)
+			r := httptest.NewRequest(http.MethodGet, rawURL, nil)
+			r = r.WithContext(ct.WithResources(context.Background(), rsc))
+			return newProxyRequest(r, nil).DeriveCacheKey("")
+		}
+		base := keyFor("http://h/?query=SELECT+1&param_tenant=a&query_id=1")
+		if keyFor("http://h/?query=SELECT+1&param_tenant=a&query_id=2") != base {
+			t.Error("an excluded param must not change the key")
+		}
+		if keyFor("http://h/?query=SELECT+1&param_tenant=b&query_id=1") == base {
+			t.Error("a non-excluded param must change the key")
+		}
+	})
+
 	t.Run("single-value params unchanged", func(t *testing.T) {
 		// Ensure the multi-value change doesn't alter keys for single-value params.
 		// This uses the same config as TestDeriveCacheKey to confirm stability.
@@ -957,4 +977,31 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 			t.Error("clients behind a pinned form field must share one cache key")
 		}
 	})
+}
+
+func TestDeriveCacheKeyParamValues(t *testing.T) {
+	for _, params := range [][]string{{"query", "step"}, {"*"}} {
+		cfg := &bo.Options{Paths: po.List{{Path: "/", CacheKeyParams: params}}}
+		key := func(query string, values map[string]string) string {
+			rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+			if values != nil {
+				rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{KeyParamValues: values}
+			}
+			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/?step=60&"+query, nil)
+			return newProxyRequest(r.WithContext(ct.WithResources(context.Background(), rsc)), nil).
+				DeriveCacheKey("")
+		}
+		// a statement keyed without its directive shares the key of one sent without it
+		plain := key("query=up", nil)
+		if got := key("query=up%20%23%20trickster-step-align%3Adrop", map[string]string{"query": "up"}); got != plain {
+			t.Errorf("%v: the stand-in value keyed apart", params)
+		}
+		if got := key("query=up%20%23%20trickster-step-align%3Adrop", nil); got == plain {
+			t.Errorf("%v: the directive never reached the key", params)
+		}
+		// a repeated parameter is left as it is
+		if got := key("query=up&query=up", map[string]string{"query": "up"}); got == plain {
+			t.Errorf("%v: a repeated parameter was replaced", params)
+		}
+	}
 }

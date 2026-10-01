@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const (
@@ -52,10 +53,10 @@ type Upstream struct {
 	Address string
 	// Host is the origin's host name, used for certificate verification.
 	Host string
-	// User and Password are the origin credentials from the origin_url.
+	// User and Password are the credentials from the resolved pgwire URL.
 	User     string
 	Password string
-	// Database is the default database from the origin_url path.
+	// Database is the default database from the resolved pgwire URL path.
 	Database string
 	// TLS is nil when the upstream TLS mode is disable.
 	TLS *tls.Config
@@ -98,8 +99,10 @@ type Config struct {
 	CacheTTL                 time.Duration
 	MaxObjectSize            int64
 	RetentionPoints          int
-	BackfillWindow           time.Duration
-	BackfillPoints           int
+	VolatileWindow           time.Duration
+	VolatileWindowPoints     int
+	PartialBucketTTL         time.Duration
+	StepAlignment            timeseries.StepAlignment
 	ShardMaxRange            time.Duration
 	ShardStep                time.Duration
 	ShardMaxPoints           int
@@ -116,7 +119,9 @@ type Config struct {
 func (c *Config) Terminated() bool { return c.Users != nil }
 
 // ConfigFromOptions derives the protocol configuration from backend options. The
-// origin URL format is postgres://[user[:password]@]host[:port][/database].
+// pgwire URL format is postgres://[user[:password]@]host[:port][/database].
+// postgres.upstream_url takes precedence over origin_url. HTTP-capable engines
+// can also use the HTTP origin's host with their default native port.
 func ConfigFromOptions(o *bo.Options, engine Engine) (Config, error) {
 	if o == nil {
 		return Config{}, errors.New("nil postgres backend options")
@@ -149,7 +154,8 @@ func ConfigFromOptions(o *bo.Options, engine Engine) (Config, error) {
 		Dialect:                engine.Dialect(), CacheKeyPrefix: o.CacheKeyPrefix, Engine: engine,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
 		RetentionPoints: o.TimeseriesRetentionFactor,
-		BackfillWindow:  time.Duration(o.BackfillTolerance), BackfillPoints: o.BackfillTolerancePoints,
+		VolatileWindow:  time.Duration(o.VolatileWindow), VolatileWindowPoints: o.VolatileWindowPoints,
+		PartialBucketTTL: time.Duration(o.PartialBucketTTL), StepAlignment: o.StepAlignment,
 		ShardMaxRange: time.Duration(o.MaxShardSizeTime), ShardStep: time.Duration(o.ShardStep),
 		ShardMaxPoints: o.MaxShardSizePoints, DoesShard: o.DoesShard,
 		QueryTimeout: time.Duration(o.Timeout),
@@ -185,12 +191,26 @@ func (c *Config) ApplyListenerOptions(o *pgo.ListenerOptions) {
 }
 
 func upstreamFromOptions(o *bo.Options, engine Engine) (Upstream, error) {
-	u, err := url.Parse(o.OriginURL)
+	rawURL := o.OriginURL
+	overridden := o.Postgres != nil && o.Postgres.UpstreamURL != ""
+	if overridden {
+		rawURL = o.Postgres.UpstreamURL
+	}
+	u, err := url.Parse(rawURL)
 	if err != nil {
-		return Upstream{}, fmt.Errorf("parse postgres origin URL: %w", err)
+		return Upstream{}, errors.New("parse postgres origin URL: invalid URL")
 	}
 	if u.Scheme != schemePostgres && u.Scheme != schemePostgreSQL {
-		return Upstream{}, fmt.Errorf("unsupported postgres origin scheme %q", u.Scheme)
+		if overridden || !supportsHTTP(engine) || (u.Scheme != "http" && u.Scheme != "https") {
+			return Upstream{}, fmt.Errorf("unsupported postgres origin scheme %q", u.Scheme)
+		}
+		// HTTP userinfo, port, path and query belong to another protocol.
+		// Only the host can be shared without an explicit pgwire URL.
+		host := u.Hostname()
+		if host == "" {
+			return Upstream{}, errors.New("postgres origin URL has no host")
+		}
+		u = &url.URL{Scheme: schemePostgres, Host: net.JoinHostPort(host, engine.DefaultPort())}
 	}
 	host := u.Hostname()
 	if host == "" {
@@ -302,8 +322,9 @@ func restartKey(o *bo.Options, users map[string]string) string {
 		o.OriginURL, strconv.FormatInt(int64(o.Timeout), 10), strconv.Itoa(o.MaxConcurrentConns),
 		strconv.FormatBool(o.RequireTLS), strconv.FormatBool(users != nil),
 		strconv.FormatBool(o.ProxyOnly), o.CacheKeyPrefix, o.CacheName,
-		fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%t", o.TimeseriesTTL, o.MaxObjectSizeBytes,
-			o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
+		fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t", o.TimeseriesTTL, o.MaxObjectSizeBytes,
+			o.TimeseriesRetentionFactor, o.VolatileWindow, o.VolatileWindowPoints,
+			o.PartialBucketTTL, o.StepAlignment,
 			o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard),
 		tlsRestartIdentity(o), credentialRestartIdentity(users),
 	} {

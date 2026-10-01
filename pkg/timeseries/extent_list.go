@@ -36,11 +36,18 @@ func (el ExtentList) String() string {
 	if len(el) == 0 {
 		return ""
 	}
-	lines := make([]string, len(el))
-	for i, e := range el {
-		lines[i] = e.String()
+	return string(el.AppendString(make([]byte, 0, len(el)*28)))
+}
+
+// AppendString appends the ExtentList to dst as String renders it
+func (el ExtentList) AppendString(dst []byte) []byte {
+	for i := range el {
+		if i > 0 {
+			dst = append(dst, ';')
+		}
+		dst = el[i].AppendString(dst)
 	}
-	return strings.Join(lines, ";")
+	return dst
 }
 
 // Encompasses returns true if the provided extent is contained
@@ -149,10 +156,11 @@ func (el ExtentList) Compress(step time.Duration) ExtentList {
 	return out[:k]
 }
 
-// Splice breaks apart extents in the list into smaller, contiguous extents, based on the provided
-// splice sizing options, and returns the resulting spliced list.
-// Splice assumes el is Compressed (e.g., Compress() was just ran or would be innefectual if ran)
-func (el ExtentList) Splice(step, maxRange, spliceStep time.Duration, maxPoints int) ExtentList {
+// Splice splits the Compressed el into contiguous extents per the splice sizing options, with
+// every boundary on the grid of step-sized buckets offset by phase from the Unix epoch.
+func (el ExtentList) Splice(step, phase, maxRange, spliceStep time.Duration,
+	maxPoints int,
+) ExtentList {
 	if len(el) == 0 {
 		if el == nil {
 			return nil
@@ -161,9 +169,9 @@ func (el ExtentList) Splice(step, maxRange, spliceStep time.Duration, maxPoints 
 	}
 	if maxPoints == 0 {
 		if spliceStep == 0 {
-			return el.spliceByTime(step, maxRange)
+			return el.spliceByTime(step, phase, maxRange)
 		}
-		return el.spliceByTimeAligned(step, maxRange, spliceStep)
+		return el.spliceByTimeAligned(step, phase, maxRange, spliceStep)
 	}
 	return el.spliceByPoints(step, maxPoints)
 }
@@ -179,7 +187,9 @@ const maxShardCount = 1 << 20
 // the epoch. step indicates the timeseries step, and spliceStep indicates the splicing interval
 // for aligning to the epoch. maxRange is the maximum width of a splice, and must be
 // a multiple of spliceStep or the results will be unpredictable
-func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duration) ExtentList {
+func (el ExtentList) spliceByTimeAligned(step, phase, maxRange,
+	spliceStep time.Duration,
+) ExtentList {
 	if step == 0 || maxRange == 0 || spliceStep == 0 {
 		return el.Clone()
 	}
@@ -196,14 +206,14 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 		origStart := e.Start
 		origEnd := e.End
 		if origEnd.Sub(origStart) <= maxRange &&
-			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
+			FloorToGrid(origEnd, spliceStep, 0).Equal(FloorToGrid(origStart, spliceStep, 0)) {
 			out = append(out, e)
 			continue
 		}
-		t1 := origStart.Truncate(spliceStep)
+		t1 := FloorToGrid(origStart, spliceStep, 0)
 		if t1.Before(origStart) {
 			t1 = t1.Add(spliceStep)
-			t2 := t1.Truncate(step)
+			t2 := FloorToGrid(t1, step, phase)
 			if !t2.Before(t1) {
 				t2 = t2.Add(-step)
 			}
@@ -215,12 +225,12 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 			origStart = end.Add(step)
 		}
 		if origEnd.Sub(origStart) <= maxRange &&
-			origEnd.Truncate(spliceStep).Equal(origStart.Truncate(spliceStep)) {
+			FloorToGrid(origEnd, spliceStep, 0).Equal(FloorToGrid(origStart, spliceStep, 0)) {
 			out = append(out, Extent{Start: origStart, End: origEnd, LastUsed: e.LastUsed})
 			continue
 		}
 		for i := origStart; !i.After(origEnd); {
-			end := i.Add(maxRange - step).Truncate(step)
+			end := FloorToGrid(i.Add(maxRange-step), step, phase)
 			if end.Before(i) {
 				end = i
 			}
@@ -236,7 +246,7 @@ func (el ExtentList) spliceByTimeAligned(step, maxRange, spliceStep time.Duratio
 }
 
 // spliceByTime splices extents that are not aligned to any particular epoch cadence
-func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
+func (el ExtentList) spliceByTime(step, phase, maxRange time.Duration) ExtentList {
 	if step == 0 || maxRange == 0 {
 		return el.Clone()
 	}
@@ -255,7 +265,7 @@ func (el ExtentList) spliceByTime(step, maxRange time.Duration) ExtentList {
 			continue
 		}
 		for i := e.Start; !i.After(e.End); {
-			end := i.Add(maxRange - step).Truncate(step)
+			end := FloorToGrid(i.Add(maxRange-step), step, phase)
 			if end.Before(i) {
 				end = i
 			}

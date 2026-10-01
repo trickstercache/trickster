@@ -17,8 +17,6 @@
 package model
 
 import (
-	"bytes"
-	"encoding/csv"
 	"io"
 	"strconv"
 	"strings"
@@ -26,7 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
-	dcsv "github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/csv"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 	trstr "github.com/trickstercache/trickster/v2/pkg/util/strings"
@@ -36,10 +34,17 @@ import (
 // ended and the data rows have started. We use TSVWithNamesAndTypes so it's 2.
 const dataStartRow = 2
 
+// the format hint of a Native response
+const formatNative = "Native"
+
+var (
+	unmarshalTSV       = stream.BytesUnmarshaler(newTSVDecoder)
+	unmarshalTSVReader = stream.ReaderUnmarshaler(newTSVDecoder)
+)
+
 // UnmarshalTimeseries converts a TSV blob into a Timeseries
 func UnmarshalTimeseries(data []byte, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	buf := bytes.NewReader(data)
-	return UnmarshalTimeseriesReader(buf, trq)
+	return unmarshalTSV(data, trq)
 }
 
 // UnmarshalTimeseriesAuto dispatches to Native or TSV based on data content.
@@ -48,40 +53,28 @@ func UnmarshalTimeseriesAuto(data []byte, trq *timeseries.TimeRangeQuery) (times
 	return UnmarshalTimeseries(data, trq)
 }
 
-// UnmarshalTimeseriesAutoReader auto-detects Native vs TSV from an io.Reader.
-// It checks the FormatHintReader wrapper set by the DPC engine from the
-// X-ClickHouse-Format response header.
+// UnmarshalTimeseriesAutoReader reads Native or TSV by the FormatHintReader the DPC engine wraps a
+// response in, from its X-ClickHouse-Format and X-ClickHouse-Timezone headers.
 func UnmarshalTimeseriesAutoReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	if hr, ok := reader.(*timeseries.FormatHintReader); ok && strings.EqualFold(hr.Format, "Native") {
-		return UnmarshalTimeseriesNativeReader(hr.Reader, trq)
+	if hr, ok := reader.(*timeseries.FormatHintReader); ok {
+		if strings.EqualFold(hr.Format, formatNative) {
+			return UnmarshalTimeseriesNativeReader(hr.Reader, trq)
+		}
+		// a DateTime's text that isn't UTC is in the response's zone
+		if zone, ok := LoadZone(hr.Timezone); ok && zone != nil {
+			return stream.ReaderUnmarshaler(tsvDecoderIn(zone))(hr.Reader, trq)
+		}
+		reader = hr.Reader
 	}
 	return UnmarshalTimeseriesReader(reader, trq)
 }
 
-// parser is safe for concurrency
-var parser = dcsv.NewParserMust(buildFieldDefinitions, typeToFieldDataType,
-	parseTimeField, dataStartRow)
-
 // UnmarshalTimeseriesReader converts a TSV blob into a Timeseries via io.Reader
 func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
-	cr := csv.NewReader(reader)
-	cr.Comma = '\t'
-	rows, err := cr.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-	unescapeRows(rows)
-	// for ClickHouse TSV responses, the first 2 rows are annotation rows that
-	// describe the data fields and their types, while the fourth row is
-	// the standard Header Names row.
-	if len(rows) < dataStartRow {
-		return nil, timeseries.ErrInvalidBody
-	}
-	ds, err := parser.ToDataSet(rows, trq)
-	return ds, err
+	return unmarshalTSVReader(reader, trq)
 }
 
-// buildFieldDefinitions is the FieldParserFunc passed to the Parser
+// buildFieldDefinitions returns the fields of the rows' columns, from their names and types
 func buildFieldDefinitions(rows [][]string,
 	trq *timeseries.TimeRangeQuery,
 ) (timeseries.SeriesFields, error) {
@@ -176,9 +169,8 @@ func unwrapColumnType(input string) string {
 	return input
 }
 
-// typeToFieldDataType is the DataTypeParserFunc passed to the Parser. Wide
-// integers, network, enum and fixed-width text types travel as text so the
-// Native encoder can rebuild them exactly.
+// typeToFieldDataType returns the type a column's values are read as; wide integers, network, enum
+// and fixed-width text types are text, which the Native encoder rebuilds them from exactly.
 func typeToFieldDataType(input string) timeseries.FieldDataType {
 	input = stripSize(unwrapColumnType(input))
 	switch input {
@@ -287,82 +279,59 @@ func parseClickHouseTimestamp(_, input string) (time.Time, error) {
 	return time.Parse(timeconv.SQLDateTimeLayout, input)
 }
 
-// unescapeRows decodes ClickHouse TSV escapes in place. The type row needs
-// it as much as the data (Enum declarations carry quotes), and the NULL
-// literal \N is left intact for the value parser.
-func unescapeRows(rows [][]string) {
-	for _, row := range rows {
-		for i, cell := range row {
-			if strings.IndexByte(cell, '\\') >= 0 {
-				row[i] = unescapeTSV(cell)
-			}
-		}
-	}
-}
-
-func unescapeTSV(s string) string {
-	if s == nullToken {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s))
+// appendUnescapedTSV appends s without its ClickHouse TSV escapes; an unknown escape is kept
+func appendUnescapedTSV(b, s []byte) []byte {
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if c != '\\' || i+1 >= len(s) {
-			b.WriteByte(c)
+			b = append(b, c)
 			continue
 		}
 		i++
-		switch s[i] {
+		switch c = s[i]; c {
 		case 'b':
-			b.WriteByte('\b')
+			b = append(b, '\b')
 		case 'f':
-			b.WriteByte('\f')
+			b = append(b, '\f')
 		case 'r':
-			b.WriteByte('\r')
+			b = append(b, '\r')
 		case 'n':
-			b.WriteByte('\n')
+			b = append(b, '\n')
 		case 't':
-			b.WriteByte('\t')
+			b = append(b, '\t')
 		case '0':
-			b.WriteByte(0)
+			b = append(b, 0)
 		case '\'', '\\':
-			b.WriteByte(s[i])
+			b = append(b, c)
 		default:
-			b.WriteByte('\\')
-			b.WriteByte(s[i])
+			b = append(b, '\\', c)
 		}
 	}
-	return b.String()
+	return b
 }
 
-// escapeTSV applies ClickHouse's TSV escaping so values round-trip exactly.
-func escapeTSV(s string) string {
-	if strings.IndexFunc(s, func(r rune) bool { return r < ' ' || r == '\\' || r == '\'' }) < 0 {
-		return s
-	}
-	var b strings.Builder
-	b.Grow(len(s) + 4)
+// appendEscapedTSV appends s escaped as ClickHouse TSV escapes a field, which is never quoted, so
+// values round-trip exactly
+func appendEscapedTSV(b []byte, s string) []byte {
 	for i := range len(s) {
 		switch c := s[i]; c {
 		case '\b':
-			b.WriteString("\\b")
+			b = append(b, '\\', 'b')
 		case '\f':
-			b.WriteString("\\f")
+			b = append(b, '\\', 'f')
 		case '\r':
-			b.WriteString("\\r")
+			b = append(b, '\\', 'r')
 		case '\n':
-			b.WriteString("\\n")
+			b = append(b, '\\', 'n')
 		case '\t':
-			b.WriteString("\\t")
+			b = append(b, '\\', 't')
 		case 0:
-			b.WriteString("\\0")
+			b = append(b, '\\', '0')
 		case '\'', '\\':
-			b.WriteByte('\\')
-			b.WriteByte(c)
+			b = append(b, '\\', c)
 		default:
-			b.WriteByte(c)
+			b = append(b, c)
 		}
 	}
-	return b.String()
+	return b
 }

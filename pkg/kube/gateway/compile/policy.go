@@ -81,6 +81,8 @@ type effective struct {
 	// tsProvider is the time series provider the generated backend is, or empty for a plain
 	// reverse proxy; a provider accelerates its own API paths and always caches
 	tsProvider string
+	// stepAlignment is the time series backend's step alignment mode, when the policy names one
+	stepAlignment string
 	// policy is the rule's resolved policy, or nil when it names none; the
 	// fields below it carry no default and are read straight from it
 	policy *ir.Policy
@@ -204,7 +206,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	if p.Handler != "" {
 		e.handlerName = p.Handler
 	}
-	e.tsProvider = p.Provider
+	e.tsProvider, e.stepAlignment = p.Provider, p.StepAlignment
 	// the operator-tier names: no annotation sets them, so a policy carrying one came from
 	// the configuration's own hands, such as a GatewayClass's parameters
 	if p.TracingName != "" {

@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 )
 
@@ -93,7 +94,7 @@ func (w *firstWriteWriter) ReadFrom(r io.Reader) (int64, error) {
 	if rf, ok := w.ResponseWriter.(io.ReaderFrom); ok {
 		return rf.ReadFrom(r)
 	}
-	return io.Copy(writerOnly{w.ResponseWriter}, r)
+	return tbytes.Copy(writerOnly{w.ResponseWriter}, r)
 }
 
 // writerOnly hides ReadFrom so io.Copy does not recurse into it

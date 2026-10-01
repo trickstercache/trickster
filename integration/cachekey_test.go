@@ -104,10 +104,9 @@ func TestCacheKey(t *testing.T) {
 		require.Equal(t, "DeltaProxyCache", r1["engine"],
 			"split-params POST must route through DeltaProxyCache (#969 read side)")
 
-		r2 := post(t, "15")
-		t.Logf("step=15 repeat: %v", r2)
-		require.Equal(t, status.StatusHit, r2["status"],
+		r2 := requireCacheHit(t, func() map[string]string { return post(t, "15") },
 			"repeat of identical split-params POST must hit the cache")
+		t.Logf("step=15 repeat: %v", r2)
 
 		r3 := post(t, "30")
 		t.Logf("step=30 split POST: %v", r3)

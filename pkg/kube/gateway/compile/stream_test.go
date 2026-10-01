@@ -72,7 +72,7 @@ func TestCompileStreamSingleMember(t *testing.T) {
 	// one resolvable member is a reverse proxy backend for its origin, bound to the listener
 	opts := serviceOpts(t)
 	opts.Defaults.IPACLName = "default-acl"
-	doc, err := buildDocument(streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1)), opts, nil)
+	doc, err := buildDocument(streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1)), opts, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, doc.Backends, 1)
 	b := doc.Backends["kgw--tcproute.data.db_r0"]
@@ -97,7 +97,7 @@ func TestCompileStreamWeightedAndInvalid(t *testing.T) {
 	m.Routes[0].Hostnames = []string{"shop.example.com", "**.api.example.com"}
 	opts := serviceOpts(t)
 	opts.Defaults.IPACLName = "default-acl"
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	front := doc.Backends["kgw--tcproute.data.db_r0"]
 	require.NotNil(t, front)
@@ -129,7 +129,7 @@ func TestCompileStreamEndpointMode(t *testing.T) {
 	m := streamShape(ir.ProtocolUDP, ir.BackendMember{RefIndex: 0, Weight: 1, Service: ir.ServiceTarget{
 		Namespace: "data", Name: "dns-svc", Port: 53, Scheme: ir.ProtocolUDP,
 	}})
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, doc.Discovery, 1)
 	front := doc.Backends["kgw--tcproute.data.db_r0"]
@@ -152,29 +152,29 @@ func TestCompileStreamEndpointMode(t *testing.T) {
 	// an unsupported routing mode is an error, as it is for an HTTP route
 	m.Policies = []ir.Policy{{Name: "p", RoutingMode: "elsewhere"}}
 	m.Routes[0].Rules[0].Policy = "p"
-	_, err = buildDocument(m, opts, nil)
+	_, err = buildDocument(m, opts, nil, nil)
 	require.ErrorIs(t, err, ErrUnsupportedRoutingMode)
 }
 
 func TestCompileStreamSkipsWhatItCannotServe(t *testing.T) {
 	// a route naming no known listener or group, or a group with no member, compiles to nothing
 	m := streamShape(ir.ProtocolTCP)
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, doc.Backends)
 	m = streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1))
 	m.Routes[0].Rules[0].BackendGroup = "unknown"
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, doc.Backends)
 	m = streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1))
 	m.Routes[0].Listeners = []string{"unknown"}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, doc.Backends)
 	m = streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1))
 	m.Routes[0].Rules = nil
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, doc.Backends)
 }
@@ -197,7 +197,7 @@ func TestCompileLoadBalancingPolicy(t *testing.T) {
 	t.Run("tcp endpoints, weighted rule", func(t *testing.T) {
 		m := withPolicy(streamShape(ir.ProtocolTCP, tcpMember(0, "a-svc", 3), tcpMember(1, "b-svc", 1)),
 			ir.Policy{LoadBalancing: "p2c"})
-		doc, err := buildDocument(m, endpointOpts(t), nil)
+		doc, err := buildDocument(m, endpointOpts(t), nil, nil)
 		require.NoError(t, err)
 		outer := doc.Backends["kgw--tcproute.data.db_r0"]
 		require.Equal(t, "rr", outer.ALB.Mechanism, "backendRef weights are apportioned exactly")
@@ -223,7 +223,7 @@ func TestCompileLoadBalancingPolicy(t *testing.T) {
 		} {
 			m := withPolicy(streamShape(test.protocol, tcpMember(0, "a-svc", 1)),
 				ir.Policy{LoadBalancing: "hrw", LoadBalancingKey: test.key})
-			doc, err := buildDocument(m, endpointOpts(t), nil)
+			doc, err := buildDocument(m, endpointOpts(t), nil, nil)
 			require.NoError(t, err)
 			front := doc.Backends["kgw--tcproute.data.db_r0"]
 			require.Equal(t, "hrw", front.ALB.Mechanism)
@@ -237,7 +237,7 @@ func TestCompileLoadBalancingPolicy(t *testing.T) {
 	t.Run("a key without hrw is not compiled", func(t *testing.T) {
 		m := withPolicy(streamShape(ir.ProtocolTCP, tcpMember(0, "a-svc", 1)),
 			ir.Policy{LoadBalancing: "lc", LoadBalancingKey: "client_ip"})
-		doc, err := buildDocument(m, endpointOpts(t), nil)
+		doc, err := buildDocument(m, endpointOpts(t), nil, nil)
 		require.NoError(t, err)
 		front := doc.Backends["kgw--tcproute.data.db_r0"]
 		require.Equal(t, "lc", front.ALB.Mechanism)
@@ -250,7 +250,7 @@ func TestCompileLoadBalancingPolicy(t *testing.T) {
 			Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 			Backends:  []ir.BackendGroup{g},
 		}, ir.Policy{LoadBalancing: "hrw", LoadBalancingKey: "header:X-Tenant"})
-		doc, err := buildDocument(m, endpointOpts(t), nil)
+		doc, err := buildDocument(m, endpointOpts(t), nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, "rr", doc.Backends["kgw--httproute.shop.web_r0"].ALB.Mechanism)
 		inner := doc.Backends["kgw--httproute.shop.web_r0_b0"]
@@ -258,13 +258,13 @@ func TestCompileLoadBalancingPolicy(t *testing.T) {
 		require.Equal(t, &albHRWDoc{Key: "header:X-Tenant"}, inner.ALB.HRW)
 		// a request has no server name to key on
 		m.Policies[0].LoadBalancingKey = "sni"
-		doc, err = buildDocument(m, endpointOpts(t), nil)
+		doc, err = buildDocument(m, endpointOpts(t), nil, nil)
 		require.NoError(t, err)
 		require.Nil(t, doc.Backends["kgw--httproute.shop.web_r0_b0"].ALB.HRW)
 	})
 	t.Run("service mode has no endpoints to balance", func(t *testing.T) {
 		m := withPolicy(streamShape(ir.ProtocolTCP, tcpMember(0, "a-svc", 1)), ir.Policy{LoadBalancing: "p2c"})
-		doc, err := buildDocument(m, serviceOpts(t), nil)
+		doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 		require.NoError(t, err)
 		require.Nil(t, doc.Backends["kgw--tcproute.data.db_r0"].ALB)
 	})

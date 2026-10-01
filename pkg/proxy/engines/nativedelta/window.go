@@ -24,14 +24,16 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
-// Window is a delta request window normalized to the plan's bucket cadence.
+// Window is a delta request window: the complete buckets it serves from the delta tier and the
+// partial buckets at its edges.
 type Window struct {
-	// Output is the inclusive-bucket extent of the client's request.
+	// Output is the inclusive-bucket extent of the complete buckets the response holds.
 	Output timeseries.Extent
 	// Cacheable is the extent list eligible for delta caching.
 	Cacheable timeseries.ExtentList
-	// Lower and Upper are the normalized half-open time bounds.
-	Lower, Upper time.Time
+	// Partials are the edge buckets fetched through the object tier and never delta-cached.
+	Partials     [2]timeseries.PartialBucket
+	PartialCount uint8
 	// Empty indicates the window contains no complete bucket.
 	Empty bool
 }
@@ -40,14 +42,10 @@ type Window struct {
 // window; callers should proxy the original statement instead.
 var ErrUnsupportedBounds = errors.New("unsupported delta request bounds")
 
-// BuildWindow converts a plan's comparator-preserving bounds into a bucket
-// window. Bounds are rounded inward to the cadence (lower up, upper down), so
-// partial edge buckets are excluded. When requireUpperBound is false, a plan
-// without an upper bound runs to the present: the window includes the bucket
-// containing now, and storage-side volatility (StableExtents) keeps that
-// still-filling bucket out of the cache.
-func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
-	requireUpperBound bool,
+// BuildWindow plans a delta window from raw bounds under a mode, never with a still-filling complete
+// bucket; requireUpperBound rejects open plans, which otherwise run to now
+func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time, requireUpperBound bool,
+	mode timeseries.StepAlignment,
 ) (Window, error) {
 	if plan == nil || plan.Step <= 0 || plan.LowerBound == nil ||
 		!plan.LowerBound.Inclusive ||
@@ -55,49 +53,30 @@ func BuildWindow(plan *sqlanalyzer.QueryPlan, now time.Time,
 		(plan.UpperBound != nil && requireUpperBound && plan.UpperBound.Inclusive) {
 		return Window{}, ErrUnsupportedBounds
 	}
-	rawLower := plan.LowerBound.Value
-	var rawUpper time.Time
-	switch {
-	case plan.UpperBound == nil:
-		rawUpper = sqlanalyzer.FloorBucket(now, plan.Step, plan.Phase).Add(plan.Step)
-	case plan.UpperBound.Inclusive:
-		// an inclusive upper names the final bucket; the equivalent exclusive
-		// bound is one cadence beyond it
-		rawUpper = plan.UpperBound.Value.Add(plan.Step)
-	default:
-		rawUpper = plan.UpperBound.Value
-	}
-	if rawUpper.Before(rawLower) {
+	r := plan.RequestedRange(now)
+	if r.End.Before(r.Start) {
 		return Window{}, ErrUnsupportedBounds
 	}
-	lower := sqlanalyzer.CeilBucket(rawLower, plan.Step, plan.Phase)
-	upper := sqlanalyzer.FloorBucket(rawUpper, plan.Step, plan.Phase)
-	if rawUpper.Sub(rawLower) < plan.Step || lower.After(upper) {
-		upper = lower
+	p := timeseries.PlanRange(r, plan.Step, plan.Phase, timeseries.SampleModelBucket, mode, now)
+	if !p.Full {
+		lower := timeseries.CeilToGrid(r.Start, plan.Step, plan.Phase)
+		return Window{Output: timeseries.Extent{Start: lower, End: lower}, Empty: true}, nil
 	}
-	window := Window{Lower: lower, Upper: upper}
-	if lower.Equal(upper) {
-		window.Output = timeseries.Extent{Start: lower, End: lower}
-		window.Empty = true
-		return window, nil
-	}
-	requested := timeseries.Extent{Start: lower, End: upper.Add(-plan.Step)}
-	window.Output = requested
-	window.Cacheable = timeseries.ExtentList{requested}
-	return window, nil
+	return Window{
+		Output: p.Interior, Cacheable: timeseries.ExtentList{p.Interior},
+		Partials: p.Partials, PartialCount: p.PartialCount,
+	}, nil
 }
 
-// StableExtents removes the volatile tail — everything newer than
-// now - window, truncated to the cadence — from the extents recorded against
-// a cache entry, so recently written buckets are refetched rather than served
-// stale from cache. A non-positive window disables trimming.
-func StableExtents(extents timeseries.ExtentList, step time.Duration,
+// StableExtents removes buckets newer than now - window, floored to the phased grid, from a
+// cache entry's extents, and always removes the still-aggregating bucket containing now.
+func StableExtents(extents timeseries.ExtentList, step, phase time.Duration,
 	window time.Duration, now time.Time,
 ) timeseries.ExtentList {
-	if window <= 0 || len(extents) == 0 || step <= 0 {
+	if len(extents) == 0 || step <= 0 {
 		return extents
 	}
-	cutoff := now.Add(-window).Truncate(step)
+	cutoff := timeseries.FloorToGrid(now.Add(-max(window, 0)), step, phase)
 	if cutoff.After(extents[len(extents)-1].End) {
 		return extents
 	}
@@ -106,4 +85,15 @@ func StableExtents(extents timeseries.ExtentList, step time.Duration,
 	}
 	volatile := timeseries.ExtentList{{Start: cutoff, End: extents[len(extents)-1].End}}
 	return extents.Remove(volatile, step)
+}
+
+// VolatileWindow returns a plan's volatile window: the query's own when set, else the larger of
+// the configured duration and the configured points in plan steps.
+func VolatileWindow(configured time.Duration, points int, step,
+	requested time.Duration,
+) time.Duration {
+	if requested > 0 {
+		return requested
+	}
+	return max(configured, time.Duration(points)*step)
 }

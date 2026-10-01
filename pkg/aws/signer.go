@@ -208,7 +208,7 @@ func NewRoundTripper(o *Options, next http.RoundTripper) (http.RoundTripper, err
 		return nil, err
 	}
 	if next == nil {
-		next = http.DefaultTransport
+		next = http.DefaultTransport //nolint:forbidigo // a caller that gives no transport gets Go's own
 	}
 	return &roundTripper{signer: s, next: next}, nil
 }

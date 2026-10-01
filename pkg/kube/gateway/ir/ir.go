@@ -623,6 +623,9 @@ type Policy struct {
 	// Provider makes the generated backend a time series provider (prometheus, influxdb, ...)
 	// whose own API paths it then accelerates; only a cache policy sets it
 	Provider string `json:"provider,omitempty"`
+	// StepAlignment is the step alignment mode of a generated time series backend; it applies only
+	// where the policy's provider supports it
+	StepAlignment string `json:"step_alignment,omitempty"`
 	// CacheKeyParams and CacheKeyHeaders are the request query parameters and headers hashed
 	// into the cache key of every path the policy governs; nil inherits and an empty list clears
 	CacheKeyParams  []string `json:"cache_key_params"`
@@ -658,6 +661,7 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.StickyKey, o.StickyKey)
 	overlayString(&out.StickySecret, o.StickySecret)
 	overlayString(&out.Provider, o.Provider)
+	overlayString(&out.StepAlignment, o.StepAlignment)
 	overlayString(&out.ResultHeader, o.ResultHeader)
 	if o.TimeoutMS > 0 {
 		out.TimeoutMS = o.TimeoutMS

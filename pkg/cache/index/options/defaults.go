@@ -33,4 +33,10 @@ const (
 	DefaultMaxSizeBackoffObjects = 100
 	// DefaultIndexExpiry is the default Index Expiry
 	DefaultIndexExpiry = time.Hour * 24 * 365 // 1 year
+	// DefaultScanInterval is the default interval between sweeps of the cache
+	DefaultScanInterval = time.Hour * 24
+	// DefaultScanBatchSize is the default count of objects a sweep reads before it pauses
+	DefaultScanBatchSize = 512
+	// DefaultScanBatchPause is the default pause of a sweep after each batch of objects
+	DefaultScanBatchPause = 50 * time.Millisecond
 )

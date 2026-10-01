@@ -81,7 +81,18 @@ func TestDefaultPathConfigs_QueryInCacheKey(t *testing.T) {
 	if len(paths) < 2 {
 		t.Fatal("expected at least 2 paths")
 	}
-	if !slices.Contains(paths[1].CacheKeyParams, "query") {
-		t.Fatalf("CacheKeyParams must include 'query' to differentiate SQL statements: %v", paths[1].CacheKeyParams)
+	// every parameter keys the query path, since query parameters and settings can change the
+	// result, except transport-only ones such as the per-query id
+	pc := paths[1]
+	if len(pc.CacheKeyParams) != 1 || pc.CacheKeyParams[0] != "*" {
+		t.Fatalf("CacheKeyParams must key every parameter: %v", pc.CacheKeyParams)
+	}
+	if !slices.Contains(pc.CacheKeyParamsExcluded, "query_id") {
+		t.Errorf("query_id must be excluded from the key: %v", pc.CacheKeyParamsExcluded)
+	}
+	for _, keyed := range []string{"query", "database", "param_tenant", "max_result_rows", "session_id"} {
+		if slices.Contains(pc.CacheKeyParamsExcluded, keyed) {
+			t.Errorf("%s changes results and must stay in the key", keyed)
+		}
 	}
 }

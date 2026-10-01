@@ -70,11 +70,21 @@ func echoServer(t *testing.T, prefix string, tlsConfig *tls.Config) string {
 
 func startServer(t *testing.T, protocol string, cfg *Config) (*Server, string) {
 	t.Helper()
+	return startServerWith(t, protocol, cfg, nil)
+}
+
+func startServerWith(t *testing.T, protocol string, cfg *Config,
+	connect func(context.Context, string) (net.Conn, error),
+) (*Server, string) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := NewServer("test", protocol, cfg)
+	if connect != nil {
+		srv.connect = connect
+	}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 	return srv, ln.Addr().String()

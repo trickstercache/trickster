@@ -54,16 +54,9 @@ func newOriginError(body []byte) *originError {
 	return e
 }
 
-type rowReader struct {
-	timeColumn int
-	decoder    *timeAxisDecoder
-	step       time.Duration
-	phase      time.Duration
-}
-
-func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, error) {
-	// buffers one statement's result from the borrowed origin connection. original marks
-	// the client's own statement, whose result can go back to the relay if it outgrows the limits.
+func (s *session) fetch(sql string, original bool, sink *rowSink) (*Result, error) {
+	// buffers a statement's result from the borrowed connection, or hands its rows to sink;
+	// original marks the client's statement, whose result may go to the relay if too large
 	config := &s.server.config
 	if config.QueryTimeout > 0 {
 		_ = s.upstream.SetReadDeadline(time.Now().Add(config.QueryTimeout))
@@ -73,7 +66,6 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 	}
 	result := &Result{}
 	var (
-		reader   *rowReader
 		failure  error
 		overflow bool
 		header   [frameHeaderLen]byte
@@ -88,7 +80,11 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 		}
 		size := int(length - frameLenSize)
 		if header[0] == msgDataRow && !overflow && failure == nil {
-			if result.Rows() >= config.MaxResultRows || len(result.data)+size > config.MaxResultSizeBytes {
+			rows, bytes := result.Rows(), len(result.data)
+			if sink != nil {
+				rows, bytes = sink.rows, sink.bytes
+			}
+			if rows >= config.MaxResultRows || bytes+size > config.MaxResultSizeBytes {
 				if original {
 					return nil, s.resumeRelay(result, size)
 				}
@@ -96,15 +92,15 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 				s.cancelFetch()
 			}
 		}
-		body, err := s.readFetchBody(result, header[0], size, overflow || failure != nil)
+		body, err := s.readFetchBody(result, header[0], size, overflow || failure != nil, sink != nil)
 		if err != nil {
 			return nil, err
 		}
 		switch header[0] {
 		case msgRowDescription:
 			result.RowDescription = body
-			if plan != nil {
-				if reader, err = plan.rowReader(s, body); err != nil && failure == nil {
+			if sink != nil {
+				if err = sink.describe(s, body); err != nil && failure == nil {
 					failure = err
 				}
 			}
@@ -112,7 +108,12 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 			if overflow || failure != nil {
 				continue
 			}
-			if err = result.keepRow(size, reader); err != nil {
+			if sink != nil {
+				err = sink.row(body)
+			} else {
+				result.keepRow()
+			}
+			if err != nil {
 				failure = err
 			}
 		case msgCommandComplete:
@@ -139,21 +140,26 @@ func (s *session) fetch(sql string, original bool, plan *deltaPlan) (*Result, er
 			if failure != nil {
 				return nil, failure
 			}
-			if reader != nil {
-				result.sortByTime()
-			}
 			return result, nil
 		}
 	}
 }
 
-func (s *session) readFetchBody(result *Result, typ byte, size int, discard bool) ([]byte, error) {
-	// reads a message body. A kept DataRow lands directly at the
-	// end of the result's row data, so a row is copied exactly once.
+func (s *session) readFetchBody(result *Result, typ byte, size int, discard, sunk bool) ([]byte, error) {
+	// reads a message body: a kept DataRow straight onto the result's row data, so it is copied once,
+	// or a sink's into the reused row buffer, for the sink to take its own copy
 	if typ == msgDataRow {
 		if discard {
 			_, err := io.CopyN(io.Discard, s.upstreamReader, int64(size))
 			return nil, err
+		}
+		if sunk {
+			if cap(s.rowBuffer) < size {
+				s.rowBuffer = make([]byte, size)
+			}
+			body := s.rowBuffer[:size]
+			_, err := io.ReadFull(s.upstreamReader, body)
+			return body, err
 		}
 		start := len(result.data)
 		result.data = append(result.data, make([]byte, size)...)
@@ -171,21 +177,9 @@ func (s *session) readFetchBody(result *Result, typ byte, size int, discard bool
 	return body, err
 }
 
-func (r *Result) keepRow(size int, reader *rowReader) error {
-	// records the row just read into the result's data, with its bucket time.
-	if reader == nil {
-		r.ends = append(r.ends, uint32(len(r.data))) // #nosec G115 -- bounded by MaxResultSizeBytes
-		return nil
-	}
-	start := len(r.data) - size
-	bucket, err := bucketTime(r.data[start:], reader.timeColumn, reader.decoder, reader.step, reader.phase)
-	if err != nil {
-		r.data = r.data[:start]
-		return err
-	}
+func (r *Result) keepRow() {
+	// records the row just read into the result's data
 	r.ends = append(r.ends, uint32(len(r.data))) // #nosec G115 -- bounded by MaxResultSizeBytes
-	r.times = append(r.times, bucket)
-	return nil
 }
 
 func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {
@@ -193,7 +187,7 @@ func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {
 	// result is neither canceled nor fetched twice. Nothing here is sized by the origin's row.
 	buffer := pumpBuffers.Get().(*[]byte)
 	defer pumpBuffers.Put(buffer)
-	out := &frameWriter{conn: s.client, timeout: s.server.config.WriteTimeout, buffer: (*buffer)[:0]}
+	out := &frameWriter{w: deadlineWriter{s.client, s.server.config.WriteTimeout}, buffer: (*buffer)[:0]}
 	if buffered.RowDescription != nil {
 		out.frame(msgRowDescription, buffered.RowDescription)
 	}
@@ -212,16 +206,38 @@ func (s *session) resumeRelay(buffered *Result, pendingRowSize int) error {
 	return errRelayResumed
 }
 
+// frames messages into a fixed buffer, writing it out as it fills; after a failed write, the rest
+// are dropped
 type frameWriter struct {
+	w      io.Writer
+	buffer []byte
+	err    error
+}
+
+// sets a write deadline before each write, so each can take the timeout
+type deadlineWriter struct {
 	conn    net.Conn
 	timeout time.Duration
-	buffer  []byte
-	err     error
+}
+
+func (d deadlineWriter) Write(b []byte) (int, error) {
+	if d.timeout > 0 {
+		_ = d.conn.SetWriteDeadline(time.Now().Add(d.timeout))
+	}
+	return d.conn.Write(b)
+}
+
+func (w *frameWriter) write(b []byte) {
+	if w.err == nil {
+		if _, err := w.w.Write(b); err != nil {
+			w.err = io.ErrClosedPipe
+		}
+	}
 }
 
 func (w *frameWriter) flush() {
-	if w.err == nil && len(w.buffer) > 0 && !writeAll(w.conn, w.buffer, w.timeout) {
-		w.err = io.ErrClosedPipe
+	if len(w.buffer) > 0 {
+		w.write(w.buffer)
 	}
 	w.buffer = w.buffer[:0]
 }
@@ -243,9 +259,16 @@ func (w *frameWriter) frame(typ byte, body []byte) {
 	}
 	// a body that does not fit is written from where it lies instead of being copied
 	w.flush()
-	if w.err == nil && !writeAll(w.conn, body, w.timeout) {
-		w.err = io.ErrClosedPipe
+	w.write(body)
+}
+
+// frames a CommandComplete for tag, copied into the buffer so that the tag need not live on
+func (w *frameWriter) commandComplete(tag []byte) {
+	w.header(msgCommandComplete, len(tag)+1)
+	if len(w.buffer)+len(tag)+1 > cap(w.buffer) {
+		w.flush()
 	}
+	w.buffer = append(append(w.buffer, tag...), 0)
 }
 
 func (w *frameWriter) stream(typ byte, from io.Reader, size int) {

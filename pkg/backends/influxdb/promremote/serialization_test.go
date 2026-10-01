@@ -27,6 +27,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote/prompb"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -96,9 +97,9 @@ func TestTimeseriesRoundTrip(t *testing.T) {
 		series.Header.TagFieldsList[1].Name != "job" {
 		t.Fatalf("tag fields = %#v", series.Header.TagFieldsList)
 	}
-	if series.Points[0].Epoch != epoch.Epoch(100*int64(time.Millisecond)) ||
-		series.Points[1].Epoch != epoch.Epoch(200*int64(time.Millisecond)) {
-		t.Fatalf("points were not sorted: %#v", series.Points)
+	if dspoints.Of(series)[0].Epoch != epoch.Epoch(100*int64(time.Millisecond)) ||
+		dspoints.Of(series)[1].Epoch != epoch.Epoch(200*int64(time.Millisecond)) {
+		t.Fatalf("points were not sorted: %#v", dspoints.Of(series))
 	}
 
 	body, err := MarshalTimeseries(ds, nil, 200)
@@ -184,17 +185,14 @@ func TestMarshalTimeseriesErrors(t *testing.T) {
 	if _, err := MarshalTimeseries(nil, nil, 200); err == nil {
 		t.Fatal("nil dataset must fail")
 	}
-	ds := &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{{
-		Header: dataset.SeriesHeader{Tags: dataset.Tags{"job": "api"}},
-		Points: dataset.Points{{Epoch: 1, Values: []any{float64(1)}}},
-	}}}}}
+	ds := &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"job": "api"}}, dataset.Points{{Epoch: 1, Values: []any{float64(1)}}})}}}}
 	if _, err := MarshalTimeseries(ds, nil, 200); err == nil {
 		t.Fatal("sub-millisecond timestamp must fail")
 	}
-	ds.Results[0].SeriesList[0].Points[0] = dataset.Point{
+	ds.Results[0].SeriesList[0].SetPoints(dataset.Points{{
 		Epoch:  epoch.Epoch(time.Millisecond),
 		Values: []any{"1"},
-	}
+	}})
 	if _, err := MarshalTimeseries(ds, nil, 200); err == nil {
 		t.Fatal("non-float sample must fail")
 	}

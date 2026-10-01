@@ -355,12 +355,11 @@ func dataSetPointKeys(ds *dataset.DataSet, pairingQuery string) map[replicaPoint
 				continue
 			}
 			hash := ds.PairingHash(&series.Header, pairingQuery)
-			for _, point := range series.Points {
-				keys[replicaPointKey{
-					statement: result.StatementID,
-					series:    hash,
-					epoch:     int64(point.Epoch),
-				}] = struct{}{}
+			segs := series.Segments()
+			for k := range segs {
+				for _, e := range segs[k].Epochs() {
+					keys[replicaPointKey{statement: result.StatementID, series: hash, epoch: int64(e)}] = struct{}{}
+				}
 			}
 		}
 	}
@@ -382,21 +381,11 @@ func pruneDataSetPoints(ds *dataset.DataSet, pairingQuery string,
 				continue
 			}
 			hash := ds.PairingHash(&series.Header, pairingQuery)
-			var pointCount int
-			for _, point := range series.Points {
-				key := replicaPointKey{
-					statement: result.StatementID,
-					series:    hash,
-					epoch:     int64(point.Epoch),
-				}
-				if _, ok := complete[key]; !ok {
-					continue
-				}
-				series.Points[pointCount] = point
-				pointCount++
-			}
-			series.Points = series.Points[:pointCount]
-			if pointCount == 0 {
+			series.SetSegments(series.Segments().Filter(func(seg *dataset.Segment, i int) bool {
+				_, ok := complete[replicaPointKey{statement: result.StatementID, series: hash, epoch: int64(seg.Epoch(i))}]
+				return ok
+			}))
+			if series.PointCount() == 0 {
 				continue
 			}
 			result.SeriesList[seriesCount] = series
@@ -407,7 +396,7 @@ func pruneDataSetPoints(ds *dataset.DataSet, pairingQuery string,
 }
 
 func replicaConflictCount(contributions []*gatherContribution) int {
-	points := make(map[replicaPointKey][]any)
+	points := make(map[replicaPointKey]replicaRow)
 	var conflicts int
 	for _, contribution := range contributions {
 		ds, ok := contribution.data.(*dataset.DataSet)
@@ -423,22 +412,80 @@ func replicaConflictCount(contributions []*gatherContribution) int {
 					continue
 				}
 				hash := series.Header.CalculateHash()
-				for _, point := range series.Points {
-					key := replicaPointKey{
-						statement: result.StatementID,
-						series:    hash,
-						epoch:     int64(point.Epoch),
-					}
-					if preferred, exists := points[key]; exists {
-						if !reflect.DeepEqual(preferred, point.Values) {
-							conflicts++
+				segs := series.Segments()
+				width := segs.NumCols()
+				for k := range segs {
+					for i, e := range segs[k].Epochs() {
+						key := replicaPointKey{statement: result.StatementID, series: hash, epoch: int64(e)}
+						row := replicaRow{seg: &segs[k], row: i, width: width}
+						if preferred, exists := points[key]; exists {
+							if !preferred.equal(row) {
+								conflicts++
+							}
+							continue
 						}
-						continue
+						points[key] = row
 					}
-					points[key] = point.Values
 				}
 			}
 		}
 	}
 	return conflicts
+}
+
+// replicaRow is a row in place, as wide as its series' first, as the series' Points are
+type replicaRow struct {
+	seg   *dataset.Segment
+	row   int
+	width int
+}
+
+// equal reports whether two rows' values are equal as reflect.DeepEqual finds their Points' values: of
+// one width, and each value of one kind and equal, which a NaN never is
+func (r replicaRow) equal(o replicaRow) bool {
+	if r.width != o.width {
+		return false
+	}
+	for c := range r.width {
+		ka, kb := r.kindAt(c), o.kindAt(c)
+		if ka != kb {
+			return false
+		}
+		switch ka {
+		case dataset.KindNull:
+		case dataset.KindBool:
+			if r.seg.Bool(c, r.row) != o.seg.Bool(c, o.row) {
+				return false
+			}
+		case dataset.KindInt64:
+			if r.seg.Int64(c, r.row) != o.seg.Int64(c, o.row) {
+				return false
+			}
+		case dataset.KindUint64:
+			if r.seg.Uint64(c, r.row) != o.seg.Uint64(c, o.row) {
+				return false
+			}
+		case dataset.KindFloat64:
+			if r.seg.Float64(c, r.row) != o.seg.Float64(c, o.row) {
+				return false
+			}
+		case dataset.KindString:
+			if r.seg.Text(c, r.row) != o.seg.Text(c, o.row) {
+				return false
+			}
+		default:
+			if !reflect.DeepEqual(r.seg.Value(c, r.row), o.seg.Value(c, o.row)) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// kindAt returns the kind of value c, null past the row's own columns
+func (r replicaRow) kindAt(c int) dataset.Kind {
+	if c >= r.seg.NumCols() {
+		return dataset.KindNull
+	}
+	return r.seg.KindAt(c, r.row)
 }

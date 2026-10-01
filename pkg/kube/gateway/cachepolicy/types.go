@@ -132,6 +132,8 @@ type Spec struct {
 	StickyIdle string `json:"stickyIdle,omitempty"`
 	// ResultHeader is Expose or Hide: whether X-Trickster-Result reaches the client
 	ResultHeader string `json:"resultHeader,omitempty"`
+	// StepAlignment is the step alignment mode of the time series backend Provider makes
+	StepAlignment string `json:"stepAlignment,omitempty"`
 }
 
 // CORS is how origin CORS headers are combined with configured ones

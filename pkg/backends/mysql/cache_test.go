@@ -17,6 +17,7 @@
 package mysql
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -35,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/vitess"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -82,6 +84,31 @@ func TestCachedQueryResultRoundTrip(t *testing.T) {
 		len(got.result.Rows) != 1 || got.result.Rows[0][0].ToString() != "42" ||
 		len(got.extents) != 1 || !got.extents[0].Start.Equal(time.Unix(60, 0)) {
 		t.Fatalf("round trip mismatch: %+v", got)
+	}
+}
+
+func TestResultCodecAppendsInPlace(t *testing.T) {
+	result := &sqltypes.Result{
+		Fields:      []*querypb.Field{{Name: "t", Type: querypb.Type_INT64}, {Name: "m", Type: querypb.Type_VARCHAR}},
+		Rows:        [][]sqltypes.Value{{sqltypes.NewInt64(60), sqltypes.NewVarChar("cpu")}, {sqltypes.NewInt64(120), sqltypes.NULL}},
+		StatusFlags: 0x0102,
+	}
+	want, err := resultCodec{}.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prefix := []byte("envelope")
+	got, err := resultCodec{}.AppendMarshal(bytes.Clone(prefix), result)
+	if err != nil || !bytes.Equal(got[:len(prefix)], prefix) || !bytes.Equal(got[len(prefix):], want) {
+		t.Fatalf("appended = %x, %v; want %x after the prefix", got, err, want)
+	}
+	back, err := resultCodec{}.Unmarshal(got[len(prefix):])
+	if err != nil || back.StatusFlags != result.StatusFlags || len(back.Rows) != 2 ||
+		back.Rows[0][1].ToString() != "cpu" || !back.Rows[1][1].IsNull() {
+		t.Fatalf("round trip = %+v, %v", back, err)
+	}
+	if _, err := (resultCodec{}).AppendMarshal(prefix, nil); err == nil {
+		t.Error("a nil result was marshaled")
 	}
 }
 
@@ -163,16 +190,22 @@ func TestMergeAndCropDeltaResults(t *testing.T) {
 		OutputColumn: "time", GroupColumns: []string{"metric"},
 		OutputUnit: timeseries.DateTimeUnixSecs,
 	}
-	merged, err := dpcTestHandler.mergeResults(parts, plan)
+	d, err := dpcTestHandler.deltaOf(plan, parts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// where parts share a bucket and group, the later part's row wins
+	merged, err := dpcTestHandler.deltaResult(d, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(merged.Rows) != 4 || merged.Rows[0][1].ToString() != "a" ||
-		merged.Rows[2][2].ToString() != "4" {
+		merged.Rows[0][2].ToString() != "3" || merged.Rows[2][2].ToString() != "4" {
 		t.Fatalf("unexpected merged rows: %+v", merged.Rows)
 	}
-	cropped, err := dpcTestHandler.cropAndSortResult(merged, plan,
-		timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(120, 0)})
+	cropped, err := dpcTestHandler.deltaResult(&nativedelta.Delta{
+		Header: d.Header, DS: d.DS.View(timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(120, 0)}),
+	}, plan)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,105 +230,13 @@ func TestMergeResultsPreservesNullAndEmptyGroupValues(t *testing.T) {
 		OutputColumn: "time", GroupColumns: []string{"metric"},
 		OutputUnit: timeseries.DateTimeUnixSecs,
 	}
-	merged, err := dpcTestHandler.mergeResults([]*sqltypes.Result{
-		result(sqltypes.NULL, 1), result(sqltypes.NewVarChar(""), 2),
-	}, plan)
+	merged, err := throughDelta(plan, result(sqltypes.NULL, 1), result(sqltypes.NewVarChar(""), 2))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(merged.Rows) != 2 || !merged.Rows[0][1].IsNull() ||
 		merged.Rows[1][1].IsNull() || merged.Rows[1][1].ToString() != "" {
 		t.Fatalf("NULL and empty group values were not preserved: %+v", merged.Rows)
-	}
-}
-
-func TestDeltaRetentionDoesNotTruncateCurrentResponse(t *testing.T) {
-	const points = 6
-	fields := []*querypb.Field{
-		{Name: "time", Type: querypb.Type_INT64},
-		{Name: "value", Type: querypb.Type_INT64},
-	}
-	rows := make([][]sqltypes.Value, points)
-	for i := range points {
-		rows[i] = []sqltypes.Value{
-			sqltypes.NewInt64(int64(i * 60)), sqltypes.NewInt64(int64(i)),
-		}
-	}
-	merged := &sqltypes.Result{Fields: fields, Rows: rows}
-	plan := &sqlanalyzer.QueryPlan{
-		Step: time.Minute, OutputColumn: "time", OutputUnit: timeseries.DateTimeUnixSecs,
-	}
-	requested := timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(300, 0)}
-	h := &protocolHandler{config: ProtocolConfig{RetentionPoints: 3}}
-
-	response, retained, retainedExtents, err := h.finalizeDeltaResult(merged,
-		timeseries.ExtentList{requested}, plan, requested, time.Unix(3600, 0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(response.Rows) != points || response.Rows[0][0].ToString() != "0" ||
-		response.Rows[points-1][0].ToString() != "300" {
-		t.Fatalf("current response was retention-truncated: %+v", response.Rows)
-	}
-	if len(retained.Rows) != 3 || retained.Rows[0][0].ToString() != "180" ||
-		retained.Rows[2][0].ToString() != "300" {
-		t.Fatalf("cached result did not apply retention: %+v", retained.Rows)
-	}
-	if len(retainedExtents) != 1 || !retainedExtents[0].Start.Equal(time.Unix(180, 0)) ||
-		!retainedExtents[0].End.Equal(time.Unix(300, 0)) {
-		t.Fatalf("cached extents did not apply retention: %v", retainedExtents)
-	}
-}
-
-func TestSortedDeltaFinalizationPreservesGroupedBoundaries(t *testing.T) {
-	fields := []*querypb.Field{
-		{Name: "time", Type: querypb.Type_INT64},
-		{Name: "metric", Type: querypb.Type_VARCHAR},
-		{Name: "value", Type: querypb.Type_INT64},
-	}
-	rows := make([][]sqltypes.Value, 0, 12)
-	for _, epoch := range []int64{0, 60, 120} {
-		for _, metric := range []string{"a", "b"} {
-			rows = append(rows, []sqltypes.Value{
-				sqltypes.NewInt64(epoch), sqltypes.NewVarChar(metric), sqltypes.NewInt64(epoch),
-			})
-		}
-	}
-	merged := &sqltypes.Result{Fields: fields, Rows: rows}
-	plan := &sqlanalyzer.QueryPlan{
-		Step: time.Minute, OutputColumn: "time", GroupColumns: []string{"metric"},
-		OutputUnit: timeseries.DateTimeUnixSecs,
-	}
-	h := &protocolHandler{config: ProtocolConfig{RetentionPoints: 2}}
-	response, retained, extents, err := h.finalizeDeltaResult(merged,
-		timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(120, 0)}},
-		plan, timeseries.Extent{Start: time.Unix(60, 0), End: time.Unix(60, 0)},
-		time.Unix(3600, 0))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(response.Rows) != 2 || response.Rows[0][0].ToString() != "60" ||
-		response.Rows[1][1].ToString() != "b" {
-		t.Fatalf("cropped grouped response = %+v", response.Rows)
-	}
-	if len(retained.Rows) != 4 || retained.Rows[0][0].ToString() != "60" ||
-		retained.Rows[3][0].ToString() != "120" || &retained.Rows[0] == &merged.Rows[2] {
-		t.Fatalf("retained grouped result = len/cap %d/%d, rows %+v",
-			len(retained.Rows), cap(retained.Rows), retained.Rows)
-	}
-	if len(extents) != 1 || !extents[0].Start.Equal(time.Unix(60, 0)) {
-		t.Fatalf("retained extents = %v", extents)
-	}
-}
-
-func TestStableExtentsExcludesBackfillWindow(t *testing.T) {
-	h := &protocolHandler{config: ProtocolConfig{BackfillPoints: 2}}
-	plan := &sqlanalyzer.QueryPlan{Step: time.Minute}
-	now := time.Unix(600, 0)
-	extents := timeseries.ExtentList{{Start: time.Unix(0, 0), End: time.Unix(600, 0)}}
-	got := h.stableExtents(extents, plan, now)
-	if len(got) != 1 || !got[0].End.Equal(time.Unix(420, 0)) {
-		t.Fatalf("stable extents = %v", got)
 	}
 }
 
@@ -414,7 +355,7 @@ func TestDeltaCoveragePlansExpectedOriginSQLAndMergedResult(t *testing.T) {
 		})
 	}
 
-	shards := need.Splice(plan.Step, 0, 0, 2)
+	shards := need.Splice(plan.Step, plan.Phase, 0, 0, 2)
 	if len(shards) != 3 {
 		t.Fatalf("sharded miss = %v, want three two-point extents", shards)
 	}
@@ -441,7 +382,7 @@ func TestDeltaCoveragePlansExpectedOriginSQLAndMergedResult(t *testing.T) {
 		}
 		parts = append(parts, &sqltypes.Result{Fields: fields, Rows: rows})
 	}
-	merged, err := dpcTestHandler.mergeResults(parts, plan)
+	merged, err := throughDelta(plan, parts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,8 +414,7 @@ func TestCacheIdentityIsolationAndCanonicalization(t *testing.T) {
 		session := &upstreamSession{database: database, timeZone: timeZone}
 		connection := &vtmysql.Conn{User: user}
 		if analysis.Plan != nil {
-			return h.queryCacheKey(connection, session, "dpc",
-				analysis.Plan.CanonicalSQL, analysis.Plan.IdentitySuffix)
+			return h.planCacheKey(connection, session, "dpc", analysis.Plan)
 		}
 		if analysis.Mode != sqlanalyzer.CacheModeObject {
 			tb.Fatalf("Analyze(%q): mode=%s reason=%s err=%v", query,

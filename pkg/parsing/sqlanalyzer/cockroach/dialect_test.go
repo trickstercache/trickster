@@ -168,6 +168,15 @@ func TestPostRender(t *testing.T) {
 	if err != nil || !strings.Contains(rendered, "v::bigint") || !strings.Contains(rendered, "'2026-09-18T10:00:00Z'") {
 		t.Fatalf("got %q %v", rendered, err)
 	}
+	// a statement with no upper bound renders a range running to now through the same spelling
+	open := a.Analyze(dialectBucketSelect+"ts >= '2026-09-18T08:00:00Z'"+dialectGrouped, time.Time{})
+	if open.Plan == nil {
+		t.Fatalf("got %+v", open)
+	}
+	rendered, err = open.Plan.RenderRange(timeseries.PartialBucket{Lower: dialectExtent.Start})
+	if err != nil || !strings.Contains(rendered, "v::bigint") || strings.Contains(rendered, "ts <") {
+		t.Fatalf("got %q %v", rendered, err)
+	}
 	rejected := a.Analyze(strings.Replace(dialectBucketSelect, "max(", "max(forbidden + ", 1)+where+dialectGrouped, time.Time{})
 	if rejected.Mode != sqlanalyzer.CacheModeObject || rejected.Reason != sqlanalyzer.ReasonUnsupportedFormat ||
 		!errors.Is(rejected.Err, ErrUnsupportedStatement) {
@@ -185,7 +194,7 @@ func TestMaskPlaceholders(t *testing.T) {
 
 func TestInclusiveUpperOneTickBelowBoundaryKeepsItsBucket(t *testing.T) {
 	a := NewAnalyzer(Options{
-		BucketMatchers: DataFusionBucketMatchers(), BoundPrecision: time.Microsecond, RoundUnalignedTimeBounds: true,
+		BucketMatchers: DataFusionBucketMatchers(), BoundPrecision: time.Microsecond,
 	})
 	for name, test := range map[string]struct {
 		where string

@@ -164,6 +164,7 @@ leave an operator believing a setting is in force when it is not.
 | `trickstercache.org/sticky` | `cookie`, `header`, `table`, `none` | keeps a client on the endpoint it first reached, in the endpoint routing mode; see below |
 | `trickstercache.org/sticky-key` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `table` mode keeps a client's endpoint by; `client_ip` unless set. `sni`, `user` and `proxy_tlv:<type>` are accepted but cannot be read from a request, so they keep `client_ip` |
 | `trickstercache.org/sticky-ttl`, `trickstercache.org/sticky-idle` | a duration of at least `1s` | a session ends that long after it began (`1h` unless set), or once unused that long |
+| `trickstercache.org/step-alignment` | `truncate`, `drop`, `partial`, `partial_start`, `partial_end`, `off` | the [step alignment](./step-alignment.md) mode of the time series backend a cache policy's `provider` makes; it applies only where that provider supports the mode, and the provider's default applies otherwise |
 
 Durations require a unit: `600` is rejected, `600s` is not.
 
@@ -348,6 +349,7 @@ independently. These are the equivalents:
 | `health-mode` | `healthMode` |
 | `load-balancing`, `load-balancing-key` | `loadBalancing`, `loadBalancingKey` |
 | `sticky`, `sticky-key`, `sticky-ttl`, `sticky-idle` | `sticky`, `stickyKey`, `stickyTTL`, `stickyIdle`, or an HTTPRoute rule's `sessionPersistence` for a cookie or header session |
+| `step-alignment` | `stepAlignment` |
 | `use-regex` | an HTTPRoute path match of type `RegularExpression` |
 | `rewrite-target` | a `URLRewrite` filter, whose `ReplacePrefixMatch` replaces the matched prefix and `ReplaceFullPath` the whole path |
 

@@ -88,7 +88,7 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 	u := urls.BuildUpstreamURL(r, c.BaseUpstreamURL())
 	qp, _, _ := params.GetRequestValues(r)
 	// Round time param down to the nearest 15 seconds if it exists
-	if p := qp.Get(upTime); p != "" {
+	if p := qp.Get(upTime); p != "" && !c.hooks.PreserveQueryGrid {
 		if i, err := strconv.ParseInt(p, 10, 64); err == nil {
 			qp.Set(upTime, strconv.FormatInt(time.Unix(i, 0).Truncate(c.instantRounder).Unix(), 10))
 		}

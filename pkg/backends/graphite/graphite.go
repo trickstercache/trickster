@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -157,7 +158,24 @@ func (c *Client) Close() {
 	}
 }
 
+// StopClients stops background ladder learning in every Graphite client in the collection
+func StopClients(clients backends.Backends) {
+	for _, c := range clients {
+		if gc, ok := c.(*Client); ok {
+			gc.Close()
+		}
+	}
+}
+
 var _ types.NewBackendClientFunc = NewClient
+
+const stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate
+
+// StepAlignments returns the modes Graphite supports and its default, truncate: whisper returns
+// whole storage buckets only, so there are no partial buckets to fetch
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return stepAlignments, timeseries.StepAlignmentTruncate
+}
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,

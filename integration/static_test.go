@@ -21,11 +21,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -216,11 +214,13 @@ func TestStatic_ConditionalRangeAndEncoding(t *testing.T) {
 	}
 
 	const (
-		missSeries  = `trickster_fileserver_responses_total{backend_name="site",cache_status="kmiss",encoding="gzip"}`
-		hitSeries   = `trickster_fileserver_responses_total{backend_name="site",cache_status="hit",encoding="gzip"}`
-		usageSeries = `trickster_fileserver_cache_usage_objects{backend_name="site"}`
+		missSeries    = `trickster_fileserver_responses_total{backend_name="site",cache_status="kmiss",encoding="gzip"}`
+		hitSeries     = `trickster_fileserver_responses_total{backend_name="site",cache_status="hit",encoding="gzip"}`
+		objectsSeries = `trickster_fileserver_cache_usage_objects{backend_name="site"}`
+		bytesSeries   = `trickster_fileserver_cache_usage_bytes{backend_name="site"}`
 	)
 	misses, hits := staticMetric(t, h, missSeries), staticMetric(t, h, hitSeries)
+	objects, size := staticMetric(t, h, objectsSeries), staticMetric(t, h, bytesSeries)
 	// a rendition is streamed as it is made, so without a length; held, it is sent with its own
 	for i := range 2 {
 		resp, body := h.do(t, "/big.css", withHeader("Accept-Encoding", "gzip"))
@@ -229,9 +229,12 @@ func TestStatic_ConditionalRangeAndEncoding(t *testing.T) {
 		require.True(t, strings.HasPrefix(resp.Header.Get("Etag"), `W/"`), "expected a weak etag when encoded")
 		require.Equal(t, "Accept-Encoding", resp.Header.Get("Vary"))
 		if i == 0 {
-			// the rendition is held away from the request, which a moment's grace allows for
-			require.Eventually(t, func() bool { return staticMetric(t, h, usageSeries) >= 2 },
-				5*time.Second, 20*time.Millisecond, "the rendition was never held")
+			// every reservation costs at least the file's size and only a held rendition costs less, so
+			// usage under that bound shows the rendition, stored away from the request, is held
+			require.Eventually(t, func() bool {
+				added := staticMetric(t, h, objectsSeries) - objects
+				return added > 0 && staticMetric(t, h, bytesSeries)-size < added*float64(len(staticBigCSS))
+			}, 5*time.Second, 20*time.Millisecond, "the rendition was never held")
 			continue
 		}
 		require.Positive(t, resp.ContentLength)
@@ -256,8 +259,8 @@ func TestStatic_ConditionalRangeAndEncoding(t *testing.T) {
 	require.Equal(t, "<h1>home</h1>", string(body))
 
 	require.Equal(t, float64(100), staticMetric(t, h, `trickster_fileserver_cache_max_usage_objects{backend_name="site"}`))
-	require.Positive(t, staticMetric(t, h, `trickster_fileserver_cache_usage_objects{backend_name="site"}`))
-	require.Positive(t, staticMetric(t, h, `trickster_fileserver_cache_usage_bytes{backend_name="site"}`))
+	require.Positive(t, staticMetric(t, h, objectsSeries))
+	require.Positive(t, staticMetric(t, h, bytesSeries))
 }
 
 func TestStatic_WellKnown(t *testing.T) {
@@ -401,8 +404,7 @@ func TestStatic_ChangesOnDiskAreServed(t *testing.T) {
 }
 
 func TestStatic_SurvivesReload(t *testing.T) {
-	// Drop prior SIGHUP handlers so this test owns the only live receiver.
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	h, site, _ := staticHarness(t)
@@ -414,7 +416,7 @@ func TestStatic_SurvivesReload(t *testing.T) {
 	requireStaticBody(t, h, "/", http.StatusOK, "<h1>home</h1>")
 
 	rewriteGeneratedConfig(t, h.ConfigPath, "public, max-age=60", "public, max-age=90")
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP), "failed to send SIGHUP for in-process reload")
+	sighupUntilReloaded(t, h.MetricsAddr)
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		resp, _ := h.do(t, "/")
 		assert.Equal(collect, "public, max-age=90", resp.Header.Get("Cache-Control"))

@@ -18,25 +18,31 @@ package integration
 
 import (
 	"context"
-	"encoding/csv"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/pkg/daemon"
 
 	"github.com/klauspost/compress/gzip"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	reloadAttemptsMetric = "trickster_config_reload_attempts_total"
 )
 
 func TestMain(m *testing.M) {
@@ -81,6 +87,36 @@ func startTrickster(t *testing.T, ctx context.Context, expected expectedStartErr
 	} else {
 		require.NoError(t, err)
 	}
+}
+
+func guardSIGHUP(t *testing.T) {
+	t.Helper()
+	// drops the SIGHUP receivers earlier daemons left and holds the test's own, so a SIGHUP sent
+	// before this test's daemon subscribes is ignored, not fatal to the test process
+	signal.Reset(syscall.SIGHUP)
+	guard := make(chan os.Signal, 1)
+	signal.Notify(guard, syscall.SIGHUP)
+	t.Cleanup(func() { signal.Stop(guard) })
+}
+
+func sighupUntilReloaded(t *testing.T, metricsAddr string) {
+	t.Helper()
+	// the daemon subscribes to SIGHUP only as its startup completes, so the signal is resent until
+	// a reload attempt is counted; without guardSIGHUP an early one is fatal
+	url := "http://" + metricsAddr + "/metrics"
+	before := metricsutil.ScrapeURL(t, url, nil)[reloadAttemptsMetric]
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		assert.NoError(collect, syscall.Kill(os.Getpid(), syscall.SIGHUP))
+		resp, err := http.Get(url)
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		scraped, err := metricsutil.Parse(resp.Body)
+		if assert.NoError(collect, err) {
+			assert.Greater(collect, scraped[reloadAttemptsMetric], before)
+		}
+	}, 30*time.Second, 500*time.Millisecond, "SIGHUP never reloaded the config")
 }
 
 func checkTricksterMetrics(t *testing.T, address string) []string {
@@ -133,7 +169,7 @@ func waitForPrometheusData(t *testing.T, prometheusAddr string) {
 	require.EventuallyWithT(t, func(collect *assert.CollectT) {
 		now := time.Now()
 		step := 15 * time.Second
-		// Truncate end to step boundary to match DPC's NormalizeExtent.
+		// Truncate end to step boundary to match DPC's AlignExtent.
 		end := now.Truncate(step)
 		start := end.Add(-5 * time.Minute)
 		qp := url.Values{
@@ -232,85 +268,6 @@ func waitForGraphiteData(t *testing.T, graphiteAddr string) {
 		}
 		assert.Greater(collect, values, 0, "waiting for the generator to write current data")
 	}, 2*time.Minute, 2*time.Second, "Graphite data never became available")
-}
-
-func waitForInfluxDBData(t *testing.T, influxAddr string) time.Time {
-	t.Helper()
-	var latest time.Time
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		req, err := http.NewRequest("POST",
-			"http://"+influxAddr+"/api/v2/query?org=trickster-dev",
-			strings.NewReader(`{"query": "from(bucket: \"trickster\") |> range(start: 0) |> filter(fn: (r) => r._measurement == \"cpu\" and r._field == \"usage_idle\") |> group() |> last(column: \"_time\") |> keep(columns: [\"_time\"])", "type": "flux"}`))
-		if !assert.NoError(collect, err) {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Token trickster-dev-token")
-		resp, err := http.DefaultClient.Do(req)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		if !assert.Equal(collect, http.StatusOK, resp.StatusCode,
-			"InfluxDB query failed: %s", strings.TrimSpace(string(b))) {
-			return
-		}
-		records, err := csv.NewReader(strings.NewReader(string(b))).ReadAll()
-		if !assert.NoError(collect, err) {
-			return
-		}
-		timeColumn := -1
-		for _, record := range records {
-			if len(record) == 0 || strings.HasPrefix(record[0], "#") {
-				continue
-			}
-			if timeColumn < 0 {
-				timeColumn = slices.Index(record, "_time")
-				continue
-			}
-			if timeColumn < 0 || timeColumn >= len(record) || record[timeColumn] == "" {
-				continue
-			}
-			latest, err = time.Parse(time.RFC3339Nano, record[timeColumn])
-			if !assert.NoError(collect, err) {
-				return
-			}
-			break
-		}
-		assert.False(collect, latest.IsZero(), "waiting for InfluxDB data")
-	}, 30*time.Second, 2*time.Second, "InfluxDB data never became available")
-	return latest
-}
-
-// waitForInfluxDB3Data polls the v3 SQL endpoint until rows land in the cpu
-// table (seeded by telegraf via v1-compat writes).
-func waitForInfluxDB3Data(t *testing.T, influxAddr string) {
-	t.Helper()
-	require.EventuallyWithT(t, func(collect *assert.CollectT) {
-		req, err := http.NewRequest("POST",
-			"http://"+influxAddr+"/api/v3/query_sql",
-			strings.NewReader(`{"q": "SELECT cpu FROM cpu LIMIT 1", "db": "trickster"}`))
-		if !assert.NoError(collect, err) {
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		defer resp.Body.Close()
-		b, err := io.ReadAll(resp.Body)
-		if !assert.NoError(collect, err) {
-			return
-		}
-		// v3 returns [] when no rows, [{...}] when rows exist
-		assert.Greater(collect, len(strings.TrimSpace(string(b))), 2,
-			"waiting for Telegraf to write data to InfluxDB 3")
-	}, 60*time.Second, 2*time.Second, "InfluxDB 3 data never became available")
 }
 
 type promResponse struct {

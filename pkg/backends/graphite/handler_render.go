@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -86,6 +87,11 @@ func (c *Client) RenderHandler(w http.ResponseWriter, r *http.Request) {
 	if isBody {
 		// the body is consumed by every clone below; keep it replayable
 		request.SetBody(r, body)
+	}
+	// off asks for the origin's own response, which the fallback lane serves
+	if c.unaligned(r) {
+		c.fallback(w, r, request.GetResources(r))
+		return
 	}
 	targets := qp[upTarget]
 	if len(targets) == 0 {
@@ -303,6 +309,18 @@ func (c *Client) unmodelable(rq *RenderQuery, cw *capture.CaptureResponseWriter)
 		len(cw.Body()) == 0
 }
 
+func (c *Client) unaligned(r *http.Request) bool {
+	// Graphite supports off, so a request resolves to it when it asks for it, or when it asks for
+	// nothing on a backend set to it
+	mode := tctx.StepAlignment(r.Context())
+	if mode == 0 {
+		if o := c.Configuration(); o != nil {
+			mode = o.StepAlignment
+		}
+	}
+	return mode == timeseries.StepAlignmentOff
+}
+
 // serves the original request unaccelerated after a misprediction
 func (c *Client) reproxy(w http.ResponseWriter, r *http.Request, rsc *request.Resources) {
 	if c.observer != nil {
@@ -323,7 +341,7 @@ func (c *Client) fallback(w http.ResponseWriter, r *http.Request, rsc *request.R
 		rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{
 			CacheKeyElements: OPCKeyElements(qp, rsc.PathConfig),
 		}
-		rsc.AlternateCacheTTL = fallbackTTL
+		rsc.AlternateCacheTTL, rsc.PerCredentialCache = fallbackTTL, true
 		rsc.Unlock()
 	}
 	engines.ObjectProxyCacheRequest(w, r)

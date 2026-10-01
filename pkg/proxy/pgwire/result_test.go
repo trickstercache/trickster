@@ -35,21 +35,10 @@ func resultTestBucket(minute int) int64 {
 	return time.Date(2026, 9, 10, 8, minute, 0, 0, time.UTC).UnixNano()
 }
 
-func testResult(rows ...string) *Result {
-	r := &Result{RowDescription: []byte(resultTestDescription), times: []int64{}}
-	for _, row := range rows {
-		minute, label, _ := strings.Cut(row, ":")
-		n := int(minute[0]-'0')*10 + int(minute[1]-'0')
-		body, _ := (&pgproto3.DataRow{Values: [][]byte{[]byte(label)}}).Encode(nil)
-		r.appendRow(body[frameHeaderLen:], resultTestBucket(n), true)
-	}
-	return r
-}
-
-func labels(t *testing.T, r *Result, descending bool) string {
+func labels(t *testing.T, stream []byte) string {
 	t.Helper()
+	// each DataRow's first column, then the CommandComplete tag
 	var out []string
-	stream := r.encode(descending)
 	for len(stream) > 0 {
 		typ, body, err := readFrame(bytes.NewReader(stream), pgMaxMessageBody)
 		if err != nil {
@@ -70,63 +59,22 @@ func labels(t *testing.T, r *Result, descending bool) string {
 	return strings.Join(out, " ")
 }
 
-func TestResultMergeCropAndOrder(t *testing.T) {
-	cached := testResult("00:a", "00:b", "05:c", "10:old")
-	fetched := testResult("10:new1", "10:new2", "15:d")
-	earlier := testResult("55:never") // sorts last: minute 55
-	merged, err := mergeResults([]*Result{cached, fetched, testResult(), earlier})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// the later part replaces bucket 10 whole; rows inside a bucket keep their order
-	if got := labels(t, merged, false); got != "a b c new1 new2 d never SELECT 7" {
-		t.Fatalf("merged: %q", got)
-	}
-	if got := labels(t, merged, true); got != "never d new1 new2 c a b SELECT 7" {
-		t.Fatalf("descending: %q", got)
-	}
-	extent := timeseries.Extent{Start: time.Unix(0, resultTestBucket(5)), End: time.Unix(0, resultTestBucket(10))}
-	if got := labels(t, merged.crop(extent), false); got != "c new1 new2 SELECT 3" {
-		t.Fatalf("cropped: %q", got)
-	}
-	empty := merged.crop(timeseries.Extent{Start: time.Unix(0, resultTestBucket(20)), End: time.Unix(0, resultTestBucket(30))})
-	if got := labels(t, empty, false); got != "SELECT 0" || empty.times == nil || empty.RowDescription == nil {
-		t.Fatalf("an empty crop keeps the row description and its delta nature: %q", got)
-	}
-	kept, first, trimmed := merged.retain(2)
-	if !trimmed || first != resultTestBucket(15) || labels(t, kept, false) != "d never SELECT 2" {
-		t.Fatalf("retain: %q from %d (%t)", labels(t, kept, false), first, trimmed)
-	}
-	for _, limit := range []int{0, 5, 99} {
-		if _, _, trimmed := merged.retain(limit); trimmed {
-			t.Fatalf("a limit of %d must keep everything", limit)
-		}
-	}
-	if _, err = mergeResults([]*Result{cached, nil}); !errors.Is(err, errResultRow) {
-		t.Fatalf("expected a nil part to be rejected, got %v", err)
-	}
-	object := &Result{}
-	object.appendRow([]byte{0, 0}, 0, false)
-	if _, err = mergeResults([]*Result{cached, object}); !errors.Is(err, errResultRow) {
-		t.Fatalf("expected an untimed part to be rejected, got %v", err)
-	}
-}
-
-func TestResultSortIsStableWithinABucket(t *testing.T) {
-	r := testResult("10:x", "10:y", "00:p", "05:m", "00:q")
-	r.sortByTime()
-	if got := labels(t, r, false); got != "p q m x y SELECT 5" {
-		t.Fatalf("sorted: %q", got)
-	}
+// the whole response writeTo writes
+func (r *Result) encode() []byte {
+	var out bytes.Buffer
+	w := frameWriter{w: &out, buffer: make([]byte, 0, pumpBufferSizeBytes)}
+	r.writeTo(&w)
+	w.flush()
+	return out.Bytes()
 }
 
 func TestResultEncodeKeepsAnObjectsOwnTag(t *testing.T) {
 	object := &Result{RowDescription: []byte(resultTestDescription), Tag: "SELECT 1"}
-	object.appendRow([]byte{0, 1, 0, 0, 0, 1, 'v'}, 0, false)
-	if got := labels(t, object, true); got != "v SELECT 1" {
+	object.appendRow([]byte{0, 1, 0, 0, 0, 1, 'v'})
+	if got := labels(t, object.encode()); got != "v SELECT 1" {
 		t.Fatalf("object: %q", got)
 	}
-	if got := labels(t, &Result{}, false); got != "SELECT 0" {
+	if got := labels(t, (&Result{}).encode()); got != "SELECT 0" {
 		t.Fatalf("a result with no tag still completes: %q", got)
 	}
 }
@@ -157,12 +105,9 @@ func TestRowColumn(t *testing.T) {
 func TestResultCodecRoundTrip(t *testing.T) {
 	codec := resultCodec{}
 	object := &Result{RowDescription: []byte(resultTestDescription), Tag: "SELECT 2"}
-	object.appendRow([]byte("row-one"), 0, false)
-	object.appendRow([]byte("row-two!"), 0, false)
-	for name, original := range map[string]*Result{
-		"delta": testResult("00:a", "00:b", "05:c"), "empty delta": testResult(), "object": object,
-		"bare": {},
-	} {
+	object.appendRow([]byte("row-one"))
+	object.appendRow([]byte("row-two!"))
+	for name, original := range map[string]*Result{"object": object, "bare": {}} {
 		encoded, err := codec.Marshal(original)
 		if err != nil {
 			t.Fatal(err)
@@ -171,15 +116,22 @@ func TestResultCodecRoundTrip(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
-		if !bytes.Equal(decoded.encode(false), original.encode(false)) || (decoded.times == nil) != (original.times == nil) ||
-			codec.Size(decoded) != codec.Size(original) {
+		if !bytes.Equal(decoded.encode(), original.encode()) || codec.Size(decoded) != codec.Size(original) {
 			t.Fatalf("%s: the round trip changed the result", name)
+		}
+		// the decoded result refers to the encoding, and an append to its data can't reach past it
+		if cap(decoded.data) != len(decoded.data) || cap(decoded.RowDescription) != len(decoded.RowDescription) {
+			t.Fatalf("%s: the decoded slices reach past their values", name)
+		}
+		appended, err := codec.AppendMarshal([]byte("envelope"), original)
+		if err != nil || string(appended[:8]) != "envelope" || !bytes.Equal(appended[8:], encoded) {
+			t.Fatalf("%s: appended = %x, %v", name, appended, err)
 		}
 	}
 	if _, err := codec.Marshal(nil); !errors.Is(err, errResultCodec) || codec.Size(nil) != 0 {
 		t.Fatalf("a nil result cannot be stored: %v", err)
 	}
-	valid, _ := codec.Marshal(testResult("00:a", "05:b"))
+	valid, _ := codec.Marshal(object)
 	for cut := range len(valid) {
 		if _, err := codec.Unmarshal(valid[:cut]); !errors.Is(err, errResultCodec) {
 			t.Fatalf("a %d-byte prefix must be rejected, got %v", cut, err)
@@ -193,10 +145,18 @@ func TestResultCodecRoundTrip(t *testing.T) {
 	if _, err := codec.Unmarshal(append(bytes.Clone(valid), 'x')); !errors.Is(err, errResultCodec) {
 		t.Fatalf("trailing bytes must be rejected, got %v", err)
 	}
+	// an entry written for delta rows, which carried bucket times, is a miss
+	timed := bytes.Clone(valid)
+	timed[1] = resultFlagTimes
+	if _, err := codec.Unmarshal(timed); !errors.Is(err, errResultCodec) {
+		t.Fatalf("a timed entry must be rejected, got %v", err)
+	}
 }
 
 func FuzzResultCodec(f *testing.F) {
-	valid, _ := resultCodec{}.Marshal(testResult("00:a", "05:b"))
+	object := &Result{RowDescription: []byte(resultTestDescription)}
+	object.appendRow([]byte("row"))
+	valid, _ := resultCodec{}.Marshal(object)
 	f.Add(valid)
 	f.Add([]byte{resultCodecVersion, resultFlagTimes, 0, 0, 0xff, 0xff, 0xff, 0xff, 0x0f})
 	f.Fuzz(func(t *testing.T, data []byte) {
@@ -205,7 +165,7 @@ func FuzzResultCodec(f *testing.F) {
 			return
 		}
 		// whatever decodes must be safe to read end to end
-		_ = decoded.encode(true)
+		_ = decoded.encode()
 		for i := range decoded.ends {
 			_ = decoded.row(i)
 		}
@@ -242,7 +202,7 @@ func TestTimeAxisDecoding(t *testing.T) {
 		"float epoch":         {TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, "1789027500", want},
 		"numeric epoch":       {TimeAxisEpochNumeric, timeseries.DateTimeUnixSecs, "1789027500.000", want},
 	} {
-		decoder, err := newTimeAxisDecoder(test.kind, test.unit, false, iso)
+		decoder, err := newTimeAxisDecoder(test.kind, test.unit, TimeSemantics{}, iso)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -250,7 +210,7 @@ func TestTimeAxisDecoding(t *testing.T) {
 			t.Fatalf("%s: got %v, %v; want %v", name, got, err, test.want)
 		}
 	}
-	zoned, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, false, iso)
+	zoned, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, TimeSemantics{}, iso)
 	for _, text := range []string{
 		"", "infinity", "-infinity", "12026-09-10 08:05:00+00", "2026-09-10 08:05:00+00 BC", "2026-09-10 08:05:00",
 		"2026-09-10 08:05:00Z", "2026-09-10 08:05:00.+00", "2026-09-10 08:05:00.1234567890+00", "2026-13-10 08:05:00+00",
@@ -261,24 +221,52 @@ func TestTimeAxisDecoding(t *testing.T) {
 			t.Fatalf("%q must fail closed, got %v", text, err)
 		}
 	}
-	naive, _ := newTimeAxisDecoder(TimeAxisTimestamp, 0, false, iso)
+	naive, _ := newTimeAxisDecoder(TimeAxisTimestamp, 0, TimeSemantics{}, iso)
 	if _, err := naive.decode([]byte("2026-09-10 08:05:00+00")); !errors.Is(err, errTimeAxis) {
 		t.Fatalf("a zone-less column cannot carry an offset, got %v", err)
 	}
-	date, _ := newTimeAxisDecoder(TimeAxisDate, 0, false, iso)
+	date, _ := newTimeAxisDecoder(TimeAxisDate, 0, TimeSemantics{}, iso)
 	if _, err := date.decode([]byte("2026-09-10 BC")); !errors.Is(err, errTimeAxis) {
 		t.Fatalf("expected a BC date to fail closed, got %v", err)
 	}
-	epoch, _ := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, false, iso)
+	epoch, _ := newTimeAxisDecoder(TimeAxisEpochFloat, timeseries.DateTimeUnixSecs, TimeSemantics{}, iso)
 	for _, text := range []string{"2e+09x", "1789027500.5", "1e300"} {
 		if _, err := epoch.decode([]byte(text)); !errors.Is(err, errTimeAxis) {
 			t.Fatalf("%q must fail closed, got %v", text, err)
 		}
 	}
-	integer, _ := newTimeAxisDecoder(TimeAxisEpochInteger, timeseries.DateTimeUnixSecs, false, iso)
+	integer, _ := newTimeAxisDecoder(TimeAxisEpochInteger, timeseries.DateTimeUnixSecs, TimeSemantics{}, iso)
 	for _, text := range []string{"abc", "9223372036854775807"} {
 		if _, err := integer.decode([]byte(text)); !errors.Is(err, errTimeAxis) {
 			t.Fatalf("%q must fail closed, got %v", text, err)
+		}
+	}
+}
+
+func TestISOTimestampsParseAsTimeParseDoes(t *testing.T) {
+	// the parser never accepts what time.Parse refuses or reads it differently, and takes every
+	// canonical value; it refuses forms PostgreSQL never sends, like a padded hour
+	const layout = "2006-01-02 15:04:05"
+	var inputs []string
+	for _, base := range []string{
+		"2026-09-10 08:05:00", "2024-02-29 23:59:59", "2023-02-29 00:00:00", "2026-04-31 12:00:00",
+		"0000-01-01 00:00:00", "2026-12-31 24:00:00", "2026-01-01 00:60:00", "2026-01-01 00:00:60",
+	} {
+		inputs = append(inputs, base)
+		for i := range base {
+			for _, c := range "0139 -:a+" {
+				mutated := []byte(base)
+				mutated[i] = byte(c)
+				inputs = append(inputs, string(mutated))
+			}
+		}
+	}
+	for _, text := range inputs {
+		want, wantErr := time.Parse(layout, text)
+		got, err := parseISOTimestamp([]byte(text), false)
+		canonical := wantErr == nil && want.Format(layout) == text
+		if (err == nil && (wantErr != nil || !got.Equal(want))) || (err != nil && canonical) {
+			t.Fatalf("%q: got %v, %v; time.Parse gives %v, %v", text, got, err, want, wantErr)
 		}
 	}
 }
@@ -306,7 +294,7 @@ func TestTimeAxisDecoderFailsClosedOnSessionSettings(t *testing.T) {
 		"float with exact digits":       {TimeAxisEpochFloat, timeseries.DateTimeUnixNano, false, map[string]string{varExtraFloatDigits: "3"}, true},
 		"unknown kind":                  {0, 0, false, nil, false},
 	} {
-		_, err := newTimeAxisDecoder(test.kind, test.unit, test.naiveUTC, timeAxisSettings(test.settings))
+		_, err := newTimeAxisDecoder(test.kind, test.unit, TimeSemantics{NaiveTimestampsAreUTC: test.naiveUTC}, timeAxisSettings(test.settings))
 		if (err == nil) != test.ok {
 			t.Errorf("%s: err = %v, want ok = %t", name, err, test.ok)
 		}
@@ -314,7 +302,7 @@ func TestTimeAxisDecoderFailsClosedOnSessionSettings(t *testing.T) {
 }
 
 func TestBucketTime(t *testing.T) {
-	decoder, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, false, timeAxisSettings(map[string]string{"datestyle": "ISO"}))
+	decoder, _ := newTimeAxisDecoder(TimeAxisTimestampTZ, 0, TimeSemantics{}, timeAxisSettings(map[string]string{"datestyle": "ISO"}))
 	row := func(values ...[]byte) []byte {
 		body, _ := (&pgproto3.DataRow{Values: values}).Encode(nil)
 		return body[frameHeaderLen:]
@@ -334,51 +322,11 @@ func TestBucketTime(t *testing.T) {
 	// a weekly bucket is phased from the Unix epoch, which began on a Thursday
 	weekly := time.Date(2026, 9, 7, 0, 0, 0, 0, time.UTC)
 	phase := 4 * 24 * time.Hour
-	if !sqlanalyzer.AlignedToBucket(weekly, 7*24*time.Hour, phase) {
+	if !timeseries.OnGrid(weekly, 7*24*time.Hour, phase) {
 		t.Fatal("fixture: a Monday must lie on a Monday-phased weekly grid")
 	}
 	if _, err = bucketTime(row([]byte("2026-09-07 00:00:00+00")), 0, decoder, 7*24*time.Hour, phase); err != nil {
 		t.Fatalf("a phased weekly bucket must be on the grid: %v", err)
-	}
-}
-
-func TestFinalizeDelta(t *testing.T) {
-	step := 5 * time.Minute
-	plan := &sqlanalyzer.QueryPlan{Step: step, UpperBound: &sqlanalyzer.Bound{}}
-	merged := testResult("00:a", "05:b", "10:c", "15:d")
-	all := timeseries.ExtentList{{Start: time.Unix(0, resultTestBucket(0)), End: time.Unix(0, resultTestBucket(15))}}
-	requested := timeseries.Extent{Start: time.Unix(0, resultTestBucket(5)), End: time.Unix(0, resultTestBucket(15))}
-	longAfter := time.Unix(0, resultTestBucket(15)).Add(24 * time.Hour)
-
-	response, retained, extents, err := finalizeDelta(&Config{RetentionPoints: 2}, plan, merged, all, requested, longAfter)
-	if err != nil || labels(t, response, false) != "b c d SELECT 3" {
-		t.Fatalf("retention must never trim the response: %q, %v", labels(t, response, false), err)
-	}
-	if labels(t, retained, false) != "c d SELECT 2" || len(extents) != 1 || !extents[0].Start.Equal(time.Unix(0, resultTestBucket(10))) {
-		t.Fatalf("retained %q over %v", labels(t, retained, false), extents)
-	}
-
-	// ten minutes after the last bucket, a fifteen-minute tolerance leaves only the first stable
-	soonAfter := time.Unix(0, resultTestBucket(15)).Add(10 * time.Minute)
-	_, retained, extents, err = finalizeDelta(&Config{BackfillWindow: 15 * time.Minute}, plan, merged, all, requested, soonAfter)
-	if err != nil || labels(t, retained, false) != "a b SELECT 2" || len(extents) != 1 {
-		t.Fatalf("rows newer than the stable coverage must not be kept: %q over %v, %v", labels(t, retained, false), extents, err)
-	}
-	_, retained, extents, err = finalizeDelta(&Config{BackfillWindow: 48 * time.Hour}, plan, merged, all, requested, soonAfter)
-	if err != nil || retained.Rows() != 0 || len(extents) != 0 {
-		t.Fatalf("an entirely volatile result keeps nothing: %d rows over %v, %v", retained.Rows(), extents, err)
-	}
-
-	// an open-ended range is never stable in its final, still-filling bucket
-	openEnded := &sqlanalyzer.QueryPlan{Step: step}
-	atTheEdge := time.Unix(0, resultTestBucket(15)).Add(time.Minute)
-	_, retained, _, err = finalizeDelta(&Config{}, openEnded, merged, all, requested, atTheEdge)
-	// one step back from now truncates to 08:10, so that bucket is volatile as well
-	if err != nil || labels(t, retained, false) != "a b SELECT 2" {
-		t.Fatalf("open-ended: %q, %v", labels(t, retained, false), err)
-	}
-	if _, _, _, err = finalizeDelta(&Config{}, plan, &Result{}, all, requested, longAfter); !errors.Is(err, errResultRow) {
-		t.Fatalf("an untimed result cannot be finalized, got %v", err)
 	}
 }
 
@@ -410,4 +358,9 @@ func TestUpstreamHandoff(t *testing.T) {
 	if !finished {
 		t.Fatal("expected the handoff to be finished")
 	}
+}
+
+func (r *Result) appendRow(body []byte) {
+	r.data = append(r.data, body...)
+	r.ends = append(r.ends, uint32(len(r.data))) // #nosec G115 -- test rows are small
 }

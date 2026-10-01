@@ -114,7 +114,7 @@ func TestUnmarshalMultipleFluxTables(t *testing.T) {
 	if len(ds.Results) != 1 || len(ds.Results[0].SeriesList) != 2 {
 		t.Fatalf("expected two series in one result, got %+v", ds.Results)
 	}
-	if got := len(ds.Results[0].SeriesList[1].Points); got != 1 {
+	if got := ds.Results[0].SeriesList[1].PointCount(); got != 1 {
 		t.Fatalf("second table has %d points, want 1", got)
 	}
 	b, err := MarshalTimeseries(ds, &timeseries.RequestOptions{}, 200)

@@ -29,8 +29,8 @@ responsible for its response and error behavior.
 Raw remote-read samples do not advertise a guaranteed interval, so point-count
 sharding cannot split their extents without risking gaps. Requests use the
 normal proxy path when `shard_max_size_points` is enabled; time-based sharding
-remains supported. Cache retention (`oldest` and `lru`) and point-based backfill
-tolerance use a positive `hints.step_ms`; a request without that hint uses the
+remains supported. Cache retention (`oldest` and `lru`) and `volatile_window_points`
+use a positive `hints.step_ms`; a request without that hint uses the
 normal proxy path, including Prometheus instant queries with a zero step hint.
 The hint is retained in serialized cache entries and does not change the 1 ms
 precision used to locate missing raw samples.
@@ -59,7 +59,9 @@ Query requests on both query endpoints may arrive as URL parameters (GET), an `a
 
 ### InfluxQL over v3
 
-`/api/v3/query_influxql` requests use the same delta-proxy caching as the v1 `/query` endpoint (queries with a `GROUP BY time(...)` interval and a time-bounded `WHERE` clause), but speak the v3 request/response shapes: the v3 request document above and the v3 tabular response formats, including the `iox::measurement` column, which Trickster treats as a series tag alongside any `GROUP BY` tags.
+`/api/v3/query_influxql` requests use the same delta-proxy caching as the v1 `/query` endpoint (queries with a `GROUP BY time(...)` interval, optionally with an offset such as `time(1h, 15m)`, and a time-bounded `WHERE` clause; a non-UTC `tz()` clause shifts bucket boundaries by the zone offset, so those queries use the object proxy cache instead), but speak the v3 request/response shapes: the v3 request document above and the v3 tabular response formats, including the `iox::measurement` column, which Trickster treats as a series tag alongside any `GROUP BY` tags.
+
+On both `/query` and `/api/v3/query_influxql`, statements whose values in one time bucket depend on other buckets or on the whole result use the object proxy cache instead of delta caching: `fill(previous)` and `fill(linear)`; transformations such as `derivative()`, `non_negative_derivative()`, `difference()`, `moving_average()`, `cumulative_sum()`, `elapsed()`, `integral()` and the other technical analysis functions; `LIMIT`, `OFFSET`, `SLIMIT` and `SOFFSET`; and subqueries, whose own time ranges are not rewritten per fetch.
 
 ### SQL Query Caching
 
@@ -76,7 +78,20 @@ GROUP BY 1
 
 SELECT queries that cannot be delta-cached (no fixed-cadence time bucket, joins, subqueries, window functions, compound selects such as `UNION`, `LIMIT`, variable-length buckets like `'1 month'`, or unsafe time predicates) fall back to the object proxy cache, which caches the whole response briefly and passes results through unchanged. Non-SELECT statements and parameterized queries (a `params` field in the request) are proxied to the origin without delta caching.
 
-Queries without an upper time bound run to the present; for these, Trickster's backfill tolerance is floored at one bucket so the still-filling final bucket is always refreshed from the origin rather than cached as complete.
+The still-filling final bucket of a range that reaches the present is never cached. Under the SQL default `step_alignment`, `drop`, the response ends before it; the `partial` and `partial_end` modes, and InfluxQL's default `partial_end`, fetch it from the origin on each request. `volatile_window` applies only to complete buckets.
+
+### Step Alignment
+
+Each query language has its own [step alignment](./step-alignment.md) support and default:
+
+| Query language | Supported modes | Default |
+|---|---|---|
+| InfluxQL, 1.x and over 3.x | all | `partial_end` |
+| SQL, over HTTP and Flight SQL | all | `drop` |
+| Flux | `truncate`, `off` | `truncate` |
+| Prometheus remote read | `truncate` | `truncate` |
+
+A backend's `step_alignment` may name any of these modes; a query in a language that doesn't support it runs in that language's default, and the fallback is counted in `trickster_step_alignment_fallbacks_total`. The `partial` modes fetch each partial bucket as a small query of its own through the object cache, so they cost up to two extra origin queries per request. A query can choose its own mode with a comment: `-- trickster-step-align:drop` in InfluxQL and SQL, `// trickster-step-align:off` in Flux. See [Per-Query Instructions](./per-query-instructions.md).
 
 ### Response Formats
 
@@ -87,6 +102,8 @@ Trickster supports the following v3 response formats, controlled by the `format`
 - `csv` — standard CSV with header row
 
 The `parquet` and `pretty` formats are not supported for caching and will be proxied through.
+
+InfluxDB 3 leaves a row's null values out of JSON and JSON Lines, so a column can first appear on any row. Trickster reads every column a response names, on whichever row first names it.
 
 ### v1/v2 Compatibility
 
@@ -120,7 +137,7 @@ The `authorization` and `database` headers are forwarded from the client through
 
 Statement queries are served through a three-tier cache:
 
-1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. A query's `ORDER BY` is carried through that rebuild, so a cache hit returns rows in the requested order; ordering terms that do not resolve to a select-list output fall to the next tier. Entries use the backend's `timeseries_ttl` and honor `backfill_tolerance`; still-filling buckets are always refetched. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
+1. **Delta proxy cache** — queries the SQL analyzer classifies as delta-cacheable (the same `date_bin()`/`date_trunc()` shapes as the HTTP path) are cached by time extent: repeat and overlapping queries fetch only the missing sub-ranges from the upstream, and responses are rebuilt into Arrow record batches conforming to the response's original schema. A query's `ORDER BY` is carried through that rebuild, so a cache hit returns rows in the requested order; ordering terms that do not resolve to a select-list output fall to the next tier. Entries use the backend's `timeseries_ttl` and honor `volatile_window`. Under the default `step_alignment`, `drop`, a range holding at least one complete bucket returns only complete buckets: partial buckets at either end of the range, including the still-filling bucket of a range that reaches the present, are left out. The `partial`, `partial_start` and `partial_end` modes fetch those buckets from the upstream over the client's own range, through the object cache for `partial_bucket_ttl`, and never delta-cache them. A range with no complete bucket gets the upstream's own result for the statement, partial and still-filling buckets included, cached as an object for `partial_bucket_ttl`. Responses whose Arrow schemas the delta model cannot represent (nested types, non-string dictionaries, ...) automatically fall to the next tier.
 2. **Object cache** — everything else cacheable is stored as the verbatim Arrow IPC byte stream, returned byte-identically, with a lifetime of `influxdb.flight_cache_ttl` (default 60s). Metadata RPCs and prepared statements always use this tier.
 3. **Proxy** — statements referencing nondeterministic functions (`now()`, `current_timestamp`, `random()`, ...) and non-SELECT statements are never cached.
 
@@ -167,7 +184,17 @@ Trickster supports the Flux Query Language for general/basic usage with InfluxDB
 
 The delta-proxy cache accepts `now()` as a `range()` bound and handles queries with `aggregateWindow(every: ...)` -- the common Grafana shape. Multi-table Flux CSV responses (one table per series in the result set) are also read correctly.
 
-Trickster does not support advanced union-style queries (e.g., with multiple `from` clauses). In this rare use case, these responses will currently provide invalid data, however, a subsequent beta will proxy unsupported requests.
+InfluxDB answers Flux queries only in annotated CSV. Trickster can also answer them in JSON when the request's `Accept` header asks for `application/json`. Each table's records are written as objects, and a NaN or infinite value is written as `null`, as InfluxDB 3's JSON writes it.
+
+`aggregateWindow` may also set `offset` and `timeSrc` (`"_stop"`, the default, or `"_start"`); Trickster aligns its fetches to the resulting window boundaries and labels. Queries whose windows cannot be mapped onto a fixed step grid are proxied without delta caching: a bare `window()` (its records keep their own `_time`), a `period` that differs from `every`, or a `location`.
+
+Queries whose values in one window depend on other windows, or on the whole range, are also proxied without delta caching:
+
+- `limit()`, `tail()`, `derivative()`, `difference()`, `cumulativeSum()`, `movingAverage()` and the other moving-average and technical analysis functions, `elapsed()`, `integral()`, `stateCount()` and `stateDuration()`;
+- `fill(usePrevious: true)`;
+- `timeShift()`, which moves labels off the window grid;
+- reducers, selectors and `sort()` that follow `aggregateWindow()`, such as `max()`, `last()` or `top()`, which collapse or reorder every window;
+- more than one `from()`, as in union and join queries.
 
 Trickster currently does not properly handle schema changes within a response CSV body (e.g., multiple CSVs in the same document with their own #annotation and header rows). We will fully support this use case in a future beta.
 

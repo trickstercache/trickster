@@ -132,6 +132,11 @@ func ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 		Start: time.UnixMilli(query.StartTimestampMs),
 		End:   time.UnixMilli(query.EndTimestampMs - 1),
 	}
+	trq.Requested = timeseries.RequestedRange{
+		Start: trq.Extent.Start, End: time.UnixMilli(query.EndTimestampMs),
+	}
+	// raw samples have no buckets, so every mode would give the same result
+	trq.StepAlignments, trq.StepAlignment = timeseries.StepAlignmentTruncate, timeseries.StepAlignmentTruncate
 	trq.ParsedQuery = &parsedRequest{readRequest: readRequest, decodeLimit: decodeLimit}
 	trq.CacheKeyElements = map[string]string{cacheKeyQuery: statement}
 	if query.Hints != nil && query.Hints.StepMs > 0 &&
@@ -142,7 +147,7 @@ func ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuery,
 		if rsc.BackendOptions.MaxShardSizePoints > 0 {
 			return trq, nil, false, errPointSharding
 		}
-		if trq.PolicyStep <= 0 && (rsc.BackendOptions.BackfillTolerancePoints > 0 ||
+		if trq.PolicyStep <= 0 && (rsc.BackendOptions.VolatileWindowPoints > 0 ||
 			rsc.BackendOptions.TimeseriesEvictionMethod == evictionmethods.EvictionMethodOldest ||
 			rsc.BackendOptions.TimeseriesEvictionMethod == evictionmethods.EvictionMethodLRU) {
 			return trq, nil, false, errPointPolicyStep

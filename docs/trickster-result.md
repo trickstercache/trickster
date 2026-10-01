@@ -15,7 +15,8 @@ The header value is a semicolon-separated list of fields. Optional fields are in
 | `engine` | The proxy engine that handled the response, such as `HTTPProxy`, `ObjectProxyCache`, or `DeltaProxyCache`. |
 | `status` | The cache or proxy result. See [Cache Status](./caches.md#cache-status). |
 | `fetched` | Time ranges fetched from the origin to satisfy the response. Ranges are formatted as `start-end`; multiple ranges are separated by semicolons inside the brackets. |
-| `ffstatus` | Fast Forward cache result for time series requests. Possible values are `hit`, `miss`, `off`, or `err`. |
+| `ffstatus` | Fast Forward cache result for time series requests. Possible values are `hit`, `kmiss`, `off`, or `err`. |
+| `partial_buckets` | The partial buckets fetched for a time series response under a `partial` [step alignment](./step-alignment.md) mode, each as `start-end:edge:status`, separated by semicolons inside the brackets. |
 | `failed` | Time ranges that Trickster attempted to fetch but could not fetch successfully. This usually appears with `proxy-error` or partial fanout failures. |
 
 ## Result Statuses
@@ -73,8 +74,26 @@ For time series responses, range values are Unix timestamps in milliseconds. A `
 | Fast Forward Status | Meaning |
 | ----- | ----- |
 | `hit` | Fast Forward data was served from cache. |
-| `miss` | Fast Forward data was fetched from the origin. |
+| `kmiss` | Fast Forward data was fetched from the origin. |
 | `off` | Fast Forward was not attempted for this request. |
 | `err` | Fast Forward was attempted but failed or returned unusable data. |
 
 Fast Forward is only relevant for supported time series backends and only when the request is eligible for the latest datapoint optimization.
+
+## Partial Buckets
+
+`partial_buckets` appears on time series responses whose [step alignment](./step-alignment.md) mode fetched partial buckets at the edges of the requested range:
+
+```http
+X-Trickster-Result: engine=DeltaProxyCache; status=hit; partial_buckets=[1612804950000-1612804980000:start:hit;1612808580000-1612808595000:end:kmiss]
+```
+
+Each entry is one partial bucket:
+
+| Part | Meaning |
+| ----- | ----- |
+| `start-end` | The bucket's fetched range, in Unix milliseconds, half-open. For a range with no end, `end` is the time of the request. |
+| edge | `start` or `end`: the edge of the requested range the bucket sits on. |
+| status | The object cache result for the bucket, such as `hit` or `kmiss`, or `err` when the fetch failed and the bucket was left out of the response. |
+
+Partial bucket fetches don't change the request's `status`: a response whose complete buckets all came from cache is a `hit`, whatever its partial buckets needed. Under an ALB that merges its members' responses, entries for the same range and edge are merged, and differing statuses become `phit`.

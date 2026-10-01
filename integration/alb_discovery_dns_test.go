@@ -27,6 +27,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -55,13 +57,25 @@ func requireCoreDNS(t *testing.T) {
 			return d.DialContext(ctx, network, coreDNSAddr)
 		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if _, err := r.LookupHost(ctx, "ns.trickster.test"); err != nil {
-		if os.Getenv("TRICKSTER_DNS_TEST") == "1" {
+	lookup := func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_, err := r.LookupHost(ctx, "ns.trickster.test")
+		return err
+	}
+	err := lookup()
+	if err != nil && os.Getenv("TRICKSTER_DNS_TEST") == "1" {
+		// a lost datagram or a zone reload is no reason to fail a run that requires CoreDNS
+		for deadline := time.Now().Add(15 * time.Second); err != nil && time.Now().Before(deadline); {
+			time.Sleep(500 * time.Millisecond)
+			err = lookup()
+		}
+		if err != nil {
 			t.Fatalf("TRICKSTER_DNS_TEST=1 but CoreDNS is not answering at %s: %v",
 				coreDNSAddr, err)
 		}
+	}
+	if err != nil {
 		t.Skipf("CoreDNS integration container not running at %s "+
 			"(run `make integration-start`); skipping", coreDNSAddr)
 	}
@@ -97,11 +111,8 @@ func writeZone(t *testing.T, records ...string) {
 
 func TestALBDiscoveryDNSSRV(t *testing.T) {
 	requireCoreDNS(t)
-	const (
-		frontPort   = 19520
-		metricsPort = 19521
-		mgmtPort    = 19522
-	)
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	leafA := newDiscoveryLeaf(t, "leafA")
 	leafB := newDiscoveryLeaf(t, "leafB")
 
@@ -115,6 +126,7 @@ func TestALBDiscoveryDNSSRV(t *testing.T) {
 		"  d1:\n    provider: dns_srv\n    dns:\n      resolver: "+
 			coreDNSAddr+"\n      interval: 1s",
 		"          srv_name: _web._tcp.trickster.test")
+	release()
 	startDiscoveryTrickster(t, cfg)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)
@@ -150,11 +162,8 @@ func TestALBDiscoveryDNSSRV(t *testing.T) {
 
 func TestALBDiscoveryDNSA(t *testing.T) {
 	requireCoreDNS(t)
-	const (
-		frontPort   = 19530
-		metricsPort = 19531
-		mgmtPort    = 19532
-	)
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	leaf := newDiscoveryLeaf(t, "leafA")
 
 	writeZone(t, "web\tIN\tA\t127.0.0.1")
@@ -164,6 +173,7 @@ func TestALBDiscoveryDNSA(t *testing.T) {
 			coreDNSAddr+"\n      interval: 1s",
 		"          hostname: web.trickster.test\n          port: \""+
 			leaf.port()+"\"")
+	release()
 	startDiscoveryTrickster(t, cfg)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)

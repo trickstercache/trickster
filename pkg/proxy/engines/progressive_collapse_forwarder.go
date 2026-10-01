@@ -23,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 )
 
@@ -99,7 +100,9 @@ func (pcf *progressiveCollapseForwarder) AddClient(w io.Writer) error {
 	var readIndex uint64
 	var err error
 	var n int
-	buf := make([]byte, HTTPBlockSize)
+	bp := tbytes.GetCopyBuffer()
+	defer tbytes.PutCopyBuffer(bp)
+	buf := *bp
 	for {
 		n, err = pcf.IndexRead(readIndex, buf)
 		if n > 0 {

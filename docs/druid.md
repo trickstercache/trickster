@@ -10,7 +10,7 @@ backends:
     provider: druid
     origin_url: http://druid-router:8888
     cache_name: default
-    backfill_tolerance: 60s
+    volatile_window: 60s
     timeseries_retention_factor: 2048
 ```
 
@@ -20,7 +20,6 @@ backends:
 
 - `queryType` is `timeseries`, `groupBy`, or `topN`.
 - `intervals` contains exactly one ISO-8601 half-open interval.
-- Both interval boundaries align with the selected granularity and origin.
 - `granularity` has a fixed width:
   - a simple granularity from `second` through `day`;
   - a positive `duration` granularity in milliseconds; or
@@ -31,10 +30,21 @@ Trickster removes the interval from the logical cache identity and rewrites
 only missing extents into Druid's `[start,end)` form. Druid's end is exclusive,
 so the final cached bucket is rendered as `extent.End + granularity`.
 
+An interval boundary inside a bucket is handled by the backend's
+`step_alignment`, which defaults to `partial` for native queries: complete
+buckets come from the delta cache, and each edge bucket is Druid's answer over
+the part of it the interval covers, fetched through the Object Proxy Cache for
+`partial_bucket_ttl` and never delta cached. A native query can choose its own
+mode, or its own volatile window, with keys in its `context` map, such as
+`"trickster-step-align": "drop"`, which Trickster leaves out of the cache key
+and Druid ignores. See [Step Alignment](./step-alignment.md) and
+[Per-Query Instructions](./per-query-instructions.md).
+
 The response model preserves native `timeseries`, `groupBy`, and `topN` JSON
-shapes. Grouping dimensions become DataSet tags internally. Hidden typed values
-and per-bucket positions preserve non-string dimensions and native row/ranking
-order when a response passes through the cache.
+shapes. Grouping dimensions become DataSet tags internally, and per-bucket
+positions keep groupBy and topN rows in Druid's order. A `descending: true`
+query is cached in time order like any other and written newest first, as Druid
+writes it. See [Response fidelity](#response-fidelity).
 
 ## Object-cache fallback
 
@@ -45,9 +55,9 @@ provide explicit freshness headers. This includes:
 - other native query types such as `scan`, `search`, `segmentMetadata`,
   `datasourceMetadata`, and `timeBoundary`;
 - multiple intervals;
-- interval boundaries that do not align with the selected granularity;
 - `all`, `none`, `week`, `month`, `quarter`, and `year` simple granularities;
 - calendar-width periods or period granularities in a non-UTC time zone;
+- timeseries `limit`, which keeps only the first rows of the whole result;
 - groupBy limits or dimension-first result ordering; and
 - response-changing contexts such as `bySegment`, `serializeDateTimeAsLong`,
   timeseries `grandTotal`, or groupBy `resultAsArray`.
@@ -67,8 +77,11 @@ or explicit `resultFormat: "object"`, or `resultFormat: "array"` with
 - one `TIME_FLOOR(__time, <fixed UTC period>)` bucket expression with an
   explicit alias;
 - a `GROUP BY` containing that bucket and every selected dimension; and
-- a complete lower/upper time range on `__time` (unaligned edges are rounded
-  inward, so partial edge buckets are not cached).
+- a complete lower/upper time range on `__time` (unaligned edges follow the
+  backend's [`step_alignment`](./step-alignment.md), `drop` by default for SQL;
+  partial edge buckets are never delta cached). A SQL comment such as
+  `-- trickster-step-align:partial` chooses the query's own mode, and wins over
+  the same key in the request's `context`.
 
 The shared CockroachDB SQL analyzer canonicalizes the statement and renders
 each missing extent while preserving the original JSON context on the wire.
@@ -78,6 +91,34 @@ standard Trickster `DataSet` internally and emitted in their requested shape
 after cache merging. Other valid `SELECT` statements and response formats
 remain safe OPC fallbacks; non-read statements, SQL task requests, and malformed
 requests are proxied.
+
+## Response fidelity
+
+A response built from the cache is written the way Druid writes it:
+
+- Numbers, objects and arrays are written exactly as Druid wrote them, so a
+  double keeps its form, such as `5319.0` or `9.999999999999999E22`.
+- Strings and keys are escaped the way Druid's JSON writer escapes them.
+- Each row's members are in Druid's order. For `timeseries` and `groupBy`
+  results, that is the order of Druid's Java hash maps.
+- Native responses end without a newline, and SQL responses end with one.
+- SQL rows without an `ORDER BY` follow Druid's order: by the `GROUP BY`
+  columns, with the time bucket first unless the `GROUP BY` ends with it.
+- Rows that tie on an `ORDER BY` also follow Druid's order.
+- Nulls sort lowest, as in Druid: first when ascending and last when
+  descending.
+
+Two things can still differ from the response Druid builds for the same
+request, and both also vary between Druid's own responses:
+
+- **topN key order.** Druid orders a topN row's keys differently depending on
+  whether its segment cache served the row, so one query can come back with
+  either order. Trickster writes the dimension, then the aggregations, then the
+  post-aggregations.
+- **Floating-point sums.** Druid adds a bucket's values in an order that
+  depends on the query's interval. So the last digits of a `doubleSum` or
+  `floatSum` can differ between two Druid queries that cover the same bucket. A
+  cached bucket keeps the value from the query that fetched it.
 
 ## Route policy
 
@@ -92,9 +133,9 @@ requests are proxied.
 
 SQL ingestion and management endpoints, ALB time-series merging,
 `scan`/`search` delta caching, and Fast Forward are not supported. Fast Forward
-is disabled for every Druid backend. A 60-second backfill
-tolerance is used when the backend does not configure one, so recently ingested
-buckets can be refreshed before segments settle.
+is disabled for every Druid backend. A 60-second `volatile_window` is used when
+the backend does not configure one, so recently ingested buckets can be
+refreshed before segments settle.
 
 ## Observability
 

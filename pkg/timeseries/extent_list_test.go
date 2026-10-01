@@ -1089,7 +1089,7 @@ func TestSplice(t *testing.T) {
 		start := time.Unix(0, 0)
 		end := time.Unix(int64(30*24*time.Hour/time.Second), 0)
 		el := ExtentList{Extent{Start: start, End: end}}
-		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		out := el.Splice(time.Minute, 0, time.Hour, 0, 0)
 		// 720 shards (one per hour) + 1 trailing shard for the boundary tick
 		expectedShards := 720
 		if len(out) < expectedShards || len(out) > expectedShards+2 {
@@ -1101,7 +1101,7 @@ func TestSplice(t *testing.T) {
 		start := time.Unix(0, 0)
 		end := time.Unix(int64(7*24*time.Hour/time.Second), 0)
 		el := ExtentList{Extent{Start: start, End: end}}
-		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		out := el.Splice(time.Minute, 0, time.Hour, 0, 0)
 		expectedShards := 168
 		if len(out) < expectedShards || len(out) > expectedShards+2 {
 			t.Errorf("expected ~%d shards, got %d", expectedShards, len(out))
@@ -1112,7 +1112,7 @@ func TestSplice(t *testing.T) {
 	// happened to accommodate; the +1 boundary tick brings the total to 5.
 	t.Run("spliceByTime 4-shard boundary", func(t *testing.T) {
 		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(4*3600, 0)}}
-		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		out := el.Splice(time.Minute, 0, time.Hour, 0, 0)
 		if len(out) != 5 {
 			t.Errorf("expected 5 shards, got %d", len(out))
 		}
@@ -1122,7 +1122,7 @@ func TestSplice(t *testing.T) {
 	// fixed allocation; the +1 boundary tick brings the total to 6.
 	t.Run("spliceByTime 5-shard boundary (first pre-patch overflow)", func(t *testing.T) {
 		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(5*3600, 0)}}
-		out := el.Splice(time.Minute, time.Hour, 0, 0)
+		out := el.Splice(time.Minute, 0, time.Hour, 0, 0)
 		if len(out) != 6 {
 			t.Errorf("expected 6 shards, got %d", len(out))
 		}
@@ -1133,7 +1133,7 @@ func TestSplice(t *testing.T) {
 		start := time.Unix(0, 0)
 		end := time.Unix(int64(30*24*time.Hour/time.Second), 0)
 		el := ExtentList{Extent{Start: start, End: end}}
-		out := el.Splice(time.Minute, time.Hour, time.Hour, 0)
+		out := el.Splice(time.Minute, 0, time.Hour, time.Hour, 0)
 		expectedShards := 720
 		if len(out) < expectedShards || len(out) > expectedShards+3 {
 			t.Errorf("expected ~%d shards, got %d", expectedShards, len(out))
@@ -1143,7 +1143,7 @@ func TestSplice(t *testing.T) {
 	// spliceByPoints used the same len(el)*4 anti-pattern; lock the fix in.
 	t.Run("spliceByPoints high shard count (regression)", func(t *testing.T) {
 		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(50*60, 0)}}
-		out := el.Splice(time.Minute, 0, 0, 10)
+		out := el.Splice(time.Minute, 0, 0, 0, 10)
 		if len(out) < 5 {
 			t.Errorf("expected at least 5 shards, got %d", len(out))
 		}
@@ -1154,7 +1154,7 @@ func TestSplice(t *testing.T) {
 	// return a Clone instead of trying to splice.
 	t.Run("spliceByTime clamps pathological input", func(t *testing.T) {
 		el := ExtentList{Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}}
-		out := el.Splice(time.Nanosecond, time.Nanosecond, 0, 0)
+		out := el.Splice(time.Nanosecond, 0, time.Nanosecond, 0, 0)
 		if len(out) != 1 {
 			t.Errorf("expected Clone (1 extent) when capacity exceeds limit, got %d", len(out))
 		}
@@ -1162,7 +1162,7 @@ func TestSplice(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			out := test.el.Splice(test.step, test.maxRange, test.spliceStep, test.maxPoints)
+			out := test.el.Splice(test.step, 0, test.maxRange, test.spliceStep, test.maxPoints)
 			if out == nil && test.expected == nil {
 				return
 			}
@@ -1328,4 +1328,53 @@ func BenchmarkCompress(b *testing.B) {
 		r = have.Compress(bmTimeStep)
 	}
 	res = r
+}
+
+func TestSpliceKeepsTheGrid(t *testing.T) {
+	const day = 24 * time.Hour
+	at := func(d, h, m int) time.Time { return time.Date(2024, 1, d, h, m, 0, 0, time.UTC) }
+	tests := []struct {
+		name                          string
+		extent                        Extent
+		step, phase, maxRange, splice time.Duration
+	}{
+		{
+			name:   "phased hourly by time",
+			extent: Extent{Start: at(1, 22, 30), End: at(2, 5, 30)},
+			step:   time.Hour, phase: 30 * time.Minute, maxRange: 3 * time.Hour,
+		},
+		{
+			name:   "phased hourly aligned to a splice step",
+			extent: Extent{Start: at(1, 22, 30), End: at(2, 5, 30)},
+			step:   time.Hour, phase: 30 * time.Minute, maxRange: 3 * time.Hour,
+			splice: time.Hour,
+		},
+		{
+			// weekly buckets from the Unix epoch fall on Thursdays
+			name:   "weekly by time",
+			extent: Extent{Start: at(4, 0, 0), End: time.Date(2024, 5, 23, 0, 0, 0, 0, time.UTC)},
+			step:   7 * day, maxRange: 35 * day,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			out := ExtentList{test.extent}.Splice(test.step, test.phase, test.maxRange,
+				test.splice, 0)
+			if len(out) < 2 {
+				t.Fatalf("expected multiple splices, got %v", out)
+			}
+			if !out[0].Start.Equal(test.extent.Start) ||
+				!out[len(out)-1].End.Equal(test.extent.End) {
+				t.Errorf("splices %v do not cover %v", out, test.extent)
+			}
+			for i, e := range out {
+				if !OnGrid(e.Start, test.step, test.phase) || !OnGrid(e.End, test.step, test.phase) {
+					t.Errorf("splice %v is off the grid", e)
+				}
+				if i > 0 && !e.Start.Equal(out[i-1].End.Add(test.step)) {
+					t.Errorf("splice %v does not follow %v", e, out[i-1])
+				}
+			}
+		})
+	}
 }

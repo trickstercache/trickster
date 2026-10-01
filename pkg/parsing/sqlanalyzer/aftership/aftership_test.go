@@ -31,24 +31,24 @@ import (
 
 const tq00 = `/* this tests a multi-line comment at the front, where the query continues after` +
 	`, and on the same line as, the comment closing delimiter
-  also, here we test: trickster-backfill-tolerance:30 */ WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x ` +
+  also, here we test: trickster-volatile-window:30 */ WITH  'igor * 31 + \' dks( k )'  as  igor, 3600 as x ` +
 	` SELECT (  intDiv(toUInt32(datetime), x) * x) * 1000 as t, apple,` +
 	` count() as cnt FROM test_db.test_table PREWHERE some_column = 'myvalue' WHERE datetime >= 1589904000 AND datetime < 1589997600` +
-	` GROUP BY t, apple ORDER BY  t DESC FORMAT TabSeparatedWithNamesAndTypes // test comment
+	` GROUP BY t, apple ORDER BY  t FORMAT TabSeparatedWithNamesAndTypes // test comment
 	// test 2 comment`
 
 const tq01 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt ` +
 	`FROM test_db.test_table WHERE datetime >= 1589904000 ` +
-	`GROUP BY t ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
+	`GROUP BY t ORDER BY t FORMAT TabSeparatedWithNamesAndTypes`
 
 const tq02 = `SELECT toStartOfInterval(datetime, INTERVAL 60 second) AS t, x, count() AS cnt ` +
 	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
-	`GROUP BY t, x ORDER BY t DESC FORMAT TabSeparatedWithNamesAndTypes`
+	`GROUP BY t, x ORDER BY t FORMAT TabSeparatedWithNamesAndTypes`
 
 const tq03 = `SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 	`FROM testdb.test_table WHERE time_column >= toDateTime(1516665600) AND time_column < toDateTime(1516687200) ` +
 	`AND date_column >= toDate(1516665600) AND date_column <= toDate(1516687200) ` +
-	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`
+	`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t FORMAT JSON`
 
 const tq04 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt, testfield1, testfield2 ` +
 	`FROM (SELECT * FROM test_db.test_table WHERE x = 1) WHERE datetime >= 1589904000 ` +
@@ -60,11 +60,11 @@ const tq05 = `SELECT toStartOfFiveMinute(datetime) AS t, count() AS cnt FROM tes
 
 const tq07 = `SELECT (intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t, count() AS cnt ` +
 	`FROM test_db.test_table WHERE datetime >= 1589904000 AND datetime < 1589997600 ` +
-	`GROUP BY t ORDER BY t DESC FORMAT JSON`
+	`GROUP BY t ORDER BY t FORMAT JSON`
 
 const tq08 = `SELECT (intDiv(toUInt32(datetime), 300) * 300) * 1000 AS t, count() AS cnt ` +
 	`FROM test_db.test_table WHERE datetime >= 1699999200 ` +
-	`GROUP BY t ORDER BY t DESC FORMAT JSON`
+	`GROUP BY t ORDER BY t FORMAT JSON`
 
 func TestAnalyzeSupportedCorpus(t *testing.T) {
 	tests := []struct {
@@ -77,7 +77,6 @@ func TestAnalyzeSupportedCorpus(t *testing.T) {
 		{"fixed bucket", tq01, 5 * time.Minute, 0},
 		{"interval bucket", tq02, time.Minute, 0},
 		{"intDiv and secondary range", tq03, time.Minute, 0},
-		{"subquery", tq04, 5 * time.Minute, 0},
 		{"relative upper", tq05, 5 * time.Minute, 0},
 		{"intDiv multiplier", tq07, 5 * time.Minute, 0},
 		{"relative lower and open upper", tq08, 5 * time.Minute, 0},
@@ -277,6 +276,183 @@ func TestStatementClassification(t *testing.T) {
 	multiple := NewAnalyzer(Options{}).Analyze(`SELECT 1; SELECT 2`, time.Now())
 	if multiple.Mode != sqlanalyzer.CacheModeObject || multiple.Reason != sqlanalyzer.ReasonInvalidSQL {
 		t.Errorf("unexpected multi-statement classification: %+v", multiple)
+	}
+}
+
+const (
+	shapeSelect = "SELECT toStartOfMinute(ts) AS t, host, count() AS c FROM events "
+	shapeFilter = "WHERE ts >= 120 AND ts < 240 "
+	shapeGroup  = "GROUP BY t, host"
+	shapeQuery  = shapeSelect + shapeFilter + shapeGroup
+)
+
+func TestAnalyzeRefusesCrossBucketShapes(t *testing.T) {
+	selectWith := func(expr string) string {
+		return "SELECT toStartOfMinute(ts) AS t, host, " + expr + " AS c FROM events " + shapeFilter + shapeGroup
+	}
+	fromSource := func(source string) string {
+		return "SELECT toStartOfMinute(ts) AS t, host, count() AS c FROM " + source + " " + shapeFilter + shapeGroup
+	}
+	tests := []struct {
+		name   string
+		query  string
+		reason sqlanalyzer.AnalysisReason
+	}{
+		{"TOP", "SELECT TOP 5 toStartOfMinute(ts) AS t, host, count() AS c FROM events " +
+			shapeFilter + shapeGroup, sqlanalyzer.ReasonUnsupportedLimit},
+		{"TOP WITH TIES", "SELECT TOP 5 WITH TIES toStartOfMinute(ts) AS t, host, count() AS c FROM events " +
+			shapeFilter + shapeGroup + " ORDER BY t", sqlanalyzer.ReasonUnsupportedLimit},
+		{
+			"inline window", selectWith("sum(count()) OVER (PARTITION BY host ORDER BY t)"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"named window", selectWith("sum(count()) OVER w") + " WINDOW w AS (ORDER BY t)",
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"unused WINDOW clause", shapeQuery + " WINDOW w AS (ORDER BY t)", sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"window nested in expression",
+			selectWith("round(avg(count()) OVER (ORDER BY t ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2)"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"runningDifference", selectWith("runningDifference(count())"), sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"nested lowercase runningdifference", selectWith("abs(runningdifference(count()))"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"runningDifferenceStartingWithFirstValue", selectWith("runningDifferenceStartingWithFirstValue(count())"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"uppercase runningAccumulate", selectWith("RUNNINGACCUMULATE(countState())"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"other running function", selectWith("runningConcurrency(min(ts), max(ts))"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"neighbor", selectWith("neighbor(count(), -1)"), sqlanalyzer.ReasonUnsupportedFormat},
+		{"lagInFrame", selectWith("lagInFrame(count(), 1)"), sqlanalyzer.ReasonUnsupportedFormat},
+		{"leadInFrame", selectWith("toFloat64(LEADINFRAME(count(), 1))"), sqlanalyzer.ReasonUnsupportedFormat},
+		{"rowNumberInAllBlocks", selectWith("rowNumberInAllBlocks()"), sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"cross-row function in WHERE", shapeSelect + shapeFilter + "AND neighbor(v, 1) > 0 " + shapeGroup,
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"cross-row function in HAVING", shapeQuery + " HAVING runningDifference(count()) > 0",
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"WITH TOTALS", shapeQuery + " WITH TOTALS", sqlanalyzer.ReasonUnsupportedFormat},
+		{"WITH TOTALS without GROUP BY", shapeSelect + shapeFilter + "WITH TOTALS", sqlanalyzer.ReasonUnsupportedFormat},
+		{"WITH FILL", shapeQuery + " ORDER BY t WITH FILL STEP 60", sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"WITH FILL INTERPOLATE", shapeQuery + " ORDER BY t WITH FILL INTERPOLATE (c AS c)",
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"SETTINGS", shapeQuery + " SETTINGS max_threads = 1", sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"SETTINGS before FORMAT", shapeQuery + " SETTINGS max_threads = 1 FORMAT JSON",
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"FROM subquery", tq04, sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"IN subquery", shapeSelect + shapeFilter + "AND host IN (SELECT host FROM hosts) " + shapeGroup,
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"GLOBAL IN subquery", shapeSelect + shapeFilter + "AND host GLOBAL IN (SELECT host FROM hosts) " +
+			shapeGroup, sqlanalyzer.ReasonUnsupportedFormat},
+		{
+			"scalar subquery in select list", selectWith("count() / (SELECT max(v) FROM limits)"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"CTE subquery", "WITH f AS (SELECT ts, host FROM events WHERE ts >= 180) " + fromSource("f"),
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{
+			"scalar WITH subquery", "WITH (SELECT max(ts) FROM events) AS m " + shapeQuery,
+			sqlanalyzer.ReasonUnsupportedFormat,
+		},
+		{"JOIN ON", fromSource("events JOIN hosts ON events.host = hosts.host"), sqlanalyzer.ReasonUnsupportedFormat},
+		{"LEFT JOIN USING", fromSource("events LEFT JOIN hosts USING (host)"), sqlanalyzer.ReasonUnsupportedFormat},
+		{"comma join", fromSource("events, hosts"), sqlanalyzer.ReasonUnsupportedFormat},
+		{"ORDER BY DESC", shapeQuery + " ORDER BY t DESC", sqlanalyzer.ReasonUnsupportedOrdering},
+		{
+			"ORDER BY bucket expression DESC", shapeQuery + " ORDER BY toStartOfMinute(ts) DESC",
+			sqlanalyzer.ReasonUnsupportedOrdering,
+		},
+		{"ORDER BY ordinal DESC", shapeQuery + " ORDER BY 1 DESC", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY multiple terms", shapeQuery + " ORDER BY t, host", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY tag", shapeQuery + " ORDER BY host", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY aggregate", shapeQuery + " ORDER BY c", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY raw time column", shapeQuery + " ORDER BY ts", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY ordinal of tag", shapeQuery + " ORDER BY 2", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY ordinal out of range", shapeQuery + " ORDER BY 9", sqlanalyzer.ReasonUnsupportedOrdering},
+		{"ORDER BY aliased term", shapeQuery + " ORDER BY t AS x", sqlanalyzer.ReasonUnsupportedOrdering},
+		{
+			"ORDER BY ordinal after column expansion",
+			"SELECT any(COLUMNS('^h')), toStartOfMinute(ts) AS t, count() AS c FROM events " +
+				shapeFilter + "GROUP BY t ORDER BY 2", sqlanalyzer.ReasonUnsupportedOrdering,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			analysis := NewAnalyzer(Options{}).Analyze(test.query, time.Unix(1_700_000_000, 0))
+			if analysis.Mode != sqlanalyzer.CacheModeObject || analysis.Reason != test.reason {
+				t.Fatalf("analysis = (%s, %s, %v), want (object, %s)",
+					analysis.Mode.String(), analysis.Reason, analysis.Err, test.reason)
+			}
+			if analysis.Err == nil || analysis.Plan != nil {
+				t.Fatalf("refusal must carry an error and no plan: %+v", analysis)
+			}
+		})
+	}
+}
+
+func TestAnalyzeOrderingStaysDelta(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+	}{
+		{"no ORDER BY", shapeQuery},
+		{"ORDER BY bucket alias", shapeQuery + " ORDER BY t"},
+		{"ORDER BY bucket alias ASC", shapeQuery + " ORDER BY t ASC"},
+		{"ORDER BY parenthesized alias", shapeQuery + " ORDER BY (t)"},
+		{"ORDER BY first ordinal", shapeQuery + " ORDER BY 1"},
+		{"ORDER BY bucket expression", shapeQuery + " ORDER BY toStartOfMinute(ts)"},
+		{
+			"ORDER BY unaliased bucket expression",
+			"SELECT toStartOfMinute(ts), host, count() FROM events " + shapeFilter +
+				"GROUP BY toStartOfMinute(ts), host ORDER BY toStartOfMinute(ts)",
+		},
+		{
+			"ORDER BY later ordinal",
+			"SELECT host, toStartOfMinute(ts) AS t, count() AS c FROM events " + shapeFilter + shapeGroup + " ORDER BY 2",
+		},
+		{
+			"ORDER BY Grafana time alias",
+			"SELECT toStartOfInterval(time, INTERVAL 60 second) AS time, count() AS c FROM events " +
+				"WHERE time >= toDateTime(120) AND time < toDateTime(240) GROUP BY time ORDER BY time",
+		},
+		{"ARRAY JOIN", "SELECT toStartOfMinute(ts) AS t, tag, count() AS c FROM events ARRAY JOIN tags AS tag " +
+			shapeFilter + "GROUP BY t, tag ORDER BY t"},
+		{
+			"columns named like cross-row functions",
+			"SELECT toStartOfMinute(ts) AS t, host, max(running_total) AS c, any(neighbor) AS n FROM events " +
+				shapeFilter + shapeGroup,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			analysis := NewAnalyzer(Options{}).Analyze(test.query, time.Unix(1_700_000_000, 0))
+			if analysis.Mode != sqlanalyzer.CacheModeDelta || analysis.Plan == nil || analysis.Err != nil {
+				t.Fatalf("analysis = (%s, %s, %v), want delta",
+					analysis.Mode.String(), analysis.Reason, analysis.Err)
+			}
+		})
 	}
 }
 

@@ -76,12 +76,20 @@ func hasPooledVarianceState(ds *dataset.DataSet) bool {
 			if series == nil {
 				continue
 			}
-			for _, point := range series.Points {
-				if len(point.Values) == 0 {
+			// a state is held boxed, so only boxed values are read to look for one
+			segs := series.Segments()
+			for k := range segs {
+				seg := &segs[k]
+				if seg.NumCols() == 0 {
 					continue
 				}
-				if _, ok := point.Values[0].(dataset.PooledVarianceState); ok {
-					return true
+				for i := range seg.Len() {
+					if seg.KindAt(0, i) != dataset.KindExt {
+						continue
+					}
+					if _, ok := seg.Value(0, i).(dataset.PooledVarianceState); ok {
+						return true
+					}
 				}
 			}
 		}
@@ -94,33 +102,26 @@ func finalizePooledVarianceStates(ds *dataset.DataSet, operator string) {
 		if result == nil {
 			continue
 		}
+		rows := rewriteFirstValues(result.SeriesList, func(_ *dataset.Series, seg *dataset.Segment, i int,
+			dst []byte,
+		) ([]byte, bool) {
+			if seg.NumCols() == 0 {
+				appendWarningOnce(ds, invalidPooledVarianceWarning)
+				return dst, false
+			}
+			state, ok := seg.Value(0, i).(dataset.PooledVarianceState)
+			if !ok || state.Count <= 0 || math.IsNaN(state.Count) || math.IsInf(state.Count, 0) {
+				appendWarningOnce(ds, invalidPooledVarianceWarning)
+				return dst, false
+			}
+			return strconv.AppendFloat(dst, varianceFinalValue(state, operator), 'f', -1, 64), true
+		})
 		keptSeries := result.SeriesList[:0]
-		for _, series := range result.SeriesList {
-			if series == nil {
+		for si, series := range result.SeriesList {
+			if rows[si] == nil {
 				continue
 			}
-			keptPoints := series.Points[:0]
-			for _, point := range series.Points {
-				if len(point.Values) == 0 {
-					appendWarningOnce(ds, invalidPooledVarianceWarning)
-					continue
-				}
-				state, ok := point.Values[0].(dataset.PooledVarianceState)
-				if !ok || state.Count <= 0 || math.IsNaN(state.Count) || math.IsInf(state.Count, 0) {
-					appendWarningOnce(ds, invalidPooledVarianceWarning)
-					continue
-				}
-				value := varianceFinalValue(state, operator)
-				formatted := strconv.FormatFloat(value, 'f', -1, 64)
-				point.Values[0] = formatted
-				point.Size = len(formatted) + 32
-				keptPoints = append(keptPoints, point)
-			}
-			if len(keptPoints) == 0 {
-				continue
-			}
-			series.Points = keptPoints
-			series.PointSize = keptPoints.Size()
+			series.SetSegments(rows[si])
 			keptSeries = append(keptSeries, series)
 		}
 		result.SeriesList = keptSeries
@@ -197,42 +198,37 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 				groups[key] = group
 				groupOrder = append(groupOrder, key)
 			}
-			for _, point := range series.Points {
-				value, ok := variancePointFloat(point)
+			for c := newRowCursor(series.Segments()); !c.done(); c.next() {
+				value, ok := sampleNumber(c.seg(), c.i)
 				if !ok {
 					continue
 				}
-				group.states[point.Epoch] = group.states[point.Epoch].Add(value)
+				pointEpoch := c.epoch()
+				group.states[pointEpoch] = group.states[pointEpoch].Add(value)
 			}
 		}
 
-		output := make(dataset.SeriesList, 0, len(groupOrder))
-		for _, key := range groupOrder {
+		out := newTextSeriesLog()
+		ids := make([]int, len(groupOrder))
+		var epochs []epoch.Epoch
+		for g, key := range groupOrder {
 			group := groups[key]
-			epochs := make([]epoch.Epoch, 0, len(group.states))
+			ids[g] = out.addSeries()
+			epochs = epochs[:0]
 			for pointEpoch := range group.states {
 				epochs = append(epochs, pointEpoch)
 			}
 			slices.Sort(epochs)
-			points := make(dataset.Points, 0, len(epochs))
 			for _, pointEpoch := range epochs {
-				formatted := strconv.FormatFloat(
-					varianceFinalValue(group.states[pointEpoch], spec.Operator), 'f', -1, 64,
-				)
-				points = append(points, dataset.Point{
-					Epoch:  pointEpoch,
-					Size:   len(formatted) + 32,
-					Values: []any{formatted},
-				})
+				out.add(ids[g], pointEpoch, varianceFinalValue(group.states[pointEpoch], spec.Operator))
 			}
-			if len(points) == 0 {
-				continue
+		}
+		rows := out.finish()
+		output := make(dataset.SeriesList, 0, len(groupOrder))
+		for g, key := range groupOrder {
+			if rows[ids[g]] != nil {
+				output = append(output, dataset.NewSeriesOf(groups[key].header, rows[ids[g]]))
 			}
-			output = append(output, &dataset.Series{
-				Header:    group.header,
-				Points:    points,
-				PointSize: points.Size(),
-			})
 		}
 		result.SeriesList = output
 	}
@@ -254,23 +250,6 @@ func aggregationGroupingTags(tags dataset.Tags, grouping promql.AggregationGroup
 		}
 	}
 	return output
-}
-
-func variancePointFloat(point dataset.Point) (float64, bool) {
-	if len(point.Values) == 0 {
-		return 0, false
-	}
-	switch value := point.Values[0].(type) {
-	case string:
-		parsed, err := strconv.ParseFloat(value, 64)
-		return parsed, err == nil
-	case float64:
-		return value, true
-	case float32:
-		return float64(value), true
-	default:
-		return 0, false
-	}
 }
 
 func varianceFinalValue(state dataset.PooledVarianceState, operator string) float64 {

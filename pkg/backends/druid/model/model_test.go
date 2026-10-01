@@ -299,7 +299,8 @@ func TestModelHelpers(t *testing.T) {
 	}
 	normalized := normalizeJSONValue([]any{
 		json.Number("18446744073709551615"), json.Number("1.25"),
-		json.Number("not-a-number"), map[string]any{"n": json.Number("1")},
+		json.Number("not-a-number"),
+		map[string]any{"n": json.Number("1")},
 	})
 	values := normalized.([]any)
 	if _, ok := values[0].(uint64); !ok {
@@ -307,13 +308,6 @@ func TestModelHelpers(t *testing.T) {
 	}
 	if _, ok := values[1].(float64); !ok || values[2] != "not-a-number" {
 		t.Fatalf("number normalization = %#v", values)
-	}
-	if fieldDataType(uint64(1)) != timeseries.Uint64 ||
-		fieldDataType(struct{}{}) != timeseries.Unknown {
-		t.Fatal("unexpected field data type")
-	}
-	if got := tagString(make(chan int)); !strings.HasPrefix(got, "0x") {
-		t.Fatalf("fallback tag string = %q", got)
 	}
 	if stringsCompare("b", "a") != 1 || stringsCompare("a", "a") != 0 {
 		t.Fatal("unexpected string comparison")
@@ -328,12 +322,12 @@ func TestRenderedPointsToleratesSparseDataSet(t *testing.T) {
 			nil,
 			{SeriesList: dataset.SeriesList{
 				nil,
-				{Header: dataset.SeriesHeader{
+				dataset.NewSeries(dataset.SeriesHeader{
 					Tags: dataset.Tags{"tag": "x"},
 					ValueFieldsList: timeseries.FieldDefinitions{
 						{Name: "missing", Role: timeseries.RoleValue},
 					},
-				}, Points: dataset.Points{{Epoch: 0}}},
+				}, dataset.Points{{Epoch: 0}}),
 			}},
 		},
 	}

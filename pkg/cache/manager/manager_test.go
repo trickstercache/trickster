@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
 	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	cm "github.com/trickstercache/trickster/v2/pkg/cache/metrics"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -136,7 +137,20 @@ func TestManagerObservesOperations(t *testing.T) {
 	}))
 	// the index records the freed bytes without counting a second operation
 	require.Equal(t, delBytesBefore+3, testutil.ToFloat64(delBytes))
+
+	// an indexed cache keeps serialized objects only
 	mc := c.(cache.MemoryCache)
+	require.False(t, c.(*Manager).SupportsReferences())
+	require.ErrorIs(t, mc.StoreReference("ref", &object{"bar"}, 0), ErrReferencesUnsupported)
+	_, s, err := mc.RetrieveReference("ref")
+	require.ErrorIs(t, err, ErrReferencesUnsupported)
+	require.Equal(t, status.LookupStatusError, s)
+
+	c = NewCache(memory.New(name, cacheConfig), CacheOptions{}, cacheConfig)
+	require.NoError(t, c.Connect())
+	t.Cleanup(func() { require.NoError(t, c.Close()) })
+	mc = c.(cache.MemoryCache)
+	require.True(t, c.(*Manager).SupportsReferences())
 	require.Equal(t, 1.0, delta(cm.KeySetDirect, cm.KeyNone, func() {
 		require.NoError(t, mc.StoreReference("ref", &object{"bar"}, 0))
 	}))
@@ -228,6 +242,73 @@ func (b *blockingClient) RetrieveReference(_ string) (any, status.LookupStatus, 
 // TestManagerCloseRejectsAfterClose verifies that once Close() has begun
 // draining, further Store/Retrieve/Remove return ErrCacheClosed and never
 // invoke the underlying client. This is the reload-safety contract.
+func TestManagerSplit(t *testing.T) {
+	const name, provider = "splitTest", "filesystem"
+	cfg := co.New()
+	cfg.Name, cfg.Provider = name, provider
+	cfg.Filesystem.CachePath = t.TempDir()
+	c := NewCache(filesystem.NewCache(name, cfg), CacheOptions{UseIndex: true}, cfg).(*Manager)
+	require.NoError(t, c.Connect())
+	require.True(t, c.SupportsSplit())
+
+	sets := metrics.CacheObjectOperations.WithLabelValues(name, provider, cm.KeySet, cm.KeyNone)
+	hits := metrics.CacheObjectOperations.WithLabelValues(name, provider, cm.KeyGet, status.StatusHit)
+	misses := metrics.CacheObjectOperations.WithLabelValues(name, provider, cm.KeyGet, status.StatusKeyMiss)
+	setsBefore, hitsBefore, missesBefore := testutil.ToFloat64(sets), testutil.ToFloat64(hits), testutil.ToFloat64(misses)
+
+	require.NoError(t, c.StoreSplit("k", []byte("meta"), []byte("body"), time.Minute))
+	meta, body, s, err := c.RetrieveSplit("k")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, s)
+	require.Equal(t, "meta", string(meta))
+	require.Equal(t, "body", string(body))
+	_, _, s, err = c.RetrieveSplit("absent")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+	require.Equal(t, setsBefore+1, testutil.ToFloat64(sets))
+	require.Equal(t, hitsBefore+1, testutil.ToFloat64(hits))
+	require.Equal(t, missesBefore+1, testutil.ToFloat64(misses))
+
+	require.True(t, c.SupportsStream())
+	meta, opened, s, err := c.OpenSplit("k")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, s)
+	require.Equal(t, "meta", string(meta))
+	require.Equal(t, int64(4), opened.Size())
+	_, _, s, err = c.OpenSplit("absent")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+	require.Equal(t, hitsBefore+2, testutil.ToFloat64(hits))
+	require.Equal(t, missesBefore+2, testutil.ToFloat64(misses))
+
+	require.NoError(t, c.Close())
+	require.ErrorIs(t, c.StoreSplit("k", nil, nil, 0), ErrCacheClosed)
+	_, _, _, err = c.RetrieveSplit("k")
+	require.ErrorIs(t, err, ErrCacheClosed)
+	_, _, _, err = c.OpenSplit("k")
+	require.ErrorIs(t, err, ErrCacheClosed)
+	// what was opened outlasts the cache it was opened from
+	part := make([]byte, 4)
+	_, err = opened.ReadAt(part, 0)
+	require.NoError(t, err)
+	require.Equal(t, "body", string(part))
+	require.NoError(t, opened.Close())
+
+	// a provider that keeps objects whole
+	whole := NewCache(memory.New(name, cfg), CacheOptions{}, cfg).(*Manager)
+	require.NoError(t, whole.Connect())
+	t.Cleanup(func() { whole.Close() })
+	require.False(t, whole.SupportsSplit())
+	require.False(t, whole.SupportsStream())
+	require.ErrorIs(t, whole.StoreSplit("k", nil, nil, 0), ErrSplitUnsupported)
+	_, _, s, err = whole.RetrieveSplit("k")
+	require.ErrorIs(t, err, ErrSplitUnsupported)
+	require.Equal(t, status.LookupStatusError, s)
+	_, _, s, err = whole.OpenSplit("k")
+	require.ErrorIs(t, err, ErrSplitUnsupported)
+	require.Equal(t, status.LookupStatusError, s)
+}
+
 func TestManagerCloseRejectsAfterClose(t *testing.T) {
 	t.Parallel()
 	bc := newBlockingClient()

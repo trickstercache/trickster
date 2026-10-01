@@ -26,6 +26,9 @@ import (
 type Options struct {
 	// CachePath represents the path on disk where our cache will live
 	CachePath string `yaml:"cache_path,omitempty"`
+	// MinFreeBytes is the space to keep free on the filesystem holding the cache path. When
+	// less is free, the cache evicts as it does when over its size. 0 disables the check.
+	MinFreeBytes int64 `yaml:"min_free_bytes,omitempty"`
 }
 
 // New returns a new Filesystem Options Reference with default values set
@@ -51,5 +54,5 @@ func (o *Options) Equal(o2 *Options) bool {
 	if o == nil {
 		return false
 	}
-	return o.CachePath == o2.CachePath
+	return o.CachePath == o2.CachePath && o.MinFreeBytes == o2.MinFreeBytes
 }

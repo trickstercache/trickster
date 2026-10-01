@@ -40,4 +40,6 @@ type MergeOpts struct {
 	Strategy        merge.Strategy
 	ToleranceNanos  int64
 	ValueOperations ValueMergeOperations
+
+	parts bool
 }

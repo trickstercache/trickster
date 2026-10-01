@@ -17,11 +17,17 @@
 package pgwire
 
 import (
+	"io"
 	"strconv"
 	"testing"
 	"time"
 
+	trickstercache "github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
 	"github.com/jackc/pgx/v5/pgproto3"
 )
@@ -34,75 +40,110 @@ const (
 	benchEpochStart = 1789776000
 )
 
-func benchResult(buckets, series int, from time.Time) *Result {
-	r := &Result{RowDescription: []byte(resultTestDescription), times: []int64{}}
+func benchDelta(buckets, series int, from time.Time) *nativedelta.Delta {
+	// rows as the row sink models them: a series per host, each point one DataRow body
+	builder := dataset.NewBuilder(nil, dataset.BuilderOptions{Fields: timeseries.SeriesFields{
+		Tags:   timeseries.FieldDefinitions{{Name: fakeHostColumn}},
+		Values: timeseries.FieldDefinitions{{Name: rowValue}},
+	}})
 	for bucket := range buckets {
 		at := from.Add(time.Duration(bucket) * benchStep)
 		for s := range series {
+			host := []byte("series-" + strconv.Itoa(s))
 			body, _ := (&pgproto3.DataRow{Values: [][]byte{
-				[]byte(at.Format("2006-01-02 15:04:05+00")), []byte("series-" + strconv.Itoa(s)), []byte("12345.678"),
+				[]byte(at.Format("2006-01-02 15:04:05+00")), host, []byte("12345.678"),
 			}}).Encode(nil)
-			r.appendRow(body[frameHeaderLen:], at.UnixNano(), true)
+			row := builder.Row()
+			row.SetEpoch(epoch.Epoch(at.UnixNano()))
+			row.SetTag(0, host)
+			row.AddBytes(body[frameHeaderLen:])
+			if err := row.Commit(); err != nil {
+				panic(err)
+			}
 		}
 	}
-	return r
+	ds, err := builder.Finish()
+	if err != nil {
+		panic(err)
+	}
+	return &nativedelta.Delta{Header: []byte(resultTestDescription), DS: ds}
 }
 
 func BenchmarkHitPath(b *testing.B) {
-	// what a cache hit costs after the lookup: decode the stored object, crop it to the
-	// request, and encode the wire response. Each must stay linear in rows.
+	// a hit's cost after the lookup: crop the stored rows and encode the response; a partial hit also
+	// merges and stores. Each must stay linear in rows.
 	start := time.Unix(benchEpochStart, 0).UTC()
+	plan := &sqlanalyzer.QueryPlan{OutputColumn: "time"}
+	descendingPlan := &sqlanalyzer.QueryPlan{Ordering: []sqlanalyzer.OrderTerm{{Column: "time", Descending: true}}}
 	for name, rows := range map[string]int{"panel": benchPanelRows, "large": benchLargeRows} {
 		buckets := rows / benchSeries
-		cached := benchResult(buckets, benchSeries, start)
-		stored, err := resultCodec{}.Marshal(cached)
-		if err != nil {
-			b.Fatal(err)
-		}
+		cached := benchDelta(buckets, benchSeries, start)
 		requested := timeseries.Extent{
 			Start: start.Add(benchStep * time.Duration(buckets/4)), End: start.Add(benchStep * time.Duration(3*buckets/4)),
 		}
-		b.Run(name+"/unmarshal", func(b *testing.B) {
+		// a bytes-cache hit after the lookup: decode the entry, crop it and encode the response
+		cache := newByteCache()
+		engine := nativedelta.New(nativedelta.Config{
+			Protocol: "bench", CacheTTL: time.Hour, CacheClient: func() trickstercache.Cache { return cache },
+		}, resultCodec{})
+		engine.StoreDelta(name, &nativedelta.Entry[*nativedelta.Delta]{Payload: cached, Extents: cached.DS.ExtentList})
+		// as a cached answer is written: through a pooled buffer to the client
+		write := func(d *nativedelta.Delta, plan *sqlanalyzer.QueryPlan) {
+			buffer := pumpBuffers.Get().(*[]byte)
+			out := frameWriter{w: io.Discard, buffer: (*buffer)[:0]}
+			writeDelta(&out, d, plan)
+			out.flush()
+			pumpBuffers.Put(buffer)
+		}
+		b.Run(name+"/bytes-hit", func(b *testing.B) {
 			b.ReportAllocs()
-			b.SetBytes(int64(len(stored)))
 			for b.Loop() {
-				if _, err := (resultCodec{}).Unmarshal(stored); err != nil {
-					b.Fatal(err)
+				entry, ok := engine.RetrieveDelta(name)
+				if !ok {
+					b.Fatal("the entry was not cached")
 				}
+				write(&nativedelta.Delta{Header: entry.Payload.Header, DS: entry.Payload.DS.View(requested)}, plan)
 			}
 		})
 		b.Run(name+"/crop", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = cached.crop(requested)
+				_ = cached.DS.View(requested)
 			}
 		})
 		b.Run(name+"/encode", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = cached.encode(false)
+				write(cached, plan)
 			}
 		})
 		b.Run(name+"/encode-descending", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				_ = cached.encode(true)
+				write(cached, descendingPlan)
 			}
 		})
-		// a partial hit merges what was cached with the newly fetched tail and stores the result
-		tail := benchResult(buckets/10+1, benchSeries, start.Add(benchStep*time.Duration(buckets-1)))
+		tail := benchDelta(buckets/10+1, benchSeries, start.Add(benchStep*time.Duration(buckets)))
 		b.Run(name+"/merge", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := mergeResults([]*Result{cached, tail}); err != nil {
-					b.Fatal(err)
-				}
+				_ = dataset.MergeDisjoint(nil, cached.DS, tail.DS)
 			}
 		})
 		b.Run(name+"/marshal", func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				if _, err := (resultCodec{}).Marshal(cached); err != nil {
+				if _, err := dataset.MarshalDataSet(cached.DS, nil, 0); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+		stored, _ := dataset.MarshalDataSet(cached.DS, nil, 0)
+		b.Run(name+"/unmarshal", func(b *testing.B) {
+			b.ReportAllocs()
+			b.SetBytes(int64(len(stored)))
+			for b.Loop() {
+				if _, err := dataset.UnmarshalDataSet(stored, nil); err != nil {
 					b.Fatal(err)
 				}
 			}

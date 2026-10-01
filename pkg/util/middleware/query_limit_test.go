@@ -134,4 +134,44 @@ func TestLimitQueryRange(t *testing.T) {
 		val := testutil.ToFloat64(metrics.ProxyQueryRangeRejections.WithLabelValues("test"))
 		assert.Equal(t, float64(1), val)
 	})
+
+	t.Run("measures the requested range, not the aligned extent", func(t *testing.T) {
+		const limit = time.Hour
+		now := time.Unix(1_700_000_000, 0)
+		for _, test := range []struct {
+			name      string
+			requested time.Duration
+			want      int
+		}{
+			{
+				"an aligned extent inside the limit does not admit a wider request", limit + time.Minute,
+				http.StatusBadRequest,
+			},
+			{
+				"an aligned extent beyond the limit does not reject a request inside it", limit - time.Minute,
+				http.StatusOK,
+			},
+		} {
+			t.Run(test.name, func(t *testing.T) {
+				r := httptest.NewRequest(http.MethodGet, "/query", nil)
+				rec := httptest.NewRecorder()
+				backendOpts := &bo.Options{Name: "test", MaxQueryRange: timeconv.Duration(limit)}
+				mockBackend := &mockTimeseriesBackend{
+					parseTRQFunc: func(*http.Request) (*timeseries.TimeRangeQuery, *timeseries.RequestOptions, bool, error) {
+						return &timeseries.TimeRangeQuery{
+							// the extent differs from the request by alignment, in the other direction
+							Extent: timeseries.Extent{Start: now.Add(-2*limit + test.requested), End: now},
+							Requested: timeseries.RequestedRange{
+								Start: now.Add(-test.requested), End: now,
+							},
+						}, nil, false, nil
+					},
+				}
+				resources := request.NewResources(backendOpts, nil, nil, nil, mockBackend, nil)
+				r = r.WithContext(tctx.WithResources(r.Context(), resources))
+				LimitQueryRange(nextHandler).ServeHTTP(rec, r)
+				assert.Equal(t, test.want, rec.Code)
+			})
+		}
+	})
 }

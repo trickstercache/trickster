@@ -142,7 +142,11 @@ func (c *Config) loginUpstream(ctx context.Context, database string,
 	}
 	var defaults map[string]string
 	if probe {
-		if defaults, err = unannouncedSettings(ctx, conn); err != nil {
+		settingsProbe := SessionDefaultsProbe{SQL: unannouncedSettingsSQL, Names: unannouncedSettingNames}
+		if engine, ok := c.Engine.(SessionDefaultsEngine); ok {
+			settingsProbe = engine.SessionDefaultsProbe()
+		}
+		if defaults, err = sessionDefaults(ctx, conn, settingsProbe); err != nil {
 			_ = conn.Close(ctx)
 			return nil, nil, fmt.Errorf("postgres upstream login: %w", sanitizeConnectError(err))
 		}
@@ -155,17 +159,37 @@ func (c *Config) loginUpstream(ctx context.Context, database string,
 	return hijacked, defaults, nil
 }
 
-func unannouncedSettings(ctx context.Context, conn *pgconn.PgConn) (map[string]string, error) {
-	results, err := conn.Exec(ctx, unannouncedSettingsSQL).ReadAll()
+func sessionDefaults(ctx context.Context, conn *pgconn.PgConn, probe SessionDefaultsProbe) (map[string]string, error) {
+	if probe.SQL == "" {
+		return nil, nil
+	}
+	results, err := conn.Exec(ctx, probe.SQL).ReadAll()
 	if err != nil {
 		return nil, err
 	}
-	if len(results) != 1 || len(results[0].Rows) != 1 || len(results[0].Rows[0]) != len(unannouncedSettingNames) {
-		return nil, errors.New("unexpected answer to the settings probe")
+	return settingsFromResults(results, probe.Names)
+}
+
+func settingsFromResults(results []*pgconn.Result, names []string) (map[string]string, error) {
+	defaults := make(map[string]string, len(names))
+	at := 0
+	for _, result := range results {
+		if result == nil || result.Err != nil || len(result.Rows) != 1 || len(result.Rows[0]) == 0 {
+			return nil, errors.New("unexpected answer to the settings probe")
+		}
+		for _, value := range result.Rows[0] {
+			if at >= len(names) || value == nil || names[at] == "" {
+				return nil, errors.New("unexpected answer to the settings probe")
+			}
+			if _, duplicate := defaults[names[at]]; duplicate {
+				return nil, errors.New("duplicate name in the settings probe")
+			}
+			defaults[names[at]] = string(value)
+			at++
+		}
 	}
-	defaults := make(map[string]string, len(unannouncedSettingNames))
-	for i, name := range unannouncedSettingNames {
-		defaults[name] = string(results[0].Rows[0][i])
+	if at == 0 || at != len(names) {
+		return nil, errors.New("unexpected answer to the settings probe")
 	}
 	return defaults, nil
 }

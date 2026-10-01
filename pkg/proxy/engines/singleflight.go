@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -34,10 +35,14 @@ import (
 type sfResponseCapture struct {
 	inner io.Writer
 	buf   bytes.Buffer
+	// pr is the request whose response is captured, until it streams one from the cache
+	pr *proxyRequest
 }
 
 func (c *sfResponseCapture) Write(p []byte) (int, error) {
-	c.buf.Write(p)
+	if c.pr == nil || !c.pr.streaming {
+		c.buf.Write(p)
+	}
 	return c.inner.Write(p)
 }
 
@@ -66,6 +71,9 @@ type opcResult struct {
 	body        []byte
 	elapsed     float64
 	cacheStatus status.LookupStatus
+	// streamed marks a result whose body was read from the cache as it was written, and
+	// so was not kept for a waiter, which must read the cache for itself
+	streamed bool
 	// varyNames, varyGeneration and varyKey record which request fields
 	// selected this response and the variant they selected, so a waiter can
 	// tell whether the result is one it may use at all
@@ -102,10 +110,15 @@ func (r *opcResult) suitableFor(pr *proxyRequest) bool {
 	return r.variantKeyFor(pr) == r.varyKey
 }
 
-// dpcResult is the shared result returned to singleflight waiters for DPC.
-// Normal waiters serve wireBody directly; IsMergeMember/TSTransformer waiters use rts.
+// the result shared with DPC singleflight waiters: most serve wire(), while merge members and
+// transformers take rts
 type dpcResult struct {
-	wireBody           []byte
+	wireBody []byte
+	// the body is marshaled by the first caller to serve it, so none is made for callers that
+	// each marshal their own, as those with partial buckets do
+	wireOnce           sync.Once
+	modeler            *timeseries.Modeler
+	rlo                *timeseries.RequestOptions
 	rts                timeseries.Timeseries
 	headers            http.Header
 	statusCode         int
@@ -116,4 +129,20 @@ type dpcResult struct {
 	cacheStatus        status.LookupStatus
 	missRanges         timeseries.ExtentList
 	failedExtents      timeseries.ExtentList // populated only is case of failed extents
+}
+
+// the response body that every caller without its own partial buckets serves
+func (r *dpcResult) wire() []byte {
+	r.wireOnce.Do(func() {
+		if r.wireBody == nil {
+			var buf bytes.Buffer
+			ts := r.rts
+			if !r.modeler.WireMarshalReadsParts {
+				ts = flatResponse(ts)
+			}
+			r.modeler.WireMarshalWriter(ts, r.rlo, r.statusCode, &buf)
+			r.wireBody = buf.Bytes()
+		}
+	})
+	return r.wireBody
 }

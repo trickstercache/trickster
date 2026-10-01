@@ -34,7 +34,7 @@ func TestInfluxDB(t *testing.T) {
 	h := configHarness(t)
 	influxAddr := h.BaseAddr
 	h.start(t)
-	latest := waitForInfluxDBData(t, "127.0.0.1:8086")
+	latest := seedInfluxDB2(t)
 	dataRange := fmt.Sprintf(`range(start: %s, stop: %s)`,
 		latest.Add(-5*time.Minute).Format(time.RFC3339Nano), latest.Add(time.Minute).Format(time.RFC3339Nano))
 
@@ -55,7 +55,7 @@ func TestInfluxDB(t *testing.T) {
 
 	t.Run("flux query", func(t *testing.T) {
 		query := `from(bucket: "trickster") |> ` + dataRange +
-			` |> filter(fn: (r) => r._measurement == "cpu" and r._field == "usage_idle")` +
+			` |> filter(fn: (r) => r._measurement == "` + influxSeedMeasurement + `" and r._field == "usage_idle")` +
 			` |> aggregateWindow(every: 1m, fn: mean) |> limit(n: 5)`
 		bodyJSON := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
 		resp, body := post(t, bodyJSON, "trickster-dev-token")
@@ -73,7 +73,8 @@ func TestInfluxDB(t *testing.T) {
 	for _, fc := range fluxCases {
 		t.Run("flux_"+fc.name, func(t *testing.T) {
 			query := `from(bucket: "trickster") |> ` + dataRange +
-				` |> filter(fn: (r) => r._field == "usage_idle") |> aggregateWindow(every: 1m, fn: ` +
+				` |> filter(fn: (r) => r._measurement == "` + influxSeedMeasurement + `" and r._field == "usage_idle")` +
+				` |> aggregateWindow(every: 1m, fn: ` +
 				fc.fn + `) |> limit(n: 5)`
 			q := fmt.Sprintf(`{"query": %q, "type": "flux"}`, query)
 			resp, body := post(t, q, "trickster-dev-token")
@@ -92,7 +93,7 @@ func TestInfluxDB(t *testing.T) {
 	// v1 InfluxQL goes through /flux2/query against InfluxDB 2's v1-compat
 	// endpoint. Verifies Trickster's v1 InfluxQL handler + cache path.
 	t.Run("influxql_select", func(t *testing.T) {
-		q := `SELECT mean("usage_idle") FROM "cpu" WHERE "cpu" = 'cpu-total' AND time > now() - 5m GROUP BY time(10s)`
+		q := `SELECT mean("usage_idle") FROM "` + influxSeedMeasurement + `" WHERE "cpu" = 'cpu-total' AND time > now() - 5m GROUP BY time(10s)`
 		u := "http://" + influxAddr + "/flux2/query?db=trickster&q=" + url.QueryEscape(q)
 		req, err := http.NewRequest("GET", u, nil)
 		require.NoError(t, err)
@@ -120,6 +121,6 @@ func TestInfluxDB(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode,
 			"expected SHOW MEASUREMENTS to proxy through: %s", string(b))
-		require.Contains(t, string(b), "cpu", "expected cpu measurement in response")
+		require.Contains(t, string(b), influxSeedMeasurement, "expected the seeded measurement in response")
 	})
 }

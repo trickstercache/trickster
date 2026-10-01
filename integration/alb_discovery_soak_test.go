@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -53,11 +55,8 @@ func TestALBDiscoverySoak(t *testing.T) {
 		duration = parsed
 	}
 
-	const (
-		frontPort   = 19550
-		metricsPort = 19551
-		mgmtPort    = 19552
-	)
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	leaves := make([]*discoveryLeaf, 6)
 	for i := range leaves {
 		leaves[i] = newDiscoveryLeaf(t, fmt.Sprintf("leaf%d", i))
@@ -68,6 +67,7 @@ func TestALBDiscoverySoak(t *testing.T) {
 	cfg := discoveryALBConfig(frontPort, metricsPort, mgmtPort,
 		"  d1:\n    provider: file",
 		"          path: "+membersPath)
+	release()
 	startDiscoveryTrickster(t, cfg)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)

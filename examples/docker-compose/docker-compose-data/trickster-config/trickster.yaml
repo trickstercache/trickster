@@ -48,7 +48,7 @@ backends:
     origin_url: 'http://influxdb:8086'
     tracing_name: otlp1
     cache_name: mem1
-    backfill_tolerance: 60s
+    volatile_window: 60s
   sim1: # simulated prometheus cached with a memory cache, traces sent to Jaeger via OTLP/HTTP
     provider: prometheus
     origin_url: 'http://devorigin:8482/prometheus'

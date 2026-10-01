@@ -19,6 +19,9 @@ package options
 import (
 	"errors"
 	"fmt"
+	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // ErrInvalidMetadata is an error for invalid metadata
@@ -33,6 +36,51 @@ var ErrInvalidMaxShardSizeTime = errors.New(
 // 'shard_max_size_points' are used on the same backend
 var ErrInvalidMaxShardSize = errors.New(
 	"'shard_max_size_time' and 'shard_max_size_points' cannot both be non-zero")
+
+// ErrStepAlignmentWithFastForwardDisable is an error for a backend that sets both step_alignment
+// and the fast_forward_disable key it supersedes
+var ErrStepAlignmentWithFastForwardDisable = errors.New(
+	"'step_alignment' and 'fast_forward_disable' cannot both be set; remove 'fast_forward_disable'")
+
+// ErrVolatileWindowWithBackfillTolerance is an error for a backend that sets both volatile_window
+// and backfill_tolerance
+var ErrVolatileWindowWithBackfillTolerance = errors.New(
+	"'volatile_window' and 'backfill_tolerance' cannot both be set; remove 'backfill_tolerance'")
+
+// ErrVolatileWindowPointsWithBackfillTolerancePoints is an error for a backend that sets both
+// volatile_window_points and backfill_tolerance_points
+var ErrVolatileWindowPointsWithBackfillTolerancePoints = errors.New(
+	"'volatile_window_points' and 'backfill_tolerance_points' cannot both be set; remove 'backfill_tolerance_points'")
+
+// ErrUnsupportedStepAlignment is an error for a step_alignment the backend's provider doesn't support
+var ErrUnsupportedStepAlignment = errors.New("unsupported step_alignment")
+
+// NewErrInvalidStepAlignment returns an error for a step_alignment value that isn't exactly one mode
+func NewErrInvalidStepAlignment(value timeseries.StepAlignment, backendName string) error {
+	return fmt.Errorf(`%w for backend "%s": %#x is not exactly one mode`,
+		timeseries.ErrInvalidStepAlignment, backendName, uint8(value))
+}
+
+// NewErrUnsupportedStepAlignment returns an error naming the modes the backend's provider supports
+func NewErrUnsupportedStepAlignment(mode, supported timeseries.StepAlignment, provider,
+	backendName string,
+) error {
+	names := supported.String()
+	if names == "" {
+		names = "no step alignment modes"
+	}
+	return fmt.Errorf(`%w "%s" for backend "%s": provider "%s" supports %s`,
+		ErrUnsupportedStepAlignment, mode, backendName, provider, names)
+}
+
+// NewErrStepAlignmentUnsupportedByMembers returns an error naming the pool members of an ALB that
+// can't apply the mode it applies to every member
+func NewErrStepAlignmentUnsupportedByMembers(mode timeseries.StepAlignment, albName string,
+	members []string,
+) error {
+	return fmt.Errorf(`%w "%s" for alb "%s": pool members [%s] can't apply it`,
+		ErrUnsupportedStepAlignment, mode, albName, strings.Join(members, ", "))
+}
 
 // ErrMissingProvider is an error type for missing provider
 type ErrMissingProvider struct {

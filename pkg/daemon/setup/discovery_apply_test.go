@@ -17,8 +17,12 @@
 package setup
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,6 +42,7 @@ import (
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	dp "github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 
 	"github.com/stretchr/testify/require"
 )
@@ -431,4 +436,52 @@ func TestApplyDiscoveryReloadStopsOutgoingAfterHandoff(t *testing.T) {
 	unsub, err := incoming.Subscribe(&do.Query{Path: path}, func(discovery.Snapshot) {})
 	require.NoError(t, err, "the incoming discoverer is live")
 	unsub()
+}
+
+const failingDiscoveryConfig = `
+discovery:
+  d1:
+    provider: kubernetes
+    kubernetes:
+      in_cluster: true
+backends:
+  probed:
+    provider: rp
+    origin_url: '%s'
+    healthcheck:
+      interval: 5ms
+      path: /
+  tmpl:
+    provider: rp
+    is_template: true
+  alb1:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool: [probed]
+      discovery:
+        discoverer_name: d1
+        template_backend: tmpl
+        startup_policy: fail
+        query:
+          service: svc
+`
+
+func TestApplyConfigDiscoveryFailureStopsStartedWorkers(t *testing.T) {
+	var probes atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		probes.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(origin.Close)
+	conf, clients, err := BootstrapConfig("-config", writeConfig(t, fmt.Sprintf(failingDiscoveryConfig, origin.URL)))
+	require.NoError(t, err)
+	quietListeners(conf)
+	si := &instance.ServerInstance{}
+	require.Error(t, ApplyConfig(si, conf, clients, nil, nil, listener.NewGroup()))
+	// no instance took the checks and pools the failed pass started, so none may keep running
+	before := probes.Load()
+	time.Sleep(50 * time.Millisecond)
+	require.Equal(t, before, probes.Load(), "the failed pass left its health checks probing")
+	require.False(t, clients["alb1"].(*alb.Client).SetDynamicTargets(nil), "the failed pass left its ALB pool running")
 }

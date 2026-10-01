@@ -43,10 +43,7 @@ func newDialectAnalyzer(utc bool) *dialectAnalyzer {
 	return &dialectAnalyzer{inner: cockroach.NewAnalyzer(cockroach.Options{
 		BucketMatchers:     buckets,
 		ExprBucketMatchers: []cockroach.ExprBucketMatcher{epochFloor},
-		// Grafana sends live, unaligned ranges; round them to the bucket cadence
-		// instead of failing closed to the object cache
-		RoundUnalignedTimeBounds: true,
-		NakedIntIsInt4:           true,
+		NakedIntIsInt4:     true,
 		// timestamps hold microseconds; a finer literal is rounded, up into the next bucket
 		BoundPrecision:       timestampPrecision,
 		RejectZonelessBounds: !utc,

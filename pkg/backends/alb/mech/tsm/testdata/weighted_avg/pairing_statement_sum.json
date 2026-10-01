@@ -12,7 +12,6 @@
           "points": [
             {
               "epoch": 100,
-              "size": 32,
               "values": [
                 "100"
               ]

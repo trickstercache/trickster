@@ -6,9 +6,9 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 ## Load Balancing and Scaling
 
-**PLANNED** - **Layer 4 Load Balancing** - We extend our HTTP L7 ALB to support Layer 4 as well. Supported mechanisms beyond Round Robin are TBD.
+**Layer 4 Load Balancing** - We extend our HTTP L7 ALB to support Layer 4 as well. Supported mechanisms beyond Round Robin are TBD.
 
-**PLANNED** - We now support sticky sessions for the Round Robin Load Balancer mechanism. More mechanisms TBD, based on whether any new ones are added for L4.
+- We now support sticky sessions for the Load Balancer feature.
 
 **PLANNED** - We now provide a request rate limiter based on request attributes. it can be attached at the listener, backend, and path levels, with most specific winning.
 
@@ -20,7 +20,7 @@ All three of these newly-supported providers consume a new `pgwire` package for 
 
 **TimescaleDB** - You can now accelerate TimescaleDB with the delta proxy cache! If you are tired of playing whack-a-mole with new continuous aggregates to manage performance, Trickster can stop the madness. Even better - any Postgres-compatible database can be fronted by Trickster for a `SELECT` result cache.
 
-**PLANNED** - **GrepTimeDB** - We've added GrepTimeDB as an acceleration-supported backend time series provider.
+**GreptimeDB** - We've added GreptimeDB as an acceleration-supported backend time series provider.
 
 **PLANNED** - **QuestDB** - And we also now support accelerating QuestDB.
 
@@ -29,3 +29,13 @@ All three of these newly-supported providers consume a new `pgwire` package for 
 ## HTTP Reverse Proxy Cache & Streaming
 
 **PLANNED** - **Media over QUIC (MoQ)** -- In Trickster 2.1, we introduced support for HTTP/3 and QUIC. We now offer support for MoQ Relaying through the reverse proxy cache.
+
+**Disk Caches** - The Filesystem and bbolt caches are rebuilt for large caches and large objects. See [Disk Caches](./caches.md#disk-caches) for details.
+
+- Cached objects are self-describing and checksummed, and are written atomically, so an incomplete or damaged object is never served.
+- The Filesystem Cache spreads its files across two levels of directories, in place of a single directory.
+- A Cache Index that is lost or out of date is rebuilt from the cache in the background. Nothing in the cache is orphaned.
+- The Cache Index is persisted as a journal of changes, and its cost no longer grows with the size of the cache. Expiration and eviction no longer rank every object in the cache.
+- Large objects are served from a disk cache as they are read, and `Range` requests read only the ranges asked for, without holding the object in memory.
+- New options: `scan_interval`, `scan_batch_size` and `scan_batch_pause` for the Cache Index, and `min_free_bytes` for the Filesystem Cache.
+- **Upgrade note:** Filesystem and bbolt caches start cold after upgrading to 2.2, as objects cached by earlier versions are stored in another format. Trickster removes them on its own, in the background.

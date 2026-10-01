@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // DefaultPort is the default PostgreSQL server port, used when an origin_url
@@ -44,6 +45,11 @@ type Client struct {
 }
 
 var _ types.NewBackendClientFunc = NewClient
+
+// StepAlignments returns the step alignment modes PostgreSQL supports, and its default
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return sqlanalyzer.StepAlignments, sqlanalyzer.DefaultStepAlignment
+}
 
 // NewClient returns a new PostgreSQL backend Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,

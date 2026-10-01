@@ -54,7 +54,8 @@ func echoUpgradeOrigin(t *testing.T) *httptest.Server {
 		if err != nil {
 			return
 		}
-		brw.WriteString("echo:" + line)
+		brw.WriteString("echo:")
+		brw.WriteString(line)
 		brw.Flush()
 	}))
 	t.Cleanup(s.Close)

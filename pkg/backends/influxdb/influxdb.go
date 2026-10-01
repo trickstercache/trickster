@@ -22,10 +22,12 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/influxql"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flightsql"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -36,6 +38,12 @@ type Client struct {
 }
 
 var _ types.NewBackendClientFunc = NewClient
+
+// StepAlignments returns the step alignment modes InfluxDB supports across its query languages, and
+// the InfluxQL default; Flux supports truncate and off only, and SQL defaults to drop
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return timeseries.StepAlignmentAll, influxql.DefaultStepAlignment
+}
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,

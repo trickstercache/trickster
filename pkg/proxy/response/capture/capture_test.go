@@ -211,3 +211,30 @@ func TestHeaderStatusCodeBody(t *testing.T) {
 	sw.Write([]byte("cd"))
 	require.Equal(t, []byte("abcd"), sw.Body())
 }
+
+func TestReleasedWriterIsReusedClean(t *testing.T) {
+	sw := NewCaptureResponseWriterWithLimit(8)
+	sw.Header().Set("X-Test", "1")
+	sw.Header().Set(headers.NameContentLength, "4")
+	sw.WriteHeader(http.StatusTeapot)
+	sw.Write([]byte("more than eight bytes"))
+	require.True(t, sw.Truncated())
+	sw.Release()
+
+	for range 8 {
+		next := NewCaptureResponseWriterWithLimit(0)
+		require.Empty(t, next.Header())
+		require.Empty(t, next.Body())
+		require.Equal(t, http.StatusOK, next.StatusCode())
+		require.False(t, next.Truncated())
+		require.False(t, next.presized)
+		next.Write([]byte("unlimited, as asked"))
+		require.Equal(t, "unlimited, as asked", string(next.Body()))
+		next.Release()
+	}
+
+	large := NewCaptureResponseWriterWithLimit(0)
+	large.Write(make([]byte, maxPooledBody+1))
+	large.Release()
+	require.Equal(t, maxPooledBody+1, len(large.Body()), "a writer over the limit is dropped, not reset")
+}

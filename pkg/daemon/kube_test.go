@@ -43,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/stretchr/testify/require"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -1086,6 +1087,24 @@ func TestProviderPaths(t *testing.T) {
 		},
 	}
 	require.Empty(t, readProviderPaths(failing))
+}
+
+func TestProviderStepAlignments(t *testing.T) {
+	// each time series provider's supported modes are read from its own client
+	for _, name := range providers.HTTPTimeSeriesProviderNames() {
+		require.NotZero(t, providerStepAlignments(name), name)
+	}
+	require.Zero(t, providerStepAlignments(providers.Prometheus)&timeseries.StepAlignmentPartial)
+	require.NotZero(t, providerStepAlignments(providers.ClickHouse)&timeseries.StepAlignmentPartial)
+	require.Zero(t, providerStepAlignments(providers.ReverseProxyCacheShort))
+	failing := rt.Lookup{
+		providers.Prometheus: func(string, *bo.Options, http.Handler, cache.Cache,
+			backends.Backends, rt.Lookup,
+		) (backends.Backend, error) {
+			return nil, errors.New("no client")
+		},
+	}
+	require.Empty(t, readProviderStepAlignments(failing))
 }
 
 func TestStartReadinessWaitsForController(t *testing.T) {

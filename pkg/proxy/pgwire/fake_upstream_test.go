@@ -86,7 +86,7 @@ type fakeCancel struct {
 }
 
 type fakeUpstream struct {
-	t          *testing.T
+	t          testing.TB
 	listener   net.Listener
 	tls        *tls.Config
 	authMode   string
@@ -99,6 +99,8 @@ type fakeUpstream struct {
 	timeOID    uint32
 	// floatDigits is the session's extra_float_digits, as a role default would set it
 	floatDigits string
+	// partialBuckets answers the buckets a range only partly covers too, valued by the seconds covered
+	partialBuckets bool
 
 	mtx      sync.Mutex
 	nextPID  uint32
@@ -109,7 +111,7 @@ type fakeUpstream struct {
 	wg       sync.WaitGroup
 }
 
-func newFakeUpstream(t *testing.T, mutate func(*fakeUpstream)) *fakeUpstream {
+func newFakeUpstream(t testing.TB, mutate func(*fakeUpstream)) *fakeUpstream {
 	t.Helper()
 	l, err := net.Listen("tcp", fakeLoopbackListen)
 	if err != nil {
@@ -461,7 +463,7 @@ func (f *fakeUpstream) buckets(backend *pgproto3.Backend, sql string) {
 	backend.Send(&pgproto3.RowDescription{Fields: fields})
 	var times []time.Time
 	for bucket := lower.Truncate(fakeBucketStep); bucket.Before(upper); bucket = bucket.Add(fakeBucketStep) {
-		if !bucket.Before(lower) {
+		if !bucket.Before(lower) || f.partialBuckets {
 			times = append(times, bucket)
 		}
 	}
@@ -481,11 +483,26 @@ func (f *fakeUpstream) buckets(backend *pgproto3.Backend, sql string) {
 			if grouped {
 				values = append(values, []byte(host))
 			}
-			backend.Send(&pgproto3.DataRow{Values: append(values, []byte(fakeBucketValue(bucket, host)))})
+			value := fakeBucketValue(bucket, host)
+			if covered := bucketCoverage(bucket, lower, upper); f.partialBuckets && covered < fakeBucketStep {
+				value = strconv.Itoa(int(covered.Seconds()) + len(host)*1000)
+			}
+			backend.Send(&pgproto3.DataRow{Values: append(values, []byte(value))})
 			rows++
 		}
 	}
 	backend.Send(&pgproto3.CommandComplete{CommandTag: []byte("SELECT " + strconv.Itoa(rows))})
+}
+
+func bucketCoverage(bucket, lower, upper time.Time) time.Duration {
+	start, end := bucket, bucket.Add(fakeBucketStep)
+	if lower.After(start) {
+		start = lower
+	}
+	if upper.Before(end) {
+		end = upper
+	}
+	return end.Sub(start)
 }
 
 func (f *fakeUpstream) isRunning() bool {
@@ -494,7 +511,7 @@ func (f *fakeUpstream) isRunning() bool {
 	return len(f.running) > 0
 }
 
-func testServerTLS(t *testing.T) *tls.Config {
+func testServerTLS(t testing.TB) *tls.Config {
 	t.Helper()
 	key, cert, err := tlstest.GetTestKeyAndCertWithNames(fakeTestCertName)
 	if err != nil {
