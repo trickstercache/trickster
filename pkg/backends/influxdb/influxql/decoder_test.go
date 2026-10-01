@@ -247,6 +247,31 @@ func TestDecoderErrors(t *testing.T) {
 	require.ErrorIs(t, err, timeseries.ErrInvalidBody)
 }
 
+func TestReadIntBounds(t *testing.T) {
+	for _, tt := range []struct {
+		name, raw string
+		want      int
+		wantErr   bool
+	}{
+		{"maximum", strconv.Itoa(math.MaxInt), math.MaxInt, false},
+		{"minimum", strconv.Itoa(math.MinInt), math.MinInt, false},
+		{"above maximum", strconv.FormatUint(uint64(math.MaxInt)+1, 10), 0, true},
+		{"below minimum", "-" + strconv.FormatUint(uint64(math.MaxInt)+2, 10), 0, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			out := 7
+			err := readInt(stream.NewJSONDecoder(strings.NewReader(tt.raw)), &out)
+			if tt.wantErr {
+				require.ErrorIs(t, err, timeseries.ErrInvalidBody)
+				require.Equal(t, 7, out)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tt.want, out)
+		})
+	}
+}
+
 func decode(t *testing.T, body string) *dataset.DataSet {
 	t.Helper()
 	ts, err := UnmarshalTimeseries([]byte(body), decoderTRQ())

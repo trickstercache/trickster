@@ -580,11 +580,11 @@ func readInt(dec *jsontext.Decoder, out *int) error {
 	}
 	switch raw.Kind() {
 	case jsontext.KindNumber:
-		v, err := strconv.ParseInt(string(raw), 10, 64)
+		v, err := strconv.Atoi(string(raw))
 		if err != nil {
 			return timeseries.ErrInvalidBody
 		}
-		*out = int(v)
+		*out = v
 	case jsontext.KindNull:
 	default:
 		return timeseries.ErrInvalidBody
