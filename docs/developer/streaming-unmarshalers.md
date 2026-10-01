@@ -26,6 +26,8 @@ func NewModeler() *timeseries.Modeler {
 
 `ReaderUnmarshaler` passes the response body to the decoder's `ReadFrom`, so decoding happens while the body is read. If you feed a decoder yourself, call `ReadFrom` instead of using `io.Copy`. When the source is a `bytes.Reader`, `io.Copy` uses the reader's `WriteTo`, which delivers the whole body in a single `Write`, and the JSON decoder then has to buffer all of it before it can start.
 
+The Delta Proxy Cache gives each origin fetch's `200` body to the provider's `WireUnmarshalerReader` as it arrives, decompressed and bounded by `max_object_size_bytes`, so decoding overlaps the network and the body is never held whole. A read that fails or passes the size limit fails the fetch, whatever the decoder returned, and nothing from it is cached. The engine reads to the end whatever the decoder leaves, so a decoder can stop at an error without draining its input.
+
 Today the proxy engine reads each upstream body into memory before calling the unmarshaler, so the current savings come from skipping the intermediate model. Once the engine passes response bodies through directly, the same decoders will read from the network with no changes.
 
 ## Choosing a Decoder

@@ -1086,7 +1086,12 @@ func fetchExtents(
 			}
 			setResourceSpanAttributes(mrsc, spanMR)
 
-			body, resp, _, fetchErr := rq.Fetch()
+			f, fetchErr := rq.fetchDecoded(func(resp *http.Response) (timeseries.Timeseries, error) {
+				tr, dec := getTimeseriesReader(resp)
+				defer closeDecoder(dec)
+				return wur(tr, rsc.TimeRangeQuery)
+			})
+			resp := f.resp
 			if resp != nil {
 				setHTTPStatusSpanAttributes(rsc.Tracer, resp.StatusCode, spanMR)
 			}
@@ -1105,10 +1110,9 @@ func fetchExtents(
 				return nil
 			}
 
-			if resp.StatusCode == http.StatusOK && len(body) > 0 {
-				tr, dec := getTimeseriesReader(resp)
-				nts, ferr := wur(tr, rsc.TimeRangeQuery)
-				closeDecoder(dec)
+			// an empty 200 holds nothing to cache, and fails nothing
+			if resp.StatusCode == http.StatusOK && (f.ts != nil || f.decodeErr != nil) {
+				nts, ferr := f.ts, f.decodeErr
 				if ferr != nil {
 					logger.Error("proxy object unmarshaling failed",
 						logging.Pairs{keys.Detail: ferr.Error()})

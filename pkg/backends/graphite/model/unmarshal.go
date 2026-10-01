@@ -376,7 +376,7 @@ func (d *decoder) rawLine(line []byte) error {
 	}
 	name := string(head)
 	err := d.addSeries(name, map[string]string{tagName: name}, false)
-	d.trq.Step = d.step
+	d.adoptStep()
 	if d.failed != nil {
 		d.note()
 		return d.failed
@@ -474,12 +474,20 @@ func (d *decoder) finishJSON() (timeseries.Timeseries, error) {
 		current := d.step
 		d.fail(&StepAmbiguousError{}, func() { d.noteAmbiguous("", current) })
 	}
-	d.trq.Step = d.step
+	d.adoptStep()
 	if d.failed != nil {
 		d.note()
 		return nil, d.failed
 	}
 	return d.finish()
+}
+
+// adoptStep gives the query the step its series agreed on, writing it only when it had none, as the
+// query is shared by the concurrent decodes of its extents
+func (d *decoder) adoptStep() {
+	if d.trq.Step != d.step {
+		d.trq.Step = d.step
+	}
 }
 
 func (d *decoder) finish() (timeseries.Timeseries, error) {
