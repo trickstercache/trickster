@@ -149,8 +149,15 @@ func TestAnalyzePlanShape(t *testing.T) {
 	}
 	plan := got.Plan
 	if plan.TimeColumn != "ts" || plan.OutputColumn != "bucket" ||
-		!slices.Equal(plan.GroupColumns, []string{"host", "region"}) {
+		!slices.Equal(plan.GroupColumns, []string{"host", "region"}) || plan.BucketGroupIndex != 0 {
 		t.Fatalf("unexpected plan shape: %+v", plan)
+	}
+	// the bucket's place among the GROUP BY terms
+	for groupBy, want := range map[string]int{"host, 1, region": 1, "host, region, bucket": 2} {
+		got := a.Analyze(strings.Replace(query, "1, host, region", groupBy, 1), time.Time{})
+		if got.Plan == nil || got.Plan.BucketGroupIndex != want {
+			t.Fatalf("GROUP BY %s: %+v", groupBy, got)
+		}
 	}
 	if !plan.LowerBound.Value.Equal(time.Unix(1704067200, 0)) || !plan.LowerBound.Inclusive {
 		t.Fatalf("lower bound = %+v", plan.LowerBound)

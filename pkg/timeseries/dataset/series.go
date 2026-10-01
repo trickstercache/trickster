@@ -19,6 +19,8 @@ package dataset
 import (
 	"fmt"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // Series represents a single timeseries in a Result
@@ -65,6 +67,33 @@ func (s *Series) Segments() Segments {
 
 // SetSegments replaces the series' rows with segs, which it shares.
 func (s *Series) SetSegments(segs Segments) {
+	s.segs = segs
+}
+
+// ReorderValues orders the series' value columns and fields as order lists their current indexes,
+// replacing its Segments rather than changing them, so any that share them keep their order.
+func (s *Series) ReorderValues(order []int) {
+	if len(s.Header.ValueFieldsList) == len(order) {
+		fields := make(timeseries.FieldDefinitions, len(order))
+		for i, j := range order {
+			fields[i] = s.Header.ValueFieldsList[j]
+		}
+		s.Header.ValueFieldsList = fields
+	}
+	if len(s.segs) == 0 {
+		return
+	}
+	segs := make(Segments, len(s.segs))
+	for k, seg := range s.segs {
+		if len(seg.cols) == len(order) {
+			cols := make([]Column, len(order))
+			for i, j := range order {
+				cols[i] = seg.cols[j]
+			}
+			seg.cols = cols
+		}
+		segs[k] = seg
+	}
 	s.segs = segs
 }
 

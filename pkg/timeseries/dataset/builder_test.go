@@ -632,3 +632,29 @@ func TestBuilderAddValueField(t *testing.T) {
 	b.AddValueField(timeseries.FieldDefinition{Name: "z"})
 	require.Len(t, b.opts.Fields.Values, 2)
 }
+
+func TestSeriesReorderValues(t *testing.T) {
+	fields := testBuilderFields()
+	fields.Values = append(fields.Values, timeseries.FieldDefinition{Name: "w", Role: timeseries.RoleValue})
+	b := NewBuilder(testBuilderTRQ(), BuilderOptions{Fields: fields})
+	for e := range 3 {
+		r := b.Row()
+		r.SetEpoch(epoch.Epoch(e))
+		r.SetTag(0, []byte("a"))
+		r.AddFloat64(float64(e))
+		r.AddString([]byte("x"))
+		require.NoError(t, r.Commit())
+	}
+	ds, err := b.Finish()
+	require.NoError(t, err)
+	s := ds.Results[0].SeriesList[0]
+	shared := NewSeriesOf(s.Header, s.Segments())
+	s.ReorderValues([]int{1, 0})
+	require.Equal(t, []string{"w", "v"}, []string{s.Header.ValueFieldsList[0].Name, s.Header.ValueFieldsList[1].Name})
+	require.Equal(t, []any{"x", 2.0}, s.Points()[2].Values)
+	// a series sharing the Segments keeps its order
+	require.Equal(t, []any{2.0, "x"}, shared.Points()[2].Values)
+	empty := &Series{}
+	empty.ReorderValues([]int{0})
+	require.Zero(t, empty.PointCount())
+}

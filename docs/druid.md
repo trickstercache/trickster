@@ -41,9 +41,10 @@ and Druid ignores. See [Step Alignment](./step-alignment.md) and
 [Per-Query Instructions](./per-query-instructions.md).
 
 The response model preserves native `timeseries`, `groupBy`, and `topN` JSON
-shapes. Grouping dimensions become DataSet tags internally. Hidden typed values
-and per-bucket positions preserve non-string dimensions and native row/ranking
-order when a response passes through the cache.
+shapes. Grouping dimensions become DataSet tags internally, and per-bucket
+positions keep groupBy and topN rows in Druid's order. A `descending: true`
+query is cached in time order like any other and written newest first, as Druid
+writes it. See [Response fidelity](#response-fidelity).
 
 ## Object-cache fallback
 
@@ -90,6 +91,34 @@ standard Trickster `DataSet` internally and emitted in their requested shape
 after cache merging. Other valid `SELECT` statements and response formats
 remain safe OPC fallbacks; non-read statements, SQL task requests, and malformed
 requests are proxied.
+
+## Response fidelity
+
+A response built from the cache is written the way Druid writes it:
+
+- Numbers, objects and arrays are written exactly as Druid wrote them, so a
+  double keeps its form, such as `5319.0` or `9.999999999999999E22`.
+- Strings and keys are escaped the way Druid's JSON writer escapes them.
+- Each row's members are in Druid's order. For `timeseries` and `groupBy`
+  results, that is the order of Druid's Java hash maps.
+- Native responses end without a newline, and SQL responses end with one.
+- SQL rows without an `ORDER BY` follow Druid's order: by the `GROUP BY`
+  columns, with the time bucket first unless the `GROUP BY` ends with it.
+- Rows that tie on an `ORDER BY` also follow Druid's order.
+- Nulls sort lowest, as in Druid: first when ascending and last when
+  descending.
+
+Two things can still differ from the response Druid builds for the same
+request, and both also vary between Druid's own responses:
+
+- **topN key order.** Druid orders a topN row's keys differently depending on
+  whether its segment cache served the row, so one query can come back with
+  either order. Trickster writes the dimension, then the aggregations, then the
+  post-aggregations.
+- **Floating-point sums.** Druid adds a bucket's values in an order that
+  depends on the query's interval. So the last digits of a `doubleSum` or
+  `floatSum` can differ between two Druid queries that cover the same bucket. A
+  cached bucket keeps the value from the query that fetched it.
 
 ## Route policy
 

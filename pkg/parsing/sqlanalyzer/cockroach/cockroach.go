@@ -395,7 +395,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
-	groups, err := analyzeGroupBy(clause.GroupBy, clause.Exprs, bucket, bucketIndex)
+	groups, bucketGroup, err := analyzeGroupBy(clause.GroupBy, clause.Exprs, bucket, bucketIndex)
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
@@ -440,6 +440,7 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		RawUpper:            ranges.rawUpper,
 		UpperIsNow:          ranges.upperIsNow,
 		GroupColumns:        groups,
+		BucketGroupIndex:    bucketGroup,
 		DropsPartialBuckets: ranges.dropsPartialBuckets,
 		Ordering:            ordering,
 		Renderer:            renderer,
@@ -772,42 +773,45 @@ func implicitGroups(clause tree.GroupBy, items tree.SelectExprs, bucketIndex int
 	return groups, nil
 }
 
+// analyzeGroupBy returns the grouping columns other than the bucket, in GROUP BY order, and the
+// bucket's place among the GROUP BY terms
 func analyzeGroupBy(
 	clause tree.GroupBy,
 	items tree.SelectExprs,
 	bucket bucketSpec,
 	bucketIndex int,
-) ([]string, error) {
+) ([]string, int, error) {
 	if bucket.implicitGrouping {
-		return implicitGroups(clause, items, bucketIndex)
+		groups, err := implicitGroups(clause, items, bucketIndex)
+		return groups, 0, err
 	}
 	if len(clause) == 0 {
-		return nil, ErrInvalidGroupByClause
+		return nil, 0, ErrInvalidGroupByClause
 	}
 	groups := make([]string, 0, len(clause)-1)
 	seen := make(map[int]struct{}, len(clause))
-	timestampGrouped := false
-	for _, expr := range clause {
+	bucketGroup := -1
+	for term, expr := range clause {
 		index, ok := resolveOutputReference(expr, items)
 		if !ok {
-			return nil, ErrInvalidGroupByClause
+			return nil, 0, ErrInvalidGroupByClause
 		}
 		if _, duplicate := seen[index]; duplicate {
-			return nil, ErrInvalidGroupByClause
+			return nil, 0, ErrInvalidGroupByClause
 		}
 		seen[index] = struct{}{}
 		if index == bucketIndex {
-			timestampGrouped = true
+			bucketGroup = term
 			continue
 		}
 		name, ok := outputName(items[index])
 		if !ok {
-			return nil, ErrInvalidGroupByClause
+			return nil, 0, ErrInvalidGroupByClause
 		}
 		groups = append(groups, name)
 	}
-	if !timestampGrouped {
-		return nil, ErrInvalidGroupByClause
+	if bucketGroup < 0 {
+		return nil, 0, ErrInvalidGroupByClause
 	}
 	// Every non-aggregated plain column in the select list must be grouped so
 	// DPC's tag-based series identity holds.
@@ -819,10 +823,10 @@ func analyzeGroupBy(
 			continue
 		}
 		if _, grouped := seen[index]; !grouped {
-			return nil, ErrInvalidGroupByClause
+			return nil, 0, ErrInvalidGroupByClause
 		}
 	}
-	return groups, nil
+	return groups, bucketGroup, nil
 }
 
 // analyzeOrderBy resolves an ORDER BY clause to result-column terms the delta

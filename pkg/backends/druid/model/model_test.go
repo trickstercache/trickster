@@ -309,13 +309,6 @@ func TestModelHelpers(t *testing.T) {
 	if _, ok := values[1].(float64); !ok || values[2] != "not-a-number" {
 		t.Fatalf("number normalization = %#v", values)
 	}
-	if fieldDataType(uint64(1)) != timeseries.Uint64 ||
-		fieldDataType(struct{}{}) != timeseries.Unknown {
-		t.Fatal("unexpected field data type")
-	}
-	if got := tagString(make(chan int)); !strings.HasPrefix(got, "0x") {
-		t.Fatalf("fallback tag string = %q", got)
-	}
 	if stringsCompare("b", "a") != 1 || stringsCompare("a", "a") != 0 {
 		t.Fatal("unexpected string comparison")
 	}

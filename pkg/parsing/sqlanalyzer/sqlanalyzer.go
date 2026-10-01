@@ -166,6 +166,8 @@ type QueryPlan struct {
 	// renders as written, so each request within a bucket renders the same statement
 	UpperIsNow   bool
 	GroupColumns []string
+	// BucketGroupIndex is the bucket's place among the GROUP BY terms, which GroupColumns leaves out
+	BucketGroupIndex int
 	// DropsPartialBuckets reports that range normalization excludes partial
 	// raw-time buckets. Consumers requiring the original SQL result must use
 	// object caching or proxying instead of rendering this plan.
