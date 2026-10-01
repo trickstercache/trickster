@@ -562,7 +562,7 @@ datasources:
     timeout: 30
     queryTimeout: 30
   secureJsonData:
-    password: trickster-dev-grafana
+    password: ${QDB_PG_READONLY_PASSWORD}
 
 # QuestDB through Trickster's HTTP passthrough/native backend. Grafana uses the
 # read-only identity for both the downstream and native upstream paths.
@@ -584,4 +584,4 @@ datasources:
     timeout: 30
     queryTimeout: 30
   secureJsonData:
-    password: trickster-dev-grafana
+    password: ${QDB_PG_READONLY_PASSWORD}

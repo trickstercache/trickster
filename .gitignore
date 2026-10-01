@@ -80,3 +80,9 @@ docs/developer/environment/docker-compose-data/coredns-zones/
 
 integration/conformance/reports
 integration/greptimedb/reports
+
+# Generated local developer credentials and rendered config.
+docs/developer/environment/docker-compose-data/credentials.env
+docs/developer/environment/docker-compose-data/credentials.env.*
+docs/developer/environment/trickster-config/trickster.generated.yaml
+docs/developer/environment/trickster-config/trickster.generated.yaml.*

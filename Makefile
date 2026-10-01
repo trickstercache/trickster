@@ -399,8 +399,12 @@ get-tools: get-msgpack
 get-msgpack:
 	$(GO) get -tool github.com/tinylib/msgp@$(shell go list -m github.com/tinylib/msgp | cut -d' ' -f2)
 
+.PHONY: developer-credentials
+developer-credentials:
+	@sh hack/developer-credentials.sh
+
 .PHONY: developer-start
-developer-start:
+developer-start: developer-credentials
 	@cd docs/developer/environment && docker compose up -d
 	@echo "Waiting for Redis to be ready..."
 	@cd docs/developer/environment && attempts=0; \
@@ -533,8 +537,8 @@ developer-greptimedb-check:
 
 RUN_FLAGS ?=
 .PHONY: serve-dev
-serve-dev:
-	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
+serve-dev: developer-credentials
+	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.generated.yaml)
 
 serve-dev-data-race:
 	RUN_FLAGS=-race $(MAKE) serve-dev 2>&1 | tee race-output.log

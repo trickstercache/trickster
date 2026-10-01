@@ -23,6 +23,8 @@ services:
     user: nobody
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - ./docker-compose-data/credentials.env
     environment:
       - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource,grafana-clickhouse-datasource,grafadruid-druid-datasource,questdb-questdb-datasource
     volumes:
@@ -440,17 +442,16 @@ services:
     image: questdb/questdb:10.0.1@sha256:67eaed863ebb2383227919ea9a5499a4a39ceca3862c20b974c84a10e11cdf89
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    env_file:
+      - ./docker-compose-data/credentials.env
     environment:
       QDB_TELEMETRY_ENABLED: "false"
       QDB_PG_USER: admin
-      QDB_PG_PASSWORD: trickster-dev-root
       QDB_PG_READONLY_USER_ENABLED: "true"
       QDB_PG_READONLY_USER: grafana_ro
-      QDB_PG_READONLY_PASSWORD: trickster-dev-grafana
       # OSS HTTP Basic auth is independent of the pgwire read-only account.
       # The admin identity also loads the seed data, so it is intentionally not read-only.
       QDB_HTTP_USER: admin
-      QDB_HTTP_PASSWORD: trickster-dev-root
       # 10.0.1 does not expose the short /execute path by default.
       QDB_HTTP_CONTEXT_EXECUTE: /execute,/api/v1/sql/execute
     ports:
@@ -473,10 +474,11 @@ services:
     build:
       context: ./docker-compose-data/questdb-config/seeding
       network: host
+    env_file:
+      - ./docker-compose-data/credentials.env
     environment:
       QUESTDB_URL: http://questdb:9000
       QUESTDB_HTTP_USER: admin
-      QUESTDB_HTTP_PASSWORD: trickster-dev-root
       QUESTDB_SEED_DATA: /seed-data
     volumes:
       - ./docker-compose-data/questdb-config/seeding:/seeding:ro
