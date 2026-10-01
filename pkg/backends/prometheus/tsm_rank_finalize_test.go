@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -355,7 +356,7 @@ func seriesPointValues(ds *dataset.DataSet) map[string][]string {
 		if series == nil {
 			continue
 		}
-		for _, point := range series.Points() {
+		for _, point := range dspoints.Of(series) {
 			if len(point.Values) > 0 {
 				out[series.Header.Name] = append(out[series.Header.Name], point.Values[0].(string))
 			}

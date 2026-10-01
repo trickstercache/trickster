@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -165,7 +166,7 @@ func TestTypeFidelity(t *testing.T) {
 			t.Fatal(err)
 		}
 		ds := ts.(*dataset.DataSet)
-		if v := ds.Results[0].SeriesList[0].Points()[0].Values[0]; v != int64(42) {
+		if v := dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0]; v != int64(42) {
 			t.Fatalf("csv integer = %v (%T), want int64(42)", v, v)
 		}
 	})
@@ -177,7 +178,7 @@ func TestTypeFidelity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()
+		points := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])
 		if points[0].Values[0] != nil {
 			t.Fatalf("null not preserved: %v", points[0].Values[0])
 		}
@@ -222,7 +223,7 @@ func TestUnmarshalRobustness(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()
+		points := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])
 		if len(points) != 1 || points[0].Epoch == 0 {
 			t.Fatalf("bad-timestamp row not skipped: %+v", points)
 		}

@@ -28,11 +28,12 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream/streamtest"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 
 	"github.com/stretchr/testify/require"
@@ -76,10 +77,10 @@ var tsvBodies = map[string]tsvCase{
 		"2024-01-01 00:02:00\ta\tr1\tnan\t5\n2024-01-01 00:02:00\tb\tr1\t-inf\t18446744073709551615\n", sqlTRQ()},
 	"types": {typesHeader +
 		"2024-01-01 00:00:00\th\t-8\t-9223372036854775808\t4294967295\t0.1\t1.25\t-14.83\ttrue\tx\\ty\t\\N\t" +
-			"2024-01-01\t2024-01-01 00:00:01\t2024-01-01 00:00:00.123\ta\t[1,2]\t\t61f0c404-5cb3-11e7-907b-a6006ad3dba0\n" +
-			"2024-01-01 00:01:00\th\tx\t99999999999999999999\t-1\t1e400\t\\N\tx\tmaybe\t\t\\\\N\t" +
-			"bad\t\t\t\t[]\tz\t\n" +
-			"2024-01-01 00:02:00\th\t\t\t\t\t\t\tF\tq\tn\t\t\t\t\t\t\t\n", decoderTRQ("t", timeseries.DateTimeSQL, "host")},
+		"2024-01-01\t2024-01-01 00:00:01\t2024-01-01 00:00:00.123\ta\t[1,2]\t\t61f0c404-5cb3-11e7-907b-a6006ad3dba0\n" +
+		"2024-01-01 00:01:00\th\tx\t99999999999999999999\t-1\t1e400\t\\N\tx\tmaybe\t\t\\\\N\t" +
+		"bad\t\t\t\t[]\tz\t\n" +
+		"2024-01-01 00:02:00\th\t\t\t\t\t\t\tF\tq\tn\t\t\t\t\t\t\t\n", decoderTRQ("t", timeseries.DateTimeSQL, "host")},
 	"time forms": {"t\thost\tv\nDateTime64(9)\tString\tInt32\n" +
 		"2024-01-01 00:00:00\ta\t1\n2024-01-01 00:00:00.123456789123\ta\t2\n 2024-01-01 00:00:00.5 \ta\t3\n" +
 		"2024-01-01 00:00:01.\ta\t4\n2024-01-01 00:00:01.12x\ta\t5\n2024-02-30 00:00:00\ta\t6\n" +
@@ -265,14 +266,14 @@ func TestTSVDecoderDepartures(t *testing.T) {
 		s := decodeTSV(t, sqlHeader+"2024-01-01 00:01:00\ta\tr1\t2\t2\n2024-01-01 00:00:00\ta\tr1\t1\t1\n", sqlTRQ()).
 			Results[0].SeriesList[0]
 		require.True(t, s.IsSorted())
-		require.Equal(t, []any{1.0, uint64(1)}, s.Points()[0].Values)
+		require.Equal(t, []any{1.0, uint64(1)}, dspoints.Of(s)[0].Values)
 	})
 	t.Run("quotes are text", func(t *testing.T) {
 		// ClickHouse's TSV escapes rather than quotes, so a quote is a value's own
 		s := decodeTSV(t, "t\thost\tv\nDateTime\tString\tString\n2024-01-01 00:00:00\t\"a\"\tx\"y\n", sqlTRQ()).
 			Results[0].SeriesList[0]
 		require.Equal(t, dataset.Tags{"host": `"a"`}, s.Header.Tags)
-		require.Equal(t, []any{`x"y`}, s.Points()[0].Values)
+		require.Equal(t, []any{`x"y`}, dspoints.Of(s)[0].Values)
 	})
 	t.Run("a series without a time is left out", func(t *testing.T) {
 		ds := decodeTSV(t, sqlHeader+"nope\ta\tr1\t1\t1\n2024-01-01 00:00:00\tb\tr1\t2\t2\n", sqlTRQ())
@@ -287,21 +288,21 @@ func TestTSVDecoderDepartures(t *testing.T) {
 		sl := ds.Results[0].SeriesList
 		require.Len(t, sl, 2)
 		require.Equal(t, dataset.Tags{"region": ""}, sl[0].Header.Tags)
-		require.Equal(t, []any{nil, nil}, sl[0].Points()[0].Values)
+		require.Equal(t, []any{nil, nil}, dspoints.Of(sl[0])[0].Values)
 		require.Equal(t, dataset.Tags{"host": "", "region": `\N`}, sl[1].Header.Tags)
-		require.Equal(t, []any{"", nil}, sl[1].Points()[0].Values)
+		require.Equal(t, []any{"", nil}, dspoints.Of(sl[1])[0].Values)
 	})
 	t.Run("compound and unknown types are text", func(t *testing.T) {
 		s := decodeTSV(t, "t\ta\tm\tx\nDateTime\tArray(String)\tMap(String, UInt8)\tIntervalSecond\n"+
 			"2024-01-01 00:00:00\t['a\\'b','c\\td']\t{'k':1}\t5\n", sqlTRQ()).Results[0].SeriesList[0]
 		// ClickHouse's TSV writes a compound's literal as it is, its elements escaped within it
-		require.Equal(t, []any{`['a\'b','c\td']`, "{'k':1}", "5"}, s.Points()[0].Values)
+		require.Equal(t, []any{`['a\'b','c\td']`, "{'k':1}", "5"}, dspoints.Of(s)[0].Values)
 	})
 	t.Run("a FixedString is held without its padding", func(t *testing.T) {
 		s := decodeTSV(t, "t\thost\tv\nDateTime\tFixedString(4)\tFixedString(4)\n2024-01-01 00:00:00\ta\\0\\0\\0\tbc\\0\\0\n",
 			sqlTRQ()).Results[0].SeriesList[0]
 		require.Equal(t, dataset.Tags{"host": "a"}, s.Header.Tags)
-		require.Equal(t, []any{"bc"}, s.Points()[0].Values)
+		require.Equal(t, []any{"bc"}, dspoints.Of(s)[0].Values)
 	})
 	t.Run("DateTimes are UTC", func(t *testing.T) {
 		const body = "t\tv\tz\nDateTime\tDateTime64(3)\tDateTime('Asia/Tokyo')\n" +
@@ -314,7 +315,7 @@ func TestTSVDecoderDepartures(t *testing.T) {
 			ts, err := stream.ReaderUnmarshaler(tsvDecoderIn(zone))(strings.NewReader(body), sqlTRQ())
 			require.NoError(t, err)
 			byTime := map[epoch.Epoch][]any{}
-			for _, p := range ts.(*dataset.DataSet).Results[0].SeriesList[0].Points() {
+			for _, p := range dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0]) {
 				byTime[p.Epoch] = p.Values
 			}
 			second := at + 1e9
@@ -332,12 +333,12 @@ func TestTSVDecoderDepartures(t *testing.T) {
 		hr.Timezone = "America/New_York"
 		ts, err := UnmarshalTimeseriesAutoReader(hr, sqlTRQ())
 		require.NoError(t, err)
-		require.Equal(t, at+1e9, ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()[1].Epoch)
+		require.Equal(t, at+1e9, dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])[1].Epoch)
 		// a native connection's response, which names no zone, is UTC
 		hr = timeseries.NewFormatHintReader(strings.NewReader(body), "TSVWithNamesAndTypes")
 		ts, err = UnmarshalTimeseriesAutoReader(hr, sqlTRQ())
 		require.NoError(t, err)
-		require.Equal(t, at-epoch.Epoch(4*time.Hour)+1e9, ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()[0].Epoch)
+		require.Equal(t, at-epoch.Epoch(4*time.Hour)+1e9, dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])[0].Epoch)
 	})
 }
 
@@ -360,9 +361,9 @@ func TestNativeDecoderNulls(t *testing.T) {
 	sl := ds.Results[0].SeriesList
 	require.Len(t, sl, 2)
 	require.Equal(t, dataset.Tags{}, sl[0].Header.Tags)
-	require.Equal(t, []any{nil, nil}, sl[0].Points()[0].Values)
+	require.Equal(t, []any{nil, nil}, dspoints.Of(sl[0])[0].Values)
 	require.Equal(t, dataset.Tags{"host": "", "region": ""}, sl[1].Header.Tags)
-	require.Equal(t, []any{"", ""}, sl[1].Points()[0].Values)
+	require.Equal(t, []any{"", ""}, dspoints.Of(sl[1])[0].Values)
 }
 
 // nativeColumnValues is a column of a Native block: its name, type and values, as the encoder takes them
@@ -723,7 +724,7 @@ func TestNativeDecoderKeepsTheOneNaN(t *testing.T) {
 	body = binary.LittleEndian.AppendUint64(body, 0x7ff8000000000abc)
 	ts, err := UnmarshalTimeseriesNative(body, sqlTRQ())
 	require.NoError(t, err)
-	v := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points()[0].Values[0].(float64)
+	v := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])[0].Values[0].(float64)
 	require.Equal(t, math.Float64bits(math.NaN()), math.Float64bits(v))
 }
 

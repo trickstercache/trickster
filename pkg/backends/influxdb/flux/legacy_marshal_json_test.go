@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -53,7 +54,7 @@ func legacyWriteJSON(ds *dataset.DataSet, w io.Writer) error {
 			}
 			w.Write([]byte(`],"records":[`))
 			for k := range s.PointCount() {
-				c := s.PointAt(k)
+				c := dspoints.At(s, k)
 				w.Write([]byte(`{"values":{`))
 				var o int
 				for n, fd := range fds {

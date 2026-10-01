@@ -122,12 +122,12 @@ func TestMergePointsWithStrategyHistogram(t *testing.T) {
 func finalizePoints(pts Points, count int) Points {
 	ds := &DataSet{Results: Results{{SeriesList: SeriesList{NewSeries(SeriesHeader{}, pts)}}}}
 	ds.FinalizeAvg(count)
-	return ds.Results[0].SeriesList[0].Points()
+	return seriesPoints(ds.Results[0].SeriesList[0])
 }
 
 // mergePoints merges pts through MergeSegments
 func mergePoints(p, p2 Points, opts MergeOpts) Points {
-	return NewSeriesOf(SeriesHeader{}, MergeSegments(segmentsFromPoints(p), segmentsFromPoints(p2), opts)).Points()
+	return seriesPoints(NewSeriesOf(SeriesHeader{}, MergeSegments(segmentsFromPoints(p), segmentsFromPoints(p2), opts)))
 }
 
 func TestFinalizeAvgNaN(t *testing.T) {

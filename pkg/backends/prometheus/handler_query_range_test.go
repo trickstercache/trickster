@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	responsemerge "github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -64,7 +65,7 @@ func TestQueryRangeHandler(t *testing.T) {
 		t.Fatalf("dedup batch merge failed: handled=%v err=%v", handled, err)
 	}
 	merged := accumulator.GetTSData().(*dataset.DataSet)
-	points := merged.Results[0].SeriesList[0].Points()
+	points := dspoints.Of(merged.Results[0].SeriesList[0])
 	if len(points) != 1 || points[0].Values[0] != "2" {
 		t.Fatalf("dedup points got %#v, want one last-value-wins point", points)
 	}

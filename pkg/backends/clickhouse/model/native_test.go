@@ -33,6 +33,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -448,10 +449,10 @@ func TestMarshalTimeseriesNative_RoundTrip(t *testing.T) {
 	if gotSeries.PointCount() != wantSeries.PointCount() {
 		t.Fatalf("points: want %d got %d", wantSeries.PointCount(), gotSeries.PointCount())
 	}
-	for i := range wantSeries.Points() {
-		if gotSeries.Points()[i].Epoch != wantSeries.Points()[i].Epoch {
+	for i := range dspoints.Of(wantSeries) {
+		if dspoints.Of(gotSeries)[i].Epoch != dspoints.Of(wantSeries)[i].Epoch {
 			t.Errorf("point %d epoch: want %d got %d", i,
-				wantSeries.Points()[i].Epoch, gotSeries.Points()[i].Epoch)
+				dspoints.Of(wantSeries)[i].Epoch, dspoints.Of(gotSeries)[i].Epoch)
 		}
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -81,7 +82,7 @@ func TestMergeGatherContributionsBatchesDataSets(t *testing.T) {
 		got.Results[0].SeriesList[0].PointCount() != 1 {
 		t.Fatalf("unexpected merged shape: %#v", got.Results)
 	}
-	if value := fmt.Sprint(got.Results[0].SeriesList[0].Points()[0].Values[0]); value != "6" {
+	if value := fmt.Sprint(dspoints.Of(got.Results[0].SeriesList[0])[0].Values[0]); value != "6" {
 		t.Fatalf("merged value got %q want 6", value)
 	}
 }

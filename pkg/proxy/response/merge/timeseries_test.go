@@ -19,6 +19,7 @@ package merge
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -62,7 +63,7 @@ func TestTimeseriesMergeFunc(t *testing.T) {
 	require.True(t, ok)
 	// default merge uses sortPoints=false, so points are concatenated (not deduped)
 	require.Equal(t, 1, ds.SeriesCount())
-	require.Len(t, ds.Results[0].SeriesList[0].Points(), 4) // 2+2 concatenated
+	require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 4) // 2+2 concatenated
 }
 
 func TestTimeseriesMergeFuncWithStrategy_Sum(t *testing.T) {
@@ -82,7 +83,7 @@ func TestTimeseriesMergeFuncWithStrategy_Sum(t *testing.T) {
 	ds, ok := ts.(*dataset.DataSet)
 	require.True(t, ok)
 	require.Equal(t, 1, ds.SeriesCount())
-	pts := ds.Results[0].SeriesList[0].Points()
+	pts := dspoints.Of(ds.Results[0].SeriesList[0])
 	require.Len(t, pts, 2)
 	require.Equal(t, "4", pts[0].Values[0]) // 1+3
 	require.Equal(t, "6", pts[1].Values[0]) // 2+4
@@ -106,11 +107,11 @@ func TestTimeseriesMergeFuncWithStrategy_Avg(t *testing.T) {
 	// Before finalization, values are accumulated sums
 	ds, ok := accum.GetTSData().(*dataset.DataSet)
 	require.True(t, ok)
-	require.Equal(t, "60", ds.Results[0].SeriesList[0].Points()[0].Values[0]) // 10+30+20
+	require.Equal(t, "60", dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0]) // 10+30+20
 
 	// Simulate what TimeseriesRespondFuncWithStrategy does: finalize avg
 	ds.FinalizeAvg(accum.MergeCount)
-	require.Equal(t, "20", ds.Results[0].SeriesList[0].Points()[0].Values[0]) // 60/3
+	require.Equal(t, "20", dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0]) // 60/3
 }
 
 func TestTimeseriesMergeFuncWithStrategy_NonDataSet(t *testing.T) {
@@ -189,7 +190,7 @@ func TestTimeseriesMergeFuncWithStrategy_NonStrategyMergerFallback(t *testing.T)
 	require.True(t, ok)
 	gotDS, ok := got.Timeseries.(*dataset.DataSet)
 	require.True(t, ok)
-	require.Len(t, gotDS.Results[0].SeriesList[0].Points(), 2)
+	require.Len(t, dspoints.Of(gotDS.Results[0].SeriesList[0]), 2)
 }
 
 func TestTimeseriesBatchMergeFuncWithStrategy(t *testing.T) {
@@ -205,7 +206,7 @@ func TestTimeseriesBatchMergeFuncWithStrategy(t *testing.T) {
 	require.Equal(t, 2, accum.MergeCount)
 	ds, ok := accum.GetTSData().(*dataset.DataSet)
 	require.True(t, ok)
-	require.Equal(t, "4", ds.Results[0].SeriesList[0].Points()[0].Values[0])
+	require.Equal(t, "4", dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0])
 }
 
 func TestTimeseriesBatchMergeFuncWithStrategy_ScalarErrorPreference(t *testing.T) {

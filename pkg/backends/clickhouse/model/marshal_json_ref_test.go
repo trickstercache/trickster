@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -202,7 +203,7 @@ func TestTimeOrderedRowsMatchesAStableSort(t *testing.T) {
 				} else {
 					at = rng.IntN(6)
 				}
-				s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(at), Values: []any{s.PointCount()}}))
+				s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(at), Values: []any{s.PointCount()}}))
 			}
 			r.SeriesList = append(r.SeriesList, s)
 		}
@@ -239,7 +240,7 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 	for i := range 3 {
 		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprint("h", i)}}, nil)
 		for j := range 5 {
-			s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
 				Values: []any{float64(i*j) / 3}}))
 		}
 		series = append(series, s)

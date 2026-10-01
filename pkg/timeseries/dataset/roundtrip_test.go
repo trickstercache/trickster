@@ -79,8 +79,8 @@ func TestSeriesRoundTrip(t *testing.T) {
 	if v2.Header.Name != "mem.free" {
 		t.Fatal("Header.Name mismatch")
 	}
-	if !v2.Points().Equal(pts) {
-		t.Fatalf("points mismatch: %v", v2.Points())
+	if !seriesPoints(&v2).Equal(pts) {
+		t.Fatalf("points mismatch: %v", seriesPoints(&v2))
 	}
 }
 

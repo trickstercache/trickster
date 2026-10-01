@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -182,7 +183,7 @@ func TestMarshalMatchesEncodingJSON(t *testing.T) {
 					for i := range values {
 						values[i] = value()
 					}
-					s.SetPoints(append(s.Points(), at(int64(1700000000+60*p), int64(rng.IntN(1e9)), values...)))
+					s.SetPoints(append(dspoints.Of(s), at(int64(1700000000+60*p), int64(rng.IntN(1e9)), values...)))
 				}
 				res.SeriesList = append(res.SeriesList, s)
 			}
@@ -257,7 +258,7 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 				for i := range values {
 					values[i] = float64(rng.IntN(100))
 				}
-				s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*p) * 1e9), Values: values}))
+				s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*p) * 1e9), Values: values}))
 			}
 			r.SeriesList = append(r.SeriesList, s)
 		}

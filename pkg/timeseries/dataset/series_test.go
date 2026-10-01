@@ -137,7 +137,7 @@ func TestSeriesClone(t *testing.T) {
 		t.Error("series clone mismatch")
 	}
 
-	if s2.Points()[0].Epoch != s.Points()[0].Epoch {
+	if seriesPoints(s2)[0].Epoch != seriesPoints(s)[0].Epoch {
 		t.Error("series clone mismatch")
 	}
 }

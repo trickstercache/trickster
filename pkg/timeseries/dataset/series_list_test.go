@@ -203,11 +203,11 @@ func TestListMergeWithStrategy(t *testing.T) {
 		if out[0].PointCount() != 2 {
 			t.Fatalf("expected 2 points, got %d", out[0].PointCount())
 		}
-		if out[0].Points()[0].Values[0] != "40" {
-			t.Errorf("expected sum 40, got %v", out[0].Points()[0].Values[0])
+		if seriesPoints(out[0])[0].Values[0] != "40" {
+			t.Errorf("expected sum 40, got %v", seriesPoints(out[0])[0].Values[0])
 		}
-		if out[0].Points()[1].Values[0] != "60" {
-			t.Errorf("expected sum 60, got %v", out[0].Points()[1].Values[0])
+		if seriesPoints(out[0])[1].Values[0] != "60" {
+			t.Errorf("expected sum 60, got %v", seriesPoints(out[0])[1].Values[0])
 		}
 	})
 
@@ -227,8 +227,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		if len(out) != 1 {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
-		if out[0].Points()[0].Values[0] != "20" {
-			t.Errorf("expected avg 20, got %v", out[0].Points()[0].Values[0])
+		if seriesPoints(out[0])[0].Values[0] != "20" {
+			t.Errorf("expected avg 20, got %v", seriesPoints(out[0])[0].Values[0])
 		}
 	})
 
@@ -236,8 +236,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		s1 := makeSeries("disk", Tags{}, ev{100, "50"})
 		s2 := makeSeries("disk", Tags{}, ev{100, "20"})
 		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyMin)
-		if out[0].Points()[0].Values[0] != "20" {
-			t.Errorf("expected min 20, got %v", out[0].Points()[0].Values[0])
+		if seriesPoints(out[0])[0].Values[0] != "20" {
+			t.Errorf("expected min 20, got %v", seriesPoints(out[0])[0].Values[0])
 		}
 	})
 
@@ -245,8 +245,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		s1 := makeSeries("disk", Tags{}, ev{100, "50"})
 		s2 := makeSeries("disk", Tags{}, ev{100, "20"})
 		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyMax)
-		if out[0].Points()[0].Values[0] != "50" {
-			t.Errorf("expected max 50, got %v", out[0].Points()[0].Values[0])
+		if seriesPoints(out[0])[0].Values[0] != "50" {
+			t.Errorf("expected max 50, got %v", seriesPoints(out[0])[0].Values[0])
 		}
 	})
 
@@ -254,8 +254,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 		s1 := makeSeries("req", Tags{}, ev{100, "999"})
 		s2 := makeSeries("req", Tags{}, ev{100, "888"})
 		out := SeriesList{s1}.MergeWithStrategy(SeriesList{s2}, true, merge.StrategyCount)
-		if out[0].Points()[0].Values[0] != "2" {
-			t.Errorf("expected count 2, got %v", out[0].Points()[0].Values[0])
+		if seriesPoints(out[0])[0].Values[0] != "2" {
+			t.Errorf("expected count 2, got %v", seriesPoints(out[0])[0].Values[0])
 		}
 	})
 
@@ -267,8 +267,8 @@ func TestListMergeWithStrategy(t *testing.T) {
 			t.Fatalf("expected 1 series, got %d", len(out))
 		}
 		// dedup: last value wins
-		if out[0].Points()[0].Values[0] != "30" {
-			t.Errorf("expected dedup value 30, got %v", out[0].Points()[0].Values[0])
+		if seriesPoints(out[0])[0].Values[0] != "30" {
+			t.Errorf("expected dedup value 30, got %v", seriesPoints(out[0])[0].Values[0])
 		}
 	})
 
@@ -394,10 +394,10 @@ func TestSortPoints(t *testing.T) {
 	sl := SeriesList{s1, s2}
 	sl.SortPoints()
 
-	if !slices.IsSortedFunc(sl[0].Points(), legacyPointCmp) {
+	if !slices.IsSortedFunc(seriesPoints(sl[0]), legacyPointCmp) {
 		t.Error("series 0 points not sorted")
 	}
-	if !slices.IsSortedFunc(sl[1].Points(), legacyPointCmp) {
+	if !slices.IsSortedFunc(seriesPoints(sl[1]), legacyPointCmp) {
 		t.Error("series 1 points not sorted")
 	}
 }

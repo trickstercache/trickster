@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -126,7 +127,7 @@ func TestFinalizeTSMMergeScalarBinaryWrapper(t *testing.T) {
 
 	t.Run("uses each point evaluation time", func(t *testing.T) {
 		series := rankSeriesWithTags("", dataset.Tags{}, "1726000000.123", 1)
-		pts := series.Points()
+		pts := dspoints.Of(series)
 		pts[0].Epoch = epoch.FromMilliSecs(1726000015123)
 		series.SetPoints(pts)
 		ds := rankDataSet(series)
@@ -197,14 +198,14 @@ func TestFinalizeTSMMergeScalarBinaryWrapper(t *testing.T) {
 			{},
 			{Values: []any{1}},
 			{Values: []any{"invalid"}},
-		}, series.Points()...))
+		}, dspoints.Of(series)...))
 		ds := rankDataSet(nil, series)
 		ds.Results = append(dataset.Results{nil}, ds.Results...)
 
 		(&Client{}).FinalizeTSMMerge("sum(up) * 2", ds)
 
-		if series.PointCount() != 1 || series.Points()[0].Values[0] != "4" {
-			t.Fatalf("points got %v", series.Points())
+		if series.PointCount() != 1 || dspoints.Of(series)[0].Values[0] != "4" {
+			t.Fatalf("points got %v", dspoints.Of(series))
 		}
 	})
 }

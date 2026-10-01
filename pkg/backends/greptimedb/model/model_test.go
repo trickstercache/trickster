@@ -307,17 +307,20 @@ func TestExactNumericSort(t *testing.T) {
 	for _, v := range []any{json.Number("9007199254740993"), json.Number("9.007199254740992e15"), nil} {
 		pts = append(pts, dataset.Point{Values: []any{v}})
 	}
-	seg := dataset.NewSeries(dataset.SeriesHeader{}, pts).Segments()[0]
-	var rows []greptimeRow
-	for i := range pts {
-		rows = append(rows, greptimeRow{s: &greptimeSeries{}, seg: &seg, row: i})
-	}
 	fields := timeseries.FieldDefinitions{{Name: "time", Role: timeseries.RoleValue}}
-	sortRows(rows, fields, []timeseries.OrderTerm{{Column: "time", NullsFirst: true}})
-	value := func(r greptimeRow) any { return r.seg.Value(0, r.row) }
-	if value(rows[0]) != nil || value(rows[1]) != json.Number("9.007199254740992e15") ||
-		value(rows[2]) != json.Number("9007199254740993") {
-		t.Fatal("sort rounded distinct numbers", rows)
+	trq := &timeseries.TimeRangeQuery{Ordering: []timeseries.OrderTerm{{Column: "time", NullsFirst: true}}}
+	d := &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: trq, Results: dataset.Results{{SeriesList: dataset.SeriesList{
+		dataset.NewSeries(dataset.SeriesHeader{}, pts)}}}}, fields: fields}
+	p, err := newGreptimePlan(d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []any
+	for row := range p.rows() {
+		got = append(got, row.seg.Value(0, row.row))
+	}
+	if got[0] != nil || got[1] != json.Number("9.007199254740992e15") || got[2] != json.Number("9007199254740993") {
+		t.Fatal("sort rounded distinct numbers", got)
 	}
 }
 

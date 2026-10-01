@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -85,7 +86,7 @@ func TestFetchPartialBucket(t *testing.T) {
 					len(ds.Results[0].SeriesList) != 1 {
 					t.Fatalf("partial bucket = %T %+v", ts, ds)
 				}
-				points := ds.Results[0].SeriesList[0].Points()
+				points := dspoints.Of(ds.Results[0].SeriesList[0])
 				if len(points) != 1 || int64(points[0].Epoch) != start.UnixNano() {
 					t.Fatalf("partial bucket points = %+v", points)
 				}

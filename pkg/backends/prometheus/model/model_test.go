@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -131,7 +132,7 @@ func TestUnmarshalInstantaneous(t *testing.T) {
 	if s.PointCount() != 1 {
 		t.Fatalf("expected 1 point, got %d", s.PointCount())
 	}
-	got := int64(s.Points()[0].Epoch)
+	got := int64(dspoints.Of(s)[0].Epoch)
 	want := int64(1554730772113000000)
 	if diff := got - want; diff < -1000 || diff > 1000 {
 		t.Errorf("expected epoch ~%d, got %d (diff=%d)", want, got, diff)

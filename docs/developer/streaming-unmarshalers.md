@@ -28,8 +28,6 @@ func NewModeler() *timeseries.Modeler {
 
 The Delta Proxy Cache gives each origin fetch's `200` body to the provider's `WireUnmarshalerReader` as it arrives, decompressed and bounded by `max_object_size_bytes`, so decoding overlaps the network and the body is never held whole. A read that fails or passes the size limit fails the fetch, whatever the decoder returned, and nothing from it is cached. The engine reads to the end whatever the decoder leaves, so a decoder can stop at an error without draining its input.
 
-Today the proxy engine reads each upstream body into memory before calling the unmarshaler, so the current savings come from skipping the intermediate model. Once the engine passes response bodies through directly, the same decoders will read from the network with no changes.
-
 ## Choosing a Decoder
 
 ### Newline-Delimited Formats
@@ -147,7 +145,7 @@ The Builder matches series the same way merges do: the header hash finds candida
 
 `Finish` returns the DataSet. It sorts only the series whose points arrived out of order, using a stable sort that keeps arrival order among equal epochs, and then applies the duplicate policy. When a series' points do arrive in order, duplicates are handled as they arrive, so `DuplicatesError` fails the `Commit` immediately. `Finish` also calculates each series header's size, and sets the DataSet's `TimeRangeQuery` and `ExtentList` from the query.
 
-The Builder logs rows as they arrive and lays them out by column when it finishes: each series holds its epochs in one array and each value column in another, all cut from a few arrays the whole DataSet shares, with text and binary values in one shared byte array. So a row does not need an allocation of its own, and a series' size is the size of its arrays. `Series.Points()` returns a copy of a series' rows as `Point` values for code that needs them, but readers on a hot path should read the columns in place through `Series.Segments()` or `Result.Rows`.
+The Builder logs rows as they arrive and lays them out by column when it finishes: each series holds its epochs in one array and each value column in another, all cut from a few arrays the whole DataSet shares, with text and binary values in one shared byte array. So a row does not need an allocation of its own, and a series' size is the size of its arrays. Read the columns in place through `Series.Segments()` or `Result.Rows`; [Columnar DataSets](./columnar-datasets.md) covers reading them, and writing a response from them.
 
 `ErrInvalidRow` and `ErrDuplicateEpoch` wrap `timeseries.ErrInvalidBody`, and `ErrBuilderFinished` reports use after `Finish`. `ErrInvalidRow` covers:
 

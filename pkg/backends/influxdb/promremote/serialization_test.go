@@ -27,6 +27,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/promremote/prompb"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -96,9 +97,9 @@ func TestTimeseriesRoundTrip(t *testing.T) {
 		series.Header.TagFieldsList[1].Name != "job" {
 		t.Fatalf("tag fields = %#v", series.Header.TagFieldsList)
 	}
-	if series.Points()[0].Epoch != epoch.Epoch(100*int64(time.Millisecond)) ||
-		series.Points()[1].Epoch != epoch.Epoch(200*int64(time.Millisecond)) {
-		t.Fatalf("points were not sorted: %#v", series.Points())
+	if dspoints.Of(series)[0].Epoch != epoch.Epoch(100*int64(time.Millisecond)) ||
+		dspoints.Of(series)[1].Epoch != epoch.Epoch(200*int64(time.Millisecond)) {
+		t.Fatalf("points were not sorted: %#v", dspoints.Of(series))
 	}
 
 	body, err := MarshalTimeseries(ds, nil, 200)

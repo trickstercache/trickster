@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -174,7 +175,7 @@ func TestMarshalWritesNothingForAValueJSONCannotHold(t *testing.T) {
 		rlo := &timeseries.RequestOptions{OutputFormat: of}
 		ds := testDataSet()
 		s := ds.Results[0].SeriesList[0]
-		pts := s.Points()
+		pts := dspoints.Of(s)
 		// a value past the series' columns is never written, so it can't fail the marshal
 		pts[0].Values = append(pts[0].Values, math.NaN())
 		s.SetPoints(pts)

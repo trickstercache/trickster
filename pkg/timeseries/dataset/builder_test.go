@@ -17,12 +17,15 @@
 package dataset
 
 import (
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 
 	"github.com/stretchr/testify/require"
 )
@@ -69,7 +72,7 @@ func commitRows(t *testing.T, b *Builder, rows ...testRow) {
 
 func pointEpochs(s *Series) []epoch.Epoch {
 	out := make([]epoch.Epoch, s.PointCount())
-	for i, p := range s.Points() {
+	for i, p := range seriesPoints(s) {
 		out[i] = p.Epoch
 	}
 	return out
@@ -77,7 +80,7 @@ func pointEpochs(s *Series) []epoch.Epoch {
 
 func pointValues(s *Series) []any {
 	out := make([]any, s.PointCount())
-	for i, p := range s.Points() {
+	for i, p := range seriesPoints(s) {
 		out[i] = p.Values[0]
 	}
 	return out
@@ -456,12 +459,12 @@ func TestBuilderManyAndWideRows(t *testing.T) {
 	require.NoError(t, wide.Commit())
 	ds, err := b.Finish()
 	require.NoError(t, err)
-	pts := ds.Results[0].SeriesList[0].Points()
+	pts := seriesPoints(ds.Results[0].SeriesList[0])
 	require.Len(t, pts, rows)
 	for i, p := range pts {
 		require.Equal(t, []any{int64(i)}, p.Values)
 	}
-	widePts := ds.Results[0].SeriesList[1].Points()
+	widePts := seriesPoints(ds.Results[0].SeriesList[1])
 	require.Len(t, widePts, 1)
 	require.Len(t, widePts[0].Values, wideValues)
 	require.Equal(t, int64(wideValues-1), widePts[0].Values[wideValues-1])
@@ -621,7 +624,7 @@ func TestBuilderAddValueField(t *testing.T) {
 		require.Len(t, s.Header.ValueFieldsList, 2)
 		require.Equal(t, "w", s.Header.ValueFieldsList[1].Name)
 		var got [][]any
-		for _, p := range s.Points() {
+		for _, p := range seriesPoints(s) {
 			got = append(got, p.Values)
 		}
 		require.Equal(t, want[s.Header.Tags["host"]], got)
@@ -653,8 +656,8 @@ func TestBuilderStartNewSeries(t *testing.T) {
 	require.NoError(t, err)
 	sl := ds.Results[0].SeriesList
 	require.Len(t, sl, 2)
-	require.Equal(t, Points{{Epoch: 0, Values: []any{1.0}}, {Epoch: 2, Values: []any{3.0}}}, sl[0].Points())
-	require.Equal(t, Points{{Epoch: 1, Values: []any{2.0}}}, sl[1].Points())
+	require.Equal(t, Points{{Epoch: 0, Values: []any{1.0}}, {Epoch: 2, Values: []any{3.0}}}, seriesPoints(sl[0]))
+	require.Equal(t, Points{{Epoch: 1, Values: []any{2.0}}}, seriesPoints(sl[1]))
 	// a finished Builder opens nothing
 	b.StartNewSeries(h)
 	require.ErrorIs(t, b.AppendPoint(Point{}), ErrBuilderFinished)
@@ -678,10 +681,119 @@ func TestSeriesReorderValues(t *testing.T) {
 	shared := NewSeriesOf(s.Header, s.Segments())
 	s.ReorderValues([]int{1, 0})
 	require.Equal(t, []string{"w", "v"}, []string{s.Header.ValueFieldsList[0].Name, s.Header.ValueFieldsList[1].Name})
-	require.Equal(t, []any{"x", 2.0}, s.Points()[2].Values)
+	require.Equal(t, []any{"x", 2.0}, seriesPoints(s)[2].Values)
 	// a series sharing the Segments keeps its order
-	require.Equal(t, []any{2.0, "x"}, shared.Points()[2].Values)
+	require.Equal(t, []any{2.0, "x"}, seriesPoints(shared)[2].Values)
 	empty := &Series{}
 	empty.ReorderValues([]int{0})
 	require.Zero(t, empty.PointCount())
+}
+
+// rows of 100 series in the orders a response can hold them: each time's rows in turn, each series'
+// rows in a run, and no order
+func BenchmarkBuilderRowOrders(b *testing.B) {
+	const series, points = 100, 1000
+	hosts := make([][]byte, series)
+	for i := range hosts {
+		hosts[i] = []byte("host-" + strconv.Itoa(i))
+	}
+	timeMajor := make([][2]int, 0, series*points)
+	for p := range points {
+		for s := range series {
+			timeMajor = append(timeMajor, [2]int{s, p})
+		}
+	}
+	seriesMajor := make([][2]int, 0, series*points)
+	for s := range series {
+		for p := range points {
+			seriesMajor = append(seriesMajor, [2]int{s, p})
+		}
+	}
+	shuffled := slices.Clone(timeMajor)
+	weaktest.NewRand(7, 7).Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+	fields := timeseries.SeriesFields{Tags: timeseries.FieldDefinitions{{Name: "host"}},
+		Values: timeseries.FieldDefinitions{{Name: "v"}}}
+	for name, rows := range map[string][][2]int{"time-major": timeMajor, "series-major": seriesMajor, "shuffled": shuffled} {
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				bl := NewBuilder(nil, BuilderOptions{Fields: fields})
+				for _, sp := range rows {
+					r := bl.Row()
+					r.SetEpoch(epoch.Epoch(sp[1]))
+					r.SetTag(0, hosts[sp[0]])
+					r.AddFloat64(float64(sp[1]))
+					if err := r.Commit(); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if _, err := bl.Finish(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// rows find their series by their tags whatever order they come in, an unset tag naming another series
+// than an empty one, and a series predicted from the last row only when its tags match
+func TestBuilderRowsFindTheirSeries(t *testing.T) {
+	rng := weaktest.NewRand(9, 9)
+	// each combination's tags, nil for unset
+	combos := [][2][]byte{{[]byte("a"), []byte("x")}, {[]byte("a"), nil}, {[]byte(""), nil}, {nil, nil},
+		{nil, []byte("")}, {[]byte("b"), []byte("x")}, {[]byte("ab"), []byte("")}, {[]byte("a"), []byte("")}}
+	fields := timeseries.SeriesFields{Tags: timeseries.FieldDefinitions{{Name: "t0"}, {Name: "t1"}},
+		Values: timeseries.FieldDefinitions{{Name: "v"}}}
+	name := func(tags [2][]byte) string {
+		var n string
+		for _, tag := range tags {
+			if tag == nil {
+				n += "|unset"
+			} else {
+				n += "|=" + string(tag)
+			}
+		}
+		return n
+	}
+	for trial := range 60 {
+		bl := NewBuilder(nil, BuilderOptions{Fields: fields})
+		want := make(map[string][]float64)
+		for i := range 50 + rng.IntN(200) {
+			var c int
+			switch trial % 3 {
+			case 0:
+				c = i % len(combos)
+			case 1:
+				c = i / 40 % len(combos)
+			default:
+				c = rng.IntN(len(combos))
+			}
+			r := bl.Row()
+			r.SetEpoch(epoch.Epoch(i))
+			for k, tag := range combos[c] {
+				if tag != nil {
+					r.SetTag(k, tag)
+				}
+			}
+			r.AddFloat64(float64(i))
+			require.NoError(t, r.Commit())
+			want[name(combos[c])] = append(want[name(combos[c])], float64(i))
+		}
+		ds, err := bl.Finish()
+		require.NoError(t, err)
+		require.Len(t, ds.Results[0].SeriesList, len(want))
+		for _, s := range ds.Results[0].SeriesList {
+			var key [2][]byte
+			for k, fd := range fields.Tags {
+				if v, ok := s.Header.Tags[fd.Name]; ok {
+					key[k] = []byte(v)
+				}
+			}
+			var got []float64
+			for _, p := range seriesPoints(s) {
+				got = append(got, p.Values[0].(float64))
+			}
+			require.Equal(t, want[name(key)], got, "trial %d, tags %v", trial, s.Header.Tags)
+		}
+	}
 }

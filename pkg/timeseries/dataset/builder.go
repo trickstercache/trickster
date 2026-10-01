@@ -17,10 +17,10 @@
 package dataset
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -98,11 +98,16 @@ type resultBuild struct {
 	series []*seriesBuild
 	lookup map[string]*seriesBuild
 	index  *seriesIndex[*seriesBuild]
+	// the series of the last row looked up by its tags
+	last *seriesBuild
 }
 
 type seriesBuild struct {
 	s  *Series
 	id int
+	// the row key the series was first looked up by, and the series the row after its last one had
+	key  string
+	next *seriesBuild
 }
 
 // NewBuilder returns a Builder for the provided query and options.
@@ -335,21 +340,38 @@ func (r *RowBuilder) reset() {
 }
 
 func (r *RowBuilder) series() *seriesBuild {
+	// each tag as its length plus one and its bytes, or 0 when it's unset
 	r.key = r.key[:0]
 	for i := 0; i < len(r.tagOff); i += 2 {
 		start, end := r.tagOff[i], r.tagOff[i+1]
 		if start < 0 {
-			r.key = append(r.key, '-')
+			r.key = append(r.key, 0)
 			continue
 		}
-		r.key = strconv.AppendInt(r.key, int64(end-start), 10)
-		r.key = append(r.key, ':')
+		r.key = binary.AppendUvarint(r.key, uint64(end-start)+1) // #nosec G115 -- a length is never negative
 		r.key = append(r.key, r.tagBuf[start:end]...)
 	}
 	rb := r.b.currentResult()
-	if sb, ok := rb.lookup[string(r.key)]; ok {
-		return sb
+	// rows repeat their series' order, a series' rows in a run or each time's rows in turn, so the series
+	// that followed the last row's before is tried before the lookup
+	if last := rb.last; last != nil && last.next != nil && last.next.key == string(r.key) {
+		rb.last = last.next
+		return last.next
 	}
+	sb, ok := rb.lookup[string(r.key)]
+	if !ok {
+		sb = r.newSeries(rb)
+	}
+	if rb.last != nil {
+		rb.last.next = sb
+	}
+	rb.last = sb
+	return sb
+}
+
+// newSeries returns the series for a row whose tags weren't looked up before: one of an equivalent
+// header, or else a new one
+func (r *RowBuilder) newSeries(rb *resultBuild) *seriesBuild {
 	opts := &r.b.opts
 	tags := make(Tags, len(opts.Fields.Tags))
 	for i, fd := range opts.Fields.Tags {
@@ -378,7 +400,11 @@ func (r *RowBuilder) series() *seriesBuild {
 		UntrackedFieldsList: opts.Fields.Untracked,
 		QueryStatement:      opts.QueryStatement,
 	}, true)
-	rb.lookup[string(r.key)] = sb
+	key := string(r.key)
+	rb.lookup[key] = sb
+	if sb.key == "" {
+		sb.key = key
+	}
 	return sb
 }
 

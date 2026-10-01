@@ -19,6 +19,7 @@ package tsm
 import (
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/golden"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -67,7 +68,7 @@ func toGolden(ds *dataset.DataSet) goldenDataSet {
 				QueryStatement: s.Header.QueryStatement,
 				Points:         make([]goldenPoint, s.PointCount()),
 			}
-			for i, p := range s.Points() {
+			for i, p := range dspoints.Of(s) {
 				gs.Points[i] = goldenPoint{
 					Epoch:  int64(p.Epoch),
 					Values: append([]any(nil), p.Values...),

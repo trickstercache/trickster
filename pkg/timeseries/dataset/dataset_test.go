@@ -56,7 +56,7 @@ func TestCropToRangeDropsSeriesWithoutMatchingPoints(t *testing.T) {
 				}}},
 			}
 			ds.CropToRange(timeseries.Extent{Start: time.Unix(bounds[0], 0), End: time.Unix(bounds[1], 0)})
-			if ds.SeriesCount() != 1 || ds.ValueCount() != 1 || ds.Results[0].SeriesList[0].Points()[0].Values[0] != int64(3) {
+			if ds.SeriesCount() != 1 || ds.ValueCount() != 1 || seriesPoints(ds.Results[0].SeriesList[0])[0].Values[0] != int64(3) {
 				t.Fatalf("crop retained points from a disjoint series: %+v", ds.Results[0].SeriesList)
 			}
 		})
@@ -321,7 +321,7 @@ func TestMergeWithStrategy(t *testing.T) {
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
-		pts := ds1.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(ds1.Results[0].SeriesList[0])
 		if len(pts) != 2 {
 			t.Fatalf("expected 2 points, got %d", len(pts))
 		}
@@ -341,8 +341,8 @@ func TestMergeWithStrategy(t *testing.T) {
 			t.Fatalf("expected 1 series, got %d", ds1.SeriesCount())
 		}
 		// dedup: last value wins
-		if ds1.Results[0].SeriesList[0].Points()[0].Values[0] != "9" {
-			t.Errorf("expected dedup value 9, got %v", ds1.Results[0].SeriesList[0].Points()[0].Values[0])
+		if seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0] != "9" {
+			t.Errorf("expected dedup value 9, got %v", seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0])
 		}
 	})
 
@@ -374,7 +374,7 @@ func TestMergeWithStrategy(t *testing.T) {
 		// Use sum for pairwise accumulation (as the merge func does for avg)
 		ds1.MergeWithStrategy(true, int(merge.StrategySum), ds2, ds3)
 		ds1.FinalizeAvg(3) // 3 datasets total
-		pts := ds1.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(ds1.Results[0].SeriesList[0])
 		if pts[0].Values[0] != "20" {
 			t.Errorf("expected avg 20, got %v", pts[0].Values[0])
 		}
@@ -413,7 +413,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		sumDS := makeDS(0, "requests", Tags{}, ep{100, "60"}, ep{200, "40"})
 		countDS := makeDS(0, "requests", Tags{}, ep{100, "3"}, ep{200, "1"})
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		pts := sumDS.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 2 {
 			t.Fatalf("expected 2 points, got %d", len(pts))
 		}
@@ -430,7 +430,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 	t.Run("nil countDS is a no-op", func(t *testing.T) {
 		ds := makeDS(0, "up", Tags{}, ep{100, "10"})
 		ds.FinalizeWeightedAvg(nil, "")
-		if ds.Results[0].SeriesList[0].Points()[0].Values[0] != "10" {
+		if seriesPoints(ds.Results[0].SeriesList[0])[0].Values[0] != "10" {
 			t.Error("expected unchanged value '10'")
 		}
 	})
@@ -439,7 +439,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		sumDS := makeDS(0, "m", Tags{}, ep{100, "50"}, ep{200, "80"})
 		countDS := makeDS(0, "m", Tags{}, ep{100, "5"}) // no epoch 200
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		pts := sumDS.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 1 {
 			t.Fatalf("expected 1 paired point, got %d", len(pts))
 		}
@@ -472,9 +472,9 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 			}},
 		}
 		sumDS.FinalizeWeightedAvg(countDS, "")
-		if sumDS.Results[0].SeriesList[0].Points()[0].Values[0] != "100" {
+		if seriesPoints(sumDS.Results[0].SeriesList[0])[0].Values[0] != "100" {
 			t.Errorf("with empty pairing, mismatched statement hashes must skip divide; got %v",
-				sumDS.Results[0].SeriesList[0].Points()[0].Values[0])
+				seriesPoints(sumDS.Results[0].SeriesList[0])[0].Values[0])
 		}
 	})
 
@@ -500,7 +500,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 			}},
 		}
 		sumDS.FinalizeWeightedAvg(countDS, "avg(x)")
-		got := sumDS.Results[0].SeriesList[0].Points()[0].Values[0]
+		got := seriesPoints(sumDS.Results[0].SeriesList[0])[0].Values[0]
 		if got != "25" {
 			t.Errorf("weighted avg = 100/4: got %v, want 25", got)
 		}
@@ -533,7 +533,7 @@ func TestFinalizeWeightedAvg(t *testing.T) {
 		sumDS.FinalizeWeightedAvg(countDS, "")
 		for _, s := range sumDS.Results[0].SeriesList {
 			region := s.Header.Tags["region"]
-			got := s.Points()[0].Values[0]
+			got := seriesPoints(s)[0].Values[0]
 			switch region {
 			case "us-east-1":
 				if got != "10" { // 100/10
@@ -658,7 +658,7 @@ func TestCroppedCloneSkipsSeriesWithoutPointsInRange(t *testing.T) {
 	clone := ds.CroppedClone(timeseries.Extent{Start: time.Unix(5, 0), End: time.Unix(15, 0)}).(*DataSet)
 	require.Len(t, clone.Results[0].SeriesList, 1)
 	require.NotSame(t, inRange, clone.Results[0].SeriesList[0])
-	require.Equal(t, inRange.Points(), clone.Results[0].SeriesList[0].Points())
+	require.Equal(t, seriesPoints(inRange), seriesPoints(clone.Results[0].SeriesList[0]))
 	require.Equal(t, source, ds.Results[0].SeriesList, "the source's series list changed")
 	for i := range source {
 		require.Same(t, source[i], ds.Results[0].SeriesList[i])

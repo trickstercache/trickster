@@ -16,7 +16,11 @@
 
 package stream
 
-import "strings"
+import (
+	"encoding/binary"
+	"math/bits"
+	"strings"
+)
 
 // The scanners in this file read raw JSON values that a jsontext.Decoder has already validated, as
 // ReadValue returns them, so they only find the boundaries of what the grammar guarantees is there.
@@ -168,9 +172,25 @@ func valueEnd(raw []byte, i int) int {
 // the bytes that end a number, true, false or null
 var literalEnds = [256]bool{',': true, ']': true, '}': true, ':': true, ' ': true, '\t': true, '\n': true, '\r': true}
 
-// stringEnd returns the index just past the JSON string that starts at raw[i]
+// stringEnd returns the index just past the JSON string that starts at raw[i], finding its quote or an
+// escape eight bytes at a time
 func stringEnd(raw []byte, i int) int {
-	for j := i + 1; j < len(raw); j++ {
+	j := i + 1
+	for j+8 <= len(raw) {
+		x := binary.LittleEndian.Uint64(raw[j:])
+		m := zeroBytes(x^quotes) | zeroBytes(x^backslashes)
+		if m == 0 {
+			j += 8
+			continue
+		}
+		j += bits.TrailingZeros64(m) / 8
+		if raw[j] == '"' {
+			return j + 1
+		}
+		// past the escape and the byte it escapes
+		j += 2
+	}
+	for ; j < len(raw); j++ {
 		switch raw[j] {
 		case '\\':
 			j++
@@ -179,4 +199,17 @@ func stringEnd(raw []byte, i int) int {
 		}
 	}
 	return len(raw)
+}
+
+const (
+	lowBits     = 0x0101010101010101
+	highBits    = 0x8080808080808080
+	quotes      = lowBits * '"'
+	backslashes = lowBits * '\\'
+)
+
+// zeroBytes returns x with the high bit set in its lowest zero byte, and possibly in bytes above that;
+// it's 0 when x has no zero byte
+func zeroBytes(x uint64) uint64 {
+	return (x - lowBits) &^ x & highBits
 }

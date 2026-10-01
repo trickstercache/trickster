@@ -41,6 +41,7 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -875,7 +876,7 @@ func TestDeltaCacheHitAndInvalidEntryBranches(t *testing.T) {
 	rewrites := metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName,
 		mysqlDialect, "render_delta_rows")
 	before := testutil.ToFloat64(rewrites)
-	unrenderable := d.DS.Results[0].SeriesList[0].Points()
+	unrenderable := dspoints.Of(d.DS.Results[0].SeriesList[0])
 	unrenderable[0].Values[0] = []byte{0xff}
 	d.DS.Results[0].SeriesList[0].SetPoints(unrenderable)
 	h.storeDelta(key, d, timeseries.ExtentList{extent})

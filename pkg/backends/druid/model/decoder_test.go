@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -139,7 +140,7 @@ func legacyForm(ts timeseries.Timeseries) *dataset.DataSet {
 					s.Header.Tags[name], _ = legacySqlTagIdentity(legacyJSON(tag))
 				}
 			}
-			pts := s.Points()
+			pts := dspoints.Of(s)
 			for _, p := range pts {
 				for i, v := range p.Values {
 					switch v := v.(type) {
@@ -357,7 +358,7 @@ func TestDecoderDepartures(t *testing.T) {
 		require.NoError(t, err)
 		s := ts.(*dataset.DataSet).Results[0].SeriesList[0]
 		require.True(t, s.IsSorted())
-		require.Equal(t, []any{int64(1)}, s.Points()[0].Values)
+		require.Equal(t, []any{int64(1)}, dspoints.Of(s)[0].Values)
 		out, err := MarshalTimeseries(ts, nil, 200)
 		require.NoError(t, err)
 		require.Equal(t, body, string(out))
@@ -454,7 +455,7 @@ func TestSQLMarshalMatchesLegacy(t *testing.T) {
 		case 0:
 			// a series out of time order, as a merge of parts may hold until sorted
 			for _, s := range ds.Results[0].SeriesList {
-				pts := s.Points()
+				pts := dspoints.Of(s)
 				rng.Shuffle(len(pts), func(a, b int) { pts[a], pts[b] = pts[b], pts[a] })
 				s.SetPoints(pts)
 			}
@@ -467,7 +468,7 @@ func TestSQLMarshalMatchesLegacy(t *testing.T) {
 		case 4:
 			// a value JSON can't hold, which writes nothing
 			if sl := ds.Results[0].SeriesList; len(sl) > 0 && rng.IntN(2) == 0 {
-				pts := sl[0].Points()
+				pts := dspoints.Of(sl[0])
 				pts[len(pts)-1].Values[len(pts[len(pts)-1].Values)-1] = math.NaN()
 				sl[0].SetPoints(pts)
 			}
@@ -541,24 +542,12 @@ func TestCompareSQLNumbers(t *testing.T) {
 		{json.Number("1.0"), float64(1), 0},
 		{json.Number("1e400"), json.Number("2"), -1},
 		{[]byte(`{"a":1}`), []byte(`{"b":1}`), -1},
+		{math.NaN(), 1.5, 1},
+		{json.Number("NaN"), json.Number("1"), 1},
+		{math.NaN(), math.NaN(), 0},
 	} {
 		require.Equal(t, c.want, compareSQLValue(c.a, c.b, false), "%v %v", c.a, c.b)
 	}
-}
-
-func TestCompareStoredRows(t *testing.T) {
-	// a series holding the same time in two Segments, as overlapping parts may
-	build := func(v float64) dataset.Segments {
-		return dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{{Epoch: 1, Values: []any{v}}}).Segments()
-	}
-	segs := append(build(1), build(2)...)
-	s := dataset.NewSeriesOf(dataset.SeriesHeader{}, segs)
-	first := dataset.Row{Series: s, Seg: &s.Segments()[0], Index: 0}
-	second := dataset.Row{Series: s, Seg: &s.Segments()[1], Index: 0}
-	require.Equal(t, -1, compareStoredRows(first, second))
-	require.Equal(t, 1, compareStoredRows(second, first))
-	require.Equal(t, 0, compareStoredRows(first, first))
-	require.Equal(t, -1, compareStoredRows(first, dataset.Row{SeriesIndex: 1}))
 }
 
 // benchBodies returns a groupBy response and a SQL object response of series x points

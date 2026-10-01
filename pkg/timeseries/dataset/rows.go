@@ -17,6 +17,7 @@
 package dataset
 
 import (
+	"cmp"
 	"iter"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -56,6 +57,25 @@ func (r Row) Bytes(c int) []byte {
 // Int64 returns the row's value in column c, which must be a KindInt64.
 func (r Row) Int64(c int) int64 {
 	return r.Seg.Int64(c, r.Index)
+}
+
+// CompareStored orders two rows of a result as it holds them, by series, Segment and row, which breaks
+// ties as a stable sort of the stored rows does.
+func CompareStored(a, b Row) int {
+	if c := cmp.Compare(a.SeriesIndex, b.SeriesIndex); c != 0 {
+		return c
+	}
+	if a.Seg != b.Seg {
+		for k := range a.Series.segs {
+			switch &a.Series.segs[k] {
+			case a.Seg:
+				return -1
+			case b.Seg:
+				return 1
+			}
+		}
+	}
+	return cmp.Compare(a.Index, b.Index)
 }
 
 // RowOrder orders the rows Result.Rows yields: by epoch, newest first when Descending, and within

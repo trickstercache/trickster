@@ -21,6 +21,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -66,7 +67,7 @@ func TestPrometheusHistogramOperationsDatasetMergeUpdatesSize(t *testing.T) {
 	left.MergeWithStrategy(true, int(merge.StrategySum), newDataSet(rightValue))
 
 	series := left.Results[0].SeriesList[0]
-	value := series.Points()[0].Values[0].(string)
+	value := dspoints.Of(series)[0].Values[0].(string)
 	// the merged value's bytes are what the series' size counts
 	require.GreaterOrEqual(t, series.Segments().Size(), int64(len(value)))
 }
@@ -207,8 +208,8 @@ func TestPrometheusHistogramOperationsDropMixedSamples(t *testing.T) {
 	ds.FinalizeValueMerge(int(merge.StrategySum))
 
 	require.Len(t, ds.Results[0].SeriesList, 2)
-	require.Equal(t, epoch.Epoch(1), ds.Results[0].SeriesList[0].Points()[0].Epoch)
-	require.Equal(t, epoch.Epoch(3), ds.Results[0].SeriesList[1].Points()[0].Epoch)
+	require.Equal(t, epoch.Epoch(1), dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch)
+	require.Equal(t, epoch.Epoch(3), dspoints.Of(ds.Results[0].SeriesList[1])[0].Epoch)
 	require.Equal(t, []string{mixedFloatHistogramWarning}, ds.Warnings)
 
 	ds.FinalizeValueMerge(int(merge.StrategySum))

@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	tsmerge "github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
@@ -83,7 +84,7 @@ func TestReplicaGroupCoalescingPrecedesCrossShardReduction(t *testing.T) {
 		t.Fatalf("merge failures = %v", failedMembers)
 	}
 	ds := accumulator.GetTSData().(*dataset.DataSet)
-	points := ds.Results[0].SeriesList[0].Points()
+	points := dspoints.Of(ds.Results[0].SeriesList[0])
 	got := make(map[int64]string, len(points))
 	for _, point := range points {
 		got[int64(point.Epoch)] = point.Values[0].(string)
@@ -102,7 +103,7 @@ func TestReplicaGroupTolerantDedupKeepsConfiguredFirst(t *testing.T) {
 
 	logical := coalesceReplicaGroup(contributions, 5)
 	ds := logical.data.(*dataset.DataSet)
-	points := ds.Results[0].SeriesList[0].Points()
+	points := dspoints.Of(ds.Results[0].SeriesList[0])
 	if len(points) != 1 {
 		t.Fatalf("points = %v, want one tolerant-deduped point", points)
 	}

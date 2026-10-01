@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -125,9 +126,9 @@ func TestReducePooledVariancePlan(t *testing.T) {
 		t.Fatalf("output: %#v", accumulator.GetTSData())
 	}
 	series := ds.Results[0].SeriesList[0]
-	state, ok := series.Points()[0].Values[0].(dataset.PooledVarianceState)
+	state, ok := dspoints.Of(series)[0].Values[0].(dataset.PooledVarianceState)
 	if !ok {
-		t.Fatalf("point value type: %T", series.Points()[0].Values[0])
+		t.Fatalf("point value type: %T", dspoints.Of(series)[0].Values[0])
 	}
 	if got, want := state.PopulationVariance(), 384.0/49.0; math.Abs(got-want) > 1e-12 {
 		t.Fatalf("variance got %.17g want %.17g", got, want)
@@ -175,7 +176,7 @@ func TestReducePooledVariancePlanDropsUnpairedPoints(t *testing.T) {
 		t.Fatalf("warnings: %v", warnings)
 	}
 	ds := accumulator.GetTSData().(*dataset.DataSet)
-	points := ds.Results[0].SeriesList[0].Points()
+	points := dspoints.Of(ds.Results[0].SeriesList[0])
 	if len(points) != 1 || points[0].Epoch != 100 {
 		t.Fatalf("points: %#v", points)
 	}

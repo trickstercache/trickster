@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/parts"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
@@ -107,7 +108,7 @@ func TestMarshalMatchesLegacyUnmerged(t *testing.T) {
 	two := &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery, Results: dataset.Results{a.Results[0], nil, b.Results[0]}}
 	requireLegacyOutput(t, two)
 	s := a.Results[0].SeriesList[0]
-	pts := s.Points()
+	pts := dspoints.Of(s)
 	pts[0], pts[len(pts)-1] = pts[len(pts)-1], pts[0]
 	a.Results[0].SeriesList[0] = dataset.NewSeries(s.Header, pts)
 	requireLegacyOutput(t, a)

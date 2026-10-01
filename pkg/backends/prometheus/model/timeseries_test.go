@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -97,10 +98,10 @@ func TestUnmarshalTimeseriesReader(t *testing.T) {
 		require.True(t, ok)
 		require.Len(t, ds.Results, 1)
 		require.Len(t, ds.Results[0].SeriesList, 2)
-		require.Len(t, ds.Results[0].SeriesList[0].Points(), 3)
-		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points()[0].Epoch)
-		require.Equal(t, epoch.Epoch(1435781445000000000), ds.Results[0].SeriesList[0].Points()[1].Epoch)
-		require.Equal(t, epoch.Epoch(1435781460000000000), ds.Results[0].SeriesList[0].Points()[2].Epoch)
+		require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 3)
+		require.Equal(t, epoch.Epoch(1435781430000000000), dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch)
+		require.Equal(t, epoch.Epoch(1435781445000000000), dspoints.Of(ds.Results[0].SeriesList[0])[1].Epoch)
+		require.Equal(t, epoch.Epoch(1435781460000000000), dspoints.Of(ds.Results[0].SeriesList[0])[2].Epoch)
 	})
 
 	t.Run("round trip preserves scalar wire shape", func(t *testing.T) {
@@ -350,8 +351,8 @@ func TestUnmarshalScalar(t *testing.T) {
 		require.Len(t, ds.Results, 1)
 		require.Equal(t, string(Scalar), ds.SourceResultType)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		require.Len(t, ds.Results[0].SeriesList[0].Points(), 1)
-		require.Equal(t, epoch.Epoch(1435781430000000000), ds.Results[0].SeriesList[0].Points()[0].Epoch)
+		require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 1)
+		require.Equal(t, epoch.Epoch(1435781430000000000), dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch)
 	})
 
 	t.Run("malformed result not array", func(t *testing.T) {
@@ -378,7 +379,7 @@ func TestUnmarshalScalar(t *testing.T) {
 		// → no points created
 		require.Len(t, ds.Results, 1)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		require.Empty(t, ds.Results[0].SeriesList[0].Points())
+		require.Empty(t, dspoints.Of(ds.Results[0].SeriesList[0]))
 	})
 
 	t.Run("single element array", func(t *testing.T) {
@@ -395,7 +396,7 @@ func TestUnmarshalScalar(t *testing.T) {
 		// Single element → len(pr.Value)==1 != 2, so no points
 		require.Len(t, ds.Results, 1)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		require.Empty(t, ds.Results[0].SeriesList[0].Points())
+		require.Empty(t, dspoints.Of(ds.Results[0].SeriesList[0]))
 	})
 }
 
@@ -418,7 +419,7 @@ func TestPopulateSeriesMalformedPoints(t *testing.T) {
 	}
 	require.Len(t, ds.Results, 1)
 	require.Len(t, ds.Results[0].SeriesList, 1)
-	pts := ds.Results[0].SeriesList[0].Points()
+	pts := dspoints.Of(ds.Results[0].SeriesList[0])
 	require.Len(t, pts, 2, "malformed points must be compacted out")
 	require.Equal(t, epoch.Epoch(1435781430000000000), pts[0].Epoch)
 	require.Equal(t, epoch.Epoch(1435781460000000000), pts[1].Epoch)
@@ -464,9 +465,9 @@ func TestUnmarshalHistogramMatrix(t *testing.T) {
 
 	s := ds.Results[0].SeriesList[0]
 	require.Equal(t, fieldNameHistogram, s.Header.ValueFieldsList[0].Name)
-	require.Len(t, s.Points(), 2)
-	require.Equal(t, epoch.Epoch(1435781430000000000), s.Points()[0].Epoch)
-	require.Equal(t, epoch.Epoch(1435781445000000000), s.Points()[1].Epoch)
+	require.Len(t, dspoints.Of(s), 2)
+	require.Equal(t, epoch.Epoch(1435781430000000000), dspoints.Of(s)[0].Epoch)
+	require.Equal(t, epoch.Epoch(1435781445000000000), dspoints.Of(s)[1].Epoch)
 
 	// Round-trip: marshal and verify valid JSON
 	b, err := MarshalTimeseries(ds, nil, 200)
@@ -492,8 +493,8 @@ func TestUnmarshalMixedMatrix(t *testing.T) {
 	histSer := ds.Results[0].SeriesList[1]
 	require.Equal(t, "value", valueSer.Header.ValueFieldsList[0].Name)
 	require.Equal(t, fieldNameHistogram, histSer.Header.ValueFieldsList[0].Name)
-	require.Len(t, valueSer.Points(), 2)
-	require.Len(t, histSer.Points(), 1)
+	require.Len(t, dspoints.Of(valueSer), 2)
+	require.Len(t, dspoints.Of(histSer), 1)
 
 	// Round-trip marshal
 	b, err := MarshalTimeseries(ds, nil, 200)
@@ -518,7 +519,7 @@ func TestUnmarshalHistogramVector(t *testing.T) {
 
 	s := ds.Results[0].SeriesList[0]
 	require.Equal(t, fieldNameHistogram, s.Header.ValueFieldsList[0].Name)
-	require.Len(t, s.Points(), 1)
+	require.Len(t, dspoints.Of(s), 1)
 
 	// Vector marshal: call MarshalTSOrVectorWriter directly with isVector=true
 	var buf strings.Builder

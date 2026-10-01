@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/promsim"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -2442,7 +2443,7 @@ func TestDeltaProxyCacheRequestLeavesCachedDataUnchanged(t *testing.T) {
 		ds := ts.(*dataset.DataSet)
 		for _, r := range ds.Results {
 			for _, s := range r.SeriesList {
-				pts := s.Points()
+				pts := dspoints.Of(s)
 				for i := range pts {
 					pts[i].Values[0] = "999"
 					pts[i].Epoch++
@@ -2554,7 +2555,7 @@ func TestDeltaProxyCacheRequestPartialHitLeavesCachedEntry(t *testing.T) {
 		fmt.Fprintf(&b, "%v %v", stored.ExtentList, stored.VolatileExtentList)
 		for _, r := range stored.Results {
 			for _, s := range r.SeriesList {
-				fmt.Fprintf(&b, " %p %v", s, s.Points())
+				fmt.Fprintf(&b, " %p %v", s, dspoints.Of(s))
 			}
 		}
 		return b.String()

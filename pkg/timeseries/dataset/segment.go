@@ -304,6 +304,16 @@ func (s Segments) Filter(keep func(seg *Segment, i int) bool) Segments {
 	return s.gather(refs)
 }
 
+// Keep returns the rows whose position across the Segments keep holds true for, as Filter does; keep
+// must have a value for every row.
+func (s Segments) Keep(keep []bool) Segments {
+	n := 0
+	return s.Filter(func(*Segment, int) bool {
+		n++
+		return keep[n-1]
+	})
+}
+
 // refsBefore returns references to the rows before row i of segment k
 func (s Segments) refsBefore(k, i int) []rowRef {
 	refs := make([]rowRef, 0, s.Len())

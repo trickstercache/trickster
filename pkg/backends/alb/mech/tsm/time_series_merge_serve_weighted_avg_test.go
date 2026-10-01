@@ -45,6 +45,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -179,7 +180,7 @@ func taggedWeightedAvgRespondFunc(
 	if ds != nil && len(ds.Results) > 0 && ds.Results[0] != nil {
 		seriesCount = len(ds.Results[0].SeriesList)
 		if seriesCount > 0 && ds.Results[0].SeriesList[0].PointCount() > 0 {
-			point := ds.Results[0].SeriesList[0].Points()[0]
+			point := dspoints.Of(ds.Results[0].SeriesList[0])[0]
 			if len(point.Values) > 0 {
 				value = formatAny(point.Values[0])
 			}
@@ -221,7 +222,7 @@ func weightedAvgRespondFunc(w http.ResponseWriter, _ *http.Request, accum *merge
 	}
 	var sb strings.Builder
 	sb.WriteString("MERGED:")
-	for _, p := range ds.Results[0].SeriesList[0].Points() {
+	for _, p := range dspoints.Of(ds.Results[0].SeriesList[0]) {
 		sb.WriteString(strconv.FormatInt(int64(p.Epoch), 10))
 		sb.WriteByte('=')
 		if len(p.Values) > 0 {

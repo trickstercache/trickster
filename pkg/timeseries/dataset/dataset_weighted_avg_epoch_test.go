@@ -43,7 +43,7 @@ func TestFinalizeWeightedAvgUnpairedEpoch(t *testing.T) {
 		countDS := mkDS("m", mkPoint(100, "2"))
 		sumDS.FinalizeWeightedAvg(countDS, "")
 
-		pts := sumDS.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 1 {
 			t.Fatalf("expected 1 point after dropping unpaired epoch, got %d (%v)", len(pts), pts)
 		}
@@ -73,7 +73,7 @@ func TestFinalizeWeightedAvgUnpairedEpoch(t *testing.T) {
 		countDS := mkDS("m", mkPoint(100, "2"), mkPoint(200, "4"))
 		sumDS.FinalizeWeightedAvg(countDS, "")
 
-		pts := sumDS.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 1 {
 			t.Fatalf("expected 1 point, got %d", len(pts))
 		}
@@ -87,7 +87,7 @@ func TestFinalizeWeightedAvgUnpairedEpoch(t *testing.T) {
 		countDS := mkDS("m", mkPoint(100, "2"), mkPoint(200, "0"))
 		sumDS.FinalizeWeightedAvg(countDS, "")
 
-		pts := sumDS.Results[0].SeriesList[0].Points()
+		pts := seriesPoints(sumDS.Results[0].SeriesList[0])
 		if len(pts) != 1 {
 			t.Fatalf("expected 1 point (zero-count dropped), got %d (%v)", len(pts), pts)
 		}

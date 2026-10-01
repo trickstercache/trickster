@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -44,7 +45,7 @@ func partsTestSet(rng *weaktest.Rand, lo, hi int, hosts []string) *dataset.DataS
 			if hist {
 				v = `{"count":"` + v + `"}`
 			}
-			s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(at) * 15e9, Values: []any{v}}))
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(at) * 15e9, Values: []any{v}}))
 		}
 		r.SeriesList = append(r.SeriesList, s)
 	}

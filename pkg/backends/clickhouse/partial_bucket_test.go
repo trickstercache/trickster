@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
@@ -81,7 +82,7 @@ func TestFetchPartialBucket(t *testing.T) {
 		require.Equal(t, want, st)
 		ds := ts.(*dataset.DataSet)
 		require.Len(t, ds.Results[0].SeriesList, 1)
-		points := ds.Results[0].SeriesList[0].Points()
+		points := dspoints.Of(ds.Results[0].SeriesList[0])
 		require.Len(t, points, 1)
 		require.Equal(t, label.UnixNano(), int64(points[0].Epoch))
 	}

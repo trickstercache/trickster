@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
@@ -70,7 +71,7 @@ func tolerantRespondFunc(_ string) merge.RespondFunc {
 		}
 		var sb strings.Builder
 		sb.WriteString("MERGED:")
-		for _, p := range ds.Results[0].SeriesList[0].Points() {
+		for _, p := range dspoints.Of(ds.Results[0].SeriesList[0]) {
 			sb.WriteString(strconv.FormatInt(int64(p.Epoch), 10))
 			sb.WriteByte('=')
 			if len(p.Values) > 0 {

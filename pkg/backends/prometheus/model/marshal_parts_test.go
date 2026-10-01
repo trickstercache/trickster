@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 
 	"github.com/stretchr/testify/require"
@@ -93,7 +94,7 @@ func FuzzAppendEpochSeconds(f *testing.F) {
 
 func TestMarshalLeavesUnsortedPointsInPlace(t *testing.T) {
 	ds := benchMatrix(1, 3)
-	pts := ds.Results[0].SeriesList[0].Points()
+	pts := dspoints.Of(ds.Results[0].SeriesList[0])
 	pts[0], pts[2] = pts[2], pts[0]
 	first := pts[0].Epoch
 	var w countingWriter

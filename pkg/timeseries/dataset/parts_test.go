@@ -44,7 +44,7 @@ func mergedState(ds *DataSet) string {
 				continue
 			}
 			out += fmt.Sprintf("%s %d[", s.Header.Name, s.PointCount())
-			for _, p := range s.Points() {
+			for _, p := range seriesPoints(s) {
 				out += fmt.Sprintf("%d:%v ", p.Epoch, p.Values)
 			}
 			out += "],"
@@ -69,7 +69,7 @@ func randomMergeSet(rng *weaktest.Rand, names []string, lo, hi int, sorted bool)
 				} else {
 					at = lo + rng.IntN(hi-lo+1)
 				}
-				s.SetPoints(append(s.Points(), Point{Epoch: epoch.Epoch(at), Values: []any{rng.IntN(100)}}))
+				s.SetPoints(append(seriesPoints(s), Point{Epoch: epoch.Epoch(at), Values: []any{rng.IntN(100)}}))
 			}
 			res.SeriesList = append(res.SeriesList, s)
 		}

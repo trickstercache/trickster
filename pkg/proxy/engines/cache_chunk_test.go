@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -630,7 +631,7 @@ func TestTimeseriesChunkMergeLeavesMemoryChunks(t *testing.T) {
 	series := func(host string, epochs ...int64) *dataset.Series {
 		s := dataset.NewSeries(dataset.SeriesHeader{Name: "m", Tags: dataset.Tags{"host": host}}, nil)
 		for _, e := range epochs {
-			s.SetPoints(append(s.Points(), dataset.Point{Epoch: epoch.Epoch(e), Values: []any{"1"}}))
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(e), Values: []any{"1"}}))
 		}
 		return s
 	}

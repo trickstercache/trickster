@@ -18,7 +18,9 @@ package model
 
 import (
 	"bytes"
+	"cmp"
 	"io"
+	"iter"
 	"math"
 	"slices"
 	"strings"
@@ -31,13 +33,14 @@ import (
 )
 
 // a series' output layout: each key's value in Druid's key order, the fields giving a point's version
-// and rank (-1 when none), and its tags as a sort key
+// and rank (-1 when none), and its tags as a sort key and the series' place in that order
 type druidSeries struct {
-	tagsKey string
-	result  []druidCell
-	event   []druidCell
-	version int
-	rank    int
+	tagsKey  string
+	tagOrder int
+	result   []druidCell
+	event    []druidCell
+	version  int
+	rank     int
 }
 
 // a key, its name and quoted with its colon, the index of the value it takes, and its place among
@@ -65,12 +68,16 @@ func (dp *druidPoint) has(i int) bool {
 	return i >= 0 && i < dp.seg.NumCols()
 }
 
-// value returns value i, boxed, or nil when the row has none
-func (dp *druidPoint) value(i int) any {
-	if dp.has(i) {
-		return dp.seg.Value(i, dp.row)
+// rankAt returns the rank of the row's series' rank field, and 0 when it has none
+func rankAt(s *druidSeries, seg *dataset.Segment, row int) int64 {
+	c := s.rank
+	if c < 0 || c >= seg.NumCols() {
+		return 0
 	}
-	return nil
+	if seg.KindAt(c, row) == dataset.KindInt64 {
+		return seg.Int64(c, row)
+	}
+	return numericRank(seg.Value(c, row))
 }
 
 // appendJSON appends value i as Druid wrote it, or null when the row has none
@@ -79,13 +86,6 @@ func (dp *druidPoint) appendJSON(b []byte, i int) ([]byte, error) {
 		return appendDruidValue(b, dp.seg, i, dp.row)
 	}
 	return append(b, "null"...), nil
-}
-
-func (dp *druidPoint) checkJSON(i int) error {
-	if dp.has(i) {
-		return checkDruidValue(dp.seg, i, dp.row)
-	}
-	return nil
 }
 
 // MarshalTimeseries converts DataSet back into the native Druid response shape.
@@ -114,28 +114,24 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries, options *timeseries.Reque
 	if plan == nil {
 		return timeseries.ErrUnknownFormat
 	}
-	points := druidPoints(ds, plan)
-	var render func(*tbytes.ChunkWriter, []druidPoint)
-	switch plan.QueryType() {
-	case queryTimeseries:
-		sortDruidPoints(points, plan.Descending(), false)
-		render = appendTimeseries
-	case queryGroupBy:
-		sortDruidPoints(points, plan.Descending(), true)
-		render = appendGroupBy
-	case queryTopN:
-		sortDruidPoints(points, plan.Descending(), true)
-		render = appendTopN
-	default:
+	o := newDruidOrder(ds, plan)
+	if o == nil {
 		return timeseries.ErrUnknownFormat
 	}
 	// the output is written as encoding/json would write it, so nothing is when a value can't be
-	if err := checkDruidValues(points, plan.QueryType()); err != nil {
+	if err := o.check(); err != nil {
 		return err
 	}
 	cw := tbytes.NewChunkWriter(writer)
 	cw.Buf = append(cw.Buf, '[')
-	render(&cw, points)
+	switch o.queryType {
+	case queryTimeseries:
+		appendTimeseries(&cw, o.points())
+	case queryGroupBy:
+		appendGroupBy(&cw, o.points())
+	default:
+		appendTopN(&cw, o.points())
+	}
 	cw.Buf = append(cw.Buf, ']')
 	return cw.Close()
 }
@@ -170,42 +166,165 @@ func planForMarshal(ds *dataset.DataSet, options *timeseries.RequestOptions) *Qu
 	return nil
 }
 
-func druidPoints(ds *dataset.DataSet, plan *QueryPlan) []druidPoint {
-	count := 0
-	for _, result := range ds.Results {
-		if result == nil {
-			continue
-		}
-		for _, series := range result.SeriesList {
-			if series != nil {
-				count += series.PointCount()
-			}
-		}
+// druidOrder writes a native response's points: each series' layout, and the order Druid writes rows in,
+// by time, then a groupBy's or topN's rank, then tags
+type druidOrder struct {
+	ds         *dataset.DataSet
+	queryType  string
+	descending bool
+	// per result, per series; nil for a series without points
+	layouts [][]*druidSeries
+	// every series with points and its layout, stably in tag order
+	byTags []taggedSeries
+}
+
+type taggedSeries struct {
+	series *dataset.Series
+	layout *druidSeries
+}
+
+func newDruidOrder(ds *dataset.DataSet, plan *QueryPlan) *druidOrder {
+	switch plan.QueryType() {
+	case queryTimeseries, queryGroupBy, queryTopN:
+	default:
+		return nil
 	}
-	out := make([]druidPoint, 0, count)
+	o := &druidOrder{
+		ds: ds, queryType: plan.QueryType(), descending: plan.Descending(),
+		layouts: make([][]*druidSeries, len(ds.Results)),
+	}
 	var layouts druidLayouts
-	for _, result := range ds.Results {
+	for ri, result := range ds.Results {
 		if result == nil {
 			continue
 		}
-		for _, series := range result.SeriesList {
+		o.layouts[ri] = make([]*druidSeries, len(result.SeriesList))
+		for si, series := range result.SeriesList {
 			if series == nil || series.PointCount() == 0 {
 				continue
 			}
-			s := layouts.series(series, plan)
+			o.layouts[ri][si] = layouts.series(series, plan)
+			o.byTags = append(o.byTags, taggedSeries{series, o.layouts[ri][si]})
+		}
+	}
+	// a series' place among the tags, stably, orders its points as their tags and then their order do
+	slices.SortStableFunc(o.byTags, func(a, b taggedSeries) int { return strings.Compare(a.layout.tagsKey, b.layout.tagsKey) })
+	for i := range o.byTags {
+		o.byTags[i].layout.tagOrder = i
+	}
+	return o
+}
+
+// ranked reports whether points of a time order by their rank
+func (o *druidOrder) ranked() bool {
+	return o.queryType != queryTimeseries
+}
+
+// check reports the first error writing a value would return, checking each column written
+func (o *druidOrder) check() error {
+	for ri, result := range o.ds.Results {
+		if result == nil {
+			continue
+		}
+		for si, series := range result.SeriesList {
+			s := o.layouts[ri][si]
+			if s == nil {
+				continue
+			}
+			cells := s.event
+			if o.queryType == queryTimeseries {
+				cells = s.result
+			}
 			segs := series.Segments()
 			for k := range segs {
-				for i := range segs[k].Len() {
-					dp := druidPoint{s: s, seg: &segs[k], row: i}
-					if s.rank >= 0 {
-						dp.rank = numericRank(dp.value(s.rank))
+				seg := &segs[k]
+				if o.queryType == queryGroupBy && s.version >= 0 && s.version < seg.NumCols() {
+					if err := checkDruidColumn(seg, s.version); err != nil {
+						return err
 					}
-					out = append(out, dp)
+				}
+				for _, c := range cells {
+					if c.index >= 0 && c.index < seg.NumCols() {
+						if err := checkDruidColumn(seg, c.index); err != nil {
+							return err
+						}
+					}
 				}
 			}
 		}
 	}
-	return out
+	return nil
+}
+
+// points yields the points in Druid's order: merged from the series as they're read when they're sorted,
+// and otherwise sorted
+func (o *druidOrder) points() iter.Seq[*druidPoint] {
+	if r, layouts, ok := o.merging(); ok {
+		return func(yield func(*druidPoint) bool) {
+			order := dataset.RowOrder{Descending: o.descending}
+			// the series are in tag order, which the merge breaks ties by, but for a rank, and for the
+			// stored order of a series' own ties, which a descending merge reads backward
+			switch {
+			case o.ranked():
+				order.Compare = func(a, b dataset.Row) int {
+					if c := cmp.Compare(rankAt(layouts[a.SeriesIndex], a.Seg, a.Index),
+						rankAt(layouts[b.SeriesIndex], b.Seg, b.Index)); c != 0 {
+						return c
+					}
+					return dataset.CompareStored(a, b)
+				}
+			case o.descending:
+				order.Compare = dataset.CompareStored
+			}
+			var dp druidPoint
+			for row := range r.Rows(order) {
+				dp = druidPoint{s: layouts[row.SeriesIndex], seg: row.Seg, row: row.Index}
+				if !yield(&dp) {
+					return
+				}
+			}
+		}
+	}
+	var points []druidPoint
+	for ri, result := range o.ds.Results {
+		if result == nil {
+			continue
+		}
+		for si, series := range result.SeriesList {
+			s := o.layouts[ri][si]
+			if s == nil {
+				continue
+			}
+			segs := series.Segments()
+			for k := range segs {
+				for i := range segs[k].Len() {
+					points = append(points, druidPoint{s: s, seg: &segs[k], row: i, rank: rankAt(s, &segs[k], i)})
+				}
+			}
+		}
+	}
+	sortDruidPoints(points, o.descending, o.ranked())
+	return func(yield func(*druidPoint) bool) {
+		for i := range points {
+			if !yield(&points[i]) {
+				return
+			}
+		}
+	}
+}
+
+// merging returns every result's series in tag order, as one result to merge, and their layouts; it's
+// false when a series isn't sorted
+func (o *druidOrder) merging() (*dataset.Result, []*druidSeries, bool) {
+	r := &dataset.Result{SeriesList: make(dataset.SeriesList, len(o.byTags))}
+	layouts := make([]*druidSeries, len(o.byTags))
+	for i, t := range o.byTags {
+		if !t.series.IsSorted() {
+			return nil, nil, false
+		}
+		r.SeriesList[i], layouts[i] = t.series, t.layout
+	}
+	return r, layouts, true
 }
 
 // druidLayouts lays out series, reusing the keys of the last one when a series has its fields
@@ -271,27 +390,6 @@ func sameDruidFields(a, b timeseries.FieldDefinitions) bool {
 	return true
 }
 
-func checkDruidValues(points []druidPoint, queryType string) error {
-	for i := range points {
-		dp := &points[i]
-		cells := dp.s.event
-		switch queryType {
-		case queryTimeseries:
-			cells = dp.s.result
-		case queryGroupBy:
-			if err := dp.checkJSON(dp.s.version); err != nil {
-				return err
-			}
-		}
-		for _, c := range cells {
-			if err := dp.checkJSON(c.index); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
 // the values were checked, so none fails
 func appendDruidObject(b []byte, dp *druidPoint, cells []druidCell) []byte {
 	b = append(b, '{')
@@ -305,28 +403,31 @@ func appendDruidObject(b []byte, dp *druidPoint, cells []druidCell) []byte {
 	return append(b, '}')
 }
 
-func appendTimeseries(cw *tbytes.ChunkWriter, points []druidPoint) {
+func appendTimeseries(cw *tbytes.ChunkWriter, points iter.Seq[*druidPoint]) {
 	var tt timeText
-	for i := range points {
-		if i > 0 {
+	first := true
+	for dp := range points {
+		if !first {
 			cw.Buf = append(cw.Buf, ',')
 		}
+		first = false
 		cw.Buf = append(cw.Buf, `{"timestamp":`...)
-		cw.Buf = tt.append(cw.Buf, points[i].epoch())
+		cw.Buf = tt.append(cw.Buf, dp.epoch())
 		cw.Buf = append(cw.Buf, `,"result":`...)
-		cw.Buf = appendDruidObject(cw.Buf, &points[i], points[i].s.result)
+		cw.Buf = appendDruidObject(cw.Buf, dp, dp.s.result)
 		cw.Buf = append(cw.Buf, '}')
 		cw.FlushIfFull()
 	}
 }
 
-func appendGroupBy(cw *tbytes.ChunkWriter, points []druidPoint) {
+func appendGroupBy(cw *tbytes.ChunkWriter, points iter.Seq[*druidPoint]) {
 	var tt timeText
-	for i := range points {
-		dp := &points[i]
-		if i > 0 {
+	first := true
+	for dp := range points {
+		if !first {
 			cw.Buf = append(cw.Buf, ',')
 		}
+		first = false
 		cw.Buf = append(cw.Buf, '{')
 		if dp.has(dp.s.version) && dp.seg.KindAt(dp.s.version, dp.row) != dataset.KindNull {
 			cw.Buf = append(cw.Buf, `"version":`...)
@@ -343,24 +444,26 @@ func appendGroupBy(cw *tbytes.ChunkWriter, points []druidPoint) {
 }
 
 // one row per epoch, which holds its points' events in order
-func appendTopN(cw *tbytes.ChunkWriter, points []druidPoint) {
-	for i := range points {
-		dp := &points[i]
-		switch {
-		case i == 0 || points[i-1].epoch() != dp.epoch():
-			if i > 0 {
+func appendTopN(cw *tbytes.ChunkWriter, points iter.Seq[*druidPoint]) {
+	first, last := true, epoch.Epoch(0)
+	for dp := range points {
+		switch e := dp.epoch(); {
+		case first || e != last:
+			if !first {
 				cw.Buf = append(cw.Buf, "]},"...)
 			}
 			cw.Buf = append(cw.Buf, `{"timestamp":`...)
-			cw.Buf = appendTimestamp(cw.Buf, dp.epoch())
+			cw.Buf = appendTimestamp(cw.Buf, e)
 			cw.Buf = append(cw.Buf, `,"result":[`...)
+			last = e
 		default:
 			cw.Buf = append(cw.Buf, ',')
 		}
+		first = false
 		cw.Buf = appendDruidObject(cw.Buf, dp, dp.s.event)
 		cw.FlushIfFull()
 	}
-	if len(points) > 0 {
+	if !first {
 		cw.Buf = append(cw.Buf, "]}"...)
 	}
 }
@@ -379,7 +482,7 @@ func sortDruidPoints(points []druidPoint, descending, rank bool) {
 			}
 			return 1
 		}
-		return strings.Compare(a.s.tagsKey, b.s.tagsKey)
+		return cmp.Compare(a.s.tagOrder, b.s.tagOrder)
 	})
 }
 

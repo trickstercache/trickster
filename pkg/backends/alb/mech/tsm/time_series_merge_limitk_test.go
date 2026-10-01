@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	responsemerge "github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -129,14 +130,14 @@ func limitKRespondFunc(w http.ResponseWriter, _ *http.Request, accum *responseme
 	}
 	parts := make([]string, 0, len(ds.Results[0].SeriesList))
 	for _, series := range ds.Results[0].SeriesList {
-		if series == nil || series.PointCount() == 0 || len(series.Points()[0].Values) == 0 {
+		if series == nil || series.PointCount() == 0 || len(dspoints.Of(series)[0].Values) == 0 {
 			continue
 		}
 		name := series.Header.Tags["instance"]
 		if replica := series.Header.Tags["replica"]; replica != "" {
 			name += "[" + replica + "]"
 		}
-		parts = append(parts, name+"="+formatAny(series.Points()[0].Values[0]))
+		parts = append(parts, name+"="+formatAny(dspoints.Of(series)[0].Values[0]))
 	}
 	_, _ = w.Write([]byte("MERGED:" + strings.Join(parts, ",") +
 		"|warnings=" + strings.Join(dsWarnings(ds), ",")))

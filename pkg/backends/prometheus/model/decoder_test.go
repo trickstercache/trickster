@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
@@ -201,7 +202,7 @@ func TestDecoderDepartures(t *testing.T) {
 	t.Run("sub-second times are exact", func(t *testing.T) {
 		ds := decode(t, `{"status":"success","data":{"resultType":"matrix","result":[`+
 			`{"metric":{"a":"b"},"values":[[1435781430.781,"1"],[1435781430.1,"2"]]}]}}`)
-		pts := ds.Results[0].SeriesList[0].Points()
+		pts := dspoints.Of(ds.Results[0].SeriesList[0])
 		require.Equal(t, epoch.Epoch(1435781430100000000), pts[0].Epoch)
 		require.Equal(t, epoch.Epoch(1435781430781000000), pts[1].Epoch, "and sorted")
 		b, err := MarshalTimeseries(ds, nil, 200)

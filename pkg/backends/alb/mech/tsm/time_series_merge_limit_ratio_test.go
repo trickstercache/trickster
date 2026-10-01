@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -152,7 +153,7 @@ func limitRatioRespondFunc(w http.ResponseWriter, _ *http.Request,
 				continue
 			}
 			for _, series := range result.SeriesList {
-				if series == nil || series.PointCount() == 0 || len(series.Points()[0].Values) == 0 {
+				if series == nil || series.PointCount() == 0 || len(dspoints.Of(series)[0].Values) == 0 {
 					continue
 				}
 				name := series.Header.Tags["service"]
@@ -160,7 +161,7 @@ func limitRatioRespondFunc(w http.ResponseWriter, _ *http.Request,
 					name += "[" + replica + "]"
 				}
 				parts = append(parts, fmt.Sprintf("%s=%v", name,
-					series.Points()[0].Values[0]))
+					dspoints.Of(series)[0].Values[0]))
 			}
 		}
 	}

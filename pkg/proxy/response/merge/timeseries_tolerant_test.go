@@ -20,6 +20,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
@@ -69,7 +70,7 @@ func TestTimeseriesMergeFuncTolerant(t *testing.T) {
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
 		require.Equal(t, 1, ds.SeriesCount())
-		pts := ds.Results[0].SeriesList[0].Points()
+		pts := dspoints.Of(ds.Results[0].SeriesList[0])
 		require.Len(t, pts, 1, "sub-tolerance epochs should collapse to a single point")
 	})
 
@@ -85,7 +86,7 @@ func TestTimeseriesMergeFuncTolerant(t *testing.T) {
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
 		require.Equal(t, 1, ds.SeriesCount())
-		pts := ds.Results[0].SeriesList[0].Points()
+		pts := dspoints.Of(ds.Results[0].SeriesList[0])
 		require.Len(t, pts, 2, "distinct epochs without tolerance should not collapse")
 	})
 
@@ -143,7 +144,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
 		require.Equal(t, 1, ds.SeriesCount())
-		require.Len(t, ds.Results[0].SeriesList[0].Points(), 1)
+		require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 1)
 		require.Equal(t, 2, accum.MergeCount)
 	})
 
@@ -162,7 +163,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
 		// Pairwise sums accumulated; final divide happens in RespondFunc.
-		require.Equal(t, "60", ds.Results[0].SeriesList[0].Points()[0].Values[0])
+		require.Equal(t, "60", dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0])
 	})
 
 	t.Run("non-optsMerger with strategy falls back to strategyMerger", func(t *testing.T) {
@@ -229,7 +230,7 @@ func TestTimeseriesMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.True(t, ok)
 		gotDS, ok := got.Timeseries.(*dataset.DataSet)
 		require.True(t, ok)
-		require.Equal(t, "12", gotDS.Results[0].SeriesList[0].Points()[0].Values[0])
+		require.Equal(t, "12", dspoints.Of(gotDS.Results[0].SeriesList[0])[0].Values[0])
 	})
 }
 
@@ -246,7 +247,7 @@ func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
 		require.True(t, handled)
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
-		require.Len(t, ds.Results[0].SeriesList[0].Points(), 1)
+		require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 1)
 	})
 
 	t.Run("incompatible input leaves accumulator untouched", func(t *testing.T) {
@@ -258,7 +259,7 @@ func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, handled)
 		require.Same(t, seed, accum.GetTSData())
-		require.Len(t, seed.Results[0].SeriesList[0].Points(), 1)
+		require.Len(t, dspoints.Of(seed.Results[0].SeriesList[0]), 1)
 	})
 
 	t.Run("empty items is not handled", func(t *testing.T) {
@@ -283,7 +284,7 @@ func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
 		require.True(t, ok)
 		gotDS, ok := got.Timeseries.(*dataset.DataSet)
 		require.True(t, ok)
-		require.Len(t, gotDS.Results[0].SeriesList[0].Points(), 2)
+		require.Len(t, dspoints.Of(gotDS.Results[0].SeriesList[0]), 2)
 	})
 
 	t.Run("zero tolerance merges without tolerant path", func(t *testing.T) {
@@ -298,7 +299,7 @@ func TestTimeseriesBatchMergeFuncTolerant(t *testing.T) {
 		require.True(t, handled)
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
-		require.Len(t, ds.Results[0].SeriesList[0].Points(), 2)
+		require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 2)
 	})
 }
 
@@ -318,7 +319,7 @@ func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.Equal(t, 3, accum.MergeCount)
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
-		require.Equal(t, "60", ds.Results[0].SeriesList[0].Points()[0].Values[0])
+		require.Equal(t, "60", dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0])
 	})
 
 	t.Run("incompatible input is not handled", func(t *testing.T) {
@@ -341,7 +342,7 @@ func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.True(t, handled)
 		ds, ok := accum.GetTSData().(*dataset.DataSet)
 		require.True(t, ok)
-		require.Len(t, ds.Results[0].SeriesList[0].Points(), 1)
+		require.Len(t, dspoints.Of(ds.Results[0].SeriesList[0]), 1)
 	})
 
 	t.Run("strategyOnly falls back to MergeWithStrategy", func(t *testing.T) {
@@ -360,7 +361,7 @@ func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.True(t, ok)
 		gotDS, ok := got.Timeseries.(*dataset.DataSet)
 		require.True(t, ok)
-		require.Equal(t, "12", gotDS.Results[0].SeriesList[0].Points()[0].Values[0])
+		require.Equal(t, "12", dspoints.Of(gotDS.Results[0].SeriesList[0])[0].Values[0])
 	})
 
 	t.Run("non-optsMerger falls back to plain Merge", func(t *testing.T) {
@@ -379,7 +380,7 @@ func TestTimeseriesBatchMergeFuncWithStrategyTolerant(t *testing.T) {
 		require.True(t, ok)
 		gotDS, ok := got.Timeseries.(*dataset.DataSet)
 		require.True(t, ok)
-		require.Len(t, gotDS.Results[0].SeriesList[0].Points(), 2)
+		require.Len(t, dspoints.Of(gotDS.Results[0].SeriesList[0]), 2)
 	})
 
 	t.Run("zero tolerance non-strategyMerger falls back to Merge", func(t *testing.T) {

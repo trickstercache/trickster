@@ -24,6 +24,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -253,7 +254,7 @@ func legacyToWireFormat(ds *dataset.DataSet,
 
 			row.Values = make([][]any, 0, s.PointCount())
 
-			for _, p := range s.Points() {
+			for _, p := range dspoints.Of(s) {
 				if len(p.Values) == 0 {
 					continue
 				}

@@ -220,7 +220,7 @@ func TestFindRange(t *testing.T) {
 	segs := segmentsFromPoints(pts)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := NewSeriesOf(SeriesHeader{}, segs.View(tt.startEpoch, tt.endEpoch)).Points()
+			got := seriesPoints(NewSeriesOf(SeriesHeader{}, segs.View(tt.startEpoch, tt.endEpoch)))
 			if tt.wantStart == tt.wantEnd {
 				require.Empty(t, got)
 				return

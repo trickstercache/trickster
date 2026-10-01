@@ -57,7 +57,7 @@ func collidingSeries(host string, epochs ...epoch.Epoch) *Series {
 	s := NewSeries(SeriesHeader{Name: "s", Tags: Tags{"host": host}}, nil)
 	s.Header.hash = 7 // every series here shares one hash
 	for _, e := range epochs {
-		s.SetPoints(append(s.Points(), Point{Epoch: e, Values: []any{int64(e)}}))
+		s.SetPoints(append(seriesPoints(s), Point{Epoch: e, Values: []any{int64(e)}}))
 	}
 	return s
 }

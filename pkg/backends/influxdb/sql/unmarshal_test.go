@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -125,7 +126,7 @@ func TestUnmarshalJSONNullThenNumeric(t *testing.T) {
 	if !ok {
 		t.Fatal("expected *dataset.DataSet")
 	}
-	pts := ds.Results[0].SeriesList[0].Points()
+	pts := dspoints.Of(ds.Results[0].SeriesList[0])
 	if len(pts) != 2 {
 		t.Fatalf("expected 2 points, got %d", len(pts))
 	}

@@ -443,7 +443,7 @@ func eachRow(ds *dataset.DataSet, fn func(v3Row)) {
 						return c
 					}
 				}
-				return compareStored(a, b)
+				return dataset.CompareStored(a, b)
 			}
 		}
 		for row := range r.Rows(order) {
@@ -486,25 +486,6 @@ func timeOrdered(ds *dataset.DataSet, ordering []timeseries.OrderTerm) (*dataset
 		}
 	}
 	return r, layouts, true
-}
-
-// compareStored orders rows as their series, and within one its Segments and rows, hold them
-func compareStored(a, b dataset.Row) int {
-	if c := cmp.Compare(a.SeriesIndex, b.SeriesIndex); c != 0 {
-		return c
-	}
-	if a.Seg != b.Seg {
-		segs := a.Series.Segments()
-		for k := range segs {
-			switch &segs[k] {
-			case a.Seg:
-				return -1
-			case b.Seg:
-				return 1
-			}
-		}
-	}
-	return cmp.Compare(a.Index, b.Index)
 }
 
 func appendV3Object(b []byte, row v3Row) []byte {

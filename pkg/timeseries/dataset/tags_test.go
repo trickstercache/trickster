@@ -224,8 +224,8 @@ func TestStripTags(t *testing.T) {
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series after strip+merge, got %d", ds1.SeriesCount())
 		}
-		if ds1.Results[0].SeriesList[0].Points()[0].Values[0] != "30" {
-			t.Errorf("expected sum 30, got %v", ds1.Results[0].SeriesList[0].Points()[0].Values[0])
+		if seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0] != "30" {
+			t.Errorf("expected sum 30, got %v", seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0])
 		}
 	})
 }

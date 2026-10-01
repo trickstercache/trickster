@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -205,7 +206,7 @@ func testRows(statement string) *Delta {
 		start, end = 0, 0
 	}
 	for at := start; at <= end; at += 60 {
-		s.SetPoints(append(s.Points(), dataset.Point{
+		s.SetPoints(append(dspoints.Of(s), dataset.Point{
 			Epoch: epoch.Epoch(time.Duration(at) * time.Second), Values: []any{statement},
 		}))
 	}

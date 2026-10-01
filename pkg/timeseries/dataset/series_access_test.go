@@ -59,7 +59,7 @@ func TestBuilderTypedAdders(t *testing.T) {
 	ds, err := b.Finish()
 	require.NoError(t, err)
 	require.Equal(t, Points{{Epoch: 1, Values: []any{nil, true, int64(-1), uint64(2), 0.5, "text", []byte("raw"),
-		json.Number("42")}}}, ds.Results[0].SeriesList[0].Points())
+		json.Number("42")}}}, seriesPoints(ds.Results[0].SeriesList[0]))
 }
 
 func TestSegmentAndRowAccessors(t *testing.T) {
@@ -82,11 +82,11 @@ func TestSegmentAndRowAccessors(t *testing.T) {
 	}
 	require.Equal(t, 2, rows)
 	require.True(t, s.IsSorted())
-	require.Equal(t, describePoints(s.Points()[1:]), describePoints(Points{s.PointAt(1)}))
-	require.Panics(t, func() { s.PointAt(2) })
+	require.Equal(t, describePoints(seriesPoints(s)[1:]), describePoints(Points{seriesPointAt(s, 1)}))
+	require.Panics(t, func() { seriesPointAt(s, 2) })
 	s.SetSegments(nil)
 	require.Zero(t, s.PointCount())
-	require.Nil(t, s.Points())
+	require.Nil(t, seriesPoints(s))
 }
 
 func TestSegmentJSONAndFormatting(t *testing.T) {
@@ -148,7 +148,7 @@ func TestSeriesMsgpStreamsAndRejects(t *testing.T) {
 	require.NoError(t, w.Flush())
 	var got Series
 	require.NoError(t, got.DecodeMsg(msgp.NewReader(&buf)))
-	require.Equal(t, describePoints(s.Points()), describePoints(got.Points()))
+	require.Equal(t, describePoints(seriesPoints(s)), describePoints(seriesPoints(&got)))
 	require.Positive(t, s.Msgsize())
 	require.Error(t, got.DecodeMsg(msgp.NewReader(&bytes.Buffer{})))
 
@@ -192,7 +192,7 @@ func TestDataSetCodecRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		got := ts.(*DataSet)
 		require.Equal(t, trq.Step, got.TimeRangeQuery.Step)
-		require.Equal(t, describePoints(ds.Results[0].SeriesList[0].Points()), describePoints(got.Results[0].SeriesList[0].Points()))
+		require.Equal(t, describePoints(seriesPoints(ds.Results[0].SeriesList[0])), describePoints(seriesPoints(got.Results[0].SeriesList[0])))
 	}
 	appended, err := AppendDataSet([]byte("prefix"), ds)
 	require.NoError(t, err)
@@ -257,4 +257,44 @@ func TestSeriesMsgsizeBoundsEncoding(t *testing.T) {
 		require.NoError(t, err)
 		require.LessOrEqual(t, len(b), s.Msgsize(), "iteration %d", iter)
 	}
+}
+
+func TestCompareStored(t *testing.T) {
+	// a series holding the same time in two Segments, as overlapping parts may
+	build := func(v float64) Segments {
+		return NewSeries(SeriesHeader{}, Points{{Epoch: 1, Values: []any{v}}}).Segments()
+	}
+	s := NewSeriesOf(SeriesHeader{}, append(build(1), build(2)...))
+	first := Row{Series: s, Seg: &s.Segments()[0], Index: 0}
+	second := Row{Series: s, Seg: &s.Segments()[1], Index: 0}
+	require.Equal(t, -1, CompareStored(first, second))
+	require.Equal(t, 1, CompareStored(second, first))
+	require.Equal(t, 0, CompareStored(first, first))
+	require.Equal(t, -1, CompareStored(first, Row{SeriesIndex: 1}))
+	require.Equal(t, -1, CompareStored(Row{Series: s, Seg: first.Seg, Index: 0}, Row{Series: s, Seg: first.Seg, Index: 1}))
+}
+
+func TestKeepAndRowAt(t *testing.T) {
+	build := func(epochs ...epoch.Epoch) Segments {
+		pts := make(Points, len(epochs))
+		for i, e := range epochs {
+			pts[i] = Point{Epoch: e, Values: []any{int64(e)}}
+		}
+		return NewSeries(SeriesHeader{}, pts).Segments()
+	}
+	s := NewSeriesOf(SeriesHeader{}, append(build(1, 2), append(Segments{{}}, build(3, 4, 5)...)...))
+	for i, want := range []epoch.Epoch{1, 2, 3, 4, 5} {
+		seg, row, ok := s.RowAt(i)
+		require.True(t, ok)
+		require.Equal(t, want, seg.Epoch(row))
+	}
+	for _, i := range []int{-1, 5} {
+		_, _, ok := s.RowAt(i)
+		require.False(t, ok)
+	}
+	kept := s.Segments().Keep([]bool{false, true, true, false, true})
+	require.Equal(t, 3, kept.Len())
+	require.Equal(t, []epoch.Epoch{2, 3, 5}, kept[0].Epochs())
+	all := []bool{true, true, true, true, true}
+	require.Len(t, s.Segments().Keep(all), len(s.Segments()))
 }

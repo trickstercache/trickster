@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -64,7 +65,7 @@ func TestFinalizeTSMMergePooledVariance(t *testing.T) {
 	t.Run("stdvar", func(t *testing.T) {
 		ds := makeDataSet(dataset.PooledVarianceState{Count: 5, Mean: 5, M2: 40})
 		(&Client{}).FinalizeTSMMerge("stdvar by (job) (up)", ds)
-		if got := ds.Results[0].SeriesList[0].Points()[0].Values[0]; got != "8" {
+		if got := dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0]; got != "8" {
 			t.Fatalf("value got %v", got)
 		}
 	})
@@ -72,7 +73,7 @@ func TestFinalizeTSMMergePooledVariance(t *testing.T) {
 	t.Run("stddev", func(t *testing.T) {
 		ds := makeDataSet(dataset.PooledVarianceState{Count: 5, Mean: 5, M2: 40})
 		(&Client{}).FinalizeTSMMerge("stddev by (job) (up)", ds)
-		got, _ := strconv.ParseFloat(ds.Results[0].SeriesList[0].Points()[0].Values[0].(string), 64)
+		got, _ := strconv.ParseFloat(dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0].(string), 64)
 		if math.Abs(got-math.Sqrt(8)) > 1e-15 {
 			t.Fatalf("value got %.17g", got)
 		}
@@ -86,7 +87,7 @@ func TestFinalizeTSMMergePooledVariance(t *testing.T) {
 		)
 		ds := varianceFinalizeDataSet("stdvar(up)", series)
 		(&Client{}).FinalizeTSMMerge("stdvar(up)", ds)
-		got := ds.Results[0].SeriesList[0].Points()
+		got := dspoints.Of(ds.Results[0].SeriesList[0])
 		if got[0].Values[0] != "0" || got[1].Values[0] != "NaN" || got[2].Values[0] != "+Inf" {
 			t.Fatalf("values: %#v", got)
 		}
@@ -132,11 +133,11 @@ func TestFinalizeTSMMergeCentralVariance(t *testing.T) {
 	if got := series.Header.Tags.JSON(); got != `{"region":"east"}` {
 		t.Fatalf("tags: %s", got)
 	}
-	if series.PointCount() != 2 || series.Points()[0].Epoch != 100 || series.Points()[1].Epoch != 200 {
-		t.Fatalf("points: %#v", series.Points())
+	if series.PointCount() != 2 || dspoints.Of(series)[0].Epoch != 100 || dspoints.Of(series)[1].Epoch != 200 {
+		t.Fatalf("points: %#v", dspoints.Of(series))
 	}
-	first, _ := strconv.ParseFloat(series.Points()[0].Values[0].(string), 64)
-	second, _ := strconv.ParseFloat(series.Points()[1].Values[0].(string), 64)
+	first, _ := strconv.ParseFloat(dspoints.Of(series)[0].Values[0].(string), 64)
+	second, _ := strconv.ParseFloat(dspoints.Of(series)[1].Values[0].(string), 64)
 	if math.Abs(first-8.0/3.0) > 1e-15 || second != 1 {
 		t.Fatalf("values got %.17g and %.17g", first, second)
 	}
@@ -160,7 +161,7 @@ func TestFinalizeTSMMergeVarianceAfterWeightedAverage(t *testing.T) {
 
 			(&Client{}).FinalizeTSMMerge(operator+"("+inner+")", ds)
 			got := ds.Results[0].SeriesList
-			if len(got) != 1 || got[0].PointCount() != 1 || got[0].Points()[0].Values[0] != want {
+			if len(got) != 1 || got[0].PointCount() != 1 || dspoints.Of(got[0])[0].Values[0] != want {
 				t.Fatalf("result: %#v", got)
 			}
 		})
@@ -203,8 +204,8 @@ func TestFinalizeTSMMergeVarianceGroupingAndSort(t *testing.T) {
 		`{"__type__":"gauge","__unit__":"requests","job":"api","region":"west"}` {
 		t.Fatalf("without tags: %s", got[0].Header.Tags.JSON())
 	}
-	if got[0].Points()[0].Values[0] != "9" || got[1].Points()[0].Values[0] != "1" {
-		t.Fatalf("values: %v %v", got[0].Points()[0].Values, got[1].Points()[0].Values)
+	if dspoints.Of(got[0])[0].Values[0] != "9" || dspoints.Of(got[1])[0].Values[0] != "1" {
+		t.Fatalf("values: %v %v", dspoints.Of(got[0])[0].Values, dspoints.Of(got[1])[0].Values)
 	}
 }
 

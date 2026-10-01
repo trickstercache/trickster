@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -82,8 +83,8 @@ func TestDeltaCodecRoundTrip(t *testing.T) {
 			}
 			for i, s := range have.SeriesList {
 				ws := want.SeriesList[i]
-				if s.Header.Tags["host"] != ws.Header.Tags["host"] || !s.Points().Equal(ws.Points()) {
-					t.Fatalf("series %d = %v, want %v", i, s.Points(), ws.Points())
+				if s.Header.Tags["host"] != ws.Header.Tags["host"] || !dspoints.Of(s).Equal(dspoints.Of(ws)) {
+					t.Fatalf("series %d = %v, want %v", i, dspoints.Of(s), dspoints.Of(ws))
 				}
 			}
 			if got.Rows() != d.Rows() || (deltaCodec{}).Size(got) <= 0 {

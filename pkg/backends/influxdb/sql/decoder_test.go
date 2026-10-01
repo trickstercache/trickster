@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
@@ -229,7 +230,7 @@ func TestDecoderDepartures(t *testing.T) {
 		} {
 			s := decode(t, body).Results[0].SeriesList[0]
 			require.True(t, s.IsSorted())
-			pts := s.Points()
+			pts := dspoints.Of(s)
 			require.Equal(t, []any{int64(2)}, pts[0].Values)
 			require.Equal(t, []any{int64(1)}, pts[2].Values)
 		}
@@ -241,7 +242,7 @@ func TestDecoderDepartures(t *testing.T) {
 		} {
 			s := decode(t, body).Results[0].SeriesList[0]
 			require.Len(t, s.Header.ValueFieldsList, 1)
-			require.Equal(t, []any{int64(2)}, s.Points()[0].Values)
+			require.Equal(t, []any{int64(2)}, dspoints.Of(s)[0].Values)
 		}
 	})
 	t.Run("a column or tag a later row names is kept", func(t *testing.T) {
@@ -255,16 +256,16 @@ func TestDecoderDepartures(t *testing.T) {
 			require.Equal(t, []string{"host"}, fieldNames(s.Header.TagFieldsList))
 		}
 		require.Equal(t, dataset.Tags{"host": ""}, sl[0].Header.Tags)
-		pts := sl[0].Points()
+		pts := dspoints.Of(sl[0])
 		require.Equal(t, []any{int64(1), int64(2), nil}, pts[0].Values)
 		require.Equal(t, []any{int64(5), int64(4), "e"}, pts[1].Values)
-		require.Equal(t, []any{nil, int64(3), nil}, sl[1].Points()[0].Values)
+		require.Equal(t, []any{nil, int64(3), nil}, dspoints.Of(sl[1])[0].Values)
 		// a tag no row names isn't a column, and an empty first row names nothing
 		ds = decode(t, `[{},{"time":"2024-01-01T00:00:00","v":1}]`)
 		s := ds.Results[0].SeriesList[0]
 		require.Empty(t, s.Header.TagFieldsList)
 		require.Empty(t, s.Header.Tags)
-		require.Equal(t, []any{int64(1)}, s.Points()[0].Values)
+		require.Equal(t, []any{int64(1)}, dspoints.Of(s)[0].Values)
 	})
 	t.Run("JSON Lines are JSON values one after another", func(t *testing.T) {
 		ds := decode(t, "{\"time\":\"2024-01-01T00:00:00\",\n\"v\":1}{\"time\":\"2024-01-01T00:01:00\",\"v\":2}\n")
@@ -350,7 +351,7 @@ func rowsBody(form, hosts, points int) []byte {
 
 func TestDecoderTimes(t *testing.T) {
 	ds := decode(t, `[{"time":"2024-01-01T00:00:00.123456789","v":1}]`)
-	require.Equal(t, epoch.Epoch(1704067200123456789), ds.Results[0].SeriesList[0].Points()[0].Epoch)
+	require.Equal(t, epoch.Epoch(1704067200123456789), dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch)
 }
 
 func BenchmarkDecoder(b *testing.B) {

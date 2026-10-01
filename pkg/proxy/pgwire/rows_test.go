@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	"github.com/jackc/pgx/v5/pgproto3"
@@ -149,7 +150,7 @@ func TestRowSink(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, s := range series {
-		for _, p := range s.Points() {
+		for _, p := range dspoints.Of(s) {
 			body, _ := p.Values[0].([]byte)
 			seen[string(body)] = true
 		}

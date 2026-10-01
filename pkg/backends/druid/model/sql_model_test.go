@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -78,7 +79,7 @@ func TestSQLModelRoundTripObjectRows(t *testing.T) {
 		t.Fatalf("unexpected series: %#v", ds.Results)
 	}
 	if ds.Results[0].SeriesList[0].PointCount() != 2 {
-		t.Fatalf("unexpected points: %#v", ds.Results[0].SeriesList[0].Points())
+		t.Fatalf("unexpected points: %#v", dspoints.Of(ds.Results[0].SeriesList[0]))
 	}
 	out, err := MarshalTimeseries(ds, &timeseries.RequestOptions{ProviderRequest: plan}, 200)
 	if err != nil {
@@ -151,7 +152,7 @@ func TestSQLModelAcceptsDruidNumericMilliseconds(t *testing.T) {
 		t.Fatal(err)
 	}
 	ds := ts.(*dataset.DataSet)
-	if got := ds.Results[0].SeriesList[0].Points()[0].Epoch; got != 1704067200000000000 {
+	if got := dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch; got != 1704067200000000000 {
 		t.Fatalf("epoch = %d", got)
 	}
 }

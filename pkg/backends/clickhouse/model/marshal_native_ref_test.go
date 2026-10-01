@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -310,7 +311,7 @@ func TestMarshalNativeRulings(t *testing.T) {
 		require.Equal(t, dataset.Tags{"host": "a", "dc": "x"}, sl[0].Header.Tags)
 		require.Equal(t, dataset.Tags{}, sl[1].Header.Tags)
 		for _, s := range sl {
-			pts := s.Points()
+			pts := dspoints.Of(s)
 			require.Len(t, pts, 10)
 			want := at.Truncate(time.Second)
 			switch timeType {

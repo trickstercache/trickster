@@ -18,6 +18,7 @@ package stream
 
 import (
 	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"encoding/json/jsontext"
 	jsonv2 "encoding/json/v2"
@@ -257,8 +258,16 @@ func AppendString(dst, raw []byte) []byte {
 	return out
 }
 
-// reports whether b holds only ASCII without escapes, which a JSON string's text is as written
+// reports whether b holds only ASCII without escapes, which a JSON string's text is as written, eight
+// bytes at a time
 func plainASCII(b []byte) bool {
+	for len(b) >= 8 {
+		x := binary.LittleEndian.Uint64(b)
+		if x&highBits != 0 || zeroBytes(x^backslashes) != 0 {
+			return false
+		}
+		b = b[8:]
+	}
 	for _, c := range b {
 		if c >= 0x80 || c == '\\' {
 			return false

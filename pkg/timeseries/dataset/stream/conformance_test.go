@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
@@ -180,12 +181,12 @@ func legacyRows(r io.Reader, trq *timeseries.TimeRangeQuery) (timeseries.Timeser
 		} else if str, ok := row[2].(string); ok {
 			v, _ = json.Number(str).Float64()
 		}
-		s.SetPoints(append(s.Points(), pt(ms, v)))
+		s.SetPoints(append(dspoints.Of(s), pt(ms, v)))
 	}
 	sl := make(dataset.SeriesList, 0, len(byHost))
 	for _, host := range slices.Sorted(maps.Keys(byHost)) {
 		s := byHost[host]
-		pts := s.Points()
+		pts := dspoints.Of(s)
 		slices.SortStableFunc(pts, func(a, b dataset.Point) int { return cmp.Compare(a.Epoch, b.Epoch) })
 		s.SetPoints(pts)
 		sl = append(sl, s)

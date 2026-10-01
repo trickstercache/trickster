@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
@@ -106,7 +107,9 @@ func TestCompare(t *testing.T) {
 			".points[1].values[0]:", CompareOptions{}},
 		{"bytes", func(ds *dataset.DataSet) { editPoint(ds, 0, 2, func(p *dataset.Point) { p.Values[0] = []byte("c") }) },
 			".points[2].values[0]:", CompareOptions{}},
-		{"other", func(ds *dataset.DataSet) { editPoint(ds, 0, 3, func(p *dataset.Point) { p.Values[0] = map[string]int{} }) },
+		{"other", func(ds *dataset.DataSet) {
+			editPoint(ds, 0, 3, func(p *dataset.Point) { p.Values[0] = map[string]int{} })
+		},
 			".points[3].values[0]:", CompareOptions{}},
 	}
 	for _, test := range tests {
@@ -138,7 +141,7 @@ func TestCompareOptions(t *testing.T) {
 // editPoint edits point i of series s in a copy of its points, then stores the copy
 func editPoint(ds *dataset.DataSet, s, i int, edit func(*dataset.Point)) {
 	series := ds.Results[0].SeriesList[s]
-	pts := series.Points()
+	pts := dspoints.Of(series)
 	edit(&pts[i])
 	series.SetPoints(pts)
 }

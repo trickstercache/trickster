@@ -102,22 +102,21 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 	selectedCounts map[rankBucketKey]int64,
 ) {
-	indexes := make([]int, len(logical.members))
-	points := make([]dataset.Points, len(logical.members))
-	kept := make([]dataset.Points, len(logical.members))
+	cursors := make([]rowCursor, len(logical.members))
+	kept := make([][]bool, len(logical.members))
 	for i, series := range logical.members {
-		points[i] = series.Points()
-		kept[i] = points[i][:0]
+		cursors[i] = newRowCursor(series.Segments())
+		kept[i] = make([]bool, series.PointCount())
 	}
 
 	for {
 		var pointEpoch epoch.Epoch
 		found := false
-		for i := range logical.members {
-			if indexes[i] >= len(points[i]) {
+		for i := range cursors {
+			if cursors[i].done() {
 				continue
 			}
-			candidateEpoch := points[i][indexes[i]].Epoch
+			candidateEpoch := cursors[i].epoch()
 			if !found || candidateEpoch < pointEpoch {
 				pointEpoch = candidateEpoch
 				found = true
@@ -132,19 +131,14 @@ func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 		if selected {
 			selectedCounts[bucket]++
 		}
-		for i := range logical.members {
-			for indexes[i] < len(points[i]) &&
-				points[i][indexes[i]].Epoch == pointEpoch {
-				point := points[i][indexes[i]]
-				if selected {
-					kept[i] = append(kept[i], point)
-				}
-				indexes[i]++
+		for i := range cursors {
+			for c := &cursors[i]; !c.done() && c.epoch() == pointEpoch; c.next() {
+				kept[i][c.n] = selected
 			}
 		}
 	}
 
 	for i, series := range logical.members {
-		series.SetPoints(kept[i])
+		series.SetSegments(series.Segments().Keep(kept[i]))
 	}
 }

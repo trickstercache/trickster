@@ -112,53 +112,20 @@ func (s *Series) IsSorted() bool {
 	return s.segs.IsSorted()
 }
 
-// Points returns a copy of the series' rows as Points, boxing every value; it suits tests and cold
-// paths, while hot paths read the Segments.
-func (s *Series) Points() Points {
-	n := s.segs.Len()
-	if n == 0 {
-		return nil
+// RowAt returns the Segment holding row i of the series and the row's index within it; ok is false
+// when the series has no row i.
+func (s *Series) RowAt(i int) (seg *Segment, row int, ok bool) {
+	if i < 0 {
+		return nil, 0, false
 	}
-	cols := s.segs.NumCols()
-	out := make(Points, 0, n)
-	var vals []any
-	if cols > 0 {
-		vals = make([]any, n*cols)
-	}
-	for i := range s.segs {
-		seg := &s.segs[i]
-		for j := range seg.Len() {
-			p := Point{Epoch: seg.epochs[j]}
-			if cols > 0 {
-				p.Values, vals = vals[:cols:cols], vals[cols:]
-				for c := range min(cols, seg.NumCols()) {
-					p.Values[c] = seg.Value(c, j)
-				}
-			}
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// PointAt returns row i as a Point, boxing its values.
-func (s *Series) PointAt(i int) Point {
 	for k := range s.segs {
-		seg := &s.segs[k]
-		if i >= seg.Len() {
-			i -= seg.Len()
+		if n := s.segs[k].Len(); i >= n {
+			i -= n
 			continue
 		}
-		p := Point{Epoch: seg.epochs[i]}
-		if n := seg.NumCols(); n > 0 {
-			p.Values = make([]any, n)
-			for c := range n {
-				p.Values[c] = seg.Value(c, i)
-			}
-		}
-		return p
+		return &s.segs[k], i, true
 	}
-	panic(fmt.Sprintf("dataset: row %d out of range", i))
+	return nil, 0, false
 }
 
 // SetPoints replaces the series' rows with points, in their order; the values are copied.

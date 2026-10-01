@@ -101,7 +101,7 @@ func TestColumnLogMatchesLegacyBuild(t *testing.T) {
 		for i := range series {
 			want := legacy.series[i].pts
 			requireSamePoints(t, want, pointsOf(Segments{segs[i]}), context+" series "+strconv.Itoa(i))
-			requireSamePoints(t, want, ds.Results[0].SeriesList[i].Points(), context+" builder series "+strconv.Itoa(i))
+			requireSamePoints(t, want, seriesPoints(ds.Results[0].SeriesList[i]), context+" builder series "+strconv.Itoa(i))
 		}
 	}
 }

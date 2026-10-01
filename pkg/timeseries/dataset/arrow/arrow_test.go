@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -589,6 +591,52 @@ func TestToRecordsSortKeyNullPlacement(t *testing.T) {
 	}
 }
 
+// the order InfluxDB 3 (DataFusion) returns for ORDER BY over these floats: IEEE 754 totalOrder, which
+// a descending order reverses, and nulls apart
+func TestToRecordsSortsFloatsInTotalOrder(t *testing.T) {
+	negNaN := math.Float64frombits(math.Float64bits(math.NaN()) | 1<<63)
+	values := []any{1.0, math.NaN(), -1.0, nil, negNaN, math.Inf(1), math.Copysign(0, -1), 0.0}
+	rows := make([][]any, len(values))
+	for i, v := range values {
+		rows[i] = []any{int64(i) * 1000, "a", v}
+	}
+	describe := func(v any) string {
+		f, ok := v.(float64)
+		switch {
+		case !ok:
+			return "null"
+		case math.IsNaN(f) && math.Signbit(f):
+			return "-NaN"
+		case math.Signbit(f) && f == 0:
+			return "-0"
+		}
+		return strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	tests := []struct {
+		key  SortKey
+		want string
+	}{
+		{SortKey{Column: "cpu"}, "-NaN -1 -0 0 1 +Inf NaN null"},
+		{SortKey{Column: "cpu", Descending: true}, "NaN +Inf 1 0 -0 -1 -NaN null"},
+		{SortKey{Column: "cpu", NullsFirst: true}, "null -NaN -1 -0 0 1 +Inf NaN"},
+		{SortKey{Column: "cpu", Descending: true, NullsFirst: true}, "null NaN +Inf 1 0 -0 -1 -NaN"},
+	}
+	schema := orderingSchema()
+	for _, tc := range tests {
+		recs, err := ToRecords(schema, orderingDataSet(t, schema, rows), tc.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, row := range extractRows(recs) {
+			got = append(got, describe(row[2]))
+		}
+		if strings.Join(got, " ") != tc.want {
+			t.Errorf("%+v: got %s, want %s", tc.key, strings.Join(got, " "), tc.want)
+		}
+	}
+}
+
 func TestToRecordsSortKeyUnknownColumn(t *testing.T) {
 	schema := orderingSchema()
 	ds := orderingDataSet(t, schema, [][]any{{int64(1000), "a", 2.0}})
@@ -613,6 +661,10 @@ func TestCompareValues(t *testing.T) {
 		{"mixed numerics", int64(2), 1.5, 1},
 		{"unsigned", uint64(3), int64(3), 0},
 		{"incomparable falls back to rendering", "1", int64(1), 0},
+		{"NaN after a number", math.NaN(), math.Inf(1), 1},
+		{"a number before NaN", int64(1), math.NaN(), -1},
+		{"NaNs equal", math.NaN(), math.NaN(), 0},
+		{"negative zero first", math.Copysign(0, -1), 0.0, -1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

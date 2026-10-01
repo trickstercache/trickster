@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -156,7 +157,7 @@ func compareSeries(want, got *dataset.Series, o CompareOptions) error {
 	case want.PointCount() != got.PointCount():
 		return fmt.Errorf(".points: want %d, got %d", want.PointCount(), got.PointCount())
 	}
-	wantPoints, gotPoints := want.Points(), got.Points()
+	wantPoints, gotPoints := dspoints.Of(want), dspoints.Of(got)
 	for i := range wantPoints {
 		wp, gp := &wantPoints[i], &gotPoints[i]
 		switch {

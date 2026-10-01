@@ -40,7 +40,7 @@ func viewSet(series map[string][]int) *DataSet {
 	for _, host := range sortedKeys(series) {
 		s := NewSeries(SeriesHeader{Name: "m", Tags: Tags{"host": host}}, nil)
 		for _, minute := range series[host] {
-			s.SetPoints(append(s.Points(), Point{
+			s.SetPoints(append(seriesPoints(s), Point{
 				Epoch: epoch.Epoch(time.Duration(minute) * viewStep), Values: []any{host, minute},
 			}))
 			if lo < 0 || minute < lo {
@@ -85,7 +85,7 @@ func minutesOf(ds *DataSet) map[string][]int {
 	out := map[string][]int{}
 	for _, r := range ds.Results {
 		for _, s := range r.SeriesList {
-			for _, p := range s.Points() {
+			for _, p := range seriesPoints(s) {
 				out[s.Header.Tags["host"]] = append(out[s.Header.Tags["host"]], int(time.Duration(p.Epoch)/viewStep))
 			}
 		}
@@ -147,11 +147,11 @@ func TestMergeDisjoint(t *testing.T) {
 	// where parts share an epoch, the later part's point wins
 	first := viewSet(map[string][]int{"a": {1, 2}})
 	second := viewSet(map[string][]int{"a": {2}})
-	newerPts := second.Results[0].SeriesList[0].Points()
+	newerPts := seriesPoints(second.Results[0].SeriesList[0])
 	newerPts[0].Values = []any{"a", "newer"}
 	second.Results[0].SeriesList[0].SetPoints(newerPts)
 	over := MergeDisjoint(first.TimeRangeQuery, first, second, nil)
-	pts := over.Results[0].SeriesList[0].Points()
+	pts := seriesPoints(over.Results[0].SeriesList[0])
 	require.Len(t, pts, 2)
 	require.Equal(t, "newer", pts[1].Values[1])
 	require.Empty(t, MergeDisjoint(nil).Results)
@@ -204,7 +204,7 @@ func TestRetainNewestMatchesSortingEveryEpoch(t *testing.T) {
 			at := -rng.IntN(20)
 			for range rng.IntN(12) {
 				at = min(at+rng.IntN(3), 0)
-				s.SetPoints(append(s.Points(), Point{Epoch: epoch.Epoch(at)}))
+				s.SetPoints(append(seriesPoints(s), Point{Epoch: epoch.Epoch(at)}))
 				all = append(all, epoch.Epoch(at))
 			}
 			r := ds.Results[2*(i%2)]
@@ -291,7 +291,7 @@ func TestAddBytes(t *testing.T) {
 	}
 	ds, err := b.Finish()
 	require.NoError(t, err)
-	pts := ds.Results[0].SeriesList[0].Points()
+	pts := seriesPoints(ds.Results[0].SeriesList[0])
 	require.Equal(t, []byte("first"), pts[0].Values[0])
 	require.Nil(t, pts[1].Values[0])
 	require.Len(t, pts[2].Values[0], bigBytes)
@@ -355,7 +355,7 @@ func viewSnapshot(ds *DataSet) string {
 				b.WriteString(" nil series\n")
 				continue
 			}
-			fmt.Fprintf(&b, " %q %v %d %v\n", s.Header.Name, s.Header.Tags, s.PointCount(), s.Points())
+			fmt.Fprintf(&b, " %q %v %d %v\n", s.Header.Name, s.Header.Tags, s.PointCount(), seriesPoints(s))
 		}
 	}
 	return b.String()

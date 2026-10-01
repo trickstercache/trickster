@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
@@ -189,7 +190,7 @@ func TestDecoderDepartures(t *testing.T) {
 		s := decode(t, cpuAnnotations+cpuRow(0, "00:30", "3", "usage", "a")+cpuRow(0, "00:00", "1", "usage", "a")).
 			Results[0].SeriesList[0]
 		require.True(t, s.IsSorted())
-		require.Equal(t, []any{1.0}, s.Points()[0].Values)
+		require.Equal(t, []any{1.0}, dspoints.Of(s)[0].Values)
 	})
 	t.Run("tables of one series are one series", func(t *testing.T) {
 		ds := decode(t, cpuAnnotations+cpuRow(0, "00:15", "2", "usage", "a")+"\n"+cpuAnnotations+

@@ -41,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/bucketsim"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -184,7 +185,7 @@ func datasetValues(t *testing.T, ts timeseries.Timeseries) map[int64]string {
 	for _, res := range ds.Results {
 		for _, s := range res.SeriesList {
 			// the points are read across the series' Segments, which a merge may have added
-			pts := s.Points()
+			pts := dspoints.Of(s)
 			for i, p := range pts {
 				// merged points are served in order, whatever the marshaler does with them
 				require.True(t, i == 0 || pts[i-1].Epoch < p.Epoch, "points out of order")
@@ -484,7 +485,7 @@ func TestKeepLabel(t *testing.T) {
 	}}, nil}}
 	// an origin that answers a bucket with its neighbors has only the bucket's own row merged
 	keepLabel(ds, label)
-	require.Equal(t, dataset.Points{point(1800)}, ds.Results[0].SeriesList[0].Points())
+	require.Equal(t, dataset.Points{point(1800)}, dspoints.Of(ds.Results[0].SeriesList[0]))
 	require.Equal(t, timeseries.ExtentList{{Start: label, End: label}}, ds.ExtentList)
 }
 
@@ -832,7 +833,7 @@ func TestPartialBucketConsumersLeaveTheCacheUnchanged(t *testing.T) {
 		ds.InjectTags(dataset.Tags{"vandal": "yes"})
 		for _, r := range ds.Results {
 			for _, s := range r.SeriesList {
-				for _, p := range s.Points() {
+				for _, p := range dspoints.Of(s) {
 					p.Values[0] = "999"
 				}
 			}

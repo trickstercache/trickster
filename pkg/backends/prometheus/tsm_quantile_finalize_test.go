@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -115,12 +116,12 @@ func TestFinalizeTSMMergeQuantileGlobalGroupsAndSparseRange(t *testing.T) {
 		east.Header.QueryStatement != "quantile by (region) (0.5, "+inner+")" {
 		t.Fatalf("east header: %#v", east.Header)
 	}
-	if east.PointCount() != 2 || east.Points()[0].Epoch != 100 || east.Points()[1].Epoch != 200 ||
-		east.Points()[0].Values[0] != "3" || east.Points()[1].Values[0] != "20" {
-		t.Fatalf("east points: %#v", east.Points())
+	if east.PointCount() != 2 || dspoints.Of(east)[0].Epoch != 100 || dspoints.Of(east)[1].Epoch != 200 ||
+		dspoints.Of(east)[0].Values[0] != "3" || dspoints.Of(east)[1].Values[0] != "20" {
+		t.Fatalf("east points: %#v", dspoints.Of(east))
 	}
-	if west.PointCount() != 1 || west.Points()[0].Values[0] != "1500" {
-		t.Fatalf("west points: %#v", west.Points())
+	if west.PointCount() != 1 || dspoints.Of(west)[0].Values[0] != "1500" {
+		t.Fatalf("west points: %#v", dspoints.Of(west))
 	}
 }
 
@@ -136,7 +137,7 @@ func TestFinalizeTSMMergeQuantileAfterWeightedAverage(t *testing.T) {
 
 	(&Client{}).FinalizeTSMMerge("quantile(0.5, "+inner+")", ds)
 	got := ds.Results[0].SeriesList
-	if len(got) != 1 || got[0].PointCount() != 1 || got[0].Points()[0].Values[0] != "5" {
+	if len(got) != 1 || got[0].PointCount() != 1 || dspoints.Of(got[0])[0].Values[0] != "5" {
 		t.Fatalf("result: %#v", got)
 	}
 }
@@ -159,7 +160,7 @@ func TestFinalizeTSMMergeQuantileGroupingMetadataAndMetricName(t *testing.T) {
 		got := ds.Results[0].SeriesList
 		if len(got) != 1 || got[0].Header.Tags.JSON() !=
 			`{"__type__":"gauge","__unit__":"requests","region":"east"}` ||
-			got[0].Points()[0].Values[0] != "3" {
+			dspoints.Of(got[0])[0].Values[0] != "3" {
 			t.Fatalf("result: %#v", got)
 		}
 	})
@@ -172,7 +173,7 @@ func TestFinalizeTSMMergeQuantileGroupingMetadataAndMetricName(t *testing.T) {
 		(&Client{}).FinalizeTSMMerge("quantile by (__name__) (0.5, "+inner+")", ds)
 		got := ds.Results[0].SeriesList
 		if len(got) != 1 || got[0].Header.Tags.JSON() != `{"__name__":"requests"}` ||
-			got[0].Header.Name != "requests" || got[0].Points()[0].Values[0] != "2" {
+			got[0].Header.Name != "requests" || dspoints.Of(got[0])[0].Values[0] != "2" {
 			t.Fatalf("result: %#v", got)
 		}
 	})
@@ -196,7 +197,7 @@ func TestFinalizeTSMMergeQuantileSpecialParametersAndIdempotence(t *testing.T) {
 			client.FinalizeTSMMerge(tt.query, ds)
 			client.FinalizeTSMMerge(tt.query, ds)
 			got := ds.Results[0].SeriesList
-			if len(got) != 1 || got[0].PointCount() != 1 || got[0].Points()[0].Values[0] != tt.want {
+			if len(got) != 1 || got[0].PointCount() != 1 || dspoints.Of(got[0])[0].Values[0] != tt.want {
 				t.Fatalf("result: %#v", got)
 			}
 			if len(ds.Warnings) != 1 || ds.Warnings[0] != invalidQuantileParameterWarning {

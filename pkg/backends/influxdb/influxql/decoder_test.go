@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset/stream"
@@ -105,7 +106,7 @@ func asLegacyTypes(ts timeseries.Timeseries) *dataset.DataSet {
 	for i, r := range ds.Results {
 		nr := &dataset.Result{StatementID: r.StatementID, Name: r.Name, Error: r.Error}
 		for _, s := range r.SeriesList {
-			pts := s.Points()
+			pts := dspoints.Of(s)
 			for j := range pts {
 				for k, v := range pts[j].Values {
 					if n, ok := v.(int64); ok {
@@ -261,7 +262,7 @@ func TestDecoderDepartures(t *testing.T) {
 	t.Run("numbers are typed by their literals", func(t *testing.T) {
 		ds := decode(t, series(`{"name":"c","columns":["time","v"],"values":[[`+t0+`,1],[`+t1+
 			`,1.5],[`+t2+`,9007199254740993],[1577836845000000000,-0]]}`))
-		pts := ds.Results[0].SeriesList[0].Points()
+		pts := dspoints.Of(ds.Results[0].SeriesList[0])
 		require.Equal(t, int64(1), pts[0].Values[0])
 		require.Equal(t, 1.5, pts[1].Values[0])
 		// past 2^53, where the legacy decoder's float64 rounded it
@@ -273,7 +274,7 @@ func TestDecoderDepartures(t *testing.T) {
 	})
 	t.Run("times are exact", func(t *testing.T) {
 		ds := decode(t, series(`{"name":"c","columns":["time","v"],"values":[[1577836800123456789,1]]}`))
-		require.Equal(t, epoch.Epoch(1577836800123456789), ds.Results[0].SeriesList[0].Points()[0].Epoch)
+		require.Equal(t, epoch.Epoch(1577836800123456789), dspoints.Of(ds.Results[0].SeriesList[0])[0].Epoch)
 	})
 	t.Run("series with one header are one series", func(t *testing.T) {
 		ds := decode(t, series(`{"name":"c","columns":["time","v"],"values":[[`+t1+`,2]]},`+
@@ -290,7 +291,7 @@ func TestDecoderDepartures(t *testing.T) {
 	})
 	t.Run("a short row's missing values are null", func(t *testing.T) {
 		ds := decode(t, series(`{"name":"c","columns":["time","a","b"],"values":[[`+t0+`,1]]}`))
-		require.Equal(t, []any{int64(1), nil}, ds.Results[0].SeriesList[0].Points()[0].Values)
+		require.Equal(t, []any{int64(1), nil}, dspoints.Of(ds.Results[0].SeriesList[0])[0].Values)
 	})
 	// the legacy decoder read the whole document before it failed, crashed, or ignored what followed
 	rejected := map[string]string{
