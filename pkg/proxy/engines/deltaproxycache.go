@@ -56,7 +56,8 @@ const (
 	statusOff = "off"
 	statusErr = "err"
 
-	hnClickHouseFormat = "X-ClickHouse-Format"
+	hnClickHouseFormat   = "X-ClickHouse-Format"
+	hnClickHouseTimezone = "X-ClickHouse-Timezone"
 
 	// errorBodyCap bounds the amount of upstream error body copied into
 	// HTTPDocument on non-2xx responses. Protects singleflight waiters
@@ -1002,7 +1003,9 @@ func getTimeseriesReader(resp *http.Response) (io.Reader, io.Closer) {
 	reader, closer := getDecoderReader(resp)
 	// a response that names its format, as ClickHouse's do, tells the unmarshaler how to read it
 	if format := resp.Header.Get(hnClickHouseFormat); format != "" {
-		return timeseries.NewFormatHintReader(reader, format), closer
+		hr := timeseries.NewFormatHintReader(reader, format)
+		hr.Timezone = resp.Header.Get(hnClickHouseTimezone)
+		return hr, closer
 	}
 	return reader, closer
 }

@@ -77,9 +77,8 @@ type column struct {
 	time bool
 }
 
-// decoder builds a DataSet from a v3 query response: a JSON array of row objects, JSON Lines of them,
-// or CSV with a header record. The first row names the columns, and each value column takes its type
-// from its first value that is neither null nor empty.
+// decoder builds a DataSet from a v3 JSON, JSON Lines or CSV response, typing a column by its first
+// non-null value; JSON leaves nulls out, so a column a later row names is added then.
 type decoder struct {
 	trq    *timeseries.TimeRangeQuery
 	b      *dataset.Builder
@@ -90,6 +89,8 @@ type decoder struct {
 	tags    []string
 	fields  timeseries.FieldDefinitions
 	typed   []bool
+	// whether a row has named each tag, as a tag no row names isn't in the response at all
+	tagSeen []bool
 	// a row's tag and value cells by slot, tags first, and its time's cell
 	cells    [][]byte
 	timeCell []byte
@@ -143,8 +144,9 @@ func (d *decoder) walkLines(dec *jsontext.Decoder) error {
 	}
 }
 
-// setColumns lays out the columns the first row names: the time, the query's tags, and the values
-func (d *decoder) setColumns(names []string) {
+// setColumns lays out the columns the first row names: the time, the query's tags, and the values.
+// With allTags, every tag of the query is laid out, named or not.
+func (d *decoder) setColumns(names []string, allTags bool) {
 	d.tsName = d.trq.TimestampDefinition.Name
 	if d.tsName == "" {
 		d.tsName = DefaultTimestampField
@@ -152,7 +154,7 @@ func (d *decoder) setColumns(names []string) {
 	// tag columns partition rows into series; they come from the analyzed GROUP BY columns and
 	// identify each series for delta merging
 	for _, fd := range d.trq.TagFieldDefintions {
-		if slices.Contains(names, fd.Name) && !slices.Contains(d.tags, fd.Name) {
+		if (allTags || slices.Contains(names, fd.Name)) && !slices.Contains(d.tags, fd.Name) {
 			d.tags = append(d.tags, fd.Name)
 		}
 	}
@@ -173,8 +175,18 @@ func (d *decoder) setColumns(names []string) {
 		d.byName[name] = len(d.columns)
 		d.columns = append(d.columns, c)
 	}
+	for i, name := range d.tags {
+		if _, ok := d.byName[name]; !ok {
+			d.byName[name] = len(d.columns)
+			d.columns = append(d.columns, column{name: name, slot: i})
+		}
+	}
 	d.fields = slices.Clip(d.fields)
 	d.typed = make([]bool, len(d.fields))
+	d.tagSeen = make([]bool, len(d.tags))
+	for i := range d.tagSeen {
+		d.tagSeen[i] = !allTags
+	}
 	d.cells = make([][]byte, len(d.tags)+len(d.fields))
 	tagFields := make(timeseries.FieldDefinitions, len(d.tags))
 	for i, name := range d.tags {
@@ -206,7 +218,7 @@ func (d *decoder) jsonRow(raw []byte) error {
 		return timeseries.ErrInvalidBody
 	}
 	if d.b == nil {
-		d.setColumns(d.jsonNames(raw))
+		d.setColumns(d.jsonNames(raw), true)
 	}
 	clear(d.cells)
 	d.timeCell = nil
@@ -214,7 +226,7 @@ func (d *decoder) jsonRow(raw []byte) error {
 	next := 0
 	for name, value, ok := members.Next(); ok; name, value, ok = members.Next() {
 		key := stream.StringText(name, &d.nameBuf)
-		i := -1
+		var i int
 		if next < len(d.columns) && string(key) == d.columns[next].name {
 			i = next
 		} else if j, found := d.byName[string(key)]; found {
@@ -222,9 +234,8 @@ func (d *decoder) jsonRow(raw []byte) error {
 		} else if string(key) == d.tsName {
 			d.timeCell = value
 			continue
-		}
-		if i < 0 {
-			continue
+		} else {
+			i = d.addColumn(string(key))
 		}
 		next = i + 1
 		// a repeated name's last value is the one kept
@@ -237,6 +248,9 @@ func (d *decoder) jsonRow(raw []byte) error {
 		}
 	}
 	nt := len(d.tags)
+	for i := range nt {
+		d.tagSeen[i] = d.tagSeen[i] || d.cells[i] != nil
+	}
 	for j := range d.fields {
 		if !d.typed[j] {
 			d.typeJSON(j, d.cells[nt+j])
@@ -256,6 +270,18 @@ func (d *decoder) jsonRow(raw []byte) error {
 		d.addJSONValue(r, d.cells[nt+j], d.fields[j].DataType)
 	}
 	return r.Commit()
+}
+
+// addColumn adds a value column a later row names, which the rows before it hold null in
+func (d *decoder) addColumn(name string) int {
+	fd := timeseries.FieldDefinition{Name: name, OutputPosition: len(d.fields), Role: timeseries.RoleValue}
+	d.columns = append(d.columns, column{name: name, slot: len(d.tags) + len(d.fields)})
+	d.byName[name] = len(d.columns) - 1
+	d.fields = append(d.fields, fd)
+	d.typed = append(d.typed, false)
+	d.cells = append(d.cells, nil)
+	d.b.AddValueField(fd)
+	return len(d.columns) - 1
 }
 
 func (d *decoder) jsonNames(raw []byte) []string {
@@ -497,7 +523,7 @@ func (d *decoder) csvRecord(fields [][]byte) error {
 		for i, f := range fields {
 			names[i] = string(f)
 		}
-		d.setColumns(names)
+		d.setColumns(names, false)
 		d.positions = make([]int, len(names))
 		for i, name := range names {
 			d.positions[i] = d.byName[name]
@@ -557,18 +583,38 @@ func (d *decoder) finish() (timeseries.Timeseries, error) {
 			d.fields[j].DataType = timeseries.String
 		}
 	}
+	// a query's tag that no row named isn't a column of the response
+	var tagFields timeseries.FieldDefinitions
+	tags := d.tags
+	if slices.Contains(d.tagSeen, false) {
+		tags = nil
+		for i, name := range d.tags {
+			if d.tagSeen[i] {
+				tags = append(tags, name)
+				tagFields = append(tagFields, timeseries.FieldDefinition{Name: name, Role: timeseries.RoleTag})
+			}
+		}
+	}
 	type keyed struct {
 		key string
 		s   *dataset.Series
 	}
 	sl := ds.Results[0].SeriesList
 	byKey := make([]keyed, len(sl))
-	parts := make([]string, len(d.tags))
+	parts := make([]string, len(tags))
 	for i, s := range sl {
-		for t, name := range d.tags {
+		for t, name := range tags {
 			parts[t] = s.Header.Tags[name]
 		}
 		byKey[i] = keyed{key: strings.Join(parts, tagKeySeparator), s: s}
+		if len(tags) < len(d.tags) {
+			s.Header.TagFieldsList = tagFields
+			for i, name := range d.tags {
+				if !d.tagSeen[i] {
+					delete(s.Header.Tags, name)
+				}
+			}
+		}
 		s.Header.ValueFieldsList = d.fields
 		s.Header.CalculateSize()
 	}

@@ -25,11 +25,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
-// outputRow locates a row: its series, and where the series holds it.
+// outputRow locates a row: its series and the series' position in its result, and where the
+// series holds it.
 type outputRow struct {
 	series *dataset.Series
 	seg    *dataset.Segment
 	i      int
+	list   int
 }
 
 func (r outputRow) epoch() epoch.Epoch {
@@ -51,21 +53,21 @@ func timeOrderedRows(r *dataset.Result) (iter.Seq[outputRow], int) {
 		// merging the sorted series breaks ties by series position, as the stable sort below does
 		return func(yield func(outputRow) bool) {
 			for row := range r.Rows(dataset.RowOrder{}) {
-				if !yield(outputRow{series: row.Series, seg: row.Seg, i: row.Index}) {
+				if !yield(outputRow{series: row.Series, seg: row.Seg, i: row.Index, list: row.SeriesIndex}) {
 					return
 				}
 			}
 		}, n
 	}
 	rows := make([]outputRow, 0, n)
-	for _, s := range r.SeriesList {
+	for j, s := range r.SeriesList {
 		if s == nil {
 			continue
 		}
 		segs := s.Segments()
 		for k := range segs {
 			for i := range segs[k].Len() {
-				rows = append(rows, outputRow{series: s, seg: &segs[k], i: i})
+				rows = append(rows, outputRow{series: s, seg: &segs[k], i: i, list: j})
 			}
 		}
 	}

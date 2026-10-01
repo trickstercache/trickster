@@ -20,6 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/ClickHouse/clickhouse-go/v2/lib/column"
 )
 
 var errBadLiteral = errors.New("invalid ClickHouse text literal")
@@ -105,9 +107,9 @@ func (p *literalParser) sequence(closer byte) ([]any, error) {
 	}
 }
 
-func (p *literalParser) mapping() (map[string]any, error) {
+func (p *literalParser) mapping() (*OrderedMap, error) {
 	p.i++ // '{'
-	out := map[string]any{}
+	out := &OrderedMap{}
 	for {
 		p.skipSpace()
 		if p.i < len(p.s) && p.s[p.i] == '}' {
@@ -128,7 +130,7 @@ func (p *literalParser) mapping() (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		out[fmt.Sprint(k)] = v
+		out.Put(fmt.Sprint(k), v)
 		p.skipSpace()
 		if p.i >= len(p.s) {
 			return nil, fmt.Errorf("%w: unterminated map", errBadLiteral)
@@ -176,3 +178,31 @@ func (p *literalParser) quoted() (string, error) {
 	}
 	return "", fmt.Errorf("%w: unterminated string", errBadLiteral)
 }
+
+// OrderedMap is a Map value's entries in the order they're written, which a Go map would lose.
+type OrderedMap struct {
+	Keys, Values []any
+}
+
+// Put adds an entry after the others.
+func (m *OrderedMap) Put(key, value any) {
+	m.Keys, m.Values = append(m.Keys, key), append(m.Values, value)
+}
+
+// Iterator returns an iterator over the entries in order.
+func (m *OrderedMap) Iterator() column.MapIterator {
+	return &orderedMapIterator{m: m, i: -1}
+}
+
+type orderedMapIterator struct {
+	m *OrderedMap
+	i int
+}
+
+func (it *orderedMapIterator) Next() bool {
+	it.i++
+	return it.i < len(it.m.Keys)
+}
+
+func (it *orderedMapIterator) Key() any   { return it.m.Keys[it.i] }
+func (it *orderedMapIterator) Value() any { return it.m.Values[it.i] }

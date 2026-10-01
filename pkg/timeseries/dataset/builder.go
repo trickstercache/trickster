@@ -55,6 +55,8 @@ type BuilderOptions struct {
 	Fields timeseries.SeriesFields
 	// SeriesName is the header name of each series created in row mode.
 	SeriesName string
+	// NameSeries, when set, names each series created in row mode from its tags, in place of SeriesName.
+	NameSeries func(tags Tags) string
 	// QueryStatement is the header query statement of each series created in row mode.
 	QueryStatement string
 	// Duplicates controls how points sharing an epoch within a series are handled.
@@ -181,6 +183,12 @@ func (b *Builder) Finish() (*DataSet, error) {
 		return nil, ErrBuilderFinished
 	}
 	b.currentResult()
+	// every series ends with every value field, those added after it was created holding nulls
+	for _, rb := range b.results {
+		for _, sb := range rb.series {
+			b.widen(sb)
+		}
+	}
 	b.finished = true
 	b.current = nil
 	segs, err := b.log.Finish()
@@ -296,6 +304,7 @@ func (r *RowBuilder) Commit() error {
 			return ErrInvalidRow
 		}
 		sb = r.series()
+		b.widen(sb)
 	}
 	err := b.log.Commit(sb.id, r.epoch)
 	r.reset()
@@ -345,9 +354,13 @@ func (r *RowBuilder) series() *seriesBuild {
 			tags[fd.Name] = string(raw)
 		}
 	}
+	name := opts.SeriesName
+	if opts.NameSeries != nil {
+		name = opts.NameSeries(tags)
+	}
 	// a new raw encoding can still name an existing series, as "a" and "\u0061" do in JSON
 	sb := r.b.seriesFor(rb, SeriesHeader{
-		Name:                opts.SeriesName,
+		Name:                name,
 		Tags:                tags,
 		TimestampField:      opts.Fields.Timestamp,
 		TagFieldsList:       opts.Fields.Tags,
@@ -379,6 +392,27 @@ func (b *Builder) seriesFor(rb *resultBuild, h SeriesHeader, cloneFields bool) *
 	rb.index.add(hash, sb)
 	rb.series = append(rb.series, sb)
 	return sb
+}
+
+// AddValueField adds a value field to the rows built from now on, in row mode. A series created before
+// it is widened to it, holding a null in it on each earlier row.
+func (b *Builder) AddValueField(fd timeseries.FieldDefinition) {
+	if b.finished {
+		return
+	}
+	// clipped, so the caller's array is never written past its length
+	b.opts.Fields.Values = append(slices.Clip(b.opts.Fields.Values), fd)
+}
+
+// widen grows a row-mode series to the value fields added since it was created
+func (b *Builder) widen(sb *seriesBuild) {
+	n := len(b.opts.Fields.Values)
+	h := &sb.s.Header
+	if len(h.ValueFieldsList) >= n || b.log.Cols(sb.id) < 0 {
+		return
+	}
+	h.ValueFieldsList = append(h.ValueFieldsList, b.opts.Fields.Values[len(h.ValueFieldsList):n]...)
+	b.log.Widen(sb.id, n)
 }
 
 func builtHeader(sb *seriesBuild) *SeriesHeader {

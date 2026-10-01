@@ -136,6 +136,7 @@ func TestQueryHandlerSessionBypassesCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	client := backendClient.(*Client)
+	client.zone.set("UTC")
 	rsc.BackendClient = client
 	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
 	// the delta cache parses every query it handles, so a parsed query shows which path ran

@@ -19,13 +19,19 @@ package epoch
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 )
 
-const naiveLayout = "2006-01-02T15:04:05.999999999"
+const (
+	naiveLayout = "2006-01-02T15:04:05.999999999"
+	sqlLayout   = "2006-01-02 15:04:05.999999999"
+	dateLayout  = "2006-01-02"
+)
 
 var canonicalTimes = []string{
 	"2026-09-30T12:34:56Z",
@@ -178,6 +184,74 @@ func FuzzParseCanonicalTime(f *testing.F) {
 	f.Fuzz(checkCanonicalTime)
 }
 
+// checkSQLTime checks the SQL parsers against time.Parse, wherever they accept s
+func checkSQLTime(t *testing.T, s string) {
+	t.Helper()
+	if got, ok := ParseSQLDateTime([]byte(s)); ok {
+		want, err := time.ParseInLocation(sqlLayout, s, time.UTC)
+		if err != nil || got != Epoch(want.UnixNano()) {
+			t.Fatalf("%q: got %d, time.Parse got %d (%v)", s, got, want.UnixNano(), err)
+		}
+	}
+	if got, ok := ParseSQLDate([]byte(s)); ok {
+		want, err := time.ParseInLocation(dateLayout, s, time.UTC)
+		if err != nil || got != Epoch(want.UnixNano()) {
+			t.Fatalf("%q: got %d, time.Parse got %d (%v)", s, got, want.UnixNano(), err)
+		}
+	}
+}
+
+func TestParseSQLTime(t *testing.T) {
+	for _, s := range canonicalTimes {
+		sql := strings.TrimSuffix(strings.Replace(s, "T", " ", 1), "Z")
+		for _, in := range []string{s, sql, sql + "Z", sql[:min(len(sql), dateLen)]} {
+			checkSQLTime(t, in)
+		}
+	}
+	for in, want := range map[string]bool{
+		"2026-09-30 12:34:56": true, "2026-09-30 12:34:56.5": true, "2026-09-30 12:34:56.1234567891": true,
+		"2026-09-30T12:34:56": false, "2026-09-30 12:34:56Z": false, "2026-09-30 12:34:56.": false,
+		"2026-09-30 12:34:56,5": false, "2026-02-30 12:34:56": false, " 2026-09-30 12:34:56": false,
+	} {
+		if _, ok := ParseSQLDateTime([]byte(in)); ok != want {
+			t.Errorf("%q: got ok %t", in, ok)
+		}
+	}
+	for in, want := range map[string]bool{"2026-09-30": true, "2026-9-30": false, "2026-09-31": false,
+		"2026-09-30 ": false, "2026/09/30": false} {
+		if _, ok := ParseSQLDate([]byte(in)); ok != want {
+			t.Errorf("%q: got ok %t", in, ok)
+		}
+	}
+	rng := weaktest.NewRand(4, 9)
+	for range 100_000 {
+		year, month := rng.IntN(10000), 1+rng.IntN(12)
+		day := 1 + rng.IntN(int(daysIn(int64(month), int64(year))))
+		s := fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d", year, month, day, rng.IntN(24), rng.IntN(60),
+			rng.IntN(60))
+		if digits := rng.IntN(13); digits > 0 {
+			s += "." + strings.Repeat(string(rune('0'+rng.IntN(10))), digits)
+		}
+		if _, ok := ParseSQLDateTime([]byte(s)); !ok {
+			t.Fatalf("%q: not parsed", s)
+		}
+		checkSQLTime(t, s)
+		checkSQLTime(t, s[:dateLen])
+	}
+	if n := testing.AllocsPerRun(100, func() {
+		_, _ = ParseSQLDateTime([]byte("2026-09-30 12:34:56.123"))
+	}); n != 0 {
+		t.Errorf("a SQL time allocated %v times", n)
+	}
+}
+
+func FuzzParseSQLTime(f *testing.F) {
+	for _, s := range canonicalTimes {
+		f.Add(strings.Replace(s, "T", " ", 1))
+	}
+	f.Fuzz(checkSQLTime)
+}
+
 func checkAppendCanonicalTime(t *testing.T, e Epoch) {
 	t.Helper()
 	tm := time.Unix(0, int64(e)).UTC()
@@ -190,6 +264,16 @@ func checkAppendCanonicalTime(t *testing.T, e Epoch) {
 		want := tm.AppendFormat(nil, c.layout)
 		if got := AppendCanonicalTime(nil, e, c.fraction, c.zoned); string(got) != string(want) {
 			t.Fatalf("%d as %s: got %s, want %s", e, c.layout, got, want)
+		}
+	}
+	// the layouts Epoch.AppendFormat writes without a time.Time
+	for _, to := range []timeseries.FieldDataType{timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL,
+		timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano} {
+		for _, quote := range []bool{false, true} {
+			want := AppendTime(nil, time.Unix(0, int64(e)), to, quote)
+			if got := e.AppendFormat(nil, to, quote); string(got) != string(want) {
+				t.Fatalf("%d as %v: got %s, want %s", e, to, got, want)
+			}
 		}
 	}
 }
@@ -251,4 +335,45 @@ func BenchmarkCanonicalTime(b *testing.B) {
 			_, _ = time.Parse(time.RFC3339Nano, string(raw))
 		}
 	})
+	sql := []byte("2020-01-01 00:00:00.123")
+	b.Run("parse/sql", func(b *testing.B) {
+		for b.Loop() {
+			_, _ = ParseSQLDateTime(sql)
+		}
+	})
+	b.Run("parse/sql/time", func(b *testing.B) {
+		for b.Loop() {
+			_, _ = time.Parse("2006-01-02 15:04:05.000", string(sql))
+		}
+	})
+	b.Run("append/sql", func(b *testing.B) {
+		for b.Loop() {
+			buf = e.AppendFormat(buf[:0], timeseries.DateTimeSQL, false)
+		}
+	})
+	b.Run("append/sql/time", func(b *testing.B) {
+		for b.Loop() {
+			buf = AppendTime(buf[:0], time.Unix(0, int64(e)), timeseries.DateTimeSQL, false)
+		}
+	})
+}
+
+func TestAppendSQLTime(t *testing.T) {
+	rng := weaktest.NewRand(10, 10)
+	for range 20000 {
+		e := Epoch(rng.Int64N(math.MaxInt64) - math.MaxInt64/2)
+		tm := time.Unix(0, int64(e)).UTC()
+		for digits := range 11 {
+			layout := "2006-01-02 15:04:05"
+			if n := min(digits, 9); n > 0 {
+				layout += "." + strings.Repeat("0", n)
+			}
+			if got := string(AppendSQLTime(nil, e, ' ', digits)); got != tm.Format(layout) {
+				t.Fatalf("%d digits of %d: got %s, want %s", digits, e, got, tm.Format(layout))
+			}
+		}
+		if got := string(AppendSQLTime(nil, e, 'T', 0)); got != tm.Format("2006-01-02T15:04:05") {
+			t.Fatalf("%d: got %s", e, got)
+		}
+	}
 }

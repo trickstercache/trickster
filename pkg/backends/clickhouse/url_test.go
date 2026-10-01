@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	modelch "github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -53,6 +54,10 @@ func TestSetExtent(t *testing.T) {
 	if !strings.Contains(rendered, "FORMAT TSVWithNamesAndTypes") {
 		t.Errorf("origin format was not forced: %s", rendered)
 	}
+	// the origin writes its DateTimes as UTC
+	if got := r.URL.Query().Get(modelch.SettingDateTimeOutput); got != dateTimeOutputISO {
+		t.Errorf("origin DateTime format was not forced: %q", got)
+	}
 }
 
 func TestSetExtentWithBody(t *testing.T) {
@@ -80,6 +85,9 @@ func TestSetExtentWithBody(t *testing.T) {
 	if !strings.Contains(rendered, "ts >= '2020-01-01 00:10:00'") ||
 		!strings.Contains(rendered, "ts < '2020-01-01 00:21:00'") {
 		t.Errorf("SQL datetime extent was not rendered: %s", rendered)
+	}
+	if got := r.URL.Query().Get(modelch.SettingDateTimeOutput); got != dateTimeOutputISO {
+		t.Errorf("origin DateTime format was not forced: %q", got)
 	}
 }
 

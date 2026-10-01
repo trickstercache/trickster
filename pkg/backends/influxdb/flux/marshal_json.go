@@ -45,6 +45,9 @@ func marshalTimeseriesJSONWriter(ds *dataset.DataSet,
 	return writeJSON(ds, w)
 }
 
+// the JSON literal for a value JSON can't hold
+const jsonNull = "null"
+
 // what a record's cell holds: text fixed for its table, the row's time, or a value column's value
 const (
 	jsonCellFixed byte = iota
@@ -172,8 +175,8 @@ func appendJSONTime(b []byte, e epoch.Epoch, dt timeseries.FieldDataType) []byte
 	return append(b, '"')
 }
 
-// appendJSONValue appends value c of row i as encoding/json's Marshal writes it, or the column's
-// default for a null or empty text; a value Marshal can't write, such as NaN, writes nothing
+// appendJSONValue appends value c of row i as encoding/json writes it, the column's default for a
+// null or empty text, and null for one JSON can't hold, such as NaN, as InfluxDB 3 writes it
 func appendJSONValue(b []byte, seg *dataset.Segment, c, i int, dflt []byte) []byte {
 	switch k := seg.KindAt(c, i); k {
 	case dataset.KindNull:
@@ -188,7 +191,7 @@ func appendJSONValue(b []byte, seg *dataset.Segment, c, i int, dflt []byte) []by
 		if out, ok := tstrings.AppendJSONFloat(b, seg.Float64(c, i), 64); ok {
 			return out
 		}
-		return b
+		return append(b, jsonNull...)
 	case dataset.KindInt64:
 		return strconv.AppendInt(b, seg.Int64(c, i), 10)
 	case dataset.KindUint64:
@@ -196,6 +199,9 @@ func appendJSONValue(b []byte, seg *dataset.Segment, c, i int, dflt []byte) []by
 	case dataset.KindBool:
 		return strconv.AppendBool(b, seg.Bool(c, i))
 	}
-	out, _ := json.Marshal(seg.Value(c, i))
+	out, err := json.Marshal(seg.Value(c, i))
+	if err != nil {
+		return append(b, jsonNull...)
+	}
 	return append(b, out...)
 }

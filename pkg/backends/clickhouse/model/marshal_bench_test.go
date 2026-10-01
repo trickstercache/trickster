@@ -45,15 +45,21 @@ func BenchmarkMarshalJSON(b *testing.B) {
 			s.SetPoints(pts)
 			series[i] = s
 		}
-		ds := jsonTestDataSet(timeseries.DateTimeUnixMilli, fds, series...)
-		b.Run(fmt.Sprintf("%dx%d", shape.series, shape.points), func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				if err := marshalTimeseriesJSON(io.Discard, ds, nil, 200); err != nil {
-					b.Fatal(err)
-				}
+		for _, tf := range []timeseries.FieldDataType{timeseries.DateTimeUnixMilli, timeseries.DateTimeSQL} {
+			ds := jsonTestDataSet(tf, fds, series...)
+			name := fmt.Sprintf("%dx%d", shape.series, shape.points)
+			if tf == timeseries.DateTimeSQL {
+				name += "/sql"
 			}
-		})
+			b.Run(name, func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					if err := marshalTimeseriesJSON(io.Discard, ds, nil, 200); err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		}
 	}
 }
 

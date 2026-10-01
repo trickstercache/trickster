@@ -18,6 +18,7 @@ package server
 
 import (
 	"bytes"
+	"math/big"
 	"reflect"
 	"testing"
 	"time"
@@ -36,8 +37,8 @@ func TestParseTextLiteral(t *testing.T) {
 		{"['a','b\\'c','x\\\\y','t\\tab']", []any{"a", "b'c", "x\\y", "t\tab"}},
 		{"[[1],[2,3]]", []any{[]any{"1"}, []any{"2", "3"}}},
 		{"('x',2,NULL)", []any{"x", "2", nil}},
-		{"{'a':1,'b':2}", map[string]any{"a": "1", "b": "2"}},
-		{"{1:['x']}", map[string]any{"1": []any{"x"}}},
+		{"{'b':1,'a':2}", &OrderedMap{Keys: []any{"b", "a"}, Values: []any{"1", "2"}}},
+		{"{1:['x']}", &OrderedMap{Keys: []any{"1"}, Values: []any{[]any{"x"}}}},
 		{"NULL", nil},
 		{"42", "42"},
 		{"true", "true"},
@@ -98,3 +99,17 @@ func TestEncodeCompoundFromTextLiterals(t *testing.T) {
 
 //go:fix inline
 func ptr[T any](v T) *T { return new(v) }
+
+func TestEncodeBigIntValues(t *testing.T) {
+	// a scanned big integer arrives as a value or a pointer, each writing the same column
+	var want, got bytes.Buffer
+	if err := EncodeNativeColumn(&want, "Int256", []any{big.NewInt(-27)}, ServerRevision); err != nil {
+		t.Fatal(err)
+	}
+	if err := EncodeNativeColumn(&got, "Int256", []any{*big.NewInt(-27)}, ServerRevision); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(want.Bytes(), got.Bytes()) {
+		t.Fatalf("got %x want %x", got.Bytes(), want.Bytes())
+	}
+}

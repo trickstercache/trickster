@@ -19,6 +19,7 @@ package model
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -27,6 +28,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+
+	"github.com/stretchr/testify/require"
 )
 
 func FuzzWFDataItemMarshalJSON(f *testing.F) {
@@ -116,10 +119,9 @@ func TestMarshalTimeseriesWriterFormats(t *testing.T) {
 	}{
 		{name: "json", format: 0, want: testDataJSONMinified},
 		{name: "csv", format: 1, want: testDataCSV},
-		{name: "csv with names", format: 2, want: "t,hostname,avg_query,avg_global_thread\n" + testDataCSV},
-		{name: "tsv", format: 3, want: strings.ReplaceAll(testDataCSV, ",", "\t")},
-		{name: "tsv with names", format: 4, want: "t\thostname\tavg_query\tavg_global_thread\n" +
-			strings.ReplaceAll(testDataCSV, ",", "\t")},
+		{name: "csv with names", format: 2, want: `"t","hostname","avg_query","avg_global_thread"` + "\n" + testDataCSV},
+		{name: "tsv", format: 3, want: testDataTSV},
+		{name: "tsv with names", format: 4, want: "t\thostname\tavg_query\tavg_global_thread\n" + testDataTSV},
 		{name: "tsv with names and types", format: 5, want: testDataTSVWithNamesAndTypes},
 	}
 	for _, tc := range tests {
@@ -196,7 +198,7 @@ func TestMarshalXSVHeadersAndEdges(t *testing.T) {
 		t.Errorf("unexpected format header %q", got)
 	}
 	body := rw.Body.String()
-	if !strings.HasPrefix(body, "t,hostname,avg_query,avg_global_thread\n") {
+	if !strings.HasPrefix(body, `"t","hostname","avg_query","avg_global_thread"`+"\n") {
 		t.Errorf("expected names row, got %s", body)
 	}
 
@@ -376,10 +378,66 @@ func TestMarshalXSVHeaderTagSkips(t *testing.T) {
 	if len(lines) < 2 {
 		t.Fatalf("expected names + data, got %v", lines)
 	}
-	if !strings.HasPrefix(lines[0], "t,") {
+	if !strings.HasPrefix(lines[0], `"t",`) {
 		t.Errorf("unexpected names row %q", lines[0])
 	}
 	if strings.Contains(lines[0], "host") {
 		t.Errorf("host tag with invalid output position should be skipped: %q", lines[0])
+	}
+}
+
+func TestMarshalXSVEmptyResult(t *testing.T) {
+	// ClickHouse answers a query without rows with an empty body
+	for of := byte(1); of <= 5; of++ {
+		for _, ds := range []*dataset.DataSet{{}, {Results: dataset.Results{{SeriesList: dataset.SeriesList{}}}}} {
+			b, err := MarshalTimeseries(ds, &timeseries.RequestOptions{OutputFormat: of}, 200)
+			if err != nil || len(b) != 0 {
+				t.Fatalf("format %d: %q, %v", of, b, err)
+			}
+		}
+	}
+}
+
+func TestMarshalXSVAsClickHouseWritesIt(t *testing.T) {
+	ny, _ := LoadZone("America/New_York")
+	// each as ClickHouse 26.7 writes it in TSV and CSV
+	for _, c := range []struct {
+		typ      string
+		value    any
+		opts     FormatOptions
+		tsv, csv string
+	}{
+		{"Int8", int64(-1), FormatOptions{}, "-1", "-1"},
+		{"Float64", 1e21, FormatOptions{}, "1e21", "1e21"},
+		{"Float64", 1e-7, FormatOptions{}, "1e-7", "1e-7"},
+		{"Float64", math.NaN(), FormatOptions{}, "nan", "nan"},
+		{"Float64", math.Inf(-1), FormatOptions{}, "-inf", "-inf"},
+		{"Decimal(18, 9)", 1e-7, FormatOptions{}, "0.0000001", "0.0000001"},
+		{"Bool", true, FormatOptions{}, "true", "true"},
+		{"String", `a"b,c`, FormatOptions{}, `a"b,c`, `"a""b,c"`},
+		{"String", "it's\t", FormatOptions{}, `it\'s\t`, "\"it's\t\""},
+		{"String", "", FormatOptions{}, "", `""`},
+		{"Nullable(String)", nil, FormatOptions{}, `\N`, `\N`},
+		{"FixedString(4)", "ab", FormatOptions{}, `ab\0\0`, "\"ab\x00\x00\""},
+		{"UUID", "61f0c404-5cb3-11e7-907b-a6006ad3dba0", FormatOptions{}, "61f0c404-5cb3-11e7-907b-a6006ad3dba0",
+			`"61f0c404-5cb3-11e7-907b-a6006ad3dba0"`},
+		{"Date", "2026-09-01", FormatOptions{}, "2026-09-01", `"2026-09-01"`},
+		{"DateTime", "2026-09-01 05:02:03", FormatOptions{Zone: ny}, "2026-09-01 01:02:03", `"2026-09-01 01:02:03"`},
+		{"Array(String)", `['a\'b','c\td']`, FormatOptions{}, `['a\'b','c\td']`, `"['a\'b','c\td']"`},
+		{"Map(String, String)", `{'k\'':'v\\'}`, FormatOptions{}, `{'k\'':'v\\'}`, `"{'k\'':'v\\'}"`},
+		{"Int256", "-10", FormatOptions{}, "-10", "-10"},
+	} {
+		fds := timeseries.FieldDefinitions{
+			{Name: "t", Role: timeseries.RoleTimestamp, SDataType: "DateTime", DataType: timeseries.DateTimeSQL},
+			{Name: "v", Role: timeseries.RoleValue, SDataType: c.typ, OutputPosition: 1},
+		}
+		ds := jsonTestDataSet(timeseries.DateTimeSQL, fds, dataset.NewSeries(dataset.SeriesHeader{},
+			dataset.Points{{Epoch: 1e9, Values: []any{c.value}}}))
+		for sep, want := range map[byte]string{'\t': c.tsv, ',': c.csv} {
+			var b bytes.Buffer
+			require.NoError(t, marshalTimeseriesXSV(&b, ds, &timeseries.RequestOptions{ProviderRequest: c.opts}, false, false, sep))
+			_, cell, _ := strings.Cut(strings.TrimSuffix(b.String(), "\n"), string(sep))
+			require.Equal(t, want, cell, "%s %v %q", c.typ, c.value, sep)
+		}
 	}
 }

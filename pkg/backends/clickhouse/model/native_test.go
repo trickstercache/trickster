@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -49,7 +48,7 @@ func TestWriteUvarint(t *testing.T) {
 		if err := writeUvarint(b, v); err != nil {
 			t.Fatalf("writeUvarint(%d): %v", v, err)
 		}
-		got, err := readUvarint(bufio.NewReader(bytes.NewReader(b.Bytes())))
+		got, err := testCursor(b.Bytes()).uvarint()
 		if err != nil {
 			t.Fatalf("readUvarint for %d: %v", v, err)
 		}
@@ -72,11 +71,11 @@ func TestWriteNativeString(t *testing.T) {
 		if err := writeNativeString(b, s); err != nil {
 			t.Fatalf("writeNativeString(%q): %v", s, err)
 		}
-		got, err := readString(bufio.NewReader(bytes.NewReader(b.Bytes())))
+		got, err := testCursor(b.Bytes()).str()
 		if err != nil {
-			t.Fatalf("readString: %v", err)
+			t.Fatalf("str: %v", err)
 		}
-		if got != s {
+		if string(got) != s {
 			t.Fatalf("string roundtrip: want %q got %q", s, got)
 		}
 	}
@@ -93,42 +92,54 @@ func TestWriteNativeString_WriterError(t *testing.T) {
 	}
 }
 
-func TestReadString_EmptyAndError(t *testing.T) {
+func TestCursorStr_EmptyAndError(t *testing.T) {
 	// length 0
-	br := bufio.NewReader(bytes.NewReader([]byte{0}))
-	s, err := readString(br)
-	if err != nil || s != "" {
+	s, err := testCursor([]byte{0}).str()
+	if err != nil || len(s) != 0 {
 		t.Fatalf("empty string: %v %q", err, s)
 	}
 	// length 5 but only 3 bytes available
-	br = bufio.NewReader(bytes.NewReader([]byte{5, 'a', 'b', 'c'}))
-	if _, err := readString(br); err == nil {
+	if _, err := testCursor([]byte{5, 'a', 'b', 'c'}).str(); err == nil {
 		t.Fatal("expected short read error")
 	}
 	// uvarint read error
-	br = bufio.NewReader(bytes.NewReader(nil))
-	if _, err := readString(br); err == nil {
+	if _, err := testCursor(nil).str(); err == nil {
 		t.Fatal("expected error on empty input")
 	}
 }
 
-func TestReadUvarint_Error(t *testing.T) {
-	br := bufio.NewReader(bytes.NewReader([]byte{0xff}))
-	if _, err := readUvarint(br); err == nil {
-		t.Fatal("expected error on truncated uvarint")
+func TestCursorUvarint_Error(t *testing.T) {
+	if _, err := testCursor([]byte{0xff}).uvarint(); !errors.Is(err, errShort) {
+		t.Fatalf("got %v, want a short input", err)
+	}
+	overflow := bytes.Repeat([]byte{0xff}, binary.MaxVarintLen64+1)
+	if _, err := testCursor(overflow).uvarint(); !errors.Is(err, errVarintOverflow) {
+		t.Fatalf("got %v, want an overflow", err)
 	}
 }
 
-func TestReadFixed(t *testing.T) {
-	r := bytes.NewReader([]byte{1, 2, 3, 4, 5})
-	b, err := readFixed(r, 3)
+func TestCursorFixed(t *testing.T) {
+	cur := testCursor([]byte{1, 2, 3, 4, 5})
+	b, err := cur.fixed(3)
 	if err != nil {
-		t.Fatalf("readFixed: %v", err)
+		t.Fatalf("fixed: %v", err)
 	}
 	if !bytes.Equal(b, []byte{1, 2, 3}) {
 		t.Fatalf("want [1 2 3] got %v", b)
 	}
-	if _, err := readFixed(r, 10); err == nil {
+	if _, err := cur.fixed(10); err == nil {
+		t.Fatal("expected EOF")
+	}
+	if _, err := cur.fixed(-1); err == nil {
+		t.Fatal("expected an error for a negative length")
+	}
+	if _, err := cur.byte(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cur.byte(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cur.byte(); err == nil {
 		t.Fatal("expected EOF")
 	}
 }
@@ -162,8 +173,7 @@ func TestWriteReadNativeValueRoundTrip(t *testing.T) {
 		if err := writeNativeValue(b, c.typ, c.in); err != nil {
 			t.Fatalf("writeNativeValue(%s,%q): %v", c.typ, c.in, err)
 		}
-		br := bufio.NewReader(bytes.NewReader(b.Bytes()))
-		got, err := readValueAsString(br, c.typ)
+		got, err := readText(b.Bytes(), c.typ)
 		if err != nil {
 			t.Fatalf("readValueAsString(%s): %v", c.typ, err)
 		}
@@ -179,7 +189,7 @@ func TestWriteReadFloatValues(t *testing.T) {
 	if err := writeNativeValue(b, TypeFloat32, "3.5"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readValueAsString(bufio.NewReader(bytes.NewReader(b.Bytes())), TypeFloat32)
+	got, err := readText(b.Bytes(), TypeFloat32)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +201,7 @@ func TestWriteReadFloatValues(t *testing.T) {
 	if err := writeNativeValue(b, TypeFloat64, "1.25"); err != nil {
 		t.Fatal(err)
 	}
-	got, err = readValueAsString(bufio.NewReader(bytes.NewReader(b.Bytes())), TypeFloat64)
+	got, err = readText(b.Bytes(), TypeFloat64)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +215,7 @@ func TestWriteNativeValue_DateTime64(t *testing.T) {
 	if err := writeNativeValue(b, "DateTime64(3)", "2020-01-01 00:00:00.000"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readValueAsString(bufio.NewReader(bytes.NewReader(b.Bytes())), "DateTime64(3)")
+	got, err := readText(b.Bytes(), "DateTime64(3)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +228,7 @@ func TestWriteNativeValue_DateTime64(t *testing.T) {
 	if err := writeNativeValue(b, "DateTime64(3)", "1577836800000"); err != nil {
 		t.Fatal(err)
 	}
-	got, err = readValueAsString(bufio.NewReader(bytes.NewReader(b.Bytes())), "DateTime64(3)")
+	got, err = readText(b.Bytes(), "DateTime64(3)")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -242,7 +252,7 @@ func TestReadValueAsString_DateTime64Precision(t *testing.T) {
 		t.Run(test.typ+"_"+strconv.FormatInt(test.ticks, 10), func(t *testing.T) {
 			var data [8]byte
 			binary.LittleEndian.PutUint64(data[:], uint64(test.ticks))
-			got, err := readValueAsString(bufio.NewReader(bytes.NewReader(data[:])), test.typ)
+			got, err := readText(data[:], test.typ)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -252,7 +262,7 @@ func TestReadValueAsString_DateTime64Precision(t *testing.T) {
 		})
 	}
 	var data [8]byte
-	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader(data[:])), "DateTime64(10)"); err == nil {
+	if _, err := readText(data[:], "DateTime64(10)"); err == nil {
 		t.Fatal("accepted invalid DateTime64 precision")
 	}
 }
@@ -262,7 +272,7 @@ func TestWriteNativeValue_UnknownTypeAsString(t *testing.T) {
 	if err := writeNativeValue(b, "SomeUnknownType", "payload"); err != nil {
 		t.Fatal(err)
 	}
-	got, err := readValueAsString(bufio.NewReader(bytes.NewReader(b.Bytes())), "SomeUnknownType")
+	got, err := readText(b.Bytes(), "SomeUnknownType")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,16 +309,16 @@ func TestReadValueAsString_DateTimeWithTimezone(t *testing.T) {
 		// Sentinel UInt32 so we can detect over-read.
 		_ = binary.Write(b, binary.LittleEndian, uint32(0xDEADBEEF))
 
-		br := bufio.NewReader(bytes.NewReader(b.Bytes()))
-		got, err := readValueAsString(br, typ)
-		if err != nil {
-			t.Fatalf("%s: readValueAsString: %v", typ, err)
+		cur := testCursor(b.Bytes())
+		var c nativeColumn
+		if err := c.readValues(cur, typ, 1); err != nil {
+			t.Fatalf("%s: readValues: %v", typ, err)
 		}
-		if got != "2020-01-01 00:00:00" {
+		if got := string(c.text(new([]byte), 0)); got != "2020-01-01 00:00:00" {
 			t.Fatalf("%s: want 2020-01-01 00:00:00, got %q", typ, got)
 		}
-		// If readValueAsString consumed more than 4 bytes, the sentinel is lost.
-		next, err := readFixed(br, 4)
+		// If the read consumed more than 4 bytes, the sentinel is lost.
+		next, err := cur.fixed(4)
 		if err != nil {
 			t.Fatalf("%s: sentinel read: %v", typ, err)
 		}
@@ -325,8 +335,7 @@ func TestReadValueAsString_ShortBuffers(t *testing.T) {
 		"DateTime64(3)",
 	}
 	for _, typ := range types {
-		br := bufio.NewReader(bytes.NewReader(nil))
-		if _, err := readValueAsString(br, typ); err == nil {
+		if _, err := readText(nil, typ); err == nil {
 			t.Fatalf("%s: expected error on empty reader", typ)
 		}
 	}
@@ -335,8 +344,7 @@ func TestReadValueAsString_ShortBuffers(t *testing.T) {
 func TestReadValueAsString_Int8UInt8Empty(t *testing.T) {
 	// UInt8/Bool/Int8 call ReadByte which surfaces io.EOF.
 	for _, typ := range []string{TypeUInt8, TypeInt8, TypeBool} {
-		br := bufio.NewReader(bytes.NewReader(nil))
-		if _, err := readValueAsString(br, typ); err == nil {
+		if _, err := readText(nil, typ); err == nil {
 			t.Fatalf("%s: expected EOF", typ)
 		}
 	}
@@ -365,7 +373,7 @@ func TestWriteNativeBlockInfo(t *testing.T) {
 	if err := writeNativeBlockInfo(b); err != nil {
 		t.Fatal(err)
 	}
-	if err := skipBlockInfo(bufio.NewReader(bytes.NewReader(b.Bytes()))); err != nil {
+	if err := skipBlockInfo(testCursor(b.Bytes())); err != nil {
 		t.Fatalf("skipBlockInfo: %v", err)
 	}
 }
@@ -375,15 +383,15 @@ func TestWriteEmptyNativeBlock(t *testing.T) {
 	if err := writeEmptyNativeBlock(b); err != nil {
 		t.Fatal(err)
 	}
-	br := bufio.NewReader(bytes.NewReader(b.Bytes()))
-	if err := skipBlockInfo(br); err != nil {
+	cur := testCursor(b.Bytes())
+	if err := skipBlockInfo(cur); err != nil {
 		t.Fatal(err)
 	}
-	ncols, err := readUvarint(br)
+	ncols, err := cur.uvarint()
 	if err != nil || ncols != 0 {
 		t.Fatalf("numCols: %d err=%v", ncols, err)
 	}
-	nrows, err := readUvarint(br)
+	nrows, err := cur.uvarint()
 	if err != nil || nrows != 0 {
 		t.Fatalf("numRows: %d err=%v", nrows, err)
 	}
@@ -393,7 +401,7 @@ func TestSkipBlockInfo_UnknownField(t *testing.T) {
 	// fieldNum=7 is unknown, handler returns error.
 	buf := &bytes.Buffer{}
 	_ = writeUvarint(buf, 7)
-	if err := skipBlockInfo(bufio.NewReader(bytes.NewReader(buf.Bytes()))); err == nil {
+	if err := skipBlockInfo(testCursor(buf.Bytes())); err == nil {
 		t.Fatal("expected unknown field error")
 	}
 }
@@ -402,17 +410,17 @@ func TestSkipBlockInfo_ErrorOnRead(t *testing.T) {
 	// truncated field-1 payload (need 1 byte after fieldNum)
 	buf := &bytes.Buffer{}
 	_ = writeUvarint(buf, 1)
-	if err := skipBlockInfo(bufio.NewReader(bytes.NewReader(buf.Bytes()))); err == nil {
+	if err := skipBlockInfo(testCursor(buf.Bytes())); err == nil {
 		t.Fatal("expected read error on field 1 body")
 	}
 	// truncated field-2 payload (need 4 bytes)
 	buf.Reset()
 	_ = writeUvarint(buf, 2)
-	if err := skipBlockInfo(bufio.NewReader(bytes.NewReader(buf.Bytes()))); err == nil {
+	if err := skipBlockInfo(testCursor(buf.Bytes())); err == nil {
 		t.Fatal("expected read error on field 2 body")
 	}
 	// no fieldNum at all
-	if err := skipBlockInfo(bufio.NewReader(bytes.NewReader(nil))); err == nil {
+	if err := skipBlockInfo(testCursor(nil)); err == nil {
 		t.Fatal("expected error reading fieldNum")
 	}
 }
@@ -454,10 +462,13 @@ func TestMarshalTimeseriesNative_EmptyDataSet(t *testing.T) {
 	if err := marshalTimeseriesNative(b, ds, &timeseries.RequestOptions{}); err != nil {
 		t.Fatal(err)
 	}
-	// empty block — UnmarshalTimeseriesNative should see no rows and return
-	// ErrInvalidBody.
-	if _, err := UnmarshalTimeseriesNative(b.Bytes(), testTRQ.Clone()); err == nil {
-		t.Fatal("expected error on empty block")
+	// an empty block reads back as no results, as a TSV response without rows does
+	ts, err := UnmarshalTimeseriesNative(b.Bytes(), testTRQ.Clone())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ds := ts.(*dataset.DataSet); len(ds.Results) != 0 {
+		t.Fatalf("expected no results, got %d", len(ds.Results))
 	}
 }
 
@@ -500,9 +511,14 @@ func TestUnmarshalTimeseriesNative_NoBlockInfo(t *testing.T) {
 	}
 }
 
-func TestUnmarshalTimeseriesNative_EmptyReaderError(t *testing.T) {
-	if _, err := UnmarshalTimeseriesNative(nil, testTRQ.Clone()); err == nil {
-		t.Fatal("expected error on empty input")
+func TestUnmarshalTimeseriesNative_EmptyInput(t *testing.T) {
+	// ClickHouse answers a query without rows in Native with an empty body
+	ts, err := UnmarshalTimeseriesNative(nil, testTRQ.Clone())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ds := ts.(*dataset.DataSet); len(ds.Results) != 0 || ds.TimeRangeQuery == nil {
+		t.Fatalf("expected no results, got %v", ds.Results)
 	}
 }
 
@@ -619,23 +635,6 @@ func TestUnmarshalTimeseriesNativeReader_ZeroColsTerminator(t *testing.T) {
 	}
 	if ts == nil {
 		t.Fatal("nil timeseries")
-	}
-}
-
-func TestNopReaderBehavior(t *testing.T) {
-	r := &nopReader{data: []byte("world"), pos: 0}
-	buf := make([]byte, 3)
-	n, err := r.Read(buf)
-	if err != nil || n != 3 || string(buf) != "wor" {
-		t.Fatalf("read1: n=%d err=%v buf=%q", n, err, buf)
-	}
-	n, err = r.Read(buf)
-	if err != nil || n != 2 || string(buf[:n]) != "ld" {
-		t.Fatalf("read2: n=%d err=%v buf=%q", n, err, buf[:n])
-	}
-	n, err = r.Read(buf)
-	if n != 0 || !errors.Is(err, io.EOF) {
-		t.Fatalf("read3 want EOF: n=%d err=%v", n, err)
 	}
 }
 
@@ -854,20 +853,20 @@ func writeNativeValue(w io.Writer, typ, val string) error {
 
 func TestReadEnumValue_UnknownIndexAndErrors(t *testing.T) {
 	typ := "Enum8('a' = 1)"
-	got, err := readValueAsString(bufio.NewReader(bytes.NewReader([]byte{7})), typ)
+	got, err := readText([]byte{7}, typ)
 	if err != nil || got != "7" {
 		t.Fatalf("unknown index: got %q, %v", got, err)
 	}
-	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader(nil)), typ); err == nil {
+	if _, err := readText(nil, typ); err == nil {
 		t.Fatal("expected read error for empty Enum8")
 	}
-	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader([]byte{1})), "Enum16('a' = 1)"); err == nil {
+	if _, err := readText([]byte{1}, "Enum16('a' = 1)"); err == nil {
 		t.Fatal("expected read error for short Enum16")
 	}
-	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader([]byte{1})), "FixedString(x)"); err == nil {
+	if _, err := readText([]byte{1}, "FixedString(x)"); err == nil {
 		t.Fatal("expected error for invalid FixedString length")
 	}
-	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader([]byte{1})), "FixedString(4)"); err == nil {
+	if _, err := readText([]byte{1}, "FixedString(4)"); err == nil {
 		t.Fatal("expected read error for short FixedString")
 	}
 	members := parseEnumMembers("Enum8('x' = 1, 'y', 'z' = 3)")
@@ -882,7 +881,7 @@ func TestReadEnumValue_UnknownIndexAndErrors(t *testing.T) {
 // encodeWithClickHouseGo produces the wire bytes for one column of values
 // using the official client, so the reader is checked against the real
 // layout (byte order, null maps) rather than against this package's writer.
-func encodeWithClickHouseGo(t *testing.T, typ string, values ...any) *bufio.Reader {
+func encodeWithClickHouseGo(t *testing.T, typ string, values ...any) []byte {
 	t.Helper()
 	col, err := column.Type(typ).Column("x", &column.ServerContext{Revision: server.ServerRevision, Timezone: time.UTC})
 	if err != nil {
@@ -895,7 +894,7 @@ func encodeWithClickHouseGo(t *testing.T, typ string, values ...any) *bufio.Read
 	}
 	var buf proto.Buffer
 	col.Encode(&buf)
-	return bufio.NewReader(bytes.NewReader(buf.Buf))
+	return buf.Buf
 }
 
 func bigInt(text string) *big.Int {
@@ -923,7 +922,7 @@ func TestReadValueAsString_ScalarsFromClickHouseGo(t *testing.T) {
 		{"FixedString(6)", "abc", "abc"},
 		{"Bool", true, "1"},
 	} {
-		got, err := readValueAsString(encodeWithClickHouseGo(t, c.typ, c.in), c.typ)
+		got, err := readText(encodeWithClickHouseGo(t, c.typ, c.in), c.typ)
 		if err != nil {
 			t.Fatalf("%s: %v", c.typ, err)
 		}
@@ -941,12 +940,14 @@ func TestReadValueAsString_ScalarsFromClickHouseGo(t *testing.T) {
 		{"Decimal(76, 0)", "7", "7"},
 		{"Decimal(10, 3)", "12500", "12.500"},
 		{"Decimal(30, 2)", "-5", "-0.05"},
+		{"Decimal(9, 2)", "50", "0.50"},
+		{"Decimal(9, 1)", "-5", "-0.5"},
 		{"Decimal32(2)", "1477", "14.77"},
 		{"Decimal64(2)", "1477", "14.77"},
 		{"Decimal128(2)", "1477", "14.77"},
 		{"Decimal256(2)", "1477", "14.77"},
 	} {
-		got, err := readValueAsString(bufio.NewReader(bytes.NewReader(scaledDecimalBytes(c.typ, c.scaled))), c.typ)
+		got, err := readText(scaledDecimalBytes(c.typ, c.scaled), c.typ)
 		if err != nil || got != c.want {
 			t.Errorf("%s: got %q, %v; want %q", c.typ, got, err, c.want)
 		}
@@ -983,30 +984,28 @@ func scaledDecimalBytes(typ, scaled string) []byte {
 }
 
 func TestReadColumnValues_Nullable(t *testing.T) {
-	r := encodeWithClickHouseGo(t, "Nullable(Float64)", 1.5, nil, 2.25)
-	got, err := readColumnValues(r, "Nullable(Float64)", 3)
+	got, err := readTexts(encodeWithClickHouseGo(t, "Nullable(Float64)", 1.5, nil, 2.25), "Nullable(Float64)", 3)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{"1.5", nullToken, "2.25"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
-	r = encodeWithClickHouseGo(t, "Nullable(String)", nil, "a")
-	got, err = readColumnValues(r, "Nullable(String)", 2)
+	got, err = readTexts(encodeWithClickHouseGo(t, "Nullable(String)", nil, "a"), "Nullable(String)", 2)
 	if err != nil || got[0] != nullToken || got[1] != "a" {
 		t.Fatalf("Nullable(String): %v %v", got, err)
 	}
-	if _, err := readColumnValues(bufio.NewReader(bytes.NewReader([]byte{0})), "Nullable(UInt8)", 2); err == nil {
+	if _, err := readTexts([]byte{0}, "Nullable(UInt8)", 2); err == nil {
 		t.Fatal("expected short null map error")
 	}
-	if _, err := readColumnValues(bufio.NewReader(bytes.NewReader([]byte{0, 0, 1})), "Nullable(UInt16)", 2); err == nil {
+	if _, err := readTexts([]byte{0, 0, 1}, "Nullable(UInt16)", 2); err == nil {
 		t.Fatal("expected short value error")
 	}
 }
 
 func TestReadColumnValues_RejectsCompoundTypes(t *testing.T) {
 	for _, typ := range []string{"Nested(a UInt8)", "Variant(UInt8, String)", "Dynamic", "JSON", "Array(Variant(UInt8))"} {
-		_, err := readColumnValues(bufio.NewReader(bytes.NewReader(make([]byte, 64))), typ, 1)
+		_, err := readTexts(make([]byte, 64), typ, 1)
 		if !errors.Is(err, errUnsupportedColumnType) {
 			t.Errorf("%s: got %v, want unsupported column type", typ, err)
 		}
@@ -1023,7 +1022,7 @@ func TestUnmarshalNative_RejectsCustomSerialization(t *testing.T) {
 	_ = writeNativeString(b, "c")
 	_ = writeNativeString(b, "String")
 	b.WriteByte(1) // custom serialization flag set
-	_, err := UnmarshalTimeseriesNative(b.Bytes(), nil)
+	_, err := UnmarshalTimeseriesNative(b.Bytes(), testTRQ.Clone())
 	if !errors.Is(err, errUnsupportedSerialization) {
 		t.Fatalf("got %v, want unsupported serialization", err)
 	}
@@ -1031,15 +1030,15 @@ func TestUnmarshalNative_RejectsCustomSerialization(t *testing.T) {
 
 func TestReadDecimalValue_Invalid(t *testing.T) {
 	for _, typ := range []string{"Decimal(x, 2)", "Decimal64(-1)", "Decimal64(a)", "Decimal(10)", "DecimalFoo(1)"} {
-		if _, err := readValueAsString(bufio.NewReader(bytes.NewReader(make([]byte, 32))), typ); err == nil {
+		if _, err := readText(make([]byte, 32), typ); err == nil {
 			t.Errorf("%s: expected error", typ)
 		}
 	}
-	if _, err := readValueAsString(bufio.NewReader(bytes.NewReader([]byte{1})), "Decimal64(2)"); err == nil {
+	if _, err := readText([]byte{1}, "Decimal64(2)"); err == nil {
 		t.Error("expected short read error")
 	}
 	for _, typ := range []string{"Date32", "Int128", "UUID", "IPv4", "IPv6"} {
-		if _, err := readValueAsString(bufio.NewReader(bytes.NewReader([]byte{1})), typ); err == nil {
+		if _, err := readText([]byte{1}, typ); err == nil {
 			t.Errorf("%s: expected short read error", typ)
 		}
 	}
@@ -1062,8 +1061,7 @@ func TestNativeNullableTagRoundTrip(t *testing.T) {
 	} {
 		_ = writeNativeString(block, col.name)
 		_ = writeNativeString(block, col.typ)
-		raw, _ := io.ReadAll(encodeWithClickHouseGo(t, col.typ, col.values...))
-		block.Write(raw)
+		block.Write(encodeWithClickHouseGo(t, col.typ, col.values...))
 	}
 	trq := testTRQ.Clone()
 	ts, err := UnmarshalTimeseriesNative(block.Bytes(), trq)
@@ -1075,26 +1073,26 @@ func TestNativeNullableTagRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// re-read the marshalled block: the null map must mark the NULL tag row
-	br := bufio.NewReader(bytes.NewReader(out.Bytes()))
-	if peek, _ := br.Peek(1); peek[0] == 1 {
-		if err := skipBlockInfo(br); err != nil {
+	cur := testCursor(out.Bytes())
+	if cur.b[0] == 1 {
+		if err := skipBlockInfo(cur); err != nil {
 			t.Fatal(err)
 		}
 	}
-	numCols, _ := readUvarint(br)
-	numRows, _ := readUvarint(br)
+	numCols, _ := cur.uvarint()
+	numRows, _ := cur.uvarint()
 	seen := map[string][]string{}
 	for range numCols {
-		name, _ := readString(br)
-		typ, _ := readString(br)
-		if _, err := br.ReadByte(); err != nil { // custom serialization flag
+		name, _ := cur.str()
+		typ, _ := cur.str()
+		if _, err := cur.byte(); err != nil { // custom serialization flag
 			t.Fatal(err)
 		}
-		vals, err := readColumnValues(br, typ, numRows)
-		if err != nil {
+		var col nativeColumn
+		if err := col.readValues(cur, string(typ), int(numRows)); err != nil {
 			t.Fatalf("%s (%s): %v", name, typ, err)
 		}
-		seen[name] = vals
+		seen[string(name)] = col.texts(int(numRows))
 	}
 	if !slices.Contains(seen["cab"], nullToken) || !slices.Contains(seen["cab"], "blue") {
 		t.Fatalf("nullable tag not preserved: %v", seen["cab"])
@@ -1106,7 +1104,7 @@ func TestNativeNullableTagRoundTrip(t *testing.T) {
 
 // encodeColumnWithPrefix is encodeWithClickHouseGo plus the serialization
 // state prefix that LowCardinality columns carry in Native blocks.
-func encodeColumnWithPrefix(t *testing.T, typ string, values ...any) *bufio.Reader {
+func encodeColumnWithPrefix(t *testing.T, typ string, values ...any) []byte {
 	t.Helper()
 	col, err := column.Type(typ).Column("x", &column.ServerContext{Revision: server.ServerRevision, Timezone: time.UTC})
 	if err != nil {
@@ -1124,7 +1122,7 @@ func encodeColumnWithPrefix(t *testing.T, typ string, values ...any) *bufio.Read
 		}
 	}
 	col.Encode(&buf)
-	return bufio.NewReader(bytes.NewReader(buf.Buf))
+	return buf.Buf
 }
 
 func TestReadColumnValues_CompoundTypes(t *testing.T) {
@@ -1148,33 +1146,35 @@ func TestReadColumnValues_CompoundTypes(t *testing.T) {
 		{"LowCardinality(Nullable(String))", []any{"a", nil, "a"}, []string{"a", nullToken, "a"}, true},
 		{"Array(LowCardinality(String))", []any{[]string{"p", "q"}}, []string{"['p','q']"}, true},
 	} {
-		var r *bufio.Reader
+		var data []byte
 		if c.prefix {
-			r = encodeColumnWithPrefix(t, c.typ, c.in...)
+			data = encodeColumnWithPrefix(t, c.typ, c.in...)
 		} else {
-			r = encodeWithClickHouseGo(t, c.typ, c.in...)
+			data = encodeWithClickHouseGo(t, c.typ, c.in...)
 		}
-		got, err := readColumn(r, c.typ, uint64(len(c.in)))
-		if err != nil {
+		cur := testCursor(data)
+		var col nativeColumn
+		if err := col.readColumn(cur, c.typ, len(c.in)); err != nil {
 			t.Fatalf("%s: %v", c.typ, err)
 		}
-		if !reflect.DeepEqual(got, c.want) {
+		if got := col.texts(len(c.in)); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s: got %q, want %q", c.typ, got, c.want)
 		}
-		if rest, _ := io.ReadAll(r); len(rest) != 0 {
-			t.Errorf("%s: %d bytes left unread", c.typ, len(rest))
+		if rest := cur.remaining(); rest != 0 {
+			t.Errorf("%s: %d bytes left unread", c.typ, rest)
 		}
 	}
-	if _, err := readColumn(bufio.NewReader(bytes.NewReader(make([]byte, 24))), "LowCardinality(String)", 1); err == nil {
+	var col nativeColumn
+	if err := col.readColumn(testCursor(make([]byte, 24)), "LowCardinality(String)", 1); err == nil {
 		t.Error("expected key version error")
 	}
-	if _, err := readColumn(bufio.NewReader(bytes.NewReader([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 1})), "Tuple(a LowCardinality(String), b UInt8)", 1); err == nil {
+	if err := col.readColumn(testCursor([]byte{1, 0, 0, 0, 0, 0, 0, 0, 0, 1}), "Tuple(a LowCardinality(String), b UInt8)", 1); err == nil {
 		t.Error("expected error for a short nested LowCardinality column")
 	}
-	if _, err := readColumnValues(bufio.NewReader(bytes.NewReader([]byte{2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0})), "Array(UInt8)", 2); err == nil {
+	if _, err := readTexts([]byte{2, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0}, "Array(UInt8)", 2); err == nil {
 		t.Error("expected invalid offsets error")
 	}
-	if _, err := readColumnValues(bufio.NewReader(bytes.NewReader(nil)), "Map(String)", 1); err == nil {
+	if _, err := readTexts(nil, "Map(String)", 1); err == nil {
 		t.Error("expected Map arity error")
 	}
 	if got := splitTypeList("Map(String, UInt8), Tuple(a String, b Enum8('x,y' = 1))"); len(got) != 2 {
@@ -1197,7 +1197,7 @@ func TestCompoundNativeRoundTrip(t *testing.T) {
 		{"Tuple(String, UInt8)", []any{[]any{"x", uint8(2)}}},
 		{"Array(Array(UInt16))", []any{[][]uint16{{1}, {2, 3}}}},
 	} {
-		text, err := readColumnValues(encodeWithClickHouseGo(t, c.typ, c.in...), c.typ, uint64(len(c.in)))
+		text, err := readTexts(encodeWithClickHouseGo(t, c.typ, c.in...), c.typ, len(c.in))
 		if err != nil {
 			t.Fatalf("%s: %v", c.typ, err)
 		}
@@ -1209,7 +1209,7 @@ func TestCompoundNativeRoundTrip(t *testing.T) {
 		if err := server.EncodeNativeBlock(&out, []server.Column{{Name: "x", Type: c.typ}}, [][]any{vals}, uint64(len(vals))); err != nil {
 			t.Fatalf("%s: encode %q: %v", c.typ, text, err)
 		}
-		want, _ := io.ReadAll(encodeWithClickHouseGo(t, c.typ, c.in...))
+		want := encodeWithClickHouseGo(t, c.typ, c.in...)
 		if !bytes.HasSuffix(out.Bytes(), want) {
 			t.Errorf("%s: re-encoded bytes differ for %q", c.typ, text)
 		}
@@ -1218,4 +1218,35 @@ func TestCompoundNativeRoundTrip(t *testing.T) {
 
 func formatEpochForType(ep epoch.Epoch, tfd timeseries.FieldDefinition) string {
 	return newNativeTimeFormat(tfd).format(ep)
+}
+
+// testCursor reads data as the whole of the input
+func testCursor(data []byte) *nativeCursor {
+	return &nativeCursor{b: data, final: true}
+}
+
+// readTexts reads n values of typ from data, the whole of the input, as their TSV texts
+func readTexts(data []byte, typ string, n int) ([]string, error) {
+	cur := testCursor(data)
+	var c nativeColumn
+	if err := c.readValues(cur, typ, n); err != nil {
+		return nil, cur.eof(err)
+	}
+	return c.texts(n), nil
+}
+
+func readText(data []byte, typ string) (string, error) {
+	texts, err := readTexts(data, typ, 1)
+	if err != nil {
+		return "", err
+	}
+	return texts[0], nil
+}
+
+func (c *nativeColumn) texts(n int) []string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = string(c.text(new([]byte), i))
+	}
+	return out
 }

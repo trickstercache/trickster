@@ -43,18 +43,23 @@ UInt64	String	Float64	Float64
 1577836920000	localhost	1	39
 `
 
-const testDataCSV = `1577836800000,localhost,1,54
-1577836860000,localhost,1,27
-1577836920000,localhost,1,39
+// as ClickHouse writes CSV, which quotes every text
+const testDataCSV = `1577836800000,"localhost",1,54
+1577836860000,"localhost",1,27
+1577836920000,"localhost",1,39
 `
 
+const testDataTSV = "1577836800000\tlocalhost\t1\t54\n1577836860000\tlocalhost\t1\t27\n" +
+	"1577836920000\tlocalhost\t1\t39\n"
+
+// as ClickHouse writes JSON, with numbers bare
 const testDataJSONMinified = `{"meta":[{"name":"t","type":"UInt64"},{"name":"` +
 	`hostname","type":"String"},{"name":"avg_query","type":"Float64"},{"name"` +
-	`:"avg_global_thread","type":"Float64"}],"data":[{"t":"1577836800000","ho` +
-	`stname":"localhost","avg_query":"1","avg_global_thread":"54"},{"t":"1577` +
-	`836860000","hostname":"localhost","avg_query":"1","avg_global_thread":"2` +
-	`7"},{"t":"1577836920000","hostname":"localhost","avg_query":"1","avg_glo` +
-	`bal_thread":"39"}],"rows":3}`
+	`:"avg_global_thread","type":"Float64"}],"data":[{"t":1577836800000,"ho` +
+	`stname":"localhost","avg_query":1,"avg_global_thread":54},{"t":1577` +
+	`836860000,"hostname":"localhost","avg_query":1,"avg_global_thread":2` +
+	`7},{"t":1577836920000,"hostname":"localhost","avg_query":1,"avg_glo` +
+	`bal_thread":39}],"rows":3}`
 
 var testTRQ = &timeseries.TimeRangeQuery{
 	Statement: testStatement,

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"io"
 	"math"
+	"regexp"
 	"testing"
 	"time"
 
@@ -99,6 +100,8 @@ func jsonBranchSeries(timeType timeseries.FieldDataType) *dataset.Series {
 	return dataset.NewSeries(h, pts)
 }
 
+var legacyMissingValue = regexp.MustCompile(`:([,}])`)
+
 func TestWriteJSONMatchesLegacy(t *testing.T) {
 	for _, tt := range []timeseries.FieldDataType{timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano,
 		timeseries.Int64} {
@@ -114,7 +117,9 @@ func TestWriteJSONMatchesLegacy(t *testing.T) {
 			var want, got bytes.Buffer
 			require.NoError(t, legacyWriteJSON(d, &want))
 			require.NoError(t, writeJSON(d, &got))
-			require.Equal(t, want.String(), got.String())
+			// the legacy writer wrote nothing for a NaN or an infinity, where null is written now
+			require.Equal(t, legacyMissingValue.ReplaceAllString(want.String(), `:null$1`), got.String())
+			require.True(t, json.Valid(got.Bytes()))
 		}
 	}
 }

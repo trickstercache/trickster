@@ -79,12 +79,19 @@ A JSON Lines body is a sequence of JSON values. A walk given to `NewJSON` reads 
 
 A format that fits neither decoder can implement `stream.Decoder` directly. The conformance checks feed a decoder with `Write` calls, with a single `ReadFrom` call, or with `Write` calls followed by one `ReadFrom`, and expect the same result each way. Errors should be sticky, and `Finish` is called once.
 
+The ClickHouse Native decoder (`clickhouse/model/decoder_native.go`) is an example for a binary format of self-contained blocks:
+- It buffers its input and reads each block once all of it has arrived, then drops it. Only the block being received is held, not the whole body.
+- A block that hasn't all arrived is read again only once the buffer has doubled, so the reads it repeats cost at most as much as the body itself.
+- `ReadFrom` reads straight into the buffer, and the buffer and the block's column storage are pooled between decodes.
+- Each column is read whole into typed storage, and the rows are then added to a row-mode Builder.
+
 ## Building the DataSet
 
 `dataset.NewBuilder(trq, opts)` returns a Builder for one response. `BuilderOptions` sets:
 
 - `Fields`: the timestamp, tag and value fields of each row.
-- `SeriesName` and `QueryStatement`: copied into each series header the Builder creates.
+- `SeriesName` and `QueryStatement`: copied into each series header the Builder creates. `NameSeries`, when set, names each new series from its tags instead, once per series.
+- `AddValueField`, in row mode, adds a value field after rows were committed. A format that leaves null values out, as InfluxDB 3's JSON does, uses it to add a column it first sees on a later row. Series created earlier are widened, and their earlier rows hold null in the new column.
 - `Duplicates`: what to do with points in one series that share an epoch: `DuplicatesKeep`, `DuplicatesFirstWins`, `DuplicatesLastWins` or `DuplicatesError`.
 - `SortSeries`: sorts each result's series by their tags when the build finishes.
 - `TagString`: converts a tag's raw bytes to its value in the series' `Tags`. By default the bytes are used as they are; `stream.JSONTagString` unquotes JSON strings.
@@ -163,6 +170,8 @@ A provider that wraps the DataSet in its own `Timeseries` type can do so in its 
   - `Unknown` infers a `bool` or number from JSON-style literals and falls back to `string`.
 - `epoch.ParseRFC3339(raw, layout)` parses a time as `time.Parse` does with `time.RFC3339` or `time.RFC3339Nano`. `epoch.ParseCanonicalTime(raw, zoned)` parses only the canonical UTC form, `YYYY-MM-DDTHH:MM:SS` with an optional fraction, followed by `Z` when `zoned` and by nothing when not, and reports whether it did. Neither allocates for a canonical time, and they return exactly what `time.Parse` would.
 - `epoch.AppendCanonicalTime(dst, e, fraction, zoned)` is the inverse for renderers: it writes what `time.Time.AppendFormat` writes with `time.RFC3339`, `time.RFC3339Nano`, or `time.RFC3339Nano` without its zone. It is as fast as Go's own formatting of the two RFC 3339 layouts, and more than three times faster for the zone-less one, which Go formats through its general layout engine.
+- `epoch.ParseSQLDateTime(raw)` and `epoch.ParseSQLDate(raw)` parse `YYYY-MM-DD HH:MM:SS`, with an optional fraction after a period, and `YYYY-MM-DD`. They return exactly what `time.Parse` returns in UTC with `2006-01-02 15:04:05.999999999` and `2006-01-02`, and report `false` for any other text so a caller can fall back. Neither allocates.
+- `Epoch.AppendFormat` writes the SQL date and time layouts without building a `time.Time`, more than three times faster than `time.Time.AppendFormat`, and RFC 3339 with `AppendCanonicalTime`.
 - `stream.ParseJSONValue(raw, dt)` parses a raw JSON value. `null` is `nil`, and quoted values are unquoted first, so numbers that an API sends as strings still parse as numbers.
 
 Parse errors wrap `stream.ErrInvalidValue`, which wraps `timeseries.ErrInvalidBody`.
@@ -251,4 +260,4 @@ func newTSVDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 4. Compare the old and new decoders with `streamtest.Bench`.
 5. Point the Modeler's wire unmarshalers at the adapters, and move the old decoder into a `_test.go` file as the `Legacy` oracle.
 
-Formats that send each series as one block, with its points in time order, map directly onto series mode; examples are Prometheus, InfluxQL JSON and Graphite. Flux CSV uses series mode too: each of its tables is one series, and each can have a different schema, which row mode's fixed fields can't follow. Formats that send rows in no particular order use row mode and rely on the Builder to sort when needed; examples are InfluxDB 3 SQL, ClickHouse and Druid. The MySQL provider's wire-protocol path never builds a DataSet, so it is not a candidate.
+Formats that send each series as one block, with its points in time order, map directly onto series mode; examples are Prometheus, InfluxQL JSON and Graphite. Flux CSV uses series mode too: each of its tables is one series, and each can have a different schema, which row mode's fixed fields can't follow. Formats that send rows in no particular order use row mode and rely on the Builder to sort when needed; examples are InfluxDB 3 SQL, ClickHouse and Druid. ClickHouse's series interleave row by row, as a `GROUP BY` bucket holds one row per series, so it uses row mode with `NameSeries` rather than reopening a series for every row. The MySQL provider's wire-protocol path never builds a DataSet, so it is not a candidate.

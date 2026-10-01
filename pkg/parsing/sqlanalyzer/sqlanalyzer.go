@@ -188,6 +188,12 @@ type QueryPlan struct {
 	// it, and no shared code interprets it.
 	OutputFormat byte
 	Renderer     ExtentRenderer
+	// ReadsZone reports that the statement reads the session's time zone other than through its bucket,
+	// whose alignment a provider checks against the zone: its rows then depend on the zone
+	ReadsZone bool
+	// ZonedBounds reports a primary time bound written as text or a date, which the database reads in
+	// the session's zone and the analysis reads as UTC, so it's only right in UTC
+	ZonedBounds bool
 }
 
 // StepAlignments are the step alignment modes a delta-cacheable SQL plan supports

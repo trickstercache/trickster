@@ -88,6 +88,9 @@ type logSeries struct {
 	unordered        bool
 	// whether the series took its width from its first row, so shorter rows are padded with nulls
 	lazy bool
+	// the width of the rows committed before the series was widened; columns from it on are read
+	// within each row's own width (0 when never widened)
+	base int
 	// whether an in-order row repeated the last epoch, which Finish resolves by the policy
 	dups bool
 }
@@ -156,6 +159,34 @@ func (l *ColumnLog) AddSeries(cols int) int {
 		l.stats = append(l.stats, logColumn{})
 	}
 	return len(l.series) - 1
+}
+
+// Widen grows the rows of a series to cols values. The rows it has committed hold null in the new
+// columns; a lazy series not yet given its width, or one already as wide, is left as it is.
+func (l *ColumnLog) Widen(series, cols int) {
+	s := &l.series[series]
+	if s.cols < 0 || cols <= s.cols {
+		return
+	}
+	if s.rows > 0 && s.base == 0 {
+		s.base = s.cols
+	}
+	// the series' stats move to the end, where they can grow
+	stat := len(l.stats)
+	l.stats = append(l.stats, l.stats[s.stat:s.stat+s.cols]...)
+	for range cols - s.cols {
+		var st logColumn
+		if s.rows > 0 {
+			st.kt.add(KindNull)
+		}
+		l.stats = append(l.stats, st)
+	}
+	s.stat, s.cols = stat, cols
+}
+
+// Cols returns the number of values each row of a series holds, or -1 for a lazy series without rows.
+func (l *ColumnLog) Cols(series int) int {
+	return l.series[series].cols
 }
 
 // Series returns the number of series added.
@@ -467,8 +498,13 @@ func (l *ColumnLog) Finish() ([]Segment, error) {
 		epochs, cols = epochs[n:], cols[s.cols:]
 		// columns of one fixed-width kind throughout are written together, a row's cells at a time
 		fixed = fixed[:0]
+		// a widened series' newer columns aren't in its earlier rows, so they're read within each row
+		bounded := s.cols
+		if s.base > 0 {
+			bounded = s.base
+		}
 		for c := range s.cols {
-			if k, tagged := l.stats[s.stat+c].kt.result(); !tagged && !k.IsBytes() && k != KindExt {
+			if k, tagged := l.stats[s.stat+c].kt.result(); c < bounded && !tagged && !k.IsBytes() && k != KindExt {
 				seg.cols[c] = Column{kind: k, vals: vals[c*n : (c+1)*n : (c+1)*n]}
 				fixed = append(fixed, fixedColumn{c: c, vals: seg.cols[c].vals})
 			}
@@ -482,19 +518,28 @@ func (l *ColumnLog) Finish() ([]Segment, error) {
 		}
 		for c := range s.cols {
 			k, tagged := l.stats[s.stat+c].kt.result()
-			if !tagged && !k.IsBytes() && k != KindExt {
+			if c < bounded && !tagged && !k.IsBytes() && k != KindExt {
 				continue
 			}
 			var colTags []Kind
 			if tagged {
 				colTags, tags = tags[:n:n], tags[n:]
 			}
-			seg.cols[c], data = l.writeColumn(rows, c, vals[c*n:(c+1)*n:(c+1)*n], colTags, data, l.stats[s.stat+c].exts)
+			seg.cols[c], data = l.writeColumn(rows, c, vals[c*n:(c+1)*n:(c+1)*n], colTags, data,
+				l.stats[s.stat+c].exts, c >= bounded)
 		}
 		vals = vals[s.cols*n:]
 		segs[i] = seg
 	}
 	return segs, nil
+}
+
+// rowEnd returns where a committed row's values end, which is where the next row's begin
+func (l *ColumnLog) rowEnd(r int32) int {
+	if next := int(r) + 1; next < len(l.rowCells) {
+		return int(l.rowCells[next])
+	}
+	return len(l.cells)
 }
 
 type fixedColumn struct {
@@ -548,7 +593,7 @@ func (l *ColumnLog) dedupe(rows []int32) ([]int32, error) {
 // writeColumn fills vals and tags with value c of each row, appending its bytes to data, and returns
 // the Column and the rest of data
 func (l *ColumnLog) writeColumn(rows []int32, c int, vals []uint64, tags []Kind, data []byte,
-	exts int,
+	exts int, bounded bool,
 ) (Column, []byte) {
 	start := len(data)
 	var ext []any
@@ -558,7 +603,12 @@ func (l *ColumnLog) writeColumn(rows []int32, c int, vals []uint64, tags []Kind,
 	var kt kindTracker
 	for j, r := range rows {
 		cell := int(l.rowCells[r]) + c
-		k, v := l.kinds[cell], l.cells[cell]
+		var k Kind
+		var v uint64
+		// a row committed before its series was widened ends before the column
+		if !bounded || cell < l.rowEnd(r) {
+			k, v = l.kinds[cell], l.cells[cell]
+		}
 		switch {
 		case k.IsBytes():
 			b := l.dataAt(v)

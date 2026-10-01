@@ -59,13 +59,13 @@ func TestRenderRange(t *testing.T) {
 		// an inclusive upper renders one tick below the exclusive end, or at the client's own value
 		{
 			"start edge of an inclusive range", " AND ts <= toDateTime(1756671913)", start,
-			[]string{rangeLower, "ts <= toDateTime64('2025-08-31 20:20:59.999999999', 9)"},
+			[]string{rangeLower, "ts <= toDateTime64('2025-08-31 20:20:59.999999999', 9, 'UTC')"},
 			"", nil,
 		},
 		{
 			"inclusive end edge", " AND ts <= toDateTime(1756671913)",
 			timeseries.PartialBucket{Lower: u(1756671900), Upper: u(1756671913), UpperInclusive: true},
-			[]string{"ts <= toDateTime64('2025-08-31 20:25:13', 9)"},
+			[]string{"ts <= toDateTime64('2025-08-31 20:25:13', 9, 'UTC')"},
 			"", nil,
 		},
 		// a statement with no upper bound sends a range running to now with none

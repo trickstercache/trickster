@@ -54,8 +54,8 @@ func cpuRow(table int, at, value, field, host string) string {
 		host + "\n"
 }
 
-// bodies the stream decoder must decode exactly as the decoder it replaced did
-var legacyBodies = map[string]string{
+// bodies every feed of the stream decoder must decode alike
+var conformanceBodies = map[string]string{
 	"response":     testFluxResponseCSV1,
 	"data set":     testDataSetAsCSV,
 	"two tables":   testFluxResponseCSV1 + "\n\n" + secondTableCSV,
@@ -96,17 +96,17 @@ const secondTableCSV = `#datatype,string,long,dateTime:RFC3339,double,string,str
 func conformance(t *testing.T, body string) {
 	t.Helper()
 	streamtest.Conformance(t, newDecoder, streamtest.Case{
-		TRQ: decoderTRQ(), Body: []byte(body), Legacy: legacyUnmarshalTimeseriesReader,
+		TRQ: decoderTRQ(), Body: []byte(body),
 	})
 }
 
-func TestDecoderMatchesLegacy(t *testing.T) {
-	for name, body := range legacyBodies {
+func TestDecoderConformance(t *testing.T) {
+	for name, body := range conformanceBodies {
 		t.Run(name, func(t *testing.T) { conformance(t, body) })
 	}
 }
 
-func TestDecoderMatchesLegacyAtScale(t *testing.T) {
+func TestDecoderConformanceAtScale(t *testing.T) {
 	rng := weaktest.NewRand(7, 7)
 	for trial := range 20 {
 		t.Run(strconv.Itoa(trial), func(t *testing.T) { conformance(t, string(randomBody(rng))) })
@@ -170,7 +170,6 @@ func TestDecoderErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			streamtest.Conformance(t, newDecoder, streamtest.Case{
 				TRQ: decoderTRQ(), Body: []byte(body), WantErr: streamtest.ErrAny,
-				Legacy: legacyUnmarshalTimeseriesReader,
 			})
 		})
 	}
@@ -202,7 +201,7 @@ func TestDecoderDepartures(t *testing.T) {
 
 func TestDecoderKeepsNothingOfItsInput(t *testing.T) {
 	// a decoded DataSet must not change when the buffer it was decoded from is reused
-	for _, body := range [][]byte{fluxBody(20, 30), []byte(legacyBodies["quoted"]), []byte(legacyBodies["types"])} {
+	for _, body := range [][]byte{fluxBody(20, 30), []byte(conformanceBodies["quoted"]), []byte(conformanceBodies["types"])} {
 		pristine := bytes.Clone(body)
 		ts, err := UnmarshalTimeseries(body, decoderTRQ())
 		require.NoError(t, err)
@@ -242,7 +241,6 @@ func BenchmarkDecoder(b *testing.B) {
 		{"10000x10", 10000, 10},
 	} {
 		body := fluxBody(shape.series, shape.points)
-		b.Run(shape.name+"/legacy", func(b *testing.B) { streamtest.Bench(b, legacyUnmarshalTimeseriesReader, trq, body) })
 		b.Run(shape.name+"/stream", func(b *testing.B) {
 			streamtest.Bench(b, stream.ReaderUnmarshaler(newDecoder), trq, body)
 		})

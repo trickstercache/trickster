@@ -58,7 +58,6 @@ var legacyBodies = map[string]string{
 		`{"time":"2024-01-01T00:02:00","i":"9","f":"1e3","s":false,"b":"F","ns":"-12","fs":"","bs":"maybe","o":[true],"a":3,"z":1},` +
 		`{"time":"2024-01-01T00:03:00","i":1e400,"f":1e400,"s":1e400,"b":1e400,"ns":true,"fs":{"x":1},"bs":null,"o":null,"a":null,"z":false}]`,
 	"json first null":   `[{"time":"2024-01-01T00:00:00","v":null,"s":""},{"time":"2024-01-01T00:01:00","v":7,"s":""},{"time":"2024-01-01T00:02:00","v":null,"s":"2"}]`,
-	"json omitted":      `[{"time":"2024-01-01T00:00:00","host":"a","a":1,"b":2},{"time":"2024-01-01T00:01:00","host":"a","b":3},{"b":4,"time":"2024-01-01T00:02:00","a":5,"extra":6}]`,
 	"json late time":    `[{"host":"a","v":1},{"host":"a","v":2,"time":"2024-01-01T00:01:00"}]`,
 	"json no time":      `[{"host":"a","v":1},{"host":"b","v":2}]`,
 	"json time forms":   `[{"time":"2024-01-01T00:00:00,25","v":0},{"time":"2024-01-01T00:00:00.5","v":1},{"time":"2024-01-01T00:00:01Z","v":2},{"time":"2024-01-01T01:00:02+01:00","v":3},{"time":"2024-01-01 00:00:03.25","v":4},{"time":1704067300,"v":6},{"time":1704067301000,"v":7},{"time":1704067302000000,"v":8},{"time":1704067303000000000,"v":9},{"time":"1704067304","v":10},{"time":1.5,"v":11},{"time":true,"v":12},{"time":null,"v":13},{"time":"x","v":14},{"time":{},"v":15},{"time":"2024-01-02","v":5}]`,
@@ -68,7 +67,6 @@ var legacyBodies = map[string]string{
 	"json dropped type": `[{"host":"a","v":"x"},{"time":"2024-01-01T00:00:00","host":"a","v":2}]`,
 	"json null rows":    `[{"time":"2024-01-01T00:00:00","v":1},null,{"time":"2024-01-01T00:01:00","v":2},null]`,
 	"json empty":        `[]`,
-	"json empty first":  `[{},{"time":"2024-01-01T00:00:00","v":1}]`,
 	"json repeated":     `[{"time":"2024-01-01T00:00:00","v":1},{"time":"2024-01-01T00:01:00","v":2,"v":3,"time":"2024-01-01T00:02:00"}]`,
 	"json duplicates":   `[{"time":"2024-01-01T00:00:00","host":"a","v":1},{"time":"2024-01-01T00:00:00","host":"a","v":2},{"time":"2024-01-01T00:01:00","host":"a","v":3}]`,
 	"json whitespace":   "[ \n{ \"time\" : \"2024-01-01T00:00:00\" , \"v\" : 1 } ,\n\t{\"time\":\"2024-01-01T00:01:00\",\"v\":2}\n]\n",
@@ -246,6 +244,28 @@ func TestDecoderDepartures(t *testing.T) {
 			require.Equal(t, []any{int64(2)}, s.Points()[0].Values)
 		}
 	})
+	t.Run("a column or tag a later row names is kept", func(t *testing.T) {
+		// InfluxDB 3 leaves a row's nulls out of JSON, so the first row needn't name every column
+		ds := decode(t, `[{"time":"2024-01-01T00:00:00","a":1,"b":2},{"time":"2024-01-01T00:01:00","host":"x","b":3},`+
+			`{"b":4,"time":"2024-01-01T00:02:00","a":5,"extra":"e"}]`)
+		sl := ds.Results[0].SeriesList
+		require.Len(t, sl, 2)
+		for _, s := range sl {
+			require.Equal(t, []string{"a", "b", "extra"}, fieldNames(s.Header.ValueFieldsList))
+			require.Equal(t, []string{"host"}, fieldNames(s.Header.TagFieldsList))
+		}
+		require.Equal(t, dataset.Tags{"host": ""}, sl[0].Header.Tags)
+		pts := sl[0].Points()
+		require.Equal(t, []any{int64(1), int64(2), nil}, pts[0].Values)
+		require.Equal(t, []any{int64(5), int64(4), "e"}, pts[1].Values)
+		require.Equal(t, []any{nil, int64(3), nil}, sl[1].Points()[0].Values)
+		// a tag no row names isn't a column, and an empty first row names nothing
+		ds = decode(t, `[{},{"time":"2024-01-01T00:00:00","v":1}]`)
+		s := ds.Results[0].SeriesList[0]
+		require.Empty(t, s.Header.TagFieldsList)
+		require.Empty(t, s.Header.Tags)
+		require.Equal(t, []any{int64(1)}, s.Points()[0].Values)
+	})
 	t.Run("JSON Lines are JSON values one after another", func(t *testing.T) {
 		ds := decode(t, "{\"time\":\"2024-01-01T00:00:00\",\n\"v\":1}{\"time\":\"2024-01-01T00:01:00\",\"v\":2}\n")
 		require.Equal(t, 2, ds.Results[0].SeriesList[0].PointCount())
@@ -261,6 +281,14 @@ func TestDecoderDepartures(t *testing.T) {
 			})
 		})
 	}
+}
+
+func fieldNames(fds timeseries.FieldDefinitions) []string {
+	names := make([]string, len(fds))
+	for i, fd := range fds {
+		names[i] = fd.Name
+	}
+	return names
 }
 
 func TestDecoderKeepsNothingOfItsInput(t *testing.T) {

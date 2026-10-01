@@ -19,7 +19,8 @@ package epoch
 import "time"
 
 const (
-	// the length of a canonical time without its fraction or zone
+	// the lengths of YYYY-MM-DD, and of a canonical time without its fraction or zone
+	dateLen          = len("2006-01-02")
 	canonicalTimeLen = len("2006-01-02T15:04:05")
 	// the most fractional digits time.Parse reads; it drops any after them
 	maxFractionDigits = 9
@@ -34,21 +35,65 @@ const (
 // time.Parse returns for that text with time.RFC3339Nano, or for the same layout without its zone,
 // and false for any other text.
 func ParseCanonicalTime(raw []byte, zoned bool) (Epoch, bool) {
-	if len(raw) < canonicalTimeLen || raw[4] != '-' || raw[7] != '-' || raw[10] != 'T' ||
-		raw[13] != ':' || raw[16] != ':' {
+	e, rest, ok := parseCivil(raw, 'T')
+	if !ok {
 		return 0, false
 	}
-	year, ok := twoDigits(raw[0:2])
-	lo, ok2 := twoDigits(raw[2:4])
-	month, ok3 := twoDigits(raw[5:7])
-	day, ok4 := twoDigits(raw[8:10])
-	hour, ok5 := twoDigits(raw[11:13])
-	minute, ok6 := twoDigits(raw[14:16])
-	sec, ok7 := twoDigits(raw[17:19])
-	year = year*100 + lo
-	if !ok || !ok2 || !ok3 || !ok4 || !ok5 || !ok6 || !ok7 || month < 1 || month > 12 || day < 1 ||
-		day > daysIn(month, year) || hour > 23 || minute > 59 || sec > 59 {
+	if zoned {
+		if len(rest) != 1 || rest[0] != 'Z' {
+			return 0, false
+		}
+	} else if len(rest) != 0 {
 		return 0, false
+	}
+	return e, true
+}
+
+// ParseSQLDateTime parses a UTC time written as YYYY-MM-DD HH:MM:SS[.fraction], as time.Parse would
+// with "2006-01-02 15:04:05.999999999", and returns false for any other text.
+func ParseSQLDateTime(raw []byte) (Epoch, bool) {
+	e, rest, ok := parseCivil(raw, ' ')
+	if !ok || len(rest) != 0 {
+		return 0, false
+	}
+	return e, true
+}
+
+// ParseSQLDate parses raw when it holds a date written as YYYY-MM-DD, returning what time.Parse
+// returns for it in UTC with the layout "2006-01-02", and false for any other text.
+func ParseSQLDate(raw []byte) (Epoch, bool) {
+	if len(raw) != dateLen {
+		return 0, false
+	}
+	days, ok := parseDate(raw)
+	return Epoch(days * secondsPerDay * int64(time.Second)), ok
+}
+
+// ParseRFC3339 parses raw as time.Parse does with layout, which must be time.RFC3339 or
+// time.RFC3339Nano; a canonical UTC time is parsed without allocating.
+func ParseRFC3339(raw []byte, layout string) (Epoch, error) {
+	if e, ok := ParseCanonicalTime(raw, true); ok {
+		return e, nil
+	}
+	t, err := time.Parse(layout, string(raw))
+	if err != nil {
+		return 0, err
+	}
+	return Epoch(t.UnixNano()), nil
+}
+
+// parseCivil parses the date and time that start raw, with sep between them, and any fraction of a
+// second after them, returning the text that follows
+func parseCivil(raw []byte, sep byte) (Epoch, []byte, bool) {
+	if len(raw) < canonicalTimeLen || raw[dateLen] != sep || raw[13] != ':' || raw[16] != ':' {
+		return 0, nil, false
+	}
+	days, ok := parseDate(raw)
+	hour, ok2 := twoDigits(raw[11:13])
+	minute, ok3 := twoDigits(raw[14:16])
+	sec, ok4 := twoDigits(raw[17:19])
+	if !ok || !ok2 || !ok3 || !ok4 || hour > 23 || minute > 59 || sec > 59 {
+		return 0, nil, false
 	}
 	rest := raw[canonicalTimeLen:]
 	var nsec int64
@@ -64,29 +109,25 @@ func ParseCanonicalTime(raw []byte, zoned bool) (Epoch, bool) {
 		}
 		rest = rest[n:]
 	}
-	if zoned {
-		if len(rest) != 1 || rest[0] != 'Z' {
-			return 0, false
-		}
-	} else if len(rest) != 0 {
-		return 0, false
-	}
-	secs := daysFromCivil(year, month, day)*secondsPerDay + hour*3600 + minute*60 + sec
+	secs := days*secondsPerDay + hour*3600 + minute*60 + sec
 	// as time.Time.UnixNano computes it, wrapping the same way outside its range
-	return Epoch(secs*int64(time.Second) + nsec), true
+	return Epoch(secs*int64(time.Second) + nsec), rest, true
 }
 
-// ParseRFC3339 parses raw as time.Parse does with layout, which must be time.RFC3339 or
-// time.RFC3339Nano; a canonical UTC time is parsed without allocating.
-func ParseRFC3339(raw []byte, layout string) (Epoch, error) {
-	if e, ok := ParseCanonicalTime(raw, true); ok {
-		return e, nil
+// parseDate returns the days from 1970-01-01 to the YYYY-MM-DD that starts raw
+func parseDate(raw []byte) (int64, bool) {
+	if raw[4] != '-' || raw[7] != '-' {
+		return 0, false
 	}
-	t, err := time.Parse(layout, string(raw))
-	if err != nil {
-		return 0, err
+	year, ok := twoDigits(raw[0:2])
+	lo, ok2 := twoDigits(raw[2:4])
+	month, ok3 := twoDigits(raw[5:7])
+	day, ok4 := twoDigits(raw[8:10])
+	year = year*100 + lo
+	if !ok || !ok2 || !ok3 || !ok4 || month < 1 || month > 12 || day < 1 || day > daysIn(month, year) {
+		return 0, false
 	}
-	return Epoch(t.UnixNano()), nil
+	return daysFromCivil(year, month, day), true
 }
 
 func twoDigits(b []byte) (int64, bool) {
@@ -137,27 +178,10 @@ const decimalDigits = "0123456789"
 // false, zoned true), time.RFC3339Nano (both true), or time.RFC3339Nano without its zone. An Epoch's
 // years, 1677 to 2262, always take four digits.
 func AppendCanonicalTime(dst []byte, e Epoch, fraction, zoned bool) []byte {
-	secs, nsec := int64(e)/int64(time.Second), int64(e)%int64(time.Second)
-	if nsec < 0 {
-		secs, nsec = secs-1, nsec+int64(time.Second)
-	}
-	days, sod := secs/secondsPerDay, secs%secondsPerDay
-	if sod < 0 {
-		days, sod = days-1, sod+secondsPerDay
-	}
-	year, month, day := civilFromDays(days)
-	dst = appendDigits(dst, year/100)
-	dst = appendDigits(dst, year%100)
-	dst = append(dst, '-')
-	dst = appendDigits(dst, month)
-	dst = append(dst, '-')
-	dst = appendDigits(dst, day)
+	days, sod, nsec := splitEpoch(e)
+	dst = appendDate(dst, days)
 	dst = append(dst, 'T')
-	dst = appendDigits(dst, sod/3600)
-	dst = append(dst, ':')
-	dst = appendDigits(dst, sod/60%60)
-	dst = append(dst, ':')
-	dst = appendDigits(dst, sod%60)
+	dst = appendClock(dst, sod)
 	if fraction && nsec != 0 {
 		// the nine digits of the nanoseconds, less the zeros that trail them
 		var digits [maxFractionDigits]byte
@@ -176,6 +200,60 @@ func AppendCanonicalTime(dst []byte, e Epoch, fraction, zoned bool) []byte {
 		dst = append(dst, 'Z')
 	}
 	return dst
+}
+
+// AppendSQLTime appends e in UTC as YYYY-MM-DD, sep and HH:MM:SS, then digits of its fraction when
+// digits is positive, as ClickHouse writes a DateTime64(digits).
+func AppendSQLTime(dst []byte, e Epoch, sep byte, digits int) []byte {
+	days, sod, nsec := splitEpoch(e)
+	dst = appendDate(dst, days)
+	dst = append(dst, sep)
+	dst = appendClock(dst, sod)
+	if digits <= 0 {
+		return dst
+	}
+	digits = min(digits, maxFractionDigits)
+	var frac [maxFractionDigits]byte
+	for i := maxFractionDigits - 1; i >= 0; i-- {
+		frac[i] = decimalDigits[nsec%10]
+		nsec /= 10
+	}
+	dst = append(dst, '.')
+	return append(dst, frac[:digits]...)
+}
+
+// splitEpoch returns the days from 1970-01-01 to e, and e's second of that day and nanosecond of
+// that second
+func splitEpoch(e Epoch) (days, sod, nsec int64) {
+	secs, nsec := int64(e)/int64(time.Second), int64(e)%int64(time.Second)
+	if nsec < 0 {
+		secs, nsec = secs-1, nsec+int64(time.Second)
+	}
+	days, sod = secs/secondsPerDay, secs%secondsPerDay
+	if sod < 0 {
+		days, sod = days-1, sod+secondsPerDay
+	}
+	return days, sod, nsec
+}
+
+// appendDate appends the date days after 1970-01-01 as YYYY-MM-DD
+func appendDate(dst []byte, days int64) []byte {
+	year, month, day := civilFromDays(days)
+	dst = appendDigits(dst, year/100)
+	dst = appendDigits(dst, year%100)
+	dst = append(dst, '-')
+	dst = appendDigits(dst, month)
+	dst = append(dst, '-')
+	return appendDigits(dst, day)
+}
+
+// appendClock appends a second of the day as HH:MM:SS
+func appendClock(dst []byte, sod int64) []byte {
+	dst = appendDigits(dst, sod/3600)
+	dst = append(dst, ':')
+	dst = appendDigits(dst, sod/60%60)
+	dst = append(dst, ':')
+	return appendDigits(dst, sod%60)
 }
 
 // appendDigits appends v, which is below 100, as two digits

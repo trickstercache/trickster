@@ -124,6 +124,17 @@ func TestBuilderRowMode(t *testing.T) {
 	sl[0].Header.ValueFieldsList[0].DataType = timeseries.Int64
 	require.Equal(t, timeseries.Float64, sl[1].Header.ValueFieldsList[0].DataType)
 	require.Equal(t, timeseries.Float64, fields.Values[0].DataType)
+	// a series can be named from its tags instead
+	b = NewBuilder(trq, BuilderOptions{Fields: fields, SeriesName: "sql",
+		NameSeries: func(tags Tags) string { return "host=" + tags["host"] }})
+	commitRows(t, b, testRow{e: 1, host: "a", v: 1.0}, testRow{e: 1, host: "b", v: 2.0},
+		testRow{e: 2, host: "a", v: 3.0})
+	ds, err = b.Finish()
+	require.NoError(t, err)
+	sl = ds.Results[0].SeriesList
+	require.Len(t, sl, 2)
+	require.Equal(t, "host=a", sl[0].Header.Name)
+	require.Equal(t, "host=b", sl[1].Header.Name)
 }
 
 func TestBuilderSortsOnlyUnorderedSeries(t *testing.T) {
@@ -567,4 +578,57 @@ func TestSameSeries(t *testing.T) {
 		mutate(&b)
 		require.False(t, sameSeries(&a, &b), name)
 	}
+}
+
+func TestBuilderAddValueField(t *testing.T) {
+	trq := testBuilderTRQ()
+	fields := testBuilderFields()
+	b := NewBuilder(trq, BuilderOptions{Fields: fields, SeriesName: "sql"})
+	row := func(e epoch.Epoch, host string, vals ...any) {
+		r := b.Row()
+		r.SetEpoch(e)
+		r.SetTag(0, []byte(host))
+		for _, v := range vals {
+			r.AddValue(v)
+		}
+		require.NoError(t, r.Commit())
+	}
+	// "a" has two rows and "b" one before the field is added; "c" comes after it, and "b" never
+	// has another row, so it's widened as it's finished
+	row(2, "a", 1.0)
+	row(1, "a", 2.0)
+	row(1, "b", 3.0)
+	b.AddValueField(timeseries.FieldDefinition{Name: "w", Role: timeseries.RoleValue})
+	row(3, "a", 4.0, "x")
+	row(1, "c", 5.0, int64(7))
+	row(0, "a", 6.0, nil)
+	// a row of the old width no longer fits
+	r := b.Row()
+	r.SetEpoch(9)
+	r.SetTag(0, []byte("a"))
+	r.AddValue(1.0)
+	require.ErrorIs(t, r.Commit(), ErrInvalidRow)
+	ds, err := b.Finish()
+	require.NoError(t, err)
+	sl := ds.Results[0].SeriesList
+	require.Len(t, sl, 3)
+	want := map[string][][]any{
+		"a": {{6.0, nil}, {2.0, nil}, {1.0, nil}, {4.0, "x"}},
+		"b": {{3.0, nil}},
+		"c": {{5.0, int64(7)}},
+	}
+	for _, s := range sl {
+		require.Len(t, s.Header.ValueFieldsList, 2)
+		require.Equal(t, "w", s.Header.ValueFieldsList[1].Name)
+		var got [][]any
+		for _, p := range s.Points() {
+			got = append(got, p.Values)
+		}
+		require.Equal(t, want[s.Header.Tags["host"]], got)
+	}
+	// the builder's own fields are its options' copy, so the caller's aren't changed
+	require.Len(t, fields.Values, 1)
+	// a field added once finished is ignored
+	b.AddValueField(timeseries.FieldDefinition{Name: "z"})
+	require.Len(t, b.opts.Fields.Values, 2)
 }
