@@ -100,31 +100,29 @@ func parseSampleByBody(body string) (time.Duration, error) {
 	if !ok {
 		return 0, errUnsupportedSampleBy
 	}
-	for {
-		token, more := scanner.Next()
-		if !more {
-			return step, nil
-		}
-		if token.Kind != sqlscan.Word || !strings.EqualFold(scanner.Text(token), "fill") {
-			return 0, errUnsupportedSampleBy
-		}
-		open, more := scanner.Next()
-		if !more || open.Kind != sqlscan.Punct || scanner.Text(open) != "(" {
-			return 0, errUnsupportedSampleBy
-		}
-		value, more := scanner.Next()
-		if !more || value.Kind != sqlscan.Word || !strings.EqualFold(scanner.Text(value), "null") {
-			return 0, errUnsupportedSampleBy
-		}
-		close, more := scanner.Next()
-		if !more || close.Kind != sqlscan.Punct || scanner.Text(close) != ")" {
-			return 0, errUnsupportedSampleBy
-		}
-		// QuestDB fills only the gaps between observations in the selected
-		// range. The generated NULL rows therefore depend on the surrounding
-		// range and cannot be merged from independent delta extents.
+	token, more := scanner.Next()
+	if !more {
+		return step, nil
+	}
+	if token.Kind != sqlscan.Word || !strings.EqualFold(scanner.Text(token), "fill") {
 		return 0, errUnsupportedSampleBy
 	}
+	open, more := scanner.Next()
+	if !more || open.Kind != sqlscan.Punct || scanner.Text(open) != "(" {
+		return 0, errUnsupportedSampleBy
+	}
+	value, more := scanner.Next()
+	if !more || value.Kind != sqlscan.Word || !strings.EqualFold(scanner.Text(value), "null") {
+		return 0, errUnsupportedSampleBy
+	}
+	close, more := scanner.Next()
+	if !more || close.Kind != sqlscan.Punct || scanner.Text(close) != ")" {
+		return 0, errUnsupportedSampleBy
+	}
+	// QuestDB fills only the gaps between observations in the selected
+	// range. The generated NULL rows therefore depend on the surrounding
+	// range and cannot be merged from independent delta extents.
+	return 0, errUnsupportedSampleBy
 }
 
 func parseSampleInterval(value string) (time.Duration, bool) {
