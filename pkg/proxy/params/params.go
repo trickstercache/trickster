@@ -95,6 +95,12 @@ func GetRequestValues(r *http.Request) (url.Values, []byte, bool) {
 		r.ParseMultipartForm(maxMultipartFormBytes) // #nosec G120 -- body bounded by MaxBytesReader above; gosec taint does not track Body field
 		r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(b))
+		// net/http only parses a urlencoded body on POST, PUT and PATCH
+		if r.Method == methods.MethodQuery && len(r.PostForm) == 0 {
+			if pf, err := url.ParseQuery(string(b)); err == nil {
+				r.PostForm = pf
+			}
+		}
 		// Merge URL query with form body: the caller may have split params
 		// across `?step=15` and the form body, and cache-key generation must
 		// see the full parameter space. Body values REPLACE URL values on

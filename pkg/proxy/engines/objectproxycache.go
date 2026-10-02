@@ -656,7 +656,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := reqs.Load(pr.key)
-	pr.isPCF = !methods.HasBody(pr.Method) && pcfExists && !pr.wantsRanges
+	pr.isPCF = methods.IsCacheable(pr.Method) && pcfExists && !pr.wantsRanges
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {

@@ -26,6 +26,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"github.com/stretchr/testify/require"
@@ -55,7 +56,10 @@ func TestHandler(t *testing.T) {
 	})
 
 	t.Run("within limit", func(t *testing.T) {
-		for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodPatch} {
+		for _, method := range []string{
+			http.MethodPost, http.MethodPut, http.MethodPatch,
+			methods.MethodQuery,
+		} {
 			t.Run(method, func(t *testing.T) {
 				rec := httptest.NewRecorder()
 				req := httptest.NewRequest(method, "/", strings.NewReader("hi"))
@@ -69,6 +73,13 @@ func TestHandler(t *testing.T) {
 	t.Run("too large reject", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("too-large"))
+		Handler(3, false, next).ServeHTTP(rec, req)
+		require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	})
+
+	t.Run("too large QUERY reject", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(methods.MethodQuery, "/", strings.NewReader("too-large"))
 		Handler(3, false, next).ServeHTTP(rec, req)
 		require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 	})

@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	authtypes "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 )
 
@@ -190,6 +191,18 @@ func TestClone(t *testing.T) {
 		b, _ := io.ReadAll(out.Body)
 		if string(b) != "post-body" {
 			t.Errorf("expected 'post-body' got %q", string(b))
+		}
+	})
+
+	t.Run("QUERY body is cloned", func(t *testing.T) {
+		r, _ := http.NewRequest(methods.MethodQuery, "http://127.0.0.1/", strings.NewReader("query-body"))
+		out, err := CloneWithoutResources(r)
+		if err != nil {
+			t.Fatal("unexpected error:", err)
+		}
+		b, _ := io.ReadAll(out.Body)
+		if string(b) != "query-body" {
+			t.Errorf("expected 'query-body' got %q", string(b))
 		}
 	})
 }

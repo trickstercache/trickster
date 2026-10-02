@@ -98,6 +98,11 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	return paths
 }
 
+// a QUERY reaches the origin as POST, so it may carry only what the API accepts on POST
+func queryMediaTypes() []string {
+	return []string{headers.ValueXFormURLEncoded}
+}
+
 // SupportedPaths returns a deep copy of the Prometheus route catalogue.
 // It does not mutate the provided backend options.
 func SupportedPaths(o *bo.Options) po.List {
@@ -114,7 +119,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnQueryRange,
 			HandlerName:     mnQueryRange,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upQuery, upStep, "stats"},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhts,
@@ -124,7 +130,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnQuery,
 			HandlerName:     mnQuery,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upQuery, upTime, "stats"},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -134,7 +141,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnSeries,
 			HandlerName:     mnSeries,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -144,7 +152,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnLabels,
 			HandlerName:     "labels",
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upMatch, upStart, upEnd},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -214,7 +223,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnQueryExemplars,
 			HandlerName:     "proxycache",
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upQuery, upStart, upEnd},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -234,7 +244,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnFormatQuery,
 			HandlerName:     "proxycache",
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upQuery},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,
@@ -244,7 +255,8 @@ func SupportedPaths(o *bo.Options) po.List {
 		{
 			Path:            APIPath + mnParseQuery,
 			HandlerName:     "proxycache",
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: queryMediaTypes(),
 			CacheKeyParams:  []string{upQuery},
 			CacheKeyHeaders: []string{},
 			ResponseHeaders: rhinst,

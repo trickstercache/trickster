@@ -152,6 +152,11 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		// a local path promised never to make
 		h = routeUpgrades(client, passthrough, h)
 	}
+	// a passthrough relays QUERY as sent: once rewritten to POST, a success would invalidate the URI
+	if !isPassthrough && len(pathOpts.QueryMediaTypes) > 0 &&
+		slices.Contains(pathOpts.Methods, methods.MethodQuery) {
+		h = middleware.QueryAsPost(pathOpts.QueryMediaTypes, h)
+	}
 	h = middleware.MaxForwards(h)
 	if tr != nil {
 		h = middleware.Trace(tr, h)
@@ -437,12 +442,20 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 			logging.Pairs{keys.BackendName: o.Name})
 	}
 
+	var queryTypes map[string][]string
 	for _, p := range o.Paths {
 		if p.Handler == nil && p.HandlerName != "" {
 			if h, ok := handlers[p.HandlerName]; ok && h != nil {
 				p.Handler = h
 				p.HandlerFromRegistry = true
 			}
+		}
+		if p.HandlerFromRegistry && p.QueryMediaTypes == nil &&
+			slices.Contains(p.Methods, methods.MethodQuery) {
+			if queryTypes == nil {
+				queryTypes = providerQueryMediaTypes(client, o)
+			}
+			p.QueryMediaTypes = queryTypes[p.HandlerName]
 		}
 
 		pathPrefix := "/" + o.Name
@@ -503,6 +516,21 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 	}
 
 	o.Router = or
+}
+
+// a configured path served by a provider handler translates QUERY as the handler's default paths
+// do; those are built from a copy of the options, since building them can set fields on it
+func providerQueryMediaTypes(client backends.Backend, o *bo.Options) map[string][]string {
+	out := make(map[string][]string)
+	for _, dp := range client.DefaultPathConfigs(o.Clone()) {
+		if dp == nil || len(dp.QueryMediaTypes) == 0 {
+			continue
+		}
+		if _, ok := out[dp.HandlerName]; !ok {
+			out[dp.HandlerName] = dp.QueryMediaTypes
+		}
+	}
+	return out
 }
 
 // mirrorTarget is one mirror of a path with the backend that receives its copies

@@ -32,10 +32,10 @@ func TestInvalidateTargetURINilInputs(t *testing.T) {
 	InvalidateTargetURI(httptest.NewRequest(http.MethodPut, "http://example.com/a", nil))
 }
 
-// a write must drop every key a later read could use, and each cacheable
+// a write must drop every key a later read could use, and each URI-keyed
 // method has its own primary key
 func TestInvalidateTargetURICoversEveryCacheableMethod(t *testing.T) {
-	if got := methods.CacheableHTTPMethods(); len(got) != 2 {
+	if got := methods.GetAndHead(); len(got) != 2 {
 		t.Fatalf("expected GET and HEAD, got %v", got)
 	}
 }
@@ -53,6 +53,7 @@ func TestIsStateChangingCoversUnsafeMethods(t *testing.T) {
 	safe := []string{
 		http.MethodGet, http.MethodHead, http.MethodOptions,
 		http.MethodTrace, http.MethodConnect, methods.MethodPurge,
+		methods.MethodQuery,
 	}
 	for _, m := range safe {
 		if methods.IsStateChanging(m) {

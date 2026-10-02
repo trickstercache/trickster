@@ -1626,3 +1626,69 @@ func TestRouteUpgrades(t *testing.T) {
 		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
 	}
 }
+
+// a configured path served by a provider handler takes that handler's QUERY translation, as
+// a kube-emitted path does when provider defaults are disabled
+func TestRegisterPathRoutesQueryAsPost(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	var relayed string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		relayed = r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	conf, err := config.Load([]string{"-origin-url", origin.URL, "-provider", providers.Prometheus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := conf.Backends["default"]
+	o.Hosts = []string{"example.com"}
+	o.PathDefaultsDisabled = true
+	client, err := prometheus.NewClient("default", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Method
+		w.WriteHeader(http.StatusOK)
+	})
+	hl := handlers.Lookup{"query": capture, providers.Proxy: capture}
+	newPath := func(path, handler string) *po.Options {
+		p := po.New()
+		p.Path = path
+		p.MatchTypeName = matching.PathMatchNameExact
+		p.HandlerName = handler
+		p.Methods = methods.QueryableMethods()
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	o.Paths = po.List{newPath("/prefix/api/v1/query", "query"), newPath("/relay", providers.Proxy)}
+	rtr := lm.NewRouter()
+	registerPathRoutes([]listenerRoute{{rtr, nil}}, conf, hl, client, o, nil, nil, nil)
+
+	serve := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(methods.MethodQuery, path, strings.NewReader("query=up"))
+		req.Host = "example.com"
+		req.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		return w
+	}
+	w := serve("/prefix/api/v1/query")
+	if w.Code != http.StatusOK || seen != http.MethodPost {
+		t.Errorf("got %d %s; want the query handler to receive POST", w.Code, seen)
+	}
+	if got := w.Header().Get(headers.NameAcceptQuery); got != `"application/x-www-form-urlencoded"` {
+		t.Errorf("Accept-Query = %q", got)
+	}
+	// a passthrough relays QUERY as sent
+	if w = serve("/relay"); relayed != methods.MethodQuery {
+		t.Errorf("origin got %q; want the passthrough to relay QUERY", relayed)
+	}
+	if got := w.Header().Get(headers.NameAcceptQuery); got != "" {
+		t.Errorf("passthrough Accept-Query = %q; want none", got)
+	}
+}

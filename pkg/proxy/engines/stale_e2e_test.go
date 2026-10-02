@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -183,6 +184,35 @@ func TestUnsafeMethodInvalidatesStoredResponse(t *testing.T) {
 	// RFC 9111 4.4: the write superseded what was stored for this URI
 	if _, body := run(http.MethodGet); body != "body-2" {
 		t.Errorf("got %s expected the write to have invalidated the stored response", body)
+	}
+}
+
+// QUERY is safe (RFC 10008), so a successful one leaves the stored GET in place
+func TestSafeQueryKeepsStoredResponse(t *testing.T) {
+	var hits atomic.Int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == methods.MethodQuery {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		n := hits.Add(1)
+		w.Header().Set(headers.NameCacheControl, "max-age=3600")
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "body-%d", n)
+	}))
+	defer ts.Close()
+
+	run, done := originOPC(t, ts, "/safe-query")
+	defer done()
+
+	if _, body := run(http.MethodGet); body != "body-1" {
+		t.Fatalf("got %s expected body-1", body)
+	}
+	if code, _ := run(methods.MethodQuery); code != http.StatusOK {
+		t.Fatalf("got %d expected the query to reach the origin", code)
+	}
+	if _, body := run(http.MethodGet); body != "body-1" {
+		t.Errorf("got %s expected the stored response to survive a QUERY", body)
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 	"net/http"
 
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 )
 
 // Clone wraps the builtin Clone, preserving the source request's context while
@@ -58,8 +59,7 @@ func CloneWithContext(ctx context.Context, r *http.Request) (*http.Request, erro
 		return nil, nil
 	}
 	out := r.Clone(ctx)
-	if r.Method == http.MethodPost || r.Method == http.MethodPut ||
-		r.Method == http.MethodPatch {
+	if methods.HasBody(r.Method) {
 		br, err := GetBodyReader(r)
 		if err != nil {
 			return nil, err
