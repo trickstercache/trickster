@@ -18,14 +18,20 @@ package aws
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/stretchr/testify/require"
 )
 
@@ -179,23 +185,142 @@ func TestHashPayloadEmptyBody(t *testing.T) {
 }
 
 // A momentary metadata-service failure must not permanently disable
-// signing, so only a successful resolution is cached.
+// signing, so a failed resolution is reused only for failureBackoff.
 func TestFailedResolutionIsNotCached(t *testing.T) {
 	isolate(t)
 	s, err := NewSigner(&Options{AccessKey: "a", SecretKey: "b"})
 	require.NoError(t, err)
+	now := time.Now()
+	s.now = func() time.Time { return now }
 
 	r, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
 	require.ErrorIs(t, s.SignRequest(t.Context(), r), ErrNoRegion)
-	s.mtx.Lock()
-	resolved := s.resolved
-	s.mtx.Unlock()
-	require.False(t, resolved, "a failed resolve must not be cached")
+	require.Nil(t, s.cachedConfig(), "a failed resolve must not be cached")
 
-	// once the region is available, the same signer succeeds
+	// within the backoff the failure is reused rather than resolved again
 	t.Setenv("AWS_REGION", "us-west-2")
+	require.ErrorIs(t, s.SignRequest(t.Context(), r), ErrNoRegion)
+
+	// once it elapses, the same signer resolves and succeeds
+	now = now.Add(failureBackoff)
 	require.NoError(t, s.SignRequest(t.Context(), r))
 	require.Contains(t, r.Header.Get("Authorization"), "/us-west-2/")
+}
+
+func TestConcurrentFirstUseResolvesOnce(t *testing.T) {
+	isolate(t)
+	s, err := NewSigner(staticOptions())
+	require.NoError(t, err)
+	var loads atomic.Int32
+	release := make(chan struct{})
+	load := s.resolve
+	s.resolve = func(ctx context.Context) (*aws.Config, error) {
+		loads.Add(1)
+		<-release
+		return load(ctx)
+	}
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			r, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+			if err := s.SignRequest(t.Context(), r); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	require.EqualValues(t, 1, loads.Load())
+}
+
+// A waiter that gives up must not cancel the resolution the other callers share.
+func TestCanceledWaiterDoesNotFailTheSharedResolution(t *testing.T) {
+	isolate(t)
+	s, err := NewSigner(staticOptions())
+	require.NoError(t, err)
+	release := make(chan struct{})
+	load := s.resolve
+	s.resolve = func(ctx context.Context) (*aws.Config, error) {
+		<-release
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		return load(ctx)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	first := make(chan error, 1)
+	go func() {
+		r, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+		first <- s.SignRequest(ctx, r)
+	}()
+	time.Sleep(20 * time.Millisecond)
+	cancel()
+	close(release)
+	<-first
+	r, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+	require.NoError(t, s.SignRequest(t.Context(), r))
+}
+
+// credentialProcessProfile writes a shared config whose profile p runs a credential_process
+// returning expiring credentials, and returns a func reporting how many times it ran.
+func credentialProcessProfile(t *testing.T, expires time.Time) func() int {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("credential_process script requires a POSIX shell")
+	}
+	dir := t.TempDir()
+	counter := filepath.Join(dir, "count")
+	script := filepath.Join(dir, "creds.sh")
+	body := fmt.Sprintf("#!/bin/sh\necho x >> %q\nprintf '%%s' '%s'\n", counter,
+		`{"Version":1,"AccessKeyId":"ASIAPROCESS","SecretAccessKey":"secret",`+
+			`"SessionToken":"token","Expiration":"`+expires.UTC().Format(time.RFC3339)+`"}`)
+	require.NoError(t, os.WriteFile(script, []byte(body), 0o700))
+	cfg := filepath.Join(dir, "config")
+	require.NoError(t, os.WriteFile(cfg,
+		[]byte("[profile p]\nregion = us-east-1\ncredential_process = "+script+"\n"), 0o600))
+	t.Setenv("AWS_CONFIG_FILE", cfg)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", filepath.Join(dir, "none"))
+	return func() int {
+		b, _ := os.ReadFile(counter)
+		return strings.Count(string(b), "x")
+	}
+}
+
+// Credentials resolved through the chain must refresh within expiryWindow of expiry, not after.
+func TestChainCredentialsRefreshBeforeExpiry(t *testing.T) {
+	isolate(t)
+	runs := credentialProcessProfile(t, time.Now().Add(expiryWindow/4))
+	s, err := NewSigner(&Options{Profile: "p", Service: "monitoring"})
+	require.NoError(t, err)
+	for range 2 {
+		r, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+		require.NoError(t, s.SignRequest(t.Context(), r))
+	}
+	require.Equal(t, 2, runs(), "credentials inside the expiry window must be refreshed")
+}
+
+func TestChainCredentialsOutsideWindowAreReused(t *testing.T) {
+	isolate(t)
+	runs := credentialProcessProfile(t, time.Now().Add(time.Hour))
+	s, err := NewSigner(&Options{Profile: "p", Service: "monitoring"})
+	require.NoError(t, err)
+	for range 3 {
+		r, _ := http.NewRequest(http.MethodGet, "https://example.com/", nil)
+		require.NoError(t, s.SignRequest(t.Context(), r))
+	}
+	require.Equal(t, 1, runs())
+}
+
+// The role_arn path builds its own cache, so the window is checked on cacheOptions directly.
+func TestCacheOptionsRefreshBeforeExpiry(t *testing.T) {
+	p := &rotatingProvider{expires: time.Now().Add(expiryWindow / 4)}
+	c := aws.NewCredentialsCache(p, cacheOptions)
+	for range 2 {
+		_, err := c.Retrieve(t.Context())
+		require.NoError(t, err)
+	}
+	require.EqualValues(t, 2, p.calls.Load())
 }
 
 func TestConcurrentSigning(t *testing.T) {
@@ -228,9 +353,7 @@ func TestRoundTripperSignsOutboundRequests(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rt, err := NewRoundTripper(staticOptions(), nil)
-	require.NoError(t, err)
-	client := &http.Client{Transport: rt}
+	client := &http.Client{Transport: newRoundTripper(t, staticOptions(), Observer{})}
 
 	resp, err := client.Post(srv.URL, "text/plain", strings.NewReader("payload"))
 	require.NoError(t, err)
@@ -246,8 +369,7 @@ func TestRoundTripperDoesNotMutateTheCallersRequest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	defer srv.Close()
 
-	rt, err := NewRoundTripper(staticOptions(), nil)
-	require.NoError(t, err)
+	rt := newRoundTripper(t, staticOptions(), Observer{})
 
 	r, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("payload"))
 	resp, err := rt.RoundTrip(r)
@@ -262,11 +384,6 @@ func TestRoundTripperDoesNotMutateTheCallersRequest(t *testing.T) {
 		"the caller's body must remain readable")
 }
 
-func TestNewRoundTripperValidates(t *testing.T) {
-	_, err := NewRoundTripper(&Options{SecretKey: "s"}, nil)
-	require.ErrorIs(t, err, ErrIncompleteStaticCredentials)
-}
-
 // A signing failure must surface as an error rather than sending an
 // unsigned request that the origin would reject confusingly.
 func TestRoundTripperFailsClosed(t *testing.T) {
@@ -277,10 +394,265 @@ func TestRoundTripperFailsClosed(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	rt, err := NewRoundTripper(&Options{AccessKey: "a", SecretKey: "b"}, nil)
-	require.NoError(t, err)
+	var failures int
+	rt := newRoundTripper(t, &Options{AccessKey: "a", SecretKey: "b"},
+		Observer{SignFailed: func(error) { failures++ }})
 	r, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	_, err = rt.RoundTrip(r)
+	_, err := rt.RoundTrip(r)
 	require.ErrorIs(t, err, ErrNoRegion)
 	require.False(t, reached, "an unsigned request must not be sent")
+	require.Equal(t, 1, failures, "the failure must reach the observer")
+}
+
+func newRoundTripper(t *testing.T, o *Options, obs Observer) http.RoundTripper {
+	t.Helper()
+	s, err := NewSigner(o)
+	require.NoError(t, err)
+	return WrapTransport(s, nil, obs)
+}
+
+// rotatingProvider issues expiring credentials with a new access key on every call.
+type rotatingProvider struct {
+	calls   atomic.Int32
+	expires time.Time
+}
+
+func (p *rotatingProvider) Retrieve(context.Context) (aws.Credentials, error) {
+	n := p.calls.Add(1)
+	expires := p.expires
+	if expires.IsZero() {
+		expires = time.Now().Add(time.Hour)
+	}
+	return aws.Credentials{
+		AccessKeyID:     fmt.Sprintf("ASIAKEY%d", n),
+		SecretAccessKey: "secret",
+		SessionToken:    fmt.Sprintf("token%d", n),
+		CanExpire:       true,
+		Expires:         expires,
+	}, nil
+}
+
+// rotatingSigner returns a signer whose resolved configuration uses p for credentials.
+func rotatingSigner(t *testing.T, p aws.CredentialsProvider) *Signer {
+	t.Helper()
+	s, err := NewSigner(&Options{Region: "us-east-1", Service: "monitoring"})
+	require.NoError(t, err)
+	s.cfg = &aws.Config{Region: "us-east-1", Credentials: aws.NewCredentialsCache(p, cacheOptions)}
+	return s
+}
+
+// rejectingOrigin answers 403 with the given code to requests signed with a rejected key.
+type rejectingOrigin struct {
+	mtx      sync.Mutex
+	hits     int
+	bodies   []string
+	reject   func(key string) bool
+	inHeader bool
+	code     string
+}
+
+func (o *rejectingOrigin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	b, _ := io.ReadAll(r.Body)
+	auth := r.Header.Get("Authorization")
+	key, _, _ := strings.Cut(auth[strings.Index(auth, "Credential=")+len("Credential="):], "/")
+	o.mtx.Lock()
+	o.hits++
+	o.bodies = append(o.bodies, string(b))
+	o.mtx.Unlock()
+	if !o.reject(key) {
+		w.Write([]byte("ok"))
+		return
+	}
+	if o.inHeader {
+		w.Header().Set(headerErrorType, o.code+":http://internal.amazon.com/coral/")
+	}
+	w.WriteHeader(http.StatusForbidden)
+	fmt.Fprintf(w, `{"__type":"%s","message":"rejected"}`, o.code)
+}
+
+func TestRoundTripperRetriesRejectedExpiringCredentials(t *testing.T) {
+	for _, inHeader := range []bool{true, false} {
+		t.Run(fmt.Sprintf("inHeader=%v", inHeader), func(t *testing.T) {
+			p := &rotatingProvider{}
+			origin := &rejectingOrigin{
+				inHeader: inHeader, code: "ExpiredTokenException",
+				reject: func(key string) bool { return key == "ASIAKEY1" },
+			}
+			srv := httptest.NewServer(origin)
+			defer srv.Close()
+
+			var codes []string
+			rt := WrapTransport(rotatingSigner(t, p), nil,
+				Observer{CredentialsRetried: func(c string) { codes = append(codes, c) }})
+			r, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader("payload"))
+			resp, err := rt.RoundTrip(r)
+			require.NoError(t, err)
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+			require.Equal(t, "ok", string(b))
+			require.Equal(t, 2, origin.hits)
+			require.Equal(t, []string{"payload", "payload"}, origin.bodies,
+				"the retry must resend the body")
+			require.EqualValues(t, 2, p.calls.Load(), "the rejected credentials must be refreshed")
+			require.Equal(t, []string{"ExpiredTokenException"}, codes)
+		})
+	}
+}
+
+func TestRoundTripperRetriesOnlyOnce(t *testing.T) {
+	origin := &rejectingOrigin{
+		inHeader: true, code: "UnrecognizedClientException",
+		reject: func(string) bool { return true },
+	}
+	srv := httptest.NewServer(origin)
+	defer srv.Close()
+
+	rt := WrapTransport(rotatingSigner(t, &rotatingProvider{}), nil, Observer{})
+	r, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := rt.RoundTrip(r)
+	require.NoError(t, err)
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Contains(t, string(b), "UnrecognizedClientException")
+	require.Equal(t, 2, origin.hits)
+}
+
+// A 403 that is not about credentials is returned as is, with the body it peeked restored.
+func TestRoundTripperDoesNotRetryOtherForbidden(t *testing.T) {
+	origin := &rejectingOrigin{
+		inHeader: true, code: "AccessDeniedException",
+		reject: func(string) bool { return true },
+	}
+	srv := httptest.NewServer(origin)
+	defer srv.Close()
+
+	rt := WrapTransport(rotatingSigner(t, &rotatingProvider{}), nil, Observer{})
+	r, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+	resp, err := rt.RoundTrip(r)
+	require.NoError(t, err)
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.Equal(t, `{"__type":"AccessDeniedException","message":"rejected"}`, string(b))
+	require.Equal(t, 1, origin.hits)
+}
+
+// Static credentials refresh to the same values, so a rejection of them is not retried.
+func TestRoundTripperDoesNotRetryStaticCredentials(t *testing.T) {
+	isolate(t)
+	origin := &rejectingOrigin{
+		inHeader: true, code: "InvalidSignatureException",
+		reject: func(string) bool { return true },
+	}
+	srv := httptest.NewServer(origin)
+	defer srv.Close()
+
+	s, err := NewSigner(staticOptions())
+	require.NoError(t, err)
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	rt := WrapTransport(s, nil, Observer{})
+	for i := range 2 {
+		// the second rejection comes after rereadInterval, which must not matter for configured keys
+		now = now.Add(time.Duration(i) * rereadInterval)
+		r, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+		resp, err := rt.RoundTrip(r)
+		require.NoError(t, err)
+		resp.Body.Close()
+		require.Equal(t, http.StatusForbidden, resp.StatusCode)
+		require.Equal(t, i+1, origin.hits)
+	}
+}
+
+// Concurrent rejections of the same credentials must cause one refresh, not one each.
+func TestConcurrentRejectionsRefreshOnce(t *testing.T) {
+	p := &rotatingProvider{}
+	origin := &rejectingOrigin{
+		inHeader: true, code: "ExpiredTokenException",
+		reject: func(key string) bool { return key == "ASIAKEY1" },
+	}
+	srv := httptest.NewServer(origin)
+	defer srv.Close()
+
+	rt := WrapTransport(rotatingSigner(t, p), nil, Observer{})
+	var wg sync.WaitGroup
+	for range 16 {
+		wg.Go(func() {
+			r, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+			resp, err := rt.RoundTrip(r)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("status %d", resp.StatusCode)
+			}
+		})
+	}
+	wg.Wait()
+	require.EqualValues(t, 2, p.calls.Load())
+}
+
+// writeSharedCredentials writes a default profile holding key to a shared credentials file the
+// chain reads, as a refresher that rewrites the file in place would.
+func writeSharedCredentials(t *testing.T, path, key string) {
+	t.Helper()
+	body := "[default]\naws_access_key_id = " + key +
+		"\naws_secret_access_key = secret\naws_session_token = token-" + key + "\n"
+	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+}
+
+// Session credentials in the shared file look static to the SDK, so a rejection of them re-reads
+// the file, at most every rereadInterval, rather than refreshing the cache.
+func TestRoundTripperRereadsSharedFileCredentials(t *testing.T) {
+	isolate(t)
+	creds := filepath.Join(t.TempDir(), "credentials")
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", creds)
+	writeSharedCredentials(t, creds, "ASIAOLD")
+
+	origin := &rejectingOrigin{
+		inHeader: true, code: "ExpiredTokenException",
+		reject: func(key string) bool { return key == "ASIAOLD" },
+	}
+	srv := httptest.NewServer(origin)
+	defer srv.Close()
+
+	s, err := NewSigner(&Options{Region: "us-east-1", Service: "monitoring"})
+	require.NoError(t, err)
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	var retries int
+	rt := WrapTransport(s, nil, Observer{CredentialsRetried: func(string) { retries++ }})
+	send := func() int {
+		r, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
+		resp, err := rt.RoundTrip(r)
+		require.NoError(t, err)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	// the first request just read the file, so its rejection is not retried
+	require.Equal(t, http.StatusForbidden, send())
+	require.Equal(t, 1, origin.hits)
+	// after the interval, a rejection re-reads the unchanged file and resends once
+	now = now.Add(rereadInterval)
+	require.Equal(t, http.StatusForbidden, send())
+	require.Equal(t, 3, origin.hits)
+	// a rejection soon after does not re-read the file again
+	require.Equal(t, http.StatusForbidden, send())
+	require.Equal(t, 4, origin.hits)
+	require.Equal(t, 1, retries)
+
+	// once the file is rewritten and the interval passes, a rejection picks up the new key
+	writeSharedCredentials(t, creds, "ASIANEW")
+	now = now.Add(rereadInterval)
+	require.Equal(t, http.StatusOK, send())
+	require.Equal(t, 6, origin.hits)
+	require.Equal(t, http.StatusOK, send())
+	require.Equal(t, 7, origin.hits, "the new key is used without a further re-read")
+	require.Equal(t, 2, retries)
 }

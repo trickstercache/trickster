@@ -60,6 +60,15 @@ The following metrics are available for polling with any Trickster configuration
     * `mirror_backend` - the backend receiving the copies
     * `result` - `sent`, or `dropped` when the mirror's in-flight bound was reached
 
+* `trickster_proxy_sigv4_events_total` (Counter) - The number of SigV4 signing events on backends with a [`sigv4`](./aws.md#the-sigv4-backend-block) block.
+  * labels:
+    * `backend_name` - the name of the configured backend whose request was signed
+    * `event` - `sign_failure` when a request could not be signed and was not sent, or `credentials_retry` when the origin rejected expiring credentials and the request was resent with refreshed ones
+
+* `trickster_proxy_truncated_responses_total` (Counter) - The number of time series fetches the origin truncated at its series limit, which Trickster proxies rather than caches. Only backends whose [flavor](./aws.md#amazon-cloudwatch-promql) declares a series limit report it.
+  * labels:
+    * `backend_name` - the name of the configured backend whose fetch was truncated
+
 * `trickster_accesslog_dropped_lines_total` (Counter) - The number of access and error log lines dropped because the log could not accept them.
   * labels:
     * `backend_name` - the name of the configured backend whose logger dropped the line

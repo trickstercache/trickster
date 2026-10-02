@@ -27,6 +27,7 @@ const (
 	CacheMode            = "cacheMode"
 	CacheProvider        = "cacheProvider"
 	Class                = "class"
+	Code                 = "code"
 	Confidence           = "confidence"
 	Conflicts            = "conflicts"
 	ContentLength        = "contentLength"

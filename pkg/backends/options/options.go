@@ -316,6 +316,8 @@ type Options struct {
 	fastForwardDisableExplicit bool
 	// set when a backend sets a volatile window key and its backfill_tolerance counterpart
 	volatileWindowConflict, volatileWindowPointsConflict bool
+	// set when a backend sets any volatile window key, so a flavor default does not replace it
+	volatileWindowExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -494,6 +496,9 @@ func (o *Options) Validate() (bool, error) {
 		if providers.NonOriginBackends().Contains(o.Provider) {
 			return false, NewErrInvalidTemplateProvider(o.Provider, o.Name)
 		}
+	}
+	if err := o.validatePrometheusFlavor(); err != nil {
+		return false, err
 	}
 	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
 		o.OriginURL == "" {
@@ -921,6 +926,7 @@ func (o *Options) Initialize(name string) error {
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
+	o.applyPrometheusFlavor()
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)
@@ -1110,6 +1116,8 @@ func (k renamedKeys) apply(o *Options) {
 	}
 	o.stepAlignmentExplicit = k.StepAlignment != nil
 	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
+	o.volatileWindowExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil ||
+		k.VolatileWindowPoints != nil || k.BackfillTolerancePoints != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.

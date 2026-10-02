@@ -86,6 +86,28 @@ var (
 		[]string{keys.Backend_Name, keys.Mirror_Backend, keys.Result},
 	)
 
+	// ProxySigV4Events counts SigV4 signing failures and requests resent with refreshed credentials
+	ProxySigV4Events = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "sigv4_events_total",
+			Help:      "Count of SigV4 signing failures and of requests resent after the origin rejected expiring credentials",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// ProxyTruncatedResponses counts time series fetches the origin truncated, which are proxied uncached
+	ProxyTruncatedResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "truncated_responses_total",
+			Help:      "Count of time series fetches the origin truncated at its series limit, which are proxied rather than cached",
+		},
+		[]string{keys.Backend_Name},
+	)
+
 	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
 	BuildInfo = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -1137,6 +1159,8 @@ func init() {
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)
+	prometheus.MustRegister(ProxySigV4Events)
+	prometheus.MustRegister(ProxyTruncatedResponses)
 	prometheus.MustRegister(ProxyStreamConnections)
 	prometheus.MustRegister(ProxyStreamActiveConnections)
 	prometheus.MustRegister(ProxyStreamBytes)
