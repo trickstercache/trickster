@@ -52,6 +52,15 @@ Some object-name prefixes are reserved in every named section (`backends`, `cach
 
 Generated configuration is merged after all files and fragments, with the same deep-merge behavior. It may only add objects under the named sections above, so it can never change `main`, `frontend`, `logging`, `metrics`, or `mgmt` settings or replace a file-defined object. A change to the generated configuration makes the running configuration stale for reload purposes in the same way as a change to a file, and every reload (SIGHUP, the reload handler, and `auto_reload_interval`) carries the current generated configuration forward.
 
+### Renamed Backend Options
+
+This backend option was renamed. The former key is still accepted, and applies only when the
+current key is not set; configuration dumps show only the current key.
+
+| Former key | Current key |
+|---|---|
+| `fastforward_ttl` | `partial_bucket_ttl` |
+
 ### Configuring Secrets or Sensitive Information
 
 Trickster supports Environment variable substitution in its configuration file where sensitive information is expected.
@@ -162,6 +171,47 @@ listeners:
     trusted_proxies: [10.0.0.0/8, 192.168.1.5]
 ```
 
+### Path Normalization
+
+Before routing a request, an HTTP listener cleans its path, then routes and
+forwards the cleaned path, so the path a route matches is always the path its
+origin receives. Without this agreement, a request for `/public/../admin/x`
+would match a `/public/` path, such as one with `authenticator_name: none`,
+while an origin that resolves dot-segments served `/admin/x`. The
+`path_normalization` block on each listener controls the cleaning:
+
+| Option | Values | Default | Effect |
+|---|---|---|---|
+| `dot_segments` | `normalize`, `reject`, `off` | `normalize` | `normalize` removes `.` and `..` segments as [RFC 3986 section 5.2.4](https://www.rfc-editor.org/rfc/rfc3986#section-5.2.4) prescribes; `reject` answers any path holding one with `400 Bad Request`; `off` routes and forwards them as received |
+| `merge_slashes` | `true`, `false` | `false` | collapses each run of slashes to one, so `/a//b` routes and forwards as `/a/b` |
+| `escaped_slashes` | `keep`, `reject`, `unescape` | `keep` | `keep` treats `%2F` as data within a segment and forwards it encoded; `reject` answers any path holding `%2F` with `400 Bad Request`; `unescape` decodes `%2F` to a separator before the path is cleaned |
+
+```yaml
+listeners:
+  default:
+    port: 8480
+    path_normalization:
+      dot_segments: normalize
+      merge_slashes: false
+      escaped_slashes: keep
+```
+
+- A percent-encoded dot (`%2E`) counts as a dot, so `/public/%2e%2e/admin/x`
+  is cleaned to `/admin/x` like its literal form.
+- With `escaped_slashes: keep`, a segment whose `%2F` hides a dot-segment,
+  such as `..%2Fadmin`, is refused with `400 Bad Request` unless
+  `dot_segments` is `off`. Origins disagree on whether `%2F` separates
+  segments, so no single cleaned path is safe to route and forward.
+- The query string is never changed, and a path that needs no cleaning is
+  routed without any allocation.
+- The listener's HTTP/1.1, HTTP/2 and HTTP/3 endpoints all apply the same
+  options. Changing them applies on reload without restarting the listener.
+- The access log records the request URI as the client sent it.
+
+An origin that depends on receiving raw `..` segments needs `dot_segments: off`
+on the listeners that front it; any path-scoped control on such a listener can
+then be bypassed by a client that sends dot-segments.
+
 ### Stream Listeners
 
 A listener whose `protocol` is `tcp`, `tls` or `udp` relays what it receives
@@ -181,12 +231,17 @@ it; every stream listener uses `port` and `address` alone.
 
 A stream listener's backend is a `reverseproxy` (`rp`) backend, whose
 `origin_url` supplies the host and port to dial and nothing more (the scheme
-may be `tcp://` or `udp://`), or an `alb` backend using the `rr` mechanism,
-whose pool members are such backends. Each connection or session is
-committed to one pool member chosen by weighted round robin, as an HTTP
-request is; a member that cannot be dialed refuses its share rather than
-passing it to a sibling, so it is health checks or discovery readiness that
-take a dead member out of rotation. A member whose origin host is under the
+may be `tcp://` or `udp://`), or an `alb` backend whose pool members are such
+backends. The ALB may use any mechanism that commits to one member: `rr`,
+`p2c`, `lc`, `lt` or `hrw` (see [Load Balancing Stream
+Listeners](./alb.md#load-balancing-stream-listeners)). Each connection or
+session is committed to one pool member for its whole life, chosen as an HTTP
+request's is. By default a member that cannot be dialed refuses its share
+rather than passing it to a sibling, so it is health checks, discovery
+readiness or passive health that take a dead member out of rotation; set
+`alb.stream.connect_retries` to try another member instead. A `tcp://` member
+with a `healthcheck.interval` is probed by opening a connection to it; a
+`udp://` member has no generic probe. A member whose origin host is under the
 reserved `.invalid` domain, which can never resolve, refuses its share
 without a lookup, which is how a share that must be refused is expressed. A
 discovery-backed ALB works too, and a `scheme` of `tcp` or `udp` on its
@@ -282,7 +337,7 @@ The top-level `frontend` section and listener address/port fields under `metrics
 
 ## Configuration Validation
 
-Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration.
+Trickster can validate configuration files by running `trickster -validate-config -config /path/to/config`. Trickster will load the file or directory and exit with the validation result, without running the configuration. The command runs every configuration check, including those that need the backend clients, such as route registration and sticky cookie conflicts. It opens no listener, cache or log file, builds no authenticator and starts no health check or discovery, so startup can still fail at one of those steps.
 
 ## Reloading the Configuration
 
@@ -329,7 +384,7 @@ A second SIGTERM or SIGINT during the delay or drain closes all connections imme
 
 ### View the Running Configuration
 
-Trickster also provides a `http://127.0.0.1:8484/trickster/config` endpoint, which returns the yaml output of the currently-running Trickster configuration. The YAML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. By default, this interface is available only on the management listener. Set `mgmt.config_handler_listener` to `metrics`, `both`, or `off` to change where it is exposed. This path is configurable as demonstrated in the example config file.
+Trickster also provides a `http://127.0.0.1:8484/trickster/config` endpoint, which returns the yaml output of the currently-running Trickster configuration. The YAML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. By default, this interface is available only on the management listener. Set `mgmt.config_handler_listener` to `metrics`, `both`, or `off` to change where it is exposed. This path is configurable as demonstrated in the example config file. Both views mask authenticator users, and under an authenticator's `config` they mask the value of any key whose name contains `secret`, `key`, `token` or `password`, at any depth.
 
 Trickster also provides a sanitized view of the running configuration at `http://127.0.0.1:8484/trickster/config/sanitized`. If the `config_handler_path` is customized, append `/sanitized` to the configured path. The sanitized output deep-copies the running configuration, renames cache, backend, listener, and tracing resources by provider and sequence number (for example, `prom-1`, `prom-2`, `alb-1`, `memory-1`, `listener-1`, `otlp-1`), renames authenticators as `auth1`, `auth2`, etc., updates references to those resources in backend, path, ALB, rule, cache, tracing, listener, and authenticator mappings, replaces backend `origin_url`, Redis `endpoint` and `endpoints`, tracing `endpoint`, and Host-related request rewriter values with `example.com`, redacts per-path request and response header values, and replaces embedded authenticator users with `user1: redacted`, `user2: redacted`, etc. This endpoint is intended for sharing running configuration details in support requests without exposing private infrastructure names, origin endpoints, or user credentials.
 
@@ -367,9 +422,12 @@ kubernetes:
     healthcheck:                # the active probe used when health_mode is probe
       path: /healthz
       interval: 5s
+    sticky_secret_file: /etc/trickster/sticky/key  # keys session tokens; the same on every replica
 ```
 
 `defaults.routing_mode` is required and has no default. In `service` mode a generated backend sends traffic to the Service's cluster IP and kube-proxy load balances it. In `endpoint` mode Trickster discovers the Service's endpoints and load balances across them itself, which is what makes zero-error rolling deploys and per-endpoint health possible. The two have different failure modes, so Trickster refuses to guess: a configuration that omits the mode fails validation rather than silently picking one. In `endpoint` mode, `defaults.health_mode` decides whether discovered endpoints are trusted on their EndpointSlice readiness (`provider`, the default) or actively probed (`probe`), and `defaults.healthcheck` is the probe used in the latter case; unset, it probes the origin's root every 5 seconds.
+
+`defaults.sticky_secret_file` names a file of at least 32 bytes that keys the session tokens every generated ALB issues, for a route's `sessionPersistence` or a `sticky` annotation, parameter or policy. Mount it from a Secret at the same path on every replica, so that each replica honors the others' tokens. A GatewayClass's `sticky_secret` parameter, which names a Secret, takes its place for that class's routes. Unset, each process uses a random key of its own, which suits a single replica only. See [kubernetes-gateway.md](./kubernetes-gateway.md#session-persistence).
 
 `gateway_class_controller_name` is the name this instance claims GatewayClasses with, and is also matched against an IngressClass's `spec.controller`. Objects belonging to any other controller are ignored entirely and never receive status, because writing status onto another controller's object is worse than ignoring it. An Ingress with no `spec.ingressClassName` is claimed only when one of this controller's IngressClasses is annotated `ingressclass.kubernetes.io/is-default-class: "true"`.
 

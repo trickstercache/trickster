@@ -32,6 +32,9 @@ type Profile struct {
 	// Supported is the Client-Accepted Encodings filtered against Trickster supported Encodings
 	// represented as a bitmap
 	Supported providers.Provider
+	// Accepted is the Supported encodings in the Client's order of preference. When empty,
+	// Trickster's own order of preference is used.
+	Accepted providers.Accepted
 	// SupportedHeaderVal is the Accept-Encoding value representation of the Supported byte
 	// that is used when proxying to an origin
 	SupportedHeaderVal string
@@ -127,6 +130,13 @@ func (p *Profile) GetEncoderInitializer() (providers.EncoderInitializer, string)
 		return nil, ""
 	}
 
+	// the client's most preferred encoding that is still supported, as Supported may have
+	// been narrowed since the header was read
+	for i := range p.Accepted.Len() {
+		if enc := p.Accepted.At(i); p.Supported&enc != 0 {
+			return providers.SelectEncoderInitializer(enc)
+		}
+	}
 	return providers.SelectEncoderInitializer(p.Supported)
 }
 

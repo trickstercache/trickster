@@ -26,6 +26,7 @@ import (
 // Clone returns a deep copy of a *url.URL
 func Clone(u *url.URL) *url.URL {
 	u2 := FromParts(u.Scheme, u.Host, u.Path, u.RawQuery, u.Fragment)
+	u2.RawPath = u.RawPath
 	if u.User != nil {
 		var user *url.Userinfo
 		if p, ok := u.User.Password(); ok {
@@ -54,6 +55,10 @@ func FromParts(scheme, host, path, query, fragment string) *url.URL {
 func BuildUpstreamURL(r *http.Request, u *url.URL) *url.URL {
 	u2 := Clone(u)
 	applyUpstreamURLRewrites(r, u2)
+	// an encoding chosen by the client or the origin URL, such as a %2F kept within a segment, is forwarded as is
+	if u2.RawPath != "" || r.URL.RawPath != "" {
+		u2.RawPath = u2.EscapedPath() + r.URL.EscapedPath()
+	}
 	u2.Path += r.URL.Path
 	u2.RawQuery = r.URL.RawQuery
 	u2.Fragment = r.URL.Fragment

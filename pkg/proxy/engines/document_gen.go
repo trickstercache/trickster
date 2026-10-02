@@ -576,7 +576,7 @@ func (z *HTTPDocument) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				z.Headers[za0001] = za0002
 			}
 		case "body":
-			z.Body, bts, err = msgp.ReadBytesBytes(bts, z.Body)
+			z.Body, bts, err = msgp.ReadBytesZC(bts)
 			if err != nil {
 				err = msgp.WrapError(err, "Body")
 				return

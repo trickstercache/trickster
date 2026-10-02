@@ -28,13 +28,13 @@ datasources:
   version: 1
   editable: true
 
-# Mockster (Prom API Simulator)
+# Prometheus API Simulator (devorigin)
 - name: sim-direct
   type: prometheus
   access: proxy
   orgId: 1
   uid: ds_sim_direct
-  url: http://mockster:8482/prometheus
+  url: http://devorigin:8482/prometheus
   version: 1
   editable: true
 - name: sim-trickster-memory-ja

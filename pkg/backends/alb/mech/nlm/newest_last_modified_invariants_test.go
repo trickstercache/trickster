@@ -135,7 +135,6 @@ func testNLMAllTruncated(t *testing.T) {
 	hs := []http.Handler{oversized(), oversized(), oversized()}
 	p, _, _ := albpool.NewHealthy(hs)
 	defer p.Stop()
-	p.SetHealthy(hs)
 
 	h := &handler{maxCaptureBytes: maxBytes}
 	h.SetPool(p)
@@ -159,7 +158,6 @@ func testNLMAllFailed(t *testing.T) {
 
 	p, _, _ := albpool.NewHealthy(hs)
 	defer p.Stop()
-	p.SetHealthy(hs)
 
 	h := &handler{}
 	h.SetPool(p)

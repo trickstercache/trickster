@@ -22,9 +22,9 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
+	cfgtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // TestFRDisqualifiesTruncatedWinner asserts that FR (FGR variant) does not
@@ -41,11 +41,10 @@ func TestFRDisqualifiesTruncatedWinner(t *testing.T) {
 	}
 	p, _, _ := albpool.New(-1, hs)
 	defer p.Stop()
-	p.SetHealthy(hs)
 
 	h := &handler{
 		fgr:             true,
-		fgrCodes:        sets.New([]int{http.StatusOK}),
+		fgrCodes:        cfgtypes.StatusCodes(http.StatusOK).Compile(),
 		maxCaptureBytes: maxBytes,
 	}
 	h.SetPool(p)
@@ -78,7 +77,6 @@ func TestFRTruncatedAllMembersFallback(t *testing.T) {
 	}
 	p, _, _ := albpool.New(-1, hs)
 	defer p.Stop()
-	p.SetHealthy(hs)
 
 	h := &handler{maxCaptureBytes: maxBytes}
 	h.SetPool(p)
@@ -105,11 +103,10 @@ func TestFRPrefersIntactOverTruncated(t *testing.T) {
 	}
 	p, _, _ := albpool.New(-1, hs)
 	defer p.Stop()
-	p.SetHealthy(hs)
 
 	h := &handler{
 		fgr:             true,
-		fgrCodes:        sets.New([]int{http.StatusOK}),
+		fgrCodes:        cfgtypes.StatusCodes(http.StatusOK).Compile(),
 		maxCaptureBytes: maxBytes,
 	}
 	h.SetPool(p)

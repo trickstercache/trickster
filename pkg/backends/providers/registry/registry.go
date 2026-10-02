@@ -21,15 +21,21 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	"github.com/trickstercache/trickster/v2/pkg/backends/druid"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
+	"github.com/trickstercache/trickster/v2/pkg/backends/greptimedb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/mysql"
+	"github.com/trickstercache/trickster/v2/pkg/backends/postgres"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/questdb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
+	"github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
 
 func SupportedProviders() types.Lookup {
@@ -38,10 +44,16 @@ func SupportedProviders() types.Lookup {
 		providers.ClickHouse:             clickhouse.NewClient,
 		providers.Druid:                  druid.NewClient,
 		providers.Graphite:               graphite.NewClient,
+		providers.GreptimeDB:             greptimedb.NewClient,
 		providers.InfluxDB:               influxdb.NewClient,
 		providers.MySQL:                  mysql.NewClient,
+		providers.Postgres:               postgres.NewClient,
+		providers.TimescaleDB:            postgres.NewClient,
 		providers.Prometheus:             prometheus.NewClient,
+		providers.QuestDB:                questdb.NewClient,
+		providers.VictoriaMetrics:        victoriametrics.NewClient,
 		providers.Rule:                   rule.NewClient,
+		providers.Static:                 static.NewClient,
 		providers.Proxy:                  reverseproxy.NewClient,
 		providers.ReverseProxyShort:      reverseproxy.NewClient,
 		providers.ReverseProxy:           reverseproxy.NewClient,
@@ -54,13 +66,21 @@ func SupportedProviders() types.Lookup {
 // protocols. Adding another native protocol requires registration here, not a
 // protocol branch in daemon setup or configuration validation.
 var nativeListeners = func() native.Registry {
-	mysqlAdapter := mysql.NativeListenerAdapter()
+	mysqlAdapter := mysql.NewNativeListenerAdapter(greptimedb.MySQLEngine())
 	clickhouseAdapter := clickhouse.NativeListenerAdapter()
 	influxdbAdapter := influxdb.NativeListenerAdapter()
+	// Every provider that speaks the PostgreSQL wire protocol shares one
+	// adapter; serving another one is a single engine added to this list.
+	pgwireAdapter := pgwire.NewNativeListenerAdapter(pgwire.NewEngines(
+		postgres.Engine(),
+		greptimedb.Engine(),
+		questdb.Engine(),
+	))
 	return native.Registry{
 		mysqlAdapter.Protocol():      mysqlAdapter,
 		clickhouseAdapter.Protocol(): clickhouseAdapter,
 		influxdbAdapter.Protocol():   influxdbAdapter,
+		pgwireAdapter.Protocol():     pgwireAdapter,
 	}
 }()
 

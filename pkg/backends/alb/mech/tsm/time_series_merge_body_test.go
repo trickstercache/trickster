@@ -59,9 +59,7 @@ func newMarkerDataSet(marker string) *dataset.DataSet {
 	return &dataset.DataSet{
 		Warnings: []string{marker},
 		Results: dataset.Results{{
-			SeriesList: dataset.SeriesList{{
-				Header: dataset.SeriesHeader{Name: marker},
-			}},
+			SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Name: marker}, nil)},
 		}},
 	}
 }

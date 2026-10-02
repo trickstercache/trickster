@@ -43,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
+	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/annotations"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/cachepolicy"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/class"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/compile"
@@ -71,6 +72,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 )
 
 var update = flag.Bool("update", false, "rewrite the golden overlay files")
@@ -90,6 +92,9 @@ var decoder = func() runtime.Decoder {
 	if err := gwapiv1a2.Install(s); err != nil {
 		panic(err)
 	}
+	if err := gwapix.Install(s); err != nil {
+		panic(err)
+	}
 	return serializer.NewCodecFactory(s).UniversalDeserializer()
 }()
 
@@ -104,6 +109,7 @@ type cache struct {
 	udpRoutes  []*gwapiv1a2.UDPRoute
 	grants     []*gwapiv1.ReferenceGrant
 	policies   []*gwapiv1.BackendTLSPolicy
+	traffic    []*gwapix.XBackendTrafficPolicy
 	cachePols  []*cachepolicy.CachePolicy
 	services   map[string]*corev1.Service
 	secrets    map[string]*corev1.Secret
@@ -131,9 +137,24 @@ func (c *cache) ReferenceGrants() []*gwapiv1.ReferenceGrant { return c.grants }
 func (c *cache) BackendTLSPolicies() []*gwapiv1.BackendTLSPolicy {
 	return c.policies
 }
+
+func (c *cache) BackendTrafficPolicies() []*gwapix.XBackendTrafficPolicy {
+	return c.traffic
+}
 func (c *cache) Namespace(name string) *corev1.Namespace     { return c.namespaces[name] }
 func (c *cache) Service(ns, name string) *corev1.Service     { return c.services[ns+"/"+name] }
 func (c *cache) ConfigMap(ns, name string) *corev1.ConfigMap { return c.configMaps[ns+"/"+name] }
+
+func (c *cache) KeySecret(ns, name string) *corev1.Secret {
+	s := c.secrets[ns+"/"+name]
+	if s == nil {
+		return nil
+	}
+	if _, labeled := s.Labels[annotations.LabelStickyKey]; !labeled {
+		return nil
+	}
+	return s
+}
 
 func (c *cache) Secret(ns, name string) *corev1.Secret {
 	s := c.secrets[ns+"/"+name]
@@ -249,6 +270,8 @@ func load(t *testing.T, path string) *cache {
 			c.grants = append(c.grants, o)
 		case *gwapiv1.BackendTLSPolicy:
 			c.policies = append(c.policies, o)
+		case *gwapix.XBackendTrafficPolicy:
+			c.traffic = append(c.traffic, o)
 		case *corev1.Service:
 			c.services[o.Namespace+"/"+o.Name] = o
 		case *corev1.Secret:
@@ -703,24 +726,30 @@ func TestTranslateAllowedRoutes(t *testing.T) {
 }
 
 func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
-	// Every fixture's overlay must survive the real loader, as the daemon's
-	// reload would apply it
+	// Every fixture's overlay must survive the real loader, as the daemon's reload would apply
+	// it, in both routing modes: the endpoint mode generates templates the service mode does not
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(baseConfig), 0o600))
 	matches, err := filepath.Glob(filepath.Join("testdata", "*.golden.yaml"))
 	require.NoError(t, err)
 	require.NotEmpty(t, matches)
 	for _, m := range matches {
-		name := strings.TrimSuffix(filepath.Base(m), ".golden.yaml")
-		t.Run(name, func(t *testing.T) {
-			model, _, o := translateFixture(t, name)
-			overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
-			require.NoError(t, err)
-			conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
-			require.NoError(t, err)
-			require.NoError(t, conf.Backends.Validate())
-			require.NoError(t, validate.Validate(conf))
-		})
+		for _, mode := range []string{kubecfg.RoutingModeService, kubecfg.RoutingModeEndpoint} {
+			name := strings.TrimSuffix(filepath.Base(m), ".golden.yaml")
+			t.Run(name+"/"+mode, func(t *testing.T) {
+				model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
+					o.Defaults.RoutingMode = mode
+				})
+				overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
+				require.NoError(t, err)
+				conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
+				require.NoError(t, err)
+				require.NoError(t, conf.Backends.Validate())
+				require.NoError(t, validate.Validate(conf))
+				require.NoError(t, conf.Process())
+				require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
+			})
+		}
 	}
 }
 
@@ -810,7 +839,8 @@ func TestTranslateUnsupportedRouteFeatures(t *testing.T) {
 		hr.Spec.Rules[0].Retry = &gwapiv1.HTTPRouteRetry{}
 		hr.Spec.Rules[0].SessionPersistence = &gwapiv1.SessionPersistence{}
 	})
-	containing(t, problems, "sessionPersistence is not supported and is ignored")
+	containing(t, problems, "sessionPersistence on a rule with one backendRef needs the endpoint routing mode")
+	require.Nil(t, model.Routes[0].Rules[0].Session)
 	require.Len(t, model.Routes, 1)
 	require.Equal(t, &ir.RuleTimeouts{RequestMS: 5000}, model.Routes[0].Rules[0].Timeouts)
 	require.Equal(t, &ir.RuleRetry{Attempts: 1}, model.Routes[0].Rules[0].Retry)
@@ -2037,6 +2067,8 @@ func TestApplyParameterRejections(t *testing.T) {
 		"unknown key":           {"colour", "blue"},
 		"bad routing mode":      {ParamRoutingMode, "sideways"},
 		"bad health mode":       {ParamHealthMode, "guess"},
+		"bad load balancing":    {ParamLoadBalancing, "fr"},
+		"bad balancing key":     {ParamLoadBalancingKey, "port"},
 		"bad timeout":           {ParamTimeout, "45"},
 		"negative timeout":      {ParamTimeout, "-1s"},
 		"unknown cache":         {ParamCacheName, "nope"},
@@ -2044,6 +2076,11 @@ func TestApplyParameterRejections(t *testing.T) {
 		"unknown tracer":        {ParamTracingName, "nope"},
 		"unknown rewriter":      {ParamReqRewriterName, "nope"},
 		"unknown authenticator": {ParamAuthenticatorName, "nope"},
+		"bad sticky":            {ParamSticky, "yes"},
+		"bad sticky key":        {ParamStickyKey, "path"},
+		"short sticky ttl":      {ParamStickyTTL, "10ms"},
+		"bad sticky idle":       {ParamStickyIdle, "soon"},
+		"secret elsewhere":      {ParamStickySecret, "infra/sticky-key"},
 	}
 	for name, kv := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -2055,6 +2092,21 @@ func TestApplyParameterRejections(t *testing.T) {
 	var p ir.Policy
 	require.NoError(t, tr.applyParameter(&p, ParamNegativeCacheName, "api-errors"))
 	require.Equal(t, "api-errors", p.NegativeCacheName)
+	require.NoError(t, tr.applyParameter(&p, ParamLoadBalancing, "hrw"))
+	require.NoError(t, tr.applyParameter(&p, ParamLoadBalancingKey, "sni"))
+	require.Equal(t, "hrw", p.LoadBalancing)
+	require.Equal(t, "sni", p.LoadBalancingKey)
+	for k, v := range map[string]string{
+		ParamSticky: "table", ParamStickyKey: "client_ip", ParamStickyTTL: "30m",
+		ParamStickyIdle: "5m", ParamStickySecret: "sticky-key",
+	} {
+		require.NoError(t, tr.applyParameter(&p, k, v), k)
+	}
+	require.Equal(t, "table", p.Sticky)
+	require.Equal(t, "client_ip", p.StickyKey)
+	require.Equal(t, int64(1800000), p.StickyTTLMS)
+	require.Equal(t, int64(300000), p.StickyIdleMS)
+	require.Equal(t, "sticky-key", p.StickySecret, "the name, which the class resolves")
 	// with nothing to check against, any name is accepted
 	free := &translator{}
 	require.NoError(t, free.applyParameter(&p, ParamReqRewriterName, "anything"))

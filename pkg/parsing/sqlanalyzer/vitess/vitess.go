@@ -24,12 +24,14 @@ package vitess
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"vitess.io/vitess/go/vt/sqlparser"
 )
@@ -61,16 +63,37 @@ var (
 // Analyzer converts Vitess's MySQL AST into Trickster's dialect-independent
 // cache plan. It contains no mutable per-query state and is safe for concurrent use.
 type Analyzer struct {
-	parser *sqlparser.Parser
+	parser    *sqlparser.Parser
+	buckets   []BucketMatcher
+	functions map[string]struct{}
+}
+
+// BucketMatcher recognizes an epoch-aligned, fixed-width bucket over one column.
+// A dialect must also establish the origin's semantics for any added functions.
+type BucketMatcher func(sqlparser.Expr) (*sqlparser.ColName, time.Duration, timeseries.FieldDataType, bool)
+
+// Options adds dialect-specific syntax without changing MySQL's defaults.
+type Options struct {
+	BucketMatchers         []BucketMatcher
+	DeterministicFunctions []string
 }
 
 // NewAnalyzer returns an analyzer configured for MySQL 8 syntax.
 func NewAnalyzer() (*Analyzer, error) {
+	return NewAnalyzerWithOptions(Options{})
+}
+
+// NewAnalyzerWithOptions returns a parser with optional compatible-dialect rules.
+func NewAnalyzerWithOptions(options Options) (*Analyzer, error) {
 	p, err := sqlparser.New(sqlparser.Options{MySQLServerVersion: "8.0.0"})
 	if err != nil {
 		return nil, err
 	}
-	return &Analyzer{parser: p}, nil
+	functions := make(map[string]struct{}, len(options.DeterministicFunctions))
+	for _, name := range options.DeterministicFunctions {
+		functions[strings.ToLower(name)] = struct{}{}
+	}
+	return &Analyzer{parser: p, buckets: slices.Clone(options.BucketMatchers), functions: functions}, nil
 }
 
 var _ sqlanalyzer.DialectAnalyzer = (*Analyzer)(nil)
@@ -92,6 +115,7 @@ func (a *Analyzer) Parser() *sqlparser.Parser {
 }
 
 type bucketInfo struct {
+	expression   sqlparser.Expr
 	timeColumn   string
 	timeAxis     string
 	outputColumn string
@@ -106,6 +130,14 @@ type rangeInfo struct {
 	// emits a literal the original operator still reads correctly.
 	upperSourceInclusive bool
 	upperTick            time.Duration
+	rawUpper             time.Time
+}
+
+func (r rangeInfo) rawUpperBound() *sqlanalyzer.Bound {
+	if r.upperSourceInclusive {
+		return &sqlanalyzer.Bound{Value: r.rawUpper, Inclusive: true}
+	}
+	return &sqlanalyzer.Bound{Value: r.upper.value, Inclusive: r.upper.inclusive}
 }
 
 type mysqlBound struct {
@@ -157,7 +189,7 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 		}
 	}
 	if selectStmt.Cache != nil || selectStmt.Lock != sqlparser.NoLock || selectStmt.SQLCalcFoundRows ||
-		selectStmt.Into != nil || isNondeterministic(selectStmt) {
+		selectStmt.Into != nil || a.isNondeterministic(selectStmt) {
 		return sqlanalyzer.Analysis{
 			Mode:   sqlanalyzer.CacheModeNone,
 			Reason: sqlanalyzer.ReasonNondeterministic, Err: ErrUnsupportedStatement,
@@ -170,7 +202,7 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 		len(selectStmt.Windows) > 0 || containsSubquery(selectStmt) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, ErrUnsupportedResultShape)
 	}
-	bucket, err := analyzeBucket(selectStmt)
+	bucket, err := analyzeBucket(selectStmt, a.buckets...)
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedBucket, err)
 	}
@@ -197,19 +229,16 @@ func (a *Analyzer) AnalyzeParsed(statement string, stmt sqlparser.Statement,
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsafePredicate, err)
 	}
-	backfillTolerance := extractBackfillTolerance(statement, selectStmt)
-	identitySuffix := ""
-	if backfillTolerance > 0 {
-		identitySuffix = fmt.Sprintf("backfill_tolerance=%d", int64(backfillTolerance/time.Second))
-	}
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
 		TimeColumn:   bucket.timeColumn, OutputColumn: bucket.outputColumn,
 		Step: bucket.step, Phase: 0, OutputUnit: bucket.unit, InputUnit: rng.lower.unit,
 		LowerBound:   &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
 		UpperBound:   &sqlanalyzer.Bound{Value: rng.upper.value, Inclusive: rng.upper.inclusive},
+		RawLower:     &sqlanalyzer.Bound{Value: rng.lower.value, Inclusive: rng.lower.inclusive},
+		RawUpper:     rng.rawUpperBound(),
 		GroupColumns: groups, ValueColumns: values, Renderer: extentRenderer,
-		BackfillTolerance: backfillTolerance, IdentitySuffix: identitySuffix,
+		Directives: directives.Parse(statement, directives.SyntaxMySQL),
 	}
 	return sqlanalyzer.Analysis{
 		Mode:   sqlanalyzer.CacheModeDelta,
@@ -232,12 +261,15 @@ func containsSubquery(stmt sqlparser.SQLNode) bool {
 	return found
 }
 
-func isNondeterministic(stmt sqlparser.SQLNode) bool {
+func (a *Analyzer) isNondeterministic(stmt sqlparser.SQLNode) bool {
 	unsafe := false
 	_ = sqlparser.Walk(func(node sqlparser.SQLNode) (bool, error) {
 		switch n := node.(type) {
 		case *sqlparser.FuncExpr:
 			name := strings.ToLower(n.Name.String())
+			if _, allowed := a.functions[name]; allowed && n.Qualifier.IsEmpty() {
+				return true, nil
+			}
 			switch name {
 			case fromUnixTimeFunction, "coalesce", "floor", "ifnull", "round":
 				// These are the deterministic general functions used by supported
@@ -261,81 +293,7 @@ func isNondeterministic(stmt sqlparser.SQLNode) bool {
 	return unsafe
 }
 
-func extractBackfillTolerance(statement string, stmt *sqlparser.Select) time.Duration {
-	query := &timeseries.TimeRangeQuery{}
-	comments := sqlCommentText(statement)
-	if stmt != nil && stmt.Comments != nil {
-		comments += " " + strings.Join(stmt.Comments.GetComments(), " ")
-	}
-	query.ExtractBackfillTolerance("  " + comments)
-	return query.BackfillTolerance
-}
-
-func sqlCommentText(statement string) string {
-	var comments strings.Builder
-	for i := 0; i < len(statement); {
-		switch statement[i] {
-		case '\'', '"', '`':
-			quote := statement[i]
-			i++
-			for i < len(statement) {
-				if statement[i] == '\\' {
-					i += min(2, len(statement)-i)
-					continue
-				}
-				if statement[i] == quote {
-					i++
-					if i < len(statement) && statement[i] == quote {
-						i++
-						continue
-					}
-					break
-				}
-				i++
-			}
-		case '/':
-			if i+1 >= len(statement) || statement[i+1] != '*' {
-				i++
-				continue
-			}
-			end := strings.Index(statement[i+2:], "*/")
-			if end < 0 {
-				return comments.String()
-			}
-			comments.WriteString(statement[i+2 : i+2+end])
-			comments.WriteByte(' ')
-			i += end + 4
-		case '#':
-			end := strings.IndexByte(statement[i+1:], '\n')
-			if end < 0 {
-				comments.WriteString(statement[i+1:])
-				return comments.String()
-			}
-			comments.WriteString(statement[i+1 : i+1+end])
-			comments.WriteByte(' ')
-			i += end + 2
-		case '-':
-			if i+2 >= len(statement) || statement[i+1] != '-' ||
-				(statement[i+2] != ' ' && statement[i+2] != '\t') {
-				i++
-				continue
-			}
-			end := strings.IndexByte(statement[i+2:], '\n')
-			if end < 0 {
-				comments.WriteString(statement[i+2:])
-				return comments.String()
-			}
-			comments.WriteString(statement[i+2 : i+2+end])
-			comments.WriteByte(' ')
-			i += end + 3
-		default:
-			i++
-		}
-	}
-	return comments.String()
-}
-
-func analyzeBucket(stmt *sqlparser.Select) (bucketInfo, error) {
+func analyzeBucket(stmt *sqlparser.Select, matchers ...BucketMatcher) (bucketInfo, error) {
 	if stmt.SelectExprs == nil {
 		return bucketInfo{}, ErrUnsupportedBucket
 	}
@@ -347,6 +305,17 @@ func analyzeBucket(stmt *sqlparser.Select) (bucketInfo, error) {
 		}
 		column, axis, seconds, unit, ok := matchBucketExpr(ae.Expr)
 		if !ok {
+			for _, match := range matchers {
+				col, step, outputUnit, matched := match(ae.Expr)
+				if !matched || col == nil || step <= 0 {
+					continue
+				}
+				column, axis, ok = columnReference(col)
+				seconds, unit = step, outputUnit
+				break
+			}
+		}
+		if !ok {
 			continue
 		}
 		alias := ae.As.String()
@@ -357,6 +326,7 @@ func analyzeBucket(stmt *sqlparser.Select) (bucketInfo, error) {
 			return bucketInfo{}, ErrUnsupportedBucket
 		}
 		candidate := bucketInfo{
+			expression: ae.Expr,
 			timeColumn: column, outputColumn: alias,
 			timeAxis: axis, step: seconds, unit: unit,
 		}
@@ -526,7 +496,8 @@ func analyzeRange(where *sqlparser.Where, bucket bucketInfo) (rangeInfo, error) 
 		}
 		out.upperSourceInclusive = true
 		out.upperTick = tick
-		out.upper.value = sqlanalyzer.FloorBucket(out.upper.value, bucket.step, 0)
+		out.rawUpper = out.upper.value
+		out.upper.value = timeseries.FloorToGrid(out.upper.value, bucket.step, 0)
 		out.upper.inclusive = false
 	}
 	return out, nil
@@ -756,13 +727,13 @@ func selectOutputs(stmt *sqlparser.Select, bucket bucketInfo) ([]selectOutput, i
 			return nil, -1, ErrUnsupportedResultShape
 		}
 		seenNames[key] = struct{}{}
-		_, axis, _, _, isBucket := matchBucketExpr(aliased.Expr)
+		isBucket := aliased.Expr == bucket.expression
 		output := selectOutput{
 			expr: aliased.Expr, name: name, alias: alias,
 			sourceName: sourceName, sourceAxis: sourceAxis, bucket: isBucket,
 		}
 		if isBucket {
-			if bucketIndex >= 0 || !strings.EqualFold(axis, bucket.timeAxis) ||
+			if bucketIndex >= 0 ||
 				!strings.EqualFold(name, bucket.outputColumn) {
 				return nil, -1, ErrUnsupportedResultShape
 			}
@@ -999,6 +970,31 @@ func (r *renderer) RenderTimeRange(lower, upper time.Time) (string, error) {
 		return false
 	}, nil).(sqlparser.Statement)
 	return sqlparser.String(stmt), nil
+}
+
+// RenderRange implements sqlanalyzer.RangeRenderer through the statement's own comparators; an
+// inclusive upper bound keeps the client's raw literal
+func (r *renderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	// vitess plans always carry an inclusive lower bound and an upper bound
+	if pb.LowerExclusive || pb.Upper.IsZero() || !r.lowerInclusive ||
+		(pb.UpperInclusive && !r.upperInclusive) {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	upper := pb.Upper
+	if r.upperInclusive && !pb.UpperInclusive {
+		// an exclusive end read through the statement's <= sits one tick below it
+		upper = upper.Add(-r.upperTick)
+	}
+	if !representable(pb.Lower, r.lower) || !representable(upper, r.upper) {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	return r.RenderTimeRange(pb.Lower, upper)
+}
+
+func representable(value time.Time, style boundStyle) bool {
+	// a literal of the style holds the value exactly, so no row moves across the rendered bound
+	tick, ok := boundTick(style)
+	return ok && value.UnixNano()%int64(tick) == 0
 }
 
 func renderBound(value time.Time, style boundStyle) sqlparser.Expr {

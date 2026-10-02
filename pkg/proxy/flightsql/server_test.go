@@ -294,10 +294,11 @@ func (f *fakeUpstream) Close() error {
 type memCache struct {
 	mu   sync.Mutex
 	data map[string][]byte
+	ttls map[string]time.Duration
 }
 
 func newMemCache() *memCache {
-	return &memCache{data: make(map[string][]byte)}
+	return &memCache{data: make(map[string][]byte), ttls: make(map[string]time.Duration)}
 }
 
 func (c *memCache) Get(key string) ([]byte, bool) {
@@ -307,10 +308,11 @@ func (c *memCache) Get(key string) ([]byte, bool) {
 	return b, ok
 }
 
-func (c *memCache) Set(key string, data []byte, _ time.Duration) {
+func (c *memCache) Set(key string, data []byte, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.data[key] = data
+	c.ttls[key] = ttl
 }
 
 // buildTestIPC creates a small Arrow record and encodes it to IPC bytes.

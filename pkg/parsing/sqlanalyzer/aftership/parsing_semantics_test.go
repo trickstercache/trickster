@@ -53,9 +53,19 @@ func TestBoundSemanticsMatrix(t *testing.T) {
 			name: "raw between", predicate: "ts BETWEEN 120 AND 240", mode: sqlanalyzer.CacheModeDelta,
 			start: 120, end: 180, rendered: []string{"ts BETWEEN 300 AND 419"},
 		},
-		{name: "raw unaligned inclusive upper", predicate: "ts >= 120 AND ts <= 241", mode: sqlanalyzer.CacheModeObject},
-		{name: "raw unaligned lower", predicate: "ts >= 121 AND ts < 240", mode: sqlanalyzer.CacheModeObject},
-		{name: "raw unaligned upper", predicate: "ts >= 120 AND ts < 241", mode: sqlanalyzer.CacheModeObject},
+		// unaligned bounds round inward to complete buckets, and the planner decides each mode's edges
+		{
+			name: "raw unaligned inclusive upper", predicate: "ts >= 120 AND ts <= 241", mode: sqlanalyzer.CacheModeDelta,
+			start: 120, end: 180, rendered: []string{"ts >= 300", "ts <= 419"},
+		},
+		{
+			name: "raw unaligned lower", predicate: "ts >= 121 AND ts < 240", mode: sqlanalyzer.CacheModeDelta,
+			start: 180, end: 180, rendered: []string{"ts >= 300", "ts < 420"},
+		},
+		{
+			name: "raw unaligned upper", predicate: "ts >= 120 AND ts < 241", mode: sqlanalyzer.CacheModeDelta,
+			start: 120, end: 180, rendered: []string{"ts >= 300", "ts < 420"},
+		},
 		{
 			name: "alias half open", predicate: "t >= 120 AND t < 240", mode: sqlanalyzer.CacheModeDelta,
 			start: 120, end: 180, rendered: []string{"t >= 300", "t < 420"},
@@ -365,7 +375,7 @@ func equalStrings(got, want []string) bool {
 }
 
 func TestRoundUnalignedTimeBounds(t *testing.T) {
-	a := NewAnalyzer(Options{RoundUnalignedTimeBounds: true})
+	a := NewAnalyzer(Options{})
 	// Grafana's $__fromTime/$__toTime expand to toDateTime(seconds) at
 	// live, unaligned instants.
 	query := "SELECT toStartOfInterval(pickup_datetime, INTERVAL 5 MINUTE) AS t, count() AS trips " +
@@ -386,6 +396,12 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 	if extent.Start.Unix() != 1756671900 || extent.End.Unix() != 1756757700 {
 		t.Fatalf("extent = [%d,%d]", extent.Start.Unix(), extent.End.Unix())
 	}
+	// the raw bounds keep the statement's own values
+	requested := got.Plan.RequestedRange(time.Unix(1756758100, 0))
+	if requested.Start.Unix() != 1756671691 || requested.End.Unix() != 1756758091 ||
+		requested.StartExclusive || requested.EndInclusive || requested.OpenEnded {
+		t.Fatalf("requested = %+v", requested)
+	}
 	rendered, err := got.Plan.RenderExtent(extent)
 	if err != nil {
 		t.Fatal(err)
@@ -395,16 +411,20 @@ func TestRoundUnalignedTimeBounds(t *testing.T) {
 		t.Fatalf("rounded bounds rendered incorrectly: %s", rendered)
 	}
 
-	// Both bounds inside one bucket leave no complete bucket to cache.
+	// Both bounds inside one bucket leave no complete bucket, which the planner decides; the bounds
+	// meet at the rounded-up lower boundary.
 	empty := a.Analyze("SELECT toStartOfInterval(ts, INTERVAL 5 MINUTE) AS t, count() FROM events "+
 		"WHERE ts >= 1756671601 AND ts < 1756671899 GROUP BY t", time.Unix(1756758100, 0))
-	if empty.Mode == sqlanalyzer.CacheModeDelta || empty.Reason != sqlanalyzer.ReasonUnsafePredicate {
+	if empty.Mode != sqlanalyzer.CacheModeDelta || empty.Plan == nil {
 		t.Fatalf("empty rounded window = %s/%s (%v)", empty.Mode, empty.Reason, empty.Err)
 	}
-
-	// Without the option, unaligned raw bounds still fail closed.
-	strict := NewAnalyzer(Options{}).Analyze(query, time.Unix(1756758100, 0))
-	if strict.Mode == sqlanalyzer.CacheModeDelta || strict.Reason != sqlanalyzer.ReasonUnsafePredicate {
-		t.Fatalf("strict analysis = %s/%s (%v)", strict.Mode, strict.Reason, strict.Err)
+	if !empty.Plan.LowerBound.Value.Equal(time.Unix(1756671900, 0)) ||
+		!empty.Plan.UpperBound.Value.Equal(empty.Plan.LowerBound.Value) {
+		t.Fatalf("empty window bounds = %+v, %+v", empty.Plan.LowerBound, empty.Plan.UpperBound)
+	}
+	if p := timeseries.PlanRange(empty.Plan.RequestedRange(time.Unix(1756758100, 0)), empty.Plan.Step,
+		empty.Plan.Phase, timeseries.SampleModelBucket, timeseries.StepAlignmentDrop,
+		time.Unix(1756758100, 0)); p.Full {
+		t.Fatalf("empty window planned a complete bucket: %+v", p)
 	}
 }

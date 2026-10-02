@@ -22,11 +22,26 @@ import (
 	"encoding/json"
 	"maps"
 	"net/url"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
+)
+
+// SampleModel describes what the value at a timestamp in a query's result represents
+type SampleModel byte
+
+const (
+	// SampleModelInstant values are evaluated at their timestamp, as in PromQL range queries
+	SampleModelInstant SampleModel = iota
+	// SampleModelBucket values aggregate every row in [timestamp, timestamp+step), so the
+	// bucket containing the current time is still filling
+	SampleModelBucket
+	// SampleModelBucketStop values aggregate every row in [timestamp-step, timestamp), as when
+	// Flux labels each window by its stop time
+	SampleModelBucketStop
+	// SampleModelStored values are whole storage buckets labeled by their start, as in
+	// Graphite's whisper files, whose newest bucket is still being written
+	SampleModelStored
 )
 
 // TimeRangeQuery represents a timeseries database query parsed from an inbound HTTP request
@@ -38,20 +53,36 @@ type TimeRangeQuery struct {
 	// Step indicates the amount of time in seconds between each datapoint in a TimeRangeQuery's resulting timeseries
 	Step time.Duration `msg:"-"`
 	// PolicyStep optionally overrides Step for cache policies expressed in logical query points.
-	// It does not affect timestamp-grid operations such as extent normalization and gap detection.
+	// It does not affect timestamp-grid operations such as extent alignment and gap detection.
 	PolicyStep time.Duration `msg:"-"`
 	// Phase is the bucket offset from the Unix epoch
 	Phase time.Duration `msg:"-"`
+	// Requested is the query's time range as the client sent it, before any alignment
+	Requested RequestedRange `msg:"-"`
+	// Partials holds the partial edge buckets planned for the request, the first PartialCount of them
+	Partials [2]PartialBucket `msg:"-"`
 	// TemplateURL is used by some Backend providers for templatization of url parameters containing timestamps
 	TemplateURL *url.URL `msg:"-"`
+	// the one-byte fields sit together, where padding after each would take the struct up a size class
+
+	// SampleModel describes what each timestamp's value represents
+	SampleModel SampleModel `msg:"-"`
+	// StepAlignments is the set of step alignment modes the query supports
+	StepAlignments StepAlignment `msg:"-"`
+	// StepAlignment is the query's step alignment mode: its default until the engine resolves it
+	StepAlignment StepAlignment `msg:"-"`
+	// PartialCount is how many of Partials are planned
+	PartialCount uint8 `msg:"-"`
 	// IsOffset is true if the query uses a relative offset modifier
 	IsOffset bool `msg:"-"`
 	// StepNS is the nanosecond representation for Step, required for MsgPack
 	StepNS int64 `msg:"step"`
 	// PolicyStepNS is the nanosecond representation for PolicyStep, required for MsgPack.
 	PolicyStepNS int64 `msg:"policy_step"`
-	// BackfillTolerance can be updated to override the overall backfill tolerance per query
-	BackfillTolerance time.Duration `msg:"-"`
+	// VolatileWindow, when set, replaces the backend's volatile window for this query
+	VolatileWindow time.Duration `msg:"-"`
+	// Directives are the trickster-* directives in the query's comments
+	Directives Directives `msg:"-"`
 	// RecordLimit is the LIMIT value of the query
 	RecordLimit int `msg:"rl"`
 	// TimestampDefinition sets the definition for the Timestamp column in the in the timeseries based on the query
@@ -60,10 +91,14 @@ type TimeRangeQuery struct {
 	TagFieldDefintions FieldDefinitions `msg:"-"`
 	// ParsedQuery is a member for the vendor-specific query object
 	ParsedQuery any `msg:"-"`
-	// OriginalBody is the original inbound request body untransformed if POST
+	// OriginalBody is the original inbound request body untransformed if POST. It is only ever
+	// replaced, never written in place, so clones share it
 	OriginalBody []byte `msg:"-"`
 	// CacheKeyElements contains parts of the request that are used to derive a Cache Key
 	CacheKeyElements map[string]string `msg:"cke"`
+	// KeyParamValues replace same-named request parameters in the cache key, as when a provider takes
+	// its directives out of a statement; a request without them keys as before
+	KeyParamValues map[string]string `msg:"-"`
 	// Ordering carries result-column sort terms needed when cached parts are
 	// rebuilt into a response. It is request-scoped and is not cached.
 	Ordering []OrderTerm `msg:"-"`
@@ -83,12 +118,19 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 		Step:                trq.Step,
 		PolicyStep:          trq.PolicyStep,
 		Phase:               trq.Phase,
+		SampleModel:         trq.SampleModel,
+		Requested:           trq.Requested,
+		StepAlignments:      trq.StepAlignments,
+		StepAlignment:       trq.StepAlignment,
+		Partials:            trq.Partials,
+		PartialCount:        trq.PartialCount,
 		StepNS:              trq.StepNS,
 		PolicyStepNS:        trq.PolicyStepNS,
 		Extent:              Extent{Start: trq.Extent.Start, End: trq.Extent.End},
 		IsOffset:            trq.IsOffset,
 		TimestampDefinition: trq.TimestampDefinition,
 		ParsedQuery:         trq.ParsedQuery,
+		Directives:          trq.Directives,
 	}
 
 	if trq.TagFieldDefintions != nil {
@@ -101,12 +143,15 @@ func (trq *TimeRangeQuery) Clone() *TimeRangeQuery {
 	}
 
 	if len(trq.OriginalBody) > 0 {
-		t.OriginalBody = make([]byte, len(trq.OriginalBody))
-		copy(t.OriginalBody, trq.OriginalBody)
+		t.OriginalBody = trq.OriginalBody
 	}
 
 	if len(trq.CacheKeyElements) > 0 {
 		t.CacheKeyElements = maps.Clone(trq.CacheKeyElements)
+	}
+
+	if len(trq.KeyParamValues) > 0 {
+		t.KeyParamValues = maps.Clone(trq.KeyParamValues)
 	}
 
 	if len(trq.Ordering) > 0 {
@@ -124,26 +169,20 @@ func (trq *TimeRangeQuery) CachePolicyStep() time.Duration {
 	return trq.Step
 }
 
-// NormalizeExtent adjusts the Start and End of a TimeRangeQuery's Extent to align against normalized boundaries.
-func (trq *TimeRangeQuery) NormalizeExtent() {
-	if trq.Step > 0 {
-		if !trq.IsOffset && trq.Extent.End.After(time.Now()) {
-			trq.Extent.End = time.Now()
-		}
-		trq.Extent.Start = truncateToPhase(trq.Extent.Start, trq.Step, trq.Phase)
-		trq.Extent.End = truncateToPhase(trq.Extent.End, trq.Step, trq.Phase)
-	}
+// AlignExtent floors the Start and End of a TimeRangeQuery's Extent to its step grid, first capping
+// End at the current time unless the query uses an offset modifier
+func (trq *TimeRangeQuery) AlignExtent() {
+	trq.alignExtent(time.Now())
 }
 
-func truncateToPhase(value time.Time, step, phase time.Duration) time.Time {
-	stepNS := step.Nanoseconds()
-	phaseNS := phase.Nanoseconds()
-	shifted := value.UnixNano() - phaseNS
-	quotient := shifted / stepNS
-	if shifted < 0 && shifted%stepNS != 0 {
-		quotient--
+func (trq *TimeRangeQuery) alignExtent(now time.Time) {
+	if trq.Step > 0 {
+		if !trq.IsOffset && trq.Extent.End.After(now) {
+			trq.Extent.End = now
+		}
+		trq.Extent.Start = FloorToGrid(trq.Extent.Start, trq.Step, trq.Phase)
+		trq.Extent.End = FloorToGrid(trq.Extent.End, trq.Step, trq.Phase)
 	}
-	return time.Unix(0, quotient*stepNS+phaseNS).In(value.Location())
 }
 
 func (trq *TimeRangeQuery) String() string {
@@ -170,13 +209,13 @@ func (trq *TimeRangeQuery) String() string {
 	return string(b)
 }
 
-// GetBackfillTolerance will return the backfill tolerance for the query based on the provided
-// defaults, and any query-specific tolerance directives included in the query comments
-func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) time.Duration {
-	if trq.BackfillTolerance > 0 {
-		return trq.BackfillTolerance
+// GetVolatileWindow returns the query's volatile window: its own when set, else the larger of the
+// backend's duration and its points in query steps
+func (trq *TimeRangeQuery) GetVolatileWindow(def time.Duration, points int) time.Duration {
+	if trq.VolatileWindow > 0 {
+		return trq.VolatileWindow
 	}
-	if trq.BackfillTolerance < 0 {
+	if trq.VolatileWindow < 0 {
 		return 0
 	}
 
@@ -193,26 +232,10 @@ func (trq *TimeRangeQuery) GetBackfillTolerance(def time.Duration, points int) t
 // Size returns the memory usage in bytes of the TimeRangeQuery
 func (trq *TimeRangeQuery) Size() int {
 	size := len(trq.Statement) + 24 + 24 + trq.TimestampDefinition.Size() + // Extent=24 + Step=8 + PolicyStep=8 + Phase=8
-		urls.Size(trq.TemplateURL) + 19 // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1
+		urls.Size(trq.TemplateURL) + 20 + // FFwDisable=1 IsOffset=1 StepNS=8 PolicyStepNS=8 CustomData=1 SampleModel=1
+		51 + 2 + 150 + 1 + 10 // Requested=51 StepAlignments=1 StepAlignment=1 Partials=2*75 PartialCount=1 Directives=10
 	for _, term := range trq.Ordering {
 		size += len(term.Column) + 2
 	}
 	return size
-}
-
-// ExtractBackfillTolerance will look for the BackfillToleranceFlag in the provided string
-// and return the BackfillTolerance value if present
-func (trq *TimeRangeQuery) ExtractBackfillTolerance(input string) {
-	if x := strings.Index(input, BackfillToleranceFlag); x > 1 {
-		x += 29
-		y := x
-		for ; y < len(input); y++ {
-			if input[y] < 48 || input[y] > 57 {
-				break
-			}
-		}
-		if i, err := strconv.Atoi(input[x:y]); err == nil {
-			trq.BackfillTolerance = time.Second * time.Duration(i)
-		}
-	}
 }

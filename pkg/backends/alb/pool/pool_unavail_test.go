@@ -19,43 +19,39 @@ package pool
 import (
 	"net/http"
 	"testing"
-	"testing/synctest"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-// Targets must drop a target whose status flipped below the floor after the
-// cached snapshot was last refreshed. The internal snapshot keeps the stale
-// view intact; Targets re-checks against the current atomic status to close
-// the race window.
-func TestLiveTargetsDropsStaleFailingTarget(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		st1 := &healthcheck.Status{}
-		st2 := &healthcheck.Status{}
-		t1 := NewTarget(http.NotFoundHandler(), st1, nil)
-		t2 := NewTarget(http.NotFoundHandler(), st2, nil)
+// Targets drops a member the moment its status falls below the floor, with no wait for any
+// background worker; a stopped pool no longer follows its members.
+func TestTargetsDropsFailingTargetImmediately(t *testing.T) {
+	st1 := &healthcheck.Status{}
+	st2 := &healthcheck.Status{}
+	t1 := NewTarget(http.NotFoundHandler(), st1, nil)
+	t2 := NewTarget(http.NotFoundHandler(), st2, nil)
 
-		p := New(Targets{t1, t2}, 1)
-		defer p.Stop()
-		st1.Set(healthcheck.StatusPassing)
-		st2.Set(healthcheck.StatusPassing)
-		synctest.Wait()
-		if got := len(p.Targets()); got != 2 {
-			t.Fatalf("setup: expected 2 healthy targets, got %d", got)
-		}
+	p := New(Targets{t1, t2}, 1)
+	defer p.Stop()
+	st1.Set(healthcheck.StatusPassing)
+	st2.Set(healthcheck.StatusPassing)
+	if got := len(p.Targets()); got != 2 {
+		t.Fatalf("setup: expected 2 healthy targets, got %d", got)
+	}
 
-		// Pin the snapshot stale by stopping the pool's refresh goroutines, then
-		// flip t2 to Failing.
-		p.Stop()
-		st2.Set(healthcheck.StatusFailing)
+	st2.Set(healthcheck.StatusFailing)
+	if live := p.Targets(); len(live) != 1 || live[0] != t1 {
+		t.Fatalf("Targets: expected only t1, got %#v", live)
+	}
 
-		if got := len(p.(*pool).snapshot()); got != 2 {
-			t.Fatalf("snapshot: expected 2 (stale), got %d", got)
-		}
-
-		live := p.Targets()
-		if len(live) != 1 || live[0] != t1 {
-			t.Fatalf("Targets: expected only t1, got %#v", live)
-		}
-	})
+	p.Stop()
+	st2.Set(healthcheck.StatusPassing)
+	st1.Set(healthcheck.StatusFailing)
+	if live := p.Targets(); len(live) != 1 || live[0] != t1 {
+		t.Fatalf("a stopped pool republished: %#v", live)
+	}
+	p.RefreshHealthy()
+	if live := p.Targets(); len(live) != 1 || live[0] != t1 {
+		t.Fatalf("a stopped pool refreshed: %#v", live)
+	}
 }

@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	encoding "github.com/trickstercache/trickster/v2/pkg/encoding/handler"
 	fopt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -63,7 +64,7 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 	if pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil {
 		h = handler.NamedMiddleware(pathOptions.AuthOptions.Name,
 			pathOptions.AuthOptions.Authenticator, h)
-	} else if pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+	} else if pathOptions.AuthenticatorName != reserved.ReferenceNone && backendOptions.AuthOptions != nil &&
 		backendOptions.AuthOptions.Authenticator != nil {
 		h = handler.NamedMiddleware(backendOptions.AuthOptions.Name,
 			backendOptions.AuthOptions.Authenticator, h)
@@ -73,7 +74,7 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
 	return pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil ||
-		pathOptions.AuthenticatorName != "none" && backendOptions.AuthOptions != nil &&
+		pathOptions.AuthenticatorName != reserved.ReferenceNone && backendOptions.AuthOptions != nil &&
 			backendOptions.AuthOptions.Authenticator != nil
 }
 
@@ -149,7 +150,10 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		// a handler that answers from configuration has no upstream for an
 		// upgrade to be tunneled to; diverting one would open a connection
 		// a local path promised never to make
-		h = middleware.UpgradeSwitch(passthrough, h)
+		h = routeUpgrades(client, passthrough, h)
+	}
+	if o.SigV4 != nil {
+		h = middleware.StripSigV4(h)
 	}
 	h = middleware.MaxForwards(h)
 	if tr != nil {
@@ -159,16 +163,17 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	// header it withholds from the client
 	withResources := shouldCaptureAuth(pathOpts, o) || pathOpts.HideResultHeader ||
 		rl.logger.NeedsResources()
-	h = attachAuthenticator(h, pathOpts, o)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
-	// WithResourcesContext must wrap outer than LimitQueryRange
-	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if len(o.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(o.ReqRewriter, h)
 	}
 	if len(pathOpts.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(pathOpts.ReqRewriter, h)
 	}
+	// authentication judges the request as the client sent it, before any rewriter changes it
+	h = attachAuthenticator(h, pathOpts, o)
+	// WithResourcesContext must wrap outer than LimitQueryRange and the authenticator
+	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if !pathOpts.NoMetrics {
 		h = middleware.Decorate(o.Name, o.Provider, pathOpts.Path, h)
 	}
@@ -176,6 +181,18 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		return accesslog.Handled(h)
 	}
 	return accesslog.Middleware(rl.logger, pathOpts.Path, withResources, h)
+}
+
+// routeUpgrades sends a route's protocol upgrades to its passthrough lane when it has an origin, to
+// its handler when that sends each request to one backend to tunnel them, else serves them as plain
+func routeUpgrades(client backends.Backend, passthrough, next http.Handler) http.Handler {
+	switch {
+	case client == nil || client.Configuration() == nil || backends.HasOrigin(client.Configuration().Provider):
+		return middleware.UpgradeSwitch(passthrough, next)
+	case backends.RelaysUpgrades(client):
+		return next
+	}
+	return middleware.IgnoreUpgrade(next)
 }
 
 type listenerRoute struct {
@@ -220,7 +237,7 @@ func RegisterProxyRoutesForListeners(conf *config.Config, clients backends.Backe
 			}
 			routes = append(routes, listenerRoute{r, frontendOptions(conf, name)})
 		}
-		if len(o.ListenerNames) == 0 && registry.NativeListeners().GetByProvider(strings.ToLower(o.Provider)) == nil {
+		if len(o.ListenerNames) == 0 && len(registry.NativeListeners().ForProvider(strings.ToLower(o.Provider))) == 0 {
 			return nil
 		}
 		return routes
@@ -338,6 +355,9 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 		if f, ok := cf[strings.ToLower(o.Provider)]; ok && f != nil {
 			client, err := f(k, o, lm.NewRouter(), c, clients, cf)
 			if err != nil {
+				return err
+			}
+			if err := backends.ValidateStepAlignment(client, o); err != nil {
 				return err
 			}
 			clients[k] = client

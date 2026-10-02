@@ -30,6 +30,22 @@ Trickster supports the full [Prometheus HTTP API (v1)](https://prometheus.io/doc
 | `/api/v1/scrape_pools` | Object Proxy Cache | No |
 | `/api/v1/features` | Object Proxy Cache | No |
 
+### Range Query Notes
+
+- A `step` may be fractional seconds (for example `1.5` or `0.5`), as Prometheus accepts; Trickster keeps the fraction and sends sub-second `start` and `end` values with millisecond precision.
+- A `query_range` whose expression uses the `@ start()` or `@ end()` modifier is proxied without caching. Those modifiers resolve against each request's own range, so results fetched for part of a range could not be combined. A fixed `@ <timestamp>` is cached normally.
+
+### Step Alignment
+
+Range queries default to the `partial_end` [step alignment](./step-alignment.md) mode: points on the step grid from the grid point at or before `start`, plus Trickster's [Fast Forward](../README.md#3-fast-forward) point at the current time when the range reaches it. Fast Forward's point is fetched through the object cache for `partial_bucket_ttl`, and skipped when the step is no longer than that.
+
+- `truncate` is the same without Fast Forward. It is the default with `fast_forward_disable: true`, which can't be set alongside `step_alignment`.
+- `drop` starts at the grid point at or after `start`, so no point falls before the requested range.
+- `off` sends each range query as the client sent it, and caches the response as an object for one minute.
+- `partial` and `partial_start` aren't supported: PromQL evaluates at instants, so there is no partial bucket at the start.
+
+A query can choose its own mode, or turn Fast Forward off, with a comment: `up # trickster-step-align:drop` or `up # trickster-fast-forward:off`. See [Per-Query Instructions](./per-query-instructions.md).
+
 ### Proxied Endpoints (not cached)
 
 | Endpoint | Notes |
@@ -46,6 +62,30 @@ All other `/api/v1/*` paths are reverse-proxied to the origin without caching.
 - **Native histograms** are fully supported in query and query_range responses, including mixed series with both float samples and histogram samples.
 - **UTF-8 metric and label names** (e.g., `{"metric.name"}`) are supported in queries and cache keys.
 - **Query stats** (`stats=all` parameter) are cache-key differentiated, so responses with and without stats are cached separately.
+
+## Flavors
+
+`prometheus.flavor` adapts a backend to a Prometheus-compatible managed
+service, applying its supported routes, limits and defaults.
+
+| flavor | service |
+| ----- | ----- |
+| `cloudwatch` | Amazon CloudWatch PromQL |
+| `amp` | Amazon Managed Service for Prometheus |
+
+```yaml
+backends:
+  cloudwatch:
+    provider: prometheus
+    prometheus:
+      flavor: cloudwatch
+    sigv4:
+      region: us-east-1
+```
+
+A flavor limits the backend to the routes the service supports and
+answers every other path itself. See [AWS Integration](./aws.md) for what
+each flavor sets.
 
 ## Injecting Labels
 

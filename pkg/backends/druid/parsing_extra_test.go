@@ -29,6 +29,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestParseTimeRangeQueryAdditionalInvalidInputs(t *testing.T) {
@@ -113,7 +114,7 @@ func TestParseHelpers(t *testing.T) {
 	if _, ok := composePeriodDuration(math.MaxInt64, 0, 0, 0, 0); ok {
 		t.Fatal("overflowing duration was accepted")
 	}
-	if truncateToPhase(time.Unix(-1, 500_000_000), time.Second, 0).UnixNano() != -1_000_000_000 {
+	if timeseries.FloorToGrid(time.Unix(-1, 500_000_000), time.Second, 0).UnixNano() != -1_000_000_000 {
 		t.Fatal("negative timestamp was not floored")
 	}
 	for _, zone := range []string{"UTC", "Etc/UTC", "GMT", "Etc/GMT"} {
@@ -152,19 +153,19 @@ func TestDimensionAndCanonicalHelpers(t *testing.T) {
 	}
 }
 
-func TestBackfillToleranceSources(t *testing.T) {
-	if druidBackfillTolerance(nil) != time.Minute {
+func TestVolatileWindowSources(t *testing.T) {
+	if druidVolatileWindow(nil) != time.Minute {
 		t.Fatal("nil request did not use Druid default")
 	}
 	r := request.SetResources(jsonRequest(`{}`), &request.Resources{})
-	if druidBackfillTolerance(r) != time.Minute {
+	if druidVolatileWindow(r) != time.Minute {
 		t.Fatal("nil backend options did not use Druid default")
 	}
 	r = request.SetResources(jsonRequest(`{}`), &request.Resources{
-		BackendOptions: &bo.Options{BackfillTolerance: 2 * 60 * 1_000_000_000},
+		BackendOptions: &bo.Options{VolatileWindow: 2 * 60 * 1_000_000_000},
 	})
-	if druidBackfillTolerance(r) != 2*time.Minute {
-		t.Fatal("configured backfill tolerance was ignored")
+	if druidVolatileWindow(r) != 2*time.Minute {
+		t.Fatal("configured volatile window was ignored")
 	}
 }
 

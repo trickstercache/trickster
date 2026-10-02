@@ -28,11 +28,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 // Handler translates native requests into the backend's HTTP handler pipeline.
@@ -158,15 +157,9 @@ func (h *Handler) handleQuery(
 	}
 	if isSelect {
 		sql += " FORMAT JSON"
-		trq := &timeseries.TimeRangeQuery{}
-		trq.ExtractBackfillTolerance(q.SQL)
-		if trq.BackfillTolerance > 0 {
-			sql += fmt.Sprintf(" /* trickster-backfill-tolerance:%d */", trq.BackfillTolerance/time.Second)
-		}
-		options := &timeseries.RequestOptions{}
-		options.ExtractFastForwardDisabled(q.SQL)
-		if options.FastForwardDisable {
-			sql += " /* trickster-fast-forward:off */"
+		// the statement is rewritten without the client's comments, so its directives ride in one of their own
+		if d := directives.Format(directives.Parse(q.SQL, directives.SyntaxClickHouse)); d != "" {
+			sql += " /* " + d + " */"
 		}
 	}
 

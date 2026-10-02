@@ -390,6 +390,76 @@ func TestVerifyPassword_SHACryptCustomRounds(t *testing.T) {
 	}
 }
 
+func TestVerifyPassword_RejectsStoredHashAsPassword(t *testing.T) {
+	t.Parallel()
+
+	password := randomPassword(t)
+	scram, err := NewSCRAMVerifier(password, randomBytes(t, SCRAMSaltLen), DefaultSCRAMIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashes := map[string]string{
+		"md5-crypt":     generateMD5CryptHash(password, prefixMD5Crypt, randomSalt(t, 8)),
+		"apr1":          generateMD5CryptHash(password, prefixAPR1, randomSalt(t, 8)),
+		"sha256-crypt":  generateSHACryptHash(password, prefixSHA256Crypt, randomSalt(t, 8), 5000, sha256.New, 32),
+		"sha512-crypt":  generateSHACryptHash(password, prefixSHA512Crypt, randomSalt(t, 8), 5000, sha512.New, 64),
+		"bcrypt":        generateBcryptHash(t, password),
+		"scram-sha-256": scram.String(),
+		"postgres-md5":  PostgresMD5(pgTestUser, password),
+	}
+	for name, hash := range hashes {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if err := VerifyPassword(hash, hash); err == nil {
+				t.Fatal("VerifyPassword accepted the stored hash as the password")
+			}
+			if err := VerifyUserPassword(pgTestUser, hash, hash); err == nil {
+				t.Fatal("VerifyUserPassword accepted the stored hash as the password")
+			}
+			if err := VerifyUserPassword(pgTestUser, hash, password); err != nil {
+				t.Fatalf("VerifyUserPassword(valid): %v", err)
+			}
+		})
+	}
+}
+
+func TestVerifyPassword_PostgresMD5NeedsUser(t *testing.T) {
+	t.Parallel()
+
+	password := randomPassword(t)
+	if err := VerifyPassword(PostgresMD5(pgTestUser, password), password); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized without a user, got %v", err)
+	}
+}
+
+func TestVerifyPassword_EmptyStoredCredential(t *testing.T) {
+	t.Parallel()
+
+	for _, password := range []string{"", randomPassword(t)} {
+		if err := VerifyPassword("", password); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("VerifyPassword: expected ErrUnauthorized, got %v", err)
+		}
+		if err := VerifyUserPassword(pgTestUser, "", password); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("VerifyUserPassword: expected ErrUnauthorized, got %v", err)
+		}
+	}
+}
+
+func TestIsCryptHash(t *testing.T) {
+	t.Parallel()
+
+	for _, prefix := range cryptHashPrefixes {
+		if !IsCryptHash(prefix + "salt$hash") {
+			t.Fatalf("%q must be recognized as a crypt hash", prefix)
+		}
+	}
+	for _, s := range []string{"", "plaintext", "$3$x", SCRAMSHA256Prefix, PostgresMD5(pgTestUser, pgTestPassword)} {
+		if IsCryptHash(s) {
+			t.Fatalf("%q must not be recognized as a crypt hash", s)
+		}
+	}
+}
+
 func TestApr1Base64Encode(t *testing.T) {
 	t.Parallel()
 

@@ -38,6 +38,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -540,8 +542,52 @@ func TestWriteConcurrentCompressionThreshold(t *testing.T) {
 		if len(b) == 0 {
 			t.Fatal("expected stored data")
 		}
-		if b[0] != 1 {
-			t.Error("large payload should be compressed (first byte should be 1)")
+		if b[0] != encodingFlag(cacheCodec) {
+			t.Errorf("large payload should be compressed (first byte should be %d)", encodingFlag(cacheCodec))
 		}
 	})
+}
+
+func TestMemoryCacheKeepsOnlyTheDataset(t *testing.T) {
+	logger.SetLogger(testLogger)
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	cache := caches["default"]
+	if cache.Configuration().Provider != providerMemory {
+		t.Fatalf("the default cache is %s, not memory", cache.Configuration().Provider)
+	}
+	ctx := tc.WithResources(context.Background(),
+		&request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+
+	ds := &dataset.DataSet{Status: "success"}
+	d := &HTTPDocument{StatusCode: http.StatusOK, Body: []byte("the origin's body"), timeseries: ds}
+	var marshaled, unmarshaled int
+	marshal := func(timeseries.Timeseries, *timeseries.RequestOptions, int) ([]byte, error) {
+		marshaled++
+		return []byte("encoded"), nil
+	}
+	unmarshal := func([]byte, *timeseries.TimeRangeQuery) (timeseries.Timeseries, error) {
+		unmarshaled++
+		return &dataset.DataSet{}, nil
+	}
+	if err := WriteCache(ctx, cache, "dpcKey", d, time.Minute, nil, marshal); err != nil {
+		t.Fatal(err)
+	}
+	if marshaled != 0 || d.Body != nil {
+		t.Fatalf("the memory cache kept an encoding: %d marshals, body %q", marshaled, d.Body)
+	}
+	got, st, _, err := QueryCache(ctx, cache, "dpcKey", nil, unmarshal)
+	if err != nil || st != status.LookupStatusHit {
+		t.Fatalf("status %s, err %v", st, err)
+	}
+	if unmarshaled != 0 || got.timeseries != ds {
+		t.Fatalf("a hit decoded its dataset (%d unmarshals) instead of reading the one held", unmarshaled)
+	}
+	if got.Size() != d.Size() || got.Size() < int(ds.Size()) {
+		t.Errorf("size %d does not count the dataset held", got.Size())
+	}
 }

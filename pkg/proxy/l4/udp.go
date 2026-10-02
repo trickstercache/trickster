@@ -17,14 +17,14 @@
 package l4
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"net"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
-
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 )
 
 // maxDatagram is the largest UDP payload a socket can carry.
@@ -62,10 +62,50 @@ var queuedByteBudget int64 = 8 << 20
 const (
 	DropQueueFull    = "queue_full"
 	DropWriteTimeout = "write_timeout"
+	DropDenied       = "denied"
 )
 
 // failedFlowLifetime is how long a failed flow is remembered; tests shorten it
 var failedFlowLifetime = 5 * time.Second
+
+// maxHeldFlows bounds the clients held after a denial at the peer stage; past it the oldest hold
+// makes room, so the newest denial is always held and the table never grows. Tests lower it.
+var maxHeldFlows = 4096
+
+// maxWaitingFlows bounds the flows awaiting an allowed datagram ahead of any dial, apart from
+// the relaying sessions; past it the oldest waiter is ended. Tests lower it.
+var maxWaitingFlows = 256
+
+// heldFlow is a client whose new flow the admission denied: its datagrams are dropped unasked
+// until the hold ends or the config that denied it is swapped. seq ties it to its ring slot.
+type heldFlow struct {
+	until time.Time
+	gen   uint64
+	seq   uint64
+}
+
+// heldKey is a ring slot: a hold in the order it was made, by its sequence, so a slot whose
+// hold has since been forgotten or remade evicts nothing
+type heldKey struct {
+	key string
+	seq uint64
+}
+
+// what awaiting an allowed datagram came to
+const (
+	waitAllowed = iota
+	waitExpired
+	waitClosed
+	waitRefused
+)
+
+// what promoting a flow into the relaying sessions came to
+const (
+	promoted = iota
+	promoteExpired
+	promoteClosed
+	promoteRefused
+)
 
 // resolvedTTL is how long a resolved upstream host is reused before it is looked up again.
 const resolvedTTL = 30 * time.Second
@@ -86,13 +126,27 @@ type PacketServer struct {
 	// tests substitute ones that stall, fail or answer without the network
 	dial   func(context.Context, string) (net.Conn, error)
 	lookup func(context.Context, string) ([]net.IPAddr, error)
-	ctx    context.Context
-	cancel context.CancelFunc
-	mu     sync.Mutex
+	// beforePromote, when set, runs once a flow's datagram was allowed and before it takes a
+	// session; tests use it to reach that window
+	beforePromote func(*udpSession)
+	ctx           context.Context
+	cancel        context.CancelFunc
+	mu            sync.Mutex
 	// dialSlot wakes a flow waiting to dial when a dial ends or the server closes
 	dialSlot sync.Cond
 	conn     net.PacketConn
 	sessions map[string]*udpSession
+	// held is the clients denied at the peer stage, and heldKeys the order they were held in,
+	// a ring once full, so the oldest hold makes room for the newest
+	held     map[string]heldFlow
+	heldKeys []heldKey
+	heldHead int
+	heldSeq  uint64
+	// waiting counts the flows awaiting an allowed datagram, and waiters orders them, oldest first
+	waiting int
+	waiters *list.List
+	// gen numbers the configs published, so a hold outlives no swap
+	gen atomic.Uint64
 	// opening, dialing and failed count the flows in each state; established flows alone are
 	// held to the session bound, so flows that never relay cannot fill it
 	opening  int
@@ -127,11 +181,35 @@ type udpSession struct {
 	closed bool
 	// upstream is set once the flow is open, when its writer starts
 	upstream net.Conn
+	// set once the upstream is dialed; told when the session ends
+	route Route
+	// the further upstreams that receive a copy of each datagram; fixed once the flow is open
+	mirrors []udpMirror
+	// set when the upstream refused a datagram, which is how an unreachable udp upstream shows
+	fault error
+	// judgedGen is the generation of the config under which the queue's first datagram was
+	// already allowed ahead of the dial; zero when it was not
+	judgedGen uint64
+	// waiter is the flow's place among the waiting flows; the server's lock guards it
+	waiter *list.Element
+	// expired is set once the flow waited the idle timeout for an allowed datagram in vain
+	expired bool
+	// settled marks the flow as counted out of the opening flows; the server's lock guards it
+	settled bool
 	// queue is a ring of the datagrams waiting for the writer, in arrival order
 	queue     [maxQueuedDatagrams][]byte
 	head, num int
 	last      atomic.Int64
 }
+
+// udpMirror is one further upstream a flow's datagrams are copied to
+type udpMirror struct {
+	conn  net.Conn
+	route Route
+}
+
+// MaxUDPMirrors bounds the upstreams one flow is copied to, each of which holds a socket.
+const MaxUDPMirrors = 7
 
 func newUDPSession(client net.Addr) *udpSession {
 	sess := &udpSession{client: client}
@@ -171,6 +249,8 @@ func (s *udpSession) pop() []byte {
 func NewPacketServer(name string, cfg *Config) *PacketServer {
 	s := &PacketServer{
 		name: name, sessions: make(map[string]*udpSession),
+		held:     make(map[string]heldFlow),
+		waiters:  list.New(),
 		resolved: make(map[string]resolvedAddr),
 	}
 	s.dialSlot.L = &s.mu
@@ -186,10 +266,14 @@ func NewPacketServer(name string, cfg *Config) *PacketServer {
 
 // Update swaps the routing table and timeouts for sessions opened from now on.
 func (s *PacketServer) Update(cfg *Config) {
-	if cfg == nil {
-		cfg = &Config{}
+	// the caller keeps its config: what is published is a copy, with the datagram flag filled in
+	var c Config
+	if cfg != nil {
+		c = *cfg
 	}
-	s.cfg.Store(cfg)
+	c.datagrams = c.Admission != nil && c.Admission.Datagrams()
+	c.gen = s.gen.Add(1)
+	s.cfg.Store(&c)
 }
 
 func (s *PacketServer) maxSessions() int {
@@ -229,22 +313,27 @@ func (s *PacketServer) isClosed() bool {
 }
 
 func (s *PacketServer) result(r string) {
-	metrics.ProxyStreamConnections.WithLabelValues(s.name, ProtocolUDP, r).Inc()
+	s.cfg.Load().observer().Result(r)
 }
 
 func (s *PacketServer) dropped(reason string) {
-	metrics.ProxyStreamDroppedDatagrams.WithLabelValues(s.name, reason).Inc()
+	s.cfg.Load().observer().Dropped(reason)
 }
 
 // forward hands a datagram to its client's flow, opening the flow on a worker of its own, so the
-// receive loop never waits on a lookup, a dial or a write
+// receive loop never waits on an admission, a lookup, a dial or a write
 func (s *PacketServer) forward(payload []byte, client net.Addr) {
 	key := client.String()
+	cfg := s.cfg.Load()
 	s.mu.Lock()
 	sess, ok := s.sessions[key]
 	if !ok {
-		sess = s.admit(key, client)
-		if sess == nil {
+		if s.heldLive(key, cfg.gen) {
+			s.mu.Unlock()
+			cfg.observer().Dropped(DropDenied)
+			return
+		}
+		if sess = s.admit(key, client); sess == nil {
 			s.mu.Unlock()
 			s.result(ResultRefused)
 			return
@@ -264,14 +353,15 @@ func (s *PacketServer) admit(key string, client net.Addr) *udpSession {
 	if s.closed || s.draining {
 		return nil
 	}
-	if len(s.sessions)-s.failed >= s.maxSessions() || s.opening >= maxOpeningFlows {
+	// flows that failed or still await an allowed datagram are held to bounds of their own
+	if len(s.sessions)-s.failed-s.waiting >= s.maxSessions() || s.opening >= maxOpeningFlows {
 		return nil
 	}
 	sess := newUDPSession(client)
 	s.sessions[key] = sess
 	s.opening++
 	s.workers.Add(1)
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, ProtocolUDP).Inc()
+	s.cfg.Load().observer().Opened()
 	return sess
 }
 
@@ -309,10 +399,9 @@ func (s *PacketServer) enqueue(sess *udpSession, payload []byte) {
 		s.dropped(DropQueueFull)
 		return
 	}
-	if sess.state == flowOpen {
-		sess.touch()
-		sess.wake.Signal()
-	}
+	// the writer, or the opener awaiting an allowed datagram, is woken; only relayed traffic
+	// keeps a flow from going idle, so nothing is touched here
+	sess.wake.Signal()
 }
 
 // writer relays the flow's queued datagrams to its upstream in order until the flow closes; a
@@ -320,7 +409,9 @@ func (s *PacketServer) enqueue(sess *udpSession, payload []byte) {
 // flow that datagram rather than the server its receive loop
 func (s *PacketServer) writer(sess *udpSession, up net.Conn) {
 	defer s.workers.Done()
+	flow := flowOf(s.name, ProtocolUDP, sess.client, "")
 	sess.mu.Lock()
+	mirrors := sess.mirrors
 	for {
 		for sess.num == 0 && !sess.closed {
 			sess.wake.Wait()
@@ -333,15 +424,30 @@ func (s *PacketServer) writer(sess *udpSession, up net.Conn) {
 			return
 		}
 		payload := sess.pop()
+		judged := sess.judgedGen
+		sess.judgedGen = 0
 		sess.mu.Unlock()
+		// judged here, on the flow's own worker, unless the opener judged it under this very config
+		if cfg := s.cfg.Load(); judged != cfg.gen && cfg.datagrams && cfg.Admission.Datagram(flow, len(payload)) != Allow {
+			s.queued.Add(-int64(len(payload)))
+			cfg.observer().Dropped(DropDenied)
+			sess.mu.Lock()
+			continue
+		}
+		sess.touch()
 		// the datagram stays charged to the budget until the write returns, since it is held
 		// for as long as the write blocks, however soon its ring slot is reused
 		_ = up.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
 		n, err := up.Write(payload)
+		for _, m := range mirrors {
+			// a copy that cannot be written is lost; the flow answers to its own upstream alone
+			_ = m.conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
+			_, _ = m.conn.Write(payload)
+		}
 		s.queued.Add(-int64(len(payload)))
 		switch {
 		case err == nil:
-			metrics.ProxyStreamBytes.WithLabelValues(s.name, ProtocolUDP, DirectionIn).Add(float64(n))
+			s.cfg.Load().observer().Bytes(DirectionIn, int64(n))
 		case isTimeout(err):
 			s.dropped(DropWriteTimeout)
 		default:
@@ -357,8 +463,226 @@ func isTimeout(err error) bool {
 	return errors.As(err, &ne) && ne.Timeout()
 }
 
+// denied asks the admission about a new flow, on the flow's own worker. A denied flow ends at
+// once and its client is held for as long as the admission says, or DefaultDeniedHold
+func (s *PacketServer) denied(key string, sess *udpSession, flow Flow) bool {
+	cfg := s.cfg.Load()
+	if cfg.Admission == nil || cfg.Admission.Peer(flow) == Allow {
+		return false
+	}
+	cfg.observer().Result(ResultDenied)
+	hold := DefaultDeniedHold
+	if h, ok := cfg.Admission.(Holder); ok {
+		hold = h.Hold(flow)
+	}
+	s.settle(sess)
+	s.hold(key, hold, cfg.gen)
+	return true
+}
+
+// hold records a client whose flow was denied under the config numbered gen; a table already
+// full forgets its oldest hold first, unless that hold has since been forgotten or remade
+func (s *PacketServer) hold(key string, d time.Duration, gen uint64) {
+	if d <= 0 {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.heldSeq++
+	slot := heldKey{key: key, seq: s.heldSeq}
+	if len(s.heldKeys) < maxHeldFlows {
+		s.heldKeys = append(s.heldKeys, slot)
+	} else {
+		old := s.heldKeys[s.heldHead]
+		if h, ok := s.held[old.key]; ok && h.seq == old.seq {
+			delete(s.held, old.key)
+		}
+		s.heldKeys[s.heldHead] = slot
+		s.heldHead = (s.heldHead + 1) % len(s.heldKeys)
+	}
+	s.held[key] = heldFlow{until: time.Now().Add(d), gen: gen, seq: slot.seq}
+}
+
+// heldLive reports whether a client is held under the config numbered gen, forgetting a hold
+// that has expired or that an earlier config made; the caller holds the server lock
+func (s *PacketServer) heldLive(key string, gen uint64) bool {
+	h, ok := s.held[key]
+	if !ok {
+		return false
+	}
+	if h.gen == gen && time.Now().Before(h.until) {
+		return true
+	}
+	delete(s.held, key)
+	return false
+}
+
+// startWaiting moves a flow with nothing allowed yet out of the opening flows and into the
+// waiting ones, which have an allowance of their own. At the allowance the oldest waiter is told
+// to expire but keeps its place until its worker has exited, and the newcomer is refused.
+func (s *PacketServer) startWaiting(sess *udpSession) bool {
+	s.settle(sess)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.waiting >= maxWaitingFlows {
+		if front := s.waiters.Front(); front != nil {
+			oldest := front.Value.(*udpSession)
+			oldest.mu.Lock()
+			oldest.expired = true
+			oldest.wake.Broadcast()
+			oldest.mu.Unlock()
+		}
+		return false
+	}
+	sess.waiter = s.waiters.PushBack(sess)
+	s.waiting++
+	return true
+}
+
+// promoteWaiting moves a flow whose datagram was allowed into the relaying sessions, as one
+// transition under the server's lock and then the flow's, so nothing can close, evict or time
+// it out meanwhile: it is turned back if that already happened, or if no session is free. A
+// flow that never waited has counted as a session since admit.
+func (s *PacketServer) promoteWaiting(sess *udpSession) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	switch {
+	case sess.closed:
+		return promoteClosed
+	case sess.expired:
+		return promoteExpired
+	case sess.waiter == nil:
+		return promoted
+	case len(s.sessions)-s.failed-s.waiting >= s.maxSessions():
+		return promoteRefused
+	}
+	s.stopWaitingLocked(sess)
+	return promoted
+}
+
+func (s *PacketServer) stopWaitingLocked(sess *udpSession) {
+	if sess.waiter != nil {
+		s.waiters.Remove(sess.waiter)
+		sess.waiter = nil
+		s.waiting--
+	}
+}
+
+// awaitAllowed judges the flow's queued datagrams on its own worker ahead of any dial, dropping
+// the denied, until one is allowed, which stays queued for the writer as judged. It gives up once
+// the idle timeout has passed with nothing allowed, or the flow closed. Unjudged flows open at once.
+func (s *PacketServer) awaitAllowed(sess *udpSession, flow Flow) int {
+	if !s.cfg.Load().datagrams {
+		return waitAllowed
+	}
+	var expiry *time.Timer
+	defer func() {
+		if expiry != nil {
+			expiry.Stop()
+		}
+	}()
+	// arm makes the flow a waiting one, if the allowance admits it, and starts the clock nothing
+	// denied refreshes
+	arm := func() bool {
+		sess.mu.Unlock()
+		ok := s.startWaiting(sess)
+		if ok {
+			expiry = time.AfterFunc(s.cfg.Load().options().UDPIdle(), func() {
+				sess.mu.Lock()
+				sess.expired = true
+				sess.wake.Broadcast()
+				sess.mu.Unlock()
+			})
+		}
+		sess.mu.Lock()
+		return ok
+	}
+	sess.mu.Lock()
+	defer sess.mu.Unlock()
+	for {
+		if sess.num == 0 && expiry == nil && !sess.closed {
+			if !arm() {
+				return waitRefused
+			}
+		}
+		for sess.num == 0 && !sess.closed && !sess.expired {
+			sess.wake.Wait()
+		}
+		if sess.closed {
+			return waitClosed
+		}
+		if sess.expired {
+			return waitExpired
+		}
+		payload := sess.queue[sess.head]
+		sess.mu.Unlock()
+		cfg := s.cfg.Load()
+		allowed := !cfg.datagrams || cfg.Admission.Datagram(flow, len(payload)) == Allow
+		sess.mu.Lock()
+		// the flow may have been closed, evicted or timed out while the admission answered
+		if sess.closed {
+			return waitClosed
+		}
+		if sess.expired {
+			return waitExpired
+		}
+		if allowed {
+			if s.cfg.Load().gen != cfg.gen {
+				// the policy changed while the datagram was judged: it is judged again, under the new one
+				continue
+			}
+			if cfg.datagrams {
+				sess.judgedGen = cfg.gen
+			}
+			return waitAllowed
+		}
+		n := int64(len(sess.pop()))
+		s.pending.Add(-n)
+		s.queued.Add(-n)
+		cfg.observer().Dropped(DropDenied)
+		if expiry == nil && !arm() {
+			return waitRefused
+		}
+	}
+}
+
 func (s *PacketServer) run(key string, sess *udpSession) {
 	defer s.end(key, sess)
+	flow := flowOf(s.name, ProtocolUDP, sess.client, "")
+	if s.denied(key, sess, flow) {
+		return
+	}
+	switch s.awaitAllowed(sess, flow) {
+	case waitExpired:
+		s.result(ResultDenied)
+		return
+	case waitClosed:
+		s.settle(sess)
+		return
+	case waitRefused:
+		s.result(ResultRefused)
+		return
+	}
+	if s.beforePromote != nil {
+		s.beforePromote(sess)
+	}
+	switch s.promoteWaiting(sess) {
+	case promoteExpired:
+		s.settle(sess)
+		s.result(ResultDenied)
+		return
+	case promoteClosed:
+		s.settle(sess)
+		return
+	case promoteRefused:
+		s.result(ResultRefused)
+		return
+	}
 	up, ok := s.open(sess)
 	if !ok {
 		s.fail(sess)
@@ -378,16 +702,24 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 		s.result(ResultNoRoute)
 		return nil, false
 	}
-	addr, ok := up.Addr()
+	route, ok := up.Pick(flowOf(s.name, ProtocolUDP, sess.client, ""))
 	if !ok {
 		s.result(ResultNoUpstream)
 		return nil, false
 	}
 	if !s.acquireDial() {
+		route.Dialed(0, ErrAbandoned)
 		return nil, false
 	}
+	flow := flowOf(s.name, ProtocolUDP, sess.client, "")
 	ctx, cancel := context.WithTimeout(s.ctx, cfg.options().Connect())
-	conn, err := s.resolveAndDial(ctx, addr)
+	began := time.Now()
+	conn, err := s.resolveAndDial(ctx, route.Addr())
+	route.Dialed(time.Since(began), err)
+	var mirrors []udpMirror
+	if err == nil {
+		mirrors = s.openMirrors(ctx, up, flow, route)
+	}
 	cancel()
 	s.releaseDial()
 	if err != nil {
@@ -399,8 +731,12 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 		// the close pass has been through this flow; what was dialed after it is closed here
 		sess.mu.Unlock()
 		_ = conn.Close()
+		route.Closed(nil)
+		closeMirrors(mirrors)
 		return nil, false
 	}
+	sess.route = route
+	sess.mirrors = mirrors
 	// what the flow kept while opening leaves the opening budget and stays queued for the writer
 	var kept int64
 	for i := range sess.num {
@@ -416,10 +752,44 @@ func (s *PacketServer) open(sess *udpSession) (net.Conn, bool) {
 	return conn, true
 }
 
-// settle moves a flow out of the opening count once it is open
+// openMirrors dials the further upstreams a mirroring upstream copies the flow to, within the
+// dial the flow already holds. One that cannot be dialed is told so and left out.
+func (s *PacketServer) openMirrors(ctx context.Context, up Upstream, flow Flow, primary Route) []udpMirror {
+	mirrorer, ok := up.(Mirrorer)
+	if !ok {
+		return nil
+	}
+	routes := mirrorer.Mirror(flow, primary)
+	for _, extra := range routes[min(len(routes), MaxUDPMirrors):] {
+		extra.Dialed(0, ErrAbandoned)
+	}
+	routes = routes[:min(len(routes), MaxUDPMirrors)]
+	mirrors := make([]udpMirror, 0, len(routes))
+	for _, route := range routes {
+		began := time.Now()
+		conn, err := s.resolveAndDial(ctx, route.Addr())
+		route.Dialed(time.Since(began), err)
+		if err == nil {
+			mirrors = append(mirrors, udpMirror{conn: conn, route: route})
+		}
+	}
+	return mirrors
+}
+
+func closeMirrors(mirrors []udpMirror) {
+	for _, m := range mirrors {
+		_ = m.conn.Close()
+		m.route.Closed(nil)
+	}
+}
+
+// settle moves a flow out of the opening count, once, and marks it active
 func (s *PacketServer) settle(sess *udpSession) {
 	s.mu.Lock()
-	s.opening--
+	if !sess.settled {
+		sess.settled = true
+		s.opening--
+	}
 	s.mu.Unlock()
 	sess.touch()
 }
@@ -487,7 +857,10 @@ func (s *PacketServer) fail(sess *udpSession) {
 	}
 	sess.mu.Unlock()
 	s.mu.Lock()
-	s.opening--
+	if !sess.settled {
+		sess.settled = true
+		s.opening--
+	}
 	if s.failed >= maxFailedFlows || s.closed {
 		s.mu.Unlock()
 		return
@@ -516,17 +889,25 @@ func (s *PacketServer) reply(sess *udpSession, up net.Conn) {
 	bp := datagramPool.Get().(*[]byte)
 	defer datagramPool.Put(bp)
 	buf := *bp
+	sess.mu.Lock()
+	route := sess.route
+	sess.mu.Unlock()
+	replied := false
 	for {
 		idle := s.cfg.Load().options().UDPIdle()
 		_ = up.SetReadDeadline(time.Now().Add(idle))
 		n, err := up.Read(buf)
 		if n > 0 {
+			if !replied && route != nil {
+				replied = true
+				route.FirstByte()
+			}
 			sess.touch()
 			s.mu.Lock()
 			pc := s.conn
 			s.mu.Unlock()
 			if _, werr := pc.WriteTo(buf[:n], sess.client); werr == nil {
-				metrics.ProxyStreamBytes.WithLabelValues(s.name, ProtocolUDP, DirectionOut).Add(float64(n))
+				s.cfg.Load().observer().Bytes(DirectionOut, int64(n))
 			}
 		}
 		if err == nil {
@@ -535,6 +916,12 @@ func (s *PacketServer) reply(sess *udpSession, up net.Conn) {
 		if isTimeout(err) && sess.idleFor() < idle {
 			// the upstream was silent but the client was not; the session lives on
 			continue
+		}
+		if errors.Is(err, syscall.ECONNREFUSED) {
+			// nothing is listening at the upstream: the only sign a udp member is down
+			sess.mu.Lock()
+			sess.fault = err
+			sess.mu.Unlock()
 		}
 		return
 	}
@@ -546,6 +933,12 @@ func (s *PacketServer) end(key string, sess *udpSession) {
 	if sess.upstream != nil {
 		_ = sess.upstream.Close()
 	}
+	if sess.route != nil {
+		sess.route.Closed(sess.fault)
+		sess.route = nil
+	}
+	closeMirrors(sess.mirrors)
+	sess.mirrors = nil
 	if sess.state == flowOpening {
 		for sess.num > 0 {
 			n := int64(len(sess.pop()))
@@ -559,8 +952,9 @@ func (s *PacketServer) end(key string, sess *udpSession) {
 	if s.sessions[key] == sess {
 		delete(s.sessions, key)
 	}
+	s.stopWaitingLocked(sess)
 	s.mu.Unlock()
-	metrics.ProxyStreamActiveConnections.WithLabelValues(s.name, ProtocolUDP).Dec()
+	s.cfg.Load().observer().Ended()
 	s.workers.Done()
 }
 

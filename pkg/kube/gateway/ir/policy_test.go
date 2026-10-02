@@ -57,6 +57,13 @@ func TestPolicyOverlay(t *testing.T) {
 	require.Equal(t, "prometheus", got.Provider)
 	require.Equal(t, ResultHeaderExpose, got.ResultHeader)
 
+	// the sticky lifetimes overlay as the other durations do: a zero keeps the base value
+	sticky := Policy{StickyTTLMS: 1000, StickyIdleMS: 2000}.Overlay(&Policy{StickyIdleMS: 3000})
+	require.Equal(t, int64(1000), sticky.StickyTTLMS)
+	require.Equal(t, int64(3000), sticky.StickyIdleMS)
+	sticky = sticky.Overlay(&Policy{StickyTTLMS: 4000})
+	require.Equal(t, int64(4000), sticky.StickyTTLMS)
+
 	// the inputs are untouched, and a nil overlay is a clone
 	require.Equal(t, map[string]string{"X-A": "1", "X-B": "1"}, base.RequestHeaders)
 	require.Equal(t, []string{"a"}, base.CacheKeyParams)
@@ -124,6 +131,8 @@ func TestPolicyOverlayFillsEveryStringField(t *testing.T) {
 		Handler: "h", CacheName: "c", RoutingMode: "r", NegativeCacheName: "n", CORSMode: "m",
 		CollapsedForwarding: "cf", RewriteTarget: "/t", TracingName: "tr",
 		ReqRewriterName: "rw", AuthenticatorName: "a", HealthMode: "probe",
+		LoadBalancing: "hrw", LoadBalancingKey: "client_ip",
+		Sticky: "table", StickyKey: "host", StickySecret: "a2V5",
 		Provider: "graphite", ResultHeader: ResultHeaderHide,
 	}
 	got := Policy{}.Overlay(over)

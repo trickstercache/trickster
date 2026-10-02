@@ -22,7 +22,9 @@ import (
 	"io"
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,25 +48,32 @@ func TestTrickster(t *testing.T) {
 	t.Run("health endpoint", func(t *testing.T) {
 		waitForTrickster(t, h.MetricsAddr, "/trickster/health")
 
-		req, err := http.NewRequest("GET", "http://"+h.MetricsAddr+"/trickster/health", nil)
-		require.NoError(t, err)
-		req.Header.Set("Accept", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-		require.Equal(t, http.StatusOK, resp.StatusCode)
-
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-		t.Logf("health response: %s", string(body))
-
-		var health struct {
-			Title       string                  `json:"title"`
-			Available   []struct{ Name string } `json:"available"`
-			Unavailable []struct{ Name string } `json:"unavailable"`
-		}
-		require.NoError(t, json.Unmarshal(body, &health))
-		require.Equal(t, "Trickster Backend Health Status", health.Title)
-		require.NotEmpty(t, health.Available, "expected at least one available backend")
+		// a backend is listed as available only once its first probe passes
+		require.EventuallyWithT(t, func(collect *assert.CollectT) {
+			req, err := http.NewRequest("GET", "http://"+h.MetricsAddr+"/trickster/health", nil)
+			if !assert.NoError(collect, err) {
+				return
+			}
+			req.Header.Set("Accept", "application/json")
+			resp, err := http.DefaultClient.Do(req)
+			if !assert.NoError(collect, err) {
+				return
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if !assert.NoError(collect, err) || !assert.Equal(collect, http.StatusOK, resp.StatusCode) {
+				return
+			}
+			var health struct {
+				Title       string                  `json:"title"`
+				Available   []struct{ Name string } `json:"available"`
+				Unavailable []struct{ Name string } `json:"unavailable"`
+			}
+			if !assert.NoError(collect, json.Unmarshal(body, &health)) {
+				return
+			}
+			assert.Equal(collect, "Trickster Backend Health Status", health.Title)
+			assert.NotEmpty(collect, health.Available, "expected at least one available backend: %s", body)
+		}, 15*time.Second, 100*time.Millisecond)
 	})
 }

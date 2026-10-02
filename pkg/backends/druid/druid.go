@@ -25,6 +25,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 var _ backends.TimeseriesBackend = (*Client)(nil)
@@ -35,6 +36,12 @@ type Client struct {
 }
 
 var _ types.NewBackendClientFunc = NewClient
+
+// StepAlignments returns the step alignment modes Druid supports, and the default of its native
+// queries, partial; Druid SQL queries default to drop
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return timeseries.StepAlignmentAll, timeseries.StepAlignmentPartial
+}
 
 // NewClient returns a new Apache Druid backend client.
 func NewClient(name string, o *bo.Options, router http.Handler,

@@ -178,6 +178,36 @@ renders `-`. The Kubernetes controller declares `route_kind`,
 `route_namespace` and `route_name` on every backend it generates, so a line
 names the Ingress, HTTPRoute or GRPCRoute it served.
 
+### Credential Redaction
+
+Trickster masks credentials before they reach a log line. The masked value
+is `REDACTED`, and names stay visible.
+
+- **Query parameters:** values of `password`, `passwd`, `pass`, `key`,
+  `api_key`, `apikey`, `access_token`, `token`, `code`, `state`,
+  `client_secret`, `signature` and `sig`, matched without regard to case.
+  This covers `%r`, `%q`, the `json` preset's `query` field, and the query of
+  a `Referer` or `Location` header.
+- **Headers:** values of `Authorization`, `Proxy-Authorization`, `Cookie`,
+  `Set-Cookie`, `X-Api-Key`, `Api-Key`, `X-Goog-Api-Key` and
+  `X-Amz-Security-Token`, logged through `%{Name}i` or `%{Name}o`.
+- **Cookies:** `%{name}c` masks only the cookies named in configuration;
+  none are masked by default.
+
+The same query and URL redaction applies to the URLs and upstream errors in
+Trickster's application log, including its debug lines.
+
+`logging.redact` adds names to each list, or turns redaction off entirely:
+
+```yaml
+logging:
+  redact:
+    query_params: [session_id]
+    headers: [X-Internal-Token]
+    cookies: [grafana_session]
+    # enabled: false # redaction is on unless explicitly disabled
+```
+
 ### Dropped Lines
 
 A log line the writer cannot accept, because its bounded buffer is full or

@@ -19,6 +19,7 @@ package mysql
 import (
 	"bytes"
 	"cmp"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -53,16 +54,18 @@ import (
 )
 
 const (
-	cacheIdentityVersion          byte = 1
-	mysqlDialect                       = "mysql"
-	cacheModeOPC                       = "opc"
-	cacheModeDPC                       = "dpc"
-	cacheModeDPCEmpty                  = "dpc-empty"
-	cacheModeDPCFallback               = "dpc-fallback"
-	metricMethodQuery                  = "QUERY"
-	metricPathQuery                    = "query"
-	metricHTTPStatusOK                 = "200"
-	metricHTTPStatusInternalError      = "500"
+	cacheIdentityVersion byte = 1
+	mysqlDialect              = "mysql"
+	cacheModeOPC              = "opc"
+	cacheModeDPC              = "dpc"
+	cacheModeDPCFallback      = "dpc-fallback"
+	// off and partial buckets keep their own objects, so one stored for another TTL never answers them
+	cacheModeOff                  = "off"
+	cacheModePartial              = "partial"
+	metricMethodQuery             = "QUERY"
+	metricPathQuery               = "query"
+	metricHTTPStatusOK            = "200"
+	metricHTTPStatusInternalError = "500"
 )
 
 type analysisMetricKey struct {
@@ -107,18 +110,24 @@ type protocolMetricHandles struct {
 // two StatusFlags bytes followed by the vitess proto encoding.
 type resultCodec struct{}
 
-func (resultCodec) Marshal(result *sqltypes.Result) ([]byte, error) {
+func (c resultCodec) Marshal(result *sqltypes.Result) ([]byte, error) {
+	return c.AppendMarshal(nil, result)
+}
+
+// AppendMarshal writes the proto encoding in place after the status flags, where marshaling it on
+// its own would take a copy to put the flags first
+func (resultCodec) AppendMarshal(out []byte, result *sqltypes.Result) ([]byte, error) {
 	if result == nil {
 		return nil, errors.New("nil MySQL cache result")
 	}
 	protoResult := sqltypes.ResultToProto3(result)
-	resultBytes, err := protoResult.MarshalVT()
-	if err != nil {
+	size := protoResult.SizeVT()
+	out = binary.BigEndian.AppendUint16(slices.Grow(out, 2+size), result.StatusFlags)
+	start := len(out)
+	out = out[:start+size]
+	if _, err := protoResult.MarshalToSizedBufferVT(out[start:]); err != nil {
 		return nil, err
 	}
-	out := make([]byte, 2+len(resultBytes))
-	binary.BigEndian.PutUint16(out[:2], result.StatusFlags)
-	copy(out[2:], resultBytes)
 	return out, nil
 }
 
@@ -175,10 +184,6 @@ func saturatedSize(size uint64) int {
 	return int(size)
 }
 
-type normalizedTimeRangeRenderer interface {
-	RenderTimeRange(lower, upper time.Time) (string, error)
-}
-
 func (h *protocolHandler) cacheEligible(session *upstreamSession) bool {
 	if h.config.ProxyOnly || h.cacheClient() == nil || session == nil {
 		return false
@@ -198,73 +203,98 @@ func (h *protocolHandler) cacheClient() cache.Cache {
 
 func (h *protocolHandler) executeCached(c *vtmysql.Conn, session *upstreamSession,
 	query string, analysis sqlanalyzer.Analysis,
-) (*sqltypes.Result, cachestatus.LookupStatus, error) {
+) (*sqltypes.Result, *renderBuffers, cachestatus.LookupStatus, error) {
+	// returns the result and, when its rows were rendered for this request alone, the buffers that
+	// hold them, which the caller releases once the result is written
 	switch analysis.Mode {
 	case sqlanalyzer.CacheModeDelta:
+		if h.unaligned(analysis) {
+			result, lookup, err := h.executeObject(c, session, query, true)
+			return result, nil, lookup, err
+		}
 		if analysis.Plan != nil {
-			return h.executeDelta(c, session, query, analysis.Plan)
+			answer, lookup, err := h.executeDelta(c, session, query, analysis.Plan)
+			if err != nil || answer.Delta == nil {
+				return answer.Object, nil, lookup, err
+			}
+			buffers := getRenderBuffers()
+			result, err := h.renderDelta(answer.Delta, analysis.Plan, buffers)
+			if err != nil {
+				buffers.release()
+				// rows that cannot be rendered are no reason to fail the client's statement, nor to keep
+				h.observeRewriteFailure("render_delta_rows")
+				h.deltaEngine().RemoveDelta(h.planCacheKey(c, session, cacheModeDPC, analysis.Plan))
+				result, err = h.executeOrigin(session, query)
+				return result, nil, cachestatus.LookupStatusProxyOnly, err
+			}
+			return result, buffers, lookup, nil
 		}
 	case sqlanalyzer.CacheModeObject:
-		return h.executeObject(c, session, query)
+		result, lookup, err := h.executeObject(c, session, query, false)
+		return result, nil, lookup, err
 	}
-	return nil, cachestatus.LookupStatusProxyOnly, errors.New("uncacheable MySQL query")
+	return nil, nil, cachestatus.LookupStatusProxyOnly, errors.New("uncacheable MySQL query")
+}
+
+func (h *protocolHandler) unaligned(analysis sqlanalyzer.Analysis) bool {
+	// off answers a delta plan with the origin's result to the client's statement, keyed on its raw range
+	return analysis.Mode == sqlanalyzer.CacheModeDelta &&
+		nativedelta.RequestStepAlignment(h.config.StepAlignment, analysis.Plan) == timeseries.StepAlignmentOff
 }
 
 func (h *protocolHandler) executeObject(c *vtmysql.Conn, session *upstreamSession,
-	query string,
+	query string, unaligned bool,
 ) (*sqltypes.Result, cachestatus.LookupStatus, error) {
-	key := h.queryCacheKey(c, session, cacheModeOPC, strings.TrimSpace(query))
-	return h.deltaEngine().ExecuteObject(key, func() (*sqltypes.Result, error) {
+	engine, ttl := cacheModeOPC, time.Duration(0)
+	if unaligned {
+		engine, ttl = cacheModeOff, timeseries.StepAlignmentOffTTL
+	}
+	key := h.queryCacheKey(c, session, engine, strings.TrimSpace(query))
+	return h.deltaEngine().ExecuteObject(key, ttl, func() (*sqltypes.Result, error) {
 		return h.executeOrigin(session, query)
 	})
 }
 
 func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession,
 	query string, plan *sqlanalyzer.QueryPlan,
-) (*sqltypes.Result, cachestatus.LookupStatus, error) {
+) (nativedelta.Outcome[*sqltypes.Result], cachestatus.LookupStatus, error) {
 	ops := nativedelta.DeltaOps[*sqltypes.Result]{
-		Fetch: func(statement string) (*sqltypes.Result, error) {
-			return h.executeOrigin(session, statement)
+		Fetch: func(statement string) (*nativedelta.Delta, error) {
+			return h.executeOriginRows(session, statement, plan)
 		},
 		FetchOriginal: func() (*sqltypes.Result, error) {
 			return h.executeOrigin(session, query)
 		},
-		Merge: func(parts []*sqltypes.Result) (*sqltypes.Result, error) {
-			return h.mergeResults(parts, plan)
-		},
-		CropResponse: func(payload *sqltypes.Result,
-			requested timeseries.Extent,
-		) (*sqltypes.Result, error) {
-			return h.cropAndSortResult(payload, plan, requested)
-		},
-		Finalize: func(merged *sqltypes.Result, allExtents timeseries.ExtentList,
-			requested timeseries.Extent, now time.Time,
-		) (*sqltypes.Result, *sqltypes.Result, timeseries.ExtentList, error) {
-			return h.finalizeDeltaResult(merged, allExtents, plan, requested, now)
-		},
 		ObjectFallback: func() (*sqltypes.Result, cachestatus.LookupStatus, error) {
-			return h.executeObject(c, session, query)
+			return h.executeObject(c, session, query, false)
+		},
+		SameHeader: sameResultHeader,
+		// the session's one upstream connection runs its fetches in turn, so none is started early
+		FetchPartial: func(_ context.Context, statement string, ttl time.Duration,
+		) (*sqltypes.Result, cachestatus.LookupStatus, error) {
+			key := h.queryCacheKey(c, session, cacheModePartial, strings.TrimSpace(statement))
+			return h.deltaEngine().ExecuteObject(key, ttl, func() (*sqltypes.Result, error) {
+				return h.executeOrigin(session, statement)
+			})
+		},
+		Model: func(result *sqltypes.Result) (*nativedelta.Delta, error) {
+			return h.modelResult(result, plan)
 		},
 	}
 	if h.config.DoesShard {
 		ops.Shard = func(missing timeseries.ExtentList) timeseries.ExtentList {
 			fetchExtents := make(timeseries.ExtentList, 0, len(missing))
 			for _, extent := range missing {
-				fetchExtents = append(fetchExtents, timeseries.ExtentList{extent}.Splice(plan.Step,
+				fetchExtents = append(fetchExtents, timeseries.ExtentList{extent}.Splice(plan.Step, plan.Phase,
 					h.config.ShardMaxRange, h.config.ShardStep, h.config.ShardMaxPoints)...)
 			}
 			return fetchExtents
 		}
 	}
-	if renderer, ok := plan.Renderer.(normalizedTimeRangeRenderer); ok {
-		ops.RenderEmpty = renderer.RenderTimeRange
-	}
 	return h.deltaEngine().ExecuteDelta(nativedelta.DeltaRequest[*sqltypes.Result]{
-		Key: h.queryCacheKey(c, session, cacheModeDPC, plan.CanonicalSQL, plan.IdentitySuffix),
-		FallbackKey: h.queryCacheKey(c, session, cacheModeDPCFallback,
-			plan.CanonicalSQL, plan.IdentitySuffix),
-		EmptyKey: h.queryCacheKey(c, session, cacheModeDPCEmpty,
-			plan.CanonicalSQL, plan.IdentitySuffix),
+		Key:         h.planCacheKey(c, session, cacheModeDPC, plan),
+		FallbackKey: h.planCacheKey(c, session, cacheModeDPCFallback, plan),
+		Statement:   query, StepAlignment: nativedelta.RequestStepAlignment(h.config.StepAlignment, plan),
 		Plan: plan, Now: time.Now(),
 		// vitess delta plans always carry closed bounds; open-ended plans
 		// proxy rather than run to the present
@@ -273,35 +303,51 @@ func (h *protocolHandler) executeDelta(c *vtmysql.Conn, session *upstreamSession
 	})
 }
 
-// finalizeDeltaResult keeps response shaping independent from cache retention.
-// Retention bounds only the stored cache object; it must never discard points
-// from the current client request after those points were fetched successfully.
-func (h *protocolHandler) finalizeDeltaResult(merged *sqltypes.Result,
-	allExtents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan,
-	requested timeseries.Extent, now time.Time,
-) (*sqltypes.Result, *sqltypes.Result, timeseries.ExtentList, error) {
-	if merged == nil {
-		return nil, nil, nil, errors.New("nil MySQL delta result")
-	}
-	timeIndex, _, err := resultIndexes(merged.Fields, plan)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	response, err := cropSortedResult(merged, timeIndex, plan.OutputUnit, requested)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	retained, retainedExtents, err := h.applyRetentionSorted(
-		merged, allExtents, plan, timeIndex)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	cacheExtents := h.stableExtents(retainedExtents, plan, now)
-	return response, retained, cacheExtents, nil
+func (h *protocolHandler) planCacheKey(c *vtmysql.Conn, session *upstreamSession, mode string,
+	plan *sqlanalyzer.QueryPlan,
+) string {
+	// the second field once held directives, which keys no longer do; it stays empty so keys don't change
+	return h.queryCacheKey(c, session, mode, plan.CanonicalSQL, "")
 }
 
 func (h *protocolHandler) executeOrigin(session *upstreamSession,
 	query string,
+) (*sqltypes.Result, error) {
+	return h.fetchOrigin(session, query, nil)
+}
+
+func (h *protocolHandler) executeOriginRows(session *upstreamSession, statement string,
+	plan *sqlanalyzer.QueryPlan,
+) (*nativedelta.Delta, error) {
+	var sink *rowSink
+	result, err := h.fetchOrigin(session, statement, func(fields []*querypb.Field) (*rowSink, error) {
+		var err error
+		sink, err = h.newRowSink(plan, fields)
+		return sink, err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return sink.finish(result.StatusFlags)
+}
+
+func (h *protocolHandler) modelResult(result *sqltypes.Result, plan *sqlanalyzer.QueryPlan,
+) (*nativedelta.Delta, error) {
+	// an object-tier result's rows, modeled as a fetch's are
+	sink, err := h.newRowSink(plan, result.Fields)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range result.Rows {
+		if err := sink.row(row); err != nil {
+			return nil, err
+		}
+	}
+	return sink.finish(result.StatusFlags)
+}
+
+func (h *protocolHandler) fetchOrigin(session *upstreamSession, query string,
+	sinkFor func([]*querypb.Field) (*rowSink, error),
 ) (*sqltypes.Result, error) {
 	if err := h.connectSession(session); err != nil {
 		return nil, err
@@ -313,14 +359,14 @@ func (h *protocolHandler) executeOrigin(session *upstreamSession,
 	err := h.runOriginQuery(session, upstream, parsedQuery{statementType: sqlparser.StmtSelect},
 		func() error {
 			var fetchErr error
-			result, fetchErr = h.collectOriginResult(session, upstream, query)
+			result, fetchErr = h.collectOriginResult(session, upstream, query, sinkFor)
 			return fetchErr
 		})
 	return result, err
 }
 
 func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream *vtmysql.Conn,
-	query string,
+	query string, sinkFor func([]*querypb.Field) (*rowSink, error),
 ) (*sqltypes.Result, error) {
 	if err := upstream.ExecuteStreamFetch(query); err != nil {
 		// The origin rejected the statement before opening a result stream, so
@@ -329,7 +375,12 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 	}
 	// Every failure from here on abandons a stream the origin is still
 	// sending, which leaves the connection desynchronized.
-	result, err := h.collectStreamedResult(session, upstream)
+	result, sinkErr, err := h.collectStreamedResult(session, upstream, sinkFor)
+	if err == nil && sinkErr != nil {
+		// rows the sink cannot model were still read to the end, so the stream stays in step
+		upstream.CloseResult()
+		return nil, sinkErr
+	}
 	if err != nil {
 		// The stream is abandoned partway through, and CloseResult would
 		// keep reading until the origin sends a remainder it may never send.
@@ -342,39 +393,58 @@ func (h *protocolHandler) collectOriginResult(session *upstreamSession, upstream
 }
 
 func (h *protocolHandler) collectStreamedResult(session *upstreamSession,
-	upstream *vtmysql.Conn,
-) (*sqltypes.Result, error) {
+	upstream *vtmysql.Conn, sinkFor func([]*querypb.Field) (*rowSink, error),
+) (*sqltypes.Result, error, error) {
+	// returns the result, whose rows go to a sink when one is given, what the sink could not model,
+	// and what failed the stream
 	fields, err := upstream.Fields()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	size, overflow := resultFieldsSize(fields, h.config.MaxResultSizeBytes)
 	if overflow {
-		return nil, h.resultLimitExceeded(session)
+		return nil, nil, h.resultLimitExceeded(session)
 	}
-	result := &sqltypes.Result{Fields: fields, Rows: make([][]sqltypes.Value, 0,
-		min(h.config.MaxResultRows, resultBatchSize))}
+	var sink *rowSink
+	var sinkErr error
+	result := &sqltypes.Result{Fields: fields}
+	if sinkFor != nil {
+		sink, sinkErr = sinkFor(fields)
+	} else {
+		result.Rows = make([][]sqltypes.Value, 0, min(h.config.MaxResultRows, resultBatchSize))
+	}
+	rows := 0
+	var reuse []sqltypes.Value
 	for {
-		row, fetchErr := upstream.FetchNext(nil)
+		row, fetchErr := upstream.FetchNext(reuse)
 		if fetchErr != nil {
-			return nil, fetchErr
+			return nil, nil, fetchErr
 		}
 		if row == nil {
-			statusFlags, _, stateErr := originProtocolState(upstream)
+			statusFlags, _, stateErr := h.originProtocolState(upstream)
 			if stateErr != nil {
-				return nil, stateErr
+				return nil, nil, stateErr
 			}
 			result.StatusFlags = statusFlags
-			return result, nil
+			return result, sinkErr, nil
 		}
-		if len(result.Rows) >= h.config.MaxResultRows {
-			return nil, h.resultLimitExceeded(session)
+		if rows >= h.config.MaxResultRows {
+			return nil, nil, h.resultLimitExceeded(session)
 		}
 		size, overflow = addRowSize(size, row, h.config.MaxResultSizeBytes)
 		if overflow {
-			return nil, h.resultLimitExceeded(session)
+			return nil, nil, h.resultLimitExceeded(session)
 		}
-		result.Rows = append(result.Rows, row)
+		rows++
+		if sinkFor == nil {
+			result.Rows = append(result.Rows, row)
+			continue
+		}
+		if sinkErr == nil {
+			sinkErr = sink.row(row)
+		}
+		// the sink copies what it keeps, so the next row is read into this one's slice
+		reuse = row[:0]
 	}
 }
 
@@ -393,7 +463,7 @@ func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSessio
 ) string {
 	session.mtx.Lock()
 	database := session.database
-	timeZone := session.timeZone
+	timeZone := session.viewLocked().TimeZone
 	collation := session.collation
 	session.mtx.Unlock()
 	var identity strings.Builder
@@ -416,7 +486,11 @@ func (h *protocolHandler) queryCacheKey(c *vtmysql.Conn, session *upstreamSessio
 		appendCacheIdentityField(&identity, part)
 	}
 	suffix := checksum.Checksum(identity.String())
-	return h.config.BackendName + "." + h.config.CacheKeyPrefix + ".mysql." + engine + "." + suffix
+	dialect := ""
+	if h.config.Engine != nil {
+		dialect = h.dialect() + "."
+	}
+	return h.config.BackendName + "." + h.config.CacheKeyPrefix + "." + dialect + "mysql." + engine + "." + suffix
 }
 
 func appendCacheIdentityField(identity *strings.Builder, value string) {
@@ -430,195 +504,6 @@ func appendCacheIdentityUint(identity *strings.Builder, value uint64) {
 	var encoded [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(encoded[:], value)
 	_, _ = identity.Write(encoded[:n])
-}
-
-func (h *protocolHandler) mergeResults(parts []*sqltypes.Result,
-	plan *sqlanalyzer.QueryPlan,
-) (*sqltypes.Result, error) {
-	if len(parts) == 0 || parts[0] == nil {
-		return nil, errors.New("empty MySQL delta result")
-	}
-	fields := parts[0].Fields
-	timeIndex, groupIndexes, err := resultIndexes(fields, plan)
-	if err != nil {
-		return nil, err
-	}
-	type keyedRow struct {
-		epoch int64
-		row   []sqltypes.Value
-	}
-	comparator, err := h.newGroupComparator(fields, groupIndexes)
-	if err != nil {
-		return nil, err
-	}
-	rows := make([]keyedRow, 0, totalRows(parts))
-	for _, part := range parts {
-		if part == nil || !compatibleFields(fields, part.Fields) {
-			return nil, errors.New("incompatible MySQL delta result fields")
-		}
-		for _, row := range part.Rows {
-			if len(row) != len(fields) {
-				return nil, errors.New("invalid MySQL delta result row")
-			}
-			if validateErr := comparator.validateRow(row); validateErr != nil {
-				return nil, validateErr
-			}
-			epoch, parseErr := resultEpoch(row[timeIndex], plan.OutputUnit)
-			if parseErr != nil {
-				return nil, parseErr
-			}
-			rows = append(rows, keyedRow{epoch: epoch, row: row})
-		}
-	}
-	var compareErr error
-	slices.SortStableFunc(rows, func(a, b keyedRow) int {
-		if a.epoch != b.epoch {
-			return cmp.Compare(a.epoch, b.epoch)
-		}
-		if compareErr != nil {
-			return 0
-		}
-		order, err := comparator.compare(a.row, b.row)
-		if err != nil {
-			compareErr = err
-		}
-		return order
-	})
-	if compareErr != nil {
-		return nil, compareErr
-	}
-	// MySQL equality is defined by the group columns' types and collations, not
-	// by their serialized bytes. Stable sorting preserves part order among
-	// equal rows, so replacing the prior representative retains the latest row.
-	compacted := rows[:0]
-	for _, candidate := range rows {
-		last := len(compacted) - 1
-		if last < 0 || compacted[last].epoch != candidate.epoch {
-			compacted = append(compacted, candidate)
-			continue
-		}
-		order, err := comparator.compare(compacted[last].row, candidate.row)
-		if err != nil {
-			return nil, err
-		}
-		if order == 0 {
-			compacted[last] = candidate
-			continue
-		}
-		compacted = append(compacted, candidate)
-	}
-	rows = compacted
-	out := cloneResultMetadata(parts[len(parts)-1])
-	out.Fields = fields
-	out.Rows = make([][]sqltypes.Value, len(rows))
-	for i := range rows {
-		out.Rows[i] = rows[i].row
-	}
-	return out, nil
-}
-
-func (h *protocolHandler) cropAndSortResult(result *sqltypes.Result,
-	plan *sqlanalyzer.QueryPlan, extent timeseries.Extent,
-) (*sqltypes.Result, error) {
-	if result == nil {
-		return nil, errors.New("nil MySQL delta result")
-	}
-	timeIndex, groupIndexes, err := resultIndexes(result.Fields, plan)
-	if err != nil {
-		return nil, err
-	}
-	comparator, err := h.newGroupComparator(result.Fields, groupIndexes)
-	if err != nil {
-		return nil, err
-	}
-	start, end := extent.Start.UnixNano(), extent.End.UnixNano()
-	type timedRow struct {
-		epoch int64
-		row   []sqltypes.Value
-	}
-	rows := make([]timedRow, 0, len(result.Rows))
-	for _, row := range result.Rows {
-		if len(row) <= timeIndex {
-			return nil, errors.New("invalid MySQL delta result row")
-		}
-		epoch, parseErr := resultEpoch(row[timeIndex], plan.OutputUnit)
-		if parseErr != nil {
-			return nil, parseErr
-		}
-		if epoch < start || epoch > end {
-			continue
-		}
-		if validateErr := comparator.validateRow(row); validateErr != nil {
-			return nil, validateErr
-		}
-		rows = append(rows, timedRow{epoch: epoch, row: row})
-	}
-	var compareErr error
-	slices.SortStableFunc(rows, func(a, b timedRow) int {
-		if a.epoch != b.epoch {
-			return cmp.Compare(a.epoch, b.epoch)
-		}
-		if compareErr != nil {
-			return 0
-		}
-		order, err := comparator.compare(a.row, b.row)
-		if err != nil {
-			compareErr = err
-		}
-		return order
-	})
-	if compareErr != nil {
-		return nil, compareErr
-	}
-	out := cloneResultMetadata(result)
-	out.Rows = make([][]sqltypes.Value, len(rows))
-	for i := range rows {
-		out.Rows[i] = rows[i].row
-	}
-	return out, nil
-}
-
-// cropSortedResult crops a result already ordered by (epoch, group), as
-// guaranteed by mergeResults, without rebuilding group keys or sorting again.
-func cropSortedResult(result *sqltypes.Result, timeIndex int,
-	unit timeseries.FieldDataType, extent timeseries.Extent,
-) (*sqltypes.Result, error) {
-	start, err := sortedRowBoundary(result.Rows, timeIndex, unit, extent.Start.UnixNano(), false)
-	if err != nil {
-		return nil, err
-	}
-	end, err := sortedRowBoundary(result.Rows, timeIndex, unit, extent.End.UnixNano(), true)
-	if err != nil {
-		return nil, err
-	}
-	if start > end {
-		return nil, errors.New("invalid MySQL delta result extent")
-	}
-	out := cloneResultMetadata(result)
-	out.Rows = slices.Clone(result.Rows[start:end])
-	return out, nil
-}
-
-func sortedRowBoundary(rows [][]sqltypes.Value, timeIndex int,
-	unit timeseries.FieldDataType, target int64, after bool,
-) (int, error) {
-	low, high := 0, len(rows)
-	for low < high {
-		middle := low + (high-low)/2
-		if len(rows[middle]) <= timeIndex {
-			return 0, errors.New("invalid MySQL delta result row")
-		}
-		epoch, err := resultEpoch(rows[middle][timeIndex], unit)
-		if err != nil {
-			return 0, err
-		}
-		if epoch > target || (!after && epoch == target) {
-			high = middle
-		} else {
-			low = middle + 1
-		}
-	}
-	return low, nil
 }
 
 func resultIndexes(fields []*querypb.Field,
@@ -719,13 +604,15 @@ type groupColumn struct {
 // exactly are rejected outright, which costs DPC optimization rather than
 // correctness because the caller falls back to the object cache.
 type groupComparator struct {
-	columns []groupColumn
+	columns   []groupColumn
+	nullsLast bool
 }
 
 func (h *protocolHandler) newGroupComparator(fields []*querypb.Field,
 	indexes []int,
 ) (*groupComparator, error) {
-	c := &groupComparator{columns: make([]groupColumn, len(indexes))}
+	semantics := h.resultSemantics()
+	c := &groupComparator{columns: make([]groupColumn, len(indexes)), nullsLast: semantics.NullsLast}
 	for i, index := range indexes {
 		// resultIndexes has already proven every group index addresses a field.
 		field := fields[index]
@@ -751,6 +638,10 @@ func (h *protocolHandler) newGroupComparator(fields []*querypb.Field,
 			// deliberately absent: it can be negative, which byte order gets wrong.
 			column.kind = compareBytes
 		case sqltypes.IsText(field.Type):
+			if semantics.BinaryText {
+				column.kind = compareBytes
+				break
+			}
 			if field.Charset > math.MaxUint16 {
 				return nil, fmt.Errorf("MySQL group column %q uses collation %d, "+
 					"which Trickster cannot order", field.Name, field.Charset)
@@ -807,8 +698,14 @@ func (c *groupComparator) compare(left, right []sqltypes.Value) (int, error) {
 		case l.IsNull() && r.IsNull():
 			continue
 		case l.IsNull():
+			if c.nullsLast {
+				return 1, nil
+			}
 			return -1, nil
 		case r.IsNull():
+			if c.nullsLast {
+				return -1, nil
+			}
 			return 1, nil
 		}
 		order, err := column.compareValues(l, r)
@@ -913,64 +810,6 @@ func cloneResultMetadata(result *sqltypes.Result) *sqltypes.Result {
 		SessionStateChanges: result.SessionStateChanges, StatusFlags: result.StatusFlags,
 		Info: result.Info,
 	}
-}
-
-func totalRows(results []*sqltypes.Result) int {
-	total := 0
-	for _, result := range results {
-		if result != nil {
-			total += len(result.Rows)
-		}
-	}
-	return total
-}
-
-func (h *protocolHandler) applyRetentionSorted(result *sqltypes.Result,
-	extents timeseries.ExtentList, plan *sqlanalyzer.QueryPlan, timeIndex int,
-) (*sqltypes.Result, timeseries.ExtentList, error) {
-	limit := h.config.RetentionPoints
-	if limit <= 0 || result == nil || len(result.Rows) <= limit || len(extents) == 0 {
-		return result, extents, nil
-	}
-	unique := 0
-	start := 0
-	var cutoff, previous int64
-	havePrevious := false
-	for i, row := range slices.Backward(result.Rows) {
-		if len(row) <= timeIndex {
-			return nil, nil, errors.New("invalid MySQL delta result row")
-		}
-		epoch, err := resultEpoch(row[timeIndex], plan.OutputUnit)
-		if err != nil {
-			return nil, nil, err
-		}
-		if !havePrevious || epoch != previous {
-			unique++
-			if unique > limit {
-				start = i + 1
-				break
-			}
-			cutoff = epoch
-			previous = epoch
-			havePrevious = true
-		}
-	}
-	if unique <= limit {
-		return result, extents, nil
-	}
-	retained := cloneResultMetadata(result)
-	retained.Rows = slices.Clone(result.Rows[start:])
-	return retained, extents.Crop(timeseries.Extent{
-		Start: time.Unix(0, cutoff), End: extents[len(extents)-1].End,
-	}), nil
-}
-
-func (h *protocolHandler) stableExtents(extents timeseries.ExtentList,
-	plan *sqlanalyzer.QueryPlan, now time.Time,
-) timeseries.ExtentList {
-	window := max(h.config.BackfillWindow, time.Duration(h.config.BackfillPoints)*plan.Step,
-		plan.BackfillTolerance)
-	return nativedelta.StableExtents(extents, plan.Step, window, now)
 }
 
 func (h *protocolHandler) updateSessionStateParsed(session *upstreamSession, parsed parsedQuery) {
@@ -1128,11 +967,11 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 		if counter := h.metricHandles.analysis[key]; counter != nil {
 			counter.Inc()
 		} else {
-			metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
+			metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, h.dialect(),
 				analysis.Mode.String(), reason).Inc()
 		}
 	} else {
-		metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, mysqlDialect,
+		metrics.SQLQueryAnalysis.WithLabelValues(h.config.BackendName, h.dialect(),
 			analysis.Mode.String(), reason).Inc()
 	}
 	if logger.Level() == level.Debug {
@@ -1144,7 +983,7 @@ func (h *protocolHandler) observeAnalysis(statementType sqlparser.StatementType,
 }
 
 func (h *protocolHandler) observeRewriteFailure(reason string) {
-	metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName, mysqlDialect, reason).Inc()
+	metrics.SQLQueryRewriteFailures.WithLabelValues(h.config.BackendName, h.dialect(), reason).Inc()
 	logger.Error("mysql query extent rewrite failed", logging.Pairs{
 		keys.BackendName: h.config.BackendName, keys.Reason: reason,
 	})
@@ -1158,7 +997,7 @@ func (h *protocolHandler) observeCache(mode sqlanalyzer.CacheMode,
 		handles, ok = h.metricHandles.cache[cacheMetricKey{mode: mode, status: status}]
 	}
 	if !ok {
-		handles = resolveCacheMetricHandles(h.config.BackendName, mode, status)
+		handles = resolveCacheMetricHandles(h.config.BackendName, h.dialect(), mode, status)
 	}
 	handles.native.Inc()
 	handles.requests.Inc()
@@ -1172,7 +1011,7 @@ func (h *protocolHandler) observeCache(mode sqlanalyzer.CacheMode,
 	}
 }
 
-func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
+func newProtocolMetricHandles(backendName, dialect string) *protocolMetricHandles {
 	handles := &protocolMetricHandles{
 		connectLatency: metrics.MySQLCommandLatency.WithLabelValues(backendName, "connect"),
 		queryLatency:   metrics.MySQLCommandLatency.WithLabelValues(backendName, metricPathQuery),
@@ -1180,7 +1019,7 @@ func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
 		cache:          make(map[cacheMetricKey]cacheMetricHandles, 10),
 	}
 	for _, key := range analysisMetricKeys {
-		handles.analysis[key] = metrics.SQLQueryAnalysis.WithLabelValues(backendName, mysqlDialect,
+		handles.analysis[key] = metrics.SQLQueryAnalysis.WithLabelValues(backendName, dialect,
 			key.mode.String(), key.reason)
 	}
 	statuses := map[sqlanalyzer.CacheMode][]cachestatus.LookupStatus{
@@ -1202,13 +1041,13 @@ func newProtocolMetricHandles(backendName string) *protocolMetricHandles {
 	for mode, values := range statuses {
 		for _, status := range values {
 			key := cacheMetricKey{mode: mode, status: status}
-			handles.cache[key] = resolveCacheMetricHandles(backendName, mode, status)
+			handles.cache[key] = resolveCacheMetricHandles(backendName, dialect, mode, status)
 		}
 	}
 	return handles
 }
 
-func resolveCacheMetricHandles(backendName string, mode sqlanalyzer.CacheMode,
+func resolveCacheMetricHandles(backendName, dialect string, mode sqlanalyzer.CacheMode,
 	status cachestatus.LookupStatus,
 ) cacheMetricHandles {
 	httpStatus := metricHTTPStatusOK
@@ -1217,13 +1056,13 @@ func resolveCacheMetricHandles(backendName string, mode sqlanalyzer.CacheMode,
 	}
 	statusLabel := status.String()
 	return cacheMetricHandles{
-		native: metrics.SQLQueryCache.WithLabelValues(backendName, mysqlDialect,
+		native: metrics.SQLQueryCache.WithLabelValues(backendName, dialect,
 			mode.String(), statusLabel),
-		requests: metrics.ProxyRequestStatus.WithLabelValues(backendName, mysqlDialect,
+		requests: metrics.ProxyRequestStatus.WithLabelValues(backendName, dialect,
 			metricMethodQuery, statusLabel, httpStatus, metricPathQuery),
-		elements: metrics.ProxyRequestElements.WithLabelValues(backendName, mysqlDialect,
+		elements: metrics.ProxyRequestElements.WithLabelValues(backendName, dialect,
 			statusLabel, metricPathQuery),
-		duration: metrics.ProxyRequestDuration.WithLabelValues(backendName, mysqlDialect,
+		duration: metrics.ProxyRequestDuration.WithLabelValues(backendName, dialect,
 			metricMethodQuery, statusLabel, httpStatus, metricPathQuery),
 	}
 }

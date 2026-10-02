@@ -100,7 +100,13 @@ spec:
 | `cors.mode` | `preserve`, `merge`, `replace`, `disable` | how origin CORS headers combine with the configured ones |
 | `cors.headers` | a map of headers | the CORS headers `merge` and `replace` apply |
 | `healthMode` | `probe`, `provider` | how discovered members are judged healthy in the endpoint routing mode |
+| `loadBalancing` | `rr`, `p2c`, `lc`, `lt`, `hrw` | how traffic is spread across a Service's endpoints in the endpoint routing mode; `rr` unless set. See [the ALB mechanisms](./alb.md) |
+| `loadBalancingKey` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `hrw` keeps on one endpoint; `client_ip` unless set |
+| `sticky` | `cookie`, `header`, `table`, `none` | keeps a client on the endpoint it first reached, on an HTTP route or Ingress in the endpoint routing mode; `none` turns off a less specific setting's. A cookie's `Max-Age` ends with its token, at most `stickyTTL` after the session began. A TCP, TLS or UDP route keeps it in a table. See [kubernetes-gateway.md](./kubernetes-gateway.md#session-persistence) |
+| `stickyKey` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>`, `sni` | what `table` mode keeps a client's endpoint by; `client_ip` unless set, and a key the route's listener cannot read (`sni` on an HTTP route, for one) is left at that |
+| `stickyTTL`, `stickyIdle` | a duration of at least `1s` | a session ends that long after it began (`1h` unless set), or once unused that long |
 | `resultHeader` | `Expose`, `Hide` | whether `X-Trickster-Result` reaches the client; see below |
+| `stepAlignment` | `truncate`, `drop`, `partial`, `partial_start`, `partial_end`, `off` | the [step alignment](./step-alignment.md) mode of the time series backend `provider` makes; a mode the policy's `provider` doesn't support makes the policy `Invalid` |
 
 In a header map a name prefixed with `-` deletes the header and one prefixed with `+`
 appends to it rather than replacing, exactly as in the annotations and in Trickster's own

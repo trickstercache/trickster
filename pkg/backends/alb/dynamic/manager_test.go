@@ -17,8 +17,10 @@
 package dynamic
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -33,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
@@ -167,14 +170,92 @@ func TestManagerProviderHealthMode(t *testing.T) {
 	require.NotNil(t, st)
 	require.Equal(t, healthcheck.StatusPassing, st.Get())
 
-	// a readiness flip updates the same status in place
+	// a readiness flip updates the same status in place; a terminating member still serves
 	mem.Ready = discovery.Terminating
+	m.ApplySnapshot(discovery.Snapshot{mem})
+	require.Equal(t, healthcheck.StatusPassing, st.Get())
+
+	mem.Ready = discovery.NotReady
 	m.ApplySnapshot(discovery.Snapshot{mem})
 	require.Equal(t, healthcheck.StatusFailing, st.Get())
 
 	mem.Ready = discovery.ReadyUnknown
 	m.ApplySnapshot(discovery.Snapshot{mem})
 	require.Equal(t, healthcheck.StatusUnchecked, st.Get())
+}
+
+func configuredMember(t *testing.T, c *alb.Client, name string) *lb.Member {
+	t.Helper()
+	for _, mb := range c.Pool().Core().Configured() {
+		if mb.Name() == name {
+			return mb
+		}
+	}
+	t.Fatalf("%s is not in the pool", name)
+	return nil
+}
+
+// a member the provider reports terminating drains in place: it keeps its name, stats and so its
+// pins, takes no new work, and the health page is told; readiness returns it to new work
+func TestManagerTerminatingMembersDrain(t *testing.T) {
+	for _, mode := range []string{ao.HealthModeProbe, ao.HealthModeProvider} {
+		t.Run(mode, func(t *testing.T) {
+			m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
+				DiscovererName: "d", TemplateBackend: "rp-template", HealthMode: mode,
+			})
+			probedTemplate(m)
+			changes := make(chan bool, 1)
+			hc.(healthcheck.RegistrationNotifier).SubscribeRegistrations(changes)
+
+			a, b := member("a", "10.0.0.1:8080"), member("b", "10.0.0.2:8080")
+			a.Ready, b.Ready = discovery.Ready, discovery.Ready
+			m.ApplySnapshot(discovery.Snapshot{a, b})
+			was := configuredMember(t, c, "myalb-a")
+			require.False(t, was.Draining())
+			<-changes
+
+			a.Ready = discovery.Terminating
+			m.ApplySnapshot(discovery.Snapshot{a, b})
+			select {
+			case <-changes:
+			default:
+				t.Fatal("the health page was not told the member drains")
+			}
+			require.Equal(t, []string{"myalb-a", "myalb-b"}, m.MemberNames())
+			draining := configuredMember(t, c, "myalb-a")
+			require.True(t, draining.Draining())
+			require.Same(t, was.Stats(), draining.Stats(), "a draining member keeps its stats")
+			require.Equal(t, was.Hash(), draining.Hash(), "a draining member keeps its pins")
+			require.Equal(t, healthcheck.StatusPassing, hc.Statuses()["myalb-a"].Get())
+
+			targets := c.Pool().Targets()
+			require.Len(t, targets, 1)
+			require.Equal(t, "myalb-b", targets[0].Name())
+			for range 4 {
+				pk, ok := c.Picker().Pick(lb.Flow{})
+				require.True(t, ok)
+				require.Equal(t, "myalb-b", pk.Member().Name(), "a draining member took new work")
+				pk.Done(lb.OutcomeOK)
+			}
+			pk, ok := c.Picker().Pick(lb.Flow{Pin: was.Hash(), HasPin: true})
+			require.True(t, ok)
+			require.True(t, pk.Pinned())
+			require.Equal(t, "myalb-a", pk.Member().Name(), "a draining member lost its pinned flow")
+			pk.Done(lb.OutcomeOK)
+
+			a.Ready = discovery.Ready
+			m.ApplySnapshot(discovery.Snapshot{a, b})
+			require.False(t, configuredMember(t, c, "myalb-a").Draining())
+			require.Len(t, c.Pool().Targets(), 2)
+
+			// a member first discovered while terminating joins draining
+			late := member("late", "10.0.0.3:8080")
+			late.Ready = discovery.Terminating
+			m.ApplySnapshot(discovery.Snapshot{a, b, late})
+			require.True(t, configuredMember(t, c, "myalb-late").Draining())
+			require.Len(t, c.Pool().Targets(), 2)
+		})
+	}
 }
 
 func TestManagerInstantiationFailureRetries(t *testing.T) {
@@ -343,4 +424,88 @@ func TestManagerProbeModeReadinessWithoutProbe(t *testing.T) {
 	mem.Ready = discovery.Ready
 	require.NotPanics(t, func() { m.ApplySnapshot(discovery.Snapshot{mem}) })
 	require.NotContains(t, hc.Statuses(), "myalb-m1")
+}
+
+// a discovered member is health checked the way a configured one is: a udp origin, which
+// nothing can probe, follows the provider's readiness instead of an http probe that can only
+// fail, and a tcp origin is probed by connecting to it
+func TestManagerProbeModeByOriginProtocol(t *testing.T) {
+	m, c, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
+	probedTemplate(m)
+	m.cfg.Template.HealthCheck.FailureThreshold = 1
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+
+	datagrams := discovery.Member{Name: "dns", Scheme: "udp", Address: "10.0.0.9:53", Ready: discovery.Ready}
+	pending := discovery.Member{Name: "pending", Scheme: "udp", Address: "10.0.0.10:53", Ready: discovery.NotReady}
+	stream := discovery.Member{Name: "db", Scheme: "tcp", Address: ln.Addr().String()}
+	m.ApplySnapshot(discovery.Snapshot{datagrams, pending, stream})
+
+	statuses := hc.Statuses()
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-dns"].Get(),
+		"a udp member the provider reports ready is available")
+	require.Equal(t, healthcheck.StatusFailing, statuses["myalb-pending"].Get())
+	require.Eventually(t, func() bool { return statuses["myalb-db"].Get() == healthcheck.StatusPassing },
+		5*time.Second, 10*time.Millisecond, "a tcp member is probed by connecting to it")
+	// no probe ever runs against the udp member, so it never goes down on one
+	time.Sleep(150 * time.Millisecond)
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-dns"].Get())
+
+	names := []string{}
+	for _, tgt := range c.Pool().Targets() {
+		names = append(names, tgt.Name())
+	}
+	require.ElementsMatch(t, []string{"myalb-dns", "myalb-db"}, names)
+
+	// and it goes on following the provider
+	pending.Ready = discovery.Ready
+	datagrams.Ready = discovery.NotReady
+	m.ApplySnapshot(discovery.Snapshot{datagrams, pending, stream})
+	require.Equal(t, healthcheck.StatusPassing, statuses["myalb-pending"].Get())
+	require.Equal(t, healthcheck.StatusFailing, statuses["myalb-dns"].Get())
+}
+
+// a member that keeps its name while its origin changes from one that is probed to one that
+// cannot be leaves no probe behind: the retired origin is not contacted again
+func TestManagerProbeRetiredWhenAMemberBecomesUnprobeable(t *testing.T) {
+	m, _, hc := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "rp-template",
+	})
+	probedTemplate(m)
+	m.cfg.Template.HealthCheck.Interval = timeconv.Duration(5 * time.Millisecond)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	var accepted atomic.Int64
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			accepted.Add(1)
+			_ = conn.Close()
+		}
+	}()
+
+	m.ApplySnapshot(discovery.Snapshot{{Name: "db", Scheme: "tcp", Address: ln.Addr().String()}})
+	require.Eventually(t, func() bool { return accepted.Load() > 2 }, 5*time.Second, 5*time.Millisecond,
+		"the tcp member was never probed")
+	probed := hc.Statuses()["myalb-db"]
+
+	m.ApplySnapshot(discovery.Snapshot{{Name: "db", Scheme: "udp", Address: "10.0.0.9:53", Ready: discovery.Ready}})
+	st := hc.Statuses()["myalb-db"]
+	require.NotSame(t, probed, st, "the member kept the status of the origin it left")
+	require.Equal(t, healthcheck.StatusPassing, st.Get())
+	// a probe in flight when the origin changed may still land; none starts after it
+	time.Sleep(50 * time.Millisecond)
+	settled := accepted.Load()
+	time.Sleep(100 * time.Millisecond)
+	require.Equal(t, settled, accepted.Load(), "the retired origin is still being probed")
+	require.Equal(t, healthcheck.StatusPassing, hc.Statuses()["myalb-db"].Get())
 }

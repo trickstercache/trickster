@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/stream"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
@@ -40,13 +41,16 @@ import (
 	ch "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/config"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
+	l4observe "github.com/trickstercache/trickster/v2/pkg/proxy/l4/observe"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -71,8 +75,10 @@ type desiredListener struct {
 // mgmtRoute is a reserved exact-path route: registered on the management
 // router and served ahead of every proxy listener's router.
 type mgmtRoute struct {
-	path    string
-	handler http.Handler
+	path     string
+	handler  http.Handler
+	methods  []string
+	mgmtOnly bool
 }
 
 // guardReservedRoutes serves reserved paths before next sees the request, so
@@ -90,6 +96,13 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
+	// every request on the listener passes here ahead of the router, unmatched ones included; middleware
+	// added here goes between the access log and next, so its answers are logged against the real client
+	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
+		normalize.Middleware(o.PathNormalization, next)))
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -126,9 +139,13 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		return route.path == "" || route.handler == nil
 	})
 	for _, route := range mgmtRoutes {
-		managementRouter.RegisterRoute(route.path, nil, nil,
+		managementRouter.RegisterRoute(route.path, nil, route.methods,
 			matching.PathMatchTypeExact, route.handler)
 	}
+	// a management-only route is not served ahead of the proxy listeners' routers
+	mgmtRoutes = slices.DeleteFunc(mgmtRoutes, func(route mgmtRoute) bool {
+		return route.mgmtOnly
+	})
 
 	// requests that miss every backend route are logged by the default
 	// access log at the router level, on every listener but metrics
@@ -298,26 +315,29 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			continue
 		}
 		var r http.Handler
+		accessLogger := routerLogger
 		switch name {
 		case mgmt.ListenerNameMgmt:
-			r = accesslog.RouterMiddleware(routerLogger, managementRouter)
+			r = managementRouter
 		case mgmt.ListenerNameMetrics:
-			r = metricsRouter
+			r, accessLogger = metricsRouter, nil
 		default:
-			r = accesslog.RouterMiddleware(routerLogger,
-				guardReservedRoutes(reserved, listenerRouters[name]))
+			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
-		// the client IP is resolved outside the access log so unmatched
-		// requests are attributed to the real client too
-		r = clientip.Middleware(trustedProxies(options), r)
 		if options.ListenPort > 0 {
+			plain := r
+			// http-01 challenges arrive on the plaintext port, ahead of every route and middleware
+			if _, http01 := conf.ListenerACME(name); http01 {
+				plain = challenge.HTTPHandler(plain)
+			}
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
-				options: options, router: r,
+				options: options, router: wrapListener(options, accessLogger, plain),
 			}
 		}
+		r = wrapListener(options, accessLogger, r)
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, options.Protocol, true)
 			tlsRouter := r
@@ -354,7 +374,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 			!o.UsesListener(desired.listenerName) {
 			continue
 		}
-		up := l4.FromBackend(clients.Get(backendName))
+		up := stream.FromBackend(clients.Get(backendName))
 		if up == nil {
 			logger.Error("stream listener backend has no dialable origin", logging.Pairs{
 				keys.ListenerName: desired.listenerName, keys.BackendName: backendName,
@@ -380,6 +400,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 	return &l4.Config{
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
+		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
 	}
 }
 

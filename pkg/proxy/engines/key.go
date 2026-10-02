@@ -132,7 +132,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	if pc == nil {
 		var kb keyBuilder
-		return kb.sum(pr.URL.Path, upstreamKeyPart,
+		return kb.sum(pr.URL.EscapedPath(), upstreamKeyPart,
 			pr.corsCacheKeyPart(pr.Request), extra)
 	}
 
@@ -177,7 +177,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		key := pc.KeyHasher(r.URL.EscapedPath(), qp, r.Header, b, trq, extra)
 		if cors := pr.corsCacheKeyPart(r); upstreamKeyPart != "" || cors != "" {
 			var kb keyBuilder
 			return kb.sum(key, upstreamKeyPart, cors)
@@ -189,9 +189,9 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		len(pc.CacheKeyHeaders)+len(pc.CacheKeyFormFields)+ckeCnt)}
 	// overrides contains query data modified by the backend provider when
 	// parsing the time range (e.g., a tokenized version of the query statement)
-	var overrides map[string]string
+	var overrides, paramValues map[string]string
 	if trq != nil {
-		overrides = trq.CacheKeyElements
+		overrides, paramValues = trq.CacheKeyElements, trq.KeyParamValues
 	}
 
 	if v := r.Header.Get(headers.NameAuthorization); v != "" &&
@@ -207,10 +207,10 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			if _, ok := overrides[p]; ok {
 				continue
 			}
-			if pc.ReplacesParam(p) {
+			if pc.ReplacesParam(p) || slices.Contains(pc.CacheKeyParamsExcluded, p) {
 				continue
 			}
-			kb.addValues(compParam, p, qp[p])
+			kb.addValues(compParam, p, keyParamValues(p, qp[p], paramValues))
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
@@ -221,7 +221,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				continue
 			}
 			if vv := qp[p]; len(vv) > 0 {
-				kb.addValues(compParam, p, vv)
+				kb.addValues(compParam, p, keyParamValues(p, vv, paramValues))
 			}
 		}
 	}
@@ -282,8 +282,15 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	// the identity part is the precomputed digest of the configured
 	// request_headers/request_params, so rotating either rotates the key
-	return kb.sum(pr.URL.Path, r.Method, upstreamKeyPart,
+	return kb.sum(pr.URL.EscapedPath(), r.Method, upstreamKeyPart,
 		pr.corsCacheKeyPart(r), pc.IdentityKeyPart(), extra)
+}
+
+func keyParamValues(name string, values []string, replacements map[string]string) []string {
+	if v, ok := replacements[name]; ok && len(values) == 1 {
+		return []string{v}
+	}
+	return values
 }
 
 // upstreamIdentityCacheKey names what the request reaches beyond the configured upstream: an

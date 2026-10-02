@@ -58,6 +58,8 @@ type RouteDecision struct {
 	Step time.Duration
 	// Extent is the requested time range, clamped to what the origin holds
 	Extent timeseries.Extent
+	// Requested is the time range as the client sent it, before clamping and alignment
+	Requested timeseries.RequestedRange
 	// MaxRetention is the shortest maxRetention across the resolved leaves,
 	// 0 when unknown
 	MaxRetention time.Duration
@@ -184,6 +186,10 @@ func (c *Client) route(ctx context.Context, rq *RenderQuery) RouteDecision {
 	// whisper's range clamp: a window wholly beyond retention holds nothing
 	// to cache; a from beyond retention is moved to the oldest point
 	d.Extent = ext
+	d.Requested = timeseries.RequestedRange{
+		Start: ext.Start, End: ext.End, EndInclusive: true,
+		OpenEnded: rp.Until == "" || rq.Now.Equal(ext.End),
+	}
 	if d.MaxRetention > 0 {
 		start, end, ok := resolution.Clamp(ext.Start, ext.End, rq.Now, d.MaxRetention)
 		if !ok {

@@ -28,6 +28,9 @@ type Modeler struct {
 	WireMarshalWriter     MarshalWriterFunc     `msg:"-"`
 	CacheUnmarshaler      UnmarshalerFunc       `msg:"-"`
 	CacheMarshaler        MarshalerFunc         `msg:"-"`
+	// WireMarshalReadsParts is true when WireMarshalWriter reads each series through its point parts
+	// (dataset.Series.PointParts), so a response with parts needn't be flattened for it
+	WireMarshalReadsParts bool `msg:"-"`
 }
 
 // UnmarshalerFunc describes a function that unmarshals a Timeseries

@@ -21,10 +21,10 @@ type contextKey int
 const (
 	resourcesKey contextKey = iota
 	hopsKey
-	rewriterHopsKey
 	healthCheckKey
 	requestBodyKey
 	servedKey
 	clientIPKey
 	mirroredKey
+	stepAlignmentKey
 )

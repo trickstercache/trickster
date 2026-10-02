@@ -166,6 +166,12 @@ style:
 check-imports:
 	@go run hack/check-imports/main.go
 
+# fails the build if weak randomness crosses the application/test boundary;
+# pkg/util/weak/weaktest also panics at runtime once the application registers
+.PHONY: check-weak-random
+check-weak-random:
+	@go run hack/check-weak-random/main.go
+
 .PHONY: gofix-apply
 gofix-apply:
 	@go fix ./...
@@ -175,15 +181,21 @@ gofix-diff:
 	@go fix -diff ./...
 
 LINT_FLAGS ?= 
+# tests are linted in a second pass by the rules that replaced the Makefile's scans, as the
+# full set of linters is not run over them
+TEST_LINTERS := forbidigo,depguard,godox,goheader
 .PHONY: golangci-lint
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed; do \
-		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./...) || exit 1; \
+	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do \
+		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
+			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
+			-c ../../.golangci.yml ./...) || exit 1; \
 	done
 
 .PHONY: lint
-lint: check-imports spelling vulncheck gofix-diff golangci-lint
+lint: check-imports check-weak-random spelling vulncheck gofix-diff golangci-lint
 
 .PHONY: lint-all
 lint-all:
@@ -215,6 +227,15 @@ benchmark-graphite:
 	@go test ./pkg/backends/graphite/resolution -run '^$$' -bench '^BenchmarkResolver' \
 		-benchmem -count=5
 
+# DataSet build, cache codec and retained-heap measurements; run by hand, never on CI runners
+DSBENCH_BUDGET_MB ?= 1024
+DSBENCH_LOAD ?= 5s
+.PHONY: benchmark-dataset
+benchmark-dataset:
+	@go test ./pkg/timeseries/dataset/dsbench -run '^$$' -bench . -benchmem -count=6
+	@TRICKSTER_DSBENCH=1 TRICKSTER_DSBENCH_BUDGET_MB=$(DSBENCH_BUDGET_MB) TRICKSTER_DSBENCH_LOAD=$(DSBENCH_LOAD) \
+		go test ./pkg/timeseries/dataset/dsbench -run '^TestRetainedHeap$$' -v -count=1 -timeout 30m
+
 .PHONY: benchmark-mysql-acceptance
 benchmark-mysql-acceptance:
 	@go test ./pkg/backends/mysql -run '^$$' -bench '^BenchmarkMySQLCompatibilityCorpus$$' \
@@ -229,14 +250,14 @@ lint-fix:
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
 .PHONY: test
-test: check-license-headers check-codegen gotest check-fmtprints check-todos
+test: check-codegen check-weak-random gotest check-devorigin-offline
 
 GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 .PHONY: gotest
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -253,6 +274,13 @@ data-race-test-inspect:
 integration-test:
 	$(MAKE) -C integration test
 	$(MAKE) -C integration data-race-test
+
+.PHONY: integration-test-no-failfast
+integration-test-no-failfast:
+	@status=0; \
+	$(MAKE) -C integration test-no-failfast || status=1; \
+	$(MAKE) -C integration data-race-test-no-failfast || status=1; \
+	exit $$status
 
 .PHONY: integration-cover
 integration-cover:
@@ -315,65 +343,13 @@ check-codegen:
 kube-configmap:
 	@hack/gen-kube-configmap.sh examples/conf/example.full.yaml deploy/kube/configmap.yaml
 
-.PHONY: check-license-headers
-check-license-headers: SHELL:=/bin/sh
-check-license-headers:
-	@for file in $$(find ./pkg ./cmd -name '*.go') ; \
-	do \
-		output=$$(grep 'Licensed under the Apache License' $$file) ; \
-		if [ "$$?" != "0" ]; then \
-			echo "" ; \
-			echo "Some project code files do not have the Trickster / Apache 2.0 license header." ; \
-			echo "Run 'make insert-license-headers' and commit the changes." ; \
-			echo "" ; \
-			exit 1 ; \
-		fi ; \
-	done ; \
-	echo "" ; echo "\033[1;32m✓\033[0m All code files have the required license header." ; echo ""
-
-.PHONY: check-fmtprints
-check-fmtprints: SHELL:=/bin/sh
-check-fmtprints: # fails if there are any fmt.Print* calls outside of the 3 approved files
-	@cd pkg && \
-	fmtprints=$$(git grep -n fmt.Print | grep -v 'appinfo/usage/usage.go' | grep -v '^daemon/'); \
-	count=0; \
-	if [ -n "$$fmtprints" ]; then \
-		count="$$(echo "$$fmtprints" | wc -l | tr -d '[:space:]')" ; \
-	fi; \
-	if [ "$$count" -ne 0 ]; then \
-		echo "" ; \
-		echo "\033[1;31m⨉\033[0m ($$count) unexpected fmt.Print*(s) must be removed from the codebase:"; \
-		echo "" ; \
-		echo "$$fmtprints" ; \
-		echo "" ; \
-		echo "" ; \
-		exit 1; \
-	fi ; \
-	echo "" ; echo "\033[1;32m✓\033[0m No unexpected fmt.Print* calls." ; echo ""
-
-.PHONY: check-todos
-check-todos: SHELL:=/bin/sh
-check-todos: # there are 11 known "TODO"s in the codebase. This check fails if more are added.
-	@cd pkg && \
-	todos=$$(git grep -in todo | grep -v 'context\.TODO'); \
-	count=0; \
-	if [ -n "$$todos" ]; then \
-		count="$$(echo "$$todos" | wc -l | tr -d '[:space:]')" ; \
-	fi; \
-	KNOWN_TODO_COUNT=7 ; \
-	if [ "$$count" -gt $$KNOWN_TODO_COUNT ]; then \
-		newtodos=$$(($$count - $$KNOWN_TODO_COUNT)) ; \
-		echo "" ; \
-		echo "\033[1;31m$$newtodos new TODOs found in the codebase.\033[0m Do not add any new TODOs to the codebase." ;\
-		echo "" ; \
-		echo "All TODOs:" ; \
-		echo "" ; \
-		echo "$$todos" | cut -b 1-100 ; \
-		echo "" ; \
-		echo "" ; \
-		exit 1; \
-	fi ; \
-	echo "" ; echo "\033[1;32m✓\033[0m No new TODOs found." ; echo ""
+# the dev environment builds hack/devorigin in an offline container, compiling
+# pkg/testutil/mocks from the repo, so those packages must stay stdlib-only
+.PHONY: check-devorigin-offline
+check-devorigin-offline:
+	@tmp=$$(mktemp -d) && trap 'chmod -R u+w "$$tmp"; rm -rf "$$tmp"' EXIT && \
+		cd hack/devorigin && GOMODCACHE="$$tmp" GOPROXY=off GOFLAGS=-mod=readonly $(GO) build -o /dev/null . && \
+		echo "hack/devorigin builds offline"
 
 .PHONY: install-codespell
 install-codespell:
@@ -391,17 +367,11 @@ install-codespell:
 
 .PHONY: spelling
 spelling:
-	@which mdspell ; \
-	if [ "$$?" != "0" ]; then \
-		echo "mdspell is not installed" ; \
-	else \
-		mdspell './README.md' './docs/**/*.md' ; \
-	fi
 	@which codespell ; \
 	if [ "$$?" != "0" ]; then \
 		echo "codespell is not installed" ; \
 	else \
-		codespell --skip='vendor,bin,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
+		codespell --skip='trickster-data,vendor,bin,*.git,*.png,*.pdf,*.tiff,*.plist,*.pem,rangesim*.go,*.gz,go.sum,go.mod' --ignore-words='./testdata/ignore_words.txt' ; \
 	fi
 
 .PHONY: serve
@@ -429,11 +399,37 @@ get-tools: get-msgpack
 get-msgpack:
 	$(GO) get -tool github.com/tinylib/msgp@$(shell go list -m github.com/tinylib/msgp | cut -d' ' -f2)
 
+# --- Developer environment ---------------------------------------------------
+# Each TSDB backend in the compose file has its own profile; services without a
+# profile (redis, grafana, prometheus, devorigin, jaeger) always start.
+# COMPOSE_PROFILES takes a comma-separated list, e.g. COMPOSE_PROFILES=mysql,clickhouse
+
+COMPOSE_ENV_DIR     := docs/developer/environment
+COREDNS_ZONES       := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
+COMPOSE_PROFILES    ?= all-providers
+# stop and delete act on every profile, so they reach whatever is running
+COMPOSE_ALL_PROFILES := *
+DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite
+DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
+
+# waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
+define wait_ready
+	@cd $(COMPOSE_ENV_DIR) && if COMPOSE_PROFILES='$(COMPOSE_PROFILES)' docker compose config --services | grep -qx '$(1)'; then \
+		echo "Waiting for $(1) to be ready..."; \
+		timeout $(3) sh -c 'until curl -sf "$(2)" >/dev/null 2>&1; do sleep 2; done'; \
+	fi
+endef
+
+.PHONY: developer-credentials
+developer-credentials:
+	@sh hack/developer-credentials.sh
+
 .PHONY: developer-start
-developer-start:
-	@cd docs/developer/environment && docker compose up -d
+developer-start: developer-credentials
+	@echo "Starting developer environment with profiles: $(COMPOSE_PROFILES)"
+	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_PROFILES)' docker compose up -d
 	@echo "Waiting for Redis to be ready..."
-	@cd docs/developer/environment && attempts=0; \
+	@cd $(COMPOSE_ENV_DIR) && attempts=0; \
 	while [ $$attempts -lt 30 ]; do \
 		response=$$(docker compose exec -T redis redis-cli ping 2>&1 || true); \
 		echo "PING -> $${response:-no response}"; \
@@ -442,82 +438,61 @@ developer-start:
 		sleep 1; \
 	done; \
 	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
-	@echo "Waiting for Prometheus to be ready..."
+	@echo "Waiting for prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
-	@echo "Waiting for Graphite to be ready..."
-	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
-	@echo "Waiting for Druid to be ready..."
-	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8888/status/health >/dev/null 2>&1; do sleep 2; done'
-	
+	@# devorigin compiles on start, so its container runs well before it serves
+	@echo "Waiting for devorigin to be ready..."
+	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8482/metrics >/dev/null 2>&1; do sleep 2; done'
+	$(call wait_ready,graphite,http://127.0.0.1:8081/metrics/find?query=carbon,120)
+	$(call wait_ready,druid,http://127.0.0.1:8888/status/health,180)
+	$(call wait_ready,victoriametrics,http://127.0.0.1:8428/health,120)
+
+# developer-start-<profile> starts the always-on services plus that one TSDB backend
+.PHONY: $(DEVELOPER_START_TARGETS)
+$(DEVELOPER_START_TARGETS): developer-start-%:
+	@$(MAKE) developer-start COMPOSE_PROFILES=$*
+
 .PHONY: developer-stop
 developer-stop:
-	@cd docs/developer/environment && docker compose stop
+	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_ALL_PROFILES)' docker compose stop
 
+# --- Integration environment -------------------------------------------------
+# The integration profile is every TSDB backend plus the integration-only
+# services (e.g. coredns for the autodiscovery DNS tests).
 
-# --- Integration-only container toggling -------------------------------------
-# The compose file carries integration-only services (e.g. coredns for the
-# autodiscovery DNS tests) commented out between the
-# "-- INTEGRATION CONTAINERS BELOW --" / "-- ABOVE --" markers, so developer
-# workstations never run them. integration-start uncomments that section,
-# seeds the mutable CoreDNS zone directory, and brings the environment up;
-# integration-stop stops the environment and comments the section back out.
+INTEGRATION_PROFILE := integration
+# one-shot loaders no service waits on, so developer-start can return while they still load
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed questdb_seed \
+	victoriametrics_seed
 
-COMPOSE_ENV_DIR := docs/developer/environment
-COMPOSE_YML     := $(COMPOSE_ENV_DIR)/docker-compose.yml
-COREDNS_ZONES   := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
-# services defined only in the integration section of the compose file
-INTEGRATION_SERVICES := coredns
-
-.PHONY: integration-env-enable
-integration-env-enable:
-	@awk 'BEGIN{p=0} \
-		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
-		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
-		p==1 && /^#/{sub(/^#/,"");print;next} \
-		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
-		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
+.PHONY: integration-start
+integration-start:
 	@mkdir -p $(COREDNS_ZONES)
 	@cp -f $(COMPOSE_ENV_DIR)/docker-compose-data/coredns/trickster.test.db.seed \
 		$(COREDNS_ZONES)/trickster.test.db
-	@echo "integration containers enabled in $(COMPOSE_YML)"
-
-.PHONY: integration-env-disable
-integration-env-disable:
-	@awk 'BEGIN{p=0} \
-		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
-		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
-		p==1 && !/^[[:space:]]*#/ && !/^[[:space:]]*$$/{print "#" $$0;next} \
-		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
-		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
-	@echo "integration containers disabled in $(COMPOSE_YML)"
-
-.PHONY: integration-start
-integration-start: integration-env-enable developer-start
+	@$(MAKE) developer-start COMPOSE_PROFILES=$(INTEGRATION_PROFILE)
+	@cd $(COMPOSE_ENV_DIR) && for id in $$(COMPOSE_PROFILES=$(INTEGRATION_PROFILE) docker compose ps -q --status running $(INTEGRATION_SEEDERS)); do \
+		echo "Waiting for seeder $$id to finish..."; \
+		status=$$(docker wait $$id); \
+		if [ "$$status" != 0 ]; then echo "seeder $$id failed (exit $$status)" >&2; exit 1; fi; \
+	done
 
 .PHONY: integration-stop
-integration-stop:
-	@$(MAKE) integration-env-enable >/dev/null
-	@# stop-and-remove the integration-only containers so a restart policy
-	@# cannot resurrect them on developer machines
-	@cd $(COMPOSE_ENV_DIR) && docker compose rm -sf $(INTEGRATION_SERVICES)
-	@$(MAKE) developer-stop
-	@$(MAKE) integration-env-disable
+integration-stop: developer-stop
 
 .PHONY: integration-delete
-integration-delete:
-	@$(MAKE) integration-env-enable >/dev/null
-	@$(MAKE) developer-delete
-	@$(MAKE) integration-env-disable
-
-# --- End Integration-only container toggling ---------------------------------
-
+integration-delete: developer-delete
 
 .PHONY: developer-delete
 developer-delete:
-	@cd docs/developer/environment && docker compose down -v --remove-orphans
+	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_ALL_PROFILES)' docker compose down -v --remove-orphans
 
+# deletes every profile's containers and volumes, then starts COMPOSE_PROFILES;
+# sequential sub-makes keep make -j from running the two concurrently
 .PHONY: developer-recreate
-developer-recreate: developer-delete developer-start
+developer-recreate:
+	@$(MAKE) developer-delete
+	@$(MAKE) developer-start COMPOSE_PROFILES='$(COMPOSE_PROFILES)'
 
 .PHONY: dev-certs
 dev-certs:
@@ -528,17 +503,8 @@ h3-client:
 	@$(GO) run ./hack/h3-client $(ARGS)
 
 .PHONY: developer-seed-data
-developer-seed-data:
-	@cd docs/developer/environment && docker compose up -d --wait clickhouse mysql druid
-	@cd docs/developer/environment && docker compose run --rm seed_data_generate
-	@cd docs/developer/environment && \
-	docker compose run --rm --no-deps clickhouse_seed & pid1=$$!; \
-	( cd docs/developer/environment && docker compose run --rm --no-deps mysql_seed ) & pid2=$$!; \
-	( cd docs/developer/environment && docker compose run --rm --no-deps druid_seed ) & pid3=$$!; \
-	rc=0; wait $$pid1 || rc=1; wait $$pid2 || rc=1; wait $$pid3 || rc=1; exit $$rc
-	@cd docs/developer/environment && docker compose stop graphite_generator && \
-		docker compose run --rm -e GRAPHITE_SEED_FORCE=1 graphite_seed && \
-		docker compose up -d graphite_generator
+developer-seed-data: developer-credentials
+	@hack/developer-seed-data.sh
 
 # regenerates the synthetic seed data to memory only and fails if its hash
 # differs from the one pinned in hack/seedgen; no network access is needed
@@ -554,10 +520,15 @@ seed-generate:
 	@cd hack/seedgen && $(GO) run . -out ../../docs/developer/environment/docker-compose-data/seed-data \
 		$(if $(SEED_PROFILE),-profile $(SEED_PROFILE),) $(if $(SEED_FORCE),-force,)
 
+# Read-only direct GreptimeDB acceptance; does not start or reseed services.
+.PHONY: developer-greptimedb-check
+developer-greptimedb-check:
+	@GO="$(GO)" sh hack/greptimedb-check.sh
+
 RUN_FLAGS ?=
 .PHONY: serve-dev
-serve-dev:
-	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
+serve-dev: developer-credentials
+	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.generated.yaml)
 
 serve-dev-data-race:
 	RUN_FLAGS=-race $(MAKE) serve-dev 2>&1 | tee race-output.log

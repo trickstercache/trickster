@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -455,10 +456,15 @@ func TestNativeTextValues(t *testing.T) {
 		{&n, "Nullable(UInt64)", "18446744073709551615"},
 		{&tm, "Nullable(DateTime64(6))", "2020-01-01 00:00:00.123456"},
 		{(*uint64)(nil), "Nullable(UInt64)", "\\N"},
+		{big.NewInt(-27), "Int256", "-27"},
+		{*big.NewInt(-27), "Int256", "-27"},
 	} {
 		if got := textValue(test.value, test.typ); got != test.want {
 			t.Fatalf("%s: got %q want %q", test.typ, got, test.want)
 		}
+	}
+	if b, err := json.Marshal(jsonValue(big.NewInt(-27), "Int256")); err != nil || string(b) != "-27" {
+		t.Fatalf("a big integer's JSON: %s, %v", b, err)
 	}
 	if _, _, err := encodeResultWithSettings(
 		[]server.Column{{Name: "a", Type: "Array(UInt32)"}}, [][]any{{[]uint32{1, 2}}}, 1, "TSV", "", nil,

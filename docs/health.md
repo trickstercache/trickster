@@ -12,6 +12,54 @@ Trickster offers `health` endpoints for monitoring the health of the Trickster s
 
 The main health check path is `/trickster/health`, which by default will return a `text/plain` summary of the backend health. You can request YAML or JSON format using the appropriate `Accept` header, or by providing a `?json` or `?yaml` query param.
 
+### ALBs and Their Pool Members
+
+Each [ALB](./alb.md) is listed with its mechanism and its pool members, grouped by health. The text form appends them to the ALB's line as `u:[...]` (unavailable), `a:[...]` (available), `nc:[...]` (not checked) and `d:[...]` (draining). The JSON and YAML forms name them `unavailablePoolMembers`, `availablePoolMembers`, `uncheckedPoolMembers`, `initializingPoolMembers` and `drainingPoolMembers`.
+
+A [draining](./alb.md#draining-pool-members) member, one marked `drain: true` or a discovered one that is terminating but still serving, is listed under its health and again as draining: it still serves the sticky sessions it has, but takes no new work. An ALB with a pool is listed as available while it has a member it would send new work to, so an ALB whose members all drain is listed as unavailable, though it still serves their sessions. For example:
+
+```yaml
+backends:
+  app1:
+    provider: reverseproxycache
+    origin_url: http://app1.example.com
+    healthcheck:
+      interval: 5s
+  app2:
+    provider: reverseproxycache
+    origin_url: http://app2.example.com
+    healthcheck:
+      interval: 5s
+  app:
+    provider: alb
+    alb:
+      mechanism: rr
+      pool:
+        - app1
+        - name: app2
+          drain: true
+```
+
+```json
+{
+  "title": "Trickster Backend Health Status",
+  "updateTime": "2026-09-26 00:00:00 UTC",
+  "available": [
+    { "name": "app1", "provider": "rpc" },
+    { "name": "app2", "provider": "rpc" },
+    {
+      "name": "app",
+      "provider": "alb",
+      "mechanism": "rr",
+      "availablePoolMembers": [ "app1", "app2" ],
+      "drainingPoolMembers": [ "app2" ]
+    }
+  ]
+}
+```
+
+See [All-Backends Health Status Page](./alb.md#all-backends-health-status-page) for more about how ALBs are listed.
+
 ### Backend-Specific Endpoints
 
 Each HTTP backend's health check path is `/trickster/health/BACKEND_NAME`. For example, if your backend is named `foo`, you can perform a health check of the upstream server at `http://<trickster_address:port>/trickster/health/foo`. Native-protocol backends publish their scheduled status through the general endpoint without registering a synthetic HTTP origin route.
@@ -55,6 +103,34 @@ to native probes. HTTP verbs, paths, headers, bodies, and expected HTTP response
 options are configuration errors for MySQL. Diagnostics exposed in health
 status and logs are limited to sanitized authentication, TLS, timeout,
 refused-connection, connection, and server-error categories.
+
+### Native PostgreSQL Health Checks
+
+A `postgres` or `timescaledb` backend is probed over the PostgreSQL wire
+protocol with the same scheduler, timeout, thresholds, status registry and
+metrics as every other health check. Each probe opens a fresh connection with
+the backend's `origin_url` credentials and upstream TLS mode, completes
+authentication, waits for the origin's `ReadyForQuery`, and ends the session
+cleanly. A backend whose `origin_url` has no username (one that relays its
+clients' own authentication) can only be checked for accepting connections.
+
+```yaml
+backends:
+  tsdb1:
+    provider: timescaledb
+    origin_url: postgres://health-user:password@tsdb.example:5432/analytics
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      failure_threshold: 3
+      recovery_threshold: 3
+```
+
+Only `interval`, `timeout`, `failure_threshold`, and `recovery_threshold`
+apply. Failures are reported as a login rejection with the origin's SQLSTATE,
+a timeout, or a connection failure; user names, addresses and passwords never
+appear in health status or logs. A native User Router refuses new sessions
+for a user whose backend is failing its health check.
 
 ### Basic Health Check Configuration Example
 

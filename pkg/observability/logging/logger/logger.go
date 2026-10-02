@@ -59,6 +59,12 @@ func Level() level.Level {
 	return logger.Level()
 }
 
+// DebugEnabled reports whether DEBUG events are logged, so a caller can skip building the details
+// of one that would be dropped
+func DebugEnabled() bool {
+	return logger.Level() == level.Debug
+}
+
 // Log logs an event to the package-level logger
 func Log(logLevel level.Level, event string, detail logging.Pairs) {
 	logger.Log(logLevel, event, detail)

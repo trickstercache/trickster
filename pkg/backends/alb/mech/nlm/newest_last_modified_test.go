@@ -217,7 +217,6 @@ func TestHandleNewestContextCancel(t *testing.T) {
 		func() {
 			p, _, _ := albpool.New(-1, hs)
 			defer p.Stop()
-			p.SetHealthy(hs)
 
 			h := &handler{}
 			h.SetPool(p)

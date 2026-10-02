@@ -19,7 +19,7 @@ package handlers
 import "testing"
 
 func TestIsLocal(t *testing.T) {
-	for _, name := range []string{NameLocalResponse, NameRedirect} {
+	for _, name := range []string{NameLocalResponse, NameRedirect, NameStatic} {
 		if !IsLocal(name) {
 			t.Errorf("%q answers locally", name)
 		}

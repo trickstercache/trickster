@@ -84,3 +84,23 @@ func TestUpgradeSwitch(t *testing.T) {
 		t.Error("nil passthrough should fall through to next")
 	}
 }
+
+func TestIgnoreUpgrade(t *testing.T) {
+	var got *http.Request
+	h := IgnoreUpgrade(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = r }))
+	r := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
+	r.Header.Set("Connection", "Upgrade")
+	r.Header.Set("Upgrade", "websocket")
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if got == nil || IsUpgradeRequest(got) {
+		t.Fatal("an upgrade request was passed on still asking to upgrade")
+	}
+	if !IsUpgradeRequest(r) {
+		t.Error("the caller's request was changed")
+	}
+	plain := httptest.NewRequest(http.MethodGet, "http://"+appinfo.Domain+"/", nil)
+	h.ServeHTTP(httptest.NewRecorder(), plain)
+	if got != plain {
+		t.Error("a plain request was not passed on as it was")
+	}
+}

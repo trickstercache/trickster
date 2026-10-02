@@ -39,11 +39,8 @@ import (
 // one (e.g. AnnotationScheme: https)
 const AnnotationScheme = appinfo.Domain + "/scheme"
 
-// buildEndpointSlices maps the ready endpoint addresses of the query's
-// Service onto members. Terminating endpoints are omitted entirely so
-// members leave the pool (and drain) before kubelet kills their pod; the
-// ready condition maps to the member ReadyState (nil is interpreted as
-// ready, per the EndpointSlice API convention).
+// buildEndpointSlices maps the endpoint addresses of the query's Service onto members, with
+// their state from endpointState
 func (s *subscription) buildEndpointSlices(lister discoverylisters.EndpointSliceNamespaceLister) discovery.Snapshot {
 	slices, err := lister.List(labels.Everything())
 	if err != nil {
@@ -66,12 +63,9 @@ func (s *subscription) buildEndpointSlices(lister discoverylisters.EndpointSlice
 			if len(ep.Addresses) == 0 {
 				continue
 			}
-			if ep.Conditions.Terminating != nil && *ep.Conditions.Terminating {
+			state, ok := endpointState(ep.Conditions)
+			if !ok {
 				continue
-			}
-			state := discovery.NotReady
-			if ep.Conditions.Ready == nil || *ep.Conditions.Ready {
-				state = discovery.Ready
 			}
 			name := ep.Addresses[0]
 			var group string
@@ -94,6 +88,21 @@ func (s *subscription) buildEndpointSlices(lister discoverylisters.EndpointSlice
 	}
 	s.clearPortWarn()
 	return out
+}
+
+// endpointState maps an endpoint's conditions (nil ready or serving is true, per the API) to a
+// state: terminating and serving drains, and false omits a terminating endpoint that stopped serving
+func endpointState(c discoveryv1.EndpointConditions) (discovery.ReadyState, bool) {
+	if c.Terminating != nil && *c.Terminating {
+		if c.Serving != nil && !*c.Serving {
+			return discovery.NotReady, false
+		}
+		return discovery.Terminating, true
+	}
+	if c.Ready == nil || *c.Ready {
+		return discovery.Ready, true
+	}
+	return discovery.NotReady, true
 }
 
 // buildServices maps each matching Service's ClusterIP onto one member.
@@ -129,10 +138,8 @@ func (s *subscription) buildServices(lister corelisters.ServiceNamespaceLister) 
 	return out
 }
 
-// buildPods maps the pod IPs of Pods matching the label selector onto
-// members. Pods that are not Running, have no IP, or are terminating
-// (deletion timestamp set) are omitted; readiness comes from the PodReady
-// condition.
+// buildPods maps the IPs of Running Pods matching the selector onto members, ready by PodReady; a
+// Pod being deleted is Terminating (draining) while ready and omitted once it is not
 func (s *subscription) buildPods(lister corelisters.PodNamespaceLister) discovery.Snapshot {
 	pods, err := lister.List(labels.Everything())
 	if err != nil {
@@ -142,8 +149,7 @@ func (s *subscription) buildPods(lister corelisters.PodNamespaceLister) discover
 	out := make(discovery.Snapshot, 0, len(pods))
 	for _, pod := range pods {
 		if pod == nil || pod.Status.PodIP == "" ||
-			pod.Status.Phase != corev1.PodRunning ||
-			pod.DeletionTimestamp != nil {
+			pod.Status.Phase != corev1.PodRunning {
 			continue
 		}
 		port, ok := resolvePodPort(pod, s.q.Port)
@@ -160,6 +166,13 @@ func (s *subscription) buildPods(lister corelisters.PodNamespaceLister) discover
 				}
 				break
 			}
+		}
+		if pod.DeletionTimestamp != nil {
+			// a terminating pod drains while it still serves, as its endpoint does
+			if state != discovery.Ready {
+				continue
+			}
+			state = discovery.Terminating
 		}
 		out = append(out, discovery.Member{
 			Name:         pod.Name,

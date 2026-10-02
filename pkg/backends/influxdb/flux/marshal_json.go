@@ -20,13 +20,15 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
-	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 type WFDocument struct {
@@ -43,118 +45,163 @@ func marshalTimeseriesJSONWriter(ds *dataset.DataSet,
 	return writeJSON(ds, w)
 }
 
+// the JSON literal for a value JSON can't hold
+const jsonNull = "null"
+
+// what a record's cell holds: text fixed for its table, the row's time, or a value column's value
+const (
+	jsonCellFixed byte = iota
+	jsonCellTime
+	jsonCellValue
+)
+
+// jsonCell is one column of a table's records: its key, and its fixed text or where its value is
+type jsonCell struct {
+	kind byte
+	key  []byte
+	text []byte
+	// a value's column among the row's values, or a time's type
+	value int
+	time  timeseries.FieldDataType
+}
+
+// writeJSON writes ds as tables of records, each series a table; a record holds a cell for every
+// column, with a column's default for a null or empty value
 func writeJSON(ds *dataset.DataSet, w io.Writer) error {
-	w.Write([]byte(`{"results":[`))
+	cw := tbytes.NewChunkWriter(w)
+	cw.Buf = append(cw.Buf, `{"results":[`...)
+	var cells []jsonCell
 	for i, r := range ds.Results {
-		w.Write([]byte(`{"tables":[`))
+		cw.Buf = append(cw.Buf, `{"tables":[`...)
 		for j, s := range r.SeriesList {
-			w.Write([]byte(`{"columns":[`))
-			fds := s.Header.FieldDefinitions()
-			setStartStopTimes(fds, ds.TimeRangeQuery.Extent)
-			for k, c := range fds {
-				if k == 0 {
-					continue
-				}
-				nb, _ := json.Marshal(c.Name)
-				tb, _ := json.Marshal(c.SDataType)
-				w.Write([]byte(`{"name":`))
-				w.Write(nb)
-				w.Write([]byte(`,"datatype":`))
-				w.Write(tb)
-				w.Write([]byte(`}`))
-				if k < len(fds)-1 {
-					w.Write([]byte(`,`))
-				}
-			}
-			w.Write([]byte(`],"records":[`))
-			for k, c := range s.Points {
-				w.Write([]byte(`{"values":{`))
-				var o int
-				for n, fd := range fds {
-					if n == 0 {
-						continue
-					}
-					b, _ := json.Marshal(fd.Name)
-					w.Write(b)
-					w.Write([]byte{':'})
-					var usedValue bool
-					b, usedValue = getCellValue(s.Header, fd, c, i, j)
-					w.Write(b)
-					if usedValue {
-						o++
-					}
-					if n < len(fds)-1 {
-						w.Write([]byte(`,`))
-					}
-				}
-				w.Write([]byte(`}}`))
-				if k < len(s.Points)-1 {
-					w.Write([]byte(`,`))
-				}
-			}
-			w.Write([]byte(`]}`))
+			cells = appendJSONTable(&cw, ds, s, j, cells[:0])
 			if j < len(r.SeriesList)-1 {
-				w.Write([]byte(`,`))
+				cw.Buf = append(cw.Buf, ',')
 			}
 		}
-		w.Write([]byte(`]}`))
+		cw.Buf = append(cw.Buf, `]}`...)
 		if i < len(ds.Results)-1 {
-			w.Write([]byte(`,`))
+			cw.Buf = append(cw.Buf, ',')
 		}
 	}
-	w.Write([]byte(`]}`))
-	return nil
+	cw.Buf = append(cw.Buf, `]}`...)
+	return cw.Close()
 }
 
-func getFormattedTimestamp(e epoch.Epoch, tfd timeseries.FieldDefinition) any {
-	switch tfd.DataType {
-	case timeseries.DateTimeRFC3339:
-		return time.Unix(0, int64(e)).UTC().Format(time.RFC3339)
-	case timeseries.DateTimeRFC3339Nano:
-		return time.Unix(0, int64(e)).UTC().Format(time.RFC3339Nano)
+func appendJSONTable(cw *tbytes.ChunkWriter, ds *dataset.DataSet, s *dataset.Series, table int,
+	cells []jsonCell,
+) []jsonCell {
+	fds := s.Header.FieldDefinitions()
+	setStartStopTimes(fds, rangeExtent(ds.TimeRangeQuery))
+	cw.Buf = append(cw.Buf, `{"columns":[`...)
+	// the first column is the annotations' and has no cells
+	values := 0
+	for k := 1; k < len(fds); k++ {
+		fd := &fds[k]
+		cw.Buf = append(cw.Buf, `{"name":`...)
+		cw.Buf = tstrings.AppendJSON(cw.Buf, fd.Name)
+		cw.Buf = append(cw.Buf, `,"datatype":`...)
+		cw.Buf = tstrings.AppendJSON(cw.Buf, fd.SDataType)
+		cw.Buf = append(cw.Buf, '}')
+		if k < len(fds)-1 {
+			cw.Buf = append(cw.Buf, ',')
+		}
+		c := jsonCell{key: append(tstrings.AppendJSON(nil, fd.Name), ':'), text: tstrings.AppendJSON(nil, fd.DefaultValue)}
+		switch fd.Role {
+		case timeseries.RoleTimestamp:
+			c.kind, c.time = jsonCellTime, fd.DataType
+		case timeseries.RoleTag:
+			if v := s.Header.Tags[fd.Name]; v != "" {
+				c.text = tstrings.AppendJSON(nil, v)
+			}
+		case timeseries.RoleValue:
+			c.kind, c.value = jsonCellValue, values
+			values++
+		case timeseries.RoleUntracked:
+			switch fd.Name {
+			case tableColumnName:
+				c.text = strconv.AppendInt(nil, int64(table), 10)
+			case startColumnName, stopColumnName:
+				if !strings.Contains(fd.DefaultValue, ":") {
+					c.text = []byte(fd.DefaultValue)
+				}
+			}
+		}
+		cells = append(cells, c)
 	}
-	return e
+	cw.Buf = append(cw.Buf, `],"records":[`...)
+	segs := s.Segments()
+	rows := segs.Len()
+	for k := range segs {
+		seg := &segs[k]
+		for i, e := range seg.Epochs() {
+			b := cw.Buf
+			b = append(b, `{"values":{`...)
+			for n := range cells {
+				c := &cells[n]
+				b = append(b, c.key...)
+				switch {
+				case c.kind == jsonCellTime:
+					b = appendJSONTime(b, e, c.time)
+				case c.kind == jsonCellValue && c.value < seg.NumCols():
+					b = appendJSONValue(b, seg, c.value, i, c.text)
+				default:
+					b = append(b, c.text...)
+				}
+				if n < len(cells)-1 {
+					b = append(b, ',')
+				}
+			}
+			b = append(b, `}}`...)
+			if rows--; rows > 0 {
+				b = append(b, ',')
+			}
+			cw.Buf = b
+			cw.FlushIfFull()
+		}
+	}
+	cw.Buf = append(cw.Buf, `]}`...)
+	return cells
 }
 
-func getCellValue(sh dataset.SeriesHeader, fd timeseries.FieldDefinition,
-	c dataset.Point, nextValue, table int,
-) ([]byte, bool) {
-	switch fd.Role {
-	case timeseries.RoleTimestamp:
-		b, _ := json.Marshal(getFormattedTimestamp(c.Epoch, fd))
-		return b, false
-	case timeseries.RoleTag:
-		val := sh.Tags[fd.Name]
-		if val == "" {
-			val = fd.DefaultValue
-		}
-		b, _ := json.Marshal(val)
-		return b, false
-	case timeseries.RoleValue:
-		if nextValue < len(c.Values) {
-			if c.Values[nextValue] == nil {
-				b, _ := json.Marshal(fd.DefaultValue)
-				return b, true
-			} else if s, ok := c.Values[nextValue].(string); ok && s == "" {
-				b, _ := json.Marshal(fd.DefaultValue)
-				return b, true
-			}
-			b, _ := json.Marshal(c.Values[nextValue])
-			return b, true
-		}
-	case timeseries.RoleUntracked:
-		switch fd.Name {
-		case tableColumnName:
-			b, _ := json.Marshal(table)
-			return b, false
-		case startColumnName, stopColumnName:
-			if strings.Contains(fd.DefaultValue, ":") {
-				b, _ := json.Marshal(fd.DefaultValue)
-				return b, true
-			}
-			return []byte(fd.DefaultValue), false
-		}
+// appendJSONTime appends a row's time as a quoted RFC 3339 time, or for any other type as its epoch
+func appendJSONTime(b []byte, e epoch.Epoch, dt timeseries.FieldDataType) []byte {
+	if dt != timeseries.DateTimeRFC3339 && dt != timeseries.DateTimeRFC3339Nano {
+		return strconv.AppendInt(b, int64(e), 10)
 	}
-	b, _ := json.Marshal(fd.DefaultValue)
-	return b, false
+	// the layouts write nothing JSON escapes
+	b = append(b, '"')
+	b = epoch.AppendCanonicalTime(b, e, dt == timeseries.DateTimeRFC3339Nano, true)
+	return append(b, '"')
+}
+
+// appendJSONValue appends value c of row i as encoding/json writes it, the column's default for a
+// null or empty text, and null for one JSON can't hold, such as NaN, as InfluxDB 3 writes it
+func appendJSONValue(b []byte, seg *dataset.Segment, c, i int, dflt []byte) []byte {
+	switch k := seg.KindAt(c, i); k {
+	case dataset.KindNull:
+		return append(b, dflt...)
+	case dataset.KindString:
+		text := seg.Bytes(c, i)
+		if len(text) == 0 {
+			return append(b, dflt...)
+		}
+		return tstrings.AppendJSON(b, string(text))
+	case dataset.KindFloat64:
+		if out, ok := tstrings.AppendJSONFloat(b, seg.Float64(c, i), 64); ok {
+			return out
+		}
+		return append(b, jsonNull...)
+	case dataset.KindInt64:
+		return strconv.AppendInt(b, seg.Int64(c, i), 10)
+	case dataset.KindUint64:
+		return strconv.AppendUint(b, seg.Uint64(c, i), 10)
+	case dataset.KindBool:
+		return strconv.AppendBool(b, seg.Bool(c, i))
+	}
+	out, err := json.Marshal(seg.Value(c, i))
+	if err != nil {
+		return append(b, jsonNull...)
+	}
+	return append(b, out...)
 }

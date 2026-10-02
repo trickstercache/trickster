@@ -33,6 +33,7 @@ func NewModeler() *timeseries.Modeler {
 		WireUnmarshaler:       UnmarshalTimeseriesAuto,
 		CacheMarshaler:        dataset.MarshalDataSet,
 		CacheUnmarshaler:      dataset.UnmarshalDataSet,
+		WireMarshalReadsParts: true,
 	}
 }
 

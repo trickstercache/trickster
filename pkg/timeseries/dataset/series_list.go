@@ -24,7 +24,6 @@ import (
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -37,16 +36,27 @@ type SeriesList []*Series
 // Merge merges sl2 into the subject SeriesList, using sl2's authoritative order
 // to adaptively reorder the existing+merged list such that it best emulates
 // the fully constituted series order as it would be served by the origin.
-// Merge assumes that a *Series in both lists, having the identical header hash,
-// are the same series and will merge sl2[i].Points into sl.Points
+// Merge treats a *Series in both lists with identical headers as the same
+// series and merges its rows from sl2 into those from sl.
 func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
+	return sl.merge(sl2, segmentsMerger(MergeOpts{SortPoints: sortPoints}))
+}
+
+// merges a series' rows with MergeSegments
+func segmentsMerger(opts MergeOpts) func(cs, s *Series) {
+	return func(cs, s *Series) {
+		cs.segs = MergeSegments(cs.segs, s.segs, opts)
+	}
+}
+
+func (sl SeriesList) merge(sl2 SeriesList, mergeSeries func(cs, s *Series)) SeriesList {
 	if len(sl2) == 0 {
 		return sl.Clone()
 	}
 	if len(sl) == 0 {
 		return sl2.Clone()
 	}
-	m := make(map[Hash]*Series, len(sl)+len(sl2))
+	idx := newSeriesIndex(len(sl)+len(sl2), headerOf)
 	out := make(SeriesList, len(sl)+len(sl2))
 	var k int
 	for _, s := range sl {
@@ -54,34 +64,33 @@ func (sl SeriesList) Merge(sl2 SeriesList, sortPoints bool) SeriesList {
 			continue
 		}
 		h := s.Header.CalculateHash()
-		if _, ok := m[h]; ok {
+		if _, ok := idx.find(h, &s.Header); ok {
 			continue
 		}
 		out[k] = s
-		m[h] = s
+		idx.add(h, s)
 		k++
 	}
-	seen := make(sets.Set[Hash], len(sl2))
+	seen := newSeriesIndex(len(sl2), headerOf)
 	var wg sync.WaitGroup
 	for _, s := range sl2 {
 		if s == nil {
 			continue
 		}
 		h := s.Header.CalculateHash()
-		if seen.Contains(h) {
+		if _, ok := seen.find(h, &s.Header); ok {
 			continue
 		}
-		seen.Set(h)
-		if cs, ok := m[h]; !ok {
+		seen.add(h, s)
+		if cs, ok := idx.find(h, &s.Header); !ok {
 			// this series does not exist in sl1; add it into out
 			out[k] = s
-			m[h] = s
+			idx.add(h, s)
 			k++
 		} else {
 			// series is in both sl1 and sl2; merge their points
 			wg.Go(func() {
-				cs.Points = MergePoints(cs.Points, s.Points, sortPoints)
-				cs.PointSize = cs.Points.Size()
+				mergeSeries(cs, s)
 			})
 		}
 	}
@@ -104,7 +113,8 @@ func (sl SeriesList) EqualHeader(sl2 SeriesList) bool {
 		if v == nil || sl2[i] == nil {
 			return false
 		}
-		if v.Header.CalculateHash() != sl2[i].Header.CalculateHash() {
+		if v.Header.CalculateHash() != sl2[i].Header.CalculateHash() ||
+			!sameSeries(&v.Header, &sl2[i].Header) {
 			return false
 		}
 	}
@@ -145,56 +155,13 @@ func (sl SeriesList) MergeWithStrategy(sl2 SeriesList, sortPoints bool, strategy
 // different timestamps.
 func (sl SeriesList) MergeWithOpts(sl2 SeriesList, opts MergeOpts) SeriesList {
 	if opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0 {
+		if opts.parts {
+			return sl.merge(sl2, func(cs, s *Series) { cs.segs = MergeSegmentParts(cs.segs, s.segs, opts.SortPoints) })
+		}
 		// fast path: legacy exact-match dedup
 		return sl.Merge(sl2, opts.SortPoints)
 	}
-	if len(sl2) == 0 {
-		return sl.Clone()
-	}
-	if len(sl) == 0 {
-		return sl2.Clone()
-	}
-	m := make(map[Hash]*Series, len(sl)+len(sl2))
-	out := make(SeriesList, len(sl)+len(sl2))
-	var k int
-	for _, s := range sl {
-		if s == nil {
-			continue
-		}
-		h := s.Header.CalculateHash()
-		if _, ok := m[h]; ok {
-			continue
-		}
-		out[k] = s
-		m[h] = s
-		k++
-	}
-	seen := make(sets.Set[Hash], len(sl2))
-	var wg sync.WaitGroup
-	for _, s := range sl2 {
-		if s == nil {
-			continue
-		}
-		h := s.Header.CalculateHash()
-		if seen.Contains(h) {
-			continue
-		}
-		seen.Set(h)
-		if cs, ok := m[h]; !ok {
-			out[k] = s
-			m[h] = s
-			k++
-		} else {
-			wg.Go(func() {
-				cs.Points = MergePointsWithOpts(cs.Points, s.Points, opts)
-				cs.PointSize = cs.Points.Size()
-			})
-		}
-	}
-	wg.Wait()
-	out = out[:k]
-	out.SortByTags()
-	return out
+	return sl.merge(sl2, segmentsMerger(opts))
 }
 
 // mergeCollection merges several member lists while preserving the same
@@ -229,18 +196,18 @@ func (sl SeriesList) mergeCollection(collection []SeriesList, opts MergeOpts) Se
 		total += len(next)
 	}
 	out := make(SeriesList, total)
-	seriesByHash := make(map[Hash]*Series, total)
+	idx := newSeriesIndex(total, headerOf)
 	var k int
 	for _, s := range sl {
 		if s == nil {
 			continue
 		}
 		h := s.Header.CalculateHash()
-		if _, ok := seriesByHash[h]; ok {
+		if _, ok := idx.find(h, &s.Header); ok {
 			continue
 		}
 		out[k] = s
-		seriesByHash[h] = s
+		idx.add(h, s)
 		k++
 	}
 
@@ -249,30 +216,30 @@ func (sl SeriesList) mergeCollection(collection []SeriesList, opts MergeOpts) Se
 		series []*Series
 	}
 	jobs := make([]mergeJob, 0)
-	jobByHash := make(map[Hash]int)
-	seen := make(sets.Set[Hash])
+	jobByTarget := make(map[*Series]int)
+	seen := newSeriesIndex(0, headerOf)
 	for _, next := range nonEmpty {
-		clear(seen)
+		seen.reset()
 		for _, s := range next {
 			if s == nil {
 				continue
 			}
 			h := s.Header.CalculateHash()
-			if seen.Contains(h) {
+			if _, ok := seen.find(h, &s.Header); ok {
 				continue
 			}
-			seen.Set(h)
-			target, ok := seriesByHash[h]
+			seen.add(h, s)
+			target, ok := idx.find(h, &s.Header)
 			if !ok {
 				out[k] = s
-				seriesByHash[h] = s
+				idx.add(h, s)
 				k++
 				continue
 			}
-			jobIndex, ok := jobByHash[h]
+			jobIndex, ok := jobByTarget[target]
 			if !ok {
 				jobIndex = len(jobs)
-				jobByHash[h] = jobIndex
+				jobByTarget[target] = jobIndex
 				jobs = append(jobs, mergeJob{target: target})
 			}
 			jobs[jobIndex].series = append(jobs[jobIndex].series, s)
@@ -281,14 +248,17 @@ func (sl SeriesList) mergeCollection(collection []SeriesList, opts MergeOpts) Se
 
 	eg := errgroup.Group{}
 	eg.SetLimit(runtime.GOMAXPROCS(0))
+	parts := opts.parts && opts.Strategy == merge.StrategyDedup && opts.ToleranceNanos == 0
 	for _, job := range jobs {
 		eg.Go(func() error {
-			points := job.target.Points
+			// each step is stored at once, as a member may be the target itself
 			for _, next := range job.series {
-				points = MergePointsWithOpts(points, next.Points, opts)
-				job.target.Points = points
+				if parts {
+					job.target.segs = MergeSegmentParts(job.target.segs, next.segs, opts.SortPoints)
+				} else {
+					job.target.segs = MergeSegments(job.target.segs, next.segs, opts)
+				}
 			}
-			job.target.PointSize = points.Size()
 			return nil
 		})
 	}
@@ -326,14 +296,11 @@ func (sl SeriesList) SortByTags() {
 	})
 }
 
+// SortPoints sorts each series' rows by epoch, keeping their order within an epoch
 func (sl SeriesList) SortPoints() {
-	eg := errgroup.Group{}
-	eg.SetLimit(runtime.GOMAXPROCS(0))
 	for _, s := range sl {
-		eg.Go(func() error {
-			slices.SortFunc(s.Points, pointCmp)
-			return nil
-		})
+		if s != nil {
+			s.segs = s.segs.Sorted()
+		}
 	}
-	eg.Wait()
 }

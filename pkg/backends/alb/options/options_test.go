@@ -23,6 +23,7 @@ import (
 
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/stretchr/testify/require"
@@ -76,7 +77,8 @@ func TestClone(t *testing.T) {
 	o := New()
 	o.Pool = Members("test")
 	o.FGRStatusCodes = []int{200}
-	o.FgrCodesLookup = sets.New([]int{200})
+	o.FGROptions.StatusCodes = types.StatusRanges{{Start: 200, End: 299}}
+	o.FGRGoodCodes = o.FGROptions.StatusCodes.Compile()
 	require.NotNil(t, o)
 	co := o.Clone()
 
@@ -86,8 +88,12 @@ func TestClone(t *testing.T) {
 	if len(co.FGRStatusCodes) != 1 || co.FGRStatusCodes[0] != 200 {
 		t.Error("status codes mismatch")
 	}
-	if len(co.FgrCodesLookup) != 1 || !co.FgrCodesLookup.Contains(200) {
+	if !co.FGRGoodCodes.Contains(250) || co.FGRGoodCodes == o.FGRGoodCodes {
 		t.Error("fgr lookup mismatch")
+	}
+	co.FGROptions.StatusCodes[0].End = 200
+	if o.FGROptions.StatusCodes[0].End != 299 {
+		t.Error("the clone shares its status code ranges with the original")
 	}
 }
 
@@ -118,7 +124,7 @@ func TestInitialize(t *testing.T) {
 	if err != nil {
 		t.Error("failed to set defaults")
 	}
-	if o.FgrCodesLookup == nil || !o.FgrCodesLookup.Contains(200) || !o.FgrCodesLookup.Contains(201) {
+	if !o.FGRGoodCodes.Contains(200) || !o.FGRGoodCodes.Contains(201) || o.FGRGoodCodes.Contains(204) {
 		t.Error("expected FGR codes lookup to be set")
 	}
 
@@ -160,9 +166,32 @@ func TestInitializeDeprecatedFGRAndDefaultOutputFormat(t *testing.T) {
 	o.MechanismName = names.MechanismFGR
 	o.FGRStatusCodes = []int{200, 204}
 	require.NoError(t, o.Initialize(""))
-	require.Equal(t, []int{200, 204}, o.FGROptions.StatusCodes)
-	require.True(t, o.FgrCodesLookup.Contains(200))
-	require.True(t, o.FgrCodesLookup.Contains(204))
+	require.Equal(t, types.StatusCodes(200, 204), o.FGROptions.StatusCodes)
+	require.True(t, o.FGRGoodCodes.Contains(200))
+	require.True(t, o.FGRGoodCodes.Contains(204))
+	require.False(t, o.FGRGoodCodes.Contains(201))
+
+	// with nothing configured, anything below 400 is good
+	o = New()
+	o.MechanismName = names.MechanismFGR
+	require.NoError(t, o.Initialize(""))
+	require.True(t, o.FGRGoodCodes.Contains(100))
+	require.True(t, o.FGRGoodCodes.Contains(399))
+	require.False(t, o.FGRGoodCodes.Contains(400))
+
+	// ranges and bare codes mix, and a range out of bounds is refused
+	o = New()
+	require.NoError(t, yaml.Unmarshal(
+		[]byte("mechanism: fgr\nfgr:\n  status_codes: [{start: 200, end: 299}, 304]\n"), o))
+	require.NoError(t, o.Initialize(""))
+	require.True(t, o.FGRGoodCodes.Contains(250))
+	require.True(t, o.FGRGoodCodes.Contains(304))
+	require.False(t, o.FGRGoodCodes.Contains(303))
+	_, err := o.Validate()
+	require.NoError(t, err)
+	o.FGROptions.StatusCodes = types.StatusRanges{{Start: 200, End: 700}}
+	_, err = o.Validate()
+	require.ErrorIs(t, err, types.ErrInvalidStatusRange)
 
 	o = New()
 	o.MechanismName = names.MechanismTSM

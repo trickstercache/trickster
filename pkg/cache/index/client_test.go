@@ -18,467 +18,41 @@ package index
 
 import (
 	"errors"
-	"fmt"
-	"sort"
+	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
-	"github.com/trickstercache/trickster/v2/pkg/cache/filesystem"
-	fso "github.com/trickstercache/trickster/v2/pkg/cache/filesystem/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob"
+	"github.com/trickstercache/trickster/v2/pkg/cache/blob/blobtest"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index/options"
-	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
 	cm "github.com/trickstercache/trickster/v2/pkg/cache/metrics"
-	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
-	"github.com/trickstercache/trickster/v2/pkg/util/atomicx"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
 
-func TestIndexedClientRemove(t *testing.T) {
-	const name, provider = "removeTest", "memory"
-	cacheConfig := co.Options{Provider: provider}
-	ic := NewIndexedClient(name, provider, &options.Options{}, memory.New(name, &cacheConfig))
-	t.Cleanup(func() { require.NoError(t, ic.Close()) })
-	// usage gauges are reported under the configured cache name
-	usage := metrics.CacheObjects.WithLabelValues(name, provider)
-	require.NoError(t, ic.Store("foo", []byte("bar"), 0))
-	require.Equal(t, 1.0, testutil.ToFloat64(usage))
-	// requested removals record freed bytes, but the delete operation is left to the cache manager
-	dels := metrics.CacheObjectOperations.WithLabelValues(name, provider, cm.KeyDel, cm.KeyNone)
-	delBytes := metrics.CacheByteOperations.WithLabelValues(name, provider, cm.KeyDel, cm.KeyNone)
-	delsBefore, delBytesBefore := testutil.ToFloat64(dels), testutil.ToFloat64(delBytes)
-	require.NoError(t, ic.Remove("foo"))
-	require.Equal(t, delsBefore, testutil.ToFloat64(dels))
-	require.Equal(t, delBytesBefore+3, testutil.ToFloat64(delBytes))
-	require.Equal(t, 0.0, testutil.ToFloat64(usage))
-	require.Equal(t, int64(0), atomic.LoadInt64(&ic.ObjectCount))
-	_, s, _ := ic.Retrieve("foo")
-	require.Equal(t, status.LookupStatusKeyMiss, s)
-}
+const (
+	testName     = "test"
+	testProvider = "filesystem"
+	testTimeout  = 5 * time.Second
+)
 
-func TestIndexedClient(t *testing.T) {
-	t.Run("basic", func(t *testing.T) {
-		const provider = "filesystem"
+var errFault = errors.New("fault")
 
-		// init filesystem cache client
-		cacheConfig := co.Options{
-			Provider: provider,
-			Filesystem: &fso.Options{
-				CachePath: t.TempDir(),
-			},
-		}
-		fsc := filesystem.NewCache("test", &cacheConfig)
-		// init indexed client
-		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
-			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
-			MaxSizeObjects:        5,
-			MaxSizeBackoffObjects: 3,
-			MaxSizeBytes:          100,
-			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           timeconv.Duration(1 * time.Hour),
-		}, fsc)
-		t.Log("basic")
-		state := getIndexedClientState(ic)
-		require.Equal(t, int64(0), state.ObjectCount)
-		require.Equal(t, int64(0), state.CacheSize)
-		require.Len(t, state.Objects, 0)
-
-		// retrieve non-existent key
-		key := "foo"
-		b, s, err := ic.Retrieve(key)
-		require.ErrorContains(t, err, "key not found in cache")
-		require.Equal(t, status.LookupStatusKeyMiss, s)
-		require.Len(t, b, 0)
-
-		// store & retrieve
-		val := []byte("bar")
-		ttl := 60 * time.Second
-		require.NoError(t, ic.Store(key, val, ttl))
-
-		state = getIndexedClientState(ic)
-		require.Equal(t, int64(1), state.ObjectCount)
-		require.Equal(t, int64(3), state.CacheSize)
-		require.Len(t, state.Objects, 1)
-
-		b, s, err = ic.Retrieve(key)
-		require.NoError(t, err)
-		require.Equal(t, status.LookupStatusHit, s)
-		require.Equal(t, val, b)
-
-		// trigger reap & expect no change
-		ic.reap()
-		state = getIndexedClientState(ic)
-		require.Equal(t, int64(1), state.ObjectCount)
-		require.Equal(t, int64(3), state.CacheSize)
-		require.Len(t, state.Objects, 1)
-
-		// clear, expect empty state
-		ic.Clear()
-		state = getIndexedClientState(ic)
-		require.Equal(t, int64(0), state.ObjectCount)
-		require.Equal(t, int64(0), state.CacheSize)
-		require.Len(t, state.Objects, 0)
-		// require.Equal(t)
-		require.NoError(t, ic.Close())
-	})
-
-	t.Run("atime", func(t *testing.T) {
-		const provider = "filesystem"
-
-		// init filesystem cache client
-		cacheConfig := co.Options{
-			Provider: provider,
-			Filesystem: &fso.Options{
-				CachePath: t.TempDir(),
-			},
-		}
-		fsc := filesystem.NewCache("test", &cacheConfig)
-		// init indexed client
-		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
-			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
-			MaxSizeObjects:        5,
-			MaxSizeBackoffObjects: 3,
-			MaxSizeBytes:          100,
-			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           timeconv.Duration(1 * time.Hour),
-		}, fsc)
-		t.Cleanup(func() { _ = ic.Close() })
-
-		// store & retrieve
-		val := []byte("bar")
-		ttl := 60 * time.Second
-		require.NoError(t, ic.Store("foo", val, ttl))
-		// expect atime to be set
-		o, ok := ic.Objects.Load("foo")
-		require.True(t, ok)
-		obj, ok := o.(*Object)
-		require.True(t, ok)
-		atime := obj.LastAccess.Load()
-		require.NotZero(t, atime)
-
-		// access the object and expect atime to be updated
-		b, s, err := ic.Retrieve("foo")
-		require.NoError(t, err)
-		require.Equal(t, status.LookupStatusHit, s)
-		require.Equal(t, val, b)
-		atime2 := obj.LastAccess.Load()
-		require.NotZero(t, atime2)
-		require.True(t, atime2.After(atime), "expected %s to be after %s", atime2, atime)
-	})
-
-	t.Run("flush", func(t *testing.T) {
-		const provider = "filesystem"
-
-		// init memory cache client
-		cacheConfig := co.Options{
-			Provider: provider,
-			Filesystem: &fso.Options{
-				CachePath: t.TempDir(),
-			},
-		}
-		fs := filesystem.NewCache("test", &cacheConfig)
-		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
-			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
-			MaxSizeObjects:        5,
-			MaxSizeBackoffObjects: 3,
-			MaxSizeBytes:          100,
-			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           timeconv.Duration(1 * time.Hour),
-		}, fs, func(ico *IndexedClientOptions) {
-			ico.NeedsFlushInterval = true
-			ico.NeedsReapInterval = true
-		})
-
-		// write a key and trigger a flush
-		ttl := 60 * time.Second
-		require.NoError(t, ic.Store("test.1", []byte("test_value"), ttl))
-		ic.flushOnce()
-
-		// look up the cache key, expect an error
-		_, s, err := ic.Retrieve(IndexKey)
-		require.Equal(t, status.LookupStatusError, s)
-		require.ErrorAs(t, err, &ErrIndexInvalidCacheKey)
-
-		// use the internal client to retrieve the key
-		b, s, err := ic.Client.Retrieve(IndexKey)
-		require.NoError(t, err)
-		require.Equal(t, status.LookupStatusHit, s)
-		t.Log(string(b))
-		// close the cache
-		ic.Close()
-
-		// start a new cache, verify it reuses the index
-		ic = NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
-			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
-			MaxSizeObjects:        5,
-			MaxSizeBackoffObjects: 3,
-			MaxSizeBytes:          100,
-			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           timeconv.Duration(1 * time.Hour),
-		}, fs, func(ico *IndexedClientOptions) {
-			ico.NeedsFlushInterval = true
-			ico.NeedsReapInterval = true
-		})
-		t.Cleanup(func() { _ = ic.Close() })
-		// look up the index key, expect a hit
-		b2, s, err := ic.Client.Retrieve(IndexKey)
-		require.NoError(t, err)
-		require.Equal(t, status.LookupStatusHit, s)
-		require.Equal(t, b, b2)
-
-		// inspect the index and expect keys
-		keys := ic.Objects.Keys()
-		require.Len(t, keys, 1)
-		require.Equal(t, "test.1", keys[0])
-
-		// expect that we can look up test.1
-		_, s, err = ic.Retrieve("test.1")
-		require.NoError(t, err)
-		require.Equal(t, status.LookupStatusHit, s)
-
-		t.Run("flush loop", func(t *testing.T) {
-			// test the actual flush loop by forcing it to flush, this utilizes goroutines
-			// and should detect more potential race conditions vs the existing flush tests that use
-			// flush internal methods
-
-			// Create fresh filesystem cache for this subtest
-			freshCacheConfig := co.Options{
-				Provider: provider,
-				Filesystem: &fso.Options{
-					CachePath: t.TempDir(),
-				},
-			}
-			freshFs := filesystem.NewCache("flushTest", &freshCacheConfig)
-			ttl := 60 * time.Second
-			ic1 := NewIndexedClient("flushTest", provider, &options.Options{
-				ReapInterval:          timeconv.Duration(time.Second * 60 * 60 * 24),
-				FlushInterval:         timeconv.Duration(time.Second * 60 * 60 * 24),
-				MaxSizeObjects:        5,
-				MaxSizeBackoffObjects: 3,
-				MaxSizeBytes:          100,
-				MaxSizeBackoffBytes:   30,
-				IndexExpiry:           timeconv.Duration(1 * time.Hour),
-			}, freshFs)
-			defer ic1.Close()
-			for i := range 5 {
-				index := fmt.Sprintf("%d", i)
-				key := "key." + index
-				require.NoError(t, ic1.Store(key, []byte("value1."+index), ttl))
-			}
-			_, s, err := ic1.Client.Retrieve(IndexKey)
-			require.Equal(t, cache.ErrKNF, err)
-			require.Equal(t, status.LookupStatusKeyMiss, s)
-			ic1.forceFlush <- true
-			<-ic1.hasFlushed
-			_, s, err = ic1.Client.Retrieve(IndexKey)
-			require.NoError(t, err)
-			require.Equal(t, status.LookupStatusHit, s)
-		})
-
-		t.Run("reap loop", func(t *testing.T) {
-			// test the actual reap loop by forcing it to reap, this utilizes goroutines
-			// and should detect more potential race conditions vs the existing reap tests that use
-			// reap internal methods
-
-			// Create fresh filesystem cache for this subtest
-			freshCacheConfig := co.Options{
-				Provider: provider,
-				Filesystem: &fso.Options{
-					CachePath: t.TempDir(),
-				},
-			}
-			freshFs := filesystem.NewCache("reapTest", &freshCacheConfig)
-			ttl := 60 * time.Second
-			ic2 := NewIndexedClient("reapTest", provider, &options.Options{
-				ReapInterval:          timeconv.Duration(time.Second * 60 * 60 * 24),
-				FlushInterval:         timeconv.Duration(time.Second * 60 * 60 * 24),
-				MaxSizeObjects:        5,
-				MaxSizeBackoffObjects: 5,
-				MaxSizeBytes:          10000,
-				MaxSizeBackoffBytes:   300,
-				IndexExpiry:           timeconv.Duration(1 * time.Hour),
-			}, freshFs)
-			defer ic2.Close()
-
-			// write 5 objects, expect 5 objects
-			for i := range 5 {
-				index := fmt.Sprintf("%d", i)
-				key := "key." + index
-				require.NoError(t, ic2.Store(key, []byte("value1."+index), ttl))
-			}
-			state := getIndexedClientState(ic2)
-			require.Equal(t, int64(5), state.ObjectCount)
-			require.Len(t, state.Objects, 5)
-			// force reap, expect 5 objects still
-			ic2.forceReap <- true
-			<-ic2.hasReaped
-			state = getIndexedClientState(ic2)
-			require.Equal(t, int64(5), state.ObjectCount)
-			require.Len(t, state.Objects, 5)
-
-			// write more objects, then force reap to trigger (count based) eviction
-			// direct index stores are not recorded as operations; the cache manager records those
-			sets := metrics.CacheObjectOperations.WithLabelValues("reapTest", provider, cm.KeySet, cm.KeyNone)
-			setsBefore := testutil.ToFloat64(sets)
-			for i := range 5 {
-				index := fmt.Sprintf("%d", i)
-				key := "another.key." + index
-				require.NoError(t, ic2.Store(key, []byte("value1."+index), ttl))
-			}
-			require.Equal(t, setsBefore, testutil.ToFloat64(sets))
-			state = getIndexedClientState(ic2)
-			require.Equal(t, int64(10), state.ObjectCount)
-			require.Equal(t, len(state.Objects), 10)
-			// force reap, expect some evictions (back to the MaxSizeObjects count)
-			evictions := metrics.CacheEvents.WithLabelValues("reapTest", provider,
-				"eviction", "size_objects")
-			dels := metrics.CacheObjectOperations.WithLabelValues("reapTest", provider, cm.KeyDel, cm.KeyNone)
-			delBytes := metrics.CacheByteOperations.WithLabelValues("reapTest", provider, cm.KeyDel, cm.KeyNone)
-			evictionsBefore := testutil.ToFloat64(evictions)
-			delsBefore, delBytesBefore := testutil.ToFloat64(dels), testutil.ToFloat64(delBytes)
-			ic2.forceReap <- true
-			<-ic2.hasReaped
-			state = getIndexedClientState(ic2)
-			require.Equal(t, int64(5), state.ObjectCount)
-			require.Equal(t, len(state.Objects), 5)
-			require.Equal(t, evictionsBefore+1, testutil.ToFloat64(evictions))
-			require.Equal(t, delsBefore+1, testutil.ToFloat64(dels))
-			require.Greater(t, testutil.ToFloat64(delBytes), delBytesBefore)
-		})
-	})
-
-	t.Run("reap eviction", func(t *testing.T) {
-		const provider = "filesystem"
-
-		// init filesystem cache client
-		cacheConfig := co.Options{
-			Provider: provider,
-			Filesystem: &fso.Options{
-				CachePath: t.TempDir(),
-			},
-		}
-		fsc := filesystem.NewCache("test", &cacheConfig)
-		// init indexed client
-		ic := NewIndexedClient("test", provider, &options.Options{
-			ReapInterval:          timeconv.Duration(time.Second * time.Duration(10)),
-			FlushInterval:         timeconv.Duration(time.Second * time.Duration(10)),
-			MaxSizeObjects:        5,
-			MaxSizeBackoffObjects: 3,
-			MaxSizeBytes:          100,
-			MaxSizeBackoffBytes:   30,
-			IndexExpiry:           timeconv.Duration(1 * time.Hour),
-		}, fsc, func(ico *IndexedClientOptions) {
-			ico.NeedsFlushInterval = true
-			ico.NeedsReapInterval = true
-		})
-		t.Cleanup(func() { _ = ic.Close() })
-		ttl := 60 * time.Second
-
-		// add expired key to cover the case that the reaper remove it
-		ic.Store("test.1", []byte("test_value"), ttl)
-
-		// add key with no expiration which should not be reaped
-		ic.Store("test.2", []byte("test_value"), ttl)
-
-		// add key with future expiration which should not be reaped
-		ic.Store("test.3", []byte("test_value"), ttl)
-
-		// trigger a reap that will only remove expired elements but not size down the full cache
-		keyCount := len(ic.Objects.Keys())
-		ic.reap()
-		require.Equal(t, keyCount, len(ic.Objects.Keys()))
-
-		state := getIndexedClientState(ic)
-		require.Equal(t, int64(3), state.ObjectCount)
-		require.Equal(t, int64(30), state.CacheSize)
-		require.Len(t, state.Objects, 3)
-
-		// add key with future expiration which should not be reaped
-		ic.Store("test.4", []byte("test_value"), ttl)
-
-		// add key with future expiration which should not be reaped
-		ic.Store("test.5", []byte("test_value"), ttl)
-
-		// add key with future expiration which should not be reaped
-		ic.Store("test.6", []byte("test_value"), ttl)
-
-		// trigger size-based reap eviction of some elements
-		keyCount = len(ic.Objects.Keys())
-		require.Equal(t, 6, keyCount)
-		ic.reap()
-
-		_, ok := ic.Objects.Load("test.1")
-		require.False(t, ok, "expected key %s to be missing", "test.1")
-
-		_, ok = ic.Objects.Load("test.2")
-		require.False(t, ok, "expected key test.2 to be missing")
-
-		_, ok = ic.Objects.Load("test.3")
-		require.False(t, ok, "expected key test.3 to be missing")
-
-		_, ok = ic.Objects.Load("test.4")
-		require.False(t, ok, "expected key test.4 to be missing")
-
-		_, ok = ic.Objects.Load("test.5")
-		require.True(t, ok, "expected key test.5 to be present")
-
-		_, ok = ic.Objects.Load("test.6")
-		require.True(t, ok, "expected key test.6 to be present")
-
-		// add key with large body to reach byte size threshold
-		ic.Store("test.7", []byte("test_value00000000000000000000000000000000000000000000000000000000000000000000000000000"), ttl)
-
-		// trigger a byte-based reap
-		keyCount = len(ic.Objects.Keys())
-		require.Equal(t, 3, keyCount)
-		ic.reap()
-		require.Len(t, ic.Objects.Keys(), 0)
-
-		// expect index to be empty
-		objects := ic.Objects.ToObjects()
-		require.Len(t, objects, 0)
-		state = getIndexedClientState(ic)
-		require.Len(t, state.Objects, 0)
-		require.Equal(t, int64(0), state.ObjectCount)
-		require.Equal(t, int64(0), state.CacheSize)
-	})
-}
-
-type indexedClientState struct {
-	ObjectCount int64
-	CacheSize   int64
-	Objects     Objects
-}
-
-func getIndexedClientState(ic *IndexedClient) *indexedClientState {
-	return &indexedClientState{
-		ObjectCount: atomic.LoadInt64(&ic.ObjectCount),
-		CacheSize:   atomic.LoadInt64(&ic.CacheSize),
-		Objects:     ic.Objects.ToObjects(),
-	}
-}
-
-type testRefObject struct {
-	n int
-}
-
-func (r *testRefObject) Size() int { return r.n }
-
-// mapClient is a simple in-memory cache.Client for index unit tests.
+// a cache with none of the capabilities an index can make use of
 type mapClient struct {
-	data      map[string][]byte
-	storeErr  error
-	removeErr error
+	mu          sync.Mutex
+	data        map[string][]byte
+	storeErr    error
+	removeErr   error
+	retrieveErr error
+	status      status.LookupStatus
 }
 
 func newMapClient() *mapClient {
@@ -492,11 +66,18 @@ func (m *mapClient) Store(key string, b []byte, _ time.Duration) error {
 	if m.storeErr != nil {
 		return m.storeErr
 	}
+	m.mu.Lock()
 	m.data[key] = append([]byte(nil), b...)
+	m.mu.Unlock()
 	return nil
 }
 
 func (m *mapClient) Retrieve(key string) ([]byte, status.LookupStatus, error) {
+	if m.retrieveErr != nil || m.status != status.LookupStatusHit {
+		return nil, m.status, m.retrieveErr
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	b, ok := m.data[key]
 	if !ok {
 		return nil, status.LookupStatusKeyMiss, cache.ErrKNF
@@ -508,374 +89,417 @@ func (m *mapClient) Remove(keys ...string) error {
 	if m.removeErr != nil {
 		return m.removeErr
 	}
+	m.mu.Lock()
 	for _, k := range keys {
 		delete(m.data, k)
 	}
+	m.mu.Unlock()
 	return nil
 }
 
-// customRetrieveClient lets tests control Retrieve responses.
-type customRetrieveClient struct {
-	*mapClient
-	retrieveFn func(string) ([]byte, status.LookupStatus, error)
+func (m *mapClient) drop(key string) {
+	m.mu.Lock()
+	delete(m.data, key)
+	m.mu.Unlock()
 }
 
-func (c *customRetrieveClient) Retrieve(key string) ([]byte, status.LookupStatus, error) {
-	if c.retrieveFn != nil {
-		return c.retrieveFn(key)
-	}
-	return c.mapClient.Retrieve(key)
-}
-
-type errMemoryClient struct {
-	*mapClient
-	storeRefErr error
-}
-
-func (e *errMemoryClient) StoreReference(string, cache.ReferenceObject, time.Duration) error {
-	return e.storeRefErr
-}
-
-func (e *errMemoryClient) RetrieveReference(string) (any, status.LookupStatus, error) {
-	return nil, status.LookupStatusError, e.storeRefErr
-}
-
-func defaultIndexOpts() *options.Options {
+// no worker acts under these unless a test tells it to
+func idleOpts() *options.Options {
 	return &options.Options{
-		ReapInterval:          timeconv.Duration(time.Hour),
-		FlushInterval:         timeconv.Duration(time.Hour),
-		MaxSizeObjects:        100,
-		MaxSizeBackoffObjects: 10,
-		MaxSizeBytes:          1 << 20,
-		MaxSizeBackoffBytes:   1024,
-		IndexExpiry:           timeconv.Duration(time.Hour),
+		ReapInterval:  timeconv.Duration(time.Hour),
+		FlushInterval: timeconv.Duration(time.Hour),
+		IndexExpiry:   timeconv.Duration(time.Hour),
 	}
 }
 
-func TestConnectAndUpdateOptions(t *testing.T) {
+func newPlainIndex(t testing.TB, o *options.Options) (*IndexedClient, *mapClient) {
+	t.Helper()
 	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	require.NoError(t, ic.Connect())
-
-	o := defaultIndexOpts()
-	o.MaxSizeObjects = 42
-	ic.UpdateOptions(o)
-	require.Equal(t, int64(42), ic.options.Load().(*options.Options).MaxSizeObjects)
+	idx := NewIndexedClient(testName, "memory", o, mc)
+	t.Cleanup(func() { idx.Close() })
+	return idx, mc
 }
 
-func TestStoreAndRetrieveIndexKeyRejected(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	require.ErrorIs(t, ic.Store(IndexKey, []byte("x"), time.Second), ErrIndexInvalidCacheKey)
-
-	b, s, err := ic.Retrieve(IndexKey)
-	require.Nil(t, b)
-	require.Equal(t, status.LookupStatusError, s)
-	require.ErrorIs(t, err, ErrIndexInvalidCacheKey)
+// a cache that cannot list what it holds, so its index never sweeps it
+type unscannedClient struct {
+	c *blob.Client
 }
 
-func TestStoreClientError(t *testing.T) {
-	mc := newMapClient()
-	mc.storeErr = errors.New("store failed")
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
+func (u unscannedClient) Connect() error                    { return u.c.Connect() }
+func (u unscannedClient) Close() error                      { return u.c.Close() }
+func (u unscannedClient) Remove(keys ...string) error       { return u.c.Remove(keys...) }
+func (u unscannedClient) MetaStore() (blob.MetaStore, bool) { return u.c.MetaStore() }
+func (u unscannedClient) FreeBytes() (int64, bool)          { return u.c.FreeBytes() }
 
-	require.ErrorContains(t, ic.Store("k", []byte("v"), time.Second), "store failed")
+func (u unscannedClient) Store(key string, b []byte, ttl time.Duration) error {
+	return u.c.Store(key, b, ttl)
 }
 
-func TestStoreUpdateExistingKey(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	require.NoError(t, ic.Store("k", []byte("ab"), time.Second))
-	state := getIndexedClientState(ic)
-	require.Equal(t, int64(1), state.ObjectCount)
-	require.Equal(t, int64(2), state.CacheSize)
-
-	require.NoError(t, ic.Store("k", []byte("abcd"), time.Second))
-	state = getIndexedClientState(ic)
-	require.Equal(t, int64(1), state.ObjectCount)
-	require.Equal(t, int64(4), state.CacheSize)
+func (u unscannedClient) Retrieve(key string) ([]byte, status.LookupStatus, error) {
+	return u.c.Retrieve(key)
 }
 
-func TestRetrieveCorruptObject(t *testing.T) {
-	mc := newMapClient()
-	require.NoError(t, mc.Store("k", []byte("not-msgpack"), 0))
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	b, s, err := ic.Retrieve("k")
-	require.Nil(t, b)
-	require.Equal(t, status.LookupStatusError, s)
-	require.Error(t, err)
+// the cache keeps its objects and the index's files in s, and the index does not sweep it
+func openIndex(t testing.TB, s *blobtest.MemStore, o *options.Options, opts ...func(*IndexedClientOptions)) *IndexedClient {
+	t.Helper()
+	c := unscannedClient{blob.NewClient(s, testName, testProvider)}
+	idx := NewIndexedClient(testName, testProvider, o, c, opts...)
+	t.Cleanup(func() { idx.crash() })
+	return idx
 }
 
-func TestRetrieveNonHitStatus(t *testing.T) {
-	mc := &customRetrieveClient{
-		mapClient: newMapClient(),
-		retrieveFn: func(string) ([]byte, status.LookupStatus, error) {
-			return nil, status.LookupStatusPartialHit, nil
-		},
-	}
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	b, s, err := ic.Retrieve("k")
-	require.Nil(t, b)
-	require.Equal(t, status.LookupStatusPartialHit, s)
-	require.NoError(t, err)
+// the cache keeps its objects and the index's files in s, and the index sweeps it
+func openSweptIndex(t testing.TB, s *blobtest.MemStore, o *options.Options) *IndexedClient {
+	t.Helper()
+	idx := NewIndexedClient(testName, testProvider, o, blob.NewClient(s, testName, testProvider))
+	t.Cleanup(func() { idx.crash() })
+	return idx
 }
 
-func TestUpdateAccessTimeMissingKey(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	// should no-op without panicking when the key is absent from the index
-	ic.updateAccessTime("missing")
+// stops the workers and persists nothing more, as a crash would
+func (idx *IndexedClient) crash() {
+	idx.cancel()
+	idx.wg.Wait()
 }
 
-func TestStoreRetrieveReference(t *testing.T) {
-	mem := memory.New("test", &co.Options{Provider: "memory"})
-	ic := NewIndexedClient("test", "memory", defaultIndexOpts(), mem)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	ref := &testRefObject{n: 7}
-	require.NoError(t, ic.StoreReference("ref", ref, time.Minute))
-	state := getIndexedClientState(ic)
-	require.Equal(t, int64(1), state.ObjectCount)
-	require.Equal(t, int64(7), state.CacheSize)
-
-	v, s, err := ic.RetrieveReference("ref")
-	require.NoError(t, err)
-	require.Equal(t, status.LookupStatusHit, s)
-	require.Equal(t, ref, v)
-
-	// zero TTL still stores
-	require.NoError(t, ic.StoreReference("ref2", &testRefObject{n: 3}, 0))
-}
-
-func TestStoreRetrieveReferenceErrors(t *testing.T) {
-	t.Run("index key", func(t *testing.T) {
-		mem := memory.New("test", &co.Options{Provider: "memory"})
-		ic := NewIndexedClient("test", "memory", defaultIndexOpts(), mem)
-		t.Cleanup(func() { _ = ic.Close() })
-
-		require.ErrorIs(t, ic.StoreReference(IndexKey, &testRefObject{n: 1}, 0), ErrIndexInvalidCacheKey)
-		v, s, err := ic.RetrieveReference(IndexKey)
-		require.Nil(t, v)
-		require.Equal(t, status.LookupStatusError, s)
-		require.ErrorIs(t, err, ErrIndexInvalidCacheKey)
-	})
-
-	t.Run("non-memory backend", func(t *testing.T) {
-		mc := newMapClient()
-		ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-		t.Cleanup(func() { _ = ic.Close() })
-
-		require.ErrorIs(t, ic.StoreReference("k", &testRefObject{n: 1}, 0), ErrInvalidCacheBackend)
-		v, s, err := ic.RetrieveReference("k")
-		require.Nil(t, v)
-		require.Equal(t, status.LookupStatusError, s)
-		require.ErrorIs(t, err, ErrInvalidCacheBackend)
-	})
-
-	t.Run("backend store error", func(t *testing.T) {
-		backend := &errMemoryClient{
-			mapClient:   newMapClient(),
-			storeRefErr: errors.New("ref store failed"),
-		}
-		ic := NewIndexedClient("test", "memory", defaultIndexOpts(), backend)
-		t.Cleanup(func() { _ = ic.Close() })
-
-		require.ErrorContains(t, ic.StoreReference("k", &testRefObject{n: 1}, 0), "ref store failed")
-	})
-}
-
-func TestNewIndexedClientWarningsAndLoad(t *testing.T) {
-	t.Run("needs intervals without intervals", func(t *testing.T) {
-		mc := newMapClient()
-		ic := NewIndexedClient("test", "map", &options.Options{
-			IndexExpiry: timeconv.Duration(time.Hour),
-		}, mc, func(ico *IndexedClientOptions) {
-			ico.NeedsFlushInterval = true
-			ico.NeedsReapInterval = true
-		})
-		require.NoError(t, ic.Close())
-	})
-
-	t.Run("oversized index discarded", func(t *testing.T) {
-		prev := maxIndexBytes
-		maxIndexBytes = 8
-		t.Cleanup(func() { maxIndexBytes = prev })
-
-		mc := newMapClient()
-		require.NoError(t, mc.Store(IndexKey, []byte("0123456789"), 0))
-		ic := NewIndexedClient("test", "map", &options.Options{
-			FlushInterval: timeconv.Duration(time.Hour),
-			IndexExpiry:   timeconv.Duration(time.Hour),
-		}, mc)
-		t.Cleanup(func() { _ = ic.Close() })
-		require.Equal(t, int64(0), atomic.LoadInt64(&ic.ObjectCount))
-	})
-
-	t.Run("expired index cleared", func(t *testing.T) {
-		mc := newMapClient()
-		seed := &IndexedClient{CacheSize: 9, ObjectCount: 1}
-		seed.LastFlush.Store(time.Now().Add(-2 * time.Hour))
-		seed.Objects.Store("old", &Object{Key: "old", Size: 9})
-		b, err := seed.MarshalMsg(nil)
-		require.NoError(t, err)
-		require.NoError(t, mc.Store(IndexKey, b, 0))
-
-		ic := NewIndexedClient("test", "map", &options.Options{
-			FlushInterval: timeconv.Duration(time.Hour),
-			IndexExpiry:   timeconv.Duration(time.Minute),
-		}, mc)
-		t.Cleanup(func() { _ = ic.Close() })
-		require.Equal(t, int64(0), atomic.LoadInt64(&ic.ObjectCount))
-		require.Equal(t, int64(0), atomic.LoadInt64(&ic.CacheSize))
-		require.Empty(t, ic.Objects.Keys())
-	})
-}
-
-func TestCloseFlushesWhenNeeded(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	require.NoError(t, ic.Store("k", []byte("v"), time.Minute))
-	ic.ico.NeedsFlushInterval = true
-	require.NoError(t, ic.Close())
-
-	_, s, err := mc.Retrieve(IndexKey)
-	require.NoError(t, err)
-	require.Equal(t, status.LookupStatusHit, s)
-}
-
-func TestFlusherTimerSkipAndSignalDrop(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", &options.Options{
-		ReapInterval:   timeconv.Duration(time.Hour),
-		FlushInterval:  timeconv.Duration(20 * time.Millisecond),
-		IndexExpiry:    timeconv.Duration(time.Hour),
-		MaxSizeBytes:   1 << 20,
-		MaxSizeObjects: 100,
-	}, mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	require.NoError(t, ic.Store("k", []byte("v"), time.Minute))
-	ic.flushOnce() // LastFlush after lastWrite → timer path should skip flushOnce
-
-	// Allow the timer branch (and skip) to run at least once.
-	time.Sleep(60 * time.Millisecond)
-
-	// Fill hasFlushed buffer then force another flush to exercise the drop path.
+func await(t testing.TB, done chan bool) {
+	t.Helper()
 	select {
-	case ic.hasFlushed <- true:
-	default:
+	case <-done:
+	case <-time.After(testTimeout):
+		t.Fatal("the worker did not finish a pass")
 	}
-	ic.forceFlush <- true
-	time.Sleep(20 * time.Millisecond)
 }
 
-func TestReaperTimerAndSignalDrop(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", &options.Options{
-		ReapInterval:   timeconv.Duration(20 * time.Millisecond),
-		FlushInterval:  timeconv.Duration(time.Hour),
-		IndexExpiry:    timeconv.Duration(time.Hour),
-		MaxSizeBytes:   1 << 20,
-		MaxSizeObjects: 100,
-	}, mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	time.Sleep(60 * time.Millisecond)
-
-	select {
-	case ic.hasReaped <- true:
-	default:
-	}
-	ic.forceReap <- true
-	time.Sleep(20 * time.Millisecond)
+func requireTotals(t testing.TB, idx *IndexedClient, count, size int64) {
+	t.Helper()
+	require.Equal(t, count, idx.Count())
+	require.Equal(t, size, idx.Size())
+	require.Len(t, idx.Keys(), int(count))
+	var slots int64
+	idx.each(func(*Object) bool { slots++; return true })
+	require.Equal(t, count, slots)
 }
 
-func TestReapTTLExpiration(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
+func TestStoreRetrieveRemove(t *testing.T) {
+	idx, _ := newPlainIndex(t, idleOpts())
+	require.NoError(t, idx.Connect())
+	usage := metrics.CacheObjects.WithLabelValues(testName, "memory")
+	usageBytes := metrics.CacheBytes.WithLabelValues(testName, "memory")
+	requireTotals(t, idx, 0, 0)
 
-	require.NoError(t, ic.Store("keep", []byte("v"), time.Hour))
-	require.NoError(t, ic.Store("expire", []byte("v"), time.Hour))
+	b, s, err := idx.Retrieve("foo")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+	require.Empty(t, b)
 
-	o, ok := ic.Objects.Load("expire")
+	start := time.Now()
+	require.NoError(t, idx.Store("foo", []byte("bar"), time.Minute))
+	require.NoError(t, idx.Store("forever", []byte("12345"), 0))
+	requireTotals(t, idx, 2, 8)
+	require.Equal(t, 2.0, testutil.ToFloat64(usage))
+	require.Equal(t, 8.0, testutil.ToFloat64(usageBytes))
+
+	o, ok := idx.Object("foo")
 	require.True(t, ok)
-	o.(*Object).Expiration.Store(time.Now().Add(-time.Minute))
-
-	ic.reap()
-	_, ok = ic.Objects.Load("expire")
+	require.Equal(t, "foo", o.Key)
+	require.Equal(t, int64(3), o.Size())
+	require.WithinDuration(t, start.Add(time.Minute), o.Expiration(), time.Second)
+	require.WithinDuration(t, start, o.LastWrite(), time.Second)
+	require.Equal(t, o.LastWrite(), o.LastAccess())
+	forever, _ := idx.Object("forever")
+	require.True(t, forever.Expiration().IsZero())
+	_, ok = idx.Object("absent")
 	require.False(t, ok)
-	_, ok = ic.Objects.Load("keep")
-	require.True(t, ok)
+
+	time.Sleep(time.Millisecond)
+	b, s, err = idx.Retrieve("foo")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, s)
+	require.Equal(t, "bar", string(b))
+	require.True(t, o.LastAccess().After(o.LastWrite()), "a retrieval is an access")
+
+	// requested removals record freed bytes, but the delete operation is left to the cache manager
+	dels := metrics.CacheObjectOperations.WithLabelValues(testName, "memory", cm.KeyDel, cm.KeyNone)
+	delBytes := metrics.CacheByteOperations.WithLabelValues(testName, "memory", cm.KeyDel, cm.KeyNone)
+	delsBefore, delBytesBefore := testutil.ToFloat64(dels), testutil.ToFloat64(delBytes)
+	require.NoError(t, idx.Remove("foo", "absent"))
+	require.Equal(t, delsBefore, testutil.ToFloat64(dels))
+	require.Equal(t, delBytesBefore+3, testutil.ToFloat64(delBytes))
+	requireTotals(t, idx, 1, 5)
+	require.Equal(t, 1.0, testutil.ToFloat64(usage))
+	_, s, _ = idx.Retrieve("foo")
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+
+	idx.Clear()
+	requireTotals(t, idx, 0, 0)
+	require.Equal(t, 0.0, testutil.ToFloat64(usageBytes))
 }
 
-func TestReapRemoveErrors(t *testing.T) {
+func TestIndexKeyIsReserved(t *testing.T) {
+	idx, mc := newPlainIndex(t, idleOpts())
+	require.ErrorIs(t, idx.Store(IndexKey, []byte("x"), time.Minute), ErrIndexInvalidCacheKey)
+	b, s, err := idx.Retrieve(IndexKey)
+	require.ErrorIs(t, err, ErrIndexInvalidCacheKey)
+	require.Equal(t, status.LookupStatusError, s)
+	require.Nil(t, b)
+	require.Empty(t, mc.data)
+}
+
+func TestStoreFailureListsNothing(t *testing.T) {
+	idx, mc := newPlainIndex(t, idleOpts())
+	mc.storeErr = errFault
+	require.ErrorIs(t, idx.Store("k", []byte("v"), time.Minute), errFault)
+	requireTotals(t, idx, 0, 0)
+}
+
+func TestStoreAgainUpdatesInPlace(t *testing.T) {
+	idx, _ := newPlainIndex(t, idleOpts())
+	require.NoError(t, idx.Store("k", []byte("1"), time.Minute))
+	first, _ := idx.Object("k")
+	require.NoError(t, idx.Store("k", []byte("12345"), time.Hour))
+	second, _ := idx.Object("k")
+	require.Same(t, first, second)
+	require.WithinDuration(t, time.Now().Add(time.Hour), second.Expiration(), time.Minute)
+	requireTotals(t, idx, 1, 5)
+	require.NoError(t, idx.Store("k", []byte("12"), 0))
+	require.True(t, second.Expiration().IsZero())
+	requireTotals(t, idx, 1, 2)
+}
+
+func TestRetrieveForgetsWhatTheCacheLost(t *testing.T) {
+	idx, mc := newPlainIndex(t, idleOpts())
+	require.NoError(t, idx.Store("k", []byte("value"), time.Minute))
+	// the cache drops the object on its own, as it does one it finds expired or corrupt
+	mc.drop("k")
+	b, s, err := idx.Retrieve("k")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+	require.Nil(t, b)
+	requireTotals(t, idx, 0, 0)
+}
+
+func TestRetrieveFailures(t *testing.T) {
+	idx, mc := newPlainIndex(t, idleOpts())
+	require.NoError(t, idx.Store("k", []byte("value"), time.Minute))
+	accessed, _ := idx.Object("k")
+	before := accessed.LastAccess()
+	time.Sleep(time.Millisecond)
+
+	mc.retrieveErr, mc.status = errFault, status.LookupStatusError
+	b, s, err := idx.Retrieve("k")
+	require.ErrorIs(t, err, errFault)
+	require.Equal(t, status.LookupStatusError, s)
+	require.Nil(t, b)
+
+	mc.retrieveErr, mc.status = nil, status.LookupStatusKeyMiss
+	b, s, err = idx.Retrieve("k")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusKeyMiss, s)
+	require.Nil(t, b)
+
+	requireTotals(t, idx, 1, 5)
+	require.Equal(t, before, accessed.LastAccess(), "neither was an access")
+	idx.updateAccessTime("absent", time.Now())
+}
+
+func TestRemoveFailure(t *testing.T) {
+	idx, mc := newPlainIndex(t, idleOpts())
+	require.NoError(t, idx.Store("k", []byte("value"), time.Minute))
+	mc.removeErr = errFault
+	require.ErrorIs(t, idx.Remove("k"), errFault)
+	requireTotals(t, idx, 0, 0)
+	require.NoError(t, idx.Store("k", []byte("value"), time.Nanosecond))
+	time.Sleep(time.Millisecond)
+	idx.reapAt(time.Now().Add(time.Minute).UnixNano())
+	requireTotals(t, idx, 0, 0)
+}
+
+func TestUpdateOptions(t *testing.T) {
+	idx, _ := newPlainIndex(t, idleOpts())
+	o := idleOpts()
+	o.MaxSizeObjects = 7
+	idx.UpdateOptions(o)
+	require.Same(t, o, idx.options.Load())
+}
+
+func TestWorkersNotStarted(t *testing.T) {
+	// a provider that needs its workers is warned of those its options leave out
 	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", &options.Options{
-		ReapInterval:          timeconv.Duration(time.Hour),
-		FlushInterval:         timeconv.Duration(time.Hour),
-		MaxSizeObjects:        1,
-		MaxSizeBackoffObjects: 0,
-		MaxSizeBytes:          1 << 20,
-		MaxSizeBackoffBytes:   0,
-		IndexExpiry:           timeconv.Duration(time.Hour),
-	}, mc)
-	t.Cleanup(func() { _ = ic.Close() })
+	idx := NewIndexedClient(testName, testProvider, &options.Options{}, mc, func(o *IndexedClientOptions) {
+		o.NeedsFlushInterval, o.NeedsReapInterval = true, true
+	})
+	require.Nil(t, idx.journal, "the cache cannot hold the index's files")
+	require.NoError(t, idx.Store("k", []byte("v"), time.Minute))
+	idx.flushOnce()
+	require.NoError(t, idx.Close())
 
-	require.NoError(t, ic.Store("a", []byte("1"), time.Hour))
-	require.NoError(t, ic.Store("b", []byte("2"), time.Hour))
-
-	o, ok := ic.Objects.Load("a")
-	require.True(t, ok)
-	o.(*Object).Expiration.Store(time.Now().Add(-time.Minute))
-
-	mc.removeErr = errors.New("remove failed")
-	ic.reap() // TTL removal error path
-	mc.removeErr = nil
-
-	// size-based eviction error path
-	require.NoError(t, ic.Store("c", []byte("3"), time.Hour))
-	require.NoError(t, ic.Store("d", []byte("4"), time.Hour))
-	mc.removeErr = errors.New("remove failed")
-	ic.reap()
+	// a cache that can hold them, but says it does not
+	idx = NewIndexedClient(testName, testProvider, idleOpts(), blob.NewClient(plainStore{blobtest.NewMemStore()}, "", ""))
+	require.Nil(t, idx.journal)
+	require.NoError(t, idx.Close())
 }
+
+// hides the optional capabilities of the Store it wraps
+type plainStore struct{ blob.Store }
 
 func TestWorkerPanicHandler(t *testing.T) {
-	mc := newMapClient()
-	ic := NewIndexedClient("test", "map", defaultIndexOpts(), mc)
-	t.Cleanup(func() { _ = ic.Close() })
-
-	var exited atomic.Bool
-	h := ic.workerPanicHandler("flusher", &exited)
-	h("boom", []byte("stack"))
-	require.True(t, exited.Load())
+	idx, _ := newPlainIndex(t, idleOpts())
+	for worker, exited := range map[string]*atomic.Bool{
+		workerFlusher: &idx.flusherExited, workerReaper: &idx.reaperExited, workerScanner: &idx.scannerExited,
+	} {
+		before := testutil.ToFloat64(metrics.CacheIndexPanicRecovered.WithLabelValues(worker))
+		idx.workerPanicHandler(worker, exited)("boom", []byte("stack"))
+		require.True(t, exited.Load())
+		require.Equal(t, before+1, testutil.ToFloat64(metrics.CacheIndexPanicRecovered.WithLabelValues(worker)))
+	}
 }
 
-func TestObjectsAtimeSortInterface(t *testing.T) {
-	o := objectsAtime{
-		&Object{Key: "b", LastAccess: *atomicx.NewTime(time.Unix(2, 0))},
-		&Object{Key: "a", LastAccess: *atomicx.NewTime(time.Unix(1, 0))},
-		&Object{Key: "c", LastAccess: *atomicx.NewTime(time.Unix(3, 0))},
+// the index is written to, read from and reaped all at once, and its totals still add up
+func TestConcurrentUse(t *testing.T) {
+	o := idleOpts()
+	o.MaxSizeObjects, o.MaxSizeBackoffObjects = 64, 8
+	s := blobtest.NewMemStore()
+	idx := openIndex(t, s, o)
+	const workers, rounds, keys = 8, 400, 128
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Go(func() {
+			for i := range rounds {
+				key := "key-" + strconv.Itoa((w*31+i)%keys)
+				switch i % 4 {
+				case 0, 1:
+					ttl := time.Duration(i%3) * time.Minute
+					if err := idx.Store(key, make([]byte, 1+i%7), ttl); err != nil {
+						t.Error(err)
+					}
+				case 2:
+					idx.Retrieve(key)
+				default:
+					idx.Remove(key)
+				}
+			}
+		})
 	}
-	require.Equal(t, 3, o.Len())
-	require.True(t, o.Less(1, 0))
-	o.Swap(0, 1)
-	require.Equal(t, "a", o[0].Key)
-	sort.Sort(o)
-	require.Equal(t, "a", o[0].Key)
-	require.Equal(t, "b", o[1].Key)
-	require.Equal(t, "c", o[2].Key)
+	wg.Go(func() {
+		for range rounds / 10 {
+			idx.reap()
+			idx.flushOnce()
+		}
+	})
+	wg.Wait()
+
+	var count, size int64
+	idx.each(func(o *Object) bool {
+		count++
+		size += o.Size()
+		_, listed := idx.Object(o.Key)
+		require.True(t, listed, o.Key)
+		return true
+	})
+	requireTotals(t, idx, count, size)
+	for _, key := range idx.Keys() {
+		_, held := s.Frame(key)
+		require.True(t, held, "%s is listed, and the cache does not hold it", key)
+	}
+}
+
+func TestSplit(t *testing.T) {
+	s := blobtest.NewMemStore()
+	idx := NewIndexedClient(testName, testProvider, idleOpts(), blob.NewClient(s, testName, testProvider))
+	t.Cleanup(func() { idx.crash() })
+	require.True(t, idx.SupportsSplit())
+	require.NoError(t, idx.StoreSplit("k", []byte("meta"), []byte("body!"), time.Minute))
+	requireTotals(t, idx, 1, 9)
+	o, _ := idx.Object("k")
+	before := o.LastAccess()
+	time.Sleep(time.Millisecond)
+
+	meta, body, st, err := idx.RetrieveSplit("k")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, st)
+	require.Equal(t, "meta", string(meta))
+	require.Equal(t, "body!", string(body))
+	require.True(t, o.LastAccess().After(before))
+
+	require.NoError(t, s.Delete("k"))
+	_, _, st, err = idx.RetrieveSplit("k")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, st)
+	requireTotals(t, idx, 0, 0)
+
+	require.ErrorIs(t, idx.StoreSplit(IndexKey, nil, nil, 0), ErrIndexInvalidCacheKey)
+	_, _, _, err = idx.RetrieveSplit(IndexKey)
+	require.ErrorIs(t, err, ErrIndexInvalidCacheKey)
+	s.PutErr, s.OpenErr = errFault, errFault
+	require.ErrorIs(t, idx.StoreSplit("k", nil, []byte("b"), 0), errFault)
+	_, _, st, err = idx.RetrieveSplit("k")
+	require.ErrorIs(t, err, errFault)
+	require.Equal(t, status.LookupStatusError, st)
+	requireTotals(t, idx, 0, 0)
+
+	plain, _ := newPlainIndex(t, idleOpts())
+	require.False(t, plain.SupportsSplit())
+	require.ErrorIs(t, plain.StoreSplit("k", nil, nil, 0), ErrSplitUnsupported)
+	_, _, st, err = plain.RetrieveSplit("k")
+	require.ErrorIs(t, err, ErrSplitUnsupported)
+	require.Equal(t, status.LookupStatusError, st)
+}
+
+func TestOpenSplit(t *testing.T) {
+	plain, _ := newPlainIndex(t, idleOpts())
+	require.False(t, plain.SupportsStream(), "the cache reads objects whole")
+	_, _, st, err := plain.OpenSplit("k")
+	require.ErrorIs(t, err, ErrSplitUnsupported)
+	require.Equal(t, status.LookupStatusError, st)
+
+	s := blobtest.NewMemStore()
+	idx := NewIndexedClient(testName, testProvider, idleOpts(), blob.NewClient(s, testName, testProvider))
+	t.Cleanup(func() { idx.crash() })
+	require.True(t, idx.SupportsStream())
+	require.NoError(t, idx.StoreSplit("k", []byte("meta"), []byte("body!"), time.Minute))
+	o, _ := idx.Object("k")
+	before := o.LastAccess()
+	time.Sleep(time.Millisecond)
+
+	meta, body, st, err := idx.OpenSplit("k")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusHit, st)
+	require.Equal(t, "meta", string(meta))
+	require.Equal(t, int64(5), body.Size())
+	require.NoError(t, body.Close())
+	require.True(t, o.LastAccess().After(before))
+
+	_, _, _, err = idx.OpenSplit(IndexKey)
+	require.ErrorIs(t, err, ErrIndexInvalidCacheKey)
+	s.OpenErr = errFault
+	_, _, st, err = idx.OpenSplit("k")
+	require.ErrorIs(t, err, errFault)
+	require.Equal(t, status.LookupStatusError, st)
+	requireTotals(t, idx, 1, 9)
+	s.OpenErr = nil
+	require.NoError(t, s.Delete("k"))
+	_, _, st, err = idx.OpenSplit("k")
+	require.ErrorIs(t, err, cache.ErrKNF)
+	require.Equal(t, status.LookupStatusKeyMiss, st)
+	requireTotals(t, idx, 0, 0)
+}
+
+// retrievals of sections that are neither hits nor failures
+type splitMissClient struct{ *mapClient }
+
+func (splitMissClient) SupportsSplit() bool                                    { return true }
+func (splitMissClient) StoreSplit(string, []byte, []byte, time.Duration) error { return nil }
+func (splitMissClient) RetrieveSplit(string) ([]byte, []byte, status.LookupStatus, error) {
+	return []byte("m"), []byte("b"), status.LookupStatusKeyMiss, nil
+}
+
+func TestSplitNonHit(t *testing.T) {
+	idx := NewIndexedClient(testName, "memory", idleOpts(), splitMissClient{newMapClient()})
+	t.Cleanup(func() { idx.Close() })
+	meta, body, st, err := idx.RetrieveSplit("k")
+	require.NoError(t, err)
+	require.Equal(t, status.LookupStatusKeyMiss, st)
+	require.Nil(t, meta)
+	require.Nil(t, body)
 }

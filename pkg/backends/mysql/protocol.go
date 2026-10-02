@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"maps"
 	"net"
+	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -45,6 +46,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -74,6 +76,7 @@ var passwordHashPrefixes = [...]string{
 // authenticated upstream session and can grow to include certificate policy
 // without coupling it to the generic listener package.
 type ProtocolConfig struct {
+	Engine      Engine
 	BackendName string
 	RestartKey  string
 	Upstream    vtmysql.ConnParams
@@ -102,8 +105,10 @@ type ProtocolConfig struct {
 	CacheTTL               time.Duration
 	MaxObjectSize          int64
 	RetentionPoints        int
-	BackfillWindow         time.Duration
-	BackfillPoints         int
+	VolatileWindow         time.Duration
+	VolatileWindowPoints   int
+	PartialBucketTTL       time.Duration
+	StepAlignment          timeseries.StepAlignment
 	ShardMaxRange          time.Duration
 	ShardStep              time.Duration
 	ShardMaxPoints         int
@@ -145,14 +150,16 @@ func ProtocolConfigFromOptions(o *bo.Options) (ProtocolConfig, error) {
 		MaxResultSizeBytes:     int64(mysqlOptions.MaxResultSizeBytes),
 		MaxUpstreamConnections: int64(o.MaxConcurrentConns), CacheKeyPrefix: o.CacheKeyPrefix,
 		CacheTTL: time.Duration(o.TimeseriesTTL), MaxObjectSize: int64(o.MaxObjectSizeBytes),
-		RetentionPoints: o.TimeseriesRetentionFactor,
-		BackfillWindow:  time.Duration(o.BackfillTolerance),
-		BackfillPoints:  o.BackfillTolerancePoints,
-		ShardMaxRange:   time.Duration(o.MaxShardSizeTime),
-		ShardStep:       time.Duration(o.ShardStep),
-		ShardMaxPoints:  o.MaxShardSizePoints,
-		DoesShard:       o.DoesShard,
-		ProxyOnly:       o.ProxyOnly,
+		RetentionPoints:      o.TimeseriesRetentionFactor,
+		VolatileWindow:       time.Duration(o.VolatileWindow),
+		VolatileWindowPoints: o.VolatileWindowPoints,
+		PartialBucketTTL:     time.Duration(o.PartialBucketTTL),
+		StepAlignment:        o.StepAlignment,
+		ShardMaxRange:        time.Duration(o.MaxShardSizeTime),
+		ShardStep:            time.Duration(o.ShardStep),
+		ShardMaxPoints:       o.MaxShardSizePoints,
+		DoesShard:            o.DoesShard,
+		ProxyOnly:            o.ProxyOnly,
 	}
 	config.RestartKey = protocolRestartKey(o, downstreamUsers)
 	return config, nil
@@ -162,7 +169,11 @@ func upstreamConnParamsFromOptions(o *bo.Options) (vtmysql.ConnParams, error) {
 	if o == nil {
 		return vtmysql.ConnParams{}, errors.New("nil MySQL backend options")
 	}
-	u, err := url.Parse(o.OriginURL)
+	rawURL := o.OriginURL
+	if o.MySQL != nil && o.MySQL.UpstreamURL != "" {
+		rawURL = o.MySQL.UpstreamURL
+	}
+	u, err := url.Parse(rawURL)
 	if err != nil {
 		return vtmysql.ConnParams{}, fmt.Errorf("parse MySQL origin URL: %w", err)
 	}
@@ -217,11 +228,12 @@ func protocolRestartKey(o *bo.Options, users map[string]string) string {
 	if o.MySQL != nil {
 		mysqlIdentity = fmt.Sprintf("%v", *o.MySQL)
 	}
-	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
+	value := fmt.Sprintf("%s|%d|%d|%s|%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%t|%s|%s|%v", o.OriginURL,
 		o.Timeout,
 		o.MaxConcurrentConns,
 		o.CacheName, o.CacheKeyPrefix, o.TimeseriesTTL, o.MaxObjectSizeBytes,
-		o.TimeseriesRetentionFactor, o.BackfillTolerance, o.BackfillTolerancePoints,
+		o.TimeseriesRetentionFactor, o.VolatileWindow, o.VolatileWindowPoints,
+		o.PartialBucketTTL, o.StepAlignment,
 		o.MaxShardSizeTime, o.ShardStep, o.MaxShardSizePoints, o.DoesShard,
 		o.ProxyOnly, o.RequireTLS, tlsIdentity, credentials, mysqlIdentity)
 	return checksum.Checksum(value)
@@ -299,6 +311,9 @@ func downstreamCredentials(o *bo.Options) (map[string]string, error) {
 		return nil, errors.New("MySQL authenticator cannot be observe_only")
 	}
 	users := maps.Clone(map[string]string(o.AuthOptions.Users))
+	if users == nil {
+		users = make(map[string]string)
+	}
 	if o.AuthOptions.UsersFile != "" {
 		loaded, err := loaders.LoadData(o.AuthOptions.UsersFile, o.AuthOptions.UsersFileFormat)
 		if err != nil {
@@ -430,11 +445,12 @@ func NewRoutedProtocolServer(config ProtocolConfig, resolver backends.RouteResol
 }
 
 func newProtocolHandler(config ProtocolConfig, env *vtenv.Environment) *protocolHandler {
-	return &protocolHandler{
+	h := &protocolHandler{
 		config: config, env: env, sessions: make(map[*vtmysql.Conn]*upstreamSession),
-		controls:      make(map[uint32]*phaseConn),
-		metricHandles: newProtocolMetricHandles(config.BackendName),
+		controls: make(map[uint32]*phaseConn),
 	}
+	h.metricHandles = newProtocolMetricHandles(config.BackendName, h.dialect())
+	return h
 }
 
 // Serve runs the protocol accept loop on l.
@@ -546,7 +562,7 @@ func (a *credentialAuth) HandleUser(user string) bool {
 }
 
 func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user string,
-	authResponse []byte, _ net.Addr,
+	authResponse []byte, remote net.Addr,
 ) (vtmysql.Getter, error) {
 	password, ok := a.users[user]
 	expected := vtmysql.ScrambleMysqlNativePassword(salt, password)
@@ -557,9 +573,10 @@ func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user st
 	}
 	if a.resolver != nil {
 		decision, resolved := a.resolver.ResolveRoute(backends.RouteInput{
-			RouterName: a.backend, Username: user, Authenticated: true,
+			RouterName: a.backend, Username: user, Authenticated: true, Client: clientAddr(remote),
 		})
 		if !resolved || !decision.Target.Available() {
+			releaseRoute(decision)
 			outcome := decision.Outcome
 			if outcome == "" {
 				outcome = backends.RouteOutcomeNoRoute
@@ -587,6 +604,7 @@ type upstreamSession struct {
 	warnings            uint16
 	database            string
 	timeZone            string
+	defaultTimeZone     string
 	collation           collations.ID // effective upstream collation
 	inTx                bool
 	cacheUnsafe         bool
@@ -616,6 +634,29 @@ type upstreamSession struct {
 // target for the same connection.
 type routedConnection struct {
 	target *protocolHandler
+	// release returns the session to the resolver that counted it; nil when it counts none
+	release func()
+}
+
+func releaseRoute(decision backends.RouteDecision) {
+	if decision.Release != nil {
+		decision.Release()
+	}
+}
+
+// clientAddr is the address a session arrived from, or the zero Addr when it is not an IP's
+func clientAddr(remote net.Addr) netip.Addr {
+	switch a := remote.(type) {
+	case *net.TCPAddr:
+		return a.AddrPort().Addr().Unmap()
+	case nil:
+		return netip.Addr{}
+	default:
+		if ap, err := netip.ParseAddrPort(a.String()); err == nil {
+			return ap.Addr().Unmap()
+		}
+	}
+	return netip.Addr{}
 }
 
 // routedProtocolHandler adapts Vitess's protocol-specific callbacks to a
@@ -675,7 +716,8 @@ func (h *routedProtocolHandler) activate(c *vtmysql.Conn) (*protocolHandler, err
 		return routed.target, nil
 	}
 	var target *protocolHandler
-	if decision, ok := c.ClientData.(backends.RouteDecision); ok && decision.Target.Backend != nil {
+	decision, _ := c.ClientData.(backends.RouteDecision)
+	if decision.Target.Backend != nil {
 		target = h.targets[decision.Target.Backend.Name()]
 	}
 	control := h.takeControl(c.ConnectionID)
@@ -683,13 +725,14 @@ func (h *routedProtocolHandler) activate(c *vtmysql.Conn) (*protocolHandler, err
 		// Activation failure is terminal for the connection. Recording it
 		// releases the pending control and blocks a second target selection.
 		c.ClientData = &routedConnection{}
+		releaseRoute(decision)
 		c.MarkForClose()
 		return nil, errNoRoute()
 	}
 	if control != nil {
 		target.setControl(c.ConnectionID, control)
 	}
-	c.ClientData = &routedConnection{target: target}
+	c.ClientData = &routedConnection{target: target, release: decision.Release}
 	target.NewConnection(c)
 	return target, nil
 }
@@ -728,6 +771,15 @@ func errNoRoute() error {
 func (h *routedProtocolHandler) ConnectionClosed(c *vtmysql.Conn) {
 	if target, err := h.target(c); err == nil {
 		target.ConnectionClosed(c)
+	}
+	switch routed := c.ClientData.(type) {
+	case *routedConnection:
+		if routed.release != nil {
+			routed.release()
+		}
+	case backends.RouteDecision:
+		// the session ended between its authentication and its first command
+		releaseRoute(routed)
 	}
 	h.mtx.Lock()
 	delete(h.controls, c.ConnectionID)
@@ -847,12 +899,16 @@ type protocolHandler struct {
 func (h *protocolHandler) deltaEngine() *nativedelta.Engine[*sqltypes.Result] {
 	h.deltaOnce.Do(func() {
 		h.delta = nativedelta.New(nativedelta.Config{
-			Protocol:              mysqlDialect,
+			Protocol:              h.dialect(),
 			BackendName:           h.config.BackendName,
 			CacheClient:           h.cacheClient,
 			CacheTTL:              h.config.CacheTTL,
 			MaxObjectSize:         h.config.MaxObjectSize,
 			RetentionPoints:       h.config.RetentionPoints,
+			VolatileWindow:        h.config.VolatileWindow,
+			VolatileWindowPoints:  h.config.VolatileWindowPoints,
+			PartialBucketTTL:      h.config.PartialBucketTTL,
+			Provider:              h.dialect(),
 			ObserveCacheFailure:   h.observeCacheFailure,
 			ObserveRewriteFailure: h.observeRewriteFailure,
 		}, resultCodec{})
@@ -1018,6 +1074,18 @@ func (h *protocolHandler) connectSession(session *upstreamSession) error {
 		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSNetError,
 			"Trickster could not restore the MySQL origin session")
 	}
+	if initializer, ok := h.config.Engine.(SessionInitializer); ok {
+		if h.config.ConnectTimeout > 0 {
+			_ = conn.GetRawConn().SetDeadline(time.Now().Add(h.config.ConnectTimeout))
+		}
+		view, initErr := initializer.InitSession(conn)
+		_ = conn.GetRawConn().SetDeadline(time.Time{})
+		if initErr != nil {
+			conn.Close()
+			return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSNetError, "Trickster could not read the origin session defaults")
+		}
+		session.defaultTimeZone = view.TimeZone
+	}
 	if h.closed.Load() {
 		conn.Close()
 		return sqlerror.NewSQLError(sqlerror.CRServerGone, sqlerror.SSUnknownSQLState,
@@ -1130,25 +1198,36 @@ func (h *protocolHandler) ComQuery(c *vtmysql.Conn, query string,
 	if parsed.statementType != vtparser.StmtSelect {
 		return h.proxyQuery(session, query, parsed, callback)
 	}
-	analysis := defaultAnalyzer.AnalyzeParsed(query, parsed.statement, parsed.err)
+	if _, ok := h.config.Engine.(SessionInitializer); ok {
+		if err := h.connectSession(session); err != nil {
+			return err
+		}
+	}
+	analysis := h.analyzeQuery(query, parsed, session, time.Now())
 	h.observeAnalysis(parsed.statementType, analysis)
 	if h.cacheEligible(session) && analysis.Mode != sqlanalyzer.CacheModeNone {
 		cacheStarted := time.Now()
-		result, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
+		servedMode := analysis.Mode
+		if h.unaligned(analysis) {
+			servedMode = sqlanalyzer.CacheModeObject
+		}
+		result, buffers, cacheStatus, cacheErr := h.executeCached(c, session, query, analysis)
+		// vitess copies each row out before the callback returns, so the rows' buffers can be reused
+		defer buffers.release()
 		if cacheErr != nil {
-			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
+			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
 			return cacheErr
 		}
 		if limitErr := h.validateResult(session, result); limitErr != nil {
-			h.observeCache(analysis.Mode, cachestatus.LookupStatusProxyError, 0,
+			h.observeCache(servedMode, cachestatus.LookupStatusProxyError, 0,
 				time.Since(cacheStarted))
 			return limitErr
 		}
 		// Cached results deliberately report no origin warnings, but retain
 		// the status flags captured with the cached result.
 		h.setProtocolState(session, result.StatusFlags, 0)
-		h.observeCache(analysis.Mode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
+		h.observeCache(servedMode, cacheStatus, len(result.Rows), time.Since(cacheStarted))
 		return callback(result)
 	}
 	if analysis.Mode == sqlanalyzer.CacheModeNone {
@@ -1482,7 +1561,7 @@ func (h *protocolHandler) streamResultSet(session *upstreamSession, upstream *vt
 		return err
 	}
 	if len(fields) == 0 {
-		statusFlags, warnings, stateErr := originProtocolState(upstream)
+		statusFlags, warnings, stateErr := h.originProtocolState(upstream)
 		if stateErr != nil {
 			return stateErr
 		}
@@ -1505,7 +1584,7 @@ func (h *protocolHandler) streamResultSet(session *upstreamSession, upstream *vt
 			return fetchErr
 		}
 		if row == nil {
-			statusFlags, warnings, stateErr := originProtocolState(upstream)
+			statusFlags, warnings, stateErr := h.originProtocolState(upstream)
 			if stateErr != nil {
 				if emitted && session.downstream != nil {
 					session.downstream.MarkForClose()

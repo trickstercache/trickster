@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math/big"
 	"net"
 	"net/http"
 	"net/url"
@@ -508,6 +509,13 @@ func defaultTLSConfig() *tls.Config { return &tls.Config{MinVersion: tls.Version
 
 func indirectValue(value any) any {
 	for value != nil {
+		// a big integer prints and encodes through its pointer's methods
+		switch n := value.(type) {
+		case *big.Int:
+			return n
+		case big.Int:
+			return &n
+		}
 		rv := reflect.ValueOf(value)
 		if rv.Kind() != reflect.Pointer {
 			return value

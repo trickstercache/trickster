@@ -20,31 +20,33 @@ package gzip
 import (
 	"bytes"
 	"io"
-	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/encoding/codecpool"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 
 	"github.com/klauspost/compress/gzip"
 )
 
-var writerPool sync.Pool
+const defaultLevel = 6
 
-// pooledWriter wraps a gzip.Writer and returns it to the pool on Close.
-type pooledWriter struct {
-	*gzip.Writer
-}
+var (
+	// a level can't be changed on a reused writer, so each has its own pool
+	encoderPools [gzip.BestCompression - gzip.StatelessCompression + 1]*codecpool.Encoders
+	decoderPool  = codecpool.NewDecoders(func() codecpool.Decoder { return new(gzip.Reader) })
+)
 
-func (pw *pooledWriter) Close() error {
-	err := pw.Writer.Close()
-	writerPool.Put(pw.Writer)
-	return err
+func init() {
+	for i := range encoderPools {
+		level := i + gzip.StatelessCompression
+		encoderPools[i] = codecpool.NewEncoders(func() codecpool.Encoder {
+			gw, _ := gzip.NewWriterLevel(nil, level)
+			return gw
+		})
+	}
 }
 
 func decodeBody(in []byte) ([]byte, error) {
-	gr, err := gzip.NewReader(bytes.NewReader(in))
-	if err != nil {
-		return nil, err
-	}
+	gr := decoderPool.Get(bytes.NewReader(in))
 	defer gr.Close()
 	return io.ReadAll(gr)
 }
@@ -72,31 +74,27 @@ func Decompress(b []byte) []byte {
 // Encode returns the encoded version of the byte slice
 func Encode(in []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(in)))
-	gw := gzip.NewWriter(buf)
+	gw := NewEncoder(buf, -1)
 	_, err := gw.Write(in)
-	gw.Close()
+	if cerr := gw.Close(); err == nil {
+		err = cerr
+	}
 	return buf.Bytes(), err
 }
 
+// NewEncoder returns a pooled encoder writing to w, which returns to its pool when closed
 func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	if level == -1 {
-		level = 6
+	if level == gzip.DefaultCompression || level < gzip.StatelessCompression ||
+		level > gzip.BestCompression {
+		level = defaultLevel
 	}
-	if v := writerPool.Get(); v != nil {
-		gw := v.(*gzip.Writer)
-		gw.Reset(w)
-		return &pooledWriter{gw}
-	}
-	gw, _ := gzip.NewWriterLevel(w, level)
-	return &pooledWriter{gw}
+	return encoderPools[level-gzip.StatelessCompression].Get(w)
 }
 
+// NewDecoder returns a pooled decoder reading from r, which returns to its pool when closed.
+// Reads fail if r doesn't begin with a gzip header.
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {
-	rc, err := gzip.NewReader(r)
-	if err != nil {
-		return nil
-	}
-	return rc
+	return decoderPool.Get(r)
 }
 
 // Detect reports whether in begins with an RFC 1952 gzip member header

@@ -28,6 +28,8 @@ import (
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -39,6 +41,9 @@ const (
 	ProtocolHTTP = "http"
 	// ProtocolMySQL is the MySQL wire-protocol listener protocol.
 	ProtocolMySQL = "mysql"
+	// ProtocolPostgres is the PostgreSQL wire protocol, shared by every
+	// provider that speaks it (e.g. postgres, timescaledb).
+	ProtocolPostgres = "postgres"
 	// ProtocolClickHouse is the ClickHouse native wire protocol.
 	ProtocolClickHouse = "clickhouse"
 	// ProtocolHTTP3 is the HTTP/3-over-QUIC listener protocol. It is not
@@ -89,6 +94,8 @@ type Options struct {
 	TLSRuntimeCerts bool `yaml:"tls_runtime_certs,omitempty"`
 	// MySQL contains downstream limits when protocol is mysql.
 	MySQL *mo.ListenerOptions `yaml:"mysql,omitempty"`
+	// Postgres contains downstream limits when protocol is postgres.
+	Postgres *pgo.ListenerOptions `yaml:"postgres,omitempty"`
 	// HTTP3 optionally serves this listener's routes over HTTP/3 as well.
 	HTTP3 *HTTP3Options `yaml:"http3,omitempty"`
 	// Stream tunes the connect and idle timeouts when protocol is tcp, tls or udp.
@@ -99,6 +106,9 @@ type Options struct {
 	// TrustedProxies lists the addresses or CIDRs of proxies whose PROXY protocol header
 	// and forwarding headers are believed when resolving the client IP; others are ignored.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+	// PathNormalization controls how an HTTP listener cleans request paths before routing
+	// them; the cleaned path is also the one forwarded upstream. Nil selects the defaults.
+	PathNormalization *pno.Options `yaml:"path_normalization,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
 	ServeTLS bool `yaml:"-"`
 	// Active indicates whether the listener has a configured purpose.
@@ -185,6 +195,7 @@ func New(name string) *Options {
 	o := FromFrontend(frontend.New())
 	o.Protocol = ProtocolHTTP
 	o.TLSWatchInterval = DefaultTLSWatchInterval
+	o.PathNormalization = pno.New()
 	switch name {
 	case DefaultFrontendName:
 		o.Active = true
@@ -273,9 +284,11 @@ func (o *Options) Clone() *Options {
 	}
 	out := *o
 	out.MySQL = o.MySQL.Clone()
+	out.Postgres = o.Postgres.Clone()
 	out.HTTP3 = o.HTTP3.Clone()
 	out.Stream = o.Stream.Clone()
 	out.TrustedProxies = slices.Clone(o.TrustedProxies)
+	out.PathNormalization = o.PathNormalization.Clone()
 	if o.MaxRequestBodySizeBytes != nil {
 		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
@@ -300,7 +313,11 @@ func (o *Options) Equal(other *Options) bool {
 	if (o.MySQL == nil) != (other.MySQL == nil) || o.MySQL != nil && *o.MySQL != *other.MySQL {
 		return false
 	}
-	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) {
+	if (o.Postgres == nil) != (other.Postgres == nil) || o.Postgres != nil && *o.Postgres != *other.Postgres {
+		return false
+	}
+	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) ||
+		!o.PathNormalization.Equal(other.PathNormalization) {
 		return false
 	}
 	if o.MaxRequestBodySizeBytes == nil || other.MaxRequestBodySizeBytes == nil {

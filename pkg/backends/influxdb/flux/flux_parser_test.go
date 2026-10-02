@@ -17,6 +17,7 @@
 package flux
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -63,6 +64,107 @@ func TestParseStep(t *testing.T) {
 	_, err = parseStep("|> window(every: 1m")
 	if err != ErrTimeRangeParsingFailed {
 		t.Fatalf("parseStep missing closer = %v", err)
+	}
+}
+
+func TestParseAggregateWindow(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "|> aggregateWindow(every: 1h, fn: mean"
+	tests := []struct {
+		name        string
+		line        string
+		expected    windowSpec
+		expectedErr error
+	}{
+		{"default stop-time labels", prefix + ")", windowSpec{step: time.Hour}, nil},
+		{
+			"explicit stop-time labels", prefix + `, timeSrc: "_stop")`,
+			windowSpec{step: time.Hour},
+			nil,
+		},
+		{
+			"start-time labels", prefix + `, timeSrc: "_start")`,
+			windowSpec{step: time.Hour, labelsAtStart: true},
+			nil,
+		},
+		{
+			"other time source is refused", prefix + `, timeSrc: "_time")`,
+			windowSpec{step: time.Hour},
+			ErrUnsupportedWindow,
+		},
+		{
+			"offset sets the phase", prefix + ", offset: 15m)",
+			windowSpec{step: time.Hour, phase: 15 * time.Minute},
+			nil,
+		},
+		{
+			"negative offset wraps into the step", prefix + ", offset: -15m)",
+			windowSpec{step: time.Hour, phase: 45 * time.Minute},
+			nil,
+		},
+		{
+			"offset beyond the step wraps", prefix + ", offset: 75m)",
+			windowSpec{step: time.Hour, phase: 15 * time.Minute},
+			nil,
+		},
+		{
+			"period equal to every is allowed", prefix + ", period: 1h)",
+			windowSpec{step: time.Hour},
+			nil,
+		},
+		{
+			"overlapping period is refused", prefix + ", period: 2h)",
+			windowSpec{step: time.Hour},
+			ErrUnsupportedWindow,
+		},
+		{
+			"unterminated period is refused", "|> aggregateWindow(every: 1h, period: 1h",
+			windowSpec{step: time.Hour},
+			ErrUnsupportedWindow,
+		},
+		{
+			"location is refused",
+			prefix + `, location: timezone.location(name: "America/Chicago"))`,
+			windowSpec{step: time.Hour},
+			ErrUnsupportedWindow,
+		},
+		{
+			"zero step is refused", "|> aggregateWindow(every: 0s, fn: mean)",
+			windowSpec{},
+			ErrUnsupportedWindow,
+		},
+		{
+			"missing every is refused", "|> aggregateWindow(fn: mean)",
+			windowSpec{},
+			ErrTimeRangeParsingFailed,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			w, err := parseAggregateWindow(test.line)
+			if !errors.Is(err, test.expectedErr) {
+				t.Fatalf("expected error %v got %v", test.expectedErr, err)
+			}
+			if err == nil && w != test.expected {
+				t.Errorf("expected %+v got %+v", test.expected, w)
+			}
+		})
+	}
+
+	if _, err := parseAggregateWindow(prefix + ", offset: soon)"); err == nil {
+		t.Error("expected an invalid offset to fail")
+	}
+}
+
+func TestParseQueryRefusesWindow(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := ParseQuery(`from(bucket: "b") |> range(start: -1h, stop: now()) ` +
+		`|> window(every: 1m) |> mean()`)
+	if !errors.Is(err, ErrUnsupportedWindow) {
+		t.Fatalf("expected %v got %v", ErrUnsupportedWindow, err)
 	}
 }
 

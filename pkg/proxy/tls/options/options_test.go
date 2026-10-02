@@ -33,6 +33,7 @@ import (
 	"testing"
 	"time"
 
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"go.yaml.in/yaml/v3"
@@ -623,5 +624,40 @@ func TestExcludeSystemRootsRequiresAnAuthority(t *testing.T) {
 	ok, err := (&Options{ExcludeSystemRoots: true, CertificateAuthorityPaths: []string{"/x"}}).Validate()
 	if ok || err == nil || errors.Is(err, ErrExcludeSystemRootsWithoutCAs) {
 		t.Fatalf("a configured path satisfies the requirement and is then checked itself, got %t %v", ok, err)
+	}
+}
+
+func TestACMEOptions(t *testing.T) {
+	o := New()
+	o.ACME = &acmeopts.BackendOptions{Issuer: "le", Domains: []string{"www.acme.test"}}
+	if err := o.Initialize(""); err != nil || !o.ServeTLS {
+		t.Fatalf("an ACME backend should serve TLS: %v", err)
+	}
+	if ok, err := o.Validate(); err != nil || !ok {
+		t.Fatalf("Validate = %v, %v; want true, nil", ok, err)
+	}
+	c := o.Clone()
+	if !c.Equal(o) {
+		t.Fatal("a clone should equal its source")
+	}
+	c.ACME.Domains[0] = "api.acme.test"
+	if c.Equal(o) || o.ACME.Domains[0] != "www.acme.test" {
+		t.Fatal("a clone should not share the ACME domains")
+	}
+	o.FullChainCertPath = "/etc/cert.pem"
+	if _, err := o.Validate(); !errors.Is(err, ErrACMEWithCertificateFiles) {
+		t.Fatalf("Validate = %v; want ErrACMEWithCertificateFiles", err)
+	}
+	o.FullChainCertPath = ""
+	o.CertificateAuthorityPaths = []string{"/nonexistent/ca.pem"}
+	if _, err := o.Validate(); err == nil {
+		t.Fatal("an ACME backend's CA paths are still checked")
+	}
+	var parsed Options
+	if err := yaml.Unmarshal([]byte("acme:\n  issuer: le\n  domains: [a.acme.test]\n"), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.ACME == nil || parsed.ACME.Issuer != "le" {
+		t.Fatalf("parsed ACME = %+v", parsed.ACME)
 	}
 }

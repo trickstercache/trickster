@@ -18,31 +18,25 @@ package pool
 
 import (
 	"net/http"
+	"runtime"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
-
-	"github.com/prometheus/client_golang/prometheus"
-	dto "github.com/prometheus/client_model/go"
 )
 
-// TestPoolRace consolidates the prior pool_stop_race, pool_stop_refresh_race,
-// pool_refresh_panic, and pool_targets_nil_hcstatus tests. Each subtest names
-// its axis so -race or panic output still points at the failing scenario.
-// Subtests are run sequentially (no t.Parallel) because they share Prometheus
-// metric vectors and the pool internal state machine.
+// Subtests are named by axis so -race or panic output points at the failing scenario.
 func TestPoolRace(t *testing.T) {
-	t.Run("stop_double_close", testPoolStopConcurrentDoubleClose)
-	t.Run("stop_then_set_healthy_no_refresh_overwrite", testPoolStopThenSetHealthy)
-	t.Run("refresh_worker_survives_panic", testPoolRefreshWorkerSurvivesPanic)
-	t.Run("targets_cached_path_nil_hcstatus", testPoolTargetsCachedPathNilHCStatus)
+	t.Run("stop_concurrent", testPoolStopConcurrent)
+	t.Run("stop_during_transitions", testPoolStopDuringTransitions)
+	t.Run("transition_storm_converges", testPoolTransitionStormConverges)
+	t.Run("transition_racing_construction", testPoolTransitionRacingConstruction)
+	t.Run("target_without_constructor", testPoolTargetWithoutConstructor)
 }
 
-// concurrent Stop must not panic on a closed channel.
-func testPoolStopConcurrentDoubleClose(t *testing.T) {
+func testPoolStopConcurrent(t *testing.T) {
 	const iterations = 200
 	for i := range iterations {
 		s := &healthcheck.Status{}
@@ -71,113 +65,114 @@ func testPoolStopConcurrentDoubleClose(t *testing.T) {
 		done.Wait()
 
 		if panics.Load() > 0 {
-			t.Fatalf("iteration %d: Stop panicked on concurrent invocation (close of closed channel)", i)
+			t.Fatalf("iteration %d: Stop panicked on concurrent invocation", i)
 		}
 	}
 }
 
-// scheduleRefresh queued by New() must not fire after Stop, or it would
-// overwrite a subsequent SetHealthy and break Stop-then-SetHealthy callers.
-func testPoolStopThenSetHealthy(t *testing.T) {
-	const iterations = 500
-	for i := range iterations {
-		s := &healthcheck.Status{}
-		tgt := NewTarget(http.NotFoundHandler(), s, nil)
-		p := New(Targets{tgt}, 1)
-		p.Stop()
-		h := []http.Handler{http.NotFoundHandler(), http.NotFoundHandler()}
-		p.SetHealthy(h)
-		if got := len(p.Targets()); got != 2 {
-			t.Fatalf("iteration %d: Targets: expected 2 got %d "+
-				"(RefreshHealthy ran after Stop returned)", i, got)
-		}
-		if got := len(p.(*pool).snapshot()); got != 2 {
-			t.Fatalf("iteration %d: snapshot: expected 2 got %d", i, got)
-		}
-	}
-}
-
-// runWithRecover must absorb panics, increment the recover counter, and
-// permit subsequent iterations to execute normally.
-func testPoolRefreshWorkerSurvivesPanic(t *testing.T) {
-	p := &pool{}
-
-	before := counterValue(t, metrics.ALBPoolRefreshPanicRecovered, "checkHealth")
-
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Fatalf("panic escaped runWithRecover: %v", r)
+// Stop racing in-flight transitions must neither deadlock nor panic, and nothing may be
+// published once it has returned
+func testPoolStopDuringTransitions(t *testing.T) {
+	for range 200 {
+		st := &healthcheck.Status{}
+		st.Set(healthcheck.StatusPassing)
+		p := New(Targets{NewTarget(http.NotFoundHandler(), st, nil)}, 1)
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			for range 50 {
+				st.Set(healthcheck.StatusFailing)
+				st.Set(healthcheck.StatusPassing)
 			}
-		}()
-		p.runWithRecover("checkHealth", func() {
-			panic("simulated refresh panic")
 		})
-	}()
-
-	after := counterValue(t, metrics.ALBPoolRefreshPanicRecovered, "checkHealth")
-	if got := after - before; got != 1 {
-		t.Fatalf("expected ALBPoolRefreshPanicRecovered{worker=checkHealth} +1, got +%v", got)
-	}
-
-	ran := false
-	p.runWithRecover("checkHealth", func() {
-		ran = true
-	})
-	if !ran {
-		t.Fatal("iteration after recovered panic did not execute")
-	}
-
-	lbefore := counterValue(t, metrics.ALBPoolRefreshPanicRecovered, "listenStatusUpdates")
-	p.runWithRecover("listenStatusUpdates", func() {
-		panic("simulated status panic")
-	})
-	lafter := counterValue(t, metrics.ALBPoolRefreshPanicRecovered, "listenStatusUpdates")
-	if got := lafter - lbefore; got != 1 {
-		t.Fatalf("expected ALBPoolRefreshPanicRecovered{worker=listenStatusUpdates} +1, got +%v", got)
+		runtime.Gosched()
+		p.Stop()
+		frozen := p.Targets()
+		wg.Wait()
+		st.Set(healthcheck.StatusFailing)
+		st.Set(healthcheck.StatusPassing)
+		st.Set(healthcheck.StatusFailing)
+		if got := p.Targets(); !slices.Equal(got, frozen) {
+			t.Fatalf("a stopped pool republished: %d then %d targets", len(frozen), len(got))
+		}
 	}
 }
 
-// Targets() cached path must tolerate a target whose hcStatus is nil, matching
-// the snapshot path. Defense-in-depth for future callers that inject targets
-// bypassing RefreshHealthy / SetHealthy.
-func testPoolTargetsCachedPathNilHCStatus(t *testing.T) {
+// concurrent transitions on every member must leave the dispatchable set matching the final
+// statuses, with no wait
+func testPoolTransitionStormConverges(t *testing.T) {
+	const n = 16
+	statuses := make([]*healthcheck.Status, n)
+	targets := make(Targets, n)
+	for i := range n {
+		statuses[i] = &healthcheck.Status{}
+		targets[i] = NewTarget(http.NotFoundHandler(), statuses[i], nil)
+	}
+	p := New(targets, 1)
+	defer p.Stop()
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			for range 200 {
+				statuses[i].Set(healthcheck.StatusPassing)
+				statuses[i].Set(healthcheck.StatusFailing)
+			}
+			if i%2 == 0 {
+				statuses[i].Set(healthcheck.StatusPassing)
+			}
+		})
+	}
+	// readers never see a nil or duplicated member while the storm runs
+	wg.Go(func() {
+		for range 2000 {
+			seen := make(map[*Target]bool, n)
+			for _, tgt := range p.Targets() {
+				if tgt == nil || seen[tgt] {
+					t.Error("Targets() returned a nil or repeated target")
+					return
+				}
+				seen[tgt] = true
+			}
+		}
+	})
+	wg.Wait()
+	var want Targets
+	for i := 0; i < n; i += 2 {
+		want = append(want, targets[i])
+	}
+	if got := p.Targets(); !slices.Equal(got, want) {
+		t.Fatalf("after the storm: %d live targets, want the %d passing ones in pool order", len(got), len(want))
+	}
+}
+
+// a transition that lands while the pool is being built is not lost
+func testPoolTransitionRacingConstruction(t *testing.T) {
+	for range 500 {
+		st := &healthcheck.Status{}
+		tgt := NewTarget(http.NotFoundHandler(), st, nil)
+		var wg sync.WaitGroup
+		wg.Go(func() { st.Set(healthcheck.StatusPassing) })
+		p := New(Targets{tgt}, 1)
+		wg.Wait()
+		if got := len(p.Targets()); got != 1 {
+			p.Stop()
+			t.Fatalf("a transition racing construction was lost: %d live targets", got)
+		}
+		p.Stop()
+	}
+}
+
+// a target assembled without a constructor has no member yet and may lack a status
+func testPoolTargetWithoutConstructor(t *testing.T) {
 	st := &healthcheck.Status{}
 	st.Set(healthcheck.StatusPassing)
-	good := NewTarget(http.NotFoundHandler(), st, nil)
+	good := &Target{handler: http.NotFoundHandler(), hcStatus: st}
 	bad := &Target{handler: http.NotFoundHandler()}
-
-	p := &pool{
-		targets:      Targets{good},
-		done:         make(chan struct{}),
-		statusCh:     make(chan bool, 1),
-		ch:           make(chan bool, 1),
-		healthyFloor: 1,
+	p := New(Targets{good, bad, nil}, 1)
+	defer p.Stop()
+	if got := p.Targets(); len(got) != 1 || got[0] != good {
+		t.Fatalf("expected only the target with a status, got %d", len(got))
 	}
-
-	cached := Targets{good, bad}
-	p.liveTargets.Store(&cached)
-
-	defer func() {
-		if r := recover(); r != nil {
-			t.Fatalf("Targets() panicked on nil hcStatus in cached path: %v", r)
-		}
-	}()
-	_ = p.Targets()
-}
-
-func counterValue(t *testing.T, vec *prometheus.CounterVec, labels ...string) float64 {
-	t.Helper()
-	c, err := vec.GetMetricWithLabelValues(labels...)
-	if err != nil {
-		t.Fatalf("GetMetricWithLabelValues: %v", err)
+	if p.ConfiguredLen() != 3 {
+		t.Errorf("configured length = %d", p.ConfiguredLen())
 	}
-	var m dto.Metric
-	if err := c.Write(&m); err != nil {
-		t.Fatalf("write metric: %v", err)
-	}
-	if m.Counter == nil || m.Counter.Value == nil {
-		return 0
-	}
-	return *m.Counter.Value
 }

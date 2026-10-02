@@ -23,12 +23,15 @@ import (
 	"net/http"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
@@ -135,6 +138,10 @@ func confirmTrueCacheHit(pr *proxyRequest) (bool, error) {
 	}
 	if fresh {
 		return true, nil
+	}
+	// only a fresh object is served from where it lies in the cache
+	if pr.materializeDocument(); pr.cacheDocument == nil {
+		return false, handleCacheKeyMiss(pr)
 	}
 	// RFC 5861 3: inside the stale-while-revalidate window the client gets the
 	// stored response now and the refresh happens behind it
@@ -255,11 +262,20 @@ func handleTrueCacheHit(pr *proxyRequest) error {
 		StatusCode: d.StatusCode, Request: pr.Request,
 		Header: d.SafeHeaderClone(),
 	}
-	if pr.wantsRanges {
+	switch {
+	case d.deferred != nil:
+		// the body is in the cache still, and the response reads from there what it serves
+		pr.upstreamReader = d.deferred
+		if d.storedEncoding != providers.Identity {
+			// as the cache compressed it, which the client accepts; another client is sent it decoded
+			pr.upstreamResponse.Header.Set(headers.NameContentEncoding, d.storedEncoding.String())
+			pr.upstreamResponse.Header.Add(headers.NameVary, headers.NameAcceptEncoding)
+		}
+	case pr.wantsRanges:
 		h, b := d.RangeParts.ExtractResponseRange(pr.wantedRanges, d.ContentLength, d.ContentType, d.Body)
 		headers.Merge(pr.upstreamResponse.Header, h)
 		pr.upstreamReader = bytes.NewReader(b)
-	} else {
+	default:
 		pr.upstreamReader = bytes.NewReader(d.Body)
 	}
 
@@ -334,7 +350,7 @@ func (pr *proxyRequest) runOPC(sfKey string, cc cache.Cache) (*opcResult, bool, 
 // writing this request's own response and returning what a waiter would need.
 func (pr *proxyRequest) executeOPC(cc cache.Cache) *opcResult {
 	// wrap the response writer to capture body writes for the opcResult
-	capture := &sfResponseCapture{inner: pr.responseWriter}
+	capture := &sfResponseCapture{inner: pr.responseWriter, pr: pr}
 	pr.responseWriter = capture
 
 	// buildErrorResult constructs an opcResult for error responses.
@@ -358,6 +374,12 @@ func (pr *proxyRequest) executeOPC(cc cache.Cache) *opcResult {
 	}
 
 	err := pr.queryCache(pr.upstreamRequest.Context(), cc)
+	// whatever becomes of the request, what the cache holds open for it is let go
+	defer pr.cacheDocument.releaseBody()
+	// only a hit on the whole of an object is served from where it lies in the cache
+	if pr.cacheStatus != status.LookupStatusHit {
+		pr.materializeDocument()
+	}
 	// nothing stored and the client will not accept a forwarded response
 	if pr.cachingPolicy.OnlyIfCached() && pr.cacheStatus != status.LookupStatusHit {
 		if fErr := handleOnlyIfCachedMiss(pr); fErr != nil {
@@ -394,6 +416,7 @@ func (pr *proxyRequest) executeOPC(cc cache.Cache) *opcResult {
 		body:            append([]byte(nil), body...),
 		elapsed:         float64(time.Since(pr.started).Milliseconds()) / 1000.0,
 		cacheStatus:     pr.cacheStatus,
+		streamed:        pr.streaming,
 		varyNames:       pr.varyNames,
 		varyGeneration:  pr.varyGeneration,
 		varyKey:         pr.key,
@@ -489,10 +512,10 @@ func handlePCF(pr *proxyRequest) error {
 			defer reqs.Delete(pr.key)
 			var dest io.Writer = pcf
 			if pr.writeToCache {
-				pr.cacheBuffer = &bytes.Buffer{}
+				pr.cacheBuffer = pr.newCacheBuffer(contentLength)
 				dest = io.MultiWriter(pcf, pr.cacheBuffer)
 			}
-			n, err := io.Copy(dest, reader)
+			n, err := tbytes.Copy(dest, reader)
 			switch {
 			case err != nil:
 				logger.Error("pcf upstream copy failed",
@@ -551,7 +574,7 @@ func handleAllWrites(pr *proxyRequest) error {
 		// storing it would serve a truncated body to every later requester
 		if pr.bodyTruncated.Load() {
 			logger.Warn("skipping cache write for truncated upstream response",
-				logging.Pairs{keys.Key: pr.key, keys.URL: pr.URL.String()})
+				logging.Pairs{keys.Key: pr.key, keys.URL: redact.URL(pr.URL)})
 			return nil
 		}
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
@@ -561,6 +584,10 @@ func handleAllWrites(pr *proxyRequest) error {
 				d.ParsePartialContentBody(pr.upstreamResponse, pr.cacheBuffer.Bytes())
 			} else {
 				d.Body = pr.cacheBuffer.Bytes()
+				// an origin that sent no length sent a whole body all the same
+				if d.ContentLength < 0 {
+					d.ContentLength = int64(len(d.Body))
+				}
 			}
 		}
 		if err := pr.store(); err != nil {
@@ -682,6 +709,12 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 			vKey += "|" + pr.wantedRanges.String()
 		}
 		result, isExecutor, sfErr = pr.runOPC(vKey, cc)
+	}
+
+	// a body that was read from the cache as it was written was kept for no one, so a
+	// waiter reads the cache for itself
+	if sfErr == nil && !isExecutor && result.streamed {
+		result, isExecutor, sfErr = pr.runOPC(sfKey+"|solo|"+newVaryGeneration(), cc)
 	}
 
 	if sfErr != nil {

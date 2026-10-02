@@ -17,7 +17,6 @@
 package model
 
 import (
-	"bufio"
 	"bytes"
 	"strings"
 	"testing"
@@ -32,21 +31,25 @@ import (
 )
 
 func TestTSVEscapeRoundTrip(t *testing.T) {
+	unescape := func(s string) string {
+		var d decoder
+		return string(d.unescape([]byte(s)))
+	}
 	for _, raw := range []string{"plain", "tab\there", "nl\nhere", "nul\x00\x00", "back\\slash", "it's", "\b\f\r", ""} {
-		if got := unescapeTSV(escapeTSV(raw)); got != raw {
+		if got := unescape(string(appendEscapedTSV(nil, raw))); got != raw {
 			t.Errorf("round trip %q -> %q", raw, got)
 		}
 	}
-	if got := unescapeTSV(`Enum8(\'orange\' = 1, \'blue\' = 2)`); got != "Enum8('orange' = 1, 'blue' = 2)" {
+	if got := unescape(`Enum8(\'orange\' = 1, \'blue\' = 2)`); got != "Enum8('orange' = 1, 'blue' = 2)" {
 		t.Errorf("enum type row: %q", got)
 	}
-	if got := unescapeTSV(nullToken); got != nullToken {
+	if got := unescape(nullToken); got != nullToken {
 		t.Errorf("null literal changed: %q", got)
 	}
-	if got := unescapeTSV(`a\qb\`); got != `a\qb\` {
+	if got := unescape(`a\qb\`); got != `a\qb\` {
 		t.Errorf("unknown escape changed: %q", got)
 	}
-	if got := escapeTSV("IUA\x00\x00"); got != `IUA\0\0` {
+	if got := string(appendEscapedTSV(nil, "IUA\x00\x00")); got != `IUA\0\0` {
 		t.Errorf("escape nul: %q", got)
 	}
 }
@@ -83,16 +86,15 @@ func TestTSVToNativeRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	// decode the block with the official client, exactly as a Grafana plugin would
-	br := bufio.NewReader(bytes.NewReader(out.Bytes()))
-	if peek, _ := br.Peek(1); peek[0] == 1 {
-		if err := skipBlockInfo(br); err != nil {
+	cur := testCursor(out.Bytes())
+	if cur.b[0] == 1 {
+		if err := skipBlockInfo(cur); err != nil {
 			t.Fatal(err)
 		}
 	}
-	numCols, _ := readUvarint(br)
-	numRows, _ := readUvarint(br)
-	consumed := out.Len() - br.Buffered()
-	pr := proto.NewReader(bytes.NewReader(out.Bytes()[consumed:]))
+	numCols, _ := cur.uvarint()
+	numRows, _ := cur.uvarint()
+	pr := proto.NewReader(bytes.NewReader(out.Bytes()[cur.off:]))
 	got := map[string][]any{}
 	for range numCols {
 		name, _ := pr.Str()
@@ -139,7 +141,7 @@ func TestTSVOutputEscapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := out.String()
-	for _, want := range []string{`Enum8(\'orange\' = 1, \'blue\' = 2, \'purple\' = 3)`, "\tIUA\\0\t", "\tA\\'B\t"} {
+	for _, want := range []string{`Enum8(\'orange\' = 1, \'blue\' = 2, \'purple\' = 3)`, "\tIUA\\0\t", "\tA\\'B\\0\t"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("TSV output missing %q:\n%s", want, text)
 		}

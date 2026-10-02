@@ -21,7 +21,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/druid/model"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -55,9 +58,7 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 			c.observeRewriteFailure("invalid_extent")
 			return errInvalidRewrite
 		}
-		interval := extent.Start.UTC().Format(time.RFC3339Nano) + "/" +
-			endExclusive.UTC().Format(time.RFC3339Nano)
-		body, err := nativePlan.RenderInterval(interval)
+		body, err := nativePlan.RenderInterval(interval(extent.Start, endExclusive))
 		if err != nil {
 			c.observeRewriteFailure("render_error")
 			return fmt.Errorf("%w: %w", errRenderQuery, err)
@@ -74,24 +75,9 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 		c.observeRewriteFailure("render_error")
 		return fmt.Errorf("%w: %w", errRenderQuery, err)
 	}
-	original := trq.OriginalBody
-	if len(original) == 0 {
-		original, err = request.GetBody(r)
-		if err != nil {
-			c.observeRewriteFailure("body_error")
-			return fmt.Errorf("%w: %w", errRenderQuery, err)
-		}
-	}
-	document, err := decodeJSONObject(original)
+	body, err := c.sqlBody(r, trq, rendered)
 	if err != nil {
-		c.observeRewriteFailure("body_error")
-		return fmt.Errorf("%w: %w", errRenderQuery, err)
-	}
-	document["query"] = rendered
-	body, _, _, err := marshalJSONObject(document, nil)
-	if err != nil {
-		c.observeRewriteFailure("render_error")
-		return fmt.Errorf("%w: %w", errRenderQuery, err)
+		return err
 	}
 	// request.Clone's span rebinding intentionally shares Resources with the
 	// client request. Split that reference before SetBody updates the buffered
@@ -102,4 +88,71 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	}
 	request.SetBody(r, body)
 	return nil
+}
+
+// FetchPartialBucket fetches one partial bucket of r's native or SQL query, rendered over the
+// bucket's raw range, through the object proxy cache
+func (c *Client) FetchPartialBucket(r *http.Request, trq *timeseries.TimeRangeQuery,
+	pb timeseries.PartialBucket, _ bool,
+) (timeseries.Timeseries, status.LookupStatus, error) {
+	if r == nil || trq == nil {
+		return nil, status.LookupStatusError, errInvalidRewrite
+	}
+	var body []byte
+	var err error
+	switch plan := trq.ParsedQuery.(type) {
+	case *model.QueryPlan:
+		// intervals are half-open and always closed
+		if pb.Upper.IsZero() || pb.LowerExclusive || pb.UpperInclusive {
+			return nil, status.LookupStatusError, backends.ErrPartialBucketsUnsupported
+		}
+		if body, err = plan.RenderInterval(interval(pb.Lower, pb.Upper)); err != nil {
+			return nil, status.LookupStatusError, fmt.Errorf("%w: %w", errRenderQuery, err)
+		}
+	case *model.SQLQueryPlan:
+		if plan == nil {
+			return nil, status.LookupStatusError, errMissingQueryPlan
+		}
+		rendered, err := plan.Plan.RenderRange(pb)
+		if err != nil {
+			return nil, status.LookupStatusError, fmt.Errorf("%w: %w", errRenderQuery, err)
+		}
+		if body, err = c.sqlBody(r, trq, rendered); err != nil {
+			return nil, status.LookupStatusError, err
+		}
+	default:
+		return nil, status.LookupStatusError, errMissingQueryPlan
+	}
+	request.SetBody(r, body)
+	return engines.FetchPartialBucket(r, nil, trq, c.Modeler())
+}
+
+func (c *Client) sqlBody(r *http.Request, trq *timeseries.TimeRangeQuery, rendered string) ([]byte, error) {
+	// the original Druid SQL envelope with its statement replaced, so context, resultFormat and any
+	// other provider fields reach the origin unchanged
+	original := trq.OriginalBody
+	var err error
+	if len(original) == 0 {
+		original, err = request.GetBody(r)
+		if err != nil {
+			c.observeRewriteFailure("body_error")
+			return nil, fmt.Errorf("%w: %w", errRenderQuery, err)
+		}
+	}
+	document, err := decodeJSONObject(original)
+	if err != nil {
+		c.observeRewriteFailure("body_error")
+		return nil, fmt.Errorf("%w: %w", errRenderQuery, err)
+	}
+	document["query"] = rendered
+	body, _, _, err := marshalJSONObject(document, nil)
+	if err != nil {
+		c.observeRewriteFailure("render_error")
+		return nil, fmt.Errorf("%w: %w", errRenderQuery, err)
+	}
+	return body, nil
+}
+
+func interval(start, endExclusive time.Time) string {
+	return start.UTC().Format(time.RFC3339Nano) + "/" + endExclusive.UTC().Format(time.RFC3339Nano)
 }

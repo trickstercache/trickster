@@ -42,6 +42,13 @@ type Options struct {
 	// MaxSizeBackoffObjects indicates how far under max_size_objects the cache size must
 	// be to complete object-size-based eviction exercise.
 	MaxSizeBackoffObjects int64 `yaml:"max_size_backoff_objects,omitempty"`
+	// ScanInterval is how long the Cache Index waits between sweeps of the cache, which list objects
+	// it did not know of and drop those the cache no longer holds. 0 disables them.
+	ScanInterval timeconv.Duration `yaml:"scan_interval,omitempty"`
+	// ScanBatchSize is how many objects a sweep of the cache reads before it pauses
+	ScanBatchSize int `yaml:"scan_batch_size,omitempty"`
+	// ScanBatchPause is how long a sweep of the cache pauses after each batch of objects
+	ScanBatchPause timeconv.Duration `yaml:"scan_batch_pause,omitempty"`
 }
 
 // New returns a new Cache Index Options Reference with default values set
@@ -54,6 +61,9 @@ func New() *Options {
 		MaxSizeBackoffBytes:   DefaultMaxSizeBackoffBytes,
 		MaxSizeObjects:        DefaultMaxSizeObjects,
 		MaxSizeBackoffObjects: DefaultMaxSizeBackoffObjects,
+		ScanInterval:          timeconv.Duration(DefaultScanInterval),
+		ScanBatchSize:         DefaultScanBatchSize,
+		ScanBatchPause:        timeconv.Duration(DefaultScanBatchPause),
 	}
 }
 
@@ -66,6 +76,10 @@ func (o *Options) Equal(o2 *Options) bool {
 
 	return o.ReapInterval == o2.ReapInterval &&
 		o.FlushInterval == o2.FlushInterval &&
+		o.IndexExpiry == o2.IndexExpiry &&
+		o.ScanInterval == o2.ScanInterval &&
+		o.ScanBatchSize == o2.ScanBatchSize &&
+		o.ScanBatchPause == o2.ScanBatchPause &&
 		o.MaxSizeBytes == o2.MaxSizeBytes &&
 		o.MaxSizeBackoffBytes == o2.MaxSizeBackoffBytes &&
 		o.MaxSizeObjects == o2.MaxSizeObjects &&

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb/iofmt"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -62,8 +63,8 @@ func TestGroupedRowsPartitionIntoSeries(t *testing.T) {
 		if series.Header.Tags["host"] != wantHost {
 			t.Fatalf("series %d tags = %v, want host=%s", i, series.Header.Tags, wantHost)
 		}
-		if len(series.Points) != 2 {
-			t.Fatalf("series %d has %d points, want 2", i, len(series.Points))
+		if series.PointCount() != 2 {
+			t.Fatalf("series %d has %d points, want 2", i, series.PointCount())
 		}
 		if len(series.Header.TagFieldsList) != 1 ||
 			series.Header.TagFieldsList[0].Name != "host" {
@@ -165,7 +166,7 @@ func TestTypeFidelity(t *testing.T) {
 			t.Fatal(err)
 		}
 		ds := ts.(*dataset.DataSet)
-		if v := ds.Results[0].SeriesList[0].Points[0].Values[0]; v != int64(42) {
+		if v := dspoints.Of(ds.Results[0].SeriesList[0])[0].Values[0]; v != int64(42) {
 			t.Fatalf("csv integer = %v (%T), want int64(42)", v, v)
 		}
 	})
@@ -177,7 +178,7 @@ func TestTypeFidelity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points
+		points := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])
 		if points[0].Values[0] != nil {
 			t.Fatalf("null not preserved: %v", points[0].Values[0])
 		}
@@ -222,7 +223,7 @@ func TestUnmarshalRobustness(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		points := ts.(*dataset.DataSet).Results[0].SeriesList[0].Points
+		points := dspoints.Of(ts.(*dataset.DataSet).Results[0].SeriesList[0])
 		if len(points) != 1 || points[0].Epoch == 0 {
 			t.Fatalf("bad-timestamp row not skipped: %+v", points)
 		}
@@ -239,13 +240,13 @@ func TestUnmarshalRobustness(t *testing.T) {
 		for _, in := range []string{
 			"2024-01-01T00:00:00", "2024-01-01T00:00:00.5", "2024-01-01 00:00:00",
 		} {
-			if _, err := parseV3Timestamp(in); err != nil {
-				t.Fatalf("parseV3Timestamp(%s): %v", in, err)
+			if _, ok := textTime([]byte(in)); !ok {
+				t.Fatalf("textTime(%s) failed", in)
 			}
 		}
-		ep, err := parseV3Timestamp("2024-01-01T00:00:10")
-		if err != nil || int64(ep) != 1704067210*int64(time.Second) {
-			t.Fatalf("naive timestamp misparsed: %d, %v", ep, err)
+		ep, ok := textTime([]byte("2024-01-01T00:00:10"))
+		if !ok || int64(ep) != 1704067210*int64(time.Second) {
+			t.Fatalf("naive timestamp misparsed: %d, %t", ep, ok)
 		}
 	})
 
@@ -258,9 +259,9 @@ func TestUnmarshalRobustness(t *testing.T) {
 			{"1704067200000", 1704067200 * int64(time.Second)},
 			{"1704067200000000000", 1704067200 * int64(time.Second)},
 		} {
-			ep, err := parseV3Timestamp(tc.in)
-			if err != nil || int64(ep) != tc.want {
-				t.Fatalf("parseV3Timestamp(%s) = %d, %v; want %d", tc.in, ep, err, tc.want)
+			ep, ok := textTime([]byte(tc.in))
+			if !ok || int64(ep) != tc.want {
+				t.Fatalf("textTime(%s) = %d, %t; want %d", tc.in, ep, ok, tc.want)
 			}
 		}
 	})

@@ -27,15 +27,24 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
+)
+
+const (
+	rolloverRetries   = 2
+	testShutdownDrain = 2 * time.Second
 )
 
 type tricksterHarness struct {
@@ -140,6 +149,24 @@ func (h tricksterHarness) queryProm(t *testing.T, backend, apiPath string, opts 
 	return pr, resp.Header.Clone()
 }
 
+func requireCacheHit(t *testing.T, request func() map[string]string,
+	msgAndArgs ...any,
+) map[string]string {
+	t.Helper()
+	// a step boundary passing between identical requests adds a bucket to fetch, so only a partial
+	// hit is retried, at most twice, as a short step can pass again
+	result := request()
+	for range rolloverRetries {
+		if result[keys.Status] != status.StatusPartialHit {
+			break
+		}
+		t.Logf("expected a hit, got a partial hit (%v); retrying for a step rollover", result)
+		result = request()
+	}
+	require.Equal(t, status.StatusHit, result[keys.Status], msgAndArgs...)
+	return result
+}
+
 func requireTricksterResult(t *testing.T, hdr http.Header, want map[string]string) {
 	t.Helper()
 	raw := hdr.Get(headers.NameTricksterResult)
@@ -179,8 +206,7 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 5)
-	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort :=
-		ports[0], ports[1], ports[2], ports[3], ports[4]
+	frontPort, metricsPort, mgmtPort, mysqlPort, flightPort := ports[0], ports[1], ports[2], ports[3], ports[4]
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
@@ -287,10 +313,36 @@ func writeTestConfig(t *testing.T, configPath string,
 			bo.ListenerNames = []string{listener.DefaultFrontendName, "influx3-flight"}
 		}
 	}
+	// the dev config's static roots are relative to the repo root, not to this package
+	for _, bo := range c.Backends {
+		if bo != nil && bo.Static != nil && bo.Static.Root != "" && !filepath.IsAbs(bo.Static.Root) {
+			if root := filepath.Join("..", bo.Static.Root); isDir(root) {
+				bo.Static.Root = root
+			}
+		}
+	}
+	// GreptimeDB's second native endpoint is likewise opt-in in this harness.
+	delete(c.Listeners, "greptimedb-mysql")
+	// The dev config binds its PostgreSQL wire-protocol listeners to fixed
+	// ports; drop them and the backends they serve, which need such a listener.
+	// Tests that want one add it back on a reserved port through mods.
+	for name, options := range c.Listeners {
+		if options == nil || options.Protocol != listener.ProtocolPostgres {
+			continue
+		}
+		delete(c.Listeners, name)
+		for backendName, backend := range c.Backends {
+			if backend != nil && backend.UsesListener(name) {
+				delete(c.Backends, backendName)
+			}
+		}
+	}
 	c.Frontend = nil
 	c.Metrics = nil
 	c.MgmtConfig.ListenAddress = ""
 	c.MgmtConfig.ListenPort = 0
+	// a connection a test leaves open would otherwise hold shutdown for the whole default drain
+	c.MgmtConfig.ShutdownDrainTimeout = timeconv.Duration(testShutdownDrain)
 	for _, mod := range mods {
 		mod(&c)
 	}
@@ -299,6 +351,11 @@ func writeTestConfig(t *testing.T, configPath string,
 	path := filepath.Join(t.TempDir(), "trickster.yaml")
 	require.NoError(t, os.WriteFile(path, out, 0o644))
 	return path
+}
+
+func isDir(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
 }
 
 func defaultCacheProviders() []cacheProviderCase {

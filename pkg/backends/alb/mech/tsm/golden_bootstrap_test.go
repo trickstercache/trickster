@@ -19,11 +19,14 @@ package tsm
 import (
 	"os"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/testutil/golden"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
+
+const regenGoldensEnv = "TRICKSTER_REGEN_GOLDENS" // set to 1, with -update, to rewrite fixtures
 
 // goldenSeries builds a Series with the given name, tags, optional query
 // statement, and one or more (epoch, string-value) points. Used only by
@@ -35,12 +38,9 @@ func goldenSeries(name string, tags dataset.Tags, query string, pts ...struct {
 ) *dataset.Series {
 	points := make(dataset.Points, len(pts))
 	for i, p := range pts {
-		points[i] = dataset.Point{Epoch: epoch.Epoch(p.e), Size: 32, Values: []any{p.v}}
+		points[i] = dataset.Point{Epoch: epoch.Epoch(p.e), Values: []any{p.v}}
 	}
-	return &dataset.Series{
-		Header: dataset.SeriesHeader{Name: name, Tags: tags, QueryStatement: query},
-		Points: points,
-	}
+	return dataset.NewSeries(dataset.SeriesHeader{Name: name, Tags: tags, QueryStatement: query}, points)
 }
 
 func dsWith(series ...*dataset.Series) *dataset.DataSet {
@@ -59,7 +59,7 @@ func TestGenerateGoldenFixtures(t *testing.T) {
 	}
 	// Require TRICKSTER_REGEN_GOLDENS=1 in addition to -update so a repo-wide
 	// `go test -update ./...` can't silently overwrite these fixtures.
-	if os.Getenv("TRICKSTER_REGEN_GOLDENS") != "1" {
+	if os.Getenv(regenGoldensEnv) != "1" {
 		t.Skip("set TRICKSTER_REGEN_GOLDENS=1 to regenerate")
 	}
 	type pt = struct {
@@ -98,5 +98,18 @@ func TestGenerateGoldenFixtures(t *testing.T) {
 	))
 	writeGoldenDataSet(t, "weighted_avg/pairing_statement_count", dsWith(
 		goldenSeries("rps", dataset.Tags{"region": "us-east-1"}, "count(rps)", pt{100, "4"}),
+	))
+
+	// step_alignment: one member on the 60s grid, and a peer answering the client's raw range, which
+	// starts 7s past the grid, or on the grid once the ALB applies one mode to both
+	const s = int64(time.Second)
+	writeGoldenDataSet(t, "step_alignment/truncate_member", dsWith(
+		goldenSeries("rps", nil, "", pt{60 * s, "10"}, pt{120 * s, "10"}, pt{180 * s, "10"}),
+	))
+	writeGoldenDataSet(t, "step_alignment/off_member", dsWith(
+		goldenSeries("rps", nil, "", pt{67 * s, "8"}, pt{127 * s, "8"}, pt{187 * s, "8"}),
+	))
+	writeGoldenDataSet(t, "step_alignment/truncate_peer", dsWith(
+		goldenSeries("rps", nil, "", pt{60 * s, "8"}, pt{120 * s, "8"}, pt{180 * s, "8"}),
 	))
 }

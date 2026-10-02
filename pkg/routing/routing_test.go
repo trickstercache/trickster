@@ -18,6 +18,7 @@ package routing
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,12 +28,14 @@ import (
 	"testing"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
+	"github.com/trickstercache/trickster/v2/pkg/backends/greptimedb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/backends/influxdb"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -44,6 +47,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
+	configtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
@@ -53,11 +58,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing/exporters/stdout"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/providers/basic"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -82,6 +90,51 @@ func TestShouldCaptureAuthForVirtualBackend(t *testing.T) {
 	if shouldCaptureAuth(path, backend) {
 		t.Error("ordinary unauthenticated backend should not seed resources")
 	}
+}
+
+func TestPathAuthenticatorReferences(t *testing.T) {
+	const backendAuthName, pathAuthName = "backend-auth", "path-auth"
+	backend := &bo.Options{AuthOptions: basicAuthOptions(t, backendAuthName, false)}
+	// the backend's authenticator admits no one and the path's own only observes, so the status
+	// shows which of them ran, if either
+	tests := []struct {
+		path   *po.Options
+		status int
+		auth   bool
+	}{
+		{po.New(), http.StatusUnauthorized, true},
+		{
+			&po.Options{AuthenticatorName: pathAuthName, AuthOptions: basicAuthOptions(t, pathAuthName, true)},
+			http.StatusNoContent, true,
+		},
+		{&po.Options{AuthenticatorName: reserved.ReferenceNone}, http.StatusNoContent, false},
+	}
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	for _, test := range tests {
+		w := httptest.NewRecorder()
+		r := request.SetResources(httptest.NewRequest(http.MethodGet, "/", nil), &request.Resources{})
+		attachAuthenticator(next, test.path, backend).ServeHTTP(w, r)
+		if w.Code != test.status {
+			t.Errorf("path authenticator %q: status = %d; want %d", test.path.AuthenticatorName, w.Code, test.status)
+		}
+		if got := hasAuthenticator(test.path, backend); got != test.auth {
+			t.Errorf("path authenticator %q: hasAuthenticator = %t; want %t",
+				test.path.AuthenticatorName, got, test.auth)
+		}
+	}
+}
+
+func basicAuthOptions(t *testing.T, name string, observeOnly bool) *autho.Options {
+	t.Helper()
+	o := &autho.Options{Name: name, Provider: basic.ID, ObserveOnly: observeOnly}
+	a, err := basic.New(map[string]any{"options": o})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.Authenticator = a
+	return o
 }
 
 func TestRegisterHealthHandler(t *testing.T) {
@@ -801,6 +854,73 @@ func TestBackendRoutesOnMultipleHTTPListeners(t *testing.T) {
 	}
 }
 
+func TestGreptimeDBRoutesOnlyOnHTTPListeners(t *testing.T) {
+	var calls atomic.Int64
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		if user, password, ok := r.BasicAuth(); !ok || user != "grafana" || password != "client-password" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("X-Origin-URI", r.RequestURI)
+		w.Header().Set("X-Origin-Method", r.Method)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer origin.Close()
+	for _, exposeHTTP := range []bool{true, false} {
+		conf := config.NewConfig()
+		o := bo.New()
+		o.Provider, o.OriginURL = providers.GreptimeDB, origin.URL+"/prefix"
+		o.AuthOptions = &autho.Options{ProxyPreserve: true, Users: configtypes.EnvStringMap{"grafana": "client-password"}}
+		auth, err := basic.New(map[string]any{"options": o.AuthOptions})
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.AuthOptions.Authenticator = auth
+		o.ListenerNames = []string{"pg"}
+		if exposeHTTP {
+			o.ListenerNames = append(o.ListenerNames, "default")
+		}
+		if err := o.Initialize("greptime"); err != nil {
+			t.Fatal(err)
+		}
+		conf.Backends = bo.Lookup{o.Name: o}
+		conf.Listeners["pg"] = &listener.Options{Protocol: listener.ProtocolPostgres, ListenPort: 8489}
+		caches := registry.LoadCachesFromConfig(conf)
+		t.Cleanup(func() { registry.CloseCaches(caches) })
+		client, err := greptimedb.NewClient(o.Name, o, lm.NewRouter(), caches[o.CacheName], nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o.HTTPClient = client.HTTPClient()
+		clients := backends.Backends{o.Name: client}
+		routers := map[string]router.Router{"default": lm.NewRouter(), "pg": lm.NewRouter()}
+		if err := RegisterProxyRoutesForListeners(conf, clients, routers, nil, caches, nil, false); err != nil {
+			t.Fatal(err)
+		}
+		for _, path := range []string{"/v1/sql?db=public", "/v1/prometheus/api/v1/query_range?query=up", "/v1/influxdb/write", "/v1/loki/api/v1/push"} {
+			for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch, http.MethodOptions, http.MethodHead} {
+				for _, name := range []string{"default", "pg"} {
+					for range 2 {
+						before := calls.Load()
+						rec := httptest.NewRecorder()
+						req := httptest.NewRequest(method, "/greptime"+path, nil)
+						req.SetBasicAuth("grafana", "client-password")
+						routers[name].ServeHTTP(rec, req)
+						if name == "default" && exposeHTTP {
+							if rec.Code != http.StatusAccepted || rec.Header().Get("X-Origin-URI") != "/prefix"+path || rec.Header().Get("X-Origin-Method") != method || calls.Load() != before+1 {
+								t.Fatalf("%s %s: not relayed exactly once, status=%d headers=%v", method, path, rec.Code, rec.Header())
+							}
+						} else if rec.Code != http.StatusNotFound || calls.Load() != before {
+							t.Fatalf("HTTP route leaked onto %s (HTTP exposed=%t)", name, exposeHTTP)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestPassthroughLaneSelection(t *testing.T) {
 	conf := config.NewConfig()
 	o := conf.Backends["default"]
@@ -834,6 +954,70 @@ func TestPassthroughLaneSelection(t *testing.T) {
 	}
 	if isPassthroughPath(nil) {
 		t.Error("nil path options must not select the passthrough lane")
+	}
+}
+
+func TestAuthenticatorRunsBeforeRewriters(t *testing.T) {
+	const user, password, host, path = "client", "client-password", "example.com", "/data"
+	const backendName, handlerName = "default", "capture"
+	logger.SetLogger(logging.NoopLogger())
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oo := conf.Backends[backendName]
+	oo.Hosts = []string{host}
+	oo.AuthOptions = &autho.Options{
+		Name: "client-auth", Provider: basic.ID,
+		Users: configtypes.EnvStringMap{user: password},
+	}
+	if oo.AuthOptions.Authenticator, err = basic.New(map[string]any{"options": oo.AuthOptions}); err != nil {
+		t.Fatal(err)
+	}
+	rpc, _ := reverseproxycache.NewClient(backendName, oo, lm.NewRouter(), nil, nil, nil)
+	var seenAuth string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenAuth = r.Header.Get(headers.NameAuthorization)
+		w.WriteHeader(http.StatusOK)
+	})
+	injected := "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
+	inject, err := rewriter.ParseRewriteList(rwopts.RewriteList{
+		[]string{"header", "set", headers.NameAuthorization, injected},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := po.New()
+	p.Path = path
+	p.HandlerName = handlerName
+	p.Methods = []string{http.MethodGet}
+	p.ReqRewriter = inject
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, handlers.Lookup{handlerName: capture}, rpc, oo, nil, nil)
+
+	// a credential only the rewriter adds must not authenticate the client
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	w := httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("rewriter-added credential: status %d; want %d", w.Code, http.StatusUnauthorized)
+	}
+	// the rewriter runs after authentication, so its header survives the authenticator's Sanitize
+	req = httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	req.SetBasicAuth(user, password)
+	w = httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || seenAuth != injected {
+		t.Fatalf("client credential: status %d, handler saw %q; want %d and the rewritten header",
+			w.Code, seenAuth, http.StatusOK)
 	}
 }
 
@@ -1445,5 +1629,117 @@ func TestDefaultBackendRoutesMirror(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the default backend's request was not mirrored")
+	}
+}
+
+// an upgrade goes where it can be tunneled: to the passthrough lane of a backend with an origin, to
+// the handler of a virtual backend that sends each request to one backend, and nowhere otherwise
+func TestRouteUpgrades(t *testing.T) {
+	var tookPassthrough bool
+	var reached *http.Request
+	passthrough := http.HandlerFunc(func(http.ResponseWriter, *http.Request) { tookPassthrough = true })
+	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { reached = r })
+	upgrade := func(h http.Handler) {
+		tookPassthrough, reached = false, nil
+		r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+		r.Header.Set("Connection", "Upgrade")
+		r.Header.Set("Upgrade", "websocket")
+		h.ServeHTTP(httptest.NewRecorder(), r)
+	}
+	virtual := func(provider, mechanism string) backends.Backend {
+		o := bo.New()
+		o.Name, o.Provider = "v", provider
+		var c backends.Backend
+		var err error
+		if provider == providers.ALB {
+			o.ALBOptions = &options.Options{MechanismName: mechanism}
+			if err = o.ALBOptions.Initialize("v"); err != nil {
+				t.Fatal(err)
+			}
+			c, err = alb.NewClient("v", o, lm.NewRouter(), nil, nil, nil)
+		} else {
+			c, err = rule.NewClient("v", o, lm.NewRouter(), nil, nil, nil)
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	o := bo.New()
+	o.Provider, o.OriginURL = providers.ReverseProxy, "http://example.com"
+	origin, err := reverseproxy.NewClient("origin", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgrade(routeUpgrades(origin, passthrough, next))
+	if !tookPassthrough || reached != nil {
+		t.Error("a backend with an origin did not tunnel its upgrade")
+	}
+	// a route with no backend has no passthrough lane either
+	upgrade(routeUpgrades(nil, nil, next))
+	if reached == nil {
+		t.Error("a route with no backend dropped its request")
+	}
+	for _, c := range []backends.Backend{virtual(providers.ALB, names.MechanismRR), virtual(providers.Rule, "")} {
+		upgrade(routeUpgrades(c, passthrough, next))
+		if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") == "" {
+			t.Errorf("%s did not hand its upgrade to its handler", c.Configuration().Provider)
+		}
+	}
+	// a fanout has no one backend to tunnel to, so it serves the request without the upgrade
+	upgrade(routeUpgrades(virtual(providers.ALB, names.MechanismFR), passthrough, next))
+	if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") != "" {
+		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
+	}
+}
+
+// A backend that signs for itself drops a client's SigV4 signature before its handlers see it.
+func TestSigV4BackendStripsClientSignature(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	for _, signs := range []bool{true, false} {
+		conf, err := config.Load([]string{
+			"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		oo := conf.Backends["default"]
+		if signs {
+			oo.SigV4 = &taws.Options{Region: "us-east-1", AccessKey: "AKIATEST", SecretKey: "s"}
+		}
+		rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+
+		var seen http.Header
+		capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.Header.Clone()
+			w.WriteHeader(http.StatusOK)
+		})
+		p := po.New()
+		p.Path = "/"
+		p.HandlerName = "capture"
+		p.Methods = []string{http.MethodGet}
+		p.MatchType, p.MatchTypeName = matching.PathMatchTypePrefix, matching.PathMatchNamePrefix
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		oo.Paths = po.List{p}
+		rtr := lm.NewRouter()
+		RegisterPathRoutes(rtr, conf, handlers.Lookup{"capture": capture}, rpc, oo, nil, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/default/api/v1/query", nil)
+		req.Header.Set(headers.NameAuthorization, "AWS4-HMAC-SHA256 Credential=ASIAGRAFANA/x, Signature=y")
+		req.Header.Set(headers.NameXAmzSecurityToken, "grafana-token")
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("signs=%v: status %d", signs, w.Code)
+		}
+		auth, token := seen.Get(headers.NameAuthorization), seen.Get(headers.NameXAmzSecurityToken)
+		if signs && (auth != "" || token != "") {
+			t.Fatalf("signing backend kept the client signature: %q %q", auth, token)
+		}
+		if !signs && (auth == "" || token != "grafana-token") {
+			t.Fatalf("non-signing backend changed the client headers: %q %q", auth, token)
+		}
 	}
 }

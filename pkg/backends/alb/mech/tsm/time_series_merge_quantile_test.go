@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	responsemerge "github.com/trickstercache/trickster/v2/pkg/proxy/response/merge"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
@@ -56,19 +57,16 @@ func quantileMemberHandler(spec quantileMemberSpec, recorder *queryRecorder) htt
 
 		seriesList := make(dataset.SeriesList, 0, len(spec.values))
 		for instance, value := range spec.values {
-			seriesList = append(seriesList, &dataset.Series{
-				Header: dataset.SeriesHeader{
-					Name:           "up",
-					Tags:           dataset.Tags{"__name__": "up", "instance": instance, "job": "api", "replica": spec.replica},
-					QueryStatement: query,
-					ValueFieldsList: timeseries.FieldDefinitions{{
-						Name: "value", DataType: timeseries.String,
-					}},
-				},
-				Points: dataset.Points{{
-					Epoch: epoch.Epoch(100), Values: []any{value},
+			seriesList = append(seriesList, dataset.NewSeries(dataset.SeriesHeader{
+				Name:           "up",
+				Tags:           dataset.Tags{"__name__": "up", "instance": instance, "job": "api", "replica": spec.replica},
+				QueryStatement: query,
+				ValueFieldsList: timeseries.FieldDefinitions{{
+					Name: "value", DataType: timeseries.String,
 				}},
-			})
+			}, dataset.Points{{
+				Epoch: epoch.Epoch(100), Values: []any{value},
+			}}))
 		}
 		seriesList.SortByTags()
 
@@ -106,8 +104,8 @@ func quantileRespondFunc(w http.ResponseWriter, _ *http.Request, accum *response
 	}
 	series := ds.Results[0].SeriesList[0]
 	value := ""
-	if series != nil && len(series.Points) > 0 && len(series.Points[0].Values) > 0 {
-		value = formatAny(series.Points[0].Values[0])
+	if series != nil && series.PointCount() > 0 && len(dspoints.Of(series)[0].Values) > 0 {
+		value = formatAny(dspoints.Of(series)[0].Values[0])
 	}
 	_, _ = w.Write([]byte("MERGED:tags=" + series.Header.Tags.JSON() + "|value=" + value +
 		"|warnings=" + strings.Join(dsWarnings(ds), ",")))

@@ -72,3 +72,50 @@ func TestClassification(t *testing.T) {
 	require.Equal(t, "**.example.com", ToAnyDepth("**.example.com"))
 	require.Equal(t, "example.com", ToAnyDepth("example.com"))
 }
+
+func TestReserved(t *testing.T) {
+	for _, addr := range []string{"unresolved.kgw.invalid:1", "x.INVALID.:9", "x.invalid", "[x.invalid]:5"} {
+		if !Reserved(addr) {
+			t.Errorf("Reserved(%q) = false", addr)
+		}
+	}
+	for _, addr := range []string{"invalid.example.com:1", "10.0.0.1:1", "", "invalid", "[::1]:80"} {
+		if Reserved(addr) {
+			t.Errorf("Reserved(%q) = true", addr)
+		}
+	}
+}
+
+func TestOverlap(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want bool
+	}{
+		{"", "example.com", true},
+		{"example.com", "EXAMPLE.com", true},
+		{"a.example.com", "b.example.com", false},
+		{"*.example.com", "a.example.com", true},
+		{"*.example.com", "a.b.example.com", false},
+		{"**.example.com", "a.b.example.com", true},
+		{"*.example.com", "example.com", false},
+		{"*.example.com", "**.example.com", true},
+		{"*.b.example.com", "**.example.com", true},
+		{"*.b.example.com", "*.example.com", false},
+		{"**.b.example.com", "*.example.com", false},
+		{"*.example.com", "**.b.example.com", false},
+		{"**.example.com", "**.b.example.com", true},
+		{"*.example.com", "*.example.org", false},
+		{"a.example.com", "*.example.org", false},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.want, Overlap(tt.a, tt.b), "%q and %q", tt.a, tt.b)
+		require.Equal(t, tt.want, Overlap(tt.b, tt.a), "%q and %q", tt.b, tt.a)
+	}
+}
+
+func TestListsOverlap(t *testing.T) {
+	require.True(t, ListsOverlap(nil, []string{"a.example.com"}))
+	require.True(t, ListsOverlap([]string{"a.example.com"}, nil))
+	require.True(t, ListsOverlap([]string{"a.example.com", "b.example.com"}, []string{"**.example.com"}))
+	require.False(t, ListsOverlap([]string{"a.example.com"}, []string{"b.example.com", "c.example.com"}))
+}

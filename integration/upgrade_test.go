@@ -54,7 +54,8 @@ func echoUpgradeOrigin(t *testing.T) *httptest.Server {
 		if err != nil {
 			return
 		}
-		brw.WriteString("echo:" + line)
+		brw.WriteString("echo:")
+		brw.WriteString(line)
 		brw.Flush()
 	}))
 	t.Cleanup(s.Close)
@@ -125,4 +126,30 @@ func TestUpgradeRejectedByOrigin(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+}
+
+// an ALB that sends each request to one member hands an upgrade to that member, which tunnels it;
+// a fanout ALB has no one member to tunnel to, so it serves the request as a plain one
+func TestUpgradeThroughALBs(t *testing.T) {
+	h := configHarness(t,
+		addPassthroughBackend("up-a", namedUpgradeOrigin(t, "up-a")),
+		addPassthroughBackend("up-b", namedUpgradeOrigin(t, "up-b")),
+		addALB("up-rr", "rr", nil, "up-a", "up-b"),
+		addALB("up-fr", "fr", nil, "up-a", "up-b"))
+	h.start(t)
+	seen := map[string]bool{}
+	for range 4 {
+		seen[upgradeThrough(t, h.BaseAddr, "/up-rr/socket", "").Get("X-Member")] = true
+	}
+	require.Equal(t, map[string]bool{"up-a": true, "up-b": true}, seen, "the ALB did not spread its tunnels")
+
+	req, err := http.NewRequest(http.MethodGet, "http://"+h.BaseAddr+"/up-fr/socket", nil)
+	require.NoError(t, err)
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "websocket")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusUpgradeRequired, resp.StatusCode,
+		"the fanout did not serve the request as the plain one its members answer")
 }

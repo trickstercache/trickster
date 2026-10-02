@@ -62,6 +62,12 @@ type RegistrationNotifier interface {
 	SubscribeRegistrations(chan bool)
 }
 
+// ChangeNotifier is implemented by health checkers that relay a change their statuses do not
+// show, such as a pool member starting to drain, to their registration subscribers
+type ChangeNotifier interface {
+	NotifyChange()
+}
+
 // Lookup is a map of named Target references
 type Lookup map[string]*target
 
@@ -100,6 +106,11 @@ func (hc *healthChecker) SubscribeRegistrations(ch chan bool) {
 	hc.mtx.Lock()
 	hc.regSubscribers = append(hc.regSubscribers, ch)
 	hc.mtx.Unlock()
+}
+
+// NotifyChange signals the registration subscribers (non-blocking) without a registration
+func (hc *healthChecker) NotifyChange() {
+	hc.notifyRegistrations()
 }
 
 func (hc *healthChecker) notifyRegistrations() {
@@ -158,10 +169,7 @@ func (hc *healthChecker) RegisterProbe(name, description string, o *ho.Options,
 
 func (hc *healthChecker) registerTarget(t *target) *Status {
 	hc.mtx.Lock()
-	if t2, ok := hc.targets[t.name]; ok && t2 != nil {
-		// synchronous stop so the old probe loop exits before the new one starts
-		t2.Stop()
-	}
+	hc.retireTargetLocked(t.name)
 	hc.targets[t.name] = t
 	hc.statuses[t.name] = t.status
 	hc.mtx.Unlock()
@@ -172,9 +180,22 @@ func (hc *healthChecker) registerTarget(t *target) *Status {
 	return t.status
 }
 
+// retireTargetLocked stops and forgets the active probe registered under name, if there is one,
+// so whatever takes the name over never runs beside it. The stop is synchronous: the old probe
+// loop has exited by the time it returns. The caller holds the lock.
+func (hc *healthChecker) retireTargetLocked(name string) {
+	if t, ok := hc.targets[name]; ok {
+		if t != nil {
+			t.Stop()
+		}
+		delete(hc.targets, name)
+	}
+}
+
 func (hc *healthChecker) RegisterVirtual(name, description string) *Status {
 	s := NewStatus(name, description, "", StatusPassing, time.Time{}, nil)
 	hc.mtx.Lock()
+	hc.retireTargetLocked(name)
 	hc.statuses[name] = s
 	hc.mtx.Unlock()
 	hc.notifyRegistrations()
@@ -184,12 +205,14 @@ func (hc *healthChecker) RegisterVirtual(name, description string) *Status {
 // RegisterExternal records a caller-managed Status (e.g., one driven by a
 // discovery provider's readiness reporting) so it surfaces in the health
 // page and status lookups. The caller owns status transitions; no probe is
-// started. Remove it with Unregister.
+// started, and an active probe already registered under the name is stopped.
+// Remove it with Unregister.
 func (hc *healthChecker) RegisterExternal(name, description string, s *Status) {
 	if name == "" || s == nil {
 		return
 	}
 	hc.mtx.Lock()
+	hc.retireTargetLocked(name)
 	hc.statuses[name] = s
 	hc.mtx.Unlock()
 	hc.notifyRegistrations()

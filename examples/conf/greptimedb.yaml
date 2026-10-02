@@ -1,0 +1,31 @@
+# Replace credentials and enable deployment-appropriate TLS before use.
+listeners:
+  greptime-pg:
+    protocol: postgres
+    port: 8489
+  greptime-mysql:
+    protocol: mysql
+    port: 8491
+
+authenticators:
+  greptime-readers:
+    provider: basic
+    proxy_preserve: true
+    users:
+      grafana_ro: ${GRAFANA_RO_PASSWORD}
+
+backends:
+  greptime:
+    provider: greptimedb
+    origin_url: http://greptime.example:4000
+    listener_names: [default, greptime-pg, greptime-mysql]
+    authenticator_name: greptime-readers
+    cache_name: default
+    postgres:
+      upstream_url: postgres://trickster_ro:REPLACE_ME@greptime.example:4003/public
+      upstream_tls_mode: disable
+    mysql:
+      upstream_url: mysql://trickster_ro:REPLACE_ME@greptime.example:4002/public
+    healthcheck:
+      interval: 5s
+      timeout: 3s

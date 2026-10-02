@@ -58,11 +58,17 @@ func TestEqual(t *testing.T) {
 	if o.Equal(o2) {
 		t.Error("expected CachePath difference to make options unequal")
 	}
+	o2 = New()
+	o2.MinFreeBytes = 1
+	if o.Equal(o2) {
+		t.Error("expected MinFreeBytes difference to make options unequal")
+	}
 }
 
 func TestUnmarshalYAML(t *testing.T) {
 	const raw = `
 cache_path: /tmp/fs-cache
+min_free_bytes: 1073741824
 `
 	o := &Options{}
 	if err := yaml.Unmarshal([]byte(raw), o); err != nil {
@@ -70,6 +76,9 @@ cache_path: /tmp/fs-cache
 	}
 	if o.CachePath != "/tmp/fs-cache" {
 		t.Errorf("expected CachePath /tmp/fs-cache, got %q", o.CachePath)
+	}
+	if o.MinFreeBytes != 1<<30 {
+		t.Errorf("expected MinFreeBytes 1073741824, got %d", o.MinFreeBytes)
 	}
 
 	o2 := &Options{}

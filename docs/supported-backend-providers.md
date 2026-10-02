@@ -6,6 +6,10 @@ Trickster currently supports the following Providers:
 
 Trickster operates as a fully-featured and highly-customizable reverse proxy cache, designed to accelerate and scale upstream endpoints like API services and other simple http services. Specify `'reverseproxycache'` or just `'rpc'` as the Provider when configuring Trickster.
 
+### <img src="./images/logos/trickster-logo.svg" width=24 /> Static File Server
+
+Trickster can serve the contents of a local directory itself, with no upstream origin, for hosting websites and other static content. Specify `'static'` as the Provider when configuring Trickster. See the [Static File Server Document](./static.md) for more information.
+
 ---
 
 ## Time Series Databases
@@ -42,6 +46,43 @@ and other Graphite-protocol backends. Specify `'graphite'` as the Provider when
 configuring Trickster.
 
 See the [Graphite Support Document](./graphite.md) for more information.
+
+### <img src="./images/external/timescaledb_logo.svg" width=24 /> PostgreSQL and TimescaleDB
+
+Trickster accepts native PostgreSQL wire-protocol connections and accelerates
+time-bucketed queries against PostgreSQL and TimescaleDB, including the
+statements Grafana's built-in PostgreSQL data source sends. Specify `postgres`
+(or its alias `timescaledb`) as the provider and expose it through a listener
+with `protocol: postgres`.
+
+See the [PostgreSQL and TimescaleDB Provider Guide](./postgres.md) for the
+supported clients, SQL, authentication, TLS, caching, routing, and operations
+contract.
+
+### <img src="./images/external/greptime-logo.svg" width=24 /> GreptimeDB
+
+Trickster accelerates eligible GreptimeDB SQL queries over HTTP, PostgreSQL
+and MySQL, plus its Prometheus-compatible range API. Specify `greptimedb` as
+the provider and map native listeners explicitly. See the
+[GreptimeDB Provider Guide](./greptimedb.md) for configuration, cache eligibility,
+Grafana macros, authentication and upstream compatibility limits.
+
+
+### <img src="./images/external/questdb-logo.svg" width=24 /> QuestDB
+
+Trickster proxies QuestDB's HTTP surface and accelerates eligible QuestDB SQL
+over the PostgreSQL wire protocol. Specify `questdb` as the provider and map a
+`protocol: postgres` listener for native clients. See the
+[QuestDB Provider Guide](./questdb.md) for configuration, cache eligibility,
+authentication and upstream compatibility limits.
+
+### <img src="./images/external/victoriametrics-logo.svg" width=24 />  VictoriaMetrics
+
+Trickster accelerates MetricsQL range queries through VictoriaMetrics' Prometheus querying API,
+caches settled instant and metadata queries, and serves its Graphite render, find and tags APIs,
+for single-node VictoriaMetrics and a tenant's vmselect paths. Specify `victoriametrics` as the
+provider; it is not a flavor of `prometheus`, and time series merging (TSM) doesn't support it yet.
+See the [VictoriaMetrics Provider Guide](./victoriametrics.md) for configuration and cache eligibility.
 
 ### <img src="./images/external/mysql_logo_60.png" width=24 /> MySQL
 

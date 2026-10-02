@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"go.yaml.in/yaml/v3"
@@ -28,13 +29,15 @@ import (
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	o := New()
-	o.Name = ""
-	if ok, err := o.Validate(); ok || err != ErrInvalidName {
-		t.Fatalf("Validate() = (%v, %v), want invalid name", ok, err)
+	for _, name := range []string{"", reserved.ReferenceNone} {
+		o := New()
+		o.Name = name
+		if ok, err := o.Validate(); ok || err != ErrInvalidName {
+			t.Fatalf("Validate(%q) = (%v, %v), want invalid name", name, ok, err)
+		}
 	}
 
-	o = New()
+	o := New()
 	o.Name = "default"
 	o.Index.MaxSizeBytes = 100
 	o.Index.MaxSizeBackoffBytes = 200
@@ -48,6 +51,34 @@ func TestValidate(t *testing.T) {
 	o.Index.MaxSizeBackoffObjects = 20
 	if ok, err := o.Validate(); ok || err != errMaxSizeBackoffObjectsTooBig {
 		t.Fatalf("Validate backoff objects = (%v, %v)", ok, err)
+	}
+
+	for name, change := range map[string]func(o *Options){
+		"scan interval":    func(o *Options) { o.Index.ScanInterval = -1 },
+		"scan batch size":  func(o *Options) { o.Index.ScanBatchSize = -1 },
+		"scan batch pause": func(o *Options) { o.Index.ScanBatchPause = -1 },
+	} {
+		o = New()
+		o.Name = "default"
+		change(o)
+		if ok, err := o.Validate(); ok || err != errNegativeScanOption {
+			t.Fatalf("Validate negative %s = (%v, %v)", name, ok, err)
+		}
+	}
+
+	o = New()
+	o.Name = "default"
+	o.Filesystem.MinFreeBytes = -1
+	if ok, err := o.Validate(); ok || err != errNegativeMinFreeBytes {
+		t.Fatalf("Validate negative min free bytes = (%v, %v)", ok, err)
+	}
+
+	o = New()
+	o.Name = "default"
+	o.Index.ScanInterval = 0
+	o.Filesystem = nil
+	if ok, err := o.Validate(); !ok || err != nil {
+		t.Fatalf("Validate(no scan interval, no filesystem) = (%v, %v)", ok, err)
 	}
 
 	o = New()

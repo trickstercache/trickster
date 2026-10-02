@@ -21,20 +21,11 @@ package l4
 import (
 	"errors"
 	"fmt"
-	"net"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 )
-
-// maxPoolDepth bounds how far a pool of pools is followed when selecting an address: a pool
-// whose members are themselves pools, which is what a weighted rule over discovered endpoints is.
-const maxPoolDepth = 2
 
 var (
 	// ErrDuplicateHost indicates a host already routed by the table.
@@ -42,159 +33,6 @@ var (
 	// ErrDuplicateCatchAll indicates a second upstream for connections naming no routed host.
 	ErrDuplicateCatchAll = errors.New("the listener already has a catch-all upstream")
 )
-
-// Upstream chooses the address a connection is relayed to.
-type Upstream interface {
-	// Addr returns the host:port to dial for the next connection, or false to refuse it.
-	Addr() (string, bool)
-}
-
-// reservedTLD is the top-level domain reserved never to resolve; an address under it refuses
-// connections without a lookup, which is how a member that must refuse its share is expressed.
-const reservedTLD = ".invalid"
-
-// Refusing reports whether an address can never be dialed: one whose host is under the reserved
-// .invalid domain.
-func Refusing(addr string) bool {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
-	return strings.HasSuffix(host, reservedTLD)
-}
-
-// Static returns an upstream with one fixed address, or one that refuses every connection when
-// the address can never be dialed.
-func Static(addr string) Upstream {
-	if Refusing(addr) {
-		return refusingUpstream{}
-	}
-	return staticUpstream{addr: addr}
-}
-
-type staticUpstream struct {
-	addr string
-}
-
-func (s staticUpstream) Addr() (string, bool) {
-	return s.addr, true
-}
-
-// refusingUpstream refuses every connection, without a lookup or a dial
-type refusingUpstream struct{}
-
-func (refusingUpstream) Addr() (string, bool) {
-	return "", false
-}
-
-// pooled is implemented by a backend whose members are a load balancer pool.
-type pooled interface {
-	Pool() pool.Pool
-}
-
-// FromBackend returns an upstream over a backend: a pool holder commits each connection to one
-// healthy member by weighted rotation, a member that is itself a pool choosing again the same
-// way, and any other backend is dialed at its origin host. A member that cannot be dialed refuses
-// its share rather than passing it to a sibling, as the HTTP load balancer does.
-func FromBackend(b backends.Backend) Upstream {
-	return fromBackend(b, 0)
-}
-
-func fromBackend(b backends.Backend, depth int) Upstream {
-	if b == nil {
-		return nil
-	}
-	if p, ok := b.(pooled); ok {
-		return &poolUpstream{pool: p.Pool, depth: depth}
-	}
-	cfg := b.Configuration()
-	if cfg == nil || cfg.Host == "" {
-		return nil
-	}
-	return Static(cfg.Host)
-}
-
-// poolUpstream rotates over a pool's healthy members with the members' weights, so consecutive
-// connections are apportioned as the round robin mechanism apportions requests.
-type poolUpstream struct {
-	pool  func() pool.Pool
-	depth int
-	pos   atomic.Uint64
-	// nested keeps one rotation per member that is itself a pool, keyed by the member's
-	// backend, which outlives the pools swapped beneath it as membership changes
-	nested sync.Map
-}
-
-func (p *poolUpstream) Addr() (string, bool) {
-	pl := p.pool()
-	if pl == nil {
-		return "", false
-	}
-	targets := pl.Targets()
-	if len(targets) == 0 {
-		return "", false
-	}
-	t := targets[p.start(targets)]
-	if t == nil {
-		return "", false
-	}
-	return p.resolve(t)
-}
-
-func (p *poolUpstream) start(targets pool.Targets) int {
-	// each member owns a weight-sized span of the rotation, as the round robin mechanism does
-	var total int
-	weighted := false
-	for _, t := range targets {
-		if t == nil {
-			continue
-		}
-		if t.Weight() != 1 {
-			weighted = true
-		}
-		total += t.Weight()
-	}
-	if total == 0 {
-		return 0
-	}
-	k := int(p.pos.Add(1) % uint64(total)) // #nosec G115 -- the value is below total, an int sum
-	if !weighted {
-		return k
-	}
-	for i, t := range targets {
-		if t == nil {
-			continue
-		}
-		k -= t.Weight()
-		if k < 0 {
-			return i
-		}
-	}
-	return len(targets) - 1
-}
-
-func (p *poolUpstream) resolve(t *pool.Target) (string, bool) {
-	b := t.Backend()
-	if b == nil {
-		return "", false
-	}
-	if _, ok := b.(pooled); ok {
-		if p.depth+1 >= maxPoolDepth {
-			return "", false
-		}
-		v, _ := p.nested.LoadOrStore(b, fromBackend(b, p.depth+1))
-		if up, ok := v.(Upstream); ok && up != nil {
-			return up.Addr()
-		}
-		return "", false
-	}
-	cfg := b.Configuration()
-	if cfg == nil || cfg.Host == "" || Refusing(cfg.Host) {
-		return "", false
-	}
-	return cfg.Host, true
-}
 
 // Table routes a connection to an upstream by the server name it offered: an exact host first,
 // then the longest wildcard suffix, then the catch-all for a connection naming no routed host.

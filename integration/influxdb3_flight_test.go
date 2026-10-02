@@ -132,7 +132,6 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 	// Unique flight port per test to avoid collisions across parallel runs.
 	h, flightPort := flightConfigHarness(t)
 	h.start(t)
-	waitForInfluxDB3Data(t, "127.0.0.1:8181")
 	seedNow := time.Now().UTC().Truncate(time.Minute)
 	seedFlightDeltaData(t, "127.0.0.1:8181", seedNow)
 	seedRange := fmt.Sprintf("time >= '%s' AND time < '%s'",
@@ -140,19 +139,7 @@ func TestInfluxDB3FlightSQL(t *testing.T) {
 
 	tricksterFlightAddr := fmt.Sprintf("127.0.0.1:%d", flightPort)
 
-	// Wait for the Flight listener to accept connections — it starts in a
-	// goroutine during backend construction so there can be a brief lag.
-	var client *flightsql.Client
-	require.Eventually(t, func() bool {
-		c, err := flightsql.NewClientCtx(context.Background(), tricksterFlightAddr, nil, nil,
-			grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return false
-		}
-		client = c
-		return true
-	}, 10*time.Second, 250*time.Millisecond, "flight sql listener never became ready")
-	t.Cleanup(func() { client.Close() })
+	client := readyFlightClient(t, tricksterFlightAddr)
 
 	// All calls need the `database` header to tell v3 which DB to query.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

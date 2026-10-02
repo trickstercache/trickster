@@ -53,7 +53,7 @@ on, and it is what makes one cached series able to serve every output format.
 ## Configuration
 
 Every common backend option applies (`cache_name`, `timeseries_ttl`,
-`timeseries_retention_factor`, `backfill_tolerance`, `max_object_size_bytes`,
+`timeseries_retention_factor`, `volatile_window`, `max_object_size_bytes`,
 `timeout`, `healthcheck`, `paths`, TLS, authenticators); two of them,
 `max_object_size_bytes` and `timeseries_retention_factor`, take
 Graphite-specific defaults, as [Sizing](#sizing) explains.
@@ -235,7 +235,7 @@ on `trickster_graphite_resolution_lookups_total`:
 | Confidence | Meaning | Behavior |
 |---|---|---|
 | `exact` | The step was read from an origin response for this metric at this age | Delta cached |
-| `derived` | Computed from known ladders — the LCM across a wildcard's leaves, or a step-altering function Trickster understands | Delta cached |
+| `derived` | Computed from known ladders — the shared step of a wildcard's leaves, or a step-altering function Trickster understands | Delta cached |
 | `configured` | From `static_retentions` only, not yet confirmed by probe | Delta cached, and a confirming probe is scheduled |
 | `unknown` | No usable step | Object cached |
 
@@ -352,6 +352,7 @@ is recorded on `trickster_graphite_fallbacks_total`:
 | `function_not_allowlisted` | A function in the target is not on the allowlist |
 | `unknown_step` | The step could not be resolved (metric not yet learned, probe failing, or the window is wholly beyond `maxRetention`) |
 | `missing_target` | No `target` parameter, or a wildcard that matches nothing |
+| `mixed_steps` | A function combines series stored at different steps. graphite-web consolidates them to their least common multiple starting from each series' first point, so the buckets move with `from` and cannot be stitched |
 | `parse_error` | The target expression, `from`/`until`, or `now` did not parse |
 | `non_series_format` | An image or pickle format, or `graphType=pie` |
 | `multi_target_step_mismatch` | Targets resolve to different steps and could not be split |
@@ -572,6 +573,10 @@ environment (`docs/developer/environment/`) is set up this way, with a
 dashboard whose panels deliberately exercise archive boundaries, the retention
 edge, schema drift, non-allowlisted functions and mixed-ladder multi-target
 requests.
+
+## Step alignment
+
+Graphite supports the `truncate` [step alignment](./step-alignment.md) mode, its default, and `off`. Whisper stores and returns whole buckets only, so there are no partial buckets for the other modes to fetch, and configuring one fails at load. `off` sends each render request to Graphite as the client sent it, through the fallback lane, cached as an object for one minute. A render target has no comment syntax, so Graphite queries can't carry directives.
 
 ## Known gaps
 

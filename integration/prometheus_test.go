@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 
 	"github.com/stretchr/testify/require"
 )
@@ -57,8 +59,10 @@ func TestPrometheus(t *testing.T) {
 				keys.Status: status.StatusKeyMiss,
 			})
 
-			_, hdr2 := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
-			requireTricksterResult(t, hdr2, map[string]string{keys.Status: status.StatusHit})
+			requireCacheHit(t, func() map[string]string {
+				_, hdr2 := h.queryProm(t, c.Backend, "/api/v1/query_range", withParams(params))
+				return parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
+			})
 		})
 	})
 
@@ -182,21 +186,30 @@ func TestPrometheus(t *testing.T) {
 	})
 
 	t.Run("fast forward", func(t *testing.T) {
-		now := time.Now()
-		params := url.Values{
-			"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
-			"start": {fmt.Sprintf("%d", now.Add(-30*time.Minute).Unix())},
-			"end":   {fmt.Sprintf("%d", now.Unix())},
-			// step must exceed FastForwardTTL (default 15s) for fast-forward to activate
-			"step": {"60"},
-		}
-		_, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+		// step must exceed partial_bucket_ttl (default 15s) for fast-forward to activate
+		const step = time.Minute
+		// fast-forward needs the request's step-aligned end to be Trickster's
+		// step-aligned now, so an attempt that straddles a step boundary is retried
+		hdr, ok := stepwindow.Retry(step, 3, func(attempt int, now time.Time) http.Header {
+			if attempt > 0 {
+				t.Logf("attempt %d straddled a step boundary; retrying", attempt)
+			}
+			params := url.Values{
+				"query": {fmt.Sprintf("up + 0*%d", now.UnixNano())},
+				"start": {fmt.Sprintf("%d", now.Add(-30*time.Minute).Unix())},
+				"end":   {fmt.Sprintf("%d", now.Unix())},
+				"step":  {strconv.Itoa(int(step / time.Second))},
+			}
+			_, hdr := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+			return hdr
+		})
+		require.True(t, ok, "every fast-forward attempt straddled a step boundary")
 		result := parseTricksterResult(hdr.Get(headers.NameTricksterResult))
 		t.Logf("fast forward: %s", hdr.Get(headers.NameTricksterResult))
 		require.Equal(t, "DeltaProxyCache", result["engine"])
 		require.NotEmpty(t, result[keys.FFStatus], "expected ffstatus in X-Trickster-Result")
 		require.NotEqual(t, "off", result[keys.FFStatus],
-			"fast-forward should be attempted for a query ending at now with step > fastforward_ttl")
+			"fast-forward should be attempted for a query ending at now with step > partial_bucket_ttl")
 	})
 
 	t.Run("POST instant queries with different query params return different results", func(t *testing.T) {
@@ -384,10 +397,11 @@ func TestPrometheus(t *testing.T) {
 		require.Equal(t, status.StatusKeyMiss, result[keys.Status])
 
 		// Second request: cache hit
-		_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
-		result2 := parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
-		t.Logf("histogram cache hit: %s", hdr2.Get(headers.NameTricksterResult))
-		require.Equal(t, status.StatusHit, result2[keys.Status])
+		requireCacheHit(t, func() map[string]string {
+			_, hdr2 := queryTricksterProm(t, tricksterAddr, "prom1", "/api/v1/query_range", params)
+			t.Logf("histogram cache hit: %s", hdr2.Get(headers.NameTricksterResult))
+			return parseTricksterResult(hdr2.Get(headers.NameTricksterResult))
+		})
 	})
 
 	t.Run("native histogram round-trip fidelity", func(t *testing.T) {

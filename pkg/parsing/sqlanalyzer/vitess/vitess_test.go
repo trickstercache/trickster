@@ -138,27 +138,6 @@ func TestAnalyzerClassifiesUnsupportedQueries(t *testing.T) {
 	}
 }
 
-func TestSQLCommentText(t *testing.T) {
-	tests := []struct {
-		name, statement, want string
-	}{
-		{"block", "SELECT '/* ignored */', \"# ignored\", `-- ignored` /* block */", " block  "},
-		{"escaped quote", `SELECT 'can\'t # comment' /* after */`, " after  "},
-		{"doubled quote", "SELECT 'it''s -- data' # tail", " tail"},
-		{"unterminated block", "SELECT 1 /* partial", ""},
-		{"hash line", "SELECT 1 # first\n# second", " first  second"},
-		{"dash line", "SELECT 1 -- first\n-- second", " first  second"},
-		{"operators", "SELECT 6/2, 3-1, 2--1", ""},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := sqlCommentText(tc.statement); got != tc.want {
-				t.Errorf("sqlCommentText() = %q, want %q", got, tc.want)
-			}
-		})
-	}
-}
-
 func TestParserDefensiveBranches(t *testing.T) {
 	parse := func(source string) sqlparser.Expr {
 		t.Helper()
@@ -676,5 +655,87 @@ func BenchmarkRenderGrafanaExtent(b *testing.B) {
 		if _, err := plan.RenderExtent(extent); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestAnalyzerKeepsRawBounds(t *testing.T) {
+	query := strings.Replace(grafanaDateTimeQuery, "1785628800", "1785628807", 1)
+	got := MustNewAnalyzer().Analyze(query, time.Time{})
+	if got.Mode != sqlanalyzer.CacheModeDelta || got.Plan == nil {
+		t.Fatalf("Analyze() = %s/%s (%v)", got.Mode, got.Reason, got.Err)
+	}
+	p := got.Plan
+	// BETWEEN's inclusive upper is floored to its exclusive grid equivalent, and kept raw
+	if !p.UpperBound.Value.Equal(time.Unix(1785628800, 0)) || p.UpperBound.Inclusive {
+		t.Fatalf("upper bound = %+v", p.UpperBound)
+	}
+	if !p.RawUpper.Value.Equal(time.Unix(1785628807, 0)) || !p.RawUpper.Inclusive ||
+		!p.RawLower.Value.Equal(time.Unix(1785542400, 0)) || !p.RawLower.Inclusive {
+		t.Fatalf("raw bounds = %+v, %+v", p.RawLower, p.RawUpper)
+	}
+	half := MustNewAnalyzer().Analyze(`SELECT UNIX_TIMESTAMP(ts) DIV 60 * 60 AS time_sec, count(*) FROM events `+
+		`WHERE ts >= FROM_UNIXTIME(1785542407) AND ts < FROM_UNIXTIME(1785628807) GROUP BY time_sec`, time.Time{})
+	if half.Plan == nil || !half.Plan.RawUpper.Value.Equal(time.Unix(1785628807, 0)) || half.Plan.RawUpper.Inclusive {
+		t.Fatalf("exclusive raw upper = %+v", half.Plan)
+	}
+}
+
+func TestRenderRange(t *testing.T) {
+	// each partial bucket renders through the statement's own comparators: an exclusive end one tick
+	// below it under <=, and the client's raw inclusive upper as written
+	const lower, upper = 1785542407, 1785628807
+	a := MustNewAnalyzer()
+	now := time.Unix(upper+3600, 0)
+	for where, want := range map[string][2][2]int64{
+		"ts >= FROM_UNIXTIME(%d) AND ts < FROM_UNIXTIME(%d)":  {{lower, 1785542460}, {1785628800, upper}},
+		"ts >= FROM_UNIXTIME(%d) AND ts <= FROM_UNIXTIME(%d)": {{lower, 1785542459}, {1785628800, upper}},
+		"ts BETWEEN FROM_UNIXTIME(%d) AND FROM_UNIXTIME(%d)":  {{lower, 1785542459}, {1785628800, upper}},
+	} {
+		query := fmt.Sprintf("SELECT UNIX_TIMESTAMP(ts) DIV 60 * 60 AS time_sec, count(*) FROM events WHERE "+
+			where+" GROUP BY time_sec", lower, upper)
+		plan := a.Analyze(query, now).Plan
+		if plan == nil {
+			t.Fatalf("%s: no delta plan", where)
+		}
+		p := timeseries.PlanRange(plan.RequestedRange(now), plan.Step, plan.Phase, timeseries.SampleModelBucket,
+			timeseries.StepAlignmentPartial, now)
+		if p.PartialCount != 2 {
+			t.Fatalf("%s: %d partial buckets", where, p.PartialCount)
+		}
+		for i, pb := range p.Partials[:p.PartialCount] {
+			rendered, err := plan.RenderRange(pb)
+			if err != nil {
+				t.Fatalf("%s: %v", where, err)
+			}
+			for _, literal := range want[i] {
+				if !strings.Contains(rendered, fmt.Sprintf("FROM_UNIXTIME(%d)", literal)) {
+					t.Errorf("%s: partial %d rendered %q, want %d", where, i, rendered, literal)
+				}
+			}
+			if got := strings.Count(rendered, "FROM_UNIXTIME("); got != 2 {
+				t.Errorf("%s: partial %d rendered %d bounds: %q", where, i, got, rendered)
+			}
+		}
+	}
+	plan := a.Analyze(safeDateTimeQuery, now).Plan
+	valid := timeseries.PartialBucket{Lower: time.Unix(lower, 0), Upper: time.Unix(1785542460, 0)}
+	if _, err := plan.RenderRange(valid); err != nil {
+		t.Fatal(err)
+	}
+	for name, change := range map[string]func(pb *timeseries.PartialBucket){
+		"exclusive lower":   func(pb *timeseries.PartialBucket) { pb.LowerExclusive = true },
+		"open upper":        func(pb *timeseries.PartialBucket) { pb.Upper = time.Time{} },
+		"inclusive under <": func(pb *timeseries.PartialBucket) { pb.UpperInclusive = true },
+		"sub-second lower":  func(pb *timeseries.PartialBucket) { pb.Lower = pb.Lower.Add(time.Millisecond) },
+		"sub-second upper":  func(pb *timeseries.PartialBucket) { pb.Upper = pb.Upper.Add(time.Millisecond) },
+	} {
+		pb := valid
+		change(&pb)
+		if _, err := plan.RenderRange(pb); !errors.Is(err, sqlanalyzer.ErrUnsupportedRange) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if !representable(time.Unix(0, 1), boundEpochNanos) || representable(time.Unix(0, 1), boundEpochSeconds) {
+		t.Error("representable")
 	}
 }

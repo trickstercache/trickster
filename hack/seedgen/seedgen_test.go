@@ -211,8 +211,10 @@ func TestRunWritesAndSkips(t *testing.T) {
 		}
 	}
 	env, _ := os.ReadFile(filepath.Join(dir, envName))
-	for _, key := range []string{"SOURCE_ROWS=", "SOURCE_PICKUP_MIN_EPOCH=", "SOURCE_PICKUP_MAX_EPOCH=",
-		"SOURCE_DROPOFF_MIN_EPOCH=", "SOURCE_DROPOFF_MAX_EPOCH=", "SEED_EPOCH=1789000000", "SHIFT_SECONDS="} {
+	for _, key := range []string{
+		"SOURCE_ROWS=", "SOURCE_PICKUP_MIN_EPOCH=", "SOURCE_PICKUP_MAX_EPOCH=",
+		"SOURCE_DROPOFF_MIN_EPOCH=", "SOURCE_DROPOFF_MAX_EPOCH=", "SEED_EPOCH=1789000000", "SHIFT_SECONDS=",
+	} {
 		if !strings.Contains(string(env), key) {
 			t.Fatalf("seed-window.env missing %s:\n%s", key, env)
 		}

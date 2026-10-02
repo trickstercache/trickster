@@ -18,6 +18,7 @@ package brotli
 
 import (
 	"bytes"
+	"io"
 	"net/http/httptest"
 	"testing"
 )
@@ -72,6 +73,24 @@ func TestPooledEncoderRoundtrip(t *testing.T) {
 		}
 		if string(decoded) != string(data) {
 			t.Fatalf("iteration %d: expected %q got %q", i, data, decoded)
+		}
+	}
+}
+
+func TestPooledCodecsRoundtripLevels(t *testing.T) {
+	want := bytes.Repeat([]byte("trickster pooled codec "), 512)
+	for _, level := range []int{-1, 0, 1, 4, 11, 12} {
+		var buf bytes.Buffer
+		enc := NewEncoder(&buf, level)
+		enc.Write(want)
+		if err := enc.Close(); err != nil {
+			t.Fatal(err)
+		}
+		dec := NewDecoder(bytes.NewReader(buf.Bytes()))
+		got, err := io.ReadAll(dec)
+		dec.Close()
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("level %d: round trip failed: %v", level, err)
 		}
 	}
 }

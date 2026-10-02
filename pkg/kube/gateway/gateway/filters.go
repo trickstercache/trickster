@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -57,7 +58,14 @@ var (
 	errBackendTimeout      = errors.New("timeouts.backendRequest must not exceed timeouts.request")
 	errRetryAttempts       = fmt.Errorf("retry.attempts must be between 1 and %d", po.MaxRetryAttempts)
 	errRetryCode           = errors.New("retry.codes must be valid HTTP status codes")
+	errSessionType         = errors.New("sessionPersistence.type must be Cookie or Header")
+	errSessionLifetime     = errors.New("sessionPersistence.cookieConfig.lifetimeType must be Session or Permanent")
+	errSessionPermanent    = errors.New("a Permanent cookie requires sessionPersistence.absoluteTimeout")
+	errSessionCookieConfig = errors.New("sessionPersistence.cookieConfig requires type Cookie")
 )
+
+// minSessionMS is the shortest session a token can keep, as it keeps time in whole seconds
+const minSessionMS = 1000
 
 // headerLocation is the response header a redirection is defined by
 const headerLocation = "Location"
@@ -69,6 +77,7 @@ type ruleFilters struct {
 	refs     [][]ir.Filter
 	timeouts *ir.RuleTimeouts
 	retry    *ir.RuleRetry
+	session  *ir.Session
 }
 
 // mirrorResolver resolves a mirror filter's backendRef into the Service that receives the
@@ -115,10 +124,11 @@ func (t *translator) lowerRuleFilters(src ir.Source, hr *gwapiv1.HTTPRoute,
 			t.reject(src, "rule %d: %s; the route is not served", i, err)
 			ok = false
 		}
-		out[i] = rf
-		if rule.SessionPersistence != nil {
-			t.reject(src, "rule %d: sessionPersistence is not supported and is ignored", i)
+		// a session the rule cannot keep leaves it served without one, as the setting only adds
+		if rf.session, err = lowerSession(rule.SessionPersistence); err != nil {
+			t.reject(src, "rule %d: %s; sessions are not kept", i, err)
 		}
+		out[i] = rf
 	}
 	return out, ok
 }
@@ -147,6 +157,69 @@ func dropUnresolvedMirrors(filters []ir.Filter) []ir.Filter {
 	return slices.DeleteFunc(filters, func(f ir.Filter) bool {
 		return f.Type == ir.FilterMirror && f.Mirror == nil
 	})
+}
+
+func lowerSession(in *gwapiv1.SessionPersistence) (*ir.Session, error) {
+	// the API's defaults are a Cookie that ends with the browser session and a session with no
+	// absolute limit; a sub-second limit is kept as the one second a token can keep
+	if in == nil {
+		return nil, nil
+	}
+	out := &ir.Session{Type: ir.SessionCookie}
+	if in.Type != nil {
+		switch *in.Type {
+		case gwapiv1.CookieBasedSessionPersistence:
+		case gwapiv1.HeaderBasedSessionPersistence:
+			out.Type = ir.SessionHeader
+		default:
+			return nil, fmt.Errorf("%w (got %q)", errSessionType, *in.Type)
+		}
+	}
+	if in.SessionName != nil && *in.SessionName != "" {
+		out.Name = *in.SessionName
+		if err := validSessionName(out.Type, out.Name); err != nil {
+			return nil, fmt.Errorf("sessionPersistence.sessionName %q: %w", out.Name, err)
+		}
+	}
+	var err error
+	if out.AbsoluteMS, err = lowerDuration("sessionPersistence.absoluteTimeout",
+		in.AbsoluteTimeout); err != nil {
+		return nil, err
+	}
+	if out.AbsoluteMS > 0 && out.AbsoluteMS < minSessionMS {
+		out.AbsoluteMS = minSessionMS
+	}
+	if in.CookieConfig == nil || in.CookieConfig.LifetimeType == nil {
+		return out, nil
+	}
+	if out.Type != ir.SessionCookie {
+		return nil, errSessionCookieConfig
+	}
+	switch *in.CookieConfig.LifetimeType {
+	case gwapiv1.SessionCookieLifetimeType:
+	case gwapiv1.PermanentCookieLifetimeType:
+		if out.AbsoluteMS == 0 {
+			return nil, errSessionPermanent
+		}
+		out.Permanent = true
+	default:
+		return nil, fmt.Errorf("%w (got %q)", errSessionLifetime, *in.CookieConfig.LifetimeType)
+	}
+	return out, nil
+}
+
+// validSessionName checks a session name the way the generated sticky block will be, where a
+// cookie whose name promises Secure is always marked Secure
+func validSessionName(typ, name string) error {
+	if typ == ir.SessionHeader {
+		o := so.Options{Mode: so.ModeHeader, Header: so.HeaderOptions{Name: name}}
+		return o.Validate()
+	}
+	o := so.Options{Mode: so.ModeCookie, Cookie: so.CookieOptions{Name: name}}
+	if so.SecureCookieName(name) {
+		o.Cookie.Secure = so.SecureAlways
+	}
+	return o.Validate()
 }
 
 func lowerTimeouts(in *gwapiv1.HTTPRouteTimeouts) (*ir.RuleTimeouts, error) {

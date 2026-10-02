@@ -96,6 +96,11 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 		if err != nil {
 			return nil, err
 		}
+		if o.ALBOptions != nil {
+			if w := o.ALBOptions.PoolRepeatWarning(k); w != "" {
+				c.addLoaderWarning(w)
+			}
+		}
 	}
 
 	if len(c.Discovery) > 0 {
@@ -103,6 +108,8 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 			return nil, err
 		}
 	}
+
+	c.ACME.Initialize()
 
 	if c.Frontend != nil {
 		if err := c.Frontend.Initialize(); err != nil {
@@ -150,6 +157,10 @@ func LoadWithOverlay(args []string, overlay *Overlay) (*Config, error) {
 					activeCaches.Set(backend.CacheName)
 				}
 			}
+		}
+		// ACME storage may borrow a redis cache's connection settings
+		if name := c.ACME.RedisCacheName(); name != "" {
+			activeCaches.Set(name)
 		}
 		warnings, err := c.Caches.Initialize(activeCaches)
 		if err != nil {

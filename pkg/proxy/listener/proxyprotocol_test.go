@@ -125,3 +125,76 @@ func TestListenerProxyProtocol(t *testing.T) {
 		require.Equal(t, "400 Bad Request", status)
 	})
 }
+
+func TestObservedConnectionProxyTLV(t *testing.T) {
+	tcp, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	ln := (&ProxyProtocolOptions{Enabled: true}).wrap(tcp)
+	defer ln.Close()
+	accept := func(t *testing.T, send func(net.Conn)) *observedConnection {
+		t.Helper()
+		client, err := net.Dial("tcp", ln.Addr().String())
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = client.Close() })
+		send(client)
+		c, err := ln.Accept()
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = c.Close() })
+		return &observedConnection{Conn: c}
+	}
+	const vpce = 0xEA
+	withTLVs := accept(t, func(c net.Conn) {
+		h := proxyproto.HeaderProxyFromAddrs(2,
+			&net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 4242},
+			&net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 80})
+		require.NoError(t, h.SetTLVs([]proxyproto.TLV{
+			{Type: proxyproto.PP2_TYPE_AUTHORITY, Value: []byte("shop.example.com")},
+			{Type: vpce, Value: []byte("first")},
+			{Type: vpce, Value: []byte("second")},
+		}))
+		_, err := h.WriteTo(c)
+		require.NoError(t, err)
+	})
+	v, ok := withTLVs.ProxyTLV(vpce)
+	require.True(t, ok)
+	require.Equal(t, "first", string(v))
+	v, ok = withTLVs.ProxyTLV(byte(proxyproto.PP2_TYPE_AUTHORITY))
+	require.True(t, ok)
+	require.Equal(t, "shop.example.com", string(v))
+	_, ok = withTLVs.ProxyTLV(0xEB)
+	require.False(t, ok)
+
+	// a version 1 header has no TLVs, and a connection with no header has nothing at all
+	v1 := accept(t, func(c net.Conn) {
+		_, err := io.WriteString(c, "PROXY TCP4 203.0.113.9 10.0.0.1 4242 80\r\n")
+		require.NoError(t, err)
+	})
+	_, ok = v1.ProxyTLV(vpce)
+	require.False(t, ok)
+	bare := accept(t, func(c net.Conn) {
+		_, err := io.WriteString(c, "hello")
+		require.NoError(t, err)
+	})
+	_, ok = bare.ProxyTLV(vpce)
+	require.False(t, ok)
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	_, ok = (&observedConnection{Conn: server}).ProxyTLV(vpce)
+	require.False(t, ok)
+
+	// TLVs that do not parse are no TLVs
+	broken := accept(t, func(c net.Conn) {
+		h := proxyproto.HeaderProxyFromAddrs(2,
+			&net.TCPAddr{IP: net.ParseIP("203.0.113.9"), Port: 4242},
+			&net.TCPAddr{IP: net.ParseIP("10.0.0.1"), Port: 80})
+		raw, err := h.Format()
+		require.NoError(t, err)
+		// one trailing byte cannot be a TLV, which needs three; the length covers it
+		raw[15]++
+		_, err = c.Write(append(raw, 0xEA))
+		require.NoError(t, err)
+	})
+	_, ok = broken.ProxyTLV(vpce)
+	require.False(t, ok)
+}

@@ -17,14 +17,19 @@
 package gatewayapi
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 
 	"github.com/stretchr/testify/require"
+	authv1 "k8s.io/api/authorization/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
+	k8stesting "k8s.io/client-go/testing"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 	gwfake "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/fake"
 )
 
@@ -151,4 +156,55 @@ func TestAlphaResources(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, []string{"tcproutes", "tlsroutes", "udproutes"}, names)
+}
+
+func TestXResources(t *testing.T) {
+	// the x-k8s.io group is probed apart from both channels of the main group
+	cs := kubefake.NewClientset()
+	cs.Resources = []*metav1.APIResourceList{{
+		GroupVersion: GroupVersion, APIResources: []metav1.APIResource{{Name: "httproutes"}},
+	}}
+	names, ok, err := XResources(kube.NewFromClientset(cs))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Nil(t, names)
+	cs.Resources = append(cs.Resources, &metav1.APIResourceList{
+		GroupVersion: XGroupVersion,
+		APIResources: []metav1.APIResource{{Name: "xbackendtrafficpolicies"}, {Name: "xmeshes"}},
+	})
+	names, ok, err = XResources(kube.NewFromClientset(cs))
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"xbackendtrafficpolicies", "xmeshes"}, names)
+}
+
+func TestXWatchable(t *testing.T) {
+	// an informer the API server refuses never syncs, so each verb is asked in each namespace
+	cs := kubefake.NewClientset()
+	var asked []string
+	cs.PrependReactor("create", "selfsubjectaccessreviews",
+		func(a k8stesting.Action) (bool, runtime.Object, error) {
+			r := a.(k8stesting.CreateAction).GetObject().(*authv1.SelfSubjectAccessReview)
+			attrs := r.Spec.ResourceAttributes
+			asked = append(asked, attrs.Namespace+"/"+attrs.Verb)
+			r.Status.Allowed = attrs.Group == gwapix.GroupName && attrs.Namespace != "denied"
+			return true, r, nil
+		})
+	c := kube.NewFromClientset(cs)
+	ok, err := XWatchable(t.Context(), c, ResourceBackendTrafficPolicies, nil)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.Equal(t, []string{"/list", "/watch"}, asked, "no namespaces is every namespace")
+	asked = nil
+	ok, err = XWatchable(t.Context(), c, ResourceBackendTrafficPolicies, []string{"shop", "denied", "data"})
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.Equal(t, []string{"shop/list", "shop/watch", "denied/list"}, asked)
+
+	cs.PrependReactor("create", "selfsubjectaccessreviews",
+		func(k8stesting.Action) (bool, runtime.Object, error) { return true, nil, errors.New("down") })
+	_, err = XWatchable(t.Context(), c, ResourceBackendTrafficPolicies, nil)
+	require.Error(t, err)
+	_, err = XWatchable(t.Context(), nil, ResourceBackendTrafficPolicies, nil)
+	require.ErrorIs(t, err, kube.ErrNoConnectionOptions)
 }

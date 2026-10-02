@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
 	"strconv"
 	"time"
 
@@ -113,10 +112,7 @@ func UnmarshalTimeseriesReader(reader io.Reader, trq *timeseries.TimeRangeQuery)
 			pts = dataset.Points{pt}
 			ds.ExtentList = timeseries.ExtentList{timeseries.Extent{Start: t, End: t}}
 		}
-		s := &dataset.Series{
-			Header: sh,
-			Points: pts,
-		}
+		s := dataset.NewSeries(sh, pts)
 		ds.Results[0].SeriesList[i] = s
 	}
 	return ds, nil
@@ -137,7 +133,6 @@ func pointFromValues(v []any) dataset.Point {
 	}
 	return dataset.Point{
 		Epoch:  epoch.Epoch(f1 * 1e9),
-		Size:   len(s) + 16,
 		Values: []any{s},
 	}
 }
@@ -163,6 +158,7 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 	}
 	w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[`))
 	var seriesSep string
+	var buf []byte
 	for _, s := range ds.Results[0].SeriesList {
 		if s == nil {
 			continue
@@ -174,24 +170,23 @@ func MarshalTimeseriesWriter(ts timeseries.Timeseries,
 			sep = ","
 		}
 		w.Write([]byte(`},"values":[`))
-		sep = ""
-		slices.SortFunc(s.Points, func(a, b dataset.Point) int {
-			if a.Epoch < b.Epoch {
-				return -1
+		// the rows may be a cached dataset's, which a marshal only reads, so any sort is of a copy
+		buf = buf[:0]
+		segs := s.Segments().Sorted()
+		for k := range segs {
+			seg := &segs[k]
+			for i := range seg.Len() {
+				if len(buf) > 0 {
+					buf = append(buf, ',')
+				}
+				buf = append(buf, '[')
+				buf = strconv.AppendFloat(buf, float64(seg.Epoch(i))/1e9, 'f', -1, 64)
+				buf = append(buf, ',', '"')
+				buf = append(buf, seg.FormatText(0, i)...)
+				buf = append(buf, '"', ']')
 			}
-			if a.Epoch > b.Epoch {
-				return 1
-			}
-			return 0
-		})
-		for _, p := range s.Points {
-			fmt.Fprintf(w, `%s[%s,"%s"]`,
-				sep,
-				strconv.FormatFloat(float64(p.Epoch)/1000000000, 'f', -1, 64),
-				p.Values[0],
-			)
-			sep = ","
 		}
+		w.Write(buf)
 		w.Write([]byte("]}"))
 		seriesSep = ","
 	}

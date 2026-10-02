@@ -63,8 +63,8 @@ Trickster currently does not support revalidation based on `If-Range` request he
 
  We plan to provide full support for `If-Range` as part of Trickster 1.1 or 2.0
 
-## Mockster Byte Range
+## Range Request Test Origin
 
-For verification of Trickster's compatibility with Byte Range Requests (as well as Time Series data), we created a golang library and accompanying standalone application dubbed Mockster. Mockster's Byte Range library simply prints out the `Lorem ipsum ...` sample text, pared down to the requested range or multipart ranges, with a few bells and whistles that allow you to customize its response for unit testing purposes. We make extensive use of Mockster in unit testing to verify the integrity of Trickster's output after performing operations like merging disparate range parts, extracting ranges from other ranges, or from a full body, compressing adjacent ranges into a single range in the cache, etc.
+To verify Trickster's compatibility with Byte Range Requests, the repository includes a mock origin in [pkg/testutil/mocks/rangesim](../pkg/testutil/mocks/rangesim). It serves the `Lorem ipsum ...` sample text at any path, pared down to the requested range or multipart ranges, with query parameters that customize its responses for testing. The unit tests use it extensively to verify the integrity of Trickster's output after operations like merging disparate range parts, extracting ranges from other ranges or from a full body, and compressing adjacent ranges into a single range in the cache. For examples, see [pkg/proxy/engines/objectproxycache_test.go](../pkg/proxy/engines/objectproxycache_test.go).
 
-It is fairly straightforward to run or import Mockster into your own applications. For examples of using it for Unit Testing, check out [/internal/proxy/engines/objectproxycache_test.go](https://github.com/trickstercache/trickster/blob/main/internal/proxy/engines/objectproxycache_test.go).
+The [developer environment](./developer/environment/README.md#devorigin) serves the same origin at `http://127.0.0.1:8482/byterange/`, behind its `rpc1` and `rpc2` backends.

@@ -114,8 +114,26 @@ type Spec struct {
 	CORS *CORS `json:"cors,omitempty"`
 	// HealthMode is probe or provider, for the endpoint routing mode
 	HealthMode string `json:"healthMode,omitempty"`
+	// LoadBalancing is rr, p2c, lc, lt or hrw: how traffic is spread across a Service's
+	// endpoints in the endpoint routing mode
+	LoadBalancing string `json:"loadBalancing,omitempty"`
+	// LoadBalancingKey is what hrw keeps together: client_ip, host, sni, header:<name>,
+	// cookie:<name> or query:<name>
+	LoadBalancingKey string `json:"loadBalancingKey,omitempty"`
+	// Sticky keeps a client on the endpoint it was first sent to in the endpoint routing mode:
+	// cookie, header or table, or none to turn off a less specific policy's
+	Sticky string `json:"sticky,omitempty"`
+	// StickyKey is what table mode keeps a client's endpoint by, from the loadBalancingKey
+	// vocabulary; client_ip unless set
+	StickyKey string `json:"stickyKey,omitempty"`
+	// StickyTTL and StickyIdle end a session that long after it began, and once unused that
+	// long; both are durations with a unit, of at least 1s
+	StickyTTL  string `json:"stickyTTL,omitempty"`
+	StickyIdle string `json:"stickyIdle,omitempty"`
 	// ResultHeader is Expose or Hide: whether X-Trickster-Result reaches the client
 	ResultHeader string `json:"resultHeader,omitempty"`
+	// StepAlignment is the step alignment mode of the time series backend Provider makes
+	StepAlignment string `json:"stepAlignment,omitempty"`
 }
 
 // CORS is how origin CORS headers are combined with configured ones

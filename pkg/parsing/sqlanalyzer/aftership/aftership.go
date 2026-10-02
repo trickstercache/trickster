@@ -28,19 +28,13 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/contenttype"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	chast "github.com/AfterShip/clickhouse-sql-parser/parser"
 )
 
 // Options configures an Analyzer.
-type Options struct {
-	// RoundUnalignedTimeBounds accepts raw-time-column predicates that are not
-	// aligned to the bucket cadence by rounding the lower bound up and the
-	// exclusive upper bound down to the cadence. Partial edge buckets are
-	// dropped rather than cached. Dashboard clients such as Grafana emit live,
-	// unaligned ranges; without this option those queries fall back to the OPC.
-	RoundUnalignedTimeBounds bool
-}
+type Options struct{}
 
 // Analyzer produces ClickHouse cache plans and is safe for concurrent use.
 // Its zero value is ready to use.
@@ -139,8 +133,12 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if hasSetOperation(selectQuery) {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedStatement, ErrUnsupportedStatement)
 	}
-	if selectQuery.Limit != nil || selectQuery.LimitBy != nil {
+	if selectQuery.Limit != nil || selectQuery.LimitBy != nil || selectQuery.Top != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedLimit, ErrLimitUnsupported)
+	}
+	// a sub-range fetch of these shapes computes different bucket values than the full query
+	if err := checkBucketLocality(selectQuery); err != nil {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 
 	constants := collectConstants(selectQuery.With)
@@ -158,7 +156,10 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 	if err != nil {
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedGrouping, err)
 	}
-	ranges, err := analyzeRanges(selectQuery, bucket, constants, now, a.opts.RoundUnalignedTimeBounds)
+	if !ordersByBucket(selectQuery.OrderBy, selectQuery.SelectItems, bucket) {
+		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedOrdering, ErrUnsupportedOrdering)
+	}
+	ranges, err := analyzeRanges(selectQuery, bucket, constants, now)
 	if err != nil {
 		reason := sqlanalyzer.ReasonNotTimeRange
 		if errors.Is(err, ErrUnsafePredicate) {
@@ -173,6 +174,9 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		return sqlanalyzer.ObjectAnalysis(sqlanalyzer.ReasonUnsupportedFormat, err)
 	}
 
+	readsZone := readsSessionZone(selectQuery, selectQuery.SelectItems[bucket.index].Expr)
+	zonedBounds := zonedBound(ranges.lower.style) || zonedBound(ranges.lowerStyle) ||
+		(ranges.upper != nil && zonedBound(ranges.upper.style))
 	canonical, renderer := buildQueryArtifacts(selectQuery, ranges, bucket.step)
 	plan := &sqlanalyzer.QueryPlan{
 		CanonicalSQL: canonical,
@@ -185,9 +189,15 @@ func (a *Analyzer) Analyze(statement string, now time.Time) sqlanalyzer.Analysis
 		LowerBound: &sqlanalyzer.Bound{
 			Value: ranges.lower.value, Inclusive: ranges.lower.inclusive,
 		},
+		RawLower:     &ranges.rawLower,
+		RawUpper:     ranges.rawUpper,
+		UpperIsNow:   ranges.upperIsNow,
 		GroupColumns: groups,
 		OutputFormat: outputFormat,
 		Renderer:     renderer,
+		Directives:   directives.Parse(statement, directives.SyntaxClickHouse),
+		ReadsZone:    readsZone,
+		ZonedBounds:  zonedBounds,
 	}
 	if ranges.upper != nil {
 		plan.UpperBound = &sqlanalyzer.Bound{
@@ -203,22 +213,147 @@ func hasSetOperation(query *chast.SelectQuery) bool {
 	return query.UnionAll != nil || query.UnionDistinct != nil || query.Except != nil || query.Intersect != nil
 }
 
+func checkBucketLocality(query *chast.SelectQuery) error {
+	var err error
+	tables := 0
+	chast.Walk(query, func(node chast.Expr) bool {
+		switch value := node.(type) {
+		case *chast.SelectQuery:
+			if value != query {
+				err = ErrNestedQuery
+			} else if value.WithTotal {
+				err = ErrCrossRowQuery
+			}
+		case *chast.SubQuery:
+			err = ErrNestedQuery
+		case *chast.JoinTableExpr:
+			// ARRAY JOIN expands rows in place, so only a second table source is a join
+			tables++
+			if tables > 1 {
+				err = ErrNestedQuery
+			}
+		case *chast.GroupByClause:
+			if value.WithTotals {
+				err = ErrCrossRowQuery
+			}
+		case *chast.WindowClause, *chast.WindowExpr, *chast.WindowFunctionExpr,
+			*chast.Fill, *chast.InterpolateClause:
+			err = ErrCrossRowQuery
+		case *chast.SettingsClause:
+			err = ErrQuerySettings
+		case *chast.FunctionExpr:
+			if value.Name != nil && isCrossRowFunction(value.Name.Name) {
+				err = ErrCrossRowQuery
+			}
+		}
+		return err == nil
+	})
+	return err
+}
+
+func isCrossRowFunction(name string) bool {
+	if len(name) > len(crossRowPrefix) && strings.EqualFold(name[:len(crossRowPrefix)], crossRowPrefix) {
+		return true
+	}
+	for _, function := range crossRowFunctions {
+		if len(name) == len(function) && strings.EqualFold(name, function) {
+			return true
+		}
+	}
+	return false
+}
+
+func ordersByBucket(clause *chast.OrderByClause, items []*chast.SelectItem, bucket bucketSpec) bool {
+	if clause == nil {
+		return true
+	}
+	// the response model emits rows ascending by bucket with ties in series order, so a
+	// single ascending bucket term is the only ordering it reproduces
+	if len(clause.Items) != 1 {
+		return false
+	}
+	order, ok := clause.Items[0].(*chast.OrderExpr)
+	if !ok || order.Alias != nil || order.Fill != nil ||
+		(order.Direction != chast.OrderDirectionNone && order.Direction != chast.OrderDirectionAsc) {
+		return false
+	}
+	switch value := unwrapColumnExpr(order.Expr).(type) {
+	case *chast.Ident:
+		return value.Name == bucket.outputColumn
+	case *chast.NumberLiteral:
+		position, err := strconv.Atoi(value.Literal)
+		if value.Base != 10 || err != nil || position != bucket.index+1 {
+			return false
+		}
+		return !slices.ContainsFunc(items[:bucket.index], expandsColumns)
+	default:
+		return expressionKey(value) == expressionKey(items[bucket.index].Expr)
+	}
+}
+
+func expandsColumns(item *chast.SelectItem) bool {
+	// a star or COLUMNS matcher can yield several result columns, shifting later positions
+	expands := false
+	chast.Walk(item, func(node chast.Expr) bool {
+		switch value := node.(type) {
+		case *chast.Ident:
+			expands = value.Name == starColumn
+		case *chast.FunctionExpr:
+			expands = value.Name != nil && strings.EqualFold(value.Name.Name, columnsFunction)
+		}
+		return !expands
+	})
+	return expands
+}
+
 type clickHouseRenderer struct {
-	template       string
+	template string
+	// openTemplate is the template without the upper bound added for a statement that has none
+	openTemplate   string
 	explicitFormat bool
 	bounds         []rendererBound
+	step           time.Duration
+	// upperTick is the resolution of an inclusive upper bound, which renders one tick below the
+	// exclusive boundary
+	upperTick time.Duration
 }
 
 func (r *clickHouseRenderer) RenderExtent(extent timeseries.Extent) (string, error) {
 	statement := r.template
 	for _, bound := range r.bounds {
-		boundExtent := extent
-		if bound.endpoint == endpointLower {
-			boundExtent.Start = boundExtent.Start.Add(bound.offset)
-		} else {
-			boundExtent.End = boundExtent.End.Add(bound.offset)
+		statement = strings.ReplaceAll(statement, bound.token, bound.render(extent))
+	}
+	return statement, nil
+}
+
+// RenderRange implements sqlanalyzer.RangeRenderer.
+func (r *clickHouseRenderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	// raw lower bounds are inclusive, and only an inclusive upper bound yields an inclusive range
+	if pb.LowerExclusive || pb.UpperInclusive && r.upperTick == 0 {
+		return "", sqlanalyzer.ErrUnsupportedRange
+	}
+	open := pb.Upper.IsZero()
+	statement := r.template
+	if open && r.openTemplate != "" {
+		statement = r.openTemplate
+	}
+	end := pb.Upper
+	if pb.UpperInclusive {
+		end = end.Add(r.upperTick)
+	}
+	// with its last label a step before the range's exclusive end, each bound's offset renders
+	// the range through that bound's own comparator
+	extent := timeseries.Extent{Start: pb.Lower, End: end.Add(-r.step)}
+	for _, bound := range r.bounds {
+		replacement := bound.original
+		if !open || bound.endpoint == endpointLower {
+			replacement = bound.render(extent)
+		} else if replacement == "" {
+			if !strings.Contains(statement, bound.token) {
+				continue
+			}
+			return "", sqlanalyzer.ErrUnsupportedRange
 		}
-		replacement := chast.Format(boundExpression(bound.endpoint, bound.style, boundExtent))
 		statement = strings.ReplaceAll(statement, bound.token, replacement)
 	}
 	return statement, nil
@@ -229,13 +364,32 @@ type rendererBound struct {
 	endpoint endpoint
 	style    boundStyle
 	offset   time.Duration
+	// original is a bare now() upper bound as written, which a range running to now keeps
+	original string
+}
+
+func (b rendererBound) render(extent timeseries.Extent) string {
+	if b.endpoint == endpointLower {
+		extent.Start = extent.Start.Add(b.offset)
+	} else {
+		extent.End = extent.End.Add(b.offset)
+	}
+	return chast.Format(boundExpression(b.endpoint, b.style, extent))
 }
 
 const (
 	day                = 24 * time.Hour
 	week               = 7 * day
 	toDateTimeFunction = "todatetime"
+	crossRowPrefix     = "running"
+	columnsFunction    = "columns"
+	starColumn         = "*"
 )
+
+var crossRowFunctions = [...]string{
+	"neighbor", "lagInFrame", "leadInFrame",
+	"rowNumberInBlock", "rowNumberInAllBlocks", "blockNumber", "blockSize",
+}
 
 var fixedBucketDurations = map[string]time.Duration{
 	"tomonday":                week,
@@ -280,6 +434,7 @@ var supportedFormats = map[string]byte{
 type bucketSpec struct {
 	timeColumn   string
 	outputColumn string
+	index        int
 	step         time.Duration
 	phase        time.Duration
 	outputUnit   timeseries.FieldDataType
@@ -288,7 +443,7 @@ type bucketSpec struct {
 func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (bucketSpec, error) {
 	var found *bucketSpec
 	var rejected bool
-	for _, item := range items {
+	for i, item := range items {
 		if item == nil || item.Expr == nil {
 			continue
 		}
@@ -302,6 +457,7 @@ func analyzeSelectList(items []*chast.SelectItem, constants map[string]int64) (b
 		if found != nil {
 			return bucketSpec{}, ErrAmbiguousTimeAxis
 		}
+		bucket.index = i
 		if item.Alias != nil {
 			bucket.outputColumn = item.Alias.Name
 		} else {
@@ -777,6 +933,7 @@ type boundTarget struct {
 	field    string
 	offset   time.Duration
 	set      func(chast.Expr)
+	original string
 }
 
 type analyzedBound struct {
@@ -784,6 +941,8 @@ type analyzedBound struct {
 	inclusive bool
 	style     boundStyle
 	target    *boundTarget
+	// now reports a bound written as a bare now() or now64()
+	now bool
 }
 
 type predicateBound struct {
@@ -799,6 +958,16 @@ type rangeAnalysis struct {
 	addSynthetic func(chast.Expr)
 	timeColumn   string
 	lowerStyle   boundStyle
+	rawLower     sqlanalyzer.Bound
+	rawUpper     *sqlanalyzer.Bound
+	upperIsNow   bool
+}
+
+func (r *rangeAnalysis) recordRaw() {
+	r.rawLower = sqlanalyzer.Bound{Value: r.lower.value, Inclusive: r.lower.inclusive}
+	if r.upper != nil {
+		r.rawUpper = &sqlanalyzer.Bound{Value: r.upper.value, Inclusive: r.upper.inclusive}
+	}
 }
 
 func analyzeRanges(
@@ -806,7 +975,6 @@ func analyzeRanges(
 	bucket bucketSpec,
 	constants map[string]int64,
 	now time.Time,
-	roundUnaligned bool,
 ) (rangeAnalysis, error) {
 	result := rangeAnalysis{timeColumn: bucket.timeColumn}
 	var predicates []predicateBound
@@ -890,21 +1058,17 @@ func analyzeRanges(
 			result.targets = append(result.targets, predicate.upper.target)
 		}
 	}
-	if err := normalizePrimaryBounds(&result, bucket, roundUnaligned); err != nil {
+	// keep the bounds as the statement wrote them, before rounding them to the grid
+	result.recordRaw()
+	if err := normalizePrimaryBounds(&result, bucket); err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-// normalizePrimaryBounds converts SQL predicates into Trickster's inclusive
-// bucket extent convention. Raw timestamp predicates must describe complete
-// buckets; otherwise a partial aggregate could be cached as a complete bucket.
-// When roundUnaligned is set, unaligned raw-column bounds are instead rounded
-// inward to the cadence (lower up, upper down), dropping partial edge buckets.
-// An inclusive upper is always floored, since its boundary bucket is partial.
-// Predicates on the bucket output are discrete and can safely move by one
-// cadence for strict comparisons.
-func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnaligned bool) error {
+func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec) error {
+	// rounds unaligned raw bounds inward (kept raw for the planner), so no partial bucket is cached
+	// whole; an inclusive upper floors, and output-column bounds shift a step
 	rounded := false
 	if bucket.step < time.Second {
 		for _, target := range result.targets {
@@ -919,21 +1083,22 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 
 	lowerOnOutput := result.lower.target != nil && result.lower.target.field == bucket.outputColumn
 	if lowerOnOutput {
+		first := timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 		if result.lower.inclusive {
-			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = first
 		} else {
-			result.lower.value = sqlanalyzer.FloorBucket(result.lower.value, bucket.step, bucket.phase)
+			result.lower.value = timeseries.FloorToGrid(result.lower.value, bucket.step, bucket.phase)
 			result.lower.target.offset = -bucket.step
+			first = result.lower.value.Add(bucket.step)
 		}
+		// output labels are discrete, so the raw range starts at the first label, on the grid
+		result.rawLower = sqlanalyzer.Bound{Value: first, Inclusive: true}
 	} else {
 		if !result.lower.inclusive {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.lower.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
-			result.lower.value = sqlanalyzer.CeilBucket(result.lower.value, bucket.step, bucket.phase)
+		if !timeseries.OnGrid(result.lower.value, bucket.step, bucket.phase) {
+			result.lower.value = timeseries.CeilToGrid(result.lower.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 	}
@@ -943,14 +1108,18 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 	}
 	upperOnOutput := result.upper.target != nil && result.upper.target.field == bucket.outputColumn
 	if upperOnOutput {
+		end := timeseries.CeilToGrid(result.upper.value, bucket.step, bucket.phase)
 		if result.upper.inclusive {
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
+			end = result.upper.value.Add(bucket.step)
 		} else {
-			result.upper.value = sqlanalyzer.CeilBucket(result.upper.value, bucket.step, bucket.phase)
+			result.upper.value = end
 			result.upper.target.offset = bucket.step
 		}
+		result.rawUpper = &sqlanalyzer.Bound{Value: end}
 		return nil
 	}
+	result.upperIsNow = result.upper.now
 	if result.upper.inclusive {
 		if result.upper.target == nil {
 			return ErrUnsafePredicate
@@ -959,11 +1128,8 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		if !ok || tick > bucket.step {
 			return ErrUnsafePredicate
 		}
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 		}
 		// col <= X reaches at most the first instant of the bucket holding X,
 		// so that bucket is partial; the floored value is the exclusive
@@ -973,19 +1139,16 @@ func normalizePrimaryBounds(result *rangeAnalysis, bucket bucketSpec, roundUnali
 		result.upper.target.offset = bucket.step - tick
 		rounded = true
 	} else {
-		if !sqlanalyzer.AlignedToBucket(result.upper.value, bucket.step, bucket.phase) {
-			if !roundUnaligned {
-				return ErrUnsafePredicate
-			}
-			result.upper.value = sqlanalyzer.FloorBucket(result.upper.value, bucket.step, bucket.phase)
+		if !timeseries.OnGrid(result.upper.value, bucket.step, bucket.phase) {
+			result.upper.value = timeseries.FloorToGrid(result.upper.value, bucket.step, bucket.phase)
 			rounded = true
 		}
 		result.upper.target.offset = bucket.step
 	}
-	// Rounding inward can leave no complete bucket; fail closed rather than
-	// requesting an inverted or empty window.
+	// rounding inward can leave no complete bucket, which the planner sends as written; both bounds
+	// sit at the rounded-up lower boundary, so no inverted window is described
 	if rounded && !result.upper.value.After(result.lower.value) {
-		return ErrUnsafePredicate
+		result.upper.value = result.lower.value
 	}
 	return nil
 }
@@ -1131,6 +1294,9 @@ func analyzePredicate(
 			if !inclusive {
 				bound.target.offset = bucket.step
 			}
+			if bound.now {
+				bound.target.original = chast.Format(boundExpression)
+			}
 			predicate.upper = &bound
 		}
 		return predicate, true, nil
@@ -1212,7 +1378,7 @@ func evaluateBound(
 		}
 		name := strings.ToLower(value.Name.Name)
 		if name == "now" && len(functionArgs(value)) == 0 {
-			return analyzedBound{value: now, inclusive: inclusive, style: boundUnixSeconds}, true
+			return analyzedBound{value: now, inclusive: inclusive, style: boundUnixSeconds, now: true}, true
 		}
 		if name == "todatetime64" || name == "now64" {
 			args := functionArgs(value)
@@ -1231,7 +1397,18 @@ func evaluateBound(
 				if precision < 0 || precision > 9 {
 					return analyzedBound{}, false
 				}
-				return analyzedBound{value: truncatePrecision(now, precision), inclusive: inclusive, style: boundToDateTime64 + boundStyle(precision)}, true
+				return analyzedBound{
+					value: truncatePrecision(now, precision), inclusive: inclusive,
+					style: boundToDateTime64 + boundStyle(precision), now: true,
+				}, true
+			}
+			// a zone may follow, which only UTC's, as bounds are rendered, reads as the analysis does
+			if len(args) == 3 {
+				zone, ok := unwrapColumnExpr(args[2]).(*chast.StringLiteral)
+				if !ok || zone.Literal != utcZone {
+					return analyzedBound{}, false
+				}
+				args = args[:2]
 			}
 			if len(args) != 2 {
 				return analyzedBound{}, false
@@ -1247,6 +1424,7 @@ func evaluateBound(
 			}
 			inner.value = truncatePrecision(inner.value, precision)
 			inner.style = boundToDateTime64 + boundStyle(precision)
+			inner.now = false
 			return inner, true
 		}
 		if name == toDateTimeFunction || name == "todate" {
@@ -1263,6 +1441,7 @@ func evaluateBound(
 			} else {
 				inner.style = boundToDate
 			}
+			inner.now = false
 			return inner, true
 		}
 	case *chast.Ident, *chast.NestedIdentifier:
@@ -1288,6 +1467,7 @@ func evaluateBound(
 		default:
 			return analyzedBound{}, false
 		}
+		left.now = false
 		return left, true
 	}
 	return analyzedBound{}, false
@@ -1307,7 +1487,7 @@ func analyzeFormat(format *chast.FormatClause) (byte, error) {
 func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step time.Duration) (string, *clickHouseRenderer) {
 	occupied := chast.Format(query)
 	bounds := make([]rendererBound, 0, len(ranges.targets)+1)
-	addBound := func(target endpoint, style boundStyle, offset time.Duration) chast.Expr {
+	addBound := func(target endpoint, style boundStyle, offset time.Duration, original string) chast.Expr {
 		index := len(bounds)
 		token := fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		for strings.Contains(occupied, token) {
@@ -1315,17 +1495,28 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 			token = fmt.Sprintf("<$TRICKSTER_TS%d_%d$>", target+1, index)
 		}
 		occupied += token
-		bounds = append(bounds, rendererBound{token: token, endpoint: target, style: style, offset: offset})
+		bounds = append(bounds, rendererBound{
+			token: token, endpoint: target, style: style, offset: offset, original: original,
+		})
 		return &chast.PlaceHolder{Type: token}
 	}
 	for _, target := range ranges.targets {
-		target.set(addBound(target.endpoint, target.style, target.offset))
+		target.set(addBound(target.endpoint, target.style, target.offset, target.original))
 	}
+	renderer := &clickHouseRenderer{explicitFormat: query.Format != nil, step: step}
+	if ranges.rawUpper != nil && ranges.rawUpper.Inclusive && ranges.upper != nil {
+		renderer.upperTick = step - ranges.upper.target.offset
+	}
+	format := query.Format
 	if ranges.addSynthetic != nil {
+		// a range running to now is rendered with no upper bound, as the statement was written
+		query.Format = templateFormat()
+		renderer.openTemplate = chast.Format(query)
+		query.Format = format
 		ranges.addSynthetic(&chast.BinaryOperation{
 			LeftExpr:  identifierExpression(ranges.timeColumn),
 			Operation: chast.TokenKindLT,
-			RightExpr: addBound(endpointUpper, ranges.lowerStyle, step),
+			RightExpr: addBound(endpointUpper, ranges.lowerStyle, step, ""),
 		})
 	}
 
@@ -1333,9 +1524,13 @@ func buildQueryArtifacts(query *chast.SelectQuery, ranges rangeAnalysis, step ti
 	for _, bound := range bounds {
 		canonical = strings.ReplaceAll(canonical, bound.token, placeholderFor(bound.endpoint))
 	}
-	explicitFormat := query.Format != nil
-	query.Format = &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
-	return canonical, &clickHouseRenderer{template: chast.Format(query), bounds: bounds, explicitFormat: explicitFormat}
+	query.Format = templateFormat()
+	renderer.template, renderer.bounds = chast.Format(query), bounds
+	return canonical, renderer
+}
+
+func templateFormat() *chast.FormatClause {
+	return &chast.FormatClause{Format: &chast.Ident{Name: "TSVWithNamesAndTypes"}}
 }
 
 func placeholderFor(target endpoint) string {
@@ -1351,8 +1546,10 @@ func boundExpression(target endpoint, style boundStyle, extent timeseries.Extent
 		value = extent.End
 	}
 	if style >= boundToDateTime64 && style <= boundToDateTime64+9 {
+		// the text names its zone, so the session's doesn't change the instant
 		return functionExpression("toDateTime64", &chast.StringLiteral{Literal: value.UTC().Format("2006-01-02 15:04:05.999999999")},
-			&chast.NumberLiteral{Literal: strconv.Itoa(int(style - boundToDateTime64)), Base: 10})
+			&chast.NumberLiteral{Literal: strconv.Itoa(int(style - boundToDateTime64)), Base: 10},
+			&chast.StringLiteral{Literal: utcZone})
 	}
 	seconds := &chast.NumberLiteral{Literal: strconv.FormatInt(value.Unix(), 10), Base: 10}
 	switch style {

@@ -43,6 +43,11 @@ func HandleBadGateway(w http.ResponseWriter, _ *http.Request) {
 	HandleMiscFailure(http.StatusBadGateway, w)
 }
 
+// HandleServiceUnavailable responds to an HTTP Request with 503 Service Unavailable
+func HandleServiceUnavailable(w http.ResponseWriter, _ *http.Request) {
+	HandleMiscFailure(http.StatusServiceUnavailable, w)
+}
+
 // HandleUnauthorized responds to an HTTP Request with a 401 Unauthorized
 func HandleUnauthorized(w http.ResponseWriter, _ *http.Request) {
 	handleFailureWithMessage(w, http.StatusUnauthorized, "Unauthorized")

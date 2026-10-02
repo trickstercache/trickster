@@ -18,6 +18,7 @@ package engines
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"time"
 
 	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	tc "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -33,7 +35,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
@@ -607,5 +612,74 @@ func TestChunkQueryMissingKey(t *testing.T) {
 	_, _, _, err = QueryCache(ctx, cache, "nonexistent-key", nil, nil)
 	if err == nil {
 		t.Error("expected error for nonexistent key, got nil")
+	}
+}
+
+func TestTimeseriesChunkMergeLeavesMemoryChunks(t *testing.T) {
+	// a series first seen in a later chunk is taken over by the chunks' merge, and later chunks merge
+	// into it; a memory cache's chunks must come through that unchanged
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	c := caches["default"]
+	if c.Configuration().Provider != providerMemory {
+		t.Fatalf("the default cache is %s", c.Configuration().Provider)
+	}
+	series := func(host string, epochs ...int64) *dataset.Series {
+		s := dataset.NewSeries(dataset.SeriesHeader{Name: "m", Tags: dataset.Tags{"host": host}}, nil)
+		for _, e := range epochs {
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(e), Values: []any{"1"}}))
+		}
+		return s
+	}
+	chunk := func(start, end int64, sl ...*dataset.Series) *dataset.DataSet {
+		return &dataset.DataSet{
+			ExtentList: timeseries.ExtentList{{Start: time.Unix(0, start), End: time.Unix(0, end)}},
+			Results:    dataset.Results{{SeriesList: sl}},
+		}
+	}
+	chunks := []*dataset.DataSet{
+		chunk(0, 9, series("a", 1, 2)),
+		chunk(10, 19, series("a", 11), series("b", 12, 13)),
+		chunk(20, 29, series("a", 21), series("b", 22)),
+	}
+	lens := func() []int {
+		var out []int
+		for _, ch := range chunks {
+			for _, s := range ch.Results[0].SeriesList {
+				out = append(out, s.PointCount())
+			}
+		}
+		return out
+	}
+	before := lens()
+	tcp := &TimeseriesChunkQueryProcessor{
+		d: &HTTPDocument{}, trq: &timeseries.TimeRangeQuery{Step: time.Nanosecond},
+		ress: make(timeseries.List, len(chunks)),
+	}
+	for i, ch := range chunks {
+		qr := &queryResult{d: &HTTPDocument{timeseries: ch}, lookupStatus: status.LookupStatusHit}
+		if err := tcp.ProcessChunk(i, "k", qr, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tcp.Finalize(); err != nil {
+		t.Fatal(err)
+	}
+	if got := lens(); fmt.Sprint(got) != fmt.Sprint(before) {
+		t.Fatalf("the read changed the cached chunks' series: %v became %v", before, got)
+	}
+	merged := tcp.d.timeseries.(*dataset.DataSet)
+	var b *dataset.Series
+	for _, s := range merged.Results[0].SeriesList {
+		if s.Header.Tags["host"] == "b" {
+			b = s
+		}
+	}
+	if b == nil || b.PointCount() != 3 {
+		t.Fatalf("the merged series b is %v", b)
 	}
 }

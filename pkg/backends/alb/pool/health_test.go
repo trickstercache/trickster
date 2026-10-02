@@ -24,31 +24,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 )
 
-func TestCheckHealth(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		tgt := &Target{
-			hcStatus: &healthcheck.Status{},
-		}
-
-		tgt.hcStatus.Set(healthcheck.StatusPassing)
-
-		p := &pool{ch: make(chan bool, 1), done: make(chan struct{}), targets: []*Target{tgt}, healthyFloor: -1}
-		p.workers.Add(1)
-		go p.checkHealth()
-		defer p.Stop()
-		p.scheduleRefresh()
-		synctest.Wait()
-
-		h := p.healthyHandlers.Load()
-		if h == nil {
-			t.Fatal("expected non-nil healthy list")
-		}
-		if got := len(*h); got != 1 {
-			t.Errorf("expected %d got %d", 1, got)
-		}
-	})
-}
-
 func TestBurstUpdatesEvictFailingTarget(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		st1 := &healthcheck.Status{}

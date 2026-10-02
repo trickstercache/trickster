@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-// Package gateway translates claimed Gateway API objects (GatewayClass, Gateway, HTTPRoute,
-// GRPCRoute, TCPRoute, TLSRoute, UDPRoute, ReferenceGrant, BackendTLSPolicy) into the IR under the
-// Gateway API's route precedence
+// Package gateway translates claimed Gateway API objects (GatewayClass, Gateway, HTTPRoute, GRPCRoute,
+// TCPRoute, TLSRoute, UDPRoute, ReferenceGrant, BackendTLSPolicy, XBackendTrafficPolicy) into the IR
 package gateway
 
 import (
@@ -29,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 )
 
 // Cache is the read side of the watch layer this translator reads; every lookup is served from
@@ -43,8 +43,11 @@ type Cache interface {
 	UDPRoutes() []*gwapiv1a2.UDPRoute
 	ReferenceGrants() []*gwapiv1.ReferenceGrant
 	BackendTLSPolicies() []*gwapiv1.BackendTLSPolicy
+	BackendTrafficPolicies() []*gwapix.XBackendTrafficPolicy
 	translate.CoreCache
 	ConfigMap(namespace, name string) *corev1.ConfigMap
+	// KeySecret returns a Secret labeled as holding a session token key, or nil
+	KeySecret(namespace, name string) *corev1.Secret
 	Namespace(name string) *corev1.Namespace
 }
 
@@ -111,6 +114,8 @@ type translator struct {
 	grants *grantIndex
 	// tlsPolicies answers which BackendTLSPolicy governs a Service port
 	tlsPolicies *backendTLSIndex
+	// traffic holds the session each Service's XBackendTrafficPolicy asks for, by namespace/name
+	traffic map[string]trafficSession
 	// classes holds every claimed GatewayClass: the policy its parameters
 	// produced, and whether its Gateways are served at all
 	classes map[string]classState
@@ -129,6 +134,9 @@ type translator struct {
 	gatewayOrder []*gatewayState
 	// routeReports holds one status entry per HTTPRoute naming a claimed Gateway
 	routeReports []*routeReport
+	// cookies holds the named session cookies claimed so far, by name, so a younger route cannot
+	// set one an older route's ALB sets for the same host on any listener
+	cookies map[string][]cookieClaim
 }
 
 // gatewayState is one claimed Gateway and what survived of its listeners
@@ -157,6 +165,7 @@ func (t *translator) run() (*ir.IR, *ir.Report, []Problem) {
 	}
 	t.grants = indexGrants(t.cfg.Cache.ReferenceGrants())
 	t.tlsPolicies = t.indexBackendTLS()
+	t.traffic = t.indexBackendTraffic()
 	t.classes = t.claimClasses()
 	if len(t.classes) == 0 {
 		return &ir.IR{}, &t.report, t.problems.List()

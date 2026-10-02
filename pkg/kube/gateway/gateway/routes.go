@@ -524,9 +524,13 @@ func (t *translator) emit(p *routePlan) {
 			}
 			governing := []string{u.frontage.policy, routePolicy, rulePolicy}
 			rf := p.filters[k]
-			rf.rule = t.dropUnreachableMirrors(p.src, rf.rule, t.routingModeOf(governing...), p.report)
+			mode := t.routingModeOf(governing...)
+			rf.rule = t.dropUnreachableMirrors(p.src, rf.rule, mode, p.report)
 			group := t.backendGroup(p.src, ruleIndex, p.hr.Namespace, p.hr.Spec.Rules[k], rf,
 				p.report, matches, governing)
+			at := sessionSite{host: u.host}
+			session := t.ruleSession(p.src, k, rf.session, group, mode, at)
+			t.memberSessions(p.src, &group, session != nil, mode, at)
 			t.model.Backends = append(t.model.Backends, group)
 			r.Rules = append(r.Rules, ir.Rule{
 				Matches: matches, BackendGroup: group.Name,
@@ -534,6 +538,7 @@ func (t *translator) emit(p *routePlan) {
 				Filters:  rf.rule,
 				Timeouts: rf.timeouts,
 				Retry:    rf.retry,
+				Session:  session,
 			})
 			ruleIndex++
 		}
@@ -889,6 +894,7 @@ func (t *translator) backendGroup(src ir.Source, ruleIndex int, namespace string
 			m.Service = target
 			m.TLS = tls
 			m.Policy = policy
+			m.Session = t.serviceSession(target.Namespace, target.Name)
 			m.Filters = t.dropUnreachableMirrors(src, m.Filters, mode, report)
 		}
 		g.Members = append(g.Members, m)

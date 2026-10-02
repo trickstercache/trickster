@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -67,9 +68,9 @@ func TestRoundTrip(t *testing.T) {
 				if s.Header.Name != orig.Header.Name {
 					continue
 				}
-				for i, p := range s.Points {
-					if p.Values[0] != orig.Points[i].Values[0] {
-						t.Errorf("point %d changed through the cache: %v vs %v", i, p.Values[0], orig.Points[i].Values[0])
+				for i, p := range dspoints.Of(s) {
+					if p.Values[0] != dspoints.Of(orig)[i].Values[0] {
+						t.Errorf("point %d changed through the cache: %v vs %v", i, p.Values[0], dspoints.Of(orig)[i].Values[0])
 					}
 				}
 			}

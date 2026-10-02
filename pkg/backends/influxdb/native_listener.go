@@ -55,11 +55,15 @@ func NativeListenerAdapter() native.Adapter { return nativeListenerAdapter{} }
 // SupportsHTTP is true because InfluxDB backends serve their primary HTTP
 // interface through ordinary HTTP listeners; Flight SQL is an additional
 // native endpoint.
-func (nativeListenerAdapter) SupportsHTTP() bool { return true }
+func (nativeListenerAdapter) SupportsHTTP(string) bool { return true }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolFlightSQL }
 
-func (nativeListenerAdapter) BackendProvider() string { return providers.InfluxDB }
+func (nativeListenerAdapter) ServesProvider(provider string) bool {
+	return provider == providers.InfluxDB
+}
+
+func (nativeListenerAdapter) Providers() []string { return []string{providers.InfluxDB} }
 
 func (nativeListenerAdapter) Configured(*listenerconfig.Options) bool { return false }
 
@@ -82,6 +86,10 @@ func (nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 
 func (nativeListenerAdapter) ValidateUserRouter(*config.Config, string, *bo.Options) error {
 	return errors.New("InfluxDB Flight SQL user routing is not supported")
+}
+
+func (nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Options) error {
+	return errors.New("InfluxDB Flight SQL session balancing is not supported")
 }
 
 func (nativeListenerAdapter) RouteResolver(native.BuildRequest) backends.RouteResolver { return nil }
@@ -181,12 +189,14 @@ func (a nativeListenerAdapter) Build(r native.BuildRequest) (listener.ProtocolSe
 		flightsql.WithCacheKeyPrefix(backendName),
 		flightsql.WithKeyScoper(influxFlightKeyScoper),
 		flightsql.WithDeltaCache(flightsql.DeltaConfig{
-			Analyzer:          isql.Analyzer(),
-			CacheClient:       backend.Cache,
-			CacheTTL:          time.Duration(o.TimeseriesTTL),
-			MaxObjectSize:     int64(o.MaxObjectSizeBytes),
-			RetentionPoints:   o.TimeseriesRetentionFactor,
-			BackfillTolerance: time.Duration(o.BackfillTolerance),
+			Analyzer:         isql.Analyzer(),
+			CacheClient:      backend.Cache,
+			CacheTTL:         time.Duration(o.TimeseriesTTL),
+			MaxObjectSize:    int64(o.MaxObjectSizeBytes),
+			RetentionPoints:  o.TimeseriesRetentionFactor,
+			VolatileWindow:   time.Duration(o.VolatileWindow),
+			PartialBucketTTL: time.Duration(o.PartialBucketTTL),
+			StepAlignment:    o.StepAlignment,
 		}),
 	}
 	if o.InfluxDB != nil && o.InfluxDB.FlightCacheTTL > 0 {

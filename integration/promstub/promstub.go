@@ -28,6 +28,10 @@ import (
 // healthcheck probes by default.
 const BuildInfoPath = "/api/v1/status/buildinfo"
 
+// DefaultFailureThreshold tolerates two failed probes in a row, so a slow probe can't take a
+// member meant to stay healthy out of its pool
+const DefaultFailureThreshold = 3
+
 // buildInfoBody is the minimal Prometheus buildinfo response trickster's
 // healthcheck accepts.
 const buildInfoBody = `{"status":"success","data":{"version":"2.0"}}`
@@ -59,6 +63,9 @@ func Preamble(frontPort, metricsPort, mgmtPort int) string {
 	fmt.Fprintf(&sb, "  mgmt:\n    address: 127.0.0.1\n    port: %d\n", mgmtPort)
 	sb.WriteString("logging:\n  log_level: error\n")
 	sb.WriteString("caches:\n  mem1:\n    provider: memory\n")
+	// a connection a test leaves open, like a UDP session, would otherwise hold shutdown for the whole
+	// default drain
+	sb.WriteString("mgmt:\n  shutdown_drain_timeout: 2s\n")
 	return sb.String()
 }
 
@@ -66,6 +73,12 @@ func Preamble(frontPort, metricsPort, mgmtPort int) string {
 // buildinfo healthcheck wired to BuildInfoPath. Caller is responsible for
 // emitting the parent "backends:\n" header before the first stanza.
 func BackendStanza(name, originURL string) string {
+	return BackendStanzaWithThreshold(name, originURL, DefaultFailureThreshold)
+}
+
+// BackendStanzaWithThreshold is BackendStanza with the given failure_threshold, such as 1
+// for a member a test takes down and expects out of its pool on the first failed probe
+func BackendStanzaWithThreshold(name, originURL string, failureThreshold int) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "  %s:\n", name)
 	sb.WriteString("    provider: prometheus\n")
@@ -76,7 +89,7 @@ func BackendStanza(name, originURL string) string {
 	sb.WriteString("      query: \"\"\n")
 	sb.WriteString("      interval: 100ms\n")
 	sb.WriteString("      timeout: 500ms\n")
-	sb.WriteString("      failure_threshold: 1\n")
+	fmt.Fprintf(&sb, "      failure_threshold: %d\n", failureThreshold)
 	sb.WriteString("      recovery_threshold: 1\n")
 	return sb.String()
 }

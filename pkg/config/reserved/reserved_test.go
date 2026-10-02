@@ -42,3 +42,22 @@ func TestNamePrefixes(t *testing.T) {
 		t.Errorf("MatchNamePrefix = %q; want empty", got)
 	}
 }
+
+func TestReferences(t *testing.T) {
+	references := References()
+	if len(references) == 0 || references[0] != ReferenceNone {
+		t.Fatalf("references = %v; want %q first", references, ReferenceNone)
+	}
+	references[0] = "changed"
+	if References()[0] != ReferenceNone {
+		t.Error("References returned shared backing storage")
+	}
+	for _, r := range References() {
+		if !IsReference(r) {
+			t.Errorf("IsReference(%q) = false", r)
+		}
+	}
+	if IsReference("") || IsReference("None") || IsReference("default") {
+		t.Error("non-reserved word reported as reserved")
+	}
+}

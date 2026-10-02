@@ -26,8 +26,10 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // DefaultPort is the default MySQL server port, used when an origin_url does
@@ -49,6 +51,11 @@ type Client struct {
 }
 
 var _ types.NewBackendClientFunc = NewClient
+
+// StepAlignments returns the step alignment modes MySQL supports, and its default
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return sqlanalyzer.StepAlignments, sqlanalyzer.DefaultStepAlignment
+}
 
 // NewClient returns a new MySQL backend Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,

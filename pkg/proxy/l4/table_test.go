@@ -18,57 +18,11 @@ package l4
 
 import (
 	"errors"
-	"net/http"
+	"net"
+	"net/netip"
 	"testing"
 	"time"
-
-	"github.com/trickstercache/trickster/v2/pkg/backends"
-	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
-	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
-
-func originBackend(t *testing.T, name, addr string) backends.Backend {
-	t.Helper()
-	o := bo.New()
-	o.OriginURL = "tcp://" + addr
-	if err := o.Initialize(name); err != nil {
-		t.Fatal(err)
-	}
-	b, err := backends.New(name, o, nil, http.NotFoundHandler(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
-type pooledBackend struct {
-	backends.Backend
-	p pool.Pool
-}
-
-func (b *pooledBackend) Pool() pool.Pool { return b.p }
-
-func newPool(t *testing.T, members ...*pool.Target) pool.Pool {
-	t.Helper()
-	p := pool.New(members, int(healthcheck.StatusUnchecked))
-	t.Cleanup(p.Stop)
-	return p
-}
-
-func member(b backends.Backend, weight int, status int32) *pool.Target {
-	st := healthcheck.NewStatus(b.Name(), "", "", status, time.Time{}, nil)
-	return pool.NewWeightedTarget(http.NotFoundHandler(), st, b, weight)
-}
-
-func pooledOf(t *testing.T, name string, members ...*pool.Target) backends.Backend {
-	t.Helper()
-	b, err := backends.New(name, bo.New(), nil, http.NotFoundHandler(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return &pooledBackend{Backend: b, p: newPool(t, members...)}
-}
 
 func TestTableLookup(t *testing.T) {
 	tbl := NewTable()
@@ -128,126 +82,69 @@ func TestTableLookup(t *testing.T) {
 	}
 }
 
-func TestStaticAndFromBackend(t *testing.T) {
-	if got, ok := Static("h:1").Addr(); !ok || got != "h:1" {
-		t.Errorf("Static = %v, %v", got, ok)
+func TestStatic(t *testing.T) {
+	route, ok := Static("h:1").Pick(Flow{})
+	if !ok || route.Addr() != "h:1" {
+		t.Fatalf("Static = %v, %v", route, ok)
+	}
+	// a fixed address has no other route to fall back to, and nothing to report to
+	if !route.Final() {
+		t.Error("a static route is not final")
+	}
+	route.Dialed(time.Millisecond, nil)
+	route.FirstByte()
+	route.Closed(nil)
+	if again, _ := Static("h:1").Pick(Flow{}); again.Addr() != "h:1" {
+		t.Errorf("second pick = %v", again)
 	}
 	// an address under the reserved .invalid domain can never resolve, so it is refused without
-	// a lookup, as a backend is whose origin names one
+	// a lookup
 	for _, addr := range []string{"unresolved.kgw.invalid:1", "x.INVALID.:9", "x.invalid"} {
 		if !Refusing(addr) {
 			t.Errorf("Refusing(%q) = false", addr)
 		}
-		if _, ok := Static(addr).Addr(); ok {
+		if _, ok := Static(addr).Pick(Flow{}); ok {
 			t.Errorf("Static(%q) dials", addr)
 		}
 	}
 	if Refusing("invalid.example.com:1") || Refusing("10.0.0.1:1") {
 		t.Error("a resolvable address is refused")
 	}
-	if _, ok := FromBackend(originBackend(t, "gone", "unresolved.kgw.invalid:1")).Addr(); ok {
-		t.Error("a backend under .invalid dials")
+	if allocs := testing.AllocsPerRun(100, func() { _, _ = Static("h:1").Pick(Flow{}) }); allocs > 1 {
+		t.Errorf("a static pick allocates %v", allocs)
 	}
-	if FromBackend(nil) != nil {
-		t.Error("nil backend yields an upstream")
-	}
-	hostless, err := backends.New("hostless", bo.New(), nil, http.NotFoundHandler(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if FromBackend(hostless) != nil {
-		t.Error("a backend without an origin host yields an upstream")
-	}
-	if got, ok := FromBackend(originBackend(t, "o", "10.0.0.1:9000")).Addr(); !ok || got != "10.0.0.1:9000" {
-		t.Errorf("origin backend = %v, %v", got, ok)
+	fixed := Static("h:1")
+	if allocs := testing.AllocsPerRun(100, func() { _, _ = fixed.Pick(Flow{}) }); allocs != 0 {
+		t.Errorf("a pick from a built static upstream allocates %v", allocs)
 	}
 }
 
-func TestPoolUpstreamRotatesWithWeights(t *testing.T) {
-	a := originBackend(t, "a", "10.0.0.1:1")
-	b := originBackend(t, "b", "10.0.0.2:1")
-	down := originBackend(t, "down", "10.0.0.3:1")
-	up := FromBackend(pooledOf(t, "alb",
-		member(a, 2, healthcheck.StatusPassing),
-		member(b, 1, healthcheck.StatusPassing),
-		member(down, 1, healthcheck.StatusFailing)))
-	counts := make(map[string]int)
-	for range 6 {
-		addr, ok := up.Addr()
-		if !ok {
-			t.Fatal("a pool with healthy members refused")
-		}
-		counts[addr]++
+func TestFlowOf(t *testing.T) {
+	tcp := flowOf("l", ProtocolTLS, &net.TCPAddr{IP: net.ParseIP("192.0.2.7"), Port: 4431}, "shop.example.com")
+	if tcp.Protocol != ProtocolTLS || tcp.ServerName != "shop.example.com" ||
+		tcp.Client != netip.MustParseAddrPort("192.0.2.7:4431") {
+		t.Errorf("tcp flow = %+v", tcp)
 	}
-	if counts["10.0.0.1:1"] != 4 || counts["10.0.0.2:1"] != 2 || counts["10.0.0.3:1"] != 0 {
-		t.Errorf("weighted rotation = %v", counts)
+	udp := flowOf("l", ProtocolUDP, &net.UDPAddr{IP: net.ParseIP("2001:db8::9"), Port: 53}, "")
+	if udp.Client != netip.MustParseAddrPort("[2001:db8::9]:53") {
+		t.Errorf("udp flow = %+v", udp)
 	}
-	// an even pool is a plain rotation
-	even := FromBackend(pooledOf(t, "even", member(a, 1, healthcheck.StatusPassing),
-		member(b, 1, healthcheck.StatusPassing)))
-	first, _ := even.Addr()
-	second, _ := even.Addr()
-	third, _ := even.Addr()
-	if first == second || first != third {
-		t.Errorf("rotation: %v, %v, %v", first, second, third)
+	// an IPv4 peer of a dual-stack socket arrives mapped into IPv6; it is one client either way
+	mapped := flowOf("l", ProtocolTCP, &net.TCPAddr{IP: net.ParseIP("::ffff:192.0.2.7"), Port: 80}, "")
+	if mapped.Client.Addr() != netip.MustParseAddr("192.0.2.7") {
+		t.Errorf("mapped client = %v", mapped.Client)
 	}
-	empty := FromBackend(pooledOf(t, "empty"))
-	if got, ok := empty.Addr(); ok {
-		t.Errorf("empty pool = %v", got)
+	// any other address is read from its text; one that is not an address leaves no client
+	if other := flowOf("l", ProtocolTCP, textAddr("198.51.100.4:9"), ""); other.Client != netip.MustParseAddrPort("198.51.100.4:9") {
+		t.Errorf("text address = %+v", other)
 	}
-	holderless := &pooledBackend{Backend: hostlessBackend(t)}
-	if got, ok := FromBackend(holderless).Addr(); ok {
-		t.Errorf("nil pool = %v", got)
-	}
-	// a member with nothing to dial refuses its own share rather than passing it on
-	mixed := FromBackend(pooledOf(t, "mixed", member(a, 1, healthcheck.StatusPassing),
-		member(hostlessBackend(t), 1, healthcheck.StatusPassing)))
-	var refused int
-	for range 4 {
-		if _, ok := mixed.Addr(); !ok {
-			refused++
-		}
-	}
-	if refused != 2 {
-		t.Errorf("refused %d of 4, want the hostless member's share", refused)
+	if flowOf("l", ProtocolTCP, textAddr("pipe"), "").Client.IsValid() || flowOf("l", ProtocolTCP, nil, "").Client.IsValid() {
+		t.Error("an unusable peer address produced a client")
 	}
 }
 
-func hostlessBackend(t *testing.T) backends.Backend {
-	t.Helper()
-	b, err := backends.New("hostless", bo.New(), nil, http.NotFoundHandler(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
+type textAddr string
 
-func TestPoolUpstreamFollowsNestedPools(t *testing.T) {
-	// an outer pool of two inner pools, as a weighted rule in endpoint mode compiles to
-	inner1 := pooledOf(t, "inner1", member(originBackend(t, "a", "10.1.0.1:1"), 1, healthcheck.StatusPassing),
-		member(originBackend(t, "b", "10.1.0.2:1"), 1, healthcheck.StatusPassing))
-	inner2 := pooledOf(t, "inner2", member(originBackend(t, "c", "10.2.0.1:1"), 1, healthcheck.StatusPassing))
-	outer := FromBackend(pooledOf(t, "outer", member(inner1, 1, healthcheck.StatusPassing),
-		member(inner2, 1, healthcheck.StatusPassing), member(hostlessBackend(t), 1, healthcheck.StatusPassing)))
-	seen := make(map[string]int)
-	var refused int
-	for range 6 {
-		addr, ok := outer.Addr()
-		if !ok {
-			refused++
-			continue
-		}
-		seen[addr]++
-	}
-	if refused != 2 || seen["10.2.0.1:1"] != 2 || seen["10.1.0.1:1"] != 1 || seen["10.1.0.2:1"] != 1 {
-		t.Errorf("outer rotation = %v with %d refused; want each inner pool its share, rotating within",
-			seen, refused)
-	}
-	// a pool nested beyond the depth bound is not followed
-	deep := FromBackend(pooledOf(t, "l0", member(pooledOf(t, "l1", member(pooledOf(t, "l2",
-		member(originBackend(t, "z", "10.9.0.1:1"), 1, healthcheck.StatusPassing)),
-		1, healthcheck.StatusPassing)), 1, healthcheck.StatusPassing)))
-	if got, ok := deep.Addr(); ok {
-		t.Errorf("a pool three deep was followed: %v", got)
-	}
-}
+func (textAddr) Network() string { return "test" }
+
+func (a textAddr) String() string { return string(a) }

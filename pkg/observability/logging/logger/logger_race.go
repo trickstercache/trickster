@@ -69,6 +69,12 @@ func Level() level.Level {
 	return logger.Level()
 }
 
+// DebugEnabled reports whether DEBUG events are logged, so a caller can skip building the details
+// of one that would be dropped
+func DebugEnabled() bool {
+	return Level() == level.Debug
+}
+
 func Log(logLevel level.Level, event string, detail logging.Pairs) {
 	mtx.Lock()
 	defer mtx.Unlock()

@@ -81,8 +81,8 @@ func TestParseV3InfluxQLJSONBody(t *testing.T) {
 		trq.TagFieldDefintions[1].Name != "host" {
 		t.Errorf("tag fields = %+v", trq.TagFieldDefintions)
 	}
-	if trq.BackfillTolerance < trq.Step {
-		t.Errorf("backfill tolerance %s below one bucket %s", trq.BackfillTolerance, trq.Step)
+	if trq.VolatileWindow < trq.Step {
+		t.Errorf("volatile window %s below one bucket %s", trq.VolatileWindow, trq.Step)
 	}
 	if _, ok := trq.ParsedQuery.(*V3InfluxQLQuery); !ok {
 		t.Errorf("parsed query type = %T", trq.ParsedQuery)
@@ -218,10 +218,9 @@ func TestAcceptHeaderDrivesFormat(t *testing.T) {
 	}
 }
 
-// TestOpenEndedQueryBackfillFloor verifies queries without an upper time bound
-// get a backfill tolerance of at least one bucket so the still-filling final
-// bucket is never cached as complete.
-func TestOpenEndedQueryBackfillFloor(t *testing.T) {
+func TestOpenEndedQueryKeepsTheDefaultVolatileWindow(t *testing.T) {
+	// the engine keeps the still-filling bucket out of the cache, so an open-ended query's volatile
+	// window stays the default rather than rising to its step
 	statement := "SELECT date_bin(INTERVAL '1 hour', time) AS time, avg(v) " +
 		"FROM m WHERE time >= 1704067200 GROUP BY 1"
 	r := jsonPost(t, `{"q":"`+statement+`"}`)
@@ -229,17 +228,10 @@ func TestOpenEndedQueryBackfillFloor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if trq.BackfillTolerance < time.Hour {
-		t.Fatalf("backfill tolerance = %s, want >= 1h", trq.BackfillTolerance)
+	if trq.VolatileWindow != time.Minute {
+		t.Fatalf("volatile window = %s, want 1m", trq.VolatileWindow)
 	}
-
-	// a bounded query keeps the smaller default
-	trq, _, _, err = ParseTimeRangeQuery(
-		jsonPost(t, `{"q":"`+identityQuery+`"}`), iofmt.V3SQL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if trq.BackfillTolerance >= time.Hour {
-		t.Fatalf("bounded query backfill tolerance = %s, want < 1h", trq.BackfillTolerance)
+	if trq.SampleModel != timeseries.SampleModelBucket {
+		t.Fatalf("sample model = %d, want bucketed", trq.SampleModel)
 	}
 }

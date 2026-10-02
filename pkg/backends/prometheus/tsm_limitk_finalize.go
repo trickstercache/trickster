@@ -72,7 +72,7 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	logicalOrder := make([]*limitKLogicalSeries, 0, len(result.SeriesList))
 	lastTagsKey := ""
 	for _, series := range result.SeriesList {
-		if series == nil || len(series.Points) == 0 {
+		if series == nil || series.PointCount() == 0 {
 			continue
 		}
 		tagsKey := series.Header.Tags.JSON()
@@ -92,7 +92,7 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	}
 	kept := result.SeriesList[:0]
 	for _, series := range result.SeriesList {
-		if series != nil && len(series.Points) > 0 {
+		if series != nil && series.PointCount() > 0 {
 			kept = append(kept, series)
 		}
 	}
@@ -102,20 +102,21 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 	selectedCounts map[rankBucketKey]int64,
 ) {
-	indexes := make([]int, len(logical.members))
-	kept := make([]dataset.Points, len(logical.members))
+	cursors := make([]rowCursor, len(logical.members))
+	kept := make([][]bool, len(logical.members))
 	for i, series := range logical.members {
-		kept[i] = series.Points[:0]
+		cursors[i] = newRowCursor(series.Segments())
+		kept[i] = make([]bool, series.PointCount())
 	}
 
 	for {
 		var pointEpoch epoch.Epoch
 		found := false
-		for i, series := range logical.members {
-			if indexes[i] >= len(series.Points) {
+		for i := range cursors {
+			if cursors[i].done() {
 				continue
 			}
-			candidateEpoch := series.Points[indexes[i]].Epoch
+			candidateEpoch := cursors[i].epoch()
 			if !found || candidateEpoch < pointEpoch {
 				pointEpoch = candidateEpoch
 				found = true
@@ -130,20 +131,14 @@ func selectLimitKLogicalPoints(logical *limitKLogicalSeries, k int64,
 		if selected {
 			selectedCounts[bucket]++
 		}
-		for i, series := range logical.members {
-			for indexes[i] < len(series.Points) &&
-				series.Points[indexes[i]].Epoch == pointEpoch {
-				point := series.Points[indexes[i]]
-				if selected {
-					kept[i] = append(kept[i], point)
-				}
-				indexes[i]++
+		for i := range cursors {
+			for c := &cursors[i]; !c.done() && c.epoch() == pointEpoch; c.next() {
+				kept[i][c.n] = selected
 			}
 		}
 	}
 
 	for i, series := range logical.members {
-		series.Points = kept[i]
-		series.PointSize = kept[i].Size()
+		series.SetSegments(series.Segments().Keep(kept[i]))
 	}
 }

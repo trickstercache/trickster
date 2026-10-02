@@ -168,6 +168,54 @@ spec:
                   enum:
                     - probe
                     - provider
+                loadBalancing:
+                  description: >-
+                    The mechanism that spreads traffic across a Service's endpoints in the
+                    endpoint routing mode; rr unless set. The weights between a rule's
+                    backendRefs are always apportioned by rr.
+                  type: string
+                  enum:
+                    - rr
+                    - p2c
+                    - lc
+                    - lt
+                    - hrw
+                loadBalancingKey:
+                  description: >-
+                    What the hrw mechanism keeps on one endpoint: client_ip (the default),
+                    host, header:<name>, cookie:<name> or query:<name> for HTTP routes, and
+                    client_ip or sni for TCP, TLS and UDP routes.
+                  type: string
+                sticky:
+                  description: >-
+                    Keeps a client on the endpoint it was first sent to, in the endpoint
+                    routing mode: cookie or header (an issued token, HTTP routes only) or
+                    table (a pin kept by stickyKey). none turns off a less specific
+                    policy's. TCP, TLS and UDP routes always keep sessions in a table.
+                  type: string
+                  enum:
+                    - cookie
+                    - header
+                    - table
+                    - none
+                stickyKey:
+                  description: >-
+                    What table mode keeps a client's endpoint by: client_ip (the default),
+                    host, header:<name>, cookie:<name> or query:<name> for HTTP routes, and
+                    client_ip or sni for TCP, TLS and UDP routes.
+                  type: string
+                stickyTTL:
+                  description: >-
+                    Ends a session this long after it began; a duration with a unit of at
+                    least 1s. 1h unless set.
+                  type: string
+                  pattern: '^[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)([0-9]+(ns|us|µs|ms|s|m|h|d|w|y))*$'
+                stickyIdle:
+                  description: >-
+                    Ends a session unused for this long; a duration with a unit of at least
+                    1s. Never unless set.
+                  type: string
+                  pattern: '^[0-9]+(ns|us|µs|ms|s|m|h|d|w|y)([0-9]+(ns|us|µs|ms|s|m|h|d|w|y))*$'
                 resultHeader:
                   description: >-
                     Whether the X-Trickster-Result response header reaches the client;
@@ -176,6 +224,19 @@ spec:
                   enum:
                     - Expose
                     - Hide
+                stepAlignment:
+                  description: >-
+                    The step alignment mode of the time series backend that provider makes:
+                    what it does with the partial buckets at the edges of a range query. It
+                    must be one the provider supports; unset takes the provider's default.
+                  type: string
+                  enum:
+                    - truncate
+                    - drop
+                    - partial
+                    - partial_start
+                    - partial_end
+                    - "off"
             status:
               type: object
               properties:

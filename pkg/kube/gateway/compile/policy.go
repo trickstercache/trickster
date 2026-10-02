@@ -19,6 +19,7 @@ package compile
 import (
 	"time"
 
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -26,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 func (i index) policy(rule ir.Rule) *ir.Policy {
@@ -61,9 +63,23 @@ type effective struct {
 	// judged healthy, and the probe it runs when that is by probing
 	healthMode  string
 	healthCheck *ho.Options
+	// loadBalancing and loadBalancingKey choose how an endpoint mode ALB spreads traffic
+	// across a Service's endpoints; the pool across a rule's backendRefs is always round robin
+	loadBalancing    string
+	loadBalancingKey string
+	// sticky, stickyKey, stickyTTL and stickyIdle keep a client on the endpoint an endpoint mode
+	// ALB first sent it to; stickySecret, else stickySecretFile, keys the tokens it issues
+	sticky           string
+	stickyKey        string
+	stickyTTL        time.Duration
+	stickyIdle       time.Duration
+	stickySecret     string
+	stickySecretFile string
 	// tsProvider is the time series provider the generated backend is, or empty for a plain
 	// reverse proxy; a provider accelerates its own API paths and always caches
 	tsProvider string
+	// stepAlignment is the time series backend's step alignment mode, when the policy names one
+	stepAlignment string
 	// policy is the rule's resolved policy, or nil when it names none; the
 	// fields below it carry no default and are read straight from it
 	policy *ir.Policy
@@ -121,6 +137,23 @@ func resolveMember(opts *kubecfg.Options, rule, member *ir.Policy) effective {
 	return resolve(opts, &merged)
 }
 
+// endpointALB returns the ALB that balances one Service's endpoints, with the policy's
+// mechanism. A key that the listener cannot read, such as a request header on a tcp route,
+// is left at the default rather than compiled into a configuration that would not load.
+func (e effective) endpointALB(discovery *albDiscoveryDoc, readable func(flowkey.KeySource) bool) *albDoc {
+	alb := &albDoc{Mechanism: albnames.MechanismRR, Discovery: discovery}
+	if e.loadBalancing != "" {
+		alb.Mechanism = e.loadBalancing
+	}
+	if alb.Mechanism != albnames.MechanismHRW || e.loadBalancingKey == "" {
+		return alb
+	}
+	if ks, err := ao.ParseHRWKey(e.loadBalancingKey); err == nil && readable(ks) {
+		alb.HRW = &albHRWDoc{Key: e.loadBalancingKey}
+	}
+	return alb
+}
+
 func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	e := effective{routingMode: opts.RoutingMode(), healthMode: ao.HealthModeProvider}
 	if d := opts.Defaults; d != nil {
@@ -132,6 +165,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 		e.timeout = time.Duration(d.Timeout)
 		e.accessLog = d.AccessLog
 		e.healthCheck = d.HealthCheck
+		e.stickySecretFile = d.StickySecretFile
 		if d.HealthMode != "" {
 			e.healthMode = d.HealthMode
 		}
@@ -146,6 +180,16 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	if p.HealthMode != "" {
 		e.healthMode = p.HealthMode
 	}
+	if p.LoadBalancing != "" {
+		e.loadBalancing = p.LoadBalancing
+	}
+	if p.LoadBalancingKey != "" {
+		e.loadBalancingKey = p.LoadBalancingKey
+	}
+	e.sticky, e.stickyKey = p.Sticky, p.StickyKey
+	e.stickyTTL = time.Duration(p.StickyTTLMS) * time.Millisecond
+	e.stickyIdle = time.Duration(p.StickyIdleMS) * time.Millisecond
+	e.stickySecret = p.StickySecret
 	if p.CacheName != "" {
 		e.cacheName = p.CacheName
 	}
@@ -158,7 +202,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	if p.Handler != "" {
 		e.handlerName = p.Handler
 	}
-	e.tsProvider = p.Provider
+	e.tsProvider, e.stepAlignment = p.Provider, p.StepAlignment
 	// the operator-tier names: no annotation sets them, so a policy carrying one came from
 	// the configuration's own hands, such as a GatewayClass's parameters
 	if p.TracingName != "" {

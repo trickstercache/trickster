@@ -22,6 +22,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/response/capture"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
 
 var (
@@ -66,6 +68,10 @@ const (
 	mnFeatures        = "features"
 	mnNotificationsLv = "notifications/live"
 )
+
+const whitespace = " \t\r\n"
+
+var startEndModifiers = [...]string{"start", "end"}
 
 // Common URL Parameter Names
 const (
@@ -100,6 +106,37 @@ func containsOffsetKeyword(stmt string) bool {
 		case depth == 0 && i+len(target) <= len(stmt) &&
 			stmt[i:i+len(target)] == target:
 			return true
+		}
+	}
+	return false
+}
+
+func containsStartEndModifier(stmt string) bool {
+	// finds @ start() or @ end() outside string literals; a match inside a comment only
+	// costs caching, since the request is then proxied
+	if strings.IndexByte(stmt, '@') < 0 {
+		return false
+	}
+	var quote byte
+	for i := 0; i < len(stmt); i++ {
+		c := stmt[i]
+		switch {
+		case quote != 0:
+			if c == '\\' && quote != '`' {
+				i++
+			} else if c == quote {
+				quote = 0
+			}
+		case c == '"' || c == '\'' || c == '`':
+			quote = c
+		case c == '@':
+			rest := strings.TrimLeft(stmt[i+1:], whitespace)
+			for _, fn := range startEndModifiers {
+				if strings.HasPrefix(rest, fn) &&
+					strings.HasPrefix(strings.TrimLeft(rest[len(fn):], whitespace), "(") {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -143,6 +180,7 @@ func roundTimestampsToMinute(qp url.Values) {
 // Client Implements Proxy Client Interface
 type Client struct {
 	backends.TimeseriesBackend
+	hooks              Hooks
 	instantRounder     time.Duration
 	hasTransformations bool
 	injectLabels       map[string]string
@@ -167,7 +205,17 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	cache cache.Cache, _ backends.Backends,
 	_ types.Lookup,
 ) (backends.Backend, error) {
-	c := &Client{}
+	return NewClientWithHooks(name, o, router, cache, flavorHooks(o))
+}
+
+// NewClientWithHooks constructs the Prometheus client for a compatible provider.
+func NewClientWithHooks(name string, o *bo.Options, router http.Handler,
+	cache cache.Cache, hooks Hooks,
+) (*Client, error) {
+	hooks.CacheKeyParams = slices.Clone(hooks.CacheKeyParams)
+	hooks.CacheKeyHeaders = slices.Clone(hooks.CacheKeyHeaders)
+	hooks.AllowedPaths = slices.Clone(hooks.AllowedPaths)
+	c := &Client{hooks: hooks}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
 		cache, modelprom.NewModeler())
 	c.TimeseriesBackend = b
@@ -185,6 +233,20 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	c.instantRounder = time.Duration(rounder)
 
 	return c, err
+}
+
+const stepAlignments = timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+	timeseries.StepAlignmentDrop | timeseries.StepAlignmentPartialEnd
+
+// StepAlignments returns the modes a range query supports and its default: partial_end, whose live
+// end is Fast Forward, or truncate when fast_forward_disable is set
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	if c.TimeseriesBackend != nil {
+		if o := c.Configuration(); o != nil && o.FastForwardDisable {
+			return stepAlignments, timeseries.StepAlignmentTruncate
+		}
+	}
+	return stepAlignments, timeseries.StepAlignmentPartialEnd
 }
 
 // parseTime converts a query time URL parameter to time.Time.
@@ -208,8 +270,22 @@ func parseDuration(input string) (time.Duration, error) {
 	if err != nil {
 		return tt.ParseDuration(input)
 	}
-	// assume v is in seconds
-	return time.Duration(int64(v)) * time.Second, nil
+	// v is in seconds and keeps its fraction, as Prometheus does; a step Prometheus would
+	// reject is refused here too
+	d := math.Round(v * float64(time.Second))
+	if math.IsNaN(d) || d <= 0 || d > math.MaxInt64 {
+		return 0, fmt.Errorf("cannot parse %q to a valid step", input)
+	}
+	return time.Duration(d), nil
+}
+
+func formatTime(t time.Time) string {
+	// Unix seconds, with the millisecond fraction Prometheus accepts only when present
+	ms := t.UnixMilli()
+	if ms%1000 == 0 {
+		return strconv.FormatInt(ms/1000, 10)
+	}
+	return strconv.FormatFloat(float64(ms)/1000, 'f', 3, 64)
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -227,11 +303,20 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if trq.Statement == "" {
 		return nil, nil, false, errors.MissingURLParam(upQuery)
 	}
+	if containsStartEndModifier(trq.Statement) {
+		// each delta fetch would resolve start() and end() against its own sub-range, and the
+		// object cache key omits the range, so the request is proxied
+		return trq, rlo, false, errors.ErrStartEndModifier
+	}
 	p := qp.Get(upStart)
 	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upStart)
 	}
-	t, err := parseTime(p)
+	parse := parseTime
+	if c.hooks.PreserveQueryGrid {
+		parse = parseGridTime
+	}
+	t, err := parse(p)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -241,7 +326,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	if p == "" {
 		return nil, nil, false, errors.MissingURLParam(upEnd)
 	}
-	t, err = parseTime(p)
+	t, err = parse(p)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -252,33 +337,98 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		return nil, nil, false, errors.MissingURLParam(upStep)
 	}
 	step, err := parseDuration(p)
+	if c.hooks.PreserveQueryGrid {
+		step, err = time.ParseDuration(p + "s")
+		if err != nil {
+			step, err = tt.ParseDuration(p)
+		}
+		if err == nil && (step <= 0 || step%time.Millisecond != 0) {
+			err = timeseries.ErrUnknownFormat
+		}
+	}
 	if err != nil {
 		return nil, nil, false, err
 	}
 	trq.Step = step
+	// the range as the client sent it, before any grid alignment below
+	requested := timeseries.RequestedRange{Start: trq.Extent.Start, End: trq.Extent.End, EndInclusive: true}
+	if c.hooks.PreserveQueryGrid {
+		if trq.Extent.End.Before(trq.Extent.Start) {
+			return nil, nil, false, timeseries.ErrUnknownFormat
+		}
+		if c.hooks.AlignQueryGrid {
+			for _, at := range []*time.Time{&trq.Extent.Start, &trq.Extent.End} {
+				remainder := at.UnixNano() % int64(step)
+				if remainder < 0 {
+					remainder += int64(step)
+				}
+				*at = at.Add(-time.Duration(remainder))
+				if !at.Equal(time.Unix(0, at.UnixNano())) {
+					return nil, nil, false, timeseries.ErrUnknownFormat
+				}
+			}
+		}
+		trq.Phase = time.Duration(trq.Extent.Start.UnixNano() % step.Nanoseconds())
+		if trq.Phase < 0 {
+			trq.Phase += step
+		}
+		trq.CacheKeyElements = map[string]string{"grid_phase_ns": strconv.FormatInt(int64(trq.Phase), 10)}
+		if trq.Phase != 0 {
+			// Shared epoch-aligned sharding cannot preserve an offset grid.
+			if o := c.Configuration(); o != nil && o.DoesShard {
+				return nil, nil, false, timeseries.ErrUnknownFormat
+			}
+		}
+	}
 
 	if containsOffsetKeyword(trq.Statement) {
 		trq.IsOffset = true
 		rlo.FastForwardDisable = true
 	}
 
-	rlo.ExtractFastForwardDisabled(trq.Statement)
-	trq.ExtractBackfillTolerance(trq.Statement)
-
-	if x := strings.Index(trq.Statement, timeseries.BackfillToleranceFlag); x > 1 {
-		x += 29
-		y := x
-		for ; y < len(trq.Statement); y++ {
-			if trq.Statement[y] < 48 || trq.Statement[y] > 57 {
-				break
-			}
-		}
-		if i, err := strconv.Atoi(trq.Statement[x:y]); err == nil {
-			trq.BackfillTolerance = time.Second * time.Duration(i)
-		}
+	if c.hooks.PreserveQueryGrid && (trq.Phase != 0 || step%time.Second != 0) {
+		rlo.FastForwardDisable = true
+	}
+	trq.Directives = directives.Parse(trq.Statement, directives.SyntaxPromQL)
+	if keyed := directives.Strip(trq.Statement, directives.SyntaxPromQL); keyed != trq.Statement {
+		trq.KeyParamValues = map[string]string{upQuery: keyed}
 	}
 
+	trq.Requested = requested
+	trq.StepAlignments, trq.StepAlignment = c.StepAlignments()
+	rlo.SeriesCap = c.seriesCap(qp.Get(upLimit))
+
 	return trq, rlo, true, nil
+}
+
+// seriesCap returns the series count at which the origin truncates a result for a request
+// carrying limit, or 0 when the origin does not truncate.
+func (c *Client) seriesCap(limit string) int {
+	n := c.hooks.MaxSeries
+	if n <= 0 {
+		return 0
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l < n {
+		return l
+	}
+	return n
+}
+
+// parseGridTime accepts only the millisecond precision carried by Prometheus
+// responses, within the common dataset's nanosecond epoch range.
+func parseGridTime(value string) (time.Time, error) {
+	if v, err := strconv.ParseFloat(value, 64); err == nil {
+		if math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v) > float64(math.MaxInt64/int64(time.Second)) || math.Round(v*1000)/1000 != v {
+			return time.Time{}, timeseries.ErrUnknownFormat
+		}
+	} else if v, err := time.Parse(time.RFC3339Nano, value); err == nil && v.Nanosecond()%int(time.Millisecond) != 0 {
+		return time.Time{}, timeseries.ErrUnknownFormat
+	}
+	t, err := parseTime(value)
+	if err == nil && (t.Year() < 1678 || t.Year() > 2261) {
+		err = timeseries.ErrUnknownFormat
+	}
+	return t, err
 }
 
 // parseVectorQuery parses the key parts of an Instantaneous Query from the inbound HTTP Request

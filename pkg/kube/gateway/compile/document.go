@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	kubeopts "github.com/trickstercache/trickster/v2/pkg/kube/options"
 	alo "github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -102,10 +103,18 @@ func CompileWithManifest(model *ir.IR, opts *kubecfg.Options) (*config.Overlay, 
 // which a rule selecting a provider is served through; nil refuses such a rule
 func CompileWith(model *ir.IR, opts *kubecfg.Options, providers ProviderPaths,
 ) (*config.Overlay, Manifest, error) {
+	return CompileWithProviders(model, opts, providers, nil)
+}
+
+// CompileWithProviders compiles as CompileWith does, applying a policy's step alignment mode only
+// where stepAlignments says its provider supports it; nil applies none
+func CompileWithProviders(model *ir.IR, opts *kubecfg.Options, providers ProviderPaths,
+	stepAlignments ProviderStepAlignments,
+) (*config.Overlay, Manifest, error) {
 	if opts == nil {
 		return nil, nil, ErrNoOptions
 	}
-	doc, err := buildDocument(model, opts, providers)
+	doc, err := buildDocument(model, opts, providers, stepAlignments)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -158,6 +167,20 @@ type document struct {
 	Listeners        map[string]*listenerDoc  `yaml:"listeners,omitempty"`
 	Backends         map[string]*backendDoc   `yaml:"backends,omitempty"`
 	RequestRewriters map[string]*rewriterDoc  `yaml:"request_rewriters,omitempty"`
+	stepAlignments   ProviderStepAlignments
+}
+
+func (d *document) stepAlignment(e effective) string {
+	// a mode applies only to a time series backend whose provider supports it; any other would fail
+	// the generated configuration, so it is left to the provider's default
+	if e.stepAlignment == "" || e.tsProvider == "" || d.stepAlignments == nil {
+		return ""
+	}
+	if mode, err := timeseries.ParseStepAlignment(e.stepAlignment); err != nil ||
+		d.stepAlignments(e.tsProvider)&mode == 0 {
+		return ""
+	}
+	return e.stepAlignment
 }
 
 func (d *document) isEmpty() bool {
@@ -218,6 +241,7 @@ type backendDoc struct {
 	TracingConfigName    string       `yaml:"tracing_name,omitempty"`
 	ReqRewriterName      string       `yaml:"req_rewriter_name,omitempty"`
 	AuthenticatorName    string       `yaml:"authenticator_name,omitempty"`
+	StepAlignment        string       `yaml:"step_alignment,omitempty"`
 	PathRoutingDisabled  bool         `yaml:"path_routing_disabled,omitempty"`
 	PathDefaultsDisabled bool         `yaml:"path_defaults_disabled,omitempty"`
 	AnyHostRouting       bool         `yaml:"any_host_routing,omitempty"`
@@ -290,6 +314,13 @@ type albDoc struct {
 	Mechanism string           `yaml:"mechanism,omitempty"`
 	Pool      []*albPoolDoc    `yaml:"pool,omitempty"`
 	Discovery *albDiscoveryDoc `yaml:"discovery,omitempty"`
+	HRW       *albHRWDoc       `yaml:"hrw,omitempty"`
+	Sticky    *albStickyDoc    `yaml:"sticky,omitempty"`
+}
+
+// albHRWDoc is what a generated ALB keeps together when its mechanism is hrw
+type albHRWDoc struct {
+	Key string `yaml:"key,omitempty"`
 }
 
 // albDiscoveryDoc binds a generated ALB's pool to the generated discoverer:
@@ -323,8 +354,9 @@ type albPoolDoc struct {
 }
 
 func buildDocument(model *ir.IR, opts *kubecfg.Options, providers ProviderPaths,
+	stepAlignments ProviderStepAlignments,
 ) (*document, error) {
-	doc := &document{}
+	doc := &document{stepAlignments: stepAlignments}
 	if model.IsEmpty() {
 		return doc, nil
 	}

@@ -201,3 +201,17 @@ func TestInstantiateFieldMatrix(t *testing.T) {
 	require.Equal(t, "/-/healthy", tmpl.HealthCheck.Path)
 	require.Equal(t, "/custom", tmpl.Paths[0].Path)
 }
+
+func TestInstantiateH2C(t *testing.T) {
+	// an h2c template has no scheme of its own; each member is held to cleartext by its own
+	tmpl := bo.New()
+	tmpl.Provider = "rp"
+	tmpl.IsTemplate = true
+	tmpl.H2CPriorKnowledge = true
+	require.NoError(t, tmpl.Initialize("h2c-template"))
+	o, err := Instantiate("h2c-pod-1", tmpl, discovery.Member{Name: "pod-1", Scheme: "http", Address: "10.0.0.1:9000"})
+	require.NoError(t, err)
+	require.True(t, o.H2CPriorKnowledge)
+	_, err = Instantiate("h2c-pod-2", tmpl, discovery.Member{Name: "pod-2", Scheme: "https", Address: "10.0.0.2:9000"})
+	require.ErrorContains(t, err, "h2c_prior_knowledge requires an http:// origin_url")
+}

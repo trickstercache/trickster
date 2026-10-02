@@ -28,20 +28,25 @@ import (
 )
 
 const (
-	metricNamespace    = "trickster"
-	cacheSubsystem     = "cache"
-	proxySubsystem     = providers.Proxy
-	configSubsystem    = "config"
-	buildSubsystem     = "build"
-	frontendSubsystem  = "frontend"
-	albSubsystem       = "alb"
-	healthSubsystem    = "healthcheck"
-	sqlSubsystem       = "sql"
-	mysqlSubsystem     = "mysql"
-	graphiteSubsystem  = providers.Graphite
-	druidSubsystem     = providers.Druid
-	tlsSubsystem       = "tls"
-	accessLogSubsystem = "accesslog"
+	metricNamespace     = "trickster"
+	cacheSubsystem      = "cache"
+	proxySubsystem      = providers.Proxy
+	configSubsystem     = "config"
+	buildSubsystem      = "build"
+	frontendSubsystem   = "frontend"
+	albSubsystem        = "alb"
+	healthSubsystem     = "healthcheck"
+	sqlSubsystem        = "sql"
+	mysqlSubsystem      = "mysql"
+	pgwireSubsystem     = "pgwire"
+	graphiteSubsystem   = providers.Graphite
+	druidSubsystem      = providers.Druid
+	vmSubsystem         = providers.VictoriaMetrics
+	tlsSubsystem        = "tls"
+	acmeSubsystem       = "acme"
+	accessLogSubsystem  = "accesslog"
+	fileserverSubsystem = "fileserver"
+	stepAlignSubsystem  = "step_alignment"
 )
 
 // Default histogram buckets used by trickster
@@ -81,6 +86,28 @@ var (
 			Help:      "Count of requests mirrored to another backend, sent or dropped at the in-flight bound",
 		},
 		[]string{keys.Backend_Name, keys.Mirror_Backend, keys.Result},
+	)
+
+	// ProxySigV4Events counts SigV4 signing failures and requests resent with refreshed credentials
+	ProxySigV4Events = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "sigv4_events_total",
+			Help:      "Count of SigV4 signing failures and of requests resent after the origin rejected expiring credentials",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// ProxyTruncatedResponses counts time series fetches the origin truncated, which are proxied uncached
+	ProxyTruncatedResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "truncated_responses_total",
+			Help:      "Count of time series fetches the origin truncated at its series limit, which are proxied rather than cached",
+		},
+		[]string{keys.Backend_Name},
 	)
 
 	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
@@ -223,6 +250,42 @@ var (
 		[]string{keys.Listener_Name, keys.Reason},
 	)
 
+	// ProxyStreamMemberConnections counts the connections and UDP sessions a stream listener
+	// committed to a load balancer pool member, by how they went
+	ProxyStreamMemberConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_connections_total",
+			Help:      "Count of connections and UDP sessions committed to a load balancer pool member, by result",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name, keys.Result},
+	)
+
+	// ProxyStreamMemberActiveConnections gauges the connections and UDP sessions open to a
+	// load balancer pool member
+	ProxyStreamMemberActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_active_connections",
+			Help:      "Number of connections and UDP sessions open to a load balancer pool member",
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name},
+	)
+
+	// ProxyStreamMemberConnectDuration observes how long connecting to a pool member took
+	ProxyStreamMemberConnectDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "stream_member_connect_duration_seconds",
+			Help:      "Time taken to connect to a load balancer pool member",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.Listener_Name, keys.Protocol, keys.Backend_Name},
+	)
+
 	// ProxyStreamBytes counts the bytes stream listeners relayed, in from clients and out to them
 	ProxyStreamBytes = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -357,6 +420,73 @@ var (
 		[]string{keys.Cache_Name, keys.Provider},
 	)
 
+	// FileserverResponses is a Counter of files served by static backends, by how the
+	// Fileserver cache was used and the encoding of the rendition the file server produced
+	FileserverResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "responses_total",
+			Help:      "Count of files served by a static backend, by Fileserver cache status and encoding.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Status, keys.Encoding},
+	)
+
+	// FileserverCacheEvents is a Counter of events that remove objects from a Fileserver cache
+	FileserverCacheEvents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_events_total",
+			Help:      "Count of objects removed from a static backend's Fileserver cache, by event.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// FileserverCacheObjects is a Gauge of the objects in a Fileserver cache, including loads in progress
+	FileserverCacheObjects = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_usage_objects",
+			Help:      "Number of objects in a static backend's Fileserver cache.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheBytes is a Gauge of the accounted bytes in a Fileserver cache, including loads in progress
+	FileserverCacheBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_usage_bytes",
+			Help:      "Number of accounted bytes in a static backend's Fileserver cache.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheMaxObjects is a Gauge of the most objects a Fileserver cache will hold
+	FileserverCacheMaxObjects = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_max_usage_objects",
+			Help:      "Maximum number of objects in a static backend's Fileserver cache before eviction.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// FileserverCacheMaxBytes is a Gauge of the most accounted bytes a Fileserver cache will hold
+	FileserverCacheMaxBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: fileserverSubsystem,
+			Name:      "cache_max_usage_bytes",
+			Help:      "Maximum number of accounted bytes in a static backend's Fileserver cache before eviction.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
 	// ProxyMaxConnections is a Gauge representing the max number of active concurrent connections in the server
 	ProxyMaxConnections = prometheus.NewGauge(
 		prometheus.GaugeOpts{
@@ -428,6 +558,31 @@ var (
 		[]string{keys.Backend_Name},
 	)
 
+	// ProxyPartialBucketFetches counts partial bucket fetches through the object proxy cache, by the
+	// edge of the range the bucket sits on and the lookup's status
+	ProxyPartialBucketFetches = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "partial_bucket_fetches_total",
+			Help:      "Count of partial bucket fetches through the object proxy cache.",
+		},
+		[]string{keys.Backend_Name, keys.Provider, keys.Edge, keys.Status},
+	)
+
+	// StepAlignmentFallbacks counts requests for a step alignment mode the query doesn't support,
+	// which were served in the query's default mode instead
+	StepAlignmentFallbacks = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: stepAlignSubsystem,
+			Name:      "fallbacks_total",
+			Help: "Count of requests for a step alignment mode the query does not support, " +
+				"served in the query's default mode.",
+		},
+		[]string{keys.Backend_Name, keys.Requested, keys.Applied},
+	)
+
 	// TimeseriesRetentionFactorExceeded counts requests spanning more buckets
 	// than timeseries_retention_factor, whose cache entry is therefore cropped
 	// and whose cropped remainder is refetched on every request.
@@ -440,6 +595,19 @@ var (
 				"the backend's timeseries_retention_factor can retain.",
 		},
 		[]string{keys.Backend_Name},
+	)
+
+	// TimeseriesOffGridExtents counts delta fetch ranges whose bounds fell between buckets and
+	// were narrowed to whole buckets before the upstream request was rendered.
+	TimeseriesOffGridExtents = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "timeseries_offgrid_extents_total",
+			Help: "Count of time series fetch ranges with bounds between buckets, " +
+				"narrowed to whole buckets before fetching.",
+		},
+		[]string{keys.Backend_Name, keys.Provider},
 	)
 
 	// SQLQueryAnalysis counts SQL analyzer classifications using bounded mode,
@@ -476,6 +644,18 @@ var (
 			Subsystem: druidSubsystem,
 			Name:      "query_analysis_total",
 			Help:      "Count of native Druid query cache-eligibility classifications.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
+	)
+
+	// VictoriaMetricsQueryAnalysis counts the cache paths chosen for MetricsQL API requests, using
+	// bounded mode and reason labels.
+	VictoriaMetricsQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: vmSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of MetricsQL API request cache-eligibility classifications.",
 		},
 		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
 	)
@@ -536,6 +716,52 @@ var (
 			Help:      "Count of MySQL protocol and origin failures.",
 		},
 		[]string{keys.Backend_Name, keys.Class},
+	)
+
+	// PGWireConnections tracks bounded PostgreSQL wire-protocol connection lifecycle outcomes.
+	PGWireConnections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "connections_total",
+			Help:      "Count of PostgreSQL wire-protocol connection lifecycle events.",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// PGWireActiveConnections is the current authenticated-or-handshaking count.
+	PGWireActiveConnections = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "active_connections",
+			Help:      "Current PostgreSQL wire-protocol downstream connections.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// PGWireConnectionErrors tracks startup, authentication, protocol, and
+	// upstream failures without including user-controlled text in labels.
+	PGWireConnectionErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "errors_total",
+			Help:      "Count of PostgreSQL wire-protocol and origin failures.",
+		},
+		[]string{keys.Backend_Name, keys.Class},
+	)
+
+	// PGWireRouteSelections tracks bounded native User Router outcomes. Backend
+	// and router names come from configuration; usernames are never labels.
+	PGWireRouteSelections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: pgwireSubsystem,
+			Name:      "route_selections_total",
+			Help:      "Count of native PostgreSQL route-selection outcomes.",
+		},
+		[]string{keys.Router_Name, keys.Backend_Name, keys.Outcome},
 	)
 
 	// GraphiteResolutionLookups counts step-resolution outcomes. confidence
@@ -705,16 +931,38 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
-	// ALBPoolRefreshPanicRecovered counts recovered panics in ALB pool refresh
-	// worker goroutines (checkHealth, listenStatusUpdates). A dead worker leaves
-	// the healthy-target snapshot stale; the per-call re-filter in Targets()
-	// still produces correct dispatch, but operator-visible gauges drift.
+	// ALBStickyResults counts the requests and flows of an ALB that keeps sessions, by how their
+	// session fared: hit, miss, expired, invalid, repick or rejected
+	ALBStickyResults = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "sticky_total",
+			Help:      "Count of requests and flows through an ALB that keeps sessions, by how their session fared.",
+		},
+		[]string{keys.ALB_Name, keys.Result},
+	)
+
+	// ALBMemberEjections counts pool members taken out of selection by passive health, which
+	// acts on repeated failures to connect rather than on a health check
+	ALBMemberEjections = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "member_ejections_total",
+			Help:      "Count of ALB pool members ejected by passive health after repeated connect failures.",
+		},
+		[]string{keys.ALB_Name, keys.Member},
+	)
+
+	// ALBPoolRefreshPanicRecovered counts panics recovered while an ALB pool rebuilt its
+	// healthy-member snapshot; the pool keeps serving the snapshot it last published.
 	ALBPoolRefreshPanicRecovered = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: metricNamespace,
 			Subsystem: albSubsystem,
 			Name:      "pool_refresh_panic_recovered_total",
-			Help:      "Count of recovered panics in ALB pool refresh worker goroutines, by worker.",
+			Help:      "Count of panics recovered while an ALB pool rebuilt its healthy-member snapshot, by worker.",
 		},
 		[]string{keys.Worker},
 	)
@@ -893,6 +1141,70 @@ var (
 		[]string{keys.Listener},
 	)
 
+	// ACMEOrdersTotal counts first-time ACME certificate orders by issuer and result
+	ACMEOrdersTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "orders_total",
+			Help:      "Count of first-time ACME certificate orders, by issuer and result.",
+		},
+		[]string{keys.Issuer, keys.Result},
+	)
+
+	// ACMERenewalsTotal counts ACME certificate renewals by issuer and result
+	ACMERenewalsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "renewals_total",
+			Help:      "Count of ACME certificate renewals, by issuer and result.",
+		},
+		[]string{keys.Issuer, keys.Result},
+	)
+
+	// ACMEChallengeRequestsTotal counts ACME challenge requests answered or refused by listeners
+	ACMEChallengeRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "challenge_requests_total",
+			Help:      "Count of ACME challenge requests received by listeners, by challenge type and result.",
+		},
+		[]string{keys.Type, keys.Result},
+	)
+
+	// ACMEOnDemandDecisionsTotal counts on-demand issuance decisions by result
+	ACMEOnDemandDecisionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "on_demand_decisions_total",
+			Help:      "Count of on-demand ACME issuance decisions, by result.",
+		},
+		[]string{keys.Result},
+	)
+
+	// ACMEStartupWaitSeconds is how long startup readiness waited for missing certificates
+	ACMEStartupWaitSeconds = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "startup_wait_seconds",
+			Help:      "Seconds startup readiness was held waiting for missing ACME certificates.",
+		},
+	)
+
+	// ACMEStartupWaitTimeoutsTotal counts startup waits that ended before every certificate was issued
+	ACMEStartupWaitTimeoutsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "startup_wait_timeouts_total",
+			Help:      "Count of startup readiness waits that timed out before every ACME certificate was issued.",
+		},
+	)
+
 	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
 	// startup because one or more pool members have no health check and could
 	// never reach the configured floor (>= Passing), which would otherwise
@@ -906,6 +1218,18 @@ var (
 		},
 		[]string{keys.Backend_Name},
 	)
+
+	// ALBPoolOnBackup flags ALB pools that have backup members and are dispatching to them
+	// because no other member is available.
+	ALBPoolOnBackup = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "pool_on_backup",
+			Help:      "1 while an ALB pool dispatches to its backup members because no other member is available; 0 otherwise.",
+		},
+		[]string{keys.Backend_Name},
+	)
 )
 
 func init() {
@@ -913,9 +1237,16 @@ func init() {
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)
+	prometheus.MustRegister(ProxySigV4Events)
+	prometheus.MustRegister(ProxyTruncatedResponses)
 	prometheus.MustRegister(ProxyStreamConnections)
 	prometheus.MustRegister(ProxyStreamActiveConnections)
 	prometheus.MustRegister(ProxyStreamBytes)
+	prometheus.MustRegister(ProxyStreamMemberConnections)
+	prometheus.MustRegister(ProxyStreamMemberActiveConnections)
+	prometheus.MustRegister(ProxyStreamMemberConnectDuration)
+	prometheus.MustRegister(ALBMemberEjections)
+	prometheus.MustRegister(ALBStickyResults)
 	prometheus.MustRegister(ProxyStreamDroppedDatagrams)
 	prometheus.MustRegister(FrontendRequestStatus)
 	prometheus.MustRegister(FrontendRequestDuration)
@@ -942,6 +1273,7 @@ func init() {
 	prometheus.MustRegister(HealthcheckStatusNotifyPanicRecovered)
 	prometheus.MustRegister(ALBPoolAdmitsFailing)
 	prometheus.MustRegister(ALBPoolFloorReset)
+	prometheus.MustRegister(ALBPoolOnBackup)
 	prometheus.MustRegister(CacheObjectOperations)
 	prometheus.MustRegister(CacheObjectOperationDuration)
 	prometheus.MustRegister(CacheByteOperations)
@@ -950,6 +1282,12 @@ func init() {
 	prometheus.MustRegister(CacheBytes)
 	prometheus.MustRegister(CacheMaxObjects)
 	prometheus.MustRegister(CacheMaxBytes)
+	prometheus.MustRegister(FileserverResponses)
+	prometheus.MustRegister(FileserverCacheEvents)
+	prometheus.MustRegister(FileserverCacheObjects)
+	prometheus.MustRegister(FileserverCacheBytes)
+	prometheus.MustRegister(FileserverCacheMaxObjects)
+	prometheus.MustRegister(FileserverCacheMaxBytes)
 	prometheus.MustRegister(BuildInfo)
 	prometheus.MustRegister(LastReloadSuccessful)
 	prometheus.MustRegister(LastReloadSuccessfulTimestamp)
@@ -958,15 +1296,23 @@ func init() {
 	prometheus.MustRegister(ReloadFailuresTotal)
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
+	prometheus.MustRegister(ProxyPartialBucketFetches)
+	prometheus.MustRegister(StepAlignmentFallbacks)
 	prometheus.MustRegister(TimeseriesRetentionFactorExceeded)
+	prometheus.MustRegister(TimeseriesOffGridExtents)
 	prometheus.MustRegister(SQLQueryAnalysis)
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
 	prometheus.MustRegister(DruidQueryRewriteFailures)
+	prometheus.MustRegister(VictoriaMetricsQueryAnalysis)
 	prometheus.MustRegister(SQLQueryCache)
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
 	prometheus.MustRegister(MySQLConnectionErrors)
+	prometheus.MustRegister(PGWireConnections)
+	prometheus.MustRegister(PGWireActiveConnections)
+	prometheus.MustRegister(PGWireConnectionErrors)
+	prometheus.MustRegister(PGWireRouteSelections)
 	prometheus.MustRegister(GraphiteResolutionLookups)
 	prometheus.MustRegister(GraphiteProbes)
 	prometheus.MustRegister(GraphiteLadders)
@@ -981,6 +1327,12 @@ func init() {
 	prometheus.MustRegister(TLSCertificateValidationFailures)
 	prometheus.MustRegister(TLSWatcherErrors)
 	prometheus.MustRegister(TLSCertificateStoreSize)
+	prometheus.MustRegister(ACMEOrdersTotal)
+	prometheus.MustRegister(ACMERenewalsTotal)
+	prometheus.MustRegister(ACMEChallengeRequestsTotal)
+	prometheus.MustRegister(ACMEOnDemandDecisionsTotal)
+	prometheus.MustRegister(ACMEStartupWaitSeconds)
+	prometheus.MustRegister(ACMEStartupWaitTimeoutsTotal)
 }
 
 // Handler returns the http handler for the listener
@@ -1004,15 +1356,23 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestElements,
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
+	ProxyPartialBucketFetches,
+	StepAlignmentFallbacks,
 	TimeseriesRetentionFactorExceeded,
+	TimeseriesOffGridExtents,
 	SQLQueryAnalysis,
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,
 	DruidQueryRewriteFailures,
+	VictoriaMetricsQueryAnalysis,
 	SQLQueryCache,
 	MySQLConnections,
 	MySQLActiveConnections,
 	MySQLConnectionErrors,
+	PGWireConnections,
+	PGWireActiveConnections,
+	PGWireConnectionErrors,
+	PGWireRouteSelections,
 	MySQLRouteSelections,
 	MySQLCommandLatency,
 	HealthcheckProbePanicRecovered,
@@ -1020,6 +1380,10 @@ var backendSeriesVecs = []partialDeleter{
 	HealthcheckStatusNotifyPanicRecovered,
 	ALBPoolAdmitsFailing,
 	ALBPoolFloorReset,
+	ALBPoolOnBackup,
+	ProxyStreamMemberConnections,
+	ProxyStreamMemberActiveConnections,
+	ProxyStreamMemberConnectDuration,
 }
 
 // DeleteBackendSeries removes every metric series labeled with the provided
@@ -1033,6 +1397,8 @@ func DeleteBackendSeries(backendName string) {
 	for _, v := range backendSeriesVecs {
 		v.DeletePartialMatch(labels)
 	}
+	// a pool member is named by the member label where the backend_name is its ALB's
+	ALBMemberEjections.DeletePartialMatch(prometheus.Labels{keys.Member: backendName})
 }
 
 // ALB Autodiscovery metrics

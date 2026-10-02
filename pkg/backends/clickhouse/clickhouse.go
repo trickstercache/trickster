@@ -18,6 +18,7 @@
 package clickhouse
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -45,9 +46,15 @@ var _ backends.TimeseriesBackend = (*Client)(nil)
 type Client struct {
 	backends.TimeseriesBackend
 	nativeClient *chnative.NativeClient
+	zone         serverZone
 }
 
 var _ types.NewBackendClientFunc = NewClient
+
+// StepAlignments returns the step alignment modes ClickHouse supports, and its default
+func (c *Client) StepAlignments() (supported, def timeseries.StepAlignment) {
+	return sqlanalyzer.StepAlignments, sqlanalyzer.DefaultStepAlignment
+}
 
 // NewClient returns a new Client Instance
 func NewClient(name string, o *bo.Options, router http.Handler,
@@ -76,8 +83,17 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 			c.HTTPClient().Transport = nc
 			c.HealthCheckHTTPClient().Transport = nc
 		}
+		// the server's zone is learned from the responses that name it
+		if next := c.HTTPClient().Transport; next != nil {
+			c.HTTPClient().Transport = &zoneObserver{next: next, zone: &c.zone}
+		}
 	}
 	return c, nil
+}
+
+// resolveZone reports whether the server's zone is known, or taken as UTC, so a request may be cached
+func (c *Client) resolveZone(ctx context.Context) bool {
+	return c.zone.resolve(ctx, c.HTTPClient(), c.BaseUpstreamURL())
 }
 
 // ParseTimeRangeQuery parses the key parts of a TimeRangeQuery from the inbound HTTP Request
@@ -114,13 +130,30 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 		}
 		ro.OutputFormat = output
 	}
-	if ro != nil && ro.OutputFormat == modelch.OutputFormatNative {
-		raw := r.URL.Query().Get("client_protocol_version")
-		revision, err := strconv.ParseUint(raw, 10, 64)
-		if raw != "" && err != nil {
-			return trq, ro, true, ErrUnsupportedOutputFormat
+	if ro != nil && r.URL != nil {
+		settings := r.URL.Query()
+		// a DateTime is written in the session's zone, which is the server's unless the request sets one
+		zone, ok := sessionZone(settings, sqlQuery)
+		if !ok {
+			zone, _ = c.zone.get()
 		}
-		ro.ProviderRequest = modelch.NativeFormatOptions{Revision: revision}
+		fopts := modelch.NewFormatOptions(settings, zone)
+		if ro.OutputFormat == modelch.OutputFormatNative {
+			raw := settings.Get("client_protocol_version")
+			revision, err := strconv.ParseUint(raw, 10, 64)
+			if raw != "" && err != nil {
+				return trq, ro, true, ErrUnsupportedOutputFormat
+			}
+			fopts.Revision = revision
+		}
+		ro.ProviderRequest = fopts
+		if plan, ok := trq.ParsedQuery.(*sqlanalyzer.QueryPlan); ok {
+			// a bound read in a zone other than UTC isn't the range the analysis read
+			if plan.ZonedBounds && zone != nil {
+				return trq, ro, true, ErrZonedBounds
+			}
+			keyRendering(trq, plan, zone)
+		}
 	}
 	if isBody && trq != nil {
 		trq.OriginalBody = originalBody
@@ -128,13 +161,13 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	var bf time.Duration
 	res := request.GetResources(r)
 	if res == nil {
-		// 60-second default backfill tolerance for ClickHouse
+		// 60-second default volatile window for ClickHouse
 		bf = time.Minute
 	} else {
-		bf = time.Duration(res.BackendOptions.BackfillTolerance)
+		bf = time.Duration(res.BackendOptions.VolatileWindow)
 	}
-	if trq.BackfillTolerance == 0 {
-		trq.BackfillTolerance = bf
+	if trq.VolatileWindow == 0 {
+		trq.VolatileWindow = bf
 	}
 	trq.TemplateURL = urls.Clone(r.URL)
 

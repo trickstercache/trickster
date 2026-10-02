@@ -19,23 +19,24 @@ package deflate
 import (
 	"bytes"
 	"io"
-	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/encoding/codecpool"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/reader"
 
 	"github.com/klauspost/compress/flate"
 )
 
-var writerPool sync.Pool
+// a level can't be changed on a reused writer, so each has its own pool
+var encoderPools [flate.BestCompression - flate.HuffmanOnly + 1]*codecpool.Encoders
 
-type pooledWriter struct {
-	*flate.Writer
-}
-
-func (pw *pooledWriter) Close() error {
-	err := pw.Writer.Close()
-	writerPool.Put(pw.Writer)
-	return err
+func init() {
+	for i := range encoderPools {
+		level := i + flate.HuffmanOnly
+		encoderPools[i] = codecpool.NewEncoders(func() codecpool.Encoder {
+			fw, _ := flate.NewWriter(nil, level)
+			return fw
+		})
+	}
 }
 
 // Decode returns the decoded version of the encoded byte slice
@@ -47,21 +48,20 @@ func Decode(in []byte) ([]byte, error) {
 // Encode returns the encoded version of the byte slice
 func Encode(in []byte) ([]byte, error) {
 	buf := bytes.NewBuffer(make([]byte, 0, len(in)))
-	// NewWriter only returns an error if the second param is < -2
-	dw, _ := flate.NewWriter(buf, -1)
-	dw.Write(in)
-	dw.Close()
-	return buf.Bytes(), nil
+	dw := NewEncoder(buf, flate.DefaultCompression)
+	_, err := dw.Write(in)
+	if cerr := dw.Close(); err == nil {
+		err = cerr
+	}
+	return buf.Bytes(), err
 }
 
+// NewEncoder returns a pooled encoder writing to w, which returns to its pool when closed
 func NewEncoder(w io.Writer, level int) io.WriteCloser {
-	if v := writerPool.Get(); v != nil {
-		fw := v.(*flate.Writer)
-		fw.Reset(w)
-		return &pooledWriter{fw}
+	if level < flate.HuffmanOnly || level > flate.BestCompression {
+		level = flate.DefaultCompression
 	}
-	fw, _ := flate.NewWriter(w, level)
-	return &pooledWriter{fw}
+	return encoderPools[level-flate.HuffmanOnly].Get(w)
 }
 
 func NewDecoder(r io.Reader) reader.ReadCloserResetter {

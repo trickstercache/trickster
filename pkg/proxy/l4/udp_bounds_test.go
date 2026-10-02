@@ -26,11 +26,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
-
-	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // countingUpstream refuses its first n selections and then yields addr
@@ -40,11 +37,11 @@ type countingUpstream struct {
 	calls  atomic.Int32
 }
 
-func (c *countingUpstream) Addr() (string, bool) {
+func (c *countingUpstream) Pick(f Flow) (Route, bool) {
 	if c.calls.Add(1) <= c.refuse {
-		return "", false
+		return nil, false
 	}
-	return c.addr, true
+	return Static(c.addr).Pick(f)
 }
 
 func TestFailedFlowsDoNotFillTheSessionBound(t *testing.T) {
@@ -448,8 +445,10 @@ func TestBlockedUpstreamWriteStallsOnlyItsFlow(t *testing.T) {
 	release := make(chan struct{})
 	var first atomic.Pointer[stallingConn]
 	var d net.Dialer
+	counts := &countingObserver{}
 	srv, addr, _ := startPacketServerWith(t, &Config{
-		Table: tableOf(t, map[string]Upstream{"": Static(echo)}),
+		Observer: counts,
+		Table:    tableOf(t, map[string]Upstream{"": Static(echo)}),
 	}, func(ctx context.Context, a string) (net.Conn, error) {
 		conn, err := d.DialContext(ctx, "udp", a)
 		if err != nil {
@@ -462,8 +461,8 @@ func TestBlockedUpstreamWriteStallsOnlyItsFlow(t *testing.T) {
 		}
 		return conn, nil
 	})
-	dropsBefore := testutil.ToFloat64(metrics.ProxyStreamDroppedDatagrams.WithLabelValues("udp-test", DropQueueFull))
-	timeoutsBefore := testutil.ToFloat64(metrics.ProxyStreamDroppedDatagrams.WithLabelValues("udp-test", DropWriteTimeout))
+	dropsBefore := counts.dropped(DropQueueFull)
+	timeoutsBefore := counts.dropped(DropWriteTimeout)
 	stuck := udpClient(t, addr)
 	if _, err := stuck.Write([]byte("first")); err != nil {
 		t.Fatal(err)
@@ -484,7 +483,7 @@ func TestBlockedUpstreamWriteStallsOnlyItsFlow(t *testing.T) {
 		}
 	}
 	waitFor(t, func() bool {
-		return testutil.ToFloat64(metrics.ProxyStreamDroppedDatagrams.WithLabelValues("udp-test", DropQueueFull))-dropsBefore >= 8
+		return counts.dropped(DropQueueFull)-dropsBefore >= 8
 	})
 	srv.mu.Lock()
 	sess := srv.sessions[stuck.LocalAddr().String()]
@@ -500,7 +499,7 @@ func TestBlockedUpstreamWriteStallsOnlyItsFlow(t *testing.T) {
 	}
 	// the first write times out at the write bound and its datagram is dropped, not the flow
 	waitFor(t, func() bool {
-		return testutil.ToFloat64(metrics.ProxyStreamDroppedDatagrams.WithLabelValues("udp-test", DropWriteTimeout)) > timeoutsBefore
+		return counts.dropped(DropWriteTimeout) > timeoutsBefore
 	})
 	close(release)
 	// once released the queue drains in order and the flow relays again
@@ -529,8 +528,10 @@ func TestInFlightWritesStayWithinTheQueuedBudget(t *testing.T) {
 	release := make(chan struct{})
 	var inFlight atomic.Int64
 	var d net.Dialer
+	counts := &countingObserver{}
 	srv, addr, _ := startPacketServerWith(t, &Config{
-		Table: tableOf(t, map[string]Upstream{"": Static(echo)}),
+		Observer: counts,
+		Table:    tableOf(t, map[string]Upstream{"": Static(echo)}),
 	}, func(ctx context.Context, a string) (net.Conn, error) {
 		conn, err := d.DialContext(ctx, "udp", a)
 		if err != nil {
@@ -538,7 +539,7 @@ func TestInFlightWritesStayWithinTheQueuedBudget(t *testing.T) {
 		}
 		return &stallingConn{Conn: conn, release: release, inFlight: &inFlight}, nil
 	})
-	dropsBefore := testutil.ToFloat64(metrics.ProxyStreamDroppedDatagrams.WithLabelValues("udp-test", DropQueueFull))
+	dropsBefore := counts.dropped(DropQueueFull)
 	const flows = 24
 	payload := make([]byte, 8192)
 	clients := make([]*net.UDPConn, flows)
@@ -569,7 +570,7 @@ func TestInFlightWritesStayWithinTheQueuedBudget(t *testing.T) {
 	if held := inFlight.Load(); held <= 0 {
 		t.Error("no write was stalled")
 	}
-	drops := testutil.ToFloat64(metrics.ProxyStreamDroppedDatagrams.WithLabelValues("udp-test", DropQueueFull)) - dropsBefore
+	drops := counts.dropped(DropQueueFull) - dropsBefore
 	if drops <= 0 {
 		t.Error("nothing beyond the budget was dropped")
 	}

@@ -11,14 +11,12 @@
           "points": [
             {
               "epoch": 100,
-              "size": 32,
               "values": [
                 "10"
               ]
             },
             {
               "epoch": 200,
-              "size": 32,
               "values": [
                 "20"
               ]

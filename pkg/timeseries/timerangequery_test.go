@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-func TestNormalizeExtent(t *testing.T) {
+func TestAlignExtent(t *testing.T) {
 	tmrw := time.Now().Add(time.Duration(24) * time.Hour).Unix()
 	expected := (time.Now().Unix() / 10) * 10
 
@@ -53,7 +53,7 @@ func TestNormalizeExtent(t *testing.T) {
 			rangeStart: 0, rangeEnd: (tmrw / 10) * 10,
 		},
 		{
-			name:  "zero step no normalization",
+			name:  "zero step no alignment",
 			start: 1, end: 103, stepSecs: 0,
 			rangeStart: 1, rangeEnd: 103,
 		},
@@ -77,7 +77,7 @@ func TestNormalizeExtent(t *testing.T) {
 				IsOffset: test.isOffset,
 			}
 
-			trq.NormalizeExtent()
+			trq.AlignExtent()
 
 			if trq.Extent.Start.Unix() != test.rangeStart {
 				t.Errorf("rangeStart: expected=%d actual=%d", test.rangeStart, trq.Extent.Start.Unix())
@@ -97,10 +97,12 @@ func TestClone(t *testing.T) {
 			Extent:      Extent{Start: time.Unix(5, 0), End: time.Unix(10, 0)},
 			Step:        time.Duration(5) * time.Second,
 			Phase:       time.Second,
+			SampleModel: SampleModelBucket,
 			TemplateURL: u,
 		}
 		c := trq.Clone()
-		if c.Statement != trq.Statement || c.Step != trq.Step || c.Phase != trq.Phase {
+		if c.Statement != trq.Statement || c.Step != trq.Step || c.Phase != trq.Phase ||
+			c.SampleModel != trq.SampleModel {
 			t.Error("basic fields mismatch")
 		}
 		if c.TemplateURL == trq.TemplateURL {
@@ -119,6 +121,22 @@ func TestClone(t *testing.T) {
 		}
 	})
 
+	t.Run("step alignment fields", func(t *testing.T) {
+		trq := &TimeRangeQuery{
+			Requested:      RequestedRange{Start: time.Unix(5, 0), End: time.Unix(10, 0), EndInclusive: true},
+			StepAlignments: StepAlignmentTruncate | StepAlignmentPartialEnd,
+			StepAlignment:  StepAlignmentPartialEnd,
+			Partials:       [2]PartialBucket{{Label: time.Unix(10, 0), Edge: BucketEdgeEnd}},
+			PartialCount:   1,
+		}
+		c := trq.Clone()
+		if c.Requested != trq.Requested || c.StepAlignments != trq.StepAlignments ||
+			c.StepAlignment != trq.StepAlignment || c.Partials != trq.Partials ||
+			c.PartialCount != trq.PartialCount {
+			t.Errorf("step alignment fields mismatch: %+v", c)
+		}
+	})
+
 	t.Run("ParsedQuery retained", func(t *testing.T) {
 		parsed := &struct{ value string }{value: "plan"}
 		trq := &TimeRangeQuery{Statement: "test", ParsedQuery: parsed}
@@ -128,15 +146,18 @@ func TestClone(t *testing.T) {
 		}
 	})
 
-	t.Run("OriginalBody independent copy", func(t *testing.T) {
+	t.Run("OriginalBody shared", func(t *testing.T) {
 		trq := &TimeRangeQuery{
 			Statement:    "test",
 			OriginalBody: []byte("original"),
 		}
 		c := trq.Clone()
-		c.OriginalBody[0] = 'X'
-		if trq.OriginalBody[0] == 'X' {
-			t.Error("clone mutation affected original OriginalBody")
+		if &c.OriginalBody[0] != &trq.OriginalBody[0] {
+			t.Error("the body, which is only ever replaced, was copied")
+		}
+		c.OriginalBody = []byte("replaced")
+		if string(trq.OriginalBody) != "original" {
+			t.Error("replacing the clone's body replaced the original's")
 		}
 	})
 
@@ -190,8 +211,8 @@ func TestCachePolicyStep(t *testing.T) {
 	if got := trq.Clone().PolicyStepNS; got != trq.PolicyStepNS {
 		t.Fatalf("cloned serialized policy step = %d", got)
 	}
-	if got := trq.GetBackfillTolerance(0, 2); got != 30*time.Second {
-		t.Fatalf("backfill tolerance = %s", got)
+	if got := trq.GetVolatileWindow(0, 2); got != 30*time.Second {
+		t.Fatalf("volatile window = %s", got)
 	}
 }
 
@@ -202,36 +223,9 @@ func TestSizeTRQ(t *testing.T) {
 		End:   time.Unix(10, 0),
 	}, Step: time.Duration(5) * time.Second, TemplateURL: u}
 	size := trq.Size()
-	if size != 143 {
-		t.Errorf("expected %d got %d", 143, size)
+	if size != 358 {
+		t.Errorf("expected %d got %d", 358, size)
 	}
-}
-
-func TestExtractBackfillTolerance(t *testing.T) {
-	t.Run("valid flag", func(t *testing.T) {
-		trq := &TimeRangeQuery{}
-		trq.ExtractBackfillTolerance("testing trickster-backfill-tolerance:30 ")
-		if trq.BackfillTolerance != time.Second*30 {
-			t.Error("expected 30s got", trq.BackfillTolerance)
-		}
-	})
-
-	t.Run("flag not present", func(t *testing.T) {
-		trq := &TimeRangeQuery{}
-		trq.ExtractBackfillTolerance("no flag here")
-		if trq.BackfillTolerance != 0 {
-			t.Error("expected 0 got", trq.BackfillTolerance)
-		}
-	})
-
-	t.Run("flag at position 0", func(t *testing.T) {
-		trq := &TimeRangeQuery{}
-		trq.ExtractBackfillTolerance("trickster-backfill-tolerance:30")
-		// x > 1 check means position 0 is not extracted
-		if trq.BackfillTolerance != 0 {
-			t.Error("expected 0 for position 0, got", trq.BackfillTolerance)
-		}
-	})
 }
 
 func TestStringTRQ(t *testing.T) {
@@ -247,7 +241,7 @@ func TestStringTRQ(t *testing.T) {
 	}
 }
 
-func TestGetBackfillTolerance(t *testing.T) {
+func TestGetVolatileWindow(t *testing.T) {
 	tests := []struct {
 		name      string
 		tolerance time.Duration
@@ -294,10 +288,10 @@ func TestGetBackfillTolerance(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			trq := &TimeRangeQuery{
-				BackfillTolerance: test.tolerance,
-				Step:              test.step,
+				VolatileWindow: test.tolerance,
+				Step:           test.step,
 			}
-			if got := trq.GetBackfillTolerance(test.def, test.points); got != test.expected {
+			if got := trq.GetVolatileWindow(test.def, test.points); got != test.expected {
 				t.Errorf("expected %s got %s", test.expected, got)
 			}
 		})
