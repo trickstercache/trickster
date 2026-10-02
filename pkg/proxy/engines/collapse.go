@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -164,7 +165,7 @@ func joinCollapse(pcf ProgressiveCollapseForwarder, w http.ResponseWriter, r *ht
 	writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, nil)
 	if err := pcf.AddClient(streamWriter(writer, resp)); err != nil {
 		logger.Error("collapsed client stream failed",
-			logging.Pairs{keys.URL: r.URL.String(), keys.Error: err.Error()})
+			logging.Pairs{keys.URL: redact.URL(r.URL), keys.Error: err.Error()})
 		abortOnCopyError(w, r, err)
 	}
 }

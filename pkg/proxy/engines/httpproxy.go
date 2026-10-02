@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -314,7 +315,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				status = http.StatusRequestEntityTooLarge
 			}
 			logger.Error("error buffering request body for retry",
-				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
+				logging.Pairs{keys.URL: redact.URL(r.URL), keys.Detail: err.Error()})
 			setHTTPStatusSpanAttributes(rsc.Tracer, status, span, doSpan)
 			return nil, &http.Response{
 				StatusCode: status,
@@ -336,7 +337,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",
-				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
+				logging.Pairs{keys.URL: redact.URL(r.URL), keys.Detail: redact.Error(err)})
 		}
 		// if there is an err and the response is nil, the server could not be reached, which
 		// is a 502 downstream, or it ran out the path's or attempt's time, which is a 504
@@ -353,7 +354,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			logger.Error("error reaching upstream origin",
 				logging.Pairs{
 					keys.Origin:          r.Host,
-					keys.URL:             r.URL.String(),
+					keys.URL:             redact.URL(r.URL),
 					keys.BackendName:     o.Name,
 					keys.BackendProvider: o.Provider,
 					keys.Detail:          "nil response from upstream origin",
@@ -369,7 +370,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.AddEvent(
 				"Failure",
 				trace.EventOption(trace.WithAttributes(
-					attribute.String(keys.Error, err.Error()),
+					attribute.String(keys.Error, redact.Error(err)),
 					attribute.Int(keys.HTTPStatus, resp.StatusCode),
 				)),
 			)
@@ -381,7 +382,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if resp.StatusCode == http.StatusBadGateway {
 		logger.Error("received 502 from upstream",
 			logging.Pairs{
-				keys.URL:             r.URL.String(),
+				keys.URL:             redact.URL(r.URL),
 				keys.BackendProvider: o.Provider,
 				keys.BackendName:     o.Name,
 				keys.HTTPStatus:      resp.StatusCode,

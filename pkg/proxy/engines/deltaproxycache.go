@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -926,7 +927,7 @@ func fetchTimeseries(
 	}
 
 	// A fallback may reuse and mutate the request after this function returns.
-	method, target, userAgent := pr.Method, pr.URL.String(), pr.UserAgent()
+	method, target, userAgent := pr.Method, redact.URL(pr.URL), pr.UserAgent()
 	goWithRecover("dpc.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName,
 			method, target, userAgent, resp.StatusCode, 0, elapsed.Seconds())
@@ -1154,10 +1155,10 @@ func fetchExtents(
 				logger.Error("unexpected upstream response",
 					logging.Pairs{
 						keys.StatusCode:           resp.StatusCode,
-						"clientRequestURL":        pr.Request.URL.String(),
+						"clientRequestURL":        redact.URL(pr.Request.URL),
 						"clientRequestMethod":     pr.Request.Method,
 						"clientRequestHeaders":    headers.SanitizeForLogging(pr.Request.Header),
-						"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
+						"upstreamRequestURL":      redact.URL(pr.upstreamRequest.URL),
 						"upstreamRequestMethod":   pr.upstreamRequest.Method,
 						"upstreamRequestHeaders":  headers.SanitizeForLogging(pr.upstreamRequest.Header),
 						"upstreamResponseHeaders": headers.LogString(resp.Header),

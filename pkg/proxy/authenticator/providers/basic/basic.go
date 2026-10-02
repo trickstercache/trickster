@@ -123,7 +123,7 @@ func (a *Authenticator) Authenticate(r *http.Request) (*types.AuthResult, error)
 	if !ok {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentials
 	}
-	if err := cred.VerifyPassword(hash, p); err != nil {
+	if err := cred.VerifyUserPassword(u, hash, p); err != nil {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentials
 	}
 	return &types.AuthResult{Username: u, Status: types.AuthSuccess}, nil

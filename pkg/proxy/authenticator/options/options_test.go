@@ -18,6 +18,7 @@ package options
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -55,10 +56,36 @@ func TestValidate(t *testing.T) {
 	if err := o.Validate(isTestProvider); !errors.Is(err, ae.ErrInvalidProvider) {
 		t.Errorf("unregistered provider = %v; want %v", err, ae.ErrInvalidProvider)
 	}
-	o = &Options{Name: testAuthenticatorName, Provider: testAuthenticatorProvider,
-		UsersFile: filepath.Join(t.TempDir(), "missing")}
+	o = &Options{
+		Name: testAuthenticatorName, Provider: testAuthenticatorProvider,
+		UsersFile: filepath.Join(t.TempDir(), "missing"),
+	}
 	if err := o.Validate(isTestProvider); !errors.Is(err, ae.ErrInvalidUsersFile) {
 		t.Errorf("missing users file = %v; want %v", err, ae.ErrInvalidUsersFile)
+	}
+	const typoFormat types.CredentialsFileFormat = "htpassword"
+	usersFile := filepath.Join(t.TempDir(), "users.csv")
+	if err := os.WriteFile(usersFile, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		file   string
+		format types.CredentialsFileFormat
+		want   error
+	}{
+		{usersFile, "", ae.ErrInvalidUsersFileFormat},
+		{usersFile, typoFormat, ae.ErrInvalidUsersFileFormat},
+		{"", typoFormat, ae.ErrInvalidUsersFileFormat},
+		{usersFile, types.CSV, nil},
+		{"", "", nil},
+	} {
+		o = &Options{
+			Name: testAuthenticatorName, Provider: testAuthenticatorProvider,
+			UsersFile: tc.file, UsersFileFormat: tc.format,
+		}
+		if err := o.Validate(isTestProvider); !errors.Is(err, tc.want) {
+			t.Errorf("users_file %q, format %q = %v; want %v", tc.file, tc.format, err, tc.want)
+		}
 	}
 }
 
@@ -77,5 +104,44 @@ func TestCloneYAMLSafe(t *testing.T) {
 	}
 	if o.Users["alice"] != "alice-password" || o.Users["bob"] != "bob-password" {
 		t.Fatalf("CloneYAMLSafe mutated original users: %#v", o.Users)
+	}
+}
+
+func TestCloneYAMLSafeRedactsProviderData(t *testing.T) {
+	const (
+		realm, secret           = "trickster", "secret-value"
+		realmKey, flagKey       = "realm", "showLoginForm"
+		nestedKey, listKey      = "oidc", "providers"
+		nestedSecret, topSecret = "client_secret", "clientSecret"
+	)
+	topSecrets := []string{topSecret, "API_KEY", "refresh_token", "password"}
+	data := map[string]any{realmKey: realm, flagKey: true}
+	for _, k := range topSecrets {
+		data[k] = secret
+	}
+	nested := map[string]any{nestedSecret: secret, realmKey: realm}
+	data[nestedKey] = nested
+	data[listKey] = []any{map[string]any{nestedSecret: secret, realmKey: realm}}
+	o := &Options{ProviderData: data}
+
+	got := o.CloneYAMLSafe().ProviderData
+	for _, k := range topSecrets {
+		if got[k] != redacted {
+			t.Errorf("%s = %v; want %q", k, got[k], redacted)
+		}
+	}
+	if got[realmKey] != realm || got[flagKey] != true {
+		t.Errorf("non-secret values changed: %#v", got)
+	}
+	for _, m := range []map[string]any{got[nestedKey].(map[string]any), got[listKey].([]any)[0].(map[string]any)} {
+		if m[nestedSecret] != redacted || m[realmKey] != realm {
+			t.Errorf("nested provider data = %#v", m)
+		}
+	}
+	if nested[nestedSecret] != secret || data[topSecret] != secret {
+		t.Error("CloneYAMLSafe mutated the original provider data")
+	}
+	if (&Options{}).CloneYAMLSafe().ProviderData != nil {
+		t.Error("nil provider data must stay nil")
 	}
 }

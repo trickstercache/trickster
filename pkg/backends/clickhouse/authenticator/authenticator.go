@@ -55,6 +55,20 @@ func New(data map[string]any) (types.Authenticator, error) {
 	return a, nil
 }
 
+// Sanitize also strips the URL credentials, so they reach the origin only with ProxyPreserve.
+func (a *authenticator) Sanitize(r *http.Request) {
+	if a.ProxyPreserve() {
+		return
+	}
+	a.Authenticator.Sanitize(r)
+	q := r.URL.Query()
+	if q.Has(upUser) || q.Has(upPassword) {
+		q.Del(upUser)
+		q.Del(upPassword)
+		r.URL.RawQuery = q.Encode()
+	}
+}
+
 func (a *authenticator) setCredentials(r *http.Request, user, credential string) error {
 	q := r.URL.Query()
 	if q.Has(upUser) && q.Has(upPassword) {

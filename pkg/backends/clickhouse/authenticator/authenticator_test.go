@@ -26,6 +26,7 @@ import (
 	pkgerrors "github.com/trickstercache/trickster/v2/pkg/errors"
 	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 )
 
 func TestRegistryEntry(t *testing.T) {
@@ -125,5 +126,34 @@ func TestExtractCredentialsMissing(t *testing.T) {
 	_, _, err = auth.ExtractCredentials(req)
 	if !errors.Is(err, ae.ErrInvalidCredentials) {
 		t.Fatalf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
+func TestSanitizeStripsURLCredentials(t *testing.T) {
+	t.Parallel()
+	const user, password = "alice", "secret"
+	for _, preserve := range []bool{false, true} {
+		o := authopt.New()
+		o.Users = map[string]string{user: password}
+		o.ProxyPreserve = preserve
+		auth, err := New(map[string]any{"options": o})
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		req := httptest.NewRequest(http.MethodGet,
+			"http://example/?query=SELECT+1&"+upUser+"="+user+"&"+upPassword+"="+password, nil)
+		req.SetBasicAuth(user, password)
+		if res, err := auth.Authenticate(req); err != nil || res.Status != at.AuthSuccess {
+			t.Fatalf("Authenticate: %v %v", res, err)
+		}
+		auth.Sanitize(req)
+		q := req.URL.Query()
+		_, _, hasBasic := req.BasicAuth()
+		if got := q.Has(upUser) && q.Has(upPassword) && hasBasic; got != preserve {
+			t.Errorf("proxy_preserve=%t: credentials kept = %t (query %q)", preserve, got, req.URL.RawQuery)
+		}
+		if q.Get("query") != "SELECT 1" {
+			t.Errorf("proxy_preserve=%t: query param lost: %q", preserve, req.URL.RawQuery)
+		}
 	}
 }

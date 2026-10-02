@@ -116,9 +116,9 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	a.AddUsersFromMap(esLookup(users))
 
 	// Should authenticate both
-	for user, pass := range users {
+	for user, pass := range map[string]string{testUser1: testUser1p, testUser2: testUser2p} {
 		req := httptest.NewRequest("GET", "/", nil)
-		req.SetBasicAuth(user, string(pass))
+		req.SetBasicAuth(user, pass)
 		_, err := a.Authenticate(req)
 		if err != nil {
 			t.Errorf("Authenticate failed for %s: %v", user, err)
@@ -141,6 +141,17 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	_, err = a.Authenticate(req)
 	if err == nil {
 		t.Error("Authenticate charlie after LoadUsersFromMap should fail")
+	}
+}
+
+func TestAuthenticateRejectsStoredHashAsPassword(t *testing.T) {
+	a := &Authenticator{}
+	hash := bcryptHash(testUser1p)
+	a.AddUser(testUser1, hash)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.SetBasicAuth(testUser1, hash)
+	if _, err := a.Authenticate(req); err == nil {
+		t.Error("expected the stored hash to be rejected as a password")
 	}
 }
 

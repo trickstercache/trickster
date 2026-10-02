@@ -126,6 +126,7 @@ func (c *Config) SanitizedClone() *Config {
 		if opts != nil {
 			opts.Name = newName
 			sanitizeAuthenticatorUsers(opts)
+			opts.ProviderData = opts.RedactedProviderData()
 		}
 		renamedAuthenticators[newName] = opts
 	}

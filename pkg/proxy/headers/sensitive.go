@@ -22,7 +22,19 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
-var sensitiveCredentials = sets.New([]string{NameAuthorization})
+// redactedValue replaces a sensitive header value in config views and logs.
+const redactedValue = "*****"
+
+var sensitiveCredentials = sets.New([]string{
+	NameAuthorization, NameProxyAuthorization, NameCookie, NameSetCookie,
+	NameXAPIKey, NameAPIKey, NameXGoogAPIKey, NameXAmzSecurityToken,
+})
+
+// IsSensitive reports whether the named header carries a credential.
+func IsSensitive(name string) bool {
+	_, ok := sensitiveCredentials[http.CanonicalHeaderKey(name)]
+	return ok
+}
 
 // HideAuthorizationCredentials replaces any sensitive HTTP header values with 5
 // asterisks sensitive headers are defined in the sensitiveCredentials map
@@ -31,8 +43,8 @@ func HideAuthorizationCredentials[m ~map[K]V, K ~string, V ~string](headers m) {
 	// value carries no credential (it can declare an opt-out) and is preserved
 	for k, v := range headers {
 		_, name := ParseUpdateKey(string(k))
-		if _, ok := sensitiveCredentials[http.CanonicalHeaderKey(name)]; ok && v != "" {
-			headers[k] = "*****"
+		if IsSensitive(name) && v != "" {
+			headers[k] = redactedValue
 		}
 	}
 }
