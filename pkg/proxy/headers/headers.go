@@ -162,8 +162,6 @@ const (
 	NameAPIKey = "Api-Key"
 	// NameXGoogAPIKey represents the HTTP Header Name of "X-Goog-Api-Key"
 	NameXGoogAPIKey = "X-Goog-Api-Key" // #nosec G101 -- a header name, not a credential
-	// NameXAmzSecurityToken represents the HTTP Header Name of "X-Amz-Security-Token"
-	NameXAmzSecurityToken = "X-Amz-Security-Token" // #nosec G101 -- a header name, not a credential
 	// NameProxyConnection represents the HTTP Header Name of "Proxy-Connection"
 	NameProxyConnection = "Proxy-Connection"
 	// NameKeepAlive represents the HTTP Header Name of "Keep-Alive"

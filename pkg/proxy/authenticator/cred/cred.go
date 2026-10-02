@@ -84,9 +84,8 @@ func VerifyPassword(hash, password string) error {
 		strings.HasPrefix(hash, prefixBcrypt2b), strings.HasPrefix(hash, prefixBcrypt2y):
 		return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	}
-	// hashing first keeps the plaintext's length out of the comparison's timing
-	stored, given := sha256.Sum256([]byte(hash)), sha256.Sum256([]byte(password))
-	if subtle.ConstantTimeCompare(stored[:], given[:]) == 1 {
+	// a plaintext entry, compared in constant time
+	if subtle.ConstantTimeCompare([]byte(hash), []byte(password)) == 1 {
 		return nil
 	}
 	return ErrUnauthorized
