@@ -157,3 +157,32 @@ func TestSanitizeStripsURLCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestCloneKeepsClickHouseHandling(t *testing.T) {
+	t.Parallel()
+	const user, password = "alice", "secret"
+	o := authopt.New()
+	o.Users = map[string]string{user: password}
+	orig, err := New(map[string]any{"options": o})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	cl := orig.Clone()
+	if _, ok := cl.(*authenticator); !ok {
+		t.Fatalf("Clone returned %T; want the ClickHouse authenticator", cl)
+	}
+	target := "http://example/?" + upUser + "=" + user + "&" + upPassword + "=" + password
+	req := httptest.NewRequest(http.MethodGet, target, nil)
+	if res, err := cl.Authenticate(req); err != nil || res.Status != at.AuthSuccess {
+		t.Fatalf("clone did not read URL credentials: %v %v", res, err)
+	}
+	cl.Sanitize(req)
+	if q := req.URL.Query(); q.Has(upUser) || q.Has(upPassword) {
+		t.Errorf("clone Sanitize kept URL credentials: %q", req.URL.RawQuery)
+	}
+	cl.RemoveUser(user)
+	req = httptest.NewRequest(http.MethodGet, target, nil)
+	if res, err := orig.Authenticate(req); err != nil || res.Status != at.AuthSuccess {
+		t.Fatalf("a change to the clone reached the original: %v %v", res, err)
+	}
+}

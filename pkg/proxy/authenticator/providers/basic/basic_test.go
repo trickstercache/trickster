@@ -350,6 +350,38 @@ func TestCloneAndSanitize(t *testing.T) {
 	}
 }
 
+func TestClonePtrKeepsAllSettings(t *testing.T) {
+	t.Parallel()
+
+	const setUserHeader = "X-Auth-User"
+	a := &Authenticator{
+		users: types.CredentialsManifest{testUser1: testUser1p}, showLoginForm: true,
+		realm: "realm", proxyPreserve: true, observeOnly: true,
+	}
+	a.SetExtractCredentialsFunc(func(*http.Request) (string, string, error) {
+		return testUser2, testUser2p, nil
+	})
+	a.SetSetCredentialsFunc(func(r *http.Request, user, _ string) error {
+		r.Header.Set(setUserHeader, user)
+		return nil
+	})
+	cl := a.ClonePtr()
+	if !cl.ProxyPreserve() || !cl.IsObserveOnly() || !cl.showLoginForm || cl.realm != a.realm {
+		t.Fatalf("clone lost settings: %+v", cl)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if u, _, err := cl.ExtractCredentials(req); err != nil || u != testUser2 {
+		t.Fatalf("clone ExtractCredentials = %q, %v", u, err)
+	}
+	if err := cl.SetCredentials(req, testUser3, testUser3p); err != nil || req.Header.Get(setUserHeader) != testUser3 {
+		t.Fatalf("clone SetCredentials did not use the custom func: %v", err)
+	}
+	cl.RemoveUser(testUser1)
+	if _, ok := a.users[testUser1]; !ok {
+		t.Fatal("ClonePtr should not share users map")
+	}
+}
+
 func TestCustomCredentialFuncs(t *testing.T) {
 	t.Parallel()
 

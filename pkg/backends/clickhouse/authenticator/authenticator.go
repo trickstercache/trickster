@@ -49,10 +49,19 @@ func New(data map[string]any) (types.Authenticator, error) {
 	if err != nil {
 		return nil, err
 	}
+	return wrap(ba), nil
+}
+
+func wrap(ba *basic.Authenticator) *authenticator {
 	a := &authenticator{Authenticator: ba}
 	ba.SetExtractCredentialsFunc(a.extractCredentials)
 	ba.SetSetCredentialsFunc(a.setCredentials)
-	return a, nil
+	return a
+}
+
+// Clone returns an independent copy that keeps the ClickHouse credential handling.
+func (a *authenticator) Clone() types.Authenticator {
+	return wrap(a.Authenticator.ClonePtr())
 }
 
 // Sanitize also strips the URL credentials, so they reach the origin only with ProxyPreserve.
