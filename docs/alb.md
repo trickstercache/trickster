@@ -540,6 +540,10 @@ A static pool member that can't apply the chosen mode fails the configuration. W
 
 `step_alignment` on an ALB using any other mechanism applies that mode to every member too, so the chart's shape doesn't depend on which member answered. Without it, those mechanisms leave members to their own modes, and Trickster logs a warning at startup for each ALB whose members differ.
 
+#### Members With a Series Limit
+
+Some managed services, such as [Amazon CloudWatch PromQL](./aws.md#amazon-cloudwatch-promql), cut a query result short at a series limit and flag it with a warning. Each member applies its own limit, so a member's truncated result is proxied and never cached, while the other members' results are cached as usual. The merged response then covers only the series each member returned, and it carries the truncation warning so the client can tell.
+
 #### Providers Supporting Time Series Merge
 
 Trickster currently supports Time Series Merging for the following TSDB Providers:

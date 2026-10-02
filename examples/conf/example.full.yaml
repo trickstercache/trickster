@@ -676,6 +676,10 @@ backends:
     # prometheus:
     #   labels:
     #     labelname: value
+    #   # flavor applies a Prometheus-compatible product's routes, limits and defaults.
+    #   # cloudwatch: Amazon CloudWatch PromQL; amp: Amazon Managed Service for Prometheus.
+    #   # See /docs/aws.md. Default is none.
+    #   flavor: cloudwatch
 
     # origin_url provides the base upstream URL for all proxied requests to this origin.
     # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
