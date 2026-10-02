@@ -29,6 +29,8 @@ import (
 type Options struct {
 	Labels       map[string]string `yaml:"labels,omitempty"`
 	InstantRound timeconv.Duration `yaml:"instant_round,omitempty"`
+	// Flavor applies a Prometheus-compatible product's routes, limits and defaults; see Flavors
+	Flavor string `yaml:"flavor,omitempty"`
 }
 
 // New returns a new Prometheus Options with default values

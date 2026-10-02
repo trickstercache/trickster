@@ -369,6 +369,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		return
 	}
 	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", pr.DeriveCacheKey(""))
+	if rlo.SeriesCap > 0 && isMarkedTruncated(cache, key) {
+		if trq.OriginalBody != nil {
+			request.SetBody(r, trq.OriginalBody)
+		}
+		DoProxy(w, r, true)
+		return
+	}
 
 	coReq := GetRequestCachingPolicy(r.Header)
 
@@ -412,6 +419,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
+			// a truncated fetch is a sample of the series, so the query is proxied whole instead
+			truncatedResult := func() *dpcResult {
+				metrics.ProxyTruncatedResponses.WithLabelValues(o.Name).Inc()
+				markTruncated(cache, key, time.Duration(o.TimeseriesTTL))
+				return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}
+			}
+
 			var cts timeseries.Timeseries
 			// ctsShared is true while cts is the dataset a memory cache holds, which is read in place
 			// and viewed before its first change, so that a hit copies nothing
@@ -432,6 +446,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if len(failedExts) > 0 && severeFault {
 					return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body, failedExts), nil
 				}
+				if truncated(rlo.SeriesCap, cts) {
+					return truncatedResult(), nil
+				}
 			} else {
 				if doc == nil || doc.timeseries == nil {
 					err = tpe.ErrEmptyDocumentBody
@@ -446,6 +463,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					}
 					if len(failedExts) > 0 && severeFault {
 						return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body, failedExts), nil
+					}
+					if truncated(rlo.SeriesCap, cts) {
+						return truncatedResult(), nil
 					}
 					// entry was removed and data came from origin; don't inherit the pre-recovery status
 					cacheStatus = status.LookupStatusKeyMiss
@@ -535,6 +555,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 						body, _ = io.ReadAll(mresp.Body)
 					}
 					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(), body, failedExts), nil
+				}
+				if truncated(rlo.SeriesCap, mts...) {
+					return truncatedResult(), nil
 				}
 				doc.Headers = fetchHeaders
 				// Merge the new delta timeseries into the cached timeseries

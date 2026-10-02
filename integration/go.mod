@@ -34,6 +34,8 @@ require (
 	github.com/AfterShip/clickhouse-sql-parser v0.5.6 // indirect
 	github.com/ClickHouse/ch-go v0.74.0 // indirect
 	github.com/DATA-DOG/go-sqlmock v1.4.1 // indirect
+	github.com/VictoriaMetrics/metrics v1.35.3 // indirect
+	github.com/VictoriaMetrics/metricsql v0.87.5 // indirect
 	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.0 // indirect
@@ -149,6 +151,8 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/twpayne/go-geom v1.4.1 // indirect
 	github.com/twpayne/go-kml v1.5.2 // indirect
+	github.com/valyala/fastrand v1.1.0 // indirect
+	github.com/valyala/histogram v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/blake3 v0.2.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect

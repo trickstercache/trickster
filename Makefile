@@ -188,7 +188,7 @@ TEST_LINTERS := forbidigo,depguard,godox,goheader
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do \
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
 			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
 			-c ../../.golangci.yml ./...) || exit 1; \
@@ -257,7 +257,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -409,7 +409,7 @@ COREDNS_ZONES       := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
 COMPOSE_PROFILES    ?= all-providers
 # stop and delete act on every profile, so they reach whatever is running
 COMPOSE_ALL_PROFILES := *
-DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb graphite
+DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite
 DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
 
 # waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
@@ -445,6 +445,7 @@ developer-start: developer-credentials
 	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8482/metrics >/dev/null 2>&1; do sleep 2; done'
 	$(call wait_ready,graphite,http://127.0.0.1:8081/metrics/find?query=carbon,120)
 	$(call wait_ready,druid,http://127.0.0.1:8888/status/health,180)
+	$(call wait_ready,victoriametrics,http://127.0.0.1:8428/health,120)
 
 # developer-start-<profile> starts the always-on services plus that one TSDB backend
 .PHONY: $(DEVELOPER_START_TARGETS)
@@ -461,7 +462,8 @@ developer-stop:
 
 INTEGRATION_PROFILE := integration
 # one-shot loaders no service waits on, so developer-start can return while they still load
-INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed questdb_seed
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed questdb_seed \
+	victoriametrics_seed
 
 .PHONY: integration-start
 integration-start:

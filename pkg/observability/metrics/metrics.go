@@ -41,6 +41,7 @@ const (
 	pgwireSubsystem     = "pgwire"
 	graphiteSubsystem   = providers.Graphite
 	druidSubsystem      = providers.Druid
+	vmSubsystem         = providers.VictoriaMetrics
 	tlsSubsystem        = "tls"
 	acmeSubsystem       = "acme"
 	accessLogSubsystem  = "accesslog"
@@ -85,6 +86,28 @@ var (
 			Help:      "Count of requests mirrored to another backend, sent or dropped at the in-flight bound",
 		},
 		[]string{keys.Backend_Name, keys.Mirror_Backend, keys.Result},
+	)
+
+	// ProxySigV4Events counts SigV4 signing failures and requests resent with refreshed credentials
+	ProxySigV4Events = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "sigv4_events_total",
+			Help:      "Count of SigV4 signing failures and of requests resent after the origin rejected expiring credentials",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// ProxyTruncatedResponses counts time series fetches the origin truncated, which are proxied uncached
+	ProxyTruncatedResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "truncated_responses_total",
+			Help:      "Count of time series fetches the origin truncated at its series limit, which are proxied rather than cached",
+		},
+		[]string{keys.Backend_Name},
 	)
 
 	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
@@ -621,6 +644,18 @@ var (
 			Subsystem: druidSubsystem,
 			Name:      "query_analysis_total",
 			Help:      "Count of native Druid query cache-eligibility classifications.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
+	)
+
+	// VictoriaMetricsQueryAnalysis counts the cache paths chosen for MetricsQL API requests, using
+	// bounded mode and reason labels.
+	VictoriaMetricsQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: vmSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of MetricsQL API request cache-eligibility classifications.",
 		},
 		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
 	)
@@ -1202,6 +1237,8 @@ func init() {
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)
+	prometheus.MustRegister(ProxySigV4Events)
+	prometheus.MustRegister(ProxyTruncatedResponses)
 	prometheus.MustRegister(ProxyStreamConnections)
 	prometheus.MustRegister(ProxyStreamActiveConnections)
 	prometheus.MustRegister(ProxyStreamBytes)
@@ -1267,6 +1304,7 @@ func init() {
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
 	prometheus.MustRegister(DruidQueryRewriteFailures)
+	prometheus.MustRegister(VictoriaMetricsQueryAnalysis)
 	prometheus.MustRegister(SQLQueryCache)
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
@@ -1326,6 +1364,7 @@ var backendSeriesVecs = []partialDeleter{
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,
 	DruidQueryRewriteFailures,
+	VictoriaMetricsQueryAnalysis,
 	SQLQueryCache,
 	MySQLConnections,
 	MySQLActiveConnections,

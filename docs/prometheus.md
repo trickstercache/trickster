@@ -63,6 +63,30 @@ All other `/api/v1/*` paths are reverse-proxied to the origin without caching.
 - **UTF-8 metric and label names** (e.g., `{"metric.name"}`) are supported in queries and cache keys.
 - **Query stats** (`stats=all` parameter) are cache-key differentiated, so responses with and without stats are cached separately.
 
+## Flavors
+
+`prometheus.flavor` adapts a backend to a Prometheus-compatible managed
+service, applying its supported routes, limits and defaults.
+
+| flavor | service |
+| ----- | ----- |
+| `cloudwatch` | Amazon CloudWatch PromQL |
+| `amp` | Amazon Managed Service for Prometheus |
+
+```yaml
+backends:
+  cloudwatch:
+    provider: prometheus
+    prometheus:
+      flavor: cloudwatch
+    sigv4:
+      region: us-east-1
+```
+
+A flavor limits the backend to the routes the service supports and
+answers every other path itself. See [AWS Integration](./aws.md) for what
+each flavor sets.
+
 ## Injecting Labels
 
 Trickster can inject labels on a per-backend basis into Prometheus responses before returning them to the caller.

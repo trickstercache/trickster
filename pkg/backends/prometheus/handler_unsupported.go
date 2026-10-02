@@ -24,10 +24,12 @@ import (
 
 // UnsupportedHandler responds to endpoints like /api/v1/admin
 func (c *Client) UnsupportedHandler(w http.ResponseWriter, _ *http.Request) {
-	e := &model.Envelope{
-		Status: "error",
-		Error:  "trickster does not support proxying this endpoint",
-	}
-	e.StartMarshal(w, http.StatusBadRequest)
+	writeErrorEnvelope(w, http.StatusBadRequest, "trickster does not support proxying this endpoint")
+}
+
+// writeErrorEnvelope answers with a Prometheus API error carrying msg.
+func writeErrorEnvelope(w http.ResponseWriter, status int, msg string) {
+	e := &model.Envelope{Status: "error", Error: msg}
+	e.StartMarshal(w, status)
 	w.Write([]byte("}"))
 }

@@ -5,6 +5,15 @@
 *.dylib
 sha256sum.txt
 
+# `go build` output of the hack/ commands, which are run with `go run`
+/hack/check-imports/check-imports
+/hack/check-weak-random/check-weak-random
+/hack/devorigin/devorigin
+/hack/druidseed/druidseed
+/hack/greptimeseed/greptimeseed
+/hack/h3-client/h3-client
+/hack/seedgen/seedgen
+
 # Test binary, build with `go test -c`
 *.test
 .coverprofile
@@ -75,8 +84,11 @@ AGENTS.md
 .claude
 
 # mutable CoreDNS zone data for the autodiscovery integration tests
-# (seeded from docker-compose-data/coredns/*.seed by `make integration-start`)
-docs/developer/environment/docker-compose-data/coredns-zones/
+# (seeded from docker-compose-data/coredns/*.seed by `make integration-start`).
+# It and seed-data have no trailing slash so a worktree can symlink them to a
+# checkout whose developer environment is already running.
+docs/developer/environment/docker-compose-data/coredns-zones
+docs/developer/environment/docker-compose-data/seed-data
 
 integration/conformance/reports
 integration/greptimedb/reports
