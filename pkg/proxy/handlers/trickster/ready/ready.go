@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-// Package ready serves the readiness endpoint, which reports 200 only while every listener is
-// serving, any Kubernetes controller has programmed its routes, and the process is not shutting down
+// Package ready serves the readiness endpoint, which reports 200 only while every listener
+// serves, no startup wait is outstanding and no shutdown has begun
 package ready
 
 import (
@@ -35,13 +35,35 @@ const (
 	// BodyNotProgrammed is the response body while a Kubernetes controller has yet to apply
 	// its first translation, so the routes it will serve are not yet in place.
 	BodyNotProgrammed = "not programmed"
+	// BodyCertsPending is the response body while startup waits for ACME certificates to be issued.
+	BodyCertsPending = "certificates pending"
 )
 
-// State records whether the process has begun shutting down, and whether it is still
-// waiting on a Kubernetes controller to program its first routes.
+// State records whether a shutdown has begun, and whether startup still waits on a Kubernetes
+// controller's first routes or on certificates to be issued.
 type State struct {
-	draining atomic.Bool
-	pending  atomic.Bool
+	draining     atomic.Bool
+	pending      atomic.Bool
+	certsPending atomic.Bool
+}
+
+// SetCertsPending marks startup as waiting for certificates; readiness stays false until SetCertsIssued.
+func (s *State) SetCertsPending() {
+	if s != nil {
+		s.certsPending.Store(true)
+	}
+}
+
+// SetCertsIssued clears the wait a SetCertsPending began.
+func (s *State) SetCertsIssued() {
+	if s != nil {
+		s.certsPending.Store(false)
+	}
+}
+
+// CertsPending reports whether startup is still waiting for certificates.
+func (s *State) CertsPending() bool {
+	return s != nil && s.certsPending.Load()
 }
 
 // SetPending marks the process as waiting for a controller's first translation; readiness
@@ -81,8 +103,8 @@ type Listeners interface {
 	Serving() bool
 }
 
-// HandlerFunc responds 200 while listeners are serving, no controller is still programming its
-// first routes and no shutdown has begun, and 503 otherwise, so load balancers route only then.
+// HandlerFunc responds 200 while listeners serve, nothing awaited at startup is outstanding and no
+// shutdown has begun, and 503 otherwise, so load balancers route only then.
 func HandlerFunc(state *State, listeners Listeners) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headers.NameContentType, headers.ValueTextPlain)
@@ -97,6 +119,9 @@ func HandlerFunc(state *State, listeners Listeners) http.HandlerFunc {
 		case state.Pending():
 			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Write([]byte(BodyNotProgrammed))
+		case state.CertsPending():
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(BodyCertsPending))
 		default:
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(BodyReady))

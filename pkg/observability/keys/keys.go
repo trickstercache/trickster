@@ -50,6 +50,7 @@ const (
 	HandlerName          = "handlerName"
 	HTTPStatus           = "httpStatus"
 	Inner                = "inner"
+	Issuer               = "issuer"
 	Key                  = "key"
 	Keys                 = "keys"
 	Kind                 = "kind"

@@ -71,6 +71,7 @@ type listenerNotifier struct {
 	watch     bool
 	fileSets  []tr.FileSet
 	memory    map[string]*tr.Entry
+	acme      []*tr.Entry
 }
 
 type watchSpec struct {
@@ -131,7 +132,7 @@ func (m *Monitor) Apply(conf *config.Config, lg *listener.Group) {
 				}
 			}
 		}
-		if len(ln.fileSets) == 0 && !o.TLSRuntimeCerts {
+		if uses, _ := conf.ListenerACME(name); len(ln.fileSets) == 0 && !o.TLSRuntimeCerts && !uses {
 			continue
 		}
 		ln.groupKeys = []string{ln.groupKey}
@@ -166,6 +167,7 @@ func (m *Monitor) Apply(conf *config.Config, lg *listener.Group) {
 	for groupKey, ln := range newListeners {
 		if old, ok := m.listeners[groupKey]; ok {
 			ln.memory = old.memory
+			ln.acme = old.acme
 		}
 	}
 	for groupKey, old := range m.listeners {
@@ -264,6 +266,31 @@ func (m *Monitor) RemoveMemoryCert(listenerName, sourceKey string) error {
 	groupKey := ln.groupKey
 	m.mtx.Unlock()
 	m.rebuild(groupKey)
+	return nil
+}
+
+// SetACMECerts replaces the ACME-managed certificates the named listener serves
+func (m *Monitor) SetACMECerts(listenerName string, entries []*tr.Entry) error {
+	m.mtx.Lock()
+	ln := m.listenerByName(listenerName)
+	if ln == nil {
+		m.mtx.Unlock()
+		return fmt.Errorf("no TLS listener named %s", listenerName)
+	}
+	prev := make(map[string]string, len(ln.acme))
+	for _, e := range ln.acme {
+		prev[e.Key] = e.ContentHash
+	}
+	ln.acme = slices.Clone(entries)
+	groupKey := ln.groupKey
+	m.mtx.Unlock()
+	m.rebuild(groupKey)
+	for _, e := range entries {
+		if hash, ok := prev[e.Key]; ok && hash != e.ContentHash {
+			logSwap(listenerName, e)
+			metrics.TLSCertificateSwapsTotal.WithLabelValues(listenerName, e.Key).Inc()
+		}
+	}
 	return nil
 }
 
@@ -397,10 +424,12 @@ func (m *Monitor) rebuild(groupKey string) {
 		memoryKeys = append(memoryKeys, key)
 	}
 	slices.Sort(memoryKeys)
-	memoryEntries := make([]*tr.Entry, 0, len(memoryKeys))
+	runtimeEntries := make([]*tr.Entry, 0, len(memoryKeys)+len(ln.acme))
 	for _, key := range memoryKeys {
-		memoryEntries = append(memoryEntries, ln.memory[key])
+		runtimeEntries = append(runtimeEntries, ln.memory[key])
 	}
+	// runtime entries are memory and ACME sources, which are replaced together
+	runtimeEntries = append(runtimeEntries, ln.acme...)
 	group := m.group
 	name := ln.name
 	keys := slices.Clone(ln.groupKeys)
@@ -420,10 +449,10 @@ func (m *Monitor) rebuild(groupKey string) {
 			continue
 		}
 		if complete {
-			store.ReplaceKinds(append(slices.Clone(fileEntries), memoryEntries...),
-				tr.SourceKindFile, tr.SourceKindMemory, tr.SourceKindConfig)
+			store.ReplaceKinds(append(slices.Clone(fileEntries), runtimeEntries...),
+				tr.SourceKindFile, tr.SourceKindMemory, tr.SourceKindACME, tr.SourceKindConfig)
 		} else {
-			store.ReplaceKinds(memoryEntries, tr.SourceKindMemory)
+			store.ReplaceKinds(runtimeEntries, tr.SourceKindMemory, tr.SourceKindACME)
 			for _, e := range fileEntries {
 				store.SetEntry(e)
 			}

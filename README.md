@@ -23,6 +23,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 
 * A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints, with [pool autodiscovery](./docs/alb-autodiscovery.md) from Kubernetes, AWS, GPC, Azure, Consul, Nomad, DNS, and more
 * [Supports TLS](./docs/tls.md), HTTP/2 and [HTTP/3](./docs/http3.md) for frontend termination, and TLS/HTTP/2 for backend origination
+* [Automatic certificates](./docs/acme.md) from Let's Encrypt or any ACME certificate authority, including wildcard and on-demand issuance
 * Can serve as Kubernetes [Ingress](./docs/kubernetes-ingress.md) and/or [Gateway](./docs/kubernetes-gateway.md) Controller
 * WebSocket and HTTP Upgrade tunneling, response trailers (gRPC), and incremental delivery of streaming responses
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt

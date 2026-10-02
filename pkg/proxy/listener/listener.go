@@ -36,6 +36,8 @@ import (
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/ondemand"
 
 	"golang.org/x/net/netutil"
 )
@@ -382,7 +384,15 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		// Replace the normal GetCertificate function in the TLS config with lg.tlsSwapper's,
 		// so users swap certs in the config later without restarting the entire process
 		tlsConfig.GetCertificate = l.tlsSwapper.GetCert
+		if store, ok := l.tlsSwapper.(sw.CertStore); ok {
+			// an unregistered on-demand provider costs one atomic load per handshake
+			tlsConfig.GetCertificate = ondemand.GetCertificate(listenerName, store, l.tlsSwapper.GetCert)
+		}
 		tlsConfig.Certificates = nil
+		// a CA validating with tls-alpn-01 gets a challenge-only config; others cost one length check
+		if tlsConfig.GetConfigForClient == nil {
+			tlsConfig.GetConfigForClient = challenge.ConfigForClient
+		}
 	}
 
 	var err error

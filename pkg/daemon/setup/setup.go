@@ -52,6 +52,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	acmehandler "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/acme"
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
@@ -60,6 +61,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
@@ -317,7 +319,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg,
-		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler})
+		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler},
+		acmeRoute(si, newConf))
 	// only now has every stream and native listener taken the sticky table it keeps its flows in
 	alb.ForgetUnusedStickyTables(clients)
 
@@ -340,6 +343,17 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		si.Listeners = lg
 	}
 	return nil
+}
+
+func acmeRoute(si *instance.ServerInstance, c *config.Config) mgmtRoute {
+	if si.ACME == nil {
+		return mgmtRoute{}
+	}
+	return mgmtRoute{
+		path: c.MgmtConfig.ACMEHandlerPath, mgmtOnly: true,
+		methods: []string{http.MethodGet, http.MethodPost},
+		handler: acmehandler.HandlerFunc(si.ACME, acme.ErrUnmanagedDomain),
+	}
 }
 
 func reconfigureLogWriters(c *config.Config) error {

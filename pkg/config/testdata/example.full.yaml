@@ -125,6 +125,7 @@ mgmt:
   purge_by_key_path: /trickster/purge/key/
   purge_by_path_path: /trickster/purge/path/
   certificates_handler_path: /trickster/certificates
+  acme_handler_path: /trickster/acme
   pprof_listener: both
   reload_handler_path: /trickster/config/reload
   reload_drain_timeout: 30s

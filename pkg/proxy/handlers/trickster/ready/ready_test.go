@@ -31,6 +31,7 @@ func TestHandlerFunc(t *testing.T) {
 		name      string
 		draining  bool
 		pending   bool
+		certs     bool
 		listeners Listeners
 		status    int
 		body      string
@@ -42,6 +43,8 @@ func TestHandlerFunc(t *testing.T) {
 		{name: "pending", pending: true, listeners: stubListeners(true), status: http.StatusServiceUnavailable, body: BodyNotProgrammed},
 		{name: "pending outranked by a listener", pending: true, listeners: stubListeners(false), status: http.StatusServiceUnavailable, body: BodyNotReady},
 		{name: "pending outranked by draining", pending: true, draining: true, listeners: stubListeners(true), status: http.StatusServiceUnavailable, body: BodyDraining},
+		{name: "certs pending", certs: true, listeners: stubListeners(true), status: http.StatusServiceUnavailable, body: BodyCertsPending},
+		{name: "certs pending outranked by pending", certs: true, pending: true, listeners: stubListeners(true), status: http.StatusServiceUnavailable, body: BodyNotProgrammed},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -51,6 +54,9 @@ func TestHandlerFunc(t *testing.T) {
 			}
 			if test.pending {
 				state.SetPending()
+			}
+			if test.certs {
+				state.SetCertsPending()
 			}
 			w := httptest.NewRecorder()
 			HandlerFunc(state, test.listeners)(w, httptest.NewRequest(http.MethodGet, "http://0/trickster/ready", nil))
@@ -83,12 +89,26 @@ func TestStateNilSafety(t *testing.T) {
 	state.SetDraining()
 	state.SetPending()
 	state.SetProgrammed()
-	if state.Draining() || state.Pending() {
+	state.SetCertsPending()
+	state.SetCertsIssued()
+	if state.Draining() || state.Pending() || state.CertsPending() {
 		t.Error("nil state must report neither draining nor pending")
 	}
 	w := httptest.NewRecorder()
 	HandlerFunc(state, stubListeners(true))(w, httptest.NewRequest(http.MethodGet, "http://0/", nil))
 	if w.Code != http.StatusOK {
 		t.Errorf("status = %d; want 200 with a nil state", w.Code)
+	}
+}
+
+func TestSetCertsIssuedClearsCertsPending(t *testing.T) {
+	state := &State{}
+	state.SetCertsPending()
+	if !state.CertsPending() {
+		t.Fatal("certificates should be pending")
+	}
+	state.SetCertsIssued()
+	if state.CertsPending() {
+		t.Error("certificates should no longer be pending")
 	}
 }

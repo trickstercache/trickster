@@ -49,6 +49,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -73,8 +74,10 @@ type desiredListener struct {
 // mgmtRoute is a reserved exact-path route: registered on the management
 // router and served ahead of every proxy listener's router.
 type mgmtRoute struct {
-	path    string
-	handler http.Handler
+	path     string
+	handler  http.Handler
+	methods  []string
+	mgmtOnly bool
 }
 
 // guardReservedRoutes serves reserved paths before next sees the request, so
@@ -134,9 +137,13 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		return route.path == "" || route.handler == nil
 	})
 	for _, route := range mgmtRoutes {
-		managementRouter.RegisterRoute(route.path, nil, nil,
+		managementRouter.RegisterRoute(route.path, nil, route.methods,
 			matching.PathMatchTypeExact, route.handler)
 	}
+	// a management-only route is not served ahead of the proxy listeners' routers
+	mgmtRoutes = slices.DeleteFunc(mgmtRoutes, func(route mgmtRoute) bool {
+		return route.mgmtOnly
+	})
 
 	// requests that miss every backend route are logged by the default
 	// access log at the router level, on every listener but metrics
@@ -315,15 +322,20 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		default:
 			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
-		r = wrapListener(options, accessLogger, r)
 		if options.ListenPort > 0 {
+			plain := r
+			// http-01 challenges arrive on the plaintext port, ahead of every route and middleware
+			if _, http01 := conf.ListenerACME(name); http01 {
+				plain = challenge.HTTPHandler(plain)
+			}
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
-				options: options, router: r,
+				options: options, router: wrapListener(options, accessLogger, plain),
 			}
 		}
+		r = wrapListener(options, accessLogger, r)
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, options.Protocol, true)
 			tlsRouter := r

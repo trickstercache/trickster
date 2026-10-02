@@ -17,7 +17,9 @@ listeners:
     tls_address: ''
 ```
 
-Note, Trickster will only start listening on a TLS port if at least one origin mapped to the named listener has a valid certificate and key configured.
+Note, Trickster will only start listening on a TLS port if at least one origin mapped to the named listener has a valid certificate and key configured, obtains its certificates through [ACME](./acme.md), or the listener sets `tls_runtime_certs`.
+
+Instead of certificate files, a backend can have Trickster obtain and renew its certificates from an ACME certificate authority such as Let's Encrypt. See [Automatic Certificates (ACME)](./acme.md).
 
 Each origin section of a Trickster config file can be augmented with the optional `tls` section to modify TLS behavior for front-end and back-end requests. For example:
 
@@ -107,7 +109,7 @@ Such a listener starts with an empty certificate store and fails handshakes unti
 
 ## Certificate Inventory (mgmt)
 
-The mgmt listener exposes a read-only, per-listener certificate inventory at `/trickster/certificates` (configurable via `mgmt.certificates_handler_path`). Each entry reports the certificate's id, source kind (`file`, `memory` or `config`), common name, subject alternative names, validity window and last-load time. The inventory never includes key material.
+The mgmt listener exposes a read-only, per-listener certificate inventory at `/trickster/certificates` (configurable via `mgmt.certificates_handler_path`). Each entry reports the certificate's id, source kind (`file`, `memory`, `acme` or `config`), common name, subject alternative names, validity window and last-load time. The inventory never includes key material.
 
 ## Observability
 

@@ -313,6 +313,29 @@ The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery
   * labels:
     * `listener` - the name of the listener
 
+* `trickster_acme_orders_total` (Counter) - Count of first-time ACME certificate orders. See [acme.md](./acme.md).
+  * labels:
+    * `issuer` - the name of the ACME issuer
+    * `result` - `success` or `failure`
+
+* `trickster_acme_renewals_total` (Counter) - Count of ACME certificate renewals
+  * labels:
+    * `issuer` - the name of the ACME issuer
+    * `result` - `success` or `failure`
+
+* `trickster_acme_challenge_requests_total` (Counter) - Count of ACME challenge requests received by listeners
+  * labels:
+    * `type` - `http-01` or `tls-alpn-01`
+    * `result` - `served`, `unknown` (no matching pending challenge) or `error`
+
+* `trickster_acme_on_demand_decisions_total` (Counter) - Count of on-demand issuance decisions
+  * labels:
+    * `result` - `allowed`, `refused`, `refused_cached`, `rate_limited` or `ask_error`
+
+* `trickster_acme_startup_wait_seconds` (Gauge) - Seconds startup readiness was held waiting for missing ACME certificates
+
+* `trickster_acme_startup_wait_timeouts_total` (Counter) - Count of startup waits that timed out before every ACME certificate was issued
+
 ---
 
 The following metrics are available only for Caches Types whose object lifecycle Trickster manages internally (Memory, Filesystem and bbolt):
