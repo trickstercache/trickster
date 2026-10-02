@@ -236,12 +236,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				})
 				continue
 			}
-			readHeaderTimeout := time.Duration(desired.options.ReadHeaderTimeout)
+			limits := serverLimits(desired.options)
 			advertised := desired.advertisedPort
 			go lg.StartPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
 				desired.address, desired.port, tlsConfig, desired.router,
 				func(h http.Handler, tc *tls.Config) listener.PacketServer {
-					return listenerhttp3.NewServer(h, tc, advertised, readHeaderTimeout)
+					return listenerhttp3.NewServer(h, tc, advertised, limits)
 				}, errorFunc)
 			continue
 		}
@@ -265,7 +265,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		}
 		go lg.StartListener(key, desired.address, desired.port,
 			desired.options.ConnectionsLimit, tlsConfig, desired.router,
-			listenerTracers, errorFunc, time.Duration(desired.options.ReadHeaderTimeout),
+			listenerTracers, errorFunc, serverLimits(desired.options),
 			proxyProtocolOptions(desired.options))
 	}
 }
@@ -444,8 +444,25 @@ func listenerNeedsRestart(old, current desiredListener) bool {
 		old.origin != current.origin || old.advertisedPort != current.advertisedPort ||
 		old.options.ConnectionsLimit != current.options.ConnectionsLimit ||
 		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout ||
+		old.options.ReadTimeout != current.options.ReadTimeout ||
+		old.options.IdleTimeout != current.options.IdleTimeout ||
+		old.options.MaxHeaderBytes != current.options.MaxHeaderBytes ||
 		old.options.ProxyProtocol != current.options.ProxyProtocol ||
 		(old.options.ProxyProtocol && !slices.Equal(old.options.TrustedProxies, current.options.TrustedProxies))
+}
+
+func serverLimits(options *listenerconfig.Options) listener.ServerLimits {
+	// a listener's idle_timeout of 0 means no timeout, where net/http would fall back to ReadTimeout
+	idle := time.Duration(options.IdleTimeout)
+	if idle <= 0 {
+		idle = listener.NoIdleTimeout
+	}
+	return listener.ServerLimits{
+		ReadHeaderTimeout: time.Duration(options.ReadHeaderTimeout),
+		ReadTimeout:       time.Duration(options.ReadTimeout),
+		IdleTimeout:       idle,
+		MaxHeaderBytes:    options.MaxHeaderBytes,
+	}
 }
 
 func trustedProxies(options *listenerconfig.Options) clientip.Trusted {

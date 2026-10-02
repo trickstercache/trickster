@@ -17,6 +17,7 @@
 package listener
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -359,6 +360,51 @@ func TestPathNormalizationYAMLCloneAndEquality(t *testing.T) {
 	c.PathNormalization.DotSegments = pno.DotSegmentsReject
 	if c.Equal(l[DefaultFrontendName]) {
 		t.Error("path_normalization must participate in equality")
+	}
+}
+
+func TestHTTPLimitsYAMLEqualityAndValidation(t *testing.T) {
+	const readTimeout, maxHeaderBytes = 30 * time.Second, 16384
+	var l Lookup
+	doc := fmt.Sprintf("default:\n  read_timeout: %s\n  idle_timeout: 0s\n  max_header_bytes: %d\n",
+		readTimeout, maxHeaderBytes)
+	if err := yaml.Unmarshal([]byte(doc), &l); err != nil {
+		t.Fatal(err)
+	}
+	o := l[DefaultFrontendName]
+	if o.ReadTimeout != timeconv.Duration(readTimeout) || o.IdleTimeout != 0 || o.MaxHeaderBytes != maxHeaderBytes {
+		t.Fatalf("limits = %v, %v, %d", o.ReadTimeout, o.IdleTimeout, o.MaxHeaderBytes)
+	}
+	if l[mgmt.ListenerNameMgmt].IdleTimeout != DefaultIdleTimeout {
+		t.Error("an unconfigured listener should carry the default idle timeout")
+	}
+	out, err := yaml.Marshal(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Options
+	if err := yaml.Unmarshal(out, &back); err != nil || back.IdleTimeout != 0 {
+		t.Errorf("a disabled idle timeout should round-trip, got %v (%v)", back.IdleTimeout, err)
+	}
+	if err := o.ValidateHTTPLimits(); err != nil {
+		t.Errorf("valid limits refused: %v", err)
+	}
+	for name, change := range map[string]func(*Options){
+		"read_timeout":     func(c *Options) { c.ReadTimeout = -1 },
+		"idle_timeout":     func(c *Options) { c.IdleTimeout = -1 },
+		"max_header_bytes": func(c *Options) { c.MaxHeaderBytes = -1 },
+	} {
+		c := o.Clone()
+		if !c.Equal(o) {
+			t.Fatal("clone should equal its source")
+		}
+		change(c)
+		if c.Equal(o) {
+			t.Errorf("%s must participate in equality", name)
+		}
+		if err := c.ValidateHTTPLimits(); err == nil {
+			t.Errorf("negative %s accepted", name)
+		}
 	}
 }
 

@@ -118,6 +118,7 @@ listeners:
     max_request_body_size_bytes: 10485760
     truncate_request_body_too_large: false
     read_header_timeout: 10s
+    idle_timeout: 2m0s
     protocol: http
     tls_watch_interval: 30s
     path_normalization:
@@ -128,6 +129,7 @@ listeners:
     max_request_body_size_bytes: 10485760
     truncate_request_body_too_large: false
     read_header_timeout: 10s
+    idle_timeout: 2m0s
     protocol: http
     tls_watch_interval: 30s
     path_normalization:
@@ -139,6 +141,7 @@ listeners:
     max_request_body_size_bytes: 10485760
     truncate_request_body_too_large: false
     read_header_timeout: 10s
+    idle_timeout: 2m0s
     protocol: http
     tls_watch_interval: 30s
     path_normalization:

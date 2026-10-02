@@ -18,6 +18,7 @@
 package listener
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -64,6 +65,16 @@ const (
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)
+	// DefaultIdleTimeout is how long an HTTP listener holds a keep-alive connection open
+	// while it waits for the client's next request.
+	DefaultIdleTimeout = timeconv.Duration(2 * time.Minute)
+)
+
+var (
+	// ErrNegativeTimeout is returned when a listener timeout is negative.
+	ErrNegativeTimeout = errors.New("timeout cannot be negative")
+	// ErrNegativeMaxHeaderBytes is returned when max_header_bytes is negative.
+	ErrNegativeMaxHeaderBytes = errors.New("max_header_bytes cannot be negative")
 )
 
 // Options describes one inbound listener.
@@ -84,6 +95,15 @@ type Options struct {
 	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
 	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
+	// ReadTimeout bounds the time an HTTP listener allows to read a whole request,
+	// body included; 0 sets no bound.
+	ReadTimeout timeconv.Duration `yaml:"read_timeout,omitempty"`
+	// IdleTimeout closes an HTTP keep-alive connection that has waited this long for its
+	// next request; 0 never closes one. It is kept when 0 so the disabled value round-trips.
+	IdleTimeout timeconv.Duration `yaml:"idle_timeout"`
+	// MaxHeaderBytes caps the bytes an HTTP listener reads for a request's line and
+	// headers; 0 selects the net/http default of 1 MB.
+	MaxHeaderBytes int `yaml:"max_header_bytes,omitempty"`
 	// Protocol selects the protocol served by this listener.
 	Protocol string `yaml:"protocol,omitempty"`
 	// TLSWatchInterval is the backstop poll for out-of-band cert/key rotation
@@ -177,6 +197,19 @@ func (o *Options) HTTP3Endpoint() (address string, port, advertisedPort int) {
 	return address, port, advertisedPort
 }
 
+// ValidateHTTPLimits checks the read and idle timeouts and the header size an HTTP listener applies.
+func (o *Options) ValidateHTTPLimits() error {
+	switch {
+	case o.ReadTimeout < 0:
+		return fmt.Errorf("read_timeout: %w", ErrNegativeTimeout)
+	case o.IdleTimeout < 0:
+		return fmt.Errorf("idle_timeout: %w", ErrNegativeTimeout)
+	case o.MaxHeaderBytes < 0:
+		return ErrNegativeMaxHeaderBytes
+	}
+	return nil
+}
+
 // IsStream reports whether the protocol relays bytes without reading them: tcp, tls or udp.
 func IsStream(protocol string) bool {
 	return protocol == ProtocolTCP || protocol == ProtocolTLS || protocol == ProtocolUDP
@@ -195,6 +228,7 @@ func New(name string) *Options {
 	o := FromFrontend(frontend.New())
 	o.Protocol = ProtocolHTTP
 	o.TLSWatchInterval = DefaultTLSWatchInterval
+	o.IdleTimeout = DefaultIdleTimeout
 	o.PathNormalization = pno.New()
 	switch name {
 	case DefaultFrontendName:
@@ -306,6 +340,8 @@ func (o *Options) Equal(other *Options) bool {
 		o.ConnectionsLimit != other.ConnectionsLimit ||
 		o.TruncateRequestBodyTooLarge != other.TruncateRequestBodyTooLarge ||
 		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS ||
+		o.ReadTimeout != other.ReadTimeout || o.IdleTimeout != other.IdleTimeout ||
+		o.MaxHeaderBytes != other.MaxHeaderBytes ||
 		o.TLSWatchInterval != other.TLSWatchInterval || o.TLSRuntimeCerts != other.TLSRuntimeCerts ||
 		o.ProxyProtocol != other.ProxyProtocol || !slices.Equal(o.TrustedProxies, other.TrustedProxies) {
 		return false

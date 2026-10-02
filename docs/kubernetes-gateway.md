@@ -810,6 +810,8 @@ the listeners it generates and in `kubernetes.defaults`:
 |---|---|---|---|
 | `max_request_body_size_bytes` | listener | 10 MiB (the default), higher for upload paths | A request body above it is refused with `413` before it reaches an origin; `truncate_request_body_too_large` is for logging, not proxying |
 | `read_header_timeout` | listener | 10s | Bounds a client that sends headers slowly; has no effect on the body or the response |
+| `idle_timeout` | listener | 2m (the default) | Closes keep-alive connections that wait too long for their next request; `0` never closes them |
+| `max_header_bytes` | listener | 64 KiB | Bounds the memory one request's headers can take; the default is 1 MB |
 | `connections_limit` | listener | 0 (unlimited), or the pod's file descriptor budget | A limit blocks accepts rather than refusing them |
 | `proxy_protocol`, `trusted_proxies` | listener | the load balancer's addresses | The real client address in logs and `max_query_range` decisions; see [Trusted Proxies](./configuring.md#trusted-proxies) |
 | `timeout` | `kubernetes.defaults` | 60s (the default) | Bounds how long an origin may take to start a response and how long its body may stall; a route's `timeouts` bound more |

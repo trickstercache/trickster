@@ -192,6 +192,19 @@ func TestListenerNeedsRestart(t *testing.T) {
 		t.Error("connection limit change should restart a listener")
 	}
 
+	for name, change := range map[string]func(*listenerconfig.Options){
+		"read_timeout":     func(o *listenerconfig.Options) { o.ReadTimeout++ },
+		"idle_timeout":     func(o *listenerconfig.Options) { o.IdleTimeout++ },
+		"max_header_bytes": func(o *listenerconfig.Options) { o.MaxHeaderBytes++ },
+	} {
+		current = old
+		current.options = o.Clone()
+		change(current.options)
+		if !listenerNeedsRestart(old, current) {
+			t.Errorf("%s change should restart a listener", name)
+		}
+	}
+
 	current = old
 	current.options = o.Clone()
 	current.options.TrustedProxies = []string{"10.0.0.0/8"}
@@ -207,6 +220,28 @@ func TestListenerNeedsRestart(t *testing.T) {
 	current.options.TrustedProxies = append(current.options.TrustedProxies, "192.0.2.1")
 	if !listenerNeedsRestart(old, current) {
 		t.Error("trusted proxy change with the PROXY protocol should restart a listener")
+	}
+}
+
+func TestServerLimits(t *testing.T) {
+	const maxHeaderBytes, readTimeout = 16384, 30 * time.Second
+	o := listenerconfig.New("custom")
+	o.ReadTimeout = timeconv.Duration(readTimeout)
+	o.MaxHeaderBytes = maxHeaderBytes
+	got := serverLimits(o)
+	want := listener.ServerLimits{
+		ReadHeaderTimeout: time.Duration(o.ReadHeaderTimeout),
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       time.Duration(listenerconfig.DefaultIdleTimeout),
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
+	if got != want {
+		t.Errorf("serverLimits = %+v; want %+v", got, want)
+	}
+	// 0 disables the idle timeout rather than falling back to the read timeout
+	o.IdleTimeout = 0
+	if got := serverLimits(o); got.IdleTimeout != listener.NoIdleTimeout {
+		t.Errorf("idle timeout = %v; want %v", got.IdleTimeout, listener.NoIdleTimeout)
 	}
 }
 
