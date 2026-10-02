@@ -157,6 +157,9 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		slices.Contains(pathOpts.Methods, methods.MethodQuery) {
 		h = middleware.QueryAsPost(pathOpts.QueryMediaTypes, h)
 	}
+	if o.SigV4 != nil {
+		h = middleware.StripSigV4(h)
+	}
 	h = middleware.MaxForwards(h)
 	if tr != nil {
 		h = middleware.Trace(tr, h)

@@ -85,6 +85,11 @@ func (c *CacheClient) Connect() error {
 	return c.client.Ping(c.ctx).Err()
 }
 
+// Cmdable returns the connected go-redis client, or nil before Connect succeeds
+func (c *CacheClient) Cmdable() redis.Cmdable {
+	return c.client
+}
+
 func (c *CacheClient) Remove(cacheKeys ...string) error {
 	return c.client.Del(c.ctx, cacheKeys...).Err()
 }

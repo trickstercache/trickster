@@ -16,7 +16,7 @@ export COMPOSE_PROFILES='*'
 
 # Every trips database service <name> has a one-shot loader service <name>_seed.
 # graphite is seeded by its own generator and is handled separately below.
-ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid questdb prometheus graphite"
+ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid questdb prometheus victoriametrics graphite"
 if [[ -z "${SEED_TARGET:-}" ]]; then
   running=" $(docker compose ps --status running --services | tr '\n' ' ') "
   SEED_TARGET=""
@@ -33,6 +33,7 @@ read -r -a targets <<< "$(echo "$SEED_TARGET" | tr ',' ' ')"
 trips_databases=()
 graphite=0
 prometheus=0
+victoriametrics=0
 for t in ${targets[@]+"${targets[@]}"}; do
   case " $ALL_TARGETS " in
     *" $t "*) ;;
@@ -41,13 +42,16 @@ for t in ${targets[@]+"${targets[@]}"}; do
   case "$t" in
     graphite) graphite=1 ;;
     prometheus) prometheus=1 ;;
+    victoriametrics) victoriametrics=1 ;;
     *) trips_databases+=("$t") ;;
   esac
 done
-if [[ ${#trips_databases[@]} -eq 0 && $graphite -eq 0 && $prometheus -eq 0 ]]; then
+if [[ ${#trips_databases[@]} -eq 0 && $graphite -eq 0 && $prometheus -eq 0 && $victoriametrics -eq 0 ]]; then
   echo "SEED_TARGET is empty (valid: $ALL_TARGETS)" >&2
   exit 1
 fi
+
+devorigin_fed=$((prometheus | victoriametrics))
 
 # The streaming sidecar must be stopped while the whisper files are recreated.
 seed_graphite() {
@@ -56,20 +60,33 @@ seed_graphite() {
   docker compose up -d graphite_generator
 }
 
-# prometheus_seed never replaces a running Prometheus's data, and devorigin must
-# restart to pick up the new seed shift, so both are stopped around the import.
-seed_prometheus() {
-  docker compose stop prometheus devorigin
-  docker compose run --rm --no-deps prometheus_seed_generate
-  docker compose run --rm --no-deps prometheus_seed
-  docker compose up -d --no-deps prometheus devorigin
+# devorigin must restart to pick up the new seed shift, so it is stopped around
+# both imports. prometheus_seed never replaces a running Prometheus's data, and
+# VictoriaMetrics can lose re-imported samples of deleted series, so both
+# reseed into emptied storage.
+seed_devorigin_fed() {
+  local services=(devorigin)
+  if [[ $prometheus -eq 1 ]]; then services+=(prometheus); fi
+  docker compose stop "${services[@]}"
+  if [[ $prometheus -eq 1 ]]; then
+    docker compose run --rm --no-deps prometheus_seed_generate
+    docker compose run --rm --no-deps prometheus_seed
+  fi
+  if [[ $victoriametrics -eq 1 ]]; then
+    docker compose stop victoriametrics
+    docker compose run --rm --no-deps --entrypoint /bin/sh victoriametrics \
+      -c 'find /storage -mindepth 1 -maxdepth 1 -exec rm -rf {} +'
+    docker compose up -d --wait --no-deps victoriametrics
+    docker compose run --rm --no-deps victoriametrics_seed
+  fi
+  docker compose up -d --no-deps "${services[@]}"
 }
 
 # developer-start can return while its one-shot loaders are still running.
 # All trips loaders share the fixture, even when only one database is reloaded;
 # prometheus_seed_generate reads it too, and ALL_TARGETS yields prometheus_seed.
 startup_services=()
-if [[ ${#trips_databases[@]} -gt 0 || $prometheus -eq 1 ]]; then
+if [[ ${#trips_databases[@]} -gt 0 || $devorigin_fed -eq 1 ]]; then
   startup_services+=(seed_data_generate prometheus_seed_generate)
   for db in $ALL_TARGETS; do
     if [[ "$db" != graphite ]]; then startup_services+=("${db}_seed"); fi
@@ -86,17 +103,34 @@ for id in $startup_ids; do
   fi
 done
 
+# Prometheus and VictoriaMetrics both join devorigin's live trips metrics to their
+# history, and reseeding restarts devorigin with a new seed shift, so whichever of
+# them is running is reseeded alongside the other to keep both in phase.
+if [[ $prometheus -ne $victoriametrics ]]; then
+  running=" $(docker compose ps --status running --services | tr '\n' ' ') "
+  if [[ $prometheus -eq 1 && "$running" == *" victoriametrics "* ]]; then
+    echo "also reseeding victoriametrics, which shares devorigin's trips metrics with prometheus"
+    victoriametrics=1
+  elif [[ $victoriametrics -eq 1 && "$running" == *" prometheus "* ]]; then
+    echo "also reseeding prometheus, which shares devorigin's trips metrics with victoriametrics"
+    prometheus=1
+  fi
+fi
+
 names=()
 pids=()
-if [[ ${#trips_databases[@]} -gt 0 || $prometheus -eq 1 ]]; then
+if [[ ${#trips_databases[@]} -gt 0 || $devorigin_fed -eq 1 ]]; then
   if [[ ${#trips_databases[@]} -gt 0 ]]; then
     docker compose up -d --wait "${trips_databases[@]}"
   fi
   docker compose run --rm seed_data_generate
 fi
-if [[ $prometheus -eq 1 ]]; then
-  seed_prometheus &
-  names+=(prometheus_seed)
+if [[ $devorigin_fed -eq 1 ]]; then
+  seed_devorigin_fed &
+  label=""
+  if [[ $prometheus -eq 1 ]]; then label+=" prometheus_seed"; fi
+  if [[ $victoriametrics -eq 1 ]]; then label+=" victoriametrics_seed"; fi
+  names+=("${label# }")
   pids+=($!)
 fi
 if [[ ${#trips_databases[@]} -gt 0 ]]; then

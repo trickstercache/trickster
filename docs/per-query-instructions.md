@@ -36,7 +36,7 @@ names; otherwise the ALB's mode applies.
 
 | Backend and query language | Comments |
 |---|---|
-| Prometheus, GreptimeDB PromQL | `# ...` to the end of the line |
+| Prometheus, GreptimeDB PromQL, VictoriaMetrics MetricsQL | `# ...` to the end of the line |
 | InfluxQL | `-- ...` to the end of the line, `/* ... */` |
 | Flux | `// ...` to the end of the line |
 | InfluxDB SQL, Flight SQL, PostgreSQL, TimescaleDB, Druid SQL, GreptimeDB SQL and PostgreSQL | `-- ...` to the end of the line, `/* ... */` |

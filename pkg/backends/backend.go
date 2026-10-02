@@ -84,7 +84,12 @@ type Registrar func(handlers.Lookup)
 func New(name string, o *bo.Options, registrar Registrar,
 	router http.Handler, cache cache.Cache,
 ) (Backend, error) {
-	c, err := proxy.NewHTTPClient(o)
+	// one signer for both clients, so the health checker shares the proxy's credential cache
+	signer, err := proxy.NewSigner(o)
+	c, err1 := proxy.NewHTTPClientWithSigner(o, signer)
+	if err == nil {
+		err = err1
+	}
 
 	// this section sets up the health check HTTP client with a reasonable timeout
 	hco := o
@@ -92,7 +97,7 @@ func New(name string, o *bo.Options, registrar Registrar,
 		hco = bo.New()
 		hco.HealthCheck = ho.New()
 	}
-	hcc, err2 := proxy.NewHTTPClient(hco)
+	hcc, err2 := proxy.NewHTTPClientWithSigner(hco, signer)
 	if err == nil {
 		err = err2
 	}

@@ -32,6 +32,15 @@ All three of these newly-supported providers consume a new `pgwire` package for 
 
 **HTTP QUERY Method** - Trickster accepts and caches the `QUERY` method ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html)), keyed on the request body. Time series query endpoints forward a `QUERY` to their origins as a `POST` and advertise `Accept-Query`. See [The QUERY Method](./paths.md#the-query-method).
 
+**Automatic Certificates (ACME)** - Trickster can now obtain and renew its own serving certificates from Let's Encrypt or any other ACME certificate authority. See [Automatic Certificates](./acme.md) for details.
+
+- A backend opts in with `tls.acme`, and certificates are issued for its `hosts`.
+- The `http-01`, `tls-alpn-01` and `dns-01` challenges are supported, and `dns-01` issues wildcard certificates through the Cloudflare, Route 53 or RFC 2136 providers.
+- Certificates are stored on the filesystem, or in Redis to share them across a cluster of instances.
+- `acme.wait_on_startup` holds readiness until a new deployment's certificates are issued.
+- On-demand TLS issues a certificate during the first handshake for a permitted name, gated by an `ask` endpoint or a list of allowed domains.
+- The mgmt listener lists managed domains and forces renewals at `/trickster/acme`.
+
 **Disk Caches** - The Filesystem and bbolt caches are rebuilt for large caches and large objects. See [Disk Caches](./caches.md#disk-caches) for details.
 
 - Cached objects are self-describing and checksummed, and are written atomically, so an incomplete or damaged object is never served.

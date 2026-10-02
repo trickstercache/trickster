@@ -213,13 +213,14 @@ Time series origins do not accept `QUERY`, so on the provider query endpoints be
 
 | Provider | Endpoints | QUERY media types |
 | --- | --- | --- |
-| Prometheus, and the Prometheus API that GreptimeDB serves | `/api/v1/query_range`, `/api/v1/query`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/query_exemplars`, `/api/v1/format_query`, `/api/v1/parse_query` | `application/x-www-form-urlencoded` |
+| Prometheus, and the Prometheus APIs that GreptimeDB and VictoriaMetrics serve | `/api/v1/query_range`, `/api/v1/query`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/query_exemplars`, `/api/v1/format_query`, `/api/v1/parse_query` | `application/x-www-form-urlencoded` |
 | InfluxDB | `/query` | `application/x-www-form-urlencoded` |
 | InfluxDB | `/api/v2/query` | `application/json`, `application/vnd.flux` |
 | InfluxDB | `/api/v3/query_sql`, `/api/v3/query_influxql` | `application/json`, `application/x-www-form-urlencoded` |
 | ClickHouse | `/` | `text/plain`, `application/sql` |
 | Graphite | `/render`, `/metrics/find`, `/metrics/expand`, `/metrics/index.json`, `/tags`, `/tags/` | `application/x-www-form-urlencoded` |
 | Druid | `/druid/v2`, `/druid/v2/sql` | `application/json` |
+| VictoriaMetrics | `/render`, `/metrics/find`, `/metrics/expand`, and each under `/graphite` | `application/x-www-form-urlencoded` |
 | GreptimeDB | `/v1/sql` | `application/x-www-form-urlencoded` |
 
 A configured path is handled the same way when it uses one of these endpoints' handlers (for example, `handler: query_range`) and its `methods` include `QUERY`. If a configured path replaces a provider default for only some of its methods, such as `[ GET, POST ]`, the default still serves `QUERY` on that path. Add `QUERY` to the configured path's `methods` to change that too.

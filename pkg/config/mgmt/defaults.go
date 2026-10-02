@@ -49,4 +49,6 @@ const (
 	// DefaultCertificatesHandlerPath defines the default path for the TLS
 	// certificate inventory handler
 	DefaultCertificatesHandlerPath = "/trickster/certificates"
+	// DefaultACMEHandlerPath defines the default path for the ACME domain and renewal handler
+	DefaultACMEHandlerPath = "/trickster/acme"
 )

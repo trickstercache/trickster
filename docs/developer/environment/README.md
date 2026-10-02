@@ -52,6 +52,7 @@ scrapes your local Trickster for the
 | `timescaledb` | `timescaledb` (the `postgres` provider) and its seeder | `make developer-start-timescaledb` |
 | `greptimedb` | `greptimedb` and its seeder | `make developer-start-greptimedb` |
 | `questdb` | `questdb` and its seeder | `make developer-start-questdb` |
+| `victoriametrics` | `victoriametrics` and its seeder | `make developer-start-victoriametrics` |
 | `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
 | `all-providers` | every TSDB backend above | `make developer-start` |
 | `integration` | every TSDB backend, plus the integration-only `coredns` | `make integration-start` |
@@ -231,15 +232,17 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 ## Included backends
 
 The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
-Apache Druid, MySQL, TimescaleDB, QuestDB, and Graphite alongside Grafana. Trickster's
-dev config registers a matching backend for each,
+Apache Druid, MySQL, TimescaleDB, QuestDB, VictoriaMetrics, and Graphite alongside Grafana.
+Trickster's dev config registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison. Each backend runs in its own profile; see [Compose Profiles](#compose-profiles).
 
 GreptimeDB also provides direct SQL and PromQL queries, a pgwire SQL cache,
 and an HTTP proxy; QuestDB provides direct HTTP and pgwire validation plus
-native pgwire SQL caching. See [GreptimeDB Details](#greptimedb-details) and
-[QuestDB Details](#questdb-details).
+native pgwire SQL caching. VictoriaMetrics serves MetricsQL and the Graphite
+APIs from one instance. See [GreptimeDB Details](#greptimedb-details),
+[QuestDB Details](#questdb-details), and
+[VictoriaMetrics Details](#victoriametrics-details).
 
 ## Seed data
 
@@ -287,6 +290,10 @@ the data of a running Prometheus: a `make developer-start` against an already
 running environment keeps the current Prometheus data, so use
 `make developer-seed-data` (below) or restart the environment to reseed it.
 
+VictoriaMetrics gets the same history the same way: `victoriametrics_seed` runs
+`hack/devorigin backfill` itself, imports the file, and VictoriaMetrics scrapes
+`devorigin` live from then on. See [VictoriaMetrics Details](#victoriametrics-details).
+
 To change the names, boroughs, cab colours, or shares, edit
 `hack/seedgen/theme.go`; to change the daily or weekly curve, edit
 `hack/seedgen/calendar.go`. After any intentional change, run
@@ -301,11 +308,13 @@ a container. See `hack/seedgen/README.md`.
 `make developer-seed-data` runs `hack/developer-seed-data.sh`, which
 regenerates the seed window and then runs every seeder concurrently. Set
 `SEED_TARGET` to a space- or comma-separated subset of `clickhouse`, `mysql`,
-`timescaledb`, `greptimedb`, `questdb`, `druid`, `prometheus`, and `graphite` to scope the
-run, for example `SEED_TARGET=timescaledb make developer-seed-data`. The seed
-instant is recomputed on every run, so a scoped re-seed shifts only the selected
+`timescaledb`, `greptimedb`, `questdb`, `druid`, `prometheus`, `victoriametrics`, and
+`graphite` to scope the run, for example `SEED_TARGET=timescaledb make developer-seed-data`.
+The seed instant is recomputed on every run, so a scoped re-seed shifts only the selected
 databases; the others keep their previous shift, and dashboards that compare
-backends will disagree until a full run re-syncs them.
+backends will disagree until a full run re-syncs them. Prometheus and VictoriaMetrics
+both join `devorigin`'s live metrics to their history, and reseeding either restarts
+`devorigin` with the new shift, so selecting one also reseeds the other when it is running.
 
 ## InfluxDB Details
 
@@ -1019,3 +1028,129 @@ repairs that response. The health check is tested directly against GreptimeDB,
 without a Trickster shim. Retain old-version failures separately; an upstream
 merge or a source-built repair is not evidence that a stable release contains
 the fix. Changing the image requires repeating the full acceptance suite.
+
+## VictoriaMetrics Details
+
+The `victoriametrics` service runs single-node VictoriaMetrics OSS v1.153.0,
+pinned to its multi-architecture image digest (amd64 and arm64 included). One
+HTTP port, `8428` on the host and in the Compose network, serves MetricsQL through the
+Prometheus querying API (`/api/v1/query`, `/api/v1/query_range`, labels,
+series, metadata), the Graphite render, find and tags APIs, and the import and
+export APIs. There is no authentication in the developer environment, and no
+native-protocol listener is opened. The image runs as root and keeps its data in the
+`victoriametrics-data` named volume at `/storage`, which survives restarts.
+
+| Setting | Value |
+|---|---|
+| Retention | `-retentionPeriod=31d`, covering the 15-day trips history and the fixtures |
+| Scrape config | `docker-compose-data/victoriametrics-config/scrape.yml` (`-promscrape.config`) |
+| Health check | `GET /health` returns `OK`; no ingest or flush |
+| Latency offset | default `-search.latencyOffset=30s`; override per query with `latency_offset` (at least `1ms`) |
+| Response cache | default `-search.cacheTimestampOffset=5m`; bypass per query with `nocache=1` |
+| Deduplication | off (`-dedup.minScrapeInterval` unset), so samples with equal timestamps are all kept |
+| Graphite step | default `-search.graphiteStorageStep=10s`; Grafana sends `Storage-Step: 10s` |
+
+VictoriaMetrics scrapes `devorigin:8482` as `job="trips"` and Trickster's
+metrics at `host.docker.internal:8481` as `job="trickster"`, every 15 seconds.
+The scrape config holds only settings VictoriaMetrics supports, rather than a
+copy of `prometheus.yml`. Check the targets with
+`curl -s http://127.0.0.1:8428/api/v1/targets`.
+
+```bash
+curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode 'query=sum by (borough) (increase(trips_total[1h]))'
+curl -s http://127.0.0.1:8428/api/v1/query_range --data-urlencode 'query=WITH (d(m) = sum(m) - sum(m offset 15m)) d(trips_total)' -d start=-6h -d step=15m
+curl -s -H 'Storage-Step: 10s' 'http://127.0.0.1:8428/render?target=aliasByNode(vmgraphite.fast.*.*.requests,2,3)&from=-1h&format=json'
+```
+
+### VictoriaMetrics seeding
+
+`victoriametrics_seed` runs `hack/devorigin backfill` into its container, the
+same 15 days of trips metrics that Prometheus gets, then runs `hack/vmseed`. The
+seeder streams the file gzip-compressed to `/api/v1/import/prometheus` with
+`job=trips` and `instance=devorigin:8482`, so the history and the live scrape
+are one set of series. It also imports two small deterministic fixtures through
+`/api/v1/import`:
+
+- `job="trickster_fixtures"` series for MetricsQL edge cases: irregular intervals
+  (7s to 300s), hourly and half-hourly counter resets, missing samples, `+Inf`
+  and `-Inf`, and two metric names with identical label sets.
+- `vmgraphite.*` Graphite series: dotted names at 10s, 30s and 60s cadences,
+  periodic gaps, and `vmgraphite.tagged.latency` with `dc` and `tier` tags.
+
+The seeder verifies every import by its exact sample count, then checks that
+Graphite find and tag autocompletion discover the fixture.
+Fixture values are functions of their timestamps. The fixtures end at the
+seeding time, so each seeder run appends the samples since the previous one;
+they span 48 hours (7 days for the 60s Graphite series), so relative dashboard
+ranges stay populated between runs.
+
+The seeder never deletes series. In v1.153.0, re-importing a deleted series over
+a wider window than it had can lose every re-imported sample on the dates the
+deleted series covered, and a restart does not recover them. The seeder therefore imports
+the trips history only when VictoriaMetrics has none. A `make developer-start`
+against a running environment keeps the current history, like Prometheus.
+`make developer-seed-data` (with `SEED_TARGET=victoriametrics` to scope it)
+stops `devorigin`, empties the `victoriametrics-data` volume, and reseeds it.
+
+VictoriaMetrics drops NaN samples on import, so the fixtures contain none, and
+stale markers come only from live scraping. Importing a sample whose timestamp
+is older than `-search.cacheTimestampOffset` resets the response cache. Late
+inserts become searchable a few seconds after the import request returns.
+
+The trips history and live samples match Prometheus' value for value, with one
+label difference: Prometheus v3.13.2 stores devorigin's bucket label `le="1"` as
+`le="1.0"`, and VictoriaMetrics keeps the exported `le="1"`. A query that selects
+one bucket by `le` needs each server's form; `histogram_quantile` is unaffected.
+
+### VictoriaMetrics in Grafana
+
+Grafana provisions three direct datasources against `http://victoriametrics:8428`:
+`victoriametrics-direct` (UID `ds_vm_direct`, GET) and `victoriametrics-direct-post`
+(UID `ds_vm_direct_post`, POST), both on the bundled Prometheus plugin, and
+`victoriametrics-graphite-direct` (UID `ds_vm_graphite_direct`), on the bundled
+Graphite plugin with a `Storage-Step: 10s` header. No VictoriaMetrics plugin is needed.
+Their Trickster peers, `victoriametrics-trickster`, `victoriametrics-trickster-post` and
+`victoriametrics-graphite-trickster`, reach the dev config's `victoriametrics1` backend at
+`http://host.docker.internal:8480/victoriametrics1`; start Trickster with `make serve-dev`.
+
+The [Trips (VictoriaMetrics)](http://127.0.0.1:3000/d/trips-victoriametrics) dashboard
+repeats the Prometheus trips panels, adds a MetricsQL row (`WITH`, implicit
+range windows, `keep_metric_names`, `topk_avg`, `histogram_quantiles`, `rollup`,
+the `limit` modifier, and the `__graphite__` selector), and charts the edge-case
+fixtures. Its performance row charts `victoriametrics1`'s requests by cache status,
+latency, returned points, and `trickster_victoriametrics_query_analysis_total`, which
+shows whether each MetricsQL request took the delta cache, the object cache, or was relayed. Its datasource variable lists every `victoriametrics-*` Prometheus-type
+datasource. The [VictoriaMetrics Graphite](http://127.0.0.1:3000/d/trickster-vm-graphite)
+dashboard charts the Graphite fixture through render, find (the `region`
+variable), `seriesByTag`, and server-side functions. On the 10s render grid,
+30s and 60s series have nulls between their points, so those panels connect
+nulls, except across real gaps. Both dashboards' Trickster performance panels filter on
+`provider="victoriametrics"` and `backend_name="victoriametrics1"`.
+
+### VictoriaMetrics behaviors to preserve
+
+These were measured on v1.153.0 directly. Trickster must reproduce them when it proxies or caches:
+
+- **Range grids:** `query_range` returns points at `start + k*step` for fewer
+  than 50 points. With its response cache on, VictoriaMetrics starts a range of
+  50 or more points on a step boundary and keeps the point count
+  (`promql.AdjustStartEnd`); `nocache=1` or `-search.disableCache` keep the
+  requested start. It keeps fractional `start` values and accepts fractional and
+  duration steps (`15.5`, `1m`). Grafana 13.1.3 aligns `start` and `end` to the
+  step itself, but sends instant queries with a fractional `time`.
+- **Responses:** successes carry a `stats` object (`seriesFetched` as a string,
+  `executionTimeMsec`). Errors carry their HTTP status in `errorType`: `"400"` for an invalid request and
+  `"422"` for a failed evaluation, rather than Prometheus' `bad_data` and `execution`.
+  Graphite render errors are plain-text 400 responses.
+- **MetricsQL:** `clamp` keeps metric names; without `keep_metric_names`,
+  `sum by (__name__)` collapses names; `rate()` over two names with identical
+  labels fails with `duplicate output timeseries`; a bare selector leaves gaps
+  where samples are farther apart than the automatic lookbehind.
+- **Graphite tags:** an unfiltered `/tags` or `/tags/<tag>` lists nothing for
+  label-based series, while `/tags/autoComplete/tags?expr=...`, `/tags/findSeries`
+  and `seriesByTag` work. `/metrics/find`, `/functions` and `/graphite/*` aliases respond.
+- **Grafana's requests:** the Prometheus plugin's health check is `query=1+1&time=4`
+  plus `/api/v1/status/buildinfo` (VictoriaMetrics reports `2.24.0`); POST
+  datasources send form bodies. The Graphite plugin POSTs `/render` forms
+  (`target`, `from`, `until`, `format=json`, `maxDataPoints`) with `Storage-Step`
+  on every request, and checks health with `constantLine(100)`.

@@ -43,6 +43,7 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -88,6 +89,8 @@ type Config struct {
 	// Kubernetes configures the Kubernetes Gateway/Ingress controller. The
 	// controller does not exist unless this section is present.
 	Kubernetes *kubecfg.Options `yaml:"kubernetes,omitempty"`
+	// ACME configures automatic certificate issuance and renewal for backends that opt in
+	ACME *acmeopts.Options `yaml:"acme,omitempty"`
 
 	// Flags contains a compiled version of the CLI flags
 	Flags *Flags `yaml:"-"`
@@ -405,6 +408,7 @@ func (c *Config) Clone() *Config {
 	}
 
 	nc.Kubernetes = c.Kubernetes.Clone()
+	nc.ACME = c.ACME.Clone()
 
 	return nc
 }
@@ -507,6 +511,9 @@ func (c *Config) String() string {
 		if v != nil && cp.Caches[k].Redis != nil && cp.Caches[k].Redis.Password != "" {
 			cp.Caches[k].Redis.Password = "*****"
 		}
+	}
+	if r := cp.ACME.RedisConnection(); r != nil && r.Password != "" {
+		r.Password = "*****"
 	}
 
 	bytes, err := yamlencoding.Marshal(cp)

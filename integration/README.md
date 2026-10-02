@@ -25,7 +25,8 @@ workstations never run them. It also waits for the database seeders to
 finish. `make integration-stop` stops the environment. `make developer-start`
 alone still works: the autodiscovery DNS tests probe for CoreDNS and skip when
 it isn't running (CI sets `TRICKSTER_DNS_TEST=1` to turn that skip into a
-failure). See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
+failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
+running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
 for the profiles.
 
 The Kubernetes scenarios (every `Test*Kind`) are separate from compose
@@ -77,6 +78,9 @@ returned harness.
   (`do`, `queryProm`, `withParams`, `withHeader`, `withBody`),
   `requireTricksterResult`, `runCacheProviderMatrix`, `configHarness`,
   `staticConfigHarness`
+- `acme_helpers_test.go` — an in-process Pebble ACME CA and an authoritative DNS server
+  that accepts RFC 2136 updates, so the ACME tests need no containers; only
+  `TestACME_RedisStorage` uses the environment's Redis
 - `testdata/` — static YAML configs for tests that need custom backends
   (ALB, rewriter, engines, rule, auth, purge, reload, TLS)
 

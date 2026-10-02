@@ -210,6 +210,12 @@ const (
 	NameXForwardedProto = "X-Forwarded-Proto"
 	// NameXForwardedServer represents the HTTP Header Name of "X-Forwarded-Server"
 	NameXForwardedServer = "X-Forwarded-Server"
+	// NameXAmzDate represents the HTTP Header Name of "X-Amz-Date"
+	NameXAmzDate = "X-Amz-Date"
+	// NameXAmzSecurityToken represents the HTTP Header Name of "X-Amz-Security-Token"
+	NameXAmzSecurityToken = "X-Amz-Security-Token" // #nosec G101 -- a header name, not a credential
+	// NameXAmzContentSHA256 represents the HTTP Header Name of "X-Amz-Content-Sha256"
+	NameXAmzContentSHA256 = "X-Amz-Content-Sha256"
 
 	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
 	NameTrkHCStatus = "Trk-HC-Status"
