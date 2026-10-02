@@ -49,6 +49,9 @@ func (c *Client) HandlerLookup() handlers.Lookup {
 	}
 	if len(c.hooks.AllowedPaths) > 0 {
 		lookup[handlerUnsupported] = http.HandlerFunc(c.UnsupportedHandler)
+		if c.hooks.CatchAll != nil {
+			lookup[handlerCatchAll] = c.hooks.CatchAll
+		}
 	}
 	if c.hooks.PrepareRequest != nil {
 		for name, handler := range lookup {
@@ -58,6 +61,21 @@ func (c *Client) HandlerLookup() handlers.Lookup {
 			lookup[name] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if !c.hooks.PrepareRequest(r) {
 					c.ProxyHandler(w, r)
+					return
+				}
+				handler.ServeHTTP(w, r)
+			})
+		}
+	}
+	if c.hooks.CheckRequest != nil {
+		for name, handler := range lookup {
+			// the catch-all answers in its own protocol, and the others never reach the origin
+			if name == "health" || name == handlerUnsupported || name == handlerCatchAll {
+				continue
+			}
+			lookup[name] = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := c.hooks.CheckRequest(r); err != nil {
+					writeErrorEnvelope(w, http.StatusBadRequest, err.Error())
 					return
 				}
 				handler.ServeHTTP(w, r)
@@ -92,7 +110,12 @@ func (c *Client) MergeablePaths() []string {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
-	paths := WithPathPrefix(Restrict(SupportedPaths(o), c.hooks.AllowedPaths), c.hooks.PathPrefix)
+	var catchAll string
+	if c.hooks.CatchAll != nil {
+		catchAll = handlerCatchAll
+	}
+	paths := WithPathPrefix(Restrict(SupportedPaths(o), c.hooks.AllowedPaths, catchAll),
+		c.hooks.PathPrefix)
 	paths = WithCacheKeyParams(paths, c.hooks.CacheKeyParams...)
 	paths = WithCacheKeyHeaders(paths, c.hooks.CacheKeyHeaders...)
 	if o != nil {

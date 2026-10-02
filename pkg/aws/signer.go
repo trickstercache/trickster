@@ -238,8 +238,9 @@ func (s *Signer) sign(ctx context.Context, r *http.Request) (aws.Credentials, er
 	if err != nil {
 		return creds, err
 	}
+	service, region := signingScope(ctx, s.service, cfg.Region)
 	if err := s.signer.SignHTTP(ctx, creds, r, hash,
-		s.service, cfg.Region, s.now().UTC()); err != nil {
+		service, region, s.now().UTC()); err != nil {
 		return creds, fmt.Errorf("aws: signing request: %w", err)
 	}
 	return creds, nil

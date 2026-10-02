@@ -88,7 +88,7 @@ func TestCloudWatchRoutes(t *testing.T) {
 		APIPath + mnMetadata:    handlerUnsupported,
 		APIPath + "admin":       handlerUnsupported,
 		APIPath:                 handlerUnsupported,
-		"/":                     handlerUnsupported,
+		"/":                     handlerCatchAll,
 	} {
 		require.Equal(t, want, h[path], path)
 	}

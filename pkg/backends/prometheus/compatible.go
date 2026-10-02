@@ -47,6 +47,11 @@ type Hooks struct {
 	AllowedPaths []string
 	// MaxSeries is the series count at which the origin truncates a query result; 0 for none
 	MaxSeries int
+	// CatchAll, when set with AllowedPaths, serves the root catch-all path instead of the
+	// unsupported handler
+	CatchAll http.Handler
+	// CheckRequest, when set, refuses any request it returns an error for, before its handler runs
+	CheckRequest func(*http.Request) error
 }
 
 func pathPrefix(prefix string) string {
@@ -93,18 +98,22 @@ func WithCacheKeyHeaders(paths po.List, names ...string) po.List {
 	return out
 }
 
-// Restrict copies paths, rebinding each path not in allowed to the unsupported
-// handler for every method, so that nothing outside allowed reaches the origin.
-func Restrict(paths po.List, allowed []string) po.List {
+// Restrict copies paths, rebinding each path outside allowed, for every method, to the
+// unsupported handler, or the root path to catchAll when set.
+func Restrict(paths po.List, allowed []string, catchAll string) po.List {
 	out := paths.Clone()
 	if len(allowed) == 0 {
 		return out
 	}
 	for _, p := range out {
-		if !slices.Contains(allowed, p.Path) {
-			p.HandlerName = handlerUnsupported
-			p.Methods = methods.AllHTTPMethods()
+		if slices.Contains(allowed, p.Path) {
+			continue
 		}
+		p.HandlerName = handlerUnsupported
+		if p.Path == rootPath && catchAll != "" {
+			p.HandlerName = catchAll
+		}
+		p.Methods = methods.AllHTTPMethods()
 	}
 	return out
 }

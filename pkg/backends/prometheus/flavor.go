@@ -26,6 +26,8 @@ import (
 
 const (
 	handlerUnsupported = "unsupported"
+	handlerCatchAll    = "catchall"
+	rootPath           = "/"
 	// upLimit caps the series a query returns, so it changes the result and is cache identity
 	upLimit = "limit"
 	// cloudWatchHealthQuery selects no metric, so the probe scans no billable samples
@@ -65,6 +67,8 @@ func flavorHooks(o *bo.Options) Hooks {
 			CacheKeyParams:    []string{upLimit},
 			HealthCheckConfig: cloudWatchHealthCheck,
 			MaxSeries:         po.CloudWatchMaxSeries,
+			CatchAll:          newCloudWatchRelay(o),
+			CheckRequest:      cloudWatchRegionCheck(backendRegion(o)),
 		}
 	case po.FlavorAMP:
 		return Hooks{AllowedPaths: ampPaths}

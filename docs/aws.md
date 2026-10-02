@@ -180,10 +180,13 @@ Prometheus server; Trickster does the signing.
   from the environment instead of `sigv4.region`, set `origin_url`
   explicitly. An `origin_url` and `sigv4.region` naming different regions
   fail at startup.
-- **Routes:** only `query`, `query_range`, `series`, `labels` and
-  `label/<name>/values` are served. Every other path is answered by
-  Trickster with an error instead of being signed and forwarded, so a
-  client cannot use Trickster's credentials to call other CloudWatch APIs.
+- **Routes:** the PromQL API's `query`, `query_range`, `series`, `labels`
+  and `label/<name>/values` are served and cached. The read-only AWS API
+  calls that Grafana's CloudWatch data source makes are relayed uncached
+  (see [Grafana's CloudWatch Data Source](#grafanas-cloudwatch-data-source)).
+  Every other path and operation is answered by Trickster with an error
+  instead of being signed and forwarded, so a client cannot use Trickster's
+  credentials to change anything.
 - **Cache keys:** `limit`, which caps the series a query returns, is part
   of each cache key.
 - **Truncated results:** CloudWatch returns at most 500 series per query,
@@ -216,6 +219,35 @@ The IAM principal needs `cloudwatch:GetMetricData` and
   }]
 }
 ```
+
+#### Grafana's CloudWatch Data Source
+
+Grafana's **Prometheus** data source needs only the PromQL API. Grafana's
+**CloudWatch** data source can also run PromQL, in its PromQL query mode,
+and works against Trickster too. Set the data source's **Endpoint** to the
+Trickster backend's URL, and its **Default Region** to the backend's
+region. Any credentials will do, since Trickster signs with its own and
+ignores the data source's.
+
+That one Endpoint carries every AWS call the data source makes, not just
+PromQL. Trickster caches the PromQL calls and relays the others to their
+services uncached, re-signed with its own credentials for each service:
+
+| service | relayed operations | used for |
+| ----- | ----- | ----- |
+| CloudWatch | `ListMetrics`, `GetMetricData`, `DescribeAlarms`, `DescribeAlarmsForMetric`, `DescribeAlarmHistory` | Save & test, metric queries, variables, annotations |
+| CloudWatch Logs | `DescribeLogGroups`, `GetLogGroupFields`, `StartQuery`, `GetQueryResults`, `StopQuery`, `GetLogEvents`, `ListAnomalies`, `ListAggregateLogGroupSummaries` | Save & test, Logs queries |
+| EC2 | `DescribeRegions`, `DescribeInstances` | the region picker, variables |
+| Resource Groups Tagging | `GetResources` | variables |
+| Observability Access Manager | `ListSinks`, `ListAttachedLinks` | the cross-account picker |
+
+Any other operation is refused with `AccessDeniedException`. A request
+signed for a region other than the backend's is refused with
+`ValidationException` rather than answered from the backend's region. Run
+one backend per region and select that region in Grafana. Grant
+Trickster's IAM identity the read permissions for the operations your
+dashboards use; Save & test needs `cloudwatch:ListMetrics` and
+`logs:DescribeLogGroups`.
 
 #### CloudWatch Limits
 

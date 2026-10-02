@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"strings"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -33,11 +34,14 @@ var sigV4Fields = []string{
 	headers.NameXAmzContentSHA256,
 }
 
-// StripSigV4 drops a client's SigV4 signature for a backend that signs requests itself, so the
-// signature neither splits the cache key nor reaches the origin beside Trickster's own.
+// StripSigV4 drops a client's SigV4 signature, keeping its scope (aws.ClientScope), for a backend
+// that signs itself, so it neither splits the cache key nor reaches the origin.
 func StripSigV4(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Header.Get(headers.NameAuthorization), sigV4AuthPrefix) {
+		if auth := r.Header.Get(headers.NameAuthorization); strings.HasPrefix(auth, sigV4AuthPrefix) {
+			if s, ok := taws.ParseScope(auth); ok {
+				r = r.WithContext(taws.WithClientScope(r.Context(), s))
+			}
 			r.Header.Del(headers.NameAuthorization)
 		}
 		for _, name := range sigV4Fields {
