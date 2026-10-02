@@ -87,6 +87,9 @@ listeners:
     read_header_timeout: 10s
     protocol: http
     tls_watch_interval: 30s
+    path_normalization:
+      dot_segments: normalize
+      escaped_slashes: keep
   metrics:
     port: 8481
     max_request_body_size_bytes: 10485760
@@ -94,6 +97,9 @@ listeners:
     read_header_timeout: 10s
     protocol: http
     tls_watch_interval: 30s
+    path_normalization:
+      dot_segments: normalize
+      escaped_slashes: keep
   mgmt:
     address: 127.0.0.1
     port: 8484
@@ -102,6 +108,9 @@ listeners:
     read_header_timeout: 10s
     protocol: http
     tls_watch_interval: 30s
+    path_normalization:
+      dot_segments: normalize
+      escaped_slashes: keep
   prom_port:
     port: 9090
     max_request_body_size_bytes: 10485760
@@ -109,6 +118,9 @@ listeners:
     read_header_timeout: 10s
     protocol: http
     tls_watch_interval: 30s
+    path_normalization:
+      dot_segments: normalize
+      escaped_slashes: keep
 logging:
   log_level: info
 metrics:

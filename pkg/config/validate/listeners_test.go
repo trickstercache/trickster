@@ -359,6 +359,19 @@ func TestListenersEdgeCases(t *testing.T) {
 		}
 	})
 
+	t.Run("invalid_path_normalization", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Backends = bo.Lookup{"test": bo.New()}
+		c.Listeners[listener.DefaultFrontendName].PathNormalization.DotSegments = "clean"
+		if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "path_normalization") {
+			t.Fatalf("expected path_normalization error, got %v", err)
+		}
+		c.Listeners[listener.DefaultFrontendName].PathNormalization = nil
+		if err := Listeners(c); err != nil {
+			t.Fatalf("expected default path normalization, got %v", err)
+		}
+	})
+
 	t.Run("port_conflict", func(t *testing.T) {
 		c := config.NewConfig()
 		c.Listeners["custom"] = listener.New("custom")

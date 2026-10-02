@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	reqmatching "github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/route"
 )
@@ -67,6 +68,30 @@ func benchRequest(b *testing.B, r *lmRouter, path string, expectMatch bool) {
 	for range b.N {
 		r.Handler(req)
 	}
+}
+
+func benchServe(b *testing.B, h http.Handler, path string) {
+	req, _ := http.NewRequest(http.MethodGet, path, nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		b.Fatalf("expected a route match for %s, got status %d", path, w.Code)
+	}
+	b.ReportAllocs()
+	for b.Loop() {
+		h.ServeHTTP(w, req)
+	}
+}
+
+// a prefix match served directly (baseline for the normalized variant)
+func BenchmarkServeClassicPrefix(b *testing.B) {
+	benchServe(b, newBenchRouter(b, 10, 0), "/prefix/path/005/extra")
+}
+
+// the same request behind the listener's default path normalization; a path
+// with nothing to clean must add no allocation
+func BenchmarkServeClassicPrefix_Normalized(b *testing.B) {
+	benchServe(b, normalize.Middleware(nil, newBenchRouter(b, 10, 0)), "/prefix/path/005/extra")
 }
 
 // classic exact matching with no regex routes registered (baseline)

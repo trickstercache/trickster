@@ -25,6 +25,7 @@ import (
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 
 	"go.yaml.in/yaml/v3"
@@ -335,6 +336,29 @@ func TestOptionsEqualProxyProtocol(t *testing.T) {
 	c.TrustedProxies[0] = "192.0.2.0/24"
 	if b.TrustedProxies[0] != "10.0.0.0/8" {
 		t.Error("clone shares the trusted proxy list")
+	}
+}
+
+func TestPathNormalizationYAMLCloneAndEquality(t *testing.T) {
+	var l Lookup
+	if err := yaml.Unmarshal([]byte("default:\n  path_normalization:\n    merge_slashes: true\n"), &l); err != nil {
+		t.Fatal(err)
+	}
+	got := l[DefaultFrontendName].PathNormalization
+	want := pno.Options{DotSegments: pno.DefaultDotSegments, MergeSlashes: true, EscapedSlashes: pno.DefaultEscapedSlashes}
+	if got == nil || *got != want {
+		t.Fatalf("path_normalization = %+v; want %+v", got, want)
+	}
+	if *l[mgmt.ListenerNameMgmt].PathNormalization != *pno.New() {
+		t.Error("an unconfigured listener should carry the default path normalization")
+	}
+	c := l[DefaultFrontendName].Clone()
+	if c.PathNormalization == got || !c.Equal(l[DefaultFrontendName]) {
+		t.Fatal("clone should deep-copy path_normalization")
+	}
+	c.PathNormalization.DotSegments = pno.DotSegmentsReject
+	if c.Equal(l[DefaultFrontendName]) {
+		t.Error("path_normalization must participate in equality")
 	}
 }
 
