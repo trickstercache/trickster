@@ -20,6 +20,7 @@ import (
 	"crypto/md5"
 	"crypto/sha256"
 	"crypto/sha512"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"hash"
@@ -29,40 +30,70 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const cryptSaltAlphabet = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+const (
+	cryptSaltAlphabet = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-var ErrUnauthorized = errors.New("unauthorized")
+	prefixAPR1        = "$apr1$"
+	prefixMD5Crypt    = "$1$"
+	prefixSHA256Crypt = "$5$"
+	prefixSHA512Crypt = "$6$"
+	prefixBcrypt2a    = "$2a$"
+	prefixBcrypt2b    = "$2b$"
+	prefixBcrypt2y    = "$2y$"
+)
 
-// VerifyPassword verifies a password against a stored hash
-// Supported formats: apr1 crypt, md5 crypt, bcrypt, sha-256 crypt, sha-512 crypt,
-// PostgreSQL SCRAM-SHA-256 verifier
+var (
+	ErrUnauthorized = errors.New("unauthorized")
+
+	cryptHashPrefixes = []string{
+		prefixAPR1, prefixMD5Crypt, prefixSHA256Crypt, prefixSHA512Crypt,
+		prefixBcrypt2a, prefixBcrypt2b, prefixBcrypt2y,
+	}
+)
+
+// IsCryptHash reports whether s is a crypt-style hash that VerifyPassword checks.
+func IsCryptHash(s string) bool {
+	for _, prefix := range cryptHashPrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// VerifyPassword checks password against a crypt hash, SCRAM verifier or plaintext entry.
+// A hash never matches itself; plaintext is compared in constant time.
 func VerifyPassword(hash, password string) error {
-	if hash == password {
-		return nil
-	}
-	if IsSCRAMVerifier(hash) {
+	switch {
+	case hash == "":
+		return ErrUnauthorized
+	case IsSCRAMVerifier(hash):
 		return verifySCRAMHash(hash, password)
-	}
-	if strings.HasPrefix(hash, "$apr1$") {
-		return verifyMD5CryptHash(hash, password, "$apr1$")
-	}
-	if strings.HasPrefix(hash, "$1$") {
-		return verifyMD5CryptHash(hash, password, "$1$")
-	}
-	if strings.HasPrefix(hash, "$5$") {
+	case IsPostgresMD5(hash):
+		// salted by user, so only VerifyUserPassword can check it
+		return ErrUnauthorized
+	case strings.HasPrefix(hash, prefixAPR1):
+		return verifyMD5CryptHash(hash, password, prefixAPR1)
+	case strings.HasPrefix(hash, prefixMD5Crypt):
+		return verifyMD5CryptHash(hash, password, prefixMD5Crypt)
+	case strings.HasPrefix(hash, prefixSHA256Crypt):
 		return verifySHA256CryptHash(hash, password)
-	}
-	if strings.HasPrefix(hash, "$6$") {
+	case strings.HasPrefix(hash, prefixSHA512Crypt):
 		return verifySHA512CryptHash(hash, password)
-	}
-	if strings.HasPrefix(hash, "$2a$") ||
-		strings.HasPrefix(hash, "$2b$") || strings.HasPrefix(hash, "$2y$") {
+	case strings.HasPrefix(hash, prefixBcrypt2a),
+		strings.HasPrefix(hash, prefixBcrypt2b), strings.HasPrefix(hash, prefixBcrypt2y):
 		return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
 	}
-	if hash == password { // finally assume unencrypted and do a direct compare
+	// hashing first keeps the plaintext's length out of the comparison's timing
+	stored, given := sha256.Sum256([]byte(hash)), sha256.Sum256([]byte(password))
+	if subtle.ConstantTimeCompare(stored[:], given[:]) == 1 {
 		return nil
 	}
 	return ErrUnauthorized
+}
+
+func equalHashes(computed, expected string) bool {
+	return subtle.ConstantTimeCompare([]byte(computed), []byte(expected)) == 1
 }
 
 // verifyMD5CryptHash verifies a password against an MD5-Crypt hash (supports both $apr1$ and $1$)
@@ -134,7 +165,7 @@ func verifyMD5CryptHash(hash, password, magicPrefix string) error {
 		csum[11],
 	}
 	encoded := apr1Base64Encode(reordered)
-	if encoded != expectedHash {
+	if !equalHashes(encoded, expectedHash) {
 		return errors.New("password mismatch")
 	}
 	return nil
@@ -306,7 +337,7 @@ func computeAndCompareSHACrypt(password, salt string, rounds int, expectedHash s
 		}
 	}
 	encoded := apr1Base64Encode(reordered)
-	if encoded != expectedHash {
+	if !equalHashes(encoded, expectedHash) {
 		return errors.New("password mismatch")
 	}
 	return nil

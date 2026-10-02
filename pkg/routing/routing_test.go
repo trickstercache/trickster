@@ -18,6 +18,7 @@ package routing
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -953,6 +954,70 @@ func TestPassthroughLaneSelection(t *testing.T) {
 	}
 	if isPassthroughPath(nil) {
 		t.Error("nil path options must not select the passthrough lane")
+	}
+}
+
+func TestAuthenticatorRunsBeforeRewriters(t *testing.T) {
+	const user, password, host, path = "client", "client-password", "example.com", "/data"
+	const backendName, handlerName = "default", "capture"
+	logger.SetLogger(logging.NoopLogger())
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oo := conf.Backends[backendName]
+	oo.Hosts = []string{host}
+	oo.AuthOptions = &autho.Options{
+		Name: "client-auth", Provider: basic.ID,
+		Users: configtypes.EnvStringMap{user: password},
+	}
+	if oo.AuthOptions.Authenticator, err = basic.New(map[string]any{"options": oo.AuthOptions}); err != nil {
+		t.Fatal(err)
+	}
+	rpc, _ := reverseproxycache.NewClient(backendName, oo, lm.NewRouter(), nil, nil, nil)
+	var seenAuth string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenAuth = r.Header.Get(headers.NameAuthorization)
+		w.WriteHeader(http.StatusOK)
+	})
+	injected := "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
+	inject, err := rewriter.ParseRewriteList(rwopts.RewriteList{
+		[]string{"header", "set", headers.NameAuthorization, injected},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := po.New()
+	p.Path = path
+	p.HandlerName = handlerName
+	p.Methods = []string{http.MethodGet}
+	p.ReqRewriter = inject
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, handlers.Lookup{handlerName: capture}, rpc, oo, nil, nil)
+
+	// a credential only the rewriter adds must not authenticate the client
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	w := httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("rewriter-added credential: status %d; want %d", w.Code, http.StatusUnauthorized)
+	}
+	// the rewriter runs after authentication, so its header survives the authenticator's Sanitize
+	req = httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	req.SetBasicAuth(user, password)
+	w = httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || seenAuth != injected {
+		t.Fatalf("client credential: status %d, handler saw %q; want %d and the rewritten header",
+			w.Code, seenAuth, http.StatusOK)
 	}
 }
 

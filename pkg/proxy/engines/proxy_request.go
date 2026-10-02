@@ -39,6 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -390,7 +391,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 			if pr.revalidationReader == nil {
 				logger.Error("revalidation upstream returned no reader",
 					logging.Pairs{
-						keys.URL:           pr.revalidationRequest.URL.String(),
+						keys.URL:           redact.URL(pr.revalidationRequest.URL),
 						keys.ContentLength: contentLength,
 					})
 			}
@@ -416,7 +417,7 @@ func (pr *proxyRequest) makeUpstreamRequests() error {
 				if pr.originReaders[i] == nil {
 					logger.Error("origin upstream returned no reader",
 						logging.Pairs{
-							keys.URL:           req.URL.String(),
+							keys.URL:           redact.URL(req.URL),
 							keys.ContentLength: contentLength,
 						})
 				}

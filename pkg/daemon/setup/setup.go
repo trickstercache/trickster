@@ -49,6 +49,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
@@ -384,6 +385,7 @@ func applyLoggingConfig(c, o *config.Config) {
 	if c == nil || c.Logging == nil {
 		return
 	}
+	redact.Configure(c.Logging.Redact)
 	isReload := o != nil && c != o
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()

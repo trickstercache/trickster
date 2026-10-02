@@ -1603,7 +1603,7 @@ backends:
 #     proxy_preserve: false
 #     # users_file is the optional users source file
 #     users_file: /path/to/user-manifest.csv
-#     # users_file_format is the source file format. Required when users_file is set. Valid options: csv, htpasswd
+#     # users_file_format is the source file format. Required when users_file is set. Valid options: csv, csvNoHeader, htpasswd
 #     users_file_format: csv
 #     # users is an optional embedded users list (format is: name: credential)
 #     users: 
@@ -1771,6 +1771,18 @@ backends:
 
 #   # compress gzips rotated archives. default is true
 #   compress: true
+
+#   # redact masks credentials in access logs and engine logs. It is on by default and
+#   # always covers the built-in names listed in /docs/access-logs.md; the lists add names.
+#   redact:
+#     # enabled: false turns redaction off entirely. default is true
+#     enabled: true
+#     # query_params are query parameter names whose values are masked, matched without case
+#     query_params: [session_id]
+#     # headers are request or response header names whose values are masked
+#     headers: [X-Internal-Token]
+#     # cookies are the cookie names whose values %{name}c masks. none by default
+#     cookies: [grafana_session]
 
 # # Kubernetes Gateway API / Ingress controller - see /docs/configuring.md and
 # # /docs/kubernetes-rbac.md for more information.

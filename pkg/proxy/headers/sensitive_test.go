@@ -53,3 +53,19 @@ func TestHideAuthorizationCredentials(t *testing.T) {
 		}
 	}
 }
+
+func TestIsSensitive(t *testing.T) {
+	for _, name := range []string{
+		NameAuthorization, NameProxyAuthorization, NameCookie, NameSetCookie,
+		NameXAPIKey, NameAPIKey, NameXGoogAPIKey, strings.ToLower(NameXAmzSecurityToken),
+	} {
+		if !IsSensitive(name) {
+			t.Errorf("%s must be sensitive", name)
+		}
+	}
+	for _, name := range []string{NameUserAgent, NameReferer, ""} {
+		if IsSensitive(name) {
+			t.Errorf("%q must not be sensitive", name)
+		}
+	}
+}

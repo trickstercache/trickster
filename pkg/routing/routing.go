@@ -163,16 +163,17 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	// header it withholds from the client
 	withResources := shouldCaptureAuth(pathOpts, o) || pathOpts.HideResultHeader ||
 		rl.logger.NeedsResources()
-	h = attachAuthenticator(h, pathOpts, o)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
-	// WithResourcesContext must wrap outer than LimitQueryRange
-	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if len(o.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(o.ReqRewriter, h)
 	}
 	if len(pathOpts.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(pathOpts.ReqRewriter, h)
 	}
+	// authentication judges the request as the client sent it, before any rewriter changes it
+	h = attachAuthenticator(h, pathOpts, o)
+	// WithResourcesContext must wrap outer than LimitQueryRange and the authenticator
+	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if !pathOpts.NoMetrics {
 		h = middleware.Decorate(o.Name, o.Provider, pathOpts.Path, h)
 	}
