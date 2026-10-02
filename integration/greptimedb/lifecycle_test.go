@@ -39,15 +39,17 @@ func TestDeveloperSeedStartupOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tt := range []struct {
-		name, target, mode string
-		wantFailure        bool
+		name, target, mode, running string
+		wantFailure                 bool
 	}{
-		{"running_seeders", "greptimedb", "active", false},
-		{"no_running_seeders", "greptimedb", "idle", false},
-		{"startup_failure", "greptimedb", "failed", true},
-		{"wait_failure", "greptimedb", "wait-error", true},
-		{"listing_failure", "greptimedb", "list-error", true},
-		{"graphite_only", "graphite", "active", false},
+		{"running_seeders", "greptimedb", "active", "", false},
+		{"no_running_seeders", "greptimedb", "idle", "", false},
+		{"startup_failure", "greptimedb", "failed", "", true},
+		{"wait_failure", "greptimedb", "wait-error", "", true},
+		{"listing_failure", "greptimedb", "list-error", "", true},
+		{"graphite_only", "graphite", "active", "", false},
+		{"victoriametrics_with_prometheus", "victoriametrics", "active", "devorigin prometheus victoriametrics", false},
+		{"victoriametrics_alone", "victoriametrics", "active", "devorigin victoriametrics", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -72,6 +74,7 @@ case "$*" in
     test "$MOCK_MODE" != idle || exit 0
     printf 'startup-one\nstartup-two\n'
     ;;
+  'compose ps --status running --services') printf '%s\n' $MOCK_RUNNING ;;
   'wait startup-one') printf '0\n' ;;
   'wait startup-two')
     test "$MOCK_MODE" != wait-error || exit 8
@@ -82,7 +85,7 @@ esac
 			logPath := filepath.Join(root, "docker.log")
 			cmd := exec.Command(bash, filepath.Join(root, "hack/developer-seed-data.sh"))
 			cmd.Env = append(os.Environ(), "PATH="+filepath.Join(root, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"),
-				"DOCKER_LOG="+logPath, "MOCK_MODE="+tt.mode, "SEED_TARGET="+tt.target)
+				"DOCKER_LOG="+logPath, "MOCK_MODE="+tt.mode, "MOCK_RUNNING="+tt.running, "SEED_TARGET="+tt.target)
 			output, err := cmd.CombinedOutput()
 			if (err != nil) != tt.wantFailure {
 				t.Fatalf("error = %v, want failure %v; output: %s", err, tt.wantFailure, output)
@@ -119,6 +122,14 @@ esac
 				}
 			} else if len(lines) < 4 || lines[1] != "wait startup-one" || lines[2] != "wait startup-two" {
 				t.Fatalf("mutations preceded startup completion: %s", log)
+			}
+			if tt.target == "victoriametrics" {
+				// prometheus shares devorigin's trips metrics, so it is reseeded too when it is running
+				coupled := strings.Contains(log, "compose run --rm --no-deps prometheus_seed\n")
+				if !strings.Contains(log, "compose run --rm --no-deps victoriametrics_seed\n") ||
+					coupled != strings.Contains(tt.running, "prometheus") {
+					t.Fatalf("running %q: prometheus reseeded = %v: %s", tt.running, coupled, log)
+				}
 			}
 		})
 	}

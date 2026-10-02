@@ -1,0 +1,854 @@
+{
+  "schema_version": 1,
+  "corpus_version": 1,
+  "upstream": {
+    "image": "victoriametrics/victoria-metrics:v1.153.0",
+    "metricsql": "v0.87.5",
+    "flags": [
+      "-retentionPeriod=31d",
+      "-promscrape.config=scrape.yml"
+    ],
+    "defaults": {
+      "-search.latencyOffset": "30s",
+      "-search.cacheTimestampOffset": "5m",
+      "-dedup.minScrapeInterval": "0",
+      "-search.graphiteStorageStep": "10s",
+      "-search.maxStepForPointsAdjustment": "1m"
+    }
+  },
+  "grafana": "Grafana 13.1.3, captured 2026-10-01 through a logging proxy",
+  "cases": [
+    {
+      "name": "trips_5m_delta",
+      "query": "sum(trips_total) - sum(trips_total offset 5m)",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Bare selectors and fixed offsets evaluate each point from samples near it.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "trips_interval_delta",
+      "query": "sum(trips_total) - sum(trips_total offset 120s)",
+      "query_origin": "dashboard trips-victoriametrics ($__interval=2m)",
+      "rationale": "Grafana expands $__interval before the request; the expanded offset is fixed.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fare_ratio",
+      "query": "(sum(trips_fares_dollars_total) - sum(trips_fares_dollars_total offset 15m)) / (sum(trips_total) - sum(trips_total offset 15m))",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Binary operators combine per-point values.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "tip_ratio",
+      "query": "(sum(trips_tips_dollars_total) - sum(trips_tips_dollars_total offset 15m)) / (sum(trips_total) - sum(trips_total offset 15m))",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Binary operators combine per-point values.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "cab_type_offset",
+      "query": "sum by (cab_type) (trips_total - trips_total offset 15m)",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Grouped aggregation over fixed offsets.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "cab_type"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "borough_range_instant",
+      "query": "sort_desc(sum by (borough) (trips_total) - sum by (borough) (trips_total offset 172800s))",
+      "query_origin": "dashboard trips-victoriametrics (instant, $__range=2d)",
+      "rationale": "sort_desc orders series over the whole result, so it is never assembled from separate ranges.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "range_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "borough"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "in_progress",
+      "query": "sum by (borough) (trips_in_progress)",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Gauge aggregation.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "borough"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "card_share",
+      "query": "100 * (sum(trips_total{payment_type!=\"CSH\"}) - sum(trips_total{payment_type!=\"CSH\"} offset 5m)) / (sum(trips_total) - sum(trips_total offset 5m))",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Label filters and offsets.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "distance_p50",
+      "query": "histogram_quantile(0.5, sum by (le) (rate(trips_distance_miles_bucket[2m])))",
+      "query_origin": "dashboard trips-victoriametrics ($__rate_interval=2m)",
+      "rationale": "rate with an explicit window under histogram_quantile.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "distance_p90",
+      "query": "histogram_quantile(0.9, sum by (le) (rate(trips_distance_miles_bucket[2m])))",
+      "query_origin": "dashboard trips-victoriametrics ($__rate_interval=2m)",
+      "rationale": "rate with an explicit window under histogram_quantile.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "with_template",
+      "query": "WITH (delta15(m) = sum(m) - sum(m offset 15m)) delta15(trips_total)",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "WITH templates are expanded by the parser before classification.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "implicit_rate",
+      "query": "sum(rate(trips_total)) * 60",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "An implicit window follows VictoriaMetrics' scrape interval estimate, as its own response cache does.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "increase_1h",
+      "query": "sum(increase(trips_total[1h]))",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Explicit rollup window.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "keep_metric_names",
+      "query": "sum by (__name__) (increase({__name__=~\"trips_(fares|tips)_dollars_total\"}[1h]) keep_metric_names)",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "keep_metric_names keeps __name__ through the rollup; the cache keeps labels as returned.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "names_dropped",
+      "query": "sum by (__name__) (increase({__name__=~\"trips_(fares|tips)_dollars_total\"}[1h]))",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Without keep_metric_names the rollup drops __name__ and the groups collapse.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "topk_avg_other",
+      "query": "topk_avg(3, sum by (borough) (increase(trips_total[1h])), \"borough=other\")",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "topk_avg ranks series by their average over the whole range.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "range_aggregate"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "borough"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "histogram_quantiles",
+      "query": "histogram_quantiles(\"q\", 0.5, 0.9, 0.99, sum by (le) (rate(trips_distance_miles_bucket)))",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Several quantiles labeled by q, per point.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "q"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "rollup_subquery",
+      "query": "rollup(sum(trips_in_progress)[15m:1m])",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Subqueries evaluate on an absolute grid of their own step.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "rollup"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "limit_modifier",
+      "query": "sum by (borough) (increase(trips_total[1h])) limit 3",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "The limit modifier chooses series across the whole range.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "limit_modifier"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "borough"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "graphite_selector",
+      "query": "{__graphite__=\"vmgraphite.fast.*.*.requests\"}",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "The __graphite__ pseudo-label selects Graphite-named series.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_resets_raw",
+      "query": "trickster_fixture_resets_total",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "The raw counter, with hourly and half-hourly resets.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_missing_raw",
+      "query": "trickster_fixture_missing",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "A 15s series with periodic and long gaps.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_special_raw",
+      "query": "trickster_fixture_special",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "+Inf and -Inf values are kept and returned as text.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": true
+      }
+    },
+    {
+      "name": "fixture_gauge_raw",
+      "query": "trickster_fixture_gauge",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "The regular 15s baseline.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_resets",
+      "query": "increase(trickster_fixture_resets_total[5m])",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Counter resets are handled inside each window.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_irregular",
+      "query": "trickster_fixture_irregular",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Irregular samples; a bare selector leaves gaps where samples are farther apart than its lookbehind.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_irregular_last",
+      "query": "last_over_time(trickster_fixture_irregular[10m])",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "A wide last_over_time window bridges the irregular fixture's gaps.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_missing_count",
+      "query": "count_over_time(trickster_fixture_missing[1m])",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Window-local count.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_special",
+      "query": "clamp(trickster_fixture_special, -10, 10)",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "+Inf and -Inf clamp to finite values; clamp keeps the metric name in MetricsQL.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "fixture_name_collision",
+      "query": "rate({__name__=~\"trickster_fixture_name_.+_total\"}[5m]) keep_metric_names",
+      "query_origin": "dashboard trips-victoriametrics",
+      "rationale": "Two names with identical labels stay distinct only with keep_metric_names.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job",
+          "shard"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "name_collision_error",
+      "query": "rate({__name__=~\"trickster_fixture_name_.+_total\"}[5m])",
+      "query_origin": "differential split-range test",
+      "rationale": "VictoriaMetrics refuses duplicate output series; its error is relayed and never cached.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "error",
+        "error_type": "422",
+        "error_contains": "duplicate output timeseries"
+      }
+    },
+    {
+      "name": "range_avg",
+      "query": "range_avg(trickster_fixture_gauge)",
+      "query_origin": "differential split-range test",
+      "rationale": "Differs between one range and two halves of it.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "range_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "running_sum",
+      "query": "running_sum(trickster_fixture_gauge)",
+      "query_origin": "differential split-range test",
+      "rationale": "Accumulates from the start of the range.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "range_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "keep_last_value",
+      "query": "keep_last_value(trickster_fixture_missing)",
+      "query_origin": "MetricsQL documentation",
+      "rationale": "Fills a gap from the last value before it, which may precede a separate fetch.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "range_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [
+          "__name__",
+          "instance",
+          "job"
+        ],
+        "metric_name_kept": true,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "at_end",
+      "query": "trickster_fixture_gauge @ end()",
+      "query_origin": "MetricsQL documentation",
+      "rationale": "end() is the requested range's end.",
+      "expected": {
+        "cache_mode": "object",
+        "reason": "range_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "at_timestamp",
+      "query": "trickster_fixture_gauge @ 1700000000",
+      "query_origin": "MetricsQL documentation",
+      "rationale": "A fixed evaluation time.",
+      "expected": {
+        "cache_mode": "delta",
+        "reason": "eligible"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "now",
+      "query": "now()",
+      "query_origin": "MetricsQL documentation",
+      "rationale": "Differs on every evaluation.",
+      "expected": {
+        "cache_mode": "proxy",
+        "reason": "volatile_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "rand",
+      "query": "rand()",
+      "query_origin": "MetricsQL documentation",
+      "rationale": "Differs on every evaluation.",
+      "expected": {
+        "cache_mode": "proxy",
+        "reason": "volatile_function"
+      },
+      "native": {
+        "status": "success",
+        "result_type": "matrix",
+        "label_keys": [],
+        "metric_name_kept": false,
+        "non_finite_values": false
+      }
+    },
+    {
+      "name": "parse_error",
+      "query": "sum(",
+      "query_origin": "MetricsQL documentation",
+      "rationale": "Relayed so VictoriaMetrics returns its own error.",
+      "expected": {
+        "cache_mode": "proxy",
+        "reason": "parse_error"
+      },
+      "native": {
+        "status": "error",
+        "error_type": "400",
+        "error_contains": "error when executing query=\"sum(\" on the"
+      }
+    }
+  ],
+  "requests": [
+    {
+      "name": "grafana_range_get",
+      "method": "GET",
+      "path": "/api/v1/query_range",
+      "params": {
+        "query": "sum(trips_total) - sum(trips_total offset 5m)",
+        "start": "1790732700",
+        "end": "1790905500",
+        "step": "300"
+      },
+      "expected": {
+        "cacheable": true,
+        "cache_mode": "delta",
+        "reason": "eligible"
+      }
+    },
+    {
+      "name": "grafana_range_post",
+      "method": "POST",
+      "path": "/api/v1/query_range",
+      "params": {
+        "query": "sum(trips_total) - sum(trips_total offset 5m)",
+        "start": "1790732700",
+        "end": "1790905500",
+        "step": "300"
+      },
+      "expected": {
+        "cacheable": true,
+        "cache_mode": "delta",
+        "reason": "eligible"
+      }
+    },
+    {
+      "name": "grafana_instant_live",
+      "method": "GET",
+      "path": "/api/v1/query",
+      "params": {
+        "query": "sort_desc(sum by (borough) (trips_total) - sum by (borough) (trips_total offset 172800s))",
+        "time": "$NOW.5682888"
+      },
+      "expected": {
+        "cacheable": false,
+        "cache_mode": "proxy",
+        "reason": "live_edge"
+      }
+    },
+    {
+      "name": "grafana_health",
+      "method": "GET",
+      "path": "/api/v1/query",
+      "params": {
+        "query": "1+1",
+        "time": "4"
+      },
+      "expected": {
+        "cacheable": false,
+        "cache_mode": "proxy",
+        "reason": "unsupported_time"
+      }
+    },
+    {
+      "name": "grafana_labels",
+      "method": "GET",
+      "path": "/api/v1/labels",
+      "params": {
+        "start": "1790898556",
+        "end": "1790905756"
+      },
+      "expected": {
+        "cacheable": true,
+        "cache_mode": "object",
+        "reason": "eligible"
+      }
+    },
+    {
+      "name": "grafana_label_values",
+      "method": "GET",
+      "path": "/api/v1/label/borough/values",
+      "params": {
+        "match[]": "trips_total",
+        "start": "1790898556",
+        "end": "1790905756"
+      },
+      "expected": {
+        "cacheable": true,
+        "cache_mode": "object",
+        "reason": "eligible"
+      }
+    },
+    {
+      "name": "grafana_series",
+      "method": "GET",
+      "path": "/api/v1/series",
+      "params": {
+        "match[]": "trips_total",
+        "start": "1790898556",
+        "end": "1790905756"
+      },
+      "expected": {
+        "cacheable": true,
+        "cache_mode": "object",
+        "reason": "eligible"
+      }
+    }
+  ]
+}

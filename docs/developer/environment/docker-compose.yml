@@ -65,6 +65,9 @@ services:
       questdb:
         condition: service_healthy
         required: false
+      victoriametrics:
+        condition: service_healthy
+        required: false
 
   # TSDBs
 
@@ -518,6 +521,61 @@ services:
       seed_data_generate:
         condition: service_completed_successfully
 
+  # VictoriaMetrics single-node OSS: MetricsQL through the Prometheus querying
+  # API and the Graphite render, find and tags APIs, all on one HTTP port. It
+  # scrapes devorigin and Trickster itself (victoriametrics-config/scrape.yml).
+  # The image runs as root; its storage lives in a named volume.
+  victoriametrics:
+    profiles: [victoriametrics, all-providers, integration]
+    image: victoriametrics/victoria-metrics:v1.153.0@sha256:5eff7af5341e401471002f58d106d399e614a62f3d240f2dbc21901e49eed5dd
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - '-storageDataPath=/storage'
+      # covers the 15 days of backfilled trips history and the seeded fixtures
+      - '-retentionPeriod=31d'
+      - '-promscrape.config=/etc/victoriametrics/scrape.yml'
+    ports:
+      - 8428:8428
+    volumes:
+      - ./docker-compose-data/victoriametrics-config:/etc/victoriametrics:ro
+      - victoriametrics-data:/storage
+    restart: always
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "2", "-O", "/dev/null", "http://127.0.0.1:8428/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  # devorigin backfills the trips history as OpenMetrics, as it does for
+  # prometheus_seed, then hack/vmseed imports it into storage without it and
+  # extends small deterministic edge-case and Graphite fixtures to the present.
+  # make developer-seed-data empties the storage to reseed the trips history.
+  victoriametrics_seed:
+    profiles: [victoriametrics, all-providers, integration]
+    image: golang:1.27-alpine
+    working_dir: /repo/hack/devorigin
+    environment:
+      GOFLAGS: -mod=readonly
+      GOPROXY: "off"
+      GOTOOLCHAIN: local
+      GOCACHE: /go-cache
+      DEVORIGIN_SEED_DATA: /seed-data
+      DEVORIGIN_OUT: /tmp/vmseed/trips.om
+      VM_URL: http://victoriametrics:8428
+      VM_SEED_OM: /tmp/vmseed/trips.om
+    volumes:
+      - ../../..:/repo:ro
+      - ./docker-compose-data/seed-data:/seed-data:ro
+      - seedgen-gocache:/go-cache
+    entrypoint: ["/bin/sh", "-c", "go run . backfill && cd ../vmseed && exec go run ."]
+    depends_on:
+      victoriametrics:
+        condition: service_healthy
+      seed_data_generate:
+        condition: service_completed_successfully
+
   # graphite (carbon-cache + graphite-web, whisper storage)
   graphite:
     profiles: [graphite, all-providers, integration]
@@ -685,4 +743,5 @@ volumes:
   timescaledb-data:
   greptimedb-data:
   questdb-data:
+  victoriametrics-data:
   redis-data:

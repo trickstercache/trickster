@@ -48,7 +48,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 |---|---|---|
 | <img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md) | <img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md) | <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md) |
 | <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md) | <img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md) | <img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md) |
-| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB / PostgreSQL](docs/postgres.md) | <img src="./docs/images/external/greptime-logo.svg" width=24 /> [GreptimeDB](docs/greptimedb.md) | [QuestDB](docs/questdb.md) |
+| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB / PostgreSQL](docs/postgres.md) | <img src="./docs/images/external/greptime-logo.svg" width=24 /> [GreptimeDB](docs/greptimedb.md) | <img src="./docs/images/external/questdb-logo.svg" width=24 /> [QuestDB](docs/questdb.md) |
+| <img src="./docs/images/external/victoriametrics-logo.svg" width=24 /> [VictoriaMetrics](docs/victoriametrics.md) | | |
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 

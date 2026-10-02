@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/backends/static"
+	"github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
@@ -50,6 +51,7 @@ func SupportedProviders() types.Lookup {
 		providers.TimescaleDB:            postgres.NewClient,
 		providers.Prometheus:             prometheus.NewClient,
 		providers.QuestDB:                questdb.NewClient,
+		providers.VictoriaMetrics:        victoriametrics.NewClient,
 		providers.Rule:                   rule.NewClient,
 		providers.Static:                 static.NewClient,
 		providers.Proxy:                  reverseproxy.NewClient,
