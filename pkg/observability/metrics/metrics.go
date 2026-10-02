@@ -43,6 +43,7 @@ const (
 	druidSubsystem      = providers.Druid
 	vmSubsystem         = providers.VictoriaMetrics
 	tlsSubsystem        = "tls"
+	acmeSubsystem       = "acme"
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
 	stepAlignSubsystem  = "step_alignment"
@@ -1140,6 +1141,70 @@ var (
 		[]string{keys.Listener},
 	)
 
+	// ACMEOrdersTotal counts first-time ACME certificate orders by issuer and result
+	ACMEOrdersTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "orders_total",
+			Help:      "Count of first-time ACME certificate orders, by issuer and result.",
+		},
+		[]string{keys.Issuer, keys.Result},
+	)
+
+	// ACMERenewalsTotal counts ACME certificate renewals by issuer and result
+	ACMERenewalsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "renewals_total",
+			Help:      "Count of ACME certificate renewals, by issuer and result.",
+		},
+		[]string{keys.Issuer, keys.Result},
+	)
+
+	// ACMEChallengeRequestsTotal counts ACME challenge requests answered or refused by listeners
+	ACMEChallengeRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "challenge_requests_total",
+			Help:      "Count of ACME challenge requests received by listeners, by challenge type and result.",
+		},
+		[]string{keys.Type, keys.Result},
+	)
+
+	// ACMEOnDemandDecisionsTotal counts on-demand issuance decisions by result
+	ACMEOnDemandDecisionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "on_demand_decisions_total",
+			Help:      "Count of on-demand ACME issuance decisions, by result.",
+		},
+		[]string{keys.Result},
+	)
+
+	// ACMEStartupWaitSeconds is how long startup readiness waited for missing certificates
+	ACMEStartupWaitSeconds = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "startup_wait_seconds",
+			Help:      "Seconds startup readiness was held waiting for missing ACME certificates.",
+		},
+	)
+
+	// ACMEStartupWaitTimeoutsTotal counts startup waits that ended before every certificate was issued
+	ACMEStartupWaitTimeoutsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "startup_wait_timeouts_total",
+			Help:      "Count of startup readiness waits that timed out before every ACME certificate was issued.",
+		},
+	)
+
 	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
 	// startup because one or more pool members have no health check and could
 	// never reach the configured floor (>= Passing), which would otherwise
@@ -1262,6 +1327,12 @@ func init() {
 	prometheus.MustRegister(TLSCertificateValidationFailures)
 	prometheus.MustRegister(TLSWatcherErrors)
 	prometheus.MustRegister(TLSCertificateStoreSize)
+	prometheus.MustRegister(ACMEOrdersTotal)
+	prometheus.MustRegister(ACMERenewalsTotal)
+	prometheus.MustRegister(ACMEChallengeRequestsTotal)
+	prometheus.MustRegister(ACMEOnDemandDecisionsTotal)
+	prometheus.MustRegister(ACMEStartupWaitSeconds)
+	prometheus.MustRegister(ACMEStartupWaitTimeoutsTotal)
 }
 
 // Handler returns the http handler for the listener

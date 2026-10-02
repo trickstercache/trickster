@@ -78,6 +78,9 @@ returned harness.
   (`do`, `queryProm`, `withParams`, `withHeader`, `withBody`),
   `requireTricksterResult`, `runCacheProviderMatrix`, `configHarness`,
   `staticConfigHarness`
+- `acme_helpers_test.go` — an in-process Pebble ACME CA and an authoritative DNS server
+  that accepts RFC 2136 updates, so the ACME tests need no containers; only
+  `TestACME_RedisStorage` uses the environment's Redis
 - `testdata/` — static YAML configs for tests that need custom backends
   (ALB, rewriter, engines, rule, auth, purge, reload, TLS)
 

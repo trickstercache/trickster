@@ -19,6 +19,8 @@ package config
 import (
 	"strings"
 	"testing"
+
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
 
 func TestSanitizedString(t *testing.T) {
@@ -389,4 +391,60 @@ request_rewriters:
 	if strings.Contains(out, "empty-provider") || strings.Contains(out, "unknown-cache") {
 		t.Errorf("expected empty/unknown names to be anonymized; got:\n%s", out)
 	}
+}
+
+func TestSanitizedStringACME(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+listeners:
+  edge-private:
+    port: 9480
+    tls_port: 9483
+caches:
+  acme-redis:
+    provider: redis
+acme:
+  storage:
+    provider: redis
+    redis:
+      connection:
+        endpoint: redis.private.example:6379
+        password: hunter2
+  issuers:
+    le:
+      email: ops@private.example
+      agree_to_terms: true
+      dns_provider:
+        provider: rfc2136
+        rfc2136:
+          server: ns.private.example:53
+    r53:
+      agree_to_terms: true
+      dns_provider:
+        provider: route53
+        route53:
+          hosted_zone_id: ZPRIVATE
+  on_demand:
+    issuer: le
+    listeners: [edge-private]
+    ask: https://ask.private.example/check
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := conf.SanitizedString()
+	for _, private := range []string{"redis.private.example", "hunter2", "ops@private.example",
+		"ns.private.example", "ZPRIVATE", "ask.private.example", "edge-private"} {
+		if strings.Contains(out, private) {
+			t.Errorf("sanitized output contains %q", private)
+		}
+	}
+	if strings.Contains(conf.String(), "hunter2") {
+		t.Error("the config dump contains the ACME Redis password")
+	}
+	conf.ACME.Storage.Redis = &acmeopts.RedisStorageOptions{CacheName: "acme-redis"}
+	if out := conf.SanitizedString(); strings.Contains(out, "cache_name: acme-redis") {
+		t.Error("the borrowed cache name was not anonymized")
+	}
+	sanitizeACME(nil, nil, nil)
 }

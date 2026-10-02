@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
@@ -272,5 +273,57 @@ func TestTLSCertConfigForListenerRuntimeCerts(t *testing.T) {
 	}
 	if len(cfg.Certificates) != 0 || len(cfg.NextProtos) == 0 {
 		t.Errorf("runtime config = %+v; want no certificates and ALPN set", cfg)
+	}
+}
+
+const acmeTestIssuer = "le"
+
+func acmeTestConfig() *Config {
+	conf := NewConfig()
+	b := conf.Backends["default"]
+	b.ListenerNames = []string{listener.DefaultFrontendName}
+	b.TLS = &options.Options{ACME: &acmeopts.BackendOptions{Issuer: acmeTestIssuer}}
+	conf.Listeners[listener.DefaultFrontendName].ServeTLS = true
+	conf.ACME = &acmeopts.Options{Issuers: map[string]*acmeopts.IssuerOptions{
+		acmeTestIssuer: {AgreeToTerms: true},
+	}}
+	conf.ACME.Initialize()
+	return conf
+}
+
+func TestListenerACME(t *testing.T) {
+	var nilConf *Config
+	if uses, _ := nilConf.ListenerACME(listener.DefaultFrontendName); uses {
+		t.Fatal("a nil config uses no ACME")
+	}
+	conf := acmeTestConfig()
+	if uses, http01 := conf.ListenerACME(listener.DefaultFrontendName); !uses || !http01 {
+		t.Fatalf("ListenerACME = %v, %v; want true, true", uses, http01)
+	}
+	if uses, _ := conf.ListenerACME("other"); uses {
+		t.Fatal("an unmapped listener uses no ACME")
+	}
+	conf.ACME.Issuers[acmeTestIssuer].Challenges = []string{acmeopts.ChallengeTLSALPN01}
+	if uses, http01 := conf.ListenerACME(listener.DefaultFrontendName); !uses || http01 {
+		t.Fatalf("ListenerACME = %v, %v; want true, false", uses, http01)
+	}
+	conf.ACME.OnDemand = &acmeopts.OnDemandOptions{Issuer: acmeTestIssuer, Listeners: []string{"edge"}}
+	conf.ACME.Issuers[acmeTestIssuer].Challenges = []string{acmeopts.ChallengeHTTP01}
+	if uses, http01 := conf.ListenerACME("edge"); !uses || !http01 {
+		t.Fatalf("on-demand ListenerACME = %v, %v; want true, true", uses, http01)
+	}
+	conf.ACME = nil
+	if uses, _ := conf.ListenerACME(listener.DefaultFrontendName); uses {
+		t.Fatal("ACME without issuers is not in use")
+	}
+}
+
+func TestTLSCertConfigForACMEListener(t *testing.T) {
+	cfg, err := acmeTestConfig().TLSCertConfigForListener(listener.DefaultFrontendName)
+	if err != nil || cfg == nil {
+		t.Fatalf("ACME listener config = %v, %v; want an empty config", cfg, err)
+	}
+	if len(cfg.Certificates) != 0 {
+		t.Errorf("ACME listener config holds %d certificates; want none", len(cfg.Certificates))
 	}
 }

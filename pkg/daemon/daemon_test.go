@@ -34,6 +34,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
 
 func init() {
@@ -407,4 +409,17 @@ func TestReloadConfigDirectoryAfterAddingSource(t *testing.T) {
 func TestReloadGoroutinePanicHandler(t *testing.T) {
 	// the handler only logs; it must tolerate any panic value
 	reloadGoroutinePanic("test-site", "test-source")("boom", []byte("stack"))
+}
+
+func TestApplyACME(t *testing.T) {
+	// a missing manager and a configuration the manager rejects are both survivable
+	applyACME(&instance.ServerInstance{}, config.NewConfig())
+	conf := config.NewConfig()
+	conf.ACME = &acmeopts.Options{Issuers: map[string]*acmeopts.IssuerOptions{"le": {AgreeToTerms: true}}}
+	si := &instance.ServerInstance{ACME: acme.New(nil, nil)}
+	t.Cleanup(si.ACME.Close)
+	applyACME(si, conf)
+	if si.ACME.Domains() != nil {
+		t.Error("a rejected configuration should manage no domains")
+	}
 }

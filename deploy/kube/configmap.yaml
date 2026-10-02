@@ -1103,6 +1103,12 @@ data:
     #         full_chain_cert_path: /path/to/your/cert.pem
     #         private_key_path: /path/to/your/key.pem
 
+    #         # acme obtains and renews this backend's certificates from an issuer in the top-level acme
+    #         # section, in place of full_chain_cert_path and private_key_path. domains defaults to hosts
+    #         # acme:
+    #         #   issuer: letsencrypt
+    #         #   domains: [ www.example.com ]
+
     #         # TLS Backend Configs
     #         # These settings configure how Trickster will behave as a client when communicating with
     #         # this backend over TLS
@@ -1639,6 +1645,54 @@ data:
     #   filename: stdout
     #   format: json
 
+    # # acme obtains and renews serving certificates from an ACME certificate authority for backends
+    # # that set tls.acme. See /docs/acme.md
+    # acme:
+    #   # wait_on_startup holds readiness at startup until missing certificates are issued, or this long
+    #   # at most. default is 0, which never holds readiness
+    #   wait_on_startup: 90s
+    #   storage:
+    #     # provider is filesystem or redis; default is filesystem
+    #     provider: filesystem
+    #     # path is the storage directory, required for filesystem storage
+    #     path: /var/lib/trickster/acme
+    #     # redis keeps ACME state in Redis, shared by every instance using the same keyspace
+    #     # redis:
+    #     #   cache_name: shared-redis      # borrow a redis cache's connection settings, or set connection
+    #     #   key_prefix: "trickster:acme:"
+    #     #   lock_ttl: 1m
+    #   issuers:
+    #     letsencrypt:
+    #       # directory_url defaults to the Let's Encrypt production directory
+    #       directory_url: https://acme-v02.api.letsencrypt.org/directory
+    #       email: ops@example.com
+    #       # agree_to_terms accepts the CA's subscriber agreement and must be true
+    #       agree_to_terms: true
+    #       # challenges defaults to [http-01, tls-alpn-01], or [dns-01] when dns_provider is set
+    #       challenges: [http-01, tls-alpn-01]
+    #       # key_type is ecdsa-p256 (default), ecdsa-p384, rsa-2048, rsa-4096 or ed25519
+    #       key_type: ecdsa-p256
+    #       # external_account_binding:
+    #       #   key_id: your-key-id
+    #       #   hmac_key_file: /etc/trickster/secrets/eab-hmac
+    #       # trusted_ca_paths: [ /etc/trickster/private-ca.pem ]
+    #     letsencrypt-dns:
+    #       email: ops@example.com
+    #       agree_to_terms: true
+    #       # dns_provider answers dns-01 challenges, which wildcard certificates require
+    #       dns_provider:
+    #         provider: cloudflare        # cloudflare, route53 or rfc2136
+    #         cloudflare:
+    #           api_token_file: /etc/trickster/secrets/cloudflare-token
+    #   # on_demand issues a certificate during the first handshake for a permitted name no backend lists
+    #   # on_demand:
+    #   #   issuer: letsencrypt
+    #   #   listeners: [default]
+    #   #   ask: http://127.0.0.1:9000/allowed     # GET ?domain=<name>; a 200 permits issuance
+    #   #   allowed_domains: ["*.customers.example.com"]
+    #   #   decision_ttl: 5m
+    #   #   rate_limit: 10
+
     # # Trickster Management Options
     # mgmt:
     #   # reload_handler_path defines the HTTP path where the Reload interface is available.
@@ -1682,6 +1736,10 @@ data:
     #   # of the TLS certificates served by each listener (metadata only; never key material)
     #   # default is /trickster/certificates
     #   certificates_handler_path: /trickster/certificates
+
+    #   # acme_handler_path provides the mgmt-only HTTP path that lists ACME-managed domains (GET)
+    #   # and forces a renewal (POST ?domain=<name>). default is /trickster/acme
+    #   acme_handler_path: /trickster/acme
 
     #   # ping_handler_path provides the HTTP path you will use to perform an uptime health check against Trickster
     #   # which can be reached at http://your-trickster-endpoint:port/$ping_handler_path
