@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
@@ -41,6 +42,11 @@ type Hooks struct {
 	// AlignQueryGrid rounds range endpoints down to epoch-aligned steps while
 	// retaining PreserveQueryGrid's millisecond parsing and wire precision.
 	AlignQueryGrid bool
+	// AllowedPaths, when set, lists the only catalogue paths served as usual; every other path
+	// is answered locally by the unsupported handler rather than proxied
+	AllowedPaths []string
+	// MaxSeries is the series count at which the origin truncates a query result; 0 for none
+	MaxSeries int
 }
 
 func pathPrefix(prefix string) string {
@@ -82,6 +88,22 @@ func WithCacheKeyHeaders(paths po.List, names ...string) po.List {
 			}) {
 				p.CacheKeyHeaders = append(p.CacheKeyHeaders, http.CanonicalHeaderKey(name))
 			}
+		}
+	}
+	return out
+}
+
+// Restrict copies paths, rebinding each path not in allowed to the unsupported
+// handler for every method, so that nothing outside allowed reaches the origin.
+func Restrict(paths po.List, allowed []string) po.List {
+	out := paths.Clone()
+	if len(allowed) == 0 {
+		return out
+	}
+	for _, p := range out {
+		if !slices.Contains(allowed, p.Path) {
+			p.HandlerName = handlerUnsupported
+			p.Methods = methods.AllHTTPMethods()
 		}
 	}
 	return out

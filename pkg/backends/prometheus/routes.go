@@ -47,6 +47,9 @@ func (c *Client) HandlerLookup() handlers.Lookup {
 		"alerts":      http.HandlerFunc(c.AlertsHandler),
 		"admin":       http.HandlerFunc(c.UnsupportedHandler),
 	}
+	if len(c.hooks.AllowedPaths) > 0 {
+		lookup[handlerUnsupported] = http.HandlerFunc(c.UnsupportedHandler)
+	}
 	if c.hooks.PrepareRequest != nil {
 		for name, handler := range lookup {
 			if name == "proxy" || name == "health" {
@@ -89,7 +92,7 @@ func (c *Client) MergeablePaths() []string {
 
 // DefaultPathConfigs returns the default PathConfigs for the given Provider
 func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
-	paths := WithPathPrefix(SupportedPaths(o), c.hooks.PathPrefix)
+	paths := WithPathPrefix(Restrict(SupportedPaths(o), c.hooks.AllowedPaths), c.hooks.PathPrefix)
 	paths = WithCacheKeyParams(paths, c.hooks.CacheKeyParams...)
 	paths = WithCacheKeyHeaders(paths, c.hooks.CacheKeyHeaders...)
 	if o != nil {
