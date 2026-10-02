@@ -38,6 +38,7 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
+	vmo "github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -204,6 +205,8 @@ type Options struct {
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
 	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
+	// VictoriaMetrics holds options specific to victoriametrics backends
+	VictoriaMetrics *vmo.Options `yaml:"victoriametrics,omitempty"`
 	// Static holds options specific to static file server backends, which require it
 	Static *so.Options `yaml:"static,omitempty"`
 
@@ -409,6 +412,10 @@ func (o *Options) Clone() *Options {
 		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
+	if o.VictoriaMetrics != nil {
+		out.VictoriaMetrics = o.VictoriaMetrics.Clone()
+	}
+
 	if o.Postgres != nil {
 		out.Postgres = o.Postgres.Clone()
 	}
@@ -546,6 +553,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
+	if err := o.VictoriaMetrics.Validate(); err != nil {
+		return false, fmt.Errorf("backend %s: %w", o.Name, err)
+	}
 	if err := o.validateStatic(); err != nil {
 		return false, err
 	}
@@ -594,6 +604,7 @@ func (o *Options) validateStatic() error {
 		{"mysql", o.MySQL != nil},
 		{"graphite", o.Graphite != nil},
 		{"influxdb", o.InfluxDB != nil},
+		{"victoriametrics", o.VictoriaMetrics != nil},
 		{"sigv4", o.SigV4 != nil},
 		{"protocol", o.Protocol != ""},
 		{"h2c_prior_knowledge", o.H2CPriorKnowledge},

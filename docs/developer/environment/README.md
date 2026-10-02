@@ -233,7 +233,7 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 
 The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
 Apache Druid, MySQL, TimescaleDB, QuestDB, VictoriaMetrics, and Graphite alongside Grafana.
-Trickster's dev config registers a matching backend for each (except VictoriaMetrics, for now),
+Trickster's dev config registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
 comparison. Each backend runs in its own profile; see [Compose Profiles](#compose-profiles).
 
@@ -1097,6 +1097,11 @@ stale markers come only from live scraping. Importing a sample whose timestamp
 is older than `-search.cacheTimestampOffset` resets the response cache. Late
 inserts become searchable a few seconds after the import request returns.
 
+The trips history and live samples match Prometheus' value for value, with one
+label difference: Prometheus v3.13.2 stores devorigin's bucket label `le="1"` as
+`le="1.0"`, and VictoriaMetrics keeps the exported `le="1"`. A query that selects
+one bucket by `le` needs each server's form; `histogram_quantile` is unaffected.
+
 ### VictoriaMetrics in Grafana
 
 Grafana provisions three direct datasources against `http://victoriametrics:8428`:
@@ -1104,32 +1109,39 @@ Grafana provisions three direct datasources against `http://victoriametrics:8428
 (UID `ds_vm_direct_post`, POST), both on the bundled Prometheus plugin, and
 `victoriametrics-graphite-direct` (UID `ds_vm_graphite_direct`), on the bundled
 Graphite plugin with a `Storage-Step: 10s` header. No VictoriaMetrics plugin is needed.
+Their Trickster peers, `victoriametrics-trickster`, `victoriametrics-trickster-post` and
+`victoriametrics-graphite-trickster`, reach the dev config's `victoriametrics1` backend at
+`http://host.docker.internal:8480/victoriametrics1`; start Trickster with `make serve-dev`.
 
 The [Trips (VictoriaMetrics)](http://127.0.0.1:3000/d/trips-victoriametrics) dashboard
 repeats the Prometheus trips panels, adds a MetricsQL row (`WITH`, implicit
 range windows, `keep_metric_names`, `topk_avg`, `histogram_quantiles`, `rollup`,
 the `limit` modifier, and the `__graphite__` selector), and charts the edge-case
-fixtures. Its datasource variable lists every `victoriametrics-*` Prometheus-type
+fixtures. Its performance row charts `victoriametrics1`'s requests by cache status,
+latency, returned points, and `trickster_victoriametrics_query_analysis_total`, which
+shows whether each MetricsQL request took the delta cache, the object cache, or was relayed. Its datasource variable lists every `victoriametrics-*` Prometheus-type
 datasource. The [VictoriaMetrics Graphite](http://127.0.0.1:3000/d/trickster-vm-graphite)
 dashboard charts the Graphite fixture through render, find (the `region`
 variable), `seriesByTag`, and server-side functions. On the 10s render grid,
 30s and 60s series have nulls between their points, so those panels connect
 nulls, except across real gaps. Both dashboards' Trickster performance panels filter on
-`provider="victoriametrics"` and `backend_name="victoriametrics1"`, and stay
-empty until that backend exists.
+`provider="victoriametrics"` and `backend_name="victoriametrics1"`.
 
 ### VictoriaMetrics behaviors to preserve
 
 These were measured on v1.153.0 directly. Trickster must reproduce them when it proxies or caches:
 
-- **Range grids:** `query_range` returns points at `start + k*step`, without
-  aligning to the step, whether or not the response cache is used. It keeps
-  fractional `start` values and accepts fractional and duration steps (`15.5`,
-  `1m`). Grafana 13.1.3 aligns `start` and `end` to the step itself, but sends
-  instant queries with a fractional `time`.
+- **Range grids:** `query_range` returns points at `start + k*step` for fewer
+  than 50 points. With its response cache on, VictoriaMetrics starts a range of
+  50 or more points on a step boundary and keeps the point count
+  (`promql.AdjustStartEnd`); `nocache=1` or `-search.disableCache` keep the
+  requested start. It keeps fractional `start` values and accepts fractional and
+  duration steps (`15.5`, `1m`). Grafana 13.1.3 aligns `start` and `end` to the
+  step itself, but sends instant queries with a fractional `time`.
 - **Responses:** successes carry a `stats` object (`seriesFetched` as a string,
-  `executionTimeMsec`). Errors use `"errorType": "400"` (the HTTP status) rather
-  than Prometheus' `bad_data`. Graphite render errors are plain-text 400 responses.
+  `executionTimeMsec`). Errors carry their HTTP status in `errorType`: `"400"` for an invalid request and
+  `"422"` for a failed evaluation, rather than Prometheus' `bad_data` and `execution`.
+  Graphite render errors are plain-text 400 responses.
 - **MetricsQL:** `clamp` keeps metric names; without `keep_metric_names`,
   `sum by (__name__)` collapses names; `rate()` over two names with identical
   labels fails with `duplicate output timeseries`; a bare selector leaves gaps

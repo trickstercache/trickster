@@ -25,7 +25,8 @@ workstations never run them. It also waits for the database seeders to
 finish. `make integration-stop` stops the environment. `make developer-start`
 alone still works: the autodiscovery DNS tests probe for CoreDNS and skip when
 it isn't running (CI sets `TRICKSTER_DNS_TEST=1` to turn that skip into a
-failure). See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
+failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
+running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
 for the profiles.
 
 The Kubernetes scenarios (every `Test*Kind`) are separate from compose

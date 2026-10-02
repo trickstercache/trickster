@@ -41,6 +41,7 @@ const (
 	pgwireSubsystem     = "pgwire"
 	graphiteSubsystem   = providers.Graphite
 	druidSubsystem      = providers.Druid
+	vmSubsystem         = providers.VictoriaMetrics
 	tlsSubsystem        = "tls"
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
@@ -624,6 +625,18 @@ var (
 		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
 	)
 
+	// VictoriaMetricsQueryAnalysis counts the cache paths chosen for MetricsQL API requests, using
+	// bounded mode and reason labels.
+	VictoriaMetricsQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: vmSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of MetricsQL API request cache-eligibility classifications.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
+	)
+
 	// DruidQueryRewriteFailures counts failures to render a native Druid query
 	// for a cache-miss extent.
 	DruidQueryRewriteFailures = prometheus.NewCounterVec(
@@ -1202,6 +1215,7 @@ func init() {
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
 	prometheus.MustRegister(DruidQueryRewriteFailures)
+	prometheus.MustRegister(VictoriaMetricsQueryAnalysis)
 	prometheus.MustRegister(SQLQueryCache)
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
@@ -1255,6 +1269,7 @@ var backendSeriesVecs = []partialDeleter{
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,
 	DruidQueryRewriteFailures,
+	VictoriaMetricsQueryAnalysis,
 	SQLQueryCache,
 	MySQLConnections,
 	MySQLActiveConnections,

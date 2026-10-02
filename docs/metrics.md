@@ -199,6 +199,12 @@ The following metrics are available for polling with any Trickster configuration
     * `cache_mode` - `delta`, `object`, or `proxy`
     * `reason` - the stable classification reason code
 
+* `trickster_victoriametrics_query_analysis_total` (Counter) - Count of MetricsQL API request cache-eligibility classifications. Labels never include query text.
+  * labels:
+    * `backend_name` - the configured VictoriaMetrics backend
+    * `cache_mode` - `delta`, `object`, or `proxy`
+    * `reason` - the stable classification reason code
+
 * `trickster_druid_query_rewrite_failures_total` (Counter) - Count of Druid cache-miss extent rewrite failures.
   * labels:
     * `backend_name` - the configured Druid backend

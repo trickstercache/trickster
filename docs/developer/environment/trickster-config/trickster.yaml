@@ -190,6 +190,15 @@ backends:
       timeout: 3s
       headers:
         Authorization: 'Basic ${QDB_HTTP_AUTHORIZATION}'
+  # VictoriaMetrics: MetricsQL through the Prometheus querying API, and the Graphite APIs,
+  # from one single-node origin. Range queries are delta cached where MetricsQL allows it.
+  victoriametrics1:
+    provider: victoriametrics
+    origin_url: 'http://127.0.0.1:8428'
+    cache_name: mem1
+    healthcheck:
+      interval: 5s
+      timeout: 3s
   click1:
     provider: clickhouse
     origin_url: 'http://127.0.0.1:8123'

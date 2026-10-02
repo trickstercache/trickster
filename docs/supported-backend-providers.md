@@ -67,13 +67,22 @@ the provider and map native listeners explicitly. See the
 [GreptimeDB Provider Guide](./greptimedb.md) for configuration, cache eligibility,
 Grafana macros, authentication and upstream compatibility limits.
 
-### QuestDB
+
+### <img src="./images/external/questdb-logo.svg" width=24 /> QuestDB
 
 Trickster proxies QuestDB's HTTP surface and accelerates eligible QuestDB SQL
 over the PostgreSQL wire protocol. Specify `questdb` as the provider and map a
 `protocol: postgres` listener for native clients. See the
 [QuestDB Provider Guide](./questdb.md) for configuration, cache eligibility,
 authentication and upstream compatibility limits.
+
+### <img src="./images/external/victoriametrics-logo.svg" width=24 />  VictoriaMetrics
+
+Trickster accelerates MetricsQL range queries through VictoriaMetrics' Prometheus querying API,
+caches settled instant and metadata queries, and serves its Graphite render, find and tags APIs,
+for single-node VictoriaMetrics and a tenant's vmselect paths. Specify `victoriametrics` as the
+provider; it is not a flavor of `prometheus`, and time series merging (TSM) doesn't support it yet.
+See the [VictoriaMetrics Provider Guide](./victoriametrics.md) for configuration and cache eligibility.
 
 ### <img src="./images/external/mysql_logo_60.png" width=24 /> MySQL
 

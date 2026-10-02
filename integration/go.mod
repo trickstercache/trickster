@@ -30,6 +30,9 @@ require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20240806141605-e8a1dd7889d6 // indirect
 	github.com/AfterShip/clickhouse-sql-parser v0.5.6 // indirect
 	github.com/ClickHouse/ch-go v0.74.0 // indirect
+	github.com/DATA-DOG/go-sqlmock v1.4.1 // indirect
+	github.com/VictoriaMetrics/metrics v1.35.3 // indirect
+	github.com/VictoriaMetrics/metricsql v0.87.5 // indirect
 	github.com/andybalholm/brotli v1.2.4 // indirect
 	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.0 // indirect
@@ -98,7 +101,6 @@ require (
 	github.com/grafana/regexp v0.0.0-20250905093917-f7b3be9d1853 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
-	github.com/influxdata/influxdb v1.13.1 // indirect
 	github.com/influxdata/influxql v1.4.1 // indirect
 	github.com/influxdata/line-protocol v0.0.0-20200327222509-2487e7298839 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -137,6 +139,8 @@ require (
 	github.com/tinylib/msgp v1.6.4 // indirect
 	github.com/twpayne/go-geom v1.4.1 // indirect
 	github.com/twpayne/go-kml v1.5.2 // indirect
+	github.com/valyala/fastrand v1.1.0 // indirect
+	github.com/valyala/histogram v1.2.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.etcd.io/bbolt v1.5.0 // indirect

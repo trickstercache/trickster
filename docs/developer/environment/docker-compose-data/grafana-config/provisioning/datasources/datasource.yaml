@@ -611,6 +611,28 @@ datasources:
   jsonData:
     httpMethod: POST
 
+- name: victoriametrics-trickster
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_vm_trickster
+  url: http://host.docker.internal:8480/victoriametrics1
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: GET
+
+- name: victoriametrics-trickster-post
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_vm_trickster_post
+  url: http://host.docker.internal:8480/victoriametrics1
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: POST
+
 # VictoriaMetrics' Graphite APIs. Storage-Step is the render grid for stored
 # points; 10s is the finest fixture cadence, so 30s and 60s series show nulls
 # between their points until Grafana's maxDataPoints consolidates them.
@@ -620,6 +642,21 @@ datasources:
   orgId: 1
   uid: ds_vm_graphite_direct
   url: http://victoriametrics:8428
+  editable: true
+  isDefault: false
+  jsonData:
+    graphiteVersion: "1.1"
+    graphiteType: default
+    httpHeaderName1: Storage-Step
+  secureJsonData:
+    httpHeaderValue1: 10s
+
+- name: victoriametrics-graphite-trickster
+  type: graphite
+  access: proxy
+  orgId: 1
+  uid: ds_vm_graphite_trickster
+  url: http://host.docker.internal:8480/victoriametrics1
   editable: true
   isDefault: false
   jsonData:

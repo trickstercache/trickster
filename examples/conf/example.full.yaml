@@ -559,6 +559,24 @@ backends:
   #   # max_object_size_bytes backend settings apply. proxy_only: true relays
   #   # every statement without inspecting it.
 
+  # # example VictoriaMetrics backend: MetricsQL through the Prometheus querying
+  # # API and the Graphite APIs. See /docs/victoriametrics.md.
+  # vm1:
+  #   provider: victoriametrics
+  #   # single-node VictoriaMetrics, or a tenant's vmselect path such as
+  #   # http://vmselect:8481/select/0/prometheus
+  #   origin_url: 'http://victoriametrics:8428'
+  #   cache_name: default
+  #   # keep it longer than the origin's -search.latencyOffset. default is 60s
+  #   # volatile_window: 60s
+  #   victoriametrics:
+  #     # the upstream path of the Graphite APIs. By default it is the origin
+  #     # URL's path, with a trailing /prometheus replaced by /graphite
+  #     # graphite_path: /select/0/graphite
+  #     # set when the origin runs with -search.disableCache, under which it
+  #     # keeps the requested grid of long range queries. default is false
+  #     # search_disable_cache: false
+  #
   # # example graphite backend. Graphite is an ordinary HTTP backend; the
   # # settings below are the Graphite-specific ones. See /docs/graphite.md.
   # graphite1:

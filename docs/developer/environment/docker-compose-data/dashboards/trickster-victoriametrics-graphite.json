@@ -687,7 +687,7 @@
       },
       "id": 201,
       "panels": [],
-      "title": "Trickster Performance (victoriametrics1 Graphite; empty until the provider exists)",
+      "title": "Trickster Performance (victoriametrics1 Graphite)",
       "type": "row"
     },
     {

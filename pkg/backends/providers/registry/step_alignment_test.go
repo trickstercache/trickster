@@ -50,6 +50,8 @@ func TestProviderStepAlignments(t *testing.T) {
 		{providers.Postgres, all, timeseries.StepAlignmentDrop},
 		{providers.TimescaleDB, all, timeseries.StepAlignmentDrop},
 		{providers.QuestDB, sqlanalyzer.StepAlignments, sqlanalyzer.DefaultStepAlignment},
+		{providers.VictoriaMetrics, timeseries.StepAlignmentOff | timeseries.StepAlignmentTruncate |
+			timeseries.StepAlignmentDrop, timeseries.StepAlignmentTruncate},
 	}
 	for _, test := range tests {
 		t.Run(test.provider, func(t *testing.T) {
@@ -79,7 +81,7 @@ func TestEveryTimeSeriesProviderAppliesOff(t *testing.T) {
 	for _, provider := range []string{
 		providers.Prometheus, providers.Graphite, providers.InfluxDB, providers.ClickHouse,
 		providers.Druid, providers.MySQL, providers.Postgres, providers.TimescaleDB, providers.GreptimeDB,
-		providers.QuestDB,
+		providers.QuestDB, providers.VictoriaMetrics,
 	} {
 		t.Run(provider, func(t *testing.T) {
 			o := bo.New()

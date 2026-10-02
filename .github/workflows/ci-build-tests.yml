@@ -137,6 +137,7 @@ jobs:
       TRICKSTER_GREPTIMEDB_MYSQL_ACCEPTANCE: "1"
       TRICKSTER_GREPTIMEDB_PROMQL_ACCEPTANCE: "1"
       TRICKSTER_DNS_TEST: "1"
+      TRICKSTER_VICTORIAMETRICS_TEST: "1"
       # every TSDB backend plus the integration-only services (e.g. coredns),
       # so the docker compose commands in later steps can address them all
       COMPOSE_PROFILES: integration

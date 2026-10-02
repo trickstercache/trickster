@@ -57,6 +57,8 @@ const (
 	GreptimeDBID
 	// QuestDB represents the QuestDB backend provider.
 	QuestDBID
+	// VictoriaMetrics represents the VictoriaMetrics backend provider.
+	VictoriaMetricsID
 
 	Backends = "backends"
 
@@ -79,6 +81,8 @@ const (
 	Postgres   = "postgres"
 	GreptimeDB = "greptimedb"
 	QuestDB    = "questdb"
+	// VictoriaMetrics serves MetricsQL and Graphite over HTTP; it is not a Prometheus flavor
+	VictoriaMetrics = "victoriametrics"
 
 	// provider name aliases
 
@@ -127,6 +131,7 @@ var Names = map[string]Provider{
 	TimescaleDB:            PostgresID,
 	GreptimeDB:             GreptimeDBID,
 	QuestDB:                QuestDBID,
+	VictoriaMetrics:        VictoriaMetricsID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,
@@ -158,6 +163,8 @@ var supportedTimeSeries = map[string]Provider{
 	TimescaleDB: PostgresID,
 	GreptimeDB:  GreptimeDBID,
 	QuestDB:     QuestDBID,
+	// a separate language and API surface, so not part of IsPrometheusCompatible
+	VictoriaMetrics: VictoriaMetricsID,
 }
 
 // IsSupportedTimeSeriesProvider returns true if the provided time series is supported by Trickster
@@ -176,6 +183,8 @@ var supportedHTTPTimeSeries = map[string]Provider{
 	Druid:      DruidID,
 	GreptimeDB: GreptimeDBID,
 	QuestDB:    QuestDBID,
+	// MetricsQL and Graphite APIs
+	VictoriaMetrics: VictoriaMetricsID,
 }
 
 // IsSupportedHTTPTimeSeriesProvider returns true if the named provider is a time series

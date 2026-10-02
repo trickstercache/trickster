@@ -17,8 +17,8 @@ export COMPOSE_PROFILES='*'
 # Every trips database service <name> has a one-shot loader service <name>_seed.
 # graphite is seeded by its own generator and is handled separately below.
 ALL_TARGETS="clickhouse mysql timescaledb greptimedb druid questdb prometheus victoriametrics graphite"
-running=" $(docker compose ps --status running --services | tr '\n' ' ') "
 if [[ -z "${SEED_TARGET:-}" ]]; then
+  running=" $(docker compose ps --status running --services | tr '\n' ' ') "
   SEED_TARGET=""
   for t in $ALL_TARGETS; do
     case "$running" in *" $t "*) SEED_TARGET+=" $t" ;; esac
@@ -51,17 +51,6 @@ if [[ ${#trips_databases[@]} -eq 0 && $graphite -eq 0 && $prometheus -eq 0 && $v
   exit 1
 fi
 
-# Prometheus and VictoriaMetrics both join devorigin's live trips metrics to their
-# history, and reseeding restarts devorigin with a new seed shift, so whichever of
-# them is running is reseeded alongside the other to keep both in phase.
-if [[ $prometheus -eq 1 && $victoriametrics -eq 0 && "$running" == *" victoriametrics "* ]]; then
-  echo "also reseeding victoriametrics, which shares devorigin's trips metrics with prometheus"
-  victoriametrics=1
-fi
-if [[ $victoriametrics -eq 1 && $prometheus -eq 0 && "$running" == *" prometheus "* ]]; then
-  echo "also reseeding prometheus, which shares devorigin's trips metrics with victoriametrics"
-  prometheus=1
-fi
 devorigin_fed=$((prometheus | victoriametrics))
 
 # The streaming sidecar must be stopped while the whisper files are recreated.
@@ -113,6 +102,20 @@ for id in $startup_ids; do
     exit 1
   fi
 done
+
+# Prometheus and VictoriaMetrics both join devorigin's live trips metrics to their
+# history, and reseeding restarts devorigin with a new seed shift, so whichever of
+# them is running is reseeded alongside the other to keep both in phase.
+if [[ $prometheus -ne $victoriametrics ]]; then
+  running=" $(docker compose ps --status running --services | tr '\n' ' ') "
+  if [[ $prometheus -eq 1 && "$running" == *" victoriametrics "* ]]; then
+    echo "also reseeding victoriametrics, which shares devorigin's trips metrics with prometheus"
+    victoriametrics=1
+  elif [[ $victoriametrics -eq 1 && "$running" == *" prometheus "* ]]; then
+    echo "also reseeding prometheus, which shares devorigin's trips metrics with victoriametrics"
+    prometheus=1
+  fi
+fi
 
 names=()
 pids=()
