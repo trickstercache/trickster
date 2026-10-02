@@ -37,8 +37,10 @@ import (
 func decoderTRQ() *timeseries.TimeRangeQuery {
 	return &timeseries.TimeRangeQuery{
 		Statement: "SELECT date_bin(INTERVAL '1 minute', time) AS time, region, host, avg(usage) FROM cpu",
-		Extent: timeseries.Extent{Start: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
-			End: time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC)},
+		Extent: timeseries.Extent{
+			Start: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			End:   time.Date(2024, 1, 1, 1, 0, 0, 0, time.UTC),
+		},
 		Step:                time.Minute,
 		TimestampDefinition: timeseries.FieldDefinition{Name: "time", Role: timeseries.RoleTimestamp},
 		// listed out of the columns' order, which orders the series
@@ -123,8 +125,10 @@ func randomBody(rng *weaktest.Rand, form, rows int) string {
 	start := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range rows {
 		ts := start.Add(time.Duration(i) * time.Second).Format(v3TimestampLayouts[0])
-		vals := []string{ts, "h" + strconv.Itoa(rng.IntN(4)), "r" + strconv.Itoa(rng.IntN(2)),
-			randomCell(rng, form), randomCell(rng, form), randomCell(rng, form)}
+		vals := []string{
+			ts, "h" + strconv.Itoa(rng.IntN(4)), "r" + strconv.Itoa(rng.IntN(2)),
+			randomCell(rng, form), randomCell(rng, form), randomCell(rng, form),
+		}
 		switch form {
 		case 2:
 			b.WriteString(strings.Join(vals, ",") + "\n")

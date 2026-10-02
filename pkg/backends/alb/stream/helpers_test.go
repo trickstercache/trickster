@@ -41,13 +41,17 @@ type spec struct {
 }
 
 func up(b backends.Backend, weight int) spec {
-	return spec{backend: b, weight: weight,
-		status: healthcheck.NewStatus(b.Name(), "", "", healthcheck.StatusPassing, time.Time{}, nil)}
+	return spec{
+		backend: b, weight: weight,
+		status: healthcheck.NewStatus(b.Name(), "", "", healthcheck.StatusPassing, time.Time{}, nil),
+	}
 }
 
 func down(b backends.Backend, weight int) spec {
-	return spec{backend: b, weight: weight,
-		status: healthcheck.NewStatus(b.Name(), "", "", healthcheck.StatusFailing, time.Time{}, nil)}
+	return spec{
+		backend: b, weight: weight,
+		status: healthcheck.NewStatus(b.Name(), "", "", healthcheck.StatusFailing, time.Time{}, nil),
+	}
 }
 
 // origin is a backend dialed at addr; an empty addr leaves it with nothing to dial

@@ -226,7 +226,8 @@ func TestParseWith(t *testing.T) {
 			window(45 * time.Second),
 		},
 		{
-			"fast forward off outside", "", map[string]string{NameFastForward: "off"},
+			"fast forward off outside", "",
+			map[string]string{NameFastForward: "off"},
 			timeseries.Directives{FastForwardDisable: true},
 		},
 		{

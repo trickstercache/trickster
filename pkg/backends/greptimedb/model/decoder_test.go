@@ -50,8 +50,10 @@ var typeLiterals = map[string][2][]string{
 	"Null":    {{"null"}, {"1", `""`}},
 }
 
-var valueTypes = []string{"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
-	"Float32", "Float64", "String", "Boolean", "Null"}
+var valueTypes = []string{
+	"Int8", "Int16", "Int32", "Int64", "UInt8", "UInt16", "UInt32", "UInt64",
+	"Float32", "Float64", "String", "Boolean", "Null",
+}
 
 // each time type and unit, and its literal for a second
 var timeTypes = []struct {
@@ -127,8 +129,10 @@ func typedBody(rng *weaktest.Rand) ([]byte, *timeseries.TimeRangeQuery) {
 	}
 	body := `{"output":[{"records":{"schema":{"column_schemas":[` + strings.Join(columns, ",") +
 		`]},"rows":[` + b.String() + `],"total_rows":` + strconv.Itoa(rows) + `}}],"execution_time_ms":1}`
-	plan := &sqlanalyzer.QueryPlan{CanonicalSQL: "fixture", OutputColumn: "time", GroupColumns: []string{"host"},
-		ValueColumns: names, Step: time.Second, OutputUnit: tt.unit}
+	plan := &sqlanalyzer.QueryPlan{
+		CanonicalSQL: "fixture", OutputColumn: "time", GroupColumns: []string{"host"},
+		ValueColumns: names, Step: time.Second, OutputUnit: tt.unit,
+	}
 	trq := sqlanalyzer.NewTimeRangeQuery("fixture")
 	plan.ApplyToQuery(trq)
 	trq.Extent = timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(int64(rows), 0)}
@@ -156,8 +160,10 @@ func TestDecoderMatchesLegacy(t *testing.T) {
 		require.NoError(t, streamtest.Compare(unwrapSQL(want), unwrapSQL(got), streamtest.CompareOptions{IgnoreSizes: true}), "%s", body)
 		require.Equal(t, want.(*dataSet).fields, got.(*dataSet).fields)
 		if decoded%10 == 0 {
-			streamtest.Conformance(t, newDecoder, streamtest.Case{TRQ: trq, Body: body, Unwrap: unwrapSQL,
-				Legacy: stream.ReaderUnmarshaler(newLegacyDecoder)})
+			streamtest.Conformance(t, newDecoder, streamtest.Case{
+				TRQ: trq, Body: body, Unwrap: unwrapSQL,
+				Legacy: stream.ReaderUnmarshaler(newLegacyDecoder),
+			})
 		}
 	}
 	// both outcomes are common
@@ -186,8 +192,10 @@ func TestDecoderFailsAsLegacy(t *testing.T) {
 		for _, at := range badTimes {
 			body := []byte(`{"output":[{"records":{"schema":{"column_schemas":[{"name":"time","data_type":"` + tt.typ +
 				`"},{"name":"v","data_type":"Int64"}]},"rows":[[` + at + `,1]],"total_rows":1}}],"execution_time_ms":1}`)
-			plan := &sqlanalyzer.QueryPlan{CanonicalSQL: "fixture", OutputColumn: "time", ValueColumns: []string{"v"},
-				Step: time.Second, OutputUnit: tt.unit}
+			plan := &sqlanalyzer.QueryPlan{
+				CanonicalSQL: "fixture", OutputColumn: "time", ValueColumns: []string{"v"},
+				Step: time.Second, OutputUnit: tt.unit,
+			}
 			trq := sqlanalyzer.NewTimeRangeQuery("fixture")
 			plan.ApplyToQuery(trq)
 			check(body, trq)
@@ -216,8 +224,10 @@ func BenchmarkDecoder(b *testing.B) {
 		`{"name":"host","data_type":"String"},{"name":"v","data_type":"Float64"},{"name":"n","data_type":"Int64"},` +
 		`{"name":"s","data_type":"String"},{"name":"b","data_type":"Boolean"}]},"rows":[` + rows.String() +
 		`],"total_rows":` + strconv.Itoa(series*points) + `}}],"execution_time_ms":1}`)
-	plan := &sqlanalyzer.QueryPlan{CanonicalSQL: "fixture", OutputColumn: "time", GroupColumns: []string{"host"},
-		ValueColumns: []string{"v", "n", "s", "b"}, Step: time.Second, OutputUnit: timeseries.DateTimeRFC3339Nano}
+	plan := &sqlanalyzer.QueryPlan{
+		CanonicalSQL: "fixture", OutputColumn: "time", GroupColumns: []string{"host"},
+		ValueColumns: []string{"v", "n", "s", "b"}, Step: time.Second, OutputUnit: timeseries.DateTimeRFC3339Nano,
+	}
 	trq := sqlanalyzer.NewTimeRangeQuery("fixture")
 	plan.ApplyToQuery(trq)
 	for name, decode := range map[string]timeseries.UnmarshalerFunc{

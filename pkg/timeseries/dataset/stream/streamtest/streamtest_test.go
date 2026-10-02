@@ -164,16 +164,20 @@ func TestConformancePasses(t *testing.T) {
 	dec := csvDecoder(dataset.BuilderOptions{SeriesName: "csv"})
 	want, err := stream.BytesUnmarshaler(dec)(csvBody, testTRQ)
 	require.NoError(t, err)
-	c := Case{TRQ: testTRQ, Body: csvBody, Want: want.(*dataset.DataSet),
-		Legacy: legacyFrom(dec), Shuffle: ShuffleLines(0)}
+	c := Case{
+		TRQ: testTRQ, Body: csvBody, Want: want.(*dataset.DataSet),
+		Legacy: legacyFrom(dec), Shuffle: ShuffleLines(0),
+	}
 	Conformance(t, dec, c)
 	rec := &recorder{}
 	Conformance(rec, dec, c)
 	require.Empty(t, rec.errs)
 
 	wrap := wrapDecoder(dec, func(d stream.Decoder) stream.Decoder { return wrappingDecoder{d} })
-	Conformance(t, wrap, Case{TRQ: testTRQ, Body: csvBody, Legacy: legacyFrom(wrap),
-		Unwrap: func(ts timeseries.Timeseries) *dataset.DataSet { return ts.(wrapped).DataSet }})
+	Conformance(t, wrap, Case{
+		TRQ: testTRQ, Body: csvBody, Legacy: legacyFrom(wrap),
+		Unwrap: func(ts timeseries.Timeseries) *dataset.DataSet { return ts.(wrapped).DataSet },
+	})
 }
 
 func TestConformanceReportsDifferences(t *testing.T) {
@@ -222,8 +226,10 @@ func TestConformanceWantAndLegacy(t *testing.T) {
 	want, err := stream.BytesUnmarshaler(other)(csvBody, testTRQ)
 	require.NoError(t, err)
 	rec := &recorder{}
-	Conformance(rec, dec, Case{TRQ: testTRQ, Body: csvBody, Want: want.(*dataset.DataSet),
-		Legacy: legacyFrom(other)})
+	Conformance(rec, dec, Case{
+		TRQ: testTRQ, Body: csvBody, Want: want.(*dataset.DataSet),
+		Legacy: legacyFrom(other),
+	})
 	rec.requireReported(t, "differs from Want: results[0].series[0].name",
 		"differs from legacy: results[0].series[0].name")
 

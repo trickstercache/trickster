@@ -84,6 +84,18 @@ data:
     #     # proxy otherwise. Default: false
     #     proxy_protocol: false
     #
+    #     # path_normalization cleans each request path before routing it, and the
+    #     # cleaned path is what the origin receives. See docs/configuring.md
+    #     path_normalization:
+    #       # dot_segments removes '.' and '..' segments per RFC 3986 (normalize),
+    #       # refuses them with 400 (reject), or leaves them (off). Default: normalize
+    #       dot_segments: normalize
+    #       # merge_slashes collapses each run of slashes to one. Default: false
+    #       merge_slashes: false
+    #       # escaped_slashes forwards %2F as data within a segment (keep), refuses
+    #       # it with 400 (reject), or decodes it to a separator (unescape). Default: keep
+    #       escaped_slashes: keep
+    #
     #     # max_request_body_size_bytes indicates the maximum allowed request body size.
     #     # Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB.
     #     max_request_body_size_bytes: 10485760

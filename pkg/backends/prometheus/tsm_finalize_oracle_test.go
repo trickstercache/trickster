@@ -49,8 +49,10 @@ var finalizedQueries = []string{
 // parse, NaN and infinities, a histogram, and, for a range query, many times
 func finalizerDataSet(rng *weaktest.Rand, rangeQuery bool) *dataset.DataSet {
 	// values of other kinds are ignored, or read as numbers, as each finalizer reads them
-	values := []any{"1", "2.5", "-3", "0", "NaN", "+Inf", "-Inf", "x", "1e300", "7", 2.5, float32(1.5),
-		json.Number("3"), int64(4)}
+	values := []any{
+		"1", "2.5", "-3", "0", "NaN", "+Inf", "-Inf", "x", "1e300", "7", 2.5, float32(1.5),
+		json.Number("3"), int64(4),
+	}
 	times := 1
 	if rangeQuery {
 		times = 2 + rng.IntN(8)
@@ -63,11 +65,15 @@ func finalizerDataSet(rng *weaktest.Rand, rangeQuery bool) *dataset.DataSet {
 			if rangeQuery && rng.IntN(4) == 0 {
 				continue
 			}
-			pts = append(pts, dataset.Point{Epoch: epoch.Epoch(int64(1000+at*60) * 1e9),
-				Values: []any{values[rng.IntN(len(values))]}})
+			pts = append(pts, dataset.Point{
+				Epoch:  epoch.Epoch(int64(1000+at*60) * 1e9),
+				Values: []any{values[rng.IntN(len(values))]},
+			})
 		}
-		header := dataset.SeriesHeader{Name: "x", Tags: tags,
-			ValueFieldsList: timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.String}}}
+		header := dataset.SeriesHeader{
+			Name: "x", Tags: tags,
+			ValueFieldsList: timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.String}},
+		}
 		if rng.IntN(10) == 0 {
 			header.ValueFieldsList[0].Name = histogramFieldName
 			for i := range pts {
@@ -146,25 +152,32 @@ func TestFinalizersMatchLegacy(t *testing.T) {
 func TestPooledVarianceMatchesLegacy(t *testing.T) {
 	rng := weaktest.NewRand(62, 62)
 	states := []any{
-		dataset.PooledVarianceState{Count: 5, Mean: 5, M2: 40}, dataset.PooledVarianceState{Count: 1, Mean: -3},
-		dataset.PooledVarianceState{Count: 0}, dataset.PooledVarianceState{Count: math.NaN()},
-		dataset.PooledVarianceState{Count: math.Inf(1)}, "1",
+		dataset.PooledVarianceState{Count: 5, Mean: 5, M2: 40},
+		dataset.PooledVarianceState{Count: 1, Mean: -3},
+		dataset.PooledVarianceState{Count: 0},
+		dataset.PooledVarianceState{Count: math.NaN()},
+		dataset.PooledVarianceState{Count: math.Inf(1)},
+		"1",
 	}
 	for range 40 {
 		var list dataset.SeriesList
 		for s := range 1 + rng.IntN(5) {
 			var pts dataset.Points
 			for at := range 1 + rng.IntN(6) {
-				pts = append(pts, dataset.Point{Epoch: epoch.Epoch(int64(at) * 1e9),
-					Values: []any{states[rng.IntN(len(states))], "extra"}})
+				pts = append(pts, dataset.Point{
+					Epoch:  epoch.Epoch(int64(at) * 1e9),
+					Values: []any{states[rng.IntN(len(states))], "extra"},
+				})
 			}
 			list = append(list, dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"job": strconv.Itoa(s)}}, pts))
 		}
 		// a series whose rows hold no values
 		list = append(list, dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{{Epoch: 1}}))
 		for _, query := range []string{"stddev by (job) (x)", "stdvar(x)"} {
-			_ = requireLegacyFinalized(t, query, &dataset.DataSet{TimeRangeQuery: &timeseries.TimeRangeQuery{Statement: "x"},
-				Results: dataset.Results{{SeriesList: list}}})
+			_ = requireLegacyFinalized(t, query, &dataset.DataSet{
+				TimeRangeQuery: &timeseries.TimeRangeQuery{Statement: "x"},
+				Results:        dataset.Results{{SeriesList: list}},
+			})
 		}
 	}
 }
@@ -175,16 +188,24 @@ func BenchmarkFinalizers(b *testing.B) {
 	for s := range 200 {
 		pts := make(dataset.Points, 500)
 		for at := range pts {
-			pts[at] = dataset.Point{Epoch: epoch.Epoch(int64(at*60) * 1e9),
-				Values: []any{strconv.FormatFloat(rng.NormFloat64()*100, 'f', -1, 64)}}
+			pts[at] = dataset.Point{
+				Epoch:  epoch.Epoch(int64(at*60) * 1e9),
+				Values: []any{strconv.FormatFloat(rng.NormFloat64()*100, 'f', -1, 64)},
+			}
 		}
-		list = append(list, dataset.NewSeries(dataset.SeriesHeader{Name: "x", Tags: dataset.Tags{"__name__": "x",
-			"job": "j" + strconv.Itoa(s%5), "cpu": strconv.Itoa(s)}}, pts))
+		list = append(list, dataset.NewSeries(dataset.SeriesHeader{Name: "x", Tags: dataset.Tags{
+			"__name__": "x",
+			"job":      "j" + strconv.Itoa(s%5), "cpu": strconv.Itoa(s),
+		}}, pts))
 	}
-	base := &dataset.DataSet{TimeRangeQuery: &timeseries.TimeRangeQuery{Statement: "x", Step: time.Minute},
-		Results: dataset.Results{{SeriesList: list}}}
-	for _, query := range []string{"topk(5, x)", "limitk(5, x)", "quantile by (job) (0.9, x)", "stddev by (job) (x)",
-		"sum(x) * 2"} {
+	base := &dataset.DataSet{
+		TimeRangeQuery: &timeseries.TimeRangeQuery{Statement: "x", Step: time.Minute},
+		Results:        dataset.Results{{SeriesList: list}},
+	}
+	for _, query := range []string{
+		"topk(5, x)", "limitk(5, x)", "quantile by (job) (0.9, x)", "stddev by (job) (x)",
+		"sum(x) * 2",
+	} {
 		for name, finalize := range map[string]func(*Client, string, timeseries.Timeseries){
 			"legacy": (*Client).legacyFinalizeTSMMergeEntry, "columnar": (*Client).FinalizeTSMMerge,
 		} {

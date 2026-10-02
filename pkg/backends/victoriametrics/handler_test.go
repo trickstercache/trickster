@@ -201,8 +201,10 @@ func decodeMatrix(t *testing.T, w *httptest.ResponseRecorder) matrixDoc {
 }
 
 func rangeValues(query string, start time.Time, points int) url.Values {
-	return url.Values{"query": {query}, "start": {secs(start)},
-		"end": {secs(start.Add(time.Duration(points-1) * time.Minute))}, "step": {"60"}}
+	return url.Values{
+		"query": {query}, "start": {secs(start)},
+		"end": {secs(start.Add(time.Duration(points-1) * time.Minute))}, "step": {"60"},
+	}
 }
 
 func TestDeltaProxyCache(t *testing.T) {

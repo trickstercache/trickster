@@ -46,6 +46,7 @@ import (
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
@@ -100,7 +101,8 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
 	// every request on the listener passes here ahead of the router, unmatched ones included; middleware
 	// added here goes between the access log and next, so its answers are logged against the real client
-	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger, next))
+	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
+		normalize.Middleware(o.PathNormalization, next)))
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,

@@ -163,8 +163,10 @@ func TestOnDemandIssuerError(t *testing.T) {
 func TestFailedApplyKeepsRunningIssuers(t *testing.T) {
 	stub := newStubIssuer(t)
 	m, path := newTestManager(t, newRecordingSink(), nil, stub)
-	require.NoError(t, m.Apply(onDemandTestConfig(t, path, &acmeopts.OnDemandOptions{Issuer: testIssuer,
-		Listeners: []string{testListener}, AllowedDomains: []string{testOnDemandName}})))
+	require.NoError(t, m.Apply(onDemandTestConfig(t, path, &acmeopts.OnDemandOptions{
+		Issuer:    testIssuer,
+		Listeners: []string{testListener}, AllowedDomains: []string{testOnDemandName},
+	})))
 	running := m.issuers[testIssuer]
 	calls := 0
 	m.factory = func(*certmagic.Config, *acmeopts.IssuerOptions, issuerPorts, *zap.Logger,
@@ -176,8 +178,10 @@ func TestFailedApplyKeepsRunningIssuers(t *testing.T) {
 		}
 		return stub, nil, nil
 	}
-	changed := onDemandTestConfig(t, path, &acmeopts.OnDemandOptions{Issuer: testIssuer,
-		Listeners: []string{testListener}, AllowedDomains: []string{"*.acme.test"}})
+	changed := onDemandTestConfig(t, path, &acmeopts.OnDemandOptions{
+		Issuer:    testIssuer,
+		Listeners: []string{testListener}, AllowedDomains: []string{"*.acme.test"},
+	})
 	changed.ACME.Issuers[testIssuer].Email = "changed@trickstercache.org"
 	require.ErrorIs(t, m.Apply(changed), errStubRefused)
 	require.Same(t, running, m.issuers[testIssuer])

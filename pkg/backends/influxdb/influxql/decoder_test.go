@@ -351,8 +351,10 @@ func TestDecoderDepartures(t *testing.T) {
 
 func TestDecoderKeepsNothingOfItsInput(t *testing.T) {
 	// a decoded DataSet must not change when the buffer it was decoded from is reused
-	for _, body := range [][]byte{valuesBody(20, 30), []byte(legacyBodies["values first"]),
-		[]byte(legacyBodies["id after"]), []byte(legacyBodies["escapes"])} {
+	for _, body := range [][]byte{
+		valuesBody(20, 30), []byte(legacyBodies["values first"]),
+		[]byte(legacyBodies["id after"]), []byte(legacyBodies["escapes"]),
+	} {
 		pristine := bytes.Clone(body)
 		ts, err := UnmarshalTimeseries(body, decoderTRQ())
 		require.NoError(t, err)

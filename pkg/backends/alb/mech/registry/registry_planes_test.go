@@ -96,13 +96,19 @@ func TestSupports(t *testing.T) {
 	require.False(t, Supports("nonexistent", types.PlaneHTTP))
 	require.False(t, Supports(names.MechanismRR, 0), "no plane is not a supported plane")
 
-	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
-		names.MechanismMirror, names.MechanismP2C, names.MechanismRace, names.MechanismRR},
+	require.Equal(t, []types.Name{
+		names.MechanismHRW, names.MechanismLC, names.MechanismLT,
+		names.MechanismMirror, names.MechanismP2C, names.MechanismRace, names.MechanismRR,
+	},
 		Supporting(types.PlaneStream))
-	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
-		names.MechanismP2C, names.MechanismRace, names.MechanismRR}, ServingProtocol("tcp"))
-	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismLT,
-		names.MechanismMirror, names.MechanismP2C, names.MechanismRR}, ServingProtocol("udp"))
+	require.Equal(t, []types.Name{
+		names.MechanismHRW, names.MechanismLC, names.MechanismLT,
+		names.MechanismP2C, names.MechanismRace, names.MechanismRR,
+	}, ServingProtocol("tcp"))
+	require.Equal(t, []types.Name{
+		names.MechanismHRW, names.MechanismLC, names.MechanismLT,
+		names.MechanismMirror, names.MechanismP2C, names.MechanismRR,
+	}, ServingProtocol("udp"))
 	require.True(t, ServesProtocol(names.MechanismConnectRace, "tls"))
 	require.False(t, ServesProtocol(names.MechanismRace, "udp"))
 	require.False(t, ServesProtocol(names.MechanismFR, "tcp"))
@@ -111,8 +117,10 @@ func TestSupports(t *testing.T) {
 	require.Empty(t, StreamProtocols(names.MechanismRR))
 	require.Empty(t, StreamProtocols("nonexistent"))
 	require.False(t, Supports(names.MechanismRace, types.PlaneHTTP))
-	require.Equal(t, []types.Name{names.MechanismHRW, names.MechanismLC, names.MechanismP2C,
-		names.MechanismRR, names.MechanismUR}, Supporting(types.PlaneNative))
+	require.Equal(t, []types.Name{
+		names.MechanismHRW, names.MechanismLC, names.MechanismP2C,
+		names.MechanismRR, names.MechanismUR,
+	}, Supporting(types.PlaneNative))
 	require.Len(t, Supporting(types.PlaneHTTP), len(registry)-2)
 }
 

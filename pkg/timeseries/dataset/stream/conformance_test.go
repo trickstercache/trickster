@@ -108,7 +108,8 @@ func TestMatrixConformance(t *testing.T) {
 		{"metric":{"job":"b"},"values":[[2,"NaN"],[1,"+Inf"]],"extra":[{}]}]},"warnings":[]}
 	`
 	fields := timeseries.SeriesFields{Values: timeseries.FieldDefinitions{
-		{Name: "value", DataType: timeseries.Float64, Role: timeseries.RoleValue}}}
+		{Name: "value", DataType: timeseries.Float64, Role: timeseries.RoleValue},
+	}}
 	want := wantDataSet(
 		wantSeries("matrix", dataset.Tags{"job": "a"}, fields, pt(1000, 1.0), pt(2500, 2.5)),
 		wantSeries("matrix", dataset.Tags{"job": "b"}, fields, pt(1000, math.Inf(1)), pt(2000, math.NaN())),

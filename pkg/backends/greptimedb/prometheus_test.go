@@ -483,8 +483,10 @@ func TestPrometheusDropStaysInsideTheRange(t *testing.T) {
 			h := newHTTPHarness(t, origin)
 			h.resources.BackendOptions.StepAlignment = timeseries.StepAlignmentDrop
 			start := base.Add(test.start)
-			v := url.Values{"query": {"up"}, "db": {"public"}, "start": {start.Format(time.RFC3339Nano)},
-				"end": {base.Add(test.end).Format(time.RFC3339Nano)}, "step": {"15"}}
+			v := url.Values{
+				"query": {"up"}, "db": {"public"}, "start": {start.Format(time.RFC3339Nano)},
+				"end": {base.Add(test.end).Format(time.RFC3339Nano)}, "step": {"15"},
+			}
 			for _, attempt := range []string{"first", "repeat"} {
 				w := h.promQuery(t, http.MethodGet, "query_range", v, nil)
 				var got struct {

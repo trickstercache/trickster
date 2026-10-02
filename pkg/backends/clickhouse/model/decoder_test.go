@@ -85,23 +85,31 @@ var tsvBodies = map[string]tsvCase{
 		"2024-01-01 00:00:00\ta\t1\n2024-01-01 00:00:00.123456789123\ta\t2\n 2024-01-01 00:00:00.5 \ta\t3\n" +
 		"2024-01-01 00:00:01.\ta\t4\n2024-01-01 00:00:01.12x\ta\t5\n2024-02-30 00:00:00\ta\t6\n" +
 		"2024-01-01T00:00:02\ta\t7\n\\N\ta\t8\n2024-01-01 00:00:03,5\ta\t9\n", sqlTRQ()},
-	"dates": {"d\tv\nDate\tFloat64\n1970-01-01\t1\n2024-02-29\t2\n2023-02-29\t3\n2024-03-01 00:00:00\t4\n",
-		decoderTRQ("d", timeseries.DateSQL)},
+	"dates": {
+		"d\tv\nDate\tFloat64\n1970-01-01\t1\n2024-02-29\t2\n2023-02-29\t3\n2024-03-01 00:00:00\t4\n",
+		decoderTRQ("d", timeseries.DateSQL),
+	},
 	"epoch forms": {"t\tv\nUInt64\tFloat64\n1700000000\t1\n1700000001000\t2\n1700000002000000\t3\n" +
 		"1700000003000000000\t4\n170000000\t5\n-1700000005\t6\n\t7\n17000000060000000000\t8\n" +
 		"2024-01-01 00:00:00\t9\n2024-01-01T00:00:00\t10\n", decoderTRQ("t", timeseries.DateTimeUnixSecs)},
 	"rfc3339": {"t\tv\nObject\tFloat64\n2024-01-01T00:00:00Z\t1\n2024-01-01T00:00:01.5Z\t2\n" +
 		"2024-01-01T01:00:02+01:00\t3\n2024-01-01 00:00:03\t4\n", decoderTRQ("t", timeseries.DateTimeRFC3339Nano)},
-	"time of day": {"t\tv\nObject\tFloat64\n00:00:01\t1\n12:34:56\t2\n24:00:00\t3\n",
-		decoderTRQ("t", timeseries.TimeSQL)},
-	"string time": {"t\tv\nString\tFloat64\n1700000001\t1\n2024-01-01 00:00:00\t2\n2024-01-01 00:00:03.5\t3\n",
-		decoderTRQ("t", timeseries.DateTimeSQL)},
+	"time of day": {
+		"t\tv\nObject\tFloat64\n00:00:01\t1\n12:34:56\t2\n24:00:00\t3\n",
+		decoderTRQ("t", timeseries.TimeSQL),
+	},
+	"string time": {
+		"t\tv\nString\tFloat64\n1700000001\t1\n2024-01-01 00:00:00\t2\n2024-01-01 00:00:03.5\t3\n",
+		decoderTRQ("t", timeseries.DateTimeSQL),
+	},
 	"empty tags": {sqlHeader + "2024-01-01 00:00:00\t\t\t1\t1\n2024-01-01 00:00:00\ta\t\t2\t2\n" +
 		"2024-01-01 00:01:00\t\tr1\t3\t3\n2024-01-01 00:02:00\t\t\t4\t4\n", sqlTRQ()},
 	"null tags": {sqlHeader + "2024-01-01 00:00:00\t\\N\tr1\t1\t1\n2024-01-01 00:01:00\t\\N\tr1\t2\t2\n", sqlTRQ()},
-	"escaped tags": {"t\th\\tost\tv\nDateTime\tString\tFloat64\n" +
-		"2024-01-01 00:00:00\ta\\tb\\\\c\\'d\\ne\t1\n2024-01-01 00:00:00\tx\\qy\\\t2\n",
-		decoderTRQ("t", timeseries.DateTimeSQL, "h\tost")},
+	"escaped tags": {
+		"t\th\\tost\tv\nDateTime\tString\tFloat64\n" +
+			"2024-01-01 00:00:00\ta\\tb\\\\c\\'d\\ne\t1\n2024-01-01 00:00:00\tx\\qy\\\t2\n",
+		decoderTRQ("t", timeseries.DateTimeSQL, "h\tost"),
+	},
 	"no rows":       {sqlHeader, sqlTRQ()},
 	"blank lines":   {"\n\n" + sqlHeader + "\n2024-01-01 00:00:00\ta\tr1\t1\t1\n\n\n2024-01-01 00:01:00\ta\tr1\t2\t2\n\n", sqlTRQ()},
 	"crlf":          {strings.ReplaceAll(sqlHeader+"2024-01-01 00:00:00\ta\tr1\t1\t1\n2024-01-01 00:01:00\ta\tr1\t2\t2\n", "\n", "\r\n"), sqlTRQ()},
@@ -114,8 +122,10 @@ var tsvBodies = map[string]tsvCase{
 		"2024-01-01 00:02:00\t5\t2024-01-01 00:06:00\t6\n", sqlTRQ()},
 	"bool forms": {"t\tb\nDateTime\tBool\n2024-01-01 00:00:00\ttrue\n2024-01-01 00:00:01\tFALSE\n" +
 		"2024-01-01 00:00:02\t1\n2024-01-01 00:00:03\tt\n2024-01-01 00:00:04\tyes\n2024-01-01 00:00:05\t\\N\n", sqlTRQ()},
-	"bad times": {sqlHeader + "2024-01-01 00:00:00\ta\tr1\t1\t1\nnope\ta\tr1\t2\t2\n2024-01-01 00:01:00\ta\tr1\t3\t3\n",
-		sqlTRQ()},
+	"bad times": {
+		sqlHeader + "2024-01-01 00:00:00\ta\tr1\t1\t1\nnope\ta\tr1\t2\t2\n2024-01-01 00:01:00\ta\tr1\t3\t3\n",
+		sqlTRQ(),
+	},
 	"long line": {sqlHeader + "2024-01-01 00:00:00\t" + strings.Repeat("h", 70000) + "\tr1\t1\t1\n", sqlTRQ()},
 }
 
@@ -445,19 +455,25 @@ var nativeBodies = map[string]nativeCase{
 		{"d32", "Date32", []any{time.Date(1969, 12, 31, 0, 0, 0, 0, time.UTC), time.Date(2299, 12, 31, 0, 0, 0, 0,
 			time.UTC), time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)}},
 		{"dt", "DateTime", minutes(0, 1, 2)},
-		{"dt64", "DateTime64(6)", []any{time.Date(1969, 12, 31, 23, 59, 59, 999999000, time.UTC), time.Unix(0, 0),
-			time.Date(2299, 1, 1, 0, 0, 0, 1000, time.UTC)}},
+		{"dt64", "DateTime64(6)", []any{
+			time.Date(1969, 12, 31, 23, 59, 59, 999999000, time.UTC), time.Unix(0, 0),
+			time.Date(2299, 1, 1, 0, 0, 0, 1000, time.UTC),
+		}},
 		{"dec", "Decimal(9, 2)", []any{"-14.83", "0.05", "0"}},
 		{"dec128", "Decimal(38, 3)", []any{"123456789012345678901234.567", "-0.001", "1"}},
 		{"e", "Enum8('a' = 1, 'b\\'c' = -2)", []any{"a", "b'c", "a"}},
 		{"e16", "Enum16('x' = -300)", []any{"x", "x", "x"}},
-		{"uuid", "UUID", []any{"61f0c404-5cb3-11e7-907b-a6006ad3dba0", "00000000-0000-0000-0000-000000000000",
-			"ffffffff-ffff-ffff-ffff-ffffffffffff"}},
+		{"uuid", "UUID", []any{
+			"61f0c404-5cb3-11e7-907b-a6006ad3dba0", "00000000-0000-0000-0000-000000000000",
+			"ffffffff-ffff-ffff-ffff-ffffffffffff",
+		}},
 		{"ip4", "IPv4", []any{net.ParseIP("10.1.2.3"), net.ParseIP("0.0.0.0"), net.ParseIP("255.255.255.255")}},
 		{"ip6", "IPv6", []any{net.ParseIP("2001:db8::1"), net.ParseIP("::ffff:1.2.3.4"), net.ParseIP("::")}},
 		{"i128", "Int128", []any{bigInt("-170141183460469231731687303715884105728"), bigInt("0"), bigInt("1")}},
-		{"u256", "UInt256", []any{bigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935"),
-			bigInt("0"), bigInt("7")}},
+		{"u256", "UInt256", []any{
+			bigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935"),
+			bigInt("0"), bigInt("7"),
+		}},
 	}}, server.ServerRevision, decoderTRQ("t", timeseries.DateTimeSQL, "host")},
 	"nullable": {[][]nativeColumnValues{{
 		{"t", "Nullable(DateTime)", append(minutes(0, 1), nil)},
@@ -719,8 +735,10 @@ func lowCardinalityBlock(version, flags uint64, size byte, rows byte, index ...b
 
 func TestNativeDecoderKeepsTheOneNaN(t *testing.T) {
 	// a NaN is read as its text reads, whatever its payload
-	body := []byte{2, 1, 1, 't', 8, 'D', 'a', 't', 'e', 'T', 'i', 'm', 'e', 0, 0, 0, 0, 1, 'v', 7, 'F', 'l', 'o', 'a', 't',
-		'6', '4'}
+	body := []byte{
+		2, 1, 1, 't', 8, 'D', 'a', 't', 'e', 'T', 'i', 'm', 'e', 0, 0, 0, 0, 1, 'v', 7, 'F', 'l', 'o', 'a', 't',
+		'6', '4',
+	}
 	body = binary.LittleEndian.AppendUint64(body, 0x7ff8000000000abc)
 	ts, err := UnmarshalTimeseriesNative(body, sqlTRQ())
 	require.NoError(t, err)
@@ -898,8 +916,13 @@ func tsvBody(series, points int) []byte {
 
 // nativeBlock is a block of the same response as tsvBody's, from its first point
 func nativeBlock(first, series, points int) []nativeColumnValues {
-	cols := []nativeColumnValues{{name: "t", typ: "DateTime"}, {name: "host", typ: "LowCardinality(String)"},
-		{name: "region", typ: "LowCardinality(String)"}, {name: "v", typ: "Float64"}, {name: "n", typ: "UInt64"}}
+	cols := []nativeColumnValues{
+		{name: "t", typ: "DateTime"},
+		{name: "host", typ: "LowCardinality(String)"},
+		{name: "region", typ: "LowCardinality(String)"},
+		{name: "v", typ: "Float64"},
+		{name: "n", typ: "UInt64"},
+	}
 	for p := first; p < first+points; p++ {
 		for s := range series {
 			cols[0].values = append(cols[0].values, time.Unix(int64(1704067200+60*p), 0))

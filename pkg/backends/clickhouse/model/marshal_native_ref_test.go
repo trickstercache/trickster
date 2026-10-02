@@ -55,8 +55,10 @@ var nativeTimeTypes = []struct {
 	{"DateTime('UTC')", timeseries.DateTimeSQL},
 }
 
-var nativeTagTypes = []string{"String", "Nullable(String)", "LowCardinality(String)",
-	"LowCardinality(Nullable(String))", "UInt8", "FixedString(3)"}
+var nativeTagTypes = []string{
+	"String", "Nullable(String)", "LowCardinality(String)",
+	"LowCardinality(Nullable(String))", "UInt8", "FixedString(3)",
+}
 
 func pick[T any](rng *weaktest.Rand, vs ...T) T {
 	return vs[rng.IntN(len(vs))]
@@ -97,9 +99,11 @@ var nativeValueTypes = []struct {
 }
 
 // values a column's writer doesn't take, which leave it boxed
-var outOfTypeValues = []any{int64(1 << 40), uint64(1 << 63), -1.5, "7", true, uint64(3), int64(3), int64(128),
+var outOfTypeValues = []any{
+	int64(1 << 40), uint64(1 << 63), -1.5, "7", true, uint64(3), int64(3), int64(128),
 	int64(-129), int64(32768), int64(-32769), int64(1 << 31), int64(-1<<31 - 1), uint64(256), uint64(65536),
-	uint64(1 << 32), uint64(math.MaxInt64 + 1)}
+	uint64(1 << 32), uint64(math.MaxInt64 + 1),
+}
 
 // randomNativeDataSet builds a DataSet as a ClickHouse decoder would, with fields of random types
 func randomNativeDataSet(rng *weaktest.Rand) *dataset.DataSet {
@@ -107,14 +111,18 @@ func randomNativeDataSet(rng *weaktest.Rand) *dataset.DataSet {
 	fields := timeseries.FieldDefinitions{{Name: "t", Role: timeseries.RoleTimestamp, SDataType: tt.typ, DataType: tt.dt}}
 	var tags, vals timeseries.FieldDefinitions
 	for i := range rng.IntN(3) {
-		tags = append(tags, timeseries.FieldDefinition{Name: "tag" + strconv.Itoa(i), Role: timeseries.RoleTag,
-			SDataType: pick(rng, nativeTagTypes...), OutputPosition: len(fields) + i})
+		tags = append(tags, timeseries.FieldDefinition{
+			Name: "tag" + strconv.Itoa(i), Role: timeseries.RoleTag,
+			SDataType: pick(rng, nativeTagTypes...), OutputPosition: len(fields) + i,
+		})
 	}
 	kinds := make([]int, 1+rng.IntN(3))
 	for i := range kinds {
 		kinds[i] = rng.IntN(len(nativeValueTypes))
-		vals = append(vals, timeseries.FieldDefinition{Name: "v" + strconv.Itoa(i), Role: timeseries.RoleValue,
-			SDataType: nativeValueTypes[kinds[i]].typ, OutputPosition: len(fields) + len(tags) + i})
+		vals = append(vals, timeseries.FieldDefinition{
+			Name: "v" + strconv.Itoa(i), Role: timeseries.RoleValue,
+			SDataType: nativeValueTypes[kinds[i]].typ, OutputPosition: len(fields) + len(tags) + i,
+		})
 	}
 	var series dataset.SeriesList
 	for s := range 1 + rng.IntN(6) {
@@ -125,8 +133,10 @@ func randomNativeDataSet(rng *weaktest.Rand) *dataset.DataSet {
 				t[tag.Name] = v
 			}
 		}
-		h := dataset.SeriesHeader{Name: strconv.Itoa(s), Tags: t, TimestampField: fields[0], TagFieldsList: tags,
-			ValueFieldsList: vals}
+		h := dataset.SeriesHeader{
+			Name: strconv.Itoa(s), Tags: t, TimestampField: fields[0], TagFieldsList: tags,
+			ValueFieldsList: vals,
+		}
 		// a series without one of the fields can't be written
 		if rng.IntN(40) == 0 {
 			h.ValueFieldsList = vals[:len(vals)-1]
@@ -292,12 +302,18 @@ func TestMarshalNativeRulings(t *testing.T) {
 		for s, tags := range []dataset.Tags{{"host": "a", "dc": "x"}, {}} {
 			var pts dataset.Points
 			for i := range 10 {
-				pts = append(pts, dataset.Point{Epoch: epoch.Epoch(at.Add(time.Duration(i) * time.Minute).UnixNano()),
-					Values: []any{"pqrstuvw", pick[any](weaktest.NewRand(uint64(i), uint64(s)), "2026-11-01 05:30:00.250", nil),
-						"{'z':1,'a':2}"}})
+				pts = append(pts, dataset.Point{
+					Epoch: epoch.Epoch(at.Add(time.Duration(i) * time.Minute).UnixNano()),
+					Values: []any{
+						"pqrstuvw", pick[any](weaktest.NewRand(uint64(i), uint64(s)), "2026-11-01 05:30:00.250", nil),
+						"{'z':1,'a':2}",
+					},
+				})
 			}
-			series = append(series, dataset.NewSeries(dataset.SeriesHeader{Tags: tags, TimestampField: fds[0],
-				TagFieldsList: fds[1:3], ValueFieldsList: fds[3:]}, pts))
+			series = append(series, dataset.NewSeries(dataset.SeriesHeader{
+				Tags: tags, TimestampField: fds[0],
+				TagFieldsList: fds[1:3], ValueFieldsList: fds[3:],
+			}, pts))
 		}
 		ds := &dataset.DataSet{Results: dataset.Results{{SeriesList: series}}}
 		var out bytes.Buffer

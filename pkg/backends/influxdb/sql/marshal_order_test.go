@@ -117,14 +117,21 @@ func TestMarshalMatchesLegacyUnmerged(t *testing.T) {
 		{Epoch: 1, Values: []any{uint64(7), "a,\"b", true, int64(-1)}},
 		{Epoch: 2, Values: []any{[]byte("x"), nil, false, math.NaN()}},
 	})
-	requireLegacyOutput(t, &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery,
-		Results: dataset.Results{{SeriesList: dataset.SeriesList{vs, nil, dataset.NewSeries(s.Header, nil)}}}})
+	requireLegacyOutput(t, &dataset.DataSet{
+		TimeRangeQuery: a.TimeRangeQuery,
+		Results:        dataset.Results{{SeriesList: dataset.SeriesList{vs, nil, dataset.NewSeries(s.Header, nil)}}},
+	})
 	// Segments that share an epoch at their boundary are still in order, and their rows keep it
-	tied := append(dataset.NewSeries(s.Header, dataset.Points{{Epoch: 1, Values: []any{int64(1)}},
-		{Epoch: 2, Values: []any{int64(2)}}}).Segments(), dataset.NewSeries(s.Header, dataset.Points{
-		{Epoch: 2, Values: []any{int64(3)}}, {Epoch: 3, Values: []any{int64(4)}}}).Segments()...)
-	requireLegacyOutput(t, &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery,
-		Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeriesOf(s.Header, tied)}}}})
+	tied := append(dataset.NewSeries(s.Header, dataset.Points{
+		{Epoch: 1, Values: []any{int64(1)}},
+		{Epoch: 2, Values: []any{int64(2)}},
+	}).Segments(), dataset.NewSeries(s.Header, dataset.Points{
+		{Epoch: 2, Values: []any{int64(3)}}, {Epoch: 3, Values: []any{int64(4)}},
+	}).Segments()...)
+	requireLegacyOutput(t, &dataset.DataSet{
+		TimeRangeQuery: a.TimeRangeQuery,
+		Results:        dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeriesOf(s.Header, tied)}}},
+	})
 	requireLegacyOutput(t, &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery})
 	requireLegacyOutput(t, &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery, Results: dataset.Results{nil}})
 }
@@ -133,8 +140,12 @@ func BenchmarkMarshalOrdered(b *testing.B) {
 	ts, err := UnmarshalTimeseries(rowsBody(0, 100, 1000), decoderTRQ())
 	require.NoError(b, err)
 	ds := ts.(*dataset.DataSet)
-	for _, ordering := range [][]timeseries.OrderTerm{nil, {{Column: "time"}}, {{Column: "time", Descending: true}},
-		{{Column: "time"}, {Column: "host"}}} {
+	for _, ordering := range [][]timeseries.OrderTerm{
+		nil,
+		{{Column: "time"}},
+		{{Column: "time", Descending: true}},
+		{{Column: "time"}, {Column: "host"}},
+	} {
 		for _, of := range []byte{iofmt.V3OutputJSON, iofmt.V3OutputCSV} {
 			name := strconv.Itoa(len(ordering)) + "terms/format" + strconv.Itoa(int(of))
 			if len(ordering) > 0 && ordering[0].Descending {
