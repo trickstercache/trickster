@@ -219,7 +219,7 @@ func TestPGWireQuestDBPassword(t *testing.T) {
 			t.Setenv("QDB_PG_READONLY_PASSWORD", test.environment)
 			filename := filepath.Join(t.TempDir(), "credentials.env")
 			if !test.missing {
-				require.NoError(t, os.WriteFile(filename, []byte(test.contents), 0600))
+				require.NoError(t, os.WriteFile(filename, []byte(test.contents), 0o600))
 			}
 			got, err := pgwireQuestDBPassword(filename)
 			if test.want == "" {

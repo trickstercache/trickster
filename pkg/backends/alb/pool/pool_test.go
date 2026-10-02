@@ -99,8 +99,10 @@ func TestTargetsRebuiltOnlyOnFloorCrossing(t *testing.T) {
 	st1, st2 := &healthcheck.Status{}, &healthcheck.Status{}
 	st1.Set(healthcheck.StatusPassing)
 	st2.Set(healthcheck.StatusPassing)
-	p := New(Targets{NewTarget(http.NotFoundHandler(), st1, nil),
-		NewTarget(http.NotFoundHandler(), st2, nil)}, 0)
+	p := New(Targets{
+		NewTarget(http.NotFoundHandler(), st1, nil),
+		NewTarget(http.NotFoundHandler(), st2, nil),
+	}, 0)
 	defer p.Stop()
 	before := p.Targets()
 	// Passing, Unchecked: all at or above a floor of 0

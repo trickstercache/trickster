@@ -43,8 +43,10 @@ func TestClientContract(t *testing.T) {
 	if _, ok := b.(backends.MergeableTimeseriesBackend); ok {
 		t.Error("the client offers mergeable paths")
 	}
-	for _, name := range []string{"query_range", "query", "series", "labels", "proxycache", "proxy",
-		"health", handlerGraphite, handlerGraphiteProxy} {
+	for _, name := range []string{
+		"query_range", "query", "series", "labels", "proxycache", "proxy",
+		"health", handlerGraphite, handlerGraphiteProxy,
+	} {
 		if c.Handlers()[name] == nil {
 			t.Errorf("missing handler %s", name)
 		}

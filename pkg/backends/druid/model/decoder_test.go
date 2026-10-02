@@ -68,48 +68,66 @@ var druidBodies = map[string]druidCase{
 		`{"timestamp":"2024-01-01T00:02:00Z","result":{"mid":3,"count":3,"count":4}}]`, testTRQ(tsPlan)},
 	"timeseries wide integers": {`[{"timestamp":"2024-01-01T00:00:00Z","result":{"count":4294967296,"sum":-4294967296,` +
 		`"over":99999999999999999999,"neg":-9223372036854775808}}]`, testTRQ(tsPlan)},
-	"timeseries with a dimension": {`[{"timestamp":"2024-01-01T00:00:00Z","result":{"page":"a","count":1}}]`,
-		testTRQ(NewQueryPlan(queryTimeseries, []string{"page"}, []string{"count"}, false, nil, nil))},
+	"timeseries with a dimension": {
+		`[{"timestamp":"2024-01-01T00:00:00Z","result":{"page":"a","count":1}}]`,
+		testTRQ(NewQueryPlan(queryTimeseries, []string{"page"}, []string{"count"}, false, nil, nil)),
+	},
 	"empty": {`[]`, testTRQ(tsPlan)},
 	"null":  {`null`, testTRQ(groupByPlan)},
-	"whitespace": {" [ {\"timestamp\" : \"2024-01-01T00:00:00Z\" , \"result\" : { \"count\" : 1 } } ] \n",
-		testTRQ(tsPlan)},
-	"groupBy": {`[{"version":"v1","timestamp":"2024-01-01T00:00:00.000Z","event":{"page":"a","user":"u","count":1}},` +
-		`{"version":"v1","timestamp":"2024-01-01T00:00:00.000Z","event":{"page":"b","user":"u","count":2}},` +
-		`{"version":"v1","timestamp":"2024-01-01T00:01:00.000Z","event":{"page":"a","user":"u","count":3,"extra":true}}]`,
-		testTRQ(groupByPlan)},
+	"whitespace": {
+		" [ {\"timestamp\" : \"2024-01-01T00:00:00Z\" , \"result\" : { \"count\" : 1 } } ] \n",
+		testTRQ(tsPlan),
+	},
+	"groupBy": {
+		`[{"version":"v1","timestamp":"2024-01-01T00:00:00.000Z","event":{"page":"a","user":"u","count":1}},` +
+			`{"version":"v1","timestamp":"2024-01-01T00:00:00.000Z","event":{"page":"b","user":"u","count":2}},` +
+			`{"version":"v1","timestamp":"2024-01-01T00:01:00.000Z","event":{"page":"a","user":"u","count":3,"extra":true}}]`,
+		testTRQ(groupByPlan),
+	},
 	"groupBy dimension types": {`[{"timestamp":"2024-01-01T00:00:00Z","event":{"page":5,"user":null,"count":1}},` +
 		`{"timestamp":"2024-01-01T00:00:00Z","version":2,"event":{"page":1.5,"count":2}},` +
 		`{"timestamp":"2024-01-01T00:00:00Z","version":null,"event":{"page":{"b":1,"a":[true]},"user":"<a&b>","count":3}},` +
 		`{"timestamp":"2024-01-01T00:00:00Z","event":{"page":"null","user":false,"count":4}},` +
 		`{"timestamp":"2024-01-01T00:00:00Z","event":{"page":-1e-9,"user":-0,"count":5}},` +
 		`{"timestamp":"2024-01-01T00:01:00Z","event":{"page":5,"user":null,"count":6,"page":6}}]`, testTRQ(groupByPlan)},
-	"topN": {`[{"timestamp":"2024-01-01T00:00:00.000Z","result":[{"page":"a","count":9},{"page":"b","count":5}]},` +
-		`{"timestamp":"2024-01-01T00:01:00.000Z","result":[]},` +
-		`{"timestamp":"2024-01-01T00:02:00.000Z","result":[{"page":"b","count":7,"x":1},{"page":"a","count":2}]}]`,
-		testTRQ(topNPlan)},
+	"topN": {
+		`[{"timestamp":"2024-01-01T00:00:00.000Z","result":[{"page":"a","count":9},{"page":"b","count":5}]},` +
+			`{"timestamp":"2024-01-01T00:01:00.000Z","result":[]},` +
+			`{"timestamp":"2024-01-01T00:02:00.000Z","result":[{"page":"b","count":7,"x":1},{"page":"a","count":2}]}]`,
+		testTRQ(topNPlan),
+	},
 	"sql": {`[{"bucket":"2024-01-01T00:00:00.000Z","host":"a","value":1},{"bucket":"2024-01-01T00:00:00.000Z","host":"b","value":2.5},` +
 		`{"host":"a","value":null,"bucket":"2024-01-01T01:00:00.000Z"}]`, testSQLTRQ(testSQLPlan())},
-	"sql times": {`[{"bucket":1704067200000,"host":"a","value":1},{"bucket":"2024-01-01T01:00:00","host":"a","value":2},` +
-		`{"bucket":"2024-01-01 02:00:00","host":"a","value":3},{"bucket":"2024-01-01 03:00:00.5","host":"a","value":4},` +
-		`{"bucket":"2024-01-02","host":"a","value":5},{"bucket":"1704243600000","host":"a","value":6},` +
-		`{"bucket":"2024-01-03T02:00:00+01:00","host":"a","value":7},{"bucket":"2024-01-03T03:00:00.123456789Z","host":"a","value":8}]`,
-		testSQLTRQ(testSQLPlan())},
-	"sql out of order": {`[{"bucket":"2024-01-01T02:00:00Z","host":"a","value":1},{"bucket":"2024-01-01T00:00:00Z","host":"a","value":2},` +
-		`{"bucket":"2024-01-01T02:00:00Z","host":"a","value":3},{"bucket":"2024-01-01T01:00:00Z","host":"b","value":4}]`,
-		testSQLTRQ(testSQLPlan())},
-	"sql tag types": {`[{"bucket":"2024-01-01T00:00:00Z","host":5,"value":"x"},{"bucket":"2024-01-01T00:00:00Z","host":null,"value":true},` +
-		`{"bucket":"2024-01-01T00:00:00Z","host":"<a&b>","value":{"k":[1]}},{"bucket":"2024-01-01T00:00:00Z","host":1.50,"value":18446744073709551615},` +
-		`{"bucket":"2024-01-01T00:00:00Z","host":{"z":1,"a":2},"value":-1e-9},{"bucket":"2024-01-01T00:00:00Z","host":"null","value":1e400}]`,
-		testSQLTRQ(testSQLPlan())},
+	"sql times": {
+		`[{"bucket":1704067200000,"host":"a","value":1},{"bucket":"2024-01-01T01:00:00","host":"a","value":2},` +
+			`{"bucket":"2024-01-01 02:00:00","host":"a","value":3},{"bucket":"2024-01-01 03:00:00.5","host":"a","value":4},` +
+			`{"bucket":"2024-01-02","host":"a","value":5},{"bucket":"1704243600000","host":"a","value":6},` +
+			`{"bucket":"2024-01-03T02:00:00+01:00","host":"a","value":7},{"bucket":"2024-01-03T03:00:00.123456789Z","host":"a","value":8}]`,
+		testSQLTRQ(testSQLPlan()),
+	},
+	"sql out of order": {
+		`[{"bucket":"2024-01-01T02:00:00Z","host":"a","value":1},{"bucket":"2024-01-01T00:00:00Z","host":"a","value":2},` +
+			`{"bucket":"2024-01-01T02:00:00Z","host":"a","value":3},{"bucket":"2024-01-01T01:00:00Z","host":"b","value":4}]`,
+		testSQLTRQ(testSQLPlan()),
+	},
+	"sql tag types": {
+		`[{"bucket":"2024-01-01T00:00:00Z","host":5,"value":"x"},{"bucket":"2024-01-01T00:00:00Z","host":null,"value":true},` +
+			`{"bucket":"2024-01-01T00:00:00Z","host":"<a&b>","value":{"k":[1]}},{"bucket":"2024-01-01T00:00:00Z","host":1.50,"value":18446744073709551615},` +
+			`{"bucket":"2024-01-01T00:00:00Z","host":{"z":1,"a":2},"value":-1e-9},{"bucket":"2024-01-01T00:00:00Z","host":"null","value":1e400}]`,
+		testSQLTRQ(testSQLPlan()),
+	},
 	"sql empty": {`[]`, testSQLTRQ(testSQLPlan())},
-	"sql array": {`[["bucket","host","value"],["2024-01-01T00:00:00Z","a",1],["2024-01-01T01:00:00Z","b",null]]`,
-		testSQLTRQ(arraySQLPlan())},
+	"sql array": {
+		`[["bucket","host","value"],["2024-01-01T00:00:00Z","a",1],["2024-01-01T01:00:00Z","b",null]]`,
+		testSQLTRQ(arraySQLPlan()),
+	},
 	"sql array header only": {`[["bucket","host","value"]]`, testSQLTRQ(arraySQLPlan())},
 	"sql null":              {`null`, testSQLTRQ(testSQLPlan())},
 	"sql names ignore case": {`[{"BUCKET":"2024-01-01T00:00:00Z","Host":"a","value":1}]`, testSQLTRQ(NewSQLQueryPlan(testSQLPlan().Plan, nil))},
-	"sql header without time": {`[["x","y"]]`,
-		testSQLTRQ(NewSQLQueryPlanWithResponseShape(testSQLPlan().Plan, nil, SQLResponseArray, true))},
+	"sql header without time": {
+		`[["x","y"]]`,
+		testSQLTRQ(NewSQLQueryPlanWithResponseShape(testSQLPlan().Plan, nil, SQLResponseArray, true)),
+	},
 }
 
 func druidConformance(t *testing.T, c druidCase) {
@@ -313,8 +331,10 @@ func TestDecoderErrors(t *testing.T) {
 		"sql time too large":  {`[{"bucket":18446744073709551615,"host":"a","value":1}]`, testSQLTRQ(testSQLPlan())},
 		"sql dropped column":  {`[{"bucket":"2024-01-01T00:00:00Z","host":"a","value":1},{"bucket":"2024-01-01T00:00:00Z","host":"a"}]`, testSQLTRQ(testSQLPlan())},
 		"sql repeat for drop": {`[{"bucket":"2024-01-01T00:00:00Z","host":"a","value":1},{"bucket":"2024-01-01T00:00:00Z","host":"a","host":"b"}]`, testSQLTRQ(testSQLPlan())},
-		"sql header repeats": {`[["bucket","host","host"]]`,
-			testSQLTRQ(NewSQLQueryPlanWithResponseShape(testSQLPlan().Plan, nil, SQLResponseArray, true))},
+		"sql header repeats": {
+			`[["bucket","host","host"]]`,
+			testSQLTRQ(NewSQLQueryPlanWithResponseShape(testSQLPlan().Plan, nil, SQLResponseArray, true)),
+		},
 		"sql time past 2262":   {`[{"bucket":"2262-04-12T00:00:00Z","host":"a","value":1}]`, testSQLTRQ(testSQLPlan())},
 		"sql time before 1678": {`[{"bucket":"1677-09-21T00:00:00Z","host":"a","value":1}]`, testSQLTRQ(testSQLPlan())},
 		"sql bad time text":    {`[{"bucket":"noon","host":"a","value":1}]`, testSQLTRQ(testSQLPlan())},
@@ -328,8 +348,10 @@ func TestDecoderErrors(t *testing.T) {
 		"sql header empty":     {`[[]]`, testSQLTRQ(arraySQLPlan())},
 		"sql header blank":     {`[["bucket","","value"]]`, testSQLTRQ(arraySQLPlan())},
 		"sql header row":       {`[{"bucket":1}]`, testSQLTRQ(arraySQLPlan())},
-		"sql no time column": {`[{"time":"2024-01-01T00:00:00Z","host":"a","value":1}]`,
-			testSQLTRQ(NewSQLQueryPlan(testSQLPlan().Plan, nil))},
+		"sql no time column": {
+			`[{"time":"2024-01-01T00:00:00Z","host":"a","value":1}]`,
+			testSQLTRQ(NewSQLQueryPlan(testSQLPlan().Plan, nil)),
+		},
 		"sql output columns": {`[["bucket","host","other"]]`, testSQLTRQ(arraySQLPlan())},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -339,8 +361,13 @@ func TestDecoderErrors(t *testing.T) {
 		})
 	}
 	// a query the decoders can't model
-	for _, trq := range []*timeseries.TimeRangeQuery{nil, {}, testTRQ(nil), testTRQ(NewQueryPlan("scan", nil, nil, false, nil, nil)),
-		{ParsedQuery: (*SQLQueryPlan)(nil)}, {ParsedQuery: &SQLQueryPlan{}}} {
+	for _, trq := range []*timeseries.TimeRangeQuery{
+		nil,
+		{},
+		testTRQ(nil), testTRQ(NewQueryPlan("scan", nil, nil, false, nil, nil)),
+		{ParsedQuery: (*SQLQueryPlan)(nil)},
+		{ParsedQuery: &SQLQueryPlan{}},
+	} {
 		_, err := UnmarshalTimeseries([]byte(`[]`), trq)
 		require.Error(t, err)
 	}

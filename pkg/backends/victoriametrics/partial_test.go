@@ -192,8 +192,10 @@ func TestPartialTransport(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resp := &http.Response{StatusCode: test.code, Header: http.Header{},
-				Body: io.NopCloser(bytes.NewReader(test.body))}
+			resp := &http.Response{
+				StatusCode: test.code, Header: http.Header{},
+				Body: io.NopCloser(bytes.NewReader(test.body)),
+			}
 			if test.encoding != "" {
 				resp.Header.Set(headers.NameContentEncoding, test.encoding)
 			}

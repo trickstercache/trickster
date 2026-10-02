@@ -135,8 +135,10 @@ func TestCompressedObjectForAnotherCodec(t *testing.T) {
 }
 
 func TestEncodingFlags(t *testing.T) {
-	for _, enc := range []encodings.Provider{encodings.Identity, encodings.Zstandard, encodings.Brotli,
-		encodings.GZip, encodings.Deflate} {
+	for _, enc := range []encodings.Provider{
+		encodings.Identity, encodings.Zstandard, encodings.Brotli,
+		encodings.GZip, encodings.Deflate,
+	} {
 		got, ok := flagEncoding(encodingFlag(enc))
 		require.True(t, ok, enc.String())
 		require.Equal(t, enc, got)

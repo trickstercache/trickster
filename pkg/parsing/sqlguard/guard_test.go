@@ -24,12 +24,12 @@ func TestScan(t *testing.T) {
 		"only": Unfaithful, "gapfill": Gapfill, "locf": Carry, "unnest": SetReturning,
 	}
 	for sql, want := range map[string]Facts{
-		"SELECT RANDOM /* between */ ()":                               {Volatile: true},
-		`SELECT "random"()`:                                            {Volatile: true},
-		"SELECT schema.random()":                                       {Volatile: true},
+		"SELECT RANDOM /* between */ ()": {Volatile: true},
+		`SELECT "random"()`:              {Volatile: true},
+		"SELECT schema.random()":         {Volatile: true},
 		"SELECT random, 'random()', $$now()$$ /* current_timestamp */": {},
 		`SELECT "RANDOM"(), "only", "current_timestamp"`:               {},
-		"SELECT now()":                                                 {Clock: true}, "SELECT current_timestamp": {Clock: true},
+		"SELECT now()": {Clock: true}, "SELECT current_timestamp": {Clock: true},
 		"SELECT * FROM ONLY t": {Unfaithful: true}, "SELECT U&'a'": {Unfaithful: true},
 		`SELECT U&"a"`:                       {Unfaithful: true},
 		"SELECT gapfill(), locf(), unnest()": {Gapfill: true, Carries: true, SetReturning: true},

@@ -309,9 +309,11 @@ func TestACME_OnDemand(t *testing.T) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	t.Cleanup(ask.Close)
-	s := newACMEStack(t, acmeStackOptions{challenge: "http-01",
-		hosts:    []string{"**.od.acme.test", "**.ask.acme.test", outside},
-		onDemand: fmt.Sprintf("ask: %s\n    allowed_domains: [\"*.od.acme.test\", \"*.ask.acme.test\"]", ask.URL)})
+	s := newACMEStack(t, acmeStackOptions{
+		challenge: "http-01",
+		hosts:     []string{"**.od.acme.test", "**.ask.acme.test", outside},
+		onDemand:  fmt.Sprintf("ask: %s\n    allowed_domains: [\"*.od.acme.test\", \"*.ask.acme.test\"]", ask.URL),
+	})
 	s.start(t)
 	s.requireReady(t, 10*time.Second)
 

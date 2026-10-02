@@ -36,12 +36,18 @@ var testTRQ = &timeseries.TimeRangeQuery{
 }
 
 var rowFields = timeseries.SeriesFields{
-	Timestamp: timeseries.FieldDefinition{Name: "time", DataType: timeseries.DateTimeUnixMilli,
-		Role: timeseries.RoleTimestamp},
-	Tags: timeseries.FieldDefinitions{{Name: "host", DataType: timeseries.String,
-		Role: timeseries.RoleTag, OutputPosition: 1}},
-	Values: timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.Float64,
-		Role: timeseries.RoleValue, OutputPosition: 2}},
+	Timestamp: timeseries.FieldDefinition{
+		Name: "time", DataType: timeseries.DateTimeUnixMilli,
+		Role: timeseries.RoleTimestamp,
+	},
+	Tags: timeseries.FieldDefinitions{{
+		Name: "host", DataType: timeseries.String,
+		Role: timeseries.RoleTag, OutputPosition: 1,
+	}},
+	Values: timeseries.FieldDefinitions{{
+		Name: "value", DataType: timeseries.Float64,
+		Role: timeseries.RoleValue, OutputPosition: 2,
+	}},
 }
 
 var (
@@ -51,8 +57,10 @@ var (
 
 func newTSVDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 	// decodes "time\thost\tvalue" rows that may arrive in any order
-	b := dataset.NewBuilder(trq, dataset.BuilderOptions{Fields: rowFields, SeriesName: "tsv",
-		QueryStatement: trq.Statement, Duplicates: dataset.DuplicatesError})
+	b := dataset.NewBuilder(trq, dataset.BuilderOptions{
+		Fields: rowFields, SeriesName: "tsv",
+		QueryStatement: trq.Statement, Duplicates: dataset.DuplicatesError,
+	})
 	var header bool
 	var cols [][]byte
 	onLine := func(line []byte) error {
@@ -92,8 +100,10 @@ func newTSVDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 func newMatrixDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 	// decodes a Prometheus-style matrix, one series at a time
 	b := dataset.NewBuilder(trq, dataset.BuilderOptions{Duplicates: dataset.DuplicatesError})
-	valueFields := timeseries.FieldDefinitions{{Name: "value", DataType: timeseries.Float64,
-		Role: timeseries.RoleValue}}
+	valueFields := timeseries.FieldDefinitions{{
+		Name: "value", DataType: timeseries.Float64,
+		Role: timeseries.RoleValue,
+	}}
 	var status string
 	series := func(dec *jsontext.Decoder) error {
 		defer b.EndSeries()
@@ -172,8 +182,10 @@ func newMatrixDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 func newRowsDecoder(trq *timeseries.TimeRangeQuery) (stream.Decoder, error) {
 	// decodes {"rows":[[time,host,value],...],"total":n} rows that may arrive in
 	// any order, checking the trailing total once all rows are read
-	b := dataset.NewBuilder(trq, dataset.BuilderOptions{Fields: rowFields, SeriesName: "rows",
-		TagString: stream.JSONTagString, SortSeries: true})
+	b := dataset.NewBuilder(trq, dataset.BuilderOptions{
+		Fields: rowFields, SeriesName: "rows",
+		TagString: stream.JSONTagString, SortSeries: true,
+	})
 	var count, total int
 	walk := func(dec *jsontext.Decoder) error {
 		return stream.Object(dec, func(key string) error {

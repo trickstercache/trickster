@@ -54,8 +54,10 @@ func FuzzAdjustRange(f *testing.F) {
 		if start < 1e8 || start >= 1e10-1e7 || span < 0 || span > 1e7 || step <= 0 || step > 1e5 {
 			return
 		}
-		v := url.Values{"start": {strconv.FormatInt(start, 10)}, "end": {strconv.FormatInt(start+span, 10)},
-			"step": {strconv.FormatInt(step, 10)}}
+		v := url.Values{
+			"start": {strconv.FormatInt(start, 10)}, "end": {strconv.FormatInt(start+span, 10)},
+			"step": {strconv.FormatInt(step, 10)},
+		}
 		changed, ok := c.adjustRange(v)
 		if !ok {
 			t.Fatalf("a valid range was refused: %v", v)
@@ -79,8 +81,10 @@ func FuzzAdjustRange(f *testing.F) {
 // FuzzClassify checks that classification never panics, relays what doesn't parse, and never
 // delta caches an expression holding a function that depends on the whole range.
 func FuzzClassify(f *testing.F) {
-	for _, s := range []string{"rate(m[5m])", "range_avg(m)", "now()", "sum(", "WITH (x = m) x",
-		`topk_avg(1, m) by (a)`, "m @ start()", "sum(m) limit 2"} {
+	for _, s := range []string{
+		"rate(m[5m])", "range_avg(m)", "now()", "sum(", "WITH (x = m) x",
+		`topk_avg(1, m) by (a)`, "m @ start()", "sum(m) limit 2",
+	} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, q string) {

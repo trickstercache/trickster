@@ -236,7 +236,10 @@ func TestTagsAppendJSONMatchesMarshal(t *testing.T) {
 		large["k"+strconv.Itoa(i)] = "v<" + strconv.Itoa(i) + ">"
 	}
 	for _, tags := range []Tags{
-		nil, {}, {"a": "b"}, large,
+		nil,
+		{},
+		{"a": "b"},
+		large,
 		{"__name__": "up", "a<b>&c": "q\"uo\\te\n\t\x01", "u": "é 😀", "": ""},
 	} {
 		want, err := json.Marshal(map[string]string(tags))

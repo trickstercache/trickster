@@ -450,8 +450,10 @@ acme:
 		t.Fatal(err)
 	}
 	out := conf.SanitizedString()
-	for _, private := range []string{"redis.private.example", "hunter2", "ops@private.example",
-		"ns.private.example", "ZPRIVATE", "ask.private.example", "edge-private"} {
+	for _, private := range []string{
+		"redis.private.example", "hunter2", "ops@private.example",
+		"ns.private.example", "ZPRIVATE", "ask.private.example", "edge-private",
+	} {
 		if strings.Contains(out, private) {
 			t.Errorf("sanitized output contains %q", private)
 		}

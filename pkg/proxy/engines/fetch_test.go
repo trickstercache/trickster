@@ -80,8 +80,10 @@ func fetchWith(t *testing.T, limit, status int, header http.Header, body io.Read
 		if header == nil {
 			header = http.Header{}
 		}
-		return &http.Response{StatusCode: status, Status: http.StatusText(status), Header: header, Body: tb,
-			ContentLength: -1, Request: req}, nil
+		return &http.Response{
+			StatusCode: status, Status: http.StatusText(status), Header: header, Body: tb,
+			ContentLength: -1, Request: req,
+		}, nil
 	})}
 	f, err := newProxyRequest(r, nil).fetchDecoded(decode)
 	return f, tb, rsc, err
