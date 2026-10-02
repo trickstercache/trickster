@@ -283,6 +283,22 @@ TRICKSTER_AWS_TEST=1 TRICKSTER_AWS_PROFILE=default TRICKSTER_CW_METRIC=ConsumedR
 
 ### Notes
 
+- Trickster signs with its own credentials; a client's signature cannot be
+  passed through, because Trickster rewrites requests (delta fetches change
+  `start` and `end`) and AWS ties each signature to the host it was made
+  for. A backend with a `sigv4` block therefore drops the SigV4 fields a
+  client sends (`Authorization` when it holds a SigV4 signature,
+  `X-Amz-Date`, `X-Amz-Security-Token` and `X-Amz-Content-Sha256`) before
+  caching or forwarding the request. Other `Authorization` values, such as
+  basic auth for Trickster's own authenticators, are kept. When pointing
+  Grafana at Trickster, turn off the data source's **SigV4 auth**; it is
+  ignored either way.
+- Anyone who can reach a `sigv4` backend reads with Trickster's IAM
+  identity, within the paths the backend serves. Give that identity only
+  the read permissions listed above, and limit who can reach Trickster with
+  network policy or one of Trickster's authenticators. Serve different
+  accounts or roles from separate backends, each with its own `role_arn`;
+  cache entries are never shared between backends.
 - SigV4 signs a hash of the request body, so Trickster buffers a request
   body in order to sign it. This applies only to backends with a `sigv4`
   block.

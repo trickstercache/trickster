@@ -27,6 +27,7 @@ import (
 	"testing"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -1624,5 +1625,56 @@ func TestRouteUpgrades(t *testing.T) {
 	upgrade(routeUpgrades(virtual(providers.ALB, names.MechanismFR), passthrough, next))
 	if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") != "" {
 		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
+	}
+}
+
+// A backend that signs for itself drops a client's SigV4 signature before its handlers see it.
+func TestSigV4BackendStripsClientSignature(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	for _, signs := range []bool{true, false} {
+		conf, err := config.Load([]string{
+			"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		oo := conf.Backends["default"]
+		if signs {
+			oo.SigV4 = &taws.Options{Region: "us-east-1", AccessKey: "AKIATEST", SecretKey: "s"}
+		}
+		rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+
+		var seen http.Header
+		capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.Header.Clone()
+			w.WriteHeader(http.StatusOK)
+		})
+		p := po.New()
+		p.Path = "/"
+		p.HandlerName = "capture"
+		p.Methods = []string{http.MethodGet}
+		p.MatchType, p.MatchTypeName = matching.PathMatchTypePrefix, matching.PathMatchNamePrefix
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		oo.Paths = po.List{p}
+		rtr := lm.NewRouter()
+		RegisterPathRoutes(rtr, conf, handlers.Lookup{"capture": capture}, rpc, oo, nil, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/default/api/v1/query", nil)
+		req.Header.Set(headers.NameAuthorization, "AWS4-HMAC-SHA256 Credential=ASIAGRAFANA/x, Signature=y")
+		req.Header.Set(headers.NameXAmzSecurityToken, "grafana-token")
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("signs=%v: status %d", signs, w.Code)
+		}
+		auth, token := seen.Get(headers.NameAuthorization), seen.Get(headers.NameXAmzSecurityToken)
+		if signs && (auth != "" || token != "") {
+			t.Fatalf("signing backend kept the client signature: %q %q", auth, token)
+		}
+		if !signs && (auth == "" || token != "grafana-token") {
+			t.Fatalf("non-signing backend changed the client headers: %q %q", auth, token)
+		}
 	}
 }
