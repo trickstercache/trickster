@@ -40,8 +40,10 @@ func TestSessionZoneAnalysis(t *testing.T) {
 		{"SELECT toStartOfHour(ts) AS t, count() AS c FROM e WHERE ts >= '2023-11-14 22:00:00' AND ts < '2023-11-14 23:00:00' GROUP BY t", true, true},
 		{"SELECT toStartOfHour(ts) AS t, count() AS c FROM e WHERE ts >= toDateTime64('2023-11-14 22:00:00', 3, 'UTC') " +
 			"AND ts < toDateTime64('2023-11-14 23:00:00', 3, 'UTC') GROUP BY t", false, false},
-		{"SELECT toStartOfHour(ts) AS t, count() AS c" + from + " AND other > toDateTime('2024-01-01 00:00:00', 'Asia/Tokyo') GROUP BY t",
-			false, false},
+		{
+			"SELECT toStartOfHour(ts) AS t, count() AS c" + from + " AND other > toDateTime('2024-01-01 00:00:00', 'Asia/Tokyo') GROUP BY t",
+			false, false,
+		},
 	} {
 		analysis := NewAnalyzer(Options{}).Analyze(c.query, time.Unix(1_700_010_000, 0))
 		if analysis.Plan == nil {
@@ -57,8 +59,10 @@ func TestSessionZoneAnalysis(t *testing.T) {
 		time.Unix(1_700_010_000, 0)); a.Plan != nil {
 		t.Error("a DateTime64 bound in another zone was analyzed")
 	}
-	for name, want := range map[string]bool{"toStartOfDay": true, "TODATE": true, "formatDateTime": true,
-		"fromUnixTimestamp64Milli": true, "toUInt32": false, "count": false, "toDateTime": false} {
+	for name, want := range map[string]bool{
+		"toStartOfDay": true, "TODATE": true, "formatDateTime": true,
+		"fromUnixTimestamp64Milli": true, "toUInt32": false, "count": false, "toDateTime": false,
+	} {
 		if zoneFunction(name) != want {
 			t.Errorf("%s: %v", name, !want)
 		}

@@ -41,11 +41,23 @@ const (
 	pgwireSubsystem     = "pgwire"
 	graphiteSubsystem   = providers.Graphite
 	druidSubsystem      = providers.Druid
+	vmSubsystem         = providers.VictoriaMetrics
 	tlsSubsystem        = "tls"
+	acmeSubsystem       = "acme"
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
 	stepAlignSubsystem  = "step_alignment"
 	geoSubsystem        = "geo"
+	ipACLSubsystem      = "ip_acl"
+)
+
+// IP access list scopes and verdicts. reject and drop are both deny.
+const (
+	IPACLScopeListener = "listener"
+	IPACLScopeBackend  = "backend"
+	IPACLScopePath     = "path"
+	ipACLVerdictAllow  = "allow"
+	ipACLVerdictDeny   = "deny"
 )
 
 // Default histogram buckets used by trickster
@@ -54,6 +66,18 @@ var (
 )
 
 var (
+	// IPACLDecisions counts allow and deny decisions for an attached access list.
+	// The list name, scope and verdict are the only labels.
+	IPACLDecisions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: ipACLSubsystem,
+			Name:      "decisions_total",
+			Help:      "Count of IP access list decisions by list, scope and verdict.",
+		},
+		[]string{keys.IP_ACL, keys.Scope, keys.Verdict},
+	)
+
 	// AccessLogDroppedLines counts access and error log lines that could not be written
 	AccessLogDroppedLines = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -85,6 +109,28 @@ var (
 			Help:      "Count of requests mirrored to another backend, sent or dropped at the in-flight bound",
 		},
 		[]string{keys.Backend_Name, keys.Mirror_Backend, keys.Result},
+	)
+
+	// ProxySigV4Events counts SigV4 signing failures and requests resent with refreshed credentials
+	ProxySigV4Events = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "sigv4_events_total",
+			Help:      "Count of SigV4 signing failures and of requests resent after the origin rejected expiring credentials",
+		},
+		[]string{keys.Backend_Name, keys.Event},
+	)
+
+	// ProxyTruncatedResponses counts time series fetches the origin truncated, which are proxied uncached
+	ProxyTruncatedResponses = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "truncated_responses_total",
+			Help:      "Count of time series fetches the origin truncated at its series limit, which are proxied rather than cached",
+		},
+		[]string{keys.Backend_Name},
 	)
 
 	// BuildInfo is a Gauge representing the Trickster binary build information of the running server instance
@@ -658,6 +704,18 @@ var (
 		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
 	)
 
+	// VictoriaMetricsQueryAnalysis counts the cache paths chosen for MetricsQL API requests, using
+	// bounded mode and reason labels.
+	VictoriaMetricsQueryAnalysis = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: vmSubsystem,
+			Name:      "query_analysis_total",
+			Help:      "Count of MetricsQL API request cache-eligibility classifications.",
+		},
+		[]string{keys.Backend_Name, keys.Cache_Mode, keys.Reason},
+	)
+
 	// DruidQueryRewriteFailures counts failures to render a native Druid query
 	// for a cache-miss extent.
 	DruidQueryRewriteFailures = prometheus.NewCounterVec(
@@ -1139,6 +1197,70 @@ var (
 		[]string{keys.Listener},
 	)
 
+	// ACMEOrdersTotal counts first-time ACME certificate orders by issuer and result
+	ACMEOrdersTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "orders_total",
+			Help:      "Count of first-time ACME certificate orders, by issuer and result.",
+		},
+		[]string{keys.Issuer, keys.Result},
+	)
+
+	// ACMERenewalsTotal counts ACME certificate renewals by issuer and result
+	ACMERenewalsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "renewals_total",
+			Help:      "Count of ACME certificate renewals, by issuer and result.",
+		},
+		[]string{keys.Issuer, keys.Result},
+	)
+
+	// ACMEChallengeRequestsTotal counts ACME challenge requests answered or refused by listeners
+	ACMEChallengeRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "challenge_requests_total",
+			Help:      "Count of ACME challenge requests received by listeners, by challenge type and result.",
+		},
+		[]string{keys.Type, keys.Result},
+	)
+
+	// ACMEOnDemandDecisionsTotal counts on-demand issuance decisions by result
+	ACMEOnDemandDecisionsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "on_demand_decisions_total",
+			Help:      "Count of on-demand ACME issuance decisions, by result.",
+		},
+		[]string{keys.Result},
+	)
+
+	// ACMEStartupWaitSeconds is how long startup readiness waited for missing certificates
+	ACMEStartupWaitSeconds = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "startup_wait_seconds",
+			Help:      "Seconds startup readiness was held waiting for missing ACME certificates.",
+		},
+	)
+
+	// ACMEStartupWaitTimeoutsTotal counts startup waits that ended before every certificate was issued
+	ACMEStartupWaitTimeoutsTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: acmeSubsystem,
+			Name:      "startup_wait_timeouts_total",
+			Help:      "Count of startup readiness waits that timed out before every ACME certificate was issued.",
+		},
+	)
+
 	// ALBPoolFloorReset flags ALB pools whose healthy_floor was reset to 0 at
 	// startup because one or more pool members have no health check and could
 	// never reach the configured floor (>= Passing), which would otherwise
@@ -1166,11 +1288,41 @@ var (
 	)
 )
 
+// IPACLDecision is the allow and deny counters for one attachment, resolved when
+// the attachment is built. A nil pointer records nothing.
+type IPACLDecision struct {
+	Allow prometheus.Counter
+	Deny  prometheus.Counter
+}
+
+// NewIPACLDecision resolves the two verdict counters for one list and scope.
+func NewIPACLDecision(name, scope string) *IPACLDecision {
+	return &IPACLDecision{
+		Allow: IPACLDecisions.WithLabelValues(name, scope, ipACLVerdictAllow),
+		Deny:  IPACLDecisions.WithLabelValues(name, scope, ipACLVerdictDeny),
+	}
+}
+
+// Observe records one decision. allowed is the allow verdict; every denial is deny.
+func (d *IPACLDecision) Observe(allowed bool) {
+	if d == nil {
+		return
+	}
+	if allowed {
+		d.Allow.Inc()
+		return
+	}
+	d.Deny.Inc()
+}
+
 func init() {
 	// Register Metrics
+	prometheus.MustRegister(IPACLDecisions)
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)
+	prometheus.MustRegister(ProxySigV4Events)
+	prometheus.MustRegister(ProxyTruncatedResponses)
 	prometheus.MustRegister(ProxyStreamConnections)
 	prometheus.MustRegister(ProxyStreamActiveConnections)
 	prometheus.MustRegister(ProxyStreamBytes)
@@ -1239,6 +1391,7 @@ func init() {
 	prometheus.MustRegister(SQLQueryRewriteFailures)
 	prometheus.MustRegister(DruidQueryAnalysis)
 	prometheus.MustRegister(DruidQueryRewriteFailures)
+	prometheus.MustRegister(VictoriaMetricsQueryAnalysis)
 	prometheus.MustRegister(SQLQueryCache)
 	prometheus.MustRegister(MySQLConnections)
 	prometheus.MustRegister(MySQLActiveConnections)
@@ -1261,6 +1414,12 @@ func init() {
 	prometheus.MustRegister(TLSCertificateValidationFailures)
 	prometheus.MustRegister(TLSWatcherErrors)
 	prometheus.MustRegister(TLSCertificateStoreSize)
+	prometheus.MustRegister(ACMEOrdersTotal)
+	prometheus.MustRegister(ACMERenewalsTotal)
+	prometheus.MustRegister(ACMEChallengeRequestsTotal)
+	prometheus.MustRegister(ACMEOnDemandDecisionsTotal)
+	prometheus.MustRegister(ACMEStartupWaitSeconds)
+	prometheus.MustRegister(ACMEStartupWaitTimeoutsTotal)
 }
 
 // Handler returns the http handler for the listener
@@ -1292,6 +1451,7 @@ var backendSeriesVecs = []partialDeleter{
 	SQLQueryRewriteFailures,
 	DruidQueryAnalysis,
 	DruidQueryRewriteFailures,
+	VictoriaMetricsQueryAnalysis,
 	SQLQueryCache,
 	MySQLConnections,
 	MySQLActiveConnections,

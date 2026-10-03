@@ -43,8 +43,10 @@ import (
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -67,6 +69,8 @@ type Config struct {
 	Frontend *fropt.Options `yaml:"frontend,omitempty"`
 	// Listeners maps inbound listener names to their configurations.
 	Listeners listener.Lookup `yaml:"listeners,omitempty"`
+	// IPACLs maps access-list names to their definitions.
+	IPACLs ipacl.Lookup `yaml:"ip_acls,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// AccessLog is the default access and error log configuration, inherited by
@@ -94,6 +98,8 @@ type Config struct {
 	// Kubernetes configures the Kubernetes Gateway/Ingress controller. The
 	// controller does not exist unless this section is present.
 	Kubernetes *kubecfg.Options `yaml:"kubernetes,omitempty"`
+	// ACME configures automatic certificate issuance and renewal for backends that opt in
+	ACME *acmeopts.Options `yaml:"acme,omitempty"`
 
 	// Flags contains a compiled version of the CLI flags
 	Flags *Flags `yaml:"-"`
@@ -412,7 +418,12 @@ func (c *Config) Clone() *Config {
 
 	nc.GeoLocators = c.GeoLocators.Clone()
 	nc.GeoACLs = c.GeoACLs.Clone()
+	if len(c.IPACLs) > 0 {
+		nc.IPACLs = c.IPACLs.Clone()
+	}
+
 	nc.Kubernetes = c.Kubernetes.Clone()
+	nc.ACME = c.ACME.Clone()
 
 	return nc
 }
@@ -515,6 +526,9 @@ func (c *Config) String() string {
 		if v != nil && cp.Caches[k].Redis != nil && cp.Caches[k].Redis.Password != "" {
 			cp.Caches[k].Redis.Password = "*****"
 		}
+	}
+	if r := cp.ACME.RedisConnection(); r != nil && r.Password != "" {
+		r.Password = "*****"
 	}
 
 	bytes, err := yamlencoding.Marshal(cp)

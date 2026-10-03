@@ -217,8 +217,10 @@ func TestParseSQLTime(t *testing.T) {
 			t.Errorf("%q: got ok %t", in, ok)
 		}
 	}
-	for in, want := range map[string]bool{"2026-09-30": true, "2026-9-30": false, "2026-09-31": false,
-		"2026-09-30 ": false, "2026/09/30": false} {
+	for in, want := range map[string]bool{
+		"2026-09-30": true, "2026-9-30": false, "2026-09-31": false,
+		"2026-09-30 ": false, "2026/09/30": false,
+	} {
 		if _, ok := ParseSQLDate([]byte(in)); ok != want {
 			t.Errorf("%q: got ok %t", in, ok)
 		}
@@ -267,8 +269,10 @@ func checkAppendCanonicalTime(t *testing.T, e Epoch) {
 		}
 	}
 	// the layouts Epoch.AppendFormat writes without a time.Time
-	for _, to := range []timeseries.FieldDataType{timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL,
-		timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano} {
+	for _, to := range []timeseries.FieldDataType{
+		timeseries.DateTimeSQL, timeseries.DateSQL, timeseries.TimeSQL,
+		timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano,
+	} {
 		for _, quote := range []bool{false, true} {
 			want := AppendTime(nil, time.Unix(0, int64(e)), to, quote)
 			if got := e.AppendFormat(nil, to, quote); string(got) != string(want) {
@@ -279,8 +283,10 @@ func checkAppendCanonicalTime(t *testing.T, e Epoch) {
 }
 
 func TestAppendCanonicalTime(t *testing.T) {
-	for _, e := range []Epoch{0, 1, -1, 999999999, -999999999, 1e9, -1e9, 1577836800123456789, 1577836800100000000,
-		math.MaxInt64, math.MinInt64, 253402300799999999999 % math.MaxInt64, -62135596800000000000 % math.MaxInt64} {
+	for _, e := range []Epoch{
+		0, 1, -1, 999999999, -999999999, 1e9, -1e9, 1577836800123456789, 1577836800100000000,
+		math.MaxInt64, math.MinInt64, 253402300799999999999 % math.MaxInt64, -62135596800000000000 % math.MaxInt64,
+	} {
 		checkAppendCanonicalTime(t, e)
 	}
 	rng := weaktest.NewRand(10, 10)

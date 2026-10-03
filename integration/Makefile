@@ -10,8 +10,8 @@ developer-stop:
 developer-delete:
 	@$(MAKE) -C .. developer-delete
 
-# integration-start/stop also toggle the integration-only containers
-# (coredns) that stay commented out of the compose file for developers
+# integration-start uses the integration compose profile, which adds the
+# integration-only containers (coredns) to every TSDB backend
 integration-start:
 	@$(MAKE) -C .. integration-start
 

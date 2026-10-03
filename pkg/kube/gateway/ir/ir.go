@@ -80,6 +80,12 @@ type ConfiguredNames struct {
 	// a stream route needs
 	GeoACLs       sets.Set[string]
 	StreamGeoACLs sets.Set[string]
+	// IPACLs are the access lists generated backends may name. A peer list or a
+	// drop list is left out: a generated backend cannot use either.
+	IPACLs sets.Set[string]
+	// DefinedIPACLs is every configured access list, eligible or not. A class
+	// parameter uses it to tell a peer or drop list from a name that is missing.
+	DefinedIPACLs sets.Set[string]
 }
 
 // Event reasons a Problem may carry; a Problem naming none is reported as Rejected
@@ -598,6 +604,9 @@ type Policy struct {
 	// GeoACLName names the configured geo ACL that gates the backend a route attaches to; like the
 	// names above, only the configuration or a class's parameters set it
 	GeoACLName string `json:"geo_acl_name,omitempty"`
+	// IPACLName is the access list every backend under the policy uses. Only a
+	// class's parameters set it. An empty name leaves a less specific policy's.
+	IPACLName string `json:"ip_acl_name,omitempty"`
 	// HealthMode is the health mode of generated discovery-backed ALBs
 	HealthMode string `json:"health_mode,omitempty"`
 	// LoadBalancing is the mechanism that spreads traffic across a Service's endpoints in the
@@ -652,6 +661,7 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.ReqRewriterName, o.ReqRewriterName)
 	overlayString(&out.AuthenticatorName, o.AuthenticatorName)
 	overlayString(&out.GeoACLName, o.GeoACLName)
+	overlayString(&out.IPACLName, o.IPACLName)
 	overlayString(&out.HealthMode, o.HealthMode)
 	overlayString(&out.LoadBalancing, o.LoadBalancing)
 	overlayString(&out.LoadBalancingKey, o.LoadBalancingKey)

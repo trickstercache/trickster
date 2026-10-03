@@ -208,3 +208,83 @@ func TestGatewayKind(t *testing.T) {
 		require.Equal(t, before, after, "a certificate rotation must not reload the configuration")
 	})
 }
+
+// TestGatewayIPACLKind serves acl.example.com through a second GatewayClass whose
+// parameters name deny-clients. The shared HTTP listener still serves shop.example.com.
+func TestGatewayIPACLKind(t *testing.T) {
+	skipUnlessKind(t)
+	waitForTrickster(t, gatewayMetricsAddr)
+
+	const (
+		params = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-acl-params
+  namespace: trickster-it
+data:
+  ip_acl_name: deny-clients
+`
+		class = `apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster-acl
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: trickster-acl-params
+    namespace: trickster-it
+`
+		gateway = `apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: acl
+  namespace: trickster-it
+spec:
+  gatewayClassName: trickster-acl
+  listeners:
+    - name: http
+      port: 9080
+      protocol: HTTP
+      hostname: acl.example.com
+      allowedRoutes:
+        namespaces:
+          from: Same
+`
+		route = `apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: acl
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: acl
+      sectionName: http
+  hostnames:
+    - acl.example.com
+  rules:
+    - backendRefs:
+        - name: webecho
+          port: 80
+`
+	)
+	applyKind(t, params)
+	applyKind(t, class)
+	applyKind(t, gateway)
+	applyKind(t, route)
+	t.Cleanup(func() {
+		deleteKind(t, route)
+		deleteKind(t, gateway)
+		deleteKind(t, class)
+		deleteKind(t, params)
+	})
+
+	waitRoute(t, gatewayHTTPAddr, "shop.example.com", "/", http.StatusOK, 2*time.Minute)
+	waitRoute(t, gatewayHTTPAddr, "acl.example.com", "/", http.StatusForbidden, 2*time.Minute)
+
+	resp, body := hostGet(t, gatewayHTTPAddr, "shop.example.com", "/")
+	require.Equal(t, http.StatusOK, resp.StatusCode, body)
+	resp, body = hostGet(t, gatewayHTTPAddr, "acl.example.com", "/")
+	require.Equal(t, http.StatusForbidden, resp.StatusCode, body)
+}

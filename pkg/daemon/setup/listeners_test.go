@@ -49,6 +49,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
@@ -191,6 +192,19 @@ func TestListenerNeedsRestart(t *testing.T) {
 		t.Error("connection limit change should restart a listener")
 	}
 
+	for name, change := range map[string]func(*listenerconfig.Options){
+		"read_timeout":     func(o *listenerconfig.Options) { o.ReadTimeout++ },
+		"idle_timeout":     func(o *listenerconfig.Options) { o.IdleTimeout++ },
+		"max_header_bytes": func(o *listenerconfig.Options) { o.MaxHeaderBytes++ },
+	} {
+		current = old
+		current.options = o.Clone()
+		change(current.options)
+		if !listenerNeedsRestart(old, current) {
+			t.Errorf("%s change should restart a listener", name)
+		}
+	}
+
 	current = old
 	current.options = o.Clone()
 	current.options.TrustedProxies = []string{"10.0.0.0/8"}
@@ -206,6 +220,28 @@ func TestListenerNeedsRestart(t *testing.T) {
 	current.options.TrustedProxies = append(current.options.TrustedProxies, "192.0.2.1")
 	if !listenerNeedsRestart(old, current) {
 		t.Error("trusted proxy change with the PROXY protocol should restart a listener")
+	}
+}
+
+func TestServerLimits(t *testing.T) {
+	const maxHeaderBytes, readTimeout = 16384, 30 * time.Second
+	o := listenerconfig.New("custom")
+	o.ReadTimeout = timeconv.Duration(readTimeout)
+	o.MaxHeaderBytes = maxHeaderBytes
+	got := serverLimits(o)
+	want := listener.ServerLimits{
+		ReadHeaderTimeout: time.Duration(o.ReadHeaderTimeout),
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       time.Duration(listenerconfig.DefaultIdleTimeout),
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
+	if got != want {
+		t.Errorf("serverLimits = %+v; want %+v", got, want)
+	}
+	// 0 disables the idle timeout rather than falling back to the read timeout
+	o.IdleTimeout = 0
+	if got := serverLimits(o); got.IdleTimeout != listener.NoIdleTimeout {
+		t.Errorf("idle timeout = %v; want %v", got.IdleTimeout, listener.NoIdleTimeout)
 	}
 }
 
@@ -807,6 +843,8 @@ func TestDesiredListenersWrapDefaultAccessLog(t *testing.T) {
 	for _, name := range []string{listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics} {
 		c.Listeners[name].Active = true
 		c.Listeners[name].ListenPort = 1
+		// with path normalization off, only the access log can wrap a router
+		c.Listeners[name].PathNormalization = &pno.Options{DotSegments: pno.DotSegmentsOff}
 	}
 	routerLogger := routing.RouterAccessLogger(c)
 	if routerLogger == nil {
@@ -832,6 +870,34 @@ func TestDesiredListenersWrapDefaultAccessLog(t *testing.T) {
 	got = desiredListeners(c, routers, lm.NewRouter(), raw, nil, nil)
 	if got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router != http.Handler(raw) {
 		t.Error("router was wrapped without a default access logger")
+	}
+}
+
+func TestDesiredListenersNormalizePaths(t *testing.T) {
+	c := config.NewConfig()
+	c.Listeners[listenerconfig.DefaultFrontendName].Active = true
+	c.Listeners[listenerconfig.DefaultFrontendName].ListenPort = 1
+	raw := lm.NewRouter()
+	var seen string
+	raw.RegisterRoute("/admin/", nil, nil, matching.PathMatchTypePrefix,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
+	h := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)[listenerKey(
+		listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router
+	for target, want := range map[string]int{
+		"/public/../admin/x":     http.StatusNoContent,
+		"/public/%2e%2e/admin/x": http.StatusNoContent,
+		"/public//..%2fadmin/x":  http.StatusBadRequest,
+	} {
+		seen = ""
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		if w.Code != want || (want == http.StatusNoContent && seen != "/admin/x") {
+			t.Errorf("%s: status %d, routed as %q; want %d", target, w.Code, seen, want)
+		}
 	}
 }
 

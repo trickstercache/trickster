@@ -38,6 +38,7 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
+	vmo "github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -53,6 +54,7 @@ import (
 	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
@@ -205,6 +207,8 @@ type Options struct {
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
 	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
+	// VictoriaMetrics holds options specific to victoriametrics backends
+	VictoriaMetrics *vmo.Options `yaml:"victoriametrics,omitempty"`
 	// Static holds options specific to static file server backends, which require it
 	Static *so.Options `yaml:"static,omitempty"`
 
@@ -252,6 +256,9 @@ type Options struct {
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
 	// GeoACLName names the geo ACL that judges this Backend's clients by their location; a Path's replaces it
 	GeoACLName string `yaml:"geo_acl_name,omitempty"`
+	// IPACLName is the access list applied to this backend's routes. A path's
+	// ip_acl_name replaces it. The reference none is not valid on a backend.
+	IPACLName string `yaml:"ip_acl_name,omitempty"`
 	// SigV4 signs outbound requests to this backend's origin with AWS
 	// SigV4. It defaults to signing for Amazon Managed Service for
 	// Prometheus; set sigv4.service to sign for another AWS service.
@@ -312,6 +319,8 @@ type Options struct {
 	// GeoACLOptions is the geo ACL named by GeoACLName. Clones share it, so the ACL compiled into it when the
 	// configuration is applied reaches every copy, a discovered member's included.
 	GeoACLOptions *geoaclopts.Options `yaml:"-"`
+	// IPACL is the compiled list named by IPACLName.
+	IPACL *ipacl.List `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
@@ -322,6 +331,8 @@ type Options struct {
 	fastForwardDisableExplicit bool
 	// set when a backend sets a volatile window key and its backfill_tolerance counterpart
 	volatileWindowConflict, volatileWindowPointsConflict bool
+	// set when a backend sets any volatile window key, so a flavor default does not replace it
+	volatileWindowExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -415,6 +426,10 @@ func (o *Options) Clone() *Options {
 		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
+	if o.VictoriaMetrics != nil {
+		out.VictoriaMetrics = o.VictoriaMetrics.Clone()
+	}
+
 	if o.Postgres != nil {
 		out.Postgres = o.Postgres.Clone()
 	}
@@ -501,6 +516,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, NewErrInvalidTemplateProvider(o.Provider, o.Name)
 		}
 	}
+	if err := o.validatePrometheusFlavor(); err != nil {
+		return false, err
+	}
 	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
 		o.OriginURL == "" {
 		return false, NewErrMissingOriginURL(o.Name)
@@ -552,6 +570,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
+	if err := o.VictoriaMetrics.Validate(); err != nil {
+		return false, fmt.Errorf("backend %s: %w", o.Name, err)
+	}
 	if err := o.validateStatic(); err != nil {
 		return false, err
 	}
@@ -600,6 +621,7 @@ func (o *Options) validateStatic() error {
 		{"mysql", o.MySQL != nil},
 		{"graphite", o.Graphite != nil},
 		{"influxdb", o.InfluxDB != nil},
+		{"victoriametrics", o.VictoriaMetrics != nil},
 		{"sigv4", o.SigV4 != nil},
 		{"protocol", o.Protocol != ""},
 		{"h2c_prior_knowledge", o.H2CPriorKnowledge},
@@ -749,7 +771,7 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
-	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup,
+	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup, acls ipacl.Lookup,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
@@ -763,6 +785,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if o.AuthOptions, ok = a[o.AuthenticatorName]; !ok {
 				return NewErrInvalidAuthenticatorName(o.AuthenticatorName, o.Name)
 			}
+		}
+		if o.IPACLName != "" {
+			list, err := resolveIPACL(acls, o.IPACLName, o.Name)
+			if err != nil {
+				return err
+			}
+			o.IPACL = list
 		}
 		if o.ReqRewriterName != "" {
 			if _, ok = rwl[o.ReqRewriterName]; !ok {
@@ -780,6 +809,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 					return NewErrInvalidAuthenticatorName(p.AuthenticatorName,
 						o.Name+"/"+p.Path)
 				}
+			}
+			if p.IPACLName != reserved.ReferenceNone && p.IPACLName != "" {
+				list, err := resolveIPACL(acls, p.IPACLName, o.Name+"/"+p.Path)
+				if err != nil {
+					return err
+				}
+				p.IPACL = list
 			}
 			if p.ReqRewriterName != "" {
 				if _, ok = rwl[p.ReqRewriterName]; !ok {
@@ -844,6 +880,19 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 		}
 	}
 	return nil
+}
+
+// resolveIPACL returns the compiled list named by a backend or path reference.
+// An empty name is not a reference. peer is listener scope only.
+func resolveIPACL(acls ipacl.Lookup, name, where string) (*ipacl.List, error) {
+	def := acls[name]
+	if def == nil || def.Compiled == nil {
+		return nil, NewErrInvalidIPACLName(name, where)
+	}
+	if def.Compiled.Source() == ipacl.Peer {
+		return nil, NewErrIPACLSourcePeer(name, where)
+	}
+	return def.Compiled, nil
 }
 
 // ValidateDiscovery validates each discovery-backed ALB in the Lookup
@@ -967,6 +1016,7 @@ func (o *Options) Initialize(name string) error {
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
+	o.applyPrometheusFlavor()
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)
@@ -1156,6 +1206,8 @@ func (k renamedKeys) apply(o *Options) {
 	}
 	o.stepAlignmentExplicit = k.StepAlignment != nil
 	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
+	o.volatileWindowExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil ||
+		k.VolatileWindowPoints != nil || k.BackfillTolerancePoints != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.

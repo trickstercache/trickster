@@ -4,12 +4,6 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
 
 ## Timeline
 
-### Q1 2026
-
-- [x] Trickster v2.0 GA Release
-  - [x] Overhaul Documentation for Trickster 2.0
-  - [ ] Updated Grafana Dashboard for Trickster Metrics
-
 ### Q3 2026
 
 - [x] Trickster v2.1 Release
@@ -21,21 +15,27 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
   - [x] Support for Druid
   - [x] Kube Ingress/Gateway API support
   - [x] Support for HTTP/3 (QUIC) and improved HTTP/1.1 and HTTP/2 conformance
-  - [ ] More easily-importable Trickster packages by other projects
 
 ### Q4 2026
 
 - [ ] Trickster v2.2 Release
   - [x] Support for accelerating TimescaleDB
-  - [ ] Support for accelerating GreptimeDB
-  - [ ] Support for accelerating QuestDB
-  - [ ] Support Access Control Lists (ACLs) for IPv4 and IPv6
-  - [x] Support [Geo ACLs](./geo-acl.md) restricting backends and paths by client location
+  - [x] Support for accelerating GreptimeDB
+  - [x] Support for accelerating QuestDB
+  - [x] Support for accelerating VictoriaMetrics
+  - [x] Support Access Control Lists (ACLs) for IPv4 and IPv6
+  - [x] Support Geo ACLs (IP -> Location translation and restricting by location)
   - [ ] Support Rate Limiting w/ bucketing on configurable request attributes
   - [x] Support ALB Sticky Sessions
   - [x] Support L4 Load Balancing
+  - [x] Support HTTP `QUERY` Method
   - [ ] Support Media over Quick (MoQ) Relaying
-  - [ ] Improved support for accelerating distributed Mimir deployments
+  - [ ] Improved support for Time Series Merge on distributed Mimir and Thanos deployments
+
+### Ongoing
+
+- [ ] Updated Grafana Dashboard for Trickster Metrics
+- [ ] More easily-importable Trickster packages by other projects
 
 ## Get Involved
 

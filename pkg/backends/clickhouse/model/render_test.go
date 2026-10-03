@@ -120,8 +120,10 @@ func TestOutFieldClasses(t *testing.T) {
 }
 
 func TestFormatOptions(t *testing.T) {
-	o := NewFormatOptions(url.Values{SettingDateTimeOutput: {"ISO"}, SettingQuoteInt64: {"1"},
-		SettingQuoteDecimals: {"true"}, SettingQuoteDenormals: {"0"}}, nil)
+	o := NewFormatOptions(url.Values{
+		SettingDateTimeOutput: {"ISO"}, SettingQuoteInt64: {"1"},
+		SettingQuoteDecimals: {"true"}, SettingQuoteDenormals: {"0"},
+	}, nil)
 	require.Equal(t, FormatOptions{DateTimeFormat: DateTimeISO, QuoteInt64: true, QuoteDecimals: true}, o)
 	require.Equal(t, DateTimeUnix, NewFormatOptions(url.Values{SettingDateTimeOutput: {"unix_timestamp"}}, nil).DateTimeFormat)
 	require.Equal(t, "UTC", o.ZoneName())

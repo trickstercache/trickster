@@ -18,6 +18,7 @@ package routing
 
 import (
 	"bytes"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
@@ -955,6 +957,70 @@ func TestPassthroughLaneSelection(t *testing.T) {
 	}
 }
 
+func TestAuthenticatorRunsBeforeRewriters(t *testing.T) {
+	const user, password, host, path = "client", "client-password", "example.com", "/data"
+	const backendName, handlerName = "default", "capture"
+	logger.SetLogger(logging.NoopLogger())
+	conf, err := config.Load([]string{
+		"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oo := conf.Backends[backendName]
+	oo.Hosts = []string{host}
+	oo.AuthOptions = &autho.Options{
+		Name: "client-auth", Provider: basic.ID,
+		Users: configtypes.EnvStringMap{user: password},
+	}
+	if oo.AuthOptions.Authenticator, err = basic.New(map[string]any{"options": oo.AuthOptions}); err != nil {
+		t.Fatal(err)
+	}
+	rpc, _ := reverseproxycache.NewClient(backendName, oo, lm.NewRouter(), nil, nil, nil)
+	var seenAuth string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenAuth = r.Header.Get(headers.NameAuthorization)
+		w.WriteHeader(http.StatusOK)
+	})
+	injected := "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+password))
+	inject, err := rewriter.ParseRewriteList(rwopts.RewriteList{
+		[]string{"header", "set", headers.NameAuthorization, injected},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := po.New()
+	p.Path = path
+	p.HandlerName = handlerName
+	p.Methods = []string{http.MethodGet}
+	p.ReqRewriter = inject
+	if err := p.Initialize(""); err != nil {
+		t.Fatal(err)
+	}
+	oo.Paths = po.List{p}
+	rtr := lm.NewRouter()
+	RegisterPathRoutes(rtr, conf, handlers.Lookup{handlerName: capture}, rpc, oo, nil, nil)
+
+	// a credential only the rewriter adds must not authenticate the client
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	w := httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("rewriter-added credential: status %d; want %d", w.Code, http.StatusUnauthorized)
+	}
+	// the rewriter runs after authentication, so its header survives the authenticator's Sanitize
+	req = httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = host
+	req.SetBasicAuth(user, password)
+	w = httptest.NewRecorder()
+	rtr.ServeHTTP(w, req)
+	if w.Code != http.StatusOK || seenAuth != injected {
+		t.Fatalf("client credential: status %d, handler saw %q; want %d and the rewritten header",
+			w.Code, seenAuth, http.StatusOK)
+	}
+}
+
 func TestRegisterPathRoutesRegexCaptures(t *testing.T) {
 	logger.SetLogger(logging.NoopLogger())
 	conf, err := config.Load([]string{
@@ -1624,5 +1690,122 @@ func TestRouteUpgrades(t *testing.T) {
 	upgrade(routeUpgrades(virtual(providers.ALB, names.MechanismFR), passthrough, next))
 	if tookPassthrough || reached == nil || reached.Header.Get("Upgrade") != "" {
 		t.Error("a fanout ALB did not serve an upgrade request as a plain one")
+	}
+}
+
+// a configured path served by a provider handler takes that handler's QUERY translation, as
+// a kube-emitted path does when provider defaults are disabled
+func TestRegisterPathRoutesQueryAsPost(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	var relayed string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		relayed = r.Method
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer origin.Close()
+	conf, err := config.Load([]string{"-origin-url", origin.URL, "-provider", providers.Prometheus})
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := conf.Backends["default"]
+	o.Hosts = []string{"example.com"}
+	o.PathDefaultsDisabled = true
+	client, err := prometheus.NewClient("default", o, lm.NewRouter(), nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen string
+	capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.Method
+		w.WriteHeader(http.StatusOK)
+	})
+	hl := handlers.Lookup{"query": capture, providers.Proxy: capture}
+	newPath := func(path, handler string) *po.Options {
+		p := po.New()
+		p.Path = path
+		p.MatchTypeName = matching.PathMatchNameExact
+		p.HandlerName = handler
+		p.Methods = methods.QueryableMethods()
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	o.Paths = po.List{newPath("/prefix/api/v1/query", "query"), newPath("/relay", providers.Proxy)}
+	rtr := lm.NewRouter()
+	registerPathRoutes([]listenerRoute{{rtr, nil}}, conf, hl, client, o, nil, nil, nil)
+
+	serve := func(path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(methods.MethodQuery, path, strings.NewReader("query=up"))
+		req.Host = "example.com"
+		req.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		return w
+	}
+	w := serve("/prefix/api/v1/query")
+	if w.Code != http.StatusOK || seen != http.MethodPost {
+		t.Errorf("got %d %s; want the query handler to receive POST", w.Code, seen)
+	}
+	if got := w.Header().Get(headers.NameAcceptQuery); got != `"application/x-www-form-urlencoded"` {
+		t.Errorf("Accept-Query = %q", got)
+	}
+	// a passthrough relays QUERY as sent
+	if w = serve("/relay"); relayed != methods.MethodQuery {
+		t.Errorf("origin got %q; want the passthrough to relay QUERY", relayed)
+	}
+	if got := w.Header().Get(headers.NameAcceptQuery); got != "" {
+		t.Errorf("passthrough Accept-Query = %q; want none", got)
+	}
+}
+
+// A backend that signs for itself drops a client's SigV4 signature before its handlers see it.
+func TestSigV4BackendStripsClientSignature(t *testing.T) {
+	logger.SetLogger(logging.NoopLogger())
+	for _, signs := range []bool{true, false} {
+		conf, err := config.Load([]string{
+			"-origin-url", "http://1", "-provider", providers.ReverseProxyCacheShort,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		oo := conf.Backends["default"]
+		if signs {
+			oo.SigV4 = &taws.Options{Region: "us-east-1", AccessKey: "AKIATEST", SecretKey: "s"}
+		}
+		rpc, _ := reverseproxycache.NewClient("default", oo, lm.NewRouter(), nil, nil, nil)
+
+		var seen http.Header
+		capture := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.Header.Clone()
+			w.WriteHeader(http.StatusOK)
+		})
+		p := po.New()
+		p.Path = "/"
+		p.HandlerName = "capture"
+		p.Methods = []string{http.MethodGet}
+		p.MatchType, p.MatchTypeName = matching.PathMatchTypePrefix, matching.PathMatchNamePrefix
+		if err := p.Initialize(""); err != nil {
+			t.Fatal(err)
+		}
+		oo.Paths = po.List{p}
+		rtr := lm.NewRouter()
+		RegisterPathRoutes(rtr, conf, handlers.Lookup{"capture": capture}, rpc, oo, nil, nil)
+
+		req := httptest.NewRequest(http.MethodGet, "/default/api/v1/query", nil)
+		req.Header.Set(headers.NameAuthorization, "AWS4-HMAC-SHA256 Credential=ASIAGRAFANA/x, Signature=y")
+		req.Header.Set(headers.NameXAmzSecurityToken, "grafana-token")
+		w := httptest.NewRecorder()
+		rtr.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("signs=%v: status %d", signs, w.Code)
+		}
+		auth, token := seen.Get(headers.NameAuthorization), seen.Get(headers.NameXAmzSecurityToken)
+		if signs && (auth != "" || token != "") {
+			t.Fatalf("signing backend kept the client signature: %q %q", auth, token)
+		}
+		if !signs && (auth == "" || token != "grafana-token") {
+			t.Fatalf("non-signing backend changed the client headers: %q %q", auth, token)
+		}
 	}
 }

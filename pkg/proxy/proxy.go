@@ -31,6 +31,16 @@ const connectTimeout = time.Second * 10
 // NewHTTPClient returns an HTTP client configured to the specifications of the
 // running Trickster config.
 func NewHTTPClient(o *bo.Options) (*http.Client, error) {
+	s, err := NewSigner(o)
+	if err != nil {
+		return nil, err
+	}
+	return NewHTTPClientWithSigner(o, s)
+}
+
+// NewHTTPClientWithSigner is NewHTTPClient signing with s, so that one backend's clients share
+// one credential cache. A nil s sends requests unsigned.
+func NewHTTPClientWithSigner(o *bo.Options, s *taws.Signer) (*http.Client, error) {
 	if o == nil {
 		return nil, nil
 	}
@@ -81,12 +91,9 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 		},
 	}
 
-	if o.SigV4 != nil {
+	if s != nil {
 		inner, _ := client.Transport.(*http.Transport)
-		wrapped, err := taws.NewRoundTripper(o.SigV4, client.Transport)
-		if err != nil {
-			return nil, err
-		}
+		wrapped := taws.WrapTransport(s, client.Transport, sigV4Observer(o.Name))
 		// sigV4RoundTripper does not satisfy idleCloser; wrap to keep
 		// CloseIdleConnections reachable on reload.
 		client.Transport = &idleClosingRoundTripper{RoundTripper: wrapped, inner: inner}

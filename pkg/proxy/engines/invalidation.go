@@ -76,7 +76,7 @@ func InvalidateTargetURI(r *http.Request) {
 	}
 	o := rsc.BackendOptions
 	authed := r.Header.Get(headers.NameAuthorization) != ""
-	for _, m := range methods.CacheableHTTPMethods() {
+	for _, m := range methods.GetAndHead() {
 		cr := r.Clone(r.Context())
 		cr.Method = m
 		// the write's body is neither part of a read's cache key nor still

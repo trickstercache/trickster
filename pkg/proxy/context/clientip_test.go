@@ -30,13 +30,6 @@ func TestClientIP(t *testing.T) {
 	if got := ClientIP(ctx); got != ip {
 		t.Errorf("ClientIP = %q, want %q", got, ip)
 	}
-	if got := ClientIP(WithClientIPOf(context.Background(), ctx)); got != ip {
-		t.Errorf("copied ClientIP = %q, want %q", got, ip)
-	}
-	empty := context.Background()
-	if got := WithClientIPOf(empty, empty); got != empty {
-		t.Error("a context with no client IP to copy was wrapped")
-	}
 }
 
 func TestPeerTrusted(t *testing.T) {
@@ -50,9 +43,6 @@ func TestPeerTrusted(t *testing.T) {
 	ctx := WithResolvedClient(context.Background(), ip, true)
 	if !PeerTrusted(ctx) || ClientIP(ctx) != ip {
 		t.Error("the resolved client was not recorded")
-	}
-	if !PeerTrusted(WithClientIPOf(context.Background(), ctx)) {
-		t.Error("a copy lost whether its peer is trusted")
 	}
 	// recording the peer's trust costs nothing over recording the address
 	alone := testing.AllocsPerRun(100, func() { _ = WithClientIP(context.Background(), ip) })

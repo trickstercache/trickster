@@ -30,8 +30,10 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 	if !view.HasParts() {
 		t.Fatal("the view has no parts")
 	}
-	sqlPlan := &SQLQueryPlan{Plan: &sqlanalyzer.QueryPlan{OutputColumn: "__time",
-		GroupColumns: []string{"page"}, ValueColumns: []string{"count", "added"}}}
+	sqlPlan := &SQLQueryPlan{Plan: &sqlanalyzer.QueryPlan{
+		OutputColumn: "__time",
+		GroupColumns: []string{"page"}, ValueColumns: []string{"count", "added"},
+	}}
 	for _, plan := range []any{
 		&QueryPlan{queryType: queryTimeseries}, &QueryPlan{queryType: queryGroupBy, descending: true},
 		&QueryPlan{queryType: queryTopN}, sqlPlan,

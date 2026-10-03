@@ -45,7 +45,7 @@ func NamedMiddleware(name string, a types.Authenticator, next http.Handler) http
 			rsc.AuthResult.AuthenticatorName == name &&
 			rsc.AuthResult.Status != types.AuthObserved {
 			if rsc.AuthResult.Status != types.AuthSuccess {
-				failures.HandleUnauthorized(w, nil)
+				handleUnauthorized(w, rsc.AuthResult)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -55,22 +55,28 @@ func NamedMiddleware(name string, a types.Authenticator, next http.Handler) http
 		res, err := a.Authenticate(r)
 		if err != nil || res == nil || (res.Status != types.AuthSuccess &&
 			res.Status != types.AuthObserved) {
-			if res != nil && res.ResponseHeaders != nil {
-				for k, v := range res.ResponseHeaders {
-					w.Header().Set(k, v)
-				}
-			}
-			failures.HandleUnauthorized(w, nil)
+			handleUnauthorized(w, res)
 			return
 		}
 		// and cache the auth result to the request context
-		rsc := request.GetResources(r)
-		cached := *res
-		cached.AuthenticatorName = name
-		rsc.AuthResult = &cached
+		if rsc := request.GetResources(r); rsc != nil {
+			cached := *res
+			cached.AuthenticatorName = name
+			rsc.AuthResult = &cached
+		}
 		if res.Status == types.AuthSuccess {
 			a.Sanitize(r)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// handleUnauthorized responds 401 with any challenge headers the result carries.
+func handleUnauthorized(w http.ResponseWriter, res *types.AuthResult) {
+	if res != nil {
+		for k, v := range res.ResponseHeaders {
+			w.Header().Set(k, v)
+		}
+	}
+	failures.HandleUnauthorized(w, nil)
 }

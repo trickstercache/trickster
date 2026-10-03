@@ -290,6 +290,12 @@ func TestLogString(t *testing.T) {
 	if x != expected {
 		t.Errorf("expected %s got %s", expected, x)
 	}
+
+	expected = "{[" + NameSetCookie + ":" + redactedValue + "]}"
+	x = LogString(http.Header{NameSetCookie: {"session=secret"}})
+	if x != expected {
+		t.Errorf("expected %s got %s", expected, x)
+	}
 }
 
 func TestLookup(t *testing.T) {

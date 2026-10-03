@@ -290,6 +290,13 @@ func TestTranslateUnresolvedBackend(t *testing.T) {
 // baseConfig is a minimal file configuration the generated overlay is merged onto; it defines
 // the cache the annotation fixture names, since the controller cannot define one
 const baseConfig = `
+ip_acls:
+  office:
+    source: client_ip
+    action: reject
+    default: deny
+    allow:
+      - 192.0.2.0/24
 backends:
   default:
     provider: rp
@@ -325,19 +332,34 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 				model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
 					o.Defaults.RoutingMode = mode
 					o.Defaults.GeoACLName = overlayGeoACL
+					o.Defaults.IPACLName = "office"
 				})
 				overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
 				require.NoError(t, err)
+				require.Contains(t, string(overlay.Data), "ip_acl_name: office")
 				conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
 				require.NoError(t, err)
 				require.NoError(t, conf.Backends.Validate())
 				require.NoError(t, conf.Caches.Validate())
 				require.NoError(t, validate.Validate(conf))
+				requireResolvedOfficeACL(t, conf)
 				require.NoError(t, conf.Process())
 				require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
 			})
 		}
 	}
+}
+
+// requireResolvedOfficeACL reports that validation compiled the file's office
+// list onto at least one generated backend.
+func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
+	t.Helper()
+	for _, b := range conf.Backends {
+		if b != nil && b.IPACLName == "office" && b.IPACL != nil {
+			return
+		}
+	}
+	t.Fatal("generated config did not resolve ip acl office onto a backend")
 }
 
 func goldenFixtures(t *testing.T) []string {

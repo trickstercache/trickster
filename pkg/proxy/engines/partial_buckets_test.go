@@ -678,8 +678,10 @@ func TestPartialBucketFetchesThatCannotRunAreLeftOut(t *testing.T) {
 		r      *http.Request
 		client backends.TimeseriesBackend
 	}{
-		{"a panicking fetch", withTestResources(httptest.NewRequest(http.MethodGet, "/", nil)),
-			panickyPartials{&TestClient{}}},
+		{
+			"a panicking fetch", withTestResources(httptest.NewRequest(http.MethodGet, "/", nil)),
+			panickyPartials{&TestClient{}},
+		},
 		{"an unreadable body", withTestResources(httptest.NewRequest(http.MethodPost, "/",
 			iotest.ErrReader(errors.New("unreadable")))), &TestClient{}},
 		{"no resources", httptest.NewRequest(http.MethodGet, "/", nil), &TestClient{}},

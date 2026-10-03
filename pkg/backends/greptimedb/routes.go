@@ -48,6 +48,7 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 		// The exact route must not mask catch-all passthrough for other methods.
 		Path: "/v1/sql", HandlerName: "sql", Methods: methods.AllHTTPMethods(),
 		MatchType: matching.PathMatchTypeExact, MatchTypeName: matching.PathMatchNameExact,
+		QueryMediaTypes: []string{headers.ValueXFormURLEncoded},
 		CacheKeyParams:  []string{"sql", "db", "format", "epoch", "limit", "compression"},
 		CacheKeyHeaders: []string{"X-Greptime-Db-Name", "X-Greptime-Timezone", "X-Greptime-Auth"},
 	}}

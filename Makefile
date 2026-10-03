@@ -188,7 +188,7 @@ TEST_LINTERS := forbidigo,depguard,godox,goheader
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do \
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
 			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
 			-c ../../.golangci.yml ./...) || exit 1; \
@@ -257,7 +257,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -399,11 +399,37 @@ get-tools: get-msgpack
 get-msgpack:
 	$(GO) get -tool github.com/tinylib/msgp@$(shell go list -m github.com/tinylib/msgp | cut -d' ' -f2)
 
+# --- Developer environment ---------------------------------------------------
+# Each TSDB backend in the compose file has its own profile; services without a
+# profile (redis, grafana, prometheus, devorigin, jaeger) always start.
+# COMPOSE_PROFILES takes a comma-separated list, e.g. COMPOSE_PROFILES=mysql,clickhouse
+
+COMPOSE_ENV_DIR     := docs/developer/environment
+COREDNS_ZONES       := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
+COMPOSE_PROFILES    ?= all-providers
+# stop and delete act on every profile, so they reach whatever is running
+COMPOSE_ALL_PROFILES := *
+DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite
+DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
+
+# waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
+define wait_ready
+	@cd $(COMPOSE_ENV_DIR) && if COMPOSE_PROFILES='$(COMPOSE_PROFILES)' docker compose config --services | grep -qx '$(1)'; then \
+		echo "Waiting for $(1) to be ready..."; \
+		timeout $(3) sh -c 'until curl -sf "$(2)" >/dev/null 2>&1; do sleep 2; done'; \
+	fi
+endef
+
+.PHONY: developer-credentials
+developer-credentials:
+	@sh hack/developer-credentials.sh
+
 .PHONY: developer-start
-developer-start:
-	@cd docs/developer/environment && docker compose up -d
+developer-start: developer-credentials
+	@echo "Starting developer environment with profiles: $(COMPOSE_PROFILES)"
+	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_PROFILES)' docker compose up -d
 	@echo "Waiting for Redis to be ready..."
-	@cd docs/developer/environment && attempts=0; \
+	@cd $(COMPOSE_ENV_DIR) && attempts=0; \
 	while [ $$attempts -lt 30 ]; do \
 		response=$$(docker compose exec -T redis redis-cli ping 2>&1 || true); \
 		echo "PING -> $${response:-no response}"; \
@@ -412,93 +438,61 @@ developer-start:
 		sleep 1; \
 	done; \
 	echo "WARNING: timed out waiting for Redis readiness; continuing anyway"
-	@echo "Waiting for Prometheus to be ready..."
+	@echo "Waiting for prometheus to be ready..."
 	@timeout 120 sh -c 'until curl -sf http://127.0.0.1:9090/-/ready >/dev/null 2>&1; do sleep 2; done'
 	@# devorigin compiles on start, so its container runs well before it serves
 	@echo "Waiting for devorigin to be ready..."
 	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8482/metrics >/dev/null 2>&1; do sleep 2; done'
-	@echo "Waiting for Graphite to be ready..."
-	@timeout 120 sh -c 'until curl -sf "http://127.0.0.1:8081/metrics/find?query=carbon" >/dev/null 2>&1; do sleep 2; done'
-	@echo "Waiting for Druid to be ready..."
-	@timeout 180 sh -c 'until curl -sf http://127.0.0.1:8888/status/health >/dev/null 2>&1; do sleep 2; done'
-	
+	$(call wait_ready,graphite,http://127.0.0.1:8081/metrics/find?query=carbon,120)
+	$(call wait_ready,druid,http://127.0.0.1:8888/status/health,180)
+	$(call wait_ready,victoriametrics,http://127.0.0.1:8428/health,120)
+
+# developer-start-<profile> starts the always-on services plus that one TSDB backend
+.PHONY: $(DEVELOPER_START_TARGETS)
+$(DEVELOPER_START_TARGETS): developer-start-%:
+	@$(MAKE) developer-start COMPOSE_PROFILES=$*
+
 .PHONY: developer-stop
 developer-stop:
-	@cd docs/developer/environment && docker compose stop
+	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_ALL_PROFILES)' docker compose stop
 
+# --- Integration environment -------------------------------------------------
+# The integration profile is every TSDB backend plus the integration-only
+# services (e.g. coredns for the autodiscovery DNS tests).
 
-# --- Integration-only container toggling -------------------------------------
-# The compose file carries integration-only services (e.g. coredns for the
-# autodiscovery DNS tests) commented out between the
-# "-- INTEGRATION CONTAINERS BELOW --" / "-- ABOVE --" markers, so developer
-# workstations never run them. integration-start uncomments that section,
-# seeds the mutable CoreDNS zone directory, and brings the environment up;
-# integration-stop stops the environment and comments the section back out.
+INTEGRATION_PROFILE := integration
+# one-shot loaders no service waits on, so developer-start can return while they still load
+INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed questdb_seed \
+	victoriametrics_seed
 
-COMPOSE_ENV_DIR := docs/developer/environment
-COMPOSE_YML     := $(COMPOSE_ENV_DIR)/docker-compose.yml
-COREDNS_ZONES   := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
-# services defined only in the integration section of the compose file
-INTEGRATION_SERVICES := coredns
-
-.PHONY: integration-env-enable
-integration-env-enable:
-	@awk 'BEGIN{p=0} \
-		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
-		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
-		p==1 && /^#/{sub(/^#/,"");print;next} \
-		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
-		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
+.PHONY: integration-start
+integration-start:
 	@mkdir -p $(COREDNS_ZONES)
 	@cp -f $(COMPOSE_ENV_DIR)/docker-compose-data/coredns/trickster.test.db.seed \
 		$(COREDNS_ZONES)/trickster.test.db
-	@echo "integration containers enabled in $(COMPOSE_YML)"
-
-.PHONY: integration-env-disable
-integration-env-disable:
-	@awk 'BEGIN{p=0} \
-		/-- INTEGRATION CONTAINERS BELOW --/{p=1;print;next} \
-		/-- INTEGRATION CONTAINERS ABOVE --/{p=0;print;next} \
-		p==1 && !/^[[:space:]]*#/ && !/^[[:space:]]*$$/{print "#" $$0;next} \
-		{print}' $(COMPOSE_YML) > $(COMPOSE_YML).tmp \
-		&& mv $(COMPOSE_YML).tmp $(COMPOSE_YML)
-	@echo "integration containers disabled in $(COMPOSE_YML)"
-
-# one-shot loaders no service waits on, so developer-start can return while they still load
-INTEGRATION_SEEDERS := clickhouse_seed druid_seed greptimedb_seed influxdb2_seed mysql_seed timescaledb_seed
-
-.PHONY: integration-start
-integration-start: integration-env-enable developer-start
-	@cd $(COMPOSE_ENV_DIR) && for id in $$(docker compose ps -q --status running $(INTEGRATION_SEEDERS)); do \
+	@$(MAKE) developer-start COMPOSE_PROFILES=$(INTEGRATION_PROFILE)
+	@cd $(COMPOSE_ENV_DIR) && for id in $$(COMPOSE_PROFILES=$(INTEGRATION_PROFILE) docker compose ps -q --status running $(INTEGRATION_SEEDERS)); do \
 		echo "Waiting for seeder $$id to finish..."; \
 		status=$$(docker wait $$id); \
 		if [ "$$status" != 0 ]; then echo "seeder $$id failed (exit $$status)" >&2; exit 1; fi; \
 	done
 
 .PHONY: integration-stop
-integration-stop:
-	@$(MAKE) integration-env-enable >/dev/null
-	@# stop-and-remove the integration-only containers so a restart policy
-	@# cannot resurrect them on developer machines
-	@cd $(COMPOSE_ENV_DIR) && docker compose rm -sf $(INTEGRATION_SERVICES)
-	@$(MAKE) developer-stop
-	@$(MAKE) integration-env-disable
+integration-stop: developer-stop
 
 .PHONY: integration-delete
-integration-delete:
-	@$(MAKE) integration-env-enable >/dev/null
-	@$(MAKE) developer-delete
-	@$(MAKE) integration-env-disable
-
-# --- End Integration-only container toggling ---------------------------------
-
+integration-delete: developer-delete
 
 .PHONY: developer-delete
 developer-delete:
-	@cd docs/developer/environment && docker compose down -v --remove-orphans
+	@cd $(COMPOSE_ENV_DIR) && COMPOSE_PROFILES='$(COMPOSE_ALL_PROFILES)' docker compose down -v --remove-orphans
 
+# deletes every profile's containers and volumes, then starts COMPOSE_PROFILES;
+# sequential sub-makes keep make -j from running the two concurrently
 .PHONY: developer-recreate
-developer-recreate: developer-delete developer-start
+developer-recreate:
+	@$(MAKE) developer-delete
+	@$(MAKE) developer-start COMPOSE_PROFILES='$(COMPOSE_PROFILES)'
 
 .PHONY: dev-certs
 dev-certs:
@@ -509,7 +503,7 @@ h3-client:
 	@$(GO) run ./hack/h3-client $(ARGS)
 
 .PHONY: developer-seed-data
-developer-seed-data:
+developer-seed-data: developer-credentials
 	@hack/developer-seed-data.sh
 
 # regenerates the synthetic seed data to memory only and fails if its hash
@@ -533,8 +527,8 @@ developer-greptimedb-check:
 
 RUN_FLAGS ?=
 .PHONY: serve-dev
-serve-dev:
-	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.yaml)
+serve-dev: developer-credentials
+	@go run $(RUN_FLAGS) cmd/trickster/main.go -config $(if $(TRK_CONFIG),$(TRK_CONFIG),docs/developer/environment/trickster-config/trickster.generated.yaml)
 
 serve-dev-data-race:
 	RUN_FLAGS=-race $(MAKE) serve-dev 2>&1 | tee race-output.log

@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 
 	"github.com/quic-go/quic-go"
@@ -42,7 +43,7 @@ const AltSvcMaxAge = 2592000
 // HTTP/3 is TLS-only by definition, and RFC 9114 3.1 requires the h3 ALPN, so
 // the caller's TLS config is cloned with h3 as the sole protocol.
 func NewServer(handler http.Handler, tlsConfig *tls.Config,
-	advertisedPort int, readHeaderTimeout time.Duration,
+	advertisedPort int, limits listener.ServerLimits,
 ) *qh3.Server {
 	tc := tlsConfig.Clone()
 	if !slices.Contains(tc.NextProtos, qh3.NextProtoH3) {
@@ -51,9 +52,11 @@ func NewServer(handler http.Handler, tlsConfig *tls.Config,
 	return &qh3.Server{
 		// quic-go sets its own server context key rather than net/http's, so
 		// the served marker is what lets the proxy recognize an H3 client
-		Handler:   middleware.MarkServed(requestDeadline(handler, readHeaderTimeout)),
-		TLSConfig: tc,
-		Port:      advertisedPort,
+		Handler:        middleware.MarkServed(requestDeadline(handler, bodyDeadline(limits))),
+		TLSConfig:      tc,
+		Port:           advertisedPort,
+		IdleTimeout:    limits.IdleTimeout,
+		MaxHeaderBytes: limits.MaxHeaderBytes,
 		QUICConfig: &quic.Config{
 			// RFC 9221 datagrams are not used by the HTTP paths today, but
 			// WebTransport and MoQ require them; enabling here costs nothing
@@ -64,11 +67,19 @@ func NewServer(handler http.Handler, tlsConfig *tls.Config,
 	}
 }
 
+func bodyDeadline(limits listener.ServerLimits) time.Duration {
+	// a QUIC stream has no whole-request deadline either, so ReadTimeout, when set, bounds the body instead
+	if limits.ReadTimeout > 0 {
+		return limits.ReadTimeout
+	}
+	return limits.ReadHeaderTimeout
+}
+
 // requestDeadline applies the request deadline that HTTP/3 cannot take from
 // http.Server: there is no ReadHeaderTimeout on a QUIC stream, so the bound
 // has to be set per-request through the ResponseController.
-func requestDeadline(next http.Handler, readHeaderTimeout time.Duration) http.Handler {
-	if readHeaderTimeout <= 0 {
+func requestDeadline(next http.Handler, timeout time.Duration) http.Handler {
+	if timeout <= 0 {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +88,7 @@ func requestDeadline(next http.Handler, readHeaderTimeout time.Duration) http.Ha
 		// none, and -1 means unknown but possibly present.
 		if r.ContentLength != 0 {
 			// a writer that cannot take a deadline still serves the request
-			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(readHeaderTimeout))
+			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(timeout))
 		}
 		next.ServeHTTP(w, r)
 	})

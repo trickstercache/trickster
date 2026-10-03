@@ -28,10 +28,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/backends/questdb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxy"
 	"github.com/trickstercache/trickster/v2/pkg/backends/reverseproxycache"
 	"github.com/trickstercache/trickster/v2/pkg/backends/rule"
 	"github.com/trickstercache/trickster/v2/pkg/backends/static"
+	"github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/pgwire"
 )
@@ -48,6 +50,8 @@ func SupportedProviders() types.Lookup {
 		providers.Postgres:               postgres.NewClient,
 		providers.TimescaleDB:            postgres.NewClient,
 		providers.Prometheus:             prometheus.NewClient,
+		providers.QuestDB:                questdb.NewClient,
+		providers.VictoriaMetrics:        victoriametrics.NewClient,
 		providers.Rule:                   rule.NewClient,
 		providers.Static:                 static.NewClient,
 		providers.Proxy:                  reverseproxy.NewClient,
@@ -70,6 +74,7 @@ var nativeListeners = func() native.Registry {
 	pgwireAdapter := pgwire.NewNativeListenerAdapter(pgwire.NewEngines(
 		postgres.Engine(),
 		greptimedb.Engine(),
+		questdb.Engine(),
 	))
 	return native.Registry{
 		mysqlAdapter.Protocol():      mysqlAdapter,

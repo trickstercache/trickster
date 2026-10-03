@@ -156,7 +156,7 @@ site:
 	}
 	// static needs no cache, so none is assigned or required
 	err = l.ValidateConfigMappings(nil, negative.Lookups{"default": negative.Lookup{}}, nil, nil,
-		autho.Lookup{"auth1": &autho.Options{}}, tro.Lookup{"default": &tro.Options{}})
+		autho.Lookup{"auth1": &autho.Options{}}, tro.Lookup{"default": &tro.Options{}}, nil)
 	if err != nil {
 		t.Errorf("expected valid config mappings, got %v", err)
 	}

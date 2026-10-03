@@ -124,6 +124,16 @@ selects `truncate` as the default, and a backend can't set both it and
 `step_alignment`. The `trickster-fast-forward:off` directive still turns Fast
 Forward off for one query.
 
+## VictoriaMetrics
+
+A VictoriaMetrics range query is served on the grid VictoriaMetrics itself evaluates it on: a
+range of 50 or more points starts on a step boundary, and a shorter one keeps its own start.
+Every point is on that grid, so `truncate`, the default, and `drop` answer alike. `partial_end`
+isn't offered, since VictoriaMetrics answers the live edge with its latency offset, not as an
+instant query at the end. Expressions that depend on the whole requested range, such as
+`range_avg` or `topk_avg`, run as `off`; a mode or directive naming another mode is counted as a
+fallback. See the [VictoriaMetrics Provider Guide](./victoriametrics.md).
+
 ## Configuration
 
 `step_alignment` is a backend option; when it is unset, the provider's default
@@ -205,6 +215,8 @@ ALB applies a mode.
 | MySQL | all | `drop` |
 | GreptimeDB PromQL | `truncate`, `drop`, `partial_end`, `off` | `partial_end` |
 | GreptimeDB SQL, over HTTP, MySQL and PostgreSQL | all | `drop` |
+| QuestDB SQL over PostgreSQL | all | `drop` |
+| VictoriaMetrics MetricsQL range queries | `truncate`, `drop`, `off` | `truncate` |
 
 A backend accepts any mode one of its paths supports; a query on a path that
 doesn't support the configured mode runs in that path's default. Graphite has no

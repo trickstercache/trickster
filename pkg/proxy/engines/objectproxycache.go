@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
@@ -573,7 +574,7 @@ func handleAllWrites(pr *proxyRequest) error {
 		// storing it would serve a truncated body to every later requester
 		if pr.bodyTruncated.Load() {
 			logger.Warn("skipping cache write for truncated upstream response",
-				logging.Pairs{keys.Key: pr.key, keys.URL: pr.URL.String()})
+				logging.Pairs{keys.Key: pr.key, keys.URL: redact.URL(pr.URL)})
 			return nil
 		}
 		if pr.cacheDocument == nil || !pr.cacheDocument.isLoaded {
@@ -656,7 +657,7 @@ func fetchViaObjectProxyCache(w io.Writer, r *http.Request) (*http.Response, sta
 
 	// if a PCF entry exists, or the client requested no-cache for this object, proxy out to it
 	pcfResult, pcfExists := reqs.Load(pr.key)
-	pr.isPCF = !methods.HasBody(pr.Method) && pcfExists && !pr.wantsRanges
+	pr.isPCF = methods.IsCacheable(pr.Method) && pcfExists && !pr.wantsRanges
 
 	if pr.isPCF || pr.cachingPolicy.NoCache {
 		if pr.cachingPolicy.NoCache {

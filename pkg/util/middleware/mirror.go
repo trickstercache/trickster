@@ -111,7 +111,10 @@ func mirrorRequest(r *http.Request) (*http.Request, error) {
 		body = bytes.NewReader(b)
 		length = int64(len(b))
 	}
-	ctx := tctx.WithClientIPOf(tctx.WithMirrored(context.Background()), r.Context())
+	ctx := tctx.WithMirrored(context.Background())
+	if ip := tctx.ClientIP(r.Context()); ip != "" {
+		ctx = tctx.WithResolvedClient(ctx, ip, request.PeerTrusted(r))
+	}
 	out, err := http.NewRequestWithContext(ctx, r.Method, r.URL.String(), body)
 	if err != nil {
 		return nil, err

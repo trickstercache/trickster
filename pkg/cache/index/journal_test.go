@@ -181,9 +181,14 @@ func TestJournalRecordsChanges(t *testing.T) {
 		changes = append(changes, change{r.op, r.key, r.size})
 	}
 	require.Equal(t, []change{
-		{opAdd, "kept", 3}, {opAdd, "forever", 1}, {opAdd, "removed", 2}, {opRemove, "removed", 0},
+		{opAdd, "kept", 3},
+		{opAdd, "forever", 1},
+		{opAdd, "removed", 2},
+		{opRemove, "removed", 0},
 		// an object too brief to persist is journaled only to take back what was persisted of it
-		{opAdd, "shortened", 1}, {opRemove, "shortened", 0}, {opAdd, "lengthened", 4},
+		{opAdd, "shortened", 1},
+		{opRemove, "shortened", 0},
+		{opAdd, "lengthened", 4},
 	}, changes)
 	mark := got[len(got)-1]
 	require.Equal(t, byte(opMark), mark.op)

@@ -111,8 +111,10 @@ func requireReferenceOutput(t *testing.T, name string, ds *dataset.DataSet) {
 
 func marshalTestSeries(name string, tags dataset.Tags, at int, fields []string, points ...dataset.Point,
 ) *dataset.Series {
-	s := dataset.NewSeries(dataset.SeriesHeader{Name: name, Tags: tags,
-		TimestampField: timeseries.FieldDefinition{Name: "time", OutputPosition: at}}, points)
+	s := dataset.NewSeries(dataset.SeriesHeader{
+		Name: name, Tags: tags,
+		TimestampField: timeseries.FieldDefinition{Name: "time", OutputPosition: at},
+	}, points)
 	for _, f := range fields {
 		s.Header.ValueFieldsList = append(s.Header.ValueFieldsList, timeseries.FieldDefinition{Name: f})
 	}

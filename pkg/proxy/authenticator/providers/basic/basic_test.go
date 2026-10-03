@@ -116,9 +116,9 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	a.AddUsersFromMap(esLookup(users))
 
 	// Should authenticate both
-	for user, pass := range users {
+	for user, pass := range map[string]string{testUser1: testUser1p, testUser2: testUser2p} {
 		req := httptest.NewRequest("GET", "/", nil)
-		req.SetBasicAuth(user, string(pass))
+		req.SetBasicAuth(user, pass)
 		_, err := a.Authenticate(req)
 		if err != nil {
 			t.Errorf("Authenticate failed for %s: %v", user, err)
@@ -141,6 +141,17 @@ func TestAddUsersFromMapLoadUsersFromMap(t *testing.T) {
 	_, err = a.Authenticate(req)
 	if err == nil {
 		t.Error("Authenticate charlie after LoadUsersFromMap should fail")
+	}
+}
+
+func TestAuthenticateRejectsStoredHashAsPassword(t *testing.T) {
+	a := &Authenticator{}
+	hash := bcryptHash(testUser1p)
+	a.AddUser(testUser1, hash)
+	req := httptest.NewRequest("GET", "/", nil)
+	req.SetBasicAuth(testUser1, hash)
+	if _, err := a.Authenticate(req); err == nil {
+		t.Error("expected the stored hash to be rejected as a password")
 	}
 }
 
@@ -336,6 +347,38 @@ func TestCloneAndSanitize(t *testing.T) {
 	a.Sanitize(req)
 	if req.Header.Get(headers.NameAuthorization) == "" {
 		t.Fatal("expected Authorization header to be preserved")
+	}
+}
+
+func TestClonePtrKeepsAllSettings(t *testing.T) {
+	t.Parallel()
+
+	const setUserHeader = "X-Auth-User"
+	a := &Authenticator{
+		users: types.CredentialsManifest{testUser1: testUser1p}, showLoginForm: true,
+		realm: "realm", proxyPreserve: true, observeOnly: true,
+	}
+	a.SetExtractCredentialsFunc(func(*http.Request) (string, string, error) {
+		return testUser2, testUser2p, nil
+	})
+	a.SetSetCredentialsFunc(func(r *http.Request, user, _ string) error {
+		r.Header.Set(setUserHeader, user)
+		return nil
+	})
+	cl := a.ClonePtr()
+	if !cl.ProxyPreserve() || !cl.IsObserveOnly() || !cl.showLoginForm || cl.realm != a.realm {
+		t.Fatalf("clone lost settings: %+v", cl)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	if u, _, err := cl.ExtractCredentials(req); err != nil || u != testUser2 {
+		t.Fatalf("clone ExtractCredentials = %q, %v", u, err)
+	}
+	if err := cl.SetCredentials(req, testUser3, testUser3p); err != nil || req.Header.Get(setUserHeader) != testUser3 {
+		t.Fatalf("clone SetCredentials did not use the custom func: %v", err)
+	}
+	cl.RemoveUser(testUser1)
+	if _, ok := a.users[testUser1]; !ok {
+		t.Fatal("ClonePtr should not share users map")
 	}
 }
 

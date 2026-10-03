@@ -70,10 +70,12 @@ func orderDataSet(t *testing.T, rng *weaktest.Rand, rows int) *dataset.DataSet {
 	}
 	cells := make([][]any, 0, rows)
 	for r := range rows {
-		cells = append(cells, []any{int64(r/3) * 1e9, fmt.Sprintf("h%d", r%3),
+		cells = append(cells, []any{
+			int64(r/3) * 1e9, fmt.Sprintf("h%d", r%3),
 			pick(1.5, -2.0, 1.5, math.NaN(), math.Inf(1), 1e300), pick(int64(1), int64(-1), int64(math.MaxInt64), int64(math.MaxInt64-1)),
 			pick(uint64(math.MaxUint64), uint64(3)), pick("a", "b", ""), pick(true, false),
-			pick(int64(-8), int64(7)), pick("x", "y", "")})
+			pick(int64(-8), int64(7)), pick("x", "y", ""),
+		})
 	}
 	schema := orderSchema()
 	return orderingDataSet(t, schema, cells)
@@ -118,7 +120,8 @@ func TestToRecordsMatchesLegacyUnmerged(t *testing.T) {
 	pts := dspoints.Of(list[0])
 	pts[0], pts[len(pts)-1] = pts[len(pts)-1], pts[0]
 	unsorted := &dataset.DataSet{TimeRangeQuery: ds.TimeRangeQuery, Results: dataset.Results{{SeriesList: dataset.SeriesList{
-		nil, dataset.NewSeries(list[0].Header, pts), list[1], dataset.NewSeries(list[2].Header, nil)}}}}
+		nil, dataset.NewSeries(list[0].Header, pts), list[1], dataset.NewSeries(list[2].Header, nil),
+	}}}}
 	requireLegacyRecords(t, unsorted)
 	// Segments that share an epoch at their boundary keep their rows' order
 	p := dspoints.Of(list[1])
@@ -128,14 +131,16 @@ func TestToRecordsMatchesLegacyUnmerged(t *testing.T) {
 	tied := append(dataset.NewSeries(list[1].Header, p[:1]).Segments(),
 		dataset.NewSeries(list[1].Header, dataset.Points{other}).Segments()...)
 	requireLegacyRecords(t, &dataset.DataSet{TimeRangeQuery: ds.TimeRangeQuery, Results: dataset.Results{{
-		SeriesList: dataset.SeriesList{list[0], dataset.NewSeriesOf(list[1].Header, tied)}}}})
+		SeriesList: dataset.SeriesList{list[0], dataset.NewSeriesOf(list[1].Header, tied)},
+	}}})
 	// a dictionary column of only empty text holds no bytes
 	empty := dspoints.Of(list[2])
 	for i := range empty {
 		empty[i].Values[len(empty[i].Values)-1] = ""
 	}
 	requireLegacyRecords(t, &dataset.DataSet{TimeRangeQuery: ds.TimeRangeQuery, Results: dataset.Results{{
-		SeriesList: dataset.SeriesList{dataset.NewSeries(list[2].Header, empty)}}}})
+		SeriesList: dataset.SeriesList{dataset.NewSeries(list[2].Header, empty)},
+	}}})
 	// a column holding values of another kind compares them as before
 	mixed := dspoints.Of(list[2])
 	for i := range mixed {
@@ -143,7 +148,8 @@ func TestToRecordsMatchesLegacyUnmerged(t *testing.T) {
 		mixed[i].Values[1] = []byte("x")
 	}
 	requireLegacyRecords(t, &dataset.DataSet{TimeRangeQuery: ds.TimeRangeQuery, Results: dataset.Results{{
-		SeriesList: dataset.SeriesList{list[0], dataset.NewSeries(list[2].Header, mixed)}}}})
+		SeriesList: dataset.SeriesList{list[0], dataset.NewSeries(list[2].Header, mixed)},
+	}}})
 }
 
 func BenchmarkToRecords(b *testing.B) {
@@ -151,8 +157,10 @@ func BenchmarkToRecords(b *testing.B) {
 	rows := make([][]any, 0, series*points)
 	for p := range points {
 		for s := range series {
-			rows = append(rows, []any{int64(p) * 1e9, fmt.Sprintf("h%d", s), float64(s*p%9973) / 7, int64(p),
-				uint64(s), "x", p%2 == 0, int64(p % 100), "y"})
+			rows = append(rows, []any{
+				int64(p) * 1e9, fmt.Sprintf("h%d", s), float64(s*p%9973) / 7, int64(p),
+				uint64(s), "x", p%2 == 0, int64(p % 100), "y",
+			})
 		}
 	}
 	schema := orderSchema()
@@ -160,8 +168,12 @@ func BenchmarkToRecords(b *testing.B) {
 	ds, err := FromRecords(schema, []arrow.RecordBatch{rec}, testTRQ("host"))
 	rec.Release()
 	require.NoError(b, err)
-	for _, keys := range [][]SortKey{nil, {{Column: "time", Descending: true}}, {{Column: "time"}, {Column: "f"}},
-		{{Column: "f"}}} {
+	for _, keys := range [][]SortKey{
+		nil,
+		{{Column: "time", Descending: true}},
+		{{Column: "time"}, {Column: "f"}},
+		{{Column: "f"}},
+	} {
 		name := fmt.Sprint(keys)
 		for impl, fn := range map[string]func(*arrow.Schema, *dataset.DataSet, ...SortKey) ([]arrow.RecordBatch, error){
 			"legacy": legacyToRecords, "stream": ToRecords,

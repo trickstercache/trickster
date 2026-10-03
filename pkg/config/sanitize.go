@@ -35,6 +35,7 @@ import (
 	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
 
 const (
@@ -134,6 +135,7 @@ func (c *Config) SanitizedClone() *Config {
 		if opts != nil {
 			opts.Name = newName
 			sanitizeAuthenticatorUsers(opts)
+			opts.ProviderData = opts.RedactedProviderData()
 		}
 		renamedAuthenticators[newName] = opts
 	}
@@ -155,6 +157,7 @@ func (c *Config) SanitizedClone() *Config {
 	cp.GeoLocators = sanitizeGeoLocators(cp.GeoLocators, geoLocatorNameMap)
 	cp.GeoACLs = sanitizeGeoACLs(cp.GeoACLs, geoACLNameMap, geoLocatorNameMap)
 	sanitizeRequestRewriters(cp.RequestRewriters)
+	sanitizeACME(cp.ACME, cacheNameMap, listenerNameMap)
 
 	if k := cp.Kubernetes; k != nil {
 		if d := k.Defaults; d != nil {
@@ -304,6 +307,49 @@ func anonymizedTracingProviderName(provider string) string {
 		return "tracing"
 	}
 	return provider
+}
+
+func sanitizeACME(o *acmeopts.Options, cacheNames, listenerNames map[string]string) {
+	if o == nil {
+		return
+	}
+	if r := o.Storage; r != nil && r.Redis != nil {
+		if name, ok := cacheNames[r.Redis.CacheName]; ok {
+			r.Redis.CacheName = name
+		}
+		if c := r.Redis.Connection; c != nil {
+			sanitizeRedisEndpoints(&cache.Options{Redis: c})
+			if c.Password != "" {
+				c.Password = sanitizedSecret
+			}
+		}
+	}
+	for _, iss := range o.Issuers {
+		if iss == nil {
+			continue
+		}
+		if iss.Email != "" {
+			iss.Email = sanitizedSecret
+		}
+		if d := iss.DNSProvider; d != nil {
+			if d.RFC2136 != nil {
+				d.RFC2136.Server = sanitizedEndpoint
+			}
+			if d.Route53 != nil && d.Route53.HostedZoneID != "" {
+				d.Route53.HostedZoneID = sanitizedSecret
+			}
+		}
+	}
+	if od := o.OnDemand; od != nil {
+		if od.Ask != "" {
+			od.Ask = sanitizedEndpoint
+		}
+		for i, name := range od.Listeners {
+			if replacement, ok := listenerNames[name]; ok {
+				od.Listeners[i] = replacement
+			}
+		}
+	}
 }
 
 func sanitizeRedisEndpoints(opts *cache.Options) {

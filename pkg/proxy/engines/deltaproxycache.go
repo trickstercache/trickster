@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
@@ -369,6 +370,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 		return
 	}
 	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", pr.DeriveCacheKey(""))
+	if rlo.SeriesCap > 0 && isMarkedTruncated(cache, key) {
+		if trq.OriginalBody != nil {
+			request.SetBody(r, trq.OriginalBody)
+		}
+		DoProxy(w, r, true)
+		return
+	}
 
 	coReq := GetRequestCachingPolicy(r.Header)
 
@@ -412,6 +420,13 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 			}
 
+			// a truncated fetch is a sample of the series, so the query is proxied whole instead
+			truncatedResult := func() *dpcResult {
+				metrics.ProxyTruncatedResponses.WithLabelValues(o.Name).Inc()
+				markTruncated(cache, key, time.Duration(o.TimeseriesTTL))
+				return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}
+			}
+
 			var cts timeseries.Timeseries
 			// ctsShared is true while cts is the dataset a memory cache holds, which is read in place
 			// and viewed before its first change, so that a hit copies nothing
@@ -432,6 +447,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if len(failedExts) > 0 && severeFault {
 					return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body, failedExts), nil
 				}
+				if truncated(rlo.SeriesCap, cts) {
+					return truncatedResult(), nil
+				}
 			} else {
 				if doc == nil || doc.timeseries == nil {
 					err = tpe.ErrEmptyDocumentBody
@@ -446,6 +464,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					}
 					if len(failedExts) > 0 && severeFault {
 						return buildErrorResult(doc.StatusCode, doc.SafeHeaderClone(), doc.Body, failedExts), nil
+					}
+					if truncated(rlo.SeriesCap, cts) {
+						return truncatedResult(), nil
 					}
 					// entry was removed and data came from origin; don't inherit the pre-recovery status
 					cacheStatus = status.LookupStatusKeyMiss
@@ -535,6 +556,9 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 						body, _ = io.ReadAll(mresp.Body)
 					}
 					return buildErrorResult(mresp.StatusCode, mresp.Header.Clone(), body, failedExts), nil
+				}
+				if truncated(rlo.SeriesCap, mts...) {
+					return truncatedResult(), nil
 				}
 				doc.Headers = fetchHeaders
 				// Merge the new delta timeseries into the cached timeseries
@@ -926,7 +950,7 @@ func fetchTimeseries(
 	}
 
 	// A fallback may reuse and mutate the request after this function returns.
-	method, target, userAgent := pr.Method, pr.URL.String(), pr.UserAgent()
+	method, target, userAgent := pr.Method, redact.URL(pr.URL), pr.UserAgent()
 	goWithRecover("dpc.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName,
 			method, target, userAgent, resp.StatusCode, 0, elapsed.Seconds())
@@ -1154,10 +1178,10 @@ func fetchExtents(
 				logger.Error("unexpected upstream response",
 					logging.Pairs{
 						keys.StatusCode:           resp.StatusCode,
-						"clientRequestURL":        pr.Request.URL.String(),
+						"clientRequestURL":        redact.URL(pr.Request.URL),
 						"clientRequestMethod":     pr.Request.Method,
 						"clientRequestHeaders":    headers.SanitizeForLogging(pr.Request.Header),
-						"upstreamRequestURL":      pr.upstreamRequest.URL.String(),
+						"upstreamRequestURL":      redact.URL(pr.upstreamRequest.URL),
 						"upstreamRequestMethod":   pr.upstreamRequest.Method,
 						"upstreamRequestHeaders":  headers.SanitizeForLogging(pr.upstreamRequest.Header),
 						"upstreamResponseHeaders": headers.LogString(resp.Header),

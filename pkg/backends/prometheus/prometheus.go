@@ -205,7 +205,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	cache cache.Cache, _ backends.Backends,
 	_ types.Lookup,
 ) (backends.Backend, error) {
-	return NewClientWithHooks(name, o, router, cache, Hooks{})
+	return NewClientWithHooks(name, o, router, cache, flavorHooks(o))
 }
 
 // NewClientWithHooks constructs the Prometheus client for a compatible provider.
@@ -214,6 +214,7 @@ func NewClientWithHooks(name string, o *bo.Options, router http.Handler,
 ) (*Client, error) {
 	hooks.CacheKeyParams = slices.Clone(hooks.CacheKeyParams)
 	hooks.CacheKeyHeaders = slices.Clone(hooks.CacheKeyHeaders)
+	hooks.AllowedPaths = slices.Clone(hooks.AllowedPaths)
 	c := &Client{hooks: hooks}
 	b, err := backends.NewTimeseriesBackend(name, o, c.RegisterHandlers, router,
 		cache, modelprom.NewModeler())
@@ -395,8 +396,22 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 
 	trq.Requested = requested
 	trq.StepAlignments, trq.StepAlignment = c.StepAlignments()
+	rlo.SeriesCap = c.seriesCap(qp.Get(upLimit))
 
 	return trq, rlo, true, nil
+}
+
+// seriesCap returns the series count at which the origin truncates a result for a request
+// carrying limit, or 0 when the origin does not truncate.
+func (c *Client) seriesCap(limit string) int {
+	n := c.hooks.MaxSeries
+	if n <= 0 {
+		return 0
+	}
+	if l, err := strconv.Atoi(limit); err == nil && l > 0 && l < n {
+		return l
+	}
+	return n
 }
 
 // parseGridTime accepts only the millisecond precision carried by Prometheus

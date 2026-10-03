@@ -431,3 +431,18 @@ func BenchmarkCache_BulkRemove(b *testing.B) {
 	}
 	b.ReportMetric(benchmarkKeyCount, "keys/op")
 }
+
+func TestCmdable(t *testing.T) {
+	rc, closeServer := setupRedisCache(clientTypeStandard)
+	defer closeServer()
+	if rc.Cmdable() != nil {
+		t.Error("expected no client before Connect")
+	}
+	if err := rc.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	defer rc.Close()
+	if err := rc.Cmdable().Ping(context.Background()).Err(); err != nil {
+		t.Error(err)
+	}
+}

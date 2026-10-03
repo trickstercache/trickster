@@ -60,10 +60,25 @@ The following metrics are available for polling with any Trickster configuration
     * `mirror_backend` - the backend receiving the copies
     * `result` - `sent`, or `dropped` when the mirror's in-flight bound was reached
 
+* `trickster_proxy_sigv4_events_total` (Counter) - The number of SigV4 signing events on backends with a [`sigv4`](./aws.md#the-sigv4-backend-block) block.
+  * labels:
+    * `backend_name` - the name of the configured backend whose request was signed
+    * `event` - `sign_failure` when a request could not be signed and was not sent, or `credentials_retry` when the origin rejected expiring credentials and the request was resent with refreshed ones
+
+* `trickster_proxy_truncated_responses_total` (Counter) - The number of time series fetches the origin truncated at its series limit, which Trickster proxies rather than caches. Only backends whose [flavor](./aws.md#amazon-cloudwatch-promql) declares a series limit report it.
+  * labels:
+    * `backend_name` - the name of the configured backend whose fetch was truncated
+
 * `trickster_accesslog_dropped_lines_total` (Counter) - The number of access and error log lines dropped because the log could not accept them.
   * labels:
     * `backend_name` - the name of the configured backend whose logger dropped the line
     * `log` - `access` or `error`
+
+* `trickster_ip_acl_decisions_total` (Counter) - Decisions made by an attached IP access list. See [ip-acl.md](./ip-acl.md).
+  * labels:
+    * `ip_acl` - the name of the access list
+    * `scope` - `listener`, `backend`, or `path`
+    * `verdict` - `allow` or `deny`. `reject` and `drop` are both `deny`
 
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
@@ -219,6 +234,12 @@ The following metrics are available for polling with any Trickster configuration
     * `cache_mode` - `delta`, `object`, or `proxy`
     * `reason` - the stable classification reason code
 
+* `trickster_victoriametrics_query_analysis_total` (Counter) - Count of MetricsQL API request cache-eligibility classifications. Labels never include query text.
+  * labels:
+    * `backend_name` - the configured VictoriaMetrics backend
+    * `cache_mode` - `delta`, `object`, or `proxy`
+    * `reason` - the stable classification reason code
+
 * `trickster_druid_query_rewrite_failures_total` (Counter) - Count of Druid cache-miss extent rewrite failures.
   * labels:
     * `backend_name` - the configured Druid backend
@@ -332,6 +353,29 @@ The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery
 * `trickster_tls_certificate_store_size` (Gauge) - Number of certificates in a listener's TLS certificate store
   * labels:
     * `listener` - the name of the listener
+
+* `trickster_acme_orders_total` (Counter) - Count of first-time ACME certificate orders. See [acme.md](./acme.md).
+  * labels:
+    * `issuer` - the name of the ACME issuer
+    * `result` - `success` or `failure`
+
+* `trickster_acme_renewals_total` (Counter) - Count of ACME certificate renewals
+  * labels:
+    * `issuer` - the name of the ACME issuer
+    * `result` - `success` or `failure`
+
+* `trickster_acme_challenge_requests_total` (Counter) - Count of ACME challenge requests received by listeners
+  * labels:
+    * `type` - `http-01` or `tls-alpn-01`
+    * `result` - `served`, `unknown` (no matching pending challenge) or `error`
+
+* `trickster_acme_on_demand_decisions_total` (Counter) - Count of on-demand issuance decisions
+  * labels:
+    * `result` - `allowed`, `refused`, `refused_cached`, `rate_limited` or `ask_error`
+
+* `trickster_acme_startup_wait_seconds` (Gauge) - Seconds startup readiness was held waiting for missing ACME certificates
+
+* `trickster_acme_startup_wait_timeouts_total` (Counter) - Count of startup waits that timed out before every ACME certificate was issued
 
 ---
 

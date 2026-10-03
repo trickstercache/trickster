@@ -41,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
@@ -436,6 +437,8 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		Authenticators: sets.New[string](nil),
 		GeoACLs:        sets.New[string](nil),
 		StreamGeoACLs:  sets.New[string](nil),
+		IPACLs:         sets.New[string](nil),
+		DefinedIPACLs:  sets.New[string](nil),
 	}
 	if conf != nil {
 		for name := range conf.Caches {
@@ -462,6 +465,15 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 				next.StreamGeoACLs.Set(name)
 			}
 		}
+		for name, def := range conf.IPACLs {
+			if def == nil {
+				continue
+			}
+			next.DefinedIPACLs.Set(name)
+			if kubernetesIPACLEligible(def.Compiled) {
+				next.IPACLs.Set(name)
+			}
+		}
 	}
 	previous := s.known.Swap(&next)
 	return previous == nil ||
@@ -471,7 +483,18 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.Rewriters, next.Rewriters) ||
 		!maps.Equal(previous.Authenticators, next.Authenticators) ||
 		!maps.Equal(previous.GeoACLs, next.GeoACLs) ||
-		!maps.Equal(previous.StreamGeoACLs, next.StreamGeoACLs)
+		!maps.Equal(previous.StreamGeoACLs, next.StreamGeoACLs) ||
+		!maps.Equal(previous.IPACLs, next.IPACLs) ||
+		!maps.Equal(previous.DefinedIPACLs, next.DefinedIPACLs)
+}
+
+// kubernetesIPACLEligible reports whether a compiled list may be named by a
+// generated backend. The same rule is kubernetesReferences in config
+// validation: client_ip and reject, which are the zero values. A nil list,
+// including one not yet compiled, is not eligible. CIDR edits do not change
+// eligibility, so they do not retranslate.
+func kubernetesIPACLEligible(list *ipacl.List) bool {
+	return list != nil && list.Source() == ipacl.ClientIP && list.Action() == ipacl.Reject
 }
 
 func marshalKubeOptions(o *kubecfg.Options) []byte {

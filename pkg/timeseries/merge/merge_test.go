@@ -148,8 +148,7 @@ func TestTSMMergePlanValidate(t *testing.T) {
 		}},
 		{"weighted missing original query", validWeightedAverageTSMPlan, func(p *TSMMergePlan) { p.OriginalQuery = "" }},
 		{"weighted reversed reduction inputs", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
-			p.Reduction.InputVariants[0], p.Reduction.InputVariants[1] =
-				p.Reduction.InputVariants[1], p.Reduction.InputVariants[0]
+			p.Reduction.InputVariants[0], p.Reduction.InputVariants[1] = p.Reduction.InputVariants[1], p.Reduction.InputVariants[0]
 		}},
 		{"weighted duplicate reduction input", validWeightedAverageTSMPlan, func(p *TSMMergePlan) {
 			p.Reduction.InputVariants[1] = TSMVariantWeightedAverageSum
@@ -177,8 +176,7 @@ func TestTSMMergePlanValidate(t *testing.T) {
 			p.OriginalQuery = ""
 		}},
 		{"pooled reversed inputs", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
-			p.Reduction.InputVariants[0], p.Reduction.InputVariants[1] =
-				p.Reduction.InputVariants[1], p.Reduction.InputVariants[0]
+			p.Reduction.InputVariants[0], p.Reduction.InputVariants[1] = p.Reduction.InputVariants[1], p.Reduction.InputVariants[0]
 		}},
 		{"pooled wrong merge strategy", validPooledVarianceTSMPlan, func(p *TSMMergePlan) {
 			p.Variants[2].MergeStrategy = int(StrategySum)

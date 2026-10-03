@@ -52,6 +52,16 @@ var ErrVolatileWindowWithBackfillTolerance = errors.New(
 var ErrVolatileWindowPointsWithBackfillTolerancePoints = errors.New(
 	"'volatile_window_points' and 'backfill_tolerance_points' cannot both be set; remove 'backfill_tolerance_points'")
 
+// ErrFlavorProvider is an error for a prometheus.flavor on a backend whose provider is not prometheus
+var ErrFlavorProvider = errors.New("'prometheus.flavor' requires provider 'prometheus'")
+
+// ErrFlavorMissingOrigin is an error for a cloudwatch flavor with neither origin_url nor sigv4.region
+var ErrFlavorMissingOrigin = errors.New(
+	"the cloudwatch flavor requires 'origin_url', or 'sigv4.region' to derive it from")
+
+// ErrFlavorRegionMismatch is an error for an AWS origin_url whose region differs from sigv4.region
+var ErrFlavorRegionMismatch = errors.New("'origin_url' and 'sigv4.region' name different regions")
+
 // ErrUnsupportedStepAlignment is an error for a step_alignment the backend's provider doesn't support
 var ErrUnsupportedStepAlignment = errors.New("unsupported step_alignment")
 
@@ -172,6 +182,32 @@ func NewErrInvalidCacheName(cacheName, backendName string) error {
 // ErrInvalidAuthenticatorName is an error type for invalid cache name
 type ErrInvalidAuthenticatorName struct {
 	error
+}
+
+// ErrInvalidIPACLName is an error type for an ip_acl_name that is not defined.
+type ErrInvalidIPACLName struct {
+	error
+}
+
+// NewErrInvalidIPACLName returns a new invalid access-list name error.
+func NewErrInvalidIPACLName(aclName, backendName string) error {
+	return &ErrInvalidIPACLName{
+		error: fmt.Errorf(`invalid ip_acl_name "%s" provided in backend options "%s"`,
+			aclName, backendName),
+	}
+}
+
+// ErrIPACLSourcePeer is an error type for a peer-source list attached outside a listener.
+type ErrIPACLSourcePeer struct {
+	error
+}
+
+// NewErrIPACLSourcePeer returns an error for a peer-source list on a backend or path.
+func NewErrIPACLSourcePeer(aclName, where string) error {
+	return &ErrIPACLSourcePeer{
+		error: fmt.Errorf("ip acl %q with source peer is listener scope only and cannot be used by %s",
+			aclName, where),
+	}
 }
 
 // NewErrInvalidAuthenticatorName returns a new invalid authenticator name error

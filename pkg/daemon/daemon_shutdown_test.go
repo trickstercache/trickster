@@ -365,7 +365,7 @@ func TestForcedShutdownFencesUnfinishedReload(t *testing.T) {
 			close(entered)
 			<-release
 			lateErr = si.Listeners.StartListener("late", "127.0.0.1", latePort, 0, nil,
-				http.NotFoundHandler(), nil, nil, time.Second, nil)
+				http.NotFoundHandler(), nil, nil, listener.ServerLimits{ReadHeaderTimeout: time.Second}, nil)
 			close(finished)
 		})
 		return false, nil

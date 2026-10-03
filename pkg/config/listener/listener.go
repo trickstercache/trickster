@@ -18,6 +18,7 @@
 package listener
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -27,7 +28,9 @@ import (
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	metrics "github.com/trickstercache/trickster/v2/pkg/observability/metrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 
 	"go.yaml.in/yaml/v3"
@@ -63,6 +66,16 @@ const (
 	// DefaultTLSWatchInterval is the default poll interval for detecting
 	// out-of-band TLS certificate rotation.
 	DefaultTLSWatchInterval = timeconv.Duration(30 * time.Second)
+	// DefaultIdleTimeout is how long an HTTP listener holds a keep-alive connection open
+	// while it waits for the client's next request.
+	DefaultIdleTimeout = timeconv.Duration(2 * time.Minute)
+)
+
+var (
+	// ErrNegativeTimeout is returned when a listener timeout is negative.
+	ErrNegativeTimeout = errors.New("timeout cannot be negative")
+	// ErrNegativeMaxHeaderBytes is returned when max_header_bytes is negative.
+	ErrNegativeMaxHeaderBytes = errors.New("max_header_bytes cannot be negative")
 )
 
 // Options describes one inbound listener.
@@ -83,6 +96,15 @@ type Options struct {
 	TruncateRequestBodyTooLarge bool `yaml:"truncate_request_body_too_large"`
 	// ReadHeaderTimeout is the amount of time allowed to read request headers.
 	ReadHeaderTimeout timeconv.Duration `yaml:"read_header_timeout,omitempty"`
+	// ReadTimeout bounds the time an HTTP listener allows to read a whole request,
+	// body included; 0 sets no bound.
+	ReadTimeout timeconv.Duration `yaml:"read_timeout,omitempty"`
+	// IdleTimeout closes an HTTP keep-alive connection that has waited this long for its
+	// next request; 0 never closes one. It is kept when 0 so the disabled value round-trips.
+	IdleTimeout timeconv.Duration `yaml:"idle_timeout"`
+	// MaxHeaderBytes caps the bytes an HTTP listener reads for a request's line and
+	// headers; 0 selects the net/http default of 1 MB.
+	MaxHeaderBytes int `yaml:"max_header_bytes,omitempty"`
 	// Protocol selects the protocol served by this listener.
 	Protocol string `yaml:"protocol,omitempty"`
 	// TLSWatchInterval is the backstop poll for out-of-band cert/key rotation
@@ -105,6 +127,14 @@ type Options struct {
 	// TrustedProxies lists the addresses or CIDRs of proxies whose PROXY protocol header
 	// and forwarding headers are believed when resolving the client IP; others are ignored.
 	TrustedProxies []string `yaml:"trusted_proxies,omitempty"`
+	// IPACLName is the access list applied to this listener. An empty name
+	// applies none. The reference none is not valid on a listener.
+	IPACLName string `yaml:"ip_acl_name,omitempty"`
+	// IPACL is the compiled list named by IPACLName.
+	IPACL *ipacl.List `yaml:"-"`
+	// PathNormalization controls how an HTTP listener cleans request paths before routing
+	// them; the cleaned path is also the one forwarded upstream. Nil selects the defaults.
+	PathNormalization *pno.Options `yaml:"path_normalization,omitempty"`
 	// ServeTLS indicates that this listener has at least one usable certificate.
 	ServeTLS bool `yaml:"-"`
 	// Active indicates whether the listener has a configured purpose.
@@ -173,6 +203,19 @@ func (o *Options) HTTP3Endpoint() (address string, port, advertisedPort int) {
 	return address, port, advertisedPort
 }
 
+// ValidateHTTPLimits checks the read and idle timeouts and the header size an HTTP listener applies.
+func (o *Options) ValidateHTTPLimits() error {
+	switch {
+	case o.ReadTimeout < 0:
+		return fmt.Errorf("read_timeout: %w", ErrNegativeTimeout)
+	case o.IdleTimeout < 0:
+		return fmt.Errorf("idle_timeout: %w", ErrNegativeTimeout)
+	case o.MaxHeaderBytes < 0:
+		return ErrNegativeMaxHeaderBytes
+	}
+	return nil
+}
+
 // IsStream reports whether the protocol relays bytes without reading them: tcp, tls or udp.
 func IsStream(protocol string) bool {
 	return protocol == ProtocolTCP || protocol == ProtocolTLS || protocol == ProtocolUDP
@@ -191,6 +234,8 @@ func New(name string) *Options {
 	o := FromFrontend(frontend.New())
 	o.Protocol = ProtocolHTTP
 	o.TLSWatchInterval = DefaultTLSWatchInterval
+	o.IdleTimeout = DefaultIdleTimeout
+	o.PathNormalization = pno.New()
 	switch name {
 	case DefaultFrontendName:
 		o.Active = true
@@ -283,6 +328,7 @@ func (o *Options) Clone() *Options {
 	out.HTTP3 = o.HTTP3.Clone()
 	out.Stream = o.Stream.Clone()
 	out.TrustedProxies = slices.Clone(o.TrustedProxies)
+	out.PathNormalization = o.PathNormalization.Clone()
 	if o.MaxRequestBodySizeBytes != nil {
 		out.MaxRequestBodySizeBytes = new(*o.MaxRequestBodySizeBytes)
 	}
@@ -300,6 +346,8 @@ func (o *Options) Equal(other *Options) bool {
 		o.ConnectionsLimit != other.ConnectionsLimit ||
 		o.TruncateRequestBodyTooLarge != other.TruncateRequestBodyTooLarge ||
 		o.ReadHeaderTimeout != other.ReadHeaderTimeout || o.ServeTLS != other.ServeTLS ||
+		o.ReadTimeout != other.ReadTimeout || o.IdleTimeout != other.IdleTimeout ||
+		o.MaxHeaderBytes != other.MaxHeaderBytes ||
 		o.TLSWatchInterval != other.TLSWatchInterval || o.TLSRuntimeCerts != other.TLSRuntimeCerts ||
 		o.ProxyProtocol != other.ProxyProtocol || !slices.Equal(o.TrustedProxies, other.TrustedProxies) {
 		return false
@@ -310,7 +358,8 @@ func (o *Options) Equal(other *Options) bool {
 	if (o.Postgres == nil) != (other.Postgres == nil) || o.Postgres != nil && *o.Postgres != *other.Postgres {
 		return false
 	}
-	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) {
+	if !o.HTTP3.Equal(other.HTTP3) || !o.Stream.Equal(other.Stream) ||
+		!o.PathNormalization.Equal(other.PathNormalization) {
 		return false
 	}
 	if o.MaxRequestBodySizeBytes == nil || other.MaxRequestBodySizeBytes == nil {

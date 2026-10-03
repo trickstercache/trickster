@@ -52,12 +52,3 @@ func PeerTrusted(ctx context.Context) bool {
 	v, _ := ctx.Value(clientIPKey).(resolvedClient)
 	return v.peerTrusted
 }
-
-// WithClientIPOf records on ctx the client IP that from carries, when it carries one, so that a
-// request detached from its client's context keeps the address that was resolved for it
-func WithClientIPOf(ctx, from context.Context) context.Context {
-	if v := from.Value(clientIPKey); v != nil {
-		return context.WithValue(ctx, clientIPKey, v)
-	}
-	return ctx
-}

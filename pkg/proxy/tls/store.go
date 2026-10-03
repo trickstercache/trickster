@@ -40,6 +40,8 @@ const (
 	// SourceKindMemory identifies certificates supplied at runtime as
 	// in-memory PEM (e.g. from a Kubernetes Secret).
 	SourceKindMemory = "memory"
+	// SourceKindACME identifies certificates obtained and renewed through ACME.
+	SourceKindACME = "acme"
 )
 
 // Entry is a single certificate held by a CertStore, keyed by a stable
@@ -47,7 +49,7 @@ const (
 type Entry struct {
 	// Key is the stable source identity of the certificate
 	Key string
-	// SourceKind is one of SourceKindConfig, SourceKindFile or SourceKindMemory
+	// SourceKind is one of SourceKindConfig, SourceKindFile, SourceKindMemory or SourceKindACME
 	SourceKind string
 	// Certificate is the parsed certificate; Leaf is always populated
 	Certificate tls.Certificate
@@ -84,6 +86,8 @@ type CertStore interface {
 	ReplaceKinds(entries []*Entry, kinds ...string)
 	// Entries returns read-only metadata for the current entry set
 	Entries() []EntryInfo
+	// Match returns the certificate indexed for serverName by exact or wildcard SNI, or nil
+	Match(serverName string) *tls.Certificate
 }
 
 // ValidatePair parses and validates a PEM-encoded certificate chain and
@@ -168,6 +172,22 @@ func (s *certStore) GetCert(clientHello *tls.ClientHelloInfo) (*tls.Certificate,
 	}
 	// If nothing matches, return the first certificate.
 	return snap.certs[0], nil
+}
+
+// Match returns the certificate indexed for serverName by exact or wildcard SNI, or nil
+func (s *certStore) Match(serverName string) *tls.Certificate {
+	snap := s.snapshot.Load()
+	name := normalizeSNI(serverName)
+	if snap == nil || name == "" {
+		return nil
+	}
+	if cert, ok := snap.exact[name]; ok {
+		return cert
+	}
+	if i := strings.IndexByte(name, '.'); i > 0 {
+		return snap.wildcard[name[i+1:]]
+	}
+	return nil
 }
 
 // NewConfigEntries wraps config-loaded certificates as SourceKindConfig

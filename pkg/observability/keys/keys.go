@@ -18,6 +18,8 @@ package keys
 
 const (
 	ALBName              = "albName"
+	Action               = "action"
+	Address              = "address"
 	AgeBucket            = "ageBucket"
 	Applied              = "applied"
 	BackendName          = "backendName"
@@ -29,6 +31,7 @@ const (
 	CacheProvider        = "cacheProvider"
 	Class                = "class"
 	ClientIP             = "clientIP"
+	Code                 = "code"
 	Confidence           = "confidence"
 	Conflicts            = "conflicts"
 	ContentLength        = "contentLength"
@@ -55,6 +58,7 @@ const (
 	HandlerName          = "handlerName"
 	HTTPStatus           = "httpStatus"
 	Inner                = "inner"
+	Issuer               = "issuer"
 	Key                  = "key"
 	Keys                 = "keys"
 	Kind                 = "kind"
@@ -130,4 +134,6 @@ const (
 	Geo_Locator    = "geo_locator"
 	HTTP_Status    = "http_status"
 	Router_Name    = "router_name"
+	IP_ACL         = "ip_acl"
+	Verdict        = "verdict"
 )

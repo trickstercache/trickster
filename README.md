@@ -23,6 +23,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 
 * A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints, with [pool autodiscovery](./docs/alb-autodiscovery.md) from Kubernetes, AWS, GPC, Azure, Consul, Nomad, DNS, and more
 * [Supports TLS](./docs/tls.md), HTTP/2 and [HTTP/3](./docs/http3.md) for frontend termination, and TLS/HTTP/2 for backend origination
+* [Automatic certificates](./docs/acme.md) from Let's Encrypt or any ACME certificate authority, including wildcard and on-demand issuance
 * Can serve as Kubernetes [Ingress](./docs/kubernetes-ingress.md) and/or [Gateway](./docs/kubernetes-gateway.md) Controller
 * WebSocket and HTTP Upgrade tunneling, response trailers (gRPC), and incremental delivery of streaming responses
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
@@ -49,7 +50,8 @@ Trickster works with virtually any Dashboard application that makes queries to a
 |---|---|---|
 | <img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md) | <img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md) | <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md) |
 | <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md) | <img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md) | <img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md) |
-| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB / PostgreSQL](docs/postgres.md) | <img src="./docs/images/external/greptime-logo.svg" width=24 /> [GreptimeDB](docs/greptimedb.md) | |
+| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB / PostgreSQL](docs/postgres.md) | <img src="./docs/images/external/greptime-logo.svg" width=24 /> [GreptimeDB](docs/greptimedb.md) | <img src="./docs/images/external/questdb-logo.svg" width=24 /> [QuestDB](docs/questdb.md) |
+| <img src="./docs/images/external/victoriametrics-logo.svg" width=24 /> [VictoriaMetrics](docs/victoriametrics.md) | | |
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 

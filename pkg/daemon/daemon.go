@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
@@ -99,6 +100,7 @@ func Start(ctx context.Context, args ...string) error {
 		CertMonitor: monitor.New(),
 		Readiness:   &ready.State{},
 	}
+	si.ACME = acme.New(si.CertMonitor, si.Readiness)
 	hupFunc := newReloadFunc(si, args)
 	si.Reloader = hupFunc
 	autoReloader := bindAutoReloader(ctx, si, hupFunc)
@@ -109,6 +111,10 @@ func Start(ctx context.Context, args ...string) error {
 	// its first translation, and the flag is raised before any listener can answer a probe
 	if conf.Kubernetes.IsEnabled() {
 		si.Readiness.SetPending()
+	}
+	// a startup wait for ACME certificates is likewise raised before any probe can be answered
+	if conf.ACME.IsEnabled() && conf.ACME.WaitOnStartup > 0 {
+		si.Readiness.SetCertsPending()
 	}
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
@@ -130,6 +136,7 @@ func Start(ctx context.Context, args ...string) error {
 	}
 	autoReloader.Update(conf)
 	si.CertMonitor.Apply(conf, si.Listeners)
+	applyACME(si, conf)
 	// the controller starts last and asynchronously: its first translation reloads the daemon,
 	// which cannot happen until startup has released the configuration lock it still holds
 	kubeSup.Apply(conf, si.Tracers)
@@ -146,6 +153,7 @@ func Start(ctx context.Context, args ...string) error {
 		<-reloadsDone
 		autoReloader.Close()
 		si.CertMonitor.Close()
+		si.ACME.Close()
 		close(quiesced)
 	})
 	shutdown(si, quiesced)
@@ -294,6 +302,7 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 		// continuity for unchanged certificate file sets
 		si.CertMonitor.Apply(newConf, si.Listeners)
 	}
+	applyACME(si, newConf)
 
 	if oldClients != nil {
 		// close idle now, then again after the drain so connections released by in-flight
@@ -320,6 +329,16 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 	// controller was built from
 	notifyKubeSupervisor(si, newConf)
 	return true, nil
+}
+
+func applyACME(si *instance.ServerInstance, conf *config.Config) {
+	if si.ACME == nil {
+		return
+	}
+	if err := si.ACME.Apply(conf); err != nil {
+		logger.Error("acme certificate management could not be applied",
+			logging.Pairs{keys.Error: err.Error()})
+	}
 }
 
 func currentOverlay(si *instance.ServerInstance) *config.Overlay {

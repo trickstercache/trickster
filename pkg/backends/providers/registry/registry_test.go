@@ -62,4 +62,9 @@ func TestPostgresProvidersShareOneNativeAdapter(t *testing.T) {
 	if listeners.GetByProvider(providers.GreptimeDB) != nil || len(listeners.ForProvider(providers.GreptimeDB)) != 2 {
 		t.Fatal("GreptimeDB must retain both native adapters without an ambiguous default")
 	}
+	if supported[providers.QuestDB] == nil || listeners.GetForProvider("postgres", providers.QuestDB) != adapter ||
+		!adapter.SupportsHTTP(providers.QuestDB) || listeners.GetByProvider(providers.QuestDB) != adapter ||
+		len(listeners.ForProvider(providers.QuestDB)) != 1 {
+		t.Fatal("QuestDB must share the HTTP-capable pgwire adapter")
+	}
 }

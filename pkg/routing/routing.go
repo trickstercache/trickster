@@ -49,6 +49,8 @@ import (
 	geohandler "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -91,6 +93,43 @@ func geoACLFor(pathOptions *po.Options, backendOptions *bo.Options) *geoacl.ACL 
 	}
 	a, _ := o.Compiled.(*geoacl.ACL)
 	return a
+}
+
+// effectiveIPACL is the list enforced for this path. none clears the backend
+// list. An empty name inherits it. A named path list replaces it. The backend
+// list is not copied onto the path.
+func effectiveIPACL(path *po.Options, backend *bo.Options) *ipacl.List {
+	if path == nil {
+		return nil
+	}
+	switch path.IPACLName {
+	case reserved.ReferenceNone:
+		return nil
+	case "":
+		if backend == nil {
+			return nil
+		}
+		return backend.IPACL
+	default:
+		return path.IPACL
+	}
+}
+
+// routeACL is the list a route enforces and the scope the decision metric uses.
+// A path name is path scope. An inherited backend list is backend scope.
+func routeACL(path *po.Options, backend *bo.Options) (*ipacl.List, string, string) {
+	list := effectiveIPACL(path, backend)
+	if list == nil || path == nil {
+		return nil, "", ""
+	}
+	if path.IPACLName != "" && path.IPACLName != reserved.ReferenceNone {
+		return list, path.IPACLName, aclhandler.ScopePath
+	}
+	name := ""
+	if backend != nil {
+		name = backend.IPACLName
+	}
+	return list, name, aclhandler.ScopeBackend
 }
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
@@ -173,6 +212,14 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 		// a local path promised never to make
 		h = routeUpgrades(client, passthrough, h)
 	}
+	// a passthrough relays QUERY as sent: once rewritten to POST, a success would invalidate the URI
+	if !isPassthrough && len(pathOpts.QueryMediaTypes) > 0 &&
+		slices.Contains(pathOpts.Methods, methods.MethodQuery) {
+		h = middleware.QueryAsPost(pathOpts.QueryMediaTypes, h)
+	}
+	if o.SigV4 != nil {
+		h = middleware.StripSigV4(h)
+	}
 	h = middleware.MaxForwards(h)
 	if tr != nil {
 		h = middleware.Trace(tr, h)
@@ -181,18 +228,22 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	// header it withholds from the client
 	withResources := shouldCaptureAuth(pathOpts, o) || pathOpts.HideResultHeader ||
 		rl.logger.NeedsResources()
-	h = attachAuthenticator(h, pathOpts, o)
-	// outside the authenticator, so a refused client never reaches a credential check, and ahead of the cache
-	h = attachGeoACL(h, pathOpts, o)
 	h = encoding.HandleCompression(h, o.CompressibleTypes)
-	// WithResourcesContext must wrap outer than LimitQueryRange
-	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if len(o.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(o.ReqRewriter, h)
 	}
 	if len(pathOpts.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(pathOpts.ReqRewriter, h)
 	}
+	// authentication judges the request as the client sent it, before any rewriter changes it
+	h = attachAuthenticator(h, pathOpts, o)
+	// outside the authenticator, so a refused client never reaches a credential check, and ahead of the cache
+	h = attachGeoACL(h, pathOpts, o)
+	// Enforce the access list before authentication and the cache handler.
+	list, name, scope := routeACL(pathOpts, o)
+	h = aclhandler.Middleware(list, name, scope, h)
+	// WithResourcesContext must wrap outer than LimitQueryRange and the authenticator
+	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if !pathOpts.NoMetrics {
 		h = middleware.Decorate(o.Name, o.Provider, pathOpts.Path, h)
 	}
@@ -460,12 +511,20 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 			logging.Pairs{keys.BackendName: o.Name})
 	}
 
+	var queryTypes map[string][]string
 	for _, p := range o.Paths {
 		if p.Handler == nil && p.HandlerName != "" {
 			if h, ok := handlers[p.HandlerName]; ok && h != nil {
 				p.Handler = h
 				p.HandlerFromRegistry = true
 			}
+		}
+		if p.HandlerFromRegistry && p.QueryMediaTypes == nil &&
+			slices.Contains(p.Methods, methods.MethodQuery) {
+			if queryTypes == nil {
+				queryTypes = providerQueryMediaTypes(client, o)
+			}
+			p.QueryMediaTypes = queryTypes[p.HandlerName]
 		}
 
 		pathPrefix := "/" + o.Name
@@ -526,6 +585,21 @@ func registerPathRoutes(routes []listenerRoute, conf *config.Config, handlers ha
 	}
 
 	o.Router = or
+}
+
+// a configured path served by a provider handler translates QUERY as the handler's default paths
+// do; those are built from a copy of the options, since building them can set fields on it
+func providerQueryMediaTypes(client backends.Backend, o *bo.Options) map[string][]string {
+	out := make(map[string][]string)
+	for _, dp := range client.DefaultPathConfigs(o.Clone()) {
+		if dp == nil || len(dp.QueryMediaTypes) == 0 {
+			continue
+		}
+		if _, ok := out[dp.HandlerName]; !ok {
+			out[dp.HandlerName] = dp.QueryMediaTypes
+		}
+	}
+	return out
 }
 
 // mirrorTarget is one mirror of a path with the backend that receives its copies

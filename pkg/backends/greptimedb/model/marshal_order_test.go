@@ -140,8 +140,10 @@ func TestMarshalMatchesLegacyUnmerged(t *testing.T) {
 	rng := weaktest.NewRand(12, 12)
 	a, b := orderDataSet(t, rng), orderDataSet(t, rng)
 	// two results take the sort, as does a series whose rows aren't in time order
-	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery,
-		Results: dataset.Results{a.Results[0], nil, b.Results[0]}}, fields: a.fields})
+	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{
+		TimeRangeQuery: a.TimeRangeQuery,
+		Results:        dataset.Results{a.Results[0], nil, b.Results[0]},
+	}, fields: a.fields})
 	s := a.Results[0].SeriesList[0]
 	pts := dspoints.Of(s)
 	pts[0], pts[len(pts)-1] = pts[len(pts)-1], pts[0]
@@ -153,19 +155,31 @@ func TestMarshalMatchesLegacyUnmerged(t *testing.T) {
 	}
 	tied := append(dataset.NewSeries(s.Header, append(row(1, 1), row(2, 2)...)).Segments(),
 		dataset.NewSeries(s.Header, append(row(2, 3), row(3, 4)...)).Segments()...)
-	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery,
-		Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeriesOf(s.Header, tied), dataset.NewSeries(s.Header, nil)}}}},
-		fields: a.fields})
+	requireLegacyOutput(t, &dataSet{
+		DataSet: &dataset.DataSet{
+			TimeRangeQuery: a.TimeRangeQuery,
+			Results:        dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeriesOf(s.Header, tied), dataset.NewSeries(s.Header, nil)}}},
+		},
+		fields: a.fields,
+	})
 	// invalid UTF-8 in a tag is read as U+FFFD, which sorts before U+FFFE
 	invalid, high := s.Header.Clone(), s.Header.Clone()
 	invalid.Tags["host"], high.Tags["host"] = "\"\xff\"", "\"\uFFFE\""
-	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery,
-		Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(invalid, dspoints.Of(s)),
-			dataset.NewSeries(high, dspoints.Of(s))}}}}, fields: a.fields})
+	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{
+		TimeRangeQuery: a.TimeRangeQuery,
+		Results: dataset.Results{{SeriesList: dataset.SeriesList{
+			dataset.NewSeries(invalid, dspoints.Of(s)),
+			dataset.NewSeries(high, dspoints.Of(s)),
+		}}},
+	}, fields: a.fields})
 	// an empty Segment holds no rows to check
-	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: a.TimeRangeQuery,
-		Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeriesOf(s.Header, dataset.Segments{{}})}}}},
-		fields: a.fields})
+	requireLegacyOutput(t, &dataSet{
+		DataSet: &dataset.DataSet{
+			TimeRangeQuery: a.TimeRangeQuery,
+			Results:        dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeriesOf(s.Header, dataset.Segments{{}})}}},
+		},
+		fields: a.fields,
+	})
 	// nothing, or an empty result, still writes the schema
 	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{}, fields: a.fields})
 	requireLegacyOutput(t, &dataSet{DataSet: &dataset.DataSet{Results: dataset.Results{nil, {}}}, fields: a.fields})
@@ -175,8 +189,10 @@ func TestMarshalFailsAsLegacy(t *testing.T) {
 	d := orderDataSet(t, weaktest.NewRand(13, 13))
 	s := d.Results[0].SeriesList[0]
 	with := func(series ...*dataset.Series) *dataSet {
-		return &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: d.TimeRangeQuery,
-			Results: dataset.Results{{SeriesList: series}}}, fields: d.fields}
+		return &dataSet{DataSet: &dataset.DataSet{
+			TimeRangeQuery: d.TimeRangeQuery,
+			Results:        dataset.Results{{SeriesList: series}},
+		}, fields: d.fields}
 	}
 	point := func(e int64, values ...any) *dataset.Series {
 		return dataset.NewSeries(s.Header, dataset.Points{{Epoch: epoch.Epoch(e), Values: values}})
@@ -242,8 +258,14 @@ func BenchmarkMarshalOrdered(b *testing.B) {
 	ts, err := UnmarshalTimeseries(orderBody(rows), orderQuery(series, points))
 	require.NoError(b, err)
 	d := ts.(*dataSet)
-	for _, ordering := range [][]timeseries.OrderTerm{nil, {{Column: "time"}}, {{Column: "time", Descending: true}},
-		{{Column: "time"}, {Column: "host"}}, {{Column: "host"}, {Column: "time"}}, {{Column: "n"}, {Column: "s"}}} {
+	for _, ordering := range [][]timeseries.OrderTerm{
+		nil,
+		{{Column: "time"}},
+		{{Column: "time", Descending: true}},
+		{{Column: "time"}, {Column: "host"}},
+		{{Column: "host"}, {Column: "time"}},
+		{{Column: "n"}, {Column: "s"}},
+	} {
 		name := "none"
 		if len(ordering) > 0 {
 			var terms []string

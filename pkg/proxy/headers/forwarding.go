@@ -72,6 +72,15 @@ var ForwardingHeaders = []string{
 	NameVia,
 }
 
+// reverseProxyStrippedHeaders are the forwarding headers httputil.ReverseProxy removes from an
+// outbound request before its Rewrite function runs
+var reverseProxyStrippedHeaders = []string{
+	NameForwarded,
+	NameXForwardedFor,
+	NameXForwardedHost,
+	NameXForwardedProto,
+}
+
 // MergeRemoveHeaders defines a list of headers that should be removed when Merging time series results.
 // Cache-related fields (Cache-Control, Vary, Age, Etag, Expires) are stripped because the merged body
 // is by definition not equivalent to any single shard's response; carrying one shard's cache directives
@@ -103,15 +112,19 @@ func IsValidForwardingType(input string) bool {
 	return ok
 }
 
-// AddForwardingHeaders sets or appends to the forwarding headers to the provided request
-func AddForwardingHeaders(r *http.Request, headerType string) {
+// AddForwardingHeaders sets the request's forwarding headers for this hop, appending to the hops it arrived
+// with only when keepPriorHops is set, as for a trusted proxy's request; otherwise those and X-Real-IP are dropped.
+func AddForwardingHeaders(r *http.Request, headerType string, keepPriorHops bool) {
 	if r == nil {
 		return
 	}
-	hop := HopsFromRequest(r)
+	hop := hopFromRequest(r, keepPriorHops)
 	// Now we can safely remove any pre-existing Forwarding headers before we set them fresh
 	StripClientHeaders(r.Header)
 	StripForwardingHeaders(r.Header)
+	if !keepPriorHops {
+		r.Header.Del(NameXRealIP)
+	}
 	SetVia(r, hop)
 	if f, ok := forwardingFuncs[headerType]; ok && f != nil {
 		f(r, hop)
@@ -239,6 +252,10 @@ func AddResponseVia(h http.Header, proto string) {
 
 // HopsFromRequest extracts a Hop reference that includes a list of any previous hops
 func HopsFromRequest(r *http.Request) *Hop {
+	return hopFromRequest(r, true)
+}
+
+func hopFromRequest(r *http.Request, withPriorHops bool) *Hop {
 	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
 	hop := &Hop{
 		RemoteAddr: clientIP,
@@ -249,7 +266,9 @@ func HopsFromRequest(r *http.Request) *Hop {
 		return hop
 	}
 	hop.Via = r.Header.Get(NameVia)
-	hop.Hops = HopsFromHeader(r.Header)
+	if withPriorHops {
+		hop.Hops = HopsFromHeader(r.Header)
+	}
 	return hop
 }
 
@@ -362,6 +381,16 @@ func StripClientHeaders(h http.Header) {
 	}
 	for _, k := range HopHeaders {
 		h.Del(k)
+	}
+}
+
+// RestoreForwardingHeaders copies onto dst the forwarding headers from src that httputil.ReverseProxy
+// removes before a Rewrite function runs, so the hops they name can be appended to.
+func RestoreForwardingHeaders(dst, src http.Header) {
+	for _, k := range reverseProxyStrippedHeaders {
+		if v, ok := src[k]; ok {
+			dst[k] = v
+		}
 	}
 }
 

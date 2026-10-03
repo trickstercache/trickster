@@ -18,11 +18,17 @@ backends:
 ```
 
 - The access log receives one line per request handled by the backend and is
-  written only when `filename` is set.
+  written only when `filename` is set. An HTTP listener access list whose
+  action is `drop` aborts the request with `http.ErrAbortHandler` inside the
+  access-log middleware's `next.ServeHTTP`, before that completion line is
+  written, so the dropped request has no access-log line. `reject` writes the
+  list's HTTP status and is logged on this path. See [ip-acl.md](./ip-acl.md).
 - The error log receives one line per request whose response status is at or
   above `error_threshold` (default `400`) and is written only when
   `error_filename` is set. An error-logged request also appears in the access
-  log when both are configured.
+  log when both are configured. A listener access-list `reject` whose status
+  is at or above that threshold is included. A `drop` writes no status, so it
+  is not an error-log line either.
 - Two backends may share a filename; they will safely share the underlying
   file and its rotation.
 - When `instance_id` is set in the main config, it is inserted into log
@@ -177,6 +183,36 @@ A key may not contain `%`, `{` or `}`. A token naming an undeclared key
 renders `-`. The Kubernetes controller declares `route_kind`,
 `route_namespace` and `route_name` on every backend it generates, so a line
 names the Ingress, HTTPRoute or GRPCRoute it served.
+
+### Credential Redaction
+
+Trickster masks credentials before they reach a log line. The masked value
+is `REDACTED`, and names stay visible.
+
+- **Query parameters:** values of `password`, `passwd`, `pass`, `key`,
+  `api_key`, `apikey`, `access_token`, `token`, `code`, `state`,
+  `client_secret`, `signature` and `sig`, matched without regard to case.
+  This covers `%r`, `%q`, the `json` preset's `query` field, and the query of
+  a `Referer` or `Location` header.
+- **Headers:** values of `Authorization`, `Proxy-Authorization`, `Cookie`,
+  `Set-Cookie`, `X-Api-Key`, `Api-Key`, `X-Goog-Api-Key` and
+  `X-Amz-Security-Token`, logged through `%{Name}i` or `%{Name}o`.
+- **Cookies:** `%{name}c` masks only the cookies named in configuration;
+  none are masked by default.
+
+The same query and URL redaction applies to the URLs and upstream errors in
+Trickster's application log, including its debug lines.
+
+`logging.redact` adds names to each list, or turns redaction off entirely:
+
+```yaml
+logging:
+  redact:
+    query_params: [session_id]
+    headers: [X-Internal-Token]
+    cookies: [grafana_session]
+    # enabled: false # redaction is on unless explicitly disabled
+```
 
 ### Dropped Lines
 
