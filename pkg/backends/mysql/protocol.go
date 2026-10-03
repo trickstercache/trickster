@@ -311,6 +311,9 @@ func downstreamCredentials(o *bo.Options) (map[string]string, error) {
 		return nil, errors.New("MySQL authenticator cannot be observe_only")
 	}
 	users := maps.Clone(map[string]string(o.AuthOptions.Users))
+	if users == nil {
+		users = make(map[string]string)
+	}
 	if o.AuthOptions.UsersFile != "" {
 		loaded, err := loaders.LoadData(o.AuthOptions.UsersFile, o.AuthOptions.UsersFileFormat)
 		if err != nil {

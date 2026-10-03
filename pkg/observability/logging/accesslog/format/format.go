@@ -24,6 +24,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -200,7 +201,7 @@ func compileToken(token byte, arg string, hasArg bool) (emitter, error) {
 		return func(b []byte, f *Fields) []byte {
 			b = appendEscaped(b, f.Method)
 			b = append(b, ' ')
-			b = appendEscaped(b, f.RequestURI)
+			b = appendEscaped(b, redact.URI(f.RequestURI))
 			b = append(b, ' ')
 			return appendEscaped(b, f.Proto)
 		}, nil
@@ -218,7 +219,7 @@ func compileToken(token byte, arg string, hasArg bool) (emitter, error) {
 				return b
 			}
 			b = append(b, '?')
-			return appendEscaped(b, f.Query)
+			return appendEscaped(b, redact.Query(f.Query))
 		}, nil
 	case 'H':
 		return func(b []byte, f *Fields) []byte {
@@ -415,7 +416,7 @@ func appendHeader(b []byte, h http.Header, key string) []byte {
 	if h == nil {
 		return append(b, dash...)
 	}
-	return appendEscapedOrDash(b, h.Get(key))
+	return appendEscapedOrDash(b, redact.Header(key, h.Get(key)))
 }
 
 func appendCookie(b []byte, h http.Header, name string) []byte {
@@ -423,7 +424,7 @@ func appendCookie(b []byte, h http.Header, name string) []byte {
 		if cookies, err := http.ParseCookie(h.Get(headers.NameCookie)); err == nil {
 			for _, c := range cookies {
 				if c.Name == name {
-					return appendEscapedOrDash(b, c.Value)
+					return appendEscapedOrDash(b, redact.Cookie(name, c.Value))
 				}
 			}
 		}
@@ -492,7 +493,7 @@ func jsonEmitters() []emitter {
 			return appendJSONString(b, f.Path)
 		}},
 		{"query", func(b []byte, f *Fields) []byte {
-			return appendJSONString(b, f.Query)
+			return appendJSONString(b, redact.Query(f.Query))
 		}},
 		{"proto", func(b []byte, f *Fields) []byte {
 			return appendJSONString(b, f.Proto)
@@ -647,5 +648,5 @@ func appendJSONHeader(b []byte, h http.Header, key string) []byte {
 	if h == nil {
 		return append(b, `""`...)
 	}
-	return appendJSONString(b, h.Get(key))
+	return appendJSONString(b, redact.Header(key, h.Get(key)))
 }

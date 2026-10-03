@@ -138,12 +138,14 @@ func TestNativeMarshalMatchesLegacyUnmerged(t *testing.T) {
 		p := dspoints.Of(s)
 		tied := append(dataset.NewSeries(s.Header, p[:1]).Segments(), dataset.NewSeries(s.Header, p[:1]).Segments()...)
 		requireLegacyNative(t, &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{
-			dataset.NewSeriesOf(s.Header, tied), s, dataset.NewSeries(s.Header, p)}}}}, plan)
+			dataset.NewSeriesOf(s.Header, tied), s, dataset.NewSeries(s.Header, p),
+		}}}}, plan)
 		// a value that can't be written stops the write before it starts
 		nan := dspoints.Of(s)
 		nan[len(nan)-1].Values[len(nan[len(nan)-1].Values)-1] = math.NaN()
 		requireLegacyNative(t, &dataset.DataSet{Results: dataset.Results{{SeriesList: append(dataset.SeriesList{
-			dataset.NewSeries(s.Header, nan)}, a.Results[0].SeriesList...)}}}, plan)
+			dataset.NewSeries(s.Header, nan),
+		}, a.Results[0].SeriesList...)}}}, plan)
 		requireLegacyNative(t, &dataset.DataSet{}, plan)
 		requireLegacyNative(t, &dataset.DataSet{Results: dataset.Results{nil, {}}}, plan)
 	}
@@ -193,7 +195,8 @@ func TestNativeMarshalMatchesLegacyTies(t *testing.T) {
 	nan := dspoints.Of(s)
 	nan[0].Values[0] = math.NaN()
 	requireLegacyNative(t, &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{
-		dataset.NewSeries(s.Header, nan)}}}}, &QueryPlan{queryType: queryTimeseries})
+		dataset.NewSeries(s.Header, nan),
+	}}}}, &QueryPlan{queryType: queryTimeseries})
 	// a groupBy writes its version, and a row whose version and rank are null writes none
 	ts, err := UnmarshalTimeseries([]byte(nativeBody(rng, queryGroupBy)), testTRQ(groupByPlan))
 	require.NoError(t, err)
@@ -224,16 +227,20 @@ func TestSQLOrderMatchesBoxed(t *testing.T) {
 			for _, s := range ds.Results[0].SeriesList {
 				pts := dspoints.Of(s)
 				for i := range pts {
-					pts[i].Values[len(pts[i].Values)-1] = []any{1.5, math.NaN(), uint64(7), uint64(3), true, false, "x",
-						int64(-2), nil, json.Number("2.5e0"), json.Number("x")}[rng.IntN(11)]
+					pts[i].Values[len(pts[i].Values)-1] = []any{
+						1.5, math.NaN(), uint64(7), uint64(3), true, false, "x",
+						int64(-2), nil, json.Number("2.5e0"), json.Number("x"),
+					}[rng.IntN(11)]
 				}
 				s.SetPoints(pts)
 			}
 		}
 		ordering := randomOrdering(rng)
 		if len(ordering) == 0 || ordering[0].Column == "bucket" {
-			ordering = append([]timeseries.OrderTerm{{Column: "value", Descending: rng.IntN(2) == 0,
-				NullsFirst: rng.IntN(2) == 0}}, ordering...)
+			ordering = append([]timeseries.OrderTerm{{
+				Column: "value", Descending: rng.IntN(2) == 0,
+				NullsFirst: rng.IntN(2) == 0,
+			}}, ordering...)
 		}
 		o := newSQLOrder(ds, ordering)
 		rows := o.stored()
@@ -272,8 +279,12 @@ func BenchmarkSQLMarshalValueOrdered(b *testing.B) {
 
 func BenchmarkNativeMarshalOrdered(b *testing.B) {
 	ds := benchDruidDataSet(100, 1000)
-	for _, plan := range []*QueryPlan{{queryType: queryTimeseries}, {queryType: queryGroupBy},
-		{queryType: queryGroupBy, descending: true}, {queryType: queryTopN}} {
+	for _, plan := range []*QueryPlan{
+		{queryType: queryTimeseries},
+		{queryType: queryGroupBy},
+		{queryType: queryGroupBy, descending: true},
+		{queryType: queryTopN},
+	} {
 		name := plan.queryType + map[bool]string{true: "-desc"}[plan.descending]
 		b.Run(name+"/legacy", func(b *testing.B) {
 			b.ReportAllocs()

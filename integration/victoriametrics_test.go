@@ -117,8 +117,10 @@ func TestVictoriaMetrics(t *testing.T) {
 	end := time.Now().Add(-3*time.Hour).Unix() / vmStep * vmStep
 	start := end - 72*vmStep
 	rng := func(query string, shift int64) url.Values {
-		return url.Values{"query": {query}, "start": {strconv.FormatInt(start+shift, 10)},
-			"end": {strconv.FormatInt(end+shift, 10)}, "step": {strconv.Itoa(vmStep)}}
+		return url.Values{
+			"query": {query}, "start": {strconv.FormatInt(start+shift, 10)},
+			"end": {strconv.FormatInt(end+shift, 10)}, "step": {strconv.Itoa(vmStep)},
+		}
 	}
 	// same answer as the origin, through the named cache path
 	same := func(t *testing.T, path string, v url.Values, method string, hdr http.Header, engine string) vmFetch {
@@ -189,9 +191,11 @@ func TestVictoriaMetrics(t *testing.T) {
 	t.Run("graphite", func(t *testing.T) {
 		// the Graphite fixture holds 48 hours of 10s data
 		gEnd := time.Now().Add(-2 * time.Hour).Unix()
-		v := url.Values{"target": {"aliasByNode(vmgraphite.fast.*.*.requests, 2, 3)"},
-			"from": {strconv.FormatInt(gEnd-3600, 10)}, "until": {strconv.FormatInt(gEnd, 10)},
-			"format": {"json"}, "maxDataPoints": {"200"}}
+		v := url.Values{
+			"target": {"aliasByNode(vmgraphite.fast.*.*.requests, 2, 3)"},
+			"from":   {strconv.FormatInt(gEnd-3600, 10)}, "until": {strconv.FormatInt(gEnd, 10)},
+			"format": {"json"}, "maxDataPoints": {"200"},
+		}
 		hdr := http.Header{"Storage-Step": {"10s"}}
 		same(t, "/render", v, http.MethodPost, hdr, "ObjectProxyCache")
 		requireCacheHit(t, func() map[string]string {

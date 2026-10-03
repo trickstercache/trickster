@@ -27,6 +27,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
+const testChallenge = "Basic"
+
 type testAuthenticator struct {
 	result        *types.AuthResult
 	err           error
@@ -75,6 +77,13 @@ func TestMiddleware(t *testing.T) {
 			cached: &types.AuthResult{Status: types.AuthFailed}, wantStatus: http.StatusUnauthorized,
 		},
 		{
+			name: "cached failure copies challenge", authenticator: &testAuthenticator{},
+			cached: &types.AuthResult{
+				Status: types.AuthFailed, ResponseHeaders: map[string]string{headers.NameWWWAuthenticate: testChallenge},
+			},
+			wantStatus: http.StatusUnauthorized, wantResponseHead: testChallenge,
+		},
+		{
 			name: "cached success", authenticator: &testAuthenticator{},
 			cached: &types.AuthResult{Status: types.AuthSuccess}, wantStatus: http.StatusNoContent,
 			wantNext: true,
@@ -88,8 +97,8 @@ func TestMiddleware(t *testing.T) {
 			wantStatus: http.StatusUnauthorized, wantAuthCalls: 1,
 		},
 		{name: "failed result copies challenge", authenticator: &testAuthenticator{result: &types.AuthResult{
-			Status: types.AuthFailed, ResponseHeaders: map[string]string{headers.NameWWWAuthenticate: "Basic"},
-		}}, wantStatus: http.StatusUnauthorized, wantAuthCalls: 1, wantResponseHead: "Basic"},
+			Status: types.AuthFailed, ResponseHeaders: map[string]string{headers.NameWWWAuthenticate: testChallenge},
+		}}, wantStatus: http.StatusUnauthorized, wantAuthCalls: 1, wantResponseHead: testChallenge},
 		{name: "observed result", authenticator: &testAuthenticator{result: &types.AuthResult{
 			Status: types.AuthObserved,
 		}}, wantStatus: http.StatusNoContent, wantNext: true, wantAuthCalls: 1, wantAuthResult: true},
@@ -152,5 +161,16 @@ func TestNamedMiddlewareScopesCachedResult(t *testing.T) {
 	}
 	if rsc.AuthResult.AuthenticatorName != "inner" {
 		t.Errorf("cached authenticator = %q, want inner", rsc.AuthResult.AuthenticatorName)
+	}
+}
+
+func TestMiddlewareWithoutResources(t *testing.T) {
+	a := &testAuthenticator{result: &types.AuthResult{Status: types.AuthSuccess}}
+	recorder := httptest.NewRecorder()
+	Middleware(a, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})).ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/", nil))
+	if recorder.Code != http.StatusNoContent || a.sanitizeCalls != 1 {
+		t.Fatalf("response = %d, sanitize calls = %d; want %d/1", recorder.Code, a.sanitizeCalls, http.StatusNoContent)
 	}
 }

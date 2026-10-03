@@ -2,9 +2,11 @@
 
 Trickster 2.x provides an Authenticator capability that allows you to protect Backends with an Authentication layer.
 
-Authenticator resources are defined globally by name, and then mapped into any Backend and/or Path configuration as needed. Authenticator users can be loaded from `htpasswd` or `csv` files, or directly in the Trickster config file. You can provide credentials in plaintext, bcrypt, apache md5-script, as well as legacy formats rsa-256 and rsa-512.
+Authenticator resources are defined globally by name, and then mapped into any Backend and/or Path configuration as needed. Authenticator users can be loaded from `htpasswd` or `csv` files, or directly in the Trickster config file. You can provide credentials in plaintext, bcrypt, Apache MD5 (`$apr1$`), MD5-crypt (`$1$`), as well as legacy formats sha-256-crypt and sha-512-crypt (`$5$`, `$6$`). PostgreSQL SCRAM-SHA-256 and `md5` verifiers are accepted too.
 
-Authenticators work with all Backend provider types. Requests are handled by their respective Authenticators before all other Handlers (e.g., Caches, Rules, Request Rewrites, ALB Routes, etc.).
+A stored hash or verifier is only ever checked as that format, so a client that sends the stored hash itself as its password is rejected. Plaintext credentials are compared in constant time, and an empty stored credential never matches.
+
+Authenticators work with all Backend provider types. Requests are handled by their respective Authenticators before all other Handlers (e.g., Caches, Rules, Request Rewrites, ALB Routes, etc.). Authentication sees the request as the client sent it: backend and path request rewriters run after it, so a rewriter cannot change the path or credentials that authentication judges.
 
 Native MySQL listeners terminate `mysql_native_password` authentication and
 have stricter credential-source requirements than HTTP authenticators. See the
@@ -45,7 +47,7 @@ If the user data changes (e.g. updated users_file contents or updated embedded u
 
 ClickHouse Auth is supported by using `provider: clickhouse` in the Authenticator config.
 
-ClickHouse authentication is the same as Basic Auth, except you can also provide `user` and `password` URL params. 
+ClickHouse authentication is the same as Basic Auth, except you can also provide `user` and `password` URL params. Unless `proxy_preserve: true` is set, those URL params are removed along with the `Authorization` header before the request is proxied.
 
 ## Example Authenticator Configs
 
@@ -100,7 +102,7 @@ authenticators:
     provider: basic # http basic auth (required)
     proxy_preserve: true # don't strip auth headers when proxying this request upstream
     users_file: /path/to/user-manifest.csv # optional users source file
-    users_file_format: csv # required when users_file is set
+    users_file_format: csv # required when users_file is set: csv, csvNoHeader or htpasswd
     users: # optional embedded users manifest (username: credential)
       user1: red123
     config: # optional provider-specific configs

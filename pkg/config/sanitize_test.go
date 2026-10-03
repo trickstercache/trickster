@@ -298,6 +298,7 @@ request_rewriters:
 }
 
 func TestConfigStringsRedactDSNAndAuthenticatorPasswords(t *testing.T) {
+	const configSecretKey, configSecret = "client_secret", "config-super-secret"
 	conf := NewConfig()
 	err := conf.loadYAMLConfig(`
 authenticators:
@@ -305,6 +306,11 @@ authenticators:
     provider: basic
     users:
       grafana: authenticator-super-secret
+    config:
+      realm: visible-realm
+      ` + configSecretKey + `: ` + configSecret + `
+      oidc:
+        signing_key: nested-super-secret
 backends:
   mysql:
     provider: mysql
@@ -319,11 +325,22 @@ backends:
 		"String":          conf.String(),
 		"SanitizedString": conf.SanitizedString(),
 	} {
-		for _, secret := range []string{"dsn-super-secret", "authenticator-super-secret"} {
+		for _, secret := range []string{
+			"dsn-super-secret", "authenticator-super-secret",
+			configSecret, "nested-super-secret",
+		} {
 			if strings.Contains(output, secret) {
 				t.Errorf("%s exposed %q:\n%s", name, secret, output)
 			}
 		}
+		for _, visible := range []string{"visible-realm", configSecretKey, "signing_key"} {
+			if !strings.Contains(output, visible) {
+				t.Errorf("%s hid %q:\n%s", name, visible, output)
+			}
+		}
+	}
+	if conf.Authenticators["mysql-clients"].ProviderData[configSecretKey] != configSecret {
+		t.Error("the config views mutated the running authenticator config")
 	}
 }
 
@@ -433,8 +450,10 @@ acme:
 		t.Fatal(err)
 	}
 	out := conf.SanitizedString()
-	for _, private := range []string{"redis.private.example", "hunter2", "ops@private.example",
-		"ns.private.example", "ZPRIVATE", "ask.private.example", "edge-private"} {
+	for _, private := range []string{
+		"redis.private.example", "hunter2", "ops@private.example",
+		"ns.private.example", "ZPRIVATE", "ask.private.example", "edge-private",
+	} {
 		if strings.Contains(out, private) {
 			t.Errorf("sanitized output contains %q", private)
 		}

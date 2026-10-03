@@ -228,8 +228,10 @@ func TestExporterMatchesBackfill(t *testing.T) {
 	dir := writeFixture(t)
 	at := int64(fixtureStart + 120)
 	out := filepath.Join(t.TempDir(), "trips.om")
-	if err := backfill(backfillOptions{dataDir: dir, out: out, step: time.Minute, window: time.Hour,
-		now: time.Unix(at, 0)}, io.Discard); err != nil {
+	if err := backfill(backfillOptions{
+		dataDir: dir, out: out, step: time.Minute, window: time.Hour,
+		now: time.Unix(at, 0),
+	}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	om, _ := os.ReadFile(out)
@@ -377,8 +379,10 @@ func TestOverflowGuards(t *testing.T) {
 	}
 
 	dir := writeFixture(t)
-	err := backfill(backfillOptions{dataDir: dir, out: filepath.Join(t.TempDir(), "x"), step: time.Second,
-		window: 30 * 24 * time.Hour, now: time.Unix(fixtureStart+3600, 0)}, io.Discard)
+	err := backfill(backfillOptions{
+		dataDir: dir, out: filepath.Join(t.TempDir(), "x"), step: time.Second,
+		window: 30 * 24 * time.Hour, now: time.Unix(fixtureStart+3600, 0),
+	}, io.Discard)
 	if err == nil || !strings.Contains(err.Error(), "samples per series") {
 		t.Errorf("expected the step limit error, got %v", err)
 	}

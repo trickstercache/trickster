@@ -70,8 +70,10 @@ func TestMarshalTimeseriesJSONWriter(t *testing.T) {
 func jsonBranchSeries(timeType timeseries.FieldDataType) *dataset.Series {
 	h := dataset.SeriesHeader{
 		Tags: dataset.Tags{"host": "a<b>&c"},
-		TimestampField: timeseries.FieldDefinition{Name: timeAltColumnName, DataType: timeType,
-			SDataType: TypeRFC3339, Role: timeseries.RoleTimestamp, OutputPosition: 3},
+		TimestampField: timeseries.FieldDefinition{
+			Name: timeAltColumnName, DataType: timeType,
+			SDataType: TypeRFC3339, Role: timeseries.RoleTimestamp, OutputPosition: 3,
+		},
 		TagFieldsList: timeseries.FieldDefinitions{
 			{Name: "host", OutputPosition: 4, SDataType: TypeString, Role: timeseries.RoleTag},
 			{Name: "missing", OutputPosition: 5, SDataType: TypeString, DefaultValue: "dflt", Role: timeseries.RoleTag},
@@ -90,8 +92,13 @@ func jsonBranchSeries(timeType timeseries.FieldDataType) *dataset.Series {
 		},
 	}
 	values := [][]any{
-		{1.5, "x"}, {nil, ""}, {math.NaN(), " <"}, {int64(-7), true}, {uint64(9), json.Number("12.50")},
-		{[]byte("raw"), map[string]any{"k": 1}}, {math.Inf(1), nil},
+		{1.5, "x"},
+		{nil, ""},
+		{math.NaN(), " <"},
+		{int64(-7), true},
+		{uint64(9), json.Number("12.50")},
+		{[]byte("raw"), map[string]any{"k": 1}},
+		{math.Inf(1), nil},
 	}
 	pts := make(dataset.Points, len(values))
 	for i, v := range values {
@@ -103,16 +110,20 @@ func jsonBranchSeries(timeType timeseries.FieldDataType) *dataset.Series {
 var legacyMissingValue = regexp.MustCompile(`:([,}])`)
 
 func TestWriteJSONMatchesLegacy(t *testing.T) {
-	for _, tt := range []timeseries.FieldDataType{timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano,
-		timeseries.Int64} {
+	for _, tt := range []timeseries.FieldDataType{
+		timeseries.DateTimeRFC3339, timeseries.DateTimeRFC3339Nano,
+		timeseries.Int64,
+	} {
 		a, b := jsonBranchSeries(tt), jsonBranchSeries(tt)
 		ds := &dataset.DataSet{TimeRangeQuery: testTRQ, Results: []*dataset.Result{
-			{SeriesList: []*dataset.Series{a, b}}, {Name: "second", SeriesList: []*dataset.Series{a}},
+			{SeriesList: []*dataset.Series{a, b}},
+			{Name: "second", SeriesList: []*dataset.Series{a}},
 			{SeriesList: []*dataset.Series{}},
 		}}
 		// a series held in parts reads as one
 		ds.Results[1].SeriesList = append(ds.Results[1].SeriesList, parts.Of(&dataset.DataSet{Results: []*dataset.Result{
-			{SeriesList: []*dataset.Series{jsonBranchSeries(tt)}}}}, epoch.Epoch(2*time.Second)).Results[0].SeriesList[0])
+			{SeriesList: []*dataset.Series{jsonBranchSeries(tt)}},
+		}}, epoch.Epoch(2*time.Second)).Results[0].SeriesList[0])
 		for _, d := range []*dataset.DataSet{ds, testDataSet(), {Results: []*dataset.Result{}}} {
 			var want, got bytes.Buffer
 			require.NoError(t, legacyWriteJSON(d, &want))

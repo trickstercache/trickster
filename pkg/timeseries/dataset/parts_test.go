@@ -160,8 +160,10 @@ func TestMergeDisjointPartsMatchesMergeDisjoint(t *testing.T) {
 		var sets []*DataSet
 		switch rng.IntN(3) {
 		case 0: // start and end buckets
-			sets = []*DataSet{randomMergeSet(rng, names, 90, 99, true), interior,
-				randomMergeSet(rng, names, 201, 210, true)}
+			sets = []*DataSet{
+				randomMergeSet(rng, names, 90, 99, true), interior,
+				randomMergeSet(rng, names, 201, 210, true),
+			}
 		case 1: // an end bucket only
 			sets = []*DataSet{interior, randomMergeSet(rng, names, 201, 210, true)}
 		default: // a part that overlaps, which must still join as MergeDisjoint joins it

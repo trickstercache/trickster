@@ -114,9 +114,20 @@ func TestSpread(t *testing.T) {
 		heavy[i] = 150 + i
 	}
 	for _, weights := range [][]int{
-		{3, 1}, {1, 3, 2}, {9, 1}, {1, 1, 1, 9}, {7, 1, 1}, {5, 3, 2}, {100, 10, 1}, {2, 3}, big,
+		{3, 1},
+		{1, 3, 2},
+		{9, 1},
+		{1, 1, 1, 9},
+		{7, 1, 1},
+		{5, 3, 2},
+		{100, 10, 1},
+		{2, 3},
+		big,
 		// beyond the laid-out schedule: walked by stride, over few members and over many
-		{4000, 3000, 2000, 1000}, {50000, 1}, {6000, 1, 1, 1}, heavy,
+		{4000, 3000, 2000, 1000},
+		{50000, 1},
+		{6000, 1, 1, 1},
+		heavy,
 	} {
 		var total int
 		for _, w := range weights {

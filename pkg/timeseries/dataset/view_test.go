@@ -306,8 +306,10 @@ func viewEdgeSet() *DataSet {
 	ds := viewSet(map[string][]int{"a": {1, 2, 3, 4, 5}, "b": {2, 4}, "c": {5}})
 	ds.Results[0].Name = "r0"
 	ds.Results[0].SeriesList = append(ds.Results[0].SeriesList, nil, NewSeries(SeriesHeader{Name: "empty"}, nil))
-	ds.Results = append(ds.Results, nil, &Result{StatementID: 2, Name: "r2", Error: "partial",
-		SeriesList: SeriesList{viewSet(map[string][]int{"d": {1, 3}}).Results[0].SeriesList[0]}})
+	ds.Results = append(ds.Results, nil, &Result{
+		StatementID: 2, Name: "r2", Error: "partial",
+		SeriesList: SeriesList{viewSet(map[string][]int{"d": {1, 3}}).Results[0].SeriesList[0]},
+	})
 	ds.VolatileExtentList = timeseries.ExtentList{{Start: minuteTime(4), End: minuteTime(5)}}
 	ds.Error, ds.SourceResultType = "an error", "matrix"
 	ds.Status, ds.ErrorType, ds.Warnings = "success", "none", []string{"w"}

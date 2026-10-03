@@ -160,6 +160,12 @@ const (
 	NameProxyAuthenticate = "Proxy-Authenticate"
 	// NameProxyAuthorization represents the HTTP Header Name of "Proxy-Authorization"
 	NameProxyAuthorization = "Proxy-Authorization"
+	// NameXAPIKey represents the HTTP Header Name of "X-Api-Key"
+	NameXAPIKey = "X-Api-Key" // #nosec G101 -- a header name, not a credential
+	// NameAPIKey represents the HTTP Header Name of "Api-Key"
+	NameAPIKey = "Api-Key"
+	// NameXGoogAPIKey represents the HTTP Header Name of "X-Goog-Api-Key"
+	NameXGoogAPIKey = "X-Goog-Api-Key" // #nosec G101 -- a header name, not a credential
 	// NameProxyConnection represents the HTTP Header Name of "Proxy-Connection"
 	NameProxyConnection = "Proxy-Connection"
 	// NameKeepAlive represents the HTTP Header Name of "Keep-Alive"
@@ -365,7 +371,11 @@ func LogString(h http.Header) string {
 	for _, k := range names {
 		v := h[k]
 		if len(v) > 0 {
-			fmt.Fprintf(sb, "%s[%s:%s]", sep, k, v[0])
+			value := v[0]
+			if IsSensitive(k) {
+				value = redactedValue
+			}
+			fmt.Fprintf(sb, "%s[%s:%s]", sep, k, value)
 			sep = ","
 		}
 	}

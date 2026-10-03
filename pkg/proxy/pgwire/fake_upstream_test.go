@@ -212,8 +212,10 @@ func (f *fakeUpstream) session(backend *pgproto3.Backend, startup *pgproto3.Star
 		backend.Send(&pgproto3.NegotiateProtocolVersion{NewestMinorProtocol: pgproto3.ProtocolVersion30})
 	}
 	if !f.authenticate(backend, startup.Parameters[paramUser]) {
-		backend.Send(&pgproto3.ErrorResponse{Severity: severityFatal, Code: sqlstateInvalidPassword,
-			Message: "password authentication failed"})
+		backend.Send(&pgproto3.ErrorResponse{
+			Severity: severityFatal, Code: sqlstateInvalidPassword,
+			Message: "password authentication failed",
+		})
 		_ = backend.Flush()
 		return
 	}
@@ -384,8 +386,10 @@ func (f *fakeUpstream) query(backend *pgproto3.Backend, pid uint32, sql string, 
 		f.mtx.Unlock()
 		select {
 		case <-canceled:
-			backend.Send(&pgproto3.ErrorResponse{Severity: "ERROR", Code: sqlstateCanceled,
-				Message: "canceling statement due to user request"})
+			backend.Send(&pgproto3.ErrorResponse{
+				Severity: "ERROR", Code: sqlstateCanceled,
+				Message: "canceling statement due to user request",
+			})
 		case <-time.After(fakeTimeout):
 			f.t.Error("slow query was never canceled")
 		}

@@ -222,8 +222,10 @@ func TestTerminatedAuthenticatesEveryCredentialFormat(t *testing.T) {
 		"plaintext":      {stored: testClientPass},
 		"scram verifier": {stored: verifier.String()},
 		"md5 method":     {stored: cred.PostgresMD5(testClientUser, testClientPass), mutate: func(c *Config) { c.AllowMD5 = true }},
-		"md5 cleartext": {stored: cred.PostgresMD5(testClientUser, testClientPass),
-			mutate: func(c *Config) { c.AllowCleartextWithoutTLS = true }},
+		"md5 cleartext": {
+			stored: cred.PostgresMD5(testClientUser, testClientPass),
+			mutate: func(c *Config) { c.AllowCleartextWithoutTLS = true },
+		},
 		"bcrypt": {stored: string(hashed), mutate: func(c *Config) { c.AllowCleartextWithoutTLS = true }},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -73,6 +73,18 @@
 #     # proxy otherwise. Default: false
 #     proxy_protocol: false
 #
+#     # path_normalization cleans each request path before routing it, and the
+#     # cleaned path is what the origin receives. See docs/configuring.md
+#     path_normalization:
+#       # dot_segments removes '.' and '..' segments per RFC 3986 (normalize),
+#       # refuses them with 400 (reject), or leaves them (off). Default: normalize
+#       dot_segments: normalize
+#       # merge_slashes collapses each run of slashes to one. Default: false
+#       merge_slashes: false
+#       # escaped_slashes forwards %2F as data within a segment (keep), refuses
+#       # it with 400 (reject), or decodes it to a separator (unescape). Default: keep
+#       escaped_slashes: keep
+#
 #     # max_request_body_size_bytes indicates the maximum allowed request body size.
 #     # Use 0 for no body allowed, and < 0 for no maximum. Default: 10MB.
 #     max_request_body_size_bytes: 10485760
@@ -1603,7 +1615,7 @@ backends:
 #     proxy_preserve: false
 #     # users_file is the optional users source file
 #     users_file: /path/to/user-manifest.csv
-#     # users_file_format is the source file format. Required when users_file is set. Valid options: csv, htpasswd
+#     # users_file_format is the source file format. Required when users_file is set. Valid options: csv, csvNoHeader, htpasswd
 #     users_file_format: csv
 #     # users is an optional embedded users list (format is: name: credential)
 #     users: 
@@ -1771,6 +1783,18 @@ backends:
 
 #   # compress gzips rotated archives. default is true
 #   compress: true
+
+#   # redact masks credentials in access logs and engine logs. It is on by default and
+#   # always covers the built-in names listed in /docs/access-logs.md; the lists add names.
+#   redact:
+#     # enabled: false turns redaction off entirely. default is true
+#     enabled: true
+#     # query_params are query parameter names whose values are masked, matched without case
+#     query_params: [session_id]
+#     # headers are request or response header names whose values are masked
+#     headers: [X-Internal-Token]
+#     # cookies are the cookie names whose values %{name}c masks. none by default
+#     cookies: [grafana_session]
 
 # # Kubernetes Gateway API / Ingress controller - see /docs/configuring.md and
 # # /docs/kubernetes-rbac.md for more information.

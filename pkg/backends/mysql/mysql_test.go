@@ -187,6 +187,11 @@ func TestProtocolConfigurationHelpers(t *testing.T) {
 	if err != nil || users["file-client"] != "file-password" {
 		t.Fatalf("file credentials = %v, %v", users, err)
 	}
+	o.AuthOptions.Users = nil
+	users, err = DownstreamCredentialsFromOptions(o)
+	if err != nil || len(users) != 1 || users["file-client"] != "file-password" {
+		t.Fatalf("users-file-only credentials = %v, %v", users, err)
+	}
 
 	config, err := ProtocolConfigFromOptions(o)
 	if err != nil {

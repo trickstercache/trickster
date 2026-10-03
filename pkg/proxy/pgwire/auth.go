@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/cred"
 
@@ -41,10 +40,6 @@ var (
 	// errNoAuthMethod means the stored credential needs a method this
 	// connection may not use, e.g. a cleartext password without TLS.
 	errNoAuthMethod = errors.New("no permitted authentication method")
-
-	// passwordHashPrefixes identify crypt-style hashes, which can only be
-	// checked against a password the client sends in the clear.
-	passwordHashPrefixes = []string{"$apr1$", "$1$", "$5$", "$6$", "$2a$", "$2b$", "$2y$"}
 )
 
 type authEntry struct {
@@ -66,7 +61,8 @@ func newAuthEntries(users map[string]string) (map[string]*authEntry, error) {
 			entry.scram = verifier
 		case cred.IsPostgresMD5(credential):
 			entry.stored, entry.md5 = credential, true
-		case isPasswordHash(credential):
+		case cred.IsCryptHash(credential):
+			// crypt hashes can only be checked against a cleartext password
 			entry.stored = credential
 		default:
 			salt := make([]byte, cred.SCRAMSaltLen)
@@ -82,15 +78,6 @@ func newAuthEntries(users map[string]string) (map[string]*authEntry, error) {
 		entries[user] = entry
 	}
 	return entries, nil
-}
-
-func isPasswordHash(credential string) bool {
-	for _, prefix := range passwordHashPrefixes {
-		if strings.HasPrefix(credential, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *session) authenticate() error {

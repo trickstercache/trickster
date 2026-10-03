@@ -459,3 +459,41 @@ func BenchmarkRender(b *testing.B) {
 		})
 	}
 }
+
+func TestRenderRedactsCredentials(t *testing.T) {
+	const password, token = "ch-super-secret", "bearer-super-secret"
+	const custom = `%q %{Authorization}i %{Referer}i %{Cookie}i`
+	const query = "user=default&password=" + password + "&query=SELECT+1"
+	f := testFields()
+	f.RequestURI = "/?" + query
+	f.Path, f.Query = "/", query
+	f.ReqHeader = f.ReqHeader.Clone()
+	f.ReqHeader.Set(headers.NameAuthorization, "Bearer "+token)
+	f.ReqHeader.Set(headers.NameReferer, "https://grafana.example/?api_key="+token)
+	for _, name := range []string{Common, Combined, Extended, JSON, custom} {
+		line := render(t, name, f)
+		for _, secret := range []string{password, token, "abc123"} {
+			if strings.Contains(line, secret) {
+				t.Errorf("format %q logged %q: %s", name, secret, line)
+			}
+		}
+		// names and the values of other parameters are kept
+		if !strings.Contains(line, "user=default&password=REDACTED&query=SELECT+1") {
+			t.Errorf("format %q did not redact the query in place: %s", name, line)
+		}
+	}
+}
+
+func TestRenderDoesNotAllocateWhenClean(t *testing.T) {
+	f := testFields()
+	buf := make([]byte, 0, 1024)
+	for _, name := range []string{Common, Combined, Extended, JSON} {
+		fm, err := ParseFormat(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if allocs := testing.AllocsPerRun(100, func() { buf = fm.Render(buf[:0], f) }); allocs != 0 {
+			t.Errorf("format %q allocated %v times rendering a request with nothing to redact", name, allocs)
+		}
+	}
+}

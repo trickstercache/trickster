@@ -186,7 +186,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			b, _ := request.GetBody(pr.Request)
 			kb.addQueryContent(pr.Request, b)
 		}
-		return kb.sum(pr.URL.Path, upstreamKeyPart,
+		return kb.sum(pr.URL.EscapedPath(), upstreamKeyPart,
 			pr.corsCacheKeyPart(pr.Request), extra)
 	}
 
@@ -235,7 +235,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		key := pc.KeyHasher(r.URL.EscapedPath(), qp, r.Header, b, trq, extra)
 		if cors := pr.corsCacheKeyPart(r); upstreamKeyPart != "" || cors != "" {
 			var kb keyBuilder
 			return kb.sum(key, upstreamKeyPart, cors)
@@ -342,7 +342,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	// the identity part is the precomputed digest of the configured
 	// request_headers/request_params, so rotating either rotates the key
-	return kb.sum(pr.URL.Path, r.Method, upstreamKeyPart,
+	return kb.sum(pr.URL.EscapedPath(), r.Method, upstreamKeyPart,
 		pr.corsCacheKeyPart(r), pc.IdentityKeyPart(), extra)
 }
 

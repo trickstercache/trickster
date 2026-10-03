@@ -39,8 +39,10 @@ func benchDruidDataSet(series, points int) *dataset.DataSet {
 		}, nil)
 		pts := make(dataset.Points, points)
 		for j := range pts {
-			pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-				Values: []any{page, int64(i * j % 97), float64(i*j%9973) / 7}}
+			pts[j] = dataset.Point{
+				Epoch:  epoch.Epoch(int64(1700000000+60*j) * 1e9),
+				Values: []any{page, int64(i * j % 97), float64(i*j%9973) / 7},
+			}
 		}
 		s.SetPoints(pts)
 		r.SeriesList = append(r.SeriesList, s)
@@ -49,8 +51,10 @@ func benchDruidDataSet(series, points int) *dataset.DataSet {
 }
 
 func BenchmarkMarshalTimeseriesWriter(b *testing.B) {
-	sqlPlan := &SQLQueryPlan{Plan: &sqlanalyzer.QueryPlan{OutputColumn: "__time",
-		GroupColumns: []string{"page"}, ValueColumns: []string{"count", "added"}}}
+	sqlPlan := &SQLQueryPlan{Plan: &sqlanalyzer.QueryPlan{
+		OutputColumn: "__time",
+		GroupColumns: []string{"page"}, ValueColumns: []string{"count", "added"},
+	}}
 	for _, shape := range []struct{ series, points int }{{100, 1000}, {10, 60}} {
 		ds := benchDruidDataSet(shape.series, shape.points)
 		for _, query := range []struct {

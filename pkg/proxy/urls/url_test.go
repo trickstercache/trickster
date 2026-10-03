@@ -48,6 +48,32 @@ func TestBuildUpstreamURL(t *testing.T) {
 	}
 }
 
+func TestBuildUpstreamURLKeepsEncoding(t *testing.T) {
+	tests := []struct{ base, target, want string }{
+		{"http://o/base", "http://test/a%2Fb/c", "/base/a%2Fb/c"},
+		{"http://o/b%2Fase", "http://test/a%2Fb", "/b%2Fase/a%2Fb"},
+		{"http://o/b%2Fase", "http://test/a/b", "/b%2Fase/a/b"},
+		{"http://o/base", "http://test/a/b", "/base/a/b"},
+	}
+	for _, test := range tests {
+		base, _ := url.Parse(test.base)
+		r, _ := http.NewRequest(http.MethodGet, test.target, nil)
+		if got := BuildUpstreamURL(r, base).EscapedPath(); got != test.want {
+			t.Errorf("%s + %s: got %s; want %s", test.base, test.target, got, test.want)
+		}
+	}
+	// a path rewritten after parsing leaves RawPath stale, so the rewritten path is forwarded
+	r, _ := http.NewRequest(http.MethodGet, "http://test/a%2Fb", nil)
+	r.URL.Path = "/rewritten"
+	base, _ := url.Parse("http://o/base")
+	if got := BuildUpstreamURL(r, base).EscapedPath(); got != "/base/rewritten" {
+		t.Errorf("stale RawPath: got %s", got)
+	}
+	if c := Clone(base); c.RawPath != base.RawPath {
+		t.Error("clone dropped RawPath")
+	}
+}
+
 func TestSize(t *testing.T) {
 	const expected = 24
 	u, _ := url.Parse("https://" + appinfo.Domain)

@@ -134,8 +134,10 @@ func TestSample(t *testing.T) {
 		// a fraction of a second is kept exactly, where float math would round it
 		{name: "sub-second", raw: `[1435781430.781,"1"]`, want: 1435781430781000000, text: "1", ok: true},
 		{name: "escaped value", raw: `[1435781430,"a\"b"]`, want: 1435781430000000000, text: `a"b`, ok: true},
-		{name: "histogram", raw: `[1435781430,{"sum":"3.14","count":"10"}]`, hist: true,
-			want: 1435781430000000000, text: `{"count":"10","sum":"3.14"}`, ok: true},
+		{
+			name: "histogram", raw: `[1435781430,{"sum":"3.14","count":"10"}]`, hist: true,
+			want: 1435781430000000000, text: `{"count":"10","sum":"3.14"}`, ok: true,
+		},
 		{name: "histogram bad time", raw: `["bad",{}]`, hist: true},
 	}
 	for _, test := range tests {

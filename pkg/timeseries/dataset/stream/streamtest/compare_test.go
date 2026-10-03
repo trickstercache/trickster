@@ -35,8 +35,10 @@ func compareBase() *dataset.DataSet {
 		for i, v := range values {
 			pts[i] = dataset.Point{Epoch: 1, Values: []any{v}}
 		}
-		return dataset.NewSeries(dataset.SeriesHeader{Name: "s", Tags: dataset.Tags{"host": host},
-			ValueFieldsList: timeseries.FieldDefinitions{fd}, Size: 5}, pts)
+		return dataset.NewSeries(dataset.SeriesHeader{
+			Name: "s", Tags: dataset.Tags{"host": host},
+			ValueFieldsList: timeseries.FieldDefinitions{fd}, Size: 5,
+		}, pts)
 	}
 	return &dataset.DataSet{
 		Status:     "success",
@@ -73,8 +75,11 @@ func TestCompare(t *testing.T) {
 		{"results", func(ds *dataset.DataSet) { ds.Results = ds.Results[:1] }, "results: want 2, got 1", CompareOptions{}},
 		{"nil result", func(ds *dataset.DataSet) { ds.Results[0] = nil }, "results[0].result: want nil false", CompareOptions{}},
 		{"statement", func(ds *dataset.DataSet) { ds.Results[0].StatementID = 2 }, "results[0].result: want {1", CompareOptions{}},
-		{"series count", func(ds *dataset.DataSet) { ds.Results[0].SeriesList = ds.Results[0].SeriesList[:1] },
-			"results[0].series: want 3, got 1", CompareOptions{}},
+		{
+			"series count", func(ds *dataset.DataSet) { ds.Results[0].SeriesList = ds.Results[0].SeriesList[:1] },
+			"results[0].series: want 3, got 1",
+			CompareOptions{},
+		},
 		{"nil series", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1] = nil }, "series[1]: want nil false", CompareOptions{}},
 		{"order", func(ds *dataset.DataSet) {
 			sl := ds.Results[0].SeriesList
@@ -82,35 +87,62 @@ func TestCompare(t *testing.T) {
 		}, "series[0].tags", CompareOptions{}},
 		{"name", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.Name = "x" }, ".name:", CompareOptions{}},
 		{"query", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.QueryStatement = "x" }, ".query:", CompareOptions{}},
-		{"timestamp", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.TimestampField.Name = "t" },
-			".timestampField:", CompareOptions{}},
+		{
+			"timestamp", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.TimestampField.Name = "t" },
+			".timestampField:",
+			CompareOptions{},
+		},
 		{"tag fields", func(ds *dataset.DataSet) {
 			ds.Results[0].SeriesList[0].Header.TagFieldsList = timeseries.FieldDefinitions{{Name: "host"}}
 		}, ".tagFields:", CompareOptions{}},
-		{"value fields", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.ValueFieldsList = nil },
-			".valueFields:", CompareOptions{}},
+		{
+			"value fields", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.ValueFieldsList = nil },
+			".valueFields:",
+			CompareOptions{},
+		},
 		{"untracked fields", func(ds *dataset.DataSet) {
 			ds.Results[0].SeriesList[0].Header.UntrackedFieldsList = timeseries.FieldDefinitions{{Name: "u"}}
 		}, ".untrackedFields:", CompareOptions{}},
 		{"header size", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[0].Header.Size = 6 }, ".headerSize:", CompareOptions{}},
 		{"points", func(ds *dataset.DataSet) { ds.Results[0].SeriesList[1].SetPoints(nil) }, "series[1].points: want 1", CompareOptions{}},
 		{"epoch", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Epoch = 2 }) }, ".points[0].epoch:", CompareOptions{}},
-		{"value count", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values = nil }) },
-			".points[0].values:", CompareOptions{}},
-		{"float", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values[0] = 2.0 }) },
-			".points[0].values[0]: want 1, got 2", CompareOptions{}},
-		{"float type", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values[0] = int64(1) }) },
-			".points[0].values[0]:", CompareOptions{}},
-		{"nan", func(ds *dataset.DataSet) { editPoint(ds, 0, 0, func(p *dataset.Point) { p.Values[0] = 1.0 }) },
-			".points[0].values[0]:", CompareOptions{}},
-		{"float32", func(ds *dataset.DataSet) { editPoint(ds, 0, 1, func(p *dataset.Point) { p.Values[0] = float32(1) }) },
-			".points[1].values[0]:", CompareOptions{}},
-		{"bytes", func(ds *dataset.DataSet) { editPoint(ds, 0, 2, func(p *dataset.Point) { p.Values[0] = []byte("c") }) },
-			".points[2].values[0]:", CompareOptions{}},
-		{"other", func(ds *dataset.DataSet) {
-			editPoint(ds, 0, 3, func(p *dataset.Point) { p.Values[0] = map[string]int{} })
+		{
+			"value count", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values = nil }) },
+			".points[0].values:",
+			CompareOptions{},
 		},
-			".points[3].values[0]:", CompareOptions{}},
+		{
+			"float", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values[0] = 2.0 }) },
+			".points[0].values[0]: want 1, got 2",
+			CompareOptions{},
+		},
+		{
+			"float type", func(ds *dataset.DataSet) { editPoint(ds, 1, 0, func(p *dataset.Point) { p.Values[0] = int64(1) }) },
+			".points[0].values[0]:",
+			CompareOptions{},
+		},
+		{
+			"nan", func(ds *dataset.DataSet) { editPoint(ds, 0, 0, func(p *dataset.Point) { p.Values[0] = 1.0 }) },
+			".points[0].values[0]:",
+			CompareOptions{},
+		},
+		{
+			"float32", func(ds *dataset.DataSet) { editPoint(ds, 0, 1, func(p *dataset.Point) { p.Values[0] = float32(1) }) },
+			".points[1].values[0]:",
+			CompareOptions{},
+		},
+		{
+			"bytes", func(ds *dataset.DataSet) { editPoint(ds, 0, 2, func(p *dataset.Point) { p.Values[0] = []byte("c") }) },
+			".points[2].values[0]:",
+			CompareOptions{},
+		},
+		{
+			"other", func(ds *dataset.DataSet) {
+				editPoint(ds, 0, 3, func(p *dataset.Point) { p.Values[0] = map[string]int{} })
+			},
+			".points[3].values[0]:",
+			CompareOptions{},
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
