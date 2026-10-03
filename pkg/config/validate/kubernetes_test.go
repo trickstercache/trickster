@@ -26,6 +26,7 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
 	"github.com/stretchr/testify/require"
@@ -161,4 +162,46 @@ func TestValidateKubernetesAuthenticatorReference(t *testing.T) {
 	c.Kubernetes.Defaults.AuthenticatorName = "absent"
 	require.ErrorContains(t, Validate(c),
 		`kubernetes 'defaults' references undefined authenticator "absent"`)
+}
+
+// An access list named by the defaults is the operator's, checked the same way
+// as an authenticator. A list that exists but is peer or drop is a different
+// failure: the name is defined, and a generated backend still cannot use it.
+func TestValidateKubernetesIPACLReference(t *testing.T) {
+	with := func(t *testing.T, name string, opts ipacl.Options) *config.Config {
+		t.Helper()
+		c := baseConfig(t)
+		c.Kubernetes = kubecfg.New()
+		c.Kubernetes.Defaults.RoutingMode = kubecfg.RoutingModeService
+		c.Kubernetes.Defaults.IPACLName = name
+		if opts.Allow != nil || opts.Source != "" || opts.Action != "" {
+			c.IPACLs = ipacl.Lookup{name: &opts}
+		}
+		return c
+	}
+
+	t.Run("eligible", func(t *testing.T) {
+		c := with(t, "office", ipacl.Options{Allow: []string{"10.0.0.0/8"}})
+		require.NoError(t, Validate(c))
+	})
+
+	t.Run("undefined", func(t *testing.T) {
+		c := with(t, "absent", ipacl.Options{})
+		require.ErrorContains(t, Validate(c),
+			`kubernetes 'defaults' references undefined ip acl "absent"`)
+	})
+
+	t.Run("peer", func(t *testing.T) {
+		c := with(t, "edge", ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"})
+		err := Validate(c)
+		require.ErrorContains(t, err, `ineligible ip acl "edge"`)
+		require.NotContains(t, err.Error(), "undefined")
+	})
+
+	t.Run("drop", func(t *testing.T) {
+		c := with(t, "wall", ipacl.Options{Allow: []string{"10.0.0.0/8"}, Action: "drop"})
+		err := Validate(c)
+		require.ErrorContains(t, err, `ineligible ip acl "wall"`)
+		require.NotContains(t, err.Error(), "undefined")
+	})
 }

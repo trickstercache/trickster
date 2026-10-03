@@ -255,6 +255,10 @@ type DefaultsOptions struct {
 	// AuthenticatorName is the configured authenticator every generated backend is behind; no
 	// annotation sets it, since one that could name it could also omit it
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// IPACLName is the access list every generated backend is behind. The list must
+	// exist, use source client_ip, and use action reject. No annotation sets it,
+	// since one that could name it could also omit it.
+	IPACLName string `yaml:"ip_acl_name,omitempty"`
 	// Timeout is the upstream timeout for generated backends
 	Timeout timeconv.Duration `yaml:"timeout,omitempty"`
 	// HealthMode is the health mode of generated discovery-backed ALBs; 'provider' by default,

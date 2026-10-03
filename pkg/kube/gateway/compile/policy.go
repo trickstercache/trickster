@@ -56,9 +56,12 @@ type effective struct {
 	tracingName       string
 	rewriterName      string
 	authenticatorName string
-	timeout           time.Duration
-	handlerName       string
-	accessLog         *alo.Options
+	// ipACLName is the access list the route backend names. A class policy
+	// replaces the kubernetes default. Members, templates and mirrors do not use it.
+	ipACLName   string
+	timeout     time.Duration
+	handlerName string
+	accessLog   *alo.Options
 	// healthMode and healthCheck shape the endpoint mode's ALBs: how a discovered member is
 	// judged healthy, and the probe it runs when that is by probing
 	healthMode  string
@@ -162,6 +165,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 		e.tracingName = d.TracingName
 		e.rewriterName = d.ReqRewriterName
 		e.authenticatorName = d.AuthenticatorName
+		e.ipACLName = d.IPACLName
 		e.timeout = time.Duration(d.Timeout)
 		e.accessLog = d.AccessLog
 		e.healthCheck = d.HealthCheck
@@ -213,6 +217,9 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	}
 	if p.AuthenticatorName != "" {
 		e.authenticatorName = p.AuthenticatorName
+	}
+	if p.IPACLName != "" {
+		e.ipACLName = p.IPACLName
 	}
 	return e
 }

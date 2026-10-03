@@ -44,6 +44,7 @@ const (
 	ParamTracingName       = "tracing_name"
 	ParamReqRewriterName   = "req_rewriter_name"
 	ParamAuthenticatorName = "authenticator_name"
+	ParamIPACLName         = "ip_acl_name"
 	ParamTimeout           = "timeout"
 	ParamHealthMode        = "health_mode"
 	ParamLoadBalancing     = "load_balancing"
@@ -210,6 +211,9 @@ var classParams = map[string]paramSetter{
 	ParamAuthenticatorName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setKnown(&p.AuthenticatorName, v, t.known.Authenticators, "authenticator")
 	},
+	ParamIPACLName: func(t *translator, p *ir.Policy, v string) error {
+		return t.setIPACL(&p.IPACLName, v)
+	},
 }
 
 // stickyKey returns the key a sticky_secret Secret holds, base64-encoded so it travels as text, or
@@ -253,4 +257,20 @@ func (t *translator) setKnown(dst *string, value string, known sets.Set[string],
 	}
 	*dst = value
 	return nil
+}
+
+// setIPACL accepts an access list a generated backend can use. A name that is
+// configured but peer or drop is ineligible, which is not the same failure as
+// a name the configuration does not define. A nil set contains nothing: it
+// does not accept every name.
+func (t *translator) setIPACL(dst *string, value string) error {
+	if t.known.IPACLs.Contains(value) {
+		*dst = value
+		return nil
+	}
+	if t.known.DefinedIPACLs.Contains(value) {
+		return fmt.Errorf("ip acl %q is ineligible: generated backends require "+
+			"source client_ip and action reject", value)
+	}
+	return fmt.Errorf("no ip acl named %q is configured", value)
 }

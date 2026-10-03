@@ -241,6 +241,7 @@ type backendDoc struct {
 	TracingConfigName    string       `yaml:"tracing_name,omitempty"`
 	ReqRewriterName      string       `yaml:"req_rewriter_name,omitempty"`
 	AuthenticatorName    string       `yaml:"authenticator_name,omitempty"`
+	IPACLName            string       `yaml:"ip_acl_name,omitempty"`
 	StepAlignment        string       `yaml:"step_alignment,omitempty"`
 	PathRoutingDisabled  bool         `yaml:"path_routing_disabled,omitempty"`
 	PathDefaultsDisabled bool         `yaml:"path_defaults_disabled,omitempty"`

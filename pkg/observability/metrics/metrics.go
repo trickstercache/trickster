@@ -47,6 +47,16 @@ const (
 	accessLogSubsystem  = "accesslog"
 	fileserverSubsystem = "fileserver"
 	stepAlignSubsystem  = "step_alignment"
+	ipACLSubsystem      = "ip_acl"
+)
+
+// IP access list scopes and verdicts. reject and drop are both deny.
+const (
+	IPACLScopeListener = "listener"
+	IPACLScopeBackend  = "backend"
+	IPACLScopePath     = "path"
+	ipACLVerdictAllow  = "allow"
+	ipACLVerdictDeny   = "deny"
 )
 
 // Default histogram buckets used by trickster
@@ -55,6 +65,18 @@ var (
 )
 
 var (
+	// IPACLDecisions counts allow and deny decisions for an attached access list.
+	// The list name, scope and verdict are the only labels.
+	IPACLDecisions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: ipACLSubsystem,
+			Name:      "decisions_total",
+			Help:      "Count of IP access list decisions by list, scope and verdict.",
+		},
+		[]string{keys.IP_ACL, keys.Scope, keys.Verdict},
+	)
+
 	// AccessLogDroppedLines counts access and error log lines that could not be written
 	AccessLogDroppedLines = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -1232,8 +1254,36 @@ var (
 	)
 )
 
+// IPACLDecision is the allow and deny counters for one attachment, resolved when
+// the attachment is built. A nil pointer records nothing.
+type IPACLDecision struct {
+	Allow prometheus.Counter
+	Deny  prometheus.Counter
+}
+
+// NewIPACLDecision resolves the two verdict counters for one list and scope.
+func NewIPACLDecision(name, scope string) *IPACLDecision {
+	return &IPACLDecision{
+		Allow: IPACLDecisions.WithLabelValues(name, scope, ipACLVerdictAllow),
+		Deny:  IPACLDecisions.WithLabelValues(name, scope, ipACLVerdictDeny),
+	}
+}
+
+// Observe records one decision. allowed is the allow verdict; every denial is deny.
+func (d *IPACLDecision) Observe(allowed bool) {
+	if d == nil {
+		return
+	}
+	if allowed {
+		d.Allow.Inc()
+		return
+	}
+	d.Deny.Inc()
+}
+
 func init() {
 	// Register Metrics
+	prometheus.MustRegister(IPACLDecisions)
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)

@@ -81,6 +81,7 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 		b.PathDefaultsDisabled = true
 		b.Hosts = r.Hostnames
 		b.AnyHostRouting = len(r.Hostnames) == 0
+		b.IPACLName = eff.ipACLName
 	}
 	// only the ALB a stream listener maps to keeps sessions, for the whole path beneath it
 	readable := streamReadable(r)

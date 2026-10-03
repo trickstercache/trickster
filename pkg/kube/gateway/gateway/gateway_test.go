@@ -607,6 +607,143 @@ func TestTranslateClassParameters(t *testing.T) {
 	require.Equal(t, p.Name, model.Routes[0].Rules[0].Policy)
 }
 
+// aclKnown is the name sets a class parameter is checked against: office may be
+// used, edge and wall exist and may not.
+func aclKnown() ir.ConfiguredNames {
+	n := known()
+	n.IPACLs = sets.New([]string{"office"})
+	n.DefinedIPACLs = sets.New([]string{"office", "edge", "wall"})
+	return n
+}
+
+func translateClass(t *testing.T, edit func(*cache), names ir.ConfiguredNames,
+) (*ir.IR, *ir.Report, []Problem) {
+	t.Helper()
+	c := load(t, filepath.Join("testdata", "class-params.yaml"))
+	edit(c)
+	model, report, problems := Translate(Config{
+		Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
+		KnownNames: func() ir.ConfiguredNames { return names },
+	})
+	return model, report, problems
+}
+
+func TestTranslateIPACLParameter(t *testing.T) {
+	// An eligible list is copied onto the class policy. A missing name and a
+	// peer or drop list both refuse the class, and they do not read as the same mistake.
+	model, report, problems := translateClass(t, func(c *cache) {
+		c.configMaps["infra/gateway-params"].Data[ParamIPACLName] = "office"
+	}, aclKnown())
+	require.Empty(t, problems)
+	require.True(t, report.Classes[0].Accepted.Status)
+	require.Equal(t, "office", model.Policies[0].IPACLName)
+	require.Equal(t, model.Policies[0].Name, model.Routes[0].Rules[0].Policy)
+
+	o := options(t)
+	overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
+	require.NoError(t, err)
+	conf := decodeOverlay(t, overlay)
+	require.Equal(t, "office", conf.Backends["kgw--httproute.shop.web_r0"].IPACLName,
+		"the class list is copied onto the generated route backend")
+
+	refused := func(t *testing.T, name, detail string) {
+		t.Helper()
+		model, report, problems := translateClass(t, func(c *cache) {
+			c.configMaps["infra/gateway-params"].Data[ParamIPACLName] = name
+		}, aclKnown())
+		containing(t, problems, "GatewayClass//trickster", detail)
+		require.False(t, report.Classes[0].Accepted.Status)
+		require.EqualValues(t, gwapiv1.GatewayClassReasonInvalidParameters,
+			report.Classes[0].Accepted.Reason)
+		require.Contains(t, report.Classes[0].Accepted.Message, detail)
+		require.Empty(t, model.Routes, "a refused class serves no route")
+		require.Empty(t, model.Policies)
+	}
+	t.Run("undefined", func(t *testing.T) {
+		refused(t, "missing", `no ip acl named "missing" is configured`)
+	})
+	t.Run("peer", func(t *testing.T) {
+		model, report, problems := translateClass(t, func(c *cache) {
+			c.configMaps["infra/gateway-params"].Data[ParamIPACLName] = "edge"
+		}, aclKnown())
+		containing(t, problems, "ineligible")
+		require.NotContains(t, problems[0].Detail, "undefined")
+		require.NotContains(t, report.Classes[0].Accepted.Message, "undefined")
+		require.Contains(t, report.Classes[0].Accepted.Message, "ineligible")
+		require.False(t, report.Classes[0].Accepted.Status)
+		require.Empty(t, model.Routes)
+	})
+	t.Run("drop", func(t *testing.T) {
+		refused(t, "wall", `ip acl "wall" is ineligible`)
+		_, report, _ := translateClass(t, func(c *cache) {
+			c.configMaps["infra/gateway-params"].Data[ParamIPACLName] = "wall"
+		}, aclKnown())
+		require.NotContains(t, report.Classes[0].Accepted.Message, "undefined")
+	})
+}
+
+func TestClassIPACLReachesTheRoutePolicy(t *testing.T) {
+	// The class list rides the policy a route already binds. HTTP, gRPC, and
+	// each stream protocol share that merge. Compile copies it onto the route backend.
+	names := aclKnown()
+	knownNames := func() ir.ConfiguredNames { return names }
+	ns := gwapiv1.Namespace("infra")
+	attach := func(c *cache) {
+		if ref := c.classes[0].Spec.ParametersRef; ref != nil {
+			c.ConfigMap(string(*ref.Namespace), ref.Name).Data[ParamIPACLName] = "office"
+			return
+		}
+		c.classes[0].Spec.ParametersRef = &gwapiv1.ParametersReference{
+			Group: "", Kind: "ConfigMap", Name: "acl-params", Namespace: &ns,
+		}
+		c.configMaps["infra/acl-params"] = &corev1.ConfigMap{
+			Namespace: "infra", Name: "acl-params",
+			Data: map[string]string{ParamIPACLName: "office"},
+		}
+	}
+	seen := map[string]bool{}
+	for _, fixture := range []string{"class-params", "grpc", "tcp", "tls"} {
+		t.Run(fixture, func(t *testing.T) {
+			c := load(t, filepath.Join("testdata", fixture+".yaml"))
+			attach(c)
+			model, _, problems := Translate(Config{
+				Cache: c, Claimer: class.New(controllerName, ""), Options: options(t),
+				KnownNames: knownNames,
+			})
+			for _, p := range problems {
+				require.NotContains(t, p.Detail, "ip_acl_name")
+				require.NotContains(t, p.Detail, "ip acl")
+			}
+			var bound bool
+			for _, route := range model.Routes {
+				for _, rule := range route.Rules {
+					var policy *ir.Policy
+					for i := range model.Policies {
+						if model.Policies[i].Name == rule.Policy {
+							policy = &model.Policies[i]
+						}
+					}
+					require.NotNil(t, policy, "route %s names no policy", route.Name)
+					require.Equal(t, "office", policy.IPACLName, "route %s protocol %s",
+						route.Name, route.Protocol)
+					bound = true
+					// an HTTP route leaves the protocol empty; the others name theirs
+					protocol := route.Protocol
+					if protocol == "" {
+						protocol = ir.ProtocolHTTP
+					}
+					seen[protocol] = true
+				}
+			}
+			require.True(t, bound, "fixture %s produced no routed rule", fixture)
+		})
+	}
+	for _, protocol := range []string{ir.ProtocolHTTP, ir.ProtocolGRPC, ir.ProtocolTCP,
+		ir.ProtocolTLS, ir.ProtocolUDP} {
+		require.Truef(t, seen[protocol], "no %s route carried the class access list", protocol)
+	}
+}
+
 func classWith(t *testing.T, edit func(*cache)) (*ir.IR, []Problem) {
 	// classWith translates the class-params fixture with its ConfigMap edited
 	t.Helper()
@@ -739,13 +876,16 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 			t.Run(name+"/"+mode, func(t *testing.T) {
 				model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
 					o.Defaults.RoutingMode = mode
+					o.Defaults.IPACLName = "office"
 				})
 				overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
 				require.NoError(t, err)
+				require.Contains(t, string(overlay.Data), "ip_acl_name: office")
 				conf, err := config.LoadWithOverlay([]string{"-config", path}, overlay)
 				require.NoError(t, err)
 				require.NoError(t, conf.Backends.Validate())
 				require.NoError(t, validate.Validate(conf))
+				requireResolvedOfficeACL(t, conf)
 				require.NoError(t, conf.Process())
 				require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
 			})
@@ -753,9 +893,28 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	}
 }
 
+// requireResolvedOfficeACL reports that validation compiled the file's office
+// list onto at least one generated backend.
+func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
+	t.Helper()
+	for _, b := range conf.Backends {
+		if b != nil && b.IPACLName == "office" && b.IPACL != nil {
+			return
+		}
+	}
+	t.Fatal("generated config did not resolve ip acl office onto a backend")
+}
+
 // baseConfig is the file configuration the generated overlay is merged
 // onto; it defines what the fixtures' parameters name
 const baseConfig = `
+ip_acls:
+  office:
+    source: client_ip
+    action: reject
+    default: deny
+    allow:
+      - 192.0.2.0/24
 backends:
   default:
     provider: rp
@@ -2076,6 +2235,7 @@ func TestApplyParameterRejections(t *testing.T) {
 		"unknown tracer":        {ParamTracingName, "nope"},
 		"unknown rewriter":      {ParamReqRewriterName, "nope"},
 		"unknown authenticator": {ParamAuthenticatorName, "nope"},
+		"empty acl":             {ParamIPACLName, ""},
 		"bad sticky":            {ParamSticky, "yes"},
 		"bad sticky key":        {ParamStickyKey, "path"},
 		"short sticky ttl":      {ParamStickyTTL, "10ms"},

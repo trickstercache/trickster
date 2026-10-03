@@ -18,6 +18,8 @@ package keys
 
 const (
 	ALBName              = "albName"
+	Action               = "action"
+	Address              = "address"
 	AgeBucket            = "ageBucket"
 	Applied              = "applied"
 	BackendName          = "backendName"
@@ -122,4 +124,6 @@ const (
 	Cache_Status   = "cache_status"
 	HTTP_Status    = "http_status"
 	Router_Name    = "router_name"
+	IP_ACL         = "ip_acl"
+	Verdict        = "verdict"
 )

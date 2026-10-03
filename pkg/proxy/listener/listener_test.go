@@ -124,7 +124,7 @@ func TestUpdateRouter(t *testing.T) {
 func TestNewListenerErr(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil, nil)
+	l, err := NewListener("-", 0, 0, nil, nil, nil, false, nil)
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -177,7 +177,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig, nil)
+	l, err := NewListener("", 0, 0, tlsConfig, nil, nil, false, nil)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -232,7 +232,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			// Bind to port 0 so the kernel picks a free ephemeral port;
 			// fixed ports flake on shared CI runners when the prior
 			// subtest's socket lingers in TIME_WAIT.
-			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, nil)
+			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, nil, nil, false, nil)
 			if err != nil {
 				t.Fatal(err)
 			} else {

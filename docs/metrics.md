@@ -74,6 +74,12 @@ The following metrics are available for polling with any Trickster configuration
     * `backend_name` - the name of the configured backend whose logger dropped the line
     * `log` - `access` or `error`
 
+* `trickster_ip_acl_decisions_total` (Counter) - Decisions made by an attached IP access list. See [ip-acl.md](./ip-acl.md).
+  * labels:
+    * `ip_acl` - the name of the access list
+    * `scope` - `listener`, `backend`, or `path`
+    * `verdict` - `allow` or `deny`. `reject` and `drop` are both `deny`
+
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request

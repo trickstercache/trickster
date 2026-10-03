@@ -594,7 +594,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = "rpc"
 
 	err = ol.ValidateConfigMappings(co.Lookup{}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid cache name")
 	}
@@ -603,13 +603,13 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = providers.Rule
 	o.RuleName = "test"
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid rule name")
 	}
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid tracing name")
 	}
@@ -619,7 +619,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Name = ""
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
 		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
-		tro.Lookup{})
+		tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid backend name")
 	}
@@ -628,7 +628,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = providers.ALB
 	o.RuleName = ""
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid negative cache name")
 	}
@@ -642,7 +642,7 @@ func TestValidateConfigMappings(t *testing.T) {
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
 		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
-		tro.Lookup{})
+		tro.Lookup{}, nil)
 	if err != nil {
 		t.Error(err)
 	}

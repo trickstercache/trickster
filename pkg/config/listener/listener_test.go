@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	frontend "github.com/trickstercache/trickster/v2/pkg/frontend/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
@@ -337,6 +338,24 @@ func TestOptionsEqualProxyProtocol(t *testing.T) {
 	c.TrustedProxies[0] = "192.0.2.0/24"
 	if b.TrustedProxies[0] != "10.0.0.0/8" {
 		t.Error("clone shares the trusted proxy list")
+	}
+}
+
+func TestIPACLNameDoesNotAffectEquality(t *testing.T) {
+	a := New(DefaultFrontendName)
+	b := a.Clone()
+	b.IPACLName = "office"
+	lists := ipacl.Lookup{"office": {Allow: []string{"10.0.0.0/8"}}}
+	if _, err := lists.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	b.IPACL = lists["office"].Compiled
+	if !a.Equal(b) {
+		t.Fatal("ip_acl_name participated in listener equality")
+	}
+	cloned := b.Clone()
+	if cloned.IPACLName != "office" || cloned.IPACL != b.IPACL {
+		t.Fatal("clone dropped the access list")
 	}
 }
 

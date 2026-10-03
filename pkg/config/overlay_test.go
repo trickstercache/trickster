@@ -275,6 +275,56 @@ func TestCheckAndMarkReloadInProgressOverlay(t *testing.T) {
 	}
 }
 
+func TestOverlayKeepsFileIPACLs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "trickster.yaml")
+	body := `
+backends:
+  primary:
+    provider: prometheus
+    origin_url: http://prom:9090
+ip_acls:
+  office:
+    allow: ["10.0.0.0/8"]
+`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	overlay := testOverlay(`
+ip_acls:
+  `+overlayTestPrefix+`edge:
+    allow: ["192.0.2.0/24"]
+`, "v1")
+	c, err := LoadWithOverlay([]string{"-config", path}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.IPACLs["office"] == nil || c.IPACLs["office"].Allow[0] != "10.0.0.0/8" {
+		t.Fatalf("file acl = %#v", c.IPACLs["office"])
+	}
+	if c.IPACLs[overlayTestPrefix+"edge"] == nil {
+		t.Fatal("overlay acl was not loaded")
+	}
+
+	reservedPath := filepath.Join(dir, "reserved.yaml")
+	reservedBody := `
+backends:
+  primary:
+    provider: prometheus
+    origin_url: http://prom:9090
+ip_acls:
+  ` + overlayTestPrefix + `office:
+    allow: ["10.0.0.0/8"]
+`
+	if err := os.WriteFile(reservedPath, []byte(reservedBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = Load([]string{"-config", reservedPath})
+	if !errors.Is(err, ErrReservedNamePrefix) {
+		t.Fatalf("reserved acl name = %v", err)
+	}
+}
+
 func TestOverlaySectionsMatchConfigFields(t *testing.T) {
 	tags := make(map[string]struct{})
 	for field := range reflect.TypeFor[Config]().Fields() {

@@ -47,6 +47,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/health"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -70,6 +72,43 @@ func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions
 			backendOptions.AuthOptions.Authenticator, h)
 	}
 	return h
+}
+
+// effectiveIPACL is the list enforced for this path. none clears the backend
+// list. An empty name inherits it. A named path list replaces it. The backend
+// list is not copied onto the path.
+func effectiveIPACL(path *po.Options, backend *bo.Options) *ipacl.List {
+	if path == nil {
+		return nil
+	}
+	switch path.IPACLName {
+	case reserved.ReferenceNone:
+		return nil
+	case "":
+		if backend == nil {
+			return nil
+		}
+		return backend.IPACL
+	default:
+		return path.IPACL
+	}
+}
+
+// routeACL is the list a route enforces and the scope the decision metric uses.
+// A path name is path scope. An inherited backend list is backend scope.
+func routeACL(path *po.Options, backend *bo.Options) (*ipacl.List, string, string) {
+	list := effectiveIPACL(path, backend)
+	if list == nil || path == nil {
+		return nil, "", ""
+	}
+	if path.IPACLName != "" && path.IPACLName != reserved.ReferenceNone {
+		return list, path.IPACLName, aclhandler.ScopePath
+	}
+	name := ""
+	if backend != nil {
+		name = backend.IPACLName
+	}
+	return list, name, aclhandler.ScopeBackend
 }
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
@@ -177,6 +216,9 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	}
 	// authentication judges the request as the client sent it, before any rewriter changes it
 	h = attachAuthenticator(h, pathOpts, o)
+	// Enforce the access list before authentication and the cache handler.
+	list, name, scope := routeACL(pathOpts, o)
+	h = aclhandler.Middleware(list, name, scope, h)
 	// WithResourcesContext must wrap outer than LimitQueryRange and the authenticator
 	h = middleware.WithResourcesContext(client, o, c, pathOpts, tr, h)
 	if !pathOpts.NoMetrics {

@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/ondemand"
@@ -94,6 +95,10 @@ type Listener struct {
 	state        atomic.Int32
 	readyCh      chan struct{}
 	readyOnce    sync.Once
+	// ipacl is the accept-time list. A reload stores a new pointer; nil admits every peer.
+	// ipaclDecisions are the counters and ACL name for that list. Nil records nothing.
+	ipacl          atomic.Pointer[ipacl.List]
+	ipaclDecisions atomic.Pointer[acceptACL]
 }
 
 type observedConnection struct {
@@ -187,6 +192,8 @@ type Group struct {
 	// onPublish is told the key of every listener added, so state prepared for a listener
 	// before it existed, such as its certificates, can be applied once it does
 	onPublish func(key string)
+	// pendingACL is an accept-time list set before its listener is published
+	pendingACL map[string]attachedACL
 }
 
 // OnPublish registers f to be called with the group key of every listener published from now on
@@ -214,6 +221,11 @@ func (lg *Group) publish(name string, l *Listener) error {
 		lg.listenersLock.Unlock()
 		return trerr.ErrListenerGroupClosed
 	}
+	if attached, ok := lg.pendingACL[name]; ok {
+		l.ipacl.Store(attached.list)
+		l.ipaclDecisions.Store(attached.slot)
+		delete(lg.pendingACL, name)
+	}
 	lg.members[name] = l
 	f := lg.onPublish
 	lg.listenersLock.Unlock()
@@ -221,6 +233,48 @@ func (lg *Group) publish(name string, l *Listener) error {
 		f(name)
 	}
 	return nil
+}
+
+// acceptACL is the accept-time counters and the name the denial log uses.
+// The name is not a metric label lookup and is not stored on the compiled list.
+type acceptACL struct {
+	dec  *metrics.IPACLDecision
+	name string
+}
+
+// attachedACL is a list stored for a listener that is not published yet, with the
+// counters resolved from the list's name.
+type attachedACL struct {
+	list *ipacl.List
+	slot *acceptACL
+}
+
+// SetIPACL swaps the accept-time list for a running listener, or holds it until that listener
+// is published. A nil list admits every peer. The socket stays open. aclName is the metric
+// label; an empty name records no decision.
+func (lg *Group) SetIPACL(name string, list *ipacl.List, aclName string) {
+	if lg == nil || name == "" {
+		return
+	}
+	var slot *acceptACL
+	if list != nil {
+		slot = &acceptACL{name: aclName}
+		if aclName != "" {
+			slot.dec = metrics.NewIPACLDecision(aclName, metrics.IPACLScopeListener)
+		}
+	}
+	lg.listenersLock.Lock()
+	defer lg.listenersLock.Unlock()
+	if l := lg.members[name]; l != nil {
+		l.ipacl.Store(list)
+		l.ipaclDecisions.Store(slot)
+		delete(lg.pendingACL, name)
+		return
+	}
+	if lg.pendingACL == nil {
+		lg.pendingACL = make(map[string]attachedACL)
+	}
+	lg.pendingACL[name] = attachedACL{list: list, slot: slot}
 }
 
 // refuse closes a bound but unpublished listener and logs the refusal.
@@ -284,26 +338,35 @@ func (l *Listener) WaitForReady(timeout time.Duration) bool {
 
 // NewListener creates a new network listener which obeys to the configuration max
 // connection limit, monitors connections with prometheus metrics, and is able
-// to be gracefully drained
+// to be gracefully drained.
 //
-// The way this works is by creating a listener and wrapping it with a
-// netutil.LimitListener to set a limit.
-//
-// This limiter will simply block waiting for resources to become available
-// whenever clients go above the limit.
+// The socket is wrapped, from the inside out, by the accept-time IP access list,
+// then netutil.LimitListener when a connection limit is set, then PROXY protocol
+// when it is enabled, then TLS. The limiter blocks when clients go above the limit.
+// A denied peer is closed inside the access list and is never returned.
 //
 // To simplify settings limits the listener is wrapped with yet another object
 // which observes the connections to set a gauge with the current number of
 // connections (with operates with sampling through scrapes), and a set of
 // counter metrics for connections accepted, rejected and closed.
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, proxyProtocol *ProxyProtocolOptions,
+	tlsConfig *tls.Config, proxyProtocol *ProxyProtocolOptions, acl *atomic.Pointer[ipacl.List],
+	judgeClientIP bool, decisions *atomic.Pointer[acceptACL],
 ) (net.Listener, error) {
 	listenerType := "http"
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
 	if err != nil {
 		// so we can exit one level above, this usually means that the port is in use
 		return nil, err
+	}
+	// the access list sits on the socket. A denial is closed here and never returned, so it
+	// does not become a limited connection, read a PROXY header, or start a TLS handshake.
+	// judgeClientIP is for a native listener whose socket peer is the client. HTTP and
+	// stream client_ip are resolved after this layer.
+	listener = newACLListener(listener, acl, decisions, judgeClientIP)
+	if connectionsLimit > 0 {
+		listener = netutil.LimitListener(listener, connectionsLimit)
+		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 	// the PROXY header precedes the TLS handshake, so it is read beneath TLS
 	if proxyProtocol != nil && proxyProtocol.Enabled {
@@ -312,11 +375,6 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	if tlsConfig != nil {
 		listenerType = "https"
 		listener = tls.NewListener(listener, tlsConfig)
-	}
-
-	if connectionsLimit > 0 {
-		listener = netutil.LimitListener(listener, connectionsLimit)
-		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 
 	logger.Debug("starting proxy listener", logging.Pairs{
@@ -396,7 +454,8 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	}
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, proxyProtocol)
+	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, proxyProtocol, &l.ipacl,
+		false, &l.ipaclDecisions)
 	if err != nil {
 		logger.ErrorSynchronous(
 			"http listener startup failed", logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
