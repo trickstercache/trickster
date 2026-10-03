@@ -445,6 +445,9 @@ func Listeners(c *config.Config) error {
 		if err := options.PathNormalization.Validate(); err != nil {
 			return fmt.Errorf("listener %q: path_normalization: %w", name, err)
 		}
+		if err := options.ValidateHTTPLimits(); err != nil {
+			return fmt.Errorf("listener %q: %w", name, err)
+		}
 
 		builtIn := name == listener.DefaultFrontendName ||
 			name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics

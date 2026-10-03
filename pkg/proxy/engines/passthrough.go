@@ -106,7 +106,12 @@ func passthroughRewrite(client backends.Backend) func(*httputil.ProxyRequest) {
 			httpguts.HeaderValuesContainsToken(r.Header[headers.NameConnection], "Upgrade")
 
 		if o != nil {
-			headers.AddForwardingHeaders(r, o.ForwardedHeaders)
+			// ReverseProxy drops every inbound forwarding header, so a trusted proxy's are restored to append to
+			peerTrusted := request.PeerTrusted(pr.In)
+			if peerTrusted {
+				headers.RestoreForwardingHeaders(r.Header, pr.In.Header)
+			}
+			headers.AddForwardingHeaders(r, o.ForwardedHeaders, peerTrusted)
 		}
 		if wantsTrailers {
 			r.Header.Set(headers.NameTe, "trailers")

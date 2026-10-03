@@ -171,6 +171,55 @@ listeners:
     trusted_proxies: [10.0.0.0/8, 192.168.1.5]
 ```
 
+#### Forwarding Headers to the Origin
+
+A backend's `forwarded_headers` (`standard`, `x`, `both` or `none`) chooses
+which forwarding headers Trickster sends upstream. A client can put any
+address it likes in the `Forwarded`, `X-Forwarded-*` and `X-Real-IP` headers
+it sends, so Trickster believes them only from the listener's
+`trusted_proxies`, as Caddy and Traefik do:
+
+- From a trusted proxy, Trickster appends its own hop to the hops the request
+  arrived with, and forwards its `X-Real-IP`.
+- From any other peer, Trickster drops those hops and `X-Real-IP`, and the
+  origin receives Trickster's hop alone, naming that peer.
+
+The same applies on paths served by the passthrough handler. A listener
+behind a load balancer must list the load balancer in `trusted_proxies`, or
+the origin sees the load balancer, not the client, as the request's source.
+
+### Connection Timeouts and Header Size
+
+These options bound the time and memory a client can hold on an HTTP
+listener. They apply to every endpoint of the listener and to the `mgmt` and
+`metrics` listeners. Changing any of them restarts the listener on reload.
+
+| Option | Default | Effect |
+|---|---|---|
+| `read_header_timeout` | `10s` | How long a client may take to send a request's line and headers |
+| `read_timeout` | `0` (none) | How long a client may take to send a whole request, body included. Set it with care on listeners that receive large uploads |
+| `idle_timeout` | `2m` | How long a keep-alive connection may wait for its next request before Trickster closes it. `0` keeps idle connections open indefinitely |
+| `max_header_bytes` | `0` (1 MB) | The most bytes Trickster reads for a request's line and headers. HTTP/1.1 requests over it are answered with `431 Request Header Fields Too Large`; HTTP/2 and HTTP/3 enforce it on the header block |
+
+```yaml
+listeners:
+  default:
+    port: 8480
+    read_header_timeout: 10s
+    idle_timeout: 2m
+    max_header_bytes: 65536
+```
+
+- Without an idle timeout, a client can hold any number of idle connections
+  open, filling `connections_limit` or exhausting file descriptors.
+- Go's HTTP server reads up to 4 KB past `max_header_bytes` before refusing a
+  request, so the effective limit is slightly higher than the value set.
+- HTTP/3 has no whole-request deadline. On an HTTP/3 endpoint, `read_timeout`
+  bounds reading a request's body from the time the handler starts, in place
+  of `read_header_timeout`. QUIC's own idle timeout also applies there.
+- These options have no effect on `tcp`, `tls` and `udp` listeners, whose
+  timeouts are under `stream`, or on native protocol listeners.
+
 ### Path Normalization
 
 Before routing a request, an HTTP listener cleans its path, then routes and

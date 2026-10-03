@@ -17,6 +17,7 @@
 package validate
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -369,6 +370,20 @@ func TestListenersEdgeCases(t *testing.T) {
 		c.Listeners[listener.DefaultFrontendName].PathNormalization = nil
 		if err := Listeners(c); err != nil {
 			t.Fatalf("expected default path normalization, got %v", err)
+		}
+	})
+
+	t.Run("invalid_http_limits", func(t *testing.T) {
+		c := config.NewConfig()
+		c.Backends = bo.Lookup{"test": bo.New()}
+		c.Listeners[listener.DefaultFrontendName].IdleTimeout = -1
+		if err := Listeners(c); !errors.Is(err, listener.ErrNegativeTimeout) {
+			t.Fatalf("expected a negative timeout error, got %v", err)
+		}
+		c.Listeners[listener.DefaultFrontendName].IdleTimeout = 0
+		c.Listeners[listener.DefaultFrontendName].MaxHeaderBytes = -1
+		if err := Listeners(c); !errors.Is(err, listener.ErrNegativeMaxHeaderBytes) {
+			t.Fatalf("expected a negative max_header_bytes error, got %v", err)
 		}
 	})
 

@@ -262,7 +262,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	// AddForwardingHeaders strips TE as hop-by-hop, so preserve a client's
 	// request for trailers across the rewrite.
 	wantsTrailers := httpguts.HeaderValuesContainsToken(r.Header[headers.NameTe], "trailers")
-	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
+	headers.AddForwardingHeaders(r, o.ForwardedHeaders, request.PeerTrusted(r))
 	if wantsTrailers {
 		r.Header.Set(headers.NameTe, "trailers")
 	}

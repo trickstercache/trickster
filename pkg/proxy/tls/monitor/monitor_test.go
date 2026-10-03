@@ -42,6 +42,8 @@ import (
 
 const testWatchInterval = 10 * time.Millisecond
 
+var testLimits = listener.ServerLimits{ReadHeaderTimeout: time.Second}
+
 func writePair(t *testing.T, certPath, keyPath string, names ...string) {
 	t.Helper()
 	k, c, err := tlstest.GetTestKeyAndCertWithNames(names...)
@@ -102,7 +104,7 @@ func startTLSListener(t *testing.T, certPath, keyPath string) (*listener.Group, 
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
-		}), nil, nil, time.Second, nil)
+		}), nil, nil, testLimits, nil)
 	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
 		t.Fatal("listener not found in group")
 	}
@@ -502,7 +504,7 @@ func startRuntimeTLSListener(t *testing.T) (*listener.Group, string, string) {
 	go lg.StartListener(key, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}), nil, nil, time.Second, nil)
+		}), nil, nil, testLimits, nil)
 	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
 		t.Fatal("listener not found in group")
 	}
@@ -717,7 +719,7 @@ func TestMonitorFillsStoreWhenListenerPublishesLater(t *testing.T) {
 	go lg.StartListener(key, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}), nil, nil, time.Second, nil)
+		}), nil, nil, testLimits, nil)
 	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
 		t.Fatal("listener not found in group")
 	}

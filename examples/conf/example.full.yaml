@@ -62,6 +62,18 @@
 #     # read_header_timeout defines the amount of time allowed to read request headers.
 #     read_header_timeout: 10s
 #
+#     # read_timeout bounds the time allowed to read a whole request, body included.
+#     # 0 sets no bound. Default: 0
+#     read_timeout: 0s
+#
+#     # idle_timeout closes a keep-alive connection that waits this long for its next
+#     # request. 0 keeps idle connections open indefinitely. Default: 2m
+#     idle_timeout: 2m
+#
+#     # max_header_bytes caps the bytes read for a request's line and headers.
+#     # 0 selects the net/http default of 1 MB. Default: 0
+#     max_header_bytes: 0
+#
 #     # trusted_proxies lists the addresses and CIDRs of proxies in front of this
 #     # listener. A connection from one of them is attributed to the client named
 #     # by its Forwarded, X-Forwarded-For or X-Real-IP header; any other connection
@@ -760,6 +772,8 @@ backends:
 #     # forwarded_headers indicates whether Trickster should use Forwarded, X-Forwarded-*
 #     # or no forwarded headers when communicating with backends. A Via header is always sent,
 #     # regardless of this values setting.
+#     # Hops a request arrived with are appended to only when one of the listener's
+#     # trusted_proxies sent it; from any other peer they are replaced by Trickster's hop.
 #     # Options are standard, x, both, or none; default is standard
 #     forwarded_headers: standard
 

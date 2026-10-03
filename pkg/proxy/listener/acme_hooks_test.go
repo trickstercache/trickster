@@ -89,7 +89,7 @@ func TestTLSListenerACMEHooks(t *testing.T) {
 	go lg.StartListener(hookTestKey, "127.0.0.1", 0, 0, &tls.Config{
 		MinVersion: tls.VersionTLS12,
 		NextProtos: []string{"h2"},
-	}, http.NotFoundHandler(), nil, nil, time.Second, nil)
+	}, http.NotFoundHandler(), nil, nil, testLimits, nil)
 	deadline := time.Now().Add(5 * time.Second)
 	for lg.Get(hookTestKey) == nil && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
