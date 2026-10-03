@@ -37,6 +37,8 @@ const (
 	ValueApplicationYAML = "application/yaml"
 	// ValueApplicationFlux represents the HTTP Header Value of "application/vnd.flux"
 	ValueApplicationFlux = "application/vnd.flux"
+	// ValueApplicationSQL represents the HTTP Header Value of "application/sql"
+	ValueApplicationSQL = "application/sql"
 	// ValueChunked represents the HTTP Header Value of "chunked"
 	ValueChunked = "chunked"
 	// ValueClose represents the HTTP Header Value of "close"
@@ -143,6 +145,8 @@ const (
 	NameIfMatch = "If-Match"
 	// NameAcceptRanges represents the HTTP Header Name of "Accept-Ranges"
 	NameAcceptRanges = "Accept-Ranges"
+	// NameAcceptQuery represents the HTTP Header Name of "Accept-Query" (RFC 10008)
+	NameAcceptQuery = "Accept-Query"
 	// NameIfRange represents the HTTP Header Name of "If-Range"
 	NameIfRange = "If-Range"
 	// NameCDNCacheControl represents the HTTP Header Name of "CDN-Cache-Control",

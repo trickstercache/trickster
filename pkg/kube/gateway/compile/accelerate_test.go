@@ -48,13 +48,13 @@ func promPaths(provider string) po.List {
 	return po.List{
 		{
 			Path: "/api/v1/query_range", HandlerName: "query_range",
-			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST"},
+			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST", "QUERY"},
 			CacheKeyParams:  []string{"query", "step", "stats"},
 			ResponseHeaders: map[string]string{"Cache-Control": "s-maxage=30"},
 		},
 		{
 			Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"},
+			Methods: []string{"GET", "POST", "QUERY"}, CacheKeyParams: []string{"query", "time"},
 		},
 		{
 			Path: "/api/v1/label/", HandlerName: "labels", MatchTypeName: matching.PathMatchNamePrefix,
@@ -133,7 +133,7 @@ func TestCompileProviderPathsFollowTheRoute(t *testing.T) {
 	require.Len(t, qr, 1)
 	require.Equal(t, "query_range", qr[0].Handler)
 	require.Equal(t, string(matching.PathMatchNameExact), qr[0].MatchType)
-	require.Equal(t, []string{"GET", "POST"}, qr[0].Methods)
+	require.Equal(t, []string{"GET", "POST", "QUERY"}, qr[0].Methods)
 	require.Equal(t, []string{"query", "step", "stats", "tenant"}, qr[0].CacheKeyParams,
 		"the provider's components come first and the policy's join them once")
 	require.Equal(t, []string{"X-Scope-OrgID"}, qr[0].CacheKeyHeaders)

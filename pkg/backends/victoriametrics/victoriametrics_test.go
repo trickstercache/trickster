@@ -151,6 +151,31 @@ func TestDefaultPathConfigs(t *testing.T) {
 	}
 }
 
+// the Graphite read APIs take QUERY, forwarded as a form POST; the GET-only ones do not
+func TestGraphitePathsQueryMethod(t *testing.T) {
+	queryable := []string{
+		"/render", "/metrics/find", "/metrics/expand",
+		"/graphite/render", "/graphite/metrics/find", "/graphite/metrics/expand",
+	}
+	var seen int
+	for _, p := range graphitePaths(nil) {
+		takesQuery := slices.Contains(p.Methods, methods.MethodQuery)
+		if slices.Contains(queryable, p.Path) {
+			seen++
+			if !takesQuery || !slices.Equal(p.QueryMediaTypes, []string{headers.ValueXFormURLEncoded}) {
+				t.Errorf("%s: methods %v, QUERY media types %v", p.Path, p.Methods, p.QueryMediaTypes)
+			}
+			continue
+		}
+		if p.HandlerName == handlerGraphite && (takesQuery || p.QueryMediaTypes != nil) {
+			t.Errorf("%s: GET-only route takes QUERY", p.Path)
+		}
+	}
+	if seen != len(queryable) {
+		t.Errorf("found %d of %d QUERY routes", seen, len(queryable))
+	}
+}
+
 func TestParseTimeRangeQuery(t *testing.T) {
 	c := newTestClient(t, "http://vm.example:8428", nil)
 	past := time.Now().Add(-6 * time.Hour).Truncate(time.Hour)

@@ -3,7 +3,7 @@
 ## Request Body Size Limiter
 
 By default, the max allowed Request Body size is 10 MB. If the client request
-body in a POST, PUT or PATCH are over 10 MB, the request will receive a
+body in a POST, PUT, PATCH or QUERY is over 10 MB, the request will receive a
 response of `413 Request Payload is too large`
 
 You can change (or bypass) this limit in the 'listeners' Config Section per-listener:

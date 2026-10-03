@@ -23,6 +23,7 @@ backends:
               methods:
                 - GET
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -49,6 +50,7 @@ backends:
               handler: proxycache
               methods:
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -73,6 +75,7 @@ backends:
               handler: proxycache
               methods:
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -97,6 +100,7 @@ backends:
               handler: proxycache
               methods:
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -171,6 +175,7 @@ backends:
               methods:
                 - GET
                 - HEAD
+                - QUERY
               response_headers:
                 +Vary: Accept-Encoding
               cache_key_headers:

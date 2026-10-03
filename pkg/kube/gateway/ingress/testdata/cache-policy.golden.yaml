@@ -19,6 +19,7 @@ backends:
               methods:
                 - GET
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -45,6 +46,7 @@ backends:
               handler: proxycache
               methods:
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -69,6 +71,7 @@ backends:
               handler: proxycache
               methods:
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -132,6 +135,7 @@ backends:
               methods:
                 - GET
                 - HEAD
+                - QUERY
               cache_key_params:
                 - query
                 - step
@@ -172,6 +176,7 @@ backends:
               methods:
                 - GET
                 - HEAD
+                - QUERY
             - path: /
               match_type: segment
               handler: proxy

@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
@@ -49,11 +50,12 @@ func (c *Client) RegisterHandlers(handlers.Lookup) {
 func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 	return po.List{
 		{
-			Path:          "/druid/v2",
-			HandlerName:   handlerQuery,
-			Methods:       []string{http.MethodPost},
-			MatchType:     matching.PathMatchTypeExact,
-			MatchTypeName: matching.PathMatchNameExact,
+			Path:            "/druid/v2",
+			HandlerName:     handlerQuery,
+			Methods:         []string{http.MethodPost, methods.MethodQuery},
+			QueryMediaTypes: []string{headers.ValueApplicationJSON},
+			MatchType:       matching.PathMatchTypeExact,
+			MatchTypeName:   matching.PathMatchNameExact,
 		},
 		{
 			Path:          "/druid/v2/sql/task",
@@ -65,7 +67,8 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:            "/druid/v2/sql",
 			HandlerName:     handlerSQLQuery,
-			Methods:         []string{http.MethodPost},
+			Methods:         []string{http.MethodPost, methods.MethodQuery},
+			QueryMediaTypes: []string{headers.ValueApplicationJSON},
 			MatchType:       matching.PathMatchTypePrefix,
 			MatchTypeName:   matching.PathMatchNamePrefix,
 			CacheKeyBody:    true,

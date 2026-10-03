@@ -19,6 +19,7 @@ package victoriametrics
 import (
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -90,8 +91,13 @@ func graphitePaths(o *bo.Options) po.List {
 		renderAge = int(time.Duration(o.TimeseriesTTL) / time.Second)
 	}
 	cached := func(path string, mt matching.PathMatchType, maxAge int, ms ...string) *po.Options {
+		var queryTypes []string
+		if slices.Contains(ms, methods.MethodQuery) {
+			// a QUERY reaches the origin as POST, which takes a form body
+			queryTypes = []string{headers.ValueXFormURLEncoded}
+		}
 		return &po.Options{
-			Path: path, HandlerName: handlerGraphite, Methods: ms,
+			Path: path, HandlerName: handlerGraphite, Methods: ms, QueryMediaTypes: queryTypes,
 			CacheKeyParams: []string{"*"}, CacheKeyHeaders: []string{storageStepHeader},
 			ResponseHeaders: map[string]string{
 				appendCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, maxAge),
@@ -109,9 +115,9 @@ func graphitePaths(o *bo.Options) po.List {
 	var out po.List
 	for _, prefix := range []string{"", graphiteSegment} {
 		out = append(out,
-			cached(prefix+"/render", matching.PathMatchTypeExact, renderAge, methods.GetAndPost()...),
-			cached(prefix+"/metrics/find", matching.PathMatchTypeExact, discoveryMaxAge, methods.GetAndPost()...),
-			cached(prefix+"/metrics/expand", matching.PathMatchTypeExact, discoveryMaxAge, methods.GetAndPost()...),
+			cached(prefix+"/render", matching.PathMatchTypeExact, renderAge, methods.QueryableMethods()...),
+			cached(prefix+"/metrics/find", matching.PathMatchTypeExact, discoveryMaxAge, methods.QueryableMethods()...),
+			cached(prefix+"/metrics/expand", matching.PathMatchTypeExact, discoveryMaxAge, methods.QueryableMethods()...),
 			cached(prefix+"/metrics/index.json", matching.PathMatchTypeExact, discoveryMaxAge, get...),
 			cached(prefix+"/tags", matching.PathMatchTypeExact, discoveryMaxAge, get...),
 			cached(prefix+"/tags/", matching.PathMatchTypePrefix, discoveryMaxAge, get...),

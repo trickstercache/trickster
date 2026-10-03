@@ -164,7 +164,8 @@ func TestManagerStartupWithoutWaitReleasesReadiness(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			state := &ready.State{}
 			state.SetCertsPending()
-			m, path := newTestManager(t, newRecordingSink(), state, newStubIssuer(t))
+			sink := newRecordingSink()
+			m, path := newTestManager(t, sink, state, newStubIssuer(t))
 			conf := config.NewConfig()
 			if test.enabled {
 				conf = testConfig(t, path, test.domains...)
@@ -172,6 +173,11 @@ func TestManagerStartupWithoutWaitReleasesReadiness(t *testing.T) {
 			}
 			require.NoError(t, m.Apply(conf))
 			require.False(t, state.CertsPending())
+			if test.enabled && len(test.domains) > 0 {
+				// issuance continues after readiness; a job canceled mid-obtain by cleanup can
+				// still be writing to the storage directory as it is removed
+				requireServed(t, sink, test.domains...)
+			}
 		})
 	}
 }

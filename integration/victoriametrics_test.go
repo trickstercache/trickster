@@ -39,6 +39,9 @@ const (
 	vmBackend = "victoriametrics1"
 	// a settled window of the seeded trips history, before live scraping began; 73 points
 	vmStep = 300
+	// VictoriaMetrics aggregates series in parallel, so a sum's last bit can differ between two
+	// evaluations of the same query; samples are compared to this many significant digits
+	vmSampleDigits = 12
 )
 
 // requireVictoriaMetrics skips when the developer environment runs without VictoriaMetrics, unless
@@ -88,8 +91,8 @@ func vmGet(t *testing.T, base, path string, v url.Values, method string, hdr htt
 	return vmFetch{resp.StatusCode, parseTricksterResult(resp.Header.Get("X-Trickster-Result")), b}
 }
 
-// vmNormalize drops the per-evaluation stats object and orders series, so a cached answer can be
-// compared with the origin's.
+// vmNormalize drops the per-evaluation stats object, orders series and rounds samples, so a cached
+// answer can be compared with the origin's.
 func vmNormalize(t *testing.T, b []byte) any {
 	t.Helper()
 	var d any
@@ -103,10 +106,32 @@ func vmNormalize(t *testing.T, b []byte) any {
 					jb, _ := json.Marshal(b.(map[string]any)["metric"])
 					return strings.Compare(string(ja), string(jb))
 				})
+				for _, series := range res {
+					sm, _ := series.(map[string]any)
+					vmRoundSample(sm["value"])
+					if values, ok := sm["values"].([]any); ok {
+						for _, sample := range values {
+							vmRoundSample(sample)
+						}
+					}
+				}
 			}
 		}
 	}
 	return d
+}
+
+// rounds the value of a [timestamp, "value"] sample in place
+func vmRoundSample(sample any) {
+	pair, ok := sample.([]any)
+	if !ok || len(pair) != 2 {
+		return
+	}
+	if s, ok := pair[1].(string); ok {
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			pair[1] = strconv.FormatFloat(f, 'g', vmSampleDigits, 64)
+		}
+	}
 }
 
 func TestVictoriaMetrics(t *testing.T) {
