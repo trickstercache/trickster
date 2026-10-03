@@ -895,8 +895,9 @@ func aclBackendReachability(c *config.Config, wantHTTP bool) sets.Set[string] {
 			}
 		}
 	}
-	for i := range len(queue) {
-		backend := c.Backends[queue[i]]
+	for len(queue) > 0 {
+		backend := c.Backends[queue[0]]
+		queue = queue[1:]
 		if o := backend.ALBOptions; o != nil {
 			for _, member := range o.Pool {
 				members.Set(member.Name)
