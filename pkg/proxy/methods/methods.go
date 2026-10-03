@@ -34,11 +34,12 @@ const (
 	connect
 	trace
 	purge
+	query
 )
 
 const (
-	cacheableMethods = get + head
-	bodyMethods      = post + put + patch
+	cacheableMethods = get + head + query
+	bodyMethods      = post + put + patch + query
 )
 
 const (
@@ -46,6 +47,10 @@ const (
 
 	// MethodPurge is the PURGE HTTP Method
 	MethodPurge = "PURGE"
+
+	// MethodQuery is the QUERY HTTP Method (RFC 10008): safe, idempotent and
+	// cacheable, with the request content as part of the cache key
+	MethodQuery = "QUERY"
 
 	// Wildcard is the method list entry that stands for every method
 	Wildcard = "*"
@@ -73,6 +78,8 @@ func getMethodLogicalID(method string) uint16 {
 		return trace
 	case MethodPurge:
 		return purge
+	case MethodQuery:
+		return query
 	}
 	return 0
 }
@@ -82,6 +89,7 @@ func AllHTTPMethods() []string {
 	return []string{
 		http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete,
 		http.MethodConnect, http.MethodOptions, http.MethodTrace, http.MethodPatch, MethodPurge,
+		MethodQuery,
 	}
 }
 
@@ -90,9 +98,20 @@ func GetAndPost() []string {
 	return []string{http.MethodGet, http.MethodPost}
 }
 
+// QueryableMethods returns the methods a query endpoint accepts: GET, POST and QUERY
+func QueryableMethods() []string {
+	return []string{http.MethodGet, http.MethodPost, MethodQuery}
+}
+
+// GetAndHead returns the methods whose cache entries are keyed by the target URI alone,
+// unlike QUERY, whose entries also depend on the request content
+func GetAndHead() []string {
+	return []string{http.MethodGet, http.MethodHead}
+}
+
 // CacheableHTTPMethods returns a list of HTTP methods that are generally considered cacheable
 func CacheableHTTPMethods() []string {
-	return []string{http.MethodGet, http.MethodHead}
+	return []string{http.MethodGet, http.MethodHead, MethodQuery}
 }
 
 // UncacheableHTTPMethods returns a list of HTTP methods that are generally considered uncacheable
@@ -103,7 +122,7 @@ func UncacheableHTTPMethods() []string {
 	}
 }
 
-// IsCacheable returns true if the method is HEAD or GET
+// IsCacheable returns true if the method is GET, HEAD or QUERY
 func IsCacheable(method string) bool {
 	if m := getMethodLogicalID(method); m > 0 {
 		return (cacheableMethods&m != 0)
@@ -111,7 +130,7 @@ func IsCacheable(method string) bool {
 	return false
 }
 
-// HasBody returns true if the method is POST, PUT or PATCH
+// HasBody returns true if the method is POST, PUT, PATCH or QUERY
 func HasBody(method string) bool {
 	if m := getMethodLogicalID(method); m > 0 {
 		return (bodyMethods&m != 0)
@@ -124,11 +143,12 @@ func HasBody(method string) bool {
 // response when one of them succeeds. A method the cache does not recognize
 // counts as state-changing, since its safety cannot be assumed. PURGE and
 // CONNECT are excluded: the first acts on the cache itself, and the second
-// establishes a tunnel rather than acting on a representation.
+// establishes a tunnel rather than acting on a representation. QUERY is safe
+// per RFC 10008.
 func IsStateChanging(method string) bool {
 	switch strings.ToUpper(method) {
 	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace,
-		http.MethodConnect, MethodPurge:
+		http.MethodConnect, MethodPurge, MethodQuery:
 		return false
 	}
 	return true

@@ -79,7 +79,7 @@ func TestOriginAuthInjection(t *testing.T) {
 	// explicit pin is left alone
 	plain := &po.Options{Path: "/render", Methods: methods.GetAndPost()}
 	pinned := &po.Options{
-		Path: "/tags", Methods: methods.GetAndPost(),
+		Path: "/tags", Methods: methods.QueryableMethods(),
 		RequestHeaders: map[string]string{headers.NameAuthorization: "Basic other"},
 	}
 	o.Paths = po.List{plain, pinned}

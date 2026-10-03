@@ -18,12 +18,13 @@ package methods
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
 	"testing"
 )
 
 func TestAllHTTPMethods(t *testing.T) {
-	expected := 10
+	expected := 11
 	l := len(AllHTTPMethods())
 	if l != expected {
 		t.Errorf("expected %d got %d", expected, l)
@@ -39,10 +40,41 @@ func TestGetAndPost(t *testing.T) {
 }
 
 func TestCacheableHTTPMethods(t *testing.T) {
-	expected := 2
+	expected := 3
 	l := len(CacheableHTTPMethods())
 	if l != expected {
 		t.Errorf("expected %d got %d", expected, l)
+	}
+}
+
+func TestQueryableMethods(t *testing.T) {
+	want := []string{http.MethodGet, http.MethodPost, MethodQuery}
+	if got := QueryableMethods(); !slices.Equal(got, want) {
+		t.Errorf("expected %v got %v", want, got)
+	}
+}
+
+func TestGetAndHead(t *testing.T) {
+	want := []string{http.MethodGet, http.MethodHead}
+	if got := GetAndHead(); !slices.Equal(got, want) {
+		t.Errorf("expected %v got %v", want, got)
+	}
+}
+
+func TestQueryMethod(t *testing.T) {
+	for _, m := range []string{MethodQuery, "query"} {
+		if !IsCacheable(m) {
+			t.Errorf("expected %s to be cacheable", m)
+		}
+		if !HasBody(m) {
+			t.Errorf("expected %s to carry a body", m)
+		}
+		if IsStateChanging(m) {
+			t.Errorf("expected %s to be safe", m)
+		}
+		if !IsValidMethod(m) {
+			t.Errorf("expected %s to be valid", m)
+		}
 	}
 }
 

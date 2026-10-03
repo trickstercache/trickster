@@ -24,7 +24,7 @@ import (
 
 // AllowedMethods is the Allow field Trickster returns when it answers an
 // OPTIONS request as the final recipient
-const AllowedMethods = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS"
+const AllowedMethods = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS, QUERY"
 
 // MaxForwards enforces RFC 9110 7.6.2 on TRACE and OPTIONS requests: it
 // decrements a non-zero Max-Forwards before the request is forwarded, and
