@@ -19,35 +19,45 @@ package integration
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/integration/promstub"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestStreamIPACL denies a loopback client at a TCP listener, reloads to allow
-// it, then reloads back to deny. The connection opened while the list allowed
-// the client keeps its flow; a connection opened after the second reload does not.
+const streamACLReloadSuccessesMetric = "trickster_config_reload_successes_total"
+
 func TestStreamIPACL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts Trickster; skipping in -short mode")
 	}
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 	members, _ := tcpMembers(t, "echo")
 	s := startStreamACL(t, members, "10.0.0.0/8")
-	require.Empty(t, s.askAndClose(t), "the loopback client was accepted by an allow list of 10.0.0.0/8")
+	name, err := probeStreamACL(s.addr)
+	require.NoError(t, err)
+	require.Empty(t, name, "the loopback client was accepted by an allow list of 10.0.0.0/8")
 
 	rewriteStreamACL(t, s, members, "127.0.0.1/32")
-	require.Eventually(t, func() bool { return s.askAndClose(t) == "echo" }, 15*time.Second, 100*time.Millisecond,
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		name, err := probeStreamACL(s.addr)
+		assert.NoError(collect, err)
+		assert.Equal(collect, "echo", name)
+	}, 15*time.Second, 100*time.Millisecond,
 		"new connections never observed the allow reload")
 
 	name, held := s.ask(t)
@@ -55,15 +65,42 @@ func TestStreamIPACL(t *testing.T) {
 	t.Cleanup(func() { _ = held.Close() })
 
 	rewriteStreamACL(t, s, members, "10.0.0.0/8")
-	require.Eventually(t, func() bool { return s.askAndClose(t) == "" }, 15*time.Second, 100*time.Millisecond,
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		name, err := probeStreamACL(s.addr)
+		assert.NoError(collect, err)
+		assert.Empty(collect, name)
+	}, 15*time.Second, 100*time.Millisecond,
 		"new connections never observed the deny reload")
 
 	_ = held.SetDeadline(time.Now().Add(5 * time.Second))
-	_, err := held.Write([]byte("still\n"))
+	_, err = held.Write([]byte("still\n"))
 	require.NoError(t, err)
 	reply, err := bufio.NewReader(held).ReadString('\n')
 	require.NoError(t, err)
 	require.Equal(t, "echo:still\n", reply, "a connection open across the reload was rejudged")
+}
+
+func probeStreamACL(addr string) (string, error) {
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
+	if err == nil {
+		defer conn.Close()
+		err = conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if err == nil {
+			_, err = conn.Write([]byte("hi\n"))
+		}
+		if err == nil {
+			var reply string
+			reply, err = bufio.NewReader(conn).ReadString('\n')
+			if err == nil {
+				name, _, _ := strings.Cut(reply, ":")
+				return name, nil
+			}
+		}
+	}
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.EPIPE) || errors.Is(err, io.EOF) {
+		return "", nil
+	}
+	return "", err
 }
 
 func startStreamACL(t *testing.T, members [][2]string, allow string) *streamLB {
@@ -84,10 +121,27 @@ func startStreamACL(t *testing.T, members [][2]string, allow string) *streamLB {
 
 func rewriteStreamACL(t *testing.T, s *streamLB, members [][2]string, allow string) {
 	t.Helper()
+	before := metricsutil.Scrape(t, s.ports[1])[streamACLReloadSuccessesMetric]
 	writeStreamACL(t, s, members, allow)
 	future := time.Now().Add(2 * time.Second)
 	require.NoError(t, os.Chtimes(s.cfgPath, future, future))
-	require.NoError(t, syscall.Kill(os.Getpid(), syscall.SIGHUP))
+	metricsAddr := fmt.Sprintf("127.0.0.1:%d", s.ports[1])
+	sighupUntilReloaded(t, metricsAddr)
+	client := &http.Client{Timeout: 2 * time.Second}
+	require.EventuallyWithT(t, func(collect *assert.CollectT) {
+		resp, err := client.Get("http://" + metricsAddr + "/metrics")
+		if !assert.NoError(collect, err) {
+			return
+		}
+		defer resp.Body.Close()
+		if !assert.Equal(collect, http.StatusOK, resp.StatusCode) {
+			return
+		}
+		scraped, err := metricsutil.Parse(resp.Body)
+		if assert.NoError(collect, err) {
+			assert.Greater(collect, scraped[streamACLReloadSuccessesMetric], before)
+		}
+	}, 15*time.Second, 100*time.Millisecond, "the ACL config was never successfully reloaded")
 }
 
 func writeStreamACL(t *testing.T, s *streamLB, members [][2]string, allow string) {
