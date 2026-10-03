@@ -823,24 +823,28 @@ func bindListenerIPACL(c *config.Config, name string, options *listener.Options)
 	return nil
 }
 
-// validateIPACLPlacements applies the checks that need listener protocols after
-// Listeners has assigned default listener names. drop is refused when HTTP
-// serves the backend. A backend ACL on a native listener is a warning: native
-// sessions are judged by the listener list only, and a ClickHouse native
-// bridge request has no client address.
 func validateIPACLPlacements(c *config.Config) error {
+	httpBackends := aclBackendReachability(c, true)
+	streamMembers := aclBackendReachability(c, false)
 	nativeListeners := providerregistry.NativeListeners()
 	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
 		backend := c.Backends[backendName]
 		if backend == nil {
 			continue
 		}
-		httpServed := backendServesHTTP(backend, c)
+		streamMember := streamMembers.Contains(backendName)
+		if backend.IPACL != nil && streamMember {
+			return streamMemberACLError(backendName, "", backend.IPACLName)
+		}
+		httpServed := httpBackends.Contains(backendName)
 		if backend.IPACL != nil && backend.IPACL.Action() == ipacl.Drop && httpServed {
 			return fmt.Errorf("backend %q uses ip acl %q with action drop, which is not valid "+
 				"when the backend is served over http", backendName, backend.IPACLName)
 		}
 		for _, path := range backend.Paths {
+			if path != nil && path.IPACL != nil && streamMember {
+				return streamMemberACLError(backendName, path.Path, path.IPACLName)
+			}
 			if path == nil || path.IPACL == nil || path.IPACL.Action() != ipacl.Drop || !httpServed {
 				continue
 			}
@@ -857,20 +861,86 @@ func validateIPACLPlacements(c *config.Config) error {
 	return nil
 }
 
-// backendServesHTTP reports whether any listener already assigned to the backend
-// speaks HTTP. An empty listener list is not treated as the default frontend:
-// Listeners has already assigned that name to backends that use it.
-func backendServesHTTP(backend *bo.Options, c *config.Config) bool {
-	if backend == nil {
-		return false
+func streamMemberACLError(backendName, path, aclName string) error {
+	where := fmt.Sprintf("backend %q", backendName)
+	if path != "" {
+		where += fmt.Sprintf(" path %q", path)
 	}
-	for _, name := range backend.ListenerNames {
-		lo := c.Listeners[name]
-		if lo != nil && (lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP) {
-			return true
+	return fmt.Errorf("%s uses ip acl %q but is a stream pool member or template: "+
+		"stream member access lists are not supported; attach the list to the listener or front alb", where, aclName)
+}
+
+func aclBackendReachability(c *config.Config, wantHTTP bool) sets.Set[string] {
+	// Follow dispatch edges once per backend. HTTP returns every reachable backend;
+	// streams return only pool members and templates, which bypass admission.
+	reached := sets.NewStringSet()
+	members := sets.NewStringSet()
+	queue := make([]string, 0, len(c.Backends))
+	add := func(name string) {
+		if name != "" && c.Backends[name] != nil && !reached.Contains(name) {
+			reached.Set(name)
+			queue = append(queue, name)
 		}
 	}
-	return false
+	for name, backend := range c.Backends {
+		if backend == nil || backend.IsTemplate {
+			continue
+		}
+		for _, listenerName := range backend.ListenerNames {
+			lo := c.Listeners[listenerName]
+			if lo != nil && (wantHTTP && (lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP) ||
+				!wantHTTP && lo.IsStream()) {
+				add(name)
+				break
+			}
+		}
+	}
+	for i := 0; i < len(queue); i++ {
+		backend := c.Backends[queue[i]]
+		if o := backend.ALBOptions; o != nil {
+			for _, member := range o.Pool {
+				members.Set(member.Name)
+				add(member.Name)
+			}
+			if o.Discovery != nil {
+				members.Set(o.Discovery.TemplateBackend)
+				add(o.Discovery.TemplateBackend)
+			}
+			if wantHTTP && o.UserRouter != nil {
+				add(o.UserRouter.DefaultBackend)
+				for _, mapping := range o.UserRouter.Users {
+					if mapping != nil {
+						add(mapping.ToBackend)
+					}
+				}
+			}
+		}
+		if !wantHTTP {
+			continue
+		}
+		if o := c.Rules[backend.RuleName]; o != nil {
+			add(o.NextRoute)
+			for _, ruleCase := range o.CaseOptions {
+				if ruleCase != nil {
+					add(ruleCase.NextRoute)
+				}
+			}
+		}
+		for _, path := range backend.Paths {
+			if path == nil {
+				continue
+			}
+			for _, mirror := range path.Mirrors {
+				if mirror != nil {
+					add(mirror.BackendName)
+				}
+			}
+		}
+	}
+	if wantHTTP {
+		return reached
+	}
+	return members
 }
 
 func addWarning(c *config.Config, warning string) {

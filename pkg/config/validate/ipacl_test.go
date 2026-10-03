@@ -23,8 +23,11 @@ import (
 	"strings"
 	"testing"
 
+	uro "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
@@ -298,4 +301,121 @@ func TestNativeBackendIPACLWarning(t *testing.T) {
 			t.Fatalf("native warnings = %d in %v", got, c.LoaderWarnings)
 		}
 	})
+}
+
+func TestIPACLDropIndirectHTTP(t *testing.T) {
+	for _, attachment := range []string{"backend", "path"} {
+		for _, via := range []string{"pool", "template", "rule default", "rule case", "mirror", "user default", "user mapping"} {
+			t.Run(attachment+"/"+via, func(t *testing.T) {
+				c := config.NewConfig()
+				list := mustACLs(t, ipacl.Lookup{"wall": {Action: "drop"}})["wall"].Compiled
+				front := &bo.Options{ListenerNames: []string{listener.DefaultFrontendName}}
+				target := &bo.Options{}
+				if attachment == "backend" {
+					target.IPACLName, target.IPACL = "wall", list
+				} else {
+					target.Paths = po.List{nil, {Path: "/", IPACLName: "wall", IPACL: list}}
+				}
+				c.Backends = bo.Lookup{"front": front, "target": target, "unused": nil}
+				switch via {
+				case "pool":
+					front.ALBOptions = &ao.Options{Pool: ao.PoolMemberList{{Name: "nested"}}}
+					c.Backends["nested"] = &bo.Options{ALBOptions: &ao.Options{
+						Pool: ao.PoolMemberList{{Name: "target"}, {Name: "missing"}, {Name: "front"}},
+					}}
+				case "template":
+					target.IsTemplate = true
+					front.ALBOptions = &ao.Options{Discovery: &ao.DiscoveryOptions{TemplateBackend: "target"}}
+				case "rule default", "rule case":
+					front.RuleName = "dispatch"
+					rule := &ro.Options{}
+					if via == "rule default" {
+						rule.NextRoute = "target"
+					} else {
+						rule.CaseOptions = ro.CaseOptionsList{nil, {NextRoute: "target"}}
+					}
+					c.Rules = ro.Lookup{"dispatch": rule}
+				case "mirror":
+					front.Paths = po.List{nil, {Mirrors: []*po.MirrorOptions{nil, {BackendName: "target"}}}}
+				case "user default", "user mapping":
+					u := &uro.Options{}
+					if via == "user default" {
+						u.DefaultBackend = "target"
+					} else {
+						u.Users = uro.UserMappingOptionsByUser{"nil": nil, "alice": {ToBackend: "target"}}
+					}
+					front.ALBOptions = &ao.Options{UserRouter: u}
+				}
+				err := validateIPACLPlacements(c)
+				if err == nil || !strings.Contains(err.Error(), "action drop") || !strings.Contains(err.Error(), "target") {
+					t.Fatalf("indirect HTTP drop = %v", err)
+				}
+				list = mustACLs(t, ipacl.Lookup{"wall": {Action: "reject"}})["wall"].Compiled
+				if attachment == "backend" {
+					target.IPACL = list
+				} else {
+					target.Paths[1].IPACL = list
+				}
+				if err := validateIPACLPlacements(c); err != nil {
+					t.Fatalf("indirect HTTP reject = %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestStreamMemberIPACLPlacements(t *testing.T) {
+	for _, protocol := range []string{listener.ProtocolTCP, listener.ProtocolTLS, listener.ProtocolUDP} {
+		for _, via := range []string{"member", "nested alb", "nested alb policy", "template", "template path"} {
+			t.Run(protocol+"/"+via, func(t *testing.T) {
+				c := config.NewConfig()
+				c.Listeners["relay"] = listener.New("relay")
+				c.Listeners["relay"].Protocol = protocol
+				list := mustACLs(t, ipacl.Lookup{"wall": {}})["wall"].Compiled
+				front := streamBackend("relay", providers.ALB)
+				front.ALBOptions = &ao.Options{MechanismName: "rr"}
+				target := streamBackend("relay", providers.ReverseProxyShort)
+				target.IPACLName, target.IPACL = "wall", list
+				c.Backends = bo.Lookup{"front": front, "target": target}
+				switch via {
+				case "member":
+					front.ALBOptions.Pool = ao.PoolMemberList{{Name: "target"}}
+				case "nested alb":
+					front.ALBOptions.Pool = ao.PoolMemberList{{Name: "nested"}}
+					nested := streamBackend("relay", providers.ALB)
+					nested.ALBOptions = &ao.Options{MechanismName: "rr", Pool: ao.PoolMemberList{{Name: "target"}}}
+					c.Backends["nested"] = nested
+				case "nested alb policy":
+					front.ALBOptions.Pool = ao.PoolMemberList{{Name: "target"}}
+					target.Provider = providers.ALB
+					target.ALBOptions = &ao.Options{MechanismName: "rr", Pool: ao.PoolMemberList{{Name: "leaf"}}}
+					c.Backends["leaf"] = streamBackend("relay", providers.ReverseProxyShort)
+				case "template", "template path":
+					target.IsTemplate = true
+					front.ALBOptions.Discovery = &ao.DiscoveryOptions{TemplateBackend: "target"}
+					if via == "template path" {
+						target.IPACLName, target.IPACL = "", nil
+						target.Paths = po.List{{Path: "/", IPACLName: "wall", IPACL: list}}
+					}
+				}
+				if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "stream member access lists are not supported") {
+					t.Fatalf("stream member ACL = %v", err)
+				}
+				target.IPACLName, target.IPACL, target.Paths = "", nil, nil
+				front.IPACLName, front.IPACL = "wall", list
+				if err := Listeners(c); err != nil {
+					t.Fatalf("front ACL = %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestIPACLUnreachableTemplateDrop(t *testing.T) {
+	c := config.NewConfig()
+	list := mustACLs(t, ipacl.Lookup{"wall": {Action: "drop"}})["wall"].Compiled
+	c.Backends = bo.Lookup{"unused": {IsTemplate: true, IPACLName: "wall", IPACL: list}}
+	if err := validateIPACLPlacements(c); err != nil {
+		t.Fatalf("unreachable template = %v", err)
+	}
 }

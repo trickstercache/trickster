@@ -85,6 +85,8 @@ UDP has no TCP accept. A UDP listener list, whichever its source, and the UDP ba
 
 A backend `peer` list is not a valid attachment, so stream admission does not enforce one.
 
+Stream admission enforces the list on the backend selected by the listener table, including a front ALB. Lists on stream ALB pool members, nested ALBs, or discovery templates are not supported and fail configuration validation. This includes named path lists on those members or templates. Attach the policy to the listener or front ALB instead.
+
 ### Native protocols
 
 A native listener (`mysql`, `postgres`, `clickhouse`, `flight-sql`) judges its list at accept. `client_ip` on that listener is the socket peer, and only when `proxy_protocol` is off. `client_ip` together with `proxy_protocol` is refused, because the socket peer and the address in the header are different addresses. `client_ip` with `proxy_protocol` and no `trusted_proxies` still loads on a listener that reads a PROXY header, including `udp`, and warns: an empty trusted-proxy list believes every peer's header.
@@ -101,7 +103,7 @@ Native sessions are judged by the listener list only. A backend that has an acce
 
 `drop` aborts the request with `http.ErrAbortHandler`. No response bytes are written, and the access log does not write its completion line. See [access-logs.md](./access-logs.md).
 
-`drop` is refused when the list is attached to a backend or path that an HTTP listener serves, including a backend mapped to both HTTP and a stream listener. A backend mapped only to `tcp`, `tls`, or `udp` may use `drop`.
+`drop` is refused when the list is attached to a backend or path that an HTTP listener serves, including a backend mapped to both HTTP and a stream listener. HTTP reachability includes dispatch through ALB pools, discovery templates, rules, user routers, and mirrors. A backend mapped only to `tcp`, `tls`, or `udp` may use `drop`.
 
 ### Streams
 
