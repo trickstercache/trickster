@@ -34,7 +34,7 @@ The roadmap for Trickster in the second half of 2026 focuses on delivering Trick
 
 - [ ] Trickster v2.3 Release
   - [ ] Expand Time Series Merge to more providers than just Prometheus
-  - [ ] Expand Promtheus support to more cloud-Managed Services (GCP, Azure)
+  - [ ] Expand Promtheus support to more cloud-managed services (GCP, Azure)
   - [ ] Add more protocols to the Authentication gate (OIDC, JWT, API Key, mTLS, etc.)
   - [ ] Support Low-Latency HLS and DASH
   - [ ] Support emergent Caching RFCs (9875, 10036, 9209, No-Vary-Search)
