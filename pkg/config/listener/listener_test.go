@@ -17,6 +17,7 @@
 package listener
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 
 	"go.yaml.in/yaml/v3"
@@ -354,6 +356,74 @@ func TestIPACLNameDoesNotAffectEquality(t *testing.T) {
 	cloned := b.Clone()
 	if cloned.IPACLName != "office" || cloned.IPACL != b.IPACL {
 		t.Fatal("clone dropped the access list")
+	}
+}
+
+func TestPathNormalizationYAMLCloneAndEquality(t *testing.T) {
+	var l Lookup
+	if err := yaml.Unmarshal([]byte("default:\n  path_normalization:\n    merge_slashes: true\n"), &l); err != nil {
+		t.Fatal(err)
+	}
+	got := l[DefaultFrontendName].PathNormalization
+	want := pno.Options{DotSegments: pno.DefaultDotSegments, MergeSlashes: true, EscapedSlashes: pno.DefaultEscapedSlashes}
+	if got == nil || *got != want {
+		t.Fatalf("path_normalization = %+v; want %+v", got, want)
+	}
+	if *l[mgmt.ListenerNameMgmt].PathNormalization != *pno.New() {
+		t.Error("an unconfigured listener should carry the default path normalization")
+	}
+	c := l[DefaultFrontendName].Clone()
+	if c.PathNormalization == got || !c.Equal(l[DefaultFrontendName]) {
+		t.Fatal("clone should deep-copy path_normalization")
+	}
+	c.PathNormalization.DotSegments = pno.DotSegmentsReject
+	if c.Equal(l[DefaultFrontendName]) {
+		t.Error("path_normalization must participate in equality")
+	}
+}
+
+func TestHTTPLimitsYAMLEqualityAndValidation(t *testing.T) {
+	const readTimeout, maxHeaderBytes = 30 * time.Second, 16384
+	var l Lookup
+	doc := fmt.Sprintf("default:\n  read_timeout: %s\n  idle_timeout: 0s\n  max_header_bytes: %d\n",
+		readTimeout, maxHeaderBytes)
+	if err := yaml.Unmarshal([]byte(doc), &l); err != nil {
+		t.Fatal(err)
+	}
+	o := l[DefaultFrontendName]
+	if o.ReadTimeout != timeconv.Duration(readTimeout) || o.IdleTimeout != 0 || o.MaxHeaderBytes != maxHeaderBytes {
+		t.Fatalf("limits = %v, %v, %d", o.ReadTimeout, o.IdleTimeout, o.MaxHeaderBytes)
+	}
+	if l[mgmt.ListenerNameMgmt].IdleTimeout != DefaultIdleTimeout {
+		t.Error("an unconfigured listener should carry the default idle timeout")
+	}
+	out, err := yaml.Marshal(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Options
+	if err := yaml.Unmarshal(out, &back); err != nil || back.IdleTimeout != 0 {
+		t.Errorf("a disabled idle timeout should round-trip, got %v (%v)", back.IdleTimeout, err)
+	}
+	if err := o.ValidateHTTPLimits(); err != nil {
+		t.Errorf("valid limits refused: %v", err)
+	}
+	for name, change := range map[string]func(*Options){
+		"read_timeout":     func(c *Options) { c.ReadTimeout = -1 },
+		"idle_timeout":     func(c *Options) { c.IdleTimeout = -1 },
+		"max_header_bytes": func(c *Options) { c.MaxHeaderBytes = -1 },
+	} {
+		c := o.Clone()
+		if !c.Equal(o) {
+			t.Fatal("clone should equal its source")
+		}
+		change(c)
+		if c.Equal(o) {
+			t.Errorf("%s must participate in equality", name)
+		}
+		if err := c.ValidateHTTPLimits(); err == nil {
+			t.Errorf("negative %s accepted", name)
+		}
 	}
 }
 

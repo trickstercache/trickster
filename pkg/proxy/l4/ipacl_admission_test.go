@@ -37,13 +37,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pires/go-proxyproto"
-
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/stream"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+
+	"github.com/pires/go-proxyproto"
 )
 
 func aclList(t *testing.T, o ipacl.Options) *ipacl.List {

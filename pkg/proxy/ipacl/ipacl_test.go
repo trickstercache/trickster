@@ -447,9 +447,7 @@ func TestCheckConcurrent(t *testing.T) {
 	want := []Verdict{Allow, Deny, Allow, Deny, Deny, Deny}
 	var wg sync.WaitGroup
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 200 {
 				for i := range addrs {
 					if got := list.Check(addrs[i]); got != want[i] {
@@ -458,7 +456,7 @@ func TestCheckConcurrent(t *testing.T) {
 					}
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 }

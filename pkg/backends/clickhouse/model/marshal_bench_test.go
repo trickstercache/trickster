@@ -39,8 +39,10 @@ func BenchmarkMarshalJSON(b *testing.B) {
 			s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}, nil)
 			pts := make(dataset.Points, shape.points)
 			for j := range pts {
-				pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-					Values: []any{float64(i*j%9973) / 7, int64(j)}}
+				pts[j] = dataset.Point{
+					Epoch:  epoch.Epoch(int64(1700000000+60*j) * 1e9),
+					Values: []any{float64(i*j%9973) / 7, int64(j)},
+				}
 			}
 			s.SetPoints(pts)
 			series[i] = s
@@ -75,8 +77,10 @@ func BenchmarkMarshalXSV(b *testing.B) {
 		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}, nil)
 		pts := make(dataset.Points, 1000)
 		for j := range pts {
-			pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-				Values: []any{float64(i*j%9973) / 7, int64(j)}}
+			pts[j] = dataset.Point{
+				Epoch:  epoch.Epoch(int64(1700000000+60*j) * 1e9),
+				Values: []any{float64(i*j%9973) / 7, int64(j)},
+			}
 		}
 		s.SetPoints(pts)
 		series[i] = s
@@ -110,8 +114,10 @@ func BenchmarkMarshalNative(b *testing.B) {
 		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprintf("host-%d", i)}}, nil)
 		pts := make(dataset.Points, 1000)
 		for j := range pts {
-			pts[j] = dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-				Values: []any{float64(i*j%9973) / 7, int64(j)}}
+			pts[j] = dataset.Point{
+				Epoch:  epoch.Epoch(int64(1700000000+60*j) * 1e9),
+				Values: []any{float64(i*j%9973) / 7, int64(j)},
+			}
 		}
 		s.SetPoints(pts)
 		series[i] = s

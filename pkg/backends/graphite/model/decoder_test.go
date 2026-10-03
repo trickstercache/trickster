@@ -76,21 +76,29 @@ var graphiteBodies = map[string]graphiteCase{
 	"no series":    {"[]", 0},
 	"null series":  {"[null]", 0},
 	"empty series": {`[{"target":"a","datapoints":[]},{"target":"b","tags":{},"datapoints":null}]`, 0},
-	"members in any order": {`[{"datapoints":[[1,10],[2,20]],"tags":{"x":"y"},"target":"a","extra":[1,{"b":2}]}]`,
-		10 * time.Second},
-	"members ignore case": {`[{"TARGET":"a","Target":"b","Tags":{"x":"1"},"TAGS":{"y":"2"},"DataPoints":[[1,10],[2,20]]}]`,
-		10 * time.Second},
+	"members in any order": {
+		`[{"datapoints":[[1,10],[2,20]],"tags":{"x":"y"},"target":"a","extra":[1,{"b":2}]}]`,
+		10 * time.Second,
+	},
+	"members ignore case": {
+		`[{"TARGET":"a","Target":"b","Tags":{"x":"1"},"TAGS":{"y":"2"},"DataPoints":[[1,10],[2,20]]}]`,
+		10 * time.Second,
+	},
 	"members repeat": {`[{"target":"a","target":null,"tags":{"x":"1"},"tags":null,"tags":{"y":null,"y2":"2","y2":"3"},` +
 		`"datapoints":[[9,0],[9,5]],"datapoints":[[1,10],[2,20]]}]`, 10 * time.Second},
 	"tags null": {`[{"target":"a","tags":{"x":"1"},"tags":null,"datapoints":[[1,10],[2,20]]}]`, 10 * time.Second},
 	"escapes": {`[{"target":"a` + bs + `u00e9` + bs + `"b` + bs + `/","tags":{"k` + bs + `n":"v` + bs + `ud834` + bs + `udd1e"},` +
 		`"datapoints":[[1,10],[2,20]]}]`, 10 * time.Second},
-	"duplicate series": {`[{"target":"a","datapoints":[[1,10],[2,20]]},{"target":"a","datapoints":[[3,10],[4,20]]}]`,
-		10 * time.Second},
+	"duplicate series": {
+		`[{"target":"a","datapoints":[[1,10],[2,20]]},{"target":"a","datapoints":[[3,10],[4,20]]}]`,
+		10 * time.Second,
+	},
 	"datapoint forms": {`[{"target":"a","datapoints":[ [ 1.5 , 10.9 ] , [null,20], [-0,30], [1e308,40], [-2.5E-3,50], ` +
 		`[1e-400,60], [7,70.0]]}]`, 10 * time.Second},
-	"raw forms": {"a,b,100,130,10|1,None,3\n\n  c,100,100,10|  \nd,100,110,10|-0,1e308\r\ne,100,110,10|None\n",
-		10 * time.Second},
+	"raw forms": {
+		"a,b,100,130,10|1,None,3\n\n  c,100,100,10|  \nd,100,110,10|-0,1e308\r\ne,100,110,10|None\n",
+		10 * time.Second,
+	},
 	"raw duplicates":  {"a,100,120,10|1,2\na,100,120,10|3,4\n", 10 * time.Second},
 	"raw mixed steps": {"a,100,120,10|1,2\nb,100,160,60|3\n", 10 * time.Second},
 }
@@ -285,8 +293,10 @@ func TestDecoderReadsInPieces(t *testing.T) {
 
 func TestParseTimestamp(t *testing.T) {
 	// as a float, truncated, which an integer of up to 15 digits is exactly
-	for _, in := range []string{"0", "-0", "7", "-7", "007", "-007", "1787349960", "123456789012345", "-123456789012345",
-		"1234567890123456", "9007199254740993", "99999999999999999999", "10.9", "-10.9", "1e3", "1E-3", "-1.5e2"} {
+	for _, in := range []string{
+		"0", "-0", "7", "-7", "007", "-007", "1787349960", "123456789012345", "-123456789012345",
+		"1234567890123456", "9007199254740993", "99999999999999999999", "10.9", "-10.9", "1e3", "1E-3", "-1.5e2",
+	} {
 		f, err := strconv.ParseFloat(in, 64)
 		require.NoError(t, err)
 		got, err := parseTimestamp([]byte(in))

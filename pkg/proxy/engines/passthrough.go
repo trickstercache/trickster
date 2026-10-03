@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
@@ -105,7 +106,12 @@ func passthroughRewrite(client backends.Backend) func(*httputil.ProxyRequest) {
 			httpguts.HeaderValuesContainsToken(r.Header[headers.NameConnection], "Upgrade")
 
 		if o != nil {
-			headers.AddForwardingHeaders(r, o.ForwardedHeaders)
+			// ReverseProxy drops every inbound forwarding header, so a trusted proxy's are restored to append to
+			peerTrusted := request.PeerTrusted(pr.In)
+			if peerTrusted {
+				headers.RestoreForwardingHeaders(r.Header, pr.In.Header)
+			}
+			headers.AddForwardingHeaders(r, o.ForwardedHeaders, peerTrusted)
 		}
 		if wantsTrailers {
 			r.Header.Set(headers.NameTe, "trailers")
@@ -210,10 +216,10 @@ func passthroughErrorHandler(w http.ResponseWriter, r *http.Request, err error) 
 	}
 	logger.Error("error reaching upstream origin",
 		logging.Pairs{
-			keys.URL:             r.URL.String(),
+			keys.URL:             redact.URL(r.URL),
 			keys.BackendName:     name,
 			keys.BackendProvider: provider,
-			keys.Detail:          err.Error(),
+			keys.Detail:          redact.Error(err),
 		})
 	h := w.Header()
 	headers.SetResultsHeader(h, "HTTPProxy", status.LookupStatusProxyError.String(), "", nil, nil)

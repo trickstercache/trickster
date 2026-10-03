@@ -86,8 +86,14 @@ func TestPoolMemberListDedupe(t *testing.T) {
 	// the first occurrence wins and keeps its position; each repeat is reported once with
 	// the share the entries used to carry together
 	got, repeats, err = PoolMemberList{
-		{Name: "a"}, {Name: "b", Weight: 2}, {Name: "a"}, {Name: "c"}, {Name: "a"},
-		{Name: "b", Weight: 2}, {Name: "d", Weight: 4}, {Name: "d"},
+		{Name: "a"},
+		{Name: "b", Weight: 2},
+		{Name: "a"},
+		{Name: "c"},
+		{Name: "a"},
+		{Name: "b", Weight: 2},
+		{Name: "d", Weight: 4},
+		{Name: "d"},
 	}.Dedupe("alb1")
 	require.NoError(t, err)
 	require.Equal(t, PoolMemberList{

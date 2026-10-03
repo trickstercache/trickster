@@ -35,6 +35,7 @@ import (
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -228,6 +229,77 @@ func TestDeriveCacheKeyIncludesProviderOwnedBody(t *testing.T) {
 	path.CacheKeyBody = false
 	if derive(`{"query":"SELECT 1"}`) != derive(`{"query":"SELECT 2"}`) {
 		t.Fatal("body affected a route that did not opt in")
+	}
+}
+
+func TestDeriveCacheKeyQueryContent(t *testing.T) {
+	path := &po.Options{Path: "/search"}
+	cfg := &bo.Options{Name: "rpc", Paths: po.List{path}}
+	derive := func(method, body, ctype, encoding string) string {
+		r := httptest.NewRequest(method, "http://origin/search?x=1", strings.NewReader(body))
+		if ctype != "" {
+			r.Header.Set(headers.NameContentType, ctype)
+		}
+		if encoding != "" {
+			r.Header.Set(headers.NameContentEncoding, encoding)
+		}
+		r = request.SetResources(r, request.NewResources(cfg, path, nil, nil, nil, nil))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	const sql = "SELECT 1"
+	base := derive(methods.MethodQuery, sql, "application/sql", "")
+	if base != derive(methods.MethodQuery, sql, "application/sql", "") {
+		t.Fatal("identical QUERY requests produced different cache keys")
+	}
+	if base == derive(methods.MethodQuery, "SELECT 2", "application/sql", "") {
+		t.Error("different QUERY bodies produced the same cache key")
+	}
+	if base == derive(methods.MethodQuery, sql, "text/plain", "") {
+		t.Error("different QUERY media types produced the same cache key")
+	}
+	if base == derive(methods.MethodQuery, sql, "application/sql", "gzip") {
+		t.Error("different QUERY content codings produced the same cache key")
+	}
+	if base != derive(methods.MethodQuery, sql, "Application/SQL", "") {
+		t.Error("media type case changed the cache key")
+	}
+	if base == derive(http.MethodGet, "", "", "") {
+		t.Error("a QUERY and a GET for the same URI share a cache key")
+	}
+
+	// a form-encoded QUERY keys on its raw content, not only the parsed fields
+	path.CacheKeyParams = []string{"query"}
+	form := derive(methods.MethodQuery, "query=up", headers.ValueXFormURLEncoded, "")
+	if form == derive(methods.MethodQuery, "query=down", headers.ValueXFormURLEncoded, "") {
+		t.Error("different form QUERY bodies produced the same cache key")
+	}
+}
+
+func TestDeriveCacheKeyQueryNoPathConfig(t *testing.T) {
+	cfg := &bo.Options{Name: "rpc"}
+	derive := func(body string) string {
+		r := httptest.NewRequest(methods.MethodQuery, "http://origin/search", strings.NewReader(body))
+		r.Header.Set(headers.NameContentType, "application/sql")
+		r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, nil, nil))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	if derive("SELECT 1") == derive("SELECT 2") {
+		t.Error("different QUERY bodies produced the same cache key")
+	}
+}
+
+func TestNormalizeMediaType(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"", ""},
+		{"application/JSON", "application/json"},
+		{" Text/Plain ; Charset=UTF-8 ", "text/plain;charset=UTF-8"},
+		{"multipart/form-data; boundary=AbC", "multipart/form-data;boundary=AbC"},
+		{"text/plain;;flag", "text/plain;flag"},
+	}
+	for _, tc := range tests {
+		if got := normalizeMediaType(tc.in); got != tc.want {
+			t.Errorf("normalizeMediaType(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 

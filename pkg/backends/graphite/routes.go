@@ -65,9 +65,10 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	long := map[string]string{headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 3600)}
 	paths := po.List{
 		{
-			Path:        renderPath,
-			HandlerName: handlerRender,
-			Methods:     methods.GetAndPost(),
+			Path:            renderPath,
+			HandlerName:     handlerRender,
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: []string{headers.ValueXFormURLEncoded},
 			// from/until/now/format are absent by design: the extent is the
 			// DPC's concern and the output format is applied at marshal time
 			CacheKeyParams: []string{upTarget, "xFilesFactor", "local"},
@@ -77,14 +78,16 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 	}
 	for _, p := range []string{healthPath, expandPath, "/metrics/index.json", "/tags"} {
 		paths = append(paths, &po.Options{
-			Path: p, HandlerName: handlerProxyCache, Methods: methods.GetAndPost(),
-			CacheKeyParams: []string{"*"}, ResponseHeaders: short,
+			Path: p, HandlerName: handlerProxyCache, Methods: methods.QueryableMethods(),
+			QueryMediaTypes: []string{headers.ValueXFormURLEncoded},
+			CacheKeyParams:  []string{"*"}, ResponseHeaders: short,
 			MatchType: matching.PathMatchTypeExact, MatchTypeName: matching.PathMatchNameExact,
 		})
 	}
 	paths = append(paths, &po.Options{
-		Path: "/tags/", HandlerName: handlerProxyCache, Methods: methods.GetAndPost(),
-		CacheKeyParams: []string{"*"}, ResponseHeaders: short,
+		Path: "/tags/", HandlerName: handlerProxyCache, Methods: methods.QueryableMethods(),
+		QueryMediaTypes: []string{headers.ValueXFormURLEncoded},
+		CacheKeyParams:  []string{"*"}, ResponseHeaders: short,
 		MatchType: matching.PathMatchTypePrefix, MatchTypeName: matching.PathMatchNamePrefix,
 	})
 	for _, p := range []string{"/functions", "/version"} {

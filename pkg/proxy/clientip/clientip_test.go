@@ -127,8 +127,9 @@ func TestMiddleware(t *testing.T) {
 	trusted, err := ParseTrusted([]string{"10.0.0.0/8"})
 	require.NoError(t, err)
 	var got string
+	var peerTrusted bool
 	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		got = tctx.ClientIP(r.Context())
+		got, peerTrusted = tctx.ClientIP(r.Context()), tctx.PeerTrusted(r.Context())
 	})
 	require.Nil(t, Middleware(trusted, nil))
 	h := Middleware(nil, next)
@@ -141,6 +142,13 @@ func TestMiddleware(t *testing.T) {
 	h = Middleware(trusted, next)
 	h.ServeHTTP(httptest.NewRecorder(), r)
 	require.Equal(t, "203.0.113.9", got)
+	require.True(t, peerTrusted)
+
+	// a peer that is no trusted proxy is the client, and its headers are not believed
+	r.RemoteAddr = "198.51.100.1:1234"
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	require.Equal(t, "198.51.100.1", got)
+	require.False(t, peerTrusted)
 
 	r.RemoteAddr = ""
 	h.ServeHTTP(httptest.NewRecorder(), r)

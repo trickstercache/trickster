@@ -154,14 +154,18 @@ func TestALBsOnTwoPlanesAreHeldToBoth(t *testing.T) {
 			want      string
 		}{
 			"client_ip": {"hrw", func(*ao.Options) {}, ""},
-			"sni": {"hrw", func(o *ao.Options) {
-				o.HRW = ao.HRWOptions{Key: "sni", KeySource: flowkey.KeySource{Kind: flowkey.KeySNI}}
+			"sni": {
+				"hrw", func(o *ao.Options) {
+					o.HRW = ao.HRWOptions{Key: "sni", KeySource: flowkey.KeySource{Kind: flowkey.KeySNI}}
+				},
+				"hrw.key \"sni\" cannot be read from a request",
 			},
-				"hrw.key \"sni\" cannot be read from a request"},
-			"host": {"hrw", func(o *ao.Options) {
-				o.HRW = ao.HRWOptions{Key: "host", KeySource: flowkey.KeySource{Kind: flowkey.KeyHost}}
+			"host": {
+				"hrw", func(o *ao.Options) {
+					o.HRW = ao.HRWOptions{Key: "host", KeySource: flowkey.KeySource{Kind: flowkey.KeyHost}}
+				},
+				"cannot read alb backend \"lb\"'s hrw.key \"host\"",
 			},
-				"cannot read alb backend \"lb\"'s hrw.key \"host\""},
 			"default signal": {"lt", func(*ao.Options) {}, ""},
 			"connect signal": {"lt", func(o *ao.Options) { o.LT.Signal = ao.LTSignalConnect }, "on a http listener"},
 			"write signal":   {"lt", func(o *ao.Options) { o.LT.Signal = ao.LTSignalFirstWrite }, "on a tls listener"},

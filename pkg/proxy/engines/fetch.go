@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	tpe "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -103,7 +104,7 @@ func (pr *proxyRequest) fetchDecoded(decode fetchDecoder) (*fetched, error) {
 	}
 	if err != nil {
 		logger.Error("error reading body from http response",
-			logging.Pairs{keys.URL: pr.URL.String(), keys.Detail: err.Error()})
+			logging.Pairs{keys.URL: redact.URL(pr.URL), keys.Detail: err.Error()})
 		return f, err
 	}
 
@@ -117,14 +118,14 @@ func (pr *proxyRequest) fetchDecoded(decode fetchDecoder) (*fetched, error) {
 	userAgent := pr.UserAgent()
 	goWithRecover("proxyRequest.fetchDecoded.logUpstreamRequest", func() {
 		logUpstreamRequest(o.Name, o.Provider, handlerName, pr.upstreamRequest.Method,
-			pr.upstreamRequest.URL.String(), userAgent, resp.StatusCode, int(n), elapsed.Seconds())
+			redact.URL(pr.upstreamRequest.URL), userAgent, resp.StatusCode, int(n), elapsed.Seconds())
 	})
 	return f, nil
 }
 
 func (pr *proxyRequest) tooLarge() error {
 	logger.Error("upstream response exceeded MaxObjectSizeBytes",
-		logging.Pairs{keys.URL: pr.URL.String(), "max": pr.rsc.BackendOptions.MaxObjectSizeBytes})
+		logging.Pairs{keys.URL: redact.URL(pr.URL), "max": pr.rsc.BackendOptions.MaxObjectSizeBytes})
 	return tpe.ErrUnexpectedUpstreamResponse
 }
 

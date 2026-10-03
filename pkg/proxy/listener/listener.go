@@ -37,6 +37,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/ondemand"
 
 	"golang.org/x/net/netutil"
 )
@@ -423,7 +425,7 @@ func (lg *Group) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
-	f func(), readHeaderTimeout time.Duration, proxyProtocol *ProxyProtocolOptions,
+	f func(), limits ServerLimits, proxyProtocol *ProxyProtocolOptions,
 ) error {
 	l := &Listener{
 		routeSwapper: switcher.NewSwitchHandler(router),
@@ -440,7 +442,15 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		// Replace the normal GetCertificate function in the TLS config with lg.tlsSwapper's,
 		// so users swap certs in the config later without restarting the entire process
 		tlsConfig.GetCertificate = l.tlsSwapper.GetCert
+		if store, ok := l.tlsSwapper.(sw.CertStore); ok {
+			// an unregistered on-demand provider costs one atomic load per handshake
+			tlsConfig.GetCertificate = ondemand.GetCertificate(listenerName, store, l.tlsSwapper.GetCert)
+		}
 		tlsConfig.Certificates = nil
+		// a CA validating with tls-alpn-01 gets a challenge-only config; others cost one length check
+		if tlsConfig.GetConfigForClient == nil {
+			tlsConfig.GetConfigForClient = challenge.ConfigForClient
+		}
 	}
 
 	var err error
@@ -461,11 +471,11 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	// the server is assigned before the listener is published to the group, so
 	// a DrainAndClose racing this startup always observes a server to shut down
 	svr := &http.Server{
-		Handler:           l.routeSwapper,
-		TLSConfig:         tlsConfig,
-		ReadHeaderTimeout: readHeaderTimeout,
-		Protocols:         serverProtocols(),
+		Handler:   l.routeSwapper,
+		TLSConfig: tlsConfig,
+		Protocols: serverProtocols(),
 	}
+	limits.apply(svr)
 	l.server = svr
 
 	if err := lg.publish(listenerName, l); err != nil {
@@ -516,12 +526,12 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *Group) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler,
-	tracers tracing.Tracers, f func(), readHeaderTimeout time.Duration,
+	tracers tracing.Tracers, f func(), limits ServerLimits,
 ) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, tracers, f, readHeaderTimeout, nil)
+		tlsConfig, router, tracers, f, limits, nil)
 }
 
 // DrainAndClose drains the named listener for up to drainWait, then closes it.

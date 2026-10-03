@@ -113,7 +113,10 @@ func Validate(c *config.Config) error {
 	if err := LoggingFiles(c); err != nil {
 		return err
 	}
-	return Listeners(c)
+	if err := Listeners(c); err != nil {
+		return err
+	}
+	return ACME(c)
 }
 
 // LoggingFiles validates shared rotation settings across all configured logs.
@@ -466,6 +469,12 @@ func Listeners(c *config.Config) error {
 		if err := bindListenerIPACL(c, name, options); err != nil {
 			return err
 		}
+		if err := options.PathNormalization.Validate(); err != nil {
+			return fmt.Errorf("listener %q: path_normalization: %w", name, err)
+		}
+		if err := options.ValidateHTTPLimits(); err != nil {
+			return fmt.Errorf("listener %q: %w", name, err)
+		}
 
 		builtIn := name == listener.DefaultFrontendName ||
 			name == mgmt.ListenerNameMgmt || name == mgmt.ListenerNameMetrics
@@ -474,13 +483,14 @@ func Listeners(c *config.Config) error {
 			addWarning(c, fmt.Sprintf("listener %q is unused and will not be started", name))
 		}
 
-		if options.TLSListenPort > 0 && !tlsMapped[name] && !options.TLSRuntimeCerts {
+		runtimeCerts := options.TLSRuntimeCerts || acmeOnDemandListener(c, name)
+		if options.TLSListenPort > 0 && !tlsMapped[name] && !runtimeCerts {
 			addWarning(c, fmt.Sprintf(
 				"listener %q TLS port is disabled because no mapped backend provides a TLS certificate", name))
 			options.TLSListenPort = 0
 			options.ServeTLS = false
 		} else {
-			options.ServeTLS = options.TLSListenPort > 0 && (tlsMapped[name] || options.TLSRuntimeCerts)
+			options.ServeTLS = options.TLSListenPort > 0 && (tlsMapped[name] || runtimeCerts)
 		}
 		if options.Active && options.ListenPort == 0 && options.TLSListenPort == 0 {
 			addWarning(c, fmt.Sprintf("listener %q has no enabled ports and will not be started", name))

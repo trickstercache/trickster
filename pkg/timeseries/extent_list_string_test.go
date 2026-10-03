@@ -73,9 +73,12 @@ func TestExtentListStringRoundTrip(t *testing.T) {
 		}
 	}
 }
+
 func TestExtentStringMatchesSprintf(t *testing.T) {
-	for _, ns := range []int64{0, 1, -1, 999999, -999999, 1700000000123456789, -1700000000123456789,
-		math.MaxInt64, math.MinInt64} {
+	for _, ns := range []int64{
+		0, 1, -1, 999999, -999999, 1700000000123456789, -1700000000123456789,
+		math.MaxInt64, math.MinInt64,
+	} {
 		e := Extent{Start: time.Unix(0, ns), End: time.Unix(0, -ns)}
 		want := fmt.Sprintf("%d-%d", e.Start.UnixNano()/1000000, e.End.UnixNano()/1000000)
 		if got := e.String(); got != want {

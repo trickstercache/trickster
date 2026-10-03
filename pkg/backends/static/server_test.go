@@ -611,8 +611,10 @@ func TestAcceptedEncodings(t *testing.T) {
 		expected []providers.Provider
 	}{
 		{"none", request(http.MethodGet), []providers.Provider{}},
-		{"weighted", request(http.MethodGet, ae, "gzip, zstd;q=0.5, br;q=0.8"),
-			[]providers.Provider{providers.GZip, providers.Brotli, providers.Zstandard}},
+		{
+			"weighted", request(http.MethodGet, ae, "gzip, zstd;q=0.5, br;q=0.8"),
+			[]providers.Provider{providers.GZip, providers.Brotli, providers.Zstandard},
+		},
 		{"unweighted", request(http.MethodGet, ae, "gzip, br"), []providers.Provider{providers.Brotli, providers.GZip}},
 		{"head", request(http.MethodHead, ae, "gzip"), []providers.Provider{providers.GZip}},
 		{"post", request(http.MethodPost, ae, "gzip"), []providers.Provider{}},
@@ -831,8 +833,10 @@ func TestNewRenditionIsStreamed(t *testing.T) {
 	if sent != held || second.Header.Get(headers.NameContentLength) != strconv.Itoa(len(held)) {
 		t.Error("expected the rendition that is held to be the bytes that were streamed")
 	}
-	for _, name := range []string{headers.NameETag, headers.NameLastModified, headers.NameVary,
-		headers.NameContentType, headers.NameCacheControl, headers.NameContentEncoding} {
+	for _, name := range []string{
+		headers.NameETag, headers.NameLastModified, headers.NameVary,
+		headers.NameContentType, headers.NameCacheControl, headers.NameContentEncoding,
+	} {
 		if first.Header.Get(name) == "" || first.Header.Get(name) != second.Header.Get(name) {
 			t.Errorf("expected %s to be the same streamed and held, got %q and %q",
 				name, first.Header.Get(name), second.Header.Get(name))

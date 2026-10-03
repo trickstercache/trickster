@@ -12,6 +12,11 @@ listeners:
   greptimedb1:
     protocol: postgres
     port: 8489
+  # questdb1 accepts PostgreSQL wire-protocol connections and relays them to
+  # the QuestDB backend below. The HTTP surface remains on the default listener.
+  questdb1:
+    protocol: postgres
+    port: 8490
   greptimedb-mysql:
     protocol: mysql
     port: 8491
@@ -40,6 +45,15 @@ authenticators:
     proxy_preserve: true
     users:
       grafana_ro: trickster-dev-grafana
+  questdb-grafana:
+    provider: basic
+    # The read-only identity is used by both Grafana and the native upstream.
+    # The admin identity is retained only for the authenticated HTTP smoke
+    # path, whose credential is preserved to QuestDB.
+    proxy_preserve: true
+    users:
+      grafana_ro: ${QDB_PG_READONLY_PASSWORD}
+      admin: ${QDB_HTTP_PASSWORD}
 negative_caches:
   default:
     '400': 3s
@@ -158,6 +172,30 @@ backends:
       upstream_url: 'postgres://trickster:trickster-dev-upstream@127.0.0.1:4003/public'
     mysql:
       upstream_url: 'mysql://trickster:trickster-dev-upstream@127.0.0.1:4002/public'
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+  # QuestDB HTTP endpoints remain passthrough; the pgwire listener enables the
+  # verified SAMPLE BY and timestamp_floor cache shapes.
+  questdb1:
+    provider: questdb
+    origin_url: 'http://127.0.0.1:9010'
+    listener_names: [default, questdb1]
+    authenticator_name: questdb-grafana
+    cache_name: mem1
+    postgres:
+      upstream_url: 'postgres://grafana_ro:${QDB_PG_READONLY_PASSWORD}@127.0.0.1:8812/qdb'
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+      headers:
+        Authorization: 'Basic ${QDB_HTTP_AUTHORIZATION}'
+  # VictoriaMetrics: MetricsQL through the Prometheus querying API, and the Graphite APIs,
+  # from one single-node origin. Range queries are delta cached where MetricsQL allows it.
+  victoriametrics1:
+    provider: victoriametrics
+    origin_url: 'http://127.0.0.1:8428'
+    cache_name: mem1
     healthcheck:
       interval: 5s
       timeout: 3s

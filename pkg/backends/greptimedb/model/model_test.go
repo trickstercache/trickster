@@ -310,7 +310,8 @@ func TestExactNumericSort(t *testing.T) {
 	fields := timeseries.FieldDefinitions{{Name: "time", Role: timeseries.RoleValue}}
 	trq := &timeseries.TimeRangeQuery{Ordering: []timeseries.OrderTerm{{Column: "time", NullsFirst: true}}}
 	d := &dataSet{DataSet: &dataset.DataSet{TimeRangeQuery: trq, Results: dataset.Results{{SeriesList: dataset.SeriesList{
-		dataset.NewSeries(dataset.SeriesHeader{}, pts)}}}}, fields: fields}
+		dataset.NewSeries(dataset.SeriesHeader{}, pts),
+	}}}}, fields: fields}
 	p, err := newGreptimePlan(d)
 	if err != nil {
 		t.Fatal(err)
@@ -516,8 +517,10 @@ func TestAppendEpochValueMatchesEpochValue(t *testing.T) {
 	for range 2000 {
 		epochs = append(epochs, int64(rng.Uint64()), int64(rng.IntN(1e12))-5e11)
 	}
-	for _, unit := range []timeseries.FieldDataType{timeseries.DateTimeUnixSecs, timeseries.DateTimeUnixMilli,
-		timeseries.DateTimeUnixMicro, timeseries.DateTimeUnixNano} {
+	for _, unit := range []timeseries.FieldDataType{
+		timeseries.DateTimeUnixSecs, timeseries.DateTimeUnixMilli,
+		timeseries.DateTimeUnixMicro, timeseries.DateTimeUnixNano,
+	} {
 		for _, typ := range []struct {
 			sdt string
 			dt  timeseries.FieldDataType

@@ -45,4 +45,7 @@ type RequestOptions struct {
 	// extent fails or the merged response cannot be modeled faithfully.
 	// Providers enabling this must ensure that replaying the query is safe.
 	FallbackToProxyOnError bool
+	// SeriesCap is the series count at which the origin truncates a result and flags it with a
+	// warning; such a result is a sample, so it is never cached or merged. 0 disables the check.
+	SeriesCap int
 }

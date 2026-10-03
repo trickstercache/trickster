@@ -52,6 +52,16 @@ var ErrVolatileWindowWithBackfillTolerance = errors.New(
 var ErrVolatileWindowPointsWithBackfillTolerancePoints = errors.New(
 	"'volatile_window_points' and 'backfill_tolerance_points' cannot both be set; remove 'backfill_tolerance_points'")
 
+// ErrFlavorProvider is an error for a prometheus.flavor on a backend whose provider is not prometheus
+var ErrFlavorProvider = errors.New("'prometheus.flavor' requires provider 'prometheus'")
+
+// ErrFlavorMissingOrigin is an error for a cloudwatch flavor with neither origin_url nor sigv4.region
+var ErrFlavorMissingOrigin = errors.New(
+	"the cloudwatch flavor requires 'origin_url', or 'sigv4.region' to derive it from")
+
+// ErrFlavorRegionMismatch is an error for an AWS origin_url whose region differs from sigv4.region
+var ErrFlavorRegionMismatch = errors.New("'origin_url' and 'sigv4.region' name different regions")
+
 // ErrUnsupportedStepAlignment is an error for a step_alignment the backend's provider doesn't support
 var ErrUnsupportedStepAlignment = errors.New("unsupported step_alignment")
 

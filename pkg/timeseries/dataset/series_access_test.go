@@ -34,10 +34,16 @@ import (
 // a series of every kind, one column each, over two rows
 func kindsSeries() *Series {
 	return NewSeries(SeriesHeader{Name: "kinds"}, Points{
-		{Epoch: 1, Values: []any{nil, true, int64(-2), uint64(3), 1.5, "a\"b", []byte("raw"), json.Number("12"),
-			map[string]any{"k": "v"}}},
-		{Epoch: 2, Values: []any{nil, false, int64(4), uint64(5), math.NaN(), "", []byte{}, json.Number("1e3"),
-			map[string]any{}}},
+		{Epoch: 1, Values: []any{
+			nil, true, int64(-2), uint64(3), 1.5, "a\"b", []byte("raw"), json.Number("12"),
+			map[string]any{"k": "v"},
+		}},
+		{Epoch: 2, Values: []any{
+			nil, false, int64(4), uint64(5), math.NaN(), "",
+			[]byte{},
+			json.Number("1e3"),
+			map[string]any{},
+		}},
 	})
 }
 
@@ -58,8 +64,10 @@ func TestBuilderTypedAdders(t *testing.T) {
 	require.NoError(t, r.Commit())
 	ds, err := b.Finish()
 	require.NoError(t, err)
-	require.Equal(t, Points{{Epoch: 1, Values: []any{nil, true, int64(-1), uint64(2), 0.5, "text", []byte("raw"),
-		json.Number("42")}}}, seriesPoints(ds.Results[0].SeriesList[0]))
+	require.Equal(t, Points{{Epoch: 1, Values: []any{
+		nil, true, int64(-1), uint64(2), 0.5, "text", []byte("raw"),
+		json.Number("42"),
+	}}}, seriesPoints(ds.Results[0].SeriesList[0]))
 }
 
 func TestSegmentAndRowAccessors(t *testing.T) {
@@ -127,8 +135,10 @@ func TestSegmentJSONAndFormatting(t *testing.T) {
 
 func TestSegmentsFilter(t *testing.T) {
 	pts := Points{
-		{Epoch: 1, Values: []any{"a"}}, {Epoch: 2, Values: []any{"b"}},
-		{Epoch: 3, Values: []any{"c"}}, {Epoch: 4, Values: []any{"d"}},
+		{Epoch: 1, Values: []any{"a"}},
+		{Epoch: 2, Values: []any{"b"}},
+		{Epoch: 3, Values: []any{"c"}},
+		{Epoch: 4, Values: []any{"d"}},
 	}
 	segs := segmentsOf(pts, 1, 2)
 	all := segs.Filter(func(*Segment, int) bool { return true })

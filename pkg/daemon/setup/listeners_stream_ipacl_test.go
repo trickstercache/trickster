@@ -29,8 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pires/go-proxyproto"
-
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -40,6 +38,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+
+	"github.com/pires/go-proxyproto"
 )
 
 func TestStreamConfigAdmission(t *testing.T) {

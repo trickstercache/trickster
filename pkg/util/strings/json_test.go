@@ -113,8 +113,11 @@ type jsonValueCase struct {
 func TestAppendJSONValue(t *testing.T) {
 	for _, v := range []any{
 		nil, "x<y>&\"", true, false, 1.5, float32(0.1), 1e-7, int64(-9), 12, int32(-3), uint64(18446744073709551615),
-		uint(7), uint32(9), json.Number("12.50"), []any{1.0, "a", nil}, map[string]any{"b": 1, "a": "<"},
-		jsonValueCase{A: 3}, int8(4), []byte("raw"),
+		uint(7), uint32(9), json.Number("12.50"),
+		[]any{1.0, "a", nil},
+		map[string]any{"b": 1, "a": "<"},
+		jsonValueCase{A: 3},
+		int8(4), []byte("raw"),
 	} {
 		want, err := json.Marshal(v)
 		if err != nil {

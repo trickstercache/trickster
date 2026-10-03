@@ -542,7 +542,7 @@ func TestHTTPPeerDenyResetsBeforeProxyHeader(t *testing.T) {
 	lg.SetIPACL(name, list, "")
 	go func() {
 		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, aclhandler.Middleware(list, "office", aclhandler.ScopeListener, okHandler()),
-			nil, nil, time.Second, &ProxyProtocolOptions{Enabled: true})
+			nil, nil, ServerLimits{ReadHeaderTimeout: time.Second}, &ProxyProtocolOptions{Enabled: true})
 	}()
 	ln := readyListener(t, lg, name)
 	dialDenied(t, ln)
@@ -557,7 +557,7 @@ func TestHTTPPeerProxyDoesNotRejudge(t *testing.T) {
 	lg.SetIPACL(name, list, "")
 	go func() {
 		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, aclhandler.Middleware(list, "office", aclhandler.ScopeListener, okHandler()),
-			nil, nil, time.Second, &ProxyProtocolOptions{Enabled: true})
+			nil, nil, ServerLimits{ReadHeaderTimeout: time.Second}, &ProxyProtocolOptions{Enabled: true})
 	}()
 	ln := readyListener(t, lg, name)
 	const request = "PROXY TCP4 192.0.2.9 10.0.0.1 4242 80\r\n" +
@@ -581,7 +581,7 @@ func TestHTTPClientIPUsesForwardedClient(t *testing.T) {
 	lg.SetIPACL(name, list, "")
 	handler := clientip.Middleware(trusted, aclhandler.Middleware(list, "office", aclhandler.ScopeListener, okHandler()))
 	go func() {
-		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, handler, nil, nil, time.Second, nil)
+		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, handler, nil, nil, ServerLimits{ReadHeaderTimeout: time.Second}, nil)
 	}()
 	ln := readyListener(t, lg, name)
 	request := func(forwarded string) string {

@@ -209,8 +209,10 @@ func TestWriteTranscoded(t *testing.T) {
 	}
 	for _, chunk := range []int{len(encoded), 1000} {
 		w := httptest.NewRecorder()
-		ew := &responseEncoder{ResponseWriter: w, decoderInit: gzip.NewDecoder,
-			encoder: zstd.NewEncoder(w, -1)}
+		ew := &responseEncoder{
+			ResponseWriter: w, decoderInit: gzip.NewDecoder,
+			encoder: zstd.NewEncoder(w, -1),
+		}
 		ew.selectWriter()
 		ew.prepared = true
 		writeInParts(t, ew, encoded, chunk)

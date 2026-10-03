@@ -26,6 +26,7 @@ import (
 	"slices"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 
 	"go.yaml.in/yaml/v3"
@@ -62,6 +63,8 @@ type Options struct {
 	// only ones trusted for the upstream origin, rather than additions to
 	// the operating system's; it requires at least one to be configured
 	ExcludeSystemRoots bool `yaml:"exclude_system_roots,omitempty"`
+	// ACME obtains and renews the backend's serving certificates from an ACME issuer
+	ACME *acmeopts.BackendOptions `yaml:"acme,omitempty"`
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -78,6 +81,7 @@ func New() *Options {
 func (o *Options) Clone() *Options {
 	out := pointers.Clone(o)
 	out.CertificateAuthorityPaths = slices.Clone(o.CertificateAuthorityPaths)
+	out.ACME = o.ACME.Clone()
 	return out
 }
 
@@ -91,7 +95,8 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.ClientKeyPath == o2.ClientKeyPath &&
 		o.CertificateAuthorityPEM == o2.CertificateAuthorityPEM &&
 		o.ServerName == o2.ServerName &&
-		o.ExcludeSystemRoots == o2.ExcludeSystemRoots
+		o.ExcludeSystemRoots == o2.ExcludeSystemRoots &&
+		o.ACME.Equal(o2.ACME)
 }
 
 // ErrInvalidCertificateAuthorityPEM is returned when certificate_authority_pem
@@ -104,13 +109,17 @@ var ErrInvalidCertificateAuthorityPEM = errors.New(
 var ErrExcludeSystemRootsWithoutCAs = errors.New(
 	"exclude_system_roots requires certificate_authority_paths or certificate_authority_pem")
 
+// ErrACMEWithCertificateFiles is returned when a backend sets both tls.acme and a certificate pair
+var ErrACMEWithCertificateFiles = errors.New(
+	"tls.acme cannot be combined with full_chain_cert_path or private_key_path")
+
 func (o *Options) Initialize(_ string) error {
 	// ServeTLS indicates this backend participates in the frontend's TLS
 	// listener by presenting a server certificate. Only a full server
 	// cert+key pair enables that. CertificateAuthorityPaths alone is used
 	// for verifying peers on outbound connections (mTLS) and must NOT
 	// cascade into flipping Frontend.ServeTLS — see #940.
-	if o.FullChainCertPath != "" && o.PrivateKeyPath != "" {
+	if (o.FullChainCertPath != "" && o.PrivateKeyPath != "") || o.ACME != nil {
 		o.ServeTLS = true
 	}
 	return nil
@@ -127,7 +136,10 @@ func (o *Options) Validate() (bool, error) {
 		o.CertificateAuthorityPEM == "" {
 		return false, ErrExcludeSystemRootsWithoutCAs
 	}
-	if (o.FullChainCertPath == "" || o.PrivateKeyPath == "") &&
+	if o.ACME != nil && (o.FullChainCertPath != "" || o.PrivateKeyPath != "") {
+		return false, ErrACMEWithCertificateFiles
+	}
+	if o.ACME == nil && (o.FullChainCertPath == "" || o.PrivateKeyPath == "") &&
 		len(o.CertificateAuthorityPaths) == 0 &&
 		o.CertificateAuthorityPEM == "" && o.ServerName == "" {
 		return false, nil

@@ -138,6 +138,9 @@ type Options struct {
 	// CacheKeyParamsExcluded names transport-only query parameters that a "*" CacheKeyParams leaves
 	// out of the cache key. It is provider-owned and not configurable by end users.
 	CacheKeyParamsExcluded []string `yaml:"-"`
+	// QueryMediaTypes, when set, are the media types a QUERY request to this path may carry; it is
+	// then forwarded upstream as POST. It is provider-owned and not configurable by end users.
+	QueryMediaTypes []string `yaml:"-"`
 	// ReqRewriter is the rewriter handler as indicated by RuleName
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
@@ -195,7 +198,7 @@ var _ types.ConfigOptions[Options] = &Options{}
 func New() *Options {
 	return &Options{
 		Path:                    DefaultPath,
-		Methods:                 methods.CacheableHTTPMethods(),
+		Methods:                 methods.GetAndHead(),
 		HandlerName:             providers.Proxy,
 		MatchTypeName:           matching.PathMatchNameExact,
 		MatchType:               matching.PathMatchTypeExact,
@@ -225,6 +228,7 @@ func (o *Options) Clone() *Options {
 	out.MatchQueryParams = cloneConditions(o.MatchQueryParams)
 	out.CacheKeyParams = slices.Clone(o.CacheKeyParams)
 	out.CacheKeyParamsExcluded = slices.Clone(o.CacheKeyParamsExcluded)
+	out.QueryMediaTypes = slices.Clone(o.QueryMediaTypes)
 	out.CacheKeyHeaders = slices.Clone(o.CacheKeyHeaders)
 	out.CacheKeyFormFields = slices.Clone(o.CacheKeyFormFields)
 

@@ -24,6 +24,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -56,7 +57,8 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:            "/" + mnQuery,
 			HandlerName:     mnQuery,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: []string{headers.ValueXFormURLEncoded},
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   matching.PathMatchNameExact,
@@ -65,7 +67,8 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:            "/" + apiv2Query,
 			HandlerName:     mnQuery,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: []string{headers.ValueApplicationJSON, headers.ValueApplicationFlux},
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "u", "p"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   matching.PathMatchNameExact,
@@ -74,7 +77,8 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:            "/" + apiv3QuerySQL,
 			HandlerName:     mnQuery,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: []string{headers.ValueApplicationJSON, headers.ValueXFormURLEncoded},
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "format"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   matching.PathMatchNameExact,
@@ -83,7 +87,8 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:            "/" + apiv3QueryInfluxQL,
 			HandlerName:     mnQuery,
-			Methods:         methods.GetAndPost(),
+			Methods:         methods.QueryableMethods(),
+			QueryMediaTypes: []string{headers.ValueApplicationJSON, headers.ValueXFormURLEncoded},
 			CacheKeyParams:  []string{influxql.ParamDB, influxql.ParamQuery, "format"},
 			CacheKeyHeaders: []string{},
 			MatchTypeName:   matching.PathMatchNameExact,

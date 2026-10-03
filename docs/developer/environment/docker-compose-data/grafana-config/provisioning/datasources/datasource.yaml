@@ -542,3 +542,126 @@ datasources:
     httpMethod: POST
   secureJsonData:
     basicAuthPassword: trickster-dev-grafana
+
+# QuestDB's official Grafana plugin uses the pgwire listener directly.
+- name: questdb-direct
+  type: questdb-questdb-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_questdb_direct
+  editable: true
+  isDefault: false
+  jsonData:
+    server: questdb
+    port: 8812
+    username: grafana_ro
+    tlsMode: disable
+    maxOpenConnections: 5
+    maxIdleConnections: 2
+    maxConnectionLifetime: 14400
+    timeout: 30
+    queryTimeout: 30
+  secureJsonData:
+    password: ${QDB_PG_READONLY_PASSWORD}
+
+# QuestDB through Trickster's HTTP passthrough/native backend. Grafana uses the
+# read-only identity for both the downstream and native upstream paths.
+- name: questdb-trickster
+  type: questdb-questdb-datasource
+  access: proxy
+  orgId: 1
+  uid: ds_questdb_trickster
+  editable: true
+  isDefault: false
+  jsonData:
+    server: host.docker.internal
+    port: 8490
+    username: grafana_ro
+    tlsMode: disable
+    maxOpenConnections: 5
+    maxIdleConnections: 2
+    maxConnectionLifetime: 14400
+    timeout: 30
+    queryTimeout: 30
+  secureJsonData:
+    password: ${QDB_PG_READONLY_PASSWORD}
+
+# VictoriaMetrics direct, using Grafana's bundled Prometheus plugin for MetricsQL.
+# The trips-victoriametrics dashboard lists every prometheus-type datasource
+# named victoriametrics-*, so Trickster peers only need to follow that naming.
+- name: victoriametrics-direct
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_vm_direct
+  url: http://victoriametrics:8428
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: GET
+
+- name: victoriametrics-direct-post
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_vm_direct_post
+  url: http://victoriametrics:8428
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: POST
+
+- name: victoriametrics-trickster
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_vm_trickster
+  url: http://host.docker.internal:8480/victoriametrics1
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: GET
+
+- name: victoriametrics-trickster-post
+  type: prometheus
+  access: proxy
+  orgId: 1
+  uid: ds_vm_trickster_post
+  url: http://host.docker.internal:8480/victoriametrics1
+  editable: true
+  isDefault: false
+  jsonData:
+    httpMethod: POST
+
+# VictoriaMetrics' Graphite APIs. Storage-Step is the render grid for stored
+# points; 10s is the finest fixture cadence, so 30s and 60s series show nulls
+# between their points until Grafana's maxDataPoints consolidates them.
+- name: victoriametrics-graphite-direct
+  type: graphite
+  access: proxy
+  orgId: 1
+  uid: ds_vm_graphite_direct
+  url: http://victoriametrics:8428
+  editable: true
+  isDefault: false
+  jsonData:
+    graphiteVersion: "1.1"
+    graphiteType: default
+    httpHeaderName1: Storage-Step
+  secureJsonData:
+    httpHeaderValue1: 10s
+
+- name: victoriametrics-graphite-trickster
+  type: graphite
+  access: proxy
+  orgId: 1
+  uid: ds_vm_graphite_trickster
+  url: http://host.docker.internal:8480/victoriametrics1
+  editable: true
+  isDefault: false
+  jsonData:
+    graphiteVersion: "1.1"
+    graphiteType: default
+    httpHeaderName1: Storage-Step
+  secureJsonData:
+    httpHeaderValue1: 10s

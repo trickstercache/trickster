@@ -48,9 +48,11 @@ import (
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 )
 
@@ -75,8 +77,10 @@ type desiredListener struct {
 // mgmtRoute is a reserved exact-path route: registered on the management
 // router and served ahead of every proxy listener's router.
 type mgmtRoute struct {
-	path    string
-	handler http.Handler
+	path     string
+	handler  http.Handler
+	methods  []string
+	mgmtOnly bool
 }
 
 // guardReservedRoutes serves reserved paths before next sees the request, so
@@ -96,14 +100,11 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 	})
 }
 
-func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler,
-) http.Handler {
-	// client IP, then the router access log, then the listener access list, then next.
-	// next is the readiness guard on a proxy listener and the built-in router on mgmt
-	// and metrics. client_ip is judged here. HTTP/3 peer is judged here. A plain or TLS
-	// peer list was judged at accept and passes through.
+func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
+	// Resolve the client and log before enforcing the ACL; normalize allowed requests before routing.
 	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
-		aclhandler.Middleware(o.IPACL, o.IPACLName, aclhandler.ScopeListener, next)))
+		aclhandler.Middleware(o.IPACL, o.IPACLName, aclhandler.ScopeListener,
+			normalize.Middleware(o.PathNormalization, next))))
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -140,9 +141,13 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		return route.path == "" || route.handler == nil
 	})
 	for _, route := range mgmtRoutes {
-		managementRouter.RegisterRoute(route.path, nil, nil,
+		managementRouter.RegisterRoute(route.path, nil, route.methods,
 			matching.PathMatchTypeExact, route.handler)
 	}
+	// a management-only route is not served ahead of the proxy listeners' routers
+	mgmtRoutes = slices.DeleteFunc(mgmtRoutes, func(route mgmtRoute) bool {
+		return route.mgmtOnly
+	})
 
 	// requests that miss every backend route are logged by the default
 	// access log at the router level, on every listener but metrics
@@ -237,12 +242,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				})
 				continue
 			}
-			readHeaderTimeout := time.Duration(desired.options.ReadHeaderTimeout)
+			limits := serverLimits(desired.options)
 			advertised := desired.advertisedPort
 			go lg.StartPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
 				desired.address, desired.port, tlsConfig, desired.router,
 				func(h http.Handler, tc *tls.Config) listener.PacketServer {
-					return listenerhttp3.NewServer(h, tc, advertised, readHeaderTimeout)
+					return listenerhttp3.NewServer(h, tc, advertised, limits)
 				}, errorFunc)
 			continue
 		}
@@ -267,7 +272,7 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 		setListenerIPACL(lg, key, desired.options)
 		go lg.StartListener(key, desired.address, desired.port,
 			desired.options.ConnectionsLimit, tlsConfig, desired.router,
-			listenerTracers, errorFunc, time.Duration(desired.options.ReadHeaderTimeout),
+			listenerTracers, errorFunc, serverLimits(desired.options),
 			proxyProtocolOptions(desired.options))
 	}
 }
@@ -326,15 +331,20 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		default:
 			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
-		r = wrapListener(options, accessLogger, r)
 		if options.ListenPort > 0 {
+			plain := r
+			// http-01 challenges arrive on the plaintext port, ahead of every route and middleware
+			if _, http01 := conf.ListenerACME(name); http01 {
+				plain = challenge.HTTPHandler(plain)
+			}
 			key := listenerKey(name, options.Protocol, false)
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
-				options: options, router: r,
+				options: options, router: wrapListener(options, accessLogger, plain),
 			}
 		}
+		r = wrapListener(options, accessLogger, r)
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, options.Protocol, true)
 			tlsRouter := r
@@ -451,8 +461,25 @@ func listenerNeedsRestart(old, current desiredListener) bool {
 		old.origin != current.origin || old.advertisedPort != current.advertisedPort ||
 		old.options.ConnectionsLimit != current.options.ConnectionsLimit ||
 		old.options.ReadHeaderTimeout != current.options.ReadHeaderTimeout ||
+		old.options.ReadTimeout != current.options.ReadTimeout ||
+		old.options.IdleTimeout != current.options.IdleTimeout ||
+		old.options.MaxHeaderBytes != current.options.MaxHeaderBytes ||
 		old.options.ProxyProtocol != current.options.ProxyProtocol ||
 		(old.options.ProxyProtocol && !slices.Equal(old.options.TrustedProxies, current.options.TrustedProxies))
+}
+
+func serverLimits(options *listenerconfig.Options) listener.ServerLimits {
+	// a listener's idle_timeout of 0 means no timeout, where net/http would fall back to ReadTimeout
+	idle := time.Duration(options.IdleTimeout)
+	if idle <= 0 {
+		idle = listener.NoIdleTimeout
+	}
+	return listener.ServerLimits{
+		ReadHeaderTimeout: time.Duration(options.ReadHeaderTimeout),
+		ReadTimeout:       time.Duration(options.ReadTimeout),
+		IdleTimeout:       idle,
+		MaxHeaderBytes:    options.MaxHeaderBytes,
+	}
 }
 
 func trustedProxies(options *listenerconfig.Options) clientip.Trusted {

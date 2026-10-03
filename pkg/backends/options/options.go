@@ -38,6 +38,7 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
+	vmo "github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -205,6 +206,8 @@ type Options struct {
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
 	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
+	// VictoriaMetrics holds options specific to victoriametrics backends
+	VictoriaMetrics *vmo.Options `yaml:"victoriametrics,omitempty"`
 	// Static holds options specific to static file server backends, which require it
 	Static *so.Options `yaml:"static,omitempty"`
 
@@ -322,6 +325,8 @@ type Options struct {
 	fastForwardDisableExplicit bool
 	// set when a backend sets a volatile window key and its backfill_tolerance counterpart
 	volatileWindowConflict, volatileWindowPointsConflict bool
+	// set when a backend sets any volatile window key, so a flavor default does not replace it
+	volatileWindowExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -415,6 +420,10 @@ func (o *Options) Clone() *Options {
 		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
+	if o.VictoriaMetrics != nil {
+		out.VictoriaMetrics = o.VictoriaMetrics.Clone()
+	}
+
 	if o.Postgres != nil {
 		out.Postgres = o.Postgres.Clone()
 	}
@@ -501,6 +510,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, NewErrInvalidTemplateProvider(o.Provider, o.Name)
 		}
 	}
+	if err := o.validatePrometheusFlavor(); err != nil {
+		return false, err
+	}
 	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
 		o.OriginURL == "" {
 		return false, NewErrMissingOriginURL(o.Name)
@@ -552,6 +564,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
 	}
+	if err := o.VictoriaMetrics.Validate(); err != nil {
+		return false, fmt.Errorf("backend %s: %w", o.Name, err)
+	}
 	if err := o.validateStatic(); err != nil {
 		return false, err
 	}
@@ -600,6 +615,7 @@ func (o *Options) validateStatic() error {
 		{"mysql", o.MySQL != nil},
 		{"graphite", o.Graphite != nil},
 		{"influxdb", o.InfluxDB != nil},
+		{"victoriametrics", o.VictoriaMetrics != nil},
 		{"sigv4", o.SigV4 != nil},
 		{"protocol", o.Protocol != ""},
 		{"h2c_prior_knowledge", o.H2CPriorKnowledge},
@@ -954,6 +970,7 @@ func (o *Options) Initialize(name string) error {
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
+	o.applyPrometheusFlavor()
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)
@@ -1143,6 +1160,8 @@ func (k renamedKeys) apply(o *Options) {
 	}
 	o.stepAlignmentExplicit = k.StepAlignment != nil
 	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
+	o.volatileWindowExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil ||
+		k.VolatileWindowPoints != nil || k.BackfillTolerancePoints != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.

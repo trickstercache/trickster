@@ -497,8 +497,12 @@ func TestQueryDeferredReadsWhole(t *testing.T) {
 		d        *HTTPDocument
 		compress bool
 	}{
-		{"part of an object", partial, false}, {"index of variants", index, false}, {"chunk", chunk, false},
-		{"no body", empty, false}, {"length not the body's", wrongLength, false}, {"compressed", whole, true},
+		{"part of an object", partial, false},
+		{"index of variants", index, false},
+		{"chunk", chunk, false},
+		{"no body", empty, false},
+		{"length not the body's", wrongLength, false},
+		{"compressed", whole, true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

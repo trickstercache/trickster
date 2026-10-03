@@ -195,8 +195,10 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"sum by (__name__) (up) * 2", int(merge.StrategyDedup), standard, "binary expression"},
 		// Aggregations beneath other operations cannot be merged shard by shard.
 		{"abs(sum(up))", int(merge.StrategyDedup), standard, "outermost"},
-		{"histogram_quantile(0.9, sum by (le) (rate(x_bucket[5m])))", int(merge.StrategyDedup),
-			standard, "outermost"},
+		{
+			"histogram_quantile(0.9, sum by (le) (rate(x_bucket[5m])))", int(merge.StrategyDedup),
+			standard, "outermost",
+		},
 		{"sum(up) + vector(1)", int(merge.StrategyDedup), standard, "binary expression"},
 		// Queries that cannot be parsed are deduplicated with a warning.
 		{"sum by service (up)", int(merge.StrategyDedup), standard, "could not be parsed"},

@@ -36,8 +36,10 @@ import (
 func decoderTRQ() *timeseries.TimeRangeQuery {
 	return &timeseries.TimeRangeQuery{
 		Statement: `from(bucket:"b") |> range(start: <$TIME_TOKEN$>)`,
-		Extent: timeseries.Extent{Start: time.Date(2025, 5, 4, 22, 0, 0, 0, time.UTC),
-			End: time.Date(2025, 5, 4, 23, 0, 0, 0, time.UTC)},
+		Extent: timeseries.Extent{
+			Start: time.Date(2025, 5, 4, 22, 0, 0, 0, time.UTC),
+			End:   time.Date(2025, 5, 4, 23, 0, 0, 0, time.UTC),
+		},
 		Step: 15 * time.Second,
 	}
 }

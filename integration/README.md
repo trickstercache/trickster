@@ -17,15 +17,17 @@ All Trickster capabilities should be covered by at least one integration test, b
 make integration-start developer-seed-data  # from repo root — starts Docker Compose env
 ```
 
-`integration-start` is `developer-start` plus the integration-only
-containers (currently CoreDNS for the ALB autodiscovery DNS tests), which
-live commented out below the `-- INTEGRATION CONTAINERS BELOW --` marker in
-the compose file so developer workstations never run them. The target
-uncomments them and seeds the mutable CoreDNS zone directory before
-compose-up; `make integration-stop` stops the environment and comments them
-back out. `make developer-start` alone still works: the autodiscovery DNS
-tests probe for CoreDNS and skip when it isn't running (CI sets
-`TRICKSTER_DNS_TEST=1` to turn that skip into a failure).
+`integration-start` seeds the mutable CoreDNS zone directory, then runs
+`developer-start` with the `integration` compose profile: every TSDB backend
+plus the integration-only containers (currently CoreDNS for the ALB
+autodiscovery DNS tests), which are in no other profile so developer
+workstations never run them. It also waits for the database seeders to
+finish. `make integration-stop` stops the environment. `make developer-start`
+alone still works: the autodiscovery DNS tests probe for CoreDNS and skip when
+it isn't running (CI sets `TRICKSTER_DNS_TEST=1` to turn that skip into a
+failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
+running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
+for the profiles.
 
 The Kubernetes scenarios (every `Test*Kind`) are separate from compose
 entirely: they need a kind cluster prepared via `make kind-integration-start`,
@@ -76,6 +78,9 @@ returned harness.
   (`do`, `queryProm`, `withParams`, `withHeader`, `withBody`),
   `requireTricksterResult`, `runCacheProviderMatrix`, `configHarness`,
   `staticConfigHarness`
+- `acme_helpers_test.go` — an in-process Pebble ACME CA and an authoritative DNS server
+  that accepts RFC 2136 updates, so the ACME tests need no containers; only
+  `TestACME_RedisStorage` uses the environment's Redis
 - `testdata/` — static YAML configs for tests that need custom backends
   (ALB, rewriter, engines, rule, auth, purge, reload, TLS)
 

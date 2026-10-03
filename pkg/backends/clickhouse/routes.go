@@ -23,6 +23,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -59,9 +60,11 @@ func (c *Client) DefaultPathConfigs(_ *bo.Options) po.List {
 		{
 			Path:          "/",
 			HandlerName:   "query",
-			Methods:       methods.GetAndPost(),
+			Methods:       methods.QueryableMethods(),
 			MatchType:     matching.PathMatchTypePrefix,
 			MatchTypeName: matching.PathMatchNamePrefix,
+			// the origin reads a POST body as the statement text
+			QueryMediaTypes: []string{headers.ValueTextPlain, headers.ValueApplicationSQL},
 			// every other parameter is a query parameter or setting that can change the result
 			CacheKeyParams:         []string{"*"},
 			CacheKeyParamsExcluded: slices.Clone(transportParams),

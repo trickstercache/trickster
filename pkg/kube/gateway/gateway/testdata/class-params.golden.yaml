@@ -23,6 +23,7 @@ backends:
               methods:
                 - GET
                 - HEAD
+                - QUERY
             - path: /api
               match_type: segment
               handler: proxy

@@ -240,8 +240,10 @@ func TestMarshalReadsSeriesParts(t *testing.T) {
 	for i := range 3 {
 		s := dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"hostname": fmt.Sprint("h", i)}}, nil)
 		for j := range 5 {
-			s.SetPoints(append(dspoints.Of(s), dataset.Point{Epoch: epoch.Epoch(int64(1700000000+60*j) * 1e9),
-				Values: []any{float64(i*j) / 3}}))
+			s.SetPoints(append(dspoints.Of(s), dataset.Point{
+				Epoch:  epoch.Epoch(int64(1700000000+60*j) * 1e9),
+				Values: []any{float64(i*j) / 3},
+			}))
 		}
 		series = append(series, s)
 	}

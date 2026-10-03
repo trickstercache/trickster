@@ -94,17 +94,68 @@ func TestAddForwardingHeaders(t *testing.T) {
 	r, _ := http.NewRequest("GET", "https://bar.com/", nil)
 	r.RemoteAddr = "1.2.3.4:5678"
 	r.ProtoMajor = 2
-	AddForwardingHeaders(nil, "none")
+	AddForwardingHeaders(nil, "none", true)
 	if _, ok := r.Header[NameXForwardedFor]; ok {
 		t.Error("did not expect X-Forwarded-For header to be set")
 	}
-	AddForwardingHeaders(r, "none")
+	AddForwardingHeaders(r, "none", true)
 	if _, ok := r.Header[NameXForwardedFor]; ok {
 		t.Error("did not expect X-Forwarded-For header to be set")
 	}
-	AddForwardingHeaders(r, "x")
+	AddForwardingHeaders(r, "x", true)
 	if _, ok := r.Header[NameXForwardedFor]; !ok {
 		t.Error("expected X-Forwarded-For header to be set")
+	}
+}
+
+func TestAddForwardingHeadersPriorHops(t *testing.T) {
+	const (
+		peer        = "198.51.100.1"
+		spoofed     = "203.0.113.9"
+		spoofedReal = "192.0.2.77"
+	)
+	for _, tc := range []struct {
+		headerType, header string
+		keep               bool
+		want               string
+	}{
+		{"x", NameXForwardedFor, true, spoofed + ", " + peer},
+		{"x", NameXForwardedFor, false, peer},
+		{"standard", NameForwarded, true, "for=" + spoofed + ", for=" + peer},
+		{"standard", NameForwarded, false, "for=" + peer},
+	} {
+		r, _ := http.NewRequest(http.MethodGet, "http://bar.com/", nil)
+		r.URL.Scheme = ""
+		r.RemoteAddr = peer + ":5678"
+		r.Header.Set(NameXForwardedFor, spoofed)
+		r.Header.Set(NameForwarded, "for="+spoofed)
+		r.Header.Set(NameXRealIP, spoofedReal)
+		AddForwardingHeaders(r, tc.headerType, tc.keep)
+		if got := r.Header.Get(tc.header); got != tc.want {
+			t.Errorf("%s keep=%t: %s = %q, want %q", tc.headerType, tc.keep, tc.header, got, tc.want)
+		}
+		if got := r.Header.Get(NameXRealIP); (got == spoofedReal) != tc.keep {
+			t.Errorf("%s keep=%t: X-Real-IP = %q", tc.headerType, tc.keep, got)
+		}
+	}
+}
+
+func TestRestoreForwardingHeaders(t *testing.T) {
+	const hop = "for=203.0.113.9"
+	src := http.Header{}
+	src.Set(NameForwarded, hop)
+	src.Set(NameXForwardedProto, "https")
+	src.Set(NameXRealIP, "192.0.2.77")
+	dst := http.Header{}
+	RestoreForwardingHeaders(dst, src)
+	if dst.Get(NameForwarded) != hop || dst.Get(NameXForwardedProto) != "https" {
+		t.Errorf("forwarding headers not restored: %v", dst)
+	}
+	if _, ok := dst[NameXForwardedFor]; ok {
+		t.Error("a header the source lacks was restored")
+	}
+	if _, ok := dst[NameXRealIP]; ok {
+		t.Error("X-Real-IP is not stripped by ReverseProxy and should not be copied")
 	}
 }
 

@@ -173,6 +173,96 @@ listeners:
     trusted_proxies: [10.0.0.0/8, 192.168.1.5]
 ```
 
+#### Forwarding Headers to the Origin
+
+A backend's `forwarded_headers` (`standard`, `x`, `both` or `none`) chooses
+which forwarding headers Trickster sends upstream. A client can put any
+address it likes in the `Forwarded`, `X-Forwarded-*` and `X-Real-IP` headers
+it sends, so Trickster believes them only from the listener's
+`trusted_proxies`, as Caddy and Traefik do:
+
+- From a trusted proxy, Trickster appends its own hop to the hops the request
+  arrived with, and forwards its `X-Real-IP`.
+- From any other peer, Trickster drops those hops and `X-Real-IP`, and the
+  origin receives Trickster's hop alone, naming that peer.
+
+The same applies on paths served by the passthrough handler. A listener
+behind a load balancer must list the load balancer in `trusted_proxies`, or
+the origin sees the load balancer, not the client, as the request's source.
+
+### Connection Timeouts and Header Size
+
+These options bound the time and memory a client can hold on an HTTP
+listener. They apply to every endpoint of the listener and to the `mgmt` and
+`metrics` listeners. Changing any of them restarts the listener on reload.
+
+| Option | Default | Effect |
+|---|---|---|
+| `read_header_timeout` | `10s` | How long a client may take to send a request's line and headers |
+| `read_timeout` | `0` (none) | How long a client may take to send a whole request, body included. Set it with care on listeners that receive large uploads |
+| `idle_timeout` | `2m` | How long a keep-alive connection may wait for its next request before Trickster closes it. `0` keeps idle connections open indefinitely |
+| `max_header_bytes` | `0` (1 MB) | The most bytes Trickster reads for a request's line and headers. HTTP/1.1 requests over it are answered with `431 Request Header Fields Too Large`; HTTP/2 and HTTP/3 enforce it on the header block |
+
+```yaml
+listeners:
+  default:
+    port: 8480
+    read_header_timeout: 10s
+    idle_timeout: 2m
+    max_header_bytes: 65536
+```
+
+- Without an idle timeout, a client can hold any number of idle connections
+  open, filling `connections_limit` or exhausting file descriptors.
+- Go's HTTP server reads up to 4 KB past `max_header_bytes` before refusing a
+  request, so the effective limit is slightly higher than the value set.
+- HTTP/3 has no whole-request deadline. On an HTTP/3 endpoint, `read_timeout`
+  bounds reading a request's body from the time the handler starts, in place
+  of `read_header_timeout`. QUIC's own idle timeout also applies there.
+- These options have no effect on `tcp`, `tls` and `udp` listeners, whose
+  timeouts are under `stream`, or on native protocol listeners.
+
+### Path Normalization
+
+Before routing a request, an HTTP listener cleans its path, then routes and
+forwards the cleaned path, so the path a route matches is always the path its
+origin receives. Without this agreement, a request for `/public/../admin/x`
+would match a `/public/` path, such as one with `authenticator_name: none`,
+while an origin that resolves dot-segments served `/admin/x`. The
+`path_normalization` block on each listener controls the cleaning:
+
+| Option | Values | Default | Effect |
+|---|---|---|---|
+| `dot_segments` | `normalize`, `reject`, `off` | `normalize` | `normalize` removes `.` and `..` segments as [RFC 3986 section 5.2.4](https://www.rfc-editor.org/rfc/rfc3986#section-5.2.4) prescribes; `reject` answers any path holding one with `400 Bad Request`; `off` routes and forwards them as received |
+| `merge_slashes` | `true`, `false` | `false` | collapses each run of slashes to one, so `/a//b` routes and forwards as `/a/b` |
+| `escaped_slashes` | `keep`, `reject`, `unescape` | `keep` | `keep` treats `%2F` as data within a segment and forwards it encoded; `reject` answers any path holding `%2F` with `400 Bad Request`; `unescape` decodes `%2F` to a separator before the path is cleaned |
+
+```yaml
+listeners:
+  default:
+    port: 8480
+    path_normalization:
+      dot_segments: normalize
+      merge_slashes: false
+      escaped_slashes: keep
+```
+
+- A percent-encoded dot (`%2E`) counts as a dot, so `/public/%2e%2e/admin/x`
+  is cleaned to `/admin/x` like its literal form.
+- With `escaped_slashes: keep`, a segment whose `%2F` hides a dot-segment,
+  such as `..%2Fadmin`, is refused with `400 Bad Request` unless
+  `dot_segments` is `off`. Origins disagree on whether `%2F` separates
+  segments, so no single cleaned path is safe to route and forward.
+- The query string is never changed, and a path that needs no cleaning is
+  routed without any allocation.
+- The listener's HTTP/1.1, HTTP/2 and HTTP/3 endpoints all apply the same
+  options. Changing them applies on reload without restarting the listener.
+- The access log records the request URI as the client sent it.
+
+An origin that depends on receiving raw `..` segments needs `dot_segments: off`
+on the listeners that front it; any path-scoped control on such a listener can
+then be bypassed by a client that sends dot-segments.
+
 ### Stream Listeners
 
 A listener whose `protocol` is `tcp`, `tls` or `udp` relays what it receives
@@ -345,7 +435,7 @@ A second SIGTERM or SIGINT during the delay or drain closes all connections imme
 
 ### View the Running Configuration
 
-Trickster also provides a `http://127.0.0.1:8484/trickster/config` endpoint, which returns the yaml output of the currently-running Trickster configuration. The YAML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. By default, this interface is available only on the management listener. Set `mgmt.config_handler_listener` to `metrics`, `both`, or `off` to change where it is exposed. This path is configurable as demonstrated in the example config file.
+Trickster also provides a `http://127.0.0.1:8484/trickster/config` endpoint, which returns the yaml output of the currently-running Trickster configuration. The YAML-formatted configuration will include all defaults populated, overlaid with any configuration file settings, command-line arguments and or applicable environment variables. By default, this interface is available only on the management listener. Set `mgmt.config_handler_listener` to `metrics`, `both`, or `off` to change where it is exposed. This path is configurable as demonstrated in the example config file. Both views mask authenticator users, and under an authenticator's `config` they mask the value of any key whose name contains `secret`, `key`, `token` or `password`, at any depth.
 
 Trickster also provides a sanitized view of the running configuration at `http://127.0.0.1:8484/trickster/config/sanitized`. If the `config_handler_path` is customized, append `/sanitized` to the configured path. The sanitized output deep-copies the running configuration, renames cache, backend, listener, and tracing resources by provider and sequence number (for example, `prom-1`, `prom-2`, `alb-1`, `memory-1`, `listener-1`, `otlp-1`), renames authenticators as `auth1`, `auth2`, etc., updates references to those resources in backend, path, ALB, rule, cache, tracing, listener, and authenticator mappings, replaces backend `origin_url`, Redis `endpoint` and `endpoints`, tracing `endpoint`, and Host-related request rewriter values with `example.com`, redacts per-path request and response header values, and replaces embedded authenticator users with `user1: redacted`, `user2: redacted`, etc. This endpoint is intended for sharing running configuration details in support requests without exposing private infrastructure names, origin endpoints, or user credentials.
 

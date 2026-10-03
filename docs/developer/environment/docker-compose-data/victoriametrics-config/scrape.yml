@@ -1,0 +1,19 @@
+# Scrape targets for the developer environment's single-node VictoriaMetrics
+# (-promscrape.config). VictoriaMetrics parses this strictly, so it holds only
+# the settings VictoriaMetrics supports, not a copy of prometheus.yml.
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # Trickster's metrics listener on the host, as Prometheus scrapes it
+  - job_name: trickster
+    static_configs:
+      - targets: ['host.docker.internal:8481']
+
+  # live trips metrics from devorigin. victoriametrics_seed imports the history
+  # with job=trips and instance=devorigin:8482, so the target must keep this
+  # address for the history and live data to join up.
+  - job_name: trips
+    static_configs:
+      - targets: ['devorigin:8482']

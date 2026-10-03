@@ -128,8 +128,10 @@ func TestBuilderRowMode(t *testing.T) {
 	require.Equal(t, timeseries.Float64, sl[1].Header.ValueFieldsList[0].DataType)
 	require.Equal(t, timeseries.Float64, fields.Values[0].DataType)
 	// a series can be named from its tags instead
-	b = NewBuilder(trq, BuilderOptions{Fields: fields, SeriesName: "sql",
-		NameSeries: func(tags Tags) string { return "host=" + tags["host"] }})
+	b = NewBuilder(trq, BuilderOptions{
+		Fields: fields, SeriesName: "sql",
+		NameSeries: func(tags Tags) string { return "host=" + tags["host"] },
+	})
 	commitRows(t, b, testRow{e: 1, host: "a", v: 1.0}, testRow{e: 1, host: "b", v: 2.0},
 		testRow{e: 2, host: "a", v: 3.0})
 	ds, err = b.Finish()
@@ -162,12 +164,18 @@ func TestBuilderSortsOnlyUnorderedSeries(t *testing.T) {
 
 func TestBuilderDuplicatePolicies(t *testing.T) {
 	ordered := []testRow{
-		{e: 1, host: "a", v: "a1"}, {e: 2, host: "a", v: "a2"}, {e: 2, host: "a", v: "a2b"},
-		{e: 2, host: "a", v: "a2c"}, {e: 3, host: "a", v: "a3"},
+		{e: 1, host: "a", v: "a1"},
+		{e: 2, host: "a", v: "a2"},
+		{e: 2, host: "a", v: "a2b"},
+		{e: 2, host: "a", v: "a2c"},
+		{e: 3, host: "a", v: "a3"},
 	}
 	unordered := []testRow{
-		{e: 2, host: "a", v: "a2"}, {e: 1, host: "a", v: "a1"}, {e: 2, host: "a", v: "a2b"},
-		{e: 3, host: "a", v: "a3"}, {e: 2, host: "a", v: "a2c"},
+		{e: 2, host: "a", v: "a2"},
+		{e: 1, host: "a", v: "a1"},
+		{e: 2, host: "a", v: "a2b"},
+		{e: 3, host: "a", v: "a3"},
+		{e: 2, host: "a", v: "a2c"},
 	}
 	tests := []struct {
 		name   string
@@ -711,8 +719,10 @@ func BenchmarkBuilderRowOrders(b *testing.B) {
 	}
 	shuffled := slices.Clone(timeMajor)
 	weaktest.NewRand(7, 7).Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
-	fields := timeseries.SeriesFields{Tags: timeseries.FieldDefinitions{{Name: "host"}},
-		Values: timeseries.FieldDefinitions{{Name: "v"}}}
+	fields := timeseries.SeriesFields{
+		Tags:   timeseries.FieldDefinitions{{Name: "host"}},
+		Values: timeseries.FieldDefinitions{{Name: "v"}},
+	}
 	for name, rows := range map[string][][2]int{"time-major": timeMajor, "series-major": seriesMajor, "shuffled": shuffled} {
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()
@@ -740,10 +750,20 @@ func BenchmarkBuilderRowOrders(b *testing.B) {
 func TestBuilderRowsFindTheirSeries(t *testing.T) {
 	rng := weaktest.NewRand(9, 9)
 	// each combination's tags, nil for unset
-	combos := [][2][]byte{{[]byte("a"), []byte("x")}, {[]byte("a"), nil}, {[]byte(""), nil}, {nil, nil},
-		{nil, []byte("")}, {[]byte("b"), []byte("x")}, {[]byte("ab"), []byte("")}, {[]byte("a"), []byte("")}}
-	fields := timeseries.SeriesFields{Tags: timeseries.FieldDefinitions{{Name: "t0"}, {Name: "t1"}},
-		Values: timeseries.FieldDefinitions{{Name: "v"}}}
+	combos := [][2][]byte{
+		{[]byte("a"), []byte("x")},
+		{[]byte("a"), nil},
+		{[]byte(""), nil},
+		{nil, nil},
+		{nil, []byte("")},
+		{[]byte("b"), []byte("x")},
+		{[]byte("ab"), []byte("")},
+		{[]byte("a"), []byte("")},
+	}
+	fields := timeseries.SeriesFields{
+		Tags:   timeseries.FieldDefinitions{{Name: "t0"}, {Name: "t1"}},
+		Values: timeseries.FieldDefinitions{{Name: "v"}},
+	}
 	name := func(tags [2][]byte) string {
 		var n string
 		for _, tag := range tags {

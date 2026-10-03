@@ -72,8 +72,11 @@ func TestReplicaConflictCountMatchesLegacy(t *testing.T) {
 	rng := weaktest.NewRand(71, 71)
 	// values replicas may disagree on, or agree on in different ways: a NaN never equals itself, -0 equals
 	// 0, and values of other kinds or widths differ
-	values := []any{"1", "1", "2", nil, math.NaN(), 0.0, math.Copysign(0, -1), int64(1), uint64(1), true,
-		[]byte("1"), []byte{}}
+	values := []any{
+		"1", "1", "2", nil, math.NaN(), 0.0, math.Copysign(0, -1), int64(1), uint64(1), true,
+		[]byte("1"),
+		[]byte{},
+	}
 	total := 0
 	for range 300 {
 		var contributions []*gatherContribution
@@ -101,7 +104,8 @@ func TestReplicaConflictCountMatchesLegacy(t *testing.T) {
 				list = append(list, series)
 			}
 			contributions = append(contributions, &gatherContribution{
-				data: &dataset.DataSet{Results: dataset.Results{{SeriesList: list}}}})
+				data: &dataset.DataSet{Results: dataset.Results{{SeriesList: list}}},
+			})
 		}
 		want := legacyReplicaConflictCount(contributions)
 		require.Equal(t, want, replicaConflictCount(contributions))

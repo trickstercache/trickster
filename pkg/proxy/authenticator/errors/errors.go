@@ -24,4 +24,5 @@ var (
 	ErrInvalidName              = errors.New("invalid authenticator name")
 	ErrInvalidProvider          = errors.New("invalid authenticator provider name")
 	ErrInvalidUsersFile         = errors.New("users does not exist or is not readable")
+	ErrInvalidUsersFileFormat   = errors.New("invalid users_file_format")
 )

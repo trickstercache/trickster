@@ -25,7 +25,7 @@ import (
 func TestProviderString(t *testing.T) {
 	t1 := RPCID
 	t2 := PrometheusID
-	var t3 Provider = 13
+	var t3 Provider = 99
 
 	if t1.String() != ReverseProxyCacheShort {
 		t.Errorf("expected %s got %s", ReverseProxyCacheShort, t1.String())
@@ -35,8 +35,8 @@ func TestProviderString(t *testing.T) {
 		t.Errorf("expected %s got %s", Prometheus, t2.String())
 	}
 
-	if t3.String() != "13" {
-		t.Errorf("expected %s got %s", "13", t3.String())
+	if t3.String() != "99" {
+		t.Errorf("expected %s got %s", "99", t3.String())
 	}
 }
 

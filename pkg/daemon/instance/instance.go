@@ -30,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 )
 
@@ -59,6 +60,8 @@ type ServerInstance struct {
 	// discovery-backed ALB, keyed by ALB backend name
 	PoolManagers map[string]*dynamic.Manager
 	CertMonitor  *monitor.Monitor
+	// ACME obtains and renews certificates for backends that opt in, feeding CertMonitor
+	ACME *acme.Manager
 	// Tracers holds the tracers the applied configuration registered, by name
 	Tracers tracing.Tracers
 }

@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -154,6 +155,28 @@ func TestGetRequestValues_POSTFormSplitParams(t *testing.T) {
 	}
 	if len(v) != 4 {
 		t.Errorf("expected 4 merged params, got %d: %v", len(v), v)
+	}
+}
+
+// net/http leaves a QUERY's urlencoded body unparsed, so its fields are parsed here
+func TestGetRequestValues_QUERYForm(t *testing.T) {
+	const body = "query=up&start=1000"
+	r, _ := http.NewRequest(methods.MethodQuery,
+		"http://example.com/api/v1/query_range?step=15",
+		io.NopCloser(bytes.NewBufferString(body)))
+	r.Header.Set(headers.NameContentType, headers.ValueXFormURLEncoded)
+
+	v, _, hb := GetRequestValues(r)
+	if !hb {
+		t.Fatal("expected hasBody=true for form QUERY")
+	}
+	want := url.Values{"query": {"up"}, "start": {"1000"}, "step": {"15"}}
+	if !reflect.DeepEqual(v, want) {
+		t.Errorf("got %v want %v", v, want)
+	}
+	// the body stays readable for the upstream request
+	if b, _ := io.ReadAll(r.Body); string(b) != body {
+		t.Errorf("got body %q want %q", b, body)
 	}
 }
 

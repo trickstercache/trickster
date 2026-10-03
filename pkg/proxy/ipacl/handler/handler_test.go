@@ -345,8 +345,7 @@ func TestDropResetsHTTP2(t *testing.T) {
 		_ = resp.Body.Close()
 		t.Fatalf("status = %d", resp.StatusCode)
 	}
-	var streamErr http2.StreamError
-	if !errors.As(err, &streamErr) {
+	if _, ok := errors.AsType[http2.StreamError](err); !ok {
 		t.Fatalf("err = %T %v", err, err)
 	}
 }

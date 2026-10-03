@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -251,6 +252,31 @@ func TestObjectCacheServesRepeatedStatements(t *testing.T) {
 	}
 	if got := cacheCount(config.BackendName, sqlanalyzer.CacheModeObject, status.LookupStatusHit); got != 2 {
 		t.Fatalf("counted %v hits, want 2", got)
+	}
+}
+
+func TestObjectFallbackVolatileReadsReachOrigin(t *testing.T) {
+	upstream := newFakeUpstream(t, nil)
+	config := cachedConfig(t, upstream)
+	config.Analyzer = cockroach.NewAnalyzer(cockroach.Options{
+		IsVolatileFunction: func(name string) bool { return name == "engine_clock" },
+	})
+	_, address := startServer(t, config)
+	conn := mustDial(t, address, testClientUser, testClientPass)
+	for _, sql := range []string{
+		"SELECT engine_clock()", "SELECT engine_clock() FROM trips LIMIT 1",
+		"SELECT engine_clock() FROM trips SAMPLE BY 5m FILL(NULL)", "SELECT random()",
+	} {
+		upstream.forget()
+		for range 2 {
+			rowsOf(t, conn, sql)
+		}
+		if got := upstream.received(); len(got) != 2 || got[0] != sql || got[1] != sql {
+			t.Fatalf("volatile reads must reach the origin every time, got %q", got)
+		}
+	}
+	if got := cacheCount(config.BackendName, sqlanalyzer.CacheModeObject, status.LookupStatusHit); got != 0 {
+		t.Fatalf("volatile reads produced %v object-cache hits", got)
 	}
 }
 

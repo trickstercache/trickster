@@ -77,7 +77,7 @@ func TestListenerProxyProtocol(t *testing.T) {
 		t.Helper()
 		lg := NewGroup()
 		name := t.Name()
-		go func() { _ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, echo, nil, nil, time.Second, o) }()
+		go func() { _ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, echo, nil, nil, testLimits, o) }()
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			if l := lg.Get(name); l != nil && l.State() == StateReady {
