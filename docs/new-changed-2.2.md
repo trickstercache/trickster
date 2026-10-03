@@ -40,6 +40,4 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **Disk Caches** - The Filesystem and bbolt caches are rebuilt for large caches and large objects. See [Disk Caches](./caches.md#disk-caches) for details.
 
-## Security
-
-**Path Normalization** - HTTP listeners now remove `.` and `..` path segments before routing and forward the cleaned path, closing a bypass of path-scoped controls such as `authenticator_name: none`; see [Path Normalization](./configuring.md#path-normalization) for the new `path_normalization` options and opt-out.
+**Path Normalization** - HTTP listeners now remove `.` and `..` path segments before routing and forward the cleaned path with options and opt-out; see [Path Normalization](./configuring.md#path-normalization).

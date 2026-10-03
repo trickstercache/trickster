@@ -28,7 +28,7 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
   - [ ] Support Rate Limiting w/ bucketing on configurable request attributes
   - [x] Support ALB Sticky Sessions
   - [x] Support L4 Load Balancing
-  - [ ] Support HTTP `QUERY` Method
+  - [x] Support HTTP `QUERY` Method
   - [ ] Support Media over Quick (MoQ) Relaying
   - [ ] Improved support for Time Series Merge on distributed Mimir and Thanos deployments
 
