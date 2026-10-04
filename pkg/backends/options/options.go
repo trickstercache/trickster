@@ -862,7 +862,7 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			// No specific validation needed for other provider types
 		}
 
-		if !providers.NonCacheBackends().Contains(o.Provider) {
+		if o.UsesCache() {
 			if _, ok := c[o.CacheName]; !ok {
 				return NewErrInvalidCacheName(o.CacheName, o.Name)
 			}
@@ -978,11 +978,19 @@ func (l Lookup) Keys() sets.Set[string] {
 	return out
 }
 
+// UsesCache reports whether the backend caches responses: every provider with an origin, and an ALB
+// whose time series merge evaluates globally.
+func (o *Options) UsesCache() bool {
+	if !providers.NonCacheBackends().Contains(o.Provider) {
+		return true
+	}
+	return o.Provider == providers.ALB && o.ALBOptions != nil && o.ALBOptions.TSMOptions.IsGlobal()
+}
+
 func (l Lookup) Initialize() error {
-	ncb := providers.NonCacheBackends()
 	for k, v := range l {
 		v.Name = k
-		if !ncb.Contains(v.Provider) && v.CacheName == "" {
+		if v.UsesCache() && v.CacheName == "" {
 			v.CacheName = DefaultBackendCacheName
 		}
 		if err := v.Initialize(k); err != nil {

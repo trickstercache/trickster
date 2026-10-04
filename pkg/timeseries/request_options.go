@@ -48,4 +48,7 @@ type RequestOptions struct {
 	// SeriesCap is the series count at which the origin truncates a result and flags it with a
 	// warning; such a result is a sample, so it is never cached or merged. 0 disables the check.
 	SeriesCap int
+	// ProxyOnlyWarning prefixes a warning flagging a result incomplete for now: the request is proxied
+	// whole and nothing new is cached. Empty disables it.
+	ProxyOnlyWarning string
 }

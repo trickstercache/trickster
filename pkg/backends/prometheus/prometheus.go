@@ -400,6 +400,7 @@ func (c *Client) ParseTimeRangeQuery(r *http.Request) (*timeseries.TimeRangeQuer
 	trq.Requested = requested
 	trq.StepAlignments, trq.StepAlignment = c.StepAlignments()
 	rlo.SeriesCap = c.seriesCap(qp.Get(upLimit))
+	rlo.ProxyOnlyWarning = c.hooks.ProxyOnlyWarning
 
 	return trq, rlo, true, nil
 }

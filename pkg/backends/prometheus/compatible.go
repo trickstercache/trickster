@@ -47,6 +47,9 @@ type Hooks struct {
 	AllowedPaths []string
 	// MaxSeries is the series count at which the origin truncates a query result; 0 for none
 	MaxSeries int
+	// ProxyOnlyWarning starts the warning the origin flags a result incomplete for now with; such a
+	// result is answered but never cached
+	ProxyOnlyWarning string
 	// CatchAll, when set with AllowedPaths, serves the root catch-all path instead of the
 	// unsupported handler
 	CatchAll http.Handler

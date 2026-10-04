@@ -351,7 +351,7 @@ func TestGlobalEvaluationPartialHeader(t *testing.T) {
 }
 
 func TestGlobalEvaluatorHandles(t *testing.T) {
-	e, err := (&Client{}).NewTSMGlobalEvaluator(globalTestSettings())
+	e, err := (&Client{}).NewTSMGlobalEvaluator(globalTestSettings(), backends.TSMGlobalCache{})
 	require.NoError(t, err)
 	for path, want := range map[string]bool{
 		globalTestQueryPath: true, globalTestRangePath: true, "/prefix" + globalTestRangePath: true,

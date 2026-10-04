@@ -35,8 +35,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/encoding"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -81,6 +83,9 @@ type handler struct {
 	// evaluator answers queries over the members' raw series when the ALB's evaluation is global
 	evaluator   atomic.Pointer[backends.TSMGlobalEvaluator]
 	evaluatorMu sync.Mutex
+	// cache and backendOptions keep global evaluations' results; they are set before requests arrive
+	cache          cache.Cache
+	backendOptions *bo.Options
 }
 
 type mergeFinalizer interface {

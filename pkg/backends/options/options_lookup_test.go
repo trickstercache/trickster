@@ -302,3 +302,35 @@ func TestOptionsValidateHealthCheckError(t *testing.T) {
 		t.Fatal("expected healthcheck validation error")
 	}
 }
+
+func TestUsesCache(t *testing.T) {
+	t.Parallel()
+	const name = "global"
+	global := New()
+	global.Provider = providers.ALB
+	global.ALBOptions = ao.New()
+	global.ALBOptions.MechanismName = "tsm"
+	global.ALBOptions.TSMOptions.Evaluation = "global"
+	merged := global.Clone()
+	merged.ALBOptions.TSMOptions.Evaluation = ""
+	origin := New()
+	origin.Provider = providers.ReverseProxyCacheShort
+	for o, want := range map[*Options]bool{global: true, merged: false, origin: true, New(): true} {
+		if got := o.UsesCache(); got != want {
+			t.Fatalf("%s %+v: UsesCache = %v, want %v", o.Provider, o.ALBOptions, got, want)
+		}
+	}
+	bare := New()
+	bare.Provider = providers.ALB
+	if bare.UsesCache() {
+		t.Fatal("an alb without options keeps no cache")
+	}
+
+	l := Lookup{name: global}
+	if err := l.Initialize(); err != nil {
+		t.Fatalf("Lookup.Initialize: %v", err)
+	}
+	if global.CacheName != DefaultBackendCacheName {
+		t.Fatalf("a global alb's cache_name defaults to %q, got %q", DefaultBackendCacheName, global.CacheName)
+	}
+}

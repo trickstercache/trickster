@@ -39,7 +39,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
-	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -385,7 +384,7 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		return nil, err
 	}
 	var c cache.Cache
-	if !providers.NonCacheBackends().Contains(nb.Provider) {
+	if nb.UsesCache() {
 		var ok bool
 		if c, ok = m.cfg.Caches[nb.CacheName]; !ok {
 			return nil, fmt.Errorf("could not find cache named [%s]", nb.CacheName)

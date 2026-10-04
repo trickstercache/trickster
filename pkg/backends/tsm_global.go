@@ -19,6 +19,8 @@ package backends
 import (
 	"net/http"
 
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
@@ -62,7 +64,15 @@ type TSMGlobalEvaluator interface {
 	ServeTSMGlobal(w http.ResponseWriter, r *http.Request, req TSMGlobalRequest)
 }
 
+// TSMGlobalCache is where an ALB keeps its global evaluations' results: its cache, its backend options,
+// and the members a cache miss reads. A nil Cache keeps no results.
+type TSMGlobalCache struct {
+	Cache   cache.Cache
+	Backend *bo.Options
+	Members func() TSMGlobalRequest
+}
+
 // TSMGlobalEvaluatorProvider is implemented by backends whose query language can evaluate globally.
 type TSMGlobalEvaluatorProvider interface {
-	NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings) (TSMGlobalEvaluator, error)
+	NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings, results TSMGlobalCache) (TSMGlobalEvaluator, error)
 }

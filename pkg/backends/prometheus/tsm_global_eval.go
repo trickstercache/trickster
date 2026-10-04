@@ -66,11 +66,31 @@ type globalEvaluator struct {
 	engine   *promql.Engine
 	// slots holds a token for each evaluation running, so no more than MaxConcurrentQueries run at once
 	slots chan struct{}
+	// cached answers from the ALB's cache when it keeps one, and members lists what its misses read
+	cached  *cachedGlobal
+	members func() backends.TSMGlobalRequest
+	// rangeCacheControl lets shared caches keep a complete range result for the ALB's timeseries TTL
+	rangeCacheControl string
 }
 
-// NewTSMGlobalEvaluator returns an evaluator running PromQL over a TSM ALB's raw member series.
-func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings) (backends.TSMGlobalEvaluator, error) {
-	return newGlobalEvaluator(settings), nil
+// NewTSMGlobalEvaluator returns an evaluator running PromQL over a TSM ALB's raw member series, keeping
+// results in the ALB's cache when results names one.
+func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings,
+	results backends.TSMGlobalCache,
+) (backends.TSMGlobalEvaluator, error) {
+	e := newGlobalEvaluator(settings)
+	if results.Backend != nil {
+		e.rangeCacheControl = sharedMaxAge(time.Duration(results.Backend.TimeseriesTTL))
+	}
+	if results.Cache == nil || results.Backend == nil || results.Members == nil {
+		return e, nil
+	}
+	cached, err := e.newCachedGlobal(results)
+	if err != nil {
+		return nil, err
+	}
+	e.cached, e.members = cached, results.Members
+	return e, nil
 }
 
 func newGlobalEvaluator(settings merge.TSMGlobalSettings) *globalEvaluator {
@@ -93,8 +113,23 @@ func (e *globalEvaluator) Handles(r *http.Request) bool {
 	return strings.HasSuffix(r.URL.Path, APIPath+mnQuery) || strings.HasSuffix(r.URL.Path, APIPath+mnQueryRange)
 }
 
-// ServeTSMGlobal evaluates the requested query once over the deduplicated raw series of every member.
+// ServeTSMGlobal answers a query from the ALB's cache, evaluating over every member's deduplicated raw
+// series only what the cache lacks; without a cache, every query is evaluated.
 func (e *globalEvaluator) ServeTSMGlobal(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) {
+	if e.cached != nil {
+		e.cached.ServeHTTP(w, r)
+		return
+	}
+	e.evaluate(w, r, req)
+}
+
+// serveOrigin evaluates a cache miss over the ALB's current members
+func (e *globalEvaluator) serveOrigin(w http.ResponseWriter, r *http.Request) {
+	e.evaluate(w, r, e.members())
+}
+
+// evaluate answers r by evaluating its query over req's members, recording the evaluation's metrics
+func (e *globalEvaluator) evaluate(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) {
 	start := time.Now()
 	outcome := e.serve(w, r, req)
 	metrics.ALBGlobalEvaluations.WithLabelValues(e.settings.Name, outcome).Inc()
@@ -184,8 +219,15 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 		}
 	}
 	result, outcome := globalResultHeader, globalOutcomeSuccess
-	if partialResult {
+	switch {
+	case partialResult:
 		result, outcome = globalPartialResultHeader, globalOutcomePartial
+		// a result missing a member's series is only true until the member returns
+		w.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
+	case !strings.HasSuffix(r.URL.Path, APIPath+mnQueryRange):
+		w.Header().Set(headers.NameCacheControl, sharedMaxAge(instantSharedMaxAge))
+	case e.rangeCacheControl != "":
+		w.Header().Set(headers.NameCacheControl, e.rangeCacheControl)
 	}
 	w.Header().Set(headers.NameTricksterResult, result)
 	global.WriteResult(w, value, warnings, infos)

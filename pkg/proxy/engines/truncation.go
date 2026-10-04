@@ -17,6 +17,8 @@
 package engines
 
 import (
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
@@ -38,6 +40,24 @@ func truncated(seriesCap int, tsl ...timeseries.Timeseries) bool {
 	for _, ts := range tsl {
 		if ds, ok := ts.(*dataset.DataSet); ok && ds != nil &&
 			len(ds.Warnings) > 0 && ds.SeriesCount() >= seriesCap {
+			return true
+		}
+	}
+	return false
+}
+
+// proxyOnlyWarned reports whether any of tsl carries a warning starting with prefix, which flags a
+// result incomplete for now rather than a query that always truncates
+func proxyOnlyWarned(prefix string, tsl ...timeseries.Timeseries) bool {
+	if prefix == "" {
+		return false
+	}
+	for _, ts := range tsl {
+		ds, ok := ts.(*dataset.DataSet)
+		if !ok || ds == nil {
+			continue
+		}
+		if slices.ContainsFunc(ds.Warnings, func(w string) bool { return strings.HasPrefix(w, prefix) }) {
 			return true
 		}
 	}

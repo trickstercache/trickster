@@ -89,7 +89,9 @@ type fakeGlobalBackend struct {
 func (b *fakeGlobalBackend) Configuration() *bo.Options { return b.cfg }
 func (b *fakeGlobalBackend) Name() string               { return b.cfg.Name }
 
-func (b *fakeGlobalBackend) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings) (backends.TSMGlobalEvaluator, error) {
+func (b *fakeGlobalBackend) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings,
+	_ backends.TSMGlobalCache,
+) (backends.TSMGlobalEvaluator, error) {
 	b.builds.Add(1)
 	if b.buildErr != nil {
 		return nil, b.buildErr

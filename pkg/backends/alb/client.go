@@ -212,6 +212,19 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 	return c, nil
 }
 
+// cacheReceiver is a mechanism that keeps results in its ALB's cache
+type cacheReceiver interface {
+	SetCache(cache.Cache, *bo.Options)
+}
+
+// SetCache gives the client its cache, and the mechanism too when it keeps results.
+func (c *Client) SetCache(cc cache.Cache) {
+	c.Backend.SetCache(cc)
+	if cr, ok := c.handler.(cacheReceiver); ok {
+		cr.SetCache(cc, c.Configuration())
+	}
+}
+
 // StartALBPools ensures that ALB's are fully loaded, which can't be done
 // until all backends are processed, so the ALB's destination backend names
 // can be mapped to their respective clients

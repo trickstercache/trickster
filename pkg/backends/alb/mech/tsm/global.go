@@ -23,6 +23,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 )
 
 var (
@@ -54,7 +55,9 @@ func (h *handler) globalEvaluator(live pool.Targets) (backends.TSMGlobalEvaluato
 		if settings.MaxResponseBytes <= 0 {
 			settings.MaxResponseBytes = bo.DefaultMaxCaptureBytes
 		}
-		ev, err := provider.NewTSMGlobalEvaluator(settings)
+		ev, err := provider.NewTSMGlobalEvaluator(settings, backends.TSMGlobalCache{
+			Cache: h.cache, Backend: h.backendOptions, Members: h.globalMembers,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -62,6 +65,24 @@ func (h *handler) globalEvaluator(live pool.Targets) (backends.TSMGlobalEvaluato
 		return ev, nil
 	}
 	return nil, errNoGlobalEvaluator
+}
+
+// SetCache gives the handler the cache and backend options global evaluation keeps its results with,
+// replacing an evaluator built without them.
+func (h *handler) SetCache(c cache.Cache, o *bo.Options) {
+	h.evaluatorMu.Lock()
+	defer h.evaluatorMu.Unlock()
+	h.cache, h.backendOptions = c, o
+	h.evaluator.Store(nil)
+}
+
+// globalMembers lists the current pool's members for a cache miss's evaluation
+func (h *handler) globalMembers() backends.TSMGlobalRequest {
+	p := h.Pool()
+	if p == nil {
+		return backends.TSMGlobalRequest{}
+	}
+	return globalRequest(p.Targets(), p.ConfiguredTargets())
 }
 
 // globalRequest lists the sources of the live members in configured order, then any live member the

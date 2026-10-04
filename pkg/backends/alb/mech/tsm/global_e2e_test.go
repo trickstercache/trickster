@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
@@ -32,6 +33,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	cr "github.com/trickstercache/trickster/v2/pkg/cache/registry"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
@@ -55,7 +58,9 @@ const (
 
 // remoteReadMember serves counters rising by one each second over remote read, recording tenants
 type remoteReadMember struct {
-	series  []labels.Labels
+	series []labels.Labels
+	// start is the time, in seconds, the member's counters begin at
+	start   int64
 	mu      sync.Mutex
 	tenants []string
 }
@@ -91,7 +96,7 @@ func (m *remoteReadMember) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ts := &prompb.TimeSeries{Labels: prompb.FromLabels(lset, nil)}
 		for i := range e2eSteps * 4 {
-			at := (e2eStart + int64(i)*15) * 1000
+			at := (m.start + int64(i)*15) * 1000
 			if at >= q.StartTimestampMs && at <= q.EndTimestampMs {
 				ts.Samples = append(ts.Samples, prompb.Sample{Timestamp: at, Value: float64(i * 15)})
 			}
@@ -103,9 +108,9 @@ func (m *remoteReadMember) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(snappy.Encode(nil, out))
 }
 
-func newRemoteReadMember(t *testing.T, name string, pods ...string) (*remoteReadMember, *pool.Target) {
+func newRemoteReadMember(t *testing.T, name string, start int64, pods ...string) (*remoteReadMember, *pool.Target) {
 	t.Helper()
-	member := &remoteReadMember{}
+	member := &remoteReadMember{start: start}
 	for _, pod := range pods {
 		member.series = append(member.series, labels.FromStrings(labels.MetricName, e2eMetric, e2ePod, pod,
 			e2eReplica, name))
@@ -125,8 +130,8 @@ func newRemoteReadMember(t *testing.T, name string, pods ...string) (*remoteRead
 }
 
 func TestServeGlobalOverRemoteRead(t *testing.T) {
-	east, eastTarget := newRemoteReadMember(t, "east", "a", "b")
-	west, westTarget := newRemoteReadMember(t, "west", "b", "c")
+	east, eastTarget := newRemoteReadMember(t, "east", e2eStart, "a", "b")
+	west, westTarget := newRemoteReadMember(t, "west", e2eStart, "b", "c")
 	p := pool.New(pool.Targets{eastTarget, westTarget}, -1)
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
@@ -168,7 +173,7 @@ func TestServeGlobalOverRemoteRead(t *testing.T) {
 }
 
 func TestServeGlobalResponseLimit(t *testing.T) {
-	_, target := newRemoteReadMember(t, "east", "a", "b")
+	_, target := newRemoteReadMember(t, "east", e2eStart, "a", "b")
 	p := pool.New(pool.Targets{target}, -1)
 	t.Cleanup(p.Stop)
 	p.RefreshHealthy()
@@ -183,4 +188,43 @@ func TestServeGlobalResponseLimit(t *testing.T) {
 	h.ServeHTTP(w, req)
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
 	require.Contains(t, w.Body.String(), "raw data limit")
+}
+
+func TestServeGlobalCachedOverRemoteRead(t *testing.T) {
+	start := time.Now().Truncate(time.Minute).Add(-3 * time.Hour).Unix()
+	member, target := newRemoteReadMember(t, "east", start, "a", "b")
+	p := pool.New(pool.Targets{target}, -1)
+	t.Cleanup(p.Stop)
+	p.RefreshHealthy()
+	conf, err := config.Load([]string{
+		"-origin-url", "http://127.0.0.1:1", "-provider", providers.Prometheus,
+		"-log-level", "error",
+	})
+	require.NoError(t, err)
+	c := cr.LoadCachesFromConfig(conf)["default"]
+	t.Cleanup(func() { _ = c.Close() })
+	alb := conf.Backends["default"].Clone()
+	alb.Name = "cached-global"
+	h := &handler{name: alb.Name, mergePaths: []string{"/"}, tsmOptions: options.Options{
+		Evaluation: options.EvaluationGlobal,
+	}}
+	h.SetPool(p)
+	h.SetCache(c, alb)
+
+	values := url.Values{
+		"query": {"count(x_total)"}, "start": {strconv.FormatInt(start+5*60, 10)},
+		"end": {strconv.FormatInt(start+20*60, 10)}, "step": {"60"},
+	}
+	for i, want := range []string{"status=kmiss", "status=hit"} {
+		req := newTestMergeRequest(t)
+		req.URL.Path = "/api/v1/query_range"
+		req.URL.RawQuery = values.Encode()
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		require.Contains(t, w.Header().Get(headers.NameTricksterResult), want, "request %d", i)
+	}
+	member.mu.Lock()
+	defer member.mu.Unlock()
+	require.Len(t, member.tenants, 1, "the hit reads no member")
 }

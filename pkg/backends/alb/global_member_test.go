@@ -23,12 +23,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/errors"
 	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 
 	"github.com/stretchr/testify/require"
@@ -107,4 +109,34 @@ func TestValidateAndStartPoolGlobalEvaluationMembers(t *testing.T) {
 		require.NoError(t, alb.ValidateAndStartPool(backends.Backends{globalTestALB: alb, keys.Member: member},
 			healthcheck.StatusLookup{keys.Member: &healthcheck.Status{}}))
 	})
+}
+
+type fakeCache struct {
+	cache.Cache
+}
+
+// cacheMechanism records the cache and options its client hands it
+type cacheMechanism struct {
+	http.Handler
+	cache   cache.Cache
+	options *bo.Options
+}
+
+func (*cacheMechanism) Name() types.Name { return names.MechanismTSM }
+
+func (m *cacheMechanism) SetCache(c cache.Cache, o *bo.Options) { m.cache, m.options = c, o }
+
+func TestClientSetCacheReachesMechanism(t *testing.T) {
+	alb := newGlobalTestALB(t, names.MechanismTSM, tsmoptions.EvaluationGlobal)
+	mech := &cacheMechanism{Handler: http.NotFoundHandler()}
+	alb.handler = mech
+	c := &fakeCache{}
+	alb.SetCache(c)
+	require.Same(t, c, alb.Cache())
+	require.Same(t, c, mech.cache)
+	require.Same(t, alb.Configuration(), mech.options)
+
+	plain := newGlobalTestALB(t, names.MechanismRR, "")
+	plain.SetCache(c)
+	require.Same(t, c, plain.Cache())
 }
