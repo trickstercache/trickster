@@ -62,7 +62,6 @@ func (h *quantileCursorHeap) Pop() any {
 }
 
 func finalizeQuantileAggregation(ds *dataset.DataSet, spec promql.QuantileAggregation) {
-	isRangeQuery := ds.Step() > 0
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
@@ -76,17 +75,8 @@ func finalizeQuantileAggregation(ds *dataset.DataSet, spec promql.QuantileAggreg
 			}
 		}
 	}
-
-	if !spec.SortSet {
-		return
-	}
-	if isRangeQuery {
-		appendWarningOnce(ds, sortInRangeQueryWarning)
-	}
-	for _, result := range ds.Results {
-		if result != nil && !isRangeQuery {
-			sortInstantSeries(result.SeriesList, spec.SortDescending)
-		}
+	if spec.SortSet {
+		sortFinalSeries(ds, spec.SortDescending)
 	}
 }
 

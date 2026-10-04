@@ -36,7 +36,6 @@ type varianceFinalizeGroup struct {
 }
 
 func finalizeVarianceAggregation(ds *dataset.DataSet, spec promql.VarianceAggregation) {
-	isRangeQuery := ds.Step() > 0
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
@@ -49,21 +48,8 @@ func finalizeVarianceAggregation(ds *dataset.DataSet, spec promql.VarianceAggreg
 		// Unsupported variance shapes retain the established per-shard fallback.
 		// A sort wrapper still needs its normal global output handling.
 	}
-
-	if !spec.SortSet {
-		return
-	}
-	if isRangeQuery {
-		appendWarningOnce(ds, sortInRangeQueryWarning)
-	}
-	for _, result := range ds.Results {
-		if result == nil {
-			continue
-		}
-		result.SeriesList = filterHistogramSeries(result.SeriesList)
-		if !isRangeQuery {
-			sortInstantSeries(result.SeriesList, spec.SortDescending)
-		}
+	if spec.SortSet {
+		sortFinalSeries(ds, spec.SortDescending)
 	}
 }
 

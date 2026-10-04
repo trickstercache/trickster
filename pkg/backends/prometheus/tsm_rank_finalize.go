@@ -160,6 +160,10 @@ func (c *Client) finalizeTSMMerge(query string, ds *dataset.DataSet, expr promql
 		finalizeVarianceAggregation(ds, spec)
 		return
 	}
+	if spec, found := promql.ParsePresenceAggregation(expr); found {
+		finalizePresenceAggregation(ds, spec)
+		return
+	}
 	if spec, found := promql.ParseRankAggregation(expr); found {
 		finalizeRankAggregation(ds, spec)
 		return
@@ -173,15 +177,18 @@ func (c *Client) finalizeTSMMerge(query string, ds *dataset.DataSet, expr promql
 }
 
 func finalizeSortWrapper(ds *dataset.DataSet, descending bool) {
-	isRangeQuery := ds.Step() > 0
-
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
+	sortFinalSeries(ds, descending)
+}
 
+// sortFinalSeries applies sort or sort_desc to finalized series, which ignore native-histogram samples
+// and only order instant vectors; the caller holds the dataset's UpdateLock
+func sortFinalSeries(ds *dataset.DataSet, descending bool) {
+	isRangeQuery := ds.Step() > 0
 	if isRangeQuery {
 		appendWarningOnce(ds, sortInRangeQueryWarning)
 	}
-
 	for _, result := range ds.Results {
 		if result == nil {
 			continue

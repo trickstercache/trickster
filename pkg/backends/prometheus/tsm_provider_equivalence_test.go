@@ -143,6 +143,9 @@ var tsmEquivalenceCorpus = []string{
 	"sum(up) + vector(1)",
 	"abs(sum(up))",
 	"sum by service (up)",
+	"count(count by (job) (up))",
+	"count by (job) (group by (job, instance) (up))",
+	"sort_desc(count(count without (instance) (up)))",
 }
 
 func TestPlanTSMMergeFormattingEquivalence(t *testing.T) {
@@ -177,6 +180,7 @@ func TestPlanTSMMergeEquivalentSpellings(t *testing.T) {
 		{"stddev by (job) (rate(requests[5m]))", "stddev(rate(requests[5m])) by (job)"},
 		{"count(up) or vector(0)", "(count(up)) or (vector((0)))"},
 		{"count(up) or vector(0)", "count(up) or ignoring () vector(-0)"},
+		{"count by (job) (count by (job, instance) (up))", "COUNT(count(up) by (job, instance)) BY (job)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt[0]+" == "+tt[1], func(t *testing.T) {
@@ -227,6 +231,8 @@ func TestFinalizeTSMMergeFormattingEquivalence(t *testing.T) {
 		"quantile(0.5, max by (instance) (up))",
 		"limit_ratio(1, count by (instance) (up))",
 		"stddev(count by (instance) (up))",
+		"count by (job) (count by (job, instance) (up))",
+		"sort_desc(group by (job) (count by (job, instance) (up)))",
 	}
 	for _, base := range bases {
 		want := finalizedSnapshot(t, base)

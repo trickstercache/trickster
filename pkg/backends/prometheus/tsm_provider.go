@@ -83,6 +83,10 @@ func (c *Client) planTSMMerge(r *http.Request, query string, expr promql.Expr,
 			return plan, err
 		}
 	}
+	if spec, found := promql.ParsePresenceAggregation(expr); found {
+		// Deduplication unions the inner label sets, so the outer count sees each once.
+		return finalizedInnerPlan(r, query, spec.Inner.String(), int(merge.StrategyDedup))
+	}
 	fanout, rewritten := tsmInnerQuery(expr)
 	finalizer := tsmFinalizer(query, expr)
 
@@ -386,10 +390,16 @@ func (c *Client) planVariance(r *http.Request, query string,
 	default:
 		return nil, false, nil
 	}
+	plan, err := finalizedInnerPlan(r, query, spec.Inner.String(), strategy)
+	return plan, true, err
+}
 
-	variantRequest, err := rewritePromQueryParam(r, spec.Inner.String())
+// finalizedInnerPlan sends inner to every member, merges the responses by strategy without routing
+// labels, and finalizes the original query once over the merged result
+func finalizedInnerPlan(r *http.Request, query, inner string, strategy int) (*merge.TSMMergePlan, error) {
+	variantRequest, err := rewritePromQueryParam(r, inner)
 	if err != nil {
-		return nil, true, fmt.Errorf("prepare tsm primary variant: %w", err)
+		return nil, fmt.Errorf("prepare tsm primary variant: %w", err)
 	}
 	plan := &merge.TSMMergePlan{
 		OriginalQuery: query,
@@ -403,14 +413,14 @@ func (c *Client) planVariance(r *http.Request, query string,
 			Kind:          merge.TSMReductionStandard,
 			InputVariants: merge.TSMReductionPrimaryVariant(),
 		},
-		Finalizer:           finalizer,
+		Finalizer:           merge.TSMFinalizerSpec{Enabled: true, Query: query},
 		Completeness:        merge.TSMCompletenessResponseAuthority,
 		StripInjectedLabels: true,
 	}
 	if err := plan.Validate(); err != nil {
-		return nil, true, err
+		return nil, err
 	}
-	return plan, true, nil
+	return plan, nil
 }
 
 func pooledVariancePlan(r *http.Request, originalQuery string,

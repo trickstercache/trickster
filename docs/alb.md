@@ -497,12 +497,15 @@ For Federation use cases where backends hold different, non-overlapping data, Tr
 | `quantile` | Query the inner expression, merge all float samples globally, then calculate the exact quantile per timestamp and aggregation group |
 | `limit_ratio` | Apply Prometheus-compatible label-hash sampling, globally finalizing a supported inner aggregation when necessary |
 | `limitk` | Query the inner expression, merge it globally, then retain the first k samples in stable TSM series order per timestamp and aggregation group |
+| `count` or `group` over an inner `count` or `group` of a selector | Query the inner aggregation, union its label sets across backends, then count or group each label set once per timestamp and aggregation group |
 | `sum`, `count`, or `count_values` followed by `or vector(0)` | Sum of values per unique label set + timestamp |
 | _(none)_ | Deduplicate (default) |
 
 For `avg` queries, Trickster issues two concurrent sub-queries per backend shard — one rewriting the outer `avg` to `sum` and another to `count` — then computes a true weighted arithmetic mean (`sum_total / count_total`) per series per timestamp. This avoids the skew introduced by a naïve avg-of-averages when backends have different data cardinalities.
 
-When an outer aggregation's input contains a nested aggregation, binary expression, or function that needs globally complete input, Trickster retains the aggregation's established merge strategy and adds a warning. This fail-open behavior preserves correct results when the input series are colocated while noting that results can be inaccurate when matching series are split across shards.
+When an outer aggregation's input contains a nested aggregation (other than the `count` and `group` forms below), binary expression, or function that needs globally complete input, Trickster retains the aggregation's established merge strategy and adds a warning. This fail-open behavior preserves correct results when the input series are colocated while noting that results can be inaccurate when matching series are split across shards.
+
+For an outer `count` or `group` whose input is a `count` or `group` of a vector selector, such as `count(count by (pod) (up))`, the result depends only on which label sets the inner aggregation produces. Trickster sends the inner aggregation to each backend, unions the label sets the backends return, and applies the outer operator once per timestamp and aggregation group. A label set returned by several backends counts once, so replicated or partially overlapping backends don't inflate the count. The selector may use label matchers, `offset`, and `@`, and the aggregation may be wrapped in `sort()`, `sort_desc()`, or a literal scalar operation such as `> 1`. A label set counts at a timestamp when any backend returned it there. Inner inputs that apply functions, filters, or binary operations can change which label sets a backend returns, so they keep the warning described above. When a backend fails, the result covers the backends that answered and is marked as a partial hit.
 
 For `sum`, `count`, or `count_values` followed by `or vector(0)`, Trickster sends the complete expression to each backend and sums the results, because a backend without matching series contributes only the explicit zero. This requires an aggregation input that each backend can evaluate independently: no nested aggregation, binary expression, or function that needs globally complete input. When the `or` uses `on(...)` or `ignoring(...)` label matching, this applies only to `sum` or `count` without `by` or `without` grouping; other forms use the warning fallback described below.
 
@@ -522,7 +525,7 @@ For an unsupported inner expression, Trickster retains the established per-shard
 
 The same deduplicating fallback and warning apply when an aggregation is not the query's outermost operation (for example, `histogram_quantile(0.9, sum by (le) (rate(x_bucket[5m])))`), when an aggregation is combined with a binary expression other than the supported `or vector(0)` form, and when the query cannot be parsed as PromQL, such as a query that uses another dialect's extensions.
 
-When a non-dedup strategy is in effect and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
+When a non-dedup strategy is in effect, or Trickster sends backends an inner expression to finalize after merging, and backends have [injected labels](./prometheus.md#injecting-labels) configured, those labels are automatically stripped before merging. This ensures series from different backends hash identically for aggregation, and the injected labels do not appear in the response.
 
 #### Native Histograms
 

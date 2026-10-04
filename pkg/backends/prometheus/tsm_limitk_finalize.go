@@ -28,7 +28,6 @@ type limitKLogicalSeries struct {
 }
 
 func finalizeLimitKAggregation(ds *dataset.DataSet, spec promql.LimitKAggregation) {
-	isRangeQuery := ds.Step() > 0
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
@@ -39,23 +38,9 @@ func finalizeLimitKAggregation(ds *dataset.DataSet, spec promql.LimitKAggregatio
 			}
 		}
 	}
-
-	if !spec.SortSet {
-		return
-	}
-	if isRangeQuery {
-		appendWarningOnce(ds, sortInRangeQueryWarning)
-	}
-	for _, result := range ds.Results {
-		if result == nil {
-			continue
-		}
-		// PromQL sort functions ignore native-histogram samples even though
-		// limitk itself retains them.
-		result.SeriesList = filterHistogramSeries(result.SeriesList)
-		if !isRangeQuery {
-			sortInstantSeries(result.SeriesList, spec.SortDescending)
-		}
+	// PromQL sort functions ignore native-histogram samples even though limitk itself retains them.
+	if spec.SortSet {
+		sortFinalSeries(ds, spec.SortDescending)
 	}
 }
 
