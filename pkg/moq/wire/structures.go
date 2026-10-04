@@ -127,6 +127,25 @@ func (ns Namespace) Clone() Namespace {
 	return out
 }
 
+// Validate checks ns, with name as its track name when it names a track, against the field count, field length
+// and total length limits a receiver enforces
+func (ns Namespace) Validate(name []byte) error {
+	if len(ns) > MaxNamespaceFields {
+		return ErrNamespaceTooLong
+	}
+	n := len(name)
+	for _, f := range ns {
+		if len(f) == 0 {
+			return ErrEmptyNamespaceField
+		}
+		n += len(f)
+	}
+	if n > MaxFullTrackNameLen {
+		return ErrNamespaceTooLong
+	}
+	return nil
+}
+
 // AppendNamespace appends a Track Namespace
 func AppendNamespace(b []byte, ns Namespace) []byte {
 	b = AppendVarint(b, uint64(len(ns)))

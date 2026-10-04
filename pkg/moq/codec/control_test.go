@@ -460,8 +460,26 @@ func TestEncodeRefusals(t *testing.T) {
 	if _, err := c.AppendMessage(nil, &message.Setup{AuthTokens: []wire.Token{{AliasType: 7}}}); err == nil {
 		t.Error("a bad setup token should not encode")
 	}
-	if _, err := c.AppendMessage(nil, &message.Namespace{Suffix: ns(strings.Repeat("x", wire.MaxMessageLen))}); !errors.Is(err, wire.ErrMessageTooLong) {
+	if _, err := c.AppendMessage(nil, &message.RequestError{Reason: strings.Repeat("x", wire.MaxMessageLen)}); !errors.Is(err, wire.ErrMessageTooLong) {
 		t.Error("an oversized message should not encode")
+	}
+	deep := make([]string, wire.MaxNamespaceFields+1)
+	for i := range deep {
+		deep[i] = "f"
+	}
+	long := strings.Repeat("n", wire.MaxFullTrackNameLen+1)
+	for _, m := range []message.Message{
+		&message.Subscribe{Track: track("t", deep...)}, &message.Publish{Track: track(long, "ns")},
+		&message.Fetch{Track: track("t", "")}, &message.TrackStatus{Track: track(long, "ns")},
+		&message.PublishNamespace{Prefix: ns(deep...)}, &message.SubscribeNamespace{Prefix: ns("")},
+		&message.SubscribeTracks{Prefix: ns(deep...)}, &message.Namespace{Suffix: ns(long)},
+		&message.NamespaceDone{Suffix: ns("")}, &message.PublishSkipped{Suffix: ns("a"), TrackName: []byte(long)},
+		&message.RequestError{Code: message.RequestRedirect, Redirect: &message.Redirect{Track: track("t", deep...)}},
+	} {
+		if _, err := c.AppendMessage(nil, m); !errors.Is(err, wire.ErrNamespaceTooLong) &&
+			!errors.Is(err, wire.ErrEmptyNamespaceField) {
+			t.Errorf("%s with a malformed name encoded: %v", m.Kind(), err)
+		}
 	}
 	var empty message.Params
 	empty.Mark(message.ParamFillParameters)

@@ -163,6 +163,22 @@ func TestNamespace(t *testing.T) {
 	if r.Namespace() != nil || r.Err() == nil {
 		t.Error("a truncated field should fail")
 	}
+	for _, tc := range []struct {
+		ns   Namespace
+		name []byte
+		want error
+	}{
+		{ns, []byte("video"), nil},
+		{Namespace{}, nil, nil},
+		{Namespace{[]byte{}}, nil, ErrEmptyNamespaceField},
+		{many, nil, ErrNamespaceTooLong},
+		{big, nil, ErrNamespaceTooLong},
+		{near, bytes.Repeat([]byte("n"), 100), ErrNamespaceTooLong},
+	} {
+		if err := tc.ns.Validate(tc.name); !errors.Is(err, tc.want) {
+			t.Errorf("Validate(%d fields, %d byte name) = %v, want %v", len(tc.ns), len(tc.name), err, tc.want)
+		}
+	}
 }
 
 func TestReasonAndURI(t *testing.T) {

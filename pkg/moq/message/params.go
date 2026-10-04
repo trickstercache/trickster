@@ -176,9 +176,8 @@ type LocationFilter struct {
 	EndObject     uint64
 }
 
-// Bounds resolves the filter against the track's Largest Object, nil when nothing has been published. A
-// subscription leaves an omitted end open, while a fetch ends it at Largest Object. ok is false when the
-// absolute end group overflows.
+// Bounds resolves the filter against Largest Object (nil if none); an omitted end is open for a
+// subscription and Largest Object for a fetch; ok is false on end group overflow
 func (f LocationFilter) Bounds(largest *wire.Location, fetch bool) (start, end wire.Location,
 	unbounded, ok bool,
 ) {

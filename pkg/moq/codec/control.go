@@ -44,6 +44,9 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 	if !ok {
 		return b, fmt.Errorf("%w: %s in draft %d", ErrUnknownMessage, m.Kind(), c.draft)
 	}
+	if err := checkNames(m); err != nil {
+		return b, err
+	}
 	start := len(b)
 	b, at := wire.BeginMessage(b, typ)
 	var err error
@@ -140,6 +143,37 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 		return b[:start], err
 	}
 	return b, nil
+}
+
+func checkNames(m message.Message) error {
+	// a name the peer would reject as malformed must not leave this endpoint, since the peer closes the session
+	switch v := m.(type) {
+	case *message.Subscribe:
+		return v.Track.Namespace.Validate(v.Track.Name)
+	case *message.Publish:
+		return v.Track.Namespace.Validate(v.Track.Name)
+	case *message.Fetch:
+		return v.Track.Namespace.Validate(v.Track.Name)
+	case *message.TrackStatus:
+		return v.Track.Namespace.Validate(v.Track.Name)
+	case *message.PublishNamespace:
+		return v.Prefix.Validate(nil)
+	case *message.SubscribeNamespace:
+		return v.Prefix.Validate(nil)
+	case *message.SubscribeTracks:
+		return v.Prefix.Validate(nil)
+	case *message.Namespace:
+		return v.Suffix.Validate(nil)
+	case *message.NamespaceDone:
+		return v.Suffix.Validate(nil)
+	case *message.PublishSkipped:
+		return v.Suffix.Validate(v.TrackName)
+	case *message.RequestError:
+		if v.Redirect != nil {
+			return v.Redirect.Track.Namespace.Validate(v.Redirect.Track.Name)
+		}
+	}
+	return nil
 }
 
 func (c *Codec) putRequestID(b []byte, id, required uint64) []byte {
