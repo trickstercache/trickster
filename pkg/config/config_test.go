@@ -329,21 +329,21 @@ func TestIsStale(t *testing.T) {
 		t.Error("expected non-stale config")
 	}
 	c.Main.configFilePath = testFile
-	time.Sleep(time.Millisecond * 10)
 
-	err = os.WriteFile(testFile, []byte(tml), 0o666)
+	info, err := os.Stat(testFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	modified := info.ModTime().Add(2 * time.Second)
+	err = os.Chtimes(testFile, modified, modified)
 	if err != nil {
 		t.Error(err)
 	}
-
-	time.Sleep(time.Millisecond * 10)
 
 	c.MgmtConfig = nil
 	if !c.IsStale() {
 		t.Error("expected stale config")
 	}
-
-	time.Sleep(time.Millisecond * 10)
 
 	if c.IsStale() {
 		t.Error("expected non-stale config")

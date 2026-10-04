@@ -30,6 +30,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/iotest"
+	"testing/synctest"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -363,36 +364,37 @@ func TestPartialBucketTTL(t *testing.T) {
 
 func TestConcurrentCallersShareTheInteriorButNotTheirPartialBuckets(t *testing.T) {
 	h := newBucketHarness(t, timeseries.StepAlignmentPartialStart)
-	base := time.Now().Add(-6 * time.Hour).Truncate(pbStep)
-	end := base.Add(pbBuckets * pbStep)
-	skews := []time.Duration{pbStartSkew, 23 * time.Second}
-	gate := make(chan struct{})
-	h.transport.gate = gate
-	var wg sync.WaitGroup
-	resps := make([]dpcResponse, len(skews))
-	for i, skew := range skews {
-		req := h.request(base.Add(skew), end, 0)
-		wg.Go(func() { resps[i] = serveDPC(h.client, req) })
-	}
-	// both callers reach the interior's singleflight while the origin is held
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-	interior := upstreamRange(base.Add(pbStep), end)
-	var interiors int
-	for _, rng := range h.up.take() {
-		if rng == interior {
-			interiors++
+	inSingleflightBubble(t, request.GetResources(h.r), func(t *testing.T) {
+		base := time.Now().Add(-6 * time.Hour).Truncate(pbStep)
+		end := base.Add(pbBuckets * pbStep)
+		skews := []time.Duration{pbStartSkew, 23 * time.Second}
+		gate := make(chan struct{})
+		h.transport.gate = gate
+		var wg sync.WaitGroup
+		resps := make([]dpcResponse, len(skews))
+		for i, skew := range skews {
+			req := h.request(base.Add(skew), end, 0)
+			wg.Go(func() { resps[i] = serveDPC(h.client, req) })
 		}
-	}
-	require.Equal(t, 1, interiors)
-	statuses := map[string]int{}
-	for i, resp := range resps {
-		statuses[parseStatus(resp.header)]++
-		want := strconv.Itoa(int((pbStep - skews[i]).Seconds()))
-		require.Equal(t, want, bucketValues(t, resp.body)[base.Unix()], "caller %d", i)
-	}
-	require.Equal(t, map[string]int{status.StatusKeyMiss: 1, status.StatusProxyHit: 1}, statuses)
+		synctest.Wait()
+		close(gate)
+		wg.Wait()
+		interior := upstreamRange(base.Add(pbStep), end)
+		var interiors int
+		for _, rng := range h.up.take() {
+			if rng == interior {
+				interiors++
+			}
+		}
+		require.Equal(t, 1, interiors)
+		statuses := map[string]int{}
+		for i, resp := range resps {
+			statuses[parseStatus(resp.header)]++
+			want := strconv.Itoa(int((pbStep - skews[i]).Seconds()))
+			require.Equal(t, want, bucketValues(t, resp.body)[base.Unix()], "caller %d", i)
+		}
+		require.Equal(t, map[string]int{status.StatusKeyMiss: 1, status.StatusProxyHit: 1}, statuses)
+	})
 }
 
 func parseStatus(h http.Header) string {

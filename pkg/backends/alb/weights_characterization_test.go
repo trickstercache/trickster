@@ -19,9 +19,7 @@ package alb
 import (
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"testing"
-	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
@@ -29,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -89,37 +88,15 @@ pool:
 	}
 }
 
-// maxGoroutinesPerPool is what one started ALB may hold while idle: a pool runs no workers
-const maxGoroutinesPerPool = 0
-
 func TestIdleGoroutinesPerALB(t *testing.T) {
-	const albs = 100
-	before := runtime.NumGoroutine()
-	clients := make([]*Client, albs)
+	baseline := goleak.IgnoreCurrent()
+	clients := make([]*Client, 100)
 	for i := range clients {
 		clients[i] = newStaticPoolALB(t, benchTargets(8, 1))
 	}
-	var got int
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		got = runtime.NumGoroutine() - before
-		if got <= albs*maxGoroutinesPerPool || time.Now().After(deadline) {
-			break
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Logf("%d idle ALBs hold %d goroutines (%.2f per ALB)", albs, got, float64(got)/albs)
-	if got > albs*maxGoroutinesPerPool {
-		t.Errorf("%d idle ALBs hold %d goroutines, want at most %d", albs, got, albs*maxGoroutinesPerPool)
-	}
+	goleak.VerifyNone(t, baseline)
 	for _, c := range clients {
 		c.StopPool()
 	}
-	deadline = time.Now().Add(2 * time.Second)
-	for runtime.NumGoroutine() > before && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
-	if left := runtime.NumGoroutine() - before; left > 0 {
-		t.Errorf("%d goroutines outlived their pools", left)
-	}
+	goleak.VerifyNone(t, baseline)
 }

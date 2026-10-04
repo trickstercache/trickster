@@ -2935,7 +2935,9 @@ func TestMirrorIsServed(t *testing.T) {
 	}
 	mu.Unlock()
 	require.Contains(t, body, "from ")
+	mu.Lock()
 	hosts = map[string]int{}
+	mu.Unlock()
 	status, _ = request(rtr, http.MethodGet, "shop.example.com", "/unmirrored")
 	require.Equal(t, http.StatusOK, status)
 	time.Sleep(50 * time.Millisecond)

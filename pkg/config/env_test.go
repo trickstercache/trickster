@@ -17,7 +17,6 @@
 package config
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -26,11 +25,11 @@ import (
 )
 
 func TestLoadEnvVars(t *testing.T) {
-	os.Setenv(evOriginURL, "http://1.1.1.1:9090/some/path")
-	os.Setenv(evProvider, "testing")
-	os.Setenv(evProxyPort, "4001")
-	os.Setenv(evMetricsPort, "4002")
-	os.Setenv(evLogLevel, "info")
+	t.Setenv(evOriginURL, "http://1.1.1.1:9090/some/path")
+	t.Setenv(evProvider, "testing")
+	t.Setenv(evProxyPort, "4001")
+	t.Setenv(evMetricsPort, "4002")
+	t.Setenv(evLogLevel, "info")
 
 	a := []string{}
 	conf, err := Load(a)
@@ -78,9 +77,4 @@ func TestLoadEnvVars(t *testing.T) {
 		t.Errorf("expected %s got %s", "INFO", conf.Logging.LogLevel)
 	}
 
-	os.Unsetenv(evOriginURL)
-	os.Unsetenv(evProvider)
-	os.Unsetenv(evProxyPort)
-	os.Unsetenv(evMetricsPort)
-	os.Unsetenv(evLogLevel)
 }

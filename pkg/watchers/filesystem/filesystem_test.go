@@ -21,10 +21,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 const testPollInterval = 10 * time.Millisecond
@@ -285,8 +286,13 @@ func TestDeletionAndRecovery(t *testing.T) {
 	if err := os.Remove(a); err != nil {
 		t.Fatal(err)
 	}
-	// enough ticks to exceed FailureThreshold; loop must survive
-	time.Sleep(time.Duration(FailureThreshold+3) * testPollInterval)
+	if !waitFor(t, 3*time.Second, func() bool {
+		readErrsMtx.Lock()
+		defer readErrsMtx.Unlock()
+		return readErrs > FailureThreshold
+	}) {
+		t.Fatal("the watcher never survived enough failed reads")
+	}
 	if rec.count() != 1 {
 		t.Fatalf("deletion should not deliver; count = %d", rec.count())
 	}
@@ -446,7 +452,8 @@ func TestEventWatchUnavailableDirs(t *testing.T) {
 
 func TestLifecycleNoLeaks(t *testing.T) {
 	_, a, b := testPaths(t)
-	before := runtime.NumGoroutine()
+	baseline := goleak.IgnoreCurrent()
+	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	ws := make([]*Watcher, 0, 8)
 	for range 8 {
 		w, err := StartNew(&Options{
@@ -456,6 +463,7 @@ func TestLifecycleNoLeaks(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(w.Close)
 		ws = append(ws, w)
 	}
 	// exercise a restart cycle on one of them before teardown
@@ -463,11 +471,6 @@ func TestLifecycleNoLeaks(t *testing.T) {
 	ws[0].Start()
 	for _, w := range ws {
 		w.Close()
-	}
-	if !waitFor(t, 3*time.Second, func() bool {
-		return runtime.NumGoroutine() <= before
-	}) {
-		t.Errorf("goroutine leak: before=%d after=%d", before, runtime.NumGoroutine())
 	}
 }
 

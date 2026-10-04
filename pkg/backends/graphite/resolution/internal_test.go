@@ -284,6 +284,8 @@ func TestExpandBounds(t *testing.T) {
 
 	t.Run("concurrent identical misses coalesce", func(t *testing.T) {
 		release := make(chan struct{})
+		unblock := sync.OnceFunc(func() { close(release) })
+		defer unblock()
 		var calls atomic.Int64
 		e, _, _ := newExp(func(w http.ResponseWriter, _ *http.Request) {
 			calls.Add(1)
@@ -302,8 +304,8 @@ func TestExpandBounds(t *testing.T) {
 				ids[g] = id
 			})
 		}
-		time.Sleep(50 * time.Millisecond) // let every goroutine reach the expander
-		close(release)
+		awaitExpansionWaiters(t, e, "c.*", len(ids))
+		unblock()
 		wg.Wait()
 		if calls.Load() != 1 {
 			t.Fatalf("concurrent misses did not coalesce: %d origin calls", calls.Load())
@@ -335,6 +337,24 @@ func TestExpandBounds(t *testing.T) {
 	})
 }
 
+func awaitExpansionWaiters(t *testing.T, e *Expander, expression string, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		e.mu.Lock()
+		call := e.inflight[expression]
+		ready := call != nil && call.waiters == want
+		e.mu.Unlock()
+		if ready {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expansion %q never had %d waiters", expression, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestExpandCoalescingLifecycle(t *testing.T) {
 	now := time.Unix(1_787_350_000, 0)
 	newStallExp := func(release chan struct{}, calls *atomic.Int64, canceled *atomic.Int64) *Expander {
@@ -361,6 +381,8 @@ func TestExpandCoalescingLifecycle(t *testing.T) {
 
 	t.Run("canceled waiter returns promptly", func(t *testing.T) {
 		release := make(chan struct{})
+		unblock := sync.OnceFunc(func() { close(release) })
+		defer unblock()
 		var calls, canceled atomic.Int64
 		e := newStallExp(release, &calls, &canceled)
 		go e.Expand(context.Background(), "a.*")
@@ -373,7 +395,7 @@ func TestExpandCoalescingLifecycle(t *testing.T) {
 			_, _, err := e.Expand(wctx, "a.*")
 			done <- err
 		}()
-		time.Sleep(20 * time.Millisecond)
+		awaitExpansionWaiters(t, e, "a.*", 2)
 		wcancel()
 		select {
 		case err := <-done:
@@ -383,11 +405,13 @@ func TestExpandCoalescingLifecycle(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("a canceled waiter stayed parked on the shared operation")
 		}
-		close(release)
+		unblock()
 	})
 
 	t.Run("canceled leader does not fail a live waiter", func(t *testing.T) {
 		release := make(chan struct{})
+		unblock := sync.OnceFunc(func() { close(release) })
+		defer unblock()
 		var calls, canceled atomic.Int64
 		e := newStallExp(release, &calls, &canceled)
 		lctx, lcancel := context.WithCancel(context.Background())
@@ -404,12 +428,12 @@ func TestExpandCoalescingLifecycle(t *testing.T) {
 			_, _, err := e.Expand(context.Background(), "b.*")
 			waiterDone <- err
 		}()
-		time.Sleep(20 * time.Millisecond)
+		awaitExpansionWaiters(t, e, "b.*", 2)
 		lcancel()
 		if err := <-leaderDone; !errors.Is(err, context.Canceled) {
 			t.Fatalf("leader: expected context.Canceled, got %v", err)
 		}
-		close(release)
+		unblock()
 		if err := <-waiterDone; err != nil {
 			t.Fatalf("waiter must still receive the result: %v", err)
 		}
@@ -417,6 +441,8 @@ func TestExpandCoalescingLifecycle(t *testing.T) {
 
 	t.Run("all callers gone cancels the origin call", func(t *testing.T) {
 		release := make(chan struct{})
+		unblock := sync.OnceFunc(func() { close(release) })
+		defer unblock()
 		var calls, canceled atomic.Int64
 		e := newStallExp(release, &calls, &canceled)
 		ctx, cancel := context.WithCancel(context.Background())
