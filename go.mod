@@ -28,7 +28,9 @@ require (
 	github.com/libdns/cloudflare v0.2.2
 	github.com/libdns/rfc2136 v1.0.1
 	github.com/libdns/route53 v1.6.2
+	github.com/maxmind/mmdbwriter v1.2.0
 	github.com/mholt/acmez/v3 v3.1.7
+	github.com/oschwald/maxminddb-golang/v2 v2.7.0
 	github.com/pires/go-proxyproto v0.15.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
@@ -360,6 +362,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
+	go4.org/netipx v0.0.0-20231129151722-fdeea329fbba // indirect
 	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260811152304-ee035b5b010f // indirect
 	golang.org/x/mod v0.41.0 // indirect

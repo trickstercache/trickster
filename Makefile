@@ -249,6 +249,7 @@ lint-fix:
 	@go tool golangci-lint fmt -c .golangci.yml
 
 GO_TEST_FLAGS ?= -coverprofile=.coverprofile
+GO_TEST_TOOL_FLAGS ?=
 .PHONY: test
 test: check-codegen check-weak-random gotest check-devorigin-offline
 
@@ -257,10 +258,16 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
+
+# The helper modules run with race detection, but their coverage does not overwrite the main profile.
+.PHONY: test-cover-race
+test-cover-race: GO_TEST_FLAGS = -race -covermode=atomic -coverprofile=.coverprofile
+test-cover-race: GO_TEST_TOOL_FLAGS = -race
+test-cover-race: test
 
 .PHONY: data-race-test
 data-race-test:
@@ -269,6 +276,10 @@ data-race-test:
 .PHONY: data-race-test-inspect
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
+
+.PHONY: integration-test-local
+integration-test-local:
+	$(MAKE) -C integration test-no-failfast
 
 .PHONY: integration-test
 integration-test:

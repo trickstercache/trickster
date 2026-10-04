@@ -23,7 +23,7 @@ esac
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$root/integration"
-reports=${GREPTIMEDB_REPORT_ROOT:-"$PWD/greptimedb/reports"}
+reports=${GREPTIMEDB_REPORT_ROOT:-"$PWD/reports/greptimedb"}
 mkdir -p "$reports"
 reports=$(CDPATH= cd -- "$reports" && pwd)
 GREPTIMEDB_REPORT_DIR=$(mktemp -d "$reports/run-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXX")
@@ -46,7 +46,7 @@ export TRICKSTER_GREPTIMEDB_ACCEPTANCE=1
 
 printf 'Report directory: %s\n' "$GREPTIMEDB_REPORT_DIR"
 status=0
-"${GO:-go}" test -json -count=1 -timeout 10m ./greptimedb > "$GREPTIMEDB_REPORT_DIR/go-test.jsonl" 2>&1 || status=$?
+"${GO:-go}" test -json -count=1 -timeout 10m -run '^TestGreptimeAcceptance' . > "$GREPTIMEDB_REPORT_DIR/go-test.jsonl" 2>&1 || status=$?
 printf 'Test exit code: %s\n' "$status"
 printf 'Report: %s/report.json\nLog: %s/go-test.jsonl\n' "$GREPTIMEDB_REPORT_DIR" "$GREPTIMEDB_REPORT_DIR"
 if [ "${TRICKSTER_GREPTIMEDB_PROXY_ACCEPTANCE:-0}" = 1 ]; then

@@ -176,6 +176,22 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 		report.refuseAll(routeConflictReason, msg)
 		return
 	}
+	// a stream carries no headers, so a class's geo ACL that reads them cannot gate it, and the route
+	// is refused rather than served ungated
+	units = slices.DeleteFunc(units, func(u *unit) bool {
+		name := t.geoACLOf(u.policy)
+		if name == "" || t.known.StreamGeoACLs.Contains(name) {
+			return false
+		}
+		t.reject(src, "geo ACL %q judges HTTP requests only, so the route is not served on listener %q",
+			name, u.listeners[0])
+		return true
+	})
+	if len(units) == 0 {
+		report.refuseAll(gwapiv1.RouteReasonUnsupportedValue,
+			"the class's geo ACL judges HTTP requests only, and cannot gate a stream route")
+		return
+	}
 	for i, u := range units {
 		group := t.streamBackendGroup(src, i, in.HTTPRoute.Namespace, in.protocol, in.rules[0],
 			report, t.routingModeOf(u.policy))

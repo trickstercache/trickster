@@ -133,8 +133,10 @@ func startForShutdown(t *testing.T, delay, drain time.Duration, origin http.Hand
 
 func TestStartDrainsInFlightRequestsOnSIGTERM(t *testing.T) {
 	originDelay := 2 * shutdownTestDelay
+	entered := make(chan struct{})
 	port, errs := startForShutdown(t, shutdownTestDelay, shutdownTestDrain,
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(entered)
 			time.Sleep(originDelay)
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -146,7 +148,11 @@ func TestStartDrainsInFlightRequestsOnSIGTERM(t *testing.T) {
 		}
 		result <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-entered:
+	case <-time.After(shutdownTestDrain):
+		t.Fatal("the request never reached the origin")
+	}
 
 	terminate(t, port)
 	// during the shutdown delay the listener still accepts new connections
@@ -175,10 +181,11 @@ func TestStartDrainsInFlightRequestsOnSIGTERM(t *testing.T) {
 }
 
 func TestStartSecondSignalForcesClose(t *testing.T) {
-	release := make(chan struct{})
+	entered, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
 	port, errs := startForShutdown(t, shutdownTestLong, shutdownTestLong,
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(entered)
 			<-release
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -187,7 +194,11 @@ func TestStartSecondSignalForcesClose(t *testing.T) {
 		_, err := getStatus(port, "/test/")
 		result <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-entered:
+	case <-time.After(shutdownTestDrain):
+		t.Fatal("the request never reached the origin")
+	}
 
 	terminate(t, port)
 	started := time.Now()

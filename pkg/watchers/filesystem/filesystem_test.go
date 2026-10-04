@@ -21,10 +21,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 const testPollInterval = 10 * time.Millisecond
@@ -285,8 +286,13 @@ func TestDeletionAndRecovery(t *testing.T) {
 	if err := os.Remove(a); err != nil {
 		t.Fatal(err)
 	}
-	// enough ticks to exceed FailureThreshold; loop must survive
-	time.Sleep(time.Duration(FailureThreshold+3) * testPollInterval)
+	if !waitFor(t, 3*time.Second, func() bool {
+		readErrsMtx.Lock()
+		defer readErrsMtx.Unlock()
+		return readErrs > FailureThreshold
+	}) {
+		t.Fatal("the watcher never survived enough failed reads")
+	}
 	if rec.count() != 1 {
 		t.Fatalf("deletion should not deliver; count = %d", rec.count())
 	}
@@ -446,7 +452,8 @@ func TestEventWatchUnavailableDirs(t *testing.T) {
 
 func TestLifecycleNoLeaks(t *testing.T) {
 	_, a, b := testPaths(t)
-	before := runtime.NumGoroutine()
+	baseline := goleak.IgnoreCurrent()
+	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
 	ws := make([]*Watcher, 0, 8)
 	for range 8 {
 		w, err := StartNew(&Options{
@@ -456,6 +463,7 @@ func TestLifecycleNoLeaks(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(w.Close)
 		ws = append(ws, w)
 	}
 	// exercise a restart cycle on one of them before teardown
@@ -464,9 +472,128 @@ func TestLifecycleNoLeaks(t *testing.T) {
 	for _, w := range ws {
 		w.Close()
 	}
-	if !waitFor(t, 3*time.Second, func() bool {
-		return runtime.NumGoroutine() <= before
-	}) {
-		t.Errorf("goroutine leak: before=%d after=%d", before, runtime.NumGoroutine())
+}
+
+func TestSkipUnchanged(t *testing.T) {
+	_, a, _ := testPaths(t)
+	rec := &changeRecorder{}
+	w, err := New(&Options{
+		Name: "test", Paths: []string{a}, Interval: time.Hour,
+		OnChange: rec.onChange, SkipUnchanged: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reads int
+	w.readFile = func(path string) ([]byte, error) {
+		reads++
+		return os.ReadFile(path)
+	}
+	expect := func(step string, wantReads int, wantContent string) {
+		t.Helper()
+		if reads != wantReads {
+			t.Fatalf("%s: %d reads, want %d", step, reads, wantReads)
+		}
+		if got := string(rec.last()[0]); got != wantContent {
+			t.Fatalf("%s: delivered %q, want %q", step, got, wantContent)
+		}
+	}
+	w.check(true)
+	expect("initial", 1, "one")
+	w.check(false)
+	w.check(false)
+	expect("unchanged polls", 1, "one")
+
+	// a write that keeps the size and modification time goes unseen by a poll, but not by an event
+	fi, err := os.Stat(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(a, []byte("two"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(a, fi.ModTime(), fi.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	w.check(false)
+	expect("disguised write, poll", 1, "one")
+	w.check(true)
+	expect("disguised write, event", 2, "two")
+
+	if err := os.WriteFile(a, []byte("six"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.check(false)
+	expect("in-place write", 3, "six")
+	writeFiles(t, "seven", a)
+	w.check(false)
+	expect("rename", 4, "seven")
+	if rec.count() != 4 {
+		t.Fatalf("%d deliveries, want 4", rec.count())
+	}
+}
+
+func TestSkipUnchangedRefusesChangeDuringRead(t *testing.T) {
+	_, a, _ := testPaths(t)
+	rec := &changeRecorder{}
+	var readErrs []error
+	w, err := New(&Options{
+		Name: "test", Paths: []string{a}, Interval: time.Hour, OnChange: rec.onChange,
+		OnReadError: func(err error) { readErrs = append(readErrs, err) }, SkipUnchanged: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const finished = "one, finished"
+	interrupted := true
+	w.readFile = func(path string) ([]byte, error) {
+		b, err := os.ReadFile(path)
+		if interrupted {
+			interrupted = false
+			if werr := os.WriteFile(path, []byte(finished), 0o600); werr != nil {
+				t.Fatal(werr)
+			}
+		}
+		return b, err
+	}
+	w.check(true)
+	if rec.count() != 0 || len(readErrs) != 1 || !errors.Is(readErrs[0], ErrChangedDuringRead) {
+		t.Fatalf("a file changed mid-read: %d deliveries, errors %v", rec.count(), readErrs)
+	}
+	w.check(false)
+	if rec.count() != 1 || string(rec.last()[0]) != finished {
+		t.Fatalf("the finished file was not delivered: %d deliveries", rec.count())
+	}
+
+	if err := os.Remove(a); err != nil {
+		t.Fatal(err)
+	}
+	w.check(false)
+	if rec.count() != 1 || len(readErrs) != 2 || !errors.Is(readErrs[1], os.ErrNotExist) {
+		t.Fatalf("a deleted file: %d deliveries, errors %v", rec.count(), readErrs)
+	}
+}
+
+func TestSkipUnchangedStarted(t *testing.T) {
+	_, a, _ := testPaths(t)
+	rec := &changeRecorder{}
+	w, err := StartNew(&Options{
+		Name: "test", Paths: []string{a}, Interval: testPollInterval,
+		OnChange: rec.onChange, SkipUnchanged: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	// a poll may land mid-write and deliver a part, so only the final content is waited for
+	if err := os.WriteFile(a, []byte("in place"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !waitFor(t, 5*time.Second, func() bool { return string(rec.last()[0]) == "in place" }) {
+		t.Fatal("an in-place write was not delivered")
+	}
+	writeFiles(t, "renamed", a)
+	if !waitFor(t, 5*time.Second, func() bool { return string(rec.last()[0]) == "renamed" }) {
+		t.Fatal("a rename was not delivered")
 	}
 }

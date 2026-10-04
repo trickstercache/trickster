@@ -54,15 +54,27 @@ make kind-soak SOAK_DURATION=60m SOAK_TIMEOUT=90m
 cd integration
 make test              # full suite, fail-fast
 make data-race-test    # full suite with -race
+make cover-race        # CI: coverage and race detection in one suite run
 make -C .. integration-test-no-failfast # full suite and race suite, continuing after failures
 go test -run TestALB   # single test
 TRICKSTER_MYSQL_CLI_TEST=1 go test -run TestMySQLRealServer -v
 ```
 
+CI uses `cover-race` to run every scenario once with race detection and atomic
+coverage instrumentation. The separate `cover` and `data-race-test` targets
+remain available for local runs.
+
+GreptimeDB acceptance checks run in this package alongside the other backend
+tests. Their live environment checks remain opt-in; `TestGreptimeAcceptance`
+selects the acceptance checks and their helper tests. See the
+[acceptance guide](greptimedb_acceptance.md) for standalone runs and reports.
+
 ## Port assignments
 
-Each top-level test boots its own Trickster instance on a unique port range to
-avoid TCP TIME_WAIT races between sequential tests. Tests that need the full
+Related HTTP/3, static-file, ClickHouse client, and Geo stream ACL scenarios
+share one Trickster instance per group and run as sequential subtests. Cache-sensitive,
+reload, lifecycle, and invalid-configuration scenarios retain isolated fixtures.
+Each fixture boots on a unique port range to avoid TCP TIME_WAIT races between tests. Tests that need the full
 developer config use `configHarness()` to clone it with swapped ports. The
 helper reserves random frontend, metrics, management, and MySQL listener ports
 until immediately before Trickster starts. Their addresses are exposed on the

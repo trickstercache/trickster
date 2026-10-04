@@ -147,8 +147,10 @@ func (s *stubIssuer) Issue(ctx context.Context, csr *x509.CertificateRequest) (*
 }
 
 func (s *stubIssuer) factory() issuerFactory {
-	return func(*certmagic.Config, *acmeopts.IssuerOptions, issuerPorts, *zap.Logger,
+	return func(cfg *certmagic.Config, _ *acmeopts.IssuerOptions, _ issuerPorts, _ *zap.Logger,
 	) (certmagic.Issuer, *certmagic.ACMEIssuer, error) {
+		// The stub has no renewal-info endpoint; avoid unrelated background ARI storage writes.
+		cfg.DisableARI = true
 		return s, nil, nil
 	}
 }

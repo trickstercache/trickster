@@ -39,13 +39,8 @@ const (
 	ScopePath     = metrics.IPACLScopePath
 )
 
-// Middleware returns next when list or next is nil. A client_ip list judges
-// request.ClientIP. A peer list judges r.RemoteAddr only for HTTP/3, which has
-// no TCP accept; every other peer list was judged on the socket and is skipped.
-// reject writes the list's HTTP status, an empty body and Cache-Control: no-store.
-// drop panics with http.ErrAbortHandler and writes nothing. An address that
-// cannot be parsed is denied. name and scope select the decision counters resolved
-// here; a skipped peer list was already counted at accept.
+// Middleware returns next behind list, or next when either is nil. A peer list is judged here only on HTTP/3,
+// which has no accept; reject writes the list's status, and drop aborts
 func Middleware(list *ipacl.List, name, scope string, next http.Handler) http.Handler {
 	if list == nil || next == nil {
 		return next
@@ -80,10 +75,9 @@ func Middleware(list *ipacl.List, name, scope string, next http.Handler) http.Ha
 	})
 }
 
-// subject is the address the list judges. client_ip is the address already
-// resolved through trusted proxies and the PROXY protocol. peer is the host of
-// r.RemoteAddr, which for HTTP/3 is the QUIC peer.
 func subject(list *ipacl.List, r *http.Request) string {
+	// client_ip was resolved through trusted proxies and the PROXY protocol; peer is r.RemoteAddr's host, which for
+	// HTTP/3 is the QUIC peer
 	if list.Source() == ipacl.Peer {
 		if r == nil {
 			return ""

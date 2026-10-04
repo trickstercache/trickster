@@ -183,9 +183,8 @@ func TestMappedPrefixes(t *testing.T) {
 	require.Equal(t, Deny, wide.Check(netip.MustParseAddr("10.1.2.3")))
 	require.Equal(t, Deny, wide.Check(netip.MustParseAddr("::ffff:10.1.2.3")))
 
-	// Check unmaps first, then matches one family. ::/0 is only the v6 prefix.
-	// all is the entry defined as both 0.0.0.0/0 and ::/0. An unmapped v4
-	// address is not inside ::/0, same as clientip.Contains.
+	// Check unmaps first and matches one family: ::/0 is only the v6 prefix, all is both, and an unmapped v4
+	// address is not inside ::/0
 	v6only, _ := mustCompile(t, Options{Allow: []string{"::/0"}})
 	require.Equal(t, Allow, v6only.Check(netip.MustParseAddr("2001:db8::1")))
 	require.Equal(t, Deny, v6only.Check(netip.MustParseAddr("10.1.2.3")))
@@ -244,9 +243,8 @@ func TestOrderedFirstMatch(t *testing.T) {
 	require.Equal(t, Deny, list.Check(netip.MustParseAddr("192.0.2.1")))
 	require.Equal(t, Deny, list.Check(netip.MustParseAddr("2001:db8::1")))
 
-	// The more specific rule is reachable when it comes first, including
-	// against a later all. Equal prefixes keep the first rule, so an
-	// ordered allow is not turned into a deny by a later copy.
+	// a more specific rule is reachable when it comes first, even before a later all, and equal prefixes keep the
+	// first rule, so a later copy cannot turn an ordered allow into a deny
 	list, warnings = mustCompile(t, Options{
 		Match: "ordered",
 		Rules: []Rule{
@@ -502,4 +500,19 @@ func TestCheckAllocs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGatesAnyBackend(t *testing.T) {
+	for _, tc := range []struct {
+		o    Options
+		want bool
+	}{
+		{Options{Allow: []string{"10.0.0.0/8"}}, true},
+		{Options{Allow: []string{"10.0.0.0/8"}, Source: sourcePeer}, false},
+		{Options{Allow: []string{"10.0.0.0/8"}, Action: actionDrop}, false},
+	} {
+		list, _ := mustCompile(t, tc.o)
+		require.Equal(t, tc.want, list.GatesAnyBackend(), tc.o)
+	}
+	require.False(t, (*List)(nil).GatesAnyBackend())
 }

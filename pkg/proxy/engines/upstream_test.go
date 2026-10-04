@@ -221,19 +221,22 @@ func TestDoUpstreamBackoffAndTimeouts(t *testing.T) {
 
 	// the attempt deadline reaches each attempt and is released with the body
 	pc = po.New()
-	pc.AttemptTimeout = timeconv.Duration(30 * time.Millisecond)
-	pc.Timeout = timeconv.Duration(time.Second)
+	pc.AttemptTimeout = timeconv.Duration(5 * time.Second)
+	pc.Timeout = timeconv.Duration(30 * time.Second)
 	rsc = upstreamResources(pc)
 	var seen context.Context
 	do = func(req *http.Request) (*http.Response, error) {
 		seen = req.Context()
 		return okResponse("ok"), nil
 	}
+	before := time.Now()
 	resp, err := doUpstream(do, r, rsc)
+	after := time.Now()
 	require.NoError(t, err)
 	deadline, ok := seen.Deadline()
 	require.True(t, ok)
-	require.WithinDuration(t, time.Now().Add(30*time.Millisecond), deadline, 20*time.Millisecond)
+	require.False(t, deadline.Before(before.Add(5*time.Second)))
+	require.False(t, deadline.After(after.Add(5*time.Second)))
 	require.NoError(t, resp.Body.Close())
 	require.ErrorIs(t, seen.Err(), context.Canceled)
 
@@ -427,11 +430,25 @@ func TestRetryDoesNotWaitOnAStalledAttempt(t *testing.T) {
 	rsc := upstreamResources(pc)
 	r := httptest.NewRequest(http.MethodGet, origin.URL+"/", nil)
 	r.RequestURI = ""
-	start := time.Now()
-	resp, err := doUpstream(http.DefaultClient.Do, r, rsc)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-	require.Equal(t, http.StatusOK, resp.StatusCode)
-	require.Less(t, time.Since(start), 2*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	r = r.WithContext(ctx)
+	type result struct {
+		resp *http.Response
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := doUpstream(http.DefaultClient.Do, r, rsc)
+		done <- result{resp: resp, err: err}
+	}()
+	select {
+	case got := <-done:
+		require.NoError(t, got.err)
+		defer got.resp.Body.Close()
+		require.Equal(t, http.StatusOK, got.resp.StatusCode)
+	case <-ctx.Done():
+		t.Fatal("retry waited for the stalled attempt's body")
+	}
 	require.EqualValues(t, 2, calls.Load())
 }

@@ -19,6 +19,7 @@ package integration
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -27,6 +28,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -196,6 +198,9 @@ func startStreamLB(t *testing.T, protocol string, members [][2]string, memberExt
 func (s *streamLB) ask(t *testing.T) (string, net.Conn) {
 	t.Helper()
 	conn, err := net.DialTimeout("tcp", s.addr, 2*time.Second)
+	if errors.Is(err, syscall.ECONNRESET) {
+		return "", nil // a connection refused at accept can be reset before the dial returns
+	}
 	require.NoError(t, err)
 	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Write([]byte("hi\n")); err != nil {

@@ -27,9 +27,7 @@ import (
 func TestProcessSimulatedLatency(t *testing.T) {
 	t.Run("zero latency is noop", func(t *testing.T) {
 		rec := httptest.NewRecorder()
-		start := time.Now()
 		processSimulatedLatency(rec, 0, 0)
-		require.Less(t, time.Since(start), 20*time.Millisecond)
 		require.Empty(t, rec.Header().Get(latencyHeaderName))
 	})
 

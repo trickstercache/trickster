@@ -197,21 +197,30 @@ func TestFetchDecoded(t *testing.T) {
 		require.ErrorIs(t, err, first)
 	})
 	t.Run("the upstream's time ends when its body does", func(t *testing.T) {
-		const wait = 20 * time.Millisecond
-		slow := readerFunc(func([]byte) (int, error) {
-			time.Sleep(wait)
-			return 0, io.EOF
+		ts, _, r, rsc, err := setupTestHarnessDPC()
+		require.NoError(t, err)
+		t.Cleanup(func() { closeTestHarness(ts, r) })
+		var transportStart, bodyEnd time.Time
+		rsc.BackendOptions.HTTPClient = &http.Client{Transport: stubTransport(func(req *http.Request) (*http.Response, error) {
+			transportStart = time.Now()
+			return &http.Response{
+				StatusCode: http.StatusOK, Header: http.Header{},
+				Body: io.NopCloser(strings.NewReader(body)), ContentLength: -1, Request: req,
+			}, nil
+		})}
+		pr := newProxyRequest(r, nil)
+		before := time.Now()
+		_, err = pr.fetchDecoded(func(resp *http.Response) (timeseries.Timeseries, error) {
+			_, _ = io.ReadAll(resp.Body)
+			bodyEnd = resp.Body.(*fetchBody).end
+			require.False(t, bodyEnd.IsZero(), "EOF records the end before decoding finishes")
+			time.Sleep(20 * time.Millisecond)
+			return &dataset.DataSet{}, nil
 		})
-		_, _, rsc, err := fetchWith(t, 0, http.StatusOK, nil, io.MultiReader(strings.NewReader(body), slow),
-			func(resp *http.Response) (timeseries.Timeseries, error) {
-				_, _ = io.ReadAll(resp.Body)
-				time.Sleep(10 * wait)
-				return &dataset.DataSet{}, nil
-			})
 		require.NoError(t, err)
 		_, _, elapsed := rsc.Upstream()
-		require.GreaterOrEqual(t, elapsed, wait)
-		require.Less(t, elapsed, 10*wait)
+		require.GreaterOrEqual(t, elapsed, bodyEnd.Sub(transportStart))
+		require.LessOrEqual(t, elapsed, bodyEnd.Sub(before))
 	})
 	t.Run("an unreachable origin is its status", func(t *testing.T) {
 		f, _, err := fetchFrom(t, 0, http.StatusOK, nil, nil, nil)

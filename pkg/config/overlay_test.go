@@ -413,3 +413,39 @@ func TestLoadFileDefaultPathErrorsPropagateWithOverlay(t *testing.T) {
 		}
 	})
 }
+
+func TestOverlayGeoSections(t *testing.T) {
+	const (
+		locatorName = overlayTestPrefix + "feed"
+		aclName     = overlayTestPrefix + "north-america"
+	)
+	configPath, _ := makeConfigSourceTestDirectory(t)
+	overlay := testOverlay(`
+geo_locators:
+  `+locatorName+`:
+    provider: geofeed
+    geofeed:
+      entries: ["192.0.2.0/24,US"]
+geo_acls:
+  `+aclName+`:
+    geo_locator_name: `+locatorName+`
+    allow: [US]
+`, "v1")
+	c, err := LoadWithOverlay([]string{"-config", configPath}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.GeoLocators[locatorName] == nil || c.GeoACLs[aclName] == nil {
+		t.Fatalf("overlay geo sections were not loaded: %v %v", c.GeoLocators, c.GeoACLs)
+	}
+	if c.GeoLocators[locatorName].Name != locatorName {
+		t.Error("overlay geo locator name was not initialized")
+	}
+	for _, section := range []string{"geo_locators", "geo_acls"} {
+		path := filepath.Join(t.TempDir(), "trickster.yaml")
+		writeConfigSourceTestFile(t, path, configSourceTestPrimary+section+":\n  "+overlayTestPrefix+"x: {}\n")
+		if _, err := Load([]string{"-config", path}); !errors.Is(err, ErrReservedNamePrefix) {
+			t.Fatalf("%s: error = %v; want %v", section, err, ErrReservedNamePrefix)
+		}
+	}
+}

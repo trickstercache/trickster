@@ -44,6 +44,7 @@ const (
 	ParamTracingName       = "tracing_name"
 	ParamReqRewriterName   = "req_rewriter_name"
 	ParamAuthenticatorName = "authenticator_name"
+	ParamGeoACLName        = "geo_acl_name"
 	ParamIPACLName         = "ip_acl_name"
 	ParamTimeout           = "timeout"
 	ParamHealthMode        = "health_mode"
@@ -211,6 +212,9 @@ var classParams = map[string]paramSetter{
 	ParamAuthenticatorName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setKnown(&p.AuthenticatorName, v, t.known.Authenticators, "authenticator")
 	},
+	ParamGeoACLName: func(t *translator, p *ir.Policy, v string) error {
+		return t.setKnown(&p.GeoACLName, v, t.known.GeoACLs, "geo ACL")
+	},
 	ParamIPACLName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setIPACL(&p.IPACLName, v)
 	},
@@ -259,11 +263,9 @@ func (t *translator) setKnown(dst *string, value string, known sets.Set[string],
 	return nil
 }
 
-// setIPACL accepts an access list a generated backend can use. A name that is
-// configured but peer or drop is ineligible, which is not the same failure as
-// a name the configuration does not define. A nil set contains nothing: it
-// does not accept every name.
 func (t *translator) setIPACL(dst *string, value string) error {
+	// a configured peer or drop list is ineligible, a different failure from an undefined name; a nil set holds
+	// nothing, so it accepts no name
 	if t.known.IPACLs.Contains(value) {
 		*dst = value
 		return nil

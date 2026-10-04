@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"bytes"
@@ -198,9 +198,8 @@ func compareFrames(left, right queryResponse, allowPercentageRounding bool) (int
 	return rounded, nil
 }
 
-// PostgreSQL numeric division and DataFusion floating division can round a
-// percentage to adjacent float64 values. Never apply this to counts or times.
 func adjacentPercentages(left, right any) bool {
+	// Cross-engine division can round percentages to adjacent float64 values; counts and times remain exact.
 	a, ok := left.(json.Number)
 	if !ok {
 		return false
@@ -219,7 +218,7 @@ func adjacentPercentages(left, right any) bool {
 
 const validResponse = `{"results":{"A":{"status":200,"frames":[{"schema":{"refId":"A","fields":[{"name":"time","type":"time"},{"name":"count","type":"number","labels":{"job":"prom"}}]},"data":{"values":[[1000,2000],[9007199254740993,2]],"nanos":[[1,2],null]}}]}}}`
 
-func TestPercentageRounding(t *testing.T) {
+func TestGreptimeAcceptancePercentageRounding(t *testing.T) {
 	const exact, adjacent = "37.37373737373737", "37.37373737373738"
 	raw := strings.ReplaceAll(strings.Replace(validResponse, `"name":"count"`, `"name":"card_use_rate"`, 1), "9007199254740993", exact)
 	left := decodeFixture(t, raw)
@@ -249,7 +248,7 @@ func TestPercentageRounding(t *testing.T) {
 	}
 }
 
-func TestAdjacentPercentages(t *testing.T) {
+func TestGreptimeAcceptanceAdjacentPercentages(t *testing.T) {
 	for _, tt := range []struct{ name, left, right string }{
 		{"negative", "-1", "-1.0000000000000002"},
 		{"above_100", "101", "101.00000000000001"},
@@ -280,7 +279,7 @@ func decodeFixture(t *testing.T, raw string) queryResponse {
 	return doc
 }
 
-func TestValidateResponse(t *testing.T) {
+func TestGreptimeAcceptanceValidateResponse(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  string
@@ -313,7 +312,7 @@ func TestValidateResponse(t *testing.T) {
 	}
 }
 
-func TestCompareResponses(t *testing.T) {
+func TestGreptimeAcceptanceCompareResponses(t *testing.T) {
 	for _, tt := range []struct{ name, old, replacement string }{
 		{"integer_precision", "9007199254740993", "9007199254740992"},
 		{"timestamp_precision", `"nanos":[[1,2],null]`, `"nanos":[[1,3],null]`},
@@ -337,7 +336,7 @@ func TestCompareResponses(t *testing.T) {
 	}
 }
 
-func TestGrafanaRequest(t *testing.T) {
+func TestGreptimeAcceptanceGrafanaRequest(t *testing.T) {
 	for _, tt := range []struct {
 		name, body string
 		status     int

@@ -56,6 +56,9 @@ type Options struct {
 	OnChange func(contents [][]byte) error
 	// OnReadError is optionally invoked when a check fails to read a file
 	OnReadError func(error)
+	// SkipUnchanged has polls skip reading files whose size and mtime are unchanged since the last read;
+	// events always read, and a file that changes mid-read is refused
+	SkipUnchanged bool
 }
 
 // errors returned by New
@@ -64,6 +67,13 @@ var (
 	ErrNoPaths         = errors.New("filesystem watcher: no paths to watch")
 	ErrInvalidInterval = errors.New("filesystem watcher: interval must be > 0")
 )
+
+// ErrChangedDuringRead is passed to OnReadError when SkipUnchanged finds a file changed while it was read
+var ErrChangedDuringRead = errors.New("filesystem watcher: file changed while it was read")
+
+type fileStat struct {
+	size, modNanos int64
+}
 
 // Watcher is a restartable filesystem watchers.Watcher. After Close, Start
 // resumes and delivers any missed content change via its initial check.
@@ -75,6 +85,8 @@ type Watcher struct {
 	// for goroutine exit) makes access safe without additional locking
 	lastApplied         string
 	consecutiveFailures int
+	lastStats           []fileStat // at the last read, for SkipUnchanged
+	readFile            func(string) ([]byte, error)
 
 	mtx     sync.Mutex
 	running bool
@@ -97,7 +109,7 @@ func New(o *Options) (*Watcher, error) {
 	if o.Interval <= 0 {
 		return nil, ErrInvalidInterval
 	}
-	w := &Watcher{opts: *o}
+	w := &Watcher{opts: *o, readFile: os.ReadFile}
 	w.opts.Paths = slices.Clone(o.Paths)
 	for _, path := range w.opts.Paths {
 		dir := filepath.Dir(path)
@@ -136,7 +148,7 @@ func (w *Watcher) Start() {
 		// wait for previous cycle's goroutine before overlapping a restart
 		<-prevStopped
 	}
-	w.check()
+	w.check(true)
 	w.startEventWatches()
 	safego.Go(func(r any, stack []byte) {
 		logger.Error("filesystem watcher goroutine panic", logging.Pairs{
@@ -222,11 +234,11 @@ func (w *Watcher) run() {
 		case <-w.done:
 			return
 		case <-ticker.C:
-			w.check()
+			w.check(false)
 			w.rearmEventWatches()
 		case <-debounceC:
 			debounceC = nil
-			w.check()
+			w.check(true)
 		case _, ok := <-eventC:
 			if !ok {
 				eventC = nil
@@ -251,20 +263,40 @@ func (w *Watcher) run() {
 
 // check reads the set and applies OnChange on content change. Read errors and
 // rejections leave last-accepted content in effect; deletion is a read failure.
-func (w *Watcher) check() {
+func (w *Watcher) check(forced bool) {
+	var before []fileStat
+	if w.opts.SkipUnchanged {
+		var err error
+		if before, err = w.statAll(); err != nil {
+			w.readFailed(err)
+			return
+		}
+		if !forced && slices.Equal(before, w.lastStats) {
+			w.consecutiveFailures = 0
+			return
+		}
+	}
 	contents := make([][]byte, len(w.opts.Paths))
 	hash := sha256.New()
 	for i, path := range w.opts.Paths {
-		b, err := os.ReadFile(path) // #nosec G703 -- paths are provided by the operator-configured consumer
+		b, err := w.readFile(path)
 		if err != nil {
-			if w.opts.OnReadError != nil {
-				w.opts.OnReadError(err)
-			}
-			w.recordFailure("filesystem watcher unable to read watched file", err)
+			w.readFailed(err)
 			return
 		}
 		contents[i] = b
 		hash.Write(b)
+	}
+	if w.opts.SkipUnchanged {
+		after, err := w.statAll()
+		if err == nil && !slices.Equal(before, after) {
+			err = ErrChangedDuringRead
+		}
+		if err != nil {
+			w.readFailed(err)
+			return
+		}
+		w.lastStats = after
 	}
 	setHash := hex.EncodeToString(hash.Sum(nil))
 	if setHash == w.lastApplied {
@@ -279,6 +311,25 @@ func (w *Watcher) check() {
 	}
 	w.lastApplied = setHash
 	w.consecutiveFailures = 0
+}
+
+func (w *Watcher) statAll() ([]fileStat, error) {
+	stats := make([]fileStat, len(w.opts.Paths))
+	for i, path := range w.opts.Paths {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		stats[i] = fileStat{size: fi.Size(), modNanos: fi.ModTime().UnixNano()}
+	}
+	return stats, nil
+}
+
+func (w *Watcher) readFailed(err error) {
+	if w.opts.OnReadError != nil {
+		w.opts.OnReadError(err)
+	}
+	w.recordFailure("filesystem watcher unable to read watched file", err)
 }
 
 func (w *Watcher) recordFailure(event string, err error) {

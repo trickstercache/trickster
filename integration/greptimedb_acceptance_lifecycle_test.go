@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ import (
 	"testing"
 )
 
-func TestDeveloperSeedStartupOrder(t *testing.T) {
+func TestGreptimeAcceptanceDeveloperSeedStartupOrder(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("developer Docker lifecycle script uses Linux paths")
 	}
@@ -34,7 +34,7 @@ func TestDeveloperSeedStartupOrder(t *testing.T) {
 	if err != nil {
 		t.Skip("bash is required for the developer lifecycle script")
 	}
-	script, err := os.ReadFile("../../hack/developer-seed-data.sh")
+	script, err := os.ReadFile("../hack/developer-seed-data.sh")
 	if err != nil {
 		t.Fatal(err)
 	}

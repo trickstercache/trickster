@@ -255,9 +255,11 @@ type DefaultsOptions struct {
 	// AuthenticatorName is the configured authenticator every generated backend is behind; no
 	// annotation sets it, since one that could name it could also omit it
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
-	// IPACLName is the access list every generated backend is behind. The list must
-	// exist, use source client_ip, and use action reject. No annotation sets it,
-	// since one that could name it could also omit it.
+	// GeoACLName is the configured geo ACL that gates the backend each generated route attaches to;
+	// no annotation or cache policy sets it, for the same reason
+	GeoACLName string `yaml:"geo_acl_name,omitempty"`
+	// IPACLName is the access list every generated backend is behind, one judging client_ip and rejecting; no
+	// annotation sets it, since one that could name it could also omit it
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
 	// Timeout is the upstream timeout for generated backends
 	Timeout timeconv.Duration `yaml:"timeout,omitempty"`

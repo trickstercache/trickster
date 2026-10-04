@@ -51,6 +51,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
@@ -253,6 +254,8 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// GeoACLName names the geo ACL that judges this Backend's clients by their location; a Path's replaces it
+	GeoACLName string `yaml:"geo_acl_name,omitempty"`
 	// IPACLName is the access list applied to this backend's routes. A path's
 	// ip_acl_name replaces it. The reference none is not valid on a backend.
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
@@ -313,6 +316,9 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+	// GeoACLOptions is the geo ACL named by GeoACLName. Clones share it, so the ACL compiled into it when the
+	// configuration is applied reaches every copy, a discovered member's included.
+	GeoACLOptions *geoaclopts.Options `yaml:"-"`
 	// IPACL is the compiled list named by IPACLName.
 	IPACL *ipacl.List `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
@@ -713,6 +719,46 @@ func (l Lookup) validateMirrors(o *Options) error {
 	return nil
 }
 
+// ValidateGeoACLNames resolves each backend's and path's geo_acl_name to the geo ACL it names. A path's
+// none clears its backend's; on a backend, none names nothing and fails.
+func (l Lookup) ValidateGeoACLNames(g geoaclopts.Lookup) error {
+	for _, o := range l {
+		if o == nil {
+			continue
+		}
+		o.GeoACLOptions = nil
+		if o.GeoACLName != "" {
+			if o.GeoACLOptions = g[o.GeoACLName]; o.GeoACLOptions == nil {
+				return NewErrInvalidGeoACLName(o.GeoACLName, o.Name)
+			}
+		}
+		for _, p := range o.Paths {
+			if p == nil {
+				continue
+			}
+			p.GeoACLOptions = nil
+			if p.GeoACLName == "" || p.GeoACLName == reserved.ReferenceNone {
+				continue
+			}
+			if p.GeoACLOptions = g[p.GeoACLName]; p.GeoACLOptions == nil {
+				return NewErrInvalidGeoACLName(p.GeoACLName, o.Name+"/"+p.Path)
+			}
+		}
+	}
+	return nil
+}
+
+// ClearACLNames clears the backend's and paths' geo_acl_name and ip_acl_name from a restart identity, since a
+// native server takes its ACLs anew on reload
+func (o *Options) ClearACLNames() {
+	o.GeoACLName, o.IPACLName = "", ""
+	for _, p := range o.Paths {
+		if p != nil {
+			p.GeoACLName, p.IPACLName = "", ""
+		}
+	}
+}
+
 // ValidateBackendName ensures the backend name is permitted against the
 // dictionary of restricted words
 func ValidateBackendName(name string) error {
@@ -836,9 +882,8 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 	return nil
 }
 
-// resolveIPACL returns the compiled list named by a backend or path reference.
-// An empty name is not a reference. peer is listener scope only.
 func resolveIPACL(acls ipacl.Lookup, name, where string) (*ipacl.List, error) {
+	// an empty name is no reference, and a peer list is for listeners only
 	def := acls[name]
 	if def == nil || def.Compiled == nil {
 		return nil, NewErrInvalidIPACLName(name, where)

@@ -244,9 +244,7 @@ func TestMiddlewareDropPanics(t *testing.T) {
 	t.Fatal("drop returned")
 }
 
-// statusWriter records a status only when WriteHeader runs. httptest.ResponseRecorder
-// starts at 200, so it cannot show that drop wrote nothing.
-type statusWriter struct {
+type statusWriter struct { // records a status only once WriteHeader runs, where a ResponseRecorder starts at 200
 	h    http.Header
 	code int
 	body bytes.Buffer

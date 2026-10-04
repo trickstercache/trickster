@@ -26,14 +26,13 @@ import (
 	"pgregory.net/rapid"
 )
 
-// A scored prefix is one already-normalized CIDR and the verdict it carries.
-type scored struct {
+type scored struct { // a normalized CIDR and the verdict it carries
 	prefix  netip.Prefix
 	verdict Verdict
 }
 
-// naiveLongest is the spec for match: longest, including deny at equal length.
 func naiveLongest(rules []scored, addr netip.Addr, def Verdict) Verdict {
+	// the spec for match: longest, a deny winning at equal length
 	addr, ok := canonical(addr)
 	if !ok {
 		return Deny
@@ -53,8 +52,8 @@ func naiveLongest(rules []scored, addr netip.Addr, def Verdict) Verdict {
 	return best
 }
 
-// naiveOrdered is a straight first-match scan, before any reduction.
 func naiveOrdered(groups [][]scored, addr netip.Addr, def Verdict) Verdict {
+	// a straight first-match scan, before any reduction
 	addr, ok := canonical(addr)
 	if !ok {
 		return Deny
@@ -179,7 +178,7 @@ func genItems(t *rapid.T) []item {
 func genRaw(t *rapid.T, label string) string {
 	switch rapid.IntRange(0, 4).Draw(t, label+"kind") {
 	case 0:
-		return entryAll
+		return EntryAll
 	case 1:
 		return genV4(t, label).String()
 	case 2:

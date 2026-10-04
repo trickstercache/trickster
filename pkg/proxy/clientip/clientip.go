@@ -113,6 +113,24 @@ func resolveHops(r *http.Request, trusted Trusted, peer string) string {
 	return peer
 }
 
+// FromNetAddr returns the unmapped IP address a connection arrived from, or the zero Addr when
+// remote is nil or not an IP address
+func FromNetAddr(remote net.Addr) netip.Addr {
+	switch a := remote.(type) {
+	case *net.TCPAddr:
+		return a.AddrPort().Addr().Unmap()
+	case *net.UDPAddr:
+		return a.AddrPort().Addr().Unmap()
+	case nil:
+		return netip.Addr{}
+	default:
+		if ap, err := netip.ParseAddrPort(a.String()); err == nil {
+			return ap.Addr().Unmap()
+		}
+	}
+	return netip.Addr{}
+}
+
 // PeerIP returns the host portion of a net address of the form host:port.
 func PeerIP(remoteAddr string) string {
 	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {

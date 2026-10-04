@@ -28,6 +28,8 @@ import (
 
 var installVitessLoggerOnce sync.Once
 
+const vitessLoginRefused = "Error authenticating user " // begins Vitess's log of each refused login
+
 func installVitessLogger() {
 	installVitessLoggerOnce.Do(func() {
 		// Vitess's unknown-command diagnostic includes the complete raw command
@@ -48,6 +50,14 @@ func (h redactingVitessHandler) Enabled(ctx context.Context, level slog.Level) b
 }
 
 func (h redactingVitessHandler) Handle(ctx context.Context, record slog.Record) error {
+	// each refused login is counted by its class, so logging every one at warn would let a flood of
+	// refusals flood the log
+	if record.Level == slog.LevelWarn && strings.HasPrefix(record.Message, vitessLoginRefused) {
+		if !h.next.Enabled(ctx, slog.LevelDebug) {
+			return nil
+		}
+		record.Level = slog.LevelDebug
+	}
 	if strings.Contains(record.Message, "Got unhandled packet (default)") {
 		if before, _, ok := strings.Cut(record.Message, "returning error:"); ok {
 			record.Message = before + "returning error: [redacted]"

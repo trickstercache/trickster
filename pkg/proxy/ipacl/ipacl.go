@@ -14,19 +14,15 @@
  * limitations under the License.
  */
 
-// Package ipacl compiles an IP access list and matches addresses against it.
-//
-// A compiled List is immutable. Check allocates nothing and takes no lock, so
-// any number of requests may call it at once. A reload builds a new list and
-// swaps the pointer; this package does not keep that pointer.
-//
-// Addresses are read and compared directly. The list does not hash them and
-// does not keep a per-client table.
+// Package ipacl compiles IP access lists and matches addresses against them; a compiled List is immutable, so
+// Check takes no lock and allocates nothing
 package ipacl
 
 import (
 	"fmt"
 	"net/netip"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/prefixtable"
 )
 
 // Config spellings. Empty means the default written beside each name.
@@ -43,15 +39,14 @@ const (
 	actionReject = "reject" // default
 	actionDrop   = "drop"
 
-	entryAll = "all"
+	// EntryAll is the entry that names every address of both families.
+	EntryAll = "all"
 
 	// DefaultStatus is the HTTP status a reject uses when status is unset.
 	DefaultStatus = 403
 )
 
-// Verdict is the result of matching one address.
-//
-// Deny is the zero value, so an unset verdict fails closed.
+// Verdict is the result of matching one address. Deny is the zero value, so an unset verdict fails closed.
 type Verdict uint8
 
 const (
@@ -73,9 +68,7 @@ func (v Verdict) String() string {
 	}
 }
 
-// Action is what an enforcement layer does with a denied address.
-//
-// Reject is the zero value, which is also the default.
+// Action is what an enforcement layer does with a denied address. Reject, the zero value, is the default.
 type Action uint8
 
 const (
@@ -97,9 +90,7 @@ func (a Action) String() string {
 	}
 }
 
-// Source is which address an enforcement layer passes to Check.
-//
-// ClientIP is the zero value, which is also the default.
+// Source is which address an enforcement layer passes to Check. ClientIP, the zero value, is the default.
 type Source uint8
 
 const (
@@ -121,11 +112,8 @@ func (s Source) String() string {
 	}
 }
 
-// Options is one access list, in the shape ip_acls will carry.
-//
-// Compile does not resolve names or attachments. Name is copied into warnings
-// when the caller has set it; an empty name, including the reserved name none,
-// is left for the configuration loader to accept or refuse.
+// Options is one access list as ip_acls configures it. Compile resolves no names or attachments, and an empty
+// or reserved name is the loader's to refuse
 type Options struct {
 	// Name is the object name. The loader sets it from the map key.
 	Name string `yaml:"-"`
@@ -165,25 +153,14 @@ type Rule struct {
 	DenyFile string `yaml:"deny_file,omitempty"`
 }
 
-// lengthTable is one prefix length and the verdict of each network at that length.
-type lengthTable struct {
-	bits   int
-	byAddr map[netip.Addr]Verdict
-}
-
-// family is one address family, longest prefix first.
-type family struct {
-	tables []lengthTable
-}
-
 // List is a compiled access list. It is safe for concurrent Check calls
 // and must not be mutated.
 type List struct {
-	v4, v6 family
-	def    Verdict
-	action Action
-	source Source
-	status int
+	prefixes prefixtable.Table[Verdict]
+	def      Verdict
+	action   Action
+	source   Source
+	status   int
 }
 
 // Action reports what a denial does.
@@ -198,13 +175,14 @@ func (l *List) Status() int { return l.status }
 // Default reports the verdict used when no prefix matches.
 func (l *List) Default() Verdict { return l.def }
 
-// Check reports whether addr is allowed.
-//
-// An invalid address is denied, whatever the default is: a request with no
-// client address fails closed. IPv4-mapped IPv6 addresses are matched as
-// their IPv4 form. An IPv6 zone matches no prefix, as netip.Prefix.Contains
-// and clientip.Contains do, so the default applies. Unmap has already
-// dropped the zone from an IPv4-mapped address.
+// GatesAnyBackend reports whether the list can gate a backend whatever listeners serve it, as a generated
+// backend's must: it judges client_ip and rejects
+func (l *List) GatesAnyBackend() bool {
+	return l != nil && l.source == ClientIP && l.action == Reject
+}
+
+// Check reports whether addr is allowed: an invalid address is denied, failing closed, a mapped one matches as
+// IPv4, and a zoned one takes the default
 func (l *List) Check(addr netip.Addr) Verdict {
 	addr, ok := canonical(addr)
 	if !ok {
@@ -213,31 +191,16 @@ func (l *List) Check(addr netip.Addr) Verdict {
 	if addr.Zone() != "" {
 		return l.def
 	}
-	fam := &l.v6
-	if addr.Is4() {
-		fam = &l.v4
-	}
-	for i := range fam.tables {
-		key := maskedAddr(addr, fam.tables[i].bits)
-		if v, found := fam.tables[i].byAddr[key]; found {
-			return v
-		}
+	if v, found := l.prefixes.Lookup(addr); found {
+		return v
 	}
 	return l.def
 }
 
-// canonical returns the address Check matches on. The zone is left in place:
-// Prefix.Contains refuses a zoned address, and masking would hide that by
-// stripping it.
 func canonical(addr netip.Addr) (netip.Addr, bool) {
+	// the zone stays, since Prefix.Contains refuses a zoned address and masking would hide that by stripping it
 	if !addr.IsValid() {
 		return netip.Addr{}, false
 	}
 	return addr.Unmap(), true
-}
-
-// maskedAddr is addr with the low bits past bits cleared. bits is a length
-// this list stored, so it is in range for addr's family.
-func maskedAddr(addr netip.Addr, bits int) netip.Addr {
-	return netip.PrefixFrom(addr, bits).Masked().Addr()
 }

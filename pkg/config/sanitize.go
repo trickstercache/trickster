@@ -31,7 +31,10 @@ import (
 	tracing "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	tp "github.com/trickstercache/trickster/v2/pkg/observability/tracing/providers"
 	auth "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
@@ -39,6 +42,10 @@ import (
 const (
 	sanitizedSecret   = "*****"
 	sanitizedEndpoint = "example.com"
+	sanitizedValue    = "redacted"
+	geoLocatorPrefix  = "geo-locator"
+	geoACLPrefix      = "geo-acl"
+	ipACLPrefix       = "ip-acl"
 )
 
 var unsanitizedPathHeaders = map[string]struct{}{
@@ -63,6 +70,9 @@ func (c *Config) SanitizedClone() *Config {
 	listenerNameMap := anonymizedListenerNames(cp.Listeners)
 	authNameMap := anonymizedAuthenticatorNames(cp.Authenticators)
 	tracingNameMap := anonymizedTracingNames(cp.TracingOptions)
+	geoLocatorNameMap := anonymizedNames(cp.GeoLocators, geoLocatorPrefix)
+	geoACLNameMap := anonymizedNames(cp.GeoACLs, geoACLPrefix)
+	ipACLNameMap := anonymizedNames(cp.IPACLs, ipACLPrefix)
 
 	renamedCaches := make(cache.Lookup, len(cp.Caches))
 	for oldName, opts := range cp.Caches {
@@ -77,6 +87,9 @@ func (c *Config) SanitizedClone() *Config {
 
 	renamedListeners := make(listenerconfig.Lookup, len(cp.Listeners))
 	for oldName, opts := range cp.Listeners {
+		if opts != nil {
+			opts.IPACLName = renamed(ipACLNameMap, opts.IPACLName)
+		}
 		renamedListeners[listenerNameMap[oldName]] = opts
 	}
 	cp.Listeners = renamedListeners
@@ -113,6 +126,7 @@ func (c *Config) SanitizedClone() *Config {
 				opts.ListenerName = newListenerName
 			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
+			sanitizeACLReferences(opts, geoACLNameMap, ipACLNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
 			sanitizeGraphiteOriginCredentials(opts)
@@ -146,8 +160,26 @@ func (c *Config) SanitizedClone() *Config {
 	}
 	cp.TracingOptions = renamedTracing
 
+	cp.GeoLocators = sanitizeGeoLocators(cp.GeoLocators, geoLocatorNameMap)
+	cp.GeoACLs = sanitizeGeoACLs(cp.GeoACLs, geoACLNameMap, geoLocatorNameMap)
+	cp.IPACLs = sanitizeIPACLs(cp.IPACLs, ipACLNameMap)
 	sanitizeRequestRewriters(cp.RequestRewriters)
 	sanitizeACME(cp.ACME, cacheNameMap, listenerNameMap)
+
+	if k := cp.Kubernetes; k != nil {
+		if d := k.Defaults; d != nil {
+			d.CacheName = renamed(cacheNameMap, d.CacheName)
+			d.TracingName = renamed(tracingNameMap, d.TracingName)
+			d.AuthenticatorName = renamed(authNameMap, d.AuthenticatorName)
+			d.GeoACLName = renamed(geoACLNameMap, d.GeoACLName)
+			d.IPACLName = renamed(ipACLNameMap, d.IPACLName)
+		}
+		if k.Ingress != nil {
+			for i, name := range k.Ingress.ListenerNames {
+				k.Ingress.ListenerNames[i] = renamed(listenerNameMap, name)
+			}
+		}
+	}
 
 	for _, opts := range cp.Rules {
 		sanitizeRuleReferences(opts, backendNameMap)
@@ -404,6 +436,111 @@ func sanitizeAuthenticatorUsers(opts *auth.Options) {
 	opts.Users = users
 }
 
+func anonymizedNames[V any](m map[string]V, prefix string) map[string]string {
+	// default keeps its name, since a geo ACL names the locator called that by omission
+	out := make(map[string]string, len(m))
+	var n int
+	for _, name := range sortedKeys(m) {
+		if name == geolocopts.DefaultName {
+			out[name] = name
+			continue
+		}
+		n++
+		out[name] = fmt.Sprintf("%s-%d", prefix, n)
+	}
+	return out
+}
+
+func sanitizeACLReferences(opts *bo.Options, geoACLNameMap, ipACLNameMap map[string]string) {
+	// none is in neither map, so a path that clears its backend's ACL keeps saying so
+	opts.GeoACLName = renamed(geoACLNameMap, opts.GeoACLName)
+	opts.IPACLName = renamed(ipACLNameMap, opts.IPACLName)
+	for _, path := range opts.Paths {
+		if path != nil {
+			path.GeoACLName = renamed(geoACLNameMap, path.GeoACLName)
+			path.IPACLName = renamed(ipACLNameMap, path.IPACLName)
+		}
+	}
+}
+
+func sanitizeGeoLocators(locators geolocopts.Lookup, nameMap map[string]string) geolocopts.Lookup {
+	if locators == nil {
+		return nil
+	}
+	out := make(geolocopts.Lookup, len(locators))
+	for oldName, opts := range locators {
+		newName := nameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			if opts.Geofeed != nil {
+				for i := range opts.Geofeed.Entries {
+					opts.Geofeed.Entries[i] = sanitizedValue
+				}
+			}
+		}
+		out[newName] = opts
+	}
+	return out
+}
+
+func sanitizeGeoACLs(acls geoaclopts.Lookup, nameMap, locatorNameMap map[string]string) geoaclopts.Lookup {
+	if acls == nil {
+		return nil
+	}
+	out := make(geoaclopts.Lookup, len(acls))
+	for oldName, opts := range acls {
+		newName := nameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			if newLocator, ok := locatorNameMap[opts.GeoLocatorName]; ok {
+				opts.GeoLocatorName = newLocator
+			}
+			for i, e := range opts.Exempt {
+				if !strings.EqualFold(strings.TrimSpace(e), geoaclopts.ExemptPrivate) {
+					opts.Exempt[i] = sanitizedValue
+				}
+			}
+		}
+		out[newName] = opts
+	}
+	return out
+}
+
+func sanitizeIPACLs(acls ipacl.Lookup, nameMap map[string]string) ipacl.Lookup {
+	if acls == nil {
+		return nil
+	}
+	out := make(ipacl.Lookup, len(acls))
+	for oldName, opts := range acls {
+		newName := nameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+			redactIPACLEntries(opts.Allow)
+			redactIPACLEntries(opts.Deny)
+			for i := range opts.Rules {
+				opts.Rules[i].Allow = redactedIPACLEntry(opts.Rules[i].Allow)
+				opts.Rules[i].Deny = redactedIPACLEntry(opts.Rules[i].Deny)
+			}
+		}
+		out[newName] = opts
+	}
+	return out
+}
+
+func redactIPACLEntries(entries []string) {
+	for i, e := range entries {
+		entries[i] = redactedIPACLEntry(e)
+	}
+}
+
+func redactedIPACLEntry(e string) string {
+	// all names no address, and an empty rule field is one the rule does not set
+	if s := strings.TrimSpace(e); s == "" || s == ipacl.EntryAll {
+		return e
+	}
+	return sanitizedValue
+}
+
 func sanitizeRequestRewriters(rewriters map[string]*rwopts.Options) {
 	for _, opts := range rewriters {
 		if opts == nil {
@@ -470,6 +607,13 @@ func sanitizeGraphiteOriginCredentials(opts *bo.Options) {
 func shouldSanitizePathHeader(name string) bool {
 	_, ok := unsanitizedPathHeaders[strings.ToLower(name)]
 	return !ok
+}
+
+func renamed(nameMap map[string]string, name string) string {
+	if newName, ok := nameMap[name]; ok {
+		return newName
+	}
+	return name
 }
 
 func sortedKeys[V any](m map[string]V) []string {

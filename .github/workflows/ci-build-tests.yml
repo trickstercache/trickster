@@ -97,8 +97,8 @@ jobs:
         continue-on-error: true
         run: go tool govulncheck ./...
       - run: go mod vendor
-      - name: Run tests
-        run: make test
+      - name: Run tests (with coverage and race detection)
+        run: make test-cover-race
       - name: Verify seed data generator is reproducible and offline
         env:
           GOPROXY: "off"
@@ -111,12 +111,6 @@ jobs:
             echo "::error::Coverage ${COVERAGE}% is below 50% minimum"
             exit 1
           fi
-      - name: Run tests (with race detection enabled)
-        run: |
-          echo "::group::Race Detection Tests"
-          make data-race-test
-          echo "::endgroup::"
-          make data-race-test-inspect
       - run: go build -o /dev/null ./cmd/trickster
       - name: Send coverage
         if: github.repository_owner == 'trickstercache' # Skip for forked repositories
@@ -164,14 +158,10 @@ jobs:
           docker compose logs --tail=60 questdb questdb_seed
           docker compose logs --tail=60 victoriametrics victoriametrics_seed
           docker compose logs --tail=60 graphite graphite_seed graphite_generator
-      - name: Run integration tests (with coverage)
+      - name: Run integration tests (with coverage and race detection)
         env:
           GREPTIMEDB_REPORT_DIR: ${{ runner.temp }}/greptimedb-reports
-        run: make integration-cover
-      - name: Run integration tests (with race detection enabled)
-        env:
-          GREPTIMEDB_REPORT_DIR: ${{ runner.temp }}/greptimedb-reports
-        run: make -C integration data-race-test
+        run: make -C integration cover-race
       - name: Upload GreptimeDB acceptance reports
         if: always()
         uses: actions/upload-artifact@v4

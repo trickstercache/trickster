@@ -20,6 +20,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
@@ -257,33 +258,38 @@ func TestWatcherDeliversOnChange(t *testing.T) {
 }
 
 func TestWatcherDebouncesBursts(t *testing.T) {
-	// A burst of changes must collapse into one rebuild; that is the whole point
-	// of the debounce window
-	cs := kubefake.NewClientset()
-	c := &changes{}
-	w, err := New(Config{
-		Client:        kube.NewFromClientset(cs),
-		GatewayClient: gwfake.NewSimpleClientset(),
-		Options: opts(t, func(o *kubecfg.Options) {
-			o.DebounceWindow = timeconv.Duration(300 * time.Millisecond)
-		}),
-		OnChange: c.handler(),
-	})
-	require.NoError(t, err)
-	t.Cleanup(w.Stop)
-	require.NoError(t, w.Start(t.Context()))
-	c.await(t, 1)
-	afterSync := c.n.Load()
-
-	for i := range 20 {
-		_, err = cs.CoreV1().Services("shop").Create(context.Background(),
-			svc("shop", "s"+string(rune('a'+i))), metav1.CreateOptions{})
+	synctest.Test(t, func(t *testing.T) {
+		// A burst of changes must collapse into one rebuild; that is the whole point
+		// of the debounce window
+		cs := kubefake.NewClientset()
+		c := &changes{}
+		w, err := New(Config{
+			Client:        kube.NewFromClientset(cs),
+			GatewayClient: gwfake.NewSimpleClientset(),
+			Options: opts(t, func(o *kubecfg.Options) {
+				o.DebounceWindow = timeconv.Duration(300 * time.Millisecond)
+			}),
+			OnChange: c.handler(),
+		})
 		require.NoError(t, err)
-	}
-	c.await(t, afterSync+1)
-	time.Sleep(600 * time.Millisecond)
-	require.LessOrEqual(t, c.n.Load(), afterSync+2,
-		"20 objects created together must not produce 20 rebuilds")
+		t.Cleanup(w.Stop)
+		require.NoError(t, w.Start(t.Context()))
+		c.await(t, 1)
+		synctest.Wait()
+		afterSync := c.n.Load()
+
+		for i := range 20 {
+			_, err = cs.CoreV1().Services("shop").Create(context.Background(),
+				svc("shop", "s"+string(rune('a'+i))), metav1.CreateOptions{})
+			require.NoError(t, err)
+		}
+		synctest.Wait()
+		require.Len(t, w.Services(), 20, "the burst must reach the informer cache")
+		require.Equal(t, afterSync, c.n.Load(), "the debounce window has not elapsed")
+		time.Sleep(w.debounce)
+		synctest.Wait()
+		require.Equal(t, afterSync+1, c.n.Load(), "the burst must deliver one rebuild")
+	})
 }
 
 func TestWatcherWatchesOnlyTLSAndKeySecrets(t *testing.T) {

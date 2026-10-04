@@ -117,6 +117,10 @@ const (
 	NameContentRange = "Content-Range"
 	// NameTricksterResult represents the HTTP Header Name of "X-Trickster-Result"
 	NameTricksterResult = "X-Trickster-Result"
+	// NameTricksterGeoDenied names the geo ACL that would have refused a request it only counted
+	NameTricksterGeoDenied = "X-Trickster-Geo-Denied"
+	// NameLink represents the HTTP Header Name of "Link"
+	NameLink = "Link"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
 	NameAcceptEncoding = "Accept-Encoding"
 	// NameAcceptLanguage represents the HTTP Header Name of "Accept-Language"

@@ -24,7 +24,7 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
   - [x] Support for accelerating QuestDB
   - [x] Support for accelerating VictoriaMetrics
   - [x] Support Access Control Lists (ACLs) for IPv4 and IPv6
-  - [ ] Support Geo ACLs (IP -> Location translation and restricting by location)
+  - [x] Support Geo ACLs (IP -> Location translation and restricting by location)
   - [ ] Support Rate Limiting w/ bucketing on configurable request attributes
   - [x] Support ALB Sticky Sessions
   - [x] Support L4 Load Balancing

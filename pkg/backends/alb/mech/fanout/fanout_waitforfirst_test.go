@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,88 +41,89 @@ func loserDrainCount(t testing.TB, mech, variant string) uint64 {
 	return m.GetHistogram().GetSampleCount()
 }
 
-// TestWaitForFirstMatchingWinsAndCancelsLosers asserts that WaitForFirst
-// returns the first result whose predicate matches, even while other slots
-// are still in-flight, and that the in-flight slots observe ctx cancel.
 func TestWaitForFirstMatchingWinsAndCancelsLosers(t *testing.T) {
-	const fast = 5 * time.Millisecond
-	const slow = 2 * time.Second
-
+	started := make(chan struct{}, 2)
 	var slowCancelled atomic.Int32
 	slowHandler := func(_ http.ResponseWriter, r *http.Request) {
-		select {
-		case <-r.Context().Done():
-			slowCancelled.Add(1)
-		case <-time.After(slow):
-		}
+		started <- struct{}{}
+		<-r.Context().Done()
+		slowCancelled.Add(1)
 	}
-	winner := func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(fast)
+	winner := func(w http.ResponseWriter, r *http.Request) {
+		for range 2 {
+			select {
+			case <-started:
+			case <-r.Context().Done():
+				return
+			}
+		}
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("winner"))
 	}
-
 	t0, _ := albpool.Target(http.HandlerFunc(slowHandler))
 	t1, _ := albpool.Target(http.HandlerFunc(winner))
 	t2, _ := albpool.Target(http.HandlerFunc(slowHandler))
-	targets := pool.Targets{t0, t1, t2}
 	parent := albpool.NewParentGET(t)
-
-	matches202 := func(r *Result) bool {
-		return r.Capture.StatusCode() == http.StatusAccepted
-	}
-
-	start := time.Now()
-	idx, results, err := WaitForFirst(context.Background(), parent, targets, Config{Mechanism: "test-waitforfirst"}, matches202)
-	elapsed := time.Since(start)
-
+	matches202 := func(r *Result) bool { return r.Capture.StatusCode() == http.StatusAccepted }
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	idx, results, err := WaitForFirst(ctx, parent, pool.Targets{t0, t1, t2},
+		Config{Mechanism: "test-waitforfirst"}, matches202)
 	require.NoError(t, err)
-	require.Equal(t, 1, idx, "winner should be slot 1")
+	require.Equal(t, 1, idx)
 	require.Len(t, results, 3)
 	require.NotNil(t, results[1].Capture)
 	require.Equal(t, "winner", string(results[1].Capture.Body()))
-	require.Less(t, elapsed, slow, "WaitForFirst must not wait for slow losers")
-	// WaitForFirst returns on winner-claim without draining losers, so the
-	// loser goroutines observe ctx cancel asynchronously after return.
-	require.Eventuallyf(t, func() bool { return slowCancelled.Load() == 2 },
-		slow, 5*time.Millisecond,
-		"both slow slots must observe ctx cancel (got %d)", slowCancelled.Load())
+	require.Eventually(t, func() bool { return slowCancelled.Load() == 2 },
+		5*time.Second, 5*time.Millisecond, "both slow slots must observe cancellation")
 }
 
-// TestWaitForFirstReturnsBeforeLoserDrains asserts that a winner is returned
-// without waiting for a non-winning handler that ignores cancellation.
 func TestWaitForFirstReturnsBeforeLoserDrains(t *testing.T) {
-	const loserDelay = 250 * time.Millisecond
-
+	started, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
 	var loserDone atomic.Bool
 	loser := func(_ http.ResponseWriter, _ *http.Request) {
-		time.Sleep(loserDelay)
+		close(started)
+		<-release
 		loserDone.Store(true)
 	}
-	winner := func(w http.ResponseWriter, _ *http.Request) {
+	winner := func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-started:
+		case <-r.Context().Done():
+			return
+		}
 		w.WriteHeader(http.StatusAccepted)
 		_, _ = w.Write([]byte("winner"))
 	}
-
 	t0, _ := albpool.Target(http.HandlerFunc(loser))
 	t1, _ := albpool.Target(http.HandlerFunc(winner))
-	targets := pool.Targets{t0, t1}
 	parent := albpool.NewParentGET(t)
-
-	matches202 := func(r *Result) bool {
-		return r.Capture.StatusCode() == http.StatusAccepted
+	matches202 := func(r *Result) bool { return r.Capture.StatusCode() == http.StatusAccepted }
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan struct{})
+	var idx int
+	var results []Result
+	var err error
+	go func() {
+		defer close(done)
+		idx, results, err = WaitForFirst(ctx, parent, pool.Targets{t0, t1},
+			Config{Mechanism: "test-waitforfirst"}, matches202)
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		t.Fatal("WaitForFirst waited for the blocked loser")
 	}
-
-	start := time.Now()
-	idx, results, err := WaitForFirst(context.Background(), parent, targets, Config{Mechanism: "test-waitforfirst"}, matches202)
-	elapsed := time.Since(start)
-
 	require.NoError(t, err)
-	require.Equal(t, 1, idx, "winner should be slot 1")
+	require.Equal(t, 1, idx)
 	require.NotNil(t, results[1].Capture)
 	require.Equal(t, "winner", string(results[1].Capture.Body()))
-	require.Less(t, elapsed, loserDelay/2, "WaitForFirst must not wait for a loser that ignores cancellation")
-	require.Eventually(t, loserDone.Load, 2*loserDelay, 10*time.Millisecond, "loser did not finish")
+	require.False(t, loserDone.Load(), "the loser must still be held when the winner returns")
+	unblock()
+	require.Eventually(t, loserDone.Load, 5*time.Second, 5*time.Millisecond, "loser did not finish")
 }
 
 // TestWaitForFirstNoMatchReturnsMinusOne asserts that when predicate never

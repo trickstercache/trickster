@@ -21,10 +21,10 @@ import (
 	"errors"
 	"io"
 	"net/http/httptest"
-	"runtime"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+	"go.uber.org/goleak"
 )
 
 func TestDecodeEncode(t *testing.T) {
@@ -145,7 +145,7 @@ func TestPooledCodecsStartNoGoroutines(t *testing.T) {
 	enc.Write(body)
 	enc.Close()
 	encoded := bytes.Clone(buf.Bytes())
-	before := runtime.NumGoroutine()
+	baseline := goleak.IgnoreCurrent()
 	for range 8 {
 		buf.Reset()
 		enc = NewEncoder(&buf, -1)
@@ -153,11 +153,12 @@ func TestPooledCodecsStartNoGoroutines(t *testing.T) {
 		dec := NewDecoder(bytes.NewReader(encoded))
 		// part way through a stream is where a concurrent decoder has its goroutine running
 		io.ReadFull(dec, make([]byte, 1))
-		if after := runtime.NumGoroutine(); after > before {
-			t.Fatalf("goroutines grew from %d to %d while codecs were open", before, after)
-		}
+		err := goleak.Find(baseline)
 		enc.Close()
 		dec.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

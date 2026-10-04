@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"context"
@@ -41,9 +41,8 @@ import (
 	"github.com/prometheus/common/model"
 )
 
-// TestProxyEnvironment compares the same origin through different transports.
-// Cross-engine rounding allowances from the direct suite never apply here.
-func TestProxyEnvironment(t *testing.T) {
+func TestGreptimeAcceptanceProxyEnvironment(t *testing.T) {
+	// Compares the same origin through different transports without cross-engine rounding allowances.
 	if os.Getenv("TRICKSTER_GREPTIMEDB_PROXY_ACCEPTANCE") != "1" {
 		t.Skip("set TRICKSTER_GREPTIMEDB_PROXY_ACCEPTANCE=1 with running proxy listeners")
 	}
@@ -399,7 +398,7 @@ func cacheTransition(before, after map[string]float64, mode string, scenario int
 	return status, nil
 }
 
-func TestCacheTransition(t *testing.T) {
+func TestGreptimeAcceptanceCacheTransition(t *testing.T) {
 	for _, tc := range []struct {
 		mode, status string
 		phase        int
@@ -436,7 +435,7 @@ func TestCacheTransition(t *testing.T) {
 	}
 }
 
-func TestWithoutRowsAt(t *testing.T) {
+func TestGreptimeAcceptanceWithoutRowsAt(t *testing.T) {
 	end := time.Unix(1_790_380_800, 0)
 	var f frame
 	f.Schema.Fields = []field{{Name: "Time", Type: "time"}, {Name: "trips", Type: "number"}}
@@ -564,7 +563,7 @@ func proxyHTTPPayload(endpoint string, form url.Values, user, password string, s
 	return data, nil
 }
 
-func TestProxyHTTPPayloadValidation(t *testing.T) {
+func TestGreptimeAcceptanceProxyHTTPPayloadValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name, body string
 		sql, valid bool

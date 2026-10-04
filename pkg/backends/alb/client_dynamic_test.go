@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 )
 
 type countingHandler struct{ hits int }
@@ -109,6 +110,7 @@ func TestSetDynamicTargets(t *testing.T) {
 // never panic or dispatch to a torn-down pool's nil state.
 func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 	c := newRRALB(t, "load-alb")
+	t.Cleanup(c.StopPool)
 	handler := c.Handlers()[providers.ALB]
 
 	// handlers must be concurrency-safe: 4 requesters dispatch into them
@@ -128,7 +130,9 @@ func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 	}
 
 	stop := make(chan struct{})
+	stopLoad := sync.OnceFunc(func() { close(stop) })
 	var wg sync.WaitGroup
+	defer func() { stopLoad(); wg.Wait() }()
 	// swapper: continuously replaces the member set
 	wg.Go(func() {
 		i := 0
@@ -162,11 +166,12 @@ func TestSetDynamicTargetsUnderLoad(t *testing.T) {
 		})
 	}
 	time.Sleep(250 * time.Millisecond)
+	require.Eventually(t, func() bool { return served.Load() > 0 }, 5*time.Second, time.Millisecond)
 	// stopping the pool mid-load must also be race-free; in-flight and
 	// subsequent requests degrade to 502, never panic
 	c.StopPool()
 	time.Sleep(50 * time.Millisecond)
-	close(stop)
+	stopLoad()
 	wg.Wait()
 	if served.Load() == 0 {
 		t.Error("expected requests to reach pool members during the swaps")

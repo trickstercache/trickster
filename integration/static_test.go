@@ -105,9 +105,20 @@ func staticMetric(t *testing.T, h tricksterHarness, series string) float64 {
 	return 0
 }
 
-func TestStatic_ServesFiles(t *testing.T) {
-	h, _, _ := staticHarness(t)
+func TestStatic(t *testing.T) {
+	h, site, _ := staticHarness(t)
+	writeStaticFile(t, filepath.Join(site, "conditional.html"), "<h1>home</h1>")
 	h.start(t)
+	t.Run("ServesFiles", func(t *testing.T) { checkStaticServesFiles(t, h) })
+	t.Run("RedirectsDirectories", func(t *testing.T) { checkStaticRedirectsDirectories(t, h) })
+	t.Run("ConditionalRangeAndEncoding", func(t *testing.T) { checkStaticConditionalRangeAndEncoding(t, h) })
+	t.Run("WellKnown", func(t *testing.T) { checkStaticWellKnown(t, h) })
+	t.Run("NotFoundFile", func(t *testing.T) { checkStaticNotFoundFile(t, h) })
+	t.Run("Authenticator", func(t *testing.T) { checkStaticAuthenticator(t, h) })
+}
+
+func checkStaticServesFiles(t *testing.T, h tricksterHarness) {
+	t.Helper()
 
 	tests := []struct {
 		path        string
@@ -157,9 +168,8 @@ func TestStatic_ServesFiles(t *testing.T) {
 	require.Empty(t, body)
 }
 
-func TestStatic_RedirectsDirectories(t *testing.T) {
-	h, _, _ := staticHarness(t)
-	h.start(t)
+func checkStaticRedirectsDirectories(t *testing.T, h tricksterHarness) {
+	t.Helper()
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
@@ -190,10 +200,9 @@ func TestStatic_RedirectsDirectories(t *testing.T) {
 	}
 }
 
-func TestStatic_ConditionalRangeAndEncoding(t *testing.T) {
-	h, _, _ := staticHarness(t)
-	h.start(t)
-	for _, path := range []string{"/index.html", "/big.bin"} {
+func checkStaticConditionalRangeAndEncoding(t *testing.T, h tricksterHarness) {
+	t.Helper()
+	for _, path := range []string{"/conditional.html", "/big.bin"} {
 		// asked for first, so the validator comes from a file that was never read
 		head, _ := h.do(t, path, func(o *requestOptions) { o.method = http.MethodHead })
 		resp, full := h.do(t, path)
@@ -263,9 +272,8 @@ func TestStatic_ConditionalRangeAndEncoding(t *testing.T) {
 	require.Positive(t, staticMetric(t, h, bytesSeries))
 }
 
-func TestStatic_WellKnown(t *testing.T) {
-	h, _, _ := staticHarness(t)
-	h.start(t)
+func checkStaticWellKnown(t *testing.T, h tricksterHarness) {
+	t.Helper()
 	for _, path := range []string{"/.well-known/security.txt", "/site/.well-known/security.txt"} {
 		resp, body := h.do(t, path)
 		require.Equal(t, http.StatusOK, resp.StatusCode, path)
@@ -277,9 +285,8 @@ func TestStatic_WellKnown(t *testing.T) {
 	}
 }
 
-func TestStatic_NotFoundFile(t *testing.T) {
-	h, _, _ := staticHarness(t)
-	h.start(t)
+func checkStaticNotFoundFile(t *testing.T, h tricksterHarness) {
+	t.Helper()
 	// a single-page application: its routes are the application, as the file that it is
 	home, _ := h.do(t, "/app/")
 	for _, path := range []string{"/app/dashboard", "/app/users/42/edit", "/app/.env"} {
@@ -338,9 +345,8 @@ func TestStatic_EvictionKeepsServing(t *testing.T) {
 	require.LessOrEqual(t, staticMetric(t, h, evictionSeries)-evictions, float64(21))
 }
 
-func TestStatic_Authenticator(t *testing.T) {
-	h, _, _ := staticHarness(t)
-	h.start(t)
+func checkStaticAuthenticator(t *testing.T, h tricksterHarness) {
+	t.Helper()
 	auth := func(user, pass string) requestOption {
 		return func(o *requestOptions) {
 			r, _ := http.NewRequest(http.MethodGet, "/", nil)

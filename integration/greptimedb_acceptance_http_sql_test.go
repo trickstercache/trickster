@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"bytes"
@@ -127,9 +127,8 @@ func compareHTTPSQL(left, right httpSQLResponse) error {
 	return nil
 }
 
-// TestHTTPSQLCacheEnvironment is read-only and requires the seeded developer
-// database plus the built Trickster HTTP listener. Every result is retained.
-func TestHTTPSQLCacheEnvironment(t *testing.T) {
+func TestGreptimeAcceptanceHTTPSQLCacheEnvironment(t *testing.T) {
+	// Requires the seeded developer database and running Trickster HTTP listener; every result is retained.
 	if os.Getenv("TRICKSTER_GREPTIMEDB_HTTP_ACCEPTANCE") != "1" {
 		t.Skip("set TRICKSTER_GREPTIMEDB_HTTP_ACCEPTANCE=1 with running HTTP listeners")
 	}
@@ -283,7 +282,7 @@ func TestHTTPSQLCacheEnvironment(t *testing.T) {
 	run("metadata", "POST", "SHOW TABLES", nil, nil, "HTTPProxy", "proxy-only")
 }
 
-func TestCompareHTTPSQLNumbers(t *testing.T) {
+func TestGreptimeAcceptanceCompareHTTPSQLNumbers(t *testing.T) {
 	makeResponse := func(value string) httpSQLResponse {
 		return httpSQLResponse{Status: 200, Body: json.RawMessage(`{"output":[` + value + `],"execution_time_ms":1}`)}
 	}

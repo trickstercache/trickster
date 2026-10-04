@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -53,21 +54,40 @@ func get(h http.Handler, r *http.Request) *httptest.ResponseRecorder {
 	return w
 }
 
-// the latency sample is the time to the member's first write, not to its last
 func TestTimedDispatchSamplesFirstWrite(t *testing.T) {
+	written, release := make(chan struct{}), make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
 	h, tgt := newLT(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		time.Sleep(30 * time.Millisecond)
 		w.WriteHeader(http.StatusAccepted)
-		time.Sleep(120 * time.Millisecond)
+		close(written)
+		<-release
 		_, _ = io.WriteString(w, "body")
 	}))
-	w := get(h, nil)
+	done := make(chan *httptest.ResponseRecorder, 1)
+	go func() { done <- get(h, nil) }()
+	select {
+	case <-written:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the member never wrote its headers")
+	}
+	st := tgt.Member().Stats()
+	first := st.Latency()
+	if first <= 0 {
+		t.Fatal("the first write did not record a latency sample")
+	}
+	unblock()
+	var w *httptest.ResponseRecorder
+	select {
+	case w = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the member never finished its response")
+	}
 	if w.Code != http.StatusAccepted || w.Body.String() != "body" {
 		t.Fatalf("response = %d %q", w.Code, w.Body.String())
 	}
-	st := tgt.Member().Stats()
-	if got := st.Latency(); got < 30*time.Millisecond || got > 110*time.Millisecond {
-		t.Errorf("sample = %v, want the ~30ms to the first write, not the ~150ms to the last", got)
+	if got := st.Latency(); got != first {
+		t.Errorf("sample changed from %v to %v after the body; want the first-write sample", first, got)
 	}
 	if st.Inflight() != 0 || st.Failures() != 0 {
 		t.Errorf("after the request: %d in flight, %d failures", st.Inflight(), st.Failures())
