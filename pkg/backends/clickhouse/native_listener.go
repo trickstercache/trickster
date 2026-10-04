@@ -107,6 +107,7 @@ func (nativeListenerAdapter) Describe(c *config.Config, name string) (native.Des
 	identity := o.Clone()
 	identity.ListenerName = ""
 	identity.ListenerNames = nil
+	identity.ClearACLNames()
 	data, err := yamlencoding.Marshal(identity)
 	if err != nil {
 		return native.Descriptor{}, err

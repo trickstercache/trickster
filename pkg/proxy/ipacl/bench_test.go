@@ -25,14 +25,11 @@ import (
 	"testing"
 )
 
-// sink keeps a compiled list alive so the compiler cannot drop Compile.
-var sink *List
+var sink *List // keeps a compiled list alive, so the compiler cannot drop Compile
 
 func BenchmarkCheck(b *testing.B) {
-	// The address is covered only by the shortest prefix, so Check walks
-	// every longer length and misses before it hits. The 100,000-entry
-	// lists are a single /32 or /128 length: one map lookup, which is the
-	// shape of a blocklist file.
+	// the address is held only by the shortest prefix, so Check misses every longer length first; the 100,000-entry
+	// lists are one /32 or /128 length, a blocklist's shape
 	v4 := mustBenchList(b, Options{Allow: []string{
 		"203.0.113.5",
 		"198.51.100.0/24",

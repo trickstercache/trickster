@@ -22,6 +22,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"testing/synctest"
+
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
+	"github.com/trickstercache/trickster/v2/pkg/cache/memory"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
 // errWriter is an io.Writer that always returns an error.
@@ -134,4 +140,24 @@ func TestSfResponseCaptureMultipleWrites(t *testing.T) {
 	if c.buf.String() != expected {
 		t.Errorf("buf: expected %q, got %q", expected, c.buf.String())
 	}
+}
+
+func inSingleflightBubble(t *testing.T, rsc *request.Resources, run func(*testing.T),
+	wrap ...func(cache.Cache) cache.Cache,
+) {
+	t.Helper()
+	synctest.Test(t, func(t *testing.T) {
+		// Cache workers share the clock so write-completion channels stay inside the bubble.
+		originalCache := rsc.CacheClient
+		rsc.CacheClient = manager.NewCache(memory.New("singleflight", rsc.CacheConfig), manager.CacheOptions{}, rsc.CacheConfig)
+		for _, f := range wrap {
+			rsc.CacheClient = f(rsc.CacheClient)
+		}
+		defer func() {
+			rsc.CacheClient.Close()
+			rsc.CacheClient = originalCache
+			closeIdleTransport(rsc.BackendOptions.HTTPClient.Transport)
+		}()
+		run(t)
+	})
 }

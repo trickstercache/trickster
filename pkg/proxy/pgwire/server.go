@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -51,6 +52,7 @@ const (
 	classUpstream       = "upstream_connect"
 	classProtocol       = "protocol"
 	classCancel         = "cancel"
+	classGeo            = "geo"
 
 	logKeyBackend = "backendName"
 	logKeyDetail  = "detail"
@@ -102,6 +104,7 @@ type Server struct {
 	cache      *cacheMetrics
 	delta      *nativedelta.Engine[*Result]
 	upstreams  atomic.Int64
+	gate       backends.SessionGateSlot
 
 	mtx      sync.Mutex
 	listener net.Listener
@@ -239,6 +242,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// UpdateSessionGate switches the gate that judges new sessions; admitted sessions are not judged again
+func (s *Server) UpdateSessionGate(gate backends.SessionGate) {
+	s.gate.Store(gate)
 }
 
 // UpdateTLSConfig atomically rotates the certificate used by new in-band TLS

@@ -65,7 +65,7 @@ A list with no entries and `default: deny` is valid and warns, because every add
 
 An entry is an address or a CIDR, in IPv4 or IPv6. Host bits in a CIDR are masked. `all` means `0.0.0.0/0` and `::/0`. `::/0` alone is IPv6. An IPv4-mapped IPv6 address is matched as its IPv4 form. At request time an address that cannot be parsed is denied, whatever `default` is. A zoned IPv6 address matches no prefix, so `default` applies.
 
-`allow_file` and `deny_file` are one entry per line. A blank line, or a line whose first non-space character is `#`, is skipped. The file is read when the configuration is loaded and on every configuration reload. A missing or unreadable file fails that load. Changing only the file does not reload Trickster; reload the configuration to read it again.
+`allow_file` and `deny_file` are one entry per line. A blank line, or a line whose first non-space character is `#`, is skipped. The file is read when the configuration is loaded and on every configuration reload. A missing or unreadable file fails that load. A reload happens only when a configuration file has changed, and an access-list file is not one: after editing only the list, update a configuration file's modification time (`touch` it, for example) before sending the reload, or the reload is skipped and the old list stays.
 
 ## `client_ip` and `peer`
 
@@ -85,13 +85,13 @@ UDP has no TCP accept. A UDP listener list, whichever its source, and the UDP ba
 
 A backend `peer` list is not a valid attachment, so stream admission does not enforce one.
 
-Stream admission enforces the list on the backend selected by the listener table, including a front ALB. Lists on stream ALB pool members, nested ALBs, or discovery templates are not supported and fail configuration validation. This includes named path lists on those members or templates. Attach the policy to the listener or front ALB instead.
+Stream admission enforces the list on the backend selected by the listener table, including a front ALB. Lists on stream ALB pool members, nested ALBs, or discovery templates are not supported and fail configuration validation. This includes named path lists on those members or templates, unless HTTP also serves the member: a path list then judges its HTTP requests. Attach the policy to the listener or front ALB instead. [Geo ACLs](./geo-acl.md) follow the same rule.
 
 ### Native protocols
 
 A native listener (`mysql`, `postgres`, `clickhouse`, `flight-sql`) judges its list at accept. `client_ip` on that listener is the socket peer, and only when `proxy_protocol` is off. `client_ip` together with `proxy_protocol` is refused, because the socket peer and the address in the header are different addresses. `client_ip` with `proxy_protocol` and no `trusted_proxies` still loads on a listener that reads a PROXY header, including `udp`, and warns: an empty trusted-proxy list believes every peer's header.
 
-Native sessions are judged by the listener list only. A backend that has an access list and is mapped to a native listener loads with a warning. A ClickHouse native bridge request carries no client address, so that backend list denies it. The configuration remains valid. A ClickHouse backend served only over HTTP does not get that warning.
+Native sessions are judged by the listener list only, so a backend that has an access list and is mapped to a native listener loads with a warning. The configuration remains valid. A ClickHouse native listener also sends each query through the backend's routes with the session's address, so the backend or path list judges every query: `reject` fails the query with exception 62 and keeps the session open, and `drop` closes the session. A ClickHouse backend served only over HTTP does not get the warning.
 
 ## Actions
 
@@ -115,7 +115,7 @@ The listener list wraps every handler on that listener. On a proxy listener that
 
 ## Reload
 
-Access-list files are read again only when the configuration is loaded or reloaded. An access-list change does not by itself rebind the listener: the running listener swaps in the new list. Connections accepted after the reload, and stream flows admitted after the reload, are judged by the new list.
+Access-list files are read again only when the configuration is loaded or reloaded, and a reload is skipped while no configuration file has changed; see [Addresses and files](#addresses-and-files). An access-list change does not by itself rebind the listener: the running listener swaps in the new list. Connections accepted after the reload, and stream flows admitted after the reload, are judged by the new list.
 
 A request already in progress is not judged a second time. An established TCP or TLS flow keeps the upstream it was relayed to and is not judged again. An established UDP flow is not admitted again. A flow that was denied stays denied; a flow that was allowed is not closed because the list changed.
 

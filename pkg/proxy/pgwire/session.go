@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 
 	"github.com/jackc/pgx/v5/pgproto3"
 )
@@ -137,6 +138,12 @@ func (s *session) serve() {
 		return
 	}
 	if !proceed {
+		return
+	}
+	// the session is judged by where it is from once its startup message is read, before any credential
+	if d := front.gate.Admit(clientip.FromNetAddr(s.client.RemoteAddr())); d != nil {
+		front.countError(classGeo)
+		s.fatal(sqlstateInvalidAuthSpec, d.Message)
 		return
 	}
 	routed := front.routes != nil

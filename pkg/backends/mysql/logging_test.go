@@ -37,3 +37,22 @@ func TestVitessUnknownCommandLogRedaction(t *testing.T) {
 		t.Fatalf("unsafe Vitess log output: %s", got)
 	}
 }
+
+func TestVitessLoginRefusalLogsAtDebug(t *testing.T) {
+	const message = vitessLoginRefused + "client using: mysql_native_password"
+	var output strings.Builder
+	handler := redactingVitessHandler{next: slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})}
+	if err := handler.Handle(context.Background(), slog.NewRecord(time.Now(), slog.LevelWarn, message, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("a refused login was logged above debug: %s", output.String())
+	}
+	handler = redactingVitessHandler{next: slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelDebug})}
+	if err := handler.Handle(context.Background(), slog.NewRecord(time.Now(), slog.LevelWarn, message, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "level=DEBUG") {
+		t.Fatalf("a refused login was not logged at debug: %s", output.String())
+	}
+}

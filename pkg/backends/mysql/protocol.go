@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"maps"
 	"net"
-	"net/netip"
 	"net/url"
 	"os"
 	"slices"
@@ -45,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
@@ -66,6 +66,11 @@ const protocolVersion = "8.0.0-trickster"
 const resultBatchSize = 256
 
 const warningCountQuery = "SHOW COUNT(*) WARNINGS"
+
+const (
+	erHostNotPrivileged sqlerror.ErrorCode = 1130  // ER_HOST_NOT_PRIVILEGED, a refusal for where a client is
+	connectionErrorGeo                     = "geo" // the connection error class of a session a geo ACL refused
+)
 
 var passwordHashPrefixes = [...]string{
 	"$apr1$", "$1$", "$2a$", "$2b$", "$2y$", "$5$", "$6$",
@@ -375,6 +380,7 @@ type ProtocolServer struct {
 	routedHandler *routedProtocolHandler
 	listener      *vtmysql.Listener
 	mtx           sync.Mutex
+	gate          backends.SessionGateSlot
 }
 
 // NewProtocolServer returns a server ready to serve an existing net.Listener.
@@ -465,6 +471,7 @@ func (s *ProtocolServer) Serve(l net.Listener) error {
 		resolver = s.routedHandler
 	}
 	auth := newCredentialAuth(s.config.DownstreamUsers, s.config.BackendName, resolver)
+	auth.gate = &s.gate
 	listener, err := vtmysql.NewFromListener(l, auth, handler, 0, 0,
 		false, true, 0, 0, false)
 	if err != nil {
@@ -526,6 +533,11 @@ func (s *ProtocolServer) UpdateRouteResolver(resolver backends.RouteResolver) {
 	}
 }
 
+// UpdateSessionGate switches the gate that judges new sessions; admitted sessions are not judged again
+func (s *ProtocolServer) UpdateSessionGate(gate backends.SessionGate) {
+	s.gate.Store(gate)
+}
+
 // ProtocolRestartKey identifies the immutable transport/authentication state
 // held by this running server, including the certificate file contents loaded
 // when it was created.
@@ -536,6 +548,7 @@ type credentialAuth struct {
 	users    map[string][]byte
 	methods  []vtmysql.AuthMethod
 	resolver backends.RouteResolver
+	gate     *backends.SessionGateSlot // nil judges no session
 }
 
 func newCredentialAuth(users map[string]string, backend string,
@@ -564,6 +577,11 @@ func (a *credentialAuth) HandleUser(user string) bool {
 func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user string,
 	authResponse []byte, remote net.Addr,
 ) (vtmysql.Getter, error) {
+	// the session is judged by where it is from before any credential is checked
+	if d := a.gate.Admit(clientip.FromNetAddr(remote)); d != nil {
+		metrics.MySQLConnectionErrors.WithLabelValues(a.backend, connectionErrorGeo).Inc()
+		return nil, sqlerror.NewSQLError(erHostNotPrivileged, sqlerror.SSUnknownSQLState, d.Message)
+	}
 	password, ok := a.users[user]
 	expected := vtmysql.ScrambleMysqlNativePassword(salt, password)
 	if !ok || subtle.ConstantTimeCompare(expected, authResponse) != 1 {
@@ -573,7 +591,7 @@ func (a *credentialAuth) UserEntryWithHash(c *vtmysql.Conn, salt []byte, user st
 	}
 	if a.resolver != nil {
 		decision, resolved := a.resolver.ResolveRoute(backends.RouteInput{
-			RouterName: a.backend, Username: user, Authenticated: true, Client: clientAddr(remote),
+			RouterName: a.backend, Username: user, Authenticated: true, Client: clientip.FromNetAddr(remote),
 		})
 		if !resolved || !decision.Target.Available() {
 			releaseRoute(decision)
@@ -642,21 +660,6 @@ func releaseRoute(decision backends.RouteDecision) {
 	if decision.Release != nil {
 		decision.Release()
 	}
-}
-
-// clientAddr is the address a session arrived from, or the zero Addr when it is not an IP's
-func clientAddr(remote net.Addr) netip.Addr {
-	switch a := remote.(type) {
-	case *net.TCPAddr:
-		return a.AddrPort().Addr().Unmap()
-	case nil:
-		return netip.Addr{}
-	default:
-		if ap, err := netip.ParseAddrPort(a.String()); err == nil {
-			return ap.Addr().Unmap()
-		}
-	}
-	return netip.Addr{}
 }
 
 // routedProtocolHandler adapts Vitess's protocol-specific callbacks to a

@@ -92,6 +92,7 @@ docs/developer/environment/docker-compose-data/seed-data
 
 integration/conformance/reports
 integration/greptimedb/reports
+integration/reports/greptimedb
 
 # Generated local developer credentials and rendered config.
 docs/developer/environment/docker-compose-data/credentials.env

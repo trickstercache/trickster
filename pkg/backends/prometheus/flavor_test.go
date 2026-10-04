@@ -31,6 +31,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
@@ -170,9 +171,31 @@ func (m *matrixOrigin) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(b.String()))
 }
 
-// rangeServer returns a func sending a limit=2 range query, spanning the given hours up to end,
-// through one client and cache configured by configure.
+const testTruncatedMarkerSuffix = "|truncated"
+
+type rangeMemoryCache interface {
+	cache.Cache
+	cache.MemoryCache
+}
+
+type observedRangeCache struct {
+	rangeMemoryCache
+	marker chan struct{}
+}
+
+func (c *observedRangeCache) Store(key string, data []byte, ttl time.Duration) error {
+	err := c.rangeMemoryCache.Store(key, data, ttl)
+	if err == nil && strings.HasSuffix(key, testTruncatedMarkerSuffix) {
+		select {
+		case c.marker <- struct{}{}:
+		default:
+		}
+	}
+	return err
+}
+
 func rangeServer(t *testing.T, query string, end time.Time, configure func(*bo.Options),
+	wrap ...func(cache.Cache) cache.Cache,
 ) func(int) *http.Response {
 	t.Helper()
 	target := func(hours int) string {
@@ -184,6 +207,10 @@ func rangeServer(t *testing.T, query string, end time.Time, configure func(*bo.O
 	t.Cleanup(ts.Close)
 
 	rsc := request.GetResources(r)
+	t.Cleanup(func() { require.NoError(t, rsc.CacheClient.Close()) })
+	for _, f := range wrap {
+		rsc.CacheClient = f(rsc.CacheClient)
+	}
 	o := rsc.BackendOptions
 	o.FastForwardDisable = true
 	configure(o)
@@ -206,52 +233,64 @@ func rangeServer(t *testing.T, query string, end time.Time, configure func(*bo.O
 	}
 }
 
-// cloudWatchRangeServer is rangeServer for a cloudwatch-flavored client whose origin is origin,
-// over ranges ending 2 hours ago.
-func cloudWatchRangeServer(t *testing.T, origin *matrixOrigin, query string) func(int) *http.Response {
+func cloudWatchRangeServer(t *testing.T, origin *matrixOrigin, query string) (func(int) *http.Response, func()) {
 	t.Helper()
 	srv := httptest.NewServer(origin)
 	t.Cleanup(srv.Close)
 	u, _ := url.Parse(srv.URL)
 	end := time.Now().Add(-2 * time.Hour).Truncate(time.Minute)
-	return rangeServer(t, query, end, func(o *bo.Options) {
+	marker := make(chan struct{}, 1)
+	serve := rangeServer(t, query, end, func(o *bo.Options) {
 		o.Scheme, o.Host = u.Scheme, u.Host
 		o.Prometheus = &po.Options{Flavor: po.FlavorCloudWatch}
+	}, func(c cache.Cache) cache.Cache {
+		mc, ok := c.(rangeMemoryCache)
+		require.True(t, ok)
+		return &observedRangeCache{rangeMemoryCache: mc, marker: marker}
 	})
+	awaitMarker := func() {
+		t.Helper()
+		select {
+		case <-marker:
+		case <-time.After(5 * time.Second):
+			t.Fatal("truncated query marker was not stored")
+		}
+	}
+	return serve, awaitMarker
 }
 
 func TestCloudWatchTruncatedRangeIsProxiedNotCached(t *testing.T) {
 	origin := &matrixOrigin{series: 2}
 	origin.truncate.Store(true)
-	serve := cloudWatchRangeServer(t, origin, `{"truncated.metric"}`)
+	serve, awaitMarker := cloudWatchRangeServer(t, origin, `{"truncated.metric"}`)
 
 	resp := serve(6)
 	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Contains(t, string(body), "results truncated", "the origin's warning reaches the client")
 	require.EqualValues(t, 2, origin.hits.Load(), "the truncated fetch is discarded and the query proxied")
 
-	time.Sleep(20 * time.Millisecond) // the marker is written asynchronously
+	awaitMarker()
 	resp = serve(6)
 	resp.Body.Close()
 	require.EqualValues(t, 3, origin.hits.Load(), "a marked query is proxied without a fetch")
 }
 
-// A truncated delta fetch must not be merged into a complete cached entry, which it then evicts.
 func TestCloudWatchTruncatedDeltaEvictsTheEntry(t *testing.T) {
 	origin := &matrixOrigin{series: 2}
-	serve := cloudWatchRangeServer(t, origin, `{"delta.metric"}`)
+	serve, awaitMarker := cloudWatchRangeServer(t, origin, `{"delta.metric"}`)
 	resp := serve(6)
 	resp.Body.Close()
 	require.EqualValues(t, 1, origin.hits.Load())
-	time.Sleep(20 * time.Millisecond)
 
 	origin.truncate.Store(true)
 	resp = serve(9) // a partial hit, which fetches the earlier 3 hours
 	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
 	require.Contains(t, string(body), "results truncated")
 	require.EqualValues(t, 3, origin.hits.Load(), "the truncated delta is discarded and the query proxied")
-	time.Sleep(20 * time.Millisecond)
+	awaitMarker()
 
 	origin.truncate.Store(false)
 	resp = serve(6)
@@ -261,12 +300,11 @@ func TestCloudWatchTruncatedDeltaEvictsTheEntry(t *testing.T) {
 
 func TestCloudWatchCompleteRangeIsCached(t *testing.T) {
 	origin := &matrixOrigin{series: 2}
-	serve := cloudWatchRangeServer(t, origin, `{"complete.metric"}`)
+	serve, _ := cloudWatchRangeServer(t, origin, `{"complete.metric"}`)
 	for range 2 {
 		resp := serve(6)
 		resp.Body.Close()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
-		time.Sleep(20 * time.Millisecond)
 	}
 	require.EqualValues(t, 1, origin.hits.Load(), "a result at the cap without a warning is complete")
 }

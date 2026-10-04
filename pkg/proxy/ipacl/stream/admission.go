@@ -35,8 +35,7 @@ type Attached struct {
 	Name string
 }
 
-// counted is a list and the counters resolved when the admission was built.
-type counted struct {
+type counted struct { // a list and the counters resolved when the admission was built
 	list  *ipacl.List
 	dec   *metrics.IPACLDecision
 	name  string
@@ -54,11 +53,8 @@ func attach(a Attached, scope string) *counted {
 	return c
 }
 
-// New returns the admission for a stream listener, or nil when the relay has
-// nothing to judge. A tcp or tls listener list whose source is the socket peer
-// is already enforced at accept, including when PROXY protocol is enabled, so
-// it is not asked again here. A backend list whose source is the socket peer
-// is not a stream placement and is not enforced.
+// New returns a stream listener's admission, or nil with nothing to judge; a tcp or tls listener's peer list was
+// judged at accept, and a backend's peer list is not enforced
 func New(protocol string, listener Attached, table *l4.Table, backend map[l4.Upstream]Attached) l4.Admission {
 	lists := make(map[l4.Upstream]*counted, len(backend))
 	for up, attached := range backend {
@@ -77,9 +73,8 @@ func New(protocol string, listener Attached, table *l4.Table, backend map[l4.Ups
 	return &admission{protocol: protocol, listener: listenerList, table: table, backend: lists}
 }
 
-// judgesListener reports whether the listener list is applied by admission.
-// UDP has no accept wrapper, so both of its sources are judged here.
 func judgesListener(protocol string, listener *ipacl.List) bool {
+	// udp has no accept wrapper, so both its sources are judged here; tcp and tls peer lists were judged at accept
 	if listener == nil {
 		return false
 	}
@@ -89,19 +84,16 @@ func judgesListener(protocol string, listener *ipacl.List) bool {
 	return listener.Source() != ipacl.Peer
 }
 
-// admission is one listener's lists. It is immutable after New.
-type admission struct {
+type admission struct { // one listener's lists, immutable after New
 	protocol string
 	listener *counted
 	table    *l4.Table
 	backend  map[l4.Upstream]*counted
 }
 
-// Peer judges the listener list from Flow.Client, which the relay has already
-// set from the socket or from a trusted PROXY header. On UDP the datagram peer
-// is that address for either source, and the one backend list follows the
-// listener list. On TCP the backend list waits for Flow, after the route exists.
 func (a *admission) Peer(f l4.Flow) l4.Verdict {
+	// the listener list judges Flow.Client, from the socket or a trusted PROXY header; on udp the backend list
+	// follows, while tcp's waits for Flow
 	if v := judge(a.listenerList(), f.Client.Addr()); v != l4.Allow {
 		return v
 	}
@@ -111,42 +103,39 @@ func (a *admission) Peer(f l4.Flow) l4.Verdict {
 	return l4.Allow
 }
 
-// Flow judges the backend list for the upstream the listener table routes this
-// server name to. The relay calls Flow only after that same Lookup has selected
-// a route, so the list is the selected backend's.
 func (a *admission) Flow(f l4.Flow) l4.Verdict {
+	// the backend list is the one of the upstream the table routes the server name to, as the relay just did
 	if a.protocol == l4.ProtocolUDP {
 		return l4.Allow
 	}
 	return judge(a.backendList(f.ServerName), f.Client.Addr())
 }
 
-// Datagram is unused. Denied UDP flows use the relay's peer-stage hold.
-func (a *admission) Datagram(l4.Flow, int) l4.Verdict { return l4.Allow }
+func (a *admission) Datagram(l4.Flow, int) l4.Verdict {
+	return l4.Allow // never asked, since Datagrams is false
+}
 
-// Datagrams reports false so an allowed UDP flow is not judged again per
-// datagram, and a denied one is held by the relay rather than by a second table.
-func (a *admission) Datagrams() bool { return false }
+func (a *admission) Datagrams() bool {
+	// an allowed udp flow is not judged per datagram, and the relay's peer-stage hold keeps a denied one out
+	return false
+}
 
-// listenerList is the listener list this admission applies. A tcp or tls peer
-// list was applied to the socket before PROXY replaced the connection address.
 func (a *admission) listenerList() *counted {
+	// a tcp or tls peer list was applied to the socket before PROXY replaced the connection address
 	return a.listener
 }
 
-// backendList is the list stored for the upstream Table.Lookup returns.
-// Calling Lookup again is the routing decision the relay just made; the lists
-// are keyed by that upstream, so selection and enforcement stay the same.
 func (a *admission) backendList(serverName string) *counted {
+	// the lists are keyed by the upstream the relay's own lookup selected, so selection and enforcement agree
 	if a.table == nil {
 		return nil
 	}
 	return a.backend[a.table.Lookup(serverName)]
 }
 
-// judge maps one list onto a relay verdict. Check denies an invalid address.
-// A nil list allows. Reject and drop stay the list's own action and both count as deny.
 func judge(c *counted, addr netip.Addr) l4.Verdict {
+	// a nil list allows and Check denies an invalid address; reject and drop keep the list's action, and both count
+	// as deny
 	if c == nil || c.list == nil || c.list.Check(addr) == ipacl.Allow {
 		if c != nil && c.list != nil {
 			c.dec.Observe(true)

@@ -984,6 +984,16 @@ func (t *translator) resolveService(routeKind, routeNS string, ref gwapiv1.Backe
 	return out, "", ""
 }
 
+func (t *translator) geoACLOf(policy string) string {
+	if p := t.policies.Get(policy); p != nil && p.GeoACLName != "" {
+		return p.GeoACLName
+	}
+	if o := t.cfg.Options; o != nil && o.Defaults != nil {
+		return o.Defaults.GeoACLName
+	}
+	return ""
+}
+
 // routingModeOf returns the routing mode the named policies, least specific first, leave in force
 // over the configured default, which is how the compiler resolves it for a member they govern
 func (t *translator) routingModeOf(names ...string) string {

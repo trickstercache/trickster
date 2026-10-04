@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache/blob/blobtest"
@@ -322,15 +323,18 @@ func TestReaperWorker(t *testing.T) {
 		require.True(t, idx.reaperExited.Load())
 	})
 	t.Run("pressure", func(t *testing.T) {
-		o := idleOpts()
-		o.MaxSizeObjects = 5
-		idx, _ := newPlainIndex(t, o)
-		require.False(t, idx.pressure.Load())
-		fill(t, idx, 10)
-		require.True(t, idx.pressure.Load())
-		// the reaper's interval is an hour, and it acts for a cache that is over its size within a second
-		require.Eventually(t, func() bool { return idx.Count() == 5 }, testTimeout, 10*time.Millisecond)
-		require.False(t, idx.pressure.Load())
+		synctest.Test(t, func(t *testing.T) {
+			o := idleOpts()
+			o.MaxSizeObjects = 5
+			idx, _ := newPlainIndex(t, o)
+			require.False(t, idx.pressure.Load())
+			fill(t, idx, 10)
+			require.True(t, idx.pressure.Load())
+			time.Sleep(pressureInterval)
+			synctest.Wait()
+			require.EqualValues(t, 5, idx.Count())
+			require.False(t, idx.pressure.Load())
+		})
 	})
 	t.Run("forced", func(t *testing.T) {
 		idx, _ := newPlainIndex(t, idleOpts())

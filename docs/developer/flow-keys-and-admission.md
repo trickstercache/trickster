@@ -2,7 +2,7 @@
 
 Features that sit in front of the backends and act per client, such as
 load-balancer affinity, access control, rate limiting and session
-persistence, share five building blocks. This guide describes each one as
+persistence, share six building blocks. This guide describes each one as
 it exists in the tree, the rules that come with it, and where a new
 feature plugs in:
 
@@ -16,6 +16,9 @@ feature plugs in:
   before anything is relayed.
 - [The HTTP listener seam](#the-http-listener-seam) (`wrapListener`) runs
   middleware for a whole HTTP listener, ahead of routing.
+- [The native session gate](#the-native-session-gate)
+  (`backends.SessionGate`) judges a native protocol session before any
+  credential is checked.
 - [The `none` reference](#the-none-reference) (`reserved.ReferenceNone`)
   lets a path clear something it would otherwise inherit from its backend.
 
@@ -27,7 +30,7 @@ A feature that adds a top-level configuration section should also follow
 | `http`, including `mgmt` and `metrics` | `wrapListener` for the whole listener; the route chain in `pkg/routing` for a backend or path | `KeySource.OnHTTP()` |
 | `tcp`, `tls` | `Admission.Peer`, then `Admission.Flow` | `KeySource.OnStream(...)` |
 | `udp` | `Admission.Peer` for each new flow, `Admission.Datagram` for each datagram | `KeySource.OnStream(...)` |
-| native (`mysql`, `postgres`, `clickhouse`, `flight-sql`) | no hook yet | `KeySource.OnNative()` |
+| native (`mysql`, `postgres`, `clickhouse`, `flight-sql`) | the session gate, once per session before authentication; every call on `flight-sql` | `KeySource.OnNative()` |
 
 ## Flow keys
 
@@ -437,18 +440,26 @@ type Holder interface {
 `l4.Config.Admission` holds one admission per listener; nil admits
 everything. The daemon builds a new `l4.Config` for each stream listener in
 `streamConfig` (`pkg/daemon/setup/listeners.go`), at startup and on every
-reload, and swaps it in with `Update`. A feature sets `Admission` there;
-nothing sets it yet. Two consequences:
+reload, and swaps it in with `Update`. A feature sets `Admission` there; geo
+ACLs do (`pkg/proxy/geo/acl/stream`), from the backends the listener serves.
+Three consequences:
 
 - **An admission is rebuilt on every reload.** State that must outlive a
   reload, such as a limiter's counters, belongs in a registry outside it.
+- **It sees the backends the listener routes to, never a pool member.** An
+  ALB's upstream picks and dials a member after admission, without
+  entering the member's routes, so validation must refuse a member setting
+  that admission would have to read, as `geoListeners` in
+  `pkg/config/validate/geo.go` does for geo ACLs.
 - **There is one slot.** Features that both judge a listener must be
   combined into one admission: access control first, so a denied client
   costs the limiter nothing; `Datagrams()` true if any part needs it; and
   `Holder` implemented by the combination itself if any part implements
   it, since the relay asks only the admission it holds. `Hold` is not told
   which part denied the flow, so the combination has to remember or work
-  it out again.
+  it out again. `l4.Chain` combines admissions that set no hold, as
+  `streamConfig` does for IP access lists and geo ACLs, in that order; it
+  does not consult a part's `Holder`.
 
 ### Stages
 
@@ -611,6 +622,62 @@ with fake admissions; copy from it. Lessons from writing it:
   end is reported.
 - When a test needs a dial to fail, fail it with the standard library's
   `syscall.ECONNREFUSED` rather than an error of the test's own.
+
+## The native session gate
+
+[pkg/backends/session_gate.go](../../pkg/backends/session_gate.go):
+
+```go
+type SessionGate interface {
+	Admit(client netip.Addr) *Denial
+}
+
+type Denial struct {
+	Reason  DenialReason
+	Message string
+}
+```
+
+- **Where it runs.** Each protocol server judges a session once, before any
+  credential is checked, and refuses it in its own error form:
+
+| Protocol | Where | Refusal |
+|---|---|---|
+| `mysql` | `credentialAuth.UserEntryWithHash`, before the password is compared | ERR 1130, SQLSTATE `HY000` |
+| `postgres` | `session.serve`, once the startup message (and TLS) is done | `FATAL`, SQLSTATE `28000` |
+| `clickhouse` | `Handler.HandleConnection`, between the client's hello and the server's | exception 195 |
+| `flight-sql` | unary and stream interceptors, on every call | `PERMISSION_DENIED` |
+
+- **One gate per listener.** A native listener maps to one backend, so
+  `pkg/daemon/setup` builds the gate from that backend and hands it to the
+  server through the optional `listener.SessionGateUpdater`, before the
+  server serves and again on every reload
+  (`Group.UpdateProtocolSessionGate`). A listener whose server takes no gate
+  is not started when its backend has one, so a gate is never silently
+  skipped. A gate change never restarts the listener: a restart key must
+  leave it out, as `bo.Options.ClearACLNames` does for the adapters that
+  hash a backend's whole options.
+- **Holding it.** A server keeps the gate in a `backends.SessionGateSlot`,
+  whose zero value admits everything at the cost of one atomic load per
+  session. `Holds` lets a server skip finding the client address when no
+  gate is set.
+- **The address** is `clientip.FromNetAddr` of the connection's remote
+  address: the peer, or the source a trusted PROXY protocol header named.
+- **Sessions are judged once,** as stream connections are; a reload that
+  newly refuses a client does not end its open sessions. `flight-sql` is the
+  exception, since gRPC multiplexes calls on one connection. `clickhouse`
+  bridges each query through its backend's HTTP router, where the route's
+  geo ACL judges it again; see
+  [Where geo ACLs apply](../geo-acl.md#where-geo-acls-apply).
+- **Routed listeners** are judged by the gate of the ALB the listener maps
+  to, before the ALB picks a member. A member is known only after
+  authentication, when the resolver has already counted the session, so
+  validation refuses a gate's source on such a member.
+- **There is one slot,** as for stream admission. A second feature that
+  judges sessions combines with the first into one gate, access control
+  first.
+- **Return a shared `Denial`.** Build it with the feature's configuration, so
+  a refusal allocates nothing; callers never change it.
 
 ## The HTTP listener seam
 

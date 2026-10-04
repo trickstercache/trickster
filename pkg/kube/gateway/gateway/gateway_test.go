@@ -306,8 +306,15 @@ func known() ir.ConfiguredNames {
 		Tracers:        sets.New([]string{}),
 		Rewriters:      sets.New([]string{}),
 		Authenticators: sets.New([]string{"gateway-auth"}),
+		GeoACLs:        sets.New([]string{testGeoACL, testHeaderGeoACL}),
+		StreamGeoACLs:  sets.New([]string{testGeoACL}),
 	}
 }
+
+const (
+	testGeoACL       = "north-america"  // any route can take it
+	testHeaderGeoACL = "edge-countries" // its locator reads headers, so only an HTTP route can take it
+)
 
 func translateFixture(t *testing.T, name string,
 	mutate ...func(*kubecfg.Options),
@@ -602,14 +609,14 @@ func TestTranslateClassParameters(t *testing.T) {
 	require.Equal(t, "objects", p.CacheName)
 	require.EqualValues(t, 45000, p.TimeoutMS)
 	require.Equal(t, "gateway-auth", p.AuthenticatorName)
+	require.Equal(t, testGeoACL, p.GeoACLName)
 	require.Equal(t, "probe", p.HealthMode)
 	require.Equal(t, kubecfg.RoutingModeService, p.RoutingMode)
 	require.Equal(t, p.Name, model.Routes[0].Rules[0].Policy)
 }
 
-// aclKnown is the name sets a class parameter is checked against: office may be
-// used, edge and wall exist and may not.
 func aclKnown() ir.ConfiguredNames {
+	// office may be used; edge and wall exist and may not
 	n := known()
 	n.IPACLs = sets.New([]string{"office"})
 	n.DefinedIPACLs = sets.New([]string{"office", "edge", "wall"})
@@ -770,6 +777,9 @@ func TestTranslateInvalidClassParametersRefuseService(t *testing.T) {
 		{"unknown authenticator", func(c *cache) {
 			c.configMaps["infra/gateway-params"].Data[ParamAuthenticatorName] = "nope"
 		}, `no authenticator named "nope"`},
+		{"unknown geo ACL", func(c *cache) {
+			c.configMaps["infra/gateway-params"].Data[ParamGeoACLName] = "nope"
+		}, `no geo ACL named "nope"`},
 		{"unknown rewriter", func(c *cache) {
 			c.configMaps["infra/gateway-params"].Data[ParamReqRewriterName] = "nope"
 		}, `no request rewriter named "nope"`},
@@ -893,9 +903,8 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	}
 }
 
-// requireResolvedOfficeACL reports that validation compiled the file's office
-// list onto at least one generated backend.
 func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
+	// validation compiled the file's office list onto at least one generated backend
 	t.Helper()
 	for _, b := range conf.Backends {
 		if b != nil && b.IPACLName == "office" && b.IPACL != nil {
@@ -930,6 +939,22 @@ authenticators:
     provider: basic
     users:
       admin: $2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy
+geo_locators:
+  default:
+    provider: geofeed
+    geofeed:
+      entries: ["192.0.2.0/24,US"]
+  edge:
+    provider: header
+    header:
+      country: CF-IPCountry
+geo_acls:
+  ` + testGeoACL + `:
+    allow: [US, CA, MX]
+    exempt: [private]
+  ` + testHeaderGeoACL + `:
+    geo_locator_name: edge
+    deny: [FR]
 `
 
 func TestTranslateIgnoresUnclaimed(t *testing.T) {
@@ -2910,7 +2935,9 @@ func TestMirrorIsServed(t *testing.T) {
 	}
 	mu.Unlock()
 	require.Contains(t, body, "from ")
+	mu.Lock()
 	hosts = map[string]int{}
+	mu.Unlock()
 	status, _ = request(rtr, http.MethodGet, "shop.example.com", "/unmirrored")
 	require.Equal(t, http.StatusOK, status)
 	time.Sleep(50 * time.Millisecond)
@@ -3617,4 +3644,35 @@ func TestTranslateGatewayInfrastructureParameters(t *testing.T) {
 	require.EqualValues(t, gwapiv1.RouteReasonNoMatchingParent,
 		condOf(t, report.Routes[0].Parents[0].Conditions, "Accepted").Reason)
 	containing(t, problems, "Gateway/infra/gw", "spec.infrastructure.parametersRef")
+}
+
+func TestGeoACLOnAttachedBackendsOnly(t *testing.T) {
+	// the backend a rule attaches to a route's listeners carries the geo ACL, so each request is judged
+	// once; its pool members, endpoint templates and mirror targets do not
+	attached := regexp.MustCompile(`_r\d+$`)
+	for _, name := range []string{"weights", "endpoint-mirror", "mirror", "cache-policy", "tcp", "basic"} {
+		for _, mode := range []string{kubecfg.RoutingModeService, kubecfg.RoutingModeEndpoint} {
+			model, _, o := translateFixture(t, name, func(o *kubecfg.Options) {
+				o.Defaults.RoutingMode = mode
+				o.Defaults.GeoACLName = testGeoACL
+			})
+			overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
+			require.NoError(t, err)
+			var doc struct {
+				Backends map[string]struct {
+					GeoACLName string `yaml:"geo_acl_name"`
+				} `yaml:"backends"`
+			}
+			require.NoError(t, yaml.Unmarshal(overlay.Data, &doc))
+			var gated int
+			for backend, b := range doc.Backends {
+				require.Equal(t, attached.MatchString(backend), b.GeoACLName == testGeoACL, "%s %s: %s",
+					name, mode, backend)
+				if b.GeoACLName != "" {
+					gated++
+				}
+			}
+			require.NotZero(t, gated, "%s %s gated nothing", name, mode)
+		}
+	}
 }

@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -164,16 +165,25 @@ func TestBehaviorSlowProbe(t *testing.T) {
 	})
 
 	t.Run("honors client cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
-		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
-		require.NoError(t, err)
-		start := time.Now()
-		resp, err := http.DefaultClient.Do(req)
-		if resp != nil {
-			resp.Body.Close()
-		}
-		assert.Error(t, err, "expected context cancellation error")
-		require.Less(t, time.Since(start), d, "should return well before %s on cancel", d)
+		synctest.Test(t, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil).WithContext(ctx)
+			w := httptest.NewRecorder()
+			done := make(chan struct{})
+			go func() {
+				BehaviorSlowProbe(time.Hour).ServeHTTP(w, req)
+				close(done)
+			}()
+			synctest.Wait()
+			cancel()
+			synctest.Wait()
+			select {
+			case <-done:
+			default:
+				t.Fatal("probe kept waiting after cancellation")
+			}
+			require.Empty(t, w.Body.String(), "a canceled probe must not write a success response")
+		})
 	})
 }

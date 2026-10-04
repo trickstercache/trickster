@@ -93,6 +93,27 @@ paths:
     hide_result_header: true
 ```
 
+### Geo ACLs on Paths
+
+A path's `geo_acl_name` replaces its backend's [geo ACL](./geo-acl.md) for requests on that path, and `geo_acl_name: none` clears the backend's, as `authenticator_name` does. A path judges HTTP requests only; a native protocol or stream listener judges sessions by the backend's geo ACL.
+
+```yaml
+backends:
+  video:
+    provider: rpc
+    origin_url: 'http://video.example.com'
+    geo_acl_name: north-america
+    paths:
+      - path: /trailers/
+        match_type: prefix
+        handler: proxycache
+        geo_acl_name: none     # trailers are served everywhere
+      - path: /eu/
+        match_type: prefix
+        handler: proxycache
+        geo_acl_name: europe   # this path is judged by another geo ACL
+```
+
 ### Dispatch-Only Paths
 
 A path with `dispatch_only: true` is registered on the backend's own router only, never on a listener. It is reachable when another backend hands the request over — an ALB selecting this backend from its pool, or a rule whose `next_route` names it — and is invisible to clients otherwise, even when the backend lists `hosts` or sets `any_host_routing`. Use it to keep the entry point for a path on one backend while the backend that finally serves it stays reachable only through that entry point. The Kubernetes controller relies on it: a route that another route's header match fronts keeps its path dispatch-only, so the rule that tests the header is the only thing registered on the listener.

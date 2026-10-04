@@ -34,6 +34,7 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
@@ -96,6 +97,8 @@ type Options struct {
 	HideResultHeader bool `yaml:"hide_result_header,omitempty"`
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Path
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// GeoACLName names the geo ACL that judges this Path's clients, replacing its Backend's; none clears it
+	GeoACLName string `yaml:"geo_acl_name,omitempty"`
 	// IPACLName replaces the backend access list for this path. An empty name
 	// inherits the backend list. none clears it.
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
@@ -145,6 +148,8 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+	// GeoACLOptions is the geo ACL named by GeoACLName, shared by clones as a Backend's is
+	GeoACLOptions *geoaclopts.Options `yaml:"-"`
 	// IPACL is the compiled list named by IPACLName. It stays nil when the
 	// path inherits the backend list or clears it with none.
 	IPACL *ipacl.List `yaml:"-"`

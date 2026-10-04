@@ -17,10 +17,11 @@
 package keytable
 
 import (
-	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	"go.uber.org/goleak"
 )
 
 const sec = int64(time.Second)
@@ -372,13 +373,10 @@ func TestConcurrentUse(t *testing.T) {
 }
 
 func TestRunsNoGoroutine(t *testing.T) {
-	before := runtime.NumGoroutine()
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	tbl := New[int](Options{TTL: time.Second, Idle: time.Second})
 	for k := range uint64(1000) {
 		tbl.Put(k, 0, 0)
-	}
-	if after := runtime.NumGoroutine(); after != before {
-		t.Errorf("goroutines went from %d to %d", before, after)
 	}
 }
 

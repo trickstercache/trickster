@@ -51,9 +51,8 @@ func (o *Options) Clone() *Options {
 	return &out
 }
 
-// Validate sets each definition's name from its map key, refuses an empty
-// name and the reserved reference none, and compiles the list. Warnings are
-// returned for the loader; Compile does not log them.
+// Validate names each definition by its map key, refuses an empty name and the reserved none, and compiles the
+// list; it returns the warnings for the loader
 func (l Lookup) Validate() ([]string, error) {
 	var warnings []string
 	for name, options := range l {

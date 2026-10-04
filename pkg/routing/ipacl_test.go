@@ -26,6 +26,7 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
@@ -164,5 +165,32 @@ func TestRouteIPACLBeforeAuthenticator(t *testing.T) {
 	h.ServeHTTP(w, req)
 	if w.Code != http.StatusOK || auth.calls != 1 || !cache.called {
 		t.Fatalf("allowed reaches auth: status=%d auth=%d cache=%v", w.Code, auth.calls, cache.called)
+	}
+}
+
+func TestRouteACLScopes(t *testing.T) {
+	office := mustList(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}})
+	partners := mustList(t, ipacl.Options{Allow: []string{"192.0.2.9"}})
+	backend := &bo.Options{IPACLName: "office", IPACL: office}
+	for _, test := range []struct {
+		name          string
+		path          *po.Options
+		backend       *bo.Options
+		list          *ipacl.List
+		aclName, want string
+	}{
+		{"inherited", &po.Options{}, backend, office, "office", aclhandler.ScopeBackend},
+		{"replaced", &po.Options{IPACLName: "partners", IPACL: partners}, backend, partners, "partners",
+			aclhandler.ScopePath},
+		{"cleared", &po.Options{IPACLName: reserved.ReferenceNone}, backend, nil, "", ""},
+		{"no backend list", &po.Options{}, &bo.Options{}, nil, "", ""},
+		{"no backend", &po.Options{IPACLName: "partners", IPACL: partners}, nil, partners, "partners",
+			aclhandler.ScopePath},
+		{"no path", nil, backend, nil, "", ""},
+	} {
+		list, name, scope := routeACL(test.path, test.backend)
+		if list != test.list || name != test.aclName || scope != test.want {
+			t.Errorf("%s: got %p %q %q, want %p %q %q", test.name, list, name, scope, test.list, test.aclName, test.want)
+		}
 	}
 }

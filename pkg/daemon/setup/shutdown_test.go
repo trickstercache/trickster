@@ -20,7 +20,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"runtime"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -42,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestShutdownNilSafe(t *testing.T) {
@@ -74,6 +74,7 @@ func TestShutdownStopsHealthChecks(t *testing.T) {
 }
 
 func TestShutdownStopsStaticClients(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 	o := bo.New()
 	o.Provider = providers.Static
 	o.Static = so.New()
@@ -83,10 +84,7 @@ func TestShutdownStopsStaticClients(t *testing.T) {
 	clients := backends.Backends{"site": client}
 	static.StartClients(clients)
 
-	before := runtime.NumGoroutine()
 	Shutdown(&instance.ServerInstance{Backends: clients})
-	require.Eventually(t, func() bool { return runtime.NumGoroutine() < before },
-		5*time.Second, 5*time.Millisecond, "the static client's watcher kept running after Shutdown")
 }
 
 func TestShutdownStopsDiscovery(t *testing.T) {

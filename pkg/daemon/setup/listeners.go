@@ -199,6 +199,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				if resolver := desired.native.RouteResolver(request); resolver != nil {
 					lg.UpdateProtocolRouteResolver(key, resolver)
 				}
+				if gate := sessionGateFor(conf, desired.listenerName); !lg.UpdateProtocolSessionGate(key, gate) &&
+					gate != nil {
+					logger.Error("native listener does not judge sessions by a geo ACL", logging.Pairs{
+						keys.ListenerName: desired.listenerName,
+					})
+				}
 				if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
 					lg.UpdateProtocolTLSConfig(key, tlsConfig)
 				} else {
@@ -225,6 +231,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 					keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol,
 					keys.Error: err.Error(),
 				})
+				continue
+			}
+			if !setSessionGate(svr, sessionGateFor(conf, desired.listenerName)) {
+				logger.Error("native listener not started: its server cannot judge sessions by a geo ACL",
+					logging.Pairs{keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol})
 				continue
 			}
 			setListenerIPACL(lg, key, desired.options)
@@ -369,14 +380,13 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 	return out
 }
 
-// streamConfig builds a stream listener's routing table from the backends mapped to it: a tls
-// listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend.
-// Each backend list is kept with the upstream added to that table, and the admission asks the
-// table again when it enforces the list, so the route and the list are one lookup.
 func streamConfig(conf *config.Config, desired desiredListener, clients backends.Backends) *l4.Config {
 	// a pool member carries the listener name too, but is reached through its pool
 	members := conf.Backends.PoolMembers()
+	// a tls listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend; ACLs are
+	// kept by upstream, found with the relay's own lookup
 	table := l4.NewTable()
+	geo := newGeoStreamAdmission(desired.options.Protocol)
 	backendACL := make(map[l4.Upstream]streamacl.Attached)
 	for _, backendName := range slices.Sorted(maps.Keys(conf.Backends)) {
 		o := conf.Backends[backendName]
@@ -394,6 +404,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		if o.IPACL != nil {
 			backendACL[up] = streamacl.Attached{List: o.IPACL, Name: o.IPACLName}
 		}
+		geo.add(o, up)
 		hosts := o.Hosts
 		if desired.options.Protocol != listenerconfig.ProtocolTLS || len(hosts) == 0 {
 			hosts = []string{""}
@@ -414,9 +425,9 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
 		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
-		Admission: streamacl.New(desired.options.Protocol, streamacl.Attached{
+		Admission: l4.Chain(streamacl.New(desired.options.Protocol, streamacl.Attached{
 			List: desired.options.IPACL, Name: desired.options.IPACLName,
-		}, table, backendACL),
+		}, table, backendACL), geo.admission(table)),
 	}
 }
 
@@ -491,9 +502,8 @@ func trustedProxies(options *listenerconfig.Options) clientip.Trusted {
 	return trusted
 }
 
-// acceptTimeIPACL reports listeners whose socket is opened by NewListener.
-// HTTP/3 and UDP have no TCP accept, so they do not use this list.
 func acceptTimeIPACL(desired desiredListener) bool {
+	// only a socket NewListener opens is judged at accept; HTTP/3 and udp have no TCP accept
 	if desired.http3 || desired.options == nil {
 		return false
 	}

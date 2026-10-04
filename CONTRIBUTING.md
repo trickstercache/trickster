@@ -55,8 +55,13 @@ For quickly compiling and testing your changes do:
 make build
 
 # For testing.
-make lint test data-race-test
+make lint test
 ```
+
+CI uses `make test-cover-race` to collect unit coverage and detect races in one
+run. It also runs the helper modules with race detection, keeping their results
+out of the main coverage profile. `make data-race-test` remains available for a
+separate race-only run.
 
 We offer a Docker Compose to help bootstrap your developer environment. See
 [the Developer Environment Documentation](./docs/developer/environment/README.md)

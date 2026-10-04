@@ -17,15 +17,14 @@
 package types
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestEnvString(t *testing.T) {
-	os.Setenv("FOO", "bar")
-	os.Setenv("BAR", "baz")
+	t.Setenv("FOO", "bar")
+	t.Setenv("BAR", "baz")
 	example := EnvString("")
 	// expect bar
 	err := example.Unmarshal([]byte("${FOO}"))
@@ -49,8 +48,8 @@ func TestEnvString(t *testing.T) {
 }
 
 func TestEnvStringMap(t *testing.T) {
-	os.Setenv("FIZZ", "buzz")
-	os.Setenv("BIZZ", "quux")
+	t.Setenv("FIZZ", "buzz")
+	t.Setenv("BIZZ", "quux")
 	example := EnvStringMap{}
 	// expect fizz
 	err := example.Unmarshal([]byte(`abc: "${FIZZ}"`))

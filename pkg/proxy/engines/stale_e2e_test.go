@@ -28,6 +28,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+
+	"github.com/stretchr/testify/require"
 )
 
 // originOPC points a harness-built request at ts and returns a func that runs
@@ -112,16 +114,14 @@ func TestStaleWhileRevalidateServesStaleAndRefreshes(t *testing.T) {
 	if _, body := run(http.MethodGet); body != "body-1" {
 		t.Errorf("got %s expected the stale body to be served as it is", body)
 	}
-	// the refresh runs behind that response, so the next request sees it
-	for range 40 {
-		if hits.Load() > 1 {
-			break
+	require.Eventually(t, func() bool {
+		if hits.Load() < 2 {
+			return false
 		}
-		time.Sleep(50 * time.Millisecond)
-	}
-	if hits.Load() < 2 {
-		t.Fatal("expected a background revalidation to reach the origin")
-	}
+		idle := true
+		staleRefreshes.Range(func(_, _ any) bool { idle = false; return false })
+		return idle
+	}, 5*time.Second, time.Millisecond, "background revalidation did not finish storing the response")
 	if _, body := run(http.MethodGet); body == "body-1" {
 		t.Error("expected the refreshed body after the background revalidation")
 	}

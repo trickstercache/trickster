@@ -32,10 +32,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIPACL exercises listener, path and ALB-member access lists through a
-// running daemon. The listener allows 192.0.2.0/24 and also 203.0.113.5/32,
-// the one address wall allows, so that client can reach the backend list.
 func TestIPACL(t *testing.T) {
+	// the listener allows 192.0.2.0/24 and 203.0.113.5/32, the one address wall allows, so that client can reach
+	// the backend list
 	if testing.Short() {
 		t.Skip("starts Trickster; skipping in -short mode")
 	}

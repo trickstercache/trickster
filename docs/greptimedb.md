@@ -187,7 +187,7 @@ when connecting a MySQL client.
 - Ingestion, mutations, enterprise-only features and gRPC caching are outside
   this provider's accelerated contract.
 
-Run the [acceptance suites](../integration/greptimedb/README.md) against an
+Run the [acceptance suites](../integration/greptimedb_acceptance.md) against an
 isolated seeded environment. Inspect cache counters as well as results:
 `trickster_sql_query_analysis_total`, `trickster_sql_query_cache_total`, and
 `trickster_sql_query_rewrite_failures_total` distinguish actual cache hits,

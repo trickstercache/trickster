@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	neturl "net/url"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -34,12 +35,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/discovery"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/template"
+	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/class"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/compile"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -365,4 +368,30 @@ func TestTCPRouteIsServedThroughDiscoveredMembers(t *testing.T) {
 		seen[throughStream(t, conn)]++
 	}
 	require.Equal(t, map[string]int{"db-svc": 4, "": 2}, seen)
+}
+
+func TestStreamRouteGeoACL(t *testing.T) {
+	// a class's geo ACL gates its stream routes only when its locator places a bare address; one that reads
+	// headers refuses the route rather than serving it ungated
+	translateWith := func(geoACL string) (*ir.IR, []Problem) {
+		c := load(t, filepath.Join("testdata", "tcp.yaml"))
+		c.classes[0].Spec.ParametersRef = &gwapiv1.ParametersReference{
+			Kind: kindConfigMap, Name: "stream-params", Namespace: new(gwapiv1.Namespace("infra")),
+		}
+		c.configMaps["infra/stream-params"] = &corev1.ConfigMap{
+			Namespace: "infra", Name: "stream-params", Data: map[string]string{ParamGeoACLName: geoACL},
+		}
+		model, _, problems := Translate(Config{
+			Cache: c, Claimer: class.New(controllerName, ""), Options: options(t), KnownNames: known,
+		})
+		return model, problems
+	}
+	model, _ := translateWith(testGeoACL)
+	require.Len(t, model.Routes, 3)
+	require.Len(t, model.Policies, 1)
+	require.Equal(t, testGeoACL, model.Policies[0].GeoACLName)
+
+	model, problems := translateWith(testHeaderGeoACL)
+	require.Empty(t, model.Routes)
+	containing(t, problems, "TCPRoute/data/db", `geo ACL "edge-countries" judges HTTP requests only`)
 }

@@ -27,11 +27,8 @@ import (
 
 const module = "github.com/trickstercache/trickster/v2/pkg/"
 
-// The configuration loader imports this package, and the relay's tests import
-// the loader. An import of the relay, the backends or the controller from here
-// is a cycle that go test reports and go build does not. The stream admission
-// lives in a separate package for that reason; this one must not reach it,
-// including pkg/proxy/l4/flow.
+// the configuration loader imports this package and the relay's tests import the loader, so an import of the
+// relay, backends or controller here is a cycle only go test reports
 
 func forbidden(name string) bool {
 	for _, bad := range []string{module + "backends", module + "kube", module + "proxy/l4"} {

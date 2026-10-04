@@ -76,11 +76,13 @@ type ConfiguredNames struct {
 	Tracers        sets.Set[string]
 	Rewriters      sets.Set[string]
 	Authenticators sets.Set[string]
-	// IPACLs are the access lists generated backends may name. A peer list or a
-	// drop list is left out: a generated backend cannot use either.
-	IPACLs sets.Set[string]
-	// DefinedIPACLs is every configured access list, eligible or not. A class
-	// parameter uses it to tell a peer or drop list from a name that is missing.
+	// GeoACLs are the geo ACLs a class's parameters may name, which is all of them; StreamGeoACLs are those
+	// a stream route may use, whose locator places a bare address
+	GeoACLs       sets.Set[string]
+	StreamGeoACLs sets.Set[string]
+	// IPACLs are the access lists a class's parameters may name: client_ip, reject ones; DefinedIPACLs are
+	// all of them, so naming another is called ineligible, not missing
+	IPACLs        sets.Set[string]
 	DefinedIPACLs sets.Set[string]
 }
 
@@ -597,6 +599,9 @@ type Policy struct {
 	TracingName       string `json:"tracing_name,omitempty"`
 	ReqRewriterName   string `json:"req_rewriter_name,omitempty"`
 	AuthenticatorName string `json:"authenticator_name,omitempty"`
+	// GeoACLName names the configured geo ACL that gates the backend a route attaches to; like the
+	// names above, only the configuration or a class's parameters set it
+	GeoACLName string `json:"geo_acl_name,omitempty"`
 	// IPACLName is the access list every backend under the policy uses. Only a
 	// class's parameters set it. An empty name leaves a less specific policy's.
 	IPACLName string `json:"ip_acl_name,omitempty"`
@@ -653,6 +658,7 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.TracingName, o.TracingName)
 	overlayString(&out.ReqRewriterName, o.ReqRewriterName)
 	overlayString(&out.AuthenticatorName, o.AuthenticatorName)
+	overlayString(&out.GeoACLName, o.GeoACLName)
 	overlayString(&out.IPACLName, o.IPACLName)
 	overlayString(&out.HealthMode, o.HealthMode)
 	overlayString(&out.LoadBalancing, o.LoadBalancing)

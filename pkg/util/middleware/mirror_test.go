@@ -165,6 +165,23 @@ type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
 
+func TestMirrorRequestKeepsClientIP(t *testing.T) {
+	const peer, client = "10.0.0.1:4000", "203.0.113.9"
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	r.RemoteAddr = peer
+	out, err := mirrorRequest(r)
+	require.NoError(t, err)
+	require.Empty(t, tctx.ClientIP(out.Context()))
+	require.Equal(t, "10.0.0.1", request.ClientIP(out))
+
+	// behind a trusted proxy, the copy is judged by the client's address, not the proxy's
+	r = r.WithContext(tctx.WithClientIP(r.Context(), client))
+	out, err = mirrorRequest(r)
+	require.NoError(t, err)
+	require.Equal(t, client, request.ClientIP(out))
+	require.True(t, tctx.IsMirrored(out.Context()))
+}
+
 func TestMirrorPreservesResolvedClientForIPACL(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
