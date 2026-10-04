@@ -6,6 +6,7 @@
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
 [![GoDoc](https://godoc.org/github.com/trickstercache/trickster/v2?status.svg)](https://godoc.org/github.com/trickstercache/trickster/v2)
 [![Docker Pulls](https://img.shields.io/docker/pulls/tricksterio/trickster.svg?maxAge=86400)](https://hub.docker.com/r/tricksterio/trickster)
+[![Slack](https://img.shields.io/badge/chat-on%20slack-green)](https://cloud-native.slack.com/archives/C022B11MMPE)
 
 Trickster is an HTTP reverse proxy/cache for http applications and a dashboard query accelerator for time series databases.
 
@@ -36,7 +37,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting
 * Built-in [Static File Server](./docs/static.md) for hosting websites and other local content
-* [Geo ACLs](./docs/geo-acl.md) restrict backends and paths by client location, on HTTP, native database and stream listeners alike
+* [Geo ACLs](./docs/geo-acl.md) and [IP ACLs](./docs/ip-acl.md) restrict backends and paths by client location, on HTTP, native database and stream listeners alike
 
 ## Time Series Database Accelerator
 
@@ -46,14 +47,30 @@ Trickster dramatically improves dashboard chart rendering times for end users by
 
 Trickster works with virtually any Dashboard application that makes queries to any of these TSDBs:
 
-| | | |
-|---|---|---|
-| <img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md) | <img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md) | <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md) |
-| <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md) | <img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md) | <img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md) |
-| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB / PostgreSQL](docs/postgres.md) | <img src="./docs/images/external/greptime-logo.svg" width=24 /> [GreptimeDB](docs/greptimedb.md) | <img src="./docs/images/external/questdb-logo.svg" width=24 /> [QuestDB](docs/questdb.md) |
-| <img src="./docs/images/external/victoriametrics-logo.svg" width=24 /> [VictoriaMetrics](docs/victoriametrics.md) | | |
-
-See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
+<table>
+  <tbody>
+    <tr>
+      <td><img src="./docs/images/external/prom_logo_60.png" width="24" alt=""> <a href="docs/prometheus.md">Prometheus</a></td>
+      <td><img src="./docs/images/external/clickhouse_logo.png" width="24" alt=""> <a href="docs/clickhouse.md">ClickHouse</a></td>
+      <td><img src="./docs/images/external/influx_logo_60.png" width="24" alt=""> <a href="docs/influxdb.md">InfluxDB</a></td>
+    </tr>
+    <tr>
+      <td><img src="./docs/images/external/victoriametrics-logo.svg" width="24" alt=""> <a href="docs/victoriametrics.md">VictoriaMetrics</a></td>
+      <td><img src="./docs/images/external/druid-logo.svg" width="24" alt=""> <a href="docs/druid.md">Apache Druid</a></td>
+      <td><img src="./docs/images/external/graphite-logo.svg" width="24" alt=""> <a href="docs/graphite.md">Graphite</a></td>
+    </tr>
+    <tr>
+      <td><img src="./docs/images/external/timescaledb_logo.svg" width="24" alt=""> <a href="docs/postgres.md">TimescaleDB / PostgreSQL</a></td>
+      <td><img src="./docs/images/external/greptime-logo.svg" width="24" alt=""> <a href="docs/greptimedb.md">GreptimeDB</a></td>
+      <td><img src="./docs/images/external/questdb-logo.svg" width="24" alt=""> <a href="docs/questdb.md">QuestDB</a></td>
+    </tr>
+    <tr>
+      <td><img src="./docs/images/external/mysql_logo_60.png" width="24" alt=""> <a href="docs/mysql.md">MySQL</a></td>
+      <td></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
 
 ### How Trickster Accelerates Time Series
 
@@ -159,10 +176,16 @@ The Makefile provides several targets, including:
 
 ## More information
 
-* Refer to the [docs](./docs/) directory for additional info.
+Refer to the [docs](./docs/) directory or <https://trickstercache.org> for additional info.
+
+## Contact
+
+You can reach us on the `#trickster` channel on either the [CNCF Slack Instance](https://cloud-native.slack.com/archives/C022B11MMPE) or the [Gophers Slack Instance](https://gophers.slack.com/archives/C9VDJLYA2), or via Google Groups at <trickster-developers@googlegroups.com>.
 
 ## Contributing
 
 Refer to [CONTRIBUTING.md](CONTRIBUTING.md)
+
+---
 
 © 2021 The Linux Foundation. All rights reserved. The Linux Foundation has registered trademarks and uses trademarks. For a list of trademarks of The Linux Foundation, please see our [Trademark Usage](https://www.linuxfoundation.org/trademark-usage) page.

@@ -6,16 +6,9 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 ## Load Balancing and Scaling
 
-**Layer 4 Load Balancing** - We extend our HTTP L7 ALB to support Layer 4 as well, with a number of new balancing mechanisms.
+**L4 Load Balancing** - We've extend the HTTP L7 ALB to support Layer 4 as well (TCP and UDP), with a number of new balancing mechanisms.
 
-- We now support sticky sessions for the Load Balancer feature.
-
-**PLANNED** - We now provide a request rate limiter based on request attributes. it can be attached at the listener, backend, and path levels, with most specific winning.
-
-- We've also added IP Access Control Lists to restrict access to certain backend resources by IP. it can be attached at the listener, backend, and path levels, with most specific winning.
-
-
-s- We now support Geolocation Access Control lists to restrict content to geographical areas through IP -> Location translation via industry-standard locator services (MaxMind, RFC 8805 geofeeds, Header from trusted downstreams). Bring your own licensed database.
+**Sticky Sessions** - We now support configurable sticky sessions for the Load Balancer feature.
 
 ## New Acceleration-supported TSDBs
 
@@ -48,3 +41,9 @@ s- We now support Geolocation Access Control lists to restrict content to geogra
 **Path Normalization** - HTTP listeners now remove `.` and `..` path segments before routing and forward the cleaned path, closing a bypass of path-scoped controls such as `authenticator_name: none`; see [Path Normalization](./configuring.md#path-normalization) for the new `path_normalization` options and opt-out.
 
 **Forwarded Hops From Trusted Proxies Only** - Trickster now forwards the `Forwarded`, `X-Forwarded-*` and `X-Real-IP` values a request arrived with only when one of the listener's `trusted_proxies` delivered it, appending its own hop; from any other peer the origin receives Trickster's hop alone, so a client cannot hand the origin a forged address. Passthrough paths, which forwarded no prior hops before, now forward a trusted proxy's. **A listener behind a load balancer must list it in `trusted_proxies`** for the origin to keep seeing client addresses. See [Forwarding Headers to the Origin](./configuring.md#forwarding-headers-to-the-origin).
+
+**PLANNED** - We now provide a request rate limiter based on request attributes. it can be attached at the listener, backend, and path levels, with most specific winning.
+
+**IP ACLs** - We've also added IP Access Control Lists to restrict access to certain backend resources by IP. it can be attached at the listener, backend, and path levels, with most specific winning.
+
+**Geo ACLs** - We now support Geolocation Access Control lists to restrict content to geographical areas through IP -> Location translation via industry-standard locator services (MaxMind, RFC 8805 geofeeds, Header from trusted downstreams). Bring your own licensed database.
