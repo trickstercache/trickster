@@ -17,13 +17,66 @@
 package session
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 )
+
+func TestRequiredReleasedAtHandOff(t *testing.T) {
+	// a dependent request waits for the one it requires to be handed off, not merely to arrive (§9.2)
+	synctest.Test(t, func(t *testing.T) {
+		c, _ := codec.ForDraft(17)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		s := &Session{codec: c, ctx: ctx, opts: Options{Role: RoleServer}}
+		done := make(chan bool, 1)
+		go func() {
+			arrived, _ := s.awaitRequired(2, 1)
+			done <- arrived
+		}()
+		synctest.Wait()
+		if err := s.acceptPeerID(0); err != nil {
+			t.Fatal(err)
+		}
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("released when the required request arrived, before it was handed off")
+		default:
+		}
+		s.handedOff(0)
+		if !<-done {
+			t.Error("released as timed out")
+		}
+		if arrived, _ := s.awaitRequired(4, 2); !arrived {
+			t.Error("a request already handed off releases at once")
+		}
+		go func() {
+			arrived, _ := s.awaitRequired(8, 1)
+			done <- arrived
+		}()
+		time.Sleep(requiredRequestWait)
+		synctest.Wait()
+		if <-done {
+			t.Error("a required request never handed off times the dependent out")
+		}
+		if len(s.requires) != 0 {
+			t.Errorf("a timed out waiter is forgotten: %v", s.requires)
+		}
+		later, _ := codec.ForDraft(18)
+		s.codec = later
+		s.handedOff(10)
+		if s.handed.has(5) {
+			t.Error("a draft without required request IDs tracks no hand-offs")
+		}
+	})
+}
 
 func TestIDWindow(t *testing.T) {
 	var w idWindow

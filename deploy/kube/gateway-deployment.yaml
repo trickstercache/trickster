@@ -74,6 +74,10 @@ spec:
               containerPort: 80
             - name: https
               containerPort: 443
+            # HTTP/3 and MoQ on the same port number
+            - name: https-udp
+              containerPort: 443
+              protocol: UDP
             # the Ingress listeners configured in gateway-configmap.yaml
             - name: web
               containerPort: 8080

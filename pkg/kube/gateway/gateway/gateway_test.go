@@ -177,6 +177,10 @@ func (c *cache) exists(kind, ns, name string) bool {
 		})
 	case cachepolicy.KindService:
 		return c.services[ns+"/"+name] != nil
+	case cachepolicy.KindUDPRoute:
+		return slices.ContainsFunc(c.udpRoutes, func(r *gwapiv1a2.UDPRoute) bool {
+			return r.Namespace == ns && r.Name == name
+		})
 	}
 	return false
 }
@@ -904,14 +908,20 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 }
 
 func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
-	// validation compiled the file's office list onto at least one generated backend
+	// validation compiled the file's office list onto at least one generated backend, or a moq listener, which
+	// judges its sessions by its own list
 	t.Helper()
 	for _, b := range conf.Backends {
 		if b != nil && b.IPACLName == "office" && b.IPACL != nil {
 			return
 		}
 	}
-	t.Fatal("generated config did not resolve ip acl office onto a backend")
+	for _, l := range conf.Listeners {
+		if l != nil && l.IPACLName == "office" && l.IPACL != nil {
+			return
+		}
+	}
+	t.Fatal("generated config did not resolve ip acl office onto a backend or listener")
 }
 
 // baseConfig is the file configuration the generated overlay is merged

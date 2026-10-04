@@ -345,14 +345,20 @@ func TestHTTPRoutes(t *testing.T) {
 		t.Errorf("a backend with no paths accepts sessions everywhere: %+v", paths)
 	}
 	o := bo.New()
-	o.Paths = po.List{po.New(), &po.Options{Path: "/hello", HandlerName: "localresponse"}, nil}
+	o.Paths = po.List{
+		po.New(), &po.Options{Path: "/hello", HandlerName: "localresponse"}, nil,
+		&po.Options{Path: "^/moq/[0-9]+$", MatchType: matching.PathMatchTypeRegex},
+	}
 	if client.DefaultPathConfigs(o) != nil {
 		t.Error("configured paths alone decide which sessions the backend serves")
 	}
 	webTransportPaths(o)
 	if o.Paths[0].HandlerName != "moq" || o.Paths[0].Methods[0] != http.MethodConnect ||
-		o.Paths[1].HandlerName != "localresponse" {
+		o.Paths[0].MatchType != matching.PathMatchTypeSegment || o.Paths[1].HandlerName != "localresponse" {
 		t.Errorf("proxy paths become session paths, local ones stay: %+v %+v", o.Paths[0], o.Paths[1])
+	}
+	if p := o.Paths[3]; p.HandlerName != "moq" || p.MatchType != matching.PathMatchTypeRegex {
+		t.Errorf("a pattern keeps matching as one: %+v", p)
 	}
 	if client.DefaultHealthCheckConfig() == nil {
 		t.Error("health check defaults")

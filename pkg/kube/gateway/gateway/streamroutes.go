@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
@@ -28,6 +30,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
+
+const schemeMoQT = "moqt"
 
 // streamInput is a TCPRoute, TLSRoute or UDPRoute in one shape: its metadata, parents and
 // hostnames in an HTTPRoute shell, so attachment is decided as for every other route kind
@@ -123,6 +127,7 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 		hosts     []string
 		anyHost   bool
 		policy    string
+		protocol  string
 	}
 	var units []*unit
 	byPort := make(map[int]*unit)
@@ -132,9 +137,14 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 		if len(hosts) == 0 {
 			hosts = []string{""}
 		}
+		protocol := in.protocol
+		if a.listener.protocol == ir.ProtocolMoQ {
+			// served as MoQ Transport sessions, claimed per authority as a TLS route is per server name
+			protocol = ir.ProtocolMoQ
+		}
 		var won []string
 		for _, h := range hosts {
-			key := streamClaimKey(in.protocol, a.listener.port, h)
+			key := streamClaimKey(protocol, a.listener.port, h)
 			owner, taken := t.claims[key]
 			switch {
 			case taken && owner.Key() == src.Key():
@@ -155,7 +165,7 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 		a.listener.attached++
 		u, ok := byPort[a.listener.port]
 		if !ok {
-			u = &unit{policy: a.gateway.policy}
+			u = &unit{policy: a.gateway.policy, protocol: protocol}
 			byPort[a.listener.port] = u
 			units = append(units, u)
 		}
@@ -193,18 +203,27 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 		return
 	}
 	for i, u := range units {
-		group := t.streamBackendGroup(src, i, in.HTTPRoute.Namespace, in.protocol, in.rules[0],
+		group := t.streamBackendGroup(src, i, in.HTTPRoute.Namespace, u.protocol, in.rules[0],
 			report, t.routingModeOf(u.policy))
 		t.model.Backends = append(t.model.Backends, group)
+		governing := []string{u.policy}
+		switch {
+		case u.protocol == ir.ProtocolMoQ:
+			governing = append(governing, t.moqPolicies(in, group)...)
+		case u.protocol == ir.ProtocolUDP &&
+			t.policies.Provider(translate.TargetUDPRoute, in.Namespace, in.Name, "") == providers.MoQ:
+			t.reject(src, "provider %s is not applied on %s: a UDP listener relays datagrams, and only a %s "+
+				"listener serves MoQ sessions", providers.MoQ, strings.Join(u.listeners, ", "), ir.GatewayProtocolMoQ)
+		}
 		r := ir.Route{
 			Name:      src.Key() + "|" + u.listeners[0],
 			Source:    src,
 			Listeners: slices.Clone(u.listeners),
 			Rank:      rank,
-			Protocol:  in.protocol,
+			Protocol:  u.protocol,
 			Rules: []ir.Rule{{
 				BackendGroup: group.Name,
-				Policy:       t.policies.Bind(src, 0, nil, u.policy),
+				Policy:       t.policies.Bind(src, 0, nil, governing...),
 			}},
 		}
 		if !u.anyHost {
@@ -212,6 +231,19 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 		}
 		t.model.Routes = append(t.model.Routes, r)
 	}
+}
+
+func (t *translator) moqPolicies(in streamInput, group ir.BackendGroup) []string {
+	// a relay's cache settings come from the policy on its UDPRoute and, for a single origin, on that Service
+	out := []string{t.policies.Attach(translate.TargetUDPRoute, in.Namespace, in.Name, "")}
+	if len(group.Members) == 1 && !group.Members[0].Invalid {
+		svc := group.Members[0].Service
+		out = append(out, t.policies.Attach(translate.TargetService, svc.Namespace, svc.Name, ""))
+		if svc.PortName != "" {
+			out = append(out, t.policies.Attach(translate.TargetService, svc.Namespace, svc.Name, svc.PortName))
+		}
+	}
+	return out
 }
 
 func (t *translator) streamBackendGroup(src ir.Source, ruleIndex int, namespace, protocol string,
@@ -225,8 +257,12 @@ func (t *translator) streamBackendGroup(src ir.Source, ruleIndex int, namespace,
 		RuleIndex: ruleIndex,
 	}
 	scheme, transport := ir.ProtocolTCP, corev1.ProtocolTCP
-	if protocol == ir.ProtocolUDP {
+	switch protocol {
+	case ir.ProtocolUDP:
 		scheme, transport = ir.ProtocolUDP, corev1.ProtocolUDP
+	case ir.ProtocolMoQ:
+		// a MoQ origin is reached by native QUIC on the Service's UDP port
+		scheme, transport = schemeMoQT, corev1.ProtocolUDP
 	}
 	for j, ref := range refs {
 		weight := 1

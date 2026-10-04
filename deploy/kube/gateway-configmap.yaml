@@ -99,3 +99,6 @@ data:
         # authenticator_name: gateway-auth
         # req_rewriter_name: strip-internal-headers
         # tracing_name: otlp
+        # HTTPS listeners also serve HTTP/3 (and WebTransport) on UDP; a
+        # class's http3 parameter overrides this per GatewayClass
+        # http3: false

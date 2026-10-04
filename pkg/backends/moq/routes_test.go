@@ -17,11 +17,16 @@
 package moq
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
 type namedBackend struct {
@@ -85,6 +90,23 @@ func TestRouteTable(t *testing.T) {
 	if _, ok := strict.ResolveRoute(backends.RouteInput{Authority: "c.example.com", Path: "/"}); ok {
 		t.Error("a host no backend names is refused when several backends share the listener")
 	}
+	// a wildcard host covers what no backend names exactly, a one-label wildcard one label only
+	d, e := namedBackend{name: "d"}, namedBackend{name: "e"}
+	wild := &routeTable{entries: []routeEntry{
+		{name: "a", client: a, hosts: []string{"live.example.com"}},
+		{name: "d", client: d, hosts: []string{"**.example.com"}},
+		{name: "e", client: e, hosts: []string{"*.example.net"}},
+	}}
+	for authority, want := range map[string]namedBackend{
+		"live.example.com": a, "eu.live.example.com": d, "vod.example.net": e,
+	} {
+		if r, ok := wild.ResolveRoute(backends.RouteInput{Authority: authority}); !ok || r.Target.Backend != want {
+			t.Errorf("%s routed to %v, want %s", authority, r.Target.Backend, want.name)
+		}
+	}
+	if _, ok := wild.ResolveRoute(backends.RouteInput{Authority: "a.vod.example.net"}); ok {
+		t.Error("a one-label wildcard does not match two labels")
+	}
 	single := &routeTable{entries: []routeEntry{{name: "a", client: a, hosts: []string{"a.example.com"}}}}
 	if d, ok := single.ResolveRoute(backends.RouteInput{Authority: "elsewhere"}); !ok || d.Target.Backend != a {
 		t.Error("a listener with one backend serves every session with it")
@@ -92,6 +114,31 @@ func TestRouteTable(t *testing.T) {
 	var empty *routeTable
 	if _, ok := empty.ResolveRoute(backends.RouteInput{}); ok {
 		t.Error("no routes")
+	}
+}
+
+func TestRoutesForPatterns(t *testing.T) {
+	// a pattern routes WebTransport sessions alone, so a backend with nothing else stays out of the native table
+	c := config.NewConfig()
+	c.Backends = bo.Lookup{}
+	all := backends.Backends{}
+	for name, paths := range map[string]po.List{
+		"prefix":  {{Path: "/live", MatchType: matching.PathMatchTypeSegment}},
+		"pattern": {{Path: "^/vod/[a-z]+$", MatchType: matching.PathMatchTypeRegex}},
+		"mixed":   {{Path: "^/x$", MatchType: matching.PathMatchTypeRegex}, {Path: "/mixed"}},
+	} {
+		o := bo.New()
+		o.Name, o.Provider, o.ListenerNames, o.Paths = name, "moq", []string{"moq1"}, paths
+		c.Backends[name] = o
+		all[name] = namedBackend{name: name}
+	}
+	rt := routesFor(native.BuildRequest{Config: c, ListenerName: "moq1", BackendClients: all})
+	got := map[string][]string{}
+	for _, e := range rt.entries {
+		got[e.name] = e.paths
+	}
+	if len(got) != 2 || !slices.Equal(got["prefix"], []string{"/live"}) || !slices.Equal(got["mixed"], []string{"/mixed"}) {
+		t.Errorf("native routes: %v", got)
 	}
 }
 

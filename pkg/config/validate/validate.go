@@ -418,7 +418,8 @@ func Listeners(c *config.Config) error {
 		if options.Protocol != listener.ProtocolHTTP && options.TLSListenPort > 0 {
 			return fmt.Errorf("listener %q cannot configure a TLS port for protocol %q", name, options.Protocol)
 		}
-		if options.Protocol != listener.ProtocolHTTP && options.TLSRuntimeCerts {
+		if options.Protocol != listener.ProtocolHTTP && options.Protocol != listener.ProtocolMoQ &&
+			options.TLSRuntimeCerts {
 			return fmt.Errorf("listener %q cannot use tls_runtime_certs with protocol %q", name, options.Protocol)
 		}
 		if options.Protocol != listener.ProtocolHTTP && options.Protocol != listener.ProtocolMoQ &&
@@ -509,9 +510,10 @@ func Listeners(c *config.Config) error {
 		if !builtIn && mapped[name] == 0 {
 			addWarning(c, fmt.Sprintf("listener %q is unused and will not be started", name))
 		}
-		if options.Protocol == listener.ProtocolMoQ && options.Active && !tlsMapped[name] {
+		if options.Protocol == listener.ProtocolMoQ && options.Active && !tlsMapped[name] && !options.TLSRuntimeCerts {
 			return fmt.Errorf("listener %q with protocol %q needs a certificate: a backend it serves must set "+
-				"tls.full_chain_cert_path and tls.private_key_path", name, options.Protocol)
+				"tls.full_chain_cert_path and tls.private_key_path, or the listener tls_runtime_certs",
+				name, options.Protocol)
 		}
 
 		runtimeCerts := options.TLSRuntimeCerts || acmeOnDemandListener(c, name)
@@ -1116,9 +1118,11 @@ func webTransportWarnings(c *config.Config, listenerName string, mapped map[stri
 func moqRoutes(c *config.Config, listenerName string) error {
 	// sessions are routed by the AUTHORITY and PATH of their SETUP, so no two backends may claim the same pair
 	claims := make(map[string]string)
+	members := c.Backends.PoolMembers()
 	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
 		o := c.Backends[name]
-		if o == nil || o.IsTemplate || !o.UsesListener(listenerName) || !strings.EqualFold(o.Provider, providers.MoQ) {
+		if o == nil || o.IsTemplate || !o.UsesListener(listenerName) || !strings.EqualFold(o.Provider, providers.MoQ) ||
+			members.Contains(name) {
 			continue
 		}
 		hosts := o.Hosts

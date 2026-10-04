@@ -736,6 +736,8 @@ func (c *Controller) targetExists(kind, namespace, name string) bool {
 		return c.watcher.Gateway(namespace, name) != nil
 	case cachepolicy.KindHTTPRoute:
 		return c.watcher.HTTPRoute(namespace, name) != nil
+	case cachepolicy.KindUDPRoute:
+		return c.watcher.UDPRoute(namespace, name) != nil
 	case cachepolicy.KindService:
 		return c.watcher.Service(namespace, name) != nil
 	case cachepolicy.KindIngress:
@@ -928,7 +930,7 @@ func (c *Controller) applyCerts(ctx context.Context, model *ir.IR, accepted bool
 	var problems []ir.Problem
 	want := make(map[certKey]certMaterial)
 	for _, l := range model.Listeners {
-		if !l.External && l.Protocol != ir.ProtocolHTTPS {
+		if !l.External && !ir.TerminatesTLS(l.Protocol) {
 			continue
 		}
 		listener := compile.CompiledListenerName(l)
@@ -968,7 +970,7 @@ func markProgrammed(model *ir.IR, report *ir.Report, installed map[certKey]struc
 	}
 	var index listenerIndex
 	for _, l := range model.Listeners {
-		if l.External || l.Protocol != ir.ProtocolHTTPS {
+		if l.External || !ir.TerminatesTLS(l.Protocol) {
 			continue
 		}
 		compiled := compile.CompiledListenerName(l)

@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
 
@@ -79,8 +80,8 @@ type routeTable struct {
 
 var _ backends.RouteResolver = (*routeTable)(nil)
 
-// ResolveRoute prefers a backend naming the session's host over one naming none, then the longest path prefix;
-// a listener with one backend serves every session with it
+// ResolveRoute prefers a backend naming the session's host, then one matching it by wildcard, then one naming no
+// host, and among those the longest path prefix; a listener with one backend serves every session with it
 func (rt *routeTable) ResolveRoute(in backends.RouteInput) (backends.RouteDecision, bool) {
 	if rt == nil || len(rt.entries) == 0 {
 		return backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
@@ -98,23 +99,15 @@ func (rt *routeTable) ResolveRoute(in backends.RouteInput) (backends.RouteDecisi
 	}
 	best, bestScore := -1, -1
 	for i, e := range rt.entries {
-		hostMatch := len(e.hosts) == 0
-		named := false
-		if slices.Contains(e.hosts, host) {
-			hostMatch, named = true, true
-		}
-		if !hostMatch {
+		rank := hostRank(e.hosts, host)
+		if rank < 0 {
 			continue
 		}
 		plen := longestPrefix(e.paths, path)
 		if plen < 0 {
 			continue
 		}
-		score := plen
-		if named {
-			score += 1 << 20
-		}
-		if score > bestScore {
+		if score := plen + rank<<20; score > bestScore {
 			best, bestScore = i, score
 		}
 	}
@@ -125,6 +118,22 @@ func (rt *routeTable) ResolveRoute(in backends.RouteInput) (backends.RouteDecisi
 		Target:  backends.RouteTarget{Backend: rt.entries[best].client},
 		Outcome: backends.RouteOutcomeSelected,
 	}, true
+}
+
+func hostRank(hosts []string, host string) int {
+	// 2 names the host, 1 matches it by wildcard, 0 names no host at all, and -1 does not match
+	if len(hosts) == 0 {
+		return 0
+	}
+	if slices.Contains(hosts, host) {
+		return 2
+	}
+	for _, h := range hosts {
+		if hostnames.IsWildcard(h) && hostnames.Overlap(h, host) {
+			return 1
+		}
+	}
+	return -1
 }
 
 func hostOnly(authority string) string {

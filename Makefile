@@ -575,8 +575,8 @@ kind-integration-ingress:
 		deployment/prometheus --timeout=180s
 
 # Deploys the Gateway API controller scenarios (TestGatewayKind,
-# TestIngressAnnotationsKind, TestGatewayRollingUpgradeKind and the conformance
-# suite) into the running kind cluster, after kind-integration-ingress. The
+# TestIngressAnnotationsKind, TestGatewayRollingUpgradeKind, TestGatewayMoQKind and
+# the conformance suite) into the running kind cluster, after kind-integration-ingress. The
 # Gateway API CRDs come from the module go.mod pins, so the cluster serves the
 # version the controller is built against, and go first because the controller
 # probes for them once at startup. The experimental channel is installed
@@ -590,13 +590,15 @@ kind-integration-gateway:
 	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k $(GATEWAY_API_CRDS)
 	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established crd --all --timeout=60s
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway.yaml
+	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway-moq.yaml
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress-annotations.yaml
 	@ip=$$(kubectl --context kind-$(KIND_CLUSTER) get node $(KIND_CLUSTER)-worker \
 		-o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}') && \
 	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it patch service trickster-gateway \
 		-p "{\"spec\":{\"externalIPs\":[\"$$ip\"]}}"
 	kubectl --context kind-$(KIND_CLUSTER) -n trickster-it rollout status \
-		deployment/trickster-gateway deployment/webecho-canary deployment/httpbin --timeout=180s
+		deployment/trickster-gateway deployment/webecho-canary deployment/httpbin \
+		deployment/moq-relay --timeout=180s
 
 # Runs every kind scenario against the running cluster, once all three deploy
 # targets above have been applied

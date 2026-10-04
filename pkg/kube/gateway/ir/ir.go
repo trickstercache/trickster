@@ -52,11 +52,22 @@ const (
 	ProtocolTLS = "tls"
 	// ProtocolUDP relays datagrams to one route's backends, one session per client
 	ProtocolUDP = "udp"
+	// ProtocolMoQ serves MoQ Transport sessions over QUIC, terminating TLS with the listener's certificates
+	// and routing each session by the authority it names
+	ProtocolMoQ = "moq"
 )
+
+// GatewayProtocolMoQ is the Gateway API listener protocol served as ProtocolMoQ
+const GatewayProtocolMoQ = "trickstercache.org/moq"
 
 // IsStream reports whether a protocol relays bytes without reading them: tcp, tls or udp
 func IsStream(protocol string) bool {
 	return protocol == ProtocolTCP || protocol == ProtocolTLS || protocol == ProtocolUDP
+}
+
+// TerminatesTLS reports whether a listener of the protocol serves certificates of its own: https or moq
+func TerminatesTLS(protocol string) bool {
+	return protocol == ProtocolHTTPS || protocol == ProtocolMoQ
 }
 
 // Path handlers a Policy may select, spelled as the generated path configuration carries them so
@@ -206,7 +217,7 @@ type Listener struct {
 	External bool `json:"external,omitempty"`
 	// Port is the TCP port served; unset for an external listener
 	Port int `json:"port,omitempty"`
-	// Protocol is http, https, tcp, tls or udp; unset for an external listener
+	// Protocol is http, https, tcp, tls, udp or moq; unset for an external listener
 	Protocol string `json:"protocol,omitempty"`
 	// Hostname optionally restricts the listener to one hostname, which may
 	// carry a single leading wildcard label
@@ -214,6 +225,9 @@ type Listener struct {
 	// CertRefs names the CertRef entries this listener serves; empty for
 	// a plaintext listener
 	CertRefs []string `json:"cert_refs,omitempty"`
+	// HTTP3 marks an https listener that also serves HTTP/3 on its port number's UDP side, which
+	// WebTransport sessions arrive over
+	HTTP3 bool `json:"http3,omitempty"`
 	// Source is the Gateway that declared it
 	Source Source `json:"source"`
 }
@@ -233,8 +247,8 @@ type Route struct {
 	// Rank orders routes whose matches meet at one slot, lower first; translators assign it from
 	// object age, oldest first, so every replica reaches the same order
 	Rank int `json:"rank,omitempty"`
-	// Protocol is grpc for a route whose backends speak gRPC, or tcp, tls or udp for one that
-	// relays its listener's bytes unread; empty is plain HTTP
+	// Protocol is grpc for a route whose backends speak gRPC, tcp, tls or udp for one that relays its
+	// listener's bytes unread, or moq for one serving MoQ Transport sessions; empty is plain HTTP
 	Protocol string `json:"protocol,omitempty"`
 	// Rules are evaluated in the order the source declared them
 	Rules []Rule `json:"rules,omitempty"`
@@ -638,6 +652,9 @@ type Policy struct {
 	// ResultHeader is expose or hide: whether the X-Trickster-Result response header reaches
 	// the client; empty exposes it
 	ResultHeader string `json:"result_header,omitempty"`
+	// HTTP3 is true or false: whether the https listeners of the Gateways under the policy also
+	// serve HTTP/3; empty takes the default, and only a class's parameters set it
+	HTTP3 string `json:"http3,omitempty"`
 }
 
 // Overlay returns the policy with every field the other sets written over it: header updates
@@ -669,6 +686,7 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.Provider, o.Provider)
 	overlayString(&out.StepAlignment, o.StepAlignment)
 	overlayString(&out.ResultHeader, o.ResultHeader)
+	overlayString(&out.HTTP3, o.HTTP3)
 	if o.TimeoutMS > 0 {
 		out.TimeoutMS = o.TimeoutMS
 	}

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
@@ -104,6 +105,8 @@ func TestUpdateLimitOnlyWhereDefined(t *testing.T) {
 	}
 }
 
+const heldWindow = 50 * time.Millisecond // how long a held request is watched for an early delivery
+
 func TestRequiredRequestID(t *testing.T) {
 	sh := newRecorder()
 	s, p := rawPeer(t, session.RoleServer, func(o *session.Options) {
@@ -113,13 +116,20 @@ func TestRequiredRequestID(t *testing.T) {
 	sub := func(id, delta uint64, name string) *message.Subscribe {
 		return &message.Subscribe{RequestID: id, RequiredRequestID: delta, Track: track(name, "live")}
 	}
-	// request 2 depends on request 0, so it waits for it however the two streams arrive
+	// request 2 depends on request 0, so it is held until request 0 has been handed to the handler
 	p.openBidi(sub(2, 1, "second"))
+	select {
+	case r := <-sh.requests:
+		t.Fatalf("request %d was delivered before the request it requires arrived", r.RequestID())
+	case <-time.After(heldWindow):
+	}
 	p.openBidi(sub(0, 0, "first"))
-	first := recv(t, sh.requests, "the required request")
-	second := recv(t, sh.requests, "the dependent request")
-	if first.RequestID() != 0 || second.RequestID() != 2 {
-		t.Errorf("delivered %d then %d", first.RequestID(), second.RequestID())
+	delivered := map[uint64]bool{}
+	for range 2 {
+		delivered[recv(t, sh.requests, "a request").RequestID()] = true
+	}
+	if !delivered[0] || !delivered[2] {
+		t.Errorf("delivered %v", delivered)
 	}
 	// one whose required request never arrives times out
 	_, br := p.openBidi(sub(6, 1, "orphan"))

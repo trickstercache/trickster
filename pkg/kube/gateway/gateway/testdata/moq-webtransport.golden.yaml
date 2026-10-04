@@ -1,0 +1,154 @@
+listeners:
+    kgw--listener-http-80:
+        port: 80
+    kgw--listener-https-443:
+        tls_port: 443
+        tls_runtime_certs: true
+        http3:
+            enabled: true
+    kgw--listener-https-8443:
+        tls_port: 8443
+        tls_runtime_certs: true
+    kgw--listener-moq-443:
+        protocol: moq
+        port: 443
+        tls_runtime_certs: true
+backends:
+    kgw--httproute.media.by-port_r0:
+        provider: moq
+        origin_url: https://origin-c.media.svc:443/
+        hosts:
+            - live.example.com
+        listener_names:
+            - kgw--listener-https-443
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /by-port
+              match_type: exact
+              handler: moq
+              methods:
+                - '*'
+    kgw--httproute.media.live_r0:
+        provider: moq
+        hosts:
+            - live.example.com
+        listener_names:
+            - kgw--listener-https-443
+        max_ttl: 30s
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /live
+              match_type: segment
+              handler: moq
+              methods:
+                - '*'
+        moq:
+            upstream:
+                alb: kgw--httproute.media.live_r0-origins
+    kgw--httproute.media.live_r0-origins:
+        provider: alb
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        alb:
+            mechanism: hrw
+            pool:
+                - name: kgw--httproute.media.live_r0_b0
+                  weight: 3
+                - name: kgw--httproute.media.live_r0_b1
+                  weight: 1
+    kgw--httproute.media.live_r0_b0:
+        provider: moq
+        origin_url: https://origin-a.media.svc:443/
+        listener_names:
+            - kgw--listener-https-443
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--httproute.media.live_r0_b1:
+        provider: moq
+        origin_url: https://origin-b.media.svc:443/
+        listener_names:
+            - kgw--listener-https-443
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--httproute.media.tcp-origin_r0:
+        provider: moq
+        origin_url: https://unresolved.kgw.invalid/
+        hosts:
+            - live.example.com
+        listener_names:
+            - kgw--listener-https-443
+        max_ttl: 30s
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /tcp
+              match_type: segment
+              handler: moq
+              methods:
+                - '*'
+    kgw--httproute.media.vod_r0:
+        provider: moq
+        origin_url: https://origin-b.media.svc:443/
+        hosts:
+            - live.example.com
+        listener_names:
+            - kgw--listener-https-443
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /vod
+              match_type: segment
+              handler: moq
+              methods:
+                - '*'
+    kgw--listener-http-80_none:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-http-80
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 404
+              response_body: no route
+    kgw--listener-https-8443_none:
+        provider: rp
+        origin_url: https://unresolved.kgw.invalid
+        listener_names:
+            - kgw--listener-https-8443
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        paths:
+            - path: /
+              match_type: prefix
+              handler: localresponse
+              methods:
+                - '*'
+              response_code: 404
+              response_body: no route
+    kgw--udproute.media.native_r0:
+        provider: moq
+        origin_url: moqt://origin-a.media.svc:443/
+        hosts:
+            - moq.example.com
+        listener_names:
+            - kgw--listener-moq-443
+        tls:
+            insecure_skip_verify: true

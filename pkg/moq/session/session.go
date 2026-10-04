@@ -120,6 +120,7 @@ type Session struct {
 	mu         sync.Mutex
 	nextID     uint64
 	peerIDs    idWindow
+	handed     idWindow
 	inbound    int
 	aliases    map[uint64]*Request
 	fetches    map[uint64]*Request
@@ -554,15 +555,25 @@ func (s *Session) acceptPeerID(id uint64) error {
 	if !s.peerIDs.add(id / 2) {
 		return &message.SessionError{Code: message.CodeInvalidRequestID, Reason: "duplicate request ID"}
 	}
+	return nil
+}
+
+func (s *Session) handedOff(id uint64) {
+	// a request given to the handler, or refused, releases those that named it as the one they require (§9.2)
+	if !s.codec.Has(codec.CapRequiredRequestID) {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.handed.add(id / 2)
 	for _, ch := range s.requires[id/2] {
 		close(ch)
 	}
 	delete(s.requires, id/2)
-	return nil
 }
 
 func (s *Session) awaitRequired(id, delta uint64) (bool, error) {
-	// draft -17: a request names one it depends on, which must arrive first or the dependent one times out
+	// draft -17: a request names one it depends on, which must be delivered first or the dependent one times out
 	if delta == 0 || !s.codec.Has(codec.CapRequiredRequestID) {
 		return true, nil
 	}
@@ -574,7 +585,7 @@ func (s *Session) awaitRequired(id, delta uint64) (bool, error) {
 	}
 	need := (id - 2*delta) / 2
 	s.mu.Lock()
-	if s.peerIDs.has(need) {
+	if s.handed.has(need) {
 		s.mu.Unlock()
 		return true, nil
 	}
@@ -705,11 +716,13 @@ func (s *Session) handleBidi(st Stream) {
 	}
 	if !arrived {
 		_ = r.Reject(message.RequestTimeout, "the required request did not arrive", 0)
+		s.handedOff(id)
 		r.readLoop()
 		return
 	}
 	if reason, reserved := reservedNamespace(m); reserved {
 		_ = r.Reject(message.RequestDoesNotExist, reason, 0)
+		s.handedOff(id)
 		r.readLoop()
 		return
 	}
@@ -722,6 +735,7 @@ func (s *Session) handleBidi(st Stream) {
 	s.mu.Unlock()
 	if full {
 		_ = r.Reject(message.RequestExcessiveLoad, "too many requests", retryExcessiveLoad)
+		s.handedOff(id)
 		r.readLoop()
 		return
 	}
@@ -742,6 +756,7 @@ func (s *Session) handleBidi(st Stream) {
 	} else {
 		go s.opts.Handler.HandleRequest(r)
 	}
+	s.handedOff(id)
 	r.readLoop()
 }
 

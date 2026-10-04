@@ -66,6 +66,7 @@ spec:
                         enum:
                           - Gateway
                           - HTTPRoute
+                          - UDPRoute
                           - Service
                           - Ingress
                       name:
@@ -89,13 +90,17 @@ spec:
                   description: >-
                     Serves the target through a time series provider, which accelerates
                     the provider's own API paths rather than caching responses as opaque
-                    objects.
+                    objects, or as moq, a MoQ Transport relay: WebTransport sessions on an
+                    HTTPRoute, native QUIC sessions on a UDPRoute served by a
+                    trickstercache.org/moq listener. A moq relay applies cacheName, maxTTL
+                    and loadBalancing, and ignores the fields only HTTP responses have.
                   type: string
                   enum:
                     - prometheus
                     - influxdb
                     - clickhouse
                     - graphite
+                    - moq
                 cacheName:
                   description: A cache the Trickster configuration defines.
                   type: string

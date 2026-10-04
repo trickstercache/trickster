@@ -219,6 +219,14 @@ reach a non-root process: the capability is dropped at `execve` unless the
 binary carries file capabilities, which the image does not set. A Gateway
 declaring some other port needs a matching Service entry.
 
+The Service also forwards UDP 443, where an `HTTPS` listener on 443 serves
+HTTP/3 and WebTransport and a `trickstercache.org/moq` listener on 443 serves
+MoQ ([MoQ relays](./kubernetes-gateway.md#moq-relays)). A LoadBalancer mixing
+TCP and UDP ports needs Kubernetes 1.26 or later and a load balancer that
+supports it; where yours does not, remove the `https-udp` entry, or move it
+to a Service of its own. A Gateway listener on another UDP port needs an
+entry of its own with `protocol: UDP`.
+
 A port is bound once, so a port belongs either to a Gateway or to a listener
 configured in the ConfigMap. The manifests give 80 and 443 to Gateways and
 serve Ingresses on 8080 and 8443, which the Service also forwards. To serve

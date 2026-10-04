@@ -459,8 +459,8 @@ func TestOlderDraftVectors(t *testing.T) {
 		typ  uint64
 		body string
 	}{
-		{c17, 0x11, "01 00 00 03 00"},                          // subscribe options out of range
-		{c19, 0x16, "02 07"},                                   // unknown fetch type
+		{c17, 0x11, "01 00 00 03 00"},                            // subscribe options out of range
+		{c19, 0x16, "02 07"},                                     // unknown fetch type
 		{c19, 0x16, "02 01 01 04 6c697665 01 76 05 00 03 00 00"}, // a fetch ending before it starts
 		{c19, 0x03, "00 01 04 6c697665 01 76 01 21 01 09"},       // unknown filter type
 	} {

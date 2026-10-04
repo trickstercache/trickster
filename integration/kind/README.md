@@ -120,13 +120,20 @@ to have run first, for the cache policy CRD and the Prometheus it deploys.
   `trickstercache.org/` ones, and asserts the foreign annotations are
   ignored, the recognized ones apply, and an unrecognized
   `trickstercache.org/` annotation is rejected with an Event.
+- `TestGatewayMoQKind` serves `gateway-moq.yaml`, which
+  `make kind-integration-gateway` applies beside `gateway.yaml`: a
+  `moq-relay` origin behind a `trickstercache.org/moq` listener and a
+  UDPRoute. The test creates the listener's TLS Secret, waits for the
+  listener to present its certificate, publishes random objects to the
+  origin directly on UDP NodePort 30090 and asserts they arrive intact
+  through the Gateway on UDP NodePort 30089.
 
 ```sh
 make kind-integration-start
 make kind-integration-ingress
 make kind-integration-gateway
 cd integration
-TRICKSTER_KIND_TEST=1 go test -run 'TestGatewayKind|TestGatewayRollingUpgradeKind|TestIngressAnnotationsKind' -v .
+TRICKSTER_KIND_TEST=1 go test -run 'TestGatewayKind|TestGatewayRollingUpgradeKind|TestIngressAnnotationsKind|TestGatewayMoQKind' -v .
 ```
 
 ## Gateway API conformance

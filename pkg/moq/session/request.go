@@ -474,6 +474,8 @@ func (r *Request) receive(m message.Message) error {
 		if err = r.s.acceptPeerID(v.RequestID); err != nil {
 			return err
 		}
+		// an update is delivered on its request's stream, in order, by the time this returns
+		defer r.s.handedOff(v.RequestID)
 		if err = r.s.resolveTokens(&v.Params); err != nil {
 			return err
 		}

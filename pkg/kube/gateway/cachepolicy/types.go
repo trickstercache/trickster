@@ -53,6 +53,7 @@ var (
 const (
 	KindGateway   = ir.KindGateway
 	KindHTTPRoute = ir.KindHTTPRoute
+	KindUDPRoute  = ir.KindUDPRoute
 	KindService   = "Service"
 	KindIngress   = ir.KindIngress
 )

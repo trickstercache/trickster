@@ -40,6 +40,7 @@ type listenerState struct {
 	port     int
 	protocol string
 	hostname string
+	http3    bool
 	allowed  allowedRoutes
 	// attached counts the routes accepted on this listener
 	attached int
@@ -63,6 +64,7 @@ var routeKinds = map[string][]string{
 	ir.ProtocolTCP:   {kindTCPRoute},
 	ir.ProtocolTLS:   {kindTLSRoute},
 	ir.ProtocolUDP:   {kindUDPRoute},
+	ir.ProtocolMoQ:   {kindUDPRoute},
 }
 
 func (a allowedRoutes) admits(kind, gatewayNS, routeNS string, ns *corev1.Namespace) bool {
@@ -252,12 +254,13 @@ var listenerProtocols = map[gwapiv1.ProtocolType]string{
 	gwapiv1.TCPProtocolType:   ir.ProtocolTCP,
 	gwapiv1.TLSProtocolType:   ir.ProtocolTLS,
 	gwapiv1.UDPProtocolType:   ir.ProtocolUDP,
+	ir.GatewayProtocolMoQ:     ir.ProtocolMoQ,
 }
 
 // transport returns the port space a protocol binds in, since a TCP and a UDP listener may share
 // a port number without conflict
 func transport(protocol string) string {
-	if protocol == ir.ProtocolUDP {
+	if protocol == ir.ProtocolUDP || protocol == ir.ProtocolMoQ {
 		return ir.ProtocolUDP
 	}
 	return ir.ProtocolTCP
@@ -320,7 +323,7 @@ func (t *translator) lowerListener(gw *gatewayState, l gwapiv1.Listener, claims 
 	}
 	var certs []string
 	switch protocol {
-	case ir.ProtocolHTTPS:
+	case ir.ProtocolHTTPS, ir.ProtocolMoQ:
 		var ok bool
 		if certs, ok = t.listenerCerts(gw, l, v); !ok {
 			return nil
@@ -348,6 +351,16 @@ func (t *translator) lowerListener(gw *gatewayState, l gwapiv1.Listener, claims 
 		t.reject(src, "%s", msg)
 		return nil
 	}
+	http3 := protocol == ir.ProtocolHTTPS && t.http3(gw)
+	if protocol == ir.ProtocolHTTPS {
+		// a port is one socket whichever Gateway declares it, so the oldest's class decides HTTP/3 for it
+		if prior, ok := claims.http3[portKey]; ok && prior != http3 {
+			t.reject(src, "listener %q: the http3 parameter is not applied, since an older Gateway's class "+
+				"set HTTP/3 to %t on port %d", section, prior, port)
+			http3 = prior
+		}
+		claims.http3[portKey] = http3
+	}
 	claims.protocols[portKey] = protocol
 	claims.owners[selfKey] = listenerOwner{src: src}
 	if !taken {
@@ -356,12 +369,12 @@ func (t *translator) lowerListener(gw *gatewayState, l gwapiv1.Listener, claims 
 	claims.claimNames(portKey, src, section, certs, identity)
 	ls := &listenerState{
 		name: src.Key() + "/" + section, section: section,
-		port: port, protocol: protocol, hostname: hostname,
+		port: port, protocol: protocol, hostname: hostname, http3: http3,
 		allowed: t.allowedRoutes(src, section, l.AllowedRoutes, v),
 	}
 	t.model.Listeners = append(t.model.Listeners, ir.Listener{
 		Name: ls.name, Section: section, Port: port, Protocol: protocol,
-		Hostname: hostname, CertRefs: certs, Source: src,
+		Hostname: hostname, CertRefs: certs, HTTP3: http3, Source: src,
 	})
 	return ls
 }
@@ -372,6 +385,7 @@ type portClaims struct {
 	protocols map[string]string
 	owners    map[string]listenerOwner
 	names     map[string]nameClaim
+	http3     map[string]bool
 }
 
 func newPortClaims() *portClaims {
@@ -379,7 +393,16 @@ func newPortClaims() *portClaims {
 		protocols: make(map[string]string),
 		owners:    make(map[string]listenerOwner),
 		names:     make(map[string]nameClaim),
+		http3:     make(map[string]bool),
 	}
+}
+
+func (t *translator) http3(gw *gatewayState) bool {
+	// the class's parameter, else the configured default
+	if p := t.policies.Get(gw.policy); p != nil && p.HTTP3 != "" {
+		return p.HTTP3 == strconv.FormatBool(true)
+	}
+	return t.cfg.Options.HTTP3()
 }
 
 // listenerOwner is the first listener to claim a hostname on a port, and what a later
@@ -444,7 +467,7 @@ func (t *translator) hostnameConflict(v *verdict, src ir.Source, section, hostna
 }
 
 func (o listenerOwner) conflicts(protocol, hostname string, certs []string) bool {
-	if protocol != ir.ProtocolHTTPS || hostname == "" {
+	if !ir.TerminatesTLS(protocol) || hostname == "" {
 		return false
 	}
 	return !slices.Equal(slices.Sorted(slices.Values(o.certs)), slices.Sorted(slices.Values(certs)))
@@ -458,7 +481,7 @@ func (t *translator) listenerCerts(gw *gatewayState, l gwapiv1.Listener, v *verd
 	section := string(l.Name)
 	if l.TLS == nil {
 		t.refuseListener(v, &v.accepted, src, gwapiv1.ListenerReasonUnsupportedValue,
-			"listener %q: an HTTPS listener requires a tls block", section)
+			"listener %q: protocol %s requires a tls block", section, l.Protocol)
 		return nil, false
 	}
 	if l.TLS.Mode != nil && *l.TLS.Mode != gwapiv1.TLSModeTerminate {

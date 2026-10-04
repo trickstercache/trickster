@@ -37,3 +37,11 @@ nodes:
         hostPort: 30087
       - containerPort: 30088
         hostPort: 30088
+      # the MoQ Gateway scenario (gateway-moq.yaml): the moq listener, and the
+      # origin relay the test publishes to, both QUIC over UDP
+      - containerPort: 30089
+        hostPort: 30089
+        protocol: UDP
+      - containerPort: 30090
+        hostPort: 30090
+        protocol: UDP

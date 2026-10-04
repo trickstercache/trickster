@@ -110,8 +110,8 @@ func (*nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 }
 
 func webTransportPaths(o *bo.Options) {
-	// a path routes native sessions by prefix and, on an HTTP listener, accepts WebTransport sessions under it;
-	// an HTTP proxy path has no meaning without an HTTP origin, while a local handler keeps its own route
+	// a path accepts sessions under it, or on an HTTP listener those its pattern matches; an HTTP proxy path has no
+	// meaning without an HTTP origin, while a local handler keeps its own route
 	for _, p := range o.Paths {
 		if p == nil {
 			continue
@@ -119,7 +119,9 @@ func webTransportPaths(o *bo.Options) {
 		switch p.HandlerName {
 		case "", providers.Proxy, providers.MoQ:
 			p.HandlerName, p.Methods = providers.MoQ, []string{http.MethodConnect}
-			p.MatchType, p.MatchTypeName = matching.PathMatchTypeSegment, matching.PathMatchNameSegment
+			if p.MatchType != matching.PathMatchTypeRegex {
+				p.MatchType, p.MatchTypeName = matching.PathMatchTypeSegment, matching.PathMatchNameSegment
+			}
 		}
 	}
 }
@@ -192,13 +194,16 @@ func ServesWebTransport(c *config.Config, listenerName string) bool {
 }
 
 func boundBackends(c *config.Config, listenerName string) []string {
+	// an alb's pool member may carry the listener's name too, but is reached through its pool, never by routing
 	if c == nil {
 		return nil
 	}
+	members := c.Backends.PoolMembers()
 	var out []string
 	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
 		o := c.Backends[name]
-		if o != nil && strings.EqualFold(o.Provider, providers.MoQ) && o.UsesListener(listenerName) {
+		if o != nil && strings.EqualFold(o.Provider, providers.MoQ) && o.UsesListener(listenerName) &&
+			!members.Contains(name) {
 			out = append(out, name)
 		}
 	}
@@ -221,11 +226,20 @@ func routesFor(request native.BuildRequest) *routeTable {
 		for _, h := range o.Hosts {
 			e.hosts = append(e.hosts, strings.ToLower(strings.TrimSuffix(h, ".")))
 		}
+		var patterns int
 		for _, p := range o.Paths {
-			// a local handler's path answers HTTP requests and routes no session
-			if p != nil && p.Path != "" && !handlers.IsLocal(p.HandlerName) {
+			// a local handler's path answers HTTP requests and routes no session, nor does a pattern routing
+			// WebTransport sessions alone
+			switch {
+			case p == nil || p.Path == "" || handlers.IsLocal(p.HandlerName):
+			case p.MatchType == matching.PathMatchTypeRegex:
+				patterns++
+			default:
 				e.paths = append(e.paths, p.Path)
 			}
+		}
+		if patterns > 0 && len(e.paths) == 0 {
+			continue
 		}
 		rt.entries = append(rt.entries, e)
 	}

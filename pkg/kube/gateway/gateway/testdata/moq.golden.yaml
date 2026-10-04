@@ -1,0 +1,64 @@
+listeners:
+    kgw--listener-moq-443:
+        protocol: moq
+        port: 443
+        tls_runtime_certs: true
+    kgw--listener-moq-4443:
+        protocol: moq
+        port: 4443
+        tls_runtime_certs: true
+backends:
+    kgw--udproute.media.any_r0:
+        provider: moq
+        origin_url: moqt://unresolved.kgw.invalid:1/
+        listener_names:
+            - kgw--listener-moq-4443
+        tls:
+            insecure_skip_verify: true
+    kgw--udproute.media.live_r0:
+        provider: moq
+        origin_url: moqt://origin-a.media.svc:4443/
+        hosts:
+            - live.example.com
+        listener_names:
+            - kgw--listener-moq-443
+        tls:
+            insecure_skip_verify: true
+    kgw--udproute.media.vod_r0:
+        provider: moq
+        hosts:
+            - '**.vod.example.com'
+        listener_names:
+            - kgw--listener-moq-443
+        moq:
+            upstream:
+                alb: kgw--udproute.media.vod_r0-origins
+    kgw--udproute.media.vod_r0-origins:
+        provider: alb
+        path_routing_disabled: true
+        path_defaults_disabled: true
+        alb:
+            mechanism: hrw
+            pool:
+                - name: kgw--udproute.media.vod_r0_b0
+                  weight: 3
+                - name: kgw--udproute.media.vod_r0_b1
+                  weight: 1
+    kgw--udproute.media.vod_r0_b0:
+        provider: moq
+        origin_url: moqt://origin-a.media.svc:4443/
+        listener_names:
+            - kgw--listener-moq-443
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true
+    kgw--udproute.media.vod_r0_b1:
+        provider: moq
+        origin_url: moqt://origin-b.media.svc:4443/
+        listener_names:
+            - kgw--listener-moq-443
+        tls:
+            insecure_skip_verify: true
+        path_routing_disabled: true
+        path_defaults_disabled: true

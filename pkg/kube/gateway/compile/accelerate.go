@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -46,7 +47,8 @@ type ProviderStepAlignments func(provider string) timeseries.StepAlignment
 var ErrNoProviderPaths = errors.New("no source of predefined paths for a time series provider")
 
 func (i index) providerPaths(e effective) (po.List, error) {
-	if e.tsProvider == "" {
+	if e.tsProvider == "" || e.tsProvider == providers.MoQ {
+		// a moq relay predefines no paths of its own to accelerate
 		return nil, nil
 	}
 	if i.providers == nil {

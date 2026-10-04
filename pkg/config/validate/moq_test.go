@@ -43,6 +43,22 @@ func moqConfig() *config.Config {
 	return c
 }
 
+func TestMoQRuntimeCerts(t *testing.T) {
+	// a moq listener whose certificates arrive at runtime, as the Kubernetes controller installs them, needs none
+	// from its backends
+	c := moqConfig()
+	c.Backends["live"].TLS = nil
+	c.Listeners["moq1"].TLSRuntimeCerts = true
+	if err := Listeners(c); err != nil {
+		t.Fatalf("a runtime-certificate moq listener: %v", err)
+	}
+	c = moqConfig()
+	c.Listeners["udp"] = &listener.Options{Protocol: listener.ProtocolUDP, ListenPort: 10444, TLSRuntimeCerts: true}
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "tls_runtime_certs") {
+		t.Errorf("runtime certificates on a protocol without TLS: %v", err)
+	}
+}
+
 func TestMoQListenerDefaults(t *testing.T) {
 	c := moqConfig()
 	if err := Listeners(c); err != nil {

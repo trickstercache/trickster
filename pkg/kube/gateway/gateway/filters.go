@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
+	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
@@ -89,6 +90,11 @@ func (rf ruleFilters) redirects() bool {
 	return ir.Rule{Filters: rf.rule}.Redirect() != nil
 }
 
+func (rf ruleFilters) shapesRequests() bool {
+	return len(rf.rule) > 0 || rf.timeouts != nil || rf.retry != nil || rf.session != nil ||
+		slices.ContainsFunc(rf.refs, func(f []ir.Filter) bool { return len(f) > 0 })
+}
+
 func (t *translator) lowerRuleFilters(src ir.Source, hr *gwapiv1.HTTPRoute,
 	report *routeReport,
 ) ([]ruleFilters, bool) {
@@ -141,7 +147,7 @@ func (t *translator) mirrorResolver(src ir.Source, namespace string,
 	return func(ref gwapiv1.BackendObjectReference) (*ir.MirrorFilter, string,
 		gwapiv1.RouteConditionReason,
 	) {
-		target, tls, reason, why := t.resolveBackendRef(src.Kind, namespace, ref)
+		target, tls, reason, why := t.resolveBackendRef(src.Kind, namespace, ref, corev1.ProtocolTCP)
 		if reason != "" {
 			t.reject(src, "requestMirror: %s; the mirror is not applied", reason)
 			report.unresolved(why, "requestMirror: "+reason)
