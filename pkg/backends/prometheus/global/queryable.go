@@ -42,13 +42,13 @@ type Queryable struct {
 	replicaLabels []string
 	deduplication string
 	partial       bool
-	failed        func(member string)
+	failed        func(member string, err error)
 }
 
 // NewQueryable returns a queryable over members; a member that can't be read is left out with a
-// warning when partial is true and fails the query otherwise, and failed learns of it.
+// warning when partial is true and fails the query otherwise, and failed learns why.
 func NewQueryable(members []Member, replicaLabels []string, deduplication string, partial bool,
-	failed func(member string),
+	failed func(member string, err error),
 ) *Queryable {
 	return &Queryable{
 		members: members, replicaLabels: replicaLabels, deduplication: deduplication,
@@ -85,26 +85,36 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 	wg.Wait()
 	var warnings annotations.Annotations
 	for i, err := range errs {
-		if err == nil && len(incomplete[i]) > 0 {
-			// an incomplete answer is kept, but only when partial responses are allowed
-			err = fmt.Errorf("incomplete answer: %w", errors.Join(incomplete[i].AsErrors()...))
+		name := members[i].Name
+		var clientErr error
+		switch {
+		case err == nil && len(incomplete[i]) == 0:
+			continue
+		case err == nil:
+			// an incomplete answer is kept when partial responses are allowed, with the member's own warnings
+			clientErr = fmt.Errorf("%w: %s: incomplete answer: %w", ErrMemberUnavailable, name,
+				errors.Join(incomplete[i].AsErrors()...))
 			if qr.q.partial {
-				warnings.Add(fmt.Errorf("%w: %s: %w", ErrMemberUnavailable, members[i].Name, err))
+				warnings.Add(clientErr)
 				continue
 			}
-		}
-		if err == nil {
-			continue
+			err = clientErr
+		case errors.Is(err, ErrFetchLimit):
+			clientErr = fmt.Errorf("%w: %s: %w", ErrMemberUnavailable, name, err)
+		case ctx.Err() != nil:
+			clientErr = fmt.Errorf("%w: %s: %w", ErrMemberUnavailable, name, ctx.Err())
+		default:
+			// a transport error can name internal hosts, so the client learns only which member failed
+			clientErr = fmt.Errorf("%w: %s", ErrMemberUnavailable, name)
 		}
 		if qr.q.failed != nil {
-			qr.q.failed(members[i].Name)
+			qr.q.failed(name, err)
 		}
-		err = fmt.Errorf("%w: %s: %w", ErrMemberUnavailable, members[i].Name, err)
 		// a limit or cancellation ends the query rather than shrinking its answer
 		if !qr.q.partial || errors.Is(err, ErrFetchLimit) || ctx.Err() != nil {
-			return storage.ErrSeriesSet(err)
+			return storage.ErrSeriesSet(clientErr)
 		}
-		warnings.Add(err)
+		warnings.Add(clientErr)
 		results[i] = nil
 	}
 	return &seriesSet{

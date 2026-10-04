@@ -19,6 +19,7 @@ package global
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 	"testing"
@@ -104,15 +105,24 @@ func TestQueryableSelect(t *testing.T) {
 		require.True(t, set.Next())
 		require.Contains(t, b.calls, [2]int64{0, 100})
 	})
+	// failures records what each failed read passes the callback, which only the logs see
+	failures := func() (func(string, error), *[]error) {
+		var errs []error
+		return func(member string, err error) { errs = append(errs, fmt.Errorf("%s: %w", member, err)) }, &errs
+	}
 	t.Run("a failed member fails the select", func(t *testing.T) {
-		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, false, nil),
+		failed, errs := failures()
+		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, false, failed),
 			context.Background(), nil)
 		require.False(t, set.Next())
-		require.ErrorIs(t, set.Err(), ErrMemberUnavailable)
-		require.ErrorIs(t, set.Err(), boom)
+		require.EqualError(t, set.Err(), ErrMemberUnavailable.Error()+": b")
+		require.NotErrorIs(t, set.Err(), boom, "the client doesn't see the transport error")
+		require.Len(t, *errs, 1)
+		require.ErrorIs(t, (*errs)[0], boom)
 	})
 	t.Run("a failed member is a warning in a partial response", func(t *testing.T) {
-		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true, nil),
+		failed, errs := failures()
+		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true, failed),
 			context.Background(), nil)
 		n := 0
 		for set.Next() {
@@ -120,7 +130,9 @@ func TestQueryableSelect(t *testing.T) {
 		}
 		require.Equal(t, 2, n)
 		require.Len(t, set.Warnings(), 1)
-		require.ErrorIs(t, set.Warnings().AsErrors()[0], boom)
+		require.EqualError(t, set.Warnings().AsErrors()[0], ErrMemberUnavailable.Error()+": b")
+		require.Len(t, *errs, 1)
+		require.ErrorIs(t, (*errs)[0], boom)
 	})
 	t.Run("a limit fails even a partial response", func(t *testing.T) {
 		limited := &MemorySource{Err: ErrFetchLimit}
@@ -133,7 +145,8 @@ func TestQueryableSelect(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true, nil), ctx, nil)
-		require.Error(t, set.Err())
+		require.ErrorIs(t, set.Err(), context.Canceled)
+		require.NotErrorIs(t, set.Err(), boom)
 	})
 }
 

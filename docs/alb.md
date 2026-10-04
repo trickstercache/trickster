@@ -477,6 +477,8 @@ If replicas disagree at the same logical point, the first configured member wins
 
 For request paths that are not mergeable by the configured time series provider, TSM does not fan the request out. Those requests are dispatched directly to the first live pool target. The same first-live-target fallback is used when a request cannot be prepared for the merge path.
 
+By default, TSM merges the answers its members give to a query. A TSM ALB can instead read its members' raw series and evaluate each query once, the way Thanos does; see [Global Evaluation](#global-evaluation).
+
 #### Merge Strategy
 
 Within each configured replica group, TSM deduplicates values when merging series with identical labels — for each timestamp, only one replica value is kept. Across different groups it uses the query's merge strategy.
@@ -546,6 +548,58 @@ A static pool member that can't apply the chosen mode fails the configuration. W
 #### Members With a Series Limit
 
 Some managed services, such as [Amazon CloudWatch PromQL](./aws.md#amazon-cloudwatch-promql), cut a query result short at a series limit and flag it with a warning. Each member applies its own limit, so a member's truncated result is proxied and never cached, while the other members' results are cached as usual. The merged response then covers only the series each member returned, and it carries the truncation warning so the client can tell.
+
+#### Global Evaluation
+
+Merging members' answers is exact only for queries whose aggregation can be split across shards, as described in [Merge Strategy](#merge-strategy). A query such as `sum(rate(x[5m]))` over replicas that differ by a label, or `histogram_quantile(...)` over buckets split across members, needs every raw sample in one place. With `tsm.evaluation: global`, a TSM ALB answers each instant and range query the way Thanos Querier does: it reads the raw series the query selects from every member, deduplicates replicas, and evaluates the whole expression once in an embedded Prometheus engine.
+
+```yaml
+backends:
+  mimir-east:
+    provider: prometheus
+    origin_url: http://mimir-east:8080/prometheus
+    prometheus:
+      flavor: mimir
+  mimir-west:
+    provider: prometheus
+    origin_url: http://mimir-west:8080/prometheus
+    prometheus:
+      flavor: mimir
+  mimir-global:
+    provider: alb
+    cache_name: default
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global        # merge (the default) or global
+        replica_labels: [replica] # labels that tell copies of one series apart; no default
+        deduplication: penalty    # penalty (the default) or chain
+        partial_response: true    # the default
+        max_samples: 50000000     # the default
+        query_timeout: 2m         # the default
+        max_concurrent_queries: 20 # the default
+        max_fetched_series: 0     # the default, unlimited
+        max_fetched_samples: 0    # the default, unlimited
+      pool:
+        - mimir-east
+        - mimir-west
+```
+
+The evaluation is set per ALB, and covers every query the ALB receives; other TSM ALBs keep merging. Requests for other paths, such as labels and series, are merged as usual. The settings below `evaluation` are valid only with `evaluation: global`.
+
+**Members.** Every pool member must be a `prometheus` backend with a [series source](./prometheus.md#series-sources): `flavor: mimir` reads Prometheus remote read, `flavor: thanos` reads Thanos StoreAPI at the member's `series_endpoint`, and any other Prometheus backend can set `series_api`. Configuration fails for any other member, including a nested ALB. Every live member is read, whatever its `replica_group`. Each read reuses the member's TLS settings, and carries the client's request headers and the member path's `request_headers`.
+
+**Deduplication.** Series whose labels match once `replica_labels` are removed are replicas of one series, and the result keeps one series per such label set, without the replica labels. `deduplication: penalty` follows Thanos: it reads one replica until that replica falls silent for twice its sampling interval, then switches to another. When the query reads the series through `rate`, `increase`, `irate` or `resets`, a switch to a replica whose counter is behind is adjusted so that it doesn't read as a counter reset. When replicas sample at the same instant, the earliest-configured member's replica is read first. `deduplication: chain` instead keeps every distinct timestamp across replicas, and the earliest-configured member's value where they share one. Series with identical labels from different members are always combined like `chain`. Leaving `replica_labels` empty still combines identical series.
+
+**Partial responses.** When a member is unavailable or fails to answer, by default the result is evaluated over the members that answered, and carries a warning naming the member, as Thanos does with partial responses enabled. Why the member failed is logged rather than returned, since a transport error can name internal hosts. Set `partial_response: false` to fail such a query with a 503 instead. A request's `partial_response` parameter overrides the ALB's setting. A failed evaluation is returned as a Prometheus API error, never replaced by a merged answer.
+
+**Limits.** `max_samples` bounds the samples the engine holds at once, like Prometheus's `--query.max-samples`. `query_timeout` bounds an evaluation from its arrival, including any wait for one of the ALB's `max_concurrent_queries` slots; a request's `timeout` parameter can shorten it. `max_fetched_series` and `max_fetched_samples` bound the raw series and samples one evaluation reads from all its members before deduplication, and each member's raw response is bounded by the ALB's [`max_capture_bytes`](#bounding-per-member-response-captures). A query that reaches a limit or times out fails, even when partial responses are allowed. Errors use Prometheus's types and status codes: `bad_data` (400), `execution` (422, which includes the limits), `canceled` (499), `internal` (500), and `timeout` or `unavailable` (503).
+
+**The engine.** The engine is the Prometheus version Trickster is built with, with a 5-minute lookback, the `@` modifier, negative offsets and the experimental functions enabled, a 1-minute step for subqueries that name none, and at most 11,000 points per series. The query's `limit` parameter is honored.
+
+**Caching.** A global ALB keeps its results in its own `cache_name` (`default` when unset), with the evaluator as the origin: range queries use the [delta proxy cache](./prometheus.md#cached-endpoints), as a Prometheus backend's do, so repeated dashboard refreshes evaluate only the new extents, and instant queries are cached for up to 30 seconds. The cache key includes the ALB's members, replica labels and deduplication, and the `X-Scope-OrgID` and `THANOS-TENANT` tenant headers, so no tenant reads another's results. A partial result is never cached: it is returned with `status=proxy-only` in its [`X-Trickster-Result`](./trickster-result.md) header, and the complete results already cached stay. The ALB's own `timeseries_ttl`, `timeseries_retention_factor` and other time series cache options apply. Info-level annotations, such as a notice that a metric might not be a counter, are returned only when the query misses the cache.
+
+Reading raw series moves much more data than reading answers, as it does in Thanos: plan `max_capture_bytes` and the fetch limits for the widest dashboard ranges. To compare global evaluation with Thanos or with merging, see the `mimir` and `thanos` profiles of the [developer environment](./developer/environment/README.md#mimir-and-thanos-details).
 
 #### Providers Supporting Time Series Merge
 

@@ -22,7 +22,7 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **CloudWatch Metrics** - We now support accelerating AWS CloudWatch Metrics on the new PromQL endpoints. Classic GetMetricData endpoints are not yet supported. 
 
-**PLANNED** - Better support for Time Series Merge for Mimir and Thanos backends
+**TSM Global Evaluation** - A Time Series Merge ALB can now evaluate each PromQL query once over the raw series of every member, deduplicating replicas the way Thanos does, rather than merging the members' answers. Members serve raw series through Prometheus remote read (the new `mimir` flavor) or the Thanos StoreAPI (the new `thanos` flavor), and results are cached with the delta proxy cache. Merging also now counts label sets returned by several members once for `count` or `group` over an inner `count` or `group`. See [Global Evaluation](./alb.md#global-evaluation).
 
 ## HTTP Reverse Proxy Cache, CDN and Streaming Media
 

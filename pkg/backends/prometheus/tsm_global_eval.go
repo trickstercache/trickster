@@ -29,6 +29,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	tsmql "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
@@ -152,7 +155,7 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 	if v, err := strconv.ParseBool(qp.Get(partialResponseParam)); err == nil {
 		partial = v
 	}
-	members, warnings, err := globalMembers(req, partial)
+	members, warnings, err := globalMembers(e.settings.Name, req, partial)
 	if err != nil {
 		return fail(http.StatusServiceUnavailable, global.ErrorTypeUnavailable, err, warnings)
 	}
@@ -193,7 +196,7 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 	}()
 	ctx = global.WithBudget(global.WithRequest(ctx, r), budget)
 	queryable := global.NewQueryable(members, e.settings.ReplicaLabels, e.settings.Deduplication, partial,
-		func(member string) { metrics.ALBGlobalMemberFailures.WithLabelValues(e.settings.Name, member).Inc() })
+		e.memberFailed)
 	qry, err := e.newQuery(ctx, r, qp.Get, queryable, query)
 	if err != nil {
 		return fail(http.StatusBadRequest, global.ErrorTypeBadData, err, warnings)
@@ -271,22 +274,38 @@ func (e *globalEvaluator) newQuery(ctx context.Context, r *http.Request, get fun
 	return e.engine.NewRangeQuery(ctx, queryable, opts, query, start, end, step)
 }
 
-// globalMembers returns the members an evaluation reads, warning of each member it can't when partial
-// responses are allowed, and failing otherwise
-func globalMembers(req backends.TSMGlobalRequest, partial bool) ([]global.Member, []string, error) {
+// memberFailed counts and logs a member read that failed, unless the client canceled it
+func (e *globalEvaluator) memberFailed(member string, err error) {
+	metrics.ALBGlobalMemberFailures.WithLabelValues(e.settings.Name, member).Inc()
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	logger.Warn("tsm global evaluation member read failed",
+		logging.Pairs{keys.ALB_Name: e.settings.Name, keys.Member: member, keys.Error: err.Error()})
+}
+
+// globalMembers returns the members an evaluation reads, warning of each it can't when partial responses
+// are allowed and failing otherwise; why a member can't be read is only logged
+func globalMembers(alb string, req backends.TSMGlobalRequest, partial bool) ([]global.Member, []string, error) {
 	members := make([]global.Member, 0, len(req.Members))
 	var unavailable []string
+	unreadable := func(member string, reason error) {
+		unavailable = append(unavailable, member)
+		logger.WarnOnce("tsm.global.unreadable."+alb+"."+member+"."+reason.Error(),
+			"tsm global evaluation member can't be read",
+			logging.Pairs{keys.ALB_Name: alb, keys.Member: member, keys.Error: reason.Error()})
+	}
 	for _, m := range req.Members {
 		source, ok := m.Source.(global.Source)
 		if !ok {
-			unavailable = append(unavailable, fmt.Sprintf("%s: %s", m.Name, errSeriesAPIUnsupported))
+			unreadable(m.Name, errSeriesAPIUnsupported)
 			continue
 		}
 		members = append(members, global.Member{Name: m.Name, Source: source})
 	}
 	for _, u := range req.Unavailable {
 		if u.Reason != nil {
-			unavailable = append(unavailable, fmt.Sprintf("%s: %s", u.Name, u.Reason))
+			unreadable(u.Name, u.Reason)
 			continue
 		}
 		unavailable = append(unavailable, u.Name)

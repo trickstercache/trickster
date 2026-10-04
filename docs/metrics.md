@@ -300,6 +300,30 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `alb_name` - the name of the configured ALB backend
 
+The following metrics are available for ALBs that use [TSM global evaluation](./alb.md#global-evaluation). Queries answered from the ALB's cache aren't evaluated, so they aren't counted.
+
+* `trickster_alb_global_evaluations_total` (Counter) - The number of TSM global evaluations
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `status` - `success`, `partial` (evaluated without an unavailable member), or the Prometheus API error type that answered the query: `bad_data`, `execution`, `timeout`, `canceled`, `unavailable` or `internal`
+
+* `trickster_alb_global_evaluation_duration_seconds` (Histogram) - The time TSM global evaluations take, from arrival to response, including raw series retrieval and any wait for an evaluation slot
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+* `trickster_alb_global_fetched_series_total` (Counter) - The number of raw series TSM global evaluations read from pool members, before deduplication
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+* `trickster_alb_global_fetched_samples_total` (Counter) - The number of raw samples TSM global evaluations read from pool members, before deduplication
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
+* `trickster_alb_global_member_failures_total` (Counter) - The number of raw series reads from a pool member that failed during TSM global evaluation
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `member` - the name of the pool member backend
+
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 
 * `trickster_alb_discovery_members` (Gauge) - Current number of discovered ALB pool members

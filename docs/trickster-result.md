@@ -50,6 +50,7 @@ Common reasons include:
 | Origin response is not cacheable | For example, response cache headers do not provide cacheability, or the response includes headers that Trickster treats as not cacheable. |
 | Time series request cannot be parsed for delta caching | Trickster may fall back to object proxy cache for compatible requests, or proxy the request directly when it cannot safely cache the query shape. |
 | Time series range is outside the retained cache window | Old data may be proxied without caching while newer ranges remain cacheable. |
+| A [TSM global evaluation](./alb.md#global-evaluation) is partial | A pool member was unavailable, so the result is returned with a warning and not cached. |
 
 When investigating `proxy-only`, check the backend provider, any `proxy_only` setting, request and response `Cache-Control` headers, and whether the request shape is supported by the configured backend provider.
 

@@ -1,0 +1,68 @@
+listeners:
+  default:
+    port: %d
+  metrics:
+    port: %d
+  mgmt:
+    port: %d
+logging:
+  log_level: error
+caches:
+  mem1:
+    provider: memory
+backends:
+  mimir-east:
+    provider: prometheus
+    origin_url: http://127.0.0.1:11080/prometheus
+    cache_name: mem1
+    prometheus:
+      flavor: mimir
+  mimir-west:
+    provider: prometheus
+    origin_url: http://127.0.0.1:11081/prometheus
+    cache_name: mem1
+    prometheus:
+      flavor: mimir
+  mimir-global:
+    provider: alb
+    cache_name: mem1
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global
+        replica_labels: [isBackup]
+      pool:
+        - mimir-east
+        - mimir-west
+  mimir-merge:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - mimir-east
+        - mimir-west
+  thanos-a:
+    provider: prometheus
+    origin_url: http://127.0.0.1:11090
+    cache_name: mem1
+    prometheus:
+      flavor: thanos
+      series_endpoint: grpc://127.0.0.1:11901
+  thanos-b:
+    provider: prometheus
+    origin_url: http://127.0.0.1:11091
+    cache_name: mem1
+    prometheus:
+      flavor: thanos
+      series_endpoint: grpc://127.0.0.1:11902
+  thanos-global:
+    provider: alb
+    cache_name: mem1
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global
+        replica_labels: [replica]
+      pool:
+        - thanos-a
+        - thanos-b

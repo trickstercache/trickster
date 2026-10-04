@@ -22,6 +22,7 @@ import (
 )
 
 //go:embed testdata/alb_cache testdata/alb_tsm_correctness testdata/alb_response_headers testdata/alb_nested testdata/alb_per_path testdata/alb_unavail testdata/alb_missing_hc testdata/alb_request_headers testdata/alb_compose
+//go:embed testdata/alb_tsm_global
 var albTestdataFS embed.FS
 
 func albTestdata(t testing.TB, name string) string {

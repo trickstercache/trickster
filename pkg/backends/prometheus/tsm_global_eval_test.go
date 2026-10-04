@@ -26,6 +26,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,6 +34,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	tsmql "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
@@ -285,7 +289,8 @@ func TestGlobalEvaluationErrors(t *testing.T) {
 		},
 		{
 			name: "strict unavailable", settings: strict, path: globalTestQueryPath, values: instant, req: unavailable,
-			status: http.StatusServiceUnavailable, contains: "broken: member down",
+			// the reason a configured member can't be read is logged, not returned
+			status: http.StatusServiceUnavailable, contains: `"error":"tsm global evaluation member unavailable: down; broken"}`,
 		},
 		{
 			name: "partial override", settings: strict, path: globalTestQueryPath,
@@ -298,7 +303,7 @@ func TestGlobalEvaluationErrors(t *testing.T) {
 		},
 		{
 			name: "partial failing member", path: globalTestQueryPath, values: instant, req: failing,
-			status: http.StatusOK, contains: "failing: member down",
+			status: http.StatusOK, contains: `"warnings":["tsm global evaluation member unavailable: failing"]`,
 		},
 		{
 			name: "no members", path: globalTestQueryPath, values: instant, req: backends.TSMGlobalRequest{},
@@ -368,7 +373,7 @@ func TestGlobalErrorType(t *testing.T) {
 		context.Canceled: global.ErrorTypeCanceled,
 		promengine.ErrStorage{Err: errGlobalTestMember}:  global.ErrorTypeInternal,
 		promengine.ErrStorage{Err: global.ErrFetchLimit}: global.ErrorTypeExecution,
-		errGlobalTestMember: global.ErrorTypeExecution,
+		errGlobalTestMember:                              global.ErrorTypeExecution,
 	} {
 		_, got := globalErrorType(err)
 		require.Equal(t, want, got, err.Error())
@@ -455,6 +460,53 @@ func TestGlobalEvaluationMetrics(t *testing.T) {
 	}
 	require.InDelta(t, failures+1, testutil.ToFloat64(metrics.ALBGlobalMemberFailures.WithLabelValues(name, "failing")), 0)
 	require.Positive(t, testutil.CollectAndCount(metrics.ALBGlobalEvaluationDuration))
+}
+
+// globalLogBuffer is a log destination safe for the logger's concurrent writes
+type globalLogBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *globalLogBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *globalLogBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestGlobalMemberFailureLogs(t *testing.T) {
+	const (
+		name     = "logs-alb"
+		detail   = "dial tcp internal-host:9090: connection refused"
+		canceled = "canceled-member"
+	)
+	logs := &globalLogBuffer{}
+	prev := logger.Logger()
+	logger.SetLogger(logging.StreamLogger(logs, level.Warn))
+	t.Cleanup(func() { logger.SetLogger(prev) })
+	settings := globalTestSettings()
+	settings.Name = name
+	e := newGlobalEvaluator(settings)
+	e.memberFailed(canceled, context.Canceled)
+	e.memberFailed("down", errors.New(detail))
+	require.Eventually(t, func() bool { return strings.Contains(logs.String(), detail) }, 5*time.Second, 10*time.Millisecond)
+	require.NotContains(t, logs.String(), canceled, "a client's cancellation isn't the member's failure to log")
+	require.InDelta(t, 1, testutil.ToFloat64(metrics.ALBGlobalMemberFailures.WithLabelValues(name, canceled)), 0)
+
+	unreadable := backends.TSMGlobalRequest{Unavailable: []backends.TSMGlobalUnavailable{
+		{Name: "misconfigured", Reason: errors.New("open /etc/certs/member.pem: no such file")},
+	}}
+	_, warnings, err := globalMembers(name, unreadable, true)
+	require.ErrorIs(t, err, errGlobalNoMembers)
+	require.Equal(t, []string{global.ErrMemberUnavailable.Error() + ": misconfigured"}, warnings)
+	require.Eventually(t, func() bool { return strings.Contains(logs.String(), "member.pem") }, 5*time.Second,
+		10*time.Millisecond)
 }
 
 func TestGlobalEvaluationClientCancel(t *testing.T) {

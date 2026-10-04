@@ -72,6 +72,8 @@ service, applying its supported routes, limits and defaults.
 | ----- | ----- |
 | `cloudwatch` | Amazon CloudWatch PromQL |
 | `amp` | Amazon Managed Service for Prometheus |
+| `mimir` | Grafana Mimir |
+| `thanos` | Thanos |
 
 ```yaml
 backends:
@@ -83,9 +85,52 @@ backends:
       region: us-east-1
 ```
 
-A flavor limits the backend to the routes the service supports and
-answers every other path itself. See [AWS Integration](./aws.md) for what
-each flavor sets.
+The `cloudwatch` and `amp` flavors limit the backend to the routes the service supports and
+answer every other path themselves. See [AWS Integration](./aws.md) for what
+each one sets. The `mimir` and `thanos` flavors change no routes; they select
+the [series source](#series-sources) that TSM global evaluation reads.
+
+### Series Sources
+
+An ALB using [TSM global evaluation](./alb.md#global-evaluation) reads raw
+series from its members rather than query results. `series_api` selects how
+a backend serves them, and `series_endpoint` where:
+
+| `series_api` | protocol | default for flavor | `series_endpoint` |
+| ----- | ----- | ----- | ----- |
+| `remote_read` | [Prometheus remote read](https://prometheus.io/docs/prometheus/latest/querying/remote_read_api/) over HTTP, as streamed chunks or sampled responses | `mimir` | optional; an absolute `http` or `https` URL. The default is the `origin_url` path plus `/api/v1/read` |
+| `storeapi` | Thanos StoreAPI `Series` over gRPC | `thanos` | required; `grpc://host:port` for plaintext, or `grpcs://host:port` for TLS with the backend's `tls` client settings |
+
+Any Prometheus backend can set `series_api`, since Prometheus itself serves
+remote read. A StoreAPI endpoint can be a Thanos Sidecar, Store Gateway,
+Receive or Querier. The `cloudwatch` and `amp` flavors serve no raw series, and
+reject both options.
+
+```yaml
+backends:
+  prom-a:
+    provider: prometheus
+    origin_url: http://prom-a:9090
+    prometheus:
+      series_api: remote_read
+  mimir:
+    provider: prometheus
+    origin_url: http://mimir:8080/prometheus # remote read at /prometheus/api/v1/read
+    prometheus:
+      flavor: mimir
+  thanos-a:
+    provider: prometheus
+    origin_url: http://prom-a:9090
+    prometheus:
+      flavor: thanos
+      series_endpoint: grpc://prom-a-sidecar:10901
+```
+
+Remote read uses the backend's HTTP client settings, and sends the client's
+end-to-end request headers plus the `request_headers` the backend's matching
+path sets, as a proxied request would; a tenant header such as
+`X-Scope-OrgID`, or an `Authorization` header, reaches the source this way.
+StoreAPI calls carry the same headers as gRPC metadata.
 
 ## Injecting Labels
 
