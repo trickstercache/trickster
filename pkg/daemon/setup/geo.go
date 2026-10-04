@@ -17,6 +17,8 @@
 package setup
 
 import (
+	"context"
+	"errors"
 	"maps"
 	"slices"
 
@@ -149,6 +151,27 @@ func (g *geoStreamAdmission) admission(table *l4.Table) l4.Admission {
 		return geostream.ForRoutes(table, g.acls)
 	}
 	return nil
+}
+
+var errUngatedListener = errors.New("native listener not started: its server cannot judge sessions by a geo ACL")
+
+func setPacketSessionGate(member listener.PacketMember, gate backends.SessionGate) bool {
+	// a member of a shared QUIC endpoint holds the protocol server that judges its sessions
+	var target any = member
+	if h, ok := member.(interface{ ProtocolHandler() any }); ok {
+		target = h.ProtocolHandler()
+	}
+	if u, ok := target.(listener.SessionGateUpdater); ok {
+		u.UpdateSessionGate(gate)
+		return true
+	}
+	return gate == nil
+}
+
+func closedContext() context.Context {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
 }
 
 func setSessionGate(svr listener.ProtocolServer, gate backends.SessionGate) bool {

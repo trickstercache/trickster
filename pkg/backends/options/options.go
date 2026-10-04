@@ -32,6 +32,7 @@ import (
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	ino "github.com/trickstercache/trickster/v2/pkg/backends/influxdb/options"
+	moqo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/mysql/options"
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -203,6 +204,8 @@ type Options struct {
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
 	// Postgres holds settings specific to PostgreSQL wire-protocol origins.
 	Postgres *pgo.Options `yaml:"postgres,omitempty"`
+	// MoQ holds settings specific to MoQ Transport relays.
+	MoQ *moqo.Options `yaml:"moq,omitempty"`
 	// Graphite holds options specific to graphite backends
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
@@ -436,6 +439,9 @@ func (o *Options) Clone() *Options {
 	if o.MySQL != nil {
 		out.MySQL = o.MySQL.Clone()
 	}
+	if o.MoQ != nil {
+		out.MoQ = o.MoQ.Clone()
+	}
 
 	if o.Static != nil {
 		out.Static = o.Static.Clone()
@@ -519,7 +525,8 @@ func (o *Options) Validate() (bool, error) {
 	if err := o.validatePrometheusFlavor(); err != nil {
 		return false, err
 	}
-	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
+	// a moq backend without an origin is one, its publishers' tracks served from the relay itself
+	if !providers.NonOriginBackends().Contains(o.Provider) && o.Provider != providers.MoQ && !o.IsTemplate &&
 		o.OriginURL == "" {
 		return false, NewErrMissingOriginURL(o.Name)
 	}
@@ -619,6 +626,7 @@ func (o *Options) validateStatic() error {
 		{"alb", o.ALBOptions != nil},
 		{"prometheus", o.Prometheus != nil},
 		{"mysql", o.MySQL != nil},
+		{"moq", o.MoQ != nil},
 		{"graphite", o.Graphite != nil},
 		{"influxdb", o.InfluxDB != nil},
 		{"victoriametrics", o.VictoriaMetrics != nil},

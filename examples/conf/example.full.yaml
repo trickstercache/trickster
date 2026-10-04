@@ -188,6 +188,32 @@
 #       allow_md5: false
 #       allow_cleartext_without_tls: false
 #
+#   # A listener with protocol moq accepts MoQ Transport sessions over native
+#   # QUIC on its UDP port; TLS is part of the QUIC handshake, so TLS ports are
+#   # not supported, and a backend it serves must provide a certificate in its
+#   # tls block. Several moq backends may share one listener: a session is
+#   # routed by the AUTHORITY and PATH of its SETUP against each backend's hosts
+#   # and paths. A moq listener may share its UDP port with an HTTP/3 endpoint,
+#   # or another moq listener, as long as their drafts differ.
+#   moq1:
+#     protocol: moq
+#     port: 443
+#     # address: ''
+#     # moq:
+#       # the client's SETUP must arrive within this timeout
+#       handshake_timeout: 5s
+#       # the QUIC idle timeout of the listener's connections
+#       idle_timeout: 2m
+#       max_sessions: 10000
+#       max_requests_per_session: 1024
+#       # advertised to clients in SETUP
+#       max_filter_ranges: 16
+#       max_request_updates: 64
+#       # accepted MoQ Transport drafts, most preferred first
+#       drafts: [21, 22, 20]
+#       # the MOQT_IMPLEMENTATION setup option; defaults to trickster
+#       implementation: ''
+#
 #   # A ClickHouse listener accepts the Native binary protocol and maps to one
 #   # ClickHouse backend through that backend's listener_names option.
 #   clickhouse-native:
@@ -620,6 +646,51 @@ backends:
   #   # timeseries_retention_factor, volatile_window, sharding and
   #   # max_object_size_bytes backend settings apply. proxy_only: true relays
   #   # every statement without inspecting it.
+
+  # # example MoQ Transport relay backend, exposed by a listener with protocol
+  # # moq (see the listeners section). One upstream subscription per track is
+  # # shared by every downstream subscriber; the newest groups stay in memory
+  # # and older ones spill to cache_name, which FETCH and fills read back.
+  # moq1:
+  #   provider: moq
+  #   # a native QUIC origin; omit origin_url to serve only what publishers send
+  #   origin_url: 'moqt://origin.example.com:443/live'
+  #   listener_names: [moq1]
+  #   # matched against the AUTHORITY and PATH of a session's SETUP
+  #   hosts: [live.example.com]
+  #   cache_name: default
+  #   # caps MAX_CACHE_DURATION, and is the lifetime of spilled groups of tracks that set none
+  #   max_ttl: 1h
+  #   moq:
+  #     upstream:
+  #       # drafts offered to the origin, most preferred first
+  #       drafts: [21, 20]
+  #       # keep the upstream subscription forwarding while every subscriber is paused
+  #       prewarm: false
+  #       reconnect_backoff: 1s
+  #       # keep an upstream subscription this long after its last subscriber leaves
+  #       linger: 5s
+  #       max_gap_fetches: 16
+  #     live_edge:
+  #       # groups of each track kept in memory
+  #       groups: 3
+  #       # payload bytes the live edge holds across all of the backend's tracks
+  #       max_size_bytes: 67108864
+  #     # false keeps only the live edge, so older groups are fetched from the origin
+  #     spill: true
+  #     # the wait for upstream fetches when a FETCH or fill names no FILL_TIMEOUT
+  #     fill_timeout: 2s
+  #     max_object_size_bytes: 67108864
+  #   # the health check completes a SETUP exchange with the origin on a fresh session
+  #   healthcheck:
+  #     interval: 5s
+  #   tls:
+  #     # served to clients of the moq listener
+  #     full_chain_cert_path: /etc/trickster/tls/server.crt
+  #     private_key_path: /etc/trickster/tls/server.key
+  #     # used toward the origin
+  #     certificate_authority_paths:
+  #       - /etc/trickster/tls/origin-ca.crt
 
   # # example VictoriaMetrics backend: MetricsQL through the Prometheus querying
   # # API and the Graphite APIs. See /docs/victoriametrics.md.

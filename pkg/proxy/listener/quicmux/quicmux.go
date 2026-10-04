@@ -137,6 +137,11 @@ func (m *Member) Handler() Handler {
 	return m.opts.Handler
 }
 
+// ProtocolHandler returns the member's handler for a listener group, which cannot name this package's types
+func (m *Member) ProtocolHandler() any {
+	return m.opts.Handler
+}
+
 // LocalAddr returns the address the member's endpoint is bound to
 func (m *Member) LocalAddr() net.Addr {
 	return m.ep.conn.LocalAddr()

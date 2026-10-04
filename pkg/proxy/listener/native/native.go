@@ -18,6 +18,7 @@
 package native
 
 import (
+	"crypto/tls"
 	"net/http"
 	"slices"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
 // Descriptor contains the immutable identity needed to reconcile a listener.
@@ -130,6 +132,12 @@ func (r Registry) ConfiguredProtocol(options *listenerconfig.Options, except str
 		}
 	}
 	return ""
+}
+
+// PacketAdapter is an Adapter whose protocol runs over QUIC: setup joins the listener to the shared endpoint
+// at its address with Join, in place of Build, so certificates rotate through the listener's swapper.
+type PacketAdapter interface {
+	Join(request BuildRequest, name string, certs tr.CertSwapper, tlsConfig *tls.Config) (listener.PacketMember, error)
 }
 
 // HTTPHandlerAdapter supplies reloadable HTTP routing for a protocol bridge.

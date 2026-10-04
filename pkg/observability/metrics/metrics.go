@@ -49,6 +49,7 @@ const (
 	stepAlignSubsystem  = "step_alignment"
 	geoSubsystem        = "geo"
 	ipACLSubsystem      = "ip_acl"
+	moqSubsystem        = "moq"
 )
 
 // IP access list scopes and verdicts. reject and drop are both deny.
@@ -1400,6 +1401,16 @@ func init() {
 	prometheus.MustRegister(PGWireActiveConnections)
 	prometheus.MustRegister(PGWireConnectionErrors)
 	prometheus.MustRegister(PGWireRouteSelections)
+	prometheus.MustRegister(MoQSessions)
+	prometheus.MustRegister(MoQActiveSessions)
+	prometheus.MustRegister(MoQRequests)
+	prometheus.MustRegister(MoQActiveSubscriptions)
+	prometheus.MustRegister(MoQObjects)
+	prometheus.MustRegister(MoQBytes)
+	prometheus.MustRegister(MoQDroppedObjects)
+	prometheus.MustRegister(MoQFetchObjects)
+	prometheus.MustRegister(MoQLiveEdgeBytes)
+	prometheus.MustRegister(MoQErrors)
 	prometheus.MustRegister(GraphiteResolutionLookups)
 	prometheus.MustRegister(GraphiteProbes)
 	prometheus.MustRegister(GraphiteLadders)
@@ -1460,6 +1471,16 @@ var backendSeriesVecs = []partialDeleter{
 	PGWireActiveConnections,
 	PGWireConnectionErrors,
 	PGWireRouteSelections,
+	MoQSessions,
+	MoQActiveSessions,
+	MoQRequests,
+	MoQActiveSubscriptions,
+	MoQObjects,
+	MoQBytes,
+	MoQDroppedObjects,
+	MoQFetchObjects,
+	MoQLiveEdgeBytes,
+	MoQErrors,
 	MySQLRouteSelections,
 	MySQLCommandLatency,
 	HealthcheckProbePanicRecovered,
@@ -1472,6 +1493,119 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyStreamMemberActiveConnections,
 	ProxyStreamMemberConnectDuration,
 }
+
+// MoQ Transport metrics. Track and namespace names are never labels; every label value is bounded.
+var (
+	// MoQSessions counts sessions by listener, backend, role, transport, draft and result.
+	MoQSessions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "sessions_total",
+			Help:      "Count of MoQ Transport sessions by outcome.",
+		},
+		[]string{keys.Listener_Name, keys.Backend_Name, keys.Role, keys.Transport, keys.Draft, keys.Result},
+	)
+
+	// MoQActiveSessions is the current count of MoQ Transport sessions.
+	MoQActiveSessions = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "active_sessions",
+			Help:      "Current MoQ Transport sessions.",
+		},
+		[]string{keys.Listener_Name, keys.Backend_Name, keys.Role},
+	)
+
+	// MoQRequests counts downstream requests by type and result.
+	MoQRequests = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "requests_total",
+			Help:      "Count of MoQ Transport requests by type and result.",
+		},
+		[]string{keys.Backend_Name, keys.Type, keys.Result},
+	)
+
+	// MoQActiveSubscriptions is the current count of subscriptions by direction.
+	MoQActiveSubscriptions = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "active_subscriptions",
+			Help:      "Current MoQ Transport subscriptions, upstream and downstream.",
+		},
+		[]string{keys.Backend_Name, keys.Direction},
+	)
+
+	// MoQObjects counts objects by direction and delivery.
+	MoQObjects = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "objects_total",
+			Help:      "Count of MoQ Transport objects by direction and delivery.",
+		},
+		[]string{keys.Backend_Name, keys.Direction, keys.Delivery},
+	)
+
+	// MoQBytes counts object payload and property bytes by direction.
+	MoQBytes = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "bytes_total",
+			Help:      "Count of MoQ Transport object bytes by direction.",
+		},
+		[]string{keys.Backend_Name, keys.Direction},
+	)
+
+	// MoQDroppedObjects counts objects not forwarded, by reason.
+	MoQDroppedObjects = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "dropped_objects_total",
+			Help:      "Count of MoQ Transport objects not forwarded, by reason.",
+		},
+		[]string{keys.Backend_Name, keys.Reason},
+	)
+
+	// MoQFetchObjects counts objects served to FETCH and fills, by source.
+	MoQFetchObjects = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "fetch_objects_total",
+			Help:      "Count of objects served to MoQ Transport fetches by source: live_edge, cache or upstream.",
+		},
+		[]string{keys.Backend_Name, keys.Source},
+	)
+
+	// MoQLiveEdgeBytes is the current size of a backend's live edge.
+	MoQLiveEdgeBytes = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "live_edge_bytes",
+			Help:      "Current bytes held in a MoQ backend's in-memory live edge.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// MoQErrors counts MoQ failures by class.
+	MoQErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "errors_total",
+			Help:      "Count of MoQ Transport failures by class.",
+		},
+		[]string{keys.Backend_Name, keys.Class},
+	)
+)
 
 // DeleteBackendSeries removes every metric series labeled with the provided
 // backend_name. It is called when a runtime-instantiated (discovered) backend

@@ -36,6 +36,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
@@ -399,6 +400,7 @@ func Listeners(c *config.Config) error {
 	}
 
 	ports := make(map[string]string)
+	quicPorts := make(map[string]map[string]string)
 	for name, options := range c.Listeners {
 		if name == "" || options == nil {
 			return stderrors.New("invalid empty listener configuration")
@@ -413,8 +415,14 @@ func Listeners(c *config.Config) error {
 		if options.Protocol != listener.ProtocolHTTP && options.TLSRuntimeCerts {
 			return fmt.Errorf("listener %q cannot use tls_runtime_certs with protocol %q", name, options.Protocol)
 		}
-		if options.Protocol != listener.ProtocolHTTP && !options.IsStream() && mapped[name] > 1 {
+		if options.Protocol != listener.ProtocolHTTP && options.Protocol != listener.ProtocolMoQ &&
+			!options.IsStream() && mapped[name] > 1 {
 			return fmt.Errorf("listener %q with protocol %q can map to only one backend", name, options.Protocol)
+		}
+		if options.Protocol == listener.ProtocolMoQ {
+			if err := moqRoutes(c, name); err != nil {
+				return err
+			}
 		}
 		if options.Stream != nil && !options.IsStream() {
 			return fmt.Errorf("listener %q configures stream options for protocol %q", name, options.Protocol)
@@ -495,6 +503,10 @@ func Listeners(c *config.Config) error {
 		if !builtIn && mapped[name] == 0 {
 			addWarning(c, fmt.Sprintf("listener %q is unused and will not be started", name))
 		}
+		if options.Protocol == listener.ProtocolMoQ && options.Active && !tlsMapped[name] {
+			return fmt.Errorf("listener %q with protocol %q needs a certificate: a backend it serves must set "+
+				"tls.full_chain_cert_path and tls.private_key_path", name, options.Protocol)
+		}
 
 		runtimeCerts := options.TLSRuntimeCerts || acmeOnDemandListener(c, name)
 		if options.TLSListenPort > 0 && !tlsMapped[name] && !runtimeCerts {
@@ -517,7 +529,12 @@ func Listeners(c *config.Config) error {
 
 		// a port is reserved in its transport's space: a udp listener and an HTTP/3 endpoint
 		// bind UDP, everything else TCP, so a tcp and a udp listener may share a port number
-		if options.Active && options.ListenPort > 0 {
+		if options.Active && options.ListenPort > 0 && options.Protocol == listener.ProtocolMoQ {
+			if err := reserveQUICPort(ports, quicPorts, name, options.ListenAddress, options.ListenPort,
+				codec.ALPNs(options.MoQ.Drafts)); err != nil {
+				return err
+			}
+		} else if options.Active && options.ListenPort > 0 {
 			transport := transportTCP
 			if options.Protocol == listener.ProtocolUDP {
 				transport = transportUDP
@@ -534,7 +551,7 @@ func Listeners(c *config.Config) error {
 			}
 		}
 		if h3Address, h3Port, _ := options.HTTP3Endpoint(); options.Active && h3Port > 0 {
-			if err := reserveListenerPort(ports, name, transportUDP, h3Address, h3Port); err != nil {
+			if err := reserveQUICPort(ports, quicPorts, name, h3Address, h3Port, []string{alpnH3}); err != nil {
 				return err
 			}
 		}
@@ -1005,6 +1022,66 @@ const (
 	transportTCP = "tcp"
 	transportUDP = "udp"
 )
+
+const alpnH3 = "h3"
+
+func reserveQUICPort(ports map[string]string, quicPorts map[string]map[string]string, listenerName, address string,
+	port int, alpns []string,
+) error {
+	// QUIC endpoints (HTTP/3 and moq) share an address:port, told apart by ALPN, but never with a plain udp listener
+	key := fmt.Sprintf("%s %s:%d", transportUDP, address, port)
+	claimed := quicPorts[key]
+	if claimed == nil {
+		if existing, ok := ports[key]; ok {
+			return fmt.Errorf("listeners %q and %q both use %s", existing, listenerName, key)
+		}
+		claimed = make(map[string]string)
+		quicPorts[key] = claimed
+		ports[key] = listenerName
+	}
+	for _, alpn := range alpns {
+		if owner, ok := claimed[alpn]; ok && owner != listenerName {
+			return fmt.Errorf("listeners %q and %q both serve %s on %s", owner, listenerName, alpn, key)
+		}
+		claimed[alpn] = listenerName
+	}
+	return nil
+}
+
+func moqRoutes(c *config.Config, listenerName string) error {
+	// sessions are routed by the AUTHORITY and PATH of their SETUP, so no two backends may claim the same pair
+	claims := make(map[string]string)
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.IsTemplate || !o.UsesListener(listenerName) || !strings.EqualFold(o.Provider, providers.MoQ) {
+			continue
+		}
+		hosts := o.Hosts
+		if len(hosts) == 0 {
+			hosts = []string{""}
+		}
+		paths := []string{"/"}
+		if len(o.Paths) > 0 {
+			paths = paths[:0]
+			for _, p := range o.Paths {
+				if p != nil && p.Path != "" {
+					paths = append(paths, p.Path)
+				}
+			}
+		}
+		for _, h := range hosts {
+			for _, p := range paths {
+				key := strings.ToLower(h) + " " + p
+				if other, ok := claims[key]; ok {
+					return fmt.Errorf("listener %q: backends %q and %q both serve host %q and path %q",
+						listenerName, other, name, h, p)
+				}
+				claims[key] = name
+			}
+		}
+	}
+	return nil
+}
 
 func reserveListenerPort(ports map[string]string, listenerName, transport, address string,
 	port int,

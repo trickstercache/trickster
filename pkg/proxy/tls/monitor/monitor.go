@@ -103,14 +103,16 @@ func (m *Monitor) Apply(conf *config.Config, lg *listener.Group) {
 	}
 	slices.Sort(backendNames)
 	for name, o := range conf.Listeners {
-		if o == nil || !o.Active || !o.ServeTLS || o.TLSListenPort <= 0 ||
-			(o.Protocol != "" && o.Protocol != listenerconfig.ProtocolHTTP) {
+		// a moq listener terminates TLS in its QUIC handshake, on its listen port
+		quic := o != nil && o.Active && o.Protocol == listenerconfig.ProtocolMoQ && o.ListenPort > 0
+		if !quic && (o == nil || !o.Active || !o.ServeTLS || o.TLSListenPort <= 0 ||
+			(o.Protocol != "" && o.Protocol != listenerconfig.ProtocolHTTP)) {
 			continue
 		}
 		interval := time.Duration(o.TLSWatchInterval)
 		ln := &listenerNotifier{
 			name:     name,
-			groupKey: listener.GroupKey(name, o.Protocol, true),
+			groupKey: listener.GroupKey(name, o.Protocol, !quic),
 			watch:    interval > 0,
 			memory:   make(map[string]*tr.Entry),
 		}

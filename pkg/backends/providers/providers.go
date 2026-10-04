@@ -59,6 +59,8 @@ const (
 	QuestDBID
 	// VictoriaMetrics represents the VictoriaMetrics backend provider.
 	VictoriaMetricsID
+	// MoQ represents the MoQ Transport relay backend provider.
+	MoQID
 
 	Backends = "backends"
 
@@ -83,6 +85,8 @@ const (
 	QuestDB    = "questdb"
 	// VictoriaMetrics serves MetricsQL and Graphite over HTTP; it is not a Prometheus flavor
 	VictoriaMetrics = "victoriametrics"
+	// MoQ relays MoQ Transport tracks; its sessions arrive on a moq listener
+	MoQ = "moq"
 
 	// provider name aliases
 
@@ -132,6 +136,7 @@ var Names = map[string]Provider{
 	GreptimeDB:             GreptimeDBID,
 	QuestDB:                QuestDBID,
 	VictoriaMetrics:        VictoriaMetricsID,
+	MoQ:                    MoQID,
 	Proxy:                  RPID,
 	ReverseProxy:           RPID,
 	ReverseProxyShort:      RPID,

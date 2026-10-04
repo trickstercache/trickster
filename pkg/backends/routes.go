@@ -46,6 +46,9 @@ type RouteInput struct {
 	Authenticated bool
 	// Client is the address the session arrived from, when the protocol adapter knows it
 	Client netip.Addr
+	// Authority and Path name the resource a session asked for, when its protocol carries them
+	Authority string
+	Path      string
 	// FallbackOnMappedUnavailable preserves HTTP User Router availability
 	// semantics. Session protocols leave it false to prevent cross-target failover.
 	FallbackOnMappedUnavailable bool

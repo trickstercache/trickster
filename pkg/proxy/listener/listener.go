@@ -261,6 +261,10 @@ func (lg *Group) SetIPACL(name string, list *ipacl.List, aclName string) {
 		l.ipacl.Store(list)
 		l.ipaclDecisions.Store(slot)
 		delete(lg.pendingACL, name)
+		// a protocol with no accept of its own, such as one served on a shared QUIC endpoint, judges peers itself
+		if u, ok := protocolTarget(l).(ipaclUpdater); ok {
+			u.UpdateIPACL(list)
+		}
 		return
 	}
 	if lg.pendingACL == nil {

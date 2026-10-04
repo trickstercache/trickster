@@ -206,7 +206,10 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 						keys.ListenerName: desired.listenerName,
 					})
 				}
-				if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
+				if _, packet := desired.native.(native.PacketAdapter); packet {
+					// a QUIC listener's certificates live in its swapper, as an HTTP/3 endpoint's do
+					updateListenerCertificates(conf, desired, lg)
+				} else if tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName); err == nil {
 					lg.UpdateProtocolTLSConfig(key, tlsConfig)
 				} else {
 					logger.Error("unable to rotate native listener TLS", logging.Pairs{
@@ -222,6 +225,12 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 
 		if desired.stream {
 			startStreamListener(lg, desired, streamConfig(conf, desired, clients), errorFunc)
+			continue
+		}
+
+		if pa, ok := desired.native.(native.PacketAdapter); ok {
+			startNativePacketListener(lg, conf, desired, pa, nativeBuildRequest(conf, desired, tracers, clients),
+				errorFunc)
 			continue
 		}
 
@@ -382,6 +391,31 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		}
 	}
 	return out
+}
+
+func startNativePacketListener(lg *listener.Group, conf *config.Config, desired desiredListener,
+	pa native.PacketAdapter, request native.BuildRequest, errorFunc func(),
+) {
+	tlsConfig, err := conf.TLSCertConfigForListener(desired.listenerName)
+	if err != nil {
+		logger.Error("unable to start native QUIC listener", logging.Pairs{
+			keys.ListenerName: desired.listenerName, "protocol": desired.options.Protocol, keys.Error: err.Error(),
+		})
+		return
+	}
+	gate := sessionGateFor(conf, desired.listenerName)
+	go lg.StartSharedPacketListener(desired.key, desired.options.Protocol, desired.address, desired.port, tlsConfig,
+		nil, func(_ http.Handler, certs tr.CertSwapper, tc *tls.Config) (listener.PacketMember, error) {
+			member, err := pa.Join(request, desired.key, certs, tc)
+			if err != nil {
+				return nil, err
+			}
+			if !setPacketSessionGate(member, gate) {
+				_ = member.Shutdown(closedContext())
+				return nil, errUngatedListener
+			}
+			return member, nil
+		}, errorFunc)
 }
 
 func streamConfig(conf *config.Config, desired desiredListener, clients backends.Backends) *l4.Config {
