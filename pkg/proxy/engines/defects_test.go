@@ -215,6 +215,61 @@ func TestAuthenticatedNegativeResponseIsNotShared(t *testing.T) {
 	}
 }
 
+func TestPerCredentialCacheKeepsAuthorizedResponsesPerCredential(t *testing.T) {
+	var hits atomic.Int64
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Write([]byte("unshared series"))
+	}))
+	defer ts.Close()
+	const otherCredential = "Basic b3RoZXI6dGVzdA=="
+	credential := func(c string) map[string]string { return map[string]string{headers.NameAuthorization: c} }
+	for _, test := range []struct {
+		name       string
+		configured bool
+		requests   []map[string]string
+		fetches    []int64
+		unflagged  []int64
+	}{
+		{
+			// a repeat is served only to its own credential, never to another or to no credential
+			name:     "client credential",
+			requests: []map[string]string{credential(testCredential), credential(testCredential), credential(otherCredential), nil},
+			fetches:  []int64{1, 0, 1, 1}, unflagged: []int64{1, 1, 1, 1},
+		},
+		{
+			name: "configured credential", configured: true, requests: []map[string]string{nil, nil},
+			fetches: []int64{1, 0}, unflagged: []int64{1, 1},
+		},
+	} {
+		for _, perCredential := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/perCredential=%t", test.name, perCredential), func(t *testing.T) {
+				rsc, url, done := originResources(t, ts, "/per-credential")
+				defer done()
+				// both lanes impose a lifetime, so only RFC 9111 3.5 decides whether the response is kept
+				rsc.AlternateCacheTTL, rsc.PerCredentialCache = time.Minute, perCredential
+				if test.configured {
+					rsc.PathConfig.RequestHeaders = map[string]string{headers.NameAuthorization: testCredential}
+					rsc.PathConfig.RefreshIdentityKeyPart()
+				}
+				want := test.fetches
+				if !perCredential {
+					want = test.unflagged
+				}
+				for i, hdrs := range test.requests {
+					before := hits.Load()
+					if code, _ := runOPCWith(rsc, http.MethodGet, url, hdrs); code != http.StatusOK {
+						t.Fatalf("request %d: got %d", i, code)
+					}
+					if got := hits.Load() - before; got != want[i] {
+						t.Errorf("request %d reached the origin %d times, want %d", i, got, want[i])
+					}
+				}
+			})
+		}
+	}
+}
+
 // a successful authenticated write supersedes the shared copy too
 func TestAuthenticatedWriteInvalidatesSharedResponse(t *testing.T) {
 	var hits atomic.Int64

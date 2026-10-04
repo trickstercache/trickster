@@ -1,0 +1,214 @@
+/*
+ * Copyright 2026 The Trickster Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package options
+
+import (
+	"testing"
+	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/config/types"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
+
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
+)
+
+func load(t *testing.T, doc string) *Options {
+	t.Helper()
+	o := New()
+	require.NoError(t, yaml.Unmarshal([]byte(doc), o))
+	return o
+}
+
+func TestHRWOptions(t *testing.T) {
+	o := load(t, "mechanism: hrw\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, flowkey.KeySource{Kind: flowkey.KeyClientIP}, o.HRW.KeySource)
+	require.Equal(t, DefaultIPv6Prefix, o.HRW.IPv6Prefix)
+	_, err := o.Validate()
+	require.NoError(t, err)
+
+	o = load(t, "mechanism: highest_random_weight\nhrw:\n  key: header:x-tenant\n  ipv6_prefix: 56\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, flowkey.KeySource{Kind: flowkey.KeyHeader, Name: "X-Tenant"}, o.HRW.KeySource)
+	require.Equal(t, 56, o.HRW.IPv6Prefix)
+	_, err = o.Validate()
+	require.NoError(t, err)
+
+	require.ErrorIs(t, load(t, "mechanism: hrw\nhrw:\n  key: port\n").Initialize("alb1"), flowkey.ErrInvalidKeySource)
+	for _, key := range []string{"method", "path", "query"} {
+		require.ErrorIs(t, load(t, "mechanism: hrw\nhrw:\n  key: "+key+"\n").Initialize("alb1"), ErrInvalidHRWKey, key)
+	}
+	bad := load(t, "mechanism: hrw\nhrw:\n  ipv6_prefix: 129\n")
+	require.NoError(t, bad.Initialize("alb1"))
+	_, err = bad.Validate()
+	require.ErrorIs(t, err, ErrInvalidIPv6Prefix)
+	unparsed := &Options{MechanismName: names.MechanismHRW, HRW: HRWOptions{Key: "nonsense"}}
+	_, err = unparsed.Validate()
+	require.ErrorIs(t, err, flowkey.ErrInvalidKeySource)
+}
+
+func TestLTOptions(t *testing.T) {
+	o := load(t, "mechanism: lt\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Empty(t, o.LT.Signal, "an unset signal is resolved per listener protocol, not at load")
+	require.Zero(t, o.LTDecay())
+	for _, code := range []int{200, 404, 500, 501, 505} {
+		require.True(t, o.LT.GoodCodes.Contains(code), code)
+	}
+	for _, code := range []int{502, 503, 504} {
+		require.False(t, o.LT.GoodCodes.Contains(code), code)
+	}
+	_, err := o.Validate()
+	require.NoError(t, err)
+
+	o = load(t, "mechanism: least_time\nlt:\n  status_codes: [{start: 200, end: 499}]\n  decay: 30s\n  signal: first_write\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, 30*time.Second, o.LTDecay())
+	require.True(t, o.LT.GoodCodes.Contains(404))
+	require.False(t, o.LT.GoodCodes.Contains(500))
+	_, err = o.Validate()
+	require.NoError(t, err)
+
+	c := o.Clone()
+	require.Equal(t, o.LT.StatusCodes, c.LT.StatusCodes)
+	require.NotSame(t, o.LT.GoodCodes, c.LT.GoodCodes)
+	c.LT.StatusCodes[0].End = 299
+	require.Equal(t, 499, o.LT.StatusCodes[0].End, "the clone shares its ranges with the original")
+
+	for doc, want := range map[string]error{
+		"mechanism: lt\nlt:\n  signal: last_byte\n":                      ErrInvalidLTSignal,
+		"mechanism: lt\nlt:\n  decay: -5s\n":                             ErrInvalidLTDecay,
+		"mechanism: lt\nlt:\n  status_codes: [{start: 500, end: 200}]\n": types.ErrInvalidStatusRange,
+	} {
+		bad := load(t, doc)
+		require.NoError(t, bad.Initialize("alb1"))
+		_, err := bad.Validate()
+		require.ErrorIs(t, err, want, doc)
+	}
+}
+
+// a strategy's block is refused on any other mechanism, as output_format is outside tsm
+func TestStrategyBlocksBelongToTheirMechanism(t *testing.T) {
+	for doc, want := range map[string]error{
+		"mechanism: rr\nhrw:\n  key: host\n":         ErrHRWOnlyForHRW,
+		"mechanism: rr\nlt:\n  decay: 5s\n":          ErrLTOnlyForLT,
+		"mechanism: lt\nhrw:\n  ipv6_prefix: 48\n":   ErrHRWOnlyForHRW,
+		"mechanism: hrw\nlt:\n  signal: first_write": ErrLTOnlyForLT,
+		"mechanism: p2c\nlt:\n  status_codes: [200]": ErrLTOnlyForLT,
+	} {
+		o := load(t, doc)
+		require.NoError(t, o.Initialize("alb1"))
+		_, err := o.Validate()
+		require.ErrorIs(t, err, want, doc)
+	}
+	for _, mech := range []string{names.MechanismP2C, names.MechanismLC, names.MechanismRR} {
+		o := load(t, "mechanism: "+mech+"\n")
+		require.NoError(t, o.Initialize("alb1"))
+		_, err := o.Validate()
+		require.NoError(t, err, mech)
+	}
+}
+
+func TestLTSignalFor(t *testing.T) {
+	o := &Options{}
+	for protocol, want := range map[string]string{
+		"http": LTSignalFirstWrite, "tcp": LTSignalConnect, "tls": LTSignalConnect,
+		"udp": LTSignalFirstReply, "mysql": LTSignalFirstWrite,
+	} {
+		got, err := o.LTSignalFor(protocol)
+		require.NoError(t, err)
+		require.Equal(t, want, got, protocol)
+	}
+	o.LT.Signal = LTSignalFirstByte
+	got, err := o.LTSignalFor("tls")
+	require.NoError(t, err)
+	require.Equal(t, LTSignalFirstByte, got)
+	for _, protocol := range []string{"http", "udp"} {
+		_, err := o.LTSignalFor(protocol)
+		require.ErrorIs(t, err, ErrInvalidLTSignal, protocol)
+	}
+}
+
+func TestStreamOptions(t *testing.T) {
+	o := load(t, "mechanism: rr\nstream:\n  connect_retries: 2\n  passive_health: {}\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, 2, o.Stream.ConnectRetries)
+	require.Equal(t, DefaultPassiveFailures, o.Stream.PassiveHealth.Failures, "an empty block turns it on")
+	_, err := o.Validate()
+	require.NoError(t, err)
+
+	o = load(t, "mechanism: p2c\nstream:\n  passive_health: {failures: 5, eject: 10s, max_ejected_percent: 25}\n")
+	require.NoError(t, o.Initialize("alb1"))
+	require.Equal(t, PassiveHealthOptions{Failures: 5, Eject: timeconv.Duration(10 * time.Second), MaxEjectedPercent: 25},
+		*o.Stream.PassiveHealth)
+	c := o.Clone()
+	c.Stream.PassiveHealth.Failures = 9
+	c.Stream.ConnectRetries = 4
+	require.Equal(t, 5, o.Stream.PassiveHealth.Failures, "the clone shares its stream options")
+	require.Zero(t, o.Stream.ConnectRetries)
+	require.Nil(t, (*StreamOptions)(nil).Clone())
+
+	for doc, want := range map[string]error{
+		"stream:\n  connect_retries: -1\n":                        ErrInvalidConnectRetries,
+		"stream:\n  connect_retries: 11\n":                        ErrInvalidConnectRetries,
+		"stream:\n  passive_health: {failures: -1}\n":             ErrInvalidPassiveHealth,
+		"stream:\n  passive_health: {eject: -1s}\n":               ErrInvalidPassiveHealth,
+		"stream:\n  passive_health: {max_ejected_percent: 101}\n": ErrInvalidPassiveHealth,
+		"stream:\n  passive_health: {max_ejected_percent: -5}\n":  ErrInvalidPassiveHealth,
+		"lt:\n  signal: last_byte\n":                              ErrInvalidLTSignal,
+	} {
+		mech := "mechanism: rr\n"
+		if want == ErrInvalidLTSignal {
+			mech = "mechanism: lt\n"
+		}
+		bad := load(t, mech+doc)
+		require.NoError(t, bad.Initialize("alb1"))
+		_, err := bad.Validate()
+		require.ErrorIs(t, err, want, doc)
+	}
+}
+
+func TestSpreadMechanismOptions(t *testing.T) {
+	for name, test := range map[string]struct {
+		doc  string
+		want error
+	}{
+		"race":               {"mechanism: race\n", nil},
+		"race width":         {"mechanism: connect_race\nstream:\n  race_width: 3\n", nil},
+		"race too narrow":    {"mechanism: race\nstream:\n  race_width: 1\n", ErrInvalidRaceWidth},
+		"race too wide":      {"mechanism: race\nstream:\n  race_width: 9\n", ErrInvalidRaceWidth},
+		"width without race": {"mechanism: rr\nstream:\n  race_width: 2\n", ErrRaceWidthOnlyForRace},
+		"race retries":       {"mechanism: race\nstream:\n  connect_retries: 1\n", ErrStreamOptionsNeedOneMember},
+		"mirror ejection":    {"mechanism: mirror\nstream:\n  passive_health:\n    failures: 2\n", ErrStreamOptionsNeedOneMember},
+		"mirror":             {"mechanism: udp_mirror\npool: [a, b, c, d, e, f, g, h]\n", nil},
+		"mirror too wide":    {"mechanism: mirror\npool: [a, b, c, d, e, f, g, h, i]\n", ErrTooManyMirrorMembers},
+		"mirror hrw block":   {"mechanism: mirror\nhrw:\n  key: host\n", ErrHRWOnlyForHRW},
+		"mirror lt block":    {"mechanism: mirror\nlt:\n  decay: 5s\n", ErrLTOnlyForLT},
+	} {
+		o := load(t, test.doc)
+		require.NoError(t, o.Initialize("alb1"), name)
+		_, err := o.Validate()
+		if test.want == nil {
+			require.NoError(t, err, name)
+			continue
+		}
+		require.ErrorIs(t, err, test.want, name)
+	}
+	require.NoError(t, (*StreamOptions)(nil).validateFor("race"))
+}

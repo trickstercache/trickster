@@ -44,8 +44,8 @@ backends:
     timeseries_retention_factor: 666
     timeseries_eviction_method: lru
     fast_forward_disable: true
-    backfill_tolerance: 301000ms
-    backfill_tolerance_points: 2
+    volatile_window: 301000ms
+    volatile_window_points: 2
     timeout: 37000ms
     timeseries_ttl: 8666000ms
     max_ttl: 300000ms

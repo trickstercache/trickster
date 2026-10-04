@@ -35,7 +35,10 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	trerr "github.com/trickstercache/trickster/v2/pkg/proxy/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	sw "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/challenge"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/ondemand"
 
 	"golang.org/x/net/netutil"
 )
@@ -83,15 +86,17 @@ type server interface {
 type Listener struct {
 	net.Listener
 	// packetConn is set instead of Listener for datagram (QUIC) endpoints
-	packetConn   net.PacketConn
-	tlsConfig    *tls.Config
-	tlsSwapper   sw.CertSwapper
-	routeSwapper *switcher.SwitchHandler
-	server       server
-	exitOnError  atomic.Bool
-	state        atomic.Int32
-	readyCh      chan struct{}
-	readyOnce    sync.Once
+	packetConn     net.PacketConn
+	tlsConfig      *tls.Config
+	tlsSwapper     sw.CertSwapper
+	routeSwapper   *switcher.SwitchHandler
+	server         server
+	exitOnError    atomic.Bool
+	state          atomic.Int32
+	readyCh        chan struct{}
+	readyOnce      sync.Once
+	ipacl          atomic.Pointer[ipacl.List] // the accept-time list, swapped on reload; nil admits every peer
+	ipaclDecisions atomic.Pointer[acceptACL]  // its counters and name; nil records nothing
 }
 
 type observedConnection struct {
@@ -110,6 +115,24 @@ func (o *observedConnection) CloseWrite() error {
 		}
 	}
 	return errors.ErrUnsupported
+}
+
+// Reset ends the connection with a reset rather than a close, so a relay may turn a client away
+// at once; it reaches the TCP connection beneath a PROXY protocol connection, and nothing else.
+func (o *observedConnection) Reset() error {
+	tc, ok := o.Conn.(*net.TCPConn)
+	if !ok {
+		if pc, wraps := o.Conn.(interface{ TCPConn() (*net.TCPConn, bool) }); wraps {
+			tc, ok = pc.TCPConn()
+		}
+	}
+	if !ok {
+		return errors.ErrUnsupported
+	}
+	if err := tc.SetLinger(0); err != nil {
+		return err
+	}
+	return o.Close()
 }
 
 func (o *observedConnection) Close() error {
@@ -166,7 +189,8 @@ type Group struct {
 	closed bool
 	// onPublish is told the key of every listener added, so state prepared for a listener
 	// before it existed, such as its certificates, can be applied once it does
-	onPublish func(key string)
+	onPublish  func(key string)
+	pendingACL map[string]attachedACL // accept-time lists set before their listeners are published
 }
 
 // OnPublish registers f to be called with the group key of every listener published from now on
@@ -194,6 +218,11 @@ func (lg *Group) publish(name string, l *Listener) error {
 		lg.listenersLock.Unlock()
 		return trerr.ErrListenerGroupClosed
 	}
+	if attached, ok := lg.pendingACL[name]; ok {
+		l.ipacl.Store(attached.list)
+		l.ipaclDecisions.Store(attached.slot)
+		delete(lg.pendingACL, name)
+	}
 	lg.members[name] = l
 	f := lg.onPublish
 	lg.listenersLock.Unlock()
@@ -201,6 +230,43 @@ func (lg *Group) publish(name string, l *Listener) error {
 		f(name)
 	}
 	return nil
+}
+
+type acceptACL struct { // the accept-time counters, and the name the denial log uses
+	dec  *metrics.IPACLDecision
+	name string
+}
+
+type attachedACL struct { // a list held for a listener not yet published, with its counters
+	list *ipacl.List
+	slot *acceptACL
+}
+
+// SetIPACL swaps a listener's accept-time list without closing its socket, holding it until the listener is
+// published; nil admits every peer, and an empty aclName counts nothing
+func (lg *Group) SetIPACL(name string, list *ipacl.List, aclName string) {
+	if lg == nil || name == "" {
+		return
+	}
+	var slot *acceptACL
+	if list != nil {
+		slot = &acceptACL{name: aclName}
+		if aclName != "" {
+			slot.dec = metrics.NewIPACLDecision(aclName, metrics.IPACLScopeListener)
+		}
+	}
+	lg.listenersLock.Lock()
+	defer lg.listenersLock.Unlock()
+	if l := lg.members[name]; l != nil {
+		l.ipacl.Store(list)
+		l.ipaclDecisions.Store(slot)
+		delete(lg.pendingACL, name)
+		return
+	}
+	if lg.pendingACL == nil {
+		lg.pendingACL = make(map[string]attachedACL)
+	}
+	lg.pendingACL[name] = attachedACL{list: list, slot: slot}
 }
 
 // refuse closes a bound but unpublished listener and logs the refusal.
@@ -262,28 +328,24 @@ func (l *Listener) WaitForReady(timeout time.Duration) bool {
 	return true
 }
 
-// NewListener creates a new network listener which obeys to the configuration max
-// connection limit, monitors connections with prometheus metrics, and is able
-// to be gracefully drained
-//
-// The way this works is by creating a listener and wrapping it with a
-// netutil.LimitListener to set a limit.
-//
-// This limiter will simply block waiting for resources to become available
-// whenever clients go above the limit.
-//
-// To simplify settings limits the listener is wrapped with yet another object
-// which observes the connections to set a gauge with the current number of
-// connections (with operates with sampling through scrapes), and a set of
-// counter metrics for connections accepted, rejected and closed.
+// NewListener returns a drainable, metered listener, its socket wrapped inside out by the accept-time IP access
+// list, the connection limit, PROXY protocol and TLS
 func NewListener(listenAddress string, listenPort, connectionsLimit int,
-	tlsConfig *tls.Config, proxyProtocol *ProxyProtocolOptions,
+	tlsConfig *tls.Config, proxyProtocol *ProxyProtocolOptions, acl *atomic.Pointer[ipacl.List],
+	judgeClientIP bool, decisions *atomic.Pointer[acceptACL],
 ) (net.Listener, error) {
 	listenerType := "http"
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", listenAddress, listenPort))
 	if err != nil {
 		// so we can exit one level above, this usually means that the port is in use
 		return nil, err
+	}
+	// a denial is closed at the socket, never holding a limited connection, reading a PROXY header or starting TLS;
+	// judgeClientIP is for a native listener, whose peer is its client
+	listener = newACLListener(listener, acl, decisions, judgeClientIP)
+	if connectionsLimit > 0 {
+		listener = netutil.LimitListener(listener, connectionsLimit)
+		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 	// the PROXY header precedes the TLS handshake, so it is read beneath TLS
 	if proxyProtocol != nil && proxyProtocol.Enabled {
@@ -292,11 +354,6 @@ func NewListener(listenAddress string, listenPort, connectionsLimit int,
 	if tlsConfig != nil {
 		listenerType = "https"
 		listener = tls.NewListener(listener, tlsConfig)
-	}
-
-	if connectionsLimit > 0 {
-		listener = netutil.LimitListener(listener, connectionsLimit)
-		metrics.ProxyMaxConnections.Set(float64(connectionsLimit))
 	}
 
 	logger.Debug("starting proxy listener", logging.Pairs{
@@ -347,7 +404,7 @@ func (lg *Group) Get(name string) *Listener {
 // StartListener starts a new HTTP listener and adds it to the listener group
 func (lg *Group) StartListener(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, router http.Handler, tracers tracing.Tracers,
-	f func(), readHeaderTimeout time.Duration, proxyProtocol *ProxyProtocolOptions,
+	f func(), limits ServerLimits, proxyProtocol *ProxyProtocolOptions,
 ) error {
 	l := &Listener{
 		routeSwapper: switcher.NewSwitchHandler(router),
@@ -364,11 +421,20 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 		// Replace the normal GetCertificate function in the TLS config with lg.tlsSwapper's,
 		// so users swap certs in the config later without restarting the entire process
 		tlsConfig.GetCertificate = l.tlsSwapper.GetCert
+		if store, ok := l.tlsSwapper.(sw.CertStore); ok {
+			// an unregistered on-demand provider costs one atomic load per handshake
+			tlsConfig.GetCertificate = ondemand.GetCertificate(listenerName, store, l.tlsSwapper.GetCert)
+		}
 		tlsConfig.Certificates = nil
+		// a CA validating with tls-alpn-01 gets a challenge-only config; others cost one length check
+		if tlsConfig.GetConfigForClient == nil {
+			tlsConfig.GetConfigForClient = challenge.ConfigForClient
+		}
 	}
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, proxyProtocol)
+	l.Listener, err = NewListener(address, port, connectionsLimit, tlsConfig, proxyProtocol, &l.ipacl,
+		false, &l.ipaclDecisions)
 	if err != nil {
 		logger.ErrorSynchronous(
 			"http listener startup failed", logging.Pairs{logKeyListenerName: listenerName, logKeyDetail: err})
@@ -384,11 +450,11 @@ func (lg *Group) StartListener(listenerName, address string, port int, connectio
 	// the server is assigned before the listener is published to the group, so
 	// a DrainAndClose racing this startup always observes a server to shut down
 	svr := &http.Server{
-		Handler:           l.routeSwapper,
-		TLSConfig:         tlsConfig,
-		ReadHeaderTimeout: readHeaderTimeout,
-		Protocols:         serverProtocols(),
+		Handler:   l.routeSwapper,
+		TLSConfig: tlsConfig,
+		Protocols: serverProtocols(),
 	}
+	limits.apply(svr)
 	l.server = svr
 
 	if err := lg.publish(listenerName, l); err != nil {
@@ -439,12 +505,12 @@ func handleTracerShutdowns(tracers tracing.Tracers) {
 // StartListenerRouter starts a new HTTP listener with a new router, and adds it to the listener group
 func (lg *Group) StartListenerRouter(listenerName, address string, port int, connectionsLimit int,
 	tlsConfig *tls.Config, path string, handler http.Handler,
-	tracers tracing.Tracers, f func(), readHeaderTimeout time.Duration,
+	tracers tracing.Tracers, f func(), limits ServerLimits,
 ) error {
 	router := http.NewServeMux()
 	router.Handle(path, handler)
 	return lg.StartListener(listenerName, address, port, connectionsLimit,
-		tlsConfig, router, tracers, f, readHeaderTimeout, nil)
+		tlsConfig, router, tracers, f, limits, nil)
 }
 
 // DrainAndClose drains the named listener for up to drainWait, then closes it.

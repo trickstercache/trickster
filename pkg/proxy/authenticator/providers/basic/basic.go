@@ -123,7 +123,7 @@ func (a *Authenticator) Authenticate(r *http.Request) (*types.AuthResult, error)
 	if !ok {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentials
 	}
-	if err := cred.VerifyPassword(hash, p); err != nil {
+	if err := cred.VerifyUserPassword(u, hash, p); err != nil {
 		return failedResult(a.showLoginForm, a.realm), ae.ErrInvalidCredentials
 	}
 	return &types.AuthResult{Username: u, Status: types.AuthSuccess}, nil
@@ -134,19 +134,11 @@ func (a *Authenticator) Clone() types.Authenticator {
 	return a.ClonePtr()
 }
 
-// Clone returns a new, completely independent clone of the Authenticator
+// ClonePtr returns a new, completely independent clone of the Authenticator
 func (a *Authenticator) ClonePtr() *Authenticator {
-	out := &Authenticator{}
-	if a.users != nil {
-		out.users = make(types.CredentialsManifest, len(a.users))
-		maps.Copy(out.users, a.users)
-	}
-	if a.extractCredsFunc != nil {
-		out.extractCredsFunc = a.extractCredsFunc
-	}
-	out.showLoginForm = a.showLoginForm
-	out.realm = a.realm
-	return out
+	out := *a
+	out.users = maps.Clone(a.users)
+	return &out
 }
 
 func (a *Authenticator) ProxyPreserve() bool {

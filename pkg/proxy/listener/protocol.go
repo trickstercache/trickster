@@ -35,6 +35,11 @@ type protocolRouteUpdater interface {
 	UpdateRouteResolver(backends.RouteResolver)
 }
 
+// SessionGateUpdater is a protocol server that judges each new session by a gate a reload may replace
+type SessionGateUpdater interface {
+	UpdateSessionGate(backends.SessionGate)
+}
+
 type protocolRestartKeyer interface {
 	ProtocolRestartKey() string
 }
@@ -47,6 +52,15 @@ type ProtocolServer interface {
 	Serve(net.Listener) error
 }
 
+func acceptJudgesClientIP(protocol string, proxy *ProxyProtocolOptions) bool {
+	// a native listener without PROXY protocol has no other address; HTTP resolves the client in middleware, and stream
+	// tcp and tls from Flow.Client
+	if proxy != nil && proxy.Enabled {
+		return false
+	}
+	return protocol != "tcp" && protocol != "tls"
+}
+
 // StartProtocolListener starts a protocol-terminating server on a Trickster
 // listener, preserving the common connection limit, metrics, and drain lifecycle.
 func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
@@ -57,7 +71,8 @@ func (lg *Group) StartProtocolListener(listenerName, protocol, address string,
 	l.setState(StateStarting)
 
 	var err error
-	l.Listener, err = NewListener(address, port, connectionsLimit, nil, proxyProtocol)
+	l.Listener, err = NewListener(address, port, connectionsLimit, nil, proxyProtocol, &l.ipacl,
+		acceptJudgesClientIP(protocol, proxyProtocol), &l.ipaclDecisions)
 	if err != nil {
 		logger.ErrorSynchronous(protocol+" listener startup failed", logging.Pairs{
 			logKeyListenerName: listenerName, logKeyDetail: err,
@@ -117,6 +132,21 @@ func (lg *Group) UpdateProtocolRouteResolver(listenerName string, resolver backe
 		return false
 	}
 	updater.UpdateRouteResolver(resolver)
+	return true
+}
+
+// UpdateProtocolSessionGate switches the gate that new native sessions are judged by; sessions already
+// admitted are not judged again. It reports false when the server takes no gate.
+func (lg *Group) UpdateProtocolSessionGate(listenerName string, gate backends.SessionGate) bool {
+	l := lg.Get(listenerName)
+	if l == nil || l.server == nil {
+		return false
+	}
+	updater, ok := l.server.(SessionGateUpdater)
+	if !ok {
+		return false
+	}
+	updater.UpdateSessionGate(gate)
 	return true
 }
 

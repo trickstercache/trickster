@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 func TestClickhouseClientInterfacing(t *testing.T) {
@@ -109,6 +110,17 @@ func TestParseTimeRangeQuery(t *testing.T) {
 		if res.Extent.End.Sub(res.Extent.Start) != want {
 			t.Errorf("expected %s got %s", want, res.Extent.End.Sub(res.Extent.Start))
 		}
+		// the engine keeps a still-filling bucket volatile only for bucketed aggregates
+		if res.SampleModel != timeseries.SampleModelBucket {
+			t.Errorf("expected bucketed sample model, got %d", res.SampleModel)
+		}
+		// the requested range is the statement's own, before the extent's inclusive end
+		if res.Requested.End.Sub(res.Requested.Start) != 6*time.Hour || res.Requested.EndInclusive {
+			t.Errorf("unexpected requested range %+v", res.Requested)
+		}
+		if res.StepAlignment != timeseries.StepAlignmentDrop {
+			t.Errorf("expected drop, got %s", res.StepAlignment)
+		}
 	}
 
 	req.URL.RawQuery = ""
@@ -155,6 +167,13 @@ func TestNativeListenerAdapterLifecycle(t *testing.T) {
 	if err != nil || rebound.RestartKey != before.RestartKey {
 		t.Fatalf("listener bindings changed restart identity: %v", err)
 	}
+	// a running server is handed its geo ACL and its routes, so naming either ACL does not restart it
+	o.GeoACLName, o.IPACLName = "north-america", "office"
+	gated, err := a.Describe(c, "native")
+	if err != nil || gated.RestartKey != before.RestartKey || o.GeoACLName == "" || o.IPACLName == "" {
+		t.Fatalf("an ACL changed restart identity: %v", err)
+	}
+	o.GeoACLName, o.IPACLName = "", ""
 	o.ListenerNames = []string{"default", "native"}
 	o.OriginURL = "http://localhost:9000"
 	after, err := a.Describe(c, "native")
@@ -199,7 +218,7 @@ func TestNativeListenerAdapterValidation(t *testing.T) {
 	if NativeListenerAdapter().Protocol() != listenerconfig.ProtocolClickHouse {
 		t.Fatal("exported adapter has wrong protocol")
 	}
-	if a.Protocol() != listenerconfig.ProtocolClickHouse || !a.SupportsHTTP() || a.Configured(nil) {
+	if a.Protocol() != listenerconfig.ProtocolClickHouse || !a.SupportsHTTP(providers.ClickHouse) || a.Configured(nil) {
 		t.Fatal("unexpected ClickHouse adapter capabilities")
 	}
 	if err := a.ValidateListener(nil); err == nil {
@@ -227,6 +246,9 @@ func TestNativeListenerAdapterValidation(t *testing.T) {
 	}
 	if err := a.ValidateUserRouter(nil, "", nil); err == nil {
 		t.Fatal("accepted native user routing")
+	}
+	if err := a.ValidateBalancer(nil, "", nil); err == nil {
+		t.Fatal("accepted native session balancing")
 	}
 	if resolver := a.RouteResolver(native.BuildRequest{}); resolver != nil {
 		t.Fatal("unexpected native route resolver")

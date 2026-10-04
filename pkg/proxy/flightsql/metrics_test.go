@@ -40,19 +40,19 @@ func (failingRenderer) RenderExtent(timeseries.Extent) (string, error) {
 
 // nativeDeltaRewriteFailureRequest builds a delta request whose extent
 // rendering fails, driving the engine's rewrite-failure hook.
-func nativeDeltaRewriteFailureRequest(_ *deltaRunner) nativedelta.DeltaRequest[*deltaPayload] {
+func nativeDeltaRewriteFailureRequest(_ *deltaRunner) nativedelta.DeltaRequest[[]byte] {
 	plan := &sqlanalyzer.QueryPlan{
 		Step:       time.Minute,
 		LowerBound: &sqlanalyzer.Bound{Value: time.Unix(0, 0), Inclusive: true},
 		UpperBound: &sqlanalyzer.Bound{Value: time.Unix(600, 0), Inclusive: false},
 		Renderer:   failingRenderer{},
 	}
-	return nativedelta.DeltaRequest[*deltaPayload]{
-		Key: "k", FallbackKey: "k:fallback", EmptyKey: "k:empty",
+	return nativedelta.DeltaRequest[[]byte]{
+		Key: "k", FallbackKey: "k:fallback",
 		Plan: plan, Now: time.Unix(3600, 0),
-		Ops: nativedelta.DeltaOps[*deltaPayload]{
-			FetchOriginal: func() (*deltaPayload, error) {
-				return &deltaPayload{Raw: []byte{}}, nil
+		Ops: nativedelta.DeltaOps[[]byte]{
+			FetchOriginal: func() ([]byte, error) {
+				return []byte{}, nil
 			},
 		},
 	}

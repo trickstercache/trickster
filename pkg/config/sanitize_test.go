@@ -17,8 +17,11 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
 
 func TestSanitizedString(t *testing.T) {
@@ -295,7 +298,203 @@ request_rewriters:
 	}
 }
 
+func TestSanitizedCloneKubernetesReferences(t *testing.T) {
+	const yml = `
+caches:
+  edge-cache:
+    provider: memory%s
+negative_caches:
+  misses:
+    "404": 5s
+authenticators:
+  staff:
+    provider: basic
+tracing:
+  private-traces:
+    provider: stdout
+listeners:
+  ingress-listener:
+    port: 9000
+backends:
+  web:
+    provider: reverseproxycache
+    origin_url: http://web.private.example
+    cache_name: edge-cache
+    negative_cache_name: misses
+geo_locators:
+  default:
+    provider: geofeed
+geo_acls:
+  customer-region:
+    allow: [US]
+kubernetes:
+  ingress:
+    listener_names: [ingress-listener]
+  defaults:
+    routing_mode: service
+    cache_name: edge-cache
+    negative_cache_name: misses
+    tracing_name: private-traces
+    authenticator_name: staff
+    geo_acl_name: customer-region
+`
+	// negative caches keep their names, even when an ordinary cache, which is renamed, shares one
+	for name, sameNamedCache := range map[string]string{
+		"own name":            "",
+		"shared with a cache": "\n  misses:\n    provider: memory",
+	} {
+		t.Run(name, func(t *testing.T) {
+			conf := NewConfig()
+			if err := conf.loadYAMLConfig(fmt.Sprintf(yml, sameNamedCache)); err != nil {
+				t.Fatal(err)
+			}
+			delete(conf.Backends, "default") // seeded by NewConfig, naming neither cache
+
+			sanitized := conf.SanitizedClone()
+			d := sanitized.Kubernetes.Defaults
+			for field, ok := range map[string]bool{
+				"cache_name":          hasKey(sanitized.Caches, d.CacheName),
+				"negative_cache_name": hasKey(sanitized.NegativeCacheConfigs, d.NegativeCacheName),
+				"tracing_name":        hasKey(sanitized.TracingOptions, d.TracingName),
+				"authenticator_name":  hasKey(sanitized.Authenticators, d.AuthenticatorName),
+				"geo_acl_name":        hasKey(sanitized.GeoACLs, d.GeoACLName),
+				"ingress listener":    hasKey(sanitized.Listeners, sanitized.Kubernetes.Ingress.ListenerNames[0]),
+			} {
+				if !ok {
+					t.Errorf("the kubernetes %s names no sanitized definition in its own section", field)
+				}
+			}
+			if d.NegativeCacheName != "misses" {
+				t.Errorf("expected the negative cache to keep its name, got %q", d.NegativeCacheName)
+			}
+			if d.GeoACLName != "geo-acl-1" {
+				t.Errorf("expected the default geo ACL to be renamed, got %q", d.GeoACLName)
+			}
+			for _, b := range sanitized.Backends {
+				if b.NegativeCacheName != d.NegativeCacheName || b.CacheName != d.CacheName {
+					t.Errorf("backend caches %q and %q differ from the kubernetes defaults' %q and %q",
+						b.CacheName, b.NegativeCacheName, d.CacheName, d.NegativeCacheName)
+				}
+			}
+
+			out := conf.SanitizedString()
+			for _, privateValue := range []string{
+				"edge-cache", "private-traces", "staff", "customer-region", "ingress-listener",
+			} {
+				if strings.Contains(out, privateValue) {
+					t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)
+				}
+			}
+
+			if d := conf.Kubernetes.Defaults; d.GeoACLName != "customer-region" || d.CacheName != "edge-cache" ||
+				d.NegativeCacheName != "misses" {
+				t.Errorf("expected original kubernetes defaults to remain unchanged")
+			}
+			if conf.Kubernetes.Ingress.ListenerNames[0] != "ingress-listener" {
+				t.Errorf("expected original ingress listener names to remain unchanged")
+			}
+		})
+	}
+}
+
+func TestSanitizedCloneIPACLs(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+ip_acls:
+  office-network:
+    allow: [10.20.30.0/24, 198.51.100.7]
+    deny: [all]
+    allow_file: /etc/trickster/office.lst
+  legacy-order:
+    match: ordered
+    rules:
+      - deny: 10.20.30.40
+      - allow: all
+listeners:
+  edge:
+    port: 9000
+    ip_acl_name: office-network
+backends:
+  web:
+    provider: reverseproxycache
+    origin_url: http://web.private.example
+    listener_names: [edge]
+    ip_acl_name: office-network
+    paths:
+      - path: /legacy/
+        ip_acl_name: legacy-order
+      - path: /open/
+        ip_acl_name: none
+kubernetes:
+  defaults:
+    routing_mode: service
+    ip_acl_name: office-network
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(conf.Backends, "default") // seeded by NewConfig, naming no list
+
+	sanitized := conf.SanitizedClone()
+	var listener, backend, legacy, open, defaults string
+	for _, lo := range sanitized.Listeners {
+		if lo.IPACLName != "" {
+			listener = lo.IPACLName
+		}
+	}
+	for _, b := range sanitized.Backends {
+		backend = b.IPACLName
+		for _, p := range b.Paths {
+			switch p.Path {
+			case "/legacy/":
+				legacy = p.IPACLName
+			case "/open/":
+				open = p.IPACLName
+			}
+		}
+	}
+	defaults = sanitized.Kubernetes.Defaults.IPACLName
+	for where, name := range map[string]string{
+		"listener": listener, "backend": backend, "path": legacy, "kubernetes defaults": defaults,
+	} {
+		if !hasKey(sanitized.IPACLs, name) || !strings.HasPrefix(name, ipACLPrefix+"-") {
+			t.Errorf("the %s names %q, which is no sanitized ip acl", where, name)
+		}
+	}
+	if listener != backend || backend != defaults || backend == legacy {
+		t.Errorf("references to one list were renamed apart: %q %q %q %q", listener, backend, defaults, legacy)
+	}
+	if open != "none" {
+		t.Errorf("a path clearing its backend's list says %q", open)
+	}
+	office := sanitized.IPACLs[backend]
+	if office.Name != backend || office.Allow[0] != sanitizedValue || office.Deny[0] != "all" ||
+		office.AllowFile != "/etc/trickster/office.lst" {
+		t.Errorf("unexpected sanitized list: %+v", office)
+	}
+	if rules := sanitized.IPACLs[legacy].Rules; rules[0].Deny != sanitizedValue || rules[1].Allow != "all" {
+		t.Errorf("unexpected sanitized rules: %+v", rules)
+	}
+
+	out := conf.SanitizedString()
+	for _, privateValue := range []string{"office-network", "legacy-order", "10.20.30", "198.51.100.7"} {
+		if strings.Contains(out, privateValue) {
+			t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)
+		}
+	}
+	if conf.IPACLs["office-network"].Allow[0] != "10.20.30.0/24" || conf.Listeners["edge"].IPACLName != "office-network" ||
+		conf.Kubernetes.Defaults.IPACLName != "office-network" {
+		t.Errorf("expected the original ip acls and references to remain unchanged")
+	}
+}
+
+func hasKey[V any](m map[string]V, k string) bool {
+	_, ok := m[k]
+	return ok
+}
+
 func TestConfigStringsRedactDSNAndAuthenticatorPasswords(t *testing.T) {
+	const configSecretKey, configSecret = "client_secret", "config-super-secret"
 	conf := NewConfig()
 	err := conf.loadYAMLConfig(`
 authenticators:
@@ -303,6 +502,11 @@ authenticators:
     provider: basic
     users:
       grafana: authenticator-super-secret
+    config:
+      realm: visible-realm
+      ` + configSecretKey + `: ` + configSecret + `
+      oidc:
+        signing_key: nested-super-secret
 backends:
   mysql:
     provider: mysql
@@ -317,11 +521,22 @@ backends:
 		"String":          conf.String(),
 		"SanitizedString": conf.SanitizedString(),
 	} {
-		for _, secret := range []string{"dsn-super-secret", "authenticator-super-secret"} {
+		for _, secret := range []string{
+			"dsn-super-secret", "authenticator-super-secret",
+			configSecret, "nested-super-secret",
+		} {
 			if strings.Contains(output, secret) {
 				t.Errorf("%s exposed %q:\n%s", name, secret, output)
 			}
 		}
+		for _, visible := range []string{"visible-realm", configSecretKey, "signing_key"} {
+			if !strings.Contains(output, visible) {
+				t.Errorf("%s hid %q:\n%s", name, visible, output)
+			}
+		}
+	}
+	if conf.Authenticators["mysql-clients"].ProviderData[configSecretKey] != configSecret {
+		t.Error("the config views mutated the running authenticator config")
 	}
 }
 
@@ -389,4 +604,62 @@ request_rewriters:
 	if strings.Contains(out, "empty-provider") || strings.Contains(out, "unknown-cache") {
 		t.Errorf("expected empty/unknown names to be anonymized; got:\n%s", out)
 	}
+}
+
+func TestSanitizedStringACME(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+listeners:
+  edge-private:
+    port: 9480
+    tls_port: 9483
+caches:
+  acme-redis:
+    provider: redis
+acme:
+  storage:
+    provider: redis
+    redis:
+      connection:
+        endpoint: redis.private.example:6379
+        password: hunter2
+  issuers:
+    le:
+      email: ops@private.example
+      agree_to_terms: true
+      dns_provider:
+        provider: rfc2136
+        rfc2136:
+          server: ns.private.example:53
+    r53:
+      agree_to_terms: true
+      dns_provider:
+        provider: route53
+        route53:
+          hosted_zone_id: ZPRIVATE
+  on_demand:
+    issuer: le
+    listeners: [edge-private]
+    ask: https://ask.private.example/check
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := conf.SanitizedString()
+	for _, private := range []string{
+		"redis.private.example", "hunter2", "ops@private.example",
+		"ns.private.example", "ZPRIVATE", "ask.private.example", "edge-private",
+	} {
+		if strings.Contains(out, private) {
+			t.Errorf("sanitized output contains %q", private)
+		}
+	}
+	if strings.Contains(conf.String(), "hunter2") {
+		t.Error("the config dump contains the ACME Redis password")
+	}
+	conf.ACME.Storage.Redis = &acmeopts.RedisStorageOptions{CacheName: "acme-redis"}
+	if out := conf.SanitizedString(); strings.Contains(out, "cache_name: acme-redis") {
+		t.Error("the borrowed cache name was not anonymized")
+	}
+	sanitizeACME(nil, nil, nil)
 }

@@ -117,8 +117,10 @@ func TestRunEndToEnd(t *testing.T) {
 	}
 	spec := *f.spec.Load()
 	text, _ := json.Marshal(spec)
-	for _, want := range []string{`"__time + 81304000000"`, `"skipHeaderRows":1`, `"dataSource":"trips"`,
-		`"intervals":["` + isoDay(1704067200+81304000) + "/" + isoDay(1711324799+81304000+86400) + `"]`, `"pickup_neighborhood_name"`, `"transit_tax"`} {
+	for _, want := range []string{
+		`"__time + 81304000000"`, `"skipHeaderRows":1`, `"dataSource":"trips"`,
+		`"intervals":["` + isoDay(1704067200+81304000) + "/" + isoDay(1711324799+81304000+86400) + `"]`, `"pickup_neighborhood_name"`, `"transit_tax"`,
+	} {
 		if !strings.Contains(string(text), want) {
 			t.Errorf("spec missing %s:\n%s", want, text)
 		}

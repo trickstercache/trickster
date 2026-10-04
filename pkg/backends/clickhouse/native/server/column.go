@@ -68,6 +68,20 @@ func columnValue(value any, target reflect.Type, location *time.Location) (any, 
 	if value == nil {
 		return nil, nil
 	}
+	// an ordered map keeps its order, its entries converted to the map's types
+	if om, ok := value.(*OrderedMap); ok && target.Kind() == reflect.Map {
+		out := &OrderedMap{Keys: make([]any, len(om.Keys)), Values: make([]any, len(om.Values))}
+		for i := range om.Keys {
+			var err error
+			if out.Keys[i], err = columnValue(om.Keys[i], target.Key(), location); err != nil {
+				return nil, err
+			}
+			if out.Values[i], err = columnValue(om.Values[i], target.Elem(), location); err != nil {
+				return nil, err
+			}
+		}
+		return out, nil
+	}
 	assignable := reflect.TypeOf(value).AssignableTo(target)
 	genericElements := (target.Kind() == reflect.Slice || target.Kind() == reflect.Map) &&
 		target.Elem().Kind() == reflect.Interface
@@ -216,12 +230,25 @@ func normalizeColumnValue(value any, typ string) (any, error) {
 		return out, nil
 	}
 	if strings.HasPrefix(typ, "Map(") && strings.HasSuffix(typ, ")") {
-		items, ok := value.(map[string]any)
-		if !ok {
-			return value, nil
-		}
 		types := splitColumnTypes(typ[len("Map(") : len(typ)-1])
 		if len(types) != 2 {
+			return value, nil
+		}
+		if om, ok := value.(*OrderedMap); ok {
+			out := &OrderedMap{Keys: make([]any, len(om.Keys)), Values: make([]any, len(om.Values))}
+			for i := range om.Keys {
+				var err error
+				if out.Keys[i], err = normalizeColumnValue(om.Keys[i], types[0]); err != nil {
+					return nil, err
+				}
+				if out.Values[i], err = normalizeColumnValue(om.Values[i], types[1]); err != nil {
+					return nil, err
+				}
+			}
+			return out, nil
+		}
+		items, ok := value.(map[string]any)
+		if !ok {
 			return value, nil
 		}
 		out := make(map[string]any, len(items))
@@ -253,23 +280,27 @@ func normalizeColumnValue(value any, typ string) (any, error) {
 		}
 		return out, nil
 	}
-	text := fmt.Sprint(value)
 	switch typ {
 	case "Int8", "Int16", "Int32", "Int64":
 		bits, _ := strconv.Atoi(strings.TrimPrefix(typ, "Int"))
-		return strconv.ParseInt(text, 10, bits)
+		return strconv.ParseInt(fmt.Sprint(value), 10, bits)
 	case "UInt8", "UInt16", "UInt32", "UInt64":
 		bits, _ := strconv.Atoi(strings.TrimPrefix(typ, "UInt"))
-		return strconv.ParseUint(text, 10, bits)
+		return strconv.ParseUint(fmt.Sprint(value), 10, bits)
 	case "Int128", "Int256", "UInt128", "UInt256":
+		// a scanned big.Int is a value, which fmt prints as a struct
+		if n, ok := value.(big.Int); ok {
+			return &n, nil
+		}
+		text := fmt.Sprint(value)
 		if n, ok := new(big.Int).SetString(text, 10); ok {
 			return n, nil
 		}
 		return nil, fmt.Errorf("invalid %s value %q", typ, text)
 	case "Float32":
-		return strconv.ParseFloat(text, 32)
+		return strconv.ParseFloat(fmt.Sprint(value), 32)
 	case "Float64":
-		return strconv.ParseFloat(text, 64)
+		return strconv.ParseFloat(fmt.Sprint(value), 64)
 	default:
 		return value, nil
 	}

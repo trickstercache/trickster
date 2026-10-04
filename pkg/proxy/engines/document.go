@@ -27,6 +27,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/encoding/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -45,7 +47,7 @@ type HTTPDocument struct {
 	StatusCode    int                 `msg:"status_code"`
 	Status        string              `msg:"status"`
 	Headers       map[string][]string `msg:"headers"`
-	Body          []byte              `msg:"body"`
+	Body          []byte              `msg:"body,zerocopy"`
 	ContentLength int64               `msg:"content_length"`
 	ContentType   string              `msg:"content_type"`
 	CachingPolicy *CachingPolicy      `msg:"caching_policy"`
@@ -67,6 +69,77 @@ type HTTPDocument struct {
 	isLoaded         bool
 	timeseries       timeseries.Timeseries
 	headerLock       sync.Mutex
+	// deferred is the body of a document whose Body was left in the cache, to be read
+	// from there only as far as a response needs it
+	deferred cache.Body
+	// storedEncoding is what the deferred body was stored compressed with, if anything, and
+	// storedSize its length once decoded
+	storedEncoding providers.Provider
+	storedSize     uint64
+}
+
+func (d *HTTPDocument) materialize() error {
+	if d == nil || d.deferred == nil {
+		return nil
+	}
+	b, err := d.deferred.ReadAll()
+	d.releaseBody()
+	if err == nil && d.storedEncoding != providers.Identity {
+		b, err = decodeBody(d.storedEncoding, b, d.storedSize)
+		d.storedEncoding = providers.Identity
+	}
+	if err != nil {
+		return err
+	}
+	if len(b) > 0 {
+		d.Body = b
+	}
+	return nil
+}
+
+// a complete document cached, by an earlier version, from an origin that sent no length
+// is as long as its body
+func (d *HTTPDocument) wholeLength() int64 {
+	if d.ContentLength >= 0 || len(d.Ranges) > 0 {
+		return d.ContentLength
+	}
+	if d.deferred != nil {
+		return d.deferred.Size()
+	}
+	return int64(len(d.Body))
+}
+
+func (d *HTTPDocument) releaseBody() {
+	if d != nil && d.deferred != nil {
+		d.deferred.Close()
+		d.deferred = nil
+	}
+}
+
+// the given ranges, and no more, of a body that was left in the cache
+func (d *HTTPDocument) readRanges(ranges byterange.Ranges) (byterange.MultipartByteRanges, error) {
+	parts := make(byterange.MultipartByteRanges, len(ranges))
+	if d.storedEncoding != providers.Identity {
+		// ranges count the decoded body, so a compressed one is read whole
+		if err := d.materialize(); err != nil {
+			return nil, err
+		}
+		for _, r := range ranges {
+			if r.Start < 0 || r.End >= int64(len(d.Body)) || r.End < r.Start {
+				return nil, errSectionsCorrupt
+			}
+			parts[r] = &byterange.MultipartByteRange{Range: r, Content: d.Body[r.Start : r.End+1]}
+		}
+		return parts, nil
+	}
+	for _, r := range ranges {
+		content := make([]byte, r.End-r.Start+1)
+		if n, err := d.deferred.ReadAt(content, r.Start); err != nil && (!errors.Is(err, io.EOF) || n < len(content)) {
+			return nil, err
+		}
+		parts[r] = &byterange.MultipartByteRange{Range: r, Content: content}
+	}
+	return parts, nil
 }
 
 func (d *HTTPDocument) GetMeta() *HTTPDocument {
@@ -175,6 +248,9 @@ func (d *HTTPDocument) ShallowCopy() *HTTPDocument {
 		isFulfillment:    d.isFulfillment,
 		isLoaded:         d.isLoaded,
 		timeseries:       d.timeseries,
+		deferred:         d.deferred,
+		storedEncoding:   d.storedEncoding,
+		storedSize:       d.storedSize,
 	}
 }
 

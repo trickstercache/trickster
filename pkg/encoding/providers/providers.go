@@ -95,6 +95,7 @@ func init() {
 		providerLookup[s] = p
 	}
 	AllSupportedWebProviders = strings.Join(webProviders, ", ")
+	webProviderLookup[GZipAltValue] = GZip
 	providerLookup[BrotliAltValue] = Brotli
 	providerLookup[ZstandardAltValue] = Zstandard
 }
@@ -122,32 +123,8 @@ func Providers() []string {
 // negotiated between Trickster and the Client. The string representation is compatible with
 // the Accept-Encoding header
 func GetCompatibleWebProviders(acceptedEncodings string) (string, Provider) {
-	var b Provider
-	var s string
-	// if an empty acceptedEncodings is provided, exit asap
-	if acceptedEncodings == s {
-		return s, b
-	}
-	// this converts the acceptedEncodings string into a bitmap of Trickster-compatible encoders
-	for enc := range strings.SplitSeq(acceptedEncodings, ",") {
-		if v, ok := webProviderLookup[strings.TrimSpace(enc)]; ok {
-			b |= v
-		}
-	}
-	// if there were no compatible encoders accepted, exit asap
-	if b == 0 {
-		return s, b
-	}
-	comp := make([]string, len(providerValLookup))
-	var k int
-	// otherwise, this builds the list of compatible encoders from the bitmap
-	for i := Provider(1); i <= maxWebProvider; i <<= 1 {
-		if b&i == i {
-			comp[k] = providerValLookup[i]
-			k++
-		}
-	}
-	return strings.Join(comp[:k], ", "), b
+	a := ParseAcceptEncoding(acceptedEncodings)
+	return a.String(), a.Bitmap()
 }
 
 // Clone returns a perfect copy of the lookup

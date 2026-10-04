@@ -25,6 +25,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	netv1 "k8s.io/api/networking/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -41,6 +42,9 @@ type Config struct {
 	// ProviderPaths returns the paths a time series provider predefines, which a route served
 	// through the provider may not declare itself; nil checks none
 	ProviderPaths func(provider string) []string
+	// ProviderStepAlignments returns the step alignment modes a time series provider supports;
+	// nil checks none
+	ProviderStepAlignments func(provider string) timeseries.StepAlignment
 }
 
 // Index holds every policy read, lowered and judged, and answers which one governs a target
@@ -203,7 +207,14 @@ func (x *Index) lower(p *CachePolicy) (ir.Policy, error) {
 		{"requestHeaders", headerMap(&out.RequestHeaders, s.RequestHeaders)},
 		{"responseHeaders", headerMap(&out.ResponseHeaders, s.ResponseHeaders)},
 		{"healthMode", parse(&out.HealthMode, s.HealthMode, translate.HealthMode)},
+		{"loadBalancing", parse(&out.LoadBalancing, s.LoadBalancing, translate.LoadBalancing)},
+		{"loadBalancingKey", parse(&out.LoadBalancingKey, s.LoadBalancingKey, translate.LoadBalancingKey)},
+		{"sticky", parse(&out.Sticky, s.Sticky, translate.Sticky)},
+		{"stickyKey", parse(&out.StickyKey, s.StickyKey, translate.StickyKey)},
+		{"stickyTTL", stickyDuration(&out.StickyTTLMS, s.StickyTTL)},
+		{"stickyIdle", stickyDuration(&out.StickyIdleMS, s.StickyIdle)},
 		{"resultHeader", parse(&out.ResultHeader, s.ResultHeader, translate.ResultHeader)},
+		{"stepAlignment", parse(&out.StepAlignment, s.StepAlignment, translate.StepAlignment)},
 	}
 	if s.CORS != nil {
 		fields = append(fields,
@@ -215,7 +226,21 @@ func (x *Index) lower(p *CachePolicy) (ir.Policy, error) {
 			return ir.Policy{}, fmt.Errorf("spec.%s: %w", f.name, err)
 		}
 	}
+	if err := x.providerSupports(out.Provider, out.StepAlignment); err != nil {
+		return ir.Policy{}, fmt.Errorf("spec.stepAlignment: %w", err)
+	}
 	return out, nil
+}
+
+func (x *Index) providerSupports(provider, stepAlignment string) error {
+	if provider == "" || stepAlignment == "" || x.cfg.ProviderStepAlignments == nil {
+		return nil
+	}
+	mode, _ := timeseries.ParseStepAlignment(stepAlignment)
+	if supported := x.cfg.ProviderStepAlignments(provider); supported&mode == 0 {
+		return fmt.Errorf("provider %s supports %s", provider, supported)
+	}
+	return nil
 }
 
 func parse(dst *string, v string, fn func(string) (string, error)) func() error {
@@ -243,6 +268,20 @@ func (x *Index) known(dst *string, v string, known interface{ Contains(string) b
 			return fmt.Errorf("no %s named %q is configured", kind, v)
 		}
 		*dst = v
+		return nil
+	}
+}
+
+func stickyDuration(dst *int64, v string) func() error {
+	return func() error {
+		if v == "" {
+			return nil
+		}
+		ms, err := translate.StickyDuration(v)
+		if err != nil {
+			return err
+		}
+		*dst = ms
 		return nil
 	}
 }

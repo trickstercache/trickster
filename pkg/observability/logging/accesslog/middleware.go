@@ -20,7 +20,6 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/hex"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"time"
@@ -30,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	utilmiddleware "github.com/trickstercache/trickster/v2/pkg/util/middleware"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/compat"
 )
 
 // UnmatchedName is the backend and provider name logged for requests that no
@@ -160,8 +160,8 @@ func newFields(l *Logger, r *http.Request, w http.ResponseWriter, pathConfig str
 func newRequestID() string {
 	// a 128-bit identifier correlates log lines and is not a secret, so the fast generator will do
 	var b [16]byte
-	binary.BigEndian.PutUint64(b[:8], rand.Uint64()) //nolint:gosec // correlation id, not a secret
-	binary.BigEndian.PutUint64(b[8:], rand.Uint64()) //nolint:gosec // correlation id, not a secret
+	binary.BigEndian.PutUint64(b[:8], compat.Uint64())
+	binary.BigEndian.PutUint64(b[8:], compat.Uint64())
 	return hex.EncodeToString(b[:])
 }
 

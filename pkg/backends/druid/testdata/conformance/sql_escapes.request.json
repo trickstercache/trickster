@@ -1,0 +1,1 @@
+{"query": "SELECT TIME_FLOOR(__time, 'PT1H') AS bucket, CONCAT(cab_type, U&'\\0001<>&\\2028\\00e9\"\\005c\ud834\udd1e') AS s, COUNT(*) AS cnt FROM trips WHERE __time >= TIMESTAMP '2026-09-20 06:00:00' AND __time < TIMESTAMP '2026-09-20 09:00:00' GROUP BY 1, 2","resultFormat":"array","header":true}

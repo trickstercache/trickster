@@ -30,7 +30,89 @@ for verification purposes.
 
 You can stop the developer environment by running `make developer-stop`. To
 delete the developer environment, run `make developer-delete` which will destroy
-all data including named volumes.
+all data including named volumes. Both act on every profile, whichever ones the
+environment was started with.
+
+### Compose Profiles
+
+Each TSDB backend runs in its own [Compose profile](https://docs.docker.com/compose/how-tos/profiles/),
+so you can start only the databases you are working on and save memory, CPU
+and disk. The services with no profile always start: `redis`, `grafana`,
+`prometheus` (and its seeders), `devorigin` (and the `seed_data_generate`
+loader it needs), and `jaeger`. Prometheus is always on because it also
+scrapes your local Trickster for the
+[Trickster Status](http://127.0.0.1:3000/d/uAJ8w1wZz/trickster-status) dashboard.
+
+| Profile | Services | Make target |
+|---|---|---|
+| `influxdb` | `influxdb2`, `influxdb3`, their seeder, and `telegraf` | `make developer-start-influxdb` |
+| `clickhouse` | `clickhouse` and its seeder | `make developer-start-clickhouse` |
+| `druid` | `druid` and its seeder | `make developer-start-druid` |
+| `mysql` | `mysql` and its seeder | `make developer-start-mysql` |
+| `timescaledb` | `timescaledb` (the `postgres` provider) and its seeder | `make developer-start-timescaledb` |
+| `greptimedb` | `greptimedb` and its seeder | `make developer-start-greptimedb` |
+| `questdb` | `questdb` and its seeder | `make developer-start-questdb` |
+| `victoriametrics` | `victoriametrics` and its seeder | `make developer-start-victoriametrics` |
+| `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
+| `all-providers` | every TSDB backend above | `make developer-start` |
+| `integration` | every TSDB backend, plus the integration-only `coredns` | `make integration-start` |
+
+`make developer-start` reads the `COMPOSE_PROFILES` variable, which defaults to
+`all-providers` and takes a comma-separated list, so you can combine backends:
+
+```bash
+make developer-start COMPOSE_PROFILES=mysql,clickhouse
+```
+
+`make developer-recreate` deletes the whole environment, including every
+profile's volumes, then starts it again with `COMPOSE_PROFILES`.
+Grafana's datasources for backends that are not running will show errors.
+
+Starting with more profiles later adds their services to the running
+environment. `make developer-seed-data` reseeds only the databases that are
+running, unless you name them with `SEED_TARGET`.
+
+## devorigin
+
+The `devorigin` service (`hack/devorigin`, run on the `golang:1.27-alpine`
+image) listens on port 8482, published on the host's loopback interface only,
+and serves three things:
+
+* `/metrics`: the trips seed data as live Prometheus metrics, which Prometheus
+  scrapes as the `trips` job (see [Seed data](#seed-data)).
+* `/prometheus/api/v1/query` and `/query_range`: a Prometheus API simulator
+  that returns repeatable synthetic data for any query and any time range, up
+  to the same 11,000-points-per-series resolution limit that Prometheus enforces.
+  Two selector labels change its behavior: `status_code` (for example
+  `up{status_code="500"}` answers 500) and `invalid_response_body=1`, which
+  answers with a body that cannot be decoded. The `sim1` and `sim2` backends
+  and the `sim-*` Grafana datasources use it, and so do the `alb1`, `alb3`,
+  and `alb4` pools, which pair it with the real Prometheus.
+* `/byterange/`: an origin that serves a fixed text body at any path, with
+  full single and multipart Range request support. The `rpc1` and `rpc2`
+  backends use it. Its query parameters are `max-age` (Cache-Control),
+  `status` (forces a response code), `ims` and `non-ims` (force a code only
+  when the request does or does not send If-Modified-Since), and `size` (up to
+  1 GiB). Requests with more than 64 ranges, or with ranges that add up to
+  more than 1 GiB, get the full body instead.
+
+The mocks live in `pkg/testutil/mocks`, where the unit tests use them too.
+They import only the standard library, so the service builds from the repo
+with no network access. To run it outside Docker:
+
+```bash
+cd hack/devorigin && go run . serve -seed-data ../../docs/developer/environment/docker-compose-data/seed-data -addr :8482
+```
+
+## Static File Server
+
+The `static1` backend in `trickster-config/trickster.yaml` serves the files under
+[static-site](./static-site/) with Trickster's [Static File Server](../../static.md)
+backend provider, at <http://127.0.0.1:8480/static1/>. It needs no container. Files
+added or changed under `static-site` are picked up while Trickster runs, with no restart.
+
+The site's `root` is relative to the root of the repo, which is where `make serve-dev`
+runs Trickster from.
 
 ## Graphite
 
@@ -150,15 +232,22 @@ frozen in todo item 3.4 and must be implemented unchanged in Phase 9.
 ## Included backends
 
 The Compose file brings up Prometheus, InfluxDB 2.x, InfluxDB 3.x, ClickHouse,
-Apache Druid, MySQL, and Graphite alongside Grafana. Trickster's dev config
-registers a matching backend for each,
+Apache Druid, MySQL, TimescaleDB, QuestDB, VictoriaMetrics, and Graphite alongside Grafana.
+Trickster's dev config registers a matching backend for each,
 so Grafana can query the upstream directly or via Trickster for a side-by-side
-comparison.
+comparison. Each backend runs in its own profile; see [Compose Profiles](#compose-profiles).
+
+GreptimeDB also provides direct SQL and PromQL queries, a pgwire SQL cache,
+and an HTTP proxy; QuestDB provides direct HTTP and pgwire validation plus
+native pgwire SQL caching. VictoriaMetrics serves MetricsQL and the Graphite
+APIs from one instance. See [GreptimeDB Details](#greptimedb-details),
+[QuestDB Details](#questdb-details), and
+[VictoriaMetrics Details](#victoriametrics-details).
 
 ## Seed data
 
-ClickHouse, MySQL, and Druid are all loaded with the same synthetic `trips`
-dataset: about 1.9 million cab rides in the fictional city of Emberwick over a
+ClickHouse, MySQL, TimescaleDB, GreptimeDB, QuestDB, and Druid are all loaded with the same
+synthetic `trips` dataset: about 1.9 million cab rides in the fictional city of Emberwick over a
 12-week window, with the same 45-column schema, label cardinality, and
 daily/weekly usage curve as a real ride dataset. Nothing is downloaded: the
 `seed_data_generate` service runs `hack/seedgen` with `go run` on the
@@ -175,6 +264,36 @@ database loader shifts them so the midpoint of the window lands on the seed
 instant, giving six weeks of past data and six weeks of future data so live
 dashboards keep showing fresh points as time passes.
 
+Prometheus gets the same trips as metrics. `prometheus_seed_generate` runs
+`hack/devorigin backfill`, which writes the last 15 days of the metrics below as
+OpenMetrics, one sample per minute. `prometheus_seed` then empties the
+Prometheus data directory and imports the file with `promtool tsdb
+create-blocks-from openmetrics`, before Prometheus starts. From then on,
+Prometheus scrapes the same metrics live from `devorigin`. Counters include
+every trip since the start of the seed window, so the backfilled history and
+the live samples join up with no counter reset. Prometheus keeps its default
+15-day retention, which is why the backfill stops at 15 days.
+
+| Metric | Type | Labels |
+|---|---|---|
+| `trips_total` | counter | `borough`, `cab_type`, `payment_type` |
+| `trips_fares_dollars_total` | counter | `borough`, `cab_type` |
+| `trips_tips_dollars_total` | counter | `borough` |
+| `trips_passengers_total` | counter | `borough` |
+| `trips_in_progress` | gauge | `borough` |
+| `trips_distance_miles` | histogram | `borough` |
+
+All of them count trips by pickup time, except `trips_in_progress`, which
+drops a trip at its dropoff time. The `Trips (Prometheus)` dashboard charts them
+through any of the Prometheus datasources. `prometheus_seed` never replaces
+the data of a running Prometheus: a `make developer-start` against an already
+running environment keeps the current Prometheus data, so use
+`make developer-seed-data` (below) or restart the environment to reseed it.
+
+VictoriaMetrics gets the same history the same way: `victoriametrics_seed` runs
+`hack/devorigin backfill` itself, imports the file, and VictoriaMetrics scrapes
+`devorigin` live from then on. See [VictoriaMetrics Details](#victoriametrics-details).
+
 To change the names, boroughs, cab colours, or shares, edit
 `hack/seedgen/theme.go`; to change the daily or weekly curve, edit
 `hack/seedgen/calendar.go`. After any intentional change, run
@@ -185,6 +304,17 @@ what the CI integration job uses; pass `-force` to regenerate over a cached
 output. `make seed-generate` (with optional `SEED_PROFILE=small` and
 `SEED_FORCE=1`) runs the generator natively into the same directory without
 a container. See `hack/seedgen/README.md`.
+
+`make developer-seed-data` runs `hack/developer-seed-data.sh`, which
+regenerates the seed window and then runs every seeder concurrently. Set
+`SEED_TARGET` to a space- or comma-separated subset of `clickhouse`, `mysql`,
+`timescaledb`, `greptimedb`, `questdb`, `druid`, `prometheus`, `victoriametrics`, and
+`graphite` to scope the run, for example `SEED_TARGET=timescaledb make developer-seed-data`.
+The seed instant is recomputed on every run, so a scoped re-seed shifts only the selected
+databases; the others keep their previous shift, and dashboards that compare
+backends will disagree until a full run re-syncs them. Prometheus and VictoriaMetrics
+both join `devorigin`'s live metrics to their history, and reseeding either restarts
+`devorigin` with the new shift, so selecting one also reseeds the other when it is running.
 
 ## InfluxDB Details
 
@@ -237,11 +367,11 @@ port `8888`. Trickster registers the `druid1` backend and exposes it at
 Run `make developer-seed-data` to load the shared synthetic `trips` data
 through Druid's native batch-ingestion API. The Druid seeder
 (`hack/druidseed`, run with `go run` by the `druid_seed` service) uses the same
-generated files and timestamp shift as the ClickHouse and MySQL seeders, then
-verifies the row count and shifted minimum and maximum timestamps through
+generated files and timestamp shift as the ClickHouse, MySQL, TimescaleDB, and
+QuestDB seeders, then verifies the row count and shifted minimum and maximum timestamps through
 Druid SQL. Before loading, it marks any segments from the previous moving seed
 window unused so repeated runs do not accumulate stale rows. It runs in
-parallel with those two database seeders after the shared generation step.
+parallel with the other database seeders after the shared generation step.
 
 The published Druid image contains the nano service scripts but not the Perl
 runtime used by its bundled supervisor. `druid-config/start-nano.sh` launches
@@ -251,8 +381,8 @@ Manager processes with Bash inside the one development container.
 ## MySQL Details
 
 The developer environment includes a pinned MySQL 8.4 (LTS) container seeded
-with the same auto-phased synthetic `trips` dataset used by ClickHouse and
-Druid. All three seeders read the shared generated files in
+with the same auto-phased synthetic `trips` dataset used by ClickHouse,
+TimescaleDB, GreptimeDB, QuestDB, and Druid. All six seeders read the shared generated files in
 `docker-compose-data/seed-data`, so the data is generated once regardless of
 which seeder runs first (see [Seed data](#seed-data)).
 
@@ -272,14 +402,14 @@ and operations contract, see the [MySQL Provider Guide](../../mysql.md).
 
 The generation step records the dataset's pickup/dropoff bounds and derives
 one seconds-level shift that places the pickup midpoint at the seed instant.
-MySQL and ClickHouse apply that exact shift to every pickup and dropoff
-datetime and regenerate the related date columns; Druid applies it to the
+MySQL, TimescaleDB, and ClickHouse apply that exact shift to every pickup and
+dropoff datetime and regenerate the related date columns; Druid applies it to the
 primary `__time` timestamp. This preserves trip durations and partition/date
 relationships in the relational copies while placing approximately half of the
 pickup distribution before and half after the seed instant. To re-seed (for
 example, after the data ages out of range), run `make developer-seed-data`,
 which first runs the `seed_data_generate` service and then reloads ClickHouse,
-MySQL, and Druid in parallel. A Trickster started before the re-seed still
+MySQL, TimescaleDB, GreptimeDB, QuestDB, and Druid in parallel. A Trickster started before the re-seed still
 holds the previous timeseries in its memory cache, so restart `make serve-dev`
 afterwards (or compare against a `-direct` datasource) to see the new data.
 
@@ -305,8 +435,8 @@ Deterministic `SELECT` results are cached through the Object Proxy Cache. A
 half-open, cadence-aligned time-series query that matches the supported Grafana
 grouping forms uses the Delta Proxy Cache, so expanding a dashboard range only
 fetches missing buckets from MySQL. MySQL uses the backend's common
-`timeseries_ttl`, `timeseries_retention_factor`, `backfill_tolerance`,
-`backfill_tolerance_points`, `max_object_size_bytes`, `cache_name`, and
+`timeseries_ttl`, `timeseries_retention_factor`, `volatile_window`,
+`volatile_window_points`, `max_object_size_bytes`, `cache_name`, and
 `cache_key_prefix` settings. Queries in transactions, and connections that
 have changed unsupported session state or executed mutations, bypass the
 cache. Grafana's literal `SET time_zone` initialization is supported and the
@@ -318,7 +448,7 @@ hour boundaries. This keeps the time-series panels cadence-aligned for DPC.
 Unrounded and live-ending half-open ranges also use DPC. Trickster rounds the
 lower bound up and the upper bound down to the query cadence, so only complete
 chart buckets inside the requested range are cached. A range containing no
-complete bucket normalizes to an empty range. Refreshes within the same cadence
+complete bucket rounds to an empty range. Refreshes within the same cadence
 window can therefore be full cache hits. The limited top-N table panel uses OPC
 by design.
 
@@ -346,3 +476,681 @@ seeding fails, inspect logs with
 `docker compose logs mysql mysql_seed` from `docs/developer/environment`, then
 re-run `make developer-seed-data`. The seed is idempotent and always truncates
 and reloads the `trips` table.
+
+## TimescaleDB Details
+
+The developer environment includes a pinned TimescaleDB container
+(`timescale/timescaledb:2.30.1-pg18`: TimescaleDB 2.30.1 on PostgreSQL 18)
+seeded with the same auto-phased synthetic `trips` dataset used by ClickHouse,
+MySQL, and Druid (see [Seed data](#seed-data)). The image is the Timescale
+License (TSL) build rather than the Apache-only `-oss` one, so
+`time_bucket_gapfill`, continuous aggregates, and compression are available
+for testing.
+
+Trickster serves TimescaleDB through its PostgreSQL wire-protocol listener.
+It relays everything a client sends, and answers eligible `SELECT` statements
+from the backend's cache (`mem1` here): whole results through the Object Proxy
+Cache, and time-bucketed range queries through the Delta Proxy Cache, which
+fetches from the origin only the buckets it does not already hold. The direct
+path is the reference that the proxied path is verified against.
+
+* Port `5432`: direct PostgreSQL access
+* Port `8488`: Trickster's PostgreSQL wire-protocol listener (`timescaledb1`,
+  `protocol: postgres`)
+* Database: `trickster`
+* Server time zone: `UTC`, set explicitly. Grafana's PostgreSQL data source
+  has no time zone option and sends none at connection startup, so its
+  sessions inherit this server default.
+* Development-only credentials (provisioned by
+  `docker-compose-data/timescaledb-config/init/01-users.sql`):
+  * `postgres` / `trickster-dev-root` — administration
+  * `seeder` / `trickster-dev-seed` — schema creation and seeding
+  * `trickster` / `trickster-dev-upstream` — Trickster's upstream connection
+    (read-only)
+  * `grafana_ro` / `trickster-dev-grafana` — Grafana direct access (read-only)
+
+The read-only roles receive `SELECT` through the seeder's default privileges,
+so dropping and re-creating the table on every seed never needs a re-grant.
+Authentication is SCRAM-SHA-256, the PostgreSQL default, for every connection
+that arrives over the network, including the published port `5432`. The
+image's `pg_hba.conf` trusts the container's own loopback and unix socket, so
+the smoke test below connects by service name to exercise the password:
+
+```sh
+docker compose exec -e PGPASSWORD=trickster-dev-grafana timescaledb \
+  psql -h timescaledb -U grafana_ro -d trickster -c "SELECT count(*) FROM trips"
+```
+
+`trips` is a hypertable partitioned on `pickup_datetime` with the default
+7-day chunks (13 for the 12-week dataset). It has the same columns as the
+MySQL table, with `pickup_datetime` and `dropoff_datetime` stored as
+`timestamptz`, plus TimescaleDB's default time index and an index on
+`(cab_type, pickup_datetime)`. Two things exist only in this copy, for the
+dashboard's cache-path panels: an indexed `pickup_epoch bigint` column holding
+`pickup_datetime` as epoch seconds (Grafana's `$__unixEpoch*` macros need an
+integer time column), and `trips_15m`, a continuous aggregate of trips and
+`total_amount` per 15 minutes and `cab_type`. The aggregate has no refresh
+policy, because the data never changes after a seed run; the seeder
+materializes it once. PostgreSQL's `COPY` cannot transform values
+while loading the way MySQL's `LOAD DATA ... SET` does, so the seeder copies
+each file into an `UNLOGGED` all-text staging table and then moves the rows
+into the hypertable with an `INSERT ... SELECT` that applies the shift. It
+then validates the same facts as the MySQL seeder (row count, shifted bounds,
+centering on seed time, date/datetime agreement, indexes) along with the chunk
+count, `pickup_epoch` agreement, that `trips_15m` accounts for every row, and
+the read-only grants.
+
+Grafana provisions the `timescaledb-direct` and `timescaledb-trickster` data
+sources using its bundled PostgreSQL plugin with the TimescaleDB option
+enabled, so `$__timeGroup` expands to `time_bucket(...)`. The dashboard is at
+<http://127.0.0.1:3000/d/trickster-timescaledb/timescaledb>, and its Data
+Source variable switches between the two; every panel must render identically
+through both. Its Trips Data row has the same
+panels as the MySQL dashboard and, because both databases hold the same rows,
+shows the same values over the same time range. Two panel queries differ from
+the MySQL versions only in dialect: the card-use rate counts with
+`FILTER (WHERE ...)`, and `round(avg(x), 2)` casts the average to `numeric`.
+The Trickster Performance row shows the `timescaledb1` backend's request
+duration, returned elements, SQL classifications
+(`trickster_sql_query_analysis_total{backend_name="timescaledb1",dialect="postgres",cache_mode,reason}`),
+cache outcomes
+(`trickster_sql_query_cache_total{backend_name="timescaledb1",cache_mode,cache_status}`)
+and rewrite failures. The dashboard's `time_bucket` panels report
+`delta / delta_cacheable`: a refresh fetches only the buckets the cache does not
+hold yet. The top-N table is cached as a whole object
+(`object / unsupported_limit`), keyed on the statement's exact text, so it is a
+hit only while its range is unchanged.
+
+The Cache Path Exercises row has one panel per caching path that the MySQL
+clone does not reach. Each panel's description states what to expect in the
+SQL Analysis Classifications panel:
+
+| Panel | Statement shape | Expected |
+| --- | --- | --- |
+| Epoch Floor Buckets | `floor(extract(epoch from col)/300)*300` with `$__timeFilter` (`BETWEEN`) | `delta / delta_cacheable` |
+| Avg Total (`$__unixEpochGroup`) | `floor((pickup_epoch)/600)*600` with `$__unixEpochFilter` | `delta / delta_cacheable` |
+| Saltmarrow Trips, Gap-Filled | single-series `time_bucket_gapfill`, half-open range | `delta / delta_cacheable` |
+| Saltmarrow Trips, Last Value Carried Forward | `locf(...)` over gapfill | `object / unsupported_bucket` |
+| Trips, 1h Moving Average | window function over the buckets | `object / unsupported_format` |
+| Trips by Cab Type (`trips_15m`) | `time_bucket` over the continuous aggregate's bucket | `delta / delta_cacheable` |
+
+On a live range (`now-3h` to `now`, 5s refresh) a delta panel settles into
+`hit` on most refreshes and one `phit` each time a new bucket closes, fetching
+only that bucket; its first load after a restart is a `kmiss`, and widening
+the range is a `phit` for the part not held. The three object panels are a
+`kmiss` on every refresh of a live range, because the range is part of their
+key, and a `hit` only on a fixed range. Saltmarrow is the sparsest borough in
+the synthetic data, so its 5-minute series has real gaps to fill.
+
+Re-seeding waits for active startup seeders before regenerating their shared
+fixture or reloading tables. A startup seeder failure stops that attempt;
+inspect its logs before retrying.
+
+Re-seeding rewrites the rows under whatever a running Trickster has cached.
+Restart Trickster after `make developer-seed-data`, or the direct and
+Trickster data sources will disagree over the ranges that were cached.
+
+These bucket expressions use the delta cache:
+
+| Bucket | Notes |
+| --- | --- |
+| `time_bucket(width, col)` | what `$__timeGroup` writes with the TimescaleDB option on; the grid starts on Monday 2000-01-03 UTC |
+| `time_bucket(width, col, TIMESTAMPTZ '...')`, `time_bucket(width, col, '...'::interval)` | a typed origin or offset; an untyped third argument is the time zone overload and is not matched |
+| `time_bucket_gapfill(width, col)` | only for a single series with both range bounds in `WHERE`, and without `locf` or `interpolate` |
+| `floor(extract(epoch from col)/N)*N` | what `$__timeGroup` writes with the option off; also with `date_part('epoch', col)` |
+| `floor((col)/N)*N` | `$__unixEpochGroup`, over a column of epoch seconds with epoch-second bounds |
+| `date_bin(width, col, origin)` | PostgreSQL requires the origin |
+| `date_trunc('unit', col)` | only while the session `TimeZone` is UTC, since PostgreSQL truncates in the session zone |
+
+A width is a fixed-length interval such as `'300.000s'`, `'5 minutes'`,
+`INTERVAL '1 hour'` or `'7 days'`; months and years never match. A range whose
+bounds are not on the bucket grid, as Grafana's live ranges are, is rounded
+inward, so the partial first and last buckets are left out of the answer. A
+bound written without a zone (`'2026-09-17 00:00:00'`, `TIMESTAMP '...'`) is
+read in the session zone by PostgreSQL, so it qualifies only while that zone
+is UTC; Grafana's `Z`-suffixed bounds always do.
+
+A statement that fits none of these is cached as a whole object with the
+reason in the classification metric. So is one the SQL parser cannot write
+back faithfully (`FROM ONLY`, a `json` cast, a `U&'...'` string), one that calls
+a set-returning function, and a gapfill outside the form above. A statement
+that calls a volatile function or reads the clock anywhere but in a time bound
+(`random()`, `now()`, `current_date`, `pg_sleep()`, `nextval()`, ...) is never
+cached (`none / nondeterministic`). Statements the parser rejects outright,
+such as named-argument calls (`origin => ...`) or `GROUP BY ROLLUP`, are
+cached as objects too.
+
+Cached answers are the origin's own bytes: the row description and every row
+are stored exactly as received, and only the bucket column is read, to place
+rows on the time axis. That is safe because everything that changes how a
+value is rendered (`TimeZone`, `DateStyle`, `extra_float_digits`, and the rest
+of the session identity below) partitions the cache. The delta cache needs the
+bucket to be the leading `ORDER BY` term (either direction) or no `ORDER BY` at
+all; within a bucket rows keep the origin's order. It uses the backend's common
+`timeseries_ttl`, `timeseries_retention_factor`, `volatile_window`,
+`volatile_window_points`, sharding, `max_object_size_bytes`, `cache_name`
+and `cache_key_prefix` settings, and an open-ended range is never considered
+complete in its newest bucket.
+
+The cache always fails open to a plain relay of the client's own statement: when
+the origin rejects Trickster's rewritten sub-query
+(`trickster_sql_query_rewrite_failures_total{reason="origin_rejected"}`), when
+a result outgrows the backend's `postgres.max_result_rows` (100000) or
+`postgres.max_result_size_bytes` (64 MiB) limits (`reason="result_size"`), or
+when the bucket column cannot be read, for example under a non-ISO `DateStyle`
+(the statement is then cached as an object instead). Such a statement skips
+the cache until its marker expires, so it is not retried on every refresh. An
+oversized result of the client's own statement is handed back to the relay
+mid-stream rather than fetched twice. Errors from the origin are passed to the
+client verbatim and never cached, and a cancel request reaches a statement
+that is being fetched for the cache.
+
+Only a simple-protocol `Query` holding one row-returning statement is
+analyzed, and so cached. Others are relayed and counted with `cache_mode="none"` and the
+reason they were passed over: `multi_statement`, `in_transaction`,
+`pipelined`, `query_size` (larger than the listener's
+`postgres.max_query_size_bytes`, 1 MiB by default), or `session_state`.
+Extended-protocol statements are relayed and never analyzed. A relayed
+statement counts as a `proxy-only` request. A driver's pool keepalive does not:
+pgx, which Grafana uses, sends an empty `-- ping` query before each panel
+query, and it is relayed to the origin but left out of the request metrics. Setting
+`proxy_only: true` on the backend switches statement inspection and caching
+off entirely.
+
+`session_state` means the session did something whose effect on later results
+Trickster cannot follow, and it stays that way until the client reconnects.
+Trickster follows the settings the origin announces (`TimeZone`, `DateStyle`,
+`IntervalStyle`, `client_encoding`, `search_path` on PostgreSQL 18, and
+others), plus `role`, `extra_float_digits` and `bytea_output` from the
+client's own `SET` statements; all of them, with the user and database, will
+partition the cache. Any other `SET` (for example a custom `app.tenant` used
+by row-level security), `set_config()`, `SELECT ... INTO`, DDL, `DO`, `CALL`,
+and fast-path function calls end caching for the session. Transactions, DML,
+`SHOW`, `EXPLAIN`, and harmless settings such as `statement_timeout` and
+`application_name` do not. A session with `standard_conforming_strings` off is
+also relayed uncached, because its string constants follow other rules than the
+analyzer reads them by. One known gap: a user-defined function that changes
+a session setting as a side effect is not detected.
+
+The `timescaledb1` backend uses `provider: timescaledb`, an alias of
+`postgres`: both names select the same engine, and metrics report
+`provider="postgres"`. A `postgres` listener maps to exactly one backend (or one User
+Router, below) and keeps one upstream connection per client connection, so session state never
+crosses clients. The backend's authenticator decides how clients log in:
+
+* With `authenticator_name` (as configured here, `timescaledb-grafana`),
+  Trickster authenticates the client itself and then opens the origin session
+  with the `origin_url` credentials. It offers SCRAM-SHA-256, plus
+  SCRAM-SHA-256-PLUS when the listener has a certificate. A user whose stored
+  credential is a crypt hash or a PostgreSQL `md5` verifier needs a cleartext
+  password, which is refused without TLS unless the listener sets
+  `postgres.allow_cleartext_without_tls` (or `postgres.allow_md5` for the
+  legacy md5 method). Authenticator entries may be plaintext or PostgreSQL
+  `SCRAM-SHA-256$...` verifiers copied from `pg_authid`.
+* Without one, or with `observe_only: true`, the client's own authentication
+  exchange is relayed to the origin untouched and Trickster holds no
+  credentials. SCRAM-SHA-256-PLUS cannot succeed in this mode when both the
+  listener and the origin use TLS, because the client binds to Trickster's
+  certificate rather than the origin's.
+
+The backend's `healthcheck` block makes Trickster log in to the origin every
+5 seconds on a fresh connection, with the `origin_url` credentials, and wait
+for `ReadyForQuery`. A `postgres` listener can also front a User Router ALB
+whose targets are `postgres`/`timescaledb` backends: Trickster authenticates
+the client against the router's authenticator, routes on the startup user, and
+pins the session to that backend
+(`trickster_pgwire_route_selections_total{router_name,backend_name,outcome}`).
+The dev config has no router; `examples/conf/postgres-user-router.yaml` is a
+complete one.
+
+TLS is negotiated in-band on port `8488` (there is no separate `tls_port`),
+and TLS to the origin is independent of it: set the backend's
+`postgres.upstream_tls_mode` to `disable` (the default), `require`,
+`verify-ca`, or `verify-full`. Cancel requests work through the listener:
+clients receive a Trickster-issued cancellation key that is mapped to the
+origin's, and a client that disconnects mid-query has its statement canceled
+at the origin. For a smoke test through Trickster (with `make serve-dev`
+running):
+
+```sh
+docker compose exec -e PGPASSWORD=trickster-dev-grafana timescaledb \
+  psql -h host.docker.internal -p 8488 -U grafana_ro -d trickster \
+  -c "SELECT current_user, count(*) FROM trips"
+```
+
+`current_user` reports `trickster`, the origin role, because the listener
+terminates authentication.
+
+Troubleshooting readiness: the `timescaledb` service has a healthcheck based on
+`pg_isready` over TCP, which only succeeds once the image's one-time
+initialization has finished; the seeder and Grafana wait for it to report
+healthy. If seeding fails, inspect logs with
+`docker compose logs timescaledb timescaledb_seed` from
+`docs/developer/environment`, then re-run `make developer-seed-data`. The seed
+is idempotent and always drops, re-creates, and reloads the `trips` table.
+PostgreSQL 18 images keep their data under `/var/lib/postgresql/18/docker`, so
+the `timescaledb-data` volume is mounted at `/var/lib/postgresql`; the init SQL
+only runs when that volume is empty (`make developer-delete` resets it).
+
+## QuestDB Details
+
+The `questdb` service runs QuestDB OSS 10.0.1, pinned to image digest
+`sha256:67eaed863ebb2383227919ea9a5499a4a39ceca3862c20b974c84a10e11cdf89`.
+Its data lives in the `questdb-data` named volume, and telemetry is disabled.
+`make developer-start` runs `hack/developer-credentials.sh` to generate random
+backend credentials in the ignored
+`docker-compose-data/credentials.env` file with owner-only
+permissions. The generator currently supplies QuestDB credentials; additional
+backends can use the same workflow. Existing credentials are reused across
+restarts. QuestDB, Grafana,
+and the seeder load this file; `make serve-dev` uses an ignored rendered
+`trickster-config/trickster.generated.yaml` with matching credentials. The pgwire
+conformance tests also read the generated credentials. `make developer-credentials`
+prepares both files without starting containers, for direct Compose use.
+The seeder accepts `QUESTDB_HTTP_PASSWORD` as an explicit override.
+To rotate the passwords, stop the environment, delete `credentials.env`, and
+restart with `make developer-start`; restart `make serve-dev` as well.
+
+| Surface | Address | Credentials |
+| --- | --- | --- |
+| PostgreSQL wire protocol, admin | `127.0.0.1:8812` | `admin` / generated admin password |
+| PostgreSQL wire protocol, read-only | `127.0.0.1:8812` | `grafana_ro` / generated reader password |
+| HTTP SQL and Web Console | <http://127.0.0.1:9010> | `admin` / generated admin password |
+
+Host port 9010 maps to QuestDB's HTTP port 9000 because ClickHouse already uses
+host port 9000. Both published QuestDB ports bind to loopback. Port 8490 is
+reserved for Trickster's QuestDB pgwire listener; the container alone does not
+start that listener. ILP/TCP port 9009 is not published.
+
+QuestDB OSS uses cleartext password authentication over pgwire and does not
+provide pgwire TLS. Use `sslmode=disable` for this local origin. The read-only
+pgwire account rejects writes, while the separate OSS HTTP Basic admin identity
+is write-capable so the seed loader can use it. The HTTP and pgwire credentials
+are intentionally distinct. These credentials are for an isolated developer
+environment, not a public deployment.
+
+Start just the origin, then query it directly:
+
+```bash
+make developer-credentials
+docker compose -f docs/developer/environment/docker-compose.yml up -d --wait questdb
+. docs/developer/environment/docker-compose-data/credentials.env
+PGPASSWORD="$QDB_PG_READONLY_PASSWORD" psql 'host=127.0.0.1 port=8812 user=grafana_ro dbname=qdb sslmode=disable' -c 'SELECT 1'
+curl --fail --user "admin:$QDB_HTTP_PASSWORD" --get \
+  --data-urlencode 'query=SELECT 1' http://127.0.0.1:9010/execute
+```
+
+The health check uses authenticated `/execute`. QuestDB 10.0.1 defaults to
+`/exec` and `/api/v1/sql/execute`, so this service explicitly configures the
+short `/execute` alias with `QDB_HTTP_CONTEXT_EXECUTE`. The original `/exec`
+endpoint remains available for the Web Console on the remapped HTTP port.
+SQL requests require HTTP Basic auth.
+
+`questdb_seed` consumes the same `trips_1.gz`, `trips_2.gz`, and
+`seed-window.env` files as the other trips databases. It imports each file into
+an all-`STRING` staging table through `/imp`, then creates the typed,
+day-partitioned WAL table through `/execute`, applies the UTC shift, regenerates
+the date columns, and creates the `trips_15m` materialized view. It waits for
+the view to cover the complete source row count and checks the shifted bounds,
+date/datetime relationships, and `pickup_epoch`. Use
+`SEED_TARGET=questdb make developer-seed-data` to reload only QuestDB; the
+loader drops and rebuilds its task-owned tables on every run.
+
+Grafana installs the official `questdb-questdb-datasource` plugin and provisions
+`questdb-direct` (UID `ds_questdb_direct`) against the QuestDB pgwire listener.
+The direct comparison dashboard is
+<http://127.0.0.1:3000/d/trickster-questdb/questdb>. Its first six panels cover
+fixed and dynamic `SAMPLE BY` buckets, numeric aggregates, grouped series,
+tables, and a `CASE` aggregate. The remaining panels exercise the QuestDB
+timestamp-floor, `FILL`, window, materialized-view, `1M`, `$now-6h..$now`,
+`$today;1d`, and `/* trickster-step-align:partial_end */` query shapes that the
+provider will need to preserve. The dashboard is direct-origin validation;
+the QuestDB datasource through Trickster exercises HTTP passthrough and native
+cache behavior separately. Fixed-width `SAMPLE BY` and `timestamp_floor`
+queries use the native delta cache; unsupported QuestDB syntax is relayed or
+object-cached conservatively.
+
+The `questdb-trickster` datasource uses Trickster's port `8490` and exercises
+the pgwire path with the read-only `grafana_ro` role. The backend also accepts
+the `admin` identity for authenticated HTTP smoke tests and preserves that
+credential to the QuestDB HTTP origin. Both paths are cleartext in this
+developer environment; do not expose them outside the host.
+
+The first six direct QuestDB panels and their TimescaleDB counterparts are the
+cross-backend correctness gate: with one generated seed window they must return
+the same frame shape and values. QuestDB targets use the official plugin's SQL
+target fields (`queryType: sql`, numeric `format`, and `selectedFormat`) rather
+than PostgreSQL target fields, and deliberately avoid PostgreSQL-only casts such
+as `::numeric`.
+
+## GreptimeDB Details
+
+The developer environment pins the official
+`greptime/greptimedb-nightly:nightly-20260923-e91faa9df` image by digest in
+standalone mode, with UTC as the default time zone and telemetry disabled.
+It contains the PostgreSQL health-query fix missing from v1.2.1. This is a
+nightly build, not a stable release; update the pin only after repeating the
+direct and proxied acceptance suites.
+
+| Endpoint | Address |
+| --- | --- |
+| HTTP SQL / health | `http://127.0.0.1:4000/v1/sql` / `/health` |
+| Prometheus-compatible API | `http://127.0.0.1:4000/v1/prometheus` |
+| gRPC | `127.0.0.1:4001` |
+| MySQL wire | `127.0.0.1:4002` |
+| PostgreSQL wire | `127.0.0.1:4003` |
+| Trickster PostgreSQL wire | `127.0.0.1:8489` |
+| Trickster MySQL wire | `127.0.0.1:8491` |
+| Trickster HTTP | `http://127.0.0.1:8480/greptimedb1` |
+
+The database is `public`. The read-only mounted static user file contains
+developer-only credentials:
+
+| User | Password | Access |
+| --- | --- | --- |
+| `seeder` | `trickster-dev-seed` | Schema creation and seeding |
+| `grafana_ro` | `trickster-dev-grafana` | Read-only Grafana direct access |
+| `trickster` | `trickster-dev-upstream` | Read-only Trickster upstream login |
+
+These are not production credentials. Data persists in the named
+`greptimedb-data` volume; `make developer-delete` deletes it. Port 8489 is
+Trickster's GreptimeDB pgwire listener. Port 8490 remains reserved for QuestDB.
+
+The `greptimedb1` backend serves the default HTTP listener and its own
+pgwire and MySQL listeners. `origin_url` is the HTTP base; `postgres.upstream_url` supplies
+the separate native host, credentials and database. Without that override,
+pgwire uses a `postgres(ql)://` origin as before, or the HTTP origin's host
+on port 4003 with no credentials. HTTP credentials, path and port are never
+reused for pgwire. Terminated authentication and native health probes need
+upstream credentials; passthrough sessions use the client's origin login.
+The shared basic authenticator sets `proxy_preserve: true` so HTTP forwards
+the client's valid origin credentials. It does not substitute pgwire's
+upstream credentials into HTTP requests.
+
+`mysql.upstream_url` independently configures the MySQL origin, with port
+4002 as its default. The MySQL listener terminates authentication and requires
+an authenticator plus an explicit native upstream login. An HTTP origin's
+credentials are never reused for either native protocol. MySQL-only deployments
+can list just `greptimedb-mysql`; their health probe authenticates and sends
+`COM_PING` to that native endpoint.
+
+MySQL SELECT queries use Vitess for analysis. The delta path supports UTC
+`DATE_BIN('5m', ts, FROM_UNIXTIME(0))` and fixed second/minute/hour/day
+`DATE_TRUNC` buckets with half-open `FROM_UNIXTIME(integer_seconds)` bounds,
+rounded inward to complete buckets. Widths must be positive whole seconds.
+Other deterministic SELECTs, including inclusive upper bounds, ranges with no
+complete bucket and unverified timezones, use the object cache;
+unknown functions and session state bypass caching. The adapter probes the
+actual session timezone and preserves nine-digit timestamp text, large integers,
+NULL ordering and bytewise string grouping. MySQL's `UNIX_TIMESTAMP` is not a
+GreptimeDB function. The wire-compatible transaction commands do not establish
+storage transactions; Trickster still bypasses caching while inside one.
+As with the existing MySQL backend, prepared statements and multiple statements
+are outside this listener's supported protocol contract.
+
+Run `sh hack/greptimedb-check.sh --mysql` against the isolated developer origin
+for the native MySQL cache and session checks. The development read-only users
+cannot `SET time_zone`; clients that issue it automatically receive the origin's
+permission error. The adapter does not hide that error or increase their rights.
+
+The pgwire surface caches supported simple-protocol SQL queries. HTTP SQL
+supports delta caching for typed `greptimedb_v1` responses and whole-response
+caching for other eligible SELECT queries. Other HTTP surfaces remain
+proxy-only. The backend preserves origin
+paths such as `/v1/sql` and `/v1/prometheus/api/v1/query_range`; it adds no
+bare `/api/v1` aliases. The mixed backend uses `GET /health`; a backend with
+only a pgwire listener uses a native login probe instead. For pgwire-only
+deployment, list only the postgres listener. For passthrough authentication,
+omit `authenticator_name`; clients must then have valid origin credentials.
+
+Pgwire delta caching recognizes `date_bin(INTERVAL '5 minutes', col)`, compact
+`date_bin('5m', col)`, UTC-session `date_trunc`, and Grafana's epoch-floor
+expressions over timestamps or epoch-second columns. Fixed widths below one
+microsecond and sub-microsecond bucket origins are object-only because pgwire
+timestamp text does not preserve that precision. Variable calendar widths,
+window functions and native `RANGE ... ALIGN` queries use the object cache;
+`TQL`, writes and volatile expressions are not cached. As with PostgreSQL,
+unaligned raw-time bounds are rounded inward to complete buckets.
+
+HTTP SQL uses the same complete-bucket alignment as pgwire. Ranges without a
+complete bucket retain the original query. The delta model preserves typed columns, nulls,
+integer precision and ordering, including empty results. Unsupported schemas
+or a failed gap fetch retry the complete original SELECT instead of returning
+an incomplete result. Database, timezone and authentication identity are
+part of the cache key. Non-SELECT and multi-statement requests are not cached.
+`format` values other than `greptimedb_v1` and requests with `limit` never use
+delta caching. Authenticated GET object responses require origin permission
+for shared caching; GreptimeDB's default responses do not grant it.
+
+PromQL uses `/v1/prometheus/api/v1/` and shares the Prometheus cache/model
+implementation. Range endpoints round down to epoch-aligned steps while
+retaining millisecond precision;
+database URL/header selection and `lookback` are part of cache identity. URL
+parameters take precedence over POST form parameters, and a form-only `db`
+is ignored, matching GreptimeDB. Instant and metadata timestamps are not
+rounded. Unknown parameters, unsupported methods, finer-than-millisecond grids
+and `count_values` use passthrough. Aligned grids support configured time sharding;
+fast-forward is disabled for fractional-second grids.
+
+An ALB using these paths can set `output_format: greptimedb` for TSM. Numeric
+planning and reduction are shared with Prometheus, with Greptime-specific
+parameter precedence and metric-name preservation. `count_values` cannot be
+merged reliably while the origin omits its numeric grouping label. Finalizers
+requiring dynamic metric-name discovery also reject the merge rather than
+invent a combined result. A single backend still relays those requests.
+Run `sh hack/greptimedb-check.sh --promql` for the isolated fixture-based
+[PromQL acceptance suite](../../../integration/greptimedb_acceptance.md#promql-provider-and-merge-acceptance).
+
+Terminated logins probe the actual timezone, date style and interval style using
+`SHOW`, not PostgreSQL's `current_setting()`. A successful `SET`, including
+GreptimeDB's persistent `SET LOCAL` and `time_zone` alias, updates the cache
+identity. Failed changes do not. Non-ISO timestamp output falls back to the
+object cache. Unknown session state disables caching. Passthrough sessions do
+not run a hidden SQL probe; timezone-dependent analysis stays conservative
+until the effective zone is known.
+
+```sh
+curl --fail-with-body -u grafana_ro:trickster-dev-grafana \
+  --data-urlencode 'sql=SELECT 1' http://127.0.0.1:4000/v1/sql
+PGPASSWORD=trickster-dev-grafana psql -h 127.0.0.1 -p 4003 \
+  -U grafana_ro -d public -c 'SELECT 1'
+PGPASSWORD=trickster-dev-grafana psql -h 127.0.0.1 -p 8489 \
+  -U grafana_ro -d public -c 'SELECT 1'
+curl --fail-with-body -u grafana_ro:trickster-dev-grafana \
+  --data-urlencode 'sql=SELECT 1' http://127.0.0.1:8480/greptimedb1/v1/sql
+curl --fail-with-body -u grafana_ro:trickster-dev-grafana \
+  --data-urlencode 'query=up' \
+  http://127.0.0.1:8480/greptimedb1/v1/prometheus/api/v1/query
+SEED_TARGET=greptimedb make developer-seed-data
+```
+
+`greptimedb_seed` runs the dependency-free `hack/greptimeseed` Go loader on
+the same generated files and `SHIFT_SECONDS` as the other trips databases.
+The loader uses HTTP SQL because v1.2.1 rejects line-protocol string fields
+for existing `DATE` columns. It preserves the TimescaleDB column types,
+uses microsecond timestamps and seconds for `pickup_epoch`, regenerates
+dates in UTC, and retains empty text while mapping empty numeric fields
+to NULL. `cab_type` and `vendor_id` are low-cardinality primary-key tags.
+`append_mode='true'` keeps distinct trips at the same timestamp.
+
+Each seed drops and rebuilds `trips` and a static `trips_15m` rollup. It
+checks exact row count, shifted pickup/dropoff bounds, centering on seed
+time, date/epoch agreement and rollup coverage. INSERTs are not retried
+after an ambiguous error, since append mode could duplicate a batch. Re-run
+the seed to start from empty tables. Inspect failures with
+`docker compose logs greptimedb greptimedb_seed`.
+
+Grafana provisions `greptimedb-direct` (`ds_greptimedb_direct`) using its
+bundled PostgreSQL datasource, with the TimescaleDB option disabled, and
+`greptimedb-prom-direct` (`ds_greptimedb_prom_direct`) using its bundled
+Prometheus datasource. Both use the read-only account. Prometheus remote
+write supplies the latter with samples from the existing scrape jobs.
+No GreptimeDB-specific Grafana plugin is installed.
+
+Their proxy counterparts are `greptimedb-trickster` (`ds_greptimedb_trickster`)
+and `greptimedb-prom-trickster` (`ds_greptimedb_prom_trickster`). The SQL pair
+appears in the GreptimeDB dashboard selector without changing panel queries.
+
+The [GreptimeDB dashboard](http://127.0.0.1:3000/d/trickster-greptimedb)
+preserves the TimescaleDB dashboard's panel IDs, layout and datasource
+selector. Its SQL differences are:
+
+| Panel IDs | SQL adaptation |
+| --- | --- |
+| 1-4, 6 | Same Grafana macros and FILTER aggregates; disabling the TimescaleDB option expands time-group macros to epoch-floor expressions |
+| 5 | `round(avg(...), 2)` without PostgreSQL's `::numeric` cast |
+| 20-21 | Unchanged epoch-floor and `$__unixEpochGroupAlias` expressions |
+| 22-23 | Native `RANGE '5m' FILL NULL/PREV ... ALIGN '5m'`, epoch-aligned with `BY ()` so tags do not split the result |
+| 24 | `date_bin(INTERVAL '5 minutes', ...)` instead of `time_bucket`, retaining the window function |
+| 25 | Static rollup, `date_bin(INTERVAL '15 minutes', ...)`, and quoted `"bucket"` (a GreptimeDB keyword) |
+
+Native RANGE filling covers the span of matching data, unlike TimescaleDB's
+gapfill over the entire requested range; leading and trailing empty buckets
+can therefore differ in panels 22-23. Performance panels use `greptimedb1`
+and `greptimedb` labels. The native SQL cache populates the classification,
+cache-status, request-duration and point counters. The rewrite-failure panel
+has no series until a fallback is needed; that is not a missing-data failure.
+Cache operations, utilization and evictions use the dedicated `greptimedb_fs`
+filesystem cache. The memory provider does not export storage-usage gauges.
+The eviction panel remains empty until an eviction occurs.
+
+### Direct Environment Checks
+
+Run `make developer-greptimedb-check` for repeatable, read-only validation of
+the direct environment. The [acceptance guide](../../../integration/greptimedb_acceptance.md)
+describes its assertions, unique result directories and remaining human-review
+checks. An empty datasource or a query error inside HTTP 200 fails the suite.
+
+GreptimeDB v1.2.1 rejects the comment-only `-- ping` query used by Grafana
+13.1.3's PostgreSQL health check. The pinned official nightly contains
+[GreptimeDB #9295](https://github.com/GreptimeTeam/greptimedb/pull/9295), which
+repairs that response. The health check is tested directly against GreptimeDB,
+without a Trickster shim. Retain old-version failures separately; an upstream
+merge or a source-built repair is not evidence that a stable release contains
+the fix. Changing the image requires repeating the full acceptance suite.
+
+## VictoriaMetrics Details
+
+The `victoriametrics` service runs single-node VictoriaMetrics OSS v1.153.0,
+pinned to its multi-architecture image digest (amd64 and arm64 included). One
+HTTP port, `8428` on the host and in the Compose network, serves MetricsQL through the
+Prometheus querying API (`/api/v1/query`, `/api/v1/query_range`, labels,
+series, metadata), the Graphite render, find and tags APIs, and the import and
+export APIs. There is no authentication in the developer environment, and no
+native-protocol listener is opened. The image runs as root and keeps its data in the
+`victoriametrics-data` named volume at `/storage`, which survives restarts.
+
+| Setting | Value |
+|---|---|
+| Retention | `-retentionPeriod=31d`, covering the 15-day trips history and the fixtures |
+| Scrape config | `docker-compose-data/victoriametrics-config/scrape.yml` (`-promscrape.config`) |
+| Health check | `GET /health` returns `OK`; no ingest or flush |
+| Latency offset | default `-search.latencyOffset=30s`; override per query with `latency_offset` (at least `1ms`) |
+| Response cache | default `-search.cacheTimestampOffset=5m`; bypass per query with `nocache=1` |
+| Deduplication | off (`-dedup.minScrapeInterval` unset), so samples with equal timestamps are all kept |
+| Graphite step | default `-search.graphiteStorageStep=10s`; Grafana sends `Storage-Step: 10s` |
+
+VictoriaMetrics scrapes `devorigin:8482` as `job="trips"` and Trickster's
+metrics at `host.docker.internal:8481` as `job="trickster"`, every 15 seconds.
+The scrape config holds only settings VictoriaMetrics supports, rather than a
+copy of `prometheus.yml`. Check the targets with
+`curl -s http://127.0.0.1:8428/api/v1/targets`.
+
+```bash
+curl -s http://127.0.0.1:8428/api/v1/query --data-urlencode 'query=sum by (borough) (increase(trips_total[1h]))'
+curl -s http://127.0.0.1:8428/api/v1/query_range --data-urlencode 'query=WITH (d(m) = sum(m) - sum(m offset 15m)) d(trips_total)' -d start=-6h -d step=15m
+curl -s -H 'Storage-Step: 10s' 'http://127.0.0.1:8428/render?target=aliasByNode(vmgraphite.fast.*.*.requests,2,3)&from=-1h&format=json'
+```
+
+### VictoriaMetrics seeding
+
+`victoriametrics_seed` runs `hack/devorigin backfill` into its container, the
+same 15 days of trips metrics that Prometheus gets, then runs `hack/vmseed`. The
+seeder streams the file gzip-compressed to `/api/v1/import/prometheus` with
+`job=trips` and `instance=devorigin:8482`, so the history and the live scrape
+are one set of series. It also imports two small deterministic fixtures through
+`/api/v1/import`:
+
+- `job="trickster_fixtures"` series for MetricsQL edge cases: irregular intervals
+  (7s to 300s), hourly and half-hourly counter resets, missing samples, `+Inf`
+  and `-Inf`, and two metric names with identical label sets.
+- `vmgraphite.*` Graphite series: dotted names at 10s, 30s and 60s cadences,
+  periodic gaps, and `vmgraphite.tagged.latency` with `dc` and `tier` tags.
+
+The seeder verifies every import by its exact sample count, then checks that
+Graphite find and tag autocompletion discover the fixture.
+Fixture values are functions of their timestamps. The fixtures end at the
+seeding time, so each seeder run appends the samples since the previous one;
+they span 48 hours (7 days for the 60s Graphite series), so relative dashboard
+ranges stay populated between runs.
+
+The seeder never deletes series. In v1.153.0, re-importing a deleted series over
+a wider window than it had can lose every re-imported sample on the dates the
+deleted series covered, and a restart does not recover them. The seeder therefore imports
+the trips history only when VictoriaMetrics has none. A `make developer-start`
+against a running environment keeps the current history, like Prometheus.
+`make developer-seed-data` (with `SEED_TARGET=victoriametrics` to scope it)
+stops `devorigin`, empties the `victoriametrics-data` volume, and reseeds it.
+
+VictoriaMetrics drops NaN samples on import, so the fixtures contain none, and
+stale markers come only from live scraping. Importing a sample whose timestamp
+is older than `-search.cacheTimestampOffset` resets the response cache. Late
+inserts become searchable a few seconds after the import request returns.
+
+The trips history and live samples match Prometheus' value for value, with one
+label difference: Prometheus v3.13.2 stores devorigin's bucket label `le="1"` as
+`le="1.0"`, and VictoriaMetrics keeps the exported `le="1"`. A query that selects
+one bucket by `le` needs each server's form; `histogram_quantile` is unaffected.
+
+### VictoriaMetrics in Grafana
+
+Grafana provisions three direct datasources against `http://victoriametrics:8428`:
+`victoriametrics-direct` (UID `ds_vm_direct`, GET) and `victoriametrics-direct-post`
+(UID `ds_vm_direct_post`, POST), both on the bundled Prometheus plugin, and
+`victoriametrics-graphite-direct` (UID `ds_vm_graphite_direct`), on the bundled
+Graphite plugin with a `Storage-Step: 10s` header. No VictoriaMetrics plugin is needed.
+Their Trickster peers, `victoriametrics-trickster`, `victoriametrics-trickster-post` and
+`victoriametrics-graphite-trickster`, reach the dev config's `victoriametrics1` backend at
+`http://host.docker.internal:8480/victoriametrics1`; start Trickster with `make serve-dev`.
+
+The [Trips (VictoriaMetrics)](http://127.0.0.1:3000/d/trips-victoriametrics) dashboard
+repeats the Prometheus trips panels, adds a MetricsQL row (`WITH`, implicit
+range windows, `keep_metric_names`, `topk_avg`, `histogram_quantiles`, `rollup`,
+the `limit` modifier, and the `__graphite__` selector), and charts the edge-case
+fixtures. Its performance row charts `victoriametrics1`'s requests by cache status,
+latency, returned points, and `trickster_victoriametrics_query_analysis_total`, which
+shows whether each MetricsQL request took the delta cache, the object cache, or was relayed. Its datasource variable lists every `victoriametrics-*` Prometheus-type
+datasource. The [VictoriaMetrics Graphite](http://127.0.0.1:3000/d/trickster-vm-graphite)
+dashboard charts the Graphite fixture through render, find (the `region`
+variable), `seriesByTag`, and server-side functions. On the 10s render grid,
+30s and 60s series have nulls between their points, so those panels connect
+nulls, except across real gaps. Both dashboards' Trickster performance panels filter on
+`provider="victoriametrics"` and `backend_name="victoriametrics1"`.
+
+### VictoriaMetrics behaviors to preserve
+
+These were measured on v1.153.0 directly. Trickster must reproduce them when it proxies or caches:
+
+- **Range grids:** `query_range` returns points at `start + k*step` for fewer
+  than 50 points. With its response cache on, VictoriaMetrics starts a range of
+  50 or more points on a step boundary and keeps the point count
+  (`promql.AdjustStartEnd`); `nocache=1` or `-search.disableCache` keep the
+  requested start. It keeps fractional `start` values and accepts fractional and
+  duration steps (`15.5`, `1m`). Grafana 13.1.3 aligns `start` and `end` to the
+  step itself, but sends instant queries with a fractional `time`.
+- **Responses:** successes carry a `stats` object (`seriesFetched` as a string,
+  `executionTimeMsec`). Errors carry their HTTP status in `errorType`: `"400"` for an invalid request and
+  `"422"` for a failed evaluation, rather than Prometheus' `bad_data` and `execution`.
+  Graphite render errors are plain-text 400 responses.
+- **MetricsQL:** `clamp` keeps metric names; without `keep_metric_names`,
+  `sum by (__name__)` collapses names; `rate()` over two names with identical
+  labels fails with `duplicate output timeseries`; a bare selector leaves gaps
+  where samples are farther apart than the automatic lookbehind.
+- **Graphite tags:** an unfiltered `/tags` or `/tags/<tag>` lists nothing for
+  label-based series, while `/tags/autoComplete/tags?expr=...`, `/tags/findSeries`
+  and `seriesByTag` work. `/metrics/find`, `/functions` and `/graphite/*` aliases respond.
+- **Grafana's requests:** the Prometheus plugin's health check is `query=1+1&time=4`
+  plus `/api/v1/status/buildinfo` (VictoriaMetrics reports `2.24.0`); POST
+  datasources send form bodies. The Graphite plugin POSTs `/render` forms
+  (`target`, `from`, `until`, `format=json`, `maxDataPoints`) with `Storage-Step`
+  on every request, and checks health with `constantLine(100)`.

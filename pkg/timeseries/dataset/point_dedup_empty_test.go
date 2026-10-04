@@ -30,10 +30,10 @@ func TestSortAndDedupeTolerantEmptyInput(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			defer func() {
 				if r := recover(); r != nil {
-					t.Fatalf("sortAndDedupeTolerant panicked on empty input: %v", r)
+					t.Fatalf("a tolerant dedupe panicked on empty input: %v", r)
 				}
 			}()
-			out := sortAndDedupeTolerant(Points{}, tc.tol)
+			out := mergePoints(Points{}, nil, MergeOpts{SortPoints: true, ToleranceNanos: tc.tol})
 			if len(out) != 0 {
 				t.Fatalf("expected length 0, got %d", len(out))
 			}

@@ -42,8 +42,8 @@ func TestLoadConfiguration(t *testing.T) {
 		t.Errorf("expected 1024, got %d", conf.Backends["default"].TimeseriesRetention)
 	}
 
-	if time.Duration(conf.Backends["default"].FastForwardTTL) != time.Duration(15)*time.Second {
-		t.Errorf("expected 15, got %s", time.Duration(conf.Backends["default"].FastForwardTTL))
+	if time.Duration(conf.Backends["default"].PartialBucketTTL) != time.Duration(15)*time.Second {
+		t.Errorf("expected 15, got %s", time.Duration(conf.Backends["default"].PartialBucketTTL))
 	}
 
 	// Memory cache no longer uses IndexedClient, so Index may be nil
@@ -196,8 +196,8 @@ func TestFullLoadConfiguration(t *testing.T) {
 		t.Errorf("expected fast_forward_disable true, got %t", o.FastForwardDisable)
 	}
 
-	if time.Duration(o.BackfillTolerance) != 301000*time.Millisecond {
-		t.Errorf("expected 301000, got %d", o.BackfillTolerance)
+	if time.Duration(o.VolatileWindow) != 301000*time.Millisecond {
+		t.Errorf("expected 301000, got %d", o.VolatileWindow)
 	}
 
 	if time.Duration(o.Timeout) != 37000*time.Millisecond {

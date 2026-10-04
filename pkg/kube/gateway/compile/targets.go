@@ -22,12 +22,12 @@ import (
 	"strings"
 	"time"
 
-	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 )
 
@@ -46,6 +46,7 @@ func newMemberTarget(doc *document, g ir.BackendGroup, m ir.BackendMember,
 	eff effective, opts *kubecfg.Options,
 ) (*memberTarget, error) {
 	origin := originBackend(m, eff)
+	origin.StepAlignment = doc.stepAlignment(eff)
 	switch eff.routingMode {
 	case kubecfg.RoutingModeService:
 		return &memberTarget{front: origin, frontHandler: eff.handler()}, nil
@@ -73,15 +74,12 @@ func newMemberTarget(doc *document, g ir.BackendGroup, m ir.BackendMember,
 	}
 	front := &backendDoc{
 		Provider: providers.ALB,
-		ALB: &albDoc{
-			Mechanism: albnames.MechanismRR,
-			Discovery: &albDiscoveryDoc{
-				DiscovererName:  doc.discoverer(opts),
-				TemplateBackend: tmplName,
-				HealthMode:      eff.healthMode,
-				Query:           query,
-			},
-		},
+		ALB: eff.endpointALB(&albDiscoveryDoc{
+			DiscovererName:  doc.discoverer(opts),
+			TemplateBackend: tmplName,
+			HealthMode:      eff.healthMode,
+			Query:           query,
+		}, flowkey.KeySource.OnHTTP),
 	}
 	return &memberTarget{
 		front: front, frontHandler: providers.ALB,

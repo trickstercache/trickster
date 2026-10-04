@@ -238,6 +238,8 @@ func TestALBCache(t *testing.T) {
 			r.Body.Close()
 			resp, body = r, b
 			assert.NotEmpty(c, b, "waiting for non-empty merged body")
+			// a response while the healthy members' first probes are pending comes from the bad one alone
+			assert.Less(c, r.StatusCode, 500, "waiting for a response the healthy members answered")
 			assert.GreaterOrEqual(c, m2QueryHits.Load(), int64(1),
 				"waiting for bad-encoding member to be queried")
 		}, 5*time.Second, 100*time.Millisecond, "alb pool never queried the bad-encoding member")

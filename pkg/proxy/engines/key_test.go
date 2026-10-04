@@ -35,6 +35,7 @@ import (
 	ct "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -228,6 +229,77 @@ func TestDeriveCacheKeyIncludesProviderOwnedBody(t *testing.T) {
 	path.CacheKeyBody = false
 	if derive(`{"query":"SELECT 1"}`) != derive(`{"query":"SELECT 2"}`) {
 		t.Fatal("body affected a route that did not opt in")
+	}
+}
+
+func TestDeriveCacheKeyQueryContent(t *testing.T) {
+	path := &po.Options{Path: "/search"}
+	cfg := &bo.Options{Name: "rpc", Paths: po.List{path}}
+	derive := func(method, body, ctype, encoding string) string {
+		r := httptest.NewRequest(method, "http://origin/search?x=1", strings.NewReader(body))
+		if ctype != "" {
+			r.Header.Set(headers.NameContentType, ctype)
+		}
+		if encoding != "" {
+			r.Header.Set(headers.NameContentEncoding, encoding)
+		}
+		r = request.SetResources(r, request.NewResources(cfg, path, nil, nil, nil, nil))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	const sql = "SELECT 1"
+	base := derive(methods.MethodQuery, sql, "application/sql", "")
+	if base != derive(methods.MethodQuery, sql, "application/sql", "") {
+		t.Fatal("identical QUERY requests produced different cache keys")
+	}
+	if base == derive(methods.MethodQuery, "SELECT 2", "application/sql", "") {
+		t.Error("different QUERY bodies produced the same cache key")
+	}
+	if base == derive(methods.MethodQuery, sql, "text/plain", "") {
+		t.Error("different QUERY media types produced the same cache key")
+	}
+	if base == derive(methods.MethodQuery, sql, "application/sql", "gzip") {
+		t.Error("different QUERY content codings produced the same cache key")
+	}
+	if base != derive(methods.MethodQuery, sql, "Application/SQL", "") {
+		t.Error("media type case changed the cache key")
+	}
+	if base == derive(http.MethodGet, "", "", "") {
+		t.Error("a QUERY and a GET for the same URI share a cache key")
+	}
+
+	// a form-encoded QUERY keys on its raw content, not only the parsed fields
+	path.CacheKeyParams = []string{"query"}
+	form := derive(methods.MethodQuery, "query=up", headers.ValueXFormURLEncoded, "")
+	if form == derive(methods.MethodQuery, "query=down", headers.ValueXFormURLEncoded, "") {
+		t.Error("different form QUERY bodies produced the same cache key")
+	}
+}
+
+func TestDeriveCacheKeyQueryNoPathConfig(t *testing.T) {
+	cfg := &bo.Options{Name: "rpc"}
+	derive := func(body string) string {
+		r := httptest.NewRequest(methods.MethodQuery, "http://origin/search", strings.NewReader(body))
+		r.Header.Set(headers.NameContentType, "application/sql")
+		r = request.SetResources(r, request.NewResources(cfg, nil, nil, nil, nil, nil))
+		return newProxyRequest(r, nil).DeriveCacheKey("")
+	}
+	if derive("SELECT 1") == derive("SELECT 2") {
+		t.Error("different QUERY bodies produced the same cache key")
+	}
+}
+
+func TestNormalizeMediaType(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"", ""},
+		{"application/JSON", "application/json"},
+		{" Text/Plain ; Charset=UTF-8 ", "text/plain;charset=UTF-8"},
+		{"multipart/form-data; boundary=AbC", "multipart/form-data;boundary=AbC"},
+		{"text/plain;;flag", "text/plain;flag"},
+	}
+	for _, tc := range tests {
+		if got := normalizeMediaType(tc.in); got != tc.want {
+			t.Errorf("normalizeMediaType(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
@@ -574,6 +646,26 @@ func TestDeriveCacheKey_MultiValueParams(t *testing.T) {
 			`http://h/api/v1/series?match[]={__name__="up"}&start=0&end=0`)
 		if k1 == k2 {
 			t.Errorf("wildcard mode: different match[] count must produce different keys, both got %s", k1)
+		}
+	})
+
+	t.Run("wildcard CacheKeyParams skips excluded params", func(t *testing.T) {
+		keyFor := func(rawURL string) string {
+			pc := &po.Options{
+				Path: "/", CacheKeyParams: []string{"*"}, CacheKeyParamsExcluded: []string{"query_id"},
+			}
+			cfg := &bo.Options{Paths: po.List{pc}}
+			rsc := request.NewResources(cfg, pc, nil, nil, nil, nil)
+			r := httptest.NewRequest(http.MethodGet, rawURL, nil)
+			r = r.WithContext(ct.WithResources(context.Background(), rsc))
+			return newProxyRequest(r, nil).DeriveCacheKey("")
+		}
+		base := keyFor("http://h/?query=SELECT+1&param_tenant=a&query_id=1")
+		if keyFor("http://h/?query=SELECT+1&param_tenant=a&query_id=2") != base {
+			t.Error("an excluded param must not change the key")
+		}
+		if keyFor("http://h/?query=SELECT+1&param_tenant=b&query_id=1") == base {
+			t.Error("a non-excluded param must change the key")
 		}
 	})
 
@@ -957,4 +1049,31 @@ func TestDeriveCacheKeyEffectiveValues(t *testing.T) {
 			t.Error("clients behind a pinned form field must share one cache key")
 		}
 	})
+}
+
+func TestDeriveCacheKeyParamValues(t *testing.T) {
+	for _, params := range [][]string{{"query", "step"}, {"*"}} {
+		cfg := &bo.Options{Paths: po.List{{Path: "/", CacheKeyParams: params}}}
+		key := func(query string, values map[string]string) string {
+			rsc := request.NewResources(cfg, cfg.Paths[0], nil, nil, nil, nil)
+			if values != nil {
+				rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{KeyParamValues: values}
+			}
+			r := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/?step=60&"+query, nil)
+			return newProxyRequest(r.WithContext(ct.WithResources(context.Background(), rsc)), nil).
+				DeriveCacheKey("")
+		}
+		// a statement keyed without its directive shares the key of one sent without it
+		plain := key("query=up", nil)
+		if got := key("query=up%20%23%20trickster-step-align%3Adrop", map[string]string{"query": "up"}); got != plain {
+			t.Errorf("%v: the stand-in value keyed apart", params)
+		}
+		if got := key("query=up%20%23%20trickster-step-align%3Adrop", nil); got == plain {
+			t.Errorf("%v: the directive never reached the key", params)
+		}
+		// a repeated parameter is left as it is
+		if got := key("query=up&query=up", map[string]string{"query": "up"}); got == plain {
+			t.Errorf("%v: a repeated parameter was replaced", params)
+		}
+	}
 }

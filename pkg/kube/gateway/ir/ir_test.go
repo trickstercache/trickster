@@ -220,6 +220,18 @@ func TestCanonicalClonesFiltersAndTLS(t *testing.T) {
 	require.Equal(t, "/y", m.Routes[0].Rules[0].Filters[3].URLRewrite.Path.Value)
 	require.Equal(t, "a", m.Backends[0].Members[0].TLS.CACertificates[0])
 
+	// sessions are copied, so a change to the canonical form leaves the input as it was
+	m.Routes[0].Rules[0].Session = &Session{Type: SessionCookie, Name: "s"}
+	m.Backends[0].Members[0].Session = &Session{Type: SessionHeader}
+	c = m.Canonical()
+	require.Equal(t, m.Routes[0].Rules[0].Session, c.Routes[0].Rules[0].Session)
+	c.Routes[0].Rules[0].Session.Name = "changed"
+	c.Backends[0].Members[0].Session.Type = SessionCookie
+	require.Equal(t, "s", m.Routes[0].Rules[0].Session.Name)
+	require.Equal(t, SessionHeader, m.Backends[0].Members[0].Session.Type)
+	var none *Session
+	require.Nil(t, none.Clone())
+
 	require.Nil(t, Rule{}.Redirect(), "a rule with no filters forwards")
 	require.Nil(t, Rule{Filters: []Filter{{Type: FilterRedirect}}}.Redirect(),
 		"a redirect filter with no body is not a redirect")

@@ -23,9 +23,9 @@ import (
 	"testing"
 	"time"
 
+	cfgtypes "github.com/trickstercache/trickster/v2/pkg/config/types"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
-	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 func TestHandleFirstResponseNilPool(t *testing.T) {
@@ -119,7 +119,7 @@ func TestFirstGoodResponse(t *testing.T) {
 	})
 
 	t.Run("FGR custom codes", func(t *testing.T) {
-		codes := sets.New([]int{http.StatusAccepted})
+		codes := cfgtypes.StatusCodes(http.StatusAccepted).Compile()
 		p, _, _ := albpool.NewHealthy([]http.Handler{
 			albpool.StatusHandler(http.StatusOK, "not-accepted"),
 			albpool.StatusHandler(http.StatusAccepted, "accepted"),
@@ -192,7 +192,7 @@ func TestFirstGoodResponse(t *testing.T) {
 }
 
 func TestFGRFallbackEmits502WhenNoMemberQualifies(t *testing.T) {
-	codes := sets.New([]int{http.StatusOK})
+	codes := cfgtypes.StatusCodes(http.StatusOK).Compile()
 	p, _, _ := albpool.NewHealthy([]http.Handler{
 		albpool.StatusHandler(http.StatusInternalServerError, "body0"),
 		albpool.StatusHandler(http.StatusInternalServerError, "body1"),
@@ -235,7 +235,6 @@ func TestHandleFirstResponseContextCancel(t *testing.T) {
 		func() {
 			p, _, _ := albpool.New(-1, []http.Handler{slow, slow})
 			defer p.Stop()
-			p.SetHealthy([]http.Handler{slow, slow})
 
 			h := &handler{}
 			h.SetPool(p)
@@ -282,7 +281,6 @@ func TestHandleFirstResponseContextCancel_50Backends(t *testing.T) {
 		func() {
 			p, _, _ := albpool.New(-1, hs)
 			defer p.Stop()
-			p.SetHealthy(hs)
 
 			h := &handler{}
 			h.SetPool(p)

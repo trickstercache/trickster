@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"sync/atomic"
 
@@ -33,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/compat"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -67,7 +67,7 @@ func Mirror(backendName string, o *po.MirrorOptions, target backends.Backend, ne
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// sampling a share of traffic needs no unpredictability
-		if !tctx.IsMirrored(r.Context()) && (m.percent >= 100 || rand.IntN(100) < m.percent) { //nolint:gosec // traffic sampling
+		if !tctx.IsMirrored(r.Context()) && (m.percent >= 100 || compat.IntN(100) < m.percent) {
 			m.fire(r)
 		}
 		next.ServeHTTP(w, r)
@@ -99,8 +99,8 @@ func (m *mirror) fire(r *http.Request) {
 }
 
 func mirrorRequest(r *http.Request) (*http.Request, error) {
-	// a bodied request is buffered on the original's resources so both can read it, and the
-	// copy is detached from the client's context so neither cancels the other
+	// a bodied request is buffered on the original's resources so both can read it; the copy keeps the
+	// client IP but not the client's context, so neither cancels the other
 	var body io.Reader = http.NoBody
 	var length int64
 	if methods.HasBody(r.Method) {
@@ -112,6 +112,9 @@ func mirrorRequest(r *http.Request) (*http.Request, error) {
 		length = int64(len(b))
 	}
 	ctx := tctx.WithMirrored(context.Background())
+	if ip := tctx.ClientIP(r.Context()); ip != "" {
+		ctx = tctx.WithResolvedClient(ctx, ip, request.PeerTrusted(r))
+	}
 	out, err := http.NewRequestWithContext(ctx, r.Method, r.URL.String(), body)
 	if err != nil {
 		return nil, err

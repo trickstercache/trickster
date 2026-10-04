@@ -44,22 +44,26 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 		corsOptions = p.CORS
 	}
 	hideResult := p != nil && p.HideResultHeader
+	// the route's resources, never handed to a request: each request gets a copy, or has them merged
+	// into the resources an outer middleware created
+	var route *request.Resources
+	if c == nil {
+		route = request.NewResources(o, p, nil, nil, client, t)
+	} else {
+		route = request.NewResources(o, p, c.Configuration(), c, client, t)
+	}
+	route.FrontendCORS = corsOptions
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if o != nil && (o.LatencyMin > 0 || o.LatencyMax > 0) {
 			processSimulatedLatency(w, time.Duration(o.LatencyMin), time.Duration(o.LatencyMax))
 		}
 
-		var resources *request.Resources
-		if c == nil {
-			resources = request.NewResources(o, p, nil, nil, client, t)
-		} else {
-			resources = request.NewResources(o, p, c.Configuration(), c, client, t)
-		}
-		resources.FrontendCORS = corsOptions
-		ctx := r.Context()
-		rsc, ok := context.Resources(ctx).(*request.Resources)
+		rsc, ok := context.Resources(r.Context()).(*request.Resources)
 		if !ok {
+			resources := request.NewResources(route.BackendOptions, route.PathConfig, route.CacheConfig,
+				route.CacheClient, route.BackendClient, route.Tracer)
+			resources.FrontendCORS = corsOptions
 			if hideResult {
 				w = HideResultHeader(w, resources)
 			}
@@ -68,8 +72,9 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 			next.ServeHTTP(cw, r.WithContext(context.WithResources(r.Context(), resources)))
 			return
 		}
+		// the request already carries rsc, so merging into it needs no new context
 		wrapResponse := rsc.FrontendCORS == nil
-		rsc.Merge(resources)
+		rsc.Merge(route)
 		if hideResult {
 			// the resources may be the ones an outer middleware created, which is how the
 			// access log sees the withheld value
@@ -80,6 +85,6 @@ func WithResourcesContext(client backends.Backend, o *bo.Options,
 			defer cw.Finalize()
 			w = cw
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithResources(r.Context(), rsc)))
+		next.ServeHTTP(w, r)
 	})
 }

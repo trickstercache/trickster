@@ -294,7 +294,13 @@ func (s *Server) DoGetStatement(ctx context.Context,
 func (s *Server) objectTier(ctx context.Context,
 	query string,
 ) ([]byte, cachestatus.LookupStatus, error) {
-	key := s.tenantKey(ctx) + ":stmt:" + query
+	return s.objectTierFor(ctx, statementKeyKind, query, s.cacheTTL)
+}
+
+func (s *Server) objectTierFor(ctx context.Context,
+	kind, query string, ttl time.Duration,
+) ([]byte, cachestatus.LookupStatus, error) {
+	key := s.tenantKey(ctx) + kind + query
 	ipcBytes, cached := s.cacheGet(key)
 	if cached {
 		return ipcBytes, cachestatus.LookupStatusHit, nil
@@ -303,7 +309,9 @@ func (s *Server) objectTier(ctx context.Context,
 	if err != nil {
 		return nil, cachestatus.LookupStatusProxyError, fmt.Errorf("upstream execute: %w", err)
 	}
-	s.cacheSet(key, b)
+	if s.cache != nil {
+		s.cache.Set(key, b, ttl)
+	}
 	return b, cachestatus.LookupStatusKeyMiss, nil
 }
 
@@ -848,6 +856,73 @@ func (s *Server) streamIPCBytes(ctx context.Context, b []byte,
 	return streamIPCBytesWithRelease(ctx, b, func() {
 		s.bufferBudget.release(size)
 	})
+}
+
+// sends records, which it takes ownership of, as the response stream, held against the buffering
+// budget as their IPC encoding would be
+func (s *Server) streamRecords(ctx context.Context, schema *arrow.Schema, records []arrow.RecordBatch,
+) (*arrow.Schema, <-chan flight.StreamChunk, error) {
+	var release func()
+	if s.bufferBudget != nil {
+		var size int64
+		for _, rec := range records {
+			for _, col := range rec.Columns() {
+				size += arrayBytes(col.Data())
+			}
+		}
+		if !s.bufferBudget.acquire(size) {
+			for _, rec := range records {
+				rec.Release()
+			}
+			return nil, nil, status.Error(codes.ResourceExhausted,
+				"Flight response buffering budget exhausted")
+		}
+		release = func() { s.bufferBudget.release(size) }
+	}
+	ch := make(chan flight.StreamChunk)
+	go func() {
+		var sent int
+		defer func() {
+			// what was sent belongs to the receiver
+			for _, rec := range records[sent:] {
+				rec.Release()
+			}
+			close(ch)
+			if release != nil {
+				if done := ctx.Done(); done != nil {
+					<-done
+				}
+				release()
+			}
+		}()
+		for _, rec := range records {
+			select {
+			case ch <- flight.StreamChunk{Data: rec}:
+				sent++
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return schema, ch, nil
+}
+
+// the bytes of an array's buffers, its children's and its dictionary's
+func arrayBytes(d arrow.ArrayData) int64 {
+	var n int64
+	for _, b := range d.Buffers() {
+		if b != nil {
+			n += int64(b.Len())
+		}
+	}
+	for _, child := range d.Children() {
+		n += arrayBytes(child)
+	}
+	// Dictionary is a typed nil for any other type, which no nil check would catch
+	if d.DataType().ID() == arrow.DICTIONARY {
+		n += arrayBytes(d.Dictionary())
+	}
+	return n
 }
 
 func streamIPCBytesWithRelease(ctx context.Context, b []byte, release func(),

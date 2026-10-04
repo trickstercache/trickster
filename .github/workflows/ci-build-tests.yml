@@ -2,16 +2,14 @@ on:
   push:
     branches:
       - main
-      - v1.0.x
-      - v1.1.x
+      - 'v[0-9]+.*'
     tags:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
   pull_request:
     branches:
       - main
-      - v1.0.x
-      - v1.1.x
+      - 'v[0-9]+.*'
 
 name: CI Tests
 
@@ -36,6 +34,13 @@ jobs:
         with:
           version: v2.13.1
           args: --timeout 5m
+          only-new-issues: true
+      # tests get the rules that replaced the Makefile's scans, as in make golangci-lint
+      - name: golangci-lint (tests)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.1
+          args: --timeout 5m --tests --enable-only forbidigo,depguard,godox,goheader
           only-new-issues: true
   docker:
     runs-on: ubuntu-latest
@@ -92,8 +97,8 @@ jobs:
         continue-on-error: true
         run: go tool govulncheck ./...
       - run: go mod vendor
-      - name: Run tests
-        run: make test
+      - name: Run tests (with coverage and race detection)
+        run: make test-cover-race
       - name: Verify seed data generator is reproducible and offline
         env:
           GOPROXY: "off"
@@ -106,12 +111,6 @@ jobs:
             echo "::error::Coverage ${COVERAGE}% is below 50% minimum"
             exit 1
           fi
-      - name: Run tests (with race detection enabled)
-        run: |
-          echo "::group::Race Detection Tests"
-          make data-race-test
-          echo "::endgroup::"
-          make data-race-test-inspect
       - run: go build -o /dev/null ./cmd/trickster
       - name: Send coverage
         if: github.repository_owner == 'trickstercache' # Skip for forked repositories
@@ -129,12 +128,18 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TRICKSTER_MYSQL_CLI_TEST: "1"
+      TRICKSTER_GREPTIMEDB_MYSQL_ACCEPTANCE: "1"
+      TRICKSTER_GREPTIMEDB_PROMQL_ACCEPTANCE: "1"
       TRICKSTER_DNS_TEST: "1"
+      TRICKSTER_VICTORIAMETRICS_TEST: "1"
+      # every TSDB backend plus the integration-only services (e.g. coredns),
+      # so the docker compose commands in later steps can address them all
+      COMPOSE_PROFILES: integration
       # CI containers cannot raise the UDP receive buffer; the warning is noise
       QUIC_GO_DISABLE_RECEIVE_BUFFER_WARNING: "1"
       # a tenth of the synthetic trips rows: the integration tests only need
-      # non-empty, correctly shaped data, and the three database loads are the
-      # slowest part of bringing the environment up
+      # non-empty, correctly shaped data, and the database loads are the
+      # slowest part of bringing the environment up (including GreptimeDB)
       SEED_PROFILE: small
     steps:
       - uses: actions/checkout@v6
@@ -149,11 +154,21 @@ jobs:
           cd docs/developer/environment
           docker compose ps
           docker compose logs --tail=30 redis prometheus mysql grafana coredns
+          docker compose logs --tail=30 devorigin prometheus_seed_generate prometheus_seed
+          docker compose logs --tail=60 questdb questdb_seed
+          docker compose logs --tail=60 victoriametrics victoriametrics_seed
           docker compose logs --tail=60 graphite graphite_seed graphite_generator
-      - name: Run integration tests (with coverage)
-        run: make integration-cover
-      - name: Run integration tests (with race detection enabled)
-        run: make -C integration data-race-test
+      - name: Run integration tests (with coverage and race detection)
+        env:
+          GREPTIMEDB_REPORT_DIR: ${{ runner.temp }}/greptimedb-reports
+        run: make -C integration cover-race
+      - name: Upload GreptimeDB acceptance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: greptimedb-acceptance-reports
+          path: ${{ runner.temp }}/greptimedb-reports
+          if-no-files-found: ignore
       - name: Send integration coverage
         if: github.repository_owner == 'trickstercache'
         uses: shogo82148/actions-goveralls@v1

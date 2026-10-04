@@ -29,7 +29,7 @@ spec:
       labels:
         app: webecho-canary
     spec:
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: 20
       containers:
         - name: webecho
           image: traefik/whoami:v1.10.2
@@ -42,7 +42,7 @@ spec:
           lifecycle:
             preStop:
               sleep:
-                seconds: 5
+                seconds: 15
           readinessProbe:
             httpGet:
               path: /
@@ -126,6 +126,9 @@ rules:
   - apiGroups: ["gateway.networking.k8s.io"]
     resources: ["referencegrants", "backendtlspolicies"]
     verbs: ["list", "watch"]
+  - apiGroups: ["gateway.networking.x-k8s.io"]
+    resources: ["xbackendtrafficpolicies"]
+    verbs: ["list", "watch"]
   - apiGroups: ["gateway.networking.k8s.io"]
     resources:
       - gatewayclasses/status
@@ -202,6 +205,32 @@ metadata:
   name: trickster
 spec:
   controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: trickster-gateway-params
+    namespace: trickster-it
+---
+# the class's parameters name the Secret that keys its session tokens, so every
+# controller pod, before and after a rollout, honors the others' tokens
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-gateway-params
+  namespace: trickster-it
+data:
+  sticky_secret: trickster-sticky-key
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: trickster-sticky-key
+  namespace: trickster-it
+  labels:
+    trickstercache.org/sticky-key: ""
+type: Opaque
+stringData:
+  key: kind-scenario-sticky-key-0123456789abcdef
 ---
 # the Ingress annotation scenario's class; the service- and endpoint-mode
 # Ingress controllers in this namespace each keep their own
@@ -219,6 +248,11 @@ metadata:
   namespace: trickster-it
 data:
   trickster.yaml: |
+    ip_acls:
+      deny-clients:
+        default: deny
+        source: client_ip
+        action: reject
     listeners:
       # the listener the annotation scenario's Ingress is served on; Gateway listeners
       # are generated from the Gateways themselves
@@ -280,7 +314,7 @@ spec:
     spec:
       serviceAccountName: trickster-gateway
       # covers the preStop sleep plus the default 30s shutdown drain
-      terminationGracePeriodSeconds: 45
+      terminationGracePeriodSeconds: 55
       # the conformance suite's Gateways declare ports 80 and 443, which the
       # container binds as nobody
       securityContext:
@@ -304,9 +338,9 @@ spec:
             periodSeconds: 1
           lifecycle:
             preStop:
-              # lets the endpoint removal propagate before SIGTERM arrives
+              # lets the endpoint removal propagate before SIGTERM arrives, with room for a loaded runner
               sleep:
-                seconds: 5
+                seconds: 15
           volumeMounts:
             - name: config
               mountPath: /etc/trickster
@@ -463,6 +497,41 @@ spec:
           requestRedirect:
             scheme: https
             statusCode: 301
+---
+# sessionPersistence over two Services: a cookie on the whole host, and a
+# header under /header, each keeping a client on the Service it first reached
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: sticky
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: edge
+      sectionName: http
+  hostnames:
+    - sticky.example.com
+  rules:
+    - backendRefs:
+        - name: webecho
+          port: 80
+        - name: webecho-canary
+          port: 80
+      sessionPersistence:
+        sessionName: gw-session
+        type: Cookie
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /header
+      backendRefs:
+        - name: webecho
+          port: 80
+        - name: webecho-canary
+          port: 80
+      sessionPersistence:
+        sessionName: X-Gw-Session
+        type: Header
 ---
 # WebSocket echo, large bodies and cacheable responses; the policy below
 # makes the route cache what go-httpbin says may be cached

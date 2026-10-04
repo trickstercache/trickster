@@ -1,0 +1,58 @@
+# Copyright 2018 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for the static file server backend tests, which replace each static.root
+
+listeners:
+  default:
+    port: 8540
+  metrics:
+    port: 8541
+  mgmt:
+    port: 8542
+
+logging:
+  log_level: info
+
+authenticators:
+  htpw1:
+    provider: basic
+    users_file: testdata/configs/htpasswd
+    users_file_format: htpasswd
+    config: {}
+
+backends:
+  site:
+    provider: static
+    is_default: true
+    static:
+      root: testdata/static/site
+      cache_control: public, max-age=60
+      cache_control_by_extension:
+        .css: public, max-age=31536000, immutable
+      mime_types:
+        .custom: text/x-custom
+      response_headers:
+        X-Content-Type-Options: nosniff
+      cache:
+        max_file_size_bytes: 4096
+        max_files: 100
+        revalidation_interval: 250ms
+  private:
+    provider: static
+    authenticator_name: htpw1
+    static:
+      root: testdata/static/private
+      default_file: home.html
+      directory_listing: true
+      # an error page, served with a 404
+      not_found_file: errors/404.html
+  app:
+    provider: static
+    static:
+      root: testdata/static/site
+      # a single-page application: every unknown path is the application, with a 200
+      not_found_file: index.html
+      not_found_status: 200
+      cache:
+        max_files: 3

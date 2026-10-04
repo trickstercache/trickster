@@ -19,9 +19,11 @@ package flux
 import (
 	"bytes"
 	"encoding/csv"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 const testFluxResponseCSV1 = `
@@ -94,4 +96,33 @@ func TestUnmarshalTimeseries(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+}
+
+func TestUnmarshalMultipleFluxTables(t *testing.T) {
+	const secondTable = `#datatype,string,long,dateTime:RFC3339,double,string,string
+#group,false,false,false,false,true,true
+#default,_result,,,,,
+,result,table,_time,_value,_field,_measurement
+,,1,2025-05-04T22:29:00Z,5,usage_system,cpu
+`
+	trq := &timeseries.TimeRangeQuery{}
+	ts, err := UnmarshalTimeseriesReader(strings.NewReader(testFluxResponseCSV1+"\n\n"+secondTable), trq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ds := ts.(*dataset.DataSet)
+	if len(ds.Results) != 1 || len(ds.Results[0].SeriesList) != 2 {
+		t.Fatalf("expected two series in one result, got %+v", ds.Results)
+	}
+	if got := ds.Results[0].SeriesList[1].PointCount(); got != 1 {
+		t.Fatalf("second table has %d points, want 1", got)
+	}
+	b, err := MarshalTimeseries(ds, &timeseries.RequestOptions{}, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(b), "#datatype"); got != 2 {
+		t.Fatalf("marshaled %d table headers, want 2: %s", got, b)
+	}
+	assertFluxCSVTables(t, b, 3, 2)
 }

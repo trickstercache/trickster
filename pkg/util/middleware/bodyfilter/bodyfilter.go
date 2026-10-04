@@ -21,6 +21,7 @@ import (
 	"net/http"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
@@ -28,8 +29,7 @@ import (
 // maximum size of a request body.
 func Handler(maxSize int64, truncateOnly bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPatch && r.Method != http.MethodPost &&
-			r.Method != http.MethodPut {
+		if !methods.HasBody(r.Method) {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -24,4 +24,22 @@ const (
 	MechanismNLM = "nlm"
 	MechanismTSM = "tsm"
 	MechanismUR  = "ur"
+	MechanismP2C = "p2c"
+	MechanismHRW = "hrw"
+	MechanismLT  = "lt"
+	MechanismLC  = "lc"
+
+	MechanismRace   = "race"
+	MechanismMirror = "mirror"
+)
+
+// Mechanism long name constants
+const (
+	MechanismRoundRobin          = "round_robin"
+	MechanismPowerOfTwoChoices   = "power_of_two_choices"
+	MechanismHighestRandomWeight = "highest_random_weight"
+	MechanismLeastTime           = "least_time"
+	MechanismLeastConnections    = "least_connections"
+	MechanismConnectRace         = "connect_race"
+	MechanismUDPMirror           = "udp_mirror"
 )

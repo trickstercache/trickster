@@ -17,6 +17,7 @@
 package options
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -27,9 +28,11 @@ import (
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	tro "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 )
@@ -100,6 +103,9 @@ func TestValidateConfigMappingsSuccessPaths(t *testing.T) {
 		Path:              "/secure",
 		AuthenticatorName: "auth",
 		ReqRewriterName:   "rw",
+	}, {
+		Path:              "/public",
+		AuthenticatorName: reserved.ReferenceNone,
 	}}
 
 	l := Lookup{"backend": o}
@@ -110,12 +116,17 @@ func TestValidateConfigMappingsSuccessPaths(t *testing.T) {
 		rwopts.Lookup{"rw": nil},
 		autho.Lookup{"auth": autho.New()},
 		tro.Lookup{"trace": tro.New()},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ValidateConfigMappings: %v", err)
 	}
 	if o.AuthOptions == nil {
 		t.Fatal("expected AuthOptions to be wired")
+	}
+	if o.Paths[0].AuthOptions == nil || o.Paths[1].AuthOptions != nil {
+		t.Fatalf("path AuthOptions = %v, %v; want the named authenticator, then none for %q",
+			o.Paths[0].AuthOptions, o.Paths[1].AuthOptions, reserved.ReferenceNone)
 	}
 	if len(o.NegativeCache) == 0 {
 		t.Fatal("expected NegativeCache map to be populated")
@@ -143,14 +154,14 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 
 	l := Lookup{keys.Member: member, "edge": edge}
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err != nil {
 		t.Fatalf("ValidateConfigMappings for ALB pool: %v", err)
 	}
 
 	edge.ALBOptions.Pool = ao.Members("edge")
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Fatal("expected cycle validation error")
 	}
@@ -167,7 +178,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	l := Lookup{"backend": o}
 
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Fatal("expected invalid authenticator error")
 	}
@@ -175,7 +186,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	o.AuthenticatorName = ""
 	o.Paths = po.List{{Path: "/x", AuthenticatorName: "missing"}}
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Fatal("expected invalid path authenticator error")
 	}
@@ -184,9 +195,96 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	o.Provider = providers.ALB
 	o.ALBOptions = nil
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Fatal("expected invalid ALB options error")
+	}
+}
+
+func TestIPACLMappings(t *testing.T) {
+	t.Parallel()
+
+	acls := ipacl.Lookup{
+		"office": {Allow: []string{"10.0.0.0/8"}},
+		"edge":   {Allow: []string{"10.20.0.0/24"}, Source: "peer"},
+	}
+	if _, err := acls.Validate(); err != nil {
+		t.Fatal(err)
+	}
+
+	backend := func() *Options {
+		o := New()
+		o.Name = "backend"
+		o.Provider = providers.Prometheus
+		o.OriginURL = "http://example.com"
+		o.TracingConfigName = ""
+		o.NegativeCacheName = ""
+		return o
+	}
+	mappings := func(l Lookup) error {
+		return l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
+			ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, acls)
+	}
+
+	o := backend()
+	o.IPACLName = "office"
+	o.Paths = po.List{
+		{Path: "/admin/", IPACLName: "office"},
+		{Path: "/public/", IPACLName: reserved.ReferenceNone},
+		{Path: "/open/"},
+	}
+	if err := mappings(Lookup{"backend": o}); err != nil {
+		t.Fatal(err)
+	}
+	if o.IPACL != acls["office"].Compiled || o.Paths[0].IPACL != acls["office"].Compiled {
+		t.Fatal("named lists were not resolved")
+	}
+	if o.Paths[1].IPACL != nil || o.Paths[1].IPACLName != reserved.ReferenceNone || o.Paths[2].IPACL != nil {
+		t.Fatalf("path lists = %#v, %#v", o.Paths[1], o.Paths[2])
+	}
+	cloned := o.Clone()
+	if cloned.IPACL != o.IPACL || cloned.Paths[0].IPACL != o.Paths[0].IPACL {
+		t.Fatal("clone copied the compiled list")
+	}
+
+	o = backend()
+	o.IPACLName = "missing"
+	err := mappings(Lookup{"backend": o})
+	var missing *ErrInvalidIPACLName
+	if !errors.As(err, &missing) {
+		t.Fatalf("missing backend list = %v", err)
+	}
+
+	o.IPACLName = reserved.ReferenceNone
+	if err = mappings(Lookup{"backend": o}); !errors.As(err, &missing) {
+		t.Fatalf("backend none = %v", err)
+	}
+
+	o.IPACLName = "edge"
+	var peer *ErrIPACLSourcePeer
+	if err = mappings(Lookup{"backend": o}); !errors.As(err, &peer) {
+		t.Fatalf("backend peer = %v", err)
+	}
+
+	o = backend()
+	o.Paths = po.List{{Path: "/admin/", IPACLName: "missing"}}
+	if err = mappings(Lookup{"backend": o}); !errors.As(err, &missing) {
+		t.Fatalf("missing path list = %v", err)
+	}
+	o.Paths[0].IPACLName = "edge"
+	if err = mappings(Lookup{"backend": o}); !errors.As(err, &peer) {
+		t.Fatalf("path peer = %v", err)
+	}
+
+	tmpl := backend()
+	tmpl.Name = "tmpl"
+	tmpl.IsTemplate = true
+	tmpl.IPACLName = "office"
+	if err = mappings(Lookup{"tmpl": tmpl}); err != nil {
+		t.Fatal(err)
+	}
+	if tmpl.Clone().IPACL != tmpl.IPACL || tmpl.IPACL != acls["office"].Compiled {
+		t.Fatal("template did not keep the compiled list")
 	}
 }
 

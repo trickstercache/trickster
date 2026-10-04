@@ -42,7 +42,7 @@ func finalizeLimitRatio(ds *dataset.DataSet, spec promql.LimitRatioAggregation) 
 		// Prometheus hashes each complete label set; by/without only partitions
 		// candidates and does not change this per-series threshold decision.
 		for _, series := range result.SeriesList {
-			if series == nil || len(series.Points) == 0 ||
+			if series == nil || series.PointCount() == 0 ||
 				!limitRatioSelectHash(spec.Ratio, prometheusLabelsHash(series.Header.Tags)) {
 				continue
 			}

@@ -19,6 +19,7 @@ data:
   cache_name: objects
   timeout: 45s
   authenticator_name: gateway-auth
+  geo_acl_name: north-america
   health_mode: probe
   routing_mode: service
 ---

@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 )
 
 // The accessors below return everything the watcher holds for a kind, in namespace/name order
@@ -199,6 +200,17 @@ func (w *Watcher) CachePolicy(namespace, name string) *cachepolicy.CachePolicy {
 	})
 }
 
+// BackendTrafficPolicies returns every XBackendTrafficPolicy in scope, or nothing in a cluster
+// that does not serve the experimental kind
+func (w *Watcher) BackendTrafficPolicies() []*gwapix.XBackendTrafficPolicy {
+	return collect(w, func(s *scope) ([]*gwapix.XBackendTrafficPolicy, error) {
+		if s.traffic == nil {
+			return nil, nil
+		}
+		return s.traffic.List(labels.Everything())
+	})
+}
+
 // Ingresses returns every Ingress in scope
 func (w *Watcher) Ingresses() []*netv1.Ingress {
 	return collect(w, func(s *scope) ([]*netv1.Ingress, error) {
@@ -286,6 +298,17 @@ func (w *Watcher) Service(namespace, name string) *corev1.Service {
 func (w *Watcher) Secret(namespace, name string) *corev1.Secret {
 	return lookup(w, namespace, func(s *scope) (*corev1.Secret, error) {
 		return s.secretLst.Secrets(namespace).Get(name)
+	})
+}
+
+// KeySecret returns one Secret labeled annotations.LabelStickyKey from cache, or nil when it is absent,
+// unlabeled, out of scope, or the cluster does not serve the Gateway API, whose classes name them
+func (w *Watcher) KeySecret(namespace, name string) *corev1.Secret {
+	return lookup(w, namespace, func(s *scope) (*corev1.Secret, error) {
+		if s.keySecrets == nil {
+			return nil, errNoLister
+		}
+		return s.keySecrets.Secrets(namespace).Get(name)
 	})
 }
 

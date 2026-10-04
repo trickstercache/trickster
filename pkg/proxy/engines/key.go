@@ -33,6 +33,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	proxyurls "github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 )
 
@@ -58,12 +59,61 @@ func DerivePathCacheKey(path, method, identity string) string {
 // its source, so elements of different kinds sharing a name cannot collide
 const (
 	compAuth     byte = 'a' // the effective client Authorization credential
-	compBody     byte = 'b' // the complete request body for provider-owned routes
+	compBody     byte = 'b' // the sha256 digest of the request body
 	compForm     byte = 'f' // a body field named in cache_key_form_fields
 	compHeader   byte = 'h' // a header named in cache_key_headers
+	compMeta     byte = 'm' // a field describing a QUERY body (RFC 10008 2.7)
 	compOverride byte = 'o' // a provider-supplied cache key element
 	compParam    byte = 'p' // a query parameter named in cache_key_params
 )
+
+const bodyComponentName = "body"
+
+// a fixed-size digest keeps a large body from being copied into the key twice
+func bodyDigest(b []byte) string {
+	d := sha256.Sum256(b)
+	return string(d[:])
+}
+
+// RFC 10008 2.7: a QUERY is keyed on its content and the fields that describe it; the
+// media type is normalized since its case is insignificant
+func (b *keyBuilder) addQueryContent(r *http.Request, body []byte) {
+	b.add(compBody, bodyComponentName, bodyDigest(body))
+	b.add(compMeta, headers.NameContentType,
+		normalizeMediaType(r.Header.Get(headers.NameContentType)))
+	if ce := r.Header.Get(headers.NameContentEncoding); ce != "" {
+		b.add(compMeta, headers.NameContentEncoding, strings.ToLower(ce))
+	}
+}
+
+// the type and parameter names are lower-cased and optional whitespace dropped; parameter
+// values stay as sent, since some (e.g., boundary) are case-sensitive
+func normalizeMediaType(ct string) string {
+	if ct == "" {
+		return ""
+	}
+	var sb strings.Builder
+	sb.Grow(len(ct))
+	var i int
+	for part := range strings.SplitSeq(ct, ";") {
+		part = strings.TrimSpace(part)
+		i++
+		if part == "" {
+			continue
+		}
+		if i > 1 {
+			sb.WriteByte(';')
+			if name, value, ok := strings.Cut(part, "="); ok {
+				sb.WriteString(strings.ToLower(strings.TrimSpace(name)))
+				sb.WriteByte('=')
+				sb.WriteString(strings.TrimSpace(value))
+				continue
+			}
+		}
+		sb.WriteString(strings.ToLower(part))
+	}
+	return sb.String()
+}
 
 type keyComponent struct {
 	class byte
@@ -132,7 +182,11 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	if pc == nil {
 		var kb keyBuilder
-		return kb.sum(pr.URL.Path, upstreamKeyPart,
+		if pr.Method == methods.MethodQuery {
+			b, _ := request.GetBody(pr.Request)
+			kb.addQueryContent(pr.Request, b)
+		}
+		return kb.sum(pr.URL.EscapedPath(), upstreamKeyPart,
 			pr.corsCacheKeyPart(pr.Request), extra)
 	}
 
@@ -162,7 +216,11 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	if qp == nil {
 		qp, b, _ = params.GetRequestValues(r)
 	}
-	if pc.CacheKeyBody && b == nil && methods.HasBody(r.Method) {
+	isQuery := r.Method == methods.MethodQuery
+	if isQuery {
+		// the raw content, since form parsing drops what is not a field
+		b, _ = request.GetBody(r)
+	} else if pc.CacheKeyBody && b == nil && methods.HasBody(r.Method) {
 		_, b, _ = params.GetRequestValues(r)
 	}
 	// A provider may expose a stable pre-rewrite body identity. This is
@@ -177,7 +235,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 	}
 
 	if pc.KeyHasher != nil {
-		key := pc.KeyHasher(r.URL.Path, qp, r.Header, b, trq, extra)
+		key := pc.KeyHasher(r.URL.EscapedPath(), qp, r.Header, b, trq, extra)
 		if cors := pr.corsCacheKeyPart(r); upstreamKeyPart != "" || cors != "" {
 			var kb keyBuilder
 			return kb.sum(key, upstreamKeyPart, cors)
@@ -189,17 +247,19 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 		len(pc.CacheKeyHeaders)+len(pc.CacheKeyFormFields)+ckeCnt)}
 	// overrides contains query data modified by the backend provider when
 	// parsing the time range (e.g., a tokenized version of the query statement)
-	var overrides map[string]string
+	var overrides, paramValues map[string]string
 	if trq != nil {
-		overrides = trq.CacheKeyElements
+		overrides, paramValues = trq.CacheKeyElements, trq.KeyParamValues
 	}
 
 	if v := r.Header.Get(headers.NameAuthorization); v != "" &&
 		!pc.ReplacesHeader(headers.NameAuthorization) && !pr.omitAuthFromKey {
 		kb.add(compAuth, headers.NameAuthorization, v)
 	}
-	if pc.CacheKeyBody {
-		kb.add(compBody, "body", string(b))
+	if isQuery {
+		kb.addQueryContent(r, b)
+	} else if pc.CacheKeyBody {
+		kb.add(compBody, bodyComponentName, bodyDigest(b))
 	}
 
 	if len(pc.CacheKeyParams) == 1 && pc.CacheKeyParams[0] == "*" {
@@ -207,10 +267,10 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 			if _, ok := overrides[p]; ok {
 				continue
 			}
-			if pc.ReplacesParam(p) {
+			if pc.ReplacesParam(p) || slices.Contains(pc.CacheKeyParamsExcluded, p) {
 				continue
 			}
-			kb.addValues(compParam, p, qp[p])
+			kb.addValues(compParam, p, keyParamValues(p, qp[p], paramValues))
 		}
 	} else {
 		for _, p := range pc.CacheKeyParams {
@@ -221,7 +281,7 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 				continue
 			}
 			if vv := qp[p]; len(vv) > 0 {
-				kb.addValues(compParam, p, vv)
+				kb.addValues(compParam, p, keyParamValues(p, vv, paramValues))
 			}
 		}
 	}
@@ -282,8 +342,15 @@ func (pr *proxyRequest) DeriveCacheKey(extra string) string {
 
 	// the identity part is the precomputed digest of the configured
 	// request_headers/request_params, so rotating either rotates the key
-	return kb.sum(pr.URL.Path, r.Method, upstreamKeyPart,
+	return kb.sum(pr.URL.EscapedPath(), r.Method, upstreamKeyPart,
 		pr.corsCacheKeyPart(r), pc.IdentityKeyPart(), extra)
+}
+
+func keyParamValues(name string, values []string, replacements map[string]string) []string {
+	if v, ok := replacements[name]; ok && len(values) == 1 {
+		return []string{v}
+	}
+	return values
 }
 
 // upstreamIdentityCacheKey names what the request reaches beyond the configured upstream: an

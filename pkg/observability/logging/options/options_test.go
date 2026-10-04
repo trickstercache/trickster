@@ -186,3 +186,36 @@ func TestRotationEqual(t *testing.T) {
 	b.Compress = &compress
 	require.False(t, a.RotationEqual(b))
 }
+
+func TestRedactYAMLCloneAndValidate(t *testing.T) {
+	t.Parallel()
+
+	const cookie = "grafana_session"
+	doc := `
+log_level: info
+redact:
+  enabled: false
+  query_params: [session_id]
+  headers: [X-Internal-Token]
+  cookies: [` + cookie + `]
+`
+	o := New()
+	require.NoError(t, yaml.Unmarshal([]byte(doc), o))
+	require.NotNil(t, o.Redact)
+	require.False(t, o.Redact.IsEnabled())
+	require.Equal(t, []string{"session_id"}, o.Redact.QueryParams)
+	require.Equal(t, []string{"X-Internal-Token"}, o.Redact.Headers)
+	require.Equal(t, []string{cookie}, o.Redact.Cookies)
+
+	c := o.Clone()
+	c.Redact.Cookies[0] = "changed"
+	require.Equal(t, cookie, o.Redact.Cookies[0])
+
+	ok, err := o.Validate()
+	require.True(t, ok)
+	require.NoError(t, err)
+	o.Redact.Headers = append(o.Redact.Headers, "")
+	ok, err = o.Validate()
+	require.False(t, ok)
+	require.ErrorIs(t, err, ErrInvalidRedactName)
+}

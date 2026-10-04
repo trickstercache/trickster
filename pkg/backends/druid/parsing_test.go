@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/druid/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 const testInterval = "2024-01-01T00:00:00Z/2024-01-02T00:00:00Z"
@@ -146,7 +147,7 @@ func TestParseTimeRangeQueryStructuredGranularities(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			interval := testInterval
 			if test.wantReason == "" {
-				start := truncateToPhase(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				start := timeseries.FloorToGrid(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 					test.step, test.phase)
 				interval = start.Format(time.RFC3339Nano) + "/" +
 					start.Add(2*test.step).Format(time.RFC3339Nano)
@@ -162,8 +163,10 @@ func TestParseTimeRangeQueryStructuredGranularities(t *testing.T) {
 				}
 				return
 			}
-			if err != nil || trq.Step != test.step || trq.Phase != test.phase {
-				t.Fatalf("got step=%s phase=%s err=%v", trq.Step, trq.Phase, err)
+			if err != nil || trq.Step != test.step || trq.Phase != test.phase ||
+				trq.SampleModel != timeseries.SampleModelBucket {
+				t.Fatalf("got step=%s phase=%s model=%d err=%v", trq.Step, trq.Phase,
+					trq.SampleModel, err)
 			}
 		})
 	}
@@ -231,12 +234,11 @@ func TestParseTimeRangeQueryFallbacks(t *testing.T) {
 		{"invalid context", http.MethodPost, headers.ValueApplicationJSON, `{"queryType":"timeseries","dataSource":"wiki","intervals":["` + testInterval + `"],"granularity":"minute","context":"bad"}`, true, reasonInvalidContext},
 		{"multi interval", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), `[`+strconvQuote(testInterval)+`]`, `[`+strconvQuote(testInterval)+`,"2024-02-01/2024-02-02"]`, 1), true, reasonMultipleIntervals},
 		{"invalid interval", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "not-an-interval", 1), true, reasonInvalidInterval},
-		{"unaligned interval start", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "2024-01-01T00:00:30Z/2024-01-02T00:00:00Z", 1), true, reasonUnalignedInterval},
-		{"unaligned interval end", http.MethodPost, headers.ValueApplicationJSON, strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, "2024-01-01T00:00:00Z/2024-01-02T00:00:30Z", 1), true, reasonUnalignedInterval},
 		{"unknown granularity", http.MethodPost, headers.ValueApplicationJSON, druidQuery("timeseries", `"fortnight"`), true, reasonUnsupportedGranularity},
 		{"by segment", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("topN", `"minute"`), "}") + `,"context":{"bySegment":true}}`, true, reasonUnsupportedShape},
 		{"numeric timestamps", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"serializeDateTimeAsLong":true}}`, true, reasonUnsupportedShape},
 		{"timeseries grand total", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"context":{"grandTotal":true}}`, true, reasonUnsupportedShape},
+		{"timeseries limit", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("timeseries", `"minute"`), "}") + `,"limit":5}`, true, reasonUnsupportedShape},
 		{"groupBy array", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"context":{"resultAsArray":true}}`, true, reasonUnsupportedShape},
 		{"groupBy dimension-first order", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"context":{"sortByDimsFirst":true}}`, true, reasonUnsupportedShape},
 		{"groupBy limit", http.MethodPost, headers.ValueApplicationJSON, strings.TrimSuffix(druidQuery("groupBy", `"minute"`), "}") + `,"limitSpec":{"type":"default","limit":10}}`, true, reasonUnsupportedShape},
@@ -280,5 +282,36 @@ func TestParseTimeRangeQueryConvertsHalfOpenExtent(t *testing.T) {
 	wantEnd := wantStart.Add(2 * time.Minute)
 	if !trq.Extent.Start.Equal(wantStart) || !trq.Extent.End.Equal(wantEnd) {
 		t.Fatalf("extent = %s, want [%s, %s]", trq.Extent.String(), wantStart, wantEnd)
+	}
+	// the requested range keeps the interval's exclusive end
+	if !trq.Requested.Start.Equal(wantStart) || !trq.Requested.End.Equal(wantStart.Add(3*time.Minute)) ||
+		trq.Requested.EndInclusive {
+		t.Fatalf("requested = %+v", trq.Requested)
+	}
+	if trq.StepAlignments != timeseries.StepAlignmentAll || trq.StepAlignment != timeseries.StepAlignmentPartial {
+		t.Fatalf("step alignment = %s of %s", trq.StepAlignment, trq.StepAlignments)
+	}
+}
+
+func TestParseTimeRangeQueryPlansUnalignedIntervals(t *testing.T) {
+	// the engine plans an unaligned interval's edges by mode, so it is a delta plan like any other
+	for _, interval := range []string{
+		"2024-01-01T00:00:30Z/2024-01-01T00:03:00Z", "2024-01-01T00:00:00Z/2024-01-01T00:02:30Z",
+		"2024-01-01T00:00:10Z/2024-01-01T00:00:20Z",
+	} {
+		body := strings.Replace(druidQuery("timeseries", `"minute"`), testInterval, interval, 1)
+		r := httptest.NewRequest(http.MethodPost, "http://trickster/druid/v2", strings.NewReader(body))
+		r.Header.Set(headers.NameContentType, headers.ValueApplicationJSON)
+		trq, _, _, err := (&Client{}).ParseTimeRangeQuery(r)
+		if err != nil {
+			t.Fatalf("%s: %v", interval, err)
+		}
+		start, end, _ := strings.Cut(interval, "/")
+		if trq.Requested.Start.Format(time.RFC3339) != start || trq.Requested.End.Format(time.RFC3339) != end {
+			t.Errorf("%s: requested = %+v", interval, trq.Requested)
+		}
+		if !trq.Extent.Start.Equal(trq.Requested.Start.Truncate(time.Minute)) {
+			t.Errorf("%s: extent = %s", interval, trq.Extent.String())
+		}
 	}
 }

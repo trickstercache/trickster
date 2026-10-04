@@ -337,7 +337,7 @@ func TestFromRecordsSkipsNilRecords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n := len(ds.Results[0].SeriesList[0].Points); n != 1 {
+	if n := ds.Results[0].SeriesList[0].PointCount(); n != 1 {
 		t.Fatalf("points = %d, want 1", n)
 	}
 	if _, err := FromRecords(schema, nil, nil); !errors.Is(err, ErrNotRepresentable) {

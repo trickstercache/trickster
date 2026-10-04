@@ -41,7 +41,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 	"github.com/trickstercache/trickster/v2/pkg/kube/controller"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
+	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/stretchr/testify/require"
 	kubefake "k8s.io/client-go/kubernetes/fake"
@@ -685,6 +690,100 @@ func TestKubeSupervisorResyncsOnCacheChange(t *testing.T) {
 	require.Equal(t, int32(1), f.at(0).resyncs.Load())
 }
 
+func compiledACL(t *testing.T, opts ipacl.Options) *ipacl.Options {
+	t.Helper()
+	list, _, err := ipacl.Compile(opts)
+	require.NoError(t, err)
+	opts.Compiled = list
+	return &opts
+}
+
+func TestKubeSupervisorResyncsOnIPACLEligibility(t *testing.T) {
+	// a running controller retranslates when the eligible or the defined lists change: a peer or drop list is
+	// defined, not eligible, and a CIDR edit to an eligible one changes neither
+	f := install(t)
+	s, _ := newTestSupervisor(t)
+	apply := func(lists ipacl.Lookup) {
+		t.Helper()
+		conf := kubeConfig()
+		conf.IPACLs = lists
+		s.Apply(conf, nil)
+	}
+	wait := func(n int32, msg string) {
+		t.Helper()
+		eventually(t, func() bool { return f.at(0).resyncs.Load() == n }, msg)
+		require.Equal(t, 1, f.count(), "an access-list edit must not restart the controller")
+	}
+	office := func(prefix, source, action string) *ipacl.Options {
+		return compiledACL(t, ipacl.Options{Allow: []string{prefix}, Source: source, Action: action})
+	}
+
+	apply(ipacl.Lookup{
+		"office": office("10.0.0.0/8", "", ""),
+		"edge":   office("10.0.0.0/8", "peer", ""),
+		"wall":   office("10.0.0.0/8", "", "drop"),
+		"ghost":  nil,
+	})
+	eventually(t, func() bool { return f.count() == 1 }, "controller not started")
+	require.Equal(t, int32(0), f.at(0).resyncs.Load())
+	require.True(t, s.knownNames().IPACLs.Contains("office"))
+	require.False(t, s.knownNames().IPACLs.Contains("edge"))
+	require.False(t, s.knownNames().IPACLs.Contains("wall"))
+	require.True(t, s.knownNames().DefinedIPACLs.Contains("office"))
+	require.True(t, s.knownNames().DefinedIPACLs.Contains("edge"))
+	require.True(t, s.knownNames().DefinedIPACLs.Contains("wall"))
+	require.False(t, s.knownNames().DefinedIPACLs.Contains("ghost"))
+
+	// the same names, different prefixes: neither set changes
+	apply(ipacl.Lookup{
+		"office": office("192.0.2.0/24", "", ""),
+		"edge":   office("192.0.2.0/24", "peer", ""),
+		"wall":   office("192.0.2.0/24", "", "drop"),
+	})
+	time.Sleep(20 * time.Millisecond)
+	require.Equal(t, int32(0), f.at(0).resyncs.Load())
+
+	// removing a drop list changes only the defined set
+	apply(ipacl.Lookup{
+		"office": office("10.0.0.0/8", "", ""),
+		"edge":   office("10.0.0.0/8", "peer", ""),
+	})
+	wait(1, "removing a list did not ask the controller to translate again")
+	require.False(t, s.knownNames().DefinedIPACLs.Contains("wall"))
+	require.True(t, s.knownNames().IPACLs.Contains("office"))
+
+	// adding a peer list changes only the defined set
+	apply(ipacl.Lookup{
+		"office": office("10.0.0.0/8", "", ""),
+		"edge":   office("10.0.0.0/8", "peer", ""),
+		"gate":   office("10.0.0.0/8", "peer", ""),
+	})
+	wait(2, "adding a list did not ask the controller to translate again")
+	require.True(t, s.knownNames().DefinedIPACLs.Contains("gate"))
+	require.False(t, s.knownNames().IPACLs.Contains("gate"))
+
+	// office becomes peer: eligible loses it, and it stays defined
+	apply(ipacl.Lookup{
+		"office": office("10.0.0.0/8", "peer", ""),
+		"edge":   office("10.0.0.0/8", "peer", ""),
+		"gate":   office("10.0.0.0/8", "peer", ""),
+	})
+	wait(3, "losing eligibility did not ask the controller to translate again")
+	require.False(t, s.knownNames().IPACLs.Contains("office"))
+	require.True(t, s.knownNames().DefinedIPACLs.Contains("office"))
+
+	// office is eligible again
+	apply(ipacl.Lookup{
+		"office": office("10.0.0.0/8", "", ""),
+		"edge":   office("10.0.0.0/8", "peer", ""),
+		"gate":   office("10.0.0.0/8", "peer", ""),
+	})
+	wait(4, "regaining eligibility did not ask the controller to translate again")
+	require.True(t, s.knownNames().IPACLs.Contains("office"))
+	require.True(t, s.knownNames().DefinedIPACLs.Contains("office"))
+	require.False(t, s.knownNames().IPACLs.Contains("edge"))
+}
+
 func TestKubeSupervisorSharesCertificateState(t *testing.T) {
 	// Every generation shares one certificate inventory, so a controller built
 	// from a new configuration can withdraw what its predecessor installed
@@ -992,6 +1091,24 @@ func TestProviderPaths(t *testing.T) {
 	require.Empty(t, readProviderPaths(failing))
 }
 
+func TestProviderStepAlignments(t *testing.T) {
+	// each time series provider's supported modes are read from its own client
+	for _, name := range providers.HTTPTimeSeriesProviderNames() {
+		require.NotZero(t, providerStepAlignments(name), name)
+	}
+	require.Zero(t, providerStepAlignments(providers.Prometheus)&timeseries.StepAlignmentPartial)
+	require.NotZero(t, providerStepAlignments(providers.ClickHouse)&timeseries.StepAlignmentPartial)
+	require.Zero(t, providerStepAlignments(providers.ReverseProxyCacheShort))
+	failing := rt.Lookup{
+		providers.Prometheus: func(string, *bo.Options, http.Handler, cache.Cache,
+			backends.Backends, rt.Lookup,
+		) (backends.Backend, error) {
+			return nil, errors.New("no client")
+		},
+	}
+	require.Empty(t, readProviderStepAlignments(failing))
+}
+
 func TestStartReadinessWaitsForController(t *testing.T) {
 	// With a kubernetes section, the readiness endpoint reports not programmed from the moment
 	// the listeners answer until the controller's first translation is applied, then ready
@@ -1052,4 +1169,27 @@ func getReady(t *testing.T, port int) (int, string) {
 	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	return resp.StatusCode, string(b)
+}
+
+func TestSetKnownNamesGeoACLs(t *testing.T) {
+	// a stream route can take only a geo ACL whose locator places a bare address, and adding or removing a geo
+	// ACL republishes the names, so routes naming it are translated again
+	const anyRoute, httpOnly = "north-america", "edge-countries"
+	s := &kubeSupervisor{}
+	conf := config.NewConfig()
+	require.True(t, s.setKnownNames(conf))
+	require.False(t, s.setKnownNames(conf))
+	conf.GeoLocators = geolocopts.Lookup{
+		geolocopts.DefaultName: {Provider: geoproviders.Geofeed},
+		"edge":                 {Provider: geoproviders.Header},
+	}
+	conf.GeoACLs = geoaclopts.Lookup{anyRoute: {}, httpOnly: {GeoLocatorName: "edge"}, "unset": nil}
+	require.True(t, s.setKnownNames(conf))
+	known := s.known.Load()
+	require.True(t, known.GeoACLs.Contains(anyRoute) && known.GeoACLs.Contains(httpOnly))
+	require.True(t, known.StreamGeoACLs.Contains(anyRoute))
+	require.False(t, known.StreamGeoACLs.Contains(httpOnly))
+	require.False(t, s.setKnownNames(conf))
+	delete(conf.GeoACLs, anyRoute)
+	require.True(t, s.setKnownNames(conf))
 }

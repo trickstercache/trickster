@@ -124,8 +124,11 @@ func TestParseZeroFallback(t *testing.T) {
 	}{
 		{"count(up) or vector(0)", true, aggregation.Count, "up", AggregationGrouping{}, true},
 		{"(count((up))) or (vector((0)))", true, aggregation.Count, "up", AggregationGrouping{}, true},
-		{"sum by (job) (up + down) or vector(-0)", true, aggregation.Sum, "up + down",
-			AggregationGrouping{Labels: []string{"job"}}, true},
+		{
+			"sum by (job) (up + down) or vector(-0)", true, aggregation.Sum, "up + down",
+			AggregationGrouping{Labels: []string{"job"}},
+			true,
+		},
 		{"count(up) or ignoring () vector(0)", true, aggregation.Count, "up", AggregationGrouping{}, true},
 		{"count(up) or on () vector(0)", true, aggregation.Count, "up", AggregationGrouping{}, false},
 		{"max(up) or ignoring (job) vector(0)", true, aggregation.Maximum, "up", AggregationGrouping{}, false},

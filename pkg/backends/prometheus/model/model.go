@@ -17,12 +17,12 @@
 package model
 
 import (
-	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 type ResultType string
@@ -53,6 +53,15 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 	if w == nil {
 		return
 	}
+	startResponse(w, httpStatus)
+	jw := tbytes.NewChunkWriter(w)
+	jw.Buf = e.appendStart(jw.Buf)
+	// the envelope's opening has no caller to report a failed write to, as before
+	_ = jw.Close()
+}
+
+// sets the status and Content-Type of a response writer, which must precede its body
+func startResponse(w io.Writer, httpStatus int) {
 	if httpStatus == 0 {
 		httpStatus = http.StatusOK
 	}
@@ -61,23 +70,30 @@ func (e *Envelope) StartMarshal(w io.Writer, httpStatus int) {
 		h.Set(headers.NameContentType, headers.ValueApplicationJSON+"; charset=UTF-8")
 		rw.WriteHeader(httpStatus)
 	}
-	sb, _ := json.Marshal(e.Status)
-	fmt.Fprintf(w, `{"status":%s`, sb)
+}
 
+func (e *Envelope) appendStart(dst []byte) []byte {
+	dst = append(dst, `{"status":`...)
+	dst = tstrings.AppendJSON(dst, e.Status)
 	if e.Error != "" {
-		b, _ := json.Marshal(e.Error)
-		fmt.Fprintf(w, `,"error":%s`, b)
+		dst = append(dst, `,"error":`...)
+		dst = tstrings.AppendJSON(dst, e.Error)
 	}
-
 	if e.ErrorType != "" {
-		b, _ := json.Marshal(e.ErrorType)
-		fmt.Fprintf(w, `,"errorType":%s`, b)
+		dst = append(dst, `,"errorType":`...)
+		dst = tstrings.AppendJSON(dst, e.ErrorType)
 	}
-
 	if len(e.Warnings) > 0 {
-		b, _ := json.Marshal(e.Warnings)
-		fmt.Fprintf(w, `,"warnings":%s`, b)
+		dst = append(dst, `,"warnings":[`...)
+		for i, w := range e.Warnings {
+			if i > 0 {
+				dst = append(dst, ',')
+			}
+			dst = tstrings.AppendJSON(dst, w)
+		}
+		dst = append(dst, ']')
 	}
+	return dst
 }
 
 // Merge combines the passed envelope data with the subject data

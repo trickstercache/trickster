@@ -17,9 +17,9 @@
 package engines
 
 import (
-	"io"
 	"net/http"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -51,7 +51,7 @@ func ProxyAndInvalidate(w http.ResponseWriter, r *http.Request) {
 	if writer == nil || reader == nil {
 		return
 	}
-	if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
+	if _, err := tbytes.Copy(streamWriter(writer, resp), reader); err != nil {
 		logger.Error("proxy response copy failed",
 			logging.Pairs{keys.Error: err.Error()})
 		abortOnCopyError(writer, r, err)
@@ -76,7 +76,7 @@ func InvalidateTargetURI(r *http.Request) {
 	}
 	o := rsc.BackendOptions
 	authed := r.Header.Get(headers.NameAuthorization) != ""
-	for _, m := range methods.CacheableHTTPMethods() {
+	for _, m := range methods.GetAndHead() {
 		cr := r.Clone(r.Context())
 		cr.Method = m
 		// the write's body is neither part of a read's cache key nor still

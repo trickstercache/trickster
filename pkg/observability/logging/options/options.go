@@ -18,11 +18,13 @@ package options
 
 import (
 	"errors"
+	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -38,11 +40,16 @@ type Options struct {
 	Retention *manager.RetentionOptions `yaml:"retention,omitempty"`
 	// Compress indicates whether rotated archives are gzipped (default true)
 	Compress *bool `yaml:"compress,omitempty"`
+	// Redact configures how credentials are masked in access logs and engine logs
+	Redact *redact.Options `yaml:"redact,omitempty"`
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var ErrInvalidLogLevel = errors.New("invalid log level")
+var (
+	ErrInvalidLogLevel   = errors.New("invalid log level")
+	ErrInvalidRedactName = errors.New("logging.redact names cannot be empty")
+)
 
 // New returns a new Options with default values
 func New() *Options {
@@ -58,6 +65,7 @@ func (o *Options) Clone() *Options {
 	out.Rotation = o.Rotation.Clone()
 	out.Retention = o.Retention.Clone()
 	out.Compress = pointers.Clone(o.Compress)
+	out.Redact = o.Redact.Clone()
 	return out
 }
 
@@ -87,7 +95,12 @@ func (o *Options) Initialize(_ string) error {
 func (o *Options) Validate() (bool, error) {
 	switch strings.ToLower(o.LogLevel) {
 	case level.Error, level.Warn, level.Fatal, level.Info, level.Debug:
-		return true, nil
+	default:
+		return false, ErrInvalidLogLevel
 	}
-	return false, ErrInvalidLogLevel
+	if r := o.Redact; r != nil &&
+		(slices.Contains(r.QueryParams, "") || slices.Contains(r.Headers, "") || slices.Contains(r.Cookies, "")) {
+		return false, ErrInvalidRedactName
+	}
+	return true, nil
 }

@@ -26,7 +26,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/trickstercache/mockster/pkg/testutil"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
@@ -44,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks"
 )
 
 const (
@@ -107,10 +107,10 @@ func NewTestInstance(
 	var ts *httptest.Server
 	switch backendProvider {
 	case PromSimBackendProvider:
-		ts = testutil.NewTestServer()
+		ts = httptest.NewServer(mocks.NewRouter())
 		backendProvider = PrometheusBackendProvider
 	case RangeSimBackendProvider:
-		ts = testutil.NewTestServer()
+		ts = httptest.NewServer(mocks.NewRouter())
 		backendProvider = RPCBackendProvider
 	default:
 		isBasicTestServer = true

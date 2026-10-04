@@ -17,6 +17,9 @@
 package loaders
 
 import (
+	"fmt"
+
+	ae "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/errors"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders/csv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/loaders/htpasswd"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
@@ -29,5 +32,5 @@ func LoadData(path string, ff types.CredentialsFileFormat) (types.CredentialsMan
 	case types.CSV, types.CSVNoHeader:
 		return csv.LoadCSV(path, ff)
 	}
-	return nil, nil
+	return nil, fmt.Errorf("%w: %q", ae.ErrInvalidUsersFileFormat, ff)
 }

@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
@@ -40,6 +41,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
@@ -336,7 +338,7 @@ func (s *kubeSupervisor) build(generation uint64, opts *kubecfg.Options,
 		CertState:     s.certState,
 		KnownNames:    s.knownNames,
 		Tracer:        s.tracer.Load,
-		ProviderPaths: providerPaths,
+		ProviderPaths: providerPaths, ProviderStepAlignments: providerStepAlignments,
 	})
 }
 
@@ -348,23 +350,48 @@ var providerPathsOnce = sync.OnceValue(func() map[string]po.List {
 
 func readProviderPaths(factories rt.Lookup) map[string]po.List {
 	out := make(map[string]po.List)
+	eachProviderClient(factories, func(name string, client backends.Backend, o *bo.Options) {
+		out[name] = client.DefaultPathConfigs(o)
+	})
+	return out
+}
+
+func eachProviderClient(factories rt.Lookup, visit func(string, backends.Backend, *bo.Options)) {
+	// a default client of each time series provider reached over HTTP
 	for name, factory := range factories {
 		if !providers.IsSupportedHTTPTimeSeriesProvider(name) {
 			continue
 		}
 		o := bo.New()
 		o.Provider = name
-		client, err := factory(name, o, nil, nil, nil, factories)
-		if err != nil {
-			continue
+		if client, err := factory(name, o, nil, nil, nil, factories); err == nil {
+			visit(name, client, o)
 		}
-		out[name] = client.DefaultPathConfigs(o)
 	}
-	return out
 }
 
 func providerPaths(provider string) po.List {
 	return providerPathsOnce()[provider]
+}
+
+// providerStepAlignmentsOnce reads the step alignment modes each time series provider supports once,
+// from the provider's own client
+var providerStepAlignmentsOnce = sync.OnceValue(func() map[string]timeseries.StepAlignment {
+	return readProviderStepAlignments(providerregistry.SupportedProviders())
+})
+
+func readProviderStepAlignments(factories rt.Lookup) map[string]timeseries.StepAlignment {
+	out := make(map[string]timeseries.StepAlignment)
+	eachProviderClient(factories, func(name string, client backends.Backend, _ *bo.Options) {
+		if sa, ok := client.(timeseries.StepAligner); ok {
+			out[name], _ = sa.StepAlignments()
+		}
+	})
+	return out
+}
+
+func providerStepAlignments(provider string) timeseries.StepAlignment {
+	return providerStepAlignmentsOnce()[provider]
 }
 
 func (s *kubeSupervisor) setTracer(opts *kubecfg.Options, tracers tracing.Tracers) {
@@ -406,6 +433,10 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		Tracers:        sets.New[string](nil),
 		Rewriters:      sets.New[string](nil),
 		Authenticators: sets.New[string](nil),
+		GeoACLs:        sets.New[string](nil),
+		StreamGeoACLs:  sets.New[string](nil),
+		IPACLs:         sets.New[string](nil),
+		DefinedIPACLs:  sets.New[string](nil),
 	}
 	if conf != nil {
 		for name := range conf.Caches {
@@ -423,6 +454,24 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		for name := range conf.Authenticators {
 			next.Authenticators.Set(name)
 		}
+		for name, o := range conf.GeoACLs {
+			if o == nil {
+				continue
+			}
+			next.GeoACLs.Set(name)
+			if conf.GeoLocators.ReadsAddresses(o.LocatorName()) {
+				next.StreamGeoACLs.Set(name)
+			}
+		}
+		for name, def := range conf.IPACLs {
+			if def == nil {
+				continue
+			}
+			next.DefinedIPACLs.Set(name)
+			if def.Compiled.GatesAnyBackend() {
+				next.IPACLs.Set(name)
+			}
+		}
 	}
 	previous := s.known.Swap(&next)
 	return previous == nil ||
@@ -430,7 +479,11 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.NegativeCaches, next.NegativeCaches) ||
 		!maps.Equal(previous.Tracers, next.Tracers) ||
 		!maps.Equal(previous.Rewriters, next.Rewriters) ||
-		!maps.Equal(previous.Authenticators, next.Authenticators)
+		!maps.Equal(previous.Authenticators, next.Authenticators) ||
+		!maps.Equal(previous.GeoACLs, next.GeoACLs) ||
+		!maps.Equal(previous.StreamGeoACLs, next.StreamGeoACLs) ||
+		!maps.Equal(previous.IPACLs, next.IPACLs) ||
+		!maps.Equal(previous.DefinedIPACLs, next.DefinedIPACLs)
 }
 
 func marshalKubeOptions(o *kubecfg.Options) []byte {

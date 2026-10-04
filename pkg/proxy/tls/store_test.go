@@ -312,3 +312,31 @@ func TestIndexSkipsUnroutableNames(t *testing.T) {
 		t.Fatalf("expected the scan to answer an unindexed name, got %v %v", cert, err)
 	}
 }
+
+func TestMatch(t *testing.T) {
+	e1 := testEntry(t, "e1", "www.example.com")
+	e2 := testEntry(t, "e2", "*.wild.example.com")
+	store := NewStore([]*Entry{e1, e2})
+	for sni, want := range map[string]*Entry{
+		"WWW.example.com.":     e1,
+		"a.wild.example.com":   e2,
+		"a.b.wild.example.com": nil,
+		"other.example.com":    nil,
+		"localhost":            nil,
+		"":                     nil,
+	} {
+		got := store.Match(sni)
+		if want == nil {
+			if got != nil {
+				t.Errorf("Match(%q) = a certificate; want nil", sni)
+			}
+			continue
+		}
+		if got != &want.Certificate {
+			t.Errorf("Match(%q) did not return the expected certificate", sni)
+		}
+	}
+	if (&certStore{}).Match("www.example.com") != nil {
+		t.Error("an empty store matched")
+	}
+}

@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
 	"github.com/trickstercache/trickster/v2/pkg/config/validate"
@@ -41,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/monitor"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
@@ -98,6 +100,7 @@ func Start(ctx context.Context, args ...string) error {
 		CertMonitor: monitor.New(),
 		Readiness:   &ready.State{},
 	}
+	si.ACME = acme.New(si.CertMonitor, si.Readiness)
 	hupFunc := newReloadFunc(si, args)
 	si.Reloader = hupFunc
 	autoReloader := bindAutoReloader(ctx, si, hupFunc)
@@ -108,6 +111,10 @@ func Start(ctx context.Context, args ...string) error {
 	// its first translation, and the flag is raised before any listener can answer a probe
 	if conf.Kubernetes.IsEnabled() {
 		si.Readiness.SetPending()
+	}
+	// a startup wait for ACME certificates is likewise raised before any probe can be answered
+	if conf.ACME.IsEnabled() && conf.ACME.WaitOnStartup > 0 {
+		si.Readiness.SetCertsPending()
 	}
 	// Serve with Config
 	err = setup.ApplyConfig(si, conf, clients, hupFunc, func() { os.Exit(1) }, si.Listeners)
@@ -129,6 +136,7 @@ func Start(ctx context.Context, args ...string) error {
 	}
 	autoReloader.Update(conf)
 	si.CertMonitor.Apply(conf, si.Listeners)
+	applyACME(si, conf)
 	// the controller starts last and asynchronously: its first translation reloads the daemon,
 	// which cannot happen until startup has released the configuration lock it still holds
 	kubeSup.Apply(conf, si.Tracers)
@@ -145,6 +153,7 @@ func Start(ctx context.Context, args ...string) error {
 		<-reloadsDone
 		autoReloader.Close()
 		si.CertMonitor.Close()
+		si.ACME.Close()
 		close(quiesced)
 	})
 	shutdown(si, quiesced)
@@ -189,13 +198,18 @@ func shutdown(si *instance.ServerInstance, quiesced <-chan struct{}) {
 }
 
 func stopWorkers(si *instance.ServerInstance) {
-	// A reload left running after a forced drain owns the workers. Process exit
-	// reclaims them, so shutdown never waits on the reload lock.
-	if !mtx.TryLock() {
+	if mtx.TryLock() {
+		setup.Shutdown(si)
+		mtx.Unlock()
 		return
 	}
-	setup.Shutdown(si)
-	mtx.Unlock()
+	// a reload left running after a forced drain, or another instance's startup, holds the
+	// lock, so the workers are stopped once it is released instead of shutdown waiting on it
+	safego.Go(reloadGoroutinePanic("stopWorkers", "shutdown"), func() {
+		mtx.Lock()
+		defer mtx.Unlock()
+		setup.Shutdown(si)
+	})
 }
 
 // Reload is the single reload orchestrator for every source (SIGHUP, the mgmt handler, the
@@ -265,6 +279,7 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 		si.Backends = oldClients
 		si.Caches = oldCaches
 		si.HealthChecker = oldHealthChecker
+		static.StartClients(oldClients)
 		metrics.ReloadFailuresTotal.Inc()
 		metrics.LastReloadSuccessful.Set(0)
 		metrics.ReloadDurationSeconds.Observe(time.Since(startTime).Seconds())
@@ -287,6 +302,7 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 		// continuity for unchanged certificate file sets
 		si.CertMonitor.Apply(newConf, si.Listeners)
 	}
+	applyACME(si, newConf)
 
 	if oldClients != nil {
 		// close idle now, then again after the drain so connections released by in-flight
@@ -313,6 +329,16 @@ func Reload(si *instance.ServerInstance, source string, args ...string) (bool, e
 	// controller was built from
 	notifyKubeSupervisor(si, newConf)
 	return true, nil
+}
+
+func applyACME(si *instance.ServerInstance, conf *config.Config) {
+	if si.ACME == nil {
+		return
+	}
+	if err := si.ACME.Apply(conf); err != nil {
+		logger.Error("acme certificate management could not be applied",
+			logging.Pairs{keys.Error: err.Error()})
+	}
 }
 
 func currentOverlay(si *instance.ServerInstance) *config.Overlay {

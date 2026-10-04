@@ -26,10 +26,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	mockprom "github.com/trickstercache/mockster/pkg/mocks/prometheus"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
@@ -38,7 +40,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/promsim"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
 
 // gatedTransport wraps an http.RoundTripper to add a gate (for synchronizing
@@ -47,10 +53,15 @@ type gatedTransport struct {
 	inner http.RoundTripper
 	gate  <-chan struct{}
 	hits  *atomic.Int64
+	// seen, when set, is told of every request as it is sent
+	seen func(*http.Request)
 }
 
 func (g *gatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	g.hits.Add(1)
+	if g.seen != nil {
+		g.seen(req)
+	}
 	<-g.gate
 	return g.inner.RoundTrip(req)
 }
@@ -182,7 +193,7 @@ func TestDeltaProxyCacheRequestMissThenHit(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -300,7 +311,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -378,7 +389,7 @@ func TestDeltaProxyCacheRequestRemoveStale(t *testing.T) {
 // 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 // 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-// 	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+// 	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 // 	u := r.URL
 // 	u.Path = "/prometheus/api/v1/query_range"
@@ -476,7 +487,7 @@ func TestDeltaProxyCacheRequestMarshalFailure(t *testing.T) {
 	}
 }
 
-func normalizeTime(t time.Time, d time.Duration) time.Time {
+func alignTime(t time.Time, d time.Duration) time.Time {
 	return time.Unix((t.Unix()/int64(d.Seconds()))*int64(d.Seconds()), 0)
 	// return t.Truncate(d)
 }
@@ -503,9 +514,9 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -536,12 +547,12 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
-	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -582,10 +593,10 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	// test partial hit (needing a lower fragment)
 	phitEnd := extn.Start.Add(-step)
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = normalizeTime(extr.Start, step)
+	extn.Start = alignTime(extr.Start, step)
 
 	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + "]"
-	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -624,18 +635,18 @@ func TestDeltaProxyCacheRequestPartialHit(t *testing.T) {
 	}
 
 	// test partial hit (needing both upper and lower fragments)
-	phitEnd = normalizeTime(extr.Start.Add(-step), step)
-	phitStart = normalizeTime(extr.End.Add(step), step)
+	phitEnd = alignTime(extr.Start.Add(-step), step)
+	phitStart = alignTime(extr.End.Add(step), step)
 
 	extr.Start = extr.Start.Add(time.Duration(-1) * time.Hour)
-	extn.Start = normalizeTime(extr.Start, step)
+	extn.Start = alignTime(extr.Start, step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour) // Extend the top by 1 hour to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched = "[" + timeseries.ExtentList{timeseries.Extent{Start: extn.Start, End: phitEnd}}.String() + ";" +
 		timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
 
-	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -697,10 +708,10 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
 	// First request: populate cache with successful data
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -736,9 +747,9 @@ func TestDeltaProxyCacheRequestPartialHitWithFailedExtents(t *testing.T) {
 	// Second request: partial hit - extend the upper range
 	// This should cause a partial hit where we need to fetch the new upper fragment.
 	// But we'll use a query that fails (queryReturnsBadGateway) for this fragment.
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(1) * time.Hour)
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	// The extent that we should fetch for the partial hit
 	extentToFetch := timeseries.Extent{Start: phitStart, End: extn.End}
@@ -800,9 +811,9 @@ func TestDeltayProxyCacheRequestDeltaFetchError(t *testing.T) {
 	end := now.Add(-time.Duration(12) * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -880,7 +891,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -921,7 +932,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched := fmt.Sprintf("[%s]", extn.String())
-	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
@@ -968,7 +979,7 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 	extn.End = extr.End.Truncate(step)
 
 	expectedFetched = fmt.Sprintf("[%s]", extn.String())
-	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
 		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 	r.URL = u
@@ -1004,124 +1015,117 @@ func TestDeltaProxyCacheRequestRangeMiss(t *testing.T) {
 }
 
 func TestDeltaProxyCacheRequestFastForward(t *testing.T) {
-	ts, w, r, rsc, err := setupTestHarnessDPC()
+	testDPCFastForward(t, false)
+}
+
+type dpcResponse struct {
+	code   int
+	body   string
+	header http.Header
+}
+
+func serveDPC(client *TestClient, r *http.Request) dpcResponse {
+	w := httptest.NewRecorder()
+	client.QueryRangeHandler(w, r)
+	resp := w.Result()
+	b, _ := io.ReadAll(resp.Body)
+	return dpcResponse{code: resp.StatusCode, body: string(b), header: resp.Header}
+}
+
+func testDPCFastForward(t *testing.T, chunked bool) {
+	t.Helper()
+	ts, _, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
-		t.Error(err)
+		t.Fatal(err)
 	}
 	defer closeTestHarness(ts, r)
+	rsc.CacheConfig.UseCacheChunking = chunked
 	rsc.CacheConfig.Provider = "test"
 
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
-
-	client.InstantCacheKey = "test-dpc-ff-key-instant"
-	client.RangeCacheKey = "test-dpc-ff-key-range"
-
 	o.FastForwardDisable = false
+	const step = 300 * time.Second
 
-	step := time.Duration(300) * time.Second
-
-	now := time.Now()
-	client.fftime = now.Truncate(time.Duration(o.FastForwardTTL))
-
-	extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
-	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
-
-	u := r.URL
-	u.Path = "/prometheus/api/v1/query_range"
-	u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
-		client.InstantCacheKey, client.RangeCacheKey,
-		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
-
-	modeler := client.testModeler()
-	expectedMatrix, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
-	em, err := modeler.WireUnmarshaler([]byte(expectedMatrix), nil)
-	if err != nil {
-		t.Error(err)
+	type attemptResult struct {
+		expected      string
+		first, second dpcResponse
 	}
-	em.SetExtents(timeseries.ExtentList{extn})
+	// fast-forward needs the request's step-aligned end to be the engine's step-aligned
+	// now, so an attempt that straddles a step boundary is retried with fresh cache keys
+	res, ok := stepwindow.Retry(step, 3, func(attempt int, now time.Time) attemptResult {
+		if attempt > 0 {
+			t.Logf("attempt %d straddled a step boundary; retrying", attempt)
+		}
+		client.InstantCacheKey = fmt.Sprintf("test-dpc-ff-key-instant-%d", attempt)
+		client.RangeCacheKey = fmt.Sprintf("test-dpc-ff-key-range-%d", attempt)
+		client.fftime = now.Truncate(time.Duration(o.PartialBucketTTL))
 
-	expectedVector, _, _ := mockprom.GetInstantData(queryReturnsOKNoLatency, client.fftime)
-	ev, err := modeler.WireUnmarshaler([]byte(expectedVector), nil)
-	if err != nil {
-		t.Error(err)
-	}
-	trq := &timeseries.TimeRangeQuery{Step: step}
-	ev.SetTimeRangeQuery(trq)
+		extr := timeseries.Extent{Start: now.Add(-time.Duration(12) * time.Hour), End: now}
+		extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	if len(ev.Extents()) == 1 && len(em.Extents()) > 0 &&
-		ev.Extents()[0].Start.Truncate(time.Second).After(em.Extents()[0].End) {
-		em.Merge(false, ev)
-	}
+		u := r.URL
+		u.Path = "/prometheus/api/v1/query_range"
+		u.RawQuery = fmt.Sprintf("instantKey=%s&rangeKey=%s&step=%d&start=%d&end=%d&query=%s",
+			client.InstantCacheKey, client.RangeCacheKey,
+			int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	em.SetExtents(nil)
-	b, err := modeler.WireMarshaler(em, nil, 200)
-	if err != nil {
-		t.Error(err)
-	}
+		modeler := client.testModeler()
+		expectedMatrix, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+		em, err := modeler.WireUnmarshaler([]byte(expectedMatrix), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		em.SetExtents(timeseries.ExtentList{extn})
 
-	expected := string(b)
+		expectedVector, _ := promsim.GetInstantData(queryReturnsOKNoLatency, client.fftime)
+		ev, err := modeler.WireUnmarshaler([]byte(expectedVector), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ev.SetTimeRangeQuery(&timeseries.TimeRangeQuery{Step: step})
 
-	client.QueryRangeHandler(w, r)
-	resp := w.Result()
+		if len(ev.Extents()) == 1 && len(em.Extents()) > 0 &&
+			ev.Extents()[0].Start.Truncate(time.Second).After(em.Extents()[0].End) {
+			em.Merge(false, ev)
+		}
 
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
+		em.SetExtents(nil)
+		b, err := modeler.WireMarshaler(em, nil, 200)
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), expected)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusKeyMiss})
-	if err != nil {
-		t.Error(err)
+		first := serveDPC(client, r)
+		// give time for the object to be written to cache in a separate goroutine from response
+		time.Sleep(time.Millisecond * 10)
+		// do it again and look for a cache hit on the timeseries and fast forward
+		second := serveDPC(client, r)
+		return attemptResult{expected: string(b), first: first, second: second}
+	})
+	if !ok {
+		t.Fatal("every fast-forward attempt straddled a step boundary")
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: status.StatusKeyMiss})
-	if err != nil {
-		t.Error(err)
-	}
-
-	// Give time for the object to be written to cache in a separate goroutine from response
-	time.Sleep(time.Millisecond * 10)
-
-	// do it again and look for a cache hit on the timeseries and fast forward
-
-	w = httptest.NewRecorder()
-	client.QueryRangeHandler(w, r)
-	resp = w.Result()
-
-	err = testStatusCodeMatch(resp.StatusCode, http.StatusOK)
-	if err != nil {
-		t.Error(err)
-	}
-
-	bodyBytes, err = io.ReadAll(resp.Body)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testStringMatch(string(bodyBytes), expected)
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: status.StatusHit})
-	if err != nil {
-		t.Error(err)
-	}
-
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: status.StatusHit})
-	if err != nil {
-		t.Error(err)
+	for i, c := range []struct {
+		resp          dpcResponse
+		status, ffsts string
+	}{
+		{res.first, status.StatusKeyMiss, status.StatusKeyMiss},
+		{res.second, status.StatusHit, status.StatusHit},
+	} {
+		if err := testStatusCodeMatch(c.resp.code, http.StatusOK); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		if err := testStringMatch(c.resp.body, res.expected); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		if err := testResultHeaderPartMatch(c.resp.header, map[string]string{keys.Status: c.status}); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
+		if err := testResultHeaderPartMatch(c.resp.header, map[string]string{keys.FFStatus: c.ffsts}); err != nil {
+			t.Errorf("request %d: %v", i+1, err)
+		}
 	}
 }
 
@@ -1146,7 +1150,7 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1177,8 +1181,36 @@ func TestDeltaProxyCacheRequestFastForwardUrlError(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: "err"})
+	// a range short of the latest point is never fast forwarded, so the request that fails isn't built
+	err = testResultHeaderPartMatch(resp.Header, map[string]string{keys.FFStatus: statusOff})
 	if err != nil {
+		t.Error(err)
+	}
+	requireLiveFastForwardError(t, false)
+}
+
+func requireLiveFastForwardError(t *testing.T, chunked bool) {
+	t.Helper()
+	ts, _, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	rsc.CacheConfig.UseCacheChunking, rsc.CacheConfig.Provider = chunked, "test"
+	client := rsc.BackendClient.(*TestClient)
+	const step = 300 * time.Second
+	// a range reaching the latest point is fast forwarded, so the request that fails reports err
+	resp, ok := stepwindow.Retry(step, 3, func(attempt int, now time.Time) dpcResponse {
+		u := r.URL
+		u.Path = "/prometheus/api/v1/query_range"
+		u.RawQuery = fmt.Sprintf("throw_ffurl_error=1&rangeKey=ff-err-%d&step=%d&start=%d&end=%d&query=%s",
+			attempt, int(step.Seconds()), now.Add(-time.Hour).Unix(), now.Unix(), queryReturnsOKNoLatency)
+		return serveDPC(client, r)
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a step boundary")
+	}
+	if err := testResultHeaderPartMatch(resp.header, map[string]string{keys.FFStatus: statusErr}); err != nil {
 		t.Error(err)
 	}
 }
@@ -1206,7 +1238,7 @@ func TestDeltaProxyCacheRequestWithRefresh(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1298,7 +1330,7 @@ func TestDeltaProxyCacheRequestWithUnmarshalAndUpstreamErrors(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1494,7 +1526,7 @@ func TestDeltaProxyCacheRequestOutOfWindow(t *testing.T) {
 	end := time.Unix(1800, 0)
 
 	// we still expect the same results
-	expected, _, _ := mockprom.GetTimeSeriesData(query, start, end, step)
+	expected, _ := promsim.GetTimeSeriesData(query, start, end, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1585,7 +1617,7 @@ func TestDeltaProxyCacheRequestBadGateway(t *testing.T) {
 	}
 }
 
-func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
+func TestDeltaProxyCacheRequest_VolatileWindow(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
 		t.Error(err)
@@ -1595,7 +1627,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	client := rsc.BackendClient.(*TestClient)
 	o := rsc.BackendOptions
 
-	o.BackfillTolerance = timeconv.Duration(time.Duration(300) * time.Second)
+	o.VolatileWindow = timeconv.Duration(time.Duration(300) * time.Second)
 	o.FastForwardDisable = true
 
 	query := "some_query_here{}"
@@ -1606,7 +1638,7 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	xn := timeseries.Extent{Start: now.Add(-time.Duration(6) * time.Hour).Truncate(step), End: now.Truncate(step)}
 
 	// We can predict what slice will need to be fetched and ensure that is only what is requested upstream
-	expected, _, _ := mockprom.GetTimeSeriesData(query, xn.Start, xn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(query, xn.Start, xn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1665,6 +1697,81 @@ func TestDeltaProxyCacheRequest_BackfillTolerance(t *testing.T) {
 	}
 }
 
+func TestDeltaProxyCacheNeverCachesLiveBucket(t *testing.T) {
+	// a one-hour step keeps both requests inside one bucket in all but rare runs
+	const step = time.Hour
+	tests := []struct {
+		name     string
+		model    timeseries.SampleModel
+		eviction evictionmethods.TimeseriesEvictionMethod
+		repeat   string
+	}{
+		{
+			"bucket model, oldest eviction", timeseries.SampleModelBucket,
+			evictionmethods.EvictionMethodOldest, status.StatusPartialHit,
+		},
+		{
+			"bucket model, lru eviction", timeseries.SampleModelBucket,
+			evictionmethods.EvictionMethodLRU, status.StatusPartialHit,
+		},
+		{
+			"instant model caches its newest point", timeseries.SampleModelInstant,
+			evictionmethods.EvictionMethodOldest, status.StatusHit,
+		},
+	}
+	for i, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ts, w, r, rsc, err := setupTestHarnessDPC()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer closeTestHarness(ts, r)
+			client := rsc.BackendClient.(*TestClient)
+			client.sampleModel = test.model
+			client.RangeCacheKey = fmt.Sprintf("test-range-key-live-%d", i)
+			client.InstantCacheKey = fmt.Sprintf("test-instant-key-live-%d", i)
+			rsc.CacheConfig.Provider = "test"
+			o := rsc.BackendOptions
+			o.FastForwardDisable = true
+			o.VolatileWindow, o.VolatileWindowPoints = 0, 0
+			o.TimeseriesEvictionMethod = test.eviction
+
+			now := time.Now()
+			live := alignTime(now, step)
+			u := r.URL
+			u.Path = "/prometheus/api/v1/query_range"
+			u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s",
+				int(step.Seconds()), now.Add(-6*step).Unix(), now.Unix(), queryReturnsOKNoLatency,
+				client.RangeCacheKey, client.InstantCacheKey)
+			client.QueryRangeHandler(w, r)
+			if err = testResultHeaderPartMatch(w.Result().Header,
+				map[string]string{keys.Status: status.StatusKeyMiss}); err != nil {
+				t.Fatal(err)
+			}
+
+			w = httptest.NewRecorder()
+			client.QueryRangeHandler(w, r)
+			if !alignTime(time.Now(), step).Equal(live) {
+				t.Skip("the test crossed a bucket boundary")
+			}
+			resp := w.Result()
+			if err = testResultHeaderPartMatch(resp.Header,
+				map[string]string{keys.Status: test.repeat}); err != nil {
+				t.Fatal(err)
+			}
+			if test.repeat != status.StatusPartialHit {
+				return
+			}
+			// only the bucket containing now is refetched
+			fetched := "[" + timeseries.ExtentList{{Start: live, End: live}}.String() + "]"
+			if err = testResultHeaderPartMatch(resp.Header,
+				map[string]string{keys.Fetched: fetched}); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+}
+
 func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	ts, w, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
@@ -1678,7 +1785,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	o.FastForwardDisable = false
 
 	step := time.Duration(300) * time.Second
-	o.FastForwardTTL = timeconv.Duration(step + 1)
+	o.PartialBucketTTL = timeconv.Duration(step + 1)
 
 	now := time.Now()
 	end := now.Add(-time.Duration(12) * time.Hour)
@@ -1686,7 +1793,7 @@ func TestDeltaProxyCacheRequestFFTTLBiggerThanStep(t *testing.T) {
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1745,9 +1852,9 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	end := now.Add(-12 * time.Hour)
 
 	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: normalizeTime(extr.Start, step), End: normalizeTime(extr.End, step)}
+	extn := timeseries.Extent{Start: alignTime(extr.Start, step), End: alignTime(extr.End, step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u := r.URL
 	u.Path = "/prometheus/api/v1/query_range"
@@ -1778,12 +1885,12 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	}
 
 	// test partial hit (needing an upper fragment)
-	phitStart := normalizeTime(extr.End.Add(step), step)
+	phitStart := alignTime(extr.End.Add(step), step)
 	extr.End = extr.End.Add(time.Duration(6) * time.Hour) // Extend the top by 6 hours to generate partial hit
-	extn.End = normalizeTime(extr.End, step)
+	extn.End = alignTime(extr.End, step)
 
 	expectedFetched := "[" + timeseries.ExtentList{timeseries.Extent{Start: phitStart, End: extn.End}}.String() + "]"
-	expected, _, _ = mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	expected, _ = promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
 	u.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s&rk=%s&ik=%s", int(step.Seconds()),
 		extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency, client.RangeCacheKey, client.InstantCacheKey)
@@ -1822,8 +1929,6 @@ func TestDeltaProxyCacheRequestShardByPoints(t *testing.T) {
 	}
 }
 
-// TestDPCSingleflightDedup verifies that concurrent identical DPC requests
-// result in only 1 origin fetch, with waiters receiving the shared result.
 func TestDPCSingleflightDedup(t *testing.T) {
 	const n = 5
 
@@ -1833,90 +1938,88 @@ func TestDPCSingleflightDedup(t *testing.T) {
 	}
 	defer closeTestHarness(ts, r)
 
-	client := rsc.BackendClient.(*TestClient)
-	o := rsc.BackendOptions
-	o.FastForwardDisable = true
+	inSingleflightBubble(t, rsc, func(t *testing.T) {
+		client := rsc.BackendClient.(*TestClient)
+		o := rsc.BackendOptions
+		o.FastForwardDisable = true
 
-	step := time.Duration(300) * time.Second
-	now := time.Now()
-	end := now.Add(-time.Duration(12) * time.Hour)
-	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
-	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+		step := time.Duration(300) * time.Second
+		now := time.Now()
+		end := now.Add(-time.Duration(12) * time.Hour)
+		extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+		extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
 
-	expected, _, _ := mockprom.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+		expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
 
-	r.URL.Path = "/prometheus/api/v1/query_range"
-	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
-		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+		r.URL.Path = "/prometheus/api/v1/query_range"
+		r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
 
-	// Wrap the HTTP transport with a gated counter to control timing
-	// and count origin fetches while preserving the real promsim responses.
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origTransport := rsc.BackendOptions.HTTPClient.Transport
-	if origTransport == nil {
-		origTransport = http.DefaultTransport
-	}
-	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
-		inner: origTransport,
-		gate:  gate,
-		hits:  &originHits,
-	}
-
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
-
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		// Use request.Clone to give each goroutine its own Resources,
-		// avoiding data races on shared fields like TSMarshaler.
-		clone, _ := request.Clone(r)
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			client.QueryRangeHandler(w, clone)
-		}()
-	}
-
-	// Give goroutines time to enter singleflight, then release the gate.
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request, got %d", hits)
-	}
-
-	var sawKmiss, sawPhit int
-	for i, rec := range recorders {
-		resp := rec.Result()
-		b, _ := io.ReadAll(resp.Body)
-		if string(b) != expected {
-			t.Errorf("request %d: body mismatch\nexpected: %s\ngot:      %s", i, expected, string(b))
+		// Wrap the HTTP transport with a gated counter to control timing
+		// and count origin fetches while preserving the real promsim responses.
+		var originHits atomic.Int64
+		gate := make(chan struct{})
+		origTransport := rsc.BackendOptions.HTTPClient.Transport
+		if origTransport == nil {
+			origTransport = http.DefaultTransport
 		}
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+			inner: origTransport,
+			gate:  gate,
+			hits:  &originHits,
 		}
-		resultHdr := resp.Header.Get(headers.NameTricksterResult)
-		if strings.Contains(resultHdr, "status=kmiss") {
-			sawKmiss++
-		} else if strings.Contains(resultHdr, "status=proxy-hit") {
-			sawPhit++
+
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, n)
+
+		for i := range n {
+			wg.Add(1)
+			idx := i
+			// Use request.Clone to give each goroutine its own Resources,
+			// avoiding data races on shared fields like TSMarshaler.
+			clone, _ := request.Clone(r)
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				client.QueryRangeHandler(w, clone)
+			}()
 		}
-	}
-	if sawKmiss != 1 {
-		t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
-	}
-	if sawPhit != n-1 {
-		t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
-	}
+
+		synctest.Wait()
+		close(gate)
+		wg.Wait()
+
+		if hits := originHits.Load(); hits != 1 {
+			t.Errorf("expected 1 origin request, got %d", hits)
+		}
+
+		var sawKmiss, sawPhit int
+		for i, rec := range recorders {
+			resp := rec.Result()
+			b, _ := io.ReadAll(resp.Body)
+			if string(b) != expected {
+				t.Errorf("request %d: body mismatch\nexpected: %s\ngot:      %s", i, expected, string(b))
+			}
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+			}
+			resultHdr := resp.Header.Get(headers.NameTricksterResult)
+			if strings.Contains(resultHdr, "status=kmiss") {
+				sawKmiss++
+			} else if strings.Contains(resultHdr, "status=proxy-hit") {
+				sawPhit++
+			}
+		}
+		if sawKmiss != 1 {
+			t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+		}
+		if sawPhit != n-1 {
+			t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
+		}
+	})
 }
 
-// TestDPCSingleflightDifferentTimeRangesNotDeduped verifies that concurrent
-// DPC requests with different time ranges are NOT collapsed into the same
-// singleflight group (the key includes start|end in millis).
 func TestDPCSingleflightDifferentTimeRangesNotDeduped(t *testing.T) {
 	ts, _, r, rsc, err := setupTestHarnessDPC()
 	if err != nil {
@@ -1924,76 +2027,76 @@ func TestDPCSingleflightDifferentTimeRangesNotDeduped(t *testing.T) {
 	}
 	defer closeTestHarness(ts, r)
 
-	client := rsc.BackendClient.(*TestClient)
-	o := rsc.BackendOptions
-	o.FastForwardDisable = true
+	inSingleflightBubble(t, rsc, func(t *testing.T) {
+		client := rsc.BackendClient.(*TestClient)
+		o := rsc.BackendOptions
+		o.FastForwardDisable = true
 
-	step := time.Duration(300) * time.Second
-	now := time.Now()
+		step := time.Duration(300) * time.Second
+		now := time.Now()
 
-	// Two non-overlapping time ranges
-	end1 := now.Add(-time.Duration(12) * time.Hour)
-	start1 := end1.Add(-time.Duration(6) * time.Hour)
+		// Two non-overlapping time ranges
+		end1 := now.Add(-time.Duration(12) * time.Hour)
+		start1 := end1.Add(-time.Duration(6) * time.Hour)
 
-	end2 := now.Add(-time.Duration(24) * time.Hour)
-	start2 := end2.Add(-time.Duration(6) * time.Hour)
+		end2 := now.Add(-time.Duration(24) * time.Hour)
+		start2 := end2.Add(-time.Duration(6) * time.Hour)
 
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origTransport := rsc.BackendOptions.HTTPClient.Transport
-	if origTransport == nil {
-		origTransport = http.DefaultTransport
-	}
-	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
-		inner: origTransport,
-		gate:  gate,
-		hits:  &originHits,
-	}
-
-	type timeRange struct {
-		start, end time.Time
-	}
-	ranges := []timeRange{
-		{start1, end1},
-		{start2, end2},
-	}
-
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, len(ranges))
-
-	for i, tr := range ranges {
-		wg.Add(1)
-		idx := i
-		clone, _ := request.Clone(r)
-		clone.URL.Path = "/prometheus/api/v1/query_range"
-		clone.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
-			int(step.Seconds()), tr.start.Unix(), tr.end.Unix(), queryReturnsOKNoLatency)
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			client.QueryRangeHandler(w, clone)
-		}()
-	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 2 {
-		t.Errorf("expected 2 origin requests (different time ranges), got %d", hits)
-	}
-
-	for i, rec := range recorders {
-		resp := rec.Result()
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+		var originHits atomic.Int64
+		gate := make(chan struct{})
+		origTransport := rsc.BackendOptions.HTTPClient.Transport
+		if origTransport == nil {
+			origTransport = http.DefaultTransport
 		}
-	}
+		rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+			inner: origTransport,
+			gate:  gate,
+			hits:  &originHits,
+		}
+
+		type timeRange struct {
+			start, end time.Time
+		}
+		ranges := []timeRange{
+			{start1, end1},
+			{start2, end2},
+		}
+
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, len(ranges))
+
+		for i, tr := range ranges {
+			wg.Add(1)
+			idx := i
+			clone, _ := request.Clone(r)
+			clone.URL.Path = "/prometheus/api/v1/query_range"
+			clone.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+				int(step.Seconds()), tr.start.Unix(), tr.end.Unix(), queryReturnsOKNoLatency)
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				client.QueryRangeHandler(w, clone)
+			}()
+		}
+
+		synctest.Wait()
+		close(gate)
+		wg.Wait()
+
+		if hits := originHits.Load(); hits != 2 {
+			t.Errorf("expected 2 origin requests (different time ranges), got %d", hits)
+		}
+
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("request %d: expected status 200, got %d", i, resp.StatusCode)
+			}
+		}
+	})
 }
 
-// TestDPCSingleflightErrorPropagation verifies that when the origin returns
-// an error (502), all concurrent singleflight callers receive the error response.
 func TestDPCSingleflightErrorPropagation(t *testing.T) {
 	const n = 5
 
@@ -2003,61 +2106,63 @@ func TestDPCSingleflightErrorPropagation(t *testing.T) {
 	}
 	defer closeTestHarness(ts, r)
 
-	client := rsc.BackendClient.(*TestClient)
-	o := rsc.BackendOptions
-	o.FastForwardDisable = true
+	inSingleflightBubble(t, rsc, func(t *testing.T) {
+		client := rsc.BackendClient.(*TestClient)
+		o := rsc.BackendOptions
+		o.FastForwardDisable = true
 
-	step := time.Duration(300) * time.Second
-	now := time.Now()
-	end := now.Add(-time.Duration(12) * time.Hour)
-	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+		step := time.Duration(300) * time.Second
+		now := time.Now()
+		end := now.Add(-time.Duration(12) * time.Hour)
+		extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
-	// Use queryReturnsBadGateway to make promsim return 502.
-	r.URL.Path = "/prometheus/api/v1/query_range"
-	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
-		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
+		// Use queryReturnsBadGateway to make promsim return 502.
+		r.URL.Path = "/prometheus/api/v1/query_range"
+		r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadGateway)
 
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origTransport := rsc.BackendOptions.HTTPClient.Transport
-	if origTransport == nil {
-		origTransport = http.DefaultTransport
-	}
-	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
-		inner: origTransport,
-		gate:  gate,
-		hits:  &originHits,
-	}
-
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
-
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		clone, _ := request.Clone(r)
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			client.QueryRangeHandler(w, clone)
-		}()
-	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request, got %d", hits)
-	}
-
-	for i, rec := range recorders {
-		resp := rec.Result()
-		if resp.StatusCode != http.StatusBadGateway {
-			t.Errorf("request %d: expected status 502, got %d", i, resp.StatusCode)
+		var originHits atomic.Int64
+		gate := make(chan struct{})
+		origTransport := rsc.BackendOptions.HTTPClient.Transport
+		if origTransport == nil {
+			origTransport = http.DefaultTransport
 		}
-	}
+		rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+			inner: origTransport,
+			gate:  gate,
+			hits:  &originHits,
+		}
+
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, n)
+
+		for i := range n {
+			wg.Add(1)
+			idx := i
+			clone, _ := request.Clone(r)
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				client.QueryRangeHandler(w, clone)
+			}()
+		}
+
+		synctest.Wait()
+		close(gate)
+		wg.Wait()
+
+		if hits := originHits.Load(); hits != 1 {
+			t.Errorf("expected 1 origin request, got %d", hits)
+		}
+
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusBadGateway {
+				t.Errorf("request %d: expected status 502, got %d", i, resp.StatusCode)
+			}
+		}
+	})
 }
 
 // TestDPCProxyOnly verifies that when BackendOptions.ProxyOnly is true,
@@ -2142,9 +2247,6 @@ func TestDPCNoCacheBypass(t *testing.T) {
 	}
 }
 
-// TestDPCSingleflightBadPayload verifies that when the origin returns an
-// OK response with an unparsable body, the error is propagated through
-// the singleflight to all waiters.
 func TestDPCSingleflightBadPayload(t *testing.T) {
 	const n = 3
 
@@ -2154,67 +2256,67 @@ func TestDPCSingleflightBadPayload(t *testing.T) {
 	}
 	defer closeTestHarness(ts, r)
 
-	client := rsc.BackendClient.(*TestClient)
-	o := rsc.BackendOptions
-	o.FastForwardDisable = true
+	inSingleflightBubble(t, rsc, func(t *testing.T) {
+		client := rsc.BackendClient.(*TestClient)
+		o := rsc.BackendOptions
+		o.FastForwardDisable = true
 
-	step := time.Duration(300) * time.Second
-	now := time.Now()
-	end := now.Add(-time.Duration(12) * time.Hour)
-	extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
+		step := time.Duration(300) * time.Second
+		now := time.Now()
+		end := now.Add(-time.Duration(12) * time.Hour)
+		extr := timeseries.Extent{Start: end.Add(-time.Duration(18) * time.Hour), End: end}
 
-	r.URL.Path = "/prometheus/api/v1/query_range"
-	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
-		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
+		r.URL.Path = "/prometheus/api/v1/query_range"
+		r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsBadPayload)
 
-	var originHits atomic.Int64
-	gate := make(chan struct{})
-	origTransport := rsc.BackendOptions.HTTPClient.Transport
-	if origTransport == nil {
-		origTransport = http.DefaultTransport
-	}
-	rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
-		inner: origTransport,
-		gate:  gate,
-		hits:  &originHits,
-	}
-
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
-
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		clone, _ := request.Clone(r)
-		go func() {
-			defer wg.Done()
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			client.QueryRangeHandler(w, clone)
-		}()
-	}
-
-	time.Sleep(50 * time.Millisecond)
-	close(gate)
-	wg.Wait()
-
-	if hits := originHits.Load(); hits != 1 {
-		t.Errorf("expected 1 origin request, got %d", hits)
-	}
-
-	// all callers should get a proxy-error cache status and an Internal Server Error
-	// response (the unmarshaling failure triggers buildErrorResult inside the
-	// singleflight closure).
-	for i, rec := range recorders {
-		resp := rec.Result()
-		if resp.StatusCode != http.StatusInternalServerError {
-			t.Errorf("request %d: expected status 500, got %d", i, resp.StatusCode)
+		var originHits atomic.Int64
+		gate := make(chan struct{})
+		origTransport := rsc.BackendOptions.HTTPClient.Transport
+		if origTransport == nil {
+			origTransport = http.DefaultTransport
 		}
-		hdr := resp.Header.Get(headers.NameTricksterResult)
-		if !strings.Contains(hdr, "status=proxy-error") {
-			t.Errorf("request %d: expected proxy-error in result header, got %q", i, hdr)
+		rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{
+			inner: origTransport,
+			gate:  gate,
+			hits:  &originHits,
 		}
-	}
+
+		var wg sync.WaitGroup
+		recorders := make([]*httptest.ResponseRecorder, n)
+
+		for i := range n {
+			wg.Add(1)
+			idx := i
+			clone, _ := request.Clone(r)
+			go func() {
+				defer wg.Done()
+				w := httptest.NewRecorder()
+				recorders[idx] = w
+				client.QueryRangeHandler(w, clone)
+			}()
+		}
+
+		synctest.Wait()
+		close(gate)
+		wg.Wait()
+
+		if hits := originHits.Load(); hits != 1 {
+			t.Errorf("expected 1 origin request, got %d", hits)
+		}
+
+		// Unmarshaling failure must reach every caller as a 500 with proxy-error status.
+		for i, rec := range recorders {
+			resp := rec.Result()
+			if resp.StatusCode != http.StatusInternalServerError {
+				t.Errorf("request %d: expected status 500, got %d", i, resp.StatusCode)
+			}
+			hdr := resp.Header.Get(headers.NameTricksterResult)
+			if !strings.Contains(hdr, "status=proxy-error") {
+				t.Errorf("request %d: expected proxy-error in result header, got %q", i, hdr)
+			}
+		}
+	})
 }
 
 // concurrencyTrackingTransport wraps an http.RoundTripper to track peak
@@ -2291,4 +2393,184 @@ func TestFetchExtentsConcurrencyLimit(t *testing.T) {
 	// at most 2 goroutines run concurrently in fetchExtents.
 	// The important thing is the test doesn't crash and the limit is applied.
 	t.Logf("peak concurrency observed: %d (limit: %d)", peak, o.FetchConcurrencyLimit)
+}
+
+func TestDeltaProxyCacheRequestLeavesCachedDataUnchanged(t *testing.T) {
+	// a request's receivers may reshape the dataset it hands on, and a transformer, which gets its own
+	// copy, may change anything in it; none of that may reach the cache
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	client := rsc.BackendClient.(*TestClient)
+	rsc.BackendOptions.FastForwardDisable = true
+	step := 300 * time.Second
+	end := time.Now().Add(-12 * time.Hour)
+	extr := timeseries.Extent{Start: end.Add(-18 * time.Hour), End: end}
+	extn := timeseries.Extent{Start: extr.Start.Truncate(step), End: extr.End.Truncate(step)}
+	expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, extn.Start, extn.End, step)
+	r.URL.Path = "/prometheus/api/v1/query_range"
+	r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+		int(step.Seconds()), extr.Start.Unix(), extr.End.Unix(), queryReturnsOKNoLatency)
+
+	serve := func(wantStatus string) string {
+		t.Helper()
+		w = httptest.NewRecorder()
+		client.QueryRangeHandler(w, r)
+		resp := w.Result()
+		body, _ := io.ReadAll(resp.Body)
+		if err := testResultHeaderPartMatch(resp.Header, map[string]string{keys.Status: wantStatus}); err != nil {
+			t.Fatal(err)
+		}
+		return string(body)
+	}
+	// what any reader may do: its points are read-only, but it owns the shape around them
+	reshape := func(ts timeseries.Timeseries) {
+		ds := ts.(*dataset.DataSet)
+		ds.Merge(true, &dataset.DataSet{Results: dataset.Results{{SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{Tags: dataset.Tags{"extra": "1"}}, dataset.Points{{Epoch: 1, Values: []any{"1"}}})}}}})
+		ds.CropToRange(timeseries.Extent{Start: extr.Start, End: extr.Start.Add(step)})
+		for _, r := range ds.Results {
+			r.SeriesList = r.SeriesList[:0]
+		}
+		ds.SetExtents(nil)
+	}
+	vandalize := func(ts timeseries.Timeseries) {
+		ds := ts.(*dataset.DataSet)
+		for _, r := range ds.Results {
+			for _, s := range r.SeriesList {
+				pts := dspoints.Of(s)
+				for i := range pts {
+					pts[i].Values[0] = "999"
+					pts[i].Epoch++
+				}
+				s.SetPoints(pts)
+				s.Header.Tags["vandal"] = "yes"
+			}
+		}
+		reshape(ds)
+	}
+
+	serve(status.StatusKeyMiss)
+	reshape(rsc.TS)
+	if err := testStringMatch(serve(status.StatusHit), expected); err != nil {
+		t.Fatalf("after the miss's dataset was reshaped: %v", err)
+	}
+	reshape(rsc.TS)
+	rsc.TSTransformer = vandalize
+	serve(status.StatusHit)
+	rsc.TSTransformer = nil
+	if err := testStringMatch(serve(status.StatusHit), expected); err != nil {
+		t.Fatalf("after a transformer changed a hit's dataset: %v", err)
+	}
+}
+
+func TestDeltaProxyCacheRequestConcurrentPartialHits(t *testing.T) {
+	// partial hits of one entry, each with its own executor, read it while each merges its deltas;
+	// under -race, merging into the cached dataset rather than a copy is a data race
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	client := rsc.BackendClient.(*TestClient)
+	rsc.BackendOptions.FastForwardDisable = true
+	step := 300 * time.Second
+	end := time.Now().Add(-12 * time.Hour).Truncate(step)
+	start := end.Add(-18 * time.Hour)
+	query := func(r *http.Request, end time.Time) {
+		r.URL.Path = "/prometheus/api/v1/query_range"
+		r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), start.Unix(), end.Unix(), queryReturnsOKNoLatency)
+	}
+	query(r, end)
+	client.QueryRangeHandler(w, r)
+
+	const n = 8
+	var wg sync.WaitGroup
+	bodies := make([]string, n)
+	for i := range n {
+		clone, _ := request.Clone(r)
+		// every other request is a hit on the primed range; the rest reach further, each by its own amount
+		reach := end
+		if i%2 == 1 {
+			reach = end.Add(step * time.Duration(i))
+		}
+		query(clone, reach)
+		wg.Go(func() {
+			w := httptest.NewRecorder()
+			client.QueryRangeHandler(w, clone)
+			b, _ := io.ReadAll(w.Result().Body)
+			bodies[i] = string(b)
+		})
+	}
+	wg.Wait()
+	for i, body := range bodies {
+		reach := end
+		if i%2 == 1 {
+			reach = end.Add(step * time.Duration(i))
+		}
+		expected, _ := promsim.GetTimeSeriesData(queryReturnsOKNoLatency, start, reach, step)
+		if err := testStringMatch(body, expected); err != nil {
+			t.Errorf("request %d: %v", i, err)
+		}
+	}
+}
+
+func TestDeltaProxyCacheRequestPartialHitLeavesCachedEntry(t *testing.T) {
+	// a memory cache's entry is read in place by every request for it, so a request that changes the
+	// data, as a partial hit does, must change a copy and store that instead
+	ts, w, r, rsc, err := setupTestHarnessDPC()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	client := rsc.BackendClient.(*TestClient)
+	o := rsc.BackendOptions
+	o.FastForwardDisable = true
+	step := 300 * time.Second
+	end := time.Now().Add(-12 * time.Hour).Truncate(step)
+	start := end.Add(-18 * time.Hour)
+	query := func(end time.Time) {
+		r.URL.Path = "/prometheus/api/v1/query_range"
+		r.URL.RawQuery = fmt.Sprintf("step=%d&start=%d&end=%d&query=%s",
+			int(step.Seconds()), start.Unix(), end.Unix(), queryReturnsOKNoLatency)
+	}
+	query(end)
+	client.QueryRangeHandler(w, r)
+
+	// the entry the first request stored, as the next request will find it
+	key := ComposeCacheKey(o.Name, o.CacheKeyPrefix, "dpc", newProxyRequest(r, nil).DeriveCacheKey(""))
+	ref, st, err := rsc.CacheClient.(cache.MemoryCache).RetrieveReference(key)
+	if err != nil || st != status.LookupStatusHit {
+		t.Fatalf("the entry was not found: %s %v", st, err)
+	}
+	stored := ref.(*HTTPDocument).timeseries.(*dataset.DataSet)
+	snapshot := func() string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "%v %v", stored.ExtentList, stored.VolatileExtentList)
+		for _, r := range stored.Results {
+			for _, s := range r.SeriesList {
+				fmt.Fprintf(&b, " %p %v", s, dspoints.Of(s))
+			}
+		}
+		return b.String()
+	}
+	before := snapshot()
+
+	for i := 1; i <= 3; i++ {
+		query(end.Add(step * time.Duration(i)))
+		w = httptest.NewRecorder()
+		client.QueryRangeHandler(w, r)
+		if err := testResultHeaderPartMatch(w.Result().Header, map[string]string{keys.Status: status.StatusPartialHit}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if snapshot() != before {
+		t.Fatal("a partial hit changed the entry it read instead of a copy of it")
+	}
+	ref, _, _ = rsc.CacheClient.(cache.MemoryCache).RetrieveReference(key)
+	if ref.(*HTTPDocument).timeseries == timeseries.Timeseries(stored) {
+		t.Fatal("the partial hits stored nothing new")
+	}
 }

@@ -26,13 +26,14 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 
 	qh3 "github.com/quic-go/quic-go/http3"
 )
 
 func TestNewServerForcesH3ALPN(t *testing.T) {
 	base := &tls.Config{NextProtos: []string{"h2", "http/1.1"}, MinVersion: tls.VersionTLS12}
-	svr := NewServer(http.NotFoundHandler(), base, 8443, 0)
+	svr := NewServer(http.NotFoundHandler(), base, 8443, listener.ServerLimits{})
 	if len(svr.TLSConfig.NextProtos) != 1 || svr.TLSConfig.NextProtos[0] != qh3.NextProtoH3 {
 		t.Errorf("expected h3 to be the sole ALPN, got %v", svr.TLSConfig.NextProtos)
 	}
@@ -48,6 +49,26 @@ func TestNewServerForcesH3ALPN(t *testing.T) {
 	}
 	if svr.QUICConfig.Allow0RTT {
 		t.Error("0-RTT should be off by default; it permits replay")
+	}
+}
+
+func TestNewServerLimits(t *testing.T) {
+	const idle, maxHeader = 90 * time.Second, 16384
+	base := &tls.Config{MinVersion: tls.VersionTLS12}
+	svr := NewServer(http.NotFoundHandler(), base, 8443,
+		listener.ServerLimits{IdleTimeout: idle, MaxHeaderBytes: maxHeader})
+	if svr.IdleTimeout != idle || svr.MaxHeaderBytes != maxHeader {
+		t.Errorf("limits not applied: idle %v, max header bytes %d", svr.IdleTimeout, svr.MaxHeaderBytes)
+	}
+}
+
+func TestBodyDeadline(t *testing.T) {
+	const header, read = time.Second, 5 * time.Second
+	if got := bodyDeadline(listener.ServerLimits{ReadHeaderTimeout: header}); got != header {
+		t.Errorf("without read_timeout got %v, want %v", got, header)
+	}
+	if got := bodyDeadline(listener.ServerLimits{ReadHeaderTimeout: header, ReadTimeout: read}); got != read {
+		t.Errorf("with read_timeout got %v, want %v", got, read)
 	}
 }
 

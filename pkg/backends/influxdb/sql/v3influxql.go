@@ -27,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 
 	"github.com/influxdata/influxql"
 )
@@ -100,19 +101,14 @@ func ParseV3InfluxQL(r *http.Request, f iofmt.Format,
 	trq.TagFieldDefintions = append(timeseries.FieldDefinitions{
 		{Name: measurementField, Role: timeseries.RoleTag},
 	}, trq.TagFieldDefintions...)
-	trq.ExtractBackfillTolerance(v3r.Query)
-	if trq.BackfillTolerance == 0 {
+	trq.Directives = directives.Parse(v3r.Query, directives.SyntaxInfluxQL)
+	if trq.VolatileWindow == 0 {
 		bf := time.Minute
 		res := request.GetResources(r)
 		if res != nil {
-			bf = time.Duration(res.BackendOptions.BackfillTolerance)
+			bf = time.Duration(res.BackendOptions.VolatileWindow)
 		}
-		// open-ended InfluxQL ranges run to now; flooring the tolerance at one
-		// bucket keeps the still-filling final bucket out of the cache
-		if bf < trq.Step {
-			bf = trq.Step
-		}
-		trq.BackfillTolerance = bf
+		trq.VolatileWindow = bf
 	}
 	rlo := &timeseries.RequestOptions{
 		OutputFormat:           outputFormat,
@@ -134,19 +130,6 @@ func ParseV3InfluxQL(r *http.Request, f iofmt.Format,
 func SetExtentV3InfluxQL(r *http.Request, trq *timeseries.TimeRangeQuery,
 	extent *timeseries.Extent, q *influxql.Query,
 ) {
-	for _, s := range q.Statements {
-		if sel, ok := s.(*influxql.SelectStatement); ok {
-			// SetTimeRange emits '>= start AND < end', so one step is added to
-			// the end time to keep the final bucket in the results
-			sel.SetTimeRange(extent.Start, extent.End.Add(trq.Step))
-		}
-	}
-	statement := q.String()
-	if methods.HasBody(r.Method) {
-		request.SetBody(r, EncodeBody(r, statement))
-		return
-	}
-	v := r.URL.Query()
-	v.Set(ParamQuery, statement)
-	r.URL.RawQuery = v.Encode()
+	// the time range clause is '>= start AND < end', so one step is added to keep the last bucket
+	SetStatement(r, ti.RenderTimeRange(q, extent.Start, extent.End.Add(trq.Step)))
 }

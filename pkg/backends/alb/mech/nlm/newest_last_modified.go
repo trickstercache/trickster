@@ -41,7 +41,7 @@ type handler struct {
 }
 
 func RegistryEntry() types.RegistryEntry {
-	return types.RegistryEntry{Name: Name, ShortName: names.MechanismNLM, New: New}
+	return types.RegistryEntry{Name: Name, ShortName: names.MechanismNLM, Planes: types.PlaneHTTP, New: New}
 }
 
 func New(o *options.Options, _ rt.Lookup) (types.Mechanism, error) {
@@ -67,6 +67,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failures.HandleBadGateway(w, r)
 		return
 	}
+	r = mech.Align(r, p.StepAlignmentOverride())
 	hl := p.Targets()
 	l := len(hl)
 	if l == 0 {
@@ -90,6 +91,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		MaxCaptureBytes:  h.maxCaptureBytes,
 		Context:          tctx.ClearResources,
 	})
+	// every slot has returned, and what is written from a capture is copied as it is written
+	defer fanout.ReleaseCaptures(results)
 
 	newestIdx := -1
 	var newestTime time.Time

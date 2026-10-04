@@ -29,7 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 )
@@ -71,11 +70,21 @@ func echoServer(t *testing.T, prefix string, tlsConfig *tls.Config) string {
 
 func startServer(t *testing.T, protocol string, cfg *Config) (*Server, string) {
 	t.Helper()
+	return startServerWith(t, protocol, cfg, nil)
+}
+
+func startServerWith(t *testing.T, protocol string, cfg *Config,
+	connect func(context.Context, string) (net.Conn, error),
+) (*Server, string) {
+	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := NewServer("test", protocol, cfg)
+	if connect != nil {
+		srv.connect = connect
+	}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
 	return srv, ln.Addr().String()
@@ -165,11 +174,8 @@ func TestServerRotatesAcrossPoolAndRefusesADeadMembersShare(t *testing.T) {
 	}
 	dead := deadLn.Addr().String()
 	_ = deadLn.Close()
-	pl := pooledOf(t, "alb",
-		member(originBackend(t, "dead", dead), 1, healthcheck.StatusPassing),
-		member(originBackend(t, "a", a), 1, healthcheck.StatusPassing),
-		member(originBackend(t, "b", b), 1, healthcheck.StatusPassing))
-	_, addr := startServer(t, ProtocolTCP, &Config{Table: tableOf(t, map[string]Upstream{"": FromBackend(pl)})})
+	up := rotate(dead, a, b)
+	_, addr := startServer(t, ProtocolTCP, &Config{Table: tableOf(t, map[string]Upstream{"": up})})
 	seen := make(map[string]int)
 	var refused int
 	for range 6 {
@@ -201,7 +207,7 @@ func TestServerRefusesWhatItCannotRoute(t *testing.T) {
 	_ = deadLn.Close()
 	for name, tbl := range map[string]*Table{
 		"empty":     NewTable(),
-		"no_member": tableOf(t, map[string]Upstream{"": FromBackend(pooledOf(t, "none"))}),
+		"no_member": tableOf(t, map[string]Upstream{"": rotate()}),
 		"dead":      tableOf(t, map[string]Upstream{"": Static(dead)}),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -384,7 +390,7 @@ func TestPipeClosesBothOnWriteFailure(t *testing.T) {
 	_ = dstPeer.Close()
 	go func() { _, _ = srcPeer.Write([]byte("data")) }()
 	var last atomic.Int64
-	if n := pipe(dst, src, 0, &last); n != 0 {
+	if n := pipe(dst, src, 0, &last, nil); n != 0 {
 		t.Errorf("bytes written to a closed destination = %d", n)
 	}
 	if _, err := srcPeer.Write([]byte("more")); err == nil {

@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 	"unicode/utf8"
 
@@ -158,20 +159,14 @@ func TestInjectTags(t *testing.T) {
 
 func TestStripTags(t *testing.T) {
 	t.Run("strips specified keys and rehashes", func(t *testing.T) {
-		s1 := &Series{
-			Header: SeriesHeader{
-				Name: "cpu",
-				Tags: Tags{"region": "us-east-1", "env": "prod"},
-			},
-			Points: testPoints(),
-		}
-		s2 := &Series{
-			Header: SeriesHeader{
-				Name: "cpu",
-				Tags: Tags{"region": "us-west-2", "env": "prod"},
-			},
-			Points: testPoints(),
-		}
+		s1 := NewSeries(SeriesHeader{
+			Name: "cpu",
+			Tags: Tags{"region": "us-east-1", "env": "prod"},
+		}, testPoints())
+		s2 := NewSeries(SeriesHeader{
+			Name: "cpu",
+			Tags: Tags{"region": "us-west-2", "env": "prod"},
+		}, testPoints())
 
 		ds1 := &DataSet{Results: Results{{SeriesList: SeriesList{s1}}}}
 		ds2 := &DataSet{Results: Results{{SeriesList: SeriesList{s2}}}}
@@ -216,14 +211,8 @@ func TestStripTags(t *testing.T) {
 	})
 
 	t.Run("strip enables merge of previously distinct series", func(t *testing.T) {
-		s1 := &Series{
-			Header: SeriesHeader{Name: "up", Tags: Tags{"region": "a"}},
-			Points: makeStringPoints(ev{100, "10"}),
-		}
-		s2 := &Series{
-			Header: SeriesHeader{Name: "up", Tags: Tags{"region": "b"}},
-			Points: makeStringPoints(ev{100, "20"}),
-		}
+		s1 := NewSeries(SeriesHeader{Name: "up", Tags: Tags{"region": "a"}}, makeStringPoints(ev{100, "10"}))
+		s2 := NewSeries(SeriesHeader{Name: "up", Tags: Tags{"region": "b"}}, makeStringPoints(ev{100, "20"}))
 		ds1 := &DataSet{Results: Results{{SeriesList: SeriesList{s1}}}}
 		ds2 := &DataSet{Results: Results{{SeriesList: SeriesList{s2}}}}
 
@@ -235,8 +224,36 @@ func TestStripTags(t *testing.T) {
 		if ds1.SeriesCount() != 1 {
 			t.Fatalf("expected 1 series after strip+merge, got %d", ds1.SeriesCount())
 		}
-		if ds1.Results[0].SeriesList[0].Points[0].Values[0] != "30" {
-			t.Errorf("expected sum 30, got %v", ds1.Results[0].SeriesList[0].Points[0].Values[0])
+		if seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0] != "30" {
+			t.Errorf("expected sum 30, got %v", seriesPoints(ds1.Results[0].SeriesList[0])[0].Values[0])
 		}
 	})
+}
+
+func TestTagsAppendJSONMatchesMarshal(t *testing.T) {
+	large := Tags{}
+	for i := range 40 {
+		large["k"+strconv.Itoa(i)] = "v<" + strconv.Itoa(i) + ">"
+	}
+	for _, tags := range []Tags{
+		nil,
+		{},
+		{"a": "b"},
+		large,
+		{"__name__": "up", "a<b>&c": "q\"uo\\te\n\t\x01", "u": "é 😀", "": ""},
+	} {
+		want, err := json.Marshal(map[string]string(tags))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(tags) == 0 {
+			want = []byte("{}")
+		}
+		if got := tags.JSON(); got != string(want) {
+			t.Errorf("JSON() = %s, want %s", got, want)
+		}
+		if got := tags.AppendJSON([]byte("x")); string(got) != "x"+string(want) {
+			t.Errorf("AppendJSON() = %s, want x%s", got, want)
+		}
+	}
 }

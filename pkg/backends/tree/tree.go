@@ -99,7 +99,8 @@ func (e Entries) Validate() error {
 			return
 		}
 		if ent.Type != "" && !nobs.Contains(ent.Type) {
-			types.Set(ent.Type)
+			// provider aliases such as timescaledb are one type
+			types.Set(providers.Canonical(ent.Type))
 		}
 		// Recurse through both Pool and UserRouterPool
 		for _, p := range ent.Pool {

@@ -33,14 +33,14 @@ func largeDataSet(n int) *dataset.DataSet {
 	for i := range pts {
 		e := epoch.FromSecs(base + int64(i)*10)
 		if i%10 == 9 {
-			pts[i] = newPoint(e, nil)
+			pts[i] = legacyNewPoint(e, nil)
 		} else {
 			v := math.Sin(float64(i) / 100)
-			pts[i] = newPoint(e, &v)
+			pts[i] = legacyNewPoint(e, &v)
 		}
 	}
 	trq := &timeseries.TimeRangeQuery{Statement: "bench.series", Step: 10 * time.Second}
-	s, err := newSeries("bench.series", nil, pts, trq)
+	s, err := legacyNewSeries("bench.series", nil, pts, trq)
 	if err != nil {
 		panic(err)
 	}

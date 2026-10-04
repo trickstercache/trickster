@@ -24,14 +24,24 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
+	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/cache/registry"
 	"github.com/trickstercache/trickster/v2/pkg/daemon/instance"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestShutdownNilSafe(t *testing.T) {
@@ -63,6 +73,20 @@ func TestShutdownStopsHealthChecks(t *testing.T) {
 	require.Equal(t, stopped, hits.Load(), "the target was probed after Shutdown")
 }
 
+func TestShutdownStopsStaticClients(t *testing.T) {
+	defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
+	o := bo.New()
+	o.Provider = providers.Static
+	o.Static = so.New()
+	o.Static.Root = t.TempDir()
+	client, err := static.NewClient("site", o, nil, nil, nil, nil)
+	require.NoError(t, err)
+	clients := backends.Backends{"site": client}
+	static.StartClients(clients)
+
+	Shutdown(&instance.ServerInstance{Backends: clients})
+}
+
 func TestShutdownStopsDiscovery(t *testing.T) {
 	si, c, clients := newDiscoveryFixture(t, unavailableDiscoverer(),
 		&do.Query{Service: "svc"}, ao.StartupPolicyRetry)
@@ -73,4 +97,15 @@ func TestShutdownStopsDiscovery(t *testing.T) {
 	Shutdown(si)
 	require.Nil(t, si.PoolManagers)
 	require.Nil(t, si.Discoverers)
+}
+
+func TestShutdownClosesCaches(t *testing.T) {
+	c := registry.NewCache("mem", cacheoptions.New())
+	si := &instance.ServerInstance{Caches: cache.Lookup{"mem": c}}
+	require.NoError(t, c.Store("k", []byte("v"), time.Minute))
+
+	Shutdown(si)
+	require.ErrorIs(t, c.Store("k", []byte("v"), time.Minute), manager.ErrCacheClosed)
+	require.Nil(t, si.Caches)
+	Shutdown(si)
 }

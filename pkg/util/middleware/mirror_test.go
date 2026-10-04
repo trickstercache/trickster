@@ -17,6 +17,7 @@
 package middleware
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,11 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
@@ -159,3 +164,86 @@ func TestMirrorRecoversPanic(t *testing.T) {
 type errReader struct{}
 
 func (errReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+
+func TestMirrorRequestKeepsClientIP(t *testing.T) {
+	const peer, client = "10.0.0.1:4000", "203.0.113.9"
+	r := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
+	r.RemoteAddr = peer
+	out, err := mirrorRequest(r)
+	require.NoError(t, err)
+	require.Empty(t, tctx.ClientIP(out.Context()))
+	require.Equal(t, "10.0.0.1", request.ClientIP(out))
+
+	// behind a trusted proxy, the copy is judged by the client's address, not the proxy's
+	r = r.WithContext(tctx.WithClientIP(r.Context(), client))
+	out, err = mirrorRequest(r)
+	require.NoError(t, err)
+	require.Equal(t, client, request.ClientIP(out))
+	require.True(t, tctx.IsMirrored(out.Context()))
+}
+
+func TestMirrorPreservesResolvedClientForIPACL(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		allow   string
+		trusted bool
+		want    int
+	}{
+		{"client allowed", "192.0.2.9", true, http.StatusNoContent},
+		{"only proxy allowed", "127.0.0.1", true, http.StatusForbidden},
+		{"untrusted peer", "127.0.0.1", false, http.StatusNoContent},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			list, _, err := ipacl.Compile(ipacl.Options{Allow: []string{tc.allow}})
+			require.NoError(t, err)
+			type observation struct {
+				status  int
+				client  string
+				trusted bool
+				err     error
+			}
+			seen := make(chan observation, 1)
+			release := make(chan struct{})
+			acl := aclhandler.Middleware(list, "mirror-client", aclhandler.ScopeBackend,
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNoContent)
+				}))
+			target := newMirrorTarget(t, func(_ http.ResponseWriter, r *http.Request) {
+				<-release
+				w := httptest.NewRecorder()
+				acl.ServeHTTP(w, r)
+				seen <- observation{w.Code, request.ClientIP(r), request.PeerTrusted(r), r.Context().Err()}
+			})
+			h := Mirror("front", &po.MirrorOptions{BackendName: "shadow"}, target,
+				http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.WriteHeader(http.StatusNoContent)
+				}))
+			var trusted clientip.Trusted
+			if tc.trusted {
+				trusted, err = clientip.ParseTrusted([]string{"127.0.0.1"})
+				require.NoError(t, err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			r := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil).WithContext(ctx)
+			r.RemoteAddr = "127.0.0.1:4242"
+			r.Header.Set(headers.NameXForwardedFor, "192.0.2.9")
+			clientip.Middleware(trusted, h).ServeHTTP(httptest.NewRecorder(), r)
+			cancel()
+			close(release)
+			select {
+			case got := <-seen:
+				require.Equal(t, tc.want, got.status)
+				wantClient := "127.0.0.1"
+				if tc.trusted {
+					wantClient = "192.0.2.9"
+				}
+				require.Equal(t, wantClient, got.client)
+				require.Equal(t, tc.trusted, got.trusted)
+				require.NoError(t, got.err)
+			case <-time.After(time.Second):
+				t.Fatal("mirror was not dispatched")
+			}
+		})
+	}
+}

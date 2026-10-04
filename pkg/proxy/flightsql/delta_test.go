@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -28,11 +29,16 @@ import (
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/cockroach"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/stepwindow"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
+
+// a statement asking for off itself
+const offDirective = "/* trickster-step-align:off */ "
 
 // deltaTestCache adapts the package's memCache-style store to the trickster
 // cache interface the delta engine consumes.
@@ -64,8 +70,7 @@ func (c deltaTestCache) Remove(keys ...string) error {
 func (c deltaTestCache) Configuration() *cacheoptions.Options { return cacheoptions.New() }
 
 var testAnalyzer = cockroach.NewAnalyzer(cockroach.Options{
-	BucketMatchers:           cockroach.DataFusionBucketMatchers(),
-	RoundUnalignedTimeBounds: true,
+	BucketMatchers: cockroach.DataFusionBucketMatchers(),
 })
 
 var renderedBounds = regexp.MustCompile(`>= (\d+).* < (\d+)`)
@@ -189,6 +194,87 @@ func TestDeltaTierCachesByExtent(t *testing.T) {
 	}
 }
 
+func TestDeltaTierStoresOnlyRetainedStableRows(t *testing.T) {
+	// retention and the volatile window trim what is cached, never the response, and the next
+	// request refetches exactly what was left out
+	for _, test := range []struct {
+		name    string
+		cfg     func(*DeltaConfig)
+		refetch string
+	}{
+		{"retention", func(c *DeltaConfig) { c.RetentionPoints = 5 }, "0"},
+		{"volatile window", func(c *DeltaConfig) { c.VolatileWindow = time.Since(time.Unix(300, 0)) }, "300"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			up := &fakeUpstream{executeFn: rangedUpstream(t)}
+			inner := newMemCache()
+			cfg := DeltaConfig{
+				Analyzer:    testAnalyzer,
+				CacheClient: func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+				CacheTTL:    time.Hour,
+			}
+			test.cfg(&cfg)
+			srv := NewServer(up, inner, WithCacheKeyPrefix("influx3"), WithDeltaCache(cfg))
+			for range 2 {
+				if rows := executeRows(t, srv, fmt.Sprintf(deltaQuery, 0, 600)); len(rows) != 20 {
+					t.Fatalf("response rows = %d, want 20", len(rows))
+				}
+			}
+			refetch := renderedBounds.FindStringSubmatch(up.executedQueries[len(up.executedQueries)-1])
+			if up.executeCalls != 2 || refetch == nil || refetch[1] != test.refetch {
+				t.Fatalf("upstream calls = %d, last fetch from %v", up.executeCalls, refetch)
+			}
+		})
+	}
+}
+
+func TestDeltaTierOffAnswersTheClientsStatementFromTheObjectTier(t *testing.T) {
+	// off configured, and off asked for by a statement on a backend left at its default
+	t.Run("configured", func(t *testing.T) { offAnswersFromTheObjectTier(t, timeseries.StepAlignmentOff, "") })
+	t.Run("by directive", func(t *testing.T) { offAnswersFromTheObjectTier(t, 0, offDirective) })
+}
+
+func offAnswersFromTheObjectTier(t *testing.T, mode timeseries.StepAlignment, directive string) {
+	up := &fakeUpstream{executeFn: rangedUpstream(t)}
+	inner := newMemCache()
+	// an object TTL unlike off's, so the test sees which one stored each statement
+	srv := NewServer(up, inner, WithCacheKeyPrefix("influx3"), WithCacheTTL(time.Hour), WithDeltaCache(DeltaConfig{
+		Analyzer:      testAnalyzer,
+		CacheClient:   func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+		CacheTTL:      time.Hour,
+		StepAlignment: mode,
+	}))
+	// off the grid at both ends, so the origin's own rows start at the raw lower bound
+	first, later := directive+fmt.Sprintf(deltaQuery, 30, 630), directive+fmt.Sprintf(deltaQuery, 30, 660)
+	for i, test := range []struct {
+		query    string
+		received []string
+	}{
+		{first, []string{first}},
+		{first, []string{first}},
+		{later, []string{first, later}},
+	} {
+		rows := executeRows(t, srv, test.query)
+		if len(rows) == 0 || rows[0][0] != 30*int64(time.Second) {
+			t.Fatalf("%d: expected the origin's rows from the raw lower bound, got %v", i, rows)
+		}
+		if !slices.Equal(up.executedQueries, test.received) {
+			t.Fatalf("%d: the origin received %q, want the client's statements %q", i,
+				up.executedQueries, test.received)
+		}
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	if len(inner.ttls) != 2 {
+		t.Errorf("expected one object per statement, got %d entries", len(inner.ttls))
+	}
+	for key, ttl := range inner.ttls {
+		if ttl != timeseries.StepAlignmentOffTTL {
+			t.Errorf("%s stored for %s, want %s", key, ttl, timeseries.StepAlignmentOffTTL)
+		}
+	}
+}
+
 func TestDeltaTierRoutesNonDeltaStatements(t *testing.T) {
 	up := &fakeUpstream{ipcBytes: buildTestIPC(t)}
 	srv := newDeltaTestServer(t, up)
@@ -209,8 +295,9 @@ func TestDeltaTierRoutesNonDeltaStatements(t *testing.T) {
 	}
 }
 
-func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
-	// the upstream returns a list-typed column the dataset model cannot express
+func unrepresentableIPC(t *testing.T) []byte {
+	t.Helper()
+	// a list-typed column the dataset model cannot express
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Nanosecond}},
 		{Name: "l", Type: arrow.ListOf(arrow.PrimitiveTypes.Int64)},
@@ -223,7 +310,38 @@ func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := &fakeUpstream{ipcBytes: ipcBytes}
+	return ipcBytes
+}
+
+func TestDeltaTierAnswersARangeWithNoRows(t *testing.T) {
+	// no rows leave nothing to name the time column, which the plan names instead
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Nanosecond}},
+		{Name: "host", Type: arrow.BinaryTypes.String},
+		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	}, nil)
+	builder := array.NewRecordBuilder(memory.DefaultAllocator, schema)
+	defer builder.Release()
+	record := builder.NewRecordBatch()
+	defer record.Release()
+	empty, err := EncodeRecords(schema, []arrow.RecordBatch{record})
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := &fakeUpstream{executeFn: func(string) ([]byte, error) { return empty, nil }}
+	srv := newDeltaTestServer(t, up)
+	for range 2 {
+		if rows := executeRows(t, srv, fmt.Sprintf(deltaQuery, 0, 600)); len(rows) != 0 {
+			t.Fatalf("rows = %v", rows)
+		}
+	}
+	if up.executeCalls != 1 {
+		t.Fatalf("upstream calls = %d, want the miss only", up.executeCalls)
+	}
+}
+
+func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
+	up := &fakeUpstream{ipcBytes: unrepresentableIPC(t)}
 	srv := newDeltaTestServer(t, up)
 
 	query := fmt.Sprintf(deltaQuery, 0, 600)
@@ -244,34 +362,79 @@ func TestDeltaTierFallsBackOnUnrepresentableSchema(t *testing.T) {
 	}
 }
 
-func TestDeltaTierOpenEndedWindowExcludesVolatileTail(t *testing.T) {
+func TestDeltaTierOffNeverServesAnObjectStoredForTheDefaultTTL(t *testing.T) {
+	up := &fakeUpstream{ipcBytes: unrepresentableIPC(t)}
+	inner := newMemCache()
+	newServer := func(mode timeseries.StepAlignment) *Server {
+		return NewServer(up, inner, WithCacheKeyPrefix("influx3"), WithCacheTTL(time.Hour),
+			WithDeltaCache(DeltaConfig{
+				Analyzer:      testAnalyzer,
+				CacheClient:   func() trickstercache.Cache { return deltaTestCache{inner: inner} },
+				CacheTTL:      time.Hour,
+				StepAlignment: mode,
+			}))
+	}
+	query := fmt.Sprintf(deltaQuery, 0, 600)
+	// the unrepresentable plan falls back to the statement's object, kept for the object TTL
+	executeRows(t, newServer(0), query)
+	calls := up.executeCalls
+	off := newServer(timeseries.StepAlignmentOff)
+	executeRows(t, off, query)
+	executeRows(t, off, query)
+	if got := up.executeCalls - calls; got != 1 {
+		t.Fatalf("off reached the origin %d times, want once: never the fallback's object, then its own", got)
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	offEntries := 0
+	for _, ttl := range inner.ttls {
+		if ttl == timeseries.StepAlignmentOffTTL {
+			offEntries++
+		}
+	}
+	if offEntries != 1 {
+		t.Errorf("expected one object stored for %s, got %d", timeseries.StepAlignmentOffTTL, offEntries)
+	}
+}
+
+func TestDeltaTierOpenEndedWindowEndsBeforeTheStillFillingBucket(t *testing.T) {
 	up := &fakeUpstream{executeFn: rangedUpstream(t)}
 	srv := newDeltaTestServer(t, up)
-
-	lower := time.Now().Add(-10 * time.Minute).Truncate(time.Minute).Unix()
-	query := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, avg(v) AS v "+
-		"FROM m WHERE time >= %d GROUP BY 1, host", lower)
-	first := executeRows(t, srv, query)
-	if up.executeCalls != 1 || len(first) == 0 {
-		t.Fatalf("open-ended miss = %d calls, %d rows", up.executeCalls, len(first))
+	type attempt struct {
+		calls, firstRows, secondRows int
+		fetched                      string
+		bucket                       time.Time
 	}
-	// the still-filling tail is excluded from storage, so an immediate rerun
-	// refetches only the volatile buckets
-	second := executeRows(t, srv, query)
-	if up.executeCalls != 2 {
-		t.Fatalf("open-ended rerun made %d upstream calls, want 2", up.executeCalls)
+	// a bucket that closes between the two requests adds a fetch, so such attempts are retried
+	got, ok := stepwindow.Retry(time.Minute, 3, func(_ int, now time.Time) attempt {
+		up.executeCalls, up.executedQueries = 0, nil
+		lower := now.Add(-10 * time.Minute).Truncate(time.Minute).Unix()
+		query := fmt.Sprintf("SELECT date_bin(INTERVAL '1 minute', time) AS time, host, avg(v) AS v "+
+			"FROM m WHERE time >= %d GROUP BY 1, host", lower)
+		first := executeRows(t, srv, query)
+		second := executeRows(t, srv, query)
+		a := attempt{
+			calls: up.executeCalls, firstRows: len(first), secondRows: len(second),
+			bucket: now.Truncate(time.Minute),
+		}
+		if len(up.executedQueries) > 0 {
+			a.fetched = up.executedQueries[0]
+		}
+		return a
+	})
+	if !ok {
+		t.Fatal("every attempt straddled a bucket boundary")
 	}
-	if len(second) < len(first)-4 || len(second) > len(first)+4 {
-		t.Fatalf("open-ended rerun rows = %d vs %d", len(second), len(first))
+	// the first request fetches up to the still-filling bucket, and the repeat is a full hit
+	if got.calls != 1 || got.firstRows == 0 || got.secondRows != got.firstRows {
+		t.Fatalf("got %d upstream calls and %d then %d rows", got.calls, got.firstRows, got.secondRows)
 	}
-	tail := up.executedQueries[len(up.executedQueries)-1]
-	match := renderedBounds.FindStringSubmatch(tail)
+	match := renderedBounds.FindStringSubmatch(got.fetched)
 	if match == nil {
-		t.Fatalf("no bounds in volatile refetch %q", tail)
+		t.Fatalf("no bounds in %q", got.fetched)
 	}
-	refetchLower, _ := strconv.ParseInt(match[1], 10, 64)
-	if refetchLower <= lower {
-		t.Fatalf("volatile refetch re-fetched the whole window: %s", tail)
+	if upper, _ := strconv.ParseInt(match[2], 10, 64); upper != got.bucket.Unix() {
+		t.Fatalf("expected the fetch to end at the still-filling bucket %d: %s", got.bucket.Unix(), got.fetched)
 	}
 }
 

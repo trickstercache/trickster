@@ -58,7 +58,7 @@ func TestFlightNativeListenerAdapterContract(t *testing.T) {
 	if adapter.Protocol() != listenerconfig.ProtocolFlightSQL {
 		t.Fatalf("Protocol() = %q", adapter.Protocol())
 	}
-	if !adapter.SupportsHTTP() {
+	if !adapter.SupportsHTTP(providers.InfluxDB) {
 		t.Fatal("SupportsHTTP() = false")
 	}
 	if adapter.Configured(listenerconfig.New("flight")) {
@@ -79,6 +79,9 @@ func TestFlightNativeListenerAdapterContract(t *testing.T) {
 	}
 	if err := adapter.ValidateUserRouter(nil, "flight", nil); err == nil {
 		t.Fatal("ValidateUserRouter() succeeded; Flight SQL has no user routing")
+	}
+	if err := adapter.ValidateBalancer(nil, "flight", nil); err == nil {
+		t.Fatal("ValidateBalancer() succeeded; Flight SQL has no session balancing")
 	}
 	if resolver := adapter.RouteResolver(native.BuildRequest{}); resolver != nil {
 		t.Fatal("RouteResolver() returned a resolver")

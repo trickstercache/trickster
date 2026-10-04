@@ -1,0 +1,203 @@
+{
+  "schema_version": 1,
+  "corpus_version": "questdb-pgwire-v1",
+  "minimum_interval": "1m",
+  "omissions": [
+    "postgresql-grafana-macro-families",
+    "builder-mode-captures",
+    "extended-protocol-statements",
+    "unsupported-FILL-PREV-and-range-clauses"
+  ],
+  "cases": [
+    {
+      "name": "sample_by_fixed",
+      "query_origin": "Hand-written QuestDB SQL regression from the developer dashboard",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, count() AS trips FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 5m",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "timestamp",
+        "lower_bound": "2026-09-18T08:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-18T11:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>",
+          "SAMPLE BY 5m"
+        ]
+      },
+      "rationale": "Fixed five-minute SAMPLE BY buckets are aligned to the epoch grid and can be merged by the native delta cache."
+    },
+    {
+      "name": "sample_by_series",
+      "query_origin": "Hand-written QuestDB SQL regression from the developer dashboard",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, cab_type, count() AS trips FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 15m",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "15m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "timestamp",
+        "lower_bound": "2026-09-18T08:15:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-18T11:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": ["cab_type"],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>",
+          "SAMPLE BY 15m"
+        ]
+      },
+      "rationale": "QuestDB groups every plain non-time select column into the series identity when SAMPLE BY has no explicit GROUP BY."
+    },
+    {
+      "name": "sample_by_fill_null",
+      "query_origin": "Hand-written QuestDB SQL regression from the developer dashboard",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, avg(total_amount) AS value FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 10m FILL(NULL) ORDER BY time",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "QuestDB generates NULL rows from observations within the selected range, so the result is not independent of the range used to fetch an extent."
+    },
+    {
+      "name": "timestamp_floor",
+      "query_origin": "Hand-written QuestDB SQL regression from the developer dashboard",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT timestamp_floor('5m', pickup_datetime) AS time, count() AS trips FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "timestamp",
+        "lower_bound": "2026-09-18T08:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-18T11:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>",
+          "timestamp_floor('5m'"
+        ]
+      },
+      "rationale": "QuestDB's fixed-width timestamp_floor expression exposes the same reusable time axis as SAMPLE BY."
+    },
+    {
+      "name": "epoch_floor",
+      "query_origin": "Hand-written QuestDB SQL regression for PostgreSQL-compatible epoch bucketing",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT floor(extract(epoch FROM pickup_datetime)/300)*300 AS time, count() AS trips FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' GROUP BY 1 ORDER BY 1",
+      "expected": {
+        "cache_mode": "delta",
+        "analysis_reason": "delta_cacheable",
+        "cadence": "5m",
+        "phase": "0s",
+        "input_unit": "rfc3339",
+        "output_unit": "unix_seconds",
+        "lower_bound": "2026-09-18T08:05:00Z",
+        "lower_inclusive": true,
+        "upper_bound": "2026-09-18T11:00:00Z",
+        "upper_inclusive": false,
+        "output_column": "time",
+        "group_columns": [],
+        "canonical_policy": "range_independent",
+        "extent_rendering": true,
+        "canonical_contains": [
+          "<$TS1$>",
+          "<$TS2$>",
+          "extract('epoch'"
+        ]
+      },
+      "rationale": "The shared epoch-floor matcher is retained for clients that express QuestDB-compatible buckets in PostgreSQL-style SQL."
+    },
+    {
+      "name": "object_month_sample",
+      "query_origin": "QuestDB calendar-width boundary regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, count() FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 1M",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "Calendar months are not a fixed duration and therefore cannot use the fixed-width delta cache."
+    },
+    {
+      "name": "object_fill_prev",
+      "query_origin": "QuestDB fill-policy boundary regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, count() FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 5m FILL(PREV)",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "Previous-value fill depends on neighboring rows outside an independently fetched extent, so it remains an object response."
+    },
+    {
+      "name": "object_from_to_sample",
+      "query_origin": "QuestDB clause-owned bounds regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, count() FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 5m FROM '2026-09-18T08:00:00Z' TO '2026-09-18T11:00:00Z' FILL(NULL)",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_bucket",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "QuestDB's SAMPLE BY FROM/TO clause owns the sampling bounds and cannot be replaced by a cache extent."
+    },
+    {
+      "name": "object_explicit_group",
+      "query_origin": "QuestDB grouping ambiguity regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT pickup_datetime AS time, cab_type, count() FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' GROUP BY cab_type SAMPLE BY 5m",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "unsupported_grouping",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "The analyzer does not guess how an explicit GROUP BY combines with QuestDB's implicit SAMPLE BY grouping."
+    },
+    {
+      "name": "object_timestamp_not_first",
+      "query_origin": "QuestDB designated-timestamp inference regression",
+      "session_time_zone": "UTC",
+      "expanded_sql": "SELECT cab_type, pickup_datetime AS time, count() FROM trips WHERE pickup_datetime >= '2026-09-18T08:00:03.123456Z' AND pickup_datetime < '2026-09-18T11:00:07.456789Z' SAMPLE BY 5m",
+      "expected": {
+        "cache_mode": "object",
+        "analysis_reason": "not_time_range",
+        "canonical_policy": "none",
+        "extent_rendering": false
+      },
+      "rationale": "QuestDB applies SAMPLE BY to the designated timestamp; the adapter only infers the first plain selected column and otherwise fails closed."
+    }
+  ]
+}

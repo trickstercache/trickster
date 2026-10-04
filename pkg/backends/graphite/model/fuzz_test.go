@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/testutil/dspoints"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 )
@@ -79,7 +80,7 @@ func FuzzUnmarshalRaw(f *testing.F) {
 						t.Fatalf("step %v: series %q has %d value fields, want 1",
 							step, sr.Header.Name, len(sr.Header.ValueFieldsList))
 					}
-					for _, pt := range sr.Points {
+					for _, pt := range dspoints.Of(sr) {
 						if len(pt.Values) != 1 {
 							t.Fatalf("step %v: series %q has a point with %d values, want 1",
 								step, sr.Header.Name, len(pt.Values))

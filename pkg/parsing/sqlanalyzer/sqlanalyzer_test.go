@@ -19,6 +19,7 @@ package sqlanalyzer
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
@@ -30,6 +31,34 @@ func TestQueryPlanRenderExtentRequiresRenderer(t *testing.T) {
 	}
 	if _, err := (&QueryPlan{}).RenderExtent(timeseries.Extent{}); !errors.Is(err, ErrMissingRenderer) {
 		t.Errorf("missing renderer error = %v, want %v", err, ErrMissingRenderer)
+	}
+}
+
+type extentOnlyRenderer struct{}
+
+func (extentOnlyRenderer) RenderExtent(timeseries.Extent) (string, error) { return "", nil }
+
+type rangeRenderer struct{ extentOnlyRenderer }
+
+func (rangeRenderer) RenderRange(pb timeseries.PartialBucket) (string, error) {
+	return pb.Lower.String(), nil
+}
+
+func TestQueryPlanRenderRange(t *testing.T) {
+	var nilPlan *QueryPlan
+	pb := timeseries.PartialBucket{Lower: time.Unix(60, 0)}
+	if _, err := nilPlan.RenderRange(pb); !errors.Is(err, ErrMissingRenderer) {
+		t.Errorf("nil plan error = %v, want %v", err, ErrMissingRenderer)
+	}
+	if _, err := (&QueryPlan{}).RenderRange(pb); !errors.Is(err, ErrMissingRenderer) {
+		t.Errorf("missing renderer error = %v, want %v", err, ErrMissingRenderer)
+	}
+	// a renderer that renders only extents can't render a partial bucket
+	if _, err := (&QueryPlan{Renderer: extentOnlyRenderer{}}).RenderRange(pb); !errors.Is(err, ErrUnsupportedRange) {
+		t.Errorf("extent-only renderer error = %v, want %v", err, ErrUnsupportedRange)
+	}
+	if got, err := (&QueryPlan{Renderer: rangeRenderer{}}).RenderRange(pb); err != nil || got != pb.Lower.String() {
+		t.Errorf("RenderRange() = %q, %v", got, err)
 	}
 }
 

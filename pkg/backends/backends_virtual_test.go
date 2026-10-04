@@ -37,6 +37,7 @@ func TestStartHealthChecksRegistersVirtualBackends(t *testing.T) {
 	}{
 		{"alb-inner", providers.ALB},
 		{"rule-inner", providers.Rule},
+		{"static-inner", providers.Static},
 	}
 	for _, c := range cases {
 		t.Run(c.provider, func(t *testing.T) {

@@ -37,3 +37,8 @@ func ClientIP(r *http.Request) string {
 	}
 	return r.RemoteAddr
 }
+
+// PeerTrusted reports whether the peer that delivered r is one of the listener's trusted proxies.
+func PeerTrusted(r *http.Request) bool {
+	return r != nil && tctx.PeerTrusted(r.Context())
+}

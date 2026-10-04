@@ -21,13 +21,14 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,13 +47,10 @@ func TestALBDiscoveryReloadDuringChurn(t *testing.T) {
 	}
 	// mirror reload_storm_test: the daemon's signal handler must be the
 	// only SIGHUP receiver
-	signal.Reset(syscall.SIGHUP)
+	guardSIGHUP(t)
 
-	const (
-		frontPort   = 19540
-		metricsPort = 19541
-		mgmtPort    = 19542
-	)
+	ports, release := portutil.Reserve(t, 3)
+	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	leaves := make([]*discoveryLeaf, 4)
 	for i := range leaves {
 		leaves[i] = newDiscoveryLeaf(t, fmt.Sprintf("leaf%d", i))
@@ -64,6 +62,7 @@ func TestALBDiscoveryReloadDuringChurn(t *testing.T) {
 	cfg := discoveryALBConfig(frontPort, metricsPort, mgmtPort,
 		"  d1:\n    provider: file",
 		"          path: "+membersPath)
+	release()
 	cfgPath := startDiscoveryTrickster(t, cfg)
 	metricsAddr := fmt.Sprintf("127.0.0.1:%d", metricsPort)
 	waitForTrickster(t, metricsAddr)

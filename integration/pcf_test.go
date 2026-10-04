@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -37,38 +38,95 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	pcfObjectPath = "/object"
+	pcfSubmitPath = "/submit"
+	pcfBodySize   = 128 * 1024
+	// more than a response writer buffers, so a held fetch still reaches every client's headers
+	pcfHeldBytes   = pcfBodySize / 2
+	pcfJoinTimeout = 15 * time.Second
+)
+
 // pcfOrigin counts upstream hits and can hold the body open until released,
 // which is how the tests prove followers joined one stream vs fetched anew.
 type pcfOrigin struct {
-	hits    atomic.Int32
-	release chan struct{}
-	body    string
-	headers map[string]string
-	status  int
+	hits     atomic.Int32
+	release  chan struct{}
+	released sync.Once
+	body     string
+	headers  map[string]string
+	status   int
 }
 
-func newPCFOrigin(t *testing.T, hold bool) (*pcfOrigin, *httptest.Server) {
+func (o *pcfOrigin) releaseHeld() {
+	o.released.Do(func() { close(o.release) })
+}
+
+func newPCFOrigin(t *testing.T, hold bool, path string) (*pcfOrigin, *httptest.Server) {
 	t.Helper()
-	o := &pcfOrigin{body: strings.Repeat("d", 128*1024), status: http.StatusOK}
+	o := &pcfOrigin{body: strings.Repeat("d", pcfBodySize), status: http.StatusOK}
 	if hold {
 		o.release = make(chan struct{})
 	}
-	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// only the test's own requests count: a stray one, such as another daemon's health probe
+		// reaching this reused port, is not a fetch
+		if r.URL.Path != path {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		o.hits.Add(1)
 		for k, v := range o.headers {
 			w.Header().Set(k, v)
 		}
 		w.Header().Set("Content-Length", fmt.Sprintf("%d", len(o.body)))
 		w.WriteHeader(o.status)
-		w.Write([]byte(o.body[:64]))
+		w.Write([]byte(o.body[:pcfHeldBytes]))
 		http.NewResponseController(w).Flush()
 		if o.release != nil {
 			<-o.release
 		}
-		w.Write([]byte(o.body[64:]))
+		w.Write([]byte(o.body[pcfHeldBytes:]))
 	}))
 	t.Cleanup(s.Close)
+	if hold {
+		// runs before s.Close, which would otherwise wait forever on a handler a failed test never released
+		t.Cleanup(o.releaseHeld)
+	}
 	return o, s
+}
+
+type pcfClient struct {
+	done chan struct{}
+	body string
+	err  error
+}
+
+func startPCFClient(t *testing.T, url string) *pcfClient {
+	t.Helper()
+	// returns once the response's headers arrive, when the request has started or joined a fetch
+	c := &pcfClient{done: make(chan struct{})}
+	headers := make(chan struct{})
+	// uncompressed, since a compressed held prefix is too small to leave the writer's buffer
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	go func() {
+		defer close(c.done)
+		resp, err := client.Get(url)
+		close(headers)
+		if err != nil {
+			c.err = err
+			return
+		}
+		defer resp.Body.Close()
+		b, err := io.ReadAll(resp.Body)
+		c.body, c.err = string(b), err
+	}()
+	select {
+	case <-headers:
+	case <-time.After(pcfJoinTimeout):
+		t.Fatalf("no response headers from %s", url)
+	}
+	return c
 }
 
 // addPCFBackend is addPassthroughBackend plus progressive collapsed forwarding
@@ -95,39 +153,24 @@ func addPCFBackend(name, originURL string) func(*tkconfig.Config) {
 }
 
 func TestPCFCollapsesConcurrentGets(t *testing.T) {
-	origin, srv := newPCFOrigin(t, true)
+	origin, srv := newPCFOrigin(t, true, pcfObjectPath)
 	h := configHarness(t, addPCFBackend("pcf", srv.URL))
 	h.start(t)
+	// cleanups run in reverse, so a failed test releases the fetch before the daemon drains it
+	t.Cleanup(origin.releaseHeld)
 
-	const clients = 3
-	var wg sync.WaitGroup
-	bodies := make([]string, clients)
-	errs := make([]error, clients)
+	// each client in turn has its headers while the origin holds the fetch, so each follower joined it
+	clients := make([]*pcfClient, 3)
 	for i := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp, err := http.Get("http://" + h.BaseAddr + "/pcf/object")
-			if err != nil {
-				errs[i] = err
-				return
-			}
-			defer resp.Body.Close()
-			b, err := io.ReadAll(resp.Body)
-			bodies[i] = string(b)
-			errs[i] = err
-		}()
-		time.Sleep(100 * time.Millisecond)
+		clients[i] = startPCFClient(t, "http://"+h.BaseAddr+"/pcf"+pcfObjectPath)
 	}
-	time.Sleep(200 * time.Millisecond)
-	close(origin.release)
-	wg.Wait()
-
 	require.EqualValues(t, 1, origin.hits.Load(),
 		"concurrent GETs for one object must share a single upstream fetch")
-	for i := range clients {
-		require.NoError(t, errs[i], "client %d", i)
-		require.Equal(t, origin.body, bodies[i], "client %d body", i)
+	origin.releaseHeld()
+	for i, c := range clients {
+		<-c.done
+		require.NoError(t, c.err, "client %d", i)
+		require.Equal(t, origin.body, c.body, "client %d body", i)
 	}
 }
 
@@ -146,14 +189,14 @@ func TestPCFRefusesIneligibleResponses(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			origin, srv := newPCFOrigin(t, false)
+			origin, srv := newPCFOrigin(t, false, pcfObjectPath)
 			origin.headers = tc.headers
 			h := configHarness(t, addPCFBackend("pcf"+tc.name, srv.URL))
 			h.start(t)
 
 			for range 2 {
 				req, err := http.NewRequest(http.MethodGet,
-					"http://"+h.BaseAddr+"/pcf"+tc.name+"/object", nil)
+					"http://"+h.BaseAddr+"/pcf"+tc.name+pcfObjectPath, nil)
 				require.NoError(t, err)
 				if tc.reqMod != nil {
 					tc.reqMod(req)
@@ -173,12 +216,12 @@ func TestPCFRefusesIneligibleResponses(t *testing.T) {
 }
 
 func TestPCFNeverCollapsesPost(t *testing.T) {
-	origin, srv := newPCFOrigin(t, false)
+	origin, srv := newPCFOrigin(t, false, pcfSubmitPath)
 	h := configHarness(t, addPCFBackend("pcfpost", srv.URL))
 	h.start(t)
 
 	for range 2 {
-		resp, err := http.Post("http://"+h.BaseAddr+"/pcfpost/submit",
+		resp, err := http.Post("http://"+h.BaseAddr+"/pcfpost"+pcfSubmitPath,
 			"text/plain", strings.NewReader("x"))
 		require.NoError(t, err)
 		io.Copy(io.Discard, resp.Body)
@@ -189,12 +232,17 @@ func TestPCFNeverCollapsesPost(t *testing.T) {
 
 func TestPCFTruncationFansOutAsFailure(t *testing.T) {
 	release := make(chan struct{})
+	releaseHeld := sync.OnceFunc(func() { close(release) })
 	var hits atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != pcfObjectPath {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
 		hits.Add(1)
-		w.Header().Set("Content-Length", "262144")
+		w.Header().Set("Content-Length", strconv.Itoa(2*pcfBodySize))
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("partial"))
+		w.Write([]byte(strings.Repeat("p", pcfHeldBytes)))
 		http.NewResponseController(w).Flush()
 		<-release
 		panic(http.ErrAbortHandler) // sever the stream mid-body
@@ -203,33 +251,17 @@ func TestPCFTruncationFansOutAsFailure(t *testing.T) {
 
 	h := configHarness(t, addPCFBackend("pcftrunc", srv.URL))
 	h.start(t)
+	t.Cleanup(releaseHeld)
 
-	const clients = 2
-	var wg sync.WaitGroup
-	sawFailure := make([]bool, clients)
+	clients := make([]*pcfClient, 2)
 	for i := range clients {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			resp, err := http.Get("http://" + h.BaseAddr + "/pcftrunc/object")
-			if err != nil {
-				sawFailure[i] = true
-				return
-			}
-			defer resp.Body.Close()
-			if _, err := io.ReadAll(resp.Body); err != nil {
-				sawFailure[i] = true
-			}
-		}()
-		time.Sleep(100 * time.Millisecond)
+		clients[i] = startPCFClient(t, "http://"+h.BaseAddr+"/pcftrunc"+pcfObjectPath)
 	}
-	time.Sleep(200 * time.Millisecond)
-	close(release)
-	wg.Wait()
-
 	require.EqualValues(t, 1, hits.Load(), "clients should have shared the doomed fetch")
-	for i := range clients {
-		require.True(t, sawFailure[i],
+	releaseHeld()
+	for i, c := range clients {
+		<-c.done
+		require.Error(t, c.err,
 			"client %d: a truncated collapse must fail visibly, not present as complete", i)
 	}
 }

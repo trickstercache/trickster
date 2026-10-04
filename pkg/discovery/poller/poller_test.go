@@ -27,9 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// settleTime is how long a test waits before asserting that something has
-// NOT happened. Negative assertions cannot be made deterministic; this is
-// long enough to be reliable and short enough to keep the suite quick.
+// Allow multiple polling cycles before checking that no event arrived.
 const settleTime = 150 * time.Millisecond
 
 // waitTime bounds positive assertions, which fail fast in practice and only
@@ -110,8 +108,6 @@ func TestNewValidation(t *testing.T) {
 	require.Equal(t, "ok", p.Name())
 }
 
-// A poller that has just started should not wait out its interval before
-// producing an answer; the caller started it because it wants one now.
 func TestFirstIterationIsImmediate(t *testing.T) {
 	r := newRecorder(nil)
 	start := time.Now()
@@ -121,57 +117,55 @@ func TestFirstIterationIsImmediate(t *testing.T) {
 		"the first iteration waited for the interval instead of running immediately")
 }
 
-// pinMaxJitter makes the one-time jitter deterministic by always drawing the
-// largest value in range. It deliberately honors the bound it is given
-// rather than returning a constant, so the caller still exercises whatever
-// cap the poller applied before drawing.
-func pinMaxJitter(t *testing.T) {
+// Pin the largest jitter draw and record its bound.
+func pinMaxJitter(t *testing.T) (*atomic.Int64, *atomic.Int64) {
 	t.Helper()
+	var draws, bound atomic.Int64
 	prev := randomDuration
-	randomDuration = func(d time.Duration) time.Duration { return d }
+	randomDuration = func(d time.Duration) time.Duration {
+		bound.Store(int64(d))
+		draws.Add(1)
+		return d
+	}
 	t.Cleanup(func() { randomDuration = prev })
+	return &draws, &bound
 }
 
-// Jitter must not postpone the first iteration: a health check registered
-// for a member joining a live pool cannot admit it until the first answer
-// arrives. The fleet is spread out by the wait that follows, once.
 func TestJitterShiftsTheCadenceNotTheFirstIteration(t *testing.T) {
-	pinMaxJitter(t)
+	draws, bound := pinMaxJitter(t)
 	const interval = 200 * time.Millisecond
 	r := newRecorder(nil)
 	start := time.Now()
 	mustStart(t, Options{Interval: interval, Jitter: interval}, r)
 	first := r.awaitCall(t)
-	require.Less(t, first.Sub(start), settleTime,
+	require.Less(t, first.Sub(start), waitTime,
 		"jitter delayed the first iteration")
 	second := r.awaitCall(t)
 	require.GreaterOrEqual(t, second.Sub(first), interval+interval/2,
 		"the wait after the first iteration must carry the jitter")
 	third := r.awaitCall(t)
-	require.Less(t, third.Sub(second), interval+interval/2,
-		"jitter must be spent once, not on every wait")
+	require.GreaterOrEqual(t, third.Sub(second), interval)
+	require.EqualValues(t, 1, draws.Load(), "jitter must be drawn once, not on every wait")
+	require.EqualValues(t, interval, bound.Load())
 }
 
-// Jitter is capped at the interval. A jitter sized for a slow poller must
-// not stall a fast one for several of its own periods: spreading over one
-// interval is all that de-phasing a fleet requires.
 func TestJitterIsCappedAtTheInterval(t *testing.T) {
-	pinMaxJitter(t)
+	draws, bound := pinMaxJitter(t)
 	const interval = 20 * time.Millisecond
 	r := newRecorder(nil)
 	// an hour of jitter on a 20ms poller would stall it for 180,000 periods
 	mustStart(t, Options{Interval: interval, Jitter: time.Hour}, r)
 	first := r.awaitCall(t)
 	second := r.awaitCall(t)
-	require.Less(t, second.Sub(first), settleTime,
+	require.Less(t, second.Sub(first), waitTime,
 		"jitter must be capped at the interval, not applied whole")
 
 	third := r.awaitCall(t)
-	require.Less(t, third.Sub(second), settleTime)
+	require.Less(t, third.Sub(second), waitTime)
+	require.EqualValues(t, 1, draws.Load())
+	require.EqualValues(t, interval, bound.Load(), "the jitter draw must be capped at the interval")
 }
 
-// A blocking-query source's immediate re-issue is never held back by
-// jitter; it is carried to the first real wait
 func TestJitterSkipsPollNow(t *testing.T) {
 	pinMaxJitter(t)
 	const interval = 200 * time.Millisecond
@@ -184,15 +178,13 @@ func TestJitterSkipsPollNow(t *testing.T) {
 	mustStart(t, Options{Interval: interval, Jitter: interval}, r)
 	first := r.awaitCall(t)
 	second := r.awaitCall(t)
-	require.Less(t, second.Sub(first), settleTime,
+	require.Less(t, second.Sub(first), waitTime,
 		"PollNow must re-issue immediately even before the jitter is spent")
 	third := r.awaitCall(t)
 	require.GreaterOrEqual(t, third.Sub(second), interval+interval/2,
 		"the jitter is spent on the first real wait")
 }
 
-// A Source returning a positive next overrides the configured interval for
-// that one iteration -- the DNS TTL-floor case.
 func TestSourceNextOverridesInterval(t *testing.T) {
 	r := newRecorder(func(context.Context, int) (time.Duration, error) {
 		return time.Millisecond, nil
@@ -203,8 +195,6 @@ func TestSourceNextOverridesInterval(t *testing.T) {
 	}
 }
 
-// PollNow re-issues immediately: the blocking-query case, where the server
-// has already done the waiting.
 func TestPollNowIteratesImmediately(t *testing.T) {
 	r := newRecorder(func(context.Context, int) (time.Duration, error) {
 		return PollNow, nil
@@ -215,8 +205,6 @@ func TestPollNowIteratesImmediately(t *testing.T) {
 	}
 }
 
-// A zero next means "use the interval", which a long interval makes
-// observable: exactly one iteration, then quiet.
 func TestZeroNextUsesInterval(t *testing.T) {
 	r := newRecorder(nil)
 	mustStart(t, Options{Interval: time.Hour, Jitter: noJitter}, r)
@@ -226,7 +214,6 @@ func TestZeroNextUsesInterval(t *testing.T) {
 		"a zero next should fall back to the interval, not re-poll")
 }
 
-// The whole point of the package: a panicking Source must not kill the loop.
 func TestPanicIsRecoveredAndLoopContinues(t *testing.T) {
 	var panics atomic.Int64
 	r := newRecorder(func(_ context.Context, n int) (time.Duration, error) {
@@ -246,8 +233,6 @@ func TestPanicIsRecoveredAndLoopContinues(t *testing.T) {
 	require.EqualValues(t, 1, panics.Load(), "OnPanic should fire once, for the one panic")
 }
 
-// A nil OnPanic must still recover -- the default handler logs rather than
-// leaving the panic to kill the goroutine.
 func TestNilPanicHandlerStillRecovers(t *testing.T) {
 	r := newRecorder(func(_ context.Context, n int) (time.Duration, error) {
 		if n == 1 {
@@ -261,8 +246,6 @@ func TestNilPanicHandlerStillRecovers(t *testing.T) {
 	}
 }
 
-// A panicking source is a failing source: it must take the backoff path
-// rather than spinning at the interval.
 func TestPanicCountsAsFailureForBackoff(t *testing.T) {
 	r := newRecorder(func(context.Context, int) (time.Duration, error) {
 		panic("always")
@@ -282,8 +265,6 @@ func TestPanicCountsAsFailureForBackoff(t *testing.T) {
 		"a persistently panicking source spun instead of backing off")
 }
 
-// Errors must not stop the loop, and must not be reported as anything the
-// poller acts on beyond backoff.
 func TestErrorDoesNotStopLoop(t *testing.T) {
 	errBoom := errors.New("boom")
 	r := newRecorder(func(context.Context, int) (time.Duration, error) {
@@ -295,8 +276,6 @@ func TestErrorDoesNotStopLoop(t *testing.T) {
 	}
 }
 
-// Without DetachIterations, Stop cancels the in-flight iteration so that
-// shutdown is prompt even when the Source is mid-blocking-query.
 func TestStopCancelsInFlightIterationByDefault(t *testing.T) {
 	entered := make(chan struct{})
 	var observedCancel atomic.Bool
@@ -315,8 +294,6 @@ func TestStopCancelsInFlightIterationByDefault(t *testing.T) {
 	require.True(t, observedCancel.Load(), "the in-flight iteration was not cancelled")
 }
 
-// With DetachIterations, Stop waits for the in-flight iteration instead of
-// cancelling it -- the health-check re-registration guarantee.
 func TestDetachedStopWaitsForInFlightIteration(t *testing.T) {
 	entered := make(chan struct{})
 	release := make(chan struct{})
@@ -358,7 +335,6 @@ func TestDetachedStopWaitsForInFlightIteration(t *testing.T) {
 	require.True(t, finished.Load())
 }
 
-// Timeout deadlines a single iteration without ending the loop.
 func TestTimeoutBoundsOneIteration(t *testing.T) {
 	deadlines := make(chan bool, 4)
 	r := newRecorder(func(ctx context.Context, _ int) (time.Duration, error) {
@@ -386,26 +362,31 @@ func TestTriggerRunsAnIterationEarly(t *testing.T) {
 	require.EqualValues(t, 2, r.count.Load())
 }
 
-// Trigger coalesces: a burst produces a bounded number of extra iterations,
-// not one per call. The bound is two rather than one because a trigger
-// raised while an iteration is in flight must still be honored -- that
-// iteration may have read its data before the change landed.
 func TestTriggerCoalesces(t *testing.T) {
-	r := newRecorder(nil)
+	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
+	defer unblock()
+	r := newRecorder(func(ctx context.Context, n int) (time.Duration, error) {
+		if n == 1 {
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+		}
+		return 0, nil
+	})
 	p := mustStart(t, Options{Interval: time.Hour, Jitter: noJitter}, r)
 	r.awaitCall(t)
 	for range 50 {
 		p.Trigger()
 	}
+	unblock()
 	r.awaitCall(t)
 	time.Sleep(settleTime)
 	require.LessOrEqual(t, r.count.Load(), int64(3),
 		"50 triggers should coalesce into at most two extra iterations")
 }
 
-// A trigger raised while the poller is not running must not be banked and
-// replayed: the immediate first iteration on the next Start already answers
-// it, and replaying would spend a second iteration on the same request.
 func TestTriggerOnStoppedPollerIsNoOp(t *testing.T) {
 	r := newRecorder(nil)
 	p, err := New(Options{Interval: time.Hour, Jitter: noJitter}, r)
@@ -433,7 +414,6 @@ func TestStopIsIdempotentAndSafeBeforeStart(t *testing.T) {
 	require.NotPanics(t, p.Stop)
 }
 
-// Restarting must not leave the previous loop running.
 func TestRestartReplacesPreviousLoop(t *testing.T) {
 	r := newRecorder(nil)
 	p, err := New(Options{Interval: 5 * time.Millisecond, Jitter: noJitter}, r)
@@ -450,7 +430,6 @@ func TestRestartReplacesPreviousLoop(t *testing.T) {
 		"a restarted poller left its predecessor loop running")
 }
 
-// Cancelling the context passed to Start is equivalent to Stop.
 func TestContextCancellationStopsLoop(t *testing.T) {
 	r := newRecorder(nil)
 	p, err := New(Options{Interval: 5 * time.Millisecond, Jitter: noJitter}, r)
@@ -494,8 +473,6 @@ func TestBackoff(t *testing.T) {
 	}
 }
 
-// Backoff must be opt-in: with MaxBackoff unset, a failing source keeps
-// polling at its interval rather than silently slowing down.
 func TestNoBackoffWhenMaxBackoffUnset(t *testing.T) {
 	errBoom := errors.New("boom")
 	r := newRecorder(func(context.Context, int) (time.Duration, error) {

@@ -52,7 +52,7 @@ spec:
       labels:
         app: webecho
     spec:
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: 20
       containers:
         - name: webecho
           image: traefik/whoami:v1.10.2
@@ -64,11 +64,11 @@ spec:
           # moment, so every EndpointSlice consumer needs the removal to
           # propagate before the process exits (zero-error rolling
           # deploys). The native sleep action is used because the image
-          # has no shell.
+          # has no shell. 15s leaves room for a loaded CI runner's slow propagation.
           lifecycle:
             preStop:
               sleep:
-                seconds: 5
+                seconds: 15
           readinessProbe:
             httpGet:
               path: /
@@ -123,6 +123,24 @@ data:
         alb:
           mechanism: rr
           healthy_floor: 1
+          discovery:
+            discoverer_name: in-cluster
+            template_backend: member-template
+            query:
+              kind: endpointslices
+              namespace: trickster-it
+              service: webecho
+              port: web
+      # the sticky draining scenario (TestALBStickyDrainingKind): cookie
+      # sessions over the same pods, reached by its Host header
+      sticky-alb:
+        provider: alb
+        hosts:
+          - sticky.trickster-it
+        alb:
+          mechanism: rr
+          healthy_floor: 1
+          sticky: {}
           discovery:
             discoverer_name: in-cluster
             template_backend: member-template

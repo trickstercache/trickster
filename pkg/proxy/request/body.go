@@ -24,6 +24,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/util/numbers"
 )
 
@@ -43,8 +44,7 @@ func SetBody(r *http.Request, body []byte) {
 }
 
 func GetBody(r *http.Request, maxSize ...int64) ([]byte, error) {
-	if r.Method != http.MethodPost && r.Method != http.MethodPut &&
-		r.Method != http.MethodPatch {
+	if !methods.HasBody(r.Method) {
 		return nil, nil
 	}
 	rsc := GetResources(r)

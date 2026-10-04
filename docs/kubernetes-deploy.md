@@ -99,8 +99,8 @@ there, and every `.yaml`, `.yml` or `.conf` file in the directory is merged
 into the primary file in name order, as described under
 [Multiple Configuration Files](./configuring.md#multiple-configuration-files). It is
 where the operator tier is provisioned without touching the primary file:
-the caches, negative caches, tracers, request rewriters and authenticators
-that `kubernetes.defaults`, a GatewayClass's parameters, a
+the caches, negative caches, tracers, request rewriters, authenticators and
+geo ACLs that `kubernetes.defaults`, a GatewayClass's parameters, a
 `TricksterCachePolicy` or an Ingress annotation may then select by name.
 
 ```yaml
@@ -167,6 +167,45 @@ the pod through a rollout, not a reload. TLS certificates for HTTPS Gateway
 listeners and Ingress TLS sections are read from the `kubernetes.io/tls`
 Secrets the objects reference and pushed into the listeners at runtime,
 rotated without a reload; no certificate is mounted.
+
+### Location databases
+
+A [geo ACL](./geo-acl.md) reads a location database that Trickster neither
+ships nor downloads; the operator mounts it. MaxMind's `geoipupdate` image
+fetches GeoLite2 or GeoIP2 files with an account ID and license key. Run it
+as an init container, so the pod starts with a file, and as a sidecar that
+keeps it current, both writing to a volume that Trickster reads:
+
+```yaml
+spec:
+  volumes:
+    - name: geoip
+      emptyDir: {}
+  initContainers:
+    - name: geoip-init
+      image: ghcr.io/maxmind/geoipupdate   # pin a release
+      env:
+        - { name: GEOIPUPDATE_EDITION_IDS, value: GeoLite2-Country }
+        - { name: GEOIPUPDATE_ACCOUNT_ID, valueFrom: { secretKeyRef: { name: geoip, key: account-id } } }
+        - { name: GEOIPUPDATE_LICENSE_KEY, valueFrom: { secretKeyRef: { name: geoip, key: license-key } } }
+      volumeMounts: [ { name: geoip, mountPath: /usr/share/GeoIP } ]
+  containers:
+    - name: geoip-update
+      image: ghcr.io/maxmind/geoipupdate
+      env:
+        - { name: GEOIPUPDATE_EDITION_IDS, value: GeoLite2-Country }
+        - { name: GEOIPUPDATE_FREQUENCY, value: "72" }   # hours between updates; keeps it running
+        - { name: GEOIPUPDATE_ACCOUNT_ID, valueFrom: { secretKeyRef: { name: geoip, key: account-id } } }
+        - { name: GEOIPUPDATE_LICENSE_KEY, valueFrom: { secretKeyRef: { name: geoip, key: license-key } } }
+      volumeMounts: [ { name: geoip, mountPath: /usr/share/GeoIP } ]
+    - name: trickster
+      volumeMounts: [ { name: geoip, mountPath: /var/lib/GeoIP, readOnly: true } ]
+```
+
+`geoipupdate` writes a new file and renames it over the old, which a geo
+locator swaps in while serving. A City file takes about 65 MB of memory per
+locator, and twice that while a replacement loads; size the pod's limit for
+it, or use a Country file. A Helm chart needs values for the volume and the two containers.
 
 ## Ports and addresses
 

@@ -19,7 +19,7 @@
 package timeseries
 
 import (
-	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/segments"
@@ -46,5 +46,16 @@ func (e Extent) After(t time.Time) bool {
 
 // String returns the string representation of the Extent
 func (e Extent) String() string {
-	return fmt.Sprintf("%d-%d", e.Start.UnixNano()/1000000, e.End.UnixNano()/1000000)
+	var buf [extentStringMax]byte
+	return string(e.AppendString(buf[:0]))
+}
+
+// the longest an Extent's string can be: two signed 64-bit integers and a separator
+const extentStringMax = 41
+
+// AppendString appends the Extent to dst as String renders it
+func (e Extent) AppendString(dst []byte) []byte {
+	dst = strconv.AppendInt(dst, e.Start.UnixNano()/1000000, 10)
+	dst = append(dst, '-')
+	return strconv.AppendInt(dst, e.End.UnixNano()/1000000, 10)
 }

@@ -29,9 +29,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
@@ -45,6 +45,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tu "github.com/trickstercache/trickster/v2/pkg/testutil"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/rangesim"
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware"
 )
 
@@ -338,7 +339,7 @@ func TestObjectProxyCachePartialHit(t *testing.T) {
 
 	// Fulfill the cache with the remaining parts
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -459,7 +460,7 @@ func TestFullArticuation(t *testing.T) {
 
 	r.Header.Del(headers.NameRange)
 	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -498,7 +499,7 @@ func TestFullArticuation(t *testing.T) {
 	}
 
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -779,7 +780,7 @@ func TestObjectProxyCacheIMS(t *testing.T) {
 
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -866,14 +867,14 @@ func TestObjectProxyCacheCanRevalidate(t *testing.T) {
 	p.ResponseHeaders = headers
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
 
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusRevalidated})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -1301,29 +1302,38 @@ func gatedOrigin(gate chan struct{}, hits *atomic.Int64,
 	}))
 }
 
-// runConcurrentOPC fires n concurrent ObjectProxyCacheRequest calls against
-// originURL using clones of r, then closes gate and waits for completion.
-func runConcurrentOPC(n int, r *http.Request, originURL *url.URL,
-	gate chan struct{},
+func runConcurrentOPC(t *testing.T, n int, r *http.Request, originURL *url.URL,
+	gate chan struct{}, wrap ...func(cache.Cache) cache.Cache,
 ) []*httptest.ResponseRecorder {
-	var wg sync.WaitGroup
-	recorders := make([]*httptest.ResponseRecorder, n)
-	for i := range n {
-		wg.Add(1)
-		idx := i
-		go func() {
-			defer wg.Done()
-			clone := r.Clone(r.Context())
-			clone.RequestURI = ""
-			clone.URL = originURL
-			w := httptest.NewRecorder()
-			recorders[idx] = w
-			ObjectProxyCacheRequest(w, clone)
-		}()
-	}
-	time.Sleep(50 * time.Millisecond)
+	t.Helper()
 	close(gate)
-	wg.Wait()
+	rsc := request.GetResources(r)
+	var recorders []*httptest.ResponseRecorder
+	inSingleflightBubble(t, rsc, func(t *testing.T) {
+		held := make(chan struct{})
+		client := rsc.BackendOptions.HTTPClient
+		original := client.Transport
+		client.Transport = &gatedTransport{inner: original, gate: held, hits: &atomic.Int64{}}
+		defer func() {
+			closeIdleTransport(client.Transport)
+			client.Transport = original
+		}()
+		var wg sync.WaitGroup
+		recorders = make([]*httptest.ResponseRecorder, n)
+		for i := range n {
+			wg.Go(func() {
+				clone := r.Clone(r.Context())
+				clone.RequestURI = ""
+				clone.URL = originURL
+				w := httptest.NewRecorder()
+				recorders[i] = w
+				ObjectProxyCacheRequest(w, clone)
+			})
+		}
+		synctest.Wait()
+		close(held)
+		wg.Wait()
+	}, wrap...)
 	return recorders
 }
 
@@ -1347,7 +1357,7 @@ func TestOPCSingleflightDedup(t *testing.T) {
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	recorders := runConcurrentOPC(5, r, originURL, gate)
+	recorders := runConcurrentOPC(t, 5, r, originURL, gate)
 
 	if h := hits.Load(); h != 1 {
 		t.Errorf("expected 1 origin request, got %d", h)
@@ -1397,7 +1407,7 @@ func TestOPCSingleflightErrorPropagation(t *testing.T) {
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	recorders := runConcurrentOPC(3, r, originURL, gate)
+	recorders := runConcurrentOPC(t, 3, r, originURL, gate)
 
 	if h := hits.Load(); h != 1 {
 		t.Errorf("expected 1 origin request, got %d", h)
@@ -1428,56 +1438,66 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set(headers.NameCacheControl, "max-age=60")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, byterange.Body)
+			fmt.Fprint(w, rangesim.Body)
 		})
 		defer origin.Close()
 		rsc.BackendOptions.HTTPClient = origin.Client()
 
-		// all requests use the same range
-		n := 4
-		var wg sync.WaitGroup
-		recorders := make([]*httptest.ResponseRecorder, n)
-		for i := range n {
-			wg.Add(1)
-			idx := i
-			clone := r.Clone(r.Context())
-			clone.RequestURI = ""
-			u, _ := url.Parse(origin.URL + "/byterange/opc")
-			clone.URL = u
-			clone.Header.Set(headers.NameRange, "bytes=0-10")
-			go func() {
-				defer wg.Done()
-				w := httptest.NewRecorder()
-				recorders[idx] = w
-				ObjectProxyCacheRequest(w, clone)
-			}()
-		}
-		time.Sleep(50 * time.Millisecond)
 		close(gate)
-		wg.Wait()
+		inSingleflightBubble(t, rsc, func(t *testing.T) {
+			held := make(chan struct{})
+			original := rsc.BackendOptions.HTTPClient.Transport
+			rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{inner: original, gate: held, hits: &atomic.Int64{}}
+			defer func() {
+				closeIdleTransport(rsc.BackendOptions.HTTPClient.Transport)
+				rsc.BackendOptions.HTTPClient.Transport = original
+			}()
+			// all requests use the same range
+			n := 4
+			var wg sync.WaitGroup
+			recorders := make([]*httptest.ResponseRecorder, n)
+			for i := range n {
+				wg.Add(1)
+				idx := i
+				clone := r.Clone(r.Context())
+				clone.RequestURI = ""
+				u, _ := url.Parse(origin.URL + "/byterange/opc")
+				clone.URL = u
+				clone.Header.Set(headers.NameRange, "bytes=0-10")
+				go func() {
+					defer wg.Done()
+					w := httptest.NewRecorder()
+					recorders[idx] = w
+					ObjectProxyCacheRequest(w, clone)
+				}()
+			}
+			synctest.Wait()
+			close(held)
+			wg.Wait()
 
-		if h := hits.Load(); h != 1 {
-			t.Errorf("expected 1 origin request (identical ranges), got %d", h)
-		}
-		var sawKmiss, sawPhit int
-		for i, rec := range recorders {
-			resp := rec.Result()
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-				t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+			if h := hits.Load(); h != 1 {
+				t.Errorf("expected 1 origin request (identical ranges), got %d", h)
 			}
-			hdr := resp.Header.Get(headers.NameTricksterResult)
-			if strings.Contains(hdr, "status=kmiss") {
-				sawKmiss++
-			} else if strings.Contains(hdr, "status=proxy-hit") {
-				sawPhit++
+			var sawKmiss, sawPhit int
+			for i, rec := range recorders {
+				resp := rec.Result()
+				if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+					t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+				}
+				hdr := resp.Header.Get(headers.NameTricksterResult)
+				if strings.Contains(hdr, "status=kmiss") {
+					sawKmiss++
+				} else if strings.Contains(hdr, "status=proxy-hit") {
+					sawPhit++
+				}
 			}
-		}
-		if sawKmiss != 1 {
-			t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
-		}
-		if sawPhit != n-1 {
-			t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
-		}
+			if sawKmiss != 1 {
+				t.Errorf("expected 1 kmiss (executor), got %d", sawKmiss)
+			}
+			if sawPhit != n-1 {
+				t.Errorf("expected %d proxy-hit (waiters), got %d", n-1, sawPhit)
+			}
+		})
 	})
 
 	t.Run("different ranges not deduped", func(t *testing.T) {
@@ -1493,42 +1513,52 @@ func TestOPCSingleflightRanges(t *testing.T) {
 		origin := gatedOrigin(gate, &hits, func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set(headers.NameCacheControl, "max-age=60")
 			w.WriteHeader(http.StatusOK)
-			fmt.Fprint(w, byterange.Body)
+			fmt.Fprint(w, rangesim.Body)
 		})
 		defer origin.Close()
 		rsc.BackendOptions.HTTPClient = origin.Client()
 
-		ranges := []string{"bytes=0-5", "bytes=10-15"}
-		var wg sync.WaitGroup
-		recorders := make([]*httptest.ResponseRecorder, len(ranges))
-		for i, rng := range ranges {
-			wg.Add(1)
-			idx := i
-			clone := r.Clone(r.Context())
-			clone.RequestURI = ""
-			u, _ := url.Parse(origin.URL + "/byterange/opc")
-			clone.URL = u
-			clone.Header.Set(headers.NameRange, rng)
-			go func() {
-				defer wg.Done()
-				w := httptest.NewRecorder()
-				recorders[idx] = w
-				ObjectProxyCacheRequest(w, clone)
-			}()
-		}
-		time.Sleep(50 * time.Millisecond)
 		close(gate)
-		wg.Wait()
-
-		if h := hits.Load(); h != 2 {
-			t.Errorf("expected 2 origin requests (different ranges), got %d", h)
-		}
-		for i, rec := range recorders {
-			resp := rec.Result()
-			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-				t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+		inSingleflightBubble(t, rsc, func(t *testing.T) {
+			held := make(chan struct{})
+			original := rsc.BackendOptions.HTTPClient.Transport
+			rsc.BackendOptions.HTTPClient.Transport = &gatedTransport{inner: original, gate: held, hits: &atomic.Int64{}}
+			defer func() {
+				closeIdleTransport(rsc.BackendOptions.HTTPClient.Transport)
+				rsc.BackendOptions.HTTPClient.Transport = original
+			}()
+			ranges := []string{"bytes=0-5", "bytes=10-15"}
+			var wg sync.WaitGroup
+			recorders := make([]*httptest.ResponseRecorder, len(ranges))
+			for i, rng := range ranges {
+				wg.Add(1)
+				idx := i
+				clone := r.Clone(r.Context())
+				clone.RequestURI = ""
+				u, _ := url.Parse(origin.URL + "/byterange/opc")
+				clone.URL = u
+				clone.Header.Set(headers.NameRange, rng)
+				go func() {
+					defer wg.Done()
+					w := httptest.NewRecorder()
+					recorders[idx] = w
+					ObjectProxyCacheRequest(w, clone)
+				}()
 			}
-		}
+			synctest.Wait()
+			close(held)
+			wg.Wait()
+
+			if h := hits.Load(); h != 2 {
+				t.Errorf("expected 2 origin requests (different ranges), got %d", h)
+			}
+			for i, rec := range recorders {
+				resp := rec.Result()
+				if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+					t.Errorf("request %d: unexpected status %d", i, resp.StatusCode)
+				}
+			}
+		})
 	})
 }
 
@@ -1568,7 +1598,9 @@ func TestOPCSingleflightHandlerError(t *testing.T) {
 	rsc.BackendOptions.HTTPClient = origin.Client()
 	originURL, _ := url.Parse(origin.URL + "/opc")
 
-	recorders := runConcurrentOPC(6, r, originURL, gate)
+	recorders := runConcurrentOPC(t, 6, r, originURL, gate, func(c cache.Cache) cache.Cache {
+		return &failStoreCache{Cache: c}
+	})
 
 	if h := hits.Load(); h != 1 {
 		t.Errorf("expected 1 origin request, got %d", h)

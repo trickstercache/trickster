@@ -150,12 +150,12 @@ Time range predicates must appear in a top-level `AND` conjunction of the `WHERE
 
 Two predicate targets are supported, with different rules:
 
-- **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`) and the upper bound exclusive (`<`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — are rounded inward to the nearest complete bucket (lower bound up, upper bound down), so partial edge buckets are omitted from the response rather than cached as complete aggregates. If no complete bucket remains after rounding, the query is served through the OPC. Other comparators — including `BETWEEN` — describe partial buckets whose aggregates cannot be safely cached, so those queries are served through the OPC.
-- **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster normalizes each comparator to the first and last included bucket.
+- **The raw time column** (the column inside the bucket function): the lower bound must be inclusive (`>=`, or the lower end of `BETWEEN`); a strict `>` is served through the OPC. The upper bound may be exclusive (`<`) or inclusive (`<=`, or the upper end of `BETWEEN`). Values that do not fall on bucket boundaries — such as the live ranges produced by Grafana's `$__fromTime` and `$__toTime` macros — leave partial buckets at the edges, which are never cached as complete aggregates; the backend's [step alignment](#step-alignment) mode decides what the response shows for them. Under the default, `drop`, they are left out, and an inclusive upper bound leaves out the bucket that contains it, because that bucket is only partly covered. A range with no complete bucket is sent to ClickHouse as written, and its response is cached as an object for `partial_bucket_ttl`.
+- **The bucket alias** (the output of the bucket expression): `>`, `>=`, `<`, `<=`, and `BETWEEN` are all supported, because bucket outputs are discrete; Trickster aligns each comparator to the first and last included bucket.
 
 Bound values may be expressed as epoch integers, ClickHouse string dates in the form `2006-01-02 15:04:05` (or date-only, or RFC3339), `toDateTime(n)`, `toDateTime64(n, precision)`, or `toDate(n)` wrappers, `WITH`-clause constants, or `now()`/`now64()` with optional addition or subtraction of seconds. DateTime64 precision is retained. Floating epoch bounds and timezone-qualified conversions such as `toDateTime(n, 'America/Denver')` are not eligible.
 
-If no upper bound is present, Trickster caches results up to the current time and inserts a safe upper bound into origin requests automatically.
+If no upper bound is present, Trickster inserts a safe upper bound into origin requests automatically and caches every complete bucket up to the current time. The still-filling bucket is never cached: under the default `step_alignment`, `drop`, the response ends before it, and the `partial` and `partial_end` modes fetch it from the origin on each request.
 
 Examples of delta-cacheable time range clauses (for a one-minute bucket cadence):
 
@@ -172,23 +172,68 @@ Secondary date-range predicates whose values match the primary range — such as
 
 The `GROUP BY` clause must include the time bucket (by alias or by its full expression), and every non-aggregate column in the select list must also be grouped. Grouped columns become the series tags in the cached time series. Queries using `GROUP BY ... WITH CUBE/ROLLUP`, grouping on expressions that are not selected, or leaving a selected dimension ungrouped are served through the OPC.
 
+Queries whose values in one time bucket can depend on other buckets, or on the whole result, are also served through the OPC:
+
+- `LIMIT`, `LIMIT BY` and `TOP`;
+- window functions (`OVER (...)` or a `WINDOW` clause) and cross-row functions such as `neighbor`, `lagInFrame`, `leadInFrame` and the `running*` family;
+- `WITH TOTALS` and `ORDER BY ... WITH FILL` (including `INTERPOLATE`);
+- a query-level `SETTINGS` clause;
+- subqueries, common table expressions and joins, which can carry time filters of their own (`ARRAY JOIN` is still delta-cacheable).
+
+### Ordering
+
+Trickster rebuilds a delta-cached response from its cached buckets in ascending time order. A query is therefore delta-cacheable only with no `ORDER BY`, or with a single ascending term on the time bucket (by alias, by the bucket expression, or by its position, as in Grafana's `ORDER BY time`). Any other ordering — descending time, additional terms, or other columns — is served through the OPC, where the origin's row order is kept.
+
 ### Output Formats
 
 Delta-cacheable queries may specify `FORMAT JSON`, `CSV`, `CSVWithNames`, `TabSeparated` (`TSV`), `TabSeparatedWithNames`, or `TabSeparatedWithNamesAndTypes`, or omit the `FORMAT` clause. Trickster requests `TSVWithNamesAndTypes` from the origin and re-marshals cached data into the client's requested format.
 
+Trickster writes each format as ClickHouse writes it:
+
+- **NULL** is `\N` in TSV and CSV, and `null` in JSON. An empty string stays an empty string.
+- **Numbers** are bare JSON numbers, and floats use ClickHouse's text (`1e21`, `1e-7`, `nan`, `inf`). JSON writes NaN and infinities as `null`.
+- **CSV** quotes every text value. A `FixedString` is padded to its width.
+- **Compound values:** `Array`, `Map` and `Tuple` values are their ClickHouse literals in TSV and CSV, and JSON arrays and objects in JSON.
+
+Responses honor `output_format_json_quote_64bit_integers`, `output_format_json_quote_decimals`, `output_format_json_quote_denormals` and `date_time_output_format`.
+
+#### Time Zones
+
+A `DateTime` without a zone in its type is written in the session's time zone: the request's `session_timezone` URL parameter, or else the server's. Trickster caches UTC and writes each response in its client's zone, so clients in different zones share cache entries.
+
+The settings that change only how a response is written aren't part of the cache key: `date_time_output_format`, the JSON quote settings, `default_format`, and `client_protocol_version`.
+
+The zone is part of the key only when it changes which rows a query returns:
+- **Buckets that start on the zone's clock:** a daily bucket starts at the zone's midnight, and an hourly bucket in a zone offset by a half hour starts on the half hour. The zone is keyed unless every offset it has over the queried range is a whole number of buckets. So hourly and finer buckets in New York or UTC share entries; Kolkata hourly buckets, and daily buckets outside UTC, don't.
+- **Zone-sensitive expressions:** another date or time function that reads the zone, such as `toHour()` or `today()`, or text compared as a time.
+
+A query whose time bounds are text (`ts >= '2026-09-29 00:00:00'`) or dates (`toDate(…)`) is read by ClickHouse in the session's zone. Outside UTC it's served through the OPC rather than delta-cached.
+
+Trickster asks the origin for `date_time_output_format=iso`, which writes every `DateTime` as UTC. Its cache holds UTC, without the ambiguity of the hour a clock repeats when daylight saving time ends. It writes its `DateTime64` range bounds with an explicit `'UTC'` zone, so the session's zone doesn't move them.
+
+Trickster learns the server's zone from the `X-ClickHouse-Timezone` header of the origin's responses. A backend that hasn't seen one yet asks the server with `SELECT timezone()` before it caches a query. If that probe fails, for example because the origin requires credentials, Trickster proxies the request uncached to learn the zone from the response. If the zone is still unknown after that, Trickster assumes UTC and logs a warning.
+
 ### Non-Time-Series Queries
 
-Queries that are not cacheable as time series — such as `LIMIT`-based queries, queries with set operations (`UNION`, `EXCEPT`, `INTERSECT`), `SELECT 1` health checks, or SDK handshake requests — are transparently proxied to the upstream ClickHouse server. These requests are cached using the Object Proxy Cache (OPC) with per-query cache keys derived from the `query` and `database` URL parameters, ensuring that different SQL statements receive distinct cache entries.
+Queries that are not cacheable as time series — such as `LIMIT`-based queries, queries with set operations (`UNION`, `EXCEPT`, `INTERSECT`), `SELECT 1` health checks, or SDK handshake requests — are transparently proxied to the upstream ClickHouse server. These requests are cached using the Object Proxy Cache (OPC).
+
+### Cache Keys
+
+Both the OPC and the delta proxy cache key a request on its SQL statement and on every other URL parameter, because query parameters (`param_<name>` values for `{name:Type}` placeholders) and settings can change the result. The native listener forwards its query parameters and settings the same way. Only transport parameters that cannot change the result are left out of the key: `query_id`, `session_timeout`, `session_check`, `send_progress_in_http_headers`, `http_headers_progress_interval_ms`, `wait_end_of_query`, `buffer_size`, `log_comment`, `log_queries`, `quota_key`, and `add_http_cors_header`.
+
+Requests that carry a `session_id` are proxied without caching. A session's `SET` statements change the results of later queries in that session, and that state is not part of any cache key.
 
 ### Health and Ping Endpoint
 
 Trickster exposes a `/ping` endpoint that returns a health check response, matching the endpoint provided by ClickHouse itself. This enables compatibility with clients and SDKs that probe `/ping` during connection initialization.
 
-### Normalization and "Fast Forwarding"
+### Step Alignment
 
-Trickster will always normalize the calculated time range to fit the step size, so small variations in the time range will still result in actual queries for the entire time "bucket". In addition, Trickster will not cache the results for the portion of the query that is still active -- i.e., within the current bucket or within the configured backfill tolerance setting (whichever is greater).
+ClickHouse supports every [step alignment](./step-alignment.md) mode, and defaults to `drop`: responses hold complete buckets only, so the partial buckets at the edges of a live range, and the still-filling bucket at the present, are left out. `truncate` answers the whole first bucket instead.
 
-Per-query behavior can be adjusted with comment directives such as `trickster-backfill-tolerance`; see [Per-Query Instructions](./per-query-instructions.md).
+`partial`, `partial_start` and `partial_end` add the partial buckets as ClickHouse computes them over the client's own range. Each is a small query of its own, sent through the object cache and kept for `partial_bucket_ttl`, never in the time series cache, so these modes cost up to two extra origin queries per request. Fast Forward doesn't apply to ClickHouse; `partial_end` shows the still-filling bucket instead.
+
+Complete buckets inside the configured `volatile_window` are refetched until they settle. A query can choose its own mode or window with a comment directive, such as `/* trickster-step-align:partial_end */`; see [Per-Query Instructions](./per-query-instructions.md). Directives in `#` comments aren't read, because Trickster's ClickHouse SQL parser rejects them: a statement with one is served through the OPC, or proxied.
 
 ## Observability
 

@@ -133,8 +133,10 @@ func startForShutdown(t *testing.T, delay, drain time.Duration, origin http.Hand
 
 func TestStartDrainsInFlightRequestsOnSIGTERM(t *testing.T) {
 	originDelay := 2 * shutdownTestDelay
+	entered := make(chan struct{})
 	port, errs := startForShutdown(t, shutdownTestDelay, shutdownTestDrain,
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(entered)
 			time.Sleep(originDelay)
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -146,7 +148,11 @@ func TestStartDrainsInFlightRequestsOnSIGTERM(t *testing.T) {
 		}
 		result <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-entered:
+	case <-time.After(shutdownTestDrain):
+		t.Fatal("the request never reached the origin")
+	}
 
 	terminate(t, port)
 	// during the shutdown delay the listener still accepts new connections
@@ -175,10 +181,11 @@ func TestStartDrainsInFlightRequestsOnSIGTERM(t *testing.T) {
 }
 
 func TestStartSecondSignalForcesClose(t *testing.T) {
-	release := make(chan struct{})
+	entered, release := make(chan struct{}), make(chan struct{})
 	defer close(release)
 	port, errs := startForShutdown(t, shutdownTestLong, shutdownTestLong,
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			close(entered)
 			<-release
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -187,7 +194,11 @@ func TestStartSecondSignalForcesClose(t *testing.T) {
 		_, err := getStatus(port, "/test/")
 		result <- err
 	}()
-	time.Sleep(50 * time.Millisecond)
+	select {
+	case <-entered:
+	case <-time.After(shutdownTestDrain):
+		t.Fatal("the request never reached the origin")
+	}
 
 	terminate(t, port)
 	started := time.Now()
@@ -245,11 +256,18 @@ func TestStopWorkersYieldsToRunningReload(t *testing.T) {
 	hc.Subscribe(stopped)
 	mtx.Lock()
 	stopWorkers(&instance.ServerInstance{HealthChecker: hc})
-	mtx.Unlock()
 	select {
 	case <-stopped:
-		t.Error("a reload holding the lock owns the checker; shutdown must not stop it")
-	default:
+		mtx.Unlock()
+		t.Fatal("a reload holding the lock owns the checker; shutdown must not stop it")
+	case <-time.After(50 * time.Millisecond):
+	}
+	mtx.Unlock()
+	// the workers the reload leaves behind are stopped as soon as it releases the lock
+	select {
+	case <-stopped:
+	case <-time.After(shutdownTestDrain):
+		t.Fatal("the checker was left running after the reload released the lock")
 	}
 	stopWorkers(&instance.ServerInstance{})
 }
@@ -358,7 +376,7 @@ func TestForcedShutdownFencesUnfinishedReload(t *testing.T) {
 			close(entered)
 			<-release
 			lateErr = si.Listeners.StartListener("late", "127.0.0.1", latePort, 0, nil,
-				http.NotFoundHandler(), nil, nil, time.Second, nil)
+				http.NotFoundHandler(), nil, nil, listener.ServerLimits{ReadHeaderTimeout: time.Second}, nil)
 			close(finished)
 		})
 		return false, nil

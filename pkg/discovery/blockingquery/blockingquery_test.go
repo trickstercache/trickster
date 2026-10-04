@@ -19,6 +19,7 @@ package blockingquery
 import (
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
@@ -107,45 +108,45 @@ func TestNextWaitWithoutCursorDefersToTheInterval(t *testing.T) {
 	require.Zero(t, c.NextWait())
 }
 
-// With a cursor, the waiting happens on the server, so the next request goes
-// out immediately -- but not sooner than the floor.
 func TestNextWaitHonorsTheFloor(t *testing.T) {
-	c := NewCursor(50 * time.Millisecond)
-	c.Begin()
-	c.Advance("100")
+	synctest.Test(t, func(t *testing.T) {
+		c := NewCursor(50 * time.Millisecond)
+		c.Begin()
+		c.Advance("100")
 
-	// a request that returned instantly must be held back
-	next := c.NextWait()
-	require.Greater(t, next, time.Duration(0))
-	require.LessOrEqual(t, next, 50*time.Millisecond)
+		// a request that returned instantly must be held back
+		next := c.NextWait()
+		require.Greater(t, next, time.Duration(0))
+		require.LessOrEqual(t, next, 50*time.Millisecond)
 
-	// one that already spent longer than the floor re-issues immediately
-	c = NewCursor(time.Millisecond)
-	c.Begin()
-	c.Advance("100")
-	time.Sleep(5 * time.Millisecond)
-	require.Equal(t, poller.PollNow, c.NextWait())
+		// one that already spent longer than the floor re-issues immediately
+		c = NewCursor(time.Millisecond)
+		c.Begin()
+		c.Advance("100")
+		time.Sleep(5 * time.Millisecond)
+		require.Equal(t, poller.PollNow, c.NextWait())
+	})
 }
 
-// A resource changing faster than the loop must not become a spin against
-// the server at exactly the moment it is busiest.
 func TestFastChangingResourceCannotSpin(t *testing.T) {
-	const floor = 20 * time.Millisecond
-	c := NewCursor(floor)
-	index := 100
-	var total time.Duration
-	for range 10 {
-		c.Begin()
-		index++
-		c.Advance(string(rune('0'+index/100)) + "00")
-		// every response arrives instantly, as a flapping service would
-		next := c.NextWait()
-		require.NotEqual(t, poller.PollNow, next,
-			"an instant response must not re-issue immediately")
-		total += next
-	}
-	require.Greater(t, total, 5*floor,
-		"ten instant responses should have been spread over several floors")
+	synctest.Test(t, func(t *testing.T) {
+		const floor = 20 * time.Millisecond
+		c := NewCursor(floor)
+		index := 100
+		var total time.Duration
+		for range 10 {
+			c.Begin()
+			index++
+			c.Advance(string(rune('0'+index/100)) + "00")
+			// every response arrives instantly, as a flapping service would
+			next := c.NextWait()
+			require.NotEqual(t, poller.PollNow, next,
+				"an instant response must not re-issue immediately")
+			total += next
+		}
+		require.Greater(t, total, 5*floor,
+			"ten instant responses should have been spread over several floors")
+	})
 }
 
 func TestDuration(t *testing.T) {

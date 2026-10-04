@@ -26,6 +26,10 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	to "github.com/trickstercache/trickster/v2/pkg/observability/tracing/options"
+	geofeedopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed/options"
+	headeropts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/header/options"
+	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 
 	"github.com/stretchr/testify/require"
@@ -161,4 +165,65 @@ func TestValidateKubernetesAuthenticatorReference(t *testing.T) {
 	c.Kubernetes.Defaults.AuthenticatorName = "absent"
 	require.ErrorContains(t, Validate(c),
 		`kubernetes 'defaults' references undefined authenticator "absent"`)
+}
+
+func TestValidateKubernetesGeoACLReference(t *testing.T) {
+	// a geo ACL in the defaults gates every generated route, stream routes included, so its locator must
+	// place a bare address
+	c := baseConfig(t)
+	c.Kubernetes = kubecfg.New()
+	c.Kubernetes.Defaults.RoutingMode = kubecfg.RoutingModeService
+	c.Kubernetes.Defaults.GeoACLName = "absent"
+	require.ErrorContains(t, Validate(c), `kubernetes 'defaults' references undefined geo ACL "absent"`)
+
+	geoACL(c, geoACLEdge, geoLocatorEdge, nil)
+	c.Kubernetes.Defaults.GeoACLName = geoACLEdge
+	c.GeoLocators[geoLocatorEdge].Header = &headeropts.Options{Country: "CF-IPCountry"}
+	require.ErrorContains(t, Validate(c), "judges HTTP requests only")
+
+	geoACL(c, geoACLNorthAmerica, geolocopts.DefaultName, nil)
+	c.GeoLocators[geolocopts.DefaultName].Geofeed = &geofeedopts.Options{Entries: []string{"192.0.2.0/24,US"}}
+	c.Kubernetes.Defaults.GeoACLName = geoACLNorthAmerica
+	require.NoError(t, Validate(c))
+}
+
+func TestValidateKubernetesIPACLReference(t *testing.T) {
+	// a defaults list is checked as an authenticator is; a defined peer or drop list fails differently, since the
+	// name exists but a generated backend cannot use it
+	with := func(t *testing.T, name string, opts ipacl.Options) *config.Config {
+		t.Helper()
+		c := baseConfig(t)
+		c.Kubernetes = kubecfg.New()
+		c.Kubernetes.Defaults.RoutingMode = kubecfg.RoutingModeService
+		c.Kubernetes.Defaults.IPACLName = name
+		if opts.Allow != nil || opts.Source != "" || opts.Action != "" {
+			c.IPACLs = ipacl.Lookup{name: &opts}
+		}
+		return c
+	}
+
+	t.Run("eligible", func(t *testing.T) {
+		c := with(t, "office", ipacl.Options{Allow: []string{"10.0.0.0/8"}})
+		require.NoError(t, Validate(c))
+	})
+
+	t.Run("undefined", func(t *testing.T) {
+		c := with(t, "absent", ipacl.Options{})
+		require.ErrorContains(t, Validate(c),
+			`kubernetes 'defaults' references undefined ip acl "absent"`)
+	})
+
+	t.Run("peer", func(t *testing.T) {
+		c := with(t, "edge", ipacl.Options{Allow: []string{"10.0.0.0/8"}, Source: "peer"})
+		err := Validate(c)
+		require.ErrorContains(t, err, `ineligible ip acl "edge"`)
+		require.NotContains(t, err.Error(), "undefined")
+	})
+
+	t.Run("drop", func(t *testing.T) {
+		c := with(t, "wall", ipacl.Options{Allow: []string{"10.0.0.0/8"}, Action: "drop"})
+		err := Validate(c)
+		require.ErrorContains(t, err, `ineligible ip acl "wall"`)
+		require.NotContains(t, err.Error(), "undefined")
+	})
 }

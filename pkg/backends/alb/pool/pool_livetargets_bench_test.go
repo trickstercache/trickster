@@ -31,8 +31,8 @@ func BenchmarkLiveTargets(b *testing.B) {
 		st.Set(healthcheck.StatusPassing)
 		targets[i] = NewTarget(http.NotFoundHandler(), st, nil)
 	}
-	p := &pool{targets: targets, healthyFloor: 1}
-	p.RefreshHealthy()
+	p := New(targets, 1)
+	defer p.Stop()
 	if got := len(p.Targets()); got != n {
 		b.Fatalf("setup: expected %d healthy targets, got %d", n, got)
 	}

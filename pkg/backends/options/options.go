@@ -36,10 +36,13 @@ import (
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	ro "github.com/trickstercache/trickster/v2/pkg/backends/rule/options"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/static/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/tree"
+	vmo "github.com/trickstercache/trickster/v2/pkg/backends/victoriametrics/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache/evictionmethods"
 	"github.com/trickstercache/trickster/v2/pkg/cache/negative"
 	co "github.com/trickstercache/trickster/v2/pkg/cache/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
@@ -48,13 +51,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
@@ -124,22 +131,23 @@ type Options struct {
 	// TimeseriesEvictionMethodName specifies which methodology ("oldest", "lru") is used to identify
 	// timeseries to evict from a full cache object
 	TimeseriesEvictionMethodName string `yaml:"timeseries_eviction_method,omitempty"`
-	// BackfillTolerance prevents values with timestamps newer than the provided number of
-	// milliseconds from being cached. this allows propagation of upstream backfill operations
-	// that modify recently-cached data
-	BackfillTolerance timeconv.Duration `yaml:"backfill_tolerance,omitempty"`
-	// BackfillTolerancePoints is similar to the MS version, except that it's final value is dependent
-	// on the query step value to determine the relative duration of backfill tolerance per-query
-	// When both are set, the higher of the two values is used
-	BackfillTolerancePoints int `yaml:"backfill_tolerance_points,omitempty"`
+	// VolatileWindow is how far back from now cached data is volatile and is refetched, so that late
+	// writes to recent timestamps reach the cache
+	VolatileWindow timeconv.Duration `yaml:"volatile_window,omitempty"`
+	// VolatileWindowPoints is VolatileWindow in query steps; when both are set, the longer applies.
+	VolatileWindowPoints int `yaml:"volatile_window_points,omitempty"`
+	// StepAlignment names what the backend does with partial buckets at the edges of a time range
+	// query; zero uses the provider's default
+	StepAlignment timeseries.StepAlignment `yaml:"step_alignment,omitempty"`
 	// Paths is a list of Path Options that control the behavior of the given paths when requested
 	Paths po.List `yaml:"paths,omitempty"`
 	// NegativeCacheName provides the name of the Negative Cache Config to be used by this Backend
 	NegativeCacheName string `yaml:"negative_cache_name,omitempty"`
 	// TimeseriesTTL specifies the cache TTL of timeseries objects
 	TimeseriesTTL timeconv.Duration `yaml:"timeseries_ttl,omitempty"`
-	// TimeseriesTTLMS specifies the cache TTL of fast forward data
-	FastForwardTTL timeconv.Duration `yaml:"fastforward_ttl,omitempty"`
+	// PartialBucketTTL specifies the cache TTL of partial buckets, including Fast Forward data.
+	// Legacy key: fastforward_ttl
+	PartialBucketTTL timeconv.Duration `yaml:"partial_bucket_ttl,omitempty"`
 	// MaxTTL specifies the maximum allowed TTL for any cache object
 	MaxTTL timeconv.Duration `yaml:"max_ttl,omitempty"`
 	// RevalidationFactor specifies how many times to multiply the object freshness lifetime
@@ -193,10 +201,16 @@ type Options struct {
 	Prometheus *prop.Options `yaml:"prometheus,omitempty"`
 	// MySQL holds limits specific to MySQL origin result processing.
 	MySQL *mo.Options `yaml:"mysql,omitempty"`
+	// Postgres holds settings specific to PostgreSQL wire-protocol origins.
+	Postgres *pgo.Options `yaml:"postgres,omitempty"`
 	// Graphite holds options specific to graphite backends
 	Graphite *gro.Options `yaml:"graphite,omitempty"`
 	// InfluxDB holds options specific to influxdb backends
 	InfluxDB *ino.Options `yaml:"influxdb,omitempty"`
+	// VictoriaMetrics holds options specific to victoriametrics backends
+	VictoriaMetrics *vmo.Options `yaml:"victoriametrics,omitempty"`
+	// Static holds options specific to static file server backends, which require it
+	Static *so.Options `yaml:"static,omitempty"`
 
 	// TLS is the TLS Configuration for the Frontend and Backend
 	TLS *to.Options `yaml:"tls,omitempty"`
@@ -240,6 +254,11 @@ type Options struct {
 	// AuthenticatorName specifies the name of the optional Authenticator to attach to this Backend, and
 	// can be overridden at the Path level.
 	AuthenticatorName string `yaml:"authenticator_name,omitempty"`
+	// GeoACLName names the geo ACL that judges this Backend's clients by their location; a Path's replaces it
+	GeoACLName string `yaml:"geo_acl_name,omitempty"`
+	// IPACLName is the access list applied to this backend's routes. A path's
+	// ip_acl_name replaces it. The reference none is not valid on a backend.
+	IPACLName string `yaml:"ip_acl_name,omitempty"`
 	// SigV4 signs outbound requests to this backend's origin with AWS
 	// SigV4. It defaults to signing for Amazon Managed Service for
 	// Prometheus; set sigv4.service to sign for another AWS service.
@@ -264,6 +283,10 @@ type Options struct {
 	//
 	// Name is the Name of the backend, taken from the Key in the Backends Lookup Map
 	Name string `yaml:"-"`
+	// HasHTTPListener is derived from listener mappings during validation.
+	HasHTTPListener bool `yaml:"-"`
+	// NativeListenerProtocols includes direct and ALB-inherited protocol mappings.
+	NativeListenerProtocols []string `yaml:"-"`
 	// Router is a router.Router containing this backend's Path Routes; it is set during route registration
 	Router router.Router `yaml:"-"`
 	// Scheme is the layer 7 protocol indicator (e.g. 'http'), derived from OriginURL
@@ -293,12 +316,23 @@ type Options struct {
 	ReqRewriter rewriter.RewriteInstructions `yaml:"-"`
 	// AuthOptions is the authenticator as indicated by AuthenticatorName
 	AuthOptions *autho.Options `yaml:"-"`
+	// GeoACLOptions is the geo ACL named by GeoACLName. Clones share it, so the ACL compiled into it when the
+	// configuration is applied reaches every copy, a discovered member's included.
+	GeoACLOptions *geoaclopts.Options `yaml:"-"`
+	// IPACL is the compiled list named by IPACLName.
+	IPACL *ipacl.List `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
 
-	sizeExplicit      bool
-	retentionExplicit bool
+	sizeExplicit               bool
+	retentionExplicit          bool
+	stepAlignmentExplicit      bool
+	fastForwardDisableExplicit bool
+	// set when a backend sets a volatile window key and its backfill_tolerance counterpart
+	volatileWindowConflict, volatileWindowPointsConflict bool
+	// set when a backend sets any volatile window key, so a flavor default does not replace it
+	volatileWindowExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -306,15 +340,15 @@ var _ types.ConfigOptions[Options] = &Options{}
 // New will return a pointer to a Backend Options with the default configuration settings
 func New() *Options {
 	return &Options{
-		BackfillTolerance:            timeconv.Duration(DefaultBackfillTolerance),
-		BackfillTolerancePoints:      DefaultBackfillTolerancePoints,
+		VolatileWindow:               timeconv.Duration(DefaultVolatileWindow),
+		VolatileWindowPoints:         DefaultVolatileWindowPoints,
 		CacheKeyPrefix:               "",
 		CacheName:                    DefaultBackendCacheName,
 		CompressibleTypeList:         DefaultCompressibleTypes(),
 		ChunkReadConcurrencyLimit:    DefaultChunkReadConcurrencyLimit,
 		ChunkWriteConcurrencyLimit:   DefaultChunkWriteConcurrencyLimit,
 		FetchConcurrencyLimit:        DefaultFetchConcurrencyLimit,
-		FastForwardTTL:               timeconv.Duration(DefaultFastForwardTTL),
+		PartialBucketTTL:             timeconv.Duration(DefaultPartialBucketTTL),
 		ForwardedHeaders:             DefaultForwardedHeaders,
 		HealthCheck:                  ho.New(),
 		KeepAliveTimeout:             timeconv.Duration(DefaultKeepAliveTimeout),
@@ -350,6 +384,7 @@ func (o *Options) Clone() *Options {
 	}
 	out.Hosts = slices.Clone(o.Hosts)
 	out.ListenerNames = slices.Clone(o.ListenerNames)
+	out.NativeListenerProtocols = slices.Clone(o.NativeListenerProtocols)
 	out.CompressibleTypeList = slices.Clone(o.CompressibleTypeList)
 	if o.CompressibleTypes != nil {
 		out.CompressibleTypes = maps.Clone(o.CompressibleTypes)
@@ -391,8 +426,19 @@ func (o *Options) Clone() *Options {
 		out.InfluxDB = o.InfluxDB.Clone()
 	}
 
+	if o.VictoriaMetrics != nil {
+		out.VictoriaMetrics = o.VictoriaMetrics.Clone()
+	}
+
+	if o.Postgres != nil {
+		out.Postgres = o.Postgres.Clone()
+	}
 	if o.MySQL != nil {
 		out.MySQL = o.MySQL.Clone()
+	}
+
+	if o.Static != nil {
+		out.Static = o.Static.Clone()
 	}
 
 	if o.AuthOptions != nil {
@@ -470,6 +516,9 @@ func (o *Options) Validate() (bool, error) {
 			return false, NewErrInvalidTemplateProvider(o.Provider, o.Name)
 		}
 	}
+	if err := o.validatePrometheusFlavor(); err != nil {
+		return false, err
+	}
 	if !providers.NonOriginBackends().Contains(o.Provider) && !o.IsTemplate &&
 		o.OriginURL == "" {
 		return false, NewErrMissingOriginURL(o.Name)
@@ -494,6 +543,18 @@ func (o *Options) Validate() (bool, error) {
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return false, ErrInvalidMaxShardSize
 	}
+	// fast_forward_disable selects Prometheus's step alignment when step_alignment is absent
+	if o.Provider == providers.Prometheus && (o.stepAlignmentExplicit || o.StepAlignment != 0) &&
+		(o.fastForwardDisableExplicit || o.FastForwardDisable) {
+		return false, fmt.Errorf("%w: backend %s", ErrStepAlignmentWithFastForwardDisable, o.Name)
+	}
+
+	if o.volatileWindowConflict {
+		return false, fmt.Errorf("%w: backend %s", ErrVolatileWindowWithBackfillTolerance, o.Name)
+	}
+	if o.volatileWindowPointsConflict {
+		return false, fmt.Errorf("%w: backend %s", ErrVolatileWindowPointsWithBackfillTolerancePoints, o.Name)
+	}
 
 	if o.ShardStep > 0 && o.MaxShardSizeTime > 0 && o.MaxShardSizeTime%o.ShardStep != 0 {
 		return false, ErrInvalidMaxShardSizeTime
@@ -508,6 +569,12 @@ func (o *Options) Validate() (bool, error) {
 		if err := o.Graphite.ValidateWithPaths(o.Paths); err != nil {
 			return false, fmt.Errorf("backend %s: %w", o.Name, err)
 		}
+	}
+	if err := o.VictoriaMetrics.Validate(); err != nil {
+		return false, fmt.Errorf("backend %s: %w", o.Name, err)
+	}
+	if err := o.validateStatic(); err != nil {
+		return false, err
 	}
 	if o.CORS != nil {
 		if _, err := o.CORS.Validate(); err != nil {
@@ -527,6 +594,50 @@ func (o *Options) Validate() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// validateStatic requires the static block on a static backend and rejects it
+// elsewhere, along with the proxying options a static backend can't honor.
+func (o *Options) validateStatic() error {
+	if o.Provider != providers.Static {
+		if o.Static != nil {
+			return NewErrUnsupportedOption("static", o.Provider, o.Name)
+		}
+		return nil
+	}
+	if o.Static == nil {
+		return NewErrMissingStaticOptions(o.Name)
+	}
+	unsupported := []struct {
+		name string
+		set  bool
+	}{
+		{"paths", len(o.Paths) > 0},
+		{"req_rewriter_name", o.ReqRewriterName != ""},
+		{"origin_url", o.OriginURL != ""},
+		{"rule_name", o.RuleName != ""},
+		{"alb", o.ALBOptions != nil},
+		{"prometheus", o.Prometheus != nil},
+		{"mysql", o.MySQL != nil},
+		{"graphite", o.Graphite != nil},
+		{"influxdb", o.InfluxDB != nil},
+		{"victoriametrics", o.VictoriaMetrics != nil},
+		{"sigv4", o.SigV4 != nil},
+		{"protocol", o.Protocol != ""},
+		{"h2c_prior_knowledge", o.H2CPriorKnowledge},
+		{"preserve_host", o.PreserveHost},
+		{"proxy_only", o.ProxyOnly},
+		{"is_template", o.IsTemplate},
+	}
+	for _, u := range unsupported {
+		if u.set {
+			return NewErrUnsupportedOption(u.name, o.Provider, o.Name)
+		}
+	}
+	if err := o.Static.Validate(); err != nil {
+		return fmt.Errorf("backend %s: %w", o.Name, err)
+	}
+	return nil
 }
 
 // Validate validates the Lookup collection of Backend Options
@@ -608,6 +719,46 @@ func (l Lookup) validateMirrors(o *Options) error {
 	return nil
 }
 
+// ValidateGeoACLNames resolves each backend's and path's geo_acl_name to the geo ACL it names. A path's
+// none clears its backend's; on a backend, none names nothing and fails.
+func (l Lookup) ValidateGeoACLNames(g geoaclopts.Lookup) error {
+	for _, o := range l {
+		if o == nil {
+			continue
+		}
+		o.GeoACLOptions = nil
+		if o.GeoACLName != "" {
+			if o.GeoACLOptions = g[o.GeoACLName]; o.GeoACLOptions == nil {
+				return NewErrInvalidGeoACLName(o.GeoACLName, o.Name)
+			}
+		}
+		for _, p := range o.Paths {
+			if p == nil {
+				continue
+			}
+			p.GeoACLOptions = nil
+			if p.GeoACLName == "" || p.GeoACLName == reserved.ReferenceNone {
+				continue
+			}
+			if p.GeoACLOptions = g[p.GeoACLName]; p.GeoACLOptions == nil {
+				return NewErrInvalidGeoACLName(p.GeoACLName, o.Name+"/"+p.Path)
+			}
+		}
+	}
+	return nil
+}
+
+// ClearACLNames clears the backend's and paths' geo_acl_name and ip_acl_name from a restart identity, since a
+// native server takes its ACLs anew on reload
+func (o *Options) ClearACLNames() {
+	o.GeoACLName, o.IPACLName = "", ""
+	for _, p := range o.Paths {
+		if p != nil {
+			p.GeoACLName, p.IPACLName = "", ""
+		}
+	}
+}
+
 // ValidateBackendName ensures the backend name is permitted against the
 // dictionary of restricted words
 func ValidateBackendName(name string) error {
@@ -620,7 +771,7 @@ func ValidateBackendName(name string) error {
 // ValidateConfigMappings ensures that named config mappings from within origin configs
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
-	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup,
+	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup, acls ipacl.Lookup,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
@@ -635,6 +786,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 				return NewErrInvalidAuthenticatorName(o.AuthenticatorName, o.Name)
 			}
 		}
+		if o.IPACLName != "" {
+			list, err := resolveIPACL(acls, o.IPACLName, o.Name)
+			if err != nil {
+				return err
+			}
+			o.IPACL = list
+		}
 		if o.ReqRewriterName != "" {
 			if _, ok = rwl[o.ReqRewriterName]; !ok {
 				return NewErrInvalidRewriterName(o.ReqRewriterName, o.Name)
@@ -646,11 +804,18 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			}
 		}
 		for _, p := range o.Paths {
-			if p.AuthenticatorName != "none" && p.AuthenticatorName != "" {
+			if p.AuthenticatorName != reserved.ReferenceNone && p.AuthenticatorName != "" {
 				if p.AuthOptions, ok = a[p.AuthenticatorName]; !ok {
 					return NewErrInvalidAuthenticatorName(p.AuthenticatorName,
 						o.Name+"/"+p.Path)
 				}
+			}
+			if p.IPACLName != reserved.ReferenceNone && p.IPACLName != "" {
+				list, err := resolveIPACL(acls, p.IPACLName, o.Name+"/"+p.Path)
+				if err != nil {
+					return err
+				}
+				p.IPACL = list
 			}
 			if p.ReqRewriterName != "" {
 				if _, ok = rwl[p.ReqRewriterName]; !ok {
@@ -685,6 +850,9 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			if err := o.ALBOptions.ValidatePool(o.Name, l.Keys()); err != nil {
 				return err
 			}
+			if _, err := o.ALBOptions.Validate(); err != nil {
+				return fmt.Errorf("invalid alb options for backend %q: %w", o.Name, err)
+			}
 			for _, m := range o.ALBOptions.Pool {
 				if t, ok := l[m.Name]; ok && t != nil && t.IsTemplate {
 					return NewErrTemplatePoolMember(m.Name, o.Name)
@@ -712,6 +880,18 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 		}
 	}
 	return nil
+}
+
+func resolveIPACL(acls ipacl.Lookup, name, where string) (*ipacl.List, error) {
+	// an empty name is no reference, and a peer list is for listeners only
+	def := acls[name]
+	if def == nil || def.Compiled == nil {
+		return nil, NewErrInvalidIPACLName(name, where)
+	}
+	if def.Compiled.Source() == ipacl.Peer {
+		return nil, NewErrIPACLSourcePeer(name, where)
+	}
+	return def.Compiled, nil
 }
 
 // ValidateDiscovery validates each discovery-backed ALB in the Lookup
@@ -835,6 +1015,7 @@ func (o *Options) Initialize(name string) error {
 	if o.MaxQueryRange < 0 {
 		return errors.New("invalid max_query_range: value must be greater than or equal to 0")
 	}
+	o.applyPrometheusFlavor()
 
 	if o.OriginURL != "" {
 		parsedURL, err := url.Parse(o.OriginURL)
@@ -846,7 +1027,9 @@ func (o *Options) Initialize(name string) error {
 		o.Host = parsedURL.Host
 		o.PathPrefix = parsedURL.Path
 	}
-	if o.H2CPriorKnowledge && !strings.EqualFold(o.Scheme, "http") {
+	// a template with no origin has no scheme yet; each discovered clone is checked with its own
+	if o.H2CPriorKnowledge && (!o.IsTemplate || o.OriginURL != "") &&
+		!strings.EqualFold(o.Scheme, "http") {
 		return fmt.Errorf(
 			"h2c_prior_knowledge requires an http:// origin_url (cleartext HTTP/2 only; no HTTP/1 fallback), got scheme %q",
 			o.Scheme)
@@ -867,8 +1050,8 @@ func (o *Options) Initialize(name string) error {
 	if o.TimeseriesTTL > o.MaxTTL {
 		o.TimeseriesTTL = o.MaxTTL
 	}
-	if o.FastForwardTTL > o.MaxTTL {
-		o.FastForwardTTL = o.MaxTTL
+	if o.PartialBucketTTL > o.MaxTTL {
+		o.PartialBucketTTL = o.MaxTTL
 	}
 	if o.TimeseriesEvictionMethodName != "" {
 		o.TimeseriesEvictionMethodName = strings.ToLower(o.TimeseriesEvictionMethodName)
@@ -878,10 +1061,13 @@ func (o *Options) Initialize(name string) error {
 	}
 	if o.Provider == providers.ALB {
 		if o.ALBOptions != nil {
-			if err := o.ALBOptions.Initialize(""); err != nil {
+			if err := o.ALBOptions.Initialize(o.Name); err != nil {
 				return err
 			}
 		}
+	}
+	if err := o.Static.Initialize(); err != nil {
+		return err
 	}
 
 	if o.HealthCheck != nil {
@@ -910,6 +1096,28 @@ func (o *Options) CloneYAMLSafe() *Options {
 		if _, hasPassword := parsed.User.Password(); hasPassword {
 			parsed.User = url.UserPassword(parsed.User.Username(), "*****")
 			co.OriginURL = parsed.String()
+		}
+	}
+	if co.Postgres != nil && co.Postgres.UpstreamURL != "" {
+		parsed, err := url.Parse(co.Postgres.UpstreamURL)
+		if err != nil {
+			co.Postgres.UpstreamURL = "*****"
+		} else if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				parsed.User = url.UserPassword(parsed.User.Username(), "*****")
+				co.Postgres.UpstreamURL = parsed.String()
+			}
+		}
+	}
+	if co.MySQL != nil && co.MySQL.UpstreamURL != "" {
+		parsed, err := url.Parse(co.MySQL.UpstreamURL)
+		if err != nil {
+			co.MySQL.UpstreamURL = "*****"
+		} else if parsed.User != nil {
+			if _, hasPassword := parsed.User.Password(); hasPassword {
+				parsed.User = url.UserPassword(parsed.User.Username(), "*****")
+				co.MySQL.UpstreamURL = parsed.String()
+			}
 		}
 	}
 	// The runtime default is the backend name, but exporting that implicit
@@ -952,11 +1160,53 @@ func (o *Options) UnmarshalYAML(value *yaml.Node) error {
 	if err := value.Decode(&lo); err != nil {
 		return err
 	}
+	// renamed and mutually exclusive keys decode again as pointers, so that their presence is exact
+	var keys renamedKeys
+	if err := value.Decode(&keys); err != nil {
+		return err
+	}
 	*o = Options(lo)
+	keys.apply(o)
 	o.sizeExplicit = yamlHasKey(value, "max_object_size_bytes")
 	o.retentionExplicit = yamlHasKey(value, "timeseries_retention_factor")
 	o.ApplyProviderSizingDefaults()
 	return nil
+}
+
+type renamedKeys struct {
+	PartialBucketTTL        *timeconv.Duration        `yaml:"partial_bucket_ttl"`
+	FastForwardTTL          *timeconv.Duration        `yaml:"fastforward_ttl"`
+	VolatileWindow          *timeconv.Duration        `yaml:"volatile_window"`
+	BackfillTolerance       *timeconv.Duration        `yaml:"backfill_tolerance"`
+	VolatileWindowPoints    *int                      `yaml:"volatile_window_points"`
+	BackfillTolerancePoints *int                      `yaml:"backfill_tolerance_points"`
+	StepAlignment           *timeseries.StepAlignment `yaml:"step_alignment"`
+	FastForwardDisable      *bool                     `yaml:"fast_forward_disable"`
+}
+
+func (k renamedKeys) apply(o *Options) {
+	// a legacy key applies only when its new key is absent
+	if k.PartialBucketTTL == nil && k.FastForwardTTL != nil {
+		o.PartialBucketTTL = *k.FastForwardTTL
+	}
+	// backfill_tolerance and backfill_tolerance_points fill the volatile window keys when those are
+	// absent; setting both of a pair fails validation
+	if k.BackfillTolerance != nil {
+		if k.VolatileWindow == nil {
+			o.VolatileWindow = *k.BackfillTolerance
+		}
+		o.volatileWindowConflict = k.VolatileWindow != nil
+	}
+	if k.BackfillTolerancePoints != nil {
+		if k.VolatileWindowPoints == nil {
+			o.VolatileWindowPoints = *k.BackfillTolerancePoints
+		}
+		o.volatileWindowPointsConflict = k.VolatileWindowPoints != nil
+	}
+	o.stepAlignmentExplicit = k.StepAlignment != nil
+	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
+	o.volatileWindowExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil ||
+		k.VolatileWindowPoints != nil || k.BackfillTolerancePoints != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.

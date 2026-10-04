@@ -18,9 +18,11 @@ package config
 
 import (
 	"crypto/tls"
+	"slices"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
 
 // TLSCertConfig returns the crypto/tls configuration object with a list of name-bound
@@ -66,8 +68,11 @@ func (c *Config) tlsCertConfig(listenerName string) (*tls.Config, error) {
 		MinVersion:   tls.VersionTLS12,
 	}
 	if l == 0 {
-		// a runtime-cert listener starts with an empty store and is fed later
+		// a runtime-cert or ACME listener starts with an empty store and is fed later
 		if o := c.Listeners[listenerName]; o != nil && o.TLSRuntimeCerts {
+			return tlsConfig, nil
+		}
+		if uses, _ := c.ListenerACME(listenerName); uses {
 			return tlsConfig, nil
 		}
 		return nil, nil
@@ -81,4 +86,26 @@ func (c *Config) tlsCertConfig(listenerName string) (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
+}
+
+// ListenerACME reports whether listenerName serves ACME-managed certificates, and whether
+// any of their issuers answers http-01, which arrives on the plaintext port
+func (c *Config) ListenerACME(listenerName string) (uses, http01 bool) {
+	if c == nil || !c.ACME.IsEnabled() {
+		return false, false
+	}
+	for _, o := range c.Backends {
+		if o == nil || o.IsTemplate || o.TLS == nil || o.TLS.ACME == nil ||
+			!o.UsesListener(listenerName) {
+			continue
+		}
+		uses = true
+		if c.ACME.Issuers[o.TLS.ACME.Issuer].HasChallenge(acmeopts.ChallengeHTTP01) {
+			return true, true
+		}
+	}
+	if od := c.ACME.OnDemand; od != nil && slices.Contains(od.Listeners, listenerName) {
+		return true, http01 || c.ACME.Issuers[od.Issuer].HasChallenge(acmeopts.ChallengeHTTP01)
+	}
+	return uses, http01
 }

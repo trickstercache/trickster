@@ -27,6 +27,7 @@ import (
 	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	ur "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	sticky "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
@@ -42,6 +43,10 @@ type Options struct {
 	// Pool provides the list of pool members (backend name + optional
 	// weight) to be used by the load balancer
 	Pool PoolMemberList `yaml:"pool,omitempty"`
+	// Name is the ALB backend's name, set by Initialize
+	Name string `yaml:"-"`
+	// PoolRepeats lists the member names Initialize found repeated in Pool and removed
+	PoolRepeats []PoolRepeat `yaml:"-"`
 	// Discovery, when set, binds this ALB's pool to a named discoverer from
 	// the top-level 'discovery' config section; discovered members are
 	// additive to static Pool entries
@@ -55,6 +60,10 @@ type Options struct {
 	// Unknown means the first health check hasn't returned yet, or the target
 	// backend has no health check interval configured.
 	HealthyFloor int `yaml:"healthy_floor,omitempty"`
+	// PropagateHealth makes the ALB unavailable, as a member of another ALB's pool, while none
+	// of its own members is available, so that pool dispatches to its other members instead
+	// of having this one fail its share.
+	PropagateHealth bool `yaml:"propagate_health,omitempty"`
 	// MaxCaptureBytes overrides the backend-level max_capture_bytes for this
 	// ALB's fanout members. Set this when the ALB's expected response shape
 	// differs from the backend default (e.g. a TSM fan-out of 50 small-payload
@@ -77,18 +86,27 @@ type Options struct {
 	UserRouter *ur.Options `yaml:"user_router,omitempty"`
 	//
 	// synthetic values
-	FgrCodesLookup sets.Set[int] `yaml:"-"`
+	// FGRGoodCodes is the compiled set of status codes that fgr accepts
+	FGRGoodCodes *types.StatusTable `yaml:"-"`
 
 	// mechanism-specific options
 	TSMOptions tsmoptions.Options        `yaml:"tsm,omitempty"`
 	NLMOptions NewestLastModifiedOptions `yaml:"nlm,omitempty"`
-	FGROptions FirstGoodResponseOptions  `yaml:"fgr,omitempty"`
+	HRW        HRWOptions                `yaml:"hrw,omitempty"`
+	LT         LTOptions                 `yaml:"lt,omitempty"`
+	// Stream holds what applies only when the ALB balances tcp, tls or udp flows
+	Stream     *StreamOptions           `yaml:"stream,omitempty"`
+	FGROptions FirstGoodResponseOptions `yaml:"fgr,omitempty"`
+	// Sticky keeps a client on the member it was first sent to; mechanisms that send each
+	// request or flow to one member only
+	Sticky *sticky.Options `yaml:"sticky,omitempty"`
 }
 
 type FirstGoodResponseOptions struct {
 	// StatusCodes provides an explicit list of status codes considered "good" when using
-	// the First Good Response (fgr) methodology. By default, any code < 400 is good.
-	StatusCodes        []int              `yaml:"status_codes,omitempty"`
+	// the First Good Response (fgr) methodology: bare codes, inclusive {start, end} ranges,
+	// or a mix. By default, any code < 400 is good.
+	StatusCodes        types.StatusRanges `yaml:"status_codes,omitempty"`
 	ConcurrencyOptions ConcurrencyOptions `yaml:",inline"`
 }
 
@@ -111,11 +129,33 @@ var _ types.ConfigOptions[Options] = &Options{}
 
 const defaultTSOutputFormat = providers.Prometheus
 
+// DefaultFGRStatusCodes returns the status codes fgr accepts when none are configured.
+func DefaultFGRStatusCodes() types.StatusRanges {
+	return types.StatusRanges{{Start: 100, End: 399}}
+}
+
 var (
 	ErrUserRouterRequired     = errors.New("'user_router' block is required")
+	ErrPropagateHealthNoPool  = errors.New("'propagate_health' is not valid for mechanism 'ur', which has no pool")
 	ErrInvalidOutputFormat    = errors.New("value for 'output_format' is invalid")
 	ErrOutputFormatOnlyForTSM = errors.New("'output_format' option is only valid for provider 'alb' and mechanism 'tsmerge'")
+	// ErrStickyMechanism is returned for a sticky block on a mechanism that does not send each
+	// request or flow to one member.
+	ErrStickyMechanism = errors.New("'sticky' is only valid for mechanisms rr, p2c, lc, lt and hrw")
 )
+
+// stickyMechanisms are the mechanisms that send each request or flow to one member, by both names
+var stickyMechanisms = sets.New([]string{
+	names.MechanismRR, names.MechanismRoundRobin, names.MechanismP2C, names.MechanismPowerOfTwoChoices,
+	names.MechanismLC, names.MechanismLeastConnections, names.MechanismLT, names.MechanismLeastTime,
+	names.MechanismHRW, names.MechanismHighestRandomWeight,
+})
+
+// SupportsSticky reports whether a mechanism sends each request or flow to one member, which
+// is what a session can be kept on.
+func SupportsSticky(mechanism string) bool {
+	return stickyMechanisms.Contains(mechanism)
+}
 
 // NewErrInvalidALBOptions returns an invalid ALB Options error
 func NewErrInvalidALBOptions(backendName string) error {
@@ -132,18 +172,6 @@ func New() *Options {
 
 // Clone returns a perfect copy of the Options
 func (o *Options) Clone() *Options {
-	var fsc []int
-	var fscm sets.Set[int]
-
-	if o.FGRStatusCodes != nil {
-		fsc = make([]int, len(o.FGRStatusCodes))
-		copy(fsc, o.FGRStatusCodes)
-	}
-
-	if o.FgrCodesLookup != nil {
-		fscm = o.FgrCodesLookup.Clone()
-	}
-
 	c := pointers.Clone(o)
 	if o.UserRouter != nil {
 		c.UserRouter = o.UserRouter.Clone()
@@ -152,12 +180,34 @@ func (o *Options) Clone() *Options {
 		c.Discovery = o.Discovery.Clone()
 	}
 	c.Pool = slices.Clone(o.Pool)
-	c.FGRStatusCodes = fsc
-	c.FgrCodesLookup = fscm
+	c.PoolRepeats = slices.Clone(o.PoolRepeats)
+	c.FGRStatusCodes = slices.Clone(o.FGRStatusCodes)
+	c.FGROptions.StatusCodes = slices.Clone(o.FGROptions.StatusCodes)
+	c.Stream = o.Stream.Clone()
+	c.Sticky = o.Sticky.Clone()
+	c.LT.StatusCodes = slices.Clone(o.LT.StatusCodes)
+	if o.LT.GoodCodes != nil {
+		table := *o.LT.GoodCodes
+		c.LT.GoodCodes = &table
+	}
+	if o.FGRGoodCodes != nil {
+		table := *o.FGRGoodCodes
+		c.FGRGoodCodes = &table
+	}
 	return c
 }
 
-func (o *Options) Initialize(_ string) error {
+func (o *Options) Initialize(name string) error {
+	if name != "" {
+		o.Name = name
+	}
+	pool, repeats, err := o.Pool.Dedupe(name)
+	if err != nil {
+		return err
+	}
+	if len(repeats) > 0 {
+		o.Pool, o.PoolRepeats = pool, repeats
+	}
 	if strings.HasPrefix(o.MechanismName, names.MechanismTSM) && o.MechanismName != names.MechanismTSM {
 		// shorten from tsmerge to tsm
 		o.MechanismName = names.MechanismTSM
@@ -166,15 +216,26 @@ func (o *Options) Initialize(_ string) error {
 	case names.MechanismFGR:
 		// apply deprecated top-level FGRStatusCodes to new FROptions level
 		if len(o.FGRStatusCodes) > 0 && len(o.FGROptions.StatusCodes) == 0 {
-			o.FGROptions.StatusCodes = o.FGRStatusCodes
+			o.FGROptions.StatusCodes = types.StatusCodes(o.FGRStatusCodes...)
 		}
-		if len(o.FGROptions.StatusCodes) > 0 {
-			o.FgrCodesLookup = sets.NewIntSet()
-			o.FgrCodesLookup.SetAll(o.FGROptions.StatusCodes)
+		codes := o.FGROptions.StatusCodes
+		if len(codes) == 0 {
+			codes = DefaultFGRStatusCodes()
 		}
+		o.FGRGoodCodes = codes.Compile()
 	case names.MechanismTSM:
 		if o.OutputFormat == "" {
 			o.OutputFormat = defaultTSOutputFormat
+		}
+	}
+
+	if err := o.initializeStrategies(); err != nil {
+		return err
+	}
+
+	if o.Sticky != nil {
+		if err := o.Sticky.Initialize(); err != nil {
+			return err
 		}
 	}
 
@@ -187,11 +248,35 @@ func (o *Options) Initialize(_ string) error {
 	return nil
 }
 
+// PoolRepeatWarning returns the deprecation warning for member names that were repeated in
+// the pool, naming the weight that restores each one's former share; empty when none were.
+func (o *Options) PoolRepeatWarning(albName string) string {
+	if len(o.PoolRepeats) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "alb %q: repeating a pool member no longer increases its share;"+
+		" repeats were ignored. to keep the former split, set", albName)
+	for i, r := range o.PoolRepeats {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		fmt.Fprintf(&sb, " {name: %s, weight: %d}", r.Name, r.Weight)
+	}
+	return sb.String()
+}
+
 func (o *Options) Validate() (bool, error) {
+	if err := o.FGROptions.StatusCodes.Validate(); err != nil {
+		return false, fmt.Errorf("fgr.status_codes: %w", err)
+	}
 	switch o.MechanismName {
 	case names.MechanismUR:
 		if o.UserRouter == nil {
 			return false, ErrUserRouterRequired
+		}
+		if o.PropagateHealth {
+			return false, ErrPropagateHealthNoPool
 		}
 	case names.MechanismTSM:
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
@@ -200,6 +285,17 @@ func (o *Options) Validate() (bool, error) {
 	default:
 		if o.OutputFormat != "" {
 			return false, ErrOutputFormatOnlyForTSM
+		}
+	}
+	if err := o.validateStrategies(); err != nil {
+		return false, err
+	}
+	if o.Sticky != nil {
+		if !SupportsSticky(o.MechanismName) {
+			return false, fmt.Errorf("%w, not %q", ErrStickyMechanism, o.MechanismName)
+		}
+		if err := o.Sticky.Validate(); err != nil {
+			return false, err
 		}
 	}
 	if o.Discovery != nil {
@@ -213,6 +309,14 @@ func (o *Options) Validate() (bool, error) {
 func (o *Options) ValidatePool(backendName string, allBackends sets.Set[string]) error {
 	if err := o.Pool.Validate(backendName); err != nil {
 		return err
+	}
+	// discovered members are never backups and never drain, so a discovered pool may list only
+	// standbys or draining members
+	if o.Discovery == nil && o.Pool.AllBackups() {
+		return fmt.Errorf("%w (alb %q)", ErrNoPrimaryPoolMember, backendName)
+	}
+	if o.Discovery == nil && o.Pool.AllDraining() {
+		return fmt.Errorf("%w (alb %q)", ErrAllPoolMembersDraining, backendName)
 	}
 	for _, m := range o.Pool {
 		if _, ok := allBackends[m.Name]; !ok {

@@ -24,6 +24,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	gro "github.com/trickstercache/trickster/v2/pkg/backends/graphite/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cacheoptions "github.com/trickstercache/trickster/v2/pkg/cache/options"
@@ -304,10 +306,32 @@ func TestBootstrapConfigValidateOnly(t *testing.T) {
 	}
 }
 
+func TestValidateConfigRejectsConflictingStickyCookies(t *testing.T) {
+	// the cookie check needs the backend clients, so -validate-config must reach it as startup does
+	path := writeConfig(t, `
+backends:
+  origin:
+    provider: rp
+    origin_url: 'http://example.com'
+  first:
+    provider: alb
+    alb: {mechanism: rr, pool: [{name: origin}], sticky: {}}
+  second:
+    provider: alb
+    alb: {mechanism: rr, pool: [{name: origin}], sticky: {}}
+`)
+	const want = `alb backends "first" and "second" both set sticky cookie "trickster_sticky"`
+	for _, args := range [][]string{{"-validate-config", "-config", path}, {"-config", path}} {
+		if _, _, err := BootstrapConfig(args...); err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%v: error = %v, want %q", args, err, want)
+		}
+	}
+}
+
 func TestBootstrapConfigRoutesRulesAndPoolsError(t *testing.T) {
 	// two backends marked default fail during route registration, which only
-	// happens after the config itself validates cleanly
-	_, _, err := BootstrapConfig("-config", writeConfig(t, `
+	// happens after the config itself validates cleanly, and -validate-config reaches it too
+	path := writeConfig(t, `
 backends:
   test1:
     is_default: true
@@ -317,9 +341,11 @@ backends:
     is_default: true
     provider: rp
     origin_url: 'http://example.com'
-`))
-	if err == nil {
-		t.Error("expected an error for multiple default backends")
+`)
+	for _, args := range [][]string{{"-config", path}, {"-validate-config", "-config", path}} {
+		if _, _, err := BootstrapConfig(args...); err == nil {
+			t.Errorf("%v: expected an error for multiple default backends", args)
+		}
 	}
 }
 
@@ -383,6 +409,45 @@ func TestApplyConfig(t *testing.T) {
 	}
 	if si.Config != conf2 {
 		t.Error("expected the instance config to be replaced on reload")
+	}
+}
+
+const graphiteConfig = `
+backends:
+  g1:
+    provider: graphite
+    origin_url: 'http://127.0.0.1:1'
+`
+
+func TestReloadAndShutdownStopGraphiteLearners(t *testing.T) {
+	accepts := func(clients backends.Backends) bool {
+		return clients["g1"].(*graphite.Client).Resolver().Learner.Schedule("x.y", nil)
+	}
+	apply := func(si *instance.ServerInstance) backends.Backends {
+		conf, clients, err := BootstrapConfig("-config", writeConfig(t, graphiteConfig))
+		if err != nil {
+			t.Fatal(err)
+		}
+		quietListeners(conf)
+		if err := ApplyConfig(si, conf, clients, nil, nil, si.Listeners); err != nil {
+			t.Fatal(err)
+		}
+		return clients
+	}
+	group := listener.NewGroup()
+	t.Cleanup(func() { _ = group.Shutdown(0) })
+	si := &instance.ServerInstance{Listeners: group}
+	old := apply(si)
+	current := apply(si)
+	if accepts(old) {
+		t.Error("a committed reload left the old client's learner running")
+	}
+	if !accepts(current) {
+		t.Error("the reload stopped the new client's learner")
+	}
+	Shutdown(si)
+	if accepts(current) {
+		t.Error("shutdown left the client's learner running")
 	}
 }
 

@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -48,8 +49,10 @@ type Status struct {
 	detail       string
 	failingSince time.Time
 	subscribers  []chan bool
-	mtx          sync.Mutex
-	prober       func(http.ResponseWriter)
+	// copy-on-write: Set reads it under mtx and calls it outside
+	onChange []*changeSubscription
+	mtx      sync.Mutex
+	prober   func(http.ResponseWriter)
 }
 
 func NewStatus(
@@ -95,15 +98,76 @@ func (s *Status) Headers() http.Header {
 	return h
 }
 
-// Set updates the status
+// Set updates the status. Change callbacks run first, synchronously and outside the Status
+// lock, so a pool has republished by the time channel subscribers are notified.
 func (s *Status) Set(i int32) {
-	s.status.Store(i)
+	prev := s.status.Swap(i)
 	s.mtx.Lock()
 	subs := slices.Clone(s.subscribers)
+	callbacks := s.onChange
 	s.mtx.Unlock()
+	if prev != i {
+		for _, c := range callbacks {
+			s.notifyChange(c, prev, i)
+		}
+	}
 	for _, ch := range subs {
 		s.notifySubscriber(ch)
 	}
+}
+
+type changeSubscription struct {
+	status *Status
+	fn     func(prev, next int32)
+	dead   atomic.Bool
+}
+
+// Unsubscribe removes the callback without waiting on one that is already running, so it is
+// safe to call from inside the callback. A callback captured by a concurrent Set is skipped.
+func (c *changeSubscription) Unsubscribe() {
+	if c.dead.Swap(true) {
+		return
+	}
+	s := c.status
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	kept := make([]*changeSubscription, 0, len(s.onChange))
+	for _, o := range s.onChange {
+		if o != c {
+			kept = append(kept, o)
+		}
+	}
+	s.onChange = kept
+}
+
+// OnChange registers fn to be called with the previous and new status after each change. It
+// is called synchronously by Set, outside the Status lock, and recovered on its own.
+func (s *Status) OnChange(fn func(prev, next int32)) lb.Subscription {
+	c := &changeSubscription{status: s, fn: fn}
+	s.mtx.Lock()
+	defer s.mtx.Unlock()
+	next := make([]*changeSubscription, len(s.onChange)+1)
+	copy(next, s.onChange)
+	next[len(s.onChange)] = c
+	s.onChange = next
+	return c
+}
+
+// notifyChange isolates one callback by recover, so a panic in it reaches neither its
+// siblings nor the probe loop calling Set
+func (s *Status) notifyChange(c *changeSubscription, prev, next int32) {
+	if c.dead.Load() {
+		return
+	}
+	safego.Run(func(r any, _ []byte) {
+		logger.Error("healthcheck status change callback panic", logging.Pairs{
+			"target": s.name,
+			"panic":  fmt.Sprintf("%v", r),
+		})
+		metrics.HealthcheckStatusNotifyPanicRecovered.WithLabelValues(s.name).Inc()
+	}, func() {
+		c.fn(prev, next)
+	})
 }
 
 // notifySubscriber sends a non-blocking notification to ch. Each send is

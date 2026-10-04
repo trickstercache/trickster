@@ -37,7 +37,7 @@ func testRawQuery() string {
 		`SELECT (intDiv(toUInt32(time_column), 60) * 60) * 1000 AS t, countMerge(some_count) AS cnt, field1, field2 ` +
 			`FROM testdb.test_table WHERE time_column >= toDateTime(1516665600) AND time_column < toDateTime(1516687200) ` +
 			`AND date_column >= toDate(1516665600) AND toDate(1516687200) ` +
-			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t, field1 FORMAT JSON`,
+			`AND field1 > 0 AND field2 = 'some_value' GROUP BY t, field1, field2 ORDER BY t FORMAT JSON`,
 	}}).
 		Encode()
 }
@@ -116,6 +116,45 @@ func TestQueryHandler(t *testing.T) {
 
 	if string(bodyBytes) != "{}" {
 		t.Errorf("expected '{}' got %s.", bodyBytes)
+	}
+}
+
+func TestQueryHandlerSessionBypassesCache(t *testing.T) {
+	backendClient, err := NewClient("test", nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts, _, r, _, err := tu.NewTestInstance("", backendClient.DefaultPathConfigs,
+		200, "{}", nil, providers.ClickHouse, "/?"+testRawQuery(), "debug")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ts.Close()
+	rsc := request.GetResources(r)
+	backendClient, err = NewClient("test", rsc.BackendOptions, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := backendClient.(*Client)
+	client.zone.set("UTC")
+	rsc.BackendClient = client
+	rsc.BackendOptions.HTTPClient = backendClient.HTTPClient()
+	// the delta cache parses every query it handles, so a parsed query shows which path ran
+	parsed := func(rawQuery string) bool {
+		rsc.TimeRangeQuery = nil
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+"/?"+rawQuery, nil)
+		w := httptest.NewRecorder()
+		client.QueryHandler(w, req.WithContext(r.Context()))
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 got %d", w.Code)
+		}
+		return rsc.TimeRangeQuery != nil
+	}
+	if !parsed(testRawQuery()) {
+		t.Fatal("a sessionless query should reach the delta cache")
+	}
+	if parsed(testRawQuery() + "&" + upSessionID + "=s1") {
+		t.Error("a session query must be proxied without reaching the delta cache")
 	}
 }
 

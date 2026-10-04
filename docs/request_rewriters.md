@@ -255,7 +255,7 @@ To clear the URL parameters, use `['params', 'set', '']`
 
 ### chain
 
-`chain` rewriters do not directly rewrite the request, but execute other rewriters' instructions before proceeding with the current rewriter's remaining instructions (if any). You can create a rewriter with some reusable functionality and include that in other rewriters with a chain exec. Or you can define a rewriter that is just a list of other chained rewriters. Note that there is currently no validation of the configuration to prevent infinite cyclic chained rewriter calls. There is, however, a hard limit of 32 chained rules before a request will stop rewriting and proceed with being served by the backend.
+`chain` rewriters do not directly rewrite the request, but execute other rewriters' instructions before proceeding with the current rewriter's remaining instructions (if any). You can create a rewriter with some reusable functionality and include that in other rewriters with a chain exec. Or you can define a rewriter that is just a list of other chained rewriters. Note that there is currently no validation of the configuration to prevent infinite cyclic chained rewriter calls. There is, however, a hard limit of 32 chained rewriter runs each time a rewriter executes; once it is reached, the remaining chained rewriters are skipped and the request proceeds to be served by the backend.
 
 `chain exec` executes the supplied rewriter name. Trickster will error at startup if the rewriter name is invalid. An example is provided in the sample yaml config at the top of this article.
 

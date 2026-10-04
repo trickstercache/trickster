@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/mockster/pkg/mocks/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -33,6 +32,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
+	"github.com/trickstercache/trickster/v2/pkg/testutil/mocks/rangesim"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/stretchr/testify/require"
 )
@@ -60,6 +61,24 @@ func TestObjectProxyCacheRequestChunks(t *testing.T) {
 	_, e = testFetchOPC(r, http.StatusPartialContent, "test", map[string]string{keys.Status: status.StatusHit})
 	for _, err = range e {
 		t.Error(err)
+	}
+}
+
+func TestObjectProxyCacheChunksObjectsKeyedByAQuery(t *testing.T) {
+	hdrs := map[string]string{headers.NameCacheControl: "max-age=60"}
+	ts, _, r, rsc, err := setupTestHarnessOPC("", "test", http.StatusOK, hdrs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeTestHarness(ts, r)
+	rsc.CacheConfig.UseCacheChunking = true
+	// a fallback lane keys its object on a query that carries no step and no series
+	rsc.TimeRangeQuery = &timeseries.TimeRangeQuery{CacheKeyElements: map[string]string{"target": "a.b"}}
+	for _, lookup := range []string{status.StatusKeyMiss, status.StatusHit} {
+		_, e := testFetchOPC(r, http.StatusOK, "test", map[string]string{keys.Status: lookup})
+		for _, err = range e {
+			t.Error(err)
+		}
 	}
 }
 
@@ -120,7 +139,7 @@ func TestObjectProxyCachePartialHitChunks(t *testing.T) {
 
 	// Fulfill the cache with the remaining parts
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -217,7 +236,7 @@ func TestFullArticuationChunks(t *testing.T) {
 
 	r.Header.Del(headers.NameRange)
 	r.URL.RawQuery = "max-age=1"
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusPartialHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusPartialHit})
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Set(headers.NameRange, "bytes=9-20, 21-22")
@@ -245,7 +264,7 @@ func TestFullArticuationChunks(t *testing.T) {
 	require.NoError(t, stderrors.Join(e...))
 
 	r.Header.Del(headers.NameRange)
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusHit})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusHit})
 	require.NoError(t, stderrors.Join(e...))
 }
 
@@ -513,7 +532,7 @@ func TestObjectProxyCacheIMSChunks(t *testing.T) {
 
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
@@ -603,14 +622,14 @@ func TestObjectProxyCacheCanRevalidateChunks(t *testing.T) {
 	p.ResponseHeaders = headers
 	rsc.BackendOptions.RevalidationFactor = 2
 
-	_, e := testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusKeyMiss})
+	_, e := testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusKeyMiss})
 	for _, err = range e {
 		t.Error(err)
 	}
 
 	time.Sleep(1010 * time.Millisecond)
 
-	_, e = testFetchOPC(r, http.StatusOK, byterange.Body, map[string]string{keys.Status: status.StatusRevalidated})
+	_, e = testFetchOPC(r, http.StatusOK, rangesim.Body, map[string]string{keys.Status: status.StatusRevalidated})
 	for _, err = range e {
 		t.Error(err)
 	}

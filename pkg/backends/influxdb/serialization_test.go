@@ -127,6 +127,20 @@ func TestMarshalTimeseries(t *testing.T) {
 		t.Fatalf("expected pretty InfluxQL output, got %q, %v", b, err)
 	}
 
+	// plain InfluxQL output is OutputFormat 0 and must match the writer's document
+	b, err = MarshalTimeseries(ts, &timeseries.RequestOptions{}, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &bytes.Buffer{}
+	if err := MarshalTimeseriesWriter(ts, &timeseries.RequestOptions{}, 200, w); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(b), `{"results":[{"statement_id":0,`) ||
+		string(b)+"\n" != w.String() {
+		t.Fatalf("expected plain InfluxQL output\n got %s\nwant %s", b, w.Bytes())
+	}
+
 	// InfluxqlPost retains the InfluxQL routing bit but is not a valid output
 	// format, so it exercises the route's format validation error.
 	if _, err = MarshalTimeseries(ts, &timeseries.RequestOptions{

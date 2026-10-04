@@ -20,12 +20,14 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/rand"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
+	"github.com/trickstercache/trickster/v2/pkg/util/weak/weaktest"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -139,8 +141,8 @@ func TestRoundTripAllTypes(t *testing.T) {
 	}
 	for i, wantHost := range []string{"a", "b"} {
 		series := ds.Results[0].SeriesList[i]
-		if series.Header.Tags["host"] != wantHost || len(series.Points) != 2 {
-			t.Fatalf("series %d = tags %v, %d points", i, series.Header.Tags, len(series.Points))
+		if series.Header.Tags["host"] != wantHost || series.PointCount() != 2 {
+			t.Fatalf("series %d = tags %v, %d points", i, series.Header.Tags, series.PointCount())
 		}
 	}
 	h0 := ds.Results[0].SeriesList[0].Header.CalculateHash()
@@ -369,7 +371,7 @@ func TestChunking(t *testing.T) {
 // TestRoundTripRandomized property-tests the round trip over randomized
 // schemas and values drawn from the supported type pool.
 func TestRoundTripRandomized(t *testing.T) {
-	rng := rand.New(rand.NewSource(42))
+	rng := weaktest.NewRand(42, 0)
 	valueTypes := []arrow.DataType{
 		arrow.FixedWidthTypes.Boolean,
 		arrow.PrimitiveTypes.Int8, arrow.PrimitiveTypes.Int16,
@@ -383,7 +385,7 @@ func TestRoundTripRandomized(t *testing.T) {
 	randomCell := func(dt arrow.DataType) any {
 		switch dt.ID() {
 		case arrow.BOOL:
-			return rng.Intn(2) == 0
+			return rng.IntN(2) == 0
 		case arrow.INT8:
 			return int64(int8(rng.Int()))
 		case arrow.INT16:
@@ -391,7 +393,7 @@ func TestRoundTripRandomized(t *testing.T) {
 		case arrow.INT32:
 			return int64(int32(rng.Int()))
 		case arrow.INT64, arrow.TIMESTAMP:
-			return rng.Int63() - rng.Int63()
+			return rng.Int64() - rng.Int64()
 		case arrow.UINT8:
 			return int64(uint8(rng.Int()))
 		case arrow.UINT16:
@@ -405,7 +407,7 @@ func TestRoundTripRandomized(t *testing.T) {
 		case arrow.FLOAT64:
 			return rng.NormFloat64()
 		default: // string-ish
-			return fmt.Sprintf("s%d", rng.Intn(1000))
+			return fmt.Sprintf("s%d", rng.IntN(1000))
 		}
 	}
 
@@ -414,17 +416,17 @@ func TestRoundTripRandomized(t *testing.T) {
 			{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Nanosecond, TimeZone: "UTC"}},
 			{Name: "tag", Type: arrow.BinaryTypes.String},
 		}
-		for i := range 1 + rng.Intn(6) {
+		for i := range 1 + rng.IntN(6) {
 			fields = append(fields, arrow.Field{
 				Name:     fmt.Sprintf("v%d", i),
-				Type:     valueTypes[rng.Intn(len(valueTypes))],
+				Type:     valueTypes[rng.IntN(len(valueTypes))],
 				Nullable: true,
 			})
 		}
 		schema := arrow.NewSchema(fields, nil)
 
-		tagValues := []string{"a", "b", "c"}[:1+rng.Intn(3)]
-		rowCount := rng.Intn(50)
+		tagValues := []string{"a", "b", "c"}[:1+rng.IntN(3)]
+		rowCount := rng.IntN(50)
 		rows := make([][]any, rowCount)
 		for r := range rows {
 			cells := make([]any, len(fields))
@@ -589,6 +591,52 @@ func TestToRecordsSortKeyNullPlacement(t *testing.T) {
 	}
 }
 
+// the order InfluxDB 3 (DataFusion) returns for ORDER BY over these floats: IEEE 754 totalOrder, which
+// a descending order reverses, and nulls apart
+func TestToRecordsSortsFloatsInTotalOrder(t *testing.T) {
+	negNaN := math.Float64frombits(math.Float64bits(math.NaN()) | 1<<63)
+	values := []any{1.0, math.NaN(), -1.0, nil, negNaN, math.Inf(1), math.Copysign(0, -1), 0.0}
+	rows := make([][]any, len(values))
+	for i, v := range values {
+		rows[i] = []any{int64(i) * 1000, "a", v}
+	}
+	describe := func(v any) string {
+		f, ok := v.(float64)
+		switch {
+		case !ok:
+			return "null"
+		case math.IsNaN(f) && math.Signbit(f):
+			return "-NaN"
+		case math.Signbit(f) && f == 0:
+			return "-0"
+		}
+		return strconv.FormatFloat(f, 'g', -1, 64)
+	}
+	tests := []struct {
+		key  SortKey
+		want string
+	}{
+		{SortKey{Column: "cpu"}, "-NaN -1 -0 0 1 +Inf NaN null"},
+		{SortKey{Column: "cpu", Descending: true}, "NaN +Inf 1 0 -0 -1 -NaN null"},
+		{SortKey{Column: "cpu", NullsFirst: true}, "null -NaN -1 -0 0 1 +Inf NaN"},
+		{SortKey{Column: "cpu", Descending: true, NullsFirst: true}, "null NaN +Inf 1 0 -0 -1 -NaN"},
+	}
+	schema := orderingSchema()
+	for _, tc := range tests {
+		recs, err := ToRecords(schema, orderingDataSet(t, schema, rows), tc.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, row := range extractRows(recs) {
+			got = append(got, describe(row[2]))
+		}
+		if strings.Join(got, " ") != tc.want {
+			t.Errorf("%+v: got %s, want %s", tc.key, strings.Join(got, " "), tc.want)
+		}
+	}
+}
+
 func TestToRecordsSortKeyUnknownColumn(t *testing.T) {
 	schema := orderingSchema()
 	ds := orderingDataSet(t, schema, [][]any{{int64(1000), "a", 2.0}})
@@ -613,6 +661,10 @@ func TestCompareValues(t *testing.T) {
 		{"mixed numerics", int64(2), 1.5, 1},
 		{"unsigned", uint64(3), int64(3), 0},
 		{"incomparable falls back to rendering", "1", int64(1), 0},
+		{"NaN after a number", math.NaN(), math.Inf(1), 1},
+		{"a number before NaN", int64(1), math.NaN(), -1},
+		{"NaNs equal", math.NaN(), math.NaN(), 0},
+		{"negative zero first", math.Copysign(0, -1), 0.0, -1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -620,5 +672,31 @@ func TestCompareValues(t *testing.T) {
 				t.Errorf("compareValues(%v, %v) = %d, want %d", tc.a, tc.b, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestFromRecordsSizesPoints(t *testing.T) {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "time", Type: &arrow.TimestampType{Unit: arrow.Second}},
+		{Name: "host", Type: arrow.BinaryTypes.String},
+		{Name: "note", Type: arrow.BinaryTypes.String},
+		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	}, nil)
+	build := func(n int) *dataset.DataSet {
+		rows := make([][]any, n)
+		for i := range rows {
+			rows[i] = []any{int64(1700000000 + i), "a", "a note of some length", float64(i)}
+		}
+		rec := makeRecord(t, schema, rows)
+		defer rec.Release()
+		ds, err := FromRecords(schema, []arrow.RecordBatch{rec}, testTRQ("host"))
+		if err != nil {
+			t.Fatalf("FromRecords: %v", err)
+		}
+		return ds
+	}
+	small, large := build(10), build(1000)
+	if grown := large.Size() - small.Size(); grown < 990*int64(len("a note of some length")) {
+		t.Fatalf("size grew by %d for 990 more rows", grown)
 	}
 }

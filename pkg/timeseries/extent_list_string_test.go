@@ -17,6 +17,8 @@
 package timeseries
 
 import (
+	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -69,5 +71,25 @@ func TestExtentListStringRoundTrip(t *testing.T) {
 		if !got[i].Start.Equal(in[i].Start) || !got[i].End.Equal(in[i].End) {
 			t.Errorf("extent %d mismatch: got %s want %s", i, got[i].String(), in[i].String())
 		}
+	}
+}
+
+func TestExtentStringMatchesSprintf(t *testing.T) {
+	for _, ns := range []int64{
+		0, 1, -1, 999999, -999999, 1700000000123456789, -1700000000123456789,
+		math.MaxInt64, math.MinInt64,
+	} {
+		e := Extent{Start: time.Unix(0, ns), End: time.Unix(0, -ns)}
+		want := fmt.Sprintf("%d-%d", e.Start.UnixNano()/1000000, e.End.UnixNano()/1000000)
+		if got := e.String(); got != want {
+			t.Errorf("%d: got %s want %s", ns, got, want)
+		}
+	}
+	el := ExtentList{{Start: time.UnixMilli(1), End: time.UnixMilli(2)}, {Start: time.UnixMilli(3), End: time.UnixMilli(4)}}
+	if got := el.String(); got != "1-2;3-4" {
+		t.Errorf("got %s", got)
+	}
+	if got := string(el.AppendString([]byte("x="))); got != "x=1-2;3-4" {
+		t.Errorf("got %s", got)
 	}
 }

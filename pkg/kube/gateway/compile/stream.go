@@ -25,6 +25,7 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 )
 
 // unresolvedStreamOriginURL is the origin a stream member that could not be resolved carries: a
@@ -80,11 +81,18 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 		b.PathDefaultsDisabled = true
 		b.Hosts = r.Hostnames
 		b.AnyHostRouting = len(r.Hostnames) == 0
+		b.GeoACLName = eff.geoACLName
+		b.IPACLName = eff.ipACLName
 	}
+	// only the ALB a stream listener maps to keeps sessions, for the whole path beneath it
+	readable := streamReadable(r)
 	if len(group.Members) == 1 && !group.Members[0].Invalid {
-		front, err := streamMember(doc, group, group.Members[0], eff, opts, listeners)
+		front, err := streamMember(doc, r, group, group.Members[0], eff, opts, listeners)
 		if err != nil {
 			return err
+		}
+		if front.ALB != nil {
+			front.ALB.Sticky = eff.policySticky(name, true, readable)
 		}
 		attach(front)
 		doc.Backends[name] = front
@@ -98,7 +106,7 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 			front = unresolvedStreamBackend()
 		} else {
 			var err error
-			if front, err = streamMember(doc, group, m, eff, opts, listeners); err != nil {
+			if front, err = streamMember(doc, r, group, m, eff, opts, listeners); err != nil {
 				return err
 			}
 		}
@@ -110,13 +118,15 @@ func compileStreamRule(doc *document, r ir.Route, group ir.BackendGroup, listene
 		doc.Backends[memberName] = front
 		pool = append(pool, &albPoolDoc{Name: memberName, Weight: m.Weight})
 	}
-	alb := &backendDoc{Provider: providers.ALB, ALB: &albDoc{Mechanism: albnames.MechanismRR, Pool: pool}}
+	alb := &backendDoc{Provider: providers.ALB, ALB: &albDoc{
+		Mechanism: albnames.MechanismRR, Pool: pool, Sticky: eff.policySticky(name, true, readable),
+	}}
 	attach(alb)
 	doc.Backends[name] = alb
 	return nil
 }
 
-func streamMember(doc *document, g ir.BackendGroup, m ir.BackendMember, eff effective,
+func streamMember(doc *document, r ir.Route, g ir.BackendGroup, m ir.BackendMember, eff effective,
 	opts *kubecfg.Options, listeners []string,
 ) (*backendDoc, error) {
 	// the member is a reverse proxy backend for its origin alone: the stream listener dials the
@@ -147,19 +157,26 @@ func streamMember(doc *document, g ir.BackendGroup, m ir.BackendMember, eff effe
 	return &backendDoc{
 		Provider:      providers.ALB,
 		ListenerNames: listeners,
-		ALB: &albDoc{
-			Mechanism: albnames.MechanismRR,
-			Discovery: &albDiscoveryDoc{
-				DiscovererName:  doc.discoverer(opts),
-				TemplateBackend: tmplName,
-				HealthMode:      ao.HealthModeProvider,
-				Query: &queryDoc{
-					Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
-					Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
-				},
+		// the endpoints are balanced by the policy's mechanism; a key must be one the route's
+		// listener can read, which is the client address, or the server name on a tls route
+		ALB: eff.endpointALB(&albDiscoveryDoc{
+			DiscovererName:  doc.discoverer(opts),
+			TemplateBackend: tmplName,
+			HealthMode:      ao.HealthModeProvider,
+			Query: &queryDoc{
+				Kind: do.KindEndpointSlices, Namespace: m.Service.Namespace,
+				Service: m.Service.Name, Port: m.Service.PortName, Scheme: scheme,
 			},
-		},
+		}, streamReadable(r)),
 	}, nil
+}
+
+// streamReadable reports whether a key can be read from a flow on the route's listener: the client
+// address, or the server name on a tls route
+func streamReadable(r ir.Route) func(flowkey.KeySource) bool {
+	return func(ks flowkey.KeySource) bool {
+		return ks.OnStream(flowkey.StreamListener{TLS: r.Protocol == ir.ProtocolTLS})
+	}
 }
 
 func unresolvedStreamBackend() *backendDoc {

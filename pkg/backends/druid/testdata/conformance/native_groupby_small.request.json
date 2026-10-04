@@ -1,0 +1,1 @@
+{"queryType":"groupBy","dataSource":"trips","granularity":"hour","intervals":["2026-09-20T06:00:00Z/2026-09-20T08:00:00Z"],"dimensions":["cab_type","payment_type"],"aggregations":[{"type":"count","name":"cnt"},{"type":"doubleSum","name":"fare","fieldName":"fare_amount"},{"type":"longSum","name":"pax","fieldName":"passenger_count"}]}

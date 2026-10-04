@@ -36,11 +36,16 @@ func SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	if err != nil {
 		return
 	}
+	SetStatement(r, stmt)
+}
+
+// SetStatement sets r's statement, in its body with the body's other fields kept, or its URL
+func SetStatement(r *http.Request, statement string) {
 	if methods.HasBody(r.Method) {
-		request.SetBody(r, EncodeBody(r, stmt))
+		request.SetBody(r, EncodeBody(r, statement))
 		return
 	}
 	qi := r.URL.Query()
-	qi.Set(ParamQuery, stmt)
+	qi.Set(ParamQuery, statement)
 	r.URL.RawQuery = qi.Encode()
 }

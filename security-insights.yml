@@ -38,10 +38,6 @@ project:
       url: https://github.com/trickstercache/trickstercache.org
       comment: |
         Trickster website repository.
-    - name: mockster
-      url: https://github.com/trickstercache/mockster
-      comment: |
-        HTTP Server Mocks for Byte Range and Time Series Databases.
     - name: benchster
       url: https://github.com/trickstercache/benchster
       comment: |

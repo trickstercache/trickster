@@ -26,7 +26,6 @@ package dynamic
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -89,12 +88,6 @@ type Config struct {
 // caller-managed statuses (provider-readiness health mode)
 type externalRegistrar interface {
 	RegisterExternal(name, description string, s *healthcheck.Status)
-}
-
-// protocolHealthProber mirrors the unexported interface consulted by
-// backends.StartHealthChecks for protocol-native probes (e.g. mysql)
-type protocolHealthProber interface {
-	HealthCheckProbe() healthcheck.Probe
 }
 
 // memberEntry is one live discovered member
@@ -272,6 +265,10 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 	// swap the pool before releasing removed members so requests never see
 	// a pool referencing a torn-down member
 	m.swapPoolLocked()
+	if cn, ok := m.cfg.HealthChecker.(healthcheck.ChangeNotifier); ok {
+		// the health page reads membership and draining from the pool, which registrations precede
+		cn.NotifyChange()
+	}
 
 	for name, e := range removed {
 		if _, replaced := m.members[name]; replaced {
@@ -402,6 +399,10 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	if err != nil {
 		return nil, err
 	}
+	// a pool member is reached through its pool only, never through a native listener
+	if err := backends.ValidateStepAlignment(client, nb); err != nil {
+		return nil, err
+	}
 	nb.HTTPClient = client.HTTPClient()
 	if c != nil {
 		client.SetCache(c)
@@ -414,56 +415,48 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		client, nb, c, m.cfg.Tracers)
 
 	e := &memberEntry{member: member, client: client}
-	if m.cfg.Options.HealthMode == ao.HealthModeProvider {
+	if m.cfg.Options.HealthMode != ao.HealthModeProvider && nb.HealthCheck != nil {
+		// the same registration a configured backend gets
+		st, err := backends.RegisterHealthCheck(m.cfg.HealthChecker, name,
+			m.healthDescription(nb.Provider), client)
+		if err != nil {
+			return nil, err
+		}
+		if st != nil {
+			if oldSt, ok := m.cfg.KnownStatuses[name]; ok && oldSt != nil {
+				if v := oldSt.Get(); v != healthcheck.StatusInitializing {
+					st.Set(v)
+				}
+			}
+			m.admitOnReadiness(name, st, member)
+			client.SetHealthCheckProbe(st.Prober())
+			e.status = st
+		}
+	}
+	if e.status == nil && (m.cfg.Options.HealthMode == ao.HealthModeProvider || nb.HealthCheck != nil) {
+		// the provider's readiness is the member's health: by configuration, or because its
+		// origin is one that cannot be probed
 		e.external = true
 		e.status = healthcheck.NewStatus(name, m.healthDescription(nb.Provider),
 			"", statusForReadyState(member.Ready), time.Time{}, nil)
 		if er, ok := m.cfg.HealthChecker.(externalRegistrar); ok {
 			er.RegisterExternal(name, m.healthDescription(nb.Provider), e.status)
 		}
-	} else if nb.HealthCheck != nil {
-		// mirror backends.StartHealthChecks: overlay the provider default
-		// healthcheck config, then register an active probe
-		hco := nb.HealthCheck
-		nb.HealthCheck = client.DefaultHealthCheckConfig()
-		if nb.HealthCheck == nil {
-			nb.HealthCheck = hco
-		} else {
-			nb.HealthCheck.Overlay(hco)
-		}
-		var st *healthcheck.Status
-		if prober, ok := client.(protocolHealthProber); ok {
-			registrar, rok := m.cfg.HealthChecker.(healthcheck.Registrar)
-			if !rok {
-				return nil, errors.New("health checker does not support protocol probes")
-			}
-			st, err = registrar.RegisterProbe(name,
-				m.healthDescription(nb.Provider), nb.HealthCheck,
-				prober.HealthCheckProbe())
-		} else {
-			st, err = m.cfg.HealthChecker.Register(name,
-				m.healthDescription(nb.Provider),
-				nb.HealthCheck, client.HealthCheckHTTPClient())
-		}
-		if err != nil {
-			return nil, err
-		}
-		if oldSt, ok := m.cfg.KnownStatuses[name]; ok && oldSt != nil {
-			if v := oldSt.Get(); v != healthcheck.StatusInitializing {
-				st.Set(v)
-			}
-		}
-		m.admitOnReadiness(name, st, member)
-		client.SetHealthCheckProbe(st.Prober())
-		e.status = st
 	}
 
-	e.target = pool.NewWeightedTarget(client.Router(), e.status, client,
-		member.Weight)
-	if e.external {
-		e.target = e.target.WithExternalHealth()
-	}
+	e.target = e.newTarget(member)
 	return e, nil
+}
+
+// newTarget builds the member's pool target around its client and status; a member the
+// provider reports terminating drains, keeping its pinned sessions and taking no new work
+func (e *memberEntry) newTarget(member discovery.Member) *pool.Target {
+	t := pool.NewWeightedTarget(e.client.Router(), e.status, e.client, member.Weight).
+		WithDraining(member.Ready == discovery.Terminating)
+	if e.external {
+		t = t.WithExternalHealth()
+	}
+	return t
 }
 
 // healthDescription tags a discovered member on the health status page
@@ -489,7 +482,7 @@ func (m *Manager) admitOnReadiness(name string, st *healthcheck.Status,
 		logging.Pairs{keys.ALBName: m.albName, keys.Member: name})
 }
 
-// updateMember applies attribute-only changes (weight, readiness, labels)
+// updateMember applies attribute-only changes (weight, readiness, draining, labels)
 // to a live member without rebuilding its backend client
 func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Member) {
 	if member.Ready != e.member.Ready {
@@ -499,14 +492,11 @@ func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Mem
 			m.admitOnReadiness(name, e.status, member)
 		}
 	}
-	if member.Weight != e.member.Weight {
-		// targets are immutable; rebuild this member's target around the
-		// same client and status
-		e.target = pool.NewWeightedTarget(e.client.Router(), e.status,
-			e.client, member.Weight)
-		if e.external {
-			e.target = e.target.WithExternalHealth()
-		}
+	if member.Weight != e.member.Weight ||
+		(member.Ready == discovery.Terminating) != (e.member.Ready == discovery.Terminating) {
+		// targets are immutable; rebuild this member's target around the same client, status
+		// and runtime stats, so a member that starts draining keeps its name and so its pins
+		e.target = e.newTarget(member).WithStatsOf(e.target)
 	}
 	e.member = member
 }
@@ -602,15 +592,13 @@ func (m *Manager) MemberNames() []string {
 	return names
 }
 
-// statusForReadyState maps provider-reported readiness onto health check
-// status values: ready members are Passing, not-ready and terminating
-// members are Failing, and readiness-unknown members are Unchecked (see the
-// healthy_floor interaction notes on options.HealthModeProvider)
+// statusForReadyState maps provider readiness onto health: ready and terminating (still serving,
+// draining) members pass, not-ready ones fail and unknown ones are Unchecked
 func statusForReadyState(r discovery.ReadyState) int32 {
 	switch r {
-	case discovery.Ready:
+	case discovery.Ready, discovery.Terminating:
 		return healthcheck.StatusPassing
-	case discovery.NotReady, discovery.Terminating:
+	case discovery.NotReady:
 		return healthcheck.StatusFailing
 	}
 	return healthcheck.StatusUnchecked

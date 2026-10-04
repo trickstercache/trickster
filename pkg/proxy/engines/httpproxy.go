@@ -29,11 +29,13 @@ import (
 	"sync"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/encoding/profile"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tspan "github.com/trickstercache/trickster/v2/pkg/observability/tracing/span"
@@ -53,8 +55,9 @@ import (
 // Reqs is for Progressive Collapsed Forwarding
 var reqs sync.Map
 
-// HTTPBlockSize represents 32K of bytes
-const HTTPBlockSize = 32 * 1024
+// HTTPBlockSize is the size of a Progressive Collapsed Forwarding block, which a pooled copy
+// buffer must hold whole
+const HTTPBlockSize = tbytes.CopyBufferSize
 
 // ClockOffsetWarning is the warning provided to users when the origin's clock offset is suspect
 const ClockOffsetWarning = "clock offset between trickster host and origin is high and may cause data anomalies"
@@ -88,7 +91,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 		trailers := responseTrailerNames(resp)
 		writer := PrepareResponseWriter(w, resp.StatusCode, resp.Header, trailers)
 		if writer != nil && reader != nil {
-			if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
+			if _, err := tbytes.Copy(streamWriter(writer, resp), reader); err != nil {
 				logger.Error("proxy response copy failed",
 					logging.Pairs{keys.Error: err.Error()})
 				if closeResponse {
@@ -132,7 +135,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 						}
 					}()
 					defer reqs.Delete(key)
-					n, err := io.Copy(pcf, reader)
+					n, err := tbytes.Copy(pcf, reader)
 					switch {
 					case err != nil:
 						logger.Error("pcf upstream copy failed",
@@ -152,7 +155,7 @@ func DoProxy(w io.Writer, r *http.Request, closeResponse bool) *http.Response {
 				}
 			} else if writer != nil && reader != nil {
 				// response is not collapsible; deliver to this client alone
-				if _, err := io.Copy(streamWriter(writer, resp), reader); err != nil {
+				if _, err := tbytes.Copy(streamWriter(writer, resp), reader); err != nil {
 					logger.Error("proxy response copy failed",
 						logging.Pairs{keys.Error: err.Error()})
 					if closeResponse {
@@ -259,7 +262,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	// AddForwardingHeaders strips TE as hop-by-hop, so preserve a client's
 	// request for trailers across the rewrite.
 	wantsTrailers := httpguts.HeaderValuesContainsToken(r.Header[headers.NameTe], "trailers")
-	headers.AddForwardingHeaders(r, o.ForwardedHeaders)
+	headers.AddForwardingHeaders(r, o.ForwardedHeaders, request.PeerTrusted(r))
 	if wantsTrailers {
 		r.Header.Set(headers.NameTe, "trailers")
 	}
@@ -312,7 +315,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 				status = http.StatusRequestEntityTooLarge
 			}
 			logger.Error("error buffering request body for retry",
-				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
+				logging.Pairs{keys.URL: redact.URL(r.URL), keys.Detail: err.Error()})
 			setHTTPStatusSpanAttributes(rsc.Tracer, status, span, doSpan)
 			return nil, &http.Response{
 				StatusCode: status,
@@ -334,7 +337,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if err != nil {
 		if rsc == nil || !rsc.Cancelable || !errors.Is(err, context.Canceled) {
 			logger.Error("error downloading url",
-				logging.Pairs{keys.URL: r.URL.String(), keys.Detail: err.Error()})
+				logging.Pairs{keys.URL: redact.URL(r.URL), keys.Detail: redact.Error(err)})
 		}
 		// if there is an err and the response is nil, the server could not be reached, which
 		// is a 502 downstream, or it ran out the path's or attempt's time, which is a 504
@@ -351,7 +354,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			logger.Error("error reaching upstream origin",
 				logging.Pairs{
 					keys.Origin:          r.Host,
-					keys.URL:             r.URL.String(),
+					keys.URL:             redact.URL(r.URL),
 					keys.BackendName:     o.Name,
 					keys.BackendProvider: o.Provider,
 					keys.Detail:          "nil response from upstream origin",
@@ -367,7 +370,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 			doSpan.AddEvent(
 				"Failure",
 				trace.EventOption(trace.WithAttributes(
-					attribute.String(keys.Error, err.Error()),
+					attribute.String(keys.Error, redact.Error(err)),
 					attribute.Int(keys.HTTPStatus, resp.StatusCode),
 				)),
 			)
@@ -379,7 +382,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 	if resp.StatusCode == http.StatusBadGateway {
 		logger.Error("received 502 from upstream",
 			logging.Pairs{
-				keys.URL:             r.URL.String(),
+				keys.URL:             redact.URL(r.URL),
 				keys.BackendProvider: o.Provider,
 				keys.BackendName:     o.Name,
 				keys.HTTPStatus:      resp.StatusCode,
@@ -453,7 +456,7 @@ func PrepareFetchReader(r *http.Request) (io.ReadCloser, *http.Response, int64) 
 func Respond(w io.Writer, code int, header http.Header, body io.Reader) {
 	PrepareResponseWriter(w, code, header, nil)
 	if body != nil {
-		io.Copy(w, body)
+		tbytes.Copy(w, body)
 	}
 }
 
@@ -475,7 +478,7 @@ func recordResults(
 	path, ffStatus string,
 	elapsed float64,
 	extents, failed timeseries.ExtentList,
-	header http.Header,
+	header http.Header, partials ...headers.PartialBucketResult,
 ) {
 	rsc := request.GetResources(r)
 	pc := rsc.PathConfig
@@ -498,5 +501,5 @@ func recordResults(
 			metrics.ProxyRequestDuration.WithLabelValues(lvs...).Observe(elapsed)
 		}
 	}
-	headers.SetResultsHeader(header, engine, s, ffStatus, extents, failed)
+	headers.SetResultsHeader(header, engine, s, ffStatus, extents, failed, partials...)
 }

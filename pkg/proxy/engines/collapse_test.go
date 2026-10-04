@@ -151,9 +151,34 @@ func collapseHarness(t *testing.T, originURL string, mutate ...func(*bo.Options,
 	return front
 }
 
+func awaitCollapseClients(t *testing.T, want int32) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		var clients int32
+		collapses.Range(func(_, value any) bool {
+			e := value.(*collapseEntry)
+			e.cond.L.Lock()
+			if pcf, ok := e.pcf.(*progressiveCollapseForwarder); ok {
+				clients += pcf.clientCount.Load()
+			}
+			e.cond.L.Unlock()
+			return true
+		})
+		if clients == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("collapse has %d clients, want %d", clients, want)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func TestCollapsedPassthroughSharesOneFetch(t *testing.T) {
 	var hits atomic.Int32
 	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
 	body := strings.Repeat("x", 4*HTTPBlockSize)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		hits.Add(1)
@@ -165,6 +190,7 @@ func TestCollapsedPassthroughSharesOneFetch(t *testing.T) {
 		w.Write([]byte(body[10:]))
 	}))
 	defer origin.Close()
+	defer unblock()
 	front := collapseHarness(t, origin.URL)
 
 	const clients = 4
@@ -183,11 +209,9 @@ func TestCollapsedPassthroughSharesOneFetch(t *testing.T) {
 			results[i] = string(b)
 			errs[i] = err
 		})
-		// stagger so the first request leads and the rest join
-		time.Sleep(50 * time.Millisecond)
 	}
-	time.Sleep(100 * time.Millisecond)
-	close(release)
+	awaitCollapseClients(t, clients)
+	unblock()
 	wg.Wait()
 
 	if got := hits.Load(); got != 1 {
@@ -209,6 +233,7 @@ func TestCollapsedPassthroughSeparatesPreservedHosts(t *testing.T) {
 	run := func(t *testing.T, preserve bool, wantFetches int32, updates map[string]string) []string {
 		var hits atomic.Int32
 		release := make(chan struct{})
+		unblock := sync.OnceFunc(func() { close(release) })
 		origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			hits.Add(1)
 			w.Header().Set(headers.NameContentLength, "8")
@@ -219,6 +244,7 @@ func TestCollapsedPassthroughSeparatesPreservedHosts(t *testing.T) {
 			w.Write([]byte(r.Host[:1]))
 		}))
 		defer origin.Close()
+		defer unblock()
 		front := collapseHarness(t, origin.URL, func(o *bo.Options, pc *po.Options) {
 			o.PreserveHost = preserve
 			pc.RequestHeaders = updates
@@ -243,10 +269,9 @@ func TestCollapsedPassthroughSeparatesPreservedHosts(t *testing.T) {
 				b, _ := io.ReadAll(resp.Body)
 				results[i] = string(b)
 			})
-			time.Sleep(50 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
-		close(release)
+		awaitCollapseClients(t, int32(len(hosts)))
+		unblock()
 		wg.Wait()
 		if got := hits.Load(); got != wantFetches {
 			t.Errorf("expected %d upstream fetches, got %d", wantFetches, got)
@@ -360,6 +385,7 @@ func TestCollapsedPassthroughUnknownLength(t *testing.T) {
 
 func TestCollapsedPassthroughTruncationFansOut(t *testing.T) {
 	release := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(release) })
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set(headers.NameContentLength, "4096")
 		w.WriteHeader(http.StatusOK)
@@ -370,6 +396,7 @@ func TestCollapsedPassthroughTruncationFansOut(t *testing.T) {
 		panic(http.ErrAbortHandler)
 	}))
 	defer origin.Close()
+	defer unblock()
 	front := collapseHarness(t, origin.URL)
 
 	const clients = 2
@@ -387,10 +414,9 @@ func TestCollapsedPassthroughTruncationFansOut(t *testing.T) {
 				failures[i] = true
 			}
 		})
-		time.Sleep(50 * time.Millisecond)
 	}
-	time.Sleep(100 * time.Millisecond)
-	close(release)
+	awaitCollapseClients(t, clients)
+	unblock()
 	wg.Wait()
 
 	for i, failed := range failures {

@@ -21,14 +21,18 @@
 package gatewayapi
 
 import (
+	"context"
 	"slices"
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 
+	authv1 "k8s.io/api/authorization/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 	gwclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gwinformers "sigs.k8s.io/gateway-api/pkg/client/informers/externalversions"
 )
@@ -54,6 +58,17 @@ var GroupVersion = gwapiv1.GroupVersion.String()
 // kinds are served under, installed only by the experimental channel
 var AlphaGroupVersion = gwapiv1a2.GroupVersion.String()
 
+// ResourceBackendTrafficPolicies is the experimental resource that asks for session persistence to
+// a Service's endpoints
+const ResourceBackendTrafficPolicies = "xbackendtrafficpolicies"
+
+// watchVerbs are what an informer needs of a resource
+var watchVerbs = []string{"list", "watch"}
+
+// XGroupVersion is the experimental Gateway API group, gateway.networking.x-k8s.io, where the kinds
+// being tried out before they join the main group, such as XBackendTrafficPolicy, are served
+var XGroupVersion = gwapix.GroupVersion.String()
+
 // Available reports whether the cluster serves the Gateway API; an informer over a resource the
 // API server does not serve never syncs, so building one would hang startup
 func Available(c *kube.Client) (bool, error) {
@@ -71,6 +86,41 @@ func Resources(c *kube.Client) ([]string, bool, error) {
 // API group version, and whether it serves that version at all
 func AlphaResources(c *kube.Client) ([]string, bool, error) {
 	return ResourcesFor(c, AlphaGroupVersion)
+}
+
+// XResources returns the sorted resource names the cluster serves in the experimental Gateway API
+// group, and whether it serves that group version at all
+func XResources(c *kube.Client) ([]string, bool, error) {
+	return ResourcesFor(c, XGroupVersion)
+}
+
+// XWatchable reports whether this identity may list and watch the experimental resource in every
+// namespace given, where "" is all of them: an informer the API server refuses never syncs
+func XWatchable(ctx context.Context, c *kube.Client, resource string, namespaces []string,
+) (bool, error) {
+	if c == nil || c.Clientset() == nil {
+		return false, kube.ErrNoConnectionOptions
+	}
+	if len(namespaces) == 0 {
+		namespaces = []string{""}
+	}
+	reviews := c.Clientset().AuthorizationV1().SelfSubjectAccessReviews()
+	for _, ns := range namespaces {
+		for _, verb := range watchVerbs {
+			r, err := reviews.Create(ctx, &authv1.SelfSubjectAccessReview{
+				Spec: authv1.SelfSubjectAccessReviewSpec{ResourceAttributes: &authv1.ResourceAttributes{
+					Namespace: ns, Verb: verb, Group: gwapix.GroupName, Resource: resource,
+				}},
+			}, metav1.CreateOptions{})
+			if err != nil {
+				return false, err
+			}
+			if !r.Status.Allowed {
+				return false, nil
+			}
+		}
+	}
+	return true, nil
 }
 
 // ResourcesFor returns the sorted resource names the cluster serves in one group version, and

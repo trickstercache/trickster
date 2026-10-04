@@ -171,6 +171,12 @@ func (h *handler) serveMultiVariantPlan(
 	if err := eg.Wait(); err != nil && parentCtx.Err() == nil {
 		logger.Warn("tsm plan gather failure", logging.Pairs{keys.Error: err})
 	}
+	// every variant has returned; the captures' headers are read until the response is written
+	defer func() {
+		for i := range executions {
+			fanout.ReleaseCaptures(executions[i].fanoutResults)
+		}
+	}()
 	if parentCtx.Err() != nil {
 		return
 	}

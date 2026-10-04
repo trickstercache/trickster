@@ -35,6 +35,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/stretchr/testify/require"
 )
@@ -47,13 +48,13 @@ func promPaths(provider string) po.List {
 	return po.List{
 		{
 			Path: "/api/v1/query_range", HandlerName: "query_range",
-			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST"},
+			MatchTypeName: matching.PathMatchNameExact, Methods: []string{"GET", "POST", "QUERY"},
 			CacheKeyParams:  []string{"query", "step", "stats"},
 			ResponseHeaders: map[string]string{"Cache-Control": "s-maxage=30"},
 		},
 		{
 			Path: "/api/v1/query", HandlerName: "query", MatchTypeName: matching.PathMatchNameExact,
-			Methods: []string{"GET", "POST"}, CacheKeyParams: []string{"query", "time"},
+			Methods: []string{"GET", "POST", "QUERY"}, CacheKeyParams: []string{"query", "time"},
 		},
 		{
 			Path: "/api/v1/label/", HandlerName: "labels", MatchTypeName: matching.PathMatchNamePrefix,
@@ -86,7 +87,7 @@ func realPaths(t *testing.T) ProviderPaths {
 func emittedWith(t *testing.T, m *ir.IR, opts *kubecfg.Options, paths ProviderPaths,
 ) map[string]*backendDoc {
 	t.Helper()
-	doc, err := buildDocument(m, opts, paths)
+	doc, err := buildDocument(m, opts, paths, nil)
 	require.NoError(t, err)
 	return doc.Backends
 }
@@ -132,7 +133,7 @@ func TestCompileProviderPathsFollowTheRoute(t *testing.T) {
 	require.Len(t, qr, 1)
 	require.Equal(t, "query_range", qr[0].Handler)
 	require.Equal(t, string(matching.PathMatchNameExact), qr[0].MatchType)
-	require.Equal(t, []string{"GET", "POST"}, qr[0].Methods)
+	require.Equal(t, []string{"GET", "POST", "QUERY"}, qr[0].Methods)
 	require.Equal(t, []string{"query", "step", "stats", "tenant"}, qr[0].CacheKeyParams,
 		"the provider's components come first and the policy's join them once")
 	require.Equal(t, []string{"X-Scope-OrgID"}, qr[0].CacheKeyHeaders)
@@ -168,6 +169,37 @@ func TestCompileProviderPathsFollowTheRoute(t *testing.T) {
 	// without a source of the provider's paths the rule is refused rather than served bare
 	_, err := Compile(m, serviceOpts(t))
 	require.ErrorIs(t, err, ErrNoProviderPaths)
+}
+
+func TestCompileStepAlignment(t *testing.T) {
+	// a policy's mode reaches a generated time series backend whose provider supports it; any
+	// other would fail the generated configuration, so the provider's default applies
+	supported := func(provider string) timeseries.StepAlignment {
+		if provider == providers.Prometheus {
+			return timeseries.StepAlignmentTruncate | timeseries.StepAlignmentPartialEnd
+		}
+		return 0
+	}
+	for _, test := range []struct {
+		name, provider, mode string
+		lookup               ProviderStepAlignments
+		want                 string
+	}{
+		{"a supported mode", providers.Prometheus, "truncate", supported, "truncate"},
+		{"an unsupported mode", providers.Prometheus, "drop", supported, ""},
+		{"no time series provider", "", "truncate", supported, ""},
+		{"no lookup", providers.Prometheus, "truncate", nil, ""},
+		{"no mode", providers.Prometheus, "", supported, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			m := simple()
+			m.Routes[0].Rules[0].Policy = "p1"
+			m.Policies = []ir.Policy{{Name: "p1", Provider: test.provider, StepAlignment: test.mode}}
+			doc, err := buildDocument(m, serviceOpts(t), promPaths, test.lookup)
+			require.NoError(t, err)
+			require.Equal(t, test.want, doc.Backends["kgw--httproute.shop.web_r0"].StepAlignment)
+		})
+	}
 }
 
 func TestCompileProviderPathsRespectOtherRoutes(t *testing.T) {

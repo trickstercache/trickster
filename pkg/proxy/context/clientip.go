@@ -18,9 +18,20 @@ package context
 
 import "context"
 
+type resolvedClient struct { // one value, so recording both costs what the address alone does
+	ip          string
+	peerTrusted bool
+}
+
 // WithClientIP records the resolved client IP address of the request on ctx.
 func WithClientIP(ctx context.Context, ip string) context.Context {
-	return context.WithValue(ctx, clientIPKey, ip)
+	return context.WithValue(ctx, clientIPKey, resolvedClient{ip: ip})
+}
+
+// WithResolvedClient records the request's resolved client IP on ctx, and whether its peer is one of the
+// listener's trusted proxies, whose headers may be believed
+func WithResolvedClient(ctx context.Context, ip string, peerTrusted bool) context.Context {
+	return context.WithValue(ctx, clientIPKey, resolvedClient{ip: ip, peerTrusted: peerTrusted})
 }
 
 // ClientIP returns the client IP address resolved for the request, or an
@@ -29,6 +40,15 @@ func ClientIP(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	v, _ := ctx.Value(clientIPKey).(string)
-	return v
+	v, _ := ctx.Value(clientIPKey).(resolvedClient)
+	return v.ip
+}
+
+// PeerTrusted reports whether the peer that delivered the request is one of the listener's trusted proxies
+func PeerTrusted(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	v, _ := ctx.Value(clientIPKey).(resolvedClient)
+	return v.peerTrusted
 }

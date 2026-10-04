@@ -1,0 +1,75 @@
+# Copyright 2026 The Trickster Authors
+# Licensed under the Apache License, Version 2.0
+#
+# Config for TestGeoACLHTTP. The listener trusts the test client, so X-Forwarded-For stands in for
+# clients elsewhere; the geofeed places them.
+
+listeners:
+  default:
+    port: 8539
+    trusted_proxies: [127.0.0.1/32, '::1/128']
+  metrics:
+    port: 8540
+  mgmt:
+    port: 8541
+
+logging:
+  log_level: info
+
+caches:
+  mem1:
+    provider: memory
+
+geo_locators:
+  default:
+    provider: geofeed
+    geofeed:
+      entries:
+        - 192.0.2.0/24,US,US-TX
+        - 198.51.100.0/24,FR
+        - 203.0.113.0/24,DE
+  geo-it-edge:
+    provider: header
+    header:
+      country: CF-IPCountry
+
+geo_acls:
+  geo-it-north-america:
+    allow: [US, CA, MX]
+  geo-it-count:
+    deny: [FR]
+    action: count
+  geo-it-edge:
+    geo_locator_name: geo-it-edge
+    deny: [FR]
+  geo-it-europe:
+    allow: [continent:EU]
+    message: Europe only.
+    response:
+      status: 451
+      headers:
+        Link: '<https://example.com/legal>; rel="blocked-by"'
+
+backends:
+  geo-it-prom:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    geo_acl_name: geo-it-north-america
+    paths:
+      - path: /api/v1/status/buildinfo
+        handler: proxy
+        geo_acl_name: none
+      - path: /api/v1/labels
+        handler: proxy
+        geo_acl_name: geo-it-europe
+  geo-it-count:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    geo_acl_name: geo-it-count
+  geo-it-edge:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+    cache_name: mem1
+    geo_acl_name: geo-it-edge

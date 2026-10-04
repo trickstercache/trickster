@@ -35,6 +35,12 @@ func TestNewNewClient(t *testing.T) {
 	}
 }
 
+func TestRelaysUpgrades(t *testing.T) {
+	if !(&Client{}).RelaysUpgrades() {
+		t.Error("a rule sends each request to one backend, which tunnels its upgrade")
+	}
+}
+
 func TestDefaultPathConfigs(t *testing.T) {
 	c := &Client{}
 	dpc := c.DefaultPathConfigs(nil)

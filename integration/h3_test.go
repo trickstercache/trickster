@@ -41,9 +41,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// h3Harness boots Trickster with a TLS listener plus an HTTP/3 endpoint in
-// front of origin, returning the harness, the HTTPS address, the UDP port, and
-// a cert pool that trusts the generated self-signed certificate.
 func h3Harness(t *testing.T, originURL string) (tricksterHarness, string, int, *x509.CertPool) {
 	t.Helper()
 	keyPEM, certPEM, err := testtls.GetTestKeyAndCertWithNames("localhost")
@@ -102,14 +99,33 @@ func h3Client(pool *x509.CertPool) *http.Client {
 	}}
 }
 
-func TestHTTP3ServesRequests(t *testing.T) {
+func TestHTTP3(t *testing.T) {
+	full := strings.Repeat("abcdefghij", 512)
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "served %s", r.URL.Path)
+		switch r.URL.Path {
+		case "/parity":
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = w.Write([]byte(strings.Repeat("p", 4096)))
+		case "/obj.txt":
+			http.ServeContent(w, r, "obj.txt", time.Time{}, strings.NewReader(full))
+		case "/hello":
+			w.Header().Set("Content-Type", "text/plain")
+			_, _ = fmt.Fprintf(w, "served %s", r.URL.Path)
+		default:
+			_, _ = w.Write([]byte("ok"))
+		}
 	}))
-	defer origin.Close()
-
+	t.Cleanup(origin.Close)
 	_, httpsAddr, udpPort, pool := h3Harness(t, origin.URL)
+	t.Run("ServesRequests", func(t *testing.T) { checkHTTP3ServesRequests(t, httpsAddr, udpPort, pool) })
+	t.Run("AltSvcAdvertised", func(t *testing.T) { checkHTTP3AltSvcAdvertised(t, httpsAddr, udpPort, pool) })
+	t.Run("ProtocolParity", func(t *testing.T) { checkHTTP3ProtocolParity(t, httpsAddr, udpPort, pool) })
+	t.Run("ByteRangeParity", func(t *testing.T) { checkHTTP3ByteRangeParity(t, httpsAddr, udpPort, pool, full) })
+	t.Run("RefusesUpgrade", func(t *testing.T) { checkHTTP3RefusesUpgrade(t, udpPort, pool) })
+}
+
+func checkHTTP3ServesRequests(t *testing.T, httpsAddr string, udpPort int, pool *x509.CertPool) {
+	t.Helper()
 
 	client := h3Client(pool)
 	defer client.Transport.(*http3.Transport).Close()
@@ -126,18 +142,14 @@ func TestHTTP3ServesRequests(t *testing.T) {
 	require.NotEmpty(t, httpsAddr)
 }
 
-func TestHTTP3AltSvcAdvertised(t *testing.T) {
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
-	}))
-	defer origin.Close()
-
-	_, httpsAddr, udpPort, pool := h3Harness(t, origin.URL)
+func checkHTTP3AltSvcAdvertised(t *testing.T, httpsAddr string, udpPort int, pool *x509.CertPool) {
+	t.Helper()
 
 	// the TLS/TCP endpoint is what advertises the alternative service
 	tcpClient := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 	}}
+	defer tcpClient.CloseIdleConnections()
 	resp, err := tcpClient.Get("https://" + httpsAddr + "/h3proxy/hello")
 	require.NoError(t, err)
 	defer resp.Body.Close()
@@ -148,17 +160,8 @@ func TestHTTP3AltSvcAdvertised(t *testing.T) {
 		"TLS responses must advertise the HTTP/3 port so clients can upgrade")
 }
 
-// TestHTTP3ProtocolParity is the assertion that actually protects the proxy
-// engines: the same request over HTTP/1.1, HTTP/2 and HTTP/3 must produce the
-// same body and the same Trickster result status.
-func TestHTTP3ProtocolParity(t *testing.T) {
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(strings.Repeat("p", 4096)))
-	}))
-	defer origin.Close()
-
-	_, httpsAddr, udpPort, pool := h3Harness(t, origin.URL)
+func checkHTTP3ProtocolParity(t *testing.T, httpsAddr string, udpPort int, pool *x509.CertPool) {
+	t.Helper()
 
 	h3c := h3Client(pool)
 	defer h3c.Transport.(*http3.Transport).Close()
@@ -172,6 +175,9 @@ func TestHTTP3ProtocolParity(t *testing.T) {
 		TLSClientConfig:   &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 		ForceAttemptHTTP2: true,
 	}}
+
+	defer h1c.CloseIdleConnections()
+	defer h2c.CloseIdleConnections()
 
 	type result struct {
 		proto, body, trkResult string
@@ -199,19 +205,15 @@ func TestHTTP3ProtocolParity(t *testing.T) {
 		"HTTP/3 must produce the same Trickster result as HTTP/1.1")
 }
 
-func TestHTTP3ByteRangeParity(t *testing.T) {
-	full := strings.Repeat("abcdefghij", 512)
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeContent(w, r, "obj.txt", time.Time{}, strings.NewReader(full))
-	}))
-	defer origin.Close()
-
-	_, httpsAddr, udpPort, pool := h3Harness(t, origin.URL)
+func checkHTTP3ByteRangeParity(t *testing.T, httpsAddr string, udpPort int, pool *x509.CertPool, full string) {
+	t.Helper()
 	h3c := h3Client(pool)
 	defer h3c.Transport.(*http3.Transport).Close()
 	tcpClient := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
 	}}
+
+	defer tcpClient.CloseIdleConnections()
 
 	rangeGet := func(c *http.Client, url string) (int, string) {
 		req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -233,13 +235,8 @@ func TestHTTP3ByteRangeParity(t *testing.T) {
 	require.Equal(t, full[10:20], h3Body)
 }
 
-func TestHTTP3RefusesUpgrade(t *testing.T) {
-	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte("ok"))
-	}))
-	defer origin.Close()
-
-	_, _, udpPort, pool := h3Harness(t, origin.URL)
+func checkHTTP3RefusesUpgrade(t *testing.T, udpPort int, pool *x509.CertPool) {
+	t.Helper()
 	h3c := h3Client(pool)
 	defer h3c.Transport.(*http3.Transport).Close()
 
@@ -249,9 +246,8 @@ func TestHTTP3RefusesUpgrade(t *testing.T) {
 	req.Header.Set("Connection", "Upgrade")
 	req.Header.Set("Upgrade", "websocket")
 
-	// RFC 9114 4.2 makes connection-specific headers malformed on HTTP/3, so
-	// this either fails at the client or is rejected server-side; either way it
-	// must not hang or produce a half-open tunnel
+	// RFC 9114 4.2 forbids connection-specific headers on HTTP/3; rejection at either end
+	// must not hang or leave a tunnel open
 	resp, err := h3c.Do(req)
 	if err != nil {
 		return

@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/cache/options/defaults"
 	"github.com/trickstercache/trickster/v2/pkg/cache/providers"
 	redis "github.com/trickstercache/trickster/v2/pkg/cache/redis/options"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -74,10 +75,7 @@ type Options struct {
 
 var _ types.ConfigOptions[Options] = &Options{}
 
-var (
-	restrictedNames = sets.New([]string{"", "none"})
-	ErrInvalidName  = errors.New("invalid cache name")
-)
+var ErrInvalidName = errors.New("invalid cache name")
 
 // New will return a pointer to a CacheOptions with the default configuration settings
 func New() *Options {
@@ -140,7 +138,7 @@ func (o *Options) Equal(o2 *Options) bool {
 }
 
 func (o *Options) Validate() (bool, error) {
-	if restrictedNames.Contains(o.Name) {
+	if o.Name == "" || reserved.IsReference(o.Name) {
 		return false, ErrInvalidName
 	}
 	if o.Index == nil {
@@ -152,6 +150,12 @@ func (o *Options) Validate() (bool, error) {
 	if o.Index.MaxSizeObjects > 0 && o.Index.MaxSizeBackoffObjects > o.Index.MaxSizeObjects {
 		return false, errMaxSizeBackoffObjectsTooBig
 	}
+	if o.Index.ScanInterval < 0 || o.Index.ScanBatchSize < 0 || o.Index.ScanBatchPause < 0 {
+		return false, errNegativeScanOption
+	}
+	if o.Filesystem != nil && o.Filesystem.MinFreeBytes < 0 {
+		return false, errNegativeMinFreeBytes
+	}
 
 	return true, nil
 }
@@ -159,6 +163,8 @@ func (o *Options) Validate() (bool, error) {
 var (
 	errMaxSizeBackoffBytesTooBig   = errors.New("MaxSizeBackoffBytes can't be larger than MaxSizeBytes")
 	errMaxSizeBackoffObjectsTooBig = errors.New("MaxSizeBackoffObjects can't be larger than MaxSizeObjects")
+	errNegativeScanOption          = errors.New("ScanInterval, ScanBatchSize and ScanBatchPause can't be negative")
+	errNegativeMinFreeBytes        = errors.New("MinFreeBytes can't be negative")
 )
 
 // Initialize sets up the cache Options with default values and overlays

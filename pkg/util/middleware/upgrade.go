@@ -49,3 +49,15 @@ func UpgradeSwitch(passthrough, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// IgnoreUpgrade serves a protocol-upgrade request as the plain request it also is, which a server
+// may do (RFC 9110 7.8), for a route with no one backend to tunnel it to, such as a fanout.
+func IgnoreUpgrade(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if IsUpgradeRequest(r) {
+			r = r.Clone(r.Context())
+			r.Header.Del(headers.NameUpgrade)
+		}
+		next.ServeHTTP(w, r)
+	})
+}

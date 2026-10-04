@@ -31,13 +31,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/types"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/ur"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/native"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/observe"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	rt "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/errors"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
@@ -45,6 +49,7 @@ import (
 	authopt "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	authreg "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	at "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/types"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/local"
@@ -60,6 +65,9 @@ import (
 type Client struct {
 	backends.Backend
 	handler types.Mechanism // this is the actual handler for all request to this backend
+	// entry serves the ALB's requests: the handler, wrapped for a user router that applies a step
+	// alignment mode; a pool mechanism applies its pool's own mode as it dispatches
+	entry http.Handler
 
 	// poolMtx serializes pool swaps (startup, discovery updates) against
 	// StopPool; the request path never takes it -- mechanisms read the pool
@@ -77,6 +85,77 @@ type Client struct {
 	// dynamicNames is the current discovered member-name list, for
 	// health/mgmt display
 	dynamicNames atomic.Pointer[[]string]
+
+	// healthMtx orders what the current pool's snapshots say about the ALB as a whole, and is
+	// held while the ALBs that pool this one react; the pool graph has no cycles
+	healthMtx sync.Mutex
+	// poolID names the current pool and lastGen its newest snapshot seen, so a superseded
+	// pool or a snapshot observed late cannot overwrite newer state
+	poolID, lastGen uint64
+	// hasBackups and onBackup track failover to the pool's backup members
+	hasBackups, onBackup bool
+	// health is the ALB's own status, which follows its pool; nil unless propagate_health
+	health *healthcheck.Status
+	// flows keeps the sessions of the ALB's stream and native flows, once a listener asks for it
+	flows     atomic.Pointer[sticky.Flows]
+	flowsOnce sync.Once
+
+	// routerOverride is a user router's step alignment, which it has no pool to carry
+	routerOverride atomic.Pointer[tctx.StepAlignmentOverride]
+	// staticAlignments profiles the configured members by name, as nested ALBs resolve only by config
+	staticAlignments map[string]memberAlignment
+	// alignmentWarning dedupes the step alignment fallback warning across swaps
+	alignmentWarning string
+}
+
+// poolObserver reports one pool's snapshots to the client that built it
+type poolObserver struct {
+	c  *Client
+	id uint64
+}
+
+func (o poolObserver) Observe(ev lb.Event) {
+	if ev.Kind == lb.EventSnapshot {
+		o.c.observeSnapshot(o.id, ev)
+	}
+}
+
+func (c *Client) observeSnapshot(id uint64, ev lb.Event) {
+	c.healthMtx.Lock()
+	defer c.healthMtx.Unlock()
+	if id != c.poolID || ev.Gen <= c.lastGen {
+		return
+	}
+	c.lastGen = ev.Gen
+	if onBackup := ev.Tier > 0; c.hasBackups && onBackup != c.onBackup {
+		c.onBackup = onBackup
+		c.reportFailover(onBackup)
+	}
+	if c.health == nil {
+		return
+	}
+	if ev.Eligible > 0 {
+		c.health.Set(healthcheck.StatusPassing)
+		return
+	}
+	c.health.Set(healthcheck.StatusFailing)
+}
+
+func (c *Client) reportFailover(onBackup bool) {
+	if !onBackup {
+		metrics.ALBPoolOnBackup.WithLabelValues(c.Name()).Set(0)
+		logger.Info("alb pool returned to its primary members", logging.Pairs{keys.BackendName: c.Name()})
+		return
+	}
+	metrics.ALBPoolOnBackup.WithLabelValues(c.Name()).Set(1)
+	logger.Warn("alb pool failed over to its backup members: no other member is available",
+		logging.Pairs{keys.BackendName: c.Name()})
+}
+
+// HealthStatus returns the status that ALBs pooling this one watch, which follows whether
+// this ALB has an available member. It is nil unless propagate_health is set.
+func (c *Client) HealthStatus() *healthcheck.Status {
+	return c.health
 }
 
 // Handlers returns a map of the HTTP Handlers the client has registered.
@@ -87,7 +166,7 @@ type Client struct {
 // has no matching handler for the requested name.
 func (c *Client) Handlers() handlers.Lookup {
 	return handlers.Lookup{
-		providers.ALB:   c.handler,
+		providers.ALB:   c.entry,
 		"localresponse": http.HandlerFunc(local.HandleLocalResponse),
 	}
 }
@@ -116,7 +195,19 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 		if err != nil {
 			return nil, err
 		}
-		c.handler = m
+		c.handler, c.entry = m, m
+		if _, isUR := m.(*ur.Handler); isUR && o.StepAlignment != 0 {
+			// the modes its targets all support are known once they are loaded
+			c.routerOverride.Store(&tctx.StepAlignmentOverride{Mode: o.StepAlignment, Allowed: o.StepAlignment})
+			c.entry = http.HandlerFunc(c.serveRouted)
+		}
+		if o.ALBOptions.PropagateHealth {
+			c.health = healthcheck.NewStatus(name, providers.ALB, "",
+				healthcheck.StatusUnchecked, time.Time{}, nil)
+		}
+		if pm, ok := m.(types.PickerMechanism); ok {
+			observe.Track(name, pm.Balancer())
+		}
 	}
 	return c, nil
 }
@@ -125,6 +216,7 @@ func NewClient(name string, o *bo.Options, router http.Handler,
 // until all backends are processed, so the ALB's destination backend names
 // can be mapped to their respective clients
 func StartALBPools(clients backends.Backends, hcs healthcheck.StatusLookup) error {
+	defer forgetStatsExcept(clients)
 	for _, c := range clients {
 		if rc, ok := c.(*Client); ok {
 			err := rc.ValidateAndStartPool(clients, hcs)
@@ -178,6 +270,9 @@ func ValidateClients(clients backends.Backends) error {
 			if err != nil {
 				return err
 			}
+			if err := c.validateStepAlignment(clients); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -220,7 +315,18 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 		return c.validateAndStartUserRouter(clients, hcs)
 	}
 	targets := make(pool.Targets, 0, len(o.Pool))
+	stats := make(map[string]*lb.Stats, len(o.Pool))
+	tracksStats := false
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		tracksStats = pm.Picker().Needs() != 0
+	}
+	seen := sets.NewStringSet()
 	for _, m := range o.Pool {
+		// a pool holds each member once; options loaded from config are already de-duplicated
+		if seen.Contains(m.Name) {
+			continue
+		}
+		seen.Set(m.Name)
 		tc, ok := clients[m.Name]
 		if !ok {
 			return alberr.NewErrInvalidPoolMemberName(c.Name(), m.Name)
@@ -231,15 +337,45 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			}
 		}
 		hc, ok := hcs[m.Name]
+		if ac, isALB := tc.(*Client); isALB && ac.health != nil {
+			// a load balancer that reports whether it has an available member is followed by
+			// that status, whatever the health checker holds for it
+			hc, ok = ac.health, true
+		}
 		if !ok {
 			// virtual backends (rule, alb) have no health checks; treat as passing
 			hc = healthcheck.NewStatus(m.Name, "virtual", "", healthcheck.StatusPassing, time.Time{}, nil)
 		}
-		targets = append(targets,
-			pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()))
+		if ac, isALB := tc.(*Client); isALB && o.Sticky != nil {
+			// a member that picks one of its own members carries this ALB's sessions a level down
+			if pm, isPicker := ac.handler.(types.PickerMechanism); isPicker {
+				pm.FollowPins()
+			}
+		}
+		// only a mechanism that keeps stats has any worth carrying over a reload
+		var kept *lb.Stats
+		if tracksStats {
+			kept = carryStats(c.Name(), m.Name)
+		}
+		t := pool.NewWeightedTarget(tc.Router(), hc, tc, m.EffectiveWeight()).
+			WithTier(m.Tier()).WithDraining(m.Drain).WithStats(kept)
+		targets = append(targets, t)
+		stats[m.Name] = t.Member().Stats()
+	}
+	if tracksStats {
+		rememberStats(c.Name(), stats)
+	}
+	var alignments map[string]memberAlignment
+	if appliesStepAlignment(c.Configuration()) {
+		visited := sets.New([]string{c.Name()})
+		alignments = make(map[string]memberAlignment, len(targets))
+		for _, t := range targets {
+			alignments[t.Name()] = alignmentOf(t.Name(), clients, visited)
+		}
 	}
 	c.poolMtx.Lock()
 	c.staticTargets = targets
+	c.staticAlignments = alignments
 	c.swapPool(targets)
 	c.poolMtx.Unlock()
 	if o.HealthyFloor <= int(healthcheck.StatusFailing) {
@@ -274,10 +410,24 @@ func (c *Client) swapPool(targets pool.Targets) {
 		return
 	}
 	oldPool := pm.Pool()
-	pm.SetPool(pool.New(targets, c.effectiveFloor(targets)))
+	hasBackups := slices.ContainsFunc(targets, func(t *pool.Target) bool { return t != nil && t.Tier() > 0 })
+	c.healthMtx.Lock()
+	c.poolID++
+	c.lastGen = 0
+	if c.hasBackups && !hasBackups {
+		metrics.ALBPoolOnBackup.DeleteLabelValues(c.Name())
+		c.onBackup = false
+	} else if hasBackups && !c.hasBackups {
+		metrics.ALBPoolOnBackup.WithLabelValues(c.Name()).Set(0)
+	}
+	c.hasBackups = hasBackups
+	observer := poolObserver{c: c, id: c.poolID}
+	c.healthMtx.Unlock()
+	pm.SetPool(pool.NewAligned(targets, c.effectiveFloor(targets), c.alignPool(targets), observer))
 	if oldPool != nil {
 		oldPool.Stop()
 	}
+	observe.TrackPool(c.Name(), c)
 }
 
 // effectiveFloor returns the healthy floor to enforce for the provided
@@ -344,6 +494,58 @@ func (c *Client) Pool() pool.Pool {
 		return pm.Pool()
 	}
 	return nil
+}
+
+// CorePool returns the protocol-neutral form of the current pool, or nil for a mechanism that
+// dispatches without one
+func (c *Client) CorePool() *lb.Pool {
+	if p := c.Pool(); p != nil {
+		return p.Core()
+	}
+	return nil
+}
+
+// DrainingPoolNames returns the names of the current pool's draining members, sorted, for
+// health and management display
+func (c *Client) DrainingPoolNames() []string {
+	p := c.CorePool()
+	if p == nil {
+		return nil
+	}
+	var names []string
+	for _, m := range p.Configured() {
+		if m.Draining() && m.Name() != "" {
+			names = append(names, m.Name())
+		}
+	}
+	slices.Sort(names)
+	return names
+}
+
+// Picker returns the balancer that commits one unit of work to one pool member, which is how
+// planes other than HTTP dispatch through this ALB. It is nil for a mechanism that does not
+// select one member: the fanout mechanisms and the user router.
+func (c *Client) Picker() lb.Picker {
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		return pm.Picker()
+	}
+	return nil
+}
+
+// RelaysUpgrades reports whether the ALB sends each request to one backend, which tunnels a protocol
+// upgrade the request asks for: a mechanism that selects one member, or the user router.
+func (c *Client) RelaysUpgrades() bool {
+	_, isUR := c.handler.(*ur.Handler)
+	return isUR || c.Picker() != nil
+}
+
+// Spread returns how the ALB's mechanism commits one flow to several members at once, or 0
+// for a mechanism that does not.
+func (c *Client) Spread() types.Spread {
+	if sm, ok := c.handler.(types.SpreadMechanism); ok {
+		return sm.Spread()
+	}
+	return 0
 }
 
 // DynamicPoolNames returns the names of the ALB's currently-discovered pool
@@ -510,6 +712,10 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	if !ok {
 		return nil
 	}
+	if cur := c.routerOverride.Load(); cur != nil {
+		members := alignmentsOf(memberNames(conf.ALBOptions), clients, sets.New([]string{c.Name()}))
+		c.routerOverride.Store(&tctx.StepAlignmentOverride{Mode: cur.Mode, Allowed: allowedStepAlignments(members)})
+	}
 	if conf.AuthOptions != nil && conf.AuthOptions.Authenticator != nil {
 		// credential replacement is only allowed if users will be positively
 		// authenticated and not just observed.
@@ -584,13 +790,33 @@ func (c *Client) validateAndStartUserRouter(clients backends.Backends, hcs healt
 	return nil
 }
 
-// RouteResolver returns the protocol-neutral resolver implemented by a User
-// Router ALB. Other ALB mechanisms do not select routes by authenticated user.
+// RouteResolver returns the protocol-neutral resolver a native protocol listener commits its
+// sessions by: a User Router's own, or one that balances sessions with the ALB's selection
+// strategy where that strategy serves sessions. It is nil for any other mechanism.
 func (c *Client) RouteResolver() backends.RouteResolver {
 	if h, ok := c.handler.(backends.RouteResolver); ok {
 		return h
 	}
+	cfg := c.Configuration()
+	if cfg == nil || cfg.ALBOptions == nil ||
+		!registry.Supports(cfg.ALBOptions.MechanismName, types.PlaneNative) {
+		return nil
+	}
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		return native.Resolver(pm.Picker(), cfg.ALBOptions, c.StickyFlows())
+	}
 	return nil
+}
+
+// StickyFlows returns the keeper of the ALB's stream and native sessions, or nil for none; built on
+// a listener's first ask, so only ALBs such listeners serve hold a table.
+func (c *Client) StickyFlows() *sticky.Flows {
+	c.flowsOnce.Do(func() {
+		if cfg := c.Configuration(); cfg != nil && cfg.ALBOptions != nil {
+			c.flows.Store(sticky.NewFlows(c.Name(), cfg.ALBOptions.Sticky))
+		}
+	})
+	return c.flows.Load()
 }
 
 // StopPool stops this Client's pool and permanently rejects further swaps
@@ -603,6 +829,10 @@ func (c *Client) StopPool() {
 	if pm, ok := c.handler.(types.PoolMechanism); ok {
 		pm.StopPool()
 	}
+	if pm, ok := c.handler.(types.PickerMechanism); ok {
+		observe.Untrack(c.Name(), pm.Balancer())
+	}
+	observe.UntrackPool(c.Name(), c)
 }
 
 // Boilerplate Interface Functions (to EOF)

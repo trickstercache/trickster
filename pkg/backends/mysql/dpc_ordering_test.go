@@ -17,13 +17,18 @@
 package mysql
 
 import (
+	"errors"
 	"math"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 
 	vtmysql "vitess.io/vitess/go/mysql"
 	"vitess.io/vitess/go/mysql/collations"
@@ -57,6 +62,15 @@ func dpcOrderingResult(groupType querypb.Type, charset collations.ID,
 		}
 	}
 	return &sqltypes.Result{Fields: fields, Rows: rows}
+}
+
+func throughDelta(plan *sqlanalyzer.QueryPlan, parts ...*sqltypes.Result) (*sqltypes.Result, error) {
+	// renders the parts' joined rows as a cached delta is rendered
+	d, err := dpcTestHandler.deltaOf(plan, parts...)
+	if err != nil {
+		return nil, err
+	}
+	return dpcTestHandler.deltaResult(d, plan)
 }
 
 func groupOrder(rows [][]sqltypes.Value) []string {
@@ -157,26 +171,24 @@ func TestGroupOrderingUsesMySQLComparison(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := dpcOrderingPlan()
 			input := dpcOrderingResult(tc.groupType, tc.charset, tc.input)
-
-			merged, err := dpcTestHandler.mergeResults([]*sqltypes.Result{input}, plan)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := groupOrder(merged.Rows); !equalStrings(got, tc.want) {
-				t.Fatalf("mergeResults order = %v, want %v", got, tc.want)
-			}
-
-			// cropAndSortResult must reach the same order from the same rows.
-			cropped, err := dpcTestHandler.cropAndSortResult(input, plan,
-				timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := groupOrder(cropped.Rows); !equalStrings(got, tc.want) {
-				t.Fatalf("cropAndSortResult order = %v, want %v", got, tc.want)
+			// the origin's order within a bucket plays no part: reversed input orders the same way
+			for _, rows := range [][][]sqltypes.Value{input.Rows, reversed(input.Rows)} {
+				out, err := throughDelta(plan, &sqltypes.Result{Fields: input.Fields, Rows: rows})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := groupOrder(out.Rows); !equalStrings(got, tc.want) {
+					t.Fatalf("order = %v, want %v", got, tc.want)
+				}
 			}
 		})
 	}
+}
+
+func reversed(rows [][]sqltypes.Value) [][]sqltypes.Value {
+	out := slices.Clone(rows)
+	slices.Reverse(out)
+	return out
 }
 
 func equalStrings(got, want []string) bool {
@@ -191,65 +203,104 @@ func equalStrings(got, want []string) bool {
 	return true
 }
 
-func TestMergeDeduplicatesUsingMySQLEquality(t *testing.T) {
-	for _, tc := range []struct {
-		name      string
-		groupType querypb.Type
-		charset   collations.ID
-		old, new  sqltypes.Value
-	}{
-		{
-			name: "case-insensitive text", groupType: querypb.Type_VARCHAR,
-			charset: utf8mb40900AICI,
-			old:     sqltypes.NewVarChar("a"), new: sqltypes.NewVarChar("A"),
-		},
-		{
-			name: "equivalent decimals", groupType: querypb.Type_DECIMAL,
-			charset: collations.CollationBinaryID,
-			old:     sqltypes.NewDecimal("1.0"), new: sqltypes.NewDecimal("1.00"),
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			oldPart := dpcOrderingResult(tc.groupType, tc.charset,
-				[]sqltypes.Value{tc.old})
-			newPart := dpcOrderingResult(tc.groupType, tc.charset,
-				[]sqltypes.Value{tc.new})
-			oldPart.Rows[0][2] = sqltypes.NewInt64(1)
-			newPart.Rows[0][2] = sqltypes.NewInt64(2)
+func TestMergeKeepsMySQLDistinctGroups(t *testing.T) {
+	// binary groups that differ only in case are two groups in one bucket
+	input := dpcOrderingResult(querypb.Type_VARBINARY, collations.CollationBinaryID,
+		[]sqltypes.Value{sqltypes.NewVarBinary("a"), sqltypes.NewVarBinary("A")})
+	out, err := throughDelta(dpcOrderingPlan(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := groupOrder(out.Rows); !equalStrings(got, []string{"A", "a"}) {
+		t.Fatalf("groups = %v", got)
+	}
+}
 
-			merged, err := dpcTestHandler.mergeResults(
-				[]*sqltypes.Result{oldPart, newPart}, dpcOrderingPlan())
-			if err != nil {
-				t.Fatal(err)
+func TestRefetchedBucketsKeepOnlyTheOriginsNewestRows(t *testing.T) {
+	// a volatile bucket is never stored, so when fetched again the origin's newest representative of a
+	// case-insensitive group replaces the older one rather than joining it
+	volatile := time.Since(time.Unix(0, 0))
+	for name, configure := range map[string]func(*ProtocolConfig){
+		"volatile window":        func(config *ProtocolConfig) { config.VolatileWindow = volatile },
+		"volatile window points": func(config *ProtocolConfig) { config.VolatileWindowPoints = int(volatile/time.Minute) + 2 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			origin, _, client := startLifecycleProxy(t, "mysql-dpc-refetch", time.Second,
+				func(config *ProtocolConfig) {
+					config.ProxyOnly, config.Cache, config.CacheTTL = false, newTestCache(), time.Hour
+					configure(config)
+				})
+			var representative atomic.Value
+			origin.setResponder(func(string) *sqltypes.Result {
+				return refetchResult(representative.Load().(string), 60)
+			})
+			for _, want := range []string{"a", "A"} {
+				representative.Store(want)
+				result, err := client.ExecuteFetch(refetchQuery, vtmysql.FETCH_ALL_ROWS, true)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := groupOrder(result.Rows); !equalStrings(got, []string{want}) {
+					t.Fatalf("groups = %v, want only %q", got, want)
+				}
 			}
-			if len(merged.Rows) != 1 {
-				t.Fatalf("mergeResults returned %d rows, want 1", len(merged.Rows))
-			}
-			if got := merged.Rows[0][1].ToString(); got != tc.new.ToString() {
-				t.Fatalf("representative group = %q, want newest %q", got, tc.new.ToString())
-			}
-			if got := merged.Rows[0][2].ToString(); got != "2" {
-				t.Fatalf("representative value = %q, want newest value 2", got)
+			if got := origin.statementCount("events"); got != 2 {
+				t.Fatalf("origin queries = %d, want one per request", got)
 			}
 		})
 	}
 }
 
-func TestMergeKeepsMySQLDistinctGroups(t *testing.T) {
-	oldPart := dpcOrderingResult(querypb.Type_VARBINARY, collations.CollationBinaryID,
-		[]sqltypes.Value{sqltypes.NewVarBinary("a")})
-	newPart := dpcOrderingResult(querypb.Type_VARBINARY, collations.CollationBinaryID,
-		[]sqltypes.Value{sqltypes.NewVarBinary("A")})
-
-	merged, err := dpcTestHandler.mergeResults(
-		[]*sqltypes.Result{oldPart, newPart}, dpcOrderingPlan())
-	if err != nil {
-		t.Fatal(err)
+func TestRetainedRowsLeaveTheResponseWhole(t *testing.T) {
+	// retention trims what is cached, never the response, so the next request refetches the rest
+	origin, _, client := startLifecycleProxy(t, "mysql-dpc-retention", time.Second,
+		func(config *ProtocolConfig) {
+			config.ProxyOnly, config.Cache, config.CacheTTL = false, newTestCache(), time.Hour
+			config.RetentionPoints = 1
+		})
+	origin.setResponder(func(string) *sqltypes.Result { return refetchResult("a", 60, 120) })
+	for range 2 {
+		result, err := client.ExecuteFetch(retentionQuery, vtmysql.FETCH_ALL_ROWS, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Rows) != 2 {
+			t.Fatalf("response rows = %d, want both buckets", len(result.Rows))
+		}
 	}
-	if len(merged.Rows) != 2 {
-		t.Fatalf("mergeResults returned %d rows, want 2", len(merged.Rows))
+	if got := origin.statementCount("events"); got != 2 {
+		t.Fatalf("origin queries = %d, want the retained bucket's refetch", got)
 	}
 }
+
+func refetchResult(group string, epochs ...int64) *sqltypes.Result {
+	input := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI, nil)
+	for _, at := range epochs {
+		input.Rows = append(input.Rows, []sqltypes.Value{
+			sqltypes.NewInt64(at), sqltypes.NewVarChar(group), sqltypes.NewInt64(1),
+		})
+	}
+	return input
+}
+
+const (
+	refetchQuery = `SELECT
+  cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time,
+  grp AS grp,
+  count(*) AS value
+FROM events
+WHERE ts >= FROM_UNIXTIME(60) AND ts < FROM_UNIXTIME(120)
+GROUP BY time, grp
+ORDER BY time, grp`
+	retentionQuery = `SELECT
+  cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time,
+  grp AS grp,
+  count(*) AS value
+FROM events
+WHERE ts >= FROM_UNIXTIME(60) AND ts < FROM_UNIXTIME(180)
+GROUP BY time, grp
+ORDER BY time, grp`
+)
 
 // TestGroupOrderingRejectsUnorderableColumns asserts DPC declines to order what
 // it cannot order exactly. Each of these falls back to the object cache, which
@@ -305,16 +356,12 @@ func TestGroupOrderingRejectsUnorderableColumns(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			plan := dpcOrderingPlan()
 			input := dpcOrderingResult(tc.groupType, collations.CollationBinaryID, tc.values)
-			_, err := dpcTestHandler.mergeResults([]*sqltypes.Result{input}, plan)
-			if err == nil {
-				t.Fatalf("mergeResults ordered an unorderable %v column", tc.groupType)
+			_, err := throughDelta(plan, input)
+			if !errors.Is(err, nativedelta.ErrUnmergeable) {
+				t.Fatalf("ordered an unorderable %v column: %v", tc.groupType, err)
 			}
 			if !strings.Contains(err.Error(), tc.wantErr) {
-				t.Fatalf("mergeResults error = %v, want it to mention %q", err, tc.wantErr)
-			}
-			if _, err = dpcTestHandler.cropAndSortResult(input, plan,
-				timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}); err == nil {
-				t.Fatalf("cropAndSortResult ordered an unorderable %v column", tc.groupType)
+				t.Fatalf("error = %v, want it to mention %q", err, tc.wantErr)
 			}
 		})
 	}
@@ -323,37 +370,7 @@ func TestGroupOrderingRejectsUnorderableColumns(t *testing.T) {
 // TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch asserts that a plan whose
 // results can never be merged is recorded, so later requests degrade straight to
 // the object cache instead of fetching every delta extent and discarding it.
-func TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch(t *testing.T) {
-	origin, _, client := startLifecycleProxy(t, "mysql-dpc-fallback", time.Second,
-		func(config *ProtocolConfig) {
-			config.ProxyOnly = false
-			config.Cache = newTestCache()
-			config.CacheTTL = time.Hour
-		})
-	// The plan groups by an ENUM column, which DPC cannot order because the
-	// result header does not carry the declaration values.
-	origin.setResponder(func(string) *sqltypes.Result {
-		return &sqltypes.Result{
-			Fields: []*querypb.Field{
-				{Name: "time", Type: querypb.Type_INT64},
-				{Name: "tier", Type: querypb.Type_ENUM, Charset: uint32(utf8mb40900AICI)},
-				{Name: "value", Type: querypb.Type_INT64},
-			},
-			Rows: [][]sqltypes.Value{
-				{
-					sqltypes.NewInt64(0),
-					sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("small")),
-					sqltypes.NewInt64(1),
-				},
-				{
-					sqltypes.NewInt64(60),
-					sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("large")),
-					sqltypes.NewInt64(2),
-				},
-			},
-		}
-	})
-	const query = `SELECT
+const unorderableTierQuery = `SELECT
   cast(cast(UNIX_TIMESTAMP(ts)/(60) as signed)*60 as signed) AS time,
   tier AS tier,
   count(*) AS value
@@ -361,6 +378,40 @@ FROM events
 WHERE ts >= FROM_UNIXTIME(0) AND ts < FROM_UNIXTIME(180)
 GROUP BY time, tier
 ORDER BY time, tier`
+
+func unorderableTierResult(string) *sqltypes.Result {
+	// the plan groups by an ENUM column, which DPC cannot order because the result header does not carry
+	// the declaration values
+	return &sqltypes.Result{
+		Fields: []*querypb.Field{
+			{Name: "time", Type: querypb.Type_INT64},
+			{Name: "tier", Type: querypb.Type_ENUM, Charset: uint32(utf8mb40900AICI)},
+			{Name: "value", Type: querypb.Type_INT64},
+		},
+		Rows: [][]sqltypes.Value{
+			{
+				sqltypes.NewInt64(0),
+				sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("small")),
+				sqltypes.NewInt64(1),
+			},
+			{
+				sqltypes.NewInt64(60),
+				sqltypes.MakeTrusted(querypb.Type_ENUM, []byte("large")),
+				sqltypes.NewInt64(2),
+			},
+		},
+	}
+}
+
+func TestUnmergeableDeltaPlanStopsRepeatingTheDeltaFetch(t *testing.T) {
+	origin, _, client := startLifecycleProxy(t, "mysql-dpc-fallback", time.Second,
+		func(config *ProtocolConfig) {
+			config.ProxyOnly = false
+			config.Cache = newTestCache()
+			config.CacheTTL = time.Hour
+		})
+	origin.setResponder(unorderableTierResult)
+	const query = unorderableTierQuery
 
 	if _, err := client.ExecuteFetch(query, vtmysql.FETCH_ALL_ROWS, true); err != nil {
 		t.Fatal(err)
@@ -380,23 +431,61 @@ ORDER BY time, tier`
 	}
 }
 
-// TestMergeRejectsCollationChangeBetweenParts asserts parts whose group column
-// changed collation are not merged, since every part would otherwise be ordered
-// by the first part's collation.
+func TestOffNeverServesAnObjectStoredForTheDefaultTTL(t *testing.T) {
+	const backend = "mysql-off-fallback"
+	cache := newTestCache()
+	shared := func(mode timeseries.StepAlignment) func(*ProtocolConfig) {
+		return func(config *ProtocolConfig) {
+			config.ProxyOnly, config.Cache, config.CacheTTL = false, cache, time.Hour
+			config.StepAlignment = mode
+		}
+	}
+	// the unorderable plan falls back to an object of the raw statement, stored for CacheTTL
+	origin, _, client := startLifecycleProxy(t, backend, time.Second, shared(0))
+	origin.setResponder(unorderableTierResult)
+	if _, err := client.ExecuteFetch(unorderableTierQuery, vtmysql.FETCH_ALL_ROWS, true); err != nil {
+		t.Fatal(err)
+	}
+	offOrigin, _, offClient := startLifecycleProxy(t, backend, time.Second, shared(timeseries.StepAlignmentOff))
+	offOrigin.setResponder(unorderableTierResult)
+	for range 2 {
+		if _, err := offClient.ExecuteFetch(unorderableTierQuery, vtmysql.FETCH_ALL_ROWS, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := offOrigin.statementCount("events"); got != 1 {
+		t.Fatalf("off reached the origin %d times, want once: never the fallback's object, then its own", got)
+	}
+	cache.mtx.Lock()
+	defer cache.mtx.Unlock()
+	offEntries := 0
+	for _, ttl := range cache.ttls {
+		if ttl == timeseries.StepAlignmentOffTTL {
+			offEntries++
+		}
+	}
+	if offEntries != 1 {
+		t.Errorf("expected one object stored for %s, got %d", timeseries.StepAlignmentOffTTL, offEntries)
+	}
+}
+
 func TestMergeRejectsCollationChangeBetweenParts(t *testing.T) {
+	// parts whose group column changed collation are not merged, since each would be ordered by one
 	plan := dpcOrderingPlan()
 	first := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI,
 		[]sqltypes.Value{sqltypes.NewVarChar("a")})
 	second := dpcOrderingResult(querypb.Type_VARCHAR, latin1SwedishCI,
 		[]sqltypes.Value{sqltypes.NewVarChar("B")})
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{first, second}, plan); err == nil {
-		t.Fatal("mergeResults accepted parts whose group collation changed")
+	second.Rows[0][0] = sqltypes.NewInt64(60)
+	if _, err := throughDelta(plan, first, second); err == nil {
+		t.Fatal("accepted parts whose group collation changed")
 	}
 	// The same collation on both parts still merges.
 	same := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI,
 		[]sqltypes.Value{sqltypes.NewVarChar("B")})
-	if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{first, same}, plan); err != nil {
-		t.Fatalf("mergeResults rejected parts sharing one collation: %v", err)
+	same.Rows[0][0] = sqltypes.NewInt64(60)
+	if _, err := throughDelta(plan, first, same); err != nil {
+		t.Fatalf("rejected parts sharing one collation: %v", err)
 	}
 }
 
@@ -409,16 +498,12 @@ func TestGroupOrderingValidatesValueTypes(t *testing.T) {
 	input := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI, []sqltypes.Value{
 		sqltypes.NewVarChar("a"), sqltypes.NewInt64(7),
 	})
-	_, err := dpcTestHandler.mergeResults([]*sqltypes.Result{input}, plan)
-	if err == nil {
-		t.Fatal("mergeResults accepted a group value of the wrong type")
+	_, err := throughDelta(plan, input)
+	if !errors.Is(err, nativedelta.ErrUnmergeable) {
+		t.Fatalf("accepted a group value of the wrong type: %v", err)
 	}
 	if !strings.Contains(err.Error(), "want VARCHAR") {
-		t.Fatalf("mergeResults error = %v, want it to name the declared type", err)
-	}
-	if _, err = dpcTestHandler.cropAndSortResult(input, plan,
-		timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}); err == nil {
-		t.Fatal("cropAndSortResult accepted a group value of the wrong type")
+		t.Fatalf("error = %v, want it to name the declared type", err)
 	}
 }
 
@@ -436,12 +521,8 @@ func TestGroupOrderingPropagatesComparisonErrors(t *testing.T) {
 			t.Skipf("collation %d is supported; pick an unimplemented ID", unknownCollation)
 		}
 		input := dpcOrderingResult(querypb.Type_VARCHAR, unknownCollation, values)
-		if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{input}, plan); err == nil {
-			t.Fatal("mergeResults silently ordered rows under an unusable collation")
-		}
-		if _, err := dpcTestHandler.cropAndSortResult(input, plan,
-			timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}); err == nil {
-			t.Fatal("cropAndSortResult silently ordered rows under an unusable collation")
+		if _, err := throughDelta(plan, input); err == nil {
+			t.Fatal("silently ordered rows under an unusable collation")
 		}
 	})
 
@@ -450,12 +531,53 @@ func TestGroupOrderingPropagatesComparisonErrors(t *testing.T) {
 		// connection default instead of rejecting the column.
 		input := dpcOrderingResult(querypb.Type_VARCHAR, 0, values)
 		input.Fields[1].Charset = uint32(math.MaxUint16) + 1
-		if _, err := dpcTestHandler.mergeResults([]*sqltypes.Result{input}, plan); err == nil {
-			t.Fatal("mergeResults truncated an out-of-range collation to Unknown")
-		}
-		if _, err := dpcTestHandler.cropAndSortResult(input, plan,
-			timeseries.Extent{Start: time.Unix(0, 0), End: time.Unix(1, 0)}); err == nil {
-			t.Fatal("cropAndSortResult truncated an out-of-range collation to Unknown")
+		if _, err := throughDelta(plan, input); err == nil {
+			t.Fatal("truncated an out-of-range collation to Unknown")
 		}
 	})
+}
+
+func TestGroupOrderingAcrossSparseBuckets(t *testing.T) {
+	plan := dpcOrderingPlan()
+	plan.Step = time.Minute
+	input := dpcOrderingResult(querypb.Type_VARCHAR, utf8mb40900AICI, nil)
+	// "c" is only in the first bucket and "a" only in the second, so neither bucket holds every series
+	for _, row := range []struct {
+		at    int64
+		group string
+	}{{0, "c"}, {0, "B"}, {60, "B"}, {60, "a"}} {
+		input.Rows = append(input.Rows, []sqltypes.Value{
+			sqltypes.NewInt64(row.at), sqltypes.NewVarChar(row.group), sqltypes.NewInt64(1),
+		})
+	}
+	d, err := dpcTestHandler.deltaOf(plan, input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// series without rows yield none, wherever they are
+	r := d.DS.Results[0]
+	r.SeriesList = append(slices.Insert(r.SeriesList, 0, nil), dataset.NewSeries(dataset.SeriesHeader{}, nil))
+	got, err := dpcTestHandler.deltaResult(d, plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if order := groupOrder(got.Rows); !slices.Equal(order, []string{"B", "c", "a", "B"}) {
+		t.Fatalf("rows in order %v", order)
+	}
+}
+
+func TestRenderBuffersRelease(t *testing.T) {
+	(*renderBuffers)(nil).release()
+	// a buffer too large to keep is cleared but not kept
+	large := &renderBuffers{values: make([]sqltypes.Value, maxPooledRender/16)}
+	large.values[0] = sqltypes.NewVarChar("cached")
+	large.release()
+	if !large.values[0].IsNull() || len(large.values) != maxPooledRender/16 {
+		t.Fatal("a dropped buffer kept its values or was kept")
+	}
+	small := &renderBuffers{values: make([]sqltypes.Value, 4), rows: make([]sqltypes.Row, 1, 2)}
+	small.release()
+	if len(small.values) != 0 || len(small.rows) != 0 {
+		t.Fatal("a small buffer was not kept for reuse")
+	}
 }

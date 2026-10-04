@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 )
@@ -148,10 +147,7 @@ func TestPacketServerRelaysSessions(t *testing.T) {
 
 func TestPacketServerRotatesAcrossPool(t *testing.T) {
 	a, b := udpEcho(t, "a:"), udpEcho(t, "b:")
-	pl := pooledOf(t, "alb",
-		member(originBackend(t, "a", a), 1, healthcheck.StatusPassing),
-		member(originBackend(t, "b", b), 1, healthcheck.StatusPassing))
-	_, addr, _ := startPacketServer(t, &Config{Table: tableOf(t, map[string]Upstream{"": FromBackend(pl)})})
+	_, addr, _ := startPacketServer(t, &Config{Table: tableOf(t, map[string]Upstream{"": rotate(a, b)})})
 	seen := make(map[string]int)
 	for range 4 {
 		seen[datagram(t, udpClient(t, addr), "x")]++
@@ -164,7 +160,7 @@ func TestPacketServerRotatesAcrossPool(t *testing.T) {
 func TestPacketServerDropsWhatItCannotRoute(t *testing.T) {
 	for name, tbl := range map[string]*Table{
 		"empty":     NewTable(),
-		"no_member": tableOf(t, map[string]Upstream{"": FromBackend(pooledOf(t, "none"))}),
+		"no_member": tableOf(t, map[string]Upstream{"": rotate()}),
 		"bad_addr":  tableOf(t, map[string]Upstream{"": Static("not an address")}),
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -353,11 +349,9 @@ func TestPacketServerMixedPoolRefusesTheInvalidShare(t *testing.T) {
 	// expires rather than looking its upstream up again per datagram
 	echo := udpEcho(t, "echo:")
 	shortFailedLifetime(t, time.Second)
-	pl := pooledOf(t, "alb",
-		member(originBackend(t, "live", echo), 1, healthcheck.StatusPassing),
-		member(originBackend(t, "gone", "unresolved.kgw.invalid:1"), 1, healthcheck.StatusPassing))
+	up := rotate(echo, "unresolved.kgw.invalid:1")
 	srv, addr, _ := startPacketServer(t, &Config{
-		Table:   tableOf(t, map[string]Upstream{"": FromBackend(pl)}),
+		Table:   tableOf(t, map[string]Upstream{"": up}),
 		Options: &options.Options{IdleTimeout: timeconv.Duration(time.Second)},
 	})
 	var served, refused int

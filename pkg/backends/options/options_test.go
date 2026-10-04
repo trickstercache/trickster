@@ -39,6 +39,7 @@ import (
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
@@ -593,7 +594,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = "rpc"
 
 	err = ol.ValidateConfigMappings(co.Lookup{}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid cache name")
 	}
@@ -602,13 +603,13 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = providers.Rule
 	o.RuleName = "test"
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid rule name")
 	}
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid tracing name")
 	}
@@ -618,7 +619,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Name = ""
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
 		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
-		tro.Lookup{})
+		tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid backend name")
 	}
@@ -627,7 +628,7 @@ func TestValidateConfigMappings(t *testing.T) {
 	o.Provider = providers.ALB
 	o.RuleName = ""
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
-		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{})
+		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
 	if err == nil {
 		t.Error("expected error for invalid negative cache name")
 	}
@@ -641,7 +642,7 @@ func TestValidateConfigMappings(t *testing.T) {
 
 	err = ol.ValidateConfigMappings(co.Lookup{"test": nil}, negative.Lookups{},
 		ro.Lookup{"test": new(ro.Options)}, rwopts.Lookup{}, autho.Lookup{},
-		tro.Lookup{})
+		tro.Lookup{}, nil)
 	if err != nil {
 		t.Error(err)
 	}
@@ -1094,6 +1095,19 @@ func TestInitializeH2CPriorKnowledge(t *testing.T) {
 		})
 	}
 
+	// a template's discovered members supply the scheme, so one with no origin of its own passes,
+	// and one whose own origin is not http does not
+	for origin, expectErr := range map[string]bool{"": false, "https://example.com": true} {
+		o := New()
+		o.Provider = "rp"
+		o.IsTemplate = true
+		o.OriginURL = origin
+		o.H2CPriorKnowledge = true
+		if err := o.Initialize("tmpl"); (err != nil) != expectErr {
+			t.Errorf("template with origin %q: error = %v, want error %v", origin, err, expectErr)
+		}
+	}
+
 	// the default must remain unaffected by the new validation
 	o := New()
 	o.Provider = "rp"
@@ -1185,5 +1199,73 @@ func TestValidateMirrors(t *testing.T) {
 	l["shadow"] = New()
 	if err := l.validateMirrors(o); err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPostgresOptionsYAMLDefaultsClone(t *testing.T) {
+	o, err := fromYAML(`
+backends:
+  pg1:
+    provider: timescaledb
+    origin_url: postgres://user:password@example.com/database
+    postgres:
+      upstream_tls_mode: verify-full
+`, "pg1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o.Initialize("pg1"); err != nil {
+		t.Fatal(err)
+	}
+	if o.Postgres == nil || o.Postgres.UpstreamTLSMode != pgo.TLSModeVerifyFull {
+		t.Fatalf("unexpected postgres options: %#v", o.Postgres)
+	}
+	clone := o.Clone()
+	clone.Postgres.UpstreamTLSMode = pgo.TLSModeDisable
+	if o.Postgres.UpstreamTLSMode != pgo.TLSModeVerifyFull {
+		t.Fatal("clone mutated original postgres options")
+	}
+}
+
+func TestPostgresUpstreamURLRedaction(t *testing.T) {
+	for _, raw := range []string{
+		"postgres://user:origin-secret@db.example/public",
+		"postgres://user:origin-secret%zz@db.example/public",
+	} {
+		o := New()
+		o.Postgres = pgo.New()
+		o.Postgres.UpstreamURL = raw
+		if safe := o.ToYAML(); strings.Contains(safe, "origin-secret") {
+			t.Fatal("YAML exposed pgwire upstream credentials")
+		}
+		if o.Postgres.UpstreamURL != raw {
+			t.Fatal("redaction changed the live configuration")
+		}
+	}
+	for _, raw := range []string{"postgres://db.example/public", "postgres://user@db.example/public"} {
+		o := New()
+		o.Postgres = pgo.New()
+		o.Postgres.UpstreamURL = raw
+		if o.CloneYAMLSafe().Postgres.UpstreamURL != raw {
+			t.Fatal("redaction changed a URL without a password")
+		}
+	}
+}
+
+func TestMySQLUpstreamURLCloneRedaction(t *testing.T) {
+	for _, raw := range []string{"mysql://user:origin-secret@db.example/public", "mysql://user:origin-secret%zz@db.example/public"} {
+		o := New()
+		o.MySQL = mo.New()
+		o.MySQL.UpstreamURL = raw
+		o.NativeListenerProtocols = []string{"mysql", "postgres"}
+		if strings.Contains(o.ToYAML(), "origin-secret") {
+			t.Fatal("YAML exposed MySQL upstream credentials")
+		}
+		clone := o.Clone()
+		clone.MySQL.UpstreamURL = "changed"
+		clone.NativeListenerProtocols[0] = "changed"
+		if o.MySQL.UpstreamURL != raw || o.NativeListenerProtocols[0] != "mysql" {
+			t.Fatal("clone mutated live options")
+		}
 	}
 }

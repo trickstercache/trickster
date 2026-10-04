@@ -93,6 +93,27 @@ paths:
     hide_result_header: true
 ```
 
+### Geo ACLs on Paths
+
+A path's `geo_acl_name` replaces its backend's [geo ACL](./geo-acl.md) for requests on that path, and `geo_acl_name: none` clears the backend's, as `authenticator_name` does. A path judges HTTP requests only; a native protocol or stream listener judges sessions by the backend's geo ACL.
+
+```yaml
+backends:
+  video:
+    provider: rpc
+    origin_url: 'http://video.example.com'
+    geo_acl_name: north-america
+    paths:
+      - path: /trailers/
+        match_type: prefix
+        handler: proxycache
+        geo_acl_name: none     # trailers are served everywhere
+      - path: /eu/
+        match_type: prefix
+        handler: proxycache
+        geo_acl_name: europe   # this path is judged by another geo ACL
+```
+
 ### Dispatch-Only Paths
 
 A path with `dispatch_only: true` is registered on the backend's own router only, never on a listener. It is reachable when another backend hands the request over — an ALB selecting this backend from its pool, or a rule whose `next_route` names it — and is invisible to clients otherwise, even when the backend lists `hosts` or sets `any_host_routing`. Use it to keep the entry point for a path on one backend while the backend that finally serves it stays reachable only through that entry point. The Kubernetes controller relies on it: a route that another route's header match fronts keeps its path dispatch-only, so the rule that tests the header is the only thing registered on the listener.
@@ -200,6 +221,31 @@ A response served from cache has no trailers, so gRPC paths should use the
 
 The `methods` section of a Path Config takes a string array of HTTP Methods that are routed through this Path Config. You can provide `[ '*' ]` to route all methods for this path.
 
+### The QUERY Method
+
+Trickster supports the HTTP `QUERY` method ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008.html)). A `QUERY` is a safe, idempotent, cacheable request that carries its query in the request body.
+
+- `QUERY` is cacheable, like `GET` and `HEAD`. Its cache key always includes the request body, the `Content-Type` (case-insensitive) and any `Content-Encoding`, so `QUERY` requests with different content never share an entry. A `QUERY` and a `GET` for the same URL are cached separately.
+- A successful `QUERY` does not invalidate cached responses for its URL, because it is safe. A successful unsafe request, such as a `POST`, invalidates the cached `GET` and `HEAD` responses for its URL but not cached `QUERY` responses. Those expire at the end of their freshness lifetime.
+- A conditional `QUERY` is evaluated as it would be for `GET`. A `Range` header on a `QUERY` is ignored, and the full response is returned.
+- The `reverseproxycache` provider's default paths accept and cache `QUERY`. Paths using the `proxy` handler relay a `QUERY` to the origin as sent. `[ '*' ]` includes `QUERY`.
+
+Time series origins do not accept `QUERY`, so on the provider query endpoints below Trickster forwards a `QUERY` to the origin as a `POST`. It first checks the request's `Content-Type`: a missing one is answered with `400` and an unsupported one with `415`. These endpoints advertise their media types in an `Accept-Query` response header, unless the origin sends its own. A `QUERY` and the equivalent `POST` share cache entries.
+
+| Provider | Endpoints | QUERY media types |
+| --- | --- | --- |
+| Prometheus, and the Prometheus APIs that GreptimeDB and VictoriaMetrics serve | `/api/v1/query_range`, `/api/v1/query`, `/api/v1/series`, `/api/v1/labels`, `/api/v1/query_exemplars`, `/api/v1/format_query`, `/api/v1/parse_query` | `application/x-www-form-urlencoded` |
+| InfluxDB | `/query` | `application/x-www-form-urlencoded` |
+| InfluxDB | `/api/v2/query` | `application/json`, `application/vnd.flux` |
+| InfluxDB | `/api/v3/query_sql`, `/api/v3/query_influxql` | `application/json`, `application/x-www-form-urlencoded` |
+| ClickHouse | `/` | `text/plain`, `application/sql` |
+| Graphite | `/render`, `/metrics/find`, `/metrics/expand`, `/metrics/index.json`, `/tags`, `/tags/` | `application/x-www-form-urlencoded` |
+| Druid | `/druid/v2`, `/druid/v2/sql` | `application/json` |
+| VictoriaMetrics | `/render`, `/metrics/find`, `/metrics/expand`, and each under `/graphite` | `application/x-www-form-urlencoded` |
+| GreptimeDB | `/v1/sql` | `application/x-www-form-urlencoded` |
+
+A configured path is handled the same way when it uses one of these endpoints' handlers (for example, `handler: query_range`) and its `methods` include `QUERY`. If a configured path replaces a provider default for only some of its methods, such as `[ GET, POST ]`, the default still serves `QUERY` on that path. Add `QUERY` to the configured path's `methods` to change that too.
+
 ## Suggested Use Cases
 
 - Redirect a path by configuring Trickster to respond with a `302` response code and a `Location` header
@@ -287,7 +333,7 @@ By default, Trickster will use the HTTP Method, URL Path and any Authorization h
 
 Trickster supports the parsing of the HTTP Request body for the purpose of deriving the Cache Key for a cacheable object. Note that body parsing requires reading the entire request body into memory and parsing it before operating on the object. This will result in slightly higher resource utilization and latency, depending upon the size of the client request body.
 
- Body parsing is supported when the request's HTTP method is `POST`, `PUT` or `PATCH`, and the request `Content-Type` is either `application/x-www-form-urlencoded`, `multipart/form-data`, or `application/json`.
+ Body parsing is supported when the request's HTTP method is `POST`, `PUT`, `PATCH` or `QUERY`, and the request `Content-Type` is either `application/x-www-form-urlencoded`, `multipart/form-data`, or `application/json`.
 
 In a Path Config, provide the `cache_key_form_fields` setting with a list of form field names to include when hashing the cache key.
 

@@ -1,6 +1,6 @@
 # <img src="./docs/images/logos/trickster-horizontal.svg" width=550 /> [![Follow on Twitter](https://img.shields.io/twitter/follow/trickstercache.svg?style=social&logo=twitter)](https://twitter.com/trickstercache)
 
-[![License](https://img.shields.io/github/license/trickstercache/trickster)](/LICENSE)
+[![License](https://img.shields.io/github/license/trickstercache/trickster)](./LICENSE)
 [![Coverage Status](https://coveralls.io/repos/github/trickstercache/trickster/badge.svg)](https://coveralls.io/github/trickstercache/trickster)
 [![build status](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml/badge.svg)](https://github.com/trickstercache/trickster/actions/workflows/ci-build-tests.yml)
 [![CII Best Practices](https://bestpractices.coreinfrastructure.org/projects/2518/badge)](https://bestpractices.coreinfrastructure.org/en/projects/2518)
@@ -17,12 +17,13 @@ Trickster is hosted by the [Cloud Native Computing Foundation](https://cncf.io) 
 
 ## HTTP Reverse Proxy Cache
 
-Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like static file servers and REST API's.
+Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like static file servers and REST APIs.
 
 ### Feature Highlights
 
 * A unique and powerful [Application Load Balancer](./docs/alb.md) for Time Series and generic HTTP endpoints, with [pool autodiscovery](./docs/alb-autodiscovery.md) from Kubernetes, AWS, GPC, Azure, Consul, Nomad, DNS, and more
 * [Supports TLS](./docs/tls.md), HTTP/2 and [HTTP/3](./docs/http3.md) for frontend termination, and TLS/HTTP/2 for backend origination
+* [Automatic certificates](./docs/acme.md) from Let's Encrypt or any ACME certificate authority, including wildcard and on-demand issuance
 * Can serve as Kubernetes [Ingress](./docs/kubernetes-ingress.md) and/or [Gateway](./docs/kubernetes-gateway.md) Controller
 * WebSocket and HTTP Upgrade tunneling, response trailers (gRPC), and incremental delivery of streaming responses
 * Offers several options for a [caching layer](./docs/caches.md), including in-memory, filesystem, Redis and bbolt
@@ -30,30 +31,27 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * Built-in Prometheus [metrics](./docs/metrics.md) and customizable [Health Check](./docs/health.md) Endpoints for end-to-end monitoring
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
-* Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md).
-* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol.
+* Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md)
+* [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol
 * Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting
+* Built-in [Static File Server](./docs/static.md) for hosting websites and other local content
+* [Geo ACLs](./docs/geo-acl.md) restrict backends and paths by client location, on HTTP, native database and stream listeners alike
 
 ## Time Series Database Accelerator
 
-Trickster dramatically improves dashboard chart rendering times for end users by eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments, as well as those with highly-cardinalized datasets, significantly more performant and scalable.
+Trickster dramatically improves dashboard chart rendering times for end users by eliminating redundant computations on the TSDBs it fronts. In short, Trickster makes read-heavy Dashboard/TSDB environments, as well as those with high-cardinality datasets, significantly more performant and scalable.
 
 ### Compatibility
 
-Trickster works with virtually any Dashboard application that makes queries to any of these TSDB's:
+Trickster works with virtually any Dashboard application that makes queries to any of these TSDBs:
 
-<img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md)
-
-<img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md)
-
-<img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md)
-
-<img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md)
-
-<img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md)
-
-<img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md)
+| | | |
+|---|---|---|
+| <img src="./docs/images/external/prom_logo_60.png" width=24 /> [Prometheus](docs/prometheus.md) | <img src="./docs/images/external/clickhouse_logo.png" width=24 /> [ClickHouse](docs/clickhouse.md) | <img src="./docs/images/external/influx_logo_60.png" width=24 /> [InfluxDB](docs/influxdb.md) |
+| <img src="./docs/images/external/mysql_logo_60.png" width=24 /> [MySQL](docs/mysql.md) | <img src="./docs/images/external/druid-logo.svg" width=24 /> [Apache Druid](docs/druid.md) | <img src="./docs/images/external/graphite-logo.svg" width=24 /> [Graphite](docs/graphite.md) |
+| <img src="./docs/images/external/timescaledb_logo.svg" width=24 /> [TimescaleDB / PostgreSQL](docs/postgres.md) | <img src="./docs/images/external/greptime-logo.svg" width=24 /> [GreptimeDB](docs/greptimedb.md) | <img src="./docs/images/external/questdb-logo.svg" width=24 /> [QuestDB](docs/questdb.md) |
+| <img src="./docs/images/external/victoriametrics-logo.svg" width=24 /> [VictoriaMetrics](docs/victoriametrics.md) | | |
 
 See the [Supported TSDB Providers](./docs/supported-backend-providers.md) document for full details
 
@@ -65,15 +63,26 @@ Most dashboards request from a time series database the entire time range of dat
 
 <img src="./docs/images/partial-cache-hit.png" width=1024 />
 
-#### 2. Step Boundary Normalization
+#### 2. Step Alignment
 
-When Trickster requests data from a tsdb, it adjusts the clients's requested time range slightly to ensure that all data points returned are aligned to normalized step boundaries. For example, if the step is 300s, all data points will fall on the clock 0's and 5's. This ensures that the data is highly cacheable, is conveyed visually to users in a more familiar way, and that all dashboard users see identical data on their screens.
+Time series databases group data into steps, or buckets, on a fixed grid. When a dashboard's time range starts or ends between two grid points, the bucket at that edge holds only part of its data. Trickster caches only complete buckets, so repeat and overlapping requests are fast and every viewer sees the same values, and each backend's step alignment mode decides what the client sees at the partial edges. Other tools call this aligning queries with their step; Trickster versions before 2.2 called it Step Boundary Normalization.
 
-<img src="./docs/images/step-boundary-normalization.png" width=640 />
+| Mode | At the partial edges |
+|---|---|
+| `truncate` | the whole bucket at the start; none at the end |
+| `drop` | neither edge |
+| `partial` | both, holding only the rows inside the range, as the origin would answer |
+| `partial_start` | the start, holding only the rows inside the range |
+| `partial_end` | the whole bucket at the start, and the end, holding only the rows inside the range |
+| `off` | the origin's answer to the range as sent, cached as an object |
+
+Each provider defaults to the behavior it has always had, and a query can choose its own mode with a comment directive. See [Step Alignment](./docs/step-alignment.md) for the modes, their cost, and support by backend.
+
+<img src="./docs/images/step-alignment.png" width=640 />
 
 #### 3. Fast Forward
 
-Trickster's Fast Forward feature ensures that even with step boundary normalization, real-time graphs still always show the most recent data, regardless of how far away the next step boundary is. For example, if your chart step is 300s, and the time is currently 1:21p, you would normally be waiting another four minutes for a new data point at 1:25p. Trickster will break the step interval for the most recent data point and always include it in the response to clients requesting real-time data.
+Trickster's Fast Forward feature ensures that even with step alignment, real-time graphs still always show the most recent data, regardless of how far away the next step boundary is. For example, if your chart step is 300s, and the time is currently 1:21p, you would normally be waiting another four minutes for a new data point at 1:25p. Trickster will break the step interval for the most recent data point and always include it in the response to clients requesting real-time data. Fast Forward is Prometheus's `partial_end` step alignment mode, its default.
 
 <img src="./docs/images/fast-forward.png" width=640 />
 
@@ -89,7 +98,7 @@ Docker images are available on Docker Hub (docker.io):
 ```bash
 $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 trickstercache/trickster
 ```
-Or via  Github Container Registry (ghcr.io):
+Or via GitHub Container Registry (ghcr.io):
 ```bash
     $ docker run --name trickster -d -v /path/to/trickster.yaml:/etc/trickster/trickster.yaml -p 0.0.0.0:8480:8480 ghcr.io/trickstercache/trickster
 ```

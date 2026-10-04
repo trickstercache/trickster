@@ -49,6 +49,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
@@ -191,6 +192,19 @@ func TestListenerNeedsRestart(t *testing.T) {
 		t.Error("connection limit change should restart a listener")
 	}
 
+	for name, change := range map[string]func(*listenerconfig.Options){
+		"read_timeout":     func(o *listenerconfig.Options) { o.ReadTimeout++ },
+		"idle_timeout":     func(o *listenerconfig.Options) { o.IdleTimeout++ },
+		"max_header_bytes": func(o *listenerconfig.Options) { o.MaxHeaderBytes++ },
+	} {
+		current = old
+		current.options = o.Clone()
+		change(current.options)
+		if !listenerNeedsRestart(old, current) {
+			t.Errorf("%s change should restart a listener", name)
+		}
+	}
+
 	current = old
 	current.options = o.Clone()
 	current.options.TrustedProxies = []string{"10.0.0.0/8"}
@@ -209,11 +223,48 @@ func TestListenerNeedsRestart(t *testing.T) {
 	}
 }
 
+func TestServerLimits(t *testing.T) {
+	const maxHeaderBytes, readTimeout = 16384, 30 * time.Second
+	o := listenerconfig.New("custom")
+	o.ReadTimeout = timeconv.Duration(readTimeout)
+	o.MaxHeaderBytes = maxHeaderBytes
+	got := serverLimits(o)
+	want := listener.ServerLimits{
+		ReadHeaderTimeout: time.Duration(o.ReadHeaderTimeout),
+		ReadTimeout:       readTimeout,
+		IdleTimeout:       time.Duration(listenerconfig.DefaultIdleTimeout),
+		MaxHeaderBytes:    maxHeaderBytes,
+	}
+	if got != want {
+		t.Errorf("serverLimits = %+v; want %+v", got, want)
+	}
+	// 0 disables the idle timeout rather than falling back to the read timeout
+	o.IdleTimeout = 0
+	if got := serverLimits(o); got.IdleTimeout != listener.NoIdleTimeout {
+		t.Errorf("idle timeout = %v; want %v", got.IdleTimeout, listener.NoIdleTimeout)
+	}
+}
+
+const (
+	trustedProxyCIDR = "192.0.2.0/24"
+	trustedPeerAddr  = "192.0.2.10:1234"
+	forwardedClient  = "203.0.113.9"
+	clientIPPath     = "/client-ip"
+	unmatchedPath    = "/unmatched"
+)
+
+func forwardedRequest(path string) *http.Request {
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.RemoteAddr = trustedPeerAddr
+	req.Header.Set(headers.NameXForwardedFor, forwardedClient)
+	return req
+}
+
 func TestDesiredListenersResolveClientIP(t *testing.T) {
 	c := config.NewConfig()
 	c.Listeners[listenerconfig.DefaultFrontendName].Active = true
 	c.Listeners[listenerconfig.DefaultFrontendName].ListenPort = 1
-	c.Listeners[listenerconfig.DefaultFrontendName].TrustedProxies = []string{"192.0.2.0/24"}
+	c.Listeners[listenerconfig.DefaultFrontendName].TrustedProxies = []string{trustedProxyCIDR}
 	raw := lm.NewRouter()
 	var seen string
 	if err := raw.RegisterRoute("/", nil, nil, matching.PathMatchTypePrefix,
@@ -225,11 +276,9 @@ func TestDesiredListenersResolveClientIP(t *testing.T) {
 	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
 	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)
 	proxy := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)]
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "192.0.2.10:1234"
-	req.Header.Set(headers.NameXForwardedFor, "203.0.113.9")
+	req := forwardedRequest("/")
 	proxy.router.ServeHTTP(httptest.NewRecorder(), req)
-	if seen != "203.0.113.9" {
+	if seen != forwardedClient {
 		t.Errorf("client ip = %q; want the forwarded address from a trusted proxy", seen)
 	}
 	req.RemoteAddr = "198.51.100.1:1234"
@@ -246,6 +295,86 @@ func TestDesiredListenersResolveClientIP(t *testing.T) {
 	c.Listeners[listenerconfig.DefaultFrontendName].ProxyProtocol = true
 	if o := proxyProtocolOptions(c.Listeners[listenerconfig.DefaultFrontendName]); o == nil || len(o.Trusted) != 1 {
 		t.Error("PROXY protocol options must carry the trusted proxies")
+	}
+}
+
+func TestDesiredListenersWrapEveryHTTPEndpoint(t *testing.T) {
+	c := config.NewConfig()
+	logPath := filepath.Join(t.TempDir(), "access.log")
+	c.AccessLog = &alo.Options{Filename: logPath, Format: "%h %s %U"}
+	var seen string
+	routers := make(map[string]router.Router)
+	for _, name := range []string{listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics} {
+		o := c.Listeners[name]
+		o.Active = true
+		o.ListenPort = 1
+		o.TrustedProxies = []string{trustedProxyCIDR}
+		r := lm.NewRouter()
+		if err := r.RegisterRoute(clientIPPath, nil, nil, matching.PathMatchTypeExact,
+			http.HandlerFunc(func(_ http.ResponseWriter, req *http.Request) {
+				seen = request.ClientIP(req)
+			})); err != nil {
+			t.Fatal(err)
+		}
+		routers[name] = r
+	}
+	frontend := c.Listeners[listenerconfig.DefaultFrontendName]
+	frontend.ServeTLS = true
+	frontend.TLSListenPort = 2
+	frontend.HTTP3 = &listenerconfig.HTTP3Options{Enabled: true}
+	routerLogger := routing.RouterAccessLogger(c)
+	if routerLogger == nil {
+		t.Fatal("expected a router-level access logger")
+	}
+	got := desiredListeners(c, routers, routers[mgmt.ListenerNameMgmt],
+		routers[mgmt.ListenerNameMetrics], routerLogger, nil)
+	endpoints := []string{
+		listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false),
+		listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true),
+		listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP3, false),
+		listenerKey(mgmt.ListenerNameMgmt, listenerconfig.ProtocolHTTP, false),
+		listenerKey(mgmt.ListenerNameMetrics, listenerconfig.ProtocolHTTP, false),
+	}
+	if len(got) != len(endpoints) {
+		t.Errorf("desired endpoints = %d; want %d", len(got), len(endpoints))
+	}
+	for _, key := range endpoints {
+		desired, ok := got[key]
+		if !ok {
+			t.Errorf("missing desired endpoint %q", key)
+			continue
+		}
+		seen = ""
+		desired.router.ServeHTTP(httptest.NewRecorder(), forwardedRequest(clientIPPath))
+		if seen != forwardedClient {
+			t.Errorf("%s: client ip = %q; want the forwarded address", key, seen)
+		}
+	}
+	// an unmatched request reaches the router through the same wrap, so its access log line names the client
+	logged := []string{listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt}
+	for _, name := range logged {
+		w := httptest.NewRecorder()
+		got[listenerKey(name, listenerconfig.ProtocolHTTP, false)].router.ServeHTTP(w, forwardedRequest(unmatchedPath))
+		if w.Code != http.StatusNotFound {
+			t.Errorf("%s: unmatched request = %d; want the router's 404", name, w.Code)
+		}
+	}
+	routerLogger.Close()
+	b, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unmatched int
+	for line := range strings.Lines(string(b)) {
+		if !strings.HasPrefix(line, forwardedClient+" ") {
+			t.Errorf("access log line %q does not name the forwarded client", line)
+		}
+		if line == fmt.Sprintf("%s %d %s\n", forwardedClient, http.StatusNotFound, unmatchedPath) {
+			unmatched++
+		}
+	}
+	if unmatched != len(logged) {
+		t.Errorf("unmatched access log lines = %d; want %d in\n%s", unmatched, len(logged), b)
 	}
 }
 
@@ -714,6 +843,8 @@ func TestDesiredListenersWrapDefaultAccessLog(t *testing.T) {
 	for _, name := range []string{listenerconfig.DefaultFrontendName, mgmt.ListenerNameMgmt, mgmt.ListenerNameMetrics} {
 		c.Listeners[name].Active = true
 		c.Listeners[name].ListenPort = 1
+		// with path normalization off, only the access log can wrap a router
+		c.Listeners[name].PathNormalization = &pno.Options{DotSegments: pno.DotSegmentsOff}
 	}
 	routerLogger := routing.RouterAccessLogger(c)
 	if routerLogger == nil {
@@ -739,6 +870,34 @@ func TestDesiredListenersWrapDefaultAccessLog(t *testing.T) {
 	got = desiredListeners(c, routers, lm.NewRouter(), raw, nil, nil)
 	if got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router != http.Handler(raw) {
 		t.Error("router was wrapped without a default access logger")
+	}
+}
+
+func TestDesiredListenersNormalizePaths(t *testing.T) {
+	c := config.NewConfig()
+	c.Listeners[listenerconfig.DefaultFrontendName].Active = true
+	c.Listeners[listenerconfig.DefaultFrontendName].ListenPort = 1
+	raw := lm.NewRouter()
+	var seen string
+	raw.RegisterRoute("/admin/", nil, nil, matching.PathMatchTypePrefix,
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+		}))
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
+	h := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)[listenerKey(
+		listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router
+	for target, want := range map[string]int{
+		"/public/../admin/x":     http.StatusNoContent,
+		"/public/%2e%2e/admin/x": http.StatusNoContent,
+		"/public//..%2fadmin/x":  http.StatusBadRequest,
+	} {
+		seen = ""
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, target, nil))
+		if w.Code != want || (want == http.StatusNoContent && seen != "/admin/x") {
+			t.Errorf("%s: status %d, routed as %q; want %d", target, w.Code, seen, want)
+		}
 	}
 }
 

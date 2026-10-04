@@ -30,7 +30,9 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/appinfo/usage"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
+	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
 	"github.com/trickstercache/trickster/v2/pkg/cache/manager"
@@ -47,9 +49,12 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	logmanager "github.com/trickstercache/trickster/v2/pkg/observability/logging/manager"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/redact"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	tr "github.com/trickstercache/trickster/v2/pkg/observability/tracing/registry"
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
+	georegistry "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/registry"
+	acmehandler "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/acme"
 	pnh "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ping"
 	ph "github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/purge"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
@@ -58,6 +63,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 )
@@ -83,13 +89,8 @@ func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
 	if conf == nil {
 		return nil, nil, te.ErrInvalidOptions
 	}
-	if conf.Flags != nil {
-		if conf.Flags.PrintVersion {
-			return conf, nil, nil
-		}
-		if conf.Flags.ValidateConfig {
-			return conf, nil, nil
-		}
+	if conf.Flags != nil && conf.Flags.PrintVersion {
+		return conf, nil, nil
 	}
 	err = conf.Process()
 	if err != nil {
@@ -100,6 +101,11 @@ func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
 	err = validate.RoutesRulesAndPools(conf, clients)
 	if err != nil {
 		return nil, nil, err
+	}
+	if conf.Flags != nil && conf.Flags.ValidateConfig {
+		// -validate-config runs every configuration check, including those that need the backend
+		// clients, but applies nothing: no listener, cache, authenticator or discovery is started
+		return conf, nil, nil
 	}
 	return conf, clients, nil
 }
@@ -152,8 +158,8 @@ func LoadAndValidateWithOverlay(overlay *config.Overlay, args ...string) (*confi
 	return cfg, nil
 }
 
-// Shutdown stops the instance's background workers that reach upstreams
-// (autodiscovery, ALB pools and health check probes) and waits for them to exit.
+// Shutdown stops the instance's upstream workers (discovery, ALB pools, Graphite learning,
+// health probes), waits for them to exit, then closes its caches.
 func Shutdown(si *instance.ServerInstance) {
 	if si == nil {
 		return
@@ -161,9 +167,29 @@ func Shutdown(si *instance.ServerInstance) {
 	stopDiscovery(si)
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
+		static.StopClients(si.Backends)
+		graphite.StopClients(si.Backends)
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
+	}
+	si.GeoLocators.Close()
+	si.GeoLocators = nil
+	// closed last, as the workers above may still write to them
+	closeCaches(si.Caches, si.MgmtOptions().ShutdownDrain())
+	si.Caches = nil
+}
+
+func closeCaches(caches cache.Lookup, drain time.Duration) {
+	for name, c := range caches {
+		// a close waits for in-flight operations, but for no longer than the shutdown drain
+		if m, ok := c.(*manager.Manager); ok {
+			m.SetCloseDrainTimeout(drain)
+		}
+		if err := c.Close(); err != nil {
+			logger.Warn("error closing cache during shutdown",
+				logging.Pairs{keys.CacheName: name, keys.Error: err.Error()})
+		}
 	}
 }
 
@@ -191,6 +217,18 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if err := buildAuthenticators(newConf); err != nil {
 		return err
 	}
+	geoLocators, err := buildGeo(si, newConf)
+	if err != nil {
+		handleStartupIssue("geo ACL setup failed", logging.Pairs{keys.Detail: err.Error()}, errorFunc)
+		return err
+	}
+	geoCommitted := false
+	defer func() {
+		// an apply that fails closes the locators it opened, and none of those still serving
+		if !geoCommitted {
+			geoLocators.CloseExcept(si.GeoLocators)
+		}
+	}()
 
 	if err := reconfigureLogWriters(newConf); err != nil {
 		handleStartupIssue("log writer reconfiguration failed",
@@ -263,6 +301,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	if si.Backends != nil {
 		alb.StopPools(si.Backends)
+		static.StopClients(si.Backends)
 	}
 	if si.HealthChecker != nil {
 		si.HealthChecker.Shutdown()
@@ -285,14 +324,21 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	alb.StartALBPools(clients, si.HealthChecker.Statuses())
 	if err = applyDiscoveryConfig(si, newConf, clients, caches, tracers,
 		oldStatuses); err != nil {
+		// nothing will own the pools and checks this pass started, so they are stopped here
+		alb.StopPools(clients)
+		si.HealthChecker.Shutdown()
 		handleStartupIssue("autodiscovery setup failed",
 			logging.Pairs{keys.Detail: err.Error()}, errorFunc)
 		return err
 	}
+	static.StartClients(clients)
 	routing.RegisterDefaultBackendRoutesForListeners(listenerRouters, newConf, clients, tracers)
 	routing.RegisterHealthHandler(mr, newConf.MgmtConfig.HealthHandlerPath, si.HealthChecker, clients)
 	applyListenerConfigs(newConf, si.Config, listenerRouters, rh, mr, tracers, clients, errorFunc, lg,
-		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler})
+		mgmtRoute{path: newConf.MgmtConfig.ReadyHandlerPath, handler: readyHandler},
+		acmeRoute(si, newConf))
+	// only now has every stream and native listener taken the sticky table it keeps its flows in
+	alb.ForgetUnusedStickyTables(clients)
 
 	accesslog.CommitGeneration(
 		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)
@@ -302,13 +348,33 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	si.Config = newConf
 	si.Tracers = tracers
 	si.Caches = caches
+	if si.Backends != nil {
+		// retired only once the reload commits, since a rolled-back reload serves the old clients again
+		graphite.StopClients(si.Backends)
+	}
 	si.Backends = clients
+	// as are the geo locators this configuration no longer keeps
+	si.GeoLocators.CloseExcept(geoLocators)
+	si.GeoLocators = geoLocators
+	georegistry.Publish(geoLocators)
+	geoCommitted = true
 	// Reloads reuse the instance's group; publishing the same pointer again
 	// would race a forced shutdown without changing the active listeners.
 	if firstStartup {
 		si.Listeners = lg
 	}
 	return nil
+}
+
+func acmeRoute(si *instance.ServerInstance, c *config.Config) mgmtRoute {
+	if si.ACME == nil {
+		return mgmtRoute{}
+	}
+	return mgmtRoute{
+		path: c.MgmtConfig.ACMEHandlerPath, mgmtOnly: true,
+		methods: []string{http.MethodGet, http.MethodPost},
+		handler: acmehandler.HandlerFunc(si.ACME, acme.ErrUnmanagedDomain),
+	}
 }
 
 func reconfigureLogWriters(c *config.Config) error {
@@ -339,6 +405,7 @@ func applyLoggingConfig(c, o *config.Config) {
 	if c == nil || c.Logging == nil {
 		return
 	}
+	redact.Configure(c.Logging.Redact)
 	isReload := o != nil && c != o
 	if c.MgmtConfig == nil {
 		c.MgmtConfig = mgmt.New()

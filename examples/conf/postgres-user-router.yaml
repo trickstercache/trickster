@@ -1,0 +1,88 @@
+# Complete native PostgreSQL / TimescaleDB User Router example.
+#
+# Replace every REPLACE_* placeholder before use. Authenticator user values
+# expand environment variables; structured backend origin_url values do not,
+# so keep this completed file in a secret store or protected filesystem.
+#
+# Trickster authenticates each client itself against the router's
+# authenticator (SCRAM-SHA-256), picks the backend mapped to the startup user,
+# and logs in to that backend's origin with its origin_url credentials. A
+# session stays on its backend until it ends.
+
+listeners:
+  postgres-routed:
+    protocol: postgres
+    address: ""
+    port: 5432
+    connections_limit: 200
+    postgres:
+      handshake_timeout: 10s
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 5m
+      max_query_size_bytes: 1048576
+
+authenticators:
+  postgres-tenants:
+    provider: basic
+    users:
+      tenant_a_reader: ${TENANT_A_CLIENT_PASSWORD}
+      tenant_b_reader: ${TENANT_B_CLIENT_PASSWORD}
+
+caches:
+  tenant-a-cache:
+    provider: memory
+    memory:
+      max_size_bytes: 536870912
+  tenant-b-cache:
+    provider: filesystem
+    filesystem:
+      cache_path: /var/cache/trickster/tenant-b
+
+backends:
+  # A backend reached only through the router needs no listener_names and no
+  # authenticator of its own. Its origin_url must carry a username.
+  tenant-a-timescaledb:
+    provider: timescaledb
+    origin_url: postgres://tenant_a_ro:REPLACE_TENANT_A_ORIGIN_PASSWORD@tsdb-a.example:5432/analytics
+    cache_name: tenant-a-cache
+    timeout: 30s
+    max_concurrent_conns: 100
+    max_object_size_bytes: 8388608
+    postgres:
+      upstream_tls_mode: verify-full
+      max_result_rows: 100000
+      max_result_size_bytes: 67108864
+    tls:
+      certificate_authority_paths:
+        - /etc/trickster/tls/origin-ca.crt
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+
+  tenant-b-postgres:
+    provider: postgres
+    origin_url: postgres://tenant_b_ro:REPLACE_TENANT_B_ORIGIN_PASSWORD@pg-b.example:5432/analytics
+    cache_name: tenant-b-cache
+    timeout: 30s
+    max_concurrent_conns: 100
+    healthcheck:
+      interval: 5s
+      timeout: 3s
+
+  postgres-by-tenant:
+    provider: alb
+    listener_names: [postgres-routed]
+    authenticator_name: postgres-tenants
+    alb:
+      mechanism: ur
+      user_router:
+        # Unlisted authenticated users route to tenant A. Remove this field to
+        # refuse an unlisted user's connection instead. A user whose backend is
+        # failing its health check is refused too; sessions never fail over.
+        default_backend: tenant-a-timescaledb
+        users:
+          tenant_a_reader:
+            to_backend: tenant-a-timescaledb
+          tenant_b_reader:
+            to_backend: tenant-b-postgres

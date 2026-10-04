@@ -134,6 +134,9 @@ type Config struct {
 	// ProviderPaths returns the paths a time series provider predefines, which the compiler
 	// serves a governed route through and a route may not declare itself; nil serves no provider
 	ProviderPaths compile.ProviderPaths
+	// ProviderStepAlignments returns the step alignment modes a time series provider supports, which
+	// a policy's mode is checked against; nil applies no policy's mode
+	ProviderStepAlignments compile.ProviderStepAlignments
 	// Recorder overrides the Event recorder built from the client, which is
 	// how tests capture Events
 	Recorder *events.Recorder
@@ -150,6 +153,8 @@ type Controller struct {
 	// alphaResources are the experimental Gateway API kinds the cluster serves, probed the same
 	// way; an empty list is a cluster without the experimental channel
 	alphaResources []string
+	// xResources are the kinds the cluster serves in the experimental x-k8s.io group, the same way
+	xResources []string
 	// status writes conditions and addresses back to the cluster; nil when the instance is read-only
 	status *status.Writer
 	// recorder publishes Events, one term at a time; nil when the instance is read-only
@@ -335,6 +340,10 @@ func New(cfg Config) (*Controller, error) {
 			if c.alphaResources == nil {
 				c.alphaResources = []string{}
 			}
+			// as are the kinds of the experimental group, such as XBackendTrafficPolicy
+			if c.xResources, err = c.xWatchable(); err != nil {
+				return nil, err
+			}
 		} else {
 			logger.Info("kubernetes cluster does not serve the gateway api; "+
 				"only ingress objects will be served",
@@ -367,6 +376,7 @@ func New(cfg Config) (*Controller, error) {
 		GatewayClient:    c.cfg.GatewayClient,
 		GatewayResources: c.gatewayResources,
 		AlphaResources:   c.alphaResources,
+		XResources:       c.xResources,
 		DynamicClient:    c.cfg.DynamicClient,
 		Options:          cfg.Options,
 		OnChange:         c.Resync,
@@ -386,6 +396,34 @@ func New(cfg Config) (*Controller, error) {
 	go c.run(c.runCtx)
 	go c.statusWorker(c.runCtx)
 	return c, nil
+}
+
+// xWatchable returns the experimental group's kinds the cluster serves and this controller may
+// watch; RBAC granted before the controller read one would otherwise hang startup on its informer
+func (c *Controller) xWatchable() ([]string, error) {
+	served, _, err := gatewayapi.XResources(c.cfg.Client)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(served))
+	for _, r := range served {
+		if r != gatewayapi.ResourceBackendTrafficPolicies {
+			continue
+		}
+		ok, err := gatewayapi.XWatchable(context.Background(), c.cfg.Client, r,
+			c.cfg.Options.WatchNamespaces)
+		if err != nil || !ok {
+			pairs := logging.Pairs{keys.Scope: kube.LogScope, keys.Kind: r, keys.Detail: gatewayapi.XGroupVersion}
+			if err != nil {
+				pairs[keys.Error] = err.Error()
+			}
+			logger.Warn("kubernetes cluster serves a gateway api kind this controller may not "+
+				"list and watch; grant both to read it", pairs)
+			continue
+		}
+		out = append(out, r)
+	}
+	return out, nil
 }
 
 func (c *Controller) buildWriters() error {
@@ -674,6 +712,7 @@ func (c *Controller) policyIndex() *cachepolicy.Index {
 	}
 	return cachepolicy.New(c.watcher.CachePolicies(), cachepolicy.Config{
 		Known: known, Exists: c.targetExists, ProviderPaths: c.providerPathNames,
+		ProviderStepAlignments: c.cfg.ProviderStepAlignments,
 	})
 }
 
@@ -708,7 +747,8 @@ func (c *Controller) targetExists(kind, namespace, name string) bool {
 func (c *Controller) compile(ctx context.Context, model *ir.IR,
 ) (*config.Overlay, compile.Manifest, error) {
 	_, span := c.span(ctx, spanCompile)
-	overlay, manifest, err := compile.CompileWith(model, c.cfg.Options, c.cfg.ProviderPaths)
+	overlay, manifest, err := compile.CompileWithProviders(model, c.cfg.Options, c.cfg.ProviderPaths,
+		c.cfg.ProviderStepAlignments)
 	endSpan(span, err)
 	return overlay, manifest, err
 }

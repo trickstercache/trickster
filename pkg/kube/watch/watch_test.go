@@ -20,10 +20,12 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/kube"
+	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/annotations"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -41,6 +43,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 	gwfake "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/fake"
 )
 
@@ -156,10 +159,12 @@ func TestWatcherReadsEveryKind(t *testing.T) {
 		&gwapiv1a2.TCPRoute{Namespace: "data", Name: "db"},
 		&gwapiv1a2.TLSRoute{Namespace: "data", Name: "shop"},
 		&gwapiv1a2.UDPRoute{Namespace: "data", Name: "dns"},
+		&gwapix.XBackendTrafficPolicy{Namespace: "shop", Name: "sticky"},
 	}
 	w, c := start(t, opts(t), core, gwObjs, gw("infra", "gw"))
 	c.await(t, 1)
 	require.Len(t, w.BackendTLSPolicies(), 1)
+	require.Len(t, w.BackendTrafficPolicies(), 1)
 	require.Len(t, w.TCPRoutes(), 1)
 	require.Len(t, w.TLSRoutes(), 1)
 	require.Len(t, w.UDPRoutes(), 1)
@@ -201,13 +206,15 @@ func TestWatcherSkipsUnservedGatewayKinds(t *testing.T) {
 		&gwapiv1.GRPCRoute{Namespace: "shop", Name: "rpc"},
 		&gwapiv1a2.TCPRoute{Namespace: "data", Name: "db"},
 		&gwapiv1a2.TLSRoute{Namespace: "data", Name: "shop"},
-		&gwapiv1a2.UDPRoute{Namespace: "data", Name: "dns"})
+		&gwapiv1a2.UDPRoute{Namespace: "data", Name: "dns"},
+		&gwapix.XBackendTrafficPolicy{Namespace: "shop", Name: "sticky"})
 	c := &changes{}
 	w, err := New(Config{
 		Client:           kube.NewFromClientset(kubefake.NewClientset()),
 		GatewayClient:    gwcs,
 		GatewayResources: []string{"gatewayclasses", "gateways", "httproutes", "referencegrants"},
 		AlphaResources:   []string{"tlsroutes"},
+		XResources:       []string{},
 		Options:          opts(t),
 		OnChange:         c.handler(),
 	})
@@ -216,6 +223,7 @@ func TestWatcherSkipsUnservedGatewayKinds(t *testing.T) {
 	require.NoError(t, w.Start(t.Context()))
 	c.await(t, 1)
 	require.Empty(t, w.BackendTLSPolicies())
+	require.Empty(t, w.BackendTrafficPolicies())
 	require.Empty(t, w.GRPCRoutes())
 	require.Nil(t, w.GRPCRoute("shop", "rpc"))
 	require.Empty(t, w.TCPRoutes())
@@ -250,38 +258,43 @@ func TestWatcherDeliversOnChange(t *testing.T) {
 }
 
 func TestWatcherDebouncesBursts(t *testing.T) {
-	// A burst of changes must collapse into one rebuild; that is the whole point
-	// of the debounce window
-	cs := kubefake.NewClientset()
-	c := &changes{}
-	w, err := New(Config{
-		Client:        kube.NewFromClientset(cs),
-		GatewayClient: gwfake.NewSimpleClientset(),
-		Options: opts(t, func(o *kubecfg.Options) {
-			o.DebounceWindow = timeconv.Duration(300 * time.Millisecond)
-		}),
-		OnChange: c.handler(),
-	})
-	require.NoError(t, err)
-	t.Cleanup(w.Stop)
-	require.NoError(t, w.Start(t.Context()))
-	c.await(t, 1)
-	afterSync := c.n.Load()
-
-	for i := range 20 {
-		_, err = cs.CoreV1().Services("shop").Create(context.Background(),
-			svc("shop", "s"+string(rune('a'+i))), metav1.CreateOptions{})
+	synctest.Test(t, func(t *testing.T) {
+		// A burst of changes must collapse into one rebuild; that is the whole point
+		// of the debounce window
+		cs := kubefake.NewClientset()
+		c := &changes{}
+		w, err := New(Config{
+			Client:        kube.NewFromClientset(cs),
+			GatewayClient: gwfake.NewSimpleClientset(),
+			Options: opts(t, func(o *kubecfg.Options) {
+				o.DebounceWindow = timeconv.Duration(300 * time.Millisecond)
+			}),
+			OnChange: c.handler(),
+		})
 		require.NoError(t, err)
-	}
-	c.await(t, afterSync+1)
-	time.Sleep(600 * time.Millisecond)
-	require.LessOrEqual(t, c.n.Load(), afterSync+2,
-		"20 objects created together must not produce 20 rebuilds")
+		t.Cleanup(w.Stop)
+		require.NoError(t, w.Start(t.Context()))
+		c.await(t, 1)
+		synctest.Wait()
+		afterSync := c.n.Load()
+
+		for i := range 20 {
+			_, err = cs.CoreV1().Services("shop").Create(context.Background(),
+				svc("shop", "s"+string(rune('a'+i))), metav1.CreateOptions{})
+			require.NoError(t, err)
+		}
+		synctest.Wait()
+		require.Len(t, w.Services(), 20, "the burst must reach the informer cache")
+		require.Equal(t, afterSync, c.n.Load(), "the debounce window has not elapsed")
+		time.Sleep(w.debounce)
+		synctest.Wait()
+		require.Equal(t, afterSync+1, c.n.Load(), "the burst must deliver one rebuild")
+	})
 }
 
-func TestWatcherWatchesOnlyTLSSecrets(t *testing.T) {
-	// Only TLS secrets are watched: a controller reads TLS material and nothing
-	// else, and holding every Secret in a cluster is neither necessary nor safe
+func TestWatcherWatchesOnlyTLSAndKeySecrets(t *testing.T) {
+	// Only TLS secrets and those labeled as session token keys are watched: holding every Secret
+	// in a cluster is neither necessary nor safe
 	cs := kubefake.NewClientset(
 		tlsSecret("shop", "tls"),
 		&corev1.Secret{
@@ -297,18 +310,66 @@ func TestWatcherWatchesOnlyTLSSecrets(t *testing.T) {
 	t.Cleanup(w.Stop)
 	require.NoError(t, w.Start(t.Context()))
 
-	var listed bool
+	// one list narrowed to TLS Secrets, and one to those labeled as holding a session token key
+	var tls, keys int
 	for _, a := range cs.Actions() {
 		la, ok := a.(k8stesting.ListAction)
 		if !ok || a.GetResource().Resource != "secrets" {
 			continue
 		}
-		listed = true
-		require.Equal(t, "type=kubernetes.io/tls",
-			la.GetListRestrictions().Fields.String(),
-			"the Secret watch must be narrowed server-side")
+		r := la.GetListRestrictions()
+		switch {
+		case r.Fields.String() == "type=kubernetes.io/tls" && r.Labels.Empty():
+			tls++
+		case r.Labels.String() == annotations.LabelStickyKey && r.Fields.Empty():
+			keys++
+		default:
+			t.Fatalf("a Secret list is not narrowed server-side: fields %q, labels %q", r.Fields, r.Labels)
+		}
 	}
-	require.True(t, listed, "expected the watcher to list secrets")
+	require.Equal(t, 1, tls, "expected the watcher to list TLS secrets")
+	require.Equal(t, 1, keys, "expected the watcher to list session key secrets")
+
+	// the key Secret is read by name only when labeled
+	require.Nil(t, w.KeySecret("shop", "app-creds"))
+	require.Nil(t, w.KeySecret("shop", "tls"))
+}
+
+func TestWatcherReadsLabeledKeySecrets(t *testing.T) {
+	// a labeled Secret is visible by name, rotated in place, and an Ingress-only watcher holds none
+	key := &corev1.Secret{
+		Namespace: "shop", Name: "sticky-key", Type: corev1.SecretTypeOpaque,
+		Labels: map[string]string{annotations.LabelStickyKey: ""},
+		Data:   map[string][]byte{"key": []byte("first")},
+	}
+	cs := kubefake.NewClientset(key)
+	c := &changes{}
+	w, err := New(Config{
+		Client: kube.NewFromClientset(cs), GatewayClient: gwfake.NewSimpleClientset(),
+		Options: opts(t), OnChange: c.handler(),
+	})
+	require.NoError(t, err)
+	t.Cleanup(w.Stop)
+	require.NoError(t, w.Start(t.Context()))
+	c.await(t, 1)
+	require.Equal(t, "first", string(w.KeySecret("shop", "sticky-key").Data["key"]))
+	require.Nil(t, w.KeySecret("shop", "absent"))
+
+	rotated := key.DeepCopy()
+	rotated.Data["key"] = []byte("second")
+	_, err = cs.CoreV1().Secrets("shop").Update(t.Context(), rotated, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	c.await(t, 2)
+	require.Eventually(t, func() bool {
+		s := w.KeySecret("shop", "sticky-key")
+		return s != nil && string(s.Data["key"]) == "second"
+	}, 5*time.Second, 10*time.Millisecond)
+
+	ingressOnly, err := New(Config{Client: kube.NewFromClientset(cs), Options: opts(t)})
+	require.NoError(t, err)
+	t.Cleanup(ingressOnly.Stop)
+	require.NoError(t, ingressOnly.Start(t.Context()))
+	require.Nil(t, ingressOnly.KeySecret("shop", "sticky-key"))
 }
 
 func TestWatcherNamespaceScoping(t *testing.T) {
@@ -620,7 +681,7 @@ func TestWatchEventsAreCounted(t *testing.T) {
 	before := testutil.ToFloat64(metrics.KubeWatchEvents.WithLabelValues(ir.KindIngress, eventAdd))
 	_, c := start(t, opts(t), []runtime.Object{ing("shop", "web")}, nil)
 	c.await(t, 1)
-	require.GreaterOrEqual(t,
-		testutil.ToFloat64(metrics.KubeWatchEvents.WithLabelValues(ir.KindIngress, eventAdd)),
-		before+1)
+	require.Eventually(t, func() bool {
+		return testutil.ToFloat64(metrics.KubeWatchEvents.WithLabelValues(ir.KindIngress, eventAdd)) >= before+1
+	}, 5*time.Second, 5*time.Millisecond)
 }

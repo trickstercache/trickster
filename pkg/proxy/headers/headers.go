@@ -37,6 +37,8 @@ const (
 	ValueApplicationYAML = "application/yaml"
 	// ValueApplicationFlux represents the HTTP Header Value of "application/vnd.flux"
 	ValueApplicationFlux = "application/vnd.flux"
+	// ValueApplicationSQL represents the HTTP Header Value of "application/sql"
+	ValueApplicationSQL = "application/sql"
 	// ValueChunked represents the HTTP Header Value of "chunked"
 	ValueChunked = "chunked"
 	// ValueClose represents the HTTP Header Value of "close"
@@ -115,6 +117,10 @@ const (
 	NameContentRange = "Content-Range"
 	// NameTricksterResult represents the HTTP Header Name of "X-Trickster-Result"
 	NameTricksterResult = "X-Trickster-Result"
+	// NameTricksterGeoDenied names the geo ACL that would have refused a request it only counted
+	NameTricksterGeoDenied = "X-Trickster-Geo-Denied"
+	// NameLink represents the HTTP Header Name of "Link"
+	NameLink = "Link"
 	// NameAcceptEncoding represents the HTTP Header Name of "Accept-Encoding"
 	NameAcceptEncoding = "Accept-Encoding"
 	// NameAcceptLanguage represents the HTTP Header Name of "Accept-Language"
@@ -141,6 +147,10 @@ const (
 	NameIfNoneMatch = "If-None-Match"
 	// NameIfMatch represents the HTTP Header Name of "If-Match"
 	NameIfMatch = "If-Match"
+	// NameAcceptRanges represents the HTTP Header Name of "Accept-Ranges"
+	NameAcceptRanges = "Accept-Ranges"
+	// NameAcceptQuery represents the HTTP Header Name of "Accept-Query" (RFC 10008)
+	NameAcceptQuery = "Accept-Query"
 	// NameIfRange represents the HTTP Header Name of "If-Range"
 	NameIfRange = "If-Range"
 	// NameCDNCacheControl represents the HTTP Header Name of "CDN-Cache-Control",
@@ -154,6 +164,12 @@ const (
 	NameProxyAuthenticate = "Proxy-Authenticate"
 	// NameProxyAuthorization represents the HTTP Header Name of "Proxy-Authorization"
 	NameProxyAuthorization = "Proxy-Authorization"
+	// NameXAPIKey represents the HTTP Header Name of "X-Api-Key"
+	NameXAPIKey = "X-Api-Key" // #nosec G101 -- a header name, not a credential
+	// NameAPIKey represents the HTTP Header Name of "Api-Key"
+	NameAPIKey = "Api-Key"
+	// NameXGoogAPIKey represents the HTTP Header Name of "X-Goog-Api-Key"
+	NameXGoogAPIKey = "X-Goog-Api-Key" // #nosec G101 -- a header name, not a credential
 	// NameProxyConnection represents the HTTP Header Name of "Proxy-Connection"
 	NameProxyConnection = "Proxy-Connection"
 	// NameKeepAlive represents the HTTP Header Name of "Keep-Alive"
@@ -204,6 +220,12 @@ const (
 	NameXForwardedProto = "X-Forwarded-Proto"
 	// NameXForwardedServer represents the HTTP Header Name of "X-Forwarded-Server"
 	NameXForwardedServer = "X-Forwarded-Server"
+	// NameXAmzDate represents the HTTP Header Name of "X-Amz-Date"
+	NameXAmzDate = "X-Amz-Date"
+	// NameXAmzSecurityToken represents the HTTP Header Name of "X-Amz-Security-Token"
+	NameXAmzSecurityToken = "X-Amz-Security-Token" // #nosec G101 -- a header name, not a credential
+	// NameXAmzContentSHA256 represents the HTTP Header Name of "X-Amz-Content-Sha256"
+	NameXAmzContentSHA256 = "X-Amz-Content-Sha256"
 
 	// NameTrkHCStatus represents the HTTP Header Name of "Trk-HC-Status"
 	NameTrkHCStatus = "Trk-HC-Status"
@@ -353,7 +375,11 @@ func LogString(h http.Header) string {
 	for _, k := range names {
 		v := h[k]
 		if len(v) > 0 {
-			fmt.Fprintf(sb, "%s[%s:%s]", sep, k, v[0])
+			value := v[0]
+			if IsSensitive(k) {
+				value = redactedValue
+			}
+			fmt.Fprintf(sb, "%s[%s:%s]", sep, k, value)
 			sep = ","
 		}
 	}

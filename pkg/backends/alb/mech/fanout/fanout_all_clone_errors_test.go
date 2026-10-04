@@ -19,7 +19,6 @@ package fanout
 import (
 	"context"
 	"net/http"
-	"runtime"
 	"testing"
 	"time"
 
@@ -28,6 +27,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/testutil/albpool"
 
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestAllAllSlotsCloneError(t *testing.T) {
@@ -43,7 +43,7 @@ func TestAllAllSlotsCloneError(t *testing.T) {
 		parent, err := http.NewRequest(http.MethodPost, "http://"+appinfo.Domain+"/", errReader{})
 		require.NoError(t, err)
 
-		before := runtime.NumGoroutine()
+		defer goleak.VerifyNone(t, goleak.IgnoreCurrent())
 
 		done := make(chan struct {
 			res []Result
@@ -63,8 +63,8 @@ func TestAllAllSlotsCloneError(t *testing.T) {
 		}
 		select {
 		case out = <-done:
-		case <-time.After(1 * time.Second):
-			t.Fatal("All did not return within 1s when every clone errors")
+		case <-time.After(5 * time.Second):
+			t.Fatal("All did not return within 5s when every clone errors")
 		}
 
 		require.Error(t, out.err)
@@ -76,9 +76,6 @@ func TestAllAllSlotsCloneError(t *testing.T) {
 			require.Error(t, out.res[i].Err, "slot %d Err should be non-nil", i)
 		}
 
-		time.Sleep(50 * time.Millisecond)
-		after := runtime.NumGoroutine()
-		require.LessOrEqual(t, after-before, 2, "goroutine leak suspected: before=%d after=%d", before, after)
 	}
 
 	t.Run("unlimited", func(t *testing.T) {

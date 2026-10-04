@@ -254,17 +254,17 @@ func (sr series) toSeries() *dataset.Series {
 	for i, val := range sr.values {
 		p := dataset.Point{
 			Epoch:  epoch.FromSecs(sr.start.Unix() + int64(i)*int64(sr.step/time.Second)),
-			Values: []any{nil}, Size: 24,
+			Values: []any{nil},
 		}
 		if val != nil {
 			p.Values[0] = *val
 		}
 		pts[i] = p
 	}
-	return &dataset.Series{Header: dataset.SeriesHeader{
+	return dataset.NewSeries(dataset.SeriesHeader{
 		Name: sr.target, Tags: dataset.Tags{"name": sr.target},
 		TimestampField: model.StepField(sr.step),
-	}, Points: pts, PointSize: int64(len(pts)) * 24}
+	}, pts)
 }
 
 // reproduces the semantics of whisper's file_fetch + __archive_fetch

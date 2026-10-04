@@ -157,16 +157,19 @@ func hasNonNaNScalar(ds *dataset.DataSet) bool {
 			if series == nil {
 				continue
 			}
-			for _, point := range series.Points {
-				if len(point.Values) == 0 {
+			segs := series.Segments()
+			for k := range segs {
+				seg := &segs[k]
+				if seg.NumCols() == 0 {
 					continue
 				}
-				value, ok := point.Values[0].(string)
-				if !ok {
-					continue
+				for i := range seg.Len() {
+					if seg.KindAt(0, i) != dataset.KindString {
+						continue
+					}
+					parsed, err := strconv.ParseFloat(seg.Text(0, i), 64)
+					return err == nil && !math.IsNaN(parsed)
 				}
-				parsed, err := strconv.ParseFloat(value, 64)
-				return err == nil && !math.IsNaN(parsed)
 			}
 		}
 	}

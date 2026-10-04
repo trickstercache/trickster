@@ -42,9 +42,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/graphite/mockserver"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 )
 
 // a graphite backend in front of a stub origin with a real memory cache,
@@ -288,6 +290,42 @@ func renderQueryMismatch(h *harness) (string, time.Duration, time.Duration, bool
 		return rq.Mispredicted()
 	}
 	return "", 0, 0, false
+}
+
+func TestRenderOffServesTheFallbackLane(t *testing.T) {
+	const host01, host02 = "dev.fast.cpu.host01.percent", "dev.fast.cpu.host02.percent"
+	for _, configured := range []bool{true, false} {
+		t.Run(fmt.Sprintf("configured=%t", configured), func(t *testing.T) {
+			h := newHarness(t, func(o *bo.Options) {
+				if configured {
+					o.StepAlignment = timeseries.StepAlignmentOff
+				}
+			})
+			h.learn(host01, host02)
+			serve := func(label string, q url.Values, fetches int64) {
+				t.Helper()
+				r := httptest.NewRequest(http.MethodGet, "http://trickster/render?"+q.Encode(), nil)
+				if !configured {
+					r = r.WithContext(tctx.WithStepAlignment(r.Context(), timeseries.StepAlignmentOff))
+				}
+				w := h.serve(r)
+				if got, want := w.Body.String(), h.direct(q); w.Code != http.StatusOK || got != want {
+					t.Errorf("%s: %d\n got: %.400s\nwant: %.400s", label, w.Code, got, want)
+				}
+				if result := w.Header().Get(headers.NameTricksterResult); !strings.Contains(result,
+					"engine=ObjectProxyCache") {
+					t.Errorf("%s: expected the object proxy cache, got %q", label, result)
+				}
+				h.expectFetches(label, fetches)
+			}
+			single := h.query(url.Values{"target": {host01}, "from": {"-1h"}})
+			serve("single", single, 1)
+			serve("single again", single, 0)
+			serve("another range", h.query(url.Values{"target": {host01}, "from": {"-50min"}}), 1)
+			// the targets are neither split nor accelerated: one origin render
+			serve("multiple targets", h.query(url.Values{"target": {host01, host02}, "from": {"-30min"}}), 1)
+		})
+	}
 }
 
 func TestRenderMultiTarget(t *testing.T) {

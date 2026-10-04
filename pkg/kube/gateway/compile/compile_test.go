@@ -17,6 +17,7 @@
 package compile
 
 import (
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -115,7 +116,7 @@ func simple() *ir.IR {
 
 func emitted(t *testing.T, m *ir.IR, opts *kubecfg.Options) map[string]*backendDoc {
 	t.Helper()
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	return doc.Backends
 }
@@ -195,7 +196,9 @@ func TestCompileWeightedBackendRefs(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	o, err := Compile(m, serviceOpts(t))
+	opts := serviceOpts(t)
+	opts.Defaults.IPACLName = "default-acl"
+	o, err := Compile(m, opts)
 	require.NoError(t, err)
 	got := decode(t, o.Data)
 
@@ -212,6 +215,9 @@ func TestCompileWeightedBackendRefs(t *testing.T) {
 	stable := got.Backends["kgw--httproute.shop.web_r0_b0"]
 	require.Equal(t, "http://stable.shop.svc:80", stable.OriginURL)
 	require.Empty(t, stable.Hosts, "hosts attach to the ALB, not its members")
+	require.Equal(t, "default-acl", alb.IPACLName)
+	require.Empty(t, stable.IPACLName)
+	require.Empty(t, got.Backends["kgw--httproute.shop.web_r0_b1"].IPACLName)
 
 	// a rule with no matches answers everything the route admits, and the
 	// ALB's own paths must select the alb handler
@@ -589,7 +595,7 @@ func TestCompilePolicyRoutingModeOverride(t *testing.T) {
 	// A policy may override the routing mode for one route
 	m := endpointShape()
 	m.Policies = []ir.Policy{{Name: "p1", RoutingMode: kubecfg.RoutingModeEndpoint}}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, providers.ALB, doc.Backends["kgw--httproute.shop.web_r0"].Provider,
 		"a per-route routing mode must reach the member compiler")
@@ -627,12 +633,13 @@ func TestCompileEndpointMode(t *testing.T) {
 	// In endpoint mode a member is an ALB whose pool is discovered from the Service's
 	// EndpointSlices, cloned from a template carrying everything the origin would have
 	opts := endpointOpts(t)
+	opts.Defaults.IPACLName = "default-acl"
 	opts.Defaults.CacheName = "default"
 	opts.Defaults.Timeout = timeconv.Duration(15 * time.Second)
 	m := endpointShape()
 	m.Policies = nil
 	m.Routes[0].Rules[0].Policy = ""
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 
 	require.Len(t, doc.Discovery, 1)
@@ -677,6 +684,8 @@ func TestCompileEndpointMode(t *testing.T) {
 	require.Empty(t, tmpl.Hosts, "a template registers nothing itself")
 	require.Len(t, tmpl.Paths, 2, "the cache split applies to the clones")
 	require.Equal(t, "/", tmpl.Paths[0].Path)
+	require.Equal(t, "default-acl", front.IPACLName)
+	require.Empty(t, tmpl.IPACLName)
 }
 
 func TestCompileEndpointModeProbe(t *testing.T) {
@@ -688,7 +697,7 @@ func TestCompileEndpointModeProbe(t *testing.T) {
 	m := endpointShape()
 	m.Policies = nil
 	m.Routes[0].Rules[0].Policy = ""
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	front := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "probe", front.ALB.Discovery.HealthMode)
@@ -701,7 +710,7 @@ func TestCompileEndpointModeProbe(t *testing.T) {
 
 	// no configured health check: the default probe
 	opts.Defaults.HealthCheck = nil
-	doc, err = buildDocument(m, opts, nil)
+	doc, err = buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	tmpl = doc.Backends["kgw--httproute.shop.web_r0_b0_tmpl"]
 	require.Equal(t, &ho.Options{Interval: timeconv.Duration(kubecfg.DefaultProbeInterval)},
@@ -711,7 +720,7 @@ func TestCompileEndpointModeProbe(t *testing.T) {
 	opts.Defaults.HealthMode = "provider"
 	m.Policies = []ir.Policy{{Name: "p1", HealthMode: "probe"}}
 	m.Routes[0].Rules[0].Policy = "p1"
-	doc, err = buildDocument(m, opts, nil)
+	doc, err = buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "probe", doc.Backends["kgw--httproute.shop.web_r0"].ALB.Discovery.HealthMode)
 	require.NotNil(t, doc.Backends["kgw--httproute.shop.web_r0_b0_tmpl"].HealthCheck)
@@ -733,10 +742,13 @@ func TestCompileEndpointModeWeighted(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, endpointOpts(t), nil)
+	opts := endpointOpts(t)
+	opts.Defaults.IPACLName = "default-acl"
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	outer := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, providers.ALB, outer.Provider)
+	require.Equal(t, "default-acl", outer.IPACLName)
 	require.Nil(t, outer.ALB.Discovery)
 	require.Len(t, outer.ALB.Pool, 2)
 	require.Len(t, doc.Discovery, 1)
@@ -748,6 +760,8 @@ func TestCompileEndpointModeWeighted(t *testing.T) {
 		require.Empty(t, member.Hosts, "a pool member registers no route of its own")
 		require.False(t, member.AnyHostRouting)
 		require.Equal(t, []string{ListenerName(80, ir.ProtocolHTTP)}, member.ListenerNames)
+		require.Empty(t, member.IPACLName)
+		require.Empty(t, doc.Backends[name+"_tmpl"].IPACLName)
 		require.Equal(t, name+"_tmpl", member.ALB.Discovery.TemplateBackend)
 		require.Len(t, member.Paths, 1)
 		require.Equal(t, providers.ALB, member.Paths[0].Handler)
@@ -783,7 +797,7 @@ func TestCompileRedirect(t *testing.T) {
 		Routes:    []ir.Route{r},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Len(t, doc.Backends, 1)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
@@ -808,7 +822,7 @@ func TestCompileRedirect(t *testing.T) {
 	// mode changes nothing for a rule that forwards nowhere
 	r.Rules[0].Filters[0].Redirect.StatusCode = 0
 	m.Routes[0] = r
-	doc, err = buildDocument(m, endpointOpts(t), nil)
+	doc, err = buildDocument(m, endpointOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusFound, doc.Backends["kgw--httproute.shop.web_r0"].Paths[0].ResponseCode)
 	require.Empty(t, doc.Discovery)
@@ -846,7 +860,7 @@ func TestCompileHeaderFilters(t *testing.T) {
 		Routes:    []ir.Route{r}, Backends: []ir.BackendGroup{g},
 		Policies: []ir.Policy{p},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	path := doc.Backends["kgw--httproute.shop.web_r0"].Paths[0]
 	require.Equal(t, map[string]string{
@@ -888,7 +902,7 @@ func TestCompileURLRewrite(t *testing.T) {
 		Listeners: []ir.Listener{httpListener()},
 		Routes:    []ir.Route{r}, Backends: []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	alb := doc.Backends["kgw--httproute.shop.web_r0"]
 	for _, p := range alb.Paths {
@@ -907,7 +921,7 @@ func TestCompileURLRewrite(t *testing.T) {
 	// translators; the compiler ignores it rather than guessing a prefix
 	g.Members[1].Filters[0].URLRewrite.Path.Type = ir.PathReplacePrefix
 	m.Backends = []ir.BackendGroup{g}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Empty(t, doc.Backends["kgw--httproute.shop.web_r0_b1"].Paths[0].ReqRewriterName)
 }
@@ -926,7 +940,7 @@ func TestCompileBackendTLS(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "https://web-svc.shop.svc:8443", b.OriginURL)
@@ -937,7 +951,7 @@ func TestCompileBackendTLS(t *testing.T) {
 
 	g.Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal", System: true}
 	m.Backends = []ir.BackendGroup{g}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, &tlsDoc{ServerName: "web.internal"}, doc.Backends["kgw--httproute.shop.web_r0"].TLS)
 }
@@ -1055,7 +1069,7 @@ func TestCompiledRoutesAreSound(t *testing.T) {
 func everyShape() map[string]*ir.IR {
 	// everyShape is one IR per output shape the compiler emits, so an invariant
 	// asserted over it is asserted over the whole projection
-	return map[string]*ir.IR{
+	shapes := map[string]*ir.IR{
 		"single backend": simple(),
 		"weighted backends": func() *ir.IR {
 			g := group("shop", "web", 0,
@@ -1141,6 +1155,8 @@ func everyShape() map[string]*ir.IR {
 			return m
 		}(),
 	}
+	maps.Copy(shapes, stickyShapes())
+	return shapes
 }
 
 func filterShape() *ir.IR {
@@ -1235,6 +1251,9 @@ func TestCompiledConfigurationLoads(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, conf.Backends.Validate())
 			require.NoError(t, validate.Validate(conf))
+			// the checks that need the router, such as which hosts an ALB sets its cookie on
+			require.NoError(t, conf.Process())
+			require.NoError(t, validate.RoutesRulesAndPools(conf, make(backends.Backends, len(conf.Backends))))
 		})
 	}
 }
@@ -1723,6 +1742,7 @@ func TestCompileOperatorNameReferences(t *testing.T) {
 	opts.Defaults.TracingName = "otlp"
 	opts.Defaults.ReqRewriterName = "strip-internal"
 	opts.Defaults.AuthenticatorName = "gateway-auth"
+	opts.Defaults.IPACLName = "default-acl"
 
 	b := emitted(t, simple(), opts)["kgw--httproute.shop.web_r0"]
 	require.NotNil(t, b)
@@ -1731,6 +1751,27 @@ func TestCompileOperatorNameReferences(t *testing.T) {
 	require.Equal(t, "otlp", b.TracingConfigName)
 	require.Equal(t, "strip-internal", b.ReqRewriterName)
 	require.Equal(t, "gateway-auth", b.AuthenticatorName)
+	require.Equal(t, "default-acl", b.IPACLName)
+
+	// a class list replaces the default; an empty policy name leaves the default
+	over := simple()
+	over.Policies = []ir.Policy{{Name: "p", IPACLName: "class-acl"}}
+	over.Routes[0].Rules[0].Policy = "p"
+	require.Equal(t, "class-acl", emitted(t, over, opts)["kgw--httproute.shop.web_r0"].IPACLName)
+	bare, err := Compile(simple(), serviceOpts(t))
+	require.NoError(t, err)
+	require.NotContains(t, string(bare.Data), "ip_acl_name")
+
+	mirrored := simple()
+	g := mirrored.Backends[0]
+	mirrored.Routes[0].Rules[0].Filters = []ir.Filter{{
+		Type: ir.FilterMirror, Mirror: &ir.MirrorFilter{
+			Service: ir.ServiceTarget{Namespace: "shop", Name: "shadow", Port: 8080}, Percent: 100,
+		},
+	}}
+	docs := emitted(t, mirrored, opts)
+	require.Equal(t, "default-acl", docs[GroupName(g)].IPACLName)
+	require.Empty(t, docs[MirrorName(g)].IPACLName)
 
 	// they are references, not definitions: the controller emits none of
 	// the objects behind them
@@ -1763,13 +1804,15 @@ func TestCompileRedirectCarriesOperatorControls(t *testing.T) {
 	}
 	opts := serviceOpts(t)
 	opts.Defaults.AuthenticatorName = "gateway-auth"
+	opts.Defaults.IPACLName = "default-acl"
 	opts.Defaults.ReqRewriterName = "strip"
 	opts.Defaults.TracingName = "otlp"
 	opts.Defaults.AccessLog = &alo.Options{Filename: "stdout", Format: "combined"}
-	doc, err := buildDocument(m, opts, nil)
+	doc, err := buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "gateway-auth", b.AuthenticatorName)
+	require.Equal(t, "default-acl", b.IPACLName)
 	require.Equal(t, "strip", b.ReqRewriterName)
 	require.Equal(t, "otlp", b.TracingConfigName)
 	require.Equal(t, "stdout", b.AccessLog.Filename)
@@ -1781,15 +1824,17 @@ func TestCompileRedirectCarriesOperatorControls(t *testing.T) {
 	require.Empty(t, b.CacheName, "a redirect caches nothing")
 
 	m.Policies = []ir.Policy{{
-		Name: "p", AuthenticatorName: "class-auth",
+		Name: "p", AuthenticatorName: "class-auth", IPACLName: "class-acl",
 		ResponseHeaders: map[string]string{"X-Policy": "1"},
 	}}
 	m.Routes[0].Rules[0].Policy = "p"
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, opts, nil, nil)
 	require.NoError(t, err)
 	b = doc.Backends["kgw--httproute.shop.web_r0"]
 	require.Equal(t, "class-auth", b.AuthenticatorName,
 		"a GatewayClass's authenticator reaches a redirecting rule")
+	require.Equal(t, "class-acl", b.IPACLName,
+		"a GatewayClass's access list replaces the default on a redirect")
 	for _, p := range b.Paths {
 		require.Equal(t, map[string]string{"X-Policy": "1"}, p.ResponseHeaders,
 			"policy response headers reach the redirection")
@@ -1813,7 +1858,7 @@ func TestCompileRedirectCarriesResponseHeaders(t *testing.T) {
 		})},
 		Backends: []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	b := doc.Backends["kgw--httproute.shop.web_r0"]
 	require.NotEmpty(t, b.Paths)
@@ -1840,7 +1885,7 @@ func TestCompileRedirectUsesTheListenerPort(t *testing.T) {
 		r.Listeners = attach
 		doc, err := buildDocument(&ir.IR{
 			Listeners: listeners, Routes: []ir.Route{r}, Backends: []ir.BackendGroup{g},
-		}, serviceOpts(t), nil)
+		}, serviceOpts(t), nil, nil)
 		require.NoError(t, err)
 		return doc
 	}
@@ -1899,13 +1944,13 @@ func TestCompileBackendTLSExcludesSystemRoots(t *testing.T) {
 		Routes:    []ir.Route{route("shop", "web", ir.Rule{BackendGroup: g.Name})},
 		Backends:  []ir.BackendGroup{g},
 	}
-	doc, err := buildDocument(m, serviceOpts(t), nil)
+	doc, err := buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.True(t, doc.Backends["kgw--httproute.shop.web_r0"].TLS.ExcludeSystemRoots)
 
 	g.Members[0].TLS = &ir.BackendTLS{Hostname: "web.internal", System: true}
 	m.Backends = []ir.BackendGroup{g}
-	doc, err = buildDocument(m, serviceOpts(t), nil)
+	doc, err = buildDocument(m, serviceOpts(t), nil, nil)
 	require.NoError(t, err)
 	require.False(t, doc.Backends["kgw--httproute.shop.web_r0"].TLS.ExcludeSystemRoots)
 }

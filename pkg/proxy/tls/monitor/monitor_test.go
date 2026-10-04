@@ -35,11 +35,14 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
+	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 )
 
 const testWatchInterval = 10 * time.Millisecond
+
+var testLimits = listener.ServerLimits{ReadHeaderTimeout: time.Second}
 
 func writePair(t *testing.T, certPath, keyPath string, names ...string) {
 	t.Helper()
@@ -101,7 +104,7 @@ func startTLSListener(t *testing.T, certPath, keyPath string) (*listener.Group, 
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ok"))
-		}), nil, nil, time.Second, nil)
+		}), nil, nil, testLimits, nil)
 	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
 		t.Fatal("listener not found in group")
 	}
@@ -501,7 +504,7 @@ func startRuntimeTLSListener(t *testing.T) (*listener.Group, string, string) {
 	go lg.StartListener(key, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}), nil, nil, time.Second, nil)
+		}), nil, nil, testLimits, nil)
 	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
 		t.Fatal("listener not found in group")
 	}
@@ -716,7 +719,7 @@ func TestMonitorFillsStoreWhenListenerPublishesLater(t *testing.T) {
 	go lg.StartListener(key, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
-		}), nil, nil, time.Second, nil)
+		}), nil, nil, testLimits, nil)
 	if !waitFor(t, 5*time.Second, func() bool { return lg.Get(key) != nil }) {
 		t.Fatal("listener not found in group")
 	}
@@ -729,5 +732,88 @@ func TestMonitorFillsStoreWhenListenerPublishesLater(t *testing.T) {
 	}
 	if kinds := kindsOf(storeFor(t, lg, key)); kinds[tr.SourceKindMemory] != 1 {
 		t.Errorf("entry kinds = %v; want the memory entry installed", kinds)
+	}
+}
+
+const acmeSAN = "acme.example.com"
+
+func acmeEntry(t *testing.T, name string) *tr.Entry {
+	t.Helper()
+	k, c, err := tlstest.GetTestKeyAndCertWithNames(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := tr.ValidatePair(c, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tr.NewEntry(tr.SourceKindACME+":stub:"+name, tr.SourceKindACME, cert)
+}
+
+func acmeListenerConfig() *config.Config {
+	conf := runtimeCertConfig()
+	conf.Listeners[listenerconfig.DefaultFrontendName].TLSRuntimeCerts = false
+	conf.ACME = &acmeopts.Options{Issuers: map[string]*acmeopts.IssuerOptions{"stub": {AgreeToTerms: true}}}
+	conf.Backends["test"].TLS = &to.Options{ACME: &acmeopts.BackendOptions{Issuer: "stub"}}
+	return conf
+}
+
+func TestMonitorACMECerts(t *testing.T) {
+	lg, key, address := startRuntimeTLSListener(t)
+	m := New()
+	defer m.Close()
+	m.Apply(acmeListenerConfig(), lg)
+	if names := m.TLSListeners(); !slices.Equal(names, []string{listenerconfig.DefaultFrontendName}) {
+		t.Fatalf("TLSListeners = %v; want the ACME listener tracked", names)
+	}
+	if err := m.SetACMECerts("no-such-listener", nil); err == nil {
+		t.Fatal("expected an error for an unknown listener")
+	}
+	if err := m.SetACMECerts(listenerconfig.DefaultFrontendName,
+		[]*tr.Entry{acmeEntry(t, acmeSAN)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := handshakeErr(address, acmeSAN); err != nil {
+		t.Fatalf("handshake failed after the ACME certificate was supplied: %v", err)
+	}
+	// a renewed certificate under the same key replaces its predecessor
+	renewed := acmeEntry(t, acmeSAN)
+	if err := m.SetACMECerts(listenerconfig.DefaultFrontendName, []*tr.Entry{renewed}); err != nil {
+		t.Fatal(err)
+	}
+	store := storeFor(t, lg, key)
+	if kinds := kindsOf(store); kinds[tr.SourceKindACME] != 1 || len(kinds) != 1 {
+		t.Fatalf("entry kinds = %v; want exactly one acme entry", kinds)
+	}
+	if got := store.Match(acmeSAN); got == nil || got.Leaf.SerialNumber.Cmp(renewed.Certificate.Leaf.SerialNumber) != 0 {
+		t.Fatal("the renewed certificate is not the one served")
+	}
+	// a reload carries ACME entries until the manager replaces them
+	m.Apply(acmeListenerConfig(), lg)
+	if !certStoreHasName(store, acmeSAN) {
+		t.Fatal("a reload dropped the ACME certificate")
+	}
+	if err := m.SetACMECerts(listenerconfig.DefaultFrontendName, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := handshakeErr(address, acmeSAN); err == nil {
+		t.Error("handshake succeeded after the ACME certificate was withdrawn")
+	}
+}
+
+func TestMonitorFileRebuildKeepsACMECerts(t *testing.T) {
+	conf, certPath, keyPath := testConfig(t, 0)
+	conf.ACME = &acmeopts.Options{Issuers: map[string]*acmeopts.IssuerOptions{"stub": {AgreeToTerms: true}}}
+	lg, key, _ := startTLSListener(t, certPath, keyPath)
+	m := New()
+	defer m.Close()
+	m.Apply(conf, lg)
+	if err := m.SetACMECerts(listenerconfig.DefaultFrontendName,
+		[]*tr.Entry{acmeEntry(t, acmeSAN)}); err != nil {
+		t.Fatal(err)
+	}
+	m.Apply(conf, lg)
+	if kinds := kindsOf(storeFor(t, lg, key)); kinds[tr.SourceKindACME] != 1 || kinds[tr.SourceKindFile] != 1 {
+		t.Fatalf("entry kinds after rebuild = %v; want the file and acme entries", kinds)
 	}
 }

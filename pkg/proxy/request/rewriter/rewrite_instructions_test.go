@@ -17,7 +17,6 @@
 package rewriter
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -25,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
-	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/urls"
@@ -509,16 +507,48 @@ func reqString(r *http.Request) string {
 	return sb.String()
 }
 
+type countingInstruction struct{ runs int }
+
+func (ri *countingInstruction) Execute(*http.Request) { ri.runs++ }
+func (ri *countingInstruction) Parse([]string) error  { return nil }
+func (ri *countingInstruction) String() string        { return "" }
+func (ri *countingInstruction) HasTokens() bool       { return false }
+
 func TestReqChainExecute(t *testing.T) {
+	counter := &countingInstruction{}
 	ri := RewriteInstructions{
-		&rwiChainExecutor{rewriterName: "rewriter1", rewriter: testRWI},
+		&rwiChainExecutor{rewriterName: "rewriter1", rewriter: RewriteInstructions{counter}},
 	}
 	r, _ := http.NewRequest(http.MethodGet, "/", nil)
-	r = r.WithContext(tctx.StartRewriterHops(context.Background()))
 	ri.Execute(r)
-	hops := tctx.RewriterHops(r.Context())
-	if hops != 1 {
-		t.Errorf("expected 1 got %d", hops)
+	if counter.runs != 1 {
+		t.Errorf("expected the chained rewriter to run once, ran %d times", counter.runs)
+	}
+	(&rwiChainExecutor{}).Execute(r)
+	(&rwiChainExecutor{rewriter: RewriteInstructions{counter}}).Execute(r)
+	if counter.runs != 2 {
+		t.Errorf("expected a standalone chain to run its rewriter, ran %d times in all", counter.runs)
+	}
+}
+
+func TestReqChainCycleStops(t *testing.T) {
+	// a runs at the root and on every second chained run below the cap
+	const wantRuns = 1 + int(options.MaxRewriterChainExecutions-1)/2
+	crw, err := ProcessConfigs(options.Lookup{
+		"a": {Instructions: options.RewriteList{{"header", "set", "X-Test", "a"}, {"chain", "exec", "b"}}},
+		"b": {Instructions: options.RewriteList{{"chain", "exec", "a"}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	counter := &countingInstruction{}
+	crw["a"][0] = counter // the chain in b holds the same instructions
+	for i := range 2 {
+		r, _ := http.NewRequest(http.MethodGet, "/", nil)
+		crw["a"].Execute(r)
+		if got := counter.runs - i*wantRuns; got != wantRuns {
+			t.Errorf("expected %d runs of the cyclic rewriter, got %d", wantRuns, got)
+		}
 	}
 }
 

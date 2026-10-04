@@ -52,6 +52,8 @@ type Options struct {
 	// CertificatesHandlerPath provides the path to register the read-only TLS
 	// certificate inventory handler
 	CertificatesHandlerPath string `yaml:"certificates_handler_path,omitempty"`
+	// ACMEHandlerPath is the mgmt-only path that lists ACME-managed domains and forces renewals
+	ACMEHandlerPath string `yaml:"acme_handler_path,omitempty"`
 	// PprofListener provides the name of the http listener that will host the pprof debugging routes
 	// Options are: "metrics", "mgmt", "both", or "off"; default is both
 	PprofListener string `yaml:"pprof_listener,omitempty"`
@@ -103,6 +105,7 @@ func New() *Options {
 		PurgeByKeyHandlerPath:   DefaultPurgeByKeyHandlerPath,
 		PurgeByPathHandlerPath:  DefaultPurgeByPathHandlerPath,
 		CertificatesHandlerPath: DefaultCertificatesHandlerPath,
+		ACMEHandlerPath:         DefaultACMEHandlerPath,
 		PprofListener:           DefaultPprofListenerName,
 		ReloadHandlerPath:       DefaultReloadHandlerPath,
 		ReloadDrainTimeout:      timeconv.Duration(DefaultDrainTimeout),

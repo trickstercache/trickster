@@ -20,6 +20,7 @@ package native
 import (
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
@@ -49,16 +50,20 @@ type BuildRequest struct {
 // protocol server, and expose a reloadable route resolver when applicable.
 type Adapter interface {
 	Protocol() string
-	// BackendProvider returns the backend provider name this adapter's
-	// protocol serves. Protocol and provider names need not match: a
-	// vendor-neutral protocol (e.g. flight-sql) can be served by a
-	// vendor-specific provider (e.g. influxdb).
-	BackendProvider() string
-	SupportsHTTP() bool
+	// ServesProvider reports whether this adapter's protocol serves the named
+	// backend provider. Protocol and provider names need not match, and one
+	// protocol (e.g. postgres) can serve several providers.
+	ServesProvider(provider string) bool
+	// Providers returns the served provider names, for messages and docs only.
+	Providers() []string
+	SupportsHTTP(provider string) bool
 	Configured(*listenerconfig.Options) bool
 	ValidateListener(*listenerconfig.Options) error
 	ValidateBackend(*bo.Options) error
 	ValidateUserRouter(*config.Config, string, *bo.Options) error
+	// ValidateBalancer validates an ALB whose selection strategy commits each of the
+	// listener's sessions to one member of its pool.
+	ValidateBalancer(*config.Config, string, *bo.Options) error
 	Describe(*config.Config, string) (Descriptor, error)
 	Build(BuildRequest) (listener.ProtocolServer, error)
 	RouteResolver(BuildRequest) backends.RouteResolver
@@ -72,15 +77,42 @@ func (r Registry) Get(protocol string) Adapter {
 	return r[protocol]
 }
 
-// GetByProvider returns the adapter whose protocol serves the given backend
-// provider, or nil when no native protocol serves it.
+// GetByProvider returns the unique adapter serving provider, or nil when the
+// provider is unsupported or ambiguous. Use GetForProvider when a listener's
+// protocol is known.
 func (r Registry) GetByProvider(provider string) Adapter {
+	var found Adapter
 	for _, adapter := range r {
-		if adapter.BackendProvider() == provider {
-			return adapter
+		if adapter.ServesProvider(provider) {
+			if found != nil {
+				return nil
+			}
+			found = adapter
 		}
 	}
+	return found
+}
+
+// GetForProvider returns the adapter serving provider over protocol.
+func (r Registry) GetForProvider(protocol, provider string) Adapter {
+	if a := r.Get(protocol); a != nil && a.ServesProvider(provider) {
+		return a
+	}
 	return nil
+}
+
+// ForProvider returns all matching adapters ordered by protocol.
+func (r Registry) ForProvider(provider string) []Adapter {
+	var out []Adapter
+	for _, a := range r {
+		if a.ServesProvider(provider) {
+			out = append(out, a)
+		}
+	}
+	slices.SortFunc(out, func(a, b Adapter) int {
+		return strings.Compare(a.Protocol(), b.Protocol())
+	})
+	return out
 }
 
 // ConfiguredProtocol returns the first, lexically ordered protocol whose

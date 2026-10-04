@@ -100,14 +100,22 @@ spec:
 | `cors.mode` | `preserve`, `merge`, `replace`, `disable` | how origin CORS headers combine with the configured ones |
 | `cors.headers` | a map of headers | the CORS headers `merge` and `replace` apply |
 | `healthMode` | `probe`, `provider` | how discovered members are judged healthy in the endpoint routing mode |
+| `loadBalancing` | `rr`, `p2c`, `lc`, `lt`, `hrw` | how traffic is spread across a Service's endpoints in the endpoint routing mode; `rr` unless set. See [the ALB mechanisms](./alb.md) |
+| `loadBalancingKey` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>` | what `hrw` keeps on one endpoint; `client_ip` unless set |
+| `sticky` | `cookie`, `header`, `table`, `none` | keeps a client on the endpoint it first reached, on an HTTP route or Ingress in the endpoint routing mode; `none` turns off a less specific setting's. A cookie's `Max-Age` ends with its token, at most `stickyTTL` after the session began. A TCP, TLS or UDP route keeps it in a table. See [kubernetes-gateway.md](./kubernetes-gateway.md#session-persistence) |
+| `stickyKey` | `client_ip`, `host`, `header:<name>`, `cookie:<name>`, `query:<name>`, `sni` | what `table` mode keeps a client's endpoint by; `client_ip` unless set, and a key the route's listener cannot read (`sni` on an HTTP route, for one) is left at that |
+| `stickyTTL`, `stickyIdle` | a duration of at least `1s` | a session ends that long after it began (`1h` unless set), or once unused that long |
 | `resultHeader` | `Expose`, `Hide` | whether `X-Trickster-Result` reaches the client; see below |
+| `stepAlignment` | `truncate`, `drop`, `partial`, `partial_start`, `partial_end`, `off` | the [step alignment](./step-alignment.md) mode of the time series backend `provider` makes; a mode the policy's `provider` doesn't support makes the policy `Invalid` |
 
 In a header map a name prefixed with `-` deletes the header and one prefixed with `+`
 appends to it rather than replacing, exactly as in the annotations and in Trickster's own
 `request_headers`. Durations require a unit. `cacheName` and `negativeCacheName` select
 among what the operator configured; the operator-tier names — a tracer, a request
-rewriter, an authenticator — have no field here either, for the reason given in the
-Ingress document: a policy that could name an authenticator could also omit one.
+rewriter, an authenticator, a geo ACL, an IP access list — have no field here either, for the
+reason given in the Ingress document: a policy that could name an authenticator or an access
+control list could also omit one. A route's geo ACL stays as `kubernetes.defaults` or its class
+set it, whatever policy the route carries.
 
 `maxTTL`, `cacheName`, `negativeCacheName`, `cacheKeyParams` and `cacheKeyHeaders` take
 effect only on a route that caches: one whose effective handler is `proxycache`, from
@@ -156,7 +164,9 @@ Three things follow:
   conflict, since every provider predefines it as a plain proxy catch-all.
 
 The generated backend carries only what the policy and the configured defaults describe:
-an origin, a cache, timeouts, headers. Provider settings with no policy field — a
+an origin, a cache, timeouts, headers. An IP access list name, when the backend has one,
+comes from `kubernetes.defaults.ip_acl_name` or the GatewayClass `ip_acl_name` parameter,
+not from this policy. Provider settings with no policy field — a
 Prometheus `instant_round`, an InfluxDB `flux` block, a Graphite `render` section — take
 their defaults. MySQL is served over its own wire protocol rather than HTTP and cannot be
 selected.

@@ -70,6 +70,7 @@ func RegistryEntry() types.RegistryEntry {
 	return types.RegistryEntry{
 		Name:      URName,
 		ShortName: names.MechanismUR,
+		Planes:    types.PlaneHTTP | types.PlaneNative,
 		New:       New,
 	}
 }

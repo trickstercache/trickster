@@ -22,14 +22,21 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
+	albnames "github.com/trickstercache/trickster/v2/pkg/backends/alb/names"
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
+	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	corso "github.com/trickstercache/trickster/v2/pkg/proxy/cors/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"golang.org/x/net/http/httpguts"
 )
@@ -49,6 +56,67 @@ func HealthMode(v string) (string, error) {
 		return "", fmt.Errorf("must be %q or %q", ao.HealthModeProbe, ao.HealthModeProvider)
 	}
 	return v, nil
+}
+
+// LoadBalancing parses the mechanism that balances a Service's endpoints: one that commits
+// each request or connection to a single member, by its short name
+func LoadBalancing(v string) (string, error) {
+	if slices.Contains(loadBalancingMechanisms, v) {
+		return v, nil
+	}
+	return "", fmt.Errorf("must be one of %s", strings.Join(loadBalancingMechanisms, ", "))
+}
+
+var loadBalancingMechanisms = []string{
+	albnames.MechanismRR, albnames.MechanismP2C, albnames.MechanismLC, albnames.MechanismLT, albnames.MechanismHRW,
+}
+
+// LoadBalancingKey parses what the hrw mechanism keeps together
+func LoadBalancingKey(v string) (string, error) {
+	if _, err := ao.ParseHRWKey(v); err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(v), nil
+}
+
+// Sticky parses how a client is kept on its endpoint: cookie, header or table, or none, which
+// turns off a less specific policy's
+func Sticky(v string) (string, error) {
+	switch v {
+	case so.ModeCookie, so.ModeHeader, so.ModeTable, reserved.ReferenceNone:
+		return v, nil
+	}
+	return "", fmt.Errorf("must be %q, %q, %q or %q", so.ModeCookie, so.ModeHeader, so.ModeTable,
+		reserved.ReferenceNone)
+}
+
+// StickyKey parses what table mode keeps a client's endpoint by: a key that follows a client,
+// never the shape of its request
+func StickyKey(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	ks, err := flowkey.ParseKeySource(v)
+	if err != nil {
+		return "", err
+	}
+	if !ks.FollowsClient() {
+		return "", fmt.Errorf("%q names the shape of a request, which no client's session follows", v)
+	}
+	return v, nil
+}
+
+// minStickyDuration is the shortest sticky lifetime, as a token keeps time in whole seconds
+const minStickyDuration = time.Second
+
+// StickyDuration parses a sticky lifetime, in milliseconds: a duration of at least one second
+func StickyDuration(v string) (int64, error) {
+	d, err := timeconv.ParsePositiveDuration(v)
+	if err != nil {
+		return 0, err
+	}
+	if d < minStickyDuration {
+		return 0, fmt.Errorf("must be at least %s (got %q)", minStickyDuration, v)
+	}
+	return d.Milliseconds(), nil
 }
 
 // Handler parses a path handler name
@@ -77,6 +145,15 @@ func CollapsedForwarding(v string) (string, error) {
 			forwarding.CFNameProgressive)
 	}
 	return v, nil
+}
+
+// StepAlignment parses a step alignment mode name, in any case, into the name the configuration takes
+func StepAlignment(v string) (string, error) {
+	mode, err := timeseries.ParseStepAlignment(v)
+	if err != nil || mode == 0 {
+		return "", fmt.Errorf("must be one of %s", timeseries.StepAlignmentAll)
+	}
+	return mode.String(), nil
 }
 
 // Provider parses a time series provider name: one reached over HTTP, whose API paths the

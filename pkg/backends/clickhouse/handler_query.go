@@ -32,6 +32,16 @@ import (
 
 // QueryHandler handles timeseries requests for ClickHouse and processes them through the delta proxy cache
 func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
+	qp := r.URL.Query()
+	if qp.Get(upSessionID) != "" {
+		// a session's SET statements can change later results, and that state is not in any key
+		logger.Debug("request runs in a session, proxying", logging.Pairs{
+			keys.BackendName: c.observabilityBackendName(),
+			keys.Dialect:     clickHouseDialect,
+		})
+		c.ProxyHandler(w, r)
+		return
+	}
 	var sqlQuery string
 	if methods.HasBody(r.Method) {
 		b, err := request.GetBody(r)
@@ -41,10 +51,20 @@ func (c *Client) QueryHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		sqlQuery = string(b)
 	} else {
-		sqlQuery = r.URL.Query().Get(upQuery)
+		sqlQuery = qp.Get(upQuery)
 	}
 	if !aftership.IsSelectQuery(sqlQuery) {
 		logger.Debug("request is not a SELECT query, proxying", logging.Pairs{
+			keys.BackendName: c.observabilityBackendName(),
+			keys.Dialect:     clickHouseDialect,
+		})
+		c.ProxyHandler(w, r)
+		return
+	}
+	// a response's DateTimes are written in the server's zone unless the request sets its own; until
+	// the server's zone is known, a request that needs it is proxied, which learns it
+	if _, ok := sessionZone(qp, sqlQuery); !ok && !c.resolveZone(r.Context()) {
+		logger.Debug("ClickHouse time zone is not known yet, proxying", logging.Pairs{
 			keys.BackendName: c.observabilityBackendName(),
 			keys.Dialect:     clickHouseDialect,
 		})

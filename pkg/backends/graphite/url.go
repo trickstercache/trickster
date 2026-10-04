@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/model"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/parsing"
@@ -53,6 +54,13 @@ func (c *Client) SetExtent(r *http.Request, trq *timeseries.TimeRangeQuery,
 	}
 	if until.Sub(from) == trq.Step {
 		from = from.Add(-trq.Step)
+	}
+	// keeping the client's sub-step offset leaves whisper's first bucket as is and keeps the pinned
+	// now from trailing until, which whisper would clamp, dropping the newest bucket
+	if clientFrom := rq.Now.Add(-rq.EffectiveAge); trq.Step >= time.Second {
+		step := int64(trq.Step / time.Second)
+		offset := time.Duration(((clientFrom.Unix()%step)+step)%step) * time.Second
+		from = timeseries.FloorToGrid(from, trq.Step, 0).Add(offset)
 	}
 	v, _, _ := params.GetRequestValues(r)
 	for _, p := range parsing.UpstreamStripParams {
@@ -91,19 +99,8 @@ func trimToExtent(ds *dataset.DataSet, e timeseries.Extent) {
 			if s == nil {
 				continue
 			}
-			// points are ascending, so only each end is examined
-			i, j := 0, len(s.Points)
-			for i < j && s.Points[i].Epoch < start {
-				s.PointSize -= int64(s.Points[i].Size)
-				i++
-			}
-			for j > i && s.Points[j-1].Epoch > end {
-				s.PointSize -= int64(s.Points[j-1].Size)
-				j--
-			}
-			if i > 0 || j < len(s.Points) {
-				s.Points = s.Points[i:j]
-			}
+			// rows are ascending, so a view trims each end
+			s.SetSegments(s.Segments().View(start, end))
 		}
 	}
 }

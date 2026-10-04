@@ -65,25 +65,3 @@ func TestUnmarshalTimeseries(t *testing.T) {
 		t.Error("expected ErrInvalidTimeFormat, got", err)
 	}
 }
-
-func TestPointFromValues(t *testing.T) {
-	v := make([]any, 6)
-
-	v[0] = int64(1577836800000)
-	// v[1] will remain nil to cover the continuation case
-	v[2] = "trickster"
-	v[3] = true
-	v[4] = float64(3.14)
-	v[5] = 8480
-
-	_, _, err := pointFromValues(v, 0)
-	if err != nil {
-		t.Error(err)
-	}
-
-	v[1] = &v[5] // this tests unsupported value types
-	_, _, err = pointFromValues(v, 0)
-	if err != timeseries.ErrInvalidTimeFormat {
-		t.Error("expected ErrInvalidTimeFormat, got", err)
-	}
-}

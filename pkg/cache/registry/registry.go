@@ -63,6 +63,9 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 	case providers.Filesystem:
 		co.IndexCliOpts.NeedsFlushInterval = true
 		co.IndexCliOpts.NeedsReapInterval = true
+		if cfg.Filesystem != nil {
+			co.IndexCliOpts.MinFreeBytes = cfg.Filesystem.MinFreeBytes
+		}
 		c = manager.NewCache(filesystem.NewCache(cacheName, cfg), co, cfg)
 	case providers.Redis:
 		c = manager.NewCache(redis.New(context.Background(), cacheName, cfg), co, cfg)
@@ -74,7 +77,6 @@ func NewCache(cacheName string, cfg *options.Options) cache.Cache {
 		c = manager.NewCache(badger.New(cacheName, cfg), co, cfg)
 	default:
 		// Default to MemoryCache
-		co.IndexCliOpts.NeedsReapInterval = true
 		c = manager.NewCache(memory.New(cacheName, cfg), co, cfg)
 	}
 	c.Connect()

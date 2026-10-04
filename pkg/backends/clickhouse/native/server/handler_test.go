@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	tlstest "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
@@ -391,6 +392,50 @@ func TestHandlerCompressedQuery(t *testing.T) {
 	}
 	if got != "SELECT 1 FORMAT JSON" {
 		t.Fatalf("result = %q", got)
+	}
+}
+
+func TestHandlerCarriesDirectivesPastTheRewrite(t *testing.T) {
+	// the forwarded statement is rewritten without the client's comments, so its directives ride in
+	// a comment of their own
+	s := New(echoJSONHandler(), nil, false, "directives")
+	address := startTestProtocolServer(t, s)
+	db := chdriver.OpenDB(&chdriver.Options{Addr: []string{address}})
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var got string
+	query := "SELECT 1 /* trickster-step-align:drop trickster-volatile-window:90 */"
+	if err := db.QueryRowContext(ctx, query).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if want := "SELECT 1 FORMAT JSON /* trickster-volatile-window:1m30s trickster-step-align:drop */"; got != want {
+		t.Fatalf("forwarded %q, want %q", got, want)
+	}
+}
+
+func TestHandlerCarriesTheSessionAddress(t *testing.T) {
+	// the bridged request answers with the client address the route chain sees
+	clientAddress := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(headers.NameContentType, "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"meta": []map[string]string{{"name": "client", "type": "String"}},
+			"data": []map[string]any{{"client": request.ClientIP(r)}},
+			"rows": 1,
+		})
+	})
+	s := New(clientAddress, nil, false, "client-address")
+	address := startTestProtocolServer(t, s)
+	db := chdriver.OpenDB(&chdriver.Options{Addr: []string{address}})
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var got string
+	if err := db.QueryRowContext(ctx, "SELECT 1").Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "127.0.0.1" {
+		t.Fatalf("bridged request's client address = %q, want 127.0.0.1", got)
 	}
 }
 

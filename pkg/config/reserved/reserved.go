@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-// Package reserved defines the object-name prefixes that are reserved for
-// configuration Trickster generates internally, so file-sourced configuration
-// can be validated against them and each in-process producer owns a prefix.
+// Package reserved defines the object-name prefixes reserved for configuration Trickster generates
+// internally, and the reference words, such as none, that may stand where a config names an object.
 package reserved
 
 import (
@@ -53,4 +52,25 @@ func MatchNamePrefix(name string) string {
 		}
 	}
 	return ""
+}
+
+const (
+	// ReferenceNone, given in place of an object name, refers to no object: a path's
+	// authenticator_name: none turns off the authenticator its backend would otherwise apply.
+	ReferenceNone = "none"
+)
+
+var references = []string{
+	ReferenceNone,
+}
+
+// References returns every reserved reference word; an object kind whose references accept one
+// must refuse it as a name, so a reference is never ambiguous.
+func References() []string {
+	return slices.Clone(references)
+}
+
+// IsReference reports whether name is a reserved reference word.
+func IsReference(name string) bool {
+	return slices.Contains(references, name)
 }

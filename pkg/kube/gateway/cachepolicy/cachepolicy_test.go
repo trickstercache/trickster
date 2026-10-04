@@ -28,6 +28,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/kube"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 
 	"github.com/stretchr/testify/require"
@@ -171,7 +172,14 @@ func TestIndexLowersEveryField(t *testing.T) {
 		ResponseHeaders:     map[string]string{"+Vary": "Accept-Encoding"},
 		CORS:                &CORS{Mode: "merge", Headers: map[string]string{"Access-Control-Allow-Origin": "*"}},
 		HealthMode:          "probe",
+		LoadBalancing:       "p2c",
+		LoadBalancingKey:    "client_ip",
+		Sticky:              "table",
+		StickyKey:           "header:X-Tenant",
+		StickyTTL:           "2h",
+		StickyIdle:          "10m",
 		ResultHeader:        "Hide",
+		StepAlignment:       "truncate",
 	}
 	x := New([]*CachePolicy{p}, Config{Known: known()})
 	require.Empty(t, x.Problems())
@@ -196,6 +204,9 @@ func TestIndexLowersEveryField(t *testing.T) {
 		ResponseHeaders: map[string]string{"+Vary": "Accept-Encoding"},
 		CORSMode:        "merge", CORSHeaders: map[string]string{"Access-Control-Allow-Origin": "*"},
 		HealthMode: "probe", ResultHeader: ir.ResultHeaderHide,
+		LoadBalancing: "p2c", LoadBalancingKey: "client_ip",
+		Sticky: "table", StickyKey: "header:X-Tenant", StickyTTLMS: 7200000, StickyIdleMS: 600000,
+		StepAlignment: "truncate",
 	}, *got)
 	require.Equal(t, ir.KindCachePolicy, got.Source.Kind)
 	require.Equal(t, "uid-full", got.Source.UID)
@@ -231,7 +242,14 @@ func TestIndexRefusesAnInvalidSpecWhole(t *testing.T) {
 		"cors.mode":           func(s *Spec) { s.CORS = &CORS{Mode: "sometimes"} },
 		"cors.headers":        func(s *Spec) { s.CORS = &CORS{Headers: map[string]string{"bad name": "1"}} },
 		"healthMode":          func(s *Spec) { s.HealthMode = "guess" },
+		"loadBalancing":       func(s *Spec) { s.LoadBalancing = "tsm" },
+		"loadBalancingKey":    func(s *Spec) { s.LoadBalancingKey = "header:" },
 		"resultHeader":        func(s *Spec) { s.ResultHeader = "Maybe" },
+		"sticky":              func(s *Spec) { s.Sticky = "always" },
+		"stickyKey":           func(s *Spec) { s.StickyKey = "method" },
+		"stickyTTL":           func(s *Spec) { s.StickyTTL = "100ms" },
+		"stickyIdle":          func(s *Spec) { s.StickyIdle = "later" },
+		"stepAlignment":       func(s *Spec) { s.StepAlignment = "exact" },
 	}
 	for field, mutate := range cases {
 		t.Run(field, func(t *testing.T) {
@@ -251,6 +269,36 @@ func TestIndexRefusesAnInvalidSpecWhole(t *testing.T) {
 				status, reason := acceptedReason(t, a)
 				require.False(t, status)
 				require.Equal(t, string(gwapiv1.PolicyReasonInvalid), reason)
+			}
+		})
+	}
+}
+
+func TestIndexChecksTheProvidersStepAlignments(t *testing.T) {
+	supported := func(provider string) timeseries.StepAlignment {
+		if provider == "prometheus" {
+			return timeseries.StepAlignmentTruncate | timeseries.StepAlignmentPartialEnd
+		}
+		return 0
+	}
+	for _, test := range []struct {
+		name, provider, mode string
+		lookup               func(string) timeseries.StepAlignment
+		valid                bool
+	}{
+		{"a mode the provider supports", "prometheus", "truncate", supported, true},
+		{"a mode the provider lacks", "prometheus", "partial", supported, false},
+		{"no provider to check against", "", "partial", supported, true},
+		{"no lookup", "prometheus", "partial", nil, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := policy("modes", 1, ref(KindHTTPRoute, "web"))
+			p.Spec.Provider, p.Spec.StepAlignment = test.provider, test.mode
+			x := New([]*CachePolicy{p}, Config{ProviderStepAlignments: test.lookup})
+			_, ok := x.Lookup(KindHTTPRoute, "shop", "web", "")
+			require.Equal(t, test.valid, ok)
+			if !test.valid {
+				require.Contains(t, x.Problems()[0].Detail, "spec.stepAlignment")
 			}
 		})
 	}

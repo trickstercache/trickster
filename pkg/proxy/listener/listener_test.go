@@ -72,7 +72,7 @@ func TestListeners(t *testing.T) {
 			Certificates: make([]tls.Certificate, 1),
 		}
 		errs <- testLG.StartListener("httpListener",
-			"", 0, 20, tc, http.NewServeMux(), trs, nil, 0, nil)
+			"", 0, 20, tc, http.NewServeMux(), trs, nil, ServerLimits{}, nil)
 		close(errs)
 	}()
 
@@ -90,7 +90,7 @@ func TestListeners(t *testing.T) {
 	go func() {
 		errs2 <- testLG.StartListenerRouter("httpListener2",
 			"", 0, 20, nil, "/", http.HandlerFunc(local.HandleLocalResponse),
-			nil, nil, 0)
+			nil, nil, ServerLimits{})
 		close(errs2)
 	}()
 	time.Sleep(time.Millisecond * 300)
@@ -105,7 +105,7 @@ func TestListeners(t *testing.T) {
 	}
 
 	err = testLG.StartListener("testBadPort",
-		"", -31, 20, nil, http.NewServeMux(), trs, nil, 0, nil)
+		"", -31, 20, nil, http.NewServeMux(), trs, nil, ServerLimits{}, nil)
 	if err == nil {
 		t.Error("expected invalid port error")
 	}
@@ -124,7 +124,7 @@ func TestUpdateRouter(t *testing.T) {
 func TestNewListenerErr(t *testing.T) {
 	logger.SetLogger(logging.ConsoleLogger(level.Error))
 	config.NewConfig()
-	l, err := NewListener("-", 0, 0, nil, nil)
+	l, err := NewListener("-", 0, 0, nil, nil, nil, false, nil)
 	if err == nil {
 		l.Close()
 		t.Errorf("expected error: %s", `listen tcp: lookup -: no such host`)
@@ -137,7 +137,7 @@ func TestListenerAccept(t *testing.T) {
 	var err error
 	go func() {
 		err = testLG.StartListener("httpListener",
-			"", 0, 20, nil, http.NewServeMux(), nil, nil, 0, nil)
+			"", 0, 20, nil, http.NewServeMux(), nil, nil, ServerLimits{}, nil)
 	}()
 	time.Sleep(time.Millisecond * 500)
 	if err != nil {
@@ -177,7 +177,7 @@ func TestNewListenerTLS(t *testing.T) {
 		t.Error(err)
 	}
 
-	l, err := NewListener("", 0, 0, tlsConfig, nil)
+	l, err := NewListener("", 0, 0, tlsConfig, nil, nil, false, nil)
 	if err != nil {
 		t.Error(err)
 	} else {
@@ -232,7 +232,7 @@ func TestListenerConnectionLimitWorks(t *testing.T) {
 			// Bind to port 0 so the kernel picks a free ephemeral port;
 			// fixed ports flake on shared CI runners when the prior
 			// subtest's socket lingers in TIME_WAIT.
-			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, nil)
+			l, err := NewListener("", 0, tc.ConnectionsLimit, nil, nil, nil, false, nil)
 			if err != nil {
 				t.Fatal(err)
 			} else {
@@ -544,7 +544,7 @@ func TestDrainAndCloseServerShutdownError(t *testing.T) {
 	lg := NewGroup()
 	errs := make(chan error, 1)
 	go func() {
-		errs <- lg.StartListener("blocking", "127.0.0.1", 0, 0, nil, handler, nil, nil, 0, nil)
+		errs <- lg.StartListener("blocking", "127.0.0.1", 0, 0, nil, handler, nil, nil, ServerLimits{}, nil)
 	}()
 
 	var l *Listener
@@ -644,7 +644,7 @@ func TestStartListenerCallsFOnBindFailure(t *testing.T) {
 	var called bool
 	lg := NewGroup()
 	err := lg.StartListener("testBadPort", "", -31, 0, nil, http.NewServeMux(),
-		nil, func() { called = true }, 0, nil)
+		nil, func() { called = true }, ServerLimits{}, nil)
 	if err == nil {
 		t.Error("expected an error for an invalid port")
 	}
@@ -699,7 +699,7 @@ func runExitOnServeErrorChild(useTLS bool) {
 	}
 	go func() {
 		_ = lg.StartListener("child", "", 0, 0, tc, http.NewServeMux(), nil,
-			func() {}, 0, nil)
+			func() {}, ServerLimits{}, nil)
 	}()
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -767,7 +767,7 @@ func startBlockingListener(t *testing.T, lg *Group, name string, release <-chan 
 		w.WriteHeader(http.StatusOK)
 	})
 	go func() {
-		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, handler, nil, nil, 0, nil)
+		_ = lg.StartListener(name, "127.0.0.1", 0, 0, nil, handler, nil, nil, ServerLimits{}, nil)
 	}()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -895,6 +895,8 @@ func TestGroupServing(t *testing.T) {
 
 const runtimeCertSAN = "runtime.example.com"
 
+var testLimits = ServerLimits{ReadHeaderTimeout: time.Second}
+
 func TestStartListenerRuntimeCertStore(t *testing.T) {
 	logger.SetLogger(logging.NoopLogger())
 	lg := NewGroup()
@@ -902,7 +904,7 @@ func TestStartListenerRuntimeCertStore(t *testing.T) {
 	const name = "runtime"
 	go func() {
 		_ = lg.StartListener(name, "127.0.0.1", 0, 0, &tls.Config{MinVersion: tls.VersionTLS12},
-			http.NotFoundHandler(), nil, nil, time.Second, nil)
+			http.NotFoundHandler(), nil, nil, testLimits, nil)
 	}()
 	var l *Listener
 	deadline := time.Now().Add(5 * time.Second)
@@ -971,7 +973,7 @@ func TestGroupRefusesStartsAfterShutdown(t *testing.T) {
 		t.Fatal("group did not report closed after shutdown")
 	}
 	err := lg.StartListener("late-http", "127.0.0.1", 0, 0, nil, http.NotFoundHandler(),
-		nil, nil, time.Second, nil)
+		nil, nil, testLimits, nil)
 	if !stderrors.Is(err, errors.ErrListenerGroupClosed) {
 		t.Errorf("StartListener after shutdown = %v; want %v", err, errors.ErrListenerGroupClosed)
 	}
@@ -1007,7 +1009,7 @@ func TestGroupOnPublish(t *testing.T) {
 	})
 	const key = "listener.hooked.http"
 	go lg.StartListener(key, "127.0.0.1", 0, 0, nil, http.NotFoundHandler(), nil, nil,
-		time.Second, nil)
+		testLimits, nil)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		mtx.Lock()

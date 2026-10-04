@@ -41,11 +41,15 @@ type nativeListenerAdapter struct{}
 // NativeListenerAdapter returns ClickHouse's shared native-listener adapter.
 func NativeListenerAdapter() native.Adapter { return nativeListenerAdapter{} }
 
-func (nativeListenerAdapter) SupportsHTTP() bool { return true }
+func (nativeListenerAdapter) SupportsHTTP(string) bool { return true }
 
 func (nativeListenerAdapter) Protocol() string { return listenerconfig.ProtocolClickHouse }
 
-func (nativeListenerAdapter) BackendProvider() string { return providers.ClickHouse }
+func (nativeListenerAdapter) ServesProvider(provider string) bool {
+	return provider == providers.ClickHouse
+}
+
+func (nativeListenerAdapter) Providers() []string { return []string{providers.ClickHouse} }
 
 func (nativeListenerAdapter) Configured(*listenerconfig.Options) bool { return false }
 
@@ -60,6 +64,10 @@ func (nativeListenerAdapter) ValidateBackend(o *bo.Options) error { return chnat
 
 func (nativeListenerAdapter) ValidateUserRouter(*config.Config, string, *bo.Options) error {
 	return errors.New("ClickHouse native user routing is not supported")
+}
+
+func (nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Options) error {
+	return errors.New("ClickHouse native session balancing is not supported")
 }
 
 func (nativeListenerAdapter) RouteResolver(native.BuildRequest) backends.RouteResolver { return nil }
@@ -99,6 +107,7 @@ func (nativeListenerAdapter) Describe(c *config.Config, name string) (native.Des
 	identity := o.Clone()
 	identity.ListenerName = ""
 	identity.ListenerNames = nil
+	identity.ClearACLNames()
 	data, err := yamlencoding.Marshal(identity)
 	if err != nil {
 		return native.Descriptor{}, err

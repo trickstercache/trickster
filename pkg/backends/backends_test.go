@@ -18,13 +18,17 @@ package backends
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 )
 
@@ -129,6 +133,45 @@ func TestStartHealthChecks(t *testing.T) {
 	}
 }
 
+func TestStartHealthChecksFailureStopsStartedChecks(t *testing.T) {
+	const interval = time.Millisecond
+	newProbed := func(name, path string) *countingProbeBackend {
+		o := bo.New()
+		o.HealthCheck = ho.New()
+		o.HealthCheck.Interval = timeconv.Duration(interval)
+		o.HealthCheck.Path = path
+		c, _ := New(name, o, nil, lm.NewRouter(), nil)
+		return &countingProbeBackend{Backend: c}
+	}
+	// map order decides whether the good check starts before the bad one fails, so a few
+	// rounds make it all but certain that a leak leaves a started check behind
+	for range 8 {
+		good := newProbed("good", "")
+		b := Backends{"good": good, "bad": newProbed("bad", "/health")}
+		hc, err := b.StartHealthChecks(nil)
+		if err == nil || hc != nil {
+			t.Fatalf("StartHealthChecks = %v, %v; want an error", hc, err)
+		}
+		before := good.calls.Load()
+		time.Sleep(20 * interval)
+		if after := good.calls.Load(); after != before {
+			t.Fatalf("a check started before the failure kept probing: %d calls, then %d", before, after)
+		}
+	}
+}
+
+type countingProbeBackend struct {
+	testBackend
+	calls atomic.Int64
+}
+
+func (cb *countingProbeBackend) HealthCheckProbe() healthcheck.Probe {
+	return func(context.Context) error {
+		cb.calls.Add(1)
+		return nil
+	}
+}
+
 type testBackend struct {
 	Backend
 }
@@ -153,5 +196,184 @@ func TestUsesCache(t *testing.T) {
 	b := UsesCache(providers.ReverseProxyShort)
 	if b {
 		t.Error("expected false")
+	}
+	if UsesCache(providers.Static) {
+		t.Error("expected false")
+	}
+	if !UsesCache(providers.Prometheus) {
+		t.Error("expected true")
+	}
+}
+
+func TestHasOrigin(t *testing.T) {
+	for _, provider := range []string{providers.ALB, providers.Rule, providers.Static} {
+		if HasOrigin(provider) {
+			t.Errorf("expected %s to have no origin", provider)
+		}
+	}
+	for _, provider := range []string{providers.Prometheus, providers.ReverseProxyCache} {
+		if !HasOrigin(provider) {
+			t.Errorf("expected %s to have an origin", provider)
+		}
+	}
+	// static answers locally, but does not front other backends
+	if IsVirtual(providers.Static) {
+		t.Error("expected static not to be virtual")
+	}
+}
+
+// choosyBackend probes by protocol only when it has a probe to offer, and may refuse to be
+// probed at all
+type choosyBackend struct {
+	testBackend
+	probe   healthcheck.Probe
+	refusal string
+}
+
+func (tb *choosyBackend) HealthCheckProbe() healthcheck.Probe { return tb.probe }
+
+func (tb *choosyBackend) HealthCheckUnsupported() string { return tb.refusal }
+
+func TestStartHealthChecksByWhatABackendOffers(t *testing.T) {
+	newBackend := func(name string) Backend {
+		o := bo.New()
+		o.HealthCheck = ho.New()
+		o.HealthCheck.Interval = 0
+		c, err := New(name, o, nil, lm.NewRouter(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	var probed int
+	b := Backends{
+		// a backend with a protocol probe is probed with it
+		"protocol": &choosyBackend{
+			Backend: newBackend("protocol"),
+			probe:   func(context.Context) error { probed++; return nil },
+		},
+		// one with none to offer for its origin falls back to the request probe
+		"request": &choosyBackend{Backend: newBackend("request")},
+		// one that cannot be probed is left out rather than probed in a way that must fail
+		"refuses": &choosyBackend{Backend: newBackend("refuses"), refusal: "no probe for this origin"},
+	}
+	b["refuses"].Configuration().HealthCheck.Interval = 1
+	hc, err := b.StartHealthChecks(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hc.Shutdown()
+	statuses := hc.Statuses()
+	if statuses["protocol"] == nil || statuses["request"] == nil {
+		t.Fatalf("registered = %v", statuses)
+	}
+	if statuses["refuses"] != nil {
+		t.Error("a backend that cannot be probed was registered for a probe")
+	}
+	w := httptest.NewRecorder()
+	statuses["protocol"].Prober()(w)
+	if probed != 1 {
+		t.Errorf("the protocol probe ran %d times", probed)
+	}
+}
+
+type statusOwner struct {
+	Backend
+	status *healthcheck.Status
+}
+
+func (o *statusOwner) HealthStatus() *healthcheck.Status { return o.status }
+
+// requestOnlyChecker is a health checker that cannot register a protocol probe
+type requestOnlyChecker struct{ healthcheck.HealthChecker }
+
+func TestVirtualBackendsReportTheirOwnStatus(t *testing.T) {
+	virtual := func(name string) Backend {
+		o := bo.New()
+		o.Provider = providers.ALB
+		c, err := New(name, o, nil, lm.NewRouter(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	own := healthcheck.NewStatus("follows", providers.ALB, "", healthcheck.StatusFailing, time.Time{}, nil)
+	hc, err := Backends{
+		"follows":   &statusOwner{Backend: virtual("follows"), status: own},
+		"keeps":     &statusOwner{Backend: virtual("keeps")},
+		"synthetic": virtual("synthetic"),
+	}.StartHealthChecks(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer hc.Shutdown()
+	statuses := hc.Statuses()
+	if statuses["follows"] != own {
+		t.Error("a virtual backend's own status is not the one reported")
+	}
+	for _, name := range []string{"keeps", "synthetic"} {
+		if st := statuses[name]; st == nil || st.Get() != healthcheck.StatusPassing {
+			t.Errorf("%s: status = %v", name, st)
+		}
+	}
+}
+
+// relay says whether a virtual backend sends each request to one backend
+type relay struct {
+	Backend
+	relays bool
+}
+
+func (r relay) RelaysUpgrades() bool { return r.relays }
+
+func TestRelaysUpgrades(t *testing.T) {
+	build := func(provider string) Backend {
+		o := bo.New()
+		o.Provider = provider
+		c, err := New("b", o, nil, lm.NewRouter(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	if !RelaysUpgrades(relay{Backend: build(providers.ALB), relays: true}) {
+		t.Error("a virtual backend that relays each request was not taken to relay upgrades")
+	}
+	for name, b := range map[string]Backend{
+		"a virtual backend that cannot":       relay{Backend: build(providers.ALB)},
+		"a virtual backend that does not say": build(providers.Rule),
+		"a backend with an origin":            relay{Backend: build(providers.ReverseProxy), relays: true},
+		"no backend":                          nil,
+		"no configuration":                    relay{Backend: &backend{}, relays: true},
+	} {
+		if RelaysUpgrades(b) {
+			t.Errorf("%s was taken to relay upgrades", name)
+		}
+	}
+}
+
+func TestRegisterHealthCheckNeedsAProbeRegistrar(t *testing.T) {
+	o := bo.New()
+	o.HealthCheck = ho.New()
+	c, err := New("protocol", o, nil, lm.NewRouter(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hc := healthcheck.New()
+	defer hc.Shutdown()
+	probed := &choosyBackend{Backend: c, probe: func(context.Context) error { return nil }}
+	if _, err := RegisterHealthCheck(requestOnlyChecker{hc}, "protocol", "test", probed); !errors.Is(err, ErrNoProbeRegistrar) {
+		t.Errorf("error = %v", err)
+	}
+	if _, err := (Backends{"protocol": probed}).StartHealthChecks(nil); err != nil {
+		t.Errorf("a full health checker refused a protocol probe: %v", err)
+	}
+	bare, err := New("bare", bo.New(), nil, lm.NewRouter(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare.Configuration().HealthCheck = nil
+	if st, err := RegisterHealthCheck(hc, "bare", "test", bare); st != nil || err != nil {
+		t.Errorf("a backend with no health check: %v, %v", st, err)
 	}
 }

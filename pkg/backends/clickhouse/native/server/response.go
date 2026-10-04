@@ -105,6 +105,14 @@ func writeBlockContent(w *protoWriter, columns []Column, values [][]any, numRows
 }
 
 func writeFormatBlock(w *protoWriter, columns []Column, values [][]any, numRows uint64, revision uint64) error {
+	return writeFormatBlockWith(w, columns, numRows, revision, func(i int) error {
+		return encodeColumnRevision(w, columns[i].Type, values[i], revision)
+	})
+}
+
+// writeFormatBlockWith writes a block's info, columns and row counts, and each column's name and
+// type, with encode writing the values of column i
+func writeFormatBlockWith(w *protoWriter, columns []Column, numRows, revision uint64, encode func(i int) error) error {
 	if revision > 0 {
 		if err := w.putUvarint(1); err != nil {
 			return err
@@ -144,7 +152,7 @@ func writeFormatBlock(w *protoWriter, columns []Column, values [][]any, numRows 
 			}
 		}
 		if numRows > 0 {
-			if err := encodeColumnRevision(w, col.Type, values[i], revision); err != nil {
+			if err := encode(i); err != nil {
 				return fmt.Errorf("write column %q data: %w", col.Name, err)
 			}
 		}
@@ -160,4 +168,19 @@ func EncodeNativeBlock(w io.Writer, columns []Column, values [][]any, rows uint6
 // EncodeNativeFormat writes an HTTP Native-format response for the requested revision.
 func EncodeNativeFormat(w io.Writer, columns []Column, values [][]any, rows, revision uint64) error {
 	return writeFormatBlock(newProtoWriter(w), columns, values, rows, revision)
+}
+
+// EncodeNativeFormatColumns writes an HTTP Native-format response as EncodeNativeFormat does, with
+// encode writing the values of column i to w, which EncodeNativeColumn can do from boxed values.
+func EncodeNativeFormatColumns(w io.Writer, columns []Column, rows, revision uint64,
+	encode func(i int, w io.Writer) error,
+) error {
+	return writeFormatBlockWith(newProtoWriter(w), columns, rows, revision, func(i int) error {
+		return encode(i, w)
+	})
+}
+
+// EncodeNativeColumn writes one column's values as EncodeNativeFormat encodes them.
+func EncodeNativeColumn(w io.Writer, typ string, values []any, revision uint64) error {
+	return encodeColumnRevision(w, typ, values, revision)
 }

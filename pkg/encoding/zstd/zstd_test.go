@@ -19,10 +19,12 @@ package zstd
 import (
 	"bytes"
 	"errors"
+	"io"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
+	"go.uber.org/goleak"
 )
 
 func TestDecodeEncode(t *testing.T) {
@@ -104,4 +106,88 @@ func TestDecompress(t *testing.T) {
 			t.Errorf("expected %q, got %q", want, got)
 		}
 	})
+}
+
+func TestPooledCodecsRoundtrip(t *testing.T) {
+	want := bytes.Repeat([]byte(`{"metric":{"job":"node"},"value":[1700000000,"1"]}`), 4096)
+	for _, level := range []int{0, 1, 3, 5, 9} {
+		for range 3 {
+			var buf bytes.Buffer
+			enc := NewEncoder(&buf, level)
+			if _, err := enc.Write(want); err != nil {
+				t.Fatal(err)
+			}
+			if err := enc.Close(); err != nil {
+				t.Fatal(err)
+			}
+			// a second close must not return the encoder to its pool again
+			if err := enc.Close(); err != nil {
+				t.Fatal(err)
+			}
+			dec := NewDecoder(bytes.NewReader(buf.Bytes()))
+			got, err := io.ReadAll(dec)
+			if err != nil {
+				t.Fatal(err)
+			}
+			dec.Close()
+			if !bytes.Equal(got, want) {
+				t.Fatalf("level %d: round trip changed the body", level)
+			}
+		}
+	}
+}
+
+func TestPooledCodecsStartNoGoroutines(t *testing.T) {
+	body := bytes.Repeat([]byte("trickster "), 1<<16)
+	// warm the pools, so that any goroutine a codec keeps would already be running
+	var buf bytes.Buffer
+	enc := NewEncoder(&buf, -1)
+	enc.Write(body)
+	enc.Close()
+	encoded := bytes.Clone(buf.Bytes())
+	baseline := goleak.IgnoreCurrent()
+	for range 8 {
+		buf.Reset()
+		enc = NewEncoder(&buf, -1)
+		enc.Write(body)
+		dec := NewDecoder(bytes.NewReader(encoded))
+		// part way through a stream is where a concurrent decoder has its goroutine running
+		io.ReadFull(dec, make([]byte, 1))
+		err := goleak.Find(baseline)
+		enc.Close()
+		dec.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestEncoderLevel(t *testing.T) {
+	cases := []struct {
+		level int
+		want  zstd.EncoderLevel
+	}{
+		{-1, zstd.SpeedDefault},
+		{0, zstd.SpeedDefault},
+		{1, zstd.SpeedFastest},
+		{2, zstd.SpeedFastest},
+		{3, zstd.SpeedDefault},
+		{4, zstd.SpeedBetterCompression},
+		{7, zstd.SpeedBetterCompression},
+		{8, zstd.SpeedBestCompression},
+		{22, zstd.SpeedBestCompression},
+	}
+	for _, c := range cases {
+		if got := encoderLevel(c.level); got != c.want {
+			t.Errorf("level %d: got %v want %v", c.level, got, c.want)
+		}
+	}
+}
+
+func TestNewDecoderBadInput(t *testing.T) {
+	dec := NewDecoder(bytes.NewReader([]byte("not zstd at all")))
+	if _, err := io.ReadAll(dec); err == nil {
+		t.Error("expected an error decoding a stream that isn't zstd")
+	}
+	dec.Close()
 }

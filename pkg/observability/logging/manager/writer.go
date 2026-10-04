@@ -627,7 +627,7 @@ func compressArchive(path string) {
 	if err != nil {
 		return
 	}
-	gz := gzip.NewWriter(dst)
+	gz := gzip.NewWriter(dst) //nolint:forbidigo // once per rotated log file, off the request path
 	_, err = io.Copy(gz, src)
 	if err == nil {
 		err = gz.Close()

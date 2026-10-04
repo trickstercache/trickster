@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 	gwapiv1a2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapix "sigs.k8s.io/gateway-api/apisx/v1alpha1"
 )
 
 // Component is the source every Event names
@@ -212,6 +213,8 @@ func Reference(src ir.Source) *corev1.ObjectReference {
 		apiVersion = gwapiv1.GroupVersion.String()
 	case ir.KindTCPRoute, ir.KindTLSRoute, ir.KindUDPRoute:
 		apiVersion = gwapiv1a2.GroupVersion.String()
+	case ir.KindBackendTrafficPolicy:
+		apiVersion = gwapix.GroupVersion.String()
 	case ir.KindIngress, ir.KindIngressClass:
 		apiVersion = netv1.SchemeGroupVersion.String()
 	case ir.KindCachePolicy:

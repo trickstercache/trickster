@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/switcher"
 )
 
@@ -39,6 +40,7 @@ type Server struct {
 	connections map[net.Conn]context.CancelFunc
 	stopping    bool
 	workers     sync.WaitGroup
+	gate        backends.SessionGateSlot
 }
 
 // New creates a native server. TLS, when required, starts before the native handshake.
@@ -47,8 +49,14 @@ func New(h http.Handler, tlsConfig *tls.Config, requireTLS bool, restartKey stri
 		handler: Handler{QueryHandler: switcher.NewSwitchHandler(h)}, requireTLS: requireTLS, restartKey: restartKey,
 		connections: make(map[net.Conn]context.CancelFunc),
 	}
+	s.handler.Gate = &s.gate
 	s.UpdateTLSConfig(tlsConfig)
 	return s
+}
+
+// UpdateSessionGate switches the gate that judges new sessions; admitted sessions are not judged again
+func (s *Server) UpdateSessionGate(gate backends.SessionGate) {
+	s.gate.Store(gate)
 }
 
 // ProtocolRestartKey identifies the backend configuration used by this server.

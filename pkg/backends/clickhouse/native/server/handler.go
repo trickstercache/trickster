@@ -28,22 +28,38 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/sqlanalyzer/aftership"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
+	tctx "github.com/trickstercache/trickster/v2/pkg/proxy/context"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/directives"
 )
+
+const (
+	exceptionIPAddressNotAllowed = 195 // IP_ADDRESS_NOT_ALLOWED, a refusal for where a client is
+	exceptionName                = "DB::Exception"
+)
+
+var errQueryAborted = errors.New("the query's route aborted it, which ends the session")
 
 // Handler translates native requests into the backend's HTTP handler pipeline.
 type Handler struct {
 	// QueryHandler is the HTTP handler that processes ClickHouse queries
 	// (typically the backend's router or QueryHandler).
 	QueryHandler http.Handler
+	// Gate judges each session by where it is from; nil judges none
+	Gate *backends.SessionGateSlot
 }
 
 // HandleConnection serves a ClickHouse native session.
 func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
+	// each query is dispatched as a request, which the route chain judges by the session's address
+	addr := clientip.FromNetAddr(conn.RemoteAddr())
+	if addr.IsValid() {
+		ctx = tctx.WithClientIP(ctx, addr.String())
+	}
 	r := newProtoReader(conn)
 	bw := bufio.NewWriterSize(conn, 128*1024)
 	w := newProtoWriter(bw)
@@ -59,6 +75,12 @@ func (h *Handler) HandleConnection(ctx context.Context, conn net.Conn) error {
 	hello, err := readClientHello(r)
 	if err != nil {
 		return fmt.Errorf("read client hello: %w", err)
+	}
+	// the session is judged by where it is from before the server's hello, and before any credential
+	if d := h.Gate.Admit(addr); d != nil {
+		_ = writeException(w, exceptionIPAddressNotAllowed, exceptionName, d.Message)
+		_ = bw.Flush()
+		return nil
 	}
 
 	if err := writeServerHello(w); err != nil {
@@ -158,15 +180,9 @@ func (h *Handler) handleQuery(
 	}
 	if isSelect {
 		sql += " FORMAT JSON"
-		trq := &timeseries.TimeRangeQuery{}
-		trq.ExtractBackfillTolerance(q.SQL)
-		if trq.BackfillTolerance > 0 {
-			sql += fmt.Sprintf(" /* trickster-backfill-tolerance:%d */", trq.BackfillTolerance/time.Second)
-		}
-		options := &timeseries.RequestOptions{}
-		options.ExtractFastForwardDisabled(q.SQL)
-		if options.FastForwardDisable {
-			sql += " /* trickster-fast-forward:off */"
+		// the statement is rewritten without the client's comments, so its directives ride in one of their own
+		if d := directives.Format(directives.Parse(q.SQL, directives.SyntaxClickHouse)); d != "" {
+			sql += " /* " + d + " */"
 		}
 	}
 
@@ -193,7 +209,9 @@ func (h *Handler) handleQuery(
 	req.Header.Set(headers.NameContentType, "text/plain")
 
 	rec := httptest.NewRecorder()
-	h.QueryHandler.ServeHTTP(rec, req)
+	if !serveQuery(h.QueryHandler, rec, req) {
+		return errQueryAborted
+	}
 	resp := rec.Result()
 
 	if resp.StatusCode != http.StatusOK {
@@ -220,6 +238,21 @@ func (h *Handler) handleQuery(
 		return err
 	}
 	return bw.Flush()
+}
+
+func serveQuery(h http.Handler, w http.ResponseWriter, r *http.Request) (served bool) {
+	// a handler aborting its request, as an access list's drop does, ends the session the way net/http ends
+	// the connection; any other panic is not the bridge's to absorb
+	defer func() {
+		if p := recover(); p != nil {
+			if err, ok := p.(error); !ok || !errors.Is(err, http.ErrAbortHandler) {
+				panic(p)
+			}
+			served = false
+		}
+	}()
+	h.ServeHTTP(w, r)
+	return true
 }
 
 func writeQueryError(w *protoWriter, bw *bufio.Writer, err error) error {

@@ -264,23 +264,19 @@ func TestMergeAndWriteVectorBatchMergeFuncEdgeCases(t *testing.T) {
 func TestHasNonNaNScalarEdgeCases(t *testing.T) {
 	if hasNonNaNScalar(&dataset.DataSet{
 		Results: dataset.Results{nil, {
-			SeriesList: dataset.SeriesList{nil, {
-				Points: dataset.Points{
-					{Values: nil},
-					{Values: []any{1.5}},
-					{Values: []any{"not-a-float"}},
-					{Values: []any{"NaN"}},
-				},
-			}},
+			SeriesList: dataset.SeriesList{nil, dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{
+				{Values: nil},
+				{Values: []any{1.5}},
+				{Values: []any{"not-a-float"}},
+				{Values: []any{"NaN"}},
+			})},
 		}},
 	}) {
 		t.Fatal("expected no non-NaN scalar")
 	}
 	if !hasNonNaNScalar(&dataset.DataSet{
 		Results: dataset.Results{{
-			SeriesList: dataset.SeriesList{{
-				Points: dataset.Points{{Values: []any{"3.14"}}},
-			}},
+			SeriesList: dataset.SeriesList{dataset.NewSeries(dataset.SeriesHeader{}, dataset.Points{{Values: []any{"3.14"}}})},
 		}},
 	}) {
 		t.Fatal("expected non-NaN scalar")

@@ -70,6 +70,8 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 		b.CacheKeyPrefix = prefix
 		b.Hosts = r.Hostnames
 		b.AnyHostRouting = len(r.Hostnames) == 0
+		b.GeoACLName = eff.geoACLName
+		b.IPACLName = eff.ipACLName
 	}
 
 	if red := rule.Redirect(); red != nil {
@@ -120,6 +122,11 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 			// discovered members are cloned from the template, so the overrides live on its
 			// catch-all path and the front's paths only dispatch; an ALB caches nothing itself
 			t.front.CacheKeyPrefix = ""
+			if rule.Session != nil {
+				t.front.ALB.Sticky = meff.sessionSticky(rule.Session, name)
+			} else {
+				t.front.ALB.Sticky = meff.memberSticky(nil, m, name)
+			}
 			t.front.Paths = compilePaths(entries, t.frontHandler, rewriters, nil)
 			t.origin.Paths = append(catchAllPaths(meff.handler(), "", over),
 				providerCatchAll(defaults, "", over, meff.hidesResult())...)
@@ -170,6 +177,7 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 				hideResult(front.Paths, meff)
 			} else {
 				front.Paths = catchAllPaths(t.frontHandler, "", nil)
+				front.ALB.Sticky = meff.memberSticky(rule.Session, m, memberName)
 				t.origin.Paths = append(catchAllPaths(meff.handler(), rewriter, over),
 					providerCatchAll(defaults, rewriter, over, hide)...)
 				hideResult(t.origin.Paths, meff)
@@ -203,6 +211,10 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 	}
 	applyMirrors(alb.Paths, mirrors)
 	alb.ALB = &albDoc{Mechanism: albnames.MechanismRR, Pool: pool}
+	if rule.Session != nil {
+		// the token carries the member and the endpoint within it, so the session keeps both
+		alb.ALB.Sticky = eff.sessionSticky(rule.Session, name)
+	}
 	out[name] = alb
 	return nil
 }

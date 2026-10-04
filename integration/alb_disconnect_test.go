@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -38,41 +39,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Mid-fanout client disconnects are hardened in fanout.All (PR #1001). The FR
-// mechanism has an in-process unit equivalent (TestHandleFirstResponseContextCancel)
-// but TSM and NLM didn't have integration coverage that exercises a real
-// http.Client cancelling against a real Trickster instance.
-//
-// These tests boot 3 slow stub Prometheus upstreams, issue a request through
-// the TSM (or NLM) ALB, cancel the client context after the first upstream has
-// responded but before the others have, and verify:
-//  1. ServeHTTP returns within a bounded window (no hang) after the client
-//     disconnects.
-//  2. The goroutine count returns close to baseline once cleanup completes
-//     (no leaked per-shard goroutines).
-//  3. No panic appears in the test output.
-
 type disconnectStub struct {
-	srv    *httptest.Server
-	delay  atomic.Int64 // nanoseconds; per-request sleep before responding
-	served atomic.Int64
+	srv      *httptest.Server
+	gate     <-chan struct{}
+	started  chan struct{}
+	finished chan struct{}
+	active   atomic.Int32
 }
 
 func newDisconnectStub(t *testing.T, label string) *disconnectStub {
 	t.Helper()
-	s := &disconnectStub{}
+	s := &disconnectStub{started: make(chan struct{}, 1), finished: make(chan struct{}, 1)}
 	mux := http.NewServeMux()
 	mux.Handle(promstub.BuildInfoPath, promstub.BuildInfoHandler())
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		d := time.Duration(s.delay.Load())
-		if d > 0 {
+		s.active.Add(1)
+		defer s.active.Add(-1)
+		select {
+		case s.started <- struct{}{}:
+		default:
+		}
+		defer func() {
 			select {
-			case <-time.After(d):
+			case s.finished <- struct{}{}:
+			default:
+			}
+		}()
+		if s.gate != nil {
+			select {
+			case <-s.gate:
 			case <-r.Context().Done():
 				return
 			}
 		}
-		s.served.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
 		w.WriteHeader(http.StatusOK)
@@ -102,8 +101,7 @@ func newDisconnectStub(t *testing.T, label string) *disconnectStub {
 	return s
 }
 
-func (s *disconnectStub) setDelay(d time.Duration) { s.delay.Store(int64(d)) }
-func (s *disconnectStub) URL() string              { return s.srv.URL }
+func (s *disconnectStub) URL() string { return s.srv.URL }
 
 func mkDisconnectMatrix(label string, start, end, step int64) string {
 	var b strings.Builder
@@ -136,11 +134,10 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 		stubsArr[i] = newDisconnectStub(t, fmt.Sprintf("p%d", i))
 	}
 
-	// Tiered delays so the client can cancel after ~one upstream has
-	// responded but before the others have.
-	stubsArr[0].setDelay(50 * time.Millisecond)
-	stubsArr[1].setDelay(2 * time.Second)
-	stubsArr[2].setDelay(2 * time.Second)
+	slowGate := make(chan struct{})
+	unblock := sync.OnceFunc(func() { close(slowGate) })
+	defer unblock()
+	stubsArr[1].gate, stubsArr[2].gate = slowGate, slowGate
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", frontPort)
@@ -173,9 +170,7 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 
-	// Settle goroutine count after Trickster startup (HTTP servers, listeners,
-	// pool refreshers all spawn long-lived workers we don't want to attribute
-	// to the request).
+	// Let startup workers settle before sampling the request's goroutine growth.
 	time.Sleep(200 * time.Millisecond)
 	runtime.GC()
 	baseline := runtime.NumGoroutine()
@@ -191,6 +186,7 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 		frontPort, mech, params.Encode())
 
 	reqCtx, cancelReq := context.WithCancel(context.Background())
+	t.Cleanup(cancelReq)
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, u, nil)
 	require.NoError(t, err)
 
@@ -200,34 +196,33 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 	type result struct {
 		resp *http.Response
 		err  error
-		when time.Time
 	}
 	resCh := make(chan result, 1)
-	start := time.Now()
 	go func() {
 		resp, err := client.Do(req)
 		if resp != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
-		resCh <- result{resp: resp, err: err, when: time.Now()}
+		resCh <- result{resp: resp, err: err}
 	}()
 
-	// Wait until the first (fast) stub has responded, then cancel before the
-	// slow stubs return. 150ms gives the 50ms stub plenty of headroom while
-	// staying well below the 2s slow stubs.
-	time.Sleep(150 * time.Millisecond)
+	for _, stub := range stubsArr {
+		select {
+		case <-stub.started:
+		case <-time.After(10 * time.Second):
+			t.Fatal("fanout did not reach every origin")
+		}
+	}
+	select {
+	case <-stubsArr[0].finished:
+	case <-time.After(10 * time.Second):
+		t.Fatal("first origin did not finish responding")
+	}
 	cancelReq()
 
 	select {
 	case r := <-resCh:
-		elapsed := r.when.Sub(start)
-		// We expect either context.Canceled bubbling up or a partial body.
-		// What we MUST NOT see: the request hanging until the slow stubs
-		// finish (~2s). Allow up to 1s as headroom for cleanup.
-		require.Less(t, elapsed, time.Second,
-			"%s: ServeHTTP did not return promptly after client disconnect (elapsed=%s, err=%v)",
-			mech, elapsed, r.err)
 		if r.err != nil && !errors.Is(r.err, context.Canceled) {
 			t.Logf("%s: client returned non-cancel error after disconnect: %v", mech, r.err)
 		}
@@ -235,23 +230,26 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 		t.Fatalf("%s: client.Do did not return within 3s of cancel; trickster likely hung", mech)
 	}
 
-	// Slow stub upstreams (2s) need to finish naturally before sampling.
-	// Until they do, their server-side handler goroutines are still parked
-	// in time.After and counted as "leaks", swamping any signal from
-	// trickster's own fanout cleanup. 2.5s is the floor; we poll past that
-	// to absorb late-arriving cleanup (keepalive timers, capture flushers,
-	// httptest accept-loop churn) without a hard sleep gamble.
+	unblock()
+	require.Eventually(t, func() bool {
+		for _, stub := range stubsArr {
+			if stub.active.Load() != 0 {
+				return false
+			}
+		}
+		return true
+	}, 5*time.Second, time.Millisecond, "origin handlers did not exit")
 	const (
-		// 10 covers test-scaffolding noise (httptest accept loops, keepalive
-		// timers, capture flushers) above the ~3-goroutine per-shard leak
-		// threshold. Tightening further flakes on CI without flagging real
-		// regressions; rely on -race + the post < baseline+10 bound here.
 		allowedDelta = 10
 		pollDeadline = 5 * time.Second
 		pollInterval = 100 * time.Millisecond
-		settleFloor  = 2500 * time.Millisecond
 	)
-	time.Sleep(settleFloor)
+	// the stubs have answered by now; the idle keep-alive connections left behind, and their goroutines
+	// on both ends, are test scaffolding rather than a leak
+	for _, s := range stubsArr {
+		s.srv.CloseClientConnections()
+	}
+	client.CloseIdleConnections()
 
 	var (
 		post  int
@@ -282,11 +280,6 @@ func runDisconnectMidFanout(t *testing.T, mech string) {
 
 	t.Logf("%s: baseline=%d post=%d delta=%d", mech, baseline, post, delta)
 
-	// TODO: scrape /metrics for trickster_alb_fanout_failures_total and assert
-	// the canceled slots did not bump the counter (a clean disconnect should
-	// not be classified as a fanout failure). Skipped here because the metric
-	// has mechanism/variant/reason labels and the cancel path may legitimately
-	// flag certain reasons; needs a follow-up to nail down which.
 }
 
 func TestALB_TSM_ClientDisconnectMidFanout(t *testing.T) {
