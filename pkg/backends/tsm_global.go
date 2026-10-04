@@ -22,8 +22,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 )
 
-// TSMGlobalSource is a backend's raw series transport. The query language evaluating over it defines how
-// series are read from it, so the TSM executor only hands it to that language's evaluator.
+// TSMGlobalSource is a backend's raw series transport; the query language evaluating over it defines
+// how series are read, so TSM only hands it to that language's evaluator.
 type TSMGlobalSource interface {
 	// SeriesAPI names the transport, such as remote_read
 	SeriesAPI() string

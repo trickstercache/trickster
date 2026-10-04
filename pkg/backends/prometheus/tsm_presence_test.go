@@ -484,8 +484,8 @@ func presencePlanRequest(query string) *http.Request {
 	return r
 }
 
-// tricksterPresenceResult plans query as TSM does, evaluates each member's fanout query on that member,
-// merges the members' API responses as TSM merges them, and finalizes the merged result
+// tricksterPresenceResult plans, fans out, merges and finalizes query as TSM does, evaluating the
+// fanout query on each member and decoding its API response
 func tricksterPresenceResult(t *testing.T, eng *promengine.Engine, members []storage.Queryable,
 	query string, ev presenceEval,
 ) presenceResult {

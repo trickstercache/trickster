@@ -40,8 +40,8 @@ type presenceIdentity struct {
 	seen   []bool
 }
 
-// presenceSlots numbers the distinct timestamps of a result. Series of one result usually share their
-// timestamps, so each row is first matched against the previous series' timestamp at the same row.
+// presenceSlots numbers a result's distinct timestamps; series usually share them, so a row is first
+// checked against the previous series' timestamp at that row
 type presenceSlots struct {
 	epochs   []epoch.Epoch
 	index    map[epoch.Epoch]int
@@ -66,8 +66,8 @@ func (s *presenceSlots) slot(row int, e epoch.Epoch) int {
 	return slot
 }
 
-// finalizePresenceAggregation applies an outer count or group to the union of the inner label sets
-// that members returned, counting each label set once per timestamp wherever any member had it
+// finalizePresenceAggregation applies the outer count or group to the union of members' inner
+// label sets, counting each once per timestamp at which any member had it
 func finalizePresenceAggregation(ds *dataset.DataSet, spec promql.PresenceAggregation) {
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()

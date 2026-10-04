@@ -70,8 +70,10 @@ func xorChunk(t *testing.T, points ...testPoint) prompb.Chunk {
 }
 
 func testHistogram() *histogram.Histogram {
-	return &histogram.Histogram{Count: 4, Sum: 5, PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}},
-		PositiveBuckets: []int64{2, 0}}
+	return &histogram.Histogram{
+		Count: 4, Sum: 5, PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}},
+		PositiveBuckets: []int64{2, 0},
+	}
 }
 
 func histogramChunk(t *testing.T, ts ...int64) prompb.Chunk {
@@ -202,13 +204,19 @@ func TestRemoteReadStreamedChunks(t *testing.T) {
 	q := got.Queries[0]
 	require.Equal(t, int64(0), q.StartTimestampMs)
 	require.Equal(t, int64(10), q.EndTimestampMs)
-	require.Equal(t, []prompb.LabelMatcher_Type{prompb.LabelMatcher_EQ, prompb.LabelMatcher_NEQ,
-		prompb.LabelMatcher_RE, prompb.LabelMatcher_NRE},
+	require.Equal(t, []prompb.LabelMatcher_Type{
+		prompb.LabelMatcher_EQ, prompb.LabelMatcher_NEQ,
+		prompb.LabelMatcher_RE, prompb.LabelMatcher_NRE,
+	},
 		[]prompb.LabelMatcher_Type{q.Matchers[0].Type, q.Matchers[1].Type, q.Matchers[2].Type, q.Matchers[3].Type})
-	require.Equal(t, prompb.ReadHints{StepMs: 2, Func: "rate", StartMs: 1, EndMs: 9, Grouping: []string{testPod},
-		By: true, RangeMs: 4}, *q.Hints)
-	require.Equal(t, []prompb.ReadRequest_ResponseType{prompb.ReadRequest_STREAMED_XOR_CHUNKS,
-		prompb.ReadRequest_SAMPLES}, got.AcceptedResponseTypes)
+	require.Equal(t, prompb.ReadHints{
+		StepMs: 2, Func: "rate", StartMs: 1, EndMs: 9, Grouping: []string{testPod},
+		By: true, RangeMs: 4,
+	}, *q.Hints)
+	require.Equal(t, []prompb.ReadRequest_ResponseType{
+		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
+		prompb.ReadRequest_SAMPLES,
+	}, got.AcceptedResponseTypes)
 
 	require.Len(t, series, 3)
 	require.Equal(t, []testPoint{{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}}, readPoints(t, series[0]))
@@ -241,8 +249,11 @@ func TestRemoteReadSamples(t *testing.T) {
 		readPoints(t, series[0]))
 	it := series[0].Iterator(nil)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
-	require.Equal(t, chunkenc.ValHistogram, it.Next())
-	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+	for range 2 {
+		require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+		_, fh := it.AtFloatHistogram(nil)
+		require.InDelta(t, 4.0, fh.Count, 0)
+	}
 }
 
 func TestRemoteReadErrors(t *testing.T) {
@@ -281,8 +292,10 @@ func TestRemoteReadErrors(t *testing.T) {
 		}, want: errRemoteRead, text: "exceeds"},
 		{name: "unknown encoding", handler: func(w http.ResponseWriter, _ *http.Request) {
 			var body bytes.Buffer
-			writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels("a"),
-				Chunks: []prompb.Chunk{{Type: prompb.Chunk_UNKNOWN}}})
+			writeFrame(t, &body, &prompb.ChunkedSeries{
+				Labels: testLabels("a"),
+				Chunks: []prompb.Chunk{{Type: prompb.Chunk_UNKNOWN}},
+			})
 			w.Header().Set(headers.NameContentType, contentTypeStreamed)
 			_, _ = w.Write(body.Bytes())
 		}, want: errRemoteRead, text: "encoding"},
@@ -335,13 +348,11 @@ func TestBudgetAndLimitedReader(t *testing.T) {
 }
 
 func TestSampleCopy(t *testing.T) {
-	h := sample{t: 1, h: testHistogram()}
-	c := h.Copy()
-	require.NotSame(t, h.H(), c.H())
 	fh := sample{t: 1, fh: testHistogram().ToFloat(nil)}
 	require.NotSame(t, fh.FH(), fh.Copy().FH())
+	require.Nil(t, fh.H())
 	require.Zero(t, fh.ST())
-	require.Equal(t, chunkenc.ValFloat, sample{}.Type())
+	require.Equal(t, chunkenc.ValFloat, sample{}.Copy().Type())
 }
 
 func TestDecodeChunkEncodings(t *testing.T) {

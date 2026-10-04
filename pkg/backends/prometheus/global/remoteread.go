@@ -66,8 +66,8 @@ type RemoteRead struct {
 	paths    po.List
 }
 
-// NewRemoteRead returns a source reading from endpoint. Requests carry the client request's headers and
-// the request headers paths configures for the client request's path, as a proxied request would.
+// NewRemoteRead returns a source reading endpoint; requests carry the client's headers plus the
+// request_headers paths sets for the client's path, as a proxied request would.
 func NewRemoteRead(endpoint *url.URL, client *http.Client, paths po.List) *RemoteRead {
 	return &RemoteRead{endpoint: endpoint.String(), client: client, paths: paths}
 }
@@ -173,8 +173,8 @@ func encodeReadRequest(mint, maxt int64, hints *storage.SelectHints, matchers []
 	return snappy.Encode(nil, data), nil
 }
 
-// decodeChunked reads a streamed response: frames of a uvarint length, a big-endian CRC-32C, and a
-// ChunkedReadResponse. A series too large for one frame continues in the frames that follow.
+// decodeChunked reads frames of a uvarint length, big-endian CRC-32C and ChunkedReadResponse;
+// a series too large for one frame continues in the next
 func decodeChunked(r io.Reader, budget *Budget) ([]storage.Series, error) {
 	br := bufio.NewReader(r)
 	var out []storage.Series
@@ -303,12 +303,7 @@ func mergeSamples(ts *prompb.TimeSeries) []chunks.Sample {
 			f++
 			continue
 		}
-		hist := ts.Histograms[h]
-		if hist.IsFloatHistogram() {
-			out = append(out, sample{t: hist.Timestamp, fh: hist.ToFloatHistogram()})
-		} else {
-			out = append(out, sample{t: hist.Timestamp, h: hist.ToIntHistogram()})
-		}
+		out = append(out, sample{t: ts.Histograms[h].Timestamp, fh: ts.Histograms[h].ToFloatHistogram()})
 		h++
 	}
 	return out

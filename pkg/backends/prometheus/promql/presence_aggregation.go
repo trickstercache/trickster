@@ -22,8 +22,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// PresenceAggregation describes an outer count or group over an inner count or group of a vector
-// selector, optionally wrapped in sort or sort_desc. Its result depends only on which inner label sets exist.
+// PresenceAggregation is an outer count or group over an inner count or group of a vector selector,
+// maybe sorted; its result depends only on which inner label sets exist.
 type PresenceAggregation struct {
 	Operator         string
 	Inner            Expr
@@ -33,8 +33,8 @@ type PresenceAggregation struct {
 	SortDescending   bool
 }
 
-// ParsePresenceAggregation matches an outer count or group whose input is a count or group of a
-// vector selector. Other inputs can change which label sets each backend returns, so they don't match.
+// ParsePresenceAggregation matches a PresenceAggregation; other inner inputs can change which label
+// sets each backend returns, so they don't match.
 func ParsePresenceAggregation(e Expr) (PresenceAggregation, bool) {
 	spec, found := parseOuterAggregation(e, aggregation.Count, aggregation.Group)
 	if !found {

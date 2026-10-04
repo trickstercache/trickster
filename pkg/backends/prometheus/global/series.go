@@ -24,34 +24,28 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
-// sample is one float or native-histogram sample of a series read as samples rather than chunks
+// sample is a float or float-histogram sample of a series read as samples; histograms are held as
+// float histograms, which the engine reads whatever their original kind
 type sample struct {
 	t  int64
 	f  float64
-	h  *histogram.Histogram
 	fh *histogram.FloatHistogram
 }
 
 func (s sample) T() int64                      { return s.t }
 func (s sample) ST() int64                     { return 0 }
 func (s sample) F() float64                    { return s.f }
-func (s sample) H() *histogram.Histogram       { return s.h }
+func (s sample) H() *histogram.Histogram       { return nil }
 func (s sample) FH() *histogram.FloatHistogram { return s.fh }
 
 func (s sample) Type() chunkenc.ValueType {
-	switch {
-	case s.h != nil:
-		return chunkenc.ValHistogram
-	case s.fh != nil:
+	if s.fh != nil {
 		return chunkenc.ValFloatHistogram
 	}
 	return chunkenc.ValFloat
 }
 
 func (s sample) Copy() chunks.Sample {
-	if s.h != nil {
-		s.h = s.h.Copy()
-	}
 	if s.fh != nil {
 		s.fh = s.fh.Copy()
 	}
