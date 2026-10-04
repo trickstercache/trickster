@@ -277,6 +277,10 @@ data-race-test:
 data-race-test-inspect:
 	./hack/inspect-race-output.sh race-output.log
 
+.PHONY: integration-test-local
+integration-test-local:
+	$(MAKE) -C integration test-no-failfast
+
 .PHONY: integration-test
 integration-test:
 	$(MAKE) -C integration test

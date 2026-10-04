@@ -74,6 +74,11 @@ func TestManagerReconcilesDomains(t *testing.T) {
 	require.NoError(t, m.Apply(conf))
 	require.NotSame(t, old, m.issuers[testIssuer])
 	require.Equal(t, served[testDomain], requireServed(t, sink, testDomain)[testDomain])
+	require.Eventually(t, func() bool {
+		certs := m.epoch.cache.AllMatchingCertificates(testDomain)
+		return len(certs) == 1 && certs[0].Leaf.SerialNumber.String() == served[testDomain]
+	}, testWait, testPoll, "the replacement issuer never cached the stored certificate")
+	require.Equal(t, int64(2), stub.issued.Load())
 }
 
 func TestManagerDisableWithdrawsCertificates(t *testing.T) {
