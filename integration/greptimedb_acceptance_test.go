@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"crypto/sha256"
@@ -31,7 +31,7 @@ import (
 	"time"
 )
 
-const environment = "../../docs/developer/environment/docker-compose-data"
+const environment = "../docs/developer/environment/docker-compose-data"
 
 type dashboard struct {
 	Panels []struct {
@@ -134,7 +134,7 @@ func (g grafanaClient) query(targets []map[string]any, uid, kind string, from, t
 	return doc, err
 }
 
-func TestDirectEnvironment(t *testing.T) {
+func TestGreptimeAcceptanceDirectEnvironment(t *testing.T) {
 	if os.Getenv("TRICKSTER_GREPTIMEDB_ACCEPTANCE") != "1" {
 		t.Skip("set TRICKSTER_GREPTIMEDB_ACCEPTANCE=1 for the read-only live suite")
 	}
@@ -372,7 +372,7 @@ func TestDirectEnvironment(t *testing.T) {
 	protocolChecks(run, &r)
 }
 
-func TestReadSeed(t *testing.T) {
+func TestGreptimeAcceptanceReadSeed(t *testing.T) {
 	valid := "SOURCE_ROWS=2\nSOURCE_PICKUP_MIN_EPOCH=1\nSOURCE_PICKUP_MAX_EPOCH=2\nSOURCE_DROPOFF_MIN_EPOCH=2\nSOURCE_DROPOFF_MAX_EPOCH=3\nSEED_EPOCH=1800000000\nSHIFT_SECONDS=1799999999\n"
 	for _, tt := range []struct {
 		name, raw string

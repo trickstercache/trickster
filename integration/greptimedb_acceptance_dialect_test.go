@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"context"
@@ -231,7 +231,7 @@ func checkQuoting(query textQuery, r *report, protocol string) error {
 	return nil
 }
 
-func TestBucketOracle(t *testing.T) {
+func TestGreptimeAcceptanceBucketOracle(t *testing.T) {
 	for _, tc := range []struct{ epoch, want int64 }{{-301, -600}, {-300, -300}, {-1, -300}, {0, 0}, {299, 0}, {300, 300}, {301, 300}} {
 		t.Run(strconv.FormatInt(tc.epoch, 10), func(t *testing.T) {
 			if got := floorBucket(tc.epoch); got != tc.want {
@@ -250,7 +250,7 @@ func TestBucketOracle(t *testing.T) {
 	}
 }
 
-func TestCheckBuckets(t *testing.T) {
+func TestGreptimeAcceptanceCheckBuckets(t *testing.T) {
 	want := map[int64]int64{0: 3, 300: 1}
 	for _, tc := range []struct {
 		name string
@@ -277,7 +277,7 @@ func TestCheckBuckets(t *testing.T) {
 	}
 }
 
-func TestCheckBucketSQL(t *testing.T) {
+func TestGreptimeAcceptanceCheckBucketSQL(t *testing.T) {
 	for _, tc := range []struct {
 		name, protocol, failure string
 		ok                      bool

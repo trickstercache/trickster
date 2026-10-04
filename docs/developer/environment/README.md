@@ -939,7 +939,7 @@ merged reliably while the origin omits its numeric grouping label. Finalizers
 requiring dynamic metric-name discovery also reject the merge rather than
 invent a combined result. A single backend still relays those requests.
 Run `sh hack/greptimedb-check.sh --promql` for the isolated fixture-based
-[PromQL acceptance suite](../../../integration/greptimedb/README.md#promql-provider-and-merge-acceptance).
+[PromQL acceptance suite](../../../integration/greptimedb_acceptance.md#promql-provider-and-merge-acceptance).
 
 Terminated logins probe the actual timezone, date style and interval style using
 `SHOW`, not PostgreSQL's `current_setting()`. A successful `SET`, including
@@ -1017,7 +1017,7 @@ The eviction panel remains empty until an eviction occurs.
 ### Direct Environment Checks
 
 Run `make developer-greptimedb-check` for repeatable, read-only validation of
-the direct environment. The [acceptance guide](../../../integration/greptimedb/README.md)
+the direct environment. The [acceptance guide](../../../integration/greptimedb_acceptance.md)
 describes its assertions, unique result directories and remaining human-review
 checks. An empty datasource or a query error inside HTTP 200 fails the suite.
 

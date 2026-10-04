@@ -106,7 +106,7 @@ fails explicitly requested acceptance instead of silently skipping it.
 ## Evidence
 
 The script uses the integration module's Go version and dependencies. Each run
-creates a new directory under `integration/greptimedb/reports/` containing:
+creates a new directory under `integration/reports/greptimedb/` containing:
 
 - `report.json`: individual PASS/FAIL/UNSUPPORTED/UNVERIFIED checks, observed versions,
   timestamps, input hashes and PostgreSQL type/parameter observations.
@@ -208,7 +208,7 @@ remains unchanged because it neither performs nor validates that capture.
 | `GREPTIMEDB_PASSWORD` | `trickster-dev-grafana` | Developer password; not written to the report |
 | `GREPTIMEDB_SQL_UID` | `ds_greptimedb_direct` | Grafana SQL datasource UID |
 | `GREPTIMEDB_PROM_UID` | `ds_greptimedb_prom_direct` | Grafana Prometheus datasource UID |
-| `GREPTIMEDB_REPORT_ROOT` | `integration/greptimedb/reports` | Parent for unique run directories |
+| `GREPTIMEDB_REPORT_ROOT` | `integration/reports/greptimedb` | Parent for unique run directories |
 | `GREPTIMEDB_BUILD_NOTE` | unset | Operator-supplied image/source identification, not independently attested |
 
 For remote Docker validation, run the same command inside the remote checkout
@@ -220,8 +220,8 @@ external services. To run them alone:
 
 ```sh
 cd integration
-go test -count=1 ./greptimedb
-go test -race -count=1 ./greptimedb
+go test -count=1 -run '^TestGreptimeAcceptance' .
+go test -race -count=1 -run '^TestGreptimeAcceptance' .
 ```
 
 ## Human Review

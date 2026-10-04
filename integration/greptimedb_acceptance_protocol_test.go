@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package greptimedb_test
+package integration
 
 import (
 	"context"
@@ -289,7 +289,7 @@ func protocolChecks(run func(string, func() error), r *report) {
 	})
 }
 
-func TestEmptyResult(t *testing.T) {
+func TestGreptimeAcceptanceEmptyResult(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		result *pgconn.Result

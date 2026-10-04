@@ -64,6 +64,11 @@ CI uses `cover-race` to run every scenario once with race detection and atomic
 coverage instrumentation. The separate `cover` and `data-race-test` targets
 remain available for local runs.
 
+GreptimeDB acceptance checks run in this package alongside the other backend
+tests. Their live environment checks remain opt-in; `TestGreptimeAcceptance`
+selects the acceptance checks and their helper tests. See the
+[acceptance guide](greptimedb_acceptance.md) for standalone runs and reports.
+
 ## Port assignments
 
 Related HTTP/3, static-file, ClickHouse client, and Geo stream ACL scenarios

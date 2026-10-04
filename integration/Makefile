@@ -28,38 +28,30 @@ TEST_TIMEOUT ?= 30m
 
 test:
 	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast
-	$(GO) test -timeout $(TEST_TIMEOUT) -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 
 .PHONY: test-no-failfast
 test-no-failfast:
 	@status=0; \
 	$(GO) test -timeout $(TEST_TIMEOUT) -v || status=1; \
-	$(GO) test -timeout $(TEST_TIMEOUT) -v ./greptimedb || status=1; \
 	../hack/filter-coverprofile.sh .integration.coverprofile || status=1; \
 	exit $$status
 
 data-race-test:
 	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast --race
-	$(GO) test -timeout $(TEST_TIMEOUT) -v --race ./greptimedb
 
 .PHONY: data-race-test-no-failfast
 data-race-test-no-failfast:
-	@status=0; \
-	$(GO) test -timeout $(TEST_TIMEOUT) -v --race || status=1; \
-	$(GO) test -timeout $(TEST_TIMEOUT) -v --race ./greptimedb || status=1; \
-	exit $$status
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --race
 
 cover:
 	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast -coverpkg=../... -coverprofile=.integration.coverprofile
-	$(GO) test -timeout $(TEST_TIMEOUT) -v ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 	$(GO) tool cover -func=.integration.coverprofile | tail -1
 
 .PHONY: cover-race
 cover-race:
 	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast -race -covermode=atomic -coverpkg=../... -coverprofile=.integration.coverprofile
-	$(GO) test -timeout $(TEST_TIMEOUT) -v -race ./greptimedb
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 	$(GO) tool cover -func=.integration.coverprofile | tail -1
 
