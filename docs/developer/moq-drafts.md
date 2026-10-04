@@ -327,6 +327,17 @@ Taken from the drafts' own change logs; issue numbers refer to the `moq-wg/moq-t
 - **-21 (since -20):** editorial restructuring only.
 - **-22 (since -21):** `LOCATION_FILTER` carries an explicit Location Filter Type (#1913, #1953); "Forwarding Preference" renamed "Delivery Mode" (#1886); `FETCH_OK` End Location is inclusive (#1910); relay-to-relay communication declared out of scope (#1931).
 
+## Interpretation and interoperability notes
+
+Where the text leaves a choice, or a peer implementation departs from it, Trickster's codec does the following. Each note names the interop peer it was checked against and the date.
+
+- **`moqt-22` and `LOCATION_FILTER` (moq-dev/moq, 2026-10-04).** The moq.dev Rust implementation registers draft -22 but encodes it byte for byte as -20, so its `LOCATION_FILTER` is the length-inferred form, not -22's typed form. The two encodings coincide only when every field is below 128 and the filter is neither Next Object nor absolute {0, 0}, so a strict -22 peer and moq-dev desynchronize on most subscriptions. Trickster implements -22 as written. By default a Trickster server prefers `moqt-21` over `moqt-22` (`codec.ServerPreference`), and a Trickster client does not offer `moqt-22` (`codec.ClientOffer`). -21 differs from -22 only in this field, so nothing is lost. Revisit when moq-dev ships typed filters.
+- **`FILL_PARAMETERS` framing.** The value is "a sequence of Parameters ... encoded as if they were Parameters for a separate message". Trickster encodes it as a length prefix around a parameter count followed by the delta-typed parameters (a nested message parameter block), matching moq-dev/moq.
+- **End of Range markers.** The text says the marker's "Group ID and Object ID fields are present", without saying whether they are deltas. Trickster reads and writes them as absolute values. As deltas, a marker inside the current group could not be expressed, because a present Group ID Delta always advances the group. moq-dev/moq does not implement markers (as of 2026-10-04), so this has not been interop-tested.
+- **`uint8` parameters.** `FORWARD`, `SUBSCRIBER_PRIORITY`, `GROUP_ORDER` and `INCLUDE_PROPERTIES` are a single raw byte, not a varint. The Range Filter parameters carry an explicit length even though `OBJECTID_FILTER` and `OBJECT_PROPERTY_FILTER` have even types.
+- **`SUBSCRIBE_TRACKS` parameters.** §9.18 lists a narrow set, while §3.6.2 allows any subscription parameter. Trickster accepts the union.
+- **Repeated known Setup Options.** The text forbids senders to repeat them but gives receivers no rule. Trickster keeps the first instance and ignores the rest; `AUTHORIZATION_TOKEN` may repeat.
+
 ## Adding a new draft
 
 1. Download the text, extract the registries and struct blocks, and diff them against the newest column here. Add the column and any new rows.
