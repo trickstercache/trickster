@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -76,6 +77,9 @@ type handler struct {
 	// as the pool hasn't been replaced. Hot path is a single atomic load
 	// plus a uint64 compare.
 	cachedStripKeys atomic.Pointer[stripKeysSnapshot]
+	// evaluator answers queries over the members' raw series when the ALB's evaluation is global
+	evaluator   atomic.Pointer[backends.TSMGlobalEvaluator]
+	evaluatorMu sync.Mutex
 }
 
 type mergeFinalizer interface {
@@ -321,6 +325,19 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "query time range exceeds the allowed limit of "+limit.String(), http.StatusBadRequest)
 				return
 			}
+		}
+	}
+
+	if h.tsmOptions.IsGlobal() {
+		evaluator, err := h.globalEvaluator(hl)
+		if err != nil {
+			logger.Warn("tsm global evaluation unavailable", logging.Pairs{keys.Error: err})
+			failures.HandleBadGateway(w, r)
+			return
+		}
+		if evaluator.Handles(r) {
+			evaluator.ServeTSMGlobal(w, r, globalRequest(hl, p.ConfiguredTargets()))
+			return
 		}
 	}
 

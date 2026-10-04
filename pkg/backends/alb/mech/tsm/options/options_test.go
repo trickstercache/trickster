@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -134,4 +135,23 @@ max_fetched_samples: 100000
 		QueryTimeout: timeconv.Duration(30 * time.Second), MaxConcurrentQueries: 4, MaxFetchedSeries: 100,
 		MaxFetchedSamples: 100000,
 	}, o)
+}
+
+func TestGlobalSettings(t *testing.T) {
+	var none *Options
+	require.Equal(t, merge.TSMGlobalSettings{
+		Deduplication: DeduplicationPenalty, PartialResponse: true, MaxSamples: DefaultMaxSamples,
+		QueryTimeout: DefaultQueryTimeout,
+	}, none.GlobalSettings())
+	o := &Options{
+		ReplicaLabels: []string{testReplicaLabel}, Deduplication: DeduplicationChain, PartialResponse: new(false),
+		MaxSamples: 7, QueryTimeout: timeconv.Duration(time.Second), MaxFetchedSeries: 8, MaxFetchedSamples: 9,
+	}
+	s := o.GlobalSettings()
+	require.Equal(t, merge.TSMGlobalSettings{
+		ReplicaLabels: []string{testReplicaLabel}, Deduplication: DeduplicationChain, MaxSamples: 7,
+		QueryTimeout: time.Second, MaxFetchedSeries: 8, MaxFetchedSamples: 9,
+	}, s)
+	s.ReplicaLabels[0] = metricNameLabel
+	require.Equal(t, testReplicaLabel, o.ReplicaLabels[0])
 }

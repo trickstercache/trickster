@@ -25,6 +25,7 @@ import (
 
 	mechoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/options"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
+	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 	"github.com/trickstercache/trickster/v2/pkg/util/pointers"
 )
 
@@ -39,9 +40,9 @@ const (
 // Deduplications name how global evaluation combines samples of series that differ only by replica labels
 const (
 	// DeduplicationPenalty keeps one replica's samples and switches replicas across gaps (the default)
-	DeduplicationPenalty = "penalty"
+	DeduplicationPenalty = merge.TSMDeduplicationPenalty
 	// DeduplicationChain keeps every distinct timestamp of every replica
-	DeduplicationChain = "chain"
+	DeduplicationChain = merge.TSMDeduplicationChain
 )
 
 const (
@@ -145,6 +146,21 @@ func (o *Options) GetMaxConcurrentQueries() int {
 		return DefaultMaxConcurrentQueries
 	}
 	return o.MaxConcurrentQueries
+}
+
+// GlobalSettings returns the settings global evaluation runs with, defaults applied.
+func (o *Options) GlobalSettings() merge.TSMGlobalSettings {
+	s := merge.TSMGlobalSettings{
+		Deduplication:   o.GetDeduplication(),
+		PartialResponse: o.AllowsPartialResponse(),
+		MaxSamples:      o.GetMaxSamples(),
+		QueryTimeout:    o.GetQueryTimeout(),
+	}
+	if o != nil {
+		s.ReplicaLabels = slices.Clone(o.ReplicaLabels)
+		s.MaxFetchedSeries, s.MaxFetchedSamples = o.MaxFetchedSeries, o.MaxFetchedSamples
+	}
+	return s
 }
 
 // Validate checks the options that can be checked without the ALB's pool.
