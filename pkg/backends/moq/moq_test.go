@@ -335,6 +335,57 @@ func TestListenerRefusals(t *testing.T) {
 	}
 }
 
+func TestRouteBySNI(t *testing.T) {
+	// a SETUP naming no AUTHORITY is routed by the TLS server name, and one naming no PATH by /
+	org := startOrigin(t)
+	a := newBackend(t, "a", "moqt://"+org.addr+"/a")
+	a.Configuration().Hosts = []string{"a.example.com"}
+	b := newBackend(t, "b", "moqt://"+org.addr+"/b")
+	b.Configuration().Hosts = []string{"b.example.com"}
+	st := startListener(t, mo.NewListener(), a, b)
+	start := func(serverName string) (*session.Session, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		defer cancel()
+		conn, err := quic.DialAddr(ctx, st.addr, &tls.Config{InsecureSkipVerify: true, ServerName: serverName, // #nosec G402
+			NextProtos: []string{"moqt-21"}, MinVersion: tls.VersionTLS13},
+			&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
+		if err != nil {
+			return nil, err
+		}
+		c, _ := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)
+		s, err := session.New(session.FromQUIC(conn), session.Options{Role: session.RoleClient, Codec: c})
+		if err != nil {
+			return nil, err
+		}
+		t.Cleanup(func() { _ = s.Close(message.CodeNoError, "") })
+		return s, s.Start(ctx)
+	}
+	s, err := start("b.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	defer cancel()
+	req, err := s.Open(ctx, &message.TrackStatus{Track: poolTrack("video")}, nopHandler{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = req.Response(ctx); err != nil {
+		t.Errorf("the server name routes the session to a backend that serves it: %v", err)
+	}
+	refused, err := start("c.example.com")
+	if err == nil {
+		select {
+		case <-refused.Done():
+			err = refused.Err()
+		case <-ctx.Done():
+		}
+	}
+	if ce, ok := errors.AsType[*session.CloseError](err); !ok || ce.Code != uint64(message.CodeInvalidPath) {
+		t.Errorf("a server name no backend serves is refused: %v", err)
+	}
+}
+
 type denyAll struct{}
 
 func (denyAll) Admit(netip.Addr) *backends.Denial {

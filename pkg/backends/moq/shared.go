@@ -100,8 +100,8 @@ func (sh *shared) isClosed() bool {
 	return sh.closed
 }
 
-// Cache returns the cache of the newest client using the relay, so a reload that renames the cache is honored
 func (sh *shared) Cache() cache.Cache {
+	// the newest client's cache, so a reload that renames the cache is honored
 	if c := sh.cache.Load(); c != nil {
 		return c.Backend.Cache()
 	}

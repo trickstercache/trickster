@@ -80,9 +80,9 @@ type routeTable struct {
 
 var _ backends.RouteResolver = (*routeTable)(nil)
 
-// ResolveRoute prefers a backend naming the session's host, then one matching it by wildcard, then one naming no
-// host, and among those the longest path prefix; a listener with one backend serves every session with it
 func (rt *routeTable) ResolveRoute(in backends.RouteInput) (backends.RouteDecision, bool) {
+	// a backend naming the session's host wins, then one matching it by wildcard, then one naming no host, each by
+	// its longest path prefix; a listener with one backend serves every session with it
 	if rt == nil || len(rt.entries) == 0 {
 		return backends.RouteDecision{Outcome: backends.RouteOutcomeNoRoute}, false
 	}
@@ -193,7 +193,6 @@ func QUICConfig(o *mo.ListenerOptions) *quic.Config {
 	}
 }
 
-// ServeQUIC serves one MoQ session on a connection the listener's endpoint accepted
 func (s *server) ServeQUIC(conn *quic.Conn) {
 	client := clientip.FromNetAddr(conn.RemoteAddr())
 	if list := s.ipacl.Load(); list != nil && list.Check(client) != ipacl.Allow {
@@ -295,9 +294,9 @@ func (s *server) untrack(sess *session.Session) {
 	s.mu.Unlock()
 }
 
-// Shutdown sends each session a GOAWAY naming the listener's goaway_uri, then waits until ctx ends for the clients
-// to move before closing what remains; it is called only when the listener stops, never on a reload that keeps it
 func (s *server) Shutdown(ctx context.Context) error {
+	// each session gets a GOAWAY naming the goaway_uri, and what remains when ctx ends is closed; a reload that keeps
+	// the listener never calls this
 	s.mu.Lock()
 	s.closing = true
 	sessions := maps.Clone(s.sessions)
@@ -336,24 +335,21 @@ func (s *server) Shutdown(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// UpdateRouteResolver swaps the routes new sessions are matched with; sessions keep the backend they have
 func (s *server) UpdateRouteResolver(r backends.RouteResolver) {
+	// only new sessions are matched against the new routes; open ones keep the backend they have
 	if rt, ok := r.(*routeTable); ok {
 		s.routes.Store(rt)
 	}
 }
 
-// UpdateSessionGate swaps the gate new connections are judged by
 func (s *server) UpdateSessionGate(g backends.SessionGate) {
 	s.gate.Store(g)
 }
 
-// UpdateIPACL swaps the access list new connections are judged by
 func (s *server) UpdateIPACL(list *ipacl.List) {
 	s.ipacl.Store(list)
 }
 
-// ProtocolRestartKey identifies the settings that need a new listener to change
 func (s *server) ProtocolRestartKey() string {
 	return s.restartKey
 }

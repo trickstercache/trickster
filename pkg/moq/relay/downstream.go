@@ -206,7 +206,8 @@ func (d *downstream) fetch(req *session.Request, m *message.Fetch) {
 		return
 	}
 	d.r.m.request(kindFetch, resultOK)
-	order := props.GroupOrder()
+	// a FETCH naming no group order is served ascending, whatever the track's publisher prefers (§9.20.9)
+	order := message.GroupOrderAscending
 	if m.Params.Has(message.ParamGroupOrder) {
 		order = m.Params.GroupOrder
 	}

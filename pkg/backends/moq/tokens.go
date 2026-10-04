@@ -145,7 +145,6 @@ func (tf *tokenFile) current() tokenTable {
 	return *tf.table.Load()
 }
 
-// Authorize reports whether one of tokens grants op on the tracks under namespace
 func (tf *tokenFile) Authorize(op relay.Operation, namespace wire.Namespace, tokens []wire.Token) bool {
 	if len(tokens) == 0 {
 		return false

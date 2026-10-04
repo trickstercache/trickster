@@ -294,7 +294,7 @@ The session and relay layers never compare draft numbers; they read these flags 
 
 | Flag | True for | Effect |
 |---|---|---|
-| `RequiredRequestID` | -17 | requests carry a Required Request ID Delta; a request naming one that has not arrived waits up to two seconds for it, then is refused with `TIMEOUT`; `INVALID_REQUIRED_REQUEST_ID` |
+| `RequiredRequestID` | -17 | requests carry a Required Request ID Delta; a request is held until the one it names has been handed to the application or refused, for up to two seconds, then is refused with `TIMEOUT`; `INVALID_REQUIRED_REQUEST_ID` |
 | `PublishOK` | -17 | `PUBLISH` is answered with `PUBLISH_OK` (`0x1E`) rather than `REQUEST_OK` |
 | `AbsoluteFetchIDs` | -17 | fetch objects carry whole Group and Object IDs rather than deltas |
 | `LegacyDoneCodes` | -17 | `PUBLISH_DONE` numbers `EXPIRED` `0x5` and `TOO_FAR_BEHIND` `0x6` |
@@ -347,6 +347,8 @@ Where the text leaves a choice, or a peer implementation departs from it, Tricks
 - **`uint8` parameters.** `FORWARD`, `SUBSCRIBER_PRIORITY`, `GROUP_ORDER` and `INCLUDE_PROPERTIES` are a single raw byte, not a varint. The Range Filter parameters carry an explicit length even though `OBJECTID_FILTER` and `OBJECT_PROPERTY_FILTER` have even types.
 - **`SUBSCRIBE_TRACKS` parameters.** §9.18 lists a narrow set, while §3.6.2 allows any subscription parameter. Trickster accepts the union.
 - **Repeated known Setup Options.** The text forbids senders to repeat them but gives receivers no rule. Trickster keeps the first instance and ignores the rest; `AUTHORIZATION_TOKEN` may repeat.
+- **`FETCH` group order (moq-dev/moq, 2026-10-04).** A `FETCH` without `GROUP_ORDER` is served ascending, as every draft from -17 says, even when the track's `DEFAULT_PUBLISHER_GROUP_ORDER` is descending; a subscription without one follows the track's preference. moq-relay's tracks prefer descending, so the two rules differ in practice: a relay that served such a `FETCH` descending would have its receiver, reading ascending as the text says, decode every Group ID Delta after the first group in the wrong direction.
+- **Required Request ID delivery (-17).** "Deliver the referenced request to the application before delivering the dependent request" is read at the hand-off: a dependent request is released once the request it names has been given to the handler or refused. Each request is handled on its own goroutine, so the order of the two handlers' first actions is the application's.
 
 ## Adding a new draft
 

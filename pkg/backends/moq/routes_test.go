@@ -24,6 +24,7 @@ import (
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
+	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -139,6 +140,56 @@ func TestRoutesForPatterns(t *testing.T) {
 	}
 	if len(got) != 2 || !slices.Equal(got["prefix"], []string{"/live"}) || !slices.Equal(got["mixed"], []string{"/mixed"}) {
 		t.Errorf("native routes: %v", got)
+	}
+}
+
+func TestValidateBackendRefusals(t *testing.T) {
+	a := NativeListenerAdapter()
+	backend := func(origin string, mutate func(*bo.Options)) *bo.Options {
+		o := bo.New()
+		o.Name, o.Provider, o.OriginURL = "b", "moq", origin
+		if mutate != nil {
+			mutate(o)
+		}
+		return o
+	}
+	for name, o := range map[string]*bo.Options{
+		"an origin and an alb": backend("moqt://origin.example.com/", func(o *bo.Options) {
+			o.MoQ = mo.New()
+			o.MoQ.Upstream.ALB = "origins"
+		}),
+		"an unsupported scheme": backend("http://origin.example.com/", nil),
+		"no host":               backend("moqt:///live", nil),
+		"an invalid moq block": backend("moqt://origin.example.com/", func(o *bo.Options) {
+			o.MoQ = mo.New()
+			o.MoQ.LiveEdge.Groups = 0
+		}),
+	} {
+		if err := a.ValidateBackend(o); err == nil {
+			t.Errorf("%s is refused", name)
+		}
+	}
+	o := backend("", nil)
+	o.MoQ = nil
+	if err := a.ValidateBackend(o); err != nil || o.MoQ == nil {
+		t.Errorf("a backend without a moq block takes the defaults: %v", err)
+	}
+	lo := &listener.Options{Protocol: listener.ProtocolMoQ}
+	if err := a.ValidateListener(lo); err != nil || lo.MoQ == nil {
+		t.Errorf("a listener without a moq block takes the defaults: %v", err)
+	}
+}
+
+func TestAccessFor(t *testing.T) {
+	m := mo.New()
+	m.Publish.Enabled, m.Publish.Namespaces = true, []string{"live/studio", "vod"}
+	a, err := accessFor("b", m)
+	if err != nil || !a.Publish || len(a.Namespaces) != 2 || string(a.Namespaces[0][1]) != "studio" {
+		t.Errorf("publishing namespaces reach the relay's access policy: %+v %v", a, err)
+	}
+	m.Publish.Namespaces = []string{"live//studio"}
+	if _, err = accessFor("b", m); err == nil {
+		t.Error("an unparsable namespace fails the backend")
 	}
 }
 

@@ -454,6 +454,66 @@ A backend's series are published only once it is in service, so a configuration 
 
 The following metrics are available when the Kubernetes Gateway/Ingress controller is enabled (the top-level `kubernetes` section; see [kubernetes-gateway.md](./kubernetes-gateway.md)):
 
+* `trickster_moq_sessions_total` (Counter) - Count of [MoQ Transport](./moq.md) sessions by outcome
+  * labels:
+    * `listener_name` - the listener the session arrived on
+    * `backend_name` - the backend it was routed to, empty when it was refused before routing
+    * `role` - `downstream`
+    * `transport` - `quic` or `webtransport`
+    * `draft` - the negotiated draft, empty when none was negotiated
+    * `result` - `ok`, `refused`, `no_route`, `busy` or `failed`
+
+* `trickster_moq_active_sessions` (Gauge) - Current MoQ Transport sessions
+  * labels:
+    * `listener_name` - the listener serving the sessions
+    * `backend_name` - the backend they were routed to
+    * `role` - `downstream`
+
+* `trickster_moq_requests_total` (Counter) - Count of MoQ Transport requests by type and result
+  * labels:
+    * `backend_name` - the moq backend
+    * `type` - `subscribe`, `fetch`, `track_status`, `publish`, `publish_namespace`, `subscribe_namespace`, `subscribe_tracks` or `other`
+    * `result` - `ok` or `refused`
+
+* `trickster_moq_active_subscriptions` (Gauge) - Current MoQ Transport subscriptions
+  * labels:
+    * `backend_name` - the moq backend
+    * `direction` - `upstream` (the relay's subscriptions toward origins and publishers) or `downstream`
+
+* `trickster_moq_objects_total` (Counter) - Count of MoQ Transport objects by direction and delivery
+  * labels:
+    * `backend_name` - the moq backend
+    * `direction` - `in` or `out`
+    * `delivery` - `stream`, `datagram` or `fetch`
+
+* `trickster_moq_bytes_total` (Counter) - Count of MoQ Transport object payload and property bytes
+  * labels:
+    * `backend_name` - the moq backend
+    * `direction` - `in` or `out`
+
+* `trickster_moq_dropped_objects_total` (Counter) - Count of MoQ Transport objects not forwarded
+  * labels:
+    * `backend_name` - the moq backend
+    * `reason` - `oversize`, `delivery_timeout`, `datagram_queue_full` or `spill_queue_full`
+
+* `trickster_moq_fetch_objects_total` (Counter) - Count of objects served to FETCH and fills, by where they came from
+  * labels:
+    * `backend_name` - the moq backend
+    * `source` - `live_edge`, `cache` or `upstream`
+
+* `trickster_moq_live_edge_bytes` (Gauge) - Current payload bytes held in a moq backend's in-memory live edge
+  * labels:
+    * `backend_name` - the moq backend
+
+* `trickster_moq_publishers_active` (Gauge) - Current `PUBLISH` subscriptions publishers hold open to a moq backend
+  * labels:
+    * `backend_name` - the moq backend
+
+* `trickster_moq_errors_total` (Counter) - Count of MoQ Transport failures
+  * labels:
+    * `backend_name` - the moq backend
+    * `class` - `malformed_track` or `cache`
+
 * `trickster_kgw_reconciles_total` (Counter) - Count of controller reconcile passes, by result
   * labels:
     * `result` - `applied` (the data plane was reloaded), `unchanged` (the generated configuration was already running), or `error` (the pass failed to compile or apply)

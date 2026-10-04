@@ -173,6 +173,16 @@ func TestJoiningFetchRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	refusedWith(t, r, message.RequestInvalidRange)
+	// an absolute start past a forwarding subscription's joining location covers nothing
+	freq, _ := subscribe(t, cl, "video", message.Params{})
+	subscribed(t, freq)
+	r, err = cl.Open(context.Background(), &message.Fetch{
+		Joining: &message.JoiningFetch{RequestID: freq.RequestID(), Start: 9},
+	}, newRec(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refusedWith(t, r, message.RequestInvalidRange)
 }
 
 func TestSubscribeNamespaceOptions17(t *testing.T) {

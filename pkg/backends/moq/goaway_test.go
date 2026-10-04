@@ -71,6 +71,29 @@ func dialDraft(t *testing.T, addr string, draft int, h session.Handler) *session
 	return s
 }
 
+func TestRedirectFor(t *testing.T) {
+	// each request is redirected to the same track, or a namespace request to its namespace; a joining fetch cannot be
+	ft := message.FullTrackName{Namespace: wire.Namespace{[]byte("live")}, Name: []byte("video")}
+	nsOnly := message.FullTrackName{Namespace: ft.Namespace}
+	for m, want := range map[message.Message]*message.Redirect{
+		&message.Subscribe{Track: ft}:                     {ConnectURI: goAwayURI, Track: ft},
+		&message.TrackStatus{Track: ft}:                   {ConnectURI: goAwayURI, Track: ft},
+		&message.Publish{Track: ft}:                       {ConnectURI: goAwayURI, Track: ft},
+		&message.Fetch{Track: ft}:                         {ConnectURI: goAwayURI, Track: ft},
+		&message.PublishNamespace{Prefix: ft.Namespace}:   {ConnectURI: goAwayURI, Track: nsOnly},
+		&message.SubscribeNamespace{Prefix: ft.Namespace}: {ConnectURI: goAwayURI, Track: nsOnly},
+		&message.SubscribeTracks{Prefix: ft.Namespace}:    {ConnectURI: goAwayURI, Track: nsOnly},
+		&message.Fetch{Joining: &message.JoiningFetch{}}:  nil,
+		&message.RequestOK{}:                              nil,
+	} {
+		got := redirectFor(m, goAwayURI)
+		if (got == nil) != (want == nil) || (got != nil && (got.ConnectURI != want.ConnectURI ||
+			!got.Track.Equal(want.Track))) {
+			t.Errorf("%T redirected to %+v, want %+v", m, got, want)
+		}
+	}
+}
+
 func refusal(t *testing.T, s *session.Session, m message.Message) *message.RequestError {
 	t.Helper()
 	req, err := s.Open(context.Background(), m, nopHandler{}, nil)

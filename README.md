@@ -33,6 +33,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * [Negative Caching](./docs/negative-caching.md) to prevent domino effect outages
 * High-performance [Collapsed Forwarding](./docs/collapsed-forwarding.md)
 * Best-in-class [Byte Range Request caching and acceleration](./docs/range_request.md)
+* A caching [Media over QUIC (MoQ) relay](./docs/moq.md) for live media, over native QUIC and WebTransport, with FETCH served from cache
 * [Distributed Tracing](./docs/tracing.md) via OpenTelemetry, supporting OTLP protocol
 * Per-backend [Access and Error Logs](./docs/access-logs.md) with Apache-style customizable formats
 * Rules engine for custom request routing and rewriting

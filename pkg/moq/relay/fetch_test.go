@@ -75,6 +75,41 @@ func TestFetchFromLiveEdge(t *testing.T) {
 	}
 }
 
+func TestFetchAscendingByDefault(t *testing.T) {
+	// a FETCH naming no group order is served ascending even when the track's publisher prefers descending (§9.20.9)
+	h := newHarness(t, relay.Options{LiveEdgeGroups: 5}, nil)
+	props, _ := wire.AppendKVs(nil, []wire.KV{{
+		Type: message.PropDefaultGroupOrder, Uint: uint64(message.GroupOrderDescending),
+	}})
+	h.o.props = props
+	c := h.client()
+	req, r := subscribe(t, c, "video", message.Params{})
+	subscribed(t, req)
+	publishGroups(t, h, r, 1000, 1001)
+	labeled := func(fr *rec) {
+		t.Helper()
+		fr.mu.Lock()
+		defer fr.mu.Unlock()
+		for i, fo := range fr.fetched {
+			if want := fmt.Sprintf("g%d-o%d", fo.Group, fo.Object); fr.payloads[i] != want {
+				t.Errorf("entry %d is labeled %s but carries %s", i, want, fr.payloads[i])
+			}
+		}
+	}
+	freq, fr := fetch(t, c, "video", fetchRange(1000, 0, 1001, math.MaxUint64))
+	if _, payloads := fetched(t, freq, fr); !slices.Equal(payloads, groupPayloads(1000, 1001)) {
+		t.Errorf("fetched %v, want ascending", payloads)
+	}
+	labeled(fr)
+	p := fetchRange(1000, 0, 1001, math.MaxUint64)
+	p.SetGroupOrder(message.GroupOrderDescending)
+	freq, fr = fetch(t, c, "video", p)
+	if _, payloads := fetched(t, freq, fr); !slices.Equal(payloads, groupPayloads(1001, 1000)) {
+		t.Errorf("fetched %v, want descending as asked", payloads)
+	}
+	labeled(fr)
+}
+
 func testSpill(t *testing.T, c cache.Cache, stores *atomic.Int32) {
 	h := newHarness(t, relay.Options{LiveEdgeGroups: 1, Spill: true}, c)
 	cl := h.client()

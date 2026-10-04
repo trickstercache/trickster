@@ -134,8 +134,8 @@ func (*nativeListenerAdapter) ValidateBalancer(*config.Config, string, *bo.Optio
 	return errors.New("moq session balancing is not supported")
 }
 
-// Describe returns the listener's restart identity: its moq block alone, since backends hot-swap under sessions
 func (a *nativeListenerAdapter) Describe(c *config.Config, listenerName string) (native.Descriptor, error) {
+	// the listener's restart identity is its moq block alone, since backends hot-swap under sessions
 	if len(boundBackends(c, listenerName)) == 0 {
 		return native.Descriptor{}, errNoBackend
 	}

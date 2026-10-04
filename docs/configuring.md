@@ -105,6 +105,8 @@ session-lifecycle requirements. See the [MySQL Provider Guide](mysql.md) before
 configuring `protocol: mysql`.
 ClickHouse Native listeners use `protocol: clickhouse`; see the
 [ClickHouse Support Guide](clickhouse.md) for ingress, origin, and TLS options.
+Media over QUIC listeners use `protocol: moq` and bind UDP; see the
+[MoQ Relay Guide](moq.md) for their options, certificates and session routing.
 
 ```yaml
 listeners:
@@ -135,7 +137,7 @@ backends:
 
 An `ip_acl_name` on a listener, backend, or path names an entry in [`ip_acls`](./ip-acl.md). A listener list and a backend list both apply. A path name replaces the backend list, and `none` clears it for that path.
 
-Each native listener maps to exactly one backend. Multiple HTTP listeners can share a backend, and ClickHouse can bind the same backend to HTTP and ClickHouse Native listeners.
+Each native listener maps to exactly one backend, except a `moq` listener, which may serve several `moq` backends as long as no two claim the same `hosts` and `paths`: each session is routed by the authority and path it names. Multiple HTTP listeners can share a backend, ClickHouse can bind the same backend to HTTP and ClickHouse Native listeners, and a `moq` backend can serve a `moq` listener and, by WebTransport, HTTP listeners.
 
 A user-defined listener with no mapped backend is not started and produces a warning. A configured TLS port is enabled only when at least one backend mapped to that listener provides a valid frontend certificate and key in its `tls` section; otherwise Trickster disables that TLS port and logs a warning.
 
