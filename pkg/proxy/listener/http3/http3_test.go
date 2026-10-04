@@ -17,7 +17,8 @@
 package http3
 
 import (
-	"crypto/tls"
+	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,34 +32,55 @@ import (
 	qh3 "github.com/quic-go/quic-go/http3"
 )
 
-func TestNewServerForcesH3ALPN(t *testing.T) {
-	base := &tls.Config{NextProtos: []string{"h2", "http/1.1"}, MinVersion: tls.VersionTLS12}
-	svr := NewServer(http.NotFoundHandler(), base, 8443, listener.ServerLimits{})
-	if len(svr.TLSConfig.NextProtos) != 1 || svr.TLSConfig.NextProtos[0] != qh3.NextProtoH3 {
-		t.Errorf("expected h3 to be the sole ALPN, got %v", svr.TLSConfig.NextProtos)
+func TestALPNAndQUICConfig(t *testing.T) {
+	if ALPN != qh3.NextProtoH3 {
+		t.Errorf("expected the h3 ALPN, got %q", ALPN)
 	}
-	// the caller's config must not be mutated: the TCP listener still needs h2
-	if len(base.NextProtos) != 2 {
-		t.Errorf("source TLS config was mutated: %v", base.NextProtos)
-	}
-	if svr.Port != 8443 {
-		t.Errorf("expected advertised port 8443, got %d", svr.Port)
-	}
-	if !svr.QUICConfig.EnableDatagrams {
+	qc := QUICConfig()
+	if !qc.EnableDatagrams {
 		t.Error("RFC 9221 datagrams should be negotiable")
 	}
-	if svr.QUICConfig.Allow0RTT {
-		t.Error("0-RTT should be off by default; it permits replay")
+	if qc.Allow0RTT {
+		t.Error("0-RTT should be off; it permits replay")
 	}
 }
 
-func TestNewServerLimits(t *testing.T) {
+func TestNewHandlerLimits(t *testing.T) {
 	const idle, maxHeader = 90 * time.Second, 16384
-	base := &tls.Config{MinVersion: tls.VersionTLS12}
-	svr := NewServer(http.NotFoundHandler(), base, 8443,
+	h := NewHandler(http.NotFoundHandler(),
 		listener.ServerLimits{IdleTimeout: idle, MaxHeaderBytes: maxHeader})
-	if svr.IdleTimeout != idle || svr.MaxHeaderBytes != maxHeader {
+	if svr := h.Server(); svr.IdleTimeout != idle || svr.MaxHeaderBytes != maxHeader {
 		t.Errorf("limits not applied: idle %v, max header bytes %d", svr.IdleTimeout, svr.MaxHeaderBytes)
+	}
+}
+
+func TestHandlerServesAndShutsDown(t *testing.T) {
+	client, addr, stop := testEndpoint(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, r.Proto)
+	}))
+	defer stop()
+	resp, err := client.Get(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if string(body) != "HTTP/3.0" {
+		t.Errorf("expected an HTTP/3 request, got %q", body)
+	}
+}
+
+func TestHandlerRefusesAfterShutdown(t *testing.T) {
+	h := NewHandler(http.NotFoundHandler(), listener.ServerLimits{})
+	// a server that never served shuts down at once
+	if err := h.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	client, addr, stop := testEndpointWith(t, h)
+	defer stop()
+	if resp, err := client.Get(addr); err == nil {
+		_ = resp.Body.Close()
+		t.Error("a handler that has shut down should refuse new connections")
 	}
 }
 

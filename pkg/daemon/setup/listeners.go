@@ -47,6 +47,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	listenerhttp3 "github.com/trickstercache/trickster/v2/pkg/proxy/listener/http3"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -254,11 +255,14 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 				continue
 			}
 			limits := serverLimits(desired.options)
-			advertised := desired.advertisedPort
-			go lg.StartPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
+			go lg.StartSharedPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
 				desired.address, desired.port, tlsConfig, desired.router,
-				func(h http.Handler, tc *tls.Config) listener.PacketServer {
-					return listenerhttp3.NewServer(h, tc, advertised, limits)
+				func(h http.Handler, certs tr.CertSwapper, tc *tls.Config) (listener.PacketMember, error) {
+					return quicmux.Join(desired.address, desired.port, quicmux.MemberOptions{
+						Name: desired.key, ALPNs: []string{listenerhttp3.ALPN},
+						Handler: listenerhttp3.NewHandler(h, limits), Certs: certs, TLS: tc,
+						QUIC: listenerhttp3.QUICConfig(),
+					})
 				}, errorFunc)
 			continue
 		}

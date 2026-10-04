@@ -535,7 +535,8 @@ func (lg *Group) DrainAndCloseContext(ctx context.Context, listenerName string) 
 	lg.listenersLock.Unlock()
 	defer l.setState(StateStopped)
 
-	if l.Listener == nil && l.packetConn == nil {
+	// a member of a shared datagram endpoint owns no socket of its own, only its server
+	if l.Listener == nil && l.packetConn == nil && l.server == nil {
 		return trerr.ErrNilListener
 	}
 	if l.server == nil {

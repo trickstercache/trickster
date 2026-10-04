@@ -17,6 +17,7 @@
 package listener
 
 import (
+	"context"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -35,6 +36,17 @@ type PacketServer interface {
 	server
 	Serve(net.PacketConn) error
 }
+
+// PacketMember is one listener's share of a datagram endpoint that other listeners may serve through too:
+// Serve blocks until the member leaves, and Shutdown drains only the member's own connections.
+type PacketMember interface {
+	server
+	Serve() error
+}
+
+// PacketJoinFunc adds a listener to the datagram endpoint at its address, given the listener's route
+// swapper (nil when it serves no HTTP routes), its certificate swapper, and its prepared TLS config.
+type PacketJoinFunc func(http.Handler, sw.CertSwapper, *tls.Config) (PacketMember, error)
 
 // NewPacketListener binds a UDP socket for a datagram protocol. Connection
 // limiting does not apply: QUIC multiplexes every peer over one socket, so
@@ -77,6 +89,74 @@ func (lg *Group) StartPacketListener(listenerName, protocol, address string,
 		tlsConfig.Certificates = nil
 	}
 	return lg.servePacket(listenerName, protocol, address, port, l, build(swapper, tlsConfig), f)
+}
+
+// StartSharedPacketListener starts a listener on a datagram endpoint that other listeners at the same address
+// may share, as QUIC protocols told apart by ALPN do; each listener keeps its own routes and certificates.
+func (lg *Group) StartSharedPacketListener(listenerName, protocol, address string, port int,
+	tlsConfig *tls.Config, router http.Handler, join PacketJoinFunc, f func(),
+) error {
+	l := &Listener{readyCh: make(chan struct{})}
+	var handler http.Handler
+	if router != nil {
+		l.routeSwapper = switcher.NewSwitchHandler(router)
+		handler = l.routeSwapper
+	}
+	if tlsConfig != nil {
+		tlsConfig = tlsConfig.Clone()
+		l.tlsConfig = tlsConfig
+		l.tlsSwapper = sw.NewSwapper(tlsConfig.Certificates)
+		tlsConfig.GetCertificate = l.tlsSwapper.GetCert
+		tlsConfig.Certificates = nil
+	}
+	l.exitOnError.Store(f != nil)
+	l.setState(StateStarting)
+
+	member, err := join(handler, l.tlsSwapper, tlsConfig)
+	if err != nil {
+		logger.ErrorSynchronous(protocol+" listener startup failed", logging.Pairs{
+			logKeyListenerName: listenerName, logKeyDetail: err,
+		})
+		l.setState(StateStopped)
+		if f != nil {
+			f()
+		}
+		return err
+	}
+	l.server = member
+	logger.Info(protocol+" listener starting", logging.Pairs{
+		logKeyListenerName: listenerName, logKeyPort: port, logKeyAddress: address,
+	})
+
+	if err := lg.publish(listenerName, l); err != nil {
+		closeServer(member)
+		l.refuse(listenerName)
+		return err
+	}
+	l.setState(StateReady)
+	l.markReady()
+
+	err = member.Serve()
+	if err != nil {
+		logger.ErrorSynchronous(protocol+" listener stopping", logging.Pairs{
+			logKeyListenerName: listenerName, logKeyDetail: err,
+		})
+		if l.exitOnError.Load() {
+			os.Exit(1)
+		}
+	}
+	return err
+}
+
+func closeServer(svr server) {
+	// a server without Close is stopped by a drain whose deadline has already passed
+	if c, ok := svr.(interface{ Close() error }); ok {
+		_ = c.Close()
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_ = svr.Shutdown(ctx)
 }
 
 // StartDatagramListener starts a datagram server that carries no HTTP routes and no
