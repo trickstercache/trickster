@@ -42,12 +42,18 @@ type Queryable struct {
 	replicaLabels []string
 	deduplication string
 	partial       bool
+	failed        func(member string)
 }
 
-// NewQueryable returns a queryable over members. When partial is true, a member whose series can't be
-// read is left out with a warning; otherwise the query fails.
-func NewQueryable(members []Member, replicaLabels []string, deduplication string, partial bool) *Queryable {
-	return &Queryable{members: members, replicaLabels: replicaLabels, deduplication: deduplication, partial: partial}
+// NewQueryable returns a queryable over members; a member that can't be read is left out with a
+// warning when partial is true and fails the query otherwise, and failed learns of it.
+func NewQueryable(members []Member, replicaLabels []string, deduplication string, partial bool,
+	failed func(member string),
+) *Queryable {
+	return &Queryable{
+		members: members, replicaLabels: replicaLabels, deduplication: deduplication,
+		partial: partial, failed: failed,
+	}
 }
 
 // Querier returns a querier reading samples from mint to maxt unless select hints narrow them.
@@ -80,6 +86,9 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 	for i, err := range errs {
 		if err == nil {
 			continue
+		}
+		if qr.q.failed != nil {
+			qr.q.failed(members[i].Name)
 		}
 		err = fmt.Errorf("%w: %s: %w", ErrMemberUnavailable, members[i].Name, err)
 		// a limit or cancellation ends the query rather than shrinking its answer

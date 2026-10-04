@@ -29,11 +29,16 @@ const (
 // TSMGlobalSettings configures how an ALB answers each query once over its members' deduplicated raw
 // series. Zero limits are unlimited.
 type TSMGlobalSettings struct {
-	ReplicaLabels     []string
-	Deduplication     string
-	PartialResponse   bool
-	MaxSamples        int
-	QueryTimeout      time.Duration
-	MaxFetchedSeries  int
-	MaxFetchedSamples int64
+	// Name is the ALB's backend name, which labels the evaluation's metrics
+	Name                 string
+	ReplicaLabels        []string
+	Deduplication        string
+	PartialResponse      bool
+	MaxSamples           int
+	QueryTimeout         time.Duration
+	MaxConcurrentQueries int
+	MaxFetchedSeries     int
+	MaxFetchedSamples    int64
+	// MaxResponseBytes bounds each member's raw series response
+	MaxResponseBytes int64
 }

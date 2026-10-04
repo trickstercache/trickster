@@ -59,6 +59,7 @@ const (
 
 type handler struct {
 	mech.PoolHolder
+	name                  string   // the ALB's backend name
 	mergePaths            []string // paths handled by the alb client that are enabled for tsmerge
 	outputFormat          string   // the provider output format (e.g., "prometheus")
 	tsmOptions            options.Options
@@ -102,6 +103,7 @@ type stripKeysSnapshot struct {
 // New constructs a time-series merge mechanism from its resolved configuration.
 func New(c Config, factories rt.Lookup) (types.Mechanism, error) {
 	out := &handler{
+		name:                  c.Name,
 		tsmOptions:            c.Options,
 		maxCaptureBytes:       c.MaxCaptureBytes,
 		maxFanoutCaptureBytes: c.MaxFanoutCaptureBytes,

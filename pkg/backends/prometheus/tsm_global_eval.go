@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	tsmql "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
@@ -50,6 +51,8 @@ const (
 
 	globalResultHeader        = "engine=ALB; status=proxy-only"
 	globalPartialResultHeader = "engine=ALB; status=phit"
+	globalOutcomeSuccess      = "success"
+	globalOutcomePartial      = "partial"
 	globalLimitWarning        = "results truncated due to limit"
 )
 
@@ -61,6 +64,8 @@ var (
 type globalEvaluator struct {
 	settings merge.TSMGlobalSettings
 	engine   *promql.Engine
+	// slots holds a token for each evaluation running, so no more than MaxConcurrentQueries run at once
+	slots chan struct{}
 }
 
 // NewTSMGlobalEvaluator returns an evaluator running PromQL over a TSM ALB's raw member series.
@@ -69,7 +74,7 @@ func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings) (backen
 }
 
 func newGlobalEvaluator(settings merge.TSMGlobalSettings) *globalEvaluator {
-	return &globalEvaluator{settings: settings, engine: promql.NewEngine(promql.EngineOpts{
+	e := &globalEvaluator{settings: settings, engine: promql.NewEngine(promql.EngineOpts{
 		MaxSamples:               settings.MaxSamples,
 		Timeout:                  settings.QueryTimeout,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return globalSubqueryStep.Milliseconds() },
@@ -77,6 +82,10 @@ func newGlobalEvaluator(settings merge.TSMGlobalSettings) *globalEvaluator {
 		EnableNegativeOffset:     true,
 		Parser:                   parser.NewParser(tsmql.ParserOptions()),
 	})}
+	if settings.MaxConcurrentQueries > 0 {
+		e.slots = make(chan struct{}, settings.MaxConcurrentQueries)
+	}
+	return e
 }
 
 // Handles reports whether r is an instant or range query, which the evaluator answers.
@@ -86,12 +95,23 @@ func (e *globalEvaluator) Handles(r *http.Request) bool {
 
 // ServeTSMGlobal evaluates the requested query once over the deduplicated raw series of every member.
 func (e *globalEvaluator) ServeTSMGlobal(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) {
+	start := time.Now()
+	outcome := e.serve(w, r, req)
+	metrics.ALBGlobalEvaluations.WithLabelValues(e.settings.Name, outcome).Inc()
+	metrics.ALBGlobalEvaluationDuration.WithLabelValues(e.settings.Name).Observe(time.Since(start).Seconds())
+}
+
+// serve answers r and returns the outcome its metrics record: success, partial, or the error type
+func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) string {
+	fail := func(status int, errorType string, err error, warnings []string) string {
+		global.WriteError(w, status, errorType, err, warnings)
+		return errorType
+	}
 	qp, _, _ := params.GetRequestValues(r)
 	query := qp.Get(upQuery)
 	if query == "" {
-		global.WriteError(w, http.StatusBadRequest, global.ErrorTypeBadData,
+		return fail(http.StatusBadRequest, global.ErrorTypeBadData,
 			fmt.Errorf("%w: %s is required", errGlobalBadData, upQuery), nil)
-		return
 	}
 	partial := e.settings.PartialResponse
 	if v, err := strconv.ParseBool(qp.Get(partialResponseParam)); err == nil {
@@ -99,28 +119,49 @@ func (e *globalEvaluator) ServeTSMGlobal(w http.ResponseWriter, r *http.Request,
 	}
 	members, warnings, err := globalMembers(req, partial)
 	if err != nil {
-		global.WriteError(w, http.StatusServiceUnavailable, global.ErrorTypeUnavailable, err, warnings)
-		return
+		return fail(http.StatusServiceUnavailable, global.ErrorTypeUnavailable, err, warnings)
+	}
+	// the query timeout includes the wait for a free evaluation slot
+	timeout := e.settings.QueryTimeout
+	if v := qp.Get(timeoutParam); v != "" {
+		d, err := parseDuration(v)
+		if err != nil {
+			return fail(http.StatusBadRequest, global.ErrorTypeBadData, fmt.Errorf("%w: %w", errGlobalBadData, err), nil)
+		}
+		if timeout <= 0 || d < timeout {
+			timeout = d
+		}
 	}
 	ctx := r.Context()
-	if v := qp.Get(timeoutParam); v != "" {
-		timeout, err := parseDuration(v)
-		if err != nil {
-			global.WriteError(w, http.StatusBadRequest, global.ErrorTypeBadData, fmt.Errorf("%w: %w", errGlobalBadData, err), nil)
-			return
-		}
+	if timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
 	}
-	ctx = global.WithBudget(global.WithRequest(ctx, r), &global.Budget{
+	if e.slots != nil {
+		select {
+		case e.slots <- struct{}{}:
+			defer func() { <-e.slots }()
+		case <-ctx.Done():
+			status, errorType := globalErrorType(ctx.Err())
+			return fail(status, errorType, fmt.Errorf("waiting for an evaluation slot: %w", ctx.Err()), warnings)
+		}
+	}
+	budget := &global.Budget{
 		MaxSeries: int64(e.settings.MaxFetchedSeries), MaxSamples: e.settings.MaxFetchedSamples,
-	})
-	queryable := global.NewQueryable(members, e.settings.ReplicaLabels, e.settings.Deduplication, partial)
+		MaxResponseBytes: e.settings.MaxResponseBytes,
+	}
+	defer func() {
+		series, samples := budget.Fetched()
+		metrics.ALBGlobalFetchedSeries.WithLabelValues(e.settings.Name).Add(float64(series))
+		metrics.ALBGlobalFetchedSamples.WithLabelValues(e.settings.Name).Add(float64(samples))
+	}()
+	ctx = global.WithBudget(global.WithRequest(ctx, r), budget)
+	queryable := global.NewQueryable(members, e.settings.ReplicaLabels, e.settings.Deduplication, partial,
+		func(member string) { metrics.ALBGlobalMemberFailures.WithLabelValues(e.settings.Name, member).Inc() })
 	qry, err := e.newQuery(ctx, r, qp.Get, queryable, query)
 	if err != nil {
-		global.WriteError(w, http.StatusBadRequest, global.ErrorTypeBadData, err, warnings)
-		return
+		return fail(http.StatusBadRequest, global.ErrorTypeBadData, err, warnings)
 	}
 	defer qry.Close()
 	res := qry.Exec(ctx)
@@ -133,8 +174,7 @@ func (e *globalEvaluator) ServeTSMGlobal(w http.ResponseWriter, r *http.Request,
 	warnings = append(warnings, resultWarnings...)
 	if res.Err != nil {
 		status, errorType := globalErrorType(res.Err)
-		global.WriteError(w, status, errorType, res.Err, warnings)
-		return
+		return fail(status, errorType, res.Err, warnings)
 	}
 	value := res.Value
 	if limit, err := strconv.Atoi(qp.Get(upLimit)); err == nil && limit > 0 {
@@ -143,12 +183,13 @@ func (e *globalEvaluator) ServeTSMGlobal(w http.ResponseWriter, r *http.Request,
 			warnings = append(warnings, globalLimitWarning)
 		}
 	}
-	result := globalResultHeader
+	result, outcome := globalResultHeader, globalOutcomeSuccess
 	if partialResult {
-		result = globalPartialResultHeader
+		result, outcome = globalPartialResultHeader, globalOutcomePartial
 	}
 	w.Header().Set(headers.NameTricksterResult, result)
 	global.WriteResult(w, value, warnings, infos)
+	return outcome
 }
 
 // newQuery prepares the instant or range query r names

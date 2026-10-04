@@ -66,6 +66,11 @@ func (b *Budget) add(series, samples int64) error {
 	return nil
 }
 
+// Fetched returns the series and samples the budget has counted.
+func (b *Budget) Fetched() (series, samples int64) {
+	return b.series.Load(), b.samples.Load()
+}
+
 // responseLimit returns the most bytes a source reads for one response, or zero for no limit
 func (b *Budget) responseLimit() int64 {
 	if b == nil {

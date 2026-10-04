@@ -151,10 +151,11 @@ func (o *Options) GetMaxConcurrentQueries() int {
 // GlobalSettings returns the settings global evaluation runs with, defaults applied.
 func (o *Options) GlobalSettings() merge.TSMGlobalSettings {
 	s := merge.TSMGlobalSettings{
-		Deduplication:   o.GetDeduplication(),
-		PartialResponse: o.AllowsPartialResponse(),
-		MaxSamples:      o.GetMaxSamples(),
-		QueryTimeout:    o.GetQueryTimeout(),
+		Deduplication:        o.GetDeduplication(),
+		PartialResponse:      o.AllowsPartialResponse(),
+		MaxSamples:           o.GetMaxSamples(),
+		QueryTimeout:         o.GetQueryTimeout(),
+		MaxConcurrentQueries: o.GetMaxConcurrentQueries(),
 	}
 	if o != nil {
 		s.ReplicaLabels = slices.Clone(o.ReplicaLabels)

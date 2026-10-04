@@ -141,7 +141,7 @@ func TestGlobalSettings(t *testing.T) {
 	var none *Options
 	require.Equal(t, merge.TSMGlobalSettings{
 		Deduplication: DeduplicationPenalty, PartialResponse: true, MaxSamples: DefaultMaxSamples,
-		QueryTimeout: DefaultQueryTimeout,
+		QueryTimeout: DefaultQueryTimeout, MaxConcurrentQueries: DefaultMaxConcurrentQueries,
 	}, none.GlobalSettings())
 	o := &Options{
 		ReplicaLabels: []string{testReplicaLabel}, Deduplication: DeduplicationChain, PartialResponse: new(false),
@@ -150,7 +150,8 @@ func TestGlobalSettings(t *testing.T) {
 	s := o.GlobalSettings()
 	require.Equal(t, merge.TSMGlobalSettings{
 		ReplicaLabels: []string{testReplicaLabel}, Deduplication: DeduplicationChain, MaxSamples: 7,
-		QueryTimeout: time.Second, MaxFetchedSeries: 8, MaxFetchedSamples: 9,
+		QueryTimeout: time.Second, MaxConcurrentQueries: DefaultMaxConcurrentQueries, MaxFetchedSeries: 8,
+		MaxFetchedSamples: 9,
 	}, s)
 	s.ReplicaLabels[0] = metricNameLabel
 	require.Equal(t, testReplicaLabel, o.ReplicaLabels[0])

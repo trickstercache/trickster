@@ -956,6 +956,63 @@ var (
 		[]string{keys.Mechanism, keys.Variant},
 	)
 
+	// ALBGlobalEvaluations counts TSM global evaluations by ALB and outcome: success, partial, or the
+	// Prometheus API error type that answered the query.
+	ALBGlobalEvaluations = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_evaluations_total",
+			Help:      "Count of TSM global evaluations, by ALB and outcome.",
+		},
+		[]string{keys.ALB_Name, keys.Status},
+	)
+
+	// ALBGlobalEvaluationDuration measures TSM global evaluations, including raw series retrieval.
+	ALBGlobalEvaluationDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_evaluation_duration_seconds",
+			Help:      "Histogram of TSM global evaluation durations, by ALB.",
+			Buckets:   defaultBuckets,
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalFetchedSeries counts the raw series TSM global evaluations read, before deduplication.
+	ALBGlobalFetchedSeries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_fetched_series_total",
+			Help:      "Count of raw series read by TSM global evaluations before deduplication, by ALB.",
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalFetchedSamples counts the raw samples TSM global evaluations read, before deduplication.
+	ALBGlobalFetchedSamples = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_fetched_samples_total",
+			Help:      "Count of raw samples read by TSM global evaluations before deduplication, by ALB.",
+		},
+		[]string{keys.ALB_Name},
+	)
+
+	// ALBGlobalMemberFailures counts member reads that failed during TSM global evaluation.
+	ALBGlobalMemberFailures = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_member_failures_total",
+			Help:      "Count of failed member raw series reads during TSM global evaluation, by ALB and member.",
+		},
+		[]string{keys.ALB_Name, keys.Member},
+	)
+
 	// ALBTSMReplicaEvents counts logical replica-group activity without using
 	// configured group names as labels. "group_attempted" and "group_failed"
 	// describe logical availability; "fallback", "conflict", and "suppressed"
@@ -1346,6 +1403,11 @@ func init() {
 	prometheus.MustRegister(ProxyConnectionFailed)
 	prometheus.MustRegister(ALBFanoutFailures)
 	prometheus.MustRegister(ALBFanoutAttempts)
+	prometheus.MustRegister(ALBGlobalEvaluations)
+	prometheus.MustRegister(ALBGlobalEvaluationDuration)
+	prometheus.MustRegister(ALBGlobalFetchedSeries)
+	prometheus.MustRegister(ALBGlobalFetchedSamples)
+	prometheus.MustRegister(ALBGlobalMemberFailures)
 	prometheus.MustRegister(ALBTSMReplicaEvents)
 	prometheus.MustRegister(ALBFanoutLoserDrain)
 	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)

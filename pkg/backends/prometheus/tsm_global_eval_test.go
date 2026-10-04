@@ -33,9 +33,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	tsmql "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	promengine "github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -378,4 +380,96 @@ func TestGlobalErrorType(t *testing.T) {
 	_, truncated = limitSeries(promengine.Matrix{{}}, 1)
 	require.False(t, truncated)
 	require.True(t, strings.HasPrefix(globalPartialResultHeader, "engine=ALB"))
+}
+
+// blockingSource holds every select until released, signaling each one it holds
+type blockingSource struct {
+	memberSource
+	held    chan struct{}
+	release chan struct{}
+}
+
+func (b blockingSource) Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
+	matchers ...*labels.Matcher,
+) ([]storage.Series, error) {
+	b.held <- struct{}{}
+	select {
+	case <-b.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	return b.memberSource.Select(ctx, mint, maxt, hints, matchers...)
+}
+
+func TestGlobalEvaluationConcurrency(t *testing.T) {
+	members, _ := presenceStorages(t, presenceTopologies[0])
+	source := blockingSource{
+		store: members[0].(presenceStore),
+		held:  make(chan struct{}, 1), release: make(chan struct{}),
+	}
+	req := backends.TSMGlobalRequest{Members: []backends.TSMGlobalMember{{Name: "slow", Source: source}}}
+	settings := globalTestSettings()
+	settings.MaxConcurrentQueries = 1
+	e := newGlobalEvaluator(settings)
+	instant := url.Values{upQuery: {globalTestQuery}, upTime: {globalTestSeconds(10)}}
+
+	first := make(chan *httptest.ResponseRecorder)
+	go func() { first <- serveGlobal(e, globalTestRequest(globalTestQueryPath, instant), req) }()
+	<-source.held
+	waiting := url.Values{upQuery: {globalTestQuery}, upTime: {globalTestSeconds(10)}, timeoutParam: {"0.05"}}
+	w := serveGlobal(e, globalTestRequest(globalTestQueryPath, waiting), req)
+	require.Equal(t, http.StatusServiceUnavailable, w.Code)
+	require.Contains(t, w.Body.String(), "evaluation slot")
+	close(source.release)
+	require.Equal(t, http.StatusOK, (<-first).Code)
+}
+
+func TestGlobalEvaluationMetrics(t *testing.T) {
+	const name = "metrics-alb"
+	members, _ := presenceStorages(t, presenceTopologies[0])
+	req := globalTestMembers(members...)
+	failing := globalTestMembers(members...)
+	failing.Members = append(failing.Members, backends.TSMGlobalMember{
+		Name:   "failing",
+		Source: memberSource{err: errGlobalTestMember},
+	})
+	settings := globalTestSettings()
+	settings.Name = name
+	e := newGlobalEvaluator(settings)
+	instant := url.Values{upQuery: {globalTestQuery}, upTime: {globalTestSeconds(10)}}
+	count := func(outcome string) float64 {
+		return testutil.ToFloat64(metrics.ALBGlobalEvaluations.WithLabelValues(name, outcome))
+	}
+	before := map[string]float64{
+		globalOutcomeSuccess: count(globalOutcomeSuccess), globalOutcomePartial: count(globalOutcomePartial),
+		global.ErrorTypeBadData: count(global.ErrorTypeBadData),
+	}
+	failures := testutil.ToFloat64(metrics.ALBGlobalMemberFailures.WithLabelValues(name, "failing"))
+	serveGlobal(e, globalTestRequest(globalTestQueryPath, instant), req)
+	serveGlobal(e, globalTestRequest(globalTestQueryPath, instant), failing)
+	serveGlobal(e, globalTestRequest(globalTestQueryPath, url.Values{}), req)
+	for outcome, n := range before {
+		require.InDelta(t, n+1, count(outcome), 0, outcome)
+	}
+	require.InDelta(t, failures+1, testutil.ToFloat64(metrics.ALBGlobalMemberFailures.WithLabelValues(name, "failing")), 0)
+	require.Positive(t, testutil.CollectAndCount(metrics.ALBGlobalEvaluationDuration))
+}
+
+func TestGlobalEvaluationClientCancel(t *testing.T) {
+	members, _ := presenceStorages(t, presenceTopologies[0])
+	source := blockingSource{
+		store: members[0].(presenceStore),
+		held:  make(chan struct{}, 1), release: make(chan struct{}),
+	}
+	req := backends.TSMGlobalRequest{Members: []backends.TSMGlobalMember{{Name: "slow", Source: source}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	r := globalTestRequest(globalTestQueryPath, url.Values{upQuery: {globalTestQuery}, upTime: {globalTestSeconds(10)}}).
+		WithContext(ctx)
+	done := make(chan *httptest.ResponseRecorder)
+	go func() { done <- serveGlobal(newGlobalEvaluator(globalTestSettings()), r, req) }()
+	<-source.held
+	cancel()
+	w := <-done
+	require.Equal(t, statusClientClosedRequest, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), global.ErrorTypeCanceled)
 }

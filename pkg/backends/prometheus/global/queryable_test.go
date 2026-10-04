@@ -86,7 +86,7 @@ func TestQueryableSelect(t *testing.T) {
 		return out
 	}
 	t.Run("deduplicates every member", func(t *testing.T) {
-		set := selectAll(t, NewQueryable(members(a, b), []string{testReplicaLabel}, merge.TSMDeduplicationChain, false),
+		set := selectAll(t, NewQueryable(members(a, b), []string{testReplicaLabel}, merge.TSMDeduplicationChain, false, nil),
 			context.Background(), &storage.SelectHints{Start: 10, End: 20})
 		var got []labels.Labels
 		for set.Next() {
@@ -98,19 +98,19 @@ func TestQueryableSelect(t *testing.T) {
 		require.Contains(t, b.calls, [2]int64{10, 20}, "select hints bound the read")
 	})
 	t.Run("querier bounds apply without hints", func(t *testing.T) {
-		set := selectAll(t, NewQueryable(members(b), nil, merge.TSMDeduplicationPenalty, false), context.Background(), nil)
+		set := selectAll(t, NewQueryable(members(b), nil, merge.TSMDeduplicationPenalty, false, nil), context.Background(), nil)
 		require.True(t, set.Next())
 		require.Contains(t, b.calls, [2]int64{0, 100})
 	})
 	t.Run("a failed member fails the select", func(t *testing.T) {
-		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, false),
+		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, false, nil),
 			context.Background(), nil)
 		require.False(t, set.Next())
 		require.ErrorIs(t, set.Err(), ErrMemberUnavailable)
 		require.ErrorIs(t, set.Err(), boom)
 	})
 	t.Run("a failed member is a warning in a partial response", func(t *testing.T) {
-		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true),
+		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true, nil),
 			context.Background(), nil)
 		n := 0
 		for set.Next() {
@@ -122,7 +122,7 @@ func TestQueryableSelect(t *testing.T) {
 	})
 	t.Run("a limit fails even a partial response", func(t *testing.T) {
 		limited := &MemorySource{Err: ErrFetchLimit}
-		set := selectAll(t, NewQueryable(members(a, limited), nil, merge.TSMDeduplicationPenalty, true),
+		set := selectAll(t, NewQueryable(members(a, limited), nil, merge.TSMDeduplicationPenalty, true, nil),
 			context.Background(), nil)
 		require.False(t, set.Next())
 		require.ErrorIs(t, set.Err(), ErrFetchLimit)
@@ -130,13 +130,13 @@ func TestQueryableSelect(t *testing.T) {
 	t.Run("cancellation fails even a partial response", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true), ctx, nil)
+		set := selectAll(t, NewQueryable(members(a, failing), nil, merge.TSMDeduplicationPenalty, true, nil), ctx, nil)
 		require.Error(t, set.Err())
 	})
 }
 
 func TestQuerierServesNoLabels(t *testing.T) {
-	qr, err := NewQueryable(nil, nil, "", false).Querier(0, 1)
+	qr, err := NewQueryable(nil, nil, "", false, nil).Querier(0, 1)
 	require.NoError(t, err)
 	values, warnings, err := qr.LabelValues(context.Background(), testPod, nil)
 	require.NoError(t, err)

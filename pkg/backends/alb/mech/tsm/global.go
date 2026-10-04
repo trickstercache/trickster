@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 )
 
 var (
@@ -47,7 +48,13 @@ func (h *handler) globalEvaluator(live pool.Targets) (backends.TSMGlobalEvaluato
 		if !ok {
 			continue
 		}
-		ev, err := provider.NewTSMGlobalEvaluator(h.tsmOptions.GlobalSettings())
+		settings := h.tsmOptions.GlobalSettings()
+		settings.Name = h.name
+		settings.MaxResponseBytes = int64(h.maxCaptureBytes)
+		if settings.MaxResponseBytes <= 0 {
+			settings.MaxResponseBytes = bo.DefaultMaxCaptureBytes
+		}
+		ev, err := provider.NewTSMGlobalEvaluator(settings)
 		if err != nil {
 			return nil, err
 		}

@@ -166,3 +166,21 @@ func TestServeGlobalOverRemoteRead(t *testing.T) {
 		member.mu.Unlock()
 	}
 }
+
+func TestServeGlobalResponseLimit(t *testing.T) {
+	_, target := newRemoteReadMember(t, "east", "a", "b")
+	p := pool.New(pool.Targets{target}, -1)
+	t.Cleanup(p.Stop)
+	p.RefreshHealthy()
+	h := &handler{mergePaths: []string{"/"}, maxCaptureBytes: 16, tsmOptions: options.Options{
+		Evaluation: options.EvaluationGlobal,
+	}}
+	h.SetPool(p)
+	req := newTestMergeRequest(t)
+	req.URL.Path = "/api/v1/query"
+	req.URL.RawQuery = url.Values{"query": {e2eMetric}, "time": {strconv.Itoa(e2eStart + 60)}}.Encode()
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+	require.Contains(t, w.Body.String(), "raw data limit")
+}
