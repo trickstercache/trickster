@@ -18,6 +18,7 @@ package relay
 
 import (
 	"context"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -59,6 +60,8 @@ type subscriber struct {
 	held    bool
 	wg      sync.WaitGroup
 	release sync.Once
+	forget  func()
+	joining *wire.Location
 }
 
 func newSubscriber(t *track, req *session.Request, p *message.Params) *subscriber {
@@ -96,7 +99,19 @@ func (s *subscriber) publishFilters() {
 }
 
 func (s *subscriber) releaseTrack() {
-	s.release.Do(func() { s.t.r.tracks.release(s.t) })
+	s.release.Do(func() {
+		s.t.r.tracks.release(s.t)
+		if s.forget != nil {
+			s.forget()
+		}
+	})
+}
+
+func (s *subscriber) joiningLocation() (*wire.Location, bool) {
+	// the Largest Object last communicated as forwarding began, which a Joining FETCH ends at (draft -19 §5.1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.joining, s.forward.Load()
 }
 
 func (s *subscriber) refuse(code message.RequestCode, reason string) {
@@ -172,6 +187,11 @@ func (s *subscriber) activate() {
 		return
 	}
 	go t.syncForward()
+	if largest != nil && s.forward.Load() {
+		s.mu.Lock()
+		s.joining = largest
+		s.mu.Unlock()
+	}
 
 	ok2 := &message.SubscribeOK{TrackAlias: s.req.Session().NewTrackAlias()}
 	if largest != nil {
@@ -186,12 +206,42 @@ func (s *subscriber) activate() {
 	}
 	pending := s.markActive()
 	t.r.m.request(kindSubscribe, resultOK)
-	if m, isSub := s.req.Message().(*message.Subscribe); isSub && m.Params.Fill != nil && s.forward.Load() {
-		s.startFill(s.req.RequestID(), m.Params.Fill, largest)
+	if largest != nil && s.forward.Load() {
+		if m, isSub := s.req.Message().(*message.Subscribe); isSub && m.Params.Fill != nil {
+			s.startFill(s.req.RequestID(), m.Params.Fill, largest)
+		}
+		s.sendEndedTail(*largest, props.PublisherPriority())
 	}
 	for _, u := range pending {
 		s.applyUpdate(u)
 	}
+}
+
+func (s *subscriber) sendEndedTail(largest wire.Location, defaultPrio uint8) {
+	// a subscription starting just past an ended group's last object learns the group ended from an empty stream,
+	// which completes the group a fill or joining fetch delivers
+	s.mu.Lock()
+	start := s.win.start
+	s.mu.Unlock()
+	if largest.Object == math.MaxUint64 || start != (wire.Location{Group: largest.Group, Object: largest.Object + 1}) {
+		return
+	}
+	h, ok := s.t.endedTail(largest)
+	if !ok {
+		return
+	}
+	prio := h.Priority
+	if h.DefaultPriority {
+		prio = defaultPrio
+	}
+	s.mu.Lock()
+	urgency, incremental := session.Urgency(s.prio, prio), session.Incremental(s.order)
+	s.mu.Unlock()
+	s.wg.Go(func() {
+		if out, err := s.req.OpenSubgroup(s.ctx, h, urgency, incremental); err == nil {
+			_ = out.Close()
+		}
+	})
 }
 
 func includeProperties(m message.Message) bool {
@@ -376,12 +426,18 @@ func (s *subscriber) applyUpdate(u *message.RequestUpdate) {
 		s.sgTimeout = millis(p.SubgroupDeliveryTimeout)
 	}
 	s.mu.Unlock()
+	resumed := p.Has(message.ParamForward) && p.Forward && !s.forward.Load()
 	if p.Has(message.ParamForward) {
 		s.setForward(p.Forward)
 	}
 	ok := &message.RequestOK{}
 	if largest != nil {
 		ok.Params.SetLargestObject(*largest)
+		if resumed {
+			s.mu.Lock()
+			s.joining = largest
+			s.mu.Unlock()
+		}
 	}
 	if err := s.req.Send(ok); err != nil {
 		return
@@ -593,14 +649,18 @@ func (w *writer) finish(st runState, sgTimeout time.Duration) {
 	out.ResetDelivered(message.ResetCancelled)
 }
 
-func (w *writer) open(firstOfRun bool, defaultPrio uint8) bool {
+func (w *writer) open(firstID uint64, firstOfRun bool, defaultPrio uint8) bool {
 	s := w.s
 	h := w.rn.header
-	if !firstOfRun {
+	switch {
+	case !firstOfRun:
 		h.FirstObject = false
 		if h.Mode == message.SubgroupIDFirstObject {
 			h.Mode = message.SubgroupIDExplicit
 		}
+	case firstID == 0:
+		// no object precedes Object 0 in its subgroup, a fact a publisher on a draft without the bit cannot state
+		h.FirstObject = true
 	}
 	prio := h.Priority
 	if h.DefaultPriority {
@@ -625,7 +685,7 @@ func (w *writer) open(firstOfRun bool, defaultPrio uint8) bool {
 }
 
 func (w *writer) write(o *object, firstOfRun bool, defaultPrio uint8) bool {
-	if w.out == nil && !w.open(firstOfRun, defaultPrio) {
+	if w.out == nil && !w.open(o.id, firstOfRun, defaultPrio) {
 		return false
 	}
 	so := message.SubgroupObject{ID: o.id, Properties: o.props, Status: o.status, PayloadLen: uint64(len(o.payload))}

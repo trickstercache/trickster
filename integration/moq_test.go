@@ -19,6 +19,7 @@ package integration
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -58,7 +59,6 @@ type moqObject struct {
 	payload []byte
 }
 
-// moqOrigin publishes tracks over native QUIC, answering SUBSCRIBE and FETCH and counting both
 type moqOrigin struct {
 	addr       string
 	mu         sync.Mutex
@@ -70,6 +70,7 @@ type moqOrigin struct {
 
 func startMoQOrigin(t *testing.T) *moqOrigin {
 	t.Helper()
+	// the origin publishes tracks over native QUIC, answering SUBSCRIBE and FETCH and counting both
 	keyPEM, certPEM, err := testtls.GetTestKeyAndCertWithNames("localhost")
 	require.NoError(t, err)
 	kp, err := tls.X509KeyPair(certPEM, keyPEM)
@@ -171,9 +172,9 @@ func (o *moqOrigin) fetch(r *session.Request, m *message.Fetch) {
 	_ = r.CloseSend()
 }
 
-// publish stores a group and sends it to every subscription made through path
 func (o *moqOrigin) publish(t *testing.T, path string, group uint64, payloads ...string) {
 	t.Helper()
+	// the group is stored for fetches and sent to every subscription made through path
 	objs := make([]moqObject, len(payloads))
 	for i, p := range payloads {
 		objs[i] = moqObject{id: uint64(i), payload: []byte(p)}
@@ -241,8 +242,7 @@ type moqBackend struct {
 	name, path, host string
 }
 
-// moqHarness starts Trickster with a moq listener whose backends relay paths of origin
-func moqHarness(t *testing.T, origin *moqOrigin, groups int, backends ...moqBackend) (tricksterHarness, string) {
+func moqServingTLS(t *testing.T) (*to.Options, *x509.CertPool) {
 	t.Helper()
 	keyPEM, certPEM, err := testtls.GetTestKeyAndCertWithNames("localhost")
 	require.NoError(t, err)
@@ -250,6 +250,15 @@ func moqHarness(t *testing.T, origin *moqOrigin, groups int, backends ...moqBack
 	certPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
 	require.NoError(t, os.WriteFile(certPath, certPEM, 0o600))
 	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
+	pool := x509.NewCertPool()
+	require.True(t, pool.AppendCertsFromPEM(certPEM))
+	return &to.Options{ServeTLS: true, FullChainCertPath: certPath, PrivateKeyPath: keyPath}, pool
+}
+
+func moqHarness(t *testing.T, origin *moqOrigin, groups int, backends ...moqBackend) (tricksterHarness, string) {
+	t.Helper()
+	// the backends relay paths of origin, chosen by authority when they name a host
+	serve, _ := moqServingTLS(t)
 	udp, releaseUDP := portutil.ReserveUDP(t, 1)
 	h := configHarness(t, func(c *tkconfig.Config) {
 		c.Listeners[moqListener] = &listenerconfig.Options{
@@ -263,10 +272,8 @@ func moqHarness(t *testing.T, origin *moqOrigin, groups int, backends ...moqBack
 			if mb.host != "" {
 				b.Hosts = []string{mb.host}
 			}
-			b.TLS = &to.Options{
-				ServeTLS: true, FullChainCertPath: certPath, PrivateKeyPath: keyPath,
-				InsecureSkipVerify: true,
-			}
+			b.TLS = serve.Clone()
+			b.TLS.InsecureSkipVerify = true
 			b.MoQ = mo.New()
 			b.MoQ.LiveEdge.Groups = groups
 			c.Backends[mb.name] = b
@@ -279,10 +286,15 @@ func moqHarness(t *testing.T, origin *moqOrigin, groups int, backends ...moqBack
 
 func dialMoQ(t *testing.T, addr, authority string) (*session.Session, error) {
 	t.Helper()
+	return dialMoQWith(t, addr, authority, codec.ALPNs(codec.ClientOffer)...)
+}
+
+func dialMoQWith(t *testing.T, addr, authority string, alpns ...string) (*session.Session, error) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
 	conn, err := quic.DialAddr(ctx, addr, &tls.Config{InsecureSkipVerify: true, // #nosec G402 -- test certificate
-		NextProtos: codec.ALPNs(codec.ClientOffer), MinVersion: tls.VersionTLS13},
+		NextProtos: alpns, MinVersion: tls.VersionTLS13},
 		&quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true})
 	if err != nil {
 		return nil, err

@@ -36,8 +36,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
-	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
-	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/webtransport-go"
@@ -60,20 +58,13 @@ type ingestHarness struct {
 	tokenPath string
 }
 
-// moqIngestHarness serves an origin-less moq backend that accepts publishers, on a moq listener and by WebTransport
-// through the default listener, with requests authorized by a token file
 func moqIngestHarness(t *testing.T) ingestHarness {
 	t.Helper()
-	keyPEM, certPEM, err := testtls.GetTestKeyAndCertWithNames("localhost")
-	require.NoError(t, err)
-	dir := t.TempDir()
-	certPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
-	tokenPath := filepath.Join(dir, "tokens")
-	require.NoError(t, os.WriteFile(certPath, certPEM, 0o600))
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
+	// an origin-less backend accepts publishers on a moq listener and by WebTransport through the default
+	// listener, authorizing requests by a token file
+	serve, pool := moqServingTLS(t)
+	tokenPath := filepath.Join(t.TempDir(), "tokens")
 	require.NoError(t, os.WriteFile(tokenPath, fmt.Appendf(nil, ingestTokenGrant, ingestPubToken, ingestSubToken), 0o600))
-	pool := x509.NewCertPool()
-	require.True(t, pool.AppendCertsFromPEM(certPEM))
 	tlsPorts, releaseTLS := portutil.Reserve(t, 1)
 	udpPorts, releaseUDP := portutil.ReserveUDP(t, 2)
 	h := configHarness(t, func(c *tkconfig.Config) {
@@ -86,7 +77,7 @@ func moqIngestHarness(t *testing.T) ingestHarness {
 		b := bo.New()
 		b.Name, b.Provider, b.CacheName = ingestBackend, providers.MoQ, "default"
 		b.ListenerNames = []string{moqListener, listenerconfig.DefaultFrontendName}
-		b.TLS = &to.Options{ServeTLS: true, FullChainCertPath: certPath, PrivateKeyPath: keyPath}
+		b.TLS = serve
 		b.MoQ = mo.New()
 		b.MoQ.Publish.Enabled = true
 		b.MoQ.Authorization.Mode, b.MoQ.Authorization.TokenFile = mo.AuthorizationToken, tokenPath
@@ -109,9 +100,9 @@ func setupTokens(values ...string) []wire.Token {
 	return out
 }
 
-// native opens a session on the moq listener whose SETUP carries tokens
 func (h ingestHarness) native(t *testing.T, tokens ...string) *session.Session {
 	t.Helper()
+	// a session on the moq listener, its SETUP carrying tokens
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()
 	conn, err := quic.DialAddr(ctx, h.moqAddr, &tls.Config{
@@ -134,9 +125,9 @@ func (h ingestHarness) native(t *testing.T, tokens ...string) *session.Session {
 	return s
 }
 
-// browser opens a session by WebTransport through the default listener, its SETUP carrying tokens
 func (h ingestHarness) browser(t *testing.T, tokens ...string) *session.Session {
 	t.Helper()
+	// a session by WebTransport through the default listener, its SETUP carrying tokens
 	tr := &webtransport.Transport{
 		TLSClientConfig:      &tls.Config{RootCAs: h.pool, ServerName: "localhost", MinVersion: tls.VersionTLS13},
 		ApplicationProtocols: codec.ALPNs(codec.ClientOffer),
@@ -168,8 +159,8 @@ func moqResponse(t *testing.T, req *session.Request) message.Message {
 
 func publishGroup(t *testing.T, req *session.Request, group uint64, payloads ...string) {
 	t.Helper()
-	out, err := req.OpenSubgroup(context.Background(), message.SubgroupHeader{Group: group, Priority: 1, EndOfGroup: true},
-		3, false)
+	out, err := req.OpenSubgroup(context.Background(),
+		message.SubgroupHeader{Group: group, Priority: 1, EndOfGroup: true, FirstObject: true}, 3, false)
 	require.NoError(t, err)
 	for i, p := range payloads {
 		require.NoError(t, out.WriteObject(&message.SubgroupObject{ID: uint64(i), PayloadLen: uint64(len(p))}))

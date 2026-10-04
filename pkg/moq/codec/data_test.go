@@ -482,3 +482,61 @@ func FuzzParseDatagram(f *testing.F) {
 		}
 	})
 }
+
+func TestFetchStreamOlderDrafts(t *testing.T) {
+	objs := []message.FetchObject{
+		{Group: 5, Object: 0, Priority: 10, PayloadLen: 3},
+		{Group: 5, Object: 4, Priority: 10, PayloadLen: 1},
+		{Group: 9, Object: 2, Subgroup: 3, Priority: 10, PayloadLen: 1},
+		{Group: 9, Object: 3, Subgroup: 3, Priority: 10, PayloadLen: 1},
+		{EndOfRange: message.RangeEndUnknown, Group: 11, Object: 0},
+	}
+	for _, draft := range []int{19, 18, 17} {
+		fetchRoundTrip(t, mustCodec(t, draft), message.GroupOrderAscending, objs)
+		fetchRoundTrip(t, mustCodec(t, draft), message.GroupOrderDescending, []message.FetchObject{
+			{Group: 9, Object: 1, Priority: 1, PayloadLen: 1},
+			{Group: 4, Object: 7, Priority: 1, PayloadLen: 1},
+		})
+	}
+	// -17 writes the Group and Object IDs whole: after {5, 4}, group 9 is 9 itself rather than a delta of 3
+	b := fetchRoundTrip(t, mustCodec(t, 17), message.GroupOrderAscending, objs[1:3])
+	if !bytes.Contains(b, []byte{fetchBitGroupID | fetchBitObjectID | fetchSubgroupExplicit, 9, 3, 2}) {
+		t.Errorf("-17 entries %x", b)
+	}
+	// a draft before -20 has no timed-out marker, so the span is reported as unknown
+	c := mustCodec(t, 19)
+	w := c.NewFetchWriter(message.GroupOrderAscending)
+	got, err := w.AppendObject(nil, &message.FetchObject{EndOfRange: message.RangeEndTimedOut, Group: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fr := c.NewFetchReader(stream(got), message.GroupOrderAscending); true {
+		o, err := fr.Next()
+		if err != nil || o.EndOfRange != message.RangeEndUnknown || o.Group != 2 {
+			t.Errorf("timed-out marker for -19 read back as %+v %v", o, err)
+		}
+	}
+	// and a reader of such a draft refuses the marker it does not define
+	c22 := mustCodec(t, 22)
+	timed, _ := c22.NewFetchWriter(message.GroupOrderAscending).AppendObject(nil,
+		&message.FetchObject{EndOfRange: message.RangeEndTimedOut, Group: 2})
+	if _, err = c.NewFetchReader(stream(timed), message.GroupOrderAscending).Next(); err == nil {
+		t.Error("a -19 reader refuses End of Timed-Out Range")
+	}
+}
+
+func TestSubgroupFirstObjectOlderDrafts(t *testing.T) {
+	// FIRST_OBJECT arrived in -18: a -17 writer leaves the bit clear and a -17 reader refuses a type with it set
+	c17, c18 := mustCodec(t, 17), mustCodec(t, 18)
+	h := message.SubgroupHeader{Group: 1, FirstObject: true, DefaultPriority: true}
+	b17 := c17.AppendSubgroupHeader(nil, &h)
+	t17, _ := wire.ReadVarint(b17)
+	if t17&subgroupBitFirstObject != 0 || c17.ClassifyStream(t17) != StreamSubgroup {
+		t.Errorf("-17 header type %#x", t17)
+	}
+	b18 := c18.AppendSubgroupHeader(nil, &h)
+	t18, _ := wire.ReadVarint(b18)
+	if t18&subgroupBitFirstObject == 0 || c17.ClassifyStream(t18) == StreamSubgroup {
+		t.Errorf("-18 header type %#x, which -17 does not define", t18)
+	}
+}

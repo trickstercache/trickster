@@ -22,6 +22,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
@@ -205,18 +206,50 @@ func (d *downstream) subscribeNamespace(req *session.Request, m *message.Subscri
 		d.refuse(req, kindSubscribeNamespace, message.RequestPrefixOverlap, reasonPrefixOverlap)
 		return
 	}
-	l := &nsListener{scope: d.scope, prefix: prefix, req: req}
-	req.SetHandlers(&withdrawal{done: func() {
-		d.r.removeNamespaceListener(l)
+	// draft -17 asks for namespaces, PUBLISHes or both in one request, which later drafts split in two
+	namespaces, tracks := true, false
+	if !req.Session().Codec().Has(codec.CapSubscribeTracks) {
+		namespaces = m.Options != message.SubscribeOptionPublish
+		tracks = m.Options != message.SubscribeOptionNamespace
+	}
+	var l *nsListener
+	var tl *trackListener
+	if namespaces {
+		l = &nsListener{scope: d.scope, prefix: prefix, req: req}
+	}
+	if tracks {
+		tl = &trackListener{
+			r: d.r, scope: d.scope, prefix: prefix, req: req, params: m.Params,
+			offered: make(map[string]struct{}),
+		}
+		tl.params.AuthTokens = nil
+	}
+	req.SetHandlers(&trackListenerHandler{l: tl, done: func() {
+		if l != nil {
+			d.r.removeNamespaceListener(l)
+		}
+		if tl != nil {
+			d.r.removeTrackListener(tl)
+		}
 		d.unclaim(&d.nsPrefixes, prefix)
 	}}, nil)
 	if err := req.Send(&message.RequestOK{}); err != nil {
 		return
 	}
 	d.r.m.request(kindSubscribeNamespace, resultOK)
-	d.r.addNamespaceListener(l)
+	if l != nil {
+		d.r.addNamespaceListener(l)
+	}
+	if tl != nil {
+		d.r.addTrackListener(tl)
+	}
 	if req.Context().Err() != nil {
-		d.r.removeNamespaceListener(l)
+		if l != nil {
+			d.r.removeNamespaceListener(l)
+		}
+		if tl != nil {
+			d.r.removeTrackListener(tl)
+		}
 	}
 }
 
@@ -260,11 +293,11 @@ func (h *trackListenerHandler) HandleMessage(r *session.Request, m message.Messa
 	if !ok {
 		return
 	}
-	h.l.mu.Lock()
-	if u.Params.Has(message.ParamForward) {
+	if h.l != nil && u.Params.Has(message.ParamForward) {
+		h.l.mu.Lock()
 		h.l.params.SetForward(u.Params.Forward)
+		h.l.mu.Unlock()
 	}
-	h.l.mu.Unlock()
 	_ = r.Send(&message.RequestOK{})
 }
 

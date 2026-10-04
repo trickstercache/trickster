@@ -485,7 +485,7 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 			return o, err
 		}
 		o.Group = gd
-		if s.started {
+		if s.started && !f.c.Has(CapAbsoluteFetchIDs) {
 			var ok bool
 			if o.Group, ok = s.nextGroup(gd); !ok {
 				return o, message.Violation("fetch group ID out of range")
@@ -518,7 +518,7 @@ func (f *FetchReader) Next() (message.FetchObject, error) {
 			return o, err
 		}
 		switch {
-		case hasGroup || !s.started:
+		case hasGroup || !s.started || f.c.Has(CapAbsoluteFetchIDs):
 			o.Object = od
 		case od > math.MaxUint64-s.object:
 			return o, message.Violation("fetch object ID overflows")
@@ -581,10 +581,11 @@ func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, er
 		case message.RangeEndUnknown:
 			flags = fetchEndUnknown
 		case message.RangeEndTimedOut:
-			if !c.Has(CapEndOfTimedOutRange) {
-				return b, ErrObjectFields
-			}
+			// a draft without the timed-out marker learns only that the span's objects are unknown
 			flags = fetchEndTimedOut
+			if !c.Has(CapEndOfTimedOutRange) {
+				flags = fetchEndUnknown
+			}
 		default:
 			return b, ErrObjectFields
 		}
@@ -595,6 +596,7 @@ func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, er
 	}
 	var flags uint64
 	var gd, od uint64
+	absolute := c.Has(CapAbsoluteFetchIDs)
 	switch {
 	case !s.started:
 		flags |= fetchBitGroupID | fetchBitObjectID
@@ -606,6 +608,9 @@ func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, er
 		if o.Object != s.object+1 {
 			flags |= fetchBitObjectID
 			od = o.Object - s.object
+			if absolute {
+				od = o.Object
+			}
 		}
 	default:
 		ascending := s.order != message.GroupOrderDescending
@@ -613,9 +618,12 @@ func (w *FetchWriter) AppendObject(b []byte, o *message.FetchObject) ([]byte, er
 			return b, ErrObjectOrder
 		}
 		flags |= fetchBitGroupID
-		if ascending {
+		switch {
+		case absolute:
+			gd = o.Group
+		case ascending:
 			gd = o.Group - s.group - 1
-		} else {
+		default:
 			gd = s.group - o.Group - 1
 		}
 		if s.object == math.MaxUint64 || o.Object != s.object+1 {

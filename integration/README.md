@@ -26,7 +26,12 @@ finish. `make integration-stop` stops the environment. `make developer-start`
 alone still works: the autodiscovery DNS tests probe for CoreDNS and skip when
 it isn't running (CI sets `TRICKSTER_DNS_TEST=1` to turn that skip into a
 failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
-running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
+running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. So does
+`TestMoQInterop` when moq-dev's relay (the `moq_relay` service) isn't
+answering on UDP port 10443, and CI sets `TRICKSTER_MOQ_INTEROP_TEST=1` to
+require it. `TestMoQInteropCLI` runs moq-dev's `moq` CLI in Docker against
+Trickster only when `TRICKSTER_MOQ_CLI_TEST=1` is set; it pulls the pinned
+image on first use and reaches Trickster through `host.docker.internal`. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
 for the profiles.
 
 The Kubernetes scenarios (every `Test*Kind`) are separate from compose

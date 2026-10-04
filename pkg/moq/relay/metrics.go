@@ -18,7 +18,6 @@ package relay
 
 import "github.com/prometheus/client_golang/prometheus"
 
-// Label values the relay records with
 const (
 	kindSubscribe          = "subscribe"
 	kindFetch              = "fetch"

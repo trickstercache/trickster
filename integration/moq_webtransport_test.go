@@ -24,8 +24,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
@@ -39,8 +37,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
-	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
-	testtls "github.com/trickstercache/trickster/v2/pkg/testutil/tls"
 
 	"github.com/quic-go/quic-go/http3"
 	"github.com/quic-go/webtransport-go"
@@ -59,21 +55,14 @@ type moqWebHarness struct {
 	pool   *x509.CertPool
 }
 
-// moqWebTransportHarness serves a moq backend for origin through the default listener's HTTP/3 endpoint, beside a
-// reverse proxy backend for site so plain HTTP/3 requests share the endpoint
 func moqWebTransportHarness(t *testing.T, origin *moqOrigin, site string, authenticated bool) moqWebHarness {
 	t.Helper()
-	keyPEM, certPEM, err := testtls.GetTestKeyAndCertWithNames("localhost")
-	require.NoError(t, err)
-	dir := t.TempDir()
-	certPath, keyPath := filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
-	require.NoError(t, os.WriteFile(certPath, certPEM, 0o600))
-	require.NoError(t, os.WriteFile(keyPath, keyPEM, 0o600))
-	pool := x509.NewCertPool()
-	require.True(t, pool.AppendCertsFromPEM(certPEM))
+	// a moq backend for origin on the default listener's HTTP/3 endpoint, beside a reverse proxy backend for site
+	// so plain HTTP/3 requests share the endpoint
+	serve, pool := moqServingTLS(t)
+	serve.InsecureSkipVerify = true
 	tlsPorts, releaseTLS := portutil.Reserve(t, 1)
 	udpPorts, releaseUDP := portutil.ReserveUDP(t, 1)
-	serve := &to.Options{ServeTLS: true, FullChainCertPath: certPath, PrivateKeyPath: keyPath, InsecureSkipVerify: true}
 	h := configHarness(t, func(c *tkconfig.Config) {
 		l := c.Listeners[listenerconfig.DefaultFrontendName]
 		l.TLSListenAddress, l.TLSListenPort = "127.0.0.1", tlsPorts[0]
@@ -104,9 +93,9 @@ func (h moqWebHarness) tlsConfig() *tls.Config {
 	return &tls.Config{RootCAs: h.pool, ServerName: "localhost", MinVersion: tls.VersionTLS13}
 }
 
-// dial opens a MoQ session by WebTransport through the backend's path-routed URL
 func (h moqWebHarness) dial(t *testing.T, header http.Header) (*http.Response, *session.Session, error) {
 	t.Helper()
+	// a MoQ session by WebTransport through the backend's path-routed URL
 	tr := &webtransport.Transport{TLSClientConfig: h.tlsConfig(), ApplicationProtocols: codec.ALPNs(codec.ClientOffer)}
 	ctx, cancel := context.WithTimeout(context.Background(), moqWait)
 	defer cancel()

@@ -68,6 +68,11 @@ func TestFetchFromLiveEdge(t *testing.T) {
 	if asks := h.o.fetchAsks(); len(asks) != 0 {
 		t.Errorf("the live edge serves without upstream fetches, got %+v", asks)
 	}
+	// a range closing at an ended group's end names its last object rather than an open end
+	freq, fr = fetch(t, c, "video", fetchRange(0, 0, 1, math.MaxUint64))
+	if ok, _ = fetched(t, freq, fr); ok.EndLocation != (wire.Location{Group: 1, Object: 2}) {
+		t.Errorf("FETCH_OK ends at the group's last object, got %+v", ok.EndLocation)
+	}
 }
 
 func testSpill(t *testing.T, c cache.Cache, stores *atomic.Int32) {
@@ -84,6 +89,11 @@ func testSpill(t *testing.T, c cache.Cache, stores *atomic.Int32) {
 	}
 	if asks := h.o.fetchAsks(); len(asks) != 0 {
 		t.Errorf("spilled groups serve from the cache, but the relay fetched %+v", asks)
+	}
+	// a group spilled through its end still names its last object when a range closes there
+	freq, fr = fetch(t, cl, "video", fetchRange(1, 0, 1, math.MaxUint64))
+	if ok, _ := fetched(t, freq, fr); ok.EndLocation != (wire.Location{Group: 1, Object: 2}) {
+		t.Errorf("FETCH_OK ends at the spilled group's last object, got %+v", ok.EndLocation)
 	}
 }
 
@@ -277,6 +287,42 @@ func TestFill(t *testing.T) {
 	case <-r.fetchDone:
 		t.Error("an empty fill range opens no fill stream")
 	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+func TestFillOfEndedGroup(t *testing.T) {
+	h := newHarness(t, relay.Options{}, nil)
+	cl := h.client()
+	first, frec := subscribe(t, cl, "video", message.Params{})
+	subscribed(t, first)
+	publishGroups(t, h, frec, 0, 1)
+
+	// group 1 ended before this subscription began, so an empty stream ends the group its fill delivers
+	var p message.Params
+	p.SetLocationFilter(message.LocationFilter{Type: message.FilterNextObject})
+	fill := &message.Params{}
+	fill.SetLocationFilter(message.LocationFilter{Type: message.FilterRelativeStart, StartGroup: 1})
+	p.SetFill(fill)
+	req, r := subscribe(t, cl, "video", p)
+	subscribed(t, req)
+	recv(t, r.fetchDone, "the fill stream")
+	eventually(t, "the empty stream ending group 1", func() bool {
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		return slices.Equal(r.tails, []uint64{1})
+	})
+
+	// a subscription starting at the next group is not told about the ended one
+	var next message.Params
+	next.SetLocationFilter(message.LocationFilter{Type: message.FilterRelativeStart})
+	nreq, nr := subscribe(t, cl, "video", next)
+	subscribed(t, nreq)
+	publishGroups(t, h, frec, 2)
+	eventually(t, "group 2 by the next-group subscription", func() bool { return nr.count() == 3 })
+	nr.mu.Lock()
+	defer nr.mu.Unlock()
+	if len(nr.tails) != 0 {
+		t.Errorf("a subscription past the ended group got tails %v", nr.tails)
 	}
 }
 

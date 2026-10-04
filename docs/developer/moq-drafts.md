@@ -122,7 +122,7 @@ Objects on a subgroup stream: `Object ID Delta (vi64)`, `[Properties]`, `Object 
 
 ### `FETCH_HEADER` and fetch objects
 
-`Type (vi64) = 0x5`, `Request ID (vi64)`. Each fetched object begins with a flags byte (-18+; -17 delta-encodes less, confirm from §10.4.4 of -17 when implementing `v17`):
+`Type (vi64) = 0x5`, `Request ID (vi64)`. Each fetched object begins with these flags in every supported draft. From -18 a present Group ID or Object ID is a delta; -17 writes both whole:
 
 | Flags | Meaning |
 |---|---|
@@ -133,7 +133,7 @@ Objects on a subgroup stream: `Object ID Delta (vi64)`, `[Properties]`, `Object 
 | `0x20` | Properties present |
 | `0x40` | datagram object: ignore the subgroup bits |
 
-End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` End of Unknown Range, `0x20C` End of Timed-Out Range (-20+). Earlier drafts define fewer; confirm per draft.
+End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` End of Unknown Range, `0x20C` End of Timed-Out Range (-20+). -17 through -19 define only the first two, so Trickster sends them a timed-out range as an unknown one.
 
 ### Object status
 
@@ -183,7 +183,7 @@ End-of-range markers (-22 §11.4.1): `0x8C` End of Non-Existent Range, `0x10C` E
 - **-17 / -18 `SUBSCRIPTION_FILTER`, -19 `LOCATION_FILTER`**: `Filter Type (vi64)`, `[Start Location]`, `[End Group Delta (vi64)]`. Types: `0x1` Next Group Start (`{Largest.Group + 1, 0}`), `0x2` Largest Object (`{Largest.Group, Largest.Object + 1}`), `0x3` AbsoluteStart (explicit start, open ended), `0x4` AbsoluteRange (explicit start and end group).
 - **-20 / -21 `LOCATION_FILTER`**: `Length (vi64)` followed by zero to four varints (`StartGroup`, `StartObject`, `EndGroupDelta`, `EndObject`); which fields are present is inferred from the length.
 - **-22 `LOCATION_FILTER`**: `Location Filter Type (vi64)` selects the fields: `0x00` none; `0x01` Relative Start, whose start is `{Largest.Group + 1 - StartGroup, 0}`; `0x02` Absolute Start (`StartGroup`, `StartObject`, open ended); `0x03` Absolute Start with Group End (adds `EndGroupDelta`, ending at the last object of that group); `0x04` Absolute Range (all four fields); `0x05` Next Object.
-- **Range filters (-19+)**: `Type`, `Length`, `[SetID (8)]`, `[Property Type]` (property filters only), then `Range` entries of `Start (vi64)`, `[End (vi64)]`. -19 lists the parameters but the text does not give them struct blocks; take the layout from -20 and confirm against -19 §9.20 when implementing `v19`.
+- **Range filters (-19+)**: `Type`, `Length`, `[SetID (8)]`, `[Property Type]` (property filters only), then `Range` entries of `Start (vi64)`, `[End (vi64)]`, each Start a delta from the prior End and each End a delta from its Start. -19 (§5.1.3) and -20 share the layout.
 - **`FILL_PARAMETERS` (-20+)**: a nested parameter list that may contain `FILL_TIMEOUT`, `SUBSCRIBER_PRIORITY`, `LOCATION_FILTER`, `GROUP_ORDER` and the four object-level range filters.
 
 ## Properties
@@ -294,27 +294,30 @@ The session and relay layers never compare draft numbers; they read these flags 
 
 | Flag | True for | Effect |
 |---|---|---|
-| `RequiredRequestID` | -17 | encode and validate the extra delta field; `INVALID_REQUIRED_REQUEST_ID` |
-| `SubscribeTracks` | -18+ | `SUBSCRIBE_TRACKS` exists; -17's `SUBSCRIBE_NAMESPACE` with subscribe options is translated to a namespace subscription plus track subscriptions |
+| `RequiredRequestID` | -17 | requests carry a Required Request ID Delta; a request naming one that has not arrived waits up to two seconds for it, then is refused with `TIMEOUT`; `INVALID_REQUIRED_REQUEST_ID` |
+| `PublishOK` | -17 | `PUBLISH` is answered with `PUBLISH_OK` (`0x1E`) rather than `REQUEST_OK` |
+| `AbsoluteFetchIDs` | -17 | fetch objects carry whole Group and Object IDs rather than deltas |
+| `LegacyDoneCodes` | -17 | `PUBLISH_DONE` numbers `EXPIRED` `0x5` and `TOO_FAR_BEHIND` `0x6` |
+| `SubscribeTracks` | -18+ | `SUBSCRIBE_TRACKS` exists and `SUBSCRIBE_NAMESPACE` is `0x50`; -17's `0x11` carries Subscribe Options, which select namespaces, `PUBLISH`es or both |
 | `Redirect` | -18+ | `REQUEST_ERROR` may carry a `Redirect`; `REDIRECT` code |
 | `TrackPropertiesInRequestOK` | -18+ | `REQUEST_OK` carries track properties |
-| `PublishOK` | -17 | the publisher expects `PUBLISH_OK` instead of `REQUEST_OK` |
-| `GoawayRequestID` | -18 | `GOAWAY` may carry a request ID |
-| `SplitDeliveryTimeouts` | -18+ | `OBJECT_DELIVERY_TIMEOUT` and `SUBGROUP_DELIVERY_TIMEOUT`; -17's `DELIVERY_TIMEOUT` maps to the object timeout |
+| `GoAwayRequestID` | -18 | `GOAWAY` may carry a request ID |
 | `FirstObjectBit` | -18+ | `SUBGROUP_HEADER` `0x40` |
 | `Padding` | -18+ | padding streams and datagrams are accepted |
-| `SevenByteVarint` | -18+ | decoder accepts 7-byte and non-minimal varints |
+| `SevenByteVarint` | -18+ | the 7-byte varint form may be sent |
+| `Params18` | -18+ | `SUBGROUP_DELIVERY_TIMEOUT`, `FILL_TIMEOUT` and `TRACK_NAMESPACE_PREFIX` exist; -17's `DELIVERY_TIMEOUT` is the object timeout |
 | `RangeFilters` | -19+ | the five range filter parameters and `MAX_FILTER_RANGES`; applied at the relay for peers without them |
 | `RequestUpdateLimit` | -19+ | `MAX_REQUEST_UPDATES`, `TOO_MANY_REQUEST_UPDATES` |
-| `MultipleSubscriptionsPerTrack` | -19+ | `DUPLICATE_SUBSCRIPTION` is not an error |
-| `JoiningFetch` | -17..-19 | `FETCH` with `Fetch Type`; joining fetches are served from the fill path |
-| `FillFetch` | -20+ | `FILL_PARAMETERS` and fill fetch streams |
+| `JoiningFetch` | -17..-19 | `FETCH` carries a Fetch Type with a Standalone range or a joining form, and `FETCH_OK` codes its End Location the same way; joining fetches are served from the fill path |
+| `LegacyLocationFilter` | -17..-19 | Location Filters are Next Group Start, Largest Object, AbsoluteStart or AbsoluteRange, translated to and from the -22 forms |
+| `FillFetch` | -20+ | `FILL_PARAMETERS`, fill fetch streams and `INCLUDE_PROPERTIES` |
 | `TypeFlagBitfields` | -20+ | unknown set bits in `SUBGROUP_HEADER` / `OBJECT_DATAGRAM` are a `PROTOCOL_VIOLATION` rather than an unknown type |
 | `PublishStateNotify` | -20+ | `PUBLISH_STATE_NOTIFY` |
-| `IncludeProperties` | -20+ | `INCLUDE_PROPERTIES` parameter |
 | `LengthInferredLocationFilter` | -20, -21 | `LOCATION_FILTER` fields inferred from length |
 | `TypedLocationFilter` | -22+ | `LOCATION_FILTER` carries an explicit type |
 | `EndOfTimedOutRange` | -20+ | fetch marker `0x20C` |
+
+Every draft accepts more than one subscription to a track, so the relay never sends -17 and -18's `DUPLICATE_SUBSCRIPTION`.
 
 ## Per-draft change highlights
 
@@ -331,7 +334,14 @@ Taken from the drafts' own change logs; issue numbers refer to the `moq-wg/moq-t
 
 Where the text leaves a choice, or a peer implementation departs from it, Trickster's codec does the following. Each note names the interop peer it was checked against and the date.
 
-- **`moqt-22` and `LOCATION_FILTER` (moq-dev/moq, 2026-10-04).** The moq.dev Rust implementation registers draft -22 but encodes it byte for byte as -20, so its `LOCATION_FILTER` is the length-inferred form, not -22's typed form. The two encodings coincide only when every field is below 128 and the filter is neither Next Object nor absolute {0, 0}, so a strict -22 peer and moq-dev desynchronize on most subscriptions. Trickster implements -22 as written. By default a Trickster server prefers `moqt-21` over `moqt-22` (`codec.ServerPreference`), and a Trickster client does not offer `moqt-22` (`codec.ClientOffer`). -21 differs from -22 only in this field, so nothing is lost. Revisit when moq-dev ships typed filters.
+- **Interop runs (moq-dev/moq relay 0.17.0 and `moq` CLI 0.14.0, 2026-10-04).** `integration/moq_interop_test.go` publishes synthetic tracks into moq-relay and pulls them through Trickster on each draft from -17 to -22, each read by a subscriber on another draft, including an upstream `FETCH` on -17 to -19. With `TRICKSTER_MOQ_CLI_TEST=1` the `moq` CLI also subscribes to, and fetches from, Trickster on -17 to -21. All of it is native QUIC; see the WebTransport note below.
+- **`moqt-22` and `LOCATION_FILTER` (moq-dev/moq, 2026-10-04).** The moq.dev Rust implementation registers draft -22 but encodes it byte for byte as -20, so its `LOCATION_FILTER` is the length-inferred form, not -22's typed form. The two encodings coincide only when every field is below 128 and the filter is neither Next Object nor absolute {0, 0}, so a strict -22 peer and moq-dev desynchronize on most subscriptions. Trickster implements -22 as written. By default a Trickster server prefers `moqt-21` over `moqt-22` (`codec.ServerPreference`), and a Trickster client does not offer `moqt-22` (`codec.ClientOffer`). -21 differs from -22 only in this field, so nothing is lost. Revisit when moq-dev ships typed filters. The CLI interop run stops at -21 for this reason: forced onto -22, the CLI's Next Object filter reads as a filter from {0, 0}.
+- **`FIRST_OBJECT` (moq-dev/moq, 2026-10-04).** moq-relay drops a subgroup stream that lacks `FIRST_OBJECT` unless a fill for that group is outstanding. Trickster forwards the bit on a stream that starts with its run's first object, and sets it whenever that object is Object 0, which a -17 publisher has no bit to say.
+- **`FETCH_OK` End Location through -19 (moq-dev/moq, 2026-10-04).** -17 to -19 code it like `FETCH`'s End Location: the last object plus one, or Object 0 for all of a group. moq-dev reads it as exclusive, answering a whole-group fetch with `{group + 1, 0}` and treating `{group, 0}` as an empty answer. Trickster decodes the text's form, so moq-dev's answer reads one group long; the relay never relies on an upstream `FETCH_OK` end. When serving, Trickster names the group's last object whenever it is known (in the live edge, or cached through the group's end), which both readings agree on. A group whose end it does not know is still answered with `{group, 0}`.
+- **`FETCH` from -20 (moq-dev/moq, 2026-10-04).** moq-relay refuses `FETCH` from -20 with `NOT_SUPPORTED`, and the CLI sends none, so a group behind the live edge is fetched neither from nor by moq-dev on those drafts.
+- **Ended groups (moq-dev/moq, 2026-10-04).** When a subscription starts just past the last object of a group that has already ended, Trickster opens an empty subgroup stream for that group with End of Group set, as moq-relay does. moq-dev's subscriber completes the group its fill (-20+) or joining fetch (-17 to -19) delivered only once that stream arrives, so a client waiting for the newest group would otherwise wait for a tail that never comes.
+- **WebTransport origins (moq-dev/moq, 2026-10-04).** WebTransport over HTTP/3 requires both endpoints to send the `reset_stream_at` transport parameter. moq-relay's WebTransport endpoint does not, and webtransport-go's client refuses such a server, so Trickster reaches moq-relay with `moqt://` only. Clients reaching Trickster by WebTransport are unaffected, because webtransport-go's server checks only its own side.
+- **`SUBSCRIBE_NAMESPACE` to publishers (moq-dev/moq, 2026-10-04).** moq-relay sends every session, publishers included, a `SUBSCRIBE_NAMESPACE` with an empty prefix, and carries on when it is refused.
 - **`FILL_PARAMETERS` framing.** The value is "a sequence of Parameters ... encoded as if they were Parameters for a separate message". Trickster encodes it as a length prefix around a parameter count followed by the delta-typed parameters (a nested message parameter block), matching moq-dev/moq.
 - **End of Range markers.** The text says the marker's "Group ID and Object ID fields are present", without saying whether they are deltas. Trickster reads and writes them as absolute values. As deltas, a marker inside the current group could not be expressed, because a present Group ID Delta always advances the group. moq-dev/moq does not implement markers (as of 2026-10-04), so this has not been interop-tested.
 - **`uint8` parameters.** `FORWARD`, `SUBSCRIBER_PRIORITY`, `GROUP_ORDER` and `INCLUDE_PROPERTIES` are a single raw byte, not a varint. The Range Filter parameters carry an explicit length even though `OBJECTID_FILTER` and `OBJECT_PROPERTY_FILTER` have even types.
@@ -342,5 +352,5 @@ Where the text leaves a choice, or a peer implementation departs from it, Tricks
 
 1. Download the text, extract the registries and struct blocks, and diff them against the newest column here. Add the column and any new rows.
 2. If nothing on the wire changed, register the new ALPN against the existing codec family. Otherwise add a codec file with only the changed encoders/decoders and a new capability flag for each behavioral change.
-3. Add byte vectors for every changed message to the codec tests, a row to the cross-draft bridging matrix, and the draft to the interop run.
+3. Add byte vectors for every changed message to the codec tests, a row to the cross-draft bridging matrix (`pkg/moq/relay/drafts_test.go`), and the draft to the interop runs (`integration/moq_interop_test.go`).
 4. Update the supported-drafts table in `docs/moq.md`.

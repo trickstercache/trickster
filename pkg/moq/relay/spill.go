@@ -152,7 +152,7 @@ func (j spillJob) run(r *Relay) {
 	}
 	key := j.t.cacheKey(j.cg.group)
 	// the index names the group before it lands, so a fetch never misses a stored group; a miss costs a lookup
-	j.t.recordSpill(j.cg.group, true)
+	j.t.recordSpill(j.cg, true)
 	var err error
 	if mc, ok := byReference(c); ok {
 		err = mc.StoreReference(key, j.cg, j.ttl)
@@ -160,7 +160,7 @@ func (j spillJob) run(r *Relay) {
 		err = c.Store(key, j.cg.encode(), j.ttl)
 	}
 	if err != nil {
-		j.t.recordSpill(j.cg.group, false)
+		j.t.recordSpill(j.cg, false)
 		r.m.fail(errClassCache)
 	}
 }
@@ -246,12 +246,16 @@ func (t *track) spillJobLocked(g *group) (spillJob, bool) {
 	return spillJob{t: t, cg: cg, ttl: ttl}, true
 }
 
-func (t *track) recordSpill(group uint64, stored bool) {
+func (t *track) recordSpill(cg *cachedGroup, stored bool) {
 	t.mu.Lock()
 	if stored {
-		t.spilled.add(group)
+		var end uint64
+		if cg.toEnd && cg.to < math.MaxUint64 {
+			end = cg.to + 1
+		}
+		t.spilled.add(cg.group, end)
 	} else {
-		t.spilled.remove(group)
+		t.spilled.remove(cg.group)
 	}
 	t.mu.Unlock()
 }
@@ -343,6 +347,31 @@ func (t *track) knownGroups(first, last uint64) []uint64 {
 	return slices.Compact(out)
 }
 
+func (t *track) lastObject(group uint64) (uint64, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if g := t.groups[group]; g != nil && g.hasEnd {
+		return g.end, true
+	}
+	return t.spilled.last(group)
+}
+
+func (t *track) endedTail(largest wire.Location) (message.SubgroupHeader, bool) {
+	// the header of an empty stream ending the group of largest, when that group ended at largest
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	g := t.groups[largest.Group]
+	if g == nil || !g.hasEnd || g.end != largest.Object || len(g.runs) == 0 {
+		return message.SubgroupHeader{}, false
+	}
+	h := g.runs[len(g.runs)-1].header
+	h.FirstObject, h.EndOfGroup = false, true
+	if h.Mode == message.SubgroupIDFirstObject {
+		h.Mode = message.SubgroupIDExplicit
+	}
+	return h, true
+}
+
 func (t *track) properties() message.Properties {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -350,25 +379,38 @@ func (t *track) properties() message.Properties {
 }
 
 type spillIndex struct {
-	ids []uint64
+	ids  []uint64
+	ends []uint64
 }
 
-func (x *spillIndex) add(id uint64) {
-	// the group IDs spilled during this process's life, sorted and bounded to the most recent
+func (x *spillIndex) add(id, end uint64) {
+	// the group IDs spilled during this process's life, sorted and bounded to the most recent; ends holds each
+	// group's last object ID plus one when it was stored through its end, else 0
 	i, found := slices.BinarySearch(x.ids, id)
 	if found {
+		x.ends[i] = end
 		return
 	}
 	x.ids = slices.Insert(x.ids, i, id)
-	if len(x.ids) > spillIndexMax {
-		x.ids = slices.Delete(x.ids, 0, len(x.ids)-spillIndexMax)
+	x.ends = slices.Insert(x.ends, i, end)
+	if n := len(x.ids) - spillIndexMax; n > 0 {
+		x.ids = slices.Delete(x.ids, 0, n)
+		x.ends = slices.Delete(x.ends, 0, n)
 	}
 }
 
 func (x *spillIndex) remove(id uint64) {
 	if i, found := slices.BinarySearch(x.ids, id); found {
 		x.ids = slices.Delete(x.ids, i, i+1)
+		x.ends = slices.Delete(x.ends, i, i+1)
 	}
+}
+
+func (x *spillIndex) last(id uint64) (uint64, bool) {
+	if i, found := slices.BinarySearch(x.ids, id); found && x.ends[i] > 0 {
+		return x.ends[i] - 1, true
+	}
+	return 0, false
 }
 
 func (x *spillIndex) has(id uint64) bool {

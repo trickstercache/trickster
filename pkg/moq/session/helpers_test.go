@@ -339,6 +339,7 @@ func rawPeerCap(t *testing.T, role session.Role, capacity int, o func(*session.O
 		t.Fatal(err)
 	}
 	p := newRaw(t, pc)
+	p.c = opts.Codec
 	started := make(chan error, 1)
 	go func() { started <- s.Start(context.Background()) }()
 	p.setup(&message.Setup{Implementation: "raw"})

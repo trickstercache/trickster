@@ -64,6 +64,17 @@ const (
 	CapTypedLocationFilter
 	// CapEndOfTimedOutRange has the End of Timed-Out Range fetch marker (from -20)
 	CapEndOfTimedOutRange
+	// CapLegacyLocationFilter spells a Location Filter as Next Group Start, Largest Object, AbsoluteStart or
+	// AbsoluteRange, with a start Location and an End Group Delta (through -19)
+	CapLegacyLocationFilter
+	// CapAbsoluteFetchIDs writes a fetch object's Group and Object IDs whole rather than as deltas (draft -17)
+	CapAbsoluteFetchIDs
+	// CapLegacyDoneCodes numbers PUBLISH_DONE's EXPIRED 0x5 and TOO_FAR_BEHIND 0x6 (draft -17)
+	CapLegacyDoneCodes
+	// CapParams18 has SUBGROUP_DELIVERY_TIMEOUT, FILL_TIMEOUT and TRACK_NAMESPACE_PREFIX (from -18)
+	CapParams18
+	// CapRequestUpdateLimit has MAX_REQUEST_UPDATES and TOO_MANY_REQUEST_UPDATES (from -19)
+	CapRequestUpdateLimit
 )
 
 // Codec encodes and decodes one draft's wire format; it holds no per-session state and is safe to share
@@ -84,14 +95,24 @@ func newCodec(draft int, caps Caps) *Codec {
 	return &Codec{draft: draft, alpn: ALPNFor(draft), caps: caps}
 }
 
-const capsFrom20 = CapSubscribeTracks | CapRedirect | CapTrackPropertiesInRequestOK | CapFirstObjectBit |
-	CapPadding | CapSevenByteVarint | CapRangeFilters | CapFillFetch | CapTypeFlagBitfields |
-	CapPublishStateNotify | CapEndOfTimedOutRange
+const (
+	capsBefore20 = CapJoiningFetch | CapLegacyLocationFilter
+	caps17       = capsBefore20 | CapRequiredRequestID | CapPublishOK | CapAbsoluteFetchIDs | CapLegacyDoneCodes
+	caps18       = capsBefore20 | CapSubscribeTracks | CapRedirect | CapTrackPropertiesInRequestOK |
+		CapGoAwayRequestID | CapFirstObjectBit | CapPadding | CapSevenByteVarint | CapParams18
+	caps19     = caps18&^CapGoAwayRequestID | CapRangeFilters | CapRequestUpdateLimit
+	capsFrom20 = CapSubscribeTracks | CapRedirect | CapTrackPropertiesInRequestOK | CapFirstObjectBit |
+		CapPadding | CapSevenByteVarint | CapRangeFilters | CapFillFetch | CapTypeFlagBitfields |
+		CapPublishStateNotify | CapEndOfTimedOutRange | CapParams18 | CapRequestUpdateLimit
+)
 
 var codecs = []*Codec{
 	newCodec(22, capsFrom20|CapTypedLocationFilter),
 	newCodec(21, capsFrom20|CapLengthInferredLocationFilter),
 	newCodec(20, capsFrom20|CapLengthInferredLocationFilter),
+	newCodec(19, caps19),
+	newCodec(18, caps18),
+	newCodec(17, caps17),
 }
 
 // Draft returns the draft number
@@ -145,11 +166,11 @@ func Drafts() []int {
 
 // ServerPreference orders the drafts a server picks from. -21 precedes -22: they differ only in LOCATION_FILTER's
 // spelling, and a widely deployed implementation encodes -22 as -21, so a client offering both is served -21.
-var ServerPreference = []int{21, 22, 20}
+var ServerPreference = []int{21, 22, 20, 19, 18, 17}
 
 // ClientOffer is the default list a client offers; it omits -22, which a server preferring the newest draft
 // would pick, for the interoperability reason given on ServerPreference
-var ClientOffer = []int{21, 20}
+var ClientOffer = []int{21, 20, 19, 18, 17}
 
 // ALPNs returns the ALPNs of the given drafts that are supported, in the order given
 func ALPNs(drafts []int) []string {
@@ -184,11 +205,19 @@ var messageTypes = map[message.Kind]uint64{
 	message.KindPublishSkipped:     0xf,
 }
 
+const (
+	typeSubscribeNamespace17 = 0x11
+	typePublishOK17          = 0x1e
+)
+
 var messageKinds = func() map[uint64]message.Kind {
-	out := make(map[uint64]message.Kind, len(messageTypes))
+	out := make(map[uint64]message.Kind, len(messageTypes)+2)
 	for k, t := range messageTypes {
 		out[t] = k
 	}
+	// draft -17 codes SUBSCRIBE_NAMESPACE 0x11 and has PUBLISH_OK; later drafts use 0x50 and reserve 0x1E
+	out[typeSubscribeNamespace17] = message.KindSubscribeNamespace
+	out[typePublishOK17] = message.KindPublishOK
 	return out
 }()
 
@@ -203,8 +232,12 @@ func (c *Codec) MessageType(k message.Kind) (uint64, bool) {
 		if !c.Has(CapSubscribeTracks) {
 			return 0, false
 		}
+	case message.KindSubscribeNamespace:
+		if !c.Has(CapSubscribeTracks) {
+			return typeSubscribeNamespace17, true
+		}
 	case message.KindPublishOK:
-		return 0, false
+		return typePublishOK17, c.Has(CapPublishOK)
 	}
 	t, ok := messageTypes[k]
 	return t, ok
@@ -216,7 +249,7 @@ func (c *Codec) MessageKind(t uint64) (message.Kind, bool) {
 	if !ok {
 		return 0, false
 	}
-	if _, ok = c.MessageType(k); !ok {
+	if want, ok := c.MessageType(k); !ok || want != t {
 		return 0, false
 	}
 	return k, true

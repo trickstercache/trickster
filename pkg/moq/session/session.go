@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,6 +51,7 @@ const (
 	maxTombstones           = 4096
 	readerSize              = 4096
 	maxOutOfOrderIDs        = 1024
+	requiredRequestWait     = 2 * time.Second
 	retryExcessiveLoad      = 1000
 )
 
@@ -122,6 +124,7 @@ type Session struct {
 	aliases    map[uint64]*Request
 	fetches    map[uint64]*Request
 	waiting    map[uint64][]chan *Request
+	requires   map[uint64][]chan struct{}
 	parked     int
 	tombstones map[uint64]time.Time
 	nextAlias  uint64
@@ -551,7 +554,54 @@ func (s *Session) acceptPeerID(id uint64) error {
 	if !s.peerIDs.add(id / 2) {
 		return &message.SessionError{Code: message.CodeInvalidRequestID, Reason: "duplicate request ID"}
 	}
+	for _, ch := range s.requires[id/2] {
+		close(ch)
+	}
+	delete(s.requires, id/2)
 	return nil
+}
+
+func (s *Session) awaitRequired(id, delta uint64) (bool, error) {
+	// draft -17: a request names one it depends on, which must arrive first or the dependent one times out
+	if delta == 0 || !s.codec.Has(codec.CapRequiredRequestID) {
+		return true, nil
+	}
+	if delta > id/2 {
+		return false, &message.SessionError{
+			Code:   message.CodeInvalidRequiredRequestID,
+			Reason: "required request ID below zero",
+		}
+	}
+	need := (id - 2*delta) / 2
+	s.mu.Lock()
+	if s.peerIDs.has(need) {
+		s.mu.Unlock()
+		return true, nil
+	}
+	ch := make(chan struct{})
+	if s.requires == nil {
+		s.requires = make(map[uint64][]chan struct{})
+	}
+	s.requires[need] = append(s.requires[need], ch)
+	s.mu.Unlock()
+	t := time.NewTimer(requiredRequestWait)
+	defer t.Stop()
+	select {
+	case <-ch:
+		return true, nil
+	case <-t.C:
+	case <-s.ctx.Done():
+	}
+	s.mu.Lock()
+	waiters := s.requires[need]
+	if i := slices.Index(waiters, ch); i >= 0 {
+		s.requires[need] = slices.Delete(waiters, i, i+1)
+		if len(s.requires[need]) == 0 {
+			delete(s.requires, need)
+		}
+	}
+	s.mu.Unlock()
+	return false, nil
 }
 
 type idWindow struct {
@@ -588,6 +638,15 @@ func (w *idWindow) add(n uint64) bool {
 		w.advance()
 	}
 	return true
+}
+
+func (w *idWindow) has(n uint64) bool {
+	// an ID below the window was accepted, or given up on when the window had to move past it
+	if n < w.low {
+		return true
+	}
+	_, ok := w.seen[n]
+	return ok
 }
 
 func (w *idWindow) advance() {
@@ -632,10 +691,21 @@ func (s *Session) handleBidi(st Stream) {
 		s.fail(err)
 		return
 	}
+	arrived, err := s.awaitRequired(id, message.RequiredRequestIDOf(m))
+	if err != nil {
+		putReader(br)
+		s.fail(err)
+		return
+	}
 	r := newRequest(s, st, br, false, k, m, id)
 	if err = r.resolveTokens(); err != nil {
 		r.release()
 		s.fail(err)
+		return
+	}
+	if !arrived {
+		_ = r.Reject(message.RequestTimeout, "the required request did not arrive", 0)
+		r.readLoop()
 		return
 	}
 	if reason, reserved := reservedNamespace(m); reserved {

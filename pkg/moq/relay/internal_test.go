@@ -145,7 +145,7 @@ func TestWindow(t *testing.T) {
 func TestSpillIndex(t *testing.T) {
 	var x spillIndex
 	for _, id := range []uint64{5, 1, 3, 3} {
-		x.add(id)
+		x.add(id, 0)
 	}
 	if !slices.Equal(x.ids, []uint64{1, 3, 5}) || !x.has(3) || x.has(2) {
 		t.Errorf("index %v", x.ids)
@@ -153,16 +153,29 @@ func TestSpillIndex(t *testing.T) {
 	if got := x.between(2, 5); !slices.Equal(got, []uint64{3, 5}) {
 		t.Errorf("between %v", got)
 	}
+	x.add(5, 8)
+	if last, ok := x.last(5); !ok || last != 7 {
+		t.Errorf("a group stored through its end knows its last object: %d %t", last, ok)
+	}
+	if _, ok := x.last(1); ok {
+		t.Error("a group stored short of its end has no known last object")
+	}
 	x.remove(3)
 	x.remove(4)
 	if x.has(3) {
 		t.Error("removed")
 	}
-	for i := range uint64(spillIndexMax + 10) {
-		x.add(100 + i)
+	if last, ok := x.last(5); !ok || last != 7 {
+		t.Errorf("a removal keeps the other ends aligned: %d %t", last, ok)
 	}
-	if len(x.ids) != spillIndexMax || x.has(1) {
+	for i := range uint64(spillIndexMax + 10) {
+		x.add(100+i, i+1)
+	}
+	if len(x.ids) != spillIndexMax || len(x.ends) != spillIndexMax || x.has(1) {
 		t.Errorf("the index keeps the newest %d, has %d", spillIndexMax, len(x.ids))
+	}
+	if last, ok := x.last(100 + spillIndexMax + 9); !ok || last != spillIndexMax+9 {
+		t.Errorf("trimming keeps the ends aligned: %d %t", last, ok)
 	}
 }
 

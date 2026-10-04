@@ -19,6 +19,7 @@ package codec
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
@@ -33,6 +34,12 @@ const (
 	OptionMaxFilterRanges       uint64 = 0x06
 	OptionImplementation        uint64 = 0x07
 	OptionMaxRequestUpdates     uint64 = 0x08
+)
+
+const (
+	fetchTypeStandalone      = 0x1 // the Fetch Types of draft -17 to -19 FETCH
+	fetchTypeRelativeJoining = 0x2
+	fetchTypeAbsoluteJoining = 0x3
 )
 
 // ErrUnknownMessage is returned when encoding a message the draft does not define
@@ -94,19 +101,29 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 		b = c.putVarint(b, v.TrackAlias)
 		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublish))
 		b = append(b, v.TrackProperties...)
+	case *message.PublishOK:
+		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublishOK))
 	case *message.PublishDone:
-		b = c.putVarint(b, uint64(v.Code))
+		b = c.putVarint(b, uint64(c.doneCode(v.Code)))
 		b = c.putVarint(b, v.StreamCount)
 		b = c.putString(b, v.Reason)
 	case *message.PublishStateNotify:
 		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindPublishStateNotify))
 	case *message.Fetch:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
+		if c.Has(CapJoiningFetch) {
+			b, err = c.appendLegacyFetch(b, v)
+			break
+		}
 		b = c.putTrack(b, v.Track)
 		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindFetch))
 	case *message.FetchOK:
 		b = append(b, boolByte(v.EndOfTrack))
-		b = c.putLocation(b, v.EndLocation)
+		end := v.EndLocation
+		if c.Has(CapJoiningFetch) {
+			end = legacyFetchEnd(end)
+		}
+		b = c.putLocation(b, end)
 		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindFetchOK))
 		b = append(b, v.TrackProperties...)
 	case *message.TrackStatus:
@@ -120,6 +137,9 @@ func (c *Codec) AppendMessage(b []byte, m message.Message) ([]byte, error) {
 	case *message.SubscribeNamespace:
 		b = c.putRequestID(b, v.RequestID, v.RequiredRequestID)
 		b = c.putNamespace(b, v.Prefix)
+		if !c.Has(CapSubscribeTracks) {
+			b = c.putVarint(b, v.Options)
+		}
 		b, err = c.appendParams(b, &v.Params, message.AllowedParams(message.KindSubscribeNamespace))
 	case *message.Namespace:
 		b = c.putNamespace(b, v.Suffix)
@@ -286,8 +306,15 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 			v.TrackProperties = message.Properties(r.Rest())
 		}
 		m = v
+	case message.KindPublishOK:
+		v := &message.PublishOK{}
+		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		m = v
 	case message.KindPublishDone:
-		m = &message.PublishDone{Code: message.DoneCode(r.Varint()), StreamCount: r.Varint(), Reason: r.Reason()}
+		m = &message.PublishDone{
+			Code: c.doneCode(message.DoneCode(r.Varint())), StreamCount: r.Varint(),
+			Reason: r.Reason(),
+		}
 	case message.KindPublishStateNotify:
 		v := &message.PublishStateNotify{}
 		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
@@ -295,8 +322,12 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 	case message.KindFetch:
 		v := &message.Fetch{}
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
-		v.Track = readTrack(&r)
-		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		if c.Has(CapJoiningFetch) {
+			err = c.parseLegacyFetch(&r, v)
+		} else {
+			v.Track = readTrack(&r)
+			v.Params, err = c.parseParams(&r, message.AllowedParams(k))
+		}
 		m = v
 	case message.KindFetchOK:
 		v := &message.FetchOK{}
@@ -306,6 +337,9 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		}
 		v.EndOfTrack = eot == 1
 		v.EndLocation = r.Location()
+		if c.Has(CapJoiningFetch) {
+			v.EndLocation = inclusiveFetchEnd(v.EndLocation)
+		}
 		if v.Params, err = c.parseParams(&r, message.AllowedParams(k)); err == nil {
 			v.TrackProperties = message.Properties(r.Rest())
 		}
@@ -326,6 +360,11 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		v := &message.SubscribeNamespace{}
 		v.RequestID, v.RequiredRequestID = c.readRequestID(&r)
 		v.Prefix = r.Namespace()
+		if !c.Has(CapSubscribeTracks) {
+			if v.Options = r.Varint(); v.Options > message.SubscribeOptionBoth && r.Err() == nil {
+				return nil, message.Violation("unknown subscribe options")
+			}
+		}
 		v.Params, err = c.parseParams(&r, message.AllowedParams(k))
 		m = v
 	case message.KindNamespace:
@@ -348,6 +387,103 @@ func (c *Codec) ParseMessage(typ uint64, body []byte) (message.Message, error) {
 		return nil, wireViolation(err)
 	}
 	return m, nil
+}
+
+func (c *Codec) doneCode(code message.DoneCode) message.DoneCode {
+	// draft -17 swaps the codes of EXPIRED and TOO_FAR_BEHIND; the swap is its own inverse
+	if c.Has(CapLegacyDoneCodes) {
+		switch code {
+		case message.DoneTooFarBehind:
+			return message.DoneExpired
+		case message.DoneExpired:
+			return message.DoneTooFarBehind
+		}
+	}
+	return code
+}
+
+func (c *Codec) appendLegacyFetch(b []byte, f *message.Fetch) ([]byte, error) {
+	// the range is a Standalone Fetch in the message, its End Location one past the last object or {group, 0}
+	// for all of a group; the joining forms name a subscription instead (through -19)
+	p := f.Params
+	p.Set &^= message.Bit(message.ParamLocationFilter)
+	if j := f.Joining; j != nil {
+		kind := uint64(fetchTypeAbsoluteJoining)
+		if j.Relative {
+			kind = fetchTypeRelativeJoining
+		}
+		b = c.putVarint(c.putVarint(c.putVarint(b, kind), j.RequestID), j.Start)
+		return c.appendParams(b, &p, message.AllowedParams(message.KindFetch))
+	}
+	lf := f.Params.LocationFilter
+	start := wire.Location{Group: lf.StartGroup, Object: lf.StartObject}
+	var end wire.Location
+	switch lf.Type {
+	case message.FilterAbsoluteRange:
+		if lf.EndObject == math.MaxUint64 {
+			return b, ErrLocationFilter
+		}
+		end = wire.Location{Group: lf.StartGroup + lf.EndGroupDelta, Object: lf.EndObject + 1}
+	case message.FilterAbsoluteStartGroupEnd:
+		end = wire.Location{Group: lf.StartGroup + lf.EndGroupDelta}
+	default:
+		return b, ErrLocationFilter
+	}
+	b = c.putTrack(c.putVarint(b, fetchTypeStandalone), f.Track)
+	b = c.putLocation(c.putLocation(b, start), end)
+	return c.appendParams(b, &p, message.AllowedParams(message.KindFetch))
+}
+
+func legacyFetchEnd(end wire.Location) wire.Location {
+	// through -19 FETCH_OK's End Location is coded like FETCH's: one past the last object, or {group, 0} for all of it
+	if end.Object == math.MaxUint64 {
+		return wire.Location{Group: end.Group}
+	}
+	return wire.Location{Group: end.Group, Object: end.Object + 1}
+}
+
+func inclusiveFetchEnd(end wire.Location) wire.Location {
+	if end.Object == 0 {
+		return wire.Location{Group: end.Group, Object: math.MaxUint64}
+	}
+	return wire.Location{Group: end.Group, Object: end.Object - 1}
+}
+
+func (c *Codec) parseLegacyFetch(r *wire.Reader, f *message.Fetch) error {
+	switch kind := r.Varint(); kind {
+	case fetchTypeStandalone:
+		f.Track = readTrack(r)
+		start, end := r.Location(), r.Location()
+		var err error
+		if f.Params, err = c.parseParams(r, message.AllowedParams(message.KindFetch)); err != nil {
+			return err
+		}
+		if r.Err() != nil {
+			return nil
+		}
+		if end.Group < start.Group {
+			return message.Violation("fetch ends before it starts")
+		}
+		lf := message.LocationFilter{
+			Type: message.FilterAbsoluteStartGroupEnd, StartGroup: start.Group, StartObject: start.Object,
+			EndGroupDelta: end.Group - start.Group,
+		}
+		if end.Object > 0 {
+			lf.Type, lf.EndObject = message.FilterAbsoluteRange, end.Object-1
+		}
+		f.Params.SetLocationFilter(lf)
+		return nil
+	case fetchTypeRelativeJoining, fetchTypeAbsoluteJoining:
+		f.Joining = &message.JoiningFetch{RequestID: r.Varint(), Start: r.Varint(), Relative: kind == fetchTypeRelativeJoining}
+		var err error
+		f.Params, err = c.parseParams(r, message.AllowedParams(message.KindFetch))
+		return err
+	default:
+		if r.Err() != nil {
+			return nil
+		}
+		return message.Violation("unknown fetch type")
+	}
 }
 
 func (c *Codec) readRequestID(r *wire.Reader) (id, required uint64) {

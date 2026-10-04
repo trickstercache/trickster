@@ -54,8 +54,9 @@ scrapes your local Trickster for the
 | `questdb` | `questdb` and its seeder | `make developer-start-questdb` |
 | `victoriametrics` | `victoriametrics` and its seeder | `make developer-start-victoriametrics` |
 | `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
-| `all-providers` | every TSDB backend above | `make developer-start` |
-| `integration` | every TSDB backend, plus the integration-only `coredns` | `make integration-start` |
+| `moq` | `moq_relay`, moq-dev's MoQ relay on UDP port 10443, the `moq` provider's interop peer | `make developer-start-moq` |
+| `all-providers` | every backend above | `make developer-start` |
+| `integration` | every backend above, plus the integration-only `coredns` | `make integration-start` |
 
 `make developer-start` reads the `COMPOSE_PROFILES` variable, which defaults to
 `all-providers` and takes a comma-separated list, so you can combine backends:

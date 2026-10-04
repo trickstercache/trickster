@@ -25,6 +25,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 )
@@ -115,8 +116,10 @@ var (
 			requester: kinds(message.KindRequestUpdate, message.KindGoAway),
 		},
 		message.KindSubscribeNamespace: {
-			first:     updateAnswers,
-			responder: updateAnswers | kinds(message.KindNamespace, message.KindNamespaceDone, message.KindGoAway),
+			first: updateAnswers,
+			// PUBLISH_BLOCKED answers a draft -17 SUBSCRIBE_NAMESPACE that asked for PUBLISHes; see draftAllows
+			responder: updateAnswers | kinds(message.KindNamespace, message.KindNamespaceDone, message.KindGoAway,
+				message.KindPublishSkipped),
 			requester: kinds(message.KindRequestUpdate, message.KindGoAway),
 		},
 		message.KindSubscribeTracks: {
@@ -282,6 +285,7 @@ func (r *Request) send(m message.Message) error {
 		return ErrRequestEnded
 	}
 	r.mu.Lock()
+	m = r.forDraftLocked(m)
 	err := r.checkSend(m)
 	r.mu.Unlock()
 	if err != nil {
@@ -351,6 +355,21 @@ func (r *Request) Cancel(code message.ResetCode) {
 	r.finish(&StreamError{Code: uint64(code)})
 }
 
+func (r *Request) forDraftLocked(m message.Message) message.Message {
+	// draft -17 accepts a PUBLISH with PUBLISH_OK rather than REQUEST_OK
+	if ok, isOK := m.(*message.RequestOK); isOK && !r.local && !r.responded && r.kind == message.KindPublish &&
+		r.s.codec.Has(codec.CapPublishOK) {
+		return &message.PublishOK{Params: ok.Params}
+	}
+	return m
+}
+
+func (r *Request) draftAllows(k message.Kind) bool {
+	// SUBSCRIBE_TRACKS took over PUBLISH_BLOCKED's role in draft -18, so later drafts never see it here
+	return k != message.KindPublishSkipped || r.kind != message.KindSubscribeNamespace ||
+		!r.s.codec.Has(codec.CapSubscribeTracks)
+}
+
 func (r *Request) checkSend(m message.Message) error {
 	f := flows[r.kind]
 	k := m.Kind()
@@ -373,7 +392,7 @@ func (r *Request) checkSend(m message.Message) error {
 	if requester {
 		allowed = f.requester
 	}
-	if !allowed.has(k) {
+	if !allowed.has(k) || !r.draftAllows(k) {
 		return fmt.Errorf("%w: %s on %s", ErrNotAllowed, k, r.kind)
 	}
 	switch k {
@@ -499,7 +518,7 @@ func (r *Request) checkReceive(m message.Message) (bool, error) {
 	if fromResponder {
 		allowed = f.responder
 	}
-	if !allowed.has(k) {
+	if !allowed.has(k) || !r.draftAllows(k) {
 		return false, message.Violation(fmt.Sprintf("%s not allowed on %s", k, r.kind))
 	}
 	switch k {
@@ -514,7 +533,8 @@ func (r *Request) checkReceive(m message.Message) (bool, error) {
 		}
 	case message.KindRequestUpdate:
 		r.updatesIn++
-		if limit := r.s.opts.Setup.MaxRequestUpdates; limit > 0 && r.updatesIn > limit {
+		if limit := r.s.opts.Setup.MaxRequestUpdates; limit > 0 && r.updatesIn > limit &&
+			r.s.codec.Has(codec.CapRequestUpdateLimit) {
 			return false, &message.SessionError{Code: message.CodeTooManyRequestUpdates, Reason: "too many updates"}
 		}
 	case message.KindPublishDone:

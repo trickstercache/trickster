@@ -132,6 +132,7 @@ jobs:
       TRICKSTER_GREPTIMEDB_PROMQL_ACCEPTANCE: "1"
       TRICKSTER_DNS_TEST: "1"
       TRICKSTER_VICTORIAMETRICS_TEST: "1"
+      TRICKSTER_MOQ_INTEROP_TEST: "1"
       # every TSDB backend plus the integration-only services (e.g. coredns),
       # so the docker compose commands in later steps can address them all
       COMPOSE_PROFILES: integration
@@ -158,6 +159,7 @@ jobs:
           docker compose logs --tail=60 questdb questdb_seed
           docker compose logs --tail=60 victoriametrics victoriametrics_seed
           docker compose logs --tail=60 graphite graphite_seed graphite_generator
+          docker compose logs --tail=60 moq_relay
       - name: Run integration tests (with coverage and race detection)
         env:
           GREPTIMEDB_REPORT_DIR: ${{ runner.temp }}/greptimedb-reports

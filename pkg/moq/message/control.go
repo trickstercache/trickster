@@ -232,6 +232,17 @@ type PublishNamespace struct {
 	RequiredRequestID uint64
 }
 
+// Subscribe Options of a draft -17 SUBSCRIBE_NAMESPACE, which later drafts split into SUBSCRIBE_NAMESPACE and
+// SUBSCRIBE_TRACKS
+const (
+	// SubscribeOptionPublish asks for a PUBLISH for each matching track, as SUBSCRIBE_TRACKS does
+	SubscribeOptionPublish uint64 = 0x0
+	// SubscribeOptionNamespace asks for the matching namespaces, as SUBSCRIBE_NAMESPACE does from -18
+	SubscribeOptionNamespace uint64 = 0x1
+	// SubscribeOptionBoth asks for both
+	SubscribeOptionBoth uint64 = 0x2
+)
+
 // SubscribeNamespace asks for the namespaces matching Prefix and changes to that set
 type SubscribeNamespace struct {
 	RequestID uint64
@@ -286,6 +297,27 @@ func (*Namespace) Kind() Kind          { return KindNamespace }
 func (*NamespaceDone) Kind() Kind      { return KindNamespaceDone }
 func (*SubscribeTracks) Kind() Kind    { return KindSubscribeTracks }
 func (*PublishSkipped) Kind() Kind     { return KindPublishSkipped }
+
+// RequiredRequestIDOf returns the Required Request ID Delta draft -17 carries in a request message, or 0
+func RequiredRequestIDOf(m Message) uint64 {
+	switch v := m.(type) {
+	case *Subscribe:
+		return v.RequiredRequestID
+	case *Publish:
+		return v.RequiredRequestID
+	case *Fetch:
+		return v.RequiredRequestID
+	case *TrackStatus:
+		return v.RequiredRequestID
+	case *PublishNamespace:
+		return v.RequiredRequestID
+	case *SubscribeNamespace:
+		return v.RequiredRequestID
+	case *RequestUpdate:
+		return v.RequiredRequestID
+	}
+	return 0
+}
 
 // RequestIDOf returns the Request ID a request message carries, and false for any other message
 func RequestIDOf(m Message) (uint64, bool) {

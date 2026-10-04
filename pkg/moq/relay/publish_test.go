@@ -46,9 +46,9 @@ func ingestHarness(t *testing.T, a relay.Access, opts relay.Options) *harness {
 	return h
 }
 
-// session connects a client that serves the relay's requests with handler and sends setup's tokens
 func (h *harness) session(handler session.Handler, tokens ...string) *session.Session {
 	h.t.Helper()
+	// the client serves the relay's requests with handler, and its SETUP carries tokens
 	cc, sc := memconn.Pair()
 	server, err := session.New(sc, session.Options{
 		Role: session.RoleServer, Codec: c22(h.t), Handler: h.relay.Handler(h.scope),

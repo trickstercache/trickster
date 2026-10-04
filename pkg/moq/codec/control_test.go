@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 
@@ -111,11 +112,40 @@ func fullParams() message.Params {
 	return p
 }
 
+func paramsFor(c *Codec, p message.Params) message.Params {
+	// drops what a draft cannot carry and respells a filter it cannot express, so one fixture serves every draft
+	p.Set &= c.KnownParams()
+	if !c.Has(CapRangeFilters) {
+		p.RangeFilters = nil
+	}
+	if !c.Has(CapFillFetch) {
+		p.Fill = nil
+	}
+	if c.Has(CapLegacyLocationFilter) {
+		switch f := &p.LocationFilter; f.Type {
+		case message.FilterAbsoluteRange:
+			f.Type, f.EndObject = message.FilterAbsoluteStartGroupEnd, 0
+		case message.FilterRelativeStart:
+			f.StartGroup = 0
+		}
+	}
+	return p
+}
+
+func publishOKParams() message.Params {
+	var p message.Params
+	p.SetForward(true)
+	p.SetGroupOrder(message.GroupOrderAscending)
+	p.SetLocationFilter(message.LocationFilter{Type: message.FilterNextObject})
+	p.SetExpires(1000)
+	return p
+}
+
 func TestRoundTripEveryMessage(t *testing.T) {
 	for _, draft := range Drafts() {
 		c := mustCodec(t, draft)
 		t.Run(c.ALPN(), func(t *testing.T) {
-			sub := fullParams()
+			sub := paramsFor(c, fullParams())
 			props := message.Properties{0x04, 0xc0, 0x27, 0x10}
 			var ok message.Params
 			ok.SetExpires(60000)
@@ -124,12 +154,24 @@ func TestRoundTripEveryMessage(t *testing.T) {
 			upd.SetForward(false)
 			upd.SetTrackNamespacePrefix(ns("live", "news"))
 			upd.RangeFilters = []message.RangeFilter{{Type: message.ParamTrackPropertyFilter, Remove: true}}
+			upd = paramsFor(c, upd)
 			var notify message.Params
 			notify.SetLargestObject(wire.Location{Group: 1})
 			notify.SetLocationFilter(message.LocationFilter{Type: message.FilterNextObject})
 			var fetch message.Params
 			fetch.SetFillTimeout(0)
 			fetch.SetLocationFilter(message.LocationFilter{Type: message.FilterAbsoluteStart, StartGroup: 4})
+			if c.Has(CapJoiningFetch) {
+				// a FETCH of -19 and earlier carries a bounded range in the message
+				fetch.SetLocationFilter(message.LocationFilter{
+					Type: message.FilterAbsoluteStartGroupEnd, StartGroup: 4, EndGroupDelta: 2,
+				})
+			}
+			fetch = paramsFor(c, fetch)
+			var options uint64
+			if !c.Has(CapSubscribeTracks) {
+				options = message.SubscribeOptionBoth
+			}
 			msgs := []message.Message{
 				&message.Setup{
 					Path: "/live?k=v", HasPath: true, Authority: "relay.example.com:443", HasAuthority: true,
@@ -154,19 +196,28 @@ func TestRoundTripEveryMessage(t *testing.T) {
 				&message.PublishDone{Code: message.DoneTrackEnded, StreamCount: 12, Reason: "done"},
 				&message.PublishStateNotify{Params: notify},
 				&message.Fetch{RequestID: 6, Track: track("video", "live"), Params: fetch},
+				&message.PublishOK{Params: paramsFor(c, publishOKParams())},
 				&message.FetchOK{
 					EndOfTrack: true, EndLocation: wire.Location{Group: 9, Object: 4},
 					TrackProperties: props,
 				},
 				&message.TrackStatus{RequestID: 8, Track: track("video", "live")},
 				&message.PublishNamespace{RequestID: 10, Prefix: ns("live")},
-				&message.SubscribeNamespace{RequestID: 12, Prefix: ns()},
+				&message.SubscribeNamespace{RequestID: 12, Prefix: ns(), Options: options},
 				&message.Namespace{Suffix: ns("sports")},
 				&message.NamespaceDone{Suffix: ns("sports")},
 				&message.SubscribeTracks{RequestID: 14, Prefix: ns("live")},
 				&message.PublishSkipped{Suffix: ns("sports"), TrackName: []byte("video")},
 			}
+			if c.Has(CapJoiningFetch) {
+				msgs = append(msgs, &message.Fetch{
+					RequestID: 16, Joining: &message.JoiningFetch{RequestID: 2, Start: 3, Relative: true},
+				}, &message.Fetch{RequestID: 18, Joining: &message.JoiningFetch{RequestID: 2, Start: 9}})
+			}
 			for _, m := range msgs {
+				if _, ok := c.MessageType(m.Kind()); !ok {
+					continue
+				}
 				roundTrip(t, c, m)
 			}
 		})
@@ -271,6 +322,154 @@ func TestWireVectors(t *testing.T) {
 	}
 }
 
+func TestLegacyLocationFilters(t *testing.T) {
+	// drafts -17 to -19 spell four filter types; the relay's neutral types map onto them where they can
+	legacy := []message.LocationFilter{
+		{Type: message.FilterRelativeStart},
+		{Type: message.FilterNextObject},
+		{Type: message.FilterAbsoluteStart, StartGroup: 300, StartObject: 1},
+		{Type: message.FilterAbsoluteStartGroupEnd, StartGroup: 5, StartObject: 2, EndGroupDelta: 3},
+	}
+	ranges := []message.LocationFilter{
+		{Type: message.FilterAbsoluteStartGroupEnd, StartGroup: 5, StartObject: 2, EndGroupDelta: 3},
+		{Type: message.FilterAbsoluteRange, StartGroup: 5, StartObject: 2, EndGroupDelta: 3, EndObject: 7},
+		{Type: message.FilterAbsoluteRange, StartGroup: 5, EndObject: 0},
+	}
+	for _, draft := range []int{17, 18, 19} {
+		c := mustCodec(t, draft)
+		for _, f := range legacy {
+			var p message.Params
+			p.SetLocationFilter(f)
+			got := roundTrip(t, c, &message.Subscribe{Track: track("t"), Params: p}).(*message.Subscribe)
+			if got.Params.LocationFilter != f {
+				t.Errorf("draft %d: %+v decoded as %+v", draft, f, got.Params.LocationFilter)
+			}
+		}
+		var p message.Params
+		p.SetLocationFilter(message.LocationFilter{Type: message.FilterNone})
+		got := roundTrip(t, c, &message.Subscribe{Track: track("t"), Params: p}).(*message.Subscribe)
+		if f := got.Params.LocationFilter; f.Type != message.FilterAbsoluteStart || f.StartGroup != 0 || f.StartObject != 0 {
+			t.Errorf("draft %d: no filter is an AbsoluteStart from {0, 0}, got %+v", draft, f)
+		}
+		for _, f := range []message.LocationFilter{
+			{Type: message.FilterRelativeStart, StartGroup: 2},
+			{Type: message.FilterAbsoluteRange, StartGroup: 1, EndObject: 4},
+		} {
+			p.SetLocationFilter(f)
+			if _, err := c.AppendMessage(nil, &message.Subscribe{Track: track("t"), Params: p}); !errors.Is(err,
+				ErrLocationFilter) {
+				t.Errorf("draft %d: %+v has no spelling", draft, f)
+			}
+		}
+		// a FETCH range travels as a Standalone Fetch, exact for the bounded forms
+		for _, f := range ranges {
+			var p message.Params
+			p.SetLocationFilter(f)
+			got := roundTrip(t, c, &message.Fetch{Track: track("t"), Params: p}).(*message.Fetch)
+			if got.Params.LocationFilter != f {
+				t.Errorf("draft %d: fetch %+v decoded as %+v", draft, f, got.Params.LocationFilter)
+			}
+		}
+		for _, f := range []message.LocationFilter{
+			{Type: message.FilterNextObject},
+			{Type: message.FilterAbsoluteRange, EndObject: math.MaxUint64},
+		} {
+			p.SetLocationFilter(f)
+			if _, err := c.AppendMessage(nil, &message.Fetch{Track: track("t"), Params: p}); !errors.Is(err,
+				ErrLocationFilter) {
+				t.Errorf("draft %d: fetch %+v has no Standalone Fetch spelling", draft, f)
+			}
+		}
+	}
+}
+
+func TestOlderDraftVectors(t *testing.T) {
+	var p message.Params
+	p.SetForward(true)
+	p.SetSubscriberPriority(200)
+	p.SetLocationFilter(message.LocationFilter{Type: message.FilterNextObject})
+	sub := &message.Subscribe{RequestID: 0, Track: track("v", "live"), Params: p}
+	var fetch message.Params
+	fetch.SetLocationFilter(message.LocationFilter{Type: message.FilterAbsoluteStartGroupEnd, StartGroup: 1, EndGroupDelta: 2})
+	var pubOK message.Params
+	pubOK.SetForward(true)
+	tests := []struct {
+		draft int
+		m     message.Message
+		want  string
+	}{
+		// LOCATION_FILTER (delta 1) holds length 1 and Filter Type 0x2, Largest Object
+		{19, sub, "03 0011 00 01 04 6c697665 01 76 03 10 01 10 c8 01 01 02"},
+		// -17 adds the Required Request ID Delta after the Request ID
+		{17, sub, "03 0012 00 00 01 04 6c697665 01 76 03 10 01 10 c8 01 01 02"},
+		// -17 SUBSCRIBE_NAMESPACE is 0x11 with Subscribe Options (2, both) before its parameters
+		{17, &message.SubscribeNamespace{RequestID: 1, Options: message.SubscribeOptionBoth}, "11 0005 01 00 00 02 00"},
+		// a Standalone Fetch: type 1, track, start {1, 0}, end {3, 0} meaning all of group 3
+		{19, &message.Fetch{RequestID: 2, Track: track("v", "live"), Params: fetch},
+			"16 000f 02 01 01 04 6c697665 01 76 01 00 03 00 00"},
+		// a Relative Joining Fetch: type 2, joined request 2, start 1
+		{19, &message.Fetch{RequestID: 4, Joining: &message.JoiningFetch{RequestID: 2, Start: 1, Relative: true}},
+			"16 0005 04 02 02 01 00"},
+		// FETCH_OK codes its end one past the last object, and all of a group as Object 0
+		{19, &message.FetchOK{EndLocation: wire.Location{Group: 3, Object: 4}}, "18 0004 00 03 05 00"},
+		{18, &message.FetchOK{EndLocation: wire.Location{Group: 3, Object: math.MaxUint64}}, "18 0004 00 03 00 00"},
+		// -17 PUBLISH_OK is 0x1E with parameters
+		{17, &message.PublishOK{Params: pubOK}, "1e 0003 01 10 01"},
+		// -17 numbers TOO_FAR_BEHIND 0x6
+		{17, &message.PublishDone{Code: message.DoneTooFarBehind, StreamCount: 5, Reason: "x"}, "0b 0004 06 05 01 78"},
+	}
+	for _, tc := range tests {
+		c := mustCodec(t, tc.draft)
+		got, err := c.AppendMessage(nil, tc.m)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.m.Kind(), err)
+		}
+		if want := hexBytes(t, tc.want); !bytes.Equal(got, want) {
+			t.Errorf("draft %d %s:\n got %x\nwant %x", tc.draft, tc.m.Kind(), got, want)
+		}
+		typ, n := wire.ReadVarint(got)
+		back, err := c.ParseMessage(typ, got[n+2:])
+		if err != nil {
+			t.Errorf("draft %d %s: the vector does not decode: %v", tc.draft, tc.m.Kind(), err)
+			continue
+		}
+		if pd, ok := back.(*message.PublishDone); ok && pd.Code != message.DoneTooFarBehind {
+			t.Errorf("draft 17 TOO_FAR_BEHIND decoded as %v", pd.Code)
+		}
+		if fok, ok := back.(*message.FetchOK); ok && fok.EndLocation != tc.m.(*message.FetchOK).EndLocation {
+			t.Errorf("draft %d FETCH_OK end decoded as %+v", tc.draft, fok.EndLocation)
+		}
+	}
+	// a message a draft does not define neither encodes nor decodes
+	c17, c19 := mustCodec(t, 17), mustCodec(t, 19)
+	if _, err := c17.AppendMessage(nil, &message.SubscribeTracks{}); !errors.Is(err, ErrUnknownMessage) {
+		t.Error("SUBSCRIBE_TRACKS before -18")
+	}
+	if _, err := c19.AppendMessage(nil, &message.PublishOK{}); !errors.Is(err, ErrUnknownMessage) {
+		t.Error("PUBLISH_OK after -17")
+	}
+	if _, err := c19.ParseMessage(0x11, nil); err == nil {
+		t.Error("0x11 is not SUBSCRIBE_NAMESPACE after -17")
+	}
+	if _, err := c17.ParseMessage(0x50, nil); err == nil {
+		t.Error("0x50 is not SUBSCRIBE_NAMESPACE in -17")
+	}
+	for _, bad := range []struct {
+		c    *Codec
+		typ  uint64
+		body string
+	}{
+		{c17, 0x11, "01 00 00 03 00"},                          // subscribe options out of range
+		{c19, 0x16, "02 07"},                                   // unknown fetch type
+		{c19, 0x16, "02 01 01 04 6c697665 01 76 05 00 03 00 00"}, // a fetch ending before it starts
+		{c19, 0x03, "00 01 04 6c697665 01 76 01 21 01 09"},       // unknown filter type
+	} {
+		if _, err := bad.c.ParseMessage(bad.typ, hexBytes(t, bad.body)); err == nil {
+			t.Errorf("draft %d %#x %s should not decode", bad.c.Draft(), bad.typ, bad.body)
+		}
+	}
+}
+
 func TestLocationFilterSpellings(t *testing.T) {
 	filters := []message.LocationFilter{
 		{Type: message.FilterNone},
@@ -282,6 +481,9 @@ func TestLocationFilterSpellings(t *testing.T) {
 	}
 	for _, draft := range Drafts() {
 		c := mustCodec(t, draft)
+		if c.Has(CapLegacyLocationFilter) {
+			continue
+		}
 		for _, f := range filters {
 			var p message.Params
 			p.SetLocationFilter(f)
@@ -309,7 +511,7 @@ func TestLocationFilterSpellings(t *testing.T) {
 }
 
 func TestCodecRegistry(t *testing.T) {
-	if len(Supported()) != len(Drafts()) || Drafts()[0] != 22 {
+	if len(Supported()) != len(Drafts()) || Drafts()[0] != 22 || Drafts()[len(Drafts())-1] != 17 {
 		t.Errorf("drafts %v", Drafts())
 	}
 	c, ok := ForALPN("moqt-21")

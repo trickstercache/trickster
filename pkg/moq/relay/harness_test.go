@@ -408,6 +408,7 @@ func (h *originReq) HandleClose(r *session.Request, _ error) {
 
 type upstream struct {
 	o        *origin
+	draft    int
 	mu       sync.Mutex
 	sess     *session.Session
 	sessions []*session.Session
@@ -425,7 +426,11 @@ func (u *upstream) Session(ctx context.Context, _ relay.Scope) (*session.Session
 		return u.sess, nil
 	}
 	cc, sc := memconn.Pair()
-	codec, _ := codec.ForDraft(22)
+	draft := u.draft
+	if draft == 0 {
+		draft = 22
+	}
+	codec, _ := codec.ForDraft(draft)
 	server, _ := session.New(sc, session.Options{Role: session.RoleServer, Codec: codec, Handler: u.o})
 	client, _ := session.New(cc, session.Options{
 		Role: session.RoleClient, Codec: codec,
@@ -605,6 +610,8 @@ type rec struct {
 	mu        sync.Mutex
 	objects   []got
 	streams   int
+	headers   []message.SubgroupHeader
+	tails     []uint64
 	resets    int
 	fetched   []message.FetchObject
 	payloads  []string
@@ -631,16 +638,20 @@ func (r *rec) HandleDatagram(_ *session.Request, d *message.Datagram) {
 func (r *rec) HandleSubgroup(_ *session.Request, in *session.IncomingSubgroup) {
 	r.mu.Lock()
 	r.streams++
+	r.headers = append(r.headers, *in.Header())
 	r.mu.Unlock()
 	g := in.Header().Group
-	for {
+	for n := 0; ; n++ {
 		o, err := in.Next()
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				r.mu.Lock()
+			r.mu.Lock()
+			switch {
+			case !errors.Is(err, io.EOF):
 				r.resets++
-				r.mu.Unlock()
+			case n == 0 && in.Header().EndOfGroup:
+				r.tails = append(r.tails, g)
 			}
+			r.mu.Unlock()
 			return
 		}
 		b, err := io.ReadAll(in)

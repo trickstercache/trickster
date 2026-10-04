@@ -428,8 +428,11 @@ func AllowedParams(k Kind) ParamSet {
 	switch k {
 	case KindSubscribe:
 		return subscribeParams
-	case KindSubscribeOK, KindRequestOK, KindPublishOK:
+	case KindSubscribeOK, KindRequestOK:
 		return Of(ParamExpires, ParamLargestObject)
+	case KindPublishOK:
+		// draft -17's PUBLISH_OK carries the subscriber's choices for the subscription
+		return subscriptionUpdateParams | Of(ParamExpires, ParamGroupOrder)
 	case KindPublish:
 		return Of(ParamObjectDeliveryTimeout, ParamAuthorizationToken, ParamSubgroupDeliveryTimeout,
 			ParamExpires, ParamLargestObject, ParamForward, ParamSubscriberPriority, ParamLocationFilter,

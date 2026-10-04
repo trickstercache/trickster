@@ -420,7 +420,7 @@ COREDNS_ZONES       := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
 COMPOSE_PROFILES    ?= all-providers
 # stop and delete act on every profile, so they reach whatever is running
 COMPOSE_ALL_PROFILES := *
-DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite
+DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite moq
 DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
 
 # waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
@@ -458,7 +458,7 @@ developer-start: developer-credentials
 	$(call wait_ready,druid,http://127.0.0.1:8888/status/health,180)
 	$(call wait_ready,victoriametrics,http://127.0.0.1:8428/health,120)
 
-# developer-start-<profile> starts the always-on services plus that one TSDB backend
+# developer-start-<profile> starts the always-on services plus that one backend
 .PHONY: $(DEVELOPER_START_TARGETS)
 $(DEVELOPER_START_TARGETS): developer-start-%:
 	@$(MAKE) developer-start COMPOSE_PROFILES=$*

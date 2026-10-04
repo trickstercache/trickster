@@ -28,6 +28,11 @@ import (
 const (
 	maxLocationFilterFields = 4
 	reasonUnknownParam      = "unknown parameter"
+
+	legacyNextGroupStart = 0x1
+	legacyLargestObject  = 0x2
+	legacyAbsoluteStart  = 0x3
+	legacyAbsoluteRange  = 0x4
 )
 
 var (
@@ -42,8 +47,11 @@ func (c *Codec) KnownParams() message.ParamSet {
 	s := message.Of(message.ParamObjectDeliveryTimeout, message.ParamAuthorizationToken,
 		message.ParamRendezvousTimeout, message.ParamExpires, message.ParamLargestObject, message.ParamForward,
 		message.ParamSubscriberPriority, message.ParamLocationFilter, message.ParamGroupOrder,
-		message.ParamNewGroupRequest, message.ParamSubgroupDeliveryTimeout, message.ParamFillTimeout,
-		message.ParamTrackNamespacePrefix)
+		message.ParamNewGroupRequest)
+	if c.Has(CapParams18) {
+		s |= message.Of(message.ParamSubgroupDeliveryTimeout, message.ParamFillTimeout,
+			message.ParamTrackNamespacePrefix)
+	}
 	if c.Has(CapRangeFilters) {
 		s |= message.Of(message.ParamSubgroupFilter, message.ParamObjectIDFilter, message.ParamPriorityFilter,
 			message.ParamObjectPropertyFilter, message.ParamTrackPropertyFilter)
@@ -203,6 +211,14 @@ func boolByte(v bool) byte {
 }
 
 func (c *Codec) appendLocationFilter(b []byte, f message.LocationFilter) ([]byte, error) {
+	if c.Has(CapLegacyLocationFilter) {
+		start := len(b)
+		var err error
+		if b, err = c.appendLegacyFilter(b, f); err != nil {
+			return b, err
+		}
+		return c.prefixLength(b, start), nil
+	}
 	if c.Has(CapTypedLocationFilter) {
 		if f.Type > message.FilterNextObject {
 			return b, ErrLocationFilter
@@ -227,6 +243,58 @@ func (c *Codec) appendLocationFilter(b []byte, f message.LocationFilter) ([]byte
 		return b, ErrLocationFilter
 	}
 	return c.prefixLength(b, start), nil
+}
+
+func (c *Codec) appendLegacyFilter(b []byte, f message.LocationFilter) ([]byte, error) {
+	// Next Group Start is a Relative Start of zero groups and Largest Object a Next Object; AbsoluteRange ends at
+	// its last group's end, as Absolute Start with Group End does, and no filter is an AbsoluteStart from {0, 0}
+	switch f.Type {
+	case message.FilterNone:
+		b = c.putLocation(c.putVarint(b, legacyAbsoluteStart), wire.Location{})
+	case message.FilterRelativeStart:
+		if f.StartGroup != 0 {
+			return b, ErrLocationFilter
+		}
+		b = c.putVarint(b, legacyNextGroupStart)
+	case message.FilterNextObject:
+		b = c.putVarint(b, legacyLargestObject)
+	case message.FilterAbsoluteStart:
+		b = c.putLocation(c.putVarint(b, legacyAbsoluteStart), wire.Location{Group: f.StartGroup, Object: f.StartObject})
+	case message.FilterAbsoluteStartGroupEnd:
+		b = c.putLocation(c.putVarint(b, legacyAbsoluteRange), wire.Location{Group: f.StartGroup, Object: f.StartObject})
+		b = c.putVarint(b, f.EndGroupDelta)
+	default:
+		return b, ErrLocationFilter
+	}
+	return b, nil
+}
+
+func (c *Codec) parseLegacyFilter(r *wire.Reader) (message.LocationFilter, error) {
+	var f message.LocationFilter
+	v := r.LenBytes(wire.MaxMessageLen)
+	if r.Err() != nil {
+		return f, nil
+	}
+	sub := wire.NewReader(v)
+	switch ft := sub.Varint(); ft {
+	case legacyNextGroupStart:
+		f.Type = message.FilterRelativeStart
+	case legacyLargestObject:
+		f.Type = message.FilterNextObject
+	case legacyAbsoluteStart:
+		f.Type, f.StartGroup, f.StartObject = message.FilterAbsoluteStart, sub.Varint(), sub.Varint()
+	case legacyAbsoluteRange:
+		f.Type, f.StartGroup, f.StartObject = message.FilterAbsoluteStartGroupEnd, sub.Varint(), sub.Varint()
+		f.EndGroupDelta = sub.Varint()
+	default:
+		if sub.Err() == nil {
+			return f, message.Violation("unknown location filter type")
+		}
+	}
+	if err := sub.Done(); err != nil {
+		return f, wireViolation(err)
+	}
+	return f, checkFilterEnd(f)
 }
 
 func appendFilterFields(c *Codec, b []byte, f message.LocationFilter) []byte {
@@ -383,6 +451,9 @@ func (c *Codec) parseParam(r *wire.Reader, t message.ParamType, p *message.Param
 
 func (c *Codec) parseLocationFilter(r *wire.Reader) (message.LocationFilter, error) {
 	var f message.LocationFilter
+	if c.Has(CapLegacyLocationFilter) {
+		return c.parseLegacyFilter(r)
+	}
 	if c.Has(CapTypedLocationFilter) {
 		ft := r.Varint()
 		if ft > uint64(message.FilterNextObject) {

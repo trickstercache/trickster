@@ -646,6 +646,22 @@ services:
       graphite_seed:
         condition: service_completed_successfully
 
+  # moq-dev's MoQ relay, the peer the moq provider interoperates with: tests
+  # publish synthetic tracks into it and pull them through Trickster on each
+  # supported draft, by native QUIC and by WebTransport, on UDP port 10443.
+  # It generates a self-signed certificate for localhost at each start and
+  # lets any session publish and subscribe.
+  moq_relay:
+    profiles: [moq, all-providers, integration]
+    image: moqdev/moq-relay:0.17.0@sha256:4f4de66c996deb4633f7c09983a7ba850c8fd4cc30b07114f742cfe8574c7ebe
+    command:
+      - --listen=[::]:443
+      - --listen-tls-generate=localhost
+      - --auth-public=**
+    ports:
+      - 10443:443/udp
+    restart: always
+
   # Mocks
 
   # devorigin (hack/devorigin) serves the live trips metrics that prometheus
