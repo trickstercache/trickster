@@ -56,5 +56,12 @@ cover:
 	@../hack/filter-coverprofile.sh .integration.coverprofile
 	$(GO) tool cover -func=.integration.coverprofile | tail -1
 
+.PHONY: cover-race
+cover-race:
+	$(GO) test -timeout $(TEST_TIMEOUT) -v --failfast -race -covermode=atomic -coverpkg=../... -coverprofile=.integration.coverprofile
+	$(GO) test -timeout $(TEST_TIMEOUT) -v -race ./greptimedb
+	@../hack/filter-coverprofile.sh .integration.coverprofile
+	$(GO) tool cover -func=.integration.coverprofile | tail -1
+
 cover-html: cover
 	$(GO) tool cover -html=.integration.coverprofile

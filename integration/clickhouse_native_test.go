@@ -305,10 +305,17 @@ func clickHouseTLSSerial(address string) (string, error) {
 	return conn.ConnectionState().PeerCertificates[0].SerialNumber.String(), nil
 }
 
-func TestClickHouseNativeLimitations(t *testing.T) {
+func TestClickHouseNativeClients(t *testing.T) {
 	h := configHarness(t)
 	h.start(t)
 	waitForClickHouseData(t, "127.0.0.1:8123")
+	t.Run("Limitations", func(t *testing.T) { checkClickHouseNativeLimitations(t, h) })
+	t.Run("SDK", func(t *testing.T) { checkClickHouseNativeSDK(t, h) })
+	t.Run("ProtocolListener", func(t *testing.T) { checkClickHouseNativeProtocolListener(t, h) })
+}
+
+func checkClickHouseNativeLimitations(t *testing.T, h tricksterHarness) {
+	t.Helper()
 	conn, err := clickhouse.Open(&clickhouse.Options{
 		Addr:        []string{h.ClickHouseNativeAddr},
 		Protocol:    clickhouse.Native,
@@ -344,11 +351,9 @@ func TestClickHouseNativeLimitations(t *testing.T) {
 	require.Contains(t, string(body), "unsupported native upstream output format")
 }
 
-func TestClickHouseNativeSDK(t *testing.T) {
-	h := configHarness(t)
+func checkClickHouseNativeSDK(t *testing.T, h tricksterHarness) {
+	t.Helper()
 	clickAddr := h.BaseAddr
-	h.start(t)
-	waitForClickHouseData(t, "127.0.0.1:8123")
 
 	db := clickhouse.OpenDB(&clickhouse.Options{
 		Addr:        []string{clickAddr},
@@ -390,13 +395,8 @@ func TestClickHouseNativeSDK(t *testing.T) {
 	})
 }
 
-// TestClickHouseNativeProtocolListener tests Flow 1: client speaks native
-// protocol to Trickster's protocol listener, which proxies through the
-// caching engine to ClickHouse's HTTP port.
-func TestClickHouseNativeProtocolListener(t *testing.T) {
-	h := configHarness(t)
-	h.start(t)
-	waitForClickHouseData(t, "127.0.0.1:8123")
+func checkClickHouseNativeProtocolListener(t *testing.T, h tricksterHarness) {
+	t.Helper()
 
 	// Connect via native protocol to Trickster's protocol listener
 	conn, err := clickhouse.Open(&clickhouse.Options{
