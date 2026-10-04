@@ -188,7 +188,7 @@ func TestRemoteReadStreamedChunks(t *testing.T) {
 	}
 	hints := &storage.SelectHints{Start: 1, End: 9, Step: 2, Func: "rate", Range: 4, Grouping: []string{testPod}, By: true}
 	budget := &Budget{}
-	series, err := source.Select(testContext(t, budget), 0, 10, hints, matchers...)
+	series, _, err := source.Select(testContext(t, budget), 0, 10, hints, matchers...)
 	require.NoError(t, err)
 
 	require.Equal(t, prop.SeriesAPIRemoteRead, source.SeriesAPI())
@@ -242,7 +242,7 @@ func TestRemoteReadSamples(t *testing.T) {
 		w.Header().Set(headers.NameContentType, contentTypeProtobuf)
 		_, _ = w.Write(snappy.Encode(nil, data))
 	})
-	series, err := source.Select(testContext(t, nil), 0, 10, nil)
+	series, _, err := source.Select(testContext(t, nil), 0, 10, nil)
 	require.NoError(t, err)
 	require.Len(t, series, 1)
 	require.Equal(t, []testPoint{{t: 1, f: 1}, {t: 2, h: true}, {t: 3, h: true}, {t: 4, f: math.Inf(1)}},
@@ -314,7 +314,7 @@ func TestRemoteReadErrors(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newTestRemoteRead(t, test.handler).Select(testContext(t, test.budget), 0, 10, nil)
+			_, _, err := newTestRemoteRead(t, test.handler).Select(testContext(t, test.budget), 0, 10, nil)
 			require.ErrorIs(t, err, test.want)
 			if test.text != "" {
 				require.Contains(t, err.Error(), test.text)
@@ -326,7 +326,7 @@ func TestRemoteReadErrors(t *testing.T) {
 func TestRemoteReadUnreachable(t *testing.T) {
 	u, err := url.Parse("http://127.0.0.1:1" + prop.RemoteReadPath)
 	require.NoError(t, err)
-	_, err = NewRemoteRead(u, &http.Client{}, nil).Select(context.Background(), 0, 1, nil)
+	_, _, err = NewRemoteRead(u, &http.Client{}, nil).Select(context.Background(), 0, 1, nil)
 	require.ErrorIs(t, err, errRemoteRead)
 }
 

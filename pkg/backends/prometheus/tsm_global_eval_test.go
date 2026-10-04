@@ -42,6 +42,7 @@ import (
 	promengine "github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,17 +56,18 @@ var errGlobalTestMember = errors.New("member down")
 
 // memberSource serves a member's in-memory series as a raw series source
 type memberSource struct {
-	store presenceStore
-	err   error
+	store    presenceStore
+	err      error
+	warnings annotations.Annotations
 }
 
 func (memberSource) SeriesAPI() string { return po.SeriesAPIRemoteRead }
 
 func (m memberSource) Select(_ context.Context, _, _ int64, _ *storage.SelectHints,
 	matchers ...*labels.Matcher,
-) ([]storage.Series, error) {
+) ([]storage.Series, annotations.Annotations, error) {
 	if m.err != nil {
-		return nil, m.err
+		return nil, nil, m.err
 	}
 	var out []storage.Series
 	for _, s := range m.store {
@@ -74,7 +76,7 @@ func (m memberSource) Select(_ context.Context, _, _ int64, _ *storage.SelectHin
 			out = append(out, s)
 		}
 	}
-	return out, nil
+	return out, m.warnings, nil
 }
 
 func globalTestSettings() merge.TSMGlobalSettings {
@@ -391,12 +393,12 @@ type blockingSource struct {
 
 func (b blockingSource) Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
 	matchers ...*labels.Matcher,
-) ([]storage.Series, error) {
+) ([]storage.Series, annotations.Annotations, error) {
 	b.held <- struct{}{}
 	select {
 	case <-b.release:
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 	return b.memberSource.Select(ctx, mint, maxt, hints, matchers...)
 }

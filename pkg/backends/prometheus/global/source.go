@@ -29,14 +29,16 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 // Source reads a member's raw series for the Prometheus engine.
 type Source interface {
 	backends.TSMGlobalSource
-	// Select returns the member's series that match every matcher, with their samples from mint to maxt
+	// Select returns the member's series that match every matcher, with their samples from mint to maxt,
+	// and any warnings the member gave that its answer may be incomplete
 	Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
-		matchers ...*labels.Matcher) ([]storage.Series, error)
+		matchers ...*labels.Matcher) ([]storage.Series, annotations.Annotations, error)
 }
 
 // ErrFetchLimit is returned when an evaluation retrieves more raw data than its budget allows.

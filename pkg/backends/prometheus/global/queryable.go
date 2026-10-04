@@ -76,14 +76,23 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 	}
 	members := qr.q.members
 	results := make([][]storage.Series, len(members))
+	incomplete := make([]annotations.Annotations, len(members))
 	errs := make([]error, len(members))
 	var wg sync.WaitGroup
 	for i, m := range members {
-		wg.Go(func() { results[i], errs[i] = m.Source.Select(ctx, mint, maxt, hints, matchers...) })
+		wg.Go(func() { results[i], incomplete[i], errs[i] = m.Source.Select(ctx, mint, maxt, hints, matchers...) })
 	}
 	wg.Wait()
 	var warnings annotations.Annotations
 	for i, err := range errs {
+		if err == nil && len(incomplete[i]) > 0 {
+			// an incomplete answer is kept, but only when partial responses are allowed
+			err = fmt.Errorf("incomplete answer: %w", errors.Join(incomplete[i].AsErrors()...))
+			if qr.q.partial {
+				warnings.Add(fmt.Errorf("%w: %s: %w", ErrMemberUnavailable, members[i].Name, err))
+				continue
+			}
+		}
 		if err == nil {
 			continue
 		}

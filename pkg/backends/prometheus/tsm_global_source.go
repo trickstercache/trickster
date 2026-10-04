@@ -64,6 +64,12 @@ func (c *Client) newGlobalSource() (backends.TSMGlobalSource, error) {
 			return nil, fmt.Errorf("%w: backend %s has no http client", errNoSeriesAPI, c.Name())
 		}
 		return global.NewRemoteRead(u, client, o.Paths), nil
+	case po.SeriesAPIStoreAPI:
+		tlsConfig, err := o.TLS.ToClientTLSConfig()
+		if err != nil {
+			return nil, err
+		}
+		return global.NewStoreAPI(u, tlsConfig, o.Paths)
 	default:
 		return nil, fmt.Errorf("%w: %s", errSeriesAPIUnsupported, api)
 	}

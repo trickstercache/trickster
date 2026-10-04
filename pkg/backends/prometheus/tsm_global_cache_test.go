@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,7 +57,7 @@ type recordingSource struct {
 
 func (s *recordingSource) Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
 	matchers ...*labels.Matcher,
-) ([]storage.Series, error) {
+) ([]storage.Series, annotations.Annotations, error) {
 	s.mu.Lock()
 	s.ranges = append(s.ranges, [2]int64{mint, maxt})
 	s.mu.Unlock()

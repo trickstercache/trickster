@@ -60,9 +60,12 @@ func TestTSMGlobalSource(t *testing.T) {
 		require.ErrorIs(t, err, po.ErrSeriesEndpoint)
 	})
 	t.Run("storeapi", func(t *testing.T) {
-		_, err := newGlobalSourceClient(t, origin, &po.Options{
-			Flavor: po.FlavorThanos, SeriesEndpoint: po.StoreAPIScheme + "://thanos:10901",
+		source, err := newGlobalSourceClient(t, origin, &po.Options{
+			Flavor: po.FlavorThanos, SeriesEndpoint: po.StoreAPISchemeTLS + "://thanos:10901",
 		}).TSMGlobalSource()
-		require.ErrorIs(t, err, errSeriesAPIUnsupported)
+		require.NoError(t, err)
+		require.IsType(t, &global.StoreAPI{}, source)
+		require.Equal(t, po.SeriesAPIStoreAPI, source.SeriesAPI())
+		require.NoError(t, source.(*global.StoreAPI).Close())
 	})
 }

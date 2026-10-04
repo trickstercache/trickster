@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 const (
@@ -78,6 +79,13 @@ func (*RemoteRead) SeriesAPI() string { return prop.SeriesAPIRemoteRead }
 // Select reads the series that match every matcher, with their samples from mint to maxt.
 func (s *RemoteRead) Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
 	matchers ...*labels.Matcher,
+) ([]storage.Series, annotations.Annotations, error) {
+	series, err := s.read(ctx, mint, maxt, hints, matchers)
+	return series, nil, err
+}
+
+func (s *RemoteRead) read(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
+	matchers []*labels.Matcher,
 ) ([]storage.Series, error) {
 	body, err := encodeReadRequest(mint, maxt, hints, matchers)
 	if err != nil {

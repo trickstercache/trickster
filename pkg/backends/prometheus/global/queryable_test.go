@@ -28,13 +28,15 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/stretchr/testify/require"
 )
 
 // MemorySource is a test source serving fixed series that match a select's matchers
 type MemorySource struct {
-	Series []storage.Series
-	Err    error
+	Series   []storage.Series
+	Err      error
+	Warnings annotations.Annotations
 
 	mu    sync.Mutex
 	calls [][2]int64
@@ -44,12 +46,12 @@ func (*MemorySource) SeriesAPI() string { return prop.SeriesAPIRemoteRead }
 
 func (m *MemorySource) Select(_ context.Context, mint, maxt int64, _ *storage.SelectHints,
 	matchers ...*labels.Matcher,
-) ([]storage.Series, error) {
+) ([]storage.Series, annotations.Annotations, error) {
 	m.mu.Lock()
 	m.calls = append(m.calls, [2]int64{mint, maxt})
 	m.mu.Unlock()
 	if m.Err != nil {
-		return nil, m.Err
+		return nil, nil, m.Err
 	}
 	var out []storage.Series
 	for _, s := range m.Series {
@@ -58,7 +60,7 @@ func (m *MemorySource) Select(_ context.Context, mint, maxt int64, _ *storage.Se
 			out = append(out, s)
 		}
 	}
-	return out, nil
+	return out, m.Warnings, nil
 }
 
 func selectAll(t *testing.T, q *Queryable, ctx context.Context, hints *storage.SelectHints) storage.SeriesSet {
@@ -147,4 +149,25 @@ func TestQuerierServesNoLabels(t *testing.T) {
 	require.Empty(t, names)
 	require.Empty(t, warnings)
 	require.NoError(t, qr.Close())
+}
+
+func TestQueryableIncompleteAnswers(t *testing.T) {
+	var incomplete annotations.Annotations
+	incomplete.Add(errors.New("store b is down"))
+	a := &MemorySource{
+		Series:   []storage.Series{listSeries(podLabels("a"), testPoint{t: 1, f: 1})},
+		Warnings: incomplete,
+	}
+	members := []Member{{Name: "thanos", Source: a}}
+	strict := selectAll(t, NewQueryable(members, nil, merge.TSMDeduplicationPenalty, false, nil),
+		context.Background(), nil)
+	require.False(t, strict.Next())
+	require.ErrorIs(t, strict.Err(), ErrMemberUnavailable)
+	require.ErrorContains(t, strict.Err(), "store b is down")
+
+	partial := selectAll(t, NewQueryable(members, nil, merge.TSMDeduplicationPenalty, true, nil),
+		context.Background(), nil)
+	require.True(t, partial.Next(), "the incomplete answer is kept")
+	require.Len(t, partial.Warnings(), 1)
+	require.ErrorIs(t, partial.Warnings().AsErrors()[0], ErrMemberUnavailable)
 }
