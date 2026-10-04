@@ -412,11 +412,32 @@ type upstream struct {
 	mu       sync.Mutex
 	sess     *session.Session
 	sessions []*session.Session
+	released []error
 	dials    atomic.Int32
 	down     atomic.Bool
 }
 
-func (u *upstream) Session(ctx context.Context, _ relay.Scope) (*session.Session, error) {
+func (u *upstream) Session(ctx context.Context, _ relay.Scope, _ message.FullTrackName) (*session.Session,
+	func(error), error,
+) {
+	sess, err := u.dial(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sess, func(err error) {
+		u.mu.Lock()
+		u.released = append(u.released, err)
+		u.mu.Unlock()
+	}, nil
+}
+
+func (u *upstream) releases() []error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return slices.Clone(u.released)
+}
+
+func (u *upstream) dial(ctx context.Context) (*session.Session, error) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	if u.down.Load() {

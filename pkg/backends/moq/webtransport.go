@@ -92,8 +92,9 @@ func (c *Client) serveWebTransport(w http.ResponseWriter, r *http.Request) {
 	// the relay outlives a reload that retires it while this session uses it
 	c.sh.hold()
 	defer c.sh.drop()
+	handler := &leavable{Handler: c.Relay().Handler(c.Scope())}
 	sess, err := session.New(session.FromWebTransport(wts), session.Options{
-		Role: session.RoleServer, Codec: cd, WebTransport: true, Handler: c.Relay().Handler(c.Scope()),
+		Role: session.RoleServer, Codec: cd, WebTransport: true, Handler: handler,
 		HandshakeTimeout: mo.DefaultHandshakeTimeout, MaxRequests: mo.DefaultMaxRequestsPerSession,
 		Setup: message.Setup{
 			Implementation: implementation(""), MaxFilterRanges: mo.DefaultMaxFilterRanges,
@@ -123,7 +124,15 @@ func (c *Client) serveWebTransport(w http.ResponseWriter, r *http.Request) {
 			keys.Transport: transportWebTransport,
 		})
 	}
-	<-sess.Done()
+	select {
+	case <-sess.Done():
+	case <-listenerhttp3.Draining(r):
+		// the listener is stopping: the client is asked to move, and the session closes once it has or the listener
+		// gives up waiting
+		handler.leave(o.GoAwayURI)
+		_ = sess.GoAway(o.GoAwayURI, 0)
+		<-sess.Done()
+	}
 	activeSessions(listenerName, backend, -1)
 	logger.Info("moq session closed", logging.Pairs{
 		keys.ListenerName: listenerName, keys.BackendName: backend, keys.Draft: draft, logKeyClient: client,

@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
@@ -31,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	pl "github.com/trickstercache/trickster/v2/pkg/proxy/listener"
@@ -53,6 +55,11 @@ const (
 
 func startWTEndpoint(t *testing.T, h http.Handler) string {
 	t.Helper()
+	return startWTMember(t, h).LocalAddr().String()
+}
+
+func startWTMember(t *testing.T, h http.Handler) *quicmux.Member {
+	t.Helper()
 	handler := listenerhttp3.NewHandler(h, pl.ServerLimits{})
 	handler.SetWebTransport(true, webListener)
 	m, err := quicmux.Join("127.0.0.1", 0, quicmux.MemberOptions{
@@ -65,11 +72,18 @@ func startWTEndpoint(t *testing.T, h http.Handler) string {
 	}
 	go func() { _ = m.Serve() }()
 	t.Cleanup(func() { _ = m.Close() })
-	return m.LocalAddr().String()
+	return m
 }
 
 func dialWT(t *testing.T, addr string, header http.Header, protocols ...string) (*http.Response, *session.Session,
 	error,
+) {
+	t.Helper()
+	return dialWTHandler(t, addr, header, nil, protocols...)
+}
+
+func dialWTHandler(t *testing.T, addr string, header http.Header, h session.Handler, protocols ...string) (
+	*http.Response, *session.Session, error,
 ) {
 	t.Helper()
 	tr := &webtransport.Transport{
@@ -91,7 +105,7 @@ func dialWT(t *testing.T, addr string, header http.Header, protocols ...string) 
 		c, _ = codec.ForDraft(21)
 	}
 	s, _ := session.New(session.FromWebTransport(ws), session.Options{
-		Role: session.RoleClient, Codec: c,
+		Role: session.RoleClient, Codec: c, Handler: h,
 		WebTransport: true,
 	})
 	t.Cleanup(func() { _ = s.Close(message.CodeNoError, "") })
@@ -371,5 +385,35 @@ func TestImplementation(t *testing.T) {
 	appinfo.Version = "2.2.0"
 	if implementation("") != Implementation+"/2.2.0" {
 		t.Errorf("the version is appended: %q", implementation(""))
+	}
+}
+
+func TestWebTransportDrainSendsGoAway(t *testing.T) {
+	org := startOrigin(t)
+	const moveTo = "https://alt.example.com/live"
+	client := newBackendWith(t, "wt-drain", "moqt://"+org.addr+"/live", func(o *bo.Options) {
+		o.MoQ.WebTransport.GoAwayURI = moveTo
+	})
+	m := startWTMember(t, http.HandlerFunc(client.serveWebTransport))
+	w := goAwayWatch{got: make(chan *message.GoAway, 1)}
+	_, s, err := dialWTHandler(t, m.LocalAddr().String(), nil, w, alpn21)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go func() { _ = m.Shutdown(ctx) }()
+	if g := recv(t, w.got, "GOAWAY"); g.NewSessionURI != moveTo {
+		t.Errorf("GOAWAY %+v", g)
+	}
+	track := message.FullTrackName{Namespace: wire.Namespace{[]byte("live")}, Name: []byte("video")}
+	if re := refusal(t, s, &message.Subscribe{Track: track}); re.Code != message.RequestRedirect ||
+		re.Redirect.ConnectURI != moveTo {
+		t.Errorf("a draining WebTransport session's refusal %+v", re)
+	}
+	select {
+	case <-s.Done():
+	case <-time.After(wait):
+		t.Fatal("the draining listener closes a session that stays")
 	}
 }

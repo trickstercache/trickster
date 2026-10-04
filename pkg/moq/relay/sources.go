@@ -228,6 +228,7 @@ func (t *track) addPublisher(u *upstreamSub, m *message.Publish) error {
 
 func (t *track) upstreamEnded(u *upstreamSub, cause error) {
 	// a source, or an attempt to open one, ended
+	u.settle(cause)
 	t.mu.Lock()
 	i := slices.Index(t.ups, u)
 	if i < 0 {
@@ -454,29 +455,34 @@ func (t *track) publisherArrived(sess *session.Session) {
 	t.mu.Unlock()
 }
 
-func (t *track) upstreamSession(ctx context.Context) (*session.Session, error) {
-	// the session an upstream FETCH or TRACK_STATUS goes to: a source's, else a namespace publisher's, else the
-	// origin's (§7.6)
+func (t *track) upstreamSession(ctx context.Context) (*session.Session, func(error), error) {
+	// the session an upstream FETCH or TRACK_STATUS goes to: a source's, else a namespace publisher's, else an
+	// origin's (§7.6); the release is called once the request ends
 	t.mu.Lock()
 	for _, u := range t.ups {
 		if s := u.session(); u.live && s != nil {
 			t.mu.Unlock()
-			return s, nil
+			return s, noRelease, nil
 		}
 	}
 	t.mu.Unlock()
 	if targets := t.r.publishersFor(t.scope, t.name.Namespace); len(targets) > 0 {
-		return targets[0], nil
+		return targets[0], noRelease, nil
 	}
 	if t.r.up == nil {
-		return nil, errNoUpstream
+		return nil, nil, errNoUpstream
 	}
-	sess, err := t.r.up.Session(ctx, t.scope)
+	sess, release, err := t.r.up.Session(ctx, t.scope, t.name)
 	if err != nil {
-		return nil, errUpstream
+		return nil, nil, errUpstream
 	}
-	return sess, nil
+	if release == nil {
+		release = noRelease
+	}
+	return sess, release, nil
 }
+
+func noRelease(error) {}
 
 func (t *track) hasUpstream() bool {
 	t.mu.Lock()

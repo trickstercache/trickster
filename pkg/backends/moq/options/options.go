@@ -71,6 +71,9 @@ const (
 
 	maxSizeBytes       = 1 << 40
 	maxNamespaceFields = 32
+	maxGoAwayURI       = 8192
+	schemeMoQT         = "moqt"
+	schemeHTTPS        = "https"
 )
 
 // Options contains the moq block of a backend
@@ -122,10 +125,16 @@ type WebTransportOptions struct {
 	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
 	// MaxSessions bounds the WebTransport sessions the backend serves at once
 	MaxSessions int `yaml:"max_sessions,omitempty"`
+	// GoAwayURI is the https URI a GOAWAY names when Trickster stops, where WebTransport clients continue their
+	// sessions; empty has them reconnect to the URI they used
+	GoAwayURI string `yaml:"goaway_uri,omitempty"`
 }
 
 // UpstreamOptions configure the sessions a backend opens toward its origin
 type UpstreamOptions struct {
+	// ALB names an alb backend whose pool of moq backends are the origins, one picked for each track, in place of
+	// origin_url
+	ALB string `yaml:"alb,omitempty"`
 	// Drafts are the MoQ Transport drafts offered to the origin, most preferred first
 	Drafts []int `yaml:"drafts,omitempty"`
 	// Prewarm keeps an upstream subscription forwarding while every downstream subscriber is paused
@@ -364,6 +373,9 @@ func (w *WebTransportOptions) validate() error {
 	if w.MaxSessions <= 0 {
 		return errors.New("moq.webtransport.max_sessions must be greater than zero")
 	}
+	if err := validateGoAwayURI("moq.webtransport.goaway_uri", w.GoAwayURI, schemeHTTPS); err != nil {
+		return err
+	}
 	for i, origin := range w.AllowedOrigins {
 		normalized, err := NormalizeOrigin(origin)
 		if err != nil {
@@ -405,6 +417,9 @@ type ListenerOptions struct {
 	Drafts []int `yaml:"drafts,omitempty"`
 	// Implementation overrides the MOQT_IMPLEMENTATION setup option
 	Implementation string `yaml:"implementation,omitempty"`
+	// GoAwayURI is the moqt URI a GOAWAY names when the listener stops, where clients continue their sessions;
+	// empty has them reconnect to the URI they used. Changing it takes effect without restarting the listener.
+	GoAwayURI string `yaml:"goaway_uri,omitempty"`
 }
 
 // NewListener returns the default listener options
@@ -435,7 +450,8 @@ func (o *ListenerOptions) Equal(other *ListenerOptions) bool {
 	return o.HandshakeTimeout == other.HandshakeTimeout && o.IdleTimeout == other.IdleTimeout &&
 		o.MaxSessions == other.MaxSessions && o.MaxRequestsPerSession == other.MaxRequestsPerSession &&
 		o.MaxFilterRanges == other.MaxFilterRanges && o.MaxRequestUpdates == other.MaxRequestUpdates &&
-		slices.Equal(o.Drafts, other.Drafts) && o.Implementation == other.Implementation
+		slices.Equal(o.Drafts, other.Drafts) && o.Implementation == other.Implementation &&
+		o.GoAwayURI == other.GoAwayURI
 }
 
 // Validate rejects unsupported drafts and disabled limits
@@ -453,6 +469,21 @@ func (o *ListenerOptions) Validate() error {
 		return errors.New("moq.max_sessions and moq.max_requests_per_session must be greater than zero")
 	case o.MaxFilterRanges < 0 || o.MaxRequestUpdates < 0:
 		return errors.New("moq.max_filter_ranges and moq.max_request_updates must not be negative")
+	}
+	return validateGoAwayURI("moq.goaway_uri", o.GoAwayURI, schemeMoQT)
+}
+
+func validateGoAwayURI(field, uri, scheme string) error {
+	// the draft caps a New Session URI at 8192 bytes and has it keep the session's scheme
+	if uri == "" {
+		return nil
+	}
+	if len(uri) > maxGoAwayURI {
+		return fmt.Errorf("%s is longer than %d bytes", field, maxGoAwayURI)
+	}
+	u, err := url.Parse(uri)
+	if err != nil || u.Host == "" || !strings.EqualFold(u.Scheme, scheme) {
+		return fmt.Errorf("%s %q is not a %s:// URI with a host", field, uri, scheme)
 	}
 	return nil
 }

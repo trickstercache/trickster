@@ -75,11 +75,18 @@ func rewriterHarness(t *testing.T) tricksterHarness {
 
 func (h tricksterHarness) start(t *testing.T) {
 	t.Helper()
+	h.startStoppable(t)
+}
+
+func (h tricksterHarness) startStoppable(t *testing.T) func() {
+	t.Helper()
+	// the func returned stops the daemon as a signal would, draining its listeners
 	if h.releasePorts != nil {
 		h.releasePorts()
 	}
-	runTrickster(t, context.Background(), "-config", h.ConfigPath)
+	stop := runTrickster(t, context.Background(), "-config", h.ConfigPath)
 	waitForTrickster(t, h.MetricsAddr)
+	return stop
 }
 
 type requestOptions struct {

@@ -18,6 +18,7 @@ package relay_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"testing"
@@ -172,6 +173,11 @@ func TestLinger(t *testing.T) {
 	}
 	again.Cancel(message.ResetCancelled)
 	recv(t, h.o.ended, "the upstream subscription to end after the linger")
+	// a subscription the relay no longer wants is released as canceled, which blames no origin
+	eventually(t, "the canceled release", func() bool {
+		rel := h.up.releases()
+		return len(rel) == 1 && errors.Is(rel[0], context.Canceled)
+	})
 }
 
 func TestPublishDoneReachesSubscribers(t *testing.T) {
@@ -190,6 +196,10 @@ func TestPublishDoneReachesSubscribers(t *testing.T) {
 	if err := recv(t, r.closes, "close"); err != nil {
 		t.Errorf("the subscription ends cleanly: %v", err)
 	}
+	eventually(t, "the clean release", func() bool {
+		rel := h.up.releases()
+		return len(rel) == 1 && rel[0] == nil
+	})
 }
 
 func TestUpstreamLossResubscribes(t *testing.T) {
@@ -200,6 +210,10 @@ func TestUpstreamLossResubscribes(t *testing.T) {
 	eventually(t, "the first object", func() bool { return r.count() == 1 })
 	h.up.kill()
 	eventually(t, "a new upstream subscription", func() bool { return h.o.subscribes.Load() == 2 })
+	// the lost session is held against its origin, so a pool of origins can pick another
+	if rel := h.up.releases(); len(rel) == 0 || rel[0] == nil || errors.Is(rel[0], context.Canceled) {
+		t.Errorf("releases %v", rel)
+	}
 	eventually(t, "forwarding upstream again", func() bool { return len(h.o.subscriptions("video")) == 1 })
 	h.o.publish(t, "video", 1, objs("after")...)
 	eventually(t, "the object after the loss", func() bool { return r.count() == 2 })
@@ -235,6 +249,9 @@ func TestRefusedUpstream(t *testing.T) {
 	}
 	if re, ok := m.(*message.RequestError); !ok || re.Code != message.RequestUnauthorized {
 		t.Errorf("got %+v", m)
+	}
+	if rel := h.up.releases(); len(rel) != 1 || rel[0] != nil {
+		t.Errorf("a refusal is the origin's answer, not its failure: %v", rel)
 	}
 	h.up.down.Store(true)
 	req2, _ := subscribe(t, h.client(), "other", message.Params{})

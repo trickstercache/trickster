@@ -158,8 +158,21 @@ func negotiated(protocol string, defaultDraft int) (*codec.Codec, bool) {
 	return codec.ForALPN(protocol)
 }
 
-// Session returns the backend's session toward its origin, dialing one when none is up
-func (d *dialer) Session(ctx context.Context, _ relay.Scope) (*session.Session, error) {
+// Session returns the backend's session toward its origin, dialing one when none is up; with a single origin, the
+// release has no choice to inform
+func (d *dialer) Session(ctx context.Context, _ relay.Scope, _ message.FullTrackName) (*session.Session, func(error),
+	error,
+) {
+	s, err := d.session(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s, noRelease, nil
+}
+
+func noRelease(error) {}
+
+func (d *dialer) session(ctx context.Context) (*session.Session, error) {
 	// one session is kept per origin and dialed again once it ends
 	for {
 		d.mu.Lock()

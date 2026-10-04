@@ -61,7 +61,9 @@ type moqObject struct {
 
 type moqOrigin struct {
 	addr       string
+	ln         *quic.Listener
 	mu         sync.Mutex
+	sessions   []*session.Session
 	subs       map[string][]*session.Request
 	groups     map[uint64][]moqObject
 	subscribes atomic.Int32
@@ -83,7 +85,7 @@ func startMoQOrigin(t *testing.T) *moqOrigin {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = ln.Close() })
 	o := &moqOrigin{
-		addr: ln.Addr().String(), subs: make(map[string][]*session.Request),
+		addr: ln.Addr().String(), ln: ln, subs: make(map[string][]*session.Request),
 		groups: make(map[uint64][]moqObject),
 	}
 	go func() {
@@ -99,6 +101,9 @@ func startMoQOrigin(t *testing.T) *moqOrigin {
 				Handler: &moqOriginSession{o: o, path: &path},
 				OnSetup: func(_ *session.Session, m *message.Setup) error { path = m.Path; return nil },
 			})
+			o.mu.Lock()
+			o.sessions = append(o.sessions, s)
+			o.mu.Unlock()
 			go func() { _ = s.Start(context.Background()) }()
 		}
 	}()
@@ -170,6 +175,18 @@ func (o *moqOrigin) fetch(r *session.Request, m *message.Fetch) {
 	}
 	_ = out.Close()
 	_ = r.CloseSend()
+}
+
+func (o *moqOrigin) kill() {
+	// the origin stops taking connections and drops those it has, as a crashed process would
+	_ = o.ln.Close()
+	o.mu.Lock()
+	sessions := slices.Clone(o.sessions)
+	o.subs = make(map[string][]*session.Request)
+	o.mu.Unlock()
+	for _, s := range sessions {
+		_ = s.Close(message.CodeInternalError, "origin stopped")
+	}
 }
 
 func (o *moqOrigin) publish(t *testing.T, path string, group uint64, payloads ...string) {

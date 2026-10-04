@@ -22,6 +22,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -54,6 +55,8 @@ func implementation(configured string) string {
 }
 
 var errNoOrigin = errors.New("moq backend has no origin to probe")
+
+const poolProbeText = "moq backend reaches its origins through alb backend %q, whose members are probed instead"
 
 // Client implements the MoQ backend provider
 type Client struct {
@@ -95,7 +98,12 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 	sh, err := sharedFor(name, relayKey(o), func() (*shared, error) {
 		sh := &shared{}
 		var up relay.Upstream
-		if o.OriginURL != "" {
+		switch {
+		case m.Upstream.ALB != "":
+			// the alb's picker is bound when the configuration commits, in RetireClients
+			sh.pool = newPoolUpstream(m.Upstream.ALB)
+			up = sh.pool
+		case o.OriginURL != "":
 			origin, err := parseOrigin(o.OriginURL)
 			if err != nil {
 				return nil, err
@@ -194,9 +202,13 @@ func (c *Client) DefaultHealthCheckConfig() *ho.Options {
 	return ho.New()
 }
 
-// HealthCheckUnsupported says why a backend with no origin is left unprobed, and is empty for one with an origin
+// HealthCheckUnsupported says why a backend with no origin of its own is left unprobed, and is empty for one with
+// an origin; the members of an alb it reaches its origins through are probed as backends of their own
 func (c *Client) HealthCheckUnsupported() string {
-	if c.sh.dialer == nil {
+	switch {
+	case c.sh.pool != nil:
+		return fmt.Sprintf(poolProbeText, c.sh.pool.alb)
+	case c.sh.dialer == nil:
 		return errNoOrigin.Error()
 	}
 	return ""

@@ -18,6 +18,7 @@ package moq
 
 import (
 	"context"
+	"maps"
 	"net"
 	"slices"
 	"strconv"
@@ -54,6 +55,8 @@ const (
 	logKeyClient   = "client"
 	logKeyReason   = "reason"
 	logKeyDuration = "duration"
+
+	reasonShuttingDown = "shutting down"
 )
 
 type relayBackend interface {
@@ -71,6 +74,7 @@ type routeEntry struct {
 
 type routeTable struct {
 	entries []routeEntry
+	goAway  string
 }
 
 var _ backends.RouteResolver = (*routeTable)(nil)
@@ -157,7 +161,7 @@ type server struct {
 	gate         backends.SessionGateSlot
 
 	mu       sync.Mutex
-	sessions map[*session.Session]struct{}
+	sessions map[*session.Session]*routed
 	closing  bool
 	active   atomic.Int64
 	wg       sync.WaitGroup
@@ -166,7 +170,9 @@ type server struct {
 var _ quicmux.Handler = (*server)(nil)
 
 func newServer(listenerName string, o *mo.ListenerOptions, restartKey string, rt *routeTable) *server {
-	s := &server{listenerName: listenerName, opts: o, restartKey: restartKey, sessions: make(map[*session.Session]struct{})}
+	s := &server{
+		listenerName: listenerName, opts: o, restartKey: restartKey, sessions: make(map[*session.Session]*routed),
+	}
 	s.routes.Store(rt)
 	return s
 }
@@ -218,8 +224,8 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeInternalError), "")
 		return
 	}
-	if !s.track(sess) {
-		_ = sess.Close(message.CodeNoError, "shutting down")
+	if !s.track(sess, r) {
+		_ = sess.Close(message.CodeNoError, reasonShuttingDown)
 		return
 	}
 	defer s.untrack(sess)
@@ -264,13 +270,13 @@ func (s *server) admit() bool {
 	return true
 }
 
-func (s *server) track(sess *session.Session) bool {
+func (s *server) track(sess *session.Session, r *routed) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closing {
 		return false
 	}
-	s.sessions[sess] = struct{}{}
+	s.sessions[sess] = r
 	return true
 }
 
@@ -280,17 +286,29 @@ func (s *server) untrack(sess *session.Session) {
 	s.mu.Unlock()
 }
 
-// Shutdown ends the listener's sessions; it is called only when the listener stops, never on a reload that keeps it
+// Shutdown sends each session a GOAWAY naming the listener's goaway_uri, then waits until ctx ends for the clients
+// to move before closing what remains; it is called only when the listener stops, never on a reload that keeps it
 func (s *server) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	s.closing = true
-	all := make([]*session.Session, 0, len(s.sessions))
-	for sess := range s.sessions {
-		all = append(all, sess)
-	}
+	sessions := maps.Clone(s.sessions)
 	s.mu.Unlock()
-	for _, sess := range all {
-		_ = sess.Close(message.CodeNoError, "shutting down")
+	uri := ""
+	if rt := s.routes.Load(); rt != nil {
+		uri = rt.goAway
+	}
+	var timeout time.Duration
+	deadline, bounded := ctx.Deadline()
+	if bounded {
+		timeout = max(time.Until(deadline), 0)
+	}
+	for sess, r := range sessions {
+		r.leave(uri)
+		if err := sess.GoAway(uri, timeout); err != nil || !bounded {
+			// a session that cannot hear GOAWAY has nothing to migrate, and with no time to drain the GOAWAY only
+			// tells the client where to reconnect
+			_ = sess.Close(message.CodeNoError, reasonShuttingDown)
+		}
 	}
 	done := make(chan struct{})
 	go func() {
@@ -301,8 +319,12 @@ func (s *server) Shutdown(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
 	}
+	// §6.6.1: a client still connected when the GOAWAY's timeout passes is closed with GOAWAY_TIMEOUT
+	for sess := range sessions {
+		_ = sess.Close(message.CodeGoAwayTimeout, reasonShuttingDown)
+	}
+	return ctx.Err()
 }
 
 // UpdateRouteResolver swaps the routes new sessions are matched with; sessions keep the backend they have
@@ -328,6 +350,7 @@ func (s *server) ProtocolRestartKey() string {
 }
 
 type routed struct {
+	departure
 	srv     *server
 	client  string
 	sni     string
@@ -402,7 +425,9 @@ func (r *routed) done() {
 }
 
 func (r *routed) HandleRequest(req *session.Request) {
-	r.handler.HandleRequest(req)
+	if !r.refuses(req) {
+		r.handler.HandleRequest(req)
+	}
 }
 
 func (r *routed) HandleGoAway(s *session.Session, m *message.GoAway) {

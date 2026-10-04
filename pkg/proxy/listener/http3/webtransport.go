@@ -54,6 +54,8 @@ type webTransport struct {
 	srv      *webtransport.Server
 	used     atomic.Bool
 	draining atomic.Bool
+	drainCh  chan struct{}
+	drainOne sync.Once
 
 	mu      sync.Mutex
 	conns   map[*quic.Conn]*wtConn
@@ -74,7 +76,9 @@ type wtRequest struct {
 }
 
 func newWebTransport(handler http.Handler, limits listener.ServerLimits) *webTransport {
-	wt := &webTransport{conns: make(map[*quic.Conn]*wtConn), drained: make(chan struct{})}
+	wt := &webTransport{
+		conns: make(map[*quic.Conn]*wtConn), drained: make(chan struct{}), drainCh: make(chan struct{}),
+	}
 	wt.srv = &webtransport.Server{
 		H3: &qh3.Server{
 			Handler:        wt.track(handler),
@@ -150,7 +154,9 @@ func (c *wtConn) done() {
 }
 
 func (wt *webTransport) shutdown(ctx context.Context) error {
-	// HTTP/3 GOAWAY is unavailable on a connection webtransport-go serves, so each closes once it runs no request
+	// HTTP/3 GOAWAY is unavailable on a connection webtransport-go serves, so each closes once it runs no request,
+	// and the sessions still open are told so they can send their own GOAWAY
+	wt.drainOne.Do(func() { close(wt.drainCh) })
 	wt.mu.Lock()
 	wt.draining.Store(true)
 	idle := make([]*quic.Conn, 0, len(wt.conns))
@@ -179,6 +185,15 @@ func (wt *webTransport) shutdown(ctx context.Context) error {
 		_ = wt.srv.Close()
 	}
 	return err
+}
+
+// Draining returns a channel closed once the listener that accepted a WebTransport session request starts to drain,
+// or nil, which never closes, for any other request
+func Draining(r *http.Request) <-chan struct{} {
+	if wr, ok := r.Context().Value(wtRequestKey{}).(*wtRequest); ok && wr.conn != nil {
+		return wr.conn.wt.drainCh
+	}
+	return nil
 }
 
 // WebTransportRequest reports whether r asks to open a WebTransport session on a connection that can carry one,

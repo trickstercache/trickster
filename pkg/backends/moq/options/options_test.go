@@ -103,11 +103,19 @@ func TestListenerOptions(t *testing.T) {
 		(*ListenerOptions)(nil).Validate() != nil {
 		t.Error("clone and nil")
 	}
+	moved := o.Clone()
+	moved.GoAwayURI = "moqt://alt.example.com:4443/live"
+	if moved.Equal(&o) || moved.Validate() != nil {
+		t.Error("a goaway_uri is compared and accepted")
+	}
 	for name, mutate := range map[string]func(*ListenerOptions){
-		"timeouts": func(o *ListenerOptions) { o.IdleTimeout = 0 },
-		"sessions": func(o *ListenerOptions) { o.MaxSessions = 0 },
-		"ranges":   func(o *ListenerOptions) { o.MaxFilterRanges = -1 },
-		"drafts":   func(o *ListenerOptions) { o.Drafts = []int{99} },
+		"timeouts":     func(o *ListenerOptions) { o.IdleTimeout = 0 },
+		"sessions":     func(o *ListenerOptions) { o.MaxSessions = 0 },
+		"ranges":       func(o *ListenerOptions) { o.MaxFilterRanges = -1 },
+		"drafts":       func(o *ListenerOptions) { o.Drafts = []int{99} },
+		"goaway https": func(o *ListenerOptions) { o.GoAwayURI = "https://alt.example.com/" },
+		"goaway host":  func(o *ListenerOptions) { o.GoAwayURI = "moqt:///live" },
+		"goaway long":  func(o *ListenerOptions) { o.GoAwayURI = "moqt://a/" + strings.Repeat("x", maxGoAwayURI) },
 	} {
 		l := NewListener()
 		mutate(l)
@@ -155,6 +163,7 @@ func TestWebTransportOptions(t *testing.T) {
 		{"no scheme", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"player.example"} }, "origin"},
 		{"a query", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"https://player.example?x=1"} }, "origin"},
 		{"credentials", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"https://u:p@player.example"} }, "origin"},
+		{"goaway scheme", func(w *WebTransportOptions) { w.GoAwayURI = "moqt://alt.example.com/" }, "goaway_uri"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

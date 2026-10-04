@@ -27,6 +27,7 @@ import (
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	checksum "github.com/trickstercache/trickster/v2/pkg/checksum/md5"
+	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 )
 
@@ -34,6 +35,7 @@ type shared struct {
 	key    string
 	relay  *relay.Relay
 	dialer *dialer
+	pool   *poolUpstream
 	cache  atomic.Pointer[Client]
 
 	wtActive atomic.Int64
@@ -62,9 +64,9 @@ func relayKey(o *bo.Options) string {
 	if m == nil {
 		m = mo.New()
 	}
-	fmt.Fprintf(&b, "%t|%d|%d|%v|%t|%d|%d|%d|%d|%d", m.Spill, m.FillTimeout, m.MaxObjectSizeBytes, m.Upstream.Drafts,
-		m.Upstream.Prewarm, m.Upstream.ReconnectBackoff, m.Upstream.Linger, m.Upstream.MaxGapFetches,
-		m.LiveEdge.Groups, m.LiveEdge.MaxSizeBytes)
+	fmt.Fprintf(&b, "%t|%d|%d|%v|%t|%d|%d|%d|%d|%d|%s", m.Spill, m.FillTimeout, m.MaxObjectSizeBytes,
+		m.Upstream.Drafts, m.Upstream.Prewarm, m.Upstream.ReconnectBackoff, m.Upstream.Linger, m.Upstream.MaxGapFetches,
+		m.LiveEdge.Groups, m.LiveEdge.MaxSizeBytes, m.Upstream.ALB)
 	if m.WebTransport != nil {
 		// a WebTransport origin that negotiates no draft is spoken to in this one
 		fmt.Fprintf(&b, "|%d", m.WebTransport.DefaultDraft)
@@ -174,14 +176,21 @@ func (sh *shared) shutdown() {
 	}
 }
 
-// RetireClients commits a configuration's clients: each relay they keep takes their publishing and authorization
-// policy, and every relay they no longer use is retired, closing once its sessions end
+// RetireClients commits a configuration's clients: each relay they keep takes their access policy and origin alb, and
+// every relay they no longer use is retired, closing once its sessions end
 func RetireClients(current backends.Backends) {
 	keep := make(map[*shared]struct{})
 	for _, c := range current {
 		if mc, ok := c.(*Client); ok && mc.sh != nil {
 			keep[mc.sh] = struct{}{}
 			mc.sh.relay.SetAccess(mc.access)
+			if p := mc.sh.pool; p != nil {
+				var picker lb.Picker
+				if pp, ok := current[p.alb].(interface{ Picker() lb.Picker }); ok {
+					picker = pp.Picker()
+				}
+				p.bind(picker)
+			}
 		}
 	}
 	sharedMu.Lock()

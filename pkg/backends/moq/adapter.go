@@ -93,6 +93,9 @@ func (*nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 		return err
 	}
 	webTransportPaths(o)
+	if o.OriginURL != "" && o.MoQ.Upstream.ALB != "" {
+		return errors.New("origin_url and moq.upstream.alb are exclusive")
+	}
 	if o.OriginURL == "" {
 		return nil
 	}
@@ -204,6 +207,10 @@ func boundBackends(c *config.Config, listenerName string) []string {
 
 func routesFor(request native.BuildRequest) *routeTable {
 	rt := &routeTable{}
+	if l := request.Listener; l != nil && l.MoQ != nil {
+		// read when the listener stops, so a reload changes it without restarting the listener
+		rt.goAway = l.MoQ.GoAwayURI
+	}
 	for _, name := range boundBackends(request.Config, request.ListenerName) {
 		client := request.BackendClients.Get(name)
 		if client == nil {

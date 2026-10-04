@@ -565,15 +565,17 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 		return l, p, nil
 	}
 	t.mu.Unlock()
-	sess, err := t.upstreamSession(ctx)
+	sess, release, err := t.upstreamSession(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
 	req, err := sess.Open(ctx, &message.TrackStatus{Track: t.name}, nopRequestHandler{}, nil)
 	if err != nil {
+		release(err)
 		return nil, nil, errUpstream
 	}
 	resp, err := req.Response(ctx)
+	release(err)
 	if err != nil {
 		return nil, nil, errUpstream
 	}
@@ -616,6 +618,10 @@ type upstreamSub struct {
 	up       bool
 	closed   bool
 	closeErr error
+
+	release   func(error)
+	released  sync.Once
+	canceling bool
 }
 
 func (u *upstreamSub) request() *session.Request {
@@ -646,10 +652,14 @@ func (u *upstreamSub) open(forward bool) {
 			return
 		}
 		var err error
-		if sess, err = t.r.up.Session(ctx, t.scope); err != nil {
+		var release func(error)
+		if sess, release, err = t.r.up.Session(ctx, t.scope, t.name); err != nil {
 			t.upstreamEnded(u, errUpstream)
 			return
 		}
+		u.mu.Lock()
+		u.release = release
+		u.mu.Unlock()
 	}
 	var p message.Params
 	p.SetForward(forward)
@@ -676,6 +686,7 @@ func (u *upstreamSub) open(forward bool) {
 		}
 		if !t.established(u, v, forward) {
 			req.Cancel(message.ResetCancelled)
+			u.settle(context.Canceled)
 			return
 		}
 		u.mu.Lock()
@@ -690,7 +701,30 @@ func (u *upstreamSub) open(forward bool) {
 	}
 }
 
+func (u *upstreamSub) settle(cause error) {
+	// the origin answers only for what a retry elsewhere might cure, never for a track that ended or was refused
+	u.released.Do(func() {
+		u.mu.Lock()
+		release, canceling := u.release, u.canceling
+		u.mu.Unlock()
+		if release == nil {
+			return
+		}
+		switch {
+		case canceling || errors.Is(cause, context.Canceled):
+			release(context.Canceled)
+		case retryable(cause):
+			release(cause)
+		default:
+			release(nil)
+		}
+	})
+}
+
 func (u *upstreamSub) cancel() {
+	u.mu.Lock()
+	u.canceling = true
+	u.mu.Unlock()
 	if req := u.request(); req != nil {
 		req.Cancel(message.ResetCancelled)
 		return

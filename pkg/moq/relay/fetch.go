@@ -264,12 +264,13 @@ func (j *fetchJob) fetchGap(ctx context.Context, g gapRange) error {
 	defer cancel()
 	src := &gapStream{ch: make(chan *session.IncomingFetch, 1), done: make(chan struct{})}
 	defer close(src.done)
-	req, err := j.openGap(gctx, g, src)
+	req, release, err := j.openGap(gctx, g, src)
 	if err != nil {
 		return j.gapFailed(ctx, end)
 	}
 	defer req.Cancel(message.ResetCancelled)
 	resp, err := req.Response(gctx)
+	release(err)
 	if err != nil {
 		return j.gapFailed(ctx, end)
 	}
@@ -295,10 +296,10 @@ func (j *fetchJob) gapFailed(ctx context.Context, end wire.Location) error {
 	return j.marker(message.RangeEndUnknown, end)
 }
 
-func (j *fetchJob) openGap(ctx context.Context, g gapRange, src *gapStream) (*session.Request, error) {
-	sess, err := j.t.upstreamSession(ctx)
+func (j *fetchJob) openGap(ctx context.Context, g gapRange, src *gapStream) (*session.Request, func(error), error) {
+	sess, release, err := j.t.upstreamSession(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	f := message.LocationFilter{
 		Type: message.FilterAbsoluteRange, StartGroup: g.first, StartObject: j.lo(g.first),
@@ -312,7 +313,12 @@ func (j *fetchJob) openGap(ctx context.Context, g gapRange, src *gapStream) (*se
 	if j.descending() {
 		p.SetGroupOrder(message.GroupOrderDescending)
 	}
-	return sess.Open(ctx, &message.Fetch{Track: j.t.name, Params: p}, nopRequestHandler{}, src)
+	req, err := sess.Open(ctx, &message.Fetch{Track: j.t.name, Params: p}, nopRequestHandler{}, src)
+	if err != nil {
+		release(err)
+		return nil, nil, err
+	}
+	return req, release, nil
 }
 
 func (j *fetchJob) copyGap(ctx context.Context, in *session.IncomingFetch, g gapRange, end wire.Location) error {

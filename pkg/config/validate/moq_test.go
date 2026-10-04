@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	moqo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/config"
@@ -195,5 +196,61 @@ func TestMoQOriginlessWarning(t *testing.T) {
 	}
 	if hasWarning(c, "serves nothing") {
 		t.Error("an ingest backend serves what is published to it")
+	}
+}
+
+func moqPoolConfig() *config.Config {
+	c := moqConfig()
+	edge := c.Backends["live"]
+	edge.OriginURL, edge.MoQ = "", moqo.New()
+	edge.MoQ.Upstream.ALB = "origins"
+	c.Backends["origin-a"] = moqBackend("moqt://a.example:443/live")
+	c.Backends["origin-b"] = moqBackend("moqt://b.example:443/live")
+	c.Backends["origins"] = &bo.Options{Provider: "alb", ALBOptions: &ao.Options{
+		MechanismName: "hrw", Pool: ao.Members("origin-a", "origin-b"),
+	}}
+	return c
+}
+
+func TestMoQUpstreamALB(t *testing.T) {
+	c := moqPoolConfig()
+	if err := Listeners(c); err != nil {
+		t.Fatalf("a moq backend reaching its origins through an alb: %v", err)
+	}
+	if hasWarning(c, "serves nothing") || hasWarning(c, "WebTransport") {
+		t.Errorf("an alb upstream and its origins raise no warnings: %v", c.LoaderWarnings)
+	}
+	ejecting := moqPoolConfig()
+	ejecting.Backends["origins"].ALBOptions.Stream = &ao.StreamOptions{PassiveHealth: &ao.PassiveHealthOptions{}}
+	if err := Listeners(ejecting); err != nil {
+		t.Errorf("failed connects may eject an origin: %v", err)
+	}
+	tests := []struct {
+		name   string
+		mutate func(*config.Config)
+		want   string
+	}{
+		{"undefined", func(c *config.Config) { c.Backends["live"].MoQ.Upstream.ALB = "nope" }, "undefined backend"},
+		{"not an alb", func(c *config.Config) { c.Backends["live"].MoQ.Upstream.ALB = "origin-a" }, "not an alb"},
+		{"fanout", func(c *config.Config) { c.Backends["origins"].ALBOptions.MechanismName = "fr" }, "picks one member"},
+		{"least time", func(c *config.Config) { c.Backends["origins"].ALBOptions.MechanismName = "lt" }, "picks one member"},
+		{"empty pool", func(c *config.Config) { c.Backends["origins"].ALBOptions.Pool = nil }, "has no pool"},
+		{"originless member", func(c *config.Config) { c.Backends["origin-b"].OriginURL = "" }, "with an origin_url"},
+		{"http member", func(c *config.Config) {
+			c.Backends["origin-b"] = &bo.Options{Provider: "rp", OriginURL: "http://127.0.0.1:9"}
+		}, "with an origin_url"},
+		{"origin as well", func(c *config.Config) { c.Backends["live"].OriginURL = "moqt://x.example:443/" }, "exclusive"},
+		{"stream retries", func(c *config.Config) {
+			c.Backends["origins"].ALBOptions.Stream = &ao.StreamOptions{ConnectRetries: 2}
+		}, "only passive_health"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := moqPoolConfig()
+			tc.mutate(c)
+			if err := Listeners(c); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want an error containing %q", err, tc.want)
+			}
+		})
 	}
 }

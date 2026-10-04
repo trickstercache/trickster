@@ -406,11 +406,11 @@ func TestOriginlessAndDialErrors(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
-	if _, err = d.Session(ctx, c.Scope()); err == nil {
+	if _, err = d.session(ctx); err == nil {
 		t.Error("an unreachable origin fails to dial")
 	}
 	d.close()
-	if _, err = d.Session(context.Background(), c.Scope()); !errors.Is(err, errDialerClosed) {
+	if _, _, err = d.Session(context.Background(), c.Scope(), message.FullTrackName{}); !errors.Is(err, errDialerClosed) {
 		t.Errorf("a closed dialer dials nothing: %v", err)
 	}
 }
@@ -468,7 +468,7 @@ func TestDialerSharesOneSession(t *testing.T) {
 	var wg sync.WaitGroup
 	for range callers {
 		wg.Go(func() {
-			s, err := d.Session(context.Background(), client.Scope())
+			s, err := d.session(context.Background())
 			if err != nil {
 				t.Error(err)
 			}

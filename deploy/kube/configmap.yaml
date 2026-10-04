@@ -224,6 +224,10 @@ data:
     #       drafts: [21, 22, 20]
     #       # the MOQT_IMPLEMENTATION setup option; defaults to trickster
     #       implementation: ''
+    #       # when the listener stops, each session gets a GOAWAY naming this moqt
+    #       # URI to continue at, and a new request is redirected there; empty has
+    #       # clients reconnect where they were. Changing it restarts nothing.
+    #       goaway_uri: ''
     #
     #   # A ClickHouse listener accepts the Native binary protocol and maps to one
     #   # ClickHouse backend through that backend's listener_names option.
@@ -679,6 +683,13 @@ data:
       #   max_ttl: 1h
       #   moq:
       #     upstream:
+      #       # in place of origin_url, an alb backend whose pool are moq backends
+      #       # with origins: each track is subscribed through one member, a
+      #       # strategy keyed on the flow (hrw) placing it by its full name, and a
+      #       # track whose origin is lost moves to another member without its
+      #       # subscribers noticing. The alb's mechanism is rr, p2c, hrw or lc;
+      #       # stream.passive_health ejects members whose origins cannot be reached.
+      #       # alb: origins
       #       # drafts offered to the origin, most preferred first
       #       drafts: [21, 20]
       #       # keep the upstream subscription forwarding while every subscriber is paused
@@ -708,6 +719,9 @@ data:
       #       # '*'; empty allows only an origin naming the requested host
       #       allowed_origins: []
       #       max_sessions: 10000
+      #       # when the http listener stops, each WebTransport session gets a GOAWAY
+      #       # naming this https URI to continue at; empty reuses the current one
+      #       goaway_uri: ''
       #     publish:
       #       # accept PUBLISH and PUBLISH_NAMESPACE, making Trickster the origin of
       #       # what publishers send; open ingest belongs behind a network boundary

@@ -359,6 +359,7 @@ func Listeners(c *config.Config) error {
 			}
 		}
 		if strings.EqualFold(backend.Provider, providers.MoQ) && backend.OriginURL == "" && backend.MoQ != nil &&
+			(backend.MoQ.Upstream == nil || backend.MoQ.Upstream.ALB == "") &&
 			(backend.MoQ.Publish == nil || !backend.MoQ.Publish.Enabled) {
 			addWarning(c, fmt.Sprintf("moq backend %q has no origin_url and does not accept publishers "+
 				"(moq.publish.enabled), so it serves nothing", backendName))
@@ -573,7 +574,51 @@ func Listeners(c *config.Config) error {
 	if err := validateIPACLPlacements(c); err != nil {
 		return err
 	}
+	if err := moqUpstreamALBs(c, streamALBs); err != nil {
+		return err
+	}
 	return requestALBs(c, streamALBs)
+}
+
+func moqUpstreamALBs(c *config.Config, streamALBs sets.Set[string]) error {
+	// an alb a moq backend reaches its origins through picks one member per track, from moq backends with origins;
+	// failed connects to them can eject a member, so of the stream options it takes passive_health
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.IsTemplate || !strings.EqualFold(o.Provider, providers.MoQ) || o.MoQ == nil ||
+			o.MoQ.Upstream == nil || o.MoQ.Upstream.ALB == "" {
+			continue
+		}
+		albName := o.MoQ.Upstream.ALB
+		a := c.Backends[albName]
+		switch {
+		case a == nil:
+			return fmt.Errorf("moq backend %q: moq.upstream.alb names undefined backend %q", name, albName)
+		case a.Provider != providers.ALB || a.ALBOptions == nil:
+			return fmt.Errorf("moq backend %q: moq.upstream.alb %q is not an alb backend", name, albName)
+		case a.ALBOptions.UserRouter != nil || !albregistry.Supports(a.ALBOptions.MechanismName, albtypes.PlaneNative):
+			return fmt.Errorf("moq backend %q: alb backend %q must use a mechanism that picks one member: %s",
+				name, albName, strings.Join(albregistry.Supporting(albtypes.PlaneNative), ", "))
+		case a.ALBOptions.Discovery != nil:
+			return fmt.Errorf("moq backend %q: alb backend %q cannot use discovery for moq origins", name, albName)
+		case len(a.ALBOptions.Pool) == 0:
+			return fmt.Errorf("moq backend %q: alb backend %q has no pool", name, albName)
+		case a.ALBOptions.Stream != nil && (a.ALBOptions.Stream.ConnectRetries != 0 ||
+			a.ALBOptions.Stream.RaceWidth != 0):
+			return fmt.Errorf("alb backend %q: of the stream options, moq origins take only passive_health", albName)
+		}
+		if a.ALBOptions.Stream != nil {
+			streamALBs.Set(albName)
+		}
+		for _, m := range a.ALBOptions.Pool {
+			if member := c.Backends[m.Name]; member == nil || !strings.EqualFold(member.Provider, providers.MoQ) ||
+				member.OriginURL == "" {
+				return fmt.Errorf("moq backend %q: every pool member of alb backend %q must be a moq backend "+
+					"with an origin_url: %q is not", name, albName, m.Name)
+			}
+		}
+	}
+	return nil
 }
 
 // sessionBalancer validates an ALB that a native protocol listener maps to without a user
@@ -1057,9 +1102,11 @@ func reserveQUICPort(ports map[string]string, quicPorts map[string]map[string]st
 }
 
 func webTransportWarnings(c *config.Config, listenerName string, mapped map[string]string) {
-	// a moq backend on an http listener accepts only WebTransport sessions, which need the listener's HTTP/3
+	// a moq backend on an http listener accepts only WebTransport sessions, which need the listener's HTTP/3; one
+	// that is an alb's pool member may be there only by default, serving as an origin
+	members := c.Backends.PoolMembers()
 	for _, backendName := range slices.Sorted(maps.Keys(mapped)) {
-		if mapped[backendName] == providers.MoQ {
+		if mapped[backendName] == providers.MoQ && !members.Contains(backendName) {
 			addWarning(c, fmt.Sprintf("listener %q has no HTTP/3 endpoint, so WebTransport sessions cannot reach "+
 				"moq backend %q through it; enable http3 on the listener", listenerName, backendName))
 		}

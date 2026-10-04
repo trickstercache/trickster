@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/cache"
+	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 )
 
@@ -52,10 +53,11 @@ type Scope struct {
 	Path      string
 }
 
-// Upstream connects the relay to the origin of a scope's tracks
+// Upstream connects the relay to the origins of a scope's tracks
 type Upstream interface {
-	// Session returns a ready session toward the origin serving scope, dialing one when needed
-	Session(ctx context.Context, scope Scope) (*session.Session, error)
+	// Session returns a ready session toward an origin serving track in scope, dialing one when needed, and a release
+	// the relay calls once the work it carries there ends: with nil, or with a failure a retry elsewhere might cure
+	Session(ctx context.Context, scope Scope, track message.FullTrackName) (*session.Session, func(error), error)
 }
 
 // CacheProvider resolves the cache that older groups spill to, at each use, so a reload can change it
