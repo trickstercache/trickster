@@ -25,6 +25,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -184,6 +185,8 @@ type Client struct {
 	instantRounder     time.Duration
 	hasTransformations bool
 	injectLabels       map[string]string
+	// globalSource is the raw series source TSM global evaluation reads, built on first use
+	globalSource atomic.Pointer[globalSourceResult]
 }
 
 // captureLimit returns the per-response capture buffer cap for c. Reads
