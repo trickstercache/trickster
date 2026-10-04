@@ -23,6 +23,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -160,10 +161,18 @@ type stack struct {
 
 func newBackend(t *testing.T, name, origin string) *Client {
 	t.Helper()
+	return newBackendWith(t, name, origin, nil)
+}
+
+func newBackendWith(t *testing.T, name, origin string, mutate func(*bo.Options)) *Client {
+	t.Helper()
 	o := bo.New()
 	o.Name, o.Provider, o.OriginURL, o.ListenerNames = name, "moq", origin, []string{"moq1"}
 	o.TLS = &to.Options{InsecureSkipVerify: true}
 	o.MoQ = mo.New()
+	if mutate != nil {
+		mutate(o)
+	}
 	if err := NativeListenerAdapter().ValidateBackend(o); err != nil {
 		t.Fatal(err)
 	}
@@ -380,15 +389,18 @@ func TestOriginlessAndDialErrors(t *testing.T) {
 		}
 	}
 	u, _ := parseOrigin("https://relay.example/moq")
-	if _, err = newDialer(u, nil, codec.ClientOffer, ""); err == nil {
-		t.Error("a WebTransport origin is not dialed as native QUIC")
+	if wd, err := newDialer(u, nil, codec.ClientOffer, 0, ""); err != nil || !wd.webTransport || wd.setup.HasPath {
+		t.Errorf("a WebTransport origin is dialed by WebTransport, its SETUP naming no path: %v", err)
+	}
+	if _, err = newDialer(&url.URL{Scheme: "ftp", Host: "relay.example"}, nil, codec.ClientOffer, 0, ""); err == nil {
+		t.Error("only moqt and https origins are dialed")
 	}
 	u, _ = parseOrigin("moqt:///nohost")
-	if _, err = newDialer(u, nil, codec.ClientOffer, ""); err == nil {
+	if _, err = newDialer(u, nil, codec.ClientOffer, 0, ""); err == nil {
 		t.Error("an origin needs a host")
 	}
 	u, _ = parseOrigin("moqt://127.0.0.1:1/")
-	d, err := newDialer(u, nil, codec.ClientOffer, "")
+	d, err := newDialer(u, nil, codec.ClientOffer, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -444,5 +456,45 @@ func TestRelaysSurviveReloads(t *testing.T) {
 	}
 	if third.sh.Cache() != nil {
 		t.Error("a client built with no cache spills nowhere")
+	}
+}
+
+func TestDialerSharesOneSession(t *testing.T) {
+	org := startOrigin(t)
+	client := newBackend(t, "shared-dial", "moqt://"+org.addr+"/live")
+	d := client.sh.dialer
+	const callers = 8
+	got := make(chan *session.Session, callers)
+	var wg sync.WaitGroup
+	for range callers {
+		wg.Go(func() {
+			s, err := d.Session(context.Background(), client.Scope())
+			if err != nil {
+				t.Error(err)
+			}
+			got <- s
+		})
+	}
+	wg.Wait()
+	close(got)
+	first := <-got
+	for s := range got {
+		if s != first {
+			t.Fatal("concurrent callers share the one upstream session")
+		}
+	}
+	// a client's GOAWAY reaches the backend's relay through the session's route and leaves its subscriptions running
+	st := startListener(t, mo.NewListener(), client)
+	s, err := dial(t, st.addr, "relay.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	objs := subscribe(t, s)
+	if err = s.GoAway("", 0); err != nil {
+		t.Fatal(err)
+	}
+	org.publish(t, 7, "after-goaway")
+	if got := recv(t, objs.got, "object"); got != "after-goaway" {
+		t.Errorf("object %q", got)
 	}
 }

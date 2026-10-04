@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
 	"go.yaml.in/yaml/v3"
@@ -113,5 +114,55 @@ func TestListenerOptions(t *testing.T) {
 		if l.Validate() == nil {
 			t.Errorf("%s: invalid options accepted", name)
 		}
+	}
+}
+
+func TestWebTransportOptions(t *testing.T) {
+	var o Options
+	in := "webtransport:\n  default_draft: 22\n  allowed_origins: ['HTTPS://Player.Example/', '*']\n"
+	if err := yaml.Unmarshal([]byte(in), &o); err != nil {
+		t.Fatal(err)
+	}
+	w := o.WebTransport
+	if w.DefaultDraft != 22 || !slices.Equal(w.Drafts, codec.ServerPreference) || w.MaxSessions != DefaultMaxSessions {
+		t.Errorf("unset fields keep their defaults: %+v", w)
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(w.AllowedOrigins, []string{"https://player.example", AnyOrigin}) {
+		t.Errorf("origins are normalized: %v", w.AllowedOrigins)
+	}
+	c := o.Clone()
+	c.WebTransport.Drafts[0], c.WebTransport.AllowedOrigins[0] = 20, "x"
+	if w.Drafts[0] == 20 || w.AllowedOrigins[0] == "x" {
+		t.Error("a clone is independent")
+	}
+	bare := New()
+	bare.WebTransport = nil
+	if err := bare.Validate(); err != nil || bare.WebTransport == nil {
+		t.Error("a missing block takes its defaults")
+	}
+	tests := []struct {
+		name   string
+		mutate func(*WebTransportOptions)
+		want   string
+	}{
+		{"bad draft", func(w *WebTransportOptions) { w.Drafts = []int{99} }, "not supported"},
+		{"default not accepted", func(w *WebTransportOptions) { w.Drafts, w.DefaultDraft = []int{21}, 20 }, "default_draft"},
+		{"no sessions", func(w *WebTransportOptions) { w.MaxSessions = 0 }, "max_sessions"},
+		{"a path", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"https://player.example/watch"} }, "origin"},
+		{"no scheme", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"player.example"} }, "origin"},
+		{"a query", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"https://player.example?x=1"} }, "origin"},
+		{"credentials", func(w *WebTransportOptions) { w.AllowedOrigins = []string{"https://u:p@player.example"} }, "origin"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := New()
+			tc.mutate(o.WebTransport)
+			if err := o.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want an error containing %q", err, tc.want)
+			}
+		})
 	}
 }

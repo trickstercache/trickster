@@ -104,7 +104,7 @@ func TestRestartKey(t *testing.T) {
 func TestAdapterContract(t *testing.T) {
 	a := NativeListenerAdapter()
 	if a.Protocol() != "moq" || !a.ServesProvider("moq") || a.ServesProvider("rpc") || len(a.Providers()) != 1 ||
-		a.SupportsHTTP("moq") || a.Configured(nil) {
+		!a.SupportsHTTP("moq") || a.Configured(nil) {
 		t.Error("adapter identity")
 	}
 	if a.ValidateListener(nil) == nil || a.ValidateBackend(nil) == nil || a.ValidateUserRouter(nil, "", nil) == nil ||

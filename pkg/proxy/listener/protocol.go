@@ -167,8 +167,8 @@ func (lg *Group) ProtocolRestartKey(listenerName string) (string, bool) {
 	return keyer.ProtocolRestartKey(), true
 }
 
-// ProtocolServerAs returns the named listener's protocol server when it is a T, so a reload can
-// hand a running server its new configuration without the group knowing the server's type.
+// ProtocolServerAs returns the named listener's protocol server, or the handler a shared QUIC endpoint's member holds,
+// when it is a T, so a reload can hand a running server its new configuration without the group knowing its type.
 func ProtocolServerAs[T any](lg *Group, listenerName string) (T, bool) {
 	var zero T
 	if lg == nil {
@@ -178,7 +178,10 @@ func ProtocolServerAs[T any](lg *Group, listenerName string) (T, bool) {
 	if l == nil || l.server == nil {
 		return zero, false
 	}
-	svr, ok := l.server.(T)
+	if svr, ok := l.server.(T); ok {
+		return svr, true
+	}
+	svr, ok := protocolTarget(l).(T)
 	return svr, ok
 }
 

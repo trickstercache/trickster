@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-// Package moq provides the MoQ Transport backend provider: a relay that serves the sessions a moq listener
-// routes to it, from an origin reached over native QUIC, or as the origin itself when it has none.
+// Package moq provides the MoQ Transport backend provider: a relay serving moq listener and WebTransport sessions
+// from an origin reached over native QUIC or WebTransport, or as the origin itself when it has none.
 package moq
 
 import (
@@ -25,20 +25,33 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/pkg/appinfo"
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
 	ho "github.com/trickstercache/trickster/v2/pkg/backends/healthcheck/options"
 	mo "github.com/trickstercache/trickster/v2/pkg/backends/moq/options"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
-// Implementation is the MOQT_IMPLEMENTATION Trickster sends when a listener names none
+// Implementation is the MOQT_IMPLEMENTATION Trickster sends, with its version, when a listener names none
 var Implementation = "trickster"
+
+func implementation(configured string) string {
+	switch {
+	case configured != "":
+		return configured
+	case appinfo.Version != "":
+		return Implementation + "/" + appinfo.Version
+	}
+	return Implementation
+}
 
 var errNoOrigin = errors.New("moq backend has no origin to probe")
 
@@ -89,7 +102,11 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 					return nil, err
 				}
 			}
-			if sh.dialer, err = newDialer(origin, tc, m.Upstream.Drafts, Implementation); err != nil {
+			defaultDraft := 0
+			if m.WebTransport != nil {
+				defaultDraft = m.WebTransport.DefaultDraft
+			}
+			if sh.dialer, err = newDialer(origin, tc, m.Upstream.Drafts, defaultDraft, implementation("")); err != nil {
 				return nil, err
 			}
 			up = sh.dialer
@@ -121,12 +138,27 @@ func (c *Client) Scope() relay.Scope {
 	return c.scope
 }
 
-// RegisterHandlers registers no HTTP routes; MoQ sessions arrive on a moq listener
-func (c *Client) RegisterHandlers(handlers.Lookup) {}
+// RegisterHandlers registers the handler that accepts WebTransport sessions on HTTP listeners
+func (c *Client) RegisterHandlers(handlers.Lookup) {
+	c.Backend.RegisterHandlers(handlers.Lookup{providers.MoQ: http.HandlerFunc(c.serveWebTransport)})
+}
 
-// DefaultPathConfigs returns no HTTP paths
-func (c *Client) DefaultPathConfigs(*bo.Options) po.List {
-	return nil
+// DefaultPathConfigs returns the path that accepts WebTransport sessions on HTTP listeners when the backend
+// configures none, so its configured paths alone decide which sessions it serves
+func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
+	if o != nil && len(o.Paths) > 0 {
+		return nil
+	}
+	return po.List{WebTransportPath(rootPath)}
+}
+
+// WebTransportPath returns a path that accepts WebTransport sessions at and below p, the only route a moq
+// backend serves on an HTTP listener
+func WebTransportPath(p string) *po.Options {
+	o := po.New()
+	o.Path, o.HandlerName, o.Methods = p, providers.MoQ, []string{http.MethodConnect}
+	o.MatchType, o.MatchTypeName = matching.PathMatchTypeSegment, matching.PathMatchNameSegment
+	return o
 }
 
 // DefaultHealthCheckConfig returns the protocol-neutral health-check defaults

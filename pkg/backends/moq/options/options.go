@@ -20,7 +20,9 @@ package options
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
@@ -56,6 +58,9 @@ const (
 	// DefaultMaxRequestUpdates is the MAX_REQUEST_UPDATES a listener advertises
 	DefaultMaxRequestUpdates = 64
 
+	// AnyOrigin in webtransport.allowed_origins lets every origin open a session
+	AnyOrigin = "*"
+
 	maxSizeBytes = 1 << 40
 )
 
@@ -69,6 +74,22 @@ type Options struct {
 	FillTimeout timeconv.Duration `yaml:"fill_timeout,omitempty"`
 	// MaxObjectSizeBytes bounds one object's payload; a larger one resets the stream carrying it
 	MaxObjectSizeBytes int64 `yaml:"max_object_size_bytes,omitempty"`
+	// WebTransport configures the sessions WebTransport clients open through HTTP listeners
+	WebTransport *WebTransportOptions `yaml:"webtransport,omitempty"`
+}
+
+// WebTransportOptions configure the sessions browsers and other WebTransport clients open on HTTP listeners
+type WebTransportOptions struct {
+	// Drafts are the MoQ Transport drafts accepted from WebTransport clients, most preferred first
+	Drafts []int `yaml:"drafts,omitempty"`
+	// DefaultDraft is assumed for a client that offers no WT-Available-Protocols and for a WebTransport origin
+	// that answers without WT-Protocol; 0 refuses both
+	DefaultDraft int `yaml:"default_draft,omitempty"`
+	// AllowedOrigins are the browser origins that may open sessions, or "*" for any; empty allows only an origin
+	// naming the host the session was requested from. A client that sends no Origin is always allowed.
+	AllowedOrigins []string `yaml:"allowed_origins,omitempty"`
+	// MaxSessions bounds the WebTransport sessions the backend serves at once
+	MaxSessions int `yaml:"max_sessions,omitempty"`
 }
 
 // UpstreamOptions configure the sessions a backend opens toward its origin
@@ -103,7 +124,12 @@ func New() *Options {
 		LiveEdge:    &LiveEdgeOptions{Groups: DefaultLiveEdgeGroups, MaxSizeBytes: DefaultLiveEdgeSizeBytes},
 		Spill:       true,
 		FillTimeout: timeconv.Duration(DefaultFillTimeout), MaxObjectSizeBytes: DefaultMaxObjectSizeBytes,
+		WebTransport: newWebTransport(),
 	}
+}
+
+func newWebTransport() *WebTransportOptions {
+	return &WebTransportOptions{Drafts: slices.Clone(codec.ServerPreference), MaxSessions: DefaultMaxSessions}
 }
 
 // Clone returns an independent copy
@@ -121,6 +147,12 @@ func (o *Options) Clone() *Options {
 		l := *o.LiveEdge
 		out.LiveEdge = &l
 	}
+	if o.WebTransport != nil {
+		w := *o.WebTransport
+		w.Drafts = slices.Clone(o.WebTransport.Drafts)
+		w.AllowedOrigins = slices.Clone(o.WebTransport.AllowedOrigins)
+		out.WebTransport = &w
+	}
 	return &out
 }
 
@@ -133,6 +165,12 @@ func (o *Options) Validate() error {
 		return errors.New("moq: upstream and live_edge are required")
 	}
 	if err := validateDrafts("moq.upstream.drafts", o.Upstream.Drafts); err != nil {
+		return err
+	}
+	if o.WebTransport == nil {
+		o.WebTransport = newWebTransport()
+	}
+	if err := o.WebTransport.validate(); err != nil {
 		return err
 	}
 	switch {
@@ -185,6 +223,51 @@ func (l *LiveEdgeOptions) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	*l = LiveEdgeOptions(value)
 	return nil
+}
+
+// UnmarshalYAML overlays explicitly configured fields onto the defaults
+func (w *WebTransportOptions) UnmarshalYAML(unmarshal func(any) error) error {
+	type plain WebTransportOptions
+	value := plain(*newWebTransport())
+	if err := unmarshal(&value); err != nil {
+		return err
+	}
+	*w = WebTransportOptions(value)
+	return nil
+}
+
+func (w *WebTransportOptions) validate() error {
+	if err := validateDrafts("moq.webtransport.drafts", w.Drafts); err != nil {
+		return err
+	}
+	if w.DefaultDraft != 0 && !slices.Contains(w.Drafts, w.DefaultDraft) {
+		return fmt.Errorf("moq.webtransport.default_draft %d is not among moq.webtransport.drafts %v",
+			w.DefaultDraft, w.Drafts)
+	}
+	if w.MaxSessions <= 0 {
+		return errors.New("moq.webtransport.max_sessions must be greater than zero")
+	}
+	for i, origin := range w.AllowedOrigins {
+		normalized, err := NormalizeOrigin(origin)
+		if err != nil {
+			return fmt.Errorf("moq.webtransport.allowed_origins: %w", err)
+		}
+		w.AllowedOrigins[i] = normalized
+	}
+	return nil
+}
+
+// NormalizeOrigin returns a serialized origin (scheme://host[:port]) in lowercase, or AnyOrigin
+func NormalizeOrigin(origin string) (string, error) {
+	if origin == AnyOrigin {
+		return origin, nil
+	}
+	u, err := url.Parse(strings.TrimSuffix(origin, "/"))
+	if err != nil || u.Scheme == "" || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
+		u.User != nil {
+		return "", fmt.Errorf("%q is not an origin of the form scheme://host[:port]", origin)
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host), nil
 }
 
 // ListenerOptions contains the moq block of a moq listener

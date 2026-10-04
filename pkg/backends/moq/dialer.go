@@ -33,6 +33,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/quic-go/http3"
+	"github.com/quic-go/webtransport-go"
 )
 
 const (
@@ -41,7 +43,7 @@ const (
 	// SchemeHTTPS is the URI scheme of a WebTransport MoQ origin
 	SchemeHTTPS = "https"
 
-	defaultMoQTPort   = "443"
+	defaultPort       = "443"
 	upstreamIdle      = time.Minute
 	upstreamKeepAlive = 15 * time.Second
 	dialTimeout       = 10 * time.Second
@@ -54,10 +56,10 @@ var (
 )
 
 type dialer struct {
-	addr  string
-	tls   *tls.Config
-	quic  *quic.Config
-	setup message.Setup
+	connect      func(ctx context.Context) (session.Conn, *codec.Codec, error)
+	transport    *webtransport.Transport
+	webTransport bool
+	setup        message.Setup
 
 	mu      sync.Mutex
 	sess    *session.Session
@@ -68,17 +70,15 @@ type dialer struct {
 
 var _ relay.Upstream = (*dialer)(nil)
 
-func newDialer(origin *url.URL, base *tls.Config, drafts []int, implementation string) (*dialer, error) {
-	if origin.Scheme != SchemeMoQT {
-		// a WebTransport origin is reached through its own client
-		return nil, errUnsupportedScheme
-	}
+func newDialer(origin *url.URL, base *tls.Config, drafts []int, defaultDraft int,
+	implementation string,
+) (*dialer, error) {
 	host, port := origin.Hostname(), origin.Port()
 	if host == "" {
 		return nil, fmt.Errorf("moq: origin_url %q names no host", origin)
 	}
 	if port == "" {
-		port = defaultMoQTPort
+		port = defaultPort
 	}
 	tc := base
 	if tc == nil {
@@ -86,28 +86,76 @@ func newDialer(origin *url.URL, base *tls.Config, drafts []int, implementation s
 	} else {
 		tc = tc.Clone()
 	}
-	tc.NextProtos = codec.ALPNs(drafts)
 	if tc.ServerName == "" {
 		tc.ServerName = host
 	}
-	path := origin.Path
-	if path == "" {
-		path = "/"
+	qc := &quic.Config{
+		EnableDatagrams: true, EnableStreamResetPartialDelivery: true, MaxIdleTimeout: upstreamIdle,
+		KeepAlivePeriod: upstreamKeepAlive,
 	}
-	authority := net.JoinHostPort(host, port)
-	if origin.Port() == "" {
-		authority = host
+	d := &dialer{setup: message.Setup{Implementation: implementation}}
+	switch origin.Scheme {
+	case SchemeMoQT:
+		tc.NextProtos = codec.ALPNs(drafts)
+		addr := net.JoinHostPort(host, port)
+		d.connect = func(ctx context.Context) (session.Conn, *codec.Codec, error) {
+			conn, err := quic.DialAddr(ctx, addr, tc, qc)
+			if err != nil {
+				return nil, nil, err
+			}
+			c, ok := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)
+			if !ok {
+				_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeVersionNegotiation), "no supported draft")
+				return nil, nil, errNoDraft
+			}
+			return session.FromQUIC(conn), c, nil
+		}
+		path := origin.Path
+		if path == "" {
+			path = rootPath
+		}
+		authority := host
+		if origin.Port() != "" {
+			authority = net.JoinHostPort(host, port)
+		}
+		d.setup.Path, d.setup.HasPath, d.setup.Authority, d.setup.HasAuthority = path, true, authority, true
+	case SchemeHTTPS:
+		// the CONNECT request carries the authority and path, so SETUP names neither
+		tc.NextProtos = []string{http3.NextProtoH3}
+		d.webTransport = true
+		// quic.DialAddr, unlike webtransport-go's default, never sends 0-RTT data
+		d.transport = &webtransport.Transport{
+			TLSClientConfig: tc, QUICConfig: qc, ApplicationProtocols: codec.ALPNs(drafts), DialAddr: quic.DialAddr,
+		}
+		target := origin.String()
+		d.connect = func(ctx context.Context) (session.Conn, *codec.Codec, error) {
+			_, s, err := d.transport.Dial(ctx, target, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			c, ok := negotiated(s.SessionState().ApplicationProtocol, defaultDraft)
+			if !ok {
+				// draft-ietf-webtrans-http3 section 3.3: a client that needs a protocol closes with WT_ALPN_ERROR
+				_ = s.CloseWithError(webtransport.WTALPNErrorCode, "no supported draft")
+				return nil, nil, errNoDraft
+			}
+			return session.FromWebTransport(s), c, nil
+		}
+	default:
+		return nil, errUnsupportedScheme
 	}
-	return &dialer{
-		addr: net.JoinHostPort(host, port), tls: tc,
-		quic: &quic.Config{
-			EnableDatagrams: true, EnableStreamResetPartialDelivery: true, MaxIdleTimeout: upstreamIdle,
-			KeepAlivePeriod: upstreamKeepAlive,
-		},
-		setup: message.Setup{
-			Path: path, HasPath: true, Authority: authority, HasAuthority: true, Implementation: implementation,
-		},
-	}, nil
+	return d, nil
+}
+
+func negotiated(protocol string, defaultDraft int) (*codec.Codec, bool) {
+	// an origin that answers without WT-Protocol negotiated nothing, so only a configured default draft applies
+	if protocol == "" {
+		if defaultDraft == 0 {
+			return nil, false
+		}
+		return codec.ForDraft(defaultDraft)
+	}
+	return codec.ForALPN(protocol)
 }
 
 // Session returns the backend's session toward its origin, dialing one when none is up
@@ -162,18 +210,15 @@ func (d *dialer) Session(ctx context.Context, _ relay.Scope) (*session.Session, 
 func (d *dialer) dial(ctx context.Context) (*session.Session, error) {
 	dctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
-	conn, err := quic.DialAddr(dctx, d.addr, d.tls, d.quic)
+	conn, c, err := d.connect(dctx)
 	if err != nil {
 		return nil, err
 	}
-	c, ok := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)
-	if !ok {
-		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeVersionNegotiation), "no supported draft")
-		return nil, errNoDraft
-	}
-	s, err := session.New(session.FromQUIC(conn), session.Options{Role: session.RoleClient, Codec: c, Setup: d.setup})
+	s, err := session.New(conn, session.Options{
+		Role: session.RoleClient, Codec: c, Setup: d.setup, WebTransport: d.webTransport,
+	})
 	if err != nil {
-		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeInternalError), "")
+		_ = conn.CloseWithError(uint64(message.CodeInternalError), "")
 		return nil, err
 	}
 	if err = s.Start(dctx); err != nil {
@@ -199,6 +244,10 @@ func (d *dialer) close() {
 	d.mu.Unlock()
 	if s != nil {
 		_ = s.Close(message.CodeNoError, "backend closed")
+	}
+	if d.transport != nil {
+		// a session still being established toward the origin is abandoned
+		_ = d.transport.Close()
 	}
 }
 

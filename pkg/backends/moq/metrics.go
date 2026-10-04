@@ -39,8 +39,8 @@ func relayMetrics(backend string) *relay.Metrics {
 	}
 }
 
-func observeSession(listener, backend, draft, result string) {
-	metrics.MoQSessions.WithLabelValues(listener, backend, roleDownstream, transportQUIC, draft, result).Inc()
+func observeSession(listener, backend, transport, draft, result string) {
+	metrics.MoQSessions.WithLabelValues(listener, backend, roleDownstream, transport, draft, result).Inc()
 }
 
 func activeSessions(listener, backend string, delta float64) {

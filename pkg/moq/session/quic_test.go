@@ -122,14 +122,25 @@ func TestQUICAdapter(t *testing.T) {
 
 func TestOverQUIC(t *testing.T) {
 	cconn, sconn := quicPair(t)
+	overTransport(t, cconn, sconn, false)
+}
+
+func overTransport(t *testing.T, cconn, sconn session.Conn, webTransport bool) {
+	t.Helper()
 	sh, ch := newRecorder(), newRecorder()
-	server, err := session.New(sconn, session.Options{Role: session.RoleServer, Codec: c22(t), Handler: sh})
+	server, err := session.New(sconn, session.Options{
+		Role: session.RoleServer, Codec: c22(t), Handler: sh, WebTransport: webTransport,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// over WebTransport the CONNECT request names the path, and SETUP may not
+	setup := message.Setup{Path: "/live", HasPath: true}
+	if webTransport {
+		setup = message.Setup{}
+	}
 	client, err := session.New(cconn, session.Options{
-		Role: session.RoleClient, Codec: c22(t), Handler: ch,
-		Setup: message.Setup{Path: "/live", HasPath: true},
+		Role: session.RoleClient, Codec: c22(t), Handler: ch, Setup: setup, WebTransport: webTransport,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,8 +208,12 @@ func TestOverQUIC(t *testing.T) {
 		t.Fatal(err)
 	}
 	reset.Reset(message.ResetDeliveryTimeout)
-	if objs := recv(t, ch.subgroups, "reset objects"); len(objs) > 1 {
-		t.Errorf("a reset stream delivers at most its partial object: %+v", objs)
+	// webtransport-go offers no reliable boundary, so a reset WebTransport stream may lose its header and arrive as
+	// nothing a subscription can claim
+	if !webTransport {
+		if objs := recv(t, ch.subgroups, "reset objects"); len(objs) > 1 {
+			t.Errorf("a reset stream delivers at most its partial object: %+v", objs)
+		}
 	}
 
 	// a stream reset and a stop each surface as a *session.StreamError

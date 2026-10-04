@@ -659,15 +659,20 @@ data:
       #   # every statement without inspecting it.
 
       # # example MoQ Transport relay backend, exposed by a listener with protocol
-      # # moq (see the listeners section). One upstream subscription per track is
-      # # shared by every downstream subscriber; the newest groups stay in memory
+      # # moq (see the listeners section), and to browsers by WebTransport through
+      # # an http listener with http3 enabled. One upstream subscription per track
+      # # is shared by every downstream subscriber; the newest groups stay in memory
       # # and older ones spill to cache_name, which FETCH and fills read back.
       # moq1:
       #   provider: moq
-      #   # a native QUIC origin; omit origin_url to serve only what publishers send
+      #   # a native QUIC origin (moqt://) or a WebTransport one (https://); omit
+      #   # origin_url to serve only what publishers send
       #   origin_url: 'moqt://origin.example.com:443/live'
-      #   listener_names: [moq1]
-      #   # matched against the AUTHORITY and PATH of a session's SETUP
+      #   # on an http listener, the backend's paths accept WebTransport sessions
+      #   # (extended CONNECT) on the listener's HTTP/3 endpoint
+      #   listener_names: [moq1, default]
+      #   # matched against the AUTHORITY and PATH of a session's SETUP, or the
+      #   # CONNECT request that opens a WebTransport session
       #   hosts: [live.example.com]
       #   cache_name: default
       #   # caps MAX_CACHE_DURATION, and is the lifetime of spilled groups of tracks that set none
@@ -692,11 +697,22 @@ data:
       #     # the wait for upstream fetches when a FETCH or fill names no FILL_TIMEOUT
       #     fill_timeout: 2s
       #     max_object_size_bytes: 67108864
+      #     webtransport:
+      #       # drafts accepted from WebTransport clients, most preferred first
+      #       drafts: [21, 22, 20]
+      #       # the draft assumed for a client offering no WT-Available-Protocols,
+      #       # and for a WebTransport origin answering without WT-Protocol; 0
+      #       # refuses both
+      #       default_draft: 0
+      #       # browser origins (scheme://host[:port]) that may open sessions, or
+      #       # '*'; empty allows only an origin naming the requested host
+      #       allowed_origins: []
+      #       max_sessions: 10000
       #   # the health check completes a SETUP exchange with the origin on a fresh session
       #   healthcheck:
       #     interval: 5s
       #   tls:
-      #     # served to clients of the moq listener
+      #     # served to clients of the moq listener and the http listener's TLS port
       #     full_chain_cert_path: /etc/trickster/tls/server.crt
       #     private_key_path: /etc/trickster/tls/server.key
       #     # used toward the origin

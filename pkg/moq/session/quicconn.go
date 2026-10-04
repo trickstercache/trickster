@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/quic-go/quic-go"
+	"github.com/quic-go/webtransport-go"
 )
 
 type quicConn struct {
@@ -90,7 +91,12 @@ func streamErr(err error) error {
 		return nil
 	}
 	if se, ok := errors.AsType[*quic.StreamError](err); ok {
-		return &StreamError{Code: uint64(se.ErrorCode), Remote: se.Remote}
+		// a closing WebTransport session resets its streams with WT_SESSION_GONE, which ends no request by itself;
+		// the session's close error follows
+		if se.ErrorCode == webtransport.WTSessionGoneErrorCode {
+			return errSessionGone
+		}
+		return &StreamError{Code: streamCode(uint64(se.ErrorCode)), Remote: se.Remote}
 	}
 	if ae, ok := errors.AsType[*quic.ApplicationError](err); ok {
 		return &CloseError{Code: uint64(ae.ErrorCode), Reason: ae.ErrorMessage, Remote: ae.Remote}

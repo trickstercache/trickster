@@ -36,6 +36,8 @@ type shared struct {
 	dialer *dialer
 	cache  atomic.Pointer[Client]
 
+	wtActive atomic.Int64
+
 	mu       sync.Mutex
 	sessions int
 	retired  bool
@@ -63,6 +65,10 @@ func relayKey(o *bo.Options) string {
 	fmt.Fprintf(&b, "%t|%d|%d|%v|%t|%d|%d|%d|%d|%d", m.Spill, m.FillTimeout, m.MaxObjectSizeBytes, m.Upstream.Drafts,
 		m.Upstream.Prewarm, m.Upstream.ReconnectBackoff, m.Upstream.Linger, m.Upstream.MaxGapFetches,
 		m.LiveEdge.Groups, m.LiveEdge.MaxSizeBytes)
+	if m.WebTransport != nil {
+		// a WebTransport origin that negotiates no draft is spoken to in this one
+		fmt.Fprintf(&b, "|%d", m.WebTransport.DefaultDraft)
+	}
 	return b.String()
 }
 
@@ -98,6 +104,14 @@ func (sh *shared) Cache() cache.Cache {
 		return c.Backend.Cache()
 	}
 	return nil
+}
+
+func (sh *shared) admitWebTransport(limit int) bool {
+	if sh.wtActive.Add(1) > int64(limit) {
+		sh.wtActive.Add(-1)
+		return false
+	}
+	return true
 }
 
 func (sh *shared) hold() {

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,16 +34,17 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/moq/codec"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/quicmux"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
 )
 
 var (
-	errNoBackend  = errors.New("no moq backend uses this listener")
-	errNotPacket  = errors.New("a moq listener joins a QUIC endpoint and is never built as a TCP server")
-	errNoWTOrigin = errors.New("https (WebTransport) origins are not yet supported; use a moqt:// origin_url")
+	errNoBackend = errors.New("no moq backend uses this listener")
+	errNotPacket = errors.New("a moq listener joins a QUIC endpoint and is never built as a TCP server")
 )
 
 type nativeListenerAdapter struct{}
@@ -63,7 +65,8 @@ func (*nativeListenerAdapter) ServesProvider(provider string) bool { return prov
 
 func (*nativeListenerAdapter) Providers() []string { return []string{providers.MoQ} }
 
-func (*nativeListenerAdapter) SupportsHTTP(string) bool { return false }
+// SupportsHTTP is true because a moq backend accepts WebTransport sessions on HTTP listeners with HTTP/3
+func (*nativeListenerAdapter) SupportsHTTP(string) bool { return true }
 
 func (*nativeListenerAdapter) Configured(o *listenerconfig.Options) bool {
 	return o != nil && o.MoQ != nil
@@ -89,6 +92,7 @@ func (*nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 	if err := o.MoQ.Validate(); err != nil {
 		return err
 	}
+	webTransportPaths(o)
 	if o.OriginURL == "" {
 		return nil
 	}
@@ -96,13 +100,25 @@ func (*nativeListenerAdapter) ValidateBackend(o *bo.Options) error {
 	if err != nil {
 		return fmt.Errorf("moq origin_url: %w", err)
 	}
-	if u.Scheme == SchemeHTTPS {
-		return errNoWTOrigin
-	}
 	if u.Hostname() == "" {
 		return fmt.Errorf("moq origin_url %q names no host", o.OriginURL)
 	}
 	return nil
+}
+
+func webTransportPaths(o *bo.Options) {
+	// a path routes native sessions by prefix and, on an HTTP listener, accepts WebTransport sessions under it;
+	// an HTTP proxy path has no meaning without an HTTP origin, while a local handler keeps its own route
+	for _, p := range o.Paths {
+		if p == nil {
+			continue
+		}
+		switch p.HandlerName {
+		case "", providers.Proxy, providers.MoQ:
+			p.HandlerName, p.Methods = providers.MoQ, []string{http.MethodConnect}
+			p.MatchType, p.MatchTypeName = matching.PathMatchTypeSegment, matching.PathMatchNameSegment
+		}
+	}
 }
 
 func (*nativeListenerAdapter) ValidateUserRouter(*config.Config, string, *bo.Options) error {
@@ -166,6 +182,12 @@ func (*nativeListenerAdapter) Join(request native.BuildRequest, name string, cer
 	})
 }
 
+// ServesWebTransport reports whether moq backends use the HTTP listener, so its HTTP/3 endpoint must accept
+// WebTransport sessions
+func ServesWebTransport(c *config.Config, listenerName string) bool {
+	return len(boundBackends(c, listenerName)) > 0
+}
+
 func boundBackends(c *config.Config, listenerName string) []string {
 	if c == nil {
 		return nil
@@ -193,7 +215,8 @@ func routesFor(request native.BuildRequest) *routeTable {
 			e.hosts = append(e.hosts, strings.ToLower(strings.TrimSuffix(h, ".")))
 		}
 		for _, p := range o.Paths {
-			if p != nil && p.Path != "" {
+			// a local handler's path answers HTTP requests and routes no session
+			if p != nil && p.Path != "" && !handlers.IsLocal(p.HandlerName) {
 				e.paths = append(e.paths, p.Path)
 			}
 		}

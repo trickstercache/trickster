@@ -65,8 +65,23 @@ func TestMoQValidation(t *testing.T) {
 			"not supported",
 		},
 		{
-			"webtransport origin", func(c *config.Config) { c.Backends["live"].OriginURL = "https://relay.example/moq" },
-			"not yet supported",
+			"default draft not offered", func(c *config.Config) {
+				c.Backends["live"].MoQ = moqo.New()
+				c.Backends["live"].MoQ.WebTransport.DefaultDraft = 20
+				c.Backends["live"].MoQ.WebTransport.Drafts = []int{21}
+			}, "default_draft",
+		},
+		{
+			"bad allowed origin", func(c *config.Config) {
+				c.Backends["live"].MoQ = moqo.New()
+				c.Backends["live"].MoQ.WebTransport.AllowedOrigins = []string{"https://player.example/watch"}
+			}, "allowed_origins",
+		},
+		{
+			"no webtransport sessions", func(c *config.Config) {
+				c.Backends["live"].MoQ = moqo.New()
+				c.Backends["live"].MoQ.WebTransport.MaxSessions = 0
+			}, "max_sessions",
 		},
 		{"bad scheme", func(c *config.Config) { c.Backends["live"].OriginURL = "http://relay.example/" }, "moqt://"},
 		{"same host twice", func(c *config.Config) {
@@ -75,10 +90,6 @@ func TestMoQValidation(t *testing.T) {
 			other.Hosts = []string{"LIVE.example.com"}
 			c.Backends["other"] = other
 		}, "both serve host"},
-		{
-			"http listener", func(c *config.Config) { c.Backends["live"].ListenerNames = []string{"default"} },
-			"requires a listener with protocol",
-		},
 		{"plain udp on the port", func(c *config.Config) {
 			c.Listeners["relay"] = &listener.Options{Protocol: listener.ProtocolUDP, ListenPort: 10443}
 			c.Backends["udp"] = &bo.Options{Provider: "rp", OriginURL: "http://127.0.0.1:9", ListenerNames: []string{"relay"}}
@@ -124,4 +135,44 @@ func TestMoQRoutingAndSharing(t *testing.T) {
 	if !web.HTTP3Enabled() {
 		t.Error("the HTTP/3 endpoint stays enabled beside the moq listeners")
 	}
+}
+
+func TestMoQOnHTTPListeners(t *testing.T) {
+	c := moqConfig()
+	c.Backends["live"].OriginURL = "https://relay.example/moq"
+	c.Backends["live"].ListenerNames = []string{"default", "moq1"}
+	c.Backends["live"].Paths = po.List{po.New(), &po.Options{Path: "/hello", HandlerName: "localresponse"}}
+	web := c.Listeners["default"]
+	web.TLSListenPort = 10443
+	if err := Listeners(c); err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(c, "no HTTP/3 endpoint") {
+		t.Errorf("a moq backend on an http listener without HTTP/3 is warned about: %v", c.LoaderWarnings)
+	}
+	paths := c.Backends["live"].Paths
+	if paths[0].HandlerName != "moq" || len(paths[0].Methods) != 1 || paths[0].Methods[0] != "CONNECT" ||
+		paths[1].HandlerName != "localresponse" {
+		t.Errorf("a proxy path accepts WebTransport sessions, a local one keeps its handler: %+v %+v", paths[0], paths[1])
+	}
+
+	c = moqConfig()
+	c.Backends["live"].ListenerNames = []string{"default"}
+	web = c.Listeners["default"]
+	web.TLSListenPort, web.HTTP3 = 10443, &listener.HTTP3Options{Enabled: true}
+	if err := Listeners(c); err != nil {
+		t.Fatal(err)
+	}
+	if hasWarning(c, "no HTTP/3 endpoint") {
+		t.Error("an http listener with HTTP/3 carries WebTransport sessions")
+	}
+}
+
+func hasWarning(c *config.Config, fragment string) bool {
+	for _, w := range c.LoaderWarnings {
+		if strings.Contains(w, fragment) {
+			return true
+		}
+	}
+	return false
 }

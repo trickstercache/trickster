@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
@@ -50,7 +51,6 @@ const (
 	resultFailed   = "failed"
 	transportQUIC  = "quic"
 	roleDownstream = "downstream"
-	logKeyDraft    = "draft"
 	logKeyClient   = "client"
 	logKeyReason   = "reason"
 	logKeyDuration = "duration"
@@ -183,23 +183,23 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 	client := clientip.FromNetAddr(conn.RemoteAddr())
 	if list := s.ipacl.Load(); list != nil && list.Check(client) != ipacl.Allow {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeUnauthorized), "")
-		observeSession(s.listenerName, "", "", resultRefused)
+		observeSession(s.listenerName, "", transportQUIC, "", resultRefused)
 		return
 	}
 	if d := s.gate.Admit(client); d != nil {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeUnauthorized), d.Message)
-		observeSession(s.listenerName, "", "", resultRefused)
+		observeSession(s.listenerName, "", transportQUIC, "", resultRefused)
 		return
 	}
 	c, ok := codec.ForALPN(conn.ConnectionState().TLS.NegotiatedProtocol)
 	if !ok {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeVersionNegotiation), "no supported draft")
-		observeSession(s.listenerName, "", "", resultRefused)
+		observeSession(s.listenerName, "", transportQUIC, "", resultRefused)
 		return
 	}
 	if !s.admit() {
 		_ = conn.CloseWithError(quic.ApplicationErrorCode(message.CodeInternalError), "session limit reached")
-		observeSession(s.listenerName, "", strconv.Itoa(c.Draft()), resultBusy)
+		observeSession(s.listenerName, "", transportQUIC, strconv.Itoa(c.Draft()), resultBusy)
 		return
 	}
 	defer s.wg.Done()
@@ -209,7 +209,8 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 		Role: session.RoleServer, Codec: c, Handler: r, OnSetup: r.route,
 		HandshakeTimeout: time.Duration(s.opts.HandshakeTimeout), MaxRequests: s.opts.MaxRequestsPerSession,
 		Setup: message.Setup{
-			Implementation: s.opts.Implementation, MaxFilterRanges: uint64(s.opts.MaxFilterRanges), // #nosec G115
+			Implementation:    implementation(s.opts.Implementation),
+			MaxFilterRanges:   uint64(s.opts.MaxFilterRanges),   // #nosec G115 -- validated as not negative
 			MaxRequestUpdates: uint64(s.opts.MaxRequestUpdates), // #nosec G115 -- validated as not negative
 		},
 	})
@@ -224,25 +225,26 @@ func (s *server) ServeQUIC(conn *quic.Conn) {
 	defer s.untrack(sess)
 	draft := strconv.Itoa(c.Draft())
 	if err = sess.Start(context.Background()); err != nil {
-		observeSession(s.listenerName, r.backendName(), draft, r.result(resultFailed))
+		observeSession(s.listenerName, r.backendName(), transportQUIC, draft, r.result(resultFailed))
 		r.done()
 		return
 	}
 	start := time.Now()
 	backend := r.backendName()
-	observeSession(s.listenerName, backend, draft, resultOK)
+	observeSession(s.listenerName, backend, transportQUIC, draft, resultOK)
 	activeSessions(s.listenerName, backend, 1)
 	if logger.DebugEnabled() {
 		logger.Debug("moq session opened", logging.Pairs{
-			"listenerName": s.listenerName, "backendName": backend, logKeyDraft: draft, logKeyClient: r.client,
+			keys.ListenerName: s.listenerName, keys.BackendName: backend, keys.Draft: draft, logKeyClient: r.client,
+			keys.Transport: transportQUIC,
 		})
 	}
 	<-sess.Done()
 	activeSessions(s.listenerName, backend, -1)
 	r.done()
 	logger.Info("moq session closed", logging.Pairs{
-		"listenerName": s.listenerName, "backendName": backend, logKeyDraft: draft, logKeyClient: r.client,
-		logKeyDuration: time.Since(start).String(), logKeyReason: sessionEnd(sess.Err()),
+		keys.ListenerName: s.listenerName, keys.BackendName: backend, keys.Draft: draft, logKeyClient: r.client,
+		keys.Transport: transportQUIC, logKeyDuration: time.Since(start).String(), logKeyReason: sessionEnd(sess.Err()),
 	})
 }
 

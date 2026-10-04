@@ -526,6 +526,9 @@ func Listeners(c *config.Config) error {
 				"listener %q HTTP/3 is disabled because it requires an http listener with a TLS port", name))
 			options.HTTP3.Enabled = false
 		}
+		if options.Protocol == listener.ProtocolHTTP && options.Active && !options.HTTP3Enabled() {
+			webTransportWarnings(c, name, mappedProviders[name])
+		}
 
 		// a port is reserved in its transport's space: a udp listener and an HTTP/3 endpoint
 		// bind UDP, everything else TCP, so a tcp and a udp listener may share a port number
@@ -1046,6 +1049,16 @@ func reserveQUICPort(ports map[string]string, quicPorts map[string]map[string]st
 		claimed[alpn] = listenerName
 	}
 	return nil
+}
+
+func webTransportWarnings(c *config.Config, listenerName string, mapped map[string]string) {
+	// a moq backend on an http listener accepts only WebTransport sessions, which need the listener's HTTP/3
+	for _, backendName := range slices.Sorted(maps.Keys(mapped)) {
+		if mapped[backendName] == providers.MoQ {
+			addWarning(c, fmt.Sprintf("listener %q has no HTTP/3 endpoint, so WebTransport sessions cannot reach "+
+				"moq backend %q through it; enable http3 on the listener", listenerName, backendName))
+		}
+	}
 }
 
 func moqRoutes(c *config.Config, listenerName string) error {

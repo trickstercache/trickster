@@ -25,6 +25,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/stream"
+	"github.com/trickstercache/trickster/v2/pkg/backends/moq"
 	providerregistry "github.com/trickstercache/trickster/v2/pkg/backends/providers/registry"
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
@@ -71,6 +72,7 @@ type desiredListener struct {
 	// http3 marks a QUIC/UDP endpoint that mirrors this listener's TLS routes.
 	http3          bool
 	advertisedPort int
+	webTransport   bool
 	// stream marks a tcp, tls or udp relay, whose routing table is swapped on reload.
 	stream bool
 }
@@ -220,6 +222,9 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			if desired.tls {
 				updateListenerCertificates(conf, desired, lg)
 			}
+			if desired.http3 {
+				setWebTransport(lg, desired)
+			}
 			continue
 		}
 
@@ -267,10 +272,11 @@ func applyListenerConfigs(conf, oldConf *config.Config,
 			go lg.StartSharedPacketListener(desired.key, listenerconfig.ProtocolHTTP3,
 				desired.address, desired.port, tlsConfig, desired.router,
 				func(h http.Handler, certs tr.CertSwapper, tc *tls.Config) (listener.PacketMember, error) {
+					handler := listenerhttp3.NewHandler(h, limits)
+					handler.SetWebTransport(desired.webTransport, desired.listenerName)
 					return quicmux.Join(desired.address, desired.port, quicmux.MemberOptions{
 						Name: desired.key, ALPNs: []string{listenerhttp3.ALPN},
-						Handler: listenerhttp3.NewHandler(h, limits), Certs: certs, TLS: tc,
-						QUIC: listenerhttp3.QUICConfig(),
+						Handler: handler, Certs: certs, TLS: tc, QUIC: listenerhttp3.QUICConfig(),
 					})
 				}, errorFunc)
 			continue
@@ -381,6 +387,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 					key: h3Key, listenerName: name,
 					address: h3Address, port: h3Port, advertisedPort: advertised,
 					tls: true, http3: true, options: options, router: r,
+					webTransport: moq.ServesWebTransport(conf, name),
 				}
 			}
 			out[key] = desiredListener{
@@ -391,6 +398,13 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 		}
 	}
 	return out
+}
+
+func setWebTransport(lg *listener.Group, desired desiredListener) {
+	// a reload that binds or unbinds the listener's last moq backend changes how new connections are served
+	if h, ok := listener.ProtocolServerAs[*listenerhttp3.Handler](lg, desired.key); ok {
+		h.SetWebTransport(desired.webTransport, desired.listenerName)
+	}
 }
 
 func startNativePacketListener(lg *listener.Group, conf *config.Config, desired desiredListener,

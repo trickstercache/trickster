@@ -24,6 +24,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
@@ -42,41 +43,74 @@ const (
 	ALPN = qh3.NextProtoH3
 )
 
-// Handler serves HTTP/3 on the connections a shared QUIC endpoint dispatches to it
+// Handler serves HTTP/3 on the connections a shared QUIC endpoint dispatches to it, and WebTransport sessions on
+// them once enabled
 type Handler struct {
-	svr *qh3.Server
+	svr        *qh3.Server
+	wt         *webTransport
+	wtListener atomic.Pointer[string]
 }
 
 // NewHandler returns an HTTP/3 handler bound to the supplied HTTP handler. TLS and the QUIC transport
 // belong to the endpoint that hands it connections.
 func NewHandler(handler http.Handler, limits listener.ServerLimits) *Handler {
-	return &Handler{svr: &qh3.Server{
-		// quic-go sets its own server context key rather than net/http's, so
-		// the served marker is what lets the proxy recognize an H3 client
-		Handler:        middleware.MarkServed(requestDeadline(handler, bodyDeadline(limits))),
-		IdleTimeout:    limits.IdleTimeout,
-		MaxHeaderBytes: limits.MaxHeaderBytes,
-	}}
+	// quic-go sets its own server context key rather than net/http's, so
+	// the served marker is what lets the proxy recognize an H3 client
+	served := middleware.MarkServed(requestDeadline(handler, bodyDeadline(limits)))
+	return &Handler{
+		svr: &qh3.Server{
+			Handler:        served,
+			IdleTimeout:    limits.IdleTimeout,
+			MaxHeaderBytes: limits.MaxHeaderBytes,
+		},
+		wt: newWebTransport(served, limits),
+	}
 }
 
-// QUICConfig returns the transport settings HTTP/3 needs from the endpoint serving it.
-// RFC 9221 datagrams are not used by the HTTP paths today, but WebTransport and MoQ
-// require them; enabling them costs nothing and keeps the negotiation available.
+// QUICConfig returns the transport settings HTTP/3 needs from the endpoint serving it: RFC 9221 datagrams and
+// stream resets with partial delivery, which WebTransport requires and plain requests never notice.
 func QUICConfig() *quic.Config {
-	return &quic.Config{EnableDatagrams: true}
+	return &quic.Config{EnableDatagrams: true, EnableStreamResetPartialDelivery: true}
+}
+
+// SetWebTransport chooses whether new connections are served through WebTransport, so an extended CONNECT can
+// open a session on them; listenerName labels those sessions. Connections already open keep how they are served.
+func (h *Handler) SetWebTransport(enabled bool, listenerName string) {
+	// the listener's name is held only while WebTransport is on
+	if !enabled {
+		h.wtListener.Store(nil)
+		return
+	}
+	h.wtListener.Store(&listenerName)
+}
+
+// WebTransportEnabled reports whether new connections are served through WebTransport
+func (h *Handler) WebTransportEnabled() bool {
+	return h.wtListener.Load() != nil
 }
 
 // ServeQUIC serves HTTP/3 on one connection until it closes
 func (h *Handler) ServeQUIC(conn *quic.Conn) {
+	if name := h.wtListener.Load(); name != nil {
+		h.wt.serve(conn, *name)
+		return
+	}
 	_ = h.svr.ServeQUICConn(conn)
 	// a server already shutting down refuses the connection without closing it; closing a
 	// connection that has ended is a no-op
 	_ = conn.CloseWithError(quic.ApplicationErrorCode(qh3.ErrCodeNoError), "")
 }
 
-// Shutdown sends GOAWAY on every connection, waits for their requests until ctx is done, then closes them
+// Shutdown sends GOAWAY on every connection, waits for their requests until ctx is done, then closes them. A
+// connection served through WebTransport cannot carry GOAWAY, so it closes as soon as it runs no request.
 func (h *Handler) Shutdown(ctx context.Context) error {
-	return h.svr.Shutdown(ctx)
+	wtErr := make(chan error, 1)
+	go func() { wtErr <- h.wt.shutdown(ctx) }()
+	err := h.svr.Shutdown(ctx)
+	if werr := <-wtErr; err == nil {
+		err = werr
+	}
+	return err
 }
 
 // Server returns the underlying HTTP/3 server
@@ -100,10 +134,9 @@ func requestDeadline(next http.Handler, readHeaderTimeout time.Duration) http.Ha
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// quic-go never leaves Body nil or http.NoBody, so neither can be used
-		// to detect an absent body; ContentLength 0 means the client declared
-		// none, and -1 means unknown but possibly present.
-		if r.ContentLength != 0 {
+		// quic-go never leaves Body nil or http.NoBody, so ContentLength tells: 0 declares no body and -1 an unknown
+		// one; a CONNECT's body is its tunnel or WebTransport session, which no deadline may cut
+		if r.ContentLength != 0 && r.Method != http.MethodConnect {
 			// a writer that cannot take a deadline still serves the request
 			_ = http.NewResponseController(w).SetReadDeadline(time.Now().Add(readHeaderTimeout))
 		}
