@@ -19,6 +19,7 @@ package options
 import (
 	"testing"
 
+	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 
 	"github.com/stretchr/testify/require"
@@ -90,4 +91,26 @@ func TestOutputFormatYAMLValidation(t *testing.T) {
 			require.Equal(t, tc.wantErr == nil, ok)
 		})
 	}
+}
+
+func TestTSMGlobalEvaluationOptions(t *testing.T) {
+	t.Parallel()
+	const replicaLabel = "replica"
+	var o Options
+	require.NoError(t, yaml.Unmarshal([]byte("mechanism: tsm\ntsm:\n  evaluation: global\n  replica_labels: ["+
+		replicaLabel+"]\n"), &o))
+	require.NoError(t, o.Initialize(""))
+	ok, err := o.Validate()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, o.TSMOptions.IsGlobal())
+
+	c := o.Clone()
+	c.TSMOptions.ReplicaLabels[0] = "other"
+	require.Equal(t, replicaLabel, o.TSMOptions.ReplicaLabels[0])
+
+	o.TSMOptions.Evaluation = "auto"
+	ok, err = o.Validate()
+	require.ErrorIs(t, err, tsmoptions.ErrInvalidEvaluation)
+	require.False(t, ok)
 }

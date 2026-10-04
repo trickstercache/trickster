@@ -29,6 +29,8 @@ import (
 const (
 	FlavorCloudWatch = "cloudwatch"
 	FlavorAMP        = "amp"
+	FlavorMimir      = "mimir"
+	FlavorThanos     = "thanos"
 )
 
 const (
@@ -49,20 +51,21 @@ var ErrUnknownFlavor = errors.New("unknown prometheus flavor")
 
 // Flavors returns the supported flavor names.
 func Flavors() []string {
-	return []string{FlavorCloudWatch, FlavorAMP}
+	return []string{FlavorCloudWatch, FlavorAMP, FlavorMimir, FlavorThanos}
 }
 
 // Validate checks the options that can be checked without the enclosing backend.
 func (o *Options) Validate() error {
-	if o == nil || o.Flavor == "" {
+	if o == nil {
 		return nil
 	}
 	switch o.Flavor {
-	case FlavorCloudWatch, FlavorAMP:
-		return nil
+	case "", FlavorCloudWatch, FlavorAMP, FlavorMimir, FlavorThanos:
+	default:
+		return fmt.Errorf("%w %q; supported flavors are %s", ErrUnknownFlavor, o.Flavor,
+			strings.Join(Flavors(), ", "))
 	}
-	return fmt.Errorf("%w %q; supported flavors are %s", ErrUnknownFlavor, o.Flavor,
-		strings.Join(Flavors(), ", "))
+	return o.validateSeries()
 }
 
 // CloudWatchOriginURL returns the CloudWatch PromQL API base URL for region.

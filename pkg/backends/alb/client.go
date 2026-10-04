@@ -335,6 +335,11 @@ func (c *Client) ValidateAndStartPool(clients backends.Backends, hcs healthcheck
 			if err := validateTSMPoolMemberProvider(m.Name, clients, sets.NewStringSet()); err != nil {
 				return err
 			}
+			if o.TSMOptions.IsGlobal() {
+				if err := validateGlobalEvaluationMember(c.Name(), tc); err != nil {
+					return err
+				}
+			}
 		}
 		hc, ok := hcs[m.Name]
 		if ac, isALB := tc.(*Client); isALB && ac.health != nil {
@@ -587,6 +592,24 @@ func validateTSMPoolMemberProvider(name string, clients backends.Backends,
 		if err := validateTSMPoolMemberProvider(child.Name, clients, nextVisited); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// validateGlobalEvaluationMember requires a member to serve its own raw series. Global evaluation reads
+// the raw series of terminal backends, so a nested ALB cannot be a member.
+func validateGlobalEvaluationMember(albName string, member backends.Backend) error {
+	cfg := member.Configuration()
+	if cfg == nil || cfg.Provider != providers.Prometheus {
+		provider := ""
+		if cfg != nil {
+			provider = cfg.Provider
+		}
+		return fmt.Errorf("%w: alb %q member %q has provider %q, not a %s backend with a series_api",
+			alberr.ErrGlobalEvaluationMember, albName, member.Name(), provider, providers.Prometheus)
+	}
+	if _, err := cfg.Prometheus.SeriesEndpointURL(cfg.OriginURL); err != nil {
+		return fmt.Errorf("%w: alb %q member %q: %w", alberr.ErrGlobalEvaluationMember, albName, member.Name(), err)
 	}
 	return nil
 }

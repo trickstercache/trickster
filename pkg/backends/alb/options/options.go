@@ -185,6 +185,7 @@ func (o *Options) Clone() *Options {
 	c.FGROptions.StatusCodes = slices.Clone(o.FGROptions.StatusCodes)
 	c.Stream = o.Stream.Clone()
 	c.Sticky = o.Sticky.Clone()
+	c.TSMOptions = o.TSMOptions.Clone()
 	c.LT.StatusCodes = slices.Clone(o.LT.StatusCodes)
 	if o.LT.GoodCodes != nil {
 		table := *o.LT.GoodCodes
@@ -281,6 +282,9 @@ func (o *Options) Validate() (bool, error) {
 	case names.MechanismTSM:
 		if o.OutputFormat != "" && !providers.IsSupportedTimeSeriesMergeProvider(o.OutputFormat) {
 			return false, ErrInvalidOutputFormat
+		}
+		if err := o.TSMOptions.Validate(); err != nil {
+			return false, err
 		}
 	default:
 		if o.OutputFormat != "" {
