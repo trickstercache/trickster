@@ -240,28 +240,29 @@ var presenceEvals = []presenceEval{
 	{start: 3, end: 37, step: 2},
 }
 
+// presenceSample holds histograms as float histograms, which list-series iterators return as they are held
 type presenceSample struct {
-	t int64
-	f float64
-	h *histogram.Histogram
+	t  int64
+	f  float64
+	fh *histogram.FloatHistogram
 }
 
 func (s presenceSample) T() int64                      { return s.t }
 func (s presenceSample) ST() int64                     { return 0 }
 func (s presenceSample) F() float64                    { return s.f }
-func (s presenceSample) H() *histogram.Histogram       { return s.h }
-func (s presenceSample) FH() *histogram.FloatHistogram { return nil }
+func (s presenceSample) H() *histogram.Histogram       { return nil }
+func (s presenceSample) FH() *histogram.FloatHistogram { return s.fh }
 
 func (s presenceSample) Type() chunkenc.ValueType {
-	if s.h != nil {
-		return chunkenc.ValHistogram
+	if s.fh != nil {
+		return chunkenc.ValFloatHistogram
 	}
 	return chunkenc.ValFloat
 }
 
 func (s presenceSample) Copy() chunks.Sample {
-	if s.h != nil {
-		s.h = s.h.Copy()
+	if s.fh != nil {
+		s.fh = s.fh.Copy()
 	}
 	return s
 }
@@ -308,7 +309,7 @@ func presenceListSeries(series presenceFixtureSeries, minutes []int) storage.Ser
 		sample := presenceSample{t: presenceMillis(minute), f: 1}
 		switch {
 		case series.hist:
-			sample.h = presenceHistogram()
+			sample.fh = presenceHistogram().ToFloat(nil)
 		case series.nan:
 			sample.f = math.NaN()
 		}

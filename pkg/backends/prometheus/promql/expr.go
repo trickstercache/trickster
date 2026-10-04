@@ -31,13 +31,17 @@ const (
 	functionVector   = "vector"
 )
 
-var promQLParser = parser.NewParser(parser.Options{
-	// Accept experimental syntax so planning does not reject what a backend can evaluate.
-	EnableExperimentalFunctions:  true,
-	ExperimentalDurationExpr:     true,
-	EnableExtendedRangeSelectors: true,
-	EnableBinopFillModifiers:     true,
-})
+var promQLParser = parser.NewParser(ParserOptions())
+
+// ParserOptions accepts experimental syntax, so TSM rejects nothing a backend can evaluate.
+func ParserOptions() parser.Options {
+	return parser.Options{
+		EnableExperimentalFunctions:  true,
+		ExperimentalDurationExpr:     true,
+		EnableExtendedRangeSelectors: true,
+		EnableBinopFillModifiers:     true,
+	}
+}
 
 var errStopInspect = errors.New("stop inspection")
 
