@@ -166,3 +166,59 @@ func TestWebTransportOptions(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishAndAuthorizationOptions(t *testing.T) {
+	var o Options
+	in := "publish:\n  enabled: true\n  namespaces: ['live/']\nauthorization:\n  mode: TOKEN\n  token_file: /x\n"
+	if err := yaml.Unmarshal([]byte(in), &o); err != nil {
+		t.Fatal(err)
+	}
+	if !o.Publish.Enabled || o.Publish.MaxPublishersPerTrack != DefaultMaxPublishersPerTrack {
+		t.Errorf("publish overlay %+v", o.Publish)
+	}
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if o.Authorization.Mode != AuthorizationToken {
+		t.Errorf("modes are normalized: %q", o.Authorization.Mode)
+	}
+	c := o.Clone()
+	c.Publish.Namespaces[0], c.Authorization.TokenFile = "other", "/y"
+	if o.Publish.Namespaces[0] != "live/" || o.Authorization.TokenFile != "/x" {
+		t.Error("a clone is independent")
+	}
+	bare := New()
+	bare.Publish, bare.Authorization = nil, nil
+	if err := bare.Validate(); err != nil || bare.Publish == nil || bare.Authorization.Mode != AuthorizationNone {
+		t.Error("missing blocks take their defaults")
+	}
+	tests := []struct {
+		name   string
+		mutate func(*Options)
+		want   string
+	}{
+		{"negative publishers", func(o *Options) { o.Publish.MaxPublishersPerTrack = -1 }, "max_publishers"},
+		{"empty field", func(o *Options) { o.Publish.Namespaces = []string{"live//x"} }, "empty field"},
+		{"token without file", func(o *Options) { o.Authorization.Mode = AuthorizationToken }, "token_file"},
+		{"file without token", func(o *Options) { o.Authorization.TokenFile = "/x" }, "mode: token"},
+		{"unknown mode", func(o *Options) { o.Authorization.Mode = "jwt" }, "not none or token"},
+		{"too many fields", func(o *Options) {
+			o.Publish.Namespaces = []string{strings.Repeat("f/", maxNamespaceFields+1)}
+		}, "fields"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			o := New()
+			tc.mutate(o)
+			if err := o.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %v, want an error containing %q", err, tc.want)
+			}
+		})
+	}
+	if ns, err := ParseNamespace("/live/studio/"); err != nil || len(ns) != 2 || string(ns[1]) != "studio" {
+		t.Errorf("parsed %q %v", ns, err)
+	}
+	if ns, err := ParseNamespace(""); err != nil || ns != nil {
+		t.Error("an empty namespace has no fields")
+	}
+}

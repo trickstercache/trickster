@@ -60,8 +60,17 @@ const (
 
 	// AnyOrigin in webtransport.allowed_origins lets every origin open a session
 	AnyOrigin = "*"
+	// DefaultMaxPublishersPerTrack bounds the publishers of one track at once
+	DefaultMaxPublishersPerTrack = 4
+	// AuthorizationNone admits every request
+	AuthorizationNone = "none"
+	// AuthorizationToken admits a request only with an AUTHORIZATION_TOKEN the token file grants its operation
+	AuthorizationToken = "token"
+	// NamespaceSeparator separates the fields of a namespace written as text, as in live/studio
+	NamespaceSeparator = "/"
 
-	maxSizeBytes = 1 << 40
+	maxSizeBytes       = 1 << 40
+	maxNamespaceFields = 32
 )
 
 // Options contains the moq block of a backend
@@ -76,6 +85,29 @@ type Options struct {
 	MaxObjectSizeBytes int64 `yaml:"max_object_size_bytes,omitempty"`
 	// WebTransport configures the sessions WebTransport clients open through HTTP listeners
 	WebTransport *WebTransportOptions `yaml:"webtransport,omitempty"`
+	// Publish configures PUBLISH and PUBLISH_NAMESPACE from downstream sessions, making Trickster their origin
+	Publish *PublishOptions `yaml:"publish,omitempty"`
+	// Authorization configures how requests are authorized
+	Authorization *AuthorizationOptions `yaml:"authorization,omitempty"`
+}
+
+// PublishOptions configure publishers that send tracks to the backend
+type PublishOptions struct {
+	// Enabled accepts PUBLISH and PUBLISH_NAMESPACE; without it a backend serves only what its origin has
+	Enabled bool `yaml:"enabled"`
+	// Namespaces are the namespace prefixes publishers may claim, written as fields joined by '/'; empty allows any
+	Namespaces []string `yaml:"namespaces,omitempty"`
+	// MaxPublishersPerTrack bounds the publishers of one track at once; 0 allows any number
+	MaxPublishersPerTrack int `yaml:"max_publishers_per_track,omitempty"`
+}
+
+// AuthorizationOptions configure how the backend authorizes requests
+type AuthorizationOptions struct {
+	// Mode is none, or token to require an AUTHORIZATION_TOKEN the token file grants
+	Mode string `yaml:"mode,omitempty"`
+	// TokenFile lists one grant per line: a token, its scope (publish, subscribe or any) and an optional namespace
+	// prefix; it is read again when it changes
+	TokenFile string `yaml:"token_file,omitempty"`
 }
 
 // WebTransportOptions configure the sessions browsers and other WebTransport clients open on HTTP listeners
@@ -124,7 +156,9 @@ func New() *Options {
 		LiveEdge:    &LiveEdgeOptions{Groups: DefaultLiveEdgeGroups, MaxSizeBytes: DefaultLiveEdgeSizeBytes},
 		Spill:       true,
 		FillTimeout: timeconv.Duration(DefaultFillTimeout), MaxObjectSizeBytes: DefaultMaxObjectSizeBytes,
-		WebTransport: newWebTransport(),
+		WebTransport:  newWebTransport(),
+		Publish:       &PublishOptions{MaxPublishersPerTrack: DefaultMaxPublishersPerTrack},
+		Authorization: &AuthorizationOptions{Mode: AuthorizationNone},
 	}
 }
 
@@ -153,6 +187,15 @@ func (o *Options) Clone() *Options {
 		w.AllowedOrigins = slices.Clone(o.WebTransport.AllowedOrigins)
 		out.WebTransport = &w
 	}
+	if o.Publish != nil {
+		p := *o.Publish
+		p.Namespaces = slices.Clone(o.Publish.Namespaces)
+		out.Publish = &p
+	}
+	if o.Authorization != nil {
+		a := *o.Authorization
+		out.Authorization = &a
+	}
 	return &out
 }
 
@@ -171,6 +214,18 @@ func (o *Options) Validate() error {
 		o.WebTransport = newWebTransport()
 	}
 	if err := o.WebTransport.validate(); err != nil {
+		return err
+	}
+	if o.Publish == nil {
+		o.Publish = &PublishOptions{MaxPublishersPerTrack: DefaultMaxPublishersPerTrack}
+	}
+	if err := o.Publish.validate(); err != nil {
+		return err
+	}
+	if o.Authorization == nil {
+		o.Authorization = &AuthorizationOptions{Mode: AuthorizationNone}
+	}
+	if err := o.Authorization.validate(); err != nil {
 		return err
 	}
 	switch {
@@ -234,6 +289,68 @@ func (w *WebTransportOptions) UnmarshalYAML(unmarshal func(any) error) error {
 	}
 	*w = WebTransportOptions(value)
 	return nil
+}
+
+// UnmarshalYAML overlays explicitly configured fields onto the defaults
+func (p *PublishOptions) UnmarshalYAML(unmarshal func(any) error) error {
+	type plain PublishOptions
+	value := plain(PublishOptions{MaxPublishersPerTrack: DefaultMaxPublishersPerTrack})
+	if err := unmarshal(&value); err != nil {
+		return err
+	}
+	*p = PublishOptions(value)
+	return nil
+}
+
+func (p *PublishOptions) validate() error {
+	if p.MaxPublishersPerTrack < 0 {
+		return errors.New("moq.publish.max_publishers_per_track must not be negative")
+	}
+	for _, ns := range p.Namespaces {
+		if _, err := ParseNamespace(ns); err != nil {
+			return fmt.Errorf("moq.publish.namespaces: %w", err)
+		}
+	}
+	return nil
+}
+
+func (a *AuthorizationOptions) validate() error {
+	a.Mode = strings.ToLower(strings.TrimSpace(a.Mode))
+	switch a.Mode {
+	case "", AuthorizationNone:
+		a.Mode = AuthorizationNone
+		if a.TokenFile != "" {
+			return errors.New("moq.authorization.token_file needs mode: token")
+		}
+	case AuthorizationToken:
+		if a.TokenFile == "" {
+			return errors.New("moq.authorization mode token needs a token_file")
+		}
+	default:
+		return fmt.Errorf("moq.authorization.mode %q is not none or token", a.Mode)
+	}
+	return nil
+}
+
+// ParseNamespace reads a namespace written as fields joined by '/', such as live/studio; leading and trailing
+// separators are ignored, and an empty string is the namespace of no fields, which every namespace extends
+func ParseNamespace(s string) ([][]byte, error) {
+	s = strings.Trim(s, NamespaceSeparator)
+	if s == "" {
+		return nil, nil
+	}
+	fields := strings.Split(s, NamespaceSeparator)
+	out := make([][]byte, len(fields))
+	for i, f := range fields {
+		if f == "" {
+			return nil, fmt.Errorf("namespace %q has an empty field", s)
+		}
+		out[i] = []byte(f)
+	}
+	if len(out) > maxNamespaceFields {
+		return nil, fmt.Errorf("namespace %q has more than %d fields", s, maxNamespaceFields)
+	}
+	return out, nil
 }
 
 func (w *WebTransportOptions) validate() error {

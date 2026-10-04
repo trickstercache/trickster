@@ -559,10 +559,14 @@ func (r *Request) receivedFIN() {
 	r.mu.Lock()
 	r.recvClosed = true
 	var failed error
+	// a PUBLISH subscription is finished by its requester, the publisher, with PUBLISH_DONE before its FIN (§6.4.2.2)
+	publish := !r.local && r.kind == message.KindPublish
 	switch {
 	case r.local && !r.responded:
 		failed = ErrNoResponse
 	case r.local && !r.termRecv && r.kind == message.KindSubscribe:
+		failed = ErrNoPublishDone
+	case publish && (!r.termRecv || !r.responded):
 		failed = ErrNoPublishDone
 	}
 	sendOpen := !r.sendClosed
@@ -572,8 +576,8 @@ func (r *Request) receivedFIN() {
 		_ = r.CloseSend()
 		return
 	}
-	if r.local && sendOpen {
-		// the responder finished, so the requester closes its half too
+	if (r.local || publish) && sendOpen {
+		// the side that finishes the request has, so the other closes its half too
 		_ = r.CloseSend()
 		return
 	}

@@ -697,6 +697,19 @@ backends:
   #       # '*'; empty allows only an origin naming the requested host
   #       allowed_origins: []
   #       max_sessions: 10000
+  #     publish:
+  #       # accept PUBLISH and PUBLISH_NAMESPACE, making Trickster the origin of
+  #       # what publishers send; open ingest belongs behind a network boundary
+  #       enabled: false
+  #       # namespace prefixes publishers may claim, as fields joined by '/',
+  #       # such as live/studio; empty allows any
+  #       namespaces: []
+  #       max_publishers_per_track: 4
+  #     authorization:
+  #       # none admits every request; token requires an AUTHORIZATION_TOKEN
+  #       # that token_file grants, one '<token> <publish|subscribe|any>
+  #       # [namespace]' per line, read again whenever the file changes
+  #       mode: none
   #   # the health check completes a SETUP exchange with the origin on a fresh session
   #   healthcheck:
   #     interval: 5s

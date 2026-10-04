@@ -176,3 +176,24 @@ func hasWarning(c *config.Config, fragment string) bool {
 	}
 	return false
 }
+
+func TestMoQOriginlessWarning(t *testing.T) {
+	c := moqConfig()
+	c.Backends["live"].OriginURL = ""
+	if err := Listeners(c); err != nil {
+		t.Fatal(err)
+	}
+	if !hasWarning(c, "serves nothing") {
+		t.Error("an origin-less backend that accepts no publishers is warned about")
+	}
+	c = moqConfig()
+	c.Backends["live"].OriginURL = ""
+	c.Backends["live"].MoQ = moqo.New()
+	c.Backends["live"].MoQ.Publish.Enabled = true
+	if err := Listeners(c); err != nil {
+		t.Fatal(err)
+	}
+	if hasWarning(c, "serves nothing") {
+		t.Error("an ingest backend serves what is published to it")
+	}
+}

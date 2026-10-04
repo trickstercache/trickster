@@ -17,13 +17,20 @@
 package relay
 
 import (
+	"sync"
+
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 )
 
 type downstream struct {
 	r     *Relay
 	scope Scope
+
+	mu         sync.Mutex
+	nsPrefixes []wire.Namespace
+	trPrefixes []wire.Namespace
 }
 
 func (d *downstream) HandleRequest(req *session.Request) {
@@ -34,25 +41,35 @@ func (d *downstream) HandleRequest(req *session.Request) {
 		d.fetch(req, m)
 	case *message.TrackStatus:
 		d.trackStatus(req, m)
+	case *message.Publish:
+		d.publish(req, m)
+	case *message.PublishNamespace:
+		d.publishNamespace(req, m)
+	case *message.SubscribeNamespace:
+		d.subscribeNamespace(req, m)
+	case *message.SubscribeTracks:
+		d.subscribeTracks(req, m)
 	default:
-		req.SetHandlers(nopRequestHandler{}, nil)
-		_ = req.Reject(message.RequestNotSupported, "not supported by this relay", 0)
-		d.r.m.request(kindOther, resultRefused)
+		d.refuse(req, kindOther, message.RequestNotSupported, reasonNotSupported)
 	}
 }
 
 func (d *downstream) HandleGoAway(*session.Session, *message.GoAway) {}
 
 func (d *downstream) subscribe(req *session.Request, m *message.Subscribe) {
+	if !d.authorized(req, OpSubscribe, m.Track.Namespace, &m.Params) {
+		d.refuse(req, kindSubscribe, message.RequestUnauthorized, reasonUnauthorized)
+		return
+	}
 	t := d.r.tracks.acquire(d.r, d.scope, m.Track)
-	s := newSubscriber(t, req, m)
+	s := newSubscriber(t, req, &m.Params)
 	req.SetHandlers(s, nil)
 	if m.Params.Invalid != nil {
 		s.refuse(m.Params.Invalid.Code, m.Params.Invalid.Reason)
 		return
 	}
 	t.hold(s)
-	if err := t.ensureUpstream(req.Context(), s.forward.Load()); err != nil {
+	if err := d.await(req, t, s.forward.Load(), &m.Params); err != nil {
 		code, reason := refusalFor(err)
 		s.refuse(code, reason)
 		return
@@ -72,6 +89,10 @@ func (fetchHandler) HandleMessage(r *session.Request, m message.Message) {
 func (fetchHandler) HandleClose(*session.Request, error) {}
 
 func (d *downstream) fetch(req *session.Request, m *message.Fetch) {
+	if !d.authorized(req, OpSubscribe, m.Track.Namespace, &m.Params) {
+		d.refuse(req, kindFetch, message.RequestUnauthorized, reasonUnauthorized)
+		return
+	}
 	req.SetHandlers(fetchHandler{}, nil)
 	refuse := func(code message.RequestCode, reason string) {
 		_ = req.Reject(code, reason, 0)
@@ -124,6 +145,10 @@ func (d *downstream) fetch(req *session.Request, m *message.Fetch) {
 }
 
 func (d *downstream) trackStatus(req *session.Request, m *message.TrackStatus) {
+	if !d.authorized(req, OpSubscribe, m.Track.Namespace, &m.Params) {
+		d.refuse(req, kindTrackStatus, message.RequestUnauthorized, reasonUnauthorized)
+		return
+	}
 	req.SetHandlers(nopRequestHandler{}, nil)
 	t := d.r.tracks.acquire(d.r, d.scope, m.Track)
 	defer d.r.tracks.release(t)

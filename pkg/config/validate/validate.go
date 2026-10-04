@@ -358,6 +358,11 @@ func Listeners(c *config.Config) error {
 				return fmt.Errorf("%s backend %q: %w", adapter.Protocol(), backendName, err)
 			}
 		}
+		if strings.EqualFold(backend.Provider, providers.MoQ) && backend.OriginURL == "" && backend.MoQ != nil &&
+			(backend.MoQ.Publish == nil || !backend.MoQ.Publish.Enabled) {
+			addWarning(c, fmt.Sprintf("moq backend %q has no origin_url and does not accept publishers "+
+				"(moq.publish.enabled), so it serves nothing", backendName))
+		}
 		if nativeTargets[backendName] && len(backend.ListenerNames) == 0 {
 			continue
 		}

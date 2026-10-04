@@ -39,9 +39,12 @@ const (
 )
 
 var (
-	errMalformed  = errors.New("moq: track is malformed")
-	errNoUpstream = &requestError{code: message.RequestDoesNotExist, reason: "no publisher for the track"}
-	errUpstream   = &requestError{code: message.RequestInternalError, reason: "upstream unavailable"}
+	errMalformed         = errors.New("moq: track is malformed")
+	errNoUpstream        = &requestError{code: message.RequestDoesNotExist, reason: "no publisher for the track"}
+	errUpstream          = &requestError{code: message.RequestInternalError, reason: "upstream unavailable"}
+	errTooManyPublishers = &requestError{code: message.RequestExcessiveLoad, reason: "too many publishers"}
+	errRendezvous        = &requestError{code: message.RequestTimeout, reason: "no publisher arrived"}
+	errMandatory         = &requestError{code: message.RequestUnsupportedExtension, reason: reasonMandatory}
 )
 
 type requestError struct {
@@ -84,15 +87,18 @@ type track struct {
 	spilled    spillIndex
 	closed     bool
 
-	up         *upstreamSub
+	ups        []*upstreamSub
 	upState    upState
 	upReady    chan struct{}
 	upErr      error
-	upForward  bool
 	fwdAck     chan struct{}
 	fwdPending int
 	linger     *time.Timer
 	retries    int
+	retrying   bool
+	lost       error
+	arrived    chan struct{}
+	awaiting   map[*session.Session]int
 
 	ctrlMu sync.Mutex
 }
@@ -104,7 +110,7 @@ func newTrack(r *Relay, scope Scope, name message.FullTrackName, key string, has
 func (t *track) idle() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return len(t.subs) == 0 && t.upState == upIdle && len(t.groups) == 0 && t.linger == nil
+	return len(t.subs) == 0 && len(t.ups) == 0 && t.upState == upIdle && len(t.groups) == 0 && t.linger == nil
 }
 
 func (t *track) largestLocked() *wire.Location {
@@ -141,114 +147,6 @@ func (t *track) unholdLocked(s *subscriber) {
 		s.held = false
 		t.held--
 	}
-}
-
-func (t *track) ensureUpstream(ctx context.Context, forward bool) error {
-	// returns once the track has an established upstream subscription, opening one if needed
-	t.mu.Lock()
-	if t.malformed {
-		t.mu.Unlock()
-		return errMalformed
-	}
-	switch t.upState {
-	case upEstablished:
-		t.mu.Unlock()
-		if forward {
-			t.resume(ctx)
-		}
-		return nil
-	case upIdle:
-		t.startUpstreamLocked(forward || t.wantForwardLocked())
-	}
-	ready := t.upReady
-	t.mu.Unlock()
-	select {
-	case <-ready:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.upState == upEstablished {
-		return nil
-	}
-	if t.upErr == nil {
-		return errUpstream
-	}
-	return t.upErr
-}
-
-func (t *track) startUpstreamLocked(forward bool) {
-	t.upState = upPending
-	t.upReady = make(chan struct{})
-	u := &upstreamSub{t: t}
-	t.up = u
-	go u.open(forward)
-}
-
-func (t *track) established(u *upstreamSub, ok *message.SubscribeOK, forward bool) bool {
-	t.mu.Lock()
-	if t.up != u || t.upState != upPending {
-		t.mu.Unlock()
-		return false
-	}
-	t.upState, t.upForward, t.retries = upEstablished, forward, 0
-	if len(ok.TrackProperties) > 0 || t.props == nil {
-		t.props = bytes.Clone(ok.TrackProperties)
-	}
-	if ok.Params.Has(message.ParamLargestObject) {
-		t.raiseLargest(ok.Params.LargestObject)
-	}
-	close(t.upReady)
-	t.mu.Unlock()
-	t.r.m.subscriptions(directionUpstream, 1)
-	go t.syncForward()
-	return true
-}
-
-func (t *track) upstreamEnded(u *upstreamSub, cause error) {
-	// an upstream subscription, or an attempt to open one, ended
-	t.mu.Lock()
-	if t.up != u {
-		t.mu.Unlock()
-		return
-	}
-	wasUp := t.upState == upEstablished
-	if t.malformed {
-		cause = errMalformed
-	}
-	t.ackedLocked(true)
-	if t.upState == upPending {
-		t.upErr = cause
-		close(t.upReady)
-	}
-	t.up, t.upState = nil, upIdle
-	resubscribe := len(t.subs) > 0 && !t.closed && !t.malformed && retryable(cause) &&
-		t.retries < reconnectAttempts
-	var end []*subscriber
-	if resubscribe {
-		backoff := t.r.opts.ReconnectBackoff << t.retries
-		t.retries++
-		t.upState = upPending
-		t.upReady = make(chan struct{})
-		nu := &upstreamSub{t: t}
-		t.up = nu
-		forward := t.wantForwardLocked()
-		time.AfterFunc(backoff, func() { nu.open(forward) })
-	} else if len(t.subs) > 0 {
-		end = slices.Clone(t.subs)
-	}
-	t.mu.Unlock()
-	if wasUp {
-		t.r.m.subscriptions(directionUpstream, -1)
-	}
-	if len(end) > 0 {
-		code, reason := doneFor(cause)
-		for _, s := range end {
-			go s.finish(code, reason)
-		}
-	}
-	t.r.tracks.dropIdle(t)
 }
 
 func retryable(cause error) bool {
@@ -317,7 +215,7 @@ func (t *track) removeSubscriber(s *subscriber) {
 	if s.forward.Load() {
 		t.forwarders--
 	}
-	if len(t.subs) == 0 && t.up != nil && t.linger == nil && !t.closed {
+	if len(t.subs) == 0 && t.hasPullLocked() && t.linger == nil && !t.closed {
 		t.linger = time.AfterFunc(t.r.opts.Linger, t.lingerExpired)
 	}
 	t.mu.Unlock()
@@ -338,20 +236,6 @@ func (t *track) setForward(s *subscriber, forward bool) {
 	go t.syncForward()
 }
 
-func (t *track) lingerExpired() {
-	t.mu.Lock()
-	t.linger = nil
-	if len(t.subs) > 0 {
-		t.mu.Unlock()
-		return
-	}
-	u := t.up
-	t.mu.Unlock()
-	if u != nil {
-		u.cancel()
-	}
-}
-
 func (t *track) resume(ctx context.Context) {
 	// a subscriber answered while the upstream is still paused, or about to pause, would miss what is published
 	// before the upstream forwards again, so every FORWARD update in flight is answered first
@@ -369,71 +253,6 @@ func (t *track) resume(ctx context.Context) {
 	}
 }
 
-func (t *track) acked() {
-	t.mu.Lock()
-	t.ackedLocked(false)
-	t.mu.Unlock()
-}
-
-func (t *track) ackedLocked(all bool) {
-	if t.fwdPending == 0 {
-		return
-	}
-	t.fwdPending--
-	if all {
-		t.fwdPending = 0
-	}
-	if t.fwdPending == 0 && t.fwdAck != nil {
-		close(t.fwdAck)
-		t.fwdAck = nil
-	}
-}
-
-func (t *track) syncForward() {
-	// the upstream subscription's FORWARD state follows the downstream subscribers'
-	t.ctrlMu.Lock()
-	defer t.ctrlMu.Unlock()
-	t.mu.Lock()
-	want, sent := t.wantForwardLocked(), t.upForward
-	var req *session.Request
-	if t.upState == upEstablished && t.up != nil {
-		req = t.up.request()
-	}
-	t.mu.Unlock()
-	if req == nil || want == sent {
-		return
-	}
-	var p message.Params
-	p.SetForward(want)
-	t.mu.Lock()
-	if t.fwdAck == nil {
-		t.fwdAck = make(chan struct{})
-	}
-	t.fwdPending++
-	t.mu.Unlock()
-	if _, err := req.Update(p); err != nil {
-		t.acked()
-		return
-	}
-	t.mu.Lock()
-	t.upForward = want
-	t.mu.Unlock()
-}
-
-func (t *track) shutdown() {
-	t.mu.Lock()
-	t.closed = true
-	u := t.up
-	if t.linger != nil {
-		t.linger.Stop()
-		t.linger = nil
-	}
-	t.mu.Unlock()
-	if u != nil {
-		u.cancel()
-	}
-}
-
 func (t *track) markMalformed() {
 	t.mu.Lock()
 	if t.malformed {
@@ -441,7 +260,7 @@ func (t *track) markMalformed() {
 		return
 	}
 	t.malformed = true
-	u := t.up
+	ups := slices.Clone(t.ups)
 	subs := slices.Clone(t.subs)
 	groups := make([]*group, 0, len(t.groups))
 	for _, g := range t.groups {
@@ -456,7 +275,7 @@ func (t *track) markMalformed() {
 	for _, s := range subs {
 		go s.finish(message.DoneMalformedTrack, "malformed track")
 	}
-	if u != nil {
+	for _, u := range ups {
 		u.cancel()
 	}
 }
@@ -579,7 +398,7 @@ func (t *track) admitLocked(g *group, o *object) admission {
 func (t *track) openRun(u *upstreamSub, h message.SubgroupHeader) *run {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.up != u || t.malformed {
+	if !t.sourceLocked(u) || t.malformed {
 		return nil
 	}
 	g := t.groupLocked(h.Group)
@@ -706,7 +525,7 @@ func (t *track) ingestDatagram(u *upstreamSub, d *message.Datagram) {
 	}
 	o.filled.Store(int64(len(o.payload)))
 	t.mu.Lock()
-	if t.up != u {
+	if !t.sourceLocked(u) {
 		t.mu.Unlock()
 		return
 	}
@@ -746,12 +565,9 @@ func (t *track) status(ctx context.Context) (*wire.Location, message.Properties,
 		return l, p, nil
 	}
 	t.mu.Unlock()
-	if t.r.up == nil {
-		return nil, nil, errNoUpstream
-	}
-	sess, err := t.r.up.Session(ctx, t.scope)
+	sess, err := t.upstreamSession(ctx)
 	if err != nil {
-		return nil, nil, errUpstream
+		return nil, nil, err
 	}
 	req, err := sess.Open(ctx, &message.TrackStatus{Track: t.name}, nopRequestHandler{}, nil)
 	if err != nil {
@@ -786,7 +602,14 @@ func (nopRequestHandler) HandleMessage(*session.Request, message.Message) {}
 func (nopRequestHandler) HandleClose(*session.Request, error)             {}
 
 type upstreamSub struct {
-	t        *track
+	t      *track
+	target *session.Session
+	pushed bool
+
+	live    bool
+	fwd     bool
+	updates int
+
 	mu       sync.Mutex
 	req      *session.Request
 	done     *publishDone
@@ -801,17 +624,32 @@ func (u *upstreamSub) request() *session.Request {
 	return u.req
 }
 
+func (u *upstreamSub) session() *session.Session {
+	// a pushed source is a publisher's PUBLISH; a pulled one subscribes to target, or to the origin when it is nil.
+	// live, fwd and updates are guarded by the track's lock
+	if u.pushed {
+		if req := u.request(); req != nil {
+			return req.Session()
+		}
+		return nil
+	}
+	return u.target
+}
+
 func (u *upstreamSub) open(forward bool) {
 	t := u.t
-	if t.r.up == nil {
-		t.upstreamEnded(u, errNoUpstream)
-		return
-	}
 	ctx := t.r.ctx
-	sess, err := t.r.up.Session(ctx, t.scope)
-	if err != nil {
-		t.upstreamEnded(u, errUpstream)
-		return
+	sess := u.target
+	if sess == nil {
+		if t.r.up == nil {
+			t.upstreamEnded(u, errNoUpstream)
+			return
+		}
+		var err error
+		if sess, err = t.r.up.Session(ctx, t.scope); err != nil {
+			t.upstreamEnded(u, errUpstream)
+			return
+		}
 	}
 	var p message.Params
 	p.SetForward(forward)
@@ -830,6 +668,12 @@ func (u *upstreamSub) open(forward bool) {
 	}
 	switch v := resp.(type) {
 	case *message.SubscribeOK:
+		if _, mandatory := v.TrackProperties.Mandatory(); mandatory {
+			// §3.7: the track is neither processed nor forwarded, and its subscribers are refused
+			req.Cancel(message.ResetCancelled)
+			t.upstreamEnded(u, errMandatory)
+			return
+		}
 		if !t.established(u, v, forward) {
 			req.Cancel(message.ResetCancelled)
 			return
@@ -860,9 +704,20 @@ func (u *upstreamSub) HandleMessage(_ *session.Request, m message.Message) {
 		u.mu.Lock()
 		u.done = &publishDone{code: v.Code, reason: v.Reason}
 		u.mu.Unlock()
+	case *message.PublishStateNotify:
+		// informative: the publisher's largest object and whether it has paused (§9.10)
+		t := u.t
+		t.mu.Lock()
+		if v.Params.Has(message.ParamLargestObject) {
+			t.raiseLargest(v.Params.LargestObject)
+		}
+		if v.Params.Has(message.ParamForward) && u.live {
+			u.fwd = v.Params.Forward
+		}
+		t.mu.Unlock()
 	case *message.RequestOK, *message.RequestError:
 		// an answer to a FORWARD update frees room for the next one
-		u.t.acked()
+		u.t.ackedSource(u)
 		go u.t.syncForward()
 	}
 }

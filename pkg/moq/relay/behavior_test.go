@@ -132,6 +132,7 @@ func newMetrics() *relay.Metrics {
 		DroppedObjects:      prometheus.NewCounterVec(prometheus.CounterOpts{Name: "d"}, []string{"reason"}),
 		FetchObjects:        prometheus.NewCounterVec(prometheus.CounterOpts{Name: "f"}, []string{"source"}),
 		LiveEdgeBytes:       prometheus.NewGauge(prometheus.GaugeOpts{Name: "l"}),
+		Publishers:          prometheus.NewGauge(prometheus.GaugeOpts{Name: "p"}),
 		Errors:              prometheus.NewCounterVec(prometheus.CounterOpts{Name: "e"}, []string{"class"}),
 	}
 }

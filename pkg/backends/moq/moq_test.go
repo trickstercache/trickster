@@ -498,3 +498,51 @@ func TestDialerSharesOneSession(t *testing.T) {
 		t.Errorf("object %q", got)
 	}
 }
+
+func TestAccessCommittedOnReload(t *testing.T) {
+	open := newBackendWith(t, "ingest", "", func(o *bo.Options) { o.MoQ.Publish.Enabled = true })
+	st := startListener(t, mo.NewListener(), open)
+	s, err := dial(t, st.addr, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publish := func(name string) message.Message {
+		t.Helper()
+		req, err := s.Open(context.Background(), &message.Publish{
+			Track:      message.FullTrackName{Namespace: wire.Namespace{[]byte("live")}, Name: []byte(name)},
+			TrackAlias: s.NewTrackAlias(),
+		}, nopHandler{}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), wait)
+		defer cancel()
+		m, err := req.Response(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	if _, ok := publish("cam1").(*message.RequestOK); !ok {
+		t.Fatal("a backend that accepts publishers takes a PUBLISH")
+	}
+	closed := newBackendWith(t, "ingest", "", func(o *bo.Options) { o.MoQ.Publish.Enabled = false })
+	if closed.Relay() != open.Relay() {
+		t.Fatal("a reload that changes only the access policy keeps the relay")
+	}
+	if _, ok := publish("cam2").(*message.RequestOK); !ok {
+		t.Error("the policy changes only when the reload commits")
+	}
+	RetireClients(backends.Backends{"ingest": closed})
+	if re, ok := publish("cam3").(*message.RequestError); !ok || re.Code != message.RequestNotSupported {
+		t.Errorf("the committed policy refuses publishers: %+v", re)
+	}
+
+	o := bo.New()
+	o.Name, o.Provider, o.ListenerNames = "badtokens", "moq", []string{"moq1"}
+	o.MoQ = mo.New()
+	o.MoQ.Authorization.Mode, o.MoQ.Authorization.TokenFile = mo.AuthorizationToken, "/nonexistent/tokens"
+	if _, err = NewClient("badtokens", o, nil, nil, nil, nil); err == nil {
+		t.Error("an unreadable token file fails the backend")
+	}
+}

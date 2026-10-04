@@ -174,12 +174,14 @@ func (sh *shared) shutdown() {
 	}
 }
 
-// RetireClients retires every relay the committed clients no longer use; each closes once its sessions end
+// RetireClients commits a configuration's clients: each relay they keep takes their publishing and authorization
+// policy, and every relay they no longer use is retired, closing once its sessions end
 func RetireClients(current backends.Backends) {
 	keep := make(map[*shared]struct{})
 	for _, c := range current {
 		if mc, ok := c.(*Client); ok && mc.sh != nil {
 			keep[mc.sh] = struct{}{}
+			mc.sh.relay.SetAccess(mc.access)
 		}
 	}
 	sharedMu.Lock()

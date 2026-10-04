@@ -35,6 +35,7 @@ func relayMetrics(backend string) *relay.Metrics {
 		DroppedObjects:      metrics.MoQDroppedObjects.MustCurryWith(l),
 		FetchObjects:        metrics.MoQFetchObjects.MustCurryWith(l),
 		LiveEdgeBytes:       metrics.MoQLiveEdgeBytes.WithLabelValues(backend),
+		Publishers:          metrics.MoQPublishers.WithLabelValues(backend),
 		Errors:              metrics.MoQErrors.MustCurryWith(l),
 	}
 }

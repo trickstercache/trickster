@@ -441,4 +441,44 @@ func TestPublishFromServer(t *testing.T) {
 	if d.Group != 2 || string(d.Payload) != "late" {
 		t.Errorf("datagram %+v", d)
 	}
+	// the publisher finishes its PUBLISH with PUBLISH_DONE and a FIN, after which the subscriber closes its half
+	if err = pub.Send(&message.PublishDone{Code: message.DoneTrackEnded, StreamCount: pub.StreamCount()}); err != nil {
+		t.Fatal(err)
+	}
+	if err = pub.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	if err = recv(t, ch.closes, "the subscriber's end"); err != nil {
+		t.Errorf("a finished PUBLISH ends cleanly: %v", err)
+	}
+	if err = recv(t, sh.closes, "the publisher's end"); err != nil {
+		t.Errorf("a finished PUBLISH ends cleanly: %v", err)
+	}
+}
+
+func TestPublishEndedWithoutDone(t *testing.T) {
+	sh, ch := newRecorder(), newRecorder()
+	ch.onRequest = func(r *session.Request) {
+		if err := r.Send(&message.RequestOK{}); err != nil {
+			t.Error(err)
+		}
+	}
+	_, server := pair(t, sh, ch, pairOpts{})
+	pub, err := server.Open(context.Background(), &message.Publish{
+		Track:      track("cam", "live"),
+		TrackAlias: server.NewTrackAlias(),
+	}, sh, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pub.Response(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// §6.4.2.2: a FIN before the publisher's PUBLISH_DONE fails the subscription
+	if err = pub.CloseSend(); err != nil {
+		t.Fatal(err)
+	}
+	if err = recv(t, ch.closes, "the subscriber's end"); !errors.Is(err, session.ErrNoPublishDone) {
+		t.Errorf("got %v", err)
+	}
 }

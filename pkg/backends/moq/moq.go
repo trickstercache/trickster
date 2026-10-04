@@ -58,8 +58,9 @@ var errNoOrigin = errors.New("moq backend has no origin to probe")
 // Client implements the MoQ backend provider
 type Client struct {
 	backends.Backend
-	sh    *shared
-	scope relay.Scope
+	sh     *shared
+	scope  relay.Scope
+	access relay.Access
 }
 
 var (
@@ -87,6 +88,9 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 			return cl, err
 		}
 		cl.scope = relay.Scope{Authority: origin.Host, Path: origin.Path}
+	}
+	if cl.access, err = accessFor(name, m); err != nil {
+		return cl, err
 	}
 	sh, err := sharedFor(name, relayKey(o), func() (*shared, error) {
 		sh := &shared{}
@@ -118,6 +122,8 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 			MaxGapFetches: m.Upstream.MaxGapFetches, ReconnectBackoff: time.Duration(m.Upstream.ReconnectBackoff),
 			Metrics: relayMetrics(name),
 		}, up, sh)
+		// a relay that outlives a reload takes the new policy when the reload commits, in RetireClients
+		sh.relay.SetAccess(cl.access)
 		return sh, nil
 	})
 	if err != nil {
@@ -126,6 +132,28 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 	sh.cache.Store(cl)
 	cl.sh = sh
 	return cl, nil
+}
+
+func accessFor(backend string, m *mo.Options) (relay.Access, error) {
+	var a relay.Access
+	if p := m.Publish; p != nil {
+		a.Publish, a.MaxPublishersPerTrack = p.Enabled, p.MaxPublishersPerTrack
+		for _, s := range p.Namespaces {
+			ns, err := mo.ParseNamespace(s)
+			if err != nil {
+				return a, err
+			}
+			a.Namespaces = append(a.Namespaces, ns)
+		}
+	}
+	if az := m.Authorization; az != nil && az.Mode == mo.AuthorizationToken {
+		tf, err := newTokenFile(backend, az.TokenFile)
+		if err != nil {
+			return a, err
+		}
+		a.Authorizer = tf
+	}
+	return a, nil
 }
 
 // Relay returns the relay serving the backend's sessions

@@ -253,7 +253,7 @@ func (j *fetchJob) gapEnd(g gapRange) wire.Location {
 
 func (j *fetchJob) fetchGap(ctx context.Context, g gapRange) error {
 	end := j.gapEnd(g)
-	if j.gaps >= j.t.r.opts.MaxGapFetches || j.t.r.up == nil {
+	if j.gaps >= j.t.r.opts.MaxGapFetches || !j.t.hasUpstream() {
 		return j.marker(message.RangeEndUnknown, end)
 	}
 	if j.budget <= 0 || !time.Now().Before(j.deadline) {
@@ -296,7 +296,7 @@ func (j *fetchJob) gapFailed(ctx context.Context, end wire.Location) error {
 }
 
 func (j *fetchJob) openGap(ctx context.Context, g gapRange, src *gapStream) (*session.Request, error) {
-	sess, err := j.t.r.up.Session(ctx, j.t.scope)
+	sess, err := j.t.upstreamSession(ctx)
 	if err != nil {
 		return nil, err
 	}

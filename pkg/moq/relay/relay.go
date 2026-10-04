@@ -40,6 +40,7 @@ const (
 	defaultMaxObjectSize    = 64 << 20
 	defaultMaxGapFetches    = 16
 	defaultReconnectBackoff = time.Second
+	defaultMaxRendezvous    = 30 * time.Second
 	reconnectAttempts       = 5
 	spillQueueLen           = 256
 	finishWait              = 2 * time.Second
@@ -84,6 +85,8 @@ type Options struct {
 	MaxGapFetches int
 	// ReconnectBackoff is the first wait before re-subscribing upstream after an upstream subscription is lost
 	ReconnectBackoff time.Duration
+	// MaxRendezvous caps how long a SUBSCRIBE waits for a publisher, whatever its RENDEZVOUS_TIMEOUT
+	MaxRendezvous time.Duration
 	// Metrics receives the relay's measurements; nil records none
 	Metrics *Metrics
 }
@@ -113,6 +116,9 @@ func (o Options) withDefaults() Options {
 	if o.ReconnectBackoff <= 0 {
 		o.ReconnectBackoff = defaultReconnectBackoff
 	}
+	if o.MaxRendezvous <= 0 {
+		o.MaxRendezvous = defaultMaxRendezvous
+	}
 	return o
 }
 
@@ -135,6 +141,9 @@ type Relay struct {
 	evictCh chan struct{}
 	spillCh chan spillJob
 	wg      sync.WaitGroup
+
+	acc atomic.Pointer[Access]
+	ns  namespaces
 }
 
 // New returns a relay whose tracks come from up and spill to the cache c resolves; up may be nil for a relay

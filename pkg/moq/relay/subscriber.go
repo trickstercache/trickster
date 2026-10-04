@@ -61,20 +61,28 @@ type subscriber struct {
 	release sync.Once
 }
 
-func newSubscriber(t *track, req *session.Request, m *message.Subscribe) *subscriber {
-	p := &m.Params
+func newSubscriber(t *track, req *session.Request, p *message.Params) *subscriber {
+	// a subscription the relay opens with PUBLISH has no request until the PUBLISH is sent; see bind
 	s := &subscriber{
-		t: t, req: req, ctx: req.Context(), filter: p.LocationFilter, ready: make(chan struct{}),
+		t: t, req: req, filter: p.LocationFilter, ready: make(chan struct{}),
 		rng: newRanges(p.RangeFilters), prio: p.SubscriberPriorityOr(message.DefaultPublisherPriority),
 		objTimeout: millis(p.ObjectDeliveryTimeout),
 		sgTimeout:  millis(p.SubgroupDeliveryTimeout),
 		writers:    make(map[*writer]struct{}),
+	}
+	if req != nil {
+		s.ctx = req.Context()
 	}
 	if p.Has(message.ParamGroupOrder) {
 		s.order = p.GroupOrder
 	}
 	s.forward.Store(p.ForwardOr(true))
 	return s
+}
+
+func (s *subscriber) bind(req *session.Request) {
+	// set before the subscription activates, after which writers and updates read it without a lock
+	s.req, s.ctx = req, req.Context()
 }
 
 type subFilters struct {
@@ -102,21 +110,18 @@ func (s *subscriber) refuse(code message.RequestCode, reason string) {
 	s.releaseTrack()
 }
 
-func (s *subscriber) activate() {
-	// the track's upstream is established; the subscriber registers and its SUBSCRIBE is answered
+func (s *subscriber) register() (*wire.Location, message.Properties, message.RequestCode, string) {
+	// the track has a source; the subscriber joins it and forwards what arrives from now on
 	t := s.t
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.malformed {
-		t.mu.Unlock()
-		s.refuse(message.RequestMalformedTrack, "malformed track")
-		return
+		return nil, nil, message.RequestMalformedTrack, "malformed track"
 	}
 	largest := t.largestLocked()
 	w, ok := newWindow(s.filter, largest)
 	if !ok {
-		t.mu.Unlock()
-		s.refuse(message.RequestInvalidRange, "location filter overflows")
-		return
+		return nil, nil, message.RequestInvalidRange, "location filter overflows"
 	}
 	props := t.props
 	s.mu.Lock()
@@ -128,7 +133,44 @@ func (s *subscriber) activate() {
 	s.mu.Unlock()
 	t.addSubscriber(s)
 	t.startOpenRunsLocked(s)
-	t.mu.Unlock()
+	return largest, props, 0, ""
+}
+
+func (s *subscriber) markActive() []*message.RequestUpdate {
+	// returns the updates that arrived while the subscription was pending, for the caller to apply
+	s.mu.Lock()
+	s.state.Store(uint32(subActive))
+	pending := s.pending
+	s.pending = nil
+	s.mu.Unlock()
+	close(s.ready)
+	s.t.r.m.subscriptions(directionDownstream, 1)
+	return pending
+}
+
+func (s *subscriber) activatePublished() {
+	// a subscription the relay opened with PUBLISH, which carried what a SUBSCRIBE_OK would (§9.8)
+	if subState(s.state.Load()) == subDone {
+		return
+	}
+	if _, _, code, _ := s.register(); code != 0 {
+		s.end(message.ResetCancelled)
+		return
+	}
+	go s.t.syncForward()
+	for _, u := range s.markActive() {
+		s.applyUpdate(u)
+	}
+}
+
+func (s *subscriber) activate() {
+	// the track's upstream is established; the subscriber registers and its SUBSCRIBE is answered
+	t := s.t
+	largest, props, code, reason := s.register()
+	if code != 0 {
+		s.refuse(code, reason)
+		return
+	}
 	go t.syncForward()
 
 	ok2 := &message.SubscribeOK{TrackAlias: s.req.Session().NewTrackAlias()}
@@ -142,14 +184,8 @@ func (s *subscriber) activate() {
 		s.end(message.ResetCancelled)
 		return
 	}
-	s.mu.Lock()
-	s.state.Store(uint32(subActive))
-	pending := s.pending
-	s.pending = nil
-	s.mu.Unlock()
-	close(s.ready)
+	pending := s.markActive()
 	t.r.m.request(kindSubscribe, resultOK)
-	t.r.m.subscriptions(directionDownstream, 1)
 	if m, isSub := s.req.Message().(*message.Subscribe); isSub && m.Params.Fill != nil && s.forward.Load() {
 		s.startFill(s.req.RequestID(), m.Params.Fill, largest)
 	}

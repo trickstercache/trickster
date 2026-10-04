@@ -260,3 +260,38 @@ func TestSignal(t *testing.T) {
 		t.Error("notify wakes waiters")
 	}
 }
+
+func TestNamespaceCounting(t *testing.T) {
+	r := New(Options{}, nil, nil)
+	defer r.Close()
+	live := wire.Namespace{[]byte("live")}
+	a := wire.Namespace{[]byte("live"), []byte("a")}
+	// a listener marked running queues its events without sending them, so they can be read here
+	l := &nsListener{prefix: live, running: true}
+	r.addNamespaceListener(l)
+	p1 := &nsPublisher{prefix: a, key: namespaceKey(a)}
+	p2 := &nsPublisher{prefix: a, key: namespaceKey(a)}
+	r.addNamespacePublisher(p1)
+	r.addNamespacePublisher(p2)
+	r.removeNamespacePublisher(p1)
+	if len(l.events) != 1 || l.events[0].done {
+		t.Fatalf("a namespace two sessions publish is reported once and stays: %+v", l.events)
+	}
+	r.removeNamespacePublisher(p2)
+	r.removeNamespacePublisher(p2)
+	if len(l.events) != 2 || !l.events[1].done || !l.events[1].suffix.Equal(a[1:]) {
+		t.Fatalf("the last withdrawal withdraws it, once: %+v", l.events)
+	}
+	late := &nsListener{prefix: live, running: true}
+	r.addNamespacePublisher(p1)
+	r.addNamespacePublisher(p2)
+	r.addNamespaceListener(late)
+	if len(late.events) != 1 {
+		t.Errorf("a listener added later is told each known namespace once: %+v", late.events)
+	}
+	r.removeNamespaceListener(late)
+	r.removeNamespacePublisher(p1)
+	if len(late.events) != 0 {
+		t.Error("a removed listener hears nothing more")
+	}
+}

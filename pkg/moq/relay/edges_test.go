@@ -330,6 +330,8 @@ func TestSpillAfterOpenRunEnds(t *testing.T) {
 	}
 	eventually(t, "the open group's object", func() bool { return r.count() == 1 })
 	publishGroups(t, h, r, 1, 2)
+	// spills are written in the background, so the closed group's is awaited before the open one is judged
+	eventually(t, "the closed group to spill", func() bool { return stores.Load() >= 1 })
 	if stores.Load() != 1 {
 		t.Errorf("only the closed group spills while the open one runs, got %d", stores.Load())
 	}

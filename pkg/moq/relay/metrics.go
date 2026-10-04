@@ -20,10 +20,14 @@ import "github.com/prometheus/client_golang/prometheus"
 
 // Label values the relay records with
 const (
-	kindSubscribe   = "subscribe"
-	kindFetch       = "fetch"
-	kindTrackStatus = "track_status"
-	kindOther       = "other"
+	kindSubscribe          = "subscribe"
+	kindFetch              = "fetch"
+	kindTrackStatus        = "track_status"
+	kindPublish            = "publish"
+	kindPublishNamespace   = "publish_namespace"
+	kindSubscribeNamespace = "subscribe_namespace"
+	kindSubscribeTracks    = "subscribe_tracks"
+	kindOther              = "other"
 
 	resultOK      = "ok"
 	resultRefused = "refused"
@@ -67,6 +71,8 @@ type Metrics struct {
 	FetchObjects *prometheus.CounterVec
 	// LiveEdgeBytes gauges the bytes the live edge holds
 	LiveEdgeBytes prometheus.Gauge
+	// Publishers gauges the PUBLISH subscriptions publishers hold open to the relay
+	Publishers prometheus.Gauge
 	// Errors counts failures by class
 	Errors *prometheus.CounterVec
 }
@@ -127,6 +133,12 @@ func (ms *meters) request(kind, result string) {
 func (ms *meters) subscriptions(direction string, delta float64) {
 	if ms != nil {
 		ms.m.ActiveSubscriptions.WithLabelValues(direction).Add(delta)
+	}
+}
+
+func (ms *meters) publishers(delta float64) {
+	if ms != nil && ms.m.Publishers != nil {
+		ms.m.Publishers.Add(delta)
 	}
 }
 

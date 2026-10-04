@@ -1410,6 +1410,7 @@ func init() {
 	prometheus.MustRegister(MoQDroppedObjects)
 	prometheus.MustRegister(MoQFetchObjects)
 	prometheus.MustRegister(MoQLiveEdgeBytes)
+	prometheus.MustRegister(MoQPublishers)
 	prometheus.MustRegister(MoQErrors)
 	prometheus.MustRegister(GraphiteResolutionLookups)
 	prometheus.MustRegister(GraphiteProbes)
@@ -1480,6 +1481,7 @@ var backendSeriesVecs = []partialDeleter{
 	MoQDroppedObjects,
 	MoQFetchObjects,
 	MoQLiveEdgeBytes,
+	MoQPublishers,
 	MoQErrors,
 	MySQLRouteSelections,
 	MySQLCommandLatency,
@@ -1591,6 +1593,17 @@ var (
 			Subsystem: moqSubsystem,
 			Name:      "live_edge_bytes",
 			Help:      "Current bytes held in a MoQ backend's in-memory live edge.",
+		},
+		[]string{keys.Backend_Name},
+	)
+
+	// MoQPublishers is the current count of publishers' PUBLISH subscriptions to a backend.
+	MoQPublishers = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: metricNamespace,
+			Subsystem: moqSubsystem,
+			Name:      "publishers_active",
+			Help:      "Current PUBLISH subscriptions publishers hold open to a MoQ backend.",
 		},
 		[]string{keys.Backend_Name},
 	)
