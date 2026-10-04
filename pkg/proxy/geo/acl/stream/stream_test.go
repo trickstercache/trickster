@@ -57,11 +57,14 @@ func TestForBackend(t *testing.T) {
 	require.Equal(t, l4.Allow, ForBackend(compile(t, options.ActionCount)).Peer(l4.Flow{Client: clientFrance}))
 }
 
-func TestForHosts(t *testing.T) {
-	hosts := l4.NewHostTable[*acl.ACL]()
-	require.NoError(t, hosts.Add("secure.example.com", compile(t, 0)))
-	require.NoError(t, hosts.Add("", nil))
-	a := ForHosts(hosts)
+type upstream struct{ l4.Upstream } // a route the table can hold, never dialed
+
+func TestForRoutes(t *testing.T) {
+	secure, other := &upstream{}, &upstream{}
+	table := l4.NewTable()
+	require.NoError(t, table.Add("secure.example.com", secure))
+	require.NoError(t, table.Add("", other))
+	a := ForRoutes(table, map[l4.Upstream]*acl.ACL{secure: compile(t, 0)})
 	require.Equal(t, l4.Allow, a.Peer(l4.Flow{Client: clientFrance}), "a tls flow is judged once its name is known")
 	require.Equal(t, l4.Reject, a.Flow(l4.Flow{Client: clientFrance, ServerName: "Secure.Example.com."}))
 	require.Equal(t, l4.Allow, a.Flow(l4.Flow{Client: clientUS, ServerName: "secure.example.com"}))

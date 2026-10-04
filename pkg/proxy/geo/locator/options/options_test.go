@@ -98,3 +98,15 @@ func TestValidate(t *testing.T) {
 	}
 	require.ErrorContains(t, (&Options{Name: testName, Provider: "x"}).Validate(), providers.Names())
 }
+
+func TestLookupReadsAddresses(t *testing.T) {
+	l := Lookup{
+		"feed": {Provider: providers.Geofeed},
+		"db":   {Provider: providers.MMDB},
+		"cdn":  {Provider: providers.Header},
+	}
+	require.True(t, l.ReadsAddresses("feed"))
+	require.True(t, l.ReadsAddresses("db"))
+	require.False(t, l.ReadsAddresses("cdn"))
+	require.True(t, l.ReadsAddresses("undefined"), "an undefined name is left to the check that names it")
+}

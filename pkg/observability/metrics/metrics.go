@@ -599,9 +599,9 @@ var (
 			Namespace: metricNamespace,
 			Subsystem: geoSubsystem,
 			Name:      "acl_decisions_total",
-			Help:      "Count of geo ACL decisions, by plane and result.",
+			Help:      "Count of geo ACL decisions, by plane and verdict.",
 		},
-		[]string{keys.Geo_ACL, keys.Plane, keys.Result},
+		[]string{keys.Geo_ACL, keys.Plane, keys.Verdict},
 	)
 
 	// GeoLocatorLookups counts geo locator lookups by whether they placed the client

@@ -63,18 +63,9 @@ func Geo(c *config.Config) error {
 
 func geoListeners(c *config.Config, nativeTargets map[string]bool) error {
 	// Listeners has derived which listeners serve each backend by now
-	dialed := streamDialed(c)
 	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
 		b := c.Backends[name]
-		if b == nil {
-			continue
-		}
-		if b.GeoACLOptions != nil && dialed[name] {
-			return fmt.Errorf("backend %q: geo_acl_name is not supported on a backend or template that a tcp, tls "+
-				"or udp listener's alb relays to, since the alb dials it without judging it; set it on the alb, or "+
-				"on this backend's paths to judge its HTTP requests", name)
-		}
-		if b.IsTemplate {
+		if b == nil || b.IsTemplate {
 			continue
 		}
 		if b.GeoACLOptions != nil {
@@ -83,7 +74,7 @@ func geoListeners(c *config.Config, nativeTargets map[string]bool) error {
 					"listener's alb sends sessions to, since a session is judged by the alb's geo ACL before it is "+
 					"routed; set it on the alb, or on this backend's paths to judge its HTTP requests", name)
 			}
-			if !geoReadsAddresses(c, b.GeoACLOptions) &&
+			if !c.GeoLocators.ReadsAddresses(b.GeoACLOptions.LocatorName()) &&
 				(len(b.NativeListenerProtocols) > 0 || servesStreamListener(c, b)) {
 				return fmt.Errorf("backend %q: geo ACL %q uses a %s geo locator, which judges HTTP requests only, "+
 					"but the backend serves a native protocol or stream listener", name, b.GeoACLName, providers.Header)
@@ -101,7 +92,7 @@ func warnGeoListeners(c *config.Config, b *bo.Options) {
 	}
 	readsHeaders := false
 	for _, o := range acls {
-		readsHeaders = readsHeaders || !geoReadsAddresses(c, o)
+		readsHeaders = readsHeaders || !c.GeoLocators.ReadsAddresses(o.LocatorName())
 	}
 	for _, ln := range b.ListenerNames {
 		lo := c.Listeners[ln]
@@ -128,41 +119,6 @@ func gatingACLs(b *bo.Options) []*geoaclopts.Options {
 	for _, p := range b.Paths {
 		if p != nil && p.GeoACLOptions != nil && p.GeoACLName != reserved.ReferenceNone {
 			out = append(out, p.GeoACLOptions)
-		}
-	}
-	return out
-}
-
-func geoReadsAddresses(c *config.Config, o *geoaclopts.Options) bool {
-	l := c.GeoLocators[o.LocatorName()]
-	return l == nil || providers.ReadsAddresses(l.Provider)
-}
-
-func streamDialed(c *config.Config) map[string]bool {
-	// the pool members and discovery templates of an alb on a stream listener, and of any alb among them
-	out := make(map[string]bool)
-	var add func(b *bo.Options)
-	add = func(b *bo.Options) {
-		if b == nil || b.ALBOptions == nil {
-			return
-		}
-		names := make([]string, 0, len(b.ALBOptions.Pool)+1)
-		for _, m := range b.ALBOptions.Pool {
-			names = append(names, m.Name)
-		}
-		if d := b.ALBOptions.Discovery; d != nil && d.TemplateBackend != "" {
-			names = append(names, d.TemplateBackend)
-		}
-		for _, name := range names {
-			if !out[name] {
-				out[name] = true
-				add(c.Backends[name])
-			}
-		}
-	}
-	for _, b := range c.Backends {
-		if b != nil && !b.IsTemplate && servesStreamListener(c, b) {
-			add(b)
 		}
 	}
 	return out

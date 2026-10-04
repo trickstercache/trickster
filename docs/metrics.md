@@ -109,7 +109,8 @@ The following metrics are available for polling with any Trickster configuration
   * labels:
     * `geo_acl` - the name of the geo ACL
     * `plane` - `http`, `native` or `stream`: the kind of listener the client was judged on
-    * `result` - `allowed`, `denied`, `counted` (denied, but the geo ACL only counts) or `exempt` (allowed with no lookup)
+    * `verdict` - `allow`, `deny`, `count` (denied, but the geo ACL only counts) or `exempt` (allowed with no lookup), as
+      `trickster_ip_acl_decisions_total` names its verdicts
 
 * `trickster_geo_locator_lookups_total` (Counter) - The number of lookups a geo locator answered. A rising rate of `not_found` can mean the listener's `trusted_proxies` is wrong, so every client resolves to a proxy's private address.
   * labels:

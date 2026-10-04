@@ -137,21 +137,6 @@ func TestFilesFirstLoadFails(t *testing.T) {
 	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
-func TestMasks(t *testing.T) {
-	require.Equal(t, uint32(0), v4Mask(0))
-	require.Equal(t, uint32(0xffffff00), v4Mask(24))
-	for bits, want := range map[int][2]uint64{
-		0:   {0, 0},
-		32:  {0xffffffff00000000, 0},
-		64:  {^uint64(0), 0},
-		96:  {^uint64(0), 0xffffffff00000000},
-		128: {^uint64(0), ^uint64(0)},
-	} {
-		hi, lo := v6Mask(bits)
-		require.Equal(t, want, [2]uint64{hi, lo}, bits)
-	}
-}
-
 func BenchmarkLocate(b *testing.B) {
 	for _, n := range []int{10, 300000} {
 		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {

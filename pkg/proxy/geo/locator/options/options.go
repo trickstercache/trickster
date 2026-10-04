@@ -160,6 +160,13 @@ func (l Lookup) Initialize() {
 	}
 }
 
+// ReadsAddresses reports whether the named locator places a bare address, as stream and native listeners need;
+// an undefined name reports true, its error being another check's
+func (l Lookup) ReadsAddresses(name string) bool {
+	o := l[name]
+	return o == nil || providers.ReadsAddresses(o.Provider)
+}
+
 // Validate validates each Options in the Lookup, naming it by its key first; a nil entry is skipped
 func (l Lookup) Validate() error {
 	for name, o := range l {

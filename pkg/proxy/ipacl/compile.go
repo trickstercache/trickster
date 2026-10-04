@@ -17,29 +17,15 @@
 package ipacl
 
 import (
-	"cmp"
 	"fmt"
 	"net/netip"
-	"slices"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/prefixtable"
 )
 
-// Compile builds an immutable list from o.
-//
-// Files are read here. The returned warnings are for the loader to log;
-// Compile does not log. On error the list is nil. Each warning is one line:
-//
-//	duplicate entry <prefix> (<where>)
-//	<prefix> is listed as both allow and deny; deny wins (<where>)
-//	unreachable rule "<input>" for <prefix> (<where>)
-//	no entries and default deny; every address is denied
-//
-// The list name is included when Name is set. longest keeps every prefix.
-// The longest match wins, and a deny wins when the same prefix is both
-// allowed and denied. ordered is first match wins. Two CIDRs are nested or
-// disjoint, never partially overlapping, so that is the same lookup once
-// every rule an earlier rule covers completely is dropped. Check does not
-// know which mode produced the list.
+// Compile builds an immutable list from o, reading its files, and returns warnings to log. A deny beats an
+// equal allow, and an ordered rule that an earlier one covers is dropped
 func Compile(o Options) (*List, []string, error) {
 	o.Match = strings.TrimSpace(o.Match)
 	o.Default = strings.TrimSpace(o.Default)
@@ -143,8 +129,8 @@ func validate(o Options) error {
 	return nil
 }
 
-// ruleValue reports the single field a rule sets. n is how many were set.
 func ruleValue(r Rule) (kind, value string, n int) {
+	// the single field a rule sets, and n, how many it sets
 	type field struct{ kind, value string }
 	for _, f := range []field{
 		{"allow", strings.TrimSpace(r.Allow)},
@@ -168,7 +154,7 @@ type compiler struct {
 	action   Action
 	source   Source
 	status   int
-	v4, v6   familyBuilder
+	prefixes prefixtable.Builder[Verdict]
 	warnings []string
 	entries  int
 }
@@ -256,104 +242,36 @@ func (c *compiler) addEntry(raw string, v Verdict, origin string) error {
 }
 
 func (c *compiler) add(p netip.Prefix, v Verdict, raw, origin string) {
-	b := c.builder(p)
 	if c.ordered {
-		// An earlier rule that contains p, including an equal prefix, already
-		// decided this address. Dropping p leaves first-match equal to a
-		// longest-prefix lookup over what remains.
-		if b.covers(p) {
+		// an earlier rule containing p, an equal prefix included, already decided its addresses; dropping p keeps
+		// first match equal to the longest-prefix lookup over what remains
+		if c.prefixes.Covers(p) {
 			c.warnings = append(c.warnings, fmt.Sprintf(
 				"%s: unreachable rule %q for %s (%s)", c.lead, raw, p, origin))
 			return
 		}
-		b.insert(p, v)
+		c.prefixes.Set(p, v)
 		return
 	}
-	dup, conflict := b.insert(p, v)
+	old, exists := c.prefixes.Set(p, v)
 	switch {
-	case dup:
+	case !exists:
+	case old == v:
 		c.warnings = append(c.warnings, fmt.Sprintf(
 			"%s: duplicate entry %s (%s)", c.lead, p, origin))
-	case conflict:
+	default:
+		c.prefixes.Set(p, Deny)
 		c.warnings = append(c.warnings, fmt.Sprintf(
 			"%s: %s is listed as both allow and deny; deny wins (%s)", c.lead, p, origin))
 	}
 }
 
-func (c *compiler) builder(p netip.Prefix) *familyBuilder {
-	if p.Addr().Is4() {
-		return &c.v4
-	}
-	return &c.v6
-}
-
 func (c *compiler) freeze() *List {
 	return &List{
-		v4:     c.v4.freeze(),
-		v6:     c.v6.freeze(),
-		def:    c.def,
-		action: c.action,
-		source: c.source,
-		status: c.status,
+		prefixes: c.prefixes.Table(),
+		def:      c.def,
+		action:   c.action,
+		source:   c.source,
+		status:   c.status,
 	}
-}
-
-// familyBuilder collects prefixes for one family. Its maps are not written
-// after freeze, which is what makes Check lock-free.
-type familyBuilder struct {
-	tables []lengthTable
-	index  map[int]int
-}
-
-func (b *familyBuilder) insert(p netip.Prefix, v Verdict) (dup, conflict bool) {
-	bits := p.Bits()
-	if b.index == nil {
-		b.index = make(map[int]int)
-	}
-	i, ok := b.index[bits]
-	if !ok {
-		i = len(b.tables)
-		b.index[bits] = i
-		b.tables = append(b.tables, lengthTable{
-			bits:   bits,
-			byAddr: make(map[netip.Addr]Verdict),
-		})
-	}
-	key := p.Addr()
-	old, exists := b.tables[i].byAddr[key]
-	if !exists {
-		b.tables[i].byAddr[key] = v
-		return false, false
-	}
-	if old == v {
-		return true, false
-	}
-	b.tables[i].byAddr[key] = Deny
-	return false, true
-}
-
-// covers reports whether an earlier prefix contains the whole of p.
-// A longer prefix cannot cover a shorter one, so only lengths of p or
-// less are consulted. The address is already the network address.
-func (b *familyBuilder) covers(p netip.Prefix) bool {
-	bits := p.Bits()
-	addr := p.Addr()
-	for i := range b.tables {
-		bl := b.tables[i].bits
-		if bl > bits {
-			continue
-		}
-		if _, ok := b.tables[i].byAddr[maskedAddr(addr, bl)]; ok {
-			return true
-		}
-	}
-	return false
-}
-
-func (b *familyBuilder) freeze() family {
-	tables := append([]lengthTable(nil), b.tables...)
-	slices.SortFunc(tables, func(a, c lengthTable) int {
-		return cmp.Compare(c.bits, a.bits)
-	})
-	return family{tables: tables}
 }

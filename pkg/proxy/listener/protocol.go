@@ -52,10 +52,9 @@ type ProtocolServer interface {
 	Serve(net.Listener) error
 }
 
-// acceptJudgesClientIP reports whether a client_ip list sees the socket peer.
-// A native listener without PROXY protocol has no other address. HTTP resolves
-// the client in middleware, and stream tcp and tls resolve it from Flow.Client.
 func acceptJudgesClientIP(protocol string, proxy *ProxyProtocolOptions) bool {
+	// a native listener without PROXY protocol has no other address; HTTP resolves the client in middleware, and stream
+	// tcp and tls from Flow.Client
 	if proxy != nil && proxy.Enabled {
 		return false
 	}

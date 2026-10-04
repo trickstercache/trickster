@@ -23,25 +23,21 @@ import (
 	"net/netip"
 	"os"
 	"strings"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/prefixtable"
 )
 
-// parseEntry parses one address, CIDR or the keyword all.
-//
-// Parsing follows clientip.ParseTrusted: a CIDR is tried first and masked,
-// otherwise a single address is a full-length prefix. IPv4-mapped IPv6 is
-// stored as IPv4, so an entry written either way matches the same addresses
-// Check sees after Unmap. all is both families. A v6 prefix that merely
-// contains mapped addresses, such as ::/0, stays v6: all is the way to name
-// both families, and Check has already turned mapped addresses into v4.
 func parseEntry(raw string) ([]netip.Prefix, error) {
-	if raw == entryAll {
+	// a CIDR is tried first and masked, then a lone address as a full-length prefix; a mapped entry is stored as
+	// IPv4, and all names both families
+	if raw == EntryAll {
 		return []netip.Prefix{
 			netip.PrefixFrom(netip.IPv4Unspecified(), 0),
 			netip.PrefixFrom(netip.IPv6Unspecified(), 0),
 		}, nil
 	}
 	if p, err := netip.ParsePrefix(raw); err == nil {
-		return normalizePrefix(p), nil
+		return []netip.Prefix{prefixtable.Canonical(p)}, nil
 	}
 	addr, err := netip.ParseAddr(raw)
 	if err != nil {
@@ -53,31 +49,11 @@ func parseEntry(raw string) ([]netip.Prefix, error) {
 	return []netip.Prefix{netip.PrefixFrom(addr, addr.BitLen())}, nil
 }
 
-// normalizePrefix masks p and rewrites an IPv4-mapped prefix of at least
-// /96 as the IPv4 prefix those bits name. ::ffff:10.0.0.0/104 is 10.0.0.0/8,
-// and ::ffff:0:0/96 is every IPv4 address. A shorter prefix does not include
-// the mapped marker in its network, so masking leaves an ordinary v6 prefix.
-func normalizePrefix(p netip.Prefix) []netip.Prefix {
-	p = p.Masked()
-	addr := p.Addr()
-	if addr.Is4() {
-		return []netip.Prefix{p}
-	}
-	const mappedBits = 96
-	if addr.Is4In6() && p.Bits() >= mappedBits {
-		v4 := netip.PrefixFrom(addr.Unmap(), p.Bits()-mappedBits).Masked()
-		return []netip.Prefix{v4}
-	}
-	return []netip.Prefix{p}
-}
-
 type fileLine struct {
 	n    int
 	text string
 }
 
-// loadFile reads an allow or deny file. Blank lines and comment lines are
-// skipped. A missing file, a directory or an unreadable file is an error.
 func loadFile(path string) ([]fileLine, error) {
 	// #nosec G304 -- operator-configured ACL file, read when the list is compiled
 	f, err := os.Open(path)
@@ -95,11 +71,9 @@ func loadFile(path string) ([]fileLine, error) {
 	return lines, nil
 }
 
-// parseLines returns one entry per line, numbered from 1 so an error can
-// name the line. A blank line, or a line whose first non-space character
-// is #, is skipped. A # later on the line is part of the entry: the file
-// format is one address or CIDR per line, not an inline comment.
 func parseLines(r io.Reader) ([]fileLine, error) {
+	// lines are numbered from 1 for errors; a # opens a comment only as a line's first non-space character, since an
+	// entry is one address or CIDR
 	sc := bufio.NewScanner(r)
 	var out []fileLine
 	n := 0

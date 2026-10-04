@@ -76,15 +76,13 @@ type ConfiguredNames struct {
 	Tracers        sets.Set[string]
 	Rewriters      sets.Set[string]
 	Authenticators sets.Set[string]
-	// GeoACLs are every geo ACL; StreamGeoACLs are those whose locator places a bare address, which
-	// a stream route needs
+	// GeoACLs are the geo ACLs a class's parameters may name, which is all of them; StreamGeoACLs are those
+	// a stream route may use, whose locator places a bare address
 	GeoACLs       sets.Set[string]
 	StreamGeoACLs sets.Set[string]
-	// IPACLs are the access lists generated backends may name. A peer list or a
-	// drop list is left out: a generated backend cannot use either.
-	IPACLs sets.Set[string]
-	// DefinedIPACLs is every configured access list, eligible or not. A class
-	// parameter uses it to tell a peer or drop list from a name that is missing.
+	// IPACLs are the access lists a class's parameters may name: client_ip, reject ones; DefinedIPACLs are
+	// all of them, so naming another is called ineligible, not missing
+	IPACLs        sets.Set[string]
 	DefinedIPACLs sets.Set[string]
 }
 

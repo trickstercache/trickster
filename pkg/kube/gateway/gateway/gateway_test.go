@@ -615,9 +615,8 @@ func TestTranslateClassParameters(t *testing.T) {
 	require.Equal(t, p.Name, model.Routes[0].Rules[0].Policy)
 }
 
-// aclKnown is the name sets a class parameter is checked against: office may be
-// used, edge and wall exist and may not.
 func aclKnown() ir.ConfiguredNames {
+	// office may be used; edge and wall exist and may not
 	n := known()
 	n.IPACLs = sets.New([]string{"office"})
 	n.DefinedIPACLs = sets.New([]string{"office", "edge", "wall"})
@@ -904,9 +903,8 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	}
 }
 
-// requireResolvedOfficeACL reports that validation compiled the file's office
-// list onto at least one generated backend.
 func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
+	// validation compiled the file's office list onto at least one generated backend
 	t.Helper()
 	for _, b := range conf.Backends {
 		if b != nil && b.IPACLName == "office" && b.IPACL != nil {

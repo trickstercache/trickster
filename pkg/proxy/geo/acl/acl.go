@@ -72,7 +72,7 @@ const (
 	resultCount
 )
 
-var resultNames = [resultCount]string{"allowed", "denied", "counted", "exempt"}
+var resultNames = [resultCount]string{"allow", "deny", "count", "exempt"} // as the decision metric's verdict label spells them
 
 // String returns the result's name
 func (r Result) String() string {
@@ -308,8 +308,8 @@ func (a *ACL) decide(plane Plane, addr netip.Addr, loc geo.Location) Result {
 		}
 		if logger.DebugEnabled() {
 			logger.Debug("geo ACL denied a client", logging.Pairs{
-				keys.GeoACL: a.name, keys.Plane: planeNames[plane], keys.ClientIP: addr.String(),
-				keys.Location: loc.String(), keys.Result: resultNames[result],
+				keys.GeoACL: a.name, keys.Plane: planeNames[plane], keys.Address: addr.String(),
+				keys.Location: loc.String(), keys.Verdict: resultNames[result],
 			})
 		}
 	}

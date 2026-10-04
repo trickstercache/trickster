@@ -438,7 +438,8 @@ data:
     #     "502": 3s
 
     # # IP access lists. Attach one with ip_acl_name on a listener, backend, or path.
-    # # See docs/ip-acl.md. Files are read when the configuration is loaded or reloaded.
+    # # See docs/ip-acl.md. Files are read when the configuration is loaded or reloaded; a reload is skipped while no
+    # # configuration file has changed, so touch a configuration file after editing only a list file.
     # ip_acls:
     #   office:
     #     # match is longest (default) or ordered. longest uses the longest matching

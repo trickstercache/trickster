@@ -42,6 +42,8 @@ const (
 	exceptionName                = "DB::Exception"
 )
 
+var errQueryAborted = errors.New("the query's route aborted it, which ends the session")
+
 // Handler translates native requests into the backend's HTTP handler pipeline.
 type Handler struct {
 	// QueryHandler is the HTTP handler that processes ClickHouse queries
@@ -207,7 +209,9 @@ func (h *Handler) handleQuery(
 	req.Header.Set(headers.NameContentType, "text/plain")
 
 	rec := httptest.NewRecorder()
-	h.QueryHandler.ServeHTTP(rec, req)
+	if !serveQuery(h.QueryHandler, rec, req) {
+		return errQueryAborted
+	}
 	resp := rec.Result()
 
 	if resp.StatusCode != http.StatusOK {
@@ -234,6 +238,21 @@ func (h *Handler) handleQuery(
 		return err
 	}
 	return bw.Flush()
+}
+
+func serveQuery(h http.Handler, w http.ResponseWriter, r *http.Request) (served bool) {
+	// a handler aborting its request, as an access list's drop does, ends the session the way net/http ends
+	// the connection; any other panic is not the bridge's to absorb
+	defer func() {
+		if p := recover(); p != nil {
+			if err, ok := p.(error); !ok || !errors.Is(err, http.ErrAbortHandler) {
+				panic(p)
+			}
+			served = false
+		}
+	}()
+	h.ServeHTTP(w, r)
+	return true
 }
 
 func writeQueryError(w *protoWriter, bw *bufio.Writer, err error) error {

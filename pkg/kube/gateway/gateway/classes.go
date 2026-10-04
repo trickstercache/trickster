@@ -263,11 +263,9 @@ func (t *translator) setKnown(dst *string, value string, known sets.Set[string],
 	return nil
 }
 
-// setIPACL accepts an access list a generated backend can use. A name that is
-// configured but peer or drop is ineligible, which is not the same failure as
-// a name the configuration does not define. A nil set contains nothing: it
-// does not accept every name.
 func (t *translator) setIPACL(dst *string, value string) error {
+	// a configured peer or drop list is ineligible, a different failure from an undefined name; a nil set holds
+	// nothing, so it accepts no name
 	if t.known.IPACLs.Contains(value) {
 		*dst = value
 		return nil

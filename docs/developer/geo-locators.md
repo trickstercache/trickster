@@ -44,7 +44,9 @@ type RequestLocator interface {
   request, a native session before authentication, a stream connection before it is relayed. A
   lookup must not block, and must not allocate. Native and stream listeners never ask a provider
   that could block; a provider that must call out to a network belongs behind a cache, on HTTP only,
-  and must say so through `providers.ReadsAddresses` or a rule like it.
+  and must say so through `providers.ReadsAddresses` or a rule like it. A provider that maps prefixes
+  to locations should build a `prefixtable.Table` (`pkg/util/prefixtable`), as `geofeed` and IP
+  access lists do.
 - **`Serves`** reports which of country, continent and subdivision the locator fills. Fix it with the
   first load: a geo ACL with subdivision entries refuses a locator that serves none when the
   configuration is applied, and a replacement that serves fewer fields must be refused, never loaded.

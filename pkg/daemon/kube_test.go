@@ -699,9 +699,8 @@ func compiledACL(t *testing.T, opts ipacl.Options) *ipacl.Options {
 }
 
 func TestKubeSupervisorResyncsOnIPACLEligibility(t *testing.T) {
-	// A running controller retranslates when the eligible set or the set of
-	// every configured list changes. A peer or drop list is defined and not
-	// eligible. A CIDR edit of a list that stays eligible is neither.
+	// a running controller retranslates when the eligible or the defined lists change: a peer or drop list is
+	// defined, not eligible, and a CIDR edit to an eligible one changes neither
 	f := install(t)
 	s, _ := newTestSupervisor(t)
 	apply := func(lists ipacl.Lookup) {

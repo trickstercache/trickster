@@ -380,13 +380,11 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 	return out
 }
 
-// streamConfig builds a stream listener's routing table from the backends mapped to it: a tls
-// listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend.
-// Each backend list is kept with the upstream added to that table, and the admission asks the
-// table again when it enforces the list, so the route and the list are one lookup.
 func streamConfig(conf *config.Config, desired desiredListener, clients backends.Backends) *l4.Config {
 	// a pool member carries the listener name too, but is reached through its pool
 	members := conf.Backends.PoolMembers()
+	// a tls listener routes by each backend's hosts, and a tcp or udp listener relays to its one backend; ACLs are
+	// kept by upstream, found with the relay's own lookup
 	table := l4.NewTable()
 	geo := newGeoStreamAdmission(desired.options.Protocol)
 	backendACL := make(map[l4.Upstream]streamacl.Attached)
@@ -406,11 +404,11 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		if o.IPACL != nil {
 			backendACL[up] = streamacl.Attached{List: o.IPACL, Name: o.IPACLName}
 		}
+		geo.add(o, up)
 		hosts := o.Hosts
 		if desired.options.Protocol != listenerconfig.ProtocolTLS || len(hosts) == 0 {
 			hosts = []string{""}
 		}
-		geo.add(o, hosts)
 		for _, h := range hosts {
 			if err := table.Add(h, up); err != nil {
 				// validation refused the duplicates, so this names a bug rather than a config
@@ -429,7 +427,7 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
 		Admission: l4.Chain(streamacl.New(desired.options.Protocol, streamacl.Attached{
 			List: desired.options.IPACL, Name: desired.options.IPACLName,
-		}, table, backendACL), geo.admission()),
+		}, table, backendACL), geo.admission(table)),
 	}
 }
 
@@ -504,9 +502,8 @@ func trustedProxies(options *listenerconfig.Options) clientip.Trusted {
 	return trusted
 }
 
-// acceptTimeIPACL reports listeners whose socket is opened by NewListener.
-// HTTP/3 and UDP have no TCP accept, so they do not use this list.
 func acceptTimeIPACL(desired desiredListener) bool {
+	// only a socket NewListener opens is judged at accept; HTTP/3 and udp have no TCP accept
 	if desired.http3 || desired.options == nil {
 		return false
 	}

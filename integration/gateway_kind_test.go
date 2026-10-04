@@ -209,9 +209,9 @@ func TestGatewayKind(t *testing.T) {
 	})
 }
 
-// TestGatewayIPACLKind serves acl.example.com through a second GatewayClass whose
-// parameters name deny-clients. The shared HTTP listener still serves shop.example.com.
 func TestGatewayIPACLKind(t *testing.T) {
+	// a second GatewayClass whose parameters name deny-clients serves acl.example.com, while the shared HTTP
+	// listener still serves shop.example.com
 	skipUnlessKind(t)
 	waitForTrickster(t, gatewayMetricsAddr)
 

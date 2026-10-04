@@ -34,6 +34,7 @@ import (
 	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed"
 	geofeedopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
@@ -83,13 +84,14 @@ func TestStreamGeoACLTCP(t *testing.T) {
 	applyListenerConfigs(conf, nil, nil, http.NotFoundHandler(), lm.NewRouter(), nil, clients, nil, group)
 	waitForListener(t, group, listenerKey("relay", listenerconfig.ProtocolTCP, false))
 
-	// a refused client sees a reset, and nothing is dialed for it
+	// a refused client sees a reset, which can beat the dial's return, and nothing is dialed for it
 	before := streamDenials(aclName)
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), time.Second)
-	require.NoError(t, err)
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	_, err = conn.Read(make([]byte, 1))
-	_ = conn.Close()
+	if err == nil {
+		_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+		_, err = conn.Read(make([]byte, 1))
+		_ = conn.Close()
+	}
 	require.True(t, errors.Is(err, syscall.ECONNRESET), "expected a reset, got %v", err)
 	require.Equal(t, before+1, streamDenials(aclName))
 	require.Zero(t, accepted.Load(), "a refused client was relayed")
@@ -165,4 +167,24 @@ func TestStreamGeoACLTLSByServerName(t *testing.T) {
 	conf.Backends["db"].GeoACLOptions = nil
 	cfg = streamConfig(conf, desiredListener{listenerName: "relay", options: conf.Listeners["relay"]}, clients)
 	require.Nil(t, cfg.Admission)
+}
+
+func TestStreamConfigChainsIPAndGeoACLs(t *testing.T) {
+	const aclName = "stream-geo-and-ip"
+	client := l4.Flow{Client: netip.AddrPortFrom(netip.MustParseAddr("127.0.0.1"), 4242)}
+	conf, clients := streamConfigFor(t, 1, listenerconfig.ProtocolTCP, "127.0.0.1:9")
+	gateBackend(t, conf.Backends["db"], aclName)
+
+	// an IP list that allows the client leaves the refusal to the geo ACL
+	conf.Backends["db"].IPACL = mustList(t, ipacl.Options{Allow: []string{"127.0.0.1"}})
+	before := streamDenials(aclName)
+	cfg := streamConfig(conf, streamDesired(conf), clients)
+	require.Equal(t, l4.Reject, cfg.Admission.Peer(client))
+	require.Equal(t, before+1, streamDenials(aclName))
+
+	// a listener IP list that refuses the client decides first, and the geo ACL is never asked
+	conf.Listeners["relay"].IPACL = mustList(t, ipacl.Options{Action: "drop"})
+	cfg = streamConfig(conf, streamDesired(conf), clients)
+	require.Equal(t, l4.Drop, cfg.Admission.Peer(client))
+	require.Equal(t, before+1, streamDenials(aclName))
 }

@@ -80,14 +80,21 @@ func attachGeoACL(h http.Handler, pathOptions *po.Options, backendOptions *bo.Op
 	return geohandler.New(geoACLFor(pathOptions, backendOptions), h)
 }
 
-func geoACLFor(pathOptions *po.Options, backendOptions *bo.Options) *geoacl.ACL {
-	o := pathOptions.GeoACLOptions
-	if o == nil {
-		if pathOptions.GeoACLName == reserved.ReferenceNone {
-			return nil
-		}
-		o = backendOptions.GeoACLOptions
+func selectACL[T any](pathName string, pathACL, backendACL T) (T, bool) {
+	// a path's own name selects its ACL, none clears the backend's, and an empty name inherits it; the bool
+	// reports that the path supplied the ACL
+	switch pathName {
+	case reserved.ReferenceNone:
+		var none T
+		return none, false
+	case "":
+		return backendACL, false
 	}
+	return pathACL, true
+}
+
+func geoACLFor(pathOptions *po.Options, backendOptions *bo.Options) *geoacl.ACL {
+	o, _ := selectACL(pathOptions.GeoACLName, pathOptions.GeoACLOptions, backendOptions.GeoACLOptions)
 	if o == nil {
 		return nil
 	}
@@ -95,39 +102,22 @@ func geoACLFor(pathOptions *po.Options, backendOptions *bo.Options) *geoacl.ACL 
 	return a
 }
 
-// effectiveIPACL is the list enforced for this path. none clears the backend
-// list. An empty name inherits it. A named path list replaces it. The backend
-// list is not copied onto the path.
-func effectiveIPACL(path *po.Options, backend *bo.Options) *ipacl.List {
-	if path == nil {
-		return nil
-	}
-	switch path.IPACLName {
-	case reserved.ReferenceNone:
-		return nil
-	case "":
-		if backend == nil {
-			return nil
-		}
-		return backend.IPACL
-	default:
-		return path.IPACL
-	}
-}
-
-// routeACL is the list a route enforces and the scope the decision metric uses.
-// A path name is path scope. An inherited backend list is backend scope.
 func routeACL(path *po.Options, backend *bo.Options) (*ipacl.List, string, string) {
-	list := effectiveIPACL(path, backend)
-	if list == nil || path == nil {
+	// the scope is the decision metric's: path for a path's own list, backend for an inherited one
+	if path == nil {
 		return nil, "", ""
 	}
-	if path.IPACLName != "" && path.IPACLName != reserved.ReferenceNone {
-		return list, path.IPACLName, aclhandler.ScopePath
-	}
-	name := ""
+	var inherited *ipacl.List
+	var name string
 	if backend != nil {
-		name = backend.IPACLName
+		inherited, name = backend.IPACL, backend.IPACLName
+	}
+	list, fromPath := selectACL(path.IPACLName, path.IPACL, inherited)
+	switch {
+	case list == nil:
+		return nil, "", ""
+	case fromPath:
+		return list, path.IPACLName, aclhandler.ScopePath
 	}
 	return list, name, aclhandler.ScopeBackend
 }

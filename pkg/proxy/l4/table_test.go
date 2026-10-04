@@ -82,24 +82,6 @@ func TestTableLookup(t *testing.T) {
 	}
 }
 
-func TestHostTableValues(t *testing.T) {
-	// another value type routes as the relay's upstreams do, a zero value included
-	tbl := NewHostTable[int]()
-	for host, v := range map[string]int{"exact.example.com": 1, "*.example.com": 2, "": 0} {
-		if err := tbl.Add(host, v); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tbl.Add("", 3); !errors.Is(err, ErrDuplicateCatchAll) {
-		t.Errorf("a second catch-all, even after a zero one = %v", err)
-	}
-	for host, want := range map[string]int{"exact.example.com": 1, "api.example.com": 2, "other.org": 0} {
-		if got := tbl.Lookup(host); got != want {
-			t.Errorf("Lookup(%q) = %d, want %d", host, got, want)
-		}
-	}
-}
-
 func TestStatic(t *testing.T) {
 	route, ok := Static("h:1").Pick(Flow{})
 	if !ok || route.Addr() != "h:1" {

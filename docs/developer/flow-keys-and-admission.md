@@ -457,7 +457,9 @@ Three consequences:
   `Holder` implemented by the combination itself if any part implements
   it, since the relay asks only the admission it holds. `Hold` is not told
   which part denied the flow, so the combination has to remember or work
-  it out again.
+  it out again. `l4.Chain` combines admissions that set no hold, as
+  `streamConfig` does for IP access lists and geo ACLs, in that order; it
+  does not consult a part's `Holder`.
 
 ### Stages
 
@@ -653,7 +655,7 @@ type Denial struct {
   (`Group.UpdateProtocolSessionGate`). A listener whose server takes no gate
   is not started when its backend has one, so a gate is never silently
   skipped. A gate change never restarts the listener: a restart key must
-  leave it out, as `bo.Options.ClearGeoACLNames` does for the adapters that
+  leave it out, as `bo.Options.ClearACLNames` does for the adapters that
   hash a backend's whole options.
 - **Holding it.** A server keeps the gate in a `backends.SessionGateSlot`,
   whose zero value admits everything at the cost of one atomic load per

@@ -79,9 +79,8 @@ func acceptAsync(ln net.Listener) <-chan accepted {
 	return ch
 }
 
-// dialDenied dials a peer the listener should reset. The reset can win the race
-// against the handshake, so a connect error of ECONNRESET is the denial itself.
 func dialDenied(t *testing.T, ln net.Listener) {
+	// the reset can beat the handshake, so a connect error of ECONNRESET is the denial itself
 	t.Helper()
 	c, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
@@ -633,9 +632,7 @@ func TestAcceptCountsAllowAndDeny(t *testing.T) {
 	}
 }
 
-// lockedBuffer lets the accept goroutine write a log line while the test reads it.
-// The TCP reset that dialDenied waits on is not a race-detector edge.
-type lockedBuffer struct {
+type lockedBuffer struct { // the accept goroutine logs while the test reads
 	mu sync.Mutex
 	bytes.Buffer
 }

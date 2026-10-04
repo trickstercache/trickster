@@ -167,13 +167,13 @@ func TestNativeListenerAdapterLifecycle(t *testing.T) {
 	if err != nil || rebound.RestartKey != before.RestartKey {
 		t.Fatalf("listener bindings changed restart identity: %v", err)
 	}
-	// a running server is handed its geo ACL, so naming one does not restart it
-	o.GeoACLName = "north-america"
+	// a running server is handed its geo ACL and its routes, so naming either ACL does not restart it
+	o.GeoACLName, o.IPACLName = "north-america", "office"
 	gated, err := a.Describe(c, "native")
-	if err != nil || gated.RestartKey != before.RestartKey || o.GeoACLName == "" {
-		t.Fatalf("a geo ACL changed restart identity: %v", err)
+	if err != nil || gated.RestartKey != before.RestartKey || o.GeoACLName == "" || o.IPACLName == "" {
+		t.Fatalf("an ACL changed restart identity: %v", err)
 	}
-	o.GeoACLName = ""
+	o.GeoACLName, o.IPACLName = "", ""
 	o.ListenerNames = []string{"default", "native"}
 	o.OriginURL = "http://localhost:9000"
 	after, err := a.Describe(c, "native")

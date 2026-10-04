@@ -36,58 +36,48 @@ var (
 
 // Table routes a connection to an upstream by the server name it offered: an exact host first,
 // then the longest wildcard suffix, then the catch-all for a connection naming no routed host.
-type Table = HostTable[Upstream]
-
-// HostTable maps server names to values as the relay routes them, so anything that must agree with the
-// relay's choice of backend, such as an admission, looks the name up the same way.
-type HostTable[V any] struct {
-	catchAll    V
-	hasCatchAll bool
-	exact       map[string]V
-	wild        []wildEntry[V]
+type Table struct {
+	catchAll Upstream
+	exact    map[string]Upstream
+	wild     []wildEntry
 }
 
 // wildEntry is one wildcard host: the suffix it stands under and whether it spans any depth.
-type wildEntry[V any] struct {
+type wildEntry struct {
 	suffix   string
 	anyDepth bool
-	value    V
+	up       Upstream
 }
 
 // NewTable returns an empty table.
 func NewTable() *Table {
-	return NewHostTable[Upstream]()
+	return &Table{exact: make(map[string]Upstream)}
 }
 
-// NewHostTable returns an empty HostTable.
-func NewHostTable[V any]() *HostTable[V] {
-	return &HostTable[V]{exact: make(map[string]V)}
-}
-
-// Add maps host to v; an empty host is the catch-all. A wildcard host follows the router's
+// Add routes host to up; an empty host is the catch-all. A wildcard host follows the router's
 // spelling: *.example.com spans one label and **.example.com any number.
-func (t *HostTable[V]) Add(host string, v V) error {
+func (t *Table) Add(host string, up Upstream) error {
 	h, err := hostnames.Normalize(host, hostnames.AllowEmpty)
 	if err != nil {
 		return err
 	}
 	if h == "" {
-		if t.hasCatchAll {
+		if t.catchAll != nil {
 			return ErrDuplicateCatchAll
 		}
-		t.catchAll, t.hasCatchAll = v, true
+		t.catchAll = up
 		return nil
 	}
 	if hostnames.IsWildcard(h) {
-		e := wildEntry[V]{suffix: "." + hostnames.Suffix(h), anyDepth: hostnames.IsAnyDepth(h), value: v}
-		if slices.ContainsFunc(t.wild, func(o wildEntry[V]) bool {
+		e := wildEntry{suffix: "." + hostnames.Suffix(h), anyDepth: hostnames.IsAnyDepth(h), up: up}
+		if slices.ContainsFunc(t.wild, func(o wildEntry) bool {
 			return o.suffix == e.suffix && o.anyDepth == e.anyDepth
 		}) {
 			return fmt.Errorf("%w: %s", ErrDuplicateHost, h)
 		}
 		t.wild = append(t.wild, e)
 		// longest suffix first, so the most specific wildcard wins
-		slices.SortStableFunc(t.wild, func(a, b wildEntry[V]) int {
+		slices.SortStableFunc(t.wild, func(a, b wildEntry) int {
 			return len(b.suffix) - len(a.suffix)
 		})
 		return nil
@@ -95,37 +85,33 @@ func (t *HostTable[V]) Add(host string, v V) error {
 	if _, dup := t.exact[h]; dup {
 		return fmt.Errorf("%w: %s", ErrDuplicateHost, h)
 	}
-	t.exact[h] = v
+	t.exact[h] = up
 	return nil
 }
 
-// Lookup returns the value for a server name, or the zero value when nothing routes it.
-func (t *HostTable[V]) Lookup(host string) V {
-	var zero V
+// Lookup returns the upstream for a server name, or nil when nothing routes it.
+func (t *Table) Lookup(host string) Upstream {
 	if t == nil {
-		return zero
+		return nil
 	}
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host != "" {
-		if v, ok := t.exact[host]; ok {
-			return v
+		if up, ok := t.exact[host]; ok {
+			return up
 		}
 		for _, e := range t.wild {
 			if !strings.HasSuffix(host, e.suffix) {
 				continue
 			}
 			if e.anyDepth || !strings.Contains(strings.TrimSuffix(host, e.suffix), ".") {
-				return e.value
+				return e.up
 			}
 		}
 	}
-	if t.hasCatchAll {
-		return t.catchAll
-	}
-	return zero
+	return t.catchAll
 }
 
 // Empty reports whether the table routes nothing at all.
-func (t *HostTable[V]) Empty() bool {
-	return t == nil || (!t.hasCatchAll && len(t.exact) == 0 && len(t.wild) == 0)
+func (t *Table) Empty() bool {
+	return t == nil || (t.catchAll == nil && len(t.exact) == 0 && len(t.wild) == 0)
 }

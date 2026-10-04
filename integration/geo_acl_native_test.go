@@ -61,7 +61,7 @@ func TestGeoACLNative(t *testing.T) {
 	h := configHarness(t, geoNativeConfig)
 	h.start(t)
 	denied := func() float64 {
-		v, _ := metricValue(t, h.MetricsAddr, geoDecisions, `geo_acl="`+geoNativeACL+`",plane="native",result="denied"`)
+		v, _ := metricValue(t, h.MetricsAddr, geoDecisions, `geo_acl="`+geoNativeACL+`",plane="native",verdict="deny"`)
 		return v
 	}
 	before := denied()

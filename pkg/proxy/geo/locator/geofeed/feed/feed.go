@@ -25,12 +25,12 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/geo"
+	"github.com/trickstercache/trickster/v2/pkg/util/prefixtable"
 )
 
 const (
-	fieldSep         = ','
-	commentMark      = '#'
-	mappedPrefixBits = 96 // how much longer an IPv4-mapped IPv6 prefix is than the IPv4 prefix it maps
+	fieldSep    = ','
+	commentMark = '#'
 )
 
 // ErrInvalidLine is wrapped by every error for a line that does not parse
@@ -93,13 +93,10 @@ func parsePrefix(s string) (netip.Prefix, error) {
 		}
 		p = netip.PrefixFrom(a, a.BitLen())
 	}
-	if a := p.Addr(); a.Is4In6() {
-		if p.Bits() < mappedPrefixBits {
-			return netip.Prefix{}, errors.New("an IPv4-mapped prefix must be at least /96")
-		}
-		p = netip.PrefixFrom(a.Unmap(), p.Bits()-mappedPrefixBits)
+	if p.Addr().Is4In6() && p.Bits() < prefixtable.MappedBits {
+		return netip.Prefix{}, errors.New("an IPv4-mapped prefix must be at least /96")
 	}
-	return p.Masked(), nil
+	return prefixtable.Canonical(p), nil
 }
 
 // Parse calls fn with each entry of a geofeed, skipping lines that do not parse; it returns the counts of

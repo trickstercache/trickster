@@ -39,9 +39,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
-	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
@@ -461,7 +459,7 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 				continue
 			}
 			next.GeoACLs.Set(name)
-			if l := conf.GeoLocators[o.LocatorName()]; l != nil && geoproviders.ReadsAddresses(l.Provider) {
+			if conf.GeoLocators.ReadsAddresses(o.LocatorName()) {
 				next.StreamGeoACLs.Set(name)
 			}
 		}
@@ -470,7 +468,7 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 				continue
 			}
 			next.DefinedIPACLs.Set(name)
-			if kubernetesIPACLEligible(def.Compiled) {
+			if def.Compiled.GatesAnyBackend() {
 				next.IPACLs.Set(name)
 			}
 		}
@@ -486,15 +484,6 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.StreamGeoACLs, next.StreamGeoACLs) ||
 		!maps.Equal(previous.IPACLs, next.IPACLs) ||
 		!maps.Equal(previous.DefinedIPACLs, next.DefinedIPACLs)
-}
-
-// kubernetesIPACLEligible reports whether a compiled list may be named by a
-// generated backend. The same rule is kubernetesReferences in config
-// validation: client_ip and reject, which are the zero values. A nil list,
-// including one not yet compiled, is not eligible. CIDR edits do not change
-// eligibility, so they do not retranslate.
-func kubernetesIPACLEligible(list *ipacl.List) bool {
-	return list != nil && list.Source() == ipacl.ClientIP && list.Action() == ipacl.Reject
 }
 
 func marshalKubeOptions(o *kubecfg.Options) []byte {

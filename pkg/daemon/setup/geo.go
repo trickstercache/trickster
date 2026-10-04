@@ -118,42 +118,37 @@ func compiledGeoACL(b *bo.Options) *acl.ACL {
 }
 
 type geoStreamAdmission struct {
-	tls   bool
-	gated bool
-	peer  *acl.ACL
-	hosts *l4.HostTable[*acl.ACL]
+	tls  bool
+	peer *acl.ACL
+	acls map[l4.Upstream]*acl.ACL // by the upstream a tls listener's table routes a server name to
 }
 
 func newGeoStreamAdmission(protocol string) *geoStreamAdmission {
-	g := &geoStreamAdmission{tls: protocol == listenerconfig.ProtocolTLS}
-	if g.tls {
-		g.hosts = l4.NewHostTable[*acl.ACL]()
-	}
-	return g
+	return &geoStreamAdmission{tls: protocol == listenerconfig.ProtocolTLS}
 }
 
-func (g *geoStreamAdmission) add(b *bo.Options, hosts []string) {
-	// an ungated backend's hosts are recorded too, so a gated backend's wildcard never judges them
+func (g *geoStreamAdmission) add(b *bo.Options, up l4.Upstream) {
 	a := compiledGeoACL(b)
-	g.gated = g.gated || a != nil
-	if !g.tls {
+	switch {
+	case a == nil:
+	case !g.tls:
 		g.peer = a
-		return
-	}
-	for _, h := range hosts {
-		// a duplicate is refused by validation, and logged when the relay's table refuses it
-		_ = g.hosts.Add(h, a)
+	default:
+		if g.acls == nil {
+			g.acls = make(map[l4.Upstream]*acl.ACL)
+		}
+		g.acls[up] = a
 	}
 }
 
-func (g *geoStreamAdmission) admission() l4.Admission {
+func (g *geoStreamAdmission) admission(table *l4.Table) l4.Admission {
 	switch {
-	case !g.gated:
-		return nil
-	case g.tls:
-		return geostream.ForHosts(g.hosts)
+	case g.peer != nil:
+		return geostream.ForBackend(g.peer)
+	case len(g.acls) > 0:
+		return geostream.ForRoutes(table, g.acls)
 	}
-	return geostream.ForBackend(g.peer)
+	return nil
 }
 
 func setSessionGate(svr listener.ProtocolServer, gate backends.SessionGate) bool {

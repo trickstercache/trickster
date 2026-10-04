@@ -41,6 +41,7 @@ import (
 	ar "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/registry"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
+	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	geoproviders "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/providers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
@@ -217,7 +218,7 @@ func kubernetesReferences(c *config.Config) error {
 			return newKubernetesRefError("defaults", "geo ACL", d.GeoACLName)
 		}
 		// any route the controller generates may be a stream route, which judges a bare address
-		if !geoReadsAddresses(c, o) {
+		if !c.GeoLocators.ReadsAddresses(o.LocatorName()) {
 			return fmt.Errorf("kubernetes 'defaults' geo ACL %q uses a %s geo locator, which judges HTTP "+
 				"requests only, but generated stream routes take the defaults too; name it in an HTTP "+
 				"GatewayClass's parameters instead", d.GeoACLName, geoproviders.Header)
@@ -230,20 +231,13 @@ func kubernetesReferences(c *config.Config) error {
 		}
 		// compiled by IPACLs above. A peer or drop list exists, so it is not an
 		// undefined name; a generated backend still cannot use it.
-		if !kubernetesIPACLEligible(def.Compiled) {
+		if !def.Compiled.GatesAnyBackend() {
 			return fmt.Errorf("kubernetes 'defaults' references ineligible ip acl %q: "+
 				"generated backends require source client_ip and action reject",
 				d.IPACLName)
 		}
 	}
 	return nil
-}
-
-// kubernetesIPACLEligible reports whether a compiled list may be named by a
-// generated backend. ClientIP and Reject are the zero values, which are also
-// the defaults. A nil list is not eligible.
-func kubernetesIPACLEligible(list *ipacl.List) bool {
-	return list != nil && list.Source() == ipacl.ClientIP && list.Action() == ipacl.Reject
 }
 
 func newKubernetesRefError(block, kind, name string) error {
@@ -545,6 +539,9 @@ func Listeners(c *config.Config) error {
 			}
 		}
 	}
+	if err := streamMemberACLs(c); err != nil {
+		return err
+	}
 	if err := geoListeners(c, nativeTargets); err != nil {
 		return err
 	}
@@ -817,12 +814,9 @@ func IPACLs(c *config.Config) error {
 	return nil
 }
 
-// bindListenerIPACL resolves a listener's ip_acl_name. peer is valid here.
-// A native listener cannot take a client_ip list while proxy_protocol is on,
-// because the socket peer and the address in the header are different.
-// A client_ip list with proxy_protocol and no trusted_proxies is a warning:
-// every peer's header is believed.
 func bindListenerIPACL(c *config.Config, name string, options *listener.Options) error {
+	// a native listener's client_ip list cannot read a PROXY header's address, only its socket peer's; with no
+	// trusted_proxies, every peer's header is believed, which warns
 	if options == nil || options.IPACLName == "" {
 		return nil
 	}
@@ -847,16 +841,11 @@ func bindListenerIPACL(c *config.Config, name string, options *listener.Options)
 
 func validateIPACLPlacements(c *config.Config) error {
 	httpBackends := aclBackendReachability(c, true)
-	streamMembers := aclBackendReachability(c, false)
 	nativeListeners := providerregistry.NativeListeners()
 	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
 		backend := c.Backends[backendName]
 		if backend == nil {
 			continue
-		}
-		streamMember := streamMembers.Contains(backendName)
-		if backend.IPACL != nil && streamMember {
-			return streamMemberACLError(backendName, "", backend.IPACLName)
 		}
 		httpServed := httpBackends.Contains(backendName)
 		if backend.IPACL != nil && backend.IPACL.Action() == ipacl.Drop && httpServed {
@@ -864,9 +853,6 @@ func validateIPACLPlacements(c *config.Config) error {
 				"when the backend is served over http", backendName, backend.IPACLName)
 		}
 		for _, path := range backend.Paths {
-			if path != nil && path.IPACL != nil && streamMember {
-				return streamMemberACLError(backendName, path.Path, path.IPACLName)
-			}
 			if path == nil || path.IPACL == nil || path.IPACL.Action() != ipacl.Drop || !httpServed {
 				continue
 			}
@@ -875,21 +861,62 @@ func validateIPACLPlacements(c *config.Config) error {
 		}
 		if backend.IPACL != nil && servesNativeListener(c, backend, nativeListeners) {
 			addWarning(c, fmt.Sprintf("backend %q has ip acl %q and is served by a native listener: "+
-				"native sessions are judged by the listener acl only, and a ClickHouse native bridge "+
-				"request to this backend has no client address and is denied",
+				"native sessions are judged by the listener acl only, though a ClickHouse native listener "+
+				"judges each query by this list, from the session's address",
 				backendName, backend.IPACLName))
 		}
 	}
 	return nil
 }
 
-func streamMemberACLError(backendName, path, aclName string) error {
+func streamMemberACLs(c *config.Config) error {
+	// a stream listener's alb dials its members and templates unjudged, so neither may carry an ACL; a path's
+	// may stay on a member HTTP also serves, since it judges those requests
+	streamMembers := aclBackendReachability(c, false)
+	httpBackends := aclBackendReachability(c, true)
+	for _, backendName := range slices.Sorted(maps.Keys(c.Backends)) {
+		backend := c.Backends[backendName]
+		if backend == nil || !streamMembers.Contains(backendName) {
+			continue
+		}
+		if err := streamMemberACLError(backendName, "", backend.IPACL, backend.IPACLName,
+			backend.GeoACLOptions, backend.GeoACLName); err != nil {
+			return err
+		}
+		if httpBackends.Contains(backendName) {
+			continue
+		}
+		for _, path := range backend.Paths {
+			if path == nil {
+				continue
+			}
+			if err := streamMemberACLError(backendName, path.Path, path.IPACL, path.IPACLName,
+				path.GeoACLOptions, path.GeoACLName); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func streamMemberACLError(backendName, path string, ip *ipacl.List, ipName string, geo *geoaclopts.Options,
+	geoName string,
+) error {
+	var kind, name, attach string
+	switch {
+	case ip != nil:
+		kind, name, attach = "ip acl", ipName, "the listener or front alb"
+	case geo != nil:
+		kind, name, attach = "geo ACL", geoName, "the front alb"
+	default:
+		return nil
+	}
 	where := fmt.Sprintf("backend %q", backendName)
 	if path != "" {
 		where += fmt.Sprintf(" path %q", path)
 	}
-	return fmt.Errorf("%s uses ip acl %q but is a stream pool member or template: "+
-		"stream member access lists are not supported; attach the list to the listener or front alb", where, aclName)
+	return fmt.Errorf("%s uses %s %q but is a stream pool member or template: stream member access lists are "+
+		"not supported; attach it to %s", where, kind, name, attach)
 }
 
 func aclBackendReachability(c *config.Config, wantHTTP bool) sets.Set[string] {

@@ -38,10 +38,10 @@ const (
 	geoCountryHeader = "CF-IPCountry"
 )
 
-func geoDecisionCount(t *testing.T, h tricksterHarness, acl, result string) float64 {
+func geoDecisionCount(t *testing.T, h tricksterHarness, acl, verdict string) float64 {
 	t.Helper()
 	v, _ := metricValue(t, h.MetricsAddr, geoDecisions,
-		fmt.Sprintf(`geo_acl=%q,plane="http",result=%q`, acl, result))
+		fmt.Sprintf(`geo_acl=%q,plane="http",verdict=%q`, acl, verdict))
 	return v
 }
 
@@ -63,7 +63,7 @@ func TestGeoACLHTTP(t *testing.T) {
 	const query = "/geo-it-prom/api/v1/query"
 
 	t.Run("allowed and refused", func(t *testing.T) {
-		denied := geoDecisionCount(t, h, "geo-it-north-america", "denied")
+		denied := geoDecisionCount(t, h, "geo-it-north-america", "deny")
 		resp, body := get(query, geoClientUS)
 		require.Equal(t, http.StatusOK, resp.StatusCode, body)
 		resp, body = get(query, geoClientFrance)
@@ -74,7 +74,7 @@ func TestGeoACLHTTP(t *testing.T) {
 		resp, _ = get(query, "")
 		require.Equal(t, http.StatusForbidden, resp.StatusCode)
 		require.Eventually(t, func() bool {
-			return geoDecisionCount(t, h, "geo-it-north-america", "denied") == denied+2
+			return geoDecisionCount(t, h, "geo-it-north-america", "deny") == denied+2
 		}, 10*time.Second, 50*time.Millisecond)
 	})
 
@@ -100,11 +100,11 @@ func TestGeoACLHTTP(t *testing.T) {
 	})
 
 	t.Run("count", func(t *testing.T) {
-		counted := geoDecisionCount(t, h, "geo-it-count", "counted")
+		counted := geoDecisionCount(t, h, "geo-it-count", "count")
 		resp, body := get("/geo-it-count/api/v1/query", geoClientFrance)
 		require.Equal(t, http.StatusOK, resp.StatusCode, body)
 		require.Eventually(t, func() bool {
-			return geoDecisionCount(t, h, "geo-it-count", "counted") == counted+1
+			return geoDecisionCount(t, h, "geo-it-count", "count") == counted+1
 		}, 10*time.Second, 50*time.Millisecond)
 	})
 }

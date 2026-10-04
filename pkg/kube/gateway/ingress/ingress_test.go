@@ -350,9 +350,8 @@ func TestGeneratedOverlayLoadsAndValidates(t *testing.T) {
 	}
 }
 
-// requireResolvedOfficeACL reports that validation compiled the file's office
-// list onto at least one generated backend.
 func requireResolvedOfficeACL(t *testing.T, conf *config.Config) {
+	// validation compiled the file's office list onto at least one generated backend
 	t.Helper()
 	for _, b := range conf.Backends {
 		if b != nil && b.IPACLName == "office" && b.IPACL != nil {

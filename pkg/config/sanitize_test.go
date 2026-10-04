@@ -397,6 +397,97 @@ kubernetes:
 	}
 }
 
+func TestSanitizedCloneIPACLs(t *testing.T) {
+	conf := NewConfig()
+	err := conf.loadYAMLConfig(`
+ip_acls:
+  office-network:
+    allow: [10.20.30.0/24, 198.51.100.7]
+    deny: [all]
+    allow_file: /etc/trickster/office.lst
+  legacy-order:
+    match: ordered
+    rules:
+      - deny: 10.20.30.40
+      - allow: all
+listeners:
+  edge:
+    port: 9000
+    ip_acl_name: office-network
+backends:
+  web:
+    provider: reverseproxycache
+    origin_url: http://web.private.example
+    listener_names: [edge]
+    ip_acl_name: office-network
+    paths:
+      - path: /legacy/
+        ip_acl_name: legacy-order
+      - path: /open/
+        ip_acl_name: none
+kubernetes:
+  defaults:
+    routing_mode: service
+    ip_acl_name: office-network
+`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(conf.Backends, "default") // seeded by NewConfig, naming no list
+
+	sanitized := conf.SanitizedClone()
+	var listener, backend, legacy, open, defaults string
+	for _, lo := range sanitized.Listeners {
+		if lo.IPACLName != "" {
+			listener = lo.IPACLName
+		}
+	}
+	for _, b := range sanitized.Backends {
+		backend = b.IPACLName
+		for _, p := range b.Paths {
+			switch p.Path {
+			case "/legacy/":
+				legacy = p.IPACLName
+			case "/open/":
+				open = p.IPACLName
+			}
+		}
+	}
+	defaults = sanitized.Kubernetes.Defaults.IPACLName
+	for where, name := range map[string]string{
+		"listener": listener, "backend": backend, "path": legacy, "kubernetes defaults": defaults,
+	} {
+		if !hasKey(sanitized.IPACLs, name) || !strings.HasPrefix(name, ipACLPrefix+"-") {
+			t.Errorf("the %s names %q, which is no sanitized ip acl", where, name)
+		}
+	}
+	if listener != backend || backend != defaults || backend == legacy {
+		t.Errorf("references to one list were renamed apart: %q %q %q %q", listener, backend, defaults, legacy)
+	}
+	if open != "none" {
+		t.Errorf("a path clearing its backend's list says %q", open)
+	}
+	office := sanitized.IPACLs[backend]
+	if office.Name != backend || office.Allow[0] != sanitizedValue || office.Deny[0] != "all" ||
+		office.AllowFile != "/etc/trickster/office.lst" {
+		t.Errorf("unexpected sanitized list: %+v", office)
+	}
+	if rules := sanitized.IPACLs[legacy].Rules; rules[0].Deny != sanitizedValue || rules[1].Allow != "all" {
+		t.Errorf("unexpected sanitized rules: %+v", rules)
+	}
+
+	out := conf.SanitizedString()
+	for _, privateValue := range []string{"office-network", "legacy-order", "10.20.30", "198.51.100.7"} {
+		if strings.Contains(out, privateValue) {
+			t.Errorf("expected sanitized config not to contain %q; got:\n%s", privateValue, out)
+		}
+	}
+	if conf.IPACLs["office-network"].Allow[0] != "10.20.30.0/24" || conf.Listeners["edge"].IPACLName != "office-network" ||
+		conf.Kubernetes.Defaults.IPACLName != "office-network" {
+		t.Errorf("expected the original ip acls and references to remain unchanged")
+	}
+}
+
 func hasKey[V any](m map[string]V, k string) bool {
 	_, ok := m[k]
 	return ok

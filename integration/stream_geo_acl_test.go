@@ -68,10 +68,10 @@ func startGeoStream(t *testing.T, protocol, origin, aclName, action string, viaA
 	return fmt.Sprintf("127.0.0.1:%d", relayPort), metricsAddr
 }
 
-func streamGeoDecisions(t *testing.T, metricsAddr, aclName, result string) float64 {
+func streamGeoDecisions(t *testing.T, metricsAddr, aclName, verdict string) float64 {
 	t.Helper()
-	v, _ := metricValue(t, metricsAddr, geoDecisions, fmt.Sprintf(`geo_acl=%q,plane="stream",result=%q`,
-		aclName, result))
+	v, _ := metricValue(t, metricsAddr, geoDecisions, fmt.Sprintf(`geo_acl=%q,plane="stream",verdict=%q`,
+		aclName, verdict))
 	return v
 }
 
@@ -86,7 +86,7 @@ func TestGeoACLStream(t *testing.T) {
 		s := &streamLB{addr: relay}
 		require.Empty(t, s.askAndClose(t), "a refused client was relayed")
 		require.Zero(t, echo.accepted.Load())
-		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "denied") == 1 },
+		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "deny") == 1 },
 			10*time.Second, 50*time.Millisecond)
 	})
 
@@ -97,7 +97,7 @@ func TestGeoACLStream(t *testing.T) {
 		s := &streamLB{addr: relay}
 		require.Empty(t, s.askAndClose(t), "a refused client was relayed")
 		require.Zero(t, echo.accepted.Load())
-		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "denied") == 1 },
+		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "deny") == 1 },
 			10*time.Second, 50*time.Millisecond)
 	})
 
@@ -107,7 +107,7 @@ func TestGeoACLStream(t *testing.T) {
 		relay, metricsAddr := startGeoStream(t, "tcp", echo.addr, aclName, "count", false)
 		s := &streamLB{addr: relay}
 		require.Equal(t, "echo", s.askAndClose(t))
-		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "counted") == 1 },
+		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "count") == 1 },
 			10*time.Second, 50*time.Millisecond)
 	})
 
@@ -119,7 +119,7 @@ func TestGeoACLStream(t *testing.T) {
 		defer conn.Close()
 		_, err = conn.Write([]byte("hi"))
 		require.NoError(t, err)
-		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "denied") == 1 },
+		require.Eventually(t, func() bool { return streamGeoDecisions(t, metricsAddr, aclName, "deny") == 1 },
 			10*time.Second, 50*time.Millisecond)
 		_ = conn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 		_, err = conn.Read(make([]byte, 64))

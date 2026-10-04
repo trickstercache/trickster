@@ -27,7 +27,8 @@ import (
 // resets tcp and tls and drops udp, since an opaque stream carries no message.
 type Admission struct {
 	peer  *acl.ACL
-	hosts *l4.HostTable[*acl.ACL]
+	table *l4.Table
+	acls  map[l4.Upstream]*acl.ACL
 }
 
 var _ l4.Admission = (*Admission)(nil)
@@ -37,10 +38,10 @@ func ForBackend(a *acl.ACL) *Admission {
 	return &Admission{peer: a}
 }
 
-// ForHosts returns an Admission judging each tls flow by the geo ACL of the backend its server name routes
-// to, mapped as the relay maps them; a host mapped to nil is allowed
-func ForHosts(hosts *l4.HostTable[*acl.ACL]) *Admission {
-	return &Admission{hosts: hosts}
+// ForRoutes returns an Admission judging each tls flow by the geo ACL of the upstream the relay's table routes
+// its server name to; an upstream with no geo ACL is allowed
+func ForRoutes(table *l4.Table, acls map[l4.Upstream]*acl.ACL) *Admission {
+	return &Admission{table: table, acls: acls}
 }
 
 // Peer judges a tcp or udp flow by its client address
@@ -53,10 +54,10 @@ func (a *Admission) Peer(f l4.Flow) l4.Verdict {
 
 // Flow judges a tls flow once its server name is known
 func (a *Admission) Flow(f l4.Flow) l4.Verdict {
-	if a.hosts == nil {
+	if a.table == nil {
 		return l4.Allow
 	}
-	g := a.hosts.Lookup(f.ServerName)
+	g := a.acls[a.table.Lookup(f.ServerName)]
 	if g == nil {
 		return l4.Allow
 	}

@@ -187,10 +187,9 @@ func TestValidateKubernetesGeoACLReference(t *testing.T) {
 	require.NoError(t, Validate(c))
 }
 
-// An access list named by the defaults is the operator's, checked the same way
-// as an authenticator. A list that exists but is peer or drop is a different
-// failure: the name is defined, and a generated backend still cannot use it.
 func TestValidateKubernetesIPACLReference(t *testing.T) {
+	// a defaults list is checked as an authenticator is; a defined peer or drop list fails differently, since the
+	// name exists but a generated backend cannot use it
 	with := func(t *testing.T, name string, opts ipacl.Options) *config.Config {
 		t.Helper()
 		c := baseConfig(t)

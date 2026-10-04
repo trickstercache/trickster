@@ -88,3 +88,61 @@ func (s *Server) deny(client net.Conn, v Verdict) {
 	}
 	s.result(ResultDenied)
 }
+
+// Chain returns one Admission asking each non-nil admission in order, the first refusal deciding;
+// nil when none is given. A part's Holder is not consulted once parts are combined.
+func Chain(admissions ...Admission) Admission {
+	var c chain
+	for _, a := range admissions {
+		if a == nil {
+			continue
+		}
+		c.parts = append(c.parts, a)
+		if a.Datagrams() {
+			c.datagrams = append(c.datagrams, a)
+		}
+	}
+	switch len(c.parts) {
+	case 0:
+		return nil
+	case 1:
+		return c.parts[0]
+	}
+	return &c
+}
+
+type chain struct {
+	parts     []Admission
+	datagrams []Admission // the parts whose Datagrams reported true when chained
+}
+
+func (c *chain) Peer(f Flow) Verdict {
+	for _, a := range c.parts {
+		if v := a.Peer(f); v != Allow {
+			return v
+		}
+	}
+	return Allow
+}
+
+func (c *chain) Flow(f Flow) Verdict {
+	for _, a := range c.parts {
+		if v := a.Flow(f); v != Allow {
+			return v
+		}
+	}
+	return Allow
+}
+
+func (c *chain) Datagram(f Flow, size int) Verdict {
+	for _, a := range c.datagrams {
+		if v := a.Datagram(f, size); v != Allow {
+			return v
+		}
+	}
+	return Allow
+}
+
+func (c *chain) Datagrams() bool {
+	return len(c.datagrams) > 0
+}

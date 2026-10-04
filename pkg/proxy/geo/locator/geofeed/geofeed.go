@@ -18,12 +18,9 @@
 package geofeed
 
 import (
-	"cmp"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/netip"
-	"slices"
 	"sync/atomic"
 	"time"
 
@@ -34,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/filesource"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed/feed"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/prefixtable"
 	"github.com/trickstercache/trickster/v2/pkg/watchers/filesystem"
 )
 
@@ -44,7 +42,7 @@ var ErrNoFileEntries = errors.New("the replaced geofeed files have no entries")
 type Locator struct {
 	name        string
 	inline      []feed.Entry
-	table       atomic.Pointer[table]
+	table       atomic.Pointer[prefixtable.Table[geo.Location]]
 	watcher     *filesystem.Watcher
 	fileEntries int // from files, in the current table; only the watcher's loads touch it
 }
@@ -100,7 +98,8 @@ func (l *Locator) load(contents [][]byte) error {
 
 // Locate returns the location of the longest prefix holding addr
 func (l *Locator) Locate(addr netip.Addr) (geo.Location, error) {
-	return l.table.Load().lookup(addr.Unmap()), nil
+	loc, _ := l.table.Load().Lookup(addr.Unmap())
+	return loc, nil
 }
 
 // Serves reports every location field, since a geofeed line can name a region and its country's continent is known
@@ -118,121 +117,18 @@ func (l *Locator) Close() error {
 
 // Len returns the number of distinct prefixes the locator holds
 func (l *Locator) Len() int {
-	return l.table.Load().n
+	return l.table.Load().Len()
 }
 
-type v4Level struct {
-	mask    uint32
-	entries map[uint32]geo.Location
-}
-
-type v6Level struct {
-	hi, lo  uint64
-	entries map[[2]uint64]geo.Location
-}
-
-type table struct {
-	v4 []v4Level
-	v6 []v6Level
-	n  int
-}
-
-func build(inline, fromFiles []feed.Entry) *table {
-	// inline entries are added last, so they beat a file's for the same prefix
-	v4 := make(map[int]map[uint32]geo.Location)
-	v6 := make(map[int]map[[2]uint64]geo.Location)
-	t := &table{}
-	add := func(e feed.Entry) {
-		bits := e.Prefix.Bits()
-		if a := e.Prefix.Addr(); a.Is4() {
-			m := v4[bits]
-			if m == nil {
-				m = make(map[uint32]geo.Location)
-				v4[bits] = m
-			}
-			m[v4Key(a)] = e.Location
-			return
-		}
-		m := v6[bits]
-		if m == nil {
-			m = make(map[[2]uint64]geo.Location)
-			v6[bits] = m
-		}
-		m[v6Key(e.Prefix.Addr())] = e.Location
-	}
+func build(inline, fromFiles []feed.Entry) *prefixtable.Table[geo.Location] {
+	// inline entries are set last, so they beat a file's for the same prefix
+	var b prefixtable.Builder[geo.Location]
 	for _, e := range fromFiles {
-		add(e)
+		b.Set(e.Prefix, e.Location)
 	}
 	for _, e := range inline {
-		add(e)
+		b.Set(e.Prefix, e.Location)
 	}
-	for bits, m := range v4 {
-		t.v4 = append(t.v4, v4Level{mask: v4Mask(bits), entries: m})
-		t.n += len(m)
-	}
-	for bits, m := range v6 {
-		hi, lo := v6Mask(bits)
-		t.v6 = append(t.v6, v6Level{hi: hi, lo: lo, entries: m})
-		t.n += len(m)
-	}
-	slices.SortFunc(t.v4, func(a, b v4Level) int { return cmp.Compare(b.mask, a.mask) })
-	slices.SortFunc(t.v6, func(a, b v6Level) int {
-		if c := cmp.Compare(b.hi, a.hi); c != 0 {
-			return c
-		}
-		return cmp.Compare(b.lo, a.lo)
-	})
-	return t
-}
-
-func (t *table) lookup(addr netip.Addr) geo.Location {
-	// one map per prefix length present, longest first, so a lookup costs a map read per length
-	if addr.Is4() {
-		k := v4Key(addr)
-		for _, lv := range t.v4 {
-			if loc, ok := lv.entries[k&lv.mask]; ok {
-				return loc
-			}
-		}
-		return geo.Location{}
-	}
-	if !addr.IsValid() {
-		return geo.Location{}
-	}
-	k := v6Key(addr)
-	for _, lv := range t.v6 {
-		if loc, ok := lv.entries[[2]uint64{k[0] & lv.hi, k[1] & lv.lo}]; ok {
-			return loc
-		}
-	}
-	return geo.Location{}
-}
-
-func v4Key(a netip.Addr) uint32 {
-	b := a.As4()
-	return binary.BigEndian.Uint32(b[:])
-}
-
-func v6Key(a netip.Addr) [2]uint64 {
-	b := a.As16()
-	return [2]uint64{binary.BigEndian.Uint64(b[:8]), binary.BigEndian.Uint64(b[8:])}
-}
-
-func v4Mask(bits int) uint32 {
-	if bits == 0 {
-		return 0
-	}
-	return ^uint32(0) << (32 - bits)
-}
-
-func v6Mask(bits int) (hi, lo uint64) {
-	switch {
-	case bits == 0:
-		return 0, 0
-	case bits <= 64:
-		return ^uint64(0) << (64 - bits), 0
-	case bits == 128:
-		return ^uint64(0), ^uint64(0)
-	}
-	return ^uint64(0), ^uint64(0) << (128 - bits)
+	t := b.Table()
+	return &t
 }

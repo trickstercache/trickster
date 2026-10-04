@@ -30,7 +30,6 @@ const (
 	CacheMode            = "cacheMode"
 	CacheProvider        = "cacheProvider"
 	Class                = "class"
-	ClientIP             = "clientIP"
 	Code                 = "code"
 	Confidence           = "confidence"
 	Conflicts            = "conflicts"

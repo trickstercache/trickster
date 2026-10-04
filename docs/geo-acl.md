@@ -224,8 +224,8 @@ exempt; a load warning says so for an `allow` list with neither `exempt` nor `un
   `tls` connection and drops a `udp` flow's datagrams; no message can be sent on an opaque stream.
   An ALB on a stream listener dials its members without entering their routes, so a backend or
   discovery template in its pool may not name a geo ACL: set it on the ALB, which judges the
-  connection before a member is dialed. A path-level geo ACL on such a member judges its own HTTP
-  requests.
+  connection before a member is dialed. A path-level geo ACL on such a member is refused too, unless
+  HTTP also serves the member, whose requests it then judges. IP access lists follow the same rule.
 - **Not gated:** the readiness path and the `mgmt` and `metrics` listeners.
 - **Other gates** on the same route judge independently, and any refusal ends the request.
 
@@ -302,7 +302,7 @@ with `Cache-Control: private`, or apply the same restriction at that cache.
 
 | Metric | Labels |
 |---|---|
-| `trickster_geo_acl_decisions_total` | `geo_acl`, `plane` (`http`, `native`, `stream`), `result` (`allowed`, `denied`, `counted`, `exempt`) |
+| `trickster_geo_acl_decisions_total` | `geo_acl`, `plane` (`http`, `native`, `stream`), `verdict` (`allow`, `deny`, `count`, `exempt`) |
 | `trickster_geo_locator_lookups_total` | `geo_locator`, `result` (`found`, `not_found`, `error`) |
 | `trickster_geo_locator_reloads_total` | `geo_locator`, `result` (`success`, `error`) |
 | `trickster_geo_locator_build_timestamp_seconds` | `geo_locator`; `mmdb` only |

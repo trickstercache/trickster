@@ -748,13 +748,13 @@ func (l Lookup) ValidateGeoACLNames(g geoaclopts.Lookup) error {
 	return nil
 }
 
-// ClearGeoACLNames clears the backend's and paths' geo_acl_name from a restart identity, since a running
-// native server is handed its geo ACL on reload
-func (o *Options) ClearGeoACLNames() {
-	o.GeoACLName = ""
+// ClearACLNames clears the backend's and paths' geo_acl_name and ip_acl_name from a restart identity, since a
+// native server takes its ACLs anew on reload
+func (o *Options) ClearACLNames() {
+	o.GeoACLName, o.IPACLName = "", ""
 	for _, p := range o.Paths {
 		if p != nil {
-			p.GeoACLName = ""
+			p.GeoACLName, p.IPACLName = "", ""
 		}
 	}
 }
@@ -882,9 +882,8 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 	return nil
 }
 
-// resolveIPACL returns the compiled list named by a backend or path reference.
-// An empty name is not a reference. peer is listener scope only.
 func resolveIPACL(acls ipacl.Lookup, name, where string) (*ipacl.List, error) {
+	// an empty name is no reference, and a peer list is for listeners only
 	def := acls[name]
 	if def == nil || def.Compiled == nil {
 		return nil, NewErrInvalidIPACLName(name, where)

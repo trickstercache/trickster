@@ -57,12 +57,10 @@ type effective struct {
 	rewriterName      string
 	authenticatorName string
 	geoACLName        string // gates only the backend a rule attaches, so each request is judged once
-	// ipACLName is the access list the route backend names. A class policy
-	// replaces the kubernetes default. Members, templates and mirrors do not use it.
-	ipACLName   string
-	timeout     time.Duration
-	handlerName string
-	accessLog   *alo.Options
+	ipACLName         string // a class's replaces the default, and only the backend a rule attaches names it
+	timeout           time.Duration
+	handlerName       string
+	accessLog         *alo.Options
 	// healthMode and healthCheck shape the endpoint mode's ALBs: how a discovered member is
 	// judged healthy, and the probe it runs when that is by probing
 	healthMode  string

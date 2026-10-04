@@ -411,6 +411,27 @@ func TestStreamMemberIPACLPlacements(t *testing.T) {
 	}
 }
 
+func TestStreamMemberIPACLPathServedOverHTTP(t *testing.T) {
+	// a member that HTTP serves too keeps a path list for those requests, but not a backend list
+	c := config.NewConfig()
+	c.Listeners["relay"] = listener.New("relay")
+	c.Listeners["relay"].Protocol = listener.ProtocolTCP
+	list := mustACLs(t, ipacl.Lookup{"wall": {}})["wall"].Compiled
+	front := streamBackend("relay", providers.ALB)
+	front.ALBOptions = &ao.Options{MechanismName: "rr", Pool: ao.PoolMemberList{{Name: "target"}}}
+	target := streamBackend("relay", providers.ReverseProxyShort)
+	target.ListenerName, target.ListenerNames = "", []string{"relay", listener.DefaultFrontendName}
+	target.Paths = po.List{{Path: "/api/", IPACLName: "wall", IPACL: list}}
+	c.Backends = bo.Lookup{"front": front, "target": target}
+	if err := Listeners(c); err != nil {
+		t.Fatalf("path list on a member HTTP serves = %v", err)
+	}
+	target.IPACLName, target.IPACL = "wall", list
+	if err := Listeners(c); err == nil || !strings.Contains(err.Error(), "stream member access lists are not supported") {
+		t.Fatalf("backend list on a stream member = %v", err)
+	}
+}
+
 func TestIPACLUnreachableTemplateDrop(t *testing.T) {
 	c := config.NewConfig()
 	list := mustACLs(t, ipacl.Lookup{"wall": {Action: "drop"}})["wall"].Compiled

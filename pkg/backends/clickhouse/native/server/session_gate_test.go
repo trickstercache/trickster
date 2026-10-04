@@ -32,6 +32,8 @@ import (
 	aclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed"
 	geofeedopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/geofeed/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	aclhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ipacl/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 
 	chdriver "github.com/ClickHouse/clickhouse-go/v2"
@@ -144,4 +146,49 @@ func TestQueriesJudgedAfterAdmission(t *testing.T) {
 	if !errors.As(err, &exception) || exception.Code != exceptionIPAddressNotAllowed {
 		t.Fatalf("new session: %v", err)
 	}
+}
+
+func TestQueriesJudgedByIPACL(t *testing.T) {
+	query := func(address string) error {
+		db := chdriver.OpenDB(&chdriver.Options{Addr: []string{address}})
+		defer db.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var got string
+		return db.QueryRowContext(ctx, "SELECT 1").Scan(&got)
+	}
+	serve := func(o ipacl.Options) string {
+		list, _, err := ipacl.Compile(o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		h := aclhandler.Middleware(list, "bridge", aclhandler.ScopeBackend, echoJSONHandler())
+		return startTestProtocolServer(t, New(h, nil, false, "ip-acl"))
+	}
+
+	// each query is judged by the session's address, the loopback here
+	if err := query(serve(ipacl.Options{Allow: []string{"127.0.0.1"}})); err != nil {
+		t.Fatalf("allowed session: %v", err)
+	}
+	var exception *chdriver.Exception
+	if err := query(serve(ipacl.Options{})); !errors.As(err, &exception) || exception.Code != 62 ||
+		!strings.Contains(exception.Message, "403") {
+		t.Fatalf("rejected query: %v", err)
+	}
+	// a drop ends the session with no answer, and the server serves the next one
+	address := serve(ipacl.Options{Action: "drop"})
+	for range 2 {
+		if err := query(address); err == nil || errors.As(err, &exception) {
+			t.Fatalf("dropped query: %v", err)
+		}
+	}
+}
+
+func TestServeQueryRepanics(t *testing.T) {
+	defer func() {
+		if p := recover(); p != "boom" {
+			t.Fatalf("recovered %v", p)
+		}
+	}()
+	serveQuery(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { panic("boom") }), nil, nil)
 }

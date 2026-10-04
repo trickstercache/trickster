@@ -276,7 +276,7 @@ func TestGeoPathOnRoutedMember(t *testing.T) {
 }
 
 func TestGeoStreamPoolMembers(t *testing.T) {
-	const refused = "listener's alb relays to"
+	const refused = "stream member access lists are not supported"
 	stream := func(protocol string) *config.Config {
 		c := config.NewConfig()
 		c.Listeners["relay"] = listener.New("relay")
@@ -304,8 +304,13 @@ func TestGeoStreamPoolMembers(t *testing.T) {
 		})
 	}
 
-	// a member that serves HTTP requests too keeps path-level geo ACLs for them, but not a backend-level one
+	// a path-level geo ACL on a member that serves no HTTP would never judge anything
 	c := stream(listener.ProtocolTCP)
+	c.Backends["m1"].Paths = pathopts.List{{Path: "/api/", GeoACLName: geoACLNorthAmerica}}
+	require.ErrorContains(t, validateGeoListeners(c), `backend "m1" path "/api/" uses geo ACL`)
+
+	// a member that serves HTTP requests too keeps path-level geo ACLs for them, but not a backend-level one
+	c = stream(listener.ProtocolTCP)
 	c.Backends["m1"].ListenerName, c.Backends["m1"].ListenerNames = "", []string{"relay", "default"}
 	c.Backends["m1"].Paths = pathopts.List{{Path: "/api/", GeoACLName: geoACLNorthAmerica}}
 	require.NoError(t, validateGeoListeners(c))
@@ -321,7 +326,7 @@ func TestGeoStreamPoolMembers(t *testing.T) {
 	m2.Provider, m2.OriginURL, m2.GeoACLName = bp.ReverseProxyShort, "tcp://m2.example.com:9000", geoACLNorthAmerica
 	c.Backends["inner"], c.Backends["m2"] = inner, m2
 	c.Backends["pool"].ALBOptions.Pool = append(c.Backends["pool"].ALBOptions.Pool, ao.PoolMember{Name: "inner"})
-	require.ErrorContains(t, validateGeoListeners(c), `backend "m2": geo_acl_name is not supported`)
+	require.ErrorContains(t, validateGeoListeners(c), `backend "m2" uses geo ACL`)
 
 	// and a template that discovery clones into the pool
 	c = stream(listener.ProtocolTCP)
@@ -330,5 +335,5 @@ func TestGeoStreamPoolMembers(t *testing.T) {
 	tmpl.GeoACLName = geoACLNorthAmerica
 	c.Backends["template"] = tmpl
 	c.Backends["pool"].ALBOptions.Discovery = &ao.DiscoveryOptions{DiscovererName: "dns", TemplateBackend: "template"}
-	require.ErrorContains(t, validateGeoListeners(c), `backend "template": geo_acl_name is not supported`)
+	require.ErrorContains(t, validateGeoListeners(c), `backend "template" uses geo ACL`)
 }
