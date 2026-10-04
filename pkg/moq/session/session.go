@@ -129,6 +129,9 @@ type Session struct {
 	live       map[*Request]struct{}
 	tokens     tokenCache
 
+	dgOnce  sync.Once
+	dgQueue chan queuedDatagram
+
 	endOnce sync.Once
 }
 

@@ -320,9 +320,16 @@ func stopped(t *testing.T, st session.SendStream, within time.Duration) (uint64,
 }
 
 func rawPeer(t *testing.T, role session.Role, o func(*session.Options)) (*session.Session, *raw) {
-	// starts a session against a hand-driven peer, which sends what a well-behaved session never would
+	t.Helper()
+	return rawPeerCap(t, role, 0, o)
+}
+
+func rawPeerCap(t *testing.T, role session.Role, capacity int, o func(*session.Options)) (*session.Session, *raw) {
+	// starts a session against a hand-driven peer, which sends what a well-behaved session never would; capacity
+	// bounds what each of the session's streams buffers before its writes block
 	t.Helper()
 	sc, pc := memconn.Pair()
+	sc.Capacity = capacity
 	opts := session.Options{Role: role, Codec: c22(t), Handler: newRecorder(), UnknownAliasWait: 200 * time.Millisecond}
 	if o != nil {
 		o(&opts)

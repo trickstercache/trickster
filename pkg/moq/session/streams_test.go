@@ -19,6 +19,7 @@ package session_test
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 	"time"
 
@@ -516,5 +517,121 @@ func TestFillFollowsTrackOrder(t *testing.T) {
 	got := recv(t, ch.fetches, "fill")
 	if len(got) != 3 || got[0].o.Group != 9 || got[1].o.Group != 7 || got[2].o.Group != 4 {
 		t.Errorf("a fill in the track's descending order decodes as sent: %+v", got)
+	}
+}
+
+func TestQueuedDatagrams(t *testing.T) {
+	sh, ch := newRecorder(), newRecorder()
+	client, server := pair(t, sh, ch, pairOpts{})
+	r := subscribe(t, client, ch, "v")
+	in := recv(t, sh.requests, "request")
+	if err := in.QueueDatagram(&message.Datagram{}, time.Time{}); !errors.Is(err, session.ErrNoTrackAlias) {
+		t.Errorf("objects need the alias SUBSCRIBE_OK assigns: %v", err)
+	}
+	if err := in.Send(&message.SubscribeOK{TrackAlias: server.NewTrackAlias()}); err != nil {
+		t.Fatal(err)
+	}
+	// a datagram that overtakes SUBSCRIBE_OK is dropped, so the subscriber learns the alias first
+	if _, err := r.Response(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.QueueDatagram(&message.Datagram{Group: 1, Payload: []byte("stale")}, time.Now().Add(-time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.QueueDatagram(&message.Datagram{Group: 2, Payload: []byte("fresh")}, time.Now().Add(wait)); err != nil {
+		t.Fatal(err)
+	}
+	if d := recv(t, ch.datagrams, "datagram"); string(d.Payload) != "fresh" {
+		t.Errorf("a datagram past its deadline is not sent: got %q", d.Payload)
+	}
+	if err := in.QueueDatagram(&message.Datagram{HasStatus: true, Payload: []byte("x")}, time.Time{}); err == nil {
+		t.Error("a datagram that cannot be encoded is refused")
+	}
+	_ = server.Close(message.CodeNoError, "")
+	if err := in.QueueDatagram(&message.Datagram{Group: 3}, time.Time{}); !errors.Is(err, session.ErrDatagramDropped) {
+		t.Errorf("a closed session queues nothing: %v", err)
+	}
+}
+
+func TestResetDelivered(t *testing.T) {
+	h := newRecorder()
+	s, p := rawPeer(t, session.RoleServer, func(o *session.Options) { o.Handler = h })
+	p.openBidi(&message.Subscribe{RequestID: 0, Track: track("v", "ns")})
+	in := recv(t, h.requests, "request")
+	if err := in.Send(&message.SubscribeOK{TrackAlias: s.NewTrackAlias()}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := in.OpenSubgroup(context.Background(), message.SubgroupHeader{Group: 1, DefaultPriority: true}, 3, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = out.WriteObject(&message.SubgroupObject{ID: 0, PayloadLen: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = out.Write([]byte("ok")); err != nil {
+		t.Fatal(err)
+	}
+	out.ResetDelivered(message.ResetTooFarBehind)
+	rs := p.acceptUni()
+	b, err := io.ReadAll(rs)
+	if !isRemoteReset(err, message.ResetTooFarBehind) || !rs.ReliableBoundary() || len(b) == 0 {
+		t.Errorf("read %d bytes, then %v", len(b), err)
+	}
+}
+
+func TestFetchStreamTrailsRequest(t *testing.T) {
+	for range 20 {
+		s, p := rawPeer(t, session.RoleClient, nil)
+		h := newRecorder()
+		f, err := s.Open(context.Background(), &message.Fetch{Track: track("v", "ns")}, h, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		st, _, _ := p.acceptBidi()
+		p.write(st, &message.FetchOK{EndLocation: wire.Location{Group: 1}})
+		_ = st.Close()
+		if err = recv(t, h.closes, "close"); err != nil {
+			t.Fatalf("the fetch's request stream ends cleanly: %v", err)
+		}
+		w := p.c.NewFetchWriter(message.GroupOrderAscending)
+		b, _ := w.AppendObject(p.c.AppendFetchHeader(nil, f.RequestID()), &message.FetchObject{Group: 1, PayloadLen: 1})
+		_ = p.openUni(append(b, 'x')).Close()
+		if got := recv(t, h.fetches, "the trailing fetch stream"); len(got) != 1 || got[0].payload != "x" {
+			t.Fatalf("got %+v", got)
+		}
+	}
+}
+
+func TestResetUnblocksWrite(t *testing.T) {
+	h := newRecorder()
+	s, p := rawPeerCap(t, session.RoleServer, 64<<10, func(o *session.Options) { o.Handler = h })
+	p.openBidi(&message.Subscribe{RequestID: 0, Track: track("v", "ns")})
+	in := recv(t, h.requests, "request")
+	if err := in.Send(&message.SubscribeOK{TrackAlias: s.NewTrackAlias()}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := in.OpenSubgroup(context.Background(), message.SubgroupHeader{Group: 1, DefaultPriority: true}, 3, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.acceptUni()
+	if err = out.WriteObject(&message.SubgroupObject{ID: 0, PayloadLen: 1 << 20}); err != nil {
+		t.Fatal(err)
+	}
+	blocked := make(chan error, 1)
+	go func() {
+		chunk := make([]byte, 16<<10)
+		for range 64 {
+			if _, err := out.Write(chunk); err != nil {
+				blocked <- err
+				return
+			}
+		}
+		blocked <- nil
+	}()
+	time.Sleep(10 * time.Millisecond)
+	out.Reset(message.ResetCancelled)
+	if err = recv(t, blocked, "the blocked write"); err == nil {
+		t.Error("a reset fails the write it unblocks")
 	}
 }

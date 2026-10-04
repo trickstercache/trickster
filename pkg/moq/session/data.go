@@ -34,6 +34,8 @@ var (
 	ErrPayloadPending = errors.New("moq: the previous object's payload is incomplete")
 	// ErrPayloadOverrun is returned when writing more payload than the object's declared length
 	ErrPayloadOverrun = errors.New("moq: payload exceeds the object's length")
+	// ErrDatagramDropped is returned when a datagram finds the session's send queue full
+	ErrDatagramDropped = errors.New("moq: datagram dropped with the send queue full")
 )
 
 func (s *Session) registerAlias(alias uint64, r *Request) error {
@@ -150,10 +152,15 @@ func (s *Session) routeFetch(id uint64, r *Request, order message.GroupOrder) {
 }
 
 func (r *Request) awaitData() (DataHandler, bool) {
+	// a fetch stream can trail its request stream, so handlers already set win over the request having ended
 	select {
 	case <-r.ready:
-	case <-r.ctx.Done():
-		return nil, false
+	default:
+		select {
+		case <-r.ready:
+		case <-r.ctx.Done():
+			return nil, false
+		}
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -428,12 +435,21 @@ func (o *outgoing) CloseWithTimeout(d time.Duration) error {
 	return nil
 }
 
-// Reset abandons the stream with code
+// Reset abandons the stream with code; a write blocked on flow control returns at once
 func (o *outgoing) Reset(code message.ResetCode) {
+	o.st.CancelWrite(uint64(code))
 	o.mu.Lock()
 	o.closed = true
 	o.mu.Unlock()
+}
+
+// ResetDelivered resets the stream with code while still delivering everything written so far (RESET_STREAM_AT)
+func (o *outgoing) ResetDelivered(code message.ResetCode) {
+	o.st.SetReliableBoundary()
 	o.st.CancelWrite(uint64(code))
+	o.mu.Lock()
+	o.closed = true
+	o.mu.Unlock()
 }
 
 // SetWriteDeadline bounds blocked writes on the stream
@@ -552,6 +568,72 @@ func (r *Request) OpenFetch(ctx context.Context, requestID uint64, order message
 }
 
 var datagramBuffers = sync.Pool{New: func() any { b := make([]byte, 0, 1500); return &b }}
+
+const datagramQueueLen = 256
+
+type queuedDatagram struct {
+	buf      *[]byte
+	deadline int64
+}
+
+func (s *Session) queueDatagram(q queuedDatagram) bool {
+	// quic-go's SendDatagram blocks while its own queue is full, so one sender per session absorbs that wait
+	s.dgOnce.Do(func() {
+		s.dgQueue = make(chan queuedDatagram, datagramQueueLen)
+		go s.sendDatagrams()
+	})
+	if s.ctx.Err() != nil {
+		return false
+	}
+	select {
+	case s.dgQueue <- q:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Session) sendDatagrams() {
+	for {
+		select {
+		case q := <-s.dgQueue:
+			if q.deadline == 0 || time.Now().UnixNano() <= q.deadline {
+				_ = s.conn.SendDatagram(*q.buf)
+			}
+			*q.buf = (*q.buf)[:0]
+			datagramBuffers.Put(q.buf)
+		case <-s.ctx.Done():
+			return
+		}
+	}
+}
+
+// QueueDatagram queues an object of this request's track for a datagram without blocking. It is dropped with
+// ErrDatagramDropped when the session's queue is full, and unsent once deadline passes (zero never passes).
+func (r *Request) QueueDatagram(d *message.Datagram, deadline time.Time) error {
+	alias, ok := r.TrackAlias()
+	if !ok {
+		return ErrNoTrackAlias
+	}
+	d.TrackAlias = alias
+	bp := datagramBuffers.Get().(*[]byte)
+	b, err := r.s.codec.AppendDatagram((*bp)[:0], d)
+	if err != nil {
+		datagramBuffers.Put(bp)
+		return err
+	}
+	*bp = b
+	var deadlineNano int64
+	if !deadline.IsZero() {
+		deadlineNano = deadline.UnixNano()
+	}
+	if !r.s.queueDatagram(queuedDatagram{buf: bp, deadline: deadlineNano}) {
+		*bp = b[:0]
+		datagramBuffers.Put(bp)
+		return ErrDatagramDropped
+	}
+	return nil
+}
 
 // SendDatagram sends an object of this request's track in a datagram under the request's alias
 func (r *Request) SendDatagram(d *message.Datagram) error {
