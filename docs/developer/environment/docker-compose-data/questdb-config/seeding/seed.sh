@@ -214,14 +214,22 @@ EOF
         echo "seed validation failed: date/datetime or epoch mismatch" >&2
         exit 1
     fi
+    sparse_span=$(sql_export "SELECT datediff('s', min(pickup_datetime), max(pickup_datetime)) FROM sparse_trips" \
+        | tail -n 1 | tr -d '\r')
+    if [ "$sparse_span" != "1800" ]; then
+        echo "seed validation failed: sparse observations must be thirty minutes apart" >&2
+        exit 1
+    fi
 }
 
-wait_for_rollup() {
-    expected=$1
+wait_for_count() {
+    query=$1
+    expected=$2
+    name=$3
     total=0
     i=0
     while [ "$i" -lt 60 ]; do
-        total=$(sql_export 'SELECT coalesce(sum(trips), 0) AS total FROM trips_15m' \
+        total=$(sql_export "$query" \
             | tail -n 1 | tr -d '\r')
         [ -n "$total" ] || total=0
         [ "$total" = "$expected" ] && break
@@ -229,7 +237,7 @@ wait_for_rollup() {
         sleep 1
     done
     if [ "$total" != "$expected" ]; then
-        echo "materialized view did not catch up: expected $expected rows, got $total" >&2
+        echo "$name did not catch up: expected $expected rows, got $total" >&2
         exit 1
     fi
 }
@@ -238,8 +246,11 @@ load_seed_metadata
 create_tables
 load_file "$FILE1"
 load_file "$FILE2"
+# WAL writes must be visible before a dependent INSERT SELECT reads them.
+wait_for_count 'SELECT count() FROM trips' "$SOURCE_ROWS" 'trips table'
 seed_sparse_table
+wait_for_count 'SELECT count() FROM sparse_trips' 2 'sparse table'
 sql_execute "$(cat /seeding/create_rollup.sql)"
-wait_for_rollup "$SOURCE_ROWS"
+wait_for_count 'SELECT coalesce(sum(trips), 0) AS total FROM trips_15m' "$SOURCE_ROWS" 'materialized view'
 validate_seed
 echo "seed complete: $SOURCE_ROWS rows, pickup window $TARGET_PICKUP_MIN_EPOCH..$TARGET_PICKUP_MAX_EPOCH"
