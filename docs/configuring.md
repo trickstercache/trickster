@@ -135,6 +135,8 @@ backends:
 
 An `ip_acl_name` on a listener, backend, or path names an entry in [`ip_acls`](./ip-acl.md). A listener list and a backend list both apply. A path name replaces the backend list, and `none` clears it for that path.
 
+A `rate_limiter_name` on a listener, backend, or path names an entry in [`rate_limiters`](./rate-limiting.md). The listener limiter is a separate outer layer. A path name replaces the backend limiter, and `none` clears it for that path.
+
 Each native listener maps to exactly one backend. Multiple HTTP listeners can share a backend, and ClickHouse can bind the same backend to HTTP and ClickHouse Native listeners.
 
 A user-defined listener with no mapped backend is not started and produces a warning. A configured TLS port is enabled only when at least one backend mapped to that listener provides a valid frontend certificate and key in its `tls` section; otherwise Trickster disables that TLS port and logs a warning.

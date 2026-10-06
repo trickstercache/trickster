@@ -57,6 +57,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
@@ -259,6 +260,9 @@ type Options struct {
 	// IPACLName is the access list applied to this backend's routes. A path's
 	// ip_acl_name replaces it. The reference none is not valid on a backend.
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
+	// RateLimiterName is the limiter applied to this backend's routes. A path's
+	// rate_limiter_name replaces it. The reference none is not valid on a backend.
+	RateLimiterName string `yaml:"rate_limiter_name,omitempty"`
 	// SigV4 signs outbound requests to this backend's origin with AWS
 	// SigV4. It defaults to signing for Amazon Managed Service for
 	// Prometheus; set sigv4.service to sign for another AWS service.
@@ -321,6 +325,8 @@ type Options struct {
 	GeoACLOptions *geoaclopts.Options `yaml:"-"`
 	// IPACL is the compiled list named by IPACLName.
 	IPACL *ipacl.List `yaml:"-"`
+	// RateLimiter is the definition named by RateLimiterName. Clones share it.
+	RateLimiter *rlopts.Options `yaml:"-"`
 	// DoesShard is true when sharding will be used with this origin, based on how the
 	// sharding options have been configured
 	DoesShard bool `yaml:"-"`
@@ -748,13 +754,13 @@ func (l Lookup) ValidateGeoACLNames(g geoaclopts.Lookup) error {
 	return nil
 }
 
-// ClearACLNames clears the backend's and paths' geo_acl_name and ip_acl_name from a restart identity, since a
-// native server takes its ACLs anew on reload
+// ClearACLNames clears ACL and rate-limiter names from a restart identity. A native server takes
+// those policies anew on reload, so the names must not force a restart by themselves.
 func (o *Options) ClearACLNames() {
-	o.GeoACLName, o.IPACLName = "", ""
+	o.GeoACLName, o.IPACLName, o.RateLimiterName = "", "", ""
 	for _, p := range o.Paths {
 		if p != nil {
-			p.GeoACLName, p.IPACLName = "", ""
+			p.GeoACLName, p.IPACLName, p.RateLimiterName = "", "", ""
 		}
 	}
 }
@@ -772,6 +778,7 @@ func ValidateBackendName(name string) error {
 // (e.g., backends.cache_name) are valid
 func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 	rul ro.Lookup, rwl rwopts.Lookup, a autho.Lookup, tr tro.Lookup, acls ipacl.Lookup,
+	limits rlopts.Lookup,
 ) error {
 	for _, o := range l {
 		if err := ValidateBackendName(o.Name); err != nil {
@@ -792,6 +799,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 				return err
 			}
 			o.IPACL = list
+		}
+		if o.RateLimiterName != "" {
+			limiter, err := resolveRateLimiter(limits, o.RateLimiterName, o.Name)
+			if err != nil {
+				return err
+			}
+			o.RateLimiter = limiter
 		}
 		if o.ReqRewriterName != "" {
 			if _, ok = rwl[o.ReqRewriterName]; !ok {
@@ -816,6 +830,13 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 					return err
 				}
 				p.IPACL = list
+			}
+			if p.RateLimiterName != reserved.ReferenceNone && p.RateLimiterName != "" {
+				limiter, err := resolveRateLimiter(limits, p.RateLimiterName, o.Name+"/"+p.Path)
+				if err != nil {
+					return err
+				}
+				p.RateLimiter = limiter
 			}
 			if p.ReqRewriterName != "" {
 				if _, ok = rwl[p.ReqRewriterName]; !ok {
@@ -880,6 +901,14 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 		}
 	}
 	return nil
+}
+
+func resolveRateLimiter(limits rlopts.Lookup, name, where string) (*rlopts.Options, error) {
+	def := limits[name]
+	if def == nil {
+		return nil, fmt.Errorf("invalid rate_limiter_name %q in %s", name, where)
+	}
+	return def, nil
 }
 
 func resolveIPACL(acls ipacl.Lookup, name, where string) (*ipacl.List, error) {

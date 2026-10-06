@@ -35,6 +35,7 @@ import (
 	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
 )
@@ -46,6 +47,7 @@ const (
 	geoLocatorPrefix  = "geo-locator"
 	geoACLPrefix      = "geo-acl"
 	ipACLPrefix       = "ip-acl"
+	rateLimitPrefix   = "rate-limit"
 )
 
 var unsanitizedPathHeaders = map[string]struct{}{
@@ -73,6 +75,7 @@ func (c *Config) SanitizedClone() *Config {
 	geoLocatorNameMap := anonymizedNames(cp.GeoLocators, geoLocatorPrefix)
 	geoACLNameMap := anonymizedNames(cp.GeoACLs, geoACLPrefix)
 	ipACLNameMap := anonymizedNames(cp.IPACLs, ipACLPrefix)
+	rateLimitNameMap := anonymizedNames(cp.RateLimiters, rateLimitPrefix)
 
 	renamedCaches := make(cache.Lookup, len(cp.Caches))
 	for oldName, opts := range cp.Caches {
@@ -89,6 +92,7 @@ func (c *Config) SanitizedClone() *Config {
 	for oldName, opts := range cp.Listeners {
 		if opts != nil {
 			opts.IPACLName = renamed(ipACLNameMap, opts.IPACLName)
+			opts.RateLimiterName = renamed(rateLimitNameMap, opts.RateLimiterName)
 		}
 		renamedListeners[listenerNameMap[oldName]] = opts
 	}
@@ -126,7 +130,7 @@ func (c *Config) SanitizedClone() *Config {
 				opts.ListenerName = newListenerName
 			}
 			sanitizePathAuthenticatorReferences(opts, authNameMap)
-			sanitizeACLReferences(opts, geoACLNameMap, ipACLNameMap)
+			sanitizeACLReferences(opts, geoACLNameMap, ipACLNameMap, rateLimitNameMap)
 			sanitizeBackendReferences(opts, backendNameMap)
 			sanitizePathHeaderValues(opts)
 			sanitizeGraphiteOriginCredentials(opts)
@@ -163,6 +167,7 @@ func (c *Config) SanitizedClone() *Config {
 	cp.GeoLocators = sanitizeGeoLocators(cp.GeoLocators, geoLocatorNameMap)
 	cp.GeoACLs = sanitizeGeoACLs(cp.GeoACLs, geoACLNameMap, geoLocatorNameMap)
 	cp.IPACLs = sanitizeIPACLs(cp.IPACLs, ipACLNameMap)
+	cp.RateLimiters = sanitizeRateLimiters(cp.RateLimiters, rateLimitNameMap)
 	sanitizeRequestRewriters(cp.RequestRewriters)
 	sanitizeACME(cp.ACME, cacheNameMap, listenerNameMap)
 
@@ -451,16 +456,33 @@ func anonymizedNames[V any](m map[string]V, prefix string) map[string]string {
 	return out
 }
 
-func sanitizeACLReferences(opts *bo.Options, geoACLNameMap, ipACLNameMap map[string]string) {
+func sanitizeACLReferences(opts *bo.Options, geoACLNameMap, ipACLNameMap, rateLimitNameMap map[string]string) {
 	// none is in neither map, so a path that clears its backend's ACL keeps saying so
 	opts.GeoACLName = renamed(geoACLNameMap, opts.GeoACLName)
 	opts.IPACLName = renamed(ipACLNameMap, opts.IPACLName)
+	opts.RateLimiterName = renamed(rateLimitNameMap, opts.RateLimiterName)
 	for _, path := range opts.Paths {
 		if path != nil {
 			path.GeoACLName = renamed(geoACLNameMap, path.GeoACLName)
 			path.IPACLName = renamed(ipACLNameMap, path.IPACLName)
+			path.RateLimiterName = renamed(rateLimitNameMap, path.RateLimiterName)
 		}
 	}
+}
+
+func sanitizeRateLimiters(limiters rlopts.Lookup, nameMap map[string]string) rlopts.Lookup {
+	if limiters == nil {
+		return nil
+	}
+	out := make(rlopts.Lookup, len(limiters))
+	for oldName, opts := range limiters {
+		newName := nameMap[oldName]
+		if opts != nil {
+			opts.Name = newName
+		}
+		out[newName] = opts
+	}
+	return out
 }
 
 func sanitizeGeoLocators(locators geolocopts.Lookup, nameMap map[string]string) geolocopts.Lookup {
