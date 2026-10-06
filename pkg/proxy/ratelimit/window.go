@@ -60,6 +60,7 @@ func (b *bucket) judge(now, window int64, limit, cost uint32, countLimited bool)
 		Allowed:    true,
 		Remaining:  remainingOf(limit, estimate(b.prev, b.cur, frac)),
 		RetryKnown: true,
+		Reset:      AgeOut(b.cur, now, window),
 	}
 }
 
@@ -74,6 +75,7 @@ func (b *bucket) refused(now, window int64, limit, cost uint32, est float64, cou
 	d := Decision{
 		Result:    ResultLimited,
 		Remaining: remainingOf(limit, est),
+		Reset:     AgeOut(b.cur, now, window),
 	}
 	if uint64(cost) > uint64(limit) {
 		return d
@@ -85,6 +87,7 @@ func (b *bucket) refused(now, window int64, limit, cost uint32, est float64, cou
 		d.Result = ResultCounted
 		d.Allowed = true
 		d.Remaining = remainingOf(limit, estimate(b.prev, b.cur, fraction(now, window)))
+		d.Reset = AgeOut(b.cur, now, window)
 	}
 	delay, ok := earliest(s, now, window, limit, cost)
 	d.RetryAfter = time.Duration(delay)
@@ -106,7 +109,28 @@ func (b *bucket) allowFast(now, window int64, limit, cost uint32) (Decision, boo
 	b.last = now
 	return Decision{
 		Result: ResultAllowed, Allowed: true, Remaining: limit - b.cur, RetryKnown: true,
+		Reset: AgeOut(b.cur, now, window),
 	}, true
+}
+
+// AgeOut is how long the previous and current window counts stay in the estimate. A current
+// count needs the rest of this window and one more; an empty current count leaves at the boundary.
+func AgeOut(cur uint32, now, window int64) time.Duration {
+	if window <= 0 {
+		return time.Second
+	}
+	elapsed := now % window
+	if elapsed < 0 {
+		elapsed += window
+	}
+	until := window - elapsed
+	if until <= 0 {
+		until = window
+	}
+	if cur > 0 {
+		until += window
+	}
+	return time.Duration(until)
 }
 
 // roll moves the counts into now's window. An older sample is clamped to the last processed

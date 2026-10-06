@@ -105,7 +105,10 @@ func (l *Limiter) Len() int {
 func (l *Limiter) judge(key uint64, ok bool, now int64, cost uint32, countLimited bool) Decision {
 	key, count := l.bind(key, ok)
 	if !count {
-		return Decision{Result: ResultExempt, Allowed: true, Remaining: l.limit, RetryKnown: true}
+		return Decision{
+			Result: ResultExempt, Allowed: true, Remaining: l.limit, RetryKnown: true,
+			Reset: AgeOut(0, now, int64(l.window)),
+		}
 	}
 	var d Decision
 	if countLimited {
@@ -116,12 +119,16 @@ func (l *Limiter) judge(key uint64, ok bool, now int64, cost uint32, countLimite
 	if d.Result != ResultFull {
 		return d
 	}
+	reset := AgeOut(0, now, int64(l.window))
 	if l.onFull == MaxKeysAllow {
-		return Decision{Result: ResultFull, Allowed: true, Remaining: l.limit, RetryKnown: true}
+		return Decision{
+			Result: ResultFull, Allowed: true, Remaining: l.limit, RetryKnown: true, Reset: reset,
+		}
 	}
 	d.Allowed = false
 	d.RetryAfter = l.window
 	d.RetryKnown = true
+	d.Reset = reset
 	return d
 }
 

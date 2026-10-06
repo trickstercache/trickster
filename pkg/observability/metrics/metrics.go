@@ -22,6 +22,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -49,6 +50,7 @@ const (
 	stepAlignSubsystem  = "step_alignment"
 	geoSubsystem        = "geo"
 	ipACLSubsystem      = "ip_acl"
+	rateLimitSubsystem  = "ratelimit"
 )
 
 // IP access list scopes and verdicts. reject and drop are both deny.
@@ -76,6 +78,23 @@ var (
 			Help:      "Count of IP access list decisions by list, scope and verdict.",
 		},
 		[]string{keys.IP_ACL, keys.Scope, keys.Verdict},
+	)
+
+	// RateLimitDecisions counts judged events. The limiter name, plane and result are the only labels.
+	RateLimitDecisions = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: rateLimitSubsystem,
+			Name:      "decisions_total",
+			Help:      "Count of rate limiter decisions by limiter, plane and result.",
+		},
+		[]string{keys.Limiter, keys.Plane, keys.Result},
+	)
+
+	rateLimitKeysDesc = prometheus.NewDesc(
+		prometheus.BuildFQName(metricNamespace, rateLimitSubsystem, "keys"),
+		"Rate limiter buckets held at scrape time.",
+		[]string{keys.Limiter}, nil,
 	)
 
 	// AccessLogDroppedLines counts access and error log lines that could not be written
@@ -1315,9 +1334,58 @@ func (d *IPACLDecision) Observe(allowed bool) {
 	d.Deny.Inc()
 }
 
+// RateLimitDecision is the five result counters for one attachment, resolved when it is built.
+type RateLimitDecision struct {
+	allowed, limited, counted, exempt, full prometheus.Counter
+}
+
+// NewRateLimitDecision resolves the result counters for one limiter and plane.
+func NewRateLimitDecision(name, plane string) *RateLimitDecision {
+	return &RateLimitDecision{
+		allowed: RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultAllowed.String()),
+		limited: RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultLimited.String()),
+		counted: RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultCounted.String()),
+		exempt:  RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultExempt.String()),
+		full:    RateLimitDecisions.WithLabelValues(name, plane, ratelimit.ResultFull.String()),
+	}
+}
+
+// Observe records one decision.
+func (d *RateLimitDecision) Observe(result ratelimit.Result) {
+	if d == nil {
+		return
+	}
+	switch result {
+	case ratelimit.ResultAllowed:
+		d.allowed.Inc()
+	case ratelimit.ResultLimited:
+		d.limited.Inc()
+	case ratelimit.ResultCounted:
+		d.counted.Inc()
+	case ratelimit.ResultExempt:
+		d.exempt.Inc()
+	case ratelimit.ResultFull:
+		d.full.Inc()
+	}
+}
+
+type rateLimitKeysCollector struct{}
+
+func (rateLimitKeysCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- rateLimitKeysDesc
+}
+
+func (rateLimitKeysCollector) Collect(ch chan<- prometheus.Metric) {
+	ratelimit.Walk(func(name string, n int) {
+		ch <- prometheus.MustNewConstMetric(rateLimitKeysDesc, prometheus.GaugeValue, float64(n), name)
+	})
+}
+
 func init() {
 	// Register Metrics
 	prometheus.MustRegister(IPACLDecisions)
+	prometheus.MustRegister(RateLimitDecisions)
+	prometheus.MustRegister(rateLimitKeysCollector{})
 	prometheus.MustRegister(AccessLogDroppedLines)
 	prometheus.MustRegister(ProxyUpstreamRetries)
 	prometheus.MustRegister(ProxyMirrorRequests)

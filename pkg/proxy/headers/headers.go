@@ -224,6 +224,9 @@ const (
 	NameXRateLimitRemaining = "X-RateLimit-Remaining"
 	// NameXRateLimitReset is the legacy X-RateLimit-Reset response field.
 	NameXRateLimitReset = "X-RateLimit-Reset"
+	// NameXTricksterRateLimited is the request field a count-mode limiter appends its name to.
+	// A listener strips a client-supplied value before any limiter runs.
+	NameXTricksterRateLimited = "X-Trickster-Rate-Limited"
 	// NameXRequestID represents the HTTP Header Name of "X-Request-ID"
 	NameXRequestID = "X-Request-ID"
 	// NameXForwardedHost represents the HTTP Header Name of "X-Forwarded-Host"

@@ -53,13 +53,15 @@ func (r Result) String() string {
 }
 
 // Decision is one judged event. RetryAfter is the precise wait until the same cost could pass;
-// RetryKnown is false when the cost is above the limit and no wait will admit it.
+// RetryKnown is false when the cost is above the limit and no wait will admit it. Reset is how
+// long until the counts in the estimate have aged out, which policy headers advertise.
 type Decision struct {
 	Result     Result
 	Allowed    bool
 	RetryAfter time.Duration
 	RetryKnown bool
 	Remaining  uint32
+	Reset      time.Duration
 }
 
 // RetryAfterSeconds rounds a precise wait up to whole seconds, and at least one second.

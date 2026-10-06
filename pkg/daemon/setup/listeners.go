@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"maps"
 	"net/http"
+	"net/url"
 	"slices"
 	"time"
 
@@ -29,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/config"
 	listenerconfig "github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/accesslog"
@@ -49,6 +51,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener/native"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
+	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
+	rlhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
@@ -100,11 +104,53 @@ func guardReservedRoutes(routes []mgmtRoute, next http.Handler) http.Handler {
 	})
 }
 
-func wrapListener(o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
-	// Resolve the client and log before enforcing the ACL; normalize allowed requests before routing.
+func wrapListener(conf *config.Config, name string, o *listenerconfig.Options, routerLogger *accesslog.Logger, next http.Handler) http.Handler {
+	if next == nil {
+		return nil
+	}
+	ready := ""
+	if conf != nil && conf.MgmtConfig != nil && name != mgmt.ListenerNameMetrics {
+		ready = normalizedReadyPath(o.PathNormalization, conf.MgmtConfig.ReadyHandlerPath)
+	}
+	// Resolve the client and log before the ACL. Normalize, then strip a spoofed marker, then limit.
 	return clientip.Middleware(trustedProxies(o), accesslog.RouterMiddleware(routerLogger,
 		aclhandler.Middleware(o.IPACL, o.IPACLName, aclhandler.ScopeListener,
-			normalize.Middleware(o.PathNormalization, next))))
+			normalize.Middleware(o.PathNormalization,
+				rlhandler.Listener(o.RateLimiter, ready, listenerStripsRateLimit(conf, name, o), next)))))
+}
+
+func normalizedReadyPath(norm *pno.Options, path string) string {
+	if path == "" {
+		return ""
+	}
+	u := &url.URL{Path: path}
+	if !normalize.New(norm).Normalize(u) {
+		return path
+	}
+	return u.Path
+}
+
+func listenerStripsRateLimit(conf *config.Config, name string, o *listenerconfig.Options) bool {
+	if o != nil && o.RateLimiterName != "" {
+		return true
+	}
+	if conf == nil {
+		return false
+	}
+	for _, b := range conf.Backends {
+		if b == nil || !b.UsesListener(name) {
+			continue
+		}
+		if b.RateLimiterName != "" && b.RateLimiterName != reserved.ReferenceNone {
+			return true
+		}
+		for _, p := range b.Paths {
+			if p != nil && p.RateLimiterName != "" && p.RateLimiterName != reserved.ReferenceNone {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func applyListenerConfigs(conf, oldConf *config.Config,
@@ -352,10 +398,10 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
-				options: options, router: wrapListener(options, accessLogger, plain),
+				options: options, router: wrapListener(conf, name, options, accessLogger, plain),
 			}
 		}
-		r = wrapListener(options, accessLogger, r)
+		r = wrapListener(conf, name, options, accessLogger, r)
 		if options.ServeTLS && options.TLSListenPort > 0 {
 			key := listenerKey(name, options.Protocol, true)
 			tlsRouter := r

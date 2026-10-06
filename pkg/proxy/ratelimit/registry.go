@@ -89,6 +89,22 @@ func ForgetExcept(keep func(name string) bool) {
 	}
 }
 
+// Walk calls fn with each kept limiter's name and how many buckets it holds.
+func Walk(fn func(name string, keys int)) {
+	if fn == nil {
+		return
+	}
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	for name, k := range registry.byName {
+		n := 0
+		if k != nil && k.store != nil {
+			n = k.store.Len()
+		}
+		fn(name, n)
+	}
+}
+
 func resetRegistry() {
 	registry.mu.Lock()
 	registry.byName = map[string]*kept{}
