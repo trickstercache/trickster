@@ -45,8 +45,10 @@ func (w *policyWriter) WriteHeader(code int) {
 
 func (w *policyWriter) Write(b []byte) (int, error) {
 	if !w.wrote {
-		w.WriteHeader(http.StatusOK)
+		w.stamp()
 	}
+	// Passthrough proxy: body bytes come from downstream handlers, not this wrapper.
+	// codeql[go/reflected-xss]
 	return w.ResponseWriter.Write(b)
 }
 
