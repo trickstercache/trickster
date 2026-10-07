@@ -34,6 +34,8 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **Disk Caches** - The Filesystem and bbolt caches are rebuilt for large caches and large objects. See [Disk Caches](./caches.md#disk-caches) for details.
 
+**SRV Origin Resolution** - A backend can resolve its origin host as a DNS SRV owner name, dialing a target and port from the SRV answer, with failover across targets and tiers. Combined with a rule and a hostname rewriter, one backend can route to any number of origins published in DNS, including ECS, Consul and Nomad services with dynamically assigned ports. See [Origin Resolution via DNS SRV](./origin-resolution.md).
+
 **Idle Connection Timeouts** - HTTP listeners now close a keep-alive connection that waits more than 2 minutes for its next request; until now idle connections were never closed. The new `idle_timeout`, `read_timeout` and `max_header_bytes` listener options tune this. See [Connection Timeouts and Header Size](./configuring.md#connection-timeouts-and-header-size).
 
 ## Security
@@ -47,3 +49,9 @@ Trickster 2.2 just recently began development, so many of the planned features a
 **IP ACLs** - We've also added IP Access Control Lists to restrict access to certain backend resources by IP. it can be attached at the listener, backend, and path levels, with most specific winning.
 
 **Geo ACLs** - We now support Geolocation Access Control lists to restrict content to geographical areas through IP -> Location translation via industry-standard locator services (MaxMind, RFC 8805 geofeeds, Header from trusted downstreams). Bring your own licensed database.
+
+## Fixes
+
+**Log Level Names Ignore Case** - `log_level`, `TRK_LOG_LEVEL` and `-log-level` now accept a level name in any case. Until now, an uppercase name such as `DEBUG` passed config validation but logged at `info`, and a config with no `logging` block warned that its own default level was unknown. See [Environment Variables](./configuring.md#environment-variables) and [Command Line Arguments](./configuring.md#command-line-arguments).
+
+**Rule Inputs Read the Requested Host** - A rule's `url`, `url_no_params`, `scheme`, `host`, `hostname` and `port` inputs now describe the URL the client requested, taking the host from the `Host` header and the scheme from whether the request arrived over TLS. Until now they read only the request URL, which carries no host or scheme on a client request, so rules matching on these inputs never matched. `port` now also infers `80` or `443` from the scheme when the host names no port, as documented. A request rewriter's `host`, `hostname` and `port` replace instructions likewise now act on the requested host. See [input_source permitted values](./rule.md#input_source-permitted-values).

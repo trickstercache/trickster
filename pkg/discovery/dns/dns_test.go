@@ -18,7 +18,6 @@ package dns
 
 import (
 	"context"
-	"net"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -27,6 +26,7 @@ import (
 	dnsopts "github.com/trickstercache/trickster/v2/pkg/discovery/dns/options"
 	do "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
+	"github.com/trickstercache/trickster/v2/pkg/dns/resolver"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/testutil/dnsserver"
@@ -245,12 +245,6 @@ func TestResolutionFailureKeepsLastGood(t *testing.T) {
 	require.Empty(t, col.next(t))
 }
 
-func TestMinTTL(t *testing.T) {
-	require.Equal(t, 30*time.Second, minTTL(0, 30))
-	require.Equal(t, 10*time.Second, minTTL(30*time.Second, 10))
-	require.Equal(t, 10*time.Second, minTTL(10*time.Second, 30))
-}
-
 func TestNewDiscovererErrors(t *testing.T) {
 	_, err := NewSRV("d", nil)
 	require.Error(t, err)
@@ -277,54 +271,6 @@ func TestSubscribeLifecycle(t *testing.T) {
 	_, err = d.Subscribe(&do.Query{SRVName: "x"}, col.handle)
 	require.ErrorIs(t, err, ErrStopped)
 	require.NoError(t, d.Stop(), "Stop is idempotent")
-}
-
-// TestStdResolver exercises the stdlib-resolver fallback against the
-// in-process DNS server via a custom Dial
-func TestStdResolver(t *testing.T) {
-	srv := dnsserver.New(t)
-	srv.Set(dnsclient.TypeSRV, dnsserver.SRV("_prom._tcp.example.com.", 30,
-		10, 2, 9090, "prom-a.example.com."))
-	srv.Set(dnsclient.TypeA, dnsserver.A("prom.example.com.", 30, "10.0.0.1"))
-	srv.Set(dnsclient.TypeAAAA)
-
-	r := &stdResolver{r: &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, network, srv.Addr())
-		},
-	}}
-	srvs, ttl, err := r.lookupSRV(t.Context(), "_prom._tcp.example.com.")
-	require.NoError(t, err)
-	require.Len(t, srvs, 1)
-	require.Equal(t, "prom-a.example.com.", srvs[0].Target)
-	require.Equal(t, uint16(2), srvs[0].Weight)
-	require.Zero(t, ttl, "the stdlib resolver conveys no TTLs")
-
-	ips, ttl, err := r.lookupIP(t.Context(), "prom.example.com.")
-	require.NoError(t, err)
-	require.Equal(t, []string{"10.0.0.1"}, ips)
-	require.Zero(t, ttl)
-
-	// a NOERROR answer with no records: the stdlib surfaces empty IP
-	// answers as a lookup error, which the poll loop treats as a
-	// resolution failure (keep last-good)
-	srv.Set(dnsclient.TypeA)
-	_, _, err = r.lookupIP(t.Context(), "prom.example.com.")
-	require.Error(t, err)
-}
-
-func TestNewResolverSelection(t *testing.T) {
-	r, err := newResolver("10.0.0.53:53")
-	require.NoError(t, err)
-	require.IsType(t, &directResolver{}, r)
-
-	// with no server configured, either the resolv.conf-backed direct
-	// resolver or the stdlib fallback is acceptable; it must not error
-	r, err = newResolver("")
-	require.NoError(t, err)
-	require.NotNil(t, r)
 }
 
 func TestModeAccessors(t *testing.T) {
@@ -355,21 +301,23 @@ type flakyResolver struct {
 	healed atomic.Bool
 }
 
-func (r *flakyResolver) lookupSRV(context.Context, string) ([]*dnsclient.SRV, time.Duration, error) {
+func (r *flakyResolver) LookupSRV(context.Context, string) (*resolver.SRVAnswer, error) {
 	r.calls.Add(1)
 	if !r.healed.Load() {
 		panic("resolver exploded")
 	}
-	return []*dnsclient.SRV{{Target: "prom-a.example.com.", Port: 9090, Weight: 1}},
-		time.Minute, nil
+	return &resolver.SRVAnswer{
+		Records: []*dnsclient.SRV{{Target: "prom-a.example.com.", Port: 9090, Weight: 1}},
+		TTL:     time.Minute,
+	}, nil
 }
 
-func (r *flakyResolver) lookupIP(context.Context, string) ([]string, time.Duration, error) {
+func (r *flakyResolver) LookupIP(context.Context, string) (resolver.IPAnswer, error) {
 	r.calls.Add(1)
 	if !r.healed.Load() {
 		panic("resolver exploded")
 	}
-	return []string{"10.0.0.1"}, time.Minute, nil
+	return resolver.IPAnswer{Addrs: []string{"10.0.0.1"}, TTL: time.Minute}, nil
 }
 
 // Before the shared poller, a panic anywhere in resolution killed the

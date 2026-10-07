@@ -114,6 +114,7 @@ const (
 	TargetName           = "targetName"
 	Targets              = "targets"
 	Threshold            = "threshold"
+	Tier                 = "tier"
 	Type                 = "type"
 	URL                  = "url"
 	Variant              = "variant"

@@ -36,6 +36,7 @@ func TestNew(t *testing.T) {
 	o := New()
 	require.Equal(t, DefaultLogLevel, o.LogLevel)
 	require.Equal(t, DefaultLogFile, o.LogFile)
+	require.Equal(t, level.InfoID, level.GetID(o.LogLevel), "the default must be a known level as given")
 }
 
 func TestClone(t *testing.T) {

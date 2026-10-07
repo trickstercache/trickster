@@ -17,7 +17,9 @@
 package rule
 
 import (
+	"crypto/tls"
 	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
@@ -44,6 +46,15 @@ func TestExtractions(t *testing.T) {
 	// through a value lookup, and differently through a presence lookup
 	rEmpty, _ := http.NewRequest("GET", testURLNoParams+"?empty=", nil)
 	rEmpty.Header = http.Header{"X-Empty": []string{""}}
+	// server requests carry their authority in the Host header and their scheme in the connection
+	rServer := httptest.NewRequest("GET", path+"?"+params, nil)
+	rServer.Host = host
+	rServer.TLS = &tls.ConnectionState{}
+	rServerNoPort := httptest.NewRequest("GET", path, nil)
+	rServerNoPort.Host = hostname
+	rServerNoPortTLS := httptest.NewRequest("GET", path, nil)
+	rServerNoPortTLS.Host = hostname
+	rServerNoPortTLS.TLS = &tls.ConnectionState{}
 
 	tests := []struct {
 		source   string
@@ -70,6 +81,18 @@ func TestExtractions(t *testing.T) {
 		{"has_param", "empty", "true", rEmpty},
 		{"header", "X-Empty", "", rEmpty},
 		{"param", "empty", "", rEmpty},
+		{"url", "", testURL, rServer},
+		{"url_no_params", "", testURLNoParams, rServer},
+		{"scheme", "", scheme, rServer},
+		{"host", "", host, rServer},
+		{"hostname", "", hostname, rServer},
+		{"port", "", port, rServer},
+		{"path", "", path, rServer},
+		{"params", "", params, rServer},
+		{"url", "", "http://" + hostname + path, rServerNoPort},
+		{"scheme", "", "http", rServerNoPort},
+		{"port", "", "80", rServerNoPort},
+		{"port", "", "443", rServerNoPortTLS},
 		{"method", "", "", nil},
 		{"url", "", "", nil},
 		{"url_no_params", "", "", nil},

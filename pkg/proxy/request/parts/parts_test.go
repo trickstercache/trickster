@@ -17,6 +17,7 @@
 package parts
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/url"
 	"testing"
@@ -59,6 +60,32 @@ func TestGetters(t *testing.T) {
 	r.URL.ForceQuery = true
 	r.URL.RawQuery = ""
 	require.Equal(t, "https://user:pw@example.com:8480/path1/path2", URLNoParams(r))
+}
+
+func TestHostFromHeader(t *testing.T) {
+	// a server request carries its authority in the Host header, not the URL
+	r := &http.Request{URL: &url.URL{Path: "/"}, Host: "Example.com:8480"}
+	require.Equal(t, "Example.com:8480", Host(r))
+	require.Equal(t, "Example.com", Hostname(r))
+	require.Equal(t, "8480", Port(r))
+	r.Host = "[::1]"
+	require.Equal(t, "::1", Hostname(r))
+	require.Empty(t, Port(r))
+	r.URL.Host = "origin.example.com"
+	require.Equal(t, "origin.example.com", Hostname(r), "the URL's host wins when it names one")
+}
+
+func TestServerRequestURL(t *testing.T) {
+	r := &http.Request{URL: &url.URL{Path: "/p", RawQuery: "a=1"}, Host: "example.com:8480"}
+	require.Equal(t, "http", Scheme(r))
+	require.Equal(t, "http://example.com:8480/p?a=1", URL(r))
+	require.Equal(t, "http://example.com:8480/p", URLNoParams(r))
+	r.TLS = &tls.ConnectionState{}
+	require.Equal(t, "https", Scheme(r))
+	require.Equal(t, "https://example.com:8480/p?a=1", URL(r))
+	require.Equal(t, "/p?a=1", r.URL.String(), "the request URL is not modified")
+	r.Host = ""
+	require.Equal(t, "/p?a=1", URL(r), "without a Host header the URL stays relative")
 }
 
 func TestGettersTolerateNil(t *testing.T) {

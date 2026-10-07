@@ -65,6 +65,17 @@ The following metrics are available for polling with any Trickster configuration
     * `backend_name` - the name of the configured backend whose request was signed
     * `event` - `sign_failure` when a request could not be signed and was not sent, or `credentials_retry` when the origin rejected expiring credentials and the request was resent with refreshed ones
 
+* `trickster_proxy_origin_srv_lookups_total` (Counter) - The number of SRV lookups made by backends using [SRV origin resolution](./origin-resolution.md).
+  * labels:
+    * `backend_name` - the name of the configured backend that dialed its origin
+    * `result` - `hit`, `miss`, `stale` (a failed refresh served the last good answer), `negative` (a cached NXDOMAIN, empty answer or failure) or `error`
+
+* `trickster_proxy_origin_srv_dial_attempts_total` (Counter) - The number of dial attempts to SRV targets by backends using [SRV origin resolution](./origin-resolution.md).
+  * labels:
+    * `backend_name` - the name of the configured backend that dialed its origin
+    * `tier` - the target's priority tier, where `0` is the preferred tier
+    * `result` - `success` or `failure`
+
 * `trickster_proxy_truncated_responses_total` (Counter) - The number of time series fetches the origin truncated at its series limit, which Trickster proxies rather than caches. Only backends whose [flavor](./aws.md#amazon-cloudwatch-promql) declares a series limit report it.
   * labels:
     * `backend_name` - the name of the configured backend whose fetch was truncated
