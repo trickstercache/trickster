@@ -206,6 +206,7 @@ it:
 | `authenticator_name` | the configured authenticator every generated backend is behind |
 | `geo_acl_name` | the configured [geo ACL](./geo-acl.md) that gates the backend each route attaches |
 | `ip_acl_name` | the access list every generated backend names; see [ip-acl.md](./ip-acl.md) |
+| `rate_limiter_name` | the rate limiter every generated HTTP and gRPC route is behind; see [rate-limiting.md](./rate-limiting.md) |
 
 `authenticator_name` and `geo_acl_name` in particular have no annotation and
 will not get one: an annotation that can name an authenticator or a geo ACL
@@ -220,6 +221,15 @@ field. An Ingress author cannot select another list or clear the configured
 default with `none`. The list must use `source: client_ip` and `action: reject`.
 A name the configuration does not define, and a list that is not eligible,
 both fail startup. The list syntax is in [ip-acl.md](./ip-acl.md).
+
+`rate_limiter_name` is the same kind of operator setting. It has no Ingress
+annotation and no `TricksterCachePolicy` field, and an Ingress author cannot
+clear it with `none`. It is copied onto generated HTTP and gRPC route backends
+only. A stream route does not take it, and neither do pool members, endpoint
+templates, mirror targets, or generated listeners. The limiter must use HTTP
+keys, a unit of `requests` or unset, and an action other than `close`. A name
+the configuration does not define, and a limiter that is not eligible, both
+fail startup. See [rate-limiting.md](./rate-limiting.md).
 
 `max-ttl`, `cache-name` and `negative-cache-name` describe caching, so they take
 effect only on a route that caches — one whose effective handler is
