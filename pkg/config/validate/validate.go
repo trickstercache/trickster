@@ -240,6 +240,17 @@ func kubernetesReferences(c *config.Config) error {
 				d.IPACLName)
 		}
 	}
+	if d.RateLimiterName != "" {
+		def := c.RateLimiters[d.RateLimiterName]
+		if def == nil {
+			return newKubernetesRefError("defaults", "rate limiter", d.RateLimiterName)
+		}
+		if !def.ServesHTTPRoutes() {
+			return fmt.Errorf("kubernetes 'defaults' references ineligible rate limiter %q: "+
+				"generated HTTP routes require HTTP keys, unit requests or unset, and an action other than close",
+				d.RateLimiterName)
+		}
+	}
 	return nil
 }
 

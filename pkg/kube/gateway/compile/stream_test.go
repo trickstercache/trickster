@@ -72,12 +72,14 @@ func TestCompileStreamSingleMember(t *testing.T) {
 	// one resolvable member is a reverse proxy backend for its origin, bound to the listener
 	opts := serviceOpts(t)
 	opts.Defaults.IPACLName = "default-acl"
+	opts.Defaults.RateLimiterName = "default-limit"
 	doc, err := buildDocument(streamShape(ir.ProtocolTCP, tcpMember(0, "db-svc", 1)), opts, nil, nil)
 	require.NoError(t, err)
 	require.Len(t, doc.Backends, 1)
 	b := doc.Backends["kgw--tcproute.data.db_r0"]
 	require.NotNil(t, b)
 	require.Equal(t, "default-acl", b.IPACLName)
+	require.Empty(t, b.RateLimiterName, "a stream route does not take the HTTP limiter")
 	require.Equal(t, providers.ReverseProxyShort, b.Provider)
 	require.Equal(t, "tcp://db-svc.data.svc:5432", b.OriginURL)
 	require.Equal(t, []string{ListenerName(5432, ir.ProtocolTCP)}, b.ListenerNames)

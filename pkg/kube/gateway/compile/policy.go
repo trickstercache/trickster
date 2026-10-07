@@ -58,6 +58,7 @@ type effective struct {
 	authenticatorName string
 	geoACLName        string // gates only the backend a rule attaches, so each request is judged once
 	ipACLName         string // a class's replaces the default, and only the backend a rule attaches names it
+	rateLimiterName   string // HTTP routes only; a stream route leaves it unset
 	timeout           time.Duration
 	handlerName       string
 	accessLog         *alo.Options
@@ -166,6 +167,7 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 		e.authenticatorName = d.AuthenticatorName
 		e.geoACLName = d.GeoACLName
 		e.ipACLName = d.IPACLName
+		e.rateLimiterName = d.RateLimiterName
 		e.timeout = time.Duration(d.Timeout)
 		e.accessLog = d.AccessLog
 		e.healthCheck = d.HealthCheck
@@ -223,6 +225,9 @@ func resolve(opts *kubecfg.Options, p *ir.Policy) effective {
 	}
 	if p.IPACLName != "" {
 		e.ipACLName = p.IPACLName
+	}
+	if p.RateLimiterName != "" {
+		e.rateLimiterName = p.RateLimiterName
 	}
 	return e
 }

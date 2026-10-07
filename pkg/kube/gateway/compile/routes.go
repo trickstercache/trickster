@@ -72,6 +72,7 @@ func compileRule(doc *document, out map[string]*backendDoc, p *planner,
 		b.AnyHostRouting = len(r.Hostnames) == 0
 		b.GeoACLName = eff.geoACLName
 		b.IPACLName = eff.ipACLName
+		b.RateLimiterName = eff.rateLimiterName
 	}
 
 	if red := rule.Redirect(); red != nil {

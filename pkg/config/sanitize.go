@@ -178,6 +178,7 @@ func (c *Config) SanitizedClone() *Config {
 			d.AuthenticatorName = renamed(authNameMap, d.AuthenticatorName)
 			d.GeoACLName = renamed(geoACLNameMap, d.GeoACLName)
 			d.IPACLName = renamed(ipACLNameMap, d.IPACLName)
+			d.RateLimiterName = renamed(rateLimitNameMap, d.RateLimiterName)
 		}
 		if k.Ingress != nil {
 			for i, name := range k.Ingress.ListenerNames {

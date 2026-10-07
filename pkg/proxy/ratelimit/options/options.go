@@ -229,3 +229,17 @@ func (o *Options) compileKeys() error {
 	}
 	return nil
 }
+
+// ServesHTTPRoutes reports whether a generated HTTP route can name the limiter: every key is
+// readable on HTTP, the unit is unset or requests, and the action is not close.
+func (o *Options) ServesHTTPRoutes() bool {
+	if o == nil || o.Action == ActionClose || (o.Unit != "" && o.Unit != UnitRequests) {
+		return false
+	}
+	for _, k := range o.KeySources {
+		if !k.OnHTTP() {
+			return false
+		}
+	}
+	return true
+}

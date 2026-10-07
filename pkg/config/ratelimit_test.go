@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 )
 
@@ -148,12 +149,15 @@ rate_limiters:
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.Kubernetes = kubecfg.New()
+	c.Kubernetes.Defaults.RateLimiterName = "per-client"
 	sanitized := c.SanitizedClone()
 	name := sanitized.Backends["prom-1"].RateLimiterName
 	if !strings.HasPrefix(name, "rate-limit-") {
 		t.Fatalf("sanitized backend reference %q", name)
 	}
-	if sanitized.Listeners["default"].RateLimiterName != name || sanitized.RateLimiters[name] == nil {
+	if sanitized.Listeners["default"].RateLimiterName != name || sanitized.RateLimiters[name] == nil ||
+		sanitized.Kubernetes.Defaults.RateLimiterName != name {
 		t.Fatal("sanitized references diverged")
 	}
 	if sanitized.Backends["prom-1"].Paths[0].RateLimiterName != reserved.ReferenceNone {
