@@ -43,10 +43,7 @@ func RateLimiters(c *config.Config) error {
 	if c == nil || len(c.RateLimiters) == 0 {
 		return nil
 	}
-	if err := c.RateLimiters.Validate(); err != nil {
-		return err
-	}
-	return nil
+	return c.RateLimiters.Validate()
 }
 
 func bindListenerRateLimit(c *config.Config, name string, options *listener.Options) error {
@@ -157,10 +154,7 @@ func checkRouteRateLimit(backendName, path, limiterName string, opts *rlopts.Opt
 	if opts == nil {
 		return fmt.Errorf("%s references undefined rate limiter %q", where, limiterName)
 	}
-	if err := checkAttachment(where, opts, planeHTTP, false, flowkey.StreamListener{}, routeHasAuthenticator(pathOpts, backend)); err != nil {
-		return err
-	}
-	return nil
+	return checkAttachment(where, opts, planeHTTP, false, flowkey.StreamListener{}, routeHasAuthenticator(pathOpts, backend))
 }
 
 func checkAttachment(where string, opts *rlopts.Options, plane string, listenerScope bool, stream flowkey.StreamListener,

@@ -57,7 +57,7 @@ func New(o *options.Options, protocol string, flowACL bool) l4.Admission {
 	a := &admission{
 		lim: ratelimit.Lookup(o.Name, ratelimit.Shape{
 			Keys: ratelimit.EncodeKeys(o.Keys), IPv6Prefix: o.IPv6Prefix,
-			Window: time.Duration(o.Window), Limit: uint32(o.Limit), MaxKeys: o.MaxKeys,
+			Window: time.Duration(o.Window), Limit: uint32(o.Limit), MaxKeys: o.MaxKeys, // #nosec G115 -- Validate bounds limit to uint32
 		}, ratelimit.Policy{Missing: missingOf(o.MissingKey), OnFull: onFullOf(o.MaxKeysAction)}),
 		extract: extractor(o), stage: stageOf(o.KeySources, unit, flowACL),
 		count: o.Action == options.ActionCount, close: o.Action == options.ActionClose,

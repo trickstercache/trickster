@@ -21,6 +21,12 @@ import (
 	"time"
 )
 
+func resetRegistry() {
+	registry.mu.Lock()
+	registry.byName = map[string]*kept{}
+	registry.mu.Unlock()
+}
+
 func TestLookupReusesCountsWhenOnlyPolicyChanges(t *testing.T) {
 	resetRegistry()
 	shape := Shape{Keys: EncodeKeys([]string{"client_ip"}), Window: time.Second, Limit: 2, MaxKeys: 10}

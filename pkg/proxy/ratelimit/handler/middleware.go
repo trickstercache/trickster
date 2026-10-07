@@ -102,14 +102,14 @@ func attach(o *options.Options) *attachment {
 		Keys:       ratelimit.EncodeKeys(o.Keys),
 		IPv6Prefix: o.IPv6Prefix,
 		Window:     time.Duration(o.Window),
-		Limit:      uint32(o.Limit),
+		Limit:      uint32(o.Limit), // #nosec G115 -- Validate bounds limit to uint32
 		MaxKeys:    o.MaxKeys,
 	}, ratelimit.Policy{Missing: missingOf(o.MissingKey), OnFull: onFullOf(o.MaxKeysAction)})
 	return &attachment{
 		lim: lim, name: o.Name, count: o.Action == options.ActionCount,
 		onFullReject: o.MaxKeysAction == options.OnFullReject,
 		status:       o.Status, header: o.Header, body: o.Body, policy: o.PolicyHeaders,
-		limit: uint32(o.Limit), window: int64(time.Duration(o.Window)),
+		limit: uint32(o.Limit), window: int64(time.Duration(o.Window)), // #nosec G115 -- Validate bounds limit to uint32
 		extract: extractor(o), decisions: metrics.NewRateLimitDecision(o.Name, planeHTTP),
 	}
 }

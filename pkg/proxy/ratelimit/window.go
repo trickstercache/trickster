@@ -107,14 +107,14 @@ func (b *bucket) refused(now, window int64, limit, cost uint32, est float64, cou
 // allowFast counts an event that stays in the current window with an empty previous window.
 // The weighted estimate is then just the current count, so no floating point is required.
 func (b *bucket) allowFast(now, window int64, limit, cost uint32) (Decision, bool) {
-	if !b.ready || now < b.last || window <= 0 || b.prev != 0 || uint64(now/window) != b.idx {
+	if !b.ready || now < b.last || window <= 0 || b.prev != 0 || uint64(now/window) != b.idx { // #nosec G115 -- now is not behind the bucket and window is positive
 		return Decision{}, false
 	}
 	sum := uint64(b.cur) + uint64(cost)
 	if sum > uint64(limit) {
 		return Decision{}, false
 	}
-	b.cur = uint32(sum)
+	b.cur = uint32(sum) // #nosec G115 -- sum was kept only when it is within limit
 	b.last = now
 	return Decision{
 		Result: ResultAllowed, Allowed: true, Remaining: limit - b.cur, RetryKnown: true,
@@ -151,7 +151,7 @@ func (b *bucket) roll(now, window int64) int64 {
 	if now < b.last {
 		now = b.last
 	}
-	i := uint64(now / window)
+	i := uint64(now / window) // #nosec G115 -- now was clamped up and window is positive
 	switch {
 	case !b.ready:
 		b.idx = i
@@ -231,7 +231,7 @@ func admits(s snap, t, window int64, limit, cost uint32) bool {
 }
 
 func (s snap) at(t, window int64) (prev, cur uint32, frac float64) {
-	i := uint64(t / window)
+	i := uint64(t / window) // #nosec G115 -- t is at or after a non-negative sample and window is positive
 	switch {
 	case i <= s.idx:
 		prev, cur = s.prev, s.cur

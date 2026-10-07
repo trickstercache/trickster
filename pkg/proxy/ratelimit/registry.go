@@ -104,9 +104,3 @@ func Walk(fn func(name string, keys int)) {
 		fn(name, n)
 	}
 }
-
-func resetRegistry() {
-	registry.mu.Lock()
-	registry.byName = map[string]*kept{}
-	registry.mu.Unlock()
-}

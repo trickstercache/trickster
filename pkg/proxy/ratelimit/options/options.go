@@ -18,6 +18,7 @@
 package options
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"math"
@@ -145,7 +146,7 @@ func (l Lookup) Validate() error {
 // Validate applies defaults and checks one limiter. The loader sets Name first.
 func (o *Options) Validate() error {
 	if o == nil {
-		return fmt.Errorf("invalid rate limiter")
+		return errors.New("invalid rate limiter")
 	}
 	if err := o.normalize(); err != nil {
 		return err
