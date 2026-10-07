@@ -64,6 +64,15 @@ func (b *bucket) judge(now, window int64, limit, cost uint32, countLimited bool)
 	}
 }
 
+// retry is the wait until cost could pass, after the counts have rolled forward, without adding it.
+func (b *bucket) retry(now, window int64, limit, cost uint32) (time.Duration, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	now = b.roll(now, window)
+	delay, ok := earliest(snap{idx: b.idx, prev: b.prev, cur: b.cur}, now, window, limit, cost)
+	return time.Duration(delay), ok
+}
+
 func (b *bucket) charge(now, window int64, cost uint32) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

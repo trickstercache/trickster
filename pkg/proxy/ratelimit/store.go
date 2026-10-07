@@ -78,6 +78,20 @@ func (s *tableStore) Len() int {
 	return s.table.Len()
 }
 
+// Retry is the wait until cost could pass for a key that already has a bucket, without counting
+// it. found is false when the key is not stored.
+func (s *tableStore) Retry(key uint64, now int64, cost uint32) (d time.Duration, known, found bool) {
+	if s.window <= 0 {
+		return 0, true, false
+	}
+	b, ok := s.table.Get(key, now)
+	if !ok || b == nil {
+		return 0, false, false
+	}
+	d, known = b.retry(now, s.window, s.limit, cost)
+	return d, known, true
+}
+
 func (s *tableStore) decide(key uint64, now int64, cost uint32, countLimited bool) Decision {
 	// A zero window cannot be divided into indexes. Count nothing rather than panic; validation
 	// rejects that configuration before a limiter is attached.

@@ -26,4 +26,6 @@ backends:
 
 A path's `rate_limiter_name` replaces the backend's. `none` is valid on a path only. The listener's limiter is not replaced by either of them.
 
+A tcp or tls listener counts a connection, and a udp listener counts a session or each datagram. A connection that ends before that stage, including a TLS name that routes nowhere, is not counted. A ClickHouse query that arrives over HTTP uses the HTTP route limiter; that is not a limiter on the native session.
+
 See [example.full.yaml](../examples/conf/example.full.yaml) for the full field list.

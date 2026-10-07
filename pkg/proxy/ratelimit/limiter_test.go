@@ -177,6 +177,33 @@ func TestNonPositiveWindowDoesNotPanic(t *testing.T) {
 	resetRegistry()
 }
 
+func TestWaitDoesNotCharge(t *testing.T) {
+	l := New(Config{Limit: 2, Window: time.Minute, MaxKeys: 10})
+	if !l.Take(1, true, 0, 1).Allowed {
+		t.Fatal("first")
+	}
+	if l.Wait(1, true, 0, 1) != 0 {
+		t.Fatal("an event still under the limit was held")
+	}
+	if !l.Take(1, true, 0, 1).Allowed {
+		t.Fatal("the read was counted")
+	}
+	denied := l.Take(1, true, 0, 1)
+	if denied.Allowed || l.Wait(1, true, 0, 1) != denied.RetryAfter {
+		t.Fatalf("wait %v retry %v", l.Wait(1, true, 0, 1), denied.RetryAfter)
+	}
+	full := New(Config{Limit: 5, Window: time.Minute, MaxKeys: 1, OnFull: MaxKeysReject})
+	if !full.Take(1, true, 0, 1).Allowed {
+		t.Fatal("stored")
+	}
+	if got := full.Wait(2, true, 0, 1); got != time.Minute {
+		t.Fatalf("full-table wait %v", got)
+	}
+	if full.Len() != 1 {
+		t.Fatalf("wait stored a key: %d", full.Len())
+	}
+}
+
 func TestNilLimiterLen(t *testing.T) {
 	var l *Limiter
 	if l.Len() != 0 {

@@ -94,6 +94,29 @@ func (l *Limiter) Charge(key uint64, ok bool, now int64, cost uint32) {
 	l.store.Charge(key, now, cost)
 }
 
+// Wait is how long until this cost could pass, without counting it. A missing key a full table
+// would refuse waits one window. Zero means this call is not holding the event.
+func (l *Limiter) Wait(key uint64, ok bool, now int64, cost uint32) time.Duration {
+	if l == nil || l.window <= 0 {
+		return 0
+	}
+	key, count := l.bind(key, ok)
+	if !count {
+		return 0
+	}
+	d, known, found := l.store.Retry(key, now, cost)
+	if found {
+		if !known {
+			return 0
+		}
+		return d
+	}
+	if l.onFull == MaxKeysReject {
+		return l.window
+	}
+	return 0
+}
+
 // Len is how many buckets the store holds, expired ones not yet swept included.
 func (l *Limiter) Len() int {
 	if l == nil || l.store == nil {

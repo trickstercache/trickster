@@ -53,6 +53,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize"
 	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	rlhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/handler"
+	rlstream "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/stream"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	tr "github.com/trickstercache/trickster/v2/pkg/proxy/tls"
@@ -467,14 +468,29 @@ func streamConfig(conf *config.Config, desired desiredListener, clients backends
 	}
 	// the relay bounds its own connections and sessions, keeping the accepted connection's
 	// half-close reachable rather than wrapping it in the limiting listener
+	ipAdm := streamacl.New(desired.options.Protocol, streamacl.Attached{
+		List: desired.options.IPACL, Name: desired.options.IPACLName,
+	}, table, backendACL)
+	geoAdm := geo.admission(table)
+	adm := l4.Chain(ipAdm, geoAdm)
+	if lim := rlstream.New(desired.options.RateLimiter, desired.options.Protocol,
+		streamFlowACL(desired.options.Protocol, backendACL, geo)); lim != nil {
+		adm = l4.Compose(ipAdm, geoAdm, lim)
+	}
 	return &l4.Config{
 		Table: table, Options: desired.options.Stream,
 		MaxConnections: desired.options.ConnectionsLimit,
 		Observer:       l4observe.Listener(desired.listenerName, desired.options.Protocol),
-		Admission: l4.Chain(streamacl.New(desired.options.Protocol, streamacl.Attached{
-			List: desired.options.IPACL, Name: desired.options.IPACLName,
-		}, table, backendACL), geo.admission(table)),
+		Admission:      adm,
 	}
+}
+
+func streamFlowACL(protocol string, backendACL map[l4.Upstream]streamacl.Attached, geo *geoStreamAdmission) bool {
+	// a backend IP list and a tls geo list both judge at Flow, so the limiter must not charge at Peer
+	if protocol == listenerconfig.ProtocolUDP || geo == nil {
+		return false
+	}
+	return len(backendACL) > 0 || protocol == listenerconfig.ProtocolTLS && len(geo.acls) > 0
 }
 
 func startStreamListener(lg *listener.Group, desired desiredListener, cfg *l4.Config, errorFunc func()) {

@@ -37,6 +37,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 
 	"github.com/pires/go-proxyproto"
@@ -333,6 +335,58 @@ func readStreamReset(t *testing.T, conn net.Conn) error {
 		return fmt.Errorf("read %v, want a reset", err)
 	}
 	return nil
+}
+
+func TestStreamConfigRateLimit(t *testing.T) {
+	tcpOpts := &rlopts.Options{Name: "cfg-tcp", Limit: 1, Unit: rlopts.UnitConnections}
+	if err := tcpOpts.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	conf, clients := streamConfigFor(t, 1, listenerconfig.ProtocolTCP, "127.0.0.1:9")
+	conf.Listeners["relay"].RateLimiterName = tcpOpts.Name
+	conf.Listeners["relay"].RateLimiter = tcpOpts
+	cfg := streamConfig(conf, streamDesired(conf), clients)
+	if _, ok := cfg.Admission.(l4.Holder); ok {
+		t.Fatal("tcp connections installed a udp hold")
+	}
+
+	udpOpts := &rlopts.Options{Name: "cfg-udp", Limit: 1, Unit: rlopts.UnitSessions}
+	if err := udpOpts.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	conf, clients = streamConfigFor(t, 1, listenerconfig.ProtocolUDP, "127.0.0.1:9")
+	conf.Listeners["relay"].RateLimiterName = udpOpts.Name
+	conf.Listeners["relay"].RateLimiter = udpOpts
+	cfg = streamConfig(conf, streamDesired(conf), clients)
+	if _, ok := cfg.Admission.(l4.Holder); !ok {
+		t.Fatal("udp sessions have no hold")
+	}
+
+	deferOpts := &rlopts.Options{Name: "cfg-defer", Limit: 2, Unit: rlopts.UnitConnections}
+	if err := deferOpts.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	conf, clients = streamConfigFor(t, 1, listenerconfig.ProtocolTCP, "127.0.0.1:9")
+	conf.Backends["db"].IPACL = mustList(t, ipacl.Options{Action: "reject"})
+	conf.Listeners["relay"].RateLimiterName = deferOpts.Name
+	conf.Listeners["relay"].RateLimiter = deferOpts
+	cfg = streamConfig(conf, streamDesired(conf), clients)
+	client := netip.AddrPortFrom(netip.MustParseAddr("192.0.2.9"), 1)
+	if cfg.Admission.Peer(l4.Flow{Client: client}) != l4.Allow {
+		t.Fatal("peer")
+	}
+	if cfg.Admission.Flow(l4.Flow{Client: client}) != l4.Reject {
+		t.Fatal("the backend list did not refuse before the limiter")
+	}
+	var n int
+	ratelimit.Walk(func(name string, keys int) {
+		if name == "cfg-defer" {
+			n = keys
+		}
+	})
+	if n != 0 {
+		t.Fatalf("flow admission charged %d buckets", n)
+	}
 }
 
 func expectNoDials(t *testing.T, n *atomic.Int32) {
