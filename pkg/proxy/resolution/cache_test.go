@@ -216,3 +216,53 @@ func TestCachePrimeAndEvict(t *testing.T) {
 	c.prime(testName+"-new", testValue, testRecTTL)
 	require.Len(t, c.entries, 1)
 }
+
+func TestCacheStaleWhileRefreshing(t *testing.T) {
+	f := &fakeFetch{}
+	f.set(testValue, testRecTTL, nil)
+	c, clk := newTestCache(f)
+	c.staleWait = 10 * time.Millisecond
+	requireGet(t, c, testValue, resultMiss)
+
+	// a slow refresh does not hold the caller past staleWait while a last good answer can serve
+	clk.advance(testRecTTL)
+	f.gate = make(chan struct{})
+	f.set(testValue2, testRecTTL, nil)
+	requireGet(t, c, testValue, resultStale)
+	close(f.gate)
+	require.Eventually(t, func() bool {
+		v, res, err := c.get(t.Context(), testName)
+		return err == nil && v == testValue2 && res == resultHit
+	}, time.Second, time.Millisecond, "the background refresh lands in the cache")
+
+	// past max_ttl there is nothing to serve, so the caller waits for the refresh
+	clk.advance(testMaxTTL)
+	f.set(testValue, testRecTTL, nil)
+	requireGet(t, c, testValue, resultMiss)
+}
+
+func TestCacheStaleAgesOutDuringWait(t *testing.T) {
+	f := &fakeFetch{}
+	f.set(testValue, testRecTTL, nil)
+	c, clk := newTestCache(f)
+	c.staleWait = 10 * time.Millisecond
+	requireGet(t, c, testValue, resultMiss)
+
+	// the get starts a moment before max_ttl runs out, and its wait crosses it
+	start := clk.now().Add(testMaxTTL - time.Millisecond)
+	var reads atomic.Int64
+	c.now = func() time.Time {
+		if reads.Add(1) == 1 {
+			return start
+		}
+		return start.Add(time.Second)
+	}
+	f.gate = make(chan struct{})
+	defer close(f.gate)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	v, res, err := c.get(ctx, testName)
+	require.ErrorIs(t, err, context.DeadlineExceeded, "the caller waits on for the refresh")
+	require.Empty(t, v, "an answer past max_ttl is not served")
+	require.Equal(t, resultError, res)
+}

@@ -45,6 +45,8 @@ const (
 	maxCacheEntries = 8192
 	// lookupTimeout bounds one shared lookup, which outlives a dial whose context ends first
 	lookupTimeout = 5 * time.Second
+	// staleRefreshWait bounds how long a dial waits on a refresh before serving the last good answer
+	staleRefreshWait = 500 * time.Millisecond
 )
 
 // errNoTargets marks an answer with no usable records; it is cached like NXDOMAIN
@@ -71,7 +73,7 @@ type ttlCache[T any] struct {
 	fetch   fetchFunc[T]
 	now     func() time.Time
 
-	minTTL, maxTTL, negativeTTL time.Duration
+	minTTL, maxTTL, negativeTTL, staleWait time.Duration
 }
 
 func newTTLCache[T any](fetch fetchFunc[T], minTTL, maxTTL, negativeTTL time.Duration) *ttlCache[T] {
@@ -82,6 +84,7 @@ func newTTLCache[T any](fetch fetchFunc[T], minTTL, maxTTL, negativeTTL time.Dur
 		minTTL:      minTTL,
 		maxTTL:      maxTTL,
 		negativeTTL: negativeTTL,
+		staleWait:   staleRefreshWait,
 	}
 }
 
@@ -90,12 +93,14 @@ type flightResult[T any] struct {
 	res lookupResult
 }
 
-// get returns the answer for name, refreshing it when it has expired
+// get returns the answer for name, refreshing it when it has expired; while a last good answer
+// can serve, the caller waits at most staleWait for the refresh
 func (c *ttlCache[T]) get(ctx context.Context, name string) (T, lookupResult, error) {
 	c.mtx.RLock()
 	e := c.entries[name]
 	c.mtx.RUnlock()
-	if e != nil && c.now().Before(e.expires) {
+	now := c.now()
+	if e != nil && now.Before(e.expires) {
 		if e.err != nil {
 			var zero T
 			return zero, resultNegative, e.err
@@ -106,14 +111,34 @@ func (c *ttlCache[T]) get(ctx context.Context, name string) (T, lookupResult, er
 		val, res, err := c.refresh(name)
 		return flightResult[T]{val: val, res: res}, err
 	})
+	if e != nil && e.err == nil && now.Before(e.staleUntil) {
+		t := time.NewTimer(c.staleWait)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			var zero T
+			return zero, resultError, ctx.Err()
+		case r := <-ch:
+			return flightReturn[T](r)
+		case <-t.C:
+			// the last good answer may have aged past max_ttl during the wait
+			if c.now().Before(e.staleUntil) {
+				return e.val, resultStale, nil
+			}
+		}
+	}
 	select {
 	case <-ctx.Done():
 		var zero T
 		return zero, resultError, ctx.Err()
 	case r := <-ch:
-		fr, _ := r.Val.(flightResult[T])
-		return fr.val, fr.res, r.Err
+		return flightReturn[T](r)
 	}
+}
+
+func flightReturn[T any](r singleflight.Result) (T, lookupResult, error) {
+	fr, _ := r.Val.(flightResult[T])
+	return fr.val, fr.res, r.Err
 }
 
 func (c *ttlCache[T]) refresh(name string) (T, lookupResult, error) {

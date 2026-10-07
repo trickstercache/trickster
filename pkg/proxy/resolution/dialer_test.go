@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -33,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/resolution/options"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -143,13 +145,18 @@ func dialPort(t *testing.T, d *Dialer, addr string) int {
 	return conn.RemoteAddr().(*net.TCPAddr).Port
 }
 
-func attempts(backend, tier, result string) float64 {
-	return testutil.ToFloat64(metrics.OriginSRVDialAttempts.WithLabelValues(backend, tier, result))
+// since snapshots a process-global counter and returns its growth, so assertions hold under -count
+func since(c prometheus.Counter) func() float64 {
+	base := testutil.ToFloat64(c)
+	return func() float64 { return testutil.ToFloat64(c) - base }
 }
 
-func lookups(backend string, res lookupResult) float64 {
-	return testutil.ToFloat64(metrics.OriginSRVLookups.WithLabelValues(backend,
-		lookupResultNames[res]))
+func attempts(backend, tier, result string) func() float64 {
+	return since(metrics.OriginSRVDialAttempts.WithLabelValues(backend, tier, result))
+}
+
+func lookups(backend string, res lookupResult) func() float64 {
+	return since(metrics.OriginSRVLookups.WithLabelValues(backend, lookupResultNames[res]))
 }
 
 func TestNew(t *testing.T) {
@@ -176,15 +183,17 @@ func TestDialUsesSRVPort(t *testing.T) {
 	})
 	r.setIP(testTargetA, testLoopback)
 	d := newTestDialer(t, backend, r)
+	miss, hit := lookups(backend, resultMiss), lookups(backend, resultHit)
+	ok := attempts(backend, "0", attemptOK)
 
 	// the URL's port is ignored, and the owner name matches case-insensitively
 	require.Equal(t, port, dialPort(t, d, testDialAddr))
 	require.Equal(t, port, dialPort(t, d, "_APP._tcp.example.com.:443"))
 	require.Equal(t, int64(1), r.srvCalls.Load(), "the second dial hits the cache")
 	require.Equal(t, int64(1), r.ipCalls.Load())
-	require.Equal(t, float64(1), lookups(backend, resultMiss))
-	require.Equal(t, float64(1), lookups(backend, resultHit))
-	require.Equal(t, float64(2), attempts(backend, "0", attemptOK))
+	require.Equal(t, float64(1), miss())
+	require.Equal(t, float64(1), hit())
+	require.Equal(t, float64(2), ok())
 }
 
 func TestDialFailoverWithinTier(t *testing.T) {
@@ -198,11 +207,12 @@ func TestDialFailoverWithinTier(t *testing.T) {
 	r.setIP(testTargetA, testLoopback)
 	r.setIP(testTargetB, testLoopback)
 	d := newTestDialer(t, backend, r)
+	failed, ok := attempts(backend, "0", attemptFailed), attempts(backend, "0", attemptOK)
 
 	// the weighted pick always lands on the dead target first, and the dial falls through
 	require.Equal(t, port, dialPort(t, d, testDialAddr))
-	require.Equal(t, float64(1), attempts(backend, "0", attemptFailed))
-	require.Equal(t, float64(1), attempts(backend, "0", attemptOK))
+	require.Equal(t, float64(1), failed())
+	require.Equal(t, float64(1), ok())
 }
 
 func TestDialFallsToLowerTier(t *testing.T) {
@@ -219,10 +229,11 @@ func TestDialFallsToLowerTier(t *testing.T) {
 	r.setIP(testTargetA, testLoopback)
 	r.setIP(testTargetB, testLoopback)
 	d := newTestDialer(t, backend, r)
+	failed, ok := attempts(backend, "0", attemptFailed), attempts(backend, "1", attemptOK)
 
 	require.Equal(t, port, dialPort(t, d, testDialAddr))
-	require.Equal(t, float64(2), attempts(backend, "0", attemptFailed))
-	require.Equal(t, float64(1), attempts(backend, "1", attemptOK))
+	require.Equal(t, float64(2), failed())
+	require.Equal(t, float64(1), ok())
 }
 
 func TestDialAdditionalSection(t *testing.T) {
@@ -263,13 +274,14 @@ func TestDialErrors(t *testing.T) {
 	const backend = "srv-errors"
 	r := newFakeResolver()
 	d := newTestDialer(t, backend, r)
+	negative := lookups(backend, resultNegative)
 
 	_, err := d.DialContext(t.Context(), testNetwork, testOwner)
 	require.Error(t, err, "an address without a port")
 
 	_, err = d.DialContext(t.Context(), testNetwork, testDialAddr)
 	require.ErrorIs(t, err, resolver.ErrNotFound)
-	require.Equal(t, float64(1), lookups(backend, resultNegative))
+	require.Equal(t, float64(1), negative())
 
 	r.setSRV("empty.example.com.", &resolver.SRVAnswer{
 		Records: []*dnsclient.SRV{srvRecord(0, 0, 80, ".")},
@@ -340,18 +352,38 @@ func TestOrder(t *testing.T) {
 	}
 	pick := func(k int) func(int) int { return func(n int) int { return min(k, n-1) } }
 
-	l := ts(1, 3)
-	shuffleByWeight(l, pick(0))
-	require.Equal(t, "01", hosts(l))
-	l = ts(1, 3)
-	shuffleByWeight(l, pick(1))
-	require.Equal(t, "10", hosts(l), "a draw past the first weight selects the second")
-	l = ts(0, 2, 0, 1)
-	shuffleByWeight(l, pick(2))
-	require.Equal(t, "3120", hosts(l), "zero weights come after every weighted target")
-	l = ts(0, 0)
-	shuffleByWeight(l, pick(0))
-	require.Equal(t, "01", hosts(l))
+	// RFC 2782: a draw in [0, sum] picks the first zero-weight target on 0, else the first
+	// target whose running sum reaches the draw
+	tests := []struct {
+		weights []int
+		draw    int
+		want    string
+	}{
+		{[]int{1, 3}, 0, "01"},
+		{[]int{1, 3}, 1, "01"},
+		{[]int{1, 3}, 2, "10"},
+		{[]int{1, 3}, 4, "10"},
+		{[]int{0, 2, 0, 1}, 0, "0213"},
+		{[]int{0, 2, 0, 1}, 1, "1302"},
+		{[]int{0, 2, 0, 1}, 3, "3102"},
+		{[]int{2, 0}, 0, "10"},
+		{[]int{0, 0}, 0, "01"},
+		{[]int{0, 0}, 1, "10"},
+	}
+	for _, test := range tests {
+		l := ts(test.weights...)
+		shuffleByWeight(l, pick(test.draw))
+		require.Equal(t, test.want, hosts(l), "weights %v, draw %d", test.weights, test.draw)
+	}
+
+	// every target, zero weights included, leads the order for some draw
+	seen := make(map[string]bool)
+	for draw := range 4 {
+		l := ts(0, 2, 0, 1)
+		shuffleByWeight(l, pick(draw))
+		seen[l[0].host] = true
+	}
+	require.Len(t, seen, 3, "the first zero-weight, and each weighted, target can lead")
 
 	lone := &srvAnswer{tiers: [][]target{ts(5)}, n: 1}
 	require.Equal(t, &lone.tiers[0][0], &lone.order(pick(0))[0], "a lone target is not copied")
@@ -360,18 +392,145 @@ func TestOrder(t *testing.T) {
 	require.Len(t, two.order(pick(0)), 2)
 }
 
-func TestAttemptTimeout(t *testing.T) {
-	require.Equal(t, minAttemptTimeout, attemptTimeout(context.Background(), 3))
+func TestAttemptBudget(t *testing.T) {
+	b := attemptBudget{floor: minAttemptTimeout, reserve: attemptReserve}
+	require.Equal(t, minAttemptTimeout, b.share(context.Background(), 3))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Second)
 	defer cancel()
-	require.InDelta(t, float64(9*time.Second), float64(attemptTimeout(ctx, 1)),
-		float64(time.Second))
-	require.InDelta(t, float64(3*time.Second), float64(attemptTimeout(ctx, 3)),
-		float64(time.Second))
-	require.Equal(t, minAttemptTimeout, attemptTimeout(ctx, 100), "a share has a floor")
+	require.InDelta(t, float64(9*time.Second), float64(b.share(ctx, 1)), float64(time.Second))
+	require.InDelta(t, float64(3*time.Second), float64(b.share(ctx, 3)), float64(time.Second))
+	// 6 attempts in 9s: the floor still fits, leaving each of the other 5 its reserve
+	require.Equal(t, minAttemptTimeout, b.share(ctx, 6))
+	// 30 attempts in 9s: the share is raised only as far as the other 29 keep their reserve
+	require.InDelta(t, float64(9*time.Second-29*attemptReserve), float64(b.share(ctx, 30)),
+		float64(50*time.Millisecond))
+	// 40 attempts in 9s: reserves alone exceed the time left, so the share stays fair
+	require.InDelta(t, float64(9*time.Second/40), float64(b.share(ctx, 40)),
+		float64(50*time.Millisecond))
 
 	short, cancel2 := context.WithTimeout(context.Background(), time.Second)
 	defer cancel2()
-	require.LessOrEqual(t, attemptTimeout(short, 100), time.Second, "the floor never exceeds the time left")
+	require.LessOrEqual(t, b.share(short, 2), time.Second-attemptReserve,
+		"an attempt never takes the next attempt's reserve")
+}
+
+const (
+	// hangingAddr is a TEST-NET-1 address whose dials hang until their deadline
+	hangingAddr       = "192.0.2.1"
+	budgetDialTimeout = time.Second
+	budgetFloor       = 200 * time.Millisecond
+	budgetReserve     = 50 * time.Millisecond
+)
+
+// newBudgetDialer dials hangingAddr* until the attempt's deadline, and everything else for real
+func newBudgetDialer(t *testing.T, name string, r resolver.Resolver) *Dialer {
+	t.Helper()
+	d := newTestDialer(t, name, r)
+	d.timeout = budgetDialTimeout
+	d.budget = attemptBudget{floor: budgetFloor, reserve: budgetReserve}
+	d.dialAddr = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		if host, _, _ := net.SplitHostPort(addr); strings.HasPrefix(host, "192.0.2.") {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
+		return d.base.DialContext(ctx, network, addr)
+	}
+	return d
+}
+
+func TestDialReachesSecondAddressOfLoneTarget(t *testing.T) {
+	_, port := listen(t)
+	r := newFakeResolver()
+	r.setSRV(testOwnerFQDN, &resolver.SRVAnswer{
+		Records: []*dnsclient.SRV{srvRecord(0, 0, port, testTargetA)},
+	})
+	r.setIP(testTargetA, hangingAddr, testLoopback)
+	d := newBudgetDialer(t, "srv-budget-addrs", r)
+	// the hanging address gets only its share of the target's budget, leaving time for the next
+	require.Equal(t, port, dialPort(t, d, testDialAddr))
+}
+
+func TestDialFailsOverPastHangingAddresses(t *testing.T) {
+	_, port := listen(t)
+	r := newFakeResolver()
+	r.setSRV(testOwnerFQDN, &resolver.SRVAnswer{Records: []*dnsclient.SRV{
+		srvRecord(10, 1, port, testTargetA),
+		srvRecord(10, 1, port, testTargetB),
+	}})
+	// under per-address shares of the whole dial, five hanging addresses outlast the dial
+	r.setIP(testTargetA, "192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4", "192.0.2.5")
+	r.setIP(testTargetB, testLoopback)
+	d := newBudgetDialer(t, "srv-budget-targets", r)
+	// target A's hanging addresses share A's half of the timeout, so B is still tried
+	require.Equal(t, port, dialPort(t, d, testDialAddr))
+}
+
+func TestDialTriesEveryAddressPastTheFloor(t *testing.T) {
+	_, port := listen(t)
+	r := newFakeResolver()
+	r.setSRV(testOwnerFQDN, &resolver.SRVAnswer{
+		Records: []*dnsclient.SRV{srvRecord(0, 0, port, testTargetA)},
+	})
+	// more hanging addresses than the timeout holds floors; only the last is reachable
+	r.setIP(testTargetA, "192.0.2.1", "192.0.2.2", "192.0.2.3", "192.0.2.4", "192.0.2.5",
+		"192.0.2.6", "192.0.2.7", testLoopback)
+	d := newBudgetDialer(t, "srv-budget-floor", r)
+	require.Equal(t, port, dialPort(t, d, testDialAddr))
+}
+
+// hangingResolver answers from a fakeResolver until it is told to hang, after which every
+// lookup blocks until its context ends or the test finishes
+type hangingResolver struct {
+	*fakeResolver
+	hang    atomic.Bool
+	release chan struct{}
+}
+
+func (r *hangingResolver) wait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-r.release:
+		return context.Canceled
+	}
+}
+
+func (r *hangingResolver) LookupSRV(ctx context.Context, fqdn string) (*resolver.SRVAnswer, error) {
+	if r.hang.Load() {
+		return nil, r.wait(ctx)
+	}
+	return r.fakeResolver.LookupSRV(ctx, fqdn)
+}
+
+func (r *hangingResolver) LookupIP(ctx context.Context, fqdn string) (resolver.IPAnswer, error) {
+	if r.hang.Load() {
+		return resolver.IPAnswer{}, r.wait(ctx)
+	}
+	return r.fakeResolver.LookupIP(ctx, fqdn)
+}
+
+func TestDialServesStaleWhileDNSHangs(t *testing.T) {
+	const backend = "srv-stale-hang"
+	_, port := listen(t)
+	r := &hangingResolver{fakeResolver: newFakeResolver(), release: make(chan struct{})}
+	t.Cleanup(func() { close(r.release) })
+	r.setSRV(testOwnerFQDN, &resolver.SRVAnswer{
+		Records: []*dnsclient.SRV{srvRecord(0, 0, port, testTargetA)}, TTL: testRecTTL,
+	})
+	r.setIP(testTargetA, testLoopback)
+	d := newTestDialer(t, backend, r)
+	stale := lookups(backend, resultStale)
+	clk := &fakeClock{t: time.Unix(1_700_000_000, 0)}
+	d.srv.now, d.addrs.now = clk.now, clk.now
+	require.Equal(t, port, dialPort(t, d, testDialAddr))
+
+	// both the SRV and the address answers expire, and DNS stops answering
+	clk.advance(testRecTTL)
+	r.hang.Store(true)
+	start := time.Now()
+	require.Equal(t, port, dialPort(t, d, testDialAddr))
+	require.Less(t, time.Since(start), 2*staleRefreshWait+time.Second,
+		"each cache waits only staleRefreshWait before serving its last good answer")
+	require.Equal(t, float64(1), stale())
 }

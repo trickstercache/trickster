@@ -43,15 +43,19 @@ const (
 	opDial        = "dial"
 	attemptOK     = "success"
 	attemptFailed = "failure"
-	// minAttemptTimeout keeps one target's share of the connect timeout from shrinking to nothing
+	// minAttemptTimeout is the share of the connect timeout an attempt gets, when attemptReserve allows
 	minAttemptTimeout = 2 * time.Second
+	// attemptReserve is the time an attempt leaves for each attempt after it, so that every one is tried
+	attemptReserve = 250 * time.Millisecond
 )
 
 // Dialer resolves the dial host as an SRV owner name and connects to a target from its
 // answer, failing over through the preferred tier and then the lower tiers
 type Dialer struct {
 	base         net.Dialer
+	dialAddr     func(ctx context.Context, network, addr string) (net.Conn, error)
 	timeout      time.Duration
+	budget       attemptBudget
 	res          resolver.Resolver
 	srv          *ttlCache[*srvAnswer]
 	addrs        *ttlCache[[]string]
@@ -102,10 +106,12 @@ func newDialer(backendName string, o *options.Options, res resolver.Resolver,
 		base:         net.Dialer{KeepAlive: keepAlive},
 		timeout:      timeout,
 		res:          res,
+		budget:       attemptBudget{floor: minAttemptTimeout, reserve: attemptReserve},
 		backend:      backendName,
 		verifyTarget: o.VerifiesTarget(),
 		intn:         compat.IntN,
 	}
+	d.dialAddr = d.base.DialContext
 	d.srv = newTTLCache(d.fetchSRV, minTTL, maxTTL, negativeTTL)
 	d.addrs = newTTLCache(d.fetchAddrs, minTTL, maxTTL, negativeTTL)
 	for i, name := range lookupResultNames {
@@ -162,7 +168,7 @@ func (d *Dialer) dial(ctx context.Context, network, addr string) (net.Conn, stri
 	ctx, cancel := context.WithTimeout(ctx, d.timeout)
 	defer cancel()
 	if _, err := netip.ParseAddr(host); err == nil {
-		conn, err := d.base.DialContext(ctx, network, addr)
+		conn, err := d.dialAddr(ctx, network, addr)
 		return conn, host, err
 	}
 	answer, res, err := d.srv.get(ctx, strings.ToLower(strings.TrimSuffix(host, ".")))
@@ -189,10 +195,13 @@ func (d *Dialer) dial(ctx context.Context, network, addr string) (net.Conn, stri
 	return nil, "", lastErr
 }
 
-// dialTarget tries each of the target's addresses, within its share of the time left
+// dialTarget resolves the target and tries each of its addresses within the target's share of
+// the time left, which it splits in turn across the addresses still to try
 func (d *Dialer) dialTarget(ctx context.Context, network string, t *target,
 	remaining int,
 ) (net.Conn, error) {
+	ctx, cancel := context.WithTimeout(ctx, d.budget.share(ctx, remaining))
+	defer cancel()
 	addrs := t.ip
 	var err error
 	if addrs == nil {
@@ -206,9 +215,9 @@ func (d *Dialer) dialTarget(ctx context.Context, network string, t *target,
 		}
 	}
 	var lastErr error
-	for _, a := range addrs {
-		actx, cancel := context.WithTimeout(ctx, attemptTimeout(ctx, remaining))
-		conn, err := d.base.DialContext(actx, network, net.JoinHostPort(a, t.port))
+	for i, a := range addrs {
+		actx, cancel := context.WithTimeout(ctx, d.budget.share(ctx, len(addrs)-i))
+		conn, err := d.dialAddr(actx, network, net.JoinHostPort(a, t.port))
 		cancel()
 		d.attempt(t.tier, err == nil)
 		if err == nil {
@@ -230,19 +239,25 @@ func (d *Dialer) attempt(tier int, ok bool) {
 	metrics.OriginSRVDialAttempts.WithLabelValues(d.backend, strconv.Itoa(tier), result).Inc()
 }
 
-// attemptTimeout splits the time left in ctx across the targets still to try
-func attemptTimeout(ctx context.Context, remaining int) time.Duration {
+// attemptBudget splits the time left in a dial across the targets or addresses still to try
+type attemptBudget struct {
+	floor, reserve time.Duration
+}
+
+// share returns an attempt's timeout: its fair share of the time left, raised toward floor only as
+// far as it leaves each later attempt reserve
+func (b attemptBudget) share(ctx context.Context, remaining int) time.Duration {
 	dl, ok := ctx.Deadline()
 	if !ok {
-		return minAttemptTimeout
+		return b.floor
 	}
 	left := time.Until(dl)
 	if remaining <= 1 {
 		return left
 	}
 	share := left / time.Duration(remaining)
-	if share < minAttemptTimeout {
-		share = min(minAttemptTimeout, left)
+	if share < b.floor {
+		share = max(share, min(b.floor, left-time.Duration(remaining-1)*b.reserve))
 	}
 	return share
 }
@@ -318,24 +333,39 @@ func (a *srvAnswer) order(intn func(int) int) []target {
 	return out
 }
 
-// shuffleByWeight orders ts by repeated weighted random selection; zero-weight targets keep
-// their places after every weighted one
+// shuffleByWeight orders ts by repeated weighted random selection (RFC 2782): a draw in [0, sum]
+// picks a zero-weight target on 0, else the first running sum reaching it
 func shuffleByWeight(ts []target, intn func(int) int) {
-	sum := 0
-	for i := range ts {
-		sum += ts[i].weight
-	}
-	for sum > 0 && len(ts) > 1 {
-		n := intn(sum)
-		s := 0
+	for len(ts) > 1 {
+		sum, zero := 0, -1
 		for i := range ts {
-			s += ts[i].weight
-			if s > n {
-				ts[0], ts[i] = ts[i], ts[0]
-				break
+			sum += ts[i].weight
+			if zero < 0 && ts[i].weight == 0 {
+				zero = i
 			}
 		}
-		sum -= ts[0].weight
+		pick := pickWeighted(ts, sum, zero, intn)
+		ts[0], ts[pick] = ts[pick], ts[0]
 		ts = ts[1:]
 	}
+}
+
+// pickWeighted returns the index of the next target; sum is the tier's total weight and zero is
+// the index of its first zero-weight target, or -1
+func pickWeighted(ts []target, sum, zero int, intn func(int) int) int {
+	if sum == 0 {
+		return intn(len(ts))
+	}
+	n := intn(sum + 1)
+	if n == 0 && zero >= 0 {
+		return zero
+	}
+	s := 0
+	for i := range ts {
+		s += ts[i].weight
+		if ts[i].weight > 0 && s >= n {
+			return i
+		}
+	}
+	return 0
 }

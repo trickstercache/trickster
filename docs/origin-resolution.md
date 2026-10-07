@@ -105,8 +105,8 @@ The transport's dial is the only thing SRV resolution changes. The request URL k
 
 Targets are chosen as [RFC 2782](https://www.rfc-editor.org/rfc/rfc2782) describes:
 
-* Targets in the lowest-priority tier (the smallest priority value) are tried first, ordered by weighted random selection.
-* If a dial fails, the remaining targets in the tier are tried, then the next tier, all within the backend's 10s connect timeout. Each target gets a share of the time left, so one unreachable target can't use it all up.
+* Targets in the lowest-priority tier (the smallest priority value) are tried first, ordered by weighted random selection. As RFC 2782 specifies, a target with weight `0` has a small chance of being chosen first, and a tier whose weights are all `0` is ordered uniformly at random.
+* If a dial fails, the remaining targets in the tier are tried, then the next tier, all within the backend's 10s connect timeout. Each target gets a share of the time left, which covers resolving its name and trying each of its addresses in turn, so neither an unreachable target nor an unreachable address can use it all up.
 * A target of `.` is ignored. An answer with no other targets means the service is not available.
 
 Each target's hostname is resolved to A/AAAA addresses with the same resolver. When the DNS server includes the target's addresses in the additional section of the SRV answer, they are used without a further lookup. A target name that is an IP literal is dialed as given, and so is a URL host that a rewriter sets to an IP literal.
@@ -115,7 +115,7 @@ Each target's hostname is resolved to A/AAAA addresses with the same resolver. W
 
 Answers are cached per owner name, and target addresses per target name. Each is kept for its record TTL, clamped to `min_ttl` and `max_ttl`. Concurrent dials for a name that needs a lookup share a single in-flight query.
 
-When a cached answer expires and the lookup then fails (a timeout, `SERVFAIL` or `REFUSED`), the last good answer keeps serving, retried no sooner than every `min_ttl`, until `max_ttl` has passed since it was looked up. NXDOMAIN and empty answers are answers rather than failures: they replace the last good answer at once and are cached for `negative_ttl`.
+When a cached answer expires, the dial waits up to 500ms for the refresh. If the refresh takes longer, the dial uses the last good answer while it is within `max_ttl`, and the refresh finishes in the background. When the lookup fails (a timeout, `SERVFAIL` or `REFUSED`), the last good answer keeps serving, retried no sooner than every `min_ttl`, until `max_ttl` has passed since it was looked up. NXDOMAIN and empty answers are answers rather than failures: they replace the last good answer at once and are cached for `negative_ttl`.
 
 Each backend's caches are bounded, so names derived from client-supplied hosts can't grow them without limit. A config reload builds new caches, and in-flight requests finish on the old transport, as with any other reload.
 
