@@ -95,6 +95,9 @@ func Validate(c *config.Config) error {
 	if err := IPACLs(c); err != nil {
 		return err
 	}
+	if err := RateLimiters(c); err != nil {
+		return err
+	}
 	if err := Caches(c); err != nil {
 		return err
 	}
@@ -237,6 +240,17 @@ func kubernetesReferences(c *config.Config) error {
 				d.IPACLName)
 		}
 	}
+	if d.RateLimiterName != "" {
+		def := c.RateLimiters[d.RateLimiterName]
+		if def == nil {
+			return newKubernetesRefError("defaults", "rate limiter", d.RateLimiterName)
+		}
+		if !def.ServesHTTPRoutes() {
+			return fmt.Errorf("kubernetes 'defaults' references ineligible rate limiter %q: "+
+				"generated HTTP routes require HTTP keys, unit requests or unset, and an action other than close",
+				d.RateLimiterName)
+		}
+	}
 	return nil
 }
 
@@ -280,7 +294,8 @@ func Backends(c *config.Config) error {
 		return errors.ErrNoValidBackends
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
-		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions, c.IPACLs); err != nil {
+		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions, c.IPACLs,
+		c.RateLimiters); err != nil {
 		return err
 	}
 	if err := c.Backends.ValidateGeoACLNames(c.GeoACLs); err != nil {
@@ -482,6 +497,9 @@ func Listeners(c *config.Config) error {
 		if err := bindListenerIPACL(c, name, options); err != nil {
 			return err
 		}
+		if err := bindListenerRateLimit(c, name, options); err != nil {
+			return err
+		}
 		if err := options.PathNormalization.Validate(); err != nil {
 			return fmt.Errorf("listener %q: path_normalization: %w", name, err)
 		}
@@ -546,6 +564,9 @@ func Listeners(c *config.Config) error {
 		return err
 	}
 	if err := validateIPACLPlacements(c); err != nil {
+		return err
+	}
+	if err := validateRateLimitPlacements(c); err != nil {
 		return err
 	}
 	return requestALBs(c, streamALBs)

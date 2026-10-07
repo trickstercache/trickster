@@ -428,15 +428,17 @@ func (s *kubeSupervisor) stillWanted(generation uint64) bool {
 
 func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 	next := ir.ConfiguredNames{
-		Caches:         sets.New[string](nil),
-		NegativeCaches: sets.New[string](nil),
-		Tracers:        sets.New[string](nil),
-		Rewriters:      sets.New[string](nil),
-		Authenticators: sets.New[string](nil),
-		GeoACLs:        sets.New[string](nil),
-		StreamGeoACLs:  sets.New[string](nil),
-		IPACLs:         sets.New[string](nil),
-		DefinedIPACLs:  sets.New[string](nil),
+		Caches:              sets.New[string](nil),
+		NegativeCaches:      sets.New[string](nil),
+		Tracers:             sets.New[string](nil),
+		Rewriters:           sets.New[string](nil),
+		Authenticators:      sets.New[string](nil),
+		GeoACLs:             sets.New[string](nil),
+		StreamGeoACLs:       sets.New[string](nil),
+		IPACLs:              sets.New[string](nil),
+		DefinedIPACLs:       sets.New[string](nil),
+		RateLimiters:        sets.New[string](nil),
+		DefinedRateLimiters: sets.New[string](nil),
 	}
 	if conf != nil {
 		for name := range conf.Caches {
@@ -472,6 +474,15 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 				next.IPACLs.Set(name)
 			}
 		}
+		for name, def := range conf.RateLimiters {
+			if def == nil {
+				continue
+			}
+			next.DefinedRateLimiters.Set(name)
+			if def.ServesHTTPRoutes() {
+				next.RateLimiters.Set(name)
+			}
+		}
 	}
 	previous := s.known.Swap(&next)
 	return previous == nil ||
@@ -483,7 +494,9 @@ func (s *kubeSupervisor) setKnownNames(conf *config.Config) bool {
 		!maps.Equal(previous.GeoACLs, next.GeoACLs) ||
 		!maps.Equal(previous.StreamGeoACLs, next.StreamGeoACLs) ||
 		!maps.Equal(previous.IPACLs, next.IPACLs) ||
-		!maps.Equal(previous.DefinedIPACLs, next.DefinedIPACLs)
+		!maps.Equal(previous.DefinedIPACLs, next.DefinedIPACLs) ||
+		!maps.Equal(previous.RateLimiters, next.RateLimiters) ||
+		!maps.Equal(previous.DefinedRateLimiters, next.DefinedRateLimiters)
 }
 
 func marshalKubeOptions(o *kubecfg.Options) []byte {

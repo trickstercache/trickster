@@ -116,7 +116,7 @@ func TestValidateConfigMappingsSuccessPaths(t *testing.T) {
 		rwopts.Lookup{"rw": nil},
 		autho.Lookup{"auth": autho.New()},
 		tro.Lookup{"trace": tro.New()},
-		nil,
+		nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("ValidateConfigMappings: %v", err)
@@ -154,14 +154,14 @@ func TestValidateConfigMappingsALBAndCycles(t *testing.T) {
 
 	l := Lookup{keys.Member: member, "edge": edge}
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err != nil {
 		t.Fatalf("ValidateConfigMappings for ALB pool: %v", err)
 	}
 
 	edge.ALBOptions.Pool = ao.Members("edge")
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected cycle validation error")
 	}
@@ -178,7 +178,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	l := Lookup{"backend": o}
 
 	err := l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid authenticator error")
 	}
@@ -186,7 +186,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	o.AuthenticatorName = ""
 	o.Paths = po.List{{Path: "/x", AuthenticatorName: "missing"}}
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid path authenticator error")
 	}
@@ -195,7 +195,7 @@ func TestValidateConfigMappingsInvalidReferences(t *testing.T) {
 	o.Provider = providers.ALB
 	o.ALBOptions = nil
 	err = l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil)
+		ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, nil, nil)
 	if err == nil {
 		t.Fatal("expected invalid ALB options error")
 	}
@@ -223,7 +223,7 @@ func TestIPACLMappings(t *testing.T) {
 	}
 	mappings := func(l Lookup) error {
 		return l.ValidateConfigMappings(co.Lookup{"default": nil}, negative.Lookups{},
-			ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, acls)
+			ro.Lookup{}, rwopts.Lookup{}, autho.Lookup{}, tro.Lookup{}, acls, nil)
 	}
 
 	o := backend()

@@ -212,6 +212,21 @@ const (
 	NameXForwardedFor = "X-Forwarded-For"
 	// NameXRealIP represents the HTTP Header Name of "X-Real-IP"
 	NameXRealIP = "X-Real-IP"
+	// NameRetryAfter is the HTTP Retry-After response field.
+	NameRetryAfter = "Retry-After"
+	// NameRateLimit is the IETF RateLimit response field.
+	NameRateLimit = "RateLimit"
+	// NameRateLimitPolicy is the IETF RateLimit-Policy response field.
+	NameRateLimitPolicy = "RateLimit-Policy"
+	// NameXRateLimitLimit is the legacy X-RateLimit-Limit response field.
+	NameXRateLimitLimit = "X-RateLimit-Limit"
+	// NameXRateLimitRemaining is the legacy X-RateLimit-Remaining response field.
+	NameXRateLimitRemaining = "X-RateLimit-Remaining"
+	// NameXRateLimitReset is the legacy X-RateLimit-Reset response field.
+	NameXRateLimitReset = "X-RateLimit-Reset"
+	// NameXTricksterRateLimited is the request field a count-mode limiter appends its name to.
+	// A listener strips a client-supplied value before any limiter runs.
+	NameXTricksterRateLimited = "X-Trickster-Rate-Limited"
 	// NameXRequestID represents the HTTP Header Name of "X-Request-ID"
 	NameXRequestID = "X-Request-ID"
 	// NameXForwardedHost represents the HTTP Header Name of "X-Forwarded-Host"

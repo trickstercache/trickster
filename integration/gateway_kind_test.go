@@ -288,3 +288,83 @@ spec:
 	resp, body = hostGet(t, gatewayHTTPAddr, "acl.example.com", "/")
 	require.Equal(t, http.StatusForbidden, resp.StatusCode, body)
 }
+
+func TestGatewayRateLimitKind(t *testing.T) {
+	// a class whose parameters name kind-route serves limited.example.com; past the limit the
+	// route answers 429 with Retry-After, and shop.example.com is unchanged
+	skipUnlessKind(t)
+	waitForTrickster(t, gatewayMetricsAddr)
+
+	const (
+		params = `apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trickster-limit-params
+  namespace: trickster-it
+data:
+  rate_limiter_name: kind-route
+`
+		class = `apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: trickster-limit
+spec:
+  controllerName: trickstercache.org/gateway-controller
+  parametersRef:
+    group: ""
+    kind: ConfigMap
+    name: trickster-limit-params
+    namespace: trickster-it
+`
+		gateway = `apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: limited
+  namespace: trickster-it
+spec:
+  gatewayClassName: trickster-limit
+  listeners:
+    - name: http
+      port: 9080
+      protocol: HTTP
+      hostname: limited.example.com
+      allowedRoutes:
+        namespaces:
+          from: Same
+`
+		route = `apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: limited
+  namespace: trickster-it
+spec:
+  parentRefs:
+    - name: limited
+      sectionName: http
+  hostnames:
+    - limited.example.com
+  rules:
+    - backendRefs:
+        - name: webecho
+          port: 80
+`
+	)
+	applyKind(t, params)
+	applyKind(t, class)
+	applyKind(t, gateway)
+	applyKind(t, route)
+	t.Cleanup(func() {
+		deleteKind(t, route)
+		deleteKind(t, gateway)
+		deleteKind(t, class)
+		deleteKind(t, params)
+	})
+
+	waitRoute(t, gatewayHTTPAddr, "shop.example.com", "/", http.StatusOK, 2*time.Minute)
+	require.Eventually(t, func() bool {
+		resp, _ := hostGet(t, gatewayHTTPAddr, "limited.example.com", "/")
+		return resp.StatusCode == http.StatusTooManyRequests && resp.Header.Get("Retry-After") != ""
+	}, 2*time.Minute, 200*time.Millisecond, "the generated route never returned 429")
+	resp, body := hostGet(t, gatewayHTTPAddr, "shop.example.com", "/")
+	require.Equal(t, http.StatusOK, resp.StatusCode, body)
+}

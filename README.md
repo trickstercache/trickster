@@ -38,6 +38,7 @@ Trickster is a fully-featured Reverse Proxy Cache for HTTP applications like sta
 * Rules engine for custom request routing and rewriting
 * Built-in [Static File Server](./docs/static.md) for hosting websites and other local content
 * [Geo ACLs](./docs/geo-acl.md) and [IP ACLs](./docs/ip-acl.md) restrict backends and paths by client location, on HTTP, native database and stream listeners alike
+* [Rate limiting](./docs/rate-limiting.md) counts requests, connections, sessions, or datagrams and refuses what exceeds a named limit
 
 ## Time Series Database Accelerator
 

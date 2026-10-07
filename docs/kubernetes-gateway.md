@@ -55,6 +55,7 @@ data:
   timeout: 45s
   authenticator_name: gateway-auth
   ip_acl_name: office
+  rate_limiter_name: per-client
 ```
 
 | Key | Value |
@@ -64,6 +65,7 @@ data:
 | `tracing_name`, `req_rewriter_name`, `authenticator_name` | a configured tracer, request rewriter or authenticator |
 | `geo_acl_name` | a configured [geo ACL](./geo-acl.md), which gates the backend each of the class's routes attaches, and none of its pool members, templates or mirror targets. A stream route needs one whose locator places addresses; under a geo ACL that reads headers, the class's stream routes are refused rather than served ungated |
 | `ip_acl_name` | a configured access list with `source: client_ip` and `action: reject`. When set, it overrides `kubernetes.defaults.ip_acl_name` for this class's route backends. See [ip-acl.md](./ip-acl.md) |
+| `rate_limiter_name` | a configured rate limiter with HTTP keys, unit `requests` or unset, and an action other than `close`. When set, it overrides `kubernetes.defaults.rate_limiter_name` for this class's HTTP and gRPC route backends. A stream route does not take it. See [rate-limiting.md](./rate-limiting.md) |
 | `timeout` | a duration with a unit, such as `30s` |
 | `health_mode` | `probe` or `provider`, for generated discovery-backed ALBs |
 | `load_balancing` | `rr`, `p2c`, `lc`, `lt` or `hrw`: how traffic is spread across a Service's endpoints in the endpoint routing mode |
@@ -74,6 +76,8 @@ data:
 | `sticky_secret` | the name of a Secret, in the ConfigMap's namespace and labeled `trickstercache.org/sticky-key`, whose `key` entry keys every session token the class's ALBs issue; see [The session key](#the-session-key) |
 
 A non-empty `ip_acl_name` is copied onto the generated HTTP, gRPC, and stream route backends, in both the `service` and `endpoint` routing modes. It is not copied onto pool members, endpoint templates, or mirrors. An empty value leaves `kubernetes.defaults.ip_acl_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a list that is not `client_ip` and `reject`, cannot be honored: the class is not served, as for any other parameter that names something the configuration does not define.
+
+A non-empty `rate_limiter_name` is copied onto the generated HTTP and gRPC route backends, in both routing modes. It is not copied onto stream route backends, pool members, endpoint templates, mirrors, or generated listeners. An empty value leaves `kubernetes.defaults.rate_limiter_name` in place. No route or policy field sets the name to `none`. A name that is not configured, or a limiter a generated HTTP route cannot use, cannot be honored: that class is not served. Another class keeps the parameters it can honor.
 
 Unlike an Ingress annotation, a GatewayClass may set the operator-tier names,
 because a GatewayClass is cluster-scoped infrastructure and whoever can write

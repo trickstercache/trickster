@@ -80,6 +80,16 @@ The following metrics are available for polling with any Trickster configuration
     * `scope` - `listener`, `backend`, or `path`
     * `verdict` - `allow` or `deny`. `reject` and `drop` are both `deny`
 
+* `trickster_ratelimit_decisions_total` (Counter) - Decisions made by an attached rate limiter. See [rate-limiting.md](./rate-limiting.md).
+  * labels:
+    * `limiter` - the name of the rate limiter
+    * `plane` - `http` or `stream`
+    * `result` - `allowed`, `limited`, `counted`, `exempt`, or `full`
+
+* `trickster_ratelimit_keys` (Gauge) - Buckets a rate limiter holds at scrape time.
+  * labels:
+    * `limiter` - the name of the rate limiter
+
 * `trickster_proxy_points_total` (Counter) - The total number of data points Trickster has handled.
   * labels:
     * `backend_name` - the name of the configured backend handling the proxy request

@@ -134,5 +134,6 @@ const (
 	HTTP_Status    = "http_status"
 	Router_Name    = "router_name"
 	IP_ACL         = "ip_acl"
+	Limiter        = "limiter"
 	Verdict        = "verdict"
 )
