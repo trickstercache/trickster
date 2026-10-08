@@ -802,6 +802,27 @@ data:
     #     # entry changes nothing. Default: false
     #     preserve_host: false
 
+    #     # origin_resolution selects how the origin host is resolved when dialing. With mode srv,
+    #     # the origin_url host (or a host set by a request rewriter) is a DNS SRV owner name, and
+    #     # each connection goes to a target and port from the SRV answer; the URL port is ignored.
+    #     # See docs/origin-resolution.md
+    #     origin_resolution:
+    #       # mode is a (default: A/AAAA lookup at the URL port) or srv. The settings
+    #       # below apply only to srv
+    #       mode: srv
+    #       # resolver is the host:port of a DNS server to query directly, which makes
+    #       # record TTLs visible. Default: empty, which uses the stdlib resolver
+    #       resolver: ''
+    #       # min_ttl and max_ttl clamp how long an answer is cached. max_ttl also bounds
+    #       # how long the last good answer keeps serving while lookups fail. Defaults: 5s, 60s
+    #       min_ttl: 5s
+    #       max_ttl: 60s
+    #       # negative_ttl is how long NXDOMAIN or an empty answer is cached. Default: 5s
+    #       negative_ttl: 5s
+    #       # tls_server_name is owner (default: verify an https origin against the URL host)
+    #       # or target (verify against the dialed SRV target)
+    #       tls_server_name: owner
+
         # is_default describes whether this backend is the default backend considered when routing http requests
         # it is false, by default; but if you only have a single backend configured, is_default will be true unless explicitly set to false
         is_default: true

@@ -18,12 +18,14 @@
 package proxy
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"time"
 
 	taws "github.com/trickstercache/trickster/v2/pkg/aws"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/resolution"
 )
 
 const connectTimeout = time.Second * 10
@@ -35,12 +37,21 @@ func NewHTTPClient(o *bo.Options) (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewHTTPClientWithSigner(o, s)
+	return NewHTTPClientWith(o, s, NewOriginDialer(o))
 }
 
-// NewHTTPClientWithSigner is NewHTTPClient signing with s, so that one backend's clients share
-// one credential cache. A nil s sends requests unsigned.
-func NewHTTPClientWithSigner(o *bo.Options, s *taws.Signer) (*http.Client, error) {
+// NewOriginDialer returns the dialer for the backend's origin_resolution, or nil when the
+// origin is dialed by its A/AAAA addresses. Share it across a backend's clients.
+func NewOriginDialer(o *bo.Options) *resolution.Dialer {
+	if o == nil {
+		return nil
+	}
+	return resolution.New(o.Name, o.OriginResolution, time.Duration(o.KeepAliveTimeout), connectTimeout)
+}
+
+// NewHTTPClientWith is NewHTTPClient signing with s and dialing with d, either of which may be nil;
+// a backend's clients share both, and so their credential and SRV caches
+func NewHTTPClientWith(o *bo.Options, s *taws.Signer, d *resolution.Dialer) (*http.Client, error) {
 	if o == nil {
 		return nil, nil
 	}
@@ -67,36 +78,46 @@ func NewHTTPClientWithSigner(o *bo.Options, s *taws.Signer) (*http.Client, error
 		protocols = &p
 	}
 
+	dial := (&net.Dialer{
+		KeepAlive: time.Duration(o.KeepAliveTimeout),
+		Timeout:   connectTimeout,
+	}).DialContext
+	if d != nil {
+		dial = d.DialContext
+	}
+	tr := &http.Transport{
+		DialContext:           dial,
+		MaxIdleConns:          o.MaxIdleConns,
+		MaxIdleConnsPerHost:   o.MaxIdleConns,
+		MaxConnsPerHost:       o.MaxConcurrentConns,
+		IdleConnTimeout:       time.Duration(o.KeepAliveTimeout),
+		TLSHandshakeTimeout:   connectTimeout,
+		ExpectContinueTimeout: time.Duration(o.Timeout),
+		ResponseHeaderTimeout: time.Duration(o.Timeout),
+		TLSClientConfig:       TLSConfig,
+		// explicit: Go suppresses h2 auto-enable when DialContext or TLSClientConfig is custom.
+		ForceAttemptHTTP2: true,
+		// nil unless h2c is configured, leaving ForceAttemptHTTP2 in charge
+		Protocols: protocols,
+	}
+	if d.VerifiesTarget() {
+		// the transport adds its ALPN protocols to TLSClientConfig on first use, so read it per dial
+		tr.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return d.DialTLSContext(ctx, network, addr, tr.TLSClientConfig)
+		}
+	}
 	client := &http.Client{
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
-		Transport: &http.Transport{
-			DialContext: (&net.Dialer{
-				KeepAlive: time.Duration(o.KeepAliveTimeout),
-				Timeout:   connectTimeout,
-			}).DialContext,
-			MaxIdleConns:          o.MaxIdleConns,
-			MaxIdleConnsPerHost:   o.MaxIdleConns,
-			MaxConnsPerHost:       o.MaxConcurrentConns,
-			IdleConnTimeout:       time.Duration(o.KeepAliveTimeout),
-			TLSHandshakeTimeout:   connectTimeout,
-			ExpectContinueTimeout: time.Duration(o.Timeout),
-			ResponseHeaderTimeout: time.Duration(o.Timeout),
-			TLSClientConfig:       TLSConfig,
-			// explicit: Go suppresses h2 auto-enable when DialContext or TLSClientConfig is custom.
-			ForceAttemptHTTP2: true,
-			// nil unless h2c is configured, leaving ForceAttemptHTTP2 in charge
-			Protocols: protocols,
-		},
+		Transport: tr,
 	}
 
 	if s != nil {
-		inner, _ := client.Transport.(*http.Transport)
-		wrapped := taws.WrapTransport(s, client.Transport, sigV4Observer(o.Name))
+		wrapped := taws.WrapTransport(s, tr, sigV4Observer(o.Name))
 		// sigV4RoundTripper does not satisfy idleCloser; wrap to keep
 		// CloseIdleConnections reachable on reload.
-		client.Transport = &idleClosingRoundTripper{RoundTripper: wrapped, inner: inner}
+		client.Transport = &idleClosingRoundTripper{RoundTripper: wrapped, inner: tr}
 	}
 
 	return client, nil

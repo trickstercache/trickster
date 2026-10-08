@@ -163,6 +163,8 @@ func (l *logger) Write(b []byte) (int, error) {
 }
 
 func (l *logger) SetLogLevel(logLevel level.Level) {
+	// configuration validates level names case-insensitively, and flags and env vars pass them raw
+	logLevel = strings.ToLower(strings.TrimSpace(logLevel))
 	id := level.GetID(logLevel)
 	if id == 0 {
 		l.WarnOnce("loglevel."+logLevel,

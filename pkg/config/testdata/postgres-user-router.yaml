@@ -327,7 +327,7 @@ listeners:
       dot_segments: normalize
       escaped_slashes: keep
 logging:
-  log_level: INFO
+  log_level: info
 metrics:
   listen_port: 8481
 tracing:

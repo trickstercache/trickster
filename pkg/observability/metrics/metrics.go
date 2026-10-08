@@ -593,6 +593,28 @@ var (
 		[]string{keys.Backend_Name, keys.Provider, keys.Edge, keys.Status},
 	)
 
+	// OriginSRVLookups counts SRV origin-resolution lookups by result: hit, miss, stale, negative or error
+	OriginSRVLookups = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "origin_srv_lookups_total",
+			Help:      "Count of SRV origin-resolution lookups, by result.",
+		},
+		[]string{keys.Backend_Name, keys.Result},
+	)
+
+	// OriginSRVDialAttempts counts dials to SRV targets by priority tier (0 is the preferred tier) and result
+	OriginSRVDialAttempts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: proxySubsystem,
+			Name:      "origin_srv_dial_attempts_total",
+			Help:      "Count of dial attempts to SRV origin targets, by priority tier and result.",
+		},
+		[]string{keys.Backend_Name, keys.Tier, keys.Result},
+	)
+
 	// GeoACLDecisions counts geo ACL judgments by the plane they were made on and their result
 	GeoACLDecisions = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -1381,6 +1403,8 @@ func init() {
 	prometheus.MustRegister(ReloadDurationSeconds)
 	prometheus.MustRegister(ProxyQueryRangeRejections)
 	prometheus.MustRegister(ProxyPartialBucketFetches)
+	prometheus.MustRegister(OriginSRVLookups)
+	prometheus.MustRegister(OriginSRVDialAttempts)
 	prometheus.MustRegister(StepAlignmentFallbacks)
 	prometheus.MustRegister(GeoACLDecisions)
 	prometheus.MustRegister(GeoLocatorLookups)
@@ -1444,6 +1468,8 @@ var backendSeriesVecs = []partialDeleter{
 	ProxyRequestDuration,
 	ProxyQueryRangeRejections,
 	ProxyPartialBucketFetches,
+	OriginSRVLookups,
+	OriginSRVDialAttempts,
 	StepAlignmentFallbacks,
 	TimeseriesRetentionFactorExceeded,
 	TimeseriesOffGridExtents,

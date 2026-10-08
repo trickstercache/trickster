@@ -53,6 +53,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/discovery/poller"
 	"github.com/trickstercache/trickster/v2/pkg/discovery/providers"
 	dnsclient "github.com/trickstercache/trickster/v2/pkg/dns/client"
+	"github.com/trickstercache/trickster/v2/pkg/dns/resolver"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
@@ -93,7 +94,7 @@ func newDiscoverer(name string, o *do.Options, m mode) (discovery.Discoverer, er
 type provider struct {
 	name     string
 	mode     mode
-	res      resolver
+	res      resolver.Resolver
 	interval time.Duration
 }
 
@@ -105,11 +106,7 @@ func newProvider(name string, o *do.Options, m mode) (*provider, error) {
 	if interval <= 0 {
 		interval = dnsopts.DefaultInterval
 	}
-	r, err := newResolver(o.DNS.Resolver)
-	if err != nil {
-		return nil, err
-	}
-	return &provider{name: name, mode: m, res: r, interval: interval}, nil
+	return &provider{name: name, mode: m, res: resolver.New(o.DNS.Resolver), interval: interval}, nil
 }
 
 // newSubscription builds a query's poll-loop runner; it satisfies
@@ -219,10 +216,11 @@ func (s *subscription) resolve(ctx context.Context) (discovery.Snapshot, time.Du
 
 // resolveSRV maps the highest-priority tier of the SRV answer onto members
 func (s *subscription) resolveSRV(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	answers, ttl, err := s.p.res.lookupSRV(ctx, dnsclient.Fqdn(s.q.SRVName))
+	answer, err := s.p.res.LookupSRV(ctx, dnsclient.Fqdn(s.q.SRVName))
 	if err != nil {
 		return nil, 0, err
 	}
+	answers := answer.Records
 	minPriority := uint16(0)
 	for i, a := range answers {
 		if i == 0 || a.Priority < minPriority {
@@ -246,18 +244,18 @@ func (s *subscription) resolveSRV(ctx context.Context) (discovery.Snapshot, time
 			},
 		})
 	}
-	return out, ttl, nil
+	return out, answer.TTL, nil
 }
 
 // resolveA maps each A/AAAA answer onto a member with the query's fixed
 // port and scheme
 func (s *subscription) resolveA(ctx context.Context) (discovery.Snapshot, time.Duration, error) {
-	ips, ttl, err := s.p.res.lookupIP(ctx, dnsclient.Fqdn(s.q.Hostname))
+	ia, err := s.p.res.LookupIP(ctx, dnsclient.Fqdn(s.q.Hostname))
 	if err != nil {
 		return nil, 0, err
 	}
-	out := make(discovery.Snapshot, 0, len(ips))
-	for _, ip := range ips {
+	out := make(discovery.Snapshot, 0, len(ia.Addrs))
+	for _, ip := range ia.Addrs {
 		out = append(out, discovery.Member{
 			Name:    ip,
 			Scheme:  schemeOf(s.q),
@@ -265,7 +263,7 @@ func (s *subscription) resolveA(ctx context.Context) (discovery.Snapshot, time.D
 			Ready:   discovery.ReadyUnknown,
 		})
 	}
-	return out, ttl, nil
+	return out, ia.TTL, nil
 }
 
 // warnResolve counts a resolution failure and logs it once per failure

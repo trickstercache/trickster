@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -59,6 +60,7 @@ import (
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
+	reso "github.com/trickstercache/trickster/v2/pkg/proxy/resolution/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	to "github.com/trickstercache/trickster/v2/pkg/proxy/tls/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -99,6 +101,9 @@ type Options struct {
 	// PreserveHost sends the client's Host header to the origin instead of the origin's own host;
 	// a Host entry in a path's request_headers still replaces it.
 	PreserveHost bool `yaml:"preserve_host,omitempty"`
+	// OriginResolution selects how the origin host is resolved at dial time: by A/AAAA lookup
+	// (the default) or as a DNS SRV owner name whose answer supplies the target and port
+	OriginResolution *reso.Options `yaml:"origin_resolution,omitempty"`
 	// Protocol selects the upstream wire protocol used to communicate with the origin.
 	// When empty, HTTP is used. Supported values are provider-specific (e.g., "native"
 	// for ClickHouse to use the binary protocol on port 9000).
@@ -453,8 +458,18 @@ func (o *Options) Clone() *Options {
 		out.SigV4 = o.SigV4.Clone()
 	}
 
+	if o.OriginResolution != nil {
+		out.OriginResolution = o.OriginResolution.Clone()
+	}
+
 	return out
 }
+
+const (
+	originResolutionKey = "origin_resolution"
+	schemeHTTP          = "http"
+	schemeHTTPS         = "https"
+)
 
 const (
 	hostReasonEmpty         = "must not be empty"
@@ -540,6 +555,9 @@ func (o *Options) Validate() (bool, error) {
 	if err := o.SigV4.Validate(); err != nil {
 		return false, fmt.Errorf("invalid sigv4 options for backend %s: %w", o.Name, err)
 	}
+	if err := o.validateOriginResolution(); err != nil {
+		return false, err
+	}
 	if o.MaxShardSizeTime > 0 && o.MaxShardSizePoints > 0 {
 		return false, ErrInvalidMaxShardSize
 	}
@@ -594,6 +612,37 @@ func (o *Options) Validate() (bool, error) {
 		}
 	}
 	return true, nil
+}
+
+// validateOriginResolution requires srv mode to have an HTTP origin whose host is not an IP, and
+// rejects tls_server_name target alongside tls.server_name
+func (o *Options) validateOriginResolution() error {
+	if o.OriginResolution == nil {
+		return nil
+	}
+	if providers.NonOriginBackends().Contains(o.Provider) || o.Protocol != "" {
+		return NewErrUnsupportedOption(originResolutionKey, o.Provider, o.Name)
+	}
+	if err := o.OriginResolution.Validate(); err != nil {
+		return fmt.Errorf("invalid %s for backend %s: %w", originResolutionKey, o.Name, err)
+	}
+	if !o.OriginResolution.IsSRV() || o.OriginURL == "" {
+		return nil
+	}
+	u, err := url.Parse(o.OriginURL)
+	if err != nil {
+		return nil // reported by the origin_url check
+	}
+	if u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS {
+		return fmt.Errorf("%w: backend %s", ErrSRVRequiresHTTP, o.Name)
+	}
+	if _, err := netip.ParseAddr(u.Hostname()); err == nil {
+		return fmt.Errorf("%w: backend %s", ErrSRVWithIPOrigin, o.Name)
+	}
+	if o.OriginResolution.VerifiesTarget() && o.TLS != nil && o.TLS.ServerName != "" {
+		return fmt.Errorf("%w: backend %s", ErrSRVTargetWithServerName, o.Name)
+	}
+	return nil
 }
 
 // validateStatic requires the static block on a static backend and rejects it
@@ -1029,7 +1078,7 @@ func (o *Options) Initialize(name string) error {
 	}
 	// a template with no origin has no scheme yet; each discovered clone is checked with its own
 	if o.H2CPriorKnowledge && (!o.IsTemplate || o.OriginURL != "") &&
-		!strings.EqualFold(o.Scheme, "http") {
+		!strings.EqualFold(o.Scheme, schemeHTTP) {
 		return fmt.Errorf(
 			"h2c_prior_knowledge requires an http:// origin_url (cleartext HTTP/2 only; no HTTP/1 fallback), got scheme %q",
 			o.Scheme)
@@ -1085,6 +1134,7 @@ func (o *Options) Initialize(name string) error {
 			return err
 		}
 	}
+	o.OriginResolution.Initialize()
 	return nil
 }
 
