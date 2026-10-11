@@ -39,10 +39,7 @@ func BenchmarkTakeHit16(b *testing.B) {
 	now := int64(time.Minute)
 	l.Take(1, true, now, 1)
 	// p*GOMAXPROCS is 16 when the process count divides 16, the contended budget.
-	p := 16 / runtime.GOMAXPROCS(0)
-	if p < 1 {
-		p = 1
-	}
+	p := max(16/runtime.GOMAXPROCS(0), 1)
 	b.SetParallelism(p)
 	b.ReportAllocs()
 	b.ResetTimer()

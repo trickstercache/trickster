@@ -17,6 +17,7 @@
 package ratelimit
 
 import (
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -49,22 +50,28 @@ type kept struct {
 }
 
 var registry = struct {
-	mu     sync.Mutex
-	byName map[string]*kept
+	mu       sync.Mutex
+	updateMu sync.Mutex
+	byName   map[string]*kept
+	update   *RegistryUpdate
 }{byName: map[string]*kept{}}
 
-// Lookup returns a limiter for name. The store is the one already kept when shape is unchanged,
-// and a new one otherwise. policy is always this call's, including after a reload.
+// Lookup reuses counts when shape is unchanged and applies policy on every call.
+// During an update, replacements are staged until the configuration commits.
 func Lookup(name string, shape Shape, policy Policy) *Limiter {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 	k := registry.byName[name]
 	if k == nil || k.shape != shape {
-		k = &kept{
-			shape: shape,
-			store: newStore(shape.Limit, shape.Window, shape.MaxKeys),
+		dst := registry.byName
+		if registry.update != nil {
+			dst = registry.update.byName
+			k = dst[name]
 		}
-		registry.byName[name] = k
+		if k == nil || k.shape != shape {
+			k = &kept{shape: shape, store: newStore(shape.Limit, shape.Window, shape.MaxKeys)}
+			dst[name] = k
+		}
 	}
 	return &Limiter{
 		store:     k.store,
@@ -81,12 +88,56 @@ func Lookup(name string, shape Shape, policy Policy) *Limiter {
 func ForgetExcept(keep func(name string) bool) {
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
+	forgetExcept(keep)
+}
+
+func forgetExcept(keep func(name string) bool) {
 	for name := range registry.byName {
 		if keep != nil && keep(name) {
 			continue
 		}
 		delete(registry.byName, name)
 	}
+}
+
+// RegistryUpdate stages replacement stores while a configuration is built.
+// Aborting leaves the committed stores, including their ongoing counts, intact.
+type RegistryUpdate struct {
+	byName map[string]*kept
+}
+
+// BeginUpdate serializes configuration updates. The caller must commit or abort the result.
+func BeginUpdate() *RegistryUpdate {
+	registry.updateMu.Lock()
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	u := &RegistryUpdate{byName: make(map[string]*kept)}
+	registry.update = u
+	return u
+}
+
+// Commit publishes the staged stores and drops names the applied configuration no longer keeps.
+func (u *RegistryUpdate) Commit(keep func(name string) bool) {
+	u.finish(keep, true)
+}
+
+// Abort discards staged stores. Calling it after Commit or Abort does nothing.
+func (u *RegistryUpdate) Abort() {
+	u.finish(nil, false)
+}
+
+func (u *RegistryUpdate) finish(keep func(name string) bool, commit bool) {
+	registry.mu.Lock()
+	defer registry.mu.Unlock()
+	if u == nil || registry.update != u {
+		return
+	}
+	if commit {
+		maps.Copy(registry.byName, u.byName)
+		forgetExcept(keep)
+	}
+	registry.update = nil
+	registry.updateMu.Unlock()
 }
 
 // Walk calls fn with each kept limiter's name and how many buckets it holds.

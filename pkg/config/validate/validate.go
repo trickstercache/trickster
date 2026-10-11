@@ -941,77 +941,7 @@ func streamMemberACLError(backendName, path string, ip *ipacl.List, ipName strin
 }
 
 func aclBackendReachability(c *config.Config, wantHTTP bool) sets.Set[string] {
-	// Follow dispatch edges once per backend. HTTP returns every reachable backend;
-	// streams return only pool members and templates, which bypass admission.
-	reached := sets.NewStringSet()
-	members := sets.NewStringSet()
-	queue := make([]string, 0, len(c.Backends))
-	add := func(name string) {
-		if name != "" && c.Backends[name] != nil && !reached.Contains(name) {
-			reached.Set(name)
-			queue = append(queue, name)
-		}
-	}
-	for name, backend := range c.Backends {
-		if backend == nil || backend.IsTemplate {
-			continue
-		}
-		for _, listenerName := range backend.ListenerNames {
-			lo := c.Listeners[listenerName]
-			if lo != nil && (wantHTTP && (lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP) ||
-				!wantHTTP && lo.IsStream()) {
-				add(name)
-				break
-			}
-		}
-	}
-	for len(queue) > 0 {
-		backend := c.Backends[queue[0]]
-		queue = queue[1:]
-		if o := backend.ALBOptions; o != nil {
-			for _, member := range o.Pool {
-				members.Set(member.Name)
-				add(member.Name)
-			}
-			if o.Discovery != nil {
-				members.Set(o.Discovery.TemplateBackend)
-				add(o.Discovery.TemplateBackend)
-			}
-			if wantHTTP && o.UserRouter != nil {
-				add(o.UserRouter.DefaultBackend)
-				for _, mapping := range o.UserRouter.Users {
-					if mapping != nil {
-						add(mapping.ToBackend)
-					}
-				}
-			}
-		}
-		if !wantHTTP {
-			continue
-		}
-		if o := c.Rules[backend.RuleName]; o != nil {
-			add(o.NextRoute)
-			for _, ruleCase := range o.CaseOptions {
-				if ruleCase != nil {
-					add(ruleCase.NextRoute)
-				}
-			}
-		}
-		for _, path := range backend.Paths {
-			if path == nil {
-				continue
-			}
-			for _, mirror := range path.Mirrors {
-				if mirror != nil {
-					add(mirror.BackendName)
-				}
-			}
-		}
-	}
-	if wantHTTP {
-		return reached
-	}
-	return members
+	return c.BackendReachability(wantHTTP)
 }
 
 func addWarning(c *config.Config, warning string) {

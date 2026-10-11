@@ -92,18 +92,77 @@ func TestHeldLimiterSurvivesForget(t *testing.T) {
 func TestFailedReloadLeavesTheRegistry(t *testing.T) {
 	resetRegistry()
 	shape := Shape{Window: time.Second, Limit: 1, MaxKeys: 10}
-	Lookup("keep", shape, Policy{}).Take(1, true, 0, 1)
-	applied := false
-	if applied {
-		ForgetExcept(func(name string) bool { return name == "keep" })
+	first := Lookup("keep", shape, Policy{})
+	first.Take(1, true, 0, 1)
+	update := BeginUpdate()
+	defer update.Abort()
+	changed := shape
+	changed.Limit = 2
+	candidate := Lookup("keep", changed, Policy{})
+	candidate.Take(1, true, 0, 1)
+	if Lookup("keep", changed, Policy{}).store != candidate.store {
+		t.Fatal("staged attachments did not share counts")
 	}
+	if Lookup("keep", shape, Policy{}).store != first.store {
+		t.Fatal("an old attachment lost the committed store during apply")
+	}
+	Lookup("new", shape, Policy{}).Take(1, true, 0, 1)
+	Walk(func(name string, n int) {
+		if name != "keep" || n != 1 {
+			t.Fatalf("uncommitted metric: %s = %d", name, n)
+		}
+	})
+	update.Abort()
 	if Lookup("keep", shape, Policy{}).Take(1, true, 0, 1).Allowed {
-		t.Fatal("a reload that did not apply forgot the count")
+		t.Fatal("a failed shape change forgot the count")
 	}
-	ForgetExcept(func(name string) bool { return false })
-	if !Lookup("keep", shape, Policy{}).Take(1, true, 0, 1).Allowed {
-		t.Fatal("forgetting the name did not start fresh")
+	if !Lookup("new", shape, Policy{}).Take(1, true, 0, 1).Allowed {
+		t.Fatal("a failed update retained a new store")
 	}
+	if !Lookup("keep", changed, Policy{}).Take(1, true, 0, 2).Allowed {
+		t.Fatal("a retry retained the aborted candidate")
+	}
+}
+
+func TestRegistryUpdateCommitsChangedAndUnchangedStores(t *testing.T) {
+	resetRegistry()
+	shape := Shape{Window: time.Second, Limit: 1, MaxKeys: 10}
+	unchanged := Lookup("same", shape, Policy{})
+	unchanged.Take(1, true, 0, 1)
+	old := Lookup("changed", shape, Policy{})
+	old.Take(1, true, 0, 1)
+	Lookup("removed", shape, Policy{})
+	update := BeginUpdate()
+	defer update.Abort()
+	changed := shape
+	changed.Limit = 2
+	candidate := Lookup("changed", changed, Policy{})
+	candidate.Take(1, true, 0, 1)
+	added := Lookup("added", shape, Policy{})
+	added.Take(1, true, 0, 1)
+	Lookup("discarded", shape, Policy{})
+	update.Commit(func(name string) bool { return name != "removed" && name != "discarded" })
+	update.Commit(nil)
+	update.Abort()
+	if Lookup("same", shape, Policy{}).Take(1, true, 0, 1).Allowed {
+		t.Fatal("an unchanged shape lost counts on commit")
+	}
+	if Lookup("changed", changed, Policy{}).store != candidate.store ||
+		Lookup("added", shape, Policy{}).store != added.store {
+		t.Fatal("commit did not publish the staged stores")
+	}
+	if old.Take(1, true, 0, 1).Allowed {
+		t.Fatal("commit cleared an in-flight store")
+	}
+	if Lookup("changed", changed, Policy{}).Take(1, true, 0, 2).Allowed {
+		t.Fatal("commit did not preserve staged counts")
+	}
+	Walk(func(name string, _ int) {
+		if name == "removed" || name == "discarded" {
+			t.Fatalf("commit kept %s", name)
+		}
+	})
+	(*RegistryUpdate)(nil).Abort()
 }
 
 func TestForgetExceptKeepsNamedStores(t *testing.T) {

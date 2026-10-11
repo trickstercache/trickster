@@ -17,6 +17,7 @@
 package stream
 
 import (
+	"net/netip"
 	"testing"
 	"time"
 
@@ -27,7 +28,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"net/netip"
 )
 
 func opts(t *testing.T, name string, mutate func(*options.Options)) *options.Options {
