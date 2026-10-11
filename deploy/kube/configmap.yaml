@@ -470,6 +470,42 @@ data:
     #       - allow: 10.0.0.0/8
     #       - deny: all
 
+    # # Named rate limiters. Attach one with rate_limiter_name on a listener, backend, or path.
+    # # See docs/rate-limiting.md. A path name replaces the backend limiter; none clears it.
+    # # The listener limiter is a separate outer layer and is never replaced.
+    # rate_limiters:
+    #   per-client:
+    #     # keys is 0 to 5 request attributes, in order. Empty means one bucket for everything.
+    #     keys: [client_ip]
+    #     # ipv6_prefix is how many leading bits of an IPv6 client address form client_ip. 1-128; default 64.
+    #     ipv6_prefix: 64
+    #     # algorithm accepts only sliding_window, which is the default.
+    #     algorithm: sliding_window
+    #     # limit is how many events each bucket may take in window.
+    #     limit: 600
+    #     # window is 1s to 1h; default 1m.
+    #     window: 1m
+    #     # missing_key is exempt (default) or shared.
+    #     missing_key: exempt
+    #     # action is reject (default), count, or close. close is stream listeners only.
+    #     action: reject
+    #     # response is the HTTP reply for reject. status is 400-599; default 429.
+    #     # headers overlay the defaults. Cache-Control: no-store is always kept.
+    #     response:
+    #       status: 429
+    #       headers:
+    #         Cache-Control: no-store
+    #       body: "Too Many Requests\n"
+    #     # policy_headers is none (default), ietf, or legacy.
+    #     policy_headers: none
+    #     # max_keys is how many buckets are tracked. Default 100000.
+    #     max_keys: 100000
+    #     # max_keys_action is allow (default) or reject when a new key does not fit.
+    #     max_keys_action: allow
+    #     # unit is requests, connections, sessions, or datagrams. Leave it unset when the
+    #     # limiter is attached on more than one plane.
+    #     # unit: requests
+
     # Configuration options for mapping Origin(s)
     backends:
 

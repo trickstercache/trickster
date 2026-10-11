@@ -32,6 +32,7 @@ import (
 	l4o "github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
 	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
 	pgo "github.com/trickstercache/trickster/v2/pkg/proxy/pgwire/options"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -132,6 +133,11 @@ type Options struct {
 	IPACLName string `yaml:"ip_acl_name,omitempty"`
 	// IPACL is the compiled list named by IPACLName.
 	IPACL *ipacl.List `yaml:"-"`
+	// RateLimiterName is the limiter applied to every request on this listener.
+	// An empty name applies none. The reference none is not valid on a listener.
+	RateLimiterName string `yaml:"rate_limiter_name,omitempty"`
+	// RateLimiter is the definition named by RateLimiterName. Clones share it.
+	RateLimiter *rlopts.Options `yaml:"-"`
 	// PathNormalization controls how an HTTP listener cleans request paths before routing
 	// them; the cleaned path is also the one forwarded upstream. Nil selects the defaults.
 	PathNormalization *pno.Options `yaml:"path_normalization,omitempty"`

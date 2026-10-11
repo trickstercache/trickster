@@ -689,6 +689,52 @@ func TestTranslateIPACLParameter(t *testing.T) {
 	})
 }
 
+func rateLimitKnown() ir.ConfiguredNames {
+	n := known()
+	n.RateLimiters = sets.New([]string{"edge"})
+	n.DefinedRateLimiters = sets.New([]string{"edge", "shut", "wire"})
+	return n
+}
+
+func TestTranslateRateLimitParameter(t *testing.T) {
+	model, report, problems := translateClass(t, func(c *cache) {
+		c.configMaps["infra/gateway-params"].Data[ParamRateLimiterName] = "edge"
+	}, rateLimitKnown())
+	require.Empty(t, problems)
+	require.True(t, report.Classes[0].Accepted.Status)
+	require.Equal(t, "edge", model.Policies[0].RateLimiterName)
+
+	o := options(t)
+	overlay, _, err := compile.CompileWith(model, o, prometheusPaths)
+	require.NoError(t, err)
+	conf := decodeOverlay(t, overlay)
+	require.Equal(t, "edge", conf.Backends["kgw--httproute.shop.web_r0"].RateLimiterName)
+
+	refused := func(t *testing.T, name, detail string) {
+		t.Helper()
+		model, report, problems := translateClass(t, func(c *cache) {
+			c.configMaps["infra/gateway-params"].Data[ParamRateLimiterName] = name
+		}, rateLimitKnown())
+		containing(t, problems, "GatewayClass//trickster", detail)
+		require.False(t, report.Classes[0].Accepted.Status)
+		require.Contains(t, report.Classes[0].Accepted.Message, detail)
+		require.Empty(t, model.Routes, "a refused class serves no route")
+	}
+	t.Run("undefined", func(t *testing.T) {
+		refused(t, "missing", `no rate limiter named "missing" is configured`)
+	})
+	t.Run("ineligible", func(t *testing.T) {
+		_, report, problems := translateClass(t, func(c *cache) {
+			c.configMaps["infra/gateway-params"].Data[ParamRateLimiterName] = "shut"
+		}, rateLimitKnown())
+		containing(t, problems, "ineligible")
+		require.NotContains(t, problems[0].Detail, "undefined")
+		require.Contains(t, report.Classes[0].Accepted.Message, "ineligible")
+		require.NotContains(t, report.Classes[0].Accepted.Message, "undefined")
+		require.False(t, report.Classes[0].Accepted.Status)
+	})
+}
+
 func TestClassIPACLReachesTheRoutePolicy(t *testing.T) {
 	// The class list rides the policy a route already binds. HTTP, gRPC, and
 	// each stream protocol share that merge. Compile copies it onto the route backend.

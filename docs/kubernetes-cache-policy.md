@@ -166,7 +166,9 @@ Three things follow:
 The generated backend carries only what the policy and the configured defaults describe:
 an origin, a cache, timeouts, headers. An IP access list name, when the backend has one,
 comes from `kubernetes.defaults.ip_acl_name` or the GatewayClass `ip_acl_name` parameter,
-not from this policy. Provider settings with no policy field — a
+not from this policy. A rate limiter name, when the backend has one, comes from
+`kubernetes.defaults.rate_limiter_name` or the GatewayClass `rate_limiter_name` parameter,
+the same way. This policy cannot set either name or clear it. Provider settings with no policy field — a
 Prometheus `instant_round`, an InfluxDB `flux` block, a Graphite `render` section — take
 their defaults. MySQL is served over its own wire protocol rather than HTTP and cannot be
 selected.

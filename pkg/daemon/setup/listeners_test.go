@@ -47,9 +47,13 @@ import (
 	autho "github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/ready"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	pno "github.com/trickstercache/trickster/v2/pkg/proxy/paths/normalize/options"
+	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
@@ -1138,5 +1142,190 @@ func TestApplyStreamListenerUDP(t *testing.T) {
 	n, err = client.Read(buf)
 	if err != nil || string(buf[:n]) != "udp:pong" {
 		t.Fatalf("reply after reload = %q %v", buf[:n], err)
+	}
+}
+
+func TestNormalizedReadyPath(t *testing.T) {
+	o := pno.New()
+	if got := normalizedReadyPath(o, "/trickster/foo/../ready"); got != "/trickster/ready" {
+		t.Fatalf("ready path %q", got)
+	}
+}
+
+func TestNilRoutersDoNotLookupLimiter(t *testing.T) {
+	c := config.NewConfig()
+	o := &rlopts.Options{Name: "skip-lookup", Limit: 1}
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c.RateLimiters = rlopts.Lookup{"skip-lookup": o}
+	ln := c.Listeners[listenerconfig.DefaultFrontendName]
+	ln.Active = true
+	ln.ListenPort = 1
+	ln.RateLimiterName = "skip-lookup"
+	ln.RateLimiter = o
+	desiredListeners(c, nil, nil, nil, nil, nil)
+	ratelimit.Walk(func(name string, _ int) {
+		if name == "skip-lookup" {
+			t.Fatal("lookup during comparison")
+		}
+	})
+}
+
+func TestHTTP3SharesListenerLimiter(t *testing.T) {
+	c := config.NewConfig()
+	o := &rlopts.Options{Name: "h3-share", Limit: 1}
+	if err := o.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: lm.NewRouter()}
+	if err := routers[listenerconfig.DefaultFrontendName].RegisterRoute("/", nil, nil,
+		matching.PathMatchTypeExact, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})); err != nil {
+		t.Fatal(err)
+	}
+	frontend := c.Listeners[listenerconfig.DefaultFrontendName]
+	frontend.Active = true
+	frontend.ListenPort = 1
+	frontend.ServeTLS = true
+	frontend.TLSListenPort = 2
+	frontend.HTTP3 = &listenerconfig.HTTP3Options{Enabled: true}
+	frontend.RateLimiterName = "h3-share"
+	frontend.RateLimiter = o
+	got := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)
+	h3 := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP3, false)].router
+	tls := got[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, true)].router
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	h3.ServeHTTP(w, req)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("h3 = %d", w.Code)
+	}
+	w = httptest.NewRecorder()
+	tls.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("tls shares quota = %d", w.Code)
+	}
+}
+
+func TestListenerReadinessNormalizationAndACL(t *testing.T) {
+	limited := func(t *testing.T, name string) *rlopts.Options {
+		t.Helper()
+		o := &rlopts.Options{Name: name, Limit: 1, Keys: []string{"path"}}
+		if err := o.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		return o
+	}
+	servePath := func(h http.Handler, path string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "http://example/", nil)
+		req.URL.Path = path
+		req.RemoteAddr = "192.0.2.9:9"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		return w
+	}
+	buckets := func(name string) int {
+		var n int
+		ratelimit.Walk(func(got string, keys int) {
+			if got == name {
+				n = keys
+			}
+		})
+		return n
+	}
+
+	t.Run("custom path and collapsed alias", func(t *testing.T) {
+		c := config.NewConfig()
+		c.MgmtConfig.ReadyHandlerPath = "/readyz"
+		o := limited(t, "ready-custom")
+		ln := c.Listeners[listenerconfig.DefaultFrontendName]
+		ln.RateLimiterName = o.Name
+		ln.RateLimiter = o
+		var seen string
+		h := wrapListener(c, listenerconfig.DefaultFrontendName, ln, nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			seen = r.URL.Path
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		for range 2 {
+			if w := servePath(h, "/readyz"); w.Code != http.StatusNoContent {
+				t.Fatalf("custom ready %d", w.Code)
+			}
+		}
+		if w := servePath(h, "/foo/../readyz"); w.Code != http.StatusNoContent || seen != "/readyz" {
+			t.Fatalf("alias %d path %q", w.Code, seen)
+		}
+		if buckets("ready-custom") != 0 {
+			t.Fatal("readiness charged")
+		}
+		if w := servePath(h, "/foo/../bar"); w.Code != http.StatusNoContent || seen != "/bar" {
+			t.Fatalf("normalized %d %q", w.Code, seen)
+		}
+		if w := servePath(h, "/bar"); w.Code != http.StatusTooManyRequests {
+			t.Fatalf("same normalized key %d", w.Code)
+		}
+	})
+
+	t.Run("listener acl denies readiness", func(t *testing.T) {
+		c := config.NewConfig()
+		c.MgmtConfig.ReadyHandlerPath = "/trickster/ready"
+		o := limited(t, "ready-acl")
+		ln := c.Listeners[listenerconfig.DefaultFrontendName]
+		ln.RateLimiterName = o.Name
+		ln.RateLimiter = o
+		ln.IPACL = mustList(t, ipacl.Options{Allow: []string{"10.0.0.0/8"}})
+		ln.IPACLName = "office"
+		h := wrapListener(c, listenerconfig.DefaultFrontendName, ln, nil, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		w := servePath(h, "/trickster/ready")
+		if w.Code != http.StatusForbidden || buckets("ready-acl") != 0 {
+			t.Fatalf("acl %d buckets %d", w.Code, buckets("ready-acl"))
+		}
+	})
+
+	t.Run("normalizer refusal is not charged", func(t *testing.T) {
+		c := config.NewConfig()
+		o := limited(t, "norm-400")
+		ln := c.Listeners[listenerconfig.DefaultFrontendName]
+		ln.RateLimiterName = o.Name
+		ln.RateLimiter = o
+		ln.PathNormalization.DotSegments = pno.DotSegmentsReject
+		h := wrapListener(c, listenerconfig.DefaultFrontendName, ln, nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			t.Fatal("limiter or route ran")
+		}))
+		w := servePath(h, "/a/../b")
+		if w.Code != http.StatusBadRequest || buckets("norm-400") != 0 {
+			t.Fatalf("status %d buckets %d", w.Code, buckets("norm-400"))
+		}
+	})
+}
+
+func TestDerivedListenerStripsSpoofedMarker(t *testing.T) {
+	c := config.NewConfig()
+	c.Backends = bo.Lookup{"api": &bo.Options{
+		Name: "api", ListenerNames: []string{listenerconfig.DefaultFrontendName},
+		Paths: po.List{{Path: "/", RateLimiterName: "edge"}},
+	}}
+	var got string
+	raw := lm.NewRouter()
+	if err := raw.RegisterRoute("/", nil, nil, matching.PathMatchTypeExact, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Get(headers.NameXTricksterRateLimited)
+		w.WriteHeader(http.StatusNoContent)
+	})); err != nil {
+		t.Fatal(err)
+	}
+	routers := map[string]router.Router{listenerconfig.DefaultFrontendName: raw}
+	ln := c.Listeners[listenerconfig.DefaultFrontendName]
+	ln.Active = true
+	ln.ListenPort = 1
+	gotListeners := desiredListeners(c, routers, lm.NewRouter(), lm.NewRouter(), nil, nil)
+	h := gotListeners[listenerKey(listenerconfig.DefaultFrontendName, listenerconfig.ProtocolHTTP, false)].router
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set(headers.NameXTricksterRateLimited, "spoofed")
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	if got != "" {
+		t.Fatalf("marker %q", got)
 	}
 }

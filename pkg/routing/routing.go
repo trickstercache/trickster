@@ -44,6 +44,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/authenticator/handler"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/flowkey"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	geoacl "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl"
 	geohandler "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/handler"
@@ -54,6 +55,8 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
+	rlhandler "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/handler"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
@@ -80,7 +83,7 @@ func attachGeoACL(h http.Handler, pathOptions *po.Options, backendOptions *bo.Op
 	return geohandler.New(geoACLFor(pathOptions, backendOptions), h)
 }
 
-func selectACL[T any](pathName string, pathACL, backendACL T) (T, bool) {
+func selectByName[T any](pathName string, pathACL, backendACL T) (T, bool) {
 	// a path's own name selects its ACL, none clears the backend's, and an empty name inherits it; the bool
 	// reports that the path supplied the ACL
 	switch pathName {
@@ -94,7 +97,7 @@ func selectACL[T any](pathName string, pathACL, backendACL T) (T, bool) {
 }
 
 func geoACLFor(pathOptions *po.Options, backendOptions *bo.Options) *geoacl.ACL {
-	o, _ := selectACL(pathOptions.GeoACLName, pathOptions.GeoACLOptions, backendOptions.GeoACLOptions)
+	o, _ := selectByName(pathOptions.GeoACLName, pathOptions.GeoACLOptions, backendOptions.GeoACLOptions)
 	if o == nil {
 		return nil
 	}
@@ -112,7 +115,7 @@ func routeACL(path *po.Options, backend *bo.Options) (*ipacl.List, string, strin
 	if backend != nil {
 		inherited, name = backend.IPACL, backend.IPACLName
 	}
-	list, fromPath := selectACL(path.IPACLName, path.IPACL, inherited)
+	list, fromPath := selectByName(path.IPACLName, path.IPACL, inherited)
 	switch {
 	case list == nil:
 		return nil, "", ""
@@ -120,6 +123,35 @@ func routeACL(path *po.Options, backend *bo.Options) (*ipacl.List, string, strin
 		return list, path.IPACLName, aclhandler.ScopePath
 	}
 	return list, name, aclhandler.ScopeBackend
+}
+
+func routeLimiter(path *po.Options, backend *bo.Options) *rlopts.Options {
+	if path == nil {
+		return nil
+	}
+	var inherited *rlopts.Options
+	if backend != nil {
+		inherited = backend.RateLimiter
+	}
+	o, _ := selectByName(path.RateLimiterName, path.RateLimiter, inherited)
+	return o
+}
+
+func attachRouteRateLimit(h http.Handler, path *po.Options, backend *bo.Options, client backends.Backend) http.Handler {
+	o := routeLimiter(path, backend)
+	if o == nil {
+		return attachAuthenticator(h, path, backend)
+	}
+	var req flowkey.Requirement
+	for _, k := range o.KeySources {
+		req |= k.Requires()
+	}
+	if req.Has(flowkey.RequiresPrincipal) {
+		h = rlhandler.HTTP(o, client, h)
+		return attachAuthenticator(h, path, backend)
+	}
+	h = attachAuthenticator(h, path, backend)
+	return rlhandler.HTTP(o, client, h)
 }
 
 func hasAuthenticator(pathOptions *po.Options, backendOptions *bo.Options) bool {
@@ -225,8 +257,8 @@ func applyMiddleware(o *bo.Options, pathOpts *po.Options, tr *tracing.Tracer,
 	if len(pathOpts.ReqRewriter) > 0 {
 		h = rewriter.Rewrite(pathOpts.ReqRewriter, h)
 	}
-	// authentication judges the request as the client sent it, before any rewriter changes it
-	h = attachAuthenticator(h, pathOpts, o)
+	// the limiter sees the request before rewriters. A key that needs the principal sits inside auth.
+	h = attachRouteRateLimit(h, pathOpts, o, client)
 	// outside the authenticator, so a refused client never reaches a credential check, and ahead of the cache
 	h = attachGeoACL(h, pathOpts, o)
 	// Enforce the access list before authentication and the cache handler.

@@ -84,6 +84,10 @@ type ConfiguredNames struct {
 	// all of them, so naming another is called ineligible, not missing
 	IPACLs        sets.Set[string]
 	DefinedIPACLs sets.Set[string]
+	// RateLimiters are the limiters a class's parameters may name. DefinedRateLimiters are all of
+	// them, so naming one that generated HTTP routes cannot use is called ineligible, not missing.
+	RateLimiters        sets.Set[string]
+	DefinedRateLimiters sets.Set[string]
 }
 
 // Event reasons a Problem may carry; a Problem naming none is reported as Rejected
@@ -605,6 +609,9 @@ type Policy struct {
 	// IPACLName is the access list every backend under the policy uses. Only a
 	// class's parameters set it. An empty name leaves a less specific policy's.
 	IPACLName string `json:"ip_acl_name,omitempty"`
+	// RateLimiterName is the limiter every HTTP backend under the policy uses. Only a class's
+	// parameters set it. Stream routes do not use it. An empty name leaves a less specific policy's.
+	RateLimiterName string `json:"rate_limiter_name,omitempty"`
 	// HealthMode is the health mode of generated discovery-backed ALBs
 	HealthMode string `json:"health_mode,omitempty"`
 	// LoadBalancing is the mechanism that spreads traffic across a Service's endpoints in the
@@ -660,6 +667,7 @@ func (p Policy) Overlay(o *Policy) Policy {
 	overlayString(&out.AuthenticatorName, o.AuthenticatorName)
 	overlayString(&out.GeoACLName, o.GeoACLName)
 	overlayString(&out.IPACLName, o.IPACLName)
+	overlayString(&out.RateLimiterName, o.RateLimiterName)
 	overlayString(&out.HealthMode, o.HealthMode)
 	overlayString(&out.LoadBalancing, o.LoadBalancing)
 	overlayString(&out.LoadBalancingKey, o.LoadBalancingKey)
