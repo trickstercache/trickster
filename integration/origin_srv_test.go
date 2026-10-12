@@ -73,10 +73,13 @@ func srvOriginConfig(frontPort, metricsPort, mgmtPort int, minTTL string) string
 	return fmt.Sprintf(`
 listeners:
   default:
+    address: 127.0.0.1
     port: %d
   metrics:
+    address: 127.0.0.1
     port: %d
   mgmt:
+    address: 127.0.0.1
     port: %d
 mgmt:
   reload_drain_timeout: 5s

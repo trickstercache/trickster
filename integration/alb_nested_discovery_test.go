@@ -44,10 +44,13 @@ func nestedDiscoveryConfig(frontPort, metricsPort, mgmtPort int, membersA, membe
 	return fmt.Sprintf(`
 listeners:
   default:
+    address: 127.0.0.1
     port: %[1]d
   metrics:
+    address: 127.0.0.1
     port: %[2]d
   mgmt:
+    address: 127.0.0.1
     port: %[3]d
 logging:
   log_level: info

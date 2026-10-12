@@ -42,7 +42,7 @@ go-mod-vendor:
 
 .PHONY: go-mod-tidy
 go-mod-tidy:
-	$(GO) mod tidy
+	@$(GO) mod tidy && cd integration && $(GO) mod tidy && cd conformance && $(GO) mod tidy
 
 .PHONY: test-go-mod
 test-go-mod:
