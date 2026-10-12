@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -137,20 +138,55 @@ func encodeTestResponse(field protowire.Number, v []byte) []byte {
 type testStore struct {
 	frames [][]byte
 	err    error
+	// rejectSnappy answers a snappy-compressed call as a store without that compressor does
+	rejectSnappy bool
 
 	mu       sync.Mutex
 	requests []storeRequest
 	md       metadata.MD
+	// compressions lists each call's request compression, "" for none
+	compressions []string
+}
+
+type compressionKey struct{}
+
+// TagRPC gives each call a place for HandleRPC to note its compression, which the handler reads
+func (s *testStore) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return context.WithValue(ctx, compressionKey{}, new(string))
+}
+
+func (s *testStore) HandleRPC(ctx context.Context, rs stats.RPCStats) {
+	if in, ok := rs.(*stats.InHeader); ok {
+		*ctx.Value(compressionKey{}).(*string) = in.Compression
+		s.mu.Lock()
+		s.compressions = append(s.compressions, in.Compression)
+		s.mu.Unlock()
+	}
+}
+
+func (*testStore) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context { return ctx }
+func (*testStore) HandleConn(context.Context, stats.ConnStats)                       {}
+
+func (s *testStore) takeCompressions() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.compressions
+	s.compressions = nil
+	return out
 }
 
 func (s *testStore) serve(t *testing.T) *StoreAPI {
 	t.Helper()
 	lis := bufconn.Listen(1 << 20)
-	srv := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{}),
+	srv := grpc.NewServer(grpc.ForceServerCodecV2(rawCodec{}), grpc.StatsHandler(s),
 		grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
 			method, _ := grpc.MethodFromServerStream(stream)
 			if method != storeAPISeriesMethod {
 				return status.Error(codes.Unimplemented, method)
+			}
+			if s.rejectSnappy && *stream.Context().Value(compressionKey{}).(*string) == storeAPICompressor {
+				return status.Errorf(codes.Unimplemented, "grpc: Decompressor is not installed for grpc-encoding %q",
+					storeAPICompressor)
 			}
 			var req rawFrame
 			if err := stream.RecvMsg(&req); err != nil {
@@ -320,4 +356,40 @@ func TestRawCodec(t *testing.T) {
 	require.ErrorIs(t, err, errStoreAPI)
 	require.ErrorIs(t, rawCodec{}.Unmarshal(nil, "frame"), errStoreAPI)
 	require.Equal(t, storeAPICodecName, rawCodec{}.Name())
+}
+
+func TestStoreAPICompression(t *testing.T) {
+	frames := [][]byte{encodeTestSeries([]string{labels.MetricName, testMetric, testPod, "a"},
+		spanned(encodeTestChunk(storeChunkXOR, xorData(t, testPoint{t: 1, f: 1}, testPoint{t: 2, f: 2}), true), 1, 2))}
+	read := func(source *StoreAPI) error {
+		t.Helper()
+		series, _, err := source.Select(testContext(t, nil), 0, 10, nil, testMetricMatcher)
+		if err == nil {
+			require.Len(t, series, 1)
+		}
+		return err
+	}
+	t.Run("snappy when the store has it", func(t *testing.T) {
+		store := &testStore{frames: frames}
+		source := store.serve(t)
+		for range 2 {
+			require.NoError(t, read(source))
+		}
+		require.Equal(t, []string{storeAPICompressor, storeAPICompressor}, store.takeCompressions())
+	})
+	t.Run("none once the store rejects it", func(t *testing.T) {
+		store := &testStore{frames: frames, rejectSnappy: true}
+		source := store.serve(t)
+		require.NoError(t, read(source))
+		require.Equal(t, []string{storeAPICompressor, ""}, store.takeCompressions())
+		require.NoError(t, read(source))
+		require.Equal(t, []string{""}, store.takeCompressions())
+	})
+	t.Run("kept when the store lacks the method", func(t *testing.T) {
+		store := &testStore{err: status.Error(codes.Unimplemented, storeAPISeriesMethod)}
+		source := store.serve(t)
+		require.Error(t, read(source))
+		require.Equal(t, []string{storeAPICompressor, ""}, store.takeCompressions())
+		require.False(t, source.uncompressed.Load())
+	})
 }

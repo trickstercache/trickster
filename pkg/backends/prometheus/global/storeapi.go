@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -96,6 +97,8 @@ type StoreAPI struct {
 	SourceIdentity
 	conn  *grpc.ClientConn
 	paths po.List
+	// uncompressed is set once the store rejects snappy, so later calls don't ask for it
+	uncompressed atomic.Bool
 }
 
 // NewStoreAPI returns a source reading a grpc:// or grpcs:// StoreAPI endpoint, grpcs with tlsConfig;
@@ -134,14 +137,32 @@ func (s *StoreAPI) Select(ctx context.Context, mint, maxt int64, hints *storage.
 	if err != nil {
 		return nil, nil, err
 	}
+	ctx = metadata.NewOutgoingContext(ctx, s.metadata(requestFrom(ctx)))
+	compress := !s.uncompressed.Load()
+	series, warnings, err := s.series(ctx, req, mint, maxt, compress)
+	if compress && status.Code(err) == codes.Unimplemented {
+		// a store without the compressor rejects the call before answering it, so it is made again without
+		series, warnings, err = s.series(ctx, req, mint, maxt, false)
+		if status.Code(err) != codes.Unimplemented {
+			s.uncompressed.Store(true)
+		}
+	}
+	return series, warnings, err
+}
+
+// series streams the series req asks for, with their messages compressed by snappy when compress is set
+func (s *StoreAPI) series(ctx context.Context, req []byte, mint, maxt int64, compress bool,
+) ([]storage.Series, annotations.Annotations, error) {
 	budget := budgetFrom(ctx)
 	maxMessage := maxStoreAPIMessageBytes
 	if limit := budget.responseLimit(); limit > 0 && limit < int64(maxMessage) {
 		maxMessage = int(limit)
 	}
-	ctx = metadata.NewOutgoingContext(ctx, s.metadata(requestFrom(ctx)))
-	stream, err := s.conn.NewStream(ctx, &seriesStreamDesc, storeAPISeriesMethod,
-		grpc.ForceCodecV2(rawCodec{}), grpc.MaxCallRecvMsgSize(maxMessage))
+	opts := []grpc.CallOption{grpc.ForceCodecV2(rawCodec{}), grpc.MaxCallRecvMsgSize(maxMessage)}
+	if compress {
+		opts = append(opts, grpc.UseCompressor(storeAPICompressor))
+	}
+	stream, err := s.conn.NewStream(ctx, &seriesStreamDesc, storeAPISeriesMethod, opts...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("%w: %w", errStoreAPI, err)
 	}

@@ -18,6 +18,7 @@ package global
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/binary"
 	"hash/crc32"
@@ -157,6 +158,34 @@ func decodeTestRequest(t *testing.T, r *http.Request) *prompb.ReadRequest {
 	var req prompb.ReadRequest
 	require.NoError(t, req.Unmarshal(data))
 	return &req
+}
+
+func TestRemoteReadAcceptsGzip(t *testing.T) {
+	var asked string
+	source := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+		asked = r.Header.Get(headers.NameAcceptEncoding)
+		var body bytes.Buffer
+		writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels("a"), Chunks: []prompb.Chunk{
+			xorChunk(t, testPoint{t: 1, f: 1}, testPoint{t: 2, f: 2}),
+		}})
+		w.Header().Set(headers.NameContentType, contentTypeStreamed+"; proto=prometheus.ChunkedReadResponse")
+		if !strings.Contains(asked, "gzip") {
+			_, _ = w.Write(body.Bytes())
+			return
+		}
+		w.Header().Set(headers.NameContentEncoding, "gzip")
+		zw := gzip.NewWriter(w)
+		_, _ = zw.Write(body.Bytes())
+		require.NoError(t, zw.Close())
+	})
+	// the client's own Accept-Encoding is not sent, so the member is asked for gzip, as Mimir answers it
+	in := httptest.NewRequest(http.MethodGet, "http://trickster"+testQueryPath, nil)
+	in.Header.Set(headers.NameAcceptEncoding, "identity")
+	series, _, err := source.Select(WithRequest(context.Background(), in), 0, 10, nil,
+		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric))
+	require.NoError(t, err)
+	require.Contains(t, asked, "gzip")
+	require.Len(t, series, 1)
 }
 
 func TestRemoteReadStreamedChunks(t *testing.T) {

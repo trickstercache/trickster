@@ -134,6 +134,13 @@ path sets, as a proxied request would; a tenant header such as
 `X-Scope-OrgID`, or an `Authorization` header, reaches the source this way.
 StoreAPI calls carry the same headers as gRPC metadata.
 
+Both transports ask for compressed answers, which mostly shrinks the label sets
+the chunks travel with. Remote read asks for gzip, which Mimir answers with;
+Prometheus answers remote read uncompressed. StoreAPI calls ask for snappy, as
+Thanos components support; a store that rejects it is read again at once
+without compression, and isn't asked for it again until Trickster restarts or
+reloads.
+
 ## Injecting Labels
 
 Trickster can inject labels on a per-backend basis into Prometheus responses before returning them to the caller.
