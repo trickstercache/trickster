@@ -42,7 +42,11 @@ go-mod-vendor:
 
 .PHONY: go-mod-tidy
 go-mod-tidy:
-	@$(GO) mod tidy && cd integration && $(GO) mod tidy && cd conformance && $(GO) mod tidy
+	@set -e; for module in . integration integration/conformance; do \
+		if [ -f "$$module/go.mod" ]; then \
+			(cd "$$module" && $(GO) mod tidy); \
+		fi; \
+	done
 
 .PHONY: test-go-mod
 test-go-mod:
