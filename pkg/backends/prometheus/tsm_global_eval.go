@@ -114,10 +114,10 @@ func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings,
 func (e *globalEvaluator) newRawCache(results backends.TSMGlobalCache) *global.RawCache {
 	name := e.settings.Name
 	opts := global.RawCacheOptions{
-		Name:          name,
-		TTL:           e.ttl,
-		Window:        e.settings.RawCacheWindow,
-		MaxSeries:     int64(e.settings.MaxFetchedSeries), MaxSamples: e.settings.MaxFetchedSamples,
+		Name:      name,
+		TTL:       e.ttl,
+		Window:    e.settings.RawCacheWindow,
+		MaxSeries: int64(e.settings.MaxFetchedSeries), MaxSamples: e.settings.MaxFetchedSamples,
 		MaxResponseBytes: e.settings.MaxResponseBytes,
 		Observe: func(status cachestatus.LookupStatus) {
 			metrics.ALBGlobalRawReads.WithLabelValues(name, status.String()).Inc()

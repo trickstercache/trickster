@@ -97,10 +97,10 @@ type RawCache struct {
 func NewRawCache(c cache.Cache, opts RawCacheOptions) *RawCache {
 	rc := &RawCache{opts: opts, now: time.Now}
 	rc.engine = nativedelta.New[*rawBlock](nativedelta.Config{
-		Protocol:      rawCacheProtocol,
-		BackendName:   opts.Name,
-		CacheClient:   func() cache.Cache { return c },
-		CacheTTL:      opts.TTL,
+		Protocol:    rawCacheProtocol,
+		BackendName: opts.Name,
+		CacheClient: func() cache.Cache { return c },
+		CacheTTL:    opts.TTL,
 	}, rawBlockCodec{})
 	return rc
 }
