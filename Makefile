@@ -578,20 +578,13 @@ kind-integration-ingress:
 		deployment/trickster-ingress deployment/trickster-ingress-endpoint \
 		deployment/prometheus --timeout=180s
 
-# Deploys the Gateway API controller scenarios (TestGatewayKind,
-# TestIngressAnnotationsKind, TestGatewayRollingUpgradeKind and the conformance
-# suite) into the running kind cluster, after kind-integration-ingress. The
-# Gateway API CRDs come from the module go.mod pins, so the cluster serves the
-# version the controller is built against, and go first because the controller
-# probes for them once at startup. The experimental channel is installed
-# because HTTPRoute retries, which the controller implements, exist only
-# there. The Service's externalIPs are set to the worker node, which is how
-# the conformance suite reaches the ports its Gateways declare.
-GATEWAY_API_CRDS = $(shell cd integration/conformance && \
-	$(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api)/config/crd/experimental
+# Deploys Gateway scenarios with the conformance module's pinned experimental CRDs.
+# Install CRDs before startup and expose Gateway ports through the worker node.
 .PHONY: kind-integration-gateway
 kind-integration-gateway:
-	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k $(GATEWAY_API_CRDS)
+	@crds=$$(cd integration/conformance && $(GO) mod download sigs.k8s.io/gateway-api && \
+		$(GO) list -m -f '{{.Dir}}' sigs.k8s.io/gateway-api) && \
+	kubectl --context kind-$(KIND_CLUSTER) apply --server-side -k "$$crds/config/crd/experimental"
 	kubectl --context kind-$(KIND_CLUSTER) wait --for=condition=Established crd --all --timeout=60s
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/gateway.yaml
 	kubectl --context kind-$(KIND_CLUSTER) apply -f integration/kind/ingress-annotations.yaml

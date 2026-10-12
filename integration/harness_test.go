@@ -183,9 +183,18 @@ type cacheProviderCase struct {
 
 func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
-	ports, release := portutil.Reserve(t, 6)
-	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
-	clickHouseHTTPOriginPort, clickHouseNativeOriginPort := ports[4], ports[5]
+	return configHarnessWithMySQLAddress(t, "127.0.0.1", mods...)
+}
+
+func configHarnessWithMySQLAddress(t *testing.T, address string, mods ...func(*tkconfig.Config)) tricksterHarness {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 5)
+	mysqlPorts, releaseMySQL := portutil.ReserveOn(t, 1, address)
+	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], mysqlPorts[0]
+	clickHouseHTTPOriginPort, clickHouseNativeOriginPort := ports[3], ports[4]
+	mods = append([]func(*tkconfig.Config){func(c *tkconfig.Config) {
+		c.Listeners["mysql1"].ListenAddress = address
+	}}, mods...)
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
@@ -197,7 +206,10 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 		MySQLAddr:                  fmt.Sprintf("127.0.0.1:%d", mysqlPort),
 		ClickHouseNativeAddr:       fmt.Sprintf("127.0.0.1:%d", clickHouseHTTPOriginPort),
 		ClickHouseNativeOriginAddr: fmt.Sprintf("127.0.0.1:%d", clickHouseNativeOriginPort),
-		releasePorts:               release,
+		releasePorts: func() {
+			release()
+			releaseMySQL()
+		},
 	}
 }
 
