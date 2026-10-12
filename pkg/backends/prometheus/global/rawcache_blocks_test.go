@@ -219,7 +219,7 @@ func TestRawCacheCompactsRefreshedBlocks(t *testing.T) {
 					require.Equal(t, now-volatile-rawTestStep+1, reads[0][0], "each refresh reads only its newest samples")
 				}
 				// meanwhile, a refreshed series holds full chunks, then a few small ones
-				if entry, ok := rc.engine.Retrieve(blockKey(key, 0)); ok && now%rawTestHour == 0 {
+				if entry, ok := rc.engine.Retrieve(blockKey(key.key, 0)); ok && now%rawTestHour == 0 {
 					for _, s := range entry.Payload.series {
 						samples := 0
 						for _, c := range s.chunks {
@@ -230,7 +230,7 @@ func TestRawCacheCompactsRefreshedBlocks(t *testing.T) {
 					}
 				}
 			}
-			entry, ok := rc.engine.Retrieve(blockKey(key, 0))
+			entry, ok := rc.engine.Retrieve(blockKey(key.key, 0))
 			require.True(t, ok)
 			require.Equal(t, timeseries.ExtentList{extent(0, rawBlockMs-1)}, entry.Extents)
 			members := make([]storage.Series, len(src.series))

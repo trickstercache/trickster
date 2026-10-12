@@ -471,10 +471,16 @@ func TestGlobalEvaluationCacheWholeRangesUnderPenalty(t *testing.T) {
 // rawReads answers a range query, as an uncached evaluation would, and returns the member reads it took
 func (gt *globalCacheTest) rawReads(t *testing.T, settings merge.TSMGlobalSettings, start, end int) [][2]int64 {
 	t.Helper()
+	return gt.rawReadsOf(t, settings, globalTestQuery, start, end)
+}
+
+func (gt *globalCacheTest) rawReadsOf(t *testing.T, settings merge.TSMGlobalSettings, query string, start, end int,
+) [][2]int64 {
+	t.Helper()
 	gt.source.mu.Lock()
 	gt.source.ranges = nil
 	gt.source.mu.Unlock()
-	values := gt.rangeValues(globalTestQuery, start, end)
+	values := gt.rangeValues(query, start, end)
 	w := gt.do(t, http.MethodGet, globalTestRangePath, values, nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 	require.Equal(t, resultValues(t, gt.uncached(t, settings, globalTestRangePath, values).Body.Bytes()),
@@ -503,6 +509,21 @@ func TestGlobalEvaluationRawCacheReadsOnlyWhatItLacks(t *testing.T) {
 	require.Equal(t, gt.baseMillis+45*presenceMinute+1, later[0][0])
 	require.Equal(t, hits+1, globalRawReads(settings, status.LookupStatusPartialHit))
 	require.Empty(t, gt.rawReads(t, settings, 20, 30))
+}
+
+func TestGlobalEvaluationRawCacheSubsumes(t *testing.T) {
+	settings := globalTestSettings()
+	gt := newGlobalCacheTest(t, settings, nil)
+	gt.source.ID = globalRawIdentity
+	subsumed := func() float64 {
+		return testutil.ToFloat64(metrics.ALBGlobalRawSubsumed.WithLabelValues(settings.Name))
+	}
+	before := subsumed()
+	require.NotEmpty(t, gt.rawReadsOf(t, settings, globalTestQuery, 5, 45))
+	// a query selecting one pod of the metric is answered from the whole metric's blocks
+	narrow := "sum(" + presenceMetric + "{" + presencePodLabel + `="` + presencePodA + `"})`
+	require.Empty(t, gt.rawReadsOf(t, settings, narrow, 10, 40))
+	require.Equal(t, before+1, subsumed())
 }
 
 func TestGlobalEvaluationRawCacheWindows(t *testing.T) {

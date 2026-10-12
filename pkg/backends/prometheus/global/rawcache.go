@@ -43,6 +43,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -80,6 +81,8 @@ type RawCacheOptions struct {
 	MaxSeries, MaxSamples, MaxResponseBytes int64
 	// Observe, when set, learns the cache status of each member read: hit, phit, kmiss or proxy-only
 	Observe func(status cachestatus.LookupStatus)
+	// Subsumed, when set, learns of each member read answered in part from a broader selector's blocks
+	Subsumed func()
 }
 
 // RawCache keeps members' raw series in a cache, in blocks of time keyed by member, request identity and
@@ -90,6 +93,8 @@ type RawCache struct {
 	flights flightGroup[fetched]
 	// locks serialize storing each block, by its key's stripe, so no store loses another's samples
 	locks [rawLockStripes]sync.Mutex
+	// index remembers which selectors' blocks are cached, so a narrower selector can read a broader one's
+	index rawIndex
 	now   func() time.Time
 }
 
@@ -120,8 +125,9 @@ type fetched struct {
 func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints *storage.SelectHints,
 	matchers []*labels.Matcher,
 ) ([]storage.Series, annotations.Annotations, error) {
-	key, ok := c.key(ctx, m.Source, matchers)
-	keep := c.keeps(c.now(), m.Source)
+	k, ok := c.key(ctx, m.Source, matchers)
+	now := c.now()
+	keep := c.keeps(now, m.Source)
 	if !ok || mint > maxt || maxt < keep.mint {
 		c.observe(cachestatus.LookupStatusProxyOnly)
 		series, warnings, err := m.Source.Select(ctx, mint, maxt, hints, matchers...)
@@ -130,9 +136,12 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		}
 		return bound(series, mint, maxt), warnings, nil
 	}
-	sources, covered := c.cached(key, max(mint, keep.mint), min(maxt, keep.maxt))
+	sources, covered, subsumed := c.cached(k, max(mint, keep.mint), min(maxt, keep.maxt), now)
+	if subsumed && c.opts.Subsumed != nil {
+		c.opts.Subsumed()
+	}
 	missing := covered.CalculateDeltas(timeseries.ExtentList{extent(mint, maxt)}, time.Millisecond)
-	results, err := c.fetchAll(ctx, key, m, missing, keep, hints, matchers)
+	results, err := c.fetchAll(ctx, k, m, missing, keep, hints, matchers)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -160,12 +169,12 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 
 // fetchAll reads the gaps from m, a few at a time; the first failure, as the evaluation running out of
 // budget, cancels the reads not yet done
-func (c *RawCache) fetchAll(ctx context.Context, key string, m Member, gaps timeseries.ExtentList,
+func (c *RawCache) fetchAll(ctx context.Context, k rawKey, m Member, gaps timeseries.ExtentList,
 	keep span, hints *storage.SelectHints, matchers []*labels.Matcher,
 ) ([]fetched, error) {
 	results := make([]fetched, len(gaps))
 	if len(gaps) == 1 {
-		results[0] = c.fetch(ctx, key, m, gaps[0], keep, hints, matchers)
+		results[0] = c.fetch(ctx, k, m, gaps[0], keep, hints, matchers)
 		return results, results[0].err
 	}
 	gctx, cancel := context.WithCancel(ctx)
@@ -175,7 +184,7 @@ func (c *RawCache) fetchAll(ctx context.Context, key string, m Member, gaps time
 	for range min(len(gaps), rawGapReads) {
 		wg.Go(func() {
 			for i := int(next.Add(1)) - 1; i < len(gaps) && gctx.Err() == nil; i = int(next.Add(1)) - 1 {
-				if results[i] = c.fetch(gctx, key, m, gaps[i], keep, hints, matchers); results[i].err != nil {
+				if results[i] = c.fetch(gctx, k, m, gaps[i], keep, hints, matchers); results[i].err != nil {
 					cancel()
 					return
 				}
@@ -236,42 +245,86 @@ func (c *RawCache) observe(status cachestatus.LookupStatus) {
 	}
 }
 
-// cached returns the cached blocks holding samples from mint to maxt, with the extents they cover
-func (c *RawCache) cached(key string, mint, maxt int64) ([]rawSource, timeseries.ExtentList) {
+// cached returns the cached blocks holding samples of k from mint to maxt, with the extents they cover. What
+// k's own blocks lack is taken from broader selectors' blocks when they hold it; subsumed reports whether any did.
+func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
+) (sources []rawSource, covered timeseries.ExtentList, subsumed bool) {
 	if mint > maxt {
-		return nil, nil
+		return nil, nil, false
 	}
-	var sources []rawSource
-	var covered timeseries.ExtentList
+	var candidates []rawCandidate
+	looked, own := false, false
 	for b := blockIndex(mint); b <= blockIndex(maxt); b++ {
-		entry, ok := c.engine.Retrieve(blockKey(key, b))
-		if !ok || entry.Marker || entry.Payload == nil {
-			continue
-		}
 		lo, hi := max(mint, b*rawBlockMs), min(maxt, (b+1)*rawBlockMs-1)
-		// what a block holds past maxt, as after the volatile window has grown, is read again
-		e := entry.Extents.Crop(extent(lo, hi))
-		if len(e) == 0 {
-			continue
+		have := c.cachedBlock(&sources, k.key, b, lo, hi, nil, nil)
+		own = own || len(have) > 0
+		for i := 0; ; i++ {
+			need := have.CalculateDeltas(timeseries.ExtentList{extent(lo, hi)}, time.Millisecond)
+			if len(need) == 0 {
+				break
+			}
+			if !looked {
+				candidates, looked = c.index.candidates(k, now), true
+			}
+			if i == len(candidates) {
+				break
+			}
+			if got := c.cachedBlock(&sources, candidates[i].key, b, lo, hi, need, candidates[i].extra); len(got) > 0 {
+				have, subsumed = append(have, got...), true
+			}
 		}
-		covered = append(covered, e...)
-		sources = append(sources, rawSource{series: entry.Payload.series, lo: lo, hi: hi, block: blockKey(key, b)})
+		covered = append(covered, have...)
 	}
-	return sources, covered
+	if own {
+		c.index.record(k, now, c.opts.TTL)
+	}
+	return sources, covered, subsumed
+}
+
+// cachedBlock adds the source of block b of key from lo to hi to sources, returning the extents it covers.
+// A broader selector's block adds only what need names, each part its own source, so no sample is read twice.
+func (c *RawCache) cachedBlock(sources *[]rawSource, key string, b, lo, hi int64, need timeseries.ExtentList,
+	match []*labels.Matcher,
+) timeseries.ExtentList {
+	bk := blockKey(key, b)
+	entry, ok := c.engine.Retrieve(bk)
+	if !ok || entry.Marker || entry.Payload == nil {
+		return nil
+	}
+	// what a block holds past hi, as after the volatile window has grown, is read again
+	e := entry.Extents.Crop(extent(lo, hi))
+	if need == nil {
+		if len(e) > 0 {
+			*sources = append(*sources, rawSource{series: entry.Payload.series, lo: lo, hi: hi, block: bk})
+		}
+		return e
+	}
+	var got timeseries.ExtentList
+	for _, n := range need {
+		for _, part := range e.Crop(n) {
+			got = append(got, part)
+			*sources = append(*sources, rawSource{
+				series: entry.Payload.series, lo: part.Start.UnixMilli(),
+				hi: part.End.UnixMilli(), block: bk, match: match,
+			})
+		}
+	}
+	return got
 }
 
 // fetch reads m's series within gap, sharing the read with concurrent callers asking for the same, and
 // keeps what lies within keep once the member answered completely
-func (c *RawCache) fetch(ctx context.Context, key string, m Member, gap timeseries.Extent, keep span,
+func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries.Extent, keep span,
 	hints *storage.SelectHints, matchers []*labels.Matcher,
 ) fetched {
 	mint, maxt := gap.Start.UnixMilli(), gap.End.UnixMilli()
-	flight := key + "/" + strconv.FormatInt(mint, 10) + "/" + strconv.FormatInt(maxt, 10)
+	flight := k.key + "/" + strconv.FormatInt(mint, 10) + "/" + strconv.FormatInt(maxt, 10)
 	r, err := c.flights.do(ctx, flight, budgetFrom(ctx), func(ctx context.Context, share func(int64) error) fetched {
 		return c.read(ctx, m, mint, maxt, hints, matchers, share)
 	}, func(r fetched) {
-		if lo, hi := max(mint, keep.mint), min(maxt, keep.maxt); r.err == nil && len(r.warnings) == 0 && lo <= hi {
-			c.store(key, r.series, lo, hi)
+		if lo, hi := max(mint, keep.mint), min(maxt, keep.maxt); r.err == nil && len(r.warnings) == 0 && lo <= hi &&
+			c.store(k.key, r.series, lo, hi) {
+			c.index.record(k, c.now(), c.opts.TTL)
 		}
 	})
 	if err != nil {
@@ -310,8 +363,9 @@ func (c *RawCache) read(ctx context.Context, m Member, mint, maxt int64, hints *
 	return r
 }
 
-// store keeps series, read completely from mint to maxt, in the blocks spanning them
-func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64) {
+// store keeps series, read completely from mint to maxt, in the blocks spanning them, and reports whether
+// it kept them all
+func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64) bool {
 	for b := blockIndex(mint); b <= blockIndex(maxt); b++ {
 		bk := blockKey(key, b)
 		mu := &c.locks[stripe(bk)]
@@ -321,9 +375,10 @@ func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64) {
 		if err != nil {
 			logger.Debug("tsm global evaluation raw series not cached",
 				logging.Pairs{keys.ALB_Name: c.opts.Name, keys.Error: err.Error()})
-			return
+			return false
 		}
 	}
+	return true
 }
 
 // storeBlock adds to the block at bk the samples from lo to hi it doesn't hold yet
@@ -358,10 +413,10 @@ func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64) error
 
 // key returns the key of src's answers to matchers for ctx's request: src's identity, the request's identity
 // headers as src sends them, and the matchers in order
-func (c *RawCache) key(ctx context.Context, src Source, matchers []*labels.Matcher) (string, bool) {
+func (c *RawCache) key(ctx context.Context, src Source, matchers []*labels.Matcher) (rawKey, bool) {
 	id := src.Identity()
 	if id == "" {
-		return "", false
+		return rawKey{}, false
 	}
 	h := sha256.New()
 	writeKeyPart(h, rawCacheVersion)
@@ -375,12 +430,20 @@ func (c *RawCache) key(ctx context.Context, src Source, matchers []*labels.Match
 			writeKeyPart(h, v)
 		}
 	}
-	for _, m := range slices.SortedFunc(slices.Values(matchers), compareMatchers) {
+	scope := h.Sum(nil)[:16]
+	k := rawKey{scope: string(scope), matchers: slices.SortedFunc(slices.Values(matchers), compareMatchers)}
+	h.Reset()
+	h.Write(scope)
+	for _, m := range k.matchers {
 		writeKeyPart(h, m.Name)
 		writeKeyPart(h, m.Type.String())
 		writeKeyPart(h, m.Value)
+		if k.metric == "" && m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual {
+			k.metric = m.Value
+		}
 	}
-	return rawKeyPrefix + hex.EncodeToString(h.Sum(nil)[:16]), true
+	k.key = rawKeyPrefix + hex.EncodeToString(h.Sum(nil)[:16])
+	return k, true
 }
 
 // writeKeyPart writes s with its length first, so no two sequences of parts write the same bytes

@@ -410,23 +410,35 @@ func startsWithReset(c chunkenc.Chunk) bool {
 }
 
 // rawSource is series whose chunks are read only from lo to hi; block is their cached block's key, or
-// empty for a member's answer, counted as it arrived
+// empty for a member's answer, counted as it arrived. Only series meeting every match matcher are read.
 type rawSource struct {
 	series []rawSeries
 	lo, hi int64
 	block  string
+	match  []*labels.Matcher
 }
 
 // assemble joins sources, whose ranges are disjoint, into the series with samples in range, in label
 // order; it returns the cached samples, or a block it can't read
 func assemble(sources []rawSource) ([]storage.Series, int64, string, error) {
 	heads := make([]int, len(sources))
+	// matched is each filtered source's head once it has met the source's matchers
+	matched := make([]int, len(sources))
 	var out []storage.Series
 	var cached int64
 	for {
 		var lset labels.Labels
 		found := false
 		for i, src := range sources {
+			if len(src.match) > 0 {
+				for heads[i] < len(src.series) && matched[i] <= heads[i] {
+					if matchesAll(src.series[heads[i]].lset, src.match) {
+						matched[i] = heads[i] + 1
+						break
+					}
+					heads[i]++
+				}
+			}
 			if heads[i] < len(src.series) && (!found || labels.Compare(src.series[heads[i]].lset, lset) < 0) {
 				lset, found = src.series[heads[i]].lset, true
 			}

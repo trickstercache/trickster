@@ -49,7 +49,7 @@ var testMetricMatcher = labels.MustNewMatcher(labels.MatchEqual, labels.MetricNa
 func waitForCallers(t *testing.T, rc *rawTestCache, mint, maxt int64, want int) {
 	t.Helper()
 	k, _ := rc.key(teamRequest(rawTestTeamA), rawTestSource(t), []*labels.Matcher{testMetricMatcher})
-	key := k + "/" + strconv.FormatInt(mint, 10) + "/" + strconv.FormatInt(maxt, 10)
+	key := k.key + "/" + strconv.FormatInt(mint, 10) + "/" + strconv.FormatInt(maxt, 10)
 	require.Eventually(t, func() bool {
 		rc.flights.mu.Lock()
 		f := rc.flights.flights[key]

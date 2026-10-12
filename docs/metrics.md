@@ -350,6 +350,10 @@ The following metrics are available for ALBs that use [TSM global evaluation](./
     * `alb_name` - the name of the configured ALB backend
     * `status` - `hit` when only samples within the volatile window were read from the member, `phit` when older samples the cache lacked were read too, `kmiss` when the cache held none, and `proxy-only` when every sample was within the volatile window, or the read couldn't be cached
 
+* `trickster_alb_global_raw_subsumed_total` (Counter) - The number of raw series reads TSM global evaluations answered in part from the cached raw series of a broader selector on the same metric
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 
 * `trickster_alb_discovery_members` (Gauge) - Current number of discovered ALB pool members

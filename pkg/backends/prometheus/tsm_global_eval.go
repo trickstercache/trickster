@@ -122,6 +122,7 @@ func (e *globalEvaluator) newRawCache(results backends.TSMGlobalCache) *global.R
 		Observe: func(status cachestatus.LookupStatus) {
 			metrics.ALBGlobalRawReads.WithLabelValues(name, status.String()).Inc()
 		},
+		Subsumed: metrics.ALBGlobalRawSubsumed.WithLabelValues(name).Inc,
 	}
 	if results.Backend.HasVolatileWindow() {
 		volatile := e.volatileWindow

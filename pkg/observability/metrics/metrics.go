@@ -1043,6 +1043,18 @@ var (
 		[]string{keys.ALB_Name},
 	)
 
+	// ALBGlobalRawSubsumed counts member raw series reads during TSM global evaluation answered in part from a
+	// broader selector's cached blocks, by ALB.
+	ALBGlobalRawSubsumed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: metricNamespace,
+			Subsystem: albSubsystem,
+			Name:      "global_raw_subsumed_total",
+			Help:      "Count of member raw series reads answered in part from a broader selector's cached raw series.",
+		},
+		[]string{keys.ALB_Name},
+	)
+
 	// ALBGlobalRawReads counts member raw series reads during TSM global evaluation, by ALB and how the
 	// raw series cache answered them: hit, phit, kmiss or proxy-only.
 	ALBGlobalRawReads = prometheus.NewCounterVec(
@@ -1511,6 +1523,7 @@ func init() {
 	prometheus.MustRegister(ALBGlobalFetchedSamples)
 	prometheus.MustRegister(ALBGlobalMemberFailures)
 	prometheus.MustRegister(ALBGlobalRawReads)
+	prometheus.MustRegister(ALBGlobalRawSubsumed)
 	prometheus.MustRegister(ALBTSMReplicaEvents)
 	prometheus.MustRegister(ALBFanoutLoserDrain)
 	prometheus.MustRegister(ALBPoolRefreshPanicRecovered)

@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -418,11 +419,13 @@ func TestRawCacheKeysByIdentity(t *testing.T) {
 	k2, _ := rc.key(teamRequest(rawTestTeamA), src, []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric), labels.MustNewMatcher(labels.MatchEqual, testPod, "a"),
 	})
-	require.Equal(t, k1, k2)
+	require.Equal(t, k1.key, k2.key)
+	require.Equal(t, testMetric, k1.metric)
 	k3, _ := rc.key(teamRequest(rawTestTeamA), src, []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchRegexp, testPod, "a"), labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric),
 	})
-	require.NotEqual(t, k1, k3)
+	require.NotEqual(t, k1.key, k3.key)
+	require.Equal(t, k1.scope, k3.scope, "the scope is the identity alone")
 }
 
 func TestRawCacheKeepsOnlyCompleteAnswers(t *testing.T) {
@@ -619,7 +622,7 @@ func TestRawCacheKeepsOnlyItsWindow(t *testing.T) {
 
 			read(2*rawTestHour, 9*rawTestHour, [2]int64{2 * rawTestHour, 9 * rawTestHour})
 			for b := range blockIndex(9*rawTestHour) + 1 {
-				entry, ok := rc.engine.Retrieve(blockKey(key, b))
+				entry, ok := rc.engine.Retrieve(blockKey(key.key, b))
 				require.Equal(t, b >= 3, ok && !entry.Marker, "block %d", b)
 			}
 			// what's older than the window is read again by every read, and the rest comes from the cache
@@ -648,7 +651,7 @@ func TestRawCacheSharesConcurrentReads(t *testing.T) {
 	key := func(rc *rawTestCache) string {
 		k, _ := rc.key(teamRequest(rawTestTeamA), rawTestSource(t), []*labels.Matcher{
 			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric)})
-		return k + "/" + "14400000/21600000"
+		return k.key + "/" + "14400000/21600000"
 	}
 	waiters := func(rc *rawTestCache, want int) {
 		require.Eventually(t, func() bool {
@@ -757,9 +760,11 @@ func copyMatrix(m promql.Matrix) promql.Matrix {
 }
 
 func TestRawCacheAgreesWithReadingMembers(t *testing.T) {
+	// the narrower selectors after the first are answered from its blocks, filtered
 	queries := []string{
 		"up", "rate(up[5m])", "increase(up[10m])", "resets(up[30m])", "max_over_time(up[1h])",
-		"sum(rate(up[5m]))",
+		"sum(rate(up[5m]))", `rate(up{pod="a"}[5m])`, `increase(up{pod="b",replica="2"}[10m])`,
+		`sum(rate(up{pod=~"a|b"}[5m]))`,
 	}
 	// cold, the same again, sliding, reaching further back, and historical, across replica gaps and resets
 	windows := []struct{ now, start, end int64 }{
@@ -774,7 +779,8 @@ func TestRawCacheAgreesWithReadingMembers(t *testing.T) {
 			t.Run(dedup+"/"+name, func(t *testing.T) {
 				src := replicaSource(t)
 				members := []Member{{Name: rawTestMember, Source: src}}
-				rc := newRawTestCache(newCache(), RawCacheOptions{})
+				var subsumed atomic.Int64
+				rc := newRawTestCache(newCache(), RawCacheOptions{Subsumed: func() { subsumed.Add(1) }})
 				cached := NewQueryable(members, []string{testReplicaLabel}, dedup, false, nil).WithRawCache(rc.RawCache)
 				direct := NewQueryable(members, []string{testReplicaLabel}, dedup, false, nil)
 				for _, w := range windows {
@@ -790,6 +796,7 @@ func TestRawCacheAgreesWithReadingMembers(t *testing.T) {
 				statuses := rc.takeStatuses()
 				require.Contains(t, statuses, status.LookupStatusHit)
 				require.Contains(t, statuses, status.LookupStatusPartialHit)
+				require.Positive(t, subsumed.Load())
 			})
 		}
 	}
@@ -881,20 +888,21 @@ func benchSource(b *testing.B) *chunkedSource {
 	return src
 }
 
-// BenchmarkRawRead compares reading 6h of 200 series from a warm raw cache, which reads only the
-// volatile window from the member, with reading them all from the member
 func BenchmarkRawRead(b *testing.B) {
+	// reading 6h of 200 series from a warm raw cache, which reads only the volatile window from the member,
+	// against reading them all from the member; then one series, alone and from the whole metric's blocks
 	const mint = rawTestEnd - 6*rawTestHour
-	read := func(b *testing.B, q *Queryable) {
+	metric := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric)
+	onePod := labels.MustNewMatcher(labels.MatchEqual, testPod, "7")
+	read := func(b *testing.B, q *Queryable, matchers ...*labels.Matcher) {
 		ctx := teamRequest(rawTestTeamA)
-		matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric)
 		qr, err := q.Querier(mint, rawTestEnd)
 		if err != nil {
 			b.Fatal(err)
 		}
 		b.ReportAllocs()
 		for b.Loop() {
-			set := qr.Select(ctx, true, &storage.SelectHints{Start: mint, End: rawTestEnd}, matcher)
+			set := qr.Select(ctx, true, &storage.SelectHints{Start: mint, End: rawTestEnd}, matchers...)
 			var it chunkenc.Iterator
 			for set.Next() {
 				it = set.At().Iterator(it)
@@ -908,24 +916,32 @@ func BenchmarkRawRead(b *testing.B) {
 	}
 	src := benchSource(b)
 	members := []Member{{Name: rawTestMember, Source: src}}
-	b.Run("member", func(b *testing.B) {
-		read(b, NewQueryable(members, nil, merge.TSMDeduplicationChain, false, nil))
-	})
-	b.Run("cached", func(b *testing.B) {
+	warm := func(b *testing.B) *Queryable {
 		conf := cacheoptions.New()
 		conf.Name, conf.Provider = rawTestALB, cacheproviders.Memory
 		c := cachemanager.NewCache(cachememory.New(conf.Name, conf), cachemanager.CacheOptions{}, conf)
 		if err := c.Connect(); err != nil {
 			b.Fatal(err)
 		}
-		defer c.Close()
+		b.Cleanup(func() { _ = c.Close() })
 		rc := newRawTestCache(c, RawCacheOptions{})
-		q := NewQueryable(members, nil, merge.TSMDeduplicationChain, false, nil).WithRawCache(rc.RawCache)
 		if _, _, err := rc.Select(teamRequest(rawTestTeamA), members[0], mint, rawTestEnd, nil,
-			[]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric)}); err != nil {
+			[]*labels.Matcher{metric}); err != nil {
 			b.Fatal(err)
 		}
 		rc.Wait()
-		read(b, q)
+		return NewQueryable(members, nil, merge.TSMDeduplicationChain, false, nil).WithRawCache(rc.RawCache)
+	}
+	b.Run("member", func(b *testing.B) {
+		read(b, NewQueryable(members, nil, merge.TSMDeduplicationChain, false, nil), metric)
+	})
+	b.Run("cached", func(b *testing.B) {
+		read(b, warm(b), metric)
+	})
+	b.Run("member/one", func(b *testing.B) {
+		read(b, NewQueryable(members, nil, merge.TSMDeduplicationChain, false, nil), metric, onePod)
+	})
+	b.Run("subsumed/one", func(b *testing.B) {
+		read(b, warm(b), metric, onePod)
 	})
 }
