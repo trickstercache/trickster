@@ -22,6 +22,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/safego"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -29,6 +34,8 @@ import (
 
 // ErrMemberUnavailable is returned or warned when a member's raw series can't be read.
 var ErrMemberUnavailable = errors.New("tsm global evaluation member unavailable")
+
+var errSourcePanic = errors.New("member read panicked")
 
 // Member is a pool member read by one evaluation; members are listed in configured order.
 type Member struct {
@@ -43,6 +50,7 @@ type Queryable struct {
 	deduplication string
 	partial       bool
 	failed        func(member string, err error)
+	cache         *RawCache
 }
 
 // NewQueryable returns a queryable over members; a member that can't be read is left out with a
@@ -54,6 +62,27 @@ func NewQueryable(members []Member, replicaLabels []string, deduplication string
 		members: members, replicaLabels: replicaLabels, deduplication: deduplication,
 		partial: partial, failed: failed,
 	}
+}
+
+// WithRawCache returns q reading members' raw series through cache.
+func (q *Queryable) WithRawCache(cache *RawCache) *Queryable {
+	q.cache = cache
+	return q
+}
+
+// read reads m's series matching every matcher, through the raw cache when there is one, each limited
+// to its samples from mint to maxt, so cached or not, they agree
+func (q *Queryable) read(ctx context.Context, m Member, mint, maxt int64, hints *storage.SelectHints,
+	matchers []*labels.Matcher,
+) ([]storage.Series, annotations.Annotations, error) {
+	if q.cache != nil {
+		return q.cache.Select(ctx, m, mint, maxt, hints, matchers)
+	}
+	series, warnings, err := m.Source.Select(ctx, mint, maxt, hints, matchers...)
+	if err != nil {
+		return nil, nil, err
+	}
+	return bound(series, mint, maxt), warnings, nil
 }
 
 // Querier returns a querier reading samples from mint to maxt unless select hints narrow them.
@@ -80,7 +109,15 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 	errs := make([]error, len(members))
 	var wg sync.WaitGroup
 	for i, m := range members {
-		wg.Go(func() { results[i], incomplete[i], errs[i] = m.Source.Select(ctx, mint, maxt, hints, matchers...) })
+		wg.Go(func() {
+			// a panic decoding a member's answer would otherwise end the process, as no handler recovers here
+			safego.Run(func(p any, stack []byte) {
+				results[i], incomplete[i], errs[i] = nil, nil, fmt.Errorf("%w: %v", errSourcePanic, p)
+				logger.Error(memberPanicEvent, logging.Pairs{keys.Member: m.Name, keys.Panic: p, keys.Stack: string(stack)})
+			}, func() {
+				results[i], incomplete[i], errs[i] = qr.q.read(ctx, m, mint, maxt, hints, matchers)
+			})
+		})
 	}
 	wg.Wait()
 	var warnings annotations.Annotations

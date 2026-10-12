@@ -49,9 +49,15 @@ const (
 
 var errGlobalSourceTest = errors.New("no endpoint")
 
-type fakeGlobalSource struct{}
+// fakeGlobalSource is a member's source, identified by its backend's origin
+type fakeGlobalSource struct {
+	identity   string
+	keyHeaders []string
+}
 
-func (fakeGlobalSource) SeriesAPI() string { return globalSourceAPI }
+func (fakeGlobalSource) SeriesAPI() string      { return globalSourceAPI }
+func (s fakeGlobalSource) Identity() string     { return s.identity }
+func (s fakeGlobalSource) KeyHeaders() []string { return s.keyHeaders }
 
 type fakeGlobalEvaluator struct {
 	mu       sync.Mutex
@@ -84,6 +90,8 @@ type fakeGlobalBackend struct {
 	settings  *merge.TSMGlobalSettings
 	buildErr  error
 	sourceErr error
+	// keyHeaders are the request headers the member's configuration keys its answers by
+	keyHeaders []string
 }
 
 func (b *fakeGlobalBackend) Configuration() *bo.Options { return b.cfg }
@@ -104,7 +112,7 @@ func (b *fakeGlobalBackend) TSMGlobalSource() (backends.TSMGlobalSource, error) 
 	if b.sourceErr != nil {
 		return nil, b.sourceErr
 	}
-	return fakeGlobalSource{}, nil
+	return fakeGlobalSource{identity: b.cfg.OriginURL, keyHeaders: b.keyHeaders}, nil
 }
 
 type globalTestPool struct {
@@ -181,6 +189,8 @@ func TestServeGlobalEvaluation(t *testing.T) {
 		require.ErrorIs(t, req.Unavailable[1].Reason, errGlobalSourceTest)
 		require.Equal(t, globalMemberPlain, req.Unavailable[2].Name)
 		require.ErrorIs(t, req.Unavailable[2].Reason, errNoGlobalSource)
+		require.NotEmpty(t, req.Namespace)
+		require.Equal(t, req.Namespace, requests[1].Namespace)
 	})
 	t.Run("other requests are merged", func(t *testing.T) {
 		tp := newGlobalTestPool(t, options.EvaluationGlobal, nil)
@@ -220,4 +230,48 @@ func TestGlobalRequestReadsUnlistedLiveMembers(t *testing.T) {
 	req := globalRequest(pool.Targets{target}, pool.Targets{nil})
 	require.Equal(t, []backends.TSMGlobalMember{{Name: globalMemberLive, Source: fakeGlobalSource{}}}, req.Members)
 	require.Empty(t, req.Unavailable)
+}
+
+func TestGlobalNamespaceFollowsMembership(t *testing.T) {
+	const (
+		originA   = "http://a"
+		originB   = "http://b"
+		elsewhere = "http://elsewhere"
+		team      = "X-Team"
+	)
+	member := func(name, origin string, keyHeaders ...string) *pool.Target {
+		status := &healthcheck.Status{}
+		status.Set(healthcheck.StatusPassing)
+		return pool.NewTarget(http.NotFoundHandler(), status, &fakeGlobalBackend{
+			cfg: &bo.Options{Name: name, OriginURL: origin}, keyHeaders: keyHeaders,
+		})
+	}
+	h := &handler{}
+	identify := func(targets ...*pool.Target) *globalIdentity {
+		p := pool.New(targets, 0)
+		t.Cleanup(p.Stop)
+		return h.globalIdentity(p)
+	}
+	a, b := member(globalMemberLive, originA), member(globalMemberDown, originB, team)
+	base := identify(a)
+	require.NotEmpty(t, base.namespace)
+	require.Empty(t, base.keyHeaders)
+	added := identify(a, b)
+	require.NotEqual(t, base.namespace, added.namespace, "a member a discovery adds changes the namespace")
+	require.Equal(t, []string{team}, added.keyHeaders)
+	require.Equal(t, base.namespace, identify(a).namespace, "removing it again restores the first")
+	require.NotEqual(t, base.namespace, identify(member(globalMemberLive, elsewhere)).namespace,
+		"a member repointed under the same name changes the namespace")
+	require.NotEqual(t, added.namespace, identify(b, a).namespace, "configured order decides ties, so it counts")
+	unreadable := member(globalMemberError, originA)
+	unreadable.Backend().(*fakeGlobalBackend).sourceErr = errGlobalSourceTest
+	require.NotEqual(t, base.namespace, identify(a, unreadable).namespace)
+
+	p := pool.New(pool.Targets{a, b}, 0)
+	t.Cleanup(p.Stop)
+	id := h.globalIdentity(p)
+	require.Same(t, id, h.globalIdentity(p), "a pool's namespace is computed once")
+	b.HealthStatus().Set(healthcheck.StatusFailing)
+	p.RefreshHealthy()
+	require.Same(t, id, h.globalIdentity(p), "health doesn't change the namespace")
 }

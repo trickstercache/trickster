@@ -457,8 +457,12 @@ func applyCachingConfig(si *instance.ServerInstance,
 
 			// a cache whose only change is its index is preserved across the reconfiguration:
 			// the new index configuration is applied to the old cache, which joins the new map
+			// a chunking change is not an index change: the reused cache would keep the old chunk layout
 			if ocfg.ProviderID == v.ProviderID &&
-				v.ProviderID == providers.MemoryID {
+				v.ProviderID == providers.MemoryID &&
+				ocfg.UseCacheChunking == v.UseCacheChunking &&
+				ocfg.TimeseriesChunkFactor == v.TimeseriesChunkFactor &&
+				ocfg.ByterangeChunkSize == v.ByterangeChunkSize {
 				// Note: this is only necessary for the memory cache as all other providers will be closed and reopened with the newest config
 				if v.Index != nil {
 					// only index-backed clients carry index options; the memory cache sizes

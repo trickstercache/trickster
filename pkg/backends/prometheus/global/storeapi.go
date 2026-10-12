@@ -27,7 +27,6 @@ import (
 	"strings"
 
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -35,10 +34,12 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -48,6 +49,8 @@ const (
 	storeAPICodecName    = "proto"
 	// maxStoreAPIMessageBytes bounds one streamed StoreAPI message
 	maxStoreAPIMessageBytes = 64 << 20
+	// grpcLocalErrorPrefix starts the errors gRPC raises in this process, as for a message over its size limit
+	grpcLocalErrorPrefix = "grpc: "
 )
 
 // Thanos storepb field numbers: SeriesRequest, SeriesResponse, Series, AggrChunk, Chunk, Label, LabelMatcher
@@ -65,6 +68,8 @@ const (
 	seriesResponseHints          = 3
 	seriesLabels                 = 1
 	seriesChunks                 = 2
+	aggrChunkMinTime             = 1
+	aggrChunkMaxTime             = 2
 	aggrChunkRaw                 = 3
 	chunkType                    = 1
 	chunkData                    = 2
@@ -88,6 +93,7 @@ var (
 
 // StoreAPI reads a member's raw series over the Thanos StoreAPI Series stream.
 type StoreAPI struct {
+	SourceIdentity
 	conn  *grpc.ClientConn
 	paths po.List
 }
@@ -147,6 +153,7 @@ func (s *StoreAPI) Select(ctx context.Context, mint, maxt int64, hints *storage.
 	}
 	var out []storage.Series
 	var last *chunkSeries
+	var lastCounted bool
 	var warnings annotations.Annotations
 	var builder labels.ScratchBuilder
 	var received int64
@@ -155,13 +162,13 @@ func (s *StoreAPI) Select(ctx context.Context, mint, maxt int64, hints *storage.
 		if err := stream.RecvMsg(&frame); errors.Is(err, io.EOF) {
 			return out, warnings, nil
 		} else if err != nil {
-			return nil, nil, fmt.Errorf("%w: %w", errStoreAPI, err)
+			return nil, nil, receiveError(err, maxMessage)
 		}
 		received += int64(len(frame.data))
 		if limit := budget.responseLimit(); limit > 0 && received > limit {
 			return nil, nil, fmt.Errorf("%w: response exceeds %d bytes", ErrFetchLimit, limit)
 		}
-		series, warning, samples, err := decodeSeriesResponse(frame.data, &builder)
+		series, warning, samples, err := decodeSeriesResponse(frame.data, &builder, mint, maxt)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -172,18 +179,32 @@ func (s *StoreAPI) Select(ctx context.Context, mint, maxt int64, hints *storage.
 		if series == nil {
 			continue
 		}
-		var newSeries int64
 		if last != nil && labels.Equal(last.lset, series.lset) {
 			last.chunks = append(last.chunks, series.chunks...)
+			last.spans = append(last.spans, series.spans...)
 		} else {
 			last = series
 			out = append(out, series)
-			newSeries = 1
+			lastCounted = false
+		}
+		var newSeries int64
+		if samples > 0 && !lastCounted {
+			newSeries, lastCounted = 1, true
 		}
 		if err := budget.add(newSeries, samples); err != nil {
 			return nil, nil, err
 		}
 	}
+}
+
+// receiveError wraps a failed receive; a message over this client's own size limit is a fetch limit,
+// which fails even a partial response, rather than a member's failure
+func receiveError(err error, maxMessage int) error {
+	if st, ok := status.FromError(err); ok && st.Code() == codes.ResourceExhausted &&
+		strings.HasPrefix(st.Message(), grpcLocalErrorPrefix) {
+		return fmt.Errorf("%w: a storeapi message exceeds %d bytes", ErrFetchLimit, maxMessage)
+	}
+	return fmt.Errorf("%w: %w", errStoreAPI, err)
 }
 
 // metadata returns the client request's end-to-end headers and the configured request headers for its
@@ -193,12 +214,7 @@ func (s *StoreAPI) metadata(in *http.Request) metadata.MD {
 	if in == nil {
 		return md
 	}
-	h := in.Header.Clone()
-	headers.StripClientHeaders(h)
-	if pc := s.paths.Match(in.Method, in.URL.Path); pc != nil && len(pc.RequestHeaders) > 0 {
-		headers.UpdateHeaders(h, pc.RequestHeaders)
-	}
-	for k, vs := range h {
+	for k, vs := range s.sentHeaders(in) {
 		if isEntityHeader(k) || isReservedMetadata(k) {
 			continue
 		}
@@ -206,6 +222,8 @@ func (s *StoreAPI) metadata(in *http.Request) metadata.MD {
 	}
 	return md
 }
+
+func (s *StoreAPI) sentHeaders(in *http.Request) http.Header { return forwardedHeaders(s.paths, in) }
 
 // isReservedMetadata reports whether gRPC sets a header itself, so a client's copy must not be sent
 func isReservedMetadata(name string) bool {
@@ -254,8 +272,10 @@ func appendInt64Field(b []byte, num protowire.Number, v int64) []byte {
 	return protowire.AppendVarint(b, uint64(v)) //nolint:gosec // wire protocol reinterpret
 }
 
-// decodeSeriesResponse reads one streamed SeriesResponse: a series with its sample count, or a warning
-func decodeSeriesResponse(b []byte, builder *labels.ScratchBuilder) (*chunkSeries, string, int64, error) {
+// decodeSeriesResponse reads one streamed SeriesResponse: a series with the count of its samples from mint
+// to maxt, or a warning
+func decodeSeriesResponse(b []byte, builder *labels.ScratchBuilder, mint, maxt int64,
+) (*chunkSeries, string, int64, error) {
 	var series *chunkSeries
 	var warning string
 	var samples int64
@@ -276,7 +296,7 @@ func decodeSeriesResponse(b []byte, builder *labels.ScratchBuilder) (*chunkSerie
 		switch num {
 		case seriesResponseSeries:
 			var err error
-			if series, samples, err = decodeStoreSeries(v, builder); err != nil {
+			if series, samples, err = decodeStoreSeries(v, builder, mint, maxt); err != nil {
 				return nil, "", 0, err
 			}
 		case seriesResponseWarning:
@@ -290,9 +310,10 @@ func decodeSeriesResponse(b []byte, builder *labels.ScratchBuilder) (*chunkSerie
 	return series, warning, samples, nil
 }
 
-func decodeStoreSeries(b []byte, builder *labels.ScratchBuilder) (*chunkSeries, int64, error) {
+func decodeStoreSeries(b []byte, builder *labels.ScratchBuilder, mint, maxt int64) (*chunkSeries, int64, error) {
 	builder.Reset()
 	var iterables []chunkenc.Iterable
+	var spans []span
 	var samples int64
 	err := forEachField(b, func(num protowire.Number, v []byte) error {
 		switch num {
@@ -311,12 +332,17 @@ func decodeStoreSeries(b []byte, builder *labels.ScratchBuilder) (*chunkSeries, 
 			}
 			builder.Add(name, value)
 		case seriesChunks:
-			chk, err := decodeAggrChunk(v)
+			chk, sp, err := decodeAggrChunk(v)
 			if err != nil {
 				return err
 			}
-			samples += int64(chk.NumSamples())
+			n, err := samplesWithin(chk, sp, mint, maxt)
+			if err != nil {
+				return fmt.Errorf("%w: %w", errStoreAPI, err)
+			}
+			samples += n
 			iterables = append(iterables, chk)
+			spans = append(spans, sp)
 		}
 		return nil
 	})
@@ -324,12 +350,13 @@ func decodeStoreSeries(b []byte, builder *labels.ScratchBuilder) (*chunkSeries, 
 		return nil, 0, err
 	}
 	builder.Sort()
-	return &chunkSeries{lset: builder.Labels(), chunks: iterables}, samples, nil
+	return &chunkSeries{lset: builder.Labels(), chunks: iterables, spans: spans}, samples, nil
 }
 
-// decodeAggrChunk returns an AggrChunk's raw chunk; a downsampled chunk without one is refused
-func decodeAggrChunk(b []byte) (chunkenc.Chunk, error) {
+// decodeAggrChunk returns an AggrChunk's raw chunk and its span; a downsampled chunk without one is refused
+func decodeAggrChunk(b []byte) (chunkenc.Chunk, span, error) {
 	var chk chunkenc.Chunk
+	var sp span
 	err := forEachField(b, func(num protowire.Number, v []byte) error {
 		if num != aggrChunkRaw {
 			return nil
@@ -364,18 +391,25 @@ func decodeAggrChunk(b []byte) (chunkenc.Chunk, error) {
 		}
 		var err error
 		// the chunk keeps data, so it is copied out of the message buffer
-		if chk, err = chunkenc.FromData(enc, append([]byte(nil), data...)); err != nil {
+		if chk, err = newChunk(enc, append([]byte(nil), data...)); err != nil {
 			return fmt.Errorf("%w: %w", errStoreAPI, err)
 		}
 		return nil
+	}, func(num protowire.Number, v uint64) {
+		switch num {
+		case aggrChunkMinTime:
+			sp.mint = int64(v) //nolint:gosec // wire protocol reinterpret
+		case aggrChunkMaxTime:
+			sp.maxt = int64(v) //nolint:gosec // wire protocol reinterpret
+		}
 	})
 	if err != nil {
-		return nil, err
+		return nil, sp, err
 	}
 	if chk == nil {
-		return nil, fmt.Errorf("%w: a chunk without raw data; only raw resolution is read", errStoreAPI)
+		return nil, sp, fmt.Errorf("%w: a chunk without raw data; only raw resolution is read", errStoreAPI)
 	}
-	return chk, nil
+	return chk, sp, nil
 }
 
 // forEachField calls bytesField for every length-delimited field of a message and varintField, when

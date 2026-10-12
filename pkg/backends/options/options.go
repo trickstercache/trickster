@@ -333,6 +333,8 @@ type Options struct {
 	volatileWindowConflict, volatileWindowPointsConflict bool
 	// set when a backend sets any volatile window key, so a flavor default does not replace it
 	volatileWindowExplicit bool
+	// set when a backend sets volatile_window or backfill_tolerance, even to zero
+	volatileDurationExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -978,6 +980,12 @@ func (l Lookup) Keys() sets.Set[string] {
 	return out
 }
 
+// HasVolatileWindow reports whether the backend sets volatile_window, or the legacy backfill_tolerance, even
+// to zero; a window set in code counts unless it is zero.
+func (o *Options) HasVolatileWindow() bool {
+	return o != nil && (o.volatileDurationExplicit || o.VolatileWindow != 0)
+}
+
 // UsesCache reports whether the backend caches responses: every provider with an origin, and an ALB
 // whose time series merge evaluates globally.
 func (o *Options) UsesCache() bool {
@@ -1213,8 +1221,9 @@ func (k renamedKeys) apply(o *Options) {
 	}
 	o.stepAlignmentExplicit = k.StepAlignment != nil
 	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
-	o.volatileWindowExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil ||
-		k.VolatileWindowPoints != nil || k.BackfillTolerancePoints != nil
+	o.volatileDurationExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil
+	o.volatileWindowExplicit = o.volatileDurationExplicit || k.VolatileWindowPoints != nil ||
+		k.BackfillTolerancePoints != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.
@@ -1283,17 +1292,13 @@ func yamlNodeHasKey(node *yaml.Node, key string, visited map[*yaml.Node]bool) bo
 	return false
 }
 
-// ApplyProviderSizingDefaults sets max_object_size_bytes and
-// timeseries_retention_factor to the provider's defaults
-// (GetProviderDefaults) wherever the YAML did not name them itself. It is
-// part of configuration loading: UnmarshalYAML calls it once the file's
-// provider is known, and the config loader calls it again for a backend
-// whose provider arrives later from the -provider flag. It is deliberately
-// not part of Initialize, so an Options constructed in code — where these
-// flags are false but the builder's assignments are intentional — is never
-// re-defaulted.
+// ApplyProviderSizingDefaults sets max_object_size_bytes and timeseries_retention_factor to the provider's defaults, with a larger
+// object size for a TSM ALB, where the YAML named neither. Only loading calls it, never Initialize, so options built in code keep theirs.
 func (o *Options) ApplyProviderSizingDefaults() {
 	mos, trf := GetProviderDefaults(o.Provider)
+	if o.Provider == providers.ALB && o.ALBOptions.IsTSM() {
+		mos = DefaultTSMMaxObjectSizeBytes
+	}
 	if !o.sizeExplicit {
 		o.MaxObjectSizeBytes = mos
 	}

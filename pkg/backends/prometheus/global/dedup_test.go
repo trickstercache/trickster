@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,7 +36,7 @@ const (
 )
 
 func listSeries(lset labels.Labels, points ...testPoint) storage.Series {
-	samples := make([]chunks.Sample, len(points))
+	samples := make([]sample, len(points))
 	for i, p := range points {
 		if p.h {
 			samples[i] = sample{t: p.t, fh: testHistogram().ToFloat(nil)}
@@ -45,7 +44,7 @@ func listSeries(lset labels.Labels, points ...testPoint) storage.Series {
 		}
 		samples[i] = sample{t: p.t, f: p.f}
 	}
-	return storage.NewListSeries(lset, samples)
+	return &sampleSeries{lset: lset, samples: samples}
 }
 
 func podLabels(pod string, kv ...string) labels.Labels {

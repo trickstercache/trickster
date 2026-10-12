@@ -35,6 +35,7 @@ import (
 
 // MemorySource is a test source serving fixed series that match a select's matchers
 type MemorySource struct {
+	SourceIdentity
 	Series   []storage.Series
 	Err      error
 	Warnings annotations.Annotations

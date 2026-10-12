@@ -198,6 +198,11 @@ func (o *Options) Clone() *Options {
 	return c
 }
 
+// IsTSM reports whether the ALB's mechanism is time series merge, under any name Initialize shortens to tsm.
+func (o *Options) IsTSM() bool {
+	return o != nil && strings.HasPrefix(o.MechanismName, names.MechanismTSM)
+}
+
 func (o *Options) Initialize(name string) error {
 	if name != "" {
 		o.Name = name
@@ -209,7 +214,7 @@ func (o *Options) Initialize(name string) error {
 	if len(repeats) > 0 {
 		o.Pool, o.PoolRepeats = pool, repeats
 	}
-	if strings.HasPrefix(o.MechanismName, names.MechanismTSM) && o.MechanismName != names.MechanismTSM {
+	if o.IsTSM() && o.MechanismName != names.MechanismTSM {
 		// shorten from tsmerge to tsm
 		o.MechanismName = names.MechanismTSM
 	}

@@ -221,6 +221,11 @@ func TestRemoteReadStreamedChunks(t *testing.T) {
 	require.Len(t, series, 3)
 	require.Equal(t, []testPoint{{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}}, readPoints(t, series[0]))
 	require.Equal(t, []testPoint{{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}}, readPoints(t, series[1]))
+	// each chunk keeps the span the member reported, across frames, and overlapping chunks aren't disjoint
+	require.Equal(t, []span{{1, 2}, {3, 3}}, series[0].(*chunkSeries).spans)
+	require.True(t, series[0].(*chunkSeries).disjoint())
+	require.Equal(t, []span{{1, 3}, {2, 3}}, series[1].(*chunkSeries).spans)
+	require.False(t, series[1].(*chunkSeries).disjoint())
 	require.Equal(t, []testPoint{{t: 5, h: true}, {t: 6, h: true}}, readPoints(t, series[2]))
 	require.Equal(t, int64(3), budget.series.Load())
 	require.Equal(t, int64(9), budget.samples.Load())
@@ -289,7 +294,7 @@ func TestRemoteReadErrors(t *testing.T) {
 			var size [binary.MaxVarintLen64]byte
 			w.Header().Set(headers.NameContentType, contentTypeStreamed)
 			_, _ = w.Write(size[:binary.PutUvarint(size[:], maxFrameBytes+1)])
-		}, want: errRemoteRead, text: "exceeds"},
+		}, want: ErrFetchLimit, text: "exceeds"},
 		{name: "unknown encoding", handler: func(w http.ResponseWriter, _ *http.Request) {
 			var body bytes.Buffer
 			writeFrame(t, &body, &prompb.ChunkedSeries{
@@ -347,12 +352,38 @@ func TestBudgetAndLimitedReader(t *testing.T) {
 	require.ErrorIs(t, err, ErrFetchLimit)
 }
 
-func TestSampleCopy(t *testing.T) {
-	fh := sample{t: 1, fh: testHistogram().ToFloat(nil)}
-	require.NotSame(t, fh.FH(), fh.Copy().FH())
-	require.Nil(t, fh.H())
-	require.Zero(t, fh.ST())
-	require.Equal(t, chunkenc.ValFloat, sample{}.Copy().Type())
+func TestSampleIterator(t *testing.T) {
+	kept := testHistogram().ToFloat(nil)
+	s := &sampleSeries{samples: []sample{{t: 1, f: 1}, {t: 2, fh: kept}, {t: 3, f: 3}, {t: 5, f: 5}}}
+	it := s.Iterator(nil)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	_, fh := it.AtFloatHistogram(nil)
+	require.Nil(t, fh, "a float sample has no histogram")
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+	at, h := it.AtHistogram(nil)
+	require.Equal(t, int64(2), at)
+	require.Nil(t, h, "samples hold float histograms")
+	_, fh = it.AtFloatHistogram(nil)
+	require.NotSame(t, kept, fh, "a caller never holds the histogram the series keeps")
+	buf := &histogram.FloatHistogram{}
+	_, fh = it.AtFloatHistogram(buf)
+	require.Same(t, buf, fh)
+	require.Equal(t, kept.Count, buf.Count)
+	require.Equal(t, chunkenc.ValFloatHistogram, it.Seek(1), "seeking behind the current sample stays")
+	require.Equal(t, int64(2), it.AtT())
+	require.Equal(t, chunkenc.ValFloat, it.Seek(4))
+	require.Equal(t, int64(5), it.AtT())
+	require.Zero(t, it.AtST())
+	require.NoError(t, it.Err())
+	require.Equal(t, chunkenc.ValNone, it.Seek(6))
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.Equal(t, chunkenc.ValNone, it.Seek(1))
+
+	reused := s.Iterator(it)
+	require.Same(t, it, reused)
+	require.Equal(t, chunkenc.ValFloat, reused.Seek(0))
+	_, f := reused.At()
+	require.Equal(t, float64(1), f)
 }
 
 func TestDecodeChunkEncodings(t *testing.T) {

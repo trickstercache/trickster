@@ -946,7 +946,8 @@ backends:
 #     # so there is an opportunity to revalidate
 #     revalidation_factor: 2.0
 
-#     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
+#     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k),
+#     # or 67108864 (64M) for an ALB with mechanism: tsm
 #     max_object_size_bytes: 524288
 
 #     # max_capture_bytes caps the per-response in-memory capture buffer used by ALB fanout and Prometheus
@@ -1442,6 +1443,11 @@ backends:
 #         # evaluation reads, before deduplication. default is 0, unlimited
 #         # max_fetched_series: 0
 #         # max_fetched_samples: 0
+#         # raw_cache_window is how far back from now the members' raw series are cached; older
+#         # samples are read from the members by every evaluation. default is 31d
+#         # raw_cache_window: 31d
+#         # the newest 5m of a mimir or thanos member's raw series, and none of another member's, are
+#         # read again by every evaluation, unless the ALB sets volatile_window for all of them
 
 # # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
 # #

@@ -40,6 +40,17 @@ func TestEffectiveSeriesAPI(t *testing.T) {
 	require.Equal(t, SeriesAPIRemoteRead, (&Options{SeriesAPI: SeriesAPIRemoteRead}).EffectiveSeriesAPI())
 }
 
+func TestEffectiveSeriesVolatileWindow(t *testing.T) {
+	var o *Options
+	require.Zero(t, o.EffectiveSeriesVolatileWindow())
+	for _, flavor := range []string{FlavorMimir, FlavorThanos} {
+		require.Equal(t, SeriesVolatileWindow, (&Options{Flavor: flavor}).EffectiveSeriesVolatileWindow(), flavor)
+	}
+	for _, other := range []*Options{{}, {SeriesAPI: SeriesAPIRemoteRead}, {Flavor: FlavorAMP}, {Flavor: FlavorCloudWatch}} {
+		require.Zero(t, other.EffectiveSeriesVolatileWindow(), other.Flavor)
+	}
+}
+
 func TestSeriesEndpointURL(t *testing.T) {
 	u, err := (&Options{Flavor: FlavorMimir}).SeriesEndpointURL(testMimirOrigin + "?x=1")
 	require.NoError(t, err)

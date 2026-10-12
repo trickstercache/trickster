@@ -172,9 +172,11 @@ func (bc *ByterangeChunkWriter) IterateChunks(
 		}
 		subkey := bc.key + chunkRange.String()
 		chunkData := d.GetByterangeChunk(chunkRange, bc.size)
-
-		if err := writeFunc(i, subkey, chunkData); err != nil {
-			return err
+		// readers treat a missing chunk as a gap, so an empty one isn't stored
+		if len(chunkData.Ranges) > 0 {
+			if err := writeFunc(i, subkey, chunkData); err != nil {
+				return err
+			}
 		}
 		i++
 	}

@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/trickstercache/trickster/v2/integration/internal/metricsutil"
 	"github.com/trickstercache/trickster/v2/integration/internal/portutil"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
@@ -37,10 +38,12 @@ import (
 )
 
 const (
-	tsmGlobalRequireEnv = "TRICKSTER_TSM_GLOBAL_TEST"
-	thanosQueryURL      = "http://127.0.0.1:11903"
-	mimirPodCountQuery  = "count(count by (pod) (tsm_pod_cpu_seconds_total))"
-	mimirPodRateQuery   = "sum(rate(tsm_pod_cpu_seconds_total[5m]))"
+	tsmGlobalRawReadsMetric = "trickster_alb_global_raw_reads_total"
+	tsmGlobalMimirALB       = "mimir-global"
+	tsmGlobalRequireEnv     = "TRICKSTER_TSM_GLOBAL_TEST"
+	thanosQueryURL          = "http://127.0.0.1:11903"
+	mimirPodCountQuery      = "count(count by (pod) (tsm_pod_cpu_seconds_total))"
+	mimirPodRateQuery       = "sum(rate(tsm_pod_cpu_seconds_total[5m]))"
 	// mimirPods is the distinct pods the two seeded regions hold between them
 	mimirPods = 5
 	// mimirMergedRates is what summing regional rates gives: the shared pod and both backups count twice
@@ -139,8 +142,9 @@ func TestALBTSMGlobalEvaluation(t *testing.T) {
 	runTrickster(t, ctx, "-config", cfgPath)
 	waitForTrickster(t, fmt.Sprintf("127.0.0.1:%d", metricsPort))
 	front := fmt.Sprintf("http://127.0.0.1:%d", frontPort)
-	// a minute ago on a 15s boundary, so every scrape and sample it reads has landed
-	at := time.Now().Add(-time.Minute).Truncate(15 * time.Second)
+	// a minute ago, so every sample it reads has landed, on a 30s step: where a 30m chunk boundary lies within a 15s scrape
+	// of a window's edge, Thanos keeps another replica's lone sample there despite its penalty; 30s steps never put one there
+	at := time.Now().Add(-time.Minute).Truncate(30 * time.Second)
 	instant := func(query string) url.Values {
 		return url.Values{"query": {query}, "time": {strconv.FormatInt(at.Unix(), 10)}}
 	}
@@ -167,6 +171,23 @@ func TestALBTSMGlobalEvaluation(t *testing.T) {
 		again, h := getPromSamples(t, front+"/mimir-global", "/api/v1/query_range", params)
 		require.Contains(t, h.Get(headers.NameTricksterResult), "status=hit")
 		requireCloseSamples(t, first, again, "cached range")
+
+		// a range shifted back is another result, reading raw series mostly from the cache; the first
+		// range's samples are kept just after it is answered, so a later shift may be needed
+		cachedReads := func() float64 {
+			scraped := metricsutil.Scrape(t, metricsPort)
+			return scraped[metricsutil.Key(tsmGlobalRawReadsMetric, map[string]string{"alb_name": tsmGlobalMimirALB,
+				"status": "hit"})] + scraped[metricsutil.Key(tsmGlobalRawReadsMetric,
+				map[string]string{"alb_name": tsmGlobalMimirALB, "status": "phit"})]
+		}
+		before := cachedReads()
+		for shift := 5; shift < 10 && cachedReads() == before; shift++ {
+			params.Set("start", strconv.FormatInt(at.Add(-time.Duration(30+shift)*time.Minute).Unix(), 10))
+			params.Set("end", strconv.FormatInt(at.Add(-time.Duration(10+shift)*time.Minute).Unix(), 10))
+			_, h = getPromSamples(t, front+"/mimir-global", "/api/v1/query_range", params)
+			require.Contains(t, h.Get(headers.NameTricksterResult), "status=kmiss")
+		}
+		require.Greater(t, cachedReads(), before, "a shifted range reads cached raw series")
 	})
 
 	t.Run("thanos parity", func(t *testing.T) {
@@ -180,12 +201,11 @@ func TestALBTSMGlobalEvaluation(t *testing.T) {
 			want, _ := getPromSamples(t, thanosQueryURL, "/api/v1/query", instant(query))
 			got, _ := getPromSamples(t, front+"/thanos-global", "/api/v1/query", instant(query))
 			requireCloseSamples(t, want, got, query)
-			// a range reads each replica's whole history, through any replica switches; its ends are on
-			// the step, where Trickster aligns them
-			end := at.Truncate(30 * time.Second)
+			// a range reads each replica's history through any replica switches, and is evaluated whole, so it
+			// matches Thanos at each step; these are on the same 30s steps, as Grafana's are
 			params := url.Values{
-				"query": {query}, "start": {strconv.FormatInt(end.Add(-20*time.Minute).Unix(), 10)},
-				"end": {strconv.FormatInt(end.Unix(), 10)}, "step": {"30"},
+				"query": {query}, "start": {strconv.FormatInt(at.Add(-20*time.Minute).Unix(), 10)},
+				"end": {strconv.FormatInt(at.Unix(), 10)}, "step": {"30"},
 			}
 			want, _ = getPromSamples(t, thanosQueryURL, "/api/v1/query_range", params)
 			got, _ = getPromSamples(t, front+"/thanos-global", "/api/v1/query_range", params)

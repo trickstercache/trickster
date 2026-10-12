@@ -247,11 +247,18 @@ type presenceSample struct {
 	fh *histogram.FloatHistogram
 }
 
-func (s presenceSample) T() int64                      { return s.t }
-func (s presenceSample) ST() int64                     { return 0 }
-func (s presenceSample) F() float64                    { return s.f }
-func (s presenceSample) H() *histogram.Histogram       { return nil }
-func (s presenceSample) FH() *histogram.FloatHistogram { return s.fh }
+func (s presenceSample) T() int64                { return s.t }
+func (s presenceSample) ST() int64               { return 0 }
+func (s presenceSample) F() float64              { return s.f }
+func (s presenceSample) H() *histogram.Histogram { return nil }
+
+// FH returns a copy, as a member's iterator does, since the engine reuses histograms it is handed as buffers
+func (s presenceSample) FH() *histogram.FloatHistogram {
+	if s.fh == nil {
+		return nil
+	}
+	return s.fh.Copy()
+}
 
 func (s presenceSample) Type() chunkenc.ValueType {
 	if s.fh != nil {

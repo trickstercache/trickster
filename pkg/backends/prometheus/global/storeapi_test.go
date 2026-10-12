@@ -106,6 +106,11 @@ func encodeTestChunk(enc uint64, data []byte, raw bool) []byte {
 	return protowire.AppendBytes(aggr, chunk)
 }
 
+// spanned gives an encoded AggrChunk the time range a store reports for it
+func spanned(aggr []byte, mint, maxt int64) []byte {
+	return append(appendInt64Field(appendInt64Field(nil, aggrChunkMinTime, mint), aggrChunkMaxTime, maxt), aggr...)
+}
+
 // encodeTestSeries writes a SeriesResponse holding a series, its labels in the order given
 func encodeTestSeries(kv []string, chunks ...[]byte) []byte {
 	var series []byte
@@ -155,11 +160,12 @@ func (s *testStore) serve(t *testing.T) *StoreAPI {
 			s.mu.Lock()
 			s.requests = append(s.requests, decodeTestSeriesRequest(t, req.data))
 			s.md = md
+			frames := s.frames
 			s.mu.Unlock()
 			if s.err != nil {
 				return s.err
 			}
-			for _, f := range s.frames {
+			for _, f := range frames {
 				if err := stream.SendMsg(&rawFrame{data: f}); err != nil {
 					return err
 				}
@@ -186,9 +192,10 @@ func xorData(t *testing.T, points ...testPoint) []byte {
 func TestStoreAPISelect(t *testing.T) {
 	podA := []string{testPod, "a", labels.MetricName, testMetric}
 	store := &testStore{frames: [][]byte{
-		encodeTestSeries(podA, encodeTestChunk(storeChunkXOR, xorData(t, testPoint{t: 1, f: 1}, testPoint{t: 2, f: 2}), true)),
+		encodeTestSeries(podA, spanned(encodeTestChunk(storeChunkXOR,
+			xorData(t, testPoint{t: 1, f: 1}, testPoint{t: 2, f: 2}), true), 1, 2)),
 		encodeTestResponse(seriesResponseHints, []byte{}),
-		encodeTestSeries(podA, encodeTestChunk(storeChunkXOR, xorData(t, testPoint{t: 3, f: 3}), true)),
+		encodeTestSeries(podA, spanned(encodeTestChunk(storeChunkXOR, xorData(t, testPoint{t: 3, f: 3}), true), 3, 3)),
 		encodeTestSeries([]string{labels.MetricName, testMetric, testPod, "b"},
 			encodeTestChunk(storeChunkHistogram, histogramChunk(t, 5, 6).Data, true)),
 		encodeTestResponse(seriesResponseWarning, []byte("store x is missing blocks")),
@@ -200,7 +207,7 @@ func TestStoreAPISelect(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchNotRegexp, testPod, "z"),
 	}
 	budget := &Budget{}
-	series, warnings, err := source.Select(testContext(t, budget), 10, 20,
+	series, warnings, err := source.Select(testContext(t, budget), 0, 20,
 		&storage.SelectHints{Step: 15, Range: 300}, matchers...)
 	require.NoError(t, err)
 
@@ -208,6 +215,10 @@ func TestStoreAPISelect(t *testing.T) {
 	require.Equal(t, labels.FromStrings(labels.MetricName, testMetric, testPod, "a"), series[0].Labels())
 	require.Equal(t, []testPoint{{t: 1, f: 1}, {t: 2, f: 2}, {t: 3, f: 3}}, readPoints(t, series[0]))
 	require.Equal(t, []testPoint{{t: 5, h: true}, {t: 6, h: true}}, readPoints(t, series[1]))
+	// a chunk's span is what the store reported, and proto3 omits a zero one
+	require.Equal(t, []span{{1, 2}, {3, 3}}, series[0].(*chunkSeries).spans)
+	require.True(t, series[0].(*chunkSeries).disjoint())
+	require.Equal(t, []span{{0, 0}}, series[1].(*chunkSeries).spans)
 	require.Len(t, warnings, 1)
 	require.ErrorContains(t, warnings.AsErrors()[0], "missing blocks")
 	series2, samples := budget.Fetched()
@@ -217,7 +228,7 @@ func TestStoreAPISelect(t *testing.T) {
 	require.Len(t, store.requests, 1)
 	req := store.requests[0]
 	require.Equal(t, storeRequest{
-		minTime: 10, maxTime: 20, step: 15, rangeMs: 300,
+		minTime: 0, maxTime: 20, step: 15, rangeMs: 300,
 		matchers:        [][3]string{{"=", labels.MetricName, testMetric}, {"!~", testPod, "z"}},
 		aggregates:      []byte{aggrRaw},
 		partialDisabled: true, strategy: partialResponseStrategyAbort,

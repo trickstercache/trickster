@@ -172,6 +172,8 @@ type chainIterator struct {
 	types   []chunkenc.ValueType
 	cur     int
 	started bool
+	// cons is whether the current sample follows the one returned before it in the same source
+	cons bool
 }
 
 func newChainIterator(its []chunkenc.Iterator) *chainIterator {
@@ -179,6 +181,7 @@ func newChainIterator(its []chunkenc.Iterator) *chainIterator {
 }
 
 func (c *chainIterator) Next() chunkenc.ValueType {
+	prev := c.cur
 	switch {
 	case !c.started:
 		c.started = true
@@ -195,12 +198,19 @@ func (c *chainIterator) Next() chunkenc.ValueType {
 			}
 		}
 	}
-	return c.pick()
+	vt := c.pick()
+	// only the iterator whose sample was just returned moves to its next one, so staying on it keeps
+	// its source's order; any other's next sample never followed the one returned
+	c.cons = vt != chunkenc.ValNone && prev >= 0 && c.cur == prev && isConsecutive(c.its[c.cur])
+	return vt
 }
 
 func (c *chainIterator) Seek(t int64) chunkenc.ValueType {
 	if c.started && c.cur < 0 {
 		return chunkenc.ValNone
+	}
+	if c.started && c.its[c.cur].AtT() >= t {
+		return c.types[c.cur]
 	}
 	for i, it := range c.its {
 		if !c.started || c.types[i] != chunkenc.ValNone {
@@ -208,6 +218,8 @@ func (c *chainIterator) Seek(t int64) chunkenc.ValueType {
 		}
 	}
 	c.started = true
+	// samples were passed over, so the one returned may not follow the last one returned
+	c.cons = false
 	return c.pick()
 }
 
@@ -232,12 +244,22 @@ func (c *chainIterator) pick() chunkenc.ValueType {
 func (c *chainIterator) At() (int64, float64) { return c.its[c.cur].At() }
 
 func (c *chainIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	return c.its[c.cur].AtHistogram(h)
+	t, out := c.its[c.cur].AtHistogram(h)
+	if !c.cons {
+		out = withUnknownReset(out, h)
+	}
+	return t, out
 }
 
 func (c *chainIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	return c.its[c.cur].AtFloatHistogram(fh)
+	t, out := c.its[c.cur].AtFloatHistogram(fh)
+	if !c.cons {
+		out = withUnknownFloatReset(out, fh)
+	}
+	return t, out
 }
+
+func (c *chainIterator) consecutive() bool { return c.cons }
 
 func (c *chainIterator) AtT() int64  { return c.its[c.cur].AtT() }
 func (c *chainIterator) AtST() int64 { return c.its[c.cur].AtST() }
@@ -264,6 +286,8 @@ type noAdjustIterator struct {
 
 func (noAdjustIterator) adjustAtValue(float64) {}
 
+func (n noAdjustIterator) consecutive() bool { return isConsecutive(n.Iterator) }
+
 // counterAdjustIterator raises a counter replica's values by what earlier switches found it behind
 type counterAdjustIterator struct {
 	chunkenc.Iterator
@@ -285,6 +309,8 @@ func (c *counterAdjustIterator) At() (int64, float64) {
 	t, v := c.Iterator.At()
 	return t, v + c.adjust
 }
+
+func (c *counterAdjustIterator) consecutive() bool { return isConsecutive(c.Iterator) }
 
 func (c *counterAdjustIterator) adjustAtValue(last float64) {
 	if c.vt != chunkenc.ValFloat {
@@ -309,6 +335,8 @@ type penaltyIterator struct {
 	// lastFloat is the last float sample returned, which a replica switched to is adjusted against
 	lastFloat float64
 	hasFloat  bool
+	// cons is whether the current sample follows the one returned before it in the same source
+	cons bool
 }
 
 func newPenaltyIterator(a, b adjustableIterator) *penaltyIterator {
@@ -316,15 +344,26 @@ func newPenaltyIterator(a, b adjustableIterator) *penaltyIterator {
 }
 
 func (it *penaltyIterator) Next() chunkenc.ValueType {
+	returned := it.lastT != math.MinInt64
 	if !it.started {
 		it.started = true
 		it.aval, it.bval = it.a.Next(), it.b.Next()
 	} else {
+		// the followed replica's sample was just returned, so it steps to its next one, which seeking
+		// past it would do too, without passing over any of its samples
 		if it.aval != chunkenc.ValNone {
-			it.aval = it.a.Seek(it.lastT + 1 + it.penA)
+			if it.useA {
+				it.aval = it.a.Next()
+			} else {
+				it.aval = it.a.Seek(it.lastT + 1 + it.penA)
+			}
 		}
 		if it.bval != chunkenc.ValNone {
-			it.bval = it.b.Seek(it.lastT + 1 + it.penB)
+			if it.useA {
+				it.bval = it.b.Seek(it.lastT + 1 + it.penB)
+			} else {
+				it.bval = it.b.Next()
+			}
 		}
 	}
 	prevUseA := it.useA
@@ -365,6 +404,8 @@ func (it *penaltyIterator) Next() chunkenc.ValueType {
 		_, it.lastFloat = it.lastIter.At()
 		it.hasFloat = true
 	}
+	// the replica switched to was sought past samples, so its sample follows none returned
+	it.cons = returned && it.useA == prevUseA && isConsecutive(it.lastIter)
 	return it.vt
 }
 
@@ -382,11 +423,16 @@ func (it *penaltyIterator) follow(useA bool, t int64) {
 // depends on every sample before it
 func (it *penaltyIterator) Seek(t int64) chunkenc.ValueType {
 	vt := it.vt
+	moved := it.started && vt != chunkenc.ValNone && it.AtT() < t
 	if !it.started {
 		vt = it.Next()
 	}
 	for vt != chunkenc.ValNone && it.AtT() < t {
 		vt = it.Next()
+	}
+	if moved {
+		// the caller never saw the samples passed over, so the one returned follows none it saw
+		it.cons = false
 	}
 	return vt
 }
@@ -394,12 +440,22 @@ func (it *penaltyIterator) Seek(t int64) chunkenc.ValueType {
 func (it *penaltyIterator) At() (int64, float64) { return it.lastIter.At() }
 
 func (it *penaltyIterator) AtHistogram(h *histogram.Histogram) (int64, *histogram.Histogram) {
-	return it.lastIter.AtHistogram(h)
+	t, out := it.lastIter.AtHistogram(h)
+	if !it.cons {
+		out = withUnknownReset(out, h)
+	}
+	return t, out
 }
 
 func (it *penaltyIterator) AtFloatHistogram(fh *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
-	return it.lastIter.AtFloatHistogram(fh)
+	t, out := it.lastIter.AtFloatHistogram(fh)
+	if !it.cons {
+		out = withUnknownFloatReset(out, fh)
+	}
+	return t, out
 }
+
+func (it *penaltyIterator) consecutive() bool { return it.cons }
 
 func (it *penaltyIterator) AtT() int64  { return it.lastIter.AtT() }
 func (it *penaltyIterator) AtST() int64 { return it.lastIter.AtST() }
@@ -419,4 +475,54 @@ func (it *penaltyIterator) adjustAtValue(last float64) {
 	if it.bval != chunkenc.ValNone {
 		it.b.adjustAtValue(last)
 	}
+}
+
+// consecutiveIterator reports whether its current sample follows the one it returned before in the
+// same source; a histogram's counter reset hint holds only across such a pair
+type consecutiveIterator interface {
+	consecutive() bool
+}
+
+// isConsecutive reports whether it's current sample follows its previous one in the same source, which
+// a member's own iterator, stepped by Next, always does
+func isConsecutive(it chunkenc.Iterator) bool {
+	if c, ok := it.(consecutiveIterator); ok {
+		return c.consecutive()
+	}
+	return true
+}
+
+// withUnknownReset returns h with an unknown counter reset hint, unless it is a gauge; h is copied,
+// into buf when given, unless it is buf, so a member's own histogram never changes
+func withUnknownReset(h, buf *histogram.Histogram) *histogram.Histogram {
+	if h == nil || h.CounterResetHint == histogram.GaugeType || h.CounterResetHint == histogram.UnknownCounterReset {
+		return h
+	}
+	if h != buf {
+		if buf == nil {
+			h = h.Copy()
+		} else {
+			h.CopyTo(buf)
+			h = buf
+		}
+	}
+	h.CounterResetHint = histogram.UnknownCounterReset
+	return h
+}
+
+// withUnknownFloatReset is withUnknownReset for float histograms
+func withUnknownFloatReset(fh, buf *histogram.FloatHistogram) *histogram.FloatHistogram {
+	if fh == nil || fh.CounterResetHint == histogram.GaugeType || fh.CounterResetHint == histogram.UnknownCounterReset {
+		return fh
+	}
+	if fh != buf {
+		if buf == nil {
+			fh = fh.Copy()
+		} else {
+			fh.CopyTo(buf)
+			fh = buf
+		}
+	}
+	fh.CounterResetHint = histogram.UnknownCounterReset
+	return fh
 }

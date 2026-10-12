@@ -52,6 +52,8 @@ const (
 	DefaultQueryTimeout = 2 * time.Minute
 	// DefaultMaxConcurrentQueries bounds the global evaluations an ALB runs at once
 	DefaultMaxConcurrentQueries = 20
+	// DefaultRawCacheWindow is how far back from now members' raw series are cached
+	DefaultRawCacheWindow = 31 * 24 * time.Hour
 
 	metricNameLabel = "__name__"
 )
@@ -93,6 +95,9 @@ type Options struct {
 	MaxFetchedSeries int `yaml:"max_fetched_series,omitempty"`
 	// MaxFetchedSamples bounds the raw samples one evaluation retrieves before deduplication; zero is unlimited
 	MaxFetchedSamples int64 `yaml:"max_fetched_samples,omitempty"`
+	// RawCacheWindow is how far back from now members' raw series are cached; older samples are read from
+	// members by every evaluation. Zero is DefaultRawCacheWindow
+	RawCacheWindow timeconv.Duration `yaml:"raw_cache_window,omitempty"`
 }
 
 // Clone returns a copy of the Options that shares no memory with it.
@@ -148,6 +153,14 @@ func (o *Options) GetMaxConcurrentQueries() int {
 	return o.MaxConcurrentQueries
 }
 
+// GetRawCacheWindow returns the configured raw series cache window, or DefaultRawCacheWindow.
+func (o *Options) GetRawCacheWindow() time.Duration {
+	if o == nil || o.RawCacheWindow == 0 {
+		return DefaultRawCacheWindow
+	}
+	return time.Duration(o.RawCacheWindow)
+}
+
 // GlobalSettings returns the settings global evaluation runs with, defaults applied.
 func (o *Options) GlobalSettings() merge.TSMGlobalSettings {
 	s := merge.TSMGlobalSettings{
@@ -156,6 +169,7 @@ func (o *Options) GlobalSettings() merge.TSMGlobalSettings {
 		MaxSamples:           o.GetMaxSamples(),
 		QueryTimeout:         o.GetQueryTimeout(),
 		MaxConcurrentQueries: o.GetMaxConcurrentQueries(),
+		RawCacheWindow:       o.GetRawCacheWindow(),
 	}
 	if o != nil {
 		s.ReplicaLabels = slices.Clone(o.ReplicaLabels)
@@ -184,7 +198,7 @@ func (o *Options) Validate() error {
 		}
 	}
 	if o.MaxSamples < 0 || o.QueryTimeout < 0 || o.MaxConcurrentQueries < 0 || o.MaxFetchedSeries < 0 ||
-		o.MaxFetchedSamples < 0 {
+		o.MaxFetchedSamples < 0 || o.RawCacheWindow < 0 {
 		return ErrInvalidGlobalLimit
 	}
 	if !o.IsGlobal() {
@@ -214,6 +228,8 @@ func (o *Options) globalSetting() string {
 		return "max_fetched_series"
 	case o.MaxFetchedSamples != 0:
 		return "max_fetched_samples"
+	case o.RawCacheWindow != 0:
+		return "raw_cache_window"
 	}
 	return ""
 }

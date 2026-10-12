@@ -37,10 +37,12 @@ func TestGlobalDefaults(t *testing.T) {
 		require.Equal(t, DefaultMaxSamples, o.GetMaxSamples())
 		require.Equal(t, DefaultQueryTimeout, o.GetQueryTimeout())
 		require.Equal(t, DefaultMaxConcurrentQueries, o.GetMaxConcurrentQueries())
+		require.Equal(t, DefaultRawCacheWindow, o.GetRawCacheWindow())
 	}
 	o := &Options{
 		Evaluation: EvaluationGlobal, Deduplication: DeduplicationChain, PartialResponse: new(false),
 		MaxSamples: 10, QueryTimeout: timeconv.Duration(time.Second), MaxConcurrentQueries: 3,
+		RawCacheWindow: timeconv.Duration(time.Hour),
 	}
 	require.True(t, o.IsGlobal())
 	require.False(t, o.AllowsPartialResponse())
@@ -48,6 +50,7 @@ func TestGlobalDefaults(t *testing.T) {
 	require.Equal(t, 10, o.GetMaxSamples())
 	require.Equal(t, time.Second, o.GetQueryTimeout())
 	require.Equal(t, 3, o.GetMaxConcurrentQueries())
+	require.Equal(t, time.Hour, o.GetRawCacheWindow())
 }
 
 func TestValidate(t *testing.T) {
@@ -75,6 +78,7 @@ func TestValidate(t *testing.T) {
 		},
 		{name: "negative samples", o: global(Options{MaxSamples: -1}), want: ErrInvalidGlobalLimit},
 		{name: "negative fetched samples", o: global(Options{MaxFetchedSamples: -1}), want: ErrInvalidGlobalLimit},
+		{name: "negative raw cache window", o: global(Options{RawCacheWindow: -1}), want: ErrInvalidGlobalLimit},
 		{name: "replicas without global", o: Options{ReplicaLabels: []string{testReplicaLabel}}, want: ErrGlobalOnly},
 		{name: "deduplication without global", o: Options{Deduplication: DeduplicationChain}, want: ErrGlobalOnly},
 		{name: "partial without global", o: Options{PartialResponse: new(false)}, want: ErrGlobalOnly},
@@ -83,6 +87,7 @@ func TestValidate(t *testing.T) {
 		{name: "concurrency without global", o: Options{MaxConcurrentQueries: 1}, want: ErrGlobalOnly},
 		{name: "series without global", o: Options{MaxFetchedSeries: 1}, want: ErrGlobalOnly},
 		{name: "fetched samples without global", o: Options{MaxFetchedSamples: 1}, want: ErrGlobalOnly},
+		{name: "raw cache window without global", o: Options{RawCacheWindow: 1}, want: ErrGlobalOnly},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -127,13 +132,14 @@ query_timeout: 30s
 max_concurrent_queries: 4
 max_fetched_series: 100
 max_fetched_samples: 100000
+raw_cache_window: 90d
 `), &o))
 	require.NoError(t, o.Validate())
 	require.Equal(t, Options{
 		Evaluation: EvaluationGlobal, ReplicaLabels: []string{testReplicaLabel, "replica"},
 		Deduplication: DeduplicationChain, PartialResponse: new(false), MaxSamples: 1000,
 		QueryTimeout: timeconv.Duration(30 * time.Second), MaxConcurrentQueries: 4, MaxFetchedSeries: 100,
-		MaxFetchedSamples: 100000,
+		MaxFetchedSamples: 100000, RawCacheWindow: timeconv.Duration(90 * 24 * time.Hour),
 	}, o)
 }
 
@@ -142,16 +148,18 @@ func TestGlobalSettings(t *testing.T) {
 	require.Equal(t, merge.TSMGlobalSettings{
 		Deduplication: DeduplicationPenalty, PartialResponse: true, MaxSamples: DefaultMaxSamples,
 		QueryTimeout: DefaultQueryTimeout, MaxConcurrentQueries: DefaultMaxConcurrentQueries,
+		RawCacheWindow: DefaultRawCacheWindow,
 	}, none.GlobalSettings())
 	o := &Options{
 		ReplicaLabels: []string{testReplicaLabel}, Deduplication: DeduplicationChain, PartialResponse: new(false),
 		MaxSamples: 7, QueryTimeout: timeconv.Duration(time.Second), MaxFetchedSeries: 8, MaxFetchedSamples: 9,
+		RawCacheWindow: timeconv.Duration(time.Hour),
 	}
 	s := o.GlobalSettings()
 	require.Equal(t, merge.TSMGlobalSettings{
 		ReplicaLabels: []string{testReplicaLabel}, Deduplication: DeduplicationChain, MaxSamples: 7,
 		QueryTimeout: time.Second, MaxConcurrentQueries: DefaultMaxConcurrentQueries, MaxFetchedSeries: 8,
-		MaxFetchedSamples: 9,
+		MaxFetchedSamples: 9, RawCacheWindow: time.Hour,
 	}, s)
 	s.ReplicaLabels[0] = metricNameLabel
 	require.Equal(t, testReplicaLabel, o.ReplicaLabels[0])

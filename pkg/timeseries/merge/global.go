@@ -41,4 +41,6 @@ type TSMGlobalSettings struct {
 	MaxFetchedSamples    int64
 	// MaxResponseBytes bounds each member's raw series response
 	MaxResponseBytes int64
+	// RawCacheWindow is how far back from now members' raw series are cached
+	RawCacheWindow time.Duration
 }

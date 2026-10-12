@@ -22,19 +22,20 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	tsmql "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/promql"
+	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/failures"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
-	"github.com/trickstercache/trickster/v2/pkg/proxy/params"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 
 	"github.com/prometheus/prometheus/promql"
@@ -47,6 +48,9 @@ const (
 	timeoutParam         = "timeout"
 	// globalSubqueryStep is the step of a subquery that names none, Prometheus's default evaluation interval
 	globalSubqueryStep = time.Minute
+	// globalLookback is how far back the engine looks for a sample, Prometheus's default, and so how far
+	// back a sample arriving late can still change a result
+	globalLookback = 5 * time.Minute
 	// maxGlobalRangePoints is the most steps a range query may evaluate, as Prometheus allows
 	maxGlobalRangePoints = 11000
 	// statusClientClosedRequest is the status Prometheus answers a canceled query with
@@ -72,8 +76,13 @@ type globalEvaluator struct {
 	// cached answers from the ALB's cache when it keeps one, and members lists what its misses read
 	cached  *cachedGlobal
 	members func() backends.TSMGlobalRequest
-	// rangeCacheControl lets shared caches keep a complete range result for the ALB's timeseries TTL
-	rangeCacheControl string
+	// raw keeps members' raw series in the ALB's cache, so evaluations read members only for what it lacks
+	raw *global.RawCache
+	// ttl is how long a complete result stays cached once the samples it reads have all arrived, which
+	// they may not have within the volatile window of now
+	ttl            time.Duration
+	volatileWindow time.Duration
+	volatilePoints int
 }
 
 // NewTSMGlobalEvaluator returns an evaluator running PromQL over a TSM ALB's raw member series, keeping
@@ -82,8 +91,12 @@ func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings,
 	results backends.TSMGlobalCache,
 ) (backends.TSMGlobalEvaluator, error) {
 	e := newGlobalEvaluator(settings)
-	if results.Backend != nil {
-		e.rangeCacheControl = sharedMaxAge(time.Duration(results.Backend.TimeseriesTTL))
+	if o := results.Backend; o != nil {
+		e.ttl, e.volatileWindow = time.Duration(o.TimeseriesTTL), time.Duration(o.VolatileWindow)
+		e.volatilePoints = o.VolatileWindowPoints
+		if results.Cache != nil {
+			e.raw = e.newRawCache(results)
+		}
 	}
 	if results.Cache == nil || results.Backend == nil || results.Members == nil {
 		return e, nil
@@ -96,10 +109,32 @@ func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings,
 	return e, nil
 }
 
+// newRawCache returns a cache of members' raw series in the ALB's cache, keeping for its TTL what's within
+// its raw cache window and older than the volatile window: the ALB's when it sets one, else each member's
+func (e *globalEvaluator) newRawCache(results backends.TSMGlobalCache) *global.RawCache {
+	name := e.settings.Name
+	opts := global.RawCacheOptions{
+		Name:          name,
+		TTL:           e.ttl,
+		Window:        e.settings.RawCacheWindow,
+		MaxSeries:     int64(e.settings.MaxFetchedSeries), MaxSamples: e.settings.MaxFetchedSamples,
+		MaxResponseBytes: e.settings.MaxResponseBytes,
+		Observe: func(status cachestatus.LookupStatus) {
+			metrics.ALBGlobalRawReads.WithLabelValues(name, status.String()).Inc()
+		},
+	}
+	if results.Backend.HasVolatileWindow() {
+		volatile := e.volatileWindow
+		opts.VolatileWindow = &volatile
+	}
+	return global.NewRawCache(results.Cache, opts)
+}
+
 func newGlobalEvaluator(settings merge.TSMGlobalSettings) *globalEvaluator {
 	e := &globalEvaluator{settings: settings, engine: promql.NewEngine(promql.EngineOpts{
 		MaxSamples:               settings.MaxSamples,
 		Timeout:                  settings.QueryTimeout,
+		LookbackDelta:            globalLookback,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return globalSubqueryStep.Milliseconds() },
 		EnableAtModifier:         true,
 		EnableNegativeOffset:     true,
@@ -112,23 +147,66 @@ func newGlobalEvaluator(settings merge.TSMGlobalSettings) *globalEvaluator {
 }
 
 // Handles reports whether r is an instant or range query, which the evaluator answers.
-func (e *globalEvaluator) Handles(r *http.Request) bool {
-	return strings.HasSuffix(r.URL.Path, APIPath+mnQuery) || strings.HasSuffix(r.URL.Path, APIPath+mnQueryRange)
+func (*globalEvaluator) Handles(r *http.Request) bool {
+	return globalRoute(r) != ""
 }
 
-// ServeTSMGlobal answers a query from the ALB's cache, evaluating over every member's deduplicated raw
-// series only what the cache lacks; without a cache, every query is evaluated.
+// ServeTSMGlobal answers a query from the ALB's cache, evaluating it over every member's deduplicated raw
+// series when the cache lacks it; without a cache, every query is evaluated.
 func (e *globalEvaluator) ServeTSMGlobal(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) {
+	route := globalRoute(r)
+	if route == "" {
+		failures.HandleNotFound(w, r)
+		return
+	}
+	// whatever prefix reached the ALB, members' path settings and the cache see the query's own path
+	r = r.Clone(r.Context())
+	r.URL.Path, r.URL.RawPath = route, ""
 	if e.cached != nil {
-		e.cached.ServeHTTP(w, r)
+		e.cached.serve(w, r, req)
 		return
 	}
 	e.evaluate(w, r, req)
 }
 
-// serveOrigin evaluates a cache miss over the ALB's current members
+// serveOrigin evaluates a miss over the pool snapshot its key's namespace came from; the request that
+// started it owns it, so its client's cancellation cancels it
 func (e *globalEvaluator) serveOrigin(w http.ResponseWriter, r *http.Request) {
-	e.evaluate(w, r, e.members())
+	owner := e.cached.owner(r)
+	if owner == nil {
+		// no client's request, as a revalidation, reads the current pool, kept only under its own namespace
+		req := e.members()
+		if !e.cached.keyedFor(r, req.Namespace) {
+			w = &noStoreWriter{ResponseWriter: w}
+		}
+		e.evaluate(w, r, req)
+		return
+	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	defer context.AfterFunc(owner.ctx, cancel)()
+	e.evaluate(w, r.WithContext(ctx), owner.req)
+}
+
+// noStoreWriter answers with Cache-Control no-store, whatever the evaluation allowed
+type noStoreWriter struct {
+	http.ResponseWriter
+	wrote bool
+}
+
+func (n *noStoreWriter) WriteHeader(status int) {
+	if !n.wrote {
+		n.wrote = true
+		n.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
+	}
+	n.ResponseWriter.WriteHeader(status)
+}
+
+func (n *noStoreWriter) Write(p []byte) (int, error) {
+	if !n.wrote {
+		n.WriteHeader(http.StatusOK)
+	}
+	return n.ResponseWriter.Write(p)
 }
 
 // evaluate answers r by evaluating its query over req's members, recording the evaluation's metrics
@@ -139,39 +217,61 @@ func (e *globalEvaluator) evaluate(w http.ResponseWriter, r *http.Request, req b
 	metrics.ALBGlobalEvaluationDuration.WithLabelValues(e.settings.Name).Observe(time.Since(start).Seconds())
 }
 
+// reject answers a query whose parameters are invalid, as an evaluation of it would
+func (e *globalEvaluator) reject(w http.ResponseWriter, err error) {
+	global.WriteError(w, http.StatusBadRequest, global.ErrorTypeBadData, err, nil)
+	metrics.ALBGlobalEvaluations.WithLabelValues(e.settings.Name, global.ErrorTypeBadData).Inc()
+}
+
+// partial reports whether q's evaluation answers from the members it can read when others fail
+func (e *globalEvaluator) partial(q globalQuery) bool {
+	if q.partial != nil {
+		return *q.partial
+	}
+	return e.settings.PartialResponse
+}
+
+// timeout returns q's evaluation timeout: the ALB's, or the request's when that is shorter
+func (e *globalEvaluator) timeout(q globalQuery) time.Duration {
+	if t := e.settings.QueryTimeout; q.timeout <= 0 || (t > 0 && t <= q.timeout) {
+		return t
+	}
+	return q.timeout
+}
+
+// cacheControl lets shared caches keep q's complete result for the ALB's time series TTL, or only
+// briefly while it reaches into the recent past, where samples may still arrive
+func (e *globalEvaluator) cacheControl(q globalQuery, now time.Time) string {
+	brief := instantSharedMaxAge
+	if e.ttl > 0 {
+		brief = min(brief, e.ttl)
+	}
+	window := max(globalLookback, e.volatileWindow, time.Duration(e.volatilePoints)*q.step)
+	if last := q.last(); e.ttl <= 0 || last.IsZero() || last.After(now.Add(-window)) {
+		return sharedMaxAge(brief)
+	}
+	return sharedMaxAge(e.ttl)
+}
+
 // serve answers r and returns the outcome its metrics record: success, partial, or the error type
 func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) string {
 	fail := func(status int, errorType string, err error, warnings []string) string {
 		global.WriteError(w, status, errorType, err, warnings)
 		return errorType
 	}
-	qp, _, _ := params.GetRequestValues(r)
-	query := qp.Get(upQuery)
-	if query == "" {
-		return fail(http.StatusBadRequest, global.ErrorTypeBadData,
-			fmt.Errorf("%w: %s is required", errGlobalBadData, upQuery), nil)
+	start := time.Now()
+	q, err := parseGlobalQuery(r)
+	if err != nil {
+		return fail(http.StatusBadRequest, global.ErrorTypeBadData, err, nil)
 	}
-	partial := e.settings.PartialResponse
-	if v, err := strconv.ParseBool(qp.Get(partialResponseParam)); err == nil {
-		partial = v
-	}
+	partial := e.partial(q)
 	members, warnings, err := globalMembers(e.settings.Name, req, partial)
 	if err != nil {
 		return fail(http.StatusServiceUnavailable, global.ErrorTypeUnavailable, err, warnings)
 	}
 	// the query timeout includes the wait for a free evaluation slot
-	timeout := e.settings.QueryTimeout
-	if v := qp.Get(timeoutParam); v != "" {
-		d, err := parseDuration(v)
-		if err != nil {
-			return fail(http.StatusBadRequest, global.ErrorTypeBadData, fmt.Errorf("%w: %w", errGlobalBadData, err), nil)
-		}
-		if timeout <= 0 || d < timeout {
-			timeout = d
-		}
-	}
 	ctx := r.Context()
-	if timeout > 0 {
+	if timeout := e.timeout(q); timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, timeout)
 		defer cancel()
@@ -197,16 +297,21 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 	ctx = global.WithBudget(global.WithRequest(ctx, r), budget)
 	queryable := global.NewQueryable(members, e.settings.ReplicaLabels, e.settings.Deduplication, partial,
 		e.memberFailed)
-	qry, err := e.newQuery(ctx, r, qp.Get, queryable, query)
+	if e.raw != nil {
+		queryable.WithRawCache(e.raw)
+		ctx = global.WithKeyHeaders(ctx, keyHeaders(r, req))
+	}
+	qry, err := e.newQuery(ctx, q, queryable)
 	if err != nil {
-		return fail(http.StatusBadRequest, global.ErrorTypeBadData, err, warnings)
+		return fail(http.StatusBadRequest, global.ErrorTypeBadData, fmt.Errorf("%w: %w", errGlobalBadData, err),
+			warnings)
 	}
 	defer qry.Close()
 	res := qry.Exec(ctx)
 	partialResult := len(warnings) > 0 || slices.ContainsFunc(res.Warnings.AsErrors(), func(err error) bool {
 		return errors.Is(err, global.ErrMemberUnavailable)
 	})
-	resultWarnings, infos := res.Warnings.AsStrings(query, 0, 0)
+	resultWarnings, infos := res.Warnings.AsStrings(q.query, 0, 0)
 	slices.Sort(resultWarnings)
 	slices.Sort(infos)
 	warnings = append(warnings, resultWarnings...)
@@ -215,63 +320,47 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 		return fail(status, errorType, res.Err, warnings)
 	}
 	value := res.Value
-	if limit, err := strconv.Atoi(qp.Get(upLimit)); err == nil && limit > 0 {
+	if q.limit > 0 {
 		var truncated bool
-		if value, truncated = limitSeries(value, limit); truncated {
+		if value, truncated = limitSeries(value, q.limit); truncated {
 			warnings = append(warnings, globalLimitWarning)
 		}
 	}
 	result, outcome := globalResultHeader, globalOutcomeSuccess
-	switch {
-	case partialResult:
+	if partialResult {
 		result, outcome = globalPartialResultHeader, globalOutcomePartial
 		// a result missing a member's series is only true until the member returns
 		w.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
-	case !strings.HasSuffix(r.URL.Path, APIPath+mnQueryRange):
-		w.Header().Set(headers.NameCacheControl, sharedMaxAge(instantSharedMaxAge))
-	case e.rangeCacheControl != "":
-		w.Header().Set(headers.NameCacheControl, e.rangeCacheControl)
+	} else {
+		w.Header().Set(headers.NameCacheControl, e.cacheControl(q, start))
 	}
 	w.Header().Set(headers.NameTricksterResult, result)
 	global.WriteResult(w, value, warnings, infos)
 	return outcome
 }
 
-// newQuery prepares the instant or range query r names
-func (e *globalEvaluator) newQuery(ctx context.Context, r *http.Request, get func(string) string,
-	queryable *global.Queryable, query string,
+// newQuery prepares q's instant or range query
+func (e *globalEvaluator) newQuery(ctx context.Context, q globalQuery, queryable *global.Queryable,
 ) (promql.Query, error) {
 	opts := promql.NewPrometheusQueryOpts(false, 0)
-	if !strings.HasSuffix(r.URL.Path, APIPath+mnQueryRange) {
-		ts := time.Now()
-		if v := get(upTime); v != "" {
-			var err error
-			if ts, err = parseTime(v); err != nil {
-				return nil, fmt.Errorf("%w: %w", errGlobalBadData, err)
-			}
-		}
-		return e.engine.NewInstantQuery(ctx, queryable, opts, query, ts)
+	if q.isRange {
+		return e.engine.NewRangeQuery(ctx, queryable, opts, q.query, q.start, q.end, q.step)
 	}
-	start, err := parseTime(get(upStart))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", errGlobalBadData, upStart, err)
+	at := q.at
+	if at.IsZero() {
+		at = time.Now()
 	}
-	end, err := parseTime(get(upEnd))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", errGlobalBadData, upEnd, err)
+	return e.engine.NewInstantQuery(ctx, queryable, opts, q.query, at)
+}
+
+// keyHeaders returns the headers that partition r's cached raw series besides Authorization: the tenant
+// headers, those r's route keys results by, and req's members' own
+func keyHeaders(r *http.Request, req backends.TSMGlobalRequest) []string {
+	names := appendHeaders(slices.Clone(globalTenantHeaders), req.KeyHeaders)
+	if rsc := request.GetResources(r); rsc != nil && rsc.PathConfig != nil {
+		names = appendHeaders(names, rsc.PathConfig.CacheKeyHeaders)
 	}
-	step, err := parseDuration(get(upStep))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", errGlobalBadData, upStep, err)
-	}
-	if end.Before(start) {
-		return nil, fmt.Errorf("%w: end timestamp must not be before start time", errGlobalBadData)
-	}
-	if end.Sub(start)/step > maxGlobalRangePoints {
-		return nil, fmt.Errorf("%w: exceeded maximum resolution of %d points per timeseries", errGlobalBadData,
-			maxGlobalRangePoints)
-	}
-	return e.engine.NewRangeQuery(ctx, queryable, opts, query, start, end, step)
+	return names
 }
 
 // memberFailed counts and logs a member read that failed, unless the client canceled it

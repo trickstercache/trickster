@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // Series APIs name the transports a backend can serve its raw series over, for TSM global evaluation
@@ -39,6 +40,10 @@ const (
 
 	schemeHTTP  = "http"
 	schemeHTTPS = "https"
+
+	// SeriesVolatileWindow is how far back from now a mimir or thanos backend's raw series may still change,
+	// as its replicas and ingesters receive samples late
+	SeriesVolatileWindow = 5 * time.Minute
 )
 
 var (
@@ -71,6 +76,15 @@ func (o *Options) EffectiveSeriesAPI() string {
 		return SeriesAPIStoreAPI
 	}
 	return ""
+}
+
+// EffectiveSeriesVolatileWindow returns how far back from now the backend's raw series may still change:
+// SeriesVolatileWindow for the mimir and thanos flavors, and none for any other backend
+func (o *Options) EffectiveSeriesVolatileWindow() time.Duration {
+	if o != nil && (o.Flavor == FlavorMimir || o.Flavor == FlavorThanos) {
+		return SeriesVolatileWindow
+	}
+	return 0
 }
 
 // SeriesEndpointURL returns where the backend serves its series API: series_endpoint when set,

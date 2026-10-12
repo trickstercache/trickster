@@ -17,6 +17,8 @@
 package tsm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"slices"
 
@@ -82,7 +84,59 @@ func (h *handler) globalMembers() backends.TSMGlobalRequest {
 	if p == nil {
 		return backends.TSMGlobalRequest{}
 	}
-	return globalRequest(p.Targets(), p.ConfiguredTargets())
+	return h.globalRequest(p, p.Targets())
+}
+
+// globalRequest lists what an evaluation over the live members reads, under the pool's namespace
+func (h *handler) globalRequest(p pool.Pool, live pool.Targets) backends.TSMGlobalRequest {
+	req := globalRequest(live, p.ConfiguredTargets())
+	id := h.globalIdentity(p)
+	req.Namespace, req.KeyHeaders = id.namespace, id.keyHeaders
+	return req
+}
+
+// globalIdentity is a pool's namespace for cached global results and its members' cache key headers;
+// it is computed once per pool, so it follows membership, not health
+type globalIdentity struct {
+	pool       pool.Pool
+	namespace  string
+	keyHeaders []string
+}
+
+// globalIdentity returns p's namespace, computing it the first time p is seen; building a member's source
+// reads only its configuration, so no member is contacted
+func (h *handler) globalIdentity(p pool.Pool) *globalIdentity {
+	if id := h.identity.Load(); id != nil && id.pool == p {
+		return id
+	}
+	d := sha256.New()
+	var keyHeaders []string
+	for _, t := range p.ConfiguredTargets() {
+		if t == nil {
+			continue
+		}
+		d.Write([]byte(t.Name()))
+		d.Write([]byte{0})
+		if provider, ok := t.Backend().(backends.TSMGlobalSourceProvider); ok {
+			if source, err := provider.TSMGlobalSource(); err == nil {
+				d.Write([]byte(source.Identity()))
+				for _, name := range source.KeyHeaders() {
+					if !slices.Contains(keyHeaders, name) {
+						keyHeaders = append(keyHeaders, name)
+					}
+				}
+			}
+		}
+		d.Write([]byte{1})
+	}
+	slices.Sort(keyHeaders)
+	for _, name := range keyHeaders {
+		d.Write([]byte(name))
+		d.Write([]byte{0})
+	}
+	id := &globalIdentity{pool: p, namespace: hex.EncodeToString(d.Sum(nil)[:16]), keyHeaders: keyHeaders}
+	h.identity.Store(id)
+	return id
 }
 
 // globalRequest lists the sources of the live members in configured order, then any live member the

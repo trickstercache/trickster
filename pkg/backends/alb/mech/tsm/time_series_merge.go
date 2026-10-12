@@ -86,6 +86,8 @@ type handler struct {
 	// cache and backendOptions keep global evaluations' results; they are set before requests arrive
 	cache          cache.Cache
 	backendOptions *bo.Options
+	// identity is the current pool's namespace for cached global results
+	identity atomic.Pointer[globalIdentity]
 }
 
 type mergeFinalizer interface {
@@ -343,7 +345,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if evaluator.Handles(r) {
-			evaluator.ServeTSMGlobal(w, r, globalRequest(hl, p.ConfiguredTargets()))
+			evaluator.ServeTSMGlobal(w, r, h.globalRequest(p, hl))
 			return
 		}
 	}

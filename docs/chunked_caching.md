@@ -24,13 +24,15 @@ fs1:
 
 `timeseries_chunk_factor` determines the maximum extent of timerange chunks, and `byterange_chunk_size` determines the maximum size of byterange chunks. See [Detail](#detail) for more information.
 
+Changes to any of these settings take effect on a configuration reload, without a restart.
+
 ## Detail
 
 ### Timeseries
 
 Timeseries chunking splits the timeseries to be cached into parts with the same *duration*, but not necessarily the same literal size.
 
-- Determine a *chunk duration* by multiplying the timerange step by `timerange_chunk_factor` (default 420)
+- Determine a *chunk duration* by multiplying the timerange step by `timeseries_chunk_factor` (default 420)
 - Determine the smallest possible extent that is aligned to the epoch along the chunk duration, while containing the entire timeseries
 - To write: Write each chunk size subextent under a subkey
 - To read: Read each subkey and merge the timeseries results
@@ -44,8 +46,9 @@ Byterange chunking splits the byterange into pieces with the same literal size. 
 - Failure to determine a range on write results in an error
 - Failure to determine a range on read will read until the query fails
 - Determine a maximum range aligned along the chunk size that contains the entire byterange
-- To write: Write each chunk size range with `RangeParts` of all provided ranges cropped to that chunk range, under a subkey
-- To read: Read each subkey and reconstitute a body from `RangeParts`, if able
+- To write: Write each chunk size range with `RangeParts` of all provided ranges cropped to that chunk range, under a subkey. A chunk that falls in a gap between cached ranges holds nothing and isn't written.
+- To read: Read only the subkeys covering the requested range and reconstitute a body from `RangeParts`. Cached ranges outside those chunks stay in the cache and remain listed in the meta document, so a later write leaves them intact.
+- A chunk that was evicted or expired is treated as a gap: its bytes are fetched from the origin again and rewritten, rather than served from the remaining chunks.
 
 ## Full Example
 

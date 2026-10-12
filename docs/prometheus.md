@@ -88,7 +88,9 @@ backends:
 The `cloudwatch` and `amp` flavors limit the backend to the routes the service supports and
 answer every other path themselves. See [AWS Integration](./aws.md) for what
 each one sets. The `mimir` and `thanos` flavors change no routes; they select
-the [series source](#series-sources) that TSM global evaluation reads.
+the [series source](#series-sources) that TSM global evaluation reads, and that
+evaluation reads their newest 5 minutes of samples again each time, since
+their replicas and ingesters may still be receiving them.
 
 ### Series Sources
 

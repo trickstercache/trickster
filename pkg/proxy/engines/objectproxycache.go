@@ -37,6 +37,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/forwarding"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ranges/byterange"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -88,6 +89,10 @@ func handleCachePartialHit(pr *proxyRequest) error {
 
 		d2.ParsePartialContentBody(resp, b)
 		d.LoadRangeParts()
+		// a chunked read that loaded no stored bytes leaves no parts, and Merge into a nil map drops the fetch
+		if d.RangeParts == nil {
+			d.RangeParts = make(byterange.MultipartByteRanges, len(d2.RangeParts))
+		}
 
 		d2.Ranges = d2.RangeParts.Ranges()
 

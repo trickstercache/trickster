@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -62,6 +61,7 @@ var (
 // RemoteRead reads a member's raw series over the Prometheus remote-read protocol, preferring
 // streamed chunks over samples.
 type RemoteRead struct {
+	SourceIdentity
 	endpoint string
 	client   *http.Client
 	paths    po.List
@@ -111,24 +111,20 @@ func (s *RemoteRead) read(ctx context.Context, mint, maxt int64, hints *storage.
 		reader = &limitedReader{r: resp.Body, remaining: limit}
 	}
 	if strings.HasPrefix(resp.Header.Get(headers.NameContentType), contentTypeStreamed) {
-		return decodeChunked(reader, budget)
+		return decodeChunked(reader, budget, mint, maxt)
 	}
-	return decodeSamples(reader, budget)
+	return decodeSamples(reader, budget, mint, maxt)
 }
+
+func (s *RemoteRead) sentHeaders(in *http.Request) http.Header { return forwardedHeaders(s.paths, in) }
 
 // setHeaders gives out the client request's end-to-end headers and the configured request headers
 // for its path, then the remote-read protocol's own
 func (s *RemoteRead) setHeaders(out, in *http.Request) {
-	if in != nil {
-		out.Header = in.Header.Clone()
-		headers.StripClientHeaders(out.Header)
-		for k := range out.Header {
-			if isEntityHeader(k) {
-				out.Header.Del(k)
-			}
-		}
-		if pc := s.paths.Match(in.Method, in.URL.Path); pc != nil && len(pc.RequestHeaders) > 0 {
-			headers.UpdateHeaders(out.Header, pc.RequestHeaders)
+	out.Header = s.sentHeaders(in)
+	for k := range out.Header {
+		if isEntityHeader(k) {
+			out.Header.Del(k)
 		}
 	}
 	out.Header.Set(headers.NameContentEncoding, contentEncodingSnappy)
@@ -181,12 +177,13 @@ func encodeReadRequest(mint, maxt int64, hints *storage.SelectHints, matchers []
 	return snappy.Encode(nil, data), nil
 }
 
-// decodeChunked reads frames of a uvarint length, big-endian CRC-32C and ChunkedReadResponse;
-// a series too large for one frame continues in the next
-func decodeChunked(r io.Reader, budget *Budget) ([]storage.Series, error) {
+// decodeChunked reads frames of a uvarint length, big-endian CRC-32C and ChunkedReadResponse, a series
+// continuing across frames; the budget counts what's from mint to maxt
+func decodeChunked(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Series, error) {
 	br := bufio.NewReader(r)
 	var out []storage.Series
 	var last *chunkSeries
+	var lastCounted bool
 	var frame []byte
 	var builder labels.ScratchBuilder
 	for {
@@ -197,8 +194,12 @@ func decodeChunked(r io.Reader, budget *Budget) ([]storage.Series, error) {
 		if err != nil {
 			return nil, fmt.Errorf("%w: frame length: %w", errRemoteRead, err)
 		}
+		// a frame over either limit is refused before its buffer is allocated
 		if size > maxFrameBytes {
-			return nil, fmt.Errorf("%w: frame of %d bytes exceeds %d", errRemoteRead, size, maxFrameBytes)
+			return nil, fmt.Errorf("%w: a remote read frame of %d bytes exceeds %d", ErrFetchLimit, size, maxFrameBytes)
+		}
+		if limit := budget.responseLimit(); limit > 0 && size > uint64(limit) {
+			return nil, fmt.Errorf("%w: a remote read frame of %d bytes exceeds %d", ErrFetchLimit, size, limit)
 		}
 		var crc [4]byte
 		if _, err := io.ReadFull(br, crc[:]); err != nil {
@@ -222,21 +223,31 @@ func decodeChunked(r io.Reader, budget *Budget) ([]storage.Series, error) {
 			lset := cs.ToLabels(&builder, nil)
 			var samples int64
 			iterables := make([]chunkenc.Iterable, len(cs.Chunks))
+			spans := make([]span, len(cs.Chunks))
 			for i, c := range cs.Chunks {
 				chk, err := decodeChunk(c)
 				if err != nil {
 					return nil, err
 				}
-				samples += int64(chk.NumSamples())
+				spans[i] = span{mint: c.MinTimeMs, maxt: c.MaxTimeMs}
+				n, err := samplesWithin(chk, spans[i], mint, maxt)
+				if err != nil {
+					return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
+				}
+				samples += n
 				iterables[i] = chk
 			}
-			var newSeries int64
 			if last != nil && labels.Equal(last.lset, lset) {
 				last.chunks = append(last.chunks, iterables...)
+				last.spans = append(last.spans, spans...)
 			} else {
-				last = &chunkSeries{lset: lset, chunks: iterables}
+				last = &chunkSeries{lset: lset, chunks: iterables, spans: spans}
 				out = append(out, last)
-				newSeries = 1
+				lastCounted = false
+			}
+			var newSeries int64
+			if samples > 0 && !lastCounted {
+				newSeries, lastCounted = 1, true
 			}
 			if err := budget.add(newSeries, samples); err != nil {
 				return nil, err
@@ -259,15 +270,16 @@ func decodeChunk(c prompb.Chunk) (chunkenc.Chunk, error) {
 	default:
 		return nil, fmt.Errorf("%w: unsupported chunk encoding %s", errRemoteRead, c.Type)
 	}
-	chk, err := chunkenc.FromData(enc, c.Data)
+	chk, err := newChunk(enc, c.Data)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
 	}
 	return chk, nil
 }
 
-// decodeSamples reads a snappy-compressed ReadResponse of samples
-func decodeSamples(r io.Reader, budget *Budget) ([]storage.Series, error) {
+// decodeSamples reads a snappy-compressed ReadResponse of samples; the budget counts what lies from mint
+// to maxt
+func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Series, error) {
 	compressed, err := io.ReadAll(r)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
@@ -292,18 +304,27 @@ func decodeSamples(r io.Reader, budget *Budget) ([]storage.Series, error) {
 	for _, result := range res.Results {
 		for _, ts := range result.Timeseries {
 			samples := mergeSamples(ts)
-			if err := budget.add(1, int64(len(samples))); err != nil {
+			var n, series int64
+			for _, s := range samples {
+				if s.t >= mint && s.t <= maxt {
+					n++
+				}
+			}
+			if n > 0 {
+				series = 1
+			}
+			if err := budget.add(series, n); err != nil {
 				return nil, err
 			}
-			out = append(out, storage.NewListSeries(ts.ToLabels(&builder, nil), samples))
+			out = append(out, &sampleSeries{lset: ts.ToLabels(&builder, nil), samples: samples})
 		}
 	}
 	return out, nil
 }
 
 // mergeSamples interleaves a series' float and histogram samples, each already in time order
-func mergeSamples(ts *prompb.TimeSeries) []chunks.Sample {
-	out := make([]chunks.Sample, 0, len(ts.Samples)+len(ts.Histograms))
+func mergeSamples(ts *prompb.TimeSeries) []sample {
+	out := make([]sample, 0, len(ts.Samples)+len(ts.Histograms))
 	f, h := 0, 0
 	for f < len(ts.Samples) || h < len(ts.Histograms) {
 		if h == len(ts.Histograms) || (f < len(ts.Samples) && ts.Samples[f].Timestamp <= ts.Histograms[h].Timestamp) {

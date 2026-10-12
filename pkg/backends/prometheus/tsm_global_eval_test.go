@@ -60,6 +60,7 @@ var errGlobalTestMember = errors.New("member down")
 
 // memberSource serves a member's in-memory series as a raw series source
 type memberSource struct {
+	global.SourceIdentity
 	store    presenceStore
 	err      error
 	warnings annotations.Annotations
@@ -373,7 +374,7 @@ func TestGlobalErrorType(t *testing.T) {
 		context.Canceled: global.ErrorTypeCanceled,
 		promengine.ErrStorage{Err: errGlobalTestMember}:  global.ErrorTypeInternal,
 		promengine.ErrStorage{Err: global.ErrFetchLimit}: global.ErrorTypeExecution,
-		errGlobalTestMember:                              global.ErrorTypeExecution,
+		errGlobalTestMember: global.ErrorTypeExecution,
 	} {
 		_, got := globalErrorType(err)
 		require.Equal(t, want, got, err.Error())

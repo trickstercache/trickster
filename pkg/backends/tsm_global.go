@@ -29,6 +29,11 @@ import (
 type TSMGlobalSource interface {
 	// SeriesAPI names the transport, such as remote_read
 	SeriesAPI() string
+	// Identity digests what decides the source's answers besides the query: where and how it reads them,
+	// with the headers and credentials it sends
+	Identity() string
+	// KeyHeaders lists the request headers the member's configuration keys its cached answers by
+	KeyHeaders() []string
 }
 
 // TSMGlobalSourceProvider is implemented by backends that serve their raw series to TSM global evaluation.
@@ -54,6 +59,11 @@ type TSMGlobalUnavailable struct {
 type TSMGlobalRequest struct {
 	Members     []TSMGlobalMember
 	Unavailable []TSMGlobalUnavailable
+	// Namespace digests the configured members, in order, with each one's Identity; it changes with
+	// membership and configuration, never health, and cached results are kept under it
+	Namespace string
+	// KeyHeaders lists every configured member's KeyHeaders, which cached results are keyed by too
+	KeyHeaders []string
 }
 
 // TSMGlobalEvaluator answers the requests it handles by evaluating each complete query once over the

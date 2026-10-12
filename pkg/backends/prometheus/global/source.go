@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 
@@ -35,16 +36,39 @@ import (
 // Source reads a member's raw series for the Prometheus engine.
 type Source interface {
 	backends.TSMGlobalSource
+	// VolatileWindow is how far back from now the member's samples may still change, so a cache reads them again
+	VolatileWindow() time.Duration
 	// Select returns the member's series that match every matcher, with their samples from mint to maxt,
 	// and any warnings the member gave that its answer may be incomplete
 	Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
 		matchers ...*labels.Matcher) ([]storage.Series, annotations.Annotations, error)
 }
 
+// SourceIdentity is what a source reports about its answers besides the query: what decides them, and
+// how long they may still change.
+type SourceIdentity struct {
+	// ID digests where and how the source reads, with the headers and credentials it sends
+	ID string
+	// Headers are the request headers the member's configuration keys its cached answers by
+	Headers []string
+	// Volatile is how far back from now the member's samples may still change
+	Volatile time.Duration
+}
+
+// Identity returns the digest of where and how the source reads.
+func (i SourceIdentity) Identity() string { return i.ID }
+
+// KeyHeaders returns the request headers the member's configuration keys its cached answers by.
+func (i SourceIdentity) KeyHeaders() []string { return i.Headers }
+
+// VolatileWindow returns how far back from now the member's samples may still change.
+func (i SourceIdentity) VolatileWindow() time.Duration { return i.Volatile }
+
 // ErrFetchLimit is returned when an evaluation retrieves more raw data than its budget allows.
 var ErrFetchLimit = errors.New("tsm global evaluation exceeded its raw data limit")
 
-// Budget bounds the raw data one evaluation retrieves from all of its sources; zero limits are unlimited.
+// Budget bounds the raw series and samples one evaluation reads within its selectors' ranges, from its
+// sources or the raw cache; zero limits are unlimited.
 type Budget struct {
 	MaxSeries        int64
 	MaxSamples       int64
@@ -52,9 +76,11 @@ type Budget struct {
 
 	series  atomic.Int64
 	samples atomic.Int64
+	// share, set on a shared read's own budget, charges its samples to every evaluation it reads for
+	share func(samples int64) error
 }
 
-// add counts retrieved series and samples, failing once either exceeds its limit
+// add counts series that have samples in range and the samples, failing once either exceeds its limit
 func (b *Budget) add(series, samples int64) error {
 	if b == nil {
 		return nil
@@ -64,6 +90,9 @@ func (b *Budget) add(series, samples int64) error {
 	}
 	if total := b.samples.Add(samples); b.MaxSamples > 0 && total > b.MaxSamples {
 		return fmt.Errorf("%w: more than %d samples", ErrFetchLimit, b.MaxSamples)
+	}
+	if b.share != nil && samples > 0 {
+		return b.share(samples)
 	}
 	return nil
 }

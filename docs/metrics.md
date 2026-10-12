@@ -311,11 +311,11 @@ The following metrics are available for ALBs that use [TSM global evaluation](./
   * labels:
     * `alb_name` - the name of the configured ALB backend
 
-* `trickster_alb_global_fetched_series_total` (Counter) - The number of raw series TSM global evaluations read from pool members, before deduplication
+* `trickster_alb_global_fetched_series_total` (Counter) - The number of raw series TSM global evaluations read from pool members or the raw series cache, before deduplication
   * labels:
     * `alb_name` - the name of the configured ALB backend
 
-* `trickster_alb_global_fetched_samples_total` (Counter) - The number of raw samples TSM global evaluations read from pool members, before deduplication
+* `trickster_alb_global_fetched_samples_total` (Counter) - The number of raw samples TSM global evaluations read from pool members or the raw series cache, before deduplication
   * labels:
     * `alb_name` - the name of the configured ALB backend
 
@@ -323,6 +323,11 @@ The following metrics are available for ALBs that use [TSM global evaluation](./
   * labels:
     * `alb_name` - the name of the configured ALB backend
     * `member` - the name of the pool member backend
+
+* `trickster_alb_global_raw_reads_total` (Counter) - The number of raw series reads TSM global evaluations made of pool members, by how the raw series cache answered them
+  * labels:
+    * `alb_name` - the name of the configured ALB backend
+    * `status` - `hit` when only samples within the volatile window were read from the member, `phit` when older samples the cache lacked were read too, `kmiss` when the cache held none, and `proxy-only` when every sample was within the volatile window, or the read couldn't be cached
 
 The following metrics are available when [ALB Autodiscovery](./alb-autodiscovery.md) is configured:
 

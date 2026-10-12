@@ -450,9 +450,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				if truncated(rlo.SeriesCap, cts) {
 					return truncatedResult(), nil
 				}
-				if proxyOnlyWarned(rlo.ProxyOnlyWarning, cts) {
-					return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
-				}
 			} else {
 				if doc == nil || doc.timeseries == nil {
 					err = tpe.ErrEmptyDocumentBody
@@ -470,9 +467,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 					}
 					if truncated(rlo.SeriesCap, cts) {
 						return truncatedResult(), nil
-					}
-					if proxyOnlyWarned(rlo.ProxyOnlyWarning, cts) {
-						return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
 					}
 					// entry was removed and data came from origin; don't inherit the pre-recovery status
 					cacheStatus = status.LookupStatusKeyMiss
@@ -565,9 +559,6 @@ func DeltaProxyCacheRequest(w http.ResponseWriter, r *http.Request, modeler *tim
 				}
 				if truncated(rlo.SeriesCap, mts...) {
 					return truncatedResult(), nil
-				}
-				if proxyOnlyWarned(rlo.ProxyOnlyWarning, mts...) {
-					return &dpcResult{cacheStatus: status.LookupStatusProxyOnly}, nil
 				}
 				doc.Headers = fetchHeaders
 				// Merge the new delta timeseries into the cached timeseries
