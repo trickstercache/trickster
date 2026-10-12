@@ -33,6 +33,7 @@ import (
 	kubecfg "github.com/trickstercache/trickster/v2/pkg/config/kubernetes"
 	"github.com/trickstercache/trickster/v2/pkg/config/listener"
 	"github.com/trickstercache/trickster/v2/pkg/config/mgmt"
+	"github.com/trickstercache/trickster/v2/pkg/config/reserved"
 	disco "github.com/trickstercache/trickster/v2/pkg/discovery/options"
 	yamlencoding "github.com/trickstercache/trickster/v2/pkg/encoding/yaml"
 	fropt "github.com/trickstercache/trickster/v2/pkg/frontend/options"
@@ -44,6 +45,7 @@ import (
 	geoaclopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/acl/options"
 	geolocopts "github.com/trickstercache/trickster/v2/pkg/proxy/geo/locator/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/ipacl"
+	rlopts "github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit/options"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter"
 	rwopts "github.com/trickstercache/trickster/v2/pkg/proxy/request/rewriter/options"
 	acmeopts "github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme/options"
@@ -71,6 +73,8 @@ type Config struct {
 	Listeners listener.Lookup `yaml:"listeners,omitempty"`
 	// IPACLs maps access-list names to their definitions.
 	IPACLs ipacl.Lookup `yaml:"ip_acls,omitempty"`
+	// RateLimiters maps limiter names to their definitions.
+	RateLimiters rlopts.Lookup `yaml:"rate_limiters,omitempty"`
 	// Logging provides configurations that affect logging behavior
 	Logging *lo.Options `yaml:"logging,omitempty"`
 	// AccessLog is the default access and error log configuration, inherited by
@@ -421,11 +425,44 @@ func (c *Config) Clone() *Config {
 	if len(c.IPACLs) > 0 {
 		nc.IPACLs = c.IPACLs.Clone()
 	}
+	nc.RateLimiters = c.RateLimiters.Clone()
+	nc.retargetRateLimiters()
 
 	nc.Kubernetes = c.Kubernetes.Clone()
 	nc.ACME = c.ACME.Clone()
 
 	return nc
+}
+
+// retargetRateLimiters points each attachment at the cloned definition. Backend and listener
+// clones otherwise keep the pre-clone pointer.
+func (c *Config) retargetRateLimiters() {
+	if c == nil {
+		return
+	}
+	for _, opts := range c.Listeners {
+		if opts != nil {
+			opts.RateLimiter = rateLimiterByName(c.RateLimiters, opts.RateLimiterName)
+		}
+	}
+	for _, backend := range c.Backends {
+		if backend == nil {
+			continue
+		}
+		backend.RateLimiter = rateLimiterByName(c.RateLimiters, backend.RateLimiterName)
+		for _, path := range backend.Paths {
+			if path != nil {
+				path.RateLimiter = rateLimiterByName(c.RateLimiters, path.RateLimiterName)
+			}
+		}
+	}
+}
+
+func rateLimiterByName(limits rlopts.Lookup, name string) *rlopts.Options {
+	if name == "" || name == reserved.ReferenceNone {
+		return nil
+	}
+	return limits[name]
 }
 
 // IsStale returns true if the running config is stale versus its sources on disk.

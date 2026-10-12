@@ -505,7 +505,6 @@ services:
     image: trickster-questdb-seed:dev
     build:
       context: ./docker-compose-data/questdb-config/seeding
-      network: host
     env_file:
       - ./docker-compose-data/credentials.env
     environment:

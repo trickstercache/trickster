@@ -243,6 +243,7 @@ type backendDoc struct {
 	AuthenticatorName    string       `yaml:"authenticator_name,omitempty"`
 	GeoACLName           string       `yaml:"geo_acl_name,omitempty"`
 	IPACLName            string       `yaml:"ip_acl_name,omitempty"`
+	RateLimiterName      string       `yaml:"rate_limiter_name,omitempty"`
 	StepAlignment        string       `yaml:"step_alignment,omitempty"`
 	PathRoutingDisabled  bool         `yaml:"path_routing_disabled,omitempty"`
 	PathDefaultsDisabled bool         `yaml:"path_defaults_disabled,omitempty"`

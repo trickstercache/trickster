@@ -160,3 +160,47 @@ func TestSectionCap(t *testing.T) {
 	require.Equal(t, 5, sectionCap(65535, headerLen*4),
 		"a bogus section count cannot drive a large allocation")
 }
+
+func TestMsgAdditionals(t *testing.T) {
+	const target = "node.example.com."
+	addl := &A{
+		Hdr:  RecordHeader{Name: target, Type: TypeA, Class: ClassINET, TTL: 60},
+		Addr: netip.MustParseAddr("10.0.0.2"),
+	}
+	m := &Msg{
+		Response: true, Questions: []Question{testQuestion()},
+		Additional: []Record{addl}, UDPSize: DefaultUDPSize,
+	}
+	b, err := m.Pack()
+	require.NoError(t, err)
+	require.Equal(t, uint16(2), binary.BigEndian.Uint16(b[10:12]), "the record plus EDNS0 OPT")
+
+	got := &Msg{}
+	require.NoError(t, got.Unpack(b))
+	require.Len(t, got.Additional, 2)
+	require.Equal(t, addl, got.Additional[0])
+	opt, ok := got.Additional[1].(*Unknown)
+	require.True(t, ok)
+	require.Equal(t, TypeOPT, opt.Hdr.Type)
+
+	// recount the same three records (A, OPT, A) as one authority record and two additional ones
+	extra, err := packRecord(nil, addl)
+	require.NoError(t, err)
+	b = append(b, extra...)
+	binary.BigEndian.PutUint16(b[8:10], 1)
+	binary.BigEndian.PutUint16(b[10:12], 2)
+	got = &Msg{}
+	require.NoError(t, got.Unpack(b))
+	require.Len(t, got.Additional, 2, "the authority record is skipped")
+
+	// a count past the end of the message ends the scan without failing the answer
+	binary.BigEndian.PutUint16(b[8:10], 0)
+	binary.BigEndian.PutUint16(b[10:12], 9)
+	got = &Msg{}
+	require.NoError(t, got.Unpack(b))
+	require.Len(t, got.Additional, 3)
+	binary.BigEndian.PutUint16(b[8:10], 9)
+	got = &Msg{}
+	require.NoError(t, got.Unpack(b))
+	require.Empty(t, got.Additional)
+}

@@ -198,6 +198,7 @@ func TestCompileWeightedBackendRefs(t *testing.T) {
 	}
 	opts := serviceOpts(t)
 	opts.Defaults.IPACLName = "default-acl"
+	opts.Defaults.RateLimiterName = "default-limit"
 	o, err := Compile(m, opts)
 	require.NoError(t, err)
 	got := decode(t, o.Data)
@@ -216,8 +217,11 @@ func TestCompileWeightedBackendRefs(t *testing.T) {
 	require.Equal(t, "http://stable.shop.svc:80", stable.OriginURL)
 	require.Empty(t, stable.Hosts, "hosts attach to the ALB, not its members")
 	require.Equal(t, "default-acl", alb.IPACLName)
+	require.Equal(t, "default-limit", alb.RateLimiterName)
 	require.Empty(t, stable.IPACLName)
+	require.Empty(t, stable.RateLimiterName)
 	require.Empty(t, got.Backends["kgw--httproute.shop.web_r0_b1"].IPACLName)
+	require.Empty(t, got.Backends["kgw--httproute.shop.web_r0_b1"].RateLimiterName)
 
 	// a rule with no matches answers everything the route admits, and the
 	// ALB's own paths must select the alb handler
@@ -634,6 +638,7 @@ func TestCompileEndpointMode(t *testing.T) {
 	// EndpointSlices, cloned from a template carrying everything the origin would have
 	opts := endpointOpts(t)
 	opts.Defaults.IPACLName = "default-acl"
+	opts.Defaults.RateLimiterName = "default-limit"
 	opts.Defaults.CacheName = "default"
 	opts.Defaults.Timeout = timeconv.Duration(15 * time.Second)
 	m := endpointShape()
@@ -685,7 +690,9 @@ func TestCompileEndpointMode(t *testing.T) {
 	require.Len(t, tmpl.Paths, 2, "the cache split applies to the clones")
 	require.Equal(t, "/", tmpl.Paths[0].Path)
 	require.Equal(t, "default-acl", front.IPACLName)
+	require.Equal(t, "default-limit", front.RateLimiterName)
 	require.Empty(t, tmpl.IPACLName)
+	require.Empty(t, tmpl.RateLimiterName)
 }
 
 func TestCompileEndpointModeProbe(t *testing.T) {
@@ -1743,6 +1750,7 @@ func TestCompileOperatorNameReferences(t *testing.T) {
 	opts.Defaults.ReqRewriterName = "strip-internal"
 	opts.Defaults.AuthenticatorName = "gateway-auth"
 	opts.Defaults.IPACLName = "default-acl"
+	opts.Defaults.RateLimiterName = "default-limit"
 
 	b := emitted(t, simple(), opts)["kgw--httproute.shop.web_r0"]
 	require.NotNil(t, b)
@@ -1752,12 +1760,15 @@ func TestCompileOperatorNameReferences(t *testing.T) {
 	require.Equal(t, "strip-internal", b.ReqRewriterName)
 	require.Equal(t, "gateway-auth", b.AuthenticatorName)
 	require.Equal(t, "default-acl", b.IPACLName)
+	require.Equal(t, "default-limit", b.RateLimiterName)
 
 	// a class list replaces the default; an empty policy name leaves the default
 	over := simple()
-	over.Policies = []ir.Policy{{Name: "p", IPACLName: "class-acl"}}
+	over.Policies = []ir.Policy{{Name: "p", IPACLName: "class-acl", RateLimiterName: "class-limit"}}
 	over.Routes[0].Rules[0].Policy = "p"
-	require.Equal(t, "class-acl", emitted(t, over, opts)["kgw--httproute.shop.web_r0"].IPACLName)
+	replaced := emitted(t, over, opts)["kgw--httproute.shop.web_r0"]
+	require.Equal(t, "class-acl", replaced.IPACLName)
+	require.Equal(t, "class-limit", replaced.RateLimiterName)
 	bare, err := Compile(simple(), serviceOpts(t))
 	require.NoError(t, err)
 	require.NotContains(t, string(bare.Data), "ip_acl_name")
@@ -1771,7 +1782,9 @@ func TestCompileOperatorNameReferences(t *testing.T) {
 	}}
 	docs := emitted(t, mirrored, opts)
 	require.Equal(t, "default-acl", docs[GroupName(g)].IPACLName)
+	require.Equal(t, "default-limit", docs[GroupName(g)].RateLimiterName)
 	require.Empty(t, docs[MirrorName(g)].IPACLName)
+	require.Empty(t, docs[MirrorName(g)].RateLimiterName)
 
 	// they are references, not definitions: the controller emits none of
 	// the objects behind them

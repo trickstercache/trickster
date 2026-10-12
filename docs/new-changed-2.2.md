@@ -36,6 +36,8 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **Chunked Caching Fixes** - `use_cache_chunking: true` is honored from configuration again; since 2.0 it was silently reset to `false` at load. Chunked byterange caching no longer zeroes stored chunks on a partial hit, stores range misses, retries chunks that were evicted rather than serving their bytes as zeros, and no longer truncates bodies when chunks are read concurrently. A configuration reload that changes a memory cache's chunking settings now rebuilds the cache. See [Chunked Caching](./chunked_caching.md).
 
+**SRV Origin Resolution** - A backend can resolve its origin host as a DNS SRV owner name, dialing a target and port from the SRV answer, with failover across targets and tiers. Combined with a rule and a hostname rewriter, one backend can route to any number of origins published in DNS, including ECS, Consul and Nomad services with dynamically assigned ports. See [Origin Resolution via DNS SRV](./origin-resolution.md).
+
 **Idle Connection Timeouts** - HTTP listeners now close a keep-alive connection that waits more than 2 minutes for its next request; until now idle connections were never closed. The new `idle_timeout`, `read_timeout` and `max_header_bytes` listener options tune this. See [Connection Timeouts and Header Size](./configuring.md#connection-timeouts-and-header-size).
 
 ## Security
@@ -44,8 +46,14 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **Forwarded Hops From Trusted Proxies Only** - Trickster now forwards the `Forwarded`, `X-Forwarded-*` and `X-Real-IP` values a request arrived with only when one of the listener's `trusted_proxies` delivered it, appending its own hop; from any other peer the origin receives Trickster's hop alone, so a client cannot hand the origin a forged address. Passthrough paths, which forwarded no prior hops before, now forward a trusted proxy's. **A listener behind a load balancer must list it in `trusted_proxies`** for the origin to keep seeing client addresses. See [Forwarding Headers to the Origin](./configuring.md#forwarding-headers-to-the-origin).
 
-**PLANNED** - We now provide a request rate limiter based on request attributes. it can be attached at the listener, backend, and path levels, with most specific winning.
+**Rate Limiting** - A named limiter counts requests, connections, sessions, or datagrams and refuses what exceeds its limit. It attaches at the listener, backend, and path. The listener limiter is its own layer. See [Rate Limiting](./rate-limiting.md).
 
 **IP ACLs** - We've also added IP Access Control Lists to restrict access to certain backend resources by IP. it can be attached at the listener, backend, and path levels, with most specific winning.
 
 **Geo ACLs** - We now support Geolocation Access Control lists to restrict content to geographical areas through IP -> Location translation via industry-standard locator services (MaxMind, RFC 8805 geofeeds, Header from trusted downstreams). Bring your own licensed database.
+
+## Fixes
+
+**Log Level Names Ignore Case** - `log_level`, `TRK_LOG_LEVEL` and `-log-level` now accept a level name in any case. Until now, an uppercase name such as `DEBUG` passed config validation but logged at `info`, and a config with no `logging` block warned that its own default level was unknown. See [Environment Variables](./configuring.md#environment-variables) and [Command Line Arguments](./configuring.md#command-line-arguments).
+
+**Rule Inputs Read the Requested Host** - A rule's `url`, `url_no_params`, `scheme`, `host`, `hostname` and `port` inputs now describe the URL the client requested, taking the host from the `Host` header and the scheme from whether the request arrived over TLS. Until now they read only the request URL, which carries no host or scheme on a client request, so rules matching on these inputs never matched. `port` now also infers `80` or `443` from the scheme when the host names no port, as documented. A request rewriter's `host`, `hostname` and `port` replace instructions likewise now act on the requested host. See [input_source permitted values](./rule.md#input_source-permitted-values).

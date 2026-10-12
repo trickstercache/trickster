@@ -61,6 +61,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/handlers/trickster/reload"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/listener"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/paths/matching"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/ratelimit"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/router/lm"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
@@ -280,6 +281,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
+	limitUpdate := ratelimit.BeginUpdate()
+	defer limitUpdate.Abort()
 	// retire the old config's access loggers once the new routes are live
 	accesslog.BeginGeneration()
 	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
@@ -339,6 +342,10 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		acmeRoute(si, newConf))
 	// only now has every stream and native listener taken the sticky table it keeps its flows in
 	alb.ForgetUnusedStickyTables(clients)
+	limitUpdate.Commit(func(name string) bool {
+		_, ok := newConf.RateLimiters[name]
+		return ok
+	})
 
 	accesslog.CommitGeneration(
 		time.Duration(newConf.MgmtConfig.ReloadDrainTimeout) + time.Second)

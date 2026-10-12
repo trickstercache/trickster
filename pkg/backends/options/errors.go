@@ -52,6 +52,17 @@ var ErrVolatileWindowWithBackfillTolerance = errors.New(
 var ErrVolatileWindowPointsWithBackfillTolerancePoints = errors.New(
 	"'volatile_window_points' and 'backfill_tolerance_points' cannot both be set; remove 'backfill_tolerance_points'")
 
+// ErrSRVRequiresHTTP is an error for origin_resolution mode srv on a non-HTTP origin_url
+var ErrSRVRequiresHTTP = errors.New("'origin_resolution.mode: srv' requires an http:// or https:// origin_url")
+
+// ErrSRVWithIPOrigin is an error for origin_resolution mode srv with an IP literal origin_url host
+var ErrSRVWithIPOrigin = errors.New(
+	"'origin_resolution.mode: srv' requires an origin_url host that is an SRV owner name, not an IP address")
+
+// ErrSRVTargetWithServerName is an error for origin_resolution.tls_server_name target with a tls.server_name
+var ErrSRVTargetWithServerName = errors.New(
+	"'origin_resolution.tls_server_name: target' and 'tls.server_name' cannot both be set")
+
 // ErrFlavorProvider is an error for a prometheus.flavor on a backend whose provider is not prometheus
 var ErrFlavorProvider = errors.New("'prometheus.flavor' requires provider 'prometheus'")
 

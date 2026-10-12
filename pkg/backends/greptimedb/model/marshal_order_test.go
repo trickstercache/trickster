@@ -118,7 +118,12 @@ func requireLegacyOutput(t *testing.T, d *dataSet) {
 		want, got := httptest.NewRecorder(), httptest.NewRecorder()
 		werr := legacyMarshal(d, want)
 		err := MarshalTimeseriesWriter(d, nil, 200, got)
-		require.Equal(t, werr, err, "ordering %v", ordering)
+		if werr == nil {
+			require.NoError(t, err, "ordering %v", ordering)
+		} else {
+			require.IsType(t, werr, err, "ordering %v", ordering)
+			require.EqualError(t, err, werr.Error(), "ordering %v", ordering)
+		}
 		require.Equal(t, want.Body.String(), got.Body.String(), "ordering %v", ordering)
 		require.Equal(t, want.Header(), got.Header(), "ordering %v", ordering)
 	}

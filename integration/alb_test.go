@@ -24,7 +24,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -33,13 +32,17 @@ import (
 	"testing"
 	"time"
 
+	tkconfig "github.com/trickstercache/trickster/v2/pkg/config"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestALB(t *testing.T) {
-	h := albHarness(t)
+	origin := newDeflateOrigin(t)
+	h := albHarness(t, func(c *tkconfig.Config) {
+		c.Backends["prom-deflate"].OriginURL = origin.URL
+	})
 	h.start(t)
 	albAddr := h.BaseAddr
 	waitForPrometheusData(t, "127.0.0.1:9090")
@@ -275,41 +278,6 @@ func TestALB(t *testing.T) {
 	})
 
 	t.Run("TSM deflate origin", func(t *testing.T) {
-		deflateBody := `{"status":"success","data":{"resultType":"vector","result":[` +
-			`{"metric":{"__name__":"up","job":"fake","instance":"deflate:1"},` +
-			`"value":[1700000000,"1"]}]}}`
-		var buf bytes.Buffer
-		fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
-		require.NoError(t, err)
-		_, err = fw.Write([]byte(deflateBody))
-		require.NoError(t, err)
-		require.NoError(t, fw.Close())
-		deflated := buf.Bytes()
-
-		mux := http.NewServeMux()
-		mux.HandleFunc("/api/v1/query", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			w.Header().Set("Content-Encoding", "deflate")
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write(deflated)
-		})
-		mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
-		})
-
-		l, err := net.Listen("tcp", "127.0.0.1:18500")
-		if err != nil {
-			t.Skipf("TODO(#938): port 18500 unavailable (%v); deflate-origin test skipped", err)
-			return
-		}
-		srv := &httptest.Server{
-			Listener: l,
-			Config:   &http.Server{Handler: mux},
-		}
-		srv.Start()
-		t.Cleanup(srv.Close)
-
 		pr, hdr := queryTricksterProm(t, albAddr, "alb-tsm-deflate", "/api/v1/query",
 			url.Values{"query": {"up"}})
 		require.Equal(t, "success", pr.Status)
@@ -490,4 +458,33 @@ func TestALB(t *testing.T) {
 			t.Logf("%s instant: %s", backend, hdr.Get(headers.NameTricksterResult))
 		})
 	}
+}
+
+func newDeflateOrigin(t *testing.T) *httptest.Server {
+	t.Helper()
+	deflateBody := `{"status":"success","data":{"resultType":"vector","result":[` +
+		`{"metric":{"__name__":"up","job":"fake","instance":"deflate:1"},` +
+		`"value":[1700000000,"1"]}]}}`
+	var buf bytes.Buffer
+	fw, err := flate.NewWriter(&buf, flate.DefaultCompression)
+	require.NoError(t, err)
+	_, err = fw.Write([]byte(deflateBody))
+	require.NoError(t, err)
+	require.NoError(t, fw.Close())
+	deflated := buf.Bytes()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/query", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "deflate")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(deflated)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"vector","result":[]}}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
 }

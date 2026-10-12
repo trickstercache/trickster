@@ -95,6 +95,9 @@ func Validate(c *config.Config) error {
 	if err := IPACLs(c); err != nil {
 		return err
 	}
+	if err := RateLimiters(c); err != nil {
+		return err
+	}
 	if err := Caches(c); err != nil {
 		return err
 	}
@@ -237,6 +240,17 @@ func kubernetesReferences(c *config.Config) error {
 				d.IPACLName)
 		}
 	}
+	if d.RateLimiterName != "" {
+		def := c.RateLimiters[d.RateLimiterName]
+		if def == nil {
+			return newKubernetesRefError("defaults", "rate limiter", d.RateLimiterName)
+		}
+		if !def.ServesHTTPRoutes() {
+			return fmt.Errorf("kubernetes 'defaults' references ineligible rate limiter %q: "+
+				"generated HTTP routes require HTTP keys, unit requests or unset, and an action other than close",
+				d.RateLimiterName)
+		}
+	}
 	return nil
 }
 
@@ -280,7 +294,8 @@ func Backends(c *config.Config) error {
 		return errors.ErrNoValidBackends
 	}
 	if err := c.Backends.ValidateConfigMappings(c.Caches, c.CompiledNegativeCaches,
-		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions, c.IPACLs); err != nil {
+		c.Rules, c.RequestRewriters, c.Authenticators, c.TracingOptions, c.IPACLs,
+		c.RateLimiters); err != nil {
 		return err
 	}
 	if err := c.Backends.ValidateGeoACLNames(c.GeoACLs); err != nil {
@@ -482,6 +497,9 @@ func Listeners(c *config.Config) error {
 		if err := bindListenerIPACL(c, name, options); err != nil {
 			return err
 		}
+		if err := bindListenerRateLimit(c, name, options); err != nil {
+			return err
+		}
 		if err := options.PathNormalization.Validate(); err != nil {
 			return fmt.Errorf("listener %q: path_normalization: %w", name, err)
 		}
@@ -546,6 +564,9 @@ func Listeners(c *config.Config) error {
 		return err
 	}
 	if err := validateIPACLPlacements(c); err != nil {
+		return err
+	}
+	if err := validateRateLimitPlacements(c); err != nil {
 		return err
 	}
 	return requestALBs(c, streamALBs)
@@ -920,77 +941,7 @@ func streamMemberACLError(backendName, path string, ip *ipacl.List, ipName strin
 }
 
 func aclBackendReachability(c *config.Config, wantHTTP bool) sets.Set[string] {
-	// Follow dispatch edges once per backend. HTTP returns every reachable backend;
-	// streams return only pool members and templates, which bypass admission.
-	reached := sets.NewStringSet()
-	members := sets.NewStringSet()
-	queue := make([]string, 0, len(c.Backends))
-	add := func(name string) {
-		if name != "" && c.Backends[name] != nil && !reached.Contains(name) {
-			reached.Set(name)
-			queue = append(queue, name)
-		}
-	}
-	for name, backend := range c.Backends {
-		if backend == nil || backend.IsTemplate {
-			continue
-		}
-		for _, listenerName := range backend.ListenerNames {
-			lo := c.Listeners[listenerName]
-			if lo != nil && (wantHTTP && (lo.Protocol == "" || lo.Protocol == listener.ProtocolHTTP) ||
-				!wantHTTP && lo.IsStream()) {
-				add(name)
-				break
-			}
-		}
-	}
-	for len(queue) > 0 {
-		backend := c.Backends[queue[0]]
-		queue = queue[1:]
-		if o := backend.ALBOptions; o != nil {
-			for _, member := range o.Pool {
-				members.Set(member.Name)
-				add(member.Name)
-			}
-			if o.Discovery != nil {
-				members.Set(o.Discovery.TemplateBackend)
-				add(o.Discovery.TemplateBackend)
-			}
-			if wantHTTP && o.UserRouter != nil {
-				add(o.UserRouter.DefaultBackend)
-				for _, mapping := range o.UserRouter.Users {
-					if mapping != nil {
-						add(mapping.ToBackend)
-					}
-				}
-			}
-		}
-		if !wantHTTP {
-			continue
-		}
-		if o := c.Rules[backend.RuleName]; o != nil {
-			add(o.NextRoute)
-			for _, ruleCase := range o.CaseOptions {
-				if ruleCase != nil {
-					add(ruleCase.NextRoute)
-				}
-			}
-		}
-		for _, path := range backend.Paths {
-			if path == nil {
-				continue
-			}
-			for _, mirror := range path.Mirrors {
-				if mirror != nil {
-					add(mirror.BackendName)
-				}
-			}
-		}
-	}
-	if wantHTTP {
-		return reached
-	}
-	return members
+	return c.BackendReachability(wantHTTP)
 }
 
 func addWarning(c *config.Config, warning string) {

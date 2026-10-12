@@ -24,7 +24,9 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,10 +41,13 @@ const (
 
 // Server is an in-process DNS server bound to a loopback port
 type Server struct {
-	mtx      sync.Mutex
-	records  map[client.Type][]client.Record
-	rcode    client.RCode
-	truncate bool
+	mtx        sync.Mutex
+	records    map[client.Type][]client.Record
+	additional []client.Record
+	rcode      client.RCode
+	truncate   bool
+	matchNames bool
+	queries    atomic.Int64
 
 	addr      string
 	pc        net.PacketConn
@@ -77,6 +82,24 @@ func (s *Server) Set(qtype client.Type, records ...client.Record) {
 	s.records[qtype] = records
 	s.mtx.Unlock()
 }
+
+// SetAdditional replaces the additional section sent with every successful answer
+func (s *Server) SetAdditional(records ...client.Record) {
+	s.mtx.Lock()
+	s.additional = records
+	s.mtx.Unlock()
+}
+
+// MatchNames makes answers carry only the records owned by the queried name, and makes a name
+// that owns no record of any type answer NXDOMAIN
+func (s *Server) MatchNames() {
+	s.mtx.Lock()
+	s.matchNames = true
+	s.mtx.Unlock()
+}
+
+// Queries returns the number of queries the server has answered
+func (s *Server) Queries() int64 { return s.queries.Load() }
 
 // SetRCode makes every subsequent answer carry rc and no records
 func (s *Server) SetRCode(rc client.RCode) {
@@ -167,14 +190,46 @@ func (s *Server) respond(query []byte, udp bool) ([]byte, error) {
 		RecursionAvailable: true,
 		Questions:          req.Questions,
 	}
+	s.queries.Add(1)
 	s.mtx.Lock()
 	resp.RCode = s.rcode
 	resp.Truncated = s.truncate && udp
 	if resp.RCode == client.RCodeSuccess && !resp.Truncated && len(req.Questions) > 0 {
-		resp.Answers = s.records[req.Questions[0].Type]
+		q := req.Questions[0]
+		resp.Answers = s.records[q.Type]
+		if s.matchNames {
+			resp.Answers = s.named(q.Type, q.Name)
+			if len(resp.Answers) == 0 && !s.owns(q.Name) {
+				resp.RCode = client.RCodeNameError
+			}
+		}
+		if resp.RCode == client.RCodeSuccess {
+			resp.Additional = s.additional
+		}
 	}
 	s.mtx.Unlock()
 	return resp.Pack()
+}
+
+func (s *Server) named(qtype client.Type, name string) []client.Record {
+	var out []client.Record
+	for _, rr := range s.records[qtype] {
+		if strings.EqualFold(rr.Header().Name, name) {
+			out = append(out, rr)
+		}
+	}
+	return out
+}
+
+func (s *Server) owns(name string) bool {
+	for _, records := range s.records {
+		for _, rr := range records {
+			if strings.EqualFold(rr.Header().Name, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // listenPair binds TCP and UDP to the same loopback port, retrying when the

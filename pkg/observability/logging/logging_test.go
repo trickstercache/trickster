@@ -17,6 +17,7 @@
 package logging
 
 import (
+	"bytes"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -317,6 +318,33 @@ func TestSetLogLevel(t *testing.T) {
 	l.SetLogLevel("warn")
 	if l.Level() != "warn" {
 		t.Errorf("expected %s got %s", "warn", l.Level())
+	}
+}
+
+func TestSetLogLevelIgnoresCase(t *testing.T) {
+	const unknownWarning = "unknown log level"
+	buf := &bytes.Buffer{}
+	l := StreamLogger(buf, "DEBUG")
+	l.SetLogAsynchronous(false)
+	if l.Level() != level.Debug {
+		t.Errorf("expected %s got %s", level.Debug, l.Level())
+	}
+	l.Debug("debug entry", nil)
+	if !strings.Contains(buf.String(), "debug entry") {
+		t.Errorf("an uppercase debug level did not log at debug: %q", buf.String())
+	}
+
+	l.SetLogLevel(" Warn ")
+	if l.Level() != level.Warn {
+		t.Errorf("expected %s got %s", level.Warn, l.Level())
+	}
+	if strings.Contains(buf.String(), unknownWarning) {
+		t.Errorf("a known level in another case was reported unknown: %q", buf.String())
+	}
+
+	l.SetLogLevel("verbose")
+	if l.Level() != level.Info || !strings.Contains(buf.String(), unknownWarning) {
+		t.Errorf("an unknown level should warn and fall back to info: %s, %q", l.Level(), buf.String())
 	}
 }
 

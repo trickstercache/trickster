@@ -83,7 +83,12 @@ func requireLegacyOutput(t *testing.T, ds *dataset.DataSet) {
 			var got, want bytes.Buffer
 			werr := legacyMarshal(&want, ds, of)
 			err := MarshalTimeseriesWriter(ds, &timeseries.RequestOptions{OutputFormat: of}, 200, &got)
-			require.Equal(t, werr, err, "format %d, ordering %v", of, ordering)
+			if werr == nil {
+				require.NoError(t, err, "format %d, ordering %v", of, ordering)
+			} else {
+				require.IsType(t, werr, err, "format %d, ordering %v", of, ordering)
+				require.EqualError(t, err, werr.Error(), "format %d, ordering %v", of, ordering)
+			}
 			require.Equal(t, want.String(), got.String(), "format %d, ordering %v", of, ordering)
 		}
 	}

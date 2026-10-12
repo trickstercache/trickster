@@ -36,36 +36,40 @@ func Method(r *http.Request) string {
 	return r.Method
 }
 
-// Scheme is the request URL's scheme
+// Scheme is the request URL's scheme; a server request's URL names none, so the scheme it
+// arrived on stands in
 func Scheme(r *http.Request) string {
 	if r == nil || r.URL == nil {
 		return ""
 	}
-	return r.URL.Scheme
+	if r.URL.Scheme != "" {
+		return r.URL.Scheme
+	}
+	return urls.RequestScheme(r)
 }
 
-// Host is the request URL's host, with any port
+// Host is the request URL's host, with any port; a server request's URL names no host, so its
+// Host header stands in
 func Host(r *http.Request) string {
-	if r == nil || r.URL == nil {
+	if r == nil {
 		return ""
 	}
-	return r.URL.Host
+	if r.URL != nil && r.URL.Host != "" {
+		return r.URL.Host
+	}
+	return r.Host
 }
 
-// Hostname is the request URL's host without its port
+// Hostname is Host without its port
 func Hostname(r *http.Request) string {
-	if r == nil || r.URL == nil {
-		return ""
-	}
-	return r.URL.Hostname()
+	hostname, _ := urls.SplitHostPort(Host(r))
+	return hostname
 }
 
-// Port is the request URL's port, or empty when it names none
+// Port is Host's port, or empty when it names none
 func Port(r *http.Request) string {
-	if r == nil || r.URL == nil {
-		return ""
-	}
-	return r.URL.Port()
+	_, port := urls.SplitHostPort(Host(r))
+	return port
 }
 
 // Path is the request URL's path
@@ -84,23 +88,39 @@ func RawQuery(r *http.Request) string {
 	return r.URL.RawQuery
 }
 
-// URL is the full request URL
+// URL is the full request URL; a server request's is made absolute from its scheme and Host header
 func URL(r *http.Request) string {
 	if r == nil || r.URL == nil {
 		return ""
 	}
-	return r.URL.String()
+	if r.URL.Host != "" || r.Host == "" {
+		return r.URL.String()
+	}
+	u := absolute(r)
+	return u.String()
 }
 
-// URLNoParams is the request URL without its query string
+// URLNoParams is URL without its query string
 func URLNoParams(r *http.Request) string {
 	if r == nil || r.URL == nil {
 		return ""
 	}
-	u := *r.URL
+	u := absolute(r)
 	u.RawQuery = ""
 	u.ForceQuery = false
 	return u.String()
+}
+
+// absolute copies the request URL, filling a server request's missing scheme and host
+func absolute(r *http.Request) url.URL {
+	u := *r.URL
+	if u.Host == "" && r.Host != "" {
+		u.Host = r.Host
+		if u.Scheme == "" {
+			u.Scheme = urls.RequestScheme(r)
+		}
+	}
+	return u
 }
 
 // Query parses the request's query string; callers evaluating several

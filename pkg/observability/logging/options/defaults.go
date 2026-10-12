@@ -16,10 +16,12 @@
 
 package options
 
+import "github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
+
 const (
 	// DefaultLogFile is the default disk location for log files.
 	// we use an empty string to indicate log to console
 	DefaultLogFile = ""
 	// DefaultLogLevel is the default level for logging
-	DefaultLogLevel = "INFO"
+	DefaultLogLevel = level.Info
 )

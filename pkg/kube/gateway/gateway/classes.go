@@ -46,6 +46,7 @@ const (
 	ParamAuthenticatorName = "authenticator_name"
 	ParamGeoACLName        = "geo_acl_name"
 	ParamIPACLName         = "ip_acl_name"
+	ParamRateLimiterName   = "rate_limiter_name"
 	ParamTimeout           = "timeout"
 	ParamHealthMode        = "health_mode"
 	ParamLoadBalancing     = "load_balancing"
@@ -218,6 +219,9 @@ var classParams = map[string]paramSetter{
 	ParamIPACLName: func(t *translator, p *ir.Policy, v string) error {
 		return t.setIPACL(&p.IPACLName, v)
 	},
+	ParamRateLimiterName: func(t *translator, p *ir.Policy, v string) error {
+		return t.setRateLimit(&p.RateLimiterName, v)
+	},
 }
 
 // stickyKey returns the key a sticky_secret Secret holds, base64-encoded so it travels as text, or
@@ -275,4 +279,17 @@ func (t *translator) setIPACL(dst *string, value string) error {
 			"source client_ip and action reject", value)
 	}
 	return fmt.Errorf("no ip acl named %q is configured", value)
+}
+
+func (t *translator) setRateLimit(dst *string, value string) error {
+	// a stream-only or close limiter is ineligible, a different failure from an undefined name
+	if t.known.RateLimiters.Contains(value) {
+		*dst = value
+		return nil
+	}
+	if t.known.DefinedRateLimiters.Contains(value) {
+		return fmt.Errorf("rate limiter %q is ineligible: generated HTTP routes require "+
+			"HTTP keys, unit requests or unset, and an action other than close", value)
+	}
+	return fmt.Errorf("no rate limiter named %q is configured", value)
 }
