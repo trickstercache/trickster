@@ -138,10 +138,8 @@ func listenerStripsRateLimit(conf *config.Config, name string, o *listenerconfig
 	if conf == nil {
 		return false
 	}
-	for _, b := range conf.Backends {
-		if b == nil || !b.UsesListener(name) {
-			continue
-		}
+	for backendName := range conf.BackendReachability(true, name) {
+		b := conf.Backends[backendName]
 		if b.RateLimiterName != "" && b.RateLimiterName != reserved.ReferenceNone {
 			return true
 		}
@@ -390,7 +388,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			r = guardReservedRoutes(reserved, listenerRouters[name])
 		}
 		if options.ListenPort > 0 {
-			plain := r
+			plain := wrapListener(conf, name, options, accessLogger, r)
 			// http-01 challenges arrive on the plaintext port, ahead of every route and middleware
 			if _, http01 := conf.ListenerACME(name); http01 {
 				plain = challenge.HTTPHandler(plain)
@@ -399,7 +397,7 @@ func desiredListeners(conf *config.Config, listenerRouters map[string]router.Rou
 			out[key] = desiredListener{
 				key: key, listenerName: name,
 				address: options.ListenAddress, port: options.ListenPort,
-				options: options, router: wrapListener(conf, name, options, accessLogger, plain),
+				options: options, router: plain,
 			}
 		}
 		r = wrapListener(conf, name, options, accessLogger, r)

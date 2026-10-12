@@ -118,7 +118,8 @@ func queryIntegrationMySQL(t *testing.T, db *sql.DB, query string) mysqlQueryRes
 
 func TestMySQLRealServerCompatibility(t *testing.T) {
 	requireMySQLDeveloperEnvironment(t)
-	harness := configHarness(t)
+	// Docker bridge clients require a listener reachable beyond loopback.
+	harness := configHarnessWithMySQLAddress(t, "0.0.0.0")
 	harness.start(t)
 	direct := openIntegrationMySQL(t, "127.0.0.1:3306")
 	proxied := openIntegrationMySQL(t, harness.MySQLAddr)

@@ -332,10 +332,7 @@ func (r *ref) take(now int64, cost uint32) bool {
 	if est+float64(cost) > float64(r.limit) {
 		return false
 	}
-	sum := uint64(r.cur) + uint64(cost)
-	if sum > math.MaxUint32 {
-		sum = math.MaxUint32
-	}
+	sum := min(uint64(r.cur)+uint64(cost), math.MaxUint32)
 	r.cur = uint32(sum)
 	return true
 }

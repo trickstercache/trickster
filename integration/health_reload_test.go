@@ -74,10 +74,13 @@ func TestHealthPageAfterReload(t *testing.T) {
 	yaml := fmt.Sprintf(`
 listeners:
   default:
+    address: 127.0.0.1
     port: %d
   metrics:
+    address: 127.0.0.1
     port: %d
   mgmt:
+    address: 127.0.0.1
     port: %d
 logging:
   log_level: error
@@ -125,10 +128,13 @@ backends:
 	yaml2 := fmt.Sprintf(`
 listeners:
   default:
+    address: 127.0.0.1
     port: %d
   metrics:
+    address: 127.0.0.1
     port: %d
   mgmt:
+    address: 127.0.0.1
     port: %d
 logging:
   log_level: warn

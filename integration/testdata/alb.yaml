@@ -134,17 +134,12 @@ backends:
       pool:
         - prom1-labeled
         - prom2-labeled
-  # A Prometheus-shaped origin that serves `Content-Encoding: deflate`
-  # bodies via a test httptest.Server bound to a reserved port.
-  # regression: #938
+  # The caller replaces this placeholder with its dynamically bound deflate origin.
   prom-deflate:
     provider: prometheus
-    origin_url: http://127.0.0.1:18500
+    origin_url: http://127.0.0.1:0
     cache_name: mem1
-  # TSM over a deflate-encoded origin + a gzip-capable origin. Used by
-  # TestALB_TSM_DeflateOrigin to verify the merge path can decode
-  # non-gzip compressed upstream responses.
-  # regression: #938
+  # Merge a deflate-encoded origin with a gzip-capable origin.
   alb-tsm-deflate:
     provider: alb
     alb:

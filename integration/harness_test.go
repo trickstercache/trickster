@@ -63,9 +63,9 @@ func developerHarness(t *testing.T) tricksterHarness {
 	return configHarness(t)
 }
 
-func albHarness(t *testing.T) tricksterHarness {
+func albHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
-	return staticConfigHarness(t, "testdata/alb.yaml")
+	return staticConfigHarness(t, "testdata/alb.yaml", mods...)
 }
 
 func rewriterHarness(t *testing.T) tricksterHarness {
@@ -183,9 +183,18 @@ type cacheProviderCase struct {
 
 func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
-	ports, release := portutil.Reserve(t, 6)
-	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], ports[3]
-	clickHouseHTTPOriginPort, clickHouseNativeOriginPort := ports[4], ports[5]
+	return configHarnessWithMySQLAddress(t, "127.0.0.1", mods...)
+}
+
+func configHarnessWithMySQLAddress(t *testing.T, address string, mods ...func(*tkconfig.Config)) tricksterHarness {
+	t.Helper()
+	ports, release := portutil.Reserve(t, 5)
+	mysqlPorts, releaseMySQL := portutil.ReserveOn(t, 1, address)
+	frontPort, metricsPort, mgmtPort, mysqlPort := ports[0], ports[1], ports[2], mysqlPorts[0]
+	clickHouseHTTPOriginPort, clickHouseNativeOriginPort := ports[3], ports[4]
+	mods = append([]func(*tkconfig.Config){func(c *tkconfig.Config) {
+		c.Listeners["mysql1"].ListenAddress = address
+	}}, mods...)
 	return tricksterHarness{
 		ConfigPath: writeTestConfig(t,
 			"../docs/developer/environment/trickster-config/trickster.yaml",
@@ -197,7 +206,10 @@ func configHarness(t *testing.T, mods ...func(*tkconfig.Config)) tricksterHarnes
 		MySQLAddr:                  fmt.Sprintf("127.0.0.1:%d", mysqlPort),
 		ClickHouseNativeAddr:       fmt.Sprintf("127.0.0.1:%d", clickHouseHTTPOriginPort),
 		ClickHouseNativeOriginAddr: fmt.Sprintf("127.0.0.1:%d", clickHouseNativeOriginPort),
-		releasePorts:               release,
+		releasePorts: func() {
+			release()
+			releaseMySQL()
+		},
 	}
 }
 
@@ -218,12 +230,12 @@ func flightConfigHarness(t *testing.T) (tricksterHarness, int) {
 	}, flightPort
 }
 
-func staticConfigHarness(t *testing.T, configPath string) tricksterHarness {
+func staticConfigHarness(t *testing.T, configPath string, mods ...func(*tkconfig.Config)) tricksterHarness {
 	t.Helper()
 	ports, release := portutil.Reserve(t, 3)
 	frontPort, metricsPort, mgmtPort := ports[0], ports[1], ports[2]
 	return tricksterHarness{
-		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0, 0, 0),
+		ConfigPath:   writeTestConfig(t, configPath, frontPort, metricsPort, mgmtPort, 0, 0, 0, 0, mods...),
 		BaseAddr:     fmt.Sprintf("127.0.0.1:%d", frontPort),
 		MetricsAddr:  fmt.Sprintf("127.0.0.1:%d", metricsPort),
 		MgmtAddr:     fmt.Sprintf("127.0.0.1:%d", mgmtPort),
@@ -272,7 +284,7 @@ func writeTestConfig(t *testing.T, configPath string,
 	c.Listeners["mgmt"].ListenPort = mgmtPort
 	c.Listeners["mgmt"].ListenAddress = "127.0.0.1"
 	if mysqlListener := c.Listeners["mysql1"]; mysqlListener != nil {
-		mysqlListener.ListenAddress = "0.0.0.0"
+		mysqlListener.ListenAddress = "127.0.0.1"
 		mysqlListener.ListenPort = mysqlPort
 	}
 	// The dev config binds its native ClickHouse listener to a fixed port; drop

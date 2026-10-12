@@ -281,6 +281,8 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 
 	caches := applyCachingConfig(si, newConf)
 	rh := reload.HandlerFunc(hupFunc)
+	limitUpdate := ratelimit.BeginUpdate()
+	defer limitUpdate.Abort()
 	// retire the old config's access loggers once the new routes are live
 	accesslog.BeginGeneration()
 	err = routing.RegisterProxyRoutesForListeners(newConf, clients, listenerRouters, mr, caches, tracers, false)
@@ -340,8 +342,7 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 		acmeRoute(si, newConf))
 	// only now has every stream and native listener taken the sticky table it keeps its flows in
 	alb.ForgetUnusedStickyTables(clients)
-	// Drop limiter stores the applied configuration no longer defines. A failed apply returns earlier.
-	ratelimit.ForgetExcept(func(name string) bool {
+	limitUpdate.Commit(func(name string) bool {
 		_, ok := newConf.RateLimiters[name]
 		return ok
 	})

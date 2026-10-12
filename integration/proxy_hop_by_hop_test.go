@@ -75,9 +75,9 @@ func TestProxyStripsHopByHopWithEmptyConnectionToken(t *testing.T) {
 	upstream := newHeaderCaptureUpstream(t)
 
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "listeners:\n  default:\n    port: %d\n", frontPort)
-	fmt.Fprintf(&sb, "  metrics:\n    port: %d\n", metricsPort)
-	fmt.Fprintf(&sb, "  mgmt:\n    port: %d\n", mgmtPort)
+	fmt.Fprintf(&sb, "listeners:\n  default:\n    address: 127.0.0.1\n    port: %d\n", frontPort)
+	fmt.Fprintf(&sb, "  metrics:\n    address: 127.0.0.1\n    port: %d\n", metricsPort)
+	fmt.Fprintf(&sb, "  mgmt:\n    address: 127.0.0.1\n    port: %d\n", mgmtPort)
 	sb.WriteString("logging:\n  log_level: error\n")
 	sb.WriteString("caches:\n  mem1:\n    provider: memory\n")
 	sb.WriteString("backends:\n")
