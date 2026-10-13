@@ -99,6 +99,8 @@ type Client struct {
 	// flows keeps the sessions of the ALB's stream and native flows, once a listener asks for it
 	flows     atomic.Pointer[sticky.Flows]
 	flowsOnce sync.Once
+	// retiring holds the discovered members the pool kept once their manager stopped, which retire with the ALB
+	retiring retiringMembers
 
 	// routerOverride is a user router's step alignment, which it has no pool to carry
 	routerOverride atomic.Pointer[tctx.StepAlignmentOverride]

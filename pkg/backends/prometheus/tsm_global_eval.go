@@ -38,6 +38,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -67,6 +68,7 @@ const (
 var (
 	errGlobalNoMembers = errors.New("no pool member can be read")
 	errGlobalBadData   = errors.New("invalid query parameter")
+	errGlobalRetired   = errors.New("tsm global evaluator is retired")
 )
 
 type globalEvaluator struct {
@@ -84,6 +86,11 @@ type globalEvaluator struct {
 	ttl            time.Duration
 	volatileWindow time.Duration
 	volatilePoints int
+	// admitted holds a place for each evaluation running, and admits none once the evaluator retires, which ends retired,
+	// canceling those still running
+	admitted drain.Gate
+	retired  context.Context
+	retire   context.CancelFunc
 }
 
 // NewTSMGlobalEvaluator returns an evaluator running PromQL over a TSM ALB's raw member series, keeping
@@ -153,7 +160,19 @@ func newGlobalEvaluator(settings merge.TSMGlobalSettings) *globalEvaluator {
 	if settings.MaxConcurrentQueries > 0 {
 		e.slots = make(chan struct{}, settings.MaxConcurrentQueries)
 	}
+	e.retired, e.retire = context.WithCancel(context.Background())
 	return e
+}
+
+// Retire ends the evaluator once its requests have drained: it admits no more evaluations and cancels those running with
+// the raw cache's reads, then waits until ctx ends for them to return and for what the raw cache still stores.
+func (e *globalEvaluator) Retire(ctx context.Context) {
+	e.admitted.Close()
+	e.retire()
+	stored := e.raw == nil || e.raw.Close(ctx)
+	if !e.admitted.Wait(ctx) || !stored {
+		logger.Warn("tsm global evaluator retired before its work ended", logging.Pairs{keys.ALB_Name: e.settings.Name})
+	}
 }
 
 // Handles reports whether r is an instant or range query, which the evaluator answers.
@@ -222,9 +241,31 @@ func (n *noStoreWriter) Write(p []byte) (int, error) {
 // evaluate answers r by evaluating its query over req's members, recording the evaluation's metrics
 func (e *globalEvaluator) evaluate(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) {
 	start := time.Now()
-	outcome := e.serve(w, r, req)
+	outcome := e.serveAdmitted(w, r, req)
 	metrics.ALBGlobalEvaluations.WithLabelValues(e.settings.Name, outcome).Inc()
 	metrics.ALBGlobalEvaluationDuration.WithLabelValues(e.settings.Name).Observe(time.Since(start).Seconds())
+}
+
+// serveAdmitted serves r unless the evaluator has retired, after which no evaluation reads its members
+func (e *globalEvaluator) serveAdmitted(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) string {
+	if !e.admitted.Enter() {
+		w.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
+		global.WriteError(w, http.StatusServiceUnavailable, global.ErrorTypeUnavailable, errGlobalRetired, nil,
+			e.settings.MaxResponseBytes)
+		return global.ErrorTypeUnavailable
+	}
+	defer e.admitted.Exit()
+	return e.serve(w, r, req)
+}
+
+// failure returns the status, error type and error that answer an evaluation failing with err; one the evaluator's retirement
+// ended is unavailable rather than canceled or timed out, unless it failed with execution, as on a limit, which decides as it would
+func (e *globalEvaluator) failure(err error) (int, string, error) {
+	status, errorType := globalErrorType(err)
+	if errorType != global.ErrorTypeExecution && e.retired.Err() != nil {
+		return http.StatusServiceUnavailable, global.ErrorTypeUnavailable, fmt.Errorf("%w: %w", errGlobalRetired, err)
+	}
+	return status, errorType, err
 }
 
 // reject answers a query whose parameters are invalid, as an evaluation of it would
@@ -283,20 +324,23 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 	if err != nil {
 		return fail(http.StatusServiceUnavailable, global.ErrorTypeUnavailable, err, warnings)
 	}
-	// the query timeout includes the wait for a free evaluation slot
-	ctx := r.Context()
+	// the query timeout includes the wait for a free evaluation slot, as does the evaluator retiring, which ends the evaluation
+	var ctx context.Context
+	var cancel context.CancelFunc
 	if timeout := e.timeout(q); timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+		ctx, cancel = context.WithTimeout(r.Context(), timeout)
+	} else {
+		ctx, cancel = context.WithCancel(r.Context())
 	}
+	defer cancel()
+	defer context.AfterFunc(e.retired, cancel)()
 	if e.slots != nil {
 		select {
 		case e.slots <- struct{}{}:
 			defer func() { <-e.slots }()
 		case <-ctx.Done():
-			status, errorType := globalErrorType(ctx.Err())
-			return fail(status, errorType, fmt.Errorf("waiting for an evaluation slot: %w", ctx.Err()), warnings)
+			status, errorType, err := e.failure(fmt.Errorf("waiting for an evaluation slot: %w", ctx.Err()))
+			return fail(status, errorType, err, warnings)
 		}
 	}
 	budget := &global.Budget{
@@ -339,9 +383,12 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 	slices.Sort(infos)
 	warnings = append(warnings, resultWarnings...)
 	if res.Err != nil {
-		err := limitDecides(res.Err, limited.Load())
-		status, errorType := globalErrorType(err)
+		status, errorType, err := e.failure(limitDecides(res.Err, limited.Load()))
 		return fail(status, errorType, err, warnings)
+	}
+	if partialResult && e.retired.Err() != nil {
+		// reads the retirement stopped are missing whether they saw the raw cache close or the evaluation end first
+		return fail(http.StatusServiceUnavailable, global.ErrorTypeUnavailable, errGlobalRetired, warnings)
 	}
 	value := res.Value
 	if q.limit > 0 {
@@ -491,4 +538,7 @@ func limitSeries(value parser.Value, limit int) (parser.Value, bool) {
 	return value, false
 }
 
-var _ backends.TSMGlobalEvaluatorProvider = (*Client)(nil)
+var (
+	_ backends.TSMGlobalEvaluatorProvider = (*Client)(nil)
+	_ backends.Retirer                    = (*globalEvaluator)(nil)
+)

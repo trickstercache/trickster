@@ -533,3 +533,150 @@ func TestDecoderChargesHistogramLayouts(t *testing.T) {
 	})
 	require.LessOrEqual(t, laidOut, d.laid+4096)
 }
+
+// bucketBounds reads the bounds of each of fh's buckets, as encoding a result does
+func bucketBounds(fh *histogram.FloatHistogram) {
+	for it := fh.AllBucketIterator(); it.Next(); {
+		_ = it.At()
+	}
+}
+
+func TestHistogramLayoutRefusesUnreadableSpans(t *testing.T) {
+	custom := func(pos, neg []testSpan, bounds ...float64) testLayout {
+		return testLayout{schema: histogram.CustomBucketsSchema, pos: pos, neg: neg, custom: bounds}
+	}
+	fine := histogram.ExponentialSchemaMax + 1
+	for name, test := range map[string]struct {
+		layout testLayout
+		// want is the error the layout is refused with, none when it reads as Prometheus reads it
+		want error
+		// panics is whether the library panics materializing the first sample or reading its buckets' bounds; custom
+		// buckets are refused as Prometheus refuses to ingest them, even where reading them happens not to panic
+		panics bool
+	}{
+		"finer schema offset back": {
+			layout: testLayout{schema: fine, pos: []testSpan{{length: 1}, {length: 1, offset: -3}}},
+			want:   histogram.ErrHistogramSpanNegativeOffset, panics: true,
+		},
+		"custom offset back": {
+			layout: custom([]testSpan{{length: 1, offset: 1}, {length: 1, offset: -1}}, nil, 1, 2, 3),
+			want:   histogram.ErrHistogramSpanNegativeOffset,
+		},
+		"custom first offset back": {
+			layout: custom([]testSpan{{length: 1, offset: -1}}, nil, 1),
+			want:   histogram.ErrHistogramSpanNegativeOffset, panics: true,
+		},
+		"custom negative side": {
+			layout: custom([]testSpan{{length: 1}}, []testSpan{{length: 1}}, 1),
+			want:   histogram.ErrHistogramCustomBucketsNegSpans,
+		},
+		"custom spans past their bounds": {
+			layout: custom([]testSpan{{length: 2}, {length: 1, offset: 1}}, nil, 1, 2),
+			want:   histogram.ErrHistogramCustomBucketsMismatch, panics: true,
+		},
+		"custom spans reaching the last bound": {layout: custom([]testSpan{{length: 2}, {length: 1}}, nil, 1, 2)},
+		"finer schema, first span offset back": {
+			layout: testLayout{schema: fine, pos: []testSpan{{length: 1, offset: -3}, {length: 1, offset: 2}}},
+		},
+		"ordinary schema offset back": {layout: testLayout{pos: []testSpan{{length: 1}, {length: 1, offset: -3}}}},
+	} {
+		for _, enc := range histogramEncodings {
+			t.Run(name+"/"+enc.String(), func(t *testing.T) {
+				l := test.layout
+				for _, sp := range append(append([]testSpan(nil), l.pos...), l.neg...) {
+					l.buckets += int(sp.length)
+				}
+				data := layoutChunk(enc, 1, l)
+				// the library's iterator reads each layout without an error, though materializing some panics
+				chk, err := chunkenc.FromData(enc, data)
+				require.NoError(t, err)
+				it := chk.Iterator(nil)
+				require.NotEqual(t, chunkenc.ValNone, it.Next())
+				require.NoError(t, it.Err())
+				materialize := func() { _, fh := it.AtFloatHistogram(nil); bucketBounds(fh) }
+				if test.panics {
+					require.Panics(t, materialize)
+				} else {
+					require.NotPanics(t, materialize)
+				}
+				_, err = histogramLayout(enc, data)
+				if test.want == nil {
+					require.NoError(t, err)
+					return
+				}
+				require.ErrorIs(t, err, errMalformedChunk)
+				require.ErrorIs(t, err, test.want)
+				// a member's chunk of the layout fails its read, by remote read or StoreAPI
+				frame := chunkedFrame(t, &prompb.ChunkedSeries{Labels: testLabels("a"), Chunks: []prompb.Chunk{
+					{Type: promChunkTypes[enc], Data: data, MinTimeMs: 150, MaxTimeMs: 150},
+				}})
+				d := newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead)
+				err = d.chunkedReadResponse(frame)
+				require.ErrorIs(t, err, errRemoteRead)
+				require.ErrorIs(t, err, test.want)
+				require.Empty(t, d.out)
+				d = newDecoder(nil, decodeTestMint, decodeTestMaxt, errStoreAPI)
+				err = d.chunkedSeries(appendBytesField(nil, seriesChunks,
+					spanned(encodeTestChunk(storeChunkTypes[enc], data, true), 150, 150)), storeChunk)
+				require.ErrorIs(t, err, errStoreAPI)
+				require.ErrorIs(t, err, test.want)
+				require.Empty(t, d.out)
+			})
+		}
+	}
+}
+
+func TestCheckBucketLayout(t *testing.T) {
+	sample := func(schema int32, pos, neg []histogram.Span, posBuckets, negBuckets int, bounds ...float64) *histogram.FloatHistogram {
+		return &histogram.FloatHistogram{
+			Schema: schema, Count: 1, PositiveSpans: pos, NegativeSpans: neg, PositiveBuckets: make([]float64, posBuckets),
+			NegativeBuckets: make([]float64, negBuckets), CustomValues: bounds,
+		}
+	}
+	one := []histogram.Span{{Length: 1}}
+	fine := histogram.ExponentialSchemaMax + 1
+	for name, test := range map[string]struct {
+		fh   *histogram.FloatHistogram
+		want error
+	}{
+		"spans past the buckets":   {sample(0, []histogram.Span{{Length: 50}}, nil, 1, 0), histogram.ErrHistogramSpansBucketsMismatch},
+		"buckets past the spans":   {sample(0, one, nil, 2, 0), histogram.ErrHistogramSpansBucketsMismatch},
+		"negative side mismatched": {sample(0, one, one, 1, 3), histogram.ErrHistogramSpansBucketsMismatch},
+		"buckets without spans":    {sample(0, nil, nil, 0, 1), histogram.ErrHistogramSpansBucketsMismatch},
+		"finer schema offset back": {
+			sample(fine, []histogram.Span{{Length: 1}, {Offset: -3, Length: 1}}, nil, 2, 0),
+			histogram.ErrHistogramSpanNegativeOffset,
+		},
+		"custom offset back": {
+			sample(histogram.CustomBucketsSchema, []histogram.Span{{Offset: -1, Length: 1}}, nil, 1, 0, 1),
+			histogram.ErrHistogramSpanNegativeOffset,
+		},
+		"custom negative side": {
+			sample(histogram.CustomBucketsSchema, one, one, 1, 1, 1), histogram.ErrHistogramCustomBucketsNegSpans,
+		},
+		"custom spans past their bounds": {
+			sample(histogram.CustomBucketsSchema, []histogram.Span{{Length: 2}, {Offset: 1, Length: 1}}, nil, 3, 0, 1, 2),
+			histogram.ErrHistogramCustomBucketsMismatch,
+		},
+		"custom spans past the buckets": {
+			sample(histogram.CustomBucketsSchema, []histogram.Span{{Length: 2}}, nil, 1, 0, 1, 2),
+			histogram.ErrHistogramSpansBucketsMismatch,
+		},
+		"empty":                                {fh: &histogram.FloatHistogram{}},
+		"exponential":                          {fh: testHistogram().ToFloat(nil)},
+		"ordinary schema offset back":          {fh: sample(0, []histogram.Span{{Length: 1}, {Offset: -3, Length: 1}}, nil, 2, 0)},
+		"first span offset back":               {fh: sample(fine, []histogram.Span{{Offset: -3, Length: 2}}, nil, 2, 0)},
+		"custom spans reaching the last bound": {fh: sample(histogram.CustomBucketsSchema, []histogram.Span{{Length: 2}, {Length: 1}}, nil, 3, 0, 1, 2)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := checkBucketLayout(test.fh)
+			if test.want == nil {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, test.want)
+			// Prometheus refuses each to be ingested too
+			require.Error(t, test.fh.Validate())
+		})
+	}
+}

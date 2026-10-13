@@ -200,6 +200,76 @@ func TestViewIterator(t *testing.T) {
 	require.Equal(t, float64(testHistogram().Count), fh.Count)
 }
 
+// rawSeriesOf is a series of one chunk of points
+func rawSeriesOf(t *testing.T, pod string, points []testPoint) rawSeries {
+	t.Helper()
+	c, sp := xorChunkOf(t, points)
+	return rawSeries{lset: podLabels(pod), chunks: []rawChunk{{span: sp, chk: c}}}
+}
+
+func TestAssembleJoinsReadsOntoCachedSeries(t *testing.T) {
+	// a block caches b and d from 100 to 190; reads hold some of them, and others, before and after it
+	cached := func() []rawSource {
+		return []rawSource{{
+			series: []rawSeries{rawSeriesOf(t, "b", steps(100, 190)), rawSeriesOf(t, "d", steps(100, 190))},
+			lo:     100, hi: 190, block: "block",
+		}}
+	}
+	reads := func(pods ...string) []rawSource {
+		before, after := rawSource{lo: 0, hi: 99}, rawSource{lo: 191, hi: 290}
+		for _, pod := range pods {
+			before.series = append(before.series, rawSeriesOf(t, pod, steps(0, 90)))
+			after.series = append(after.series, rawSeriesOf(t, pod, steps(200, 290)))
+		}
+		return []rawSource{after, before}
+	}
+	pointsByPod := func(series []storage.Series) map[string][]testPoint {
+		out := make(map[string][]testPoint, len(series))
+		var last labels.Labels
+		for i, s := range series {
+			if i > 0 {
+				require.Negative(t, labels.Compare(last, s.Labels()), "series are in label order")
+			}
+			last = s.Labels()
+			out[s.Labels().Get(testPod)] = readPoints(t, s)
+		}
+		return out
+	}
+
+	base, samples, bad, err := assemble(nil, cached())
+	require.NoError(t, err)
+	require.Empty(t, bad)
+	require.Equal(t, int64(2*len(steps(100, 190))), samples, "the cached block's samples are counted")
+	require.Equal(t, map[string][]testPoint{"b": steps(100, 190), "d": steps(100, 190)}, pointsByPod(base))
+
+	// reads of only cached series add their views to those series in place
+	base, _, _, err = assemble(nil, cached())
+	require.NoError(t, err)
+	first := &base[0]
+	joined, samples, _, err := assemble(base, reads("b", "d"))
+	require.NoError(t, err)
+	require.Zero(t, samples, "nothing read is counted as cached")
+	require.Same(t, first, &joined[0], "the cached series' array is kept")
+	require.Equal(t, map[string][]testPoint{"b": steps(0, 290), "d": steps(0, 290)}, pointsByPod(joined))
+
+	// reads adding series the cache lacks, before, between and after its own, move to an array of their own
+	base, _, _, err = assemble(nil, cached())
+	require.NoError(t, err)
+	kept := append([]storage.Series(nil), base...)
+	joined, _, _, err = assemble(base, reads("a", "c", "d", "e"))
+	require.NoError(t, err)
+	require.Equal(t, map[string][]testPoint{
+		"a": append(steps(0, 90), steps(200, 290)...), "b": steps(100, 190), "c": append(steps(0, 90), steps(200, 290)...),
+		"d": steps(0, 290), "e": append(steps(0, 90), steps(200, 290)...),
+	}, pointsByPod(joined))
+	require.Equal(t, kept, base, "the cached series' array is never overwritten")
+
+	// with nothing cached, the reads alone are assembled
+	joined, _, _, err = assemble(nil, reads("a"))
+	require.NoError(t, err)
+	require.Equal(t, map[string][]testPoint{"a": append(steps(0, 90), steps(200, 290)...)}, pointsByPod(joined))
+}
+
 func TestBoundedIterator(t *testing.T) {
 	c, _ := xorChunkOf(t, steps(0, 90))
 	s := &boundedSeries{Series: &chunkSeries{lset: podLabels("a"), chunks: []chunkenc.Iterable{c}}, mint: 15, maxt: 55}

@@ -250,7 +250,7 @@ func TestDecoderGroupsOnlyHistograms(t *testing.T) {
 	require.Len(t, d.out, 2)
 	require.Nil(t, d.groups)
 	require.Zero(t, d.laid)
-	allocs := testing.AllocsPerRun(10, func() { _ = d.groupKey() })
+	allocs := testing.AllocsPerRun(1000, func() { _ = d.groupKey() })
 	require.Zero(t, allocs, "hashing a label set without its replica labels allocates nothing")
 }
 

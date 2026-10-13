@@ -17,25 +17,35 @@
 package prometheus
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"net/http"
 	"net/url"
 	"slices"
+	"sync"
+	"sync/atomic"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
+	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	pathopts "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 )
 
 var (
 	errNoSeriesAPI          = errors.New("prometheus backend serves no raw series")
 	errSeriesAPIUnsupported = errors.New("prometheus series_api is not supported")
+	errSourceRetired        = errors.New("prometheus backend is retired")
+
+	newStoreAPI = global.NewStoreAPI
 )
 
 type globalSourceResult struct {
@@ -43,17 +53,43 @@ type globalSourceResult struct {
 	err    error
 }
 
+// globalSourceHolder holds what building a client's source returned. A StoreAPI source holds a connection of its own, so
+// mu serializes building it, once, with retiring it, after which none is built
+type globalSourceHolder struct {
+	mu     sync.Mutex
+	result atomic.Pointer[globalSourceResult]
+}
+
 // TSMGlobalSource returns the source TSM global evaluation reads the backend's raw series from.
 func (c *Client) TSMGlobalSource() (backends.TSMGlobalSource, error) {
-	if r := c.globalSource.Load(); r != nil {
+	if r := c.globalSource.result.Load(); r != nil {
 		return r.source, r.err
 	}
-	r := &globalSourceResult{}
-	r.source, r.err = c.newGlobalSource()
-	// concurrent first callers build equal sources; every caller returns the one stored
-	c.globalSource.CompareAndSwap(nil, r)
-	r = c.globalSource.Load()
+	c.globalSource.mu.Lock()
+	defer c.globalSource.mu.Unlock()
+	r := c.globalSource.result.Load()
+	if r == nil {
+		r = &globalSourceResult{}
+		r.source, r.err = c.newGlobalSource()
+		c.globalSource.result.Store(r)
+	}
 	return r.source, r.err
+}
+
+// Retire closes the connection the client's raw series source holds, as a StoreAPI source's, once the client's requests
+// have drained; a retired client builds no source.
+func (c *Client) Retire(context.Context) {
+	c.globalSource.mu.Lock()
+	r := c.globalSource.result.Swap(&globalSourceResult{err: errSourceRetired})
+	c.globalSource.mu.Unlock()
+	if r == nil {
+		return
+	}
+	if closer, ok := r.source.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			logger.Debug("prometheus raw series source did not close", logging.Pairs{keys.Error: err.Error()})
+		}
+	}
 }
 
 func (c *Client) newGlobalSource() (backends.TSMGlobalSource, error) {
@@ -84,7 +120,7 @@ func (c *Client) newGlobalSource() (backends.TSMGlobalSource, error) {
 		if err != nil {
 			return nil, err
 		}
-		s, err := global.NewStoreAPI(u, tlsConfig, o.Paths)
+		s, err := newStoreAPI(u, tlsConfig, o.Paths)
 		if err != nil {
 			return nil, err
 		}
@@ -150,4 +186,7 @@ func globalKeyHeaders(paths pathopts.List) []string {
 	return out
 }
 
-var _ backends.TSMGlobalSourceProvider = (*Client)(nil)
+var (
+	_ backends.TSMGlobalSourceProvider = (*Client)(nil)
+	_ backends.Retirer                 = (*Client)(nil)
+)

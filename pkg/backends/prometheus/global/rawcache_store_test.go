@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/level"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -747,4 +748,162 @@ func TestFlightGroupStartsAnotherReadOnceOneEnds(t *testing.T) {
 	g.mu.Lock()
 	require.Empty(t, g.flights)
 	g.mu.Unlock()
+}
+
+func TestRawCacheRefusesMalformedSampleHistogramLayouts(t *testing.T) {
+	// a member's histogram sent as a sample whose spans lay out other than its buckets, or reach past its custom bounds, fails
+	// its read whether or not the raw cache is used, so the cache neither panics on it nor keeps it
+	const blockEnd = rawBlockMs - 1
+	matchers := []*labels.Matcher{testMetricMatcher}
+	for name, tc := range map[string]struct {
+		malform func(*histogram.Histogram)
+		want    error
+	}{
+		"spans past the buckets": {func(h *histogram.Histogram) {
+			h.PositiveSpans, h.PositiveBuckets = []histogram.Span{{Length: 50}}, []int64{1}
+		}, histogram.ErrHistogramSpansBucketsMismatch},
+		"buckets past the spans": {func(h *histogram.Histogram) {
+			h.NegativeSpans, h.NegativeBuckets = []histogram.Span{{Length: 1}}, []int64{1, 1}
+		}, histogram.ErrHistogramSpansBucketsMismatch},
+		"spans past custom bounds": {func(h *histogram.Histogram) {
+			h.Schema, h.CustomValues = histogram.CustomBucketsSchema, []float64{1, 2}
+			h.PositiveSpans, h.PositiveBuckets = []histogram.Span{{Length: 2}, {Offset: 1, Length: 1}}, []int64{1, 0, 0}
+		}, histogram.ErrHistogramCustomBucketsMismatch},
+	} {
+		for kind, encode := range sampleHistogramKinds {
+			for cacheName, newCache := range rawTestCaches(t) {
+				t.Run(name+"/"+kind+"/"+cacheName, func(t *testing.T) {
+					logs := captureErrors(t)
+					h := resetHistogram(1)
+					tc.malform(h)
+					src := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+						_ = decodeTestRequest(t, r)
+						writeSamples(t, w, &prompb.TimeSeries{
+							Labels: testLabels("a"), Histograms: []prompb.Histogram{encode(31*rawTestMinute, h)},
+						})
+					})
+					src.SourceIdentity = SourceIdentity{ID: rawTestIdentity}
+					ctx := teamRequest(rawTestTeamA)
+					_, _, err := src.Select(ctx, 0, blockEnd, nil, matchers...)
+					require.ErrorIs(t, err, errRemoteRead)
+					require.ErrorIs(t, err, tc.want)
+
+					rc := newRawTestCache(newCache(), RawCacheOptions{})
+					rc.setNow(rawBlockMs + rawTestVolatile.Milliseconds())
+					_, _, err = rc.Select(ctx, Member{Name: rawTestMember, Source: src}, 0, blockEnd, nil, matchers)
+					waitWithin(t, rc.Wait)
+					require.ErrorIs(t, err, errRemoteRead)
+					require.ErrorIs(t, err, tc.want)
+					for _, event := range []string{memberPanicEvent, storePanicEvent, flightPanicEvent} {
+						require.NotContains(t, logs.String(), event)
+					}
+					k, ok := rc.key(ctx, src, matchers)
+					require.True(t, ok)
+					_, ok = rc.engine.Retrieve(blockKey(k.key, 0))
+					require.False(t, ok)
+					require.False(t, indexed(rc.RawCache, k))
+				})
+			}
+		}
+	}
+}
+
+func TestRawCacheRefusesUnreadableMemberChunks(t *testing.T) {
+	// a member's histogram chunk whose samples would panic once materialized, its spans unreducible or reaching past its custom
+	// bounds, fails its read as it is decoded, with the cache or without, so no block ever holds it
+	const blockEnd = rawBlockMs - 1
+	matchers := []*labels.Matcher{testMetricMatcher}
+	for encName, enc := range storeTestEncodings {
+		pastBounds := layoutChunk(enc, 1, testLayout{
+			schema: histogram.CustomBucketsSchema, pos: []testSpan{{length: 3}}, custom: []float64{1}, buckets: 3,
+		})
+		unreducible := histogramChunkAt(t, enc, true, 31, 32, 33)
+		for name, tc := range map[string]struct {
+			chunk prompb.Chunk
+			want  error
+		}{
+			"unreducible spans": {prompb.Chunk{
+				Type: promChunkTypes[enc], Data: unreducible.chk.Bytes(), MinTimeMs: unreducible.mint, MaxTimeMs: unreducible.maxt,
+			}, histogram.ErrHistogramSpanNegativeOffset},
+			"spans past custom bounds": {
+				prompb.Chunk{Type: promChunkTypes[enc], Data: pastBounds}, histogram.ErrHistogramCustomBucketsMismatch,
+			},
+		} {
+			for cacheName, newCache := range rawTestCaches(t) {
+				t.Run(encName+"/"+name+"/"+cacheName, func(t *testing.T) {
+					logs := captureErrors(t)
+					src := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+						_ = decodeTestRequest(t, r)
+						w.Header().Set(headers.NameContentType, limitTestStreamed)
+						var body bytes.Buffer
+						writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels("a"), Chunks: []prompb.Chunk{tc.chunk}})
+						_, _ = w.Write(body.Bytes())
+					})
+					src.SourceIdentity = SourceIdentity{ID: rawTestIdentity}
+					ctx := teamRequest(rawTestTeamA)
+					_, _, err := src.Select(ctx, 0, blockEnd, nil, matchers...)
+					require.ErrorIs(t, err, errRemoteRead)
+					require.ErrorIs(t, err, tc.want)
+
+					rc := newRawTestCache(newCache(), RawCacheOptions{})
+					rc.setNow(rawBlockMs + rawTestVolatile.Milliseconds())
+					_, _, err = rc.Select(ctx, Member{Name: rawTestMember, Source: src}, 0, blockEnd, nil, matchers)
+					waitWithin(t, rc.Wait)
+					require.ErrorIs(t, err, errRemoteRead)
+					require.ErrorIs(t, err, tc.want)
+					for _, event := range []string{memberPanicEvent, storePanicEvent, flightPanicEvent} {
+						require.NotContains(t, logs.String(), event)
+					}
+					k, ok := rc.key(ctx, src, matchers)
+					require.True(t, ok)
+					_, ok = rc.engine.Retrieve(blockKey(k.key, 0))
+					require.False(t, ok, "no block holds the chunk")
+					require.False(t, indexed(rc.RawCache, k))
+				})
+			}
+		}
+	}
+}
+
+func TestRawCacheDropsUnreadableCachedBlockBeforeReading(t *testing.T) {
+	// a cached chunk the select reads part of fails as it is counted, before any member is read, and its block is dropped,
+	// so the next select reads the member for it
+	lset := podLabels("a")
+	const blockEnd = rawBlockMs - 1
+	mint := 20 * rawTestMinute
+	for cacheName, newCache := range rawTestCaches(t) {
+		t.Run(cacheName, func(t *testing.T) {
+			points := make([]testPoint, 0, 21)
+			for m := int64(10); m <= 30; m++ {
+				points = append(points, testPoint{t: m * rawTestMinute, f: float64(m)})
+			}
+			chk, sp := xorChunkOf(t, points)
+			src := &chunkedSource{ID: rawTestIdentity, series: []*chunkSeries{{lset: lset, chunks: []chunkenc.Iterable{chk}, spans: []span{sp}}}}
+			rc := newRawTestCache(newCache(), RawCacheOptions{})
+			rc.setNow(rawBlockMs + rawTestVolatile.Milliseconds())
+			ctx := teamRequest(rawTestTeamA)
+			matchers := []*labels.Matcher{testMetricMatcher}
+			k, ok := rc.key(ctx, src, matchers)
+			require.True(t, ok)
+			bk := blockKey(k.key, 0)
+			rc.engine.Store(bk, &nativedelta.Entry[*rawBlock]{
+				Payload: &rawBlock{series: []rawSeries{{lset: lset, chunks: []rawChunk{{span: sp, chk: truncated(t, chk)}}}}},
+				Extents: timeseries.ExtentList{extent(0, storeTestCachedTo)},
+			})
+			_, _, err := rc.Select(ctx, Member{Name: rawTestMember, Source: src}, mint, blockEnd, nil, matchers)
+			waitWithin(t, rc.Wait)
+			require.Error(t, err)
+			require.Empty(t, src.takeReads(), "no member is read for a select its cache fails")
+			entry, ok := rc.engine.Retrieve(bk)
+			require.True(t, ok)
+			require.True(t, entry.Marker, "the block is dropped")
+
+			series, _, err := rc.Select(ctx, Member{Name: rawTestMember, Source: src}, mint, blockEnd, nil, matchers)
+			waitWithin(t, rc.Wait)
+			require.NoError(t, err)
+			require.Len(t, series, 1)
+			require.Equal(t, points[10:], readPoints(t, series[0]))
+			require.Equal(t, [][2]int64{{mint, blockEnd}}, src.takeReads())
+		})
+	}
 }

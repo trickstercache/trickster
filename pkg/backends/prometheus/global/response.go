@@ -51,6 +51,8 @@ const (
 	// encodeSlack is the most bytes encoded between two checks of an encoding's size, as a sample or a histogram
 	// bucket with the punctuation around it; a response buffer grows to at most its limit plus this
 	encodeSlack = 256
+	// minErrorBytes is the least an error response may take, so a result limit too small for its message still leaves it
+	minErrorBytes = 4 << 10
 	// growThreshold is the capacity from which a response buffer grows by about a quarter rather than doubling, as append grows
 	growThreshold = 256
 	// quotedPlain, quotedShort and quotedUnicode are the lengths of a byte that JSON quotes as it is, of a backslash escape,
@@ -118,10 +120,10 @@ func WriteResult(w http.ResponseWriter, value parser.Value, warnings, infos []st
 	return nil
 }
 
-// WriteError writes a Prometheus HTTP API error response of at most maxBytes, zero for no limit, whenever its type fits
-// with an empty message: warnings that don't fit are left out, and a message that doesn't is cut short.
+// WriteError writes a Prometheus HTTP API error response of at most maxBytes, zero for no limit, or 4 KiB when that is
+// more: warnings that don't fit are left out, and a message that doesn't is cut short.
 func WriteError(w http.ResponseWriter, status int, errorType string, err error, warnings []string, maxBytes int64) {
-	limit := encodeLimit(maxBytes)
+	limit := max(encodeLimit(maxBytes), minErrorBytes)
 	e := resultEncoder{limit: encodeLimit(0)}
 	e.room(0)
 	e.b = append(e.b, `{"status":"error","errorType":`...)

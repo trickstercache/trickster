@@ -42,6 +42,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
 
 	"github.com/prometheus/common/model"
@@ -72,7 +73,10 @@ const (
 	flightPanicEvent = "tsm global evaluation shared read callback panicked"
 )
 
-var errStorePanic = errors.New("raw series block store panicked")
+var (
+	errStorePanic     = errors.New("raw series block store panicked")
+	errRawCacheClosed = errors.New("raw series cache is closed")
+)
 
 // RawCacheOptions configures a RawCache.
 type RawCacheOptions struct {
@@ -115,6 +119,8 @@ type RawCache struct {
 	// index remembers which selectors' blocks are cached, so a narrower selector can read a broader one's
 	index rawIndex
 	now   func() time.Time
+	// closed is set once the cache closes, after which it reads and stores nothing
+	closed atomic.Bool
 }
 
 // rawRefusal is the range of samples a block couldn't keep within the size limit, until expires, merged onto the
@@ -176,6 +182,14 @@ func NewRawCache(c cache.Cache, opts RawCacheOptions) *RawCache {
 // Wait returns once every member read started so far has stored what it keeps.
 func (c *RawCache) Wait() { c.flights.running.Wait() }
 
+// Close stops the cache reading members: later selects fail, reads under way are canceled, and nothing a read returns
+// from then on is stored. It waits until ctx ends for stores under way, reporting whether they finished.
+func (c *RawCache) Close(ctx context.Context) bool {
+	c.closed.Store(true)
+	c.flights.close()
+	return drain.Wait(ctx, &c.flights.running)
+}
+
 // fetched is a member read's series, normalized to the span it was read for
 type fetched struct {
 	series   []rawSeries
@@ -188,6 +202,9 @@ type fetched struct {
 func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints *storage.SelectHints,
 	matchers []*labels.Matcher,
 ) ([]storage.Series, annotations.Annotations, error) {
+	if c.closed.Load() {
+		return nil, nil, errRawCacheClosed
+	}
 	k, ok := c.key(ctx, m.Source, matchers)
 	now := c.now()
 	keep := c.keeps(now, m.Source)
@@ -204,13 +221,25 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		c.opts.Subsumed()
 	}
 	missing := covered.CalculateDeltas(timeseries.ExtentList{extent(mint, maxt)}, time.Millisecond)
-	// reads limited in series identify them, so a select reading several ranges can charge each series once as it arrives
+	series, cachedSamples, bad, err := assemble(nil, sources)
+	if err != nil {
+		// a cached block whose samples can't be read is dropped, so the next read fetches them again
+		c.engine.Store(bad, &nativedelta.Entry[*rawBlock]{Marker: true})
+		return nil, nil, err
+	}
+	// reads limited in series identify them, so a select reading several ranges can charge each series once as it arrives;
+	// what the cache serves is charged before them, so they stop once it and what they read exceed the allowance
 	charge := newSelectCharge(budgetFrom(ctx), len(missing) > 1 && c.opts.MaxSeries > 0)
+	if err := charge.prepay(int64(len(series)), cachedSamples); err != nil {
+		return nil, nil, err
+	}
 	results, err := c.fetchAll(ctx, k, m, missing, keep, held, hints, matchers, charge)
 	if err != nil {
 		return nil, nil, err
 	}
 	var warnings annotations.Annotations
+	// the cached sources are assembled, so their slots hold the reads' answers
+	sources = sources[:0]
 	for i, r := range results {
 		warnings.Merge(r.warnings)
 		sources = append(sources, rawSource{
@@ -219,14 +248,12 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		})
 	}
 	c.observe(readStatus(covered, missing, mint, keep.maxt))
-	series, cachedSamples, bad, err := assemble(sources)
-	if err != nil {
-		// a cached block whose samples can't be read is dropped, so the next read fetches them again
-		c.engine.Store(bad, &nativedelta.Entry[*rawBlock]{Marker: true})
-		return nil, nil, err
+	if len(sources) > 0 {
+		// the reads' answers count nothing, so they can't fail
+		series, _, _, _ = assemble(series, sources)
 	}
-	// the member's reads charged what they held as it arrived; the rest of the series served, and cached samples, are now
-	if err := charge.settle(int64(len(series)), cachedSamples); err != nil {
+	// the reads charged what they held as it arrived; the series served besides those, and the cache's, are now
+	if err := charge.settle(int64(len(series))); err != nil {
 		return nil, nil, err
 	}
 	return series, warnings, nil
@@ -402,8 +429,9 @@ func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries
 	r, err := c.flights.do(ctx, flight, charge, func(ctx context.Context, share shareFunc) fetched {
 		return c.read(ctx, m, mint, maxt, hints, matchers, share)
 	}, func(r fetched) {
+		// nothing is stored once the cache closes, as what it stores into may then be released
 		if lo, hi := max(mint, keep.mint), min(maxt, keep.maxt); r.err == nil && len(r.warnings) == 0 && lo <= hi &&
-			c.store(k.key, r.series, lo, hi, held) {
+			!c.closed.Load() && c.store(k.key, r.series, lo, hi, held) {
 			c.index.record(k, c.now(), c.opts.TTL)
 		}
 	})
@@ -730,13 +758,22 @@ func (s *selectCharge) pay(readSeries, samples int64, ids []uint64) error {
 	return s.budget.add(n, 0)
 }
 
-// settle charges the cached samples the select serves, and the series it serves that its reads' charges left out, or
-// takes back those they charged but it doesn't serve, as copies of a series a read held apart
-func (s *selectCharge) settle(served, cachedSamples int64) error {
+// prepay charges the series and samples the select serves from the cache before any of its reads charge, which then
+// charge only the series past those, as they may be the same
+func (s *selectCharge) prepay(series, samples int64) error {
+	s.mu.Lock()
+	s.series = series
+	s.mu.Unlock()
+	return s.budget.add(series, samples)
+}
+
+// settle charges the series the select serves that its charges left out, or takes back those they charged but it
+// doesn't serve, as copies of a series a read held apart
+func (s *selectCharge) settle(served int64) error {
 	s.mu.Lock()
 	charged := s.series
 	s.mu.Unlock()
-	return s.budget.add(served-charged, cachedSamples)
+	return s.budget.add(served-charged, 0)
 }
 
 // flightCaller is a caller waiting on a shared read, with what the read charges for it
@@ -823,8 +860,10 @@ func (f *flight[T]) leave(c *flightCaller) (finished bool) {
 type flightGroup[T any] struct {
 	mu      sync.Mutex
 	flights map[string]*flight[T]
+	// closed is set, under mu, once the group runs nothing more
+	closed bool
 	// running counts flights until their after functions return
-	running sync.WaitGroup
+	running drain.Group
 }
 
 // do returns fn's result for key, run once for concurrent callers each paying through its own charge, or what
@@ -838,6 +877,10 @@ func (g *flightGroup[T]) do(ctx context.Context, key string, charge *selectCharg
 	}
 	caller := &flightCaller{charge: charge, out: make(chan struct{})}
 	g.mu.Lock()
+	if g.closed {
+		g.mu.Unlock()
+		return zero, errRawCacheClosed
+	}
 	if g.flights == nil {
 		g.flights = make(map[string]*flight[T])
 	}
@@ -900,6 +943,16 @@ func (g *flightGroup[T]) run(ctx context.Context, key string, f *flight[T],
 	close(f.done)
 	if after != nil {
 		safego.Run(logFlightPanic, func() { after(f.result) })
+	}
+}
+
+// close runs nothing more and cancels the runs under way, whose callers get what each then returns
+func (g *flightGroup[T]) close() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.closed = true
+	for _, f := range g.flights {
+		f.cancel()
 	}
 }
 

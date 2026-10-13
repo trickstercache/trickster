@@ -141,6 +141,10 @@ Thanos components support; a store that rejects it is read again at once
 without compression, and isn't asked for it again until Trickster restarts or
 reloads.
 
+A backend opens its StoreAPI connection on its first read, and closes it once a
+reload, shutdown, or autodiscovery replaces the backend and its requests have
+drained, as described for [global evaluation](./alb.md#global-evaluation).
+
 ## Injecting Labels
 
 Trickster can inject labels on a per-backend basis into Prometheus responses before returning them to the caller.

@@ -494,11 +494,13 @@ func TestGlobalMemberFailureLogs(t *testing.T) {
 	settings := globalTestSettings()
 	settings.Name = name
 	e := newGlobalEvaluator(settings)
+	failures := metrics.ALBGlobalMemberFailures.WithLabelValues(name, canceled)
+	before := testutil.ToFloat64(failures)
 	e.memberFailed(canceled, context.Canceled)
 	e.memberFailed("down", errors.New(detail))
 	require.Eventually(t, func() bool { return strings.Contains(logs.String(), detail) }, 5*time.Second, 10*time.Millisecond)
 	require.NotContains(t, logs.String(), canceled, "a client's cancellation isn't the member's failure to log")
-	require.InDelta(t, 1, testutil.ToFloat64(metrics.ALBGlobalMemberFailures.WithLabelValues(name, canceled)), 0)
+	require.InDelta(t, before+1, testutil.ToFloat64(failures), 0)
 
 	unreadable := backends.TSMGlobalRequest{Unavailable: []backends.TSMGlobalUnavailable{
 		{Name: "misconfigured", Reason: errors.New("open /etc/certs/member.pem: no such file")},

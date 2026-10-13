@@ -457,8 +457,8 @@ func (d *decoder) histogramShape(b []byte) (histogramShape, error) {
 	return s, nil
 }
 
-// histogram reads a Histogram message of shape s as the float histogram the engine reads, its memory charged first. A
-// schema finer than the engine reads is reduced, as a chunk's iterator reduces it; an unknown one, or spans that can't be, fail.
+// histogram reads a Histogram message of shape s as the float histogram the engine reads, its memory charged first. A schema
+// finer than the engine reads is reduced, as a chunk's iterator reduces it; an unknown one, or a malformed bucket layout, fail.
 func (d *decoder) histogram(b []byte, s histogramShape) (*histogram.FloatHistogram, error) {
 	if !histogram.IsKnownSchema(s.schema) {
 		return nil, fmt.Errorf("%w: %w", d.kind, histogram.UnknownSchemaError(s.schema))
@@ -539,6 +539,9 @@ func (d *decoder) histogram(b []byte, s histogramShape) (*histogram.FloatHistogr
 	// a count is read as the kind of histogram says, and is zero when its own field is of the other kind
 	fh.Count = count.of(s.float, histogramCountFloat)
 	fh.ZeroCount = zeroCount.of(s.float, histogramZeroCountFloat)
+	if err := checkBucketLayout(fh); err != nil {
+		return nil, fmt.Errorf("%w: %w", d.kind, err)
+	}
 	if fh.Schema > histogram.ExponentialSchemaMax {
 		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
 			return nil, fmt.Errorf("%w: %w", d.kind, err)

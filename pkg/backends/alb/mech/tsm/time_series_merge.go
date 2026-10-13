@@ -80,9 +80,11 @@ type handler struct {
 	// as the pool hasn't been replaced. Hot path is a single atomic load
 	// plus a uint64 compare.
 	cachedStripKeys atomic.Pointer[stripKeysSnapshot]
-	// evaluator answers queries over the members' raw series when the ALB's evaluation is global
+	// evaluator answers queries over the members' raw series when the ALB's evaluation is global; once retired, set under
+	// evaluatorMu, the handler builds none
 	evaluator   atomic.Pointer[backends.TSMGlobalEvaluator]
 	evaluatorMu sync.Mutex
+	retired     bool
 	// cache and backendOptions keep global evaluations' results; they are set before requests arrive
 	cache          cache.Cache
 	backendOptions *bo.Options

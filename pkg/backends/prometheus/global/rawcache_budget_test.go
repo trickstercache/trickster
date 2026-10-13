@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"maps"
 	"net/http"
+	"runtime"
 	"slices"
 	"strconv"
 	"sync"
@@ -426,15 +427,15 @@ func TestSelectChargeChargesEachSeriesOnce(t *testing.T) {
 	series, _ = budget.Fetched()
 	require.Equal(t, int64(4), series)
 	// what the select serves, its reads' series and those only cached, settles the charge exactly
-	require.NoError(t, charge.settle(5, 7))
+	require.NoError(t, charge.settle(5))
 	series, samples = budget.Fetched()
-	require.Equal(t, [2]int64{5, 32}, [2]int64{series, samples})
+	require.Equal(t, [2]int64{5, 25}, [2]int64{series, samples})
 	require.ErrorIs(t, (&selectCharge{budget: budget}).pay(1, 0, nil), ErrFetchLimit, "every select charges the same budget")
 	// and takes back what its reads charged for copies of a series, which it serves as one
 	budget = &Budget{}
 	charge = &selectCharge{budget: budget}
 	require.NoError(t, charge.pay(3, 0, nil))
-	require.NoError(t, charge.settle(2, 0))
+	require.NoError(t, charge.settle(2))
 	series, _ = budget.Fetched()
 	require.Equal(t, int64(2), series)
 
@@ -453,9 +454,40 @@ func TestSelectChargeChargesEachSeriesOnce(t *testing.T) {
 	wg.Wait()
 	series, samples = budget.Fetched()
 	require.Equal(t, [2]int64{perRead, reads * perRead}, [2]int64{series, samples})
-	require.NoError(t, charge.settle(perRead, 0))
+	require.NoError(t, charge.settle(perRead))
 	series, _ = budget.Fetched()
 	require.Equal(t, int64(perRead), series)
+}
+
+func TestSelectChargePrepaysWhatTheCacheServes(t *testing.T) {
+	budget := &Budget{MaxSeries: 5, MaxSamples: 100}
+	charge := newSelectCharge(budget, false)
+	require.NoError(t, charge.prepay(3, 40))
+	// a read charges all its samples, as they lie outside what's cached, but only series past those cached, as they may be the same
+	require.NoError(t, charge.pay(2, 10, nil))
+	series, samples := budget.Fetched()
+	require.Equal(t, [2]int64{3, 50}, [2]int64{series, samples})
+	require.NoError(t, charge.pay(4, 10, nil))
+	series, samples = budget.Fetched()
+	require.Equal(t, [2]int64{4, 60}, [2]int64{series, samples})
+	require.NoError(t, charge.settle(5))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(5), series)
+	// with ids, a read's distinct series are charged once they outnumber those cached
+	budget = &Budget{MaxSeries: 5}
+	charge = newSelectCharge(budget, true)
+	require.NoError(t, charge.prepay(3, 0))
+	require.NoError(t, charge.pay(0, 0, []uint64{1, 2}))
+	require.NoError(t, charge.pay(0, 0, []uint64{2, 3}))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(3), series)
+	require.NoError(t, charge.pay(0, 0, []uint64{4}))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(4), series)
+	// what the cache serves alone can exceed the allowance, before anything is read
+	require.ErrorIs(t, newSelectCharge(&Budget{MaxSamples: 10}, false).prepay(0, 11), ErrFetchLimit)
+	require.ErrorIs(t, newSelectCharge(&Budget{MaxSeries: 2}, false).prepay(3, 0), ErrFetchLimit)
+	require.NoError(t, newSelectCharge(nil, false).prepay(3, 11))
 }
 
 func TestSelectChargeCountsIDsOnce(t *testing.T) {
@@ -509,12 +541,18 @@ func TestSelectChargeSizesItsSetForItsFirstIDs(t *testing.T) {
 	for i := range ids {
 		ids[i] = uint64(i)
 	}
-	payAll := func(limit int64) float64 {
-		return testing.AllocsPerRun(5, func() {
-			_ = newSelectCharge(&Budget{MaxSeries: limit}, true).pay(0, 0, ids)
-		})
+	// bytes rather than allocation counts, which other tests' goroutines can tip by one
+	allocated := func(f func()) uint64 {
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		f()
+		runtime.ReadMemStats(&after)
+		return after.TotalAlloc - before.TotalAlloc
 	}
-	grown := testing.AllocsPerRun(5, func() {
+	payAll := func(limit int64) uint64 {
+		return allocated(func() { _ = newSelectCharge(&Budget{MaxSeries: limit}, true).pay(0, 0, ids) })
+	}
+	grown := allocated(func() {
 		seen := make(map[uint64]struct{})
 		for _, id := range ids {
 			seen[id] = struct{}{}
@@ -867,14 +905,14 @@ func TestRawCacheChargesMembersSeriesAsTheyArrive(t *testing.T) {
 		series, samples = budget.Fetched()
 		require.Equal(t, [2]int64{all, all * minuteSamples(0, maxt)}, [2]int64{series, samples})
 		require.Contains(t, rc.takeStatuses(), cachestatus.LookupStatusHit)
-		// with the cache warm, the reads of the volatile window still stop once the members' series exceed the limit
+		// with the cache warm, what it serves is charged before the members are read, so once the members' cached series
+		// together exceed the limit, a member whose series would pass it reads nothing, and the evaluation fails
 		const limit = all*3/4 + 1
 		budget = &Budget{MaxSeries: limit}
 		_, err = evaluate(t, rc, budget)
 		require.ErrorIs(t, err, ErrFetchLimit)
-		require.Less(t, settled(t, members), int64(all))
 		series, _ = budget.Fetched()
-		require.LessOrEqual(t, series, int64(limit+members))
+		require.LessOrEqual(t, series, int64(limit+pods), "the charge stops within one member's cached series of the limit")
 	})
 }
 
@@ -902,22 +940,24 @@ func TestRawCacheChargesSeriesOnceAcrossGapsAndFrames(t *testing.T) {
 				require.Len(t, src.takeReads(), 8)
 				series, _ := budget.Fetched()
 				require.Equal(t, int64(2), series)
-				// a limit the gaps' series exceed stops the reads under way, and those not begun never start
+				// a limit the cached series exceed fails the select before any of its gaps is read
 				rc = fill()
 				_, _, err = rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), &Budget{MaxSeries: 1}), src, 0, 8*rawTestHour)
 				require.ErrorIs(t, err, ErrFetchLimit)
-				require.LessOrEqual(t, len(src.takeReads()), rawGapReads)
+				require.Empty(t, src.takeReads())
 			})
 		}
 	})
 	t.Run("gaps holding different series", func(t *testing.T) {
-		// one series stops and another starts between the gaps, so the select serves more than either read holds
-		pods := map[string][2]int64{"a": {4 * rawTestHour, rawTestEnd}, "b": {0, 4*rawTestHour - 1}}
+		// one series stops and another starts within the cached range between the gaps, which holds neither, so the select
+		// serves more than either read holds, and the cache serves none of them
+		pods := map[string][2]int64{"a": {5 * rawTestHour, rawTestEnd}, "b": {0, 3*rawTestHour - 1}}
 		filler := &lifetimeServer{pods: pods}
 		fill := func() *rawTestCache {
 			rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{MaxSeries: 2})
-			_, _, err := rc.selectAt(t, teamRequest(rawTestTeamA), filler.source(t), 3*rawTestHour, 5*rawTestHour)
+			cached, _, err := rc.selectAt(t, teamRequest(rawTestTeamA), filler.source(t), 3*rawTestHour, 5*rawTestHour-1)
 			require.NoError(t, err)
+			require.Empty(t, cached)
 			return rc
 		}
 		budget := &Budget{MaxSeries: 2}
@@ -1068,4 +1108,79 @@ func TestRawCacheChargesStreamedCopiesOnce(t *testing.T) {
 	require.Len(t, served, 3, "the copy is joined to its series later, by deduplication")
 	series, _ = budget.Fetched()
 	require.Equal(t, int64(2), series)
+}
+
+// selectCountingSource counts the reads made of its source
+type selectCountingSource struct {
+	Source
+	selects atomic.Int64
+}
+
+func (s *selectCountingSource) Select(ctx context.Context, mint, maxt int64, hints *storage.SelectHints,
+	matchers ...*labels.Matcher,
+) ([]storage.Series, annotations.Annotations, error) {
+	s.selects.Add(1)
+	return s.Source.Select(ctx, mint, maxt, hints, matchers...)
+}
+
+func TestRawCacheChargesWhatItServesBeforeReading(t *testing.T) {
+	const pods, maxt = 20, 2 * rawTestHour
+	server := &podsServer{pods: pods, pause: budgetTestPause}
+	src := &selectCountingSource{Source: server.source(t, rawTestIdentity)}
+	rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{})
+	read := func(budget *Budget) ([]storage.Series, error) {
+		t.Helper()
+		series, _, err := rc.Select(WithBudget(teamRequest(rawTestTeamA), budget), Member{Name: rawTestMember, Source: src},
+			0, maxt, nil, []*labels.Matcher{testMetricMatcher})
+		rc.Wait()
+		return series, err
+	}
+	// settled waits until the server has ended every read made, so what it wrote is final, and returns the reads and frames
+	settled := func(t *testing.T) (int64, int64) {
+		t.Helper()
+		require.Eventually(t, func() bool { return server.ended.Load() == src.selects.Load() }, storeTestWait, time.Millisecond)
+		reads, written := src.selects.Load(), server.written.Load()
+		src.selects.Store(0)
+		server.ended.Store(0)
+		server.written.Store(0)
+		return reads, written
+	}
+	// the whole range is read and kept, then all but the volatile window's samples are served from the cache
+	rc.setNow(maxt + rawTestHour)
+	_, err := read(nil)
+	require.NoError(t, err)
+	settled(t)
+	rc.setNow(maxt)
+	all := minuteSamples(0, maxt)
+	volatile := minuteSamples(maxt-rawTestVolatile.Milliseconds()+1, maxt)
+	cached := all - volatile
+
+	t.Run("within the limit, cached and read data are charged exactly once", func(t *testing.T) {
+		budget := &Budget{MaxSeries: pods, MaxSamples: pods * all}
+		series, err := read(budget)
+		require.NoError(t, err)
+		require.Len(t, series, pods)
+		fetchedSeries, fetchedSamples := budget.Fetched()
+		require.Equal(t, [2]int64{pods, pods * all}, [2]int64{fetchedSeries, fetchedSamples})
+		reads, written := settled(t)
+		require.Equal(t, [2]int64{1, pods}, [2]int64{reads, written})
+	})
+	t.Run("cached samples leave room for a few frames, so the read stops after them", func(t *testing.T) {
+		_, err := read(&Budget{MaxSamples: pods*cached + 3*volatile})
+		require.ErrorIs(t, err, ErrFetchLimit)
+		reads, written := settled(t)
+		require.Equal(t, int64(1), reads)
+		require.Less(t, written, int64(pods), "the read stopped before sending every series")
+	})
+	for name, budget := range map[string]*Budget{
+		"cached series alone exceed the limit":  {MaxSeries: pods - 1},
+		"cached samples alone exceed the limit": {MaxSamples: pods*cached - 1},
+	} {
+		t.Run(name+", so nothing is read", func(t *testing.T) {
+			_, err := read(budget)
+			require.ErrorIs(t, err, ErrFetchLimit)
+			reads, written := settled(t)
+			require.Equal(t, [2]int64{0, 0}, [2]int64{reads, written})
+		})
+	}
 }

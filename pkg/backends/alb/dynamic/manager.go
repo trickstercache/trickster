@@ -278,9 +278,9 @@ func (m *Manager) applyLocked(canonical discovery.Snapshot) {
 			// same-name rebuild (member identity changed): the successor
 			// owns the name's health registration and metric series, so
 			// only the old client's connections are released
-			m.releaseMemberConns(name, e)
+			m.releaseMemberConns(name, e.client, true)
 		} else {
-			m.teardownMember(name, e)
+			m.teardownMember(name, e, true)
 		}
 		removes++
 		metrics.ALBDiscoveryMemberChanges.WithLabelValues(
@@ -410,7 +410,7 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	}
 	// a pool member is reached through its pool only, never through a native listener
 	if err := backends.ValidateStepAlignment(client, nb); err != nil {
-		closeClientConns(client)
+		closeClientConns(client, 0)
 		return nil, err
 	}
 	nb.HTTPClient = client.HTTPClient()
@@ -430,7 +430,7 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		st, err := backends.RegisterHealthCheck(m.cfg.HealthChecker, name,
 			m.healthDescription(nb.Provider), client)
 		if err != nil {
-			closeClientConns(client)
+			closeClientConns(client, 0)
 			return nil, err
 		}
 		if st != nil {
@@ -512,23 +512,19 @@ func (m *Manager) updateMember(name string, e *memberEntry, member discovery.Mem
 	e.member = member
 }
 
-// teardownMember releases a removed member: its health check registration
-// is removed immediately (no new probes), its metric series are deleted,
-// and its idle upstream connections are closed after the drain timeout so
-// in-flight requests dispatched to the old pool complete undisturbed.
-func (m *Manager) teardownMember(name string, e *memberEntry) {
+// teardownMember releases a removed member: its health check registration (so no new probes) and metric series go at once,
+// and its connections once the drain timeout passes, as releaseMemberConns releases them
+func (m *Manager) teardownMember(name string, e *memberEntry, retire bool) {
 	if m.cfg.HealthChecker != nil {
 		m.cfg.HealthChecker.Unregister(name)
 	}
 	metrics.DeleteBackendSeries(name)
-	m.releaseMemberConns(name, e)
+	m.releaseMemberConns(name, e.client, retire)
 }
 
-// releaseMemberConns closes a retired member client's idle upstream
-// connections after the drain timeout, so in-flight requests dispatched via
-// the old pool complete undisturbed
-func (m *Manager) releaseMemberConns(name string, e *memberEntry) {
-	client := e.client
+// releaseMemberConns closes a removed member client's idle upstream connections after the drain timeout, so in-flight
+// requests dispatched via the old pool complete undisturbed, retiring the client first when retire is set
+func (m *Manager) releaseMemberConns(name string, client backends.Backend, retire bool) {
 	drain := m.cfg.DrainTimeout
 	safego.Go(func(r any, stack []byte) {
 		discovery.LogError("alb discovery member teardown panic", logging.Pairs{
@@ -541,13 +537,26 @@ func (m *Manager) releaseMemberConns(name string, e *memberEntry) {
 		if drain > 0 {
 			time.Sleep(drain)
 		}
-		closeClientConns(client)
+		if retire {
+			closeClientConns(client, drain)
+			return
+		}
+		closeIdleConns(client)
 	})
 }
 
-func closeClientConns(client backends.Backend) {
+// closeClientConns retires a member client, as one holding a raw series source's connection, waiting at most wait for
+// work it still runs, then closes its idle connections; a client that was never admitted waits for nothing
+func closeClientConns(client backends.Backend, wait time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), wait)
+	backends.Retire(ctx, client)
+	cancel()
+	closeIdleConns(client)
+}
+
+// closeIdleConns closes a member client's idle connections, including its health probes', which dial through a transport of their own
+func closeIdleConns(client backends.Backend) {
 	closeIdle(client.HTTPClient())
-	// health probes dial through a transport of their own
 	closeIdle(client.HealthCheckHTTPClient())
 }
 
@@ -561,9 +570,8 @@ func closeIdle(c *http.Client) {
 	}
 }
 
-// Stop tears down every discovered member and permanently disables the
-// Manager. Called on shutdown and on config reload (a reload constructs a
-// new Manager, optionally seeded from this one's AppliedSnapshot).
+// Stop tears down every discovered member and permanently disables the Manager, on shutdown and on a reload, which builds a
+// new Manager. The ALB's pool keeps the members, which retire with the ALB, and serve on when a failed reload restores it.
 func (m *Manager) Stop() {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
@@ -576,9 +584,12 @@ func (m *Manager) Stop() {
 	}
 	m.pending = nil
 	m.hasPending = false
+	retiring := make(backends.Backends, len(m.members))
 	for name, e := range m.members {
-		m.teardownMember(name, e)
+		m.teardownMember(name, e, false)
+		retiring[name] = e.client
 	}
+	m.cfg.ALB.RetireWith(retiring)
 	m.members = make(map[string]*memberEntry)
 	metrics.DeleteALBDiscoverySeries(m.albName)
 }

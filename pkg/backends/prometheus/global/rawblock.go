@@ -457,17 +457,25 @@ type rawSource struct {
 	match  []*labels.Matcher
 }
 
-// assemble joins sources, whose ranges are disjoint, into the series with samples in range, in label
-// order; it returns the cached samples, or a block it can't read
-func assemble(sources []rawSource) ([]storage.Series, int64, string, error) {
+// assemble joins base, series it assembled before, with sources, whose ranges are disjoint from each other's and base's,
+// into the series with samples in range, in label order; it returns the cached sources' samples, or a block it can't read
+func assemble(base []storage.Series, sources []rawSource) ([]storage.Series, int64, string, error) {
 	heads := make([]int, len(sources))
 	// matched is each filtered source's head once it has met the source's matchers
 	matched := make([]int, len(sources))
-	var out []storage.Series
+	// out keeps base's array, its series taking the sources' views in place, until a series base lacks is added, which
+	// would overwrite one not yet read, so out then moves to an array of its own
+	out, inPlace := base[:0], len(base) > 0
+	// next is base's next series
+	var next int
 	var cached int64
 	for {
 		var lset labels.Labels
-		found := false
+		found := next < len(base)
+		if found {
+			lset = base[next].Labels()
+		}
+		fromBase := found
 		for i, src := range sources {
 			if len(src.match) > 0 {
 				for heads[i] < len(src.series) && matched[i] <= heads[i] {
@@ -479,13 +487,19 @@ func assemble(sources []rawSource) ([]storage.Series, int64, string, error) {
 				}
 			}
 			if heads[i] < len(src.series) && (!found || labels.Compare(src.series[heads[i]].lset, lset) < 0) {
-				lset, found = src.series[heads[i]].lset, true
+				lset, found, fromBase = src.series[heads[i]].lset, true, false
 			}
 		}
 		if !found {
 			return out, cached, "", nil
 		}
+		var vs *viewSeries
 		var views []chunkView
+		if fromBase {
+			vs, _ = base[next].(*viewSeries)
+			views = vs.views
+			next++
+		}
 		for i, src := range sources {
 			if heads[i] < len(src.series) && labels.Equal(src.series[heads[i]].lset, lset) {
 				var n int64
@@ -503,7 +517,16 @@ func assemble(sources []rawSource) ([]storage.Series, int64, string, error) {
 		if !slices.IsSortedFunc(views, compareViews) {
 			slices.SortFunc(views, compareViews)
 		}
-		out = append(out, &viewSeries{lset: lset, views: views})
+		switch {
+		case vs != nil:
+			vs.views = views
+		case inPlace:
+			out, inPlace = append(make([]storage.Series, 0, len(base)+1), out...), false
+			fallthrough
+		default:
+			vs = &viewSeries{lset: lset, views: views}
+		}
+		out = append(out, vs)
 	}
 }
 

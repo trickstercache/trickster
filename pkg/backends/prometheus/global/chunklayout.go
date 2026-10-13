@@ -19,6 +19,7 @@ package global
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/bits"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -41,6 +42,8 @@ const (
 	// three 8-byte arrays, or one and two of bytes
 	histogramLayoutBytes      = 3 * bucketBytes
 	floatHistogramLayoutBytes = bucketBytes + 2
+	// maxSpanWidth is where the reach of a side's spans saturates, past the bounds any histogram can have
+	maxSpanWidth = math.MaxInt64 / 2
 )
 
 // varbitSizes are how many bits follow each count of a varbit's leading ones, as the library writes them
@@ -125,8 +128,8 @@ func (r *bitReader) varbitInt() (int64, bool) {
 	return int64(v), ok //nolint:gosec // wire protocol reinterpret
 }
 
-// histogramLayout returns the memory an iterator lays out for the bucket layout a histogram chunk's samples share,
-// refusing a layout of an unknown schema, or of more buckets than its first sample's bits hold; others lay out none
+// histogramLayout returns the memory an iterator lays out for the bucket layout a histogram chunk's samples share, none for other
+// encodings, refusing one of an unknown schema, of spans a spanWalk refuses or past custom bounds, or of more buckets than its data holds
 func histogramLayout(enc chunkenc.Encoding, data []byte) (int64, error) {
 	var sampleBits, bucketBits int
 	var bucketLayout int64
@@ -158,18 +161,28 @@ func histogramLayout(enc chunkenc.Encoding, data []byte) (int64, error) {
 	if !histogram.IsKnownSchema(schema) {
 		return 0, fmt.Errorf("%w: %w", errMalformedChunk, histogram.UnknownSchemaError(schema))
 	}
+	isCustom := histogram.IsCustomBucketsSchema(schema)
 	var spans, buckets uint64
+	var width int64
 	// positive spans, then negative, each a count and then each span's length and offset
-	for range 2 {
+	for side := range 2 {
 		count, ok := r.varbitUint()
 		if !ok {
 			return 0, layoutError(enc)
 		}
+		if isCustom && side > 0 && count > 0 {
+			return 0, fmt.Errorf("%w: %w", errMalformedChunk, histogram.ErrHistogramCustomBucketsNegSpans)
+		}
+		walk := newSpanWalk(schema)
 		for ; count > 0; count-- {
 			length, lengthOK := r.varbitUint()
-			_, offsetOK := r.varbitInt()
+			offset, offsetOK := r.varbitInt()
 			if !lengthOK || !offsetOK {
 				return 0, layoutError(enc)
+			}
+			// a span keeps the low 32 bits of each, as the chunk's iterator reads it
+			if err := walk.add(uint32(length), int32(offset)); err != nil { //nolint:gosec // as the iterator reads them
+				return 0, fmt.Errorf("%w: %w", errMalformedChunk, err)
 			}
 			// refused as soon as the buckets outnumber what the data could hold, so their sum can't overflow
 			if buckets += uint64(uint32(length)); buckets > uint64(r.remaining()/bucketBits) { //nolint:gosec // a span's length keeps its low 32 bits
@@ -177,9 +190,12 @@ func histogramLayout(enc chunkenc.Encoding, data []byte) (int64, error) {
 			}
 			spans++
 		}
+		if side == 0 {
+			width = walk.width
+		}
 	}
 	var custom uint64
-	if histogram.IsCustomBucketsSchema(schema) {
+	if isCustom {
 		count, ok := r.varbitUint()
 		for ; ok && count > 0; count-- {
 			// a bound of zero is followed by a whole float64
@@ -192,11 +208,79 @@ func histogramLayout(enc chunkenc.Encoding, data []byte) (int64, error) {
 		if !ok {
 			return 0, layoutError(enc)
 		}
+		if err := checkCustomWidth(width, custom); err != nil {
+			return 0, fmt.Errorf("%w: %w", errMalformedChunk, err)
+		}
 	}
 	if r.remaining() < sampleBits || buckets > uint64((r.remaining()-sampleBits)/bucketBits) { //nolint:gosec // positive
 		return 0, bucketsError(enc)
 	}
 	return int64(buckets)*bucketLayout + int64(spans)*spanBytes + int64(custom)*bucketBytes, nil //nolint:gosec // bounded by the data's bits
+}
+
+// spanWalk checks one side's spans in turn, summing their buckets and reach: a custom-bucket schema's are never offset back,
+// as Prometheus ingests none so, nor a finer schema's than the engine reads after its first, which reduction fails on
+type spanWalk struct {
+	custom, fine bool
+	spans        int
+	buckets      uint64
+	width        int64
+}
+
+// newSpanWalk returns the walk of a side's spans for a histogram of schema
+func newSpanWalk(schema int32) spanWalk {
+	return spanWalk{custom: histogram.IsCustomBucketsSchema(schema), fine: schema > histogram.ExponentialSchemaMax}
+}
+
+func (w *spanWalk) add(length uint32, offset int32) error {
+	if offset < 0 && (w.custom || (w.fine && w.spans > 0)) {
+		return fmt.Errorf("%w: span %d offset by %d", histogram.ErrHistogramSpanNegativeOffset, w.spans+1, offset)
+	}
+	w.spans++
+	w.buckets += uint64(length)
+	// the reach saturates far past any histogram's bounds, so it never overflows
+	w.width = min(w.width+int64(offset)+int64(length), maxSpanWidth)
+	return nil
+}
+
+// checkCustomWidth refuses custom-bucket spans reaching width buckets past the bounds' buckets, one more than the bounds
+func checkCustomWidth(width int64, bounds uint64) error {
+	if uint64(width) > bounds+1 { //nolint:gosec // a custom-bucket schema's reach is never negative
+		return fmt.Errorf("%w: spans reach %d buckets of %d bounds", histogram.ErrHistogramCustomBucketsMismatch, width, bounds)
+	}
+	return nil
+}
+
+// checkBucketLayout refuses a histogram read as a sample whose bucket layout a chunk's would be refused for, or whose spans
+// lay out other than its buckets, as reading it would index past them; its counts aren't checked
+func checkBucketLayout(fh *histogram.FloatHistogram) error {
+	custom := histogram.IsCustomBucketsSchema(fh.Schema)
+	if custom && (len(fh.NegativeSpans) > 0 || len(fh.NegativeBuckets) > 0) {
+		return histogram.ErrHistogramCustomBucketsNegSpans
+	}
+	if _, err := walkSpans(fh.NegativeSpans, len(fh.NegativeBuckets), fh.Schema); err != nil {
+		return err
+	}
+	width, err := walkSpans(fh.PositiveSpans, len(fh.PositiveBuckets), fh.Schema)
+	if err != nil || !custom {
+		return err
+	}
+	return checkCustomWidth(width, uint64(len(fh.CustomValues)))
+}
+
+// walkSpans checks the spans of a side of a histogram of schema, which must lay out exactly buckets, returning their reach
+func walkSpans(spans []histogram.Span, buckets int, schema int32) (int64, error) {
+	w := newSpanWalk(schema)
+	for _, sp := range spans {
+		if err := w.add(sp.Length, sp.Offset); err != nil {
+			return 0, err
+		}
+	}
+	if w.buckets != uint64(buckets) { //nolint:gosec // a length is never negative
+		return 0, fmt.Errorf("%w: spans lay out %d buckets, have %d", histogram.ErrHistogramSpansBucketsMismatch,
+			w.buckets, buckets)
+	}
+	return w.width, nil
 }
 
 func layoutError(enc chunkenc.Encoding) error {

@@ -251,6 +251,64 @@ func TestGlobalEvaluationLimitOutranksContextEnd(t *testing.T) {
 	}
 }
 
+func TestGlobalEvaluationLimitOutranksRetirement(t *testing.T) {
+	quietLimitTest(t)
+	// a member's read holds until retirement ends the evaluation, then fails on a limit when set, which decides the answer
+	// as it would were the deadline or the client to end it; without one, the evaluation is answered as retired
+	for _, limit := range []bool{true, false} {
+		t.Run("limit="+strconv.FormatBool(limit), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				req := backends.TSMGlobalRequest{Members: []backends.TSMGlobalMember{
+					{Name: limitTestMember, Source: contextEndSource{limit: limit}},
+				}}
+				e := newGlobalEvaluator(globalTestSettings())
+				done := make(chan *httptest.ResponseRecorder, 1)
+				go func() { done <- serveGlobal(e, limitTestInstant(), req) }()
+				synctest.Wait()
+				e.Retire(context.Background())
+				w := <-done
+				body := decodeLimitTestBody(t, w)
+				if limit {
+					require.Equal(t, http.StatusUnprocessableEntity, w.Code, w.Body.String())
+					require.Equal(t, global.ErrorTypeExecution, body.ErrorType)
+					require.Contains(t, body.Error, unavailableFor(limitTestMember, errLimitTest).Error())
+					require.NotContains(t, body.Error, errGlobalRetired.Error())
+					return
+				}
+				require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+				require.Equal(t, global.ErrorTypeUnavailable, body.ErrorType)
+				require.Contains(t, body.Error, errGlobalRetired.Error())
+			})
+		})
+	}
+
+	// once retired, a failure with execution stands, and any other is the retirement's
+	e := newGlobalEvaluator(globalTestSettings())
+	e.Retire(context.Background())
+	for name, tc := range map[string]struct {
+		err     error
+		retired bool
+	}{
+		"a member's limit with the cancellation": {err: errors.Join(engineCanceled, unavailableFor(limitTestMember, errLimitTest))},
+		"a storage limit":                        {err: promengine.ErrStorage{Err: errLimitTest}},
+		"the engine's sample limit":              {err: promengine.ErrTooManySamples(engineEvalEnv)},
+		"the cancellation":                       {err: engineCanceled, retired: true},
+		"the deadline":                           {err: context.DeadlineExceeded, retired: true},
+		"a member's cancellation":                {err: unavailableFor(limitTestMember, context.Canceled), retired: true},
+		"a storage failure":                      {err: promengine.ErrStorage{Err: errLimitTestStorage}, retired: true},
+	} {
+		status, errorType, err := e.failure(tc.err)
+		require.ErrorIs(t, err, tc.err, name)
+		if tc.retired {
+			require.Equal(t, [2]any{http.StatusServiceUnavailable, global.ErrorTypeUnavailable}, [2]any{status, errorType}, name)
+			require.ErrorIs(t, err, errGlobalRetired, name)
+			continue
+		}
+		require.Equal(t, [2]any{http.StatusUnprocessableEntity, global.ErrorTypeExecution}, [2]any{status, errorType}, name)
+		require.NotErrorIs(t, err, errGlobalRetired, name)
+	}
+}
+
 func TestGlobalEvaluationLimitStopsOtherReads(t *testing.T) {
 	quietLimitTest(t)
 	for _, partial := range []bool{true, false} {

@@ -399,7 +399,7 @@ func TestRawCodec(t *testing.T) {
 	require.Equal(t, "message", string(f.data))
 	held := &f.data[0]
 	next := message("reused")
-	allocs := testing.AllocsPerRun(10, func() { _ = rawCodec{}.Unmarshal(next, &f) })
+	allocs := testing.AllocsPerRun(1000, func() { _ = rawCodec{}.Unmarshal(next, &f) })
 	require.Zero(t, allocs, "a message the buffer holds is received into it")
 	require.Equal(t, "reused", string(f.data))
 	require.Same(t, held, &f.data[0])

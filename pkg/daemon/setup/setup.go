@@ -32,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb"
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	bp "github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/backends/static"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/index"
@@ -67,11 +68,19 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/tls/acme"
 	"github.com/trickstercache/trickster/v2/pkg/routing"
 	"github.com/trickstercache/trickster/v2/pkg/util/safego"
+	"github.com/trickstercache/trickster/v2/pkg/util/sets"
 )
 
 // mtx guards config loading and validation so only one operation occurs at a time; it
 // prevents overlapping operations rather than any data race
 var mtx sync.Mutex
+
+// minCacheCloseDrain is the least a closing cache waits for its operations under way, once its drain is spent, as a
+// cache manager given none waits its own default
+const minCacheCloseDrain = time.Millisecond
+
+// newClients returns the map a configuration's backend clients are built into
+var newClients = func(size int) backends.Backends { return make(backends.Backends, size) }
 
 // BootstrapConfig loads, validates, processes and prepares a configuration along with its
 // backend clients, the initialization both startup and reload share
@@ -97,15 +106,18 @@ func BootstrapConfigWithOverlay(overlay *config.Overlay, args ...string,
 	if err != nil {
 		return nil, nil, err
 	}
-	clients := make(backends.Backends, len(conf.Backends))
+	clients := newClients(len(conf.Backends))
 	// these can't be done until the config is processed
 	err = validate.RoutesRulesAndPools(conf, clients)
 	if err != nil {
+		// clients that never serve have nothing to drain
+		clients.Retire(0)
 		return nil, nil, err
 	}
 	if conf.Flags != nil && conf.Flags.ValidateConfig {
 		// -validate-config runs every configuration check, including those that need the backend
 		// clients, but applies nothing: no listener, cache, authenticator or discovery is started
+		clients.Retire(0)
 		return conf, nil, nil
 	}
 	return conf, clients, nil
@@ -176,16 +188,20 @@ func Shutdown(si *instance.ServerInstance) {
 	}
 	si.GeoLocators.Close()
 	si.GeoLocators = nil
-	// closed last, as the workers above may still write to them
-	closeCaches(si.Caches, si.MgmtOptions().ShutdownDrain())
+	// backends retire before the caches close, since their own work, such as storing a raw series read, may write to
+	// them just as the workers above may; both end within the one shutdown drain
+	drain := si.MgmtOptions().ShutdownDrain()
+	deadline := time.Now().Add(drain)
+	si.Backends.Retire(drain)
+	closeCaches(si.Caches, deadline)
 	si.Caches = nil
 }
 
-func closeCaches(caches cache.Lookup, drain time.Duration) {
+func closeCaches(caches cache.Lookup, deadline time.Time) {
 	for name, c := range caches {
-		// a close waits for in-flight operations, but for no longer than the shutdown drain
+		// a close waits for in-flight operations, but no later than the shutdown drain's deadline
 		if m, ok := c.(*manager.Manager); ok {
-			m.SetCloseDrainTimeout(drain)
+			m.SetCloseDrainTimeout(max(time.Until(deadline), minCacheCloseDrain))
 		}
 		if err := c.Close(); err != nil {
 			logger.Warn("error closing cache during shutdown",
@@ -201,6 +217,12 @@ func ApplyConfig(si *instance.ServerInstance, newConf *config.Config,
 	if si == nil || newConf == nil {
 		return nil
 	}
+	defer func() {
+		// clients of a configuration that fails to apply never serve, so they have nothing to drain
+		if retErr != nil {
+			clients.Retire(0)
+		}
+	}()
 
 	if newConf.Main.ServerName == "" {
 		newConf.Main.ServerName, _ = os.Hostname()
@@ -451,6 +473,7 @@ func applyCachingConfig(si *instance.ServerInstance,
 		return caches
 	}
 
+	deferred := globalALBCaches(si.Config)
 	for k, v := range newConf.Caches {
 		if w, ok := si.Caches[k]; ok {
 			ocfg := w.Configuration()
@@ -484,8 +507,10 @@ func applyCachingConfig(si *instance.ServerInstance,
 				continue
 			}
 
-			// if we got to this point, the cache won't be used, so close it.
-			closeOldCache(k, w, time.Duration(newConf.MgmtConfig.ReloadDrainTimeout))
+			// if we got to this point, the cache won't be used, so it is closed
+			if closesAtOnce(k, w, deferred) {
+				closeOldCache(k, w, time.Duration(newConf.MgmtConfig.ReloadDrainTimeout))
+			}
 		}
 
 		// the newly-named cache is not in the old config or couldn't be reused, so make it anew
@@ -495,12 +520,63 @@ func applyCachingConfig(si *instance.ServerInstance,
 	// close caches that existed in the old config but are absent from the new
 	// config; without this, renaming a cache leaks the old cache's goroutines.
 	for k, w := range si.Caches {
-		if _, ok := newConf.Caches[k]; ok {
+		if _, ok := newConf.Caches[k]; ok || !closesAtOnce(k, w, deferred) {
 			continue
 		}
 		closeOldCache(k, w, time.Duration(newConf.MgmtConfig.ReloadDrainTimeout))
 	}
 	return caches
+}
+
+func globalALBCaches(c *config.Config) sets.Set[string] {
+	if c == nil {
+		return nil
+	}
+	var names sets.Set[string]
+	for _, o := range c.Backends {
+		// a TSM global ALB's evaluations may still store results and raw series in its cache until the ALB retires
+		if o == nil || o.Provider != bp.ALB || !o.ALBOptions.IsTSMGlobal() {
+			continue
+		}
+		if names == nil {
+			names = sets.NewStringSet()
+		}
+		names.Set(o.CacheName)
+	}
+	return names
+}
+
+func closesAtOnce(name string, c cache.Cache, deferred sets.Set[string]) bool {
+	// only a memory or redis cache an old global ALB stores in waits for the old clients to retire before it closes;
+	// one keeping its objects in local files can't, as the cache replacing it may open the same files
+	if !deferred.Contains(name) {
+		return true
+	}
+	conf := c.Configuration()
+	return conf == nil || (conf.ProviderID != providers.MemoryID && conf.ProviderID != providers.RedisID)
+}
+
+// CloseReplacedCaches closes the caches of old, oldConf's, that current doesn't keep and applying it left open, which a reload
+// calls once the clients that used them have retired; each waits no longer than drain for its operations under way.
+func CloseReplacedCaches(oldConf *config.Config, old, current cache.Lookup, drain time.Duration) {
+	deferred := globalALBCaches(oldConf)
+	if len(deferred) == 0 {
+		return
+	}
+	for name, c := range old {
+		if c != nil && !closesAtOnce(name, c, deferred) && !keeps(current, c) {
+			closeOldCache(name, c, drain)
+		}
+	}
+}
+
+func keeps(caches cache.Lookup, c cache.Cache) bool {
+	for _, k := range caches {
+		if k == c {
+			return true
+		}
+	}
+	return false
 }
 
 func closeOldCache(name string, w cache.Cache, drainTimeout time.Duration) {

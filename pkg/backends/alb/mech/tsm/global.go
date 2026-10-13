@@ -17,6 +17,7 @@
 package tsm
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -31,6 +32,7 @@ import (
 var (
 	errNoGlobalEvaluator = errors.New("no pool member provides tsm global evaluation")
 	errNoGlobalSource    = errors.New("member serves no raw series")
+	errGlobalRetired     = errors.New("tsm global evaluation is retired")
 )
 
 // globalEvaluator returns the ALB's evaluator, built once from the first live member that provides one
@@ -42,6 +44,9 @@ func (h *handler) globalEvaluator(live pool.Targets) (backends.TSMGlobalEvaluato
 	defer h.evaluatorMu.Unlock()
 	if ev := h.evaluator.Load(); ev != nil {
 		return *ev, nil
+	}
+	if h.retired {
+		return nil, errGlobalRetired
 	}
 	for _, t := range live {
 		if t == nil {
@@ -67,6 +72,18 @@ func (h *handler) globalEvaluator(live pool.Targets) (backends.TSMGlobalEvaluato
 		return ev, nil
 	}
 	return nil, errNoGlobalEvaluator
+}
+
+// Retire retires the ALB's evaluator once the ALB's requests have drained, waiting no longer than ctx for its work to
+// end; the handler builds no evaluator after.
+func (h *handler) Retire(ctx context.Context) {
+	h.evaluatorMu.Lock()
+	h.retired = true
+	ev := h.evaluator.Swap(nil)
+	h.evaluatorMu.Unlock()
+	if ev != nil {
+		backends.Retire(ctx, *ev)
+	}
 }
 
 // SetCache gives the handler the cache and backend options global evaluation keeps its results with,

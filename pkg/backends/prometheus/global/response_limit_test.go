@@ -350,9 +350,9 @@ func TestWriteErrorEscapes(t *testing.T) {
 }
 
 func TestWriteErrorFitsLimit(t *testing.T) {
-	// an error keeps within its limit whenever its type does: warnings that don't fit are left out, in order, and a
-	// message that doesn't is cut short between characters
-	msg := "a <message> \xff \u00fc \u2028 " + strings.Repeat("&", limitTestEscapes)
+	// an error keeps within its limit, or minErrorBytes when that is more: warnings that don't fit are left out, in
+	// order, and a message that doesn't is cut short between characters
+	msg := "a <message> \xff \u00fc \u2028 " + strings.Repeat("&", minErrorBytes/quotedUnicode)
 	warnings := []string{strings.Repeat("<", limitTestEscapes), "w1", strings.Repeat("\x01", 40), "w<2>"}
 	write := func(limit int64) []byte {
 		w := httptest.NewRecorder()
@@ -364,13 +364,19 @@ func TestWriteErrorFitsLimit(t *testing.T) {
 	full := write(0)
 	want := decodeTestError(t, full)
 	require.Len(t, want.Warnings, len(warnings))
-	floor := len(`{"status":"error","errorType":"` + ErrorTypeUnavailable + `","error":""}`)
+	require.Greater(t, len(full), minErrorBytes+quotedUnicode, "the whole error is past the floor")
+	// a limit below the floor writes what the floor does, its message cut short rather than left empty
+	floored := write(minErrorBytes)
+	require.Equal(t, string(floored), string(write(1)))
+	resp := decodeTestError(t, floored)
+	require.NotEmpty(t, resp.Error)
+	require.True(t, strings.HasPrefix(want.Error, resp.Error), resp.Error)
 	var last errorTestResponse
-	for limit := 1; limit <= len(full)+2; limit++ {
+	for limit := minErrorBytes - 2; limit <= len(full)+2; limit++ {
 		body := write(int64(limit))
 		resp := decodeTestError(t, body)
 		require.Equal(t, ErrorTypeUnavailable, resp.ErrorType)
-		require.LessOrEqual(t, len(body), max(limit, floor), "limit %d", limit)
+		require.LessOrEqual(t, len(body), max(limit, minErrorBytes), "limit %d", limit)
 		require.True(t, strings.HasPrefix(want.Error, resp.Error), "limit %d: %q", limit, resp.Error)
 		require.GreaterOrEqual(t, len(resp.Error), len(last.Error), "a higher limit never shortens the message")
 		require.True(t, isSubsequence(resp.Warnings, want.Warnings), "limit %d: %q", limit, resp.Warnings)
