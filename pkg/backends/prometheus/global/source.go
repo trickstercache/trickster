@@ -78,12 +78,20 @@ type Budget struct {
 
 	series  atomic.Int64
 	samples atomic.Int64
-	// share, set on a shared read's own budget, charges its samples to every evaluation it reads for
-	share func(samples int64) error
+	// share, set on a shared read's own budget, charges its series and samples to every evaluation it reads for
+	share shareFunc
 }
 
+// shareFunc charges series and samples a shared read added to its budget to the evaluations it reads for; ids are the
+// label set hashes of the series, when the budget identifies them
+type shareFunc func(series, samples int64, ids []uint64) error
+
 // add counts series that have samples in range and the samples, failing once either exceeds its limit
-func (b *Budget) add(series, samples int64) error {
+func (b *Budget) add(series, samples int64) error { return b.addSeries(series, samples, nil) }
+
+// addSeries is add for series whose label set hashes are ids, when the budget identifies them, which a shared read
+// passes on, so an evaluation reading a series in several of a selector's time ranges counts it once
+func (b *Budget) addSeries(series, samples int64, ids []uint64) error {
 	if b == nil {
 		return nil
 	}
@@ -93,11 +101,15 @@ func (b *Budget) add(series, samples int64) error {
 	if total := b.samples.Add(samples); b.MaxSamples > 0 && total > b.MaxSamples {
 		return fmt.Errorf("%w: more than %d samples", ErrFetchLimit, b.MaxSamples)
 	}
-	if b.share != nil && samples > 0 {
-		return b.share(samples)
+	if b.share != nil && (series > 0 || samples > 0) {
+		return b.share(series, samples, ids)
 	}
 	return nil
 }
+
+// identifies reports whether series are counted by their label sets' hashes, so a copy of one isn't counted again:
+// only when their number is limited, as a hash set as large as the limit is then all that's kept
+func (b *Budget) identifies() bool { return b != nil && b.MaxSeries > 0 }
 
 // exceeds reports whether adding series and samples would exceed either limit, reading the counts without
 // adding to them, so a reader can check each chunk before keeping it and add many at once

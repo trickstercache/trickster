@@ -602,8 +602,8 @@ func TestChunkReaderMaterializesWithoutAllocating(t *testing.T) {
 }
 
 // answerWith returns a shared read answering v, counting its runs in runs when set
-func answerWith(v int, runs *atomic.Int32) func(context.Context, func(int64) error) int {
-	return func(context.Context, func(int64) error) int {
+func answerWith(v int, runs *atomic.Int32) func(context.Context, shareFunc) int {
+	return func(context.Context, shareFunc) int {
 		if runs != nil {
 			runs.Add(1)
 		}
@@ -619,7 +619,9 @@ func TestFlightGroupAnswersBeforeAfter(t *testing.T) {
 	t.Cleanup(releaseOnce)
 	do := func(v int, after func(int)) (got int, err error) {
 		t.Helper()
-		waitWithin(t, func() { got, err = g.do(context.Background(), rawTestMember, &Budget{}, answerWith(v, &runs), after) })
+		waitWithin(t, func() {
+			got, err = g.do(context.Background(), rawTestMember, &selectCharge{}, answerWith(v, &runs), after)
+		})
 		return got, err
 	}
 	// the caller is answered while after still runs
@@ -690,7 +692,7 @@ func TestRawCacheAnswersBeforeStoring(t *testing.T) {
 func TestFlightGroupSurvivesPanickingAfter(t *testing.T) {
 	logs := captureErrors(t)
 	var g flightGroup[int]
-	got, err := g.do(context.Background(), rawTestMember, &Budget{}, answerWith(1, nil), func(int) { panic(storeTestBug) })
+	got, err := g.do(context.Background(), rawTestMember, &selectCharge{}, answerWith(1, nil), func(int) { panic(storeTestBug) })
 	require.NoError(t, err)
 	require.Equal(t, 1, got)
 	waitWithin(t, g.running.Wait)
@@ -699,8 +701,49 @@ func TestFlightGroupSurvivesPanickingAfter(t *testing.T) {
 	require.Empty(t, g.flights, "the flight is forgotten")
 	g.mu.Unlock()
 	// a later caller runs its own read rather than joining the one whose after panicked
-	got, err = g.do(context.Background(), rawTestMember, &Budget{}, answerWith(2, nil), nil)
+	got, err = g.do(context.Background(), rawTestMember, &selectCharge{}, answerWith(2, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, 2, got)
 	waitWithin(t, g.running.Wait)
+}
+
+func TestFlightGroupStartsAnotherReadOnceOneEnds(t *testing.T) {
+	var g flightGroup[int]
+	var runs atomic.Int32
+	stopped, finish := make(chan struct{}), make(chan struct{})
+	finishOnce := sync.OnceFunc(func() { close(finish) })
+	t.Cleanup(finishOnce)
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	var errFirst error
+	wg.Go(func() {
+		_, errFirst = g.do(ctx, rawTestMember, &selectCharge{}, func(rctx context.Context, _ shareFunc) int {
+			runs.Add(1)
+			<-rctx.Done()
+			close(stopped)
+			<-finish
+			return 1
+		}, nil)
+	})
+	require.Eventually(t, func() bool {
+		return flightIs(&g, rawTestMember, func(f *flight[int]) bool { return len(f.callers) == 1 })
+	}, storeTestWait, time.Millisecond)
+	// its only caller leaving ends the read, which is still finishing when another caller arrives and starts its own
+	cancel()
+	waitWithin(t, func() { <-stopped })
+	waitWithin(t, wg.Wait)
+	require.ErrorIs(t, errFirst, context.Canceled)
+	var got int
+	var err error
+	waitWithin(t, func() {
+		got, err = g.do(context.Background(), rawTestMember, &selectCharge{}, answerWith(2, &runs), nil)
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, got)
+	require.Equal(t, int32(2), runs.Load())
+	finishOnce()
+	waitWithin(t, g.running.Wait)
+	g.mu.Lock()
+	require.Empty(t, g.flights)
+	g.mu.Unlock()
 }

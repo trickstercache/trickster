@@ -351,9 +351,9 @@ func TestDecoderCountsBeforeKeeping(t *testing.T) {
 }
 
 func TestDecoderAddsToBudgetByQuantum(t *testing.T) {
-	var shared []int64
-	budget := &Budget{share: func(n int64) error {
-		shared = append(shared, n)
+	var shared [][2]int64
+	budget := &Budget{share: func(series, samples int64, _ []uint64) error {
+		shared = append(shared, [2]int64{series, samples})
 		return nil
 	}}
 	frame := chunkedFrame(t,
@@ -366,21 +366,21 @@ func TestDecoderAddsToBudgetByQuantum(t *testing.T) {
 	series, err := decodeFrames(t, budget, frame)
 	require.NoError(t, err)
 	require.Len(t, series, 2)
-	// a quantum is added at once, and the rest as the frame ends
-	require.Equal(t, []int64{6000, 10}, shared)
+	// a quantum is added at once, and the rest as the frame ends, each with the series new to it
+	require.Equal(t, [][2]int64{{1, 6000}, {1, 10}}, shared)
 	fetchedSeries, fetchedSamples := budget.Fetched()
 	require.Equal(t, int64(2), fetchedSeries)
 	require.Equal(t, int64(6010), fetchedSamples)
 
 	stop := errors.New("no evaluation can afford more")
 	shared = nil
-	budget = &Budget{share: func(n int64) error {
-		shared = append(shared, n)
+	budget = &Budget{share: func(series, samples int64, _ []uint64) error {
+		shared = append(shared, [2]int64{series, samples})
 		return stop
 	}}
 	_, err = decodeFrames(t, budget, frame)
 	require.ErrorIs(t, err, stop)
-	require.Equal(t, []int64{6000}, shared, "a shared read stops once none of its evaluations can afford more")
+	require.Equal(t, [][2]int64{{1, 6000}}, shared, "a shared read stops once none of its evaluations can afford more")
 
 	// what a frame counts short of a quantum is added as it ends, and can fail it too
 	shared = nil
@@ -389,7 +389,7 @@ func TestDecoderAddsToBudgetByQuantum(t *testing.T) {
 		Chunks: []prompb.Chunk{claimedChunk(10, 110, 120)},
 	}))
 	require.ErrorIs(t, err, stop)
-	require.Equal(t, []int64{10}, shared)
+	require.Equal(t, [][2]int64{{1, 10}}, shared)
 	shared = nil
 	d := newDecoder(budget, decodeTestMint, decodeTestMaxt, errRemoteRead)
 	err = d.readResponse(samplesResponse(t, &prompb.TimeSeries{
@@ -397,7 +397,7 @@ func TestDecoderAddsToBudgetByQuantum(t *testing.T) {
 		Samples: []prompb.Sample{{Timestamp: 110, Value: 1}},
 	}))
 	require.ErrorIs(t, err, stop)
-	require.Equal(t, []int64{1}, shared)
+	require.Equal(t, [][2]int64{{1, 1}}, shared)
 }
 
 func TestDecoderSamples(t *testing.T) {
@@ -798,7 +798,7 @@ func TestStoreAPIKeepsOnlyInRange(t *testing.T) {
 	require.Equal(t, int64(2), fetchedSamples)
 
 	stop := errors.New("no evaluation can afford more")
-	budget = &Budget{share: func(int64) error { return stop }}
+	budget = &Budget{share: func(int64, int64, []uint64) error { return stop }}
 	_, _, err = (&testStore{frames: frames}).serve(t).Select(testContext(t, budget), decodeTestMint, decodeTestMaxt, nil)
 	require.ErrorIs(t, err, stop, "what a message counts is added as it ends")
 }
@@ -906,6 +906,64 @@ func TestDecoderSeriesLimitStopsBeforeKeeping(t *testing.T) {
 			require.Len(t, d.out, limit, "the read stops at the first series the budget can't afford, before keeping it")
 			series, _ := budget.Fetched()
 			require.Equal(t, int64(limit+1), series)
+		})
+	}
+}
+
+func TestDecoderCountsCopiesOnceUnderASeriesLimit(t *testing.T) {
+	// pod a is sent, then b, then a again, a copy deduplication joins to the first rather than a series of its own
+	pods, times := []string{"a", "b", "a"}, []int64{110, 120, 130}
+	var chunked []*prompb.ChunkedSeries
+	var timeSeries []*prompb.TimeSeries
+	var messages [][]byte
+	for i, pod := range pods {
+		chunked = append(chunked, &prompb.ChunkedSeries{
+			Labels: testLabels(pod),
+			Chunks: []prompb.Chunk{xorChunk(t, pointsAt(times[i])...)},
+		})
+		timeSeries = append(timeSeries, &prompb.TimeSeries{
+			Labels:  testLabels(pod),
+			Samples: []prompb.Sample{{Timestamp: times[i], Value: 1}},
+		})
+		messages = append(messages, encodeTestSeries([]string{labels.MetricName, testMetric, testPod, pod},
+			spanned(encodeTestChunk(storeChunkXOR, xorData(t, pointsAt(times[i])...), true), times[i], times[i])))
+	}
+	frame, samples := chunkedFrame(t, chunked...), samplesResponse(t, timeSeries...)
+	decodes := map[string]func(*decoder) error{
+		"remote read": func(d *decoder) error { return d.chunkedReadResponse(frame) },
+		"samples":     func(d *decoder) error { return d.readResponse(samples) },
+		"storeapi": func(d *decoder) error {
+			for _, m := range messages {
+				if _, err := d.seriesResponse(m); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	}
+	id := func(pod string) uint64 { return labels.FromStrings(labels.MetricName, testMetric, testPod, pod).Hash() }
+	for name, decode := range decodes {
+		t.Run(name, func(t *testing.T) {
+			var shared []uint64
+			budget := &Budget{MaxSeries: 2, share: func(_, _ int64, ids []uint64) error {
+				shared = append(shared, ids...)
+				return nil
+			}}
+			d := newDecoder(budget, decodeTestMint, decodeTestMaxt, errRemoteRead)
+			require.NoError(t, decode(d))
+			require.Len(t, d.out, 3, "the copy is kept, to be joined to its series")
+			series, samples := budget.Fetched()
+			require.Equal(t, [2]int64{2, 3}, [2]int64{series, samples})
+			require.Equal(t, []uint64{id("a"), id("b")}, shared, "each series is shared with its id once")
+			require.ErrorIs(t, decode(newDecoder(&Budget{MaxSeries: 1}, decodeTestMint, decodeTestMaxt, errRemoteRead)),
+				ErrFetchLimit)
+			// without a limit, series aren't told apart, so the copy counts as it arrives, and no set of ids takes memory
+			unlimited := &Budget{}
+			plain := newDecoder(unlimited, decodeTestMint, decodeTestMaxt, errRemoteRead)
+			require.NoError(t, decode(plain))
+			series, _ = unlimited.Fetched()
+			require.Equal(t, int64(3), series)
+			require.Equal(t, int64(2*seenBytes), plain.allowance-d.allowance)
 		})
 	}
 }
@@ -1133,7 +1191,7 @@ func TestDecoderReleasesReplacedBuffers(t *testing.T) {
 	retained := func(t *testing.T, start func(*Budget) <-chan error, finish func()) int64 {
 		t.Helper()
 		decoded := make(chan struct{}, messages)
-		budget := &Budget{share: func(int64) error {
+		budget := &Budget{share: func(int64, int64, []uint64) error {
 			decoded <- struct{}{}
 			return nil
 		}}

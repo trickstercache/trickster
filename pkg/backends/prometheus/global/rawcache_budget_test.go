@@ -19,13 +19,17 @@ package global
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 
@@ -45,10 +49,10 @@ const (
 
 var testMetricMatcher = labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric)
 
-// waitForCallers waits until the shared read of the test metric from mint to maxt has want callers
-func waitForCallers(t *testing.T, rc *rawTestCache, mint, maxt int64, want int) {
+// waitForFlight waits until the shared read of src's test metric from mint to maxt meets cond, which reads it locked
+func waitForFlight(t *testing.T, rc *rawTestCache, src Source, mint, maxt int64, cond func(f *flight[fetched]) bool) {
 	t.Helper()
-	k, _ := rc.key(teamRequest(rawTestTeamA), rawTestSource(t), []*labels.Matcher{testMetricMatcher})
+	k, _ := rc.key(teamRequest(rawTestTeamA), src, []*labels.Matcher{testMetricMatcher})
 	key := k.key + "/" + strconv.FormatInt(mint, 10) + "/" + strconv.FormatInt(maxt, 10)
 	require.Eventually(t, func() bool {
 		rc.flights.mu.Lock()
@@ -59,12 +63,18 @@ func waitForCallers(t *testing.T, rc *rawTestCache, mint, maxt int64, want int) 
 		}
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		return len(f.callers) == want
+		return cond(f)
 	}, 5*time.Second, time.Millisecond)
 }
 
+// waitForCallers waits until the shared read of the test metric from mint to maxt has want callers
+func waitForCallers(t *testing.T, rc *rawTestCache, mint, maxt int64, want int) {
+	t.Helper()
+	waitForFlight(t, rc, rawTestSource(t), mint, maxt, func(f *flight[fetched]) bool { return len(f.callers) == want })
+}
+
 // streamingSource answers as a member streaming its answer does: each chunk is counted against the read's
-// budget as it is sent, and it records how many reads it serves at once
+// budget as it is sent, each series identified as a decoder does, and it records how many reads it serves at once
 type streamingSource struct {
 	*chunkedSource
 	// pause, when set, comes before each chunk, so reads overlap
@@ -102,10 +112,14 @@ func (s *streamingSource) Select(ctx context.Context, mint, maxt int64, hints *s
 				return nil, nil, err
 			}
 			var newSeries int64
+			var ids []uint64
 			if n > 0 && !counted {
 				newSeries, counted = 1, true
+				if budget.identifies() {
+					ids = []uint64{cs.lset.Hash()}
+				}
 			}
-			if err := budget.add(newSeries, n); err != nil {
+			if err := budget.addSeries(newSeries, n, ids); err != nil {
 				return nil, nil, err
 			}
 			s.sent.Add(n)
@@ -150,21 +164,25 @@ func TestRawCacheSharedReadChargesEachCaller(t *testing.T) {
 	src := &streamingSource{chunkedSource: rawTestSource(t)}
 	src.gate = make(chan struct{})
 	rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{})
-	small, large := &Budget{MaxSamples: 100}, &Budget{}
+	small, few, large := &Budget{MaxSamples: 100}, &Budget{MaxSeries: 1}, &Budget{}
 	var wg sync.WaitGroup
-	var errSmall, errLarge error
+	var errSmall, errFew, errLarge error
 	var served []storage.Series
 	wg.Go(func() {
 		_, _, errSmall = rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), small), src, mint, maxt)
 	})
 	wg.Go(func() {
+		_, _, errFew = rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), few), src, mint, maxt)
+	})
+	wg.Go(func() {
 		served, _, errLarge = rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), large), src, mint, maxt)
 	})
-	waitForCallers(t, rc, mint, maxt, 2)
+	waitForCallers(t, rc, mint, maxt, 3)
 	close(src.gate)
 	wg.Wait()
-	// the caller whose budget ran out leaves the read, which goes on for the other
+	// the callers whose samples or series ran out leave the read, which goes on for the other
 	require.ErrorIs(t, errSmall, ErrFetchLimit)
+	require.ErrorIs(t, errFew, ErrFetchLimit)
 	require.NoError(t, errLarge)
 	want := wantPoints(t, src.chunkedSource, mint, maxt)
 	require.Equal(t, want, pointsOf(t, served))
@@ -178,13 +196,13 @@ func TestFlightGroupChargesEveryCaller(t *testing.T) {
 	var g flightGroup[int]
 	ctx := context.Background()
 	charged, release := make(chan struct{}), make(chan struct{})
-	read := func(_ context.Context, share func(int64) error) int {
-		if share(50) != nil {
+	read := func(_ context.Context, share shareFunc) int {
+		if share(2, 50, nil) != nil {
 			return -1
 		}
 		close(charged)
 		<-release
-		if share(50) != nil {
+		if share(1, 50, nil) != nil {
 			return -1
 		}
 		return 1
@@ -193,37 +211,37 @@ func TestFlightGroupChargesEveryCaller(t *testing.T) {
 	var wg sync.WaitGroup
 	var result, refused int
 	var errFirst, errLater error
-	wg.Go(func() { result, errFirst = g.do(ctx, "k", first, read, nil) })
+	wg.Go(func() { result, errFirst = g.do(ctx, "k", &selectCharge{budget: first}, read, nil) })
 	<-charged
-	// a caller joining later pays what the read has read so far, and is refused when it can't
-	refusedCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	_, err := g.do(refusedCtx, "k", &Budget{MaxSamples: 10}, read, nil)
-	require.ErrorIs(t, err, ErrFetchLimit)
+	// a caller joining later pays the series and samples the read has read so far, and is refused when it can't
+	for _, budget := range []*Budget{{MaxSamples: 10}, {MaxSeries: 1}} {
+		refusedCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_, err := g.do(refusedCtx, "k", &selectCharge{budget: budget}, read, nil)
+		cancel()
+		require.ErrorIs(t, err, ErrFetchLimit)
+	}
 	// one that can pays, then leaves once the read costs more than it allows
-	later := &Budget{MaxSamples: 60}
-	wg.Go(func() { refused, errLater = g.do(ctx, "k", later, read, nil) })
-	require.Eventually(t, func() bool {
-		g.mu.Lock()
-		f := g.flights["k"]
-		g.mu.Unlock()
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return len(f.callers) == 2
-	}, 5*time.Second, time.Millisecond)
+	later := &Budget{MaxSeries: 2, MaxSamples: 1000}
+	wg.Go(func() { refused, errLater = g.do(ctx, "k", &selectCharge{budget: later}, read, nil) })
+	// it pays as it joins, its samples before its series
+	require.Eventually(t, func() bool { series, _ := later.Fetched(); return series > 0 }, 5*time.Second, time.Millisecond)
+	series, samples := later.Fetched()
+	require.Equal(t, [2]int64{2, 50}, [2]int64{series, samples})
+	require.True(t, flightIs(&g, "k", func(f *flight[int]) bool { return len(f.callers) == 2 }))
 	close(release)
 	wg.Wait()
 	require.NoError(t, errFirst)
 	require.Equal(t, 1, result)
 	require.ErrorIs(t, errLater, ErrFetchLimit)
 	require.Zero(t, refused)
-	_, samples := first.Fetched()
-	require.Equal(t, int64(100), samples)
+	series, samples = first.Fetched()
+	require.Equal(t, [2]int64{3, 100}, [2]int64{series, samples})
 
 	// a read no caller can afford stops reading
 	stopped := make(chan int, 1)
-	_, err = g.do(ctx, "solo", &Budget{MaxSamples: 10}, func(_ context.Context, share func(int64) error) int {
-		if share(50) != nil {
+	solo := &selectCharge{budget: &Budget{MaxSeries: 1}}
+	_, err := g.do(ctx, "solo", solo, func(_ context.Context, share shareFunc) int {
+		if share(2, 0, nil) != nil {
 			stopped <- -1
 			return -1
 		}
@@ -233,6 +251,280 @@ func TestFlightGroupChargesEveryCaller(t *testing.T) {
 	require.ErrorIs(t, err, ErrFetchLimit)
 	require.Equal(t, -1, <-stopped)
 	g.running.Wait()
+}
+
+func TestFlightGroupReplaysSeriesIDsToLateCallers(t *testing.T) {
+	var g flightGroup[int]
+	ctx := context.Background()
+	charged, release := make(chan struct{}), make(chan struct{})
+	read := func(_ context.Context, share shareFunc) int {
+		if share(2, 0, []uint64{1, 2}) != nil {
+			return -1
+		}
+		close(charged)
+		<-release
+		return 1
+	}
+	var wg sync.WaitGroup
+	var errFirst, errJoined error
+	wg.Go(func() { _, errFirst = g.do(ctx, "k", &selectCharge{}, read, nil) })
+	<-charged
+	// a select whose other read reported series 3 joins, paying for the two series the read holds that are new to it
+	joined := newSelectCharge(&Budget{MaxSeries: 3}, true)
+	require.NoError(t, joined.pay(1, 0, []uint64{3}))
+	wg.Go(func() { _, errJoined = g.do(ctx, "k", joined, read, nil) })
+	require.Eventually(t, func() bool { series, _ := joined.budget.Fetched(); return series > 1 }, 5*time.Second,
+		time.Millisecond)
+	series, _ := joined.budget.Fetched()
+	require.Equal(t, int64(3), series)
+	require.True(t, flightIs(&g, "k", func(f *flight[int]) bool { return len(f.callers) == 2 }))
+	// one whose other read reported series 3 and 4 can't afford the read's two more, though no read alone exceeds it
+	refused := newSelectCharge(&Budget{MaxSeries: 3}, true)
+	require.NoError(t, refused.pay(2, 0, []uint64{3, 4}))
+	_, err := g.do(ctx, "k", refused, read, nil)
+	require.ErrorIs(t, err, ErrFetchLimit)
+	series, _ = refused.budget.Fetched()
+	require.Equal(t, int64(4), series)
+	require.True(t, flightIs(&g, "k", func(f *flight[int]) bool { return len(f.callers) == 2 }), "the refused caller left")
+	close(release)
+	wg.Wait()
+	require.NoError(t, errFirst)
+	require.NoError(t, errJoined)
+	g.running.Wait()
+}
+
+// flightIs reports whether g's flight of key meets cond, which reads it locked
+func flightIs[T any](g *flightGroup[T], key string, cond func(f *flight[T]) bool) bool {
+	g.mu.Lock()
+	f := g.flights[key]
+	g.mu.Unlock()
+	if f == nil {
+		return false
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return cond(f)
+}
+
+// gatedCharge returns the charge of a select of budget, whose first payment, a late caller's for what a shared read
+// held before it joined, closes entered and then waits until resume is called
+func gatedCharge(t *testing.T, budget *Budget, identified bool) (charge *selectCharge, entered chan struct{},
+	resume func(),
+) {
+	t.Helper()
+	entered, gate := make(chan struct{}), make(chan struct{})
+	resume = sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(resume)
+	var paid atomic.Bool
+	// an evaluation's budget has no share; setting one holds the select's first payment as it charges the budget
+	budget.share = func(int64, int64, []uint64) error {
+		if paid.CompareAndSwap(false, true) {
+			close(entered)
+			<-gate
+		}
+		return nil
+	}
+	return newSelectCharge(budget, identified), entered, resume
+}
+
+func TestFlightGroupLateCallersPayOutsideItsLocks(t *testing.T) {
+	const held, heldSamples, added = 4096, 10, 1
+	ids := make([]uint64, held)
+	for i := range ids {
+		ids[i] = uint64(i)
+	}
+	tests := map[string]struct {
+		budget     *Budget
+		identified bool
+		// grows is whether the read reports another series while the late caller pays for those it held before
+		grows bool
+		// refused is whether the late caller's payment for what the read held fails, released whether the read
+		// releases it before it has paid
+		refused, released bool
+	}{
+		"affordable":                  {budget: &Budget{MaxSeries: held + added}, identified: true, grows: true},
+		"refused by its payment":      {budget: &Budget{MaxSeries: held - 1}, identified: true, refused: true},
+		"released before it has paid": {budget: &Budget{MaxSeries: held}, grows: true, released: true},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			var g flightGroup[int]
+			ctx := context.Background()
+			charged, release := make(chan struct{}), make(chan struct{})
+			releaseRead := sync.OnceFunc(func() { close(release) })
+			t.Cleanup(releaseRead)
+			read := func(_ context.Context, share shareFunc) int {
+				if share(held, heldSamples, ids) != nil {
+					return -1
+				}
+				close(charged)
+				<-release
+				if tc.grows && share(added, heldSamples, []uint64{held}) != nil {
+					return -1
+				}
+				return 1
+			}
+			var first, late sync.WaitGroup
+			var result, lateResult int
+			var errFirst, errLate error
+			first.Go(func() { result, errFirst = g.do(ctx, "k", &selectCharge{}, read, nil) })
+			<-charged
+			charge, entered, resume := gatedCharge(t, tc.budget, tc.identified)
+			late.Go(func() { lateResult, errLate = g.do(ctx, "k", charge, read, nil) })
+			waitWithin(t, func() { <-entered })
+			// while the late caller pays for the many series the read held, another key's read runs, and the late caller
+			// is already among the read's callers
+			var other, callers int
+			waitWithin(t, func() { other, _ = g.do(ctx, "other", &selectCharge{}, answerWith(2, nil), nil) })
+			require.Equal(t, 2, other)
+			waitWithin(t, func() { flightIs(&g, "k", func(f *flight[int]) bool { callers = len(f.callers); return true }) })
+			require.Equal(t, 2, callers)
+			if !tc.refused {
+				// the read goes on charging and answering its callers before the late caller has paid
+				releaseRead()
+				waitWithin(t, first.Wait)
+				require.NoError(t, errFirst)
+				require.Equal(t, 1, result)
+			}
+			resume()
+			waitWithin(t, late.Wait)
+			if tc.refused || tc.released {
+				require.ErrorIs(t, errLate, ErrFetchLimit)
+				require.Zero(t, lateResult)
+			} else {
+				require.NoError(t, errLate)
+				require.Equal(t, 1, lateResult)
+				series, samples := tc.budget.Fetched()
+				require.Equal(t, [2]int64{held + added, 2 * heldSamples}, [2]int64{series, samples})
+			}
+			if tc.refused {
+				// a caller its payment refused leaves the read, which goes on for the others
+				require.True(t, flightIs(&g, "k", func(f *flight[int]) bool {
+					return len(f.callers) == 1 && f.callers[0].charge != charge && !f.ended
+				}))
+				require.Len(t, charge.seen, held, "the set grew only one past the limit")
+				releaseRead()
+				waitWithin(t, first.Wait)
+				require.NoError(t, errFirst)
+				require.Equal(t, 1, result)
+			}
+			waitWithin(t, g.running.Wait)
+		})
+	}
+}
+
+func TestSelectChargeChargesEachSeriesOnce(t *testing.T) {
+	budget := &Budget{MaxSeries: 5}
+	charge := &selectCharge{budget: budget}
+	// a select's reads cover disjoint ranges of the same series, so the most any one has held is charged
+	require.NoError(t, charge.pay(3, 10, nil))
+	require.NoError(t, charge.pay(2, 10, nil))
+	require.NoError(t, charge.pay(3, 0, nil))
+	series, samples := budget.Fetched()
+	require.Equal(t, [2]int64{3, 20}, [2]int64{series, samples})
+	require.NoError(t, charge.pay(4, 5, nil))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(4), series)
+	// what the select serves, its reads' series and those only cached, settles the charge exactly
+	require.NoError(t, charge.settle(5, 7))
+	series, samples = budget.Fetched()
+	require.Equal(t, [2]int64{5, 32}, [2]int64{series, samples})
+	require.ErrorIs(t, (&selectCharge{budget: budget}).pay(1, 0, nil), ErrFetchLimit, "every select charges the same budget")
+	// and takes back what its reads charged for copies of a series, which it serves as one
+	budget = &Budget{}
+	charge = &selectCharge{budget: budget}
+	require.NoError(t, charge.pay(3, 0, nil))
+	require.NoError(t, charge.settle(2, 0))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(2), series)
+
+	// reads raising the charge at once still charge the most any one held
+	const reads, perRead = 8, 500
+	budget = &Budget{MaxSeries: perRead}
+	charge = &selectCharge{budget: budget}
+	var wg sync.WaitGroup
+	for range reads {
+		wg.Go(func() {
+			for n := int64(1); n <= perRead; n++ {
+				require.NoError(t, charge.pay(n, 1, nil))
+			}
+		})
+	}
+	wg.Wait()
+	series, samples = budget.Fetched()
+	require.Equal(t, [2]int64{perRead, reads * perRead}, [2]int64{series, samples})
+	require.NoError(t, charge.settle(perRead, 0))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(perRead), series)
+}
+
+func TestSelectChargeCountsIDsOnce(t *testing.T) {
+	// a select counts ids only when its reads identify series and its budget limits them
+	require.False(t, newSelectCharge(&Budget{MaxSeries: 5}, false).identify)
+	require.False(t, newSelectCharge(&Budget{}, true).identify)
+	require.False(t, newSelectCharge(nil, true).identify)
+	unidentified := newSelectCharge(&Budget{MaxSeries: 5}, false)
+	require.NoError(t, unidentified.pay(2, 0, []uint64{1, 2}))
+	require.Nil(t, unidentified.seen, "a select not counting ids keeps none")
+	budget := &Budget{MaxSeries: 5}
+	charge := newSelectCharge(budget, true)
+	// reads of disjoint ranges holding different series are charged for all of them, those they share once
+	require.NoError(t, charge.pay(2, 10, []uint64{1, 2}))
+	require.NoError(t, charge.pay(2, 10, []uint64{2, 3}))
+	require.NoError(t, charge.pay(1, 0, []uint64{1}))
+	series, samples := budget.Fetched()
+	require.Equal(t, [2]int64{3, 20}, [2]int64{series, samples})
+	// a read reporting series without ids still raises the charge to all those it held
+	require.NoError(t, charge.pay(4, 0, nil))
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(4), series)
+	// the set grows only one past the limit, which then fails every pay
+	require.ErrorIs(t, charge.pay(4, 0, []uint64{4, 5, 6, 7, 8, 9}), ErrFetchLimit)
+	require.Len(t, charge.seen, 6)
+	require.ErrorIs(t, charge.pay(1, 0, []uint64{10}), ErrFetchLimit)
+	require.Len(t, charge.seen, 6)
+
+	// reads reporting ids at once charge each distinct one once
+	const reads, perRead = 8, 500
+	budget = &Budget{MaxSeries: reads * perRead}
+	charge = newSelectCharge(budget, true)
+	var wg sync.WaitGroup
+	for r := range reads {
+		wg.Go(func() {
+			for n := range perRead {
+				// each read's ids overlap the next read's by half
+				id := uint64(r*perRead/2 + n)
+				require.NoError(t, charge.pay(int64(n+1), 1, []uint64{id}))
+			}
+		})
+	}
+	wg.Wait()
+	series, samples = budget.Fetched()
+	require.Equal(t, [2]int64{(reads + 1) * perRead / 2, reads * perRead}, [2]int64{series, samples})
+}
+
+func TestSelectChargeSizesItsSetForItsFirstIDs(t *testing.T) {
+	const many = 1 << 14
+	ids := make([]uint64, many)
+	for i := range ids {
+		ids[i] = uint64(i)
+	}
+	payAll := func(limit int64) float64 {
+		return testing.AllocsPerRun(5, func() {
+			_ = newSelectCharge(&Budget{MaxSeries: limit}, true).pay(0, 0, ids)
+		})
+	}
+	grown := testing.AllocsPerRun(5, func() {
+		seen := make(map[uint64]struct{})
+		for _, id := range ids {
+			seen[id] = struct{}{}
+		}
+	})
+	sized := payAll(many)
+	// a select's first ids, as many as a late caller pays for what a shared read held, size its set at once
+	require.Less(t, sized, grown)
+	// though never past one more than the limit, where the set stops growing
+	require.Less(t, payAll(many/1024), sized)
 }
 
 // framedRemoteRead serves budgetTestFrames frames of 120 samples each, pausing between them, and records
@@ -401,4 +693,379 @@ func TestRawCacheCountsExactlyWhatItServes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// podsServer streams pods series of the test metric over remote read, a frame each with a pause after, every series
+// sampled each minute of the read's range; it counts the frames it wrote, and the reads it served once they end
+type podsServer struct {
+	pods  int
+	pause time.Duration
+	// hold, when set, holds each read after holdAfter frames until it closes
+	hold      chan struct{}
+	holdAfter int
+
+	written, ended atomic.Int64
+}
+
+// source returns a member, identified by id, read from a server of its own
+func (p *podsServer) source(t *testing.T, id string) *RemoteRead {
+	t.Helper()
+	rr := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+		defer p.ended.Add(1)
+		q := decodeTestRequest(t, r).Queries[0]
+		w.Header().Set(headers.NameContentType, contentTypeStreamed+"; proto=prometheus.ChunkedReadResponse")
+		chunks := minuteChunks(t, q.StartTimestampMs, q.EndTimestampMs)
+		for i := range p.pods {
+			if p.hold != nil && i == p.holdAfter {
+				select {
+				case <-p.hold:
+				case <-r.Context().Done():
+					return
+				}
+			}
+			var body bytes.Buffer
+			writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels(fmt.Sprintf("%03d", i)), Chunks: chunks})
+			if _, err := w.Write(body.Bytes()); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			p.written.Add(1)
+			select {
+			case <-time.After(p.pause):
+			case <-r.Context().Done():
+				return
+			}
+		}
+	})
+	rr.ID = id
+	return rr
+}
+
+// lifetimeServer streams over remote read each of its pods living within a read's range, a frame each, sampled every
+// minute it lives there; with hold set, a read then stays open until hold closes or the read is canceled, as canceled counts
+type lifetimeServer struct {
+	// pods holds each pod's first and last sample times
+	pods     map[string][2]int64
+	hold     chan struct{}
+	canceled atomic.Int64
+}
+
+// source returns a member read from a server of its own, with the test source's identity
+func (l *lifetimeServer) source(t *testing.T) *RemoteRead {
+	t.Helper()
+	rr := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+		q := decodeTestRequest(t, r).Queries[0]
+		w.Header().Set(headers.NameContentType, limitTestStreamed)
+		for _, pod := range slices.Sorted(maps.Keys(l.pods)) {
+			lo, hi := max(q.StartTimestampMs, l.pods[pod][0]), min(q.EndTimestampMs, l.pods[pod][1])
+			if minuteSamples(lo, hi) <= 0 {
+				continue
+			}
+			var body bytes.Buffer
+			writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels(pod), Chunks: minuteChunks(t, lo, hi)})
+			if _, err := w.Write(body.Bytes()); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
+		if l.hold == nil {
+			return
+		}
+		select {
+		case <-l.hold:
+		case <-r.Context().Done():
+			l.canceled.Add(1)
+		}
+	})
+	rr.ID = rawTestIdentity
+	return rr
+}
+
+// minuteSamples is how many whole minutes lie from mint to maxt, each a sample of every series a podsServer streams
+func minuteSamples(mint, maxt int64) int64 {
+	return maxt/rawTestMinute - (mint+rawTestMinute-1)/rawTestMinute + 1
+}
+
+func minuteChunks(t *testing.T, mint, maxt int64) []prompb.Chunk {
+	t.Helper()
+	var points []testPoint
+	for ts := (mint + rawTestMinute - 1) / rawTestMinute * rawTestMinute; ts <= maxt; ts += rawTestMinute {
+		points = append(points, testPoint{t: ts, f: float64(ts)})
+	}
+	var chunks []prompb.Chunk
+	for from := 0; from < len(points); from += rawTestChunk {
+		chunks = append(chunks, xorChunk(t, points[from:min(from+rawTestChunk, len(points))]...))
+	}
+	return chunks
+}
+
+func TestRawCacheChargesMembersSeriesAsTheyArrive(t *testing.T) {
+	const members, pods, maxt = 3, 20, 2 * rawTestHour
+	// every member holds the same series, which deduplication merges, yet each member's are charged
+	const all = members * pods
+	server := &podsServer{pods: pods, pause: budgetTestPause}
+	sources := make([]Member, members)
+	for i := range sources {
+		name := "member-" + strconv.Itoa(i)
+		sources[i] = Member{Name: name, Source: server.source(t, name)}
+	}
+	evaluate := func(t *testing.T, rc *rawTestCache, budget *Budget) (int, error) {
+		t.Helper()
+		qr, err := NewQueryable(sources, nil, merge.TSMDeduplicationChain, false, nil).WithRawCache(rc.RawCache).
+			Querier(0, maxt)
+		require.NoError(t, err)
+		set := qr.Select(WithBudget(teamRequest(rawTestTeamA), budget), true, &storage.SelectHints{Start: 0, End: maxt},
+			testMetricMatcher)
+		var n int
+		for set.Next() {
+			n++
+		}
+		rc.Wait()
+		return n, set.Err()
+	}
+	// settled waits until the servers have ended reads, so what they wrote is final, and returns it
+	settled := func(t *testing.T, reads int64) int64 {
+		t.Helper()
+		require.Eventually(t, func() bool { return server.ended.Load() == reads }, 5*time.Second, time.Millisecond)
+		written := server.written.Load()
+		server.written.Store(0)
+		server.ended.Store(0)
+		return written
+	}
+	// each read is limited as the evaluation is, so every member alone is well within it
+	newCache := func(limit int64) *rawTestCache {
+		return newRawTestCache(&rawByteCache{}, RawCacheOptions{MaxSeries: limit})
+	}
+	t.Run("collectively over the limit, every member's read stops", func(t *testing.T) {
+		const limit = all/2 + 1
+		rc := newCache(limit)
+		rc.setNow(maxt + rawTestHour)
+		budget := &Budget{MaxSeries: limit}
+		_, err := evaluate(t, rc, budget)
+		require.ErrorIs(t, err, ErrFetchLimit)
+		written := settled(t, members)
+		require.Less(t, written, int64(all), "the members' reads stopped before sending every series")
+		series, _ := budget.Fetched()
+		require.LessOrEqual(t, series, int64(limit+members), "each read stopped within a frame of the limit")
+	})
+	t.Run("collectively within the limit, each series is charged once", func(t *testing.T) {
+		rc := newCache(all)
+		rc.setNow(maxt + rawTestHour)
+		budget := &Budget{MaxSeries: all}
+		n, err := evaluate(t, rc, budget)
+		require.NoError(t, err)
+		require.Equal(t, pods, n)
+		require.Equal(t, int64(all), settled(t, members))
+		series, samples := budget.Fetched()
+		require.Equal(t, [2]int64{all, all * minuteSamples(0, maxt)}, [2]int64{series, samples})
+		// now the volatile window's samples are read again, the rest served from the cache, and still charged once
+		rc.setNow(maxt)
+		budget = &Budget{MaxSeries: all}
+		_, err = evaluate(t, rc, budget)
+		require.NoError(t, err)
+		require.Equal(t, int64(all), settled(t, members))
+		series, samples = budget.Fetched()
+		require.Equal(t, [2]int64{all, all * minuteSamples(0, maxt)}, [2]int64{series, samples})
+		require.Contains(t, rc.takeStatuses(), cachestatus.LookupStatusHit)
+		// with the cache warm, the reads of the volatile window still stop once the members' series exceed the limit
+		const limit = all*3/4 + 1
+		budget = &Budget{MaxSeries: limit}
+		_, err = evaluate(t, rc, budget)
+		require.ErrorIs(t, err, ErrFetchLimit)
+		require.Less(t, settled(t, members), int64(all))
+		series, _ = budget.Fetched()
+		require.LessOrEqual(t, series, int64(limit+members))
+	})
+}
+
+func TestRawCacheChargesSeriesOnceAcrossGapsAndFrames(t *testing.T) {
+	t.Run("gaps", func(t *testing.T) {
+		src := &streamingSource{chunkedSource: rawTestSource(t), pause: time.Millisecond}
+		// reads limited in series identify them, as they are whenever the evaluation is, and the select counts their ids;
+		// unlimited reads don't, and the select counts the most series one read held
+		for name, readLimit := range map[string]int64{"by id": 2, "by count": 0} {
+			t.Run(name, func(t *testing.T) {
+				// half of each hour is cached, so a read of eight hours has eight gaps, each holding both series
+				fill := func() *rawTestCache {
+					rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{MaxSeries: readLimit})
+					for start := int64(0); start < 8*rawTestHour; start += rawTestHour {
+						_, _, err := rc.selectAt(t, teamRequest(rawTestTeamA), src, start, start+30*rawTestMinute)
+						require.NoError(t, err)
+					}
+					src.takeReads()
+					return rc
+				}
+				rc := fill()
+				budget := &Budget{MaxSeries: 2}
+				_, _, err := rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), budget), src, 0, 8*rawTestHour)
+				require.NoError(t, err, "a series read in every gap is charged once")
+				require.Len(t, src.takeReads(), 8)
+				series, _ := budget.Fetched()
+				require.Equal(t, int64(2), series)
+				// a limit the gaps' series exceed stops the reads under way, and those not begun never start
+				rc = fill()
+				_, _, err = rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), &Budget{MaxSeries: 1}), src, 0, 8*rawTestHour)
+				require.ErrorIs(t, err, ErrFetchLimit)
+				require.LessOrEqual(t, len(src.takeReads()), rawGapReads)
+			})
+		}
+	})
+	t.Run("gaps holding different series", func(t *testing.T) {
+		// one series stops and another starts between the gaps, so the select serves more than either read holds
+		pods := map[string][2]int64{"a": {4 * rawTestHour, rawTestEnd}, "b": {0, 4*rawTestHour - 1}}
+		filler := &lifetimeServer{pods: pods}
+		fill := func() *rawTestCache {
+			rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{MaxSeries: 2})
+			_, _, err := rc.selectAt(t, teamRequest(rawTestTeamA), filler.source(t), 3*rawTestHour, 5*rawTestHour)
+			require.NoError(t, err)
+			return rc
+		}
+		budget := &Budget{MaxSeries: 2}
+		served, _, err := fill().selectAt(t, WithBudget(teamRequest(rawTestTeamA), budget), filler.source(t), 0, 8*rawTestHour)
+		require.NoError(t, err)
+		require.Len(t, served, 2)
+		series, _ := budget.Fetched()
+		require.Equal(t, int64(2), series)
+		// with room for one, the second series fails the select as it arrives, while both reads are still under way
+		held := &lifetimeServer{pods: pods, hold: make(chan struct{})}
+		src := held.source(t)
+		// the hold is released before the server closes, which waits for its reads
+		t.Cleanup(sync.OnceFunc(func() { close(held.hold) }))
+		rc := fill()
+		budget = &Budget{MaxSeries: 1}
+		waitWithin(t, func() {
+			_, _, err = rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), budget), src, 0, 8*rawTestHour)
+		})
+		require.ErrorIs(t, err, ErrFetchLimit)
+		series, _ = budget.Fetched()
+		require.Equal(t, int64(2), series)
+		require.Eventually(t, func() bool { return held.canceled.Load() == 2 }, storeTestWait, time.Millisecond,
+			"both reads were stopped before they ended")
+	})
+	t.Run("frames", func(t *testing.T) {
+		var written atomic.Int64
+		maxt := int64(budgetTestFrames*rawTestChunk) * rawTestStep
+		rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{})
+		rc.setNow(maxt + rawTestHour)
+		// one series sent across every frame
+		budget := &Budget{MaxSeries: 1}
+		_, _, err := rc.selectAt(t, WithBudget(teamRequest(rawTestTeamA), budget), framedRemoteRead(t, &written), 0, maxt)
+		require.NoError(t, err)
+		series, samples := budget.Fetched()
+		require.Equal(t, [2]int64{1, budgetTestFrames * rawTestChunk}, [2]int64{series, samples})
+	})
+}
+
+func TestRawCacheLateCallersPayWhatTheReadHeld(t *testing.T) {
+	const pods, held, maxt = 30, 5, 2 * rawTestHour
+	server := &podsServer{pods: pods, hold: make(chan struct{}), holdAfter: held}
+	release := sync.OnceFunc(func() { close(server.hold) })
+	src := server.source(t, rawTestIdentity)
+	t.Cleanup(release)
+	rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{})
+	rc.setNow(maxt + rawTestHour)
+	read := func(budget *Budget) ([]storage.Series, error) {
+		series, _, err := rc.Select(WithBudget(teamRequest(rawTestTeamA), budget), Member{Name: rawTestMember, Source: src},
+			0, maxt, &storage.SelectHints{Start: 0, End: maxt}, []*labels.Matcher{testMetricMatcher})
+		return series, err
+	}
+	perSeries := minuteSamples(0, maxt)
+	first := &Budget{}
+	var wg sync.WaitGroup
+	var served []storage.Series
+	var errFirst, errLater error
+	wg.Go(func() { served, errFirst = read(first) })
+	waitForFlight(t, rc, src, 0, maxt, func(f *flight[fetched]) bool { return f.series == held })
+	// a caller joining now pays the series and samples read so far, and is refused at once when it can't
+	for _, budget := range []*Budget{{MaxSeries: held - 1}, {MaxSamples: held*perSeries - 1}} {
+		var err error
+		waitWithin(t, func() { _, err = read(budget) })
+		require.ErrorIs(t, err, ErrFetchLimit)
+	}
+	// one that can afford them joins, then leaves once the read holds more series than it allows
+	later := &Budget{MaxSeries: 2 * held}
+	wg.Go(func() { _, errLater = read(later) })
+	// it pays as it joins, its samples before its series
+	require.Eventually(t, func() bool { series, _ := later.Fetched(); return series > 0 }, storeTestWait, time.Millisecond)
+	series, samples := later.Fetched()
+	require.Equal(t, [2]int64{held, held * perSeries}, [2]int64{series, samples})
+	waitForFlight(t, rc, src, 0, maxt, func(f *flight[fetched]) bool { return len(f.callers) == 2 })
+	release()
+	wg.Wait()
+	rc.Wait()
+	require.ErrorIs(t, errLater, ErrFetchLimit)
+	// it left at the first series past its limit, not once the read ended
+	series, _ = later.Fetched()
+	require.Equal(t, int64(2*held+1), series)
+	require.NoError(t, errFirst)
+	require.Len(t, served, pods)
+	series, samples = first.Fetched()
+	require.Equal(t, [2]int64{pods, pods * perSeries}, [2]int64{series, samples})
+	require.Equal(t, int64(1), server.ended.Load(), "every caller shared one read")
+}
+
+// copiesSource streams pod a, then pod b, then the rest of pod a in a later frame, a copy of a the read joins to it, as
+// two series sampled every minute of the read's range
+func copiesSource(t *testing.T, id string) *RemoteRead {
+	t.Helper()
+	rr := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+		q := decodeTestRequest(t, r).Queries[0]
+		chunks := minuteChunks(t, q.StartTimestampMs, q.EndTimestampMs)
+		var body bytes.Buffer
+		writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels("a"), Chunks: chunks[:1]},
+			&prompb.ChunkedSeries{Labels: testLabels("b"), Chunks: chunks})
+		writeFrame(t, &body, &prompb.ChunkedSeries{Labels: testLabels("a"), Chunks: chunks[1:]})
+		w.Header().Set(headers.NameContentType, limitTestStreamed)
+		_, _ = w.Write(body.Bytes())
+	})
+	rr.ID = id
+	return rr
+}
+
+func TestRawCacheChargesStreamedCopiesOnce(t *testing.T) {
+	const maxt = 2 * rawTestHour
+	members := make([]Member, 2)
+	for i := range members {
+		name := "member-" + strconv.Itoa(i)
+		members[i] = Member{Name: name, Source: copiesSource(t, name)}
+	}
+	hints := &storage.SelectHints{Start: 0, End: maxt}
+	// selectAll reads each member's series through a cache whose reads are limited as the evaluation is
+	selectAll := func(t *testing.T, budget *Budget, members ...Member) error {
+		t.Helper()
+		rc := newRawTestCache(&rawByteCache{}, RawCacheOptions{MaxSeries: budget.MaxSeries})
+		rc.setNow(maxt + rawTestHour)
+		ctx := WithBudget(teamRequest(rawTestTeamA), budget)
+		for _, m := range members {
+			served, _, err := rc.Select(ctx, m, 0, maxt, hints, []*labels.Matcher{testMetricMatcher})
+			if err != nil {
+				return err
+			}
+			require.Len(t, served, 2)
+		}
+		rc.Wait()
+		return nil
+	}
+	perSeries := minuteSamples(0, maxt)
+	// without a limit, a read counts the copy as it arrives, and the select takes it back once it serves two series
+	budget := &Budget{}
+	require.NoError(t, selectAll(t, budget, members[0]))
+	series, samples := budget.Fetched()
+	require.Equal(t, [2]int64{2, 2 * perSeries}, [2]int64{series, samples})
+	// with one, reads tell the copy apart as it arrives, so members serving as many series as the limit allows pass
+	for _, limit := range []int64{2, 4} {
+		budget = &Budget{MaxSeries: limit}
+		require.NoError(t, selectAll(t, budget, members[:limit/2]...))
+		series, _ = budget.Fetched()
+		require.Equal(t, limit, series)
+	}
+	require.ErrorIs(t, selectAll(t, &Budget{MaxSeries: 3}, members...), ErrFetchLimit)
+	// a read without the cache counts the copy once too
+	budget = &Budget{MaxSeries: 2}
+	served, _, err := members[0].Source.Select(WithBudget(teamRequest(rawTestTeamA), budget), 0, maxt, hints,
+		testMetricMatcher)
+	require.NoError(t, err)
+	require.Len(t, served, 3, "the copy is joined to its series later, by deduplication")
+	series, _ = budget.Fetched()
+	require.Equal(t, int64(2), series)
 }

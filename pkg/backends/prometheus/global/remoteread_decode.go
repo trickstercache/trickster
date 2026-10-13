@@ -277,15 +277,22 @@ func (d *decoder) timeSeries(b []byte) error {
 		return nil
 	}
 	d.builder.Sort()
-	if err := d.count(1, n); err != nil {
+	fresh, err := d.fresh()
+	if err != nil {
 		return err
 	}
-	if err := d.charge(sampleSeriesBytes + d.labelBytes + n*sampleBytes); err != nil {
+	var series int64
+	if fresh {
+		series = 1
+	}
+	if err = d.count(series, n); err != nil {
+		return err
+	}
+	if err = d.charge(sampleSeriesBytes + d.labelBytes + n*sampleBytes); err != nil {
 		return err
 	}
 	samples := make([]sample, 0, n)
 	if histograms {
-		var err error
 		if samples, err = d.mergeSamples(b, samples); err != nil {
 			return err
 		}

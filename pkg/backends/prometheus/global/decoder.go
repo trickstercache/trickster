@@ -54,8 +54,10 @@ const (
 	bucketBytes         = int64(unsafe.Sizeof(float64(0)))
 	// unsafeLabelStrings is set when a label set copies the strings it is built from, so they may share a message's memory
 	unsafeLabelStrings = labels.ImplementationName == "stringlabels"
-	// groupBytes is what an entry of a map of label set hashes to sums may take, its table as little as 7/16 full once grown
+	// groupBytes and seenBytes are what an entry of a map of label set hashes to sums, or of a set of them, may take, its
+	// table as little as 7/16 full once grown
 	groupBytes = 48
+	seenBytes  = 24
 	// labelSeparator ends each name and value hashed into a label set's hash
 	labelSeparator = "\xff"
 )
@@ -69,8 +71,13 @@ type decoder struct {
 	kind error
 	// limit is the most memory what's kept may take, of which allowance remains
 	limit, allowance int64
-	// series and samples are counted but not yet added to the budget
+	// series and samples are counted but not yet added to the budget, with ids, the label set hashes of those series
 	series, samples int64
+	ids             []uint64
+	// identify is set when the budget identifies series, so seen holds the hash of each series counted, and a copy
+	// of a series sent apart from its other messages isn't counted again
+	identify bool
+	seen     map[uint64]struct{}
 	// labelSlots is the most labels one series has held in builder, each slot charged once
 	labelSlots int
 	// labelCount and labelBytes count the labels in builder and the memory a label set of them takes
@@ -108,7 +115,9 @@ type scratchChunk struct {
 
 func newDecoder(budget *Budget, mint, maxt int64, kind error) *decoder {
 	limit := budget.decodeLimit()
-	return &decoder{budget: budget, mint: mint, maxt: maxt, kind: kind, limit: limit, allowance: limit}
+	return &decoder{
+		budget: budget, mint: mint, maxt: maxt, kind: kind, limit: limit, allowance: limit, identify: budget.identifies(),
+	}
 }
 
 // charge takes n bytes from the allowance before they are allocated, failing once the response would keep more
@@ -213,7 +222,31 @@ func (d *decoder) flush() error {
 	}
 	series, samples := d.series, d.samples
 	d.series, d.samples = 0, 0
-	return d.budget.add(series, samples)
+	err := d.budget.addSeries(series, samples, d.ids)
+	d.ids = d.ids[:0]
+	return err
+}
+
+// fresh reports whether the series whose labels the builder holds is one the response hasn't counted yet. When the
+// budget identifies series, a copy is not, and a new one's hash is noted, its memory charged; else every one is.
+func (d *decoder) fresh() (bool, error) {
+	if !d.identify {
+		return true, nil
+	}
+	d.builder.Overwrite(&d.lset)
+	id := d.lset.Hash()
+	if _, ok := d.seen[id]; ok {
+		return false, nil
+	}
+	if err := d.charge(seenBytes); err != nil {
+		return false, err
+	}
+	if d.seen == nil {
+		d.seen = make(map[uint64]struct{})
+	}
+	d.seen[id] = struct{}{}
+	d.ids = append(d.ids, id)
+	return true, nil
 }
 
 // wireField is one field of a protobuf message: its varint or fixed-size value, or its bytes when length-delimited
@@ -422,7 +455,12 @@ func (d *decoder) keep(cur *chunkSeries, c wireChunk, size int64) (*chunkSeries,
 	var newSeries int64
 	cost := chunkBytes + int64(len(c.data))
 	if cur == nil {
-		newSeries, cost = 1, cost+chunkSeriesBytes+size
+		cost += chunkSeriesBytes + size
+		if fresh, err := d.fresh(); err != nil {
+			return nil, err
+		} else if fresh {
+			newSeries = 1
+		}
 	}
 	if err := d.count(newSeries, n); err != nil {
 		return nil, err

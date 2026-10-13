@@ -147,7 +147,9 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		c.opts.Subsumed()
 	}
 	missing := covered.CalculateDeltas(timeseries.ExtentList{extent(mint, maxt)}, time.Millisecond)
-	results, err := c.fetchAll(ctx, k, m, missing, keep, hints, matchers)
+	// reads limited in series identify them, so a select reading several ranges can charge each series once as it arrives
+	charge := newSelectCharge(budgetFrom(ctx), len(missing) > 1 && c.opts.MaxSeries > 0)
+	results, err := c.fetchAll(ctx, k, m, missing, keep, hints, matchers, charge)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -166,8 +168,8 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		c.engine.Store(bad, &nativedelta.Entry[*rawBlock]{Marker: true})
 		return nil, nil, err
 	}
-	// the samples read from the member were counted as they arrived; the series and cached samples are now
-	if err := budgetFrom(ctx).add(int64(len(series)), cachedSamples); err != nil {
+	// the member's reads charged what they held as it arrived; the rest of the series served, and cached samples, are now
+	if err := charge.settle(int64(len(series)), cachedSamples); err != nil {
 		return nil, nil, err
 	}
 	return series, warnings, nil
@@ -176,11 +178,11 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 // fetchAll reads the gaps from m, a few at a time; the first failure, as the evaluation running out of
 // budget, cancels the reads not yet done
 func (c *RawCache) fetchAll(ctx context.Context, k rawKey, m Member, gaps timeseries.ExtentList,
-	keep span, hints *storage.SelectHints, matchers []*labels.Matcher,
+	keep span, hints *storage.SelectHints, matchers []*labels.Matcher, charge *selectCharge,
 ) ([]fetched, error) {
 	results := make([]fetched, len(gaps))
 	if len(gaps) == 1 {
-		results[0] = c.fetch(ctx, k, m, gaps[0], keep, hints, matchers)
+		results[0] = c.fetch(ctx, k, m, gaps[0], keep, hints, matchers, charge)
 		return results, results[0].err
 	}
 	gctx, cancel := context.WithCancel(ctx)
@@ -190,7 +192,7 @@ func (c *RawCache) fetchAll(ctx context.Context, k rawKey, m Member, gaps timese
 	for range min(len(gaps), rawGapReads) {
 		wg.Go(func() {
 			for i := int(next.Add(1)) - 1; i < len(gaps) && gctx.Err() == nil; i = int(next.Add(1)) - 1 {
-				if results[i] = c.fetch(gctx, k, m, gaps[i], keep, hints, matchers); results[i].err != nil {
+				if results[i] = c.fetch(gctx, k, m, gaps[i], keep, hints, matchers, charge); results[i].err != nil {
 					cancel()
 					return
 				}
@@ -318,14 +320,14 @@ func (c *RawCache) cachedBlock(sources *[]rawSource, key string, b, lo, hi int64
 	return got
 }
 
-// fetch reads m's series within gap, sharing the read with concurrent callers asking for the same, and
-// keeps what lies within keep once the member answered completely
+// fetch reads m's series within gap, sharing the read with concurrent callers asking for the same, each paying for
+// it through its own charge; it keeps what lies within keep once the member answered completely
 func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries.Extent, keep span,
-	hints *storage.SelectHints, matchers []*labels.Matcher,
+	hints *storage.SelectHints, matchers []*labels.Matcher, charge *selectCharge,
 ) fetched {
 	mint, maxt := gap.Start.UnixMilli(), gap.End.UnixMilli()
 	flight := k.key + "/" + strconv.FormatInt(mint, 10) + "/" + strconv.FormatInt(maxt, 10)
-	r, err := c.flights.do(ctx, flight, budgetFrom(ctx), func(ctx context.Context, share func(int64) error) fetched {
+	r, err := c.flights.do(ctx, flight, charge, func(ctx context.Context, share shareFunc) fetched {
 		return c.read(ctx, m, mint, maxt, hints, matchers, share)
 	}, func(r fetched) {
 		if lo, hi := max(mint, keep.mint), min(maxt, keep.maxt); r.err == nil && len(r.warnings) == 0 && lo <= hi &&
@@ -342,7 +344,7 @@ func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries
 // read reads and normalizes m's series from mint to maxt; its budget charges what's decoded to the
 // evaluations sharing it, as it arrives, and a panic becomes the read's error
 func (c *RawCache) read(ctx context.Context, m Member, mint, maxt int64, hints *storage.SelectHints,
-	matchers []*labels.Matcher, share func(int64) error,
+	matchers []*labels.Matcher, share shareFunc,
 ) (r fetched) {
 	safego.Run(func(p any, stack []byte) {
 		r = fetched{err: fmt.Errorf("%w: %v", errSourcePanic, p)}
@@ -573,9 +575,67 @@ func keyHeadersFrom(ctx context.Context) []string {
 	return names
 }
 
-// flightCaller is a caller waiting on a shared read, with the budget the read charges for it
-type flightCaller struct {
+// selectCharge charges one select's reads to its evaluation's budget. Their ranges are disjoint but share series: it
+// charges each by its id once, when identify is set, else the most any one read has held; settle charges the rest last.
+type selectCharge struct {
 	budget *Budget
+	// identify is set when the select counts its series by their ids, in seen
+	identify bool
+	mu       sync.Mutex
+	// series is what the budget has been charged for the select's series so far
+	series int64
+	// seen holds the ids of the series the select's reads have reported, never more than one past the budget's limit
+	seen map[uint64]struct{}
+}
+
+// newSelectCharge returns the charge of a select of budget, which counts series by their ids when identified is set:
+// its several reads identify series, and the budget limits them
+func newSelectCharge(budget *Budget, identified bool) *selectCharge {
+	return &selectCharge{budget: budget, identify: identified && budget.identifies()}
+}
+
+// pay charges samples, and raises what's charged for series to readSeries, all those one read has held so far, or
+// when the select counts ids, to every distinct one its reads have reported, ids the latest, if that is more
+func (s *selectCharge) pay(readSeries, samples int64, ids []uint64) error {
+	if err := s.budget.add(0, samples); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.identify {
+		if s.seen == nil && len(ids) > 0 {
+			// sized at once for the first ids, which a late caller's payment for what a shared read held can make many
+			s.seen = make(map[uint64]struct{}, min(int64(len(ids)), s.budget.MaxSeries+1))
+		}
+		// once the set holds more series than the budget allows, the charge below fails, so it grows no further
+		for _, id := range ids {
+			if int64(len(s.seen)) > s.budget.MaxSeries {
+				break
+			}
+			s.seen[id] = struct{}{}
+		}
+		readSeries = max(readSeries, int64(len(s.seen)))
+	}
+	if readSeries <= s.series {
+		return nil
+	}
+	n := readSeries - s.series
+	s.series = readSeries
+	return s.budget.add(n, 0)
+}
+
+// settle charges the cached samples the select serves, and the series it serves that its reads' charges left out, or
+// takes back those they charged but it doesn't serve, as copies of a series a read held apart
+func (s *selectCharge) settle(served, cachedSamples int64) error {
+	s.mu.Lock()
+	charged := s.series
+	s.mu.Unlock()
+	return s.budget.add(served-charged, cachedSamples)
+}
+
+// flightCaller is a caller waiting on a shared read, with what the read charges for it
+type flightCaller struct {
+	charge *selectCharge
 	// out closes when the read costs more than the caller's budget allows, as err says
 	out chan struct{}
 	err error
@@ -589,37 +649,38 @@ type flight[T any] struct {
 
 	mu      sync.Mutex
 	callers []*flightCaller
-	// charged is what the run has charged its callers, which a caller joining later pays at once
-	charged int64
+	// series and samples are what the run has read, and ids the series' ids when its read identifies them, as it does only
+	// under a series limit, which bounds them; ids is only appended to, so a caller joining later pays them unlocked
+	series, samples int64
+	ids             []uint64
 	// ended is set once no caller is left, so the run stops and a later caller starts another
 	ended    bool
 	finished bool
 }
 
-// join adds c to the flight's callers, charging it what the run has read so far; it reports false when
-// the flight has ended, and an error when c can't afford what it read
-func (f *flight[T]) join(c *flightCaller) (bool, error) {
+// join adds c to the flight's callers, returning the series, with their ids, and samples the run has read so far, for c
+// to pay once no lock is held; ok is false when the flight has ended
+func (f *flight[T]) join(c *flightCaller) (series, samples int64, ids []uint64, ok bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.ended {
-		return false, nil
-	}
-	if err := c.budget.add(0, f.charged); err != nil {
-		return false, err
+		return 0, 0, nil, false
 	}
 	f.callers = append(f.callers, c)
-	return true, nil
+	return f.series, f.samples, f.ids[:len(f.ids):len(f.ids)], true
 }
 
-// charge charges samples the run read to each caller, releasing any whose budget they exceed; once none
-// is left, it fails, so the run stops reading
-func (f *flight[T]) charge(samples int64) error {
+// charge charges the series, with their ids, and samples the run read to each caller, releasing any whose budget
+// they exceed; once none is left, it fails, so the run stops reading
+func (f *flight[T]) charge(series, samples int64, ids []uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.charged += samples
+	f.series += series
+	f.samples += samples
+	f.ids = append(f.ids, ids...)
 	kept := f.callers[:0]
 	for _, c := range f.callers {
-		if err := c.budget.add(0, samples); err != nil {
+		if err := c.charge.pay(f.series, samples, ids); err != nil {
 			c.err = err
 			close(c.out)
 			continue
@@ -658,27 +719,25 @@ type flightGroup[T any] struct {
 	running sync.WaitGroup
 }
 
-// do returns fn's result for key, run once for concurrent callers each charged to its budget, or what ended
-// the caller's wait; after runs once callers have the result
-func (g *flightGroup[T]) do(ctx context.Context, key string, budget *Budget,
-	fn func(context.Context, func(int64) error) T, after func(T),
+// do returns fn's result for key, run once for concurrent callers each paying through its own charge, or what
+// ended the caller's wait; after runs once callers have the result
+func (g *flightGroup[T]) do(ctx context.Context, key string, charge *selectCharge,
+	fn func(context.Context, shareFunc) T, after func(T),
 ) (T, error) {
 	var zero T
 	if err := ctx.Err(); err != nil {
 		return zero, err
 	}
-	caller := &flightCaller{budget: budget, out: make(chan struct{})}
+	caller := &flightCaller{charge: charge, out: make(chan struct{})}
 	g.mu.Lock()
 	if g.flights == nil {
 		g.flights = make(map[string]*flight[T])
 	}
+	var series, samples int64
+	var ids []uint64
 	f, joined := g.flights[key], false
 	if f != nil {
-		var err error
-		if joined, err = f.join(caller); err != nil {
-			g.mu.Unlock()
-			return zero, err
-		}
+		series, samples, ids, joined = f.join(caller)
 	}
 	if !joined {
 		fctx, cancel := context.WithCancel(context.WithoutCancel(ctx)) //nolint:gosec // the flight's run calls it
@@ -688,6 +747,14 @@ func (g *flightGroup[T]) do(ctx context.Context, key string, budget *Budget,
 		go g.run(fctx, key, f, fn, after)
 	}
 	g.mu.Unlock()
+	// a caller joining late pays for what the run read before, unlocked, as that can be every series' id; the run's
+	// charges meanwhile commute with it, as series charged are the union or most of what's read, and samples a sum
+	if joined {
+		if err := charge.pay(series, samples, ids); err != nil {
+			f.leave(caller)
+			return zero, err
+		}
+	}
 	select {
 	case <-f.done:
 		// a caller the read outgrew fails, even when the read then finished for others
@@ -707,8 +774,8 @@ func (g *flightGroup[T]) do(ctx context.Context, key string, budget *Budget,
 
 // run runs fn for f's callers, then after; f stays joinable until after returns, and is then forgotten and
 // counted done even when after panics, which its callers, already answered, never see
-func (g *flightGroup[T]) run(ctx context.Context, key string, f *flight[T], fn func(context.Context, func(int64) error) T,
-	after func(T),
+func (g *flightGroup[T]) run(ctx context.Context, key string, f *flight[T],
+	fn func(context.Context, shareFunc) T, after func(T),
 ) {
 	defer g.running.Done()
 	defer g.forget(key, f)
