@@ -260,21 +260,34 @@ func TestRemoteReadStreamedChunks(t *testing.T) {
 	require.Equal(t, int64(9), budget.samples.Load())
 }
 
+// writeSamples answers a remote read with series as samples
+func writeSamples(t *testing.T, w http.ResponseWriter, series ...*prompb.TimeSeries) {
+	t.Helper()
+	data, err := (&prompb.ReadResponse{Results: []*prompb.QueryResult{{Timeseries: series}}}).Marshal()
+	require.NoError(t, err)
+	w.Header().Set(headers.NameContentType, contentTypeProtobuf)
+	_, _ = w.Write(snappy.Encode(nil, data))
+}
+
+// sampleHistogramKinds encode a histogram sample as a member sends it, as integer or float counts
+var sampleHistogramKinds = map[string]func(int64, *histogram.Histogram) prompb.Histogram{
+	"histogram": prompb.FromIntHistogram,
+	"float histogram": func(at int64, h *histogram.Histogram) prompb.Histogram {
+		return prompb.FromFloatHistogram(at, h.ToFloat(nil))
+	},
+}
+
 func TestRemoteReadSamples(t *testing.T) {
 	source := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = decodeTestRequest(t, r)
-		res := &prompb.ReadResponse{Results: []*prompb.QueryResult{{Timeseries: []*prompb.TimeSeries{{
+		writeSamples(t, w, &prompb.TimeSeries{
 			Labels:  testLabels("a"),
 			Samples: []prompb.Sample{{Value: 1, Timestamp: 1}, {Value: math.Inf(1), Timestamp: 4}},
 			Histograms: []prompb.Histogram{
 				prompb.FromIntHistogram(2, testHistogram()),
 				prompb.FromFloatHistogram(3, testHistogram().ToFloat(nil)),
 			},
-		}}}}}
-		data, err := res.Marshal()
-		require.NoError(t, err)
-		w.Header().Set(headers.NameContentType, contentTypeProtobuf)
-		_, _ = w.Write(snappy.Encode(nil, data))
+		})
 	})
 	series, _, err := source.Select(testContext(t, nil), 0, 10, nil)
 	require.NoError(t, err)
@@ -287,6 +300,77 @@ func TestRemoteReadSamples(t *testing.T) {
 		require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
 		_, fh := it.AtFloatHistogram(nil)
 		require.InDelta(t, 4.0, fh.Count, 0)
+	}
+}
+
+// chunkedHistogram returns h as the engine reads it from a chunk of the encoding a member would send it in
+func chunkedHistogram(t *testing.T, kind string, h *histogram.Histogram) *histogram.FloatHistogram {
+	t.Helper()
+	enc := storeTestEncodings[kind]
+	chk, err := chunkenc.NewEmptyChunk(enc)
+	require.NoError(t, err)
+	app, err := chk.Appender()
+	require.NoError(t, err)
+	if enc == chunkenc.EncFloatHistogram {
+		_, _, _, err = app.AppendFloatHistogram(nil, 0, 1, h.ToFloat(nil), false)
+	} else {
+		_, _, _, err = app.AppendHistogram(nil, 0, 1, h, false)
+	}
+	require.NoError(t, err)
+	it := chk.Iterator(nil)
+	require.NotEqual(t, chunkenc.ValNone, it.Next())
+	_, fh := it.AtFloatHistogram(nil)
+	return fh
+}
+
+func TestRemoteReadSampleHistogramLayouts(t *testing.T) {
+	custom := &histogram.Histogram{
+		Schema: histogram.CustomBucketsSchema, Count: 2, Sum: 3, CustomValues: []float64{1, 2},
+		PositiveSpans: []histogram.Span{{Offset: 0, Length: 2}}, PositiveBuckets: []int64{1, 0},
+	}
+	finest := testHistogram()
+	finest.Schema = histogram.ExponentialSchemaMax
+	unknown := testHistogram()
+	unknown.Schema = histogram.ExponentialSchemaMaxReserved + 1
+	short := fineHistogram(false)
+	short.PositiveSpans = []histogram.Span{{Offset: 1, Length: 3}}
+	cases := map[string]struct {
+		h    *histogram.Histogram
+		want error
+	}{
+		"exponential":                   {h: testHistogram()},
+		"finest schema":                 {h: finest},
+		"custom buckets":                {h: custom},
+		"finer schema":                  {h: fineHistogram(false)},
+		"finer schema, unreducible":     {h: fineHistogram(true), want: histogram.ErrHistogramSpanNegativeOffset},
+		"finer schema, too few buckets": {h: short, want: histogram.ErrHistogramSpansBucketsMismatch},
+		"unknown schema":                {h: unknown, want: histogram.ErrHistogramsUnknownSchema},
+	}
+	for name, tc := range cases {
+		for kind, encode := range sampleHistogramKinds {
+			t.Run(name+"/"+kind, func(t *testing.T) {
+				source := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+					_ = decodeTestRequest(t, r)
+					writeSamples(t, w, &prompb.TimeSeries{Labels: testLabels("a"), Histograms: []prompb.Histogram{encode(1, tc.h)}})
+				})
+				series, _, err := source.Select(testContext(t, nil), 0, 10, nil)
+				if tc.want != nil {
+					require.ErrorIs(t, err, errRemoteRead)
+					require.ErrorIs(t, err, tc.want)
+					require.Nil(t, series)
+					return
+				}
+				require.NoError(t, err)
+				require.Len(t, series, 1)
+				it := series[0].Iterator(nil)
+				require.Equal(t, chunkenc.ValFloatHistogram, it.Next())
+				_, fh := it.AtFloatHistogram(nil)
+				// the engine reads a member's histogram alike whether it arrives as a sample or in a chunk
+				want := chunkedHistogram(t, kind, tc.h)
+				require.True(t, want.Equals(fh), "read %v, want %v", fh, want)
+				require.LessOrEqual(t, fh.Schema, histogram.ExponentialSchemaMax)
+			})
+		}
 	}
 }
 

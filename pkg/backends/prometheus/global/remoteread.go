@@ -34,6 +34,7 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
 	"github.com/klauspost/compress/snappy"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -303,7 +304,10 @@ func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 	var builder labels.ScratchBuilder
 	for _, result := range res.Results {
 		for _, ts := range result.Timeseries {
-			samples := mergeSamples(ts)
+			samples, err := mergeSamples(ts)
+			if err != nil {
+				return nil, err
+			}
 			var n, series int64
 			for _, s := range samples {
 				if s.t >= mint && s.t <= maxt {
@@ -323,7 +327,7 @@ func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 }
 
 // mergeSamples interleaves a series' float and histogram samples, each already in time order
-func mergeSamples(ts *prompb.TimeSeries) []sample {
+func mergeSamples(ts *prompb.TimeSeries) ([]sample, error) {
 	out := make([]sample, 0, len(ts.Samples)+len(ts.Histograms))
 	f, h := 0, 0
 	for f < len(ts.Samples) || h < len(ts.Histograms) {
@@ -332,10 +336,29 @@ func mergeSamples(ts *prompb.TimeSeries) []sample {
 			f++
 			continue
 		}
-		out = append(out, sample{t: ts.Histograms[h].Timestamp, fh: ts.Histograms[h].ToFloatHistogram()})
+		fh, err := sampleHistogram(&ts.Histograms[h])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, sample{t: ts.Histograms[h].Timestamp, fh: fh})
 		h++
 	}
-	return out
+	return out, nil
+}
+
+// sampleHistogram returns h with a schema finer than the engine reads reduced, as a chunk's iterator reduces it, so its
+// layout is checked before it's kept; an unknown schema, or spans that can't be reduced, fail the read
+func sampleHistogram(h *prompb.Histogram) (*histogram.FloatHistogram, error) {
+	if !histogram.IsKnownSchema(h.Schema) {
+		return nil, fmt.Errorf("%w: %w", errRemoteRead, histogram.UnknownSchemaError(h.Schema))
+	}
+	fh := h.ToFloatHistogram()
+	if fh.Schema > histogram.ExponentialSchemaMax {
+		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
+			return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
+		}
+	}
+	return fh, nil
 }
 
 // limitedReader fails, rather than ending early, once a response exceeds its byte limit

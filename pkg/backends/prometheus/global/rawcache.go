@@ -63,7 +63,13 @@ const (
 	rawGapReads = 4
 	// memberPanicEvent is logged when reading or decoding a member's answer panics
 	memberPanicEvent = "tsm global evaluation member read panicked"
+	// storePanicEvent is logged when keeping a read's series in a block panics, as a malformed chunk can
+	storePanicEvent = "tsm global evaluation raw series block store panicked"
+	// flightPanicEvent is logged when what a shared read does once its callers have the result panics
+	flightPanicEvent = "tsm global evaluation shared read callback panicked"
 )
+
+var errStorePanic = errors.New("raw series block store panicked")
 
 // RawCacheOptions configures a RawCache.
 type RawCacheOptions struct {
@@ -367,12 +373,8 @@ func (c *RawCache) read(ctx context.Context, m Member, mint, maxt int64, hints *
 // it kept them all
 func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64) bool {
 	for b := blockIndex(mint); b <= blockIndex(maxt); b++ {
-		bk := blockKey(key, b)
-		mu := &c.locks[stripe(bk)]
-		mu.Lock()
-		err := c.storeBlock(bk, series, max(mint, b*rawBlockMs), min(maxt, (b+1)*rawBlockMs-1))
-		mu.Unlock()
-		if err != nil {
+		lo, hi := max(mint, b*rawBlockMs), min(maxt, (b+1)*rawBlockMs-1)
+		if err := c.keepBlock(blockKey(key, b), series, lo, hi); err != nil {
 			logger.Debug("tsm global evaluation raw series not cached",
 				logging.Pairs{keys.ALB_Name: c.opts.Name, keys.Error: err.Error()})
 			return false
@@ -381,8 +383,30 @@ func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64) bool 
 	return true
 }
 
-// storeBlock adds to the block at bk the samples from lo to hi it doesn't hold yet
-func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64) error {
+// keepBlock stores into the block at bk under its stripe's lock. A panic, as decoding a malformed chunk can raise,
+// fails the store; one raised once the block's own chunks are read drops the block too, so no later store reads it.
+func (c *RawCache) keepBlock(bk string, series []rawSeries, lo, hi int64) (err error) {
+	mu := &c.locks[stripe(bk)]
+	mu.Lock()
+	defer mu.Unlock()
+	var merging bool
+	safego.Run(func(p any, stack []byte) {
+		if merging {
+			c.engine.Remove(bk)
+		}
+		err = fmt.Errorf("%w: %v", errStorePanic, p)
+		logger.Error(storePanicEvent, logging.Pairs{
+			keys.ALB_Name: c.opts.Name, keys.Key: bk, keys.Panic: p, keys.Stack: string(stack),
+		})
+	}, func() {
+		err = c.storeBlock(bk, series, lo, hi, &merging)
+	})
+	return err
+}
+
+// storeBlock adds to the block at bk the samples from lo to hi it doesn't hold yet; merging is set once it
+// reads the block's own chunks, not only series'
+func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64, merging *bool) error {
 	var current *rawBlock
 	var covered timeseries.ExtentList
 	if entry, ok := c.engine.Retrieve(bk); ok && !entry.Marker && entry.Payload != nil {
@@ -405,6 +429,7 @@ func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64) error
 	block := blockIndex(lo)
 	complete := len(extents) == 1 && extents[0].Start.UnixMilli() == block*rawBlockMs &&
 		extents[0].End.UnixMilli() == (block+1)*rawBlockMs-1
+	*merging = current != nil
 	c.engine.Store(bk, &nativedelta.Entry[*rawBlock]{
 		Payload: mergeBlock(current, parts, extents, complete), Extents: extents,
 	})
@@ -680,10 +705,13 @@ func (g *flightGroup[T]) do(ctx context.Context, key string, budget *Budget,
 	}
 }
 
+// run runs fn for f's callers, then after; f stays joinable until after returns, and is then forgotten and
+// counted done even when after panics, which its callers, already answered, never see
 func (g *flightGroup[T]) run(ctx context.Context, key string, f *flight[T], fn func(context.Context, func(int64) error) T,
 	after func(T),
 ) {
 	defer g.running.Done()
+	defer g.forget(key, f)
 	defer f.cancel()
 	f.result = fn(ctx, f.charge)
 	f.mu.Lock()
@@ -691,11 +719,19 @@ func (g *flightGroup[T]) run(ctx context.Context, key string, f *flight[T], fn f
 	f.mu.Unlock()
 	close(f.done)
 	if after != nil {
-		after(f.result)
+		safego.Run(logFlightPanic, func() { after(f.result) })
 	}
+}
+
+// forget removes f from the group, unless another flight has since taken its key
+func (g *flightGroup[T]) forget(key string, f *flight[T]) {
 	g.mu.Lock()
 	if g.flights[key] == f {
 		delete(g.flights, key)
 	}
 	g.mu.Unlock()
+}
+
+func logFlightPanic(p any, stack []byte) {
+	logger.Error(flightPanicEvent, logging.Pairs{keys.Panic: p, keys.Stack: string(stack)})
 }

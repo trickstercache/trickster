@@ -29,6 +29,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -76,9 +77,9 @@ type rawBlock struct {
 // wholly inside and encoding the rest again; empty series are left out
 func normalize(series []storage.Series, mint, maxt int64) ([]rawSeries, error) {
 	out := make([]rawSeries, 0, len(series))
-	var it chunkenc.Iterator
+	var r chunkReader
 	for _, s := range series {
-		chunks, err := normalizeSeries(s, mint, maxt, &it)
+		chunks, err := normalizeSeries(s, mint, maxt, &r)
 		if err != nil {
 			return nil, err
 		}
@@ -91,14 +92,14 @@ func normalize(series []storage.Series, mint, maxt int64) ([]rawSeries, error) {
 
 // normalizeSeries returns s's samples from mint to maxt as disjoint chunks, each read through first, and
 // kept as it is only when its samples rise within its reported span
-func normalizeSeries(s storage.Series, mint, maxt int64, it *chunkenc.Iterator) ([]rawChunk, error) {
+func normalizeSeries(s storage.Series, mint, maxt int64, r *chunkReader) ([]rawChunk, error) {
 	cs, ok := s.(*chunkSeries)
 	if !ok || !cs.disjoint() {
 		return encodeRange(nil, s.Iterator(nil), mint, maxt)
 	}
 	actual := make([]span, len(cs.chunks))
 	for i, c := range cs.chunks {
-		sp, rising, err := readSpan(c.(chunkenc.Chunk), it)
+		sp, rising, err := r.readSpan(c.(chunkenc.Chunk))
 		if err != nil {
 			return nil, err
 		}
@@ -121,13 +122,23 @@ func normalizeSeries(s storage.Series, mint, maxt int64, it *chunkenc.Iterator) 
 	return chunks, nil
 }
 
-// readSpan reads c through, returning the span of its samples, unknown when it has none, and whether they
-// rise strictly
-func readSpan(c chunkenc.Chunk, it *chunkenc.Iterator) (span, bool, error) {
-	sp, rising := span{mint: 1, maxt: 0}, true
-	*it = c.Iterator(*it)
-	for vt := (*it).Next(); vt != chunkenc.ValNone; vt = (*it).Next() {
-		switch t := (*it).AtT(); {
+// chunkReader reads chunks through, reusing one iterator, and one histogram of each kind to materialize into
+type chunkReader struct {
+	it chunkenc.Iterator
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
+}
+
+// readSpan reads c through, returning the span of its samples, unknown when it has none, and whether they rise
+// strictly. A histogram chunk's samples share one bucket layout, materialized once, so a malformed one panics here.
+func (r *chunkReader) readSpan(c chunkenc.Chunk) (span, bool, error) {
+	sp, rising, laidOut := span{mint: 1, maxt: 0}, true, false
+	r.it = c.Iterator(r.it)
+	for vt := r.it.Next(); vt != chunkenc.ValNone; vt = r.it.Next() {
+		if !laidOut {
+			laidOut = r.materialize(vt)
+		}
+		switch t := r.it.AtT(); {
 		case !sp.known():
 			sp = span{mint: t, maxt: t}
 		case t <= sp.maxt:
@@ -136,7 +147,27 @@ func readSpan(c chunkenc.Chunk, it *chunkenc.Iterator) (span, bool, error) {
 			sp.maxt = t
 		}
 	}
-	return sp, rising, (*it).Err()
+	return sp, rising, r.it.Err()
+}
+
+// materialize reads the current histogram sample into r's own, reporting whether that settles its chunk's
+// layout: a float chunk has none, and a stale marker is read without it
+func (r *chunkReader) materialize(vt chunkenc.ValueType) bool {
+	switch vt {
+	case chunkenc.ValHistogram:
+		if r.h == nil {
+			r.h = &histogram.Histogram{}
+		}
+		_, h := r.it.AtHistogram(r.h)
+		return !value.IsStaleNaN(h.Sum)
+	case chunkenc.ValFloatHistogram:
+		if r.fh == nil {
+			r.fh = &histogram.FloatHistogram{}
+		}
+		_, fh := r.it.AtFloatHistogram(r.fh)
+		return !value.IsStaleNaN(fh.Sum)
+	}
+	return true
 }
 
 // cropChunk appends c's samples from mint to maxt to dst: c itself when it lies wholly inside, or else
