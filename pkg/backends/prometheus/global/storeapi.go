@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"strings"
 	"sync/atomic"
+	"unsafe"
 
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -52,6 +53,8 @@ const (
 	maxStoreAPIMessageBytes = 64 << 20
 	// grpcLocalErrorPrefix starts the errors gRPC raises in this process, as for a message over its size limit
 	grpcLocalErrorPrefix = "grpc: "
+	// warningBytes is the memory a kept warning takes besides its text: its error, and its key and value in a map of them
+	warningBytes = 2*int64(unsafe.Sizeof("")) + int64(unsafe.Sizeof(error(nil)))
 )
 
 // Thanos storepb field numbers: SeriesRequest, SeriesResponse, Series, AggrChunk, Chunk, Label, LabelMatcher
@@ -153,6 +156,9 @@ func (s *StoreAPI) Select(ctx context.Context, mint, maxt int64, hints *storage.
 // series streams the series req asks for, with their messages compressed by snappy when compress is set
 func (s *StoreAPI) series(ctx context.Context, req []byte, mint, maxt int64, compress bool,
 ) ([]storage.Series, annotations.Annotations, error) {
+	// a stream is released only once canceled or read to its end, so one left unread is canceled as this returns
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	budget := budgetFrom(ctx)
 	maxMessage := maxStoreAPIMessageBytes
 	if limit := budget.responseLimit(); limit > 0 && limit < int64(maxMessage) {
@@ -172,48 +178,32 @@ func (s *StoreAPI) series(ctx context.Context, req []byte, mint, maxt int64, com
 	if err := stream.CloseSend(); err != nil {
 		return nil, nil, fmt.Errorf("%w: %w", errStoreAPI, err)
 	}
-	var out []storage.Series
-	var last *chunkSeries
-	var lastCounted bool
+	d := newDecoder(budget, mint, maxt, errStoreAPI)
+	d.replicaLabels = replicaLabelsFrom(ctx)
 	var warnings annotations.Annotations
-	var builder labels.ScratchBuilder
 	var received int64
+	// each message is received into one buffer, which grows only for a message larger than any before
+	var frame rawFrame
 	for {
-		var frame rawFrame
+		held := cap(frame.data)
 		if err := stream.RecvMsg(&frame); errors.Is(err, io.EOF) {
-			return out, warnings, nil
+			return d.out, warnings, nil
 		} else if err != nil {
 			return nil, nil, receiveError(err, maxMessage)
+		}
+		if cap(frame.data) != held {
+			d.release()
 		}
 		received += int64(len(frame.data))
 		if limit := budget.responseLimit(); limit > 0 && received > limit {
 			return nil, nil, fmt.Errorf("%w: response exceeds %d bytes", ErrFetchLimit, limit)
 		}
-		series, warning, samples, err := decodeSeriesResponse(frame.data, &builder, mint, maxt)
+		warning, err := d.seriesResponse(frame.data)
 		if err != nil {
 			return nil, nil, err
 		}
 		if warning != "" {
 			warnings.Add(errors.New(warning))
-			continue
-		}
-		if series == nil {
-			continue
-		}
-		if last != nil && labels.Equal(last.lset, series.lset) {
-			last.chunks = append(last.chunks, series.chunks...)
-			last.spans = append(last.spans, series.spans...)
-		} else {
-			last = series
-			out = append(out, series)
-			lastCounted = false
-		}
-		var newSeries int64
-		if samples > 0 && !lastCounted {
-			newSeries, lastCounted = 1, true
-		}
-		if err := budget.add(newSeries, samples); err != nil {
-			return nil, nil, err
 		}
 	}
 }
@@ -293,185 +283,115 @@ func appendInt64Field(b []byte, num protowire.Number, v int64) []byte {
 	return protowire.AppendVarint(b, uint64(v)) //nolint:gosec // wire protocol reinterpret
 }
 
-// decodeSeriesResponse reads one streamed SeriesResponse: a series with the count of its samples from mint
-// to maxt, or a warning
-func decodeSeriesResponse(b []byte, builder *labels.ScratchBuilder, mint, maxt int64,
-) (*chunkSeries, string, int64, error) {
-	var series *chunkSeries
-	var warning string
-	var samples int64
+// seriesResponse reads one streamed SeriesResponse, keeping its series' chunks from mint to maxt and adding what they
+// count to the budget, or returning its warning. A message of more than one result is refused before any is decoded.
+func (d *decoder) seriesResponse(b []byte) (string, error) {
+	var result wireField
 	for len(b) > 0 {
-		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return nil, "", 0, fmt.Errorf("%w: %w", errStoreAPI, protowire.ParseError(n))
+		f, rest, err := d.field(b)
+		if err != nil {
+			return "", err
 		}
-		b = b[n:]
-		if typ != protowire.BytesType {
-			return nil, "", 0, fmt.Errorf("%w: unexpected response field %d", errStoreAPI, num)
+		b = rest
+		if f.typ != protowire.BytesType {
+			return "", fmt.Errorf("%w: unexpected response field %d", errStoreAPI, f.num)
 		}
-		v, n := protowire.ConsumeBytes(b)
-		if n < 0 {
-			return nil, "", 0, fmt.Errorf("%w: %w", errStoreAPI, protowire.ParseError(n))
-		}
-		b = b[n:]
-		switch num {
-		case seriesResponseSeries:
-			var err error
-			if series, samples, err = decodeStoreSeries(v, builder, mint, maxt); err != nil {
-				return nil, "", 0, err
-			}
-		case seriesResponseWarning:
-			warning = string(v)
-		case seriesResponseHints:
+		switch f.num {
+		case seriesResponseSeries, seriesResponseWarning, seriesResponseHints:
 		default:
 			// an unknown kind of answer could hold series this client would silently drop
-			return nil, "", 0, fmt.Errorf("%w: unsupported response field %d", errStoreAPI, num)
+			return "", fmt.Errorf("%w: unsupported response field %d", errStoreAPI, f.num)
 		}
+		// the result is a oneof that stores send one value of, so a second leaves which one is meant ambiguous
+		if result.num != 0 {
+			return "", fmt.Errorf("%w: response fields %d and %d are alternative results", errStoreAPI, result.num, f.num)
+		}
+		result = f
 	}
-	return series, warning, samples, nil
+	switch result.num {
+	case seriesResponseSeries:
+		if err := d.chunkedSeries(result.b, storeChunk); err != nil {
+			return "", err
+		}
+		return "", d.flush()
+	case seriesResponseWarning:
+		// an empty warning, like a message without a result, adds nothing
+		if len(result.b) == 0 {
+			return "", nil
+		}
+		if err := d.charge(warningBytes + int64(len(result.b))); err != nil {
+			return "", err
+		}
+		return string(result.b), nil
+	}
+	return "", nil
 }
 
-func decodeStoreSeries(b []byte, builder *labels.ScratchBuilder, mint, maxt int64) (*chunkSeries, int64, error) {
-	builder.Reset()
-	var iterables []chunkenc.Iterable
-	var spans []span
-	var samples int64
-	err := forEachField(b, func(num protowire.Number, v []byte) error {
-		switch num {
-		case seriesLabels:
-			var name, value string
-			if err := forEachField(v, func(num protowire.Number, v []byte) error {
-				switch num {
-				case labelName:
-					name = string(v)
-				case labelValue:
-					value = string(v)
-				}
-				return nil
-			}); err != nil {
-				return err
-			}
-			builder.Add(name, value)
-		case seriesChunks:
-			chk, sp, err := decodeAggrChunk(v)
-			if err != nil {
-				return err
-			}
-			n, err := samplesWithin(chk, sp, mint, maxt)
-			if err != nil {
-				return fmt.Errorf("%w: %w", errStoreAPI, err)
-			}
-			samples += n
-			iterables = append(iterables, chk)
-			spans = append(spans, sp)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, 0, err
-	}
-	builder.Sort()
-	return &chunkSeries{lset: builder.Labels(), chunks: iterables, spans: spans}, samples, nil
-}
-
-// decodeAggrChunk returns an AggrChunk's raw chunk and its span; a downsampled chunk without one is refused
-func decodeAggrChunk(b []byte) (chunkenc.Chunk, span, error) {
-	var chk chunkenc.Chunk
-	var sp span
-	err := forEachField(b, func(num protowire.Number, v []byte) error {
-		if num != aggrChunkRaw {
-			return nil
-		}
-		// proto3 omits a zero type, so a chunk without one is XOR
-		enc := chunkenc.EncXOR
-		var data []byte
-		if err := forEachField(v, func(num protowire.Number, v []byte) error {
-			if num == chunkData {
-				data = v
-			}
-			return nil
-		}, func(num protowire.Number, v uint64) {
-			if num != chunkType {
-				return
-			}
-			switch v {
-			case storeChunkXOR:
-				enc = chunkenc.EncXOR
-			case storeChunkHistogram:
-				enc = chunkenc.EncHistogram
-			case storeChunkFloatHistogram:
-				enc = chunkenc.EncFloatHistogram
-			default:
-				enc = chunkenc.EncNone
-			}
-		}); err != nil {
-			return err
-		}
-		if enc == chunkenc.EncNone {
-			return fmt.Errorf("%w: unsupported chunk encoding", errStoreAPI)
-		}
-		var err error
-		// the chunk keeps data, so it is copied out of the message buffer
-		if chk, err = newChunk(enc, append([]byte(nil), data...)); err != nil {
-			return fmt.Errorf("%w: %w", errStoreAPI, err)
-		}
-		return nil
-	}, func(num protowire.Number, v uint64) {
-		switch num {
-		case aggrChunkMinTime:
-			sp.mint = int64(v) //nolint:gosec // wire protocol reinterpret
-		case aggrChunkMaxTime:
-			sp.maxt = int64(v) //nolint:gosec // wire protocol reinterpret
-		}
-	})
-	if err != nil {
-		return nil, sp, err
-	}
-	if chk == nil {
-		return nil, sp, fmt.Errorf("%w: a chunk without raw data; only raw resolution is read", errStoreAPI)
-	}
-	return chk, sp, nil
-}
-
-// forEachField calls bytesField for every length-delimited field of a message and varintField, when
-// given, for every varint; fields of other wire types are skipped
-func forEachField(b []byte, bytesField func(protowire.Number, []byte) error,
-	varintField ...func(protowire.Number, uint64),
-) error {
+// storeChunk reads an AggrChunk message's span and raw chunk; a downsampled chunk without one is refused
+func storeChunk(d *decoder, b []byte) (wireChunk, error) {
+	var c wireChunk
+	var raw []byte
 	for len(b) > 0 {
-		num, typ, n := protowire.ConsumeTag(b)
-		if n < 0 {
-			return fmt.Errorf("%w: %w", errStoreAPI, protowire.ParseError(n))
+		f, rest, err := d.field(b)
+		if err != nil {
+			return c, err
 		}
-		b = b[n:]
-		switch typ {
-		case protowire.BytesType:
-			v, n := protowire.ConsumeBytes(b)
-			if n < 0 {
-				return fmt.Errorf("%w: %w", errStoreAPI, protowire.ParseError(n))
+		b = rest
+		switch f.num {
+		case aggrChunkMinTime, aggrChunkMaxTime:
+			if err := d.expect(f, protowire.VarintType); err != nil {
+				return c, err
 			}
-			if err := bytesField(num, v); err != nil {
-				return err
+			if f.num == aggrChunkMinTime {
+				c.sp.mint = int64(f.u) //nolint:gosec // wire protocol reinterpret
+			} else {
+				c.sp.maxt = int64(f.u) //nolint:gosec // wire protocol reinterpret
 			}
-			b = b[n:]
-		case protowire.VarintType:
-			v, n := protowire.ConsumeVarint(b)
-			if n < 0 {
-				return fmt.Errorf("%w: %w", errStoreAPI, protowire.ParseError(n))
+		case aggrChunkRaw:
+			if err := d.expect(f, protowire.BytesType); err != nil {
+				return c, err
 			}
-			for _, f := range varintField {
-				f(num, v)
-			}
-			b = b[n:]
-		default:
-			n := protowire.ConsumeFieldValue(num, typ, b)
-			if n < 0 {
-				return fmt.Errorf("%w: %w", errStoreAPI, protowire.ParseError(n))
-			}
-			b = b[n:]
+			raw = f.b
 		}
 	}
-	return nil
+	if raw == nil {
+		return c, fmt.Errorf("%w: a chunk without raw data; only raw resolution is read", errStoreAPI)
+	}
+	// proto3 omits a zero type, so a chunk without one is XOR
+	typ := uint64(storeChunkXOR)
+	for len(raw) > 0 {
+		f, rest, err := d.field(raw)
+		if err != nil {
+			return c, err
+		}
+		raw = rest
+		switch f.num {
+		case chunkType:
+			if err := d.expect(f, protowire.VarintType); err != nil {
+				return c, err
+			}
+			typ = f.u
+		case chunkData:
+			if err := d.expect(f, protowire.BytesType); err != nil {
+				return c, err
+			}
+			c.data = f.b
+		}
+	}
+	switch typ {
+	case storeChunkXOR:
+		c.enc = chunkenc.EncXOR
+	case storeChunkHistogram:
+		c.enc = chunkenc.EncHistogram
+	case storeChunkFloatHistogram:
+		c.enc = chunkenc.EncFloatHistogram
+	default:
+		return c, fmt.Errorf("%w: unsupported chunk encoding %d", errStoreAPI, typ)
+	}
+	if err := checkChunk(c.enc, c.data); err != nil {
+		return c, fmt.Errorf("%w: %w", errStoreAPI, err)
+	}
+	return c, nil
 }
 
 // rawFrame is one protobuf message, encoded or decoded by its caller rather than the codec
@@ -495,7 +415,13 @@ func (rawCodec) Unmarshal(data mem.BufferSlice, v any) error {
 	if !ok {
 		return fmt.Errorf("%w: cannot decode into %T", errStoreAPI, v)
 	}
-	f.data = data.Materialize()
+	// the frame's buffer is reused when it is large enough, as nothing decoded from a message keeps its memory
+	n := data.Len()
+	if cap(f.data) < n {
+		f.data = make([]byte, n)
+	}
+	f.data = f.data[:n]
+	data.CopyTo(f.data)
 	return nil
 }
 

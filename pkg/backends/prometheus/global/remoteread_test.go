@@ -59,7 +59,7 @@ type testPoint struct {
 	h bool
 }
 
-func xorChunk(t *testing.T, points ...testPoint) prompb.Chunk {
+func xorChunk(t testing.TB, points ...testPoint) prompb.Chunk {
 	t.Helper()
 	c := chunkenc.NewXORChunk()
 	app, err := c.Appender()
@@ -500,22 +500,32 @@ func TestSampleIterator(t *testing.T) {
 }
 
 func TestDecodeChunkEncodings(t *testing.T) {
+	decode := func(c prompb.Chunk) (wireChunk, error) {
+		t.Helper()
+		data, err := c.Marshal()
+		require.NoError(t, err)
+		return remoteChunk(newDecoder(nil, 0, 10, errRemoteRead), data)
+	}
 	xor2 := chunkenc.NewXOR2Chunk()
 	app, err := xor2.Appender()
 	require.NoError(t, err)
 	app.Append(0, 1, 7)
-	chk, err := decodeChunk(prompb.Chunk{Type: prompb.Chunk_XOR2, Data: xor2.Bytes()})
+	c, err := decode(prompb.Chunk{Type: prompb.Chunk_XOR2, Data: xor2.Bytes()})
 	require.NoError(t, err)
-	require.Equal(t, chunkenc.EncXOR2, chk.Encoding())
+	require.Equal(t, chunkenc.EncXOR2, c.enc)
 
 	fh := chunkenc.NewFloatHistogramChunk()
 	happ, err := fh.Appender()
 	require.NoError(t, err)
 	_, _, _, err = happ.AppendFloatHistogram(nil, 0, 1, testHistogram().ToFloat(nil), true)
 	require.NoError(t, err)
-	chk, err = decodeChunk(prompb.Chunk{Type: prompb.Chunk_FLOAT_HISTOGRAM, Data: fh.Bytes()})
+	c, err = decode(prompb.Chunk{Type: prompb.Chunk_FLOAT_HISTOGRAM, Data: fh.Bytes(), MinTimeMs: 1, MaxTimeMs: 1})
 	require.NoError(t, err)
-	require.Equal(t, chunkenc.EncFloatHistogram, chk.Encoding())
+	require.Equal(t, chunkenc.EncFloatHistogram, c.enc)
+	require.Equal(t, span{mint: 1, maxt: 1}, c.sp)
+
+	_, err = decode(prompb.Chunk{Type: prompb.Chunk_HISTOGRAM_ST, Data: fh.Bytes()})
+	require.ErrorIs(t, err, errRemoteRead, "encodings no member sends are refused")
 }
 
 func TestChunkSeriesLabels(t *testing.T) {

@@ -17,6 +17,7 @@
 package global
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -45,15 +46,27 @@ func chunkHeaderSize(enc chunkenc.Encoding) (int, bool) {
 // newChunk wraps data as a chunk of enc, refusing data shorter than its header, which the library
 // reads for the sample count and iterators without checking the length
 func newChunk(enc chunkenc.Encoding, data []byte) (chunkenc.Chunk, error) {
-	size, ok := chunkHeaderSize(enc)
-	if !ok {
-		return nil, fmt.Errorf("%w: unsupported encoding %s", errMalformedChunk, enc)
-	}
-	if len(data) < size {
-		return nil, fmt.Errorf("%w: %d bytes of %s data, under its %d-byte header", errMalformedChunk, len(data), enc, size)
+	if err := checkChunk(enc, data); err != nil {
+		return nil, err
 	}
 	return chunkenc.FromData(enc, data)
 }
+
+// checkChunk refuses data of an encoding no member sends, or shorter than its encoding's header
+func checkChunk(enc chunkenc.Encoding, data []byte) error {
+	size, ok := chunkHeaderSize(enc)
+	if !ok {
+		return fmt.Errorf("%w: unsupported encoding %s", errMalformedChunk, enc)
+	}
+	if len(data) < size {
+		return fmt.Errorf("%w: %d bytes of %s data, under its %d-byte header", errMalformedChunk, len(data), enc, size)
+	}
+	return nil
+}
+
+// headerSamples returns the sample count that starts the header of data checkChunk accepted, as each
+// encoding's NumSamples reads it
+func headerSamples(data []byte) int64 { return int64(binary.BigEndian.Uint16(data)) }
 
 // sample is a float or float-histogram sample of a series read as samples; histograms are held as
 // float histograms, which the engine reads whatever their original kind
@@ -151,6 +164,12 @@ type span struct {
 
 func (s span) known() bool { return s.mint <= s.maxt }
 
+// outside reports whether the span is known and lies wholly before mint or after maxt
+func (s span) outside(mint, maxt int64) bool { return s.known() && (s.maxt < mint || s.mint > maxt) }
+
+// inside reports whether the span is known and lies wholly from mint to maxt
+func (s span) inside(mint, maxt int64) bool { return s.known() && s.mint >= mint && s.maxt <= maxt }
+
 // chunkSeries is a series read as encoded chunks; chunks are in start-time order and may overlap
 type chunkSeries struct {
 	lset   labels.Labels
@@ -186,17 +205,24 @@ func (s *chunkSeries) disjoint() bool {
 // crosses either end or is unknown
 func samplesWithin(chk chunkenc.Chunk, sp span, mint, maxt int64) (int64, error) {
 	switch {
-	case sp.known() && (sp.maxt < mint || sp.mint > maxt):
+	case sp.outside(mint, maxt):
 		return 0, nil
-	case sp.known() && sp.mint >= mint && sp.maxt <= maxt:
+	case sp.inside(mint, maxt):
 		return int64(chk.NumSamples()), nil
 	}
+	n, _, err := readWithin(chk, mint, maxt, nil)
+	return n, err
+}
+
+// readWithin reads chk through it, returning how many of its samples lie from mint to maxt and the iterator,
+// for the next read to reuse
+func readWithin(chk chunkenc.Chunk, mint, maxt int64, it chunkenc.Iterator) (int64, chunkenc.Iterator, error) {
 	var n int64
-	it := chk.Iterator(nil)
+	it = chk.Iterator(it)
 	for vt := it.Seek(mint); vt != chunkenc.ValNone && it.AtT() <= maxt; vt = it.Next() {
 		n++
 	}
-	return n, it.Err()
+	return n, it, it.Err()
 }
 
 // boundedSeries passes on only its series' samples from mint to maxt, as the engine asked for them

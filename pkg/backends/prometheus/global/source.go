@@ -22,11 +22,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
+	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -97,6 +99,13 @@ func (b *Budget) add(series, samples int64) error {
 	return nil
 }
 
+// exceeds reports whether adding series and samples would exceed either limit, reading the counts without
+// adding to them, so a reader can check each chunk before keeping it and add many at once
+func (b *Budget) exceeds(series, samples int64) bool {
+	return b != nil && ((b.MaxSeries > 0 && b.series.Load()+series > b.MaxSeries) ||
+		(b.MaxSamples > 0 && b.samples.Load()+samples > b.MaxSamples))
+}
+
 // Fetched returns the series and samples the budget has counted.
 func (b *Budget) Fetched() (series, samples int64) {
 	return b.series.Load(), b.samples.Load()
@@ -110,9 +119,24 @@ func (b *Budget) responseLimit() int64 {
 	return b.MaxResponseBytes
 }
 
+// decodeLimit returns the most bytes the series kept from one response may take: decodeExpansion times its byte
+// limit, or the default capture limit's when it has none, so decoding is bounded even when fetching isn't
+func (b *Budget) decodeLimit() int64 {
+	limit := b.responseLimit()
+	if limit <= 0 {
+		limit = bo.DefaultMaxCaptureBytes
+	}
+	if limit > math.MaxInt64/decodeExpansion {
+		return math.MaxInt64
+	}
+	return decodeExpansion * limit
+}
+
 type requestKey struct{}
 
 type budgetKey struct{}
+
+type replicaLabelsKey struct{}
 
 // WithRequest returns ctx carrying the client request whose credentials and tenant headers sources forward.
 func WithRequest(ctx context.Context, r *http.Request) context.Context {
@@ -132,4 +156,15 @@ func requestFrom(ctx context.Context) *http.Request {
 func budgetFrom(ctx context.Context) *Budget {
 	b, _ := ctx.Value(budgetKey{}).(*Budget)
 	return b
+}
+
+// withReplicaLabels returns ctx carrying the labels deduplication groups series without, so a source decoding a
+// response charges what each group's series lay out together, as deduplication reads them
+func withReplicaLabels(ctx context.Context, names []string) context.Context {
+	return context.WithValue(ctx, replicaLabelsKey{}, names)
+}
+
+func replicaLabelsFrom(ctx context.Context) []string {
+	names, _ := ctx.Value(replicaLabelsKey{}).([]string)
+	return names
 }

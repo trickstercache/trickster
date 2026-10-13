@@ -34,11 +34,9 @@ import (
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
 	"github.com/klauspost/compress/snappy"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -112,7 +110,9 @@ func (s *RemoteRead) read(ctx context.Context, mint, maxt int64, hints *storage.
 		reader = &limitedReader{r: resp.Body, remaining: limit}
 	}
 	if strings.HasPrefix(resp.Header.Get(headers.NameContentType), contentTypeStreamed) {
-		return decodeChunked(reader, budget, mint, maxt)
+		d := newDecoder(budget, mint, maxt, errRemoteRead)
+		d.replicaLabels = replicaLabelsFrom(ctx)
+		return decodeChunked(reader, d)
 	}
 	return decodeSamples(reader, budget, mint, maxt)
 }
@@ -178,19 +178,16 @@ func encodeReadRequest(mint, maxt int64, hints *storage.SelectHints, matchers []
 	return snappy.Encode(nil, data), nil
 }
 
-// decodeChunked reads frames of a uvarint length, big-endian CRC-32C and ChunkedReadResponse, a series
-// continuing across frames; the budget counts what's from mint to maxt
-func decodeChunked(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Series, error) {
+// decodeChunked reads frames of a uvarint length, big-endian CRC-32C and ChunkedReadResponse through d, a series
+// continuing across frames; only what's within d's range is kept, counted against its budget
+func decodeChunked(r io.Reader, d *decoder) ([]storage.Series, error) {
 	br := bufio.NewReader(r)
-	var out []storage.Series
-	var last *chunkSeries
-	var lastCounted bool
+	budget := d.budget
 	var frame []byte
-	var builder labels.ScratchBuilder
 	for {
 		size, err := binary.ReadUvarint(br)
 		if errors.Is(err, io.EOF) {
-			return out, nil
+			return d.out, nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("%w: frame length: %w", errRemoteRead, err)
@@ -207,6 +204,7 @@ func decodeChunked(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 			return nil, fmt.Errorf("%w: frame checksum: %w", errRemoteRead, err)
 		}
 		if cap(frame) < int(size) {
+			d.release()
 			frame = make([]byte, size)
 		}
 		frame = frame[:size]
@@ -216,70 +214,14 @@ func decodeChunked(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 		if crc32.Checksum(frame, castagnoli) != binary.BigEndian.Uint32(crc[:]) {
 			return nil, fmt.Errorf("%w: frame checksum mismatch", errRemoteRead)
 		}
-		var res prompb.ChunkedReadResponse
-		if err := res.Unmarshal(frame); err != nil {
-			return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
-		}
-		for _, cs := range res.ChunkedSeries {
-			lset := cs.ToLabels(&builder, nil)
-			var samples int64
-			iterables := make([]chunkenc.Iterable, len(cs.Chunks))
-			spans := make([]span, len(cs.Chunks))
-			for i, c := range cs.Chunks {
-				chk, err := decodeChunk(c)
-				if err != nil {
-					return nil, err
-				}
-				spans[i] = span{mint: c.MinTimeMs, maxt: c.MaxTimeMs}
-				n, err := samplesWithin(chk, spans[i], mint, maxt)
-				if err != nil {
-					return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
-				}
-				samples += n
-				iterables[i] = chk
-			}
-			if last != nil && labels.Equal(last.lset, lset) {
-				last.chunks = append(last.chunks, iterables...)
-				last.spans = append(last.spans, spans...)
-			} else {
-				last = &chunkSeries{lset: lset, chunks: iterables, spans: spans}
-				out = append(out, last)
-				lastCounted = false
-			}
-			var newSeries int64
-			if samples > 0 && !lastCounted {
-				newSeries, lastCounted = 1, true
-			}
-			if err := budget.add(newSeries, samples); err != nil {
-				return nil, err
-			}
+		if err := d.chunkedReadResponse(frame); err != nil {
+			return nil, err
 		}
 	}
 }
 
-func decodeChunk(c prompb.Chunk) (chunkenc.Chunk, error) {
-	var enc chunkenc.Encoding
-	switch c.Type {
-	case prompb.Chunk_XOR:
-		enc = chunkenc.EncXOR
-	case prompb.Chunk_XOR2:
-		enc = chunkenc.EncXOR2
-	case prompb.Chunk_HISTOGRAM:
-		enc = chunkenc.EncHistogram
-	case prompb.Chunk_FLOAT_HISTOGRAM:
-		enc = chunkenc.EncFloatHistogram
-	default:
-		return nil, fmt.Errorf("%w: unsupported chunk encoding %s", errRemoteRead, c.Type)
-	}
-	chk, err := newChunk(enc, c.Data)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
-	}
-	return chk, nil
-}
-
-// decodeSamples reads a snappy-compressed ReadResponse of samples; the budget counts what lies from mint
-// to maxt
+// decodeSamples reads a snappy-compressed ReadResponse of samples; only what lies from mint to maxt is kept,
+// counted against the budget
 func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Series, error) {
 	compressed, err := io.ReadAll(r)
 	if err != nil {
@@ -296,69 +238,11 @@ func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
 	}
-	var res prompb.ReadResponse
-	if err := res.Unmarshal(data); err != nil {
-		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
+	d := newDecoder(budget, mint, maxt, errRemoteRead)
+	if err := d.readResponse(data); err != nil {
+		return nil, err
 	}
-	var out []storage.Series
-	var builder labels.ScratchBuilder
-	for _, result := range res.Results {
-		for _, ts := range result.Timeseries {
-			samples, err := mergeSamples(ts)
-			if err != nil {
-				return nil, err
-			}
-			var n, series int64
-			for _, s := range samples {
-				if s.t >= mint && s.t <= maxt {
-					n++
-				}
-			}
-			if n > 0 {
-				series = 1
-			}
-			if err := budget.add(series, n); err != nil {
-				return nil, err
-			}
-			out = append(out, &sampleSeries{lset: ts.ToLabels(&builder, nil), samples: samples})
-		}
-	}
-	return out, nil
-}
-
-// mergeSamples interleaves a series' float and histogram samples, each already in time order
-func mergeSamples(ts *prompb.TimeSeries) ([]sample, error) {
-	out := make([]sample, 0, len(ts.Samples)+len(ts.Histograms))
-	f, h := 0, 0
-	for f < len(ts.Samples) || h < len(ts.Histograms) {
-		if h == len(ts.Histograms) || (f < len(ts.Samples) && ts.Samples[f].Timestamp <= ts.Histograms[h].Timestamp) {
-			out = append(out, sample{t: ts.Samples[f].Timestamp, f: ts.Samples[f].Value})
-			f++
-			continue
-		}
-		fh, err := sampleHistogram(&ts.Histograms[h])
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, sample{t: ts.Histograms[h].Timestamp, fh: fh})
-		h++
-	}
-	return out, nil
-}
-
-// sampleHistogram returns h with a schema finer than the engine reads reduced, as a chunk's iterator reduces it, so its
-// layout is checked before it's kept; an unknown schema, or spans that can't be reduced, fail the read
-func sampleHistogram(h *prompb.Histogram) (*histogram.FloatHistogram, error) {
-	if !histogram.IsKnownSchema(h.Schema) {
-		return nil, fmt.Errorf("%w: %w", errRemoteRead, histogram.UnknownSchemaError(h.Schema))
-	}
-	fh := h.ToFloatHistogram()
-	if fh.Schema > histogram.ExponentialSchemaMax {
-		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
-			return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
-		}
-	}
-	return fh, nil
+	return d.out, nil
 }
 
 // limitedReader fails, rather than ending early, once a response exceeds its byte limit

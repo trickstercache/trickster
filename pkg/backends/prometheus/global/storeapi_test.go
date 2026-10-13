@@ -20,8 +20,10 @@ import (
 	"context"
 	"net"
 	"net/url"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -32,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/mem"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
@@ -89,6 +92,32 @@ func decodeTestSeriesRequest(t *testing.T, b []byte) storeRequest {
 	return req
 }
 
+// forEachField calls bytesField for every length-delimited field of a message and varintField, when
+// given, for every varint; fields of other wire types are skipped
+func forEachField(b []byte, bytesField func(protowire.Number, []byte) error,
+	varintField ...func(protowire.Number, uint64),
+) error {
+	d := newDecoder(nil, 0, 0, errStoreAPI)
+	for len(b) > 0 {
+		f, rest, err := d.field(b)
+		if err != nil {
+			return err
+		}
+		b = rest
+		switch f.typ {
+		case protowire.BytesType:
+			if err := bytesField(f.num, f.b); err != nil {
+				return err
+			}
+		case protowire.VarintType:
+			for _, fn := range varintField {
+				fn(f.num, f.u)
+			}
+		}
+	}
+	return nil
+}
+
 func encodeTestChunk(enc uint64, data []byte, raw bool) []byte {
 	var chunk []byte
 	// proto3 writes no type for XOR, its zero value
@@ -140,6 +169,8 @@ type testStore struct {
 	err    error
 	// rejectSnappy answers a snappy-compressed call as a store without that compressor does
 	rejectSnappy bool
+	// hold, when set, is called with the call's context once frames are sent, before the call ends
+	hold func(context.Context)
 
 	mu       sync.Mutex
 	requests []storeRequest
@@ -205,6 +236,9 @@ func (s *testStore) serve(t *testing.T) *StoreAPI {
 				if err := stream.SendMsg(&rawFrame{data: f}); err != nil {
 					return err
 				}
+			}
+			if s.hold != nil {
+				s.hold(stream.Context())
 			}
 			return nil
 		}))
@@ -356,6 +390,55 @@ func TestRawCodec(t *testing.T) {
 	require.ErrorIs(t, err, errStoreAPI)
 	require.ErrorIs(t, rawCodec{}.Unmarshal(nil, "frame"), errStoreAPI)
 	require.Equal(t, storeAPICodecName, rawCodec{}.Name())
+
+	message := func(s string) mem.BufferSlice {
+		return mem.BufferSlice{mem.SliceBuffer([]byte(s[:2])), mem.SliceBuffer([]byte(s[2:]))}
+	}
+	var f rawFrame
+	require.NoError(t, rawCodec{}.Unmarshal(message("message"), &f))
+	require.Equal(t, "message", string(f.data))
+	held := &f.data[0]
+	next := message("reused")
+	allocs := testing.AllocsPerRun(10, func() { _ = rawCodec{}.Unmarshal(next, &f) })
+	require.Zero(t, allocs, "a message the buffer holds is received into it")
+	require.Equal(t, "reused", string(f.data))
+	require.Same(t, held, &f.data[0])
+	require.NoError(t, rawCodec{}.Unmarshal(message("a longer message"), &f))
+	require.Equal(t, "a longer message", string(f.data))
+}
+
+func TestStoreAPICancelsAStreamItStopsReading(t *testing.T) {
+	canceled := make(chan struct{})
+	store := &testStore{
+		frames: [][]byte{encodeTestSeries([]string{labels.MetricName, testMetric},
+			encodeTestChunk(storeChunkXOR, xorData(t, testPoint{t: 1, f: 1}, testPoint{t: 2, f: 2}), true))},
+		hold: func(ctx context.Context) {
+			<-ctx.Done()
+			close(canceled)
+		},
+	}
+	_, _, err := store.serve(t).Select(testContext(t, &Budget{MaxSamples: 1}), 0, 10, nil)
+	require.ErrorIs(t, err, ErrFetchLimit)
+	select {
+	case <-canceled:
+	case <-time.After(storeTestWait):
+		t.Fatal("the stream left unread was never canceled")
+	}
+}
+
+func TestStoreAPIChargesWarnings(t *testing.T) {
+	var frames [][]byte
+	var size int64
+	for i := range 2000 {
+		frames = append(frames, encodeTestResponse(seriesResponseWarning, []byte("w"+strconv.Itoa(i))))
+		size += int64(len(frames[i]))
+	}
+	_, _, err := (&testStore{frames: frames}).serve(t).Select(testContext(t, &Budget{MaxResponseBytes: size}), 0, 10, nil)
+	require.ErrorIs(t, err, ErrFetchLimit, "each warning kept is charged, as it takes more than its message")
+	_, warnings, err := (&testStore{frames: frames[:10]}).serve(t).Select(testContext(t, &Budget{MaxResponseBytes: size}),
+		0, 10, nil)
+	require.NoError(t, err)
+	require.Len(t, warnings, 10)
 }
 
 func TestStoreAPICompression(t *testing.T) {

@@ -103,6 +103,9 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 	if hints != nil {
 		mint, maxt, function = hints.Start, hints.End, hints.Func
 	}
+	if len(qr.q.replicaLabels) > 0 {
+		ctx = withReplicaLabels(ctx, qr.q.replicaLabels)
+	}
 	members := qr.q.members
 	results := make([][]storage.Series, len(members))
 	incomplete := make([]annotations.Annotations, len(members))
