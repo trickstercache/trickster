@@ -83,7 +83,7 @@ func (s sample) valueType() chunkenc.ValueType {
 	return chunkenc.ValFloat
 }
 
-// sampleSeries is a series read as samples, in time order
+// sampleSeries is a series read as samples, one at each time, in time order, which seeking relies on
 type sampleSeries struct {
 	lset    labels.Labels
 	samples []sample

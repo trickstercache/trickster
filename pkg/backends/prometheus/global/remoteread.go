@@ -245,7 +245,8 @@ func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 	return d.out, nil
 }
 
-// limitedReader fails, rather than ending early, once a response exceeds its byte limit
+// limitedReader fails, rather than ending early, once a response exceeds its byte limit; at the limit, a response
+// ends only at its own EOF, so a transport error there is never mistaken for a complete response
 type limitedReader struct {
 	r         io.Reader
 	remaining int64
@@ -253,11 +254,14 @@ type limitedReader struct {
 
 func (l *limitedReader) Read(p []byte) (int, error) {
 	if l.remaining <= 0 {
+		// a byte past the limit fails the read whatever error comes with it; otherwise the probe's own result is
+		// the read's: EOF, a transport error, or nothing read and no error, which a caller reads again
 		var probe [1]byte
-		if n, _ := l.r.Read(probe[:]); n > 0 {
+		n, err := l.r.Read(probe[:])
+		if n > 0 {
 			return 0, fmt.Errorf("%w: response exceeds its byte limit", ErrFetchLimit)
 		}
-		return 0, io.EOF
+		return 0, err
 	}
 	if int64(len(p)) > l.remaining {
 		p = p[:l.remaining]

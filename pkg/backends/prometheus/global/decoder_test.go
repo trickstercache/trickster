@@ -231,10 +231,12 @@ func TestDecoderAllowanceAppliesWithoutFetchLimits(t *testing.T) {
 	chunk, err := inRange.Marshal()
 	require.NoError(t, err)
 	manyLabels := bytes.Repeat(appendBytesField(nil, seriesLabels, nil), 1000)
-	emptyHistograms := func(n int) []byte {
+	// emptyHistograms are n histograms of no buckets, each step milliseconds after the one before
+	emptyHistograms := func(n int, step uint64) []byte {
 		ts := appendBytesField(nil, seriesLabels, nil)
-		h := appendVarintField(nil, histogramTimestamp, decodeTestMint)
-		ts = append(ts, bytes.Repeat(appendBytesField(nil, timeSeriesHistograms, h), n)...)
+		for i := range uint64(n) {
+			ts = appendBytesField(ts, timeSeriesHistograms, appendVarintField(nil, histogramTimestamp, decodeTestMint+i*step))
+		}
 		return appendBytesField(nil, readResponseResults, appendBytesField(nil, queryResultTimeseries, ts))
 	}
 	tests := map[string]struct {
@@ -245,10 +247,10 @@ func TestDecoderAllowanceAppliesWithoutFetchLimits(t *testing.T) {
 			message: appendBytesField(nil, chunkedResponseSeries, appendBytesField(manyLabels, seriesChunks, chunk)),
 			decode:  (*decoder).chunkedReadResponse,
 		},
-		// each sample's slot is charged before the series' samples are allocated
-		"many samples": {message: emptyHistograms(1000), decode: (*decoder).readResponse},
-		// and each histogram before it is
-		"many histograms": {message: emptyHistograms(200), decode: (*decoder).readResponse},
+		// each sample's slot is charged before the series' samples are allocated, those sharing a time too
+		"many samples": {message: emptyHistograms(1000, 0), decode: (*decoder).readResponse},
+		// and each histogram kept, one at each time, before it is
+		"many histograms": {message: emptyHistograms(200, 1), decode: (*decoder).readResponse},
 	}
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -426,9 +428,9 @@ func TestDecoderSamples(t *testing.T) {
 	require.Len(t, d.out, 2)
 	ss := d.out[0].(*sampleSeries)
 	require.Equal(t, labels.FromStrings(labels.MetricName, testMetric, testPod, "a"), ss.lset)
-	// only samples in range are kept, merged in time order, a float first where a histogram shares its time
-	require.Equal(t, []testPoint{{t: 110, f: 110}, {t: 120, h: true}, {t: 130, f: 130}, {t: 130, h: true}}, readPoints(t, ss))
-	require.Len(t, ss.samples, cap(ss.samples), "the samples are allocated once, as many as are kept")
+	// only samples in range are kept, merged in time order, a float rather than a histogram where both share a time
+	require.Equal(t, []testPoint{{t: 110, f: 110}, {t: 120, h: true}, {t: 130, f: 130}}, readPoints(t, ss))
+	require.Len(t, ss.samples, cap(ss.samples)-1, "the samples are allocated once, for every one sent in range")
 	// a series of only floats keeps those from mint to maxt, both included
 	fs := d.out[1].(*sampleSeries)
 	require.Equal(t, pointsAt(100, 150, 200), readPoints(t, fs))
@@ -437,10 +439,10 @@ func TestDecoderSamples(t *testing.T) {
 	require.Equal(t, int64(2), fetchedSeries)
 	require.Equal(t, int64(7), fetchedSamples)
 
-	// a series' samples are counted before any is allocated
+	// a series' samples are counted before any is allocated, every one sent in range, though some share a time
 	many := make([]int64, 10000)
 	for i := range many {
-		many[i] = decodeTestMint + int64(i%100)
+		many[i] = decodeTestMint + int64(i*100/len(many))
 	}
 	data = samplesResponse(t, &prompb.TimeSeries{Labels: testLabels("a"), Samples: floats(many...)})
 	allocs, allocated, err := decodeAllocs(t, func(d *decoder) error {
@@ -833,6 +835,30 @@ func BenchmarkDecodeSamples(b *testing.B) {
 			testPod, string(rune('a'+i%26))+string(rune('a'+i/26)), "job", "node"), nil)}
 		for j := range 120 {
 			ts.Samples = append(ts.Samples, prompb.Sample{Timestamp: int64(j) * 15000, Value: float64(j % 7)})
+		}
+		series[i] = ts
+	}
+	data := samplesResponse(b, series...)
+	b.ReportAllocs()
+	b.SetBytes(int64(len(data)))
+	for b.Loop() {
+		d := newDecoder(nil, 0, 120*15000, errRemoteRead)
+		if err := d.readResponse(data); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecodeMixedSamples(b *testing.B) {
+	series := make([]*prompb.TimeSeries, 200)
+	h := testHistogram()
+	for i := range series {
+		ts := &prompb.TimeSeries{Labels: prompb.FromLabels(labels.FromStrings(labels.MetricName, testMetric,
+			testPod, string(rune('a'+i%26))+string(rune('a'+i/26)), "job", "node"), nil)}
+		// floats and histograms alternate, so the two kinds are merged
+		for j := range 60 {
+			ts.Samples = append(ts.Samples, prompb.Sample{Timestamp: int64(2*j) * 15000, Value: float64(j % 7)})
+			ts.Histograms = append(ts.Histograms, prompb.FromIntHistogram(int64(2*j+1)*15000, h))
 		}
 		series[i] = ts
 	}

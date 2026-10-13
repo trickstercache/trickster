@@ -42,7 +42,7 @@ const (
 	layoutTestAt = 150
 	// layoutTestSlack is what iterators take besides their bucket layouts
 	layoutTestSlack = 64 << 10
-	// heapAttempts is how many times a heap measurement is taken, the least kept
+	// heapAttempts is how many times a heap measurement is taken, the least and most kept
 	heapAttempts     = 3
 	layoutRemoteRead = "remote read"
 	layoutStoreAPI   = "storeapi"
@@ -266,13 +266,16 @@ func heapAfter(next func() any) int64 {
 	return int64(after.HeapAlloc) - int64(before.HeapAlloc)
 }
 
-// leastHeapAfter is the least heapAfter of a few runs of next, as what other goroutines allocate meanwhile only adds
-func leastHeapAfter(next func() any) int64 {
-	least := heapAfter(next)
+// heapAfterRuns returns the least and most heapAfter of a few runs of next: what other goroutines allocate meanwhile only
+// adds to a run, and what they release only takes from it, so the least bounds what next keeps from above, the most from below
+func heapAfterRuns(next func() any) (least, most int64) {
+	least = heapAfter(next)
+	most = least
 	for range heapAttempts - 1 {
-		least = min(least, heapAfter(next))
+		n := heapAfter(next)
+		least, most = min(least, n), max(most, n)
 	}
-	return least
+	return least, most
 }
 
 func TestDeduplicationLaysOutNoMoreThanDecodingCharged(t *testing.T) {
@@ -288,14 +291,14 @@ func TestDeduplicationLaysOutNoMoreThanDecodingCharged(t *testing.T) {
 					dedup, "")
 				require.Len(t, series, shape.groups)
 				// the engine reads one series at a time, which lays out every chunk deduplication chains into it
-				live := leastHeapAfter(func() any {
+				least, most := heapAfterRuns(func() any {
 					it := series[0].Iterator(nil)
 					require.Equal(t, chunkenc.ValHistogram, it.Next())
 					return it
 				})
-				t.Logf("charged %d, laid out %d", d.laid, live)
-				require.Greater(t, live, d.laid/2, "the layouts were read")
-				require.LessOrEqual(t, live, d.laid+layoutTestSlack)
+				t.Logf("charged %d, laid out %d to %d", d.laid, least, most)
+				require.Greater(t, most, d.laid/2, "the layouts were read")
+				require.LessOrEqual(t, least, d.laid+layoutTestSlack)
 				runtime.KeepAlive(series)
 			})
 		}

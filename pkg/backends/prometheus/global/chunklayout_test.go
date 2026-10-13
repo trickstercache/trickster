@@ -526,7 +526,7 @@ func TestDecoderChargesHistogramLayouts(t *testing.T) {
 	d := newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead)
 	require.NoError(t, d.chunkedReadResponse(frame))
 	require.Equal(t, layoutCost(chunkenc.EncHistogram, full), d.laid)
-	laidOut := leastHeapAfter(func() any {
+	laidOut, _ := heapAfterRuns(func() any {
 		it := d.out[0].Iterator(nil)
 		require.Equal(t, chunkenc.ValHistogram, it.Next())
 		return it

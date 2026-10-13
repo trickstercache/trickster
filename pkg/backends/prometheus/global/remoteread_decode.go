@@ -18,6 +18,7 @@ package global
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math"
 
@@ -64,7 +65,16 @@ const (
 	sampleValueTag     = sampleValue<<3 | byte(protowire.Fixed64Type)
 	sampleTimestampTag = sampleTimestamp<<3 | byte(protowire.VarintType)
 	sampleFixedBytes   = 9
+	// floatKind and histogramKind are the kinds of sample in a series message, as an order error names them
+	floatKind     = 0
+	histogramKind = 1
 )
+
+// errSampleOrder is returned for a series message whose floats, or whose histograms, go back in time
+var errSampleOrder = errors.New("samples out of time order")
+
+// sampleKindNames name each kind of sample, as an error reports it
+var sampleKindNames = [...]string{floatKind: "float", histogramKind: "histogram"}
 
 // chunkedReadResponse reads one frame's ChunkedReadResponse, adding what it counts to the budget; its query index
 // is ignored, as a read asks one query
@@ -221,12 +231,15 @@ func (d *decoder) next(c *sampleCursor) error {
 // inRange reports whether t lies from mint to maxt
 func (d *decoder) inRange(t int64) bool { return t >= d.mint && t <= d.maxt }
 
-// timeSeries reads a TimeSeries message, keeping its samples from mint to maxt. A first pass reads its labels and
-// counts those samples, so a series without any is never kept, and the rest are counted before they are kept.
+// timeSeries reads a TimeSeries message, keeping its samples from mint to maxt. A first pass reads its labels, checks
+// every sample's order, and counts those in range, so a series without any is never kept, and the rest are counted first.
 func (d *decoder) timeSeries(b []byte) error {
 	d.resetLabels()
-	var n int64
+	var n, t int64
 	var histograms bool
+	// a sample earlier than the last of its kind fails the response, as merging and seeking a kind's samples would
+	// silently skip those after it; each kind's last time is its own local, so it stays in a register
+	lastFloat, lastHistogram := int64(math.MinInt64), int64(math.MinInt64)
 	for rest := b; len(rest) > 0; {
 		f, next, err := d.field(rest)
 		if err != nil {
@@ -236,11 +249,24 @@ func (d *decoder) timeSeries(b []byte) error {
 		switch f.num {
 		case seriesLabels:
 			err = d.addLabel(f)
-		case timeSeriesSamples, timeSeriesHistograms:
-			var t int64
-			if t, err = d.sampleTime(f); err == nil && d.inRange(t) {
-				n++
-				histograms = histograms || f.num == timeSeriesHistograms
+		case timeSeriesSamples:
+			if t, err = d.sampleTime(f); err == nil {
+				if t < lastFloat {
+					return d.orderError(floatKind, t, lastFloat)
+				}
+				if lastFloat = t; d.inRange(t) {
+					n++
+				}
+			}
+		case timeSeriesHistograms:
+			if t, err = d.sampleTime(f); err == nil {
+				if t < lastHistogram {
+					return d.orderError(histogramKind, t, lastHistogram)
+				}
+				if lastHistogram = t; d.inRange(t) {
+					n++
+					histograms = true
+				}
 			}
 		}
 		if err != nil {
@@ -283,41 +309,50 @@ func (d *decoder) sampleTime(f wireField) (int64, error) {
 	return s.t, err
 }
 
-// floatSamples appends to dst the float samples from mint to maxt of a series message the first pass read
+// orderError is the error a sample of kind at t fails a response with when one of its kind before it is at last
+func (d *decoder) orderError(kind int, t, last int64) error {
+	return fmt.Errorf("%w: %w: a %s sample at %d follows one at %d", d.kind, errSampleOrder, sampleKindNames[kind], t, last)
+}
+
+// floatSamples appends to dst the float samples from mint to maxt of a series message the first pass read, in time
+// order; of samples sharing a time, only the first is kept
 func (d *decoder) floatSamples(b []byte, dst []sample) []sample {
+	kept := int64(math.MinInt64)
 	for len(b) > 0 {
 		f, rest, _ := d.field(b)
 		b = rest
 		if f.num != timeSeriesSamples {
 			continue
 		}
-		if t, v, _ := d.sample(f.b); d.inRange(t) {
-			dst = append(dst, sample{t: t, f: v})
+		if t, v, _ := d.sample(f.b); d.inRange(t) && (t > kept || len(dst) == 0) {
+			dst, kept = append(dst, sample{t: t, f: v}), t
 		}
 	}
 	return dst
 }
 
-// mergeSamples appends to dst the float and histogram samples from mint to maxt of a series message the first pass
-// read, each kind in time order, merged so
+// mergeSamples appends to dst the float and histogram samples from mint to maxt the first pass read, merging the kinds in time
+// order. Each time keeps one sample, its first float, else its first histogram; Prometheus's remote-read client also prefers a float.
 func (d *decoder) mergeSamples(b []byte, dst []sample) ([]sample, error) {
 	floats, hists := sampleCursor{rest: b, num: timeSeriesSamples}, sampleCursor{rest: b, num: timeSeriesHistograms}
 	// the first pass read every sample, so neither cursor fails
 	_, _ = d.next(&floats), d.next(&hists)
+	kept := int64(math.MinInt64)
 	for floats.ok || hists.ok {
+		// a float is taken first where both kinds share a time, so a histogram there is dropped without being decoded
 		if floats.ok && (!hists.ok || floats.t <= hists.t) {
-			if d.inRange(floats.t) {
-				dst = append(dst, sample{t: floats.t, f: floats.f})
+			if d.inRange(floats.t) && (floats.t > kept || len(dst) == 0) {
+				dst, kept = append(dst, sample{t: floats.t, f: floats.f}), floats.t
 			}
 			_ = d.next(&floats)
 			continue
 		}
-		if d.inRange(hists.t) {
+		if d.inRange(hists.t) && (hists.t > kept || len(dst) == 0) {
 			fh, err := d.histogram(hists.h, hists.shape)
 			if err != nil {
 				return nil, err
 			}
-			dst = append(dst, sample{t: hists.t, fh: fh})
+			dst, kept = append(dst, sample{t: hists.t, fh: fh}), hists.t
 		}
 		_ = d.next(&hists)
 	}

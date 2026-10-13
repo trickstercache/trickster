@@ -224,7 +224,8 @@ func sortRawSeries(series []rawSeries, mint, maxt int64) ([]rawSeries, error) {
 	return out, nil
 }
 
-// joinChunks returns two chunk lists of one series as one, merging their samples where they overlap
+// joinChunks returns two chunk lists of one series as one, merging their samples where they overlap; a, the copy sent
+// first, keeps its sample at a time both hold, as deduplication chains a member's copies of a series
 func joinChunks(a, b []rawChunk, mint, maxt int64) ([]rawChunk, error) {
 	all := append(slices.Clip(a), b...)
 	slices.SortFunc(all, compareChunks)
@@ -235,11 +236,18 @@ func joinChunks(a, b []rawChunk, mint, maxt int64) ([]rawChunk, error) {
 	if disjoint {
 		return all, nil
 	}
-	iterables := make([]chunkenc.Iterable, len(all))
-	for i, c := range all {
-		iterables[i] = c.chk
+	return encodeRange(nil, newChainIterator([]chunkenc.Iterator{chunksIterator(a), chunksIterator(b)}), mint, maxt)
+}
+
+// chunksIterator reads disjoint chunks in time order one after another
+func chunksIterator(chunks []rawChunk) chunkenc.Iterator {
+	views := make([]chunkView, len(chunks))
+	for i, c := range chunks {
+		views[i] = chunkView{chk: c.chk, lo: c.mint, hi: c.maxt}
 	}
-	return encodeRange(nil, storage.ChainSampleIteratorFromIterables(nil, iterables), mint, maxt)
+	vi := &viewIterator{}
+	vi.reset(views)
+	return vi
 }
 
 // cropSeries returns series' samples within extents, which are in time order
