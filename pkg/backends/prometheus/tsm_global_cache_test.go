@@ -1116,6 +1116,9 @@ func TestGlobalCacheKeyPrefix(t *testing.T) {
 	labelled := globalTestSettings()
 	labelled.ReplicaLabels = []string{globalReplicaLabel}
 	require.NotEqual(t, prefix, newGlobalEvaluator(labelled).cacheKeyPrefix())
+	limited := globalTestSettings()
+	limited.MaxResponseBytes++
+	require.NotEqual(t, prefix, newGlobalEvaluator(limited).cacheKeyPrefix(), "the result size limit changes the key")
 
 	gt := newGlobalCacheTest(t, globalTestSettings(), nil)
 	cg := gt.evaluator.cached

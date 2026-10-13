@@ -216,30 +216,25 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		}
 		return bound(series, mint, maxt), warnings, nil
 	}
-	sources, covered, held, subsumed := c.cached(k, max(mint, keep.mint), min(maxt, keep.maxt), now)
-	if subsumed && c.opts.Subsumed != nil {
-		c.opts.Subsumed()
+	// what the cache serves is charged a block at a time as it is assembled, so a select the evaluation can't afford stops
+	// before retrieving more blocks, and before any member is read
+	charge := newSelectCharge(budgetFrom(ctx), false)
+	a, covered, held, err := c.cached(ctx, k, max(mint, keep.mint), min(maxt, keep.maxt), now, charge)
+	if err != nil {
+		return nil, nil, err
 	}
 	missing := covered.CalculateDeltas(timeseries.ExtentList{extent(mint, maxt)}, time.Millisecond)
-	series, cachedSamples, bad, err := assemble(nil, sources)
-	if err != nil {
-		// a cached block whose samples can't be read is dropped, so the next read fetches them again
-		c.engine.Store(bad, &nativedelta.Entry[*rawBlock]{Marker: true})
-		return nil, nil, err
-	}
-	// reads limited in series identify them, so a select reading several ranges can charge each series once as it arrives;
-	// what the cache serves is charged before them, so they stop once it and what they read exceed the allowance
-	charge := newSelectCharge(budgetFrom(ctx), len(missing) > 1 && c.opts.MaxSeries > 0)
-	if err := charge.prepay(int64(len(series)), cachedSamples); err != nil {
-		return nil, nil, err
+	// reads limited in series identify them; a select reading several ranges, or a range besides the cached series, counts
+	// their ids with the cached series', so each series is charged once, as it first arrives, and none is taken for another
+	if c.opts.MaxSeries > 0 && (len(missing) > 1 || len(missing) == 1 && len(a.series) > 0) {
+		charge.identifyFrom(a.series)
 	}
 	results, err := c.fetchAll(ctx, k, m, missing, keep, held, hints, matchers, charge)
 	if err != nil {
 		return nil, nil, err
 	}
 	var warnings annotations.Annotations
-	// the cached sources are assembled, so their slots hold the reads' answers
-	sources = sources[:0]
+	var sources []rawSource
 	for i, r := range results {
 		warnings.Merge(r.warnings)
 		sources = append(sources, rawSource{
@@ -249,14 +244,14 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 	}
 	c.observe(readStatus(covered, missing, mint, keep.maxt))
 	if len(sources) > 0 {
-		// the reads' answers count nothing, so they can't fail
-		series, _, _, _ = assemble(series, sources)
+		// the reads' answers count nothing, and were charged as they arrived, so they can't fail
+		_, _, _ = a.add(ctx, sources, nil)
 	}
 	// the reads charged what they held as it arrived; the series served besides those, and the cache's, are now
-	if err := charge.settle(int64(len(series))); err != nil {
+	if err := charge.settle(int64(len(a.series))); err != nil {
 		return nil, nil, err
 	}
-	return series, warnings, nil
+	return a.result(), warnings, nil
 }
 
 // fetchAll reads the gaps from m, a few at a time; the first failure, as the evaluation running out of budget, cancels the
@@ -346,17 +341,22 @@ func (c *RawCache) observe(status cachestatus.LookupStatus) {
 	}
 }
 
-// cached returns the cached blocks holding samples of k from mint to maxt, with the extents they cover, and what
-// k's own blocks held. What they lack is taken from broader selectors' blocks holding it; subsumed reports any did.
-func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
-) (sources []rawSource, covered timeseries.ExtentList, held heldExtents, subsumed bool) {
+// cached assembles k's cached series from mint to maxt a block at a time, charging each block's series and samples before retrieving the next,
+// and returns the extents they cover with what k's own blocks held. What k's blocks lack is taken from broader selectors' blocks holding it.
+func (c *RawCache) cached(ctx context.Context, k rawKey, mint, maxt int64, now time.Time, charge *selectCharge,
+) (a assembly, covered timeseries.ExtentList, held heldExtents, err error) {
 	if mint > maxt {
-		return nil, nil, held, false
+		return a, nil, held, nil
 	}
 	var candidates []rawCandidate
-	looked, own := false, false
+	var sources []rawSource
+	looked, own, subsumed := false, false, false
 	last := blockIndex(maxt)
 	for b := blockIndex(mint); b <= last; b++ {
+		if err := ctx.Err(); err != nil {
+			return a, nil, held, err
+		}
+		sources = sources[:0]
 		lo, hi := max(mint, b*rawBlockMs), min(maxt, (b+1)*rawBlockMs-1)
 		have, all := c.cachedBlock(&sources, k.key, b, lo, hi, nil, nil)
 		if len(all) > 0 {
@@ -365,7 +365,11 @@ func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
 			}
 			held.extents[b-held.first] = all
 		}
-		own = own || len(have) > 0
+		if len(have) > 0 && !own {
+			// a selector holding blocks is remembered, so a narrower one can read them
+			own = true
+			c.index.record(k, now, c.opts.TTL)
+		}
 		for i := 0; ; i++ {
 			need := have.CalculateDeltas(timeseries.ExtentList{extent(lo, hi)}, time.Millisecond)
 			if len(need) == 0 {
@@ -378,15 +382,31 @@ func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
 				break
 			}
 			if got, _ := c.cachedBlock(&sources, candidates[i].key, b, lo, hi, need, candidates[i].extra); len(got) > 0 {
-				have, subsumed = append(have, got...), true
+				have = append(have, got...)
+				if !subsumed && c.opts.Subsumed != nil {
+					c.opts.Subsumed()
+				}
+				subsumed = true
 			}
 		}
 		covered = append(covered, have...)
+		if len(sources) == 0 {
+			continue
+		}
+		before := len(a.series)
+		samples, bad, err := a.add(ctx, sources, charge.budget)
+		if err != nil {
+			if bad != "" {
+				// a cached block whose samples can't be read is dropped, so the next read fetches them again
+				c.engine.Store(bad, &nativedelta.Entry[*rawBlock]{Marker: true})
+			}
+			return a, nil, held, err
+		}
+		if err := charge.prepay(int64(len(a.series)-before), samples); err != nil {
+			return a, nil, held, err
+		}
 	}
-	if own {
-		c.index.record(k, now, c.opts.TTL)
-	}
-	return sources, covered, held, subsumed
+	return a, covered, held, nil
 }
 
 // cachedBlock adds the source of block b of key from lo to hi to sources, returning the extents it covers, and all
@@ -709,8 +729,8 @@ func keyHeadersFrom(ctx context.Context) []string {
 	return names
 }
 
-// selectCharge charges one select's reads to its evaluation's budget. Their ranges are disjoint but share series: it
-// charges each by its id once, when identify is set, else the most any one read has held; settle charges the rest last.
+// selectCharge charges what one select serves from the cache, then its reads, to its evaluation's budget. Their ranges are disjoint but
+// share series: it charges each by its id once, when identify is set, else the most any one read has held; settle charges the rest last.
 type selectCharge struct {
 	budget *Budget
 	// identify is set when the select counts its series by their ids, in seen
@@ -718,7 +738,7 @@ type selectCharge struct {
 	mu       sync.Mutex
 	// series is what the budget has been charged for the select's series so far
 	series int64
-	// seen holds the ids of the series the select's reads have reported, never more than one past the budget's limit
+	// seen holds the ids of the series the cache served and the select's reads have reported, never more than one past the budget's limit
 	seen map[uint64]struct{}
 }
 
@@ -758,13 +778,31 @@ func (s *selectCharge) pay(readSeries, samples int64, ids []uint64) error {
 	return s.budget.add(n, 0)
 }
 
-// prepay charges the series and samples the select serves from the cache before any of its reads charge, which then
-// charge only the series past those, as they may be the same
+// prepay charges series and samples the select serves from the cache, block by block before any of its reads charge, which
+// then charge only the series past those: the series not among them, by id, when identify is set, else past their number
 func (s *selectCharge) prepay(series, samples int64) error {
 	s.mu.Lock()
-	s.series = series
+	s.series += series
 	s.mu.Unlock()
 	return s.budget.add(series, samples)
+}
+
+// identifyFrom has the charge count series by their ids, when its budget limits them, starting with cached, the series the select serves
+// from the cache, so a read's series is charged unless one of those or an earlier read's; prepay charged cached within that limit, bounding them
+func (s *selectCharge) identifyFrom(cached []*viewSeries) {
+	if !s.budget.identifies() {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.identify = true
+	if len(cached) == 0 {
+		return
+	}
+	s.seen = make(map[uint64]struct{}, len(cached))
+	for _, cs := range cached {
+		s.seen[cs.lset.Hash()] = struct{}{}
+	}
 }
 
 // settle charges the series the select serves that its charges left out, or takes back those they charged but it

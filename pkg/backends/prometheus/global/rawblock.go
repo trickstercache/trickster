@@ -18,6 +18,7 @@ package global
 
 import (
 	"cmp"
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -47,6 +48,8 @@ const (
 	rawChunkSamples = 120
 	// rawTailChunks is how many small chunks may trail a block before they are encoded again as full ones
 	rawTailChunks = 8
+	// countDoneChunks is how many cached chunks are counted between checks of whether the select's context ended
+	countDoneChunks = 64
 )
 
 var errRawBlockCodec = errors.New("invalid cached raw series")
@@ -457,23 +460,45 @@ type rawSource struct {
 	match  []*labels.Matcher
 }
 
-// assemble joins base, series it assembled before, with sources, whose ranges are disjoint from each other's and base's,
-// into the series with samples in range, in label order; it returns the cached sources' samples, or a block it can't read
-func assemble(base []storage.Series, sources []rawSource) ([]storage.Series, int64, string, error) {
-	heads := make([]int, len(sources))
-	// matched is each filtered source's head once it has met the source's matchers
-	matched := make([]int, len(sources))
+// assembly is the series assembled from sources so far, in label order, and spare, an array they no longer use, which a
+// later add reuses once a source adds a series they lack
+type assembly struct {
+	series, spare []*viewSeries
+	// heads is each add's scratch: where each source's series are read, then each filtered source's head once matched
+	heads []int
+	// equal is each add's scratch: whether each source's head is the series being assembled
+	equal []bool
+}
+
+// add joins sources, whose ranges are disjoint from each other's and the assembly's, into its series, returning the cached sources' samples or a
+// block it can't read. It fails before keeping a cached chunk that, with what it counted before, exceeds what budget has left, or soon after ctx ends.
+func (a *assembly) add(ctx context.Context, sources []rawSource, budget *Budget) (int64, string, error) {
+	limit := newCountLimit(ctx, budget)
+	base := a.series
+	if cap(a.heads) < 2*len(sources) {
+		a.heads = make([]int, 2*len(sources))
+	}
+	heads, matched := a.heads[:len(sources)], a.heads[len(sources):2*len(sources)]
+	clear(heads)
+	clear(matched)
+	if cap(a.equal) < len(sources) {
+		a.equal = make([]bool, len(sources))
+	}
+	equal := a.equal[:len(sources)]
 	// out keeps base's array, its series taking the sources' views in place, until a series base lacks is added, which
-	// would overwrite one not yet read, so out then moves to an array of its own
-	out, inPlace := base[:0], len(base) > 0
+	// would overwrite one not yet read, so out then moves to spare's array, and base's becomes spare; without base, it starts there
+	out, inPlace, moved := base[:0], len(base) > 0, len(base) == 0
+	if moved {
+		out = a.spare[:0]
+	}
 	// next is base's next series
 	var next int
-	var cached int64
+	var cached, added int64
 	for {
 		var lset labels.Labels
 		found := next < len(base)
 		if found {
-			lset = base[next].Labels()
+			lset = base[next].lset
 		}
 		fromBase := found
 		for i, src := range sources {
@@ -486,58 +511,160 @@ func assemble(base []storage.Series, sources []rawSource) ([]storage.Series, int
 					heads[i]++
 				}
 			}
-			if heads[i] < len(src.series) && (!found || labels.Compare(src.series[heads[i]].lset, lset) < 0) {
-				lset, found, fromBase = src.series[heads[i]].lset, true, false
+			equal[i] = false
+			if heads[i] == len(src.series) {
+				continue
 			}
+			head := src.series[heads[i]].lset
+			c := -1
+			if found {
+				c = labels.Compare(head, lset)
+			}
+			if c < 0 {
+				// the sources before hold none of this earlier series
+				lset, found, fromBase = head, true, false
+				clear(equal[:i])
+			}
+			equal[i] = c <= 0
 		}
 		if !found {
-			return out, cached, "", nil
+			if moved {
+				a.spare = base[:0]
+			}
+			a.series = out
+			return cached, "", nil
 		}
 		var vs *viewSeries
 		var views []chunkView
 		if fromBase {
-			vs, _ = base[next].(*viewSeries)
+			vs = base[next]
 			views = vs.views
 			next++
 		}
+		sorted, took := len(views), false
+		// the series is counted with those added, and as one more when new, as each of its chunks is
+		limit.series = added
+		if !fromBase {
+			limit.series++
+		}
 		for i, src := range sources {
-			if heads[i] < len(src.series) && labels.Equal(src.series[heads[i]].lset, lset) {
+			if equal[i] {
 				var n int64
 				var err error
-				if views, n, err = appendViews(views, src.series[heads[i]].chunks, src.lo, src.hi, src.block != ""); err != nil {
-					return nil, 0, src.block, err
+				// only cached sources are counted, as a member's answer was counted as it arrived
+				var counting *countLimit
+				if src.block != "" {
+					limit.samples, counting = cached, &limit
+				}
+				if views, n, err = appendViews(views, src.series[heads[i]].chunks, src.lo, src.hi, counting); err != nil {
+					if limit.err != nil {
+						// the select can't afford it, or ended, which says nothing of the block
+						return 0, "", err
+					}
+					return 0, src.block, err
 				}
 				cached += n
 				heads[i]++
+				took = true
 			}
 		}
 		if len(views) == 0 {
 			continue
 		}
-		if !slices.IsSortedFunc(views, compareViews) {
-			slices.SortFunc(views, compareViews)
+		// only a series the sources added to changes
+		if took {
+			if grown := len(views) - sorted; grown > 1 || grown == 1 && sorted > 0 && compareViews(views[sorted-1], views[sorted]) > 0 {
+				sortViews(views, sorted)
+			}
+			switch {
+			case vs != nil:
+				vs.views = views
+			case inPlace:
+				out, inPlace, moved = append(slices.Grow(a.spare[:0], len(base)+1), out...), false, true
+				fallthrough
+			default:
+				vs = &viewSeries{lset: lset, views: views}
+				added++
+			}
 		}
-		switch {
-		case vs != nil:
-			vs.views = views
-		case inPlace:
-			out, inPlace = append(make([]storage.Series, 0, len(base)+1), out...), false
-			fallthrough
-		default:
-			vs = &viewSeries{lset: lset, views: views}
+		if inPlace {
+			// out's next slot already holds vs, base's series before next
+			out = out[:len(out)+1]
+		} else {
+			out = append(out, vs)
 		}
-		out = append(out, vs)
 	}
 }
 
-// appendViews appends a view of each chunk reaching from lo to hi; with count set, it counts their samples
-// there, reading only chunks crossing an end, skipping those with none
-func appendViews(dst []chunkView, chunks []rawChunk, lo, hi int64, count bool) ([]chunkView, int64, error) {
+// result returns the series assembled.
+func (a *assembly) result() []storage.Series {
+	out := make([]storage.Series, len(a.series))
+	for i, vs := range a.series {
+		out[i] = vs
+	}
+	return out
+}
+
+// sortViews sorts views, of which the first sorted are, by when each begins; only those after are sorted, unless they begin
+// before those end, as views of a block do after its earlier blocks', so a series assembled block by block is never sorted whole
+func sortViews(views []chunkView, sorted int) {
+	if added := views[sorted:]; !slices.IsSortedFunc(added, compareViews) {
+		slices.SortFunc(added, compareViews)
+	}
+	if sorted > 0 && compareViews(views[sorted-1], views[sorted]) > 0 {
+		slices.SortFunc(views, compareViews)
+	}
+}
+
+// countLimit stops an add counting cached chunks once they exceed what its budget has left, or its context ends; err says why
+type countLimit struct {
+	// budget is set only when it limits series or samples
+	budget *Budget
+	ctx    context.Context
+	done   <-chan struct{}
+	// series is what's added counting the series being read, and samples what's counted before its chunks being read
+	series, samples int64
+	// unchecked is how many chunks were counted since done was last checked
+	unchecked int
+	err       error
+}
+
+func newCountLimit(ctx context.Context, budget *Budget) countLimit {
+	l := countLimit{ctx: ctx, done: ctx.Done()}
+	if budget != nil && (budget.MaxSeries > 0 || budget.MaxSamples > 0) {
+		l.budget = budget
+	}
+	return l
+}
+
+// allows reports whether the series being read can keep a chunk, counting samples of its chunks. It is called only for
+// each chunk under a budget, and every countDoneChunks chunks, when it checks whether the select's context ended.
+func (l *countLimit) allows(samples int64) bool {
+	if l.unchecked >= countDoneChunks {
+		l.unchecked = 0
+		if l.done != nil {
+			select {
+			case <-l.done:
+				l.err = l.ctx.Err()
+				return false
+			default:
+			}
+		}
+	}
+	if l.budget != nil {
+		l.err = l.budget.check(l.series, l.samples+samples)
+	}
+	return l.err == nil
+}
+
+// appendViews appends a view of each chunk reaching from lo to hi; with limit set, it counts their samples there,
+// reading only chunks crossing an end, skipping those with none, and fails before keeping one limit doesn't allow
+func appendViews(dst []chunkView, chunks []rawChunk, lo, hi int64, limit *countLimit) ([]chunkView, int64, error) {
 	var total int64
 	i := sort.Search(len(chunks), func(i int) bool { return chunks[i].maxt >= lo })
 	for ; i < len(chunks) && chunks[i].mint <= hi; i++ {
 		c := chunks[i]
-		if count {
+		if limit != nil {
 			n, err := samplesWithin(c.chk, c.span, lo, hi)
 			if err != nil {
 				return nil, 0, err
@@ -546,6 +673,10 @@ func appendViews(dst []chunkView, chunks []rawChunk, lo, hi int64, count bool) (
 				continue
 			}
 			total += n
+			// a select under no budget only counts chunks between checks of its context
+			if limit.unchecked++; (limit.budget != nil || limit.unchecked >= countDoneChunks) && !limit.allows(total) {
+				return nil, 0, limit.err
+			}
 		}
 		dst = append(dst, chunkView{chk: c.chk, lo: max(lo, c.mint), hi: min(hi, c.maxt)})
 	}

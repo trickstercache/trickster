@@ -202,6 +202,60 @@ func TestGlobalEvaluationResultLimitConcurrentMisses(t *testing.T) {
 	}
 }
 
+func TestGlobalCachedResultsFollowTheResultLimit(t *testing.T) {
+	// a result kept under one limit is never served under a lower one, as after a reload lowers it, or by another ALB sharing
+	// the cache and namespace; an equal limit is served it
+	settings := globalTestSettings()
+	shared := globalTestCache(t)
+	gt := newGlobalCacheTest(t, settings, shared)
+	gt.source.store = resultLimitStores(gt.baseMillis)["samples"]
+	// limited returns a cache test of the result limit sharing gt's cache, namespace and member data
+	limited := func(limit int64) *globalCacheTest {
+		s := settings
+		s.MaxResponseBytes = limit
+		lt := newGlobalCacheTest(t, s, shared)
+		lt.baseMillis, lt.source.store = gt.baseMillis, gt.source.store
+		return lt
+	}
+	for name, query := range map[string]struct {
+		path   string
+		values url.Values
+	}{
+		"range":   {globalTestRangePath, gt.rangeValues(presenceMetric, 0, resultLimitPoints-1)},
+		"instant": {globalTestQueryPath, gt.instantValues(presenceMetric, resultLimitPoints-1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			full := gt.uncached(t, settings, query.path, query.values)
+			require.Equal(t, http.StatusOK, full.Code, full.Body.String())
+			size := int64(full.Body.Len())
+			do := func(lt *globalCacheTest) *httptest.ResponseRecorder {
+				return lt.do(t, http.MethodGet, query.path, query.values, nil)
+			}
+			requireResult := func(w *httptest.ResponseRecorder, want status.Label) {
+				t.Helper()
+				require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+				require.Equal(t, full.Body.String(), w.Body.String())
+				requireCacheStatus(t, w, want)
+			}
+			higher := limited(size + 1)
+			requireResult(do(higher), status.StatusKeyMiss)
+			requireResult(do(higher), status.StatusHit)
+			lower := limited(size - 1)
+			for range 2 {
+				w := do(lower)
+				requireResultTooLarge(t, w, size-1)
+				requireCacheStatus(t, w, status.StatusKeyMiss)
+			}
+			require.Equal(t, 1, higher.source.reads())
+			require.Equal(t, 2, lower.source.reads(), "the result kept under the higher limit was never served")
+			requireResult(do(limited(size+1)), status.StatusHit)
+			at := limited(size)
+			requireResult(do(at), status.StatusKeyMiss)
+			requireResult(do(at), status.StatusHit)
+		})
+	}
+}
+
 func roundTripBody(t *testing.T, tr inProcessTransport) (*http.Response, string) {
 	t.Helper()
 	resp, err := tr.RoundTrip(httptest.NewRequest(http.MethodGet, "/", nil))

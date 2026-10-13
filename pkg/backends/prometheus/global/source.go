@@ -96,15 +96,37 @@ func (b *Budget) addSeries(series, samples int64, ids []uint64) error {
 		return nil
 	}
 	if total := b.series.Add(series); b.MaxSeries > 0 && total > b.MaxSeries {
-		return fmt.Errorf("%w: more than %d series", ErrFetchLimit, b.MaxSeries)
+		return b.seriesLimitError()
 	}
 	if total := b.samples.Add(samples); b.MaxSamples > 0 && total > b.MaxSamples {
-		return fmt.Errorf("%w: more than %d samples", ErrFetchLimit, b.MaxSamples)
+		return b.samplesLimitError()
 	}
 	if b.share != nil && (series > 0 || samples > 0) {
 		return b.share(series, samples, ids)
 	}
 	return nil
+}
+
+// check returns the error adding series and samples would fail with, without adding them, so a reader can stop
+// before keeping what it can't afford, then add all it kept at once
+func (b *Budget) check(series, samples int64) error {
+	switch {
+	case b == nil:
+		return nil
+	case b.MaxSeries > 0 && b.series.Load()+series > b.MaxSeries:
+		return b.seriesLimitError()
+	case b.MaxSamples > 0 && b.samples.Load()+samples > b.MaxSamples:
+		return b.samplesLimitError()
+	}
+	return nil
+}
+
+func (b *Budget) seriesLimitError() error {
+	return fmt.Errorf("%w: more than %d series", ErrFetchLimit, b.MaxSeries)
+}
+
+func (b *Budget) samplesLimitError() error {
+	return fmt.Errorf("%w: more than %d samples", ErrFetchLimit, b.MaxSamples)
 }
 
 // identifies reports whether series are counted by their label sets' hashes, so a copy of one isn't counted again:

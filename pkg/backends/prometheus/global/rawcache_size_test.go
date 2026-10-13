@@ -114,15 +114,39 @@ type countingCache struct {
 	cache.Cache
 	mu        sync.Mutex
 	retrieved map[string]int
+	// each, when set, is called as each retrieval is counted
+	each func()
 }
 
 func (c *countingCache) count(key string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.retrieved == nil {
 		c.retrieved = make(map[string]int)
 	}
 	c.retrieved[key]++
+	each := c.each
+	c.mu.Unlock()
+	if each != nil {
+		each()
+	}
+}
+
+// takeAll returns how many times any key was retrieved since last asked
+func (c *countingCache) takeAll() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var n int
+	for _, k := range c.retrieved {
+		n += k
+	}
+	clear(c.retrieved)
+	return n
+}
+
+func (c *countingCache) setEach(each func()) {
+	c.mu.Lock()
+	c.each = each
+	c.mu.Unlock()
 }
 
 // take returns how many times key was retrieved since last asked

@@ -17,6 +17,8 @@
 package global
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -66,7 +68,7 @@ func seriesOf(t *testing.T, lset labels.Labels, parts ...[]testPoint) *chunkSeri
 
 func rawPoints(t *testing.T, s rawSeries) []testPoint {
 	t.Helper()
-	views, _, err := appendViews(nil, s.chunks, 0, 1<<40, false)
+	views, _, err := appendViews(nil, s.chunks, 0, 1<<40, nil)
 	require.NoError(t, err)
 	return readPoints(t, &viewSeries{lset: s.lset, views: views})
 }
@@ -236,38 +238,225 @@ func TestAssembleJoinsReadsOntoCachedSeries(t *testing.T) {
 		return out
 	}
 
-	base, samples, bad, err := assemble(nil, cached())
+	// assembled returns the cached block's series, assembled
+	assembled := func() *assembly {
+		a := &assembly{}
+		_, _, err := a.add(context.Background(), cached(), nil)
+		require.NoError(t, err)
+		return a
+	}
+	a := &assembly{}
+	samples, bad, err := a.add(context.Background(), cached(), nil)
 	require.NoError(t, err)
 	require.Empty(t, bad)
 	require.Equal(t, int64(2*len(steps(100, 190))), samples, "the cached block's samples are counted")
-	require.Equal(t, map[string][]testPoint{"b": steps(100, 190), "d": steps(100, 190)}, pointsByPod(base))
+	require.Equal(t, map[string][]testPoint{"b": steps(100, 190), "d": steps(100, 190)}, pointsByPod(a.result()))
 
 	// reads of only cached series add their views to those series in place
-	base, _, _, err = assemble(nil, cached())
-	require.NoError(t, err)
-	first := &base[0]
-	joined, samples, _, err := assemble(base, reads("b", "d"))
+	a = assembled()
+	first := &a.series[0]
+	samples, _, err = a.add(context.Background(), reads("b", "d"), nil)
 	require.NoError(t, err)
 	require.Zero(t, samples, "nothing read is counted as cached")
-	require.Same(t, first, &joined[0], "the cached series' array is kept")
-	require.Equal(t, map[string][]testPoint{"b": steps(0, 290), "d": steps(0, 290)}, pointsByPod(joined))
+	require.Same(t, first, &a.series[0], "the cached series' array is kept")
+	require.Nil(t, a.spare)
+	require.Equal(t, map[string][]testPoint{"b": steps(0, 290), "d": steps(0, 290)}, pointsByPod(a.result()))
 
 	// reads adding series the cache lacks, before, between and after its own, move to an array of their own
-	base, _, _, err = assemble(nil, cached())
-	require.NoError(t, err)
-	kept := append([]storage.Series(nil), base...)
-	joined, _, _, err = assemble(base, reads("a", "c", "d", "e"))
+	a = assembled()
+	base := a.series
+	kept := append([]*viewSeries(nil), base...)
+	_, _, err = a.add(context.Background(), reads("a", "c", "d", "e"), nil)
 	require.NoError(t, err)
 	require.Equal(t, map[string][]testPoint{
 		"a": append(steps(0, 90), steps(200, 290)...), "b": steps(100, 190), "c": append(steps(0, 90), steps(200, 290)...),
 		"d": steps(0, 290), "e": append(steps(0, 90), steps(200, 290)...),
-	}, pointsByPod(joined))
+	}, pointsByPod(a.result()))
 	require.Equal(t, kept, base, "the cached series' array is never overwritten")
 
-	// with nothing cached, the reads alone are assembled
-	joined, _, _, err = assemble(nil, reads("a"))
+	// an assembly starts in its spare array, and once series move from an array, the next series added move to it
+	spare := make([]*viewSeries, 0, 8)
+	a = &assembly{spare: spare}
+	_, _, err = a.add(context.Background(), cached(), nil)
 	require.NoError(t, err)
-	require.Equal(t, map[string][]testPoint{"a": append(steps(0, 90), steps(200, 290)...)}, pointsByPod(joined))
+	require.Same(t, &spare[:1][0], &a.series[0])
+	_, _, err = a.add(context.Background(), reads("a", "c", "d", "e"), nil)
+	require.NoError(t, err)
+	require.Same(t, &spare[:1][0], &a.spare[:1][0])
+	later := rawSource{lo: 300, hi: 390, series: []rawSeries{rawSeriesOf(t, "f", steps(300, 390))}}
+	_, _, err = a.add(context.Background(), []rawSource{later}, nil)
+	require.NoError(t, err)
+	require.Same(t, &spare[:1][0], &a.series[0], "the spare array is reused")
+	require.Len(t, a.series, 6)
+	require.Equal(t, steps(300, 390), pointsByPod(a.result())["f"])
+
+	// with nothing cached, the reads alone are assembled
+	a = &assembly{}
+	_, _, err = a.add(context.Background(), reads("a"), nil)
+	require.NoError(t, err)
+	require.Equal(t, map[string][]testPoint{"a": append(steps(0, 90), steps(200, 290)...)}, pointsByPod(a.result()))
+}
+
+// countedChunk counts the times its samples are counted: by number for a cached chunk wholly within a view, else by reading
+// it through; each, when set, is called once it has counted
+type countedChunk struct {
+	chunkenc.Chunk
+	counted *int
+	each    func()
+}
+
+func (c countedChunk) count() {
+	*c.counted++
+	if c.each != nil {
+		c.each()
+	}
+}
+
+func (c countedChunk) NumSamples() int {
+	c.count()
+	return c.Chunk.NumSamples()
+}
+
+func (c countedChunk) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	c.count()
+	return c.Chunk.Iterator(it)
+}
+
+// countedSeries is pod's series of chunks of 10 samples, one each 100ms from first, counting each chunk's counts in counted
+func countedSeries(t *testing.T, pod string, first, chunks int, counted *int, each func()) rawSeries {
+	t.Helper()
+	rs := rawSeries{lset: podLabels(pod)}
+	for i := first; i < first+chunks; i++ {
+		c, sp := xorChunkOf(t, steps(int64(i)*100, int64(i)*100+90))
+		rs.chunks = append(rs.chunks, rawChunk{span: sp, chk: countedChunk{Chunk: c, counted: counted, each: each}})
+	}
+	return rs
+}
+
+func TestAssemblyStopsWithinASeries(t *testing.T) {
+	const chunks, perChunk = 50, 10
+	var counted int
+	// source is block's samples of pod's series of chunks, from first, within lo to hi
+	source := func(block, pod string, first int, lo, hi int64) rawSource {
+		return rawSource{lo: lo, hi: hi, block: block, series: []rawSeries{countedSeries(t, pod, first, chunks, &counted, nil)}}
+	}
+	whole := func(block string, first int) rawSource {
+		return source(block, "a", first, int64(first)*100, int64(first+chunks)*100-1)
+	}
+	for name, test := range map[string]struct {
+		// before is assembled under no budget first, and charged to it, as an earlier block is
+		before  []rawSource
+		sources []rawSource
+		budget  *Budget
+		// counted is how many chunks the limited add counts, and fits whether it succeeds
+		counted int
+		fits    bool
+	}{
+		"the first chunk":  {sources: []rawSource{whole("block", 0)}, budget: &Budget{MaxSamples: perChunk - 1}, counted: 1},
+		"the second chunk": {sources: []rawSource{whole("block", 0)}, budget: &Budget{MaxSamples: perChunk + 1}, counted: 2},
+		"exactly the budget": {
+			sources: []rawSource{whole("block", 0)}, budget: &Budget{MaxSamples: chunks * perChunk}, counted: chunks, fits: true,
+		},
+		"a series assembled before, from another block": {
+			before: []rawSource{whole("earlier", 0)}, sources: []rawSource{whole("block", chunks)},
+			budget: &Budget{MaxSamples: chunks*perChunk + perChunk + 1}, counted: 2,
+		},
+		"a series of several sources": {
+			sources: []rawSource{whole("later", chunks), whole("block", 0)},
+			budget:  &Budget{MaxSamples: chunks*perChunk + 1}, counted: chunks + 1,
+		},
+		"a chunk crossing the range's start": {
+			// the first chunk's samples from 50ms are 5, read through
+			sources: []rawSource{source("block", "a", 0, 45, chunks*100-1)}, budget: &Budget{MaxSamples: perChunk/2 - 1}, counted: 1,
+		},
+		"a series limit it fits": {sources: []rawSource{whole("block", 0)}, budget: &Budget{MaxSeries: 1}, counted: chunks, fits: true},
+		"a series limit it exceeds": {
+			before: []rawSource{whole("earlier", 0)}, sources: []rawSource{source("block", "b", 0, 0, chunks*100-1)},
+			budget: &Budget{MaxSeries: 1}, counted: 1,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := &assembly{}
+			for _, src := range test.before {
+				samples, _, err := a.add(context.Background(), []rawSource{src}, nil)
+				require.NoError(t, err)
+				require.NoError(t, test.budget.add(int64(len(a.series)), samples))
+			}
+			counted = 0
+			_, bad, err := a.add(context.Background(), test.sources, test.budget)
+			require.Equal(t, test.counted, counted, "no chunk past the budget's limit is counted")
+			if test.fits {
+				require.NoError(t, err)
+				return
+			}
+			require.ErrorIs(t, err, ErrFetchLimit)
+			require.Empty(t, bad, "a block the select can't afford isn't taken for a bad one")
+		})
+	}
+
+	// a select whose context ends stops counting within countDoneChunks chunks, and reports no bad block
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	counted = 0
+	long := rawSource{
+		lo: 0, hi: 10 * countDoneChunks * 100, block: "block",
+		series: []rawSeries{countedSeries(t, "a", 0, 10*countDoneChunks, &counted, func() {
+			if counted == 2 {
+				cancel()
+			}
+		})},
+	}
+	_, bad, err := (&assembly{}).add(ctx, []rawSource{long}, nil)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Empty(t, bad)
+	require.Equal(t, countDoneChunks, counted)
+	// and one under no budget whose context hasn't ended counts every chunk
+	counted = 0
+	_, _, err = (&assembly{}).add(context.Background(), []rawSource{long}, nil)
+	require.NoError(t, err)
+	require.Equal(t, 10*countDoneChunks, counted)
+}
+
+func TestAssemblyStopsAtTheBudget(t *testing.T) {
+	const pods = 100
+	var counted int
+	src := rawSource{lo: 0, hi: 1000, block: "block"}
+	for i := range pods {
+		rs := rawSeriesOf(t, fmt.Sprintf("%03d", i), steps(100, 190))
+		rs.chunks[0].chk = countedChunk{Chunk: rs.chunks[0].chk, counted: &counted}
+		src.series = append(src.series, rs)
+	}
+	perSeries := int64(len(steps(100, 190)))
+	// already is what the budget counted before the assembly; counted is how many series the assembly then counts
+	for name, test := range map[string]struct {
+		budget           *Budget
+		already, counted int
+	}{
+		"series":                 {budget: &Budget{MaxSeries: 3}, counted: 4},
+		"samples":                {budget: &Budget{MaxSamples: 2*perSeries + 1}, counted: 3},
+		"series counted before":  {budget: &Budget{MaxSeries: 5}, already: 4, counted: 2},
+		"within both":            {budget: &Budget{MaxSeries: pods, MaxSamples: pods * perSeries}, counted: pods},
+		"within an unset budget": {counted: pods},
+	} {
+		t.Run(name, func(t *testing.T) {
+			counted = 0
+			require.NoError(t, test.budget.add(int64(test.already), 0))
+			a := &assembly{}
+			samples, _, err := a.add(context.Background(), []rawSource{src}, test.budget)
+			require.Equal(t, test.counted, counted, "no series past the budget's limit is counted")
+			if test.budget != nil {
+				series, samples := test.budget.Fetched()
+				require.Equal(t, [2]int64{int64(test.already), 0}, [2]int64{series, samples}, "the assembly charges nothing")
+			}
+			if test.counted < pods {
+				require.ErrorIs(t, err, ErrFetchLimit)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, a.series, pods)
+			require.Equal(t, pods*perSeries, samples)
+		})
+	}
 }
 
 func TestBoundedIterator(t *testing.T) {
