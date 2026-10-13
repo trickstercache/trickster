@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package global
+package strings
 
 import (
 	"encoding/json"
@@ -64,18 +64,18 @@ func marshalTestString(t *testing.T, s string) []byte {
 func requireQuotedAsJSON(t *testing.T, s string) {
 	t.Helper()
 	want := marshalTestString(t, s)
-	n, first := quotedLen(s, math.MaxInt)
+	n, plain := JSONQuotedLen(s, math.MaxInt)
 	require.Equal(t, len(want), n, "%q", s)
-	require.Equal(t, string(want), string(appendQuoted(nil, s, first)), "%q", s)
-	require.Equal(t, string(want), string(appendQuoted(nil, s, 0)), "%q", s)
-	require.Equal(t, s[:first], string(want[1:first+1]), "%q: nothing before %d is escaped", s, first)
-	exact, _ := quotedLen(s, n)
+	require.Equal(t, string(want), string(AppendJSONFrom(nil, s, plain)), "%q", s)
+	require.Equal(t, string(want), string(AppendJSON(nil, s)), "%q", s)
+	require.Equal(t, s[:plain], string(want[1:plain+1]), "%q: nothing before %d is escaped", s, plain)
+	exact, _ := JSONQuotedLen(s, n)
 	require.Equal(t, n, exact, "%q: measured within its own length", s)
 	// every limit of a short string, and a sample of a long one's
 	for limit := 0; limit < n; limit += 1 + n/quoteTestLimits {
-		over, _ := quotedLen(s, limit)
+		over, _ := JSONQuotedLen(s, limit)
 		require.Greater(t, over, limit, "%q: a length past %d", s, limit)
-		cut, size := quotedPrefix(s, limit)
+		cut, size := JSONQuotedPrefix(s, limit)
 		if limit < len(`""`) {
 			// no limit is below the empty string's
 			require.Zero(t, cut)
@@ -91,12 +91,12 @@ func requireQuotedAsJSON(t *testing.T, s string) {
 		_, next := quotedChar(s, cut)
 		require.Greater(t, size+next, limit, "%q: a prefix within %d is the longest", s, limit)
 	}
-	cut, size := quotedPrefix(s, n)
+	cut, size := JSONQuotedPrefix(s, n)
 	require.Equal(t, len(s), cut)
 	require.Equal(t, n, size)
 }
 
-func TestQuotedMatchesEncodingJSON(t *testing.T) {
+func TestJSONQuotedMatchesEncodingJSON(t *testing.T) {
 	for _, s := range quoteTestStrings {
 		requireQuotedAsJSON(t, s)
 	}
@@ -105,14 +105,14 @@ func TestQuotedMatchesEncodingJSON(t *testing.T) {
 		for d := range 256 {
 			s := string([]byte{byte(c), byte(d)})
 			want := marshalTestString(t, s)
-			n, first := quotedLen(s, math.MaxInt)
+			n, plain := JSONQuotedLen(s, math.MaxInt)
 			require.Equal(t, len(want), n, "%q", s)
-			require.Equal(t, string(want), string(appendQuoted(nil, s, first)), "%q", s)
+			require.Equal(t, string(want), string(AppendJSONFrom(nil, s, plain)), "%q", s)
 		}
 	}
 }
 
-func FuzzQuoted(f *testing.F) {
+func FuzzJSONQuoted(f *testing.F) {
 	for _, s := range quoteTestStrings {
 		f.Add(s)
 	}

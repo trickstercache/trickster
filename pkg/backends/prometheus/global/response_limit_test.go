@@ -352,7 +352,7 @@ func TestWriteErrorEscapes(t *testing.T) {
 func TestWriteErrorFitsLimit(t *testing.T) {
 	// an error keeps within its limit, or minErrorBytes when that is more: warnings that don't fit are left out, in
 	// order, and a message that doesn't is cut short between characters
-	msg := "a <message> \xff \u00fc \u2028 " + strings.Repeat("&", minErrorBytes/quotedUnicode)
+	msg := "a <message> \xff \u00fc \u2028 " + strings.Repeat("&", minErrorBytes/len(`\u0026`))
 	warnings := []string{strings.Repeat("<", limitTestEscapes), "w1", strings.Repeat("\x01", 40), "w<2>"}
 	write := func(limit int64) []byte {
 		w := httptest.NewRecorder()
@@ -364,7 +364,7 @@ func TestWriteErrorFitsLimit(t *testing.T) {
 	full := write(0)
 	want := decodeTestError(t, full)
 	require.Len(t, want.Warnings, len(warnings))
-	require.Greater(t, len(full), minErrorBytes+quotedUnicode, "the whole error is past the floor")
+	require.Greater(t, len(full), minErrorBytes+len(`\u0026`), "the whole error is past the floor")
 	// a limit below the floor writes what the floor does, its message cut short rather than left empty
 	floored := write(minErrorBytes)
 	require.Equal(t, string(floored), string(write(1)))

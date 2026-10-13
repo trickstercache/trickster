@@ -650,7 +650,8 @@ func TestRawCacheSharesConcurrentReads(t *testing.T) {
 	const mint, maxt = 4 * rawTestHour, 6 * rawTestHour
 	key := func(rc *rawTestCache) string {
 		k, _ := rc.key(teamRequest(rawTestTeamA), rawTestSource(t), []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric)})
+			labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, testMetric),
+		})
 		return k.key + "/" + "14400000/21600000"
 	}
 	waiters := func(rc *rawTestCache, want int) {
@@ -734,8 +735,10 @@ func replicaSource(t *testing.T) *chunkedSource {
 
 func evalRangeQuery(t *testing.T, q storage.Queryable, query string, start, end int64) promql.Matrix {
 	t.Helper()
-	engine := promql.NewEngine(promql.EngineOpts{MaxSamples: 10_000_000, Timeout: time.Minute,
-		LookbackDelta: 5 * time.Minute})
+	engine := promql.NewEngine(promql.EngineOpts{
+		MaxSamples: 10_000_000, Timeout: time.Minute,
+		LookbackDelta: 5 * time.Minute,
+	})
 	qry, err := engine.NewRangeQuery(teamRequest(rawTestTeamA), q, nil, query, time.UnixMilli(start),
 		time.UnixMilli(end), time.Minute)
 	require.NoError(t, err)

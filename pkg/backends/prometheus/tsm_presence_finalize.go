@@ -84,8 +84,8 @@ func finalizePresenceAggregation(ds *dataset.DataSet, spec promql.PresenceAggreg
 }
 
 func finalizePresenceResult(result *dataset.Result, spec promql.PresenceAggregation) {
-	groups := make(map[string]*presenceGroup)
-	groupOrder := make([]*presenceGroup, 0)
+	groups := aggregationGroups{grouping: spec.Grouping}
+	var groupOrder []*presenceGroup
 	identities := make(map[string]*presenceIdentity, len(result.SeriesList))
 	seriesIdentities := make([]*presenceIdentity, len(result.SeriesList))
 	out := newTextSeriesLog()
@@ -97,22 +97,13 @@ func finalizePresenceResult(result *dataset.Result, spec promql.PresenceAggregat
 		identityKey := series.Header.Tags.JSON()
 		identity := identities[identityKey]
 		if identity == nil {
-			tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
-			groupKey := tags.JSON()
-			group := groups[groupKey]
-			if group == nil {
-				header := series.Header.Clone()
-				header.Tags = tags
-				header.Name = tags[promql.MetricNameLabel]
-				header.TagFieldsList = nil
-				header.QueryStatement = spec.AggregationQuery
-				header.CalculateHash(true)
-				header.CalculateSize()
-				group = &presenceGroup{header: header, series: out.addSeries()}
-				groups[groupKey] = group
-				groupOrder = append(groupOrder, group)
+			id := groups.id(series.Header.Tags)
+			if id == len(groupOrder) {
+				groupOrder = append(groupOrder, &presenceGroup{
+					header: aggregationHeader(series, spec.Grouping, spec.AggregationQuery), series: out.addSeries(),
+				})
 			}
-			identity = &presenceIdentity{group: group}
+			identity = &presenceIdentity{group: groupOrder[id]}
 			identities[identityKey] = identity
 		}
 		identity.series++

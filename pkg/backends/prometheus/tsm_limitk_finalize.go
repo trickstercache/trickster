@@ -56,7 +56,7 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	result.SeriesList.SortByTags()
 	logicalOrder := make([]*limitKLogicalSeries, 0, len(result.SeriesList))
 	lastTagsKey := ""
-	groups := rankGroups{grouping: spec.Grouping}
+	groups := aggregationGroups{grouping: spec.Grouping}
 	for _, series := range result.SeriesList {
 		if series == nil || series.PointCount() == 0 {
 			continue

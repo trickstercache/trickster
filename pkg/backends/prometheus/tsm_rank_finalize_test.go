@@ -190,10 +190,10 @@ func TestFinalizeTSMMergeRankGroupingIgnoresMetricName(t *testing.T) {
 	}
 }
 
-func TestRankGroups(t *testing.T) {
+func TestAggregationGroups(t *testing.T) {
 	tags := dataset.Tags{"__name__": "up", "instance": "a", "job": "api"}
 	t.Run("ungrouped", func(t *testing.T) {
-		var groups rankGroups
+		var groups aggregationGroups
 		if id := groups.id(tags); id != 0 || groups.ids != nil || groups.keyBuf != nil {
 			t.Fatalf("id %d keys %v buffer %q", id, groups.ids, groups.keyBuf)
 		}
@@ -211,7 +211,7 @@ func TestRankGroups(t *testing.T) {
 		{grouping: promql.AggregationGrouping{Labels: []string{"__name__", "job"}}, want: `{"__name__":"up","job":"api"}`},
 	} {
 		t.Run(tt.want, func(t *testing.T) {
-			groups := rankGroups{grouping: tt.grouping}
+			groups := aggregationGroups{grouping: tt.grouping}
 			id := groups.id(tags)
 			if _, ok := groups.ids[tt.want]; !ok || len(groups.ids) != 1 || id != 0 {
 				t.Fatalf("id %d keys %v want key %s", id, groups.ids, tt.want)
@@ -225,7 +225,7 @@ func TestRankGroups(t *testing.T) {
 		})
 	}
 	t.Run("distinct groups", func(t *testing.T) {
-		groups := rankGroups{grouping: promql.AggregationGrouping{Labels: []string{"instance"}, Without: true}}
+		groups := aggregationGroups{grouping: promql.AggregationGrouping{Labels: []string{"instance"}, Without: true}}
 		got := []int{
 			groups.id(dataset.Tags{"__name__": "a", "instance": "i1", "job": "x"}),
 			groups.id(dataset.Tags{"__name__": "b", "instance": "i1", "job": "y"}),

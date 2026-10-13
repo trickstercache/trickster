@@ -540,10 +540,6 @@ func histogramNumber(value any) (float64, error) {
 }
 
 func formatHistogramNumber(value float64) string {
-	format := byte('f')
-	absolute := math.Abs(value)
-	if absolute != 0 && (absolute < 1e-6 || absolute >= 1e21) {
-		format = 'e'
-	}
-	return strconv.FormatFloat(value, format, -1, 64)
+	var buf [32]byte
+	return string(AppendFloat(buf[:0], value))
 }

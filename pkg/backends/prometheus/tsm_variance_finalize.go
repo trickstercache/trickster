@@ -26,7 +26,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
-	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 const invalidPooledVarianceWarning = "trickster: pooled-variance finalization dropped an invalid intermediate point"
@@ -161,30 +160,20 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 		if result == nil {
 			continue
 		}
-		groups := make(map[string]*varianceFinalizeGroup)
-		groupOrder := make([]string, 0)
+		groups := aggregationGroups{grouping: spec.Grouping}
+		var groupOrder []*varianceFinalizeGroup
 		for _, series := range result.SeriesList {
 			if series == nil || isHistogramSeries(series) {
 				continue
 			}
-			tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
-			key := tags.JSON()
-			group := groups[key]
-			if group == nil {
-				header := series.Header.Clone()
-				header.Tags = tags
-				header.Name = tags[promql.MetricNameLabel]
-				header.TagFieldsList = nil
-				header.QueryStatement = spec.AggregationQuery
-				header.CalculateHash(true)
-				header.CalculateSize()
-				group = &varianceFinalizeGroup{
-					header: header,
+			id := groups.id(series.Header.Tags)
+			if id == len(groupOrder) {
+				groupOrder = append(groupOrder, &varianceFinalizeGroup{
+					header: aggregationHeader(series, spec.Grouping, spec.AggregationQuery),
 					states: make(map[epoch.Epoch]dataset.PooledVarianceState),
-				}
-				groups[key] = group
-				groupOrder = append(groupOrder, key)
+				})
 			}
+			group := groupOrder[id]
 			for c := newRowCursor(series.Segments()); !c.done(); c.next() {
 				value, ok := sampleNumber(c.seg(), c.i)
 				if !ok {
@@ -198,8 +187,7 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 		out := newTextSeriesLog()
 		ids := make([]int, len(groupOrder))
 		var epochs []epoch.Epoch
-		for g, key := range groupOrder {
-			group := groups[key]
+		for g, group := range groupOrder {
 			ids[g] = out.addSeries()
 			epochs = epochs[:0]
 			for pointEpoch := range group.states {
@@ -212,62 +200,13 @@ func finalizeCentralVariance(ds *dataset.DataSet, spec promql.VarianceAggregatio
 		}
 		rows := out.finish()
 		output := make(dataset.SeriesList, 0, len(groupOrder))
-		for g, key := range groupOrder {
+		for g, group := range groupOrder {
 			if rows[ids[g]] != nil {
-				output = append(output, dataset.NewSeriesOf(groups[key].header, rows[ids[g]]))
+				output = append(output, dataset.NewSeriesOf(group.header, rows[ids[g]]))
 			}
 		}
 		result.SeriesList = output
 	}
-}
-
-func aggregationGroupingTags(tags dataset.Tags, grouping promql.AggregationGrouping) dataset.Tags {
-	if grouping.Without {
-		output := tags.Clone()
-		delete(output, promql.MetricNameLabel)
-		for _, label := range grouping.Labels {
-			delete(output, label)
-		}
-		return output
-	}
-	output := make(dataset.Tags, len(grouping.Labels))
-	for _, label := range grouping.Labels {
-		if value, found := tags[label]; found && value != "" {
-			output[label] = value
-		}
-	}
-	return output
-}
-
-func appendGroupingKey(dst []byte, tags dataset.Tags, grouping promql.AggregationGrouping) []byte {
-	// appends aggregationGroupingTags(tags, grouping).JSON() without building those tags; parsing leaves
-	// grouping's labels sorted and unique, so by-labels are already in JSON key order
-	var arr [16]string
-	names := arr[:0]
-	if grouping.Without {
-		for name := range tags {
-			if name != promql.MetricNameLabel && !slices.Contains(grouping.Labels, name) {
-				names = append(names, name)
-			}
-		}
-		slices.Sort(names)
-	} else {
-		for _, name := range grouping.Labels {
-			if tags[name] != "" {
-				names = append(names, name)
-			}
-		}
-	}
-	dst = append(dst, '{')
-	for i, name := range names {
-		if i > 0 {
-			dst = append(dst, ',')
-		}
-		dst = tstrings.AppendJSON(dst, name)
-		dst = append(dst, ':')
-		dst = tstrings.AppendJSON(dst, tags[name])
-	}
-	return append(dst, '}')
 }
 
 func varianceFinalValue(state dataset.PooledVarianceState, operator string) float64 {

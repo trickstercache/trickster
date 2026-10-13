@@ -81,8 +81,8 @@ func finalizeQuantileAggregation(ds *dataset.DataSet, spec promql.QuantileAggreg
 }
 
 func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregation) {
-	groups := make(map[string]*quantileFinalizeGroup)
-	groupOrder := make([]*quantileFinalizeGroup, 0)
+	groups := aggregationGroups{grouping: spec.Grouping}
+	var groupOrder []*quantileFinalizeGroup
 	cursors := make(quantileCursorHeap, 0, len(result.SeriesList))
 	out := newTextSeriesLog()
 
@@ -90,22 +90,13 @@ func finalizeQuantileResult(result *dataset.Result, spec promql.QuantileAggregat
 		if series == nil || isHistogramSeries(series) || series.PointCount() == 0 {
 			continue
 		}
-		tags := aggregationGroupingTags(series.Header.Tags, spec.Grouping)
-		key := tags.JSON()
-		group := groups[key]
-		if group == nil {
-			header := series.Header.Clone()
-			header.Tags = tags
-			header.Name = tags[promql.MetricNameLabel]
-			header.TagFieldsList = nil
-			header.QueryStatement = spec.AggregationQuery
-			header.CalculateHash(true)
-			header.CalculateSize()
-			group = &quantileFinalizeGroup{header: header, series: out.addSeries()}
-			groups[key] = group
-			groupOrder = append(groupOrder, group)
+		id := groups.id(series.Header.Tags)
+		if id == len(groupOrder) {
+			groupOrder = append(groupOrder, &quantileFinalizeGroup{
+				header: aggregationHeader(series, spec.Grouping, spec.AggregationQuery), series: out.addSeries(),
+			})
 		}
-		heap.Push(&cursors, &quantileCursor{rowCursor: newRowCursor(series.Segments()), group: group})
+		heap.Push(&cursors, &quantileCursor{rowCursor: newRowCursor(series.Segments()), group: groupOrder[id]})
 	}
 
 	// the groups given a value at the current epoch

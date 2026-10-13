@@ -34,6 +34,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
 	tt "github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines"
@@ -207,11 +208,13 @@ func appendHeaders(list, add []string) []string {
 // form's version, replica labels, deduplication and the result size limit, so no result kept under a higher limit is served
 func (e *globalEvaluator) cacheKeyPrefix() string {
 	h := sha256.New()
-	h.Write([]byte(globalCacheVersion + "\x01"))
+	buf := tbytes.WriteLengthPrefixed(h, nil, globalCacheVersion)
+	buf = tbytes.WriteLengthPrefixed(h, buf, strconv.Itoa(len(e.settings.ReplicaLabels)))
 	for _, label := range e.settings.ReplicaLabels {
-		h.Write([]byte(label + "\x00"))
+		buf = tbytes.WriteLengthPrefixed(h, buf, label)
 	}
-	h.Write([]byte("\x01" + e.settings.Deduplication + "\x01" + strconv.FormatInt(e.settings.MaxResponseBytes, 10)))
+	buf = tbytes.WriteLengthPrefixed(h, buf, e.settings.Deduplication)
+	tbytes.WriteLengthPrefixed(h, buf, strconv.FormatInt(e.settings.MaxResponseBytes, 10))
 	return globalOriginHost + "." + hex.EncodeToString(h.Sum(nil)[:8])
 }
 

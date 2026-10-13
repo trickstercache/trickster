@@ -623,6 +623,5 @@ func appendDoubles(dst []float64, f wireField) []float64 {
 
 // zigzag32 decodes a sint32 field, whose varint's low 32 bits hold its zigzag encoding
 func zigzag32(v uint64) int32 {
-	u := uint32(v)                   //nolint:gosec // a sint32 field keeps its low 32 bits
-	return int32(u>>1) ^ -int32(u&1) //nolint:gosec // zigzag decoding
+	return int32(protowire.DecodeZigZag(v & math.MaxUint32)) //nolint:gosec // a sint32 field's value fits in its low 32 bits
 }

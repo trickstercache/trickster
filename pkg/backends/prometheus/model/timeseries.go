@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 
 	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
@@ -193,6 +194,16 @@ func groupSeriesByTags(seriesList []*dataset.Series, scratch []byte) []seriesGro
 		}
 	}
 	return groups
+}
+
+// AppendFloat appends f as Prometheus writes a sample value: in decimal, but with an exponent below 1e-6 or from 1e21,
+// and NaN and the infinities as NaN, +Inf and -Inf.
+func AppendFloat(dst []byte, f float64) []byte {
+	format := byte('f')
+	if abs := math.Abs(f); abs != 0 && (abs < 1e-6 || abs >= 1e21) {
+		format = 'e'
+	}
+	return strconv.AppendFloat(dst, f, format, -1, 64)
 }
 
 // appends e as the seconds Prometheus writes, as strconv.FormatFloat(e/1e9, 'f', -1) renders them;

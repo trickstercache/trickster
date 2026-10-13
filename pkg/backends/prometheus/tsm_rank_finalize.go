@@ -40,12 +40,6 @@ type rankBucketKey struct {
 	group int
 }
 
-type rankGroups struct {
-	grouping promql.AggregationGrouping
-	ids      map[string]int
-	keyBuf   []byte
-}
-
 type rankCandidate struct {
 	series   *dataset.Series
 	pointIdx int
@@ -222,7 +216,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 		appendWarningOnce(ds, sortInRangeQueryWarning)
 	}
 
-	groups := rankGroups{grouping: spec.Grouping}
+	groups := aggregationGroups{grouping: spec.Grouping}
 	for _, result := range ds.Results {
 		if result == nil || len(result.SeriesList) == 0 {
 			continue
@@ -298,24 +292,6 @@ func rankValueLess(a, b float64, operator string) bool {
 		return a < b
 	}
 	return a > b
-}
-
-func (g *rankGroups) id(tags dataset.Tags) int {
-	// every series shares the one group of an ungrouped aggregation
-	if !g.grouping.Without && len(g.grouping.Labels) == 0 {
-		return 0
-	}
-	// the key is built in reused scratch space, and only a group not seen before allocates its key
-	g.keyBuf = appendGroupingKey(g.keyBuf[:0], tags, g.grouping)
-	if id, ok := g.ids[string(g.keyBuf)]; ok {
-		return id
-	}
-	if g.ids == nil {
-		g.ids = make(map[string]int)
-	}
-	id := len(g.ids)
-	g.ids[string(g.keyBuf)] = id
-	return id
 }
 
 func keepSelectedRankPoints(

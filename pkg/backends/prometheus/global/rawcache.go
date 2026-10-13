@@ -19,11 +19,9 @@ package global
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"hash"
 	"maps"
 	"net/http"
 	"slices"
@@ -33,6 +31,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	cachestatus "github.com/trickstercache/trickster/v2/pkg/cache/status"
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -114,7 +113,7 @@ type RawCache struct {
 	locks [rawLockStripes]sync.Mutex
 	// refused remembers, by stripe and under its lock, the samples each block was last refused for its size
 	refused [rawLockStripes]map[string]rawRefusal
-	// keyScope is what every key's hash starts with: the cache version and the size limit, each as writeKeyPart writes it
+	// keyScope is what every key's hash starts with: the cache version and the size limit, each length-prefixed
 	keyScope []byte
 	// index remembers which selectors' blocks are cached, so a narrower selector can read a broader one's
 	index rawIndex
@@ -161,8 +160,7 @@ func holds(held, want timeseries.ExtentList) bool {
 func NewRawCache(c cache.Cache, opts RawCacheOptions) *RawCache {
 	rc := &RawCache{opts: opts, now: time.Now}
 	for _, part := range []string{rawCacheVersion, strconv.FormatInt(max(opts.MaxObjectSize, 0), 10)} {
-		rc.keyScope = binary.AppendUvarint(rc.keyScope, uint64(len(part)))
-		rc.keyScope = append(rc.keyScope, part...)
+		rc.keyScope = tbytes.AppendLengthPrefixed(rc.keyScope, part)
 	}
 	var failed func(string)
 	if observe := opts.ObserveCacheFailure; observe != nil {
@@ -601,14 +599,14 @@ func (c *RawCache) key(ctx context.Context, src Source, matchers []*labels.Match
 	}
 	h := sha256.New()
 	h.Write(c.keyScope)
-	writeKeyPart(h, id)
+	buf := tbytes.WriteLengthPrefixed(h, nil, id)
 	sent := sentHeaders(src, requestFrom(ctx))
 	for _, name := range identityHeaders(ctx, src) {
 		values := sent.Values(name)
-		writeKeyPart(h, name)
-		writeKeyPart(h, strconv.Itoa(len(values)))
+		buf = tbytes.WriteLengthPrefixed(h, buf, name)
+		buf = tbytes.WriteLengthPrefixed(h, buf, strconv.Itoa(len(values)))
 		for _, v := range values {
-			writeKeyPart(h, v)
+			buf = tbytes.WriteLengthPrefixed(h, buf, v)
 		}
 	}
 	scope := h.Sum(nil)[:16]
@@ -616,22 +614,15 @@ func (c *RawCache) key(ctx context.Context, src Source, matchers []*labels.Match
 	h.Reset()
 	h.Write(scope)
 	for _, m := range k.matchers {
-		writeKeyPart(h, m.Name)
-		writeKeyPart(h, m.Type.String())
-		writeKeyPart(h, m.Value)
+		buf = tbytes.WriteLengthPrefixed(h, buf, m.Name)
+		buf = tbytes.WriteLengthPrefixed(h, buf, m.Type.String())
+		buf = tbytes.WriteLengthPrefixed(h, buf, m.Value)
 		if k.metric == "" && m.Name == model.MetricNameLabel && m.Type == labels.MatchEqual {
 			k.metric = m.Value
 		}
 	}
 	k.key = rawKeyPrefix + hex.EncodeToString(h.Sum(nil)[:16])
 	return k, true
-}
-
-// writeKeyPart writes s with its length first, so no two sequences of parts write the same bytes
-func writeKeyPart(h hash.Hash, s string) {
-	var n [binary.MaxVarintLen64]byte
-	h.Write(n[:binary.PutUvarint(n[:], uint64(len(s)))])
-	h.Write([]byte(s))
 }
 
 func compareMatchers(a, b *labels.Matcher) int {

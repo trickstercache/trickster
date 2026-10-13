@@ -95,9 +95,11 @@ func TestRawIndex(t *testing.T) {
 	}
 	t.Run("narrowest strict subsets of the same scope and metric", func(t *testing.T) {
 		var x rawIndex
-		for _, k := range []rawKey{broad, mid, narrow, indexKey(rawIndexOther, testMetricMatcher),
+		for _, k := range []rawKey{
+			broad, mid, narrow, indexKey(rawIndexOther, testMetricMatcher),
 			indexKey(rawIndexScope, labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "other")),
-			indexKey(rawIndexScope, testMetricMatcher, podB)} {
+			indexKey(rawIndexScope, testMetricMatcher, podB),
+		} {
 			x.record(k, now, time.Hour)
 		}
 		require.Equal(t, []string{mid.key, broad.key}, keys(x.candidates(narrow, now)))

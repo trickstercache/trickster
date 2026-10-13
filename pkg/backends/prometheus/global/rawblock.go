@@ -26,6 +26,7 @@ import (
 	"slices"
 	"sort"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -815,22 +816,18 @@ func (rawBlockCodec) AppendMarshal(dst []byte, b *rawBlock) ([]byte, error) {
 	for _, s := range b.series {
 		dst = binary.AppendUvarint(dst, uint64(s.lset.Len())) //nolint:gosec // a count is never negative
 		s.lset.Range(func(l labels.Label) {
-			dst = appendLengthPrefixed(dst, l.Name)
-			dst = appendLengthPrefixed(dst, l.Value)
+			dst = tbytes.AppendLengthPrefixed(dst, l.Name)
+			dst = tbytes.AppendLengthPrefixed(dst, l.Value)
 		})
 		dst = binary.AppendUvarint(dst, uint64(len(s.chunks)))
 		for _, c := range s.chunks {
 			dst = binary.AppendVarint(dst, c.mint)
 			dst = binary.AppendVarint(dst, c.maxt)
 			dst = append(dst, byte(c.chk.Encoding()))
-			dst = appendLengthPrefixed(dst, c.chk.Bytes())
+			dst = tbytes.AppendLengthPrefixed(dst, c.chk.Bytes())
 		}
 	}
 	return dst, nil
-}
-
-func appendLengthPrefixed[T string | []byte](dst []byte, v T) []byte {
-	return append(binary.AppendUvarint(dst, uint64(len(v))), v...)
 }
 
 // Unmarshal decodes a block whose chunks refer to data, and refuses one AppendMarshal couldn't have written

@@ -19,6 +19,7 @@ package model
 import (
 	"bytes"
 	"errors"
+	"math"
 	"strconv"
 	"testing"
 
@@ -64,6 +65,17 @@ func TestMarshalStopsAtFailedWrite(t *testing.T) {
 
 	w = &failingWriter{}
 	require.ErrorIs(t, marshalScalarWriter(benchMatrix(1, 1), 200, w), errWrite)
+}
+
+func TestAppendFloat(t *testing.T) {
+	// decimal between 1e-6 and 1e21, as Prometheus writes sample values, else with an exponent
+	for f, want := range map[float64]string{
+		0: "0", 1.5: "1.5", -2: "-2", 1e-6: "0.000001", 1e-7: "1e-07", -1e-7: "-1e-07", 123456789.25: "123456789.25",
+		1e20: "100000000000000000000", 1e21: "1e+21", math.Inf(1): "+Inf", math.Inf(-1): "-Inf",
+	} {
+		require.Equal(t, want, string(AppendFloat([]byte("x"), f))[1:], "%g", f)
+	}
+	require.Equal(t, "NaN", string(AppendFloat(nil, math.NaN())))
 }
 
 func TestAppendEpochSeconds(t *testing.T) {

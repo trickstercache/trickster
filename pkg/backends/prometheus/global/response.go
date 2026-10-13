@@ -24,9 +24,10 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
-	"unicode/utf8"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/model"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -55,15 +56,6 @@ const (
 	minErrorBytes = 4 << 10
 	// growThreshold is the capacity from which a response buffer grows by about a quarter rather than doubling, as append grows
 	growThreshold = 256
-	// quotedPlain, quotedShort and quotedUnicode are the lengths of a byte that JSON quotes as it is, of a backslash escape,
-	// and of a \u escape
-	quotedPlain   = 1
-	quotedShort   = 2
-	quotedUnicode = 6
-	// hexDigits are the digits of a \u escape, lowercase as encoding/json writes them
-	hexDigits = "0123456789abcdef"
-	// replacementChar is written for each byte of invalid UTF-8, as encoding/json writes it
-	replacementChar = string(utf8.RuneError)
 )
 
 // ErrResultTooLarge is returned when an evaluation's encoded result exceeds the bytes allowed it.
@@ -72,21 +64,6 @@ var ErrResultTooLarge = errors.New("tsm global evaluation result exceeded its si
 var errBodyClosed = errors.New("read on a closed result body")
 
 var responseBuffers = sync.Pool{New: func() any { return new([]byte) }}
-
-// asciiQuoted holds the length of each ASCII byte as encoding/json quotes it, escaping HTML characters
-var asciiQuoted = func() (lens [utf8.RuneSelf]uint8) {
-	for c := range lens {
-		switch {
-		case c == '"' || c == '\\' || c == '\b' || c == '\f' || c == '\n' || c == '\r' || c == '\t':
-			lens[c] = quotedShort
-		case c < ' ' || c == '<' || c == '>' || c == '&':
-			lens[c] = quotedUnicode
-		default:
-			lens[c] = quotedPlain
-		}
-	}
-	return lens
-}()
 
 // ResultLimitError returns the error an evaluation fails with when its encoded result exceeds maxBytes.
 func ResultLimitError(maxBytes int64) error {
@@ -132,9 +109,9 @@ func WriteError(w http.ResponseWriter, status int, errorType string, err error, 
 	e.b = append(e.b, `,"error":`...)
 	// the message leaves room for the closing brace
 	msg := err.Error()
-	cut, n := quotedPrefix(msg, limit-len(e.b)-1)
+	cut, n := tstrings.JSONQuotedPrefix(msg, limit-len(e.b)-1)
 	e.room(n)
-	e.b = appendQuoted(e.b, msg[:cut], 0)
+	e.b = tstrings.AppendJSON(e.b, msg[:cut])
 	if len(warnings) > 0 {
 		e.limit = limit - 1
 		e.fitStrings("warnings", warnings)
@@ -480,13 +457,7 @@ func appendTimestamp(b []byte, t int64) []byte {
 
 // appendFloat writes a quoted sample value as Prometheus does, exponent notation for very small or large values
 func appendFloat(b []byte, f float64) []byte {
-	b = append(b, '"')
-	format := byte('f')
-	if abs := math.Abs(f); abs != 0 && (abs < 1e-6 || abs >= 1e21) {
-		format = 'e'
-	}
-	b = strconv.AppendFloat(b, f, format, -1, 64)
-	return append(b, '"')
+	return append(model.AppendFloat(append(b, '"'), f), '"')
 }
 
 // histogramPoint writes a native histogram sample's non-empty buckets as boundary rule (0 lower
@@ -549,109 +520,10 @@ func (e *resultEncoder) str(s string) bool {
 	if len(s)+2 > avail {
 		return false
 	}
-	n, first := quotedLen(s, avail)
+	n, plain := tstrings.JSONQuotedLen(s, avail)
 	if !e.room(n) {
 		return false
 	}
-	e.b = appendQuoted(e.b, s, first)
+	e.b = tstrings.AppendJSONFrom(e.b, s, plain)
 	return true
-}
-
-// quotedLen returns the length of s quoted as encoding/json quotes it, or a length past limit once it passes limit, and the
-// offset of its first byte that is escaped or not ASCII, len(s) when none is
-func quotedLen(s string, limit int) (int, int) {
-	first := 0
-	for first < len(s) && s[first] < utf8.RuneSelf && asciiQuoted[s[first]] == quotedPlain {
-		first++
-	}
-	n := len(s) + 2
-	for i := first; i < len(s) && n <= limit; {
-		if c := s[i]; c < utf8.RuneSelf {
-			n += int(asciiQuoted[c]) - quotedPlain
-			i++
-			continue
-		}
-		size, quoted := quotedChar(s, i)
-		n += quoted - size
-		i += size
-	}
-	return n, first
-}
-
-// quotedPrefix returns how many leading bytes of s, ending between characters, quote within limit bytes, and their quoted length
-func quotedPrefix(s string, limit int) (int, int) {
-	i, n := 0, 2
-	for i < len(s) {
-		size, quoted := quotedChar(s, i)
-		if n+quoted > limit {
-			break
-		}
-		n += quoted
-		i += size
-	}
-	return i, n
-}
-
-// quotedChar returns the size of the character at s[i], an invalid byte alone, and its length as encoding/json quotes it
-func quotedChar(s string, i int) (int, int) {
-	if c := s[i]; c < utf8.RuneSelf {
-		return quotedPlain, int(asciiQuoted[c])
-	}
-	switch r, size := utf8.DecodeRuneInString(s[i:]); {
-	case size == 1:
-		return size, len(replacementChar)
-	case r == '\u2028' || r == '\u2029':
-		return size, quotedUnicode
-	default:
-		return size, size
-	}
-}
-
-// appendQuoted appends s quoted as encoding/json quotes it, escaping HTML characters and the line and paragraph separators
-// and replacing each invalid byte; nothing in s before first is escaped
-func appendQuoted(b []byte, s string, first int) []byte {
-	b = append(b, '"')
-	start := 0
-	for i := first; i < len(s); {
-		c := s[i]
-		if c < utf8.RuneSelf {
-			if asciiQuoted[c] == quotedPlain {
-				i++
-				continue
-			}
-			b = append(b, s[start:i]...)
-			switch c {
-			case '"', '\\':
-				b = append(b, '\\', c)
-			case '\b':
-				b = append(b, '\\', 'b')
-			case '\f':
-				b = append(b, '\\', 'f')
-			case '\n':
-				b = append(b, '\\', 'n')
-			case '\r':
-				b = append(b, '\\', 'r')
-			case '\t':
-				b = append(b, '\\', 't')
-			default:
-				b = append(b, '\\', 'u', '0', '0', hexDigits[c>>4], hexDigits[c&0xF])
-			}
-			i++
-			start = i
-			continue
-		}
-		r, size := utf8.DecodeRuneInString(s[i:])
-		if size == 1 || r == '\u2028' || r == '\u2029' {
-			b = append(b, s[start:i]...)
-			if size == 1 {
-				b = append(b, replacementChar...)
-			} else {
-				b = append(b, '\\', 'u', '2', '0', '2', hexDigits[r&0xF])
-			}
-			start = i + size
-		}
-		i += size
-	}
-	b = append(b, s[start:]...)
-	return append(b, '"')
 }
