@@ -509,7 +509,8 @@ func TestRawCacheKeepBlockDropsOnlyItsOwnFailure(t *testing.T) {
 						Extents: timeseries.ExtentList{extent(0, storeTestCachedTo)},
 					})
 					stored := histogramChunkAt(t, enc, !tc.cachedMalformed, tc.stored...)
-					err := rc.keepBlock(bk, []rawSeries{{lset: lset, chunks: []rawChunk{stored}}}, storeTestCachedTo+1, tc.hi)
+					err := rc.keepBlock(bk, []rawSeries{{lset: lset, chunks: []rawChunk{stored}}}, storeTestCachedTo+1, tc.hi,
+						timeseries.ExtentList{extent(0, storeTestCachedTo)})
 					require.ErrorIs(t, err, errStorePanic)
 					require.Contains(t, logs.String(), storePanicEvent)
 					entry, ok := rc.engine.Retrieve(bk)

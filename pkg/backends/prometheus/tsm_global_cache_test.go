@@ -583,20 +583,32 @@ func TestGlobalEvaluationRawCacheWindows(t *testing.T) {
 			require.Equal(t, first[0][1], reads[0][1])
 		}
 	})
-	t.Run("blocks of any size", func(t *testing.T) {
-		// blocks are kept whole, as the delta cache keeps its objects, whatever the ALB's object size limit
-		settings := globalTestSettings()
-		gt := newGlobalCacheTest(t, settings, nil)
-		gt.source.ID = globalRawIdentity
-		alb := globalTestALB(t)
-		alb.MaxObjectSizeBytes = 64
-		ev, err := (&Client{}).NewTSMGlobalEvaluator(settings, backends.TSMGlobalCache{
-			Cache: gt.cache, Backend: alb, Members: gt.request,
-		})
-		require.NoError(t, err)
-		gt.evaluator = ev.(*globalEvaluator)
-		require.NotEmpty(t, gt.rawReads(t, settings, 5, 45))
-		require.Empty(t, gt.rawReads(t, settings, 10, 40))
+	t.Run("the ALB's object size limit", func(t *testing.T) {
+		// a block past the ALB's max_object_size_bytes isn't kept, so each range is read whole and still answered
+		for size, kept := range map[int]bool{64: false, bo.DefaultTSMMaxObjectSizeBytes: true} {
+			settings := globalTestSettings()
+			gt := newGlobalCacheTest(t, settings, nil)
+			gt.source.ID = globalRawIdentity
+			alb := globalTestALB(t)
+			alb.MaxObjectSizeBytes = size
+			ev, err := (&Client{}).NewTSMGlobalEvaluator(settings, backends.TSMGlobalCache{
+				Cache: gt.cache, Backend: alb, Members: gt.request,
+			})
+			require.NoError(t, err)
+			gt.evaluator = ev.(*globalEvaluator)
+			// each refusal counts among the cache's error events
+			conf := gt.cache.Configuration()
+			refusals := metrics.CacheEvents.WithLabelValues(conf.Name, conf.Provider, "error", "tsm_global_raw_max_object_size")
+			before := testutil.ToFloat64(refusals)
+			if !kept {
+				whole(t, gt, settings)
+				require.Greater(t, testutil.ToFloat64(refusals), before)
+				continue
+			}
+			require.NotEmpty(t, gt.rawReads(t, settings, 5, 45))
+			require.Empty(t, gt.rawReads(t, settings, 10, 40), "a block within the limit is kept")
+			require.Equal(t, before, testutil.ToFloat64(refusals))
+		}
 	})
 	t.Run("the raw cache window", func(t *testing.T) {
 		// samples 2h15m old or more are older than any block a 10m window keeps

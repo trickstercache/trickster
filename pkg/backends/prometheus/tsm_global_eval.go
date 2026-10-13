@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
@@ -109,15 +110,16 @@ func (c *Client) NewTSMGlobalEvaluator(settings merge.TSMGlobalSettings,
 	return e, nil
 }
 
-// newRawCache returns a cache of members' raw series in the ALB's cache, keeping for its TTL what's within
-// its raw cache window and older than the volatile window: the ALB's when it sets one, else each member's
+// newRawCache returns a cache of members' raw series in the ALB's cache, keeping for its TTL, in blocks within its object size
+// limit, what's within its raw cache window and older than the volatile window: the ALB's when it sets one, else each member's
 func (e *globalEvaluator) newRawCache(results backends.TSMGlobalCache) *global.RawCache {
 	name := e.settings.Name
 	opts := global.RawCacheOptions{
-		Name:      name,
-		TTL:       e.ttl,
-		Window:    e.settings.RawCacheWindow,
-		MaxSeries: int64(e.settings.MaxFetchedSeries), MaxSamples: e.settings.MaxFetchedSamples,
+		Name:          name,
+		TTL:           e.ttl,
+		Window:        e.settings.RawCacheWindow,
+		MaxObjectSize: int64(results.Backend.MaxObjectSizeBytes),
+		MaxSeries:     int64(e.settings.MaxFetchedSeries), MaxSamples: e.settings.MaxFetchedSamples,
 		MaxResponseBytes: e.settings.MaxResponseBytes,
 		Observe: func(status cachestatus.LookupStatus) {
 			metrics.ALBGlobalRawReads.WithLabelValues(name, status.String()).Inc()
@@ -127,6 +129,13 @@ func (e *globalEvaluator) newRawCache(results backends.TSMGlobalCache) *global.R
 	if results.Backend.HasVolatileWindow() {
 		volatile := e.volatileWindow
 		opts.VolatileWindow = &volatile
+	}
+	// failures to keep or read blocks, as for their size, count among the cache's events, as other delta engines' do
+	if conf := results.Cache.Configuration(); conf != nil {
+		cacheName, provider := conf.Name, conf.Provider
+		opts.ObserveCacheFailure = func(reason string) {
+			metrics.CacheEvents.WithLabelValues(cacheName, provider, keys.Error, reason).Inc()
+		}
 	}
 	return global.NewRawCache(results.Cache, opts)
 }
@@ -296,8 +305,17 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 		metrics.ALBGlobalFetchedSamples.WithLabelValues(e.settings.Name).Add(float64(samples))
 	}()
 	ctx = global.WithBudget(global.WithRequest(ctx, r), budget)
+	// the first member read reported failing on a fetch limit decides the answer, even when the deadline, the client, or another
+	// read's failure, as for a selector the engine expands first, ends the evaluation
+	var limited atomic.Pointer[error]
 	queryable := global.NewQueryable(members, e.settings.ReplicaLabels, e.settings.Deduplication, partial,
-		e.memberFailed)
+		func(member string, err error) {
+			if errors.Is(err, global.ErrFetchLimit) {
+				limit := fmt.Errorf("%w: %s: %w", global.ErrMemberUnavailable, member, err)
+				limited.CompareAndSwap(nil, &limit)
+			}
+			e.memberFailed(member, err)
+		})
 	if e.raw != nil {
 		queryable.WithRawCache(e.raw)
 		ctx = global.WithKeyHeaders(ctx, keyHeaders(r, req))
@@ -317,8 +335,9 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 	slices.Sort(infos)
 	warnings = append(warnings, resultWarnings...)
 	if res.Err != nil {
-		status, errorType := globalErrorType(res.Err)
-		return fail(status, errorType, res.Err, warnings)
+		err := limitDecides(res.Err, limited.Load())
+		status, errorType := globalErrorType(err)
+		return fail(status, errorType, err, warnings)
 	}
 	value := res.Value
 	if q.limit > 0 {
@@ -413,29 +432,40 @@ func globalMembers(alb string, req backends.TSMGlobalRequest, partial bool) ([]g
 	return members, warnings, nil
 }
 
-// globalErrorType returns the status and Prometheus error type that answer a failed evaluation; a storage
-// error is classified by the source error it carries
+// globalErrorType returns the status and Prometheus error type that answer a failed evaluation; a storage error is classified
+// by the source error it carries too. A limit reached decides it, whatever deadline or cancellation the error also carries
 func globalErrorType(err error) (int, string) {
 	var storage promql.ErrStorage
 	if errors.As(err, &storage) && storage.Err != nil {
-		err = storage.Err
+		err = errors.Join(storage.Err, err)
 	}
 	var timeout promql.ErrQueryTimeout
 	var canceled promql.ErrQueryCanceled
 	var samples promql.ErrTooManySamples
 	switch {
+	case errors.As(err, &samples) || errors.Is(err, global.ErrFetchLimit):
+		return http.StatusUnprocessableEntity, global.ErrorTypeExecution
 	case errors.As(err, &timeout) || errors.Is(err, context.DeadlineExceeded):
 		return http.StatusServiceUnavailable, global.ErrorTypeTimeout
 	case errors.As(err, &canceled) || errors.Is(err, context.Canceled):
 		return statusClientClosedRequest, global.ErrorTypeCanceled
-	case errors.As(err, &samples) || errors.Is(err, global.ErrFetchLimit):
-		return http.StatusUnprocessableEntity, global.ErrorTypeExecution
 	case errors.Is(err, global.ErrMemberUnavailable):
 		return http.StatusServiceUnavailable, global.ErrorTypeUnavailable
 	case storage.Err != nil:
 		return http.StatusInternalServerError, global.ErrorTypeInternal
 	}
 	return http.StatusUnprocessableEntity, global.ErrorTypeExecution
+}
+
+// limitDecides returns err joined with limit, a member read's failure on a fetch limit, unless err already carries one: the engine
+// reports the first failure it meets, as the deadline or another selector's read failing, which needn't be the limit
+func limitDecides(err error, limit *error) error {
+	var storage promql.ErrStorage
+	if limit == nil || errors.Is(err, global.ErrFetchLimit) ||
+		(errors.As(err, &storage) && errors.Is(storage.Err, global.ErrFetchLimit)) {
+		return err
+	}
+	return errors.Join(*limit, err)
 }
 
 // limitSeries keeps the first limit series of a vector or matrix, reporting whether any were dropped

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
@@ -35,7 +36,11 @@ import (
 // ErrMemberUnavailable is returned or warned when a member's raw series can't be read.
 var ErrMemberUnavailable = errors.New("tsm global evaluation member unavailable")
 
-var errSourcePanic = errors.New("member read panicked")
+var (
+	errSourcePanic = errors.New("member read panicked")
+	// errReadStopped marks a member read that ended once another member's failure, which decides the query, stopped it
+	errReadStopped = errors.New("member read stopped")
+)
 
 // Member is a pool member read by one evaluation; members are listed in configured order.
 type Member struct {
@@ -110,6 +115,12 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 	results := make([][]storage.Series, len(members))
 	incomplete := make([]annotations.Annotations, len(members))
 	errs := make([]error, len(members))
+	// a read whose failure fails the query stops the other members' reads, as nothing they return can change its answer
+	rctx, stop := ctx, context.CancelFunc(nil)
+	if len(members) > 1 {
+		rctx, stop = context.WithCancel(ctx)
+		defer stop()
+	}
 	var wg sync.WaitGroup
 	for i, m := range members {
 		wg.Go(func() {
@@ -118,17 +129,29 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 				results[i], incomplete[i], errs[i] = nil, nil, fmt.Errorf("%w: %v", errSourcePanic, p)
 				logger.Error(memberPanicEvent, logging.Pairs{keys.Member: m.Name, keys.Panic: p, keys.Stack: string(stack)})
 			}, func() {
-				results[i], incomplete[i], errs[i] = qr.q.read(ctx, m, mint, maxt, hints, matchers)
+				results[i], incomplete[i], errs[i] = qr.q.read(rctx, m, mint, maxt, hints, matchers)
 			})
+			if stop == nil || (errs[i] == nil && len(incomplete[i]) == 0) {
+				return
+			}
+			switch limited := errors.Is(errs[i], ErrFetchLimit); {
+			case !limited && rctx.Err() != nil && ctx.Err() == nil:
+				// what the read returned once stopped is no failure of its member's, so it's neither reported nor decides
+				errs[i] = errReadStopped
+			case limited || !qr.q.partial:
+				stop()
+			}
 		})
 	}
 	wg.Wait()
+	// a limit any member's read reached decides the query, even past an earlier member's failure or the end of ctx
+	limit := slices.IndexFunc(errs, reachedLimit)
 	var warnings annotations.Annotations
 	for i, err := range errs {
 		name := members[i].Name
 		var clientErr error
 		switch {
-		case err == nil && len(incomplete[i]) == 0:
+		case err == nil && len(incomplete[i]) == 0, errors.Is(err, errReadStopped):
 			continue
 		case err == nil:
 			// an incomplete answer is kept when partial responses are allowed, with the member's own warnings
@@ -150,9 +173,12 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 		if qr.q.failed != nil {
 			qr.q.failed(name, err)
 		}
-		// a limit or cancellation ends the query rather than shrinking its answer
+		// a limit or cancellation ends the query rather than shrinking its answer, with the limit when a read reached one
 		if !qr.q.partial || errors.Is(err, ErrFetchLimit) || ctx.Err() != nil {
-			return storage.ErrSeriesSet(clientErr)
+			if limit < 0 || i == limit {
+				return storage.ErrSeriesSet(clientErr)
+			}
+			continue
 		}
 		warnings.Add(clientErr)
 		results[i] = nil
@@ -162,6 +188,9 @@ func (qr *querier) Select(ctx context.Context, _ bool, hints *storage.SelectHint
 		warnings: warnings,
 	}
 }
+
+// reachedLimit reports whether err is a read's failure on a fetch limit
+func reachedLimit(err error) bool { return errors.Is(err, ErrFetchLimit) }
 
 // LabelValues is not used to evaluate queries, so the queryable serves no label values.
 func (*querier) LabelValues(context.Context, string, *storage.LabelHints,

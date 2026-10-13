@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"maps"
 	"net/http"
 	"slices"
 	"strconv"
@@ -59,6 +60,8 @@ const (
 	// rawCacheProtocol labels the cache engine's logs and failure metrics
 	rawCacheProtocol = "tsm_global_raw"
 	rawLockStripes   = 64
+	// rawStripeRefusals bounds the blocks refused for their size that each lock stripe remembers
+	rawStripeRefusals = 64
 	// rawGapReads bounds how many of one read's missing extents are read from the member at once
 	rawGapReads = 4
 	// memberPanicEvent is logged when reading or decoding a member's answer panics
@@ -83,35 +86,89 @@ type RawCacheOptions struct {
 	// Window is how far back from now samples are kept, by whole blocks; older ones are always read from
 	// members. Zero keeps samples of any age
 	Window time.Duration
+	// MaxObjectSize, when positive, is the most bytes a block may take in the cache: a larger block isn't kept, nor tried again
+	// for the same samples while it holds what it did, until TTL passes. Blocks are keyed by it, so caches of other limits keep their own
+	MaxObjectSize int64
 	// MaxSeries, MaxSamples and MaxResponseBytes bound each member read, as an evaluation's Budget does
 	MaxSeries, MaxSamples, MaxResponseBytes int64
 	// Observe, when set, learns the cache status of each member read: hit, phit, kmiss or proxy-only
 	Observe func(status cachestatus.LookupStatus)
 	// Subsumed, when set, learns of each member read answered in part from a broader selector's blocks
 	Subsumed func()
+	// ObserveCacheFailure, when set, learns why the cache failed to keep or read a block, as a reason prefixed
+	// by tsm_global_raw_, such as tsm_global_raw_max_object_size
+	ObserveCacheFailure func(reason string)
 }
 
-// RawCache keeps members' raw series in a cache, in blocks of time keyed by member, request identity and
-// matchers, so a member is read only for what it lacks and the volatile window.
+// RawCache keeps members' raw series in a cache, in blocks of time keyed by size limit, member, request identity
+// and matchers, so a member is read only for what it lacks and the volatile window.
 type RawCache struct {
 	opts    RawCacheOptions
 	engine  *nativedelta.Engine[*rawBlock]
 	flights flightGroup[fetched]
 	// locks serialize storing each block, by its key's stripe, so no store loses another's samples
 	locks [rawLockStripes]sync.Mutex
+	// refused remembers, by stripe and under its lock, the samples each block was last refused for its size
+	refused [rawLockStripes]map[string]rawRefusal
+	// keyScope is what every key's hash starts with: the cache version and the size limit, each as writeKeyPart writes it
+	keyScope []byte
 	// index remembers which selectors' blocks are cached, so a narrower selector can read a broader one's
 	index rawIndex
 	now   func() time.Time
 }
 
+// rawRefusal is the range of samples a block couldn't keep within the size limit, until expires, merged onto the
+// extents the block then held, which are none when it held nothing
+type rawRefusal struct {
+	lo, hi  int64
+	onto    timeseries.ExtentList
+	expires time.Time
+}
+
+// heldExtents are the extents each of a select's own blocks held when it looked them up, from block first on
+type heldExtents struct {
+	first   int64
+	extents []timeseries.ExtentList
+}
+
+// of returns the extents block b held, which are none when it wasn't cached
+func (h heldExtents) of(b int64) timeseries.ExtentList {
+	if i := b - h.first; i >= 0 && i < int64(len(h.extents)) {
+		return h.extents[i]
+	}
+	return nil
+}
+
+// holds reports whether every extent of want lies within one of held's, which are merged
+func holds(held, want timeseries.ExtentList) bool {
+	for _, w := range want {
+		if !slices.ContainsFunc(held, func(h timeseries.Extent) bool {
+			return !w.Start.Before(h.Start) && !w.End.After(h.End)
+		}) {
+			return false
+		}
+	}
+	return true
+}
+
 // NewRawCache returns a RawCache keeping blocks in c.
 func NewRawCache(c cache.Cache, opts RawCacheOptions) *RawCache {
 	rc := &RawCache{opts: opts, now: time.Now}
+	for _, part := range []string{rawCacheVersion, strconv.FormatInt(max(opts.MaxObjectSize, 0), 10)} {
+		rc.keyScope = binary.AppendUvarint(rc.keyScope, uint64(len(part)))
+		rc.keyScope = append(rc.keyScope, part...)
+	}
+	var failed func(string)
+	if observe := opts.ObserveCacheFailure; observe != nil {
+		failed = func(reason string) { observe(rawCacheProtocol + "_" + reason) }
+	}
 	rc.engine = nativedelta.New[*rawBlock](nativedelta.Config{
-		Protocol:    rawCacheProtocol,
-		BackendName: opts.Name,
-		CacheClient: func() cache.Cache { return c },
-		CacheTTL:    opts.TTL,
+		Protocol:            rawCacheProtocol,
+		BackendName:         opts.Name,
+		CacheClient:         func() cache.Cache { return c },
+		CacheTTL:            opts.TTL,
+		MaxObjectSize:       opts.MaxObjectSize,
+		ObserveCacheFailure: failed,
 	}, rawBlockCodec{})
 	return rc
 }
@@ -142,14 +199,14 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 		}
 		return bound(series, mint, maxt), warnings, nil
 	}
-	sources, covered, subsumed := c.cached(k, max(mint, keep.mint), min(maxt, keep.maxt), now)
+	sources, covered, held, subsumed := c.cached(k, max(mint, keep.mint), min(maxt, keep.maxt), now)
 	if subsumed && c.opts.Subsumed != nil {
 		c.opts.Subsumed()
 	}
 	missing := covered.CalculateDeltas(timeseries.ExtentList{extent(mint, maxt)}, time.Millisecond)
 	// reads limited in series identify them, so a select reading several ranges can charge each series once as it arrives
 	charge := newSelectCharge(budgetFrom(ctx), len(missing) > 1 && c.opts.MaxSeries > 0)
-	results, err := c.fetchAll(ctx, k, m, missing, keep, hints, matchers, charge)
+	results, err := c.fetchAll(ctx, k, m, missing, keep, held, hints, matchers, charge)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -175,14 +232,18 @@ func (c *RawCache) Select(ctx context.Context, m Member, mint, maxt int64, hints
 	return series, warnings, nil
 }
 
-// fetchAll reads the gaps from m, a few at a time; the first failure, as the evaluation running out of
-// budget, cancels the reads not yet done
+// fetchAll reads the gaps from m, a few at a time; the first failure, as the evaluation running out of budget, cancels the
+// reads not yet done. A read that reached a fetch limit decides the error, even when ctx ended meanwhile
 func (c *RawCache) fetchAll(ctx context.Context, k rawKey, m Member, gaps timeseries.ExtentList,
-	keep span, hints *storage.SelectHints, matchers []*labels.Matcher, charge *selectCharge,
+	keep span, held heldExtents, hints *storage.SelectHints, matchers []*labels.Matcher, charge *selectCharge,
 ) ([]fetched, error) {
+	if len(gaps) == 0 {
+		// the cache held every sample, so nothing is read
+		return nil, ctx.Err()
+	}
 	results := make([]fetched, len(gaps))
 	if len(gaps) == 1 {
-		results[0] = c.fetch(ctx, k, m, gaps[0], keep, hints, matchers, charge)
+		results[0] = c.fetch(ctx, k, m, gaps[0], keep, held, hints, matchers, charge)
 		return results, results[0].err
 	}
 	gctx, cancel := context.WithCancel(ctx)
@@ -192,7 +253,7 @@ func (c *RawCache) fetchAll(ctx context.Context, k rawKey, m Member, gaps timese
 	for range min(len(gaps), rawGapReads) {
 		wg.Go(func() {
 			for i := int(next.Add(1)) - 1; i < len(gaps) && gctx.Err() == nil; i = int(next.Add(1)) - 1 {
-				if results[i] = c.fetch(gctx, k, m, gaps[i], keep, hints, matchers, charge); results[i].err != nil {
+				if results[i] = c.fetch(gctx, k, m, gaps[i], keep, held, hints, matchers, charge); results[i].err != nil {
 					cancel()
 					return
 				}
@@ -200,20 +261,25 @@ func (c *RawCache) fetchAll(ctx context.Context, k rawKey, m Member, gaps timese
 		})
 	}
 	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	var errs []error
+	var limits, failures []error
 	for _, r := range results {
-		// a read this select canceled after another failed reports only that failure
-		if r.err != nil && !errors.Is(r.err, context.Canceled) {
-			errs = append(errs, r.err)
+		switch {
+		case r.err == nil:
+		case errors.Is(r.err, ErrFetchLimit):
+			limits = append(limits, r.err)
+		case !errors.Is(r.err, context.Canceled):
+			// a read this select canceled after another failed reports only that failure
+			failures = append(failures, r.err)
 		}
 	}
-	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
-	}
-	if gctx.Err() != nil {
+	switch {
+	case len(limits) > 0:
+		return nil, errors.Join(limits...)
+	case ctx.Err() != nil:
+		return nil, ctx.Err()
+	case len(failures) > 0:
+		return nil, errors.Join(failures...)
+	case gctx.Err() != nil:
 		return nil, gctx.Err()
 	}
 	return results, nil
@@ -253,18 +319,25 @@ func (c *RawCache) observe(status cachestatus.LookupStatus) {
 	}
 }
 
-// cached returns the cached blocks holding samples of k from mint to maxt, with the extents they cover. What
-// k's own blocks lack is taken from broader selectors' blocks when they hold it; subsumed reports whether any did.
+// cached returns the cached blocks holding samples of k from mint to maxt, with the extents they cover, and what
+// k's own blocks held. What they lack is taken from broader selectors' blocks holding it; subsumed reports any did.
 func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
-) (sources []rawSource, covered timeseries.ExtentList, subsumed bool) {
+) (sources []rawSource, covered timeseries.ExtentList, held heldExtents, subsumed bool) {
 	if mint > maxt {
-		return nil, nil, false
+		return nil, nil, held, false
 	}
 	var candidates []rawCandidate
 	looked, own := false, false
-	for b := blockIndex(mint); b <= blockIndex(maxt); b++ {
+	last := blockIndex(maxt)
+	for b := blockIndex(mint); b <= last; b++ {
 		lo, hi := max(mint, b*rawBlockMs), min(maxt, (b+1)*rawBlockMs-1)
-		have := c.cachedBlock(&sources, k.key, b, lo, hi, nil, nil)
+		have, all := c.cachedBlock(&sources, k.key, b, lo, hi, nil, nil)
+		if len(all) > 0 {
+			if held.extents == nil {
+				held = heldExtents{first: b, extents: make([]timeseries.ExtentList, last-b+1)}
+			}
+			held.extents[b-held.first] = all
+		}
 		own = own || len(have) > 0
 		for i := 0; ; i++ {
 			need := have.CalculateDeltas(timeseries.ExtentList{extent(lo, hi)}, time.Millisecond)
@@ -277,7 +350,7 @@ func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
 			if i == len(candidates) {
 				break
 			}
-			if got := c.cachedBlock(&sources, candidates[i].key, b, lo, hi, need, candidates[i].extra); len(got) > 0 {
+			if got, _ := c.cachedBlock(&sources, candidates[i].key, b, lo, hi, need, candidates[i].extra); len(got) > 0 {
 				have, subsumed = append(have, got...), true
 			}
 		}
@@ -286,18 +359,18 @@ func (c *RawCache) cached(k rawKey, mint, maxt int64, now time.Time,
 	if own {
 		c.index.record(k, now, c.opts.TTL)
 	}
-	return sources, covered, subsumed
+	return sources, covered, held, subsumed
 }
 
-// cachedBlock adds the source of block b of key from lo to hi to sources, returning the extents it covers.
-// A broader selector's block adds only what need names, each part its own source, so no sample is read twice.
+// cachedBlock adds the source of block b of key from lo to hi to sources, returning the extents it covers, and all
+// it holds. A broader selector's block adds only what need names, each part its own source, so no sample is read twice.
 func (c *RawCache) cachedBlock(sources *[]rawSource, key string, b, lo, hi int64, need timeseries.ExtentList,
 	match []*labels.Matcher,
-) timeseries.ExtentList {
+) (got, all timeseries.ExtentList) {
 	bk := blockKey(key, b)
 	entry, ok := c.engine.Retrieve(bk)
 	if !ok || entry.Marker || entry.Payload == nil {
-		return nil
+		return nil, nil
 	}
 	// what a block holds past hi, as after the volatile window has grown, is read again
 	e := entry.Extents.Crop(extent(lo, hi))
@@ -305,9 +378,8 @@ func (c *RawCache) cachedBlock(sources *[]rawSource, key string, b, lo, hi int64
 		if len(e) > 0 {
 			*sources = append(*sources, rawSource{series: entry.Payload.series, lo: lo, hi: hi, block: bk})
 		}
-		return e
+		return e, entry.Extents
 	}
-	var got timeseries.ExtentList
 	for _, n := range need {
 		for _, part := range e.Crop(n) {
 			got = append(got, part)
@@ -317,12 +389,12 @@ func (c *RawCache) cachedBlock(sources *[]rawSource, key string, b, lo, hi int64
 			})
 		}
 	}
-	return got
+	return got, entry.Extents
 }
 
-// fetch reads m's series within gap, sharing the read with concurrent callers asking for the same, each paying for
-// it through its own charge; it keeps what lies within keep once the member answered completely
-func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries.Extent, keep span,
+// fetch reads m's series within gap, sharing the read with concurrent callers asking for the same, each paying for it
+// through its own charge; it keeps what lies within keep once the member answered completely, into blocks that held what held lists
+func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries.Extent, keep span, held heldExtents,
 	hints *storage.SelectHints, matchers []*labels.Matcher, charge *selectCharge,
 ) fetched {
 	mint, maxt := gap.Start.UnixMilli(), gap.End.UnixMilli()
@@ -331,7 +403,7 @@ func (c *RawCache) fetch(ctx context.Context, k rawKey, m Member, gap timeseries
 		return c.read(ctx, m, mint, maxt, hints, matchers, share)
 	}, func(r fetched) {
 		if lo, hi := max(mint, keep.mint), min(maxt, keep.maxt); r.err == nil && len(r.warnings) == 0 && lo <= hi &&
-			c.store(k.key, r.series, lo, hi) {
+			c.store(k.key, r.series, lo, hi, held) {
 			c.index.record(k, c.now(), c.opts.TTL)
 		}
 	})
@@ -371,27 +443,38 @@ func (c *RawCache) read(ctx context.Context, m Member, mint, maxt int64, hints *
 	return r
 }
 
-// store keeps series, read completely from mint to maxt, in the blocks spanning them, and reports whether
-// it kept them all
-func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64) bool {
+// store keeps series, read completely from mint to maxt, in the blocks spanning them, which held what held lists as the read
+// began, and reports whether any block holds them. A block they'd take past the size limit is passed over; any other failure fails.
+func (c *RawCache) store(key string, series []rawSeries, mint, maxt int64, held heldExtents) bool {
+	kept := false
 	for b := blockIndex(mint); b <= blockIndex(maxt); b++ {
 		lo, hi := max(mint, b*rawBlockMs), min(maxt, (b+1)*rawBlockMs-1)
-		if err := c.keepBlock(blockKey(key, b), series, lo, hi); err != nil {
+		switch err := c.keepBlock(blockKey(key, b), series, lo, hi, held.of(b)); {
+		case err == nil:
+			kept = true
+		case !errors.Is(err, nativedelta.ErrObjectTooLarge):
 			logger.Debug("tsm global evaluation raw series not cached",
 				logging.Pairs{keys.ALB_Name: c.opts.Name, keys.Error: err.Error()})
 			return false
 		}
 	}
-	return true
+	return kept
 }
 
-// keepBlock stores into the block at bk under its stripe's lock. A panic, as decoding a malformed chunk can raise,
-// fails the store; one raised once the block's own chunks are read drops the block too, so no later store reads it.
-func (c *RawCache) keepBlock(bk string, series []rawSeries, lo, hi int64) (err error) {
-	mu := &c.locks[stripe(bk)]
+// keepBlock stores into the block at bk, which held the extents held as the read began, under its stripe's lock. A panic, as
+// decoding a malformed chunk can raise, fails the store; one raised once the block's own chunks are read drops the block too.
+func (c *RawCache) keepBlock(bk string, series []rawSeries, lo, hi int64, held timeseries.ExtentList) (err error) {
+	s := stripe(bk)
+	mu := &c.locks[s]
 	mu.Lock()
 	defer mu.Unlock()
+	// samples a block was refused for, or more, are refused again without reading or merging the block until TTL passes,
+	// while it holds at least what they were merged onto; one it no longer holds, as once evicted, may take them now
+	if r, ok := c.refused[s][bk]; ok && lo <= r.lo && hi >= r.hi && c.now().Before(r.expires) && holds(held, r.onto) {
+		return nativedelta.ErrObjectTooLarge
+	}
 	var merging bool
+	var onto timeseries.ExtentList
 	safego.Run(func(p any, stack []byte) {
 		if merging {
 			c.engine.Remove(bk)
@@ -401,23 +484,47 @@ func (c *RawCache) keepBlock(bk string, series []rawSeries, lo, hi int64) (err e
 			keys.ALB_Name: c.opts.Name, keys.Key: bk, keys.Panic: p, keys.Stack: string(stack),
 		})
 	}, func() {
-		err = c.storeBlock(bk, series, lo, hi, &merging)
+		onto, err = c.storeBlock(bk, series, lo, hi, &merging)
 	})
+	if errors.Is(err, nativedelta.ErrObjectTooLarge) {
+		c.refuse(s, bk, lo, hi, onto)
+	}
 	return err
 }
 
-// storeBlock adds to the block at bk the samples from lo to hi it doesn't hold yet; merging is set once it
-// reads the block's own chunks, not only series'
-func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64, merging *bool) error {
+// refuse remembers that the block at bk, of stripe s whose lock is held, couldn't keep the samples from lo to hi
+// besides the extents onto within the size limit; a full stripe forgets its expired refusals, else any one
+func (c *RawCache) refuse(s int, bk string, lo, hi int64, onto timeseries.ExtentList) {
+	now := c.now()
+	refused := c.refused[s]
+	if refused == nil {
+		refused = make(map[string]rawRefusal)
+		c.refused[s] = refused
+	}
+	if _, ok := refused[bk]; !ok && len(refused) >= rawStripeRefusals {
+		maps.DeleteFunc(refused, func(_ string, r rawRefusal) bool { return !now.Before(r.expires) })
+		for k := range refused {
+			if len(refused) < rawStripeRefusals {
+				break
+			}
+			delete(refused, k)
+		}
+	}
+	refused[bk] = rawRefusal{lo: lo, hi: hi, onto: onto, expires: now.Add(c.opts.TTL)}
+}
+
+// storeBlock adds to the block at bk the samples from lo to hi it doesn't hold yet, returning the extents it held
+// before; merging is set once it reads the block's own chunks, not only series'
+func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64, merging *bool,
+) (covered timeseries.ExtentList, err error) {
 	var current *rawBlock
-	var covered timeseries.ExtentList
 	if entry, ok := c.engine.Retrieve(bk); ok && !entry.Marker && entry.Payload != nil {
 		// the entry may be shared, so its extents are copied before the delta sorts them
 		current, covered = entry.Payload, entry.Extents.Clone()
 	}
 	add := covered.CalculateDeltas(timeseries.ExtentList{extent(lo, hi)}, time.Millisecond)
 	if len(add) == 0 {
-		return nil
+		return covered, nil
 	}
 	ranges := make([][2]int64, len(add))
 	for i, e := range add {
@@ -425,28 +532,27 @@ func (c *RawCache) storeBlock(bk string, series []rawSeries, lo, hi int64, mergi
 	}
 	parts, err := cropSeries(series, ranges)
 	if err != nil {
-		return err
+		return covered, err
 	}
 	extents := covered.Merge(add, time.Millisecond)
 	block := blockIndex(lo)
 	complete := len(extents) == 1 && extents[0].Start.UnixMilli() == block*rawBlockMs &&
 		extents[0].End.UnixMilli() == (block+1)*rawBlockMs-1
 	*merging = current != nil
-	c.engine.Store(bk, &nativedelta.Entry[*rawBlock]{
+	return covered, c.engine.Keep(bk, &nativedelta.Entry[*rawBlock]{
 		Payload: mergeBlock(current, parts, extents, complete), Extents: extents,
 	})
-	return nil
 }
 
-// key returns the key of src's answers to matchers for ctx's request: src's identity, the request's identity
-// headers as src sends them, and the matchers in order
+// key returns the key of src's answers to matchers for ctx's request: the size limit, so caches of other limits
+// never drop each other's blocks, src's identity, the request's identity headers as src sends them, and the matchers
 func (c *RawCache) key(ctx context.Context, src Source, matchers []*labels.Matcher) (rawKey, bool) {
 	id := src.Identity()
 	if id == "" {
 		return rawKey{}, false
 	}
 	h := sha256.New()
-	writeKeyPart(h, rawCacheVersion)
+	h.Write(c.keyScope)
 	writeKeyPart(h, id)
 	sent := sentHeaders(src, requestFrom(ctx))
 	for _, name := range identityHeaders(ctx, src) {
@@ -697,8 +803,9 @@ func (f *flight[T]) charge(series, samples int64, ids []uint64) error {
 	return nil
 }
 
-// leave removes c, which no longer waits; an unfinished flight no caller waits on ends
-func (f *flight[T]) leave(c *flightCaller) {
+// leave removes c, which no longer waits, reporting whether the run had finished; an unfinished flight no caller waits on ends.
+// It waits out any charge under way, so once it returns, no charge closes c.out but one that already has
+func (f *flight[T]) leave(c *flightCaller) (finished bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if i := slices.Index(f.callers, c); i >= 0 {
@@ -708,6 +815,7 @@ func (f *flight[T]) leave(c *flightCaller) {
 		f.ended = true
 		f.cancel()
 	}
+	return f.finished
 }
 
 // flightGroup runs a function once for a key's concurrent callers, with the first's context values; it ends
@@ -757,18 +865,23 @@ func (g *flightGroup[T]) do(ctx context.Context, key string, charge *selectCharg
 	}
 	select {
 	case <-f.done:
-		// a caller the read outgrew fails, even when the read then finished for others
-		select {
-		case <-caller.out:
-			return zero, caller.err
-		default:
-			return f.result, nil
+	case <-caller.out:
+	case <-ctx.Done():
+		// a read that finished, or outgrew the caller, by the time it left answers with that outcome rather than ctx's end
+		if !f.leave(caller) {
+			select {
+			case <-caller.out:
+			default:
+				return zero, ctx.Err()
+			}
 		}
+	}
+	// a caller the read outgrew fails, even when the read then finished for others
+	select {
 	case <-caller.out:
 		return zero, caller.err
-	case <-ctx.Done():
-		f.leave(caller)
-		return zero, ctx.Err()
+	default:
+		return f.result, nil
 	}
 }
 
