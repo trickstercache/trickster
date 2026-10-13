@@ -773,7 +773,7 @@ func (f *flight[T]) join(c *flightCaller) (series, samples int64, ids []uint64, 
 		return 0, 0, nil, false
 	}
 	f.callers = append(f.callers, c)
-	return f.series, f.samples, f.ids[:len(f.ids):len(f.ids)], true
+	return f.series, f.samples, slices.Clip(f.ids), true
 }
 
 // charge charges the series, with their ids, and samples the run read to each caller, releasing any whose budget

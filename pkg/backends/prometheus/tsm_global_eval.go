@@ -229,7 +229,8 @@ func (e *globalEvaluator) evaluate(w http.ResponseWriter, r *http.Request, req b
 
 // reject answers a query whose parameters are invalid, as an evaluation of it would
 func (e *globalEvaluator) reject(w http.ResponseWriter, err error) {
-	global.WriteError(w, http.StatusBadRequest, global.ErrorTypeBadData, err, nil)
+	w.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
+	global.WriteError(w, http.StatusBadRequest, global.ErrorTypeBadData, err, nil, e.settings.MaxResponseBytes)
 	metrics.ALBGlobalEvaluations.WithLabelValues(e.settings.Name, global.ErrorTypeBadData).Inc()
 }
 
@@ -266,7 +267,10 @@ func (e *globalEvaluator) cacheControl(q globalQuery, now time.Time) string {
 // serve answers r and returns the outcome its metrics record: success, partial, or the error type
 func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req backends.TSMGlobalRequest) string {
 	fail := func(status int, errorType string, err error, warnings []string) string {
-		global.WriteError(w, status, errorType, err, warnings)
+		// no cache keeps a failure, as a member's recovery or a later evaluation's timing can answer the query; the failure
+		// keeps within the result's limit, as one answering a result too large for it must
+		w.Header().Set(headers.NameCacheControl, headers.ValueNoStore)
+		global.WriteError(w, status, errorType, err, warnings, e.settings.MaxResponseBytes)
 		return errorType
 	}
 	start := time.Now()
@@ -355,7 +359,11 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 		w.Header().Set(headers.NameCacheControl, e.cacheControl(q, start))
 	}
 	w.Header().Set(headers.NameTricksterResult, result)
-	global.WriteResult(w, value, warnings, infos)
+	if err := global.WriteResult(w, value, warnings, infos, e.settings.MaxResponseBytes); err != nil {
+		// nothing of the result was written, so the answer is the failure alone
+		w.Header().Del(headers.NameTricksterResult)
+		return fail(http.StatusUnprocessableEntity, global.ErrorTypeExecution, err, warnings)
+	}
 	return outcome
 }
 

@@ -39,7 +39,7 @@ type TSMGlobalSettings struct {
 	MaxConcurrentQueries int
 	MaxFetchedSeries     int
 	MaxFetchedSamples    int64
-	// MaxResponseBytes bounds each member's raw series response
+	// MaxResponseBytes bounds each member's raw series response and the result an evaluation encodes
 	MaxResponseBytes int64
 	// RawCacheWindow is how far back from now members' raw series are cached
 	RawCacheWindow time.Duration

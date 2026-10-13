@@ -31,6 +31,7 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/global"
 	po "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/observability/tracing"
@@ -121,7 +122,9 @@ func (e *globalEvaluator) newCachedGlobal(results backends.TSMGlobalCache) (*cac
 	// a failed evaluation is mostly a member's outage or a deadline, which no later request should get,
 	// so no failure is kept, whatever negative cache the ALB names
 	o.NegativeCacheName, o.NegativeCache = "", nil
-	o.HTTPClient = &http.Client{Transport: inProcessTransport{handler: http.HandlerFunc(e.serveOrigin)}}
+	o.HTTPClient = &http.Client{Transport: inProcessTransport{
+		handler: http.HandlerFunc(e.serveOrigin), maxBytes: e.settings.MaxResponseBytes,
+	}}
 	client, err := NewClientWithHooks(o.Name, o, nil, results.Cache, Hooks{CacheKeyHeaders: globalTenantHeaders})
 	if err != nil {
 		return nil, err
@@ -319,7 +322,7 @@ func (cg *cachedGlobal) keyedFor(r *http.Request, namespace string) bool {
 }
 
 // joinWriter passes a response through, unless it reports a cancellation this request didn't make, as
-// an evaluation it joined reports when the client that started it goes away
+// an evaluation it joined reports when the client that started it goes away; no cache keeps a failure
 type joinWriter struct {
 	w      http.ResponseWriter
 	ctx    context.Context
@@ -343,6 +346,10 @@ func (j *joinWriter) WriteHeader(status int) {
 	}
 	h := j.w.Header()
 	maps.Copy(h, j.header)
+	// the cache passes on a failure without the no-store its evaluation answered with
+	if status >= http.StatusBadRequest {
+		h.Set(headers.NameCacheControl, headers.ValueNoStore)
+	}
 	j.w.WriteHeader(status)
 }
 
@@ -356,16 +363,28 @@ func (j *joinWriter) Write(p []byte) (int, error) {
 	return j.w.Write(p)
 }
 
-// inProcessTransport answers requests with a handler rather than a network round trip
+// inProcessTransport answers requests with a handler rather than a network round trip; a successful answer of more than
+// maxBytes, zero for no limit, is replaced whole by a failed evaluation's, so no part of it reads as a result
 type inProcessTransport struct {
-	handler http.Handler
+	handler  http.Handler
+	maxBytes int64
 }
 
 func (t inProcessTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	w := &bufferedResponse{header: make(http.Header)}
+	w := &bufferedResponse{header: make(http.Header), limit: t.maxBytes}
 	t.handler.ServeHTTP(w, r)
+	if w.overflow {
+		w = &bufferedResponse{header: make(http.Header)}
+		w.header.Set(headers.NameCacheControl, headers.ValueNoStore)
+		global.WriteError(w, http.StatusUnprocessableEntity, global.ErrorTypeExecution,
+			global.ResultLimitError(t.maxBytes), nil, 0)
+	}
 	if w.status == 0 {
 		w.status = http.StatusOK
+	}
+	body, size := w.kept, int64(w.keptSize)
+	if body == nil {
+		body, size = io.NopCloser(bytes.NewReader(w.body.Bytes())), int64(w.body.Len())
 	}
 	return &http.Response{
 		Status:        strconv.Itoa(w.status) + " " + http.StatusText(w.status),
@@ -374,16 +393,23 @@ func (t inProcessTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		ProtoMajor:    r.ProtoMajor,
 		ProtoMinor:    r.ProtoMinor,
 		Header:        w.header,
-		Body:          io.NopCloser(bytes.NewReader(w.body.Bytes())),
-		ContentLength: int64(w.body.Len()),
+		Body:          body,
+		ContentLength: size,
 		Request:       r,
 	}, nil
 }
 
+// bufferedResponse holds a handler's answer, written to body or, when handed over whole, kept as it is
 type bufferedResponse struct {
-	header http.Header
-	status int
-	body   bytes.Buffer
+	header   http.Header
+	status   int
+	body     bytes.Buffer
+	kept     io.ReadCloser
+	keptSize int
+	// limit bounds the bytes a successful answer may hold, zero for none, as a failure bounds itself; overflow records
+	// an answer that passed it
+	limit    int64
+	overflow bool
 }
 
 func (b *bufferedResponse) Header() http.Header { return b.header }
@@ -398,5 +424,36 @@ func (b *bufferedResponse) Write(p []byte) (int, error) {
 	if b.status == 0 {
 		b.status = http.StatusOK
 	}
+	if b.kept != nil {
+		// what follows a kept body is written after it
+		kept := b.kept
+		b.kept = nil
+		_, _ = b.body.ReadFrom(kept)
+		_ = kept.Close()
+	}
+	if b.overflow || b.exceeds(len(p)) {
+		b.overflow = true
+		return 0, global.ErrResultTooLarge
+	}
 	return b.body.Write(p)
 }
+
+// KeepBody takes body as the answer without copying it, unless something was written before it
+func (b *bufferedResponse) KeepBody(body io.ReadCloser, size int) {
+	if b.kept != nil || b.body.Len() > 0 || b.overflow || b.exceeds(size) {
+		defer body.Close()
+		_, _ = io.Copy(b, body)
+		return
+	}
+	if b.status == 0 {
+		b.status = http.StatusOK
+	}
+	b.kept, b.keptSize = body, size
+}
+
+// exceeds reports whether n more bytes take a successful answer past its limit
+func (b *bufferedResponse) exceeds(n int) bool {
+	return b.limit > 0 && b.status < http.StatusBadRequest && int64(b.body.Len())+int64(n) > b.limit
+}
+
+var _ global.BodyKeeper = (*bufferedResponse)(nil)

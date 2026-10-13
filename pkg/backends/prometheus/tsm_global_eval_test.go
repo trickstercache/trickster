@@ -141,7 +141,7 @@ func globalOracle(t *testing.T, union storage.Queryable, query string, ev presen
 	slices.Sort(warnings)
 	slices.Sort(infos)
 	w := httptest.NewRecorder()
-	global.WriteResult(w, res.Value, warnings, infos)
+	require.NoError(t, global.WriteResult(w, res.Value, warnings, infos, 0))
 	return w.Body.String()
 }
 
@@ -374,7 +374,7 @@ func TestGlobalErrorType(t *testing.T) {
 		context.Canceled: global.ErrorTypeCanceled,
 		promengine.ErrStorage{Err: errGlobalTestMember}:  global.ErrorTypeInternal,
 		promengine.ErrStorage{Err: global.ErrFetchLimit}: global.ErrorTypeExecution,
-		errGlobalTestMember: global.ErrorTypeExecution,
+		errGlobalTestMember:                              global.ErrorTypeExecution,
 	} {
 		_, got := globalErrorType(err)
 		require.Equal(t, want, got, err.Error())

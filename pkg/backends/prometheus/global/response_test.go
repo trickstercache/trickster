@@ -39,7 +39,7 @@ import (
 func writeTestResult(t *testing.T, value parser.Value, warnings, infos []string) string {
 	t.Helper()
 	w := httptest.NewRecorder()
-	WriteResult(w, value, warnings, infos)
+	require.NoError(t, WriteResult(w, value, warnings, infos, 0))
 	require.Equal(t, http.StatusOK, w.Code)
 	require.Equal(t, contentTypeJSON, w.Header().Get(headers.NameContentType))
 	return w.Body.String()
@@ -125,7 +125,7 @@ func TestWriteResultDecodes(t *testing.T) {
 
 func TestWriteError(t *testing.T) {
 	w := httptest.NewRecorder()
-	WriteError(w, http.StatusUnprocessableEntity, ErrorTypeExecution, errors.New(`too "many"`), []string{"w"})
+	WriteError(w, http.StatusUnprocessableEntity, ErrorTypeExecution, errors.New(`too "many"`), []string{"w"}, 0)
 	require.Equal(t, http.StatusUnprocessableEntity, w.Code)
 	require.Equal(t, `{"status":"error","errorType":"execution","error":"too \"many\"","warnings":["w"]}`, w.Body.String())
 }

@@ -947,7 +947,7 @@ func TestGlobalEvaluationCacheRetriesAnotherClientsCancellation(t *testing.T) {
 	// away, every time here, as an unlucky request could see each time it joins one
 	cg.dispatch = func(w http.ResponseWriter, r *http.Request, isRange bool) {
 		if calls.Add(1) < maxJoinAttempts {
-			global.WriteError(w, statusClientClosedRequest, global.ErrorTypeCanceled, context.Canceled, nil)
+			global.WriteError(w, statusClientClosedRequest, global.ErrorTypeCanceled, context.Canceled, nil, 0)
 			return
 		}
 		dispatch(w, r, isRange)
