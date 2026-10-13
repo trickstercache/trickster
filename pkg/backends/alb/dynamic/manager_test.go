@@ -276,6 +276,23 @@ func TestManagerInstantiationFailureRetries(t *testing.T) {
 	require.Equal(t, []string{"myalb-m1"}, m.MemberNames())
 }
 
+func TestManagerMemberCacheRequirement(t *testing.T) {
+	m, c, _ := newTestManager(t, &ao.DiscoveryOptions{
+		DiscovererName: "d", TemplateBackend: "prom-template",
+	})
+	// a caching member needs its cache, as a configured backend does at startup; the reverse proxy
+	// members of the other tests are instantiated with no caches at all
+	m.cfg.Template = newPromTemplate(t)
+	s := discovery.Snapshot{member("m1", "10.0.0.1:9090")}
+	m.ApplySnapshot(s)
+	require.Empty(t, m.MemberNames())
+	require.Empty(t, c.DynamicPoolNames())
+
+	m.cfg.Caches = cache.Lookup{bo.DefaultBackendCacheName: nil}
+	m.ApplySnapshot(s)
+	require.Equal(t, []string{"myalb-m1"}, m.MemberNames())
+}
+
 func TestManagerReplicaGroupChangeRebuildsMember(t *testing.T) {
 	m, _, _ := newTestManager(t, &ao.DiscoveryOptions{
 		DiscovererName: "d", TemplateBackend: "prom-template",

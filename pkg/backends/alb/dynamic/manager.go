@@ -109,6 +109,8 @@ type Manager struct {
 	// tracer is the ALB's configured tracer (nil when tracing is not
 	// configured); it spans the reconcile cycle, never the request path
 	tracer *tracing.Tracer
+	// global is set when the ALB evaluates queries over raw series, which every member must then serve
+	global bool
 
 	mtx     sync.Mutex
 	members map[string]*memberEntry
@@ -133,9 +135,11 @@ func New(cfg Config) *Manager {
 		discoverer: cfg.Options.DiscovererName,
 		members:    make(map[string]*memberEntry),
 	}
-	if albCfg := cfg.ALB.Configuration(); albCfg != nil &&
-		albCfg.TracingConfigName != "" {
-		m.tracer = cfg.Tracers[albCfg.TracingConfigName]
+	if albCfg := cfg.ALB.Configuration(); albCfg != nil {
+		if albCfg.TracingConfigName != "" {
+			m.tracer = cfg.Tracers[albCfg.TracingConfigName]
+		}
+		m.global = albCfg.ALBOptions.IsTSMGlobal()
 	}
 	return m
 }
@@ -383,6 +387,12 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	if err != nil {
 		return nil, err
 	}
+	// checked before anything is built for the member, as its series endpoint can derive from its discovered origin
+	if m.global {
+		if err := nb.ValidateSeriesSource(); err != nil {
+			return nil, bo.NewErrGlobalEvaluationMember(m.albName, m.cfg.Template.Name, name, err)
+		}
+	}
 	var c cache.Cache
 	if nb.UsesCache() {
 		var ok bool
@@ -400,6 +410,7 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 	}
 	// a pool member is reached through its pool only, never through a native listener
 	if err := backends.ValidateStepAlignment(client, nb); err != nil {
+		closeClientConns(client)
 		return nil, err
 	}
 	nb.HTTPClient = client.HTTPClient()
@@ -419,6 +430,7 @@ func (m *Manager) instantiateMember(name string, member discovery.Member) (*memb
 		st, err := backends.RegisterHealthCheck(m.cfg.HealthChecker, name,
 			m.healthDescription(nb.Provider), client)
 		if err != nil {
+			closeClientConns(client)
 			return nil, err
 		}
 		if st != nil {
@@ -529,9 +541,14 @@ func (m *Manager) releaseMemberConns(name string, e *memberEntry) {
 		if drain > 0 {
 			time.Sleep(drain)
 		}
-		closeIdle(client.HTTPClient())
-		closeIdle(client.HealthCheckHTTPClient())
+		closeClientConns(client)
 	})
+}
+
+func closeClientConns(client backends.Backend) {
+	closeIdle(client.HTTPClient())
+	// health probes dial through a transport of their own
+	closeIdle(client.HealthCheckHTTPClient())
 }
 
 func closeIdle(c *http.Client) {

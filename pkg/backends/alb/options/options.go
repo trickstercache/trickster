@@ -203,6 +203,12 @@ func (o *Options) IsTSM() bool {
 	return o != nil && strings.HasPrefix(o.MechanismName, names.MechanismTSM)
 }
 
+// IsTSMGlobal reports whether the ALB evaluates queries over its members' raw series: a time series merge
+// whose tsm block sets evaluation: global. Every other mechanism ignores the tsm block.
+func (o *Options) IsTSMGlobal() bool {
+	return o.IsTSM() && o.TSMOptions.IsGlobal()
+}
+
 func (o *Options) Initialize(name string) error {
 	if name != "" {
 		o.Name = name

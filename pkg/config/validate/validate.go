@@ -315,7 +315,25 @@ func Backends(c *config.Config) error {
 		return err
 	}
 	warnStepAlignments(c)
+	warnSharedSeriesEndpoints(c)
 	return nil
+}
+
+func warnSharedSeriesEndpoints(c *config.Config) {
+	for _, name := range slices.Sorted(maps.Keys(c.Backends)) {
+		o := c.Backends[name]
+		if o == nil || o.Provider != providers.ALB || !o.ALBOptions.IsTSMGlobal() || o.ALBOptions.Discovery == nil {
+			continue
+		}
+		// discovery replaces only a member's origin, so a template's series_endpoint is every member's
+		tmpl := o.ALBOptions.Discovery.TemplateBackend
+		if t := c.Backends[tmpl]; t == nil || t.Prometheus == nil || t.Prometheus.SeriesEndpoint == "" {
+			continue
+		}
+		addWarning(c, fmt.Sprintf("alb %q gives every discovered member the series_endpoint of template %q, so "+
+			"each member reads the same store; remote read without a series_endpoint reads each member's origin",
+			name, tmpl))
+	}
 }
 
 func warnStepAlignments(c *config.Config) {

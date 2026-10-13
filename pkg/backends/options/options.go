@@ -1001,6 +1001,13 @@ func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
 		if !ok || t == nil || !t.IsTemplate {
 			return NewErrInvalidTemplateBackendName(d.TemplateBackend, o.Name)
 		}
+		// a global evaluation reads every member's raw series; an endpoint that derives from a discovered
+		// origin is checked again as each member is made
+		if o.ALBOptions.IsTSMGlobal() {
+			if err := t.validateTemplateSeriesSource(d.Query.Scheme); err != nil {
+				return NewErrGlobalEvaluationMember(o.Name, d.TemplateBackend, "", err)
+			}
+		}
 		// TSM-merged pools require members whose provider can be merged,
 		// and per-member replica groups (replica_group_label) are only
 		// meaningful -- and only accepted by backend initialization -- on
@@ -1070,7 +1077,7 @@ func (o *Options) UsesCache() bool {
 	if !providers.NonCacheBackends().Contains(o.Provider) {
 		return true
 	}
-	return o.Provider == providers.ALB && o.ALBOptions != nil && o.ALBOptions.TSMOptions.IsGlobal()
+	return o.Provider == providers.ALB && o.ALBOptions.IsTSMGlobal()
 }
 
 func (l Lookup) Initialize() error {
