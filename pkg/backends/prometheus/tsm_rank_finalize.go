@@ -37,7 +37,13 @@ const (
 
 type rankBucketKey struct {
 	epoch int64
-	group string
+	group int
+}
+
+type rankGroups struct {
+	grouping promql.AggregationGrouping
+	ids      map[string]int
+	keyBuf   []byte
 }
 
 type rankCandidate struct {
@@ -216,6 +222,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 		appendWarningOnce(ds, sortInRangeQueryWarning)
 	}
 
+	groups := rankGroups{grouping: spec.Grouping}
 	for _, result := range ds.Results {
 		if result == nil || len(result.SeriesList) == 0 {
 			continue
@@ -226,7 +233,7 @@ func finalizeRankAggregation(ds *dataset.DataSet, spec promql.RankAggregation) {
 			if series == nil {
 				continue
 			}
-			group := rankGroupKey(series.Header.Tags, spec.Grouping)
+			group := groups.id(series.Header.Tags)
 			for c := newRowCursor(series.Segments()); !c.done(); c.next() {
 				value, ok := sampleFloat(c.seg(), c.i)
 				if !ok {
@@ -293,27 +300,22 @@ func rankValueLess(a, b float64, operator string) bool {
 	return a > b
 }
 
-func rankGroupKey(tags dataset.Tags, grouping promql.AggregationGrouping) string {
-	if len(grouping.Labels) == 0 {
-		if grouping.Without {
-			return tags.JSON()
-		}
-		return ""
+func (g *rankGroups) id(tags dataset.Tags) int {
+	// every series shares the one group of an ungrouped aggregation
+	if !g.grouping.Without && len(g.grouping.Labels) == 0 {
+		return 0
 	}
-	if grouping.Without {
-		kept := tags.Clone()
-		for _, label := range grouping.Labels {
-			delete(kept, label)
-		}
-		return kept.JSON()
+	// the key is built in reused scratch space, and only a group not seen before allocates its key
+	g.keyBuf = appendGroupingKey(g.keyBuf[:0], tags, g.grouping)
+	if id, ok := g.ids[string(g.keyBuf)]; ok {
+		return id
 	}
-	kept := make(dataset.Tags, len(grouping.Labels))
-	for _, label := range grouping.Labels {
-		if value := tags[label]; value != "" {
-			kept[label] = value
-		}
+	if g.ids == nil {
+		g.ids = make(map[string]int)
 	}
-	return kept.JSON()
+	id := len(g.ids)
+	g.ids[string(g.keyBuf)] = id
+	return id
 }
 
 func keepSelectedRankPoints(

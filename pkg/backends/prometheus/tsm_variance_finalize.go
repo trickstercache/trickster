@@ -26,6 +26,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/aggregation"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/dataset"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 const invalidPooledVarianceWarning = "trickster: pooled-variance finalization dropped an invalid intermediate point"
@@ -236,6 +237,37 @@ func aggregationGroupingTags(tags dataset.Tags, grouping promql.AggregationGroup
 		}
 	}
 	return output
+}
+
+func appendGroupingKey(dst []byte, tags dataset.Tags, grouping promql.AggregationGrouping) []byte {
+	// appends aggregationGroupingTags(tags, grouping).JSON() without building those tags; parsing leaves
+	// grouping's labels sorted and unique, so by-labels are already in JSON key order
+	var arr [16]string
+	names := arr[:0]
+	if grouping.Without {
+		for name := range tags {
+			if name != promql.MetricNameLabel && !slices.Contains(grouping.Labels, name) {
+				names = append(names, name)
+			}
+		}
+		slices.Sort(names)
+	} else {
+		for _, name := range grouping.Labels {
+			if tags[name] != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	dst = append(dst, '{')
+	for i, name := range names {
+		if i > 0 {
+			dst = append(dst, ',')
+		}
+		dst = tstrings.AppendJSON(dst, name)
+		dst = append(dst, ':')
+		dst = tstrings.AppendJSON(dst, tags[name])
+	}
+	return append(dst, '}')
 }
 
 func varianceFinalValue(state dataset.PooledVarianceState, operator string) float64 {

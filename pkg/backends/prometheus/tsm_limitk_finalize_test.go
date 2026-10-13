@@ -141,6 +141,41 @@ func TestFinalizeTSMMergeLimitKGrouping(t *testing.T) {
 	}
 }
 
+func TestFinalizeTSMMergeLimitKGroupingIgnoresMetricName(t *testing.T) {
+	const inner = `{__name__=~"a|b"}`
+	makeDataSet := func() *dataset.DataSet {
+		return varianceFinalizeDataSet(inner,
+			varianceFinalizeSeries(dataset.Tags{"__name__": "b", "instance": "i2", "job": "x"}, inner,
+				"1", int64(100)),
+			varianceFinalizeSeries(dataset.Tags{"__name__": "a", "instance": "i2", "job": "x"}, inner,
+				"2", int64(100)),
+			varianceFinalizeSeries(dataset.Tags{"__name__": "b", "instance": "i1", "job": "x"}, inner,
+				"3", int64(100)),
+			varianceFinalizeSeries(dataset.Tags{"__name__": "a", "instance": "i1", "job": "x"}, inner,
+				"4", int64(100)),
+		)
+	}
+	// each instance is one group, whose first series in label order is its metric a series
+	for _, grouping := range []string{"without (job)", "without ()", "without (__name__)", "by (instance)"} {
+		query := "limitk " + grouping + " (1, " + inner + ")"
+		t.Run(query, func(t *testing.T) {
+			ds := makeDataSet()
+			(&Client{}).FinalizeTSMMerge(query, ds)
+			got := ds.Results[0].SeriesList
+			if len(got) != 2 || got[0].Header.Tags["instance"] != "i1" ||
+				got[1].Header.Tags["instance"] != "i2" {
+				t.Fatalf("selected groups: %#v", got)
+			}
+			for _, series := range got {
+				if len(series.Header.Tags) != 3 || series.Header.Tags["__name__"] != "a" ||
+					series.Header.Tags["job"] != "x" {
+					t.Fatalf("selected labels were changed: %v", series.Header.Tags)
+				}
+			}
+		})
+	}
+}
+
 func TestFinalizeTSMMergeLimitKQuotedGroupingLabel(t *testing.T) {
 	const inner = "up"
 	ds := varianceFinalizeDataSet(inner,

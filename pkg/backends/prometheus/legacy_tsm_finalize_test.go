@@ -598,18 +598,11 @@ func legacyRankValueLess(a, b float64, operator string) bool {
 }
 
 func legacyRankGroupKey(tags dataset.Tags, grouping promql.AggregationGrouping) string {
-	if len(grouping.Labels) == 0 {
-		if grouping.Without {
-			return tags.JSON()
-		}
-		return ""
-	}
 	if grouping.Without {
-		kept := tags.Clone()
-		for _, label := range grouping.Labels {
-			delete(kept, label)
-		}
-		return kept.JSON()
+		return legacyAggregationGroupingTags(tags, grouping).JSON()
+	}
+	if len(grouping.Labels) == 0 {
+		return ""
 	}
 	kept := make(dataset.Tags, len(grouping.Labels))
 	for _, label := range grouping.Labels {

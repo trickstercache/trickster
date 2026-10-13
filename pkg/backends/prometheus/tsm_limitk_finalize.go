@@ -23,7 +23,7 @@ import (
 )
 
 type limitKLogicalSeries struct {
-	group   string
+	group   int
 	members []*dataset.Series
 }
 
@@ -56,15 +56,14 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	result.SeriesList.SortByTags()
 	logicalOrder := make([]*limitKLogicalSeries, 0, len(result.SeriesList))
 	lastTagsKey := ""
+	groups := rankGroups{grouping: spec.Grouping}
 	for _, series := range result.SeriesList {
 		if series == nil || series.PointCount() == 0 {
 			continue
 		}
 		tagsKey := series.Header.Tags.JSON()
 		if len(logicalOrder) == 0 || tagsKey != lastTagsKey {
-			logicalOrder = append(logicalOrder, &limitKLogicalSeries{
-				group: rankGroupKey(series.Header.Tags, spec.Grouping),
-			})
+			logicalOrder = append(logicalOrder, &limitKLogicalSeries{group: groups.id(series.Header.Tags)})
 			lastTagsKey = tagsKey
 		}
 		last := logicalOrder[len(logicalOrder)-1]
