@@ -174,6 +174,21 @@ func TestPlanTSMMergeStrategies(t *testing.T) {
 		{"limit_ratio(0.5, sum(absent(up)))", int(merge.StrategyDedup), standard, "absent"},
 		{"limit_ratio(scalar(ratio), up)", int(merge.StrategyDedup), standard, aggregation.LimitRatio},
 		{"group(up)", int(merge.StrategyDedup), standard, ""},
+		// Counts of inner label sets union those sets across backends before counting them.
+		{"count(count by (pod) (up))", int(merge.StrategyDedup), standard, ""},
+		{"count(group by (pod) (up))", int(merge.StrategyDedup), standard, ""},
+		{"group(count by (pod) (up))", int(merge.StrategyDedup), standard, ""},
+		{"count by (ns) (count by (ns, pod) (up))", int(merge.StrategyDedup), standard, ""},
+		{"count(count without (instance) (up))", int(merge.StrategyDedup), standard, ""},
+		{"sort_desc(count by (ns) (count by (ns, pod) (up)))", int(merge.StrategyDedup), standard, ""},
+		{"count(count by (pod) (up)) > 1", int(merge.StrategyDedup), standard, ""},
+		// Inner inputs that can change which label sets a backend returns keep the warning.
+		{"count(count by (pod) (rate(x[5m])))", int(merge.StrategySum), standard, "nested aggregation"},
+		{"count(count by (pod) (up == 1))", int(merge.StrategySum), standard, "nested aggregation"},
+		{"count(sum by (pod) (up))", int(merge.StrategySum), standard, "nested aggregation"},
+		{"sum(count by (pod) (up))", int(merge.StrategySum), standard, "nested aggregation"},
+		{"max(count by (pod) (up))", int(merge.StrategyMax), standard, "nested aggregation"},
+		{"group(sum by (pod) (up))", int(merge.StrategyDedup), standard, "nested aggregation"},
 		// Literal scalar operations are finalized after their aggregation is merged.
 		{"sum(rate(requests[5m])) * 100", int(merge.StrategySum), standard, ""},
 		{"100 / count(up)", int(merge.StrategySum), standard, ""},

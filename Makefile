@@ -185,6 +185,8 @@ gofix-diff:
 	@go fix -diff ./...
 
 LINT_FLAGS ?= 
+# TOOL_MODULES are the separate Go modules of the developer tools, which lint and gotest cover too
+TOOL_MODULES := hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/mimirseed
 # tests are linted in a second pass by the rules that replaced the Makefile's scans, as the
 # full set of linters is not run over them
 TEST_LINTERS := forbidigo,depguard,godox,goheader
@@ -192,7 +194,7 @@ TEST_LINTERS := forbidigo,depguard,godox,goheader
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do \
+	@for m in $(TOOL_MODULES); do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
 			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
 			-c ../../.golangci.yml ./...) || exit 1; \
@@ -262,7 +264,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
+	@for m in $(TOOL_MODULES); do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."
@@ -424,7 +426,8 @@ COREDNS_ZONES       := $(COMPOSE_ENV_DIR)/docker-compose-data/coredns-zones
 COMPOSE_PROFILES    ?= all-providers
 # stop and delete act on every profile, so they reach whatever is running
 COMPOSE_ALL_PROFILES := *
-DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite
+DEVELOPER_PROFILES  := influxdb clickhouse druid mysql timescaledb greptimedb questdb victoriametrics graphite \
+	mimir thanos
 DEVELOPER_START_TARGETS := $(addprefix developer-start-,$(DEVELOPER_PROFILES))
 
 # waits up to $(3)s for URL $(2) to respond, when service $(1) is in the active profiles
@@ -461,6 +464,9 @@ developer-start: developer-credentials
 	$(call wait_ready,graphite,http://127.0.0.1:8081/metrics/find?query=carbon,120)
 	$(call wait_ready,druid,http://127.0.0.1:8888/status/health,180)
 	$(call wait_ready,victoriametrics,http://127.0.0.1:8428/health,120)
+	$(call wait_ready,mimir_east,http://127.0.0.1:11080/ready,120)
+	$(call wait_ready,mimir_west,http://127.0.0.1:11081/ready,120)
+	$(call wait_ready,thanos_query,http://127.0.0.1:11903/-/ready,120)
 
 # developer-start-<profile> starts the always-on services plus that one TSDB backend
 .PHONY: $(DEVELOPER_START_TARGETS)

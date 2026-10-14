@@ -25,6 +25,8 @@ var (
 	ErrInvalidTimeSeriesMergeProvider = errors.New("invalid time series merge provider")
 	ErrUnsupportedMechanism           = errors.New("unsupported mechanism")
 	ErrInvalidOptionsMetadata         = errors.New("invalid options metadata")
+	// ErrGlobalEvaluationMember is returned for a pool member that cannot serve raw series
+	ErrGlobalEvaluationMember = errors.New("invalid tsm global evaluation member")
 )
 
 // InvalidALBOptionsError is an error type for invalid ALB Options

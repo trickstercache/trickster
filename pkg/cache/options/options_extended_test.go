@@ -210,3 +210,45 @@ caches:
 		t.Fatalf("unexpected cache options: %+v", c)
 	}
 }
+
+func TestUseCacheChunkingSurvivesInitialize(t *testing.T) {
+	t.Parallel()
+
+	const (
+		chunked   = "chunked"
+		unchunked = "unchunked"
+	)
+	const raw = `
+caches:
+  chunked:
+    provider: memory
+    use_cache_chunking: true
+  unchunked:
+    provider: memory
+`
+	var d struct {
+		Caches Lookup `yaml:"caches"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &d); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	if _, err := d.Caches.Initialize(sets.New([]string{chunked, unchunked})); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	c, u := d.Caches[chunked], d.Caches[unchunked]
+	if !c.UseCacheChunking {
+		t.Error("use_cache_chunking: true was reset by Initialize")
+	}
+	if u.UseCacheChunking {
+		t.Error("an unset use_cache_chunking must stay false")
+	}
+
+	cl := c.Clone()
+	if !cl.UseCacheChunking || !c.Equal(cl) {
+		t.Error("Clone dropped use_cache_chunking")
+	}
+	cl.UseCacheChunking = false
+	if c.Equal(cl) {
+		t.Error("Equal ignored a use_cache_chunking difference")
+	}
+}

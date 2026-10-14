@@ -23,12 +23,11 @@ import (
 )
 
 type limitKLogicalSeries struct {
-	group   string
+	group   int
 	members []*dataset.Series
 }
 
 func finalizeLimitKAggregation(ds *dataset.DataSet, spec promql.LimitKAggregation) {
-	isRangeQuery := ds.Step() > 0
 	ds.UpdateLock.Lock()
 	defer ds.UpdateLock.Unlock()
 
@@ -39,23 +38,9 @@ func finalizeLimitKAggregation(ds *dataset.DataSet, spec promql.LimitKAggregatio
 			}
 		}
 	}
-
-	if !spec.SortSet {
-		return
-	}
-	if isRangeQuery {
-		appendWarningOnce(ds, sortInRangeQueryWarning)
-	}
-	for _, result := range ds.Results {
-		if result == nil {
-			continue
-		}
-		// PromQL sort functions ignore native-histogram samples even though
-		// limitk itself retains them.
-		result.SeriesList = filterHistogramSeries(result.SeriesList)
-		if !isRangeQuery {
-			sortInstantSeries(result.SeriesList, spec.SortDescending)
-		}
+	// PromQL sort functions ignore native-histogram samples even though limitk itself retains them.
+	if spec.SortSet {
+		sortFinalSeries(ds, spec.SortDescending)
 	}
 }
 
@@ -71,15 +56,14 @@ func finalizeLimitKResult(result *dataset.Result, spec promql.LimitKAggregation)
 	result.SeriesList.SortByTags()
 	logicalOrder := make([]*limitKLogicalSeries, 0, len(result.SeriesList))
 	lastTagsKey := ""
+	groups := aggregationGroups{grouping: spec.Grouping}
 	for _, series := range result.SeriesList {
 		if series == nil || series.PointCount() == 0 {
 			continue
 		}
 		tagsKey := series.Header.Tags.JSON()
 		if len(logicalOrder) == 0 || tagsKey != lastTagsKey {
-			logicalOrder = append(logicalOrder, &limitKLogicalSeries{
-				group: rankGroupKey(series.Header.Tags, spec.Grouping),
-			})
+			logicalOrder = append(logicalOrder, &limitKLogicalSeries{group: groups.id(series.Header.Tags)})
 			lastTagsKey = tagsKey
 		}
 		last := logicalOrder[len(logicalOrder)-1]

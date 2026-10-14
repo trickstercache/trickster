@@ -22,7 +22,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -681,5 +683,145 @@ func TestTimeseriesChunkMergeLeavesMemoryChunks(t *testing.T) {
 	}
 	if b == nil || b.PointCount() != 3 {
 		t.Fatalf("the merged series b is %v", b)
+	}
+}
+
+func TestSplitRangesByWindow(t *testing.T) {
+	w := byterange.Range{Start: 16, End: 47}
+	tests := []struct {
+		name    string
+		rs      byterange.Ranges
+		in, out byterange.Ranges
+	}{
+		{"inside", byterange.Ranges{{Start: 20, End: 30}}, byterange.Ranges{{Start: 20, End: 30}}, nil},
+		{
+			"outside",
+			byterange.Ranges{{Start: 0, End: 9}, {Start: 60, End: 70}},
+			nil,
+			byterange.Ranges{{Start: 0, End: 9}, {Start: 60, End: 70}},
+		},
+		{
+			"straddles both edges",
+			byterange.Ranges{{Start: 0, End: 60}},
+			byterange.Ranges{{Start: 16, End: 47}},
+			byterange.Ranges{{Start: 0, End: 15}, {Start: 48, End: 60}},
+		},
+		{
+			"touches edges",
+			byterange.Ranges{{Start: 10, End: 16}, {Start: 47, End: 50}},
+			byterange.Ranges{{Start: 16, End: 16}, {Start: 47, End: 47}},
+			byterange.Ranges{{Start: 10, End: 15}, {Start: 48, End: 50}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in, out := splitRangesByWindow(tt.rs, w)
+			if !slices.Equal(in, tt.in) || !slices.Equal(out, tt.out) {
+				t.Errorf("got in %s out %s, want in %s out %s", in, out, tt.in, tt.out)
+			}
+		})
+	}
+}
+
+func TestByterangeChunkWriterSkipsGapChunks(t *testing.T) {
+	part := func(start int64, b ...byte) *byterange.MultipartByteRange {
+		return &byterange.MultipartByteRange{Range: byterange.Range{Start: start, End: start + int64(len(b)) - 1}, Content: b}
+	}
+	d := &HTTPDocument{RangeParts: byterange.MultipartByteRanges{}}
+	for _, p := range []*byterange.MultipartByteRange{part(0, 0, 1), part(40, 4, 0)} {
+		d.RangeParts[p.Range] = p
+	}
+	d.Ranges = d.RangeParts.Ranges()
+	bc := &ByterangeChunkWriter{key: "k", size: 16, crs: 0, cre: 48}
+	var written []string
+	err := bc.IterateChunks(d, func(_ int, subkey string, _ any) error {
+		written = append(written, subkey)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// chunk 16-31 lies between the parts and holds nothing to store
+	if want := []string{"k0-15", "k32-47"}; !slices.Equal(written, want) {
+		t.Errorf("wrote %v, want %v", written, want)
+	}
+}
+
+func TestByterangeChunkQueryMissingChunk(t *testing.T) {
+	logger.SetLogger(testLogger)
+	const key = "missing-chunk-key"
+	conf, err := config.Load([]string{"-origin-url", "http://1", "-provider", "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	caches := cr.LoadCachesFromConfig(conf)
+	defer cr.CloseCaches(caches)
+	c := caches["default"]
+	c.Configuration().UseCacheChunking = true
+	c.Configuration().ByterangeChunkSize = 16
+
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{
+		headers.NameContentLength: {strconv.Itoa(len(testRangeBody))},
+	}}
+	d := DocumentFromHTTPResponse(resp, []byte(testRangeBody), nil)
+	ctx := tc.WithResources(context.Background(),
+		&request.Resources{BackendOptions: conf.Backends["default"], Tracer: tu.NewTestTracer()})
+	if err := WriteCache(ctx, c, key, d, time.Minute, sets.New([]string{headers.ValueTextPlain}), nil); err != nil {
+		t.Fatal(err)
+	}
+	// an evicted chunk must turn its bytes into a delta, never be served as zeros
+	_ = c.Remove(key + byterange.Range{Start: 16, End: 31}.String())
+	ranges := byterange.Ranges{{Start: 5, End: 40}}
+	d2, ls, deltas, err := QueryCache(ctx, c, key, ranges, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ls != status.LookupStatusPartialHit {
+		t.Errorf("status = %s, want %s", ls, status.LookupStatusPartialHit)
+	}
+	if want := (byterange.Ranges{{Start: 16, End: 31}}); !slices.Equal(deltas, want) {
+		t.Errorf("deltas = %s, want %s", deltas, want)
+	}
+	// the unread tail stays stored rather than being claimed as read
+	if want := (byterange.Ranges{{Start: 48, End: int64(len(testRangeBody)) - 1}}); !slices.Equal(d2.unloadedRanges, want) {
+		t.Errorf("unloaded = %s, want %s", d2.unloadedRanges, want)
+	}
+	for r, p := range d2.RangeParts {
+		if want := testRangeBody[r.Start : r.End+1]; string(p.Content) != want {
+			t.Errorf("part %s = %q, want %q", r, p.Content, want)
+		}
+	}
+
+	// with every chunk gone the whole object is a miss, not a hit on an empty body
+	for _, s := range []int64{0, 32, 48} {
+		_ = c.Remove(key + byterange.Range{Start: s, End: s + 15}.String())
+	}
+	if _, ls, _, err = QueryCache(ctx, c, key, nil, nil); ls != status.LookupStatusKeyMiss || err == nil {
+		t.Errorf("status = %s, err = %v; want a key miss", ls, err)
+	}
+}
+
+func TestByterangeChunkProcessorConcurrentLength(t *testing.T) {
+	const (
+		size   = 16
+		chunks = 64
+		rounds = 200
+	)
+	for range rounds {
+		var dbl int64
+		bcp := &ByterangeChunkQueryProcessor{d: &HTTPDocument{Body: make([]byte, size*chunks)}, size: size, dbl: &dbl}
+		var wg sync.WaitGroup
+		for i := range int64(chunks) {
+			r := byterange.Range{Start: i * size, End: i*size + size - 1}
+			qr := &queryResult{
+				d:            &HTTPDocument{Body: make([]byte, size), Ranges: byterange.Ranges{r}},
+				lookupStatus: status.LookupStatusHit,
+			}
+			wg.Go(func() { _ = bcp.ProcessChunk(int(i), "", qr, nil) })
+		}
+		wg.Wait()
+		if dbl != size*chunks {
+			t.Fatalf("body length = %d, want %d", dbl, size*chunks)
+		}
 	}
 }

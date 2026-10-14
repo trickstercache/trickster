@@ -19,6 +19,7 @@ package options
 import (
 	"testing"
 
+	tsmoptions "github.com/trickstercache/trickster/v2/pkg/backends/alb/mech/tsm/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 
 	"github.com/stretchr/testify/require"
@@ -85,6 +86,61 @@ func TestOutputFormatYAMLValidation(t *testing.T) {
 			require.NoError(t, yaml.Unmarshal([]byte(tc.input), &o))
 			require.NoError(t, o.Initialize(""))
 			require.Equal(t, tc.wantFormat, o.OutputFormat)
+			ok, err := o.Validate()
+			require.ErrorIs(t, err, tc.wantErr)
+			require.Equal(t, tc.wantErr == nil, ok)
+		})
+	}
+}
+
+func TestTSMGlobalEvaluationOptions(t *testing.T) {
+	t.Parallel()
+	const replicaLabel = "replica"
+	var o Options
+	require.NoError(t, yaml.Unmarshal([]byte("mechanism: tsm\ntsm:\n  evaluation: global\n  replica_labels: ["+
+		replicaLabel+"]\n"), &o))
+	require.NoError(t, o.Initialize(""))
+	ok, err := o.Validate()
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, o.TSMOptions.IsGlobal())
+
+	c := o.Clone()
+	c.TSMOptions.ReplicaLabels[0] = "other"
+	require.Equal(t, replicaLabel, o.TSMOptions.ReplicaLabels[0])
+
+	o.TSMOptions.Evaluation = "auto"
+	ok, err = o.Validate()
+	require.ErrorIs(t, err, tsmoptions.ErrInvalidEvaluation)
+	require.False(t, ok)
+}
+
+func TestIsTSMGlobal(t *testing.T) {
+	t.Parallel()
+	var none *Options
+	require.False(t, none.IsTSMGlobal())
+	for _, tc := range []struct {
+		name, input string
+		want        bool
+		wantErr     error
+	}{
+		{"global tsm", "mechanism: tsm\ntsm: {evaluation: global}\n", true, nil},
+		{"global tsm under its long name", "mechanism: tsmerge\ntsm: {evaluation: global}\n", true, nil},
+		{"merging tsm", "mechanism: tsm\ntsm: {evaluation: merge}\n", false, nil},
+		{"default tsm", "mechanism: tsm\n", false, nil},
+		{"residual global block on rr", "mechanism: rr\ntsm: {evaluation: global, replica_labels: [replica]}\n", false, nil},
+		{"residual global block on fgr", "mechanism: fgr\ntsm: {evaluation: global}\n", false, nil},
+		{"typo in an inactive block", "mechanism: rr\ntsm: {evaluation: gl0bal}\n", false, nil},
+		{"typo in an active block", "mechanism: tsm\ntsm: {evaluation: gl0bal}\n", false, tsmoptions.ErrInvalidEvaluation},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var o Options
+			require.NoError(t, yaml.Unmarshal([]byte(tc.input), &o))
+			// backend options consult it before the ALB options are initialized, and after
+			require.Equal(t, tc.want, o.IsTSMGlobal())
+			require.NoError(t, o.Initialize(""))
+			require.Equal(t, tc.want, o.IsTSMGlobal())
 			ok, err := o.Validate()
 			require.ErrorIs(t, err, tc.wantErr)
 			require.Equal(t, tc.wantErr == nil, ok)

@@ -153,7 +153,22 @@ backends: they are never routed, cannot be `is_default`, cannot appear in
 a static ALB pool, and do not require an `origin_url`. A template must
 use an origin-serving provider (not `alb` or `rule`), and a TSM-merged or
 `replica_group_label`-using ALB requires a time-series-merge-capable
-template provider.
+template provider. A TSM ALB with `evaluation: global` requires a
+`prometheus` template with a
+[series source](./prometheus.md#series-sources). Discovery replaces only
+the origin, so a template's `series_endpoint`, including the one Thanos
+StoreAPI requires, is used unchanged by every discovered member: each
+member reads that same store, and each read counts separately against
+`max_fetched_series` and `max_fetched_samples`. A pool of sharded Thanos
+sidecars discovered this way therefore reads only the one shard the
+endpoint names, and Trickster logs a warning at startup for any such
+template. Global evaluation over discovered members suits remote read
+without a `series_endpoint`, as with `flavor: mimir`, which reads
+`/api/v1/read` beneath each member's own origin. That origin must be
+`http` or `https`, so a `query.scheme` of `tcp` or `udp` fails
+configuration, and a discovered member whose endpoint still can't be
+formed is logged and not added to the pool. See
+[Global Evaluation](./alb.md#global-evaluation).
 
 ### The `alb.discovery` Block
 

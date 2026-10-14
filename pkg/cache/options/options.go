@@ -120,7 +120,8 @@ func (o *Options) Equal(o2 *Options) bool {
 		o.ByterangeChunkSize != o2.ByterangeChunkSize {
 		return false
 	}
-	if (o.Index == nil || o2.Index == nil) || !o.Index.Equal(o2.Index) {
+	// providers that don't use an index (memory, badger, redis) have a nil Index on both sides
+	if (o.Index == nil) != (o2.Index == nil) || (o.Index != nil && !o.Index.Equal(o2.Index)) {
 		return false
 	}
 	switch o.ProviderID {
@@ -221,8 +222,6 @@ func (o *Options) Initialize(name string) error {
 	} else {
 		o.Memory = nil
 	}
-
-	o.UseCacheChunking = defaults.DefaultUseCacheChunking
 
 	if o.TimeseriesChunkFactor == 0 {
 		o.TimeseriesChunkFactor = defaults.DefaultTimeseriesChunkFactor

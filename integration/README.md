@@ -29,6 +29,20 @@ failure). `TestVictoriaMetrics` likewise skips when VictoriaMetrics isn't
 running, and CI sets `TRICKSTER_VICTORIAMETRICS_TEST=1` to require it. See the [developer environment README](../docs/developer/environment/README.md#compose-profiles)
 for the profiles.
 
+`TestALBTSMGlobalEvaluation` is **run by hand rather than by CI**: it needs
+the `mimir` and `thanos` profiles, which the `integration` profile leaves out.
+It skips when they aren't running; `TRICKSTER_TSM_GLOBAL_TEST=1` turns that
+skip into a failure. It compares TSM global evaluation with merging over the
+seeded Mimir regions, checks that repeated range queries hit the cache, and
+checks that global evaluation over the Thanos sidecars matches Thanos Querier,
+for instant and range queries. See
+[Mimir and Thanos Details](../docs/developer/environment/README.md#mimir-and-thanos-details).
+
+```sh
+make developer-start-mimir developer-start-thanos  # from repo root
+cd integration && TRICKSTER_TSM_GLOBAL_TEST=1 go test -run TestALBTSMGlobalEvaluation -v
+```
+
 The Kubernetes scenarios (every `Test*Kind`) are separate from compose
 entirely: they need a kind cluster prepared via `make kind-integration-start`,
 `make kind-integration-ingress` and `make kind-integration-gateway` (see

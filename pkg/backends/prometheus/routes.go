@@ -125,6 +125,14 @@ func (c *Client) DefaultPathConfigs(o *bo.Options) po.List {
 }
 
 // a QUERY reaches the origin as POST, so it may carry only what the API accepts on POST
+// instantSharedMaxAge is how long shared caches may keep an instant query's response
+const instantSharedMaxAge = 30 * time.Second
+
+// sharedMaxAge returns the Cache-Control value letting shared caches keep a response for d
+func sharedMaxAge(d time.Duration) string {
+	return fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, int64(d/time.Second))
+}
+
 func queryMediaTypes() []string {
 	return []string{headers.ValueXFormURLEncoded}
 }
@@ -134,13 +142,9 @@ func queryMediaTypes() []string {
 func SupportedPaths(o *bo.Options) po.List {
 	var rhts map[string]string
 	if o != nil {
-		rhts = map[string]string{
-			headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, time.Duration(o.TimeseriesTTL)/(1*time.Second)),
-		}
+		rhts = map[string]string{headers.NameCacheControl: sharedMaxAge(time.Duration(o.TimeseriesTTL))}
 	}
-	rhinst := map[string]string{
-		headers.NameCacheControl: fmt.Sprintf("%s=%d", headers.ValueSharedMaxAge, 30),
-	}
+	rhinst := map[string]string{headers.NameCacheControl: sharedMaxAge(instantSharedMaxAge)}
 	paths := po.List{
 		{
 			Path:            APIPath + mnQueryRange,

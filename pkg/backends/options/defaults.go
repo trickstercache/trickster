@@ -37,6 +37,9 @@ const (
 	DefaultRevalidationFactor = 2
 	// DefaultMaxObjectSizeBytes is the default Max Size of any Cache Object
 	DefaultMaxObjectSizeBytes = 524288
+	// DefaultTSMMaxObjectSizeBytes is a TSM ALB's default: its global evaluations cache whole results, far
+	// larger than one backend's responses
+	DefaultTSMMaxObjectSizeBytes = 64 * 1024 * 1024
 	// DefaultMaxCaptureBytes is the default per-response capture-buffer cap,
 	// applied to Trickster's internal response captures (ALB fanout, Prometheus
 	// label/transform handlers, etc.). Set to 256 MiB to protect against a

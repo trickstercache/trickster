@@ -32,6 +32,8 @@ import (
 
 func opts(t *testing.T, name string, mutate func(*options.Options)) *options.Options {
 	t.Helper()
+	// the limiter's buckets are forgotten once t ends, so a test run again in the same process starts under its limit
+	t.Cleanup(func() { ratelimit.ForgetExcept(func(n string) bool { return n != name }) })
 	o := &options.Options{Name: name, Limit: 1, Window: timeconv.Duration(time.Minute)}
 	if mutate != nil {
 		mutate(o)

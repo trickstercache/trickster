@@ -809,8 +809,15 @@ data:
         #     labelname: value
         #   # flavor applies a Prometheus-compatible product's routes, limits and defaults.
         #   # cloudwatch: Amazon CloudWatch PromQL; amp: Amazon Managed Service for Prometheus.
-        #   # See /docs/aws.md. Default is none.
+        #   # See /docs/aws.md. mimir and thanos select the series_api below. Default is none.
         #   flavor: cloudwatch
+        #   # series_api is how the backend serves raw series to an ALB using tsm global evaluation:
+        #   # remote_read (the mimir flavor's default) or storeapi (the thanos flavor's default).
+        #   # See /docs/prometheus.md#series-sources. Default is none.
+        #   series_api: remote_read
+        #   # series_endpoint is where series_api is served: an http(s) remote-read URL, by default the
+        #   # origin_url path plus /api/v1/read, or the grpc:// or grpcs:// address StoreAPI requires
+        #   series_endpoint: grpc://prometheus-sidecar:10901
 
         # origin_url provides the base upstream URL for all proxied requests to this origin.
         # it can be as simple as http://example.com or as complex as https://example.com:8443/path/prefix
@@ -1007,7 +1014,8 @@ data:
     #     # so there is an opportunity to revalidate
     #     revalidation_factor: 2.0
 
-    #     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k)
+    #     # max_object_size_bytes defines the largest byte size an object may be before it is uncacheable due to size. default is 524288 (512k),
+    #     # or 67108864 (64M) for an ALB with mechanism: tsm
     #     max_object_size_bytes: 524288
 
     #     # max_capture_bytes caps the per-response in-memory capture buffer used by ALB fanout and Prometheus
@@ -1346,8 +1354,9 @@ data:
     #     alb:
     #       # mechanism defines the ALB pool member selection mechanism.
     #       # rr (round_robin), p2c (power_of_two_choices), lc (least_connections), lt (least_time)
-    #       # and hrw (highest_random_weight) select one pool member per request; fr, fgr, nlm and
-    #       # tsm fan each request out to the pool; ur routes by user. race (connect_race) and mirror
+    #       # and hrw (highest_random_weight) select one pool member per request; fr (first_response),
+    #       # fgr (first_good_response), nlm (newest_last_modified) and tsm (time_series_merge) fan each
+    #       # request out to the pool; ur (user_router) routes by user. race (connect_race) and mirror
     #       # (udp_mirror) serve only tcp/tls and udp stream listeners. See /docs/alb.md.
     #       # values are rr, fr, fgr, nlm, or tsm. see the docs for detailed descriptions of each
     #       # rr - standard round robin
@@ -1396,6 +1405,8 @@ data:
     #       # max_capture_bytes overrides the backend-level max_capture_bytes for this ALB's fanout members.
     #       # Set this when the ALB's expected response shape differs from the backend default. When 0 (the
     #       # default), the parent Backend's max_capture_bytes is used, falling back to 268435456 (256 MiB).
+    #       # With tsm evaluation: global, it bounds each member's raw series response and each evaluation's
+    #       # encoded result; a larger result fails with a 422 execution error rather than being returned in part.
     #       max_capture_bytes: 16777216 # 16 MiB
     #       fgr: # First Good Response mechanism options, only applicable when mechanism is set to fgr
     #         # status_codes is a list of status codes considered 'good' when using the fgr mechanism
@@ -1477,6 +1488,37 @@ data:
     #         # default is every member, up to 4. connect_retries and passive_health do not apply to
     #         # the race and mirror mechanisms
     #         # race_width: 2
+
+    #       tsm: # Time Series Merge mechanism options, only applicable when mechanism is set to tsm
+    #         # evaluation is merge (default), which merges the members' answers, or global, which
+    #         # evaluates each query once over every member's deduplicated raw series, as Thanos does.
+    #         # Every member of a global ALB needs a prometheus series_api. See /docs/alb.md#global-evaluation
+    #         evaluation: merge
+    #         # the settings below apply only with evaluation: global
+    #         # replica_labels are left out of a raw series' identity, so series differing only by them
+    #         # are copies of one series. default is none
+    #         # replica_labels: [ replica ]
+    #         # deduplication is penalty (default), which follows one replica across gaps as Thanos
+    #         # does, or chain, which keeps every distinct timestamp of every replica
+    #         # deduplication: penalty
+    #         # partial_response answers from the members that could be read, with a warning, when
+    #         # one can't. a request's partial_response parameter overrides it. default is true
+    #         # partial_response: true
+    #         # max_samples bounds the samples one evaluation holds at once. default is 50000000
+    #         # max_samples: 50000000
+    #         # query_timeout bounds one evaluation, including its wait for a slot. default is 2m
+    #         # query_timeout: 2m
+    #         # max_concurrent_queries bounds the evaluations the ALB runs at once. default is 20
+    #         # max_concurrent_queries: 20
+    #         # max_fetched_series and max_fetched_samples bound the raw series and samples one
+    #         # evaluation reads, before deduplication. default is 0, unlimited
+    #         # max_fetched_series: 0
+    #         # max_fetched_samples: 0
+    #         # raw_cache_window is how far back from now the members' raw series are cached; older
+    #         # samples are read from the members by every evaluation. default is 31d
+    #         # raw_cache_window: 31d
+    #         # the newest 5m of a mimir or thanos member's raw series, and none of another member's, are
+    #         # read again by every evaluation, unless the ALB sets volatile_window for all of them
 
     # # ALB Pool Autodiscovery - see /docs/alb-autodiscovery.md for more information
     # #

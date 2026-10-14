@@ -76,6 +76,8 @@ type HTTPDocument struct {
 	// storedSize its length once decoded
 	storedEncoding providers.Provider
 	storedSize     uint64
+	// unloadedRanges are stored ranges a chunked read left in the cache; the meta document keeps them
+	unloadedRanges byterange.Ranges
 }
 
 func (d *HTTPDocument) materialize() error {
@@ -154,6 +156,10 @@ func (d *HTTPDocument) GetMeta() *HTTPDocument {
 		Ranges:        d.Ranges.Clone(),
 		RangeParts:    nil,
 	}
+	// a document with no ranges is the whole object, which supersedes anything left unloaded
+	if len(d.Ranges) > 0 && len(d.unloadedRanges) > 0 {
+		dd.Ranges = append(dd.Ranges, d.unloadedRanges...).Compress()
+	}
 	if d.CachingPolicy != nil {
 		dd.CachingPolicy = d.CachingPolicy.Clone()
 	}
@@ -182,13 +188,15 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *H
 		dd.Ranges = byterange.Ranges{dr}
 	} else {
 		size := chunkRange.End - chunkRange.Start + 1
-		dd.Body = make([]byte, size)
 		var ddbi int64
-		dd.Ranges = make(byterange.Ranges, len(d.RangeParts))
 		var ddri int
 		for r, rp := range d.RangeParts {
 			if r.Start > chunkRange.End || r.End < chunkRange.Start {
 				continue
+			}
+			if dd.Body == nil {
+				dd.Body = make([]byte, size)
+				dd.Ranges = make(byterange.Ranges, len(d.RangeParts))
 			}
 			start := r.Start
 			if r.Start < chunkRange.Start {
@@ -204,6 +212,10 @@ func (d *HTTPDocument) GetByterangeChunk(chunkRange byterange.Range, _ int64) *H
 			copy(dd.Body[r.Start%size:r.End%size+1], content)
 			dd.Ranges[ddri] = r
 			ddri++
+		}
+		// a chunk inside a gap between stored parts holds nothing; callers skip writing it
+		if ddri == 0 {
+			return dd
 		}
 		ddbi -= chunkRange.Start
 		dd.Body = dd.Body[:ddbi]
@@ -251,6 +263,7 @@ func (d *HTTPDocument) ShallowCopy() *HTTPDocument {
 		deferred:         d.deferred,
 		storedEncoding:   d.storedEncoding,
 		storedSize:       d.storedSize,
+		unloadedRanges:   d.unloadedRanges,
 	}
 }
 

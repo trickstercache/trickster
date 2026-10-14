@@ -65,8 +65,6 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/util/middleware/bodyfilter"
 )
 
-var noCacheBackends = providers.NonCacheBackends()
-
 func attachAuthenticator(h http.Handler, pathOptions *po.Options, backendOptions *bo.Options) http.Handler {
 	if pathOptions.AuthOptions != nil && pathOptions.AuthOptions.Authenticator != nil {
 		h = handler.NamedMiddleware(pathOptions.AuthOptions.Name,
@@ -436,7 +434,8 @@ func registerBackendRoutes(r []listenerRoute, metricsRouter router.Router,
 ) error {
 	var c cache.Cache
 
-	if _, ok := noCacheBackends[o.Provider]; !ok {
+	if o.UsesCache() {
+		var ok bool
 		if c, ok = caches[o.CacheName]; !ok {
 			return fmt.Errorf("could not find cache named [%s]", o.CacheName)
 		}

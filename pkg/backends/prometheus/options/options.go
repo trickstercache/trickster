@@ -31,6 +31,10 @@ type Options struct {
 	InstantRound timeconv.Duration `yaml:"instant_round,omitempty"`
 	// Flavor applies a Prometheus-compatible product's routes, limits and defaults; see Flavors
 	Flavor string `yaml:"flavor,omitempty"`
+	// SeriesAPI names how the backend serves raw series to TSM global evaluation; see SeriesAPIs
+	SeriesAPI string `yaml:"series_api,omitempty"`
+	// SeriesEndpoint is where SeriesAPI is served: a remote-read URL, or a grpc:// or grpcs:// address
+	SeriesEndpoint string `yaml:"series_endpoint,omitempty"`
 }
 
 // New returns a new Prometheus Options with default values

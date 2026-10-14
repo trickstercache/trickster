@@ -28,9 +28,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky"
 	so "github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -42,6 +44,8 @@ func stickyALB(t *testing.T, mechanism string, o *so.Options, adjust func(*ao.Op
 ) backends.Backend {
 	t.Helper()
 	name := t.Name()
+	// the ALB's counts start from zero, even when the test runs again in the same process
+	metrics.ALBStickyResults.DeletePartialMatch(prometheus.Labels{keys.ALB_Name: name})
 	t.Cleanup(func() { sticky.ForgetTablesExcept(func(n string, _ *sticky.Table) bool { return n != name }) })
 	return newALBWith(t, name, mechanism, func(ao *ao.Options) {
 		ao.Sticky = o

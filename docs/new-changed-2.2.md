@@ -22,7 +22,7 @@ Trickster 2.2 just recently began development, so many of the planned features a
 
 **CloudWatch Metrics** - We now support accelerating AWS CloudWatch Metrics on the new PromQL endpoints. Classic GetMetricData endpoints are not yet supported. 
 
-**PLANNED** - Better support for Time Series Merge for Mimir and Thanos backends
+**TSM Global Evaluation** - A Time Series Merge ALB can now evaluate each PromQL query once over the raw series of every member, deduplicating replicas the way Thanos does, rather than merging the members' answers. Members serve raw series through Prometheus remote read (the new `mimir` flavor) or the Thanos StoreAPI (the new `thanos` flavor), and complete results are cached, while the members' raw series are delta-cached, so each member is read only for the samples the cache lacks. Merging also now counts label sets returned by several members once for `count` or `group` over an inner `count` or `group`. See [Global Evaluation](./alb.md#global-evaluation).
 
 ## HTTP Reverse Proxy Cache, CDN and Streaming Media
 
@@ -33,6 +33,8 @@ Trickster 2.2 just recently began development, so many of the planned features a
 **Automatic Certificates (ACME)** - Trickster can now obtain and renew its own serving certificates from Let's Encrypt or any other ACME certificate authority. See [Automatic Certificates](./acme.md) for details.
 
 **Disk Caches** - The Filesystem and bbolt caches are rebuilt for large caches and large objects. See [Disk Caches](./caches.md#disk-caches) for details.
+
+**Chunked Caching Fixes** - `use_cache_chunking: true` is honored from configuration again; since 2.0 it was silently reset to `false` at load. Chunked byterange caching no longer zeroes stored chunks on a partial hit, stores range misses, retries chunks that were evicted rather than serving their bytes as zeros, and no longer truncates bodies when chunks are read concurrently. A configuration reload that changes a memory cache's chunking settings now rebuilds the cache. See [Chunked Caching](./chunked_caching.md).
 
 **SRV Origin Resolution** - A backend can resolve its origin host as a DNS SRV owner name, dialing a target and port from the SRV answer, with failover across targets and tiers. Combined with a rule and a hostname rewriter, one backend can route to any number of origins published in DNS, including ECS, Consul and Nomad services with dynamically assigned ports. See [Origin Resolution via DNS SRV](./origin-resolution.md).
 

@@ -140,6 +140,72 @@ backends:
         - name: prom1
           weight: 3
         - sim1
+  # mimir-east and mimir-west are the two regions of the mimir profile (make developer-start-mimir);
+  # each also holds a copy of one of the other's pods, labeled isBackup
+  mimir-east:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:11080/prometheus'
+    cache_name: mem1
+    prometheus:
+      flavor: mimir
+  mimir-west:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:11081/prometheus'
+    cache_name: mem1
+    prometheus:
+      flavor: mimir
+  # mimir-global evaluates each query once, over both regions' raw series with the backups deduplicated
+  mimir-global:
+    provider: alb
+    cache_name: mem1
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global
+        replica_labels: [isBackup]
+      pool:
+        - mimir-east
+        - mimir-west
+  # mimir-merge merges each region's own answer, for comparison with mimir-global
+  mimir-merge:
+    provider: alb
+    alb:
+      mechanism: tsm
+      pool:
+        - mimir-east
+        - mimir-west
+  # thanos-a and thanos-b are the HA Prometheus pair of the thanos profile (make developer-start-thanos);
+  # their StoreAPI series come from each one's Thanos sidecar
+  thanos-a:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:11090'
+    cache_name: mem1
+    prometheus:
+      flavor: thanos
+      series_endpoint: 'grpc://127.0.0.1:11901'
+  thanos-b:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:11091'
+    cache_name: mem1
+    prometheus:
+      flavor: thanos
+      series_endpoint: 'grpc://127.0.0.1:11902'
+  thanos-global:
+    provider: alb
+    cache_name: mem1
+    alb:
+      mechanism: tsm
+      tsm:
+        evaluation: global
+        replica_labels: [replica]
+      pool:
+        - thanos-a
+        - thanos-b
+  # thanos-query proxies Thanos Querier over the same pair, whose answers thanos-global should match
+  thanos-query:
+    provider: prometheus
+    origin_url: 'http://127.0.0.1:11903'
+    cache_name: mem1
   mysql1:
     provider: mysql
     origin_url: 'mysql://trickster:trickster-dev-upstream@127.0.0.1:3306/trickster'

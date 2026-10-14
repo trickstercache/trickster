@@ -766,6 +766,37 @@ func TestApplyCachingConfigMemoryIndexUpdate(t *testing.T) {
 	_ = existing.Close()
 }
 
+func TestApplyCachingConfigMemoryChunkingChange(t *testing.T) {
+	oc := config.NewConfig()
+	oc.Caches["default"].Provider = providers.Memory
+	oc.Caches["default"].ProviderID = providers.MemoryID
+	existing := registry.NewCache("default", oc.Caches["default"])
+	if err := existing.Connect(); err != nil {
+		t.Fatal(err)
+	}
+	si := &instance.ServerInstance{
+		Config: oc,
+		Caches: cache.Lookup{"default": existing},
+	}
+
+	nc := config.NewConfig()
+	nc.Caches["default"].Provider = providers.Memory
+	nc.Caches["default"].ProviderID = providers.MemoryID
+	nc.Caches["default"].UseCacheChunking = true
+	nc.MgmtConfig.ReloadDrainTimeout = 0
+
+	caches := applyCachingConfig(si, nc)
+	c := caches["default"]
+	if c == existing {
+		t.Error("a memory cache whose chunking changed should be rebuilt")
+	}
+	if !c.Configuration().UseCacheChunking {
+		t.Error("the rebuilt cache should use the new chunking setting")
+	}
+	time.Sleep(50 * time.Millisecond)
+	_ = c.Close()
+}
+
 func TestApplyCachingConfigClosesReplacedAndRemoved(t *testing.T) {
 	oc := config.NewConfig()
 	oc.Caches["default"].Provider = providers.Memory

@@ -37,7 +37,8 @@ import (
 // queries over x whose finalizers read every series' values
 var finalizedQueries = []string{
 	"topk(2, x)", "bottomk(1, x)", "topk by (job) (1, x)", "sort_desc(topk(3, x))", "sort(bottomk(2, x))",
-	"limitk(2, x)", "limitk by (job) (1, x)", "sort_desc(limitk(3, x))",
+	"bottomk without (cpu) (1, x)", "limitk(2, x)", "limitk by (job) (1, x)", "limitk without (cpu) (1, x)",
+	"sort_desc(limitk(3, x))",
 	"limit_ratio(0.5, x)", "limit_ratio(-0.3, x)",
 	"quantile(0.9, x)", "quantile by (job) (0.5, x)", "quantile(2, x)", "sort(quantile without (cpu) (0.25, x))",
 	"stddev(x)", "stdvar by (job) (x)", "sort_desc(stddev without (cpu) (x))",

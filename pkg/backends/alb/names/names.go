@@ -42,4 +42,32 @@ const (
 	MechanismLeastConnections    = "least_connections"
 	MechanismConnectRace         = "connect_race"
 	MechanismUDPMirror           = "udp_mirror"
+	MechanismFirstResponse       = "first_response"
+	MechanismFirstGoodResponse   = "first_good_response"
+	MechanismNewestLastModified  = "newest_last_modified"
+	MechanismTimeSeriesMerge     = "time_series_merge"
+	MechanismUserRouter          = "user_router"
 )
+
+var shortNames = map[string]string{
+	MechanismRoundRobin:          MechanismRR,
+	MechanismPowerOfTwoChoices:   MechanismP2C,
+	MechanismHighestRandomWeight: MechanismHRW,
+	MechanismLeastTime:           MechanismLT,
+	MechanismLeastConnections:    MechanismLC,
+	MechanismConnectRace:         MechanismRace,
+	MechanismUDPMirror:           MechanismMirror,
+	MechanismFirstResponse:       MechanismFR,
+	MechanismFirstGoodResponse:   MechanismFGR,
+	MechanismNewestLastModified:  MechanismNLM,
+	MechanismTimeSeriesMerge:     MechanismTSM,
+	MechanismUserRouter:          MechanismUR,
+}
+
+// Short returns the short name of a mechanism given its long name, and any other name as it is.
+func Short(name string) string {
+	if short, ok := shortNames[name]; ok {
+		return short
+	}
+	return name
+}

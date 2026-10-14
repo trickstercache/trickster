@@ -344,6 +344,8 @@ type Options struct {
 	volatileWindowConflict, volatileWindowPointsConflict bool
 	// set when a backend sets any volatile window key, so a flavor default does not replace it
 	volatileWindowExplicit bool
+	// set when a backend sets volatile_window or backfill_tolerance, even to zero
+	volatileDurationExplicit bool
 }
 
 var _ types.ConfigOptions[Options] = &Options{}
@@ -932,7 +934,7 @@ func (l Lookup) ValidateConfigMappings(c co.Lookup, ncl negative.Lookups,
 			// No specific validation needed for other provider types
 		}
 
-		if !providers.NonCacheBackends().Contains(o.Provider) {
+		if o.UsesCache() {
 			if _, ok := c[o.CacheName]; !ok {
 				return NewErrInvalidCacheName(o.CacheName, o.Name)
 			}
@@ -999,6 +1001,13 @@ func (l Lookup) ValidateDiscovery(dl do.Lookup) error {
 		if !ok || t == nil || !t.IsTemplate {
 			return NewErrInvalidTemplateBackendName(d.TemplateBackend, o.Name)
 		}
+		// a global evaluation reads every member's raw series; an endpoint that derives from a discovered
+		// origin is checked again as each member is made
+		if o.ALBOptions.IsTSMGlobal() {
+			if err := t.validateTemplateSeriesSource(d.Query.Scheme); err != nil {
+				return NewErrGlobalEvaluationMember(o.Name, d.TemplateBackend, "", err)
+			}
+		}
 		// TSM-merged pools require members whose provider can be merged,
 		// and per-member replica groups (replica_group_label) are only
 		// meaningful -- and only accepted by backend initialization -- on
@@ -1056,11 +1065,25 @@ func (l Lookup) Keys() sets.Set[string] {
 	return out
 }
 
+// HasVolatileWindow reports whether the backend sets volatile_window, or the legacy backfill_tolerance, even
+// to zero; a window set in code counts unless it is zero.
+func (o *Options) HasVolatileWindow() bool {
+	return o != nil && (o.volatileDurationExplicit || o.VolatileWindow != 0)
+}
+
+// UsesCache reports whether the backend caches responses: every provider with an origin, and an ALB
+// whose time series merge evaluates globally.
+func (o *Options) UsesCache() bool {
+	if !providers.NonCacheBackends().Contains(o.Provider) {
+		return true
+	}
+	return o.Provider == providers.ALB && o.ALBOptions.IsTSMGlobal()
+}
+
 func (l Lookup) Initialize() error {
-	ncb := providers.NonCacheBackends()
 	for k, v := range l {
 		v.Name = k
-		if !ncb.Contains(v.Provider) && v.CacheName == "" {
+		if v.UsesCache() && v.CacheName == "" {
 			v.CacheName = DefaultBackendCacheName
 		}
 		if err := v.Initialize(k); err != nil {
@@ -1284,8 +1307,9 @@ func (k renamedKeys) apply(o *Options) {
 	}
 	o.stepAlignmentExplicit = k.StepAlignment != nil
 	o.fastForwardDisableExplicit = k.FastForwardDisable != nil
-	o.volatileWindowExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil ||
-		k.VolatileWindowPoints != nil || k.BackfillTolerancePoints != nil
+	o.volatileDurationExplicit = k.VolatileWindow != nil || k.BackfillTolerance != nil
+	o.volatileWindowExplicit = o.volatileDurationExplicit || k.VolatileWindowPoints != nil ||
+		k.BackfillTolerancePoints != nil
 }
 
 // NormalizeListenerNames merges the legacy binding and removes duplicate names.
@@ -1354,17 +1378,13 @@ func yamlNodeHasKey(node *yaml.Node, key string, visited map[*yaml.Node]bool) bo
 	return false
 }
 
-// ApplyProviderSizingDefaults sets max_object_size_bytes and
-// timeseries_retention_factor to the provider's defaults
-// (GetProviderDefaults) wherever the YAML did not name them itself. It is
-// part of configuration loading: UnmarshalYAML calls it once the file's
-// provider is known, and the config loader calls it again for a backend
-// whose provider arrives later from the -provider flag. It is deliberately
-// not part of Initialize, so an Options constructed in code — where these
-// flags are false but the builder's assignments are intentional — is never
-// re-defaulted.
+// ApplyProviderSizingDefaults sets max_object_size_bytes and timeseries_retention_factor to the provider's defaults, with a larger
+// object size for a TSM ALB, where the YAML named neither. Only loading calls it, never Initialize, so options built in code keep theirs.
 func (o *Options) ApplyProviderSizingDefaults() {
 	mos, trf := GetProviderDefaults(o.Provider)
+	if o.Provider == providers.ALB && o.ALBOptions.IsTSM() {
+		mos = DefaultTSMMaxObjectSizeBytes
+	}
 	if !o.sizeExplicit {
 		o.MaxObjectSizeBytes = mos
 	}
