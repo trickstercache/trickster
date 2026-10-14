@@ -538,6 +538,7 @@ func TestAllNoLeaksOnCtxCancel(t *testing.T) {
 func TestScatterReleasesUnwantedCaptures(t *testing.T) {
 	// a slot whose result no caller will be given has its capture released once it is done with it,
 	// and the others keep theirs
+	rc := countReleases(t)
 	targets := make(pool.Targets, 3)
 	for i := range targets {
 		body := fmt.Sprintf("slot-%d", i)
@@ -559,8 +560,7 @@ func TestScatterReleasesUnwantedCaptures(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Nil(t, results[1].Capture)
-	require.Empty(t, unwanted.Load().Body(), "the unwanted capture was not released")
-	require.Empty(t, unwanted.Load().Header())
+	require.Equal(t, 1, rc.of(unwanted.Load()), "the unwanted capture must be released once")
 	for _, i := range []int{0, 2} {
 		require.Equal(t, fmt.Sprintf("slot-%d", i), string(results[i].Capture.Body()))
 	}
