@@ -46,7 +46,7 @@ func TestRelayRejectsCloseAndPassesUnderLimit(t *testing.T) {
 	if got := roundTrip(t, addr, "one"); got != "echo:one" {
 		t.Fatalf("reply %q", got)
 	}
-	expectReset(t, dial(t, addr))
+	expectResetDialing(t, addr)
 
 	addr = start(New(opts(t, "relay-close", func(o *options.Options) {
 		o.Action = options.ActionClose
@@ -293,6 +293,21 @@ func expectReset(t *testing.T, conn net.Conn) {
 	if _, err := conn.Read(make([]byte, 1)); err == nil || !isReset(err) {
 		t.Fatalf("read %v, want a reset", err)
 	}
+}
+
+// expectResetDialing dials a server that resets on accept; the reset can reach the client before
+// its connect returns, when the dial reports it, or after, when the first read does
+func expectResetDialing(t *testing.T, addr string) {
+	t.Helper()
+	conn, err := net.DialTimeout("tcp", addr, time.Second)
+	if isReset(err) {
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	expectReset(t, conn)
 }
 
 func expectClose(t *testing.T, conn net.Conn) {

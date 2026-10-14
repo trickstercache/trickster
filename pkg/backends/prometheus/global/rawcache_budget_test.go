@@ -786,12 +786,16 @@ type lifetimeServer struct {
 	pods     map[string][2]int64
 	hold     chan struct{}
 	canceled atomic.Int64
+	// started and ended count the reads that reached the server, and those that have since returned
+	started, ended atomic.Int64
 }
 
 // source returns a member read from a server of its own, with the test source's identity
 func (l *lifetimeServer) source(t *testing.T) *RemoteRead {
 	t.Helper()
 	rr := newTestRemoteRead(t, func(w http.ResponseWriter, r *http.Request) {
+		l.started.Add(1)
+		defer l.ended.Add(1)
 		q := decodeTestRequest(t, r).Queries[0]
 		w.Header().Set(headers.NameContentType, limitTestStreamed)
 		for _, pod := range slices.Sorted(maps.Keys(l.pods)) {

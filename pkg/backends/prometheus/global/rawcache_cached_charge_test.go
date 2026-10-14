@@ -44,24 +44,22 @@ func TestRawCacheChargesReadSeriesBesidesCachedOnes(t *testing.T) {
 		pods   map[string][2]int64
 		cached [2]int64
 		maxt   int64
-		reads  int64
 		fits   bool
 	}{
 		"a read holding another series": {
 			pods: map[string][2]int64{"a": {0, block - 1}, "b": {block, rawTestEnd}}, cached: [2]int64{0, block - 1},
-			maxt: 2*block - 1, reads: 1,
+			maxt: 2*block - 1,
 		},
 		"reads around the cached range, one holding another series": {
 			pods:   map[string][2]int64{"a": {block, 2*block - 1}, "b": {2 * block, rawTestEnd}},
-			cached: [2]int64{block, 2*block - 1}, maxt: 3*block - 1, reads: 2,
+			cached: [2]int64{block, 2*block - 1}, maxt: 3*block - 1,
 		},
 		"a read holding the cached series": {
-			pods: map[string][2]int64{"a": {0, rawTestEnd}}, cached: [2]int64{0, block - 1}, maxt: 2*block - 1, reads: 1,
-			fits: true,
+			pods: map[string][2]int64{"a": {0, rawTestEnd}}, cached: [2]int64{0, block - 1}, maxt: 2*block - 1, fits: true,
 		},
 		"reads around the cached range holding the cached series": {
 			pods: map[string][2]int64{"a": {0, rawTestEnd}}, cached: [2]int64{block, 2*block - 1}, maxt: 3*block - 1,
-			reads: 2, fits: true,
+			fits: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -93,8 +91,12 @@ func TestRawCacheChargesReadSeriesBesidesCachedOnes(t *testing.T) {
 			}
 			require.ErrorIs(t, err, ErrFetchLimit)
 			require.Equal(t, int64(2), series)
-			require.Eventually(t, func() bool { return server.canceled.Load() == test.reads }, storeTestWait, time.Millisecond,
-				"every read was stopped before it ended")
+			// a read the select stopped before it reached the member is never seen, so every one that was is
+			// required to have ended, which, as the hold is never released, it does only once it is stopped
+			require.Eventually(t, func() bool {
+				started := server.started.Load()
+				return started > 0 && server.ended.Load() == started
+			}, storeTestWait, time.Millisecond, "every read that reached the member was stopped before it ended")
 		})
 	}
 }
