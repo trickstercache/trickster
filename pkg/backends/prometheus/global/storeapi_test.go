@@ -475,4 +475,15 @@ func TestStoreAPICompression(t *testing.T) {
 		require.Equal(t, []string{storeAPICompressor, ""}, store.takeCompressions())
 		require.False(t, source.uncompressed.Load())
 	})
+	for _, code := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Canceled} {
+		t.Run("failed retry/"+code.String(), func(t *testing.T) {
+			store := &testStore{rejectSnappy: true, err: status.Error(code, code.String())}
+			source := store.serve(t)
+			for range 2 {
+				require.Equal(t, code, status.Code(read(source)))
+				require.False(t, source.uncompressed.Load())
+				require.Equal(t, []string{storeAPICompressor, ""}, store.takeCompressions())
+			}
+		})
+	}
 }

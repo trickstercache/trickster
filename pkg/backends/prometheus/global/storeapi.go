@@ -146,7 +146,7 @@ func (s *StoreAPI) Select(ctx context.Context, mint, maxt int64, hints *storage.
 	if compress && status.Code(err) == codes.Unimplemented {
 		// a store without the compressor rejects the call before answering it, so it is made again without
 		series, warnings, err = s.series(ctx, req, mint, maxt, false)
-		if status.Code(err) != codes.Unimplemented {
+		if err == nil {
 			s.uncompressed.Store(true)
 		}
 	}
