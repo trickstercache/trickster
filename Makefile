@@ -34,7 +34,7 @@ BUMPER_FILE    := ./testdata/license_header_template.txt
 THIRD_PARTY_LICENSES_DIR  := $(BUILD_SUBDIR)/third-party-licenses
 # `go tool` compiles for GOOS/GOARCH, so a cross-build must point this at a host-built binary
 GO_LICENSES    ?= $(GO) tool go-licenses
-GOLANG_CI_LINT_VERSION ?= v2.13.1
+GOLANG_CI_LINT_VERSION ?= v2.14.0
 
 .PHONY: go-mod-vendor
 go-mod-vendor:
