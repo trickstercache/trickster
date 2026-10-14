@@ -647,7 +647,7 @@ backends:
     provider: alb
     max_query_range: 14d
     alb:
-      mechanism: tsm # time series merge
+      mechanism: tsm # or time_series_merge
       pool: 
         - prom01a
         - prom01b
@@ -707,7 +707,7 @@ backends:
   node-alb-fr:
     provider: alb
     alb:
-      mechanism: fr # first response
+      mechanism: fr # or first_response
       pool:
         - node01
         - node02
@@ -747,7 +747,7 @@ backends:
   node-alb-fgr:
     provider: alb
     alb:
-      mechanism: fgr # first good response
+      mechanism: fgr # or first_good_response
       pool:
         - node01
         - node02
@@ -784,7 +784,7 @@ backends:
   node-alb-nlm:
     provider: alb
     alb:
-      mechanism: nlm # newest last modified
+      mechanism: nlm # or newest_last_modified
       pool:
         - node01
         - node02
@@ -823,7 +823,7 @@ backends:
     provider: alb
     authenticator_name: dbUsers
     alb:
-      mechanism: ur # User Router Mechanism
+      mechanism: ur # or user_router
       user_router: # User Router-specific configs
         default_backend: readersBackend # optional - users not in the list will route here, origin will 401
         users:

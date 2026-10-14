@@ -56,7 +56,7 @@ import (
 
 const (
 	ShortName            = names.MechanismTSM
-	Name      types.Name = "time_series_merge"
+	Name      types.Name = names.MechanismTimeSeriesMerge
 )
 
 type handler struct {

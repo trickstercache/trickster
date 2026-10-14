@@ -55,9 +55,12 @@ func TestALBCacheRequirementAgrees(t *testing.T) {
 		"residual global block on rr":    {names.MechanismRR, tsmoptions.EvaluationGlobal, false, nil},
 		"global tsm without its cache":   {names.MechanismTSM, tsmoptions.EvaluationGlobal, true, nil},
 		"global tsm under its long name": {"tsmerge", tsmoptions.EvaluationGlobal, true, nil},
-		"merging tsm":                    {names.MechanismTSM, tsmoptions.EvaluationMerge, false, nil},
-		"typo in an active tsm block":    {names.MechanismTSM, typo, false, tsmoptions.ErrInvalidEvaluation},
-		"typo in an inactive tsm block":  {names.MechanismRR, typo, false, nil},
+		"global tsm under its registered long name": {
+			names.MechanismTimeSeriesMerge, tsmoptions.EvaluationGlobal, true, nil,
+		},
+		"merging tsm":                   {names.MechanismTSM, tsmoptions.EvaluationMerge, false, nil},
+		"typo in an active tsm block":   {names.MechanismTSM, typo, false, tsmoptions.ErrInvalidEvaluation},
+		"typo in an inactive tsm block": {names.MechanismRR, typo, false, nil},
 	} {
 		t.Run(name, func(t *testing.T) {
 			doc := strings.NewReplacer("MECHANISM", test.mechanism, "EVALUATION", test.evaluation).
@@ -119,4 +122,51 @@ func loadCacheTestConfig(t *testing.T, doc string) *config.Config {
 	c, err := config.Load([]string{"-config", path})
 	require.NoError(t, err)
 	return c
+}
+
+const longNameConfig = `
+backends:
+  prom:
+    provider: prometheus
+    origin_url: http://127.0.0.1:9090
+  lb:
+    provider: alb
+    alb:
+      mechanism: MECHANISM
+      pool: [{name: prom}]
+`
+
+func TestALBLongMechanismNames(t *testing.T) {
+	// an alb named by a mechanism's long name loads, validates and starts as one named by its short name
+	type outcome struct {
+		mechanism, outputFormat string
+		fgrCodes                bool
+		validate, routes        string
+	}
+	errString := func(err error) string {
+		if err == nil {
+			return ""
+		}
+		return err.Error()
+	}
+	run := func(mechanism string) outcome {
+		c := loadCacheTestConfig(t, strings.ReplaceAll(longNameConfig, "MECHANISM", mechanism))
+		o := c.Backends["lb"].ALBOptions
+		out := outcome{mechanism: o.MechanismName, outputFormat: o.OutputFormat, fgrCodes: o.FGRGoodCodes != nil}
+		out.validate = errString(Validate(c))
+		require.NoError(t, c.Process())
+		out.routes = errString(RoutesRulesAndPools(c, make(backends.Backends, len(c.Backends))))
+		return out
+	}
+	for long, short := range map[string]string{
+		names.MechanismTimeSeriesMerge: names.MechanismTSM, names.MechanismFirstGoodResponse: names.MechanismFGR,
+		names.MechanismFirstResponse: names.MechanismFR, names.MechanismNewestLastModified: names.MechanismNLM,
+		names.MechanismUserRouter: names.MechanismUR,
+	} {
+		t.Run(long, func(t *testing.T) {
+			want := run(short)
+			require.Equal(t, short, want.mechanism)
+			require.Equal(t, want, run(long))
+		})
+	}
 }

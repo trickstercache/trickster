@@ -32,7 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 )
 
-const URName types.Name = "user_router"
+const URName types.Name = names.MechanismUserRouter
 
 // UserRoute holds runtime state for one configured user mapping.
 type UserRoute = backends.RouteTarget

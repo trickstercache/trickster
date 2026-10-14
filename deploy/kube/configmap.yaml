@@ -1354,8 +1354,9 @@ data:
     #     alb:
     #       # mechanism defines the ALB pool member selection mechanism.
     #       # rr (round_robin), p2c (power_of_two_choices), lc (least_connections), lt (least_time)
-    #       # and hrw (highest_random_weight) select one pool member per request; fr, fgr, nlm and
-    #       # tsm fan each request out to the pool; ur routes by user. race (connect_race) and mirror
+    #       # and hrw (highest_random_weight) select one pool member per request; fr (first_response),
+    #       # fgr (first_good_response), nlm (newest_last_modified) and tsm (time_series_merge) fan each
+    #       # request out to the pool; ur (user_router) routes by user. race (connect_race) and mirror
     #       # (udp_mirror) serve only tcp/tls and udp stream listeners. See /docs/alb.md.
     #       # values are rr, fr, fgr, nlm, or tsm. see the docs for detailed descriptions of each
     #       # rr - standard round robin

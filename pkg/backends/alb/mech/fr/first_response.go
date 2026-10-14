@@ -33,8 +33,8 @@ import (
 )
 
 const (
-	FRName  types.Name = "first_response"
-	FGRName types.Name = "first_good_response"
+	FRName  types.Name = names.MechanismFirstResponse
+	FGRName types.Name = names.MechanismFirstGoodResponse
 )
 
 type handler struct {

@@ -26,9 +26,11 @@ import (
 	ao "github.com/trickstercache/trickster/v2/pkg/backends/alb/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/pool"
 	"github.com/trickstercache/trickster/v2/pkg/backends/healthcheck"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -113,6 +115,9 @@ func TestSpreadRoutesCountTheirMember(t *testing.T) {
 	u := FromBackend(newALB(t, "counted-alb", "race", up(m[0], 1), up(m[1], 1)))
 	f := clientFlow(l4.ProtocolTCP, "198.51.100.1:1000", "")
 	f.Listener = "spread-counts"
+	// the listener's counts start from zero, even when the test runs again in the same process
+	metrics.ProxyStreamMemberConnections.DeletePartialMatch(prometheus.Labels{keys.Listener_Name: f.Listener})
+	metrics.ProxyStreamMemberActiveConnections.DeletePartialMatch(prometheus.Labels{keys.Listener_Name: f.Listener})
 	count := func(member, result string) float64 {
 		return testutil.ToFloat64(metrics.ProxyStreamMemberConnections.WithLabelValues(f.Listener, f.Protocol, member, result))
 	}

@@ -35,9 +35,11 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/lb/rr"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -258,6 +260,8 @@ func stickyCount(t *testing.T, result string) float64 {
 func (f *fixture) stickyALB(t *testing.T, o *so.Options, names ...string) *alb.Client {
 	t.Helper()
 	name := t.Name()
+	// the ALB's counts start from zero, even when the test runs again in the same process
+	metrics.ALBStickyResults.DeletePartialMatch(prometheus.Labels{keys.ALB_Name: name})
 	t.Cleanup(func() { sticky.ForgetTablesExcept(func(n string, _ *sticky.Table) bool { return n != name }) })
 	return f.alb(t, name, &ao.Options{MechanismName: "rr", Pool: ao.Members(names...), Sticky: o})
 }

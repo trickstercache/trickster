@@ -27,9 +27,11 @@ import (
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/alb/sticky/options"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
+	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/secret"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
@@ -48,11 +50,17 @@ func persistence(t *testing.T, doc string) *HTTP {
 	o.Secret = secret.Secret(key)
 	require.NoError(t, o.Initialize())
 	require.NoError(t, o.Validate())
-	name := t.Name()
-	t.Cleanup(func() { ForgetTablesExcept(func(n string, _ *Table) bool { return n != name }) })
-	p, err := NewHTTP(name, o)
+	p, err := NewHTTP(testALB(t), o)
 	require.NoError(t, err)
 	return p
+}
+
+func testALB(t *testing.T) string {
+	// an ALB named for t, whose tables are forgotten once t ends, and whose counts start from zero when t runs again
+	name := t.Name()
+	metrics.ALBStickyResults.DeletePartialMatch(prometheus.Labels{keys.ALB_Name: name})
+	t.Cleanup(func() { ForgetTablesExcept(func(n string, _ *Table) bool { return n != name }) })
+	return name
 }
 
 func count(t *testing.T, result string) float64 {
