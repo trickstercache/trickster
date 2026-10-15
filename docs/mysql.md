@@ -603,6 +603,20 @@ The initial release does not claim support for:
 - arbitrary session-state caching or cross-session mutation invalidation; and
 - nested/mixed MySQL User Router topologies or origin credential remapping.
 
+### Streamed result metadata and FOUND_ROWS()
+
+Vitess does not expose the terminal status flags and warning count of a
+streamed result set. To preserve those fields for the downstream client,
+Trickster issues `SHOW COUNT(*) WARNINGS` on the same upstream connection
+after the stream ends. That diagnostic statement can update connection-local
+MySQL diagnostics, so `FOUND_ROWS()` immediately after a streamed result may
+reflect the hidden warning-count query rather than the client's previous
+statement.
+
+This is a known compatibility gap in the Vitess streaming API, not a
+Trickster-specific SQL parsing defect. A Vitess API that exposes terminal
+result metadata is required to remove the workaround.
+
 The executable SQL contract is
 [`pkg/backends/mysql/testdata/compatibility/v1.json`](../pkg/backends/mysql/testdata/compatibility/v1.json). The maintainer-facing frozen release matrix is in
 [`docs/developer/mysql-release-contract.md`](developer/mysql-release-contract.md).
