@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
 	"github.com/trickstercache/trickster/v2/pkg/observability/metrics"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -110,7 +111,7 @@ type Server struct {
 	listener net.Listener
 	sessions map[*session]struct{}
 	closing  bool
-	wg       sync.WaitGroup
+	wg       drain.Group
 }
 
 // NewServer returns a server ready to serve an existing net.Listener.
@@ -231,17 +232,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	for _, sess := range sessions {
 		sess.close()
 	}
-	done := make(chan struct{})
-	go func() {
-		s.wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
+	if !drain.Wait(ctx, &s.wg) {
 		return ctx.Err()
 	}
+	return nil
 }
 
 // UpdateSessionGate switches the gate that judges new sessions; admitted sessions are not judged again

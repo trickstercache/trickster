@@ -20,10 +20,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/request"
 
 	"github.com/klauspost/compress/snappy"
@@ -50,14 +51,7 @@ func decodeSnappyBlock(compressed []byte, maxDecoded int) ([]byte, error) {
 	if maxDecoded <= 0 {
 		maxDecoded = bo.DefaultMaxCaptureBytes
 	}
-	decodedLen, err := snappy.DecodedLen(compressed)
-	if err != nil {
-		return nil, err
-	}
-	if decodedLen > maxDecoded {
-		return nil, fmt.Errorf("%w: %d > %d", errBodyTooLarge, decodedLen, maxDecoded)
-	}
-	return snappy.Decode(nil, compressed)
+	return remoteread.DecodeSnappy(compressed, int64(maxDecoded), errBodyTooLarge)
 }
 
 func readSnappyBlock(reader io.Reader, maxDecoded int) ([]byte, error) {
@@ -68,16 +62,12 @@ func readSnappyBlock(reader io.Reader, maxDecoded int) ([]byte, error) {
 	if maxEncoded < 0 {
 		maxEncoded = maxDecoded
 	}
-	readLimit := int64(maxEncoded)
-	if readLimit < math.MaxInt64 {
-		readLimit++
+	compressed, err := tbytes.ReadBoundedBody(reader, maxEncoded, false)
+	if errors.Is(err, tbytes.ErrBodyTooLarge) {
+		return nil, fmt.Errorf("%w: compressed size exceeds %d", errBodyTooLarge, maxEncoded)
 	}
-	compressed, err := io.ReadAll(io.LimitReader(reader, readLimit))
 	if err != nil {
 		return nil, err
-	}
-	if len(compressed) > maxEncoded {
-		return nil, fmt.Errorf("%w: compressed size exceeds %d", errBodyTooLarge, maxEncoded)
 	}
 	return decodeSnappyBlock(compressed, maxDecoded)
 }

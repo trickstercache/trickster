@@ -88,16 +88,39 @@ func Wait(ctx context.Context, g *Group) bool {
 	if g.idle() {
 		return true
 	}
+	select {
+	case <-Done(&g.wg):
+		return true
+	case <-ctx.Done():
+		// work that ended as ctx did still counts as ended
+		return g.idle()
+	}
+}
+
+// Done returns a channel closed once wg's work ends; the goroutine that closes it exits only then.
+func Done(wg *sync.WaitGroup) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
-		g.wg.Wait()
+		wg.Wait()
 		close(done)
 	}()
+	return done
+}
+
+// WaitGroup waits for wg's work until ctx ends, reporting whether it ended first. Unlike Wait, it can't see work that ends
+// just as ctx does, so work that has to tell those apart counts itself with a Group.
+func WaitGroup(ctx context.Context, wg *sync.WaitGroup) bool {
+	done := Done(wg)
 	select {
 	case <-done:
 		return true
 	case <-ctx.Done():
 		// work that ended as ctx did still counts as ended
-		return g.idle()
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
 	}
 }

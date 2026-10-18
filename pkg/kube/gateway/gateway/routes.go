@@ -29,6 +29,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/methods"
 	reqmatching "github.com/trickstercache/trickster/v2/pkg/proxy/request/matching"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -85,7 +86,7 @@ func frontages(attachments []attachment) []*frontage {
 			continue
 		}
 		if !f.anyHost {
-			f.hostnames = translate.Unique(append(f.hostnames, a.hostnames...))
+			f.hostnames = tstrings.Unique(append(f.hostnames, a.hostnames...))
 		}
 	}
 	return out
@@ -682,7 +683,7 @@ func (t *translator) routeHostnames(src ir.Source, hr *gwapiv1.HTTPRoute) ([]str
 		}
 		out = append(out, n)
 	}
-	return translate.Unique(out), true
+	return tstrings.Unique(out), true
 }
 
 func (t *translator) candidates(src ir.Source, rank int, listener, host string,

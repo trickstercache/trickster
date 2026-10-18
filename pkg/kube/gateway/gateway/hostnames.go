@@ -19,14 +19,14 @@ package gateway
 import (
 	"strings"
 
-	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 )
 
 func intersectHostnames(listener string, route []string) ([]string, bool) {
 	// a wildcard covers any depth
 	if listener == "" {
-		return translate.Unique(route), true
+		return tstrings.Unique(route), true
 	}
 	if len(route) == 0 {
 		return []string{listener}, true
@@ -40,7 +40,7 @@ func intersectHostnames(listener string, route []string) ([]string, bool) {
 	if len(out) == 0 {
 		return nil, false
 	}
-	return translate.Unique(out), true
+	return tstrings.Unique(out), true
 }
 
 func intersect(listener, route string) (string, bool) {

@@ -22,13 +22,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
 	"sync/atomic"
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -153,17 +153,14 @@ func (b *Budget) responseLimit() int64 {
 	return b.MaxResponseBytes
 }
 
-// decodeLimit returns the most bytes the series kept from one response may take: decodeExpansion times its byte
+// decodeLimit returns the most bytes the series kept from one response may take: remoteread's expansion times its byte
 // limit, or the default capture limit's when it has none, so decoding is bounded even when fetching isn't
 func (b *Budget) decodeLimit() int64 {
 	limit := b.responseLimit()
 	if limit <= 0 {
 		limit = bo.DefaultMaxCaptureBytes
 	}
-	if limit > math.MaxInt64/decodeExpansion {
-		return math.MaxInt64
-	}
-	return decodeExpansion * limit
+	return remoteread.DecodeAllowance(limit)
 }
 
 type requestKey struct{}

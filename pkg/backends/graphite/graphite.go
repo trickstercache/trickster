@@ -19,7 +19,6 @@ package graphite
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -33,6 +32,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/backends/graphite/resolution"
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers/registry/types"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache"
 	"github.com/trickstercache/trickster/v2/pkg/cache/status"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
@@ -313,12 +313,11 @@ func configHash(g *gro.Options) string {
 func (c *Client) effectiveIdentityDigest() string {
 	c.identityOnce.Do(func() {
 		h := sha256.New()
-		var sizes [binary.MaxVarintLen64]byte
+		var buf []byte
 		writeStr := func(s string) {
 			// length-prefixed, so no content can shift an element boundary
-			n := binary.PutUvarint(sizes[:], uint64(len(s)))
-			h.Write(sizes[:n])
-			h.Write([]byte(s))
+			buf = tbytes.AppendLengthPrefixed(buf[:0], s)
+			h.Write(buf)
 		}
 		o := c.Configuration()
 		if o != nil {

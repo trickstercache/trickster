@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 )
 
 // ErrBodyTooLarge is returned by ReadBoundedBody when a whole-body read
@@ -57,7 +58,11 @@ func ReadBoundedBody(r io.Reader, max int, truncate bool) ([]byte, error) {
 	}
 	// read one byte past the limit, so that hitting it is distinguishable
 	// from a body that merely ends exactly at it
-	b, err := io.ReadAll(io.LimitReader(r, int64(max)+1))
+	limit := int64(max)
+	if limit < math.MaxInt64 {
+		limit++
+	}
+	b, err := io.ReadAll(io.LimitReader(r, limit))
 	if err != nil {
 		return nil, err
 	}

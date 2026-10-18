@@ -25,6 +25,7 @@ import (
 	"sync"
 	"unsafe"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/epoch"
 )
 
@@ -234,8 +235,7 @@ func (l *ColumnLog) addData(k Kind, raw []byte) {
 	}
 	ci := len(l.data) - 1
 	off := len(l.data[ci])
-	chunk := binary.AppendUvarint(l.data[ci], uint64(len(raw))) // #nosec G115 -- a length is never negative
-	l.data[ci] = append(chunk, raw...)
+	l.data[ci] = tbytes.AppendLengthPrefixed(l.data[ci], raw)
 	l.dataLen += len(raw)
 	l.addCell(k, uint64(ci)<<cellOffsetShift|uint64(off)) // #nosec G115 -- as above
 }

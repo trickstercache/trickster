@@ -21,6 +21,8 @@ import (
 	"slices"
 	"unsafe"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
+
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,9 +32,6 @@ import (
 )
 
 const (
-	// decodeExpansion is how many times a response's byte limit the series kept from it may take in memory, above what
-	// small chunks and short labels expand to
-	decodeExpansion = 4
 	// countQuantum is the most samples a decoder counts before adding them to its budget, which a shared read
 	// charges to each evaluation it is for
 	countQuantum = 4096
@@ -67,8 +66,8 @@ const (
 type decoder struct {
 	budget     *Budget
 	mint, maxt int64
-	// kind is the error a malformed response fails with
-	kind error
+	// Reader reads the response's messages, failing a malformed one with its Kind
+	remoteread.Reader
 	// limit is the most memory what's kept may take, of which allowance remains
 	limit, allowance int64
 	// series and samples are counted but not yet added to the budget, with ids, the label set hashes of those series
@@ -116,7 +115,7 @@ type scratchChunk struct {
 func newDecoder(budget *Budget, mint, maxt int64, kind error) *decoder {
 	limit := budget.decodeLimit()
 	return &decoder{
-		budget: budget, mint: mint, maxt: maxt, kind: kind, limit: limit, allowance: limit, identify: budget.identifies(),
+		budget: budget, mint: mint, maxt: maxt, Kind: kind, limit: limit, allowance: limit, identify: budget.identifies(),
 	}
 }
 
@@ -249,87 +248,17 @@ func (d *decoder) fresh() (bool, error) {
 	return true, nil
 }
 
-// wireField is one field of a protobuf message: its varint or fixed-size value, or its bytes when length-delimited
-type wireField struct {
-	num protowire.Number
-	typ protowire.Type
-	u   uint64
-	b   []byte
-}
-
-// field reads the field b starts with, returning the bytes after it; any length is checked against b's
-func (d *decoder) field(b []byte) (wireField, []byte, error) {
-	num, typ, n := protowire.ConsumeTag(b)
-	if n < 0 {
-		return wireField{}, nil, d.parseError(n)
-	}
-	b = b[n:]
-	f := wireField{num: num, typ: typ}
-	switch typ {
-	case protowire.VarintType:
-		f.u, n = protowire.ConsumeVarint(b)
-	case protowire.Fixed64Type:
-		f.u, n = protowire.ConsumeFixed64(b)
-	case protowire.BytesType:
-		f.b, n = protowire.ConsumeBytes(b)
-	default:
-		n = protowire.ConsumeFieldValue(num, typ, b)
-	}
-	if n < 0 {
-		return wireField{}, nil, d.parseError(n)
-	}
-	return f, b[n:], nil
-}
-
-func (d *decoder) parseError(n int) error {
-	return fmt.Errorf("%w: %w", d.kind, protowire.ParseError(n))
-}
-
-// expect refuses a field without the wire type its field number is declared with
-func (d *decoder) expect(f wireField, typ protowire.Type) error {
-	if f.typ == typ {
-		return nil
-	}
-	return fmt.Errorf("%w: field %d has wire type %d, not %d", d.kind, f.num, f.typ, typ)
-}
-
-// repeated returns how many values a repeated scalar field holds: one when it isn't packed, and is of wire type
-// typ, or as many varints, or fixed64 values when typ is that, as its packed bytes hold
-func (d *decoder) repeated(f wireField, typ protowire.Type) (int, error) {
-	if f.typ == typ {
-		return 1, nil
-	}
-	if err := d.expect(f, protowire.BytesType); err != nil {
-		return 0, err
-	}
-	if typ == protowire.Fixed64Type {
-		if len(f.b)%8 != 0 {
-			return 0, fmt.Errorf("%w: field %d packs %d bytes, not whole 8-byte values", d.kind, f.num, len(f.b))
-		}
-		return len(f.b) / 8, nil
-	}
-	var count int
-	for b := f.b; len(b) > 0; count++ {
-		_, n := protowire.ConsumeVarint(b)
-		if n < 0 {
-			return 0, d.parseError(n)
-		}
-		b = b[n:]
-	}
-	return count, nil
-}
-
 // readLabels adds the labels of a series message to the builder, sorted, returning the memory a label set of
 // them takes; StoreAPI's Series and remote read's ChunkedSeries and TimeSeries number their labels alike
 func (d *decoder) readLabels(b []byte) (int64, error) {
 	d.resetLabels()
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return 0, err
 		}
 		b = rest
-		if f.num != seriesLabels {
+		if f.Num != seriesLabels {
 			continue
 		}
 		if err := d.addLabel(f); err != nil {
@@ -348,11 +277,11 @@ func (d *decoder) resetLabels() {
 
 // addLabel adds a label field's name and value to the builder, which keeps a slot for each label of the series with
 // the most, each charged as it is first needed
-func (d *decoder) addLabel(f wireField) error {
-	if err := d.expect(f, protowire.BytesType); err != nil {
+func (d *decoder) addLabel(f remoteread.Field) error {
+	if err := d.Expect(f, protowire.BytesType); err != nil {
 		return err
 	}
-	name, value, err := d.label(f.b)
+	name, value, err := d.Label(f.B)
 	if err != nil {
 		return err
 	}
@@ -365,28 +294,6 @@ func (d *decoder) addLabel(f wireField) error {
 	d.builder.Add(labelString(name), labelString(value))
 	d.labelBytes += int64(len(name)+len(value)) + labelLengthBytes
 	return nil
-}
-
-// label reads a Label message's name and value
-func (d *decoder) label(b []byte) (name, value []byte, err error) {
-	for len(b) > 0 {
-		var f wireField
-		if f, b, err = d.field(b); err != nil {
-			return nil, nil, err
-		}
-		if f.num != labelName && f.num != labelValue {
-			continue
-		}
-		if err = d.expect(f, protowire.BytesType); err != nil {
-			return nil, nil, err
-		}
-		if f.num == labelName {
-			name = f.b
-		} else {
-			value = f.b
-		}
-	}
-	return name, value, nil
 }
 
 // labelString returns b as a string, sharing its memory when label sets copy what they are built from
@@ -424,15 +331,15 @@ func (d *decoder) chunkedSeries(b []byte, parse chunkParser) error {
 	}
 	for len(b) > 0 {
 		// readLabels read every field, so none fails to read here
-		f, rest, _ := d.field(b)
+		f, rest, _ := d.Field(b)
 		b = rest
-		if f.num != seriesChunks {
+		if f.Num != seriesChunks {
 			continue
 		}
-		if err := d.expect(f, protowire.BytesType); err != nil {
+		if err := d.Expect(f, protowire.BytesType); err != nil {
 			return err
 		}
-		c, err := parse(d, f.b)
+		c, err := parse(d, f.B)
 		if err != nil {
 			return err
 		}
@@ -497,7 +404,7 @@ func (d *decoder) within(c wireChunk) (n, laid int64, err error) {
 		}
 	}
 	if laid, err = histogramLayout(c.enc, c.data); err != nil {
-		return 0, 0, fmt.Errorf("%w: %w", d.kind, err)
+		return 0, 0, fmt.Errorf("%w: %w", d.Kind, err)
 	}
 	if inside {
 		return n, laid, nil
@@ -513,7 +420,7 @@ func (d *decoder) within(c wireChunk) (n, laid int64, err error) {
 		s.chk.Reset(c.data)
 	}
 	if n, s.it, err = readWithin(s.chk, d.mint, d.maxt, s.it); err != nil {
-		return 0, 0, fmt.Errorf("%w: %w", d.kind, err)
+		return 0, 0, fmt.Errorf("%w: %w", d.Kind, err)
 	}
 	return n, laid, nil
 }

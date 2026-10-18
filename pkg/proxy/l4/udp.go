@@ -25,6 +25,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 )
 
 // maxDatagram is the largest UDP payload a socket can carry.
@@ -160,7 +162,7 @@ type PacketServer struct {
 	queued  atomic.Int64
 	// resolved caches upstream host lookups, since many flows select one static upstream
 	resolved map[string]resolvedAddr
-	workers  sync.WaitGroup
+	workers  drain.Group
 }
 
 // resolvedAddr is one cached lookup
@@ -964,18 +966,11 @@ func (s *PacketServer) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	s.draining = true
 	s.mu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		s.workers.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		s.close()
-		return nil
-	case <-ctx.Done():
+	if !drain.Wait(ctx, &s.workers) {
 		return ctx.Err()
 	}
+	s.close()
+	return nil
 }
 
 // Close stops relaying and ends every flow.

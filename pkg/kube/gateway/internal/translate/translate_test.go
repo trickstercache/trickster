@@ -175,9 +175,7 @@ func TestHostname(t *testing.T) {
 	require.Error(t, err)
 }
 
-func TestUniqueAndCheckName(t *testing.T) {
-	require.Nil(t, Unique(nil))
-	require.Equal(t, []string{"a", "b"}, Unique([]string{"b", "a", "b"}))
+func TestCheckName(t *testing.T) {
 	require.NoError(t, CheckName(nil, "cache", "anything"))
 	require.NoError(t, CheckName(sets.New([]string{"x"}), "cache", ""))
 	require.NoError(t, CheckName(sets.New([]string{"x"}), "cache", "x"))

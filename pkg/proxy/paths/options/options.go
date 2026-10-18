@@ -18,7 +18,6 @@ package options
 
 import (
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"maps"
@@ -28,6 +27,7 @@ import (
 	"strings"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/providers"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/cache/key"
 	"github.com/trickstercache/trickster/v2/pkg/config/types"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
@@ -380,11 +380,10 @@ func (o *Options) computeIdentityKeyPart() string {
 		return ""
 	}
 	h := sha256.New()
-	var sizes [binary.MaxVarintLen64]byte
+	var buf []byte
 	writeStr := func(s string) {
-		n := binary.PutUvarint(sizes[:], uint64(len(s)))
-		h.Write(sizes[:n])
-		h.Write([]byte(s))
+		buf = tbytes.AppendLengthPrefixed(buf[:0], s)
+		h.Write(buf)
 	}
 	writeMap := func(class byte, m map[string]string) {
 		for _, k := range slices.Sorted(maps.Keys(m)) {

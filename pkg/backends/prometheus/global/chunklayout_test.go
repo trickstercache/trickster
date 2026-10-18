@@ -396,7 +396,7 @@ func TestDecoderRefusesHistogramLayoutsBeforeReading(t *testing.T) {
 	store := func(enc chunkenc.Encoding, data []byte, sp span) func(*decoder) error {
 		series := appendBytesField(nil, seriesChunks, spanned(encodeTestChunk(storeChunkTypes[enc], data, true), sp.mint, sp.maxt))
 		return func(d *decoder) error {
-			d.kind = errStoreAPI
+			d.Kind = errStoreAPI
 			return d.chunkedSeries(series, storeChunk)
 		}
 	}

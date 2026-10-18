@@ -24,6 +24,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/internal/translate"
 	"github.com/trickstercache/trickster/v2/pkg/kube/gateway/ir"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/hostnames"
+	tstrings "github.com/trickstercache/trickster/v2/pkg/util/strings"
 
 	corev1 "k8s.io/api/core/v1"
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -208,7 +209,7 @@ func (t *translator) streamRoute(rank int, in streamInput) {
 			}},
 		}
 		if !u.anyHost {
-			r.Hostnames = translate.Unique(u.hosts)
+			r.Hostnames = tstrings.Unique(u.hosts)
 		}
 		t.model.Routes = append(t.model.Routes, r)
 	}

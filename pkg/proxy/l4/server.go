@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/proxy/l4/options"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 )
 
 // Listener protocols served by this package.
@@ -125,7 +126,7 @@ type Server struct {
 	conns     map[net.Conn]struct{}
 	upstreams map[net.Conn]struct{}
 	closed    bool
-	workers   sync.WaitGroup
+	workers   drain.Group
 }
 
 // NewServer returns a server for a listener of the tcp or tls protocol.
@@ -417,17 +418,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	}
 	s.slot.Broadcast()
 	s.mu.Unlock()
-	done := make(chan struct{})
-	go func() {
-		s.workers.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
+	if !drain.Wait(ctx, &s.workers) {
 		return ctx.Err()
 	}
+	return nil
 }
 
 // Close stops accepting, ends every pending dial and closes both sides of every relay.
