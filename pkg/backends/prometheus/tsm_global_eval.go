@@ -386,8 +386,8 @@ func (e *globalEvaluator) serve(w http.ResponseWriter, r *http.Request, req back
 		status, errorType, err := e.failure(limitDecides(res.Err, limited.Load()))
 		return fail(status, errorType, err, warnings)
 	}
-	if partialResult && e.retired.Err() != nil {
-		// reads the retirement stopped are missing whether they saw the raw cache close or the evaluation end first
+	if e.retired.Err() != nil {
+		// Retirement can precede its cancellation callback, allowing the engine to finish successfully.
 		return fail(http.StatusServiceUnavailable, global.ErrorTypeUnavailable, errGlobalRetired, warnings)
 	}
 	value := res.Value
