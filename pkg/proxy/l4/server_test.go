@@ -358,6 +358,11 @@ func TestServerDrainsUnderLoad(t *testing.T) {
 	if err := <-drained; err != nil {
 		t.Errorf("Shutdown after the last connection closed = %v", err)
 	}
+	ended, cancelEnded := context.WithCancel(context.Background())
+	cancelEnded()
+	if err := srv.Shutdown(ended); err != nil {
+		t.Errorf("Shutdown with nothing left and an ended context = %v", err)
+	}
 	if err := srv.Serve(ln); !errors.Is(err, ErrServerClosed) {
 		t.Errorf("Serve after Shutdown = %v", err)
 	}

@@ -17,6 +17,7 @@
 package manager
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/observability/keys"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging"
 	"github.com/trickstercache/trickster/v2/pkg/observability/logging/logger"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 
 	"golang.org/x/sync/singleflight"
 )
@@ -261,14 +263,9 @@ func (cm *Manager) Close() error {
 	if timeout <= 0 {
 		timeout = DefaultCloseDrainHardTimeout
 	}
-	done := make(chan struct{})
-	go func() {
-		cm.inflight.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(timeout):
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	if !drain.WaitGroup(ctx, &cm.inflight) {
 		logger.Warn("cache close drain timed out, closing underlying client anyway",
 			logging.Pairs{
 				"cache":   cm.config.Name,

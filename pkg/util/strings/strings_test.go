@@ -54,9 +54,11 @@ func TestUnique(t *testing.T) {
 		t.Errorf("expected %s got %s", expected, after)
 	}
 
-	empty := Unique(nil)
-	if len(empty) != 0 {
-		t.Error("expected empty list")
+	if Unique(nil) != nil || Unique([]string{}) != nil {
+		t.Error("expected nil for an empty input")
+	}
+	if got := strings.Join(Unique([]string{"a", "a"}), ","); got != "a" {
+		t.Errorf("expected a got %s", got)
 	}
 }
 

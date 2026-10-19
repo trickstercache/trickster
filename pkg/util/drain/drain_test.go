@@ -132,3 +132,44 @@ func TestWaitWithNothingUnderWayAllocatesNothing(t *testing.T) {
 	cancel()
 	require.Zero(t, testing.AllocsPerRun(100, func() { Wait(ctx, &g) }))
 }
+
+func TestDone(t *testing.T) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	done := Done(&wg)
+	select {
+	case <-done:
+		t.Fatal("done before the work ended")
+	case <-time.After(20 * time.Millisecond):
+	}
+	wg.Done()
+	select {
+	case <-done:
+	case <-time.After(testWait):
+		t.Fatal("never done after the work ended")
+	}
+	var idle sync.WaitGroup
+	select {
+	case <-Done(&idle):
+	case <-time.After(testWait):
+		t.Fatal("never done with nothing under way")
+	}
+}
+
+func TestWaitGroup(t *testing.T) {
+	var wg sync.WaitGroup
+	require.True(t, WaitGroup(context.Background(), &wg), "nothing to wait for")
+	wg.Add(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	require.False(t, WaitGroup(ctx, &wg), "the work outlived the deadline")
+	ended := make(chan bool)
+	go func() { ended <- WaitGroup(context.Background(), &wg) }()
+	wg.Done()
+	select {
+	case ok := <-ended:
+		require.True(t, ok)
+	case <-time.After(testWait):
+		t.Fatal("the wait never ended")
+	}
+}

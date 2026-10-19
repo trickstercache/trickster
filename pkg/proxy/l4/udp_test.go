@@ -202,6 +202,11 @@ func TestPacketServerShutdown(t *testing.T) {
 	if err := <-done; !errors.Is(err, ErrServerClosed) {
 		t.Errorf("Serve returned %v", err)
 	}
+	finished, cancelFinished := context.WithCancel(context.Background())
+	cancelFinished()
+	if err := srv.Shutdown(finished); err != nil {
+		t.Errorf("Shutdown with nothing left and an ended context = %v", err)
+	}
 	if srv.ActiveSessions() != 0 {
 		t.Errorf("sessions after shutdown = %d", srv.ActiveSessions())
 	}

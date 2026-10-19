@@ -488,3 +488,26 @@ func TestEffectiveIdentityRotation(t *testing.T) {
 		t.Fatal("an unchanged identity must not bump the generation")
 	}
 }
+
+func TestEffectiveIdentityDigestGolden(t *testing.T) {
+	// the identity digest is part of every cache key, so its encoding must not change
+	o := bo.New()
+	o.Graphite = gro.New()
+	b, err := NewClient("golden", o, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := b.(*Client)
+	t.Cleanup(c.Close)
+	o.Paths = c.DefaultPathConfigs(o)
+	for _, pc := range o.Paths {
+		if pc.Path == "/render" {
+			pc.RequestHeaders = map[string]string{headers.NameAuthorization: "Bearer golden"}
+			pc.RefreshIdentityKeyPart()
+		}
+	}
+	const want = "f64bbd7ffb269ab0"
+	if got := c.effectiveIdentityDigest(); got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
+}

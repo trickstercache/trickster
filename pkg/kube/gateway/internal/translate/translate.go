@@ -251,16 +251,6 @@ func Hostname(h string, mode hostnames.Mode) (string, error) {
 	return n, err
 }
 
-// Unique returns a sorted copy without repeats, nil for an empty input
-func Unique(in []string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	out := slices.Clone(in)
-	slices.Sort(out)
-	return slices.Compact(out)
-}
-
 // CheckName reports whether the running configuration defines a named
 // object; a nil set accepts any name, and an empty name names nothing
 func CheckName(known sets.Set[string], kind, name string) error {

@@ -38,8 +38,11 @@ func Substring(s string, i int, length int) string {
 	return s[i : i+length]
 }
 
-// Unique returns a uniqueified version of the list
+// Unique returns a sorted copy without repeats, nil for an empty input
 func Unique(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
 	out := slices.Clone(in)
 	slices.Sort(out)
 	return slices.Compact(out)

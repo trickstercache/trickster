@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/config/reload"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 )
 
 // Wait blocks until ctx ends or SIGINT/SIGTERM arrives, then returns a channel
@@ -96,12 +97,7 @@ func (q *reloadQueue) run() {
 
 // done returns a channel closed once no reload is running or pending.
 func (q *reloadQueue) done() <-chan struct{} {
-	ch := make(chan struct{})
-	go func() {
-		q.wg.Wait()
-		close(ch)
-	}()
-	return ch
+	return drain.Done(&q.wg)
 }
 
 // DrainContext returns a context that ends when timeout elapses or when a

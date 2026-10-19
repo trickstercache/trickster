@@ -29,6 +29,7 @@ import (
 	"unsafe"
 
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -286,43 +287,43 @@ func appendInt64Field(b []byte, num protowire.Number, v int64) []byte {
 // seriesResponse reads one streamed SeriesResponse, keeping its series' chunks from mint to maxt and adding what they
 // count to the budget, or returning its warning. A message of more than one result is refused before any is decoded.
 func (d *decoder) seriesResponse(b []byte) (string, error) {
-	var result wireField
+	var result remoteread.Field
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return "", err
 		}
 		b = rest
-		if f.typ != protowire.BytesType {
-			return "", fmt.Errorf("%w: unexpected response field %d", errStoreAPI, f.num)
+		if f.Typ != protowire.BytesType {
+			return "", fmt.Errorf("%w: unexpected response field %d", errStoreAPI, f.Num)
 		}
-		switch f.num {
+		switch f.Num {
 		case seriesResponseSeries, seriesResponseWarning, seriesResponseHints:
 		default:
 			// an unknown kind of answer could hold series this client would silently drop
-			return "", fmt.Errorf("%w: unsupported response field %d", errStoreAPI, f.num)
+			return "", fmt.Errorf("%w: unsupported response field %d", errStoreAPI, f.Num)
 		}
 		// the result is a oneof that stores send one value of, so a second leaves which one is meant ambiguous
-		if result.num != 0 {
-			return "", fmt.Errorf("%w: response fields %d and %d are alternative results", errStoreAPI, result.num, f.num)
+		if result.Num != 0 {
+			return "", fmt.Errorf("%w: response fields %d and %d are alternative results", errStoreAPI, result.Num, f.Num)
 		}
 		result = f
 	}
-	switch result.num {
+	switch result.Num {
 	case seriesResponseSeries:
-		if err := d.chunkedSeries(result.b, storeChunk); err != nil {
+		if err := d.chunkedSeries(result.B, storeChunk); err != nil {
 			return "", err
 		}
 		return "", d.flush()
 	case seriesResponseWarning:
 		// an empty warning, like a message without a result, adds nothing
-		if len(result.b) == 0 {
+		if len(result.B) == 0 {
 			return "", nil
 		}
-		if err := d.charge(warningBytes + int64(len(result.b))); err != nil {
+		if err := d.charge(warningBytes + int64(len(result.B))); err != nil {
 			return "", err
 		}
-		return string(result.b), nil
+		return string(result.B), nil
 	}
 	return "", nil
 }
@@ -332,26 +333,26 @@ func storeChunk(d *decoder, b []byte) (wireChunk, error) {
 	var c wireChunk
 	var raw []byte
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return c, err
 		}
 		b = rest
-		switch f.num {
+		switch f.Num {
 		case aggrChunkMinTime, aggrChunkMaxTime:
-			if err := d.expect(f, protowire.VarintType); err != nil {
+			if err := d.Expect(f, protowire.VarintType); err != nil {
 				return c, err
 			}
-			if f.num == aggrChunkMinTime {
-				c.sp.mint = int64(f.u) //nolint:gosec // wire protocol reinterpret
+			if f.Num == aggrChunkMinTime {
+				c.sp.mint = int64(f.U) //nolint:gosec // wire protocol reinterpret
 			} else {
-				c.sp.maxt = int64(f.u) //nolint:gosec // wire protocol reinterpret
+				c.sp.maxt = int64(f.U) //nolint:gosec // wire protocol reinterpret
 			}
 		case aggrChunkRaw:
-			if err := d.expect(f, protowire.BytesType); err != nil {
+			if err := d.Expect(f, protowire.BytesType); err != nil {
 				return c, err
 			}
-			raw = f.b
+			raw = f.B
 		}
 	}
 	if raw == nil {
@@ -360,22 +361,22 @@ func storeChunk(d *decoder, b []byte) (wireChunk, error) {
 	// proto3 omits a zero type, so a chunk without one is XOR
 	typ := uint64(storeChunkXOR)
 	for len(raw) > 0 {
-		f, rest, err := d.field(raw)
+		f, rest, err := d.Field(raw)
 		if err != nil {
 			return c, err
 		}
 		raw = rest
-		switch f.num {
+		switch f.Num {
 		case chunkType:
-			if err := d.expect(f, protowire.VarintType); err != nil {
+			if err := d.Expect(f, protowire.VarintType); err != nil {
 				return c, err
 			}
-			typ = f.u
+			typ = f.U
 		case chunkData:
-			if err := d.expect(f, protowire.BytesType); err != nil {
+			if err := d.Expect(f, protowire.BytesType); err != nil {
 				return c, err
 			}
-			c.data = f.b
+			c.data = f.B
 		}
 	}
 	switch typ {

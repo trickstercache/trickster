@@ -159,7 +159,7 @@ var layoutDecodes = map[string]func(*testing.T, *decoder, []layoutSeries) error{
 		return d.chunkedReadResponse(chunkedFrame(t, chunked...))
 	},
 	layoutStoreAPI: func(_ *testing.T, d *decoder, series []layoutSeries) error {
-		d.kind = errStoreAPI
+		d.Kind = errStoreAPI
 		frames, _ := storeMessages(series)
 		for _, f := range frames {
 			if _, err := d.seriesResponse(f); err != nil {

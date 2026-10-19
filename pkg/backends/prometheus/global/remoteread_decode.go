@@ -17,10 +17,11 @@
 package global
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
+
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
@@ -31,12 +32,8 @@ import (
 // Prometheus remote-read field numbers: ReadResponse, QueryResult, TimeSeries, Sample, Histogram, BucketSpan,
 // ChunkedReadResponse and Chunk; ChunkedSeries and Label number theirs as StoreAPI's Series and Label do
 const (
-	readResponseResults     = 1
-	queryResultTimeseries   = 1
-	timeSeriesSamples       = 2
-	timeSeriesHistograms    = 4
-	sampleValue             = 1
-	sampleTimestamp         = 2
+	timeSeriesSamples       = remoteread.TimeSeriesSamples
+	timeSeriesHistograms    = remoteread.TimeSeriesHistograms
 	histogramCountInt       = 1
 	histogramCountFloat     = 2
 	histogramSum            = 3
@@ -60,11 +57,6 @@ const (
 	remoteChunkMaxTime      = 2
 	remoteChunkType         = 3
 	remoteChunkData         = 4
-	// sampleValueTag and sampleTimestampTag start a Sample's value, a fixed64, and its time, a varint, which the value's
-	// tag and eight bytes, sampleFixedBytes, precede as Prometheus writes them
-	sampleValueTag     = sampleValue<<3 | byte(protowire.Fixed64Type)
-	sampleTimestampTag = sampleTimestamp<<3 | byte(protowire.VarintType)
-	sampleFixedBytes   = 9
 	// floatKind and histogramKind are the kinds of sample in a series message, as an order error names them
 	floatKind     = 0
 	histogramKind = 1
@@ -80,18 +72,18 @@ var sampleKindNames = [...]string{floatKind: "float", histogramKind: "histogram"
 // is ignored, as a read asks one query
 func (d *decoder) chunkedReadResponse(b []byte) error {
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return err
 		}
 		b = rest
-		if f.num != chunkedResponseSeries {
+		if f.Num != chunkedResponseSeries {
 			continue
 		}
-		if err := d.expect(f, protowire.BytesType); err != nil {
+		if err := d.Expect(f, protowire.BytesType); err != nil {
 			return err
 		}
-		if err := d.chunkedSeries(f.b, remoteChunk); err != nil {
+		if err := d.chunkedSeries(f.B, remoteChunk); err != nil {
 			return err
 		}
 	}
@@ -103,29 +95,29 @@ func remoteChunk(d *decoder, b []byte) (wireChunk, error) {
 	var c wireChunk
 	var typ uint64
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return c, err
 		}
 		b = rest
-		switch f.num {
+		switch f.Num {
 		case remoteChunkMinTime, remoteChunkMaxTime, remoteChunkType:
-			if err := d.expect(f, protowire.VarintType); err != nil {
+			if err := d.Expect(f, protowire.VarintType); err != nil {
 				return c, err
 			}
-			switch f.num {
+			switch f.Num {
 			case remoteChunkMinTime:
-				c.sp.mint = int64(f.u) //nolint:gosec // wire protocol reinterpret
+				c.sp.mint = int64(f.U) //nolint:gosec // wire protocol reinterpret
 			case remoteChunkMaxTime:
-				c.sp.maxt = int64(f.u) //nolint:gosec // wire protocol reinterpret
+				c.sp.maxt = int64(f.U) //nolint:gosec // wire protocol reinterpret
 			default:
-				typ = f.u
+				typ = f.U
 			}
 		case remoteChunkData:
-			if err := d.expect(f, protowire.BytesType); err != nil {
+			if err := d.Expect(f, protowire.BytesType); err != nil {
 				return c, err
 			}
-			c.data = f.b
+			c.data = f.B
 		}
 	}
 	switch typ {
@@ -138,54 +130,20 @@ func remoteChunk(d *decoder, b []byte) (wireChunk, error) {
 	case uint64(prompb.Chunk_FLOAT_HISTOGRAM):
 		c.enc = chunkenc.EncFloatHistogram
 	default:
-		return c, fmt.Errorf("%w: unsupported chunk encoding %d", d.kind, typ)
+		return c, fmt.Errorf("%w: unsupported chunk encoding %d", d.Kind, typ)
 	}
 	if err := checkChunk(c.enc, c.data); err != nil {
-		return c, fmt.Errorf("%w: %w", d.kind, err)
+		return c, fmt.Errorf("%w: %w", d.Kind, err)
 	}
 	return c, nil
 }
 
 // readResponse reads a ReadResponse of samples, adding what it counts to the budget
 func (d *decoder) readResponse(b []byte) error {
-	for len(b) > 0 {
-		f, rest, err := d.field(b)
-		if err != nil {
-			return err
-		}
-		b = rest
-		if f.num != readResponseResults {
-			continue
-		}
-		if err := d.expect(f, protowire.BytesType); err != nil {
-			return err
-		}
-		if err := d.queryResult(f.b); err != nil {
-			return err
-		}
+	if _, err := d.Series(b, func(_ int, ts []byte) error { return d.timeSeries(ts) }); err != nil {
+		return err
 	}
 	return d.flush()
-}
-
-// queryResult reads a QueryResult's series of samples
-func (d *decoder) queryResult(b []byte) error {
-	for len(b) > 0 {
-		f, rest, err := d.field(b)
-		if err != nil {
-			return err
-		}
-		b = rest
-		if f.num != queryResultTimeseries {
-			continue
-		}
-		if err := d.expect(f, protowire.BytesType); err != nil {
-			return err
-		}
-		if err := d.timeSeries(f.b); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // sampleCursor walks one kind of sample in a TimeSeries message, floats or histograms, each kind in time order
@@ -204,22 +162,22 @@ type sampleCursor struct {
 func (d *decoder) next(c *sampleCursor) error {
 	c.ok = false
 	for len(c.rest) > 0 {
-		f, rest, err := d.field(c.rest)
+		f, rest, err := d.Field(c.rest)
 		if err != nil {
 			return err
 		}
 		c.rest = rest
-		if f.num != c.num {
+		if f.Num != c.num {
 			continue
 		}
-		if err := d.expect(f, protowire.BytesType); err != nil {
+		if err := d.Expect(f, protowire.BytesType); err != nil {
 			return err
 		}
 		if c.num == timeSeriesSamples {
-			c.t, c.f, err = d.sample(f.b)
+			c.t, c.f, err = d.Sample(f.B)
 		} else {
-			c.h = f.b
-			c.shape, err = d.histogramShape(f.b)
+			c.h = f.B
+			c.shape, err = d.histogramShape(f.B)
 			c.t = c.shape.t
 		}
 		c.ok = err == nil
@@ -241,12 +199,12 @@ func (d *decoder) timeSeries(b []byte) error {
 	// silently skip those after it; each kind's last time is its own local, so it stays in a register
 	lastFloat, lastHistogram := int64(math.MinInt64), int64(math.MinInt64)
 	for rest := b; len(rest) > 0; {
-		f, next, err := d.field(rest)
+		f, next, err := d.Field(rest)
 		if err != nil {
 			return err
 		}
 		rest = next
-		switch f.num {
+		switch f.Num {
 		case seriesLabels:
 			err = d.addLabel(f)
 		case timeSeriesSamples:
@@ -304,21 +262,21 @@ func (d *decoder) timeSeries(b []byte) error {
 }
 
 // sampleTime returns the time of a float or histogram sample field
-func (d *decoder) sampleTime(f wireField) (int64, error) {
-	if err := d.expect(f, protowire.BytesType); err != nil {
+func (d *decoder) sampleTime(f remoteread.Field) (int64, error) {
+	if err := d.Expect(f, protowire.BytesType); err != nil {
 		return 0, err
 	}
-	if f.num == timeSeriesSamples {
-		t, _, err := d.sample(f.b)
+	if f.Num == timeSeriesSamples {
+		t, _, err := d.Sample(f.B)
 		return t, err
 	}
-	s, err := d.histogramShape(f.b)
+	s, err := d.histogramShape(f.B)
 	return s.t, err
 }
 
 // orderError is the error a sample of kind at t fails a response with when one of its kind before it is at last
 func (d *decoder) orderError(kind int, t, last int64) error {
-	return fmt.Errorf("%w: %w: a %s sample at %d follows one at %d", d.kind, errSampleOrder, sampleKindNames[kind], t, last)
+	return fmt.Errorf("%w: %w: a %s sample at %d follows one at %d", d.Kind, errSampleOrder, sampleKindNames[kind], t, last)
 }
 
 // floatSamples appends to dst the float samples from mint to maxt of a series message the first pass read, in time
@@ -326,12 +284,12 @@ func (d *decoder) orderError(kind int, t, last int64) error {
 func (d *decoder) floatSamples(b []byte, dst []sample) []sample {
 	kept := int64(math.MinInt64)
 	for len(b) > 0 {
-		f, rest, _ := d.field(b)
+		f, rest, _ := d.Field(b)
 		b = rest
-		if f.num != timeSeriesSamples {
+		if f.Num != timeSeriesSamples {
 			continue
 		}
-		if t, v, _ := d.sample(f.b); d.inRange(t) && (t > kept || len(dst) == 0) {
+		if t, v, _ := d.Sample(f.B); d.inRange(t) && (t > kept || len(dst) == 0) {
 			dst, kept = append(dst, sample{t: t, f: v}), t
 		}
 	}
@@ -366,35 +324,6 @@ func (d *decoder) mergeSamples(b []byte, dst []sample) ([]sample, error) {
 	return dst, nil
 }
 
-// sample reads a Sample message's time and value
-func (d *decoder) sample(b []byte) (t int64, v float64, err error) {
-	// a sample written as Prometheus writes one, its value and then its time, is read directly
-	if len(b) > sampleFixedBytes && b[0] == sampleValueTag && b[sampleFixedBytes] == sampleTimestampTag {
-		if u, n := protowire.ConsumeVarint(b[sampleFixedBytes+1:]); n == len(b)-sampleFixedBytes-1 {
-			return int64(u), math.Float64frombits(binary.LittleEndian.Uint64(b[1:sampleFixedBytes])), nil //nolint:gosec // wire protocol reinterpret
-		}
-	}
-	for len(b) > 0 {
-		var f wireField
-		if f, b, err = d.field(b); err != nil {
-			return 0, 0, err
-		}
-		switch f.num {
-		case sampleValue:
-			if err = d.expect(f, protowire.Fixed64Type); err != nil {
-				return 0, 0, err
-			}
-			v = math.Float64frombits(f.u)
-		case sampleTimestamp:
-			if err = d.expect(f, protowire.VarintType); err != nil {
-				return 0, 0, err
-			}
-			t = int64(f.u) //nolint:gosec // wire protocol reinterpret
-		}
-	}
-	return t, v, nil
-}
-
 // histogramShape is what a first pass over a Histogram message finds: its time and schema, whether its counts are
 // floats, as the last of its count fields says, and how many spans, buckets and custom values it holds
 type histogramShape struct {
@@ -410,34 +339,34 @@ type histogramShape struct {
 func (d *decoder) histogramShape(b []byte) (histogramShape, error) {
 	var s histogramShape
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return s, err
 		}
 		b = rest
 		var n int
-		switch f.num {
+		switch f.Num {
 		case histogramCountInt, histogramZeroCountInt, histogramResetHint, histogramSchema, histogramTimestamp:
-			err = d.expect(f, protowire.VarintType)
+			err = d.Expect(f, protowire.VarintType)
 		case histogramCountFloat, histogramSum, histogramZeroThreshold, histogramZeroCountFloat:
-			err = d.expect(f, protowire.Fixed64Type)
+			err = d.Expect(f, protowire.Fixed64Type)
 		case histogramNegativeSpans, histogramPositiveSpans:
-			err = d.expect(f, protowire.BytesType)
+			err = d.Expect(f, protowire.BytesType)
 		case histogramNegativeDeltas, histogramPositiveDeltas:
-			n, err = d.repeated(f, protowire.VarintType)
+			n, err = d.Repeated(f, protowire.VarintType)
 		case histogramNegativeCounts, histogramPositiveCounts, histogramCustomValues:
-			n, err = d.repeated(f, protowire.Fixed64Type)
+			n, err = d.Repeated(f, protowire.Fixed64Type)
 		}
 		if err != nil {
 			return s, err
 		}
-		switch f.num {
+		switch f.Num {
 		case histogramCountInt, histogramCountFloat:
-			s.float = f.num == histogramCountFloat
+			s.float = f.Num == histogramCountFloat
 		case histogramSchema:
-			s.schema = zigzag32(f.u)
+			s.schema = zigzag32(f.U)
 		case histogramTimestamp:
-			s.t = int64(f.u) //nolint:gosec // wire protocol reinterpret
+			s.t = int64(f.U) //nolint:gosec // wire protocol reinterpret
 		case histogramNegativeSpans:
 			s.negSpans++
 		case histogramPositiveSpans:
@@ -461,7 +390,7 @@ func (d *decoder) histogramShape(b []byte) (histogramShape, error) {
 // finer than the engine reads is reduced, as a chunk's iterator reduces it; an unknown one, or a malformed bucket layout, fail.
 func (d *decoder) histogram(b []byte, s histogramShape) (*histogram.FloatHistogram, error) {
 	if !histogram.IsKnownSchema(s.schema) {
-		return nil, fmt.Errorf("%w: %w", d.kind, histogram.UnknownSchemaError(s.schema))
+		return nil, fmt.Errorf("%w: %w", d.Kind, histogram.UnknownSchemaError(s.schema))
 	}
 	negBuckets, posBuckets := s.negDeltas, s.posDeltas
 	if s.float {
@@ -493,25 +422,25 @@ func (d *decoder) histogram(b []byte, s histogramShape) (*histogram.FloatHistogr
 	var negCount, posCount float64
 	for len(b) > 0 {
 		// the shape's pass read every field
-		f, rest, _ := d.field(b)
+		f, rest, _ := d.Field(b)
 		b = rest
-		switch f.num {
+		switch f.Num {
 		case histogramCountInt, histogramCountFloat:
-			count = fieldValue{num: f.num, u: f.u}
+			count = fieldValue{num: f.Num, u: f.U}
 		case histogramZeroCountInt, histogramZeroCountFloat:
-			zeroCount = fieldValue{num: f.num, u: f.u}
+			zeroCount = fieldValue{num: f.Num, u: f.U}
 		case histogramSum:
-			fh.Sum = math.Float64frombits(f.u)
+			fh.Sum = math.Float64frombits(f.U)
 		case histogramZeroThreshold:
-			fh.ZeroThreshold = math.Float64frombits(f.u)
+			fh.ZeroThreshold = math.Float64frombits(f.U)
 		case histogramResetHint:
-			fh.CounterResetHint = histogram.CounterResetHint(f.u) //nolint:gosec // wire protocol reinterpret
+			fh.CounterResetHint = histogram.CounterResetHint(f.U) //nolint:gosec // wire protocol reinterpret
 		case histogramNegativeSpans, histogramPositiveSpans:
-			sp, err := d.bucketSpan(f.b)
+			sp, err := d.bucketSpan(f.B)
 			if err != nil {
 				return nil, err
 			}
-			if f.num == histogramNegativeSpans {
+			if f.Num == histogramNegativeSpans {
 				fh.NegativeSpans = append(fh.NegativeSpans, sp)
 			} else {
 				fh.PositiveSpans = append(fh.PositiveSpans, sp)
@@ -540,11 +469,11 @@ func (d *decoder) histogram(b []byte, s histogramShape) (*histogram.FloatHistogr
 	fh.Count = count.of(s.float, histogramCountFloat)
 	fh.ZeroCount = zeroCount.of(s.float, histogramZeroCountFloat)
 	if err := checkBucketLayout(fh); err != nil {
-		return nil, fmt.Errorf("%w: %w", d.kind, err)
+		return nil, fmt.Errorf("%w: %w", d.Kind, err)
 	}
 	if fh.Schema > histogram.ExponentialSchemaMax {
 		if err := fh.ReduceResolution(histogram.ExponentialSchemaMax); err != nil {
-			return nil, fmt.Errorf("%w: %w", d.kind, err)
+			return nil, fmt.Errorf("%w: %w", d.Kind, err)
 		}
 	}
 	return fh, nil
@@ -572,33 +501,33 @@ func (v fieldValue) of(float bool, floatNum protowire.Number) float64 {
 func (d *decoder) bucketSpan(b []byte) (histogram.Span, error) {
 	var sp histogram.Span
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return sp, err
 		}
 		b = rest
-		if f.num != bucketSpanOffset && f.num != bucketSpanLength {
+		if f.Num != bucketSpanOffset && f.Num != bucketSpanLength {
 			continue
 		}
-		if err := d.expect(f, protowire.VarintType); err != nil {
+		if err := d.Expect(f, protowire.VarintType); err != nil {
 			return sp, err
 		}
-		if f.num == bucketSpanOffset {
-			sp.Offset = zigzag32(f.u)
+		if f.Num == bucketSpanOffset {
+			sp.Offset = zigzag32(f.U)
 		} else {
-			sp.Length = uint32(f.u) //nolint:gosec // a uint32 field keeps its low 32 bits
+			sp.Length = uint32(f.U) //nolint:gosec // a uint32 field keeps its low 32 bits
 		}
 	}
 	return sp, nil
 }
 
 // appendDeltas appends to dst the bucket counts a repeated sint64 field of deltas holds, each added to the last
-func appendDeltas(dst []float64, f wireField, last float64) ([]float64, float64) {
-	if f.typ == protowire.VarintType {
-		last += float64(protowire.DecodeZigZag(f.u))
+func appendDeltas(dst []float64, f remoteread.Field, last float64) ([]float64, float64) {
+	if f.Typ == protowire.VarintType {
+		last += float64(protowire.DecodeZigZag(f.U))
 		return append(dst, last), last
 	}
-	for b := f.b; len(b) > 0; {
+	for b := f.B; len(b) > 0; {
 		v, n := protowire.ConsumeVarint(b)
 		if n <= 0 {
 			break
@@ -610,11 +539,11 @@ func appendDeltas(dst []float64, f wireField, last float64) ([]float64, float64)
 }
 
 // appendDoubles appends to dst the values a repeated double field holds
-func appendDoubles(dst []float64, f wireField) []float64 {
-	if f.typ == protowire.Fixed64Type {
-		return append(dst, math.Float64frombits(f.u))
+func appendDoubles(dst []float64, f remoteread.Field) []float64 {
+	if f.Typ == protowire.Fixed64Type {
+		return append(dst, math.Float64frombits(f.U))
 	}
-	for b := f.b; len(b) >= 8; b = b[8:] {
+	for b := f.B; len(b) >= 8; b = b[8:] {
 		v, _ := protowire.ConsumeFixed64(b)
 		dst = append(dst, math.Float64frombits(v))
 	}

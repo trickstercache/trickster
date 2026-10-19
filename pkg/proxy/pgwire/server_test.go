@@ -590,6 +590,9 @@ func TestServerLifecycle(t *testing.T) {
 	}
 	expired, expire := context.WithCancel(context.Background())
 	expire()
+	if err = server.Shutdown(expired); err != nil {
+		t.Fatalf("a drain with no sessions left reported %v", err)
+	}
 	server.wg.Add(1)
 	if err = server.Shutdown(expired); !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected the shutdown deadline to be reported, got %v", err)

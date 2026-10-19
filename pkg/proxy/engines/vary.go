@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 )
 
@@ -74,13 +75,9 @@ func varySecondaryKey(primary, generation string, names []string, h http.Header)
 	sum := sha256.New()
 	var buf []byte
 	sum.Write([]byte(generation))
-	writeStr := func(s string) {
-		buf = binary.AppendUvarint(buf[:0], uint64(len(s)))
-		buf = append(buf, s...)
-		sum.Write(buf)
-	}
 	for _, n := range names {
-		writeStr(n)
+		buf = tbytes.AppendLengthPrefixed(buf[:0], n)
+		sum.Write(buf)
 		vv, ok := h[n]
 		if !ok {
 			sum.Write([]byte{0})
@@ -90,7 +87,8 @@ func varySecondaryKey(primary, generation string, names []string, h http.Header)
 		buf = binary.AppendUvarint(buf[:0], uint64(len(vv)))
 		sum.Write(buf)
 		for _, v := range vv {
-			writeStr(v)
+			buf = tbytes.AppendLengthPrefixed(buf[:0], v)
+			sum.Write(buf)
 		}
 	}
 	return primary + ".v" + hex.EncodeToString(sum.Sum(nil))

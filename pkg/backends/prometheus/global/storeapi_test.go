@@ -99,19 +99,19 @@ func forEachField(b []byte, bytesField func(protowire.Number, []byte) error,
 ) error {
 	d := newDecoder(nil, 0, 0, errStoreAPI)
 	for len(b) > 0 {
-		f, rest, err := d.field(b)
+		f, rest, err := d.Field(b)
 		if err != nil {
 			return err
 		}
 		b = rest
-		switch f.typ {
+		switch f.Typ {
 		case protowire.BytesType:
-			if err := bytesField(f.num, f.b); err != nil {
+			if err := bytesField(f.Num, f.B); err != nil {
 				return err
 			}
 		case protowire.VarintType:
 			for _, fn := range varintField {
-				fn(f.num, f.u)
+				fn(f.Num, f.U)
 			}
 		}
 	}

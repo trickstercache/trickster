@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/trickstercache/trickster/v2/pkg/backends/clickhouse/native/server"
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/parsing/timeconv"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
@@ -356,7 +357,7 @@ func (o *nativeOut) add(row outputRow, layout *nativeSeries, i int) {
 		o.data = append(o.data, boolByte(seg.Bool(c, r)))
 	case o.kind == outString && kind == dataset.KindString:
 		o.present()
-		o.data = appendNativeString(o.data, seg.Bytes(c, r))
+		o.data = tbytes.AppendLengthPrefixed(o.data, seg.Bytes(c, r))
 	case o.kind == outLowCardinality && kind == dataset.KindString:
 		o.keys = append(o.keys, dictKey(o, seg.Bytes(c, r)))
 	case o.kind == outTime && kind == dataset.KindString:
@@ -392,7 +393,7 @@ func (o *nativeOut) addTag(layout *nativeSeries, i int) {
 		o.addNull()
 	case o.kind == outString:
 		o.present()
-		o.data = appendNativeString(o.data, s)
+		o.data = tbytes.AppendLengthPrefixed(o.data, s)
 	default:
 		// a series' tag has one key, found once
 		if layout.keys[i] == noKey {
@@ -440,11 +441,6 @@ func (o *nativeOut) appendWord(v uint64) {
 	}
 }
 
-// appendNativeString appends a String value: its length, then its bytes
-func appendNativeString[T ~string | ~[]byte](dst []byte, v T) []byte {
-	return append(binary.AppendUvarint(dst, uint64(len(v))), v...)
-}
-
 // dictKey returns the key of a value in the dictionary, adding the value in first-seen order
 func dictKey[T ~string | ~[]byte](o *nativeOut, v T) uint64 {
 	key := o.entries + o.dictDefaults()
@@ -453,7 +449,7 @@ func dictKey[T ~string | ~[]byte](o *nativeOut, v T) uint64 {
 	}
 	o.dict[string(v)] = key
 	o.entries++
-	o.data = appendNativeString(o.data, v)
+	o.data = tbytes.AppendLengthPrefixed(o.data, v)
 	return key
 }
 

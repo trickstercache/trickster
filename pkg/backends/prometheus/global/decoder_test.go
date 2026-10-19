@@ -31,6 +31,7 @@ import (
 	"time"
 
 	bo "github.com/trickstercache/trickster/v2/pkg/backends/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 
 	"github.com/klauspost/compress/snappy"
@@ -188,7 +189,7 @@ func TestDecoderManyEntriesTakeNoMemory(t *testing.T) {
 		// empty Sample messages are at time zero, before the range
 		ts := appendBytesField(nil, seriesLabels, nil)
 		ts = append(ts, bytes.Repeat(appendBytesField(nil, timeSeriesSamples, nil), n)...)
-		return appendBytesField(nil, readResponseResults, appendBytesField(nil, queryResultTimeseries, ts))
+		return appendBytesField(nil, remoteread.ReadResponseResults, appendBytesField(nil, remoteread.QueryResultTimeseries, ts))
 	}
 	shapes := map[string]struct {
 		message func(n int) []byte
@@ -199,8 +200,8 @@ func TestDecoderManyEntriesTakeNoMemory(t *testing.T) {
 			return bytes.Repeat(appendBytesField(nil, chunkedResponseSeries, nil), n)
 		}, decode: (*decoder).chunkedReadResponse},
 		"empty time series": {message: func(n int) []byte {
-			return appendBytesField(nil, readResponseResults,
-				bytes.Repeat(appendBytesField(nil, queryResultTimeseries, nil), n))
+			return appendBytesField(nil, remoteread.ReadResponseResults,
+				bytes.Repeat(appendBytesField(nil, remoteread.QueryResultTimeseries, nil), n))
 		}, decode: (*decoder).readResponse},
 		"empty samples": {message: emptySamples, decode: (*decoder).readResponse},
 	}
@@ -237,7 +238,7 @@ func TestDecoderAllowanceAppliesWithoutFetchLimits(t *testing.T) {
 		for i := range uint64(n) {
 			ts = appendBytesField(ts, timeSeriesHistograms, appendVarintField(nil, histogramTimestamp, decodeTestMint+i*step))
 		}
-		return appendBytesField(nil, readResponseResults, appendBytesField(nil, queryResultTimeseries, ts))
+		return appendBytesField(nil, remoteread.ReadResponseResults, appendBytesField(nil, remoteread.QueryResultTimeseries, ts))
 	}
 	tests := map[string]struct {
 		message []byte
@@ -288,9 +289,9 @@ func TestDecoderAllowanceBoundary(t *testing.T) {
 		require.Empty(t, d.out, "the chunk over the limit is never kept")
 	}
 
-	require.Equal(t, decodeExpansion*int64(bo.DefaultMaxCaptureBytes), (*Budget)(nil).decodeLimit())
-	require.Equal(t, decodeExpansion*int64(bo.DefaultMaxCaptureBytes), (&Budget{}).decodeLimit())
-	require.Equal(t, int64(decodeExpansion*1000), (&Budget{MaxResponseBytes: 1000}).decodeLimit())
+	require.Equal(t, remoteread.DecodeExpansion*int64(bo.DefaultMaxCaptureBytes), (*Budget)(nil).decodeLimit())
+	require.Equal(t, remoteread.DecodeExpansion*int64(bo.DefaultMaxCaptureBytes), (&Budget{}).decodeLimit())
+	require.Equal(t, int64(remoteread.DecodeExpansion*1000), (&Budget{MaxResponseBytes: 1000}).decodeLimit())
 	require.Equal(t, int64(math.MaxInt64), (&Budget{MaxResponseBytes: math.MaxInt64 - 1}).decodeLimit())
 }
 
@@ -552,7 +553,7 @@ func TestDecoderOversizedHistogram(t *testing.T) {
 	// a delta of zero packs into one byte, but takes eight as a bucket
 	h = appendBytesField(h, histogramPositiveDeltas, make([]byte, buckets))
 	ts := appendBytesField(appendBytesField(nil, seriesLabels, nil), timeSeriesHistograms, h)
-	data := appendBytesField(nil, readResponseResults, appendBytesField(nil, queryResultTimeseries, ts))
+	data := appendBytesField(nil, remoteread.ReadResponseResults, appendBytesField(nil, remoteread.QueryResultTimeseries, ts))
 	budget := &Budget{MaxResponseBytes: int64(len(data))}
 	require.Less(t, budget.decodeLimit(), int64(buckets)*bucketBytes)
 	_, allocated, err := decodeAllocs(t, func(d *decoder) error {
@@ -570,7 +571,7 @@ func TestDecoderMalformedWire(t *testing.T) {
 	}
 	xor := appendVarintField(appendVarintField(nil, remoteChunkType, uint64(prompb.Chunk_XOR)), remoteChunkMinTime, 110)
 	samples := func(ts []byte) []byte {
-		return appendBytesField(nil, readResponseResults, appendBytesField(nil, queryResultTimeseries, ts))
+		return appendBytesField(nil, remoteread.ReadResponseResults, appendBytesField(nil, remoteread.QueryResultTimeseries, ts))
 	}
 	inRange := appendVarintField(nil, histogramTimestamp, decodeTestMint)
 	hist := func(fields []byte) []byte {
@@ -601,17 +602,17 @@ func TestDecoderMalformedWire(t *testing.T) {
 		"chunk across the range, corrupt": {message: chunk(appendBytesField(appendVarintField(appendVarintField(
 			appendVarintField(nil, remoteChunkType, uint64(prompb.Chunk_XOR)), remoteChunkMinTime, 50), remoteChunkMaxTime, 150),
 			remoteChunkData, binary.BigEndian.AppendUint16(nil, 3)))},
-		"query result malformed": {message: appendBytesField(nil, readResponseResults, []byte{0x80}), decode: (*decoder).readResponse},
+		"query result malformed": {message: appendBytesField(nil, remoteread.ReadResponseResults, []byte{0x80}), decode: (*decoder).readResponse},
 		"time series malformed":  {message: samples([]byte{0x80}), decode: (*decoder).readResponse},
 		"sample malformed":       {message: samples(appendBytesField(nil, timeSeriesSamples, []byte{0x80})), decode: (*decoder).readResponse},
 		"histogram malformed":    {message: samples(appendBytesField(nil, timeSeriesHistograms, []byte{0x80})), decode: (*decoder).readResponse},
 		"sample label as varint": {message: samples(appendBytesField(appendVarintField(nil, seriesLabels, 1), timeSeriesSamples,
-			appendVarintField(nil, sampleTimestamp, decodeTestMint))), decode: (*decoder).readResponse},
-		"results as varint":         {message: appendVarintField(nil, readResponseResults, 1), decode: (*decoder).readResponse},
-		"time series as varint":     {message: appendBytesField(nil, readResponseResults, appendVarintField(nil, queryResultTimeseries, 1)), decode: (*decoder).readResponse},
+			appendVarintField(nil, remoteread.SampleTimestamp, decodeTestMint))), decode: (*decoder).readResponse},
+		"results as varint":         {message: appendVarintField(nil, remoteread.ReadResponseResults, 1), decode: (*decoder).readResponse},
+		"time series as varint":     {message: appendBytesField(nil, remoteread.ReadResponseResults, appendVarintField(nil, remoteread.QueryResultTimeseries, 1)), decode: (*decoder).readResponse},
 		"sample as varint":          {message: samples(appendVarintField(nil, timeSeriesSamples, 1)), decode: (*decoder).readResponse},
-		"sample value as varint":    {message: samples(appendBytesField(nil, timeSeriesSamples, appendVarintField(nil, sampleValue, 1))), decode: (*decoder).readResponse},
-		"sample time as fixed64":    {message: samples(appendBytesField(nil, timeSeriesSamples, appendFixed64Field(nil, sampleTimestamp, 1))), decode: (*decoder).readResponse},
+		"sample value as varint":    {message: samples(appendBytesField(nil, timeSeriesSamples, appendVarintField(nil, remoteread.SampleValue, 1))), decode: (*decoder).readResponse},
+		"sample time as fixed64":    {message: samples(appendBytesField(nil, timeSeriesSamples, appendFixed64Field(nil, remoteread.SampleTimestamp, 1))), decode: (*decoder).readResponse},
 		"histogram schema as fixed": {message: hist(appendFixed64Field(nil, histogramSchema, 1)), decode: (*decoder).readResponse},
 		"histogram sum as varint":   {message: hist(appendVarintField(nil, histogramSum, 1)), decode: (*decoder).readResponse},
 		"histogram spans as varint": {message: hist(appendVarintField(nil, histogramPositiveSpans, 1)), decode: (*decoder).readResponse},
@@ -667,8 +668,8 @@ func TestDecoderMalformedWire(t *testing.T) {
 		histogramPositiveSpans, sp)
 	h = appendBytesField(h, histogramPositiveDeltas, protowire.AppendVarint(nil, protowire.EncodeZigZag(1)))
 	ts := appendBytesField(appendBytesField(unknown, timeSeriesHistograms, h), timeSeriesSamples,
-		appendVarintField(appendFixed64Field(appendVarintField(nil, 3, 1), sampleValue, math.Float64bits(2)), sampleTimestamp, 110))
-	data := appendBytesField(unknown, readResponseResults, appendBytesField(unknown, queryResultTimeseries, ts))
+		appendVarintField(appendFixed64Field(appendVarintField(nil, 3, 1), remoteread.SampleValue, math.Float64bits(2)), remoteread.SampleTimestamp, 110))
+	data := appendBytesField(unknown, remoteread.ReadResponseResults, appendBytesField(unknown, remoteread.QueryResultTimeseries, ts))
 	d := newDecoder(nil, decodeTestMint, decodeTestMaxt, errRemoteRead)
 	require.NoError(t, d.readResponse(data))
 	require.Len(t, d.out, 1)
@@ -684,7 +685,7 @@ func marshalChunk(t *testing.T, c prompb.Chunk) []byte {
 
 func TestAppendDeltasStopsAtMalformedVarint(t *testing.T) {
 	packed := append(protowire.AppendVarint(nil, protowire.EncodeZigZag(2)), 0x80)
-	got, last := appendDeltas(nil, wireField{typ: protowire.BytesType, b: packed}, 1)
+	got, last := appendDeltas(nil, remoteread.Field{Typ: protowire.BytesType, B: packed}, 1)
 	require.Equal(t, []float64{3}, got)
 	require.InDelta(t, 3.0, last, 0)
 }

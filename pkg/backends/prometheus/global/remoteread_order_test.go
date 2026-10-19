@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries/merge"
 
@@ -133,7 +134,7 @@ func wireSeries(t *testing.T, fields ...any) []byte {
 			msg = appendBytesField(msg, timeSeriesHistograms, b)
 		}
 	}
-	return appendBytesField(nil, readResponseResults, appendBytesField(nil, queryResultTimeseries, msg))
+	return appendBytesField(nil, remoteread.ReadResponseResults, appendBytesField(nil, remoteread.QueryResultTimeseries, msg))
 }
 
 func TestDecoderSampleOrder(t *testing.T) {

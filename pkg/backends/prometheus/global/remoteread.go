@@ -30,6 +30,7 @@ import (
 	"strings"
 
 	prop "github.com/trickstercache/trickster/v2/pkg/backends/prometheus/options"
+	"github.com/trickstercache/trickster/v2/pkg/backends/prometheus/remoteread"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/headers"
 	po "github.com/trickstercache/trickster/v2/pkg/proxy/paths/options"
 
@@ -227,14 +228,10 @@ func decodeSamples(r io.Reader, budget *Budget, mint, maxt int64) ([]storage.Ser
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
 	}
-	size, err := snappy.DecodedLen(compressed)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
+	data, err := remoteread.DecodeSnappy(compressed, budget.responseLimit(), ErrFetchLimit)
+	if errors.Is(err, ErrFetchLimit) {
+		return nil, err
 	}
-	if limit := budget.responseLimit(); limit > 0 && int64(size) > limit {
-		return nil, fmt.Errorf("%w: response of %d bytes", ErrFetchLimit, size)
-	}
-	data, err := snappy.Decode(nil, compressed)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", errRemoteRead, err)
 	}

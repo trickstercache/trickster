@@ -23,7 +23,7 @@ import (
 
 // AppendLengthPrefixed appends v after its length as a uvarint, so a sequence of values appended this way can't
 // be read as another sequence of values.
-func AppendLengthPrefixed[T string | []byte](dst []byte, v T) []byte {
+func AppendLengthPrefixed[T ~string | ~[]byte](dst []byte, v T) []byte {
 	return append(binary.AppendUvarint(dst, uint64(len(v))), v...)
 }
 

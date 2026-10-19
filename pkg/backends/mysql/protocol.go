@@ -47,6 +47,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/proxy/clientip"
 	"github.com/trickstercache/trickster/v2/pkg/proxy/engines/nativedelta"
 	"github.com/trickstercache/trickster/v2/pkg/timeseries"
+	"github.com/trickstercache/trickster/v2/pkg/util/drain"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
@@ -889,7 +890,7 @@ type protocolHandler struct {
 	mtx             sync.Mutex
 	sessions        map[*vtmysql.Conn]*upstreamSession
 	controls        map[uint32]*phaseConn
-	wg              sync.WaitGroup
+	wg              drain.Group
 	closed          atomic.Bool
 	activeUpstreams atomic.Int64
 	delta           *nativedelta.Engine[*sqltypes.Result]
@@ -1967,20 +1968,13 @@ func (h *protocolHandler) shutdown(ctx context.Context) error {
 		downstream.Close()
 	}
 	h.mtx.Unlock()
-	done := make(chan struct{})
-	go func() {
-		h.wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
+	if drain.Wait(ctx, &h.wg) {
 		return nil
-	case <-ctx.Done():
-		h.mtx.Lock()
-		for downstream := range h.sessions {
-			downstream.Close()
-		}
-		h.mtx.Unlock()
-		return ctx.Err()
 	}
+	h.mtx.Lock()
+	for downstream := range h.sessions {
+		downstream.Close()
+	}
+	h.mtx.Unlock()
+	return ctx.Err()
 }

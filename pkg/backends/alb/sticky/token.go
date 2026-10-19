@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	tbytes "github.com/trickstercache/trickster/v2/pkg/bytes"
 	"github.com/trickstercache/trickster/v2/pkg/lb"
 	"github.com/trickstercache/trickster/v2/pkg/secret"
 )
@@ -96,8 +97,7 @@ func NewCodec(keys *secret.Keyring, albName string, ttl, idle time.Duration) (*C
 		return nil, err
 	}
 	// the tag covers the ALB's name, length first, so that another ALB's token is not honored
-	bound := binary.AppendUvarint(nil, uint64(len(albName)))
-	c := &Codec{signer: s, bound: append(bound, albName...), ttl: seconds(ttl), idle: seconds(idle)}
+	c := &Codec{signer: s, bound: tbytes.AppendLengthPrefixed(nil, albName), ttl: seconds(ttl), idle: seconds(idle)}
 	c.bufs.New = func() any { return new(buffers) }
 	return c, nil
 }
