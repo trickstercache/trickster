@@ -443,6 +443,38 @@ func TestGlobalEvaluatorRetireWakesSlotWaiters(t *testing.T) {
 	}
 }
 
+func TestGlobalEvaluatorRetirementBeforeCancellationRejectsCompleteResult(t *testing.T) {
+	members, _ := presenceStorages(t, presenceTopologies[0])
+	source := stubbornSource{
+		store: members[0].(presenceStore),
+		held:  make(chan struct{}, 1), release: make(chan struct{}),
+	}
+	release := sync.OnceFunc(func() { close(source.release) })
+	t.Cleanup(release)
+	req := backends.TSMGlobalRequest{Members: []backends.TSMGlobalMember{{Name: "stubborn", Source: source}}}
+	e := newGlobalEvaluator(globalTestSettings())
+	answered := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		answered <- serveGlobal(e, globalTestRequest(globalTestQueryPath,
+			url.Values{upQuery: {globalTestQuery}, upTime: {globalTestSeconds(10)}}), req)
+	}()
+	<-source.held
+	// Expose retirement without canceling the query, as when its cancellation callback has not run yet.
+	retired, cancel := context.WithCancel(context.Background())
+	cancel()
+	e.retired = retired
+	release()
+	select {
+	case w := <-answered:
+		require.Equal(t, http.StatusServiceUnavailable, w.Code, w.Body.String())
+		require.Contains(t, w.Body.String(), errGlobalRetired.Error())
+		require.Equal(t, headers.ValueNoStore, w.Header().Get(headers.NameCacheControl))
+		require.Empty(t, w.Header().Get(headers.NameTricksterResult))
+	case <-time.After(retireTestWait):
+		t.Fatal("the evaluation never ended")
+	}
+}
+
 func TestGlobalEvaluatorRetirementEndsAPartialEvaluation(t *testing.T) {
 	members, _ := presenceStorages(t, presenceTopologies[0])
 	var req backends.TSMGlobalRequest
