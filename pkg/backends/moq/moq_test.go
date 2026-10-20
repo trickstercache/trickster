@@ -75,10 +75,11 @@ func recv[T any](t *testing.T, ch <-chan T, what string) T {
 }
 
 type origin struct {
-	addr string
-	mu   sync.Mutex
-	subs []*session.Request
-	seen chan *message.Setup
+	addr     string
+	mu       sync.Mutex
+	subs     []*session.Request
+	seen     chan *message.Setup
+	sessions chan *session.Session
 }
 
 func (o *origin) HandleRequest(r *session.Request) {
@@ -133,7 +134,7 @@ func startOrigin(t *testing.T) *origin {
 	if err != nil {
 		t.Fatal(err)
 	}
-	o := &origin{addr: ln.Addr().String(), seen: make(chan *message.Setup, 8)}
+	o := &origin{addr: ln.Addr().String(), seen: make(chan *message.Setup, 8), sessions: make(chan *session.Session, 8)}
 	t.Cleanup(func() { _ = ln.Close() })
 	go func() {
 		for {
@@ -146,7 +147,14 @@ func startOrigin(t *testing.T) *origin {
 				Role: session.RoleServer, Codec: c, Handler: o,
 				OnSetup: func(_ *session.Session, m *message.Setup) error { o.seen <- m; return nil },
 			})
-			go func() { _ = s.Start(context.Background()) }()
+			go func() {
+				if s.Start(context.Background()) == nil {
+					select {
+					case o.sessions <- s:
+					default:
+					}
+				}
+			}()
 		}
 	}()
 	return o
@@ -595,5 +603,55 @@ func TestAccessCommittedOnReload(t *testing.T) {
 	o.MoQ.Authorization.Mode, o.MoQ.Authorization.TokenFile = mo.AuthorizationToken, "/nonexistent/tokens"
 	if _, err = NewClient("badtokens", o, nil, nil, nil, nil); err == nil {
 		t.Error("an unreadable token file fails the backend")
+	}
+}
+
+type nsWatch struct {
+	got chan message.Message
+}
+
+func (w *nsWatch) HandleMessage(_ *session.Request, m message.Message) { w.got <- m }
+func (w *nsWatch) HandleClose(*session.Request, error)                 {}
+
+func TestOriginPublishesNamespaces(t *testing.T) {
+	org := startOrigin(t)
+	client := newBackend(t, "origin-ns", "moqt://"+org.addr+"/live")
+	st := startListener(t, mo.NewListener(), client)
+	s, err := dial(t, st.addr, "relay.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &nsWatch{got: make(chan message.Message, 8)}
+	req, err := s.Open(context.Background(), &message.SubscribeNamespace{Prefix: wire.Namespace{[]byte("live")}}, w, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := req.Response(context.Background()); err != nil || m.Kind() != message.KindRequestOK {
+		t.Fatalf("SUBSCRIBE_NAMESPACE answered %v %v", m, err)
+	}
+	// the listener makes the relay dial the origin, which publishes its namespaces on that session
+	up := recv(t, org.sessions, "the relay's upstream session")
+	ann, err := up.Open(context.Background(), &message.PublishNamespace{Prefix: wire.Namespace{[]byte("live"), []byte("a")}},
+		nopHandler{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := ann.Response(context.Background()); err != nil || m.Kind() != message.KindRequestOK {
+		t.Fatalf("PUBLISH_NAMESPACE answered %v %v", m, err)
+	}
+	if n, ok := recv(t, w.got, "NAMESPACE").(*message.Namespace); !ok || string(n.Suffix[0]) != "a" {
+		t.Fatalf("got %+v", n)
+	}
+	// other requests from the origin are refused
+	other, err := up.Open(context.Background(), &message.SubscribeNamespace{}, nopHandler{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m, err := other.Response(context.Background()); err != nil || m.Kind() != message.KindRequestError {
+		t.Errorf("the origin's SUBSCRIBE_NAMESPACE answered %v %v", m, err)
+	}
+	ann.Cancel(message.ResetCancelled)
+	if d, ok := recv(t, w.got, "NAMESPACE_DONE").(*message.NamespaceDone); !ok || string(d.Suffix[0]) != "a" {
+		t.Fatalf("got %+v", d)
 	}
 }

@@ -129,6 +129,9 @@ type origin struct {
 	hold       chan struct{}
 	fetchHold  chan struct{}
 	markGaps   bool
+	// namespaces, when set, receives each accepted SUBSCRIBE_NAMESPACE; unset, they are refused
+	namespaces chan *session.Request
+	nsAsks     atomic.Int32
 }
 
 func newOrigin() *origin {
@@ -249,6 +252,15 @@ func (o *origin) HandleRequest(r *session.Request) {
 		o.fetch(r, m)
 	case *message.TrackStatus:
 		o.status(r, m)
+	case *message.SubscribeNamespace:
+		o.nsAsks.Add(1)
+		r.SetHandlers(&originReq{o: o}, nil)
+		if o.namespaces == nil {
+			_ = r.Reject(message.RequestNotSupported, "", 0)
+			return
+		}
+		_ = r.Send(&message.RequestOK{})
+		o.namespaces <- r
 	default:
 		r.SetHandlers(&originReq{o: o}, nil)
 		_ = r.Reject(message.RequestNotSupported, "", 0)

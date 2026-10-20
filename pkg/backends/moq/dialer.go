@@ -31,6 +31,7 @@ import (
 	"github.com/trickstercache/trickster/v2/pkg/moq/message"
 	"github.com/trickstercache/trickster/v2/pkg/moq/relay"
 	"github.com/trickstercache/trickster/v2/pkg/moq/session"
+	"github.com/trickstercache/trickster/v2/pkg/moq/wire"
 
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -47,6 +48,7 @@ const (
 	upstreamIdle      = time.Minute
 	upstreamKeepAlive = 15 * time.Second
 	dialTimeout       = 10 * time.Second
+	reasonNotServed   = "requests are not served"
 )
 
 var (
@@ -60,6 +62,7 @@ type dialer struct {
 	transport    *webtransport.Transport
 	webTransport bool
 	setup        message.Setup
+	namespaces   namespaceRecorder
 
 	mu      sync.Mutex
 	sess    *session.Session
@@ -68,7 +71,14 @@ type dialer struct {
 	closed  bool
 }
 
-var _ relay.Upstream = (*dialer)(nil)
+var (
+	_ relay.Upstream  = (*dialer)(nil)
+	_ session.Handler = (*dialer)(nil)
+)
+
+type namespaceRecorder interface {
+	OriginNamespace(ns wire.Namespace) (withdraw func())
+}
 
 func newDialer(origin *url.URL, base *tls.Config, drafts []int, defaultDraft int,
 	implementation string,
@@ -227,7 +237,7 @@ func (d *dialer) dial(ctx context.Context) (*session.Session, error) {
 		return nil, err
 	}
 	s, err := session.New(conn, session.Options{
-		Role: session.RoleClient, Codec: c, Setup: d.setup, WebTransport: d.webTransport,
+		Role: session.RoleClient, Codec: c, Setup: d.setup, WebTransport: d.webTransport, Handler: d,
 	})
 	if err != nil {
 		_ = conn.CloseWithError(uint64(message.CodeInternalError), "")
@@ -238,6 +248,30 @@ func (d *dialer) dial(ctx context.Context) (*session.Session, error) {
 	}
 	return s, nil
 }
+
+func (d *dialer) HandleRequest(r *session.Request) {
+	// the origin may publish the namespaces it serves on a session the relay dialed (§7.6); it is sent nothing
+	// else, and asks for nothing else that is served
+	m, ok := r.Message().(*message.PublishNamespace)
+	if !ok || d.namespaces == nil {
+		_ = r.Reject(message.RequestNotSupported, reasonNotServed, 0)
+		return
+	}
+	withdraw := d.namespaces.OriginNamespace(m.Prefix)
+	r.SetHandlers(originNamespace{withdraw: withdraw}, nil)
+	if r.Send(&message.RequestOK{}) != nil || r.Context().Err() != nil {
+		withdraw()
+	}
+}
+
+func (d *dialer) HandleGoAway(*session.Session, *message.GoAway) {}
+
+type originNamespace struct {
+	withdraw func()
+}
+
+func (o originNamespace) HandleMessage(*session.Request, message.Message) {}
+func (o originNamespace) HandleClose(*session.Request, error)             { o.withdraw() }
 
 func (d *dialer) probe(ctx context.Context) error {
 	// a fresh session that completes SETUP shows the origin is serving

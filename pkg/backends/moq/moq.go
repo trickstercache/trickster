@@ -130,6 +130,10 @@ func NewClient(name string, o *bo.Options, router http.Handler, c cache.Cache, _
 			MaxGapFetches: m.Upstream.MaxGapFetches, ReconnectBackoff: time.Duration(m.Upstream.ReconnectBackoff),
 			Metrics: relayMetrics(name),
 		}, up, sh)
+		if sh.dialer != nil {
+			// set before the dialer's first session, so every namespace the origin publishes reaches the relay
+			sh.dialer.namespaces = sh.relay
+		}
 		// a relay that outlives a reload takes the new policy when the reload commits, in RetireClients
 		sh.relay.SetAccess(cl.access)
 		return sh, nil

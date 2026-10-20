@@ -30,13 +30,21 @@ type namespaces struct {
 	pubs      []*nsPublisher
 	listeners []*nsListener
 	trackers  []*trackListener
+	upstreams map[string]*nsUpstream
 }
 
+// nsPublisher is one registration of a namespace: by a publisher's session, or by the origin when sess is nil;
+// one the origin published on an upstream session covers every scope
 type nsPublisher struct {
-	scope  Scope
-	prefix wire.Namespace
-	key    string
-	sess   *session.Session
+	scope    Scope
+	prefix   wire.Namespace
+	key      string
+	sess     *session.Session
+	anyScope bool
+}
+
+func (p *nsPublisher) inScope(scope Scope) bool {
+	return p.anyScope || p.scope == scope
 }
 
 type nsEvent struct {
@@ -48,6 +56,7 @@ type nsListener struct {
 	scope  Scope
 	prefix wire.Namespace
 	req    *session.Request
+	up     *nsUpstream
 
 	mu      sync.Mutex
 	events  []nsEvent
@@ -65,16 +74,16 @@ func (r *Relay) publishersFor(scope Scope, ns wire.Namespace) []*session.Session
 	defer r.ns.mu.Unlock()
 	var out []*session.Session
 	for _, p := range slices.Backward(r.ns.pubs) {
-		if p.scope == scope && ns.HasPrefix(p.prefix) && !slices.Contains(out, p.sess) {
+		if p.sess != nil && p.scope == scope && ns.HasPrefix(p.prefix) && !slices.Contains(out, p.sess) {
 			out = append(out, p.sess)
 		}
 	}
 	return out
 }
 
-func (n *namespaces) knownLocked(scope Scope, key string, except *nsPublisher) bool {
+func (n *namespaces) knownLocked(scope Scope, key string) bool {
 	for _, p := range n.pubs {
-		if p != except && p.scope == scope && p.key == key {
+		if p.inScope(scope) && p.key == key {
 			return true
 		}
 	}
@@ -86,15 +95,16 @@ func (r *Relay) addNamespacePublisher(p *nsPublisher) {
 	// track under it subscribes to its publisher (§7.6)
 	n := &r.ns
 	n.mu.Lock()
-	if !n.knownLocked(p.scope, p.key, nil) {
-		for _, l := range n.listeners {
-			if l.scope == p.scope && p.prefix.HasPrefix(l.prefix) {
-				l.push(nsEvent{suffix: p.prefix[len(l.prefix):]})
-			}
+	for _, l := range n.listeners {
+		if p.inScope(l.scope) && p.prefix.HasPrefix(l.prefix) && !n.knownLocked(l.scope, p.key) {
+			l.push(nsEvent{suffix: p.prefix[len(l.prefix):]})
 		}
 	}
 	n.pubs = append(n.pubs, p)
 	n.mu.Unlock()
+	if p.sess == nil {
+		return
+	}
 	r.tracks.each(func(t *track) {
 		if t.scope == p.scope && t.name.Namespace.HasPrefix(p.prefix) {
 			t.publisherArrived(p.sess)
@@ -112,11 +122,8 @@ func (r *Relay) removeNamespacePublisher(p *nsPublisher) {
 		return
 	}
 	n.pubs = slices.Delete(n.pubs, i, i+1)
-	if n.knownLocked(p.scope, p.key, nil) {
-		return
-	}
 	for _, l := range n.listeners {
-		if l.scope == p.scope && p.prefix.HasPrefix(l.prefix) {
+		if p.inScope(l.scope) && p.prefix.HasPrefix(l.prefix) && !n.knownLocked(l.scope, p.key) {
 			l.push(nsEvent{suffix: p.prefix[len(l.prefix):], done: true})
 		}
 	}
@@ -129,7 +136,7 @@ func (r *Relay) addNamespaceListener(l *nsListener) {
 	n.mu.Lock()
 	seen := make(map[string]struct{})
 	for _, p := range n.pubs {
-		if p.scope != l.scope || !p.prefix.HasPrefix(l.prefix) {
+		if !p.inScope(l.scope) || !p.prefix.HasPrefix(l.prefix) {
 			continue
 		}
 		if _, dup := seen[p.key]; dup {
@@ -139,6 +146,9 @@ func (r *Relay) addNamespaceListener(l *nsListener) {
 		l.push(nsEvent{suffix: p.prefix[len(l.prefix):]})
 	}
 	n.listeners = append(n.listeners, l)
+	if r.up != nil {
+		l.up = r.acquireUpstreamLocked(l.scope, l.prefix)
+	}
 	n.mu.Unlock()
 }
 
@@ -147,6 +157,10 @@ func (r *Relay) removeNamespaceListener(l *nsListener) {
 	n.mu.Lock()
 	if i := slices.Index(n.listeners, l); i >= 0 {
 		n.listeners = slices.Delete(n.listeners, i, i+1)
+		if l.up != nil {
+			r.releaseUpstreamLocked(l.up)
+			l.up = nil
+		}
 	}
 	n.mu.Unlock()
 	l.mu.Lock()

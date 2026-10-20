@@ -237,7 +237,18 @@ the track. The relay never pauses a publisher, so an ingest backend's cache keep
 published.
 
 `SUBSCRIBE_NAMESPACE` is answered with the namespaces publishers announced, and kept current as
-they come and go. `SUBSCRIBE_TRACKS` offers each published track under the prefix with a relay
+they come and go. A backend with an origin also learns the origin's namespaces, in either of two
+ways, and announces a namespace once however many sources report it:
+
+- It forwards the request: one upstream `SUBSCRIBE_NAMESPACE` per prefix, shared by every
+  subscriber of that prefix. A lost one withdraws what it reported and is sent again, one the
+  origin refuses is not retried, and one whose last subscriber leaves lingers for
+  `upstream.linger`. With an `alb` pool, it goes to one member.
+- It accepts `PUBLISH_NAMESPACE` from the origin on its upstream session, as moq-dev's relay
+  sends, and reports those namespaces until the origin withdraws them or the session ends. With
+  an `alb` pool, these reach the member backends, not the pool's.
+
+`SUBSCRIBE_TRACKS` offers each published track under the prefix with a relay
 `PUBLISH`. A `SUBSCRIBE` naming a `RENDEZVOUS_TIMEOUT` waits up to that long (at most 30
 seconds) for a publisher to arrive; without one, a track nobody publishes is refused with
 `DOES_NOT_EXIST`. Publishers are refused with:
@@ -460,8 +471,10 @@ go -C hack/diagstreamer run ./cmd/diagstreamer -out fmp4 | moq --connect moqt://
 
 - No TCP fallback: WebTransport over HTTP/2 is not served, so clients need UDP.
 - No packaging: Trickster does not convert between MoQT and HLS, DASH or other formats.
-- `SUBSCRIBE_NAMESPACE` is answered from publishers' announcements only, and not propagated to
-  the origin.
+- `SUBSCRIBE_TRACKS`, and the PUBLISH form of draft -17's `SUBSCRIBE_NAMESPACE`, are answered
+  from publishers only, and not forwarded to the origin.
+- With an `alb` pool, the namespaces an origin publishes on its upstream session reach the
+  member backends, and not the pool's subscribers.
 - `EXPIRES` is neither sent nor acted on.
 - `NEW_GROUP_REQUEST` is not forwarded upstream, and upstream subscriptions are never filtered,
   so `MAX_FILTER_RANGES` is not used toward origins.
