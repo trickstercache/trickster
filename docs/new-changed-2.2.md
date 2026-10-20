@@ -1,8 +1,6 @@
 # Trickster 2.2
 
-Trickster 2.2 extends many of the new features introduced in 2.1, while adding support for delta-caching several new TSDB's that use the Postgres Query Dialect.
-
-Trickster 2.2 just recently began development, so many of the planned features are still being designed or are under development.
+Trickster 2.2 extends many of the new features introduced in 2.1, while adding support for delta-caching several new TSDB's that use the Postgres Query Dialect, as well as a new Global Query Evaluator that works with mixed Prom, Thanos and Mimir deployments. 2.2 adds multiple security and enforcement features, including ACME automatic cert renewal, IP ACLs, Rate Limtiing and GeoACLs; and new CDN-grade enhancements including MoQ support.
 
 ## Load Balancing and Scaling
 

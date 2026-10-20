@@ -1,6 +1,6 @@
 # Trickster Roadmap
 
-The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 2.1 and 2.2; as well as supporting new time series applications and cloud native integrations. 
+The roadmap for Trickster in the remainder of 2026 focuses on delivering versions 2.2 and 2.3; as well as supporting new time series applications and cloud native integrations.  Trickster v2.0 was released in Q2 and v2.1 was released in Q3.
 
 ## Timeline
 
@@ -31,6 +31,18 @@ The roadmap for Trickster in 2026 focuses on delivering Trickster versions 2.0, 
   - [x] Support HTTP `QUERY` Method
   - [ ] Support Media over Quick (MoQ) Relaying
   - [x] Improved support for Time Series Merge on distributed Mimir and Thanos deployments
+
+- [ ] Trickster v2.3 Release
+  - [ ] Expand Authenticator to more providers (OIDC, JWT, API Key, mTLS, etc.)
+  - [ ] Expand Prometheus support to more managed services (Azure, GCP)
+  - [ ] Expand Time Series Merge to more providers (VictoraMetrics, InfluxDB, etc.)
+  - [ ] Support emerergent Caching RFCs (9875, 10036, 9209, draft-ietf-httpbis-no-vary-search-10)
+  - [ ] S3 Range Caching
+  - [ ] Compression Dictionaries
+  - [ ] JSON marshaling/unmarshaling Performance via v2 / jsontext
+  - [ ] Web Application Firewall
+  - [ ] Publish Trickster installer packages for deb, dpkg, rpm, casks via the CI/CD Pipeline
+  - [ ] Streaming Video Enhnacements (low-latency DASH/HLS, content steering, AWS QUIC LB support)
 
 ### Ongoing
 
