@@ -1,10 +1,10 @@
 # Trickster 2.2
 
-Trickster 2.2 extends many of the new features introduced in 2.1, while adding support for delta-caching several new TSDB's that use the Postgres Query Dialect, as well as a new Global Query Evaluator that works with mixed Prom, Thanos and Mimir deployments. 2.2 adds multiple security and enforcement features, including ACME automatic cert renewal, IP ACLs, Rate Limtiing and GeoACLs; and new CDN-grade enhancements including MoQ support.
+Trickster 2.2 extends many of the new features introduced in 2.1, while adding support for delta-caching several new TSDB's that use the Postgres Query Dialect, as well as a new Global Query Evaluator that works with mixed Prom, Thanos and Mimir deployments. 2.2 adds multiple security and enforcement features, including ACME automatic cert renewal, IP ACLs, Rate Limiting and GeoACLs; and new CDN-grade enhancements including MoQ support.
 
 ## Load Balancing and Scaling
 
-**L4 Load Balancing** - We've extend the HTTP L7 ALB to support Layer 4 as well (TCP and UDP), with a number of new balancing mechanisms.
+**L4 Load Balancing** - We've extended the HTTP L7 ALB to support Layer 4 as well (TCP and UDP), with a number of new balancing mechanisms.
 
 **Sticky Sessions** - We now support configurable sticky sessions for the Load Balancer feature.
 
@@ -16,7 +16,7 @@ Trickster 2.2 extends many of the new features introduced in 2.1, while adding s
 
 **QuestDB** - And we also now support accelerating QuestDB.
 
-**VictoriaMetrics** - And we also now support accelerating VictoriaMetrics on the MetricsQL and Grahpite HTTP endpoints.
+**VictoriaMetrics** - And we also now support accelerating VictoriaMetrics on the MetricsQL and Graphite HTTP endpoints.
 
 **CloudWatch Metrics** - We now support accelerating AWS CloudWatch Metrics on the new PromQL endpoints. Classic GetMetricData endpoints are not yet supported. 
 

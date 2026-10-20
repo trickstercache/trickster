@@ -36,13 +36,13 @@ The roadmap for Trickster in the remainder of 2026 focuses on delivering version
   - [ ] Expand Authenticator to more providers (OIDC, JWT, API Key, mTLS, etc.)
   - [ ] Expand Prometheus support to more managed services (Azure, GCP)
   - [ ] Expand Time Series Merge to more providers (VictoraMetrics, InfluxDB, etc.)
-  - [ ] Support emerergent Caching RFCs (9875, 10036, 9209, draft-ietf-httpbis-no-vary-search-10)
+  - [ ] Support emergent Caching RFCs (9875, 10036, 9209, draft-ietf-httpbis-no-vary-search-10)
   - [ ] S3 Range Caching
   - [ ] Compression Dictionaries
   - [ ] JSON marshaling/unmarshaling Performance via v2 / jsontext
   - [ ] Web Application Firewall
   - [ ] Publish Trickster installer packages for deb, dpkg, rpm, casks via the CI/CD Pipeline
-  - [ ] Streaming Video Enhnacements (low-latency DASH/HLS, content steering, AWS QUIC LB support)
+  - [ ] Streaming Video Enhancements (low-latency DASH/HLS, content steering, AWS QUIC LB support)
 
 ### Ongoing
 
