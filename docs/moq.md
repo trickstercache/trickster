@@ -432,10 +432,12 @@ received object prints `verified`, `unverified` (a payload without the synthetic
 
 For real media, publish a fragmented MP4 with moq-dev's CLI into the dev relay, or into a
 backend that accepts publishers, and play it in moq-dev's web player through Trickster's
-WebTransport endpoint with a certificate the browser trusts:
+WebTransport endpoint with a certificate the browser trusts.
+[`hack/diagstreamer`](../hack/diagstreamer/README.md) generates a live feed with a clock and a
+timing strip in the picture:
 
 ```bash
-moq --connect moqt://localhost:8490/ publish --broadcast demo fmp4 < demo.mp4
+go -C hack/diagstreamer run ./cmd/diagstreamer -out fmp4 | moq --connect moqt://localhost:8490/ --broadcast demo import fmp4
 ```
 
 ## Troubleshooting

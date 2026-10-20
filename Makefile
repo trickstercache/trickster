@@ -188,7 +188,7 @@ TEST_LINTERS := forbidigo,depguard,godox,goheader
 golangci-lint:
 	@go tool golangci-lint run $(LINT_FLAGS) -c .golangci.yml
 	@go tool golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) -c .golangci.yml
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do \
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/diagstreamer; do \
 		(cd $$m && go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) -c ../../.golangci.yml ./... && \
 			go tool -modfile ../../go.mod golangci-lint run $(LINT_FLAGS) --tests --enable-only $(TEST_LINTERS) \
 			-c ../../.golangci.yml ./...) || exit 1; \
@@ -258,7 +258,7 @@ GO_TEST_PATH ?= $(shell $(GO) list ./... | grep -v v2/integration | tr '\n' ' ')
 gotest:
 	$(GO) test -timeout=5m -v ${GO_TEST_FLAGS} $(GO_TEST_PATH)
 	@./hack/filter-coverprofile.sh .coverprofile
-	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin; do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
+	@for m in hack/seedgen hack/druidseed hack/greptimeseed hack/vmseed hack/devorigin hack/diagstreamer; do (cd $$m && $(GO) test -timeout=5m $(GO_TEST_TOOL_FLAGS) ./...) || exit 1; done
 	@echo
 	@./hack/coverprofile-summary.sh
 	@echo "All tests passed successfully."

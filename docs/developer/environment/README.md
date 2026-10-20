@@ -54,7 +54,7 @@ scrapes your local Trickster for the
 | `questdb` | `questdb` and its seeder | `make developer-start-questdb` |
 | `victoriametrics` | `victoriametrics` and its seeder | `make developer-start-victoriametrics` |
 | `graphite` | `graphite`, its seeder, and its generator sidecar | `make developer-start-graphite` |
-| `moq` | `moq_relay`, moq-dev's MoQ relay on UDP port 10443, the `moq` provider's interop peer | `make developer-start-moq` |
+| `moq` | `moq_relay`, moq-dev's MoQ relay on UDP port 10443, the `moq` provider's interop peer; `diagstreamer`, a live diagnostic HLS and DASH stream on port 8496 ([hack/diagstreamer](../../../hack/diagstreamer/README.md)) | `make developer-start-moq` |
 | `all-providers` | every backend above | `make developer-start` |
 | `integration` | every backend above, plus the integration-only `coredns` | `make integration-start` |
 
